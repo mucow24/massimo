@@ -15,10 +15,70 @@ function legibleTextOn(hex: string): string {
   return L > 0.5 ? '#000' : '#fff';
 }
 import { dragState, useDoc, useSelection } from '../state/store';
-import { StationId } from '../state/types';
+import { Station, StationId } from '../state/types';
 import { buildBands } from '../geometry/interlining';
 import { SegmentBand } from './SegmentBand';
 import { StationView } from './StationView';
+import { Vec2 } from '../geometry/vec';
+import { STOP_SIZE } from '../geometry/orientation';
+
+const SQRT2_2 = Math.SQRT2 / 2;
+const SNAP_PERP_TOLERANCE = 10;
+const SNAP_PERP_TOLERANCE_RECOVERY = 15; // 150% when routing is currently failing
+
+// The "axis" a station's input/output line lies on. Two stations share an
+// axis iff their rotation values are equal mod 4.
+function axisForRotation(rot: number): Vec2 {
+  switch (rot % 4) {
+    case 0:
+      return { x: 0, y: 1 };
+    case 1:
+      return { x: SQRT2_2, y: -SQRT2_2 }; // NE–SW
+    case 2:
+      return { x: 1, y: 0 };
+    default:
+      return { x: SQRT2_2, y: SQRT2_2 }; // NW–SE
+  }
+}
+
+function tryAxisSnap(
+  draggedId: StationId,
+  proposedX: number,
+  proposedY: number,
+  draggedRotation: number,
+  stations: Record<StationId, Station>,
+  tolerance: number,
+): { x: number; y: number; guide: { from: Vec2; to: Vec2 } | null } {
+  const axis = axisForRotation(draggedRotation);
+  const perpX = -axis.y;
+  const perpY = axis.x;
+  let best: { st: Station; perpDist: number } | null = null;
+  for (const t of Object.values(stations)) {
+    if (t.id === draggedId) continue;
+    if (t.rotation % 4 !== draggedRotation % 4) continue;
+    const dx = t.x - proposedX;
+    const dy = t.y - proposedY;
+    const perpDist = Math.abs(dx * perpX + dy * perpY);
+    if (perpDist > tolerance) continue;
+    if (!best || perpDist < best.perpDist) best = { st: t, perpDist };
+  }
+  if (!best) return { x: proposedX, y: proposedY, guide: null };
+  // Snap so the dragged station lies exactly on the axis line through `best`.
+  const dx = proposedX - best.st.x;
+  const dy = proposedY - best.st.y;
+  const along = dx * axis.x + dy * axis.y;
+  const sx = best.st.x + along * axis.x;
+  const sy = best.st.y + along * axis.y;
+  // Guide goes from the dragged dot exactly to the target dot.
+  return {
+    x: sx,
+    y: sy,
+    guide: {
+      from: { x: sx, y: sy },
+      to: { x: best.st.x, y: best.st.y },
+    },
+  };
+}
 
 export function MapCanvas() {
   const stations = useDoc((s) => s.stations);
@@ -40,7 +100,11 @@ export function MapCanvas() {
     startMX: number;
     startMY: number;
     moved: boolean;
+    // Latched: once recovery mode triggers during a drag, it stays on for the
+    // remainder of the drag so the snap doesn't flap as the warning toggles.
+    recoveryLatched: boolean;
   } | null>(null);
+  const [snapGuide, setSnapGuide] = useState<{ from: Vec2; to: Vec2 } | null>(null);
 
   useEffect(() => {
     const el = svgRef.current?.parentElement;
@@ -130,7 +194,31 @@ export function MapCanvas() {
       if (ds.moved) {
         const dx = dxScreen / viewport.zoom;
         const dy = dyScreen / viewport.zoom;
-        moveStation(ds.id, ds.startWX + dx, ds.startWY + dy);
+        let nx = ds.startWX + dx;
+        let ny = ds.startWY + dy;
+        const draggedRot = stations[ds.id]?.rotation ?? 0;
+        // Recovery mode: snapping defaults to ON and Shift turns it off, with
+        // widened tolerance. Otherwise snapping is opt-in via Shift.
+        // Latch ON whenever a routing warning appears mid-drag, but never
+        // release within the same drag — that prevents oscillation when the
+        // snap fixes the route, clearing the warning, which would otherwise
+        // turn snap off, drifting the station off-axis, re-triggering the
+        // warning, etc.
+        if (!ds.recoveryLatched && bands.some((b) => b.warning)) {
+          ds.recoveryLatched = true;
+        }
+        const inRecovery = ds.recoveryLatched;
+        const shouldSnap = inRecovery ? !e.shiftKey : e.shiftKey;
+        const tol = inRecovery ? SNAP_PERP_TOLERANCE_RECOVERY : SNAP_PERP_TOLERANCE;
+        if (shouldSnap) {
+          const snap = tryAxisSnap(ds.id, nx, ny, draggedRot, stations, tol);
+          nx = snap.x;
+          ny = snap.y;
+          setSnapGuide(snap.guide);
+        } else if (snapGuide) {
+          setSnapGuide(null);
+        }
+        moveStation(ds.id, nx, ny);
       }
       void wasMoved;
     }
@@ -145,6 +233,7 @@ export function MapCanvas() {
     if (dragStationRef.current) {
       const wasMoved = dragStationRef.current.moved;
       dragStationRef.current = null;
+      setSnapGuide(null);
       if (wasMoved) {
         try {
           svgRef.current?.releasePointerCapture(e.pointerId);
@@ -185,6 +274,7 @@ export function MapCanvas() {
       startMX: e.clientX,
       startMY: e.clientY,
       moved: false,
+      recoveryLatched: bands.some((b) => b.warning),
     };
     // Don't capture the pointer here — capture would redirect the synthesized
     // click event away from the station's rect to the SVG, breaking onClick.
@@ -233,14 +323,80 @@ export function MapCanvas() {
           <SegmentBand key={b.pairKey + ':' + b.lines.map((l) => l.id).join(',')} spec={b} />
         ))}
 
-        {/* stations on top */}
+        {/* station backgrounds: hit areas, names, colored stop squares */}
         {Object.values(stations).map((st) => (
           <StationView
-            key={st.id}
+            key={st.id + ':bg'}
             station={st}
             lines={lines}
             zoom={viewport.zoom}
             onStartDrag={onStationDragStart}
+            layer="bg"
+          />
+        ))}
+
+        {/* snap guide — over stop squares but under dots. Blurred halo behind, sharp blue on top, so it reads against any line color. */}
+        {snapGuide && (
+          <g pointerEvents="none">
+            <defs>
+              <filter
+                id="snap-halo-blur"
+                x="-50%"
+                y="-50%"
+                width="200%"
+                height="200%"
+              >
+                <feGaussianBlur stdDeviation={2 / viewport.zoom} />
+              </filter>
+            </defs>
+            <g filter="url(#snap-halo-blur)">
+              <line
+                x1={snapGuide.from.x}
+                y1={snapGuide.from.y}
+                x2={snapGuide.to.x}
+                y2={snapGuide.to.y}
+                stroke="rgb(185, 218, 255)"
+                strokeWidth={5 / viewport.zoom}
+                strokeLinecap="round"
+              />
+              <circle
+                cx={snapGuide.to.x}
+                cy={snapGuide.to.y}
+                r={STOP_SIZE * 0.28 + 1 / viewport.zoom}
+                fill="none"
+                stroke="rgb(185, 218, 255)"
+                strokeWidth={5 / viewport.zoom}
+              />
+              <circle
+                cx={snapGuide.from.x}
+                cy={snapGuide.from.y}
+                r={STOP_SIZE * 0.28 + 1 / viewport.zoom}
+                fill="none"
+                stroke="rgb(185, 218, 255)"
+                strokeWidth={5 / viewport.zoom}
+              />
+            </g>
+            <line
+              x1={snapGuide.from.x}
+              y1={snapGuide.from.y}
+              x2={snapGuide.to.x}
+              y2={snapGuide.to.y}
+              stroke="#1488a0"
+              strokeWidth={2 / viewport.zoom}
+              strokeDasharray={`${4 / viewport.zoom} ${3 / viewport.zoom}`}
+            />
+          </g>
+        )}
+
+        {/* station dots: rendered last so the snap guide passes under them */}
+        {Object.values(stations).map((st) => (
+          <StationView
+            key={st.id + ':dots'}
+            station={st}
+            lines={lines}
+            zoom={viewport.zoom}
+            onStartDrag={onStationDragStart}
+            layer="dots"
           />
         ))}
       </svg>
