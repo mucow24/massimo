@@ -12,6 +12,7 @@ import type {
   StopOrientation,
   Viewport,
 } from './types';
+import { randomStationName } from './stationNames';
 
 const uid = () =>
   Math.random().toString(36).slice(2, 8) + Date.now().toString(36).slice(-4);
@@ -112,7 +113,7 @@ export const useDoc = create<DocState>()(
         const id = uid();
         const station: Station = {
           id,
-          name: 'New Station',
+          name: randomStationName(),
           x,
           y,
           rotation: 0,

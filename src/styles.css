@@ -17,6 +17,9 @@ body,
 .canvas-host svg text {
   user-select: none;
   -webkit-user-select: none;
+  text-rendering: geometricPrecision;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
 }
 
 button,

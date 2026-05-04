@@ -489,9 +489,10 @@ export function MapCanvas() {
     if (!onBackground) return;
     if (selection.placingStation) {
       const w = screenToWorld(e.clientX, e.clientY);
-      const id = addStation(w.x, w.y);
-      selection.setPlacingStation(false);
-      selection.selectStation(id);
+      addStation(w.x, w.y);
+      // Stay in place-station mode; user clicks again or hits Esc / the
+      // toolbar button to exit. Don't auto-select the new station — that
+      // would close the placing-mode banner via the inspector swap.
       return;
     }
     selection.selectStation(null);

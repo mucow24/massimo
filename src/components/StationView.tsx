@@ -82,21 +82,26 @@ export function StationView({ station, lines, onStartDrag, layer }: Props) {
   let labelTextAnchor: 'start' | 'middle' | 'end' = 'middle';
   let labelAnchorX = labelCenter.x;
   let labelAnchorY = labelCenter.y;
+  // Visual gap so the text never butts right against the adjacent stop.
+  const LABEL_GAP = 5;
+  const readAngle = (label.rotation * Math.PI) / 4;
+  const readCos = Math.cos(readAngle);
+  const readSin = Math.sin(readAngle);
   if (adjPlus) {
     labelTextAnchor = 'end';
-    labelAnchorX = labelCenter.x + dirPlus.anchor.x;
-    labelAnchorY = labelCenter.y + dirPlus.anchor.y;
+    // Anchor sits at the +readingDir edge of the cell, then back off by
+    // LABEL_GAP in -readingDir so the text isn't touching the stop.
+    labelAnchorX = labelCenter.x + dirPlus.anchor.x - LABEL_GAP * readCos;
+    labelAnchorY = labelCenter.y + dirPlus.anchor.y - LABEL_GAP * readSin;
   } else if (adjMinus) {
     labelTextAnchor = 'start';
-    labelAnchorX = labelCenter.x + dirMinus.anchor.x;
-    labelAnchorY = labelCenter.y + dirMinus.anchor.y;
+    labelAnchorX = labelCenter.x + dirMinus.anchor.x + LABEL_GAP * readCos;
+    labelAnchorY = labelCenter.y + dirMinus.anchor.y + LABEL_GAP * readSin;
   }
-  // Per-label offset: shifts along the reading direction (in unrotated
-  // station-local coords; the station's own rotation is applied later).
+  // Per-label offset: shifts along the reading direction.
   if (label.offset) {
-    const a = (label.rotation * Math.PI) / 4;
-    labelAnchorX += label.offset * Math.cos(a);
-    labelAnchorY += label.offset * Math.sin(a);
+    labelAnchorX += label.offset * readCos;
+    labelAnchorY += label.offset * readSin;
   }
 
   // Hit rect: union of cell bounding box, the rotated label-text bounding
