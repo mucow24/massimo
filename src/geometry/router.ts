@@ -135,6 +135,37 @@ function routeLeg(start: Vec2, sDir: Vec2, end: Vec2, eDir: Vec2, R: number): Ro
   });
 
   const best = cands[0];
+  // A route is "tight" if it forces sharp turns or arcs that have to shrink
+  // far below the configured radius. Tight routes produce ugly geometry —
+  // especially in interlined bands, where offset paths can't fit neatly and
+  // sometimes blow up near degenerate bends. When we detect tightness, drop
+  // back to a dumb straight-line fallback for both the centerline and any
+  // offset paths derived from it, and flag the warning so the user sees a
+  // toast and can fix the layout.
+  let warning = false;
+  for (let i = 1; i < best.vertices.length - 1 && !warning; i++) {
+    const inDir = norm(sub(best.vertices[i], best.vertices[i - 1]));
+    const outDir = norm(sub(best.vertices[i + 1], best.vertices[i]));
+    const cosA = Math.max(-1, Math.min(1, dot(inDir, outDir)));
+    const θ = Math.acos(cosA);
+    if (θ > (3 * Math.PI) / 4 - 0.01) warning = true; // ≥ 135°
+  }
+  if (!warning) {
+    const { rs } = computeArcRadii(best.vertices, R);
+    for (const r of rs) {
+      if (r > 0 && r < R * 0.5) {
+        warning = true;
+        break;
+      }
+    }
+  }
+  if (warning) {
+    return {
+      vertices: [start, end],
+      pathD: `M ${fmt(start)} L ${fmt(end)}`,
+      warning: true,
+    };
+  }
   return {
     vertices: best.vertices,
     pathD: filletPath(best.vertices, R),
@@ -268,53 +299,67 @@ function solveUTurn(start: Vec2, sDir: Vec2, end: Vec2, eDir: Vec2, R: number): 
 const fmt = (p: Vec2) => `${p.x.toFixed(2)} ${p.y.toFixed(2)}`;
 
 /**
+ * For a polyline, compute the effective arc radius and bend angle at each
+ * interior corner. Tangents are scaled down where they collide on a shared
+ * edge: for each edge, t_a + t_b ≤ edge_length. Both adjacent corners are
+ * scaled by the same factor when over-constrained, so radii at neighboring
+ * corners stay proportional. Used by `filletPath` and `offsetFilletPath` so
+ * that all paths in an interlined band share concentric arc centers.
+ */
+function computeArcRadii(verts: Vec2[], R: number): { rs: number[]; angles: number[] } {
+  const n = verts.length;
+  const rs = new Array(n).fill(R);
+  const angles = new Array(n).fill(0);
+  const tans = new Array(n).fill(0);
+  for (let i = 1; i < n - 1; i++) {
+    const inDir = norm(sub(verts[i], verts[i - 1]));
+    const outDir = norm(sub(verts[i + 1], verts[i]));
+    const cosA = Math.max(-1, Math.min(1, dot(inDir, outDir)));
+    angles[i] = Math.acos(cosA);
+    tans[i] = R * Math.tan(angles[i] / 2);
+  }
+  for (let i = 0; i < n - 1; i++) {
+    const edgeLen = len(sub(verts[i + 1], verts[i]));
+    const sum = tans[i] + tans[i + 1];
+    if (sum > edgeLen - EPS && sum > EPS) {
+      const factor = (edgeLen - EPS) / sum;
+      tans[i] *= factor;
+      tans[i + 1] *= factor;
+    }
+  }
+  for (let i = 1; i < n - 1; i++) {
+    if (angles[i] > EPS) rs[i] = tans[i] / Math.tan(angles[i] / 2);
+    else rs[i] = 0;
+  }
+  return { rs, angles };
+}
+
+/**
  * Build an SVG path string from a polyline, replacing each interior vertex
- * with a circular-arc fillet of radius R that's tangent to both adjacent edges.
- * If an arc can't fit because of edge length, it's silently shrunk to fit.
+ * with a circular-arc fillet tangent to both adjacent edges. Radius is taken
+ * from `computeArcRadii`, which honors per-edge tangent budget so an arc that
+ * needs more than half its edge can take it as long as the neighbor doesn't.
  */
 export function filletPath(verts: Vec2[], R: number): string {
   if (verts.length < 2) return '';
   if (verts.length === 2) return `M ${fmt(verts[0])} L ${fmt(verts[1])}`;
+  const { rs, angles } = computeArcRadii(verts, R);
 
   let d = `M ${fmt(verts[0])}`;
   for (let i = 1; i < verts.length - 1; i++) {
-    const prev = verts[i - 1];
-    const cur = verts[i];
-    const nxt = verts[i + 1];
-
-    const inDir = norm(sub(cur, prev));
-    const outDir = norm(sub(nxt, cur));
-
-    // Bend angle θ between inDir and outDir
-    const cosA = Math.max(-1, Math.min(1, dot(inDir, outDir)));
-    const θ = Math.acos(cosA);
-    if (θ < EPS) {
-      // Collinear; just continue.
-      d += ` L ${fmt(cur)}`;
+    const r = rs[i];
+    const θ = angles[i];
+    if (θ < EPS || r < EPS) {
+      d += ` L ${fmt(verts[i])}`;
       continue;
     }
-
-    let r = R;
-    const idealTan = r * Math.tan(θ / 2);
-
-    // Cap r so arc fits on each side.
-    const inLen = len(sub(cur, prev));
-    const outLen = len(sub(nxt, cur));
-    const maxIn = i === 1 ? inLen - EPS : inLen / 2 - EPS;
-    const maxOut = i === verts.length - 2 ? outLen - EPS : outLen / 2 - EPS;
-    const maxTan = Math.min(maxIn, maxOut);
-    let useTan = idealTan;
-    if (idealTan > maxTan) {
-      useTan = Math.max(0, maxTan);
-      r = useTan / Math.max(EPS, Math.tan(θ / 2));
-    }
-
-    const pIn = sub(cur, scale(inDir, useTan)); // arc start
-    const pOut = add(cur, scale(outDir, useTan)); // arc end
-
-    // Sweep direction: cross product of inDir × outDir; SVG arc sweep flag is 1 for clockwise (in screen coords).
+    const inDir = norm(sub(verts[i], verts[i - 1]));
+    const outDir = norm(sub(verts[i + 1], verts[i]));
+    const useTan = r * Math.tan(θ / 2);
+    const pIn = sub(verts[i], scale(inDir, useTan));
+    const pOut = add(verts[i], scale(outDir, useTan));
     const cz = inDir.x * outDir.y - inDir.y * outDir.x;
-    const sweep = cz > 0 ? 1 : 0; // y-down: positive cross = CW visually
+    const sweep = cz > 0 ? 1 : 0;
     d += ` L ${fmt(pIn)} A ${r.toFixed(2)} ${r.toFixed(2)} 0 0 ${sweep} ${fmt(pOut)}`;
   }
   d += ` L ${fmt(verts[verts.length - 1])}`;
@@ -346,61 +391,56 @@ export function offsetFilletPath(verts: Vec2[], R: number, offset: number): stri
       const sum = { x: a.x + b.x, y: a.y + b.y };
       const ln = Math.hypot(sum.x, sum.y);
       n = ln < EPS ? a : { x: sum.x / ln, y: sum.y / ln };
-      const cosHalf = Math.max(EPS, dot(n, a));
+      // Distance from V to the offset corner along the bisector is
+      // |offset| / cos(half-angle). For bends approaching 180° cos(half)
+      // approaches 0 and the offset corner flies off to infinity, leaving
+      // a long spike in the rendered band. Cap the scale at a reasonable
+      // limit so near-degenerate bends just look like sharp corners
+      // instead of geometric explosions.
+      const MAX_BISECTOR_SCALE = 3;
+      const cosHalf = Math.max(1 / MAX_BISECTOR_SCALE, dot(n, a));
       n = { x: n.x / cosHalf, y: n.y / cosHalf };
     }
     return { x: p.x + n.x * offset, y: p.y + n.y * offset };
   });
 
-  // For arc radius, adjust for offset: arcs on the inside shrink, outside grow.
-  // We re-fillet using the original center of curvature: same arc center but
-  // offset radius. Achieved by computing arc with R + (signed) offset depending
-  // on bend direction.
   if (offV.length === 2) return `M ${fmt(offV[0])} L ${fmt(offV[1])}`;
+
+  // Use the centerline's effective per-corner radii so offset arcs share
+  // arc centers with the centerline. Concentric → no gaps between bands.
+  const { rs, angles } = computeArcRadii(verts, R);
+
   let d = `M ${fmt(offV[0])}`;
   for (let i = 1; i < offV.length - 1; i++) {
-    const prev = offV[i - 1];
-    const cur = offV[i];
-    const nxt = offV[i + 1];
-
-    const inDir = norm(sub(cur, prev));
-    const outDir = norm(sub(nxt, cur));
-    const cosA = Math.max(-1, Math.min(1, dot(inDir, outDir)));
-    const θ = Math.acos(cosA);
+    const θ = angles[i];
     if (θ < EPS) {
-      d += ` L ${fmt(cur)}`;
+      d += ` L ${fmt(offV[i])}`;
       continue;
     }
-    // sweep direction (cross of original verts; same direction post-offset for our parallel offsets)
+    // Sweep direction is determined from the centerline (parallel offset
+    // doesn't change which side the bend curves toward).
     const inOrig = norm(sub(verts[i], verts[i - 1]));
     const outOrig = norm(sub(verts[i + 1], verts[i]));
     const cz = inOrig.x * outOrig.y - inOrig.y * outOrig.x;
     const sweep = cz > 0 ? 1 : 0;
 
-    // Effective radius for this offset path: R + offset on outside of bend, R - offset on inside.
-    // Convention: positive offset = traveler's left side. cz > 0 = right turn (in y-down screen).
-    // Right turn + left offset → outside of bend; right turn + right offset → inside.
+    // r' = centerline rs[i] ± offset, with sign by inside/outside at this corner.
     const onInside = (cz > 0 && offset < 0) || (cz < 0 && offset > 0);
-    let r = onInside ? R - Math.abs(offset) : R + Math.abs(offset);
-    if (r < EPS) r = EPS;
-
+    const r = rs[i] + (onInside ? -Math.abs(offset) : Math.abs(offset));
+    if (r < EPS) {
+      d += ` L ${fmt(offV[i])}`;
+      continue;
+    }
     const useTan = r * Math.tan(θ / 2);
 
-    const inLen = len(sub(cur, prev));
-    const outLen = len(sub(nxt, cur));
-    const maxIn = i === 1 ? inLen - EPS : inLen / 2 - EPS;
-    const maxOut = i === offV.length - 2 ? outLen - EPS : outLen / 2 - EPS;
-    const maxTan = Math.min(maxIn, maxOut);
-    let tanUse = useTan;
-    let rUse = r;
-    if (tanUse > maxTan) {
-      tanUse = Math.max(0, maxTan);
-      rUse = tanUse / Math.max(EPS, Math.tan(θ / 2));
-    }
-
-    const pIn = sub(cur, scale(inDir, tanUse));
-    const pOut = add(cur, scale(outDir, tanUse));
-    d += ` L ${fmt(pIn)} A ${rUse.toFixed(2)} ${rUse.toFixed(2)} 0 0 ${sweep} ${fmt(pOut)}`;
+    // Use the centerline directions — they're parallel to the offset edges,
+    // and using offV's directly would divide-by-near-zero whenever the
+    // bisector cap pulls two offset corners together.
+    const inDir = norm(sub(verts[i], verts[i - 1]));
+    const outDir = norm(sub(verts[i + 1], verts[i]));
+    const pIn = sub(offV[i], scale(inDir, useTan));
+    const pOut = add(offV[i], scale(outDir, useTan));
+    d += ` L ${fmt(pIn)} A ${r.toFixed(2)} ${r.toFixed(2)} 0 0 ${sweep} ${fmt(pOut)}`;
   }
   d += ` L ${fmt(offV[offV.length - 1])}`;
   return d;
