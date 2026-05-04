@@ -6,6 +6,7 @@ export function Toolbar() {
   const viewport = useDoc((s) => s.viewport);
   const setViewport = useDoc((s) => s.setViewport);
   const addLine = useDoc((s) => s.addLine);
+  const clearAll = useDoc((s) => s.clearAll);
   const selection = useSelection();
 
   const onAddStation = () => {
@@ -16,6 +17,14 @@ export function Toolbar() {
     selection.startAppendAt(id, -1);
   };
   const onResetView = () => setViewport({ x: 0, y: 0, zoom: 1 });
+  const onClear = () => {
+    selection.selectStation(null);
+    selection.selectLine(null);
+    selection.setAppending(null);
+    selection.setPlacingStation(false);
+    selection.setEditingStationId(null);
+    clearAll();
+  };
 
   return (
     <div className="toolbar">
@@ -31,6 +40,9 @@ export function Toolbar() {
         + Station
       </button>
       <button onClick={onAddLine}>+ Line</button>
+      <button onClick={onClear} title="Clear the entire map and start fresh">
+        Clear
+      </button>
       <span className="spacer" />
       <label>
         Curve r
