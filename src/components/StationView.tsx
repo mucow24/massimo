@@ -30,7 +30,13 @@ export function StationView({ station, lines, onStartDrag, layer }: Props) {
     if (dragState.suppressClick) return;
     e.stopPropagation();
     if (selection.appendingToLineId) {
-      toggleStationOnLine(selection.appendingToLineId, station.id);
+      const ln = lines[selection.appendingToLineId];
+      const wasInLine = ln?.stations.includes(station.id) ?? false;
+      const cursor = selection.insertAfterIndex ?? -1;
+      toggleStationOnLine(selection.appendingToLineId, station.id, cursor);
+      if (!wasInLine) {
+        selection.setInsertAfterIndex(cursor + 1);
+      }
     } else {
       selection.selectStation(station.id);
     }

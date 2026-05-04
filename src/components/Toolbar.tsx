@@ -13,8 +13,7 @@ export function Toolbar() {
   };
   const onAddLine = () => {
     const id = addLine();
-    selection.selectLine(id);
-    selection.setAppending(id);
+    selection.startAppendAt(id, -1);
   };
   const onResetView = () => setViewport({ x: 0, y: 0, zoom: 1 });
 

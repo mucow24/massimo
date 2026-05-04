@@ -1,4 +1,4 @@
-import { useDoc, useSelection } from '../state/store';
+import { MTA_PALETTE, useDoc, useSelection } from '../state/store';
 import type { LineId, StationId } from '../state/types';
 
 export function Inspector() {
@@ -109,6 +109,68 @@ function StationInspector({ id }: { id: StationId }) {
   );
 }
 
+function ColorPalette({ value, onChange }: { value: string; onChange: (c: string) => void }) {
+  const v = value.toLowerCase();
+  const isCustom = !MTA_PALETTE.some((p) => p.color.toLowerCase() === v);
+  const swatchBase: React.CSSProperties = {
+    width: 22,
+    height: 22,
+    borderRadius: 3,
+    cursor: 'pointer',
+    padding: 0,
+    boxSizing: 'border-box',
+  };
+  return (
+    <div style={{ display: 'flex', flexWrap: 'wrap', gap: 4 }}>
+      {MTA_PALETTE.map((p) => {
+        const selected = v === p.color.toLowerCase();
+        return (
+          <button
+            key={p.color}
+            type="button"
+            title={p.name}
+            onClick={() => onChange(p.color)}
+            style={{
+              ...swatchBase,
+              background: p.color,
+              border: selected ? '2px solid #000' : '1px solid rgba(0,0,0,0.2)',
+            }}
+          />
+        );
+      })}
+      <label
+        title={isCustom ? `Custom (${value})` : 'Custom'}
+        style={{
+          ...swatchBase,
+          display: 'inline-flex',
+          alignItems: 'center',
+          justifyContent: 'center',
+          background: isCustom ? value : '#fff',
+          border: isCustom ? '2px solid #000' : '1px dashed rgba(0,0,0,0.4)',
+          fontSize: 12,
+          color: isCustom ? '#fff' : '#666',
+          fontWeight: 700,
+          textShadow: isCustom ? '0 0 2px rgba(0,0,0,0.5)' : undefined,
+        }}
+      >
+        ?
+        <input
+          type="color"
+          value={value}
+          onChange={(e) => onChange(e.target.value)}
+          style={{
+            position: 'absolute',
+            width: 0,
+            height: 0,
+            opacity: 0,
+            pointerEvents: 'none',
+          }}
+        />
+      </label>
+    </div>
+  );
+}
+
 function LineInspector({ id }: { id: LineId }) {
   const line = useDoc((s) => s.lines[id]);
   const stations = useDoc((s) => s.stations);
@@ -143,39 +205,71 @@ function LineInspector({ id }: { id: LineId }) {
       </div>
       <div className="field">
         <label>Color</label>
-        <input
-          type="color"
+        <ColorPalette
           value={line.color}
-          onChange={(e) => updateLine(line.id, { color: e.target.value })}
+          onChange={(c) => updateLine(line.id, { color: c })}
         />
       </div>
       <div className="field">
-        <label>Append from map</label>
-        <button
-          className="btn-mini"
-          onClick={() => selection.setAppending(isAppending ? null : line.id)}
-          style={isAppending ? { background: '#1a4ea8', color: '#fff', borderColor: '#1a4ea8' } : undefined}
-        >
-          {isAppending ? 'Stop appending' : 'Append from map'}
-        </button>
-      </div>
-      <div className="field">
         <label>Stations ({line.stations.length})</label>
-        {line.stations.length === 0 && <div className="empty">Empty. Use "Append from map" to add.</div>}
+        {line.stations.length === 0 && (
+          <button
+            className="btn-mini"
+            onClick={() => selection.startAppendAt(line.id, -1)}
+            style={
+              isAppending
+                ? { background: line.color, color: '#fff', borderColor: line.color }
+                : undefined
+            }
+          >
+            {isAppending ? 'Stop adding' : 'Add stations from map'}
+          </button>
+        )}
         {line.stations.map((sid, i) => {
           const st = stations[sid];
           if (!st) return null;
+          const isActiveCursor = isAppending && selection.insertAfterIndex === i;
           return (
-            <div key={i + ':' + sid} className="list-row" style={{ paddingLeft: 0 }}>
-              <span style={{ width: 18, color: '#999' }}>{i + 1}.</span>
-              <span className="grow">{st.name}</span>
-              <button className="btn-mini" disabled={i === 0} onClick={() => moveSt(i, -1)}>↑</button>
-              <button
-                className="btn-mini"
-                disabled={i === line.stations.length - 1}
-                onClick={() => moveSt(i, 1)}
-              >↓</button>
-              <button className="btn-mini danger" onClick={() => removeStationFromLine(line.id, i)}>×</button>
+            <div key={i + ':' + sid}>
+              <div className="list-row" style={{ paddingLeft: 0 }}>
+                <span style={{ width: 18, color: '#999' }}>{i + 1}.</span>
+                <span className="grow">{st.name}</span>
+                <button className="btn-mini" disabled={i === 0} onClick={() => moveSt(i, -1)}>↑</button>
+                <button
+                  className="btn-mini"
+                  disabled={i === line.stations.length - 1}
+                  onClick={() => moveSt(i, 1)}
+                >↓</button>
+                {isActiveCursor ? (
+                  <button
+                    className="btn-mini"
+                    onClick={() => selection.setAppending(null)}
+                    style={{ background: line.color, color: '#fff', borderColor: line.color }}
+                    title="Stop adding stations"
+                  >
+                    ■
+                  </button>
+                ) : (
+                  <button
+                    className="btn-mini"
+                    onClick={() => selection.startAppendAt(line.id, i)}
+                    title={`Insert stations after ${st.name}`}
+                  >
+                    +
+                  </button>
+                )}
+                <button className="btn-mini danger" onClick={() => removeStationFromLine(line.id, i)}>×</button>
+              </div>
+              {isActiveCursor && (
+                <div
+                  style={{
+                    height: 3,
+                    background: line.color,
+                    margin: '2px 0',
+                    borderRadius: 1.5,
+                  }}
+                />
+              )}
             </div>
           );
         })}
