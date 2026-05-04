@@ -32,15 +32,19 @@ export interface StopMarkerSpec {
 const pairKeyOf = (a: StationId, b: StationId) => (a < b ? `${a}|${b}` : `${b}|${a}`);
 
 interface SegInfo {
+  // Canonical (alphabetic): fromId < toId always. Both fromCell and toCell are
+  // this line's stops at canonFrom and canonTo. So segs from different lines
+  // through the same station-pair share a coordinate basis when bucketed.
   fromId: StationId;
   toId: StationId;
   fromCell: StopCell;
   toCell: StopCell;
-  forward: boolean;
   lineId: LineId;
   color: string;
-  // Unit world vector from `from` toward `to`, used to resolve auto-axis
-  // stop orientations into a signed travel direction.
+  // Unit world vector along this LINE'S travel direction at this segment
+  // (line.stations[i] → line.stations[i+1]). Drives auto-axis orientation
+  // resolution. Not necessarily canonFrom→canonTo — a line traversing the
+  // pair in reverse alphabetic order has worldHint pointing canonTo→canonFrom.
   worldHint: Vec2;
 }
 
@@ -105,18 +109,18 @@ export function buildBands(
       if (!fromCell || !toCell) continue;
       const key = pairKeyOf(a, b);
       const forward = a < b;
-      const dx = sb.x - sa.x;
-      const dy = sb.y - sa.y;
-      const len = Math.hypot(dx, dy) || 1;
+      // Line direction at this segment, regardless of canonical ordering.
+      const dxLine = sb.x - sa.x;
+      const dyLine = sb.y - sa.y;
+      const lineLen = Math.hypot(dxLine, dyLine) || 1;
       (groups[key] ||= []).push({
-        fromId: a,
-        toId: b,
-        fromCell,
-        toCell,
-        forward,
+        fromId: forward ? a : b,
+        toId: forward ? b : a,
+        fromCell: forward ? fromCell : toCell,
+        toCell: forward ? toCell : fromCell,
         lineId,
         color: line.color,
-        worldHint: { x: dx / len, y: dy / len },
+        worldHint: { x: dxLine / lineLen, y: dyLine / lineLen },
       });
     }
   }
@@ -125,19 +129,19 @@ export function buildBands(
   const bands: SegmentBandSpec[] = [];
 
   for (const [pairKey, segs] of Object.entries(groups)) {
-    // Bucket by WORLD travel direction at each end. Two lines that share a
-    // station-pair AND share both world tangent directions can interline,
-    // even when their per-stop local orientations differ (e.g. horizontal at
-    // station A under rotation 0 vs. vertical at station B under rotation 6,
-    // both producing east-going world travel).
+    // Bucket by world travel AXIS at each end (mod 4). Two lines on the same
+    // station-pair that share an axis can render as a single band — even if
+    // they traverse the corridor in opposite directions. Their stops are at
+    // the same world positions either way; the band's flow direction is
+    // metadata that doesn't affect the rendered shape.
     const buckets: Record<string, SegInfo[]> = {};
     for (const s of segs) {
       const fromS = stations[s.fromId];
       const toS = stations[s.toId];
       if (!fromS || !toS) continue;
-      const fIdx = dirIndex8(travelDirWorld(s.fromCell, fromS, s.worldHint));
-      const tIdx = dirIndex8(travelDirWorld(s.toCell, toS, s.worldHint));
-      const key = `${fIdx}|${tIdx}`;
+      const fAxis = dirIndex8(travelDirWorld(s.fromCell, fromS, s.worldHint)) % 4;
+      const tAxis = dirIndex8(travelDirWorld(s.toCell, toS, s.worldHint)) % 4;
+      const key = `${fAxis}|${tAxis}`;
       (buckets[key] ||= []).push(s);
     }
 
@@ -147,8 +151,18 @@ export function buildBands(
       const sample = bucket[0];
       const fromS = stations[sample.fromId];
       const toS = stations[sample.toId];
-      const fDir = travelDirWorld(sample.fromCell, fromS, sample.worldHint);
-      const tDir = travelDirWorld(sample.toCell, toS, sample.worldHint);
+      // Resolve sample's tangent (gives us the AXIS), then sign-flip if
+      // needed so the band's flow points canonFrom → canonTo. Without this,
+      // if `bucket[0]` happens to be a line traversing the corridor in
+      // reverse alphabetic order, the router gets a U-turn input.
+      const sampleFDir = travelDirWorld(sample.fromCell, fromS, sample.worldHint);
+      const sampleTDir = travelDirWorld(sample.toCell, toS, sample.worldHint);
+      const canonDx = toS.x - fromS.x;
+      const canonDy = toS.y - fromS.y;
+      const fSign = sampleFDir.x * canonDx + sampleFDir.y * canonDy >= 0 ? 1 : -1;
+      const tSign = sampleTDir.x * canonDx + sampleTDir.y * canonDy >= 0 ? 1 : -1;
+      const fDir: Vec2 = { x: sampleFDir.x * fSign, y: sampleFDir.y * fSign };
+      const tDir: Vec2 = { x: sampleTDir.x * tSign, y: sampleTDir.y * tSign };
       // leftOf(motion) — must match the perpendicular convention used by
       // offsetFilletPath. With this, sorting ascending by perp-projection
       // assigns lower-k indices to lines on the negative-offset (right of
@@ -183,7 +197,9 @@ export function buildBands(
       let group: Enriched[] = [];
       const flush = () => {
         if (group.length === 0) return;
-        bands.push(buildBandSpec(group.map((e) => e.seg), stations, curveRadius, pairKey));
+        bands.push(
+          buildBandSpec(group.map((e) => e.seg), stations, curveRadius, pairKey, fDir, tDir),
+        );
         group = [];
       };
       const TOL = 0.5;
@@ -280,6 +296,11 @@ function buildBandSpec(
   stations: Record<StationId, Station>,
   R: number,
   pairKey: string,
+  // The band's canonical-direction tangents (signed canonFrom→canonTo). Must
+  // be the same fDir/tDir the bucket loop used for sorting/grouping so the
+  // router and the merge basis agree.
+  fromDir: Vec2,
+  toDir: Vec2,
 ): SegmentBandSpec {
   const fromStation = stations[group[0].fromId];
   const toStation = stations[group[0].toId];
@@ -296,8 +317,6 @@ function buildBandSpec(
   });
   const fromMeanWorld = meanVec(fromWorlds);
   const toMeanWorld = meanVec(toWorlds);
-  const fromDir = travelDirWorld(group[0].fromCell, fromStation, group[0].worldHint);
-  const toDir = travelDirWorld(group[0].toCell, toStation, group[0].worldHint);
 
   const result = route(fromMeanWorld, fromDir, toMeanWorld, toDir, R);
 
