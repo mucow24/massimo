@@ -1,15 +1,17 @@
-import { useDoc, useSelection } from '../state/store';
+import { effectiveLineOrder, useDoc, useSelection } from '../state/store';
 import { Inspector } from './Inspector';
 
 export function Sidebar() {
   const stations = useDoc((s) => s.stations);
   const lines = useDoc((s) => s.lines);
+  const lineOrder = useDoc((s) => s.lineOrder);
   const selection = useSelection();
   const deleteStation = useDoc((s) => s.deleteStation);
   const deleteLine = useDoc((s) => s.deleteLine);
+  const moveLineInOrder = useDoc((s) => s.moveLineInOrder);
 
   const stationList = Object.values(stations);
-  const lineList = Object.values(lines);
+  const orderedLineIds = effectiveLineOrder(lineOrder, lines);
 
   return (
     <aside className="sidebar">
@@ -40,28 +42,55 @@ export function Sidebar() {
         </section>
 
         <section>
-          <h2>Lines ({lineList.length})</h2>
-          {lineList.length === 0 && <div className="empty">No lines yet.</div>}
-          {lineList.map((ln) => (
-            <div
-              key={ln.id}
-              className={'list-row' + (selection.selectedLineId === ln.id ? ' selected' : '')}
-              onClick={() => selection.selectLine(ln.id)}
-            >
-              <span className="swatch" style={{ background: ln.color }} />
-              <strong style={{ width: 28 }}>{ln.service}</strong>
-              <span className="grow">{ln.stations.length} stations</span>
-              <button
-                className="btn-mini danger"
-                onClick={(e) => {
-                  e.stopPropagation();
-                  if (confirm(`Delete line "${ln.service}"?`)) deleteLine(ln.id);
-                }}
+          <h2>Lines ({orderedLineIds.length})</h2>
+          {orderedLineIds.length === 0 && <div className="empty">No lines yet.</div>}
+          {orderedLineIds.map((id, i) => {
+            const ln = lines[id];
+            if (!ln) return null;
+            return (
+              <div
+                key={ln.id}
+                className={'list-row' + (selection.selectedLineId === ln.id ? ' selected' : '')}
+                onClick={() => selection.selectLine(ln.id)}
+                title="Top of list = front-most. Drag with ↑/↓ to reorder."
               >
-                ×
-              </button>
-            </div>
-          ))}
+                <span className="swatch" style={{ background: ln.color }} />
+                <strong style={{ width: 28 }}>{ln.service}</strong>
+                <span className="grow">{ln.stations.length} stations</span>
+                <button
+                  className="btn-mini"
+                  disabled={i === 0}
+                  title="Move up (forward)"
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    moveLineInOrder(ln.id, -1);
+                  }}
+                >
+                  ↑
+                </button>
+                <button
+                  className="btn-mini"
+                  disabled={i === orderedLineIds.length - 1}
+                  title="Move down (backward)"
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    moveLineInOrder(ln.id, 1);
+                  }}
+                >
+                  ↓
+                </button>
+                <button
+                  className="btn-mini danger"
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    if (confirm(`Delete line "${ln.service}"?`)) deleteLine(ln.id);
+                  }}
+                >
+                  ×
+                </button>
+              </div>
+            );
+          })}
         </section>
 
         <Inspector />

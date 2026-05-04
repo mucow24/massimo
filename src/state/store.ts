@@ -8,8 +8,22 @@ const uid = () =>
 const DEFAULT_DOC: MapDoc = {
   stations: {},
   lines: {},
+  lineOrder: [],
   curveRadius: 24,
   viewport: { x: 0, y: 0, zoom: 1 },
+};
+
+// Returns lineOrder reconciled against `lines`: filters out missing IDs and
+// appends any line IDs that aren't yet in the order. Use this everywhere you
+// read order so older persisted docs (without lineOrder) still work.
+export const effectiveLineOrder = (
+  lineOrder: LineId[] | undefined,
+  lines: Record<LineId, Line>,
+): LineId[] => {
+  const present = (lineOrder ?? []).filter((id) => lines[id]);
+  const seen = new Set(present);
+  for (const id of Object.keys(lines)) if (!seen.has(id)) present.push(id);
+  return present;
 };
 
 // Official MTA NYC subway line trunk colors. Per the MTA developer
@@ -68,6 +82,7 @@ interface DocState extends MapDoc {
   removeStationFromLine: (lineId: LineId, idx: number) => void;
   reorderLineStations: (lineId: LineId, stations: StationId[]) => void;
   deleteLine: (id: LineId) => void;
+  moveLineInOrder: (id: LineId, dir: -1 | 1) => void;
 
   setCurveRadius: (r: number) => void;
   setViewport: (v: Viewport) => void;
@@ -147,7 +162,12 @@ export const useDoc = create<DocState>()(
             color,
             stations: [],
           };
-          return { lines: { ...s.lines, [id]: line } };
+          // New line goes on top of the layer stack (front-most).
+          const order = effectiveLineOrder(s.lineOrder, s.lines);
+          return {
+            lines: { ...s.lines, [id]: line },
+            lineOrder: [id, ...order],
+          };
         });
         return id;
       },
@@ -238,7 +258,20 @@ export const useDoc = create<DocState>()(
             const st = s.stations[sid];
             stations[sid] = { ...st, stopOrder: st.stopOrder.filter((x) => x !== id) };
           }
-          return { lines: rest, stations };
+          const order = effectiveLineOrder(s.lineOrder, s.lines).filter((x) => x !== id);
+          return { lines: rest, stations, lineOrder: order };
+        });
+      },
+
+      moveLineInOrder: (id, dir) => {
+        set((s) => {
+          const order = effectiveLineOrder(s.lineOrder, s.lines).slice();
+          const i = order.indexOf(id);
+          if (i < 0) return s;
+          const j = i + dir;
+          if (j < 0 || j >= order.length) return s;
+          [order[i], order[j]] = [order[j], order[i]];
+          return { lineOrder: order };
         });
       },
 
@@ -251,6 +284,7 @@ export const useDoc = create<DocState>()(
       partialize: (s) => ({
         stations: s.stations,
         lines: s.lines,
+        lineOrder: s.lineOrder,
         curveRadius: s.curveRadius,
         viewport: s.viewport,
       }),

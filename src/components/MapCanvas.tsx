@@ -213,9 +213,10 @@ export function MapCanvas() {
     return () => ro.disconnect();
   }, []);
 
+  const lineOrder = useDoc((s) => s.lineOrder);
   const bands = useMemo(
-    () => buildBands(stations, lines, curveRadius),
-    [stations, lines, curveRadius],
+    () => buildBands(stations, lines, curveRadius, lineOrder),
+    [stations, lines, curveRadius, lineOrder],
   );
 
   // viewBox: world coords; center of screen = (viewport.x, viewport.y), zoom scales.
@@ -592,9 +593,10 @@ function WarningToasts() {
   const curveRadius = useDoc((s) => s.curveRadius);
   const setViewport = useDoc((s) => s.setViewport);
   const viewport = useDoc((s) => s.viewport);
+  const lineOrder = useDoc((s) => s.lineOrder);
   const bands = useMemo(
-    () => buildBands(stations, lines, curveRadius),
-    [stations, lines, curveRadius],
+    () => buildBands(stations, lines, curveRadius, lineOrder),
+    [stations, lines, curveRadius, lineOrder],
   );
   const warnings = bands.filter((b) => b.warning);
   if (warnings.length === 0) return null;

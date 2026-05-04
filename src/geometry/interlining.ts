@@ -38,6 +38,7 @@ export function buildBands(
   stations: Record<StationId, Station>,
   lines: Record<LineId, Line>,
   curveRadius: number,
+  lineOrder: LineId[] = [],
 ): SegmentBandSpec[] {
   // 1. Collect all per-line segments keyed by sorted station pair.
   const groups: Record<string, SegInfo[]> = {};
@@ -108,6 +109,18 @@ export function buildBands(
       }
       flush();
     }
+  }
+
+  // Sort bands so the line that appears HIGHEST in lineOrder (smallest index =
+  // top of the layer stack) renders LAST. Each band's z-priority is the
+  // top-most line it contains. Bands with equal priority keep insertion order.
+  if (lineOrder.length > 0) {
+    const lineIndex: Record<LineId, number> = {};
+    lineOrder.forEach((id, i) => (lineIndex[id] = i));
+    const fallback = lineOrder.length;
+    const priority = (band: SegmentBandSpec) =>
+      Math.min(...band.lines.map((l) => lineIndex[l.id] ?? fallback));
+    bands.sort((a, b) => priority(b) - priority(a));
   }
 
   return bands;

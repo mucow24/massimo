@@ -31,6 +31,8 @@ export interface Viewport {
 export interface MapDoc {
   stations: Record<StationId, Station>;
   lines: Record<LineId, Line>;
+  // Z-order, top-of-list (index 0) renders LAST = on top, à la Photoshop layers.
+  lineOrder: LineId[];
   curveRadius: number;
   viewport: Viewport;
 }
