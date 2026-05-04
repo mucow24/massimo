@@ -1,0 +1,23 @@
+export type Vec2 = { x: number; y: number };
+
+export const v = (x: number, y: number): Vec2 => ({ x, y });
+
+export const add = (a: Vec2, b: Vec2): Vec2 => ({ x: a.x + b.x, y: a.y + b.y });
+export const sub = (a: Vec2, b: Vec2): Vec2 => ({ x: a.x - b.x, y: a.y - b.y });
+export const scale = (a: Vec2, k: number): Vec2 => ({ x: a.x * k, y: a.y * k });
+export const dot = (a: Vec2, b: Vec2): number => a.x * b.x + a.y * b.y;
+export const cross = (a: Vec2, b: Vec2): number => a.x * b.y - a.y * b.x;
+export const len = (a: Vec2): number => Math.hypot(a.x, a.y);
+export const norm = (a: Vec2): Vec2 => {
+  const L = len(a) || 1;
+  return { x: a.x / L, y: a.y / L };
+};
+export const perp = (a: Vec2): Vec2 => ({ x: -a.y, y: a.x });
+export const eq = (a: Vec2, b: Vec2, eps = 1e-6) =>
+  Math.abs(a.x - b.x) < eps && Math.abs(a.y - b.y) < eps;
+
+export const rotate = (a: Vec2, rad: number): Vec2 => {
+  const c = Math.cos(rad);
+  const s = Math.sin(rad);
+  return { x: a.x * c - a.y * s, y: a.x * s + a.y * c };
+};
