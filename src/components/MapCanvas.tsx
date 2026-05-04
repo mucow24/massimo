@@ -41,6 +41,8 @@ function axisForRotation(rot: number): Vec2 {
   }
 }
 
+const TIGHT_PERP_TOLERANCE = 0.5;
+
 function tryAxisSnap(
   draggedId: StationId,
   proposedX: number,
@@ -48,7 +50,12 @@ function tryAxisSnap(
   draggedRotation: number,
   stations: Record<StationId, Station>,
   tolerance: number,
-): { x: number; y: number; guide: { from: Vec2; to: Vec2 } | null } {
+): {
+  x: number;
+  y: number;
+  guide: { from: Vec2; to: Vec2 } | null;
+  secondaryGuide: { from: Vec2; to: Vec2 } | null;
+} {
   const axis = axisForRotation(draggedRotation);
   const perpX = -axis.y;
   const perpY = axis.x;
@@ -62,14 +69,39 @@ function tryAxisSnap(
     if (perpDist > tolerance) continue;
     if (!best || perpDist < best.perpDist) best = { st: t, perpDist };
   }
-  if (!best) return { x: proposedX, y: proposedY, guide: null };
+  if (!best) {
+    return { x: proposedX, y: proposedY, guide: null, secondaryGuide: null };
+  }
   // Snap so the dragged station lies exactly on the axis line through `best`.
   const dx = proposedX - best.st.x;
   const dy = proposedY - best.st.y;
   const along = dx * axis.x + dy * axis.y;
   const sx = best.st.x + along * axis.x;
   const sy = best.st.y + along * axis.y;
-  // Guide goes from the dragged dot exactly to the target dot.
+
+  // Look in the opposite direction along the axis from the primary target,
+  // with tight perp tolerance, for an already-aligned station. Closest one
+  // gets a secondary guide.
+  const t1AlongFromS = (best.st.x - sx) * axis.x + (best.st.y - sy) * axis.y;
+  const oppositeSign = -Math.sign(t1AlongFromS);
+  let secondary: { st: Station; alongAbs: number } | null = null;
+  if (oppositeSign !== 0) {
+    for (const t of Object.values(stations)) {
+      if (t.id === draggedId || t.id === best.st.id) continue;
+      if (t.rotation % 4 !== draggedRotation % 4) continue;
+      const ddx = t.x - sx;
+      const ddy = t.y - sy;
+      const perpDist = Math.abs(ddx * perpX + ddy * perpY);
+      if (perpDist > TIGHT_PERP_TOLERANCE) continue;
+      const alongFromS = ddx * axis.x + ddy * axis.y;
+      if (Math.sign(alongFromS) !== oppositeSign) continue;
+      const alongAbs = Math.abs(alongFromS);
+      if (!secondary || alongAbs < secondary.alongAbs) {
+        secondary = { st: t, alongAbs };
+      }
+    }
+  }
+
   return {
     x: sx,
     y: sy,
@@ -77,6 +109,12 @@ function tryAxisSnap(
       from: { x: sx, y: sy },
       to: { x: best.st.x, y: best.st.y },
     },
+    secondaryGuide: secondary
+      ? {
+          from: { x: sx, y: sy },
+          to: { x: secondary.st.x, y: secondary.st.y },
+        }
+      : null,
   };
 }
 
@@ -104,7 +142,10 @@ export function MapCanvas() {
     // remainder of the drag so the snap doesn't flap as the warning toggles.
     recoveryLatched: boolean;
   } | null>(null);
-  const [snapGuide, setSnapGuide] = useState<{ from: Vec2; to: Vec2 } | null>(null);
+  const [snapGuide, setSnapGuide] = useState<{
+    primary: { from: Vec2; to: Vec2 };
+    secondary: { from: Vec2; to: Vec2 } | null;
+  } | null>(null);
 
   useEffect(() => {
     const el = svgRef.current?.parentElement;
@@ -214,7 +255,11 @@ export function MapCanvas() {
           const snap = tryAxisSnap(ds.id, nx, ny, draggedRot, stations, tol);
           nx = snap.x;
           ny = snap.y;
-          setSnapGuide(snap.guide);
+          setSnapGuide(
+            snap.guide
+              ? { primary: snap.guide, secondary: snap.secondaryGuide }
+              : null,
+          );
         } else if (snapGuide) {
           setSnapGuide(null);
         }
@@ -350,41 +395,80 @@ export function MapCanvas() {
               </filter>
             </defs>
             <g filter="url(#snap-halo-blur)">
+              {/* primary line halo */}
               <line
-                x1={snapGuide.from.x}
-                y1={snapGuide.from.y}
-                x2={snapGuide.to.x}
-                y2={snapGuide.to.y}
+                x1={snapGuide.primary.from.x}
+                y1={snapGuide.primary.from.y}
+                x2={snapGuide.primary.to.x}
+                y2={snapGuide.primary.to.y}
                 stroke="rgb(185, 218, 255)"
                 strokeWidth={5 / viewport.zoom}
                 strokeLinecap="round"
               />
+              {/* secondary line halo */}
+              {snapGuide.secondary && (
+                <line
+                  x1={snapGuide.secondary.from.x}
+                  y1={snapGuide.secondary.from.y}
+                  x2={snapGuide.secondary.to.x}
+                  y2={snapGuide.secondary.to.y}
+                  stroke="rgb(185, 218, 255)"
+                  strokeWidth={5 / viewport.zoom}
+                  strokeLinecap="round"
+                />
+              )}
+              {/* dragged dot halo */}
               <circle
-                cx={snapGuide.to.x}
-                cy={snapGuide.to.y}
+                cx={snapGuide.primary.from.x}
+                cy={snapGuide.primary.from.y}
                 r={STOP_SIZE * 0.28 + 1 / viewport.zoom}
                 fill="none"
                 stroke="rgb(185, 218, 255)"
                 strokeWidth={5 / viewport.zoom}
               />
+              {/* primary target halo */}
               <circle
-                cx={snapGuide.from.x}
-                cy={snapGuide.from.y}
+                cx={snapGuide.primary.to.x}
+                cy={snapGuide.primary.to.y}
                 r={STOP_SIZE * 0.28 + 1 / viewport.zoom}
                 fill="none"
                 stroke="rgb(185, 218, 255)"
                 strokeWidth={5 / viewport.zoom}
               />
+              {/* secondary target halo */}
+              {snapGuide.secondary && (
+                <circle
+                  cx={snapGuide.secondary.to.x}
+                  cy={snapGuide.secondary.to.y}
+                  r={STOP_SIZE * 0.28 + 1 / viewport.zoom}
+                  fill="none"
+                  stroke="rgb(185, 218, 255)"
+                  strokeWidth={5 / viewport.zoom}
+                />
+              )}
             </g>
+            {/* primary dashed line */}
             <line
-              x1={snapGuide.from.x}
-              y1={snapGuide.from.y}
-              x2={snapGuide.to.x}
-              y2={snapGuide.to.y}
+              x1={snapGuide.primary.from.x}
+              y1={snapGuide.primary.from.y}
+              x2={snapGuide.primary.to.x}
+              y2={snapGuide.primary.to.y}
               stroke="#1488a0"
               strokeWidth={2 / viewport.zoom}
               strokeDasharray={`${4 / viewport.zoom} ${3 / viewport.zoom}`}
             />
+            {/* secondary dashed line */}
+            {snapGuide.secondary && (
+              <line
+                x1={snapGuide.secondary.from.x}
+                y1={snapGuide.secondary.from.y}
+                x2={snapGuide.secondary.to.x}
+                y2={snapGuide.secondary.to.y}
+                stroke="#1488a0"
+                strokeWidth={2 / viewport.zoom}
+                strokeDasharray={`${4 / viewport.zoom} ${3 / viewport.zoom}`}
+              />
+            )}
           </g>
         )}
 
