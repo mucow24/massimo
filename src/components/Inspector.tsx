@@ -21,6 +21,7 @@ function StationInspector({ id }: { id: StationId }) {
   const rotateStopAction = useDoc((s) => s.rotateStop);
   const moveLabelAction = useDoc((s) => s.moveLabel);
   const rotateLabelAction = useDoc((s) => s.rotateLabel);
+  const setLabelOffset = useDoc((s) => s.setLabelOffset);
   const selection = useSelection();
 
   if (!station) return null;
@@ -42,6 +43,24 @@ function StationInspector({ id }: { id: StationId }) {
   const onRotateCell = () => {
     if (selectedStopCell) rotateStopAction(station.id, selectedStopCell.lineId);
     else if (labelSelected) rotateLabelAction(station.id);
+  };
+
+  // Disable an arrow when its target cell would block the move:
+  //   - Label-selected: target occupied by a stop → blocked.
+  //   - Stop-selected: target = label cell → blocked (stops can swap with
+  //     each other, but not with the label).
+  const isBlocked = (dRow: number, dCol: number): boolean => {
+    if (labelSelected) {
+      const newRow = station.label.row + dRow;
+      const newCol = station.label.col + dCol;
+      return station.stops.some((c) => c.row === newRow && c.col === newCol);
+    }
+    if (selectedStopCell) {
+      const newRow = selectedStopCell.row + dRow;
+      const newCol = selectedStopCell.col + dCol;
+      return station.label.row === newRow && station.label.col === newCol;
+    }
+    return false;
   };
 
   return (
@@ -110,9 +129,17 @@ function StationInspector({ id }: { id: StationId }) {
           />
           <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 22px)', gap: 2 }}>
             <span />
-            <button className="btn-mini" disabled={!hasSelection} onClick={() => onMove(-1, 0)}>↑</button>
+            <button
+              className="btn-mini"
+              disabled={!hasSelection || isBlocked(-1, 0)}
+              onClick={() => onMove(-1, 0)}
+            >↑</button>
             <span />
-            <button className="btn-mini" disabled={!hasSelection} onClick={() => onMove(0, -1)}>←</button>
+            <button
+              className="btn-mini"
+              disabled={!hasSelection || isBlocked(0, -1)}
+              onClick={() => onMove(0, -1)}
+            >←</button>
             <button
               className="btn-mini"
               disabled={!hasSelection}
@@ -121,14 +148,66 @@ function StationInspector({ id }: { id: StationId }) {
             >
               ⟳
             </button>
-            <button className="btn-mini" disabled={!hasSelection} onClick={() => onMove(0, 1)}>→</button>
+            <button
+              className="btn-mini"
+              disabled={!hasSelection || isBlocked(0, 1)}
+              onClick={() => onMove(0, 1)}
+            >→</button>
             <span />
-            <button className="btn-mini" disabled={!hasSelection} onClick={() => onMove(1, 0)}>↓</button>
+            <button
+              className="btn-mini"
+              disabled={!hasSelection || isBlocked(1, 0)}
+              onClick={() => onMove(1, 0)}
+            >↓</button>
             <span />
           </div>
         </div>
       </div>
+      <div className="field">
+        <label>Label offset (along reading direction)</label>
+        <LabelOffsetControl
+          value={station.label.offset}
+          onChange={(v) => setLabelOffset(station.id, v)}
+        />
+      </div>
     </section>
+  );
+}
+
+function LabelOffsetControl({
+  value,
+  onChange,
+}: {
+  value: number;
+  onChange: (v: number) => void;
+}) {
+  // Slider [-100, 100] with detent at 0; textbox accepts any number.
+  // Snap to 0 when the slider sits within ±2 of zero.
+  const clampedSlider = Math.max(-100, Math.min(100, value));
+  return (
+    <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+      <input
+        type="range"
+        min={-100}
+        max={100}
+        step={1}
+        value={clampedSlider}
+        onChange={(e) => {
+          const n = Number(e.target.value);
+          onChange(Math.abs(n) <= 2 ? 0 : n);
+        }}
+        style={{ flex: 1 }}
+      />
+      <input
+        type="number"
+        value={value}
+        onChange={(e) => {
+          const n = Number(e.target.value);
+          if (Number.isFinite(n)) onChange(n);
+        }}
+        style={{ width: 56 }}
+      />
+    </div>
   );
 }
 

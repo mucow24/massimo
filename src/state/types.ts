@@ -17,10 +17,14 @@ export interface StopCell {
 // The station's name lives in a single grid cell with its own 8-way rotation
 // (in the unrotated station-local frame). The rendered text auto-anchors to
 // the side of the cell that faces an adjacent stop, when one is present.
+// `offset` shifts the rendered label along its own reading direction (so for
+// upright text it's left/right, for vertical text it's up/down, etc.) in
+// pixels of unrotated-station-local space. Positive = forward in reading dir.
 export interface LabelCell {
   row: number;
   col: number;
   rotation: Rotation;
+  offset: number;
 }
 
 export interface Station {

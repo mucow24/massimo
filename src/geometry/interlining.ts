@@ -13,6 +13,20 @@ export interface SegmentBandSpec {
   paths: string[];
   warning: boolean;
   centerline: Vec2[];
+  // Z-priority: smallest = front-most. min over the band's lines' positions
+  // in lineOrder (or fallback = lineOrder.length when missing).
+  priority: number;
+}
+
+// A single colored stop square for one line at one station, with its
+// per-line priority. Rendered alongside bands so that a back-stack line's
+// stop square doesn't paint over a front-stack line's band passing through.
+export interface StopMarkerSpec {
+  cx: number;
+  cy: number;
+  color: string;
+  rotationDeg: number; // station rotation in degrees CW
+  priority: number;
 }
 
 const pairKeyOf = (a: StationId, b: StationId) => (a < b ? `${a}|${b}` : `${b}|${a}`);
@@ -137,26 +151,66 @@ export function buildBands(
     }
   }
 
-  // 3. Z-order bands by user-controlled lineOrder (front-most last).
-  // Reconcile the persisted order against `lines`: filter dead IDs and append
-  // any line not yet in the order. Otherwise a doc whose `lineOrder` predates
-  // a line addition would leave that line outside the index, snap it to the
-  // fallback (back of stack), and disagree with the sidebar — which already
-  // does this reconciliation for display.
+  // 3. Tag each band with its z-priority (min lineIndex of any contained
+  // line). The actual sort happens in the renderer, where bands and stop
+  // markers are merged into one pass.
+  const lineIndex = buildLineIndex(lineOrder, lines);
+  const fallback = Object.keys(lineIndex).length;
+  for (const band of bands) {
+    band.priority = Math.min(
+      ...band.lines.map((l) => lineIndex[l.id] ?? fallback),
+    );
+  }
+
+  return bands;
+}
+
+// Reconcile persisted lineOrder against the lines dict (filter dead IDs,
+// append any missing). Returns a {lineId: index} map. Index 0 = front-most.
+export function buildLineIndex(
+  lineOrder: LineId[],
+  lines: Record<LineId, Line>,
+): Record<LineId, number> {
   const present = lineOrder.filter((id) => lines[id]);
   const seen = new Set(present);
   const reconciled = present.slice();
   for (const id of Object.keys(lines)) if (!seen.has(id)) reconciled.push(id);
-  if (reconciled.length > 0) {
-    const lineIndex: Record<LineId, number> = {};
-    reconciled.forEach((id, i) => (lineIndex[id] = i));
-    const fallback = reconciled.length;
-    const priority = (band: SegmentBandSpec) =>
-      Math.min(...band.lines.map((l) => lineIndex[l.id] ?? fallback));
-    bands.sort((a, b) => priority(b) - priority(a));
-  }
+  const idx: Record<LineId, number> = {};
+  reconciled.forEach((id, i) => (idx[id] = i));
+  return idx;
+}
 
-  return bands;
+// One stop marker per (station, line stop) pair, in world coords, with the
+// line's per-line z-priority. Rendered interleaved with bands.
+export function buildStopMarkers(
+  stations: Record<StationId, Station>,
+  lines: Record<LineId, Line>,
+  lineOrder: LineId[],
+): StopMarkerSpec[] {
+  const lineIndex = buildLineIndex(lineOrder, lines);
+  const fallback = Object.keys(lineIndex).length;
+  const markers: StopMarkerSpec[] = [];
+  for (const station of Object.values(stations)) {
+    for (const cell of station.stops) {
+      const line = lines[cell.lineId];
+      if (!line) continue;
+      const local = stopCenterAt(cell.row, cell.col);
+      // Apply station rotation to local point to get world center.
+      const a = (station.rotation * Math.PI) / 4;
+      const c = Math.cos(a);
+      const s = Math.sin(a);
+      const cx = station.x + local.x * c - local.y * s;
+      const cy = station.y + local.x * s + local.y * c;
+      markers.push({
+        cx,
+        cy,
+        color: line.color,
+        rotationDeg: station.rotation * 45,
+        priority: lineIndex[cell.lineId] ?? fallback,
+      });
+    }
+  }
+  return markers;
 }
 
 function buildBandSpec(
@@ -210,5 +264,6 @@ function buildBandSpec(
     paths,
     warning: result.warning,
     centerline: result.vertices,
+    priority: 0, // overwritten in buildBands' final pass
   };
 }

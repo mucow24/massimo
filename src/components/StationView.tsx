@@ -91,6 +91,13 @@ export function StationView({ station, lines, onStartDrag, layer }: Props) {
     labelAnchorX = labelCenter.x + dirMinus.anchor.x;
     labelAnchorY = labelCenter.y + dirMinus.anchor.y;
   }
+  // Per-label offset: shifts along the reading direction (in unrotated
+  // station-local coords; the station's own rotation is applied later).
+  if (label.offset) {
+    const a = (label.rotation * Math.PI) / 4;
+    labelAnchorX += label.offset * Math.cos(a);
+    labelAnchorY += label.offset * Math.sin(a);
+  }
 
   // Hit rect: union of cell bounding box, the rotated label-text bounding
   // box, and the origin (where the no-stops fallback dot lives).
@@ -188,22 +195,8 @@ export function StationView({ station, lines, onStartDrag, layer }: Props) {
             {station.name}
           </text>
         )}
-        {stops.map((cell) => {
-          const line = lines[cell.lineId];
-          if (!line) return null;
-          const c = stopCenterAt(cell.row, cell.col);
-          return (
-            <rect
-              key={cell.lineId}
-              x={c.x - half}
-              y={c.y - half}
-              width={STOP_SIZE}
-              height={STOP_SIZE}
-              fill={line.color}
-              pointerEvents="none"
-            />
-          );
-        })}
+        {/* Colored stop squares are rendered by MapCanvas alongside bands so
+            that per-line z-order is honored. */}
       </g>
     );
   }

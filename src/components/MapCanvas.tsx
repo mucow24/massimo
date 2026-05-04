@@ -16,7 +16,7 @@ function legibleTextOn(hex: string): string {
 }
 import { dragState, useDoc, useSelection } from '../state/store';
 import { Station, StationId, StopCell } from '../state/types';
-import { buildBands } from '../geometry/interlining';
+import { buildBands, buildStopMarkers, SegmentBandSpec, StopMarkerSpec } from '../geometry/interlining';
 import { SegmentBand } from './SegmentBand';
 import { StationView } from './StationView';
 import { Vec2 } from '../geometry/vec';
@@ -237,6 +237,21 @@ export function MapCanvas() {
     () => buildBands(stations, lines, curveRadius, lineOrder),
     [stations, lines, curveRadius, lineOrder],
   );
+  // Bands and stop markers merged into one pass, sorted by per-line z-priority
+  // so a back-stack stop square doesn't paint over a front-stack band passing
+  // through that station.
+  const renderables = useMemo(() => {
+    const markers = buildStopMarkers(stations, lines, lineOrder);
+    type R =
+      | { kind: 'band'; spec: SegmentBandSpec; priority: number }
+      | { kind: 'marker'; spec: StopMarkerSpec; priority: number };
+    const list: R[] = [
+      ...bands.map((b) => ({ kind: 'band' as const, spec: b, priority: b.priority })),
+      ...markers.map((m) => ({ kind: 'marker' as const, spec: m, priority: m.priority })),
+    ];
+    list.sort((a, b) => b.priority - a.priority);
+    return list;
+  }, [bands, stations, lines, lineOrder]);
 
   // viewBox: world coords; center of screen = (viewport.x, viewport.y), zoom scales.
   const vbW = size.w / viewport.zoom;
@@ -438,10 +453,26 @@ export function MapCanvas() {
         {/* grid (subtle, helps spatial sense) */}
         <Grid vbX={vbX} vbY={vbY} vbW={vbW} vbH={vbH} zoom={viewport.zoom} />
 
-        {/* segments */}
-        {bands.map((b) => (
-          <SegmentBand key={b.pairKey + ':' + b.lines.map((l) => l.id).join(',')} spec={b} />
-        ))}
+        {/* bands and stop squares interleaved by per-line z-priority */}
+        {renderables.map((r, i) =>
+          r.kind === 'band' ? (
+            <SegmentBand
+              key={'b:' + r.spec.pairKey + ':' + r.spec.lines.map((l) => l.id).join(',')}
+              spec={r.spec}
+            />
+          ) : (
+            <rect
+              key={'m:' + i}
+              x={-STOP_SIZE / 2}
+              y={-STOP_SIZE / 2}
+              width={STOP_SIZE}
+              height={STOP_SIZE}
+              fill={r.spec.color}
+              transform={`translate(${r.spec.cx} ${r.spec.cy}) rotate(${r.spec.rotationDeg})`}
+              pointerEvents="none"
+            />
+          ),
+        )}
 
         {/* station backgrounds: hit areas, names, colored stop squares */}
         {Object.values(stations).map((st) => (

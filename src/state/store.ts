@@ -89,6 +89,7 @@ interface DocState extends MapDoc {
   rotateStop: (stationId: StationId, lineId: LineId) => void;
   moveLabel: (stationId: StationId, dRow: number, dCol: number) => void;
   rotateLabel: (stationId: StationId) => void;
+  setLabelOffset: (stationId: StationId, offset: number) => void;
 
   addLine: () => LineId;
   updateLine: (id: LineId, patch: Partial<Pick<Line, 'service' | 'color' | 'stations'>>) => void;
@@ -116,7 +117,7 @@ export const useDoc = create<DocState>()(
           y,
           rotation: 0,
           stops: [],
-          label: { row: 0, col: -1, rotation: 0 },
+          label: { row: 0, col: -1, rotation: 0, offset: 0 },
         };
         set((s) => ({ stations: { ...s.stations, [id]: station } }));
         return id;
@@ -168,22 +169,16 @@ export const useDoc = create<DocState>()(
           const cell = st.stops[i];
           const newRow = cell.row + dRow;
           const newCol = cell.col + dCol;
-          // If a different stop OR the label is at the destination, swap.
+          // Stops can swap with another stop, but cannot enter the label cell.
+          if (st.label.row === newRow && st.label.col === newCol) return s;
           const j = st.stops.findIndex((c) => c.row === newRow && c.col === newCol);
           const newStops = st.stops.slice();
           if (j >= 0 && j !== i) {
             newStops[j] = { ...newStops[j], row: cell.row, col: cell.col };
           }
           newStops[i] = { ...cell, row: newRow, col: newCol };
-          let newLabel = st.label;
-          if (st.label.row === newRow && st.label.col === newCol) {
-            newLabel = { ...st.label, row: cell.row, col: cell.col };
-          }
           return {
-            stations: {
-              ...s.stations,
-              [stationId]: { ...st, stops: newStops, label: newLabel },
-            },
+            stations: { ...s.stations, [stationId]: { ...st, stops: newStops } },
           };
         });
       },
@@ -208,26 +203,15 @@ export const useDoc = create<DocState>()(
           if (!st) return s;
           const newRow = st.label.row + dRow;
           const newCol = st.label.col + dCol;
-          // If a stop occupies the destination, swap it back into the label's
-          // current cell so nothing collides.
-          const swapTargetIdx = st.stops.findIndex(
-            (c) => c.row === newRow && c.col === newCol,
-          );
-          let newStops = st.stops;
-          if (swapTargetIdx >= 0) {
-            newStops = st.stops.slice();
-            newStops[swapTargetIdx] = {
-              ...newStops[swapTargetIdx],
-              row: st.label.row,
-              col: st.label.col,
-            };
-          }
+          // The label can only move into empty cells. If a stop occupies the
+          // destination, the move is a no-op.
+          const blocked = st.stops.some((c) => c.row === newRow && c.col === newCol);
+          if (blocked) return s;
           return {
             stations: {
               ...s.stations,
               [stationId]: {
                 ...st,
-                stops: newStops,
                 label: { ...st.label, row: newRow, col: newCol },
               },
             },
@@ -244,6 +228,19 @@ export const useDoc = create<DocState>()(
             stations: {
               ...s.stations,
               [stationId]: { ...st, label: { ...st.label, rotation: next } },
+            },
+          };
+        });
+      },
+
+      setLabelOffset: (stationId, offset) => {
+        set((s) => {
+          const st = s.stations[stationId];
+          if (!st) return s;
+          return {
+            stations: {
+              ...s.stations,
+              [stationId]: { ...st, label: { ...st.label, offset } },
             },
           };
         });
@@ -392,7 +389,7 @@ export const useDoc = create<DocState>()(
     }),
     {
       name: 'vignelli-map-doc-v1',
-      version: 2,
+      version: 3,
       storage: createJSONStorage(() => localStorage),
       partialize: (s) => ({
         stations: s.stations,
@@ -435,7 +432,17 @@ export const useDoc = create<DocState>()(
             const minCol = (st.stops ?? []).length === 0
               ? 0
               : Math.min(...st.stops.map((c) => c.col));
-            const label: LabelCell = { row: 0, col: minCol - 1, rotation: 0 };
+            const label: LabelCell = { row: 0, col: minCol - 1, rotation: 0, offset: 0 };
+            migratedStations[id] = { ...st, label };
+          }
+          state.stations = migratedStations;
+        }
+        // v2 -> v3: label gains an `offset` field (default 0).
+        if (fromVersion < 3 && state && state.stations) {
+          const migratedStations: Record<string, Station> = {};
+          for (const [id, raw] of Object.entries(state.stations)) {
+            const st = raw as Station;
+            const label: LabelCell = { ...st.label, offset: st.label.offset ?? 0 };
             migratedStations[id] = { ...st, label };
           }
           state.stations = migratedStations;
