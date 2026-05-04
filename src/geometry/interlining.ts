@@ -1,7 +1,7 @@
 import { Line, LineId, Station, StationId, StopCell } from '../state/types';
 import { Vec2 } from './vec';
 import { route } from './router';
-import { segmentEndpoints, STOP_SIZE, stopCenterAt } from './orientation';
+import { rotateBy, STOP_SIZE, stopCenterAt, travelDirLocal } from './orientation';
 import { offsetFilletPath } from './router';
 
 export interface SegmentBandSpec {
@@ -39,6 +39,28 @@ interface SegInfo {
   forward: boolean;
   lineId: LineId;
   color: string;
+}
+
+// Stop center in WORLD coords (anchor + cell offset rotated by station rotation).
+function stopPosWorld(cell: StopCell, station: Station): Vec2 {
+  const local = stopCenterAt(cell.row, cell.col);
+  const a = (station.rotation * Math.PI) / 4;
+  const c = Math.cos(a);
+  const s = Math.sin(a);
+  return {
+    x: station.x + local.x * c - local.y * s,
+    y: station.y + local.x * s + local.y * c,
+  };
+}
+
+function travelDirWorld(cell: StopCell, station: Station): Vec2 {
+  return rotateBy(travelDirLocal(cell.orientation), station.rotation);
+}
+
+// Quantize a unit vector to one of 8 compass directions.
+function dirIndex8(v: Vec2): number {
+  const a = Math.atan2(v.y, v.x);
+  return (((Math.round(a / (Math.PI / 4)) % 8) + 8) % 8);
 }
 
 /**
@@ -86,68 +108,91 @@ export function buildBands(
   const bands: SegmentBandSpec[] = [];
 
   for (const [pairKey, segs] of Object.entries(groups)) {
-    const byDir: Record<string, SegInfo[]> = { fwd: [], rev: [] };
-    for (const s of segs) byDir[s.forward ? 'fwd' : 'rev'].push(s);
+    // Bucket by WORLD travel direction at each end. Two lines that share a
+    // station-pair AND share both world tangent directions can interline,
+    // even when their per-stop local orientations differ (e.g. horizontal at
+    // station A under rotation 0 vs. vertical at station B under rotation 6,
+    // both producing east-going world travel).
+    const buckets: Record<string, SegInfo[]> = {};
+    for (const s of segs) {
+      const fromS = stations[s.fromId];
+      const toS = stations[s.toId];
+      if (!fromS || !toS) continue;
+      const fIdx = dirIndex8(travelDirWorld(s.fromCell, fromS));
+      const tIdx = dirIndex8(travelDirWorld(s.toCell, toS));
+      const key = `${fIdx}|${tIdx}`;
+      (buckets[key] ||= []).push(s);
+    }
 
-    for (const dirKey of ['fwd', 'rev']) {
-      const list = byDir[dirKey];
-      if (list.length === 0) continue;
-      // Bucket by shared orientation. Two lines with mismatched orientations
-      // at A or B are guaranteed to be in different buckets, hence different
-      // bands (which is what we want).
-      const buckets: Record<string, SegInfo[]> = {};
-      for (const s of list) {
-        if (s.fromCell.orientation !== s.toCell.orientation) {
-          // Mismatched orientation across the segment is its own solo band —
-          // it can't interline with anything because the band can't reconcile
-          // two orientations across a perpendicular spread.
-          buckets[`solo:${s.lineId}`] = [s];
-        } else {
-          (buckets[s.fromCell.orientation] ||= []).push(s);
-        }
-      }
-      for (const bucket of Object.values(buckets)) {
-        // For the matched-orientation buckets the from and to orientations
-        // are identical. For solo buckets they may differ; perpAxis only
-        // governs grouping within a bucket and a solo bucket has one segment.
-        const orientation = bucket[0].fromCell.orientation;
-        const perpAxis: 'col' | 'row' = orientation === 'vertical' ? 'col' : 'row';
-        const sortedBucket = bucket.slice().sort((a, b) => {
-          const va = a.fromCell[perpAxis];
-          const vb = b.fromCell[perpAxis];
-          return va - vb;
-        });
+    for (const bucket of Object.values(buckets)) {
+      if (bucket.length === 0) continue;
+      // Reference travel directions / perpendicular axes from the first segment.
+      const sample = bucket[0];
+      const fromS = stations[sample.fromId];
+      const toS = stations[sample.toId];
+      const fDir = travelDirWorld(sample.fromCell, fromS);
+      const tDir = travelDirWorld(sample.toCell, toS);
+      // leftOf(motion) — must match the perpendicular convention used by
+      // offsetFilletPath. With this, sorting ascending by perp-projection
+      // assigns lower-k indices to lines on the negative-offset (right of
+      // motion) side — exactly what `(k − (n−1)/2) * STOP_SIZE` produces.
+      const fPerp: Vec2 = { x: fDir.y, y: -fDir.x };
+      const tPerp: Vec2 = { x: tDir.y, y: -tDir.x };
 
-        // Greedily merge into runs where each successive line is one step
-        // further along perpAxis at BOTH endpoints in the same direction.
-        let group: SegInfo[] = [];
-        const flush = () => {
-          if (group.length === 0) return;
-          bands.push(buildBandSpec(group, stations, curveRadius, pairKey));
-          group = [];
+      // Enrich with world perp/parallel positions at each end for sorting and
+      // adjacency comparison.
+      type Enriched = {
+        seg: SegInfo;
+        fPerpPos: number;
+        fParPos: number;
+        tPerpPos: number;
+        tParPos: number;
+      };
+      const enriched: Enriched[] = bucket.map((s) => {
+        const fp = stopPosWorld(s.fromCell, stations[s.fromId]);
+        const tp = stopPosWorld(s.toCell, stations[s.toId]);
+        return {
+          seg: s,
+          fPerpPos: fp.x * fPerp.x + fp.y * fPerp.y,
+          fParPos: fp.x * fDir.x + fp.y * fDir.y,
+          tPerpPos: tp.x * tPerp.x + tp.y * tPerp.y,
+          tParPos: tp.x * tDir.x + tp.y * tDir.y,
         };
-        for (const s of sortedBucket) {
-          if (group.length === 0) {
-            group.push(s);
-            continue;
-          }
-          const prev = group[group.length - 1];
-          const dFrom = s.fromCell[perpAxis] - prev.fromCell[perpAxis];
-          const dTo = s.toCell[perpAxis] - prev.toCell[perpAxis];
-          // Must also stay on the same parallel axis (same row for vertical
-          // bands, same col for horizontal) at each station.
-          const parAxis: 'col' | 'row' = perpAxis === 'col' ? 'row' : 'col';
-          const sameParA = s.fromCell[parAxis] === prev.fromCell[parAxis];
-          const sameParB = s.toCell[parAxis] === prev.toCell[parAxis];
-          if (dFrom === 1 && dTo === 1 && sameParA && sameParB) {
-            group.push(s);
-          } else {
-            flush();
-            group.push(s);
-          }
+      });
+      enriched.sort((a, b) => a.fPerpPos - b.fPerpPos);
+
+      // Greedily merge contiguous perp-adjacency in WORLD coords (≈ STOP_SIZE
+      // step) at both ends, with matching parallel position at both ends.
+      let group: Enriched[] = [];
+      const flush = () => {
+        if (group.length === 0) return;
+        bands.push(buildBandSpec(group.map((e) => e.seg), stations, curveRadius, pairKey));
+        group = [];
+      };
+      const TOL = 0.5;
+      for (const e of enriched) {
+        if (group.length === 0) {
+          group.push(e);
+          continue;
         }
-        flush();
+        const prev = group[group.length - 1];
+        const dFromPerp = e.fPerpPos - prev.fPerpPos;
+        const dToPerp = e.tPerpPos - prev.tPerpPos;
+        const sameParA = Math.abs(e.fParPos - prev.fParPos) < TOL;
+        const sameParB = Math.abs(e.tParPos - prev.tParPos) < TOL;
+        if (
+          Math.abs(dFromPerp - STOP_SIZE) < TOL &&
+          Math.abs(dToPerp - STOP_SIZE) < TOL &&
+          sameParA &&
+          sameParB
+        ) {
+          group.push(e);
+        } else {
+          flush();
+          group.push(e);
+        }
       }
+      flush();
     }
   }
 
@@ -219,34 +264,25 @@ function buildBandSpec(
   R: number,
   pairKey: string,
 ): SegmentBandSpec {
-  // Centerline anchor at each end is the mean of the band's endpoint cells.
-  const meanCell = (cells: StopCell[]): { row: number; col: number } => {
-    const row = cells.reduce((a, c) => a + c.row, 0) / cells.length;
-    const col = cells.reduce((a, c) => a + c.col, 0) / cells.length;
-    return { row, col };
-  };
-  const fromCells = group.map((g) => g.fromCell);
-  const toCells = group.map((g) => g.toCell);
-  const fromMean = meanCell(fromCells);
-  const toMean = meanCell(toCells);
-  // Endpoint orientation is taken from each end's actual cells. Within an
-  // interlined bucket they all match; for a solo band they may differ, and
-  // the segment's two tangents need to come from each end independently.
-  const fromOrientation = group[0].fromCell.orientation;
-  const toOrientation = group[0].toCell.orientation;
-
   const fromStation = stations[group[0].fromId];
   const toStation = stations[group[0].toId];
 
-  const ep = segmentEndpoints(
-    fromStation,
-    stopCenterAt(fromMean.row, fromMean.col),
-    fromOrientation,
-    toStation,
-    stopCenterAt(toMean.row, toMean.col),
-    toOrientation,
-  );
-  const result = route(ep.start, ep.startDir, ep.end, ep.endDir, R);
+  // Centerline endpoints are the mean of the band's per-line stop centers in
+  // WORLD coords. Travel directions also come from world (per-stop orientation
+  // rotated by station rotation), so a band can span stations whose local
+  // orientations differ as long as the world tangent matches.
+  const fromWorlds = group.map((g) => stopPosWorld(g.fromCell, fromStation));
+  const toWorlds = group.map((g) => stopPosWorld(g.toCell, toStation));
+  const meanVec = (vs: Vec2[]): Vec2 => ({
+    x: vs.reduce((a, p) => a + p.x, 0) / vs.length,
+    y: vs.reduce((a, p) => a + p.y, 0) / vs.length,
+  });
+  const fromMeanWorld = meanVec(fromWorlds);
+  const toMeanWorld = meanVec(toWorlds);
+  const fromDir = travelDirWorld(group[0].fromCell, fromStation);
+  const toDir = travelDirWorld(group[0].toCell, toStation);
+
+  const result = route(fromMeanWorld, fromDir, toMeanWorld, toDir, R);
 
   const n = group.length;
   const paths: string[] = [];
