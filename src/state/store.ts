@@ -104,6 +104,7 @@ interface DocState extends MapDoc {
 
   setCurveRadius: (r: number) => void;
   setViewport: (v: Viewport) => void;
+  clearAll: () => void;
 }
 
 export const useDoc = create<DocState>()(
@@ -468,6 +469,10 @@ export const useDoc = create<DocState>()(
 
       setCurveRadius: (r) => set({ curveRadius: r }),
       setViewport: (v) => set({ viewport: v }),
+      clearAll: () => {
+        paletteCursor = 0;
+        set({ ...DEFAULT_DOC });
+      },
     }),
     {
       name: 'vignelli-map-doc-v1',
