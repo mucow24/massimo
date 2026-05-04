@@ -11,7 +11,7 @@ export function Inspector() {
   return null;
 }
 
-function StationInspector({ id }: { id: StationId }) {
+export function StationInspector({ id }: { id: StationId }) {
   const station = useDoc((s) => s.stations[id]);
   const lines = useDoc((s) => s.lines);
   const renameStation = useDoc((s) => s.renameStation);
@@ -61,7 +61,6 @@ function StationInspector({ id }: { id: StationId }) {
 
   return (
     <section className="inspector">
-      <h2>Station</h2>
       <div className="field">
         <label>Name</label>
         <input
@@ -89,7 +88,7 @@ function StationInspector({ id }: { id: StationId }) {
       </div>
       <div className="field">
         <label>Rotation: {station.rotation * 45}°</label>
-        <div style={{ display: 'flex', gap: 6 }}>
+        <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
           <button className="btn-mini" onClick={() => rotateStation(station.id)}>
             Rotate +45°
           </button>
@@ -109,6 +108,16 @@ function StationInspector({ id }: { id: StationId }) {
             }}
           >
             Reset
+          </button>
+          <button
+            className="btn-mini"
+            onClick={() => {
+              for (let i = 0; i < 4; i++) rotateStation(station.id);
+              mirrorLabelAction(station.id);
+            }}
+            title="Rotate the station 180° and mirror the label so it stays on the same side"
+          >
+            Flip station
           </button>
         </div>
       </div>
@@ -407,7 +416,7 @@ function ColorPalette({ value, onChange }: { value: string; onChange: (c: string
   );
 }
 
-function LineInspector({ id }: { id: LineId }) {
+export function LineInspector({ id }: { id: LineId }) {
   const line = useDoc((s) => s.lines[id]);
   const stations = useDoc((s) => s.stations);
   const updateLine = useDoc((s) => s.updateLine);
@@ -470,15 +479,15 @@ function LineInspector({ id }: { id: LineId }) {
               <div className="list-row" style={{ paddingLeft: 0 }}>
                 <span style={{ width: 18, color: '#999' }}>{i + 1}.</span>
                 <span className="grow">{st.name}</span>
-                <button className="btn-mini" disabled={i === 0} onClick={() => moveSt(i, -1)}>↑</button>
+                <button className="btn-mini icon" disabled={i === 0} onClick={() => moveSt(i, -1)}>↑</button>
                 <button
-                  className="btn-mini"
+                  className="btn-mini icon"
                   disabled={i === line.stations.length - 1}
                   onClick={() => moveSt(i, 1)}
                 >↓</button>
                 {isActiveCursor ? (
                   <button
-                    className="btn-mini"
+                    className="btn-mini icon"
                     onClick={() => selection.setAppending(null)}
                     style={{ background: line.color, color: '#fff', borderColor: line.color }}
                     title="Stop adding stations"
@@ -487,7 +496,7 @@ function LineInspector({ id }: { id: LineId }) {
                   </button>
                 ) : (
                   <button
-                    className="btn-mini"
+                    className="btn-mini icon"
                     onClick={() => selection.startAppendAt(line.id, i)}
                     title={`Insert stations after ${st.name}`}
                   >

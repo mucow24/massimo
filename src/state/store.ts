@@ -642,6 +642,8 @@ export const dragState = { suppressClick: false };
 
 // ----- Selection (ephemeral, not persisted) -----
 
+export type SidebarTab = 'stations' | 'lines';
+
 interface SelectionState {
   selectedStationId: StationId | null;
   selectedLineId: LineId | null;
@@ -659,6 +661,8 @@ interface SelectionState {
   labelSelected: boolean;
   // The station whose name is being edited inline on the canvas.
   editingStationId: StationId | null;
+  // Which sidebar tab is currently visible.
+  activeTab: SidebarTab;
   selectStation: (id: StationId | null) => void;
   selectLine: (id: LineId | null) => void;
   startAppendAt: (lineId: LineId, insertAfterIndex: number) => void;
@@ -669,6 +673,7 @@ interface SelectionState {
   setSelectedStopLineId: (id: LineId | null) => void;
   setLabelSelected: (selected: boolean) => void;
   setEditingStationId: (id: StationId | null) => void;
+  setActiveTab: (tab: SidebarTab) => void;
 }
 
 export const useSelection = create<SelectionState>((set, get) => ({
@@ -681,6 +686,7 @@ export const useSelection = create<SelectionState>((set, get) => ({
   selectedStopLineId: null,
   labelSelected: false,
   editingStationId: null,
+  activeTab: 'stations',
   selectStation: (id) =>
     set({
       selectedStationId: id,
@@ -688,6 +694,7 @@ export const useSelection = create<SelectionState>((set, get) => ({
       selectedStopLineId: null,
       labelSelected: false,
       editingStationId: id === null ? null : get().editingStationId,
+      activeTab: id === null ? get().activeTab : 'stations',
     }),
   selectLine: (id) => {
     const wasAppending = get().appendingToLineId !== null;
@@ -697,6 +704,7 @@ export const useSelection = create<SelectionState>((set, get) => ({
       selectedStationId: null,
       appendingToLineId: switchingToDifferent ? null : get().appendingToLineId,
       insertAfterIndex: switchingToDifferent ? null : get().insertAfterIndex,
+      activeTab: id === null ? get().activeTab : 'lines',
     });
   },
   startAppendAt: (lineId, idx) =>
@@ -704,6 +712,7 @@ export const useSelection = create<SelectionState>((set, get) => ({
       appendingToLineId: lineId,
       insertAfterIndex: idx,
       selectedLineId: lineId,
+      activeTab: 'lines',
     }),
   setAppending: (id) =>
     set({
@@ -719,4 +728,5 @@ export const useSelection = create<SelectionState>((set, get) => ({
   setLabelSelected: (selected) =>
     set({ labelSelected: selected, selectedStopLineId: selected ? null : get().selectedStopLineId }),
   setEditingStationId: (id) => set({ editingStationId: id }),
+  setActiveTab: (tab) => set({ activeTab: tab }),
 }));

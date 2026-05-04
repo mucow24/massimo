@@ -75,6 +75,8 @@ select {
   padding: 0 12px;
   background: #fff;
   border-bottom: 1px solid #ddd;
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.08);
+  z-index: 1;
 }
 
 .toolbar button {
@@ -131,6 +133,8 @@ select {
   display: flex;
   flex-direction: column;
   overflow: hidden;
+  box-shadow: -4px 0 12px rgba(0, 0, 0, 0.08);
+  z-index: 1;
 }
 
 .sidebar h2 {
@@ -143,13 +147,75 @@ select {
 }
 
 .sidebar section {
-  border-bottom: 1px solid #eee;
   padding-bottom: 8px;
 }
 
 .sidebar .scroll {
   flex: 1;
   overflow-y: auto;
+}
+
+.tab-bar {
+  display: flex;
+  background: #000;
+}
+.tab-bar .tab {
+  flex: 1;
+  background: transparent;
+  border: 0;
+  border-bottom: 4px solid transparent;
+  padding: 10px 12px;
+  font-size: 13px;
+  font-weight: 500;
+  color: rgba(255, 255, 255, 0.55);
+  cursor: pointer;
+}
+.tab-bar .tab:hover {
+  color: #fff;
+}
+.tab-bar .tab.active {
+  color: #fff;
+  /* MTA "Purple (7)" trunk color. */
+  border-bottom-color: #b933ad;
+  font-weight: 700;
+}
+
+.tab-actions {
+  padding: 8px 12px;
+  border-bottom: 1px solid #eee;
+}
+.tab-actions button {
+  background: #fff;
+  border: 1px solid #bbb;
+  border-radius: 4px;
+  padding: 4px 10px;
+  cursor: pointer;
+}
+.tab-actions button:hover {
+  background: #f0f0f0;
+}
+
+.inline-editor {
+  background: #fafbfd;
+  border-top: 1px solid #e7eaf0;
+  border-bottom: 1px solid #e7eaf0;
+}
+
+.line-badges {
+  display: inline-flex;
+  gap: 3px;
+  flex-shrink: 0;
+}
+.line-badge {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 18px;
+  height: 18px;
+  border-radius: 50%;
+  font-size: 10px;
+  font-weight: 400;
+  flex-shrink: 0;
 }
 
 .list-row {
@@ -189,10 +255,34 @@ select {
 .btn-mini:hover {
   background: #f0f0f0;
 }
+.btn-mini.danger {
+  border-color: transparent;
+  color: #b0b0b0;
+  font-size: 16px;
+  line-height: 1;
+  padding: 0 4px;
+}
 .btn-mini.danger:hover {
-  background: #fbe6e6;
-  border-color: #d77;
-  color: #a22;
+  background: transparent;
+  border-color: transparent;
+  color: #c33;
+}
+
+.btn-mini.icon {
+  border-color: transparent;
+  color: #b0b0b0;
+  font-size: 14px;
+  line-height: 1;
+  padding: 0 4px;
+}
+.btn-mini.icon:hover:not(:disabled) {
+  background: transparent;
+  border-color: transparent;
+  color: #111;
+}
+.btn-mini.icon:disabled {
+  color: #e0e0e0;
+  cursor: default;
 }
 
 .inspector {
