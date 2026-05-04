@@ -246,7 +246,17 @@ export const useDoc = create<DocState>()(
           const i = st.stops.findIndex((c) => c.lineId === lineId);
           if (i < 0) return s;
           const cur = st.stops[i];
-          const next: StopOrientation = cur.orientation === 'vertical' ? 'horizontal' : 'vertical';
+          // Cycle: auto-vertical → up → down → auto-horizontal → left → right
+          const cycle: StopOrientation[] = [
+            'auto-vertical',
+            'up',
+            'down',
+            'auto-horizontal',
+            'left',
+            'right',
+          ];
+          const idx = cycle.indexOf(cur.orientation);
+          const next = cycle[(idx + 1) % cycle.length];
           const newStops = st.stops.slice();
           newStops[i] = { ...cur, orientation: next };
           return { stations: { ...s.stations, [stationId]: { ...st, stops: newStops } } };
@@ -452,7 +462,7 @@ export const useDoc = create<DocState>()(
                 lineId,
                 row: 0,
                 col: maxCol + 1,
-                orientation: 'vertical',
+                orientation: 'auto-vertical',
               };
               newStops = [...st.stops, newCell];
             }
@@ -539,7 +549,7 @@ export const useDoc = create<DocState>()(
     }),
     {
       name: 'vignelli-map-doc-v1',
-      version: 3,
+      version: 5,
       storage: createJSONStorage(() => localStorage),
       partialize: (s) => ({
         stations: s.stations,
@@ -560,7 +570,7 @@ export const useDoc = create<DocState>()(
               lineId,
               row: 0,
               col: i,
-              orientation: 'vertical' as const,
+              orientation: 'auto-vertical' as const,
             }));
             const { stopOrder: _drop, ...rest } = oldSt;
             void _drop;
@@ -594,6 +604,30 @@ export const useDoc = create<DocState>()(
             const st = raw as Station;
             const label: LabelCell = { ...st.label, offset: st.label.offset ?? 0 };
             migratedStations[id] = { ...st, label };
+          }
+          state.stations = migratedStations;
+        }
+        // v3/v4 -> v5: stop orientation enum widens. Map legacy `vertical`/
+        // `horizontal` to the new `auto-vertical`/`auto-horizontal` so the
+        // direction is now line-derived (previously it was hard-coded +axis).
+        // For docs whose stations were already auto-rotated to make the line
+        // travel in the +axis direction, this is identical behavior.
+        //
+        // The version was bumped through 4 during dev HMR before this
+        // migration existed, leaving some persisted docs at v4 with the old
+        // string values. Running this whenever fromVersion < 5 catches both.
+        // The rename is a no-op on already-migrated values.
+        if (fromVersion < 5 && state && state.stations) {
+          const migratedStations: Record<string, Station> = {};
+          for (const [id, raw] of Object.entries(state.stations)) {
+            const st = raw as Station;
+            const stops = st.stops.map((c) => {
+              const o = c.orientation as unknown as string;
+              if (o === 'vertical') return { ...c, orientation: 'auto-vertical' as const };
+              if (o === 'horizontal') return { ...c, orientation: 'auto-horizontal' as const };
+              return c;
+            });
+            migratedStations[id] = { ...st, stops };
           }
           state.stations = migratedStations;
         }
