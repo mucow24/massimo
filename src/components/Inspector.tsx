@@ -21,6 +21,8 @@ function StationInspector({ id }: { id: StationId }) {
   const rotateStopAction = useDoc((s) => s.rotateStop);
   const moveLabelAction = useDoc((s) => s.moveLabel);
   const rotateLabelAction = useDoc((s) => s.rotateLabel);
+  const mirrorLabelAction = useDoc((s) => s.mirrorLabel);
+  const flipLabelAction = useDoc((s) => s.flipLabel);
   const setLabelOffset = useDoc((s) => s.setLabelOffset);
   const selection = useSelection();
 
@@ -45,16 +47,10 @@ function StationInspector({ id }: { id: StationId }) {
     else if (labelSelected) rotateLabelAction(station.id);
   };
 
-  // Disable an arrow when its target cell would block the move:
-  //   - Label-selected: target occupied by a stop → blocked.
-  //   - Stop-selected: target = label cell → blocked (stops can swap with
-  //     each other, but not with the label).
+  // Disable arrows only for stop moves whose target is the label cell —
+  // stops can swap with each other but can't enter the label cell. Label
+  // moves never get disabled now (they jump past blocking stops).
   const isBlocked = (dRow: number, dCol: number): boolean => {
-    if (labelSelected) {
-      const newRow = station.label.row + dRow;
-      const newCol = station.label.col + dCol;
-      return station.stops.some((c) => c.row === newRow && c.col === newCol);
-    }
     if (selectedStopCell) {
       const newRow = selectedStopCell.row + dRow;
       const newCol = selectedStopCell.col + dCol;
@@ -118,15 +114,25 @@ function StationInspector({ id }: { id: StationId }) {
       </div>
       <div className="field">
         <label>Stop layout (unrotated)</label>
+        <div style={{ marginBottom: 6, display: 'flex', gap: 4 }}>
+          <button
+            className="btn-mini"
+            onClick={() => mirrorLabelAction(station.id)}
+            title="Move the label to the opposite side of the stops and flip 180°"
+          >
+            Mirror label
+          </button>
+          <button
+            className="btn-mini"
+            onClick={() => flipLabelAction(station.id)}
+            title="Rotate the label 180° (without moving it)"
+          >
+            Flip label
+          </button>
+        </div>
         <div style={{ display: 'flex', gap: 8, alignItems: 'flex-start' }}>
-          <StopGrid
-            station={station}
-            lines={lines}
-            selectedLineId={selectedLineId}
-            labelSelected={labelSelected}
-            onSelectStop={(lid) => selection.setSelectedStopLineId(lid)}
-            onSelectLabel={() => selection.setLabelSelected(true)}
-          />
+          {/* Controls FIRST, grid second — so the controls don't jump
+              around as the grid resizes when stops/label move. */}
           <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 22px)', gap: 2 }}>
             <span />
             <button
@@ -161,6 +167,14 @@ function StationInspector({ id }: { id: StationId }) {
             >↓</button>
             <span />
           </div>
+          <StopGrid
+            station={station}
+            lines={lines}
+            selectedLineId={selectedLineId}
+            labelSelected={labelSelected}
+            onSelectStop={(lid) => selection.setSelectedStopLineId(lid)}
+            onSelectLabel={() => selection.setLabelSelected(true)}
+          />
         </div>
       </div>
       <div className="field">

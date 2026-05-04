@@ -90,6 +90,8 @@ interface DocState extends MapDoc {
   rotateStop: (stationId: StationId, lineId: LineId) => void;
   moveLabel: (stationId: StationId, dRow: number, dCol: number) => void;
   rotateLabel: (stationId: StationId) => void;
+  flipLabel: (stationId: StationId) => void;
+  mirrorLabel: (stationId: StationId) => void;
   setLabelOffset: (stationId: StationId, offset: number) => void;
 
   addLine: () => LineId;
@@ -202,12 +204,16 @@ export const useDoc = create<DocState>()(
         set((s) => {
           const st = s.stations[stationId];
           if (!st) return s;
-          const newRow = st.label.row + dRow;
-          const newCol = st.label.col + dCol;
-          // The label can only move into empty cells. If a stop occupies the
-          // destination, the move is a no-op.
-          const blocked = st.stops.some((c) => c.row === newRow && c.col === newCol);
-          if (blocked) return s;
+          if (dRow === 0 && dCol === 0) return s;
+          // Step in the requested direction; if a stop occupies the
+          // destination, keep stepping until we land on an empty cell. So
+          // [Label] O O O + → ends up O O O [Label].
+          let newRow = st.label.row + dRow;
+          let newCol = st.label.col + dCol;
+          while (st.stops.some((c) => c.row === newRow && c.col === newCol)) {
+            newRow += dRow;
+            newCol += dCol;
+          }
           return {
             stations: {
               ...s.stations,
@@ -229,6 +235,81 @@ export const useDoc = create<DocState>()(
             stations: {
               ...s.stations,
               [stationId]: { ...st, label: { ...st.label, rotation: next } },
+            },
+          };
+        });
+      },
+
+      flipLabel: (stationId) => {
+        set((s) => {
+          const st = s.stations[stationId];
+          if (!st) return s;
+          const next = ((st.label.rotation + 4) % 8) as Rotation;
+          return {
+            stations: {
+              ...s.stations,
+              [stationId]: { ...st, label: { ...st.label, rotation: next } },
+            },
+          };
+        });
+      },
+
+      mirrorLabel: (stationId) => {
+        set((s) => {
+          const st = s.stations[stationId];
+          if (!st) return s;
+          if (st.stops.length === 0) {
+            // Just flip the rotation; nothing to mirror around.
+            const next = ((st.label.rotation + 4) % 8) as Rotation;
+            return {
+              stations: {
+                ...s.stations,
+                [stationId]: { ...st, label: { ...st.label, rotation: next } },
+              },
+            };
+          }
+          // Direction from the label to the stops' centroid (quantized to
+          // a single dominant cardinal axis). The mirrored label sits one
+          // step past the FURTHEST stop along that direction (and any
+          // stops beyond), so a label on one side ends up on the opposite
+          // side of the entire footprint.
+          const cx = st.stops.reduce((a, c) => a + c.col, 0) / st.stops.length;
+          const cy = st.stops.reduce((a, c) => a + c.row, 0) / st.stops.length;
+          const drRaw = cy - st.label.row;
+          const dcRaw = cx - st.label.col;
+          let dRow = 0;
+          let dCol = 0;
+          if (Math.abs(drRaw) > Math.abs(dcRaw)) dRow = Math.sign(drRaw) || 1;
+          else dCol = Math.sign(dcRaw) || 1;
+          // Furthest stop along (dRow, dCol).
+          const proj = (r: number, c: number) => r * dRow + c * dCol;
+          const maxProj = st.stops.reduce(
+            (m, cell) => Math.max(m, proj(cell.row, cell.col)),
+            -Infinity,
+          );
+          // Step past the max-projected stop (and any other stops at the
+          // same projection level beyond) until we land on an empty cell.
+          let newRow = st.label.row;
+          let newCol = st.label.col;
+          // March until we're past maxProj AND on an empty cell.
+          // Safety bound just in case.
+          for (let k = 0; k < 1000; k++) {
+            newRow += dRow;
+            newCol += dCol;
+            const beyond = proj(newRow, newCol) > maxProj;
+            const empty = !st.stops.some(
+              (c) => c.row === newRow && c.col === newCol,
+            );
+            if (beyond && empty) break;
+          }
+          const next = ((st.label.rotation + 4) % 8) as Rotation;
+          return {
+            stations: {
+              ...s.stations,
+              [stationId]: {
+                ...st,
+                label: { ...st.label, row: newRow, col: newCol, rotation: next },
+              },
             },
           };
         });
