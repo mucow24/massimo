@@ -16,17 +16,32 @@ function StationInspector({ id }: { id: StationId }) {
   const lines = useDoc((s) => s.lines);
   const renameStation = useDoc((s) => s.renameStation);
   const rotateStation = useDoc((s) => s.rotateStation);
-  const reorderStops = useDoc((s) => s.reorderStops);
   const moveStation = useDoc((s) => s.moveStation);
+  const moveStopAction = useDoc((s) => s.moveStop);
+  const rotateStopAction = useDoc((s) => s.rotateStop);
+  const moveLabelAction = useDoc((s) => s.moveLabel);
+  const rotateLabelAction = useDoc((s) => s.rotateLabel);
+  const selection = useSelection();
 
   if (!station) return null;
 
-  const moveStop = (idx: number, dir: -1 | 1) => {
-    const ord = [...station.stopOrder];
-    const j = idx + dir;
-    if (j < 0 || j >= ord.length) return;
-    [ord[idx], ord[j]] = [ord[j], ord[idx]];
-    reorderStops(station.id, ord);
+  const selectedLineId = selection.selectedStopLineId;
+  const labelSelected = selection.labelSelected;
+  const selectedStopCell = selectedLineId
+    ? station.stops.find((c) => c.lineId === selectedLineId)
+    : null;
+  const hasSelection = selectedStopCell || labelSelected;
+
+  const onMove = (dRow: number, dCol: number) => {
+    if (selectedStopCell) {
+      moveStopAction(station.id, selectedStopCell.lineId, dRow, dCol);
+    } else if (labelSelected) {
+      moveLabelAction(station.id, dRow, dCol);
+    }
+  };
+  const onRotateCell = () => {
+    if (selectedStopCell) rotateStopAction(station.id, selectedStopCell.lineId);
+    else if (labelSelected) rotateLabelAction(station.id);
   };
 
   return (
@@ -66,7 +81,6 @@ function StationInspector({ id }: { id: StationId }) {
           <button
             className="btn-mini"
             onClick={() => {
-              // -45° = +7
               for (let i = 0; i < 7; i++) rotateStation(station.id);
             }}
           >
@@ -75,7 +89,6 @@ function StationInspector({ id }: { id: StationId }) {
           <button
             className="btn-mini"
             onClick={() => {
-              // reset to 0 by rotating to (8 - r) % 8 times.
               const need = (8 - station.rotation) % 8;
               for (let i = 0; i < need; i++) rotateStation(station.id);
             }}
@@ -85,27 +98,140 @@ function StationInspector({ id }: { id: StationId }) {
         </div>
       </div>
       <div className="field">
-        <label>Stop order (left → right at 0° rotation)</label>
-        {station.stopOrder.length === 0 && <div className="empty">No lines stop here yet.</div>}
-        {station.stopOrder.map((lid, i) => {
-          const ln = lines[lid];
-          if (!ln) return null;
-          return (
-            <div key={lid} className="list-row" style={{ paddingLeft: 0 }}>
-              <span className="swatch" style={{ background: ln.color }} />
-              <strong style={{ width: 28 }}>{ln.service}</strong>
-              <span className="grow">{i}</span>
-              <button className="btn-mini" disabled={i === 0} onClick={() => moveStop(i, -1)}>↑</button>
-              <button
-                className="btn-mini"
-                disabled={i === station.stopOrder.length - 1}
-                onClick={() => moveStop(i, 1)}
-              >↓</button>
-            </div>
-          );
-        })}
+        <label>Stop layout (unrotated)</label>
+        <div style={{ display: 'flex', gap: 8, alignItems: 'flex-start' }}>
+          <StopGrid
+            station={station}
+            lines={lines}
+            selectedLineId={selectedLineId}
+            labelSelected={labelSelected}
+            onSelectStop={(lid) => selection.setSelectedStopLineId(lid)}
+            onSelectLabel={() => selection.setLabelSelected(true)}
+          />
+          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 22px)', gap: 2 }}>
+            <span />
+            <button className="btn-mini" disabled={!hasSelection} onClick={() => onMove(-1, 0)}>↑</button>
+            <span />
+            <button className="btn-mini" disabled={!hasSelection} onClick={() => onMove(0, -1)}>←</button>
+            <button
+              className="btn-mini"
+              disabled={!hasSelection}
+              onClick={onRotateCell}
+              title={labelSelected ? 'Rotate label' : 'Rotate stop'}
+            >
+              ⟳
+            </button>
+            <button className="btn-mini" disabled={!hasSelection} onClick={() => onMove(0, 1)}>→</button>
+            <span />
+            <button className="btn-mini" disabled={!hasSelection} onClick={() => onMove(1, 0)}>↓</button>
+            <span />
+          </div>
+        </div>
       </div>
     </section>
+  );
+}
+
+type GridStation = {
+  stops: { lineId: string; row: number; col: number; orientation: 'vertical' | 'horizontal' }[];
+  label: { row: number; col: number; rotation: number };
+};
+
+function StopGrid({
+  station,
+  lines,
+  selectedLineId,
+  labelSelected,
+  onSelectStop,
+  onSelectLabel,
+}: {
+  station: GridStation;
+  lines: Record<string, { color: string; service: string }>;
+  selectedLineId: string | null;
+  labelSelected: boolean;
+  onSelectStop: (lineId: string | null) => void;
+  onSelectLabel: () => void;
+}) {
+  const stops = station.stops;
+  const label = station.label;
+  const occupied: { row: number; col: number }[] = [
+    ...stops.map((c) => ({ row: c.row, col: c.col })),
+    { row: label.row, col: label.col },
+  ];
+  // Bounding box, padded one cell on each side.
+  const minRow = Math.min(...occupied.map((c) => c.row)) - 1;
+  const maxRow = Math.max(...occupied.map((c) => c.row)) + 1;
+  const minCol = Math.min(...occupied.map((c) => c.col)) - 1;
+  const maxCol = Math.max(...occupied.map((c) => c.col)) + 1;
+  const stopByPos: Record<string, (typeof stops)[number]> = {};
+  for (const c of stops) stopByPos[`${c.row},${c.col}`] = c;
+  const cellSize = 22;
+
+  const cells: React.ReactElement[] = [];
+  for (let r = minRow; r <= maxRow; r++) {
+    for (let c = minCol; c <= maxCol; c++) {
+      const isLabel = label.row === r && label.col === c;
+      const stop = !isLabel ? stopByPos[`${r},${c}`] : undefined;
+      const line = stop ? lines[stop.lineId] : null;
+      const selected =
+        (isLabel && labelSelected) ||
+        (!!stop && stop.lineId === selectedLineId);
+      cells.push(
+        <div
+          key={`${r},${c}`}
+          onClick={() => {
+            if (isLabel) onSelectLabel();
+            else if (stop) onSelectStop(stop.lineId);
+            else onSelectStop(null);
+          }}
+          style={{
+            width: cellSize,
+            height: cellSize,
+            background: isLabel ? '#fff' : stop && line ? line.color : 'transparent',
+            border: selected
+              ? '2px solid #000'
+              : isLabel
+                ? '1px solid rgba(0,0,0,0.4)'
+                : stop
+                  ? '1px solid rgba(0,0,0,0.2)'
+                  : '1px dashed rgba(0,0,0,0.12)',
+            borderRadius: 2,
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'center',
+            color: isLabel ? '#222' : '#fff',
+            fontSize: 12,
+            fontWeight: 700,
+            cursor: isLabel || stop ? 'pointer' : 'default',
+            textShadow: isLabel ? undefined : '0 0 2px rgba(0,0,0,0.6)',
+            boxSizing: 'border-box',
+            transform: isLabel ? `rotate(${label.rotation * 45}deg)` : undefined,
+          }}
+          title={
+            isLabel
+              ? `Label at (${r}, ${c}) rot ${label.rotation * 45}°`
+              : stop
+                ? `${line?.service ?? ''} at (${r}, ${c}) ${stop.orientation}`
+                : `(${r}, ${c}) empty`
+          }
+        >
+          {isLabel ? 'L' : stop ? (stop.orientation === 'vertical' ? '↕' : '↔') : ''}
+        </div>,
+      );
+    }
+  }
+
+  const cols = maxCol - minCol + 1;
+  return (
+    <div
+      style={{
+        display: 'grid',
+        gridTemplateColumns: `repeat(${cols}, ${cellSize}px)`,
+        gap: 2,
+      }}
+    >
+      {cells}
+    </div>
   );
 }
 

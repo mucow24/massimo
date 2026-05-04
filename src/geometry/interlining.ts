@@ -1,17 +1,15 @@
-import { Line, LineId, Station, StationId } from '../state/types';
+import { Line, LineId, Station, StationId, StopCell } from '../state/types';
 import { Vec2 } from './vec';
 import { route } from './router';
-import { segmentEndpoints, STOP_SIZE } from './orientation';
+import { segmentEndpoints, STOP_SIZE, stopCenterAt } from './orientation';
 import { offsetFilletPath } from './router';
 
 export interface SegmentBandSpec {
-  // unique key per (stationA,stationB) pair (sorted)
   pairKey: string;
   fromId: StationId;
   toId: StationId;
   // Lines in this band, in render order (perpendicular to direction of travel).
   lines: { id: LineId; color: string }[];
-  // SVG path strings, one per line, in same order.
   paths: string[];
   warning: boolean;
   centerline: Vec2[];
@@ -22,17 +20,19 @@ const pairKeyOf = (a: StationId, b: StationId) => (a < b ? `${a}|${b}` : `${b}|$
 interface SegInfo {
   fromId: StationId;
   toId: StationId;
-  fromIndex: number; // stop index at fromStation
-  toIndex: number; // stop index at toStation
-  forward: boolean; // true if (fromId,toId) order matches sorted pair order
+  fromCell: StopCell;
+  toCell: StopCell;
+  forward: boolean;
   lineId: LineId;
   color: string;
 }
 
 /**
- * For each adjacent station pair on each line, group the lines by the
- * (sorted) pair key, then split groups into contiguous-stop-index bands.
- * Returns one SegmentBandSpec per band.
+ * Build all colored bands for the map. A "band" is one or more lines that
+ * share a station-pair and pass through it with matching stop orientations
+ * AND grid-adjacent cells along the perpendicular-to-travel axis at both
+ * stations. Bands render with stroke-width = STOP_SIZE per line, perpendicular
+ * offsets `(k − (n−1)/2) * STOP_SIZE`.
  */
 export function buildBands(
   stations: Record<StationId, Station>,
@@ -40,7 +40,7 @@ export function buildBands(
   curveRadius: number,
   lineOrder: LineId[] = [],
 ): SegmentBandSpec[] {
-  // 1. Collect all per-line segments keyed by sorted station pair.
+  // 1. Collect per-line segments keyed by sorted station pair, with stop cells.
   const groups: Record<string, SegInfo[]> = {};
 
   for (const lineId of Object.keys(lines)) {
@@ -51,16 +51,16 @@ export function buildBands(
       const sa = stations[a];
       const sb = stations[b];
       if (!sa || !sb) continue;
-      const fromIndex = sa.stopOrder.indexOf(lineId);
-      const toIndex = sb.stopOrder.indexOf(lineId);
-      if (fromIndex < 0 || toIndex < 0) continue;
+      const fromCell = sa.stops.find((c) => c.lineId === lineId);
+      const toCell = sb.stops.find((c) => c.lineId === lineId);
+      if (!fromCell || !toCell) continue;
       const key = pairKeyOf(a, b);
       const forward = a < b;
       (groups[key] ||= []).push({
         fromId: a,
         toId: b,
-        fromIndex,
-        toIndex,
+        fromCell,
+        toCell,
         forward,
         lineId,
         color: line.color,
@@ -68,56 +68,89 @@ export function buildBands(
     }
   }
 
-  // 2. For each pair group, determine contiguous bands.
-  // Two lines interline if:
-  //  - same direction (forward flag)
-  //  - their stop-index pairs at A and B are adjacent (differ by 1)
-  //    AND the "shape" between them is monotonic (either both +1 or both -1).
-  // We greedily merge sorted-by-fromIndex.
+  // 2. Build interlined runs within each group.
   const bands: SegmentBandSpec[] = [];
 
   for (const [pairKey, segs] of Object.entries(groups)) {
-    // Split by direction first — segments with different `forward` orientation are
-    // running opposite ways through the pair; treat as separate bands (in v1).
     const byDir: Record<string, SegInfo[]> = { fwd: [], rev: [] };
     for (const s of segs) byDir[s.forward ? 'fwd' : 'rev'].push(s);
 
     for (const dirKey of ['fwd', 'rev']) {
       const list = byDir[dirKey];
       if (list.length === 0) continue;
-      list.sort((a, b) => a.fromIndex - b.fromIndex);
-
-      // Group: consecutive entries whose (fromIndex, toIndex) both increase by 1.
-      let group: SegInfo[] = [];
-      const flush = () => {
-        if (group.length === 0) return;
-        bands.push(buildBandSpec(group, stations, curveRadius, pairKey));
-        group = [];
-      };
+      // Bucket by shared orientation. Two lines with mismatched orientations
+      // at A or B are guaranteed to be in different buckets, hence different
+      // bands (which is what we want).
+      const buckets: Record<string, SegInfo[]> = {};
       for (const s of list) {
-        if (group.length === 0) {
-          group.push(s);
+        if (s.fromCell.orientation !== s.toCell.orientation) {
+          // Mismatched orientation across the segment is its own solo band —
+          // it can't interline with anything because the band can't reconcile
+          // two orientations across a perpendicular spread.
+          buckets[`solo:${s.lineId}`] = [s];
         } else {
+          (buckets[s.fromCell.orientation] ||= []).push(s);
+        }
+      }
+      for (const bucket of Object.values(buckets)) {
+        // For the matched-orientation buckets the from and to orientations
+        // are identical. For solo buckets they may differ; perpAxis only
+        // governs grouping within a bucket and a solo bucket has one segment.
+        const orientation = bucket[0].fromCell.orientation;
+        const perpAxis: 'col' | 'row' = orientation === 'vertical' ? 'col' : 'row';
+        const sortedBucket = bucket.slice().sort((a, b) => {
+          const va = a.fromCell[perpAxis];
+          const vb = b.fromCell[perpAxis];
+          return va - vb;
+        });
+
+        // Greedily merge into runs where each successive line is one step
+        // further along perpAxis at BOTH endpoints in the same direction.
+        let group: SegInfo[] = [];
+        const flush = () => {
+          if (group.length === 0) return;
+          bands.push(buildBandSpec(group, stations, curveRadius, pairKey));
+          group = [];
+        };
+        for (const s of sortedBucket) {
+          if (group.length === 0) {
+            group.push(s);
+            continue;
+          }
           const prev = group[group.length - 1];
-          if (s.fromIndex === prev.fromIndex + 1 && s.toIndex === prev.toIndex + 1) {
+          const dFrom = s.fromCell[perpAxis] - prev.fromCell[perpAxis];
+          const dTo = s.toCell[perpAxis] - prev.toCell[perpAxis];
+          // Must also stay on the same parallel axis (same row for vertical
+          // bands, same col for horizontal) at each station.
+          const parAxis: 'col' | 'row' = perpAxis === 'col' ? 'row' : 'col';
+          const sameParA = s.fromCell[parAxis] === prev.fromCell[parAxis];
+          const sameParB = s.toCell[parAxis] === prev.toCell[parAxis];
+          if (dFrom === 1 && dTo === 1 && sameParA && sameParB) {
             group.push(s);
           } else {
             flush();
             group.push(s);
           }
         }
+        flush();
       }
-      flush();
     }
   }
 
-  // Sort bands so the line that appears HIGHEST in lineOrder (smallest index =
-  // top of the layer stack) renders LAST. Each band's z-priority is the
-  // top-most line it contains. Bands with equal priority keep insertion order.
-  if (lineOrder.length > 0) {
+  // 3. Z-order bands by user-controlled lineOrder (front-most last).
+  // Reconcile the persisted order against `lines`: filter dead IDs and append
+  // any line not yet in the order. Otherwise a doc whose `lineOrder` predates
+  // a line addition would leave that line outside the index, snap it to the
+  // fallback (back of stack), and disagree with the sidebar — which already
+  // does this reconciliation for display.
+  const present = lineOrder.filter((id) => lines[id]);
+  const seen = new Set(present);
+  const reconciled = present.slice();
+  for (const id of Object.keys(lines)) if (!seen.has(id)) reconciled.push(id);
+  if (reconciled.length > 0) {
     const lineIndex: Record<LineId, number> = {};
-    lineOrder.forEach((id, i) => (lineIndex[id] = i));
-    const fallback = lineOrder.length;
+    reconciled.forEach((id, i) => (lineIndex[id] = i));
+    const fallback = reconciled.length;
     const priority = (band: SegmentBandSpec) =>
       Math.min(...band.lines.map((l) => lineIndex[l.id] ?? fallback));
     bands.sort((a, b) => priority(b) - priority(a));
@@ -132,21 +165,35 @@ function buildBandSpec(
   R: number,
   pairKey: string,
 ): SegmentBandSpec {
-  // The band's centerline runs from the midpoint of the band's stop range
-  // at the from-station to the midpoint at the to-station.
-  const first = group[0];
-  const last = group[group.length - 1];
-  const fromMidIdx = (first.fromIndex + last.fromIndex) / 2;
-  const toMidIdx = (first.toIndex + last.toIndex) / 2;
+  // Centerline anchor at each end is the mean of the band's endpoint cells.
+  const meanCell = (cells: StopCell[]): { row: number; col: number } => {
+    const row = cells.reduce((a, c) => a + c.row, 0) / cells.length;
+    const col = cells.reduce((a, c) => a + c.col, 0) / cells.length;
+    return { row, col };
+  };
+  const fromCells = group.map((g) => g.fromCell);
+  const toCells = group.map((g) => g.toCell);
+  const fromMean = meanCell(fromCells);
+  const toMean = meanCell(toCells);
+  // Endpoint orientation is taken from each end's actual cells. Within an
+  // interlined bucket they all match; for a solo band they may differ, and
+  // the segment's two tangents need to come from each end independently.
+  const fromOrientation = group[0].fromCell.orientation;
+  const toOrientation = group[0].toCell.orientation;
 
-  const fromStation = stations[first.fromId];
-  const toStation = stations[first.toId];
+  const fromStation = stations[group[0].fromId];
+  const toStation = stations[group[0].toId];
 
-  const ep = segmentEndpoints(fromStation, fromMidIdx, toStation, toMidIdx);
+  const ep = segmentEndpoints(
+    fromStation,
+    stopCenterAt(fromMean.row, fromMean.col),
+    fromOrientation,
+    toStation,
+    stopCenterAt(toMean.row, toMean.col),
+    toOrientation,
+  );
   const result = route(ep.start, ep.startDir, ep.end, ep.endDir, R);
 
-  // For each line in the band, render one path offset perpendicular to centerline.
-  // Offsets: line at position k (0-indexed in group) sits at offset (k - (n-1)/2) * STOP_SIZE.
   const n = group.length;
   const paths: string[] = [];
   const linesArr = group.map((g) => ({ id: g.lineId, color: g.color }));
@@ -157,8 +204,8 @@ function buildBandSpec(
 
   return {
     pairKey,
-    fromId: first.fromId,
-    toId: first.toId,
+    fromId: group[0].fromId,
+    toId: group[0].toId,
     lines: linesArr,
     paths,
     warning: result.warning,

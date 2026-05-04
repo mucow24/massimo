@@ -32,7 +32,7 @@ export function Sidebar() {
                 className="btn-mini danger"
                 onClick={(e) => {
                   e.stopPropagation();
-                  if (confirm(`Delete station "${st.name}"?`)) deleteStation(st.id);
+                  deleteStation(st.id);
                 }}
               >
                 ×
@@ -83,7 +83,7 @@ export function Sidebar() {
                   className="btn-mini danger"
                   onClick={(e) => {
                     e.stopPropagation();
-                    if (confirm(`Delete line "${ln.service}"?`)) deleteLine(ln.id);
+                    deleteLine(ln.id);
                   }}
                 >
                   ×

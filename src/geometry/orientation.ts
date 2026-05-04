@@ -1,4 +1,5 @@
 import { Vec2 } from './vec';
+import type { StopOrientation } from '../state/types';
 
 export const STOP_SIZE = 14;
 export const STOP_GAP = 0;
@@ -17,34 +18,52 @@ export const rotateBy = (p: Vec2, r: Rotation): Vec2 => {
 };
 
 /**
- * In a station's local coords (rotation=0):
- *  - The first stop's center sits at the origin.
- *  - Stop i's center sits at (i * STOP_SIZE, 0) (no gap; squares share edges).
- *  - "Input" edge of a stop is its top edge; "output" is bottom.
- *  - Station name is rendered to the LEFT of stop 0.
+ * Local-space center of a grid cell at (row, col). Cells touch (no gap), so
+ * stop k=col=0,row=0 sits at the local origin. Position scales by STOP_SIZE.
  */
-export const stopCenterLocal = (stopIndex: number): Vec2 => ({
-  x: stopIndex * (STOP_SIZE + STOP_GAP),
-  y: 0,
+export const stopCenterAt = (row: number, col: number): Vec2 => ({
+  x: col * (STOP_SIZE + STOP_GAP),
+  y: row * (STOP_SIZE + STOP_GAP),
 });
-
-export const stopInputMidLocal = (stopIndex: number): Vec2 => ({
-  x: stopIndex * (STOP_SIZE + STOP_GAP),
-  y: -HALF,
-});
-
-export const stopOutputMidLocal = (stopIndex: number): Vec2 => ({
-  x: stopIndex * (STOP_SIZE + STOP_GAP),
-  y: HALF,
-});
-
-export const inputDirLocal: Vec2 = { x: 0, y: 1 }; // line travels INTO stop, going DOWN-WARD in local
-export const outputDirLocal: Vec2 = { x: 0, y: 1 }; // line LEAVES stop, going DOWN-WARD in local
 
 /**
- * Converts a local point into world coords given the station's world position
- * and rotation steps.
+ * Travel direction in the unrotated local frame for a stop with the given
+ * orientation. Vertical → +y (line moves down); horizontal → +x (right).
+ * Both the "input" and "output" edges have this same travel direction.
  */
+export const travelDirLocal = (o: StopOrientation): Vec2 =>
+  o === 'vertical' ? { x: 0, y: 1 } : { x: 1, y: 0 };
+
+/**
+ * Half-edge offset from a stop center to its input edge midpoint, in local
+ * coords. For vertical stops the input edge is the top (−y, hence −HALF y);
+ * for horizontal stops it's the left (−x).
+ */
+export const inputEdgeOffsetLocal = (o: StopOrientation): Vec2 =>
+  o === 'vertical' ? { x: 0, y: -HALF } : { x: -HALF, y: 0 };
+
+/** Mirror of input: output edge midpoint offset. */
+export const outputEdgeOffsetLocal = (o: StopOrientation): Vec2 =>
+  o === 'vertical' ? { x: 0, y: HALF } : { x: HALF, y: 0 };
+
+/**
+ * 8-way direction for label rotation. Index = rotation 0..7. Each entry has
+ * the grid cell offset (dRow, dCol) you'd step into to reach the cell that
+ * lies in that direction, and the corresponding cell-boundary anchor point
+ * (cell-local coords) — for cardinal rotations it's an edge midpoint, for
+ * diagonals it's a corner.
+ */
+export const DIR_8: { dRow: number; dCol: number; anchor: Vec2 }[] = [
+  { dRow: 0, dCol: 1, anchor: { x: HALF, y: 0 } },     // 0: E
+  { dRow: 1, dCol: 1, anchor: { x: HALF, y: HALF } },  // 1: SE
+  { dRow: 1, dCol: 0, anchor: { x: 0, y: HALF } },     // 2: S
+  { dRow: 1, dCol: -1, anchor: { x: -HALF, y: HALF } },// 3: SW
+  { dRow: 0, dCol: -1, anchor: { x: -HALF, y: 0 } },   // 4: W
+  { dRow: -1, dCol: -1, anchor: { x: -HALF, y: -HALF } }, // 5: NW
+  { dRow: -1, dCol: 0, anchor: { x: 0, y: -HALF } },   // 6: N
+  { dRow: -1, dCol: 1, anchor: { x: HALF, y: -HALF } },// 7: NE
+];
+
 export const localToWorld = (local: Vec2, station: { x: number; y: number; rotation: Rotation }): Vec2 => {
   const r = rotateBy(local, station.rotation);
   return { x: r.x + station.x, y: r.y + station.y };
@@ -52,31 +71,37 @@ export const localToWorld = (local: Vec2, station: { x: number; y: number; rotat
 
 export const localDirToWorld = (local: Vec2, rotation: Rotation): Vec2 => rotateBy(local, rotation);
 
-/**
- * For a line segment FROM `fromStation` (output edge of its stop) TO `toStation` (input edge):
- * returns the world points and unit direction vectors at both ends.
- */
 export interface SegmentEndpoints {
   start: Vec2;
-  startDir: Vec2; // unit, points away from start (direction the line LEAVES the stop)
+  startDir: Vec2;
   end: Vec2;
-  endDir: Vec2; // unit, points INTO end (direction the line ARRIVES at the stop)
+  endDir: Vec2;
 }
 
+/**
+ * Compute the world endpoints + travel directions for a band segment.
+ *
+ * `fromLocalPoint` / `toLocalPoint` are local-space points on each station
+ * (typically the centerline anchor of the band — the mean of its endpoint
+ * cells). `fromOrientation` / `toOrientation` give the band's shared
+ * orientation at each station — they should match for a valid interlined
+ * band, though the function tolerates per-end values for flexibility.
+ *
+ * The endpoints are placed at the stop center (the local point as given);
+ * the renderer's stroke-linecap="square" extends the band into the stop
+ * area, masking any seam at the colored square.
+ */
 export const segmentEndpoints = (
   from: { x: number; y: number; rotation: Rotation },
-  fromStopIndex: number,
+  fromLocalPoint: Vec2,
+  fromOrientation: StopOrientation,
   to: { x: number; y: number; rotation: Rotation },
-  toStopIndex: number,
+  toLocalPoint: Vec2,
+  toOrientation: StopOrientation,
 ): SegmentEndpoints => {
-  // Endpoints sit at the stop edge midpoints (output edge of from-stop, input
-  // edge of to-stop). The band is rendered with stroke-linecap="square" so the
-  // stroke extends an extra STOP_SIZE/2 past these endpoints INTO the stop —
-  // that masks any anti-aliasing hairline at the seam with the stop's colored
-  // square. Routing geometry stays exactly as before.
-  const start = localToWorld(stopOutputMidLocal(fromStopIndex), from);
-  const startDir = localDirToWorld({ x: 0, y: 1 }, from.rotation);
-  const end = localToWorld(stopInputMidLocal(toStopIndex), to);
-  const endDir = localDirToWorld({ x: 0, y: 1 }, to.rotation);
+  const start = localToWorld(fromLocalPoint, from);
+  const startDir = localDirToWorld(travelDirLocal(fromOrientation), from.rotation);
+  const end = localToWorld(toLocalPoint, to);
+  const endDir = localDirToWorld(travelDirLocal(toOrientation), to.rotation);
   return { start, startDir, end, endDir };
 };

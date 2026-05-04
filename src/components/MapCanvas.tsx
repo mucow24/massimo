@@ -15,12 +15,12 @@ function legibleTextOn(hex: string): string {
   return L > 0.5 ? '#000' : '#fff';
 }
 import { dragState, useDoc, useSelection } from '../state/store';
-import { Station, StationId } from '../state/types';
+import { Station, StationId, StopCell } from '../state/types';
 import { buildBands } from '../geometry/interlining';
 import { SegmentBand } from './SegmentBand';
 import { StationView } from './StationView';
 import { Vec2 } from '../geometry/vec';
-import { STOP_SIZE, rotateBy, stopCenterLocal, Rotation } from '../geometry/orientation';
+import { STOP_SIZE, rotateBy, stopCenterAt, travelDirLocal, Rotation } from '../geometry/orientation';
 
 const SQRT2_2 = Math.SQRT2 / 2;
 const SNAP_PERP_TOLERANCE = 10;
@@ -42,30 +42,48 @@ function axisForRotation(rot: number): Vec2 {
 
 const TIGHT_PERP_TOLERANCE = 0.5;
 
-// Build (draggedStopOffset, targetStopOffset) pairs in world-rotation-local
-// coords for two stations. We align the SHARED line's stops where possible —
-// that's what makes routing through interlining stops actually clean. If
-// neither station has stops, fall back to anchor-to-anchor; if only one has
-// stops, also anchor-to-anchor (no shared line to align).
+// Build alignment pairs between the dragged station and a target. Each pair
+// carries:
+//   dOff/tOff: world-rotation offsets (anchor → stop center) on each station
+//   axis:      world unit vector along which the line through both stops runs
+//
+// For shared-line pairs the axis is the world travel direction at that stop —
+// derived from per-stop orientation rotated by station rotation. The two stops
+// must share a world axis (parallel travel directions) to qualify.
+//
+// When neither station has stops, fall back to anchor-to-anchor on the
+// dragged station's rotation axis. When only one side has stops or no line
+// is shared, no pairs are emitted and that target won't snap.
+type AlignmentPair = { dOff: Vec2; tOff: Vec2; axis: Vec2 };
+
 function alignmentPairs(
   draggedRotation: Rotation,
-  draggedStopOrder: string[],
+  draggedStops: StopCell[],
   target: Station,
-): { dOff: Vec2; tOff: Vec2 }[] {
-  if (draggedStopOrder.length === 0 || target.stopOrder.length === 0) {
-    return [{ dOff: { x: 0, y: 0 }, tOff: { x: 0, y: 0 } }];
+): AlignmentPair[] {
+  if (draggedStops.length === 0 && target.stops.length === 0) {
+    return [
+      { dOff: { x: 0, y: 0 }, tOff: { x: 0, y: 0 }, axis: axisForRotation(draggedRotation) },
+    ];
   }
-  const out: { dOff: Vec2; tOff: Vec2 }[] = [];
-  for (let i = 0; i < draggedStopOrder.length; i++) {
-    const lineId = draggedStopOrder[i];
-    const j = target.stopOrder.indexOf(lineId);
-    if (j < 0) continue;
+  const out: AlignmentPair[] = [];
+  for (const dCell of draggedStops) {
+    const tCell = target.stops.find((c) => c.lineId === dCell.lineId);
+    if (!tCell) continue;
+    const dWorldDir = rotateBy(travelDirLocal(dCell.orientation), draggedRotation);
+    const tWorldDir = rotateBy(travelDirLocal(tCell.orientation), target.rotation);
+    if (!parallel(dWorldDir, tWorldDir)) continue;
     out.push({
-      dOff: rotateBy(stopCenterLocal(i), draggedRotation),
-      tOff: rotateBy(stopCenterLocal(j), target.rotation),
+      dOff: rotateBy(stopCenterAt(dCell.row, dCell.col), draggedRotation),
+      tOff: rotateBy(stopCenterAt(tCell.row, tCell.col), target.rotation),
+      axis: dWorldDir,
     });
   }
   return out;
+}
+
+function parallel(a: Vec2, b: Vec2): boolean {
+  return Math.abs(a.x * b.y - a.y * b.x) < 1e-3;
 }
 
 function tryAxisSnap(
@@ -73,7 +91,7 @@ function tryAxisSnap(
   proposedX: number,
   proposedY: number,
   draggedRotation: Rotation,
-  draggedStopOrder: string[],
+  draggedStops: StopCell[],
   stations: Record<StationId, Station>,
   tolerance: number,
 ): {
@@ -82,35 +100,42 @@ function tryAxisSnap(
   guide: { from: Vec2; to: Vec2 } | null;
   secondaryGuide: { from: Vec2; to: Vec2 } | null;
 } {
-  const axis = axisForRotation(draggedRotation);
-  const perpX = -axis.y;
-  const perpY = axis.x;
-
-  // Search for the best primary alignment: minimum perpendicular distance
-  // between a stop on the dragged station and the corresponding stop on a
-  // target station (matching axis, shared line — or anchor-to-anchor when
-  // neither has stops).
-  type Best = { target: Station; dOff: Vec2; tOff: Vec2; perpDist: number };
+  // Find the best alignment pair (any target, any shared line) by lowest
+  // perpendicular distance to that pair's world axis.
+  type Best = {
+    target: Station;
+    dOff: Vec2;
+    tOff: Vec2;
+    axis: Vec2;
+    perpDist: number;
+  };
   let best: Best | null = null;
   for (const t of Object.values(stations)) {
     if (t.id === draggedId) continue;
-    if (t.rotation % 4 !== draggedRotation % 4) continue;
-    for (const { dOff, tOff } of alignmentPairs(draggedRotation, draggedStopOrder, t)) {
-      const tStopX = t.x + tOff.x;
-      const tStopY = t.y + tOff.y;
-      const dStopX = proposedX + dOff.x;
-      const dStopY = proposedY + dOff.y;
+    for (const pair of alignmentPairs(draggedRotation, draggedStops, t)) {
+      const perpX = -pair.axis.y;
+      const perpY = pair.axis.x;
+      const tStopX = t.x + pair.tOff.x;
+      const tStopY = t.y + pair.tOff.y;
+      const dStopX = proposedX + pair.dOff.x;
+      const dStopY = proposedY + pair.dOff.y;
       const dx = tStopX - dStopX;
       const dy = tStopY - dStopY;
       const perpDist = Math.abs(dx * perpX + dy * perpY);
       if (perpDist > tolerance) continue;
-      if (!best || perpDist < best.perpDist) best = { target: t, dOff, tOff, perpDist };
+      if (!best || perpDist < best.perpDist) {
+        best = { target: t, dOff: pair.dOff, tOff: pair.tOff, axis: pair.axis, perpDist };
+      }
     }
   }
 
   if (!best) {
     return { x: proposedX, y: proposedY, guide: null, secondaryGuide: null };
   }
+
+  const axis = best.axis;
+  const perpX = -axis.y;
+  const perpY = axis.x;
 
   // Snap so the dragged stop lies on the axis line through the target stop.
   const tStopX = best.target.x + best.tOff.x;
@@ -122,7 +147,6 @@ function tryAxisSnap(
   const along = dxp * axis.x + dyp * axis.y;
   const snappedDStopX = tStopX + along * axis.x;
   const snappedDStopY = tStopY + along * axis.y;
-  // Anchor moves so the dragged stop ends up at the snapped position.
   const sx = snappedDStopX - best.dOff.x;
   const sy = snappedDStopY - best.dOff.y;
 
@@ -131,21 +155,20 @@ function tryAxisSnap(
     to: { x: tStopX, y: tStopY },
   };
 
-  // Secondary: ray cast in the opposite axis direction with tight tolerance.
-  // We re-evaluate alignment pairs against every other station but use the
-  // post-snap dragged stop as the origin. Pick whichever (other) station's
-  // matching stop is closest along the opposite ray, within TIGHT tolerance.
+  // Secondary: opposite-side ray along the same axis, tight tolerance, only
+  // pairs whose own world axis matches `best.axis` qualify (so a "tight" hit
+  // means it's actually on the same alignment line).
   const oppositeSign = -Math.sign(along) || 0;
   let secondary: { fromS: Vec2; toS: Vec2; alongAbs: number } | null = null;
   if (oppositeSign !== 0) {
     for (const t of Object.values(stations)) {
       if (t.id === draggedId || t.id === best.target.id) continue;
-      if (t.rotation % 4 !== draggedRotation % 4) continue;
-      for (const { dOff, tOff } of alignmentPairs(draggedRotation, draggedStopOrder, t)) {
-        const tStopWorldX = t.x + tOff.x;
-        const tStopWorldY = t.y + tOff.y;
-        const dStopWorldX = sx + dOff.x;
-        const dStopWorldY = sy + dOff.y;
+      for (const pair of alignmentPairs(draggedRotation, draggedStops, t)) {
+        if (!parallel(pair.axis, axis)) continue;
+        const tStopWorldX = t.x + pair.tOff.x;
+        const tStopWorldY = t.y + pair.tOff.y;
+        const dStopWorldX = sx + pair.dOff.x;
+        const dStopWorldY = sy + pair.dOff.y;
         const ddx = tStopWorldX - dStopWorldX;
         const ddy = tStopWorldY - dStopWorldY;
         const perpDist = Math.abs(ddx * perpX + ddy * perpY);
@@ -291,7 +314,7 @@ export function MapCanvas() {
         let ny = ds.startWY + dy;
         const draggedSt = stations[ds.id];
         const draggedRot = (draggedSt?.rotation ?? 0) as Rotation;
-        const draggedStopOrder = draggedSt?.stopOrder ?? [];
+        const draggedStops = draggedSt?.stops ?? [];
         // Snap is on by default; Shift bypasses it.
         const shouldSnap = !e.shiftKey;
         const tol = SNAP_PERP_TOLERANCE;
@@ -301,7 +324,7 @@ export function MapCanvas() {
             nx,
             ny,
             draggedRot,
-            draggedStopOrder,
+            draggedStops,
             stations,
             tol,
           );

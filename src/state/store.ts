@@ -1,6 +1,17 @@
 import { create } from 'zustand';
 import { persist, createJSONStorage } from 'zustand/middleware';
-import type { Line, LineId, MapDoc, Rotation, Station, StationId, Viewport } from './types';
+import type {
+  LabelCell,
+  Line,
+  LineId,
+  MapDoc,
+  Rotation,
+  Station,
+  StationId,
+  StopCell,
+  StopOrientation,
+  Viewport,
+} from './types';
 
 const uid = () =>
   Math.random().toString(36).slice(2, 8) + Date.now().toString(36).slice(-4);
@@ -74,7 +85,10 @@ interface DocState extends MapDoc {
   moveStation: (id: StationId, x: number, y: number) => void;
   rotateStation: (id: StationId) => void;
   deleteStation: (id: StationId) => void;
-  reorderStops: (id: StationId, stopOrder: LineId[]) => void;
+  moveStop: (stationId: StationId, lineId: LineId, dRow: number, dCol: number) => void;
+  rotateStop: (stationId: StationId, lineId: LineId) => void;
+  moveLabel: (stationId: StationId, dRow: number, dCol: number) => void;
+  rotateLabel: (stationId: StationId) => void;
 
   addLine: () => LineId;
   updateLine: (id: LineId, patch: Partial<Pick<Line, 'service' | 'color' | 'stations'>>) => void;
@@ -101,7 +115,8 @@ export const useDoc = create<DocState>()(
           x,
           y,
           rotation: 0,
-          stopOrder: [],
+          stops: [],
+          label: { row: 0, col: -1, rotation: 0 },
         };
         set((s) => ({ stations: { ...s.stations, [id]: station } }));
         return id;
@@ -144,11 +159,93 @@ export const useDoc = create<DocState>()(
         });
       },
 
-      reorderStops: (id, stopOrder) => {
+      moveStop: (stationId, lineId, dRow, dCol) => {
         set((s) => {
-          const cur = s.stations[id];
-          if (!cur) return s;
-          return { stations: { ...s.stations, [id]: { ...cur, stopOrder } } };
+          const st = s.stations[stationId];
+          if (!st) return s;
+          const i = st.stops.findIndex((c) => c.lineId === lineId);
+          if (i < 0) return s;
+          const cell = st.stops[i];
+          const newRow = cell.row + dRow;
+          const newCol = cell.col + dCol;
+          // If a different stop OR the label is at the destination, swap.
+          const j = st.stops.findIndex((c) => c.row === newRow && c.col === newCol);
+          const newStops = st.stops.slice();
+          if (j >= 0 && j !== i) {
+            newStops[j] = { ...newStops[j], row: cell.row, col: cell.col };
+          }
+          newStops[i] = { ...cell, row: newRow, col: newCol };
+          let newLabel = st.label;
+          if (st.label.row === newRow && st.label.col === newCol) {
+            newLabel = { ...st.label, row: cell.row, col: cell.col };
+          }
+          return {
+            stations: {
+              ...s.stations,
+              [stationId]: { ...st, stops: newStops, label: newLabel },
+            },
+          };
+        });
+      },
+
+      rotateStop: (stationId, lineId) => {
+        set((s) => {
+          const st = s.stations[stationId];
+          if (!st) return s;
+          const i = st.stops.findIndex((c) => c.lineId === lineId);
+          if (i < 0) return s;
+          const cur = st.stops[i];
+          const next: StopOrientation = cur.orientation === 'vertical' ? 'horizontal' : 'vertical';
+          const newStops = st.stops.slice();
+          newStops[i] = { ...cur, orientation: next };
+          return { stations: { ...s.stations, [stationId]: { ...st, stops: newStops } } };
+        });
+      },
+
+      moveLabel: (stationId, dRow, dCol) => {
+        set((s) => {
+          const st = s.stations[stationId];
+          if (!st) return s;
+          const newRow = st.label.row + dRow;
+          const newCol = st.label.col + dCol;
+          // If a stop occupies the destination, swap it back into the label's
+          // current cell so nothing collides.
+          const swapTargetIdx = st.stops.findIndex(
+            (c) => c.row === newRow && c.col === newCol,
+          );
+          let newStops = st.stops;
+          if (swapTargetIdx >= 0) {
+            newStops = st.stops.slice();
+            newStops[swapTargetIdx] = {
+              ...newStops[swapTargetIdx],
+              row: st.label.row,
+              col: st.label.col,
+            };
+          }
+          return {
+            stations: {
+              ...s.stations,
+              [stationId]: {
+                ...st,
+                stops: newStops,
+                label: { ...st.label, row: newRow, col: newCol },
+              },
+            },
+          };
+        });
+      },
+
+      rotateLabel: (stationId) => {
+        set((s) => {
+          const st = s.stations[stationId];
+          if (!st) return s;
+          const next = ((st.label.rotation + 1) % 8) as Rotation;
+          return {
+            stations: {
+              ...s.stations,
+              [stationId]: { ...st, label: { ...st.label, rotation: next } },
+            },
+          };
         });
       },
 
@@ -190,10 +287,12 @@ export const useDoc = create<DocState>()(
             // remove (all occurrences)
             const newStations = ln.stations.filter((x) => x !== stationId);
             const stillStops = newStations.includes(stationId);
-            const newOrder = stillStops ? st.stopOrder : st.stopOrder.filter((x) => x !== lineId);
+            const newStops = stillStops
+              ? st.stops
+              : st.stops.filter((c) => c.lineId !== lineId);
             return {
               lines: { ...s.lines, [lineId]: { ...ln, stations: newStations } },
-              stations: { ...s.stations, [stationId]: { ...st, stopOrder: newOrder } },
+              stations: { ...s.stations, [stationId]: { ...st, stops: newStops } },
             };
           } else {
             const idx =
@@ -205,12 +304,25 @@ export const useDoc = create<DocState>()(
               stationId,
               ...ln.stations.slice(idx),
             ];
-            const newOrder = st.stopOrder.includes(lineId)
-              ? st.stopOrder
-              : [...st.stopOrder, lineId];
+            // Add a stop cell if this line doesn't yet have one at the station.
+            // Spawn at (0, maxCol+1) of existing footprint; (0, 0) when empty.
+            const hasCell = st.stops.some((c) => c.lineId === lineId);
+            let newStops = st.stops;
+            if (!hasCell) {
+              const maxCol = st.stops.length === 0
+                ? -1
+                : st.stops.reduce((m, c) => (c.col > m ? c.col : m), -Infinity);
+              const newCell: StopCell = {
+                lineId,
+                row: 0,
+                col: maxCol + 1,
+                orientation: 'vertical',
+              };
+              newStops = [...st.stops, newCell];
+            }
             return {
               lines: { ...s.lines, [lineId]: { ...ln, stations: newStations } },
-              stations: { ...s.stations, [stationId]: { ...st, stopOrder: newOrder } },
+              stations: { ...s.stations, [stationId]: { ...st, stops: newStops } },
             };
           }
         });
@@ -222,7 +334,7 @@ export const useDoc = create<DocState>()(
           if (!ln) return s;
           const removedStationId = ln.stations[idx];
           const newStations = [...ln.stations.slice(0, idx), ...ln.stations.slice(idx + 1)];
-          // If station is no longer on the line at all, remove from its stopOrder.
+          // If the station is no longer on the line at all, drop its stop cell.
           const stillStops = newStations.includes(removedStationId);
           let stations = s.stations;
           if (!stillStops && stations[removedStationId]) {
@@ -231,7 +343,7 @@ export const useDoc = create<DocState>()(
               ...stations,
               [removedStationId]: {
                 ...st,
-                stopOrder: st.stopOrder.filter((x) => x !== lineId),
+                stops: st.stops.filter((c) => c.lineId !== lineId),
               },
             };
           }
@@ -256,7 +368,7 @@ export const useDoc = create<DocState>()(
           const stations: Record<StationId, Station> = {};
           for (const sid of Object.keys(s.stations)) {
             const st = s.stations[sid];
-            stations[sid] = { ...st, stopOrder: st.stopOrder.filter((x) => x !== id) };
+            stations[sid] = { ...st, stops: st.stops.filter((c) => c.lineId !== id) };
           }
           const order = effectiveLineOrder(s.lineOrder, s.lines).filter((x) => x !== id);
           return { lines: rest, stations, lineOrder: order };
@@ -280,6 +392,7 @@ export const useDoc = create<DocState>()(
     }),
     {
       name: 'vignelli-map-doc-v1',
+      version: 2,
       storage: createJSONStorage(() => localStorage),
       partialize: (s) => ({
         stations: s.stations,
@@ -288,6 +401,47 @@ export const useDoc = create<DocState>()(
         curveRadius: s.curveRadius,
         viewport: s.viewport,
       }),
+      migrate: (persisted, fromVersion) => {
+        const state = persisted as { stations?: Record<string, unknown> };
+        // v0 -> v1: stopOrder array -> stops grid.
+        if (fromVersion < 1 && state && state.stations) {
+          const migratedStations: Record<string, Station> = {};
+          for (const [id, raw] of Object.entries(state.stations)) {
+            const oldSt = raw as Station & { stopOrder?: LineId[] };
+            const stopOrder = oldSt.stopOrder ?? [];
+            const stops: StopCell[] = stopOrder.map((lineId, i) => ({
+              lineId,
+              row: 0,
+              col: i,
+              orientation: 'vertical' as const,
+            }));
+            const { stopOrder: _drop, ...rest } = oldSt;
+            void _drop;
+            migratedStations[id] = { ...rest, stops } as Station;
+          }
+          state.stations = migratedStations;
+        }
+        // v1 -> v2: every station gains a label cell. Place it at
+        // (0, minCol - 1) — one cell left of the leftmost stop — to match
+        // the prior implicit "name to the left" rendering.
+        if (fromVersion < 2 && state && state.stations) {
+          const migratedStations: Record<string, Station> = {};
+          for (const [id, raw] of Object.entries(state.stations)) {
+            const st = raw as Station & { label?: LabelCell };
+            if (st.label) {
+              migratedStations[id] = st;
+              continue;
+            }
+            const minCol = (st.stops ?? []).length === 0
+              ? 0
+              : Math.min(...st.stops.map((c) => c.col));
+            const label: LabelCell = { row: 0, col: minCol - 1, rotation: 0 };
+            migratedStations[id] = { ...st, label };
+          }
+          state.stations = migratedStations;
+        }
+        return state as MapDoc;
+      },
     },
   ),
 );
@@ -306,6 +460,14 @@ interface SelectionState {
   insertAfterIndex: number | null;
   placingStation: boolean;
   hoveredStationId: StationId | null;
+  // The lineId of the currently-selected stop cell within the active station
+  // inspector. Cleared whenever a different station is selected.
+  selectedStopLineId: LineId | null;
+  // True if the label cell is the current selection within the grid editor.
+  // Mutually exclusive with selectedStopLineId.
+  labelSelected: boolean;
+  // The station whose name is being edited inline on the canvas.
+  editingStationId: StationId | null;
   selectStation: (id: StationId | null) => void;
   selectLine: (id: LineId | null) => void;
   startAppendAt: (lineId: LineId, insertAfterIndex: number) => void;
@@ -313,6 +475,9 @@ interface SelectionState {
   setInsertAfterIndex: (idx: number | null) => void;
   setPlacingStation: (placing: boolean) => void;
   setHoveredStation: (id: StationId | null) => void;
+  setSelectedStopLineId: (id: LineId | null) => void;
+  setLabelSelected: (selected: boolean) => void;
+  setEditingStationId: (id: StationId | null) => void;
 }
 
 export const useSelection = create<SelectionState>((set, get) => ({
@@ -322,7 +487,17 @@ export const useSelection = create<SelectionState>((set, get) => ({
   insertAfterIndex: null,
   placingStation: false,
   hoveredStationId: null,
-  selectStation: (id) => set({ selectedStationId: id, selectedLineId: null }),
+  selectedStopLineId: null,
+  labelSelected: false,
+  editingStationId: null,
+  selectStation: (id) =>
+    set({
+      selectedStationId: id,
+      selectedLineId: null,
+      selectedStopLineId: null,
+      labelSelected: false,
+      editingStationId: id === null ? null : get().editingStationId,
+    }),
   selectLine: (id) => {
     const wasAppending = get().appendingToLineId !== null;
     const switchingToDifferent = wasAppending && id !== get().appendingToLineId;
@@ -348,4 +523,9 @@ export const useSelection = create<SelectionState>((set, get) => ({
   setInsertAfterIndex: (idx) => set({ insertAfterIndex: idx }),
   setPlacingStation: (placing) => set({ placingStation: placing }),
   setHoveredStation: (id) => set({ hoveredStationId: id }),
+  setSelectedStopLineId: (id) =>
+    set({ selectedStopLineId: id, labelSelected: id === null ? get().labelSelected : false }),
+  setLabelSelected: (selected) =>
+    set({ labelSelected: selected, selectedStopLineId: selected ? null : get().selectedStopLineId }),
+  setEditingStationId: (id) => set({ editingStationId: id }),
 }));
