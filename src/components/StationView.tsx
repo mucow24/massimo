@@ -153,7 +153,6 @@ export function StationView({ station, lines, onStartDrag, layer }: Props) {
   const hitH = localMaxY - localMinY;
 
   const isSelected = selection.selectedStationId === station.id;
-  const isHovered = selection.hoveredStationId === station.id;
   const isEditing = selection.editingStationId === station.id;
 
   if (layer === 'bg') {
@@ -190,9 +189,9 @@ export function StationView({ station, lines, onStartDrag, layer }: Props) {
             y={labelAnchorY}
             textAnchor={labelTextAnchor}
             dominantBaseline="central"
-            fontSize={11}
-            fontWeight={isHovered ? 800 : 600}
-            textDecoration={isHovered ? 'underline' : undefined}
+            fontSize={12}
+            fontWeight={selection.hoveredStationId === station.id ? 700 : 400}
+            textDecoration={selection.hoveredStationId === station.id ? 'underline' : undefined}
             pointerEvents="none"
             fill="#111"
             transform={`rotate(${label.rotation * 45} ${labelAnchorX} ${labelAnchorY})`}

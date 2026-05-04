@@ -3,3 +3,6 @@ dist/
 .vite/
 *.log
 .DS_Store
+
+# Source archive for fonts (extracted into public/fonts/)
+helvetica-neue-*.zip
