@@ -225,9 +225,26 @@ function LabelOffsetControl({
   );
 }
 
+type GridStopOrientation =
+  | 'up'
+  | 'down'
+  | 'auto-vertical'
+  | 'left'
+  | 'right'
+  | 'auto-horizontal';
+
 type GridStation = {
-  stops: { lineId: string; row: number; col: number; orientation: 'vertical' | 'horizontal' }[];
+  stops: { lineId: string; row: number; col: number; orientation: GridStopOrientation }[];
   label: { row: number; col: number; rotation: number };
+};
+
+const ORIENTATION_GLYPH: Record<GridStopOrientation, string> = {
+  'auto-vertical': '↕',
+  up: '↑',
+  down: '↓',
+  'auto-horizontal': '↔',
+  left: '←',
+  right: '→',
 };
 
 function StopGrid({
@@ -308,7 +325,7 @@ function StopGrid({
                 : `(${r}, ${c}) empty`
           }
         >
-          {isLabel ? 'L' : stop ? (stop.orientation === 'vertical' ? '↕' : '↔') : ''}
+          {isLabel ? 'L' : stop ? ORIENTATION_GLYPH[stop.orientation] : ''}
         </div>,
       );
     }

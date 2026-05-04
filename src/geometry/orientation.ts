@@ -28,23 +28,61 @@ export const stopCenterAt = (row: number, col: number): Vec2 => ({
 
 /**
  * Travel direction in the unrotated local frame for a stop with the given
- * orientation. Vertical → +y (line moves down); horizontal → +x (right).
- * Both the "input" and "output" edges have this same travel direction.
+ * orientation. Returns a unit vector along ±x or ±y.
+ *
+ * For explicit orientations (`up`/`down`/`left`/`right`) the result is fixed.
+ * For `auto-*` orientations the sign comes from `lineHintLocal` — the line's
+ * actual local-frame direction at this station, derived from the world
+ * tangent rotated by `-station.rotation`. If no hint is supplied (e.g.
+ * orphan stops with no line connected), auto falls back to +axis (down/right)
+ * to match the legacy behavior.
  */
-export const travelDirLocal = (o: StopOrientation): Vec2 =>
-  o === 'vertical' ? { x: 0, y: 1 } : { x: 1, y: 0 };
+export const travelDirLocal = (
+  o: StopOrientation,
+  lineHintLocal: Vec2 | null = null,
+): Vec2 => {
+  switch (o) {
+    case 'down':
+      return { x: 0, y: 1 };
+    case 'up':
+      return { x: 0, y: -1 };
+    case 'right':
+      return { x: 1, y: 0 };
+    case 'left':
+      return { x: -1, y: 0 };
+    case 'auto-vertical':
+      return { x: 0, y: lineHintLocal && lineHintLocal.y < 0 ? -1 : 1 };
+    case 'auto-horizontal':
+      return { x: lineHintLocal && lineHintLocal.x < 0 ? -1 : 1, y: 0 };
+  }
+};
+
+/** Whether a stop's orientation runs along the local Y axis (vertical). */
+export const isVerticalAxis = (o: StopOrientation): boolean =>
+  o === 'up' || o === 'down' || o === 'auto-vertical';
 
 /**
  * Half-edge offset from a stop center to its input edge midpoint, in local
- * coords. For vertical stops the input edge is the top (−y, hence −HALF y);
- * for horizontal stops it's the left (−x).
+ * coords. The input edge is the one OPPOSITE the resolved travel direction,
+ * so it depends on the resolved direction (±axis) — `lineHintLocal` is
+ * forwarded through to `travelDirLocal`.
  */
-export const inputEdgeOffsetLocal = (o: StopOrientation): Vec2 =>
-  o === 'vertical' ? { x: 0, y: -HALF } : { x: -HALF, y: 0 };
+export const inputEdgeOffsetLocal = (
+  o: StopOrientation,
+  lineHintLocal: Vec2 | null = null,
+): Vec2 => {
+  const d = travelDirLocal(o, lineHintLocal);
+  return { x: -d.x * HALF, y: -d.y * HALF };
+};
 
 /** Mirror of input: output edge midpoint offset. */
-export const outputEdgeOffsetLocal = (o: StopOrientation): Vec2 =>
-  o === 'vertical' ? { x: 0, y: HALF } : { x: HALF, y: 0 };
+export const outputEdgeOffsetLocal = (
+  o: StopOrientation,
+  lineHintLocal: Vec2 | null = null,
+): Vec2 => {
+  const d = travelDirLocal(o, lineHintLocal);
+  return { x: d.x * HALF, y: d.y * HALF };
+};
 
 /**
  * 8-way direction for label rotation. Index = rotation 0..7. Each entry has
@@ -98,10 +136,20 @@ export const segmentEndpoints = (
   to: { x: number; y: number; rotation: Rotation },
   toLocalPoint: Vec2,
   toOrientation: StopOrientation,
+  // World-frame direction of travel from `from` toward `to`. Used to resolve
+  // `auto-*` orientations — pass null if you genuinely don't know (auto will
+  // fall back to its +axis default).
+  worldTravelDir: Vec2 | null = null,
 ): SegmentEndpoints => {
+  const fromHintLocal = worldTravelDir
+    ? rotateBy(worldTravelDir, ((-from.rotation + 8) % 8) as Rotation)
+    : null;
+  const toHintLocal = worldTravelDir
+    ? rotateBy(worldTravelDir, ((-to.rotation + 8) % 8) as Rotation)
+    : null;
   const start = localToWorld(fromLocalPoint, from);
-  const startDir = localDirToWorld(travelDirLocal(fromOrientation), from.rotation);
+  const startDir = localDirToWorld(travelDirLocal(fromOrientation, fromHintLocal), from.rotation);
   const end = localToWorld(toLocalPoint, to);
-  const endDir = localDirToWorld(travelDirLocal(toOrientation), to.rotation);
+  const endDir = localDirToWorld(travelDirLocal(toOrientation, toHintLocal), to.rotation);
   return { start, startDir, end, endDir };
 };

@@ -39,6 +39,9 @@ interface SegInfo {
   forward: boolean;
   lineId: LineId;
   color: string;
+  // Unit world vector from `from` toward `to`, used to resolve auto-axis
+  // stop orientations into a signed travel direction.
+  worldHint: Vec2;
 }
 
 // Stop center in WORLD coords (anchor + cell offset rotated by station rotation).
@@ -53,8 +56,18 @@ function stopPosWorld(cell: StopCell, station: Station): Vec2 {
   };
 }
 
-function travelDirWorld(cell: StopCell, station: Station): Vec2 {
-  return rotateBy(travelDirLocal(cell.orientation), station.rotation);
+// Rotate a world-frame vector into the unrotated station-local frame so that
+// `travelDirLocal` can decide which way an auto-axis stop should travel.
+function worldToStationLocal(v: Vec2, station: Station): Vec2 {
+  const a = -(station.rotation * Math.PI) / 4;
+  const c = Math.cos(a);
+  const s = Math.sin(a);
+  return { x: v.x * c - v.y * s, y: v.x * s + v.y * c };
+}
+
+function travelDirWorld(cell: StopCell, station: Station, worldHint: Vec2 | null): Vec2 {
+  const localHint = worldHint ? worldToStationLocal(worldHint, station) : null;
+  return rotateBy(travelDirLocal(cell.orientation, localHint), station.rotation);
 }
 
 // Quantize a unit vector to one of 8 compass directions.
@@ -92,6 +105,9 @@ export function buildBands(
       if (!fromCell || !toCell) continue;
       const key = pairKeyOf(a, b);
       const forward = a < b;
+      const dx = sb.x - sa.x;
+      const dy = sb.y - sa.y;
+      const len = Math.hypot(dx, dy) || 1;
       (groups[key] ||= []).push({
         fromId: a,
         toId: b,
@@ -100,6 +116,7 @@ export function buildBands(
         forward,
         lineId,
         color: line.color,
+        worldHint: { x: dx / len, y: dy / len },
       });
     }
   }
@@ -118,8 +135,8 @@ export function buildBands(
       const fromS = stations[s.fromId];
       const toS = stations[s.toId];
       if (!fromS || !toS) continue;
-      const fIdx = dirIndex8(travelDirWorld(s.fromCell, fromS));
-      const tIdx = dirIndex8(travelDirWorld(s.toCell, toS));
+      const fIdx = dirIndex8(travelDirWorld(s.fromCell, fromS, s.worldHint));
+      const tIdx = dirIndex8(travelDirWorld(s.toCell, toS, s.worldHint));
       const key = `${fIdx}|${tIdx}`;
       (buckets[key] ||= []).push(s);
     }
@@ -130,8 +147,8 @@ export function buildBands(
       const sample = bucket[0];
       const fromS = stations[sample.fromId];
       const toS = stations[sample.toId];
-      const fDir = travelDirWorld(sample.fromCell, fromS);
-      const tDir = travelDirWorld(sample.toCell, toS);
+      const fDir = travelDirWorld(sample.fromCell, fromS, sample.worldHint);
+      const tDir = travelDirWorld(sample.toCell, toS, sample.worldHint);
       // leftOf(motion) — must match the perpendicular convention used by
       // offsetFilletPath. With this, sorting ascending by perp-projection
       // assigns lower-k indices to lines on the negative-offset (right of
@@ -279,8 +296,8 @@ function buildBandSpec(
   });
   const fromMeanWorld = meanVec(fromWorlds);
   const toMeanWorld = meanVec(toWorlds);
-  const fromDir = travelDirWorld(group[0].fromCell, fromStation);
-  const toDir = travelDirWorld(group[0].toCell, toStation);
+  const fromDir = travelDirWorld(group[0].fromCell, fromStation, group[0].worldHint);
+  const toDir = travelDirWorld(group[0].toCell, toStation, group[0].worldHint);
 
   const result = route(fromMeanWorld, fromDir, toMeanWorld, toDir, R);
 
