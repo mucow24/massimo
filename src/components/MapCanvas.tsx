@@ -312,7 +312,7 @@ export function MapCanvas() {
   const svgRef = useRef<SVGSVGElement | null>(null);
   const [size, setSize] = useState({ w: 800, h: 600 });
   const [panning, setPanning] = useState(false);
-  const panStartRef = useRef<{ mx: number; my: number; vx: number; vy: number } | null>(null);
+  const panStartRef = useRef<{ mx: number; my: number; vx: number; vy: number; moved: boolean } | null>(null);
   const dragStationRef = useRef<{
     id: StationId;
     startWX: number;
@@ -395,7 +395,7 @@ export function MapCanvas() {
     if (selection.placingStation) return;
     if (e.target === svgRef.current || (e.target as Element).tagName === 'rect' && (e.target as Element).hasAttribute('data-bg')) {
       // start panning
-      panStartRef.current = { mx: e.clientX, my: e.clientY, vx: viewport.x, vy: viewport.y };
+      panStartRef.current = { mx: e.clientX, my: e.clientY, vx: viewport.x, vy: viewport.y, moved: false };
       setPanning(true);
       svgRef.current?.setPointerCapture(e.pointerId);
     }
@@ -403,8 +403,15 @@ export function MapCanvas() {
 
   const onPointerMove = (e: React.PointerEvent) => {
     if (panStartRef.current) {
-      const dx = (e.clientX - panStartRef.current.mx) / viewport.zoom;
-      const dy = (e.clientY - panStartRef.current.my) / viewport.zoom;
+      const mxDelta = e.clientX - panStartRef.current.mx;
+      const myDelta = e.clientY - panStartRef.current.my;
+      // Mark the pan as a real drag once it crosses a small threshold so the
+      // synthesized click on pointerup can be distinguished from a tap.
+      if (!panStartRef.current.moved && Math.hypot(mxDelta, myDelta) > 4) {
+        panStartRef.current.moved = true;
+      }
+      const dx = mxDelta / viewport.zoom;
+      const dy = myDelta / viewport.zoom;
       setViewport({
         x: panStartRef.current.vx - dx,
         y: panStartRef.current.vy - dy,
@@ -459,9 +466,18 @@ export function MapCanvas() {
 
   const onPointerUp = (e: React.PointerEvent) => {
     if (panStartRef.current) {
+      const panMoved = panStartRef.current.moved;
       panStartRef.current = null;
       setPanning(false);
       svgRef.current?.releasePointerCapture(e.pointerId);
+      if (panMoved) {
+        // Suppress the click that fires after pointerup so it doesn't
+        // collapse the open station/line editor.
+        dragState.suppressClick = true;
+        setTimeout(() => {
+          dragState.suppressClick = false;
+        }, 0);
+      }
     }
     if (dragStationRef.current) {
       const wasMoved = dragStationRef.current.moved;
@@ -487,6 +503,7 @@ export function MapCanvas() {
     const onBackground =
       e.target === svgRef.current || (e.target as Element).hasAttribute('data-bg');
     if (!onBackground) return;
+    if (dragState.suppressClick) return;
     if (selection.placingStation) {
       const w = screenToWorld(e.clientX, e.clientY);
       addStation(w.x, w.y);
