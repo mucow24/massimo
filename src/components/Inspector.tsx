@@ -16,6 +16,7 @@ export function StationInspector({ id }: { id: StationId }) {
   const lines = useDoc((s) => s.lines);
   const renameStation = useDoc((s) => s.renameStation);
   const rotateStation = useDoc((s) => s.rotateStation);
+  const rotateStationAndLayout = useDoc((s) => s.rotateStationAndLayout);
   const moveStation = useDoc((s) => s.moveStation);
   const moveStopAction = useDoc((s) => s.moveStop);
   const rotateStopAction = useDoc((s) => s.rotateStop);
@@ -118,6 +119,22 @@ export function StationInspector({ id }: { id: StationId }) {
             title="Rotate the station 180° and mirror the label so it stays on the same side"
           >
             Flip station
+          </button>
+        </div>
+        <div style={{ display: 'flex', gap: 6, marginTop: 4 }}>
+          <button
+            className="btn-mini"
+            onClick={() => rotateStationAndLayout(station.id, -1)}
+            title="Rotate the station and stop layout 90° counter-clockwise"
+          >
+            R−
+          </button>
+          <button
+            className="btn-mini"
+            onClick={() => rotateStationAndLayout(station.id, 1)}
+            title="Rotate the station and stop layout 90° clockwise"
+          >
+            R+
           </button>
         </div>
       </div>
