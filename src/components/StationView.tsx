@@ -58,7 +58,7 @@ export function StationView({ station, lines, onStartDrag }: Props) {
   return (
     <g
       transform={`translate(${station.x} ${station.y}) rotate(${angle})`}
-      style={{ cursor: 'grab' }}
+      style={{ cursor: 'move' }}
     >
       {/* hit area (transparent, but receives pointer events) */}
       <rect
