@@ -86,6 +86,11 @@ function parallel(a: Vec2, b: Vec2): boolean {
   return Math.abs(a.x * b.y - a.y * b.x) < 1e-3;
 }
 
+interface SnapGuide {
+  from: Vec2;
+  to: Vec2;
+}
+
 function tryAxisSnap(
   draggedId: StationId,
   proposedX: number,
@@ -97,19 +102,20 @@ function tryAxisSnap(
 ): {
   x: number;
   y: number;
-  guide: { from: Vec2; to: Vec2 } | null;
-  secondaryGuide: { from: Vec2; to: Vec2 } | null;
+  guides: SnapGuide[];
 } {
-  // Find the best alignment pair (any target, any shared line) by lowest
-  // perpendicular distance to that pair's world axis.
-  type Best = {
+  type Cand = {
     target: Station;
     dOff: Vec2;
     tOff: Vec2;
     axis: Vec2;
     perpDist: number;
+    targetStopX: number;
+    targetStopY: number;
   };
-  let best: Best | null = null;
+
+  // Collect every alignment pair within perp tolerance.
+  const all: Cand[] = [];
   for (const t of Object.values(stations)) {
     if (t.id === draggedId) continue;
     for (const pair of alignmentPairs(draggedRotation, draggedStops, t)) {
@@ -123,76 +129,175 @@ function tryAxisSnap(
       const dy = tStopY - dStopY;
       const perpDist = Math.abs(dx * perpX + dy * perpY);
       if (perpDist > tolerance) continue;
-      if (!best || perpDist < best.perpDist) {
-        best = { target: t, dOff: pair.dOff, tOff: pair.tOff, axis: pair.axis, perpDist };
-      }
+      all.push({
+        target: t,
+        dOff: pair.dOff,
+        tOff: pair.tOff,
+        axis: pair.axis,
+        perpDist,
+        targetStopX: tStopX,
+        targetStopY: tStopY,
+      });
     }
   }
 
-  if (!best) {
-    return { x: proposedX, y: proposedY, guide: null, secondaryGuide: null };
+  if (all.length === 0) {
+    return { x: proposedX, y: proposedY, guides: [] };
   }
 
-  const axis = best.axis;
-  const perpX = -axis.y;
-  const perpY = axis.x;
+  // Consolidate interlined candidates: lines that share the same target
+  // station AND the same axis (e.g., all the lines of an interlined band)
+  // get merged into a single band-level candidate using the mean of their
+  // dOffs/tOffs. Without this, each shared line individually crosses the
+  // perp tolerance at a slightly different drag position and the user sees
+  // several alignment "clicks" instead of one band-wide snap.
+  const targetAxisGroups: Cand[][] = [];
+  for (const c of all) {
+    const g = targetAxisGroups.find(
+      (grp) => grp[0].target.id === c.target.id && parallel(grp[0].axis, c.axis),
+    );
+    if (g) g.push(c);
+    else targetAxisGroups.push([c]);
+  }
+  const consolidated: Cand[] = targetAxisGroups.map((g) => {
+    if (g.length === 1) return g[0];
+    const meanDOff = {
+      x: g.reduce((s, c) => s + c.dOff.x, 0) / g.length,
+      y: g.reduce((s, c) => s + c.dOff.y, 0) / g.length,
+    };
+    const meanTOff = {
+      x: g.reduce((s, c) => s + c.tOff.x, 0) / g.length,
+      y: g.reduce((s, c) => s + c.tOff.y, 0) / g.length,
+    };
+    const axis = g[0].axis;
+    const perpX = -axis.y;
+    const perpY = axis.x;
+    const tStopX = g[0].target.x + meanTOff.x;
+    const tStopY = g[0].target.y + meanTOff.y;
+    const dStopX = proposedX + meanDOff.x;
+    const dStopY = proposedY + meanDOff.y;
+    const dx = tStopX - dStopX;
+    const dy = tStopY - dStopY;
+    const perpDist = Math.abs(dx * perpX + dy * perpY);
+    return {
+      target: g[0].target,
+      dOff: meanDOff,
+      tOff: meanTOff,
+      axis,
+      perpDist,
+      targetStopX: tStopX,
+      targetStopY: tStopY,
+    };
+  });
 
-  // Snap so the dragged stop lies on the axis line through the target stop.
-  const tStopX = best.target.x + best.tOff.x;
-  const tStopY = best.target.y + best.tOff.y;
-  const proposedDStopX = proposedX + best.dOff.x;
-  const proposedDStopY = proposedY + best.dOff.y;
-  const dxp = proposedDStopX - tStopX;
-  const dyp = proposedDStopY - tStopY;
-  const along = dxp * axis.x + dyp * axis.y;
-  const snappedDStopX = tStopX + along * axis.x;
-  const snappedDStopY = tStopY + along * axis.y;
-  const sx = snappedDStopX - best.dOff.x;
-  const sy = snappedDStopY - best.dOff.y;
+  // Group consolidated candidates by axis (parallel) and keep best per group.
+  const groups: Cand[][] = [];
+  for (const c of consolidated) {
+    const g = groups.find((grp) => parallel(grp[0].axis, c.axis));
+    if (g) g.push(c);
+    else groups.push([c]);
+  }
+  const bests = groups.map((g) => g.reduce((a, b) => (a.perpDist <= b.perpDist ? a : b)));
+  bests.sort((a, b) => a.perpDist - b.perpDist);
 
-  const primaryGuide = {
-    from: { x: snappedDStopX, y: snappedDStopY },
-    to: { x: tStopX, y: tStopY },
-  };
-
-  // Secondary: opposite-side ray along the same axis, tight tolerance, only
-  // pairs whose own world axis matches `best.axis` qualify (so a "tight" hit
-  // means it's actually on the same alignment line).
-  const oppositeSign = -Math.sign(along) || 0;
-  let secondary: { fromS: Vec2; toS: Vec2; alongAbs: number } | null = null;
-  if (oppositeSign !== 0) {
-    for (const t of Object.values(stations)) {
-      if (t.id === draggedId || t.id === best.target.id) continue;
-      for (const pair of alignmentPairs(draggedRotation, draggedStops, t)) {
-        if (!parallel(pair.axis, axis)) continue;
-        const tStopWorldX = t.x + pair.tOff.x;
-        const tStopWorldY = t.y + pair.tOff.y;
-        const dStopWorldX = sx + pair.dOff.x;
-        const dStopWorldY = sy + pair.dOff.y;
-        const ddx = tStopWorldX - dStopWorldX;
-        const ddy = tStopWorldY - dStopWorldY;
-        const perpDist = Math.abs(ddx * perpX + ddy * perpY);
-        if (perpDist > TIGHT_PERP_TOLERANCE) continue;
-        const alongFromD = ddx * axis.x + ddy * axis.y;
-        if (Math.sign(alongFromD) !== oppositeSign) continue;
-        const alongAbs = Math.abs(alongFromD);
-        if (!secondary || alongAbs < secondary.alongAbs) {
-          secondary = {
-            fromS: { x: dStopWorldX, y: dStopWorldY },
-            toS: { x: tStopWorldX, y: tStopWorldY },
-            alongAbs,
-          };
-        }
-      }
+  const primary = bests[0];
+  // Find a non-parallel secondary (so the two constraints solve uniquely).
+  let secondary: Cand | null = null;
+  for (let i = 1; i < bests.length; i++) {
+    const cz = primary.axis.x * bests[i].axis.y - primary.axis.y * bests[i].axis.x;
+    if (Math.abs(cz) > 0.1) {
+      secondary = bests[i];
+      break;
     }
   }
 
-  return {
-    x: sx,
-    y: sy,
-    guide: primaryGuide,
-    secondaryGuide: secondary ? { from: secondary.fromS, to: secondary.toS } : null,
+  let sx: number;
+  let sy: number;
+
+  if (secondary) {
+    // Two-axis snap: solve the 2x2 system that puts the dragged stop on each
+    // target axis line simultaneously. Each constraint is
+    //   (anchor + dOff_i - targetStop_i) · perp_i = 0
+    // ⇒  anchor · perp_i = (targetStop_i - dOff_i) · perp_i
+    const p1 = { x: -primary.axis.y, y: primary.axis.x };
+    const p2 = { x: -secondary.axis.y, y: secondary.axis.x };
+    const k1 =
+      (primary.targetStopX - primary.dOff.x) * p1.x +
+      (primary.targetStopY - primary.dOff.y) * p1.y;
+    const k2 =
+      (secondary.targetStopX - secondary.dOff.x) * p2.x +
+      (secondary.targetStopY - secondary.dOff.y) * p2.y;
+    const det = p1.x * p2.y - p1.y * p2.x;
+    sx = (k1 * p2.y - k2 * p1.y) / det;
+    sy = (p1.x * k2 - p2.x * k1) / det;
+  } else {
+    // Single-axis snap: project the dragged stop onto the primary's axis
+    // line through its target stop.
+    const c = primary;
+    const proposedDStopX = proposedX + c.dOff.x;
+    const proposedDStopY = proposedY + c.dOff.y;
+    const dxp = proposedDStopX - c.targetStopX;
+    const dyp = proposedDStopY - c.targetStopY;
+    const along = dxp * c.axis.x + dyp * c.axis.y;
+    const snappedDStopX = c.targetStopX + along * c.axis.x;
+    const snappedDStopY = c.targetStopY + along * c.axis.y;
+    sx = snappedDStopX - c.dOff.x;
+    sy = snappedDStopY - c.dOff.y;
+  }
+
+  // Build guides for every active axis (so the user sees that both snaps
+  // are engaged on a perpendicular transfer station, etc.).
+  const guides: SnapGuide[] = [];
+  const pushGuide = (c: Cand) => {
+    guides.push({
+      from: { x: sx + c.dOff.x, y: sy + c.dOff.y },
+      to: { x: c.targetStopX, y: c.targetStopY },
+    });
   };
+  pushGuide(primary);
+  if (secondary) pushGuide(secondary);
+
+  // Same-axis opposite-direction tight neighbor (the existing "in-line third
+  // station" feature) — emitted per active axis. Does nothing when there's
+  // no third station already aligned.
+  const addOppositeGuide = (c: Cand) => {
+    const px = -c.axis.y;
+    const py = c.axis.x;
+    const dStopX = sx + c.dOff.x;
+    const dStopY = sy + c.dOff.y;
+    const primaryAlong =
+      (c.targetStopX - dStopX) * c.axis.x + (c.targetStopY - dStopY) * c.axis.y;
+    const oppositeSign = -Math.sign(primaryAlong) || 0;
+    if (oppositeSign === 0) return;
+    let candidate: { from: Vec2; to: Vec2; alongAbs: number } | null = null;
+    // Use consolidated (one entry per target+axis) so a third interlined
+    // station doesn't get a separate guide per shared line.
+    for (const o of consolidated) {
+      if (o.target.id === c.target.id) continue;
+      if (!parallel(o.axis, c.axis)) continue;
+      const oDStopX = sx + o.dOff.x;
+      const oDStopY = sy + o.dOff.y;
+      const ddx = o.targetStopX - oDStopX;
+      const ddy = o.targetStopY - oDStopY;
+      const perpDistOpp = Math.abs(ddx * px + ddy * py);
+      if (perpDistOpp > TIGHT_PERP_TOLERANCE) continue;
+      const alongFromD = ddx * c.axis.x + ddy * c.axis.y;
+      if (Math.sign(alongFromD) !== oppositeSign) continue;
+      const alongAbs = Math.abs(alongFromD);
+      if (!candidate || alongAbs < candidate.alongAbs) {
+        candidate = {
+          from: { x: oDStopX, y: oDStopY },
+          to: { x: o.targetStopX, y: o.targetStopY },
+          alongAbs,
+        };
+      }
+    }
+    if (candidate) guides.push({ from: candidate.from, to: candidate.to });
+  };
+  addOppositeGuide(primary);
+  if (secondary) addOppositeGuide(secondary);
+
+  return { x: sx, y: sy, guides };
 }
 
 export function MapCanvas() {
@@ -216,10 +321,7 @@ export function MapCanvas() {
     startMY: number;
     moved: boolean;
   } | null>(null);
-  const [snapGuide, setSnapGuide] = useState<{
-    primary: { from: Vec2; to: Vec2 };
-    secondary: { from: Vec2; to: Vec2 } | null;
-  } | null>(null);
+  const [snapGuides, setSnapGuides] = useState<SnapGuide[]>([]);
 
   useEffect(() => {
     const el = svgRef.current?.parentElement;
@@ -345,13 +447,9 @@ export function MapCanvas() {
           );
           nx = snap.x;
           ny = snap.y;
-          setSnapGuide(
-            snap.guide
-              ? { primary: snap.guide, secondary: snap.secondaryGuide }
-              : null,
-          );
-        } else if (snapGuide) {
-          setSnapGuide(null);
+          setSnapGuides(snap.guides);
+        } else if (snapGuides.length > 0) {
+          setSnapGuides([]);
         }
         moveStation(ds.id, nx, ny);
       }
@@ -368,7 +466,7 @@ export function MapCanvas() {
     if (dragStationRef.current) {
       const wasMoved = dragStationRef.current.moved;
       dragStationRef.current = null;
-      setSnapGuide(null);
+      setSnapGuides([]);
       if (wasMoved) {
         try {
           svgRef.current?.releasePointerCapture(e.pointerId);
@@ -486,8 +584,9 @@ export function MapCanvas() {
           />
         ))}
 
-        {/* snap guide — over stop squares but under dots. Blurred halo behind, sharp blue on top, so it reads against any line color. */}
-        {snapGuide && (
+        {/* snap guides — one per active alignment axis (plus optional
+            same-axis third-station markers). Halo behind + dashed teal on top. */}
+        {snapGuides.length > 0 && (
           <g pointerEvents="none">
             <defs>
               <filter
@@ -501,80 +600,48 @@ export function MapCanvas() {
               </filter>
             </defs>
             <g filter="url(#snap-halo-blur)">
-              {/* primary line halo */}
-              <line
-                x1={snapGuide.primary.from.x}
-                y1={snapGuide.primary.from.y}
-                x2={snapGuide.primary.to.x}
-                y2={snapGuide.primary.to.y}
-                stroke="rgb(185, 218, 255)"
-                strokeWidth={5 / viewport.zoom}
-                strokeLinecap="round"
-              />
-              {/* secondary line halo */}
-              {snapGuide.secondary && (
-                <line
-                  x1={snapGuide.secondary.from.x}
-                  y1={snapGuide.secondary.from.y}
-                  x2={snapGuide.secondary.to.x}
-                  y2={snapGuide.secondary.to.y}
-                  stroke="rgb(185, 218, 255)"
-                  strokeWidth={5 / viewport.zoom}
-                  strokeLinecap="round"
-                />
-              )}
-              {/* dragged dot halo */}
-              <circle
-                cx={snapGuide.primary.from.x}
-                cy={snapGuide.primary.from.y}
-                r={STOP_SIZE * 0.28 + 1 / viewport.zoom}
-                fill="none"
-                stroke="rgb(185, 218, 255)"
-                strokeWidth={5 / viewport.zoom}
-              />
-              {/* primary target halo */}
-              <circle
-                cx={snapGuide.primary.to.x}
-                cy={snapGuide.primary.to.y}
-                r={STOP_SIZE * 0.28 + 1 / viewport.zoom}
-                fill="none"
-                stroke="rgb(185, 218, 255)"
-                strokeWidth={5 / viewport.zoom}
-              />
-              {/* secondary target halo */}
-              {snapGuide.secondary && (
-                <circle
-                  cx={snapGuide.secondary.to.x}
-                  cy={snapGuide.secondary.to.y}
-                  r={STOP_SIZE * 0.28 + 1 / viewport.zoom}
-                  fill="none"
-                  stroke="rgb(185, 218, 255)"
-                  strokeWidth={5 / viewport.zoom}
-                />
-              )}
+              {snapGuides.map((g, i) => (
+                <g key={'halo' + i}>
+                  <line
+                    x1={g.from.x}
+                    y1={g.from.y}
+                    x2={g.to.x}
+                    y2={g.to.y}
+                    stroke="rgb(185, 218, 255)"
+                    strokeWidth={5 / viewport.zoom}
+                    strokeLinecap="round"
+                  />
+                  <circle
+                    cx={g.from.x}
+                    cy={g.from.y}
+                    r={STOP_SIZE * 0.28 + 1 / viewport.zoom}
+                    fill="none"
+                    stroke="rgb(185, 218, 255)"
+                    strokeWidth={5 / viewport.zoom}
+                  />
+                  <circle
+                    cx={g.to.x}
+                    cy={g.to.y}
+                    r={STOP_SIZE * 0.28 + 1 / viewport.zoom}
+                    fill="none"
+                    stroke="rgb(185, 218, 255)"
+                    strokeWidth={5 / viewport.zoom}
+                  />
+                </g>
+              ))}
             </g>
-            {/* primary dashed line */}
-            <line
-              x1={snapGuide.primary.from.x}
-              y1={snapGuide.primary.from.y}
-              x2={snapGuide.primary.to.x}
-              y2={snapGuide.primary.to.y}
-              stroke="#1488a0"
-              strokeWidth={2 / viewport.zoom}
-              strokeDasharray={`${4 / viewport.zoom} ${3 / viewport.zoom}`}
-            />
-            {/* secondary dashed line */}
-            {snapGuide.secondary && (
+            {snapGuides.map((g, i) => (
               <line
-                x1={snapGuide.secondary.from.x}
-                y1={snapGuide.secondary.from.y}
-                x2={snapGuide.secondary.to.x}
-                y2={snapGuide.secondary.to.y}
+                key={'dash' + i}
+                x1={g.from.x}
+                y1={g.from.y}
+                x2={g.to.x}
+                y2={g.to.y}
                 stroke="#1488a0"
                 strokeWidth={2 / viewport.zoom}
                 strokeDasharray={`${4 / viewport.zoom} ${3 / viewport.zoom}`}
               />
-            )}
+            ))}
           </g>
         )}
 
