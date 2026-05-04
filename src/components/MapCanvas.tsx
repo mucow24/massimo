@@ -391,10 +391,10 @@ export function MapCanvas() {
 
   const onPointerDown = (e: React.PointerEvent) => {
     if (e.button !== 0) return;
-    // Don't start panning while in place-station mode — clicks should place.
-    if (selection.placingStation) return;
     if (e.target === svgRef.current || (e.target as Element).tagName === 'rect' && (e.target as Element).hasAttribute('data-bg')) {
-      // start panning
+      // Start panning. Even in place-station mode — a tap still places (the
+      // pan-moved suppression on pointerup keeps drags from placing), but a
+      // real drag pans the canvas instead.
       panStartRef.current = { mx: e.clientX, my: e.clientY, vx: viewport.x, vy: viewport.y, moved: false };
       setPanning(true);
       svgRef.current?.setPointerCapture(e.pointerId);

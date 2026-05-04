@@ -137,6 +137,7 @@ interface DocState extends MapDoc {
   renameStation: (id: StationId, name: string) => void;
   moveStation: (id: StationId, x: number, y: number) => void;
   rotateStation: (id: StationId) => void;
+  rotateStationAndLayout: (id: StationId, dir: -1 | 1) => void;
   deleteStation: (id: StationId) => void;
   moveStop: (stationId: StationId, lineId: LineId, dRow: number, dCol: number) => void;
   rotateStop: (stationId: StationId, lineId: LineId) => void;
@@ -201,6 +202,58 @@ export const useDoc = create<DocState>()(
           if (!cur) return s;
           const next = ((cur.rotation + 1) % 8) as Rotation;
           return { stations: { ...s.stations, [id]: { ...cur, rotation: next } } };
+        });
+      },
+
+      // Rotate the layout (col/row of every stop + label) 90° while rotating
+      // the station the OPPOSITE way, so the world appearance stays the same
+      // but the editor view of the unrotated grid is reoriented. Stop
+      // orientations and label rotation are transformed in lockstep so world
+      // tangent directions stay invariant too.
+      //
+      // dir = +1: layout rotates clockwise; station rotates CCW (rotation += 6).
+      // dir = -1: layout rotates CCW; station rotates CW (rotation += 2).
+      // CW maps (col, row) → (-row, col); CCW maps (col, row) → (row, -col).
+      rotateStationAndLayout: (id, dir) => {
+        set((s) => {
+          const cur = s.stations[id];
+          if (!cur) return s;
+          const stationStep = dir === 1 ? 6 : 2; // CCW for R+, CW for R-
+          const nextRot = ((cur.rotation + stationStep) % 8) as Rotation;
+          const rotateGrid = (col: number, row: number) =>
+            dir === 1 ? { col: -row, row: col } : { col: row, row: -col };
+          // Orientation maps so that the WORLD tangent direction is preserved
+          // across the change in station rotation.
+          // R+ (station CCW 90°): up→right, right→down, down→left, left→up.
+          // R− (station CW 90°): up→left, left→down, down→right, right→up.
+          const rotOrient = (o: StopOrientation): StopOrientation => {
+            if (o === 'auto-vertical') return 'auto-horizontal';
+            if (o === 'auto-horizontal') return 'auto-vertical';
+            if (dir === 1) {
+              if (o === 'up') return 'right';
+              if (o === 'right') return 'down';
+              if (o === 'down') return 'left';
+              return 'up'; // o === 'left'
+            } else {
+              if (o === 'up') return 'left';
+              if (o === 'left') return 'down';
+              if (o === 'down') return 'right';
+              return 'up'; // o === 'right'
+            }
+          };
+          const stops = cur.stops.map((c) => {
+            const r = rotateGrid(c.col, c.row);
+            return { ...c, col: r.col, row: r.row, orientation: rotOrient(c.orientation) };
+          });
+          const lr = rotateGrid(cur.label.col, cur.label.row);
+          // Label rotation is in the unrotated local frame; to keep its world
+          // orientation, advance it the inverse of the station's step.
+          const labelStep = dir === 1 ? 2 : 6;
+          const labelRot = ((cur.label.rotation + labelStep) % 8) as Rotation;
+          const label = { ...cur.label, col: lr.col, row: lr.row, rotation: labelRot };
+          return {
+            stations: { ...s.stations, [id]: { ...cur, rotation: nextRot, stops, label } },
+          };
         });
       },
 
