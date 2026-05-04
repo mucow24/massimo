@@ -24,7 +24,6 @@ import { STOP_SIZE, rotateBy, stopCenterLocal, Rotation } from '../geometry/orie
 
 const SQRT2_2 = Math.SQRT2 / 2;
 const SNAP_PERP_TOLERANCE = 10;
-const SNAP_PERP_TOLERANCE_RECOVERY = 15; // 150% when routing is currently failing
 
 // The "axis" a station's input/output line lies on. Two stations share an
 // axis iff their rotation values are equal mod 4.
@@ -193,9 +192,6 @@ export function MapCanvas() {
     startMX: number;
     startMY: number;
     moved: boolean;
-    // Latched: once recovery mode triggers during a drag, it stays on for the
-    // remainder of the drag so the snap doesn't flap as the warning toggles.
-    recoveryLatched: boolean;
   } | null>(null);
   const [snapGuide, setSnapGuide] = useState<{
     primary: { from: Vec2; to: Vec2 };
@@ -296,19 +292,9 @@ export function MapCanvas() {
         const draggedSt = stations[ds.id];
         const draggedRot = (draggedSt?.rotation ?? 0) as Rotation;
         const draggedStopOrder = draggedSt?.stopOrder ?? [];
-        // Recovery mode: snapping defaults to ON and Shift turns it off, with
-        // widened tolerance. Otherwise snapping is opt-in via Shift.
-        // Latch ON whenever a routing warning appears mid-drag, but never
-        // release within the same drag — that prevents oscillation when the
-        // snap fixes the route, clearing the warning, which would otherwise
-        // turn snap off, drifting the station off-axis, re-triggering the
-        // warning, etc.
-        if (!ds.recoveryLatched && bands.some((b) => b.warning)) {
-          ds.recoveryLatched = true;
-        }
-        const inRecovery = ds.recoveryLatched;
-        const shouldSnap = inRecovery ? !e.shiftKey : e.shiftKey;
-        const tol = inRecovery ? SNAP_PERP_TOLERANCE_RECOVERY : SNAP_PERP_TOLERANCE;
+        // Snap is on by default; Shift bypasses it.
+        const shouldSnap = !e.shiftKey;
+        const tol = SNAP_PERP_TOLERANCE;
         if (shouldSnap) {
           const snap = tryAxisSnap(
             ds.id,
@@ -385,7 +371,6 @@ export function MapCanvas() {
       startMX: e.clientX,
       startMY: e.clientY,
       moved: false,
-      recoveryLatched: bands.some((b) => b.warning),
     };
     // Don't capture the pointer here — capture would redirect the synthesized
     // click event away from the station's rect to the SVG, breaking onClick.
