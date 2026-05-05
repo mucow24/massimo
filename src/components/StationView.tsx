@@ -104,75 +104,53 @@ export function StationView({ station, lines, onStartDrag, layer }: Props) {
     labelAnchorY += label.offset * readSin;
   }
 
-  // Hit rect: union of cell bounding box, the rotated label-text bounding
-  // box, and the origin (where the no-stops fallback dot lives).
-  const bbMinX = stopCenterAt(0, minCol).x - half;
-  const bbMaxX = stopCenterAt(0, maxCol).x + half;
-  const bbMinY = stopCenterAt(minRow, 0).y - half;
-  const bbMaxY = stopCenterAt(maxRow, 0).y + half;
+  // Hit shapes: a rect tight to the cells (axis-aligned in local coords) and
+  // a rect tight to the label text (rotated about the label anchor to match
+  // the label's reading direction). Two tight rects beat one big union AABB:
+  // a long diagonal label's AABB blows up well past the visible text.
+  const HIT_PAD = 2;
+  const cellsHitX = stopCenterAt(0, minCol).x - half - HIT_PAD;
+  const cellsHitY = stopCenterAt(minRow, 0).y - half - HIT_PAD;
+  const cellsHitW = stopCenterAt(0, maxCol).x + half + HIT_PAD - cellsHitX;
+  const cellsHitH = stopCenterAt(maxRow, 0).y + half + HIT_PAD - cellsHitY;
   const textW = Math.max(20, station.name.length * 7);
   const textHalfH = 7;
   let textXMin: number;
-  let textXMax: number;
-  if (labelTextAnchor === 'start') {
-    textXMin = labelAnchorX;
-    textXMax = labelAnchorX + textW;
-  } else if (labelTextAnchor === 'end') {
-    textXMin = labelAnchorX - textW;
-    textXMax = labelAnchorX;
-  } else {
-    textXMin = labelAnchorX - textW / 2;
-    textXMax = labelAnchorX + textW / 2;
-  }
-  const textCorners = [
-    { x: textXMin, y: labelAnchorY - textHalfH },
-    { x: textXMax, y: labelAnchorY - textHalfH },
-    { x: textXMin, y: labelAnchorY + textHalfH },
-    { x: textXMax, y: labelAnchorY + textHalfH },
-  ];
-  const labelAngle = (label.rotation * Math.PI) / 4;
-  const cosA = Math.cos(labelAngle);
-  const sinA = Math.sin(labelAngle);
-  const rotatedCorners = textCorners.map((p) => {
-    const dx = p.x - labelAnchorX;
-    const dy = p.y - labelAnchorY;
-    return {
-      x: labelAnchorX + dx * cosA - dy * sinA,
-      y: labelAnchorY + dx * sinA + dy * cosA,
-    };
-  });
-  const textMinX = Math.min(...rotatedCorners.map((p) => p.x));
-  const textMaxX = Math.max(...rotatedCorners.map((p) => p.x));
-  const textMinY = Math.min(...rotatedCorners.map((p) => p.y));
-  const textMaxY = Math.max(...rotatedCorners.map((p) => p.y));
-  const localMinX = Math.min(bbMinX, textMinX) - 2;
-  const localMaxX = Math.max(bbMaxX, textMaxX) + 2;
-  const localMinY = Math.min(bbMinY, textMinY) - 2;
-  const localMaxY = Math.max(bbMaxY, textMaxY) + 2;
-  const hitW = localMaxX - localMinX;
-  const hitH = localMaxY - localMinY;
+  if (labelTextAnchor === 'start') textXMin = labelAnchorX;
+  else if (labelTextAnchor === 'end') textXMin = labelAnchorX - textW;
+  else textXMin = labelAnchorX - textW / 2;
+  const labelHitX = textXMin - HIT_PAD;
+  const labelHitY = labelAnchorY - textHalfH - HIT_PAD;
+  const labelHitW = textW + 2 * HIT_PAD;
+  const labelHitH = 2 * textHalfH + 2 * HIT_PAD;
+  const labelHitTransform = `rotate(${label.rotation * 45} ${labelAnchorX} ${labelAnchorY})`;
 
   const isSelected = selection.selectedStationId === station.id;
   const isEditing = selection.editingStationId === station.id;
 
   if (layer === 'bg') {
+    const hitProps = {
+      fill: 'transparent',
+      pointerEvents: 'all' as const,
+      onPointerDown,
+      onClick,
+      onDoubleClick,
+      onContextMenu,
+      style: isSelected ? { stroke: '#1a4ea8', strokeDasharray: '3 3' } : undefined,
+    };
     return (
       <g
         transform={`translate(${station.x} ${station.y}) rotate(${angle})`}
         style={{ cursor: 'move' }}
       >
+        <rect x={cellsHitX} y={cellsHitY} width={cellsHitW} height={cellsHitH} {...hitProps} />
         <rect
-          x={localMinX}
-          y={localMinY}
-          width={hitW}
-          height={hitH}
-          fill="transparent"
-          pointerEvents="all"
-          onPointerDown={onPointerDown}
-          onClick={onClick}
-          onDoubleClick={onDoubleClick}
-          onContextMenu={onContextMenu}
-          style={isSelected ? { stroke: '#1a4ea8', strokeDasharray: '3 3' } : undefined}
+          x={labelHitX}
+          y={labelHitY}
+          width={labelHitW}
+          height={labelHitH}
+          transform={labelHitTransform}
+          {...hitProps}
         />
         {isEditing ? (
           <NameEditor
