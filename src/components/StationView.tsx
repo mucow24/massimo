@@ -2,13 +2,20 @@ import { useEffect, useRef } from 'react';
 import { Line, Station } from '../model/types';
 import { beginHistoryGroup, dragState, useDoc, useSelection } from '../state/store';
 import { DIR_8, STOP_SIZE, stopCenterAt } from '../geometry/orientation';
+import { polygonsToPath, Pt, unionConvex } from '../geometry/polygonUnion';
+
+const SELECTION_WASH_COLOR = '#f0ff00';
+const SELECTION_WASH_OPACITY = 0.2;
+const SELECTION_STROKE_COLOR = '#000000';
+const SELECTION_STROKE_WIDTH = 2;
+const SELECTION_CORNER_RADIUS = 5;
 
 interface Props {
   station: Station;
   lines: Record<string, Line>;
   zoom: number;
   onStartDrag: (id: string, ev: React.PointerEvent) => void;
-  layer: 'bg' | 'dots';
+  layer: 'wash' | 'bg' | 'label' | 'dots' | 'stroke';
 }
 
 export function StationView({ station, lines, onStartDrag, layer }: Props) {
@@ -128,6 +135,69 @@ export function StationView({ station, lines, onStartDrag, layer }: Props) {
   const isSelected = selection.selectedStationId === station.id;
   const isEditing = selection.editingStationId === station.id;
 
+  if (layer === 'wash' || layer === 'stroke') {
+    if (!isSelected) return null;
+    // Compute the union polygon of the cells rect and (rotated) label rect,
+    // then smooth its corners with quadratic Beziers. The smoothing applies
+    // to the outer-boundary corners ONLY (because each vertex of the union
+    // is a corner of the actual silhouette), so there are no rounded-corner
+    // artifacts where the rects meet.
+    const labelAng = (label.rotation * Math.PI) / 4;
+    const cosL = Math.cos(labelAng);
+    const sinL = Math.sin(labelAng);
+    const rotateLabelCorner = (px: number, py: number): Pt => {
+      const dx = px - labelAnchorX;
+      const dy = py - labelAnchorY;
+      return {
+        x: labelAnchorX + dx * cosL - dy * sinL,
+        y: labelAnchorY + dx * sinL + dy * cosL,
+      };
+    };
+    const cells: Pt[] = [
+      { x: cellsHitX, y: cellsHitY },
+      { x: cellsHitX + cellsHitW, y: cellsHitY },
+      { x: cellsHitX + cellsHitW, y: cellsHitY + cellsHitH },
+      { x: cellsHitX, y: cellsHitY + cellsHitH },
+    ];
+    const labelPoly: Pt[] = [
+      rotateLabelCorner(labelHitX, labelHitY),
+      rotateLabelCorner(labelHitX + labelHitW, labelHitY),
+      rotateLabelCorner(labelHitX + labelHitW, labelHitY + labelHitH),
+      rotateLabelCorner(labelHitX, labelHitY + labelHitH),
+    ];
+    const pathStr = polygonsToPath(unionConvex(cells, labelPoly), SELECTION_CORNER_RADIUS);
+
+    if (layer === 'wash') {
+      return (
+        <g
+          transform={`translate(${station.x} ${station.y}) rotate(${angle})`}
+          pointerEvents="none"
+        >
+          <path
+            d={pathStr}
+            fill={SELECTION_WASH_COLOR}
+            fillOpacity={SELECTION_WASH_OPACITY}
+            fillRule="nonzero"
+          />
+        </g>
+      );
+    }
+    return (
+      <g
+        transform={`translate(${station.x} ${station.y}) rotate(${angle})`}
+        pointerEvents="none"
+      >
+        <path
+          d={pathStr}
+          fill="none"
+          stroke={SELECTION_STROKE_COLOR}
+          strokeWidth={SELECTION_STROKE_WIDTH}
+          strokeLinejoin="round"
+        />
+      </g>
+    );
+  }
+
   if (layer === 'bg') {
     const hitProps = {
       fill: 'transparent',
@@ -136,7 +206,6 @@ export function StationView({ station, lines, onStartDrag, layer }: Props) {
       onClick,
       onDoubleClick,
       onContextMenu,
-      style: isSelected ? { stroke: '#1a4ea8', strokeDasharray: '3 3' } : undefined,
     };
     return (
       <g
@@ -152,6 +221,15 @@ export function StationView({ station, lines, onStartDrag, layer }: Props) {
           transform={labelHitTransform}
           {...hitProps}
         />
+      </g>
+    );
+  }
+
+  if (layer === 'label') {
+    // Labels render in their own pass after all bg washes so that a selected
+    // station's wash can never cover a neighboring station's label.
+    return (
+      <g transform={`translate(${station.x} ${station.y}) rotate(${angle})`}>
         {isEditing ? (
           <NameEditor
             x={labelCenter.x - (textW + 8) / 2}
@@ -177,8 +255,6 @@ export function StationView({ station, lines, onStartDrag, layer }: Props) {
             {station.name}
           </text>
         )}
-        {/* Colored stop squares are rendered by MapCanvas alongside bands so
-            that per-line z-order is honored. */}
       </g>
     );
   }
