@@ -1,10 +1,11 @@
 import { useDoc, useSelection } from '../state/store';
+import { useViewportStore } from '../state/viewportStore';
 
 export function Toolbar() {
   const curveRadius = useDoc((s) => s.curveRadius);
   const setCurveRadius = useDoc((s) => s.setCurveRadius);
-  const viewport = useDoc((s) => s.viewport);
-  const setViewport = useDoc((s) => s.setViewport);
+  const zoom = useViewportStore((s) => s.zoom);
+  const setViewport = useViewportStore((s) => s.setViewport);
   const clearAll = useDoc((s) => s.clearAll);
   const selection = useSelection();
 
@@ -52,7 +53,7 @@ export function Toolbar() {
       </label>
       <label>
         Zoom
-        <span style={{ width: 36 }}>{(viewport.zoom * 100).toFixed(0)}%</span>
+        <span style={{ width: 36 }}>{(zoom * 100).toFixed(0)}%</span>
       </label>
       <button onClick={onResetView}>Reset view</button>
     </div>

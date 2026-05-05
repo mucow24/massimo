@@ -1,4 +1,4 @@
-import { Vec2 } from '../geometry/vec';
+import type { Vec2 } from '../geometry/vec';
 
 export type StationId = string;
 export type LineId = string;
@@ -73,5 +73,10 @@ export interface MapDoc {
   // Z-order, top-of-list (index 0) renders LAST = on top, à la Photoshop layers.
   lineOrder: LineId[];
   curveRadius: number;
-  viewport: Viewport;
+  /**
+   * Monotonically-increasing counter advanced each time a line is added.
+   * Used to pick the next palette color so the cycle continues across
+   * deletions and reloads. Persisted with the doc.
+   */
+  lineCounter: number;
 }

@@ -9,7 +9,6 @@ import type {
   StationId,
   StopCell,
   StopOrientation,
-  Viewport,
 } from './types';
 
 export const DEFAULT_DOC: MapDoc = {
@@ -17,7 +16,7 @@ export const DEFAULT_DOC: MapDoc = {
   lines: {},
   lineOrder: [],
   curveRadius: 24,
-  viewport: { x: 0, y: 0, zoom: 1 },
+  lineCounter: 0,
 };
 
 // ---------- Stations ----------
@@ -320,6 +319,7 @@ export function addLine(
     ...doc,
     lines: { ...doc.lines, [id]: line },
     lineOrder: [id, ...order],
+    lineCounter: doc.lineCounter + 1,
   };
 }
 
@@ -445,10 +445,6 @@ export function moveLineInOrder(doc: MapDoc, id: LineId, dir: -1 | 1): MapDoc {
 
 export function setCurveRadius(doc: MapDoc, r: number): MapDoc {
   return { ...doc, curveRadius: r };
-}
-
-export function setViewport(doc: MapDoc, v: Viewport): MapDoc {
-  return { ...doc, viewport: v };
 }
 
 export function clearAll(_doc: MapDoc): MapDoc {

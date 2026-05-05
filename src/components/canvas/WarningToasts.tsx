@@ -1,5 +1,6 @@
 import { useMemo } from 'react';
 import { useDoc } from '../../state/store';
+import { useViewportStore } from '../../state/viewportStore';
 import { buildBands } from '../../geometry/interlining';
 
 /**
@@ -10,8 +11,8 @@ export function WarningToasts() {
   const stations = useDoc((s) => s.stations);
   const lines = useDoc((s) => s.lines);
   const curveRadius = useDoc((s) => s.curveRadius);
-  const setViewport = useDoc((s) => s.setViewport);
-  const viewport = useDoc((s) => s.viewport);
+  const setViewport = useViewportStore((s) => s.setViewport);
+  const zoom = useViewportStore((s) => s.zoom);
   const lineOrder = useDoc((s) => s.lineOrder);
   const bands = useMemo(
     () => buildBands(stations, lines, curveRadius, lineOrder),
@@ -30,7 +31,7 @@ export function WarningToasts() {
             className="toast"
             onClick={() => {
               const c = w.centerline[Math.floor(w.centerline.length / 2)];
-              if (c) setViewport({ x: c.x, y: c.y, zoom: viewport.zoom });
+              if (c) setViewport({ x: c.x, y: c.y, zoom });
             }}
           >
             ⚠ Routing warning: {a} ↔ {b}
