@@ -22,6 +22,8 @@ export function StopGrid({
   labelSelected,
   onSelectStop,
   onSelectLabel,
+  onRotateStop,
+  onRotateLabel,
 }: {
   station: GridStation;
   lines: Record<string, { color: string; service: string }>;
@@ -29,6 +31,8 @@ export function StopGrid({
   labelSelected: boolean;
   onSelectStop: (lineId: string | null) => void;
   onSelectLabel: () => void;
+  onRotateStop: (lineId: string) => void;
+  onRotateLabel: () => void;
 }) {
   const stops = station.stops;
   const label = station.label;
@@ -59,6 +63,17 @@ export function StopGrid({
             if (isLabel) onSelectLabel();
             else if (stop) onSelectStop(stop.lineId);
             else onSelectStop(null);
+          }}
+          onContextMenu={(e) => {
+            if (isLabel) {
+              e.preventDefault();
+              onSelectLabel();
+              onRotateLabel();
+            } else if (stop) {
+              e.preventDefault();
+              onSelectStop(stop.lineId);
+              onRotateStop(stop.lineId);
+            }
           }}
           style={{
             width: cellSize,

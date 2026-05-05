@@ -1,3 +1,4 @@
+import { useEffect, useRef } from 'react';
 import { useDoc, useSelection } from '../../state/store';
 import type { StationId } from '../../model/types';
 import { StopGrid } from './StopGrid';
@@ -9,28 +10,53 @@ export function StationInspector({ id }: { id: StationId }) {
   const lines = useDoc((s) => s.lines);
   const renameStation = useDoc((s) => s.renameStation);
   const rotateStation = useDoc((s) => s.rotateStation);
-  const rotateStationAndLayout = useDoc((s) => s.rotateStationAndLayout);
   const moveStation = useDoc((s) => s.moveStation);
   const moveStopAction = useDoc((s) => s.moveStop);
   const rotateStopAction = useDoc((s) => s.rotateStop);
   const moveLabelAction = useDoc((s) => s.moveLabel);
   const rotateLabelAction = useDoc((s) => s.rotateLabel);
-  const mirrorLabelAction = useDoc((s) => s.mirrorLabel);
-  const flipLabelAction = useDoc((s) => s.flipLabel);
   const setLabelOffset = useDoc((s) => s.setLabelOffset);
   const selection = useSelection();
   const nameField = useFieldHistory();
   const xField = useFieldHistory();
   const yField = useFieldHistory();
-
-  if (!station) return null;
+  const stopAreaRef = useRef<HTMLDivElement | null>(null);
 
   const selectedLineId = selection.selectedStopLineId;
   const labelSelected = selection.labelSelected;
-  const selectedStopCell = selectedLineId
-    ? station.stops.find((c) => c.lineId === selectedLineId)
-    : null;
-  const hasSelection = selectedStopCell || labelSelected;
+  const selectedStopCell =
+    selectedLineId && station
+      ? station.stops.find((c) => c.lineId === selectedLineId)
+      : null;
+  const hasSelection = !!(selectedStopCell || labelSelected);
+
+  // Standard deselect: Escape, or mousedown anywhere outside the stop-area
+  // (the row containing the move/rotate controls and the StopGrid). Clicks
+  // on canvas/sidebar already deselect via selectStation; this covers the
+  // remaining "click on something else within the inspector" case.
+  useEffect(() => {
+    if (!hasSelection) return;
+    const clear = () => {
+      selection.setSelectedStopLineId(null);
+      selection.setLabelSelected(false);
+    };
+    const onMouseDown = (e: MouseEvent) => {
+      const root = stopAreaRef.current;
+      if (root && root.contains(e.target as Node)) return;
+      clear();
+    };
+    const onKeyDown = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') clear();
+    };
+    document.addEventListener('mousedown', onMouseDown);
+    document.addEventListener('keydown', onKeyDown);
+    return () => {
+      document.removeEventListener('mousedown', onMouseDown);
+      document.removeEventListener('keydown', onKeyDown);
+    };
+  }, [hasSelection, selection]);
+
+  if (!station) return null;
 
   // Arrow buttons act in the displayed frame: clicking ↑ moves the cell
   // toward the top of the screen, regardless of how the grid is rotated.
@@ -86,8 +112,8 @@ export function StationInspector({ id }: { id: StationId }) {
         />
       </div>
       <div className="field">
-        <label>Position</label>
-        <div style={{ display: 'flex', gap: 6 }}>
+        <label>Position &amp; rotation</label>
+        <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
           <input
             type="number"
             value={Math.round(station.x)}
@@ -102,78 +128,29 @@ export function StationInspector({ id }: { id: StationId }) {
             style={{ width: 70 }}
             {...yField}
           />
-        </div>
-      </div>
-      <div className="field">
-        <label>Rotation: {station.rotation * 45}°</label>
-        <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
-          <button className="btn-mini" onClick={() => rotateStation(station.id)}>
-            Rotate +45°
-          </button>
           <button
             className="btn-mini"
             onClick={() => {
               for (let i = 0; i < 7; i++) rotateStation(station.id);
             }}
+            title="Rotate −45°"
+            aria-label="Rotate −45°"
           >
-            Rotate −45°
+            ⟲
           </button>
           <button
             className="btn-mini"
-            onClick={() => {
-              const need = (8 - station.rotation) % 8;
-              for (let i = 0; i < need; i++) rotateStation(station.id);
-            }}
+            onClick={() => rotateStation(station.id)}
+            title="Rotate +45°"
+            aria-label="Rotate +45°"
           >
-            Reset
-          </button>
-          <button
-            className="btn-mini"
-            onClick={() => {
-              for (let i = 0; i < 4; i++) rotateStation(station.id);
-              mirrorLabelAction(station.id);
-            }}
-            title="Rotate the station 180° and mirror the label so it stays on the same side"
-          >
-            Flip station
-          </button>
-        </div>
-        <div style={{ display: 'flex', gap: 6, marginTop: 4 }}>
-          <button
-            className="btn-mini"
-            onClick={() => rotateStationAndLayout(station.id, -1)}
-            title="Rotate the station and stop layout 90° counter-clockwise"
-          >
-            R−
-          </button>
-          <button
-            className="btn-mini"
-            onClick={() => rotateStationAndLayout(station.id, 1)}
-            title="Rotate the station and stop layout 90° clockwise"
-          >
-            R+
+            ⟳
           </button>
         </div>
       </div>
       <div className="field">
         <label>Stop layout</label>
-        <div style={{ marginBottom: 6, display: 'flex', gap: 4 }}>
-          <button
-            className="btn-mini"
-            onClick={() => mirrorLabelAction(station.id)}
-            title="Move the label to the opposite side of the stops and flip 180°"
-          >
-            Mirror label
-          </button>
-          <button
-            className="btn-mini"
-            onClick={() => flipLabelAction(station.id)}
-            title="Rotate the label 180° (without moving it)"
-          >
-            Flip label
-          </button>
-        </div>
-        <div style={{ display: 'flex', gap: 8, alignItems: 'flex-start' }}>
+        <div ref={stopAreaRef} style={{ display: 'flex', gap: 8, alignItems: 'flex-start' }}>
           {/* Controls FIRST, grid second — so the controls don't jump
               around as the grid resizes when stops/label move. */}
           <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 22px)', gap: 2 }}>
@@ -225,6 +202,8 @@ export function StationInspector({ id }: { id: StationId }) {
             labelSelected={labelSelected}
             onSelectStop={(lid) => selection.setSelectedStopLineId(lid)}
             onSelectLabel={() => selection.setLabelSelected(true)}
+            onRotateStop={(lid) => rotateStopAction(station.id, lid)}
+            onRotateLabel={() => rotateLabelAction(station.id)}
           />
         </div>
       </div>
