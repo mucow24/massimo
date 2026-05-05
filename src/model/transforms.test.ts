@@ -126,7 +126,7 @@ describe('moveStop', () => {
 });
 
 describe('rotateStop', () => {
-  it('cycles auto-vertical → up → down → auto-horizontal → left → right', () => {
+  it('toggles between auto-vertical and auto-horizontal', () => {
     let doc = makeDoc({
       stations: [
         makeStation({
@@ -135,10 +135,39 @@ describe('rotateStop', () => {
         }),
       ],
     });
-    const sequence = ['up', 'down', 'auto-horizontal', 'left', 'right', 'auto-vertical'];
-    for (const expected of sequence) {
-      doc = T.rotateStop(doc, 's1', 'L1');
-      expect(doc.stations.s1.stops[0].orientation).toBe(expected);
+    doc = T.rotateStop(doc, 's1', 'L1');
+    expect(doc.stations.s1.stops[0].orientation).toBe('auto-horizontal');
+    doc = T.rotateStop(doc, 's1', 'L1');
+    expect(doc.stations.s1.stops[0].orientation).toBe('auto-vertical');
+  });
+
+  it('collapses explicit vertical orientations (up/down) to auto-horizontal', () => {
+    for (const start of ['up', 'down'] as const) {
+      const doc = makeDoc({
+        stations: [
+          makeStation({
+            id: 's1',
+            stops: [makeStop('L1', { orientation: start })],
+          }),
+        ],
+      });
+      const next = T.rotateStop(doc, 's1', 'L1');
+      expect(next.stations.s1.stops[0].orientation).toBe('auto-horizontal');
+    }
+  });
+
+  it('collapses explicit horizontal orientations (left/right) to auto-vertical', () => {
+    for (const start of ['left', 'right'] as const) {
+      const doc = makeDoc({
+        stations: [
+          makeStation({
+            id: 's1',
+            stops: [makeStop('L1', { orientation: start })],
+          }),
+        ],
+      });
+      const next = T.rotateStop(doc, 's1', 'L1');
+      expect(next.stations.s1.stops[0].orientation).toBe('auto-vertical');
     }
   });
 });

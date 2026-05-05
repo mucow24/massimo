@@ -158,17 +158,14 @@ export function rotateStop(doc: MapDoc, stationId: StationId, lineId: LineId): M
   const i = st.stops.findIndex((c) => c.lineId === lineId);
   if (i < 0) return doc;
   const cur = st.stops[i];
-  // Cycle: auto-vertical → up → down → auto-horizontal → left → right
-  const cycle: StopOrientation[] = [
-    'auto-vertical',
-    'up',
-    'down',
-    'auto-horizontal',
-    'left',
-    'right',
-  ];
-  const idx = cycle.indexOf(cur.orientation);
-  const next = cycle[(idx + 1) % cycle.length];
+  // The UI exposes only the two auto-axis orientations; this toggles between
+  // them. Explicit `up`/`down`/`left`/`right` remain valid in the model (and
+  // in persisted docs), but rotating from one of those collapses to the auto
+  // orientation on the opposite axis.
+  const wasVertical =
+    cur.orientation === 'auto-vertical' || cur.orientation === 'up' || cur.orientation === 'down';
+  const next: StopOrientation = wasVertical ? 'auto-horizontal' : 'auto-vertical';
+  if (next === cur.orientation) return doc;
   const newStops = st.stops.slice();
   newStops[i] = { ...cur, orientation: next };
   return { ...doc, stations: { ...doc.stations, [stationId]: { ...st, stops: newStops } } };
