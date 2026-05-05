@@ -35,6 +35,11 @@ export function StationView({ station, lines, onStartDrag, layer }: Props) {
   const onClick = (e: React.MouseEvent) => {
     if (dragState.suppressClick) return;
     e.stopPropagation();
+    if (selection.creatingLineTag) {
+      // "Click anywhere that isn't a valid place for line tags" exits the mode.
+      selection.setCreatingLineTag(false);
+      return;
+    }
     if (selection.appendingToLineId) {
       const ln = lines[selection.appendingToLineId];
       const wasInLine = ln?.stations.includes(station.id) ?? false;
@@ -193,13 +198,17 @@ export function StationView({ station, lines, onStartDrag, layer }: Props) {
   }
 
   if (layer === 'bg') {
+    // In add-line-tag mode, station hit rects (which extend past the visible
+    // footprint) would block hover/click on bands passing nearby. Make them
+    // pass-through so the cursor goes straight to the band stripes.
+    const inTagMode = selection.creatingLineTag;
     const hitProps = {
       fill: 'transparent',
-      pointerEvents: 'all' as const,
-      onPointerDown,
-      onClick,
-      onDoubleClick,
-      onContextMenu,
+      pointerEvents: inTagMode ? ('none' as const) : ('all' as const),
+      onPointerDown: inTagMode ? undefined : onPointerDown,
+      onClick: inTagMode ? undefined : onClick,
+      onDoubleClick: inTagMode ? undefined : onDoubleClick,
+      onContextMenu: inTagMode ? undefined : onContextMenu,
     };
     return (
       <g

@@ -430,3 +430,256 @@ describe('addLine — lineCounter', () => {
     expect(doc.lineCounter).toBe(2);
   });
 });
+
+// ---------- Line tags ----------
+
+describe('addLineTag', () => {
+  it('inserts a tag with the given fields', () => {
+    const doc = makeDoc({
+      lines: [makeLine({ id: 'L1', stations: ['s1', 's2'] })],
+    });
+    const next = T.addLineTag(doc, 't1', 'L1', 's1', 's2', 'from', 25, 0);
+    expect(next.lineTags.t1).toEqual({
+      id: 't1',
+      lineId: 'L1',
+      fromStationId: 's1',
+      toStationId: 's2',
+      anchorEnd: 'from',
+      distance: 25,
+      orientation: 0,
+    });
+  });
+
+  it('does not mutate the original doc', () => {
+    const doc = makeDoc({ lines: [makeLine({ id: 'L1' })] });
+    T.addLineTag(doc, 't1', 'L1', 's1', 's2', 'from', 25, 0);
+    expect(doc.lineTags).toEqual({});
+  });
+});
+
+describe('moveLineTag', () => {
+  it('updates pair, anchor, and distance while preserving orientation', () => {
+    const doc = makeDoc({
+      lines: [makeLine({ id: 'L1' })],
+      lineTags: [
+        {
+          id: 't1',
+          lineId: 'L1',
+          fromStationId: 's1',
+          toStationId: 's2',
+          anchorEnd: 'from',
+          distance: 10,
+          orientation: 1,
+        },
+      ],
+    });
+    const next = T.moveLineTag(doc, 't1', 's3', 's4', 'to', 50);
+    expect(next.lineTags.t1).toEqual({
+      id: 't1',
+      lineId: 'L1',
+      fromStationId: 's3',
+      toStationId: 's4',
+      anchorEnd: 'to',
+      distance: 50,
+      orientation: 1,
+    });
+  });
+
+  it('is a no-op for unknown ids', () => {
+    const doc = makeDoc({});
+    expect(T.moveLineTag(doc, 'nope', 'a', 'b', 'from', 5)).toEqual(doc);
+  });
+});
+
+describe('cycleLineTagOrientation', () => {
+  it('cycles 0 → 1 → 2 → 3 → 0', () => {
+    let doc = makeDoc({
+      lineTags: [
+        {
+          id: 't1',
+          lineId: 'L1',
+          fromStationId: 'a',
+          toStationId: 'b',
+          anchorEnd: 'from',
+          distance: 0,
+          orientation: 0,
+        },
+      ],
+    });
+    doc = T.cycleLineTagOrientation(doc, 't1');
+    expect(doc.lineTags.t1.orientation).toBe(1);
+    doc = T.cycleLineTagOrientation(doc, 't1');
+    expect(doc.lineTags.t1.orientation).toBe(2);
+    doc = T.cycleLineTagOrientation(doc, 't1');
+    expect(doc.lineTags.t1.orientation).toBe(3);
+    doc = T.cycleLineTagOrientation(doc, 't1');
+    expect(doc.lineTags.t1.orientation).toBe(0);
+  });
+});
+
+describe('deleteLineTag', () => {
+  it('removes the tag by id', () => {
+    const doc = makeDoc({
+      lineTags: [
+        {
+          id: 't1',
+          lineId: 'L1',
+          fromStationId: 'a',
+          toStationId: 'b',
+          anchorEnd: 'from',
+          distance: 0,
+          orientation: 0,
+        },
+        {
+          id: 't2',
+          lineId: 'L1',
+          fromStationId: 'a',
+          toStationId: 'b',
+          anchorEnd: 'from',
+          distance: 25,
+          orientation: 0,
+        },
+      ],
+    });
+    const next = T.deleteLineTag(doc, 't1');
+    expect(next.lineTags.t1).toBeUndefined();
+    expect(next.lineTags.t2).toBeDefined();
+  });
+});
+
+describe('deleteLine — line tag cascade', () => {
+  it('drops tags on the deleted line; leaves others alone', () => {
+    const doc = makeDoc({
+      stations: [makeStation({ id: 's1', stops: [makeStop('L1'), makeStop('L2', { col: 1 })] })],
+      lines: [makeLine({ id: 'L1' }), makeLine({ id: 'L2' })],
+      lineOrder: ['L1', 'L2'],
+      lineTags: [
+        {
+          id: 't1',
+          lineId: 'L1',
+          fromStationId: 's1',
+          toStationId: 's2',
+          anchorEnd: 'from',
+          distance: 0,
+          orientation: 0,
+        },
+        {
+          id: 't2',
+          lineId: 'L2',
+          fromStationId: 's1',
+          toStationId: 's2',
+          anchorEnd: 'from',
+          distance: 0,
+          orientation: 0,
+        },
+      ],
+    });
+    const next = T.deleteLine(doc, 'L1');
+    expect(next.lineTags.t1).toBeUndefined();
+    expect(next.lineTags.t2).toBeDefined();
+  });
+});
+
+describe('removeStationFromLine — line tag cascade', () => {
+  it('drops tags whose corridor is no longer an edge on the line', () => {
+    const doc = makeDoc({
+      stations: [
+        makeStation({ id: 's1', stops: [makeStop('L1')] }),
+        makeStation({ id: 's2', stops: [makeStop('L1')] }),
+        makeStation({ id: 's3', stops: [makeStop('L1')] }),
+      ],
+      lines: [makeLine({ id: 'L1', stations: ['s1', 's2', 's3'] })],
+      lineTags: [
+        {
+          id: 't12',
+          lineId: 'L1',
+          fromStationId: 's1',
+          toStationId: 's2',
+          anchorEnd: 'from',
+          distance: 25,
+          orientation: 0,
+        },
+        {
+          id: 't23',
+          lineId: 'L1',
+          fromStationId: 's2',
+          toStationId: 's3',
+          anchorEnd: 'from',
+          distance: 25,
+          orientation: 0,
+        },
+      ],
+    });
+    const next = T.removeStationFromLine(doc, 'L1', 1);
+    expect(next.lineTags.t12).toBeUndefined();
+    expect(next.lineTags.t23).toBeUndefined();
+  });
+
+  it('keeps tags whose corridor remains an edge', () => {
+    const doc = makeDoc({
+      stations: [
+        makeStation({ id: 's1', stops: [makeStop('L1')] }),
+        makeStation({ id: 's2', stops: [makeStop('L1')] }),
+        makeStation({ id: 's3', stops: [makeStop('L1')] }),
+      ],
+      lines: [makeLine({ id: 'L1', stations: ['s1', 's2', 's3'] })],
+      lineTags: [
+        {
+          id: 't12',
+          lineId: 'L1',
+          fromStationId: 's1',
+          toStationId: 's2',
+          anchorEnd: 'from',
+          distance: 25,
+          orientation: 0,
+        },
+      ],
+    });
+    const next = T.removeStationFromLine(doc, 'L1', 2);
+    expect(next.lineTags.t12).toBeDefined();
+  });
+});
+
+describe('deleteStation — line tag cascade', () => {
+  it('drops tags whose corridor referenced the deleted station on any line', () => {
+    const doc = makeDoc({
+      stations: [
+        makeStation({ id: 's1', stops: [makeStop('L1')] }),
+        makeStation({ id: 's2', stops: [makeStop('L1')] }),
+      ],
+      lines: [makeLine({ id: 'L1', stations: ['s1', 's2'] })],
+      lineTags: [
+        {
+          id: 't1',
+          lineId: 'L1',
+          fromStationId: 's1',
+          toStationId: 's2',
+          anchorEnd: 'from',
+          distance: 25,
+          orientation: 0,
+        },
+      ],
+    });
+    const next = T.deleteStation(doc, 's2');
+    expect(next.lineTags.t1).toBeUndefined();
+  });
+});
+
+describe('clearAll — line tags', () => {
+  it('clears lineTags', () => {
+    const doc = makeDoc({
+      lineTags: [
+        {
+          id: 't1',
+          lineId: 'L1',
+          fromStationId: 'a',
+          toStationId: 'b',
+          anchorEnd: 'from',
+          distance: 0,
+          orientation: 0,
+        },
+      ],
+    });
+    expect(T.clearAll(doc).lineTags).toEqual({});
+  });
+});

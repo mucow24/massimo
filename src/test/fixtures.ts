@@ -59,17 +59,21 @@ export function makeDoc(parts: {
   lines?: Line[];
   lineOrder?: LineId[];
   curveRadius?: number;
+  lineTags?: import('../model/types').LineTag[];
 }): MapDoc {
   const stations: Record<StationId, Station> = {};
   for (const s of parts.stations ?? []) stations[s.id] = s;
   const lines: Record<LineId, Line> = {};
   for (const l of parts.lines ?? []) lines[l.id] = l;
+  const lineTags: Record<string, import('../model/types').LineTag> = {};
+  for (const t of parts.lineTags ?? []) lineTags[t.id] = t;
   return {
     stations,
     lines,
     lineOrder: parts.lineOrder ?? Object.keys(lines),
     curveRadius: parts.curveRadius ?? 24,
     lineCounter: 0,
+    lineTags,
   };
 }
 

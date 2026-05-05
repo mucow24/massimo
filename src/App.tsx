@@ -7,6 +7,8 @@ import { useDoc, useSelection } from './state/store';
 export default function App() {
   const setAppending = useSelection((s) => s.setAppending);
   const setPlacingStation = useSelection((s) => s.setPlacingStation);
+  const setCreatingLineTag = useSelection((s) => s.setCreatingLineTag);
+  const selectLineTag = useSelection((s) => s.selectLineTag);
 
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
@@ -20,10 +22,19 @@ export default function App() {
       if (e.key === 'Escape') {
         setAppending(null);
         setPlacingStation(false);
+        setCreatingLineTag(false);
+        selectLineTag(null);
         return;
       }
       if ((e.key === 'Delete' || e.key === 'Backspace') && !inForm) {
         const sel = useSelection.getState();
+        const tagId = sel.selectedLineTagId;
+        if (tagId) {
+          e.preventDefault();
+          sel.selectLineTag(null);
+          useDoc.getState().deleteLineTag(tagId);
+          return;
+        }
         const stationId = sel.selectedStationId;
         if (stationId) {
           e.preventDefault();
@@ -49,7 +60,7 @@ export default function App() {
     };
     window.addEventListener('keydown', onKey);
     return () => window.removeEventListener('keydown', onKey);
-  }, [setAppending, setPlacingStation]);
+  }, [setAppending, setPlacingStation, setCreatingLineTag, selectLineTag]);
 
   return (
     <div className="app">

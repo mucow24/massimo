@@ -20,12 +20,17 @@ export function Toolbar() {
   const onAddStation = () => {
     selection.setPlacingStation(!selection.placingStation);
   };
+  const onAddLineTag = () => {
+    selection.setCreatingLineTag(!selection.creatingLineTag);
+  };
   const onResetView = () => setViewport({ x: 0, y: 0, zoom: 1 });
   const onClear = () => {
     selection.selectStation(null);
     selection.selectLine(null);
+    selection.selectLineTag(null);
     selection.setAppending(null);
     selection.setPlacingStation(false);
+    selection.setCreatingLineTag(false);
     selection.setEditingStationId(null);
     clearAll();
   };
@@ -38,6 +43,7 @@ export function Toolbar() {
       lineOrder: doc.lineOrder,
       curveRadius: doc.curveRadius,
       lineCounter: doc.lineCounter,
+      lineTags: doc.lineTags,
     });
     const blob = new Blob([json], { type: 'application/json' });
     const url = URL.createObjectURL(blob);
@@ -66,8 +72,10 @@ export function Toolbar() {
     setLoadError(null);
     selection.selectStation(null);
     selection.selectLine(null);
+    selection.selectLineTag(null);
     selection.setAppending(null);
     selection.setPlacingStation(false);
+    selection.setCreatingLineTag(false);
     selection.setEditingStationId(null);
     // Replace doc state, preserving the mutator method references via merge.
     useDoc.setState({ ...DEFAULT_DOC, ...result.doc });
@@ -86,6 +94,17 @@ export function Toolbar() {
         }
       >
         + Station
+      </button>
+      <button
+        onClick={onAddLineTag}
+        style={
+          selection.creatingLineTag
+            ? { background: '#1a4ea8', color: '#fff', borderColor: '#1a4ea8' }
+            : undefined
+        }
+        title="Click on a colored line to place a movable label inside the band"
+      >
+        + Line tag
       </button>
       <button onClick={onSave} title="Download the current map as a .massimo.json file">
         Save

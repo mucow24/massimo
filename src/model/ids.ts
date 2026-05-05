@@ -3,6 +3,7 @@ import type { LineId, StationId } from './types';
 export interface IdFactory {
   stationId(): StationId;
   lineId(): LineId;
+  lineTagId(): string;
 }
 
 /**
@@ -14,6 +15,7 @@ export function defaultIdFactory(): IdFactory {
   return {
     stationId: uid,
     lineId: uid,
+    lineTagId: uid,
   };
 }
 
@@ -24,8 +26,10 @@ export function defaultIdFactory(): IdFactory {
 export function counterIdFactory(seed = 0): IdFactory {
   let s = seed;
   let l = seed;
+  let t = seed;
   return {
     stationId: () => `s${s++}`,
     lineId: () => `l${l++}`,
+    lineTagId: () => `t${t++}`,
   };
 }

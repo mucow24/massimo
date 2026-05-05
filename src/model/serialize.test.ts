@@ -195,8 +195,181 @@ describe('migrate — historical versions', () => {
       lineOrder: [],
       curveRadius: 24,
       lineCounter: 0,
+      lineTags: {},
     };
     const doc = migrate(cur, SCHEMA_VERSION);
     expect(doc).toMatchObject(cur);
+  });
+
+  it('v6 → current: lineTags defaults to {} for old files without the field', () => {
+    const v6 = {
+      stations: {},
+      lines: {},
+      lineOrder: [],
+      curveRadius: 24,
+      lineCounter: 0,
+    };
+    const doc = migrate(v6, 6);
+    expect(doc.lineTags).toEqual({});
+  });
+
+  it('v7 → v8: tag with fractional t becomes (anchorEnd, distance)', () => {
+    // Two stations 100 world units apart; one-line band; tag at t=0.3.
+    // Stripe length = 100 (offset=0 since single-line band). Canonical-t=0.3
+    // ⇒ arcLen=30 ⇒ closer to "from" ⇒ anchorEnd='from', distance=30.
+    const v7 = {
+      stations: {
+        s1: {
+          id: 's1',
+          name: 's1',
+          x: 0,
+          y: 0,
+          rotation: 0,
+          stops: [{ lineId: 'L1', row: 0, col: 0, orientation: 'auto-vertical' }],
+          label: { row: 0, col: -1, rotation: 0, offset: 0 },
+        },
+        s2: {
+          id: 's2',
+          name: 's2',
+          x: 100,
+          y: 0,
+          rotation: 0,
+          stops: [{ lineId: 'L1', row: 0, col: 0, orientation: 'auto-vertical' }],
+          label: { row: 0, col: -1, rotation: 0, offset: 0 },
+        },
+      },
+      lines: { L1: { id: 'L1', service: 'A', color: '#000', stations: ['s1', 's2'] } },
+      lineOrder: ['L1'],
+      curveRadius: 24,
+      lineCounter: 1,
+      lineTags: {
+        t1: {
+          id: 't1',
+          lineId: 'L1',
+          fromStationId: 's1',
+          toStationId: 's2',
+          t: 0.3,
+          orientation: 0,
+        },
+      },
+    };
+    const doc = migrate(v7, 7);
+    expect(doc.lineTags.t1).toMatchObject({
+      id: 't1',
+      lineId: 'L1',
+      fromStationId: 's1',
+      toStationId: 's2',
+      anchorEnd: 'from',
+      orientation: 0,
+    });
+    expect(doc.lineTags.t1.distance).toBeCloseTo(30, 1);
+  });
+
+  it('v7 → v8: tag past midpoint anchors at "to"', () => {
+    const v7 = {
+      stations: {
+        s1: {
+          id: 's1',
+          name: 's1',
+          x: 0,
+          y: 0,
+          rotation: 0,
+          stops: [{ lineId: 'L1', row: 0, col: 0, orientation: 'auto-vertical' }],
+          label: { row: 0, col: -1, rotation: 0, offset: 0 },
+        },
+        s2: {
+          id: 's2',
+          name: 's2',
+          x: 100,
+          y: 0,
+          rotation: 0,
+          stops: [{ lineId: 'L1', row: 0, col: 0, orientation: 'auto-vertical' }],
+          label: { row: 0, col: -1, rotation: 0, offset: 0 },
+        },
+      },
+      lines: { L1: { id: 'L1', service: 'A', color: '#000', stations: ['s1', 's2'] } },
+      lineOrder: ['L1'],
+      curveRadius: 24,
+      lineCounter: 1,
+      lineTags: {
+        t1: {
+          id: 't1',
+          lineId: 'L1',
+          fromStationId: 's1',
+          toStationId: 's2',
+          t: 0.8,
+          orientation: 0,
+        },
+      },
+    };
+    const doc = migrate(v7, 7);
+    expect(doc.lineTags.t1.anchorEnd).toBe('to');
+    expect(doc.lineTags.t1.distance).toBeCloseTo(20, 1); // 100 - 80
+  });
+
+  it('v7 → v8: reverse-canon line t converts to correct canonical anchor', () => {
+    // Line traverses s2→s1 (reverse-canon). Old t=0.3 in line-frame = canon-t=0.7.
+    // arcLen=70 ⇒ closer to "to" ⇒ anchorEnd='to', distance=30.
+    const v7 = {
+      stations: {
+        s1: {
+          id: 's1',
+          name: 's1',
+          x: 0,
+          y: 0,
+          rotation: 0,
+          stops: [{ lineId: 'L1', row: 0, col: 0, orientation: 'auto-vertical' }],
+          label: { row: 0, col: -1, rotation: 0, offset: 0 },
+        },
+        s2: {
+          id: 's2',
+          name: 's2',
+          x: 100,
+          y: 0,
+          rotation: 0,
+          stops: [{ lineId: 'L1', row: 0, col: 0, orientation: 'auto-vertical' }],
+          label: { row: 0, col: -1, rotation: 0, offset: 0 },
+        },
+      },
+      lines: { L1: { id: 'L1', service: 'A', color: '#000', stations: ['s2', 's1'] } },
+      lineOrder: ['L1'],
+      curveRadius: 24,
+      lineCounter: 1,
+      lineTags: {
+        t1: {
+          id: 't1',
+          lineId: 'L1',
+          fromStationId: 's1',
+          toStationId: 's2',
+          t: 0.3,
+          orientation: 0,
+        },
+      },
+    };
+    const doc = migrate(v7, 7);
+    expect(doc.lineTags.t1.anchorEnd).toBe('to');
+    expect(doc.lineTags.t1.distance).toBeCloseTo(30, 1);
+  });
+
+  it('v7 → v8: orphan tag (line missing) is dropped', () => {
+    const v7 = {
+      stations: {},
+      lines: {},
+      lineOrder: [],
+      curveRadius: 24,
+      lineCounter: 0,
+      lineTags: {
+        t1: {
+          id: 't1',
+          lineId: 'GONE',
+          fromStationId: 's1',
+          toStationId: 's2',
+          t: 0.5,
+          orientation: 0,
+        },
+      },
+    };
+    const doc = migrate(v7, 7);
+    expect(doc.lineTags.t1).toBeUndefined();
   });
 });

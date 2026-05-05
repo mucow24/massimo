@@ -1,0 +1,400 @@
+import { useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
+import type { LineTag, MapDoc } from '../../model/types';
+import type { SegmentBandSpec } from '../../geometry/interlining';
+import {
+  lineTraversesForwardCanon,
+  offsetPathLength,
+  sampleOffsetPathByArcLength,
+} from '../../geometry/lineTagGeometry';
+import { STOP_SIZE } from '../../geometry/orientation';
+import { dragState, useDoc, useSelection } from '../../state/store';
+import type { Vec2 } from '../../geometry/vec';
+import { useLineTagDrag } from './useLineTagDrag';
+
+const ALONG_FONT_SIZE = 12;
+const TEXT_PAD = 1;
+
+const SELECTION_WASH_COLOR = '#f0ff00';
+const SELECTION_WASH_OPACITY = 0.3;
+const SELECTION_STROKE_COLOR = '#000000';
+const SELECTION_STROKE_WIDTH = 1.5;
+
+interface Props {
+  bands: SegmentBandSpec[];
+  zoom: number;
+  svgRef: React.RefObject<SVGSVGElement | null>;
+}
+
+/**
+ * Resolve a tag to its renderable position by looking up the band whose
+ * pairKey matches and which contains the tag's line. Returns null if the
+ * tag is orphaned (line gone or corridor no longer an edge).
+ */
+export interface ResolvedTag {
+  tag: LineTag;
+  service: string;
+  color: string;
+  p: Vec2;
+  // Tangent in line-traversal frame (already flipped if the line traverses
+  // the corridor reverse-canonically). Unit vector.
+  tangent: Vec2;
+}
+
+export function resolveTag(
+  tag: LineTag,
+  doc: Pick<MapDoc, 'lines' | 'curveRadius'>,
+  bands: SegmentBandSpec[],
+): ResolvedTag | null {
+  const line = doc.lines[tag.lineId];
+  if (!line) return null;
+  const pairKey = `${tag.fromStationId}|${tag.toStationId}`;
+  const band = bands.find(
+    (b) => b.pairKey === pairKey && b.lines.some((l) => l.id === tag.lineId),
+  );
+  if (!band) return null;
+  const k = band.lines.findIndex((l) => l.id === tag.lineId);
+  const n = band.lines.length;
+  const offset = (k - (n - 1) / 2) * STOP_SIZE;
+  const stripeTotal = offsetPathLength(band.centerline, doc.curveRadius, offset);
+  // Walk from anchor endpoint by `distance` along the stripe. Clamps inside
+  // sampleOffsetPathByArcLength when the corridor has shrunk below distance.
+  const arcLenOnStripe =
+    tag.anchorEnd === 'from' ? tag.distance : Math.max(0, stripeTotal - tag.distance);
+  const sample = sampleOffsetPathByArcLength(
+    band.centerline,
+    doc.curveRadius,
+    offset,
+    arcLenOnStripe,
+  );
+  const forward = lineTraversesForwardCanon(line, tag.fromStationId, tag.toStationId);
+  const tangent = forward
+    ? sample.tangent
+    : { x: -sample.tangent.x, y: -sample.tangent.y };
+  return {
+    tag,
+    service: line.service,
+    color: line.color,
+    p: sample.p,
+    tangent,
+  };
+}
+
+const ORIENTATION_OFFSET_DEG: Record<0 | 1 | 2 | 3, number> = {
+  0: 0, // along line-forward
+  1: -90, // perpendicular CCW (visually, in y-down screen)
+  2: 180, // along line-reverse
+  3: 90, // perpendicular CW
+};
+
+export function LineTagsLayer({ bands, zoom, svgRef }: Props) {
+  const lines = useDoc((s) => s.lines);
+  const lineTags = useDoc((s) => s.lineTags);
+  const curveRadius = useDoc((s) => s.curveRadius);
+  const cycleLineTagOrientation = useDoc((s) => s.cycleLineTagOrientation);
+  const deleteLineTag = useDoc((s) => s.deleteLineTag);
+  const selection = useSelection();
+  const drag = useLineTagDrag(svgRef, zoom);
+
+  const resolved = useMemo(() => {
+    const list: ResolvedTag[] = [];
+    for (const id of Object.keys(lineTags)) {
+      const r = resolveTag(lineTags[id], { lines, curveRadius }, bands);
+      if (r) list.push(r);
+    }
+    return list;
+  }, [lineTags, lines, curveRadius, bands]);
+
+  // Measure each unique service string once at fontSize=12 bold to know how
+  // wide it is. Used to shrink perpendicular text so it fits in the band.
+  const services = useMemo(() => {
+    const set = new Set<string>();
+    for (const r of resolved) set.add(r.service);
+    if (selection.lineTagHoverPreview) set.add(selection.lineTagHoverPreview.service);
+    return Array.from(set);
+  }, [resolved, selection.lineTagHoverPreview]);
+  const widths = useMeasureTextWidths(services);
+
+  // Suppress click after a drag, mirroring station drag.
+  const onTagPointerDown = (e: React.PointerEvent, tagId: string) => {
+    if (e.button !== 0) return;
+    drag.onStartDrag(tagId, e);
+  };
+
+  const onTagClick = (e: React.MouseEvent, tagId: string) => {
+    if (dragState.suppressClick) return;
+    e.stopPropagation();
+    selection.selectLineTag(tagId);
+  };
+
+  const onTagContextMenu = (e: React.MouseEvent, tagId: string) => {
+    e.preventDefault();
+    e.stopPropagation();
+    // Right-click on an unselected tag: select + cycle in one action.
+    if (selection.selectedLineTagId !== tagId) selection.selectLineTag(tagId);
+    cycleLineTagOrientation(tagId);
+  };
+
+  // Esc clears any in-flight ghost preview when leaving mode (delegated to App)
+  // — but also clear hover preview when the layer unmounts.
+  useEffect(
+    () => () => {
+      // No-op on unmount; preview is cleared by mode-setters.
+    },
+    [],
+  );
+
+  // Delete is wired in App.tsx for keyboard.
+  void deleteLineTag;
+
+  return (
+    <g>
+      {/* Hidden measurer: invisible but rendered so getBBox works. */}
+      <Measurer services={services} />
+
+      {/* Selection wash for the selected tag (painted first, before tag text). */}
+      {selection.selectedLineTagId &&
+        (() => {
+          const r = resolved.find((x) => x.tag.id === selection.selectedLineTagId);
+          if (!r) return null;
+          return (
+            <TagShape
+              r={r}
+              widths={widths}
+              layer="wash"
+              onPointerDown={(e) => onTagPointerDown(e, r.tag.id)}
+              onClick={(e) => onTagClick(e, r.tag.id)}
+              onContextMenu={(e) => onTagContextMenu(e, r.tag.id)}
+            />
+          );
+        })()}
+
+      {/* All tag texts. */}
+      {resolved.map((r) => (
+        <TagShape
+          key={r.tag.id}
+          r={r}
+          widths={widths}
+          layer="text"
+          onPointerDown={(e) => onTagPointerDown(e, r.tag.id)}
+          onClick={(e) => onTagClick(e, r.tag.id)}
+          onContextMenu={(e) => onTagContextMenu(e, r.tag.id)}
+        />
+      ))}
+
+      {/* Selection stroke for the selected tag (on top of text). */}
+      {selection.selectedLineTagId &&
+        (() => {
+          const r = resolved.find((x) => x.tag.id === selection.selectedLineTagId);
+          if (!r) return null;
+          return (
+            <TagShape
+              r={r}
+              widths={widths}
+              layer="stroke"
+              onPointerDown={(e) => onTagPointerDown(e, r.tag.id)}
+              onClick={(e) => onTagClick(e, r.tag.id)}
+              onContextMenu={(e) => onTagContextMenu(e, r.tag.id)}
+            />
+          );
+        })()}
+
+      {/* Ghost preview while in add-line-tag mode and hovering a stripe. */}
+      {selection.creatingLineTag && selection.lineTagHoverPreview && (
+        <GhostPreview preview={selection.lineTagHoverPreview} widths={widths} />
+      )}
+    </g>
+  );
+}
+
+interface TagShapeProps {
+  r: ResolvedTag;
+  widths: Map<string, number>;
+  layer: 'wash' | 'text' | 'stroke';
+  onPointerDown: (e: React.PointerEvent) => void;
+  onClick: (e: React.MouseEvent) => void;
+  onContextMenu: (e: React.MouseEvent) => void;
+}
+
+function TagShape({ r, widths, layer, onPointerDown, onClick, onContextMenu }: TagShapeProps) {
+  const orientation = r.tag.orientation;
+  const tangentAngleDeg = (Math.atan2(r.tangent.y, r.tangent.x) * 180) / Math.PI;
+  const rotateDeg = tangentAngleDeg + ORIENTATION_OFFSET_DEG[orientation];
+  const { fontSize, textWidth, textHeight } = sizingFor(r.service, orientation, widths);
+
+  if (layer === 'text') {
+    return (
+      <g
+        transform={`translate(${r.p.x} ${r.p.y}) rotate(${rotateDeg})`}
+        style={{ cursor: 'move' }}
+      >
+        {/* Invisible hit rect that picks up pointer events even where the text glyphs are sparse. */}
+        <rect
+          x={-textWidth / 2 - TEXT_PAD}
+          y={-textHeight / 2 - TEXT_PAD}
+          width={textWidth + 2 * TEXT_PAD}
+          height={textHeight + 2 * TEXT_PAD}
+          fill="transparent"
+          pointerEvents="all"
+          onPointerDown={onPointerDown}
+          onClick={onClick}
+          onContextMenu={onContextMenu}
+        />
+        <text
+          x={0}
+          y={0}
+          textAnchor="middle"
+          dominantBaseline="central"
+          fontSize={fontSize}
+          fontWeight={700}
+          fill="#000"
+          pointerEvents="none"
+        >
+          {r.service}
+        </text>
+      </g>
+    );
+  }
+
+  // Wash + stroke share the same rounded-rect outline.
+  const w = textWidth + 2 * TEXT_PAD;
+  const h = textHeight + 2 * TEXT_PAD;
+  return (
+    <g transform={`translate(${r.p.x} ${r.p.y}) rotate(${rotateDeg})`} pointerEvents="none">
+      <rect
+        x={-w / 2}
+        y={-h / 2}
+        width={w}
+        height={h}
+        rx={2}
+        ry={2}
+        fill={layer === 'wash' ? SELECTION_WASH_COLOR : 'none'}
+        fillOpacity={layer === 'wash' ? SELECTION_WASH_OPACITY : undefined}
+        stroke={layer === 'stroke' ? SELECTION_STROKE_COLOR : undefined}
+        strokeWidth={layer === 'stroke' ? SELECTION_STROKE_WIDTH : undefined}
+      />
+    </g>
+  );
+}
+
+function GhostPreview({
+  preview,
+  widths,
+}: {
+  preview: NonNullable<ReturnType<typeof useSelection.getState>['lineTagHoverPreview']>;
+  widths: Map<string, number>;
+}) {
+  const orientation: 0 | 1 | 2 | 3 = 0; // ghost defaults to along-forward
+  // Re-orient tangent to line-traversal frame (preview already gives canonical;
+  // we flip if reverse-canonical).
+  const tangent = preview.lineForwardMatchesCanon
+    ? preview.tangent
+    : { x: -preview.tangent.x, y: -preview.tangent.y };
+  const tangentAngleDeg = (Math.atan2(tangent.y, tangent.x) * 180) / Math.PI;
+  const rotateDeg = tangentAngleDeg + ORIENTATION_OFFSET_DEG[orientation];
+  const { fontSize } = sizingFor(preview.service, orientation, widths);
+  return (
+    <g transform={`translate(${preview.p.x} ${preview.p.y}) rotate(${rotateDeg})`} pointerEvents="none">
+      <text
+        x={0}
+        y={0}
+        textAnchor="middle"
+        dominantBaseline="central"
+        fontSize={fontSize}
+        fontWeight={700}
+        fill="#000"
+        opacity={0.5}
+      >
+        {preview.service}
+      </text>
+    </g>
+  );
+}
+
+/**
+ * Measurer: renders each unique service string at fontSize=ALONG_FONT_SIZE
+ * with bold weight, invisible, so we can read .getBBox() in a layout effect.
+ * Results live in a shared module-level cache so multiple LineTagsLayer
+ * instances share work and the cache survives re-renders.
+ */
+const widthCache = new Map<string, number>();
+// Subscribers fire when the cache mutates; useSyncExternalStore-style.
+const widthCacheListeners = new Set<() => void>();
+function subscribeWidthCache(fn: () => void): () => void {
+  widthCacheListeners.add(fn);
+  return () => {
+    widthCacheListeners.delete(fn);
+  };
+}
+function notifyWidthCache() {
+  for (const fn of widthCacheListeners) fn();
+}
+
+function Measurer({ services }: { services: string[] }) {
+  const refs = useRef(new Map<string, SVGTextElement | null>());
+  useLayoutEffect(() => {
+    let dirty = false;
+    for (const s of services) {
+      if (widthCache.has(s)) continue;
+      const el = refs.current.get(s);
+      if (el) {
+        try {
+          widthCache.set(s, el.getBBox().width);
+          dirty = true;
+        } catch {
+          widthCache.set(s, s.length * 7);
+          dirty = true;
+        }
+      }
+    }
+    if (dirty) notifyWidthCache();
+  }, [services]);
+  return (
+    <g style={{ visibility: 'hidden' }} pointerEvents="none">
+      {services.map((s) => (
+        <text
+          key={s}
+          ref={(el) => {
+            refs.current.set(s, el);
+          }}
+          fontSize={ALONG_FONT_SIZE}
+          fontWeight={700}
+        >
+          {s}
+        </text>
+      ))}
+    </g>
+  );
+}
+
+function useMeasureTextWidths(services: string[]): Map<string, number> {
+  // Subscribe to cache notifications so newly-measured strings trigger a
+  // re-render of consumers in the next React tick.
+  const [, setTick] = useState(0);
+  useEffect(() => subscribeWidthCache(() => setTick((x) => x + 1)), []);
+  const widths = new Map<string, number>();
+  for (const s of services) {
+    widths.set(s, widthCache.get(s) ?? s.length * 7);
+  }
+  return widths;
+}
+
+/**
+ * Compute font size + bounding box for a tag.
+ *
+ * One size for all four orientations: fontSize = 12, bbox follows the
+ * measured width at that size. Perpendicular orientations may slightly
+ * exceed the 14px band width on long service names (e.g. "AA"), which the
+ * user prefers over the previous shrinks-on-rotation behavior.
+ */
+function sizingFor(
+  service: string,
+  _orientation: 0 | 1 | 2 | 3,
+  widths: Map<string, number>,
+): { fontSize: number; textWidth: number; textHeight: number } {
+  const measuredAt12 = widths.get(service) ?? service.length * 7;
+  return {
+    fontSize: ALONG_FONT_SIZE,
+    textWidth: measuredAt12,
+    textHeight: ALONG_FONT_SIZE,
+  };
+}
