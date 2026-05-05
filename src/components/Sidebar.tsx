@@ -1,6 +1,6 @@
 import { useEffect } from 'react';
 import { effectiveLineOrder, useDoc, useSelection } from '../state/store';
-import { LineInspector, StationInspector } from './Inspector';
+import { LineInspector, StationInspector } from './inspector';
 import type { Line } from '../state/types';
 import { legibleTextOn } from '../util/color';
 
