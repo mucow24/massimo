@@ -24,16 +24,12 @@ export function StationInspector({ id }: { id: StationId }) {
 
   const selectedLineId = selection.selectedStopLineId;
   const labelSelected = selection.labelSelected;
-  const selectedStopCell =
-    selectedLineId && station
-      ? station.stops.find((c) => c.lineId === selectedLineId)
-      : null;
-  const hasSelection = !!(selectedStopCell || labelSelected);
+  const hasSelection = !!(selectedLineId || labelSelected);
 
-  // Standard deselect: Escape, or mousedown anywhere outside the stop-area
-  // (the row containing the move/rotate controls and the StopGrid). Clicks
-  // on canvas/sidebar already deselect via selectStation; this covers the
-  // remaining "click on something else within the inspector" case.
+  // Standard deselect: Escape, or mousedown anywhere outside the stop area
+  // (the StopGrid). Clicks on canvas/sidebar already deselect via
+  // selectStation; this covers the remaining "click on something else
+  // within the inspector" case.
   useEffect(() => {
     if (!hasSelection) return;
     const clear = () => {
@@ -57,48 +53,6 @@ export function StationInspector({ id }: { id: StationId }) {
   }, [hasSelection, selection]);
 
   if (!station) return null;
-
-  // Arrow buttons act in the displayed frame: clicking ↑ moves the cell
-  // toward the top of the screen, regardless of how the grid is rotated.
-  // For 90° rotations we remap the cardinal delta into unrotated grid
-  // coords; at 45° offsets the rotation is purely visual and the arrows
-  // continue to operate in unrotated grid coords (no clean cardinal
-  // mapping exists for a half-turn).
-  const quarterTurns = station.rotation % 2 === 0 ? station.rotation / 2 : 0;
-  const toUnrotatedDelta = (dRow: number, dCol: number) => {
-    let dr = dRow;
-    let dc = dCol;
-    for (let i = 0; i < quarterTurns; i++) {
-      [dr, dc] = [-dc, dr];
-    }
-    return { dRow: dr, dCol: dc };
-  };
-
-  const onMove = (dRow: number, dCol: number) => {
-    const m = toUnrotatedDelta(dRow, dCol);
-    if (selectedStopCell) {
-      moveStopAction(station.id, selectedStopCell.lineId, m.dRow, m.dCol);
-    } else if (labelSelected) {
-      moveLabelAction(station.id, m.dRow, m.dCol);
-    }
-  };
-  const onRotateCell = () => {
-    if (selectedStopCell) rotateStopAction(station.id, selectedStopCell.lineId);
-    else if (labelSelected) rotateLabelAction(station.id);
-  };
-
-  // Disable arrows only for stop moves whose target is the label cell —
-  // stops can swap with each other but can't enter the label cell. Label
-  // moves never get disabled now (they jump past blocking stops).
-  const isBlocked = (dRow: number, dCol: number): boolean => {
-    if (selectedStopCell) {
-      const m = toUnrotatedDelta(dRow, dCol);
-      const newRow = selectedStopCell.row + m.dRow;
-      const newCol = selectedStopCell.col + m.dCol;
-      return station.label.row === newRow && station.label.col === newCol;
-    }
-    return false;
-  };
 
   return (
     <section className="inspector">
@@ -150,51 +104,7 @@ export function StationInspector({ id }: { id: StationId }) {
       </div>
       <div className="field">
         <label>Stop layout</label>
-        <div ref={stopAreaRef} style={{ display: 'flex', gap: 8, alignItems: 'flex-start' }}>
-          {/* Controls FIRST, grid second — so the controls don't jump
-              around as the grid resizes when stops/label move. */}
-          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 22px)', gap: 2 }}>
-            <span />
-            <button
-              className="btn-mini"
-              disabled={!hasSelection || isBlocked(-1, 0)}
-              onClick={() => onMove(-1, 0)}
-            >
-              ↑
-            </button>
-            <span />
-            <button
-              className="btn-mini"
-              disabled={!hasSelection || isBlocked(0, -1)}
-              onClick={() => onMove(0, -1)}
-            >
-              ←
-            </button>
-            <button
-              className="btn-mini"
-              disabled={!hasSelection}
-              onClick={onRotateCell}
-              title={labelSelected ? 'Rotate label' : 'Rotate stop'}
-            >
-              ⟳
-            </button>
-            <button
-              className="btn-mini"
-              disabled={!hasSelection || isBlocked(0, 1)}
-              onClick={() => onMove(0, 1)}
-            >
-              →
-            </button>
-            <span />
-            <button
-              className="btn-mini"
-              disabled={!hasSelection || isBlocked(1, 0)}
-              onClick={() => onMove(1, 0)}
-            >
-              ↓
-            </button>
-            <span />
-          </div>
+        <div ref={stopAreaRef} style={{ display: 'flex', justifyContent: 'center' }}>
           <StopGrid
             station={station}
             lines={lines}
@@ -204,6 +114,8 @@ export function StationInspector({ id }: { id: StationId }) {
             onSelectLabel={() => selection.setLabelSelected(true)}
             onRotateStop={(lid) => rotateStopAction(station.id, lid)}
             onRotateLabel={() => rotateLabelAction(station.id)}
+            onMoveStop={(lid, dRow, dCol) => moveStopAction(station.id, lid, dRow, dCol)}
+            onMoveLabel={(dRow, dCol) => moveLabelAction(station.id, dRow, dCol)}
           />
         </div>
       </div>
