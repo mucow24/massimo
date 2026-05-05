@@ -21,13 +21,7 @@ export const DEFAULT_DOC: MapDoc = {
 
 // ---------- Stations ----------
 
-export function addStation(
-  doc: MapDoc,
-  x: number,
-  y: number,
-  id: StationId,
-  name: string,
-): MapDoc {
+export function addStation(doc: MapDoc, x: number, y: number, id: StationId, name: string): MapDoc {
   const station: Station = {
     id,
     name,
@@ -122,7 +116,6 @@ export function rotateStationAndLayout(doc: MapDoc, id: StationId, dir: -1 | 1):
 }
 
 export function deleteStation(doc: MapDoc, id: StationId): MapDoc {
-   
   const { [id]: _gone, ...rest } = doc.stations;
   const lines: Record<LineId, Line> = {};
   for (const lid of Object.keys(doc.lines)) {
@@ -183,12 +176,7 @@ export function rotateStop(doc: MapDoc, stationId: StationId, lineId: LineId): M
 
 // ---------- Label ----------
 
-export function moveLabel(
-  doc: MapDoc,
-  stationId: StationId,
-  dRow: number,
-  dCol: number,
-): MapDoc {
+export function moveLabel(doc: MapDoc, stationId: StationId, dRow: number, dCol: number): MapDoc {
   const st = doc.stations[stationId];
   if (!st) return doc;
   if (dRow === 0 && dCol === 0) return doc;
@@ -264,10 +252,7 @@ export function mirrorLabel(doc: MapDoc, stationId: StationId): MapDoc {
   else dCol = Math.sign(dcRaw) || 1;
   // Furthest stop along (dRow, dCol).
   const proj = (r: number, c: number) => r * dRow + c * dCol;
-  const maxProj = st.stops.reduce(
-    (m, cell) => Math.max(m, proj(cell.row, cell.col)),
-    -Infinity,
-  );
+  const maxProj = st.stops.reduce((m, cell) => Math.max(m, proj(cell.row, cell.col)), -Infinity);
   // Step past the max-projected stop (and any other stops at the same
   // projection level beyond) until we land on an empty cell. Safety bound.
   let newRow = st.label.row;
@@ -306,12 +291,7 @@ export function setLabelOffset(doc: MapDoc, stationId: StationId, offset: number
 
 // ---------- Lines ----------
 
-export function addLine(
-  doc: MapDoc,
-  id: LineId,
-  service: string,
-  color: string,
-): MapDoc {
+export function addLine(doc: MapDoc, id: LineId, service: string, color: string): MapDoc {
   const line: Line = { id, service, color, stations: [] };
   // New line goes on top of the layer stack (front-most).
   const order = effectiveLineOrder(doc.lineOrder, doc.lines);
@@ -405,11 +385,7 @@ export function removeStationFromLine(doc: MapDoc, lineId: LineId, idx: number):
   };
 }
 
-export function reorderLineStations(
-  doc: MapDoc,
-  lineId: LineId,
-  stations: StationId[],
-): MapDoc {
+export function reorderLineStations(doc: MapDoc, lineId: LineId, stations: StationId[]): MapDoc {
   const ln = doc.lines[lineId];
   if (!ln) return doc;
   return {
@@ -420,7 +396,6 @@ export function reorderLineStations(
 }
 
 export function deleteLine(doc: MapDoc, id: LineId): MapDoc {
-   
   const { [id]: _gone, ...rest } = doc.lines;
   const stations: Record<StationId, Station> = {};
   for (const sid of Object.keys(doc.stations)) {

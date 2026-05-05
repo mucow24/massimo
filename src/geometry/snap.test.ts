@@ -1,10 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import {
-  alignmentPairs,
-  axisForRotation,
-  parallel,
-  snapDraggedStation,
-} from './snap';
+import { alignmentPairs, axisForRotation, parallel, snapDraggedStation } from './snap';
 import { makeStation, makeStop } from '../test/fixtures';
 import type { Station, StationId, StopCell } from '../model/types';
 
@@ -204,21 +199,13 @@ describe('snapDraggedStation', () => {
       id: 't',
       x: 100,
       y: 0,
-      stops: [
-        makeStop('L1', { col: 0 }),
-        makeStop('L2', { col: 1 }),
-        makeStop('L3', { col: 2 }),
-      ],
+      stops: [makeStop('L1', { col: 0 }), makeStop('L2', { col: 1 }), makeStop('L3', { col: 2 })],
     });
     const dragged = makeStation({
       id: 'd',
       x: 0,
       y: 0,
-      stops: [
-        makeStop('L1', { col: 0 }),
-        makeStop('L2', { col: 1 }),
-        makeStop('L3', { col: 2 }),
-      ],
+      stops: [makeStop('L1', { col: 0 }), makeStop('L2', { col: 1 }), makeStop('L3', { col: 2 })],
     });
     const r = snapDraggedStation({
       draggedId: 'd',

@@ -51,9 +51,7 @@ function applyOne(doc: MapDoc, action: Action, ids: ReturnType<typeof counterIdF
     case 'toggleStationOnLine': {
       const lineId = pickKey(doc.lines);
       const stationId = pickKey(doc.stations);
-      return lineId && stationId
-        ? T.toggleStationOnLine(doc, lineId, stationId)
-        : doc;
+      return lineId && stationId ? T.toggleStationOnLine(doc, lineId, stationId) : doc;
     }
     case 'rotateStation': {
       const id = pickKey(doc.stations);

@@ -177,8 +177,7 @@ export function snapDraggedStation(input: SnapInput): SnapResult {
     const p1 = { x: -primary.axis.y, y: primary.axis.x };
     const p2 = { x: -secondary.axis.y, y: secondary.axis.x };
     const k1 =
-      (primary.targetStopX - primary.dOff.x) * p1.x +
-      (primary.targetStopY - primary.dOff.y) * p1.y;
+      (primary.targetStopX - primary.dOff.x) * p1.x + (primary.targetStopY - primary.dOff.y) * p1.y;
     const k2 =
       (secondary.targetStopX - secondary.dOff.x) * p2.x +
       (secondary.targetStopY - secondary.dOff.y) * p2.y;
@@ -220,8 +219,7 @@ export function snapDraggedStation(input: SnapInput): SnapResult {
     const py = c.axis.x;
     const dStopX = sx + c.dOff.x;
     const dStopY = sy + c.dOff.y;
-    const primaryAlong =
-      (c.targetStopX - dStopX) * c.axis.x + (c.targetStopY - dStopY) * c.axis.y;
+    const primaryAlong = (c.targetStopX - dStopX) * c.axis.x + (c.targetStopY - dStopY) * c.axis.y;
     const oppositeSign = -Math.sign(primaryAlong) || 0;
     if (oppositeSign === 0) return;
     let candidate: { from: Vec2; to: Vec2; alongAbs: number } | null = null;

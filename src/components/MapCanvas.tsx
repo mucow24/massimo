@@ -106,7 +106,13 @@ export function MapCanvas() {
           fill="#fafafa"
         />
 
-        <Grid vbX={view.vbX} vbY={view.vbY} vbW={view.vbW} vbH={view.vbH} zoom={view.viewport.zoom} />
+        <Grid
+          vbX={view.vbX}
+          vbY={view.vbY}
+          vbW={view.vbW}
+          vbH={view.vbH}
+          zoom={view.viewport.zoom}
+        />
 
         {/* bands and stop squares interleaved by per-line z-priority */}
         {renderables.map((r, i) =>

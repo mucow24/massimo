@@ -1,12 +1,6 @@
 import { describe, it, expect } from 'vitest';
 import { buildBands, buildLineIndex, buildStopMarkers } from './interlining';
-import {
-  makeDoc,
-  makeLine,
-  makeStation,
-  makeStop,
-  stationWithStop,
-} from '../test/fixtures';
+import { makeDoc, makeLine, makeStation, makeStop, stationWithStop } from '../test/fixtures';
 
 describe('buildLineIndex', () => {
   it('numbers IDs in lineOrder front-to-back', () => {
@@ -76,19 +70,13 @@ describe('buildBands — interlining', () => {
           id: 's1',
           x: 0,
           y: 0,
-          stops: [
-            makeStop('L1', { col: 0 }),
-            makeStop('L2', { col: 1 }),
-          ],
+          stops: [makeStop('L1', { col: 0 }), makeStop('L2', { col: 1 })],
         }),
         makeStation({
           id: 's2',
           x: 0,
           y: 100,
-          stops: [
-            makeStop('L1', { col: 0 }),
-            makeStop('L2', { col: 1 }),
-          ],
+          stops: [makeStop('L1', { col: 0 }), makeStop('L2', { col: 1 })],
         }),
       ],
       lines: [
@@ -111,19 +99,13 @@ describe('buildBands — interlining', () => {
           id: 's1',
           x: 0,
           y: 0,
-          stops: [
-            makeStop('L1', { col: 0 }),
-            makeStop('L2', { col: 1 }),
-          ],
+          stops: [makeStop('L1', { col: 0 }), makeStop('L2', { col: 1 })],
         }),
         makeStation({
           id: 's2',
           x: 0,
           y: 100,
-          stops: [
-            makeStop('L1', { col: 0 }),
-            makeStop('L2', { col: 1 }),
-          ],
+          stops: [makeStop('L1', { col: 0 }), makeStop('L2', { col: 1 })],
         }),
       ],
       lines: [
@@ -144,19 +126,13 @@ describe('buildBands — interlining', () => {
           id: 's1',
           x: 0,
           y: 0,
-          stops: [
-            makeStop('L1', { col: 0 }),
-            makeStop('L2', { col: 5 }),
-          ],
+          stops: [makeStop('L1', { col: 0 }), makeStop('L2', { col: 5 })],
         }),
         makeStation({
           id: 's2',
           x: 0,
           y: 100,
-          stops: [
-            makeStop('L1', { col: 0 }),
-            makeStop('L2', { col: 5 }),
-          ],
+          stops: [makeStop('L1', { col: 0 }), makeStop('L2', { col: 5 })],
         }),
       ],
       lines: [
@@ -177,19 +153,13 @@ describe('buildBands — priority', () => {
           id: 's1',
           x: 0,
           y: 0,
-          stops: [
-            makeStop('L1', { col: 0 }),
-            makeStop('L2', { col: 1 }),
-          ],
+          stops: [makeStop('L1', { col: 0 }), makeStop('L2', { col: 1 })],
         }),
         makeStation({
           id: 's2',
           x: 0,
           y: 100,
-          stops: [
-            makeStop('L1', { col: 0 }),
-            makeStop('L2', { col: 1 }),
-          ],
+          stops: [makeStop('L1', { col: 0 }), makeStop('L2', { col: 1 })],
         }),
       ],
       lines: [

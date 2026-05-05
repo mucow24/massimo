@@ -109,8 +109,7 @@ export function migrate(raw: unknown, fromVersion: number): MapDoc {
         migratedStations[id] = st;
         continue;
       }
-      const minCol =
-        (st.stops ?? []).length === 0 ? 0 : Math.min(...st.stops.map((c) => c.col));
+      const minCol = (st.stops ?? []).length === 0 ? 0 : Math.min(...st.stops.map((c) => c.col));
       const label: LabelCell = { row: 0, col: minCol - 1, rotation: 0, offset: 0 };
       migratedStations[id] = { ...st, label };
     }
