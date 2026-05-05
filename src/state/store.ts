@@ -1,5 +1,6 @@
 import { create } from 'zustand';
 import { persist, createJSONStorage } from 'zustand/middleware';
+import { temporal } from 'zundo';
 import type { Line, LineId, MapDoc, StationId } from '../model/types';
 import { effectiveLineOrder } from '../model/lineOrder';
 import { defaultIdFactory, IdFactory } from '../model/ids';
@@ -84,8 +85,9 @@ interface DocState extends MapDoc {
 }
 
 export const useDoc = create<DocState>()(
-  persist(
-    (set) => ({
+  temporal(
+    persist(
+      (set) => ({
       ...DEFAULT_DOC,
 
       addStation: (x, y) => {
@@ -144,6 +146,20 @@ export const useDoc = create<DocState>()(
       }),
       // Single source of truth for migrations — see model/serialize.ts.
       migrate: (persisted, fromVersion) => migrateDoc(persisted, fromVersion),
+    },
+    ),
+    {
+      // Track only the document data — viewport and selection are in their
+      // own stores, and the mutator method references never change so they're
+      // safe to leave in (Object.assign on undo preserves them).
+      partialize: (state) => ({
+        stations: state.stations,
+        lines: state.lines,
+        lineOrder: state.lineOrder,
+        curveRadius: state.curveRadius,
+        lineCounter: state.lineCounter,
+      }),
+      limit: 200,
     },
   ),
 );

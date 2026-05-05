@@ -33,6 +33,19 @@ export default function App() {
           useDoc.getState().deleteStation(stationId);
         }
       }
+      const mod = e.metaKey || e.ctrlKey;
+      if (mod && !inForm && (e.key === 'z' || e.key === 'Z')) {
+        e.preventDefault();
+        const temporal = useDoc.temporal.getState();
+        if (e.shiftKey) temporal.redo();
+        else temporal.undo();
+        return;
+      }
+      if (mod && !inForm && (e.key === 'y' || e.key === 'Y')) {
+        e.preventDefault();
+        useDoc.temporal.getState().redo();
+        return;
+      }
     };
     window.addEventListener('keydown', onKey);
     return () => window.removeEventListener('keydown', onKey);
