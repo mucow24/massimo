@@ -62,6 +62,24 @@ export default function App() {
     return () => window.removeEventListener('keydown', onKey);
   }, [setAppending, setPlacingStation, setCreatingLineTag, selectLineTag]);
 
+  // Right-click anywhere cancels an active mode. Capture phase + stopPropagation
+  // so we beat element-level context menus (station rotate, tag flip): they
+  // shouldn't fire when the user is trying to back out of a mode.
+  useEffect(() => {
+    const onContextMenu = (e: globalThis.MouseEvent) => {
+      const sel = useSelection.getState();
+      if (sel.placingStation || sel.creatingLineTag || sel.appendingToLineId) {
+        e.preventDefault();
+        e.stopPropagation();
+        sel.setPlacingStation(false);
+        sel.setCreatingLineTag(false);
+        sel.setAppending(null);
+      }
+    };
+    document.addEventListener('contextmenu', onContextMenu, true);
+    return () => document.removeEventListener('contextmenu', onContextMenu, true);
+  }, []);
+
   return (
     <div className="app">
       <Toolbar />
