@@ -163,9 +163,7 @@ export function rotateStop(doc: MapDoc, stationId: StationId, lineId: LineId): M
   // in persisted docs), but rotating from one of those collapses to the auto
   // orientation on the opposite axis.
   const wasVertical =
-    cur.orientation === 'auto-vertical' ||
-    cur.orientation === 'up' ||
-    cur.orientation === 'down';
+    cur.orientation === 'auto-vertical' || cur.orientation === 'up' || cur.orientation === 'down';
   const next: StopOrientation = wasVertical ? 'auto-horizontal' : 'auto-vertical';
   if (next === cur.orientation) return doc;
   const newStops = st.stops.slice();
