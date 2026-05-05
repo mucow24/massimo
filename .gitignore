@@ -4,5 +4,13 @@ dist/
 *.log
 .DS_Store
 
+# TypeScript build artifacts
+*.tsbuildinfo
+vite.config.js
+vite.config.d.ts
+
+# Vitest coverage output
+coverage/
+
 # Source archive for fonts (extracted into public/fonts/)
 helvetica-neue-*.zip

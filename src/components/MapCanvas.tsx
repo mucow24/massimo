@@ -4,9 +4,10 @@ import { useEffect, useMemo, useRef, useState } from 'react';
 // Uses the W3C relative-luminance formula.
 function legibleTextOn(hex: string): string {
   const m = hex.replace('#', '');
-  const v = m.length === 3
-    ? [m[0] + m[0], m[1] + m[1], m[2] + m[2]]
-    : [m.slice(0, 2), m.slice(2, 4), m.slice(4, 6)];
+  const v =
+    m.length === 3
+      ? [m[0] + m[0], m[1] + m[1], m[2] + m[2]]
+      : [m.slice(0, 2), m.slice(2, 4), m.slice(4, 6)];
   const [r, g, b] = v.map((h) => {
     const c = parseInt(h, 16) / 255;
     return c <= 0.03928 ? c / 12.92 : Math.pow((c + 0.055) / 1.055, 2.4);
@@ -16,11 +17,22 @@ function legibleTextOn(hex: string): string {
 }
 import { dragState, useDoc, useSelection } from '../state/store';
 import { Station, StationId, StopCell } from '../state/types';
-import { buildBands, buildStopMarkers, SegmentBandSpec, StopMarkerSpec } from '../geometry/interlining';
+import {
+  buildBands,
+  buildStopMarkers,
+  SegmentBandSpec,
+  StopMarkerSpec,
+} from '../geometry/interlining';
 import { SegmentBand } from './SegmentBand';
 import { StationView } from './StationView';
 import { Vec2 } from '../geometry/vec';
-import { STOP_SIZE, rotateBy, stopCenterAt, travelDirLocal, Rotation } from '../geometry/orientation';
+import {
+  STOP_SIZE,
+  rotateBy,
+  stopCenterAt,
+  travelDirLocal,
+  Rotation,
+} from '../geometry/orientation';
 
 const SQRT2_2 = Math.SQRT2 / 2;
 const SNAP_PERP_TOLERANCE = 10;
@@ -62,9 +74,7 @@ function alignmentPairs(
   target: Station,
 ): AlignmentPair[] {
   if (draggedStops.length === 0 && target.stops.length === 0) {
-    return [
-      { dOff: { x: 0, y: 0 }, tOff: { x: 0, y: 0 }, axis: axisForRotation(draggedRotation) },
-    ];
+    return [{ dOff: { x: 0, y: 0 }, tOff: { x: 0, y: 0 }, axis: axisForRotation(draggedRotation) }];
   }
   const out: AlignmentPair[] = [];
   for (const dCell of draggedStops) {
@@ -222,8 +232,7 @@ function tryAxisSnap(
     const p1 = { x: -primary.axis.y, y: primary.axis.x };
     const p2 = { x: -secondary.axis.y, y: secondary.axis.x };
     const k1 =
-      (primary.targetStopX - primary.dOff.x) * p1.x +
-      (primary.targetStopY - primary.dOff.y) * p1.y;
+      (primary.targetStopX - primary.dOff.x) * p1.x + (primary.targetStopY - primary.dOff.y) * p1.y;
     const k2 =
       (secondary.targetStopX - secondary.dOff.x) * p2.x +
       (secondary.targetStopY - secondary.dOff.y) * p2.y;
@@ -265,8 +274,7 @@ function tryAxisSnap(
     const py = c.axis.x;
     const dStopX = sx + c.dOff.x;
     const dStopY = sy + c.dOff.y;
-    const primaryAlong =
-      (c.targetStopX - dStopX) * c.axis.x + (c.targetStopY - dStopY) * c.axis.y;
+    const primaryAlong = (c.targetStopX - dStopX) * c.axis.x + (c.targetStopY - dStopY) * c.axis.y;
     const oppositeSign = -Math.sign(primaryAlong) || 0;
     if (oppositeSign === 0) return;
     let candidate: { from: Vec2; to: Vec2; alongAbs: number } | null = null;
@@ -312,7 +320,13 @@ export function MapCanvas() {
   const svgRef = useRef<SVGSVGElement | null>(null);
   const [size, setSize] = useState({ w: 800, h: 600 });
   const [panning, setPanning] = useState(false);
-  const panStartRef = useRef<{ mx: number; my: number; vx: number; vy: number; moved: boolean } | null>(null);
+  const panStartRef = useRef<{
+    mx: number;
+    my: number;
+    vx: number;
+    vy: number;
+    moved: boolean;
+  } | null>(null);
   const dragStationRef = useRef<{
     id: StationId;
     startWX: number;
@@ -391,11 +405,20 @@ export function MapCanvas() {
 
   const onPointerDown = (e: React.PointerEvent) => {
     if (e.button !== 0) return;
-    if (e.target === svgRef.current || (e.target as Element).tagName === 'rect' && (e.target as Element).hasAttribute('data-bg')) {
+    if (
+      e.target === svgRef.current ||
+      ((e.target as Element).tagName === 'rect' && (e.target as Element).hasAttribute('data-bg'))
+    ) {
       // Start panning. Even in place-station mode — a tap still places (the
       // pan-moved suppression on pointerup keeps drags from placing), but a
       // real drag pans the canvas instead.
-      panStartRef.current = { mx: e.clientX, my: e.clientY, vx: viewport.x, vy: viewport.y, moved: false };
+      panStartRef.current = {
+        mx: e.clientX,
+        my: e.clientY,
+        vx: viewport.x,
+        vy: viewport.y,
+        moved: false,
+      };
       setPanning(true);
       svgRef.current?.setPointerCapture(e.pointerId);
     }
@@ -443,15 +466,7 @@ export function MapCanvas() {
         const shouldSnap = !e.shiftKey;
         const tol = SNAP_PERP_TOLERANCE;
         if (shouldSnap) {
-          const snap = tryAxisSnap(
-            ds.id,
-            nx,
-            ny,
-            draggedRot,
-            draggedStops,
-            stations,
-            tol,
-          );
+          const snap = tryAxisSnap(ds.id, nx, ny, draggedRot, draggedStops, stations, tol);
           nx = snap.x;
           ny = snap.y;
           setSnapGuides(snap.guides);
@@ -545,22 +560,21 @@ export function MapCanvas() {
           </div>
         </>
       )}
-      {selection.appendingToLineId && !selection.placingStation && (() => {
-        const line = lines[selection.appendingToLineId];
-        if (!line) return null;
-        const text = legibleTextOn(line.color);
-        return (
-          <>
-            <div className="append-frame" style={{ borderColor: line.color }} />
-            <div
-              className="append-banner"
-              style={{ background: line.color, color: text }}
-            >
-              Appending to line {line.service} — click stations to add or remove. Esc to stop.
-            </div>
-          </>
-        );
-      })()}
+      {selection.appendingToLineId &&
+        !selection.placingStation &&
+        (() => {
+          const line = lines[selection.appendingToLineId];
+          if (!line) return null;
+          const text = legibleTextOn(line.color);
+          return (
+            <>
+              <div className="append-frame" style={{ borderColor: line.color }} />
+              <div className="append-banner" style={{ background: line.color, color: text }}>
+                Appending to line {line.service} — click stations to add or remove. Esc to stop.
+              </div>
+            </>
+          );
+        })()}
       <svg
         ref={svgRef}
         viewBox={`${vbX} ${vbY} ${vbW} ${vbH}`}
@@ -617,13 +631,7 @@ export function MapCanvas() {
         {snapGuides.length > 0 && (
           <g pointerEvents="none">
             <defs>
-              <filter
-                id="snap-halo-blur"
-                x="-50%"
-                y="-50%"
-                width="200%"
-                height="200%"
-              >
+              <filter id="snap-halo-blur" x="-50%" y="-50%" width="200%" height="200%">
                 <feGaussianBlur stdDeviation={2 / viewport.zoom} />
               </filter>
             </defs>
@@ -710,12 +718,28 @@ function Grid({
   const lines: React.ReactElement[] = [];
   for (let x = x0; x <= vbX + vbW; x += step) {
     lines.push(
-      <line key={'vx' + x} x1={x} y1={vbY} x2={x} y2={vbY + vbH} stroke="#eee" strokeWidth={1 / zoom} />,
+      <line
+        key={'vx' + x}
+        x1={x}
+        y1={vbY}
+        x2={x}
+        y2={vbY + vbH}
+        stroke="#eee"
+        strokeWidth={1 / zoom}
+      />,
     );
   }
   for (let y = y0; y <= vbY + vbH; y += step) {
     lines.push(
-      <line key={'hy' + y} x1={vbX} y1={y} x2={vbX + vbW} y2={y} stroke="#eee" strokeWidth={1 / zoom} />,
+      <line
+        key={'hy' + y}
+        x1={vbX}
+        y1={y}
+        x2={vbX + vbW}
+        y2={y}
+        stroke="#eee"
+        strokeWidth={1 / zoom}
+      />,
     );
   }
   return <g pointerEvents="none">{lines}</g>;

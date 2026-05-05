@@ -6,9 +6,10 @@ import type { Line } from '../state/types';
 // Pick black or white text for legibility against an arbitrary hex bg.
 function legibleTextOn(hex: string): string {
   const m = hex.replace('#', '');
-  const v = m.length === 3
-    ? [m[0] + m[0], m[1] + m[1], m[2] + m[2]]
-    : [m.slice(0, 2), m.slice(2, 4), m.slice(4, 6)];
+  const v =
+    m.length === 3
+      ? [m[0] + m[0], m[1] + m[1], m[2] + m[2]]
+      : [m.slice(0, 2), m.slice(2, 4), m.slice(4, 6)];
   const [r, g, b] = v.map((h) => {
     const c = parseInt(h, 16) / 255;
     return c <= 0.03928 ? c / 12.92 : Math.pow((c + 0.055) / 1.055, 2.4);
@@ -45,17 +46,13 @@ export function Sidebar() {
   // outside the sidebar (e.g. clicking a station on the canvas).
   useEffect(() => {
     if (selection.activeTab !== 'stations' || !selection.selectedStationId) return;
-    const el = document.querySelector(
-      `[data-station-row="${selection.selectedStationId}"]`,
-    );
+    const el = document.querySelector(`[data-station-row="${selection.selectedStationId}"]`);
     el?.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
   }, [selection.selectedStationId, selection.activeTab]);
 
   useEffect(() => {
     if (selection.activeTab !== 'lines' || !selection.selectedLineId) return;
-    const el = document.querySelector(
-      `[data-line-row="${selection.selectedLineId}"]`,
-    );
+    const el = document.querySelector(`[data-line-row="${selection.selectedLineId}"]`);
     el?.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
   }, [selection.selectedLineId, selection.activeTab]);
 

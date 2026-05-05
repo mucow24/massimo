@@ -77,7 +77,7 @@ function travelDirWorld(cell: StopCell, station: Station, worldHint: Vec2 | null
 // Quantize a unit vector to one of 8 compass directions.
 function dirIndex8(v: Vec2): number {
   const a = Math.atan2(v.y, v.x);
-  return (((Math.round(a / (Math.PI / 4)) % 8) + 8) % 8);
+  return ((Math.round(a / (Math.PI / 4)) % 8) + 8) % 8;
 }
 
 /**
@@ -198,7 +198,14 @@ export function buildBands(
       const flush = () => {
         if (group.length === 0) return;
         bands.push(
-          buildBandSpec(group.map((e) => e.seg), stations, curveRadius, pairKey, fDir, tDir),
+          buildBandSpec(
+            group.map((e) => e.seg),
+            stations,
+            curveRadius,
+            pairKey,
+            fDir,
+            tDir,
+          ),
         );
         group = [];
       };
@@ -235,9 +242,7 @@ export function buildBands(
   const lineIndex = buildLineIndex(lineOrder, lines);
   const fallback = Object.keys(lineIndex).length;
   for (const band of bands) {
-    band.priority = Math.min(
-      ...band.lines.map((l) => lineIndex[l.id] ?? fallback),
-    );
+    band.priority = Math.min(...band.lines.map((l) => lineIndex[l.id] ?? fallback));
   }
 
   return bands;

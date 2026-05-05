@@ -15,10 +15,7 @@ export default function App() {
       const target = e.target as HTMLElement | null;
       const tag = target?.tagName;
       const inForm =
-        tag === 'INPUT' ||
-        tag === 'TEXTAREA' ||
-        tag === 'SELECT' ||
-        target?.isContentEditable;
+        tag === 'INPUT' || tag === 'TEXTAREA' || tag === 'SELECT' || target?.isContentEditable;
 
       if (e.key === 'Escape') {
         setAppending(null);
