@@ -512,6 +512,10 @@ export function MapCanvas() {
       // would close the placing-mode banner via the inspector swap.
       return;
     }
+    if (selection.appendingToLineId) {
+      selection.setAppending(null);
+      return;
+    }
     selection.selectStation(null);
   };
 
@@ -534,21 +538,27 @@ export function MapCanvas() {
   return (
     <div className="canvas-host">
       {selection.placingStation && (
-        <div className="append-banner placing">
-          Click on the canvas to place a new station. Press Esc to cancel.
-        </div>
+        <>
+          <div className="append-frame" style={{ borderColor: '#1a4ea8' }} />
+          <div className="append-banner placing">
+            Click on the canvas to place a new station. Press Esc to cancel.
+          </div>
+        </>
       )}
       {selection.appendingToLineId && !selection.placingStation && (() => {
         const line = lines[selection.appendingToLineId];
         if (!line) return null;
         const text = legibleTextOn(line.color);
         return (
-          <div
-            className="append-banner"
-            style={{ background: line.color, color: text }}
-          >
-            Appending to line {line.service} — click stations to add or remove. Esc to stop.
-          </div>
+          <>
+            <div className="append-frame" style={{ borderColor: line.color }} />
+            <div
+              className="append-banner"
+              style={{ background: line.color, color: text }}
+            >
+              Appending to line {line.service} — click stations to add or remove. Esc to stop.
+            </div>
+          </>
         );
       })()}
       <svg
