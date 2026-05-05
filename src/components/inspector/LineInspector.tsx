@@ -1,5 +1,5 @@
 import { useDoc, useSelection } from '../../state/store';
-import type { LineId } from '../../state/types';
+import type { LineId } from '../../model/types';
 import { ColorPalette } from './ColorPalette';
 
 export function LineInspector({ id }: { id: LineId }) {

@@ -1,5 +1,5 @@
 import { Vec2 } from './vec';
-import type { StopOrientation } from '../state/types';
+import type { StopOrientation } from '../model/types';
 
 export const STOP_SIZE = 14;
 export const STOP_GAP = 0;

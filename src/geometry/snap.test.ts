@@ -6,7 +6,7 @@ import {
   snapDraggedStation,
 } from './snap';
 import { makeStation, makeStop } from '../test/fixtures';
-import type { Station, StationId, StopCell } from '../state/types';
+import type { Station, StationId, StopCell } from '../model/types';
 
 describe('parallel', () => {
   it('flags vectors with the same direction', () => {

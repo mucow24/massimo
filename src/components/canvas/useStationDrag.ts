@@ -1,6 +1,6 @@
 import { RefObject, useRef, useState } from 'react';
 import { dragState, useDoc } from '../../state/store';
-import type { StationId } from '../../state/types';
+import type { StationId } from '../../model/types';
 import { Rotation } from '../../geometry/orientation';
 import { snapDraggedStation, SnapGuide, SNAP_PERP_TOLERANCE } from '../../geometry/snap';
 

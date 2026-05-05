@@ -1,5 +1,5 @@
 import { useEffect, useRef } from 'react';
-import { Line, Station } from '../state/types';
+import { Line, Station } from '../model/types';
 import { dragState, useDoc, useSelection } from '../state/store';
 import { DIR_8, STOP_SIZE, stopCenterAt } from '../geometry/orientation';
 

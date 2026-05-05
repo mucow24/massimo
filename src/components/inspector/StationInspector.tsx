@@ -1,5 +1,5 @@
 import { useDoc, useSelection } from '../../state/store';
-import type { StationId } from '../../state/types';
+import type { StationId } from '../../model/types';
 import { StopGrid } from './StopGrid';
 import { LabelOffsetControl } from './LabelOffsetControl';
 
