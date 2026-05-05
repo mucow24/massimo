@@ -165,13 +165,17 @@ export function StationInspector({ id }: { id: StationId }) {
               className="btn-mini"
               disabled={!hasSelection || isBlocked(-1, 0)}
               onClick={() => onMove(-1, 0)}
-            >↑</button>
+            >
+              ↑
+            </button>
             <span />
             <button
               className="btn-mini"
               disabled={!hasSelection || isBlocked(0, -1)}
               onClick={() => onMove(0, -1)}
-            >←</button>
+            >
+              ←
+            </button>
             <button
               className="btn-mini"
               disabled={!hasSelection}
@@ -184,13 +188,17 @@ export function StationInspector({ id }: { id: StationId }) {
               className="btn-mini"
               disabled={!hasSelection || isBlocked(0, 1)}
               onClick={() => onMove(0, 1)}
-            >→</button>
+            >
+              →
+            </button>
             <span />
             <button
               className="btn-mini"
               disabled={!hasSelection || isBlocked(1, 0)}
               onClick={() => onMove(1, 0)}
-            >↓</button>
+            >
+              ↓
+            </button>
             <span />
           </div>
           <StopGrid
@@ -214,13 +222,7 @@ export function StationInspector({ id }: { id: StationId }) {
   );
 }
 
-function LabelOffsetControl({
-  value,
-  onChange,
-}: {
-  value: number;
-  onChange: (v: number) => void;
-}) {
+function LabelOffsetControl({ value, onChange }: { value: number; onChange: (v: number) => void }) {
   // Slider [-100, 100] with detent at 0; textbox accepts any number.
   // Snap to 0 when the slider sits within ±2 of zero.
   const clampedSlider = Math.max(-100, Math.min(100, value));
@@ -251,13 +253,7 @@ function LabelOffsetControl({
   );
 }
 
-type GridStopOrientation =
-  | 'up'
-  | 'down'
-  | 'auto-vertical'
-  | 'left'
-  | 'right'
-  | 'auto-horizontal';
+type GridStopOrientation = 'up' | 'down' | 'auto-vertical' | 'left' | 'right' | 'auto-horizontal';
 
 type GridStation = {
   stops: { lineId: string; row: number; col: number; orientation: GridStopOrientation }[];
@@ -309,9 +305,7 @@ function StopGrid({
       const isLabel = label.row === r && label.col === c;
       const stop = !isLabel ? stopByPos[`${r},${c}`] : undefined;
       const line = stop ? lines[stop.lineId] : null;
-      const selected =
-        (isLabel && labelSelected) ||
-        (!!stop && stop.lineId === selectedLineId);
+      const selected = (isLabel && labelSelected) || (!!stop && stop.lineId === selectedLineId);
       cells.push(
         <div
           key={`${r},${c}`}
@@ -467,10 +461,7 @@ export function LineInspector({ id }: { id: LineId }) {
       </div>
       <div className="field">
         <label>Color</label>
-        <ColorPalette
-          value={line.color}
-          onChange={(c) => updateLine(line.id, { color: c })}
-        />
+        <ColorPalette value={line.color} onChange={(c) => updateLine(line.id, { color: c })} />
       </div>
       <div className="field">
         <label>Stations ({line.stations.length})</label>
@@ -496,12 +487,16 @@ export function LineInspector({ id }: { id: LineId }) {
               <div className="list-row" style={{ paddingLeft: 0 }}>
                 <span style={{ width: 18, color: '#999' }}>{i + 1}.</span>
                 <span className="grow">{st.name}</span>
-                <button className="btn-mini icon" disabled={i === 0} onClick={() => moveSt(i, -1)}>↑</button>
+                <button className="btn-mini icon" disabled={i === 0} onClick={() => moveSt(i, -1)}>
+                  ↑
+                </button>
                 <button
                   className="btn-mini icon"
                   disabled={i === line.stations.length - 1}
                   onClick={() => moveSt(i, 1)}
-                >↓</button>
+                >
+                  ↓
+                </button>
                 {isActiveCursor ? (
                   <button
                     className="btn-mini icon"
@@ -520,7 +515,12 @@ export function LineInspector({ id }: { id: LineId }) {
                     +
                   </button>
                 )}
-                <button className="btn-mini danger" onClick={() => removeStationFromLine(line.id, i)}>×</button>
+                <button
+                  className="btn-mini danger"
+                  onClick={() => removeStationFromLine(line.id, i)}
+                >
+                  ×
+                </button>
               </div>
               {isActiveCursor && (
                 <div

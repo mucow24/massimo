@@ -14,8 +14,7 @@ import type {
 } from './types';
 import { randomStationName } from './stationNames';
 
-const uid = () =>
-  Math.random().toString(36).slice(2, 8) + Date.now().toString(36).slice(-4);
+const uid = () => Math.random().toString(36).slice(2, 8) + Date.now().toString(36).slice(-4);
 
 const DEFAULT_DOC: MapDoc = {
   stations: {},
@@ -413,9 +412,7 @@ export const useDoc = create<DocState>()(
             newRow += dRow;
             newCol += dCol;
             const beyond = proj(newRow, newCol) > maxProj;
-            const empty = !st.stops.some(
-              (c) => c.row === newRow && c.col === newCol,
-            );
+            const empty = !st.stops.some((c) => c.row === newRow && c.col === newCol);
             if (beyond && empty) break;
           }
           const next = ((st.label.rotation + 4) % 8) as Rotation;
@@ -482,9 +479,7 @@ export const useDoc = create<DocState>()(
             // remove (all occurrences)
             const newStations = ln.stations.filter((x) => x !== stationId);
             const stillStops = newStations.includes(stationId);
-            const newStops = stillStops
-              ? st.stops
-              : st.stops.filter((c) => c.lineId !== lineId);
+            const newStops = stillStops ? st.stops : st.stops.filter((c) => c.lineId !== lineId);
             const stationsAfter = {
               ...s.stations,
               [stationId]: { ...st, stops: newStops },
@@ -508,9 +503,10 @@ export const useDoc = create<DocState>()(
             const hasCell = st.stops.some((c) => c.lineId === lineId);
             let newStops = st.stops;
             if (!hasCell) {
-              const maxCol = st.stops.length === 0
-                ? -1
-                : st.stops.reduce((m, c) => (c.col > m ? c.col : m), -Infinity);
+              const maxCol =
+                st.stops.length === 0
+                  ? -1
+                  : st.stops.reduce((m, c) => (c.col > m ? c.col : m), -Infinity);
               const newCell: StopCell = {
                 lineId,
                 row: 0,
@@ -642,9 +638,8 @@ export const useDoc = create<DocState>()(
               migratedStations[id] = st;
               continue;
             }
-            const minCol = (st.stops ?? []).length === 0
-              ? 0
-              : Math.min(...st.stops.map((c) => c.col));
+            const minCol =
+              (st.stops ?? []).length === 0 ? 0 : Math.min(...st.stops.map((c) => c.col));
             const label: LabelCell = { row: 0, col: minCol - 1, rotation: 0, offset: 0 };
             migratedStations[id] = { ...st, label };
           }
@@ -779,7 +774,10 @@ export const useSelection = create<SelectionState>((set, get) => ({
   setSelectedStopLineId: (id) =>
     set({ selectedStopLineId: id, labelSelected: id === null ? get().labelSelected : false }),
   setLabelSelected: (selected) =>
-    set({ labelSelected: selected, selectedStopLineId: selected ? null : get().selectedStopLineId }),
+    set({
+      labelSelected: selected,
+      selectedStopLineId: selected ? null : get().selectedStopLineId,
+    }),
   setEditingStationId: (id) => set({ editingStationId: id }),
   setActiveTab: (tab) => set({ activeTab: tab }),
 }));

@@ -207,10 +207,7 @@ export function StationView({ station, lines, onStartDrag, layer }: Props) {
 
   // layer === 'dots'
   return (
-    <g
-      transform={`translate(${station.x} ${station.y}) rotate(${angle})`}
-      pointerEvents="none"
-    >
+    <g transform={`translate(${station.x} ${station.y}) rotate(${angle})`} pointerEvents="none">
       {phantomDot &&
         (() => {
           const c = stopCenterAt(phantomDot.row, phantomDot.col);
