@@ -93,7 +93,9 @@ export function StopGrid({
       const selected = (isLabel && labelSelected) || (!!stop && stop.lineId === selectedLineId);
       const isDragSource =
         !!drag &&
-        ((drag.source.kind === 'stop' && cellKind === 'stop' && drag.source.lineId === stop!.lineId) ||
+        ((drag.source.kind === 'stop' &&
+          cellKind === 'stop' &&
+          drag.source.lineId === stop!.lineId) ||
           (drag.source.kind === 'label' && cellKind === 'label'));
       const isDropTarget =
         !!drag &&
