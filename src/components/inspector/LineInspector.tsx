@@ -56,6 +56,42 @@ export function LineInspector({ id }: { id: LineId }) {
             {isAppending ? 'Stop adding' : 'Add stations from map'}
           </button>
         )}
+        {line.stations.length > 0 &&
+          (() => {
+            const isStartCursor = isAppending && selection.insertAfterIndex === -1;
+            return (
+              <>
+                <button
+                  className="btn-mini"
+                  onClick={() =>
+                    isStartCursor
+                      ? selection.setAppending(null)
+                      : selection.startAppendAt(line.id, -1)
+                  }
+                  style={{
+                    width: '100%',
+                    padding: '1px 6px',
+                    ...(isStartCursor
+                      ? { background: line.color, color: '#fff', borderColor: line.color }
+                      : {}),
+                  }}
+                  title="Insert stations before the first station"
+                >
+                  {isStartCursor ? 'Stop adding' : '+ Add before start'}
+                </button>
+                {isStartCursor && (
+                  <div
+                    style={{
+                      height: 3,
+                      background: line.color,
+                      margin: '2px 0',
+                      borderRadius: 1.5,
+                    }}
+                  />
+                )}
+              </>
+            );
+          })()}
         {line.stations.map((sid, i) => {
           const st = stations[sid];
           if (!st) return null;
