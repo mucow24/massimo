@@ -1,18 +1,11 @@
 import { create } from 'zustand';
 import { persist, createJSONStorage } from 'zustand/middleware';
-import type {
-  LabelCell,
-  Line,
-  LineId,
-  MapDoc,
-  Station,
-  StationId,
-  StopCell,
-} from '../model/types';
+import type { Line, LineId, MapDoc, StationId } from '../model/types';
 import { effectiveLineOrder } from '../model/lineOrder';
 import { defaultIdFactory, IdFactory } from '../model/ids';
 import { DEFAULT_DOC } from '../model/transforms';
 import * as T from '../model/transforms';
+import { migrate as migrateDoc, SCHEMA_VERSION } from '../model/serialize';
 import { randomStationName } from './stationNames';
 
 // Re-export so callers (Sidebar, etc.) keep working with one source of truth.
@@ -140,7 +133,7 @@ export const useDoc = create<DocState>()(
     }),
     {
       name: 'vignelli-map-doc-v1',
-      version: 6,
+      version: SCHEMA_VERSION,
       storage: createJSONStorage(() => localStorage),
       partialize: (s) => ({
         stations: s.stations,
@@ -149,88 +142,8 @@ export const useDoc = create<DocState>()(
         curveRadius: s.curveRadius,
         lineCounter: s.lineCounter,
       }),
-      migrate: (persisted, fromVersion) => {
-        const state = persisted as {
-          stations?: Record<string, unknown>;
-          lines?: Record<string, unknown>;
-          lineOrder?: string[];
-          lineCounter?: number;
-          viewport?: unknown;
-        };
-        // v0 -> v1: stopOrder array -> stops grid.
-        if (fromVersion < 1 && state && state.stations) {
-          const migratedStations: Record<string, Station> = {};
-          for (const [id, raw] of Object.entries(state.stations)) {
-            const oldSt = raw as Station & { stopOrder?: LineId[] };
-            const stopOrder = oldSt.stopOrder ?? [];
-            const stops: StopCell[] = stopOrder.map((lineId, i) => ({
-              lineId,
-              row: 0,
-              col: i,
-              orientation: 'auto-vertical' as const,
-            }));
-            const { stopOrder: _drop, ...rest } = oldSt;
-            void _drop;
-            migratedStations[id] = { ...rest, stops } as Station;
-          }
-          state.stations = migratedStations;
-        }
-        // v1 -> v2: every station gains a label cell. Place it at
-        // (0, minCol - 1) — one cell left of the leftmost stop — to match
-        // the prior implicit "name to the left" rendering.
-        if (fromVersion < 2 && state && state.stations) {
-          const migratedStations: Record<string, Station> = {};
-          for (const [id, raw] of Object.entries(state.stations)) {
-            const st = raw as Station & { label?: LabelCell };
-            if (st.label) {
-              migratedStations[id] = st;
-              continue;
-            }
-            const minCol =
-              (st.stops ?? []).length === 0 ? 0 : Math.min(...st.stops.map((c) => c.col));
-            const label: LabelCell = { row: 0, col: minCol - 1, rotation: 0, offset: 0 };
-            migratedStations[id] = { ...st, label };
-          }
-          state.stations = migratedStations;
-        }
-        // v2 -> v3: label gains an `offset` field (default 0).
-        if (fromVersion < 3 && state && state.stations) {
-          const migratedStations: Record<string, Station> = {};
-          for (const [id, raw] of Object.entries(state.stations)) {
-            const st = raw as Station;
-            const label: LabelCell = { ...st.label, offset: st.label.offset ?? 0 };
-            migratedStations[id] = { ...st, label };
-          }
-          state.stations = migratedStations;
-        }
-        // v3/v4 -> v5: stop orientation enum widens. Map legacy `vertical`/
-        // `horizontal` to the new `auto-vertical`/`auto-horizontal` so the
-        // direction is now line-derived (previously it was hard-coded +axis).
-        if (fromVersion < 5 && state && state.stations) {
-          const migratedStations: Record<string, Station> = {};
-          for (const [id, raw] of Object.entries(state.stations)) {
-            const st = raw as Station;
-            const stops = st.stops.map((c) => {
-              const o = c.orientation as unknown as string;
-              if (o === 'vertical') return { ...c, orientation: 'auto-vertical' as const };
-              if (o === 'horizontal') return { ...c, orientation: 'auto-horizontal' as const };
-              return c;
-            });
-            migratedStations[id] = { ...st, stops };
-          }
-          state.stations = migratedStations;
-        }
-        // v5 -> v6: viewport leaves MapDoc (moves to viewportStore); MapDoc
-        // gains lineCounter (initialized to current line count as a
-        // best-effort starting point for the palette cursor).
-        if (fromVersion < 6 && state) {
-          if (state.lineCounter === undefined) {
-            state.lineCounter = state.lines ? Object.keys(state.lines).length : 0;
-          }
-          delete state.viewport;
-        }
-        return state as MapDoc;
-      },
+      // Single source of truth for migrations — see model/serialize.ts.
+      migrate: (persisted, fromVersion) => migrateDoc(persisted, fromVersion),
     },
   ),
 );
