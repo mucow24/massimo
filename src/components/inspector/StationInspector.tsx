@@ -32,11 +32,28 @@ export function StationInspector({ id }: { id: StationId }) {
     : null;
   const hasSelection = selectedStopCell || labelSelected;
 
+  // Arrow buttons act in the displayed frame: clicking ↑ moves the cell
+  // toward the top of the screen, regardless of how the grid is rotated.
+  // For 90° rotations we remap the cardinal delta into unrotated grid
+  // coords; at 45° offsets the rotation is purely visual and the arrows
+  // continue to operate in unrotated grid coords (no clean cardinal
+  // mapping exists for a half-turn).
+  const quarterTurns = station.rotation % 2 === 0 ? station.rotation / 2 : 0;
+  const toUnrotatedDelta = (dRow: number, dCol: number) => {
+    let dr = dRow;
+    let dc = dCol;
+    for (let i = 0; i < quarterTurns; i++) {
+      [dr, dc] = [-dc, dr];
+    }
+    return { dRow: dr, dCol: dc };
+  };
+
   const onMove = (dRow: number, dCol: number) => {
+    const m = toUnrotatedDelta(dRow, dCol);
     if (selectedStopCell) {
-      moveStopAction(station.id, selectedStopCell.lineId, dRow, dCol);
+      moveStopAction(station.id, selectedStopCell.lineId, m.dRow, m.dCol);
     } else if (labelSelected) {
-      moveLabelAction(station.id, dRow, dCol);
+      moveLabelAction(station.id, m.dRow, m.dCol);
     }
   };
   const onRotateCell = () => {
@@ -49,8 +66,9 @@ export function StationInspector({ id }: { id: StationId }) {
   // moves never get disabled now (they jump past blocking stops).
   const isBlocked = (dRow: number, dCol: number): boolean => {
     if (selectedStopCell) {
-      const newRow = selectedStopCell.row + dRow;
-      const newCol = selectedStopCell.col + dCol;
+      const m = toUnrotatedDelta(dRow, dCol);
+      const newRow = selectedStopCell.row + m.dRow;
+      const newCol = selectedStopCell.col + m.dCol;
       return station.label.row === newRow && station.label.col === newCol;
     }
     return false;
@@ -138,7 +156,7 @@ export function StationInspector({ id }: { id: StationId }) {
         </div>
       </div>
       <div className="field">
-        <label>Stop layout (unrotated)</label>
+        <label>Stop layout</label>
         <div style={{ marginBottom: 6, display: 'flex', gap: 4 }}>
           <button
             className="btn-mini"

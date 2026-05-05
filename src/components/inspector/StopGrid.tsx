@@ -1,6 +1,7 @@
 type GridStopOrientation = 'up' | 'down' | 'auto-vertical' | 'left' | 'right' | 'auto-horizontal';
 
 type GridStation = {
+  rotation: number;
   stops: { lineId: string; row: number; col: number; orientation: GridStopOrientation }[];
   label: { row: number; col: number; rotation: number };
 };
@@ -97,15 +98,31 @@ export function StopGrid({
   }
 
   const cols = maxCol - minCol + 1;
+  const rows = maxRow - minRow + 1;
+  const gap = 2;
+  const gridW = cols * cellSize + (cols - 1) * gap;
+  const gridH = rows * cellSize + (rows - 1) * gap;
+  const angleDeg = station.rotation * 45;
+  const angleRad = (angleDeg * Math.PI) / 180;
+  const cosA = Math.abs(Math.cos(angleRad));
+  const sinA = Math.abs(Math.sin(angleRad));
+  const wrapW = gridW * cosA + gridH * sinA;
+  const wrapH = gridW * sinA + gridH * cosA;
   return (
-    <div
-      style={{
-        display: 'grid',
-        gridTemplateColumns: `repeat(${cols}, ${cellSize}px)`,
-        gap: 2,
-      }}
-    >
-      {cells}
+    <div style={{ position: 'relative', width: wrapW, height: wrapH }}>
+      <div
+        style={{
+          position: 'absolute',
+          left: '50%',
+          top: '50%',
+          transform: `translate(-50%, -50%) rotate(${angleDeg}deg)`,
+          display: 'grid',
+          gridTemplateColumns: `repeat(${cols}, ${cellSize}px)`,
+          gap,
+        }}
+      >
+        {cells}
+      </div>
     </div>
   );
 }
