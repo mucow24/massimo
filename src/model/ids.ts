@@ -10,8 +10,7 @@ export interface IdFactory {
  * interactive editor; not stable across runs. Used by the live store.
  */
 export function defaultIdFactory(): IdFactory {
-  const uid = () =>
-    Math.random().toString(36).slice(2, 8) + Date.now().toString(36).slice(-4);
+  const uid = () => Math.random().toString(36).slice(2, 8) + Date.now().toString(36).slice(-4);
   return {
     stationId: uid,
     lineId: uid,

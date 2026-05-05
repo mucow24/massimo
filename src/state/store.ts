@@ -70,11 +70,7 @@ interface DocState extends MapDoc {
 
   addLine: () => LineId;
   updateLine: (id: LineId, patch: Partial<Pick<Line, 'service' | 'color' | 'stations'>>) => void;
-  toggleStationOnLine: (
-    lineId: LineId,
-    stationId: StationId,
-    insertAfterIndex?: number,
-  ) => void;
+  toggleStationOnLine: (lineId: LineId, stationId: StationId, insertAfterIndex?: number) => void;
   removeStationFromLine: (lineId: LineId, idx: number) => void;
   reorderLineStations: (lineId: LineId, stations: StationId[]) => void;
   deleteLine: (id: LineId) => void;
@@ -88,65 +84,65 @@ export const useDoc = create<DocState>()(
   temporal(
     persist(
       (set) => ({
-      ...DEFAULT_DOC,
+        ...DEFAULT_DOC,
 
-      addStation: (x, y) => {
-        const id = ids.stationId();
-        const name = randomStationName();
-        set((s) => T.addStation(s, x, y, id, name));
-        return id;
-      },
-      renameStation: (id, name) => set((s) => T.renameStation(s, id, name)),
-      moveStation: (id, x, y) => set((s) => T.moveStation(s, id, x, y)),
-      rotateStation: (id) => set((s) => T.rotateStation(s, id)),
-      rotateStationAndLayout: (id, dir) => set((s) => T.rotateStationAndLayout(s, id, dir)),
-      deleteStation: (id) => set((s) => T.deleteStation(s, id)),
+        addStation: (x, y) => {
+          const id = ids.stationId();
+          const name = randomStationName();
+          set((s) => T.addStation(s, x, y, id, name));
+          return id;
+        },
+        renameStation: (id, name) => set((s) => T.renameStation(s, id, name)),
+        moveStation: (id, x, y) => set((s) => T.moveStation(s, id, x, y)),
+        rotateStation: (id) => set((s) => T.rotateStation(s, id)),
+        rotateStationAndLayout: (id, dir) => set((s) => T.rotateStationAndLayout(s, id, dir)),
+        deleteStation: (id) => set((s) => T.deleteStation(s, id)),
 
-      moveStop: (stationId, lineId, dRow, dCol) =>
-        set((s) => T.moveStop(s, stationId, lineId, dRow, dCol)),
-      rotateStop: (stationId, lineId) => set((s) => T.rotateStop(s, stationId, lineId)),
+        moveStop: (stationId, lineId, dRow, dCol) =>
+          set((s) => T.moveStop(s, stationId, lineId, dRow, dCol)),
+        rotateStop: (stationId, lineId) => set((s) => T.rotateStop(s, stationId, lineId)),
 
-      moveLabel: (stationId, dRow, dCol) => set((s) => T.moveLabel(s, stationId, dRow, dCol)),
-      rotateLabel: (stationId) => set((s) => T.rotateLabel(s, stationId)),
-      flipLabel: (stationId) => set((s) => T.flipLabel(s, stationId)),
-      mirrorLabel: (stationId) => set((s) => T.mirrorLabel(s, stationId)),
-      setLabelOffset: (stationId, offset) => set((s) => T.setLabelOffset(s, stationId, offset)),
+        moveLabel: (stationId, dRow, dCol) => set((s) => T.moveLabel(s, stationId, dRow, dCol)),
+        rotateLabel: (stationId) => set((s) => T.rotateLabel(s, stationId)),
+        flipLabel: (stationId) => set((s) => T.flipLabel(s, stationId)),
+        mirrorLabel: (stationId) => set((s) => T.mirrorLabel(s, stationId)),
+        setLabelOffset: (stationId, offset) => set((s) => T.setLabelOffset(s, stationId, offset)),
 
-      addLine: () => {
-        const id = ids.lineId();
-        set((s) => {
-          const color = MTA_PALETTE[s.lineCounter % MTA_PALETTE.length].color;
-          const service = pickNextLineName(s.lines);
-          return T.addLine(s, id, service, color);
-        });
-        return id;
-      },
-      updateLine: (id, patch) => set((s) => T.updateLine(s, id, patch)),
-      toggleStationOnLine: (lineId, stationId, insertAfterIndex) =>
-        set((s) => T.toggleStationOnLine(s, lineId, stationId, insertAfterIndex)),
-      removeStationFromLine: (lineId, idx) => set((s) => T.removeStationFromLine(s, lineId, idx)),
-      reorderLineStations: (lineId, stations) =>
-        set((s) => T.reorderLineStations(s, lineId, stations)),
-      deleteLine: (id) => set((s) => T.deleteLine(s, id)),
-      moveLineInOrder: (id, dir) => set((s) => T.moveLineInOrder(s, id, dir)),
+        addLine: () => {
+          const id = ids.lineId();
+          set((s) => {
+            const color = MTA_PALETTE[s.lineCounter % MTA_PALETTE.length].color;
+            const service = pickNextLineName(s.lines);
+            return T.addLine(s, id, service, color);
+          });
+          return id;
+        },
+        updateLine: (id, patch) => set((s) => T.updateLine(s, id, patch)),
+        toggleStationOnLine: (lineId, stationId, insertAfterIndex) =>
+          set((s) => T.toggleStationOnLine(s, lineId, stationId, insertAfterIndex)),
+        removeStationFromLine: (lineId, idx) => set((s) => T.removeStationFromLine(s, lineId, idx)),
+        reorderLineStations: (lineId, stations) =>
+          set((s) => T.reorderLineStations(s, lineId, stations)),
+        deleteLine: (id) => set((s) => T.deleteLine(s, id)),
+        moveLineInOrder: (id, dir) => set((s) => T.moveLineInOrder(s, id, dir)),
 
-      setCurveRadius: (r) => set((s) => T.setCurveRadius(s, r)),
-      clearAll: () => set((s) => T.clearAll(s)),
-    }),
-    {
-      name: 'vignelli-map-doc-v1',
-      version: SCHEMA_VERSION,
-      storage: createJSONStorage(() => localStorage),
-      partialize: (s) => ({
-        stations: s.stations,
-        lines: s.lines,
-        lineOrder: s.lineOrder,
-        curveRadius: s.curveRadius,
-        lineCounter: s.lineCounter,
+        setCurveRadius: (r) => set((s) => T.setCurveRadius(s, r)),
+        clearAll: () => set((s) => T.clearAll(s)),
       }),
-      // Single source of truth for migrations — see model/serialize.ts.
-      migrate: (persisted, fromVersion) => migrateDoc(persisted, fromVersion),
-    },
+      {
+        name: 'vignelli-map-doc-v1',
+        version: SCHEMA_VERSION,
+        storage: createJSONStorage(() => localStorage),
+        partialize: (s) => ({
+          stations: s.stations,
+          lines: s.lines,
+          lineOrder: s.lineOrder,
+          curveRadius: s.curveRadius,
+          lineCounter: s.lineCounter,
+        }),
+        // Single source of truth for migrations — see model/serialize.ts.
+        migrate: (persisted, fromVersion) => migrateDoc(persisted, fromVersion),
+      },
     ),
     {
       // Track only the document data — viewport and selection are in their

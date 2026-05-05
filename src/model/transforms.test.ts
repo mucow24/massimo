@@ -100,10 +100,7 @@ describe('moveStop', () => {
       stations: [
         makeStation({
           id: 's1',
-          stops: [
-            makeStop('L1', { row: 0, col: 0 }),
-            makeStop('L2', { row: 0, col: 1 }),
-          ],
+          stops: [makeStop('L1', { row: 0, col: 0 }), makeStop('L2', { row: 0, col: 1 })],
         }),
       ],
     });

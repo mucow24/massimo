@@ -120,14 +120,7 @@ describe('route — tight bend warning', () => {
 
 describe('route — waypoints', () => {
   it('stitches a path through provided waypoints', () => {
-    const r = route(
-      { x: 0, y: 0 },
-      east,
-      { x: 200, y: 200 },
-      south,
-      24,
-      [{ x: 100, y: 0 }],
-    );
+    const r = route({ x: 0, y: 0 }, east, { x: 200, y: 200 }, south, 24, [{ x: 100, y: 0 }]);
     // First leg goes through (100, 0); final corner near (200, 0).
     expect(r.vertices[0]).toEqual({ x: 0, y: 0 });
     expect(r.vertices[r.vertices.length - 1]).toEqual({ x: 200, y: 200 });
