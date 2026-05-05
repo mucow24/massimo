@@ -4,6 +4,7 @@ import { useViewportStore } from '../state/viewportStore';
 import { parse, serialize } from '../model/serialize';
 import { DEFAULT_DOC } from '../model/transforms';
 import { useFieldHistory } from './useFieldHistory';
+import { Menu, MenuItem, MenuSeparator } from './Menu';
 
 export function Toolbar() {
   const curveRadius = useDoc((s) => s.curveRadius);
@@ -85,33 +86,16 @@ export function Toolbar() {
   return (
     <div className="toolbar">
       <strong>Massimo</strong>
-      <button
-        onClick={onAddStation}
-        style={
-          selection.placingStation
-            ? { background: '#1a4ea8', color: '#fff', borderColor: '#1a4ea8' }
-            : undefined
-        }
-      >
-        + Station
-      </button>
-      <button
-        onClick={onAddLineTag}
-        style={
-          selection.creatingLineTag
-            ? { background: '#1a4ea8', color: '#fff', borderColor: '#1a4ea8' }
-            : undefined
-        }
-        title="Click on a colored line to place a movable label inside the band"
-      >
-        + Line tag
-      </button>
-      <button onClick={onSave} title="Download the current map as a .massimo.json file">
-        Save
-      </button>
-      <button onClick={onLoadClick} title="Open a saved .massimo.json file">
-        Load
-      </button>
+      <Menu label="Canvas">
+        <MenuItem onClick={onSave}>Save</MenuItem>
+        <MenuItem onClick={onLoadClick}>Load…</MenuItem>
+        <MenuSeparator />
+        <MenuItem onClick={onClear}>Clear</MenuItem>
+      </Menu>
+      <Menu label="Add">
+        <MenuItem onClick={onAddStation}>Stations</MenuItem>
+        <MenuItem onClick={onAddLineTag}>Line tags</MenuItem>
+      </Menu>
       <input
         ref={fileInputRef}
         type="file"
@@ -119,9 +103,6 @@ export function Toolbar() {
         style={{ display: 'none' }}
         onChange={onFileChosen}
       />
-      <button onClick={onClear} title="Clear the entire map and start fresh">
-        Clear
-      </button>
       <span className="spacer" />
       <label>
         Curve r
