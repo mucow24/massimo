@@ -310,6 +310,10 @@ interface SelectionState {
   creatingLineTag: boolean;
   selectedLineTagId: string | null;
   lineTagHoverPreview: LineTagHoverPreview | null;
+  // When true, edits made via the StationInspector (stop layout + label)
+  // mirror to all directly-connected stations whose unrotated stop layouts
+  // are identical. Resets to false whenever a different station is selected.
+  mirrorMatching: boolean;
   selectStation: (id: StationId | null) => void;
   selectLine: (id: LineId | null) => void;
   startAppendAt: (lineId: LineId, insertAfterIndex: number) => void;
@@ -324,6 +328,7 @@ interface SelectionState {
   selectLineTag: (id: string | null) => void;
   setCreatingLineTag: (creating: boolean) => void;
   setLineTagHoverPreview: (preview: LineTagHoverPreview | null) => void;
+  setMirrorMatching: (on: boolean) => void;
 }
 
 export const useSelection = create<SelectionState>((set, get) => ({
@@ -340,6 +345,7 @@ export const useSelection = create<SelectionState>((set, get) => ({
   creatingLineTag: false,
   selectedLineTagId: null,
   lineTagHoverPreview: null,
+  mirrorMatching: false,
   selectStation: (id) =>
     set({
       selectedStationId: id,
@@ -351,6 +357,8 @@ export const useSelection = create<SelectionState>((set, get) => ({
       activeTab: id === null ? get().activeTab : 'stations',
       creatingLineTag: id === null ? get().creatingLineTag : false,
       lineTagHoverPreview: null,
+      // Each new selection opts into mirror mode fresh.
+      mirrorMatching: false,
     }),
   selectLine: (id) => {
     const wasAppending = get().appendingToLineId !== null;
@@ -431,4 +439,5 @@ export const useSelection = create<SelectionState>((set, get) => ({
       lineTagHoverPreview: creating ? get().lineTagHoverPreview : null,
     }),
   setLineTagHoverPreview: (preview) => set({ lineTagHoverPreview: preview }),
+  setMirrorMatching: (on) => set({ mirrorMatching: on }),
 }));
