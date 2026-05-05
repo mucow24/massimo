@@ -61,6 +61,36 @@ export interface Line {
   waypoints?: Record<string, Vec2[]>;
 }
 
+// A movable label printed inside a line's color band (Vignelli-style).
+//
+// Anchored to a *station-pair corridor*, not a segment index, so the tag
+// survives line reordering: as long as the line still has an edge between
+// `fromStationId` and `toStationId`, the tag stays on it.
+//
+// `fromStationId < toStationId` always (canonical / alphabetic order, matching
+// `pairKeyOf` in interlining.ts).
+//
+// Position is anchored to one of the two canonical endpoints, by world
+// arc-length along the line's stripe path. As the corridor lengthens or
+// shortens, the tag stays at the same `distance` from its `anchorEnd`,
+// keeping it visually pinned to the nearer station.
+//
+// `orientation` is in *line-traversal* frame so the user's notion of "forward"
+// matches how they drew the line; the renderer flips when the line traverses
+// the corridor in reverse-canonical order. Cycle: 0 → 1 → 2 → 3 → 0.
+export interface LineTag {
+  id: string;
+  lineId: LineId;
+  fromStationId: StationId;
+  toStationId: StationId;
+  // 'from' = anchor at fromStationId (canonically lesser); 'to' = at toStationId.
+  anchorEnd: 'from' | 'to';
+  // Arc length in world units from the anchor endpoint along the stripe.
+  // Renderer clamps to the stripe length if the corridor shrinks below it.
+  distance: number;
+  orientation: 0 | 1 | 2 | 3;
+}
+
 export interface Viewport {
   x: number;
   y: number;
@@ -79,4 +109,6 @@ export interface MapDoc {
    * deletions and reloads. Persisted with the doc.
    */
   lineCounter: number;
+  // Movable in-band labels. Keyed by tag id.
+  lineTags: Record<string, LineTag>;
 }
