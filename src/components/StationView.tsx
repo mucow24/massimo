@@ -1,12 +1,7 @@
 import { useEffect, useRef } from 'react';
 import { Line, Station } from '../model/types';
-import { dragState, useDoc, useSelection } from '../state/store';
+import { beginHistoryGroup, dragState, useDoc, useSelection } from '../state/store';
 import { DIR_8, STOP_SIZE, stopCenterAt } from '../geometry/orientation';
-import { useFieldHistory } from './useFieldHistory';
-
-// Width of the inline-on-canvas name editor, in world units. Wide enough to
-// fit a typical station name; centered on the station's label cell.
-const NAME_EDITOR_WIDTH = 140;
 
 interface Props {
   station: Station;
@@ -181,9 +176,9 @@ export function StationView({ station, lines, onStartDrag, layer }: Props) {
         />
         {isEditing ? (
           <NameEditor
-            x={labelCenter.x - NAME_EDITOR_WIDTH / 2}
+            x={labelCenter.x - (textW + 8) / 2}
             y={labelCenter.y - 10}
-            width={NAME_EDITOR_WIDTH}
+            width={textW + 8}
             value={station.name}
             onChange={(v) => renameStation(station.id, v)}
             onCommit={() => selection.setEditingStationId(null)}
@@ -242,28 +237,43 @@ function NameEditor({
   onCommit: () => void;
 }) {
   const ref = useRef<HTMLInputElement | null>(null);
-  const field = useFieldHistory();
+  // Open a history group on mount. Doing this in useEffect (rather than via
+  // an onFocus handler) sidesteps any uncertainty about whether the synthetic
+  // focus event fires for an input inside a foreignObject when el.focus() is
+  // called programmatically. Group is committed on blur, Enter, or unmount.
+  const groupRef = useRef<ReturnType<typeof beginHistoryGroup> | null>(null);
   useEffect(() => {
+    groupRef.current = beginHistoryGroup();
     const el = ref.current;
-    if (!el) return;
-    el.focus();
-    el.select();
+    el?.focus();
+    el?.select();
+    return () => {
+      groupRef.current?.commit();
+      groupRef.current = null;
+    };
   }, []);
+
+  const closeEditor = () => {
+    groupRef.current?.commit();
+    groupRef.current = null;
+    onCommit();
+  };
+
   const onKey = (e: React.KeyboardEvent<HTMLInputElement>) => {
     if (e.key === 'Enter' || e.key === 'Escape') {
       e.preventDefault();
-      onCommit();
+      closeEditor();
+      e.stopPropagation();
+      return;
     }
-    // Intercept Cmd/Ctrl+Z (and Y/Shift+Z for redo). The browser's native
-    // input undo only reverts a single keystroke at a time and would also
-    // fire onChange, so the doc would creep back one character per Ctrl-Z.
-    // Instead: commit the in-flight rename group, trigger doc-level
-    // undo/redo, and close the editor — one Ctrl-Z reverts the whole rename.
+    // Intercept Cmd/Ctrl+Z and friends. The browser's native input undo
+    // would only revert one keystroke at a time AND fire onChange, creeping
+    // the doc back one char per Ctrl-Z. Commit the rename group, run our
+    // doc-level undo/redo, then close — one Ctrl-Z reverts the whole rename.
     const mod = e.metaKey || e.ctrlKey;
     if (mod && (e.key === 'z' || e.key === 'Z')) {
       e.preventDefault();
-      field.onBlur();
-      onCommit();
+      closeEditor();
       const temporal = useDoc.temporal.getState();
       if (e.shiftKey) temporal.redo();
       else temporal.undo();
@@ -272,14 +282,14 @@ function NameEditor({
     }
     if (mod && (e.key === 'y' || e.key === 'Y')) {
       e.preventDefault();
-      field.onBlur();
-      onCommit();
+      closeEditor();
       useDoc.temporal.getState().redo();
       e.stopPropagation();
       return;
     }
     e.stopPropagation();
   };
+
   return (
     <foreignObject x={x} y={y} width={width} height={20} style={{ overflow: 'visible' }}>
       <input
@@ -287,11 +297,7 @@ function NameEditor({
         type="text"
         value={value}
         onChange={(e) => onChange(e.target.value)}
-        onFocus={field.onFocus}
-        onBlur={() => {
-          field.onBlur();
-          onCommit();
-        }}
+        onBlur={closeEditor}
         onKeyDown={onKey}
         onPointerDown={(e) => e.stopPropagation()}
         onMouseDown={(e) => e.stopPropagation()}
