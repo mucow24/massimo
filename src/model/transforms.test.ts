@@ -377,18 +377,10 @@ describe('moveLineInOrder', () => {
   });
 });
 
-describe('setCurveRadius / setViewport / clearAll', () => {
+describe('setCurveRadius / clearAll', () => {
   it('setCurveRadius updates curveRadius', () => {
     const doc = makeDoc({});
     expect(T.setCurveRadius(doc, 42).curveRadius).toBe(42);
-  });
-  it('setViewport replaces viewport', () => {
-    const doc = makeDoc({});
-    expect(T.setViewport(doc, { x: 10, y: 20, zoom: 2 }).viewport).toEqual({
-      x: 10,
-      y: 20,
-      zoom: 2,
-    });
   });
   it('clearAll returns a fresh DEFAULT_DOC', () => {
     const doc = makeDoc({
@@ -399,5 +391,16 @@ describe('setCurveRadius / setViewport / clearAll', () => {
     expect(cleared.stations).toEqual({});
     expect(cleared.lines).toEqual({});
     expect(cleared.lineOrder).toEqual([]);
+    expect(cleared.lineCounter).toBe(0);
+  });
+});
+
+describe('addLine — lineCounter', () => {
+  it('increments lineCounter on each addLine', () => {
+    let doc = makeDoc({});
+    doc = T.addLine(doc, 'A', 'A', '#000');
+    expect(doc.lineCounter).toBe(1);
+    doc = T.addLine(doc, 'B', 'B', '#fff');
+    expect(doc.lineCounter).toBe(2);
   });
 });

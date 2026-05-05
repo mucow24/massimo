@@ -69,7 +69,7 @@ export function makeDoc(parts: {
     lines,
     lineOrder: parts.lineOrder ?? Object.keys(lines),
     curveRadius: parts.curveRadius ?? 24,
-    viewport: { x: 0, y: 0, zoom: 1 },
+    lineCounter: 0,
   };
 }
 

@@ -8,7 +8,6 @@ import type {
   Station,
   StationId,
   StopCell,
-  Viewport,
 } from '../model/types';
 import { effectiveLineOrder } from '../model/lineOrder';
 import { defaultIdFactory, IdFactory } from '../model/ids';
@@ -35,8 +34,6 @@ export const MTA_PALETTE: { name: string; color: string }[] = [
   { name: 'Turquoise (T)', color: '#00ADD0' },
   { name: 'Dark Gray (S)', color: '#808183' },
 ];
-
-let paletteCursor = 0;
 
 // Auto-name sequence: A, B, ..., Z, 0, 1, ..., 9, AA, AB, ..., AZ, A0, ..., A9, BA, ...
 const ALPHABET = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789';
@@ -90,7 +87,6 @@ interface DocState extends MapDoc {
   moveLineInOrder: (id: LineId, dir: -1 | 1) => void;
 
   setCurveRadius: (r: number) => void;
-  setViewport: (v: Viewport) => void;
   clearAll: () => void;
 }
 
@@ -123,11 +119,10 @@ export const useDoc = create<DocState>()(
 
       addLine: () => {
         const id = ids.lineId();
-        const color = MTA_PALETTE[paletteCursor++ % MTA_PALETTE.length].color;
-        let serviceOut = '?';
         set((s) => {
-          serviceOut = pickNextLineName(s.lines);
-          return T.addLine(s, id, serviceOut, color);
+          const color = MTA_PALETTE[s.lineCounter % MTA_PALETTE.length].color;
+          const service = pickNextLineName(s.lines);
+          return T.addLine(s, id, service, color);
         });
         return id;
       },
@@ -141,25 +136,27 @@ export const useDoc = create<DocState>()(
       moveLineInOrder: (id, dir) => set((s) => T.moveLineInOrder(s, id, dir)),
 
       setCurveRadius: (r) => set((s) => T.setCurveRadius(s, r)),
-      setViewport: (v) => set((s) => T.setViewport(s, v)),
-      clearAll: () => {
-        paletteCursor = 0;
-        set((s) => T.clearAll(s));
-      },
+      clearAll: () => set((s) => T.clearAll(s)),
     }),
     {
       name: 'vignelli-map-doc-v1',
-      version: 5,
+      version: 6,
       storage: createJSONStorage(() => localStorage),
       partialize: (s) => ({
         stations: s.stations,
         lines: s.lines,
         lineOrder: s.lineOrder,
         curveRadius: s.curveRadius,
-        viewport: s.viewport,
+        lineCounter: s.lineCounter,
       }),
       migrate: (persisted, fromVersion) => {
-        const state = persisted as { stations?: Record<string, unknown> };
+        const state = persisted as {
+          stations?: Record<string, unknown>;
+          lines?: Record<string, unknown>;
+          lineOrder?: string[];
+          lineCounter?: number;
+          viewport?: unknown;
+        };
         // v0 -> v1: stopOrder array -> stops grid.
         if (fromVersion < 1 && state && state.stations) {
           const migratedStations: Record<string, Station> = {};
@@ -172,8 +169,8 @@ export const useDoc = create<DocState>()(
               col: i,
               orientation: 'auto-vertical' as const,
             }));
-             
             const { stopOrder: _drop, ...rest } = oldSt;
+            void _drop;
             migratedStations[id] = { ...rest, stops } as Station;
           }
           state.stations = migratedStations;
@@ -222,6 +219,15 @@ export const useDoc = create<DocState>()(
             migratedStations[id] = { ...st, stops };
           }
           state.stations = migratedStations;
+        }
+        // v5 -> v6: viewport leaves MapDoc (moves to viewportStore); MapDoc
+        // gains lineCounter (initialized to current line count as a
+        // best-effort starting point for the palette cursor).
+        if (fromVersion < 6 && state) {
+          if (state.lineCounter === undefined) {
+            state.lineCounter = state.lines ? Object.keys(state.lines).length : 0;
+          }
+          delete state.viewport;
         }
         return state as MapDoc;
       },

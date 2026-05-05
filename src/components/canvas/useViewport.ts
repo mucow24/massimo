@@ -1,5 +1,6 @@
 import { RefObject, useEffect, useRef, useState } from 'react';
-import { dragState, useDoc } from '../../state/store';
+import { dragState } from '../../state/store';
+import { useViewportStore } from '../../state/viewportStore';
 
 export interface ViewportApi {
   size: { w: number; h: number };
@@ -24,8 +25,11 @@ export interface ViewportApi {
  * station-drag side, and the shell composes both onto each pointer event.
  */
 export function useViewport(svgRef: RefObject<SVGSVGElement | null>): ViewportApi {
-  const viewport = useDoc((s) => s.viewport);
-  const setViewport = useDoc((s) => s.setViewport);
+  const x = useViewportStore((s) => s.x);
+  const y = useViewportStore((s) => s.y);
+  const zoom = useViewportStore((s) => s.zoom);
+  const setViewport = useViewportStore((s) => s.setViewport);
+  const viewport = { x, y, zoom };
 
   const [size, setSize] = useState({ w: 800, h: 600 });
   const [panning, setPanning] = useState(false);
