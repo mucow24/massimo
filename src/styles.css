@@ -311,8 +311,24 @@ select {
   font-size: 11px;
   cursor: pointer;
 }
-.btn-mini:hover {
+.btn-mini:hover:not(:disabled) {
   background: #f0f0f0;
+}
+.btn-mini.mirror-on {
+  background: #d22;
+  border-color: #b81f1f;
+  color: #fff;
+  font-weight: 600;
+}
+.btn-mini.mirror-on:hover:not(:disabled) {
+  background: #c91f1f;
+}
+
+/* Range input in "indeterminate" state — multiple matching stations have
+   different label offsets. Thumb dims so it doesn't claim a specific value;
+   the next interaction commits the new value to all of them. */
+input[type='range'].indeterminate {
+  filter: grayscale(1) opacity(0.5);
 }
 .btn-mini.danger {
   border-color: transparent;

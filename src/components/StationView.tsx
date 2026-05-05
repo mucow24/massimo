@@ -9,13 +9,15 @@ const SELECTION_WASH_OPACITY = 0.2;
 const SELECTION_STROKE_COLOR = '#000000';
 const SELECTION_STROKE_WIDTH = 2;
 const SELECTION_CORNER_RADIUS = 5;
+const MATCH_STROKE_COLOR = '#888';
+const MATCH_STROKE_WIDTH = 1.5;
 
 interface Props {
   station: Station;
   lines: Record<string, Line>;
   zoom: number;
   onStartDrag: (id: string, ev: React.PointerEvent) => void;
-  layer: 'wash' | 'bg' | 'label' | 'dots' | 'stroke';
+  layer: 'wash' | 'bg' | 'label' | 'dots' | 'stroke' | 'match-stroke';
 }
 
 export function StationView({ station, lines, onStartDrag, layer }: Props) {
@@ -140,8 +142,11 @@ export function StationView({ station, lines, onStartDrag, layer }: Props) {
   const isSelected = selection.selectedStationId === station.id;
   const isEditing = selection.editingStationId === station.id;
 
-  if (layer === 'wash' || layer === 'stroke') {
-    if (!isSelected) return null;
+  if (layer === 'wash' || layer === 'stroke' || layer === 'match-stroke') {
+    // The wash + selection-stroke layers only paint when this station is
+    // selected; the match-stroke layer is rendered by MapCanvas only for
+    // matching stations, so it always paints.
+    if ((layer === 'wash' || layer === 'stroke') && !isSelected) return null;
     // Compute the union polygon of the cells rect and (rotated) label rect,
     // then smooth its corners with quadratic Beziers. The smoothing applies
     // to the outer-boundary corners ONLY (because each vertex of the union
@@ -180,6 +185,19 @@ export function StationView({ station, lines, onStartDrag, layer }: Props) {
             fill={SELECTION_WASH_COLOR}
             fillOpacity={SELECTION_WASH_OPACITY}
             fillRule="nonzero"
+          />
+        </g>
+      );
+    }
+    if (layer === 'match-stroke') {
+      return (
+        <g transform={`translate(${station.x} ${station.y}) rotate(${angle})`} pointerEvents="none">
+          <path
+            d={pathStr}
+            fill="none"
+            stroke={MATCH_STROKE_COLOR}
+            strokeWidth={MATCH_STROKE_WIDTH}
+            strokeLinejoin="round"
           />
         </g>
       );

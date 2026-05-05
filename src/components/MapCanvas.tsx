@@ -24,6 +24,7 @@ import {
   sampleOffsetPath,
 } from '../geometry/lineTagGeometry';
 import type { LineId } from '../model/types';
+import { findMatchingStations } from '../model/matching';
 
 export function MapCanvas() {
   const stations = useDoc((s) => s.stations);
@@ -42,6 +43,13 @@ export function MapCanvas() {
     () => buildBands(stations, lines, curveRadius, lineOrder),
     [stations, lines, curveRadius, lineOrder],
   );
+
+  // When mirror-matching mode is on for the selected station, highlight the
+  // adjacent stations whose unrotated stop layouts are identical.
+  const matchingIds = useMemo(() => {
+    if (!selection.mirrorMatching || !selection.selectedStationId) return [];
+    return findMatchingStations({ stations, lines }, selection.selectedStationId);
+  }, [selection.mirrorMatching, selection.selectedStationId, stations, lines]);
   // Bands and stop markers merged into one pass, sorted by per-line z-priority
   // so a back-stack stop square doesn't paint over a front-stack band passing
   // through that station.
@@ -260,6 +268,24 @@ export function MapCanvas() {
 
         {/* Line tags: in-band labels that ride each line's stripe. */}
         <LineTagsLayer bands={bands} zoom={view.viewport.zoom} svgRef={svgRef} />
+
+        {/* Match-stroke: gray outline on each station whose layout matches
+            the selected station while mirror mode is on. Drawn beneath the
+            selection stroke so the selected station's black outline still
+            stands out. */}
+        {matchingIds.map(
+          (sid) =>
+            stations[sid] && (
+              <StationView
+                key={sid + ':match-stroke'}
+                station={stations[sid]}
+                lines={lines}
+                zoom={view.viewport.zoom}
+                onStartDrag={drag.onStartDrag}
+                layer="match-stroke"
+              />
+            ),
+        )}
 
         {/* selection stroke: 2px black ring around the merged silhouette,
             painted on top of everything so the outline is never occluded. */}
