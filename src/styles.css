@@ -351,6 +351,14 @@ select {
   background: #1a4ea8;
   color: #fff;
 }
+.append-frame {
+  position: absolute;
+  inset: 0;
+  border: 4px solid currentColor;
+  pointer-events: none;
+  z-index: 4;
+  box-sizing: border-box;
+}
 
 .drag-handle {
   cursor: grab;

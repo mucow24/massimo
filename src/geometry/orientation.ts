@@ -1,5 +1,5 @@
 import { Vec2 } from './vec';
-import type { StopOrientation } from '../state/types';
+import type { StopOrientation } from '../model/types';
 
 export const STOP_SIZE = 14;
 export const STOP_GAP = 0;
@@ -37,10 +37,7 @@ export const stopCenterAt = (row: number, col: number): Vec2 => ({
  * orphan stops with no line connected), auto falls back to +axis (down/right)
  * to match the legacy behavior.
  */
-export const travelDirLocal = (
-  o: StopOrientation,
-  lineHintLocal: Vec2 | null = null,
-): Vec2 => {
+export const travelDirLocal = (o: StopOrientation, lineHintLocal: Vec2 | null = null): Vec2 => {
   switch (o) {
     case 'down':
       return { x: 0, y: 1 };
@@ -92,17 +89,20 @@ export const outputEdgeOffsetLocal = (
  * diagonals it's a corner.
  */
 export const DIR_8: { dRow: number; dCol: number; anchor: Vec2 }[] = [
-  { dRow: 0, dCol: 1, anchor: { x: HALF, y: 0 } },     // 0: E
-  { dRow: 1, dCol: 1, anchor: { x: HALF, y: HALF } },  // 1: SE
-  { dRow: 1, dCol: 0, anchor: { x: 0, y: HALF } },     // 2: S
-  { dRow: 1, dCol: -1, anchor: { x: -HALF, y: HALF } },// 3: SW
-  { dRow: 0, dCol: -1, anchor: { x: -HALF, y: 0 } },   // 4: W
+  { dRow: 0, dCol: 1, anchor: { x: HALF, y: 0 } }, // 0: E
+  { dRow: 1, dCol: 1, anchor: { x: HALF, y: HALF } }, // 1: SE
+  { dRow: 1, dCol: 0, anchor: { x: 0, y: HALF } }, // 2: S
+  { dRow: 1, dCol: -1, anchor: { x: -HALF, y: HALF } }, // 3: SW
+  { dRow: 0, dCol: -1, anchor: { x: -HALF, y: 0 } }, // 4: W
   { dRow: -1, dCol: -1, anchor: { x: -HALF, y: -HALF } }, // 5: NW
-  { dRow: -1, dCol: 0, anchor: { x: 0, y: -HALF } },   // 6: N
-  { dRow: -1, dCol: 1, anchor: { x: HALF, y: -HALF } },// 7: NE
+  { dRow: -1, dCol: 0, anchor: { x: 0, y: -HALF } }, // 6: N
+  { dRow: -1, dCol: 1, anchor: { x: HALF, y: -HALF } }, // 7: NE
 ];
 
-export const localToWorld = (local: Vec2, station: { x: number; y: number; rotation: Rotation }): Vec2 => {
+export const localToWorld = (
+  local: Vec2,
+  station: { x: number; y: number; rotation: Rotation },
+): Vec2 => {
   const r = rotateBy(local, station.rotation);
   return { x: r.x + station.x, y: r.y + station.y };
 };
