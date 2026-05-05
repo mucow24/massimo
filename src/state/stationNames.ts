@@ -249,7 +249,7 @@ const LONDON_STATIONS: string[] = [
   "St John's Wood",
   "St Paul's",
   'Seven Sisters',
-  'Shepherd\'s Bush',
+  "Shepherd's Bush",
   'Sloane Square',
   'Snaresbrook',
   'South Ealing',

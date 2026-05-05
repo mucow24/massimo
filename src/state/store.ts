@@ -1,42 +1,16 @@
 import { create } from 'zustand';
 import { persist, createJSONStorage } from 'zustand/middleware';
-import type {
-  LabelCell,
-  Line,
-  LineId,
-  MapDoc,
-  Rotation,
-  Station,
-  StationId,
-  StopCell,
-  StopOrientation,
-  Viewport,
-} from './types';
+import { temporal } from 'zundo';
+import type { Line, LineId, MapDoc, StationId } from '../model/types';
+import { effectiveLineOrder } from '../model/lineOrder';
+import { defaultIdFactory, IdFactory } from '../model/ids';
+import { DEFAULT_DOC } from '../model/transforms';
+import * as T from '../model/transforms';
+import { migrate as migrateDoc, SCHEMA_VERSION } from '../model/serialize';
 import { randomStationName } from './stationNames';
 
-const uid = () =>
-  Math.random().toString(36).slice(2, 8) + Date.now().toString(36).slice(-4);
-
-const DEFAULT_DOC: MapDoc = {
-  stations: {},
-  lines: {},
-  lineOrder: [],
-  curveRadius: 24,
-  viewport: { x: 0, y: 0, zoom: 1 },
-};
-
-// Returns lineOrder reconciled against `lines`: filters out missing IDs and
-// appends any line IDs that aren't yet in the order. Use this everywhere you
-// read order so older persisted docs (without lineOrder) still work.
-export const effectiveLineOrder = (
-  lineOrder: LineId[] | undefined,
-  lines: Record<LineId, Line>,
-): LineId[] => {
-  const present = (lineOrder ?? []).filter((id) => lines[id]);
-  const seen = new Set(present);
-  for (const id of Object.keys(lines)) if (!seen.has(id)) present.push(id);
-  return present;
-};
+// Re-export so callers (Sidebar, etc.) keep working with one source of truth.
+export { effectiveLineOrder };
 
 // Official MTA NYC subway line trunk colors. Per the MTA developer
 // resources / NYC Subway nomenclature: each service's color corresponds to
@@ -55,10 +29,7 @@ export const MTA_PALETTE: { name: string; color: string }[] = [
   { name: 'Dark Gray (S)', color: '#808183' },
 ];
 
-let paletteCursor = 0;
-
 // Auto-name sequence: A, B, ..., Z, 0, 1, ..., 9, AA, AB, ..., AZ, A0, ..., A9, BA, ...
-// alphabet has 36 chars. After single-char names exhaust (36), use two-char.
 const ALPHABET = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789';
 const nameForIndex = (n: number): string => {
   const len = ALPHABET.length; // 36
@@ -70,58 +41,6 @@ const nameForIndex = (n: number): string => {
   return '?'; // overflow; unlikely for v1
 };
 
-// After a line's station list changes, re-pick each station's rotation so the
-// line travels through it cleanly. Each station's local +y points along the
-// line's world travel direction at that station.
-//
-// Skips stations that carry other lines' stops too — those are transfer hubs
-// where the user has presumably set rotation deliberately, and clobbering it
-// from one of the participating lines would just thrash.
-const autoOrientLineStops = (
-  stationsIn: Record<StationId, Station>,
-  lineId: LineId,
-  lineStations: StationId[],
-): Record<StationId, Station> => {
-  if (lineStations.length < 2) return stationsIn;
-  const out = { ...stationsIn };
-  for (let i = 0; i < lineStations.length; i++) {
-    const sid = lineStations[i];
-    const st = out[sid];
-    if (!st) continue;
-    if (st.stops.some((c) => c.lineId !== lineId)) continue;
-    const prev = i > 0 ? out[lineStations[i - 1]] : null;
-    const next = i < lineStations.length - 1 ? out[lineStations[i + 1]] : null;
-    if (!prev && !next) continue;
-    let wx = 0;
-    let wy = 0;
-    if (prev && next) {
-      const ix = st.x - prev.x;
-      const iy = st.y - prev.y;
-      const ox = next.x - st.x;
-      const oy = next.y - st.y;
-      const inN = Math.hypot(ix, iy) || 1;
-      const outN = Math.hypot(ox, oy) || 1;
-      wx = ix / inN + ox / outN;
-      wy = iy / inN + oy / outN;
-    } else if (prev) {
-      wx = st.x - prev.x;
-      wy = st.y - prev.y;
-    } else if (next) {
-      wx = next.x - st.x;
-      wy = next.y - st.y;
-    }
-    if (wx === 0 && wy === 0) continue;
-    // Rotation r ∈ 0..7 such that local +y, after rotation, points along
-    // (wx, wy). Derivation: rotateBy((0,1), r·π/4) = (−sin a, cos a); set
-    // that equal to the unit travel vector and solve.
-    const theta = Math.atan2(wy, wx);
-    const r = (((Math.round((4 * theta) / Math.PI - 2) % 8) + 8) % 8) as Rotation;
-    if (st.rotation === r) continue;
-    out[sid] = { ...st, rotation: r };
-  }
-  return out;
-};
-
 const pickNextLineName = (lines: Record<LineId, Line>): string => {
   const taken = new Set(Object.values(lines).map((l) => l.service));
   for (let i = 0; i < 26 * 36 + 36; i++) {
@@ -130,6 +49,8 @@ const pickNextLineName = (lines: Record<LineId, Line>): string => {
   }
   return '?';
 };
+
+const ids: IdFactory = defaultIdFactory();
 
 interface DocState extends MapDoc {
   // mutators
@@ -156,539 +77,154 @@ interface DocState extends MapDoc {
   moveLineInOrder: (id: LineId, dir: -1 | 1) => void;
 
   setCurveRadius: (r: number) => void;
-  setViewport: (v: Viewport) => void;
   clearAll: () => void;
 }
 
 export const useDoc = create<DocState>()(
-  persist(
-    (set) => ({
-      ...DEFAULT_DOC,
+  temporal(
+    persist(
+      (set) => ({
+        ...DEFAULT_DOC,
 
-      addStation: (x, y) => {
-        const id = uid();
-        const station: Station = {
-          id,
-          name: randomStationName(),
-          x,
-          y,
-          rotation: 0,
-          stops: [],
-          label: { row: 0, col: -1, rotation: 0, offset: 0 },
-        };
-        set((s) => ({ stations: { ...s.stations, [id]: station } }));
-        return id;
-      },
+        addStation: (x, y) => {
+          const id = ids.stationId();
+          const name = randomStationName();
+          set((s) => T.addStation(s, x, y, id, name));
+          return id;
+        },
+        renameStation: (id, name) => set((s) => T.renameStation(s, id, name)),
+        moveStation: (id, x, y) => set((s) => T.moveStation(s, id, x, y)),
+        rotateStation: (id) => set((s) => T.rotateStation(s, id)),
+        rotateStationAndLayout: (id, dir) => set((s) => T.rotateStationAndLayout(s, id, dir)),
+        deleteStation: (id) => set((s) => T.deleteStation(s, id)),
 
-      renameStation: (id, name) => {
-        set((s) => {
-          const cur = s.stations[id];
-          if (!cur) return s;
-          return { stations: { ...s.stations, [id]: { ...cur, name } } };
-        });
-      },
+        moveStop: (stationId, lineId, dRow, dCol) =>
+          set((s) => T.moveStop(s, stationId, lineId, dRow, dCol)),
+        rotateStop: (stationId, lineId) => set((s) => T.rotateStop(s, stationId, lineId)),
 
-      moveStation: (id, x, y) => {
-        set((s) => {
-          const cur = s.stations[id];
-          if (!cur) return s;
-          return { stations: { ...s.stations, [id]: { ...cur, x, y } } };
-        });
-      },
+        moveLabel: (stationId, dRow, dCol) => set((s) => T.moveLabel(s, stationId, dRow, dCol)),
+        rotateLabel: (stationId) => set((s) => T.rotateLabel(s, stationId)),
+        flipLabel: (stationId) => set((s) => T.flipLabel(s, stationId)),
+        mirrorLabel: (stationId) => set((s) => T.mirrorLabel(s, stationId)),
+        setLabelOffset: (stationId, offset) => set((s) => T.setLabelOffset(s, stationId, offset)),
 
-      rotateStation: (id) => {
-        set((s) => {
-          const cur = s.stations[id];
-          if (!cur) return s;
-          const next = ((cur.rotation + 1) % 8) as Rotation;
-          return { stations: { ...s.stations, [id]: { ...cur, rotation: next } } };
-        });
-      },
-
-      // Rotate the layout (col/row of every stop + label) 90° while rotating
-      // the station the OPPOSITE way, so the world appearance stays the same
-      // but the editor view of the unrotated grid is reoriented. Stop
-      // orientations and label rotation are transformed in lockstep so world
-      // tangent directions stay invariant too.
-      //
-      // dir = +1: layout rotates clockwise; station rotates CCW (rotation += 6).
-      // dir = -1: layout rotates CCW; station rotates CW (rotation += 2).
-      // CW maps (col, row) → (-row, col); CCW maps (col, row) → (row, -col).
-      rotateStationAndLayout: (id, dir) => {
-        set((s) => {
-          const cur = s.stations[id];
-          if (!cur) return s;
-          const stationStep = dir === 1 ? 6 : 2; // CCW for R+, CW for R-
-          const nextRot = ((cur.rotation + stationStep) % 8) as Rotation;
-          const rotateGrid = (col: number, row: number) =>
-            dir === 1 ? { col: -row, row: col } : { col: row, row: -col };
-          // Orientation maps so that the WORLD tangent direction is preserved
-          // across the change in station rotation.
-          // R+ (station CCW 90°): up→right, right→down, down→left, left→up.
-          // R− (station CW 90°): up→left, left→down, down→right, right→up.
-          const rotOrient = (o: StopOrientation): StopOrientation => {
-            if (o === 'auto-vertical') return 'auto-horizontal';
-            if (o === 'auto-horizontal') return 'auto-vertical';
-            if (dir === 1) {
-              if (o === 'up') return 'right';
-              if (o === 'right') return 'down';
-              if (o === 'down') return 'left';
-              return 'up'; // o === 'left'
-            } else {
-              if (o === 'up') return 'left';
-              if (o === 'left') return 'down';
-              if (o === 'down') return 'right';
-              return 'up'; // o === 'right'
-            }
-          };
-          const stops = cur.stops.map((c) => {
-            const r = rotateGrid(c.col, c.row);
-            return { ...c, col: r.col, row: r.row, orientation: rotOrient(c.orientation) };
+        addLine: () => {
+          const id = ids.lineId();
+          set((s) => {
+            const color = MTA_PALETTE[s.lineCounter % MTA_PALETTE.length].color;
+            const service = pickNextLineName(s.lines);
+            return T.addLine(s, id, service, color);
           });
-          const lr = rotateGrid(cur.label.col, cur.label.row);
-          // Label rotation is in the unrotated local frame; to keep its world
-          // orientation, advance it the inverse of the station's step.
-          const labelStep = dir === 1 ? 2 : 6;
-          const labelRot = ((cur.label.rotation + labelStep) % 8) as Rotation;
-          const label = { ...cur.label, col: lr.col, row: lr.row, rotation: labelRot };
-          return {
-            stations: { ...s.stations, [id]: { ...cur, rotation: nextRot, stops, label } },
-          };
-        });
-      },
+          return id;
+        },
+        updateLine: (id, patch) => set((s) => T.updateLine(s, id, patch)),
+        toggleStationOnLine: (lineId, stationId, insertAfterIndex) =>
+          set((s) => T.toggleStationOnLine(s, lineId, stationId, insertAfterIndex)),
+        removeStationFromLine: (lineId, idx) => set((s) => T.removeStationFromLine(s, lineId, idx)),
+        reorderLineStations: (lineId, stations) =>
+          set((s) => T.reorderLineStations(s, lineId, stations)),
+        deleteLine: (id) => set((s) => T.deleteLine(s, id)),
+        moveLineInOrder: (id, dir) => set((s) => T.moveLineInOrder(s, id, dir)),
 
-      deleteStation: (id) => {
-        set((s) => {
-          const { [id]: _gone, ...rest } = s.stations;
-          const lines: Record<LineId, Line> = {};
-          for (const lid of Object.keys(s.lines)) {
-            const ln = s.lines[lid];
-            lines[lid] = { ...ln, stations: ln.stations.filter((x) => x !== id) };
-          }
-          return { stations: rest, lines };
-        });
-      },
-
-      moveStop: (stationId, lineId, dRow, dCol) => {
-        set((s) => {
-          const st = s.stations[stationId];
-          if (!st) return s;
-          const i = st.stops.findIndex((c) => c.lineId === lineId);
-          if (i < 0) return s;
-          const cell = st.stops[i];
-          const newRow = cell.row + dRow;
-          const newCol = cell.col + dCol;
-          // Stops can swap with another stop, but cannot enter the label cell.
-          if (st.label.row === newRow && st.label.col === newCol) return s;
-          const j = st.stops.findIndex((c) => c.row === newRow && c.col === newCol);
-          const newStops = st.stops.slice();
-          if (j >= 0 && j !== i) {
-            newStops[j] = { ...newStops[j], row: cell.row, col: cell.col };
-          }
-          newStops[i] = { ...cell, row: newRow, col: newCol };
-          return {
-            stations: { ...s.stations, [stationId]: { ...st, stops: newStops } },
-          };
-        });
-      },
-
-      rotateStop: (stationId, lineId) => {
-        set((s) => {
-          const st = s.stations[stationId];
-          if (!st) return s;
-          const i = st.stops.findIndex((c) => c.lineId === lineId);
-          if (i < 0) return s;
-          const cur = st.stops[i];
-          // Cycle: auto-vertical → up → down → auto-horizontal → left → right
-          const cycle: StopOrientation[] = [
-            'auto-vertical',
-            'up',
-            'down',
-            'auto-horizontal',
-            'left',
-            'right',
-          ];
-          const idx = cycle.indexOf(cur.orientation);
-          const next = cycle[(idx + 1) % cycle.length];
-          const newStops = st.stops.slice();
-          newStops[i] = { ...cur, orientation: next };
-          return { stations: { ...s.stations, [stationId]: { ...st, stops: newStops } } };
-        });
-      },
-
-      moveLabel: (stationId, dRow, dCol) => {
-        set((s) => {
-          const st = s.stations[stationId];
-          if (!st) return s;
-          if (dRow === 0 && dCol === 0) return s;
-          // Step in the requested direction; if a stop occupies the
-          // destination, keep stepping until we land on an empty cell. So
-          // [Label] O O O + → ends up O O O [Label].
-          let newRow = st.label.row + dRow;
-          let newCol = st.label.col + dCol;
-          while (st.stops.some((c) => c.row === newRow && c.col === newCol)) {
-            newRow += dRow;
-            newCol += dCol;
-          }
-          return {
-            stations: {
-              ...s.stations,
-              [stationId]: {
-                ...st,
-                label: { ...st.label, row: newRow, col: newCol },
-              },
-            },
-          };
-        });
-      },
-
-      rotateLabel: (stationId) => {
-        set((s) => {
-          const st = s.stations[stationId];
-          if (!st) return s;
-          const next = ((st.label.rotation + 1) % 8) as Rotation;
-          return {
-            stations: {
-              ...s.stations,
-              [stationId]: { ...st, label: { ...st.label, rotation: next } },
-            },
-          };
-        });
-      },
-
-      flipLabel: (stationId) => {
-        set((s) => {
-          const st = s.stations[stationId];
-          if (!st) return s;
-          const next = ((st.label.rotation + 4) % 8) as Rotation;
-          return {
-            stations: {
-              ...s.stations,
-              [stationId]: { ...st, label: { ...st.label, rotation: next } },
-            },
-          };
-        });
-      },
-
-      mirrorLabel: (stationId) => {
-        set((s) => {
-          const st = s.stations[stationId];
-          if (!st) return s;
-          if (st.stops.length === 0) {
-            // Just flip the rotation; nothing to mirror around.
-            const next = ((st.label.rotation + 4) % 8) as Rotation;
-            return {
-              stations: {
-                ...s.stations,
-                [stationId]: { ...st, label: { ...st.label, rotation: next } },
-              },
-            };
-          }
-          // Direction from the label to the stops' centroid (quantized to
-          // a single dominant cardinal axis). The mirrored label sits one
-          // step past the FURTHEST stop along that direction (and any
-          // stops beyond), so a label on one side ends up on the opposite
-          // side of the entire footprint.
-          const cx = st.stops.reduce((a, c) => a + c.col, 0) / st.stops.length;
-          const cy = st.stops.reduce((a, c) => a + c.row, 0) / st.stops.length;
-          const drRaw = cy - st.label.row;
-          const dcRaw = cx - st.label.col;
-          let dRow = 0;
-          let dCol = 0;
-          if (Math.abs(drRaw) > Math.abs(dcRaw)) dRow = Math.sign(drRaw) || 1;
-          else dCol = Math.sign(dcRaw) || 1;
-          // Furthest stop along (dRow, dCol).
-          const proj = (r: number, c: number) => r * dRow + c * dCol;
-          const maxProj = st.stops.reduce(
-            (m, cell) => Math.max(m, proj(cell.row, cell.col)),
-            -Infinity,
-          );
-          // Step past the max-projected stop (and any other stops at the
-          // same projection level beyond) until we land on an empty cell.
-          let newRow = st.label.row;
-          let newCol = st.label.col;
-          // March until we're past maxProj AND on an empty cell.
-          // Safety bound just in case.
-          for (let k = 0; k < 1000; k++) {
-            newRow += dRow;
-            newCol += dCol;
-            const beyond = proj(newRow, newCol) > maxProj;
-            const empty = !st.stops.some(
-              (c) => c.row === newRow && c.col === newCol,
-            );
-            if (beyond && empty) break;
-          }
-          const next = ((st.label.rotation + 4) % 8) as Rotation;
-          return {
-            stations: {
-              ...s.stations,
-              [stationId]: {
-                ...st,
-                label: { ...st.label, row: newRow, col: newCol, rotation: next },
-              },
-            },
-          };
-        });
-      },
-
-      setLabelOffset: (stationId, offset) => {
-        set((s) => {
-          const st = s.stations[stationId];
-          if (!st) return s;
-          return {
-            stations: {
-              ...s.stations,
-              [stationId]: { ...st, label: { ...st.label, offset } },
-            },
-          };
-        });
-      },
-
-      addLine: () => {
-        const id = uid();
-        const color = MTA_PALETTE[paletteCursor++ % MTA_PALETTE.length].color;
-        set((s) => {
-          const line: Line = {
-            id,
-            service: pickNextLineName(s.lines),
-            color,
-            stations: [],
-          };
-          // New line goes on top of the layer stack (front-most).
-          const order = effectiveLineOrder(s.lineOrder, s.lines);
-          return {
-            lines: { ...s.lines, [id]: line },
-            lineOrder: [id, ...order],
-          };
-        });
-        return id;
-      },
-
-      updateLine: (id, patch) => {
-        set((s) => {
-          const cur = s.lines[id];
-          if (!cur) return s;
-          return { lines: { ...s.lines, [id]: { ...cur, ...patch } } };
-        });
-      },
-
-      toggleStationOnLine: (lineId, stationId, insertAfterIndex) => {
-        set((s) => {
-          const ln = s.lines[lineId];
-          const st = s.stations[stationId];
-          if (!ln || !st) return s;
-          const inLine = ln.stations.includes(stationId);
-          if (inLine) {
-            // remove (all occurrences)
-            const newStations = ln.stations.filter((x) => x !== stationId);
-            const stillStops = newStations.includes(stationId);
-            const newStops = stillStops
-              ? st.stops
-              : st.stops.filter((c) => c.lineId !== lineId);
-            const stationsAfter = {
-              ...s.stations,
-              [stationId]: { ...st, stops: newStops },
-            };
-            return {
-              lines: { ...s.lines, [lineId]: { ...ln, stations: newStations } },
-              stations: autoOrientLineStops(stationsAfter, lineId, newStations),
-            };
-          } else {
-            const idx =
-              insertAfterIndex === undefined
-                ? ln.stations.length
-                : Math.min(ln.stations.length, Math.max(0, insertAfterIndex + 1));
-            const newStations = [
-              ...ln.stations.slice(0, idx),
-              stationId,
-              ...ln.stations.slice(idx),
-            ];
-            // Add a stop cell if this line doesn't yet have one at the station.
-            // Spawn at (0, maxCol+1) of existing footprint; (0, 0) when empty.
-            const hasCell = st.stops.some((c) => c.lineId === lineId);
-            let newStops = st.stops;
-            if (!hasCell) {
-              const maxCol = st.stops.length === 0
-                ? -1
-                : st.stops.reduce((m, c) => (c.col > m ? c.col : m), -Infinity);
-              const newCell: StopCell = {
-                lineId,
-                row: 0,
-                col: maxCol + 1,
-                orientation: 'auto-vertical',
-              };
-              newStops = [...st.stops, newCell];
-            }
-            const stationsAfter = {
-              ...s.stations,
-              [stationId]: { ...st, stops: newStops },
-            };
-            return {
-              lines: { ...s.lines, [lineId]: { ...ln, stations: newStations } },
-              stations: autoOrientLineStops(stationsAfter, lineId, newStations),
-            };
-          }
-        });
-      },
-
-      removeStationFromLine: (lineId, idx) => {
-        set((s) => {
-          const ln = s.lines[lineId];
-          if (!ln) return s;
-          const removedStationId = ln.stations[idx];
-          const newStations = [...ln.stations.slice(0, idx), ...ln.stations.slice(idx + 1)];
-          // If the station is no longer on the line at all, drop its stop cell.
-          const stillStops = newStations.includes(removedStationId);
-          let stations = s.stations;
-          if (!stillStops && stations[removedStationId]) {
-            const st = stations[removedStationId];
-            stations = {
-              ...stations,
-              [removedStationId]: {
-                ...st,
-                stops: st.stops.filter((c) => c.lineId !== lineId),
-              },
-            };
-          }
-          return {
-            lines: { ...s.lines, [lineId]: { ...ln, stations: newStations } },
-            stations: autoOrientLineStops(stations, lineId, newStations),
-          };
-        });
-      },
-
-      reorderLineStations: (lineId, stations) => {
-        set((s) => {
-          const ln = s.lines[lineId];
-          if (!ln) return s;
-          return {
-            lines: { ...s.lines, [lineId]: { ...ln, stations } },
-            stations: autoOrientLineStops(s.stations, lineId, stations),
-          };
-        });
-      },
-
-      deleteLine: (id) => {
-        set((s) => {
-          const { [id]: _gone, ...rest } = s.lines;
-          const stations: Record<StationId, Station> = {};
-          for (const sid of Object.keys(s.stations)) {
-            const st = s.stations[sid];
-            stations[sid] = { ...st, stops: st.stops.filter((c) => c.lineId !== id) };
-          }
-          const order = effectiveLineOrder(s.lineOrder, s.lines).filter((x) => x !== id);
-          return { lines: rest, stations, lineOrder: order };
-        });
-      },
-
-      moveLineInOrder: (id, dir) => {
-        set((s) => {
-          const order = effectiveLineOrder(s.lineOrder, s.lines).slice();
-          const i = order.indexOf(id);
-          if (i < 0) return s;
-          const j = i + dir;
-          if (j < 0 || j >= order.length) return s;
-          [order[i], order[j]] = [order[j], order[i]];
-          return { lineOrder: order };
-        });
-      },
-
-      setCurveRadius: (r) => set({ curveRadius: r }),
-      setViewport: (v) => set({ viewport: v }),
-      clearAll: () => {
-        paletteCursor = 0;
-        set({ ...DEFAULT_DOC });
-      },
-    }),
-    {
-      name: 'vignelli-map-doc-v1',
-      version: 5,
-      storage: createJSONStorage(() => localStorage),
-      partialize: (s) => ({
-        stations: s.stations,
-        lines: s.lines,
-        lineOrder: s.lineOrder,
-        curveRadius: s.curveRadius,
-        viewport: s.viewport,
+        setCurveRadius: (r) => set((s) => T.setCurveRadius(s, r)),
+        clearAll: () => set((s) => T.clearAll(s)),
       }),
-      migrate: (persisted, fromVersion) => {
-        const state = persisted as { stations?: Record<string, unknown> };
-        // v0 -> v1: stopOrder array -> stops grid.
-        if (fromVersion < 1 && state && state.stations) {
-          const migratedStations: Record<string, Station> = {};
-          for (const [id, raw] of Object.entries(state.stations)) {
-            const oldSt = raw as Station & { stopOrder?: LineId[] };
-            const stopOrder = oldSt.stopOrder ?? [];
-            const stops: StopCell[] = stopOrder.map((lineId, i) => ({
-              lineId,
-              row: 0,
-              col: i,
-              orientation: 'auto-vertical' as const,
-            }));
-            const { stopOrder: _drop, ...rest } = oldSt;
-            void _drop;
-            migratedStations[id] = { ...rest, stops } as Station;
-          }
-          state.stations = migratedStations;
-        }
-        // v1 -> v2: every station gains a label cell. Place it at
-        // (0, minCol - 1) — one cell left of the leftmost stop — to match
-        // the prior implicit "name to the left" rendering.
-        if (fromVersion < 2 && state && state.stations) {
-          const migratedStations: Record<string, Station> = {};
-          for (const [id, raw] of Object.entries(state.stations)) {
-            const st = raw as Station & { label?: LabelCell };
-            if (st.label) {
-              migratedStations[id] = st;
-              continue;
-            }
-            const minCol = (st.stops ?? []).length === 0
-              ? 0
-              : Math.min(...st.stops.map((c) => c.col));
-            const label: LabelCell = { row: 0, col: minCol - 1, rotation: 0, offset: 0 };
-            migratedStations[id] = { ...st, label };
-          }
-          state.stations = migratedStations;
-        }
-        // v2 -> v3: label gains an `offset` field (default 0).
-        if (fromVersion < 3 && state && state.stations) {
-          const migratedStations: Record<string, Station> = {};
-          for (const [id, raw] of Object.entries(state.stations)) {
-            const st = raw as Station;
-            const label: LabelCell = { ...st.label, offset: st.label.offset ?? 0 };
-            migratedStations[id] = { ...st, label };
-          }
-          state.stations = migratedStations;
-        }
-        // v3/v4 -> v5: stop orientation enum widens. Map legacy `vertical`/
-        // `horizontal` to the new `auto-vertical`/`auto-horizontal` so the
-        // direction is now line-derived (previously it was hard-coded +axis).
-        // For docs whose stations were already auto-rotated to make the line
-        // travel in the +axis direction, this is identical behavior.
-        //
-        // The version was bumped through 4 during dev HMR before this
-        // migration existed, leaving some persisted docs at v4 with the old
-        // string values. Running this whenever fromVersion < 5 catches both.
-        // The rename is a no-op on already-migrated values.
-        if (fromVersion < 5 && state && state.stations) {
-          const migratedStations: Record<string, Station> = {};
-          for (const [id, raw] of Object.entries(state.stations)) {
-            const st = raw as Station;
-            const stops = st.stops.map((c) => {
-              const o = c.orientation as unknown as string;
-              if (o === 'vertical') return { ...c, orientation: 'auto-vertical' as const };
-              if (o === 'horizontal') return { ...c, orientation: 'auto-horizontal' as const };
-              return c;
-            });
-            migratedStations[id] = { ...st, stops };
-          }
-          state.stations = migratedStations;
-        }
-        return state as MapDoc;
+      {
+        name: 'vignelli-map-doc-v1',
+        version: SCHEMA_VERSION,
+        storage: createJSONStorage(() => localStorage),
+        partialize: (s) => ({
+          stations: s.stations,
+          lines: s.lines,
+          lineOrder: s.lineOrder,
+          curveRadius: s.curveRadius,
+          lineCounter: s.lineCounter,
+        }),
+        // Single source of truth for migrations — see model/serialize.ts.
+        migrate: (persisted, fromVersion) => migrateDoc(persisted, fromVersion),
       },
+    ),
+    {
+      // Track only the document data — viewport and selection are in their
+      // own stores, and the mutator method references never change so they're
+      // safe to leave in (Object.assign on undo preserves them).
+      partialize: (state) => ({
+        stations: state.stations,
+        lines: state.lines,
+        lineOrder: state.lineOrder,
+        curveRadius: state.curveRadius,
+        lineCounter: state.lineCounter,
+      }),
+      limit: 200,
     },
   ),
 );
+
+/**
+ * Snapshot of the partialized doc fields tracked by zundo.
+ * Matches the `partialize` config above.
+ */
+type DocSnapshot = Pick<MapDoc, 'stations' | 'lines' | 'lineOrder' | 'curveRadius' | 'lineCounter'>;
+
+function snapshotDoc(s: DocState): DocSnapshot {
+  return {
+    stations: s.stations,
+    lines: s.lines,
+    lineOrder: s.lineOrder,
+    curveRadius: s.curveRadius,
+    lineCounter: s.lineCounter,
+  };
+}
+
+/**
+ * Open a history "group" around a multi-step user action — a station drag
+ * (many moveStation calls between pointerdown and pointerup), a text-input
+ * edit (many onChange calls between focus and blur), a slider drag, etc.
+ *
+ * Captures the current doc state and pauses recording. Calling `commit()`
+ * resumes recording and pushes exactly one history entry — the captured
+ * pre-action snapshot — covering everything that happened in between.
+ * If nothing actually changed (focus → blur with no edits, click without
+ * drag), `commit()` is a no-op so we don't litter history with empty entries.
+ * `cancel()` resumes without pushing anything; equivalent to commit() when
+ * no changes occurred but explicit at the call site.
+ */
+export function beginHistoryGroup(): { commit: () => void; cancel: () => void } {
+  const snapshot = snapshotDoc(useDoc.getState());
+  const temporal = useDoc.temporal.getState();
+  temporal.pause();
+  let done = false;
+  return {
+    commit: () => {
+      if (done) return;
+      done = true;
+      temporal.resume();
+      const cur = snapshotDoc(useDoc.getState());
+      // Reference-equality check on the partialized fields: transforms
+      // produce new objects only when something changes, so this is sound.
+      if (
+        cur.stations === snapshot.stations &&
+        cur.lines === snapshot.lines &&
+        cur.lineOrder === snapshot.lineOrder &&
+        cur.curveRadius === snapshot.curveRadius &&
+        cur.lineCounter === snapshot.lineCounter
+      ) {
+        return;
+      }
+      // Manually push our snapshot as a single history entry. A new action
+      // wipes the redo stack, mirroring zundo's default handler behavior.
+      useDoc.temporal.setState((s) => ({
+        pastStates: [...s.pastStates, snapshot],
+        futureStates: [],
+      }));
+    },
+    cancel: () => {
+      if (done) return;
+      done = true;
+      temporal.resume();
+    },
+  };
+}
 
 // ----- Drag-vs-click suppression (module-level, not persisted) -----
 export const dragState = { suppressClick: false };
@@ -779,7 +315,10 @@ export const useSelection = create<SelectionState>((set, get) => ({
   setSelectedStopLineId: (id) =>
     set({ selectedStopLineId: id, labelSelected: id === null ? get().labelSelected : false }),
   setLabelSelected: (selected) =>
-    set({ labelSelected: selected, selectedStopLineId: selected ? null : get().selectedStopLineId }),
+    set({
+      labelSelected: selected,
+      selectedStopLineId: selected ? null : get().selectedStopLineId,
+    }),
   setEditingStationId: (id) => set({ editingStationId: id }),
   setActiveTab: (tab) => set({ activeTab: tab }),
 }));

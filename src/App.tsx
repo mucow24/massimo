@@ -15,10 +15,7 @@ export default function App() {
       const target = e.target as HTMLElement | null;
       const tag = target?.tagName;
       const inForm =
-        tag === 'INPUT' ||
-        tag === 'TEXTAREA' ||
-        tag === 'SELECT' ||
-        target?.isContentEditable;
+        tag === 'INPUT' || tag === 'TEXTAREA' || tag === 'SELECT' || target?.isContentEditable;
 
       if (e.key === 'Escape') {
         setAppending(null);
@@ -35,6 +32,19 @@ export default function App() {
           sel.selectStation(null);
           useDoc.getState().deleteStation(stationId);
         }
+      }
+      const mod = e.metaKey || e.ctrlKey;
+      if (mod && !inForm && (e.key === 'z' || e.key === 'Z')) {
+        e.preventDefault();
+        const temporal = useDoc.temporal.getState();
+        if (e.shiftKey) temporal.redo();
+        else temporal.undo();
+        return;
+      }
+      if (mod && !inForm && (e.key === 'y' || e.key === 'Y')) {
+        e.preventDefault();
+        useDoc.temporal.getState().redo();
+        return;
       }
     };
     window.addEventListener('keydown', onKey);

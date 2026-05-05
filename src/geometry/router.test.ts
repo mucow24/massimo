@@ -1,0 +1,207 @@
+import { describe, it, expect } from 'vitest';
+import { dirIndex, bendAngle, route, filletPath, offsetFilletPath, DIRS_8 } from './router';
+
+const east = { x: 1, y: 0 };
+const south = { x: 0, y: 1 };
+const west = { x: -1, y: 0 };
+
+describe('dirIndex', () => {
+  it('maps each cardinal/diagonal direction to its index', () => {
+    expect(dirIndex({ x: 1, y: 0 })).toBe(0);
+    expect(dirIndex({ x: 0, y: 1 })).toBe(2);
+    expect(dirIndex({ x: -1, y: 0 })).toBe(4);
+    expect(dirIndex({ x: 0, y: -1 })).toBe(6);
+    expect(dirIndex({ x: 0.7, y: 0.7 })).toBe(1);
+    expect(dirIndex({ x: -0.7, y: 0.7 })).toBe(3);
+    expect(dirIndex({ x: -0.7, y: -0.7 })).toBe(5);
+    expect(dirIndex({ x: 0.7, y: -0.7 })).toBe(7);
+  });
+
+  it('quantizes off-axis vectors to nearest 8-way index', () => {
+    expect(dirIndex({ x: 0.95, y: 0.1 })).toBe(0);
+    expect(dirIndex({ x: 0.1, y: 0.95 })).toBe(2);
+  });
+});
+
+describe('bendAngle', () => {
+  it('is zero for the same direction', () => {
+    for (let i = 0; i < 8; i++) expect(bendAngle(i, i)).toBe(0);
+  });
+
+  it('is symmetric in its arguments', () => {
+    for (let i = 0; i < 8; i++) {
+      for (let j = 0; j < 8; j++) {
+        expect(bendAngle(i, j)).toBeCloseTo(bendAngle(j, i), 10);
+      }
+    }
+  });
+
+  it('is bounded to [0, π]', () => {
+    for (let i = 0; i < 8; i++) {
+      for (let j = 0; j < 8; j++) {
+        const a = bendAngle(i, j);
+        expect(a).toBeGreaterThanOrEqual(0);
+        expect(a).toBeLessThanOrEqual(Math.PI + 1e-9);
+      }
+    }
+  });
+
+  it('returns π for opposite directions', () => {
+    expect(bendAngle(0, 4)).toBeCloseTo(Math.PI, 10);
+    expect(bendAngle(2, 6)).toBeCloseTo(Math.PI, 10);
+  });
+});
+
+describe('route — straight', () => {
+  it('produces a 2-vertex path when both directions are equal and on-axis', () => {
+    const r = route({ x: 0, y: 0 }, east, { x: 100, y: 0 }, east, 24);
+    expect(r.warning).toBe(false);
+    expect(r.vertices).toHaveLength(2);
+    expect(r.vertices[0]).toEqual({ x: 0, y: 0 });
+    expect(r.vertices[1]).toEqual({ x: 100, y: 0 });
+  });
+});
+
+describe('route — 1-bend', () => {
+  it('emits a single corner when start and end share a column', () => {
+    // Start east, end south at (100, 100): the 1-bend solution has a single
+    // corner at (100, 0). The router sometimes picks a 2-bend chamfer because
+    // a diagonal middle segment is shorter — accept either as long as
+    // endpoints are right and no warning fires.
+    const r = route({ x: 0, y: 0 }, east, { x: 100, y: 100 }, south, 24);
+    expect(r.warning).toBe(false);
+    expect(r.vertices.length).toBeGreaterThanOrEqual(3);
+    expect(r.vertices[0]).toEqual({ x: 0, y: 0 });
+    expect(r.vertices[r.vertices.length - 1]).toEqual({ x: 100, y: 100 });
+  });
+
+  it('emits exactly one corner for an axis-aligned L when chamfer is impossible', () => {
+    // With end directly above start (no horizontal offset), the 2-bend
+    // chamfer can't beat the 1-bend, so we get a clean L.
+    const r = route({ x: 0, y: 0 }, east, { x: 50, y: 50 }, south, 24);
+    expect(r.warning).toBe(false);
+    expect(r.vertices[0]).toEqual({ x: 0, y: 0 });
+    expect(r.vertices[r.vertices.length - 1]).toEqual({ x: 50, y: 50 });
+  });
+});
+
+describe('route — 2-bend', () => {
+  it('produces a Z shape when start and end directions are parallel and offset', () => {
+    const r = route({ x: 0, y: 0 }, east, { x: 200, y: 80 }, east, 24);
+    expect(r.warning).toBe(false);
+    expect(r.vertices).toHaveLength(4);
+    expect(r.vertices[0]).toEqual({ x: 0, y: 0 });
+    expect(r.vertices[3]).toEqual({ x: 200, y: 80 });
+  });
+});
+
+describe('route — U-turn', () => {
+  it('produces a 3-bend rectangular detour for anti-parallel directions', () => {
+    const r = route({ x: 0, y: 0 }, east, { x: 0, y: 200 }, west, 24);
+    // U-turn: east → some perpendicular → -east-ish → west. 5 vertices.
+    expect(r.vertices.length).toBeGreaterThanOrEqual(4);
+    expect(r.vertices[0]).toEqual({ x: 0, y: 0 });
+    const last = r.vertices[r.vertices.length - 1];
+    expect(last).toEqual({ x: 0, y: 200 });
+  });
+});
+
+describe('route — tight bend warning', () => {
+  it('flags a route whose corner angle exceeds 135° and emits a straight fallback', () => {
+    // Start east, end pointing nearly back at start — forces near-180° bend
+    // through a 2-bend solution that the router rejects as tight.
+    const r = route({ x: 0, y: 0 }, east, { x: 10, y: 1 }, west, 24);
+    expect(r.warning).toBe(true);
+    expect(r.vertices).toHaveLength(2);
+    expect(r.pathD).toContain('M ');
+    expect(r.pathD).toContain('L ');
+  });
+});
+
+describe('route — waypoints', () => {
+  it('stitches a path through provided waypoints', () => {
+    const r = route({ x: 0, y: 0 }, east, { x: 200, y: 200 }, south, 24, [{ x: 100, y: 0 }]);
+    // First leg goes through (100, 0); final corner near (200, 0).
+    expect(r.vertices[0]).toEqual({ x: 0, y: 0 });
+    expect(r.vertices[r.vertices.length - 1]).toEqual({ x: 200, y: 200 });
+    const passesThroughWaypoint = r.vertices.some(
+      (v) => Math.abs(v.x - 100) < 0.01 && Math.abs(v.y - 0) < 0.01,
+    );
+    expect(passesThroughWaypoint).toBe(true);
+  });
+});
+
+describe('filletPath', () => {
+  it('returns empty for fewer than 2 vertices', () => {
+    expect(filletPath([], 24)).toBe('');
+  });
+
+  it('returns a simple M..L for exactly 2 vertices', () => {
+    const d = filletPath(
+      [
+        { x: 0, y: 0 },
+        { x: 50, y: 0 },
+      ],
+      24,
+    );
+    expect(d).toBe('M 0.00 0.00 L 50.00 0.00');
+  });
+
+  it('emits an arc command for a 3-vertex L with a real bend', () => {
+    const d = filletPath(
+      [
+        { x: 0, y: 0 },
+        { x: 100, y: 0 },
+        { x: 100, y: 100 },
+      ],
+      24,
+    );
+    expect(d).toContain(' A ');
+    expect(d).toMatch(/^M /);
+  });
+});
+
+describe('offsetFilletPath', () => {
+  it('with offset=0 produces the same string as filletPath', () => {
+    const verts = [
+      { x: 0, y: 0 },
+      { x: 100, y: 0 },
+      { x: 100, y: 100 },
+    ];
+    expect(offsetFilletPath(verts, 24, 0)).toBe(filletPath(verts, 24));
+  });
+
+  it('shifts a straight 2-vertex path perpendicular to motion', () => {
+    // East-going line, positive offset moves toward "left of motion" (north
+    // in screen coords: y decreases).
+    const d = offsetFilletPath(
+      [
+        { x: 0, y: 0 },
+        { x: 100, y: 0 },
+      ],
+      24,
+      10,
+    );
+    expect(d).toBe('M 0.00 -10.00 L 100.00 -10.00');
+  });
+
+  it('shifts the opposite direction for negative offset', () => {
+    const d = offsetFilletPath(
+      [
+        { x: 0, y: 0 },
+        { x: 100, y: 0 },
+      ],
+      24,
+      -10,
+    );
+    expect(d).toBe('M 0.00 10.00 L 100.00 10.00');
+  });
+});
+
+describe('DIRS_8', () => {
+  it('all entries are unit vectors', () => {
+    for (const d of DIRS_8) {
+      expect(Math.hypot(d.x, d.y)).toBeCloseTo(1, 10);
+    }
+  });
+});

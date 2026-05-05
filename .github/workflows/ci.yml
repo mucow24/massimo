@@ -1,0 +1,42 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+# Cancel in-flight runs for the same branch when a new commit lands.
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  ci:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+
+      # Using `npm install` rather than `npm ci`. `npm ci` is strict about
+      # platform-specific optional deps (esbuild, rollup, etc.) being in the
+      # lockfile, which Windows-generated lockfiles routinely miss — see
+      # https://github.com/npm/cli/issues/4828. `npm install` honors the
+      # lockfile for resolved versions but tolerates the omissions.
+      - run: npm install --no-audit --no-fund
+
+      - name: Lint
+        run: npm run lint
+
+      - name: Format check
+        run: npm run format:check
+
+      - name: Test
+        run: npm test
+
+      - name: Build
+        run: npm run build
