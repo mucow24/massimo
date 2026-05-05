@@ -1,5 +1,5 @@
 import { RefObject, useRef, useState } from 'react';
-import { dragState, useDoc } from '../../state/store';
+import { beginHistoryGroup, dragState, useDoc } from '../../state/store';
 import type { StationId } from '../../model/types';
 import { Rotation } from '../../geometry/orientation';
 import { snapDraggedStation, SnapGuide, SNAP_PERP_TOLERANCE } from '../../geometry/snap';
@@ -33,6 +33,7 @@ export function useStationDrag(
     startMX: number;
     startMY: number;
     moved: boolean;
+    history: ReturnType<typeof beginHistoryGroup>;
   } | null>(null);
   const [snapGuides, setSnapGuides] = useState<SnapGuide[]>([]);
 
@@ -46,6 +47,10 @@ export function useStationDrag(
       startMX: e.clientX,
       startMY: e.clientY,
       moved: false,
+      // Snapshot the doc and pause history. If the gesture turns out to be
+      // a drag, we'll commit one entry on pointerup; if it's just a click,
+      // we cancel without recording anything.
+      history: beginHistoryGroup(),
     };
     // Don't capture the pointer here — capture would redirect the synthesized
     // click event away from the station's rect to the SVG, breaking onClick.
@@ -96,10 +101,18 @@ export function useStationDrag(
 
   const onPointerUp = (e: React.PointerEvent) => {
     if (!dragStationRef.current) return;
-    const wasMoved = dragStationRef.current.moved;
+    const ds = dragStationRef.current;
+    const wasMoved = ds.moved;
     dragStationRef.current = null;
     setSnapGuides([]);
-    if (!wasMoved) return;
+    if (!wasMoved) {
+      // Pure click — no drag happened. Discard the captured snapshot.
+      ds.history.cancel();
+      return;
+    }
+    // Drag actually happened: push a single history entry covering the
+    // full sequence of moveStation updates.
+    ds.history.commit();
     try {
       svgRef.current?.releasePointerCapture(e.pointerId);
     } catch {

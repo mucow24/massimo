@@ -164,6 +164,72 @@ export const useDoc = create<DocState>()(
   ),
 );
 
+/**
+ * Snapshot of the partialized doc fields tracked by zundo.
+ * Matches the `partialize` config above.
+ */
+type DocSnapshot = Pick<MapDoc, 'stations' | 'lines' | 'lineOrder' | 'curveRadius' | 'lineCounter'>;
+
+function snapshotDoc(s: DocState): DocSnapshot {
+  return {
+    stations: s.stations,
+    lines: s.lines,
+    lineOrder: s.lineOrder,
+    curveRadius: s.curveRadius,
+    lineCounter: s.lineCounter,
+  };
+}
+
+/**
+ * Open a history "group" around a multi-step user action — a station drag
+ * (many moveStation calls between pointerdown and pointerup), a text-input
+ * edit (many onChange calls between focus and blur), a slider drag, etc.
+ *
+ * Captures the current doc state and pauses recording. Calling `commit()`
+ * resumes recording and pushes exactly one history entry — the captured
+ * pre-action snapshot — covering everything that happened in between.
+ * If nothing actually changed (focus → blur with no edits, click without
+ * drag), `commit()` is a no-op so we don't litter history with empty entries.
+ * `cancel()` resumes without pushing anything; equivalent to commit() when
+ * no changes occurred but explicit at the call site.
+ */
+export function beginHistoryGroup(): { commit: () => void; cancel: () => void } {
+  const snapshot = snapshotDoc(useDoc.getState());
+  const temporal = useDoc.temporal.getState();
+  temporal.pause();
+  let done = false;
+  return {
+    commit: () => {
+      if (done) return;
+      done = true;
+      temporal.resume();
+      const cur = snapshotDoc(useDoc.getState());
+      // Reference-equality check on the partialized fields: transforms
+      // produce new objects only when something changes, so this is sound.
+      if (
+        cur.stations === snapshot.stations &&
+        cur.lines === snapshot.lines &&
+        cur.lineOrder === snapshot.lineOrder &&
+        cur.curveRadius === snapshot.curveRadius &&
+        cur.lineCounter === snapshot.lineCounter
+      ) {
+        return;
+      }
+      // Manually push our snapshot as a single history entry. A new action
+      // wipes the redo stack, mirroring zundo's default handler behavior.
+      useDoc.temporal.setState((s) => ({
+        pastStates: [...s.pastStates, snapshot],
+        futureStates: [],
+      }));
+    },
+    cancel: () => {
+      if (done) return;
+      done = true;
+      temporal.resume();
+    },
+  };
+}
+
 // ----- Drag-vs-click suppression (module-level, not persisted) -----
 export const dragState = { suppressClick: false };
 

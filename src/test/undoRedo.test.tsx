@@ -1,5 +1,5 @@
 import { describe, it, expect, beforeEach } from 'vitest';
-import { useDoc } from '../state/store';
+import { beginHistoryGroup, useDoc } from '../state/store';
 import { useViewportStore } from '../state/viewportStore';
 import { useSelection } from '../state/store';
 import { DEFAULT_DOC } from '../model/transforms';
@@ -45,5 +45,52 @@ describe('undo/redo', () => {
     useDoc.temporal.getState().undo();
     // Station gone, but selection store is independent.
     expect(useSelection.getState().selectedStationId).toBe(id);
+  });
+});
+
+describe('beginHistoryGroup', () => {
+  it('coalesces a burst of mutations into one history entry', () => {
+    // Simulate a station drag: many moveStation calls between begin and commit.
+    const id = useDoc.getState().addStation(0, 0);
+    const beforeUndoStack = useDoc.temporal.getState().pastStates.length;
+    const group = beginHistoryGroup();
+    for (let i = 0; i < 30; i++) {
+      useDoc.getState().moveStation(id, i, i);
+    }
+    group.commit();
+    const afterUndoStack = useDoc.temporal.getState().pastStates.length;
+    // Exactly one new entry, regardless of the 30 moveStation calls.
+    expect(afterUndoStack - beforeUndoStack).toBe(1);
+  });
+
+  it('a single undo after the group reverts the entire burst', () => {
+    const id = useDoc.getState().addStation(0, 0);
+    const group = beginHistoryGroup();
+    useDoc.getState().moveStation(id, 50, 50);
+    useDoc.getState().moveStation(id, 100, 100);
+    useDoc.getState().moveStation(id, 200, 200);
+    group.commit();
+    useDoc.temporal.getState().undo();
+    // Back to the position from before the group started (post-addStation).
+    expect(useDoc.getState().stations[id].x).toBe(0);
+    expect(useDoc.getState().stations[id].y).toBe(0);
+  });
+
+  it('cancel() discards the snapshot without adding to history', () => {
+    useDoc.getState().addStation(0, 0);
+    const beforeUndoStack = useDoc.temporal.getState().pastStates.length;
+    const group = beginHistoryGroup();
+    // No edits.
+    group.cancel();
+    expect(useDoc.temporal.getState().pastStates.length).toBe(beforeUndoStack);
+  });
+
+  it('commit() with no changes is a no-op (does not litter history)', () => {
+    useDoc.getState().addStation(0, 0);
+    const beforeUndoStack = useDoc.temporal.getState().pastStates.length;
+    const group = beginHistoryGroup();
+    // No edits between begin and commit (e.g. focus → blur with no typing).
+    group.commit();
+    expect(useDoc.temporal.getState().pastStates.length).toBe(beforeUndoStack);
   });
 });

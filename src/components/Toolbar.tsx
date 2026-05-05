@@ -3,6 +3,7 @@ import { useDoc, useSelection } from '../state/store';
 import { useViewportStore } from '../state/viewportStore';
 import { parse, serialize } from '../model/serialize';
 import { DEFAULT_DOC } from '../model/transforms';
+import { useFieldHistory } from './useFieldHistory';
 
 export function Toolbar() {
   const curveRadius = useDoc((s) => s.curveRadius);
@@ -14,6 +15,7 @@ export function Toolbar() {
 
   const fileInputRef = useRef<HTMLInputElement | null>(null);
   const [loadError, setLoadError] = useState<string | null>(null);
+  const curveField = useFieldHistory();
 
   const onAddStation = () => {
     selection.setPlacingStation(!selection.placingStation);
@@ -111,6 +113,7 @@ export function Toolbar() {
           step={1}
           value={curveRadius}
           onChange={(e) => setCurveRadius(Number(e.target.value))}
+          {...curveField}
         />
         <span style={{ width: 24 }}>{curveRadius}</span>
       </label>
