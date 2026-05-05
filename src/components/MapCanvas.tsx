@@ -114,6 +114,20 @@ export function MapCanvas() {
           zoom={view.viewport.zoom}
         />
 
+        {/* selection wash: painted before bands so the wash sits behind
+            line segments, markers, dots, and labels — all the way in the
+            background. Only the selected station renders anything. */}
+        {selection.selectedStationId && stations[selection.selectedStationId] && (
+          <StationView
+            key={selection.selectedStationId + ':wash'}
+            station={stations[selection.selectedStationId]}
+            lines={lines}
+            zoom={view.viewport.zoom}
+            onStartDrag={drag.onStartDrag}
+            layer="wash"
+          />
+        )}
+
         {/* bands and stop squares interleaved by per-line z-priority */}
         {renderables.map((r, i) =>
           r.kind === 'band' ? (
@@ -149,6 +163,19 @@ export function MapCanvas() {
 
         <SnapGuides guides={drag.snapGuides} zoom={view.viewport.zoom} />
 
+        {/* station labels: rendered after bg/wash so a selected station's
+            orange wash never paints over a neighbor's label. */}
+        {Object.values(stations).map((st) => (
+          <StationView
+            key={st.id + ':label'}
+            station={st}
+            lines={lines}
+            zoom={view.viewport.zoom}
+            onStartDrag={drag.onStartDrag}
+            layer="label"
+          />
+        ))}
+
         {/* station dots: rendered last so the snap guide passes under them */}
         {Object.values(stations).map((st) => (
           <StationView
@@ -160,6 +187,19 @@ export function MapCanvas() {
             layer="dots"
           />
         ))}
+
+        {/* selection stroke: 2px black ring around the merged silhouette,
+            painted on top of everything so the outline is never occluded. */}
+        {selection.selectedStationId && stations[selection.selectedStationId] && (
+          <StationView
+            key={selection.selectedStationId + ':stroke'}
+            station={stations[selection.selectedStationId]}
+            lines={lines}
+            zoom={view.viewport.zoom}
+            onStartDrag={drag.onStartDrag}
+            layer="stroke"
+          />
+        )}
       </svg>
 
       <WarningToasts />
