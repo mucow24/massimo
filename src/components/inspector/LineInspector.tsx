@@ -1,6 +1,7 @@
 import { useDoc, useSelection } from '../../state/store';
 import type { LineId } from '../../model/types';
 import { ColorPalette } from './ColorPalette';
+import { useFieldHistory } from '../useFieldHistory';
 
 export function LineInspector({ id }: { id: LineId }) {
   const line = useDoc((s) => s.lines[id]);
@@ -9,6 +10,7 @@ export function LineInspector({ id }: { id: LineId }) {
   const removeStationFromLine = useDoc((s) => s.removeStationFromLine);
   const reorderLineStations = useDoc((s) => s.reorderLineStations);
   const selection = useSelection();
+  const serviceField = useFieldHistory();
 
   if (!line) return null;
 
@@ -32,6 +34,7 @@ export function LineInspector({ id }: { id: LineId }) {
           maxLength={3}
           value={line.service}
           onChange={(e) => updateLine(line.id, { service: e.target.value.toUpperCase() })}
+          {...serviceField}
         />
       </div>
       <div className="field">

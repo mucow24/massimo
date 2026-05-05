@@ -1,4 +1,5 @@
 import { MTA_PALETTE } from '../../state/store';
+import { useFieldHistory } from '../useFieldHistory';
 
 export function ColorPalette({
   value,
@@ -9,6 +10,7 @@ export function ColorPalette({
 }) {
   const v = value.toLowerCase();
   const isCustom = !MTA_PALETTE.some((p) => p.color.toLowerCase() === v);
+  const customField = useFieldHistory();
   const swatchBase: React.CSSProperties = {
     width: 22,
     height: 22,
@@ -55,6 +57,7 @@ export function ColorPalette({
           type="color"
           value={value}
           onChange={(e) => onChange(e.target.value)}
+          {...customField}
           style={{
             position: 'absolute',
             width: 0,

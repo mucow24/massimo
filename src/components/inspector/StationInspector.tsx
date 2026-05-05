@@ -2,6 +2,7 @@ import { useDoc, useSelection } from '../../state/store';
 import type { StationId } from '../../model/types';
 import { StopGrid } from './StopGrid';
 import { LabelOffsetControl } from './LabelOffsetControl';
+import { useFieldHistory } from '../useFieldHistory';
 
 export function StationInspector({ id }: { id: StationId }) {
   const station = useDoc((s) => s.stations[id]);
@@ -18,6 +19,9 @@ export function StationInspector({ id }: { id: StationId }) {
   const flipLabelAction = useDoc((s) => s.flipLabel);
   const setLabelOffset = useDoc((s) => s.setLabelOffset);
   const selection = useSelection();
+  const nameField = useFieldHistory();
+  const xField = useFieldHistory();
+  const yField = useFieldHistory();
 
   if (!station) return null;
 
@@ -60,6 +64,7 @@ export function StationInspector({ id }: { id: StationId }) {
           type="text"
           value={station.name}
           onChange={(e) => renameStation(station.id, e.target.value)}
+          {...nameField}
         />
       </div>
       <div className="field">
@@ -70,12 +75,14 @@ export function StationInspector({ id }: { id: StationId }) {
             value={Math.round(station.x)}
             onChange={(e) => moveStation(station.id, Number(e.target.value), station.y)}
             style={{ width: 70 }}
+            {...xField}
           />
           <input
             type="number"
             value={Math.round(station.y)}
             onChange={(e) => moveStation(station.id, station.x, Number(e.target.value))}
             style={{ width: 70 }}
+            {...yField}
           />
         </div>
       </div>

@@ -1,3 +1,5 @@
+import { useFieldHistory } from '../useFieldHistory';
+
 export function LabelOffsetControl({
   value,
   onChange,
@@ -8,6 +10,8 @@ export function LabelOffsetControl({
   // Slider [-100, 100] with detent at 0; textbox accepts any number.
   // Snap to 0 when the slider sits within ±2 of zero.
   const clampedSlider = Math.max(-100, Math.min(100, value));
+  const sliderField = useFieldHistory();
+  const numberField = useFieldHistory();
   return (
     <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
       <input
@@ -21,6 +25,7 @@ export function LabelOffsetControl({
           onChange(Math.abs(n) <= 2 ? 0 : n);
         }}
         style={{ flex: 1 }}
+        {...sliderField}
       />
       <input
         type="number"
@@ -30,6 +35,7 @@ export function LabelOffsetControl({
           if (Number.isFinite(n)) onChange(n);
         }}
         style={{ width: 56 }}
+        {...numberField}
       />
     </div>
   );

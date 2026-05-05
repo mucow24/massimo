@@ -2,6 +2,7 @@ import { useEffect, useRef } from 'react';
 import { Line, Station } from '../model/types';
 import { dragState, useDoc, useSelection } from '../state/store';
 import { DIR_8, STOP_SIZE, stopCenterAt } from '../geometry/orientation';
+import { useFieldHistory } from './useFieldHistory';
 
 interface Props {
   station: Station;
@@ -237,6 +238,7 @@ function NameEditor({
   onCommit: () => void;
 }) {
   const ref = useRef<HTMLInputElement | null>(null);
+  const field = useFieldHistory();
   useEffect(() => {
     const el = ref.current;
     if (!el) return;
@@ -257,7 +259,11 @@ function NameEditor({
         type="text"
         value={value}
         onChange={(e) => onChange(e.target.value)}
-        onBlur={onCommit}
+        onFocus={field.onFocus}
+        onBlur={() => {
+          field.onBlur();
+          onCommit();
+        }}
         onKeyDown={onKey}
         onPointerDown={(e) => e.stopPropagation()}
         onMouseDown={(e) => e.stopPropagation()}
