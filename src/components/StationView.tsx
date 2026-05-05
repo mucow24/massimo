@@ -4,6 +4,10 @@ import { dragState, useDoc, useSelection } from '../state/store';
 import { DIR_8, STOP_SIZE, stopCenterAt } from '../geometry/orientation';
 import { useFieldHistory } from './useFieldHistory';
 
+// Width of the inline-on-canvas name editor, in world units. Wide enough to
+// fit a typical station name; centered on the station's label cell.
+const NAME_EDITOR_WIDTH = 140;
+
 interface Props {
   station: Station;
   lines: Record<string, Line>;
@@ -177,9 +181,9 @@ export function StationView({ station, lines, onStartDrag, layer }: Props) {
         />
         {isEditing ? (
           <NameEditor
-            x={labelCenter.x - half}
-            y={labelCenter.y - half}
-            width={STOP_SIZE}
+            x={labelCenter.x - NAME_EDITOR_WIDTH / 2}
+            y={labelCenter.y - 10}
+            width={NAME_EDITOR_WIDTH}
             value={station.name}
             onChange={(v) => renameStation(station.id, v)}
             onCommit={() => selection.setEditingStationId(null)}
@@ -249,6 +253,30 @@ function NameEditor({
     if (e.key === 'Enter' || e.key === 'Escape') {
       e.preventDefault();
       onCommit();
+    }
+    // Intercept Cmd/Ctrl+Z (and Y/Shift+Z for redo). The browser's native
+    // input undo only reverts a single keystroke at a time and would also
+    // fire onChange, so the doc would creep back one character per Ctrl-Z.
+    // Instead: commit the in-flight rename group, trigger doc-level
+    // undo/redo, and close the editor — one Ctrl-Z reverts the whole rename.
+    const mod = e.metaKey || e.ctrlKey;
+    if (mod && (e.key === 'z' || e.key === 'Z')) {
+      e.preventDefault();
+      field.onBlur();
+      onCommit();
+      const temporal = useDoc.temporal.getState();
+      if (e.shiftKey) temporal.redo();
+      else temporal.undo();
+      e.stopPropagation();
+      return;
+    }
+    if (mod && (e.key === 'y' || e.key === 'Y')) {
+      e.preventDefault();
+      field.onBlur();
+      onCommit();
+      useDoc.temporal.getState().redo();
+      e.stopPropagation();
+      return;
     }
     e.stopPropagation();
   };
