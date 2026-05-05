@@ -169,10 +169,7 @@ export function StationView({ station, lines, onStartDrag, layer }: Props) {
 
     if (layer === 'wash') {
       return (
-        <g
-          transform={`translate(${station.x} ${station.y}) rotate(${angle})`}
-          pointerEvents="none"
-        >
+        <g transform={`translate(${station.x} ${station.y}) rotate(${angle})`} pointerEvents="none">
           <path
             d={pathStr}
             fill={SELECTION_WASH_COLOR}
@@ -183,10 +180,7 @@ export function StationView({ station, lines, onStartDrag, layer }: Props) {
       );
     }
     return (
-      <g
-        transform={`translate(${station.x} ${station.y}) rotate(${angle})`}
-        pointerEvents="none"
-      >
+      <g transform={`translate(${station.x} ${station.y}) rotate(${angle})`} pointerEvents="none">
         <path
           d={pathStr}
           fill="none"

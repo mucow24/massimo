@@ -234,7 +234,9 @@ export function unionConvex(rawA: Pt[], rawB: Pt[]): Pt[][] {
     ...collectKeptSegments(A, B, crossings, true),
     ...collectKeptSegments(B, A, crossings, false),
   ];
-  const polys = stitch(segs).map(removeCollinear).filter((p) => p.length >= 3);
+  const polys = stitch(segs)
+    .map(removeCollinear)
+    .filter((p) => p.length >= 3);
   if (polys.length === 0) {
     // Stitch failed (or no segments). Fall back to rendering both inputs as
     // separate components — visually approximate, but never silent.
