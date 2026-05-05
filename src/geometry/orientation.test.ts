@@ -10,7 +10,7 @@ import {
   stopCenterAt,
   travelDirLocal,
 } from './orientation';
-import type { Rotation, StopOrientation } from '../state/types';
+import type { Rotation, StopOrientation } from '../model/types';
 
 describe('rotateBy', () => {
   it('returns the input for rotation 0', () => {

@@ -8,7 +8,7 @@ import type {
   StationId,
   StopCell,
   StopOrientation,
-} from '../state/types';
+} from '../model/types';
 
 export function makeStation(overrides: Partial<Station> & { id: StationId }): Station {
   return {

@@ -1,4 +1,4 @@
-import { Line, LineId, Station, StationId, StopCell } from '../state/types';
+import { Line, LineId, Station, StationId, StopCell } from '../model/types';
 import { Vec2 } from './vec';
 import { route } from './router';
 import { rotateBy, STOP_SIZE, stopCenterAt, travelDirLocal } from './orientation';
