@@ -117,6 +117,12 @@ export function redistributeBetween(
       const px = stopX - stopOffsets[k].x;
       const py = stopY - stopOffsets[k].y;
       const stationId = ids[k];
+      const cur = sts[k];
+      // Skip sub-pixel drift: if the new position is essentially the same as
+      // the current one, leave the station alone. Avoids breaking perfect
+      // angle/snap alignments via floating-point error when the chain is
+      // already evenly spaced.
+      if (Math.hypot(px - cur.x, py - cur.y) < 1) continue;
       const existing = proposals.get(stationId);
       if (existing) {
         if (Math.hypot(existing.x - px, existing.y - py) > 0.5) {
