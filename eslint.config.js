@@ -37,10 +37,13 @@ export default [
         Node: 'readonly',
         KeyboardEvent: 'readonly',
         MouseEvent: 'readonly',
+        PointerEvent: 'readonly',
         Blob: 'readonly',
         URL: 'readonly',
         React: 'readonly',
         SVGSVGElement: 'readonly',
+        SVGPathElement: 'readonly',
+        SVGTextElement: 'readonly',
       },
     },
     plugins: {

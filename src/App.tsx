@@ -7,6 +7,8 @@ import { useDoc, useSelection } from './state/store';
 export default function App() {
   const setAppending = useSelection((s) => s.setAppending);
   const setPlacingStation = useSelection((s) => s.setPlacingStation);
+  const setCreatingLineTag = useSelection((s) => s.setCreatingLineTag);
+  const selectLineTag = useSelection((s) => s.selectLineTag);
 
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
@@ -20,10 +22,19 @@ export default function App() {
       if (e.key === 'Escape') {
         setAppending(null);
         setPlacingStation(false);
+        setCreatingLineTag(false);
+        selectLineTag(null);
         return;
       }
       if ((e.key === 'Delete' || e.key === 'Backspace') && !inForm) {
         const sel = useSelection.getState();
+        const tagId = sel.selectedLineTagId;
+        if (tagId) {
+          e.preventDefault();
+          sel.selectLineTag(null);
+          useDoc.getState().deleteLineTag(tagId);
+          return;
+        }
         const stationId = sel.selectedStationId;
         if (stationId) {
           e.preventDefault();
@@ -49,7 +60,25 @@ export default function App() {
     };
     window.addEventListener('keydown', onKey);
     return () => window.removeEventListener('keydown', onKey);
-  }, [setAppending, setPlacingStation]);
+  }, [setAppending, setPlacingStation, setCreatingLineTag, selectLineTag]);
+
+  // Right-click anywhere cancels an active mode. Capture phase + stopPropagation
+  // so we beat element-level context menus (station rotate, tag flip): they
+  // shouldn't fire when the user is trying to back out of a mode.
+  useEffect(() => {
+    const onContextMenu = (e: globalThis.MouseEvent) => {
+      const sel = useSelection.getState();
+      if (sel.placingStation || sel.creatingLineTag || sel.appendingToLineId) {
+        e.preventDefault();
+        e.stopPropagation();
+        sel.setPlacingStation(false);
+        sel.setCreatingLineTag(false);
+        sel.setAppending(null);
+      }
+    };
+    document.addEventListener('contextmenu', onContextMenu, true);
+    return () => document.removeEventListener('contextmenu', onContextMenu, true);
+  }, []);
 
   return (
     <div className="app">

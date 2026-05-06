@@ -3,6 +3,7 @@ import { effectiveLineOrder } from './lineOrder';
 import type {
   Line,
   LineId,
+  LineTag,
   MapDoc,
   Rotation,
   Station,
@@ -17,6 +18,7 @@ export const DEFAULT_DOC: MapDoc = {
   lineOrder: [],
   curveRadius: 24,
   lineCounter: 0,
+  lineTags: {},
 };
 
 // ---------- Stations ----------
@@ -122,7 +124,7 @@ export function deleteStation(doc: MapDoc, id: StationId): MapDoc {
     const ln = doc.lines[lid];
     lines[lid] = { ...ln, stations: ln.stations.filter((x) => x !== id) };
   }
-  return { ...doc, stations: rest, lines };
+  return pruneOrphanLineTags({ ...doc, stations: rest, lines });
 }
 
 // ---------- Stops ----------
@@ -375,11 +377,11 @@ export function removeStationFromLine(doc: MapDoc, lineId: LineId, idx: number):
       [removedStationId]: { ...st, stops: st.stops.filter((c) => c.lineId !== lineId) },
     };
   }
-  return {
+  return pruneOrphanLineTags({
     ...doc,
     lines: { ...doc.lines, [lineId]: { ...ln, stations: newStations } },
     stations: autoOrientLineStops(stations, lineId, newStations),
-  };
+  });
 }
 
 export function reorderLineStations(doc: MapDoc, lineId: LineId, stations: StationId[]): MapDoc {
@@ -400,7 +402,12 @@ export function deleteLine(doc: MapDoc, id: LineId): MapDoc {
     stations[sid] = { ...st, stops: st.stops.filter((c) => c.lineId !== id) };
   }
   const order = effectiveLineOrder(doc.lineOrder, doc.lines).filter((x) => x !== id);
-  return { ...doc, lines: rest, stations, lineOrder: order };
+  // Drop tags whose lineId matches; the rest are valid by construction.
+  const lineTags: Record<string, LineTag> = {};
+  for (const tid of Object.keys(doc.lineTags)) {
+    if (doc.lineTags[tid].lineId !== id) lineTags[tid] = doc.lineTags[tid];
+  }
+  return { ...doc, lines: rest, stations, lineOrder: order, lineTags };
 }
 
 export function moveLineInOrder(doc: MapDoc, id: LineId, dir: -1 | 1): MapDoc {
@@ -420,5 +427,90 @@ export function setCurveRadius(doc: MapDoc, r: number): MapDoc {
 }
 
 export function clearAll(_doc: MapDoc): MapDoc {
-  return { ...DEFAULT_DOC };
+  return { ...DEFAULT_DOC, lineTags: {} };
+}
+
+// ---------- Line tags ----------
+
+export function addLineTag(
+  doc: MapDoc,
+  id: string,
+  lineId: LineId,
+  fromStationId: StationId,
+  toStationId: StationId,
+  anchorEnd: 'from' | 'to',
+  distance: number,
+  orientation: 0 | 1 | 2 | 3,
+): MapDoc {
+  const tag: LineTag = {
+    id,
+    lineId,
+    fromStationId,
+    toStationId,
+    anchorEnd,
+    distance,
+    orientation,
+  };
+  return { ...doc, lineTags: { ...doc.lineTags, [id]: tag } };
+}
+
+export function moveLineTag(
+  doc: MapDoc,
+  id: string,
+  fromStationId: StationId,
+  toStationId: StationId,
+  anchorEnd: 'from' | 'to',
+  distance: number,
+): MapDoc {
+  const cur = doc.lineTags[id];
+  if (!cur) return doc;
+  return {
+    ...doc,
+    lineTags: {
+      ...doc.lineTags,
+      [id]: { ...cur, fromStationId, toStationId, anchorEnd, distance },
+    },
+  };
+}
+
+export function cycleLineTagOrientation(doc: MapDoc, id: string): MapDoc {
+  const cur = doc.lineTags[id];
+  if (!cur) return doc;
+  const next = ((cur.orientation + 1) % 4) as 0 | 1 | 2 | 3;
+  return { ...doc, lineTags: { ...doc.lineTags, [id]: { ...cur, orientation: next } } };
+}
+
+export function deleteLineTag(doc: MapDoc, id: string): MapDoc {
+  if (!doc.lineTags[id]) return doc;
+  const { [id]: _gone, ...rest } = doc.lineTags;
+  return { ...doc, lineTags: rest };
+}
+
+/**
+ * Drop any line tag whose corridor (fromStationId, toStationId) is no longer
+ * a connected edge on the tag's line. Called after structural edits that
+ * could orphan a tag — deleting a station, removing one from a line, etc.
+ */
+function pruneOrphanLineTags(doc: MapDoc): MapDoc {
+  const next: Record<string, LineTag> = {};
+  let changed = false;
+  for (const tid of Object.keys(doc.lineTags)) {
+    const tag = doc.lineTags[tid];
+    const ln = doc.lines[tag.lineId];
+    if (!ln || !isLineEdge(ln, tag.fromStationId, tag.toStationId)) {
+      changed = true;
+      continue;
+    }
+    next[tid] = tag;
+  }
+  return changed ? { ...doc, lineTags: next } : doc;
+}
+
+function isLineEdge(line: Line, a: StationId, b: StationId): boolean {
+  for (let i = 0; i < line.stations.length - 1; i++) {
+    const x = line.stations[i];
+    const y = line.stations[i + 1];
+    if ((x === a && y === b) || (x === b && y === a)) return true;
+  }
+  return false;
 }

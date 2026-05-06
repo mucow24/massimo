@@ -2,6 +2,7 @@ import { create } from 'zustand';
 import { persist, createJSONStorage } from 'zustand/middleware';
 import { temporal } from 'zundo';
 import type { Line, LineId, MapDoc, StationId } from '../model/types';
+import type { Vec2 } from '../geometry/vec';
 import { effectiveLineOrder } from '../model/lineOrder';
 import { defaultIdFactory, IdFactory } from '../model/ids';
 import { DEFAULT_DOC } from '../model/transforms';
@@ -76,6 +77,24 @@ interface DocState extends MapDoc {
   deleteLine: (id: LineId) => void;
   moveLineInOrder: (id: LineId, dir: -1 | 1) => void;
 
+  addLineTag: (
+    lineId: LineId,
+    fromStationId: StationId,
+    toStationId: StationId,
+    anchorEnd: 'from' | 'to',
+    distance: number,
+    orientation: 0 | 1 | 2 | 3,
+  ) => string;
+  moveLineTag: (
+    id: string,
+    fromStationId: StationId,
+    toStationId: StationId,
+    anchorEnd: 'from' | 'to',
+    distance: number,
+  ) => void;
+  cycleLineTagOrientation: (id: string) => void;
+  deleteLineTag: (id: string) => void;
+
   setCurveRadius: (r: number) => void;
   clearAll: () => void;
 }
@@ -126,6 +145,27 @@ export const useDoc = create<DocState>()(
         deleteLine: (id) => set((s) => T.deleteLine(s, id)),
         moveLineInOrder: (id, dir) => set((s) => T.moveLineInOrder(s, id, dir)),
 
+        addLineTag: (lineId, fromStationId, toStationId, anchorEnd, distance, orientation) => {
+          const id = ids.lineTagId();
+          set((s) =>
+            T.addLineTag(
+              s,
+              id,
+              lineId,
+              fromStationId,
+              toStationId,
+              anchorEnd,
+              distance,
+              orientation,
+            ),
+          );
+          return id;
+        },
+        moveLineTag: (id, fromStationId, toStationId, anchorEnd, distance) =>
+          set((s) => T.moveLineTag(s, id, fromStationId, toStationId, anchorEnd, distance)),
+        cycleLineTagOrientation: (id) => set((s) => T.cycleLineTagOrientation(s, id)),
+        deleteLineTag: (id) => set((s) => T.deleteLineTag(s, id)),
+
         setCurveRadius: (r) => set((s) => T.setCurveRadius(s, r)),
         clearAll: () => set((s) => T.clearAll(s)),
       }),
@@ -139,6 +179,7 @@ export const useDoc = create<DocState>()(
           lineOrder: s.lineOrder,
           curveRadius: s.curveRadius,
           lineCounter: s.lineCounter,
+          lineTags: s.lineTags,
         }),
         // Single source of truth for migrations — see model/serialize.ts.
         migrate: (persisted, fromVersion) => migrateDoc(persisted, fromVersion),
@@ -154,6 +195,7 @@ export const useDoc = create<DocState>()(
         lineOrder: state.lineOrder,
         curveRadius: state.curveRadius,
         lineCounter: state.lineCounter,
+        lineTags: state.lineTags,
       }),
       limit: 200,
     },
@@ -164,7 +206,10 @@ export const useDoc = create<DocState>()(
  * Snapshot of the partialized doc fields tracked by zundo.
  * Matches the `partialize` config above.
  */
-type DocSnapshot = Pick<MapDoc, 'stations' | 'lines' | 'lineOrder' | 'curveRadius' | 'lineCounter'>;
+type DocSnapshot = Pick<
+  MapDoc,
+  'stations' | 'lines' | 'lineOrder' | 'curveRadius' | 'lineCounter' | 'lineTags'
+>;
 
 function snapshotDoc(s: DocState): DocSnapshot {
   return {
@@ -173,6 +218,7 @@ function snapshotDoc(s: DocState): DocSnapshot {
     lineOrder: s.lineOrder,
     curveRadius: s.curveRadius,
     lineCounter: s.lineCounter,
+    lineTags: s.lineTags,
   };
 }
 
@@ -207,7 +253,8 @@ export function beginHistoryGroup(): { commit: () => void; cancel: () => void } 
         cur.lines === snapshot.lines &&
         cur.lineOrder === snapshot.lineOrder &&
         cur.curveRadius === snapshot.curveRadius &&
-        cur.lineCounter === snapshot.lineCounter
+        cur.lineCounter === snapshot.lineCounter &&
+        cur.lineTags === snapshot.lineTags
       ) {
         return;
       }
@@ -233,6 +280,22 @@ export const dragState = { suppressClick: false };
 
 export type SidebarTab = 'stations' | 'lines';
 
+// Hover preview shown while in add-line-tag mode: tracks the candidate
+// insertion point under the cursor on a line stripe, so the canvas can
+// render a ghost tag without committing it to the doc.
+export interface LineTagHoverPreview {
+  lineId: LineId;
+  service: string;
+  fromStationId: StationId;
+  toStationId: StationId;
+  t: number;
+  // Sampled position + tangent in world coords. Tangent is in canonical-band
+  // direction; the ghost re-orients in line-traversal frame at render time.
+  p: Vec2;
+  tangent: Vec2;
+  lineForwardMatchesCanon: boolean;
+}
+
 interface SelectionState {
   selectedStationId: StationId | null;
   selectedLineId: LineId | null;
@@ -252,6 +315,14 @@ interface SelectionState {
   editingStationId: StationId | null;
   // Which sidebar tab is currently visible.
   activeTab: SidebarTab;
+  // Line tag selection + creation.
+  creatingLineTag: boolean;
+  selectedLineTagId: string | null;
+  lineTagHoverPreview: LineTagHoverPreview | null;
+  // When true, edits made via the StationInspector (stop layout + label)
+  // mirror to all directly-connected stations whose unrotated stop layouts
+  // are identical. Resets to false whenever a different station is selected.
+  mirrorMatching: boolean;
   selectStation: (id: StationId | null) => void;
   selectLine: (id: LineId | null) => void;
   startAppendAt: (lineId: LineId, insertAfterIndex: number) => void;
@@ -263,6 +334,10 @@ interface SelectionState {
   setLabelSelected: (selected: boolean) => void;
   setEditingStationId: (id: StationId | null) => void;
   setActiveTab: (tab: SidebarTab) => void;
+  selectLineTag: (id: string | null) => void;
+  setCreatingLineTag: (creating: boolean) => void;
+  setLineTagHoverPreview: (preview: LineTagHoverPreview | null) => void;
+  setMirrorMatching: (on: boolean) => void;
 }
 
 export const useSelection = create<SelectionState>((set, get) => ({
@@ -276,14 +351,23 @@ export const useSelection = create<SelectionState>((set, get) => ({
   labelSelected: false,
   editingStationId: null,
   activeTab: 'stations',
+  creatingLineTag: false,
+  selectedLineTagId: null,
+  lineTagHoverPreview: null,
+  mirrorMatching: false,
   selectStation: (id) =>
     set({
       selectedStationId: id,
       selectedLineId: null,
+      selectedLineTagId: null,
       selectedStopLineId: null,
       labelSelected: false,
       editingStationId: id === null ? null : get().editingStationId,
       activeTab: id === null ? get().activeTab : 'stations',
+      creatingLineTag: id === null ? get().creatingLineTag : false,
+      lineTagHoverPreview: null,
+      // Each new selection opts into mirror mode fresh.
+      mirrorMatching: false,
     }),
   selectLine: (id) => {
     const wasAppending = get().appendingToLineId !== null;
@@ -291,9 +375,12 @@ export const useSelection = create<SelectionState>((set, get) => ({
     set({
       selectedLineId: id,
       selectedStationId: null,
+      selectedLineTagId: null,
       appendingToLineId: switchingToDifferent ? null : get().appendingToLineId,
       insertAfterIndex: switchingToDifferent ? null : get().insertAfterIndex,
       activeTab: id === null ? get().activeTab : 'lines',
+      creatingLineTag: id === null ? get().creatingLineTag : false,
+      lineTagHoverPreview: null,
     });
   },
   startAppendAt: (lineId, idx) =>
@@ -301,16 +388,28 @@ export const useSelection = create<SelectionState>((set, get) => ({
       appendingToLineId: lineId,
       insertAfterIndex: idx,
       selectedLineId: lineId,
+      selectedLineTagId: null,
       activeTab: 'lines',
+      creatingLineTag: false,
+      lineTagHoverPreview: null,
     }),
   setAppending: (id) =>
     set({
       appendingToLineId: id,
       insertAfterIndex: id === null ? null : get().insertAfterIndex,
       selectedLineId: id ?? get().selectedLineId,
+      creatingLineTag: id === null ? get().creatingLineTag : false,
+      lineTagHoverPreview: id === null ? get().lineTagHoverPreview : null,
     }),
   setInsertAfterIndex: (idx) => set({ insertAfterIndex: idx }),
-  setPlacingStation: (placing) => set({ placingStation: placing }),
+  setPlacingStation: (placing) =>
+    set({
+      placingStation: placing,
+      // Entering place-station mode clears tag mode + tag selection.
+      creatingLineTag: placing ? false : get().creatingLineTag,
+      selectedLineTagId: placing ? null : get().selectedLineTagId,
+      lineTagHoverPreview: placing ? null : get().lineTagHoverPreview,
+    }),
   setHoveredStation: (id) => set({ hoveredStationId: id }),
   setSelectedStopLineId: (id) =>
     set({ selectedStopLineId: id, labelSelected: id === null ? get().labelSelected : false }),
@@ -321,4 +420,33 @@ export const useSelection = create<SelectionState>((set, get) => ({
     }),
   setEditingStationId: (id) => set({ editingStationId: id }),
   setActiveTab: (tab) => set({ activeTab: tab }),
+  selectLineTag: (id) =>
+    set({
+      selectedLineTagId: id,
+      selectedStationId: null,
+      selectedLineId: null,
+      selectedStopLineId: null,
+      labelSelected: false,
+      editingStationId: null,
+      // Selecting a tag exits placement modes.
+      creatingLineTag: id === null ? get().creatingLineTag : false,
+      placingStation: id === null ? get().placingStation : false,
+      appendingToLineId: id === null ? get().appendingToLineId : null,
+      insertAfterIndex: id === null ? get().insertAfterIndex : null,
+      lineTagHoverPreview: null,
+    }),
+  setCreatingLineTag: (creating) =>
+    set({
+      creatingLineTag: creating,
+      // Entering tag mode clears all other modes + selections.
+      placingStation: creating ? false : get().placingStation,
+      appendingToLineId: creating ? null : get().appendingToLineId,
+      insertAfterIndex: creating ? null : get().insertAfterIndex,
+      selectedStationId: creating ? null : get().selectedStationId,
+      selectedLineId: creating ? null : get().selectedLineId,
+      selectedLineTagId: creating ? null : get().selectedLineTagId,
+      lineTagHoverPreview: creating ? get().lineTagHoverPreview : null,
+    }),
+  setLineTagHoverPreview: (preview) => set({ lineTagHoverPreview: preview }),
+  setMirrorMatching: (on) => set({ mirrorMatching: on }),
 }));

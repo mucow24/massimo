@@ -1,0 +1,418 @@
+import { describe, it, expect } from 'vitest';
+import {
+  sampleOffsetPath,
+  sampleOffsetPathByArcLength,
+  offsetPathLength,
+  closestParamOnOffsetPath,
+  lineTraversesForwardCanon,
+  snapNeighborTag,
+} from './lineTagGeometry';
+import { Vec2 } from './vec';
+import { makeLine } from '../test/fixtures';
+import type { LineTag } from '../model/types';
+
+const eq = (a: number, b: number, eps = 1e-6) => Math.abs(a - b) < eps;
+const approxVec = (a: Vec2, b: Vec2, eps = 1e-3) =>
+  Math.abs(a.x - b.x) < eps && Math.abs(a.y - b.y) < eps;
+
+describe('sampleOffsetPath — 2-vertex straight', () => {
+  const verts = [
+    { x: 0, y: 0 },
+    { x: 100, y: 0 },
+  ];
+
+  it('t=0 sits at the start point with offset=0', () => {
+    const s = sampleOffsetPath(verts, 24, 0, 0);
+    expect(approxVec(s.p, { x: 0, y: 0 })).toBe(true);
+    expect(approxVec(s.tangent, { x: 1, y: 0 })).toBe(true);
+  });
+
+  it('t=1 sits at the end point with offset=0', () => {
+    const s = sampleOffsetPath(verts, 24, 0, 1);
+    expect(approxVec(s.p, { x: 100, y: 0 })).toBe(true);
+  });
+
+  it('t=0.5 sits at the midpoint with offset=0', () => {
+    const s = sampleOffsetPath(verts, 24, 0, 0.5);
+    expect(approxVec(s.p, { x: 50, y: 0 })).toBe(true);
+    expect(approxVec(s.tangent, { x: 1, y: 0 })).toBe(true);
+  });
+
+  it('positive offset shifts perpendicular (left-of-motion = north in y-down)', () => {
+    const s = sampleOffsetPath(verts, 24, 10, 0.5);
+    expect(approxVec(s.p, { x: 50, y: -10 })).toBe(true);
+    expect(approxVec(s.tangent, { x: 1, y: 0 })).toBe(true);
+  });
+
+  it('negative offset shifts the opposite direction', () => {
+    const s = sampleOffsetPath(verts, 24, -10, 0.5);
+    expect(approxVec(s.p, { x: 50, y: 10 })).toBe(true);
+  });
+
+  it('total length matches the polyline length', () => {
+    expect(eq(offsetPathLength(verts, 24, 0), 100)).toBe(true);
+  });
+});
+
+describe('sampleOffsetPath — single 90° bend', () => {
+  // East then south: arc replaces the corner at (100, 0).
+  const verts = [
+    { x: 0, y: 0 },
+    { x: 100, y: 0 },
+    { x: 100, y: 100 },
+  ];
+  const R = 24;
+
+  it('t=0 is the start vertex (centerline)', () => {
+    const s = sampleOffsetPath(verts, R, 0, 0);
+    expect(approxVec(s.p, { x: 0, y: 0 })).toBe(true);
+    expect(approxVec(s.tangent, { x: 1, y: 0 })).toBe(true);
+  });
+
+  it('t=1 is the end vertex (centerline)', () => {
+    const s = sampleOffsetPath(verts, R, 0, 1);
+    expect(approxVec(s.p, { x: 100, y: 100 })).toBe(true);
+    expect(approxVec(s.tangent, { x: 0, y: 1 })).toBe(true);
+  });
+
+  it('total length is two straights + one quarter-arc (centerline)', () => {
+    // From (0,0) east to (100-R, 0), then quarter arc r=R, then south from
+    // (100, R) to (100, 100). Both straights = 100 - R.
+    const expected = 2 * (100 - R) + (Math.PI * R) / 2;
+    expect(eq(offsetPathLength(verts, R, 0), expected, 1e-6)).toBe(true);
+  });
+
+  it('mid-arc sample lies on the expected circle and tangent is perpendicular to radius', () => {
+    const total = offsetPathLength(verts, R, 0);
+    // Arc center at (100 - R, 0 + R) = (76, 24) for the east-then-south corner.
+    // Find a t inside the arc: arc starts at (100-R, 0) at arc-length (100-R),
+    // ends at arc-length (100-R + π*R/2). Mid-arc at (100-R) + π*R/4.
+    const midArcS = 100 - R + (Math.PI * R) / 4;
+    const tMid = midArcS / total;
+    const s = sampleOffsetPath(verts, R, 0, tMid);
+    // Distance from arc center to sampled point should equal R.
+    const center = { x: 100 - R, y: R };
+    const d = Math.hypot(s.p.x - center.x, s.p.y - center.y);
+    expect(eq(d, R, 1e-3)).toBe(true);
+    // Tangent should be perpendicular to (point - center) (dot = 0).
+    const radial = { x: s.p.x - center.x, y: s.p.y - center.y };
+    const tDotRadial = s.tangent.x * radial.x + s.tangent.y * radial.y;
+    expect(eq(tDotRadial, 0, 1e-3)).toBe(true);
+  });
+
+  it('positive offset shrinks inside-of-bend arc length, negative offset expands it', () => {
+    // Bend at (100,0) goes east → south, which is a "right turn" visually.
+    // The "inside" of the bend is to the south-east; "outside" to the
+    // north-west. Per emitOffsetSegments, positive offset moves left-of-
+    // motion = north when traveling east, which is OUTSIDE this bend.
+    // So positive offset → outside → larger arc → longer total.
+    const total0 = offsetPathLength(verts, R, 0);
+    const totalPos = offsetPathLength(verts, R, 10);
+    const totalNeg = offsetPathLength(verts, R, -10);
+    expect(totalPos).toBeGreaterThan(total0);
+    expect(totalNeg).toBeLessThan(total0);
+  });
+});
+
+describe('sampleOffsetPath — Z (2-bend, parallel ends)', () => {
+  const verts = [
+    { x: 0, y: 0 },
+    { x: 60, y: 0 },
+    { x: 60, y: 80 },
+    { x: 200, y: 80 },
+  ];
+  const R = 24;
+
+  it('arc length is monotonic in t', () => {
+    let prev: Vec2 | null = null;
+    let totalDist = 0;
+    const samples = 100;
+    for (let i = 0; i <= samples; i++) {
+      const t = i / samples;
+      const s = sampleOffsetPath(verts, R, 0, t);
+      if (prev) totalDist += Math.hypot(s.p.x - prev.x, s.p.y - prev.y);
+      prev = s.p;
+    }
+    // Sum of fine-grained distances approximates total arc length.
+    const total = offsetPathLength(verts, R, 0);
+    expect(Math.abs(totalDist - total)).toBeLessThan(1);
+  });
+
+  it('tangent stays unit-length over the whole sweep', () => {
+    for (let i = 0; i <= 20; i++) {
+      const t = i / 20;
+      const s = sampleOffsetPath(verts, R, 0, t);
+      const tlen = Math.hypot(s.tangent.x, s.tangent.y);
+      expect(eq(tlen, 1, 1e-6)).toBe(true);
+    }
+  });
+});
+
+describe('closestParamOnOffsetPath', () => {
+  it('projects perpendicularly onto a straight segment', () => {
+    const verts = [
+      { x: 0, y: 0 },
+      { x: 100, y: 0 },
+    ];
+    const r = closestParamOnOffsetPath(verts, 24, 0, { x: 30, y: 5 });
+    const sample = sampleOffsetPath(verts, 24, 0, r.t);
+    expect(approxVec(sample.p, { x: 30, y: 0 }, 0.5)).toBe(true);
+    expect(r.dist).toBeLessThan(5.5);
+  });
+
+  it('finds a point near a 90° bend', () => {
+    const verts = [
+      { x: 0, y: 0 },
+      { x: 100, y: 0 },
+      { x: 100, y: 100 },
+    ];
+    // A point just inside the bend: should land near the arc.
+    const r = closestParamOnOffsetPath(verts, 24, 0, { x: 95, y: 5 });
+    expect(r.dist).toBeLessThan(20);
+    // t should be near the middle of the path (which is the arc).
+    expect(r.t).toBeGreaterThan(0.4);
+    expect(r.t).toBeLessThan(0.7);
+  });
+});
+
+describe('sampleOffsetPathByArcLength', () => {
+  const verts = [
+    { x: 0, y: 0 },
+    { x: 100, y: 0 },
+  ];
+
+  it('returns start at arcLen=0', () => {
+    const s = sampleOffsetPathByArcLength(verts, 24, 0, 0);
+    expect(approxVec(s.p, { x: 0, y: 0 })).toBe(true);
+  });
+
+  it('returns the point at the given arc length', () => {
+    const s = sampleOffsetPathByArcLength(verts, 24, 0, 30);
+    expect(approxVec(s.p, { x: 30, y: 0 })).toBe(true);
+  });
+
+  it('clamps to the end when arcLen exceeds total length', () => {
+    const s = sampleOffsetPathByArcLength(verts, 24, 0, 999);
+    expect(approxVec(s.p, { x: 100, y: 0 })).toBe(true);
+  });
+
+  it('clamps to the start when arcLen is negative', () => {
+    const s = sampleOffsetPathByArcLength(verts, 24, 0, -50);
+    expect(approxVec(s.p, { x: 0, y: 0 })).toBe(true);
+  });
+});
+
+describe('lineTraversesForwardCanon', () => {
+  it('returns true when the line has a (from, to) edge in canonical order', () => {
+    const line = makeLine({ id: 'L1', stations: ['s1', 's2', 's3'] });
+    expect(lineTraversesForwardCanon(line, 's1', 's2')).toBe(true);
+    expect(lineTraversesForwardCanon(line, 's2', 's3')).toBe(true);
+  });
+
+  it('returns false when the edge appears reversed in line.stations', () => {
+    // Line traverses s2→s1, so for the canonical pair (s1, s2) it is reverse.
+    const line = makeLine({ id: 'L1', stations: ['s2', 's1'] });
+    expect(lineTraversesForwardCanon(line, 's1', 's2')).toBe(false);
+  });
+});
+
+describe('snapNeighborTag', () => {
+  // Straight 100-unit centerline. Stripe offset 0 means stripe length = 100.
+  const centerline = [
+    { x: 0, y: 0 },
+    { x: 100, y: 0 },
+  ];
+  const R = 24;
+  // All neighbors live on the same band, offset 0.
+  const stripeOffset = () => 0;
+
+  const makeArgs = (
+    overrides: Partial<Parameters<typeof snapNeighborTag>[0]>,
+  ): Parameters<typeof snapNeighborTag>[0] => ({
+    candCanonT: 0.5,
+    candPairKey: 's1|s2',
+    selfTagId: 'self',
+    bandCenterline: centerline,
+    curveRadius: R,
+    lineStripeOffset: stripeOffset,
+    lineTags: {},
+    tol: 10,
+    ...overrides,
+  });
+
+  it('snaps when neighbor anchored at "from" with the matching distance', () => {
+    // canon-t = 0.3 ⇒ neighbor anchored at "from" with distance 30 (stripe=100).
+    const tag: LineTag = {
+      id: 't1',
+      lineId: 'L1',
+      fromStationId: 's1',
+      toStationId: 's2',
+      anchorEnd: 'from',
+      distance: 30,
+      orientation: 0,
+    };
+    const result = snapNeighborTag(makeArgs({ candCanonT: 0.305, lineTags: { t1: tag } }));
+    expect(result.snapped).toBe(true);
+    expect(result.canonT).toBeCloseTo(0.3, 6);
+  });
+
+  it('snaps when neighbor anchored at "to" — must convert distance to canon-t', () => {
+    // canon-t = 0.3 ⇒ canon-arclen = 30. Neighbor anchored at "to" with
+    // distance 70 sits at the same world position (stripe=100, 100-70=30).
+    const tag: LineTag = {
+      id: 't1',
+      lineId: 'L1',
+      fromStationId: 's1',
+      toStationId: 's2',
+      anchorEnd: 'to',
+      distance: 70,
+      orientation: 0,
+    };
+    const result = snapNeighborTag(makeArgs({ candCanonT: 0.305, lineTags: { t1: tag } }));
+    expect(result.snapped).toBe(true);
+    expect(result.canonT).toBeCloseTo(0.3, 6);
+  });
+
+  it('does not falsely snap when a "to"-anchored neighbor has matching raw distance but different position', () => {
+    // canon-t=0.3, distance=30 from "to" sits at canon-t=0.7 (stripe=100,
+    // 100-30=70). Candidate at canon-t=0.305 must NOT snap.
+    const tag: LineTag = {
+      id: 't1',
+      lineId: 'L1',
+      fromStationId: 's1',
+      toStationId: 's2',
+      anchorEnd: 'to',
+      distance: 30,
+      orientation: 0,
+    };
+    const result = snapNeighborTag(makeArgs({ candCanonT: 0.305, lineTags: { t1: tag } }));
+    expect(result.snapped).toBe(false);
+  });
+
+  it('symmetric: from-anchored and to-anchored at same world position both snap', () => {
+    // Two tags at canon-t=0.4 (stripe=100): one anchored from with distance 40,
+    // one anchored to with distance 60. Both should be snap targets.
+    const fromTag: LineTag = {
+      id: 'fr',
+      lineId: 'A',
+      fromStationId: 's1',
+      toStationId: 's2',
+      anchorEnd: 'from',
+      distance: 40,
+      orientation: 0,
+    };
+    const toTag: LineTag = {
+      id: 'to',
+      lineId: 'B',
+      fromStationId: 's1',
+      toStationId: 's2',
+      anchorEnd: 'to',
+      distance: 60,
+      orientation: 0,
+    };
+    const r1 = snapNeighborTag(
+      makeArgs({ candCanonT: 0.405, selfTagId: 'fr', lineTags: { fr: fromTag, to: toTag } }),
+    );
+    const r2 = snapNeighborTag(
+      makeArgs({ candCanonT: 0.405, selfTagId: 'to', lineTags: { fr: fromTag, to: toTag } }),
+    );
+    expect(r1.snapped).toBe(true);
+    expect(r2.snapped).toBe(true);
+    expect(r1.canonT).toBeCloseTo(0.4, 6);
+    expect(r2.canonT).toBeCloseTo(0.4, 6);
+  });
+
+  it('does not snap when neighbor is on a different corridor', () => {
+    const tag: LineTag = {
+      id: 't1',
+      lineId: 'L1',
+      fromStationId: 's3',
+      toStationId: 's4',
+      anchorEnd: 'from',
+      distance: 50,
+      orientation: 0,
+    };
+    const result = snapNeighborTag(makeArgs({ candCanonT: 0.5, lineTags: { t1: tag } }));
+    expect(result.snapped).toBe(false);
+  });
+
+  it('skips the dragged tag itself', () => {
+    const self: LineTag = {
+      id: 'self',
+      lineId: 'L1',
+      fromStationId: 's1',
+      toStationId: 's2',
+      anchorEnd: 'from',
+      distance: 50,
+      orientation: 0,
+    };
+    const result = snapNeighborTag(
+      makeArgs({ candCanonT: 0.5, selfTagId: 'self', lineTags: { self } }),
+    );
+    expect(result.snapped).toBe(false);
+  });
+
+  it('does not snap when far from any neighbor', () => {
+    const tag: LineTag = {
+      id: 't1',
+      lineId: 'L1',
+      fromStationId: 's1',
+      toStationId: 's2',
+      anchorEnd: 'from',
+      distance: 20,
+      orientation: 0,
+    };
+    const result = snapNeighborTag(makeArgs({ candCanonT: 0.8, lineTags: { t1: tag } }));
+    expect(result.snapped).toBe(false);
+  });
+
+  it('skips neighbors whose line is not in the band', () => {
+    const tag: LineTag = {
+      id: 't1',
+      lineId: 'OTHER',
+      fromStationId: 's1',
+      toStationId: 's2',
+      anchorEnd: 'from',
+      distance: 30,
+      orientation: 0,
+    };
+    const result = snapNeighborTag(
+      makeArgs({
+        candCanonT: 0.305,
+        lineTags: { t1: tag },
+        lineStripeOffset: (id) => (id === 'IN_BAND' ? 0 : null),
+      }),
+    );
+    expect(result.snapped).toBe(false);
+  });
+});
+
+describe('offsetFilletPath cross-check (no drift between rendered and sampled)', () => {
+  // Render path, parse its M-start and final L-end, compare against samples.
+  it('t=0 matches the M command start coordinates for offset=10 with arcs', () => {
+    const verts = [
+      { x: 0, y: 0 },
+      { x: 100, y: 0 },
+      { x: 100, y: 100 },
+    ];
+    const R = 24;
+    const offset = 10;
+    const sample = sampleOffsetPath(verts, R, offset, 0);
+    // The sampled start should equal the offset polyline's first vertex
+    // (offV[0]). For this geometry: leftOf(east) = (0,-1), so offV[0] = (0,-10).
+    expect(approxVec(sample.p, { x: 0, y: -10 }, 1e-3)).toBe(true);
+  });
+
+  it('t=1 matches the offset polyline end (offV[N-1])', () => {
+    const verts = [
+      { x: 0, y: 0 },
+      { x: 100, y: 0 },
+      { x: 100, y: 100 },
+    ];
+    const R = 24;
+    const offset = 10;
+    const sample = sampleOffsetPath(verts, R, offset, 1);
+    // leftOf(south) = (1, 0), so offV[2] = (100+10, 100) = (110, 100).
+    expect(approxVec(sample.p, { x: 110, y: 100 }, 1e-3)).toBe(true);
+  });
+});
