@@ -74,6 +74,7 @@ export function makeDoc(parts: {
     curveRadius: parts.curveRadius ?? 24,
     lineCounter: 0,
     lineTags,
+    routeBullets: {},
   };
 }
 

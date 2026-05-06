@@ -1,6 +1,8 @@
-import { useMemo, useRef } from 'react';
+import { useMemo, useRef, useState } from 'react';
 
-import { dragState, useDoc, useSelection } from '../state/store';
+import { beginHistoryGroup, dragState, useDoc, useSelection } from '../state/store';
+import type { SnapGuide } from '../geometry/snap';
+import { snapBullet } from '../geometry/snapBullet';
 import {
   buildBands,
   buildStopMarkers,
@@ -17,6 +19,8 @@ import { WarningToasts } from './canvas/WarningToasts';
 import { EditingBanner } from './canvas/EditingBanner';
 import { SnapGuides } from './canvas/SnapGuides';
 import { LineTagsLayer } from './canvas/LineTagsLayer';
+import { RouteBulletView } from './RouteBulletView';
+import { RouteBulletPopover } from './RouteBulletPopover';
 import {
   closestParamOnOffsetPath,
   lineTraversesForwardCanon,
@@ -31,6 +35,7 @@ const DIM_COLOR = '#000000';
 const DIM_ALPHA = 0.75;
 // 1 = full color, 0 = greyscale.
 const OTHER_LINE_SATURATION = 0.5;
+const BULLET_SNAP_TOLERANCE = 10;
 
 export function MapCanvas() {
   const stations = useDoc((s) => s.stations);
@@ -39,6 +44,10 @@ export function MapCanvas() {
   const lineOrder = useDoc((s) => s.lineOrder);
   const addStation = useDoc((s) => s.addStation);
   const addLineTag = useDoc((s) => s.addLineTag);
+  const routeBullets = useDoc((s) => s.routeBullets);
+  const addRouteBullet = useDoc((s) => s.addRouteBullet);
+  const moveRouteBullet = useDoc((s) => s.moveRouteBullet);
+  const rotateRouteBullet = useDoc((s) => s.rotateRouteBullet);
   const selection = useSelection();
   const highlightLineId = selection.selectedLineId;
 
@@ -86,6 +95,19 @@ export function MapCanvas() {
   }, [bands, stations, lines, lineOrder]);
 
   const inHandMode = selection.toolMode === 'hand' || selection.spaceHeld;
+
+  // Bullet drag state — minimal local ref to avoid a whole new hook for now.
+  const bulletDragRef = useRef<{
+    id: string;
+    startWX: number;
+    startWY: number;
+    startMX: number;
+    startMY: number;
+    moved: boolean;
+    history: ReturnType<typeof beginHistoryGroup>;
+  } | null>(null);
+  const [bulletSnapGuides, setBulletSnapGuides] = useState<SnapGuide[]>([]);
+
   const onPointerDown = (e: React.PointerEvent) => {
     // Middle-button drag pans regardless of tool mode.
     if (e.button === 1) {
@@ -98,10 +120,90 @@ export function MapCanvas() {
   const onPointerMove = (e: React.PointerEvent) => {
     view.onPointerMove(e);
     drag.onPointerMove(e);
+    const bd = bulletDragRef.current;
+    if (bd) {
+      const dxScreen = e.clientX - bd.startMX;
+      const dyScreen = e.clientY - bd.startMY;
+      if (!bd.moved && Math.hypot(dxScreen, dyScreen) > 4) {
+        bd.moved = true;
+        dragState.suppressClick = true;
+        svgRef.current?.setPointerCapture(e.pointerId);
+      }
+      if (bd.moved) {
+        const dx = dxScreen / view.viewport.zoom;
+        const dy = dyScreen / view.viewport.zoom;
+        let nx = bd.startWX + dx;
+        let ny = bd.startWY + dy;
+        const cur = routeBullets[bd.id];
+        const snapLine = cur && cur.lineId ? lines[cur.lineId] : null;
+        if (snapLine && !e.shiftKey) {
+          const snap = snapBullet({
+            x: nx,
+            y: ny,
+            line: snapLine,
+            stations,
+            tolerance: BULLET_SNAP_TOLERANCE,
+          });
+          nx = snap.x;
+          ny = snap.y;
+          setBulletSnapGuides(snap.guides);
+        } else if (bulletSnapGuides.length > 0) {
+          setBulletSnapGuides([]);
+        }
+        moveRouteBullet(bd.id, nx, ny);
+      }
+    }
   };
   const onPointerUp = (e: React.PointerEvent) => {
     view.onPointerUp(e);
     drag.onPointerUp(e);
+    const bd = bulletDragRef.current;
+    if (bd) {
+      const wasMoved = bd.moved;
+      bulletDragRef.current = null;
+      setBulletSnapGuides([]);
+      if (wasMoved) {
+        bd.history.commit();
+        try {
+          svgRef.current?.releasePointerCapture(e.pointerId);
+        } catch {
+          // pointer may not have been captured
+        }
+        setTimeout(() => {
+          dragState.suppressClick = false;
+        }, 0);
+      } else {
+        bd.history.cancel();
+      }
+    }
+  };
+
+  const onBulletPointerDown = (id: string, e: React.PointerEvent) => {
+    if (e.button !== 0) return;
+    if (inHandMode) return;
+    const b = routeBullets[id];
+    if (!b) return;
+    e.stopPropagation();
+    bulletDragRef.current = {
+      id,
+      startWX: b.x,
+      startWY: b.y,
+      startMX: e.clientX,
+      startMY: e.clientY,
+      moved: false,
+      history: beginHistoryGroup(),
+    };
+  };
+  const onBulletClick = (id: string, e: React.MouseEvent) => {
+    if (dragState.suppressClick) return;
+    if (inHandMode) return;
+    e.stopPropagation();
+    selection.selectRouteBullet(id);
+  };
+  const onBulletContextMenu = (id: string, e: React.MouseEvent) => {
+    e.preventDefault();
+    e.stopPropagation();
+    rotateRouteBullet(id);
   };
 
   const onCanvasClick = (e: React.MouseEvent) => {
@@ -118,6 +220,17 @@ export function MapCanvas() {
       // would close the placing-mode banner via the inspector swap.
       return;
     }
+    if (selection.creatingRouteBullet) {
+      const w = view.screenToWorld(e.clientX, e.clientY);
+      // Default new bullet to the first line in z-order so it has a
+      // recognizable color/service immediately. User can change it via
+      // the popover after exiting placement mode (Esc / right-click).
+      // Don't auto-select — that would close the placement banner and
+      // break the click-click-click drop pattern, like place-station mode.
+      const defaultLineId = lineOrder.find((id) => lines[id]) ?? null;
+      addRouteBullet(w.x, w.y, defaultLineId);
+      return;
+    }
     if (selection.creatingLineTag) {
       // Click on background while in tag mode = exit the mode.
       selection.setCreatingLineTag(false);
@@ -129,6 +242,7 @@ export function MapCanvas() {
     }
     selection.selectStation(null);
     selection.selectLineTag(null);
+    selection.selectRouteBullet(null);
   };
 
   // Hover/click handlers passed to SegmentBand when in add-line-tag mode.
@@ -567,10 +681,45 @@ export function MapCanvas() {
           />
         )}
 
+        {/* Route bullets: free-floating service badges, rendered above
+            everything so they pop. */}
+        {Object.values(routeBullets).map((b) => (
+          <RouteBulletView
+            key={b.id}
+            bullet={b}
+            lines={lines}
+            selected={selection.selectedRouteBulletId === b.id}
+            onPointerDown={onBulletPointerDown}
+            onClick={onBulletClick}
+            onContextMenu={onBulletContextMenu}
+          />
+        ))}
+
         {/* Snap guides: rendered last so the dotted lines + measurement
             labels sit on top of line tags and everything else. */}
-        <SnapGuides guides={drag.snapGuides} zoom={view.viewport.zoom} />
+        <SnapGuides
+          guides={[...drag.snapGuides, ...bulletSnapGuides]}
+          zoom={view.viewport.zoom}
+        />
       </svg>
+
+      {selection.selectedRouteBulletId &&
+        routeBullets[selection.selectedRouteBulletId] &&
+        (() => {
+          const b = routeBullets[selection.selectedRouteBulletId];
+          const r = svgRef.current?.getBoundingClientRect();
+          const vb = svgRef.current?.viewBox.baseVal;
+          if (!r || !vb) return null;
+          const sx = r.left + ((b.x - vb.x) / vb.width) * r.width;
+          const sy = r.top + ((b.y - vb.y) / vb.height) * r.height;
+          return (
+            <RouteBulletPopover
+              bullet={b}
+              anchor={{ x: sx, y: sy }}
+              onClose={() => selection.selectRouteBullet(null)}
+            />
+          );
+        })()}
 
       <WarningToasts />
     </div>

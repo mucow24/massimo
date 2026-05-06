@@ -97,6 +97,24 @@ export interface Viewport {
   zoom: number;
 }
 
+export type RouteBulletShape = 'circle' | 'square' | 'diamond';
+
+// A free-floating, draggable route badge that displays a single line's
+// service code in its color. Used as a label/legend element on the map.
+export interface RouteBullet {
+  id: string;
+  x: number;
+  y: number;
+  rotation: Rotation;
+  // Which line's color + service code to render. Null = unset (no line
+  // chosen yet); renders as a neutral placeholder.
+  lineId: LineId | null;
+  shape: RouteBulletShape;
+  // Half-extent in world units (radius for circle, half-side for
+  // square/diamond).
+  size: number;
+}
+
 export interface MapDoc {
   stations: Record<StationId, Station>;
   lines: Record<LineId, Line>;
@@ -111,4 +129,6 @@ export interface MapDoc {
   lineCounter: number;
   // Movable in-band labels. Keyed by tag id.
   lineTags: Record<string, LineTag>;
+  // Free-floating route badges. Keyed by bullet id.
+  routeBullets: Record<string, RouteBullet>;
 }

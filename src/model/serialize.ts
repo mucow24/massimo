@@ -4,7 +4,7 @@ import { buildBands } from '../geometry/interlining';
 import { offsetPathLength } from '../geometry/lineTagGeometry';
 import { STOP_SIZE } from '../geometry/orientation';
 
-export const SCHEMA_VERSION = 8;
+export const SCHEMA_VERSION = 9;
 export const SCHEMA_FORMAT = 'massimo-map';
 
 export interface SerializedFile {
@@ -82,6 +82,7 @@ export function migrate(raw: unknown, fromVersion: number): MapDoc {
     curveRadius?: number;
     lineCounter?: number;
     lineTags?: Record<string, unknown>;
+    routeBullets?: Record<string, unknown>;
     viewport?: unknown;
   };
 
@@ -180,6 +181,11 @@ export function migrate(raw: unknown, fromVersion: number): MapDoc {
     );
   }
 
+  // v8 -> v9: routeBullets introduced. Default to {} for older files.
+  if (fromVersion < 9 && state) {
+    if (!state.routeBullets) state.routeBullets = {};
+  }
+
   // Fill in any fields that newer code expects but the migration chain
   // didn't touch (e.g. an older file with no curveRadius or lineOrder).
   const out = state as unknown as MapDoc;
@@ -190,6 +196,7 @@ export function migrate(raw: unknown, fromVersion: number): MapDoc {
     lines: out.lines ?? {},
     lineOrder: out.lineOrder ?? Object.keys(out.lines ?? {}),
     lineTags: out.lineTags ?? {},
+    routeBullets: out.routeBullets ?? {},
   };
 }
 

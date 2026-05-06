@@ -1,7 +1,7 @@
 import { create } from 'zustand';
 import { persist, createJSONStorage } from 'zustand/middleware';
 import { temporal } from 'zundo';
-import type { Line, LineId, MapDoc, StationId } from '../model/types';
+import type { Line, LineId, MapDoc, RouteBullet, StationId } from '../model/types';
 import type { Vec2 } from '../geometry/vec';
 import { effectiveLineOrder } from '../model/lineOrder';
 import { defaultIdFactory, IdFactory } from '../model/ids';
@@ -100,6 +100,15 @@ interface DocState extends MapDoc {
   cycleLineTagOrientation: (id: string) => void;
   deleteLineTag: (id: string) => void;
 
+  addRouteBullet: (x: number, y: number, lineId: LineId | null) => string;
+  moveRouteBullet: (id: string, x: number, y: number) => void;
+  rotateRouteBullet: (id: string) => void;
+  updateRouteBullet: (
+    id: string,
+    patch: Partial<Pick<RouteBullet, 'lineId' | 'shape' | 'size'>>,
+  ) => void;
+  deleteRouteBullet: (id: string) => void;
+
   setCurveRadius: (r: number) => void;
   clearAll: () => void;
 }
@@ -173,6 +182,16 @@ export const useDoc = create<DocState>()(
         cycleLineTagOrientation: (id) => set((s) => T.cycleLineTagOrientation(s, id)),
         deleteLineTag: (id) => set((s) => T.deleteLineTag(s, id)),
 
+        addRouteBullet: (x, y, lineId) => {
+          const id = ids.routeBulletId();
+          set((s) => T.addRouteBullet(s, id, x, y, lineId));
+          return id;
+        },
+        moveRouteBullet: (id, x, y) => set((s) => T.moveRouteBullet(s, id, x, y)),
+        rotateRouteBullet: (id) => set((s) => T.rotateRouteBullet(s, id)),
+        updateRouteBullet: (id, patch) => set((s) => T.updateRouteBullet(s, id, patch)),
+        deleteRouteBullet: (id) => set((s) => T.deleteRouteBullet(s, id)),
+
         setCurveRadius: (r) => set((s) => T.setCurveRadius(s, r)),
         clearAll: () => set((s) => T.clearAll(s)),
       }),
@@ -187,6 +206,7 @@ export const useDoc = create<DocState>()(
           curveRadius: s.curveRadius,
           lineCounter: s.lineCounter,
           lineTags: s.lineTags,
+          routeBullets: s.routeBullets,
         }),
         // Single source of truth for migrations — see model/serialize.ts.
         migrate: (persisted, fromVersion) => migrateDoc(persisted, fromVersion),
@@ -203,6 +223,7 @@ export const useDoc = create<DocState>()(
         curveRadius: state.curveRadius,
         lineCounter: state.lineCounter,
         lineTags: state.lineTags,
+        routeBullets: state.routeBullets,
       }),
       limit: 200,
     },
@@ -215,7 +236,7 @@ export const useDoc = create<DocState>()(
  */
 type DocSnapshot = Pick<
   MapDoc,
-  'stations' | 'lines' | 'lineOrder' | 'curveRadius' | 'lineCounter' | 'lineTags'
+  'stations' | 'lines' | 'lineOrder' | 'curveRadius' | 'lineCounter' | 'lineTags' | 'routeBullets'
 >;
 
 function snapshotDoc(s: DocState): DocSnapshot {
@@ -226,6 +247,7 @@ function snapshotDoc(s: DocState): DocSnapshot {
     curveRadius: s.curveRadius,
     lineCounter: s.lineCounter,
     lineTags: s.lineTags,
+    routeBullets: s.routeBullets,
   };
 }
 
@@ -329,6 +351,9 @@ interface SelectionState {
   creatingLineTag: boolean;
   selectedLineTagId: string | null;
   lineTagHoverPreview: LineTagHoverPreview | null;
+  // Route bullet selection + creation.
+  creatingRouteBullet: boolean;
+  selectedRouteBulletId: string | null;
   // When true, edits made via the StationInspector (stop layout + label)
   // mirror to all directly-connected stations whose unrotated stop layouts
   // are identical. Resets to false whenever a different station is selected.
@@ -354,6 +379,8 @@ interface SelectionState {
   selectLineTag: (id: string | null) => void;
   setCreatingLineTag: (creating: boolean) => void;
   setLineTagHoverPreview: (preview: LineTagHoverPreview | null) => void;
+  selectRouteBullet: (id: string | null) => void;
+  setCreatingRouteBullet: (creating: boolean) => void;
   setMirrorMatching: (on: boolean) => void;
 }
 
@@ -372,6 +399,8 @@ export const useSelection = create<SelectionState>((set, get) => ({
   creatingLineTag: false,
   selectedLineTagId: null,
   lineTagHoverPreview: null,
+  creatingRouteBullet: false,
+  selectedRouteBulletId: null,
   mirrorMatching: false,
   toolMode: 'arrow',
   spaceHeld: false,
@@ -471,5 +500,33 @@ export const useSelection = create<SelectionState>((set, get) => ({
       lineTagHoverPreview: creating ? get().lineTagHoverPreview : null,
     }),
   setLineTagHoverPreview: (preview) => set({ lineTagHoverPreview: preview }),
+  selectRouteBullet: (id) =>
+    set({
+      selectedRouteBulletId: id,
+      // Selecting a bullet clears other selections + placement modes.
+      selectedStationId: id === null ? get().selectedStationId : null,
+      selectedLineId: id === null ? get().selectedLineId : null,
+      selectedLineTagId: id === null ? get().selectedLineTagId : null,
+      labelSelected: false,
+      editingStationId: null,
+      creatingLineTag: id === null ? get().creatingLineTag : false,
+      placingStation: id === null ? get().placingStation : false,
+      appendingToLineId: id === null ? get().appendingToLineId : null,
+      insertAfterIndex: id === null ? get().insertAfterIndex : null,
+      creatingRouteBullet: id === null ? get().creatingRouteBullet : false,
+    }),
+  setCreatingRouteBullet: (creating) =>
+    set({
+      creatingRouteBullet: creating,
+      // Entering bullet-creation mode clears all other modes + selections.
+      placingStation: creating ? false : get().placingStation,
+      creatingLineTag: creating ? false : get().creatingLineTag,
+      appendingToLineId: creating ? null : get().appendingToLineId,
+      insertAfterIndex: creating ? null : get().insertAfterIndex,
+      selectedStationId: creating ? null : get().selectedStationId,
+      selectedLineId: creating ? null : get().selectedLineId,
+      selectedLineTagId: creating ? null : get().selectedLineTagId,
+      selectedRouteBulletId: creating ? null : get().selectedRouteBulletId,
+    }),
   setMirrorMatching: (on) => set({ mirrorMatching: on }),
 }));

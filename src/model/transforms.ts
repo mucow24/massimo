@@ -7,6 +7,7 @@ import type {
   LineTag,
   MapDoc,
   Rotation,
+  RouteBullet,
   Station,
   StationId,
   StopCell,
@@ -20,6 +21,7 @@ export const DEFAULT_DOC: MapDoc = {
   curveRadius: 24,
   lineCounter: 0,
   lineTags: {},
+  routeBullets: {},
 };
 
 // ---------- Stations ----------
@@ -562,7 +564,14 @@ export function deleteLine(doc: MapDoc, id: LineId): MapDoc {
   for (const tid of Object.keys(doc.lineTags)) {
     if (doc.lineTags[tid].lineId !== id) lineTags[tid] = doc.lineTags[tid];
   }
-  return { ...doc, lines: rest, stations, lineOrder: order, lineTags };
+  // Null out any route bullets that referenced this line; the bullet stays
+  // on the canvas but reverts to "unset" until the user picks a new line.
+  const routeBullets: Record<string, RouteBullet> = {};
+  for (const bid of Object.keys(doc.routeBullets)) {
+    const b = doc.routeBullets[bid];
+    routeBullets[bid] = b.lineId === id ? { ...b, lineId: null } : b;
+  }
+  return { ...doc, lines: rest, stations, lineOrder: order, lineTags, routeBullets };
 }
 
 export function moveLineInOrder(doc: MapDoc, id: LineId, dir: -1 | 1): MapDoc {
@@ -640,6 +649,60 @@ export function deleteLineTag(doc: MapDoc, id: string): MapDoc {
   const { [id]: _gone, ...rest } = doc.lineTags;
   return { ...doc, lineTags: rest };
 }
+
+// ---------- Route bullets ----------
+
+export function addRouteBullet(
+  doc: MapDoc,
+  id: string,
+  x: number,
+  y: number,
+  lineId: LineId | null,
+): MapDoc {
+  const bullet: RouteBullet = {
+    id,
+    x,
+    y,
+    rotation: 0,
+    lineId,
+    shape: 'circle',
+    size: 14,
+  };
+  return { ...doc, routeBullets: { ...doc.routeBullets, [id]: bullet } };
+}
+
+export function moveRouteBullet(doc: MapDoc, id: string, x: number, y: number): MapDoc {
+  const cur = doc.routeBullets[id];
+  if (!cur) return doc;
+  return { ...doc, routeBullets: { ...doc.routeBullets, [id]: { ...cur, x, y } } };
+}
+
+export function rotateRouteBullet(doc: MapDoc, id: string): MapDoc {
+  const cur = doc.routeBullets[id];
+  if (!cur) return doc;
+  const next = ((cur.rotation + 1) % 8) as Rotation;
+  return {
+    ...doc,
+    routeBullets: { ...doc.routeBullets, [id]: { ...cur, rotation: next } },
+  };
+}
+
+export function updateRouteBullet(
+  doc: MapDoc,
+  id: string,
+  patch: Partial<Pick<RouteBullet, 'lineId' | 'shape' | 'size'>>,
+): MapDoc {
+  const cur = doc.routeBullets[id];
+  if (!cur) return doc;
+  return { ...doc, routeBullets: { ...doc.routeBullets, [id]: { ...cur, ...patch } } };
+}
+
+export function deleteRouteBullet(doc: MapDoc, id: string): MapDoc {
+  if (!doc.routeBullets[id]) return doc;
+  const { [id]: _gone, ...rest } = doc.routeBullets;
+  return { ...doc, routeBullets: rest };
+}
+
 
 /**
  * Drop any line tag whose corridor (fromStationId, toStationId) is no longer
