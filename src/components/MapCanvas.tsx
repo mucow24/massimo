@@ -281,7 +281,6 @@ export function MapCanvas() {
           />
         ))}
 
-        <SnapGuides guides={drag.snapGuides} zoom={view.viewport.zoom} />
 
         {/* station labels: rendered after bg/wash so a selected station's
             orange wash never paints over a neighbor's label. */}
@@ -452,6 +451,10 @@ export function MapCanvas() {
             layer="stroke"
           />
         )}
+
+        {/* Snap guides: rendered last so the dotted lines + measurement
+            labels sit on top of line tags and everything else. */}
+        <SnapGuides guides={drag.snapGuides} zoom={view.viewport.zoom} />
       </svg>
 
       <WarningToasts />
