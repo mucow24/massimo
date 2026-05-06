@@ -8,7 +8,6 @@ export function Sidebar() {
   const stations = useDoc((s) => s.stations);
   const lines = useDoc((s) => s.lines);
   const lineOrder = useDoc((s) => s.lineOrder);
-  const addLine = useDoc((s) => s.addLine);
   const selection = useSelection();
   const deleteStation = useDoc((s) => s.deleteStation);
   const deleteLine = useDoc((s) => s.deleteLine);
@@ -22,11 +21,6 @@ export function Sidebar() {
     Object.values(lines)
       .filter((ln) => ln.stations.includes(stationId))
       .sort((a, b) => a.service.localeCompare(b.service));
-
-  const onNewLine = () => {
-    const id = addLine();
-    selection.startAppendAt(id, -1);
-  };
 
   // Scroll the expanded editor into view when something gets selected from
   // outside the sidebar (e.g. clicking a station on the canvas).
@@ -124,9 +118,6 @@ export function Sidebar() {
 
         {selection.activeTab === 'lines' && (
           <section>
-            <div className="tab-actions">
-              <button onClick={onNewLine}>+ New line</button>
-            </div>
             {orderedLineIds.length === 0 && <div className="empty">No lines yet.</div>}
             {orderedLineIds.map((id, i) => {
               const ln = lines[id];

@@ -12,6 +12,7 @@ export function Toolbar() {
   const zoom = useViewportStore((s) => s.zoom);
   const setViewport = useViewportStore((s) => s.setViewport);
   const clearAll = useDoc((s) => s.clearAll);
+  const addLine = useDoc((s) => s.addLine);
   const selection = useSelection();
 
   const fileInputRef = useRef<HTMLInputElement | null>(null);
@@ -23,6 +24,10 @@ export function Toolbar() {
   };
   const onAddLineTag = () => {
     selection.setCreatingLineTag(!selection.creatingLineTag);
+  };
+  const onAddLine = () => {
+    const id = addLine();
+    selection.startAppendAt(id, -1);
   };
   const onResetView = () => setViewport({ x: 0, y: 0, zoom: 1 });
   const onClear = () => {
@@ -94,6 +99,7 @@ export function Toolbar() {
       </Menu>
       <Menu label="Add">
         <MenuItem onClick={onAddStation}>Stations</MenuItem>
+        <MenuItem onClick={onAddLine}>Line</MenuItem>
         <MenuItem onClick={onAddLineTag}>Line tags</MenuItem>
       </Menu>
       <input
