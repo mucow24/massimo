@@ -21,6 +21,7 @@ import { SnapGuides } from './canvas/SnapGuides';
 import { LineTagsLayer } from './canvas/LineTagsLayer';
 import { RouteBulletView } from './RouteBulletView';
 import { RouteBulletPopover } from './RouteBulletPopover';
+import { TransferLayer } from './TransferLayer';
 import {
   closestParamOnOffsetPath,
   lineTraversesForwardCanon,
@@ -48,6 +49,7 @@ export function MapCanvas() {
   const addRouteBullet = useDoc((s) => s.addRouteBullet);
   const moveRouteBullet = useDoc((s) => s.moveRouteBullet);
   const rotateRouteBullet = useDoc((s) => s.rotateRouteBullet);
+  const transfers = useDoc((s) => s.transfers);
   const selection = useSelection();
   const highlightLineId = selection.selectedLineId;
 
@@ -240,9 +242,15 @@ export function MapCanvas() {
       selection.setAppending(null);
       return;
     }
+    if (selection.creatingTransfer) {
+      // Click on background while picking transfer endpoints exits the mode.
+      selection.setCreatingTransfer(false);
+      return;
+    }
     selection.selectStation(null);
     selection.selectLineTag(null);
     selection.selectRouteBullet(null);
+    selection.selectTransfer(null);
   };
 
   // Hover/click handlers passed to SegmentBand when in add-line-tag mode.
@@ -680,6 +688,15 @@ export function MapCanvas() {
             layer="stroke"
           />
         )}
+
+        {/* Transfers: 2px black lines connecting two station anchors. */}
+        <TransferLayer
+          transfers={transfers}
+          stations={stations}
+          selectedId={selection.selectedTransferId}
+          zoom={view.viewport.zoom}
+          onSelect={(id) => selection.selectTransfer(id)}
+        />
 
         {/* Route bullets: free-floating service badges, rendered above
             everything so they pop. */}

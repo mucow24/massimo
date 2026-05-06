@@ -79,6 +79,59 @@ describe('deleteStation', () => {
     expect(next.lines.L1.stations).toEqual(['s2']);
     expect(next.lines.L2.stations).toEqual([]);
   });
+
+  it('cascade-deletes transfers that reference the removed station', () => {
+    const doc = makeDoc({
+      stations: [
+        makeStation({ id: 's1' }),
+        makeStation({ id: 's2' }),
+        makeStation({ id: 's3' }),
+      ],
+      transfers: [
+        { id: 'x1', stationA: 's1', stationB: 's2' },
+        { id: 'x2', stationA: 's2', stationB: 's3' },
+      ],
+    });
+    const next = T.deleteStation(doc, 's1');
+    expect(next.transfers.x1).toBeUndefined();
+    expect(next.transfers.x2).toBeDefined();
+  });
+});
+
+describe('addTransfer', () => {
+  it('inserts a transfer between two stations', () => {
+    const doc = makeDoc({
+      stations: [makeStation({ id: 's1' }), makeStation({ id: 's2' })],
+    });
+    const next = T.addTransfer(doc, 'x1', 's1', 's2');
+    expect(next.transfers.x1).toEqual({ id: 'x1', stationA: 's1', stationB: 's2' });
+  });
+
+  it('refuses to create a self-transfer', () => {
+    const doc = makeDoc({ stations: [makeStation({ id: 's1' })] });
+    expect(T.addTransfer(doc, 'x1', 's1', 's1')).toBe(doc);
+  });
+
+  it('refuses if either endpoint does not exist', () => {
+    const doc = makeDoc({ stations: [makeStation({ id: 's1' })] });
+    expect(T.addTransfer(doc, 'x1', 's1', 'missing')).toBe(doc);
+    expect(T.addTransfer(doc, 'x1', 'missing', 's1')).toBe(doc);
+  });
+});
+
+describe('deleteTransfer', () => {
+  it('removes a transfer by id', () => {
+    const doc = makeDoc({
+      stations: [makeStation({ id: 's1' }), makeStation({ id: 's2' })],
+      transfers: [{ id: 'x1', stationA: 's1', stationB: 's2' }],
+    });
+    expect(T.deleteTransfer(doc, 'x1').transfers.x1).toBeUndefined();
+  });
+
+  it('is a no-op for unknown ids', () => {
+    const doc = makeDoc({});
+    expect(T.deleteTransfer(doc, 'nope')).toBe(doc);
+  });
 });
 
 describe('moveStop', () => {

@@ -110,6 +110,9 @@ interface DocState extends MapDoc {
   ) => void;
   deleteRouteBullet: (id: string) => void;
 
+  addTransfer: (stationA: StationId, stationB: StationId) => string;
+  deleteTransfer: (id: string) => void;
+
   setCurveRadius: (r: number) => void;
   clearAll: () => void;
 }
@@ -198,6 +201,13 @@ export const useDoc = create<DocState>()(
         updateRouteBullet: (id, patch) => set((s) => T.updateRouteBullet(s, id, patch)),
         deleteRouteBullet: (id) => set((s) => T.deleteRouteBullet(s, id)),
 
+        addTransfer: (a, b) => {
+          const id = ids.transferId();
+          set((s) => T.addTransfer(s, id, a, b));
+          return id;
+        },
+        deleteTransfer: (id) => set((s) => T.deleteTransfer(s, id)),
+
         setCurveRadius: (r) => set((s) => T.setCurveRadius(s, r)),
         clearAll: () => set((s) => T.clearAll(s)),
       }),
@@ -213,6 +223,7 @@ export const useDoc = create<DocState>()(
           lineCounter: s.lineCounter,
           lineTags: s.lineTags,
           routeBullets: s.routeBullets,
+          transfers: s.transfers,
         }),
         // Single source of truth for migrations — see model/serialize.ts.
         migrate: (persisted, fromVersion) => migrateDoc(persisted, fromVersion),
@@ -230,6 +241,7 @@ export const useDoc = create<DocState>()(
         lineCounter: state.lineCounter,
         lineTags: state.lineTags,
         routeBullets: state.routeBullets,
+        transfers: state.transfers,
       }),
       limit: 200,
     },
@@ -242,7 +254,14 @@ export const useDoc = create<DocState>()(
  */
 type DocSnapshot = Pick<
   MapDoc,
-  'stations' | 'lines' | 'lineOrder' | 'curveRadius' | 'lineCounter' | 'lineTags' | 'routeBullets'
+  | 'stations'
+  | 'lines'
+  | 'lineOrder'
+  | 'curveRadius'
+  | 'lineCounter'
+  | 'lineTags'
+  | 'routeBullets'
+  | 'transfers'
 >;
 
 function snapshotDoc(s: DocState): DocSnapshot {
@@ -254,6 +273,7 @@ function snapshotDoc(s: DocState): DocSnapshot {
     lineCounter: s.lineCounter,
     lineTags: s.lineTags,
     routeBullets: s.routeBullets,
+    transfers: s.transfers,
   };
 }
 
@@ -360,6 +380,12 @@ interface SelectionState {
   // Route bullet selection + creation.
   creatingRouteBullet: boolean;
   selectedRouteBulletId: string | null;
+  // Transfer selection + creation. While `creatingTransfer` is true and
+  // `transferAnchor` is null, the next station-click becomes A. Once A is
+  // set, the next station-click becomes B and commits the transfer.
+  creatingTransfer: boolean;
+  transferAnchor: StationId | null;
+  selectedTransferId: string | null;
   // When true, edits made via the StationInspector (stop layout + label)
   // mirror to all directly-connected stations whose unrotated stop layouts
   // are identical. Resets to false whenever a different station is selected.
@@ -387,6 +413,9 @@ interface SelectionState {
   setLineTagHoverPreview: (preview: LineTagHoverPreview | null) => void;
   selectRouteBullet: (id: string | null) => void;
   setCreatingRouteBullet: (creating: boolean) => void;
+  selectTransfer: (id: string | null) => void;
+  setCreatingTransfer: (creating: boolean) => void;
+  setTransferAnchor: (id: StationId | null) => void;
   setMirrorMatching: (on: boolean) => void;
 }
 
@@ -407,6 +436,9 @@ export const useSelection = create<SelectionState>((set, get) => ({
   lineTagHoverPreview: null,
   creatingRouteBullet: false,
   selectedRouteBulletId: null,
+  creatingTransfer: false,
+  transferAnchor: null,
+  selectedTransferId: null,
   mirrorMatching: false,
   toolMode: 'arrow',
   spaceHeld: false,
@@ -529,10 +561,46 @@ export const useSelection = create<SelectionState>((set, get) => ({
       creatingLineTag: creating ? false : get().creatingLineTag,
       appendingToLineId: creating ? null : get().appendingToLineId,
       insertAfterIndex: creating ? null : get().insertAfterIndex,
+      creatingTransfer: creating ? false : get().creatingTransfer,
+      transferAnchor: creating ? null : get().transferAnchor,
       selectedStationId: creating ? null : get().selectedStationId,
       selectedLineId: creating ? null : get().selectedLineId,
       selectedLineTagId: creating ? null : get().selectedLineTagId,
       selectedRouteBulletId: creating ? null : get().selectedRouteBulletId,
+      selectedTransferId: creating ? null : get().selectedTransferId,
     }),
+  selectTransfer: (id) =>
+    set({
+      selectedTransferId: id,
+      selectedStationId: id === null ? get().selectedStationId : null,
+      selectedLineId: id === null ? get().selectedLineId : null,
+      selectedLineTagId: id === null ? get().selectedLineTagId : null,
+      selectedRouteBulletId: id === null ? get().selectedRouteBulletId : null,
+      labelSelected: false,
+      editingStationId: null,
+      placingStation: id === null ? get().placingStation : false,
+      creatingLineTag: id === null ? get().creatingLineTag : false,
+      creatingRouteBullet: id === null ? get().creatingRouteBullet : false,
+      creatingTransfer: id === null ? get().creatingTransfer : false,
+      transferAnchor: id === null ? get().transferAnchor : null,
+      appendingToLineId: id === null ? get().appendingToLineId : null,
+      insertAfterIndex: id === null ? get().insertAfterIndex : null,
+    }),
+  setCreatingTransfer: (creating) =>
+    set({
+      creatingTransfer: creating,
+      transferAnchor: null,
+      placingStation: creating ? false : get().placingStation,
+      creatingLineTag: creating ? false : get().creatingLineTag,
+      creatingRouteBullet: creating ? false : get().creatingRouteBullet,
+      appendingToLineId: creating ? null : get().appendingToLineId,
+      insertAfterIndex: creating ? null : get().insertAfterIndex,
+      selectedStationId: creating ? null : get().selectedStationId,
+      selectedLineId: creating ? null : get().selectedLineId,
+      selectedLineTagId: creating ? null : get().selectedLineTagId,
+      selectedRouteBulletId: creating ? null : get().selectedRouteBulletId,
+      selectedTransferId: creating ? null : get().selectedTransferId,
+    }),
+  setTransferAnchor: (id) => set({ transferAnchor: id }),
   setMirrorMatching: (on) => set({ mirrorMatching: on }),
 }));
