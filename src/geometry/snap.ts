@@ -18,6 +18,10 @@ export const TIGHT_PERP_TOLERANCE = 0.5;
 export interface SnapGuide {
   from: Vec2;
   to: Vec2;
+  /** Optional label to render above the guide. Used for the per-drag
+   *  measurement readout: distance for a regular snap, station-to-station
+   *  spacing for a Ctrl-drag. */
+  label?: string;
 }
 
 export interface SnapResult {
@@ -208,14 +212,37 @@ export function snapDraggedStation(input: SnapInput): SnapResult {
     sy = snappedDStopY - c.dOff.y;
   }
 
+  // Compute the per-station spacing for the Ctrl-drag readout. We use the
+  // shared line where the dragged and anchor are furthest apart (most
+  // intermediates → tightest spacing), divided into the guide's distance.
+  const spacingDivisor = (() => {
+    if (!redistributeAnchor) return 0;
+    let segments = 0;
+    for (const line of Object.values(lines)) {
+      const dIdx = line.stations.indexOf(draggedId);
+      const tIdx = line.stations.indexOf(redistributeAnchor);
+      if (dIdx < 0 || tIdx < 0) continue;
+      segments = Math.max(segments, Math.abs(dIdx - tIdx));
+    }
+    return segments;
+  })();
+
+  const labelFor = (from: Vec2, to: Vec2, isAnchor: boolean): string => {
+    const dist = Math.hypot(to.x - from.x, to.y - from.y);
+    if (isAnchor && spacingDivisor > 0) {
+      return Math.round(dist / spacingDivisor).toString();
+    }
+    return Math.round(dist).toString();
+  };
+
   // Build guides for every active axis (so the user sees that both snaps
   // are engaged on a perpendicular transfer station, etc.).
   const guides: SnapGuide[] = [];
   const pushGuide = (c: Cand) => {
-    guides.push({
-      from: { x: sx + c.dOff.x, y: sy + c.dOff.y },
-      to: { x: c.targetStopX, y: c.targetStopY },
-    });
+    const from = { x: sx + c.dOff.x, y: sy + c.dOff.y };
+    const to = { x: c.targetStopX, y: c.targetStopY };
+    const isAnchor = !!redistributeAnchor && c.target.id === redistributeAnchor;
+    guides.push({ from, to, label: labelFor(from, to, isAnchor) });
   };
   pushGuide(primary);
   if (secondary) pushGuide(secondary);
@@ -254,7 +281,13 @@ export function snapDraggedStation(input: SnapInput): SnapResult {
         };
       }
     }
-    if (candidate) guides.push({ from: candidate.from, to: candidate.to });
+    if (candidate) {
+      guides.push({
+        from: candidate.from,
+        to: candidate.to,
+        label: labelFor(candidate.from, candidate.to, false),
+      });
+    }
   };
   addOppositeGuide(primary);
   if (secondary) addOppositeGuide(secondary);

@@ -63,6 +63,46 @@ export function SnapGuides({ guides, zoom }: Props) {
           strokeDasharray={`${4 / zoom} ${3 / zoom}`}
         />
       ))}
+      {guides.map((g, i) => {
+        if (!g.label) return null;
+        // Position the label above the midpoint of the guide, offset
+        // perpendicular by a small fixed screen-pixel amount so it sits
+        // clear of the dotted line. "Above" = the side toward smaller y
+        // (screen up) — the perpendicular flips to keep the label on top
+        // regardless of the line's direction.
+        const mx = (g.from.x + g.to.x) / 2;
+        const my = (g.from.y + g.to.y) / 2;
+        const dx = g.to.x - g.from.x;
+        const dy = g.to.y - g.from.y;
+        const len = Math.hypot(dx, dy) || 1;
+        let px = -dy / len;
+        let py = dx / len;
+        if (py > 0) {
+          px = -px;
+          py = -py;
+        }
+        const offset = 9 / zoom;
+        const lx = mx + px * offset;
+        const ly = my + py * offset;
+        return (
+          <text
+            key={'label' + i}
+            x={lx}
+            y={ly}
+            fontSize={14 / zoom}
+            fontWeight={700}
+            fill="#000"
+            stroke="#FCCC0A"
+            strokeWidth={4 / zoom}
+            paintOrder="stroke"
+            textAnchor="middle"
+            dominantBaseline="central"
+            pointerEvents="none"
+          >
+            {g.label}
+          </text>
+        );
+      })}
     </g>
   );
 }
