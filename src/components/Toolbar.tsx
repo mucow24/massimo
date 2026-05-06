@@ -5,6 +5,32 @@ import { parse, serialize } from '../model/serialize';
 import { DEFAULT_DOC } from '../model/transforms';
 import { useFieldHistory } from './useFieldHistory';
 import { Menu, MenuItem, MenuSeparator } from './Menu';
+import { CursorArrowIcon, HandIcon } from '@radix-ui/react-icons';
+
+function ToolButtons() {
+  const toolMode = useSelection((s) => s.toolMode);
+  const spaceHeld = useSelection((s) => s.spaceHeld);
+  const setToolMode = useSelection((s) => s.setToolMode);
+  const effective: 'arrow' | 'hand' = spaceHeld ? 'hand' : toolMode;
+  return (
+    <div className="tool-group">
+      <button
+        className={'tool-btn' + (effective === 'arrow' ? ' active' : '')}
+        title="Arrow (A)"
+        onClick={() => setToolMode('arrow')}
+      >
+        <CursorArrowIcon />
+      </button>
+      <button
+        className={'tool-btn' + (effective === 'hand' ? ' active' : '')}
+        title="Hand (H) — hold Space"
+        onClick={() => setToolMode('hand')}
+      >
+        <HandIcon />
+      </button>
+    </div>
+  );
+}
 
 export function Toolbar() {
   const curveRadius = useDoc((s) => s.curveRadius);
@@ -102,6 +128,7 @@ export function Toolbar() {
         <MenuItem onClick={onAddLine}>Line</MenuItem>
         <MenuItem onClick={onAddLineTag}>Line tags</MenuItem>
       </Menu>
+      <ToolButtons />
       <input
         ref={fileInputRef}
         type="file"

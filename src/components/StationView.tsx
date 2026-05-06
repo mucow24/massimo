@@ -31,6 +31,8 @@ export function StationView({ station, lines, onStartDrag, layer }: Props) {
 
   const onPointerDown = (e: React.PointerEvent) => {
     if (e.button !== 0) return;
+    // In hand mode, let the event bubble to the SVG so it becomes a pan.
+    if (selection.toolMode === 'hand' || selection.spaceHeld) return;
     onStartDrag(station.id, e);
   };
 
@@ -220,18 +222,20 @@ export function StationView({ station, lines, onStartDrag, layer }: Props) {
     // footprint) would block hover/click on bands passing nearby. Make them
     // pass-through so the cursor goes straight to the band stripes.
     const inTagMode = selection.creatingLineTag;
+    const inHandMode = selection.toolMode === 'hand' || selection.spaceHeld;
     const hitProps = {
       fill: 'transparent',
       pointerEvents: inTagMode ? ('none' as const) : ('all' as const),
       onPointerDown: inTagMode ? undefined : onPointerDown,
-      onClick: inTagMode ? undefined : onClick,
-      onDoubleClick: inTagMode ? undefined : onDoubleClick,
+      onClick: inTagMode || inHandMode ? undefined : onClick,
+      onDoubleClick: inTagMode || inHandMode ? undefined : onDoubleClick,
       onContextMenu: inTagMode ? undefined : onContextMenu,
     };
+    const cursor = inHandMode ? 'grab' : 'move';
     return (
       <g
         transform={`translate(${station.x} ${station.y}) rotate(${angle})`}
-        style={{ cursor: 'move' }}
+        style={{ cursor }}
       >
         <rect x={cellsHitX} y={cellsHitY} width={cellsHitW} height={cellsHitH} {...hitProps} />
         <rect

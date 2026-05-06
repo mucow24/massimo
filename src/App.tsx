@@ -10,6 +10,8 @@ export default function App() {
   const setPlacingStation = useSelection((s) => s.setPlacingStation);
   const setCreatingLineTag = useSelection((s) => s.setCreatingLineTag);
   const selectLineTag = useSelection((s) => s.selectLineTag);
+  const setToolMode = useSelection((s) => s.setToolMode);
+  const setSpaceHeld = useSelection((s) => s.setSpaceHeld);
 
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
@@ -58,10 +60,30 @@ export default function App() {
         useDoc.temporal.getState().redo();
         return;
       }
+      if (!inForm && !mod && (e.key === 'a' || e.key === 'A')) {
+        setToolMode('arrow');
+        return;
+      }
+      if (!inForm && !mod && (e.key === 'h' || e.key === 'H')) {
+        setToolMode('hand');
+        return;
+      }
+      if (!inForm && e.key === ' ' && !e.repeat) {
+        e.preventDefault();
+        setSpaceHeld(true);
+        return;
+      }
+    };
+    const onKeyUp = (e: KeyboardEvent) => {
+      if (e.key === ' ') setSpaceHeld(false);
     };
     window.addEventListener('keydown', onKey);
-    return () => window.removeEventListener('keydown', onKey);
-  }, [setAppending, setPlacingStation, setCreatingLineTag, selectLineTag]);
+    window.addEventListener('keyup', onKeyUp);
+    return () => {
+      window.removeEventListener('keydown', onKey);
+      window.removeEventListener('keyup', onKeyUp);
+    };
+  }, [setAppending, setPlacingStation, setCreatingLineTag, selectLineTag, setToolMode, setSpaceHeld]);
 
   // Right-click anywhere cancels an active mode. Capture phase + stopPropagation
   // so we beat element-level context menus (station rotate, tag flip): they
