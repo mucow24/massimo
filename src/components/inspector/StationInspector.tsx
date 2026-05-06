@@ -1,13 +1,15 @@
-import { useEffect, useRef } from 'react';
-import { useDoc, useSelection } from '../../state/store';
+import { useEffect, useMemo, useRef } from 'react';
+import { beginHistoryGroup, useDoc, useSelection } from '../../state/store';
 import type { StationId } from '../../model/types';
+import { findMatchingStations } from '../../model/matching';
 import { StopGrid } from './StopGrid';
 import { LabelOffsetControl } from './LabelOffsetControl';
 import { useFieldHistory } from '../useFieldHistory';
 
 export function StationInspector({ id }: { id: StationId }) {
   const station = useDoc((s) => s.stations[id]);
-  const lines = useDoc((s) => s.lines);
+  const stationsAll = useDoc((s) => s.stations);
+  const linesAll = useDoc((s) => s.lines);
   const renameStation = useDoc((s) => s.renameStation);
   const rotateStation = useDoc((s) => s.rotateStation);
   const moveStation = useDoc((s) => s.moveStation);
@@ -21,6 +23,27 @@ export function StationInspector({ id }: { id: StationId }) {
   const xField = useFieldHistory();
   const yField = useFieldHistory();
   const stopAreaRef = useRef<HTMLDivElement | null>(null);
+
+  // Stations whose unrotated stop layout is identical to this one and are
+  // adjacent on at least one line. Recomputed when stops/lines change.
+  const matchingIds = useMemo(
+    () => findMatchingStations({ stations: stationsAll, lines: linesAll }, id),
+    [stationsAll, linesAll, id],
+  );
+
+  // When mirror is on, apply `act` to the selected station and every
+  // matching station — wrapped in a single history group so undo collapses
+  // the batch into one entry. When off, behaves like a direct call.
+  const dispatchAll = (act: (sid: StationId) => void) => {
+    if (!selection.mirrorMatching || matchingIds.length === 0) {
+      act(id);
+      return;
+    }
+    const group = beginHistoryGroup();
+    act(id);
+    for (const sid of matchingIds) act(sid);
+    group.commit();
+  };
 
   const selectedLineId = selection.selectedStopLineId;
   const labelSelected = selection.labelSelected;
@@ -53,6 +76,9 @@ export function StationInspector({ id }: { id: StationId }) {
   }, [hasSelection, selection]);
 
   if (!station) return null;
+
+  const mirrorOn = selection.mirrorMatching;
+  const mirrorAvailable = matchingIds.length > 0;
 
   return (
     <section className="inspector">
@@ -100,6 +126,19 @@ export function StationInspector({ id }: { id: StationId }) {
           >
             ⟳
           </button>
+          <button
+            className={`btn-mini${mirrorOn ? ' mirror-on' : ''}`}
+            onClick={() => selection.setMirrorMatching(!mirrorOn)}
+            disabled={!mirrorAvailable && !mirrorOn}
+            title={
+              mirrorAvailable
+                ? `Mirror layout edits to ${matchingIds.length} matching neighbor${matchingIds.length === 1 ? '' : 's'}`
+                : 'No directly-connected stations share this layout'
+            }
+            aria-pressed={mirrorOn}
+          >
+            all
+          </button>
         </div>
       </div>
       <div className="field">
@@ -107,15 +146,17 @@ export function StationInspector({ id }: { id: StationId }) {
         <div ref={stopAreaRef} style={{ display: 'flex', justifyContent: 'center' }}>
           <StopGrid
             station={station}
-            lines={lines}
+            lines={linesAll}
             selectedLineId={selectedLineId}
             labelSelected={labelSelected}
             onSelectStop={(lid) => selection.setSelectedStopLineId(lid)}
             onSelectLabel={() => selection.setLabelSelected(true)}
-            onRotateStop={(lid) => rotateStopAction(station.id, lid)}
-            onRotateLabel={() => rotateLabelAction(station.id)}
-            onMoveStop={(lid, dRow, dCol) => moveStopAction(station.id, lid, dRow, dCol)}
-            onMoveLabel={(dRow, dCol) => moveLabelAction(station.id, dRow, dCol)}
+            onRotateStop={(lid) => dispatchAll((sid) => rotateStopAction(sid, lid))}
+            onRotateLabel={() => dispatchAll((sid) => rotateLabelAction(sid))}
+            onMoveStop={(lid, dRow, dCol) =>
+              dispatchAll((sid) => moveStopAction(sid, lid, dRow, dCol))
+            }
+            onMoveLabel={(dRow, dCol) => dispatchAll((sid) => moveLabelAction(sid, dRow, dCol))}
           />
         </div>
       </div>
@@ -123,7 +164,11 @@ export function StationInspector({ id }: { id: StationId }) {
         <label>Label offset (along reading direction)</label>
         <LabelOffsetControl
           value={station.label.offset}
-          onChange={(v) => setLabelOffset(station.id, v)}
+          onChange={(v) => dispatchAll((sid) => setLabelOffset(sid, v))}
+          indeterminate={
+            mirrorOn &&
+            matchingIds.some((sid) => stationsAll[sid]?.label.offset !== station.label.offset)
+          }
         />
       </div>
     </section>

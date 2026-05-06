@@ -9,13 +9,15 @@ const SELECTION_WASH_OPACITY = 0.2;
 const SELECTION_STROKE_COLOR = '#000000';
 const SELECTION_STROKE_WIDTH = 2;
 const SELECTION_CORNER_RADIUS = 5;
+const MATCH_STROKE_COLOR = '#888';
+const MATCH_STROKE_WIDTH = 1.5;
 
 interface Props {
   station: Station;
   lines: Record<string, Line>;
   zoom: number;
   onStartDrag: (id: string, ev: React.PointerEvent) => void;
-  layer: 'wash' | 'bg' | 'label' | 'dots' | 'stroke';
+  layer: 'wash' | 'bg' | 'label' | 'dots' | 'stroke' | 'match-stroke';
 }
 
 export function StationView({ station, lines, onStartDrag, layer }: Props) {
@@ -35,6 +37,11 @@ export function StationView({ station, lines, onStartDrag, layer }: Props) {
   const onClick = (e: React.MouseEvent) => {
     if (dragState.suppressClick) return;
     e.stopPropagation();
+    if (selection.creatingLineTag) {
+      // "Click anywhere that isn't a valid place for line tags" exits the mode.
+      selection.setCreatingLineTag(false);
+      return;
+    }
     if (selection.appendingToLineId) {
       const ln = lines[selection.appendingToLineId];
       const wasInLine = ln?.stations.includes(station.id) ?? false;
@@ -135,8 +142,11 @@ export function StationView({ station, lines, onStartDrag, layer }: Props) {
   const isSelected = selection.selectedStationId === station.id;
   const isEditing = selection.editingStationId === station.id;
 
-  if (layer === 'wash' || layer === 'stroke') {
-    if (!isSelected) return null;
+  if (layer === 'wash' || layer === 'stroke' || layer === 'match-stroke') {
+    // The wash + selection-stroke layers only paint when this station is
+    // selected; the match-stroke layer is rendered by MapCanvas only for
+    // matching stations, so it always paints.
+    if ((layer === 'wash' || layer === 'stroke') && !isSelected) return null;
     // Compute the union polygon of the cells rect and (rotated) label rect,
     // then smooth its corners with quadratic Beziers. The smoothing applies
     // to the outer-boundary corners ONLY (because each vertex of the union
@@ -179,6 +189,19 @@ export function StationView({ station, lines, onStartDrag, layer }: Props) {
         </g>
       );
     }
+    if (layer === 'match-stroke') {
+      return (
+        <g transform={`translate(${station.x} ${station.y}) rotate(${angle})`} pointerEvents="none">
+          <path
+            d={pathStr}
+            fill="none"
+            stroke={MATCH_STROKE_COLOR}
+            strokeWidth={MATCH_STROKE_WIDTH}
+            strokeLinejoin="round"
+          />
+        </g>
+      );
+    }
     return (
       <g transform={`translate(${station.x} ${station.y}) rotate(${angle})`} pointerEvents="none">
         <path
@@ -193,13 +216,17 @@ export function StationView({ station, lines, onStartDrag, layer }: Props) {
   }
 
   if (layer === 'bg') {
+    // In add-line-tag mode, station hit rects (which extend past the visible
+    // footprint) would block hover/click on bands passing nearby. Make them
+    // pass-through so the cursor goes straight to the band stripes.
+    const inTagMode = selection.creatingLineTag;
     const hitProps = {
       fill: 'transparent',
-      pointerEvents: 'all' as const,
-      onPointerDown,
-      onClick,
-      onDoubleClick,
-      onContextMenu,
+      pointerEvents: inTagMode ? ('none' as const) : ('all' as const),
+      onPointerDown: inTagMode ? undefined : onPointerDown,
+      onClick: inTagMode ? undefined : onClick,
+      onDoubleClick: inTagMode ? undefined : onDoubleClick,
+      onContextMenu: inTagMode ? undefined : onContextMenu,
     };
     return (
       <g

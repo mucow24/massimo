@@ -305,8 +305,11 @@ const fmt = (p: Vec2) => `${p.x.toFixed(2)} ${p.y.toFixed(2)}`;
  * scaled by the same factor when over-constrained, so radii at neighboring
  * corners stay proportional. Used by `filletPath` and `offsetFilletPath` so
  * that all paths in an interlined band share concentric arc centers.
+ *
+ * Exported so the line-tag sampler can use the SAME per-corner radii the
+ * renderer uses — keeps tag positions glued to painted geometry.
  */
-function computeArcRadii(verts: Vec2[], R: number): { rs: number[]; angles: number[] } {
+export function computeArcRadii(verts: Vec2[], R: number): { rs: number[]; angles: number[] } {
   const n = verts.length;
   const rs = new Array(n).fill(R);
   const angles = new Array(n).fill(0);
@@ -367,19 +370,38 @@ export function filletPath(verts: Vec2[], R: number): string {
 }
 
 /**
- * Like filletPath but emits a translated path offset perpendicular to the
- * local direction by `offset` (constant signed distance). Used for interlining
- * bands that share a centerline.
+ * One piece of an offset path: either a straight segment between two points
+ * or a circular arc whose start tangent is `inDir` and which sweeps `theta`
+ * radians. `sign` = +1 means the tangent rotates CCW in math y-up coords
+ * (= clockwise visually in y-down screen coords); -1 is the opposite.
  */
-export function offsetFilletPath(verts: Vec2[], R: number, offset: number): string {
-  if (Math.abs(offset) < EPS) return filletPath(verts, R);
-  if (verts.length < 2) return '';
+export type OffsetPathSegment =
+  | { kind: 'line'; from: Vec2; to: Vec2; length: number }
+  | {
+      kind: 'arc';
+      from: Vec2;
+      to: Vec2;
+      r: number;
+      theta: number;
+      inDir: Vec2;
+      sign: 1 | -1;
+      length: number;
+    };
 
-  // Offset every vertex perpendicular to its incident edges. Convention: a
-  // positive offset moves each point 90° counter-clockwise (visually, in y-down
-  // screen) from the direction of motion — i.e., toward the traveler's left.
-  // This matches the "stop k=0 is screen-left when traveling south at rot 0"
-  // convention used everywhere else.
+/**
+ * Walk a polyline as an offset path: yield each straight + arc piece in
+ * traversal order. Used by both `offsetFilletPath` (which turns segments into
+ * SVG commands) and the line-tag sampler (which walks them by arc length).
+ *
+ * `offset = 0` traverses the centerline directly. Positive offsets move
+ * "left of motion" (90° CCW in math y-up = visually north when traveling
+ * east in y-down screen). Matches the convention used everywhere else.
+ */
+export function emitOffsetSegments(verts: Vec2[], R: number, offset: number): OffsetPathSegment[] {
+  if (verts.length < 2) return [];
+
+  // Offset every vertex perpendicular to its incident edges. See offsetFilletPath
+  // history for the bisector-cap rationale.
   const leftOf = (d: Vec2): Vec2 => ({ x: d.y, y: -d.x });
   const offV: Vec2[] = verts.map((p, i) => {
     let n: Vec2;
@@ -391,12 +413,6 @@ export function offsetFilletPath(verts: Vec2[], R: number, offset: number): stri
       const sum = { x: a.x + b.x, y: a.y + b.y };
       const ln = Math.hypot(sum.x, sum.y);
       n = ln < EPS ? a : { x: sum.x / ln, y: sum.y / ln };
-      // Distance from V to the offset corner along the bisector is
-      // |offset| / cos(half-angle). For bends approaching 180° cos(half)
-      // approaches 0 and the offset corner flies off to infinity, leaving
-      // a long spike in the rendered band. Cap the scale at a reasonable
-      // limit so near-degenerate bends just look like sharp corners
-      // instead of geometric explosions.
       const MAX_BISECTOR_SCALE = 3;
       const cosHalf = Math.max(1 / MAX_BISECTOR_SCALE, dot(n, a));
       n = { x: n.x / cosHalf, y: n.y / cosHalf };
@@ -404,44 +420,77 @@ export function offsetFilletPath(verts: Vec2[], R: number, offset: number): stri
     return { x: p.x + n.x * offset, y: p.y + n.y * offset };
   });
 
-  if (offV.length === 2) return `M ${fmt(offV[0])} L ${fmt(offV[1])}`;
+  const segs: OffsetPathSegment[] = [];
 
-  // Use the centerline's effective per-corner radii so offset arcs share
-  // arc centers with the centerline. Concentric → no gaps between bands.
+  if (offV.length === 2) {
+    segs.push({ kind: 'line', from: offV[0], to: offV[1], length: len(sub(offV[1], offV[0])) });
+    return segs;
+  }
+
   const { rs, angles } = computeArcRadii(verts, R);
 
-  let d = `M ${fmt(offV[0])}`;
+  let cursor = offV[0];
   for (let i = 1; i < offV.length - 1; i++) {
     const θ = angles[i];
-    if (θ < EPS) {
-      d += ` L ${fmt(offV[i])}`;
-      continue;
-    }
-    // Sweep direction is determined from the centerline (parallel offset
-    // doesn't change which side the bend curves toward).
-    const inOrig = norm(sub(verts[i], verts[i - 1]));
-    const outOrig = norm(sub(verts[i + 1], verts[i]));
-    const cz = inOrig.x * outOrig.y - inOrig.y * outOrig.x;
-    const sweep = cz > 0 ? 1 : 0;
-
-    // r' = centerline rs[i] ± offset, with sign by inside/outside at this corner.
-    const onInside = (cz > 0 && offset < 0) || (cz < 0 && offset > 0);
-    const r = rs[i] + (onInside ? -Math.abs(offset) : Math.abs(offset));
-    if (r < EPS) {
-      d += ` L ${fmt(offV[i])}`;
-      continue;
-    }
-    const useTan = r * Math.tan(θ / 2);
-
-    // Use the centerline directions — they're parallel to the offset edges,
-    // and using offV's directly would divide-by-near-zero whenever the
-    // bisector cap pulls two offset corners together.
+    // Sweep is determined from the centerline (offset doesn't change it).
     const inDir = norm(sub(verts[i], verts[i - 1]));
     const outDir = norm(sub(verts[i + 1], verts[i]));
+    const cz = inDir.x * outDir.y - inDir.y * outDir.x;
+    const onInside = (cz > 0 && offset < 0) || (cz < 0 && offset > 0);
+    const r = rs[i] + (onInside ? -Math.abs(offset) : Math.abs(offset));
+
+    if (θ < EPS || r < EPS) {
+      // Degenerate corner: emit a straight line up to offV[i].
+      segs.push({ kind: 'line', from: cursor, to: offV[i], length: len(sub(offV[i], cursor)) });
+      cursor = offV[i];
+      continue;
+    }
+
+    const useTan = r * Math.tan(θ / 2);
     const pIn = sub(offV[i], scale(inDir, useTan));
     const pOut = add(offV[i], scale(outDir, useTan));
-    d += ` L ${fmt(pIn)} A ${r.toFixed(2)} ${r.toFixed(2)} 0 0 ${sweep} ${fmt(pOut)}`;
+
+    // Always emit the leading line, even if zero-length — matches the
+    // original `L pIn A pOut` cadence so SVG strings stay byte-identical.
+    segs.push({ kind: 'line', from: cursor, to: pIn, length: len(sub(pIn, cursor)) });
+    const sign: 1 | -1 = cz > 0 ? 1 : -1;
+    segs.push({
+      kind: 'arc',
+      from: pIn,
+      to: pOut,
+      r,
+      theta: θ,
+      inDir,
+      sign,
+      length: r * θ,
+    });
+    cursor = pOut;
   }
-  d += ` L ${fmt(offV[offV.length - 1])}`;
+  const end = offV[offV.length - 1];
+  segs.push({ kind: 'line', from: cursor, to: end, length: len(sub(end, cursor)) });
+  return segs;
+}
+
+/**
+ * Like filletPath but emits a translated path offset perpendicular to the
+ * local direction by `offset` (constant signed distance). Used for interlining
+ * bands that share a centerline.
+ */
+export function offsetFilletPath(verts: Vec2[], R: number, offset: number): string {
+  if (Math.abs(offset) < EPS) return filletPath(verts, R);
+  if (verts.length < 2) return '';
+
+  const segs = emitOffsetSegments(verts, R, offset);
+  if (segs.length === 0) return '';
+
+  let d = `M ${fmt(segs[0].from)}`;
+  for (const s of segs) {
+    if (s.kind === 'line') {
+      d += ` L ${fmt(s.to)}`;
+    } else {
+      const sweep = s.sign === 1 ? 1 : 0;
+      d += ` A ${s.r.toFixed(2)} ${s.r.toFixed(2)} 0 0 ${sweep} ${fmt(s.to)}`;
+    }
+  }
   return d;
 }

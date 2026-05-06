@@ -13,11 +13,9 @@ describe('App smoke', () => {
     expect(screen.getByText('Massimo')).toBeInTheDocument();
   });
 
-  it('shows toolbar buttons', () => {
+  it('shows toolbar menus', () => {
     render(<App />);
-    expect(screen.getByRole('button', { name: /\+ Station/ })).toBeInTheDocument();
-    expect(screen.getByRole('button', { name: /Save/ })).toBeInTheDocument();
-    expect(screen.getByRole('button', { name: /Load/ })).toBeInTheDocument();
-    expect(screen.getByRole('button', { name: /Clear/ })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: /Canvas/ })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: /Add/ })).toBeInTheDocument();
   });
 });

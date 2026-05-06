@@ -16,6 +16,15 @@ import { Grid } from './canvas/Grid';
 import { WarningToasts } from './canvas/WarningToasts';
 import { EditingBanner } from './canvas/EditingBanner';
 import { SnapGuides } from './canvas/SnapGuides';
+import { LineTagsLayer } from './canvas/LineTagsLayer';
+import {
+  closestParamOnOffsetPath,
+  lineTraversesForwardCanon,
+  offsetPathLength,
+  sampleOffsetPath,
+} from '../geometry/lineTagGeometry';
+import type { LineId } from '../model/types';
+import { findMatchingStations } from '../model/matching';
 
 export function MapCanvas() {
   const stations = useDoc((s) => s.stations);
@@ -23,6 +32,7 @@ export function MapCanvas() {
   const curveRadius = useDoc((s) => s.curveRadius);
   const lineOrder = useDoc((s) => s.lineOrder);
   const addStation = useDoc((s) => s.addStation);
+  const addLineTag = useDoc((s) => s.addLineTag);
   const selection = useSelection();
 
   const svgRef = useRef<SVGSVGElement | null>(null);
@@ -33,6 +43,13 @@ export function MapCanvas() {
     () => buildBands(stations, lines, curveRadius, lineOrder),
     [stations, lines, curveRadius, lineOrder],
   );
+
+  // When mirror-matching mode is on for the selected station, highlight the
+  // adjacent stations whose unrotated stop layouts are identical.
+  const matchingIds = useMemo(() => {
+    if (!selection.mirrorMatching || !selection.selectedStationId) return [];
+    return findMatchingStations({ stations, lines }, selection.selectedStationId);
+  }, [selection.mirrorMatching, selection.selectedStationId, stations, lines]);
   // Bands and stop markers merged into one pass, sorted by per-line z-priority
   // so a back-stack stop square doesn't paint over a front-stack band passing
   // through that station.
@@ -74,12 +91,71 @@ export function MapCanvas() {
       // would close the placing-mode banner via the inspector swap.
       return;
     }
+    if (selection.creatingLineTag) {
+      // Click on background while in tag mode = exit the mode.
+      selection.setCreatingLineTag(false);
+      return;
+    }
     if (selection.appendingToLineId) {
       selection.setAppending(null);
       return;
     }
     selection.selectStation(null);
+    selection.selectLineTag(null);
   };
+
+  // Hover/click handlers passed to SegmentBand when in add-line-tag mode.
+  // Each band's renderer captures its own spec via closure.
+  const makeBandHandlers = (spec: SegmentBandSpec) => ({
+    onLineHover: (lineId: LineId, e: React.PointerEvent) => {
+      const line = lines[lineId];
+      if (!line) return;
+      // Find this stripe's offset within the band.
+      const k = spec.lines.findIndex((l) => l.id === lineId);
+      const n = spec.lines.length;
+      const offset = (k - (n - 1) / 2) * STOP_SIZE;
+      const world = view.screenToWorld(e.clientX, e.clientY);
+      const closest = closestParamOnOffsetPath(spec.centerline, curveRadius, offset, world);
+      const sample = sampleOffsetPath(spec.centerline, curveRadius, offset, closest.t);
+      // Determine canon vs line-traversal: the band's pairKey is canonical.
+      // For this band's stations, fromCanon < toCanon. The line traverses
+      // forward-canon iff line.stations contains (fromCanon, toCanon) as a
+      // consecutive pair.
+      const [fromCanon, toCanon] = spec.pairKey.split('|');
+      const forward = lineTraversesForwardCanon(line, fromCanon, toCanon);
+      selection.setLineTagHoverPreview({
+        lineId,
+        service: line.service,
+        fromStationId: fromCanon,
+        toStationId: toCanon,
+        t: closest.t,
+        p: sample.p,
+        tangent: sample.tangent,
+        lineForwardMatchesCanon: forward,
+      });
+    },
+    onLineLeave: () => {
+      selection.setLineTagHoverPreview(null);
+    },
+    onLineClick: (lineId: LineId, e: React.MouseEvent) => {
+      e.stopPropagation();
+      const line = lines[lineId];
+      if (!line) return;
+      const k = spec.lines.findIndex((l) => l.id === lineId);
+      const n = spec.lines.length;
+      const offset = (k - (n - 1) / 2) * STOP_SIZE;
+      const world = view.screenToWorld(e.clientX, e.clientY);
+      const closest = closestParamOnOffsetPath(spec.centerline, curveRadius, offset, world);
+      const [fromCanon, toCanon] = spec.pairKey.split('|');
+      const stripeTotal = offsetPathLength(spec.centerline, curveRadius, offset);
+      const arcLen = closest.t * stripeTotal;
+      // Anchor to whichever endpoint is nearer at insertion time.
+      const anchorEnd: 'from' | 'to' = arcLen <= stripeTotal / 2 ? 'from' : 'to';
+      const distance = anchorEnd === 'from' ? arcLen : stripeTotal - arcLen;
+      addLineTag(lineId, fromCanon, toCanon, anchorEnd, distance, 0);
+      // Stay in mode (matches + Station behavior).
+    },
+  });
 
   return (
     <div className="canvas-host">
@@ -134,6 +210,8 @@ export function MapCanvas() {
             <SegmentBand
               key={'b:' + r.spec.pairKey + ':' + r.spec.lines.map((l) => l.id).join(',')}
               spec={r.spec}
+              interactive={selection.creatingLineTag}
+              {...(selection.creatingLineTag ? makeBandHandlers(r.spec) : {})}
             />
           ) : (
             <rect
@@ -187,6 +265,27 @@ export function MapCanvas() {
             layer="dots"
           />
         ))}
+
+        {/* Line tags: in-band labels that ride each line's stripe. */}
+        <LineTagsLayer bands={bands} zoom={view.viewport.zoom} svgRef={svgRef} />
+
+        {/* Match-stroke: gray outline on each station whose layout matches
+            the selected station while mirror mode is on. Drawn beneath the
+            selection stroke so the selected station's black outline still
+            stands out. */}
+        {matchingIds.map(
+          (sid) =>
+            stations[sid] && (
+              <StationView
+                key={sid + ':match-stroke'}
+                station={stations[sid]}
+                lines={lines}
+                zoom={view.viewport.zoom}
+                onStartDrag={drag.onStartDrag}
+                layer="match-stroke"
+              />
+            ),
+        )}
 
         {/* selection stroke: 2px black ring around the merged silhouette,
             painted on top of everything so the outline is never occluded. */}

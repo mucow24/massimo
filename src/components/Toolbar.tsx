@@ -4,6 +4,7 @@ import { useViewportStore } from '../state/viewportStore';
 import { parse, serialize } from '../model/serialize';
 import { DEFAULT_DOC } from '../model/transforms';
 import { useFieldHistory } from './useFieldHistory';
+import { Menu, MenuItem, MenuSeparator } from './Menu';
 
 export function Toolbar() {
   const curveRadius = useDoc((s) => s.curveRadius);
@@ -20,12 +21,17 @@ export function Toolbar() {
   const onAddStation = () => {
     selection.setPlacingStation(!selection.placingStation);
   };
+  const onAddLineTag = () => {
+    selection.setCreatingLineTag(!selection.creatingLineTag);
+  };
   const onResetView = () => setViewport({ x: 0, y: 0, zoom: 1 });
   const onClear = () => {
     selection.selectStation(null);
     selection.selectLine(null);
+    selection.selectLineTag(null);
     selection.setAppending(null);
     selection.setPlacingStation(false);
+    selection.setCreatingLineTag(false);
     selection.setEditingStationId(null);
     clearAll();
   };
@@ -38,6 +44,7 @@ export function Toolbar() {
       lineOrder: doc.lineOrder,
       curveRadius: doc.curveRadius,
       lineCounter: doc.lineCounter,
+      lineTags: doc.lineTags,
     });
     const blob = new Blob([json], { type: 'application/json' });
     const url = URL.createObjectURL(blob);
@@ -66,8 +73,10 @@ export function Toolbar() {
     setLoadError(null);
     selection.selectStation(null);
     selection.selectLine(null);
+    selection.selectLineTag(null);
     selection.setAppending(null);
     selection.setPlacingStation(false);
+    selection.setCreatingLineTag(false);
     selection.setEditingStationId(null);
     // Replace doc state, preserving the mutator method references via merge.
     useDoc.setState({ ...DEFAULT_DOC, ...result.doc });
@@ -77,22 +86,16 @@ export function Toolbar() {
   return (
     <div className="toolbar">
       <strong>Massimo</strong>
-      <button
-        onClick={onAddStation}
-        style={
-          selection.placingStation
-            ? { background: '#1a4ea8', color: '#fff', borderColor: '#1a4ea8' }
-            : undefined
-        }
-      >
-        + Station
-      </button>
-      <button onClick={onSave} title="Download the current map as a .massimo.json file">
-        Save
-      </button>
-      <button onClick={onLoadClick} title="Open a saved .massimo.json file">
-        Load
-      </button>
+      <Menu label="Canvas">
+        <MenuItem onClick={onSave}>Save</MenuItem>
+        <MenuItem onClick={onLoadClick}>Load…</MenuItem>
+        <MenuSeparator />
+        <MenuItem onClick={onClear}>Clear</MenuItem>
+      </Menu>
+      <Menu label="Add">
+        <MenuItem onClick={onAddStation}>Stations</MenuItem>
+        <MenuItem onClick={onAddLineTag}>Line tags</MenuItem>
+      </Menu>
       <input
         ref={fileInputRef}
         type="file"
@@ -100,9 +103,6 @@ export function Toolbar() {
         style={{ display: 'none' }}
         onChange={onFileChosen}
       />
-      <button onClick={onClear} title="Clear the entire map and start fresh">
-        Clear
-      </button>
       <span className="spacer" />
       <label>
         Curve r
