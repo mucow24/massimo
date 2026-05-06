@@ -1,4 +1,4 @@
-import type { Station, StationId, StopCell } from '../model/types';
+import type { Line, LineId, Station, StationId, StopCell } from '../model/types';
 import type { Vec2 } from './vec';
 import { rotateBy, stopCenterAt, travelDirLocal } from './orientation';
 import type { Rotation } from './orientation';
@@ -33,6 +33,9 @@ export interface SnapInput {
   draggedRotation: Rotation;
   draggedStops: StopCell[];
   stations: Record<StationId, Station>;
+  /** Required for line-adjacency filtering — only line-adjacent stations on
+   *  a shared line emit a snap pair. */
+  lines: Record<LineId, Line>;
   /** World-units perpendicular tolerance for engaging a snap. */
   tolerance?: number;
 }
@@ -56,6 +59,7 @@ export function snapDraggedStation(input: SnapInput): SnapResult {
     draggedRotation,
     draggedStops,
     stations,
+    lines,
     tolerance = SNAP_PERP_TOLERANCE,
   } = input;
 
@@ -73,7 +77,7 @@ export function snapDraggedStation(input: SnapInput): SnapResult {
   const all: Cand[] = [];
   for (const t of Object.values(stations)) {
     if (t.id === draggedId) continue;
-    for (const pair of alignmentPairs(draggedRotation, draggedStops, t)) {
+    for (const pair of alignmentPairs(draggedId, draggedRotation, draggedStops, t, lines)) {
       const perpX = -pair.axis.y;
       const perpY = pair.axis.x;
       const tStopX = t.x + pair.tOff.x;
@@ -102,10 +106,12 @@ export function snapDraggedStation(input: SnapInput): SnapResult {
 
   // Consolidate interlined candidates: lines that share the same target
   // station AND the same axis (e.g. all the lines of an interlined band) get
-  // merged into a single band-level candidate using the mean of their
-  // dOffs/tOffs. Without this, each shared line individually crosses the
-  // perp tolerance at a slightly different drag position and the user sees
-  // several alignment "clicks" instead of one band-wide snap.
+  // merged into a single band-level candidate. Without this, each shared
+  // line individually crosses the perp tolerance at a slightly different
+  // drag position and the user sees several alignment "clicks" instead of
+  // one band-wide snap. We pick the median band by perpendicular offset so
+  // the visual guide lands on a real stripe — averaging the offsets puts
+  // the guide between bands when the band count is even.
   const targetAxisGroups: Cand[][] = [];
   for (const c of all) {
     const g = targetAxisGroups.find(
@@ -116,33 +122,14 @@ export function snapDraggedStation(input: SnapInput): SnapResult {
   }
   const consolidated: Cand[] = targetAxisGroups.map((g) => {
     if (g.length === 1) return g[0];
-    const meanDOff = {
-      x: g.reduce((s, c) => s + c.dOff.x, 0) / g.length,
-      y: g.reduce((s, c) => s + c.dOff.y, 0) / g.length,
-    };
-    const meanTOff = {
-      x: g.reduce((s, c) => s + c.tOff.x, 0) / g.length,
-      y: g.reduce((s, c) => s + c.tOff.y, 0) / g.length,
-    };
     const axis = g[0].axis;
     const perpX = -axis.y;
     const perpY = axis.x;
-    const tStopX = g[0].target.x + meanTOff.x;
-    const tStopY = g[0].target.y + meanTOff.y;
-    const dStopX = proposedX + meanDOff.x;
-    const dStopY = proposedY + meanDOff.y;
-    const dx = tStopX - dStopX;
-    const dy = tStopY - dStopY;
-    const perpDist = Math.abs(dx * perpX + dy * perpY);
-    return {
-      target: g[0].target,
-      dOff: meanDOff,
-      tOff: meanTOff,
-      axis,
-      perpDist,
-      targetStopX: tStopX,
-      targetStopY: tStopY,
-    };
+    const sorted = [...g].sort(
+      (a, b) =>
+        a.dOff.x * perpX + a.dOff.y * perpY - (b.dOff.x * perpX + b.dOff.y * perpY),
+    );
+    return sorted[Math.floor((sorted.length - 1) / 2)];
   });
 
   // Group consolidated candidates by axis (parallel) and keep best per group.
@@ -289,17 +276,22 @@ export interface AlignmentPair {
 /**
  * Build alignment pairs between the dragged station and a target. For
  * shared-line pairs the axis is the world travel direction at that stop —
- * derived from per-stop orientation rotated by station rotation. The two
- * stops must share a world axis (parallel travel directions) to qualify.
+ * derived from per-stop orientation rotated by station rotation. A pair is
+ * only emitted when (1) the two stops share a world axis (parallel travel
+ * directions) and (2) the target is line-adjacent to the dragged station on
+ * that line — i.e. the two stations are consecutive in `line.stations`.
+ * Filtering by adjacency keeps the snap focused on a station's actual
+ * neighbors instead of latching onto stations further along the same axis.
  *
  * When neither station has stops, fall back to anchor-to-anchor on the
- * dragged station's rotation axis. When only one side has stops or no line
- * is shared, no pairs are emitted and that target won't snap.
+ * dragged station's rotation axis (no line topology to consult).
  */
 export function alignmentPairs(
+  draggedId: StationId,
   draggedRotation: Rotation,
   draggedStops: StopCell[],
   target: Station,
+  lines: Record<LineId, Line>,
 ): AlignmentPair[] {
   if (draggedStops.length === 0 && target.stops.length === 0) {
     return [{ dOff: { x: 0, y: 0 }, tOff: { x: 0, y: 0 }, axis: axisForRotation(draggedRotation) }];
@@ -308,6 +300,11 @@ export function alignmentPairs(
   for (const dCell of draggedStops) {
     const tCell = target.stops.find((c) => c.lineId === dCell.lineId);
     if (!tCell) continue;
+    const line = lines[dCell.lineId];
+    if (!line) continue;
+    const dIdx = line.stations.indexOf(draggedId);
+    const tIdx = line.stations.indexOf(target.id);
+    if (dIdx < 0 || tIdx < 0 || Math.abs(dIdx - tIdx) !== 1) continue;
     const dWorldDir = rotateBy(travelDirLocal(dCell.orientation), draggedRotation);
     const tWorldDir = rotateBy(travelDirLocal(tCell.orientation), target.rotation);
     if (!parallel(dWorldDir, tWorldDir)) continue;

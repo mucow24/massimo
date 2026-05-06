@@ -24,6 +24,7 @@ export function useStationDrag(
   viewportZoom: number,
 ): StationDragApi {
   const stations = useDoc((s) => s.stations);
+  const lines = useDoc((s) => s.lines);
   const moveStation = useDoc((s) => s.moveStation);
   const redistributeBetween = useDoc((s) => s.redistributeBetween);
 
@@ -95,6 +96,7 @@ export function useStationDrag(
         draggedRotation: draggedRot,
         draggedStops,
         stations,
+        lines,
         tolerance: SNAP_PERP_TOLERANCE,
       });
       nx = snap.x;

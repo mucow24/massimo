@@ -1,7 +1,21 @@
 import { describe, it, expect } from 'vitest';
 import { alignmentPairs, axisForRotation, parallel, snapDraggedStation } from './snap';
 import { makeStation, makeStop } from '../test/fixtures';
-import type { Station, StationId, StopCell } from '../model/types';
+import type { Line, LineId, Station, StationId, StopCell } from '../model/types';
+
+// Helper: build a line whose stations array forms a chain. Adjacency in
+// `line.stations` is what alignmentPairs filters by.
+const lineOf = (id: LineId, stationIds: StationId[]): Line => ({
+  id,
+  service: id,
+  color: '#000',
+  stations: stationIds,
+});
+const linesOf = (...ls: Line[]): Record<LineId, Line> => {
+  const m: Record<LineId, Line> = {};
+  for (const l of ls) m[l.id] = l;
+  return m;
+};
 
 describe('parallel', () => {
   it('flags vectors with the same direction', () => {
@@ -31,12 +45,12 @@ describe('axisForRotation', () => {
 describe('alignmentPairs', () => {
   it('returns the rotation-axis fallback when neither side has stops', () => {
     const target = makeStation({ id: 't', x: 0, y: 0 });
-    const pairs = alignmentPairs(0, [], target);
+    const pairs = alignmentPairs('d', 0, [], target, {});
     expect(pairs).toHaveLength(1);
     expect(pairs[0].axis).toEqual({ x: 0, y: 1 });
   });
 
-  it('emits a pair for each shared line with parallel travel directions', () => {
+  it('emits a pair for each shared line where the two stations are adjacent', () => {
     const target = makeStation({
       id: 't',
       x: 0,
@@ -47,7 +61,8 @@ describe('alignmentPairs', () => {
       makeStop('L1', { row: 0, col: 0 }),
       makeStop('L2', { row: 0, col: 1 }),
     ];
-    const pairs = alignmentPairs(0, draggedStops, target);
+    const lines = linesOf(lineOf('L1', ['d', 't']), lineOf('L2', ['d', 't']));
+    const pairs = alignmentPairs('d', 0, draggedStops, target, lines);
     expect(pairs).toHaveLength(2);
   });
 
@@ -59,7 +74,45 @@ describe('alignmentPairs', () => {
       stops: [makeStop('LX', { row: 0, col: 0 })],
     });
     const draggedStops: StopCell[] = [makeStop('LY', { row: 0, col: 0 })];
-    expect(alignmentPairs(0, draggedStops, target)).toEqual([]);
+    expect(
+      alignmentPairs(
+        'd',
+        0,
+        draggedStops,
+        target,
+        linesOf(lineOf('LX', ['t']), lineOf('LY', ['d'])),
+      ),
+    ).toEqual([]);
+  });
+
+  it('emits no pair when stations are on the same line but not adjacent', () => {
+    // Line L1: d → x → t (an intervening station between dragged and target).
+    const target = makeStation({
+      id: 't',
+      x: 0,
+      y: 200,
+      stops: [makeStop('L1', { row: 0, col: 0 })],
+    });
+    const draggedStops: StopCell[] = [makeStop('L1', { row: 0, col: 0 })];
+    const lines = linesOf(lineOf('L1', ['d', 'x', 't']));
+    expect(alignmentPairs('d', 0, draggedStops, target, lines)).toEqual([]);
+  });
+
+  it('per-line adjacency: emit a pair only on lines where the stations are adjacent', () => {
+    // L1: d → t (adjacent). L2: d → x → t (not adjacent).
+    const target = makeStation({
+      id: 't',
+      x: 0,
+      y: 100,
+      stops: [makeStop('L1', { row: 0, col: 0 }), makeStop('L2', { row: 0, col: 1 })],
+    });
+    const draggedStops: StopCell[] = [
+      makeStop('L1', { row: 0, col: 0 }),
+      makeStop('L2', { row: 0, col: 1 }),
+    ];
+    const lines = linesOf(lineOf('L1', ['d', 't']), lineOf('L2', ['d', 'x', 't']));
+    const pairs = alignmentPairs('d', 0, draggedStops, target, lines);
+    expect(pairs).toHaveLength(1);
   });
 });
 
@@ -78,6 +131,7 @@ describe('snapDraggedStation', () => {
       draggedRotation: 0,
       draggedStops: [makeStop('L1')],
       stations: stations(makeStation({ id: 'd', x: 0, y: 0 })),
+      lines: linesOf(lineOf('L1', ['d'])),
     });
     expect(r.x).toBe(50);
     expect(r.y).toBe(50);
@@ -106,6 +160,7 @@ describe('snapDraggedStation', () => {
       draggedRotation: 0,
       draggedStops: dragged.stops,
       stations: stations(dragged, target),
+      lines: linesOf(lineOf('L1', ['d', 't'])),
     });
     expect(r.x).toBeCloseTo(100, 5);
     expect(r.y).toBeCloseTo(50, 5);
@@ -149,6 +204,7 @@ describe('snapDraggedStation', () => {
       draggedRotation: 0,
       draggedStops: dragged.stops,
       stations: stations(dragged, t1, t2),
+      lines: linesOf(lineOf('L1', ['d', 't1']), lineOf('L2', ['d', 't2'])),
     });
     expect(r.x).toBeCloseTo(100, 3);
     expect(r.y).toBeCloseTo(200, 3);
@@ -168,6 +224,7 @@ describe('snapDraggedStation', () => {
       y: 0,
       stops: [makeStop('L1')],
     });
+    const lines = linesOf(lineOf('L1', ['d', 't']));
     // Within tolerance: snaps.
     const inTol = snapDraggedStation({
       draggedId: 'd',
@@ -176,6 +233,7 @@ describe('snapDraggedStation', () => {
       draggedRotation: 0,
       draggedStops: dragged.stops,
       stations: stations(dragged, target),
+      lines,
       tolerance: 10,
     });
     expect(inTol.guides).toHaveLength(1);
@@ -187,6 +245,7 @@ describe('snapDraggedStation', () => {
       draggedRotation: 0,
       draggedStops: dragged.stops,
       stations: stations(dragged, target),
+      lines,
       tolerance: 10,
     });
     expect(outTol.guides).toEqual([]);
@@ -214,6 +273,11 @@ describe('snapDraggedStation', () => {
       draggedRotation: 0,
       draggedStops: dragged.stops,
       stations: stations(dragged, target),
+      lines: linesOf(
+        lineOf('L1', ['d', 't']),
+        lineOf('L2', ['d', 't']),
+        lineOf('L3', ['d', 't']),
+      ),
     });
     expect(r.guides).toHaveLength(1);
   });
@@ -231,6 +295,7 @@ describe('snapDraggedStation', () => {
       draggedRotation: 0,
       draggedStops: dragged.stops,
       stations: stations(dragged, target),
+      lines: {},
     });
     expect(r.x).toBeCloseTo(100, 3);
     expect(r.y).toBeCloseTo(50, 3);
@@ -265,6 +330,8 @@ describe('snapDraggedStation', () => {
       draggedRotation: 0,
       draggedStops: dragged.stops,
       stations: stations(dragged, target, third),
+      // d is line-adjacent to both a and c on L1: a — d — c.
+      lines: linesOf(lineOf('L1', ['a', 'd', 'c'])),
     });
     // 1 primary guide + 1 opposite-direction guide.
     expect(r.guides.length).toBeGreaterThanOrEqual(2);
