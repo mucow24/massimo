@@ -101,6 +101,7 @@ interface DocState extends MapDoc {
   deleteLineTag: (id: string) => void;
 
   addRouteBullet: (x: number, y: number, lineId: LineId | null) => string;
+  addRouteBulletWith: (fields: Omit<RouteBullet, 'id'>) => string;
   moveRouteBullet: (id: string, x: number, y: number) => void;
   rotateRouteBullet: (id: string) => void;
   updateRouteBullet: (
@@ -185,6 +186,11 @@ export const useDoc = create<DocState>()(
         addRouteBullet: (x, y, lineId) => {
           const id = ids.routeBulletId();
           set((s) => T.addRouteBullet(s, id, x, y, lineId));
+          return id;
+        },
+        addRouteBulletWith: (fields) => {
+          const id = ids.routeBulletId();
+          set((s) => T.addRouteBulletWith(s, id, fields));
           return id;
         },
         moveRouteBullet: (id, x, y) => set((s) => T.moveRouteBullet(s, id, x, y)),
