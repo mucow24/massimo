@@ -99,9 +99,13 @@ export function StationView({ station, lines, onStartDrag, layer, highlightColor
       const lineId = closestStopLineId(station, e);
       if (!selection.transferAnchor) {
         selection.setTransferAnchor({ stationId: station.id, lineId });
+        // Clear the first-pick hover highlight — the dot is now committed
+        // as the anchor, no longer just hovered.
+        selection.setHoveredLineStop(null);
       } else if (selection.transferAnchor.stationId !== station.id) {
         addTransfer(selection.transferAnchor, { stationId: station.id, lineId });
         selection.setCreatingTransfer(false);
+        selection.setHoveredLineStop(null);
       }
       return;
     }
@@ -299,6 +303,21 @@ export function StationView({ station, lines, onStartDrag, layer, highlightColor
     // pass-through so the cursor goes straight to the band stripes.
     const inTagMode = selection.creatingLineTag;
     const inHandMode = selection.toolMode === 'hand' || selection.spaceHeld;
+    // While picking the FIRST endpoint of a transfer, surface a 3px white
+    // stroke on whichever dot the cursor is closest to so the user knows
+    // exactly which dot they'll attach the transfer to.
+    const inTransferPickFirst = selection.creatingTransfer && !selection.transferAnchor;
+    const onTransferPointerMove = (e: React.PointerEvent) => {
+      const lineId = closestStopLineId(station, e);
+      if (!lineId) return;
+      const cur = selection.hoveredLineStop;
+      if (cur && cur.stationId === station.id && cur.lineId === lineId) return;
+      selection.setHoveredLineStop({ stationId: station.id, lineId });
+    };
+    const onTransferPointerLeave = () => {
+      const cur = selection.hoveredLineStop;
+      if (cur && cur.stationId === station.id) selection.setHoveredLineStop(null);
+    };
     const hitProps = {
       fill: 'transparent',
       pointerEvents: inTagMode ? ('none' as const) : ('all' as const),
@@ -306,6 +325,8 @@ export function StationView({ station, lines, onStartDrag, layer, highlightColor
       onClick: inTagMode || inHandMode ? undefined : onClick,
       onDoubleClick: inTagMode || inHandMode ? undefined : onDoubleClick,
       onContextMenu: inTagMode ? undefined : onContextMenu,
+      onPointerMove: inTransferPickFirst ? onTransferPointerMove : undefined,
+      onPointerLeave: inTransferPickFirst ? onTransferPointerLeave : undefined,
     };
     const cursor = inHandMode ? 'grab' : 'move';
     return (
