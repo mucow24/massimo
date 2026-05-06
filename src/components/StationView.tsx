@@ -17,10 +17,20 @@ interface Props {
   lines: Record<string, Line>;
   zoom: number;
   onStartDrag: (id: string, ev: React.PointerEvent) => void;
-  layer: 'wash' | 'bg' | 'label' | 'highlight-label' | 'dots' | 'stroke' | 'match-stroke';
+  layer:
+    | 'wash'
+    | 'bg'
+    | 'label'
+    | 'highlight-label'
+    | 'dots'
+    | 'highlight-dots'
+    | 'stroke'
+    | 'match-stroke';
+  // Override fill for the highlight-* layers (default white).
+  highlightColor?: string;
 }
 
-export function StationView({ station, lines, onStartDrag, layer }: Props) {
+export function StationView({ station, lines, onStartDrag, layer, highlightColor = '#fff' }: Props) {
   const selection = useSelection();
   const rotateStation = useDoc((s) => s.rotateStation);
   const renameStation = useDoc((s) => s.renameStation);
@@ -265,7 +275,7 @@ export function StationView({ station, lines, onStartDrag, layer }: Props) {
           fontWeight={selection.hoveredStationId === station.id ? 700 : 400}
           textDecoration={selection.hoveredStationId === station.id ? 'underline' : undefined}
           pointerEvents="none"
-          fill="#fff"
+          fill={highlightColor}
           transform={`rotate(${label.rotation * 45} ${labelAnchorX} ${labelAnchorY})`}
         >
           {station.name}
@@ -304,6 +314,32 @@ export function StationView({ station, lines, onStartDrag, layer }: Props) {
             {station.name}
           </text>
         )}
+      </g>
+    );
+  }
+
+  if (layer === 'highlight-dots') {
+    // Dots above the dim/highlight passes, used for not-yet-on-line stations
+    // during append mode. Color overridable via highlightColor.
+    return (
+      <g transform={`translate(${station.x} ${station.y}) rotate(${angle})`} pointerEvents="none">
+        {phantomDot &&
+          (() => {
+            const c = stopCenterAt(phantomDot.row, phantomDot.col);
+            return <circle cx={c.x} cy={c.y} r={STOP_SIZE * 0.28} fill={highlightColor} />;
+          })()}
+        {stops.map((cell) => {
+          const c = stopCenterAt(cell.row, cell.col);
+          return (
+            <circle
+              key={cell.lineId}
+              cx={c.x}
+              cy={c.y}
+              r={STOP_SIZE * 0.28}
+              fill={highlightColor}
+            />
+          );
+        })}
       </g>
     );
   }
