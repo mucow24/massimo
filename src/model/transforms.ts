@@ -53,10 +53,19 @@ export function moveStation(doc: MapDoc, id: StationId, x: number, y: number): M
 // the intervening stops by arc length along the existing polyline through
 // those stops. If a station is intervening on multiple matching lines (its
 // new position would be ambiguous), it is left untouched.
+export type RedistributeMode =
+  // Arc length along the existing polyline; corner stations are treated as
+  // additional anchors. Used for ctrl-click (one-shot).
+  | 'arc-bends'
+  // Straight-line interpolation between A and B's stop positions. Used for
+  // ctrl-drag — gives predictable, wiggle-free even spacing as B moves.
+  | 'straight';
+
 export function redistributeBetween(
   doc: MapDoc,
   startId: StationId,
   endId: StationId,
+  mode: RedistributeMode = 'arc-bends',
 ): MapDoc {
   if (startId === endId) return doc;
   if (!doc.stations[startId] || !doc.stations[endId]) return doc;
@@ -90,64 +99,85 @@ export function redistributeBetween(
     });
     const stopPts = sts.map((st, i) => ({ x: st.x + stopOffsets[i].x, y: st.y + stopOffsets[i].y }));
 
-    // Treat any intervening station that sits at a real bend in the polyline
-    // as an additional anchor. Without this, the redistribute drags corner
-    // stations along the straight-line shortcut between their neighbors,
-    // breaking the corner geometry and the routing of any other line that
-    // crosses through.
-    const ANGLE_THRESHOLD = (5 * Math.PI) / 180;
+    // Build the list of anchor indices (positions whose stop is fixed).
+    // Always anchor the endpoints; arc-bends mode also anchors any intervening
+    // station that sits at a real bend in the existing polyline.
     const anchors: number[] = [0];
-    for (let k = 1; k < stopPts.length - 1; k++) {
-      const ax = stopPts[k].x - stopPts[k - 1].x;
-      const ay = stopPts[k].y - stopPts[k - 1].y;
-      const bx = stopPts[k + 1].x - stopPts[k].x;
-      const by = stopPts[k + 1].y - stopPts[k].y;
-      const aLen = Math.hypot(ax, ay);
-      const bLen = Math.hypot(bx, by);
-      if (aLen === 0 || bLen === 0) continue;
-      const cosA = (ax * bx + ay * by) / (aLen * bLen);
-      const angle = Math.acos(Math.max(-1, Math.min(1, cosA)));
-      if (angle > ANGLE_THRESHOLD) anchors.push(k);
+    if (mode === 'arc-bends') {
+      const ANGLE_THRESHOLD = (5 * Math.PI) / 180;
+      for (let k = 1; k < stopPts.length - 1; k++) {
+        const ax = stopPts[k].x - stopPts[k - 1].x;
+        const ay = stopPts[k].y - stopPts[k - 1].y;
+        const bx = stopPts[k + 1].x - stopPts[k].x;
+        const by = stopPts[k + 1].y - stopPts[k].y;
+        const aLen = Math.hypot(ax, ay);
+        const bLen = Math.hypot(bx, by);
+        if (aLen === 0 || bLen === 0) continue;
+        const cosA = (ax * bx + ay * by) / (aLen * bLen);
+        const angle = Math.acos(Math.max(-1, Math.min(1, cosA)));
+        if (angle > ANGLE_THRESHOLD) anchors.push(k);
+      }
     }
     anchors.push(stopPts.length - 1);
 
-    // Redistribute within each anchor-to-anchor sub-chain independently.
+    // Redistribute within each anchor-to-anchor sub-chain.
     for (let a = 0; a < anchors.length - 1; a++) {
       const from = anchors[a];
       const to = anchors[a + 1];
       const subN = to - from - 1;
       if (subN < 1) continue;
 
-      const subSegLens: number[] = [];
-      for (let i = from; i < to; i++) {
-        subSegLens.push(
-          Math.hypot(stopPts[i + 1].x - stopPts[i].x, stopPts[i + 1].y - stopPts[i].y),
-        );
+      // Compute the target stop position for each non-anchor station k.
+      const targets: { x: number; y: number }[] = [];
+      if (mode === 'straight') {
+        // Straight-line interpolation between the anchor endpoints.
+        const ax = stopPts[from].x;
+        const ay = stopPts[from].y;
+        const bx = stopPts[to].x;
+        const by = stopPts[to].y;
+        for (let k = 1; k <= subN; k++) {
+          const t = k / (subN + 1);
+          targets.push({ x: ax + t * (bx - ax), y: ay + t * (by - ay) });
+        }
+      } else {
+        // Arc length along the existing sub-polyline.
+        const subSegLens: number[] = [];
+        for (let i = from; i < to; i++) {
+          subSegLens.push(
+            Math.hypot(stopPts[i + 1].x - stopPts[i].x, stopPts[i + 1].y - stopPts[i].y),
+          );
+        }
+        const subTotal = subSegLens.reduce((s, v) => s + v, 0);
+        if (subTotal === 0) continue;
+        for (let k = 1; k <= subN; k++) {
+          const target = (k * subTotal) / (subN + 1);
+          let acc = 0;
+          let sx = stopPts[from].x;
+          let sy = stopPts[from].y;
+          for (let i = 0; i < subSegLens.length; i++) {
+            if (acc + subSegLens[i] >= target) {
+              const t = subSegLens[i] === 0 ? 0 : (target - acc) / subSegLens[i];
+              sx = stopPts[from + i].x + t * (stopPts[from + i + 1].x - stopPts[from + i].x);
+              sy = stopPts[from + i].y + t * (stopPts[from + i + 1].y - stopPts[from + i].y);
+              break;
+            }
+            acc += subSegLens[i];
+          }
+          targets.push({ x: sx, y: sy });
+        }
       }
-      const subTotal = subSegLens.reduce((s, v) => s + v, 0);
-      if (subTotal === 0) continue;
 
       for (let k = 1; k <= subN; k++) {
-        const target = (k * subTotal) / (subN + 1);
-        let acc = 0;
-        let stopX = stopPts[from].x;
-        let stopY = stopPts[from].y;
-        for (let i = 0; i < subSegLens.length; i++) {
-          if (acc + subSegLens[i] >= target) {
-            const t = subSegLens[i] === 0 ? 0 : (target - acc) / subSegLens[i];
-            stopX = stopPts[from + i].x + t * (stopPts[from + i + 1].x - stopPts[from + i].x);
-            stopY = stopPts[from + i].y + t * (stopPts[from + i + 1].y - stopPts[from + i].y);
-            break;
-          }
-          acc += subSegLens[i];
-        }
         const idx = from + k;
-        const px = stopX - stopOffsets[idx].x;
-        const py = stopY - stopOffsets[idx].y;
+        const t = targets[k - 1];
+        const px = t.x - stopOffsets[idx].x;
+        const py = t.y - stopOffsets[idx].y;
         const cur = sts[idx];
-        // Skip sub-pixel drift to avoid breaking perfect snap alignments via
-        // floating-point error.
-        if (Math.hypot(px - cur.x, py - cur.y) < 1) continue;
+        // In arc modes, skip sub-pixel drift to avoid breaking perfect snap
+        // alignments via floating-point error. Straight-line is exact by
+        // construction — and in drag mode tiny per-frame shifts must apply
+        // or stations near the anchor lag behind and wobble off the line.
+        if (mode !== 'straight' && Math.hypot(px - cur.x, py - cur.y) < 1) continue;
         const stationId = ids[idx];
         const existing = proposals.get(stationId);
         if (existing) {

@@ -58,7 +58,11 @@ interface DocState extends MapDoc {
   addStation: (x: number, y: number) => StationId;
   renameStation: (id: StationId, name: string) => void;
   moveStation: (id: StationId, x: number, y: number) => void;
-  redistributeBetween: (startId: StationId, endId: StationId) => void;
+  redistributeBetween: (
+    startId: StationId,
+    endId: StationId,
+    mode?: 'arc-bends' | 'straight',
+  ) => void;
   rotateStation: (id: StationId) => void;
   rotateStationAndLayout: (id: StationId, dir: -1 | 1) => void;
   deleteStation: (id: StationId) => void;
@@ -114,8 +118,8 @@ export const useDoc = create<DocState>()(
         },
         renameStation: (id, name) => set((s) => T.renameStation(s, id, name)),
         moveStation: (id, x, y) => set((s) => T.moveStation(s, id, x, y)),
-        redistributeBetween: (startId, endId) =>
-          set((s) => T.redistributeBetween(s, startId, endId)),
+        redistributeBetween: (startId, endId, mode = 'arc-bends') =>
+          set((s) => T.redistributeBetween(s, startId, endId, mode)),
         rotateStation: (id) => set((s) => T.rotateStation(s, id)),
         rotateStationAndLayout: (id, dir) => set((s) => T.rotateStationAndLayout(s, id, dir)),
         deleteStation: (id) => set((s) => T.deleteStation(s, id)),

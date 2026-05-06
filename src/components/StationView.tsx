@@ -16,7 +16,7 @@ interface Props {
   station: Station;
   lines: Record<string, Line>;
   zoom: number;
-  onStartDrag: (id: string, ev: React.PointerEvent) => void;
+  onStartDrag: (id: string, ev: React.PointerEvent, redistributeAnchor?: string) => void;
   layer:
     | 'wash'
     | 'bg'
@@ -44,7 +44,17 @@ export function StationView({ station, lines, onStartDrag, layer, highlightColor
     if (e.button !== 0) return;
     // In hand mode, let the event bubble to the SVG so it becomes a pan.
     if (selection.toolMode === 'hand' || selection.spaceHeld) return;
-    onStartDrag(station.id, e);
+    // Ctrl/Cmd+drag on a different station while one is selected: drag the
+    // target while continuously redistributing intervening stops between
+    // the two. A pure click (no drag) still routes to onClick → one-shot
+    // redistribute via the click handler.
+    const anchor =
+      (e.ctrlKey || e.metaKey) &&
+      selection.selectedStationId &&
+      selection.selectedStationId !== station.id
+        ? selection.selectedStationId
+        : undefined;
+    onStartDrag(station.id, e, anchor);
   };
 
   const onClick = (e: React.MouseEvent) => {
