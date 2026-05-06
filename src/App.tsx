@@ -3,6 +3,7 @@ import { Toolbar } from './components/Toolbar';
 import { Sidebar } from './components/Sidebar';
 import { MapCanvas } from './components/MapCanvas';
 import { useDoc, useSelection } from './state/store';
+import { readClipboard, writeClipboard } from './model/clipboard';
 
 export default function App() {
   const setAppending = useSelection((s) => s.setAppending);
@@ -68,6 +69,72 @@ export default function App() {
       if (mod && !inForm && (e.key === 'y' || e.key === 'Y')) {
         e.preventDefault();
         useDoc.temporal.getState().redo();
+        return;
+      }
+      // Copy / paste / duplicate for the currently-selected route bullet.
+      // Stay out of form fields so native text-editing shortcuts keep working.
+      if (mod && !inForm && (e.key === 'c' || e.key === 'C')) {
+        const sel = useSelection.getState();
+        const bid = sel.selectedRouteBulletId;
+        if (!bid) return;
+        const b = useDoc.getState().routeBullets[bid];
+        if (!b) return;
+        const text = writeClipboard({
+          kind: 'route-bullet',
+          data: {
+            x: b.x,
+            y: b.y,
+            rotation: b.rotation,
+            lineId: b.lineId,
+            shape: b.shape,
+            size: b.size,
+          },
+        });
+        navigator.clipboard?.writeText(text).catch(() => {});
+        e.preventDefault();
+        return;
+      }
+      if (mod && !inForm && (e.key === 'v' || e.key === 'V')) {
+        e.preventDefault();
+        navigator.clipboard
+          ?.readText()
+          .then((text) => {
+            const payload = readClipboard(text);
+            if (!payload || payload.kind !== 'route-bullet') return;
+            const d = payload.data;
+            const newId = useDoc
+              .getState()
+              .addRouteBulletWith({
+                x: d.x + 15,
+                y: d.y + 15,
+                rotation: d.rotation,
+                lineId: d.lineId,
+                shape: d.shape,
+                size: d.size,
+              });
+            useSelection.getState().selectRouteBullet(newId);
+          })
+          .catch(() => {});
+        return;
+      }
+      if (mod && !inForm && (e.key === 'd' || e.key === 'D')) {
+        const sel = useSelection.getState();
+        const bid = sel.selectedRouteBulletId;
+        if (!bid) return;
+        const b = useDoc.getState().routeBullets[bid];
+        if (!b) return;
+        e.preventDefault();
+        const newId = useDoc
+          .getState()
+          .addRouteBulletWith({
+            x: b.x + 15,
+            y: b.y + 15,
+            rotation: b.rotation,
+            lineId: b.lineId,
+            shape: b.shape,
+            size: b.size,
+          });
+        useSelection.getState().selectRouteBullet(newId);
         return;
       }
       if (!inForm && !mod && (e.key === 'a' || e.key === 'A')) {

@@ -671,6 +671,16 @@ export function addRouteBullet(
   return { ...doc, routeBullets: { ...doc.routeBullets, [id]: bullet } };
 }
 
+// Insert a fully-specified bullet (used by duplicate + paste).
+export function addRouteBulletWith(
+  doc: MapDoc,
+  id: string,
+  fields: Omit<RouteBullet, 'id'>,
+): MapDoc {
+  const bullet: RouteBullet = { id, ...fields };
+  return { ...doc, routeBullets: { ...doc.routeBullets, [id]: bullet } };
+}
+
 export function moveRouteBullet(doc: MapDoc, id: string, x: number, y: number): MapDoc {
   const cur = doc.routeBullets[id];
   if (!cur) return doc;
