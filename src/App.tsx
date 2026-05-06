@@ -8,7 +8,9 @@ export default function App() {
   const setAppending = useSelection((s) => s.setAppending);
   const setPlacingStation = useSelection((s) => s.setPlacingStation);
   const setCreatingLineTag = useSelection((s) => s.setCreatingLineTag);
+  const setCreatingRouteBullet = useSelection((s) => s.setCreatingRouteBullet);
   const selectLineTag = useSelection((s) => s.selectLineTag);
+  const selectRouteBullet = useSelection((s) => s.selectRouteBullet);
   const setToolMode = useSelection((s) => s.setToolMode);
   const setSpaceHeld = useSelection((s) => s.setSpaceHeld);
 
@@ -25,11 +27,20 @@ export default function App() {
         setAppending(null);
         setPlacingStation(false);
         setCreatingLineTag(false);
+        setCreatingRouteBullet(false);
         selectLineTag(null);
+        selectRouteBullet(null);
         return;
       }
       if ((e.key === 'Delete' || e.key === 'Backspace') && !inForm) {
         const sel = useSelection.getState();
+        const bulletId = sel.selectedRouteBulletId;
+        if (bulletId) {
+          e.preventDefault();
+          sel.selectRouteBullet(null);
+          useDoc.getState().deleteRouteBullet(bulletId);
+          return;
+        }
         const tagId = sel.selectedLineTagId;
         if (tagId) {
           e.preventDefault();
@@ -82,7 +93,16 @@ export default function App() {
       window.removeEventListener('keydown', onKey);
       window.removeEventListener('keyup', onKeyUp);
     };
-  }, [setAppending, setPlacingStation, setCreatingLineTag, selectLineTag, setToolMode, setSpaceHeld]);
+  }, [
+    setAppending,
+    setPlacingStation,
+    setCreatingLineTag,
+    setCreatingRouteBullet,
+    selectLineTag,
+    selectRouteBullet,
+    setToolMode,
+    setSpaceHeld,
+  ]);
 
   // Right-click anywhere cancels an active mode. Capture phase + stopPropagation
   // so we beat element-level context menus (station rotate, tag flip): they
@@ -90,12 +110,18 @@ export default function App() {
   useEffect(() => {
     const onContextMenu = (e: globalThis.MouseEvent) => {
       const sel = useSelection.getState();
-      if (sel.placingStation || sel.creatingLineTag || sel.appendingToLineId) {
+      if (
+        sel.placingStation ||
+        sel.creatingLineTag ||
+        sel.appendingToLineId ||
+        sel.creatingRouteBullet
+      ) {
         e.preventDefault();
         e.stopPropagation();
         sel.setPlacingStation(false);
         sel.setCreatingLineTag(false);
         sel.setAppending(null);
+        sel.setCreatingRouteBullet(false);
       }
     };
     document.addEventListener('contextmenu', onContextMenu, true);

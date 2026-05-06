@@ -51,6 +51,9 @@ export function Toolbar() {
   const onAddLineTag = () => {
     selection.setCreatingLineTag(!selection.creatingLineTag);
   };
+  const onAddRouteBullet = () => {
+    selection.setCreatingRouteBullet(!selection.creatingRouteBullet);
+  };
   const onAddLine = () => {
     const id = addLine();
     selection.startAppendAt(id, -1);
@@ -60,9 +63,11 @@ export function Toolbar() {
     selection.selectStation(null);
     selection.selectLine(null);
     selection.selectLineTag(null);
+    selection.selectRouteBullet(null);
     selection.setAppending(null);
     selection.setPlacingStation(false);
     selection.setCreatingLineTag(false);
+    selection.setCreatingRouteBullet(false);
     selection.setEditingStationId(null);
     clearAll();
   };
@@ -76,6 +81,7 @@ export function Toolbar() {
       curveRadius: doc.curveRadius,
       lineCounter: doc.lineCounter,
       lineTags: doc.lineTags,
+      routeBullets: doc.routeBullets,
     });
     const blob = new Blob([json], { type: 'application/json' });
     const url = URL.createObjectURL(blob);
@@ -105,9 +111,11 @@ export function Toolbar() {
     selection.selectStation(null);
     selection.selectLine(null);
     selection.selectLineTag(null);
+    selection.selectRouteBullet(null);
     selection.setAppending(null);
     selection.setPlacingStation(false);
     selection.setCreatingLineTag(false);
+    selection.setCreatingRouteBullet(false);
     selection.setEditingStationId(null);
     // Replace doc state, preserving the mutator method references via merge.
     useDoc.setState({ ...DEFAULT_DOC, ...result.doc });
@@ -127,6 +135,7 @@ export function Toolbar() {
         <MenuItem onClick={onAddStation}>Stations</MenuItem>
         <MenuItem onClick={onAddLine}>Line</MenuItem>
         <MenuItem onClick={onAddLineTag}>Line tags</MenuItem>
+        <MenuItem onClick={onAddRouteBullet}>Route bullets</MenuItem>
       </Menu>
       <ToolButtons />
       <input

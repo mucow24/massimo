@@ -32,6 +32,7 @@ describe('save/load round-trip', () => {
       curveRadius: useDoc.getState().curveRadius,
       lineCounter: useDoc.getState().lineCounter,
       lineTags: useDoc.getState().lineTags,
+      routeBullets: useDoc.getState().routeBullets,
     });
     const result = parse(json);
     expect(result.ok).toBe(true);

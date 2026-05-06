@@ -11,6 +11,7 @@ export function EditingBanner() {
   const placingStation = useSelection((s) => s.placingStation);
   const appendingToLineId = useSelection((s) => s.appendingToLineId);
   const creatingLineTag = useSelection((s) => s.creatingLineTag);
+  const creatingRouteBullet = useSelection((s) => s.creatingRouteBullet);
 
   if (placingStation) {
     return (
@@ -28,6 +29,16 @@ export function EditingBanner() {
         <div className="append-frame" style={{ borderColor: '#1a4ea8' }} />
         <div className="append-banner placing">
           Click a colored line to place a tag. Press Esc to cancel.
+        </div>
+      </>
+    );
+  }
+  if (creatingRouteBullet) {
+    return (
+      <>
+        <div className="append-frame" style={{ borderColor: '#1a4ea8' }} />
+        <div className="append-banner placing">
+          Click on the canvas to place a route bullet. Press Esc to cancel.
         </div>
       </>
     );

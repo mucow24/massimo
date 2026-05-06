@@ -167,6 +167,88 @@ select {
   overflow: hidden;
 }
 
+.bullet-popover {
+  background: #fff;
+  border: 3px solid #000;
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.2);
+  width: 240px;
+  font-size: 12px;
+  display: flex;
+  flex-direction: column;
+}
+.bullet-popover .header {
+  height: 10px;
+  background: #000;
+  flex-shrink: 0;
+}
+.bullet-popover .body {
+  padding: 10px 12px;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+.bullet-popover .row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+.bullet-popover .row label {
+  width: 48px;
+  flex-shrink: 0;
+  color: #000;
+  font-weight: 700;
+}
+.bullet-popover .row select,
+.bullet-popover .row input[type='range'] {
+  flex: 1;
+  min-width: 0;
+}
+.bullet-popover .shape-group {
+  display: inline-flex;
+  gap: 4px;
+  flex: 1;
+}
+.bullet-popover .shape-btn {
+  flex: 1;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  height: 26px;
+  background: #fff;
+  border: 1px solid #bbb;
+  border-radius: 3px;
+  padding: 0;
+  cursor: pointer;
+}
+.bullet-popover .shape-btn:hover {
+  background: #f0f0f0;
+}
+.bullet-popover .shape-btn.active {
+  background: #d6e4ff;
+  border-color: #6a8ed6;
+}
+.bullet-popover .shape-btn svg {
+  display: block;
+}
+.bullet-popover .footer {
+  display: flex;
+  justify-content: flex-end;
+}
+.bullet-popover .delete-btn {
+  background: #fff;
+  color: #c33;
+  border: 1px solid #c33;
+  border-radius: 3px;
+  padding: 3px 10px;
+  font-size: 12px;
+  font-weight: 600;
+  cursor: pointer;
+}
+.bullet-popover .delete-btn:hover {
+  background: #c33;
+  color: #fff;
+}
+
 .tool-group {
   display: inline-flex;
   gap: 2px;
