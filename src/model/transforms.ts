@@ -1,5 +1,6 @@
 import { autoOrientLineStops } from './autoOrient';
 import { effectiveLineOrder } from './lineOrder';
+import { rotateBy, stopCenterAt } from '../geometry/orientation';
 import type {
   Line,
   LineId,
@@ -46,6 +47,97 @@ export function moveStation(doc: MapDoc, id: StationId, x: number, y: number): M
   const cur = doc.stations[id];
   if (!cur) return doc;
   return { ...doc, stations: { ...doc.stations, [id]: { ...cur, x, y } } };
+}
+
+// For every line that contains both startId and endId, evenly redistribute
+// the intervening stops by arc length along the existing polyline through
+// those stops. If a station is intervening on multiple matching lines (its
+// new position would be ambiguous), it is left untouched.
+export function redistributeBetween(
+  doc: MapDoc,
+  startId: StationId,
+  endId: StationId,
+): MapDoc {
+  if (startId === endId) return doc;
+  if (!doc.stations[startId] || !doc.stations[endId]) return doc;
+
+  const proposals = new Map<StationId, { x: number; y: number }>();
+  const conflicted = new Set<StationId>();
+
+  for (const line of Object.values(doc.lines)) {
+    const iStart = line.stations.indexOf(startId);
+    const iEnd = line.stations.indexOf(endId);
+    if (iStart < 0 || iEnd < 0) continue;
+
+    const iLow = Math.min(iStart, iEnd);
+    const iHigh = Math.max(iStart, iEnd);
+    const n = iHigh - iLow - 1;
+    if (n < 1) continue;
+
+    const ids = line.stations.slice(iLow, iHigh + 1);
+    const sts = ids.map((id) => doc.stations[id]);
+    if (sts.some((p) => !p)) continue;
+
+    // The visible route runs through this line's STOPS, not station centers.
+    // At interlined stations the stop is offset from the center, so a polyline
+    // through centers can zigzag even when the stops are perfectly aligned.
+    // Use stop world positions to drive the redistribution, then derive each
+    // new station center from the new stop position.
+    const stopOffsets = sts.map((st) => {
+      const cell = st.stops.find((c) => c.lineId === line.id);
+      if (!cell) return { x: 0, y: 0 };
+      return rotateBy(stopCenterAt(cell.row, cell.col), st.rotation);
+    });
+    const stopPts = sts.map((st, i) => ({ x: st.x + stopOffsets[i].x, y: st.y + stopOffsets[i].y }));
+
+    // Arc-length parametrization of the existing stop polyline.
+    const segLens: number[] = [];
+    for (let i = 0; i < stopPts.length - 1; i++) {
+      segLens.push(Math.hypot(stopPts[i + 1].x - stopPts[i].x, stopPts[i + 1].y - stopPts[i].y));
+    }
+    const totalLen = segLens.reduce((a, b) => a + b, 0);
+    if (totalLen === 0) continue;
+
+    for (let k = 1; k <= n; k++) {
+      const target = (k * totalLen) / (n + 1);
+      let acc = 0;
+      let stopX = stopPts[0].x;
+      let stopY = stopPts[0].y;
+      for (let i = 0; i < segLens.length; i++) {
+        if (acc + segLens[i] >= target) {
+          const t = segLens[i] === 0 ? 0 : (target - acc) / segLens[i];
+          stopX = stopPts[i].x + t * (stopPts[i + 1].x - stopPts[i].x);
+          stopY = stopPts[i].y + t * (stopPts[i + 1].y - stopPts[i].y);
+          break;
+        }
+        acc += segLens[i];
+      }
+      // Derive the station center from the new stop position so the line's
+      // stop lands exactly on the arc-length target.
+      const px = stopX - stopOffsets[k].x;
+      const py = stopY - stopOffsets[k].y;
+      const stationId = ids[k];
+      const existing = proposals.get(stationId);
+      if (existing) {
+        if (Math.hypot(existing.x - px, existing.y - py) > 0.5) {
+          conflicted.add(stationId);
+        }
+      } else {
+        proposals.set(stationId, { x: px, y: py });
+      }
+    }
+  }
+
+  for (const id of conflicted) proposals.delete(id);
+  if (proposals.size === 0) return doc;
+
+  let stations = doc.stations;
+  for (const [id, p] of proposals) {
+    const cur = stations[id];
+    if (!cur) continue;
+    stations = { ...stations, [id]: { ...cur, x: p.x, y: p.y } };
+  }
+  return { ...doc, stations };
 }
 
 export function rotateStation(doc: MapDoc, id: StationId): MapDoc {
