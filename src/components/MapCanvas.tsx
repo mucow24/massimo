@@ -25,8 +25,12 @@ import {
 } from '../geometry/lineTagGeometry';
 import type { LineId } from '../model/types';
 import { findMatchingStations } from '../model/matching';
-import { useDebugHighlight } from '../state/debugHighlightStore';
 import { desaturateColor } from '../util/color';
+
+const DIM_COLOR = '#000000';
+const DIM_ALPHA = 0.65;
+// 1 = full color, 0 = greyscale.
+const OTHER_LINE_SATURATION = 0.5;
 
 export function MapCanvas() {
   const stations = useDoc((s) => s.stations);
@@ -36,7 +40,6 @@ export function MapCanvas() {
   const addStation = useDoc((s) => s.addStation);
   const addLineTag = useDoc((s) => s.addLineTag);
   const selection = useSelection();
-  const debug = useDebugHighlight();
   const highlightLineId = selection.selectedLineId;
 
   const svgRef = useRef<SVGSVGElement | null>(null);
@@ -57,14 +60,14 @@ export function MapCanvas() {
   // Color override map for non-selected lines while a line is being edited.
   // Selected line keeps its true color; others get desaturated toward greyscale.
   const colorMap = useMemo(() => {
-    if (!highlightLineId || debug.desaturate >= 1) return undefined;
+    if (!highlightLineId || OTHER_LINE_SATURATION >= 1) return undefined;
     const map: Record<string, string> = {};
     for (const ln of Object.values(lines)) {
       if (ln.id === highlightLineId) continue;
-      map[ln.id] = desaturateColor(ln.color, debug.desaturate);
+      map[ln.id] = desaturateColor(ln.color, OTHER_LINE_SATURATION);
     }
     return map;
-  }, [highlightLineId, debug.desaturate, lines]);
+  }, [highlightLineId, lines]);
 
   // Bands and stop markers merged into one pass, sorted by per-line z-priority
   // so a back-stack stop square doesn't paint over a front-stack band passing
@@ -308,14 +311,14 @@ export function MapCanvas() {
         {/* Debug highlight: dim overlay + re-painted selected line on top.
             Painted after dots so other lines' stop dots can't punch through
             the selected line's outline. */}
-        {highlightLineId && debug.dimAlpha > 0 && (
+        {highlightLineId && DIM_ALPHA > 0 && (
           <rect
             x={view.vbX}
             y={view.vbY}
             width={view.vbW}
             height={view.vbH}
-            fill={debug.dimColor}
-            fillOpacity={debug.dimAlpha}
+            fill={DIM_COLOR}
+            fillOpacity={DIM_ALPHA}
             pointerEvents="none"
           />
         )}

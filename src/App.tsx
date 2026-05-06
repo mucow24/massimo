@@ -2,7 +2,6 @@ import { useEffect } from 'react';
 import { Toolbar } from './components/Toolbar';
 import { Sidebar } from './components/Sidebar';
 import { MapCanvas } from './components/MapCanvas';
-import { DebugHighlightPanel } from './components/DebugHighlightPanel';
 import { useDoc, useSelection } from './state/store';
 
 export default function App() {
@@ -108,7 +107,6 @@ export default function App() {
       <Toolbar />
       <MapCanvas />
       <Sidebar />
-      <DebugHighlightPanel />
     </div>
   );
 }
