@@ -33,6 +33,7 @@ describe('save/load round-trip', () => {
       lineCounter: useDoc.getState().lineCounter,
       lineTags: useDoc.getState().lineTags,
       routeBullets: useDoc.getState().routeBullets,
+      transfers: useDoc.getState().transfers,
     });
     const result = parse(json);
     expect(result.ok).toBe(true);

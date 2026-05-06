@@ -10,8 +10,10 @@ export default function App() {
   const setPlacingStation = useSelection((s) => s.setPlacingStation);
   const setCreatingLineTag = useSelection((s) => s.setCreatingLineTag);
   const setCreatingRouteBullet = useSelection((s) => s.setCreatingRouteBullet);
+  const setCreatingTransfer = useSelection((s) => s.setCreatingTransfer);
   const selectLineTag = useSelection((s) => s.selectLineTag);
   const selectRouteBullet = useSelection((s) => s.selectRouteBullet);
+  const selectTransfer = useSelection((s) => s.selectTransfer);
   const setToolMode = useSelection((s) => s.setToolMode);
   const setSpaceHeld = useSelection((s) => s.setSpaceHeld);
 
@@ -29,8 +31,10 @@ export default function App() {
         setPlacingStation(false);
         setCreatingLineTag(false);
         setCreatingRouteBullet(false);
+        setCreatingTransfer(false);
         selectLineTag(null);
         selectRouteBullet(null);
+        selectTransfer(null);
         return;
       }
       if ((e.key === 'Delete' || e.key === 'Backspace') && !inForm) {
@@ -40,6 +44,13 @@ export default function App() {
           e.preventDefault();
           sel.selectRouteBullet(null);
           useDoc.getState().deleteRouteBullet(bulletId);
+          return;
+        }
+        const transferId = sel.selectedTransferId;
+        if (transferId) {
+          e.preventDefault();
+          sel.selectTransfer(null);
+          useDoc.getState().deleteTransfer(transferId);
           return;
         }
         const tagId = sel.selectedLineTagId;
@@ -165,8 +176,10 @@ export default function App() {
     setPlacingStation,
     setCreatingLineTag,
     setCreatingRouteBullet,
+    setCreatingTransfer,
     selectLineTag,
     selectRouteBullet,
+    selectTransfer,
     setToolMode,
     setSpaceHeld,
   ]);
@@ -181,7 +194,8 @@ export default function App() {
         sel.placingStation ||
         sel.creatingLineTag ||
         sel.appendingToLineId ||
-        sel.creatingRouteBullet
+        sel.creatingRouteBullet ||
+        sel.creatingTransfer
       ) {
         e.preventDefault();
         e.stopPropagation();
@@ -189,6 +203,7 @@ export default function App() {
         sel.setCreatingLineTag(false);
         sel.setAppending(null);
         sel.setCreatingRouteBullet(false);
+        sel.setCreatingTransfer(false);
       }
     };
     document.addEventListener('contextmenu', onContextMenu, true);

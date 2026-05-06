@@ -12,6 +12,8 @@ export function EditingBanner() {
   const appendingToLineId = useSelection((s) => s.appendingToLineId);
   const creatingLineTag = useSelection((s) => s.creatingLineTag);
   const creatingRouteBullet = useSelection((s) => s.creatingRouteBullet);
+  const creatingTransfer = useSelection((s) => s.creatingTransfer);
+  const transferAnchor = useSelection((s) => s.transferAnchor);
 
   if (placingStation) {
     return (
@@ -39,6 +41,18 @@ export function EditingBanner() {
         <div className="append-frame" style={{ borderColor: '#1a4ea8' }} />
         <div className="append-banner placing">
           Click on the canvas to place a route bullet. Press Esc to cancel.
+        </div>
+      </>
+    );
+  }
+  if (creatingTransfer) {
+    return (
+      <>
+        <div className="append-frame" style={{ borderColor: '#1a4ea8' }} />
+        <div className="append-banner placing">
+          {transferAnchor
+            ? 'Click the second station to complete the transfer. Press Esc to cancel.'
+            : 'Click the first station to start a transfer. Press Esc to cancel.'}
         </div>
       </>
     );

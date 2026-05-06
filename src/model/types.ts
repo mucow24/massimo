@@ -131,4 +131,15 @@ export interface MapDoc {
   lineTags: Record<string, LineTag>;
   // Free-floating route badges. Keyed by bullet id.
   routeBullets: Record<string, RouteBullet>;
+  // Inter-station transfer indicators (a black line between two stations).
+  transfers: Record<string, Transfer>;
+}
+
+// A transfer is just a line between two stations — its endpoints follow
+// their station anchors so it stays connected as the user drags either
+// endpoint around. Cascade-deleted when either station is removed.
+export interface Transfer {
+  id: string;
+  stationA: StationId;
+  stationB: StationId;
 }

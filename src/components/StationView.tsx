@@ -38,6 +38,7 @@ export function StationView({ station, lines, onStartDrag, layer, highlightColor
   const renameStation = useDoc((s) => s.renameStation);
   const toggleStationOnLine = useDoc((s) => s.toggleStationOnLine);
   const redistributeBetween = useDoc((s) => s.redistributeBetween);
+  const addTransfer = useDoc((s) => s.addTransfer);
 
   const stops = station.stops;
   const angle = station.rotation * 45;
@@ -62,6 +63,16 @@ export function StationView({ station, lines, onStartDrag, layer, highlightColor
   const onClick = (e: React.MouseEvent) => {
     if (dragState.suppressClick) return;
     e.stopPropagation();
+    // Transfer-creation flow: first click sets the anchor, second commits.
+    if (selection.creatingTransfer) {
+      if (!selection.transferAnchor) {
+        selection.setTransferAnchor(station.id);
+      } else if (selection.transferAnchor !== station.id) {
+        addTransfer(selection.transferAnchor, station.id);
+        selection.setCreatingTransfer(false);
+      }
+      return;
+    }
     // Ctrl/Cmd-click on a different station while one is selected:
     // redistribute intervening stops on each line that connects them.
     if (

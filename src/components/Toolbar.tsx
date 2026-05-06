@@ -54,6 +54,9 @@ export function Toolbar() {
   const onAddRouteBullet = () => {
     selection.setCreatingRouteBullet(!selection.creatingRouteBullet);
   };
+  const onAddTransfer = () => {
+    selection.setCreatingTransfer(!selection.creatingTransfer);
+  };
   const onAddLine = () => {
     const id = addLine();
     selection.startAppendAt(id, -1);
@@ -64,10 +67,12 @@ export function Toolbar() {
     selection.selectLine(null);
     selection.selectLineTag(null);
     selection.selectRouteBullet(null);
+    selection.selectTransfer(null);
     selection.setAppending(null);
     selection.setPlacingStation(false);
     selection.setCreatingLineTag(false);
     selection.setCreatingRouteBullet(false);
+    selection.setCreatingTransfer(false);
     selection.setEditingStationId(null);
     clearAll();
   };
@@ -82,6 +87,7 @@ export function Toolbar() {
       lineCounter: doc.lineCounter,
       lineTags: doc.lineTags,
       routeBullets: doc.routeBullets,
+      transfers: doc.transfers,
     });
     const blob = new Blob([json], { type: 'application/json' });
     const url = URL.createObjectURL(blob);
@@ -112,10 +118,12 @@ export function Toolbar() {
     selection.selectLine(null);
     selection.selectLineTag(null);
     selection.selectRouteBullet(null);
+    selection.selectTransfer(null);
     selection.setAppending(null);
     selection.setPlacingStation(false);
     selection.setCreatingLineTag(false);
     selection.setCreatingRouteBullet(false);
+    selection.setCreatingTransfer(false);
     selection.setEditingStationId(null);
     // Replace doc state, preserving the mutator method references via merge.
     useDoc.setState({ ...DEFAULT_DOC, ...result.doc });
@@ -136,6 +144,7 @@ export function Toolbar() {
         <MenuItem onClick={onAddLine}>Line</MenuItem>
         <MenuItem onClick={onAddLineTag}>Line tags</MenuItem>
         <MenuItem onClick={onAddRouteBullet}>Route bullets</MenuItem>
+        <MenuItem onClick={onAddTransfer}>Transfer</MenuItem>
       </Menu>
       <ToolButtons />
       <input

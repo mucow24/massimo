@@ -12,6 +12,7 @@ import type {
   StationId,
   StopCell,
   StopOrientation,
+  Transfer,
 } from './types';
 
 export const DEFAULT_DOC: MapDoc = {
@@ -22,6 +23,7 @@ export const DEFAULT_DOC: MapDoc = {
   lineCounter: 0,
   lineTags: {},
   routeBullets: {},
+  transfers: {},
 };
 
 // ---------- Stations ----------
@@ -281,7 +283,13 @@ export function deleteStation(doc: MapDoc, id: StationId): MapDoc {
     const ln = doc.lines[lid];
     lines[lid] = { ...ln, stations: ln.stations.filter((x) => x !== id) };
   }
-  return pruneOrphanLineTags({ ...doc, stations: rest, lines });
+  // Cascade-delete transfers that referenced the removed station.
+  const transfers: Record<string, Transfer> = {};
+  for (const xid of Object.keys(doc.transfers)) {
+    const t = doc.transfers[xid];
+    if (t.stationA !== id && t.stationB !== id) transfers[xid] = t;
+  }
+  return pruneOrphanLineTags({ ...doc, stations: rest, lines, transfers });
 }
 
 // ---------- Stops ----------
@@ -713,6 +721,25 @@ export function deleteRouteBullet(doc: MapDoc, id: string): MapDoc {
   return { ...doc, routeBullets: rest };
 }
 
+// ---------- Transfers ----------
+
+export function addTransfer(
+  doc: MapDoc,
+  id: string,
+  stationA: StationId,
+  stationB: StationId,
+): MapDoc {
+  if (stationA === stationB) return doc;
+  if (!doc.stations[stationA] || !doc.stations[stationB]) return doc;
+  const transfer: Transfer = { id, stationA, stationB };
+  return { ...doc, transfers: { ...doc.transfers, [id]: transfer } };
+}
+
+export function deleteTransfer(doc: MapDoc, id: string): MapDoc {
+  if (!doc.transfers[id]) return doc;
+  const { [id]: _gone, ...rest } = doc.transfers;
+  return { ...doc, transfers: rest };
+}
 
 /**
  * Drop any line tag whose corridor (fromStationId, toStationId) is no longer
