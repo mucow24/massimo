@@ -1,9 +1,38 @@
 import { useEffect, useRef } from 'react';
-import { Line, Station } from '../model/types';
+import { Line, LineId, Station } from '../model/types';
 import { beginHistoryGroup, dragState, useDoc, useSelection } from '../state/store';
 import { DIR_8, STOP_SIZE, stopCenterAt } from '../geometry/orientation';
 import { polygonsToPath, Pt, unionConvex } from '../geometry/polygonUnion';
 import { legibleTextOn } from '../util/color';
+
+// Map a click on a station to the closest dot's lineId. Used to pin a
+// transfer endpoint to the specific stop the user clicked on, rather than
+// the station's anchor center.
+function closestStopLineId(station: Station, e: React.MouseEvent): LineId | null {
+  if (station.stops.length === 0) return null;
+  const svg = document.querySelector('.canvas-host svg') as SVGSVGElement | null;
+  if (!svg) return station.stops[0].lineId;
+  const r = svg.getBoundingClientRect();
+  const vb = svg.viewBox.baseVal;
+  const wx = vb.x + ((e.clientX - r.left) / r.width) * vb.width;
+  const wy = vb.y + ((e.clientY - r.top) / r.height) * vb.height;
+  const a = (station.rotation * Math.PI) / 4;
+  const cs = Math.cos(a);
+  const sn = Math.sin(a);
+  let bestId = station.stops[0].lineId;
+  let bestDist = Infinity;
+  for (const cell of station.stops) {
+    const local = stopCenterAt(cell.row, cell.col);
+    const sx = station.x + local.x * cs - local.y * sn;
+    const sy = station.y + local.x * sn + local.y * cs;
+    const d = Math.hypot(wx - sx, wy - sy);
+    if (d < bestDist) {
+      bestDist = d;
+      bestId = cell.lineId;
+    }
+  }
+  return bestId;
+}
 
 const SELECTION_WASH_COLOR = '#f0ff00';
 const SELECTION_WASH_OPACITY = 0.2;
@@ -64,11 +93,14 @@ export function StationView({ station, lines, onStartDrag, layer, highlightColor
     if (dragState.suppressClick) return;
     e.stopPropagation();
     // Transfer-creation flow: first click sets the anchor, second commits.
+    // Capture which specific dot was closest to the click so the transfer
+    // pins to that stop instead of an arbitrary station-anchor location.
     if (selection.creatingTransfer) {
+      const lineId = closestStopLineId(station, e);
       if (!selection.transferAnchor) {
-        selection.setTransferAnchor(station.id);
-      } else if (selection.transferAnchor !== station.id) {
-        addTransfer(selection.transferAnchor, station.id);
+        selection.setTransferAnchor({ stationId: station.id, lineId });
+      } else if (selection.transferAnchor.stationId !== station.id) {
+        addTransfer(selection.transferAnchor, { stationId: station.id, lineId });
         selection.setCreatingTransfer(false);
       }
       return;

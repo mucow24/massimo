@@ -4,7 +4,7 @@ import { buildBands } from '../geometry/interlining';
 import { offsetPathLength } from '../geometry/lineTagGeometry';
 import { STOP_SIZE } from '../geometry/orientation';
 
-export const SCHEMA_VERSION = 10;
+export const SCHEMA_VERSION = 11;
 export const SCHEMA_FORMAT = 'massimo-map';
 
 export interface SerializedFile {
@@ -190,6 +190,26 @@ export function migrate(raw: unknown, fromVersion: number): MapDoc {
   // v9 -> v10: transfers introduced. Default to {} for older files.
   if (fromVersion < 10 && state) {
     if (!state.transfers) state.transfers = {};
+  }
+
+  // v10 -> v11: transfer endpoints become {stationId, lineId} pairs so
+  // they can pin to a specific dot at interlined stations. Convert
+  // {stationA, stationB} into {a: {stationId, lineId: null}, b: ...}.
+  if (fromVersion < 11 && state && state.transfers) {
+    const next: Record<string, unknown> = {};
+    for (const [id, raw] of Object.entries(state.transfers)) {
+      const t = raw as { stationA?: unknown; stationB?: unknown; a?: unknown; b?: unknown };
+      if (t.a && t.b) {
+        next[id] = t;
+      } else if (typeof t.stationA === 'string' && typeof t.stationB === 'string') {
+        next[id] = {
+          id,
+          a: { stationId: t.stationA, lineId: null },
+          b: { stationId: t.stationB, lineId: null },
+        };
+      }
+    }
+    state.transfers = next;
   }
 
   // Fill in any fields that newer code expects but the migration chain

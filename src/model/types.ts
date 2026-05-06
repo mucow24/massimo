@@ -135,11 +135,22 @@ export interface MapDoc {
   transfers: Record<string, Transfer>;
 }
 
-// A transfer is just a line between two stations — its endpoints follow
-// their station anchors so it stays connected as the user drags either
-// endpoint around. Cascade-deleted when either station is removed.
+// One endpoint of a transfer: a specific dot on a station. `lineId` picks
+// which dot when the station has multiple (interlining); null means "no
+// specific line / station has no stops" — render falls back to the
+// station's anchor.
+export interface TransferEnd {
+  stationId: StationId;
+  lineId: LineId | null;
+}
+
+// A transfer is a 2px black line connecting one station dot to another. The
+// endpoints are anchored to specific stops so they follow the dot when
+// stations move, lines are reordered, or stops shift on a station.
+// Cascade-deleted when either endpoint station is removed; `lineId`
+// nulled if the referenced line is removed.
 export interface Transfer {
   id: string;
-  stationA: StationId;
-  stationB: StationId;
+  a: TransferEnd;
+  b: TransferEnd;
 }

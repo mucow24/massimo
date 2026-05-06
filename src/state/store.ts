@@ -110,7 +110,10 @@ interface DocState extends MapDoc {
   ) => void;
   deleteRouteBullet: (id: string) => void;
 
-  addTransfer: (stationA: StationId, stationB: StationId) => string;
+  addTransfer: (
+    a: { stationId: StationId; lineId: LineId | null },
+    b: { stationId: StationId; lineId: LineId | null },
+  ) => string;
   deleteTransfer: (id: string) => void;
 
   setCurveRadius: (r: number) => void;
@@ -206,6 +209,7 @@ export const useDoc = create<DocState>()(
           set((s) => T.addTransfer(s, id, a, b));
           return id;
         },
+
         deleteTransfer: (id) => set((s) => T.deleteTransfer(s, id)),
 
         setCurveRadius: (r) => set((s) => T.setCurveRadius(s, r)),
@@ -381,10 +385,12 @@ interface SelectionState {
   creatingRouteBullet: boolean;
   selectedRouteBulletId: string | null;
   // Transfer selection + creation. While `creatingTransfer` is true and
-  // `transferAnchor` is null, the next station-click becomes A. Once A is
-  // set, the next station-click becomes B and commits the transfer.
+  // `transferAnchor` is null, the next station-click picks the first dot.
+  // Once set, the next station-click picks the second dot and commits.
+  // The anchor records the specific dot (lineId) the user clicked on so
+  // the transfer pins to that stop.
   creatingTransfer: boolean;
-  transferAnchor: StationId | null;
+  transferAnchor: { stationId: StationId; lineId: LineId | null } | null;
   selectedTransferId: string | null;
   // When true, edits made via the StationInspector (stop layout + label)
   // mirror to all directly-connected stations whose unrotated stop layouts
@@ -415,7 +421,7 @@ interface SelectionState {
   setCreatingRouteBullet: (creating: boolean) => void;
   selectTransfer: (id: string | null) => void;
   setCreatingTransfer: (creating: boolean) => void;
-  setTransferAnchor: (id: StationId | null) => void;
+  setTransferAnchor: (anchor: { stationId: StationId; lineId: LineId | null } | null) => void;
   setMirrorMatching: (on: boolean) => void;
 }
 
@@ -601,6 +607,6 @@ export const useSelection = create<SelectionState>((set, get) => ({
       selectedRouteBulletId: creating ? null : get().selectedRouteBulletId,
       selectedTransferId: creating ? null : get().selectedTransferId,
     }),
-  setTransferAnchor: (id) => set({ transferAnchor: id }),
+  setTransferAnchor: (anchor) => set({ transferAnchor: anchor }),
   setMirrorMatching: (on) => set({ mirrorMatching: on }),
 }));

@@ -1,4 +1,5 @@
-import type { Station, Transfer } from '../model/types';
+import type { LineId, Station, Transfer, TransferEnd } from '../model/types';
+import { stopCenterAt } from '../geometry/orientation';
 
 interface Props {
   transfers: Record<string, Transfer>;
@@ -6,6 +7,37 @@ interface Props {
   selectedId: string | null;
   zoom: number;
   onSelect: (id: string) => void;
+}
+
+/**
+ * World position of a station's specific dot. Falls back to the station's
+ * anchor when no lineId is given or the line isn't on this station (e.g.,
+ * after the line was deleted).
+ */
+export function transferEndWorld(
+  station: Station,
+  lineId: LineId | null,
+): { x: number; y: number } {
+  if (!lineId) return { x: station.x, y: station.y };
+  const cell = station.stops.find((c) => c.lineId === lineId);
+  if (!cell) return { x: station.x, y: station.y };
+  const local = stopCenterAt(cell.row, cell.col);
+  const a = (station.rotation * Math.PI) / 4;
+  const cs = Math.cos(a);
+  const sn = Math.sin(a);
+  return {
+    x: station.x + local.x * cs - local.y * sn,
+    y: station.y + local.x * sn + local.y * cs,
+  };
+}
+
+function endpointWorld(
+  end: TransferEnd,
+  stations: Record<string, Station>,
+): { x: number; y: number } | null {
+  const st = stations[end.stationId];
+  if (!st) return null;
+  return transferEndWorld(st, end.lineId);
 }
 
 /**
@@ -21,8 +53,8 @@ export function TransferLayer({ transfers, stations, selectedId, zoom, onSelect 
   return (
     <g>
       {list.map((t) => {
-        const a = stations[t.stationA];
-        const b = stations[t.stationB];
+        const a = endpointWorld(t.a, stations);
+        const b = endpointWorld(t.b, stations);
         if (!a || !b) return null;
         const isSelected = selectedId === t.id;
         return (
