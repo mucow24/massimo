@@ -79,8 +79,17 @@ export function Sidebar() {
                         <span
                           key={ln.id}
                           className="line-badge"
-                          style={{ background: ln.color, color: legibleTextOn(ln.color) }}
-                          title={`Line ${ln.service}`}
+                          style={{
+                            background: ln.color,
+                            color: legibleTextOn(ln.color),
+                            cursor: 'pointer',
+                          }}
+                          title={`Edit line ${ln.service}`}
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            selection.setHoveredStation(null);
+                            selection.selectLine(ln.id);
+                          }}
                         >
                           {ln.service}
                         </span>
