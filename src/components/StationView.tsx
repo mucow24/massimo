@@ -35,6 +35,7 @@ export function StationView({ station, lines, onStartDrag, layer, highlightColor
   const rotateStation = useDoc((s) => s.rotateStation);
   const renameStation = useDoc((s) => s.renameStation);
   const toggleStationOnLine = useDoc((s) => s.toggleStationOnLine);
+  const redistributeBetween = useDoc((s) => s.redistributeBetween);
 
   const stops = station.stops;
   const angle = station.rotation * 45;
@@ -49,6 +50,16 @@ export function StationView({ station, lines, onStartDrag, layer, highlightColor
   const onClick = (e: React.MouseEvent) => {
     if (dragState.suppressClick) return;
     e.stopPropagation();
+    // Ctrl/Cmd-click on a different station while one is selected:
+    // redistribute intervening stops on each line that connects them.
+    if (
+      (e.ctrlKey || e.metaKey) &&
+      selection.selectedStationId &&
+      selection.selectedStationId !== station.id
+    ) {
+      redistributeBetween(selection.selectedStationId, station.id);
+      return;
+    }
     if (selection.creatingLineTag) {
       // "Click anywhere that isn't a valid place for line tags" exits the mode.
       selection.setCreatingLineTag(false);
