@@ -90,46 +90,73 @@ export function redistributeBetween(
     });
     const stopPts = sts.map((st, i) => ({ x: st.x + stopOffsets[i].x, y: st.y + stopOffsets[i].y }));
 
-    // Arc-length parametrization of the existing stop polyline.
-    const segLens: number[] = [];
-    for (let i = 0; i < stopPts.length - 1; i++) {
-      segLens.push(Math.hypot(stopPts[i + 1].x - stopPts[i].x, stopPts[i + 1].y - stopPts[i].y));
+    // Treat any intervening station that sits at a real bend in the polyline
+    // as an additional anchor. Without this, the redistribute drags corner
+    // stations along the straight-line shortcut between their neighbors,
+    // breaking the corner geometry and the routing of any other line that
+    // crosses through.
+    const ANGLE_THRESHOLD = (5 * Math.PI) / 180;
+    const anchors: number[] = [0];
+    for (let k = 1; k < stopPts.length - 1; k++) {
+      const ax = stopPts[k].x - stopPts[k - 1].x;
+      const ay = stopPts[k].y - stopPts[k - 1].y;
+      const bx = stopPts[k + 1].x - stopPts[k].x;
+      const by = stopPts[k + 1].y - stopPts[k].y;
+      const aLen = Math.hypot(ax, ay);
+      const bLen = Math.hypot(bx, by);
+      if (aLen === 0 || bLen === 0) continue;
+      const cosA = (ax * bx + ay * by) / (aLen * bLen);
+      const angle = Math.acos(Math.max(-1, Math.min(1, cosA)));
+      if (angle > ANGLE_THRESHOLD) anchors.push(k);
     }
-    const totalLen = segLens.reduce((a, b) => a + b, 0);
-    if (totalLen === 0) continue;
+    anchors.push(stopPts.length - 1);
 
-    for (let k = 1; k <= n; k++) {
-      const target = (k * totalLen) / (n + 1);
-      let acc = 0;
-      let stopX = stopPts[0].x;
-      let stopY = stopPts[0].y;
-      for (let i = 0; i < segLens.length; i++) {
-        if (acc + segLens[i] >= target) {
-          const t = segLens[i] === 0 ? 0 : (target - acc) / segLens[i];
-          stopX = stopPts[i].x + t * (stopPts[i + 1].x - stopPts[i].x);
-          stopY = stopPts[i].y + t * (stopPts[i + 1].y - stopPts[i].y);
-          break;
-        }
-        acc += segLens[i];
+    // Redistribute within each anchor-to-anchor sub-chain independently.
+    for (let a = 0; a < anchors.length - 1; a++) {
+      const from = anchors[a];
+      const to = anchors[a + 1];
+      const subN = to - from - 1;
+      if (subN < 1) continue;
+
+      const subSegLens: number[] = [];
+      for (let i = from; i < to; i++) {
+        subSegLens.push(
+          Math.hypot(stopPts[i + 1].x - stopPts[i].x, stopPts[i + 1].y - stopPts[i].y),
+        );
       }
-      // Derive the station center from the new stop position so the line's
-      // stop lands exactly on the arc-length target.
-      const px = stopX - stopOffsets[k].x;
-      const py = stopY - stopOffsets[k].y;
-      const stationId = ids[k];
-      const cur = sts[k];
-      // Skip sub-pixel drift: if the new position is essentially the same as
-      // the current one, leave the station alone. Avoids breaking perfect
-      // angle/snap alignments via floating-point error when the chain is
-      // already evenly spaced.
-      if (Math.hypot(px - cur.x, py - cur.y) < 1) continue;
-      const existing = proposals.get(stationId);
-      if (existing) {
-        if (Math.hypot(existing.x - px, existing.y - py) > 0.5) {
-          conflicted.add(stationId);
+      const subTotal = subSegLens.reduce((s, v) => s + v, 0);
+      if (subTotal === 0) continue;
+
+      for (let k = 1; k <= subN; k++) {
+        const target = (k * subTotal) / (subN + 1);
+        let acc = 0;
+        let stopX = stopPts[from].x;
+        let stopY = stopPts[from].y;
+        for (let i = 0; i < subSegLens.length; i++) {
+          if (acc + subSegLens[i] >= target) {
+            const t = subSegLens[i] === 0 ? 0 : (target - acc) / subSegLens[i];
+            stopX = stopPts[from + i].x + t * (stopPts[from + i + 1].x - stopPts[from + i].x);
+            stopY = stopPts[from + i].y + t * (stopPts[from + i + 1].y - stopPts[from + i].y);
+            break;
+          }
+          acc += subSegLens[i];
         }
-      } else {
-        proposals.set(stationId, { x: px, y: py });
+        const idx = from + k;
+        const px = stopX - stopOffsets[idx].x;
+        const py = stopY - stopOffsets[idx].y;
+        const cur = sts[idx];
+        // Skip sub-pixel drift to avoid breaking perfect snap alignments via
+        // floating-point error.
+        if (Math.hypot(px - cur.x, py - cur.y) < 1) continue;
+        const stationId = ids[idx];
+        const existing = proposals.get(stationId);
+        if (existing) {
+          if (Math.hypot(existing.x - px, existing.y - py) > 0.5) {
+            conflicted.add(stationId);
+          }
+        } else {
+          proposals.set(stationId, { x: px, y: py });
+        }
       }
     }
   }
