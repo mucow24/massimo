@@ -148,12 +148,26 @@ export function MapCanvas() {
         const cur = routeBullets[bd.id];
         const lineId = cur?.lineId ?? null;
         if (lineId && !e.shiftKey) {
-          // The line's stripe path goes through every band that contains
-          // it — collect each band's centerline as a separate polyline so
-          // the snap follows the actual rendered (curved) geometry.
-          const polylines = bands
-            .filter((b) => b.lines.some((l) => l.id === lineId))
-            .map((b) => b.centerline);
+          // For each band the line passes through, sample THIS line's
+          // stripe (its perpendicular offset off the band centerline) so
+          // interlined bands snap to the actual stripe of the chosen
+          // line, not the band's averaged centerline.
+          const STRIPE_SAMPLES = 24;
+          const polylines: { x: number; y: number }[][] = [];
+          for (const b of bands) {
+            const k = b.lines.findIndex((l) => l.id === lineId);
+            if (k < 0) continue;
+            const n = b.lines.length;
+            const offset = (k - (n - 1) / 2) * STOP_SIZE;
+            const totalLen = offsetPathLength(b.centerline, curveRadius, offset);
+            if (totalLen < 1e-6) continue;
+            const polyline: { x: number; y: number }[] = [];
+            for (let i = 0; i <= STRIPE_SAMPLES; i++) {
+              const t = i / STRIPE_SAMPLES;
+              polyline.push(sampleOffsetPath(b.centerline, curveRadius, offset, t).p);
+            }
+            polylines.push(polyline);
+          }
           const snap = snapBullet({
             x: nx,
             y: ny,
