@@ -102,10 +102,16 @@ export function StationView({ station, lines, onStartDrag, layer, highlightColor
         // Clear the first-pick hover highlight — the dot is now committed
         // as the anchor, no longer just hovered.
         selection.setHoveredLineStop(null);
-      } else if (selection.transferAnchor.stationId !== station.id) {
-        addTransfer(selection.transferAnchor, { stationId: station.id, lineId });
-        selection.setCreatingTransfer(false);
-        selection.setHoveredLineStop(null);
+      } else {
+        // Same station + same dot is a no-op self-transfer; same station
+        // + a DIFFERENT dot (interlined station) is allowed.
+        const sameStation = selection.transferAnchor.stationId === station.id;
+        const sameLine = selection.transferAnchor.lineId === lineId;
+        if (!(sameStation && sameLine)) {
+          addTransfer(selection.transferAnchor, { stationId: station.id, lineId });
+          selection.setCreatingTransfer(false);
+          selection.setHoveredLineStop(null);
+        }
       }
       return;
     }

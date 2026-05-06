@@ -738,7 +738,10 @@ export function addTransfer(
   a: { stationId: StationId; lineId: LineId | null },
   b: { stationId: StationId; lineId: LineId | null },
 ): MapDoc {
-  if (a.stationId === b.stationId) return doc;
+  // Same station + same lineId is a self-transfer (zero-length); reject.
+  // Same station + DIFFERENT lineIds is fine — a short transfer between
+  // two dots of an interlined station is a valid use case.
+  if (a.stationId === b.stationId && a.lineId === b.lineId) return doc;
   if (!doc.stations[a.stationId] || !doc.stations[b.stationId]) return doc;
   const transfer: Transfer = {
     id,

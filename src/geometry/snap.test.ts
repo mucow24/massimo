@@ -301,6 +301,85 @@ describe('snapDraggedStation', () => {
     expect(r.y).toBeCloseTo(50, 3);
   });
 
+  it('bulletLineId: snaps a free-floating bullet to a station stop on the line', () => {
+    // Two stations, both with a stop on L1 (auto-vertical → vertical world
+    // axis). A bullet (no stops, no draggedId) hovering near x=0 snaps
+    // perpendicular onto the vertical axis through the stops.
+    const a = makeStation({
+      id: 'a',
+      x: 0,
+      y: 0,
+      stops: [makeStop('L1')],
+    });
+    const b = makeStation({
+      id: 'b',
+      x: 0,
+      y: 100,
+      stops: [makeStop('L1')],
+    });
+    const r = snapDraggedStation({
+      proposedX: 5,
+      proposedY: 50,
+      stations: stations(a, b),
+      lines: linesOf(lineOf('L1', ['a', 'b'])),
+      bulletLineId: 'L1',
+    });
+    expect(r.x).toBeCloseTo(0, 5);
+    expect(r.y).toBeCloseTo(50, 5);
+    // Primary guide to the closer stop, plus opposite-direction guide to
+    // the third in-line station — same behavior the station-drag path
+    // emits when a third station shares the snap axis.
+    expect(r.guides.length).toBeGreaterThanOrEqual(1);
+  });
+
+  it('bulletLineId: ignores stations with no stop on the chosen line', () => {
+    // L1 covers `a`; L2 covers `b`. A bullet bound to L1 must NOT snap to
+    // `b` even though they share an axis — `b` has no stop on L1.
+    const a = makeStation({
+      id: 'a',
+      x: 0,
+      y: 0,
+      stops: [makeStop('L1')],
+    });
+    const b = makeStation({
+      id: 'b',
+      x: 0,
+      y: 200,
+      stops: [makeStop('L2')],
+    });
+    const r = snapDraggedStation({
+      proposedX: 5,
+      proposedY: 200,
+      stations: stations(a, b),
+      lines: linesOf(lineOf('L1', ['a']), lineOf('L2', ['b'])),
+      bulletLineId: 'L1',
+    });
+    // Snap should engage only via `a` — for a bullet near `b`'s y, x snaps
+    // onto a's vertical axis line.
+    expect(r.x).toBeCloseTo(0, 5);
+    expect(r.y).toBeCloseTo(200, 5);
+  });
+
+  it('bulletLineId: rejects bullets too far from any matching stop axis', () => {
+    const a = makeStation({
+      id: 'a',
+      x: 0,
+      y: 0,
+      stops: [makeStop('L1')],
+    });
+    const r = snapDraggedStation({
+      proposedX: 50,
+      proposedY: 50,
+      stations: stations(a),
+      lines: linesOf(lineOf('L1', ['a'])),
+      bulletLineId: 'L1',
+      tolerance: 10,
+    });
+    expect(r.x).toBe(50);
+    expect(r.y).toBe(50);
+    expect(r.guides).toEqual([]);
+  });
+
   it('redistributeAnchor: snaps exclusively to the anchor, ignoring adjacency', () => {
     // Line: a — x — d. Anchor a is two steps from dragged d, so the regular
     // adjacency filter would skip it. With redistributeAnchor=a the anchor

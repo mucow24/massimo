@@ -1,8 +1,7 @@
 import { useMemo, useRef, useState } from 'react';
 
 import { beginHistoryGroup, dragState, useDoc, useSelection } from '../state/store';
-import type { SnapGuide } from '../geometry/snap';
-import { snapBullet } from '../geometry/snapBullet';
+import { snapDraggedStation, type SnapGuide } from '../geometry/snap';
 import {
   buildBands,
   buildStopMarkers,
@@ -148,31 +147,16 @@ export function MapCanvas() {
         const cur = routeBullets[bd.id];
         const lineId = cur?.lineId ?? null;
         if (lineId && !e.shiftKey) {
-          // For each band the line passes through, sample THIS line's
-          // stripe (its perpendicular offset off the band centerline) so
-          // interlined bands snap to the actual stripe of the chosen
-          // line, not the band's averaged centerline.
-          const STRIPE_SAMPLES = 24;
-          const polylines: { x: number; y: number }[][] = [];
-          for (const b of bands) {
-            const k = b.lines.findIndex((l) => l.id === lineId);
-            if (k < 0) continue;
-            const n = b.lines.length;
-            const offset = (k - (n - 1) / 2) * STOP_SIZE;
-            const totalLen = offsetPathLength(b.centerline, curveRadius, offset);
-            if (totalLen < 1e-6) continue;
-            const polyline: { x: number; y: number }[] = [];
-            for (let i = 0; i <= STRIPE_SAMPLES; i++) {
-              const t = i / STRIPE_SAMPLES;
-              polyline.push(sampleOffsetPath(b.centerline, curveRadius, offset, t).p);
-            }
-            polylines.push(polyline);
-          }
-          const snap = snapBullet({
-            x: nx,
-            y: ny,
-            polylines,
+          // Reuse the station snap engine in bullet mode — it already
+          // handles per-stop axis alignment, two-axis snap at corners,
+          // and the "third in-line station" opposite-direction guide.
+          const snap = snapDraggedStation({
+            proposedX: nx,
+            proposedY: ny,
+            stations,
+            lines,
             tolerance: BULLET_SNAP_TOLERANCE,
+            bulletLineId: lineId,
           });
           nx = snap.x;
           ny = snap.y;
@@ -457,6 +441,56 @@ export function MapCanvas() {
           />
         ))}
 
+        {/* Transfers: 2px black lines connecting two dots. Rendered BEFORE
+            the dim layer so they fade with everything else when a line is
+            selected, and the selected line's stripe paints on top of them. */}
+        <TransferLayer
+          transfers={transfers}
+          stations={stations}
+          selectedId={selection.selectedTransferId}
+          zoom={view.viewport.zoom}
+          onSelect={(id) => selection.selectTransfer(id)}
+        />
+
+        {/* In-progress transfer preview line: from the anchor dot to the
+            cursor while waiting for the second click. */}
+        {selection.creatingTransfer &&
+          selection.transferAnchor &&
+          cursorWorld &&
+          stations[selection.transferAnchor.stationId] &&
+          (() => {
+            const anchorWorld = transferEndWorld(
+              stations[selection.transferAnchor.stationId],
+              selection.transferAnchor.lineId,
+            );
+            return (
+              <line
+                x1={anchorWorld.x}
+                y1={anchorWorld.y}
+                x2={cursorWorld.x}
+                y2={cursorWorld.y}
+                stroke="#000"
+                strokeWidth={2}
+                strokeLinecap="round"
+                pointerEvents="none"
+              />
+            );
+          })()}
+
+        {/* Route bullets: rendered before the dim so they fade with the
+            rest of the map when a line is selected. */}
+        {Object.values(routeBullets).map((b) => (
+          <RouteBulletView
+            key={b.id}
+            bullet={b}
+            lines={lines}
+            selected={selection.selectedRouteBulletId === b.id}
+            onPointerDown={onBulletPointerDown}
+            onClick={onBulletClick}
+            onContextMenu={onBulletContextMenu}
+          />
+        ))}
+
         {/* Debug highlight: dim overlay + re-painted selected line on top.
             Painted after dots so other lines' stop dots can't punch through
             the selected line's outline. */}
@@ -716,54 +750,6 @@ export function MapCanvas() {
             layer="stroke"
           />
         )}
-
-        {/* Transfers: 2px black lines connecting two station anchors. */}
-        <TransferLayer
-          transfers={transfers}
-          stations={stations}
-          selectedId={selection.selectedTransferId}
-          zoom={view.viewport.zoom}
-          onSelect={(id) => selection.selectTransfer(id)}
-        />
-
-        {/* In-progress transfer preview: line from the anchor dot to the
-            cursor while waiting for the second click. */}
-        {selection.creatingTransfer &&
-          selection.transferAnchor &&
-          cursorWorld &&
-          stations[selection.transferAnchor.stationId] &&
-          (() => {
-            const anchorWorld = transferEndWorld(
-              stations[selection.transferAnchor.stationId],
-              selection.transferAnchor.lineId,
-            );
-            return (
-              <line
-                x1={anchorWorld.x}
-                y1={anchorWorld.y}
-                x2={cursorWorld.x}
-                y2={cursorWorld.y}
-                stroke="#000"
-                strokeWidth={2}
-                strokeLinecap="round"
-                pointerEvents="none"
-              />
-            );
-          })()}
-
-        {/* Route bullets: free-floating service badges, rendered above
-            everything so they pop. */}
-        {Object.values(routeBullets).map((b) => (
-          <RouteBulletView
-            key={b.id}
-            bullet={b}
-            lines={lines}
-            selected={selection.selectedRouteBulletId === b.id}
-            onPointerDown={onBulletPointerDown}
-            onClick={onBulletClick}
-            onContextMenu={onBulletContextMenu}
-          />
-        ))}
 
         {/* Snap guides: rendered last so the dotted lines + measurement
             labels sit on top of line tags and everything else. */}

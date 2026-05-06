@@ -31,11 +31,14 @@ export interface SnapResult {
 }
 
 export interface SnapInput {
-  draggedId: StationId;
+  /** Station drag mode: required when no `bulletLineId`. */
+  draggedId?: StationId;
   proposedX: number;
   proposedY: number;
-  draggedRotation: Rotation;
-  draggedStops: StopCell[];
+  /** Station drag mode: required when no `bulletLineId`. */
+  draggedRotation?: Rotation;
+  /** Station drag mode: the dragged station's stops. */
+  draggedStops?: StopCell[];
   stations: Record<StationId, Station>;
   /** Required for line-adjacency filtering — only line-adjacent stations on
    *  a shared line emit a snap pair. */
@@ -48,6 +51,11 @@ export interface SnapInput {
    *  fixed point on the line. Adjacency on each shared line is bypassed
    *  here — the anchor qualifies regardless of how many stops sit between. */
   redistributeAnchor?: StationId;
+  /** Bullet mode: snap a free-floating element (no stops of its own) to
+   *  align with any station's stop on this line. The bullet anchors at
+   *  (proposedX, proposedY) — its own stop offset is zero — and projects
+   *  onto each target stop's axis line. Line adjacency doesn't apply. */
+  bulletLineId?: LineId;
 }
 
 /**
@@ -72,6 +80,7 @@ export function snapDraggedStation(input: SnapInput): SnapResult {
     lines,
     tolerance = SNAP_PERP_TOLERANCE,
     redistributeAnchor,
+    bulletLineId,
   } = input;
 
   type Cand = {
@@ -86,24 +95,27 @@ export function snapDraggedStation(input: SnapInput): SnapResult {
 
   // Collect every alignment pair within perp tolerance.
   const all: Cand[] = [];
-  // Ctrl-drag: only the anchor is a valid snap target, and adjacency on the
-  // shared line is bypassed so the anchor qualifies even with intermediates
-  // between it and the dragged station.
-  const targets = redistributeAnchor
-    ? stations[redistributeAnchor]
-      ? [stations[redistributeAnchor]]
-      : []
-    : Object.values(stations).filter((t) => t.id !== draggedId);
+  // Pick the right pool of target stations for the active mode.
+  const targets = bulletLineId
+    ? Object.values(stations)
+    : redistributeAnchor
+      ? stations[redistributeAnchor]
+        ? [stations[redistributeAnchor]]
+        : []
+      : Object.values(stations).filter((t) => t.id !== draggedId);
   const requireAdjacency = !redistributeAnchor;
   for (const t of targets) {
-    for (const pair of alignmentPairs(
-      draggedId,
-      draggedRotation,
-      draggedStops,
-      t,
-      lines,
-      requireAdjacency,
-    )) {
+    const pairs = bulletLineId
+      ? bulletAlignmentPairs(t, bulletLineId)
+      : alignmentPairs(
+          draggedId as StationId,
+          draggedRotation as Rotation,
+          draggedStops ?? [],
+          t,
+          lines,
+          requireAdjacency,
+        );
+    for (const pair of pairs) {
       const perpX = -pair.axis.y;
       const perpY = pair.axis.x;
       const tStopX = t.x + pair.tOff.x;
@@ -218,6 +230,7 @@ export function snapDraggedStation(input: SnapInput): SnapResult {
   const spacingDivisor = (() => {
     if (!redistributeAnchor) return 0;
     let segments = 0;
+    if (!draggedId) return 0;
     for (const line of Object.values(lines)) {
       const dIdx = line.stations.indexOf(draggedId);
       const tIdx = line.stations.indexOf(redistributeAnchor);
@@ -341,6 +354,26 @@ export interface AlignmentPair {
  * When neither station has stops, fall back to anchor-to-anchor on the
  * dragged station's rotation axis (no line topology to consult).
  */
+/**
+ * Bullet-mode alignment pairs. The bullet has no stops of its own, so the
+ * dragged-side offset is zero — it anchors at its own world position. For
+ * each target station that has a stop on the chosen line, emit one pair
+ * with that stop's tOff + world-frame travel direction. Line-topology
+ * adjacency doesn't apply: a bullet labeling a line cares about every
+ * stop on that line, not just neighbors.
+ */
+export function bulletAlignmentPairs(target: Station, lineId: LineId): AlignmentPair[] {
+  const cell = target.stops.find((c) => c.lineId === lineId);
+  if (!cell) return [];
+  return [
+    {
+      dOff: { x: 0, y: 0 },
+      tOff: rotateBy(stopCenterAt(cell.row, cell.col), target.rotation),
+      axis: rotateBy(travelDirLocal(cell.orientation), target.rotation),
+    },
+  ];
+}
+
 export function alignmentPairs(
   draggedId: StationId,
   draggedRotation: Rotation,
