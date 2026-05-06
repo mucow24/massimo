@@ -6,7 +6,7 @@ import { snapDraggedStation, SnapGuide, SNAP_PERP_TOLERANCE } from '../../geomet
 
 export interface StationDragApi {
   snapGuides: SnapGuide[];
-  onStartDrag: (id: StationId, e: React.PointerEvent) => void;
+  onStartDrag: (id: StationId, e: React.PointerEvent, redistributeAnchor?: StationId) => void;
   onPointerMove: (e: React.PointerEvent) => void;
   onPointerUp: (e: React.PointerEvent) => void;
 }
@@ -25,6 +25,7 @@ export function useStationDrag(
 ): StationDragApi {
   const stations = useDoc((s) => s.stations);
   const moveStation = useDoc((s) => s.moveStation);
+  const redistributeBetween = useDoc((s) => s.redistributeBetween);
 
   const dragStationRef = useRef<{
     id: StationId;
@@ -33,11 +34,16 @@ export function useStationDrag(
     startMX: number;
     startMY: number;
     moved: boolean;
+    redistributeAnchor: StationId | null;
     history: ReturnType<typeof beginHistoryGroup>;
   } | null>(null);
   const [snapGuides, setSnapGuides] = useState<SnapGuide[]>([]);
 
-  const onStartDrag = (id: StationId, e: React.PointerEvent) => {
+  const onStartDrag = (
+    id: StationId,
+    e: React.PointerEvent,
+    redistributeAnchor?: StationId,
+  ) => {
     const st = stations[id];
     if (!st) return;
     dragStationRef.current = {
@@ -47,6 +53,7 @@ export function useStationDrag(
       startMX: e.clientX,
       startMY: e.clientY,
       moved: false,
+      redistributeAnchor: redistributeAnchor ?? null,
       // Snapshot the doc and pause history. If the gesture turns out to be
       // a drag, we'll commit one entry on pointerup; if it's just a click,
       // we cancel without recording anything.
@@ -97,6 +104,12 @@ export function useStationDrag(
       setSnapGuides([]);
     }
     moveStation(ds.id, nx, ny);
+    if (ds.redistributeAnchor) {
+      // Drag-mode redistribute uses straight-line interpolation between A
+      // and B's stop positions so spacing stays predictable and intermediates
+      // don't wobble off-axis as the polyline reshapes each frame.
+      redistributeBetween(ds.redistributeAnchor, ds.id, 'straight');
+    }
   };
 
   const onPointerUp = (e: React.PointerEvent) => {
