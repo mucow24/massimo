@@ -392,6 +392,27 @@ export function MapCanvas() {
                 ];
               });
             })()}
+            {/* In append mode, surface stations not yet on the line as
+                white dots + white labels above the dim. */}
+            {selection.appendingToLineId === highlightLineId &&
+              (() => {
+                const ln = lines[highlightLineId];
+                if (!ln) return null;
+                const onLine = new Set(ln.stations);
+                return Object.values(stations)
+                  .filter((st) => !onLine.has(st.id))
+                  .map((st) => (
+                    <StationView
+                      key={'add-l:' + st.id}
+                      station={st}
+                      lines={lines}
+                      zoom={view.viewport.zoom}
+                      onStartDrag={drag.onStartDrag}
+                      layer="highlight-label"
+                      highlightColor="#bbb"
+                    />
+                  ));
+              })()}
           </g>
         )}
 
