@@ -761,17 +761,19 @@ export function MapCanvas() {
 
       {selection.selectedRouteBulletId &&
         routeBullets[selection.selectedRouteBulletId] &&
+        view.vbW > 0 &&
+        view.vbH > 0 &&
         (() => {
           const b = routeBullets[selection.selectedRouteBulletId];
-          const r = svgRef.current?.getBoundingClientRect();
-          const vb = svgRef.current?.viewBox.baseVal;
-          if (!r || !vb) return null;
-          const sx = r.left + ((b.x - vb.x) / vb.width) * r.width;
-          const sy = r.top + ((b.y - vb.y) / vb.height) * r.height;
+          // Canvas-host-relative pixel coords from the bullet's world
+          // position via the current viewport. No ref reads — keeps the
+          // react-hooks lint happy.
+          const x = ((b.x - view.vbX) / view.vbW) * view.size.w;
+          const y = ((b.y - view.vbY) / view.vbH) * view.size.h;
           return (
             <RouteBulletPopover
               bullet={b}
-              anchor={{ x: sx, y: sy }}
+              anchor={{ x, y }}
               onClose={() => selection.selectRouteBullet(null)}
             />
           );
