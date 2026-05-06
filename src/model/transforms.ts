@@ -101,7 +101,10 @@ export function redistributeBetween(
       if (!cell) return { x: 0, y: 0 };
       return rotateBy(stopCenterAt(cell.row, cell.col), st.rotation);
     });
-    const stopPts = sts.map((st, i) => ({ x: st.x + stopOffsets[i].x, y: st.y + stopOffsets[i].y }));
+    const stopPts = sts.map((st, i) => ({
+      x: st.x + stopOffsets[i].x,
+      y: st.y + stopOffsets[i].y,
+    }));
 
     // Build the list of anchor indices (positions whose stop is fixed).
     // Always anchor the endpoints; arc-bends mode also anchors any intervening

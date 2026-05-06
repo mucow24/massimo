@@ -43,11 +43,7 @@ export function SegmentBand({
             strokeLinejoin="round"
             pointerEvents={interactive || selectable ? 'stroke' : undefined}
             style={
-              interactive
-                ? { cursor: 'crosshair' }
-                : selectable
-                  ? { cursor: 'pointer' }
-                  : undefined
+              interactive ? { cursor: 'crosshair' } : selectable ? { cursor: 'pointer' } : undefined
             }
             onPointerMove={interactive && onLineHover ? (e) => onLineHover(lineId, e) : undefined}
             onPointerLeave={interactive && onLineLeave ? (e) => onLineLeave(lineId, e) : undefined}

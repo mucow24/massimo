@@ -273,11 +273,7 @@ describe('snapDraggedStation', () => {
       draggedRotation: 0,
       draggedStops: dragged.stops,
       stations: stations(dragged, target),
-      lines: linesOf(
-        lineOf('L1', ['d', 't']),
-        lineOf('L2', ['d', 't']),
-        lineOf('L3', ['d', 't']),
-      ),
+      lines: linesOf(lineOf('L1', ['d', 't']), lineOf('L2', ['d', 't']), lineOf('L3', ['d', 't'])),
     });
     expect(r.guides).toHaveLength(1);
   });

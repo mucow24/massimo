@@ -164,8 +164,7 @@ export function snapDraggedStation(input: SnapInput): SnapResult {
     const perpX = -axis.y;
     const perpY = axis.x;
     const sorted = [...g].sort(
-      (a, b) =>
-        a.dOff.x * perpX + a.dOff.y * perpY - (b.dOff.x * perpX + b.dOff.y * perpY),
+      (a, b) => a.dOff.x * perpX + a.dOff.y * perpY - (b.dOff.x * perpX + b.dOff.y * perpY),
     );
     return sorted[Math.floor((sorted.length - 1) / 2)];
   });

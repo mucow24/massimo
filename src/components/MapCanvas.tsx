@@ -324,9 +324,7 @@ export function MapCanvas() {
       <svg
         ref={svgRef}
         viewBox={`${view.vbX} ${view.vbY} ${view.vbW} ${view.vbH}`}
-        className={
-          (inHandMode ? 'tool-hand' : 'tool-arrow') + (view.panning ? ' panning' : '')
-        }
+        className={(inHandMode ? 'tool-hand' : 'tool-arrow') + (view.panning ? ' panning' : '')}
         onWheel={view.onWheel}
         onPointerDown={onPointerDown}
         onPointerMove={onPointerMove}
@@ -414,7 +412,6 @@ export function MapCanvas() {
             layer="bg"
           />
         ))}
-
 
         {/* station labels: rendered after bg/wash so a selected station's
             orange wash never paints over a neighbor's label. */}
@@ -753,10 +750,7 @@ export function MapCanvas() {
 
         {/* Snap guides: rendered last so the dotted lines + measurement
             labels sit on top of line tags and everything else. */}
-        <SnapGuides
-          guides={[...drag.snapGuides, ...bulletSnapGuides]}
-          zoom={view.viewport.zoom}
-        />
+        <SnapGuides guides={[...drag.snapGuides, ...bulletSnapGuides]} zoom={view.viewport.zoom} />
       </svg>
 
       {selection.selectedRouteBulletId &&
