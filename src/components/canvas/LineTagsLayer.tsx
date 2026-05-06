@@ -48,9 +48,7 @@ export function resolveTag(
   const line = doc.lines[tag.lineId];
   if (!line) return null;
   const pairKey = `${tag.fromStationId}|${tag.toStationId}`;
-  const band = bands.find(
-    (b) => b.pairKey === pairKey && b.lines.some((l) => l.id === tag.lineId),
-  );
+  const band = bands.find((b) => b.pairKey === pairKey && b.lines.some((l) => l.id === tag.lineId));
   if (!band) return null;
   const k = band.lines.findIndex((l) => l.id === tag.lineId);
   const n = band.lines.length;
@@ -67,9 +65,7 @@ export function resolveTag(
     arcLenOnStripe,
   );
   const forward = lineTraversesForwardCanon(line, tag.fromStationId, tag.toStationId);
-  const tangent = forward
-    ? sample.tangent
-    : { x: -sample.tangent.x, y: -sample.tangent.y };
+  const tangent = forward ? sample.tangent : { x: -sample.tangent.x, y: -sample.tangent.y };
   return {
     tag,
     service: line.service,
@@ -223,10 +219,7 @@ function TagShape({ r, widths, layer, onPointerDown, onClick, onContextMenu }: T
 
   if (layer === 'text') {
     return (
-      <g
-        transform={`translate(${r.p.x} ${r.p.y}) rotate(${rotateDeg})`}
-        style={{ cursor: 'move' }}
-      >
+      <g transform={`translate(${r.p.x} ${r.p.y}) rotate(${rotateDeg})`} style={{ cursor: 'move' }}>
         {/* Invisible hit rect that picks up pointer events even where the text glyphs are sparse. */}
         <rect
           x={-textWidth / 2 - TEXT_PAD}
@@ -293,7 +286,10 @@ function GhostPreview({
   const rotateDeg = tangentAngleDeg + ORIENTATION_OFFSET_DEG[orientation];
   const { fontSize } = sizingFor(preview.service, orientation, widths);
   return (
-    <g transform={`translate(${preview.p.x} ${preview.p.y}) rotate(${rotateDeg})`} pointerEvents="none">
+    <g
+      transform={`translate(${preview.p.x} ${preview.p.y}) rotate(${rotateDeg})`}
+      pointerEvents="none"
+    >
       <text
         x={0}
         y={0}

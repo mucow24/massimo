@@ -476,7 +476,7 @@ export function moveLineTag(
 export function cycleLineTagOrientation(doc: MapDoc, id: string): MapDoc {
   const cur = doc.lineTags[id];
   if (!cur) return doc;
-  const next = (((cur.orientation + 1) % 4) as 0 | 1 | 2 | 3);
+  const next = ((cur.orientation + 1) % 4) as 0 | 1 | 2 | 3;
   return { ...doc, lineTags: { ...doc.lineTags, [id]: { ...cur, orientation: next } } };
 }
 

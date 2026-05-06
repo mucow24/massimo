@@ -148,7 +148,16 @@ export const useDoc = create<DocState>()(
         addLineTag: (lineId, fromStationId, toStationId, anchorEnd, distance, orientation) => {
           const id = ids.lineTagId();
           set((s) =>
-            T.addLineTag(s, id, lineId, fromStationId, toStationId, anchorEnd, distance, orientation),
+            T.addLineTag(
+              s,
+              id,
+              lineId,
+              fromStationId,
+              toStationId,
+              anchorEnd,
+              distance,
+              orientation,
+            ),
           );
           return id;
         },

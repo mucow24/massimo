@@ -397,11 +397,7 @@ export type OffsetPathSegment =
  * "left of motion" (90° CCW in math y-up = visually north when traveling
  * east in y-down screen). Matches the convention used everywhere else.
  */
-export function emitOffsetSegments(
-  verts: Vec2[],
-  R: number,
-  offset: number,
-): OffsetPathSegment[] {
+export function emitOffsetSegments(verts: Vec2[], R: number, offset: number): OffsetPathSegment[] {
   if (verts.length < 2) return [];
 
   // Offset every vertex perpendicular to its incident edges. See offsetFilletPath
