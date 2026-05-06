@@ -177,19 +177,21 @@ export function snapDraggedStation(input: SnapInput): SnapResult {
     if (g) g.push(c);
     else groups.push([c]);
   }
-  // Pick the closest stop per axis. Primary criterion is perpendicular
-  // distance (smaller = better-aligned). When perpDists tie — bullet snap
-  // against a chain of collinear stops, for instance — break the tie by
-  // total distance so the nearest station along the axis becomes primary
-  // and the further ones fall to addOppositeGuide.
+  // Per-axis primary candidate: every entry in `g` has already passed the
+  // perpDist-within-tolerance filter, so they're all "aligned enough" along
+  // this axis. Among the alignable ones, pick the candidate closest to
+  // the dragged point — that's the meaningful neighbor — instead of the
+  // smallest perpDist (which on bullet snap, where every stop on a line
+  // is a candidate, could be a station way past the actual neighbors due
+  // to sub-pixel perp differences). addOppositeGuide handles the other
+  // side along the axis.
   const distFromBullet = (c: Cand) =>
     Math.hypot(proposedX - c.targetStopX, proposedY - c.targetStopY);
   const bests = groups.map((g) =>
-    g.reduce((a, b) => {
-      if (a.perpDist !== b.perpDist) return a.perpDist <= b.perpDist ? a : b;
-      return distFromBullet(a) <= distFromBullet(b) ? a : b;
-    }),
+    g.reduce((a, b) => (distFromBullet(a) <= distFromBullet(b) ? a : b)),
   );
+  // Across axes (for two-axis snap), the smallest perpDist still wins:
+  // it picks the better-aligned axis as primary.
   bests.sort((a, b) => a.perpDist - b.perpDist);
 
   const primary = bests[0];

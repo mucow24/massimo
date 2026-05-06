@@ -61,7 +61,7 @@ export function RouteBulletPopover({ bullet, anchor, onClose }: Props) {
     <div
       className="bullet-popover"
       style={{
-        position: 'fixed',
+        position: 'absolute',
         left: anchor.x + 14,
         top: anchor.y + 14,
         zIndex: 1100,
