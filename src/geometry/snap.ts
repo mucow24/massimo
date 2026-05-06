@@ -1,4 +1,4 @@
-import type { Station, StationId, StopCell } from '../model/types';
+import type { Line, LineId, Station, StationId, StopCell } from '../model/types';
 import type { Vec2 } from './vec';
 import { rotateBy, stopCenterAt, travelDirLocal } from './orientation';
 import type { Rotation } from './orientation';
@@ -18,6 +18,10 @@ export const TIGHT_PERP_TOLERANCE = 0.5;
 export interface SnapGuide {
   from: Vec2;
   to: Vec2;
+  /** Optional label to render above the guide. Used for the per-drag
+   *  measurement readout: distance for a regular snap, station-to-station
+   *  spacing for a Ctrl-drag. */
+  label?: string;
 }
 
 export interface SnapResult {
@@ -27,14 +31,31 @@ export interface SnapResult {
 }
 
 export interface SnapInput {
-  draggedId: StationId;
+  /** Station drag mode: required when no `bulletLineId`. */
+  draggedId?: StationId;
   proposedX: number;
   proposedY: number;
-  draggedRotation: Rotation;
-  draggedStops: StopCell[];
+  /** Station drag mode: required when no `bulletLineId`. */
+  draggedRotation?: Rotation;
+  /** Station drag mode: the dragged station's stops. */
+  draggedStops?: StopCell[];
   stations: Record<StationId, Station>;
+  /** Required for line-adjacency filtering — only line-adjacent stations on
+   *  a shared line emit a snap pair. */
+  lines: Record<LineId, Line>;
   /** World-units perpendicular tolerance for engaging a snap. */
   tolerance?: number;
+  /** Ctrl-drag (redistribute) mode: snap exclusively to this station. The
+   *  intermediates between dragged and anchor are moving targets during the
+   *  redistribute and make poor snap candidates; the anchor is the single
+   *  fixed point on the line. Adjacency on each shared line is bypassed
+   *  here — the anchor qualifies regardless of how many stops sit between. */
+  redistributeAnchor?: StationId;
+  /** Bullet mode: snap a free-floating element (no stops of its own) to
+   *  align with any station's stop on this line. The bullet anchors at
+   *  (proposedX, proposedY) — its own stop offset is zero — and projects
+   *  onto each target stop's axis line. Line adjacency doesn't apply. */
+  bulletLineId?: LineId;
 }
 
 /**
@@ -56,7 +77,10 @@ export function snapDraggedStation(input: SnapInput): SnapResult {
     draggedRotation,
     draggedStops,
     stations,
+    lines,
     tolerance = SNAP_PERP_TOLERANCE,
+    redistributeAnchor,
+    bulletLineId,
   } = input;
 
   type Cand = {
@@ -71,9 +95,27 @@ export function snapDraggedStation(input: SnapInput): SnapResult {
 
   // Collect every alignment pair within perp tolerance.
   const all: Cand[] = [];
-  for (const t of Object.values(stations)) {
-    if (t.id === draggedId) continue;
-    for (const pair of alignmentPairs(draggedRotation, draggedStops, t)) {
+  // Pick the right pool of target stations for the active mode.
+  const targets = bulletLineId
+    ? Object.values(stations)
+    : redistributeAnchor
+      ? stations[redistributeAnchor]
+        ? [stations[redistributeAnchor]]
+        : []
+      : Object.values(stations).filter((t) => t.id !== draggedId);
+  const requireAdjacency = !redistributeAnchor;
+  for (const t of targets) {
+    const pairs = bulletLineId
+      ? bulletAlignmentPairs(t, bulletLineId)
+      : alignmentPairs(
+          draggedId as StationId,
+          draggedRotation as Rotation,
+          draggedStops ?? [],
+          t,
+          lines,
+          requireAdjacency,
+        );
+    for (const pair of pairs) {
       const perpX = -pair.axis.y;
       const perpY = pair.axis.x;
       const tStopX = t.x + pair.tOff.x;
@@ -102,10 +144,12 @@ export function snapDraggedStation(input: SnapInput): SnapResult {
 
   // Consolidate interlined candidates: lines that share the same target
   // station AND the same axis (e.g. all the lines of an interlined band) get
-  // merged into a single band-level candidate using the mean of their
-  // dOffs/tOffs. Without this, each shared line individually crosses the
-  // perp tolerance at a slightly different drag position and the user sees
-  // several alignment "clicks" instead of one band-wide snap.
+  // merged into a single band-level candidate. Without this, each shared
+  // line individually crosses the perp tolerance at a slightly different
+  // drag position and the user sees several alignment "clicks" instead of
+  // one band-wide snap. We pick the median band by perpendicular offset so
+  // the visual guide lands on a real stripe — averaging the offsets puts
+  // the guide between bands when the band count is even.
   const targetAxisGroups: Cand[][] = [];
   for (const c of all) {
     const g = targetAxisGroups.find(
@@ -116,33 +160,13 @@ export function snapDraggedStation(input: SnapInput): SnapResult {
   }
   const consolidated: Cand[] = targetAxisGroups.map((g) => {
     if (g.length === 1) return g[0];
-    const meanDOff = {
-      x: g.reduce((s, c) => s + c.dOff.x, 0) / g.length,
-      y: g.reduce((s, c) => s + c.dOff.y, 0) / g.length,
-    };
-    const meanTOff = {
-      x: g.reduce((s, c) => s + c.tOff.x, 0) / g.length,
-      y: g.reduce((s, c) => s + c.tOff.y, 0) / g.length,
-    };
     const axis = g[0].axis;
     const perpX = -axis.y;
     const perpY = axis.x;
-    const tStopX = g[0].target.x + meanTOff.x;
-    const tStopY = g[0].target.y + meanTOff.y;
-    const dStopX = proposedX + meanDOff.x;
-    const dStopY = proposedY + meanDOff.y;
-    const dx = tStopX - dStopX;
-    const dy = tStopY - dStopY;
-    const perpDist = Math.abs(dx * perpX + dy * perpY);
-    return {
-      target: g[0].target,
-      dOff: meanDOff,
-      tOff: meanTOff,
-      axis,
-      perpDist,
-      targetStopX: tStopX,
-      targetStopY: tStopY,
-    };
+    const sorted = [...g].sort(
+      (a, b) => a.dOff.x * perpX + a.dOff.y * perpY - (b.dOff.x * perpX + b.dOff.y * perpY),
+    );
+    return sorted[Math.floor((sorted.length - 1) / 2)];
   });
 
   // Group consolidated candidates by axis (parallel) and keep best per group.
@@ -152,7 +176,21 @@ export function snapDraggedStation(input: SnapInput): SnapResult {
     if (g) g.push(c);
     else groups.push([c]);
   }
-  const bests = groups.map((g) => g.reduce((a, b) => (a.perpDist <= b.perpDist ? a : b)));
+  // Per-axis primary candidate: every entry in `g` has already passed the
+  // perpDist-within-tolerance filter, so they're all "aligned enough" along
+  // this axis. Among the alignable ones, pick the candidate closest to
+  // the dragged point — that's the meaningful neighbor — instead of the
+  // smallest perpDist (which on bullet snap, where every stop on a line
+  // is a candidate, could be a station way past the actual neighbors due
+  // to sub-pixel perp differences). addOppositeGuide handles the other
+  // side along the axis.
+  const distFromBullet = (c: Cand) =>
+    Math.hypot(proposedX - c.targetStopX, proposedY - c.targetStopY);
+  const bests = groups.map((g) =>
+    g.reduce((a, b) => (distFromBullet(a) <= distFromBullet(b) ? a : b)),
+  );
+  // Across axes (for two-axis snap), the smallest perpDist still wins:
+  // it picks the better-aligned axis as primary.
   bests.sort((a, b) => a.perpDist - b.perpDist);
 
   const primary = bests[0];
@@ -199,14 +237,38 @@ export function snapDraggedStation(input: SnapInput): SnapResult {
     sy = snappedDStopY - c.dOff.y;
   }
 
+  // Compute the per-station spacing for the Ctrl-drag readout. We use the
+  // shared line where the dragged and anchor are furthest apart (most
+  // intermediates → tightest spacing), divided into the guide's distance.
+  const spacingDivisor = (() => {
+    if (!redistributeAnchor) return 0;
+    let segments = 0;
+    if (!draggedId) return 0;
+    for (const line of Object.values(lines)) {
+      const dIdx = line.stations.indexOf(draggedId);
+      const tIdx = line.stations.indexOf(redistributeAnchor);
+      if (dIdx < 0 || tIdx < 0) continue;
+      segments = Math.max(segments, Math.abs(dIdx - tIdx));
+    }
+    return segments;
+  })();
+
+  const labelFor = (from: Vec2, to: Vec2, isAnchor: boolean): string => {
+    const dist = Math.hypot(to.x - from.x, to.y - from.y);
+    if (isAnchor && spacingDivisor > 0) {
+      return Math.round(dist / spacingDivisor).toString();
+    }
+    return Math.round(dist).toString();
+  };
+
   // Build guides for every active axis (so the user sees that both snaps
   // are engaged on a perpendicular transfer station, etc.).
   const guides: SnapGuide[] = [];
   const pushGuide = (c: Cand) => {
-    guides.push({
-      from: { x: sx + c.dOff.x, y: sy + c.dOff.y },
-      to: { x: c.targetStopX, y: c.targetStopY },
-    });
+    const from = { x: sx + c.dOff.x, y: sy + c.dOff.y };
+    const to = { x: c.targetStopX, y: c.targetStopY };
+    const isAnchor = !!redistributeAnchor && c.target.id === redistributeAnchor;
+    guides.push({ from, to, label: labelFor(from, to, isAnchor) });
   };
   pushGuide(primary);
   if (secondary) pushGuide(secondary);
@@ -245,7 +307,13 @@ export function snapDraggedStation(input: SnapInput): SnapResult {
         };
       }
     }
-    if (candidate) guides.push({ from: candidate.from, to: candidate.to });
+    if (candidate) {
+      guides.push({
+        from: candidate.from,
+        to: candidate.to,
+        label: labelFor(candidate.from, candidate.to, false),
+      });
+    }
   };
   addOppositeGuide(primary);
   if (secondary) addOppositeGuide(secondary);
@@ -289,17 +357,46 @@ export interface AlignmentPair {
 /**
  * Build alignment pairs between the dragged station and a target. For
  * shared-line pairs the axis is the world travel direction at that stop —
- * derived from per-stop orientation rotated by station rotation. The two
- * stops must share a world axis (parallel travel directions) to qualify.
+ * derived from per-stop orientation rotated by station rotation. A pair is
+ * only emitted when (1) the two stops share a world axis (parallel travel
+ * directions) and (2) the target is line-adjacent to the dragged station on
+ * that line — i.e. the two stations are consecutive in `line.stations`.
+ * Filtering by adjacency keeps the snap focused on a station's actual
+ * neighbors instead of latching onto stations further along the same axis.
  *
  * When neither station has stops, fall back to anchor-to-anchor on the
- * dragged station's rotation axis. When only one side has stops or no line
- * is shared, no pairs are emitted and that target won't snap.
+ * dragged station's rotation axis (no line topology to consult).
  */
+/**
+ * Bullet-mode alignment pairs. The bullet has no stops of its own, so the
+ * dragged-side offset is zero — it anchors at its own world position. For
+ * each target station that has a stop on the chosen line, emit one pair
+ * with that stop's tOff + world-frame travel direction. Line-topology
+ * adjacency doesn't apply: a bullet labeling a line cares about every
+ * stop on that line, not just neighbors.
+ */
+export function bulletAlignmentPairs(target: Station, lineId: LineId): AlignmentPair[] {
+  const cell = target.stops.find((c) => c.lineId === lineId);
+  if (!cell) return [];
+  return [
+    {
+      dOff: { x: 0, y: 0 },
+      tOff: rotateBy(stopCenterAt(cell.row, cell.col), target.rotation),
+      axis: rotateBy(travelDirLocal(cell.orientation), target.rotation),
+    },
+  ];
+}
+
 export function alignmentPairs(
+  draggedId: StationId,
   draggedRotation: Rotation,
   draggedStops: StopCell[],
   target: Station,
+  lines: Record<LineId, Line>,
+  // When false, skip the line-adjacency check and emit a pair on every
+  // shared line where the travel directions are parallel. Used by the
+  // Ctrl-drag (redistribute) snap path to align with a non-adjacent anchor.
+  requireAdjacency: boolean = true,
 ): AlignmentPair[] {
   if (draggedStops.length === 0 && target.stops.length === 0) {
     return [{ dOff: { x: 0, y: 0 }, tOff: { x: 0, y: 0 }, axis: axisForRotation(draggedRotation) }];
@@ -308,6 +405,16 @@ export function alignmentPairs(
   for (const dCell of draggedStops) {
     const tCell = target.stops.find((c) => c.lineId === dCell.lineId);
     if (!tCell) continue;
+    const line = lines[dCell.lineId];
+    if (!line) continue;
+    if (requireAdjacency) {
+      const dIdx = line.stations.indexOf(draggedId);
+      const tIdx = line.stations.indexOf(target.id);
+      if (dIdx < 0 || tIdx < 0 || Math.abs(dIdx - tIdx) !== 1) continue;
+    } else {
+      // Still require both stations to be on the line.
+      if (!line.stations.includes(draggedId) || !line.stations.includes(target.id)) continue;
+    }
     const dWorldDir = rotateBy(travelDirLocal(dCell.orientation), draggedRotation);
     const tWorldDir = rotateBy(travelDirLocal(tCell.orientation), target.rotation);
     if (!parallel(dWorldDir, tWorldDir)) continue;

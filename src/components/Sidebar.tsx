@@ -1,4 +1,4 @@
-import { useEffect } from 'react';
+import { useEffect, useRef } from 'react';
 import { effectiveLineOrder, useDoc, useSelection } from '../state/store';
 import { LineInspector, StationInspector } from './inspector';
 import type { Line } from '../model/types';
@@ -8,7 +8,6 @@ export function Sidebar() {
   const stations = useDoc((s) => s.stations);
   const lines = useDoc((s) => s.lines);
   const lineOrder = useDoc((s) => s.lineOrder);
-  const addLine = useDoc((s) => s.addLine);
   const selection = useSelection();
   const deleteStation = useDoc((s) => s.deleteStation);
   const deleteLine = useDoc((s) => s.deleteLine);
@@ -23,11 +22,6 @@ export function Sidebar() {
       .filter((ln) => ln.stations.includes(stationId))
       .sort((a, b) => a.service.localeCompare(b.service));
 
-  const onNewLine = () => {
-    const id = addLine();
-    selection.startAppendAt(id, -1);
-  };
-
   // Scroll the expanded editor into view when something gets selected from
   // outside the sidebar (e.g. clicking a station on the canvas).
   useEffect(() => {
@@ -36,8 +30,14 @@ export function Sidebar() {
     el?.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
   }, [selection.selectedStationId, selection.activeTab]);
 
+  // Only scroll when the tab just transitioned to 'lines' (e.g. clicking a
+  // line bullet from the stations tab). In-tab clicks shouldn't reflow.
+  const prevLinesTabRef = useRef(selection.activeTab);
   useEffect(() => {
+    const wasOnLines = prevLinesTabRef.current === 'lines';
+    prevLinesTabRef.current = selection.activeTab;
     if (selection.activeTab !== 'lines' || !selection.selectedLineId) return;
+    if (wasOnLines) return;
     const el = document.querySelector(`[data-line-row="${selection.selectedLineId}"]`);
     el?.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
   }, [selection.selectedLineId, selection.activeTab]);
@@ -79,8 +79,17 @@ export function Sidebar() {
                         <span
                           key={ln.id}
                           className="line-badge"
-                          style={{ background: ln.color, color: legibleTextOn(ln.color) }}
-                          title={`Line ${ln.service}`}
+                          style={{
+                            background: ln.color,
+                            color: legibleTextOn(ln.color),
+                            cursor: 'pointer',
+                          }}
+                          title={`Edit line ${ln.service}`}
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            selection.setHoveredStation(null);
+                            selection.selectLine(ln.id);
+                          }}
                         >
                           {ln.service}
                         </span>
@@ -109,16 +118,17 @@ export function Sidebar() {
 
         {selection.activeTab === 'lines' && (
           <section>
-            <div className="tab-actions">
-              <button onClick={onNewLine}>+ New line</button>
-            </div>
             {orderedLineIds.length === 0 && <div className="empty">No lines yet.</div>}
             {orderedLineIds.map((id, i) => {
               const ln = lines[id];
               if (!ln) return null;
               const expanded = selection.selectedLineId === ln.id;
               return (
-                <div key={ln.id} data-line-row={ln.id}>
+                <div
+                  key={ln.id}
+                  data-line-row={ln.id}
+                  style={expanded ? { border: `4px solid ${ln.color}` } : undefined}
+                >
                   <div
                     className={'list-row' + (expanded ? ' selected' : '')}
                     onClick={() => selection.selectLine(expanded ? null : ln.id)}
@@ -160,7 +170,7 @@ export function Sidebar() {
                     </button>
                   </div>
                   {expanded && (
-                    <div className="inline-editor">
+                    <div className="inline-editor" style={{ border: 'none' }}>
                       <LineInspector id={ln.id} />
                     </div>
                   )}

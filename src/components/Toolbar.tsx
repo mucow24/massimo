@@ -5,6 +5,32 @@ import { parse, serialize } from '../model/serialize';
 import { DEFAULT_DOC } from '../model/transforms';
 import { useFieldHistory } from './useFieldHistory';
 import { Menu, MenuItem, MenuSeparator } from './Menu';
+import { CursorArrowIcon, HandIcon } from '@radix-ui/react-icons';
+
+function ToolButtons() {
+  const toolMode = useSelection((s) => s.toolMode);
+  const spaceHeld = useSelection((s) => s.spaceHeld);
+  const setToolMode = useSelection((s) => s.setToolMode);
+  const effective: 'arrow' | 'hand' = spaceHeld ? 'hand' : toolMode;
+  return (
+    <div className="tool-group">
+      <button
+        className={'tool-btn' + (effective === 'arrow' ? ' active' : '')}
+        title="Arrow (A)"
+        onClick={() => setToolMode('arrow')}
+      >
+        <CursorArrowIcon />
+      </button>
+      <button
+        className={'tool-btn' + (effective === 'hand' ? ' active' : '')}
+        title="Hand (H) — hold Space"
+        onClick={() => setToolMode('hand')}
+      >
+        <HandIcon />
+      </button>
+    </div>
+  );
+}
 
 export function Toolbar() {
   const curveRadius = useDoc((s) => s.curveRadius);
@@ -12,6 +38,7 @@ export function Toolbar() {
   const zoom = useViewportStore((s) => s.zoom);
   const setViewport = useViewportStore((s) => s.setViewport);
   const clearAll = useDoc((s) => s.clearAll);
+  const addLine = useDoc((s) => s.addLine);
   const selection = useSelection();
 
   const fileInputRef = useRef<HTMLInputElement | null>(null);
@@ -24,14 +51,28 @@ export function Toolbar() {
   const onAddLineTag = () => {
     selection.setCreatingLineTag(!selection.creatingLineTag);
   };
+  const onAddRouteBullet = () => {
+    selection.setCreatingRouteBullet(!selection.creatingRouteBullet);
+  };
+  const onAddTransfer = () => {
+    selection.setCreatingTransfer(!selection.creatingTransfer);
+  };
+  const onAddLine = () => {
+    const id = addLine();
+    selection.startAppendAt(id, -1);
+  };
   const onResetView = () => setViewport({ x: 0, y: 0, zoom: 1 });
   const onClear = () => {
     selection.selectStation(null);
     selection.selectLine(null);
     selection.selectLineTag(null);
+    selection.selectRouteBullet(null);
+    selection.selectTransfer(null);
     selection.setAppending(null);
     selection.setPlacingStation(false);
     selection.setCreatingLineTag(false);
+    selection.setCreatingRouteBullet(false);
+    selection.setCreatingTransfer(false);
     selection.setEditingStationId(null);
     clearAll();
   };
@@ -45,6 +86,8 @@ export function Toolbar() {
       curveRadius: doc.curveRadius,
       lineCounter: doc.lineCounter,
       lineTags: doc.lineTags,
+      routeBullets: doc.routeBullets,
+      transfers: doc.transfers,
     });
     const blob = new Blob([json], { type: 'application/json' });
     const url = URL.createObjectURL(blob);
@@ -74,9 +117,13 @@ export function Toolbar() {
     selection.selectStation(null);
     selection.selectLine(null);
     selection.selectLineTag(null);
+    selection.selectRouteBullet(null);
+    selection.selectTransfer(null);
     selection.setAppending(null);
     selection.setPlacingStation(false);
     selection.setCreatingLineTag(false);
+    selection.setCreatingRouteBullet(false);
+    selection.setCreatingTransfer(false);
     selection.setEditingStationId(null);
     // Replace doc state, preserving the mutator method references via merge.
     useDoc.setState({ ...DEFAULT_DOC, ...result.doc });
@@ -94,8 +141,12 @@ export function Toolbar() {
       </Menu>
       <Menu label="Add">
         <MenuItem onClick={onAddStation}>Stations</MenuItem>
+        <MenuItem onClick={onAddLine}>Line</MenuItem>
         <MenuItem onClick={onAddLineTag}>Line tags</MenuItem>
+        <MenuItem onClick={onAddRouteBullet}>Route bullets</MenuItem>
+        <MenuItem onClick={onAddTransfer}>Transfer</MenuItem>
       </Menu>
+      <ToolButtons />
       <input
         ref={fileInputRef}
         type="file"

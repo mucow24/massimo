@@ -1,15 +1,18 @@
 import { autoOrientLineStops } from './autoOrient';
 import { effectiveLineOrder } from './lineOrder';
+import { rotateBy, stopCenterAt } from '../geometry/orientation';
 import type {
   Line,
   LineId,
   LineTag,
   MapDoc,
   Rotation,
+  RouteBullet,
   Station,
   StationId,
   StopCell,
   StopOrientation,
+  Transfer,
 } from './types';
 
 export const DEFAULT_DOC: MapDoc = {
@@ -19,6 +22,8 @@ export const DEFAULT_DOC: MapDoc = {
   curveRadius: 24,
   lineCounter: 0,
   lineTags: {},
+  routeBullets: {},
+  transfers: {},
 };
 
 // ---------- Stations ----------
@@ -46,6 +51,163 @@ export function moveStation(doc: MapDoc, id: StationId, x: number, y: number): M
   const cur = doc.stations[id];
   if (!cur) return doc;
   return { ...doc, stations: { ...doc.stations, [id]: { ...cur, x, y } } };
+}
+
+// For every line that contains both startId and endId, evenly redistribute
+// the intervening stops by arc length along the existing polyline through
+// those stops. If a station is intervening on multiple matching lines (its
+// new position would be ambiguous), it is left untouched.
+export type RedistributeMode =
+  // Arc length along the existing polyline; corner stations are treated as
+  // additional anchors. Used for ctrl-click (one-shot).
+  | 'arc-bends'
+  // Straight-line interpolation between A and B's stop positions. Used for
+  // ctrl-drag — gives predictable, wiggle-free even spacing as B moves.
+  | 'straight';
+
+export function redistributeBetween(
+  doc: MapDoc,
+  startId: StationId,
+  endId: StationId,
+  mode: RedistributeMode = 'arc-bends',
+): MapDoc {
+  if (startId === endId) return doc;
+  if (!doc.stations[startId] || !doc.stations[endId]) return doc;
+
+  const proposals = new Map<StationId, { x: number; y: number }>();
+  const conflicted = new Set<StationId>();
+
+  for (const line of Object.values(doc.lines)) {
+    const iStart = line.stations.indexOf(startId);
+    const iEnd = line.stations.indexOf(endId);
+    if (iStart < 0 || iEnd < 0) continue;
+
+    const iLow = Math.min(iStart, iEnd);
+    const iHigh = Math.max(iStart, iEnd);
+    const n = iHigh - iLow - 1;
+    if (n < 1) continue;
+
+    const ids = line.stations.slice(iLow, iHigh + 1);
+    const sts = ids.map((id) => doc.stations[id]);
+    if (sts.some((p) => !p)) continue;
+
+    // The visible route runs through this line's STOPS, not station centers.
+    // At interlined stations the stop is offset from the center, so a polyline
+    // through centers can zigzag even when the stops are perfectly aligned.
+    // Use stop world positions to drive the redistribution, then derive each
+    // new station center from the new stop position.
+    const stopOffsets = sts.map((st) => {
+      const cell = st.stops.find((c) => c.lineId === line.id);
+      if (!cell) return { x: 0, y: 0 };
+      return rotateBy(stopCenterAt(cell.row, cell.col), st.rotation);
+    });
+    const stopPts = sts.map((st, i) => ({
+      x: st.x + stopOffsets[i].x,
+      y: st.y + stopOffsets[i].y,
+    }));
+
+    // Build the list of anchor indices (positions whose stop is fixed).
+    // Always anchor the endpoints; arc-bends mode also anchors any intervening
+    // station that sits at a real bend in the existing polyline.
+    const anchors: number[] = [0];
+    if (mode === 'arc-bends') {
+      const ANGLE_THRESHOLD = (5 * Math.PI) / 180;
+      for (let k = 1; k < stopPts.length - 1; k++) {
+        const ax = stopPts[k].x - stopPts[k - 1].x;
+        const ay = stopPts[k].y - stopPts[k - 1].y;
+        const bx = stopPts[k + 1].x - stopPts[k].x;
+        const by = stopPts[k + 1].y - stopPts[k].y;
+        const aLen = Math.hypot(ax, ay);
+        const bLen = Math.hypot(bx, by);
+        if (aLen === 0 || bLen === 0) continue;
+        const cosA = (ax * bx + ay * by) / (aLen * bLen);
+        const angle = Math.acos(Math.max(-1, Math.min(1, cosA)));
+        if (angle > ANGLE_THRESHOLD) anchors.push(k);
+      }
+    }
+    anchors.push(stopPts.length - 1);
+
+    // Redistribute within each anchor-to-anchor sub-chain.
+    for (let a = 0; a < anchors.length - 1; a++) {
+      const from = anchors[a];
+      const to = anchors[a + 1];
+      const subN = to - from - 1;
+      if (subN < 1) continue;
+
+      // Compute the target stop position for each non-anchor station k.
+      const targets: { x: number; y: number }[] = [];
+      if (mode === 'straight') {
+        // Straight-line interpolation between the anchor endpoints.
+        const ax = stopPts[from].x;
+        const ay = stopPts[from].y;
+        const bx = stopPts[to].x;
+        const by = stopPts[to].y;
+        for (let k = 1; k <= subN; k++) {
+          const t = k / (subN + 1);
+          targets.push({ x: ax + t * (bx - ax), y: ay + t * (by - ay) });
+        }
+      } else {
+        // Arc length along the existing sub-polyline.
+        const subSegLens: number[] = [];
+        for (let i = from; i < to; i++) {
+          subSegLens.push(
+            Math.hypot(stopPts[i + 1].x - stopPts[i].x, stopPts[i + 1].y - stopPts[i].y),
+          );
+        }
+        const subTotal = subSegLens.reduce((s, v) => s + v, 0);
+        if (subTotal === 0) continue;
+        for (let k = 1; k <= subN; k++) {
+          const target = (k * subTotal) / (subN + 1);
+          let acc = 0;
+          let sx = stopPts[from].x;
+          let sy = stopPts[from].y;
+          for (let i = 0; i < subSegLens.length; i++) {
+            if (acc + subSegLens[i] >= target) {
+              const t = subSegLens[i] === 0 ? 0 : (target - acc) / subSegLens[i];
+              sx = stopPts[from + i].x + t * (stopPts[from + i + 1].x - stopPts[from + i].x);
+              sy = stopPts[from + i].y + t * (stopPts[from + i + 1].y - stopPts[from + i].y);
+              break;
+            }
+            acc += subSegLens[i];
+          }
+          targets.push({ x: sx, y: sy });
+        }
+      }
+
+      for (let k = 1; k <= subN; k++) {
+        const idx = from + k;
+        const t = targets[k - 1];
+        const px = t.x - stopOffsets[idx].x;
+        const py = t.y - stopOffsets[idx].y;
+        const cur = sts[idx];
+        // In arc modes, skip sub-pixel drift to avoid breaking perfect snap
+        // alignments via floating-point error. Straight-line is exact by
+        // construction — and in drag mode tiny per-frame shifts must apply
+        // or stations near the anchor lag behind and wobble off the line.
+        if (mode !== 'straight' && Math.hypot(px - cur.x, py - cur.y) < 1) continue;
+        const stationId = ids[idx];
+        const existing = proposals.get(stationId);
+        if (existing) {
+          if (Math.hypot(existing.x - px, existing.y - py) > 0.5) {
+            conflicted.add(stationId);
+          }
+        } else {
+          proposals.set(stationId, { x: px, y: py });
+        }
+      }
+    }
+  }
+
+  for (const id of conflicted) proposals.delete(id);
+  if (proposals.size === 0) return doc;
+
+  let stations = doc.stations;
+  for (const [id, p] of proposals) {
+    const cur = stations[id];
+    if (!cur) continue;
+    stations = { ...stations, [id]: { ...cur, x: p.x, y: p.y } };
+  }
+  return { ...doc, stations };
 }
 
 export function rotateStation(doc: MapDoc, id: StationId): MapDoc {
@@ -124,7 +286,13 @@ export function deleteStation(doc: MapDoc, id: StationId): MapDoc {
     const ln = doc.lines[lid];
     lines[lid] = { ...ln, stations: ln.stations.filter((x) => x !== id) };
   }
-  return pruneOrphanLineTags({ ...doc, stations: rest, lines });
+  // Cascade-delete transfers that referenced the removed station.
+  const transfers: Record<string, Transfer> = {};
+  for (const xid of Object.keys(doc.transfers)) {
+    const t = doc.transfers[xid];
+    if (t.a.stationId !== id && t.b.stationId !== id) transfers[xid] = t;
+  }
+  return pruneOrphanLineTags({ ...doc, stations: rest, lines, transfers });
 }
 
 // ---------- Stops ----------
@@ -407,7 +575,23 @@ export function deleteLine(doc: MapDoc, id: LineId): MapDoc {
   for (const tid of Object.keys(doc.lineTags)) {
     if (doc.lineTags[tid].lineId !== id) lineTags[tid] = doc.lineTags[tid];
   }
-  return { ...doc, lines: rest, stations, lineOrder: order, lineTags };
+  // Null out any route bullets that referenced this line; the bullet stays
+  // on the canvas but reverts to "unset" until the user picks a new line.
+  const routeBullets: Record<string, RouteBullet> = {};
+  for (const bid of Object.keys(doc.routeBullets)) {
+    const b = doc.routeBullets[bid];
+    routeBullets[bid] = b.lineId === id ? { ...b, lineId: null } : b;
+  }
+  // Null out lineId on transfer endpoints that pointed at this line; the
+  // transfer stays in place, just falls back to the station anchor.
+  const transfers: Record<string, Transfer> = {};
+  for (const xid of Object.keys(doc.transfers)) {
+    const t = doc.transfers[xid];
+    const a = t.a.lineId === id ? { ...t.a, lineId: null } : t.a;
+    const b = t.b.lineId === id ? { ...t.b, lineId: null } : t.b;
+    transfers[xid] = a === t.a && b === t.b ? t : { ...t, a, b };
+  }
+  return { ...doc, lines: rest, stations, lineOrder: order, lineTags, routeBullets, transfers };
 }
 
 export function moveLineInOrder(doc: MapDoc, id: LineId, dir: -1 | 1): MapDoc {
@@ -484,6 +668,96 @@ export function deleteLineTag(doc: MapDoc, id: string): MapDoc {
   if (!doc.lineTags[id]) return doc;
   const { [id]: _gone, ...rest } = doc.lineTags;
   return { ...doc, lineTags: rest };
+}
+
+// ---------- Route bullets ----------
+
+export function addRouteBullet(
+  doc: MapDoc,
+  id: string,
+  x: number,
+  y: number,
+  lineId: LineId | null,
+): MapDoc {
+  const bullet: RouteBullet = {
+    id,
+    x,
+    y,
+    rotation: 0,
+    lineId,
+    shape: 'circle',
+    size: 14,
+  };
+  return { ...doc, routeBullets: { ...doc.routeBullets, [id]: bullet } };
+}
+
+// Insert a fully-specified bullet (used by duplicate + paste).
+export function addRouteBulletWith(
+  doc: MapDoc,
+  id: string,
+  fields: Omit<RouteBullet, 'id'>,
+): MapDoc {
+  const bullet: RouteBullet = { id, ...fields };
+  return { ...doc, routeBullets: { ...doc.routeBullets, [id]: bullet } };
+}
+
+export function moveRouteBullet(doc: MapDoc, id: string, x: number, y: number): MapDoc {
+  const cur = doc.routeBullets[id];
+  if (!cur) return doc;
+  return { ...doc, routeBullets: { ...doc.routeBullets, [id]: { ...cur, x, y } } };
+}
+
+export function rotateRouteBullet(doc: MapDoc, id: string): MapDoc {
+  const cur = doc.routeBullets[id];
+  if (!cur) return doc;
+  const next = ((cur.rotation + 1) % 8) as Rotation;
+  return {
+    ...doc,
+    routeBullets: { ...doc.routeBullets, [id]: { ...cur, rotation: next } },
+  };
+}
+
+export function updateRouteBullet(
+  doc: MapDoc,
+  id: string,
+  patch: Partial<Pick<RouteBullet, 'lineId' | 'shape' | 'size'>>,
+): MapDoc {
+  const cur = doc.routeBullets[id];
+  if (!cur) return doc;
+  return { ...doc, routeBullets: { ...doc.routeBullets, [id]: { ...cur, ...patch } } };
+}
+
+export function deleteRouteBullet(doc: MapDoc, id: string): MapDoc {
+  if (!doc.routeBullets[id]) return doc;
+  const { [id]: _gone, ...rest } = doc.routeBullets;
+  return { ...doc, routeBullets: rest };
+}
+
+// ---------- Transfers ----------
+
+export function addTransfer(
+  doc: MapDoc,
+  id: string,
+  a: { stationId: StationId; lineId: LineId | null },
+  b: { stationId: StationId; lineId: LineId | null },
+): MapDoc {
+  // Same station + same lineId is a self-transfer (zero-length); reject.
+  // Same station + DIFFERENT lineIds is fine — a short transfer between
+  // two dots of an interlined station is a valid use case.
+  if (a.stationId === b.stationId && a.lineId === b.lineId) return doc;
+  if (!doc.stations[a.stationId] || !doc.stations[b.stationId]) return doc;
+  const transfer: Transfer = {
+    id,
+    a: { stationId: a.stationId, lineId: a.lineId },
+    b: { stationId: b.stationId, lineId: b.lineId },
+  };
+  return { ...doc, transfers: { ...doc.transfers, [id]: transfer } };
+}
+
+export function deleteTransfer(doc: MapDoc, id: string): MapDoc {
+  if (!doc.transfers[id]) return doc;
+  const { [id]: _gone, ...rest } = doc.transfers;
+  return { ...doc, transfers: rest };
 }
 
 /**

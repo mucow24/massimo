@@ -11,6 +11,10 @@ interface Props {
   onLineHover?: (lineId: LineId, e: React.PointerEvent<SVGPathElement>) => void;
   onLineLeave?: (lineId: LineId, e: React.PointerEvent<SVGPathElement>) => void;
   onLineClick?: (lineId: LineId, e: React.MouseEvent<SVGPathElement>) => void;
+  // Default-mode click handler: selects a line by clicking its stripe.
+  onLineSelect?: (lineId: LineId, e: React.MouseEvent<SVGPathElement>) => void;
+  // Optional per-line color override (e.g. for desaturating non-selected lines).
+  colorMap?: Record<LineId, string>;
 }
 
 export function SegmentBand({
@@ -19,25 +23,37 @@ export function SegmentBand({
   onLineHover,
   onLineLeave,
   onLineClick,
+  onLineSelect,
+  colorMap,
 }: Props) {
   return (
     <g>
       {spec.paths.map((d, i) => {
         const lineId = spec.lines[i].id;
+        const color = colorMap?.[lineId] ?? spec.lines[i].color;
+        const selectable = !interactive && !!onLineSelect;
         return (
           <path
             key={lineId}
             d={d}
             fill="none"
-            stroke={spec.lines[i].color}
+            stroke={color}
             strokeWidth={14}
             strokeLinecap="square"
             strokeLinejoin="round"
-            pointerEvents={interactive ? 'stroke' : undefined}
-            style={interactive ? { cursor: 'crosshair' } : undefined}
+            pointerEvents={interactive || selectable ? 'stroke' : undefined}
+            style={
+              interactive ? { cursor: 'crosshair' } : selectable ? { cursor: 'pointer' } : undefined
+            }
             onPointerMove={interactive && onLineHover ? (e) => onLineHover(lineId, e) : undefined}
             onPointerLeave={interactive && onLineLeave ? (e) => onLineLeave(lineId, e) : undefined}
-            onClick={interactive && onLineClick ? (e) => onLineClick(lineId, e) : undefined}
+            onClick={
+              interactive && onLineClick
+                ? (e) => onLineClick(lineId, e)
+                : selectable
+                  ? (e) => onLineSelect!(lineId, e)
+                  : undefined
+            }
           />
         );
       })}

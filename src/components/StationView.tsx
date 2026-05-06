@@ -1,8 +1,38 @@
 import { useEffect, useRef } from 'react';
-import { Line, Station } from '../model/types';
+import { Line, LineId, Station } from '../model/types';
 import { beginHistoryGroup, dragState, useDoc, useSelection } from '../state/store';
 import { DIR_8, STOP_SIZE, stopCenterAt } from '../geometry/orientation';
 import { polygonsToPath, Pt, unionConvex } from '../geometry/polygonUnion';
+import { legibleTextOn } from '../util/color';
+
+// Map a click on a station to the closest dot's lineId. Used to pin a
+// transfer endpoint to the specific stop the user clicked on, rather than
+// the station's anchor center.
+function closestStopLineId(station: Station, e: React.MouseEvent): LineId | null {
+  if (station.stops.length === 0) return null;
+  const svg = document.querySelector('.canvas-host svg') as SVGSVGElement | null;
+  if (!svg) return station.stops[0].lineId;
+  const r = svg.getBoundingClientRect();
+  const vb = svg.viewBox.baseVal;
+  const wx = vb.x + ((e.clientX - r.left) / r.width) * vb.width;
+  const wy = vb.y + ((e.clientY - r.top) / r.height) * vb.height;
+  const a = (station.rotation * Math.PI) / 4;
+  const cs = Math.cos(a);
+  const sn = Math.sin(a);
+  let bestId = station.stops[0].lineId;
+  let bestDist = Infinity;
+  for (const cell of station.stops) {
+    const local = stopCenterAt(cell.row, cell.col);
+    const sx = station.x + local.x * cs - local.y * sn;
+    const sy = station.y + local.x * sn + local.y * cs;
+    const d = Math.hypot(wx - sx, wy - sy);
+    if (d < bestDist) {
+      bestDist = d;
+      bestId = cell.lineId;
+    }
+  }
+  return bestId;
+}
 
 const SELECTION_WASH_COLOR = '#f0ff00';
 const SELECTION_WASH_OPACITY = 0.2;
@@ -16,27 +46,91 @@ interface Props {
   station: Station;
   lines: Record<string, Line>;
   zoom: number;
-  onStartDrag: (id: string, ev: React.PointerEvent) => void;
-  layer: 'wash' | 'bg' | 'label' | 'dots' | 'stroke' | 'match-stroke';
+  onStartDrag: (id: string, ev: React.PointerEvent, redistributeAnchor?: string) => void;
+  layer:
+    | 'wash'
+    | 'bg'
+    | 'label'
+    | 'highlight-label'
+    | 'starter-label'
+    | 'dots'
+    | 'highlight-dots'
+    | 'stroke'
+    | 'match-stroke';
+  // Override fill for the highlight-* layers (default white).
+  highlightColor?: string;
 }
 
-export function StationView({ station, lines, onStartDrag, layer }: Props) {
+export function StationView({
+  station,
+  lines,
+  onStartDrag,
+  layer,
+  highlightColor = '#fff',
+}: Props) {
   const selection = useSelection();
   const rotateStation = useDoc((s) => s.rotateStation);
   const renameStation = useDoc((s) => s.renameStation);
   const toggleStationOnLine = useDoc((s) => s.toggleStationOnLine);
+  const redistributeBetween = useDoc((s) => s.redistributeBetween);
+  const addTransfer = useDoc((s) => s.addTransfer);
 
   const stops = station.stops;
   const angle = station.rotation * 45;
 
   const onPointerDown = (e: React.PointerEvent) => {
     if (e.button !== 0) return;
-    onStartDrag(station.id, e);
+    // In hand mode, let the event bubble to the SVG so it becomes a pan.
+    if (selection.toolMode === 'hand' || selection.spaceHeld) return;
+    // Ctrl/Cmd+drag on a different station while one is selected: drag the
+    // target while continuously redistributing intervening stops between
+    // the two. A pure click (no drag) still routes to onClick → one-shot
+    // redistribute via the click handler.
+    const anchor =
+      (e.ctrlKey || e.metaKey) &&
+      selection.selectedStationId &&
+      selection.selectedStationId !== station.id
+        ? selection.selectedStationId
+        : undefined;
+    onStartDrag(station.id, e, anchor);
   };
 
   const onClick = (e: React.MouseEvent) => {
     if (dragState.suppressClick) return;
     e.stopPropagation();
+    // Transfer-creation flow: first click sets the anchor, second commits.
+    // Capture which specific dot was closest to the click so the transfer
+    // pins to that stop instead of an arbitrary station-anchor location.
+    if (selection.creatingTransfer) {
+      const lineId = closestStopLineId(station, e);
+      if (!selection.transferAnchor) {
+        selection.setTransferAnchor({ stationId: station.id, lineId });
+        // Clear the first-pick hover highlight — the dot is now committed
+        // as the anchor, no longer just hovered.
+        selection.setHoveredLineStop(null);
+      } else {
+        // Same station + same dot is a no-op self-transfer; same station
+        // + a DIFFERENT dot (interlined station) is allowed.
+        const sameStation = selection.transferAnchor.stationId === station.id;
+        const sameLine = selection.transferAnchor.lineId === lineId;
+        if (!(sameStation && sameLine)) {
+          addTransfer(selection.transferAnchor, { stationId: station.id, lineId });
+          selection.setCreatingTransfer(false);
+          selection.setHoveredLineStop(null);
+        }
+      }
+      return;
+    }
+    // Ctrl/Cmd-click on a different station while one is selected:
+    // redistribute intervening stops on each line that connects them.
+    if (
+      (e.ctrlKey || e.metaKey) &&
+      selection.selectedStationId &&
+      selection.selectedStationId !== station.id
+    ) {
+      redistributeBetween(selection.selectedStationId, station.id);
+      return;
+    }
     if (selection.creatingLineTag) {
       // "Click anywhere that isn't a valid place for line tags" exits the mode.
       selection.setCreatingLineTag(false);
@@ -220,19 +314,35 @@ export function StationView({ station, lines, onStartDrag, layer }: Props) {
     // footprint) would block hover/click on bands passing nearby. Make them
     // pass-through so the cursor goes straight to the band stripes.
     const inTagMode = selection.creatingLineTag;
+    const inHandMode = selection.toolMode === 'hand' || selection.spaceHeld;
+    // While picking the FIRST endpoint of a transfer, surface a 3px white
+    // stroke on whichever dot the cursor is closest to so the user knows
+    // exactly which dot they'll attach the transfer to.
+    const inTransferPickFirst = selection.creatingTransfer && !selection.transferAnchor;
+    const onTransferPointerMove = (e: React.PointerEvent) => {
+      const lineId = closestStopLineId(station, e);
+      if (!lineId) return;
+      const cur = selection.hoveredLineStop;
+      if (cur && cur.stationId === station.id && cur.lineId === lineId) return;
+      selection.setHoveredLineStop({ stationId: station.id, lineId });
+    };
+    const onTransferPointerLeave = () => {
+      const cur = selection.hoveredLineStop;
+      if (cur && cur.stationId === station.id) selection.setHoveredLineStop(null);
+    };
     const hitProps = {
       fill: 'transparent',
       pointerEvents: inTagMode ? ('none' as const) : ('all' as const),
       onPointerDown: inTagMode ? undefined : onPointerDown,
-      onClick: inTagMode ? undefined : onClick,
-      onDoubleClick: inTagMode ? undefined : onDoubleClick,
+      onClick: inTagMode || inHandMode ? undefined : onClick,
+      onDoubleClick: inTagMode || inHandMode ? undefined : onDoubleClick,
       onContextMenu: inTagMode ? undefined : onContextMenu,
+      onPointerMove: inTransferPickFirst ? onTransferPointerMove : undefined,
+      onPointerLeave: inTransferPickFirst ? onTransferPointerLeave : undefined,
     };
+    const cursor = inHandMode ? 'grab' : 'move';
     return (
-      <g
-        transform={`translate(${station.x} ${station.y}) rotate(${angle})`}
-        style={{ cursor: 'move' }}
-      >
+      <g transform={`translate(${station.x} ${station.y}) rotate(${angle})`} style={{ cursor }}>
         <rect x={cellsHitX} y={cellsHitY} width={cellsHitW} height={cellsHitH} {...hitProps} />
         <rect
           x={labelHitX}
@@ -246,9 +356,76 @@ export function StationView({ station, lines, onStartDrag, layer }: Props) {
     );
   }
 
+  if (layer === 'starter-label') {
+    // Append-mode "starter" station: name in the line color, with a
+    // contrasting 1px stroke for legibility against the dim layer. Always
+    // bold so the eye lands on it as the insertion anchor.
+    const strokeColor = legibleTextOn(highlightColor);
+    return (
+      <g transform={`translate(${station.x} ${station.y}) rotate(${angle})`}>
+        <text
+          x={labelAnchorX}
+          y={labelAnchorY}
+          textAnchor={labelTextAnchor}
+          dominantBaseline="central"
+          fontSize={12}
+          fontWeight={700}
+          textDecoration={selection.hoveredStationId === station.id ? 'underline' : undefined}
+          pointerEvents="none"
+          fill={highlightColor}
+          stroke={strokeColor}
+          strokeWidth={2}
+          paintOrder="stroke"
+          transform={`rotate(${label.rotation * 45} ${labelAnchorX} ${labelAnchorY})`}
+        >
+          {station.name}
+        </text>
+      </g>
+    );
+  }
+
+  if (layer === 'highlight-label') {
+    // Same positioning as 'label' but always renders text (never the
+    // inline editor), in white. Used above the dim overlay so the selected
+    // line's station names stay legible.
+    return (
+      <g transform={`translate(${station.x} ${station.y}) rotate(${angle})`}>
+        <text
+          x={labelAnchorX}
+          y={labelAnchorY}
+          textAnchor={labelTextAnchor}
+          dominantBaseline="central"
+          fontSize={12}
+          fontWeight={selection.hoveredStationId === station.id ? 700 : 400}
+          textDecoration={selection.hoveredStationId === station.id ? 'underline' : undefined}
+          pointerEvents="none"
+          fill={highlightColor}
+          transform={`rotate(${label.rotation * 45} ${labelAnchorX} ${labelAnchorY})`}
+        >
+          {station.name}
+        </text>
+      </g>
+    );
+  }
+
   if (layer === 'label') {
     // Labels render in their own pass after all bg washes so that a selected
-    // station's wash can never cover a neighboring station's label.
+    // station's wash can never cover a neighboring station's label. When a
+    // line is selected, the highlight pass re-renders labels above the dim
+    // layer; skip them here so antialiased edges of the (dimmed) black
+    // underdraw don't bleed through the colored / white re-render.
+    const highlightLineId = selection.selectedLineId;
+    if (highlightLineId) {
+      const isAppending = selection.appendingToLineId === highlightLineId;
+      if (isAppending) {
+        // Append mode re-renders every station's label above the dim.
+        return null;
+      }
+      const ln = lines[highlightLineId];
+      if (ln && ln.stations.includes(station.id)) {
+        return null;
+      }
+    }
     return (
       <g transform={`translate(${station.x} ${station.y}) rotate(${angle})`}>
         {isEditing ? (
@@ -280,7 +457,34 @@ export function StationView({ station, lines, onStartDrag, layer }: Props) {
     );
   }
 
+  if (layer === 'highlight-dots') {
+    // Dots above the dim/highlight passes, used for not-yet-on-line stations
+    // during append mode. Color overridable via highlightColor.
+    return (
+      <g transform={`translate(${station.x} ${station.y}) rotate(${angle})`} pointerEvents="none">
+        {phantomDot &&
+          (() => {
+            const c = stopCenterAt(phantomDot.row, phantomDot.col);
+            return <circle cx={c.x} cy={c.y} r={STOP_SIZE * 0.28} fill={highlightColor} />;
+          })()}
+        {stops.map((cell) => {
+          const c = stopCenterAt(cell.row, cell.col);
+          return (
+            <circle
+              key={cell.lineId}
+              cx={c.x}
+              cy={c.y}
+              r={STOP_SIZE * 0.28}
+              fill={highlightColor}
+            />
+          );
+        })}
+      </g>
+    );
+  }
+
   // layer === 'dots'
+  const hoveredStop = selection.hoveredLineStop;
   return (
     <g transform={`translate(${station.x} ${station.y}) rotate(${angle})`} pointerEvents="none">
       {phantomDot &&
@@ -290,7 +494,19 @@ export function StationView({ station, lines, onStartDrag, layer }: Props) {
         })()}
       {stops.map((cell) => {
         const c = stopCenterAt(cell.row, cell.col);
-        return <circle key={cell.lineId} cx={c.x} cy={c.y} r={STOP_SIZE * 0.28} fill="#000" />;
+        const isHovered =
+          hoveredStop?.stationId === station.id && hoveredStop?.lineId === cell.lineId;
+        return (
+          <circle
+            key={cell.lineId}
+            cx={c.x}
+            cy={c.y}
+            r={STOP_SIZE * 0.28}
+            fill="#000"
+            stroke={isHovered ? '#fff' : undefined}
+            strokeWidth={isHovered ? 3 : undefined}
+          />
+        );
       })}
     </g>
   );
