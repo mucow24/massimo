@@ -60,6 +60,7 @@ export function makeDoc(parts: {
   lineOrder?: LineId[];
   curveRadius?: number;
   lineTags?: import('../model/types').LineTag[];
+  transfers?: import('../model/types').Transfer[];
 }): MapDoc {
   const stations: Record<StationId, Station> = {};
   for (const s of parts.stations ?? []) stations[s.id] = s;
@@ -67,6 +68,8 @@ export function makeDoc(parts: {
   for (const l of parts.lines ?? []) lines[l.id] = l;
   const lineTags: Record<string, import('../model/types').LineTag> = {};
   for (const t of parts.lineTags ?? []) lineTags[t.id] = t;
+  const transfers: Record<string, import('../model/types').Transfer> = {};
+  for (const x of parts.transfers ?? []) transfers[x.id] = x;
   return {
     stations,
     lines,
@@ -74,6 +77,8 @@ export function makeDoc(parts: {
     curveRadius: parts.curveRadius ?? 24,
     lineCounter: 0,
     lineTags,
+    routeBullets: {},
+    transfers,
   };
 }
 

@@ -25,6 +25,7 @@ export interface StopMarkerSpec {
   cx: number;
   cy: number;
   color: string;
+  lineId: LineId;
   rotationDeg: number; // station rotation in degrees CW
   priority: number;
 }
@@ -288,6 +289,7 @@ export function buildStopMarkers(
         cx,
         cy,
         color: line.color,
+        lineId: cell.lineId,
         rotationDeg: station.rotation * 45,
         priority: lineIndex[cell.lineId] ?? fallback,
       });

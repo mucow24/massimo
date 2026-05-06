@@ -97,6 +97,24 @@ export interface Viewport {
   zoom: number;
 }
 
+export type RouteBulletShape = 'circle' | 'square' | 'diamond';
+
+// A free-floating, draggable route badge that displays a single line's
+// service code in its color. Used as a label/legend element on the map.
+export interface RouteBullet {
+  id: string;
+  x: number;
+  y: number;
+  rotation: Rotation;
+  // Which line's color + service code to render. Null = unset (no line
+  // chosen yet); renders as a neutral placeholder.
+  lineId: LineId | null;
+  shape: RouteBulletShape;
+  // Half-extent in world units (radius for circle, half-side for
+  // square/diamond).
+  size: number;
+}
+
 export interface MapDoc {
   stations: Record<StationId, Station>;
   lines: Record<LineId, Line>;
@@ -111,4 +129,28 @@ export interface MapDoc {
   lineCounter: number;
   // Movable in-band labels. Keyed by tag id.
   lineTags: Record<string, LineTag>;
+  // Free-floating route badges. Keyed by bullet id.
+  routeBullets: Record<string, RouteBullet>;
+  // Inter-station transfer indicators (a black line between two stations).
+  transfers: Record<string, Transfer>;
+}
+
+// One endpoint of a transfer: a specific dot on a station. `lineId` picks
+// which dot when the station has multiple (interlining); null means "no
+// specific line / station has no stops" — render falls back to the
+// station's anchor.
+export interface TransferEnd {
+  stationId: StationId;
+  lineId: LineId | null;
+}
+
+// A transfer is a 2px black line connecting one station dot to another. The
+// endpoints are anchored to specific stops so they follow the dot when
+// stations move, lines are reordered, or stops shift on a station.
+// Cascade-deleted when either endpoint station is removed; `lineId`
+// nulled if the referenced line is removed.
+export interface Transfer {
+  id: string;
+  a: TransferEnd;
+  b: TransferEnd;
 }

@@ -79,6 +79,139 @@ describe('deleteStation', () => {
     expect(next.lines.L1.stations).toEqual(['s2']);
     expect(next.lines.L2.stations).toEqual([]);
   });
+
+  it('cascade-deletes transfers that reference the removed station', () => {
+    const doc = makeDoc({
+      stations: [makeStation({ id: 's1' }), makeStation({ id: 's2' }), makeStation({ id: 's3' })],
+      transfers: [
+        { id: 'x1', a: { stationId: 's1', lineId: null }, b: { stationId: 's2', lineId: null } },
+        { id: 'x2', a: { stationId: 's2', lineId: null }, b: { stationId: 's3', lineId: null } },
+      ],
+    });
+    const next = T.deleteStation(doc, 's1');
+    expect(next.transfers.x1).toBeUndefined();
+    expect(next.transfers.x2).toBeDefined();
+  });
+});
+
+describe('addTransfer', () => {
+  it('inserts a transfer between two specific dots', () => {
+    const doc = makeDoc({
+      stations: [makeStation({ id: 's1' }), makeStation({ id: 's2' })],
+    });
+    const next = T.addTransfer(
+      doc,
+      'x1',
+      { stationId: 's1', lineId: 'L1' },
+      { stationId: 's2', lineId: 'L2' },
+    );
+    expect(next.transfers.x1).toEqual({
+      id: 'x1',
+      a: { stationId: 's1', lineId: 'L1' },
+      b: { stationId: 's2', lineId: 'L2' },
+    });
+  });
+
+  it('accepts null lineId for stations that have no relevant stop', () => {
+    const doc = makeDoc({
+      stations: [makeStation({ id: 's1' }), makeStation({ id: 's2' })],
+    });
+    const next = T.addTransfer(
+      doc,
+      'x1',
+      { stationId: 's1', lineId: null },
+      { stationId: 's2', lineId: null },
+    );
+    expect(next.transfers.x1.a.lineId).toBeNull();
+    expect(next.transfers.x1.b.lineId).toBeNull();
+  });
+
+  it('allows a same-station transfer between two distinct dots', () => {
+    // Interlined station case: two different lines have stops on the same
+    // station and the user wants a short transfer indicator between those
+    // two dots. Same-station + same-lineId is the only true self-transfer.
+    const doc = makeDoc({ stations: [makeStation({ id: 's1' })] });
+    const next = T.addTransfer(
+      doc,
+      'x1',
+      { stationId: 's1', lineId: 'L1' },
+      { stationId: 's1', lineId: 'L2' },
+    );
+    expect(next.transfers.x1).toEqual({
+      id: 'x1',
+      a: { stationId: 's1', lineId: 'L1' },
+      b: { stationId: 's1', lineId: 'L2' },
+    });
+  });
+
+  it('refuses a same-station, same-lineId self-transfer', () => {
+    const doc = makeDoc({ stations: [makeStation({ id: 's1' })] });
+    expect(
+      T.addTransfer(
+        doc,
+        'x1',
+        { stationId: 's1', lineId: 'L1' },
+        { stationId: 's1', lineId: 'L1' },
+      ),
+    ).toBe(doc);
+    expect(
+      T.addTransfer(
+        doc,
+        'x1',
+        { stationId: 's1', lineId: null },
+        { stationId: 's1', lineId: null },
+      ),
+    ).toBe(doc);
+  });
+
+  it('refuses if either endpoint station does not exist', () => {
+    const doc = makeDoc({ stations: [makeStation({ id: 's1' })] });
+    expect(
+      T.addTransfer(
+        doc,
+        'x1',
+        { stationId: 's1', lineId: null },
+        { stationId: 'missing', lineId: null },
+      ),
+    ).toBe(doc);
+  });
+});
+
+describe('deleteTransfer', () => {
+  it('removes a transfer by id', () => {
+    const doc = makeDoc({
+      stations: [makeStation({ id: 's1' }), makeStation({ id: 's2' })],
+      transfers: [
+        { id: 'x1', a: { stationId: 's1', lineId: null }, b: { stationId: 's2', lineId: null } },
+      ],
+    });
+    expect(T.deleteTransfer(doc, 'x1').transfers.x1).toBeUndefined();
+  });
+
+  it('is a no-op for unknown ids', () => {
+    const doc = makeDoc({});
+    expect(T.deleteTransfer(doc, 'nope')).toBe(doc);
+  });
+});
+
+describe('deleteLine: transfers', () => {
+  it('nulls out lineId on transfer endpoints that referenced the line', () => {
+    const doc = makeDoc({
+      stations: [makeStation({ id: 's1' }), makeStation({ id: 's2' })],
+      lines: [makeLine({ id: 'L1', stations: ['s1', 's2'] })],
+      transfers: [
+        { id: 'x1', a: { stationId: 's1', lineId: 'L1' }, b: { stationId: 's2', lineId: 'L1' } },
+        { id: 'x2', a: { stationId: 's1', lineId: null }, b: { stationId: 's2', lineId: 'L2' } },
+      ],
+    });
+    const next = T.deleteLine(doc, 'L1');
+    // x1 endpoints both nulled out; transfer survives.
+    expect(next.transfers.x1.a.lineId).toBeNull();
+    expect(next.transfers.x1.b.lineId).toBeNull();
+    // x2 didn't reference L1 — untouched.
+    expect(next.transfers.x2.a.lineId).toBeNull();
+    expect(next.transfers.x2.b.lineId).toBe('L2');
+  });
 });
 
 describe('moveStop', () => {

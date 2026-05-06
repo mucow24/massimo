@@ -1,7 +1,21 @@
 import { describe, it, expect } from 'vitest';
 import { alignmentPairs, axisForRotation, parallel, snapDraggedStation } from './snap';
 import { makeStation, makeStop } from '../test/fixtures';
-import type { Station, StationId, StopCell } from '../model/types';
+import type { Line, LineId, Station, StationId, StopCell } from '../model/types';
+
+// Helper: build a line whose stations array forms a chain. Adjacency in
+// `line.stations` is what alignmentPairs filters by.
+const lineOf = (id: LineId, stationIds: StationId[]): Line => ({
+  id,
+  service: id,
+  color: '#000',
+  stations: stationIds,
+});
+const linesOf = (...ls: Line[]): Record<LineId, Line> => {
+  const m: Record<LineId, Line> = {};
+  for (const l of ls) m[l.id] = l;
+  return m;
+};
 
 describe('parallel', () => {
   it('flags vectors with the same direction', () => {
@@ -31,12 +45,12 @@ describe('axisForRotation', () => {
 describe('alignmentPairs', () => {
   it('returns the rotation-axis fallback when neither side has stops', () => {
     const target = makeStation({ id: 't', x: 0, y: 0 });
-    const pairs = alignmentPairs(0, [], target);
+    const pairs = alignmentPairs('d', 0, [], target, {});
     expect(pairs).toHaveLength(1);
     expect(pairs[0].axis).toEqual({ x: 0, y: 1 });
   });
 
-  it('emits a pair for each shared line with parallel travel directions', () => {
+  it('emits a pair for each shared line where the two stations are adjacent', () => {
     const target = makeStation({
       id: 't',
       x: 0,
@@ -47,7 +61,8 @@ describe('alignmentPairs', () => {
       makeStop('L1', { row: 0, col: 0 }),
       makeStop('L2', { row: 0, col: 1 }),
     ];
-    const pairs = alignmentPairs(0, draggedStops, target);
+    const lines = linesOf(lineOf('L1', ['d', 't']), lineOf('L2', ['d', 't']));
+    const pairs = alignmentPairs('d', 0, draggedStops, target, lines);
     expect(pairs).toHaveLength(2);
   });
 
@@ -59,7 +74,45 @@ describe('alignmentPairs', () => {
       stops: [makeStop('LX', { row: 0, col: 0 })],
     });
     const draggedStops: StopCell[] = [makeStop('LY', { row: 0, col: 0 })];
-    expect(alignmentPairs(0, draggedStops, target)).toEqual([]);
+    expect(
+      alignmentPairs(
+        'd',
+        0,
+        draggedStops,
+        target,
+        linesOf(lineOf('LX', ['t']), lineOf('LY', ['d'])),
+      ),
+    ).toEqual([]);
+  });
+
+  it('emits no pair when stations are on the same line but not adjacent', () => {
+    // Line L1: d → x → t (an intervening station between dragged and target).
+    const target = makeStation({
+      id: 't',
+      x: 0,
+      y: 200,
+      stops: [makeStop('L1', { row: 0, col: 0 })],
+    });
+    const draggedStops: StopCell[] = [makeStop('L1', { row: 0, col: 0 })];
+    const lines = linesOf(lineOf('L1', ['d', 'x', 't']));
+    expect(alignmentPairs('d', 0, draggedStops, target, lines)).toEqual([]);
+  });
+
+  it('per-line adjacency: emit a pair only on lines where the stations are adjacent', () => {
+    // L1: d → t (adjacent). L2: d → x → t (not adjacent).
+    const target = makeStation({
+      id: 't',
+      x: 0,
+      y: 100,
+      stops: [makeStop('L1', { row: 0, col: 0 }), makeStop('L2', { row: 0, col: 1 })],
+    });
+    const draggedStops: StopCell[] = [
+      makeStop('L1', { row: 0, col: 0 }),
+      makeStop('L2', { row: 0, col: 1 }),
+    ];
+    const lines = linesOf(lineOf('L1', ['d', 't']), lineOf('L2', ['d', 'x', 't']));
+    const pairs = alignmentPairs('d', 0, draggedStops, target, lines);
+    expect(pairs).toHaveLength(1);
   });
 });
 
@@ -78,6 +131,7 @@ describe('snapDraggedStation', () => {
       draggedRotation: 0,
       draggedStops: [makeStop('L1')],
       stations: stations(makeStation({ id: 'd', x: 0, y: 0 })),
+      lines: linesOf(lineOf('L1', ['d'])),
     });
     expect(r.x).toBe(50);
     expect(r.y).toBe(50);
@@ -106,6 +160,7 @@ describe('snapDraggedStation', () => {
       draggedRotation: 0,
       draggedStops: dragged.stops,
       stations: stations(dragged, target),
+      lines: linesOf(lineOf('L1', ['d', 't'])),
     });
     expect(r.x).toBeCloseTo(100, 5);
     expect(r.y).toBeCloseTo(50, 5);
@@ -149,6 +204,7 @@ describe('snapDraggedStation', () => {
       draggedRotation: 0,
       draggedStops: dragged.stops,
       stations: stations(dragged, t1, t2),
+      lines: linesOf(lineOf('L1', ['d', 't1']), lineOf('L2', ['d', 't2'])),
     });
     expect(r.x).toBeCloseTo(100, 3);
     expect(r.y).toBeCloseTo(200, 3);
@@ -168,6 +224,7 @@ describe('snapDraggedStation', () => {
       y: 0,
       stops: [makeStop('L1')],
     });
+    const lines = linesOf(lineOf('L1', ['d', 't']));
     // Within tolerance: snaps.
     const inTol = snapDraggedStation({
       draggedId: 'd',
@@ -176,6 +233,7 @@ describe('snapDraggedStation', () => {
       draggedRotation: 0,
       draggedStops: dragged.stops,
       stations: stations(dragged, target),
+      lines,
       tolerance: 10,
     });
     expect(inTol.guides).toHaveLength(1);
@@ -187,6 +245,7 @@ describe('snapDraggedStation', () => {
       draggedRotation: 0,
       draggedStops: dragged.stops,
       stations: stations(dragged, target),
+      lines,
       tolerance: 10,
     });
     expect(outTol.guides).toEqual([]);
@@ -214,6 +273,7 @@ describe('snapDraggedStation', () => {
       draggedRotation: 0,
       draggedStops: dragged.stops,
       stations: stations(dragged, target),
+      lines: linesOf(lineOf('L1', ['d', 't']), lineOf('L2', ['d', 't']), lineOf('L3', ['d', 't'])),
     });
     expect(r.guides).toHaveLength(1);
   });
@@ -231,9 +291,141 @@ describe('snapDraggedStation', () => {
       draggedRotation: 0,
       draggedStops: dragged.stops,
       stations: stations(dragged, target),
+      lines: {},
     });
     expect(r.x).toBeCloseTo(100, 3);
     expect(r.y).toBeCloseTo(50, 3);
+  });
+
+  it('bulletLineId: snaps a free-floating bullet to a station stop on the line', () => {
+    // Two stations, both with a stop on L1 (auto-vertical → vertical world
+    // axis). A bullet (no stops, no draggedId) hovering near x=0 snaps
+    // perpendicular onto the vertical axis through the stops.
+    const a = makeStation({
+      id: 'a',
+      x: 0,
+      y: 0,
+      stops: [makeStop('L1')],
+    });
+    const b = makeStation({
+      id: 'b',
+      x: 0,
+      y: 100,
+      stops: [makeStop('L1')],
+    });
+    const r = snapDraggedStation({
+      proposedX: 5,
+      proposedY: 50,
+      stations: stations(a, b),
+      lines: linesOf(lineOf('L1', ['a', 'b'])),
+      bulletLineId: 'L1',
+    });
+    expect(r.x).toBeCloseTo(0, 5);
+    expect(r.y).toBeCloseTo(50, 5);
+    // Primary guide to the closer stop, plus opposite-direction guide to
+    // the third in-line station — same behavior the station-drag path
+    // emits when a third station shares the snap axis.
+    expect(r.guides.length).toBeGreaterThanOrEqual(1);
+  });
+
+  it('bulletLineId: ignores stations with no stop on the chosen line', () => {
+    // L1 covers `a`; L2 covers `b`. A bullet bound to L1 must NOT snap to
+    // `b` even though they share an axis — `b` has no stop on L1.
+    const a = makeStation({
+      id: 'a',
+      x: 0,
+      y: 0,
+      stops: [makeStop('L1')],
+    });
+    const b = makeStation({
+      id: 'b',
+      x: 0,
+      y: 200,
+      stops: [makeStop('L2')],
+    });
+    const r = snapDraggedStation({
+      proposedX: 5,
+      proposedY: 200,
+      stations: stations(a, b),
+      lines: linesOf(lineOf('L1', ['a']), lineOf('L2', ['b'])),
+      bulletLineId: 'L1',
+    });
+    // Snap should engage only via `a` — for a bullet near `b`'s y, x snaps
+    // onto a's vertical axis line.
+    expect(r.x).toBeCloseTo(0, 5);
+    expect(r.y).toBeCloseTo(200, 5);
+  });
+
+  it('bulletLineId: snaps to the CLOSEST stops on the chosen line, not iteration order', () => {
+    // Four stations on a single vertical chain at x=0. Bullet at (5, 250)
+    // is nearest C (y=200) and D (y=300). The snap engine must pick those
+    // as the primary + opposite guides, NOT A or B just because they came
+    // first in iteration order. Regression: bullet snap was using
+    // perpDist as the sole tiebreaker and falling back to insertion order
+    // when all stops were collinear (same perpDist), so a bullet near the
+    // terminus would draw guides to the far end of the line.
+    const a = makeStation({ id: 'a', x: 0, y: 0, stops: [makeStop('L1')] });
+    const b = makeStation({ id: 'b', x: 0, y: 100, stops: [makeStop('L1')] });
+    const c = makeStation({ id: 'c', x: 0, y: 200, stops: [makeStop('L1')] });
+    const d = makeStation({ id: 'd', x: 0, y: 300, stops: [makeStop('L1')] });
+    const r = snapDraggedStation({
+      proposedX: 5,
+      proposedY: 250,
+      stations: stations(a, b, c, d),
+      lines: linesOf(lineOf('L1', ['a', 'b', 'c', 'd'])),
+      bulletLineId: 'L1',
+    });
+    // Snap pins x to 0; y preserved.
+    expect(r.x).toBeCloseTo(0, 5);
+    expect(r.y).toBeCloseTo(250, 5);
+    // Two guides — to c (50 above) and d (50 below). Neither is to a (250)
+    // or b (150) — those are further on the same axis line.
+    const guideTargets = r.guides.map((g) => `${g.to.x.toFixed(0)},${g.to.y.toFixed(0)}`).sort();
+    expect(guideTargets).toEqual(['0,200', '0,300']);
+  });
+
+  it('bulletLineId: rejects bullets too far from any matching stop axis', () => {
+    const a = makeStation({
+      id: 'a',
+      x: 0,
+      y: 0,
+      stops: [makeStop('L1')],
+    });
+    const r = snapDraggedStation({
+      proposedX: 50,
+      proposedY: 50,
+      stations: stations(a),
+      lines: linesOf(lineOf('L1', ['a'])),
+      bulletLineId: 'L1',
+      tolerance: 10,
+    });
+    expect(r.x).toBe(50);
+    expect(r.y).toBe(50);
+    expect(r.guides).toEqual([]);
+  });
+
+  it('redistributeAnchor: snaps exclusively to the anchor, ignoring adjacency', () => {
+    // Line: a — x — d. Anchor a is two steps from dragged d, so the regular
+    // adjacency filter would skip it. With redistributeAnchor=a the anchor
+    // qualifies anyway and is the only candidate.
+    const a = makeStation({ id: 'a', x: 100, y: 0, stops: [makeStop('L1')] });
+    const x = makeStation({ id: 'x', x: 100, y: 100, stops: [makeStop('L1')] });
+    const d = makeStation({ id: 'd', x: 0, y: 200, stops: [makeStop('L1')] });
+    const r = snapDraggedStation({
+      draggedId: 'd',
+      proposedX: 105,
+      proposedY: 200,
+      draggedRotation: 0,
+      draggedStops: d.stops,
+      stations: stations(d, a, x),
+      lines: linesOf(lineOf('L1', ['a', 'x', 'd'])),
+      redistributeAnchor: 'a',
+    });
+    expect(r.x).toBeCloseTo(100, 5);
+    expect(r.y).toBeCloseTo(200, 5);
+    // Exactly one guide, to the anchor — x (an adjacent intermediate) is
+    // ignored even though it's also on the same axis.
+    expect(r.guides).toHaveLength(1);
   });
 
   it('emits an opposite-direction guide when a third in-line station exists', () => {
@@ -265,6 +457,8 @@ describe('snapDraggedStation', () => {
       draggedRotation: 0,
       draggedStops: dragged.stops,
       stations: stations(dragged, target, third),
+      // d is line-adjacent to both a and c on L1: a — d — c.
+      lines: linesOf(lineOf('L1', ['a', 'd', 'c'])),
     });
     // 1 primary guide + 1 opposite-direction guide.
     expect(r.guides.length).toBeGreaterThanOrEqual(2);

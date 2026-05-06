@@ -1,7 +1,7 @@
 import { create } from 'zustand';
 import { persist, createJSONStorage } from 'zustand/middleware';
 import { temporal } from 'zundo';
-import type { Line, LineId, MapDoc, StationId } from '../model/types';
+import type { Line, LineId, MapDoc, RouteBullet, StationId } from '../model/types';
 import type { Vec2 } from '../geometry/vec';
 import { effectiveLineOrder } from '../model/lineOrder';
 import { defaultIdFactory, IdFactory } from '../model/ids';
@@ -58,6 +58,11 @@ interface DocState extends MapDoc {
   addStation: (x: number, y: number) => StationId;
   renameStation: (id: StationId, name: string) => void;
   moveStation: (id: StationId, x: number, y: number) => void;
+  redistributeBetween: (
+    startId: StationId,
+    endId: StationId,
+    mode?: 'arc-bends' | 'straight',
+  ) => void;
   rotateStation: (id: StationId) => void;
   rotateStationAndLayout: (id: StationId, dir: -1 | 1) => void;
   deleteStation: (id: StationId) => void;
@@ -95,6 +100,22 @@ interface DocState extends MapDoc {
   cycleLineTagOrientation: (id: string) => void;
   deleteLineTag: (id: string) => void;
 
+  addRouteBullet: (x: number, y: number, lineId: LineId | null) => string;
+  addRouteBulletWith: (fields: Omit<RouteBullet, 'id'>) => string;
+  moveRouteBullet: (id: string, x: number, y: number) => void;
+  rotateRouteBullet: (id: string) => void;
+  updateRouteBullet: (
+    id: string,
+    patch: Partial<Pick<RouteBullet, 'lineId' | 'shape' | 'size'>>,
+  ) => void;
+  deleteRouteBullet: (id: string) => void;
+
+  addTransfer: (
+    a: { stationId: StationId; lineId: LineId | null },
+    b: { stationId: StationId; lineId: LineId | null },
+  ) => string;
+  deleteTransfer: (id: string) => void;
+
   setCurveRadius: (r: number) => void;
   clearAll: () => void;
 }
@@ -113,6 +134,8 @@ export const useDoc = create<DocState>()(
         },
         renameStation: (id, name) => set((s) => T.renameStation(s, id, name)),
         moveStation: (id, x, y) => set((s) => T.moveStation(s, id, x, y)),
+        redistributeBetween: (startId, endId, mode = 'arc-bends') =>
+          set((s) => T.redistributeBetween(s, startId, endId, mode)),
         rotateStation: (id) => set((s) => T.rotateStation(s, id)),
         rotateStationAndLayout: (id, dir) => set((s) => T.rotateStationAndLayout(s, id, dir)),
         deleteStation: (id) => set((s) => T.deleteStation(s, id)),
@@ -166,6 +189,29 @@ export const useDoc = create<DocState>()(
         cycleLineTagOrientation: (id) => set((s) => T.cycleLineTagOrientation(s, id)),
         deleteLineTag: (id) => set((s) => T.deleteLineTag(s, id)),
 
+        addRouteBullet: (x, y, lineId) => {
+          const id = ids.routeBulletId();
+          set((s) => T.addRouteBullet(s, id, x, y, lineId));
+          return id;
+        },
+        addRouteBulletWith: (fields) => {
+          const id = ids.routeBulletId();
+          set((s) => T.addRouteBulletWith(s, id, fields));
+          return id;
+        },
+        moveRouteBullet: (id, x, y) => set((s) => T.moveRouteBullet(s, id, x, y)),
+        rotateRouteBullet: (id) => set((s) => T.rotateRouteBullet(s, id)),
+        updateRouteBullet: (id, patch) => set((s) => T.updateRouteBullet(s, id, patch)),
+        deleteRouteBullet: (id) => set((s) => T.deleteRouteBullet(s, id)),
+
+        addTransfer: (a, b) => {
+          const id = ids.transferId();
+          set((s) => T.addTransfer(s, id, a, b));
+          return id;
+        },
+
+        deleteTransfer: (id) => set((s) => T.deleteTransfer(s, id)),
+
         setCurveRadius: (r) => set((s) => T.setCurveRadius(s, r)),
         clearAll: () => set((s) => T.clearAll(s)),
       }),
@@ -180,6 +226,8 @@ export const useDoc = create<DocState>()(
           curveRadius: s.curveRadius,
           lineCounter: s.lineCounter,
           lineTags: s.lineTags,
+          routeBullets: s.routeBullets,
+          transfers: s.transfers,
         }),
         // Single source of truth for migrations — see model/serialize.ts.
         migrate: (persisted, fromVersion) => migrateDoc(persisted, fromVersion),
@@ -196,6 +244,8 @@ export const useDoc = create<DocState>()(
         curveRadius: state.curveRadius,
         lineCounter: state.lineCounter,
         lineTags: state.lineTags,
+        routeBullets: state.routeBullets,
+        transfers: state.transfers,
       }),
       limit: 200,
     },
@@ -208,7 +258,14 @@ export const useDoc = create<DocState>()(
  */
 type DocSnapshot = Pick<
   MapDoc,
-  'stations' | 'lines' | 'lineOrder' | 'curveRadius' | 'lineCounter' | 'lineTags'
+  | 'stations'
+  | 'lines'
+  | 'lineOrder'
+  | 'curveRadius'
+  | 'lineCounter'
+  | 'lineTags'
+  | 'routeBullets'
+  | 'transfers'
 >;
 
 function snapshotDoc(s: DocState): DocSnapshot {
@@ -219,6 +276,8 @@ function snapshotDoc(s: DocState): DocSnapshot {
     curveRadius: s.curveRadius,
     lineCounter: s.lineCounter,
     lineTags: s.lineTags,
+    routeBullets: s.routeBullets,
+    transfers: s.transfers,
   };
 }
 
@@ -305,6 +364,9 @@ interface SelectionState {
   insertAfterIndex: number | null;
   placingStation: boolean;
   hoveredStationId: StationId | null;
+  // The (lineId, stationId) currently hovered in the line editor's station
+  // list. Used to highlight the corresponding stop dot on the canvas.
+  hoveredLineStop: { lineId: LineId; stationId: StationId } | null;
   // The lineId of the currently-selected stop cell within the active station
   // inspector. Cleared whenever a different station is selected.
   selectedStopLineId: LineId | null;
@@ -319,10 +381,27 @@ interface SelectionState {
   creatingLineTag: boolean;
   selectedLineTagId: string | null;
   lineTagHoverPreview: LineTagHoverPreview | null;
+  // Route bullet selection + creation.
+  creatingRouteBullet: boolean;
+  selectedRouteBulletId: string | null;
+  // Transfer selection + creation. While `creatingTransfer` is true and
+  // `transferAnchor` is null, the next station-click picks the first dot.
+  // Once set, the next station-click picks the second dot and commits.
+  // The anchor records the specific dot (lineId) the user clicked on so
+  // the transfer pins to that stop.
+  creatingTransfer: boolean;
+  transferAnchor: { stationId: StationId; lineId: LineId | null } | null;
+  selectedTransferId: string | null;
   // When true, edits made via the StationInspector (stop layout + label)
   // mirror to all directly-connected stations whose unrotated stop layouts
   // are identical. Resets to false whenever a different station is selected.
   mirrorMatching: boolean;
+  // Canvas tool mode: 'arrow' for select/move, 'hand' for pan.
+  toolMode: 'arrow' | 'hand';
+  // Spacebar held → temporarily acts like hand mode.
+  spaceHeld: boolean;
+  setToolMode: (m: 'arrow' | 'hand') => void;
+  setSpaceHeld: (v: boolean) => void;
   selectStation: (id: StationId | null) => void;
   selectLine: (id: LineId | null) => void;
   startAppendAt: (lineId: LineId, insertAfterIndex: number) => void;
@@ -330,6 +409,7 @@ interface SelectionState {
   setInsertAfterIndex: (idx: number | null) => void;
   setPlacingStation: (placing: boolean) => void;
   setHoveredStation: (id: StationId | null) => void;
+  setHoveredLineStop: (v: { lineId: LineId; stationId: StationId } | null) => void;
   setSelectedStopLineId: (id: LineId | null) => void;
   setLabelSelected: (selected: boolean) => void;
   setEditingStationId: (id: StationId | null) => void;
@@ -337,6 +417,11 @@ interface SelectionState {
   selectLineTag: (id: string | null) => void;
   setCreatingLineTag: (creating: boolean) => void;
   setLineTagHoverPreview: (preview: LineTagHoverPreview | null) => void;
+  selectRouteBullet: (id: string | null) => void;
+  setCreatingRouteBullet: (creating: boolean) => void;
+  selectTransfer: (id: string | null) => void;
+  setCreatingTransfer: (creating: boolean) => void;
+  setTransferAnchor: (anchor: { stationId: StationId; lineId: LineId | null } | null) => void;
   setMirrorMatching: (on: boolean) => void;
 }
 
@@ -347,6 +432,7 @@ export const useSelection = create<SelectionState>((set, get) => ({
   insertAfterIndex: null,
   placingStation: false,
   hoveredStationId: null,
+  hoveredLineStop: null,
   selectedStopLineId: null,
   labelSelected: false,
   editingStationId: null,
@@ -354,7 +440,16 @@ export const useSelection = create<SelectionState>((set, get) => ({
   creatingLineTag: false,
   selectedLineTagId: null,
   lineTagHoverPreview: null,
+  creatingRouteBullet: false,
+  selectedRouteBulletId: null,
+  creatingTransfer: false,
+  transferAnchor: null,
+  selectedTransferId: null,
   mirrorMatching: false,
+  toolMode: 'arrow',
+  spaceHeld: false,
+  setToolMode: (m) => set({ toolMode: m }),
+  setSpaceHeld: (v) => set({ spaceHeld: v }),
   selectStation: (id) =>
     set({
       selectedStationId: id,
@@ -411,6 +506,7 @@ export const useSelection = create<SelectionState>((set, get) => ({
       lineTagHoverPreview: placing ? null : get().lineTagHoverPreview,
     }),
   setHoveredStation: (id) => set({ hoveredStationId: id }),
+  setHoveredLineStop: (v) => set({ hoveredLineStop: v }),
   setSelectedStopLineId: (id) =>
     set({ selectedStopLineId: id, labelSelected: id === null ? get().labelSelected : false }),
   setLabelSelected: (selected) =>
@@ -448,5 +544,69 @@ export const useSelection = create<SelectionState>((set, get) => ({
       lineTagHoverPreview: creating ? get().lineTagHoverPreview : null,
     }),
   setLineTagHoverPreview: (preview) => set({ lineTagHoverPreview: preview }),
+  selectRouteBullet: (id) =>
+    set({
+      selectedRouteBulletId: id,
+      // Selecting a bullet clears other selections + placement modes.
+      selectedStationId: id === null ? get().selectedStationId : null,
+      selectedLineId: id === null ? get().selectedLineId : null,
+      selectedLineTagId: id === null ? get().selectedLineTagId : null,
+      labelSelected: false,
+      editingStationId: null,
+      creatingLineTag: id === null ? get().creatingLineTag : false,
+      placingStation: id === null ? get().placingStation : false,
+      appendingToLineId: id === null ? get().appendingToLineId : null,
+      insertAfterIndex: id === null ? get().insertAfterIndex : null,
+      creatingRouteBullet: id === null ? get().creatingRouteBullet : false,
+    }),
+  setCreatingRouteBullet: (creating) =>
+    set({
+      creatingRouteBullet: creating,
+      // Entering bullet-creation mode clears all other modes + selections.
+      placingStation: creating ? false : get().placingStation,
+      creatingLineTag: creating ? false : get().creatingLineTag,
+      appendingToLineId: creating ? null : get().appendingToLineId,
+      insertAfterIndex: creating ? null : get().insertAfterIndex,
+      creatingTransfer: creating ? false : get().creatingTransfer,
+      transferAnchor: creating ? null : get().transferAnchor,
+      selectedStationId: creating ? null : get().selectedStationId,
+      selectedLineId: creating ? null : get().selectedLineId,
+      selectedLineTagId: creating ? null : get().selectedLineTagId,
+      selectedRouteBulletId: creating ? null : get().selectedRouteBulletId,
+      selectedTransferId: creating ? null : get().selectedTransferId,
+    }),
+  selectTransfer: (id) =>
+    set({
+      selectedTransferId: id,
+      selectedStationId: id === null ? get().selectedStationId : null,
+      selectedLineId: id === null ? get().selectedLineId : null,
+      selectedLineTagId: id === null ? get().selectedLineTagId : null,
+      selectedRouteBulletId: id === null ? get().selectedRouteBulletId : null,
+      labelSelected: false,
+      editingStationId: null,
+      placingStation: id === null ? get().placingStation : false,
+      creatingLineTag: id === null ? get().creatingLineTag : false,
+      creatingRouteBullet: id === null ? get().creatingRouteBullet : false,
+      creatingTransfer: id === null ? get().creatingTransfer : false,
+      transferAnchor: id === null ? get().transferAnchor : null,
+      appendingToLineId: id === null ? get().appendingToLineId : null,
+      insertAfterIndex: id === null ? get().insertAfterIndex : null,
+    }),
+  setCreatingTransfer: (creating) =>
+    set({
+      creatingTransfer: creating,
+      transferAnchor: null,
+      placingStation: creating ? false : get().placingStation,
+      creatingLineTag: creating ? false : get().creatingLineTag,
+      creatingRouteBullet: creating ? false : get().creatingRouteBullet,
+      appendingToLineId: creating ? null : get().appendingToLineId,
+      insertAfterIndex: creating ? null : get().insertAfterIndex,
+      selectedStationId: creating ? null : get().selectedStationId,
+      selectedLineId: creating ? null : get().selectedLineId,
+      selectedLineTagId: creating ? null : get().selectedLineTagId,
+      selectedRouteBulletId: creating ? null : get().selectedRouteBulletId,
+      selectedTransferId: creating ? null : get().selectedTransferId,
+    }),
+  setTransferAnchor: (anchor) => set({ transferAnchor: anchor }),
   setMirrorMatching: (on) => set({ mirrorMatching: on }),
 }));
