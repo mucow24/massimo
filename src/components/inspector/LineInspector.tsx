@@ -26,7 +26,6 @@ export function LineInspector({ id }: { id: LineId }) {
 
   return (
     <section className="inspector">
-      <h2>Line</h2>
       <div className="field">
         <label>Service code</label>
         <input

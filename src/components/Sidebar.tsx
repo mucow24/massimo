@@ -1,4 +1,4 @@
-import { useEffect } from 'react';
+import { useEffect, useRef } from 'react';
 import { effectiveLineOrder, useDoc, useSelection } from '../state/store';
 import { LineInspector, StationInspector } from './inspector';
 import type { Line } from '../model/types';
@@ -36,8 +36,14 @@ export function Sidebar() {
     el?.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
   }, [selection.selectedStationId, selection.activeTab]);
 
+  // Only scroll when the tab just transitioned to 'lines' (e.g. clicking a
+  // line bullet from the stations tab). In-tab clicks shouldn't reflow.
+  const prevLinesTabRef = useRef(selection.activeTab);
   useEffect(() => {
+    const wasOnLines = prevLinesTabRef.current === 'lines';
+    prevLinesTabRef.current = selection.activeTab;
     if (selection.activeTab !== 'lines' || !selection.selectedLineId) return;
+    if (wasOnLines) return;
     const el = document.querySelector(`[data-line-row="${selection.selectedLineId}"]`);
     el?.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
   }, [selection.selectedLineId, selection.activeTab]);
@@ -127,7 +133,11 @@ export function Sidebar() {
               if (!ln) return null;
               const expanded = selection.selectedLineId === ln.id;
               return (
-                <div key={ln.id} data-line-row={ln.id}>
+                <div
+                  key={ln.id}
+                  data-line-row={ln.id}
+                  style={expanded ? { border: `4px solid ${ln.color}` } : undefined}
+                >
                   <div
                     className={'list-row' + (expanded ? ' selected' : '')}
                     onClick={() => selection.selectLine(expanded ? null : ln.id)}
@@ -169,7 +179,7 @@ export function Sidebar() {
                     </button>
                   </div>
                   {expanded && (
-                    <div className="inline-editor">
+                    <div className="inline-editor" style={{ border: 'none' }}>
                       <LineInspector id={ln.id} />
                     </div>
                   )}
