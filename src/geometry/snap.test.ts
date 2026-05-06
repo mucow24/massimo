@@ -301,6 +301,30 @@ describe('snapDraggedStation', () => {
     expect(r.y).toBeCloseTo(50, 3);
   });
 
+  it('redistributeAnchor: snaps exclusively to the anchor, ignoring adjacency', () => {
+    // Line: a — x — d. Anchor a is two steps from dragged d, so the regular
+    // adjacency filter would skip it. With redistributeAnchor=a the anchor
+    // qualifies anyway and is the only candidate.
+    const a = makeStation({ id: 'a', x: 100, y: 0, stops: [makeStop('L1')] });
+    const x = makeStation({ id: 'x', x: 100, y: 100, stops: [makeStop('L1')] });
+    const d = makeStation({ id: 'd', x: 0, y: 200, stops: [makeStop('L1')] });
+    const r = snapDraggedStation({
+      draggedId: 'd',
+      proposedX: 105,
+      proposedY: 200,
+      draggedRotation: 0,
+      draggedStops: d.stops,
+      stations: stations(d, a, x),
+      lines: linesOf(lineOf('L1', ['a', 'x', 'd'])),
+      redistributeAnchor: 'a',
+    });
+    expect(r.x).toBeCloseTo(100, 5);
+    expect(r.y).toBeCloseTo(200, 5);
+    // Exactly one guide, to the anchor — x (an adjacent intermediate) is
+    // ignored even though it's also on the same axis.
+    expect(r.guides).toHaveLength(1);
+  });
+
   it('emits an opposite-direction guide when a third in-line station exists', () => {
     // Three stations on a vertical corridor: target above (100, 0), third
     // below (100, 200), drag near (102, 100). Should emit a primary guide

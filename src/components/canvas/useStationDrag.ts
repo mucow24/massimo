@@ -98,6 +98,10 @@ export function useStationDrag(
         stations,
         lines,
         tolerance: SNAP_PERP_TOLERANCE,
+        // Ctrl-drag: snap exclusively to the anchor (the originally
+        // selected station). Intermediates are moving with the
+        // redistribute and would be unstable snap targets.
+        redistributeAnchor: ds.redistributeAnchor ?? undefined,
       });
       nx = snap.x;
       ny = snap.y;
