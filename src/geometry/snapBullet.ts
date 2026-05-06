@@ -1,12 +1,14 @@
-import type { Line, LineId, Station, StationId } from '../model/types';
 import type { SnapGuide } from './snap';
-import { STOP_SIZE } from './orientation';
 
 export interface SnapBulletInput {
   x: number;
   y: number;
-  line: Line;
-  stations: Record<StationId, Station>;
+  // One polyline per band the line passes through. Each polyline is the
+  // band's centerline (the rendered stripe path), so snap follows the
+  // curved geometry — straight-line direction between stops doesn't match
+  // the visual line at corners or at stations whose stop orientation
+  // forces a specific tangent.
+  polylines: { x: number; y: number }[][];
   tolerance: number;
 }
 
@@ -14,18 +16,6 @@ export interface SnapBulletResult {
   x: number;
   y: number;
   guides: SnapGuide[];
-}
-
-// World position of a station's stop on the given line.
-function stopWorldOnLine(st: Station, lineId: LineId): { x: number; y: number } | null {
-  const cell = st.stops.find((c) => c.lineId === lineId);
-  if (!cell) return null;
-  const a = (st.rotation * Math.PI) / 4;
-  const cs = Math.cos(a);
-  const sn = Math.sin(a);
-  const lx = cell.col * STOP_SIZE;
-  const ly = cell.row * STOP_SIZE;
-  return { x: st.x + lx * cs - ly * sn, y: st.y + lx * sn + ly * cs };
 }
 
 /**
@@ -52,7 +42,7 @@ function stopWorldOnLine(st: Station, lineId: LineId): { x: number; y: number } 
  *     two endpoints, labeled with the distance.
  */
 export function snapBullet(input: SnapBulletInput): SnapBulletResult {
-  const { x, y, line, stations, tolerance } = input;
+  const { x, y, polylines, tolerance } = input;
 
   type Cand = {
     aw: { x: number; y: number };
@@ -62,28 +52,28 @@ export function snapBullet(input: SnapBulletInput): SnapBulletResult {
     perpDist: number;
     s: number; // signed parallel distance from aw along (ux, uy)
     segLen: number;
+    polylineIndex: number;
   };
   const cands: Cand[] = [];
-  for (let i = 0; i < line.stations.length - 1; i++) {
-    const sa = stations[line.stations[i]];
-    const sb = stations[line.stations[i + 1]];
-    if (!sa || !sb) continue;
-    const aw = stopWorldOnLine(sa, line.id);
-    const bw = stopWorldOnLine(sb, line.id);
-    if (!aw || !bw) continue;
-    const dx = bw.x - aw.x;
-    const dy = bw.y - aw.y;
-    const segLen = Math.hypot(dx, dy);
-    if (segLen === 0) continue;
-    const ux = dx / segLen;
-    const uy = dy / segLen;
-    // Perpendicular axis (rotate +90°): (-uy, ux).
-    const px = -uy;
-    const py = ux;
-    const perpDist = Math.abs((x - aw.x) * px + (y - aw.y) * py);
-    if (perpDist > tolerance) continue;
-    const s = (x - aw.x) * ux + (y - aw.y) * uy;
-    cands.push({ aw, bw, ux, uy, perpDist, s, segLen });
+  for (let pi = 0; pi < polylines.length; pi++) {
+    const poly = polylines[pi];
+    for (let i = 0; i < poly.length - 1; i++) {
+      const aw = poly[i];
+      const bw = poly[i + 1];
+      const dx = bw.x - aw.x;
+      const dy = bw.y - aw.y;
+      const segLen = Math.hypot(dx, dy);
+      if (segLen === 0) continue;
+      const ux = dx / segLen;
+      const uy = dy / segLen;
+      // Perpendicular axis (rotate +90°): (-uy, ux).
+      const px = -uy;
+      const py = ux;
+      const perpDist = Math.abs((x - aw.x) * px + (y - aw.y) * py);
+      if (perpDist > tolerance) continue;
+      const s = (x - aw.x) * ux + (y - aw.y) * uy;
+      cands.push({ aw, bw, ux, uy, perpDist, s, segLen, polylineIndex: pi });
+    }
   }
   if (cands.length === 0) return { x, y, guides: [] };
 
@@ -109,32 +99,38 @@ export function snapBullet(input: SnapBulletInput): SnapBulletResult {
   const best = cands[0];
   const sx = best.aw.x + best.s * best.ux;
   const sy = best.aw.y + best.s * best.uy;
-  const dPrev = Math.hypot(sx - best.aw.x, sy - best.aw.y);
-  const dNext = Math.hypot(sx - best.bw.x, sy - best.bw.y);
-  const inside = best.s >= 0 && best.s <= best.segLen;
+  // Guide endpoints are the polyline's terminal stations, so labels show
+  // distance to the actual neighboring stations even when the snapped
+  // position sits along an interior segment of a curved polyline.
+  const poly = polylines[best.polylineIndex];
+  const startEndpoint = poly[0];
+  const endEndpoint = poly[poly.length - 1];
+  const dStart = Math.hypot(sx - startEndpoint.x, sy - startEndpoint.y);
+  const dEnd = Math.hypot(sx - endEndpoint.x, sy - endEndpoint.y);
+  const insideSegment = best.s >= 0 && best.s <= best.segLen;
   const guides: SnapGuide[] = [];
-  if (inside) {
+  if (insideSegment) {
     // Bullet projection sits between the two endpoints — both are
     // meaningful neighbors (one on each side along the line direction).
     guides.push({
       from: { x: sx, y: sy },
-      to: best.aw,
-      label: Math.round(dPrev).toString(),
+      to: startEndpoint,
+      label: Math.round(dStart).toString(),
     });
     guides.push({
       from: { x: sx, y: sy },
-      to: best.bw,
-      label: Math.round(dNext).toString(),
+      to: endEndpoint,
+      label: Math.round(dEnd).toString(),
     });
   } else {
     // Bullet projection sits outside the segment — both endpoints lie on
     // the same side of the bullet along the line. Only the nearest one is
     // useful; a second guide just clutters.
-    const useA = dPrev < dNext;
+    const useStart = dStart < dEnd;
     guides.push({
       from: { x: sx, y: sy },
-      to: useA ? best.aw : best.bw,
-      label: Math.round(useA ? dPrev : dNext).toString(),
+      to: useStart ? startEndpoint : endEndpoint,
+      label: Math.round(useStart ? dStart : dEnd).toString(),
     });
   }
   return { x: sx, y: sy, guides };

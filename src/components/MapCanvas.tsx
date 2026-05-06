@@ -146,13 +146,18 @@ export function MapCanvas() {
         let nx = bd.startWX + dx;
         let ny = bd.startWY + dy;
         const cur = routeBullets[bd.id];
-        const snapLine = cur && cur.lineId ? lines[cur.lineId] : null;
-        if (snapLine && !e.shiftKey) {
+        const lineId = cur?.lineId ?? null;
+        if (lineId && !e.shiftKey) {
+          // The line's stripe path goes through every band that contains
+          // it — collect each band's centerline as a separate polyline so
+          // the snap follows the actual rendered (curved) geometry.
+          const polylines = bands
+            .filter((b) => b.lines.some((l) => l.id === lineId))
+            .map((b) => b.centerline);
           const snap = snapBullet({
             x: nx,
             y: ny,
-            line: snapLine,
-            stations,
+            polylines,
             tolerance: BULLET_SNAP_TOLERANCE,
           });
           nx = snap.x;
