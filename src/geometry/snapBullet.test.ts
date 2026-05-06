@@ -109,4 +109,52 @@ describe('snapBullet', () => {
     const labels = r.guides.map((g) => g.label).sort();
     expect(labels).toEqual(['50', '50']);
   });
+
+  it('highlights the closest pair of stations, not the first parallel segment', () => {
+    // L1: a (0, 0) — b (0, 100) — c (0, 200) — d (0, 300). Four stations on
+    // a single vertical chain. Bullet at (3, 270) is between c and d, much
+    // closer to d (30 away) than to a (270). Guides must go to c and d, not
+    // to a and b just because they came first in the iteration order.
+    const line = lineFor('L1', 'a', 'b', 'c', 'd');
+    const stations = stationsFor(
+      makeStation({ id: 'a', x: 0, y: 0, stops: [makeStop('L1')] }),
+      makeStation({ id: 'b', x: 0, y: 100, stops: [makeStop('L1')] }),
+      makeStation({ id: 'c', x: 0, y: 200, stops: [makeStop('L1')] }),
+      makeStation({ id: 'd', x: 0, y: 300, stops: [makeStop('L1')] }),
+    );
+    const r = snapBullet({ x: 3, y: 270, line, stations, tolerance: 10 });
+    expect(r.y).toBeCloseTo(270, 5);
+    const labels = r.guides.map((g) => g.label).sort();
+    expect(labels).toEqual(['30', '70']);
+  });
+
+  it('beyond-the-end bullet emits a single guide to the nearest endpoint', () => {
+    // Bullet at (3, 350) is past the line's end (d at y=300). Both endpoints
+    // of the c-d segment lie on the same side of the bullet (above it), so
+    // only the nearest one (d, dist 50) is a meaningful neighbor — drawing
+    // a second guide back to c (dist 150) just clutters the screen.
+    const line = lineFor('L1', 'a', 'b', 'c', 'd');
+    const stations = stationsFor(
+      makeStation({ id: 'a', x: 0, y: 0, stops: [makeStop('L1')] }),
+      makeStation({ id: 'b', x: 0, y: 100, stops: [makeStop('L1')] }),
+      makeStation({ id: 'c', x: 0, y: 200, stops: [makeStop('L1')] }),
+      makeStation({ id: 'd', x: 0, y: 300, stops: [makeStop('L1')] }),
+    );
+    const r = snapBullet({ x: 3, y: 350, line, stations, tolerance: 10 });
+    expect(r.guides).toHaveLength(1);
+    expect(r.guides[0].label).toBe('50');
+  });
+
+  it('before-the-start bullet emits a single guide to the nearest endpoint', () => {
+    const line = lineFor('L1', 'a', 'b', 'c', 'd');
+    const stations = stationsFor(
+      makeStation({ id: 'a', x: 0, y: 0, stops: [makeStop('L1')] }),
+      makeStation({ id: 'b', x: 0, y: 100, stops: [makeStop('L1')] }),
+      makeStation({ id: 'c', x: 0, y: 200, stops: [makeStop('L1')] }),
+      makeStation({ id: 'd', x: 0, y: 300, stops: [makeStop('L1')] }),
+    );
+    const r = snapBullet({ x: 3, y: -40, line, stations, tolerance: 10 });
+    expect(r.guides).toHaveLength(1);
+    expect(r.guides[0].label).toBe('40');
+  });
 });

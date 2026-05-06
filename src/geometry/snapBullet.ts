@@ -87,24 +87,55 @@ export function snapBullet(input: SnapBulletInput): SnapBulletResult {
   }
   if (cands.length === 0) return { x, y, guides: [] };
 
-  // Prefer candidates where the parallel projection lies inside the segment.
+  // Prefer candidates where the parallel projection lies inside the
+  // segment (the bullet sits between the two stations); otherwise prefer
+  // the segment whose nearest endpoint is closest to the bullet, so a
+  // bullet placed past the end of the line latches onto the actual end
+  // segment instead of an arbitrary first-iterator-wins parallel one.
   cands.sort((a, b) => {
     const aInside = a.s >= 0 && a.s <= a.segLen ? 0 : 1;
     const bInside = b.s >= 0 && b.s <= b.segLen ? 0 : 1;
     if (aInside !== bInside) return aInside - bInside;
-    return a.perpDist - b.perpDist;
+    const aMin = Math.min(
+      Math.hypot(x - a.aw.x, y - a.aw.y),
+      Math.hypot(x - a.bw.x, y - a.bw.y),
+    );
+    const bMin = Math.min(
+      Math.hypot(x - b.aw.x, y - b.aw.y),
+      Math.hypot(x - b.bw.x, y - b.bw.y),
+    );
+    return aMin - bMin;
   });
   const best = cands[0];
   const sx = best.aw.x + best.s * best.ux;
   const sy = best.aw.y + best.s * best.uy;
   const dPrev = Math.hypot(sx - best.aw.x, sy - best.aw.y);
   const dNext = Math.hypot(sx - best.bw.x, sy - best.bw.y);
-  return {
-    x: sx,
-    y: sy,
-    guides: [
-      { from: { x: sx, y: sy }, to: best.aw, label: Math.round(dPrev).toString() },
-      { from: { x: sx, y: sy }, to: best.bw, label: Math.round(dNext).toString() },
-    ],
-  };
+  const inside = best.s >= 0 && best.s <= best.segLen;
+  const guides: SnapGuide[] = [];
+  if (inside) {
+    // Bullet projection sits between the two endpoints — both are
+    // meaningful neighbors (one on each side along the line direction).
+    guides.push({
+      from: { x: sx, y: sy },
+      to: best.aw,
+      label: Math.round(dPrev).toString(),
+    });
+    guides.push({
+      from: { x: sx, y: sy },
+      to: best.bw,
+      label: Math.round(dNext).toString(),
+    });
+  } else {
+    // Bullet projection sits outside the segment — both endpoints lie on
+    // the same side of the bullet along the line. Only the nearest one is
+    // useful; a second guide just clutters.
+    const useA = dPrev < dNext;
+    guides.push({
+      from: { x: sx, y: sy },
+      to: useA ? best.aw : best.bw,
+      label: Math.round(useA ? dPrev : dNext).toString(),
+    });
+  }
+  return { x: sx, y: sy, guides };
 }

@@ -43,6 +43,13 @@ export function RouteBulletPopover({ bullet, anchor, onClose }: Props) {
   const onLine = (lineId: string) =>
     updateRouteBullet(bullet.id, { lineId: lineId === '' ? null : lineId });
   const onSize = (size: number) => updateRouteBullet(bullet.id, { size });
+  const onSizeWheel = (e: React.WheelEvent) => {
+    e.preventDefault();
+    e.stopPropagation();
+    const delta = e.deltaY < 0 ? 1 : -1;
+    const next = Math.max(6, Math.min(48, bullet.size + delta));
+    if (next !== bullet.size) onSize(next);
+  };
   const onDelete = () => {
     deleteRouteBullet(bullet.id);
     onClose();
@@ -93,7 +100,7 @@ export function RouteBulletPopover({ bullet, anchor, onClose }: Props) {
             ))}
           </div>
         </div>
-        <div className="row">
+        <div className="row" onWheel={onSizeWheel}>
           <label>Size</label>
           <input
             type="range"
