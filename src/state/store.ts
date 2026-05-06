@@ -305,6 +305,9 @@ interface SelectionState {
   insertAfterIndex: number | null;
   placingStation: boolean;
   hoveredStationId: StationId | null;
+  // The (lineId, stationId) currently hovered in the line editor's station
+  // list. Used to highlight the corresponding stop dot on the canvas.
+  hoveredLineStop: { lineId: LineId; stationId: StationId } | null;
   // The lineId of the currently-selected stop cell within the active station
   // inspector. Cleared whenever a different station is selected.
   selectedStopLineId: LineId | null;
@@ -330,6 +333,7 @@ interface SelectionState {
   setInsertAfterIndex: (idx: number | null) => void;
   setPlacingStation: (placing: boolean) => void;
   setHoveredStation: (id: StationId | null) => void;
+  setHoveredLineStop: (v: { lineId: LineId; stationId: StationId } | null) => void;
   setSelectedStopLineId: (id: LineId | null) => void;
   setLabelSelected: (selected: boolean) => void;
   setEditingStationId: (id: StationId | null) => void;
@@ -347,6 +351,7 @@ export const useSelection = create<SelectionState>((set, get) => ({
   insertAfterIndex: null,
   placingStation: false,
   hoveredStationId: null,
+  hoveredLineStop: null,
   selectedStopLineId: null,
   labelSelected: false,
   editingStationId: null,
@@ -411,6 +416,7 @@ export const useSelection = create<SelectionState>((set, get) => ({
       lineTagHoverPreview: placing ? null : get().lineTagHoverPreview,
     }),
   setHoveredStation: (id) => set({ hoveredStationId: id }),
+  setHoveredLineStop: (v) => set({ hoveredLineStop: v }),
   setSelectedStopLineId: (id) =>
     set({ selectedStopLineId: id, labelSelected: id === null ? get().labelSelected : false }),
   setLabelSelected: (selected) =>

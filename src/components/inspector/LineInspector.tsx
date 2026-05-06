@@ -97,7 +97,18 @@ export function LineInspector({ id }: { id: LineId }) {
           const isActiveCursor = isAppending && selection.insertAfterIndex === i;
           return (
             <div key={i + ':' + sid}>
-              <div className="list-row" style={{ paddingLeft: 0 }}>
+              <div
+                className="list-row"
+                style={{ paddingLeft: 0 }}
+                onMouseEnter={() => {
+                  selection.setHoveredLineStop({ lineId: line.id, stationId: sid });
+                  selection.setHoveredStation(sid);
+                }}
+                onMouseLeave={() => {
+                  selection.setHoveredLineStop(null);
+                  selection.setHoveredStation(null);
+                }}
+              >
                 <span style={{ width: 18, color: '#999' }}>{i + 1}.</span>
                 <span className="grow">{st.name}</span>
                 <button className="btn-mini icon" disabled={i === 0} onClick={() => moveSt(i, -1)}>

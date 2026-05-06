@@ -7,7 +7,7 @@ import {
   SegmentBandSpec,
   StopMarkerSpec,
 } from '../geometry/interlining';
-import { STOP_SIZE } from '../geometry/orientation';
+import { STOP_SIZE, stopCenterAt } from '../geometry/orientation';
 import { SegmentBand } from './SegmentBand';
 import { StationView } from './StationView';
 import { useViewport } from './canvas/useViewport';
@@ -25,6 +25,8 @@ import {
 } from '../geometry/lineTagGeometry';
 import type { LineId } from '../model/types';
 import { findMatchingStations } from '../model/matching';
+import { useDebugHighlight } from '../state/debugHighlightStore';
+import { desaturateColor } from '../util/color';
 
 export function MapCanvas() {
   const stations = useDoc((s) => s.stations);
@@ -34,6 +36,8 @@ export function MapCanvas() {
   const addStation = useDoc((s) => s.addStation);
   const addLineTag = useDoc((s) => s.addLineTag);
   const selection = useSelection();
+  const debug = useDebugHighlight();
+  const highlightLineId = selection.selectedLineId;
 
   const svgRef = useRef<SVGSVGElement | null>(null);
   const view = useViewport(svgRef);
@@ -50,6 +54,18 @@ export function MapCanvas() {
     if (!selection.mirrorMatching || !selection.selectedStationId) return [];
     return findMatchingStations({ stations, lines }, selection.selectedStationId);
   }, [selection.mirrorMatching, selection.selectedStationId, stations, lines]);
+  // Color override map for non-selected lines while a line is being edited.
+  // Selected line keeps its true color; others get desaturated toward greyscale.
+  const colorMap = useMemo(() => {
+    if (!highlightLineId || debug.desaturate >= 1) return undefined;
+    const map: Record<string, string> = {};
+    for (const ln of Object.values(lines)) {
+      if (ln.id === highlightLineId) continue;
+      map[ln.id] = desaturateColor(ln.color, debug.desaturate);
+    }
+    return map;
+  }, [highlightLineId, debug.desaturate, lines]);
+
   // Bands and stop markers merged into one pass, sorted by per-line z-priority
   // so a back-stack stop square doesn't paint over a front-stack band passing
   // through that station.
@@ -211,6 +227,11 @@ export function MapCanvas() {
               key={'b:' + r.spec.pairKey + ':' + r.spec.lines.map((l) => l.id).join(',')}
               spec={r.spec}
               interactive={selection.creatingLineTag}
+              colorMap={colorMap}
+              onLineSelect={(lineId, e) => {
+                e.stopPropagation();
+                selection.selectLine(lineId);
+              }}
               {...(selection.creatingLineTag ? makeBandHandlers(r.spec) : {})}
             />
           ) : (
@@ -220,7 +241,11 @@ export function MapCanvas() {
               y={-STOP_SIZE / 2}
               width={STOP_SIZE}
               height={STOP_SIZE}
-              fill={r.spec.color}
+              fill={
+                colorMap && r.spec.lineId !== highlightLineId
+                  ? (colorMap[r.spec.lineId] ?? r.spec.color)
+                  : r.spec.color
+              }
               transform={`translate(${r.spec.cx} ${r.spec.cy}) rotate(${r.spec.rotationDeg})`}
               pointerEvents="none"
             />
@@ -265,6 +290,96 @@ export function MapCanvas() {
             layer="dots"
           />
         ))}
+
+        {/* Debug highlight: dim overlay + re-painted selected line on top.
+            Painted after dots so other lines' stop dots can't punch through
+            the selected line's outline. */}
+        {highlightLineId && debug.dimAlpha > 0 && (
+          <rect
+            x={view.vbX}
+            y={view.vbY}
+            width={view.vbW}
+            height={view.vbH}
+            fill={debug.dimColor}
+            fillOpacity={debug.dimAlpha}
+            pointerEvents="none"
+          />
+        )}
+        {highlightLineId && (
+          <g pointerEvents="none">
+            {renderables.map((r, i) => {
+              if (r.kind !== 'band') return null;
+              const k = r.spec.lines.findIndex((l) => l.id === highlightLineId);
+              if (k < 0) return null;
+              return (
+                <path
+                  key={'hl-b:' + i}
+                  d={r.spec.paths[k]}
+                  fill="none"
+                  stroke={r.spec.lines[k].color}
+                  strokeWidth={14}
+                  strokeLinecap="square"
+                  strokeLinejoin="round"
+                />
+              );
+            })}
+            {renderables.map((r, i) => {
+              if (r.kind !== 'marker' || r.spec.lineId !== highlightLineId) return null;
+              const m = r.spec;
+              return (
+                <rect
+                  key={'hl-m:' + i}
+                  x={-STOP_SIZE / 2}
+                  y={-STOP_SIZE / 2}
+                  width={STOP_SIZE}
+                  height={STOP_SIZE}
+                  fill={m.color}
+                  transform={`translate(${m.cx} ${m.cy}) rotate(${m.rotationDeg})`}
+                />
+              );
+            })}
+            {/* Re-render the selected line's stop dots on top so the
+                colored markers don't swallow them. */}
+            {(() => {
+              const ln = lines[highlightLineId];
+              if (!ln) return null;
+              return ln.stations.flatMap((sid) => {
+                const st = stations[sid];
+                if (!st) return [];
+                const cell = st.stops.find((c) => c.lineId === highlightLineId);
+                if (!cell) return [];
+                const local = stopCenterAt(cell.row, cell.col);
+                const a = (st.rotation * Math.PI) / 4;
+                const cs = Math.cos(a);
+                const sn = Math.sin(a);
+                const cx = st.x + local.x * cs - local.y * sn;
+                const cy = st.y + local.x * sn + local.y * cs;
+                return [
+                  <circle key={'hl-d:' + sid} cx={cx} cy={cy} r={STOP_SIZE * 0.28} fill="#000" />,
+                ];
+              });
+            })()}
+            {/* Selected line's station names rendered in white above dim. */}
+            {(() => {
+              const ln = lines[highlightLineId];
+              if (!ln) return null;
+              return ln.stations.flatMap((sid) => {
+                const st = stations[sid];
+                if (!st) return [];
+                return [
+                  <StationView
+                    key={'hl-l:' + sid}
+                    station={st}
+                    lines={lines}
+                    zoom={view.viewport.zoom}
+                    onStartDrag={drag.onStartDrag}
+                    layer="highlight-label"
+                  />,
+                ];
+              });
+            })()}
+          </g>
+        )}
 
         {/* Line tags: in-band labels that ride each line's stripe. */}
         <LineTagsLayer bands={bands} zoom={view.viewport.zoom} svgRef={svgRef} />

@@ -17,7 +17,7 @@ interface Props {
   lines: Record<string, Line>;
   zoom: number;
   onStartDrag: (id: string, ev: React.PointerEvent) => void;
-  layer: 'wash' | 'bg' | 'label' | 'dots' | 'stroke' | 'match-stroke';
+  layer: 'wash' | 'bg' | 'label' | 'highlight-label' | 'dots' | 'stroke' | 'match-stroke';
 }
 
 export function StationView({ station, lines, onStartDrag, layer }: Props) {
@@ -246,6 +246,30 @@ export function StationView({ station, lines, onStartDrag, layer }: Props) {
     );
   }
 
+  if (layer === 'highlight-label') {
+    // Same positioning as 'label' but always renders text (never the
+    // inline editor), in white. Used above the dim overlay so the selected
+    // line's station names stay legible.
+    return (
+      <g transform={`translate(${station.x} ${station.y}) rotate(${angle})`}>
+        <text
+          x={labelAnchorX}
+          y={labelAnchorY}
+          textAnchor={labelTextAnchor}
+          dominantBaseline="central"
+          fontSize={12}
+          fontWeight={selection.hoveredStationId === station.id ? 700 : 400}
+          textDecoration={selection.hoveredStationId === station.id ? 'underline' : undefined}
+          pointerEvents="none"
+          fill="#fff"
+          transform={`rotate(${label.rotation * 45} ${labelAnchorX} ${labelAnchorY})`}
+        >
+          {station.name}
+        </text>
+      </g>
+    );
+  }
+
   if (layer === 'label') {
     // Labels render in their own pass after all bg washes so that a selected
     // station's wash can never cover a neighboring station's label.
@@ -281,6 +305,7 @@ export function StationView({ station, lines, onStartDrag, layer }: Props) {
   }
 
   // layer === 'dots'
+  const hoveredStop = selection.hoveredLineStop;
   return (
     <g transform={`translate(${station.x} ${station.y}) rotate(${angle})`} pointerEvents="none">
       {phantomDot &&
@@ -290,7 +315,19 @@ export function StationView({ station, lines, onStartDrag, layer }: Props) {
         })()}
       {stops.map((cell) => {
         const c = stopCenterAt(cell.row, cell.col);
-        return <circle key={cell.lineId} cx={c.x} cy={c.y} r={STOP_SIZE * 0.28} fill="#000" />;
+        const isHovered =
+          hoveredStop?.stationId === station.id && hoveredStop?.lineId === cell.lineId;
+        return (
+          <circle
+            key={cell.lineId}
+            cx={c.x}
+            cy={c.y}
+            r={STOP_SIZE * 0.28}
+            fill="#000"
+            stroke={isHovered ? '#fff' : undefined}
+            strokeWidth={isHovered ? 3 : undefined}
+          />
+        );
       })}
     </g>
   );
