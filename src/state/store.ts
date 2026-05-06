@@ -326,6 +326,12 @@ interface SelectionState {
   // mirror to all directly-connected stations whose unrotated stop layouts
   // are identical. Resets to false whenever a different station is selected.
   mirrorMatching: boolean;
+  // Canvas tool mode: 'arrow' for select/move, 'hand' for pan.
+  toolMode: 'arrow' | 'hand';
+  // Spacebar held → temporarily acts like hand mode.
+  spaceHeld: boolean;
+  setToolMode: (m: 'arrow' | 'hand') => void;
+  setSpaceHeld: (v: boolean) => void;
   selectStation: (id: StationId | null) => void;
   selectLine: (id: LineId | null) => void;
   startAppendAt: (lineId: LineId, insertAfterIndex: number) => void;
@@ -360,6 +366,10 @@ export const useSelection = create<SelectionState>((set, get) => ({
   selectedLineTagId: null,
   lineTagHoverPreview: null,
   mirrorMatching: false,
+  toolMode: 'arrow',
+  spaceHeld: false,
+  setToolMode: (m) => set({ toolMode: m }),
+  setSpaceHeld: (v) => set({ spaceHeld: v }),
   selectStation: (id) =>
     set({
       selectedStationId: id,

@@ -12,7 +12,7 @@ export interface ViewportApi {
   panning: boolean;
   screenToWorld: (mx: number, my: number) => { x: number; y: number };
   onWheel: (e: React.WheelEvent) => void;
-  onPointerDown: (e: React.PointerEvent) => void;
+  startPan: (e: React.PointerEvent) => void;
   onPointerMove: (e: React.PointerEvent) => void;
   onPointerUp: (e: React.PointerEvent) => void;
 }
@@ -39,6 +39,7 @@ export function useViewport(svgRef: RefObject<SVGSVGElement | null>): ViewportAp
     vx: number;
     vy: number;
     moved: boolean;
+    captured: boolean;
   } | null>(null);
 
   useEffect(() => {
@@ -85,25 +86,21 @@ export function useViewport(svgRef: RefObject<SVGSVGElement | null>): ViewportAp
     });
   };
 
-  const onPointerDown = (e: React.PointerEvent) => {
-    if (e.button !== 0) return;
-    if (
-      e.target === svgRef.current ||
-      ((e.target as Element).tagName === 'rect' && (e.target as Element).hasAttribute('data-bg'))
-    ) {
-      // Start panning. Even in place-station mode — a tap still places (the
-      // pan-moved suppression on pointerup keeps drags from placing), but a
-      // real drag pans the canvas instead.
-      panStartRef.current = {
-        mx: e.clientX,
-        my: e.clientY,
-        vx: viewport.x,
-        vy: viewport.y,
-        moved: false,
-      };
-      setPanning(true);
-      svgRef.current?.setPointerCapture(e.pointerId);
-    }
+  // Pan starts only when the parent (MapCanvas) calls startPan (hand mode
+  // left-button, or middle-button anywhere).
+  const startPan = (e: React.PointerEvent) => {
+    if (e.button !== 0 && e.button !== 1) return;
+    panStartRef.current = {
+      mx: e.clientX,
+      my: e.clientY,
+      vx: viewport.x,
+      vy: viewport.y,
+      moved: false,
+      captured: false,
+    };
+    setPanning(true);
+    svgRef.current?.setPointerCapture(e.pointerId);
+    panStartRef.current.captured = true;
   };
 
   const onPointerMove = (e: React.PointerEvent) => {
@@ -127,9 +124,16 @@ export function useViewport(svgRef: RefObject<SVGSVGElement | null>): ViewportAp
   const onPointerUp = (e: React.PointerEvent) => {
     if (!panStartRef.current) return;
     const panMoved = panStartRef.current.moved;
+    const wasCaptured = panStartRef.current.captured;
     panStartRef.current = null;
     setPanning(false);
-    svgRef.current?.releasePointerCapture(e.pointerId);
+    if (wasCaptured) {
+      try {
+        svgRef.current?.releasePointerCapture(e.pointerId);
+      } catch {
+        // ignore — already released
+      }
+    }
     if (panMoved) {
       // Suppress the click that fires after pointerup so it doesn't
       // collapse the open station/line editor.
@@ -150,7 +154,7 @@ export function useViewport(svgRef: RefObject<SVGSVGElement | null>): ViewportAp
     panning,
     screenToWorld,
     onWheel,
-    onPointerDown,
+    startPan,
     onPointerMove,
     onPointerUp,
   };

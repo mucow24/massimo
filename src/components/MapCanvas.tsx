@@ -82,8 +82,15 @@ export function MapCanvas() {
     return list;
   }, [bands, stations, lines, lineOrder]);
 
+  const inHandMode = selection.toolMode === 'hand' || selection.spaceHeld;
   const onPointerDown = (e: React.PointerEvent) => {
-    view.onPointerDown(e);
+    // Middle-button drag pans regardless of tool mode.
+    if (e.button === 1) {
+      e.preventDefault();
+      view.startPan(e);
+      return;
+    }
+    if (inHandMode) view.startPan(e);
   };
   const onPointerMove = (e: React.PointerEvent) => {
     view.onPointerMove(e);
@@ -95,6 +102,7 @@ export function MapCanvas() {
   };
 
   const onCanvasClick = (e: React.MouseEvent) => {
+    if (inHandMode) return;
     const onBackground =
       e.target === svgRef.current || (e.target as Element).hasAttribute('data-bg');
     if (!onBackground) return;
@@ -179,7 +187,9 @@ export function MapCanvas() {
       <svg
         ref={svgRef}
         viewBox={`${view.vbX} ${view.vbY} ${view.vbW} ${view.vbH}`}
-        className={view.panning ? 'panning' : ''}
+        className={
+          (inHandMode ? 'tool-hand' : 'tool-arrow') + (view.panning ? ' panning' : '')
+        }
         onWheel={view.onWheel}
         onPointerDown={onPointerDown}
         onPointerMove={onPointerMove}
@@ -228,10 +238,14 @@ export function MapCanvas() {
               spec={r.spec}
               interactive={selection.creatingLineTag}
               colorMap={colorMap}
-              onLineSelect={(lineId, e) => {
-                e.stopPropagation();
-                selection.selectLine(lineId);
-              }}
+              onLineSelect={
+                inHandMode
+                  ? undefined
+                  : (lineId, e) => {
+                      e.stopPropagation();
+                      selection.selectLine(lineId);
+                    }
+              }
               {...(selection.creatingLineTag ? makeBandHandlers(r.spec) : {})}
             />
           ) : (
