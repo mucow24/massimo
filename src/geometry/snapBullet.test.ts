@@ -1,160 +1,106 @@
 import { describe, it, expect } from 'vitest';
 import { snapBullet } from './snapBullet';
-import { makeStation, makeStop } from '../test/fixtures';
-import type { Line, Station, StationId } from '../model/types';
 
-const lineFor = (id: string, ...stationIds: string[]): Line => ({
-  id,
-  service: id,
-  color: '#000',
-  stations: stationIds,
-});
+// Build per-band polylines for a vertical chain of stations at x = 0.
+const verticalChain = (...ys: number[]): { x: number; y: number }[][] => {
+  const polys: { x: number; y: number }[][] = [];
+  for (let i = 0; i < ys.length - 1; i++) {
+    polys.push([
+      { x: 0, y: ys[i] },
+      { x: 0, y: ys[i + 1] },
+    ]);
+  }
+  return polys;
+};
 
-const stationsFor = (...sts: Station[]): Record<StationId, Station> => {
-  const m: Record<StationId, Station> = {};
-  for (const s of sts) m[s.id] = s;
-  return m;
+const horizontalChain = (...xs: number[]): { x: number; y: number }[][] => {
+  const polys: { x: number; y: number }[][] = [];
+  for (let i = 0; i < xs.length - 1; i++) {
+    polys.push([
+      { x: xs[i], y: 0 },
+      { x: xs[i + 1], y: 0 },
+    ]);
+  }
+  return polys;
 };
 
 describe('snapBullet', () => {
-  // Vertical line: stations a (0, 0) and b (0, 100), both with a stop on L1.
-  // The line's stripe runs along x = 0, y ∈ [0, 100].
-  const vertical = () => ({
-    line: lineFor('L1', 'a', 'b'),
-    stations: stationsFor(
-      makeStation({ id: 'a', x: 0, y: 0, stops: [makeStop('L1')] }),
-      makeStation({ id: 'b', x: 0, y: 100, stops: [makeStop('L1')] }),
-    ),
-  });
-
-  // Horizontal line: stations c (0, 0) and d (100, 0), oriented so each
-  // stop's travel direction is horizontal.
-  const horizontal = () => ({
-    line: lineFor('L1', 'c', 'd'),
-    stations: stationsFor(
-      makeStation({
-        id: 'c',
-        x: 0,
-        y: 0,
-        rotation: 2,
-        stops: [makeStop('L1', { row: 0, col: 0 })],
-      }),
-      makeStation({
-        id: 'd',
-        x: 100,
-        y: 0,
-        rotation: 2,
-        stops: [makeStop('L1', { row: 0, col: 0 })],
-      }),
-    ),
-  });
-
   it('snaps a bullet near a vertical line: x is pinned, y is preserved', () => {
-    // Bullet near the line at perpDist=4 — well within tolerance.
-    const { line, stations } = vertical();
-    const r = snapBullet({ x: 4, y: 50, line, stations, tolerance: 10 });
+    const r = snapBullet({ x: 4, y: 50, polylines: verticalChain(0, 100), tolerance: 10 });
     expect(r.x).toBeCloseTo(0, 5);
     expect(r.y).toBeCloseTo(50, 5);
     expect(r.guides).toHaveLength(2);
   });
 
   it('snaps when the bullet sits BEYOND the line endpoints', () => {
-    // Past the first station (y < 0). The bullet should still snap on x and
-    // keep its negative y — bullets are typically placed alongside or just
-    // past the end of a line.
-    const { line, stations } = vertical();
-    const r = snapBullet({ x: 6, y: -40, line, stations, tolerance: 10 });
+    const r = snapBullet({ x: 6, y: -40, polylines: verticalChain(0, 100), tolerance: 10 });
     expect(r.x).toBeCloseTo(0, 5);
     expect(r.y).toBeCloseTo(-40, 5);
   });
 
   it('does NOT snap when the bullet is beyond perpendicular tolerance', () => {
-    const { line, stations } = vertical();
-    const r = snapBullet({ x: 50, y: 50, line, stations, tolerance: 10 });
+    const r = snapBullet({ x: 50, y: 50, polylines: verticalChain(0, 100), tolerance: 10 });
     expect(r.x).toBe(50);
     expect(r.y).toBe(50);
     expect(r.guides).toEqual([]);
   });
 
   it('snaps a bullet near a horizontal line: y pinned, x preserved', () => {
-    const { line, stations } = horizontal();
-    const r = snapBullet({ x: 50, y: 4, line, stations, tolerance: 10 });
+    const r = snapBullet({ x: 50, y: 4, polylines: horizontalChain(0, 100), tolerance: 10 });
     expect(r.x).toBeCloseTo(50, 5);
     expect(r.y).toBeCloseTo(0, 5);
   });
 
-  it('emits two guides labeled with distances to each segment endpoint', () => {
-    const { line, stations } = vertical();
-    const r = snapBullet({ x: 3, y: 30, line, stations, tolerance: 10 });
-    // After snap, bullet is at (0, 30). Distances are 30 (to a at y=0) and
-    // 70 (to b at y=100).
+  it('emits two guides labeled with distances to each polyline endpoint', () => {
+    const r = snapBullet({ x: 3, y: 30, polylines: verticalChain(0, 100), tolerance: 10 });
     expect(r.guides).toHaveLength(2);
     const labels = r.guides.map((g) => g.label).sort();
     expect(labels).toEqual(['30', '70']);
   });
 
-  it('prefers the segment that contains the bullet over a parallel-but-distant one', () => {
-    // L1: a (0, 0) — b (0, 100) — c (0, 200). Three stations on a single
-    // vertical chain. Bullet at (3, 150) is between b and c — guides should
-    // go to those, not to a + b.
-    const line = lineFor('L1', 'a', 'b', 'c');
-    const stations = stationsFor(
-      makeStation({ id: 'a', x: 0, y: 0, stops: [makeStop('L1')] }),
-      makeStation({ id: 'b', x: 0, y: 100, stops: [makeStop('L1')] }),
-      makeStation({ id: 'c', x: 0, y: 200, stops: [makeStop('L1')] }),
-    );
-    const r = snapBullet({ x: 3, y: 150, line, stations, tolerance: 10 });
+  it('prefers the polyline that contains the bullet over a parallel-but-distant one', () => {
+    const r = snapBullet({ x: 3, y: 150, polylines: verticalChain(0, 100, 200), tolerance: 10 });
     expect(r.x).toBeCloseTo(0, 5);
     expect(r.y).toBeCloseTo(150, 5);
     const labels = r.guides.map((g) => g.label).sort();
     expect(labels).toEqual(['50', '50']);
   });
 
-  it('highlights the closest pair of stations, not the first parallel segment', () => {
-    // L1: a (0, 0) — b (0, 100) — c (0, 200) — d (0, 300). Four stations on
-    // a single vertical chain. Bullet at (3, 270) is between c and d, much
-    // closer to d (30 away) than to a (270). Guides must go to c and d, not
-    // to a and b just because they came first in the iteration order.
-    const line = lineFor('L1', 'a', 'b', 'c', 'd');
-    const stations = stationsFor(
-      makeStation({ id: 'a', x: 0, y: 0, stops: [makeStop('L1')] }),
-      makeStation({ id: 'b', x: 0, y: 100, stops: [makeStop('L1')] }),
-      makeStation({ id: 'c', x: 0, y: 200, stops: [makeStop('L1')] }),
-      makeStation({ id: 'd', x: 0, y: 300, stops: [makeStop('L1')] }),
-    );
-    const r = snapBullet({ x: 3, y: 270, line, stations, tolerance: 10 });
+  it('highlights the closest pair of stations, not the first parallel polyline', () => {
+    const r = snapBullet({ x: 3, y: 270, polylines: verticalChain(0, 100, 200, 300), tolerance: 10 });
     expect(r.y).toBeCloseTo(270, 5);
     const labels = r.guides.map((g) => g.label).sort();
     expect(labels).toEqual(['30', '70']);
   });
 
   it('beyond-the-end bullet emits a single guide to the nearest endpoint', () => {
-    // Bullet at (3, 350) is past the line's end (d at y=300). Both endpoints
-    // of the c-d segment lie on the same side of the bullet (above it), so
-    // only the nearest one (d, dist 50) is a meaningful neighbor — drawing
-    // a second guide back to c (dist 150) just clutters the screen.
-    const line = lineFor('L1', 'a', 'b', 'c', 'd');
-    const stations = stationsFor(
-      makeStation({ id: 'a', x: 0, y: 0, stops: [makeStop('L1')] }),
-      makeStation({ id: 'b', x: 0, y: 100, stops: [makeStop('L1')] }),
-      makeStation({ id: 'c', x: 0, y: 200, stops: [makeStop('L1')] }),
-      makeStation({ id: 'd', x: 0, y: 300, stops: [makeStop('L1')] }),
-    );
-    const r = snapBullet({ x: 3, y: 350, line, stations, tolerance: 10 });
+    const r = snapBullet({ x: 3, y: 350, polylines: verticalChain(0, 100, 200, 300), tolerance: 10 });
     expect(r.guides).toHaveLength(1);
     expect(r.guides[0].label).toBe('50');
   });
 
   it('before-the-start bullet emits a single guide to the nearest endpoint', () => {
-    const line = lineFor('L1', 'a', 'b', 'c', 'd');
-    const stations = stationsFor(
-      makeStation({ id: 'a', x: 0, y: 0, stops: [makeStop('L1')] }),
-      makeStation({ id: 'b', x: 0, y: 100, stops: [makeStop('L1')] }),
-      makeStation({ id: 'c', x: 0, y: 200, stops: [makeStop('L1')] }),
-      makeStation({ id: 'd', x: 0, y: 300, stops: [makeStop('L1')] }),
-    );
-    const r = snapBullet({ x: 3, y: -40, line, stations, tolerance: 10 });
+    const r = snapBullet({ x: 3, y: -40, polylines: verticalChain(0, 100, 200, 300), tolerance: 10 });
     expect(r.guides).toHaveLength(1);
     expect(r.guides[0].label).toBe('40');
+  });
+
+  it('respects a curved polyline: bullet past a station with a horizontal tangent snaps horizontal', () => {
+    // Mimics the Embankment ↔ Fo Tan corridor: Embankment's tangent is
+    // horizontal, then the band curves to meet Fo Tan slightly south. The
+    // centerline polyline starts horizontally before bending. A bullet
+    // placed alongside Embankment's horizontal section should snap onto
+    // the horizontal — NOT to the straight-line direction between stops.
+    const polyline: { x: number; y: number }[] = [
+      { x: 100, y: 0 }, // Embankment stop
+      { x: 130, y: 0 }, // tangent extension (horizontal)
+      { x: 150, y: 5 }, // start of curve
+      { x: 170, y: 14 }, // end of curve
+      { x: 200, y: 14 }, // Fo Tan stop
+    ];
+    const r = snapBullet({ x: 50, y: 4, polylines: [polyline], tolerance: 10 });
+    // The horizontal segment near Embankment dominates: snap pins y → 0.
+    expect(r.y).toBeCloseTo(0, 5);
+    expect(r.x).toBeCloseTo(50, 5);
   });
 });
