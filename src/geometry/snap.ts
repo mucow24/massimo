@@ -38,6 +38,12 @@ export interface SnapInput {
   lines: Record<LineId, Line>;
   /** World-units perpendicular tolerance for engaging a snap. */
   tolerance?: number;
+  /** Ctrl-drag (redistribute) mode: snap exclusively to this station. The
+   *  intermediates between dragged and anchor are moving targets during the
+   *  redistribute and make poor snap candidates; the anchor is the single
+   *  fixed point on the line. Adjacency on each shared line is bypassed
+   *  here — the anchor qualifies regardless of how many stops sit between. */
+  redistributeAnchor?: StationId;
 }
 
 /**
@@ -61,6 +67,7 @@ export function snapDraggedStation(input: SnapInput): SnapResult {
     stations,
     lines,
     tolerance = SNAP_PERP_TOLERANCE,
+    redistributeAnchor,
   } = input;
 
   type Cand = {
@@ -75,9 +82,24 @@ export function snapDraggedStation(input: SnapInput): SnapResult {
 
   // Collect every alignment pair within perp tolerance.
   const all: Cand[] = [];
-  for (const t of Object.values(stations)) {
-    if (t.id === draggedId) continue;
-    for (const pair of alignmentPairs(draggedId, draggedRotation, draggedStops, t, lines)) {
+  // Ctrl-drag: only the anchor is a valid snap target, and adjacency on the
+  // shared line is bypassed so the anchor qualifies even with intermediates
+  // between it and the dragged station.
+  const targets = redistributeAnchor
+    ? stations[redistributeAnchor]
+      ? [stations[redistributeAnchor]]
+      : []
+    : Object.values(stations).filter((t) => t.id !== draggedId);
+  const requireAdjacency = !redistributeAnchor;
+  for (const t of targets) {
+    for (const pair of alignmentPairs(
+      draggedId,
+      draggedRotation,
+      draggedStops,
+      t,
+      lines,
+      requireAdjacency,
+    )) {
       const perpX = -pair.axis.y;
       const perpY = pair.axis.x;
       const tStopX = t.x + pair.tOff.x;
@@ -292,6 +314,10 @@ export function alignmentPairs(
   draggedStops: StopCell[],
   target: Station,
   lines: Record<LineId, Line>,
+  // When false, skip the line-adjacency check and emit a pair on every
+  // shared line where the travel directions are parallel. Used by the
+  // Ctrl-drag (redistribute) snap path to align with a non-adjacent anchor.
+  requireAdjacency: boolean = true,
 ): AlignmentPair[] {
   if (draggedStops.length === 0 && target.stops.length === 0) {
     return [{ dOff: { x: 0, y: 0 }, tOff: { x: 0, y: 0 }, axis: axisForRotation(draggedRotation) }];
@@ -302,9 +328,14 @@ export function alignmentPairs(
     if (!tCell) continue;
     const line = lines[dCell.lineId];
     if (!line) continue;
-    const dIdx = line.stations.indexOf(draggedId);
-    const tIdx = line.stations.indexOf(target.id);
-    if (dIdx < 0 || tIdx < 0 || Math.abs(dIdx - tIdx) !== 1) continue;
+    if (requireAdjacency) {
+      const dIdx = line.stations.indexOf(draggedId);
+      const tIdx = line.stations.indexOf(target.id);
+      if (dIdx < 0 || tIdx < 0 || Math.abs(dIdx - tIdx) !== 1) continue;
+    } else {
+      // Still require both stations to be on the line.
+      if (!line.stations.includes(draggedId) || !line.stations.includes(target.id)) continue;
+    }
     const dWorldDir = rotateBy(travelDirLocal(dCell.orientation), draggedRotation);
     const tWorldDir = rotateBy(travelDirLocal(tCell.orientation), target.rotation);
     if (!parallel(dWorldDir, tWorldDir)) continue;
