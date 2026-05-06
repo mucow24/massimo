@@ -113,16 +113,14 @@ export default function App() {
             const payload = readClipboard(text);
             if (!payload || payload.kind !== 'route-bullet') return;
             const d = payload.data;
-            const newId = useDoc
-              .getState()
-              .addRouteBulletWith({
-                x: d.x + 15,
-                y: d.y + 15,
-                rotation: d.rotation,
-                lineId: d.lineId,
-                shape: d.shape,
-                size: d.size,
-              });
+            const newId = useDoc.getState().addRouteBulletWith({
+              x: d.x + 15,
+              y: d.y + 15,
+              rotation: d.rotation,
+              lineId: d.lineId,
+              shape: d.shape,
+              size: d.size,
+            });
             useSelection.getState().selectRouteBullet(newId);
           })
           .catch(() => {});
@@ -135,16 +133,14 @@ export default function App() {
         const b = useDoc.getState().routeBullets[bid];
         if (!b) return;
         e.preventDefault();
-        const newId = useDoc
-          .getState()
-          .addRouteBulletWith({
-            x: b.x + 15,
-            y: b.y + 15,
-            rotation: b.rotation,
-            lineId: b.lineId,
-            shape: b.shape,
-            size: b.size,
-          });
+        const newId = useDoc.getState().addRouteBulletWith({
+          x: b.x + 15,
+          y: b.y + 15,
+          rotation: b.rotation,
+          lineId: b.lineId,
+          shape: b.shape,
+          size: b.size,
+        });
         useSelection.getState().selectRouteBullet(newId);
         return;
       }

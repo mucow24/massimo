@@ -61,7 +61,13 @@ interface Props {
   highlightColor?: string;
 }
 
-export function StationView({ station, lines, onStartDrag, layer, highlightColor = '#fff' }: Props) {
+export function StationView({
+  station,
+  lines,
+  onStartDrag,
+  layer,
+  highlightColor = '#fff',
+}: Props) {
   const selection = useSelection();
   const rotateStation = useDoc((s) => s.rotateStation);
   const renameStation = useDoc((s) => s.renameStation);
@@ -336,10 +342,7 @@ export function StationView({ station, lines, onStartDrag, layer, highlightColor
     };
     const cursor = inHandMode ? 'grab' : 'move';
     return (
-      <g
-        transform={`translate(${station.x} ${station.y}) rotate(${angle})`}
-        style={{ cursor }}
-      >
+      <g transform={`translate(${station.x} ${station.y}) rotate(${angle})`} style={{ cursor }}>
         <rect x={cellsHitX} y={cellsHitY} width={cellsHitW} height={cellsHitH} {...hitProps} />
         <rect
           x={labelHitX}

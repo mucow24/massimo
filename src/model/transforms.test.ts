@@ -82,11 +82,7 @@ describe('deleteStation', () => {
 
   it('cascade-deletes transfers that reference the removed station', () => {
     const doc = makeDoc({
-      stations: [
-        makeStation({ id: 's1' }),
-        makeStation({ id: 's2' }),
-        makeStation({ id: 's3' }),
-      ],
+      stations: [makeStation({ id: 's1' }), makeStation({ id: 's2' }), makeStation({ id: 's3' })],
       transfers: [
         { id: 'x1', a: { stationId: 's1', lineId: null }, b: { stationId: 's2', lineId: null } },
         { id: 'x2', a: { stationId: 's2', lineId: null }, b: { stationId: 's3', lineId: null } },
@@ -151,10 +147,20 @@ describe('addTransfer', () => {
   it('refuses a same-station, same-lineId self-transfer', () => {
     const doc = makeDoc({ stations: [makeStation({ id: 's1' })] });
     expect(
-      T.addTransfer(doc, 'x1', { stationId: 's1', lineId: 'L1' }, { stationId: 's1', lineId: 'L1' }),
+      T.addTransfer(
+        doc,
+        'x1',
+        { stationId: 's1', lineId: 'L1' },
+        { stationId: 's1', lineId: 'L1' },
+      ),
     ).toBe(doc);
     expect(
-      T.addTransfer(doc, 'x1', { stationId: 's1', lineId: null }, { stationId: 's1', lineId: null }),
+      T.addTransfer(
+        doc,
+        'x1',
+        { stationId: 's1', lineId: null },
+        { stationId: 's1', lineId: null },
+      ),
     ).toBe(doc);
   });
 

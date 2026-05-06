@@ -40,11 +40,7 @@ export function useStationDrag(
   } | null>(null);
   const [snapGuides, setSnapGuides] = useState<SnapGuide[]>([]);
 
-  const onStartDrag = (
-    id: StationId,
-    e: React.PointerEvent,
-    redistributeAnchor?: StationId,
-  ) => {
+  const onStartDrag = (id: StationId, e: React.PointerEvent, redistributeAnchor?: StationId) => {
     const st = stations[id];
     if (!st) return;
     dragStationRef.current = {
