@@ -243,8 +243,7 @@ function migrateLineTagsToAnchored(
     if (stripeTotal <= 0) continue;
     // Old `t` was in line-traversal frame; convert to canonical-t.
     const line = lines[old.lineId];
-    const forward =
-      line && lineForwardCanon(line, old.fromStationId, old.toStationId);
+    const forward = line && lineForwardCanon(line, old.fromStationId, old.toStationId);
     const canonT = forward ? old.t : 1 - old.t;
     const arcLen = Math.max(0, Math.min(stripeTotal, canonT * stripeTotal));
     const anchorEnd: 'from' | 'to' = arcLen <= stripeTotal / 2 ? 'from' : 'to';

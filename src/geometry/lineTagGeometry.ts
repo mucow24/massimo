@@ -166,11 +166,7 @@ export function closestParamOnOffsetPath(
  * If the line has neither edge, returns true (orphan; caller should handle
  * separately — `pruneOrphanLineTags` typically deletes such tags).
  */
-export function lineTraversesForwardCanon(
-  line: Line,
-  from: StationId,
-  to: StationId,
-): boolean {
+export function lineTraversesForwardCanon(line: Line, from: StationId, to: StationId): boolean {
   for (let i = 0; i < line.stations.length - 1; i++) {
     const a = line.stations[i];
     const b = line.stations[i + 1];
@@ -213,11 +209,7 @@ export function snapNeighborTag(args: {
     if (otherPairKey !== args.candPairKey) continue;
     const otherOffset = args.lineStripeOffset(other.lineId);
     if (otherOffset === null) continue;
-    const otherStripeTotal = offsetPathLength(
-      args.bandCenterline,
-      args.curveRadius,
-      otherOffset,
-    );
+    const otherStripeTotal = offsetPathLength(args.bandCenterline, args.curveRadius, otherOffset);
     if (otherStripeTotal <= 0) continue;
     const otherArcLenOnStripe =
       other.anchorEnd === 'from'
