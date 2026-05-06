@@ -360,6 +360,34 @@ describe('snapDraggedStation', () => {
     expect(r.y).toBeCloseTo(200, 5);
   });
 
+  it('bulletLineId: snaps to the CLOSEST stops on the chosen line, not iteration order', () => {
+    // Four stations on a single vertical chain at x=0. Bullet at (5, 250)
+    // is nearest C (y=200) and D (y=300). The snap engine must pick those
+    // as the primary + opposite guides, NOT A or B just because they came
+    // first in iteration order. Regression: bullet snap was using
+    // perpDist as the sole tiebreaker and falling back to insertion order
+    // when all stops were collinear (same perpDist), so a bullet near the
+    // terminus would draw guides to the far end of the line.
+    const a = makeStation({ id: 'a', x: 0, y: 0, stops: [makeStop('L1')] });
+    const b = makeStation({ id: 'b', x: 0, y: 100, stops: [makeStop('L1')] });
+    const c = makeStation({ id: 'c', x: 0, y: 200, stops: [makeStop('L1')] });
+    const d = makeStation({ id: 'd', x: 0, y: 300, stops: [makeStop('L1')] });
+    const r = snapDraggedStation({
+      proposedX: 5,
+      proposedY: 250,
+      stations: stations(a, b, c, d),
+      lines: linesOf(lineOf('L1', ['a', 'b', 'c', 'd'])),
+      bulletLineId: 'L1',
+    });
+    // Snap pins x to 0; y preserved.
+    expect(r.x).toBeCloseTo(0, 5);
+    expect(r.y).toBeCloseTo(250, 5);
+    // Two guides — to c (50 above) and d (50 below). Neither is to a (250)
+    // or b (150) — those are further on the same axis line.
+    const guideTargets = r.guides.map((g) => `${g.to.x.toFixed(0)},${g.to.y.toFixed(0)}`).sort();
+    expect(guideTargets).toEqual(['0,200', '0,300']);
+  });
+
   it('bulletLineId: rejects bullets too far from any matching stop axis', () => {
     const a = makeStation({
       id: 'a',

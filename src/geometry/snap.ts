@@ -177,7 +177,19 @@ export function snapDraggedStation(input: SnapInput): SnapResult {
     if (g) g.push(c);
     else groups.push([c]);
   }
-  const bests = groups.map((g) => g.reduce((a, b) => (a.perpDist <= b.perpDist ? a : b)));
+  // Pick the closest stop per axis. Primary criterion is perpendicular
+  // distance (smaller = better-aligned). When perpDists tie — bullet snap
+  // against a chain of collinear stops, for instance — break the tie by
+  // total distance so the nearest station along the axis becomes primary
+  // and the further ones fall to addOppositeGuide.
+  const distFromBullet = (c: Cand) =>
+    Math.hypot(proposedX - c.targetStopX, proposedY - c.targetStopY);
+  const bests = groups.map((g) =>
+    g.reduce((a, b) => {
+      if (a.perpDist !== b.perpDist) return a.perpDist <= b.perpDist ? a : b;
+      return distFromBullet(a) <= distFromBullet(b) ? a : b;
+    }),
+  );
   bests.sort((a, b) => a.perpDist - b.perpDist);
 
   const primary = bests[0];
