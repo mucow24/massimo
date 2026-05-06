@@ -130,10 +130,31 @@ describe('addTransfer', () => {
     expect(next.transfers.x1.b.lineId).toBeNull();
   });
 
-  it('refuses to create a self-transfer regardless of lineIds', () => {
+  it('allows a same-station transfer between two distinct dots', () => {
+    // Interlined station case: two different lines have stops on the same
+    // station and the user wants a short transfer indicator between those
+    // two dots. Same-station + same-lineId is the only true self-transfer.
+    const doc = makeDoc({ stations: [makeStation({ id: 's1' })] });
+    const next = T.addTransfer(
+      doc,
+      'x1',
+      { stationId: 's1', lineId: 'L1' },
+      { stationId: 's1', lineId: 'L2' },
+    );
+    expect(next.transfers.x1).toEqual({
+      id: 'x1',
+      a: { stationId: 's1', lineId: 'L1' },
+      b: { stationId: 's1', lineId: 'L2' },
+    });
+  });
+
+  it('refuses a same-station, same-lineId self-transfer', () => {
     const doc = makeDoc({ stations: [makeStation({ id: 's1' })] });
     expect(
-      T.addTransfer(doc, 'x1', { stationId: 's1', lineId: 'L1' }, { stationId: 's1', lineId: 'L2' }),
+      T.addTransfer(doc, 'x1', { stationId: 's1', lineId: 'L1' }, { stationId: 's1', lineId: 'L1' }),
+    ).toBe(doc);
+    expect(
+      T.addTransfer(doc, 'x1', { stationId: 's1', lineId: null }, { stationId: 's1', lineId: null }),
     ).toBe(doc);
   });
 
