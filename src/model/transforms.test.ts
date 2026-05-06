@@ -88,8 +88,8 @@ describe('deleteStation', () => {
         makeStation({ id: 's3' }),
       ],
       transfers: [
-        { id: 'x1', stationA: 's1', stationB: 's2' },
-        { id: 'x2', stationA: 's2', stationB: 's3' },
+        { id: 'x1', a: { stationId: 's1', lineId: null }, b: { stationId: 's2', lineId: null } },
+        { id: 'x2', a: { stationId: 's2', lineId: null }, b: { stationId: 's3', lineId: null } },
       ],
     });
     const next = T.deleteStation(doc, 's1');
@@ -99,23 +99,54 @@ describe('deleteStation', () => {
 });
 
 describe('addTransfer', () => {
-  it('inserts a transfer between two stations', () => {
+  it('inserts a transfer between two specific dots', () => {
     const doc = makeDoc({
       stations: [makeStation({ id: 's1' }), makeStation({ id: 's2' })],
     });
-    const next = T.addTransfer(doc, 'x1', 's1', 's2');
-    expect(next.transfers.x1).toEqual({ id: 'x1', stationA: 's1', stationB: 's2' });
+    const next = T.addTransfer(
+      doc,
+      'x1',
+      { stationId: 's1', lineId: 'L1' },
+      { stationId: 's2', lineId: 'L2' },
+    );
+    expect(next.transfers.x1).toEqual({
+      id: 'x1',
+      a: { stationId: 's1', lineId: 'L1' },
+      b: { stationId: 's2', lineId: 'L2' },
+    });
   });
 
-  it('refuses to create a self-transfer', () => {
-    const doc = makeDoc({ stations: [makeStation({ id: 's1' })] });
-    expect(T.addTransfer(doc, 'x1', 's1', 's1')).toBe(doc);
+  it('accepts null lineId for stations that have no relevant stop', () => {
+    const doc = makeDoc({
+      stations: [makeStation({ id: 's1' }), makeStation({ id: 's2' })],
+    });
+    const next = T.addTransfer(
+      doc,
+      'x1',
+      { stationId: 's1', lineId: null },
+      { stationId: 's2', lineId: null },
+    );
+    expect(next.transfers.x1.a.lineId).toBeNull();
+    expect(next.transfers.x1.b.lineId).toBeNull();
   });
 
-  it('refuses if either endpoint does not exist', () => {
+  it('refuses to create a self-transfer regardless of lineIds', () => {
     const doc = makeDoc({ stations: [makeStation({ id: 's1' })] });
-    expect(T.addTransfer(doc, 'x1', 's1', 'missing')).toBe(doc);
-    expect(T.addTransfer(doc, 'x1', 'missing', 's1')).toBe(doc);
+    expect(
+      T.addTransfer(doc, 'x1', { stationId: 's1', lineId: 'L1' }, { stationId: 's1', lineId: 'L2' }),
+    ).toBe(doc);
+  });
+
+  it('refuses if either endpoint station does not exist', () => {
+    const doc = makeDoc({ stations: [makeStation({ id: 's1' })] });
+    expect(
+      T.addTransfer(
+        doc,
+        'x1',
+        { stationId: 's1', lineId: null },
+        { stationId: 'missing', lineId: null },
+      ),
+    ).toBe(doc);
   });
 });
 
@@ -123,7 +154,9 @@ describe('deleteTransfer', () => {
   it('removes a transfer by id', () => {
     const doc = makeDoc({
       stations: [makeStation({ id: 's1' }), makeStation({ id: 's2' })],
-      transfers: [{ id: 'x1', stationA: 's1', stationB: 's2' }],
+      transfers: [
+        { id: 'x1', a: { stationId: 's1', lineId: null }, b: { stationId: 's2', lineId: null } },
+      ],
     });
     expect(T.deleteTransfer(doc, 'x1').transfers.x1).toBeUndefined();
   });
@@ -131,6 +164,26 @@ describe('deleteTransfer', () => {
   it('is a no-op for unknown ids', () => {
     const doc = makeDoc({});
     expect(T.deleteTransfer(doc, 'nope')).toBe(doc);
+  });
+});
+
+describe('deleteLine: transfers', () => {
+  it('nulls out lineId on transfer endpoints that referenced the line', () => {
+    const doc = makeDoc({
+      stations: [makeStation({ id: 's1' }), makeStation({ id: 's2' })],
+      lines: [makeLine({ id: 'L1', stations: ['s1', 's2'] })],
+      transfers: [
+        { id: 'x1', a: { stationId: 's1', lineId: 'L1' }, b: { stationId: 's2', lineId: 'L1' } },
+        { id: 'x2', a: { stationId: 's1', lineId: null }, b: { stationId: 's2', lineId: 'L2' } },
+      ],
+    });
+    const next = T.deleteLine(doc, 'L1');
+    // x1 endpoints both nulled out; transfer survives.
+    expect(next.transfers.x1.a.lineId).toBeNull();
+    expect(next.transfers.x1.b.lineId).toBeNull();
+    // x2 didn't reference L1 — untouched.
+    expect(next.transfers.x2.a.lineId).toBeNull();
+    expect(next.transfers.x2.b.lineId).toBe('L2');
   });
 });
 

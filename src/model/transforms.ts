@@ -287,7 +287,7 @@ export function deleteStation(doc: MapDoc, id: StationId): MapDoc {
   const transfers: Record<string, Transfer> = {};
   for (const xid of Object.keys(doc.transfers)) {
     const t = doc.transfers[xid];
-    if (t.stationA !== id && t.stationB !== id) transfers[xid] = t;
+    if (t.a.stationId !== id && t.b.stationId !== id) transfers[xid] = t;
   }
   return pruneOrphanLineTags({ ...doc, stations: rest, lines, transfers });
 }
@@ -579,7 +579,16 @@ export function deleteLine(doc: MapDoc, id: LineId): MapDoc {
     const b = doc.routeBullets[bid];
     routeBullets[bid] = b.lineId === id ? { ...b, lineId: null } : b;
   }
-  return { ...doc, lines: rest, stations, lineOrder: order, lineTags, routeBullets };
+  // Null out lineId on transfer endpoints that pointed at this line; the
+  // transfer stays in place, just falls back to the station anchor.
+  const transfers: Record<string, Transfer> = {};
+  for (const xid of Object.keys(doc.transfers)) {
+    const t = doc.transfers[xid];
+    const a = t.a.lineId === id ? { ...t.a, lineId: null } : t.a;
+    const b = t.b.lineId === id ? { ...t.b, lineId: null } : t.b;
+    transfers[xid] = a === t.a && b === t.b ? t : { ...t, a, b };
+  }
+  return { ...doc, lines: rest, stations, lineOrder: order, lineTags, routeBullets, transfers };
 }
 
 export function moveLineInOrder(doc: MapDoc, id: LineId, dir: -1 | 1): MapDoc {
@@ -726,12 +735,16 @@ export function deleteRouteBullet(doc: MapDoc, id: string): MapDoc {
 export function addTransfer(
   doc: MapDoc,
   id: string,
-  stationA: StationId,
-  stationB: StationId,
+  a: { stationId: StationId; lineId: LineId | null },
+  b: { stationId: StationId; lineId: LineId | null },
 ): MapDoc {
-  if (stationA === stationB) return doc;
-  if (!doc.stations[stationA] || !doc.stations[stationB]) return doc;
-  const transfer: Transfer = { id, stationA, stationB };
+  if (a.stationId === b.stationId) return doc;
+  if (!doc.stations[a.stationId] || !doc.stations[b.stationId]) return doc;
+  const transfer: Transfer = {
+    id,
+    a: { stationId: a.stationId, lineId: a.lineId },
+    b: { stationId: b.stationId, lineId: b.lineId },
+  };
   return { ...doc, transfers: { ...doc.transfers, [id]: transfer } };
 }
 

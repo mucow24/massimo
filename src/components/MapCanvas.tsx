@@ -21,7 +21,7 @@ import { SnapGuides } from './canvas/SnapGuides';
 import { LineTagsLayer } from './canvas/LineTagsLayer';
 import { RouteBulletView } from './RouteBulletView';
 import { RouteBulletPopover } from './RouteBulletPopover';
-import { TransferLayer } from './TransferLayer';
+import { TransferLayer, transferEndWorld } from './TransferLayer';
 import {
   closestParamOnOffsetPath,
   lineTraversesForwardCanon,
@@ -109,6 +109,10 @@ export function MapCanvas() {
     history: ReturnType<typeof beginHistoryGroup>;
   } | null>(null);
   const [bulletSnapGuides, setBulletSnapGuides] = useState<SnapGuide[]>([]);
+  // Cursor position in world coords — used to draw the in-progress transfer
+  // line from the picked anchor station to the user's cursor while they
+  // hunt for the second endpoint.
+  const [cursorWorld, setCursorWorld] = useState<{ x: number; y: number } | null>(null);
 
   const onPointerDown = (e: React.PointerEvent) => {
     // Middle-button drag pans regardless of tool mode.
@@ -122,6 +126,11 @@ export function MapCanvas() {
   const onPointerMove = (e: React.PointerEvent) => {
     view.onPointerMove(e);
     drag.onPointerMove(e);
+    if (selection.creatingTransfer && selection.transferAnchor) {
+      setCursorWorld(view.screenToWorld(e.clientX, e.clientY));
+    } else if (cursorWorld) {
+      setCursorWorld(null);
+    }
     const bd = bulletDragRef.current;
     if (bd) {
       const dxScreen = e.clientX - bd.startMX;
@@ -697,6 +706,31 @@ export function MapCanvas() {
           zoom={view.viewport.zoom}
           onSelect={(id) => selection.selectTransfer(id)}
         />
+
+        {/* In-progress transfer preview: line from the anchor dot to the
+            cursor while waiting for the second click. */}
+        {selection.creatingTransfer &&
+          selection.transferAnchor &&
+          cursorWorld &&
+          stations[selection.transferAnchor.stationId] &&
+          (() => {
+            const anchorWorld = transferEndWorld(
+              stations[selection.transferAnchor.stationId],
+              selection.transferAnchor.lineId,
+            );
+            return (
+              <line
+                x1={anchorWorld.x}
+                y1={anchorWorld.y}
+                x2={cursorWorld.x}
+                y2={cursorWorld.y}
+                stroke="#000"
+                strokeWidth={2}
+                strokeLinecap="round"
+                pointerEvents="none"
+              />
+            );
+          })()}
 
         {/* Route bullets: free-floating service badges, rendered above
             everything so they pop. */}
