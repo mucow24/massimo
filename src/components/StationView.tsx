@@ -3,6 +3,7 @@ import { Line, Station } from '../model/types';
 import { beginHistoryGroup, dragState, useDoc, useSelection } from '../state/store';
 import { DIR_8, STOP_SIZE, stopCenterAt } from '../geometry/orientation';
 import { polygonsToPath, Pt, unionConvex } from '../geometry/polygonUnion';
+import { legibleTextOn } from '../util/color';
 
 const SELECTION_WASH_COLOR = '#f0ff00';
 const SELECTION_WASH_OPACITY = 0.2;
@@ -22,6 +23,7 @@ interface Props {
     | 'bg'
     | 'label'
     | 'highlight-label'
+    | 'starter-label'
     | 'dots'
     | 'highlight-dots'
     | 'stroke'
@@ -281,6 +283,34 @@ export function StationView({ station, lines, onStartDrag, layer, highlightColor
     );
   }
 
+  if (layer === 'starter-label') {
+    // Append-mode "starter" station: name in the line color, with a
+    // contrasting 1px stroke for legibility against the dim layer. Always
+    // bold so the eye lands on it as the insertion anchor.
+    const strokeColor = legibleTextOn(highlightColor);
+    return (
+      <g transform={`translate(${station.x} ${station.y}) rotate(${angle})`}>
+        <text
+          x={labelAnchorX}
+          y={labelAnchorY}
+          textAnchor={labelTextAnchor}
+          dominantBaseline="central"
+          fontSize={12}
+          fontWeight={700}
+          textDecoration={selection.hoveredStationId === station.id ? 'underline' : undefined}
+          pointerEvents="none"
+          fill={highlightColor}
+          stroke={strokeColor}
+          strokeWidth={2}
+          paintOrder="stroke"
+          transform={`rotate(${label.rotation * 45} ${labelAnchorX} ${labelAnchorY})`}
+        >
+          {station.name}
+        </text>
+      </g>
+    );
+  }
+
   if (layer === 'highlight-label') {
     // Same positioning as 'label' but always renders text (never the
     // inline editor), in white. Used above the dim overlay so the selected
@@ -307,7 +337,22 @@ export function StationView({ station, lines, onStartDrag, layer, highlightColor
 
   if (layer === 'label') {
     // Labels render in their own pass after all bg washes so that a selected
-    // station's wash can never cover a neighboring station's label.
+    // station's wash can never cover a neighboring station's label. When a
+    // line is selected, the highlight pass re-renders labels above the dim
+    // layer; skip them here so antialiased edges of the (dimmed) black
+    // underdraw don't bleed through the colored / white re-render.
+    const highlightLineId = selection.selectedLineId;
+    if (highlightLineId) {
+      const isAppending = selection.appendingToLineId === highlightLineId;
+      if (isAppending) {
+        // Append mode re-renders every station's label above the dim.
+        return null;
+      }
+      const ln = lines[highlightLineId];
+      if (ln && ln.stations.includes(station.id)) {
+        return null;
+      }
+    }
     return (
       <g transform={`translate(${station.x} ${station.y}) rotate(${angle})`}>
         {isEditing ? (
