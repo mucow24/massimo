@@ -1,7 +1,7 @@
 import { create } from 'zustand';
 import { persist, createJSONStorage } from 'zustand/middleware';
 import { temporal } from 'zundo';
-import type { Line, LineId, MapDoc, RouteBullet, StationId } from '../model/types';
+import type { DotShape, Line, LineId, MapDoc, RouteBullet, StationId } from '../model/types';
 import type { Vec2 } from '../geometry/vec';
 import { effectiveLineOrder } from '../model/lineOrder';
 import { defaultIdFactory, IdFactory } from '../model/ids';
@@ -58,6 +58,7 @@ interface DocState extends MapDoc {
   addStation: (x: number, y: number) => StationId;
   renameStation: (id: StationId, name: string) => void;
   moveStation: (id: StationId, x: number, y: number) => void;
+  setDotShape: (stationIds: StationId[], shape: DotShape) => void;
   redistributeBetween: (
     startId: StationId,
     endId: StationId,
@@ -136,6 +137,7 @@ export const useDoc = create<DocState>()(
         },
         renameStation: (id, name) => set((s) => T.renameStation(s, id, name)),
         moveStation: (id, x, y) => set((s) => T.moveStation(s, id, x, y)),
+        setDotShape: (stationIds, shape) => set((s) => T.setDotShape(s, stationIds, shape)),
         redistributeBetween: (startId, endId, mode = 'arc-bends') =>
           set((s) => T.redistributeBetween(s, startId, endId, mode)),
         rotateStation: (id) => set((s) => T.rotateStation(s, id)),

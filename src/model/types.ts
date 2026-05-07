@@ -23,11 +23,25 @@ export type StopOrientation =
   | 'right'
   | 'auto-horizontal';
 
+// Glyph rendered at a stop. `undefined` is treated as `'filled-black'` (the
+// historical default) — no migration is needed for older saves.
+export type DotShape =
+  | 'filled-black'
+  | 'open-black'
+  | 'filled-black-white-stroke'
+  | 'filled-white'
+  | 'open-white'
+  | 'filled-white-black-stroke'
+  | 'filled-black-diamond'
+  | 'filled-white-diamond'
+  | 'none';
+
 export interface StopCell {
   lineId: LineId;
   row: number;
   col: number;
   orientation: StopOrientation;
+  dotShape?: DotShape;
 }
 
 // The station's name lives in a single grid cell with its own 8-way rotation

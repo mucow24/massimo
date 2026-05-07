@@ -1,11 +1,12 @@
 import { useEffect, useRef } from 'react';
 import { Line, LineId, Station } from '../model/types';
 import { beginHistoryGroup, dragState, useDoc, useSelection } from '../state/store';
-import { DIR_8, STOP_SIZE, stopCenterAt } from '../geometry/orientation';
+import { DIR_8, STOP_DOT_RADIUS, STOP_SIZE, stopCenterAt } from '../geometry/orientation';
 import { polygonsToPath, unionConvex } from '../geometry/polygonUnion';
 import { stationBoundaryRectsLocal } from '../geometry/stationBoundary';
 import { pathBetweenStations } from '../model/pathSelect';
 import { legibleTextOn } from '../util/color';
+import { StopGlyph } from './StopGlyph';
 
 // Map a click on a station to the closest dot's lineId. Used to pin a
 // transfer endpoint to the specific stop the user clicked on, rather than
@@ -491,18 +492,12 @@ export function StationView({
         {phantomDot &&
           (() => {
             const c = stopCenterAt(phantomDot.row, phantomDot.col);
-            return <circle cx={c.x} cy={c.y} r={STOP_SIZE * 0.28} fill={highlightColor} />;
+            return <circle cx={c.x} cy={c.y} r={STOP_DOT_RADIUS} fill={highlightColor} />;
           })()}
         {stops.map((cell) => {
           const c = stopCenterAt(cell.row, cell.col);
           return (
-            <circle
-              key={cell.lineId}
-              cx={c.x}
-              cy={c.y}
-              r={STOP_SIZE * 0.28}
-              fill={highlightColor}
-            />
+            <circle key={cell.lineId} cx={c.x} cy={c.y} r={STOP_DOT_RADIUS} fill={highlightColor} />
           );
         })}
       </g>
@@ -516,21 +511,21 @@ export function StationView({
       {phantomDot &&
         (() => {
           const c = stopCenterAt(phantomDot.row, phantomDot.col);
-          return <circle cx={c.x} cy={c.y} r={STOP_SIZE * 0.28} fill="#000" />;
+          return <circle cx={c.x} cy={c.y} r={STOP_DOT_RADIUS} fill="#000" />;
         })()}
       {stops.map((cell) => {
         const c = stopCenterAt(cell.row, cell.col);
         const isHovered =
           hoveredStop?.stationId === station.id && hoveredStop?.lineId === cell.lineId;
         return (
-          <circle
+          <StopGlyph
             key={cell.lineId}
             cx={c.x}
             cy={c.y}
-            r={STOP_SIZE * 0.28}
-            fill="#000"
-            stroke={isHovered ? '#fff' : undefined}
-            strokeWidth={isHovered ? 3 : undefined}
+            shape={cell.dotShape}
+            isHovered={isHovered}
+            stationId={station.id}
+            lineId={cell.lineId}
           />
         );
       })}
