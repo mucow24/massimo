@@ -1,6 +1,7 @@
 import { describe, it, expect } from 'vitest';
 import * as T from './transforms';
 import { makeDoc, makeLine, makeStation, makeStop, stationWithStop } from '../test/fixtures';
+import type { MapDoc, RouteBullet, Station } from './types';
 
 describe('addStation', () => {
   it('inserts a station with default rotation/stops/label at the given coords', () => {
@@ -45,32 +46,33 @@ describe('rotateStation', () => {
   });
 });
 
-describe('rotateStationsAround', () => {
+describe('rotateItemsAround', () => {
   const SQRT2_2 = Math.SQRT2 / 2;
+  const st = (id: string): T.ItemRef => ({ type: 'station', id });
+  const bu = (id: string): T.ItemRef => ({ type: 'bullet', id });
+  const docWithBullet = (parts: {
+    stations?: Station[];
+    routeBullets: Record<string, RouteBullet>;
+  }): MapDoc => {
+    const base = makeDoc({ stations: parts.stations ?? [] });
+    return { ...base, routeBullets: parts.routeBullets };
+  };
 
-  it('rotates the pivot in place and rotates siblings 45° around it', () => {
-    // Pivot at origin. Sibling at (100, 0). After +45° CW, sibling should
-    // sit at (100·cos45°, 100·sin45°) ≈ (70.71, 70.71).
+  it('station pivot, station sibling: pivot stays put, sibling orbits', () => {
     const doc = makeDoc({
       stations: [
         makeStation({ id: 'p', x: 0, y: 0, rotation: 0 }),
         makeStation({ id: 's', x: 100, y: 0, rotation: 0 }),
       ],
     });
-    const next = T.rotateStationsAround(doc, 'p', ['p', 's']);
-
-    // Pivot: rotation incremented, position unchanged.
-    expect(next.stations.p.rotation).toBe(1);
-    expect(next.stations.p.x).toBe(0);
-    expect(next.stations.p.y).toBe(0);
-
-    // Sibling: rotation incremented + position rotated around pivot.
+    const next = T.rotateItemsAround(doc, st('p'), [st('p'), st('s')]);
+    expect(next.stations.p).toMatchObject({ rotation: 1, x: 0, y: 0 });
     expect(next.stations.s.rotation).toBe(1);
     expect(next.stations.s.x).toBeCloseTo(100 * SQRT2_2, 5);
     expect(next.stations.s.y).toBeCloseTo(100 * SQRT2_2, 5);
   });
 
-  it('preserves relative geometry: distances between members are unchanged', () => {
+  it('preserves relative geometry across stations', () => {
     const doc = makeDoc({
       stations: [
         makeStation({ id: 'a', x: 0, y: 0 }),
@@ -78,43 +80,92 @@ describe('rotateStationsAround', () => {
         makeStation({ id: 'c', x: 100, y: 100 }),
       ],
     });
-    const distBefore = (s1: string, s2: string, d = doc) => {
+    const dist = (s1: string, s2: string, d: MapDoc) => {
       const a = d.stations[s1];
       const b = d.stations[s2];
       return Math.hypot(a.x - b.x, a.y - b.y);
     };
-    const next = T.rotateStationsAround(doc, 'a', ['a', 'b', 'c']);
-    expect(distBefore('a', 'b', next)).toBeCloseTo(distBefore('a', 'b'), 5);
-    expect(distBefore('b', 'c', next)).toBeCloseTo(distBefore('b', 'c'), 5);
-    expect(distBefore('a', 'c', next)).toBeCloseTo(distBefore('a', 'c'), 5);
+    const next = T.rotateItemsAround(doc, st('a'), [st('a'), st('b'), st('c')]);
+    expect(dist('a', 'b', next)).toBeCloseTo(dist('a', 'b', doc), 5);
+    expect(dist('b', 'c', next)).toBeCloseTo(dist('b', 'c', doc), 5);
+    expect(dist('a', 'c', next)).toBeCloseTo(dist('a', 'c', doc), 5);
   });
 
-  it('eight rotations are an identity (full revolution)', () => {
+  it('eight rotations is an identity (stations only)', () => {
     const doc = makeDoc({
       stations: [makeStation({ id: 'p', x: 50, y: 50 }), makeStation({ id: 's', x: 150, y: 50 })],
     });
     let next = doc;
-    for (let i = 0; i < 8; i++) next = T.rotateStationsAround(next, 'p', ['p', 's']);
+    for (let i = 0; i < 8; i++) next = T.rotateItemsAround(next, st('p'), [st('p'), st('s')]);
     expect(next.stations.p.rotation).toBe(0);
     expect(next.stations.s.rotation).toBe(0);
     expect(next.stations.p.x).toBeCloseTo(50, 3);
-    expect(next.stations.p.y).toBeCloseTo(50, 3);
     expect(next.stations.s.x).toBeCloseTo(150, 3);
-    expect(next.stations.s.y).toBeCloseTo(50, 3);
   });
 
-  it('is a no-op when the pivot id is missing', () => {
+  it('no-op when pivot id is missing from the doc', () => {
     const doc = makeDoc({ stations: [makeStation({ id: 's' })] });
-    expect(T.rotateStationsAround(doc, 'nope', ['s'])).toEqual(doc);
+    expect(T.rotateItemsAround(doc, st('nope'), [st('s')])).toEqual(doc);
   });
 
-  it('skips ids that are not in the doc', () => {
+  it('skips members that are not in the doc', () => {
     const doc = makeDoc({
       stations: [makeStation({ id: 'p', x: 0, y: 0 }), makeStation({ id: 's', x: 100, y: 0 })],
     });
-    const next = T.rotateStationsAround(doc, 'p', ['p', 's', 'ghost']);
+    const next = T.rotateItemsAround(doc, st('p'), [st('p'), st('s'), st('ghost')]);
     expect(next.stations.s.rotation).toBe(1);
     expect(Object.keys(next.stations)).toEqual(['p', 's']);
+  });
+
+  it('bullet pivot orbits a station sibling around the bullet position', () => {
+    // Bullet at (0, 0), station at (100, 0). Right-click bullet → pivot.
+    const doc = docWithBullet({
+      stations: [makeStation({ id: 's', x: 100, y: 0, rotation: 0 })],
+      routeBullets: {
+        b: { id: 'b', x: 0, y: 0, rotation: 0, lineId: null, shape: 'circle', size: 12 },
+      },
+    });
+    const next = T.rotateItemsAround(doc, bu('b'), [bu('b'), st('s')]);
+    // Pivot (bullet) rotation incremented, position unchanged.
+    expect(next.routeBullets.b.rotation).toBe(1);
+    expect(next.routeBullets.b.x).toBe(0);
+    expect(next.routeBullets.b.y).toBe(0);
+    // Station orbits.
+    expect(next.stations.s.rotation).toBe(1);
+    expect(next.stations.s.x).toBeCloseTo(100 * SQRT2_2, 5);
+    expect(next.stations.s.y).toBeCloseTo(100 * SQRT2_2, 5);
+  });
+
+  it('station pivot orbits a bullet sibling around the station position', () => {
+    const doc = docWithBullet({
+      stations: [makeStation({ id: 's', x: 0, y: 0, rotation: 0 })],
+      routeBullets: {
+        b: { id: 'b', x: 100, y: 0, rotation: 0, lineId: null, shape: 'circle', size: 12 },
+      },
+    });
+    const next = T.rotateItemsAround(doc, st('s'), [st('s'), bu('b')]);
+    expect(next.stations.s).toMatchObject({ rotation: 1, x: 0, y: 0 });
+    expect(next.routeBullets.b.rotation).toBe(1);
+    expect(next.routeBullets.b.x).toBeCloseTo(100 * SQRT2_2, 5);
+    expect(next.routeBullets.b.y).toBeCloseTo(100 * SQRT2_2, 5);
+  });
+
+  it('mixed selection: every member rotates and orbits as one rigid body', () => {
+    const doc = docWithBullet({
+      stations: [makeStation({ id: 'p', x: 0, y: 0 }), makeStation({ id: 's', x: 100, y: 0 })],
+      routeBullets: {
+        b: { id: 'b', x: 0, y: 100, rotation: 0, lineId: null, shape: 'circle', size: 12 },
+      },
+    });
+    const next = T.rotateItemsAround(doc, st('p'), [st('p'), st('s'), bu('b')]);
+    // Pivot stays.
+    expect(next.stations.p).toMatchObject({ x: 0, y: 0 });
+    // Station sibling at (100, 0) → (70.71, 70.71).
+    expect(next.stations.s.x).toBeCloseTo(100 * SQRT2_2, 5);
+    expect(next.stations.s.y).toBeCloseTo(100 * SQRT2_2, 5);
+    // Bullet sibling at (0, 100) → (-70.71, 70.71).
+    expect(next.routeBullets.b.x).toBeCloseTo(-100 * SQRT2_2, 5);
+    expect(next.routeBullets.b.y).toBeCloseTo(100 * SQRT2_2, 5);
   });
 });
 

@@ -250,6 +250,71 @@ export function rotateStationsAround(doc: MapDoc, pivotId: StationId, ids: Stati
 }
 
 /**
+ * Reference to a member of a station+bullet multi-selection. Used by
+ * `rotateItemsAround` to identify which doc collection each member lives
+ * in without requiring callers to pre-split by type.
+ */
+export interface ItemRef {
+  type: 'station' | 'bullet';
+  id: string;
+}
+
+/**
+ * Generalized version of `rotateStationsAround` that handles a mixed
+ * station+bullet selection. Pivot can be either type. Each member's own
+ * rotation steps by one; non-pivot members orbit 45° clockwise around
+ * the pivot's world position. Members whose ids are missing from the doc
+ * are silently skipped — selection state can outlive a doc edit (undo).
+ */
+export function rotateItemsAround(doc: MapDoc, pivot: ItemRef, members: ItemRef[]): MapDoc {
+  const pivotItem = pivot.type === 'station' ? doc.stations[pivot.id] : doc.routeBullets[pivot.id];
+  if (!pivotItem) return doc;
+  const px = pivotItem.x;
+  const py = pivotItem.y;
+  const ang = Math.PI / 4;
+  const cs = Math.cos(ang);
+  const sn = Math.sin(ang);
+
+  let stations = doc.stations;
+  let routeBullets = doc.routeBullets;
+
+  for (const m of members) {
+    const isPivot = m.type === pivot.type && m.id === pivot.id;
+    if (m.type === 'station') {
+      const cur = stations[m.id];
+      if (!cur) continue;
+      const nextRot = ((cur.rotation + 1) % 8) as Rotation;
+      let nx = cur.x;
+      let ny = cur.y;
+      if (!isPivot) {
+        const dx = cur.x - px;
+        const dy = cur.y - py;
+        nx = px + dx * cs - dy * sn;
+        ny = py + dx * sn + dy * cs;
+      }
+      stations = { ...stations, [m.id]: { ...cur, rotation: nextRot, x: nx, y: ny } };
+    } else {
+      const cur = routeBullets[m.id];
+      if (!cur) continue;
+      const nextRot = ((cur.rotation + 1) % 8) as Rotation;
+      let nx = cur.x;
+      let ny = cur.y;
+      if (!isPivot) {
+        const dx = cur.x - px;
+        const dy = cur.y - py;
+        nx = px + dx * cs - dy * sn;
+        ny = py + dx * sn + dy * cs;
+      }
+      routeBullets = {
+        ...routeBullets,
+        [m.id]: { ...cur, rotation: nextRot, x: nx, y: ny },
+      };
+    }
+  }
+  return { ...doc, stations, routeBullets };
+}
+
+/**
  * Rotate the station 180° and mirror the label so it stays on the same world
  * side as before.
  */

@@ -283,6 +283,21 @@ export function MapCanvas() {
   const onBulletContextMenu = (id: string, e: React.MouseEvent) => {
     e.preventDefault();
     e.stopPropagation();
+    // Right-click on a bullet that's part of a multi-selection rotates
+    // the whole group rigidly around this bullet, mirroring the station
+    // gesture; both bullets and stations orbit via rotateItemsAround.
+    const sel = useSelection.getState();
+    const stIds = sel.selectedStationIds;
+    const blIds = sel.selectedRouteBulletIds;
+    const total = stIds.length + blIds.length;
+    if (total > 1 && blIds.includes(id)) {
+      const members: { type: 'station' | 'bullet'; id: string }[] = [
+        ...stIds.map((sid) => ({ type: 'station' as const, id: sid })),
+        ...blIds.map((bid) => ({ type: 'bullet' as const, id: bid })),
+      ];
+      useDoc.getState().rotateItemsAround({ type: 'bullet', id }, members);
+      return;
+    }
     rotateRouteBullet(id);
   };
 
