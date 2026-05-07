@@ -4,6 +4,7 @@ import { beginHistoryGroup, dragState, useDoc, useSelection } from '../state/sto
 import { DIR_8, STOP_SIZE, stopCenterAt } from '../geometry/orientation';
 import { polygonsToPath, unionConvex } from '../geometry/polygonUnion';
 import { stationBoundaryRectsLocal } from '../geometry/stationBoundary';
+import { pathBetweenStations } from '../model/pathSelect';
 import { legibleTextOn } from '../util/color';
 
 // Map a click on a station to the closest dot's lineId. Used to pin a
@@ -148,6 +149,18 @@ export function StationView({
       toggleStationOnLine(selection.appendingToLineId, station.id, cursor);
       if (!wasInLine) {
         selection.setInsertAfterIndex(cursor + 1);
+      }
+      return;
+    }
+    // Ctrl/Cmd+Shift+click on a different station extends the selection
+    // along the shortest shared line from the anchor to this station,
+    // toggling every station in the half-open interval (anchor, this].
+    // No-op if there's no anchor (no current selection) or no shared line.
+    if ((e.ctrlKey || e.metaKey) && e.shiftKey) {
+      const anchor = selIds.length > 0 ? selIds[selIds.length - 1] : null;
+      if (anchor && anchor !== station.id) {
+        const path = pathBetweenStations({ lines }, anchor, station.id);
+        if (path) selection.xorStationsToSelection(path);
       }
       return;
     }
