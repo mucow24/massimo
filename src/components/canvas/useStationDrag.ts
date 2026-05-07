@@ -1,5 +1,5 @@
 import { RefObject, useRef, useState } from 'react';
-import { beginHistoryGroup, dragState, useDoc } from '../../state/store';
+import { beginHistoryGroup, dragState, useDoc, useSelection } from '../../state/store';
 import type { StationId } from '../../model/types';
 import { Rotation } from '../../geometry/orientation';
 import { snapDraggedStation, SnapGuide, SNAP_PERP_TOLERANCE } from '../../geometry/snap';
@@ -36,6 +36,12 @@ export function useStationDrag(
     startMY: number;
     moved: boolean;
     redistributeAnchor: StationId | null;
+    // Other selected stations to drag with the grabbed one (group drag).
+    // Each is paired with its starting world position so per-frame deltas
+    // are computed against a stable origin even if the dragged station's
+    // position is mid-snap.
+    siblings: { id: StationId; startX: number; startY: number }[];
+    siblingIdSet: ReadonlySet<StationId>;
     history: ReturnType<typeof beginHistoryGroup>;
   } | null>(null);
   const [snapGuides, setSnapGuides] = useState<SnapGuide[]>([]);
@@ -43,6 +49,21 @@ export function useStationDrag(
   const onStartDrag = (id: StationId, e: React.PointerEvent, redistributeAnchor?: StationId) => {
     const st = stations[id];
     if (!st) return;
+    // Group-drag: if the grabbed station is part of a multi-selection AND
+    // the user isn't ctrl-dragging (which keeps redistribute behavior),
+    // every other selected station tags along with the same delta. Snap
+    // operates on the grabbed station only; siblings translate.
+    const ids = useSelection.getState().selectedStationIds;
+    const groupDrag = !redistributeAnchor && ids.length > 1 && ids.includes(id);
+    const siblings: { id: StationId; startX: number; startY: number }[] = [];
+    if (groupDrag) {
+      for (const sid of ids) {
+        if (sid === id) continue;
+        const sst = stations[sid];
+        if (!sst) continue;
+        siblings.push({ id: sid, startX: sst.x, startY: sst.y });
+      }
+    }
     dragStationRef.current = {
       id,
       startWX: st.x,
@@ -51,6 +72,8 @@ export function useStationDrag(
       startMY: e.clientY,
       moved: false,
       redistributeAnchor: redistributeAnchor ?? null,
+      siblings,
+      siblingIdSet: new Set(siblings.map((s) => s.id)),
       // Snapshot the doc and pause history. If the gesture turns out to be
       // a drag, we'll commit one entry on pointerup; if it's just a click,
       // we cancel without recording anything.
@@ -98,6 +121,9 @@ export function useStationDrag(
         // selected station). Intermediates are moving with the
         // redistribute and would be unstable snap targets.
         redistributeAnchor: ds.redistributeAnchor ?? undefined,
+        // Group-drag: every sibling is moving with the grabbed station, so
+        // they're not stable snap targets — exclude them.
+        excludedIds: ds.siblingIdSet.size > 0 ? ds.siblingIdSet : undefined,
       });
       nx = snap.x;
       ny = snap.y;
@@ -106,6 +132,14 @@ export function useStationDrag(
       setSnapGuides([]);
     }
     moveStation(ds.id, nx, ny);
+    // Group-drag: apply the same delta to every selected sibling.
+    if (ds.siblings.length > 0) {
+      const deltaX = nx - ds.startWX;
+      const deltaY = ny - ds.startWY;
+      for (const sib of ds.siblings) {
+        moveStation(sib.id, sib.startX + deltaX, sib.startY + deltaY);
+      }
+    }
     if (ds.redistributeAnchor) {
       // Drag-mode redistribute uses straight-line interpolation between A
       // and B's stop positions so spacing stays predictable and intermediates

@@ -1,5 +1,18 @@
-import { test, expect } from '@playwright/test';
+import { test, expect, type Page } from '@playwright/test';
 import { clickAtWithModifiers, fourInLine, seedAndOpen, stationCenter } from './fixtures';
+
+async function stationWorldPos(page: Page, id: string): Promise<{ x: number; y: number }> {
+  // Read world coords from the bg <g>'s transform attribute, which always
+  // reflects the live render state (vs. localStorage, which lags writes).
+  return await page.evaluate((sid) => {
+    const el = document.querySelector(`[data-station-id="${sid}"]`);
+    if (!el) throw new Error(`station ${sid} not in DOM`);
+    const t = el.getAttribute('transform') ?? '';
+    const m = t.match(/translate\(\s*(-?\d+(?:\.\d+)?)\s+(-?\d+(?:\.\d+)?)\s*\)/);
+    if (!m) throw new Error(`could not parse transform "${t}"`);
+    return { x: parseFloat(m[1]), y: parseFloat(m[2]) };
+  }, id);
+}
 
 test.describe('multi-station selection', () => {
   test('shift-click toggles stations into and out of the set', async ({ page }) => {
@@ -79,5 +92,70 @@ test.describe('multi-station selection', () => {
     // Selection unchanged: only A.
     await expect(page.locator('[data-station-wash]')).toHaveCount(1);
     await expect(page.locator('[data-station-wash="A"]')).toBeVisible();
+  });
+
+  test('group drag: dragging one selected station moves all selected by the same delta', async ({
+    page,
+  }) => {
+    await seedAndOpen(page, fourInLine);
+
+    const a = await stationCenter(page, 'A');
+    const b = await stationCenter(page, 'B');
+    const c = await stationCenter(page, 'C');
+
+    // Build a 3-station selection [A, B, C]; D stays unselected.
+    await page.mouse.click(a.x, a.y);
+    await clickAtWithModifiers(page, b, ['Shift']);
+    await clickAtWithModifiers(page, c, ['Shift']);
+    await expect(page.locator('[data-station-wash]')).toHaveCount(3);
+
+    const before = {
+      A: await stationWorldPos(page, 'A'),
+      B: await stationWorldPos(page, 'B'),
+      C: await stationWorldPos(page, 'C'),
+      D: await stationWorldPos(page, 'D'),
+    };
+
+    // Drag B by ~50 page pixels to the right (which equals 50 world units
+    // at zoom=1). Hold shift to bypass snap so the delta is exact.
+    await page.keyboard.down('Shift');
+    await page.mouse.move(b.x, b.y);
+    await page.mouse.down();
+    // Several intermediate moves so the drag is detected (>4px threshold).
+    await page.mouse.move(b.x + 10, b.y, { steps: 2 });
+    await page.mouse.move(b.x + 50, b.y, { steps: 5 });
+    await page.mouse.up();
+    await page.keyboard.up('Shift');
+
+    const after = {
+      A: await stationWorldPos(page, 'A'),
+      B: await stationWorldPos(page, 'B'),
+      C: await stationWorldPos(page, 'C'),
+      D: await stationWorldPos(page, 'D'),
+    };
+
+    const dxA = after.A.x - before.A.x;
+    const dxB = after.B.x - before.B.x;
+    const dxC = after.C.x - before.C.x;
+    const dxD = after.D.x - before.D.x;
+
+    // All three selected stations move by the same delta.
+    expect(dxA).toBeCloseTo(dxB, 1);
+    expect(dxC).toBeCloseTo(dxB, 1);
+    // Move actually happened.
+    expect(Math.abs(dxB)).toBeGreaterThan(20);
+    // D (unselected) didn't move.
+    expect(dxD).toBeCloseTo(0, 1);
+
+    // One Ctrl-Z reverts the entire group move.
+    await page.keyboard.press('Control+z');
+    const reverted = {
+      A: await stationWorldPos(page, 'A'),
+      B: await stationWorldPos(page, 'B'),
+      C: await stationWorldPos(page, 'C'),
+    };
+    expect(reverted.A.x).toBeCloseTo(before.A.x, 1);
+    expect(reverted.B.x).toBeCloseTo(before.B.x, 1);
+    expect(reverted.C.x).toBeCloseTo(before.C.x, 1);
   });
 });
