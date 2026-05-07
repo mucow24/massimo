@@ -1,5 +1,6 @@
 import { describe, it, expect } from 'vitest';
 import { findMatchingStations } from './matching';
+import * as T from './transforms';
 import { makeDoc, makeLine, makeStation, makeStop } from '../test/fixtures';
 
 describe('findMatchingStations', () => {
@@ -243,5 +244,119 @@ describe('findMatchingStations', () => {
       lines: [makeLine({ id: 'L1', stations: ['s1', 's2'] })],
     });
     expect(findMatchingStations(doc, 's1')).toEqual(['s2']);
+  });
+
+  it('ignores orphan stops (whose lineId is no longer in doc.lines)', () => {
+    // s1, s2, s3 all sit on L1 with identical layouts. s3 also carries a stop
+    // tagged for a long-deleted line "Z" (not present in doc.lines). The user
+    // sees three identical stations on L1 — the orphan is invisible because
+    // its line doesn't render. Matching should not be broken by stale data.
+    const doc = makeDoc({
+      stations: [
+        makeStation({ id: 's1', stops: [makeStop('L1')] }),
+        makeStation({ id: 's2', stops: [makeStop('L1')] }),
+        makeStation({
+          id: 's3',
+          stops: [makeStop('L1'), makeStop('Z', { col: 1 })],
+        }),
+      ],
+      lines: [makeLine({ id: 'L1', stations: ['s1', 's2', 's3'] })],
+    });
+    expect(findMatchingStations(doc, 's1').sort()).toEqual(['s2', 's3']);
+    expect(findMatchingStations(doc, 's3').sort()).toEqual(['s1', 's2']);
+  });
+
+  it('treats two stations with matching orphan stops as identical', () => {
+    // Both s1 and s2 carry an orphan "Z" stop; s3 doesn't. After ignoring the
+    // orphan, all three render the same on L1, so all three should match.
+    const doc = makeDoc({
+      stations: [
+        makeStation({
+          id: 's1',
+          stops: [makeStop('L1'), makeStop('Z', { col: 1 })],
+        }),
+        makeStation({
+          id: 's2',
+          stops: [makeStop('L1'), makeStop('Z', { col: 1 })],
+        }),
+        makeStation({ id: 's3', stops: [makeStop('L1')] }),
+      ],
+      lines: [makeLine({ id: 'L1', stations: ['s1', 's2', 's3'] })],
+    });
+    expect(findMatchingStations(doc, 's1').sort()).toEqual(['s2', 's3']);
+    expect(findMatchingStations(doc, 's3').sort()).toEqual(['s1', 's2']);
+  });
+
+  it('matching is symmetric: a in matches(b) iff b in matches(a)', () => {
+    // Property check across a few representative configurations.
+    const doc = makeDoc({
+      stations: [
+        makeStation({ id: 's1', stops: [makeStop('L1')] }),
+        makeStation({ id: 's2', stops: [makeStop('L1')] }),
+        makeStation({ id: 's3', stops: [makeStop('L1')] }),
+      ],
+      lines: [makeLine({ id: 'L1', stations: ['s1', 's2', 's3'] })],
+    });
+    const ids = ['s1', 's2', 's3'];
+    for (const a of ids) {
+      const ma = new Set(findMatchingStations(doc, a));
+      for (const b of ids) {
+        if (a === b) continue;
+        const mb = new Set(findMatchingStations(doc, b));
+        expect(ma.has(b)).toBe(mb.has(a));
+      }
+    }
+  });
+
+  it('three stations added to a line via toggleStationOnLine all match each other', () => {
+    // Integration check: build a doc the way the UI actually does, then
+    // verify matching. Each toggle re-runs auto-orient on the line; the
+    // stations end up with the same rotation because they're collinear.
+    let doc = T.addLine(
+      T.addStation(
+        T.addStation(T.addStation(makeDoc({}), 0, 0, 's1', 'S1'), 0, 100, 's2', 'S2'),
+        0,
+        200,
+        's3',
+        'S3',
+      ),
+      'L1',
+      'L1',
+      '#000',
+    );
+    doc = T.toggleStationOnLine(doc, 'L1', 's1');
+    doc = T.toggleStationOnLine(doc, 'L1', 's2');
+    doc = T.toggleStationOnLine(doc, 'L1', 's3');
+    expect(findMatchingStations(doc, 's1').sort()).toEqual(['s2', 's3']);
+    expect(findMatchingStations(doc, 's2').sort()).toEqual(['s1', 's3']);
+    expect(findMatchingStations(doc, 's3').sort()).toEqual(['s1', 's2']);
+  });
+
+  it('matching survives a line being deleted then re-added', () => {
+    // Scenario: 3 identical stations on L1. User deletes L1 (which strips
+    // every station's L1 stops). User re-adds L1 with the same id and re-
+    // attaches the stations. Even if some intermediate state had left orphan
+    // stops behind, matching should still see all three as identical.
+    let doc = T.addLine(
+      T.addStation(
+        T.addStation(T.addStation(makeDoc({}), 0, 0, 's1', 'S1'), 0, 100, 's2', 'S2'),
+        0,
+        200,
+        's3',
+        'S3',
+      ),
+      'L1',
+      'L1',
+      '#000',
+    );
+    doc = T.toggleStationOnLine(doc, 'L1', 's1');
+    doc = T.toggleStationOnLine(doc, 'L1', 's2');
+    doc = T.toggleStationOnLine(doc, 'L1', 's3');
+    doc = T.deleteLine(doc, 'L1');
+    doc = T.addLine(doc, 'L1', 'L1', '#000');
+    doc = T.toggleStationOnLine(doc, 'L1', 's1');
+    doc = T.toggleStationOnLine(doc, 'L1', 's2');
+    doc = T.toggleStationOnLine(doc, 'L1', 's3');
+    expect(findMatchingStations(doc, 's2').sort()).toEqual(['s1', 's3']);
   });
 });

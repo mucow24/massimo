@@ -17,12 +17,16 @@ type MatchingScope = Pick<MapDoc, 'stations' | 'lines'>;
  * this one in the world", not just "internally identical." Position, name,
  * and label are still ignored.
  *
+ * Stops whose lineId no longer exists in `doc.lines` are ignored — they
+ * don't render, so they shouldn't make two visually-identical stations
+ * fail to match.
+ *
  * Excludes the selected station itself.
  */
 export function findMatchingStations(doc: MatchingScope, selectedId: StationId): StationId[] {
   const sel = doc.stations[selectedId];
   if (!sel) return [];
-  const selKey = stopsKey(sel);
+  const selKey = stopsKey(sel, doc.lines);
   const candidates = new Set<StationId>();
   for (const lineId of Object.keys(doc.lines)) {
     const line = doc.lines[lineId];
@@ -34,20 +38,25 @@ export function findMatchingStations(doc: MatchingScope, selectedId: StationId):
   for (const sid of candidates) {
     const st = doc.stations[sid];
     if (!st) continue;
-    if (stopsKey(st) === selKey) out.push(sid);
+    if (stopsKey(st, doc.lines) === selKey) out.push(sid);
   }
   return out;
 }
 
 /**
  * Canonical string key for a station's structural identity: rotation, the
- * sorted stop set, and the label's cell + rotation. `label.offset` is
- * deliberately excluded — it's a small per-station nudge, and stations
- * that are otherwise identical but have slightly different offsets are
- * still "the same kind of station" for mass-editing purposes.
+ * sorted stop set (filtered to lines that still exist), and the label's
+ * cell + rotation. `label.offset` is deliberately excluded — it's a small
+ * per-station nudge, and stations that are otherwise identical but have
+ * slightly different offsets are still "the same kind of station" for
+ * mass-editing purposes.
  */
-function stopsKey(st: Station): string {
-  const parts = st.stops.map(stopKey);
+function stopsKey(st: Station, lines: MatchingScope['lines']): string {
+  const parts: string[] = [];
+  for (const c of st.stops) {
+    if (!lines[c.lineId]) continue;
+    parts.push(stopKey(c));
+  }
   parts.sort();
   const lab = st.label;
   return `r${st.rotation}|L${lab.row},${lab.col},${lab.rotation}|${parts.join('|')}`;
