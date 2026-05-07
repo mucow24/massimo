@@ -1,7 +1,23 @@
 import { describe, it, expect } from 'vitest';
-import { stationBoundaryRectsLocal, stationLocalToWorld, stationsForRect } from './stationBoundary';
+import {
+  routeBulletsForRect,
+  stationBoundaryRectsLocal,
+  stationLocalToWorld,
+  stationsForRect,
+} from './stationBoundary';
 import { makeStation, makeStop, stationWithStop } from '../test/fixtures';
 import { STOP_SIZE } from './orientation';
+import type { RouteBullet } from '../model/types';
+
+const makeBullet = (id: string, x: number, y: number, size = 12): RouteBullet => ({
+  id,
+  x,
+  y,
+  rotation: 0,
+  lineId: null,
+  shape: 'circle',
+  size,
+});
 
 describe('stationBoundaryRectsLocal', () => {
   it('returns two 4-vertex rects (cells + label) in local coords', () => {
@@ -103,5 +119,36 @@ describe('stationsForRect', () => {
     const stations = { A: a };
     const rect = { x0: 1000, y0: 1000, x1: 2000, y1: 2000 };
     expect(stationsForRect(stations, rect)).toEqual([]);
+  });
+});
+
+describe('routeBulletsForRect', () => {
+  it('returns ids of bullets whose square footprint overlaps the rect', () => {
+    const b1 = makeBullet('b1', 0, 0, 12);
+    const b2 = makeBullet('b2', 1000, 1000, 12);
+    const bullets = { b1, b2 };
+    const rect = { x0: -50, y0: -50, x1: 50, y1: 50 };
+    expect(routeBulletsForRect(bullets, rect)).toEqual(['b1']);
+  });
+
+  it('detects a bullet whose footprint just barely intrudes the rect', () => {
+    // Bullet centered at (60, 0) with size 12 → footprint x ∈ [48, 72].
+    // Rect x ∈ [50, 70] → footprint overlaps in [50, 70]. Should hit.
+    const b = makeBullet('b', 60, 0, 12);
+    const rect = { x0: 50, y0: -10, x1: 70, y1: 10 };
+    expect(routeBulletsForRect({ b }, rect)).toEqual(['b']);
+  });
+
+  it('returns empty when bullets are entirely outside the rect', () => {
+    const b = makeBullet('b', 100, 100, 12);
+    const rect = { x0: -10, y0: -10, x1: 10, y1: 10 };
+    expect(routeBulletsForRect({ b }, rect)).toEqual([]);
+  });
+
+  it('handles inverted rect coords (negative width/height)', () => {
+    const b = makeBullet('b', 0, 0, 12);
+    // Rect from (50, 50) to (-50, -50) — same area, inverted endpoints.
+    const rect = { x0: 50, y0: 50, x1: -50, y1: -50 };
+    expect(routeBulletsForRect({ b }, rect)).toEqual(['b']);
   });
 });

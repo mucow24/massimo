@@ -1,6 +1,6 @@
 import { RefObject, useRef, useState } from 'react';
 import { dragState, useDoc, useSelection } from '../../state/store';
-import { stationsForRect } from '../../geometry/stationBoundary';
+import { routeBulletsForRect, stationsForRect } from '../../geometry/stationBoundary';
 import type { Pt } from '../../geometry/polygonUnion';
 import type { StationId } from '../../model/types';
 
@@ -14,10 +14,12 @@ export interface RectSelectRect {
 export interface RectSelectApi {
   /** Active rubber-band rect in world coords, or null if not dragging. */
   rect: RectSelectRect | null;
-  /** While dragging, the station ids the selection WILL contain on
-   *  release, given the current rect + modifier state. Null when not
-   *  dragging — callers should fall back to the live selection store. */
-  previewIds: StationId[] | null;
+  /** Stations the selection WILL contain on release, given the current
+   *  rect + modifier state. Null when not dragging — callers should fall
+   *  back to the live selection store. */
+  previewStationIds: StationId[] | null;
+  /** Bullets the selection WILL contain on release. Null when not dragging. */
+  previewBulletIds: string[] | null;
   onPointerDown: (e: React.PointerEvent) => void;
   onPointerMove: (e: React.PointerEvent) => void;
   onPointerUp: (e: React.PointerEvent) => void;
@@ -32,10 +34,10 @@ function modeFromEvent(e: React.PointerEvent): RectSelectMode {
 }
 
 function applyMode(
-  current: readonly StationId[],
-  hits: readonly StationId[],
+  current: readonly string[],
+  hits: readonly string[],
   mode: RectSelectMode,
-): StationId[] {
+): string[] {
   if (mode === 'set') return [...hits];
   const have = new Set(current);
   if (mode === 'add') {
@@ -63,6 +65,9 @@ function applyMode(
  *   - none           → replace selection with rect hits
  *   - shift          → add rect hits to selection
  *   - ctrl+shift     → toggle (xor) rect hits with selection
+ *
+ * Both stations and route bullets participate; the same mode applies
+ * independently to each type.
  */
 export function useRectSelect(
   svgRef: RefObject<SVGSVGElement | null>,
@@ -75,7 +80,8 @@ export function useRectSelect(
     moved: boolean;
   } | null>(null);
   const [rect, setRect] = useState<RectSelectRect | null>(null);
-  const [previewIds, setPreviewIds] = useState<StationId[] | null>(null);
+  const [previewStationIds, setPreviewStationIds] = useState<StationId[] | null>(null);
+  const [previewBulletIds, setPreviewBulletIds] = useState<string[] | null>(null);
 
   const onPointerDown = (e: React.PointerEvent) => {
     if (e.button !== 0) return;
@@ -122,14 +128,18 @@ export function useRectSelect(
     };
     setRect(nextRect);
 
-    // Per-frame preview of the resulting selection. Reads stations + the
-    // current selection straight from the stores so we don't carry stale
-    // copies through the closure. Modifiers come from this pointer event,
-    // so changing shift/ctrl mid-drag updates the preview on the next move.
-    const stations = useDoc.getState().stations;
-    const hits = stationsForRect(stations, nextRect);
-    const current = useSelection.getState().selectedStationIds;
-    setPreviewIds(applyMode(current, hits, modeFromEvent(e)));
+    // Per-frame preview of the resulting selection. Reads stations,
+    // bullets, and the current selection straight from the stores so we
+    // don't carry stale copies through the closure. Modifiers come from
+    // this pointer event, so changing shift/ctrl mid-drag updates the
+    // preview on the next move.
+    const doc = useDoc.getState();
+    const sel = useSelection.getState();
+    const mode = modeFromEvent(e);
+    const stationHits = stationsForRect(doc.stations, nextRect);
+    const bulletHits = routeBulletsForRect(doc.routeBullets, nextRect);
+    setPreviewStationIds(applyMode(sel.selectedStationIds, stationHits, mode));
+    setPreviewBulletIds(applyMode(sel.selectedRouteBulletIds, bulletHits, mode));
   };
 
   const onPointerUp = (e: React.PointerEvent) => {
@@ -139,7 +149,8 @@ export function useRectSelect(
     dragRef.current = null;
     if (!wasMoved) {
       setRect(null);
-      setPreviewIds(null);
+      setPreviewStationIds(null);
+      setPreviewBulletIds(null);
       return;
     }
     const end = screenToWorld(e.clientX, e.clientY);
@@ -150,16 +161,25 @@ export function useRectSelect(
       y1: end.y,
     };
     setRect(null);
-    setPreviewIds(null);
+    setPreviewStationIds(null);
+    setPreviewBulletIds(null);
 
-    const stations = useDoc.getState().stations;
-    const hits = stationsForRect(stations, finalRect);
+    const doc = useDoc.getState();
+    const stationHits = stationsForRect(doc.stations, finalRect);
+    const bulletHits = routeBulletsForRect(doc.routeBullets, finalRect);
 
     const sel = useSelection.getState();
     const mode = modeFromEvent(e);
-    if (mode === 'xor') sel.xorStationsToSelection(hits);
-    else if (mode === 'add') sel.addStationsToSelection(hits);
-    else sel.setStationSelection(hits);
+    if (mode === 'xor') {
+      sel.xorStationsToSelection(stationHits);
+      sel.xorRouteBulletsToSelection(bulletHits);
+    } else if (mode === 'add') {
+      sel.addStationsToSelection(stationHits);
+      sel.addRouteBulletsToSelection(bulletHits);
+    } else {
+      sel.setStationSelection(stationHits);
+      sel.setRouteBulletSelection(bulletHits);
+    }
 
     try {
       svgRef.current?.releasePointerCapture(e.pointerId);
@@ -171,5 +191,12 @@ export function useRectSelect(
     }, 0);
   };
 
-  return { rect, previewIds, onPointerDown, onPointerMove, onPointerUp };
+  return {
+    rect,
+    previewStationIds,
+    previewBulletIds,
+    onPointerDown,
+    onPointerMove,
+    onPointerUp,
+  };
 }
