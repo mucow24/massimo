@@ -1,6 +1,7 @@
 import { useMemo, useRef, useState } from 'react';
 
 import { beginHistoryGroup, dragState, useDoc, useSelection } from '../state/store';
+import { useSnapPrefs } from '../state/snapPrefs';
 import { snapDraggedStation, type SnapGuide } from '../geometry/snap';
 import {
   buildBands,
@@ -51,6 +52,7 @@ export function MapCanvas() {
   const rotateRouteBullet = useDoc((s) => s.rotateRouteBullet);
   const transfers = useDoc((s) => s.transfers);
   const selection = useSelection();
+  const snapModes = useSnapPrefs((s) => s.modes);
   const highlightLineId = selection.selectedLineId;
 
   const svgRef = useRef<SVGSVGElement | null>(null);
@@ -183,6 +185,7 @@ export function MapCanvas() {
             lines,
             tolerance: BULLET_SNAP_TOLERANCE,
             bulletLineId: lineId,
+            modes: snapModes,
           });
           nx = snap.x;
           ny = snap.y;
