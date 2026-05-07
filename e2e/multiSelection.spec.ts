@@ -158,4 +158,94 @@ test.describe('multi-station selection', () => {
     expect(reverted.B.x).toBeCloseTo(before.B.x, 1);
     expect(reverted.C.x).toBeCloseTo(before.C.x, 1);
   });
+
+  test('rect-select on empty canvas selects every station inside', async ({ page }) => {
+    await seedAndOpen(page, fourInLine);
+
+    const a = await stationCenter(page, 'A');
+    const c = await stationCenter(page, 'C');
+    // Drag a rectangle from above-left of A to below-right of C. Stations
+    // sit at world y=0 so picking page y values 50px above and below gives
+    // a rect that encloses A, B, and C but not D.
+    const startX = a.x - 30;
+    const startY = a.y - 50;
+    const endX = c.x + 20;
+    const endY = c.y + 50;
+
+    await page.mouse.move(startX, startY);
+    await page.mouse.down();
+    await page.mouse.move(startX + 10, startY, { steps: 2 });
+    await page.mouse.move(endX, endY, { steps: 5 });
+    await page.mouse.up();
+
+    await expect(page.locator('[data-station-wash="A"]')).toBeVisible();
+    await expect(page.locator('[data-station-wash="B"]')).toBeVisible();
+    await expect(page.locator('[data-station-wash="C"]')).toBeVisible();
+    await expect(page.locator('[data-station-wash="D"]')).toHaveCount(0);
+  });
+
+  test('shift+rect-select adds to the existing selection', async ({ page }) => {
+    await seedAndOpen(page, fourInLine);
+
+    const a = await stationCenter(page, 'A');
+    const d = await stationCenter(page, 'D');
+
+    // First, single-select D.
+    await page.mouse.click(d.x, d.y);
+    await expect(page.locator('[data-station-wash="D"]')).toBeVisible();
+
+    // Then shift+rect-drag over A and B.
+    const b = await stationCenter(page, 'B');
+    const startX = a.x - 30;
+    const startY = a.y - 50;
+    const endX = b.x + 20;
+    const endY = b.y + 50;
+
+    await page.keyboard.down('Shift');
+    await page.mouse.move(startX, startY);
+    await page.mouse.down();
+    await page.mouse.move(startX + 10, startY, { steps: 2 });
+    await page.mouse.move(endX, endY, { steps: 5 });
+    await page.mouse.up();
+    await page.keyboard.up('Shift');
+
+    await expect(page.locator('[data-station-wash="A"]')).toBeVisible();
+    await expect(page.locator('[data-station-wash="B"]')).toBeVisible();
+    await expect(page.locator('[data-station-wash="C"]')).toHaveCount(0);
+    await expect(page.locator('[data-station-wash="D"]')).toBeVisible();
+  });
+
+  test('ctrl+shift+rect-select toggles (xor) hits with the existing selection', async ({
+    page,
+  }) => {
+    await seedAndOpen(page, fourInLine);
+
+    // Pre-select A and C (so a rect over A+B will toggle A off, leaving
+    // {C, B} after the gesture).
+    const a = await stationCenter(page, 'A');
+    const b = await stationCenter(page, 'B');
+    const c = await stationCenter(page, 'C');
+    await page.mouse.click(a.x, a.y);
+    await clickAtWithModifiers(page, c, ['Shift']);
+
+    const startX = a.x - 30;
+    const startY = a.y - 50;
+    const endX = b.x + 20;
+    const endY = b.y + 50;
+
+    await page.keyboard.down('Control');
+    await page.keyboard.down('Shift');
+    await page.mouse.move(startX, startY);
+    await page.mouse.down();
+    await page.mouse.move(startX + 10, startY, { steps: 2 });
+    await page.mouse.move(endX, endY, { steps: 5 });
+    await page.mouse.up();
+    await page.keyboard.up('Shift');
+    await page.keyboard.up('Control');
+
+    await expect(page.locator('[data-station-wash="A"]')).toHaveCount(0);
+    await expect(page.locator('[data-station-wash="B"]')).toBeVisible();
+    await expect(page.locator('[data-station-wash="C"]')).toBeVisible();
+    await expect(page.locator('[data-station-wash="D"]')).toHaveCount(0);
+  });
 });
