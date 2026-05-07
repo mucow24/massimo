@@ -1,5 +1,5 @@
 import type { Pt } from './polygonUnion';
-import type { Station, StationId } from '../model/types';
+import type { RouteBullet, Station, StationId } from '../model/types';
 import { DIR_8, STOP_SIZE, stopCenterAt } from './orientation';
 import { rectIntersectsPolygon, type AABB } from './rectPolygon';
 
@@ -133,6 +133,28 @@ export function stationsForRect(stations: Record<StationId, Station>, rect: AABB
     if (rectIntersectsPolygon(rect, cellsWorld) || rectIntersectsPolygon(rect, labelWorld)) {
       hits.push(id);
     }
+  }
+  return hits;
+}
+
+/**
+ * Ids of every route bullet whose footprint overlaps `rect` (world coords).
+ * Each bullet's hit shape is a `size × size`-half-extent square centered on
+ * its position — a slight over-estimate for circle bullets, but it lines up
+ * with the dashed selection ring's bounding box, which is what the user
+ * sees as "the selectable footprint".
+ */
+export function routeBulletsForRect(bullets: Record<string, RouteBullet>, rect: AABB): string[] {
+  const xLo = Math.min(rect.x0, rect.x1);
+  const xHi = Math.max(rect.x0, rect.x1);
+  const yLo = Math.min(rect.y0, rect.y1);
+  const yHi = Math.max(rect.y0, rect.y1);
+  const hits: string[] = [];
+  for (const id of Object.keys(bullets)) {
+    const b = bullets[id];
+    if (b.x + b.size < xLo || b.x - b.size > xHi) continue;
+    if (b.y + b.size < yLo || b.y - b.size > yHi) continue;
+    hits.push(id);
   }
   return hits;
 }

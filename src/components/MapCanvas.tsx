@@ -57,10 +57,12 @@ export function MapCanvas() {
   const view = useViewport(svgRef);
   const drag = useStationDrag(svgRef, view.viewport.zoom);
   const rectSelect = useRectSelect(svgRef, view.screenToWorld);
-  // While a rect-select drag is in flight, render the wash/stroke over
-  // its previewed result instead of the live selection so the user sees
-  // exactly what'll be selected on release.
-  const washIds = rectSelect.previewIds ?? selection.selectedStationIds;
+  // While a rect-select drag is in flight, render selection visuals
+  // (station wash/stroke and bullet ring) over the previewed result
+  // instead of the live selection so the user sees exactly what'll be
+  // selected on release.
+  const washIds = rectSelect.previewStationIds ?? selection.selectedStationIds;
+  const bulletSelectedIds = rectSelect.previewBulletIds ?? selection.selectedRouteBulletIds;
 
   const bands = useMemo(
     () => buildBands(stations, lines, curveRadius, lineOrder),
@@ -509,7 +511,7 @@ export function MapCanvas() {
             key={b.id}
             bullet={b}
             lines={lines}
-            selected={selection.selectedRouteBulletIds.includes(b.id)}
+            selected={bulletSelectedIds.includes(b.id)}
             onPointerDown={onBulletPointerDown}
             onClick={onBulletClick}
             onContextMenu={onBulletContextMenu}

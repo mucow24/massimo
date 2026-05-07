@@ -420,4 +420,34 @@ test.describe('multi-bullet selection', () => {
     await expect(page.locator('[data-bullet-id="b1"][data-bullet-selected]')).toHaveCount(0);
     await expect(page.locator('[data-bullet-id="b2"][data-bullet-selected]')).toBeVisible();
   });
+
+  test('rect-select picks up bullets alongside stations', async ({ page }) => {
+    await seedAndOpen(page, fourInLineWithBullets);
+
+    // Drag a rect that encloses bullet b1 (at world -200,-200) AND
+    // station A (world -300, 0). The seed places bullets at y = -200 and
+    // stations at y = 0, so a tall rect on the left half catches both.
+    const a = await stationCenter(page, 'A');
+    const b1 = await bulletCenter(page, 'b1');
+    // Top-left corner above the bullet, bottom-right corner just past A.
+    const startX = Math.min(a.x, b1.x) - 30;
+    const startY = b1.y - 50;
+    const endX = Math.max(a.x, b1.x) + 30;
+    const endY = a.y + 50;
+
+    await page.mouse.move(startX, startY);
+    await page.mouse.down();
+    await page.mouse.move(startX + 10, startY, { steps: 2 });
+    await page.mouse.move(endX, endY, { steps: 5 });
+    // Mid-drag preview: both b1 and A show selected.
+    await expect(page.locator('[data-bullet-id="b1"][data-bullet-selected]')).toBeVisible();
+    await expect(page.locator('[data-station-wash="A"]')).toBeVisible();
+    await page.mouse.up();
+
+    // Final selection: A and b1, nothing else.
+    await expect(page.locator('[data-station-wash="A"]')).toBeVisible();
+    await expect(page.locator('[data-bullet-id="b1"][data-bullet-selected]')).toBeVisible();
+    await expect(page.locator('[data-bullet-id="b2"][data-bullet-selected]')).toHaveCount(0);
+    await expect(page.locator('[data-station-wash="B"]')).toHaveCount(0);
+  });
 });
