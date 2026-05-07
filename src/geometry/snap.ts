@@ -303,18 +303,14 @@ export function snapDraggedStation(input: SnapInput): SnapResult {
     sy = snappedDStopY - c.dOff.y;
   }
 
-  // Phase 3: along-axis refinement (equidistant + tens). Only applies to
-  // station drag with a single-axis line-mode primary — bullets and 2-axis
-  // snaps don't have a meaningful "along the line" interpretation here, and
-  // refining off an `all` mode primary would silently move the snap to a
-  // line-mode target that wasn't part of the candidate pool.
-  if (
-    !secondary &&
-    !bulletLineId &&
-    primary.kind === 'line' &&
-    draggedId !== undefined &&
-    (modes.equidistant || modes.tens)
-  ) {
+  // Phase 3: along-axis refinement (equidistant + tens). Runs for any
+  // single-axis line-mode primary — both station drags and bullets. 2-axis
+  // snaps are skipped (the corner is already locked) and `all`-mode
+  // primaries are skipped (refining off them would silently slide the snap
+  // to a line-mode anchor that wasn't part of the candidate pool).
+  // Equidistant has no meaning for bullets (no A-B-C neighbors); the helper
+  // gates that internally.
+  if (!secondary && primary.kind === 'line' && (modes.equidistant || modes.tens)) {
     const refined = refineAlongAxis({
       sx,
       sy,
@@ -327,6 +323,7 @@ export function snapDraggedStation(input: SnapInput): SnapResult {
       stationsRec: stations,
       modes,
       tolerance,
+      bulletLineId,
     });
     if (refined) {
       sx = refined.sx;
@@ -523,10 +520,19 @@ export function allAxesPairs(
  * Phase-3 along-axis refinement: equidistant + tens. Adjusts (sx, sy) along
  * `axis` to either the midpoint between same-line prev/next neighbors
  * (`equidistant`), or the nearest multiple of `TENS_INTERVAL` measured from
- * the prev-in-line-ordering neighbor (`tens`). Both are gated on
- * `modes.line` (caller guarantees this when invoking). When both modes are
- * on, the candidate closest to the snapped position wins; equidistant wins
- * exact ties.
+ * a stable along-axis anchor (`tens`).
+ *
+ * Anchor selection for tens:
+ *   - Station drag: the dragged station's prev-in-line-ordering neighbor on
+ *     the line. For termini at index 0, falls back to next so both ends of
+ *     a line behave symmetrically.
+ *   - Bullet drag: the line's first station's stop. Bullets aren't part of
+ *     `line.stations`, so a stable line-anchored grid (every 10 from the
+ *     start of the line) is the natural extension. Equidistant is skipped
+ *     for bullets — there's no A-B-C concept for a free-floating bullet.
+ *
+ * When both modes apply, the candidate closest to the proposed position
+ * wins; equidistant wins exact ties.
  *
  * Returns null if no refinement applies. Otherwise returns the refined
  * (sx, sy). The caller rebuilds guides afterward, so labels reflect the
@@ -537,13 +543,16 @@ function refineAlongAxis(args: {
   sy: number;
   axis: Vec2;
   dOff: Vec2;
-  draggedId: StationId;
+  draggedId: StationId | undefined;
   draggedRotation: Rotation;
   draggedStops: StopCell[];
   lines: Record<LineId, Line>;
   stationsRec: Record<StationId, Station>;
   modes: SnapModes;
   tolerance: number;
+  /** Set in bullet mode. Selects the bullet-specific anchor logic and
+   *  disables equidistant. */
+  bulletLineId?: LineId;
 }): { sx: number; sy: number } | null {
   const {
     sx,
@@ -557,6 +566,7 @@ function refineAlongAxis(args: {
     stationsRec,
     modes,
     tolerance,
+    bulletLineId,
   } = args;
   if (!modes.equidistant && !modes.tens) return null;
 
@@ -577,6 +587,24 @@ function refineAlongAxis(args: {
   type Refinement = { delta: number; kind: 'equidistant' | 'tens' };
   const candidates: Refinement[] = [];
 
+  // Bullet path: tens-only, anchored at the bound line's start stop.
+  if (bulletLineId) {
+    if (!modes.tens) return null;
+    const line = lines[bulletLineId];
+    if (!line || line.stations.length === 0) return null;
+    const anchorStation = stationsRec[line.stations[0]];
+    if (!anchorStation) return null;
+    const anchor = stopWorldFor(anchorStation, bulletLineId);
+    if (!anchor?.axisOk) return null;
+    const dAlong = (dStopX - anchor.x) * axis.x + (dStopY - anchor.y) * axis.y;
+    const tensAlong = Math.round(dAlong / TENS_INTERVAL) * TENS_INTERVAL;
+    const delta = tensAlong - dAlong;
+    if (Math.abs(delta) > tolerance) return null;
+    return { sx: sx + delta * axis.x, sy: sy + delta * axis.y };
+  }
+
+  // Station path.
+  if (draggedId === undefined) return null;
   for (const line of Object.values(lines)) {
     const dIdx = line.stations.indexOf(draggedId);
     if (dIdx < 0) continue;
@@ -601,12 +629,18 @@ function refineAlongAxis(args: {
       }
     }
 
-    if (modes.tens && prevStop?.axisOk) {
-      const dAlong = (dStopX - prevStop.x) * axis.x + (dStopY - prevStop.y) * axis.y;
-      const tensAlong = Math.round(dAlong / TENS_INTERVAL) * TENS_INTERVAL;
-      const delta = tensAlong - dAlong;
-      if (Math.abs(delta) <= tolerance) {
-        candidates.push({ delta, kind: 'tens' });
+    if (modes.tens) {
+      // Prefer the prev neighbor; fall back to next so termini at index 0
+      // still get a tens anchor. Either side defines the same multiple-of-
+      // 10 grid along the axis (just shifted by the segment length).
+      const tensAnchor = prevStop?.axisOk ? prevStop : nextStop?.axisOk ? nextStop : null;
+      if (tensAnchor) {
+        const dAlong = (dStopX - tensAnchor.x) * axis.x + (dStopY - tensAnchor.y) * axis.y;
+        const tensAlong = Math.round(dAlong / TENS_INTERVAL) * TENS_INTERVAL;
+        const delta = tensAlong - dAlong;
+        if (Math.abs(delta) <= tolerance) {
+          candidates.push({ delta, kind: 'tens' });
+        }
       }
     }
   }
