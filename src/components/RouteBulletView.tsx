@@ -39,6 +39,8 @@ export function RouteBulletView({
 
   return (
     <g
+      data-bullet-id={bullet.id}
+      data-bullet-selected={selected || undefined}
       transform={`translate(${bullet.x} ${bullet.y}) rotate(${angle})`}
       onPointerDown={(e) => onPointerDown(bullet.id, e)}
       onClick={(e) => onClick(bullet.id, e)}

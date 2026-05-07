@@ -1,5 +1,12 @@
 import { test, expect, type Page } from '@playwright/test';
-import { clickAtWithModifiers, fourInLine, seedAndOpen, stationCenter } from './fixtures';
+import {
+  bulletCenter,
+  clickAtWithModifiers,
+  fourInLine,
+  fourInLineWithBullets,
+  seedAndOpen,
+  stationCenter,
+} from './fixtures';
 
 async function stationWorldPos(page: Page, id: string): Promise<{ x: number; y: number }> {
   // Read world coords from the bg <g>'s transform attribute, which always
@@ -363,5 +370,54 @@ test.describe('multi-station selection', () => {
     await expect(page.locator('[data-station-wash="B"]')).toBeVisible();
     await expect(page.locator('[data-station-wash="C"]')).toBeVisible();
     await expect(page.locator('[data-station-wash="D"]')).toHaveCount(0);
+  });
+});
+
+test.describe('multi-bullet selection', () => {
+  test('plain click selects a bullet exclusively (clears any prior selection)', async ({
+    page,
+  }) => {
+    await seedAndOpen(page, fourInLineWithBullets);
+
+    const a = await stationCenter(page, 'A');
+    const b1 = await bulletCenter(page, 'b1');
+
+    // Pre-select station A.
+    await page.mouse.click(a.x, a.y);
+    await expect(page.locator('[data-station-wash="A"]')).toBeVisible();
+
+    // Plain-click bullet b1 → station A deselected, b1 marked selected.
+    await page.mouse.click(b1.x, b1.y);
+    await expect(page.locator('[data-station-wash="A"]')).toHaveCount(0);
+    await expect(page.locator('[data-bullet-id="b1"][data-bullet-selected]')).toBeVisible();
+  });
+
+  test('shift-click toggles a bullet without disturbing the rest of the selection', async ({
+    page,
+  }) => {
+    await seedAndOpen(page, fourInLineWithBullets);
+
+    const a = await stationCenter(page, 'A');
+    const b1 = await bulletCenter(page, 'b1');
+    const b2 = await bulletCenter(page, 'b2');
+
+    // Build a mixed selection: station A + bullet b1.
+    await page.mouse.click(a.x, a.y);
+    await clickAtWithModifiers(page, b1, ['Shift']);
+    await expect(page.locator('[data-station-wash="A"]')).toBeVisible();
+    await expect(page.locator('[data-bullet-id="b1"][data-bullet-selected]')).toBeVisible();
+    await expect(page.locator('[data-bullet-id="b2"][data-bullet-selected]')).toHaveCount(0);
+
+    // Shift-click b2 → adds b2; A and b1 stay.
+    await clickAtWithModifiers(page, b2, ['Shift']);
+    await expect(page.locator('[data-station-wash="A"]')).toBeVisible();
+    await expect(page.locator('[data-bullet-id="b1"][data-bullet-selected]')).toBeVisible();
+    await expect(page.locator('[data-bullet-id="b2"][data-bullet-selected]')).toBeVisible();
+
+    // Shift-click b1 again → removes b1; A and b2 stay.
+    await clickAtWithModifiers(page, b1, ['Shift']);
+    await expect(page.locator('[data-station-wash="A"]')).toBeVisible();
+    await expect(page.locator('[data-bullet-id="b1"][data-bullet-selected]')).toHaveCount(0);
+    await expect(page.locator('[data-bullet-id="b2"][data-bullet-selected]')).toBeVisible();
   });
 });

@@ -229,6 +229,13 @@ export function MapCanvas() {
     if (dragState.suppressClick) return;
     if (inHandMode) return;
     e.stopPropagation();
+    // Shift-click toggles bullet membership without disturbing other
+    // selected items (mirrors station shift-click). Plain click replaces
+    // the entire selection with this bullet.
+    if (e.shiftKey && !(e.ctrlKey || e.metaKey)) {
+      selection.toggleRouteBulletSelection(id);
+      return;
+    }
     selection.selectRouteBullet(id);
   };
   const onBulletContextMenu = (id: string, e: React.MouseEvent) => {
