@@ -44,4 +44,40 @@ test.describe('multi-station selection', () => {
     await clickAtWithModifiers(page, c, ['Shift']);
     await expect(page.locator('[data-station-row="A"] .inline-editor')).toBeVisible();
   });
+
+  test('ctrl+shift+click extends selection along a shared line', async ({ page }) => {
+    await seedAndOpen(page, fourInLine);
+
+    const a = await stationCenter(page, 'A');
+    const d = await stationCenter(page, 'D');
+
+    // Click A (single selection), then ctrl+shift+click D → all stations
+    // between A and D (B, C, D) join the selection. A remains selected.
+    await page.mouse.click(a.x, a.y);
+    await clickAtWithModifiers(page, d, ['Control', 'Shift']);
+
+    await expect(page.locator('[data-station-wash="A"]')).toBeVisible();
+    await expect(page.locator('[data-station-wash="B"]')).toBeVisible();
+    await expect(page.locator('[data-station-wash="C"]')).toBeVisible();
+    await expect(page.locator('[data-station-wash="D"]')).toBeVisible();
+  });
+
+  test('ctrl+shift+click on a station with no shared line is a no-op', async ({ page }) => {
+    // Add an isolated station E (no line membership) to the seed.
+    const seed = {
+      ...fourInLine,
+      stations: [...fourInLine.stations, { id: 'E', name: 'E', x: 0, y: 200, stops: [] }],
+    };
+    await seedAndOpen(page, seed);
+
+    const a = await stationCenter(page, 'A');
+    const e = await stationCenter(page, 'E');
+
+    await page.mouse.click(a.x, a.y);
+    await clickAtWithModifiers(page, e, ['Control', 'Shift']);
+
+    // Selection unchanged: only A.
+    await expect(page.locator('[data-station-wash]')).toHaveCount(1);
+    await expect(page.locator('[data-station-wash="A"]')).toBeVisible();
+  });
 });
