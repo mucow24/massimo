@@ -1,5 +1,6 @@
 import { RefObject, useRef, useState } from 'react';
 import { beginHistoryGroup, dragState, useDoc, useSelection } from '../../state/store';
+import { useSnapPrefs } from '../../state/snapPrefs';
 import type { StationId } from '../../model/types';
 import { Rotation } from '../../geometry/orientation';
 import { snapDraggedStation, SnapGuide, SNAP_PERP_TOLERANCE } from '../../geometry/snap';
@@ -28,6 +29,7 @@ export function useStationDrag(
   const moveStation = useDoc((s) => s.moveStation);
   const moveRouteBullet = useDoc((s) => s.moveRouteBullet);
   const redistributeBetween = useDoc((s) => s.redistributeBetween);
+  const snapModes = useSnapPrefs((s) => s.modes);
 
   const dragStationRef = useRef<{
     id: StationId;
@@ -145,6 +147,7 @@ export function useStationDrag(
         // Group-drag: every sibling is moving with the grabbed station, so
         // they're not stable snap targets — exclude them.
         excludedIds: ds.siblingIdSet.size > 0 ? ds.siblingIdSet : undefined,
+        modes: snapModes,
       });
       nx = snap.x;
       ny = snap.y;
