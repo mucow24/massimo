@@ -56,6 +56,11 @@ export interface SnapInput {
    *  (proposedX, proposedY) — its own stop offset is zero — and projects
    *  onto each target stop's axis line. Line adjacency doesn't apply. */
   bulletLineId?: LineId;
+  /** Group-drag: stations to skip when picking snap candidates. Includes
+   *  every other station moving with the group, so they don't act as
+   *  (themselves-moving) snap targets for the grabbed station. The dragged
+   *  station is always implicitly excluded; this set augments that. */
+  excludedIds?: ReadonlySet<StationId>;
 }
 
 /**
@@ -78,6 +83,7 @@ export function snapDraggedStation(input: SnapInput): SnapResult {
     draggedStops,
     stations,
     lines,
+    excludedIds,
     tolerance = SNAP_PERP_TOLERANCE,
     redistributeAnchor,
     bulletLineId,
@@ -96,13 +102,16 @@ export function snapDraggedStation(input: SnapInput): SnapResult {
   // Collect every alignment pair within perp tolerance.
   const all: Cand[] = [];
   // Pick the right pool of target stations for the active mode.
+  const excluded = excludedIds;
   const targets = bulletLineId
-    ? Object.values(stations)
+    ? Object.values(stations).filter((t) => !excluded || !excluded.has(t.id))
     : redistributeAnchor
       ? stations[redistributeAnchor]
         ? [stations[redistributeAnchor]]
         : []
-      : Object.values(stations).filter((t) => t.id !== draggedId);
+      : Object.values(stations).filter(
+          (t) => t.id !== draggedId && (!excluded || !excluded.has(t.id)),
+        );
   const requireAdjacency = !redistributeAnchor;
   for (const t of targets) {
     const pairs = bulletLineId
