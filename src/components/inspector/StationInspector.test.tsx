@@ -1,0 +1,251 @@
+import { describe, it, expect, beforeEach } from 'vitest';
+import { render, screen } from '@testing-library/react';
+import userEvent from '@testing-library/user-event';
+import { StationInspector } from './StationInspector';
+import { useDoc, useSelection } from '../../state/store';
+import { DEFAULT_DOC } from '../../model/transforms';
+import { makeDoc, makeStation, makeStop, makeLine } from '../../test/fixtures';
+
+const SELECTION_BLANK = {
+  selectedStationIds: [] as string[],
+  selectedRouteBulletIds: [] as string[],
+  selectedLineId: null,
+  appendingToLineId: null,
+  insertAfterIndex: null,
+  placingStation: false,
+  selectedLineTagId: null,
+  selectedTransferId: null,
+  creatingLineTag: false,
+  creatingRouteBullet: false,
+  creatingTransfer: false,
+  transferAnchor: null,
+  mirrorMatching: false,
+  selectedStopLineId: null,
+  labelSelected: false,
+  editingStationId: null,
+};
+
+describe('<StationInspector /> — shape picker wiring', () => {
+  beforeEach(() => {
+    localStorage.clear();
+    useDoc.setState({ ...DEFAULT_DOC });
+    useSelection.setState(SELECTION_BLANK);
+  });
+
+  it('picker is disabled when no stop is selected (only a station)', () => {
+    useDoc.setState({
+      ...DEFAULT_DOC,
+      ...makeDoc({
+        stations: [
+          makeStation({
+            id: 'a',
+            stops: [makeStop('L1'), makeStop('L2', { col: 1 })],
+          }),
+        ],
+        lines: [makeLine({ id: 'L1', stations: ['a'] }), makeLine({ id: 'L2', stations: ['a'] })],
+      }),
+    });
+    useSelection.setState({ ...SELECTION_BLANK, selectedStationIds: ['a'] });
+
+    render(<StationInspector id="a" />);
+    expect(screen.getByRole('button', { name: 'Stop shape' })).toHaveAttribute(
+      'aria-disabled',
+      'true',
+    );
+  });
+
+  it('picker is disabled when only the label is selected', () => {
+    useDoc.setState({
+      ...DEFAULT_DOC,
+      ...makeDoc({
+        stations: [makeStation({ id: 'a', stops: [makeStop('L1')] })],
+        lines: [makeLine({ id: 'L1', stations: ['a'] })],
+      }),
+    });
+    useSelection.setState({
+      ...SELECTION_BLANK,
+      selectedStationIds: ['a'],
+      labelSelected: true,
+    });
+
+    render(<StationInspector id="a" />);
+    expect(screen.getByRole('button', { name: 'Stop shape' })).toHaveAttribute(
+      'aria-disabled',
+      'true',
+    );
+  });
+
+  it('picker becomes enabled once a stop is clicked in the StopGrid', async () => {
+    const user = userEvent.setup();
+    useDoc.setState({
+      ...DEFAULT_DOC,
+      ...makeDoc({
+        stations: [makeStation({ id: 'a', stops: [makeStop('L1')] })],
+        lines: [makeLine({ id: 'L1', stations: ['a'] })],
+      }),
+    });
+    useSelection.setState({ ...SELECTION_BLANK, selectedStationIds: ['a'] });
+
+    render(<StationInspector id="a" />);
+    expect(screen.getByRole('button', { name: 'Stop shape' })).toHaveAttribute(
+      'aria-disabled',
+      'true',
+    );
+
+    const stopCell = document.querySelector(
+      '[data-cell-kind="stop"][data-line-id="L1"]',
+    ) as HTMLElement;
+    expect(stopCell).not.toBeNull();
+    await user.click(stopCell);
+
+    expect(screen.getByRole('button', { name: 'Stop shape' })).toHaveAttribute(
+      'aria-disabled',
+      'false',
+    );
+  });
+
+  it('clicking the picker trigger does not deselect the stop (picker stays enabled)', async () => {
+    const user = userEvent.setup();
+    useDoc.setState({
+      ...DEFAULT_DOC,
+      ...makeDoc({
+        stations: [makeStation({ id: 'a', stops: [makeStop('L1')] })],
+        lines: [makeLine({ id: 'L1', stations: ['a'] })],
+      }),
+    });
+    useSelection.setState({ ...SELECTION_BLANK, selectedStationIds: ['a'] });
+
+    render(<StationInspector id="a" />);
+    const stopCell = document.querySelector(
+      '[data-cell-kind="stop"][data-line-id="L1"]',
+    ) as HTMLElement;
+    await user.click(stopCell);
+    expect(useSelection.getState().selectedStopLineId).toBe('L1');
+
+    await user.click(screen.getByRole('button', { name: 'Stop shape' }));
+
+    expect(useSelection.getState().selectedStopLineId).toBe('L1');
+    expect(screen.getByRole('button', { name: 'Stop shape' })).toHaveAttribute(
+      'aria-disabled',
+      'false',
+    );
+    expect(screen.getByRole('menu')).toBeInTheDocument();
+  });
+
+  it("trigger reflects the selected stop's explicit dotShape", async () => {
+    const user = userEvent.setup();
+    useDoc.setState({
+      ...DEFAULT_DOC,
+      ...makeDoc({
+        stations: [
+          makeStation({
+            id: 'a',
+            stops: [makeStop('L1', { dotShape: 'filled-white' })],
+          }),
+        ],
+        lines: [makeLine({ id: 'L1', stations: ['a'] })],
+      }),
+    });
+    useSelection.setState({ ...SELECTION_BLANK, selectedStationIds: ['a'] });
+
+    render(<StationInspector id="a" />);
+    const stopCell = document.querySelector(
+      '[data-cell-kind="stop"][data-line-id="L1"]',
+    ) as HTMLElement;
+    await user.click(stopCell);
+
+    const trigger = screen.getByRole('button', { name: 'Stop shape' });
+    const circle = trigger.querySelector('circle');
+    expect(circle).not.toBeNull();
+    expect(circle?.getAttribute('fill')).toBe('#fff');
+  });
+
+  it('trigger shows the filled-black default when the selected stop has no dotShape set', async () => {
+    const user = userEvent.setup();
+    useDoc.setState({
+      ...DEFAULT_DOC,
+      ...makeDoc({
+        stations: [makeStation({ id: 'a', stops: [makeStop('L1')] })],
+        lines: [makeLine({ id: 'L1', stations: ['a'] })],
+      }),
+    });
+    useSelection.setState({ ...SELECTION_BLANK, selectedStationIds: ['a'] });
+
+    render(<StationInspector id="a" />);
+    const stopCell = document.querySelector(
+      '[data-cell-kind="stop"][data-line-id="L1"]',
+    ) as HTMLElement;
+    await user.click(stopCell);
+
+    const trigger = screen.getByRole('button', { name: 'Stop shape' });
+    const circle = trigger.querySelector('circle');
+    expect(circle).not.toBeNull();
+    expect(circle?.getAttribute('fill')).toBe('#000');
+  });
+
+  it('with mirror on and matching neighbors disagreeing, trigger still reflects the inspected station', async () => {
+    const user = userEvent.setup();
+    useDoc.setState({
+      ...DEFAULT_DOC,
+      ...makeDoc({
+        stations: [
+          makeStation({ id: 'a', stops: [makeStop('L1', { dotShape: 'filled-white' })] }),
+          makeStation({ id: 'b', stops: [makeStop('L1', { dotShape: 'filled-black' })] }),
+        ],
+        lines: [makeLine({ id: 'L1', stations: ['a', 'b'] })],
+      }),
+    });
+    useSelection.setState({
+      ...SELECTION_BLANK,
+      selectedStationIds: ['a'],
+      mirrorMatching: true,
+    });
+
+    render(<StationInspector id="a" />);
+    const stopCell = document.querySelector(
+      '[data-cell-kind="stop"][data-line-id="L1"]',
+    ) as HTMLElement;
+    await user.click(stopCell);
+
+    const trigger = screen.getByRole('button', { name: 'Stop shape' });
+    const circle = trigger.querySelector('circle');
+    expect(circle).not.toBeNull();
+    expect(circle?.getAttribute('fill')).toBe('#fff');
+  });
+
+  it('mirror mode propagates the per-stop shape change to matching stations and collapses to one undo step', async () => {
+    const user = userEvent.setup();
+    useDoc.setState({
+      ...DEFAULT_DOC,
+      ...makeDoc({
+        stations: [
+          makeStation({ id: 'a', stops: [makeStop('L1')] }),
+          makeStation({ id: 'b', stops: [makeStop('L1')] }),
+        ],
+        lines: [makeLine({ id: 'L1', stations: ['a', 'b'] })],
+      }),
+    });
+    useSelection.setState({
+      ...SELECTION_BLANK,
+      selectedStationIds: ['a'],
+      mirrorMatching: true,
+    });
+
+    const pastBefore = useDoc.temporal.getState().pastStates.length;
+
+    render(<StationInspector id="a" />);
+    const stopCell = document.querySelector(
+      '[data-cell-kind="stop"][data-line-id="L1"]',
+    ) as HTMLElement;
+    await user.click(stopCell);
+    await user.click(screen.getByRole('button', { name: 'Stop shape' }));
+    await user.click(screen.getByRole('menuitem', { name: 'Open white' }));
+
+    const doc = useDoc.getState();
+    expect(doc.stations.a.stops[0].dotShape).toBe('open-white');
+    expect(doc.stations.b.stops[0].dotShape).toBe('open-white');
+
+    const pastAfter = useDoc.temporal.getState().pastStates.length;
+    expect(pastAfter - pastBefore).toBe(1);
+  });
+});

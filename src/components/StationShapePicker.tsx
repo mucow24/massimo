@@ -1,6 +1,4 @@
 import { useEffect, useRef, useState } from 'react';
-import { useDoc, useSelection } from '../state/store';
-import { STOP_DOT_RADIUS } from '../geometry/orientation';
 import { StopGlyph } from './StopGlyph';
 import type { DotShape } from '../model/types';
 
@@ -22,13 +20,19 @@ const SHAPES: ShapeOption[] = [
 ];
 
 const PREVIEW_SIZE = 20;
+const TRIGGER_SIZE = 15;
 
-export function StationShapePicker() {
-  const selectedStationIds = useSelection((s) => s.selectedStationIds);
-  const setDotShape = useDoc((s) => s.setDotShape);
+export function StationShapePicker({
+  disabled,
+  currentShape,
+  onPick,
+}: {
+  disabled: boolean;
+  currentShape: DotShape;
+  onPick: (shape: DotShape) => void;
+}) {
   const [open, setOpen] = useState(false);
   const wrapRef = useRef<HTMLDivElement | null>(null);
-  const disabled = selectedStationIds.length === 0;
 
   useEffect(() => {
     if (!open) return;
@@ -52,8 +56,8 @@ export function StationShapePicker() {
     setOpen((x) => !x);
   };
 
-  const onPick = (shape: DotShape) => {
-    setDotShape(selectedStationIds, shape);
+  const handlePick = (shape: DotShape) => {
+    onPick(shape);
     setOpen(false);
   };
 
@@ -66,10 +70,17 @@ export function StationShapePicker() {
         aria-haspopup="menu"
         aria-expanded={open}
         aria-disabled={disabled}
-        title={disabled ? 'Stop shape — select stations first' : 'Stop shape'}
+        title={disabled ? 'Stop shape — select a stop first' : 'Stop shape'}
         onClick={onTriggerClick}
       >
-        <TriggerIcon />
+        <svg
+          width={TRIGGER_SIZE}
+          height={TRIGGER_SIZE}
+          viewBox={`${-TRIGGER_SIZE / 2} ${-TRIGGER_SIZE / 2} ${TRIGGER_SIZE} ${TRIGGER_SIZE}`}
+          aria-hidden="true"
+        >
+          <StopGlyph cx={0} cy={0} shape={currentShape} />
+        </svg>
       </button>
       {open && (
         <div className="shape-grid" role="menu">
@@ -80,7 +91,7 @@ export function StationShapePicker() {
               role="menuitem"
               className="shape-option"
               aria-label={label}
-              onClick={() => onPick(shape)}
+              onClick={() => handlePick(shape)}
             >
               <svg
                 width={PREVIEW_SIZE}
@@ -94,14 +105,5 @@ export function StationShapePicker() {
         </div>
       )}
     </div>
-  );
-}
-
-function TriggerIcon() {
-  return (
-    <svg width={15} height={15} viewBox="-7.5 -7.5 15 15" aria-hidden="true">
-      <circle cx={-2} cy={0} r={STOP_DOT_RADIUS} fill="#000" />
-      <path d="M3 -1.5 L6 -1.5 L4.5 1 Z" fill="#000" />
-    </svg>
   );
 }
