@@ -15,6 +15,37 @@ export const SNAP_PERP_TOLERANCE = 10;
  */
 export const TIGHT_PERP_TOLERANCE = 0.5;
 
+/** "Snap to 10's" interval, in world units. */
+export const TENS_INTERVAL = 10;
+
+/**
+ * User-toggleable snap modes. All four are independent flags but
+ * `equidistant` and `tens` are no-ops unless `line` is also true.
+ */
+export interface SnapModes {
+  /** Today's "lock to line direction" snap (project onto the axis defined by
+   *  line-adjacent neighbors with parallel travel directions). */
+  line: boolean;
+  /** Along the line axis, snap the dragged stop to the midpoint between the
+   *  same-line prev and next neighbors when their axes through the dragged
+   *  are parallel. Gated on `line`. */
+  equidistant: boolean;
+  /** Along the line axis, snap the dragged stop to a multiple of TENS_INTERVAL
+   *  measured from the prev-in-line-ordering neighbor. Gated on `line`. */
+  tens: boolean;
+  /** Snap when the dragged stop is vertically, horizontally, or diagonally
+   *  aligned with any other stop (line membership and travel direction
+   *  ignored). Composes with `line` via the existing 2-axis solver. */
+  all: boolean;
+}
+
+export const DEFAULT_SNAP_MODES: SnapModes = {
+  line: true,
+  equidistant: false,
+  tens: false,
+  all: false,
+};
+
 export interface SnapGuide {
   from: Vec2;
   to: Vec2;
@@ -61,6 +92,9 @@ export interface SnapInput {
    *  (themselves-moving) snap targets for the grabbed station. The dragged
    *  station is always implicitly excluded; this set augments that. */
   excludedIds?: ReadonlySet<StationId>;
+  /** Which snap modes are active. Defaults to {@link DEFAULT_SNAP_MODES}
+   *  (line on, others off) so existing call sites preserve current behavior. */
+  modes?: SnapModes;
 }
 
 /**
@@ -87,6 +121,7 @@ export function snapDraggedStation(input: SnapInput): SnapResult {
     tolerance = SNAP_PERP_TOLERANCE,
     redistributeAnchor,
     bulletLineId,
+    modes = DEFAULT_SNAP_MODES,
   } = input;
 
   type Cand = {
@@ -97,6 +132,9 @@ export function snapDraggedStation(input: SnapInput): SnapResult {
     perpDist: number;
     targetStopX: number;
     targetStopY: number;
+    /** Which snap mode produced this candidate. Used to gate the phase-3
+     *  along-axis refinement (only fires when the primary came from line). */
+    kind: 'line' | 'all';
   };
 
   // Collect every alignment pair within perp tolerance.
@@ -113,17 +151,31 @@ export function snapDraggedStation(input: SnapInput): SnapResult {
           (t) => t.id !== draggedId && (!excluded || !excluded.has(t.id)),
         );
   const requireAdjacency = !redistributeAnchor;
+  // Redistribute (Ctrl-drag) is treated like a line-mode operation regardless
+  // of the user's `modes.line` toggle — it's an explicit, modal interaction.
+  const lineModeOn = modes.line || !!redistributeAnchor;
+  const allModeOn = modes.all && !redistributeAnchor;
   for (const t of targets) {
-    const pairs = bulletLineId
-      ? bulletAlignmentPairs(t, bulletLineId)
-      : alignmentPairs(
-          draggedId as StationId,
-          draggedRotation as Rotation,
-          draggedStops ?? [],
-          t,
-          lines,
-          requireAdjacency,
-        );
+    const linePairs: AlignmentPair[] = lineModeOn
+      ? bulletLineId
+        ? bulletAlignmentPairs(t, bulletLineId)
+        : alignmentPairs(
+            draggedId as StationId,
+            draggedRotation as Rotation,
+            draggedStops ?? [],
+            t,
+            lines,
+            requireAdjacency,
+          )
+      : [];
+    const allPairs: AlignmentPair[] = allModeOn
+      ? allAxesPairs(draggedStops ?? [], (draggedRotation ?? 0) as Rotation, t)
+      : [];
+    type TaggedPair = AlignmentPair & { kind: 'line' | 'all' };
+    const pairs: TaggedPair[] = [
+      ...linePairs.map((p): TaggedPair => ({ ...p, kind: 'line' })),
+      ...allPairs.map((p): TaggedPair => ({ ...p, kind: 'all' })),
+    ];
     for (const pair of pairs) {
       const perpX = -pair.axis.y;
       const perpY = pair.axis.x;
@@ -143,6 +195,7 @@ export function snapDraggedStation(input: SnapInput): SnapResult {
         perpDist,
         targetStopX: tStopX,
         targetStopY: tStopY,
+        kind: pair.kind,
       });
     }
   }
@@ -168,14 +221,18 @@ export function snapDraggedStation(input: SnapInput): SnapResult {
     else targetAxisGroups.push([c]);
   }
   const consolidated: Cand[] = targetAxisGroups.map((g) => {
-    if (g.length === 1) return g[0];
+    // If any candidate in this target+axis group came from line mode,
+    // preserve the 'line' tag on the consolidated candidate — phase 3
+    // refinement only fires off line-mode primaries.
+    const kind: 'line' | 'all' = g.some((c) => c.kind === 'line') ? 'line' : 'all';
+    if (g.length === 1) return { ...g[0], kind };
     const axis = g[0].axis;
     const perpX = -axis.y;
     const perpY = axis.x;
     const sorted = [...g].sort(
       (a, b) => a.dOff.x * perpX + a.dOff.y * perpY - (b.dOff.x * perpX + b.dOff.y * perpY),
     );
-    return sorted[Math.floor((sorted.length - 1) / 2)];
+    return { ...sorted[Math.floor((sorted.length - 1) / 2)], kind };
   });
 
   // Group consolidated candidates by axis (parallel) and keep best per group.
@@ -244,6 +301,37 @@ export function snapDraggedStation(input: SnapInput): SnapResult {
     const snappedDStopY = c.targetStopY + along * c.axis.y;
     sx = snappedDStopX - c.dOff.x;
     sy = snappedDStopY - c.dOff.y;
+  }
+
+  // Phase 3: along-axis refinement (equidistant + tens). Only applies to
+  // station drag with a single-axis line-mode primary — bullets and 2-axis
+  // snaps don't have a meaningful "along the line" interpretation here, and
+  // refining off an `all` mode primary would silently move the snap to a
+  // line-mode target that wasn't part of the candidate pool.
+  if (
+    !secondary &&
+    !bulletLineId &&
+    primary.kind === 'line' &&
+    draggedId !== undefined &&
+    (modes.equidistant || modes.tens)
+  ) {
+    const refined = refineAlongAxis({
+      sx,
+      sy,
+      axis: primary.axis,
+      dOff: primary.dOff,
+      draggedId,
+      draggedRotation: (draggedRotation ?? 0) as Rotation,
+      draggedStops: draggedStops ?? [],
+      lines,
+      stationsRec: stations,
+      modes,
+      tolerance,
+    });
+    if (refined) {
+      sx = refined.sx;
+      sy = refined.sy;
+    }
   }
 
   // Compute the per-station spacing for the Ctrl-drag readout. We use the
@@ -394,6 +482,153 @@ export function bulletAlignmentPairs(target: Station, lineId: LineId): Alignment
       axis: rotateBy(travelDirLocal(cell.orientation), target.rotation),
     },
   ];
+}
+
+/**
+ * Snap-to-all alignment pairs. For every target stop × every dragged stop
+ * (or anchor, if dragged has no stops) × the four world axes (horizontal,
+ * vertical, and the two 45° diagonals), emit a candidate. Line membership,
+ * adjacency, and stop orientation are all ignored — the user just wants to
+ * snap when their stop visually lines up with anyone else's stop on a 4-axis
+ * grid. The existing solver consolidates duplicates if a line-mode pair and
+ * an all-mode pair happen to produce the same target+axis.
+ */
+const ALL_AXES: Vec2[] = [
+  { x: 1, y: 0 },
+  { x: 0, y: 1 },
+  { x: SQRT2_2, y: SQRT2_2 },
+  { x: SQRT2_2, y: -SQRT2_2 },
+];
+export function allAxesPairs(
+  draggedStops: StopCell[],
+  draggedRotation: Rotation,
+  target: Station,
+): AlignmentPair[] {
+  if (target.stops.length === 0) return [];
+  const dOffs: Vec2[] =
+    draggedStops.length === 0
+      ? [{ x: 0, y: 0 }]
+      : draggedStops.map((c) => rotateBy(stopCenterAt(c.row, c.col), draggedRotation));
+  const out: AlignmentPair[] = [];
+  for (const tCell of target.stops) {
+    const tOff = rotateBy(stopCenterAt(tCell.row, tCell.col), target.rotation);
+    for (const dOff of dOffs) {
+      for (const axis of ALL_AXES) out.push({ dOff, tOff, axis });
+    }
+  }
+  return out;
+}
+
+/**
+ * Phase-3 along-axis refinement: equidistant + tens. Adjusts (sx, sy) along
+ * `axis` to either the midpoint between same-line prev/next neighbors
+ * (`equidistant`), or the nearest multiple of `TENS_INTERVAL` measured from
+ * the prev-in-line-ordering neighbor (`tens`). Both are gated on
+ * `modes.line` (caller guarantees this when invoking). When both modes are
+ * on, the candidate closest to the snapped position wins; equidistant wins
+ * exact ties.
+ *
+ * Returns null if no refinement applies. Otherwise returns the refined
+ * (sx, sy). The caller rebuilds guides afterward, so labels reflect the
+ * refined distance automatically.
+ */
+function refineAlongAxis(args: {
+  sx: number;
+  sy: number;
+  axis: Vec2;
+  dOff: Vec2;
+  draggedId: StationId;
+  draggedRotation: Rotation;
+  draggedStops: StopCell[];
+  lines: Record<LineId, Line>;
+  stationsRec: Record<StationId, Station>;
+  modes: SnapModes;
+  tolerance: number;
+}): { sx: number; sy: number } | null {
+  const {
+    sx,
+    sy,
+    axis,
+    dOff,
+    draggedId,
+    draggedRotation,
+    draggedStops,
+    lines,
+    stationsRec,
+    modes,
+    tolerance,
+  } = args;
+  if (!modes.equidistant && !modes.tens) return null;
+
+  const dStopX = sx + dOff.x;
+  const dStopY = sy + dOff.y;
+
+  const stopWorldFor = (
+    st: Station,
+    lineId: LineId,
+  ): { x: number; y: number; axisOk: boolean } | null => {
+    const cell = st.stops.find((c) => c.lineId === lineId);
+    if (!cell) return null;
+    const off = rotateBy(stopCenterAt(cell.row, cell.col), st.rotation);
+    const stopAxis = rotateBy(travelDirLocal(cell.orientation), st.rotation);
+    return { x: st.x + off.x, y: st.y + off.y, axisOk: parallel(stopAxis, axis) };
+  };
+
+  type Refinement = { delta: number; kind: 'equidistant' | 'tens' };
+  const candidates: Refinement[] = [];
+
+  for (const line of Object.values(lines)) {
+    const dIdx = line.stations.indexOf(draggedId);
+    if (dIdx < 0) continue;
+    const dCell = draggedStops.find((c) => c.lineId === line.id);
+    if (!dCell) continue;
+    const lineAxis = rotateBy(travelDirLocal(dCell.orientation), draggedRotation);
+    if (!parallel(lineAxis, axis)) continue;
+
+    const prevId = dIdx > 0 ? line.stations[dIdx - 1] : null;
+    const nextId = dIdx < line.stations.length - 1 ? line.stations[dIdx + 1] : null;
+    const prev = prevId ? stationsRec[prevId] : null;
+    const next = nextId ? stationsRec[nextId] : null;
+    const prevStop = prev ? stopWorldFor(prev, line.id) : null;
+    const nextStop = next ? stopWorldFor(next, line.id) : null;
+
+    if (modes.equidistant && prevStop?.axisOk && nextStop?.axisOk) {
+      const midX = (prevStop.x + nextStop.x) / 2;
+      const midY = (prevStop.y + nextStop.y) / 2;
+      const along = (midX - dStopX) * axis.x + (midY - dStopY) * axis.y;
+      if (Math.abs(along) <= tolerance) {
+        candidates.push({ delta: along, kind: 'equidistant' });
+      }
+    }
+
+    if (modes.tens && prevStop?.axisOk) {
+      const dAlong = (dStopX - prevStop.x) * axis.x + (dStopY - prevStop.y) * axis.y;
+      const tensAlong = Math.round(dAlong / TENS_INTERVAL) * TENS_INTERVAL;
+      const delta = tensAlong - dAlong;
+      if (Math.abs(delta) <= tolerance) {
+        candidates.push({ delta, kind: 'tens' });
+      }
+    }
+  }
+
+  if (candidates.length === 0) return null;
+
+  candidates.sort((a, b) => {
+    const da = Math.abs(a.delta);
+    const db = Math.abs(b.delta);
+    if (Math.abs(da - db) < 1e-6) {
+      // Tie: equidistant wins.
+      if (a.kind === b.kind) return 0;
+      return a.kind === 'equidistant' ? -1 : 1;
+    }
+    return da - db;
+  });
+
+  const chosen = candidates[0];
+  return {
+    sx: sx + chosen.delta * axis.x,
+    sy: sy + chosen.delta * axis.y,
+  };
 }
 
 export function alignmentPairs(
