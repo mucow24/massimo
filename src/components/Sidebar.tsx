@@ -69,8 +69,12 @@ export function Sidebar() {
             {stationList.map((st) => {
               const ids = selection.selectedStationIds;
               const inSelection = ids.includes(st.id);
-              // Inline editor only opens for true single-selection.
-              const expanded = ids.length === 1 && ids[0] === st.id;
+              // Inline editor only opens for true single-selection — no
+              // other stations and no bullets in the selection set.
+              const expanded =
+                ids.length === 1 &&
+                ids[0] === st.id &&
+                selection.selectedRouteBulletIds.length === 0;
               return (
                 <div key={st.id} data-station-row={st.id}>
                   <div
