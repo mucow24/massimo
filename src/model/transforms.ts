@@ -2,6 +2,7 @@ import { autoOrientLineStops } from './autoOrient';
 import { effectiveLineOrder } from './lineOrder';
 import { rotateBy, stopCenterAt } from '../geometry/orientation';
 import type {
+  DotShape,
   Line,
   LineId,
   LineTag,
@@ -51,6 +52,19 @@ export function moveStation(doc: MapDoc, id: StationId, x: number, y: number): M
   const cur = doc.stations[id];
   if (!cur) return doc;
   return { ...doc, stations: { ...doc.stations, [id]: { ...cur, x, y } } };
+}
+
+export function setDotShape(doc: MapDoc, stationIds: StationId[], shape: DotShape): MapDoc {
+  const stations = { ...doc.stations };
+  for (const id of stationIds) {
+    const cur = stations[id];
+    if (!cur) continue;
+    stations[id] = {
+      ...cur,
+      stops: cur.stops.map((s) => ({ ...s, dotShape: shape })),
+    };
+  }
+  return { ...doc, stations };
 }
 
 // For every line that contains both startId and endId, evenly redistribute
