@@ -1,50 +1,31 @@
-import { describe, it, expect, beforeEach } from 'vitest';
+import { describe, it, expect, vi } from 'vitest';
 import { render, screen } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { StationShapePicker } from './StationShapePicker';
-import { useDoc, useSelection } from '../state/store';
-import { DEFAULT_DOC } from '../model/transforms';
-import { makeDoc, makeStation, makeStop } from '../test/fixtures';
 
 describe('<StationShapePicker />', () => {
-  beforeEach(() => {
-    localStorage.clear();
-    useDoc.setState({ ...DEFAULT_DOC });
-    useSelection.setState({ selectedStationIds: [] });
-  });
-
-  it('trigger has aria-disabled=true with no selection; click does not open the menu', async () => {
+  it('trigger has aria-disabled=true when disabled prop is true; click does not open the menu', async () => {
     const user = userEvent.setup();
-    render(<StationShapePicker />);
+    render(<StationShapePicker disabled currentShape="filled-black" onPick={vi.fn()} />);
     const trigger = screen.getByRole('button', { name: 'Stop shape' });
     expect(trigger).toHaveAttribute('aria-disabled', 'true');
     await user.click(trigger);
     expect(screen.queryByRole('menu')).toBeNull();
   });
 
-  it('trigger becomes enabled once a station is selected', () => {
-    useSelection.setState({ selectedStationIds: ['a'] });
-    render(<StationShapePicker />);
-    expect(screen.getByRole('button', { name: 'Stop shape' })).toHaveAttribute(
-      'aria-disabled',
-      'false',
-    );
-  });
-
-  it('clicking the enabled trigger opens a menu with 9 menuitems', async () => {
+  it('trigger is enabled when disabled=false; clicking opens a menu with 9 menuitems', async () => {
     const user = userEvent.setup();
-    useSelection.setState({ selectedStationIds: ['a'] });
-    render(<StationShapePicker />);
-    await user.click(screen.getByRole('button', { name: 'Stop shape' }));
-    const menu = screen.getByRole('menu');
-    expect(menu).toBeInTheDocument();
+    render(<StationShapePicker disabled={false} currentShape="filled-black" onPick={vi.fn()} />);
+    const trigger = screen.getByRole('button', { name: 'Stop shape' });
+    expect(trigger).toHaveAttribute('aria-disabled', 'false');
+    await user.click(trigger);
+    expect(screen.getByRole('menu')).toBeInTheDocument();
     expect(screen.getAllByRole('menuitem')).toHaveLength(9);
   });
 
   it('menu items carry human-readable aria-labels for every shape', async () => {
     const user = userEvent.setup();
-    useSelection.setState({ selectedStationIds: ['a'] });
-    render(<StationShapePicker />);
+    render(<StationShapePicker disabled={false} currentShape="filled-black" onPick={vi.fn()} />);
     await user.click(screen.getByRole('button', { name: 'Stop shape' }));
     expect(screen.getByRole('menuitem', { name: 'Filled black' })).toBeInTheDocument();
     expect(screen.getByRole('menuitem', { name: 'Open black' })).toBeInTheDocument();
@@ -61,57 +42,63 @@ describe('<StationShapePicker />', () => {
     expect(screen.getByRole('menuitem', { name: 'None' })).toBeInTheDocument();
   });
 
-  it('clicking a menu item writes the new shape to all selected stations and closes the menu', async () => {
+  it('clicking a menu item calls onPick with that shape and closes the menu', async () => {
     const user = userEvent.setup();
-    useDoc.setState({
-      ...DEFAULT_DOC,
-      ...makeDoc({
-        stations: [
-          makeStation({ id: 'a', stops: [makeStop('L1')] }),
-          makeStation({ id: 'b', stops: [makeStop('L1')] }),
-        ],
-      }),
-    });
-    useSelection.setState({ selectedStationIds: ['a', 'b'] });
-    render(<StationShapePicker />);
+    const onPick = vi.fn();
+    render(<StationShapePicker disabled={false} currentShape="filled-black" onPick={onPick} />);
 
     await user.click(screen.getByRole('button', { name: 'Stop shape' }));
     await user.click(screen.getByRole('menuitem', { name: 'Filled black diamond' }));
 
-    const doc = useDoc.getState();
-    expect(doc.stations.a.stops[0].dotShape).toBe('filled-black-diamond');
-    expect(doc.stations.b.stops[0].dotShape).toBe('filled-black-diamond');
+    expect(onPick).toHaveBeenCalledTimes(1);
+    expect(onPick).toHaveBeenCalledWith('filled-black-diamond');
     expect(screen.queryByRole('menu')).toBeNull();
   });
 
-  it('Escape closes the menu without mutating state', async () => {
+  it('trigger renders the currentShape glyph (diamond → polygon)', () => {
+    render(
+      <StationShapePicker
+        disabled={false}
+        onPick={vi.fn()}
+        currentShape="filled-black-diamond"
+      />,
+    );
+    const trigger = screen.getByRole('button', { name: 'Stop shape' });
+    expect(trigger.querySelector('polygon')).not.toBeNull();
+  });
+
+  it('trigger renders the currentShape glyph (filled-black → black-fill circle)', () => {
+    render(<StationShapePicker disabled={false} currentShape="filled-black" onPick={vi.fn()} />);
+    const trigger = screen.getByRole('button', { name: 'Stop shape' });
+    const circle = trigger.querySelector('circle');
+    expect(circle).not.toBeNull();
+    expect(circle?.getAttribute('fill')).toBe('#000');
+  });
+
+  it('disabled trigger still renders a glyph (so the button is not visually empty)', () => {
+    render(<StationShapePicker disabled currentShape="filled-black" onPick={vi.fn()} />);
+    const trigger = screen.getByRole('button', { name: 'Stop shape' });
+    expect(trigger.querySelector('circle, polygon')).not.toBeNull();
+  });
+
+  it('Escape closes the menu without firing onPick', async () => {
     const user = userEvent.setup();
-    useDoc.setState({
-      ...DEFAULT_DOC,
-      ...makeDoc({
-        stations: [makeStation({ id: 'a', stops: [makeStop('L1')] })],
-      }),
-    });
-    useSelection.setState({ selectedStationIds: ['a'] });
-    render(<StationShapePicker />);
+    const onPick = vi.fn();
+    render(<StationShapePicker disabled={false} currentShape="filled-black" onPick={onPick} />);
 
     await user.click(screen.getByRole('button', { name: 'Stop shape' }));
     expect(screen.getByRole('menu')).toBeInTheDocument();
     await user.keyboard('{Escape}');
     expect(screen.queryByRole('menu')).toBeNull();
-    expect(useDoc.getState().stations.a.stops[0].dotShape).toBeUndefined();
+    expect(onPick).not.toHaveBeenCalled();
   });
 
-  it('outside click closes the menu without mutating state', async () => {
+  it('outside click closes the menu without firing onPick', async () => {
     const user = userEvent.setup();
-    useDoc.setState({
-      ...DEFAULT_DOC,
-      ...makeDoc({ stations: [makeStation({ id: 'a', stops: [makeStop('L1')] })] }),
-    });
-    useSelection.setState({ selectedStationIds: ['a'] });
+    const onPick = vi.fn();
     render(
       <div>
-        <StationShapePicker />
+        <StationShapePicker disabled={false} currentShape="filled-black" onPick={onPick} />
         <button data-testid="outside">outside</button>
       </div>,
     );
@@ -120,6 +107,21 @@ describe('<StationShapePicker />', () => {
     expect(screen.getByRole('menu')).toBeInTheDocument();
     await user.click(screen.getByTestId('outside'));
     expect(screen.queryByRole('menu')).toBeNull();
-    expect(useDoc.getState().stations.a.stops[0].dotShape).toBeUndefined();
+    expect(onPick).not.toHaveBeenCalled();
+  });
+
+  it('tooltip text differs by disabled state', () => {
+    const { rerender } = render(
+      <StationShapePicker disabled currentShape="filled-black" onPick={vi.fn()} />,
+    );
+    expect(screen.getByRole('button', { name: 'Stop shape' })).toHaveAttribute(
+      'title',
+      'Stop shape — select a stop first',
+    );
+    rerender(<StationShapePicker disabled={false} currentShape="filled-black" onPick={vi.fn()} />);
+    expect(screen.getByRole('button', { name: 'Stop shape' })).toHaveAttribute(
+      'title',
+      'Stop shape',
+    );
   });
 });
