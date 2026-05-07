@@ -3,6 +3,7 @@ import type { StopOrientation } from '../model/types';
 
 export const STOP_SIZE = 14;
 export const STOP_GAP = 0;
+export const STOP_DOT_RADIUS = STOP_SIZE * 0.28;
 
 export type Rotation = 0 | 1 | 2 | 3 | 4 | 5 | 6 | 7;
 

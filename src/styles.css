@@ -290,6 +290,57 @@ select {
   vertical-align: middle;
 }
 
+.shape-picker {
+  position: relative;
+  display: inline-flex;
+}
+.shape-picker-trigger {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  padding: 1px 4px;
+  line-height: 1;
+}
+.shape-picker-trigger[aria-disabled='true'] {
+  opacity: 0.4;
+  cursor: not-allowed;
+}
+.shape-picker-trigger:hover[aria-disabled='true'] {
+  background: transparent;
+}
+.shape-grid {
+  position: absolute;
+  top: calc(100% + 4px);
+  right: 0;
+  z-index: 50;
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 6px;
+  padding: 8px;
+  background: #fff;
+  border: 1px solid #ccc;
+  border-radius: 4px;
+  box-shadow: 0 6px 16px rgba(0, 0, 0, 0.12);
+}
+.shape-option {
+  width: 26px;
+  height: 26px;
+  padding: 0;
+  background: #808080;
+  border: 1px solid #6b6b6b;
+  border-radius: 3px;
+  cursor: pointer;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+}
+.shape-option:hover {
+  background: #909090;
+}
+.shape-option svg {
+  display: block;
+}
+
 .canvas-host svg {
   width: 100%;
   height: 100%;

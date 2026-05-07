@@ -5,6 +5,7 @@ import { findMatchingStations } from '../../model/matching';
 import { StopGrid } from './StopGrid';
 import { LabelOffsetControl } from './LabelOffsetControl';
 import { useFieldHistory } from '../useFieldHistory';
+import { StationShapePicker } from '../StationShapePicker';
 
 export function StationInspector({ id }: { id: StationId }) {
   const station = useDoc((s) => s.stations[id]);
@@ -139,6 +140,7 @@ export function StationInspector({ id }: { id: StationId }) {
           >
             all
           </button>
+          <StationShapePicker />
         </div>
       </div>
       <div className="field">
