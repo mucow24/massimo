@@ -2,7 +2,8 @@ import { useEffect, useRef } from 'react';
 import { Line, LineId, Station } from '../model/types';
 import { beginHistoryGroup, dragState, useDoc, useSelection } from '../state/store';
 import { DIR_8, STOP_SIZE, stopCenterAt } from '../geometry/orientation';
-import { polygonsToPath, Pt, unionConvex } from '../geometry/polygonUnion';
+import { polygonsToPath, unionConvex } from '../geometry/polygonUnion';
+import { stationBoundaryRectsLocal } from '../geometry/stationBoundary';
 import { legibleTextOn } from '../util/color';
 
 // Map a click on a station to the closest dot's lineId. Used to pin a
@@ -241,34 +242,11 @@ export function StationView({
     // selected; the match-stroke layer is rendered by MapCanvas only for
     // matching stations, so it always paints.
     if ((layer === 'wash' || layer === 'stroke') && !isSelected) return null;
-    // Compute the union polygon of the cells rect and (rotated) label rect,
-    // then smooth its corners with quadratic Beziers. The smoothing applies
-    // to the outer-boundary corners ONLY (because each vertex of the union
-    // is a corner of the actual silhouette), so there are no rounded-corner
-    // artifacts where the rects meet.
-    const labelAng = (label.rotation * Math.PI) / 4;
-    const cosL = Math.cos(labelAng);
-    const sinL = Math.sin(labelAng);
-    const rotateLabelCorner = (px: number, py: number): Pt => {
-      const dx = px - labelAnchorX;
-      const dy = py - labelAnchorY;
-      return {
-        x: labelAnchorX + dx * cosL - dy * sinL,
-        y: labelAnchorY + dx * sinL + dy * cosL,
-      };
-    };
-    const cells: Pt[] = [
-      { x: cellsHitX, y: cellsHitY },
-      { x: cellsHitX + cellsHitW, y: cellsHitY },
-      { x: cellsHitX + cellsHitW, y: cellsHitY + cellsHitH },
-      { x: cellsHitX, y: cellsHitY + cellsHitH },
-    ];
-    const labelPoly: Pt[] = [
-      rotateLabelCorner(labelHitX, labelHitY),
-      rotateLabelCorner(labelHitX + labelHitW, labelHitY),
-      rotateLabelCorner(labelHitX + labelHitW, labelHitY + labelHitH),
-      rotateLabelCorner(labelHitX, labelHitY + labelHitH),
-    ];
+    // Smooth the union of the cells rect + (rotated) label rect with
+    // quadratic Beziers. Smoothing applies to the outer-boundary corners
+    // ONLY (each vertex of the union is a corner of the actual silhouette),
+    // so there are no rounded-corner artifacts where the rects meet.
+    const { cells, label: labelPoly } = stationBoundaryRectsLocal(station);
     const pathStr = polygonsToPath(unionConvex(cells, labelPoly), SELECTION_CORNER_RADIUS);
 
     if (layer === 'wash') {
