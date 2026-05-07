@@ -19,11 +19,13 @@ export function StationInspector({ id }: { id: StationId }) {
   const moveLabelAction = useDoc((s) => s.moveLabel);
   const rotateLabelAction = useDoc((s) => s.rotateLabel);
   const setLabelOffset = useDoc((s) => s.setLabelOffset);
+  const setDotShape = useDoc((s) => s.setDotShape);
   const selection = useSelection();
   const nameField = useFieldHistory();
   const xField = useFieldHistory();
   const yField = useFieldHistory();
   const stopAreaRef = useRef<HTMLDivElement | null>(null);
+  const shapePickerRef = useRef<HTMLDivElement | null>(null);
 
   // Stations whose unrotated stop layout is identical to this one and are
   // adjacent on at least one line. Recomputed when stops/lines change.
@@ -61,8 +63,12 @@ export function StationInspector({ id }: { id: StationId }) {
       selection.setLabelSelected(false);
     };
     const onMouseDown = (e: MouseEvent) => {
-      const root = stopAreaRef.current;
-      if (root && root.contains(e.target as Node)) return;
+      const stopRoot = stopAreaRef.current;
+      if (stopRoot && stopRoot.contains(e.target as Node)) return;
+      // The shape picker acts on the selected stop, so clicks inside it must
+      // not deselect — otherwise opening the menu would disable it.
+      const pickerRoot = shapePickerRef.current;
+      if (pickerRoot && pickerRoot.contains(e.target as Node)) return;
       clear();
     };
     const onKeyDown = (e: KeyboardEvent) => {
@@ -140,7 +146,21 @@ export function StationInspector({ id }: { id: StationId }) {
           >
             all
           </button>
-          <StationShapePicker />
+          <div ref={shapePickerRef} style={{ display: 'inline-flex' }}>
+            <StationShapePicker
+              disabled={selectedLineId === null || labelSelected}
+              currentShape={
+                (selectedLineId === null
+                  ? undefined
+                  : station.stops.find((s) => s.lineId === selectedLineId)?.dotShape) ??
+                'filled-black'
+              }
+              onPick={(shape) => {
+                if (selectedLineId === null) return;
+                dispatchAll((sid) => setDotShape(sid, selectedLineId, shape));
+              }}
+            />
+          </div>
         </div>
       </div>
       <div className="field">

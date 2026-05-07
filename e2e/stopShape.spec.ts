@@ -8,15 +8,16 @@ test.beforeEach(async ({ page }) => {
 
 // The picker lives in the StationInspector, which only renders for a
 // single-station selection. Selecting a station is therefore a precondition
-// for the picker to be on the page at all.
+// for the picker to be on the page at all. Picking a stop in the StopGrid
+// is now also required: the picker only writes to the click-selected stop.
 
 test.describe('Stop shape picker — smoke', () => {
-  test('selecting A and picking "Filled black diamond" replaces A\'s dot with a <polygon>', async ({
+  test('selecting A, clicking its L1 stop, and picking "Filled black diamond" replaces only A\'s L1 dot', async ({
     page,
   }) => {
     await seedAndOpen(page, fourInLine);
 
-    // Default: A's stop is a circle.
+    // Default: every station's stop is filled-black.
     await expect(
       page.locator('[data-stop-station="A"][data-stop-shape="filled-black"]'),
     ).toBeVisible();
@@ -24,7 +25,10 @@ test.describe('Stop shape picker — smoke', () => {
     const a = await stationCenter(page, 'A');
     await page.mouse.click(a.x, a.y);
 
-    // Inspector is now open; open the picker; pick the diamond.
+    // Click A's L1 stop in the StopGrid.
+    await page.locator('[data-cell-kind="stop"][data-line-id="L1"]').click();
+
+    // Open picker, pick diamond.
     await page.getByRole('button', { name: 'Stop shape' }).click();
     await page.getByRole('menuitem', { name: 'Filled black diamond' }).click();
 
@@ -33,28 +37,58 @@ test.describe('Stop shape picker — smoke', () => {
     await expect(dot).toBeVisible();
     await expect(dot).toHaveJSProperty('tagName', 'polygon');
     await expect(dot).toHaveAttribute('fill', '#000');
+
+    // Sibling stations untouched.
+    await expect(
+      page.locator('[data-stop-station="B"][data-stop-shape="filled-black"]'),
+    ).toBeVisible();
+    await expect(
+      page.locator('[data-stop-station="C"][data-stop-shape="filled-black"]'),
+    ).toBeVisible();
+    await expect(
+      page.locator('[data-stop-station="D"][data-stop-shape="filled-black"]'),
+    ).toBeVisible();
   });
 });
 
 test.describe('Stop shape picker — coverage', () => {
-  test('picker is absent when nothing is selected; appears once a station is selected', async ({
-    page,
-  }) => {
+  test('picker is absent when nothing is selected', async ({ page }) => {
     await seedAndOpen(page, fourInLine);
     await expect(page.getByRole('button', { name: 'Stop shape' })).toHaveCount(0);
+  });
+
+  test('picker is present but disabled when only a station is selected', async ({ page }) => {
+    await seedAndOpen(page, fourInLine);
 
     const a = await stationCenter(page, 'A');
     await page.mouse.click(a.x, a.y);
-    await expect(page.getByRole('button', { name: 'Stop shape' })).toBeVisible();
+    await expect(page.getByRole('button', { name: 'Stop shape' })).toHaveAttribute(
+      'aria-disabled',
+      'true',
+    );
   });
 
-  test('"None" leaves no glyph element; line still routes through the station', async ({
+  test('picker becomes enabled after clicking a stop in the StopGrid', async ({ page }) => {
+    await seedAndOpen(page, fourInLine);
+
+    const a = await stationCenter(page, 'A');
+    await page.mouse.click(a.x, a.y);
+    await page.locator('[data-cell-kind="stop"][data-line-id="L1"]').click();
+
+    await expect(page.getByRole('button', { name: 'Stop shape' })).toHaveAttribute(
+      'aria-disabled',
+      'false',
+    );
+  });
+
+  test('"None" leaves no glyph element at the targeted stop; line still routes through', async ({
     page,
   }) => {
     await seedAndOpen(page, fourInLine);
 
     const b = await stationCenter(page, 'B');
     await page.mouse.click(b.x, b.y);
+    await page.locator('[data-cell-kind="stop"][data-line-id="L1"]').click();
     await page.getByRole('button', { name: 'Stop shape' }).click();
     await page.getByRole('menuitem', { name: 'None' }).click();
 
@@ -68,6 +102,7 @@ test.describe('Stop shape picker — coverage', () => {
 
     const a = await stationCenter(page, 'A');
     await page.mouse.click(a.x, a.y);
+    await page.locator('[data-cell-kind="stop"][data-line-id="L1"]').click();
     await page.getByRole('button', { name: 'Stop shape' }).click();
     await page.getByRole('menuitem', { name: 'Filled black diamond' }).click();
     await expect(
@@ -85,6 +120,7 @@ test.describe('Stop shape picker — coverage', () => {
 
     const a = await stationCenter(page, 'A');
     await page.mouse.click(a.x, a.y);
+    await page.locator('[data-cell-kind="stop"][data-line-id="L1"]').click();
     await page.getByRole('button', { name: 'Stop shape' }).click();
     await page.getByRole('menuitem', { name: 'Filled black diamond' }).click();
 

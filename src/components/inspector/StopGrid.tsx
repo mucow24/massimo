@@ -120,6 +120,7 @@ export function StopGrid({
           data-cell-row={r}
           data-cell-col={c}
           data-cell-kind={cellKind}
+          data-line-id={stop?.lineId}
           onPointerDown={(e) => {
             if (e.button !== 0) return;
             if (cellKind === 'stop') {

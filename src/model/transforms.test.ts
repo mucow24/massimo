@@ -942,43 +942,16 @@ describe('clearAll — line tags', () => {
 });
 
 describe('setDotShape', () => {
-  it('writes the shape onto every stop at a single station', () => {
+  it('writes the new shape onto the targeted stop only', () => {
     const doc = makeDoc({
       stations: [makeStation({ id: 'a', stops: [makeStop('L1'), makeStop('L2', { col: 1 })] })],
     });
-    const next = T.setDotShape(doc, ['a'], 'filled-black-diamond');
-    expect(next.stations.a.stops.map((s) => s.dotShape)).toEqual([
-      'filled-black-diamond',
-      'filled-black-diamond',
-    ]);
+    const next = T.setDotShape(doc, 'a', 'L1', 'filled-black-diamond');
+    expect(next.stations.a.stops[0].dotShape).toBe('filled-black-diamond');
+    expect(next.stations.a.stops[1].dotShape).toBeUndefined();
   });
 
-  it('applies the shape to every stop at every selected station', () => {
-    const doc = makeDoc({
-      stations: [
-        makeStation({ id: 'a', stops: [makeStop('L1')] }),
-        makeStation({ id: 'b', stops: [makeStop('L1'), makeStop('L2', { col: 1 })] }),
-        makeStation({ id: 'c', stops: [makeStop('L1')] }),
-      ],
-    });
-    const next = T.setDotShape(doc, ['a', 'b'], 'open-white');
-    expect(next.stations.a.stops[0].dotShape).toBe('open-white');
-    expect(next.stations.b.stops[0].dotShape).toBe('open-white');
-    expect(next.stations.b.stops[1].dotShape).toBe('open-white');
-    // c was not selected — untouched.
-    expect(next.stations.c.stops[0].dotShape).toBeUndefined();
-  });
-
-  it('silently ignores unknown station IDs', () => {
-    const doc = makeDoc({
-      stations: [makeStation({ id: 'a', stops: [makeStop('L1')] })],
-    });
-    const next = T.setDotShape(doc, ['a', 'ghost'], 'filled-white');
-    expect(next.stations.a.stops[0].dotShape).toBe('filled-white');
-    expect(next.stations.ghost).toBeUndefined();
-  });
-
-  it('preserves lineId/row/col/orientation on each cell', () => {
+  it('preserves lineId/row/col/orientation on the targeted cell', () => {
     const doc = makeDoc({
       stations: [
         makeStation({
@@ -987,7 +960,7 @@ describe('setDotShape', () => {
         }),
       ],
     });
-    const next = T.setDotShape(doc, ['a'], 'filled-black-diamond');
+    const next = T.setDotShape(doc, 'a', 'L1', 'filled-black-diamond');
     expect(next.stations.a.stops[0]).toMatchObject({
       lineId: 'L1',
       row: 2,
@@ -997,11 +970,39 @@ describe('setDotShape', () => {
     });
   });
 
+  it('leaves sibling stations untouched', () => {
+    const doc = makeDoc({
+      stations: [
+        makeStation({ id: 'a', stops: [makeStop('L1')] }),
+        makeStation({ id: 'b', stops: [makeStop('L1')] }),
+      ],
+    });
+    const next = T.setDotShape(doc, 'a', 'L1', 'open-white');
+    expect(next.stations.a.stops[0].dotShape).toBe('open-white');
+    expect(next.stations.b.stops[0].dotShape).toBeUndefined();
+  });
+
+  it('silently no-ops on unknown station id', () => {
+    const doc = makeDoc({
+      stations: [makeStation({ id: 'a', stops: [makeStop('L1')] })],
+    });
+    const next = T.setDotShape(doc, 'ghost', 'L1', 'filled-white');
+    expect(next).toEqual(doc);
+  });
+
+  it('silently no-ops when the station has no stop on lineId', () => {
+    const doc = makeDoc({
+      stations: [makeStation({ id: 'a', stops: [makeStop('L1')] })],
+    });
+    const next = T.setDotShape(doc, 'a', 'L99', 'open-white');
+    expect(next).toEqual(doc);
+  });
+
   it("'none' is a plain assignment, not a removal", () => {
     const doc = makeDoc({
       stations: [makeStation({ id: 'a', stops: [makeStop('L1')] })],
     });
-    const next = T.setDotShape(doc, ['a'], 'none');
+    const next = T.setDotShape(doc, 'a', 'L1', 'none');
     expect(next.stations.a.stops[0].dotShape).toBe('none');
   });
 });
