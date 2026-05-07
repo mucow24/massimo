@@ -42,10 +42,7 @@ describe('<StationInspector /> — shape picker wiring', () => {
             stops: [makeStop('L1'), makeStop('L2', { col: 1 })],
           }),
         ],
-        lines: [
-          makeLine({ id: 'L1', stations: ['a'] }),
-          makeLine({ id: 'L2', stations: ['a'] }),
-        ],
+        lines: [makeLine({ id: 'L1', stations: ['a'] }), makeLine({ id: 'L2', stations: ['a'] })],
       }),
     });
     useSelection.setState({ ...SELECTION_BLANK, selectedStationIds: ['a'] });

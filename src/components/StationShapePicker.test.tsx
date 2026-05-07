@@ -57,11 +57,7 @@ describe('<StationShapePicker />', () => {
 
   it('trigger renders the currentShape glyph (diamond → polygon)', () => {
     render(
-      <StationShapePicker
-        disabled={false}
-        onPick={vi.fn()}
-        currentShape="filled-black-diamond"
-      />,
+      <StationShapePicker disabled={false} onPick={vi.fn()} currentShape="filled-black-diamond" />,
     );
     const trigger = screen.getByRole('button', { name: 'Stop shape' });
     expect(trigger.querySelector('polygon')).not.toBeNull();
