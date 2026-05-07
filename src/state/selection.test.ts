@@ -4,12 +4,12 @@ import { useSelection } from './store';
 beforeEach(() => {
   useSelection.setState({
     selectedStationIds: [],
+    selectedRouteBulletIds: [],
     selectedLineId: null,
     appendingToLineId: null,
     insertAfterIndex: null,
     placingStation: false,
     selectedLineTagId: null,
-    selectedRouteBulletId: null,
     selectedTransferId: null,
     creatingLineTag: false,
     creatingRouteBullet: false,
@@ -127,6 +127,84 @@ describe('selection — array model', () => {
       useSelection.setState({ selectedStationIds: ['A', 'B'] });
       useSelection.getState().xorStationsToSelection([]);
       expect(useSelection.getState().selectedStationIds).toEqual(['A', 'B']);
+    });
+  });
+});
+
+describe('selection — route bullets (parallel array)', () => {
+  it('initial state: empty array', () => {
+    expect(useSelection.getState().selectedRouteBulletIds).toEqual([]);
+  });
+
+  describe('selectRouteBullet', () => {
+    it('replaces with [id]', () => {
+      useSelection.getState().selectRouteBullet('b1');
+      expect(useSelection.getState().selectedRouteBulletIds).toEqual(['b1']);
+    });
+
+    it('null clears the array', () => {
+      useSelection.getState().selectRouteBullet('b1');
+      useSelection.getState().selectRouteBullet(null);
+      expect(useSelection.getState().selectedRouteBulletIds).toEqual([]);
+    });
+
+    it('clears stations when picking a bullet (plain click semantics)', () => {
+      useSelection.setState({ selectedStationIds: ['A', 'B'] });
+      useSelection.getState().selectRouteBullet('b1');
+      expect(useSelection.getState().selectedStationIds).toEqual([]);
+      expect(useSelection.getState().selectedRouteBulletIds).toEqual(['b1']);
+    });
+
+    it('selectStation clears bullets too — plain click is exclusive', () => {
+      useSelection.setState({ selectedRouteBulletIds: ['b1', 'b2'] });
+      useSelection.getState().selectStation('S1');
+      expect(useSelection.getState().selectedStationIds).toEqual(['S1']);
+      expect(useSelection.getState().selectedRouteBulletIds).toEqual([]);
+    });
+  });
+
+  describe('toggleRouteBulletSelection', () => {
+    it('appends a new id (becomes anchor)', () => {
+      useSelection.getState().toggleRouteBulletSelection('b1');
+      useSelection.getState().toggleRouteBulletSelection('b2');
+      expect(useSelection.getState().selectedRouteBulletIds).toEqual(['b1', 'b2']);
+    });
+
+    it('removes an existing id', () => {
+      useSelection.setState({ selectedRouteBulletIds: ['b1', 'b2', 'b3'] });
+      useSelection.getState().toggleRouteBulletSelection('b2');
+      expect(useSelection.getState().selectedRouteBulletIds).toEqual(['b1', 'b3']);
+    });
+
+    it('does not touch station selection — shift-click is per-type', () => {
+      useSelection.setState({ selectedStationIds: ['A'], selectedRouteBulletIds: [] });
+      useSelection.getState().toggleRouteBulletSelection('b1');
+      expect(useSelection.getState().selectedStationIds).toEqual(['A']);
+      expect(useSelection.getState().selectedRouteBulletIds).toEqual(['b1']);
+    });
+  });
+
+  describe('setRouteBulletSelection', () => {
+    it('replaces with the given ids exactly, deduped last-wins', () => {
+      useSelection.setState({ selectedRouteBulletIds: ['x'] });
+      useSelection.getState().setRouteBulletSelection(['b1', 'b2', 'b1']);
+      expect(useSelection.getState().selectedRouteBulletIds).toEqual(['b2', 'b1']);
+    });
+  });
+
+  describe('addRouteBulletsToSelection', () => {
+    it('unions, preserving prior order', () => {
+      useSelection.setState({ selectedRouteBulletIds: ['b1', 'b2'] });
+      useSelection.getState().addRouteBulletsToSelection(['b2', 'b3']);
+      expect(useSelection.getState().selectedRouteBulletIds).toEqual(['b1', 'b2', 'b3']);
+    });
+  });
+
+  describe('xorRouteBulletsToSelection', () => {
+    it('removes intersection, appends rest', () => {
+      useSelection.setState({ selectedRouteBulletIds: ['b1', 'b2', 'b3'] });
+      useSelection.getState().xorRouteBulletsToSelection(['b2', 'b4']);
+      expect(useSelection.getState().selectedRouteBulletIds).toEqual(['b1', 'b3', 'b4']);
     });
   });
 });

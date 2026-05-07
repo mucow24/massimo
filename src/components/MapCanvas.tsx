@@ -502,7 +502,7 @@ export function MapCanvas() {
             key={b.id}
             bullet={b}
             lines={lines}
-            selected={selection.selectedRouteBulletId === b.id}
+            selected={selection.selectedRouteBulletIds.includes(b.id)}
             onPointerDown={onBulletPointerDown}
             onClick={onBulletClick}
             onContextMenu={onBulletContextMenu}
@@ -796,12 +796,13 @@ export function MapCanvas() {
         <SnapGuides guides={[...drag.snapGuides, ...bulletSnapGuides]} zoom={view.viewport.zoom} />
       </svg>
 
-      {selection.selectedRouteBulletId &&
-        routeBullets[selection.selectedRouteBulletId] &&
+      {selection.selectedRouteBulletIds.length === 1 &&
+        selection.selectedStationIds.length === 0 &&
+        routeBullets[selection.selectedRouteBulletIds[0]] &&
         view.vbW > 0 &&
         view.vbH > 0 &&
         (() => {
-          const b = routeBullets[selection.selectedRouteBulletId];
+          const b = routeBullets[selection.selectedRouteBulletIds[0]];
           // Canvas-host-relative pixel coords from the bullet's world
           // position via the current viewport. No ref reads — keeps the
           // react-hooks lint happy.
