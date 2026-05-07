@@ -215,6 +215,56 @@ test.describe('multi-station selection', () => {
     await expect(page.locator('[data-station-wash="D"]')).toBeVisible();
   });
 
+  test('right-click on a member of a multi-selection rotates the whole group rigidly', async ({
+    page,
+  }) => {
+    await seedAndOpen(page, fourInLine);
+
+    const a = await stationCenter(page, 'A');
+    const c = await stationCenter(page, 'C');
+
+    // Select A and C. (B and D stay unselected.)
+    await page.mouse.click(a.x, a.y);
+    await clickAtWithModifiers(page, c, ['Shift']);
+
+    const beforeA = await stationWorldPos(page, 'A');
+    const beforeC = await stationWorldPos(page, 'C');
+    const beforeB = await stationWorldPos(page, 'B');
+    const beforeD = await stationWorldPos(page, 'D');
+    const distBefore = Math.hypot(beforeA.x - beforeC.x, beforeA.y - beforeC.y);
+
+    // Right-click on A — A is the pivot.
+    await page.mouse.click(a.x, a.y, { button: 'right' });
+
+    const afterA = await stationWorldPos(page, 'A');
+    const afterC = await stationWorldPos(page, 'C');
+    const afterB = await stationWorldPos(page, 'B');
+    const afterD = await stationWorldPos(page, 'D');
+
+    // Pivot didn't move.
+    expect(afterA.x).toBeCloseTo(beforeA.x, 1);
+    expect(afterA.y).toBeCloseTo(beforeA.y, 1);
+
+    // C orbited 45° clockwise around A: distance preserved.
+    const distAfter = Math.hypot(afterA.x - afterC.x, afterA.y - afterC.y);
+    expect(distAfter).toBeCloseTo(distBefore, 1);
+
+    // C's world position is rotated 45° CW around A. With C originally
+    // east of A (delta = (+400, 0)), it should now be SE: x and y deltas
+    // are both ~+283.
+    const SQRT2_2 = Math.SQRT2 / 2;
+    const expCdx = (beforeC.x - beforeA.x) * SQRT2_2 - (beforeC.y - beforeA.y) * SQRT2_2;
+    const expCdy = (beforeC.x - beforeA.x) * SQRT2_2 + (beforeC.y - beforeA.y) * SQRT2_2;
+    expect(afterC.x - afterA.x).toBeCloseTo(expCdx, 1);
+    expect(afterC.y - afterA.y).toBeCloseTo(expCdy, 1);
+
+    // Unselected stations (B, D) didn't move.
+    expect(afterB.x).toBeCloseTo(beforeB.x, 1);
+    expect(afterB.y).toBeCloseTo(beforeB.y, 1);
+    expect(afterD.x).toBeCloseTo(beforeD.x, 1);
+    expect(afterD.y).toBeCloseTo(beforeD.y, 1);
+  });
+
   test('ctrl+shift+rect-select toggles (xor) hits with the existing selection', async ({
     page,
   }) => {

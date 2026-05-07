@@ -218,6 +218,38 @@ export function rotateStation(doc: MapDoc, id: StationId): MapDoc {
 }
 
 /**
+ * Rotate a group of stations 45° clockwise around a pivot. Each station's
+ * own rotation field advances by one step (matching the single-station
+ * `rotateStation` behavior), so each station's stops/label rotate in place
+ * as if right-clicked individually. In addition, every non-pivot station's
+ * world position is rotated 45° around the pivot's center, preserving the
+ * group's relative geometry as a rigid body.
+ */
+export function rotateStationsAround(doc: MapDoc, pivotId: StationId, ids: StationId[]): MapDoc {
+  const pivot = doc.stations[pivotId];
+  if (!pivot) return doc;
+  const ang = Math.PI / 4;
+  const cs = Math.cos(ang);
+  const sn = Math.sin(ang);
+  let stations = doc.stations;
+  for (const id of ids) {
+    const cur = stations[id];
+    if (!cur) continue;
+    const nextRot = ((cur.rotation + 1) % 8) as Rotation;
+    let nx = cur.x;
+    let ny = cur.y;
+    if (id !== pivotId) {
+      const dx = cur.x - pivot.x;
+      const dy = cur.y - pivot.y;
+      nx = pivot.x + dx * cs - dy * sn;
+      ny = pivot.y + dx * sn + dy * cs;
+    }
+    stations = { ...stations, [id]: { ...cur, rotation: nextRot, x: nx, y: ny } };
+  }
+  return { ...doc, stations };
+}
+
+/**
  * Rotate the station 180° and mirror the label so it stays on the same world
  * side as before.
  */
