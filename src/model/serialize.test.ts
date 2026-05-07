@@ -372,4 +372,55 @@ describe('migrate — historical versions', () => {
     const doc = migrate(v7, 7);
     expect(doc.lineTags.t1).toBeUndefined();
   });
+
+  it('v11 → current: stops without dotShape stay undefined and load fine', () => {
+    const v11 = {
+      stations: {
+        s1: {
+          id: 's1',
+          name: 's1',
+          x: 0,
+          y: 0,
+          rotation: 0,
+          stops: [{ lineId: 'L1', row: 0, col: 0, orientation: 'auto-vertical' }],
+          label: { row: 0, col: -1, rotation: 0, offset: 0 },
+        },
+      },
+      lines: { L1: { id: 'L1', service: 'A', color: '#000', stations: ['s1'] } },
+      lineOrder: ['L1'],
+      curveRadius: 24,
+      lineCounter: 1,
+      lineTags: {},
+      routeBullets: {},
+      transfers: {},
+    };
+    const doc = migrate(v11, 11);
+    expect(doc.stations.s1.stops[0].dotShape).toBeUndefined();
+  });
+});
+
+describe('serialize / parse — dotShape', () => {
+  it('round-trips a stop with dotShape', () => {
+    const doc = makeDoc({
+      stations: [
+        makeStation({
+          id: 's1',
+          stops: [
+            {
+              lineId: 'L1',
+              row: 0,
+              col: 0,
+              orientation: 'auto-vertical',
+              dotShape: 'filled-black-diamond',
+            },
+          ],
+        }),
+      ],
+      lines: [makeLine({ id: 'L1', stations: ['s1'] })],
+    });
+    const json = serialize(doc);
+    const result = parse(json);
+    expect(result.ok).toBe(true);
+    if (result.ok) expect(result.doc.stations.s1.stops[0].dotShape).toBe('filled-black-diamond');
+  });
 });

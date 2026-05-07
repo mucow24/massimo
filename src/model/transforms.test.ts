@@ -940,3 +940,68 @@ describe('clearAll — line tags', () => {
     expect(T.clearAll(doc).lineTags).toEqual({});
   });
 });
+
+describe('setDotShape', () => {
+  it('writes the shape onto every stop at a single station', () => {
+    const doc = makeDoc({
+      stations: [makeStation({ id: 'a', stops: [makeStop('L1'), makeStop('L2', { col: 1 })] })],
+    });
+    const next = T.setDotShape(doc, ['a'], 'filled-black-diamond');
+    expect(next.stations.a.stops.map((s) => s.dotShape)).toEqual([
+      'filled-black-diamond',
+      'filled-black-diamond',
+    ]);
+  });
+
+  it('applies the shape to every stop at every selected station', () => {
+    const doc = makeDoc({
+      stations: [
+        makeStation({ id: 'a', stops: [makeStop('L1')] }),
+        makeStation({ id: 'b', stops: [makeStop('L1'), makeStop('L2', { col: 1 })] }),
+        makeStation({ id: 'c', stops: [makeStop('L1')] }),
+      ],
+    });
+    const next = T.setDotShape(doc, ['a', 'b'], 'open-white');
+    expect(next.stations.a.stops[0].dotShape).toBe('open-white');
+    expect(next.stations.b.stops[0].dotShape).toBe('open-white');
+    expect(next.stations.b.stops[1].dotShape).toBe('open-white');
+    // c was not selected — untouched.
+    expect(next.stations.c.stops[0].dotShape).toBeUndefined();
+  });
+
+  it('silently ignores unknown station IDs', () => {
+    const doc = makeDoc({
+      stations: [makeStation({ id: 'a', stops: [makeStop('L1')] })],
+    });
+    const next = T.setDotShape(doc, ['a', 'ghost'], 'filled-white');
+    expect(next.stations.a.stops[0].dotShape).toBe('filled-white');
+    expect(next.stations.ghost).toBeUndefined();
+  });
+
+  it('preserves lineId/row/col/orientation on each cell', () => {
+    const doc = makeDoc({
+      stations: [
+        makeStation({
+          id: 'a',
+          stops: [makeStop('L1', { row: 2, col: 3, orientation: 'left' })],
+        }),
+      ],
+    });
+    const next = T.setDotShape(doc, ['a'], 'filled-black-diamond');
+    expect(next.stations.a.stops[0]).toMatchObject({
+      lineId: 'L1',
+      row: 2,
+      col: 3,
+      orientation: 'left',
+      dotShape: 'filled-black-diamond',
+    });
+  });
+
+  it("'none' is a plain assignment, not a removal", () => {
+    const doc = makeDoc({
+      stations: [makeStation({ id: 'a', stops: [makeStop('L1')] })],
+    });
+    const next = T.setDotShape(doc, ['a'], 'none');
+    expect(next.stations.a.stops[0].dotShape).toBe('none');
+  });
+});

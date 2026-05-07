@@ -4,7 +4,7 @@ import { buildBands } from '../geometry/interlining';
 import { offsetPathLength } from '../geometry/lineTagGeometry';
 import { STOP_SIZE } from '../geometry/orientation';
 
-export const SCHEMA_VERSION = 11;
+export const SCHEMA_VERSION = 12;
 export const SCHEMA_FORMAT = 'massimo-map';
 
 export interface SerializedFile {

@@ -3,7 +3,7 @@ import { type Page } from '@playwright/test';
 // Mirrors the partialized shape persisted by the doc store
 // (`vignelli-map-doc-v1` in localStorage) plus the schema version envelope.
 // Keep in sync with model/serialize.ts:SCHEMA_VERSION when migrations land.
-export const SCHEMA_VERSION = 11;
+export const SCHEMA_VERSION = 12;
 
 export interface SeedStation {
   id: string;
