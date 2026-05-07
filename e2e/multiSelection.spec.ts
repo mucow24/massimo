@@ -21,6 +21,17 @@ async function stationWorldPos(page: Page, id: string): Promise<{ x: number; y: 
   }, id);
 }
 
+async function bulletWorldPos(page: Page, id: string): Promise<{ x: number; y: number }> {
+  return await page.evaluate((bid) => {
+    const el = document.querySelector(`[data-bullet-id="${bid}"]`);
+    if (!el) throw new Error(`bullet ${bid} not in DOM`);
+    const t = el.getAttribute('transform') ?? '';
+    const m = t.match(/translate\(\s*(-?\d+(?:\.\d+)?)\s+(-?\d+(?:\.\d+)?)\s*\)/);
+    if (!m) throw new Error(`could not parse transform "${t}"`);
+    return { x: parseFloat(m[1]), y: parseFloat(m[2]) };
+  }, id);
+}
+
 test.describe('multi-station selection', () => {
   test('shift-click toggles stations into and out of the set', async ({ page }) => {
     await seedAndOpen(page, fourInLine);
@@ -449,5 +460,94 @@ test.describe('multi-bullet selection', () => {
     await expect(page.locator('[data-bullet-id="b1"][data-bullet-selected]')).toBeVisible();
     await expect(page.locator('[data-bullet-id="b2"][data-bullet-selected]')).toHaveCount(0);
     await expect(page.locator('[data-station-wash="B"]')).toHaveCount(0);
+  });
+
+  test('group drag: dragging a selected bullet moves every selected item by the same delta', async ({
+    page,
+  }) => {
+    await seedAndOpen(page, fourInLineWithBullets);
+
+    const a = await stationCenter(page, 'A');
+    const b1 = await bulletCenter(page, 'b1');
+    const b2 = await bulletCenter(page, 'b2');
+
+    // Build a mixed selection: A + b1 + b2.
+    await page.mouse.click(a.x, a.y);
+    await clickAtWithModifiers(page, b1, ['Shift']);
+    await clickAtWithModifiers(page, b2, ['Shift']);
+
+    const before = {
+      A: await stationWorldPos(page, 'A'),
+      B: await stationWorldPos(page, 'B'),
+      b1: await bulletWorldPos(page, 'b1'),
+      b2: await bulletWorldPos(page, 'b2'),
+    };
+
+    // Drag b1 ~50px right. Hold shift to bypass bullet snap so the delta
+    // is exact at zoom=1.
+    await page.keyboard.down('Shift');
+    await page.mouse.move(b1.x, b1.y);
+    await page.mouse.down();
+    await page.mouse.move(b1.x + 10, b1.y, { steps: 2 });
+    await page.mouse.move(b1.x + 50, b1.y, { steps: 5 });
+    await page.mouse.up();
+    await page.keyboard.up('Shift');
+
+    const after = {
+      A: await stationWorldPos(page, 'A'),
+      B: await stationWorldPos(page, 'B'),
+      b1: await bulletWorldPos(page, 'b1'),
+      b2: await bulletWorldPos(page, 'b2'),
+    };
+
+    const dxA = after.A.x - before.A.x;
+    const dxb1 = after.b1.x - before.b1.x;
+    const dxb2 = after.b2.x - before.b2.x;
+    const dxB = after.B.x - before.B.x;
+
+    expect(Math.abs(dxb1)).toBeGreaterThan(20);
+    expect(dxA).toBeCloseTo(dxb1, 1);
+    expect(dxb2).toBeCloseTo(dxb1, 1);
+    // Unselected station B doesn't move.
+    expect(dxB).toBeCloseTo(0, 1);
+
+    // One Ctrl-Z reverts the entire group move.
+    await page.keyboard.press('Control+z');
+    expect((await stationWorldPos(page, 'A')).x).toBeCloseTo(before.A.x, 1);
+    expect((await bulletWorldPos(page, 'b1')).x).toBeCloseTo(before.b1.x, 1);
+    expect((await bulletWorldPos(page, 'b2')).x).toBeCloseTo(before.b2.x, 1);
+  });
+
+  test('group drag: dragging a selected station moves every selected bullet too', async ({
+    page,
+  }) => {
+    await seedAndOpen(page, fourInLineWithBullets);
+
+    const a = await stationCenter(page, 'A');
+    const b1 = await bulletCenter(page, 'b1');
+
+    await page.mouse.click(a.x, a.y);
+    await clickAtWithModifiers(page, b1, ['Shift']);
+
+    const before = {
+      A: await stationWorldPos(page, 'A'),
+      b1: await bulletWorldPos(page, 'b1'),
+    };
+
+    await page.keyboard.down('Shift');
+    await page.mouse.move(a.x, a.y);
+    await page.mouse.down();
+    await page.mouse.move(a.x + 10, a.y, { steps: 2 });
+    await page.mouse.move(a.x + 50, a.y, { steps: 5 });
+    await page.mouse.up();
+    await page.keyboard.up('Shift');
+
+    const after = {
+      A: await stationWorldPos(page, 'A'),
+      b1: await bulletWorldPos(page, 'b1'),
+    };
+
+    expect(after.A.x - before.A.x).toBeCloseTo(after.b1.x - before.b1.x, 1);
+    expect(Math.abs(after.A.x - before.A.x)).toBeGreaterThan(20);
   });
 });

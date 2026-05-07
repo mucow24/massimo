@@ -108,7 +108,9 @@ export function MapCanvas() {
 
   const inHandMode = selection.toolMode === 'hand' || selection.spaceHeld;
 
-  // Bullet drag state — minimal local ref to avoid a whole new hook for now.
+  // Bullet drag state — minimal local ref to avoid a whole new hook for
+  // now. When the grabbed bullet is part of a multi-selection, sibling
+  // arrays carry every other selected item along by the same delta.
   const bulletDragRef = useRef<{
     id: string;
     startWX: number;
@@ -116,6 +118,8 @@ export function MapCanvas() {
     startMX: number;
     startMY: number;
     moved: boolean;
+    bulletSiblings: { id: string; startX: number; startY: number }[];
+    stationSiblings: { id: string; startX: number; startY: number }[];
     history: ReturnType<typeof beginHistoryGroup>;
   } | null>(null);
   const [bulletSnapGuides, setBulletSnapGuides] = useState<SnapGuide[]>([]);
@@ -164,7 +168,11 @@ export function MapCanvas() {
         let ny = bd.startWY + dy;
         const cur = routeBullets[bd.id];
         const lineId = cur?.lineId ?? null;
-        if (lineId && !e.shiftKey) {
+        // Group-drag suppresses the bullet-line snap: siblings are moving,
+        // so snap targets become unstable and a half-snapped grabbed
+        // bullet would drag the whole group off-axis.
+        const inGroupDrag = bd.bulletSiblings.length > 0 || bd.stationSiblings.length > 0;
+        if (lineId && !e.shiftKey && !inGroupDrag) {
           // Reuse the station snap engine in bullet mode — it already
           // handles per-stop axis alignment, two-axis snap at corners,
           // and the "third in-line station" opposite-direction guide.
@@ -183,6 +191,16 @@ export function MapCanvas() {
           setBulletSnapGuides([]);
         }
         moveRouteBullet(bd.id, nx, ny);
+        if (inGroupDrag) {
+          const deltaX = nx - bd.startWX;
+          const deltaY = ny - bd.startWY;
+          for (const bs of bd.bulletSiblings) {
+            moveRouteBullet(bs.id, bs.startX + deltaX, bs.startY + deltaY);
+          }
+          for (const ss of bd.stationSiblings) {
+            useDoc.getState().moveStation(ss.id, ss.startX + deltaX, ss.startY + deltaY);
+          }
+        }
       }
     }
   };
@@ -217,6 +235,26 @@ export function MapCanvas() {
     const b = routeBullets[id];
     if (!b) return;
     e.stopPropagation();
+    // Group-drag: if the grabbed bullet is part of the multi-selection,
+    // every other selected item (bullets + stations) tags along with the
+    // same delta on each pointer move.
+    const sel = useSelection.getState();
+    const includesGrabbed = sel.selectedRouteBulletIds.includes(id);
+    const bulletSiblings: { id: string; startX: number; startY: number }[] = [];
+    const stationSiblings: { id: string; startX: number; startY: number }[] = [];
+    if (includesGrabbed) {
+      for (const bid of sel.selectedRouteBulletIds) {
+        if (bid === id) continue;
+        const sb = routeBullets[bid];
+        if (!sb) continue;
+        bulletSiblings.push({ id: bid, startX: sb.x, startY: sb.y });
+      }
+      for (const sid of sel.selectedStationIds) {
+        const ss = stations[sid];
+        if (!ss) continue;
+        stationSiblings.push({ id: sid, startX: ss.x, startY: ss.y });
+      }
+    }
     bulletDragRef.current = {
       id,
       startWX: b.x,
@@ -224,6 +262,8 @@ export function MapCanvas() {
       startMX: e.clientX,
       startMY: e.clientY,
       moved: false,
+      bulletSiblings,
+      stationSiblings,
       history: beginHistoryGroup(),
     };
   };

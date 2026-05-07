@@ -26,6 +26,7 @@ export function useStationDrag(
   const stations = useDoc((s) => s.stations);
   const lines = useDoc((s) => s.lines);
   const moveStation = useDoc((s) => s.moveStation);
+  const moveRouteBullet = useDoc((s) => s.moveRouteBullet);
   const redistributeBetween = useDoc((s) => s.redistributeBetween);
 
   const dragStationRef = useRef<{
@@ -42,6 +43,10 @@ export function useStationDrag(
     // position is mid-snap.
     siblings: { id: StationId; startX: number; startY: number }[];
     siblingIdSet: ReadonlySet<StationId>;
+    // Selected route bullets that tag along with the group drag. Same
+    // delta as the grabbed station; no snap targets, no participation in
+    // the snap engine's candidate set.
+    bulletSiblings: { id: string; startX: number; startY: number }[];
     history: ReturnType<typeof beginHistoryGroup>;
   } | null>(null);
   const [snapGuides, setSnapGuides] = useState<SnapGuide[]>([]);
@@ -53,7 +58,8 @@ export function useStationDrag(
     // the user isn't ctrl-dragging (which keeps redistribute behavior),
     // every other selected station tags along with the same delta. Snap
     // operates on the grabbed station only; siblings translate.
-    const ids = useSelection.getState().selectedStationIds;
+    const sel = useSelection.getState();
+    const ids = sel.selectedStationIds;
     const groupDrag = !redistributeAnchor && ids.length > 1 && ids.includes(id);
     const siblings: { id: StationId; startX: number; startY: number }[] = [];
     if (groupDrag) {
@@ -62,6 +68,20 @@ export function useStationDrag(
         const sst = stations[sid];
         if (!sst) continue;
         siblings.push({ id: sid, startX: sst.x, startY: sst.y });
+      }
+    }
+    // Bullets that are part of the same multi-selection: travel along.
+    // The grabbed station only needs to be in `selectedStationIds` for
+    // bullets to tag along — a single station selection plus selected
+    // bullets is the natural "drag everything as one group" gesture.
+    const bulletSiblings: { id: string; startX: number; startY: number }[] = [];
+    const includesGrabbed = ids.includes(id);
+    if (!redistributeAnchor && includesGrabbed && sel.selectedRouteBulletIds.length > 0) {
+      const docBullets = useDoc.getState().routeBullets;
+      for (const bid of sel.selectedRouteBulletIds) {
+        const b = docBullets[bid];
+        if (!b) continue;
+        bulletSiblings.push({ id: bid, startX: b.x, startY: b.y });
       }
     }
     dragStationRef.current = {
@@ -74,6 +94,7 @@ export function useStationDrag(
       redistributeAnchor: redistributeAnchor ?? null,
       siblings,
       siblingIdSet: new Set(siblings.map((s) => s.id)),
+      bulletSiblings,
       // Snapshot the doc and pause history. If the gesture turns out to be
       // a drag, we'll commit one entry on pointerup; if it's just a click,
       // we cancel without recording anything.
@@ -132,12 +153,16 @@ export function useStationDrag(
       setSnapGuides([]);
     }
     moveStation(ds.id, nx, ny);
-    // Group-drag: apply the same delta to every selected sibling.
-    if (ds.siblings.length > 0) {
+    // Group-drag: apply the same delta to every selected sibling — both
+    // station siblings and bullet siblings.
+    if (ds.siblings.length > 0 || ds.bulletSiblings.length > 0) {
       const deltaX = nx - ds.startWX;
       const deltaY = ny - ds.startWY;
       for (const sib of ds.siblings) {
         moveStation(sib.id, sib.startX + deltaX, sib.startY + deltaY);
+      }
+      for (const bs of ds.bulletSiblings) {
+        moveRouteBullet(bs.id, bs.startX + deltaX, bs.startY + deltaY);
       }
     }
     if (ds.redistributeAnchor) {
