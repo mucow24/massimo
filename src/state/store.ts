@@ -64,6 +64,8 @@ interface DocState extends MapDoc {
     mode?: 'arc-bends' | 'straight',
   ) => void;
   rotateStation: (id: StationId) => void;
+  rotateStationsAround: (pivotId: StationId, ids: StationId[]) => void;
+  rotateItemsAround: (pivot: T.ItemRef, members: T.ItemRef[]) => void;
   rotateStationAndLayout: (id: StationId, dir: -1 | 1) => void;
   deleteStation: (id: StationId) => void;
   moveStop: (stationId: StationId, lineId: LineId, dRow: number, dCol: number) => void;
@@ -137,6 +139,8 @@ export const useDoc = create<DocState>()(
         redistributeBetween: (startId, endId, mode = 'arc-bends') =>
           set((s) => T.redistributeBetween(s, startId, endId, mode)),
         rotateStation: (id) => set((s) => T.rotateStation(s, id)),
+        rotateStationsAround: (pivotId, ids) => set((s) => T.rotateStationsAround(s, pivotId, ids)),
+        rotateItemsAround: (pivot, members) => set((s) => T.rotateItemsAround(s, pivot, members)),
         rotateStationAndLayout: (id, dir) => set((s) => T.rotateStationAndLayout(s, id, dir)),
         deleteStation: (id) => set((s) => T.deleteStation(s, id)),
 
@@ -356,7 +360,11 @@ export interface LineTagHoverPreview {
 }
 
 interface SelectionState {
-  selectedStationId: StationId | null;
+  // Multi-station selection. Order is meaningful: the last entry is the
+  // "anchor" (most recently single-clicked station), used as the source for
+  // ctrl+shift+click path-extend and as the station shown in the inspector
+  // when length === 1.
+  selectedStationIds: StationId[];
   selectedLineId: LineId | null;
   appendingToLineId: LineId | null;
   // Insertion cursor for append-from-map. -1 means "insert at start".
@@ -381,9 +389,11 @@ interface SelectionState {
   creatingLineTag: boolean;
   selectedLineTagId: string | null;
   lineTagHoverPreview: LineTagHoverPreview | null;
-  // Route bullet selection + creation.
+  // Route bullet selection + creation. Multi-selection: parallel to
+  // `selectedStationIds`, with the same ordered-list semantics. The
+  // last entry is the anchor (used by the popover when length === 1).
   creatingRouteBullet: boolean;
-  selectedRouteBulletId: string | null;
+  selectedRouteBulletIds: string[];
   // Transfer selection + creation. While `creatingTransfer` is true and
   // `transferAnchor` is null, the next station-click picks the first dot.
   // Once set, the next station-click picks the second dot and commits.
@@ -403,6 +413,10 @@ interface SelectionState {
   setToolMode: (m: 'arrow' | 'hand') => void;
   setSpaceHeld: (v: boolean) => void;
   selectStation: (id: StationId | null) => void;
+  toggleStationSelection: (id: StationId) => void;
+  setStationSelection: (ids: StationId[]) => void;
+  addStationsToSelection: (ids: StationId[]) => void;
+  xorStationsToSelection: (ids: StationId[]) => void;
   selectLine: (id: LineId | null) => void;
   startAppendAt: (lineId: LineId, insertAfterIndex: number) => void;
   setAppending: (id: LineId | null) => void;
@@ -418,6 +432,10 @@ interface SelectionState {
   setCreatingLineTag: (creating: boolean) => void;
   setLineTagHoverPreview: (preview: LineTagHoverPreview | null) => void;
   selectRouteBullet: (id: string | null) => void;
+  toggleRouteBulletSelection: (id: string) => void;
+  setRouteBulletSelection: (ids: string[]) => void;
+  addRouteBulletsToSelection: (ids: string[]) => void;
+  xorRouteBulletsToSelection: (ids: string[]) => void;
   setCreatingRouteBullet: (creating: boolean) => void;
   selectTransfer: (id: string | null) => void;
   setCreatingTransfer: (creating: boolean) => void;
@@ -426,7 +444,7 @@ interface SelectionState {
 }
 
 export const useSelection = create<SelectionState>((set, get) => ({
-  selectedStationId: null,
+  selectedStationIds: [],
   selectedLineId: null,
   appendingToLineId: null,
   insertAfterIndex: null,
@@ -441,7 +459,7 @@ export const useSelection = create<SelectionState>((set, get) => ({
   selectedLineTagId: null,
   lineTagHoverPreview: null,
   creatingRouteBullet: false,
-  selectedRouteBulletId: null,
+  selectedRouteBulletIds: [],
   creatingTransfer: false,
   transferAnchor: null,
   selectedTransferId: null,
@@ -452,7 +470,9 @@ export const useSelection = create<SelectionState>((set, get) => ({
   setSpaceHeld: (v) => set({ spaceHeld: v }),
   selectStation: (id) =>
     set({
-      selectedStationId: id,
+      selectedStationIds: id == null ? [] : [id],
+      // Plain click is exclusive across types: clears bullets too.
+      selectedRouteBulletIds: [],
       selectedLineId: null,
       selectedLineTagId: null,
       selectedStopLineId: null,
@@ -464,12 +484,92 @@ export const useSelection = create<SelectionState>((set, get) => ({
       // Each new selection opts into mirror mode fresh.
       mirrorMatching: false,
     }),
+  toggleStationSelection: (id) =>
+    set((s) => {
+      const idx = s.selectedStationIds.indexOf(id);
+      if (idx >= 0) {
+        const next = s.selectedStationIds.slice();
+        next.splice(idx, 1);
+        return {
+          selectedStationIds: next,
+          // Multi-select implicitly clears the inspector-state pieces tied
+          // to a single station's grid editor. The line-tag preview is
+          // also stale.
+          selectedStopLineId: null,
+          labelSelected: false,
+          mirrorMatching: false,
+          editingStationId: null,
+          activeTab: 'stations',
+        };
+      }
+      return {
+        selectedStationIds: [...s.selectedStationIds, id],
+        selectedLineId: null,
+        selectedLineTagId: null,
+        selectedStopLineId: null,
+        labelSelected: false,
+        editingStationId: null,
+        activeTab: 'stations',
+        mirrorMatching: false,
+      };
+    }),
+  setStationSelection: (ids) =>
+    set(() => {
+      // Dedupe preserving each id's LAST occurrence (later position wins).
+      const lastIdx = new Map<StationId, number>();
+      ids.forEach((id, i) => lastIdx.set(id, i));
+      const dedup: StationId[] = [];
+      for (let i = 0; i < ids.length; i++) {
+        if (lastIdx.get(ids[i]) === i) dedup.push(ids[i]);
+      }
+      return {
+        selectedStationIds: dedup,
+        selectedLineId: null,
+        selectedLineTagId: null,
+        selectedStopLineId: null,
+        labelSelected: false,
+        editingStationId: null,
+        activeTab: 'stations',
+        mirrorMatching: false,
+      };
+    }),
+  addStationsToSelection: (ids) =>
+    set((s) => {
+      const have = new Set(s.selectedStationIds);
+      const novel = ids.filter((id) => !have.has(id));
+      if (novel.length === 0) return {};
+      return {
+        selectedStationIds: [...s.selectedStationIds, ...novel],
+        selectedLineId: null,
+        selectedLineTagId: null,
+        mirrorMatching: false,
+      };
+    }),
+  xorStationsToSelection: (ids) =>
+    set((s) => {
+      const have = new Set(s.selectedStationIds);
+      const removeSet = new Set<StationId>();
+      const appendList: StationId[] = [];
+      for (const id of ids) {
+        if (have.has(id)) removeSet.add(id);
+        else appendList.push(id);
+      }
+      if (removeSet.size === 0 && appendList.length === 0) return {};
+      const next = s.selectedStationIds.filter((id) => !removeSet.has(id));
+      next.push(...appendList);
+      return {
+        selectedStationIds: next,
+        selectedLineId: null,
+        selectedLineTagId: null,
+        mirrorMatching: false,
+      };
+    }),
   selectLine: (id) => {
     const wasAppending = get().appendingToLineId !== null;
     const switchingToDifferent = wasAppending && id !== get().appendingToLineId;
     set({
       selectedLineId: id,
-      selectedStationId: null,
+      selectedStationIds: [],
       selectedLineTagId: null,
       appendingToLineId: switchingToDifferent ? null : get().appendingToLineId,
       insertAfterIndex: switchingToDifferent ? null : get().insertAfterIndex,
@@ -519,7 +619,7 @@ export const useSelection = create<SelectionState>((set, get) => ({
   selectLineTag: (id) =>
     set({
       selectedLineTagId: id,
-      selectedStationId: null,
+      selectedStationIds: [],
       selectedLineId: null,
       selectedStopLineId: null,
       labelSelected: false,
@@ -538,7 +638,7 @@ export const useSelection = create<SelectionState>((set, get) => ({
       placingStation: creating ? false : get().placingStation,
       appendingToLineId: creating ? null : get().appendingToLineId,
       insertAfterIndex: creating ? null : get().insertAfterIndex,
-      selectedStationId: creating ? null : get().selectedStationId,
+      selectedStationIds: creating ? [] : get().selectedStationIds,
       selectedLineId: creating ? null : get().selectedLineId,
       selectedLineTagId: creating ? null : get().selectedLineTagId,
       lineTagHoverPreview: creating ? get().lineTagHoverPreview : null,
@@ -546,9 +646,9 @@ export const useSelection = create<SelectionState>((set, get) => ({
   setLineTagHoverPreview: (preview) => set({ lineTagHoverPreview: preview }),
   selectRouteBullet: (id) =>
     set({
-      selectedRouteBulletId: id,
+      selectedRouteBulletIds: id == null ? [] : [id],
       // Selecting a bullet clears other selections + placement modes.
-      selectedStationId: id === null ? get().selectedStationId : null,
+      selectedStationIds: id === null ? get().selectedStationIds : [],
       selectedLineId: id === null ? get().selectedLineId : null,
       selectedLineTagId: id === null ? get().selectedLineTagId : null,
       labelSelected: false,
@@ -558,6 +658,51 @@ export const useSelection = create<SelectionState>((set, get) => ({
       appendingToLineId: id === null ? get().appendingToLineId : null,
       insertAfterIndex: id === null ? get().insertAfterIndex : null,
       creatingRouteBullet: id === null ? get().creatingRouteBullet : false,
+    }),
+  toggleRouteBulletSelection: (id) =>
+    set((s) => {
+      const idx = s.selectedRouteBulletIds.indexOf(id);
+      if (idx >= 0) {
+        const next = s.selectedRouteBulletIds.slice();
+        next.splice(idx, 1);
+        return { selectedRouteBulletIds: next };
+      }
+      return {
+        selectedRouteBulletIds: [...s.selectedRouteBulletIds, id],
+        selectedLineId: null,
+        selectedLineTagId: null,
+      };
+    }),
+  setRouteBulletSelection: (ids) =>
+    set(() => {
+      const lastIdx = new Map<string, number>();
+      ids.forEach((id, i) => lastIdx.set(id, i));
+      const dedup: string[] = [];
+      for (let i = 0; i < ids.length; i++) {
+        if (lastIdx.get(ids[i]) === i) dedup.push(ids[i]);
+      }
+      return { selectedRouteBulletIds: dedup };
+    }),
+  addRouteBulletsToSelection: (ids) =>
+    set((s) => {
+      const have = new Set(s.selectedRouteBulletIds);
+      const novel = ids.filter((id) => !have.has(id));
+      if (novel.length === 0) return {};
+      return { selectedRouteBulletIds: [...s.selectedRouteBulletIds, ...novel] };
+    }),
+  xorRouteBulletsToSelection: (ids) =>
+    set((s) => {
+      const have = new Set(s.selectedRouteBulletIds);
+      const removeSet = new Set<string>();
+      const appendList: string[] = [];
+      for (const id of ids) {
+        if (have.has(id)) removeSet.add(id);
+        else appendList.push(id);
+      }
+      if (removeSet.size === 0 && appendList.length === 0) return {};
+      const next = s.selectedRouteBulletIds.filter((id) => !removeSet.has(id));
+      next.push(...appendList);
+      return { selectedRouteBulletIds: next };
     }),
   setCreatingRouteBullet: (creating) =>
     set({
@@ -569,19 +714,19 @@ export const useSelection = create<SelectionState>((set, get) => ({
       insertAfterIndex: creating ? null : get().insertAfterIndex,
       creatingTransfer: creating ? false : get().creatingTransfer,
       transferAnchor: creating ? null : get().transferAnchor,
-      selectedStationId: creating ? null : get().selectedStationId,
+      selectedStationIds: creating ? [] : get().selectedStationIds,
       selectedLineId: creating ? null : get().selectedLineId,
       selectedLineTagId: creating ? null : get().selectedLineTagId,
-      selectedRouteBulletId: creating ? null : get().selectedRouteBulletId,
+      selectedRouteBulletIds: creating ? [] : get().selectedRouteBulletIds,
       selectedTransferId: creating ? null : get().selectedTransferId,
     }),
   selectTransfer: (id) =>
     set({
       selectedTransferId: id,
-      selectedStationId: id === null ? get().selectedStationId : null,
+      selectedStationIds: id === null ? get().selectedStationIds : [],
       selectedLineId: id === null ? get().selectedLineId : null,
       selectedLineTagId: id === null ? get().selectedLineTagId : null,
-      selectedRouteBulletId: id === null ? get().selectedRouteBulletId : null,
+      selectedRouteBulletIds: id === null ? get().selectedRouteBulletIds : [],
       labelSelected: false,
       editingStationId: null,
       placingStation: id === null ? get().placingStation : false,
@@ -601,10 +746,10 @@ export const useSelection = create<SelectionState>((set, get) => ({
       creatingRouteBullet: creating ? false : get().creatingRouteBullet,
       appendingToLineId: creating ? null : get().appendingToLineId,
       insertAfterIndex: creating ? null : get().insertAfterIndex,
-      selectedStationId: creating ? null : get().selectedStationId,
+      selectedStationIds: creating ? [] : get().selectedStationIds,
       selectedLineId: creating ? null : get().selectedLineId,
       selectedLineTagId: creating ? null : get().selectedLineTagId,
-      selectedRouteBulletId: creating ? null : get().selectedRouteBulletId,
+      selectedRouteBulletIds: creating ? [] : get().selectedRouteBulletIds,
       selectedTransferId: creating ? null : get().selectedTransferId,
     }),
   setTransferAnchor: (anchor) => set({ transferAnchor: anchor }),
