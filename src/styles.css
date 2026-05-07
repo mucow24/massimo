@@ -274,6 +274,21 @@ select {
   background: #d6e4ff;
   border-color: #6a8ed6;
 }
+.toolbar button.tool-btn[aria-disabled='true'] {
+  opacity: 0.4;
+  cursor: not-allowed;
+}
+.toolbar button.tool-btn[aria-disabled='true']:hover {
+  background: #fff;
+}
+.tool-group-divider {
+  display: inline-block;
+  width: 1px;
+  height: 18px;
+  margin: 0 6px 0 8px;
+  background: #ccc;
+  vertical-align: middle;
+}
 
 .canvas-host svg {
   width: 100%;

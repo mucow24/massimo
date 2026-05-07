@@ -6,6 +6,7 @@ import { DEFAULT_DOC } from '../model/transforms';
 import { useFieldHistory } from './useFieldHistory';
 import { Menu, MenuItem, MenuSeparator } from './Menu';
 import { CursorArrowIcon, HandIcon } from '@radix-ui/react-icons';
+import { SnapToggleBar } from './SnapToggleBar';
 
 function ToolButtons() {
   const toolMode = useSelection((s) => s.toolMode);
@@ -147,6 +148,8 @@ export function Toolbar() {
         <MenuItem onClick={onAddTransfer}>Transfer</MenuItem>
       </Menu>
       <ToolButtons />
+      <span className="tool-group-divider" aria-hidden="true" />
+      <SnapToggleBar />
       <input
         ref={fileInputRef}
         type="file"
