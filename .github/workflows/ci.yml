@@ -40,3 +40,30 @@ jobs:
 
       - name: Build
         run: npm run build
+
+      # Cache the Chromium download so we don't pay the ~120 MB hit on
+      # every CI run. Keyed by package-lock — bumping @playwright/test
+      # invalidates the cache automatically. The matching browser binary
+      # version lives in package-lock.json, so the hash is the right key.
+      - name: Cache Playwright browsers
+        id: playwright-cache
+        uses: actions/cache@v4
+        with:
+          path: ~/.cache/ms-playwright
+          key: playwright-${{ runner.os }}-${{ hashFiles('package-lock.json') }}
+
+      - name: Install Playwright Chromium
+        run: npx playwright install --with-deps chromium
+
+      - name: E2E
+        run: npm run e2e
+
+      # On e2e failure, surface the trace + screenshot artifacts so the
+      # failing test can be replayed locally with `npx playwright show-trace`.
+      - name: Upload Playwright artifacts on failure
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: playwright-results
+          path: test-results/
+          retention-days: 7
