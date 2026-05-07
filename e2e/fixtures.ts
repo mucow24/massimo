@@ -22,9 +22,20 @@ export interface SeedLine {
   stations: string[];
 }
 
+export interface SeedRouteBullet {
+  id: string;
+  x: number;
+  y: number;
+  rotation?: number;
+  lineId: string | null;
+  shape?: 'circle' | 'square' | 'diamond';
+  size?: number;
+}
+
 export interface Seed {
   stations: SeedStation[];
   lines: SeedLine[];
+  routeBullets?: SeedRouteBullet[];
 }
 
 /**
@@ -65,6 +76,19 @@ export async function seedAndOpen(page: Page, seed: Seed): Promise<void> {
     };
   }
 
+  const routeBullets: Record<string, unknown> = {};
+  for (const b of seed.routeBullets ?? []) {
+    routeBullets[b.id] = {
+      id: b.id,
+      x: b.x,
+      y: b.y,
+      rotation: b.rotation ?? 0,
+      lineId: b.lineId,
+      shape: b.shape ?? 'circle',
+      size: b.size ?? 12,
+    };
+  }
+
   const persisted = {
     state: {
       stations,
@@ -73,7 +97,7 @@ export async function seedAndOpen(page: Page, seed: Seed): Promise<void> {
       curveRadius: 24,
       lineCounter: seed.lines.length,
       lineTags: {},
-      routeBullets: {},
+      routeBullets,
       transfers: {},
     },
     version: SCHEMA_VERSION,
@@ -112,6 +136,19 @@ export const fourInLine: Seed = {
 };
 
 /**
+ * fourInLine + two route bullets above the station row at y = -200.
+ * Bullets are clear of every station's selection silhouette, so rect-
+ * select / hit-test geometry stays separable from the station row.
+ */
+export const fourInLineWithBullets: Seed = {
+  ...fourInLine,
+  routeBullets: [
+    { id: 'b1', x: -200, y: -200, lineId: 'L1', shape: 'circle', size: 16 },
+    { id: 'b2', x: 200, y: -200, lineId: 'L1', shape: 'circle', size: 16 },
+  ],
+};
+
+/**
  * Returns the centroid of a station's bg <g> as page coords. Stable hit
  * point for clicks/drags regardless of the station's rotation.
  */
@@ -119,6 +156,14 @@ export async function stationCenter(page: Page, id: string): Promise<{ x: number
   const handle = page.locator(`[data-station-id="${id}"]`);
   const box = await handle.boundingBox();
   if (!box) throw new Error(`station ${id} not visible`);
+  return { x: box.x + box.width / 2, y: box.y + box.height / 2 };
+}
+
+/** Page-coord centroid of a route bullet's <g>. */
+export async function bulletCenter(page: Page, id: string): Promise<{ x: number; y: number }> {
+  const handle = page.locator(`[data-bullet-id="${id}"]`);
+  const box = await handle.boundingBox();
+  if (!box) throw new Error(`bullet ${id} not visible`);
   return { x: box.x + box.width / 2, y: box.y + box.height / 2 };
 }
 
