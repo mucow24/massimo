@@ -149,9 +149,15 @@ export function StationView({
       if (!wasInLine) {
         selection.setInsertAfterIndex(cursor + 1);
       }
-    } else {
-      selection.selectStation(station.id);
+      return;
     }
+    // Shift-click toggles membership in the multi-selection. Plain click
+    // (no modifier) replaces the selection with this station.
+    if (e.shiftKey && !(e.ctrlKey || e.metaKey)) {
+      selection.toggleStationSelection(station.id);
+      return;
+    }
+    selection.selectStation(station.id);
   };
 
   const onContextMenu = (e: React.MouseEvent) => {
@@ -255,7 +261,11 @@ export function StationView({
 
     if (layer === 'wash') {
       return (
-        <g transform={`translate(${station.x} ${station.y}) rotate(${angle})`} pointerEvents="none">
+        <g
+          data-station-wash={station.id}
+          transform={`translate(${station.x} ${station.y}) rotate(${angle})`}
+          pointerEvents="none"
+        >
           <path
             d={pathStr}
             fill={SELECTION_WASH_COLOR}
@@ -324,7 +334,11 @@ export function StationView({
     };
     const cursor = inHandMode ? 'grab' : 'move';
     return (
-      <g transform={`translate(${station.x} ${station.y}) rotate(${angle})`} style={{ cursor }}>
+      <g
+        data-station-id={station.id}
+        transform={`translate(${station.x} ${station.y}) rotate(${angle})`}
+        style={{ cursor }}
+      >
         <rect x={cellsHitX} y={cellsHitY} width={cellsHitW} height={cellsHitH} {...hitProps} />
         <rect
           x={labelHitX}
