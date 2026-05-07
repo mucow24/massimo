@@ -23,12 +23,15 @@ export function Sidebar() {
       .sort((a, b) => a.service.localeCompare(b.service));
 
   // Scroll the expanded editor into view when something gets selected from
-  // outside the sidebar (e.g. clicking a station on the canvas).
+  // outside the sidebar (e.g. clicking a station on the canvas). Use the
+  // anchor (last clicked) so scroll follows the most recent action.
+  const ids = selection.selectedStationIds;
+  const stationAnchorId = ids.length > 0 ? ids[ids.length - 1] : null;
   useEffect(() => {
-    if (selection.activeTab !== 'stations' || !selection.selectedStationId) return;
-    const el = document.querySelector(`[data-station-row="${selection.selectedStationId}"]`);
+    if (selection.activeTab !== 'stations' || !stationAnchorId) return;
+    const el = document.querySelector(`[data-station-row="${stationAnchorId}"]`);
     el?.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
-  }, [selection.selectedStationId, selection.activeTab]);
+  }, [stationAnchorId, selection.activeTab]);
 
   // Only scroll when the tab just transitioned to 'lines' (e.g. clicking a
   // line bullet from the stations tab). In-tab clicks shouldn't reflow.
@@ -64,11 +67,18 @@ export function Sidebar() {
           <section>
             {stationList.length === 0 && <div className="empty">No stations yet.</div>}
             {stationList.map((st) => {
-              const expanded = selection.selectedStationId === st.id;
+              const ids = selection.selectedStationIds;
+              const inSelection = ids.includes(st.id);
+              // Inline editor only opens for true single-selection — no
+              // other stations and no bullets in the selection set.
+              const expanded =
+                ids.length === 1 &&
+                ids[0] === st.id &&
+                selection.selectedRouteBulletIds.length === 0;
               return (
                 <div key={st.id} data-station-row={st.id}>
                   <div
-                    className={'list-row' + (expanded ? ' selected' : '')}
+                    className={'list-row' + (inSelection ? ' selected' : '')}
                     onClick={() => selection.selectStation(expanded ? null : st.id)}
                     onMouseEnter={() => selection.setHoveredStation(st.id)}
                     onMouseLeave={() => selection.setHoveredStation(null)}

@@ -2,7 +2,9 @@ import { useEffect, useRef } from 'react';
 import { Line, LineId, Station } from '../model/types';
 import { beginHistoryGroup, dragState, useDoc, useSelection } from '../state/store';
 import { DIR_8, STOP_SIZE, stopCenterAt } from '../geometry/orientation';
-import { polygonsToPath, Pt, unionConvex } from '../geometry/polygonUnion';
+import { polygonsToPath, unionConvex } from '../geometry/polygonUnion';
+import { stationBoundaryRectsLocal } from '../geometry/stationBoundary';
+import { pathBetweenStations } from '../model/pathSelect';
 import { legibleTextOn } from '../util/color';
 
 // Map a click on a station to the closest dot's lineId. Used to pin a
@@ -70,6 +72,8 @@ export function StationView({
 }: Props) {
   const selection = useSelection();
   const rotateStation = useDoc((s) => s.rotateStation);
+  const rotateStationsAround = useDoc((s) => s.rotateStationsAround);
+  const rotateItemsAround = useDoc((s) => s.rotateItemsAround);
   const renameStation = useDoc((s) => s.renameStation);
   const toggleStationOnLine = useDoc((s) => s.toggleStationOnLine);
   const redistributeBetween = useDoc((s) => s.redistributeBetween);
@@ -82,16 +86,15 @@ export function StationView({
     if (e.button !== 0) return;
     // In hand mode, let the event bubble to the SVG so it becomes a pan.
     if (selection.toolMode === 'hand' || selection.spaceHeld) return;
-    // Ctrl/Cmd+drag on a different station while one is selected: drag the
-    // target while continuously redistributing intervening stops between
-    // the two. A pure click (no drag) still routes to onClick → one-shot
-    // redistribute via the click handler.
+    // Ctrl/Cmd+drag on a different station while exactly one is selected:
+    // drag the target while continuously redistributing intervening stops
+    // between the two. A pure click (no drag) still routes to onClick →
+    // one-shot redistribute via the click handler. When multi-selected,
+    // ctrl-drag yields to group-drag (no anchor captured).
+    const ids = selection.selectedStationIds;
+    const soloAnchor = ids.length === 1 ? ids[0] : null;
     const anchor =
-      (e.ctrlKey || e.metaKey) &&
-      selection.selectedStationId &&
-      selection.selectedStationId !== station.id
-        ? selection.selectedStationId
-        : undefined;
+      (e.ctrlKey || e.metaKey) && soloAnchor && soloAnchor !== station.id ? soloAnchor : undefined;
     onStartDrag(station.id, e, anchor);
   };
 
@@ -121,14 +124,17 @@ export function StationView({
       }
       return;
     }
-    // Ctrl/Cmd-click on a different station while one is selected:
+    // Ctrl/Cmd-click on a different station while exactly one is selected:
     // redistribute intervening stops on each line that connects them.
+    // Multi-selection disables redistribute — group operations win.
+    const selIds = selection.selectedStationIds;
     if (
       (e.ctrlKey || e.metaKey) &&
-      selection.selectedStationId &&
-      selection.selectedStationId !== station.id
+      !e.shiftKey &&
+      selIds.length === 1 &&
+      selIds[0] !== station.id
     ) {
-      redistributeBetween(selection.selectedStationId, station.id);
+      redistributeBetween(selIds[0], station.id);
       return;
     }
     if (selection.creatingLineTag) {
@@ -144,14 +150,51 @@ export function StationView({
       if (!wasInLine) {
         selection.setInsertAfterIndex(cursor + 1);
       }
-    } else {
-      selection.selectStation(station.id);
+      return;
     }
+    // Ctrl/Cmd+Shift+click on a different station extends the selection
+    // along the shortest shared line from the anchor to this station,
+    // toggling every station in the half-open interval (anchor, this].
+    // No-op if there's no anchor (no current selection) or no shared line.
+    if ((e.ctrlKey || e.metaKey) && e.shiftKey) {
+      const anchor = selIds.length > 0 ? selIds[selIds.length - 1] : null;
+      if (anchor && anchor !== station.id) {
+        const path = pathBetweenStations({ lines }, anchor, station.id);
+        if (path) selection.xorStationsToSelection(path);
+      }
+      return;
+    }
+    // Shift-click toggles membership in the multi-selection. Plain click
+    // (no modifier) replaces the selection with this station.
+    if (e.shiftKey && !(e.ctrlKey || e.metaKey)) {
+      selection.toggleStationSelection(station.id);
+      return;
+    }
+    selection.selectStation(station.id);
   };
 
   const onContextMenu = (e: React.MouseEvent) => {
     e.preventDefault();
     e.stopPropagation();
+    // Right-click on a station that's part of a multi-selection rotates
+    // the whole group rigidly around this station: each member rotates
+    // in place AND non-pivot members orbit 45° around the pivot. When
+    // bullets are also selected they orbit too via `rotateItemsAround`.
+    const ids = selection.selectedStationIds;
+    const bulletIds = selection.selectedRouteBulletIds;
+    const totalSelected = ids.length + bulletIds.length;
+    if (totalSelected > 1 && ids.includes(station.id)) {
+      if (bulletIds.length === 0) {
+        rotateStationsAround(station.id, ids);
+      } else {
+        const members: { type: 'station' | 'bullet'; id: string }[] = [
+          ...ids.map((id) => ({ type: 'station' as const, id })),
+          ...bulletIds.map((id) => ({ type: 'bullet' as const, id })),
+        ];
+        rotateItemsAround({ type: 'station', id: station.id }, members);
+      }
+      return;
+    }
     rotateStation(station.id);
   };
 
@@ -233,47 +276,26 @@ export function StationView({
   const labelHitH = 2 * textHalfH + 2 * HIT_PAD;
   const labelHitTransform = `rotate(${label.rotation * 45} ${labelAnchorX} ${labelAnchorY})`;
 
-  const isSelected = selection.selectedStationId === station.id;
   const isEditing = selection.editingStationId === station.id;
 
   if (layer === 'wash' || layer === 'stroke' || layer === 'match-stroke') {
-    // The wash + selection-stroke layers only paint when this station is
-    // selected; the match-stroke layer is rendered by MapCanvas only for
-    // matching stations, so it always paints.
-    if ((layer === 'wash' || layer === 'stroke') && !isSelected) return null;
-    // Compute the union polygon of the cells rect and (rotated) label rect,
-    // then smooth its corners with quadratic Beziers. The smoothing applies
-    // to the outer-boundary corners ONLY (because each vertex of the union
-    // is a corner of the actual silhouette), so there are no rounded-corner
-    // artifacts where the rects meet.
-    const labelAng = (label.rotation * Math.PI) / 4;
-    const cosL = Math.cos(labelAng);
-    const sinL = Math.sin(labelAng);
-    const rotateLabelCorner = (px: number, py: number): Pt => {
-      const dx = px - labelAnchorX;
-      const dy = py - labelAnchorY;
-      return {
-        x: labelAnchorX + dx * cosL - dy * sinL,
-        y: labelAnchorY + dx * sinL + dy * cosL,
-      };
-    };
-    const cells: Pt[] = [
-      { x: cellsHitX, y: cellsHitY },
-      { x: cellsHitX + cellsHitW, y: cellsHitY },
-      { x: cellsHitX + cellsHitW, y: cellsHitY + cellsHitH },
-      { x: cellsHitX, y: cellsHitY + cellsHitH },
-    ];
-    const labelPoly: Pt[] = [
-      rotateLabelCorner(labelHitX, labelHitY),
-      rotateLabelCorner(labelHitX + labelHitW, labelHitY),
-      rotateLabelCorner(labelHitX + labelHitW, labelHitY + labelHitH),
-      rotateLabelCorner(labelHitX, labelHitY + labelHitH),
-    ];
+    // MapCanvas decides which stations get wash/stroke/match-stroke layers
+    // (selected set, plus the rect-select preview, plus mirror-matching
+    // stations). StationView trusts that filtering — no redundant gate.
+    // Smooth the union of the cells rect + (rotated) label rect with
+    // quadratic Beziers. Smoothing applies to the outer-boundary corners
+    // ONLY (each vertex of the union is a corner of the actual silhouette),
+    // so there are no rounded-corner artifacts where the rects meet.
+    const { cells, label: labelPoly } = stationBoundaryRectsLocal(station);
     const pathStr = polygonsToPath(unionConvex(cells, labelPoly), SELECTION_CORNER_RADIUS);
 
     if (layer === 'wash') {
       return (
-        <g transform={`translate(${station.x} ${station.y}) rotate(${angle})`} pointerEvents="none">
+        <g
+          data-station-wash={station.id}
+          transform={`translate(${station.x} ${station.y}) rotate(${angle})`}
+          pointerEvents="none"
+        >
           <path
             d={pathStr}
             fill={SELECTION_WASH_COLOR}
@@ -342,7 +364,11 @@ export function StationView({
     };
     const cursor = inHandMode ? 'grab' : 'move';
     return (
-      <g transform={`translate(${station.x} ${station.y}) rotate(${angle})`} style={{ cursor }}>
+      <g
+        data-station-id={station.id}
+        transform={`translate(${station.x} ${station.y}) rotate(${angle})`}
+        style={{ cursor }}
+      >
         <rect x={cellsHitX} y={cellsHitY} width={cellsHitW} height={cellsHitH} {...hitProps} />
         <rect
           x={labelHitX}

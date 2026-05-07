@@ -12,5 +12,10 @@ vite.config.d.ts
 # Vitest coverage output
 coverage/
 
+# Playwright artifacts
+test-results/
+playwright-report/
+.playwright/
+
 # Source archive for fonts (extracted into public/fonts/)
 helvetica-neue-*.zip

@@ -41,10 +41,10 @@ describe('undo/redo', () => {
     const { addStation } = useDoc.getState();
     const id = addStation(0, 0);
     useSelection.getState().selectStation(id);
-    expect(useSelection.getState().selectedStationId).toBe(id);
+    expect(useSelection.getState().selectedStationIds).toEqual([id]);
     useDoc.temporal.getState().undo();
     // Station gone, but selection store is independent.
-    expect(useSelection.getState().selectedStationId).toBe(id);
+    expect(useSelection.getState().selectedStationIds).toEqual([id]);
   });
 });
 

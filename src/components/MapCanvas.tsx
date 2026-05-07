@@ -13,6 +13,7 @@ import { SegmentBand } from './SegmentBand';
 import { StationView } from './StationView';
 import { useViewport } from './canvas/useViewport';
 import { useStationDrag } from './canvas/useStationDrag';
+import { useRectSelect } from './canvas/useRectSelect';
 import { Grid } from './canvas/Grid';
 import { WarningToasts } from './canvas/WarningToasts';
 import { EditingBanner } from './canvas/EditingBanner';
@@ -55,6 +56,13 @@ export function MapCanvas() {
   const svgRef = useRef<SVGSVGElement | null>(null);
   const view = useViewport(svgRef);
   const drag = useStationDrag(svgRef, view.viewport.zoom);
+  const rectSelect = useRectSelect(svgRef, view.screenToWorld);
+  // While a rect-select drag is in flight, render selection visuals
+  // (station wash/stroke and bullet ring) over the previewed result
+  // instead of the live selection so the user sees exactly what'll be
+  // selected on release.
+  const washIds = rectSelect.previewStationIds ?? selection.selectedStationIds;
+  const bulletSelectedIds = rectSelect.previewBulletIds ?? selection.selectedRouteBulletIds;
 
   const bands = useMemo(
     () => buildBands(stations, lines, curveRadius, lineOrder),
@@ -62,11 +70,14 @@ export function MapCanvas() {
   );
 
   // When mirror-matching mode is on for the selected station, highlight the
-  // adjacent stations whose unrotated stop layouts are identical.
+  // adjacent stations whose unrotated stop layouts are identical. Mirror
+  // mode only applies to single-selection.
+  const soloSelectedId =
+    selection.selectedStationIds.length === 1 ? selection.selectedStationIds[0] : null;
   const matchingIds = useMemo(() => {
-    if (!selection.mirrorMatching || !selection.selectedStationId) return [];
-    return findMatchingStations({ stations, lines }, selection.selectedStationId);
-  }, [selection.mirrorMatching, selection.selectedStationId, stations, lines]);
+    if (!selection.mirrorMatching || !soloSelectedId) return [];
+    return findMatchingStations({ stations, lines }, soloSelectedId);
+  }, [selection.mirrorMatching, soloSelectedId, stations, lines]);
   // Color override map for non-selected lines while a line is being edited.
   // Selected line keeps its true color; others get desaturated toward greyscale.
   const colorMap = useMemo(() => {
@@ -97,7 +108,9 @@ export function MapCanvas() {
 
   const inHandMode = selection.toolMode === 'hand' || selection.spaceHeld;
 
-  // Bullet drag state — minimal local ref to avoid a whole new hook for now.
+  // Bullet drag state — minimal local ref to avoid a whole new hook for
+  // now. When the grabbed bullet is part of a multi-selection, sibling
+  // arrays carry every other selected item along by the same delta.
   const bulletDragRef = useRef<{
     id: string;
     startWX: number;
@@ -105,6 +118,8 @@ export function MapCanvas() {
     startMX: number;
     startMY: number;
     moved: boolean;
+    bulletSiblings: { id: string; startX: number; startY: number }[];
+    stationSiblings: { id: string; startX: number; startY: number }[];
     history: ReturnType<typeof beginHistoryGroup>;
   } | null>(null);
   const [bulletSnapGuides, setBulletSnapGuides] = useState<SnapGuide[]>([]);
@@ -120,11 +135,18 @@ export function MapCanvas() {
       view.startPan(e);
       return;
     }
-    if (inHandMode) view.startPan(e);
+    if (inHandMode) {
+      view.startPan(e);
+      return;
+    }
+    // Arrow mode: a left-button pointerdown on background may begin a
+    // rect-select. The hook self-gates on background hit + active mode.
+    rectSelect.onPointerDown(e);
   };
   const onPointerMove = (e: React.PointerEvent) => {
     view.onPointerMove(e);
     drag.onPointerMove(e);
+    rectSelect.onPointerMove(e);
     if (selection.creatingTransfer && selection.transferAnchor) {
       setCursorWorld(view.screenToWorld(e.clientX, e.clientY));
     } else if (cursorWorld) {
@@ -146,7 +168,11 @@ export function MapCanvas() {
         let ny = bd.startWY + dy;
         const cur = routeBullets[bd.id];
         const lineId = cur?.lineId ?? null;
-        if (lineId && !e.shiftKey) {
+        // Group-drag suppresses the bullet-line snap: siblings are moving,
+        // so snap targets become unstable and a half-snapped grabbed
+        // bullet would drag the whole group off-axis.
+        const inGroupDrag = bd.bulletSiblings.length > 0 || bd.stationSiblings.length > 0;
+        if (lineId && !e.shiftKey && !inGroupDrag) {
           // Reuse the station snap engine in bullet mode — it already
           // handles per-stop axis alignment, two-axis snap at corners,
           // and the "third in-line station" opposite-direction guide.
@@ -165,12 +191,23 @@ export function MapCanvas() {
           setBulletSnapGuides([]);
         }
         moveRouteBullet(bd.id, nx, ny);
+        if (inGroupDrag) {
+          const deltaX = nx - bd.startWX;
+          const deltaY = ny - bd.startWY;
+          for (const bs of bd.bulletSiblings) {
+            moveRouteBullet(bs.id, bs.startX + deltaX, bs.startY + deltaY);
+          }
+          for (const ss of bd.stationSiblings) {
+            useDoc.getState().moveStation(ss.id, ss.startX + deltaX, ss.startY + deltaY);
+          }
+        }
       }
     }
   };
   const onPointerUp = (e: React.PointerEvent) => {
     view.onPointerUp(e);
     drag.onPointerUp(e);
+    rectSelect.onPointerUp(e);
     const bd = bulletDragRef.current;
     if (bd) {
       const wasMoved = bd.moved;
@@ -198,6 +235,26 @@ export function MapCanvas() {
     const b = routeBullets[id];
     if (!b) return;
     e.stopPropagation();
+    // Group-drag: if the grabbed bullet is part of the multi-selection,
+    // every other selected item (bullets + stations) tags along with the
+    // same delta on each pointer move.
+    const sel = useSelection.getState();
+    const includesGrabbed = sel.selectedRouteBulletIds.includes(id);
+    const bulletSiblings: { id: string; startX: number; startY: number }[] = [];
+    const stationSiblings: { id: string; startX: number; startY: number }[] = [];
+    if (includesGrabbed) {
+      for (const bid of sel.selectedRouteBulletIds) {
+        if (bid === id) continue;
+        const sb = routeBullets[bid];
+        if (!sb) continue;
+        bulletSiblings.push({ id: bid, startX: sb.x, startY: sb.y });
+      }
+      for (const sid of sel.selectedStationIds) {
+        const ss = stations[sid];
+        if (!ss) continue;
+        stationSiblings.push({ id: sid, startX: ss.x, startY: ss.y });
+      }
+    }
     bulletDragRef.current = {
       id,
       startWX: b.x,
@@ -205,6 +262,8 @@ export function MapCanvas() {
       startMX: e.clientX,
       startMY: e.clientY,
       moved: false,
+      bulletSiblings,
+      stationSiblings,
       history: beginHistoryGroup(),
     };
   };
@@ -212,11 +271,33 @@ export function MapCanvas() {
     if (dragState.suppressClick) return;
     if (inHandMode) return;
     e.stopPropagation();
+    // Shift-click toggles bullet membership without disturbing other
+    // selected items (mirrors station shift-click). Plain click replaces
+    // the entire selection with this bullet.
+    if (e.shiftKey && !(e.ctrlKey || e.metaKey)) {
+      selection.toggleRouteBulletSelection(id);
+      return;
+    }
     selection.selectRouteBullet(id);
   };
   const onBulletContextMenu = (id: string, e: React.MouseEvent) => {
     e.preventDefault();
     e.stopPropagation();
+    // Right-click on a bullet that's part of a multi-selection rotates
+    // the whole group rigidly around this bullet, mirroring the station
+    // gesture; both bullets and stations orbit via rotateItemsAround.
+    const sel = useSelection.getState();
+    const stIds = sel.selectedStationIds;
+    const blIds = sel.selectedRouteBulletIds;
+    const total = stIds.length + blIds.length;
+    if (total > 1 && blIds.includes(id)) {
+      const members: { type: 'station' | 'bullet'; id: string }[] = [
+        ...stIds.map((sid) => ({ type: 'station' as const, id: sid })),
+        ...blIds.map((bid) => ({ type: 'bullet' as const, id: bid })),
+      ];
+      useDoc.getState().rotateItemsAround({ type: 'bullet', id }, members);
+      return;
+    }
     rotateRouteBullet(id);
   };
 
@@ -353,16 +434,20 @@ export function MapCanvas() {
 
         {/* selection wash: painted before bands so the wash sits behind
             line segments, markers, dots, and labels — all the way in the
-            background. Only the selected station renders anything. */}
-        {selection.selectedStationId && stations[selection.selectedStationId] && (
-          <StationView
-            key={selection.selectedStationId + ':wash'}
-            station={stations[selection.selectedStationId]}
-            lines={lines}
-            zoom={view.viewport.zoom}
-            onStartDrag={drag.onStartDrag}
-            layer="wash"
-          />
+            background. One per selected station (or per previewed station
+            during a rect-select drag). */}
+        {washIds.map(
+          (sid) =>
+            stations[sid] && (
+              <StationView
+                key={sid + ':wash'}
+                station={stations[sid]}
+                lines={lines}
+                zoom={view.viewport.zoom}
+                onStartDrag={drag.onStartDrag}
+                layer="wash"
+              />
+            ),
         )}
 
         {/* bands and stop squares interleaved by per-line z-priority */}
@@ -481,7 +566,7 @@ export function MapCanvas() {
             key={b.id}
             bullet={b}
             lines={lines}
-            selected={selection.selectedRouteBulletId === b.id}
+            selected={bulletSelectedIds.includes(b.id)}
             onPointerDown={onBulletPointerDown}
             onClick={onBulletClick}
             onContextMenu={onBulletContextMenu}
@@ -736,15 +821,37 @@ export function MapCanvas() {
         )}
 
         {/* selection stroke: 2px black ring around the merged silhouette,
-            painted on top of everything so the outline is never occluded. */}
-        {selection.selectedStationId && stations[selection.selectedStationId] && (
-          <StationView
-            key={selection.selectedStationId + ':stroke'}
-            station={stations[selection.selectedStationId]}
-            lines={lines}
-            zoom={view.viewport.zoom}
-            onStartDrag={drag.onStartDrag}
-            layer="stroke"
+            painted on top of everything so the outline is never occluded.
+            One per selected station (or per previewed station during a
+            rect-select drag). */}
+        {washIds.map(
+          (sid) =>
+            stations[sid] && (
+              <StationView
+                key={sid + ':stroke'}
+                station={stations[sid]}
+                lines={lines}
+                zoom={view.viewport.zoom}
+                onStartDrag={drag.onStartDrag}
+                layer="stroke"
+              />
+            ),
+        )}
+
+        {/* Rubber-band rect for the rect-select gesture. World coords; the
+            stroke width compensates for zoom so the dashed line stays a
+            consistent screen weight. */}
+        {rectSelect.rect && (
+          <rect
+            x={Math.min(rectSelect.rect.x0, rectSelect.rect.x1)}
+            y={Math.min(rectSelect.rect.y0, rectSelect.rect.y1)}
+            width={Math.abs(rectSelect.rect.x1 - rectSelect.rect.x0)}
+            height={Math.abs(rectSelect.rect.y1 - rectSelect.rect.y0)}
+            fill="rgba(26, 78, 168, 0.08)"
+            stroke="#1a4ea8"
+            strokeWidth={1.5 / view.viewport.zoom}
+            strokeDasharray={`${4 / view.viewport.zoom} ${3 / view.viewport.zoom}`}
+            pointerEvents="none"
           />
         )}
 
@@ -753,12 +860,13 @@ export function MapCanvas() {
         <SnapGuides guides={[...drag.snapGuides, ...bulletSnapGuides]} zoom={view.viewport.zoom} />
       </svg>
 
-      {selection.selectedRouteBulletId &&
-        routeBullets[selection.selectedRouteBulletId] &&
+      {selection.selectedRouteBulletIds.length === 1 &&
+        selection.selectedStationIds.length === 0 &&
+        routeBullets[selection.selectedRouteBulletIds[0]] &&
         view.vbW > 0 &&
         view.vbH > 0 &&
         (() => {
-          const b = routeBullets[selection.selectedRouteBulletId];
+          const b = routeBullets[selection.selectedRouteBulletIds[0]];
           // Canvas-host-relative pixel coords from the bullet's world
           // position via the current viewport. No ref reads — keeps the
           // react-hooks lint happy.

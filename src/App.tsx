@@ -2,7 +2,7 @@ import { useEffect } from 'react';
 import { Toolbar } from './components/Toolbar';
 import { Sidebar } from './components/Sidebar';
 import { MapCanvas } from './components/MapCanvas';
-import { useDoc, useSelection } from './state/store';
+import { beginHistoryGroup, useDoc, useSelection } from './state/store';
 import { readClipboard, writeClipboard } from './model/clipboard';
 
 export default function App() {
@@ -39,11 +39,20 @@ export default function App() {
       }
       if ((e.key === 'Delete' || e.key === 'Backspace') && !inForm) {
         const sel = useSelection.getState();
-        const bulletId = sel.selectedRouteBulletId;
-        if (bulletId) {
+        // Mixed station + bullet multi-selection takes priority over the
+        // single-element delete paths below; one history entry covers
+        // every removed item so a single Ctrl-Z reverts the lot.
+        const stationIds = sel.selectedStationIds;
+        const bulletIds = sel.selectedRouteBulletIds;
+        if (stationIds.length + bulletIds.length > 0) {
           e.preventDefault();
+          sel.selectStation(null);
           sel.selectRouteBullet(null);
-          useDoc.getState().deleteRouteBullet(bulletId);
+          const group = beginHistoryGroup();
+          const doc = useDoc.getState();
+          for (const id of stationIds) doc.deleteStation(id);
+          for (const id of bulletIds) doc.deleteRouteBullet(id);
+          group.commit();
           return;
         }
         const transferId = sel.selectedTransferId;
@@ -60,14 +69,6 @@ export default function App() {
           useDoc.getState().deleteLineTag(tagId);
           return;
         }
-        const stationId = sel.selectedStationId;
-        if (stationId) {
-          e.preventDefault();
-          // Clear selection first so the inspector doesn't briefly show a
-          // dangling reference, then delete.
-          sel.selectStation(null);
-          useDoc.getState().deleteStation(stationId);
-        }
       }
       const mod = e.metaKey || e.ctrlKey;
       if (mod && !inForm && (e.key === 'z' || e.key === 'Z')) {
@@ -82,12 +83,15 @@ export default function App() {
         useDoc.temporal.getState().redo();
         return;
       }
-      // Copy / paste / duplicate for the currently-selected route bullet.
-      // Stay out of form fields so native text-editing shortcuts keep working.
+      // Copy / paste / duplicate for a single selected route bullet (the
+      // shortcut only fires when exactly one bullet is the current
+      // selection, matching the existing single-bullet UX). Stay out of
+      // form fields so native text-editing shortcuts keep working.
       if (mod && !inForm && (e.key === 'c' || e.key === 'C')) {
         const sel = useSelection.getState();
-        const bid = sel.selectedRouteBulletId;
-        if (!bid) return;
+        const bullets = sel.selectedRouteBulletIds;
+        if (bullets.length !== 1 || sel.selectedStationIds.length > 0) return;
+        const bid = bullets[0];
         const b = useDoc.getState().routeBullets[bid];
         if (!b) return;
         const text = writeClipboard({
@@ -128,8 +132,9 @@ export default function App() {
       }
       if (mod && !inForm && (e.key === 'd' || e.key === 'D')) {
         const sel = useSelection.getState();
-        const bid = sel.selectedRouteBulletId;
-        if (!bid) return;
+        const bullets = sel.selectedRouteBulletIds;
+        if (bullets.length !== 1 || sel.selectedStationIds.length > 0) return;
+        const bid = bullets[0];
         const b = useDoc.getState().routeBullets[bid];
         if (!b) return;
         e.preventDefault();

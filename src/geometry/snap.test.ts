@@ -138,6 +138,37 @@ describe('snapDraggedStation', () => {
     expect(r.guides).toEqual([]);
   });
 
+  it('excludedIds skips listed stations as snap candidates', () => {
+    // Same setup as the basic single-axis snap test below — target T at
+    // (100, 0). Without exclusion, dragging near (105, 50) snaps x to 100.
+    // With T excluded, no candidate remains and the drag passes through.
+    const target = makeStation({
+      id: 't',
+      x: 100,
+      y: 0,
+      stops: [makeStop('L1', { row: 0, col: 0 })],
+    });
+    const dragged = makeStation({
+      id: 'd',
+      x: 0,
+      y: 0,
+      stops: [makeStop('L1', { row: 0, col: 0 })],
+    });
+    const r = snapDraggedStation({
+      draggedId: 'd',
+      proposedX: 105,
+      proposedY: 50,
+      draggedRotation: 0,
+      draggedStops: dragged.stops,
+      stations: stations(dragged, target),
+      lines: linesOf(lineOf('L1', ['d', 't'])),
+      excludedIds: new Set(['t']),
+    });
+    expect(r.x).toBe(105);
+    expect(r.y).toBe(50);
+    expect(r.guides).toEqual([]);
+  });
+
   it('single-axis snap projects the dragged stop onto the target axis line', () => {
     // Target at world (100, 0) with one stop on L1 (auto-vertical, axis +y).
     // Dragging dragged station near (105, 50): it should snap to x=100.
