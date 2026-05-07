@@ -54,17 +54,22 @@ export function moveStation(doc: MapDoc, id: StationId, x: number, y: number): M
   return { ...doc, stations: { ...doc.stations, [id]: { ...cur, x, y } } };
 }
 
-export function setDotShape(doc: MapDoc, stationIds: StationId[], shape: DotShape): MapDoc {
-  const stations = { ...doc.stations };
-  for (const id of stationIds) {
-    const cur = stations[id];
-    if (!cur) continue;
-    stations[id] = {
-      ...cur,
-      stops: cur.stops.map((s) => ({ ...s, dotShape: shape })),
-    };
-  }
-  return { ...doc, stations };
+export function setDotShape(
+  doc: MapDoc,
+  stationId: StationId,
+  lineId: LineId,
+  shape: DotShape,
+): MapDoc {
+  const cur = doc.stations[stationId];
+  if (!cur) return doc;
+  let changed = false;
+  const stops = cur.stops.map((s) => {
+    if (s.lineId !== lineId) return s;
+    changed = true;
+    return { ...s, dotShape: shape };
+  });
+  if (!changed) return doc;
+  return { ...doc, stations: { ...doc.stations, [stationId]: { ...cur, stops } } };
 }
 
 // For every line that contains both startId and endId, evenly redistribute
