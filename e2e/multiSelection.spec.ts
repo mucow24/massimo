@@ -550,4 +550,68 @@ test.describe('multi-bullet selection', () => {
     expect(after.A.x - before.A.x).toBeCloseTo(after.b1.x - before.b1.x, 1);
     expect(Math.abs(after.A.x - before.A.x)).toBeGreaterThan(20);
   });
+
+  test('right-click on a selected bullet rotates the whole mixed group rigidly', async ({
+    page,
+  }) => {
+    await seedAndOpen(page, fourInLineWithBullets);
+
+    const a = await stationCenter(page, 'A');
+    const b1 = await bulletCenter(page, 'b1');
+
+    // Select A + b1.
+    await page.mouse.click(a.x, a.y);
+    await clickAtWithModifiers(page, b1, ['Shift']);
+
+    const beforeA = await stationWorldPos(page, 'A');
+    const beforeb1 = await bulletWorldPos(page, 'b1');
+    const distBefore = Math.hypot(beforeA.x - beforeb1.x, beforeA.y - beforeb1.y);
+
+    // Right-click b1 — bullet is the pivot; A orbits.
+    await page.mouse.click(b1.x, b1.y, { button: 'right' });
+
+    const afterA = await stationWorldPos(page, 'A');
+    const afterb1 = await bulletWorldPos(page, 'b1');
+
+    // Pivot (bullet) doesn't move.
+    expect(afterb1.x).toBeCloseTo(beforeb1.x, 1);
+    expect(afterb1.y).toBeCloseTo(beforeb1.y, 1);
+
+    // A orbited 45° CW around b1: distance preserved, deltas match the
+    // rotation of (A - b1).
+    const distAfter = Math.hypot(afterA.x - afterb1.x, afterA.y - afterb1.y);
+    expect(distAfter).toBeCloseTo(distBefore, 1);
+    const SQRT2_2 = Math.SQRT2 / 2;
+    const dx = beforeA.x - beforeb1.x;
+    const dy = beforeA.y - beforeb1.y;
+    expect(afterA.x - afterb1.x).toBeCloseTo(dx * SQRT2_2 - dy * SQRT2_2, 1);
+    expect(afterA.y - afterb1.y).toBeCloseTo(dx * SQRT2_2 + dy * SQRT2_2, 1);
+  });
+
+  test('right-click on a selected station rotates a mixed group with bullets too', async ({
+    page,
+  }) => {
+    await seedAndOpen(page, fourInLineWithBullets);
+
+    const a = await stationCenter(page, 'A');
+    const b1 = await bulletCenter(page, 'b1');
+
+    await page.mouse.click(a.x, a.y);
+    await clickAtWithModifiers(page, b1, ['Shift']);
+
+    const beforeA = await stationWorldPos(page, 'A');
+    const beforeb1 = await bulletWorldPos(page, 'b1');
+    const distBefore = Math.hypot(beforeA.x - beforeb1.x, beforeA.y - beforeb1.y);
+
+    // Right-click A — station is the pivot; bullet orbits.
+    await page.mouse.click(a.x, a.y, { button: 'right' });
+
+    const afterA = await stationWorldPos(page, 'A');
+    const afterb1 = await bulletWorldPos(page, 'b1');
+
+    expect(afterA.x).toBeCloseTo(beforeA.x, 1);
+    expect(afterA.y).toBeCloseTo(beforeA.y, 1);
+    const distAfter = Math.hypot(afterA.x - afterb1.x, afterA.y - afterb1.y);
+    expect(distAfter).toBeCloseTo(distBefore, 1);
+  });
 });

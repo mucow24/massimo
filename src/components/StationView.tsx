@@ -73,6 +73,7 @@ export function StationView({
   const selection = useSelection();
   const rotateStation = useDoc((s) => s.rotateStation);
   const rotateStationsAround = useDoc((s) => s.rotateStationsAround);
+  const rotateItemsAround = useDoc((s) => s.rotateItemsAround);
   const renameStation = useDoc((s) => s.renameStation);
   const toggleStationOnLine = useDoc((s) => s.toggleStationOnLine);
   const redistributeBetween = useDoc((s) => s.redistributeBetween);
@@ -176,12 +177,22 @@ export function StationView({
     e.preventDefault();
     e.stopPropagation();
     // Right-click on a station that's part of a multi-selection rotates
-    // the whole group rigidly around this station: each member rotates in
-    // place AND non-pivot members orbit 45° around the pivot, preserving
-    // relative geometry.
+    // the whole group rigidly around this station: each member rotates
+    // in place AND non-pivot members orbit 45° around the pivot. When
+    // bullets are also selected they orbit too via `rotateItemsAround`.
     const ids = selection.selectedStationIds;
-    if (ids.length > 1 && ids.includes(station.id)) {
-      rotateStationsAround(station.id, ids);
+    const bulletIds = selection.selectedRouteBulletIds;
+    const totalSelected = ids.length + bulletIds.length;
+    if (totalSelected > 1 && ids.includes(station.id)) {
+      if (bulletIds.length === 0) {
+        rotateStationsAround(station.id, ids);
+      } else {
+        const members: { type: 'station' | 'bullet'; id: string }[] = [
+          ...ids.map((id) => ({ type: 'station' as const, id })),
+          ...bulletIds.map((id) => ({ type: 'bullet' as const, id })),
+        ];
+        rotateItemsAround({ type: 'station', id: station.id }, members);
+      }
       return;
     }
     rotateStation(station.id);
