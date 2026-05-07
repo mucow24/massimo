@@ -184,6 +184,72 @@ test.describe('multi-station selection', () => {
     await expect(page.locator('[data-station-wash="D"]')).toHaveCount(0);
   });
 
+  test('rect-select shows a live preview of the resulting selection mid-drag', async ({ page }) => {
+    await seedAndOpen(page, fourInLine);
+
+    const a = await stationCenter(page, 'A');
+    const b = await stationCenter(page, 'B');
+    const c = await stationCenter(page, 'C');
+
+    // Begin a drag from above-left of A; expect no wash before the rect
+    // engulfs anything.
+    await page.mouse.move(a.x - 30, a.y - 50);
+    await page.mouse.down();
+    await page.mouse.move(a.x - 20, a.y - 50, { steps: 2 });
+    // Mid-drag: rect now covers A only — wash should already be on A,
+    // not on B/C.
+    await page.mouse.move(a.x + 20, a.y + 50, { steps: 4 });
+    await expect(page.locator('[data-station-wash="A"]')).toBeVisible();
+    await expect(page.locator('[data-station-wash="B"]')).toHaveCount(0);
+    await expect(page.locator('[data-station-wash="C"]')).toHaveCount(0);
+
+    // Extend the rect to cover B too — preview should add B.
+    await page.mouse.move(b.x + 20, b.y + 50, { steps: 4 });
+    await expect(page.locator('[data-station-wash="A"]')).toBeVisible();
+    await expect(page.locator('[data-station-wash="B"]')).toBeVisible();
+    await expect(page.locator('[data-station-wash="C"]')).toHaveCount(0);
+
+    // Shrink the rect back to cover only A — B should leave the preview.
+    await page.mouse.move(a.x + 20, a.y + 50, { steps: 4 });
+    await expect(page.locator('[data-station-wash="A"]')).toBeVisible();
+    await expect(page.locator('[data-station-wash="B"]')).toHaveCount(0);
+
+    // Finish over C — only A and C end up selected.
+    await page.mouse.move(c.x + 20, c.y + 50, { steps: 4 });
+    await page.mouse.up();
+    await expect(page.locator('[data-station-wash="A"]')).toBeVisible();
+    await expect(page.locator('[data-station-wash="B"]')).toBeVisible();
+    await expect(page.locator('[data-station-wash="C"]')).toBeVisible();
+    await expect(page.locator('[data-station-wash="D"]')).toHaveCount(0);
+  });
+
+  test('rect-select preview honors ctrl+shift xor (selected stations inside rect drop out)', async ({
+    page,
+  }) => {
+    await seedAndOpen(page, fourInLine);
+
+    // Pre-select A.
+    const a = await stationCenter(page, 'A');
+    await page.mouse.click(a.x, a.y);
+    await expect(page.locator('[data-station-wash="A"]')).toBeVisible();
+
+    // Ctrl+Shift+drag a rect over A. While dragging, A's wash should
+    // disappear (it's about to be toggled off).
+    await page.keyboard.down('Control');
+    await page.keyboard.down('Shift');
+    await page.mouse.move(a.x - 30, a.y - 50);
+    await page.mouse.down();
+    await page.mouse.move(a.x - 20, a.y - 50, { steps: 2 });
+    await page.mouse.move(a.x + 20, a.y + 50, { steps: 4 });
+    await expect(page.locator('[data-station-wash="A"]')).toHaveCount(0);
+    await page.mouse.up();
+    await page.keyboard.up('Shift');
+    await page.keyboard.up('Control');
+
+    // After release: A is gone, nothing else selected.
+    await expect(page.locator('[data-station-wash]')).toHaveCount(0);
+  });
+
   test('shift+rect-select adds to the existing selection', async ({ page }) => {
     await seedAndOpen(page, fourInLine);
 
