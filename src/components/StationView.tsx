@@ -265,14 +265,12 @@ export function StationView({
   const labelHitH = 2 * textHalfH + 2 * HIT_PAD;
   const labelHitTransform = `rotate(${label.rotation * 45} ${labelAnchorX} ${labelAnchorY})`;
 
-  const isSelected = selection.selectedStationIds.includes(station.id);
   const isEditing = selection.editingStationId === station.id;
 
   if (layer === 'wash' || layer === 'stroke' || layer === 'match-stroke') {
-    // The wash + selection-stroke layers only paint when this station is
-    // selected; the match-stroke layer is rendered by MapCanvas only for
-    // matching stations, so it always paints.
-    if ((layer === 'wash' || layer === 'stroke') && !isSelected) return null;
+    // MapCanvas decides which stations get wash/stroke/match-stroke layers
+    // (selected set, plus the rect-select preview, plus mirror-matching
+    // stations). StationView trusts that filtering — no redundant gate.
     // Smooth the union of the cells rect + (rotated) label rect with
     // quadratic Beziers. Smoothing applies to the outer-boundary corners
     // ONLY (each vertex of the union is a corner of the actual silhouette),

@@ -57,6 +57,10 @@ export function MapCanvas() {
   const view = useViewport(svgRef);
   const drag = useStationDrag(svgRef, view.viewport.zoom);
   const rectSelect = useRectSelect(svgRef, view.screenToWorld);
+  // While a rect-select drag is in flight, render the wash/stroke over
+  // its previewed result instead of the live selection so the user sees
+  // exactly what'll be selected on release.
+  const washIds = rectSelect.previewIds ?? selection.selectedStationIds;
 
   const bands = useMemo(
     () => buildBands(stations, lines, curveRadius, lineOrder),
@@ -366,8 +370,9 @@ export function MapCanvas() {
 
         {/* selection wash: painted before bands so the wash sits behind
             line segments, markers, dots, and labels — all the way in the
-            background. One per selected station. */}
-        {selection.selectedStationIds.map(
+            background. One per selected station (or per previewed station
+            during a rect-select drag). */}
+        {washIds.map(
           (sid) =>
             stations[sid] && (
               <StationView
@@ -753,8 +758,9 @@ export function MapCanvas() {
 
         {/* selection stroke: 2px black ring around the merged silhouette,
             painted on top of everything so the outline is never occluded.
-            One per selected station. */}
-        {selection.selectedStationIds.map(
+            One per selected station (or per previewed station during a
+            rect-select drag). */}
+        {washIds.map(
           (sid) =>
             stations[sid] && (
               <StationView
