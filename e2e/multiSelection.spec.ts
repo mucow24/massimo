@@ -588,6 +588,55 @@ test.describe('multi-bullet selection', () => {
     expect(afterA.y - afterb1.y).toBeCloseTo(dx * SQRT2_2 + dy * SQRT2_2, 1);
   });
 
+  test('inspector and popover hide when the selection mixes a station and a bullet', async ({
+    page,
+  }) => {
+    await seedAndOpen(page, fourInLineWithBullets);
+
+    const a = await stationCenter(page, 'A');
+    const b1 = await bulletCenter(page, 'b1');
+
+    // Single-station selection → station inspector visible.
+    await page.mouse.click(a.x, a.y);
+    await expect(page.locator('[data-station-row="A"] .inline-editor')).toBeVisible();
+
+    // Add a bullet via shift-click → mixed selection. Inspector hides;
+    // bullet popover stays out (it only shows for single-bullet, no
+    // station-selected case).
+    await clickAtWithModifiers(page, b1, ['Shift']);
+    await expect(page.locator('.inline-editor')).toHaveCount(0);
+    await expect(page.locator('.bullet-popover')).toHaveCount(0);
+
+    // Reduce to a single bullet → popover returns.
+    await clickAtWithModifiers(page, a, ['Shift']);
+    await expect(page.locator('.bullet-popover')).toBeVisible();
+  });
+
+  test('Delete removes every selected station and bullet in one history entry', async ({
+    page,
+  }) => {
+    await seedAndOpen(page, fourInLineWithBullets);
+
+    const a = await stationCenter(page, 'A');
+    const b1 = await bulletCenter(page, 'b1');
+
+    await page.mouse.click(a.x, a.y);
+    await clickAtWithModifiers(page, b1, ['Shift']);
+
+    await page.keyboard.press('Delete');
+
+    await expect(page.locator('[data-station-id="A"]')).toHaveCount(0);
+    await expect(page.locator('[data-bullet-id="b1"]')).toHaveCount(0);
+    // Other items untouched.
+    await expect(page.locator('[data-station-id="B"]')).toBeVisible();
+    await expect(page.locator('[data-bullet-id="b2"]')).toBeVisible();
+
+    // Single Ctrl-Z restores both.
+    await page.keyboard.press('Control+z');
+    await expect(page.locator('[data-station-id="A"]')).toBeVisible();
+    await expect(page.locator('[data-bullet-id="b1"]')).toBeVisible();
+  });
+
   test('right-click on a selected station rotates a mixed group with bullets too', async ({
     page,
   }) => {

@@ -14,7 +14,9 @@ export function Inspector() {
   // station gets selected (e.g. via the sidebar), the line editor stays open.
   if (selection.appendingToLineId) return <LineInspector id={selection.appendingToLineId} />;
   // Single-selection only: multi-selection hides the station inspector.
-  if (selection.selectedStationIds.length === 1)
+  // A selected route bullet alongside the station also disqualifies —
+  // the inspector is a single-item editor.
+  if (selection.selectedStationIds.length === 1 && selection.selectedRouteBulletIds.length === 0)
     return <StationInspector id={selection.selectedStationIds[0]} />;
   if (selection.selectedLineId) return <LineInspector id={selection.selectedLineId} />;
   return null;
