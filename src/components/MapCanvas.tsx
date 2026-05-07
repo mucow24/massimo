@@ -13,6 +13,7 @@ import { SegmentBand } from './SegmentBand';
 import { StationView } from './StationView';
 import { useViewport } from './canvas/useViewport';
 import { useStationDrag } from './canvas/useStationDrag';
+import { useRectSelect } from './canvas/useRectSelect';
 import { Grid } from './canvas/Grid';
 import { WarningToasts } from './canvas/WarningToasts';
 import { EditingBanner } from './canvas/EditingBanner';
@@ -55,6 +56,7 @@ export function MapCanvas() {
   const svgRef = useRef<SVGSVGElement | null>(null);
   const view = useViewport(svgRef);
   const drag = useStationDrag(svgRef, view.viewport.zoom);
+  const rectSelect = useRectSelect(svgRef, view.screenToWorld);
 
   const bands = useMemo(
     () => buildBands(stations, lines, curveRadius, lineOrder),
@@ -123,11 +125,18 @@ export function MapCanvas() {
       view.startPan(e);
       return;
     }
-    if (inHandMode) view.startPan(e);
+    if (inHandMode) {
+      view.startPan(e);
+      return;
+    }
+    // Arrow mode: a left-button pointerdown on background may begin a
+    // rect-select. The hook self-gates on background hit + active mode.
+    rectSelect.onPointerDown(e);
   };
   const onPointerMove = (e: React.PointerEvent) => {
     view.onPointerMove(e);
     drag.onPointerMove(e);
+    rectSelect.onPointerMove(e);
     if (selection.creatingTransfer && selection.transferAnchor) {
       setCursorWorld(view.screenToWorld(e.clientX, e.clientY));
     } else if (cursorWorld) {
@@ -174,6 +183,7 @@ export function MapCanvas() {
   const onPointerUp = (e: React.PointerEvent) => {
     view.onPointerUp(e);
     drag.onPointerUp(e);
+    rectSelect.onPointerUp(e);
     const bd = bulletDragRef.current;
     if (bd) {
       const wasMoved = bd.moved;
@@ -756,6 +766,23 @@ export function MapCanvas() {
                 layer="stroke"
               />
             ),
+        )}
+
+        {/* Rubber-band rect for the rect-select gesture. World coords; the
+            stroke width compensates for zoom so the dashed line stays a
+            consistent screen weight. */}
+        {rectSelect.rect && (
+          <rect
+            x={Math.min(rectSelect.rect.x0, rectSelect.rect.x1)}
+            y={Math.min(rectSelect.rect.y0, rectSelect.rect.y1)}
+            width={Math.abs(rectSelect.rect.x1 - rectSelect.rect.x0)}
+            height={Math.abs(rectSelect.rect.y1 - rectSelect.rect.y0)}
+            fill="rgba(26, 78, 168, 0.08)"
+            stroke="#1a4ea8"
+            strokeWidth={1.5 / view.viewport.zoom}
+            strokeDasharray={`${4 / view.viewport.zoom} ${3 / view.viewport.zoom}`}
+            pointerEvents="none"
+          />
         )}
 
         {/* Snap guides: rendered last so the dotted lines + measurement
