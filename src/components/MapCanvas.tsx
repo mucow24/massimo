@@ -62,11 +62,14 @@ export function MapCanvas() {
   );
 
   // When mirror-matching mode is on for the selected station, highlight the
-  // adjacent stations whose unrotated stop layouts are identical.
+  // adjacent stations whose unrotated stop layouts are identical. Mirror
+  // mode only applies to single-selection.
+  const soloSelectedId =
+    selection.selectedStationIds.length === 1 ? selection.selectedStationIds[0] : null;
   const matchingIds = useMemo(() => {
-    if (!selection.mirrorMatching || !selection.selectedStationId) return [];
-    return findMatchingStations({ stations, lines }, selection.selectedStationId);
-  }, [selection.mirrorMatching, selection.selectedStationId, stations, lines]);
+    if (!selection.mirrorMatching || !soloSelectedId) return [];
+    return findMatchingStations({ stations, lines }, soloSelectedId);
+  }, [selection.mirrorMatching, soloSelectedId, stations, lines]);
   // Color override map for non-selected lines while a line is being edited.
   // Selected line keeps its true color; others get desaturated toward greyscale.
   const colorMap = useMemo(() => {
@@ -353,16 +356,19 @@ export function MapCanvas() {
 
         {/* selection wash: painted before bands so the wash sits behind
             line segments, markers, dots, and labels — all the way in the
-            background. Only the selected station renders anything. */}
-        {selection.selectedStationId && stations[selection.selectedStationId] && (
-          <StationView
-            key={selection.selectedStationId + ':wash'}
-            station={stations[selection.selectedStationId]}
-            lines={lines}
-            zoom={view.viewport.zoom}
-            onStartDrag={drag.onStartDrag}
-            layer="wash"
-          />
+            background. One per selected station. */}
+        {selection.selectedStationIds.map(
+          (sid) =>
+            stations[sid] && (
+              <StationView
+                key={sid + ':wash'}
+                station={stations[sid]}
+                lines={lines}
+                zoom={view.viewport.zoom}
+                onStartDrag={drag.onStartDrag}
+                layer="wash"
+              />
+            ),
         )}
 
         {/* bands and stop squares interleaved by per-line z-priority */}
@@ -736,16 +742,20 @@ export function MapCanvas() {
         )}
 
         {/* selection stroke: 2px black ring around the merged silhouette,
-            painted on top of everything so the outline is never occluded. */}
-        {selection.selectedStationId && stations[selection.selectedStationId] && (
-          <StationView
-            key={selection.selectedStationId + ':stroke'}
-            station={stations[selection.selectedStationId]}
-            lines={lines}
-            zoom={view.viewport.zoom}
-            onStartDrag={drag.onStartDrag}
-            layer="stroke"
-          />
+            painted on top of everything so the outline is never occluded.
+            One per selected station. */}
+        {selection.selectedStationIds.map(
+          (sid) =>
+            stations[sid] && (
+              <StationView
+                key={sid + ':stroke'}
+                station={stations[sid]}
+                lines={lines}
+                zoom={view.viewport.zoom}
+                onStartDrag={drag.onStartDrag}
+                layer="stroke"
+              />
+            ),
         )}
 
         {/* Snap guides: rendered last so the dotted lines + measurement
