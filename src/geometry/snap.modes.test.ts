@@ -49,7 +49,7 @@ describe('snapDraggedStation: snap mode gating', () => {
     expect(r.guides).toEqual([]);
   });
 
-  it('omitted modes preserves today\'s behavior (defaults to line on)', () => {
+  it("omitted modes preserves today's behavior (defaults to line on)", () => {
     // Same fixture as the existing single-axis test in snap.test.ts.
     const target = makeStation({ id: 't', x: 100, y: 0, stops: [makeStop('L1')] });
     const dragged = makeStation({ id: 'd', x: 0, y: 0, stops: [makeStop('L1')] });
@@ -457,7 +457,7 @@ describe('snapDraggedStation: bullet mode + snap modes', () => {
     expect(withEqui.y).toBeCloseTo(baseline.y, 5);
   });
 
-  it('modes.tens snaps a bullet to multiples of 10 from the line\'s start stop', () => {
+  it("modes.tens snaps a bullet to multiples of 10 from the line's start stop", () => {
     // Line [A, B] vertical. A at (0,0) is the line's start stop and is the
     // tens anchor for bullets. Drag a bullet near (1, 47): line snap pulls
     // it onto the vertical axis through A (x=0); tens snaps along that
