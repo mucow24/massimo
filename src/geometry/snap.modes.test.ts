@@ -237,8 +237,10 @@ describe('snapDraggedStation: tens mode', () => {
     expect(r.y).toBeCloseTo(0, 5);
   });
 
-  it('does nothing when the dragged station has no prev (it is at index 0)', () => {
-    // Line is [B, C]: B at index 0, no prev. Tens has no anchor → no-op.
+  it('falls back to the next neighbor when there is no prev (terminus at index 0)', () => {
+    // Line is [B, C]: B at index 0 (terminus), no prev. Without the
+    // fallback, the user sees asymmetric behavior — only one terminus on a
+    // line gets tens snap. With fallback to next: B uses C as anchor.
     const b = makeStation({ id: 'b', x: 0, y: 0, stops: [horizontalStop('L1')] });
     const c = makeStation({ id: 'c', x: 100, y: 0, stops: [horizontalStop('L1')] });
     const r = snapDraggedStation({
@@ -251,8 +253,29 @@ describe('snapDraggedStation: tens mode', () => {
       lines: linesOf(lineOf('L1', ['b', 'c'])),
       modes: { ...LINE_ONLY, tens: true },
     });
-    // Only line snap (project onto axis line y=0): (7, 0).
-    expect(r.x).toBeCloseTo(7, 5);
+    // Anchor at C=(100, 0); 7 is 93 from C. Nearest multiple of 10 is 90,
+    // i.e. world x = 10. Result: (10, 0).
+    expect(r.x).toBeCloseTo(10, 5);
+    expect(r.y).toBeCloseTo(0, 5);
+  });
+
+  it('also fires for the last terminus (line ordering already provides prev)', () => {
+    // Line [A, B]: B at index 1, prev = A. Existing behavior — sanity-
+    // check the symmetric case so a future regression on either side is
+    // caught.
+    const a = makeStation({ id: 'a', x: 0, y: 0, stops: [horizontalStop('L1')] });
+    const b = makeStation({ id: 'b', x: 100, y: 0, stops: [horizontalStop('L1')] });
+    const r = snapDraggedStation({
+      draggedId: 'b',
+      proposedX: 93,
+      proposedY: 0.5,
+      draggedRotation: 0,
+      draggedStops: b.stops,
+      stations: stations(a, b),
+      lines: linesOf(lineOf('L1', ['a', 'b'])),
+      modes: { ...LINE_ONLY, tens: true },
+    });
+    expect(r.x).toBeCloseTo(90, 5);
     expect(r.y).toBeCloseTo(0, 5);
   });
 
@@ -409,18 +432,18 @@ describe('snapDraggedStation: bullet mode + snap modes', () => {
     expect(r.guides).toEqual([]);
   });
 
-  it('modes.equidistant and modes.tens are no-ops on bullets', () => {
-    // Same fixture as the existing bullet snap test; with equidistant + tens
-    // additionally on, the result must equal the line-only baseline.
+  it('modes.equidistant is a no-op on bullets (no A-B-C semantics)', () => {
+    // Bullets aren't in line.stations, so there's no prev/next pair to
+    // average. Equidistant must not affect the bullet's snapped position.
     const a = makeStation({ id: 'a', x: 0, y: 0, stops: [makeStop('L1')] });
     const b = makeStation({ id: 'b', x: 0, y: 100, stops: [makeStop('L1')] });
-    const both = snapDraggedStation({
+    const withEqui = snapDraggedStation({
       proposedX: 5,
       proposedY: 50,
       stations: stations(a, b),
       lines: linesOf(lineOf('L1', ['a', 'b'])),
       bulletLineId: 'L1',
-      modes: { line: true, equidistant: true, tens: true, all: false },
+      modes: { line: true, equidistant: true, tens: false, all: false },
     });
     const baseline = snapDraggedStation({
       proposedX: 5,
@@ -430,8 +453,27 @@ describe('snapDraggedStation: bullet mode + snap modes', () => {
       bulletLineId: 'L1',
       modes: LINE_ONLY,
     });
-    expect(both.x).toBeCloseTo(baseline.x, 5);
-    expect(both.y).toBeCloseTo(baseline.y, 5);
+    expect(withEqui.x).toBeCloseTo(baseline.x, 5);
+    expect(withEqui.y).toBeCloseTo(baseline.y, 5);
+  });
+
+  it('modes.tens snaps a bullet to multiples of 10 from the line\'s start stop', () => {
+    // Line [A, B] vertical. A at (0,0) is the line's start stop and is the
+    // tens anchor for bullets. Drag a bullet near (1, 47): line snap pulls
+    // it onto the vertical axis through A (x=0); tens snaps along that
+    // axis to multiples of 10 from A → y=50.
+    const a = makeStation({ id: 'a', x: 0, y: 0, stops: [makeStop('L1')] });
+    const b = makeStation({ id: 'b', x: 0, y: 100, stops: [makeStop('L1')] });
+    const r = snapDraggedStation({
+      proposedX: 1,
+      proposedY: 47,
+      stations: stations(a, b),
+      lines: linesOf(lineOf('L1', ['a', 'b'])),
+      bulletLineId: 'L1',
+      modes: { line: true, equidistant: false, tens: true, all: false },
+    });
+    expect(r.x).toBeCloseTo(0, 5);
+    expect(r.y).toBeCloseTo(50, 5);
   });
 
   it('modes.all snaps a bullet to a 4-axis grid through any stop', () => {
