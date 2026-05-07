@@ -83,15 +83,16 @@ export function StationView({
     if (e.button !== 0) return;
     // In hand mode, let the event bubble to the SVG so it becomes a pan.
     if (selection.toolMode === 'hand' || selection.spaceHeld) return;
-    // Ctrl/Cmd+drag on a different station while one is selected: drag the
-    // target while continuously redistributing intervening stops between
-    // the two. A pure click (no drag) still routes to onClick → one-shot
-    // redistribute via the click handler.
+    // Ctrl/Cmd+drag on a different station while exactly one is selected:
+    // drag the target while continuously redistributing intervening stops
+    // between the two. A pure click (no drag) still routes to onClick →
+    // one-shot redistribute via the click handler. When multi-selected,
+    // ctrl-drag yields to group-drag (no anchor captured).
+    const ids = selection.selectedStationIds;
+    const soloAnchor = ids.length === 1 ? ids[0] : null;
     const anchor =
-      (e.ctrlKey || e.metaKey) &&
-      selection.selectedStationId &&
-      selection.selectedStationId !== station.id
-        ? selection.selectedStationId
+      (e.ctrlKey || e.metaKey) && soloAnchor && soloAnchor !== station.id
+        ? soloAnchor
         : undefined;
     onStartDrag(station.id, e, anchor);
   };
@@ -122,14 +123,17 @@ export function StationView({
       }
       return;
     }
-    // Ctrl/Cmd-click on a different station while one is selected:
+    // Ctrl/Cmd-click on a different station while exactly one is selected:
     // redistribute intervening stops on each line that connects them.
+    // Multi-selection disables redistribute — group operations win.
+    const selIds = selection.selectedStationIds;
     if (
       (e.ctrlKey || e.metaKey) &&
-      selection.selectedStationId &&
-      selection.selectedStationId !== station.id
+      !e.shiftKey &&
+      selIds.length === 1 &&
+      selIds[0] !== station.id
     ) {
-      redistributeBetween(selection.selectedStationId, station.id);
+      redistributeBetween(selIds[0], station.id);
       return;
     }
     if (selection.creatingLineTag) {
@@ -234,7 +238,7 @@ export function StationView({
   const labelHitH = 2 * textHalfH + 2 * HIT_PAD;
   const labelHitTransform = `rotate(${label.rotation * 45} ${labelAnchorX} ${labelAnchorY})`;
 
-  const isSelected = selection.selectedStationId === station.id;
+  const isSelected = selection.selectedStationIds.includes(station.id);
   const isEditing = selection.editingStationId === station.id;
 
   if (layer === 'wash' || layer === 'stroke' || layer === 'match-stroke') {

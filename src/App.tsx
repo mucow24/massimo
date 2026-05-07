@@ -2,7 +2,7 @@ import { useEffect } from 'react';
 import { Toolbar } from './components/Toolbar';
 import { Sidebar } from './components/Sidebar';
 import { MapCanvas } from './components/MapCanvas';
-import { useDoc, useSelection } from './state/store';
+import { beginHistoryGroup, useDoc, useSelection } from './state/store';
 import { readClipboard, writeClipboard } from './model/clipboard';
 
 export default function App() {
@@ -60,13 +60,17 @@ export default function App() {
           useDoc.getState().deleteLineTag(tagId);
           return;
         }
-        const stationId = sel.selectedStationId;
-        if (stationId) {
+        const stationIds = sel.selectedStationIds;
+        if (stationIds.length > 0) {
           e.preventDefault();
           // Clear selection first so the inspector doesn't briefly show a
-          // dangling reference, then delete.
+          // dangling reference, then delete every selected station inside
+          // one history entry so a single Ctrl-Z reverts them all.
           sel.selectStation(null);
-          useDoc.getState().deleteStation(stationId);
+          const group = beginHistoryGroup();
+          const ds = useDoc.getState().deleteStation;
+          for (const id of stationIds) ds(id);
+          group.commit();
         }
       }
       const mod = e.metaKey || e.ctrlKey;
