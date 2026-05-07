@@ -72,6 +72,7 @@ export function StationView({
 }: Props) {
   const selection = useSelection();
   const rotateStation = useDoc((s) => s.rotateStation);
+  const rotateStationsAround = useDoc((s) => s.rotateStationsAround);
   const renameStation = useDoc((s) => s.renameStation);
   const toggleStationOnLine = useDoc((s) => s.toggleStationOnLine);
   const redistributeBetween = useDoc((s) => s.redistributeBetween);
@@ -92,9 +93,7 @@ export function StationView({
     const ids = selection.selectedStationIds;
     const soloAnchor = ids.length === 1 ? ids[0] : null;
     const anchor =
-      (e.ctrlKey || e.metaKey) && soloAnchor && soloAnchor !== station.id
-        ? soloAnchor
-        : undefined;
+      (e.ctrlKey || e.metaKey) && soloAnchor && soloAnchor !== station.id ? soloAnchor : undefined;
     onStartDrag(station.id, e, anchor);
   };
 
@@ -176,6 +175,15 @@ export function StationView({
   const onContextMenu = (e: React.MouseEvent) => {
     e.preventDefault();
     e.stopPropagation();
+    // Right-click on a station that's part of a multi-selection rotates
+    // the whole group rigidly around this station: each member rotates in
+    // place AND non-pivot members orbit 45° around the pivot, preserving
+    // relative geometry.
+    const ids = selection.selectedStationIds;
+    if (ids.length > 1 && ids.includes(station.id)) {
+      rotateStationsAround(station.id, ids);
+      return;
+    }
     rotateStation(station.id);
   };
 
