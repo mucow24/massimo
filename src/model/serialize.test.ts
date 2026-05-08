@@ -83,4 +83,3 @@ describe('serialize / parse — dotShape', () => {
     if (result.ok) expect(result.doc.stations.s1.stops[0].dotShape).toBe('filled-black-diamond');
   });
 });
-

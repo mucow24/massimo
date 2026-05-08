@@ -46,9 +46,7 @@ function station({
 describe('labelLayoutLocal — auto-snap', () => {
   describe('cardinal reading direction (rotation=0, "E")', () => {
     it('snaps to W cell (strict adjMinus)', () => {
-      const lay = labelLayoutLocal(
-        station({ rotation: 0, stopOffsetRow: 0, stopOffsetCol: -1 }),
-      );
+      const lay = labelLayoutLocal(station({ rotation: 0, stopOffsetRow: 0, stopOffsetCol: -1 }));
       expect(lay.textAnchor).toBe('start');
       // Anchor at W edge of label cell, gapped inward.
       expect(lay.anchorX).toBeCloseTo(-HALF + LABEL_GAP, 5);
@@ -56,101 +54,75 @@ describe('labelLayoutLocal — auto-snap', () => {
     });
 
     it('snaps to E cell (strict adjPlus)', () => {
-      const lay = labelLayoutLocal(
-        station({ rotation: 0, stopOffsetRow: 0, stopOffsetCol: 1 }),
-      );
+      const lay = labelLayoutLocal(station({ rotation: 0, stopOffsetRow: 0, stopOffsetCol: 1 }));
       expect(lay.textAnchor).toBe('end');
       expect(lay.anchorX).toBeCloseTo(HALF - LABEL_GAP, 5);
       expect(lay.anchorY).toBeCloseTo(0, 5);
     });
 
     it('does NOT snap to a perpendicular (N) stop', () => {
-      const lay = labelLayoutLocal(
-        station({ rotation: 0, stopOffsetRow: -1, stopOffsetCol: 0 }),
-      );
+      const lay = labelLayoutLocal(station({ rotation: 0, stopOffsetRow: -1, stopOffsetCol: 0 }));
       expect(lay.textAnchor).toBe('middle');
       expect(lay.anchorX).toBeCloseTo(0, 5);
       expect(lay.anchorY).toBeCloseTo(0, 5);
     });
 
     it('does NOT snap to a perpendicular (S) stop', () => {
-      const lay = labelLayoutLocal(
-        station({ rotation: 0, stopOffsetRow: 1, stopOffsetCol: 0 }),
-      );
+      const lay = labelLayoutLocal(station({ rotation: 0, stopOffsetRow: 1, stopOffsetCol: 0 }));
       expect(lay.textAnchor).toBe('middle');
     });
 
     it('snaps with diagonal SW stop (in -reading half-plane)', () => {
-      const lay = labelLayoutLocal(
-        station({ rotation: 0, stopOffsetRow: 1, stopOffsetCol: -1 }),
-      );
+      const lay = labelLayoutLocal(station({ rotation: 0, stopOffsetRow: 1, stopOffsetCol: -1 }));
       expect(lay.textAnchor).toBe('start');
     });
 
     it('snaps with diagonal NE stop (in +reading half-plane)', () => {
-      const lay = labelLayoutLocal(
-        station({ rotation: 0, stopOffsetRow: -1, stopOffsetCol: 1 }),
-      );
+      const lay = labelLayoutLocal(station({ rotation: 0, stopOffsetRow: -1, stopOffsetCol: 1 }));
       expect(lay.textAnchor).toBe('end');
     });
   });
 
   describe('diagonal reading direction (rotation=7, "NE")', () => {
     it('snaps to strict NE diagonal stop (existing adjPlus)', () => {
-      const lay = labelLayoutLocal(
-        station({ rotation: 7, stopOffsetRow: -1, stopOffsetCol: 1 }),
-      );
+      const lay = labelLayoutLocal(station({ rotation: 7, stopOffsetRow: -1, stopOffsetCol: 1 }));
       expect(lay.textAnchor).toBe('end');
     });
 
     it('snaps to strict SW diagonal stop (existing adjMinus)', () => {
-      const lay = labelLayoutLocal(
-        station({ rotation: 7, stopOffsetRow: 1, stopOffsetCol: -1 }),
-      );
+      const lay = labelLayoutLocal(station({ rotation: 7, stopOffsetRow: 1, stopOffsetCol: -1 }));
       expect(lay.textAnchor).toBe('start');
     });
 
     // The bug: a cardinal-adjacent stop W of a NE-reading label leaves the
     // snap unfired, dropping the label way out at cell-center distance.
     it('snaps to W stop (in -reading half-plane, was buggy)', () => {
-      const lay = labelLayoutLocal(
-        station({ rotation: 7, stopOffsetRow: 0, stopOffsetCol: -1 }),
-      );
+      const lay = labelLayoutLocal(station({ rotation: 7, stopOffsetRow: 0, stopOffsetCol: -1 }));
       expect(lay.textAnchor).toBe('start');
     });
 
     it('snaps to S stop (in -reading half-plane, was buggy)', () => {
-      const lay = labelLayoutLocal(
-        station({ rotation: 7, stopOffsetRow: 1, stopOffsetCol: 0 }),
-      );
+      const lay = labelLayoutLocal(station({ rotation: 7, stopOffsetRow: 1, stopOffsetCol: 0 }));
       expect(lay.textAnchor).toBe('start');
     });
 
     it('snaps to E stop (in +reading half-plane, was buggy)', () => {
-      const lay = labelLayoutLocal(
-        station({ rotation: 7, stopOffsetRow: 0, stopOffsetCol: 1 }),
-      );
+      const lay = labelLayoutLocal(station({ rotation: 7, stopOffsetRow: 0, stopOffsetCol: 1 }));
       expect(lay.textAnchor).toBe('end');
     });
 
     it('snaps to N stop (in +reading half-plane, was buggy)', () => {
-      const lay = labelLayoutLocal(
-        station({ rotation: 7, stopOffsetRow: -1, stopOffsetCol: 0 }),
-      );
+      const lay = labelLayoutLocal(station({ rotation: 7, stopOffsetRow: -1, stopOffsetCol: 0 }));
       expect(lay.textAnchor).toBe('end');
     });
 
     it('does NOT snap to perpendicular NW stop', () => {
-      const lay = labelLayoutLocal(
-        station({ rotation: 7, stopOffsetRow: -1, stopOffsetCol: -1 }),
-      );
+      const lay = labelLayoutLocal(station({ rotation: 7, stopOffsetRow: -1, stopOffsetCol: -1 }));
       expect(lay.textAnchor).toBe('middle');
     });
 
     it('does NOT snap to perpendicular SE stop', () => {
-      const lay = labelLayoutLocal(
-        station({ rotation: 7, stopOffsetRow: 1, stopOffsetCol: 1 }),
-      );
+      const lay = labelLayoutLocal(station({ rotation: 7, stopOffsetRow: 1, stopOffsetCol: 1 }));
       expect(lay.textAnchor).toBe('middle');
     });
   });
