@@ -15,7 +15,14 @@ describe('addStation', () => {
       rotation: 0,
       stops: [],
     });
-    expect(doc.stations.s1.label).toEqual({ row: 0, col: -1, rotation: 0, offset: 0 });
+    expect(doc.stations.s1.label).toEqual({
+      row: 0,
+      col: -1,
+      rotation: 0,
+      offset: 0,
+      align: 'auto',
+      valign: 'middle',
+    });
   });
 });
 
@@ -177,7 +184,7 @@ describe('rotateStationAndLayout', () => {
           id: 's1',
           rotation: 3,
           stops: [makeStop('L1', { row: 1, col: 2, orientation: 'up' })],
-          label: { row: 0, col: -1, rotation: 1, offset: 0 },
+          label: { row: 0, col: -1, rotation: 1, offset: 0, align: 'auto', valign: 'middle' },
         }),
       ],
     });
@@ -373,7 +380,7 @@ describe('moveStop', () => {
         makeStation({
           id: 's1',
           stops: [makeStop('L1', { row: 0, col: 0 })],
-          label: { row: 0, col: 1, rotation: 0, offset: 0 },
+          label: { row: 0, col: 1, rotation: 0, offset: 0, align: 'auto', valign: 'middle' },
         }),
       ],
     });
@@ -437,7 +444,7 @@ describe('moveLabel', () => {
         makeStation({
           id: 's1',
           stops: [makeStop('L1', { row: 0, col: 1 })],
-          label: { row: 0, col: 0, rotation: 0, offset: 0 },
+          label: { row: 0, col: 0, rotation: 0, offset: 0, align: 'auto', valign: 'middle' },
         }),
       ],
     });
@@ -457,7 +464,7 @@ describe('rotateLabel / flipLabel', () => {
       stations: [
         makeStation({
           id: 's1',
-          label: { row: 0, col: -1, rotation: 7, offset: 0 },
+          label: { row: 0, col: -1, rotation: 7, offset: 0, align: 'auto', valign: 'middle' },
         }),
       ],
     });
@@ -469,7 +476,7 @@ describe('rotateLabel / flipLabel', () => {
       stations: [
         makeStation({
           id: 's1',
-          label: { row: 5, col: 7, rotation: 1, offset: 3 },
+          label: { row: 5, col: 7, rotation: 1, offset: 3, align: 'auto', valign: 'middle' },
         }),
       ],
     });
@@ -484,7 +491,7 @@ describe('mirrorLabel', () => {
       stations: [
         makeStation({
           id: 's1',
-          label: { row: 0, col: -1, rotation: 0, offset: 0 },
+          label: { row: 0, col: -1, rotation: 0, offset: 0, align: 'auto', valign: 'middle' },
         }),
       ],
     });
@@ -504,7 +511,7 @@ describe('mirrorLabel', () => {
             makeStop('L1', { row: 0, col: 1 }),
             makeStop('L1', { row: 0, col: 2 }),
           ],
-          label: { row: 0, col: -1, rotation: 0, offset: 0 },
+          label: { row: 0, col: -1, rotation: 0, offset: 0, align: 'auto', valign: 'middle' },
         }),
       ],
     });

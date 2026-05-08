@@ -1,11 +1,11 @@
 import type { Pt } from './polygonUnion';
 import type { RouteBullet, Station, StationId } from '../model/types';
-import { DIR_8, STOP_SIZE, stopCenterAt } from './orientation';
+import { STOP_SIZE, stopCenterAt } from './orientation';
+import { labelLayoutLocal } from './labelLayout';
 import { rectIntersectsPolygon, type AABB } from './rectPolygon';
 
 const HALF = STOP_SIZE / 2;
 const HIT_PAD = 2;
-const LABEL_GAP = 5;
 
 /**
  * The two rectangular components of a station's selection silhouette in
@@ -31,57 +31,10 @@ export function stationBoundaryRectsLocal(station: Station): StationBoundaryRect
   const minCol = Math.min(...allCells.map((c) => c.col));
   const maxCol = Math.max(...allCells.map((c) => c.col));
 
-  const isAdjacent = (row: number, col: number) => {
-    if (stops.some((s) => s.row === row && s.col === col)) return true;
-    if (phantomDot && phantomDot.row === row && phantomDot.col === col) return true;
-    return false;
-  };
-
-  // Mirrors StationView label-anchor math so the hit/wash polygons agree
-  // exactly with what's painted.
-  const labelCenter = stopCenterAt(label.row, label.col);
-  const dirPlus = DIR_8[label.rotation];
-  const dirMinus = DIR_8[(label.rotation + 4) % 8];
-  const adjPlus = isAdjacent(label.row + dirPlus.dRow, label.col + dirPlus.dCol);
-  const adjMinus = isAdjacent(label.row + dirMinus.dRow, label.col + dirMinus.dCol);
-  let labelTextAnchor: 'start' | 'middle' | 'end' = 'middle';
-  let labelAnchorX = labelCenter.x;
-  let labelAnchorY = labelCenter.y;
-  const readAngle = (label.rotation * Math.PI) / 4;
-  const readCos = Math.cos(readAngle);
-  const readSin = Math.sin(readAngle);
-  if (adjPlus) {
-    labelTextAnchor = 'end';
-    labelAnchorX = labelCenter.x + dirPlus.anchor.x - LABEL_GAP * readCos;
-    labelAnchorY = labelCenter.y + dirPlus.anchor.y - LABEL_GAP * readSin;
-  } else if (adjMinus) {
-    labelTextAnchor = 'start';
-    labelAnchorX = labelCenter.x + dirMinus.anchor.x + LABEL_GAP * readCos;
-    labelAnchorY = labelCenter.y + dirMinus.anchor.y + LABEL_GAP * readSin;
-  }
-  if (label.offset) {
-    labelAnchorX += label.offset * readCos;
-    labelAnchorY += label.offset * readSin;
-  }
-
   const cellsHitX = stopCenterAt(0, minCol).x - HALF - HIT_PAD;
   const cellsHitY = stopCenterAt(minRow, 0).y - HALF - HIT_PAD;
   const cellsHitW = stopCenterAt(0, maxCol).x + HALF + HIT_PAD - cellsHitX;
   const cellsHitH = stopCenterAt(maxRow, 0).y + HALF + HIT_PAD - cellsHitY;
-  const nameLines = station.name.split('\n');
-  const longestLineLen = nameLines.reduce((m, l) => Math.max(m, l.length), 0);
-  const textW = Math.max(20, longestLineLen * 7);
-  const textHalfH = 7;
-  const LABEL_LINE_HEIGHT = 14;
-  const extraLines = nameLines.length - 1;
-  let textXMin: number;
-  if (labelTextAnchor === 'start') textXMin = labelAnchorX;
-  else if (labelTextAnchor === 'end') textXMin = labelAnchorX - textW;
-  else textXMin = labelAnchorX - textW / 2;
-  const labelHitX = textXMin - HIT_PAD;
-  const labelHitY = labelAnchorY - textHalfH - HIT_PAD;
-  const labelHitW = textW + 2 * HIT_PAD;
-  const labelHitH = 2 * textHalfH + extraLines * LABEL_LINE_HEIGHT + 2 * HIT_PAD;
 
   const cells: Pt[] = [
     { x: cellsHitX, y: cellsHitY },
@@ -90,22 +43,25 @@ export function stationBoundaryRectsLocal(station: Station): StationBoundaryRect
     { x: cellsHitX, y: cellsHitY + cellsHitH },
   ];
 
+  // Label rect — same layout the renderer uses, then rotated about the
+  // anchor so the polygon aligns with the painted text.
+  const lay = labelLayoutLocal(station);
   const labelAng = (label.rotation * Math.PI) / 4;
   const cosL = Math.cos(labelAng);
   const sinL = Math.sin(labelAng);
   const rotateLabelCorner = (px: number, py: number): Pt => {
-    const dx = px - labelAnchorX;
-    const dy = py - labelAnchorY;
+    const dx = px - lay.anchorX;
+    const dy = py - lay.anchorY;
     return {
-      x: labelAnchorX + dx * cosL - dy * sinL,
-      y: labelAnchorY + dx * sinL + dy * cosL,
+      x: lay.anchorX + dx * cosL - dy * sinL,
+      y: lay.anchorY + dx * sinL + dy * cosL,
     };
   };
   const labelPoly: Pt[] = [
-    rotateLabelCorner(labelHitX, labelHitY),
-    rotateLabelCorner(labelHitX + labelHitW, labelHitY),
-    rotateLabelCorner(labelHitX + labelHitW, labelHitY + labelHitH),
-    rotateLabelCorner(labelHitX, labelHitY + labelHitH),
+    rotateLabelCorner(lay.hitX, lay.hitY),
+    rotateLabelCorner(lay.hitX + lay.hitW, lay.hitY),
+    rotateLabelCorner(lay.hitX + lay.hitW, lay.hitY + lay.hitH),
+    rotateLabelCorner(lay.hitX, lay.hitY + lay.hitH),
   ];
 
   return { cells, label: labelPoly };

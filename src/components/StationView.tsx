@@ -1,8 +1,9 @@
 import { useEffect, useLayoutEffect, useRef, useState } from 'react';
 import { Line, LineId, Station } from '../model/types';
 import { beginHistoryGroup, dragState, useDoc, useSelection } from '../state/store';
-import { DIR_8, STOP_DOT_RADIUS, STOP_SIZE, stopCenterAt } from '../geometry/orientation';
+import { STOP_DOT_RADIUS, STOP_SIZE, stopCenterAt } from '../geometry/orientation';
 import { polygonsToPath, unionConvex } from '../geometry/polygonUnion';
+import { labelLayoutLocal } from '../geometry/labelLayout';
 import { stationBoundaryRectsLocal } from '../geometry/stationBoundary';
 import { pathBetweenStations } from '../model/pathSelect';
 import { legibleTextOn } from '../util/color';
@@ -219,67 +220,35 @@ export function StationView({
   const minCol = Math.min(...allCells.map((c) => c.col));
   const maxCol = Math.max(...allCells.map((c) => c.col));
 
-  const isAdjacent = (row: number, col: number) => {
-    if (stops.some((s) => s.row === row && s.col === col)) return true;
-    if (phantomDot && phantomDot.row === row && phantomDot.col === col) return true;
-    return false;
-  };
+  // Label layout — anchor, text-anchor, dominant baseline, and the hit rect
+  // around the painted text. Shared with stationBoundary so the wash
+  // silhouette and the hit-test rect always agree with the visible text.
+  const {
+    anchorX: labelAnchorX,
+    anchorY: labelAnchorY,
+    textAnchor: labelTextAnchor,
+    baseline: labelBaseline,
+    hitX: labelHitX,
+    hitY: labelHitY,
+    hitW: labelHitW,
+    hitH: labelHitH,
+  } = labelLayoutLocal(station);
+  const nameLines = station.name.split('\n');
 
-  // Label render: figure out which side of the label cell the text anchors to.
-  const labelCenter = stopCenterAt(label.row, label.col);
-  const dirPlus = DIR_8[label.rotation];
-  const dirMinus = DIR_8[(label.rotation + 4) % 8];
-  const adjPlus = isAdjacent(label.row + dirPlus.dRow, label.col + dirPlus.dCol);
-  const adjMinus = isAdjacent(label.row + dirMinus.dRow, label.col + dirMinus.dCol);
-  let labelTextAnchor: 'start' | 'middle' | 'end' = 'middle';
-  let labelAnchorX = labelCenter.x;
-  let labelAnchorY = labelCenter.y;
-  // Visual gap so the text never butts right against the adjacent stop.
-  const LABEL_GAP = 5;
-  const readAngle = (label.rotation * Math.PI) / 4;
-  const readCos = Math.cos(readAngle);
-  const readSin = Math.sin(readAngle);
-  if (adjPlus) {
-    labelTextAnchor = 'end';
-    // Anchor sits at the +readingDir edge of the cell, then back off by
-    // LABEL_GAP in -readingDir so the text isn't touching the stop.
-    labelAnchorX = labelCenter.x + dirPlus.anchor.x - LABEL_GAP * readCos;
-    labelAnchorY = labelCenter.y + dirPlus.anchor.y - LABEL_GAP * readSin;
-  } else if (adjMinus) {
-    labelTextAnchor = 'start';
-    labelAnchorX = labelCenter.x + dirMinus.anchor.x + LABEL_GAP * readCos;
-    labelAnchorY = labelCenter.y + dirMinus.anchor.y + LABEL_GAP * readSin;
-  }
-  // Per-label offset: shifts along the reading direction.
-  if (label.offset) {
-    labelAnchorX += label.offset * readCos;
-    labelAnchorY += label.offset * readSin;
-  }
-
-  // Hit shapes: a rect tight to the cells (axis-aligned in local coords) and
-  // a rect tight to the label text (rotated about the label anchor to match
-  // the label's reading direction). Two tight rects beat one big union AABB:
-  // a long diagonal label's AABB blows up well past the visible text.
+  // Cells AABB hit rect.
   const HIT_PAD = 2;
   const cellsHitX = stopCenterAt(0, minCol).x - half - HIT_PAD;
   const cellsHitY = stopCenterAt(minRow, 0).y - half - HIT_PAD;
   const cellsHitW = stopCenterAt(0, maxCol).x + half + HIT_PAD - cellsHitX;
   const cellsHitH = stopCenterAt(maxRow, 0).y + half + HIT_PAD - cellsHitY;
-  const nameLines = station.name.split('\n');
+  const labelHitTransform = `rotate(${label.rotation * 45} ${labelAnchorX} ${labelAnchorY})`;
+
+  // Inline rename editor anchors to the label cell (not the text anchor),
+  // so the textarea always opens centered on the L cell regardless of
+  // alignment.
+  const labelCenter = stopCenterAt(label.row, label.col);
   const longestLineLen = nameLines.reduce((m, l) => Math.max(m, l.length), 0);
   const textW = Math.max(20, longestLineLen * 7);
-  const textHalfH = 7;
-  const LABEL_LINE_HEIGHT = 14;
-  const extraLines = nameLines.length - 1;
-  let textXMin: number;
-  if (labelTextAnchor === 'start') textXMin = labelAnchorX;
-  else if (labelTextAnchor === 'end') textXMin = labelAnchorX - textW;
-  else textXMin = labelAnchorX - textW / 2;
-  const labelHitX = textXMin - HIT_PAD;
-  const labelHitY = labelAnchorY - textHalfH - HIT_PAD;
-  const labelHitW = textW + 2 * HIT_PAD;
-  const labelHitH = 2 * textHalfH + extraLines * LABEL_LINE_HEIGHT + 2 * HIT_PAD;
-  const labelHitTransform = `rotate(${label.rotation * 45} ${labelAnchorX} ${labelAnchorY})`;
 
   const isEditing = selection.editingStationId === station.id;
 
@@ -398,7 +367,7 @@ export function StationView({
           x={labelAnchorX}
           y={labelAnchorY}
           textAnchor={labelTextAnchor}
-          dominantBaseline="central"
+          dominantBaseline={labelBaseline}
           fontSize={12}
           fontWeight={700}
           textDecoration={selection.hoveredStationId === station.id ? 'underline' : undefined}
@@ -430,7 +399,7 @@ export function StationView({
           x={labelAnchorX}
           y={labelAnchorY}
           textAnchor={labelTextAnchor}
-          dominantBaseline="central"
+          dominantBaseline={labelBaseline}
           fontSize={12}
           fontWeight={selection.hoveredStationId === station.id ? 700 : 400}
           textDecoration={selection.hoveredStationId === station.id ? 'underline' : undefined}
@@ -483,7 +452,7 @@ export function StationView({
             x={labelAnchorX}
             y={labelAnchorY}
             textAnchor={labelTextAnchor}
-            dominantBaseline="central"
+            dominantBaseline={labelBaseline}
             fontSize={12}
             fontWeight={selection.hoveredStationId === station.id ? 700 : 400}
             textDecoration={selection.hoveredStationId === station.id ? 'underline' : undefined}

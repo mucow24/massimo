@@ -4,6 +4,7 @@ import type { StationId } from '../../model/types';
 import { findMatchingStations } from '../../model/matching';
 import { StopGrid } from './StopGrid';
 import { LabelOffsetControl } from './LabelOffsetControl';
+import { LabelAlignButton, LabelValignButton } from './LabelAlignButtons';
 import { useFieldHistory } from '../useFieldHistory';
 import { StationShapePicker } from '../StationShapePicker';
 
@@ -19,6 +20,10 @@ export function StationInspector({ id }: { id: StationId }) {
   const moveLabelAction = useDoc((s) => s.moveLabel);
   const rotateLabelAction = useDoc((s) => s.rotateLabel);
   const setLabelOffset = useDoc((s) => s.setLabelOffset);
+  const cycleLabelAlign = useDoc((s) => s.cycleLabelAlign);
+  const setLabelAlign = useDoc((s) => s.setLabelAlign);
+  const cycleLabelValign = useDoc((s) => s.cycleLabelValign);
+  const setLabelValign = useDoc((s) => s.setLabelValign);
   const setDotShape = useDoc((s) => s.setDotShape);
   const selection = useSelection();
   const nameField = useFieldHistory();
@@ -106,14 +111,14 @@ export function StationInspector({ id }: { id: StationId }) {
             type="number"
             value={Math.round(station.x)}
             onChange={(e) => moveStation(station.id, Number(e.target.value), station.y)}
-            style={{ width: 70 }}
+            style={{ width: 44 }}
             {...xField}
           />
           <input
             type="number"
             value={Math.round(station.y)}
             onChange={(e) => moveStation(station.id, station.x, Number(e.target.value))}
-            style={{ width: 70 }}
+            style={{ width: 44 }}
             {...yField}
           />
           <button
@@ -162,6 +167,40 @@ export function StationInspector({ id }: { id: StationId }) {
               }}
             />
           </div>
+          <LabelAlignButton
+            align={station.label.align}
+            onCycle={() => {
+              // Cycle the primary station; in mirror mode, force matching
+              // stations to the SAME resulting align so the group stays in
+              // sync (per-station cycle would diverge if their starts differ).
+              // Whole batch becomes one undo entry.
+              const useMirror = selection.mirrorMatching && matchingIds.length > 0;
+              const group = useMirror ? beginHistoryGroup() : null;
+              cycleLabelAlign(station.id);
+              if (useMirror) {
+                const next = useDoc.getState().stations[station.id]?.label.align;
+                if (next) {
+                  for (const sid of matchingIds) setLabelAlign(sid, next);
+                }
+              }
+              group?.commit();
+            }}
+          />
+          <LabelValignButton
+            valign={station.label.valign}
+            onCycle={() => {
+              const useMirror = selection.mirrorMatching && matchingIds.length > 0;
+              const group = useMirror ? beginHistoryGroup() : null;
+              cycleLabelValign(station.id);
+              if (useMirror) {
+                const next = useDoc.getState().stations[station.id]?.label.valign;
+                if (next) {
+                  for (const sid of matchingIds) setLabelValign(sid, next);
+                }
+              }
+              group?.commit();
+            }}
+          />
         </div>
       </div>
       <div className="field">

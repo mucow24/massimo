@@ -36,7 +36,7 @@ describe('stationBoundaryRectsLocal', () => {
       // Push label far away so it doesn't overlap or extend the cells AABB
       // (cells AABB includes the label cell when both are at the same row/col
       // group — see allCells in StationView).
-      label: { row: 0, col: 0, rotation: 0, offset: 0 },
+      label: { row: 0, col: 0, rotation: 0, offset: 0, align: 'auto', valign: 'middle' },
     });
     const { cells } = stationBoundaryRectsLocal(st);
     const xs = cells.map((p) => p.x);
@@ -57,7 +57,7 @@ describe('stationBoundaryRectsLocal', () => {
       y: 0,
       rotation: 0,
       stops: [makeStop('L1', { row: 0, col: 0 })],
-      label: { row: 0, col: -1, rotation: 1, offset: 0 }, // 45°
+      label: { row: 0, col: -1, rotation: 1, offset: 0, align: 'auto', valign: 'middle' }, // 45°
     });
     const upright = stationBoundaryRectsLocal(stUpright).label;
     const diag = stationBoundaryRectsLocal(stDiag).label;
