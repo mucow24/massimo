@@ -1,4 +1,4 @@
-import { useEffect, useRef } from 'react';
+import { useEffect, useLayoutEffect, useRef, useState } from 'react';
 import { Line, LineId, Station } from '../model/types';
 import { beginHistoryGroup, dragState, useDoc, useSelection } from '../state/store';
 import { DIR_8, STOP_DOT_RADIUS, STOP_SIZE, stopCenterAt } from '../geometry/orientation';
@@ -265,8 +265,12 @@ export function StationView({
   const cellsHitY = stopCenterAt(minRow, 0).y - half - HIT_PAD;
   const cellsHitW = stopCenterAt(0, maxCol).x + half + HIT_PAD - cellsHitX;
   const cellsHitH = stopCenterAt(maxRow, 0).y + half + HIT_PAD - cellsHitY;
-  const textW = Math.max(20, station.name.length * 7);
+  const nameLines = station.name.split('\n');
+  const longestLineLen = nameLines.reduce((m, l) => Math.max(m, l.length), 0);
+  const textW = Math.max(20, longestLineLen * 7);
   const textHalfH = 7;
+  const LABEL_LINE_HEIGHT = 14;
+  const extraLines = nameLines.length - 1;
   let textXMin: number;
   if (labelTextAnchor === 'start') textXMin = labelAnchorX;
   else if (labelTextAnchor === 'end') textXMin = labelAnchorX - textW;
@@ -274,7 +278,7 @@ export function StationView({
   const labelHitX = textXMin - HIT_PAD;
   const labelHitY = labelAnchorY - textHalfH - HIT_PAD;
   const labelHitW = textW + 2 * HIT_PAD;
-  const labelHitH = 2 * textHalfH + 2 * HIT_PAD;
+  const labelHitH = 2 * textHalfH + extraLines * LABEL_LINE_HEIGHT + 2 * HIT_PAD;
   const labelHitTransform = `rotate(${label.rotation * 45} ${labelAnchorX} ${labelAnchorY})`;
 
   const isEditing = selection.editingStationId === station.id;
@@ -403,9 +407,14 @@ export function StationView({
           stroke={strokeColor}
           strokeWidth={2}
           paintOrder="stroke"
+          xmlSpace="preserve"
           transform={`rotate(${label.rotation * 45} ${labelAnchorX} ${labelAnchorY})`}
         >
-          {station.name}
+          {nameLines.map((line, i) => (
+            <tspan key={i} x={labelAnchorX} dy={i === 0 ? 0 : '1.2em'}>
+              {line}
+            </tspan>
+          ))}
         </text>
       </g>
     );
@@ -427,9 +436,14 @@ export function StationView({
           textDecoration={selection.hoveredStationId === station.id ? 'underline' : undefined}
           pointerEvents="none"
           fill={highlightColor}
+          xmlSpace="preserve"
           transform={`rotate(${label.rotation * 45} ${labelAnchorX} ${labelAnchorY})`}
         >
-          {station.name}
+          {nameLines.map((line, i) => (
+            <tspan key={i} x={labelAnchorX} dy={i === 0 ? 0 : '1.2em'}>
+              {line}
+            </tspan>
+          ))}
         </text>
       </g>
     );
@@ -475,9 +489,14 @@ export function StationView({
             textDecoration={selection.hoveredStationId === station.id ? 'underline' : undefined}
             pointerEvents="none"
             fill="#111"
+            xmlSpace="preserve"
             transform={`rotate(${label.rotation * 45} ${labelAnchorX} ${labelAnchorY})`}
           >
-            {station.name}
+            {nameLines.map((line, i) => (
+              <tspan key={i} x={labelAnchorX} dy={i === 0 ? 0 : '1.2em'}>
+                {line}
+              </tspan>
+            ))}
           </text>
         )}
       </g>
@@ -548,7 +567,8 @@ function NameEditor({
   onChange: (v: string) => void;
   onCommit: () => void;
 }) {
-  const ref = useRef<HTMLInputElement | null>(null);
+  const ref = useRef<HTMLTextAreaElement | null>(null);
+  const [editorHeight, setEditorHeight] = useState(20);
   // Open a history group on mount. Doing this in useEffect (rather than via
   // an onFocus handler) sidesteps any uncertainty about whether the synthetic
   // focus event fires for an input inside a foreignObject when el.focus() is
@@ -565,14 +585,33 @@ function NameEditor({
     };
   }, []);
 
+  // Reset to 'auto' before reading scrollHeight so the textarea can shrink
+  // when lines are removed, then snap to content height (with a sane floor).
+  useLayoutEffect(() => {
+    const el = ref.current;
+    if (!el) return;
+    el.style.height = 'auto';
+    const h = Math.max(20, el.scrollHeight);
+    el.style.height = h + 'px';
+    setEditorHeight((prev) => (prev === h ? prev : h));
+  }, [value]);
+
   const closeEditor = () => {
     groupRef.current?.commit();
     groupRef.current = null;
     onCommit();
   };
 
-  const onKey = (e: React.KeyboardEvent<HTMLInputElement>) => {
-    if (e.key === 'Enter' || e.key === 'Escape') {
+  const onKey = (e: React.KeyboardEvent<HTMLTextAreaElement>) => {
+    // Enter commits (preserves single-line muscle memory). Shift+Enter
+    // inserts a newline so labels can be multiline.
+    if (e.key === 'Enter' && !e.shiftKey) {
+      e.preventDefault();
+      closeEditor();
+      e.stopPropagation();
+      return;
+    }
+    if (e.key === 'Escape') {
       e.preventDefault();
       closeEditor();
       e.stopPropagation();
@@ -603,10 +642,10 @@ function NameEditor({
   };
 
   return (
-    <foreignObject x={x} y={y} width={width} height={20} style={{ overflow: 'visible' }}>
-      <input
+    <foreignObject x={x} y={y} width={width} height={editorHeight} style={{ overflow: 'visible' }}>
+      <textarea
         ref={ref}
-        type="text"
+        rows={1}
         value={value}
         onChange={(e) => onChange(e.target.value)}
         onBlur={closeEditor}
@@ -625,7 +664,11 @@ function NameEditor({
           background: '#fff',
           textAlign: 'right',
           fontFamily: 'inherit',
+          lineHeight: '1.2',
           boxSizing: 'border-box',
+          resize: 'none',
+          overflow: 'hidden',
+          whiteSpace: 'pre',
         }}
       />
     </foreignObject>
