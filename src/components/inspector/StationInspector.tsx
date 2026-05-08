@@ -1,7 +1,8 @@
 import { useEffect, useMemo, useRef } from 'react';
 import { beginHistoryGroup, useDoc, useSelection } from '../../state/store';
 import type { StationId } from '../../model/types';
-import { findMatchingStations } from '../../model/matching';
+import { findMatchingStations, type LayoutOffset } from '../../model/matching';
+import { rotateGridDelta } from '../../geometry/orientation';
 import { StopGrid } from './StopGrid';
 import { LabelOffsetControl } from './LabelOffsetControl';
 import { LabelAlignButton, LabelValignButton } from './LabelAlignButtons';
@@ -32,24 +33,27 @@ export function StationInspector({ id }: { id: StationId }) {
   const stopAreaRef = useRef<HTMLDivElement | null>(null);
   const shapePickerRef = useRef<HTMLDivElement | null>(null);
 
-  // Stations whose unrotated stop layout is identical to this one and are
-  // adjacent on at least one line. Recomputed when stops/lines change.
-  const matchingIds = useMemo(
+  // Stations that render identically to this one (across the model's 4-fold
+  // mirror symmetry) AND share a line with it. Each carries a layoutOffset
+  // (0–3) describing how its unrotated grid maps to the source's, so callers
+  // that propagate (dRow, dCol) edits can rotate them to match.
+  const matches = useMemo(
     () => findMatchingStations({ stations: stationsAll, lines: linesAll }, id),
     [stationsAll, linesAll, id],
   );
 
-  // When mirror is on, apply `act` to the selected station and every
-  // matching station — wrapped in a single history group so undo collapses
-  // the batch into one entry. When off, behaves like a direct call.
-  const dispatchAll = (act: (sid: StationId) => void) => {
-    if (!selection.mirrorMatching || matchingIds.length === 0) {
-      act(id);
+  // When mirror is on, apply `act` to the selected station (offset 0) and
+  // every matching station (with its own offset). Wrapped in a single
+  // history group so undo collapses the batch into one entry. When off,
+  // behaves like a direct call.
+  const dispatchAll = (act: (sid: StationId, layoutOffset: LayoutOffset) => void) => {
+    if (!selection.mirrorMatching || matches.length === 0) {
+      act(id, 0);
       return;
     }
     const group = beginHistoryGroup();
-    act(id);
-    for (const sid of matchingIds) act(sid);
+    act(id, 0);
+    for (const m of matches) act(m.id, m.layoutOffset);
     group.commit();
   };
 
@@ -90,7 +94,7 @@ export function StationInspector({ id }: { id: StationId }) {
   if (!station) return null;
 
   const mirrorOn = selection.mirrorMatching;
-  const mirrorAvailable = matchingIds.length > 0;
+  const mirrorAvailable = matches.length > 0;
 
   return (
     <section className="inspector">
@@ -145,7 +149,7 @@ export function StationInspector({ id }: { id: StationId }) {
             disabled={!mirrorAvailable && !mirrorOn}
             title={
               mirrorAvailable
-                ? `Mirror layout edits to ${matchingIds.length} matching neighbor${matchingIds.length === 1 ? '' : 's'}`
+                ? `Mirror layout edits to ${matches.length} matching neighbor${matches.length === 1 ? '' : 's'}`
                 : 'No directly-connected stations share this layout'
             }
             aria-pressed={mirrorOn}
@@ -164,6 +168,7 @@ export function StationInspector({ id }: { id: StationId }) {
               onPick={(shape) => {
                 if (selectedLineId === null) return;
                 dispatchAll((sid) => setDotShape(sid, selectedLineId, shape));
+                // dotShape is rotation-invariant — no per-match transform.
               }}
             />
           </div>
@@ -174,13 +179,13 @@ export function StationInspector({ id }: { id: StationId }) {
               // stations to the SAME resulting align so the group stays in
               // sync (per-station cycle would diverge if their starts differ).
               // Whole batch becomes one undo entry.
-              const useMirror = selection.mirrorMatching && matchingIds.length > 0;
+              const useMirror = selection.mirrorMatching && matches.length > 0;
               const group = useMirror ? beginHistoryGroup() : null;
               cycleLabelAlign(station.id);
               if (useMirror) {
                 const next = useDoc.getState().stations[station.id]?.label.align;
                 if (next) {
-                  for (const sid of matchingIds) setLabelAlign(sid, next);
+                  for (const m of matches) setLabelAlign(m.id, next);
                 }
               }
               group?.commit();
@@ -189,13 +194,13 @@ export function StationInspector({ id }: { id: StationId }) {
           <LabelValignButton
             valign={station.label.valign}
             onCycle={() => {
-              const useMirror = selection.mirrorMatching && matchingIds.length > 0;
+              const useMirror = selection.mirrorMatching && matches.length > 0;
               const group = useMirror ? beginHistoryGroup() : null;
               cycleLabelValign(station.id);
               if (useMirror) {
                 const next = useDoc.getState().stations[station.id]?.label.valign;
                 if (next) {
-                  for (const sid of matchingIds) setLabelValign(sid, next);
+                  for (const m of matches) setLabelValign(m.id, next);
                 }
               }
               group?.commit();
@@ -216,9 +221,19 @@ export function StationInspector({ id }: { id: StationId }) {
             onRotateStop={(lid) => dispatchAll((sid) => rotateStopAction(sid, lid))}
             onRotateLabel={() => dispatchAll((sid) => rotateLabelAction(sid))}
             onMoveStop={(lid, dRow, dCol) =>
-              dispatchAll((sid) => moveStopAction(sid, lid, dRow, dCol))
+              dispatchAll((sid, k) => {
+                // Local-frame deltas must be rotated by the match's
+                // layoutOffset so the world-frame edit matches the source.
+                const d = rotateGridDelta(dRow, dCol, k);
+                moveStopAction(sid, lid, d.dRow, d.dCol);
+              })
             }
-            onMoveLabel={(dRow, dCol) => dispatchAll((sid) => moveLabelAction(sid, dRow, dCol))}
+            onMoveLabel={(dRow, dCol) =>
+              dispatchAll((sid, k) => {
+                const d = rotateGridDelta(dRow, dCol, k);
+                moveLabelAction(sid, d.dRow, d.dCol);
+              })
+            }
           />
         </div>
       </div>
@@ -229,7 +244,7 @@ export function StationInspector({ id }: { id: StationId }) {
           onChange={(v) => dispatchAll((sid) => setLabelOffset(sid, v))}
           indeterminate={
             mirrorOn &&
-            matchingIds.some((sid) => stationsAll[sid]?.label.offset !== station.label.offset)
+            matches.some((m) => stationsAll[m.id]?.label.offset !== station.label.offset)
           }
         />
       </div>

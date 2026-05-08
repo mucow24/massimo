@@ -60,6 +60,33 @@ export const isVerticalAxis = (o: StopOrientation): boolean =>
   o === 'up' || o === 'down' || o === 'auto-vertical';
 
 /**
+ * Rotate a grid-frame displacement (dRow, dCol) by k 90°-steps. One step
+ * matches the layout transform in `rotateStationLayoutBy90(_, +1)`:
+ *   (col, row) → (-row, col), i.e. (dRow, dCol) → (dCol, -dRow).
+ *
+ * Used by mirror-matching mass-edits: when the inspector broadcasts a
+ * moveStop / moveLabel to a matching station whose layout differs from the
+ * source by a layoutOffset of k, the (dRow, dCol) delta must be rotated by k
+ * steps so the world-frame edit stays consistent across the group.
+ */
+export const rotateGridDelta = (
+  dRow: number,
+  dCol: number,
+  k: 0 | 1 | 2 | 3,
+): { dRow: number; dCol: number } => {
+  let r = dRow;
+  let c = dCol;
+  for (let i = 0; i < k; i++) {
+    const nr = c;
+    const nc = -r;
+    r = nr;
+    c = nc;
+  }
+  // Normalize -0 to +0 so callers can compare with strict equality / toEqual.
+  return { dRow: r === 0 ? 0 : r, dCol: c === 0 ? 0 : c };
+};
+
+/**
  * Half-edge offset from a stop center to its input edge midpoint, in local
  * coords. The input edge is the one OPPOSITE the resolved travel direction,
  * so it depends on the resolved direction (±axis) — `lineHintLocal` is
