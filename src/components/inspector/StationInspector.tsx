@@ -91,10 +91,11 @@ export function StationInspector({ id }: { id: StationId }) {
     <section className="inspector">
       <div className="field">
         <label>Name</label>
-        <input
-          type="text"
+        <textarea
           value={station.name}
           onChange={(e) => renameStation(station.id, e.target.value)}
+          rows={Math.max(1, station.name.split('\n').length)}
+          style={{ resize: 'vertical', whiteSpace: 'pre', overflow: 'auto' }}
           {...nameField}
         />
       </div>
