@@ -1,5 +1,8 @@
 import { DEFAULT_DOC } from './transforms';
+import { PALETTES, type PaletteId } from './palettes';
 import type { MapDoc } from './types';
+
+const KNOWN_PALETTE_IDS = new Set<PaletteId>(PALETTES.map((p) => p.id));
 
 export const SCHEMA_FORMAT = 'massimo-map';
 
@@ -35,5 +38,15 @@ export function parse(json: string): ParseResult {
   if (!file.doc || typeof file.doc !== 'object') {
     return { ok: false, error: 'Missing `doc` field' };
   }
-  return { ok: true, doc: { ...DEFAULT_DOC, ...file.doc } };
+  const merged: MapDoc = { ...DEFAULT_DOC, ...file.doc };
+  // Enforce the "at least one valid palette" invariant on load. A malformed
+  // file with explicit `activePalettes: []` or only unknown ids would
+  // otherwise leave the doc in an unreachable-from-UI state.
+  const validPalettes = (merged.activePalettes ?? []).filter((id) => KNOWN_PALETTE_IDS.has(id));
+  if (validPalettes.length === 0) {
+    merged.activePalettes = [...DEFAULT_DOC.activePalettes];
+  } else {
+    merged.activePalettes = validPalettes;
+  }
+  return { ok: true, doc: merged };
 }

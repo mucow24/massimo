@@ -89,6 +89,7 @@ export function Toolbar() {
       labelFontSize: doc.labelFontSize,
       labelBold: doc.labelBold,
       labelItalic: doc.labelItalic,
+      activePalettes: doc.activePalettes,
     });
     const blob = new Blob([json], { type: 'application/json' });
     const url = URL.createObjectURL(blob);

@@ -16,27 +16,11 @@ import { effectiveLineOrder } from '../model/lineOrder';
 import { defaultIdFactory, IdFactory } from '../model/ids';
 import { DEFAULT_DOC } from '../model/transforms';
 import * as T from '../model/transforms';
+import { cyclingColors, type PaletteId } from '../model/palettes';
 import { randomStationName } from './stationNames';
 
 // Re-export so callers (Sidebar, etc.) keep working with one source of truth.
 export { effectiveLineOrder };
-
-// Official MTA NYC subway line trunk colors. Per the MTA developer
-// resources / NYC Subway nomenclature: each service's color corresponds to
-// the trunk line it primarily uses below 60th Street in Manhattan.
-export const MTA_PALETTE: { name: string; color: string }[] = [
-  { name: 'Blue (A·C·E)', color: '#0039A6' },
-  { name: 'Orange (B·D·F·M)', color: '#FF6319' },
-  { name: 'Lime (G)', color: '#6CBE45' },
-  { name: 'Gray (L)', color: '#A7A9AC' },
-  { name: 'Brown (J·Z)', color: '#996633' },
-  { name: 'Yellow (N·Q·R·W)', color: '#FCCC0A' },
-  { name: 'Red (1·2·3)', color: '#EE352E' },
-  { name: 'Green (4·5·6)', color: '#00933C' },
-  { name: 'Purple (7)', color: '#B933AD' },
-  { name: 'Turquoise (T)', color: '#00ADD0' },
-  { name: 'Dark Gray (S)', color: '#808183' },
-];
 
 // Auto-name sequence: A, B, ..., Z, 0, 1, ..., 9, AA, AB, ..., AZ, A0, ..., A9, BA, ...
 const ALPHABET = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789';
@@ -135,6 +119,8 @@ interface DocState extends MapDoc {
   setLabelFontSize: (n: number) => void;
   setLabelBold: (b: boolean) => void;
   setLabelItalic: (i: boolean) => void;
+  setActivePalettes: (ids: PaletteId[]) => void;
+  togglePalette: (id: PaletteId) => void;
   clearAll: () => void;
 }
 
@@ -179,7 +165,8 @@ export const useDoc = create<DocState>()(
         addLine: () => {
           const id = ids.lineId();
           set((s) => {
-            const color = MTA_PALETTE[s.lineCounter % MTA_PALETTE.length].color;
+            const cycle = cyclingColors(s.activePalettes);
+            const color = cycle[s.lineCounter % cycle.length];
             const service = pickNextLineName(s.lines);
             return T.addLine(s, id, service, color);
           });
@@ -242,6 +229,8 @@ export const useDoc = create<DocState>()(
         setLabelFontSize: (n) => set((s) => T.setLabelFontSize(s, n)),
         setLabelBold: (b) => set((s) => T.setLabelBold(s, b)),
         setLabelItalic: (i) => set((s) => T.setLabelItalic(s, i)),
+        setActivePalettes: (idsArr) => set((s) => T.setActivePalettes(s, idsArr)),
+        togglePalette: (id) => set((s) => T.togglePalette(s, id)),
         clearAll: () => set((s) => T.clearAll(s)),
       }),
       {
@@ -259,6 +248,7 @@ export const useDoc = create<DocState>()(
           labelFontSize: s.labelFontSize,
           labelBold: s.labelBold,
           labelItalic: s.labelItalic,
+          activePalettes: s.activePalettes,
         }),
       },
     ),
@@ -278,6 +268,7 @@ export const useDoc = create<DocState>()(
         labelFontSize: state.labelFontSize,
         labelBold: state.labelBold,
         labelItalic: state.labelItalic,
+        activePalettes: state.activePalettes,
       }),
       limit: 200,
     },
@@ -301,6 +292,7 @@ type DocSnapshot = Pick<
   | 'labelFontSize'
   | 'labelBold'
   | 'labelItalic'
+  | 'activePalettes'
 >;
 
 function snapshotDoc(s: DocState): DocSnapshot {
@@ -316,6 +308,7 @@ function snapshotDoc(s: DocState): DocSnapshot {
     labelFontSize: s.labelFontSize,
     labelBold: s.labelBold,
     labelItalic: s.labelItalic,
+    activePalettes: s.activePalettes,
   };
 }
 

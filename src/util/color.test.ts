@@ -1,6 +1,6 @@
 import { describe, it, expect } from 'vitest';
 import { legibleTextOn } from './color';
-import { MTA_PALETTE } from '../state/store';
+import { PALETTES } from '../model/palettes';
 
 describe('legibleTextOn', () => {
   it('returns white text on pure black', () => {
@@ -26,10 +26,12 @@ describe('legibleTextOn', () => {
     expect(legibleTextOn('#FCCC0A')).toBe('#000');
   });
 
-  it('returns either #000 or #fff for every MTA palette color', () => {
-    for (const p of MTA_PALETTE) {
-      const out = legibleTextOn(p.color);
-      expect(['#000', '#fff']).toContain(out);
+  it('returns either #000 or #fff for every swatch in every palette', () => {
+    for (const palette of PALETTES) {
+      for (const s of palette.swatches) {
+        const out = legibleTextOn(s.color);
+        expect(['#000', '#fff']).toContain(out);
+      }
     }
   });
 });

@@ -1,7 +1,8 @@
 import { useEffect, useId, useRef, useState } from 'react';
-import { MixerHorizontalIcon } from '@radix-ui/react-icons';
+import { ChevronDownIcon, ChevronRightIcon, MixerHorizontalIcon } from '@radix-ui/react-icons';
 import { useDoc } from '../state/store';
 import { LABEL_FONT_SIZE_MAX, LABEL_FONT_SIZE_MIN } from '../model/transforms';
+import { PALETTES } from '../model/palettes';
 import { useFieldHistory } from './useFieldHistory';
 import { usePopover } from './usePopover';
 
@@ -22,6 +23,10 @@ export function OptionsPopover() {
   const setLabelBold = useDoc((s) => s.setLabelBold);
   const labelItalic = useDoc((s) => s.labelItalic);
   const setLabelItalic = useDoc((s) => s.setLabelItalic);
+  const activePalettes = useDoc((s) => s.activePalettes);
+  const togglePalette = useDoc((s) => s.togglePalette);
+
+  const [palettesExpanded, setPalettesExpanded] = useState(false);
 
   const curveField = useFieldHistory();
   const fontSizeField = useFieldHistory();
@@ -137,6 +142,45 @@ export function OptionsPopover() {
             >
               <em>I</em>
             </button>
+          </div>
+
+          <div className="options-popover-row options-popover-row-block">
+            <button
+              type="button"
+              className="options-palette-disclosure"
+              aria-expanded={palettesExpanded}
+              onClick={() => setPalettesExpanded((v) => !v)}
+            >
+              {palettesExpanded ? <ChevronDownIcon /> : <ChevronRightIcon />}
+              <span>Color palettes</span>
+            </button>
+            {palettesExpanded && (
+              <div className="options-palettes">
+                {PALETTES.map((palette) => {
+                  const checked = activePalettes.includes(palette.id);
+                  const isLone = checked && activePalettes.length === 1;
+                  return (
+                    <label key={palette.id} className="options-palette-card" aria-disabled={isLone}>
+                      <div className="options-palette-card-row">
+                        <input
+                          type="checkbox"
+                          aria-label={palette.name}
+                          checked={checked}
+                          disabled={isLone}
+                          onChange={() => togglePalette(palette.id)}
+                        />
+                        <span>{palette.name}</span>
+                      </div>
+                      <div className="options-palette-strip" aria-hidden="true">
+                        {palette.swatches.map((s) => (
+                          <span key={s.color} style={{ background: s.color }} />
+                        ))}
+                      </div>
+                    </label>
+                  );
+                })}
+              </div>
+            )}
           </div>
         </div>
       )}
