@@ -18,7 +18,8 @@ describe('<ColorPalette /> sections', () => {
     const headers = Array.from(document.querySelectorAll('.color-palette-section-label')).map(
       (el) => el.textContent,
     );
-    expect(headers).toEqual(['MTA', 'BART']);
+    // BART precedes MTA alphabetically within North America.
+    expect(headers).toEqual(['BART', 'MTA']);
   });
 
   it('with only MTA active, shows the 11 MTA swatches plus the custom swatch', () => {

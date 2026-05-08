@@ -740,14 +740,15 @@ describe('activePalettes', () => {
 
   it('setActivePalettes accepts a list and stores it in PALETTES declaration order', () => {
     const doc = makeDoc({});
-    expect(T.setActivePalettes(doc, ['bart', 'mta']).activePalettes).toEqual(['mta', 'bart']);
+    // BART precedes MTA alphabetically within North America.
+    expect(T.setActivePalettes(doc, ['mta', 'bart']).activePalettes).toEqual(['bart', 'mta']);
   });
 
   it('setActivePalettes deduplicates input', () => {
     const doc = makeDoc({});
     expect(T.setActivePalettes(doc, ['bart', 'mta', 'mta', 'bart']).activePalettes).toEqual([
-      'mta',
       'bart',
+      'mta',
     ]);
   });
 
@@ -764,7 +765,8 @@ describe('activePalettes', () => {
 
   it('togglePalette adds an absent id', () => {
     const doc = T.setActivePalettes(makeDoc({}), ['mta']);
-    expect(T.togglePalette(doc, 'bart').activePalettes).toEqual(['mta', 'bart']);
+    // Result is normalised to PALETTES order — BART precedes MTA in N. America.
+    expect(T.togglePalette(doc, 'bart').activePalettes).toEqual(['bart', 'mta']);
   });
 
   it('togglePalette removes a present id', () => {

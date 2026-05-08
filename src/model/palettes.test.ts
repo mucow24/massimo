@@ -2,11 +2,57 @@ import { describe, it, expect } from 'vitest';
 import { PALETTES, activePalettes, cyclingColors, type PaletteId } from './palettes';
 
 describe('PALETTES catalog', () => {
-  it('contains mta, bart, and caltrain in declaration order', () => {
-    expect(PALETTES.map((p) => p.id)).toEqual(['mta', 'bart', 'caltrain']);
+  it('lists palettes in alphabetical order, grouped by continent (asia → europe → na)', () => {
+    expect(PALETTES.map((p) => p.id)).toEqual([
+      // Asia, alphabetical
+      'beijing-subway',
+      'mtr',
+      'shanghai-metro',
+      'tokyo-subway',
+      // Europe, alphabetical
+      'berlin-ubahn',
+      'paris-ratp',
+      'tfl',
+      // North America, alphabetical
+      'bart',
+      'caltrain',
+      'cta',
+      'la-metro',
+      'mbta',
+      'mta',
+      'muni',
+      'wmata',
+    ]);
   });
 
-  it('has the expected swatch counts per palette', () => {
+  it('every continent group is internally sorted by display name (case-insensitive)', () => {
+    const byContinent: Record<string, string[]> = {};
+    for (const p of PALETTES) {
+      (byContinent[p.continent] ??= []).push(p.name);
+    }
+    for (const names of Object.values(byContinent)) {
+      const sorted = [...names].sort((a, b) => a.localeCompare(b, 'en', { sensitivity: 'base' }));
+      expect(names).toEqual(sorted);
+    }
+  });
+
+  it('continent groups appear in alphabetical continent order, contiguously', () => {
+    const continents = PALETTES.map((p) => p.continent);
+    // Each continent appears in one contiguous block.
+    const seen = new Set<string>();
+    let prev: string | null = null;
+    for (const c of continents) {
+      if (c !== prev) {
+        expect(seen.has(c)).toBe(false);
+        seen.add(c);
+        prev = c;
+      }
+    }
+    // And the block order is alphabetical.
+    expect([...seen]).toEqual([...seen].sort());
+  });
+
+  it('preserves the existing per-palette swatch counts', () => {
     const byId = Object.fromEntries(PALETTES.map((p) => [p.id, p]));
     expect(byId.mta.swatches).toHaveLength(11);
     expect(byId.bart.swatches).toHaveLength(5);
@@ -35,12 +81,15 @@ describe('cyclingColors', () => {
   });
 
   it('concatenates active palettes in PALETTES declaration order, not input order', () => {
-    const a = cyclingColors(['bart', 'mta']);
-    const b = cyclingColors(['mta', 'bart']);
+    // BART comes before MTA in the new ordering (alphabetical within
+    // North America), so a [mta, bart] input still produces a [bart..., mta...]
+    // output.
+    const a = cyclingColors(['mta', 'bart']);
+    const b = cyclingColors(['bart', 'mta']);
     expect(a).toEqual(b);
-    expect(a).toHaveLength(16); // 11 + 5
-    expect(a.slice(0, 11)).toEqual(cyclingColors(['mta']));
-    expect(a.slice(11)).toEqual(cyclingColors(['bart']));
+    expect(a).toHaveLength(16); // 11 MTA + 5 BART
+    expect(a.slice(0, 5)).toEqual(cyclingColors(['bart']));
+    expect(a.slice(5)).toEqual(cyclingColors(['mta']));
   });
 
   it('drops unknown ids silently', () => {
@@ -50,7 +99,8 @@ describe('cyclingColors', () => {
 
 describe('activePalettes', () => {
   it('returns palettes in PALETTES declaration order regardless of input order', () => {
-    expect(activePalettes(['caltrain', 'mta']).map((p) => p.id)).toEqual(['mta', 'caltrain']);
+    // BART comes before MTA in N. America (alphabetical).
+    expect(activePalettes(['mta', 'bart']).map((p) => p.id)).toEqual(['bart', 'mta']);
   });
 
   it('drops unknown ids silently', () => {
