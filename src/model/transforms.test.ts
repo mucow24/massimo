@@ -685,6 +685,54 @@ describe('setCurveRadius / clearAll', () => {
   });
 });
 
+describe('label font/style settings', () => {
+  it('exposes font-size bounds and default as constants', () => {
+    expect(T.LABEL_FONT_SIZE_MIN).toBe(2);
+    expect(T.LABEL_FONT_SIZE_MAX).toBe(24);
+    expect(T.LABEL_FONT_SIZE_DEFAULT).toBe(12);
+  });
+
+  it('DEFAULT_DOC has sensible defaults', () => {
+    expect(T.DEFAULT_DOC.labelFontSize).toBe(12);
+    expect(T.DEFAULT_DOC.labelBold).toBe(false);
+    expect(T.DEFAULT_DOC.labelItalic).toBe(false);
+  });
+
+  it('setLabelFontSize sets a valid value', () => {
+    const doc = makeDoc({});
+    expect(T.setLabelFontSize(doc, 16).labelFontSize).toBe(16);
+  });
+
+  it('setLabelFontSize clamps below the minimum', () => {
+    const doc = makeDoc({});
+    expect(T.setLabelFontSize(doc, 0).labelFontSize).toBe(2);
+    expect(T.setLabelFontSize(doc, -5).labelFontSize).toBe(2);
+  });
+
+  it('setLabelFontSize clamps above the maximum', () => {
+    const doc = makeDoc({});
+    expect(T.setLabelFontSize(doc, 99).labelFontSize).toBe(24);
+  });
+
+  it('setLabelFontSize rounds fractional values', () => {
+    const doc = makeDoc({});
+    expect(T.setLabelFontSize(doc, 12.7).labelFontSize).toBe(13);
+    expect(T.setLabelFontSize(doc, 12.4).labelFontSize).toBe(12);
+  });
+
+  it('setLabelBold flips the boolean', () => {
+    const doc = makeDoc({});
+    expect(T.setLabelBold(doc, true).labelBold).toBe(true);
+    expect(T.setLabelBold(T.setLabelBold(doc, true), false).labelBold).toBe(false);
+  });
+
+  it('setLabelItalic flips the boolean', () => {
+    const doc = makeDoc({});
+    expect(T.setLabelItalic(doc, true).labelItalic).toBe(true);
+    expect(T.setLabelItalic(T.setLabelItalic(doc, true), false).labelItalic).toBe(false);
+  });
+});
+
 describe('addLine — lineCounter', () => {
   it('increments lineCounter on each addLine', () => {
     let doc = makeDoc({});

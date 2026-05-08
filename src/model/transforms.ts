@@ -18,6 +18,10 @@ import type {
   Transfer,
 } from './types';
 
+export const LABEL_FONT_SIZE_MIN = 2;
+export const LABEL_FONT_SIZE_MAX = 24;
+export const LABEL_FONT_SIZE_DEFAULT = 12;
+
 export const DEFAULT_DOC: MapDoc = {
   stations: {},
   lines: {},
@@ -27,6 +31,9 @@ export const DEFAULT_DOC: MapDoc = {
   lineTags: {},
   routeBullets: {},
   transfers: {},
+  labelFontSize: LABEL_FONT_SIZE_DEFAULT,
+  labelBold: false,
+  labelItalic: false,
 };
 
 // ---------- Stations ----------
@@ -793,6 +800,25 @@ export function moveLineInOrder(doc: MapDoc, id: LineId, dir: -1 | 1): MapDoc {
 
 export function setCurveRadius(doc: MapDoc, r: number): MapDoc {
   return { ...doc, curveRadius: r };
+}
+
+export function setLabelFontSize(doc: MapDoc, n: number): MapDoc {
+  const clamped = Math.max(
+    LABEL_FONT_SIZE_MIN,
+    Math.min(LABEL_FONT_SIZE_MAX, Math.round(n)),
+  );
+  if (clamped === doc.labelFontSize) return doc;
+  return { ...doc, labelFontSize: clamped };
+}
+
+export function setLabelBold(doc: MapDoc, b: boolean): MapDoc {
+  if (b === doc.labelBold) return doc;
+  return { ...doc, labelBold: b };
+}
+
+export function setLabelItalic(doc: MapDoc, i: boolean): MapDoc {
+  if (i === doc.labelItalic) return doc;
+  return { ...doc, labelItalic: i };
 }
 
 export function clearAll(_doc: MapDoc): MapDoc {

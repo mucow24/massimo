@@ -132,6 +132,9 @@ interface DocState extends MapDoc {
   deleteTransfer: (id: string) => void;
 
   setCurveRadius: (r: number) => void;
+  setLabelFontSize: (n: number) => void;
+  setLabelBold: (b: boolean) => void;
+  setLabelItalic: (i: boolean) => void;
   clearAll: () => void;
 }
 
@@ -236,6 +239,9 @@ export const useDoc = create<DocState>()(
         deleteTransfer: (id) => set((s) => T.deleteTransfer(s, id)),
 
         setCurveRadius: (r) => set((s) => T.setCurveRadius(s, r)),
+        setLabelFontSize: (n) => set((s) => T.setLabelFontSize(s, n)),
+        setLabelBold: (b) => set((s) => T.setLabelBold(s, b)),
+        setLabelItalic: (i) => set((s) => T.setLabelItalic(s, i)),
         clearAll: () => set((s) => T.clearAll(s)),
       }),
       {
@@ -250,6 +256,9 @@ export const useDoc = create<DocState>()(
           lineTags: s.lineTags,
           routeBullets: s.routeBullets,
           transfers: s.transfers,
+          labelFontSize: s.labelFontSize,
+          labelBold: s.labelBold,
+          labelItalic: s.labelItalic,
         }),
       },
     ),
@@ -266,6 +275,9 @@ export const useDoc = create<DocState>()(
         lineTags: state.lineTags,
         routeBullets: state.routeBullets,
         transfers: state.transfers,
+        labelFontSize: state.labelFontSize,
+        labelBold: state.labelBold,
+        labelItalic: state.labelItalic,
       }),
       limit: 200,
     },
@@ -286,6 +298,9 @@ type DocSnapshot = Pick<
   | 'lineTags'
   | 'routeBullets'
   | 'transfers'
+  | 'labelFontSize'
+  | 'labelBold'
+  | 'labelItalic'
 >;
 
 function snapshotDoc(s: DocState): DocSnapshot {
@@ -298,6 +313,9 @@ function snapshotDoc(s: DocState): DocSnapshot {
     lineTags: s.lineTags,
     routeBullets: s.routeBullets,
     transfers: s.transfers,
+    labelFontSize: s.labelFontSize,
+    labelBold: s.labelBold,
+    labelItalic: s.labelItalic,
   };
 }
 
