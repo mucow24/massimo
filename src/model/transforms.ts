@@ -805,10 +805,7 @@ export function setCurveRadius(doc: MapDoc, r: number): MapDoc {
 }
 
 export function setLabelFontSize(doc: MapDoc, n: number): MapDoc {
-  const clamped = Math.max(
-    LABEL_FONT_SIZE_MIN,
-    Math.min(LABEL_FONT_SIZE_MAX, Math.round(n)),
-  );
+  const clamped = Math.max(LABEL_FONT_SIZE_MIN, Math.min(LABEL_FONT_SIZE_MAX, Math.round(n)));
   if (clamped === doc.labelFontSize) return doc;
   return { ...doc, labelFontSize: clamped };
 }
