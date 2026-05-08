@@ -228,6 +228,7 @@ export function StationView({
     anchorY: labelAnchorY,
     textAnchor: labelTextAnchor,
     baseline: labelBaseline,
+    firstLineDy: labelFirstLineDy,
     hitX: labelHitX,
     hitY: labelHitY,
     hitW: labelHitW,
@@ -380,7 +381,7 @@ export function StationView({
           transform={`rotate(${label.rotation * 45} ${labelAnchorX} ${labelAnchorY})`}
         >
           {nameLines.map((line, i) => (
-            <tspan key={i} x={labelAnchorX} dy={i === 0 ? 0 : '1.2em'}>
+            <tspan key={i} x={labelAnchorX} dy={i === 0 ? labelFirstLineDy : '1.2em'}>
               {line}
             </tspan>
           ))}
@@ -409,7 +410,7 @@ export function StationView({
           transform={`rotate(${label.rotation * 45} ${labelAnchorX} ${labelAnchorY})`}
         >
           {nameLines.map((line, i) => (
-            <tspan key={i} x={labelAnchorX} dy={i === 0 ? 0 : '1.2em'}>
+            <tspan key={i} x={labelAnchorX} dy={i === 0 ? labelFirstLineDy : '1.2em'}>
               {line}
             </tspan>
           ))}
@@ -462,7 +463,7 @@ export function StationView({
             transform={`rotate(${label.rotation * 45} ${labelAnchorX} ${labelAnchorY})`}
           >
             {nameLines.map((line, i) => (
-              <tspan key={i} x={labelAnchorX} dy={i === 0 ? 0 : '1.2em'}>
+              <tspan key={i} x={labelAnchorX} dy={i === 0 ? labelFirstLineDy : '1.2em'}>
                 {line}
               </tspan>
             ))}

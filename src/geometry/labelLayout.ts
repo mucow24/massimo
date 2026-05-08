@@ -17,6 +17,10 @@ export interface LabelLayout {
   // SVG attribute values: which side of the anchor the text aligns to.
   textAnchor: 'start' | 'middle' | 'end';
   baseline: LabelBaseline;
+  // dy for the FIRST tspan, used to shift multi-line blocks so that valign
+  // refers to the BLOCK rather than just the first line. Subsequent tspans
+  // stack 1.2em below this one. Empty string means "no dy attribute".
+  firstLineDy: string;
   // Tight box around the rendered text in unrotated station-local coords,
   // padded by HIT_PAD on each side. Used by:
   //  - the bg hit-test rect (rotated about (anchorX, anchorY) for hit-testing)
@@ -95,24 +99,47 @@ export function labelLayoutLocal(station: Station): LabelLayout {
   else if (textAnchor === 'end') textXMin = anchorX - textW;
   else textXMin = anchorX - textW / 2;
 
-  // Top of the painted text block, given the dominant baseline:
-  // - 'text-before-edge': first line's top is AT the anchor.
-  // - 'central'         : first line's center is AT the anchor (block top is
-  //                       half a line above).
-  // - 'text-after-edge' : first line's bottom is AT the anchor (block top is
-  //                       a full line above).
+  // Vertical alignment is in BLOCK terms, not first-line terms: 'top' puts
+  // the block top at the anchor, 'middle' centers the block, 'bottom' puts
+  // the block bottom at the anchor. We achieve this by shifting only the
+  // first line up; subsequent tspans stack 1.2em below it as before. The
+  // anchor itself stays on the L cell so rotation still pivots there.
+  //
+  // Lines stack down by `LABEL_LINE_HEIGHT` (~1.2em). The block's height is
+  // `2*textHalfH + extraLines*LINE_HEIGHT`. The first line's natural y given
+  // the dominant baseline is:
+  //   - 'text-before-edge': first line top   = anchorY
+  //   - 'central'         : first line center= anchorY  (top = anchorY - 7)
+  //   - 'text-after-edge' : first line bottom= anchorY  (top = anchorY - 14)
+  // To put the BLOCK at the desired position relative to anchorY, shift the
+  // first line up by:
+  //   - top   : 0
+  //   - middle: extraLines * LINE_HEIGHT / 2
+  //   - bottom: extraLines * LINE_HEIGHT
+  let firstLineShiftPx = 0;
+  if (baseline === 'central') firstLineShiftPx = (extraLines * LABEL_LINE_HEIGHT) / 2;
+  else if (baseline === 'text-after-edge') firstLineShiftPx = extraLines * LABEL_LINE_HEIGHT;
+  // Keep dy in em (matches the '1.2em' stacking on subsequent tspans), so it
+  // tracks font-size if we ever change it.
+  const FONT_SIZE_PX = 12;
+  const firstLineDy =
+    firstLineShiftPx === 0 ? '0' : `${(-firstLineShiftPx / FONT_SIZE_PX).toFixed(3)}em`;
+
+  // Top of the painted text block (already accounting for the first-line
+  // shift above): for 'top' the block top is at anchorY; for 'middle' it's
+  // half a block-height above; for 'bottom' it's a full block-height above.
+  const blockH = 2 * TEXT_HALF_H + extraLines * LABEL_LINE_HEIGHT;
   let textYMin: number;
   if (baseline === 'text-before-edge') textYMin = anchorY;
-  else if (baseline === 'text-after-edge') textYMin = anchorY - 2 * TEXT_HALF_H;
-  else textYMin = anchorY - TEXT_HALF_H;
-
-  const blockH = 2 * TEXT_HALF_H + extraLines * LABEL_LINE_HEIGHT;
+  else if (baseline === 'text-after-edge') textYMin = anchorY - blockH;
+  else textYMin = anchorY - blockH / 2;
 
   return {
     anchorX,
     anchorY,
     textAnchor,
     baseline,
+    firstLineDy,
     hitX: textXMin - HIT_PAD,
     hitY: textYMin - HIT_PAD,
     hitW: textW + 2 * HIT_PAD,
