@@ -6,6 +6,7 @@ import {
   isVerticalAxis,
   outputEdgeOffsetLocal,
   rotateBy,
+  rotateGridDelta,
   segmentEndpoints,
   stopCenterAt,
   travelDirLocal,
@@ -187,5 +188,49 @@ describe('segmentEndpoints', () => {
     );
     expect(e.startDir.y).toBe(-1);
     expect(e.endDir.y).toBe(-1);
+  });
+});
+
+describe('rotateGridDelta', () => {
+  // Mirrors the per-step transform in `rotateStationLayoutBy90(_, +1)`:
+  //   (col, row) → (-row, col)
+  // i.e. (dRow, dCol) → (dCol, -dRow). Applied k times. Used by mirror-
+  // matching mass-edits to keep moveStop/moveLabel deltas visually consistent
+  // across stations whose layouts differ by a 90°·k rotation.
+
+  it('k = 0 is identity', () => {
+    expect(rotateGridDelta(1, 0, 0)).toEqual({ dRow: 1, dCol: 0 });
+    expect(rotateGridDelta(0, 1, 0)).toEqual({ dRow: 0, dCol: 1 });
+    expect(rotateGridDelta(-1, 2, 0)).toEqual({ dRow: -1, dCol: 2 });
+  });
+
+  it('k = 1 rotates one 90°-step CW in screen coords', () => {
+    // Matches the layout step in rotateStationLayoutBy90: (1, 0) → (0, -1).
+    expect(rotateGridDelta(1, 0, 1)).toEqual({ dRow: 0, dCol: -1 });
+    expect(rotateGridDelta(0, 1, 1)).toEqual({ dRow: 1, dCol: 0 });
+    expect(rotateGridDelta(-1, 0, 1)).toEqual({ dRow: 0, dCol: 1 });
+  });
+
+  it('k = 2 negates both components (180°)', () => {
+    expect(rotateGridDelta(1, 0, 2)).toEqual({ dRow: -1, dCol: 0 });
+    expect(rotateGridDelta(0, 1, 2)).toEqual({ dRow: 0, dCol: -1 });
+    expect(rotateGridDelta(2, -3, 2)).toEqual({ dRow: -2, dCol: 3 });
+  });
+
+  it('k = 3 is the inverse of k = 1', () => {
+    // (1, 0) → (0, 1).
+    expect(rotateGridDelta(1, 0, 3)).toEqual({ dRow: 0, dCol: 1 });
+    expect(rotateGridDelta(0, 1, 3)).toEqual({ dRow: -1, dCol: 0 });
+  });
+
+  it('applying k=1 four times returns to the identity', () => {
+    let r = 3;
+    let c = -2;
+    for (let i = 0; i < 4; i++) {
+      const out = rotateGridDelta(r, c, 1);
+      r = out.dRow;
+      c = out.dCol;
+    }
+    expect({ dRow: r, dCol: c }).toEqual({ dRow: 3, dCol: -2 });
   });
 });
