@@ -190,7 +190,36 @@ describe('<OptionsPopover />', () => {
       expect(disclosure).toHaveAttribute('aria-expanded', 'true');
       const checkboxes = screen.getAllByRole('checkbox');
       const names = checkboxes.map((c) => c.getAttribute('aria-label'));
-      expect(names).toEqual(['MTA', 'BART', 'Caltrain']);
+      expect(names).toEqual([
+        // Asia
+        'Beijing Subway',
+        'MTR',
+        'Shanghai Metro',
+        'Tokyo Subway',
+        // Europe
+        'Berlin U-Bahn',
+        'Paris (RATP)',
+        'TfL (London)',
+        // North America
+        'BART',
+        'Caltrain',
+        'CTA',
+        'LA Metro',
+        'MBTA',
+        'MTA',
+        'MUNI',
+        'WMATA',
+      ]);
+    });
+
+    it('renders a horizontal separator between each pair of adjacent continents', async () => {
+      const user = userEvent.setup();
+      render(<Toolbar />);
+      await user.click(screen.getByRole('button', { name: 'Options' }));
+      await user.click(screen.getByRole('button', { name: /color palettes/i }));
+      // Three continents (asia, europe, na) → two separators between them.
+      const separators = document.querySelectorAll('.options-palette-separator');
+      expect(separators).toHaveLength(2);
     });
 
     it('default state: only MTA checked, MTA disabled (lone palette)', async () => {
@@ -215,7 +244,8 @@ describe('<OptionsPopover />', () => {
       await user.click(screen.getByRole('button', { name: 'Options' }));
       await user.click(screen.getByRole('button', { name: /color palettes/i }));
       await user.click(screen.getByRole('checkbox', { name: 'BART' }));
-      expect(useDoc.getState().activePalettes).toEqual(['mta', 'bart']);
+      // Stored in canonical order — BART precedes MTA in N. America.
+      expect(useDoc.getState().activePalettes).toEqual(['bart', 'mta']);
       const mta = screen.getByRole('checkbox', { name: 'MTA' }) as HTMLInputElement;
       expect(mta.disabled).toBe(false);
     });

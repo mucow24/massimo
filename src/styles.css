@@ -222,6 +222,13 @@ select {
   flex-direction: column;
   gap: 3px;
   margin-top: 2px;
+  max-height: 360px;
+  overflow-y: auto;
+}
+.options-palette-separator {
+  border: 0;
+  border-top: 1px solid #ccc;
+  margin: 4px 0;
 }
 .options-palette-card {
   display: flex;

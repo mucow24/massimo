@@ -194,14 +194,28 @@ describe('save/load round-trip', () => {
 
 describe('addLine auto-cycle across palettes', () => {
   it('cycles through every active palette’s colors in PALETTES order, then wraps', () => {
-    useDoc.setState({ ...useDoc.getState(), ...DEFAULT_DOC, activePalettes: ['mta', 'bart'] });
-    // 11 + 5 = 16 colors in the cycle.
+    // Note: BART precedes MTA alphabetically within North America, so the
+    // concatenated cycle puts BART's 5 colors first, then MTA's 11.
+    useDoc.setState({ ...useDoc.getState(), ...DEFAULT_DOC, activePalettes: ['bart', 'mta'] });
     const expected = [
-      // MTA, in order:
-      '#0039A6', '#FF6319', '#6CBE45', '#A7A9AC', '#996633', '#FCCC0A',
-      '#EE352E', '#00933C', '#B933AD', '#00ADD0', '#808183',
       // BART, in order:
-      '#FFE800', '#00AEEF', '#4DB848', '#ED1C24', '#FAA61A',
+      '#FFE800',
+      '#00AEEF',
+      '#4DB848',
+      '#ED1C24',
+      '#FAA61A',
+      // MTA, in order:
+      '#0039A6',
+      '#FF6319',
+      '#6CBE45',
+      '#A7A9AC',
+      '#996633',
+      '#FCCC0A',
+      '#EE352E',
+      '#00933C',
+      '#B933AD',
+      '#00ADD0',
+      '#808183',
     ];
     const colors: string[] = [];
     for (let i = 0; i < 17; i++) {
@@ -209,7 +223,7 @@ describe('addLine auto-cycle across palettes', () => {
       colors.push(useDoc.getState().lines[id].color);
     }
     expect(colors.slice(0, 16)).toEqual(expected);
-    // 17th wraps back to MTA[0].
+    // 17th wraps back to BART[0].
     expect(colors[16]).toBe(expected[0]);
   });
 });
