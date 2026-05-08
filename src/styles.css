@@ -553,10 +553,14 @@ input[type='range'].indeterminate {
 }
 
 .inspector input[type='text'],
-.inspector input[type='color'] {
+.inspector input[type='color'],
+.inspector textarea {
   border: 1px solid #ccc;
   border-radius: 3px;
   padding: 3px 5px;
+}
+.inspector textarea {
+  font: inherit;
 }
 
 .warning-toasts {

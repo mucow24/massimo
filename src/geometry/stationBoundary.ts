@@ -68,8 +68,12 @@ export function stationBoundaryRectsLocal(station: Station): StationBoundaryRect
   const cellsHitY = stopCenterAt(minRow, 0).y - HALF - HIT_PAD;
   const cellsHitW = stopCenterAt(0, maxCol).x + HALF + HIT_PAD - cellsHitX;
   const cellsHitH = stopCenterAt(maxRow, 0).y + HALF + HIT_PAD - cellsHitY;
-  const textW = Math.max(20, station.name.length * 7);
+  const nameLines = station.name.split('\n');
+  const longestLineLen = nameLines.reduce((m, l) => Math.max(m, l.length), 0);
+  const textW = Math.max(20, longestLineLen * 7);
   const textHalfH = 7;
+  const LABEL_LINE_HEIGHT = 14;
+  const extraLines = nameLines.length - 1;
   let textXMin: number;
   if (labelTextAnchor === 'start') textXMin = labelAnchorX;
   else if (labelTextAnchor === 'end') textXMin = labelAnchorX - textW;
@@ -77,7 +81,7 @@ export function stationBoundaryRectsLocal(station: Station): StationBoundaryRect
   const labelHitX = textXMin - HIT_PAD;
   const labelHitY = labelAnchorY - textHalfH - HIT_PAD;
   const labelHitW = textW + 2 * HIT_PAD;
-  const labelHitH = 2 * textHalfH + 2 * HIT_PAD;
+  const labelHitH = 2 * textHalfH + extraLines * LABEL_LINE_HEIGHT + 2 * HIT_PAD;
 
   const cells: Pt[] = [
     { x: cellsHitX, y: cellsHitY },
