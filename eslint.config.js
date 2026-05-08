@@ -32,6 +32,7 @@ export default [
         ResizeObserver: 'readonly',
         HTMLElement: 'readonly',
         HTMLInputElement: 'readonly',
+        HTMLTextAreaElement: 'readonly',
         HTMLDivElement: 'readonly',
         Element: 'readonly',
         Node: 'readonly',
