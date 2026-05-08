@@ -9,7 +9,7 @@ import {
   SegmentBandSpec,
   StopMarkerSpec,
 } from '../geometry/interlining';
-import { STOP_SIZE, stopCenterAt } from '../geometry/orientation';
+import { STOP_SIZE, stopCenterAt, travelDirLocal, rotateBy } from '../geometry/orientation';
 import { SegmentBand } from './SegmentBand';
 import { StationView } from './StationView';
 import { useViewport } from './canvas/useViewport';
@@ -29,7 +29,7 @@ import {
   offsetPathLength,
   sampleOffsetPath,
 } from '../geometry/lineTagGeometry';
-import type { LineId } from '../model/types';
+import type { LineId, Station, StopCell } from '../model/types';
 import { findMatchingStations } from '../model/matching';
 import { desaturateColor, legibleTextOn } from '../util/color';
 
@@ -623,8 +623,84 @@ export function MapCanvas() {
                 />
               );
             })}
+            {/* Direction triangles: small black arrow ~5px past each stop
+                dot pointing along the stop's own travel direction. */}
+            {(() => {
+              const ln = lines[highlightLineId];
+              if (!ln) return null;
+              type P = { sid: string; x: number; y: number; st: Station; cell: StopCell };
+              const points: P[] = [];
+              for (const sid of ln.stations) {
+                const st = stations[sid];
+                if (!st) continue;
+                const cell = st.stops.find((c) => c.lineId === highlightLineId);
+                if (!cell) continue;
+                const local = stopCenterAt(cell.row, cell.col);
+                const a = (st.rotation * Math.PI) / 4;
+                const cs = Math.cos(a);
+                const sn = Math.sin(a);
+                points.push({
+                  sid,
+                  st,
+                  cell,
+                  x: st.x + local.x * cs - local.y * sn,
+                  y: st.y + local.x * sn + local.y * cs,
+                });
+              }
+              if (points.length < 2) return null;
+              const dotR = STOP_SIZE * 0.28;
+              const gap = 2;
+              const halfW = 3;
+              const height = 5;
+              const baseDist = dotR + gap;
+              const apexDist = baseDist + height;
+              return points.map((p, i) => {
+                // Hint resolves auto-* sign; for explicit orientations it's
+                // ignored. Use the segment toward the next stop (or back from
+                // the previous stop at the terminus).
+                const ref = i < points.length - 1 ? points[i + 1] : points[i - 1];
+                const sign = i < points.length - 1 ? 1 : -1;
+                const worldHint = {
+                  x: (ref.x - p.x) * sign,
+                  y: (ref.y - p.y) * sign,
+                };
+                const aInv = -(p.st.rotation * Math.PI) / 4;
+                const ci = Math.cos(aInv);
+                const si = Math.sin(aInv);
+                const localHint = {
+                  x: worldHint.x * ci - worldHint.y * si,
+                  y: worldHint.x * si + worldHint.y * ci,
+                };
+                const localDir = travelDirLocal(p.cell.orientation, localHint);
+                const worldDir = rotateBy(localDir, p.st.rotation);
+                const dx = worldDir.x;
+                const dy = worldDir.y;
+                const px = -dy;
+                const py = dx;
+                const baseCx = p.x + dx * baseDist;
+                const baseCy = p.y + dy * baseDist;
+                const apexX = p.x + dx * apexDist;
+                const apexY = p.y + dy * apexDist;
+                const lX = baseCx + px * halfW;
+                const lY = baseCy + py * halfW;
+                const rX = baseCx - px * halfW;
+                const rY = baseCy - py * halfW;
+                const isTerminus = i === points.length - 1;
+                return (
+                  <path
+                    key={'hl-tri:' + p.sid}
+                    d={`M ${apexX} ${apexY} L ${lX} ${lY} L ${rX} ${rY} Z`}
+                    fill={isTerminus ? ln.color : '#000'}
+                    stroke={isTerminus ? ln.color : undefined}
+                    strokeWidth={isTerminus ? 10 : undefined}
+                    strokeLinejoin={isTerminus ? 'miter' : undefined}
+                    paintOrder={isTerminus ? 'stroke fill' : undefined}
+                  />
+                );
+              });
+            })()}
             {/* Re-render the selected line's stop dots on top so the
-                colored markers don't swallow them. */}
+                colored markers and direction triangles don't swallow them. */}
             {(() => {
               const ln = lines[highlightLineId];
               if (!ln) return null;
