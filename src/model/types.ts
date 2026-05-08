@@ -44,17 +44,36 @@ export interface StopCell {
   dotShape?: DotShape;
 }
 
+// Alignment of the rendered label text relative to the label cell, expressed
+// in the label's reading-direction frame.
+//
+// `auto`  — snap against an adjacent stop (text-anchor end/start with a small
+//           gap), or fall back to centering on the cell when no stop is
+//           adjacent along the reading axis. The historical default.
+// `start` — text begins at the cell center and extends forward.
+// `middle`— text centered on the cell center.
+// `end`   — text ends at the cell center and extends backward.
+export type LabelAlign = 'auto' | 'start' | 'middle' | 'end';
+
+// Vertical alignment in the label's own (unrotated) frame — i.e. relative to
+// the reading-direction's perpendicular axis. Maps to SVG dominant-baseline
+// at render time.
+export type LabelValign = 'top' | 'middle' | 'bottom';
+
 // The station's name lives in a single grid cell with its own 8-way rotation
-// (in the unrotated station-local frame). The rendered text auto-anchors to
-// the side of the cell that faces an adjacent stop, when one is present.
-// `offset` shifts the rendered label along its own reading direction (so for
-// upright text it's left/right, for vertical text it's up/down, etc.) in
-// pixels of unrotated-station-local space. Positive = forward in reading dir.
+// (in the unrotated station-local frame). `align` controls how the rendered
+// text positions relative to that cell along the reading direction; `valign`
+// does the same on the cross-reading axis. `offset` then shifts the rendered
+// label along its reading direction (so for upright text it's left/right,
+// for vertical text it's up/down, etc.) in pixels of unrotated-station-local
+// space. Positive = forward in reading dir.
 export interface LabelCell {
   row: number;
   col: number;
   rotation: Rotation;
   offset: number;
+  align: LabelAlign;
+  valign: LabelValign;
 }
 
 export interface Station {
