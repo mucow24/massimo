@@ -1,6 +1,7 @@
 import { autoOrientLineStops } from './autoOrient';
 import { effectiveLineOrder } from './lineOrder';
 import { rotateBy, stopCenterAt } from '../geometry/orientation';
+import { PALETTES, type PaletteId } from './palettes';
 import type {
   DotShape,
   LabelAlign,
@@ -34,6 +35,7 @@ export const DEFAULT_DOC: MapDoc = {
   labelFontSize: LABEL_FONT_SIZE_DEFAULT,
   labelBold: false,
   labelItalic: false,
+  activePalettes: ['mta'],
 };
 
 // ---------- Stations ----------
@@ -819,6 +821,43 @@ export function setLabelBold(doc: MapDoc, b: boolean): MapDoc {
 export function setLabelItalic(doc: MapDoc, i: boolean): MapDoc {
   if (i === doc.labelItalic) return doc;
   return { ...doc, labelItalic: i };
+}
+
+const PALETTE_DECLARATION_ORDER: PaletteId[] = PALETTES.map((p) => p.id);
+const KNOWN_PALETTE_IDS = new Set<PaletteId>(PALETTE_DECLARATION_ORDER);
+
+function normalizePaletteIds(ids: readonly PaletteId[]): PaletteId[] {
+  const set = new Set(ids.filter((id) => KNOWN_PALETTE_IDS.has(id)));
+  return PALETTE_DECLARATION_ORDER.filter((id) => set.has(id));
+}
+
+function arraysEqual<T>(a: readonly T[], b: readonly T[]): boolean {
+  if (a.length !== b.length) return false;
+  for (let i = 0; i < a.length; i++) if (a[i] !== b[i]) return false;
+  return true;
+}
+
+/**
+ * Replace the active palette set. Empty input (or input containing only
+ * unknown ids) is rejected — the doc must always have at least one active
+ * palette. Input is deduplicated and normalised to PALETTES declaration order.
+ */
+export function setActivePalettes(doc: MapDoc, ids: readonly PaletteId[]): MapDoc {
+  const next = normalizePaletteIds(ids);
+  if (next.length === 0) return doc;
+  if (arraysEqual(next, doc.activePalettes)) return doc;
+  return { ...doc, activePalettes: next };
+}
+
+/**
+ * Toggle a single palette in/out of the active set. Refuses to remove the
+ * last active palette (returns input doc unchanged), preserving the
+ * "non-empty" invariant in one place.
+ */
+export function togglePalette(doc: MapDoc, id: PaletteId): MapDoc {
+  const present = doc.activePalettes.includes(id);
+  const next = present ? doc.activePalettes.filter((x) => x !== id) : [...doc.activePalettes, id];
+  return setActivePalettes(doc, next);
 }
 
 export function clearAll(_doc: MapDoc): MapDoc {

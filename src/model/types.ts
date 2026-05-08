@@ -1,4 +1,5 @@
 import type { Vec2 } from '../geometry/vec';
+import type { PaletteId } from './palettes';
 
 export type StationId = string;
 export type LineId = string;
@@ -171,6 +172,9 @@ export interface MapDoc {
   labelFontSize: number;
   labelBold: boolean;
   labelItalic: boolean;
+  // Which color palettes are available in the line editor. Invariant:
+  // never empty (enforced by transforms / parse sanitiser).
+  activePalettes: PaletteId[];
 }
 
 // One endpoint of a transfer: a specific dot on a station. `lineId` picks

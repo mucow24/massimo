@@ -66,6 +66,7 @@ export function makeDoc(parts: {
   labelFontSize?: number;
   labelBold?: boolean;
   labelItalic?: boolean;
+  activePalettes?: import('../model/palettes').PaletteId[];
 }): MapDoc {
   const stations: Record<StationId, Station> = {};
   for (const s of parts.stations ?? []) stations[s.id] = s;
@@ -87,6 +88,7 @@ export function makeDoc(parts: {
     labelFontSize: parts.labelFontSize ?? 12,
     labelBold: parts.labelBold ?? false,
     labelItalic: parts.labelItalic ?? false,
+    activePalettes: parts.activePalettes ?? ['mta'],
   };
 }
 

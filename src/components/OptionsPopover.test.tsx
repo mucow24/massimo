@@ -169,4 +169,67 @@ describe('<OptionsPopover />', () => {
     await user.click(italic);
     expect(useDoc.getState().labelItalic).toBe(false);
   });
+
+  describe('color-palette disclosure', () => {
+    it('renders a "Color palettes" disclosure trigger; cards are hidden by default', async () => {
+      const user = userEvent.setup();
+      render(<Toolbar />);
+      await user.click(screen.getByRole('button', { name: 'Options' }));
+      const disclosure = screen.getByRole('button', { name: /color palettes/i });
+      expect(disclosure).toHaveAttribute('aria-expanded', 'false');
+      // No palette checkboxes visible until expanded.
+      expect(screen.queryByRole('checkbox', { name: /^MTA$/ })).toBeNull();
+    });
+
+    it('expanding reveals one checkbox per palette in PALETTES order', async () => {
+      const user = userEvent.setup();
+      render(<Toolbar />);
+      await user.click(screen.getByRole('button', { name: 'Options' }));
+      const disclosure = screen.getByRole('button', { name: /color palettes/i });
+      await user.click(disclosure);
+      expect(disclosure).toHaveAttribute('aria-expanded', 'true');
+      const checkboxes = screen.getAllByRole('checkbox');
+      const names = checkboxes.map((c) => c.getAttribute('aria-label'));
+      expect(names).toEqual(['MTA', 'BART', 'Caltrain']);
+    });
+
+    it('default state: only MTA checked, MTA disabled (lone palette)', async () => {
+      const user = userEvent.setup();
+      render(<Toolbar />);
+      await user.click(screen.getByRole('button', { name: 'Options' }));
+      await user.click(screen.getByRole('button', { name: /color palettes/i }));
+      const mta = screen.getByRole('checkbox', { name: 'MTA' }) as HTMLInputElement;
+      const bart = screen.getByRole('checkbox', { name: 'BART' }) as HTMLInputElement;
+      const caltrain = screen.getByRole('checkbox', { name: 'Caltrain' }) as HTMLInputElement;
+      expect(mta.checked).toBe(true);
+      expect(bart.checked).toBe(false);
+      expect(caltrain.checked).toBe(false);
+      expect(mta.disabled).toBe(true);
+      expect(bart.disabled).toBe(false);
+      expect(caltrain.disabled).toBe(false);
+    });
+
+    it('checking BART updates the store and re-enables the MTA checkbox', async () => {
+      const user = userEvent.setup();
+      render(<Toolbar />);
+      await user.click(screen.getByRole('button', { name: 'Options' }));
+      await user.click(screen.getByRole('button', { name: /color palettes/i }));
+      await user.click(screen.getByRole('checkbox', { name: 'BART' }));
+      expect(useDoc.getState().activePalettes).toEqual(['mta', 'bart']);
+      const mta = screen.getByRole('checkbox', { name: 'MTA' }) as HTMLInputElement;
+      expect(mta.disabled).toBe(false);
+    });
+
+    it('unchecking BART after re-checking returns to lone-MTA + disabled state', async () => {
+      const user = userEvent.setup();
+      render(<Toolbar />);
+      await user.click(screen.getByRole('button', { name: 'Options' }));
+      await user.click(screen.getByRole('button', { name: /color palettes/i }));
+      await user.click(screen.getByRole('checkbox', { name: 'BART' }));
+      await user.click(screen.getByRole('checkbox', { name: 'BART' }));
+      expect(useDoc.getState().activePalettes).toEqual(['mta']);
+      const mta = screen.getByRole('checkbox', { name: 'MTA' }) as HTMLInputElement;
+      expect(mta.disabled).toBe(true);
+    });
+  });
 });

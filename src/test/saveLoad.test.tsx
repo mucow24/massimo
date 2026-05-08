@@ -37,6 +37,7 @@ describe('save/load round-trip', () => {
       labelFontSize: useDoc.getState().labelFontSize,
       labelBold: useDoc.getState().labelBold,
       labelItalic: useDoc.getState().labelItalic,
+      activePalettes: useDoc.getState().activePalettes,
     });
     const result = parse(json);
     expect(result.ok).toBe(true);
@@ -124,6 +125,7 @@ describe('save/load round-trip', () => {
       labelFontSize: s.labelFontSize,
       labelBold: s.labelBold,
       labelItalic: s.labelItalic,
+      activePalettes: s.activePalettes,
     });
     const result = parse(json);
     expect(result.ok).toBe(true);
@@ -132,5 +134,82 @@ describe('save/load round-trip', () => {
       expect(result.doc.labelBold).toBe(true);
       expect(result.doc.labelItalic).toBe(false);
     }
+  });
+
+  it('round-trips activePalettes', () => {
+    const fixture = makeDoc({ activePalettes: ['mta', 'caltrain'] });
+    const json = serialize(fixture);
+    const result = parse(json);
+    expect(result.ok).toBe(true);
+    if (result.ok) {
+      expect(result.doc.activePalettes).toEqual(['mta', 'caltrain']);
+    }
+  });
+
+  it('legacy files (no activePalettes) parse with [mta] from DEFAULT_DOC', () => {
+    const legacy = JSON.stringify({
+      format: SCHEMA_FORMAT,
+      doc: {
+        stations: {},
+        lines: {},
+        lineOrder: [],
+        curveRadius: 24,
+        lineCounter: 0,
+        lineTags: {},
+        routeBullets: {},
+        transfers: {},
+      },
+    });
+    const result = parse(legacy);
+    expect(result.ok).toBe(true);
+    if (result.ok) {
+      expect(result.doc.activePalettes).toEqual(['mta']);
+    }
+  });
+
+  it('parse normalises an explicit empty activePalettes to [mta]', () => {
+    const malformed = JSON.stringify({
+      format: SCHEMA_FORMAT,
+      doc: { ...makeDoc({}), activePalettes: [] },
+    });
+    const result = parse(malformed);
+    expect(result.ok).toBe(true);
+    if (result.ok) {
+      expect(result.doc.activePalettes).toEqual(['mta']);
+    }
+  });
+
+  it('parse normalises activePalettes containing only unknown ids to [mta]', () => {
+    const malformed = JSON.stringify({
+      format: SCHEMA_FORMAT,
+      doc: { ...makeDoc({}), activePalettes: ['nope', 'still-nope'] },
+    });
+    const result = parse(malformed);
+    expect(result.ok).toBe(true);
+    if (result.ok) {
+      expect(result.doc.activePalettes).toEqual(['mta']);
+    }
+  });
+});
+
+describe('addLine auto-cycle across palettes', () => {
+  it('cycles through every active palette’s colors in PALETTES order, then wraps', () => {
+    useDoc.setState({ ...useDoc.getState(), ...DEFAULT_DOC, activePalettes: ['mta', 'bart'] });
+    // 11 + 5 = 16 colors in the cycle.
+    const expected = [
+      // MTA, in order:
+      '#0039A6', '#FF6319', '#6CBE45', '#A7A9AC', '#996633', '#FCCC0A',
+      '#EE352E', '#00933C', '#B933AD', '#00ADD0', '#808183',
+      // BART, in order:
+      '#FFE800', '#00AEEF', '#4DB848', '#ED1C24', '#FAA61A',
+    ];
+    const colors: string[] = [];
+    for (let i = 0; i < 17; i++) {
+      const id = useDoc.getState().addLine();
+      colors.push(useDoc.getState().lines[id].color);
+    }
+    expect(colors.slice(0, 16)).toEqual(expected);
+    // 17th wraps back to MTA[0].
+    expect(colors[16]).toBe(expected[0]);
   });
 });

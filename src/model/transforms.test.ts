@@ -733,6 +733,51 @@ describe('label font/style settings', () => {
   });
 });
 
+describe('activePalettes', () => {
+  it('DEFAULT_DOC.activePalettes is exactly [mta]', () => {
+    expect(T.DEFAULT_DOC.activePalettes).toEqual(['mta']);
+  });
+
+  it('setActivePalettes accepts a list and stores it in PALETTES declaration order', () => {
+    const doc = makeDoc({});
+    expect(T.setActivePalettes(doc, ['bart', 'mta']).activePalettes).toEqual(['mta', 'bart']);
+  });
+
+  it('setActivePalettes deduplicates input', () => {
+    const doc = makeDoc({});
+    expect(T.setActivePalettes(doc, ['bart', 'mta', 'mta', 'bart']).activePalettes).toEqual([
+      'mta',
+      'bart',
+    ]);
+  });
+
+  it('setActivePalettes returns the input doc unchanged when the input is empty', () => {
+    const doc = T.setActivePalettes(makeDoc({}), ['mta', 'bart']);
+    expect(T.setActivePalettes(doc, [])).toBe(doc);
+  });
+
+  it('setActivePalettes returns the input doc unchanged when only unknown ids are given', () => {
+    const doc = T.setActivePalettes(makeDoc({}), ['mta', 'bart']);
+    // @ts-expect-error - exercising the runtime guard with an unknown id
+    expect(T.setActivePalettes(doc, ['nope'])).toBe(doc);
+  });
+
+  it('togglePalette adds an absent id', () => {
+    const doc = T.setActivePalettes(makeDoc({}), ['mta']);
+    expect(T.togglePalette(doc, 'bart').activePalettes).toEqual(['mta', 'bart']);
+  });
+
+  it('togglePalette removes a present id', () => {
+    const doc = T.setActivePalettes(makeDoc({}), ['mta', 'bart']);
+    expect(T.togglePalette(doc, 'bart').activePalettes).toEqual(['mta']);
+  });
+
+  it('togglePalette refuses to remove the last palette (invariant)', () => {
+    const doc = T.setActivePalettes(makeDoc({}), ['mta']);
+    expect(T.togglePalette(doc, 'mta')).toBe(doc);
+  });
+});
+
 describe('addLine — lineCounter', () => {
   it('increments lineCounter on each addLine', () => {
     let doc = makeDoc({});
