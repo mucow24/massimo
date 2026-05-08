@@ -10,7 +10,14 @@ export interface SeedStation {
   y: number;
   rotation?: number;
   stops: { lineId: string; row: number; col: number; orientation?: string }[];
-  label?: { row: number; col: number; rotation: number; offset: number };
+  label?: {
+    row: number;
+    col: number;
+    rotation: number;
+    offset: number;
+    align?: 'auto' | 'start' | 'middle' | 'end';
+    valign?: 'top' | 'middle' | 'bottom';
+  };
 }
 
 export interface SeedLine {
@@ -61,14 +68,9 @@ export async function seedAndOpen(page: Page, seed: Seed): Promise<void> {
         col: c.col,
         orientation: c.orientation ?? 'auto-vertical',
       })),
-      label: s.label ?? {
-        row: 0,
-        col: -1,
-        rotation: 0,
-        offset: 0,
-        align: 'auto',
-        valign: 'middle',
-      },
+      label: s.label
+        ? { align: 'auto', valign: 'middle', ...s.label }
+        : { row: 0, col: -1, rotation: 0, offset: 0, align: 'auto', valign: 'middle' },
     };
   }
   const lines: Record<string, unknown> = {};

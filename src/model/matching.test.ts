@@ -14,7 +14,11 @@ describe('findMatchingStations', () => {
       ],
       lines: [makeLine({ id: 'L1', stations: ['s1', 's2', 's3'] })],
     });
-    expect(findMatchingStations(doc, 's2').sort()).toEqual(['s1', 's3']);
+    expect(
+      findMatchingStations(doc, 's2')
+        .map((m) => m.id)
+        .sort(),
+    ).toEqual(['s1', 's3']);
   });
 
   it('excludes the selected station itself', () => {
@@ -25,7 +29,7 @@ describe('findMatchingStations', () => {
       ],
       lines: [makeLine({ id: 'L1', stations: ['s1', 's2'] })],
     });
-    expect(findMatchingStations(doc, 's1')).toEqual(['s2']);
+    expect(findMatchingStations(doc, 's1').map((m) => m.id)).toEqual(['s2']);
   });
 
   it('excludes connected stations whose stops differ', () => {
@@ -73,7 +77,7 @@ describe('findMatchingStations', () => {
         makeLine({ id: 'L2', stations: ['s1', 's2'] }),
       ],
     });
-    expect(findMatchingStations(doc, 's1')).toEqual(['s2']);
+    expect(findMatchingStations(doc, 's1').map((m) => m.id)).toEqual(['s2']);
   });
 
   it('requires station rotation to match', () => {
@@ -97,7 +101,7 @@ describe('findMatchingStations', () => {
       ],
       lines: [makeLine({ id: 'L1', stations: ['s1', 's2'] })],
     });
-    expect(findMatchingStations(doc, 's1')).toEqual(['s2']);
+    expect(findMatchingStations(doc, 's1').map((m) => m.id)).toEqual(['s2']);
   });
 
   it('excludes connected stations with a different stop orientation', () => {
@@ -125,7 +129,11 @@ describe('findMatchingStations', () => {
       ],
       lines: [makeLine({ id: 'L1', stations: ['s1', 's2', 's3', 's4', 's5'] })],
     });
-    expect(findMatchingStations(doc, 's2').sort()).toEqual(['s1', 's3', 's4', 's5']);
+    expect(
+      findMatchingStations(doc, 's2')
+        .map((m) => m.id)
+        .sort(),
+    ).toEqual(['s1', 's3', 's4', 's5']);
   });
 
   it('skips non-matching stations on the line but keeps matching ones beyond them', () => {
@@ -140,7 +148,11 @@ describe('findMatchingStations', () => {
       ],
       lines: [makeLine({ id: 'L1', stations: ['s1', 's2', 's3', 's4'] })],
     });
-    expect(findMatchingStations(doc, 's1').sort()).toEqual(['s2', 's4']);
+    expect(
+      findMatchingStations(doc, 's1')
+        .map((m) => m.id)
+        .sort(),
+    ).toEqual(['s2', 's4']);
   });
 
   it('unions matches across every line containing the selected station', () => {
@@ -163,9 +175,17 @@ describe('findMatchingStations', () => {
       ],
     });
     // From s2 (on both lines): matches across both — s1, s3, s4, s5.
-    expect(findMatchingStations(doc, 's2').sort()).toEqual(['s1', 's3', 's4', 's5']);
+    expect(
+      findMatchingStations(doc, 's2')
+        .map((m) => m.id)
+        .sort(),
+    ).toEqual(['s1', 's3', 's4', 's5']);
     // From s1 (on L1 only): only s2 and s3.
-    expect(findMatchingStations(doc, 's1').sort()).toEqual(['s2', 's3']);
+    expect(
+      findMatchingStations(doc, 's1')
+        .map((m) => m.id)
+        .sort(),
+    ).toEqual(['s2', 's3']);
   });
 
   it('handles a line that visits the selected station twice without duplicates', () => {
@@ -179,7 +199,11 @@ describe('findMatchingStations', () => {
       ],
       lines: [makeLine({ id: 'L1', stations: ['s1', 's2', 's3', 's1'] })],
     });
-    expect(findMatchingStations(doc, 's1').sort()).toEqual(['s2', 's3']);
+    expect(
+      findMatchingStations(doc, 's1')
+        .map((m) => m.id)
+        .sort(),
+    ).toEqual(['s2', 's3']);
   });
 
   it('considers adjacency on any shared line, not just one', () => {
@@ -205,7 +229,11 @@ describe('findMatchingStations', () => {
         makeLine({ id: 'L2', stations: ['s1', 's3'] }),
       ],
     });
-    expect(findMatchingStations(doc, 's1').sort()).toEqual(['s2', 's3']);
+    expect(
+      findMatchingStations(doc, 's1')
+        .map((m) => m.id)
+        .sort(),
+    ).toEqual(['s2', 's3']);
   });
 
   it('returns empty for a missing station id', () => {
@@ -250,7 +278,7 @@ describe('findMatchingStations', () => {
       ],
       lines: [makeLine({ id: 'L1', stations: ['s1', 's2'] })],
     });
-    expect(findMatchingStations(doc, 's1')).toEqual(['s2']);
+    expect(findMatchingStations(doc, 's1').map((m) => m.id)).toEqual(['s2']);
   });
 
   it('ignores orphan stops (whose lineId is no longer in doc.lines)', () => {
@@ -269,8 +297,16 @@ describe('findMatchingStations', () => {
       ],
       lines: [makeLine({ id: 'L1', stations: ['s1', 's2', 's3'] })],
     });
-    expect(findMatchingStations(doc, 's1').sort()).toEqual(['s2', 's3']);
-    expect(findMatchingStations(doc, 's3').sort()).toEqual(['s1', 's2']);
+    expect(
+      findMatchingStations(doc, 's1')
+        .map((m) => m.id)
+        .sort(),
+    ).toEqual(['s2', 's3']);
+    expect(
+      findMatchingStations(doc, 's3')
+        .map((m) => m.id)
+        .sort(),
+    ).toEqual(['s1', 's2']);
   });
 
   it('treats two stations with matching orphan stops as identical', () => {
@@ -290,8 +326,16 @@ describe('findMatchingStations', () => {
       ],
       lines: [makeLine({ id: 'L1', stations: ['s1', 's2', 's3'] })],
     });
-    expect(findMatchingStations(doc, 's1').sort()).toEqual(['s2', 's3']);
-    expect(findMatchingStations(doc, 's3').sort()).toEqual(['s1', 's2']);
+    expect(
+      findMatchingStations(doc, 's1')
+        .map((m) => m.id)
+        .sort(),
+    ).toEqual(['s2', 's3']);
+    expect(
+      findMatchingStations(doc, 's3')
+        .map((m) => m.id)
+        .sort(),
+    ).toEqual(['s1', 's2']);
   });
 
   it('matching is symmetric: a in matches(b) iff b in matches(a)', () => {
@@ -306,10 +350,10 @@ describe('findMatchingStations', () => {
     });
     const ids = ['s1', 's2', 's3'];
     for (const a of ids) {
-      const ma = new Set(findMatchingStations(doc, a));
+      const ma = new Set(findMatchingStations(doc, a).map((m) => m.id));
       for (const b of ids) {
         if (a === b) continue;
-        const mb = new Set(findMatchingStations(doc, b));
+        const mb = new Set(findMatchingStations(doc, b).map((m) => m.id));
         expect(ma.has(b)).toBe(mb.has(a));
       }
     }
@@ -334,9 +378,108 @@ describe('findMatchingStations', () => {
     doc = T.toggleStationOnLine(doc, 'L1', 's1');
     doc = T.toggleStationOnLine(doc, 'L1', 's2');
     doc = T.toggleStationOnLine(doc, 'L1', 's3');
-    expect(findMatchingStations(doc, 's1').sort()).toEqual(['s2', 's3']);
-    expect(findMatchingStations(doc, 's2').sort()).toEqual(['s1', 's3']);
-    expect(findMatchingStations(doc, 's3').sort()).toEqual(['s1', 's2']);
+    expect(
+      findMatchingStations(doc, 's1')
+        .map((m) => m.id)
+        .sort(),
+    ).toEqual(['s2', 's3']);
+    expect(
+      findMatchingStations(doc, 's2')
+        .map((m) => m.id)
+        .sort(),
+    ).toEqual(['s1', 's3']);
+    expect(
+      findMatchingStations(doc, 's3')
+        .map((m) => m.id)
+        .sort(),
+    ).toEqual(['s1', 's2']);
+  });
+
+  it('matches a station and its 180° layout-mirror', () => {
+    // A: rot 0, label (-1,-1) rot 0, stop (0,0) auto-vertical.
+    // C: rot 4, label (1,1) rot 4, stop (0,0) auto-vertical.
+    // C is what `rotateStationAndLayout` produces from A applied twice — the
+    // editor's view of the unrotated grid is mirrored, but world appearance
+    // is identical. They should match.
+    const doc = makeDoc({
+      stations: [
+        makeStation({
+          id: 'A',
+          rotation: 0,
+          stops: [makeStop('L1')],
+          label: { row: -1, col: -1, rotation: 0, offset: 0, align: 'auto', valign: 'middle' },
+        }),
+        makeStation({
+          id: 'C',
+          rotation: 4,
+          stops: [makeStop('L1')],
+          label: { row: 1, col: 1, rotation: 4, offset: 0, align: 'auto', valign: 'middle' },
+        }),
+      ],
+      lines: [makeLine({ id: 'L1', stations: ['A', 'C'] })],
+    });
+    expect(findMatchingStations(doc, 'A').map((m) => m.id)).toEqual(['C']);
+    expect(findMatchingStations(doc, 'C').map((m) => m.id)).toEqual(['A']);
+  });
+
+  it('matches across a 90° layout rotation', () => {
+    // B is A rotated one 90°-step via rotateStationAndLayout(dir=+1):
+    //   station rotation 0 + 6 = 6
+    //   label cell (col=-1, row=0) → (col=0, row=-1), rotation 0 + 2 = 2
+    //   stop (0,0) auto-vertical → (0,0) auto-horizontal
+    // Visually identical, but a single 90°-step apart in the editor's
+    // unrotated grid. Catches k=1, not just k=2.
+    const doc = makeDoc({
+      stations: [
+        makeStation({
+          id: 'A',
+          rotation: 0,
+          stops: [makeStop('L1', { orientation: 'auto-vertical' })],
+          label: { row: 0, col: -1, rotation: 0, offset: 0, align: 'auto', valign: 'middle' },
+        }),
+        makeStation({
+          id: 'B',
+          rotation: 6,
+          stops: [makeStop('L1', { orientation: 'auto-horizontal' })],
+          label: { row: -1, col: 0, rotation: 2, offset: 0, align: 'auto', valign: 'middle' },
+        }),
+      ],
+      lines: [makeLine({ id: 'L1', stations: ['A', 'B'] })],
+    });
+    expect(findMatchingStations(doc, 'A').map((m) => m.id)).toEqual(['B']);
+  });
+
+  it('returned matches carry the layoutOffset needed to align them', () => {
+    // Same setup as the 180°-mirror test plus a trivial-identical neighbor.
+    // From A's perspective: B has offset 0 (same layout), C has offset 2
+    // (180° layout-mirror).
+    const doc = makeDoc({
+      stations: [
+        makeStation({
+          id: 'A',
+          rotation: 0,
+          stops: [makeStop('L1')],
+          label: { row: -1, col: -1, rotation: 0, offset: 0, align: 'auto', valign: 'middle' },
+        }),
+        makeStation({
+          id: 'B',
+          rotation: 0,
+          stops: [makeStop('L1')],
+          label: { row: -1, col: -1, rotation: 0, offset: 0, align: 'auto', valign: 'middle' },
+        }),
+        makeStation({
+          id: 'C',
+          rotation: 4,
+          stops: [makeStop('L1')],
+          label: { row: 1, col: 1, rotation: 4, offset: 0, align: 'auto', valign: 'middle' },
+        }),
+      ],
+      lines: [makeLine({ id: 'L1', stations: ['A', 'B', 'C'] })],
+    });
+    const matches = findMatchingStations(doc, 'A');
+    const byId = new Map(matches.map((m) => [m.id, m.layoutOffset]));
+    expect(byId.get('B')).toBe(0);
+    expect(byId.get('C')).toBe(2);
   });
 
   it('matching survives a line being deleted then re-added', () => {
@@ -364,6 +507,10 @@ describe('findMatchingStations', () => {
     doc = T.toggleStationOnLine(doc, 'L1', 's1');
     doc = T.toggleStationOnLine(doc, 'L1', 's2');
     doc = T.toggleStationOnLine(doc, 'L1', 's3');
-    expect(findMatchingStations(doc, 's2').sort()).toEqual(['s1', 's3']);
+    expect(
+      findMatchingStations(doc, 's2')
+        .map((m) => m.id)
+        .sort(),
+    ).toEqual(['s1', 's3']);
   });
 });
