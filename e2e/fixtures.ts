@@ -1,9 +1,7 @@
 import { type Page } from '@playwright/test';
 
 // Mirrors the partialized shape persisted by the doc store
-// (`vignelli-map-doc-v1` in localStorage) plus the schema version envelope.
-// Keep in sync with model/serialize.ts:SCHEMA_VERSION when migrations land.
-export const SCHEMA_VERSION = 12;
+// (`vignelli-map-doc-v1` in localStorage).
 
 export interface SeedStation {
   id: string;
@@ -63,7 +61,14 @@ export async function seedAndOpen(page: Page, seed: Seed): Promise<void> {
         col: c.col,
         orientation: c.orientation ?? 'auto-vertical',
       })),
-      label: s.label ?? { row: 0, col: -1, rotation: 0, offset: 0 },
+      label: s.label ?? {
+        row: 0,
+        col: -1,
+        rotation: 0,
+        offset: 0,
+        align: 'auto',
+        valign: 'middle',
+      },
     };
   }
   const lines: Record<string, unknown> = {};
@@ -100,7 +105,6 @@ export async function seedAndOpen(page: Page, seed: Seed): Promise<void> {
       routeBullets,
       transfers: {},
     },
-    version: SCHEMA_VERSION,
   };
 
   await page.evaluate(

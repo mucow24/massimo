@@ -3,6 +3,8 @@ import { effectiveLineOrder } from './lineOrder';
 import { rotateBy, stopCenterAt } from '../geometry/orientation';
 import type {
   DotShape,
+  LabelAlign,
+  LabelValign,
   Line,
   LineId,
   LineTag,
@@ -37,7 +39,7 @@ export function addStation(doc: MapDoc, x: number, y: number, id: StationId, nam
     y,
     rotation: 0,
     stops: [],
-    label: { row: 0, col: -1, rotation: 0, offset: 0 },
+    label: { row: 0, col: -1, rotation: 0, offset: 0, align: 'auto', valign: 'middle' },
   };
   return { ...doc, stations: { ...doc.stations, [id]: station } };
 }
@@ -568,6 +570,66 @@ export function setLabelOffset(doc: MapDoc, stationId: StationId, offset: number
     stations: {
       ...doc.stations,
       [stationId]: { ...st, label: { ...st.label, offset } },
+    },
+  };
+}
+
+const ALIGN_CYCLE: LabelAlign[] = ['auto', 'start', 'middle', 'end'];
+
+export function cycleLabelAlign(doc: MapDoc, stationId: StationId): MapDoc {
+  const st = doc.stations[stationId];
+  if (!st) return doc;
+  const cur = st.label.align;
+  const i = ALIGN_CYCLE.indexOf(cur);
+  const next = ALIGN_CYCLE[(i + 1) % ALIGN_CYCLE.length];
+  return {
+    ...doc,
+    stations: {
+      ...doc.stations,
+      [stationId]: { ...st, label: { ...st.label, align: next } },
+    },
+  };
+}
+
+export function setLabelAlign(doc: MapDoc, stationId: StationId, align: LabelAlign): MapDoc {
+  const st = doc.stations[stationId];
+  if (!st) return doc;
+  if (st.label.align === align) return doc;
+  return {
+    ...doc,
+    stations: {
+      ...doc.stations,
+      [stationId]: { ...st, label: { ...st.label, align } },
+    },
+  };
+}
+
+const VALIGN_CYCLE: LabelValign[] = ['top', 'middle', 'bottom'];
+
+export function cycleLabelValign(doc: MapDoc, stationId: StationId): MapDoc {
+  const st = doc.stations[stationId];
+  if (!st) return doc;
+  const cur = st.label.valign;
+  const i = VALIGN_CYCLE.indexOf(cur);
+  const next = VALIGN_CYCLE[(i + 1) % VALIGN_CYCLE.length];
+  return {
+    ...doc,
+    stations: {
+      ...doc.stations,
+      [stationId]: { ...st, label: { ...st.label, valign: next } },
+    },
+  };
+}
+
+export function setLabelValign(doc: MapDoc, stationId: StationId, valign: LabelValign): MapDoc {
+  const st = doc.stations[stationId];
+  if (!st) return doc;
+  if (st.label.valign === valign) return doc;
+  return {
+    ...doc,
+    stations: {
+      ...doc.stations,
+      [stationId]: { ...st, label: { ...st.label, valign } },
     },
   };
 }

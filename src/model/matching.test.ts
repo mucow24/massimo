@@ -221,12 +221,12 @@ describe('findMatchingStations', () => {
         makeStation({
           id: 's1',
           stops: [makeStop('L1')],
-          label: { row: -1, col: -1, rotation: 1, offset: 0 },
+          label: { row: -1, col: -1, rotation: 1, offset: 0, align: 'auto', valign: 'middle' },
         }),
         makeStation({
           id: 's2',
           stops: [makeStop('L1')],
-          label: { row: 1, col: 1, rotation: 1, offset: 0 },
+          label: { row: 1, col: 1, rotation: 1, offset: 0, align: 'auto', valign: 'middle' },
         }),
       ],
       lines: [makeLine({ id: 'L1', stations: ['s1', 's2'] })],
@@ -235,7 +235,14 @@ describe('findMatchingStations', () => {
   });
 
   it('matches when label cell is identical', () => {
-    const label = { row: 0, col: -1, rotation: 0 as const, offset: 4 };
+    const label = {
+      row: 0,
+      col: -1,
+      rotation: 0 as const,
+      offset: 4,
+      align: 'auto' as const,
+      valign: 'middle' as const,
+    };
     const doc = makeDoc({
       stations: [
         makeStation({ id: 's1', stops: [makeStop('L1')], label }),

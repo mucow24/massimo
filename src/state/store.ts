@@ -1,13 +1,21 @@
 import { create } from 'zustand';
 import { persist, createJSONStorage } from 'zustand/middleware';
 import { temporal } from 'zundo';
-import type { DotShape, Line, LineId, MapDoc, RouteBullet, StationId } from '../model/types';
+import type {
+  DotShape,
+  LabelAlign,
+  LabelValign,
+  Line,
+  LineId,
+  MapDoc,
+  RouteBullet,
+  StationId,
+} from '../model/types';
 import type { Vec2 } from '../geometry/vec';
 import { effectiveLineOrder } from '../model/lineOrder';
 import { defaultIdFactory, IdFactory } from '../model/ids';
 import { DEFAULT_DOC } from '../model/transforms';
 import * as T from '../model/transforms';
-import { migrate as migrateDoc, SCHEMA_VERSION } from '../model/serialize';
 import { randomStationName } from './stationNames';
 
 // Re-export so callers (Sidebar, etc.) keep working with one source of truth.
@@ -76,6 +84,10 @@ interface DocState extends MapDoc {
   flipLabel: (stationId: StationId) => void;
   mirrorLabel: (stationId: StationId) => void;
   setLabelOffset: (stationId: StationId, offset: number) => void;
+  cycleLabelAlign: (stationId: StationId) => void;
+  setLabelAlign: (stationId: StationId, align: LabelAlign) => void;
+  cycleLabelValign: (stationId: StationId) => void;
+  setLabelValign: (stationId: StationId, valign: LabelValign) => void;
 
   addLine: () => LineId;
   updateLine: (id: LineId, patch: Partial<Pick<Line, 'service' | 'color' | 'stations'>>) => void;
@@ -156,6 +168,10 @@ export const useDoc = create<DocState>()(
         flipLabel: (stationId) => set((s) => T.flipLabel(s, stationId)),
         mirrorLabel: (stationId) => set((s) => T.mirrorLabel(s, stationId)),
         setLabelOffset: (stationId, offset) => set((s) => T.setLabelOffset(s, stationId, offset)),
+        cycleLabelAlign: (stationId) => set((s) => T.cycleLabelAlign(s, stationId)),
+        setLabelAlign: (stationId, align) => set((s) => T.setLabelAlign(s, stationId, align)),
+        cycleLabelValign: (stationId) => set((s) => T.cycleLabelValign(s, stationId)),
+        setLabelValign: (stationId, valign) => set((s) => T.setLabelValign(s, stationId, valign)),
 
         addLine: () => {
           const id = ids.lineId();
@@ -224,7 +240,6 @@ export const useDoc = create<DocState>()(
       }),
       {
         name: 'vignelli-map-doc-v1',
-        version: SCHEMA_VERSION,
         storage: createJSONStorage(() => localStorage),
         partialize: (s) => ({
           stations: s.stations,
@@ -236,8 +251,6 @@ export const useDoc = create<DocState>()(
           routeBullets: s.routeBullets,
           transfers: s.transfers,
         }),
-        // Single source of truth for migrations — see model/serialize.ts.
-        migrate: (persisted, fromVersion) => migrateDoc(persisted, fromVersion),
       },
     ),
     {

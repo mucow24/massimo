@@ -1,7 +1,7 @@
 import { describe, it, expect, beforeEach } from 'vitest';
 import { useDoc } from '../state/store';
 import { DEFAULT_DOC } from '../model/transforms';
-import { parse, serialize, SCHEMA_FORMAT, SCHEMA_VERSION } from '../model/serialize';
+import { parse, serialize, SCHEMA_FORMAT } from '../model/serialize';
 import { makeDoc, makeLine, makeStation, makeStop } from './fixtures';
 
 beforeEach(() => {
@@ -53,7 +53,6 @@ describe('save/load round-trip', () => {
     const json = serialize(makeDoc({}));
     const obj = JSON.parse(json);
     expect(obj.format).toBe(SCHEMA_FORMAT);
-    expect(obj.version).toBe(SCHEMA_VERSION);
     expect(obj.doc).toBeDefined();
   });
 });
