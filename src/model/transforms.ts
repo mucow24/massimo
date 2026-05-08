@@ -346,20 +346,21 @@ export function flipStation(doc: MapDoc, id: StationId): MapDoc {
 }
 
 /**
- * Rotate the layout (col/row of every stop + label) 90° while rotating the
- * station the OPPOSITE way, so the world appearance stays the same but the
- * editor view of the unrotated grid is reoriented. Stop orientations and
- * label rotation are transformed in lockstep so world tangent directions
+ * Pure helper: rotate the layout (col/row of every stop + label) 90° while
+ * rotating the station the OPPOSITE way, so world appearance stays the same
+ * but the editor view of the unrotated grid is reoriented. Stop orientations
+ * and label rotation are transformed in lockstep so world tangent directions
  * stay invariant too.
  *
  * dir = +1: layout rotates clockwise; station rotates CCW (rotation += 6).
  * dir = -1: layout rotates CCW; station rotates CW (rotation += 2).
+ *
+ * Exported so that `matching.ts` can use the same transform to canonicalize
+ * a station's structural identity across the 4-fold mirror symmetry.
  */
-export function rotateStationAndLayout(doc: MapDoc, id: StationId, dir: -1 | 1): MapDoc {
-  const cur = doc.stations[id];
-  if (!cur) return doc;
+export function rotateStationLayoutBy90(station: Station, dir: -1 | 1): Station {
   const stationStep = dir === 1 ? 6 : 2; // CCW for R+, CW for R-
-  const nextRot = ((cur.rotation + stationStep) % 8) as Rotation;
+  const nextRot = ((station.rotation + stationStep) % 8) as Rotation;
   const rotateGrid = (col: number, row: number) =>
     dir === 1 ? { col: -row, row: col } : { col: row, row: -col };
   // Orientation maps so that the WORLD tangent direction is preserved across
@@ -381,19 +382,25 @@ export function rotateStationAndLayout(doc: MapDoc, id: StationId, dir: -1 | 1):
       return 'up'; // o === 'right'
     }
   };
-  const stops = cur.stops.map((c) => {
+  const stops = station.stops.map((c) => {
     const r = rotateGrid(c.col, c.row);
     return { ...c, col: r.col, row: r.row, orientation: rotOrient(c.orientation) };
   });
-  const lr = rotateGrid(cur.label.col, cur.label.row);
+  const lr = rotateGrid(station.label.col, station.label.row);
   // Label rotation is in the unrotated local frame; to keep its world
   // orientation, advance it the inverse of the station's step.
   const labelStep = dir === 1 ? 2 : 6;
-  const labelRot = ((cur.label.rotation + labelStep) % 8) as Rotation;
-  const label = { ...cur.label, col: lr.col, row: lr.row, rotation: labelRot };
+  const labelRot = ((station.label.rotation + labelStep) % 8) as Rotation;
+  const label = { ...station.label, col: lr.col, row: lr.row, rotation: labelRot };
+  return { ...station, rotation: nextRot, stops, label };
+}
+
+export function rotateStationAndLayout(doc: MapDoc, id: StationId, dir: -1 | 1): MapDoc {
+  const cur = doc.stations[id];
+  if (!cur) return doc;
   return {
     ...doc,
-    stations: { ...doc.stations, [id]: { ...cur, rotation: nextRot, stops, label } },
+    stations: { ...doc.stations, [id]: rotateStationLayoutBy90(cur, dir) },
   };
 }
 

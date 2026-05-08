@@ -78,7 +78,7 @@ export function MapCanvas() {
     selection.selectedStationIds.length === 1 ? selection.selectedStationIds[0] : null;
   const matchingIds = useMemo(() => {
     if (!selection.mirrorMatching || !soloSelectedId) return [];
-    return findMatchingStations({ stations, lines }, soloSelectedId);
+    return findMatchingStations({ stations, lines }, soloSelectedId).map((m) => m.id);
   }, [selection.mirrorMatching, soloSelectedId, stations, lines]);
   // Color override map for non-selected lines while a line is being edited.
   // Selected line keeps its true color; others get desaturated toward greyscale.
