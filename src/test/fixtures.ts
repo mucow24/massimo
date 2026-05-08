@@ -63,6 +63,10 @@ export function makeDoc(parts: {
   curveRadius?: number;
   lineTags?: import('../model/types').LineTag[];
   transfers?: import('../model/types').Transfer[];
+  labelFontSize?: number;
+  labelBold?: boolean;
+  labelItalic?: boolean;
+  activePalettes?: import('../model/palettes').PaletteId[];
 }): MapDoc {
   const stations: Record<StationId, Station> = {};
   for (const s of parts.stations ?? []) stations[s.id] = s;
@@ -81,6 +85,10 @@ export function makeDoc(parts: {
     lineTags,
     routeBullets: {},
     transfers,
+    labelFontSize: parts.labelFontSize ?? 12,
+    labelBold: parts.labelBold ?? false,
+    labelItalic: parts.labelItalic ?? false,
+    activePalettes: parts.activePalettes ?? ['mta'],
   };
 }
 

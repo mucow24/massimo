@@ -685,6 +685,101 @@ describe('setCurveRadius / clearAll', () => {
   });
 });
 
+describe('label font/style settings', () => {
+  it('exposes font-size bounds and default as constants', () => {
+    expect(T.LABEL_FONT_SIZE_MIN).toBe(2);
+    expect(T.LABEL_FONT_SIZE_MAX).toBe(24);
+    expect(T.LABEL_FONT_SIZE_DEFAULT).toBe(12);
+  });
+
+  it('DEFAULT_DOC has sensible defaults', () => {
+    expect(T.DEFAULT_DOC.labelFontSize).toBe(12);
+    expect(T.DEFAULT_DOC.labelBold).toBe(false);
+    expect(T.DEFAULT_DOC.labelItalic).toBe(false);
+  });
+
+  it('setLabelFontSize sets a valid value', () => {
+    const doc = makeDoc({});
+    expect(T.setLabelFontSize(doc, 16).labelFontSize).toBe(16);
+  });
+
+  it('setLabelFontSize clamps below the minimum', () => {
+    const doc = makeDoc({});
+    expect(T.setLabelFontSize(doc, 0).labelFontSize).toBe(2);
+    expect(T.setLabelFontSize(doc, -5).labelFontSize).toBe(2);
+  });
+
+  it('setLabelFontSize clamps above the maximum', () => {
+    const doc = makeDoc({});
+    expect(T.setLabelFontSize(doc, 99).labelFontSize).toBe(24);
+  });
+
+  it('setLabelFontSize rounds fractional values', () => {
+    const doc = makeDoc({});
+    expect(T.setLabelFontSize(doc, 12.7).labelFontSize).toBe(13);
+    expect(T.setLabelFontSize(doc, 12.4).labelFontSize).toBe(12);
+  });
+
+  it('setLabelBold flips the boolean', () => {
+    const doc = makeDoc({});
+    expect(T.setLabelBold(doc, true).labelBold).toBe(true);
+    expect(T.setLabelBold(T.setLabelBold(doc, true), false).labelBold).toBe(false);
+  });
+
+  it('setLabelItalic flips the boolean', () => {
+    const doc = makeDoc({});
+    expect(T.setLabelItalic(doc, true).labelItalic).toBe(true);
+    expect(T.setLabelItalic(T.setLabelItalic(doc, true), false).labelItalic).toBe(false);
+  });
+});
+
+describe('activePalettes', () => {
+  it('DEFAULT_DOC.activePalettes is exactly [mta]', () => {
+    expect(T.DEFAULT_DOC.activePalettes).toEqual(['mta']);
+  });
+
+  it('setActivePalettes accepts a list and stores it in PALETTES declaration order', () => {
+    const doc = makeDoc({});
+    // BART precedes MTA alphabetically within North America.
+    expect(T.setActivePalettes(doc, ['mta', 'bart']).activePalettes).toEqual(['bart', 'mta']);
+  });
+
+  it('setActivePalettes deduplicates input', () => {
+    const doc = makeDoc({});
+    expect(T.setActivePalettes(doc, ['bart', 'mta', 'mta', 'bart']).activePalettes).toEqual([
+      'bart',
+      'mta',
+    ]);
+  });
+
+  it('setActivePalettes returns the input doc unchanged when the input is empty', () => {
+    const doc = T.setActivePalettes(makeDoc({}), ['mta', 'bart']);
+    expect(T.setActivePalettes(doc, [])).toBe(doc);
+  });
+
+  it('setActivePalettes returns the input doc unchanged when only unknown ids are given', () => {
+    const doc = T.setActivePalettes(makeDoc({}), ['mta', 'bart']);
+    // @ts-expect-error - exercising the runtime guard with an unknown id
+    expect(T.setActivePalettes(doc, ['nope'])).toBe(doc);
+  });
+
+  it('togglePalette adds an absent id', () => {
+    const doc = T.setActivePalettes(makeDoc({}), ['mta']);
+    // Result is normalised to PALETTES order — BART precedes MTA in N. America.
+    expect(T.togglePalette(doc, 'bart').activePalettes).toEqual(['bart', 'mta']);
+  });
+
+  it('togglePalette removes a present id', () => {
+    const doc = T.setActivePalettes(makeDoc({}), ['mta', 'bart']);
+    expect(T.togglePalette(doc, 'bart').activePalettes).toEqual(['mta']);
+  });
+
+  it('togglePalette refuses to remove the last palette (invariant)', () => {
+    const doc = T.setActivePalettes(makeDoc({}), ['mta']);
+    expect(T.togglePalette(doc, 'mta')).toBe(doc);
+  });
+});
+
 describe('addLine — lineCounter', () => {
   it('increments lineCounter on each addLine', () => {
     let doc = makeDoc({});

@@ -80,6 +80,9 @@ export function StationView({
   const toggleStationOnLine = useDoc((s) => s.toggleStationOnLine);
   const redistributeBetween = useDoc((s) => s.redistributeBetween);
   const addTransfer = useDoc((s) => s.addTransfer);
+  const labelFontSize = useDoc((s) => s.labelFontSize);
+  const labelBold = useDoc((s) => s.labelBold);
+  const labelItalic = useDoc((s) => s.labelItalic);
 
   const stops = station.stops;
   const angle = station.rotation * 45;
@@ -401,8 +404,9 @@ export function StationView({
           y={labelAnchorY}
           textAnchor={labelTextAnchor}
           dominantBaseline={labelBaseline}
-          fontSize={12}
-          fontWeight={selection.hoveredStationId === station.id ? 700 : 400}
+          fontSize={labelFontSize}
+          fontWeight={labelBold || selection.hoveredStationId === station.id ? 700 : 400}
+          fontStyle={labelItalic ? 'italic' : undefined}
           textDecoration={selection.hoveredStationId === station.id ? 'underline' : undefined}
           pointerEvents="none"
           fill={highlightColor}
@@ -454,8 +458,9 @@ export function StationView({
             y={labelAnchorY}
             textAnchor={labelTextAnchor}
             dominantBaseline={labelBaseline}
-            fontSize={12}
-            fontWeight={selection.hoveredStationId === station.id ? 700 : 400}
+            fontSize={labelFontSize}
+            fontWeight={labelBold || selection.hoveredStationId === station.id ? 700 : 400}
+            fontStyle={labelItalic ? 'italic' : undefined}
             textDecoration={selection.hoveredStationId === station.id ? 'underline' : undefined}
             pointerEvents="none"
             fill="#111"
