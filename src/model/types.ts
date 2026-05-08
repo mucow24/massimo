@@ -166,6 +166,11 @@ export interface MapDoc {
   routeBullets: Record<string, RouteBullet>;
   // Inter-station transfer indicators (a black line between two stations).
   transfers: Record<string, Transfer>;
+  // Global station-label styling. Applies to every station name; line tags
+  // and route bullets keep their always-bold pill styling.
+  labelFontSize: number;
+  labelBold: boolean;
+  labelItalic: boolean;
 }
 
 // One endpoint of a transfer: a specific dot on a station. `lineId` picks

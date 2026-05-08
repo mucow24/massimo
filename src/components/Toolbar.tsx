@@ -3,10 +3,10 @@ import { useDoc, useSelection } from '../state/store';
 import { useViewportStore } from '../state/viewportStore';
 import { parse, serialize } from '../model/serialize';
 import { DEFAULT_DOC } from '../model/transforms';
-import { useFieldHistory } from './useFieldHistory';
 import { Menu, MenuItem, MenuSeparator } from './Menu';
 import { CursorArrowIcon, HandIcon } from '@radix-ui/react-icons';
 import { SnapToggleBar } from './SnapToggleBar';
+import { OptionsPopover } from './OptionsPopover';
 
 function ToolButtons() {
   const toolMode = useSelection((s) => s.toolMode);
@@ -34,8 +34,6 @@ function ToolButtons() {
 }
 
 export function Toolbar() {
-  const curveRadius = useDoc((s) => s.curveRadius);
-  const setCurveRadius = useDoc((s) => s.setCurveRadius);
   const zoom = useViewportStore((s) => s.zoom);
   const setViewport = useViewportStore((s) => s.setViewport);
   const clearAll = useDoc((s) => s.clearAll);
@@ -44,7 +42,6 @@ export function Toolbar() {
 
   const fileInputRef = useRef<HTMLInputElement | null>(null);
   const [loadError, setLoadError] = useState<string | null>(null);
-  const curveField = useFieldHistory();
 
   const onAddStation = () => {
     selection.setPlacingStation(!selection.placingStation);
@@ -89,6 +86,9 @@ export function Toolbar() {
       lineTags: doc.lineTags,
       routeBullets: doc.routeBullets,
       transfers: doc.transfers,
+      labelFontSize: doc.labelFontSize,
+      labelBold: doc.labelBold,
+      labelItalic: doc.labelItalic,
     });
     const blob = new Blob([json], { type: 'application/json' });
     const url = URL.createObjectURL(blob);
@@ -150,6 +150,8 @@ export function Toolbar() {
       <ToolButtons />
       <span className="tool-group-divider" aria-hidden="true" />
       <SnapToggleBar />
+      <span className="tool-group-divider" aria-hidden="true" />
+      <OptionsPopover />
       <input
         ref={fileInputRef}
         type="file"
@@ -158,19 +160,6 @@ export function Toolbar() {
         onChange={onFileChosen}
       />
       <span className="spacer" />
-      <label>
-        Curve r
-        <input
-          type="range"
-          min={4}
-          max={80}
-          step={1}
-          value={curveRadius}
-          onChange={(e) => setCurveRadius(Number(e.target.value))}
-          {...curveField}
-        />
-        <span style={{ width: 24 }}>{curveRadius}</span>
-      </label>
       <label>
         Zoom
         <span style={{ width: 36 }}>{(zoom * 100).toFixed(0)}%</span>

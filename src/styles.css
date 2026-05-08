@@ -149,6 +149,56 @@ select {
   margin: 4px 0;
 }
 
+.options-popover-wrap {
+  position: relative;
+  display: inline-flex;
+}
+.options-popover {
+  position: absolute;
+  top: 100%;
+  right: 0;
+  margin-top: 4px;
+  z-index: 100;
+  background: #fff;
+  border: 1px solid #ccc;
+  border-radius: 4px;
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.12);
+  padding: 10px 12px;
+  min-width: 240px;
+  font-size: 12px;
+  color: #111;
+}
+.options-popover-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 8px;
+}
+.options-popover-row:last-child {
+  margin-bottom: 0;
+}
+.options-popover-label {
+  width: 72px;
+  flex-shrink: 0;
+  color: #555;
+}
+.options-popover-row input[type='range'] {
+  flex: 1;
+  min-width: 0;
+}
+.options-popover-value {
+  width: 24px;
+  text-align: right;
+  color: #555;
+}
+.options-popover-spin {
+  width: 44px;
+  font-size: 12px;
+  padding: 1px 4px;
+  border: 1px solid #ccc;
+  border-radius: 3px;
+}
+
 .toolbar .spacer {
   flex: 1;
 }
