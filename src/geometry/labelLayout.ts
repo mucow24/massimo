@@ -45,12 +45,6 @@ export function labelLayoutLocal(station: Station): LabelLayout {
   const dirPlus = DIR_8[label.rotation];
   const dirMinus = DIR_8[(label.rotation + 4) % 8];
 
-  const isAdjacent = (row: number, col: number) => {
-    if (stops.some((s) => s.row === row && s.col === col)) return true;
-    if (phantomDot && phantomDot.row === row && phantomDot.col === col) return true;
-    return false;
-  };
-
   const readAngle = (label.rotation * Math.PI) / 4;
   const readCos = Math.cos(readAngle);
   const readSin = Math.sin(readAngle);
@@ -64,9 +58,20 @@ export function labelLayoutLocal(station: Station): LabelLayout {
     // changes.
     textAnchor = label.align;
   } else {
-    // 'auto' (or unset): snap against an adjacent stop; otherwise center.
-    const adjPlus = isAdjacent(label.row + dirPlus.dRow, label.col + dirPlus.dCol);
-    const adjMinus = isAdjacent(label.row + dirMinus.dRow, label.col + dirMinus.dCol);
+    // 'auto' (or unset): snap whenever a stop sits in the reading-direction
+    // HALF-plane around the label cell — not just the strictly-adjacent cell
+    // along the reading axis. This covers diagonal-reading labels with
+    // cardinal-adjacent stops (and vice versa); without it, a NE-reading
+    // label with a W-adjacent stop drops to centered placement and the
+    // text floats off in space.
+    //
+    // Each of the 8 surrounding cells is classified by sign of its dot
+    // product with the reading direction: > 0 = ahead, < 0 = behind, = 0
+    // (perpendicular) doesn't snap. The 0 threshold is safe because in the
+    // 8-cell grid the smallest non-zero |dot| is ~0.707; perpendicular
+    // cells are exactly 0 (mod fp noise).
+    const adjPlus = anyStopInHalfPlane(stops, phantomDot, label, readCos, readSin, 1);
+    const adjMinus = anyStopInHalfPlane(stops, phantomDot, label, readCos, readSin, -1);
     if (adjPlus) {
       textAnchor = 'end';
       anchorX = labelCenter.x + dirPlus.anchor.x - LABEL_GAP * readCos;
@@ -145,4 +150,42 @@ export function labelLayoutLocal(station: Station): LabelLayout {
     hitW: textW + 2 * HIT_PAD,
     hitH: blockH + 2 * HIT_PAD,
   };
+}
+
+/**
+ * Is any stop (or the phantom dot) one cell away from the label, in the
+ * half-plane on `sign`'s side of the reading direction? `sign` is +1 for
+ * the "ahead" half-plane (dirPlus) or -1 for "behind" (dirMinus).
+ */
+function anyStopInHalfPlane(
+  stops: Station['stops'],
+  phantomDot: { row: number; col: number } | null,
+  label: Station['label'],
+  readCos: number,
+  readSin: number,
+  sign: 1 | -1,
+): boolean {
+  // Threshold > 0 — perpendicular cells (dot ≈ 0) don't snap; cells in the
+  // half-plane have |dot| ≥ ~0.707 so a tiny floating-point epsilon would
+  // also work, but a strict > 0 (with sign applied) is fine for our 8-way
+  // grid.
+  const isInHalfPlane = (dRow: number, dCol: number) => {
+    const dx = dCol;
+    const dy = dRow;
+    const dot = dx * readCos + dy * readSin;
+    return sign * dot > 1e-6;
+  };
+  for (const s of stops) {
+    const dRow = s.row - label.row;
+    const dCol = s.col - label.col;
+    // Only one-cell-away neighbors (Chebyshev distance == 1).
+    if (Math.max(Math.abs(dRow), Math.abs(dCol)) !== 1) continue;
+    if (isInHalfPlane(dRow, dCol)) return true;
+  }
+  if (phantomDot) {
+    const dRow = phantomDot.row - label.row;
+    const dCol = phantomDot.col - label.col;
+    if (Math.max(Math.abs(dRow), Math.abs(dCol)) === 1 && isInHalfPlane(dRow, dCol)) return true;
+  }
+  return false;
 }
