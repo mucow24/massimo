@@ -18,4 +18,9 @@ describe('App smoke', () => {
     expect(screen.getByRole('button', { name: /Canvas/ })).toBeInTheDocument();
     expect(screen.getByRole('button', { name: /Add/ })).toBeInTheDocument();
   });
+
+  it('exposes an Options button in the toolbar', () => {
+    render(<App />);
+    expect(screen.getByRole('button', { name: 'Options' })).toBeInTheDocument();
+  });
 });

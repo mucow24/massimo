@@ -1,4 +1,5 @@
-import { ReactNode, useEffect, useId, useRef, useState } from 'react';
+import { ReactNode, useId } from 'react';
+import { usePopover } from './usePopover';
 
 interface MenuProps {
   label: string;
@@ -11,27 +12,8 @@ interface MenuProps {
  * outside click, Escape, or after an item is activated.
  */
 export function Menu({ label, children }: MenuProps) {
-  const [open, setOpen] = useState(false);
-  const wrapRef = useRef<HTMLDivElement | null>(null);
+  const { open, setOpen, wrapRef } = usePopover();
   const id = useId();
-
-  useEffect(() => {
-    if (!open) return;
-    const onDocClick = (e: globalThis.MouseEvent) => {
-      if (wrapRef.current && !wrapRef.current.contains(e.target as Node)) setOpen(false);
-    };
-    const onKey = (e: globalThis.KeyboardEvent) => {
-      if (e.key === 'Escape') setOpen(false);
-    };
-    // Defer until next tick so the click that opened the menu doesn't also close it.
-    const t = setTimeout(() => document.addEventListener('mousedown', onDocClick), 0);
-    document.addEventListener('keydown', onKey);
-    return () => {
-      clearTimeout(t);
-      document.removeEventListener('mousedown', onDocClick);
-      document.removeEventListener('keydown', onKey);
-    };
-  }, [open]);
 
   return (
     <div className="menu" ref={wrapRef}>
@@ -41,7 +23,7 @@ export function Menu({ label, children }: MenuProps) {
         aria-haspopup="menu"
         aria-expanded={open}
         aria-controls={id}
-        onClick={() => setOpen((x) => !x)}
+        onClick={() => setOpen(!open)}
       >
         {label}
       </button>
