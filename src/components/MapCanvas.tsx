@@ -1,6 +1,7 @@
-import { useMemo, useRef, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 
 import { beginHistoryGroup, dragState, useDoc, useSelection } from '../state/store';
+import { randomStationName } from '../state/stationNames';
 import { useSnapPrefs } from '../state/snapPrefs';
 import { snapDraggedStation, type SnapGuide } from '../geometry/snap';
 import {
@@ -22,6 +23,7 @@ import { WarningToasts } from './canvas/WarningToasts';
 import { EditingBanner } from './canvas/EditingBanner';
 import { SnapGuides } from './canvas/SnapGuides';
 import { LineTagsLayer } from './canvas/LineTagsLayer';
+import { StationPlacingPreview } from './canvas/StationPlacingPreview';
 import { RouteBulletView } from './RouteBulletView';
 import { RouteBulletPopover } from './RouteBulletPopover';
 import { TransferLayer, transferEndWorld } from './TransferLayer';
@@ -142,10 +144,21 @@ export function MapCanvas() {
     history: ReturnType<typeof beginHistoryGroup>;
   } | null>(null);
   const [bulletSnapGuides, setBulletSnapGuides] = useState<SnapGuide[]>([]);
-  // Cursor position in world coords — used to draw the in-progress transfer
-  // line from the picked anchor station to the user's cursor while they
-  // hunt for the second endpoint.
+  // Cursor position in world coords — drives the in-progress transfer line
+  // from the anchor dot to the cursor, and the station-placing-mode ghost
+  // that follows the cursor before each click.
   const [cursorWorld, setCursorWorld] = useState<{ x: number; y: number } | null>(null);
+  // Pre-rolled name for the next station that'll drop in placing mode, so
+  // the ghost shows the actual name (not a placeholder) and the click commits
+  // the same name the user just saw.
+  const [previewName, setPreviewName] = useState<string | null>(null);
+  useEffect(() => {
+    if (selection.placingStation) {
+      setPreviewName((cur) => cur ?? randomStationName());
+    } else {
+      setPreviewName(null);
+    }
+  }, [selection.placingStation]);
 
   const onPointerDown = (e: React.PointerEvent) => {
     // Middle-button drag pans regardless of tool mode.
@@ -166,7 +179,10 @@ export function MapCanvas() {
     view.onPointerMove(e);
     drag.onPointerMove(e);
     rectSelect.onPointerMove(e);
-    if (selection.creatingTransfer && selection.transferAnchor) {
+    if (
+      (selection.creatingTransfer && selection.transferAnchor) ||
+      selection.placingStation
+    ) {
       setCursorWorld(view.screenToWorld(e.clientX, e.clientY));
     } else if (cursorWorld) {
       setCursorWorld(null);
@@ -329,7 +345,8 @@ export function MapCanvas() {
     if (dragState.suppressClick) return;
     if (selection.placingStation) {
       const w = view.screenToWorld(e.clientX, e.clientY);
-      addStation(w.x, w.y);
+      addStation(w.x, w.y, previewName ?? undefined);
+      setPreviewName(randomStationName());
       // Stay in place-station mode; user clicks again or hits Esc / the
       // toolbar button to exit. Don't auto-select the new station — that
       // would close the placing-mode banner via the inspector swap.
@@ -430,6 +447,9 @@ export function MapCanvas() {
         onPointerDown={onPointerDown}
         onPointerMove={onPointerMove}
         onPointerUp={onPointerUp}
+        onPointerLeave={() => {
+          if (cursorWorld) setCursorWorld(null);
+        }}
         onClick={onCanvasClick}
         onContextMenu={(e) => e.preventDefault()}
         onDragStart={(e) => e.preventDefault()}
@@ -575,6 +595,16 @@ export function MapCanvas() {
               />
             );
           })()}
+
+        {/* Station-placing-mode ghost: a faint dot + name following the
+            cursor before each click, so the user can see where (and what
+            name) the next placement will land. */}
+        <StationPlacingPreview
+          world={selection.placingStation ? cursorWorld : null}
+          name={previewName}
+          lines={lines}
+        />
+
 
         {/* Route bullets: rendered before the dim so they fade with the
             rest of the map when a line is selected. */}
