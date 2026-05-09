@@ -181,10 +181,7 @@ export function MapCanvas() {
     view.onPointerMove(e);
     drag.onPointerMove(e);
     rectSelect.onPointerMove(e);
-    if (
-      (selection.creatingTransfer && selection.transferAnchor) ||
-      selection.placingStation
-    ) {
+    if ((selection.creatingTransfer && selection.transferAnchor) || selection.placingStation) {
       setCursorWorld(view.screenToWorld(e.clientX, e.clientY));
     } else if (cursorWorld) {
       setCursorWorld(null);
@@ -606,7 +603,6 @@ export function MapCanvas() {
           name={previewName}
           lines={lines}
         />
-
 
         {/* Route bullets: rendered before the dim so they fade with the
             rest of the map when a line is selected. */}
