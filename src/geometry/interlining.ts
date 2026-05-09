@@ -318,8 +318,7 @@ export function buildStopMarkers(
         rotationDeg: station.rotation * 45,
         priority: lineIndex[cell.lineId] ?? fallback,
         style,
-        outward:
-          style === 'dashed' ? terminusOutwardFromBand(line, station.id, bandByPair) : null,
+        outward: style === 'dashed' ? terminusOutwardFromBand(line, station.id, bandByPair) : null,
       });
     }
   }
