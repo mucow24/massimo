@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState } from 'react';
+import { useMemo, useRef, useState } from 'react';
 
 import { beginHistoryGroup, dragState, useDoc, useSelection } from '../state/store';
 import { randomStationName } from '../state/stationNames';
@@ -150,15 +150,17 @@ export function MapCanvas() {
   const [cursorWorld, setCursorWorld] = useState<{ x: number; y: number } | null>(null);
   // Pre-rolled name for the next station that'll drop in placing mode, so
   // the ghost shows the actual name (not a placeholder) and the click commits
-  // the same name the user just saw.
-  const [previewName, setPreviewName] = useState<string | null>(null);
-  useEffect(() => {
-    if (selection.placingStation) {
-      setPreviewName((cur) => cur ?? randomStationName());
-    } else {
-      setPreviewName(null);
-    }
-  }, [selection.placingStation]);
+  // the same name the user just saw. Reset when placing mode toggles via the
+  // "adjust state during render" pattern — see
+  // https://react.dev/learn/you-might-not-need-an-effect#adjusting-some-state-when-a-prop-changes
+  const [previewName, setPreviewName] = useState<string | null>(() =>
+    selection.placingStation ? randomStationName() : null,
+  );
+  const [prevPlacing, setPrevPlacing] = useState(selection.placingStation);
+  if (selection.placingStation !== prevPlacing) {
+    setPrevPlacing(selection.placingStation);
+    setPreviewName(selection.placingStation ? randomStationName() : null);
+  }
 
   const onPointerDown = (e: React.PointerEvent) => {
     // Middle-button drag pans regardless of tool mode.
@@ -179,10 +181,7 @@ export function MapCanvas() {
     view.onPointerMove(e);
     drag.onPointerMove(e);
     rectSelect.onPointerMove(e);
-    if (
-      (selection.creatingTransfer && selection.transferAnchor) ||
-      selection.placingStation
-    ) {
+    if ((selection.creatingTransfer && selection.transferAnchor) || selection.placingStation) {
       setCursorWorld(view.screenToWorld(e.clientX, e.clientY));
     } else if (cursorWorld) {
       setCursorWorld(null);
@@ -604,7 +603,6 @@ export function MapCanvas() {
           name={previewName}
           lines={lines}
         />
-
 
         {/* Route bullets: rendered before the dim so they fade with the
             rest of the map when a line is selected. */}
