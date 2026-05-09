@@ -7,6 +7,7 @@ import type {
   LabelValign,
   Line,
   LineId,
+  LineStyle,
   MapDoc,
   RouteBullet,
   StationId,
@@ -78,6 +79,12 @@ interface DocState extends MapDoc {
   toggleStationOnLine: (lineId: LineId, stationId: StationId, insertAfterIndex?: number) => void;
   removeStationFromLine: (lineId: LineId, idx: number) => void;
   reorderLineStations: (lineId: LineId, stations: StationId[]) => void;
+  setLineSegmentStyle: (
+    lineId: LineId,
+    fromStationId: StationId,
+    toStationId: StationId,
+    style: LineStyle,
+  ) => void;
   deleteLine: (id: LineId) => void;
   moveLineInOrder: (id: LineId, dir: -1 | 1) => void;
 
@@ -178,6 +185,8 @@ export const useDoc = create<DocState>()(
         removeStationFromLine: (lineId, idx) => set((s) => T.removeStationFromLine(s, lineId, idx)),
         reorderLineStations: (lineId, stations) =>
           set((s) => T.reorderLineStations(s, lineId, stations)),
+        setLineSegmentStyle: (lineId, fromStationId, toStationId, style) =>
+          set((s) => T.setLineSegmentStyle(s, lineId, fromStationId, toStationId, style)),
         deleteLine: (id) => set((s) => T.deleteLine(s, id)),
         moveLineInOrder: (id, dir) => set((s) => T.moveLineInOrder(s, id, dir)),
 

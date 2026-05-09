@@ -1,4 +1,5 @@
-import { Line, LineId, Station, StationId, StopCell } from '../model/types';
+import { Line, LineId, LineStyle, Station, StationId, StopCell } from '../model/types';
+import { pairKeyOf } from '../model/pairKey';
 import { Vec2 } from './vec';
 import { route } from './router';
 import { rotateBy, STOP_SIZE, stopCenterAt, travelDirLocal } from './orientation';
@@ -9,7 +10,8 @@ export interface SegmentBandSpec {
   fromId: StationId;
   toId: StationId;
   // Lines in this band, in render order (perpendicular to direction of travel).
-  lines: { id: LineId; color: string }[];
+  // `style` is the per-segment override resolved at build time (solid by default).
+  lines: { id: LineId; color: string; style: LineStyle }[];
   paths: string[];
   warning: boolean;
   centerline: Vec2[];
@@ -21,6 +23,17 @@ export interface SegmentBandSpec {
 // A single colored stop square for one line at one station, with its
 // per-line priority. Rendered alongside bands so that a back-stack line's
 // stop square doesn't paint over a front-stack line's band passing through.
+//
+// `style` is derived from this line's segmentStyles at the incident
+// adjacencies: any hatched adjacency wins (so the hatch pattern visually
+// flows through the station); otherwise dashed only if EVERY adjacency is
+// dashed (so two dashed corridors meet cleanly at the stop center with no
+// painted marker breaking up the dash rhythm); otherwise solid.
+//
+// `outward` is set only when this is a TERMINUS on a dashed run (single
+// dashed adjacency). The renderer paints a short cap-extension stub
+// outward along this unit vector so the dashes fill the outer half of the
+// dot — without it the dashed line would visually end mid-dot.
 export interface StopMarkerSpec {
   cx: number;
   cy: number;
@@ -28,9 +41,9 @@ export interface StopMarkerSpec {
   lineId: LineId;
   rotationDeg: number; // station rotation in degrees CW
   priority: number;
+  style: LineStyle;
+  outward: Vec2 | null;
 }
-
-const pairKeyOf = (a: StationId, b: StationId) => (a < b ? `${a}|${b}` : `${b}|${a}`);
 
 interface SegInfo {
   // Canonical (alphabetic): fromId < toId always. Both fromCell and toCell are
@@ -42,6 +55,7 @@ interface SegInfo {
   toCell: StopCell;
   lineId: LineId;
   color: string;
+  style: LineStyle;
   // Unit world vector along this LINE'S travel direction at this segment
   // (line.stations[i] → line.stations[i+1]). Drives auto-axis orientation
   // resolution. Not necessarily canonFrom→canonTo — a line traversing the
@@ -121,6 +135,7 @@ export function buildBands(
         toCell: forward ? toCell : fromCell,
         lineId,
         color: line.color,
+        style: line.segmentStyles?.[key] ?? 'solid',
         worldHint: { x: dxLine / lineLen, y: dyLine / lineLen },
       });
     }
@@ -266,13 +281,22 @@ export function buildLineIndex(
 
 // One stop marker per (station, line stop) pair, in world coords, with the
 // line's per-line z-priority. Rendered interleaved with bands.
+//
+// `bands` (optional) is consulted for dashed-terminus markers: we read the
+// band's actual centerline tangent at the terminus so the cap-extension
+// stub aligns with the rendered band path (which can curve through fillets,
+// so a naive station-to-station direction would be wrong).
 export function buildStopMarkers(
   stations: Record<StationId, Station>,
   lines: Record<LineId, Line>,
   lineOrder: LineId[],
+  bands: SegmentBandSpec[] = [],
 ): StopMarkerSpec[] {
   const lineIndex = buildLineIndex(lineOrder, lines);
   const fallback = Object.keys(lineIndex).length;
+  // Index bands by pairKey for O(1) lookup during outward computation.
+  const bandByPair: Record<string, SegmentBandSpec> = {};
+  for (const b of bands) bandByPair[b.pairKey] = b;
   const markers: StopMarkerSpec[] = [];
   for (const station of Object.values(stations)) {
     for (const cell of station.stops) {
@@ -285,6 +309,7 @@ export function buildStopMarkers(
       const s = Math.sin(a);
       const cx = station.x + local.x * c - local.y * s;
       const cy = station.y + local.x * s + local.y * c;
+      const style = stationMarkerStyle(line, station.id);
       markers.push({
         cx,
         cy,
@@ -292,10 +317,76 @@ export function buildStopMarkers(
         lineId: cell.lineId,
         rotationDeg: station.rotation * 45,
         priority: lineIndex[cell.lineId] ?? fallback,
+        style,
+        outward:
+          style === 'dashed' ? terminusOutwardFromBand(line, station.id, bandByPair) : null,
       });
     }
   }
   return markers;
+}
+
+// Unit vector pointing outward from `stationId` along the band's actual
+// tangent at the terminus, iff this station is a TERMINUS for the line
+// (single adjacency) AND the corresponding band is in `bandByPair`. Returns
+// null otherwise.
+//
+// Using the band's centerline (rather than a station-to-station direction)
+// is what makes the cap-extension stub align with the rendered band path,
+// even when the band routes through a fillet or has its endpoint shifted
+// off the station's geometric center for interlining.
+function terminusOutwardFromBand(
+  line: Line,
+  stationId: StationId,
+  bandByPair: Record<string, SegmentBandSpec>,
+): Vec2 | null {
+  const indices: number[] = [];
+  for (let i = 0; i < line.stations.length; i++) {
+    if (line.stations[i] === stationId) indices.push(i);
+  }
+  if (indices.length !== 1) return null;
+  const i = indices[0];
+  let neighbourId: StationId | null = null;
+  if (i === 0 && line.stations.length > 1) neighbourId = line.stations[1];
+  else if (i === line.stations.length - 1 && line.stations.length > 1)
+    neighbourId = line.stations[i - 1];
+  if (!neighbourId) return null;
+  const band = bandByPair[pairKeyOf(stationId, neighbourId)];
+  if (!band || band.centerline.length < 2) return null;
+  // Centerline goes canonFrom → canonTo. Pick the endpoint matching our
+  // terminus station and read the tangent pointing OUT of the band there.
+  const v = band.centerline;
+  const atFrom = band.fromId === stationId;
+  const atTo = band.toId === stationId;
+  if (!atFrom && !atTo) return null;
+  const a = atFrom ? v[1] : v[v.length - 2];
+  const b = atFrom ? v[0] : v[v.length - 1];
+  const dx = b.x - a.x;
+  const dy = b.y - a.y;
+  const len = Math.hypot(dx, dy);
+  if (len === 0) return null;
+  return { x: dx / len, y: dy / len };
+}
+
+// Derive the marker style from this line's segment styles at the adjacencies
+// incident to `stationId`. Rule: any hatched adjacency wins; else dashed iff
+// every adjacency is dashed; else solid. See StopMarkerSpec for rationale.
+function stationMarkerStyle(line: Line, stationId: StationId): LineStyle {
+  const styles = line.segmentStyles;
+  if (!styles) return 'solid';
+  const adjacencies: LineStyle[] = [];
+  for (let i = 0; i < line.stations.length; i++) {
+    if (line.stations[i] !== stationId) continue;
+    if (i > 0) {
+      adjacencies.push(styles[pairKeyOf(line.stations[i - 1], stationId)] ?? 'solid');
+    }
+    if (i < line.stations.length - 1) {
+      adjacencies.push(styles[pairKeyOf(stationId, line.stations[i + 1])] ?? 'solid');
+    }
+  }
+  if (adjacencies.includes('hatched')) return 'hatched';
+  if (adjacencies.length > 0 && adjacencies.every((s) => s === 'dashed')) return 'dashed';
+  return 'solid';
 }
 
 function buildBandSpec(
@@ -329,7 +420,7 @@ function buildBandSpec(
 
   const n = group.length;
   const paths: string[] = [];
-  const linesArr = group.map((g) => ({ id: g.lineId, color: g.color }));
+  const linesArr = group.map((g) => ({ id: g.lineId, color: g.color, style: g.style }));
   for (let k = 0; k < n; k++) {
     const offset = (k - (n - 1) / 2) * STOP_SIZE;
     paths.push(offsetFilletPath(result.vertices, R, offset));

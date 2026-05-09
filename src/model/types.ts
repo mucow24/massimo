@@ -87,12 +87,21 @@ export interface Station {
   label: LabelCell;
 }
 
+// Visual style for a single segment of a line. `solid` is the historical
+// default and is never explicitly stored — a missing entry in `segmentStyles`
+// means solid.
+export type LineStyle = 'solid' | 'dashed' | 'hatched';
+
 export interface Line {
   id: LineId;
   service: string;
   color: string;
   stations: StationId[];
   waypoints?: Record<string, Vec2[]>;
+  // Per-segment style overrides keyed by canonical pair-key (pairKeyOf(a, b)).
+  // Missing key ⇒ 'solid'. Setters delete the key when called with 'solid'
+  // so the default is never stored.
+  segmentStyles?: Record<string, LineStyle>;
 }
 
 // A movable label printed inside a line's color band (Vignelli-style).
