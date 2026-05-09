@@ -246,7 +246,8 @@ describe('buildStopMarkers', () => {
       const ms = buildStopMarkers(doc.stations, doc.lines, doc.lineOrder);
       const station = doc.stations[stationId];
       return ms.find(
-        (m) => m.lineId === lineId && Math.abs(m.cx - station.x) < 1 && Math.abs(m.cy - station.y) < 1,
+        (m) =>
+          m.lineId === lineId && Math.abs(m.cx - station.x) < 1 && Math.abs(m.cy - station.y) < 1,
       );
     };
 
@@ -302,10 +303,7 @@ describe('buildStopMarkers', () => {
           }),
         ],
       });
-    const findMarker = (
-      doc: ReturnType<typeof dashedDoc>,
-      stationId: string,
-    ) => {
+    const findMarker = (doc: ReturnType<typeof dashedDoc>, stationId: string) => {
       const bands = buildBands(doc.stations, doc.lines, 24, doc.lineOrder);
       const ms = buildStopMarkers(doc.stations, doc.lines, doc.lineOrder, bands);
       const st = doc.stations[stationId];

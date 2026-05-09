@@ -78,13 +78,7 @@ export function HatchPatterns({ colors }: Props) {
           height={TILE_HEIGHT}
           patternTransform="rotate(45)"
         >
-          <rect
-            x={0}
-            y={0}
-            width={HATCH_STRIPE_WIDTH}
-            height={TILE_HEIGHT}
-            fill={color}
-          />
+          <rect x={0} y={0} width={HATCH_STRIPE_WIDTH} height={TILE_HEIGHT} fill={color} />
         </pattern>
       ))}
     </>
