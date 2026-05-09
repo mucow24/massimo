@@ -1,5 +1,5 @@
 import type { LineStyle } from '../../model/types';
-import { HatchPatterns, lineStyleStrokeAttrs } from '../HatchPatterns';
+import { HatchPatterns, lineStyleStrokeAttrs, lineStyleUnderlayAttrs } from '../HatchPatterns';
 
 interface Props {
   style: LineStyle;
@@ -21,6 +21,7 @@ const TITLE: Record<LineStyle, string> = {
 // with an aria-label so screen-reader-friendly queries can find it.
 export function SegmentStyleDivider({ style, color, onClick }: Props) {
   const { stroke, strokeDasharray } = lineStyleStrokeAttrs(style, color);
+  const underlay = lineStyleUnderlayAttrs(style);
 
   return (
     <button
@@ -53,6 +54,17 @@ export function SegmentStyleDivider({ style, color, onClick }: Props) {
           <defs>
             <HatchPatterns colors={[color]} />
           </defs>
+        )}
+        {underlay && (
+          <line
+            x1={0}
+            y1={HEIGHT / 2}
+            x2={100}
+            y2={HEIGHT / 2}
+            stroke={underlay.stroke}
+            strokeWidth={HEIGHT}
+            strokeLinecap={underlay.strokeLinecap}
+          />
         )}
         <line
           x1={0}

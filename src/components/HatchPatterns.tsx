@@ -14,13 +14,18 @@ export function hatchPatternId(color: string): string {
 // Locked-in pattern geometry, both tuned visually against the NYC subway
 // map's dashed-service convention.
 //
-//   hatched: 2px diagonal stripes separated by 2px gaps, rotated 45° in
-//            world space.
-//   dashed : 2px painted dashes separated by 2px gaps along the stroke.
+//   hatched: 2px diagonal stripes separated by 2px white stripes, rotated
+//            45° in world space.
+//   dashed : 2px painted dashes separated by 2px gaps along the stroke,
+//            backed by a solid white underlay so the gaps read as white.
 export const HATCH_STRIPE_WIDTH = 2;
 export const HATCH_GAP_WIDTH = 2;
 const DASH_ON = 2;
 const DASH_OFF = 2;
+
+// Opaque fill painted in the "off" positions of dashed/hatched strokes so
+// lines passing behind them are fully occluded instead of bleeding through.
+const UNDERLAY_COLOR = '#fff';
 
 // Resolve a per-segment line style into the SVG stroke attributes shared by
 // every code path that paints a band-stroke (SegmentBand + the selected-line
@@ -54,6 +59,18 @@ export function lineStyleStrokeAttrs(
   return { stroke: color, strokeDasharray: undefined, strokeLinecap: 'square' };
 }
 
+// Companion to lineStyleStrokeAttrs: when a style needs a solid underlay
+// painted beneath the foreground stroke (so its "off" positions read as
+// opaque white instead of letting the line behind show through), this
+// returns the underlay's stroke attrs. Returns null when no underlay is
+// needed (solid; hatched bakes white into the SVG <pattern> directly).
+export function lineStyleUnderlayAttrs(
+  style: LineStyle,
+): { stroke: string; strokeLinecap: 'butt' | 'square' } | null {
+  if (style === 'dashed') return { stroke: UNDERLAY_COLOR, strokeLinecap: 'butt' };
+  return null;
+}
+
 interface Props {
   colors: string[];
 }
@@ -79,6 +96,13 @@ export function HatchPatterns({ colors }: Props) {
           patternTransform="rotate(45)"
         >
           <rect x={0} y={0} width={HATCH_STRIPE_WIDTH} height={TILE_HEIGHT} fill={color} />
+          <rect
+            x={HATCH_STRIPE_WIDTH}
+            y={0}
+            width={HATCH_GAP_WIDTH}
+            height={TILE_HEIGHT}
+            fill={UNDERLAY_COLOR}
+          />
         </pattern>
       ))}
     </>
