@@ -1,0 +1,69 @@
+import type { LineStyle } from '../../model/types';
+import { HatchPatterns, lineStyleStrokeAttrs } from '../HatchPatterns';
+
+interface Props {
+  style: LineStyle;
+  color: string;
+  onClick: () => void;
+}
+
+const HEIGHT = 8;
+const TITLE: Record<LineStyle, string> = {
+  solid: 'Segment style: solid (click to set dashed)',
+  dashed: 'Segment style: dashed (click to set hatched)',
+  hatched: 'Segment style: hatched (click to set solid)',
+};
+
+// Compact preview row that mirrors the rendered look of a segment between two
+// station-list rows. Doubles as a clickable cycler — solid → dashed → hatched.
+//
+// Carries data-segment-style-divider + data-style for tests; uses role="button"
+// with an aria-label so screen-reader-friendly queries can find it.
+export function SegmentStyleDivider({ style, color, onClick }: Props) {
+  const { stroke, strokeDasharray } = lineStyleStrokeAttrs(style, color);
+
+  return (
+    <button
+      type="button"
+      data-segment-style-divider
+      data-style={style}
+      onClick={onClick}
+      aria-label={TITLE[style]}
+      title={TITLE[style]}
+      style={{
+        display: 'block',
+        width: '100%',
+        height: HEIGHT + 4,
+        margin: '2px 0',
+        padding: 0,
+        background: 'transparent',
+        border: '1px solid transparent',
+        borderRadius: 3,
+        cursor: 'pointer',
+      }}
+    >
+      <svg
+        width="100%"
+        height={HEIGHT}
+        preserveAspectRatio="none"
+        viewBox={`0 0 100 ${HEIGHT}`}
+        style={{ display: 'block' }}
+      >
+        {style === 'hatched' && (
+          <defs>
+            <HatchPatterns colors={[color]} />
+          </defs>
+        )}
+        <line
+          x1={0}
+          y1={HEIGHT / 2}
+          x2={100}
+          y2={HEIGHT / 2}
+          stroke={stroke}
+          strokeWidth={HEIGHT}
+          strokeDasharray={strokeDasharray}
+        />
+      </svg>
+    </button>
+  );
+}

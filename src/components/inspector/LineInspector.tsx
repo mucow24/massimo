@@ -1,7 +1,15 @@
 import { useDoc, useSelection } from '../../state/store';
-import type { LineId } from '../../model/types';
+import type { LineId, LineStyle } from '../../model/types';
+import { pairKeyOf } from '../../model/pairKey';
 import { ColorPalette } from './ColorPalette';
 import { useFieldHistory } from '../useFieldHistory';
+import { SegmentStyleDivider } from './SegmentStyleDivider';
+
+const NEXT_STYLE: Record<LineStyle, LineStyle> = {
+  solid: 'dashed',
+  dashed: 'hatched',
+  hatched: 'solid',
+};
 
 export function LineInspector({ id }: { id: LineId }) {
   const line = useDoc((s) => s.lines[id]);
@@ -9,10 +17,17 @@ export function LineInspector({ id }: { id: LineId }) {
   const updateLine = useDoc((s) => s.updateLine);
   const removeStationFromLine = useDoc((s) => s.removeStationFromLine);
   const reorderLineStations = useDoc((s) => s.reorderLineStations);
+  const setLineSegmentStyle = useDoc((s) => s.setLineSegmentStyle);
   const selection = useSelection();
   const serviceField = useFieldHistory();
 
   if (!line) return null;
+
+  const cycleSegmentStyle = (fromStationId: string, toStationId: string) => {
+    const key = pairKeyOf(fromStationId, toStationId);
+    const cur = (line.segmentStyles?.[key] ?? 'solid') as LineStyle;
+    setLineSegmentStyle(line.id, fromStationId, toStationId, NEXT_STYLE[cur]);
+  };
 
   const moveSt = (idx: number, dir: -1 | 1) => {
     const arr = [...line.stations];
@@ -156,6 +171,20 @@ export function LineInspector({ id }: { id: LineId }) {
                   }}
                 />
               )}
+              {i < line.stations.length - 1 &&
+                (() => {
+                  const nextSid = line.stations[i + 1];
+                  if (!stations[nextSid]) return null;
+                  const key = pairKeyOf(sid, nextSid);
+                  const style = (line.segmentStyles?.[key] ?? 'solid') as LineStyle;
+                  return (
+                    <SegmentStyleDivider
+                      style={style}
+                      color={line.color}
+                      onClick={() => cycleSegmentStyle(sid, nextSid)}
+                    />
+                  );
+                })()}
             </div>
           );
         })}

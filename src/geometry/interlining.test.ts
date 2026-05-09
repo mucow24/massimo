@@ -225,4 +225,131 @@ describe('buildStopMarkers', () => {
     const markers = buildStopMarkers(doc.stations, doc.lines, doc.lineOrder);
     expect(markers).toHaveLength(0);
   });
+
+  describe('style derivation from segmentStyles', () => {
+    const lineThrough = (segmentStyles?: Record<string, 'solid' | 'dashed' | 'hatched'>) =>
+      makeLine({ id: 'L1', stations: ['s1', 's2', 's3'], segmentStyles });
+    const docWith = (segmentStyles?: Record<string, 'solid' | 'dashed' | 'hatched'>) =>
+      makeDoc({
+        stations: [
+          stationWithStop('s1', 'L1', { x: 0, y: 0 }),
+          stationWithStop('s2', 'L1', { x: 100, y: 0 }),
+          stationWithStop('s3', 'L1', { x: 200, y: 0 }),
+        ],
+        lines: [lineThrough(segmentStyles)],
+      });
+    const markerForStation = (
+      doc: ReturnType<typeof docWith>,
+      stationId: string,
+      lineId = 'L1',
+    ) => {
+      const ms = buildStopMarkers(doc.stations, doc.lines, doc.lineOrder);
+      const station = doc.stations[stationId];
+      return ms.find(
+        (m) =>
+          m.lineId === lineId && Math.abs(m.cx - station.x) < 1 && Math.abs(m.cy - station.y) < 1,
+      );
+    };
+
+    it('defaults to solid when no segmentStyles are set', () => {
+      const doc = docWith();
+      expect(markerForStation(doc, 's2')?.style).toBe('solid');
+    });
+
+    it('hatched if any incident adjacency is hatched (interior station)', () => {
+      const doc = docWith({ 's1|s2': 'hatched' });
+      expect(markerForStation(doc, 's2')?.style).toBe('hatched');
+    });
+
+    it('hatched at a terminus when its only adjacency is hatched', () => {
+      const doc = docWith({ 's1|s2': 'hatched' });
+      expect(markerForStation(doc, 's1')?.style).toBe('hatched');
+    });
+
+    it('hatched wins over dashed at a junction (one hatched + one dashed adjacency)', () => {
+      const doc = docWith({ 's1|s2': 'hatched', 's2|s3': 'dashed' });
+      expect(markerForStation(doc, 's2')?.style).toBe('hatched');
+    });
+
+    it('dashed only when EVERY adjacency is dashed (interior between two dashed)', () => {
+      const doc = docWith({ 's1|s2': 'dashed', 's2|s3': 'dashed' });
+      expect(markerForStation(doc, 's2')?.style).toBe('dashed');
+    });
+
+    it('solid at an interior station with one dashed and one solid adjacency', () => {
+      const doc = docWith({ 's1|s2': 'dashed' });
+      expect(markerForStation(doc, 's2')?.style).toBe('solid');
+    });
+
+    it('dashed at a terminus when its only adjacency is dashed', () => {
+      const doc = docWith({ 's1|s2': 'dashed' });
+      expect(markerForStation(doc, 's1')?.style).toBe('dashed');
+    });
+  });
+
+  describe('outward direction (dashed terminus cap-extension)', () => {
+    const dashedDoc = () =>
+      makeDoc({
+        stations: [
+          stationWithStop('s1', 'L1', { x: 0, y: 0 }),
+          stationWithStop('s2', 'L1', { x: 100, y: 0 }),
+          stationWithStop('s3', 'L1', { x: 200, y: 0 }),
+        ],
+        lines: [
+          makeLine({
+            id: 'L1',
+            stations: ['s1', 's2', 's3'],
+            segmentStyles: { 's1|s2': 'dashed', 's2|s3': 'dashed' },
+          }),
+        ],
+      });
+    const findMarker = (doc: ReturnType<typeof dashedDoc>, stationId: string) => {
+      const bands = buildBands(doc.stations, doc.lines, 24, doc.lineOrder);
+      const ms = buildStopMarkers(doc.stations, doc.lines, doc.lineOrder, bands);
+      const st = doc.stations[stationId];
+      return ms.find(
+        (m) => m.lineId === 'L1' && Math.abs(m.cx - st.x) < 1 && Math.abs(m.cy - st.y) < 1,
+      );
+    };
+
+    it('outward at the start terminus points away from the next station', () => {
+      const doc = dashedDoc();
+      const m = findMarker(doc, 's1');
+      // s1 is at (0,0); the line continues to s2 at (100,0). Outward (-x).
+      expect(m?.outward?.x).toBeLessThan(0);
+      expect(Math.abs(m?.outward?.y ?? 1)).toBeLessThan(0.01);
+    });
+
+    it('outward at the end terminus points away from the previous station', () => {
+      const doc = dashedDoc();
+      const m = findMarker(doc, 's3');
+      // s3 is at (200,0); the line came from s2 at (100,0). Outward (+x).
+      expect(m?.outward?.x).toBeGreaterThan(0);
+      expect(Math.abs(m?.outward?.y ?? 1)).toBeLessThan(0.01);
+    });
+
+    it('outward is null at an interior dashed station', () => {
+      const doc = dashedDoc();
+      expect(findMarker(doc, 's2')?.outward).toBeNull();
+    });
+
+    it('outward is null on a non-dashed terminus', () => {
+      const doc = makeDoc({
+        stations: [
+          stationWithStop('s1', 'L1', { x: 0, y: 0 }),
+          stationWithStop('s2', 'L1', { x: 100, y: 0 }),
+        ],
+        lines: [makeLine({ id: 'L1', stations: ['s1', 's2'] })],
+      });
+      expect(findMarker(doc, 's1')?.outward).toBeNull();
+    });
+
+    it('outward is null when bands are not supplied', () => {
+      const doc = dashedDoc();
+      // Calling without bands — terminus marker has no source for tangent.
+      const ms = buildStopMarkers(doc.stations, doc.lines, doc.lineOrder);
+      const m = ms.find((x) => x.lineId === 'L1' && Math.abs(x.cx) < 1);
+      expect(m?.outward).toBeNull();
+    });
+  });
 });

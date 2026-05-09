@@ -58,6 +58,96 @@ describe('parse — error cases', () => {
   });
 });
 
+describe('serialize / parse — segmentStyles', () => {
+  it('round-trips a line with non-solid segmentStyles', () => {
+    const doc = makeDoc({
+      stations: [
+        makeStation({ id: 's1', stops: [makeStop('L1')] }),
+        makeStation({ id: 's2', stops: [makeStop('L1')] }),
+        makeStation({ id: 's3', stops: [makeStop('L1')] }),
+      ],
+      lines: [
+        makeLine({
+          id: 'L1',
+          stations: ['s1', 's2', 's3'],
+          segmentStyles: { 's1|s2': 'hatched', 's2|s3': 'dashed' },
+        }),
+      ],
+    });
+    const r = parse(serialize(doc));
+    expect(r.ok).toBe(true);
+    if (r.ok) {
+      expect(r.doc.lines.L1.segmentStyles).toEqual({
+        's1|s2': 'hatched',
+        's2|s3': 'dashed',
+      });
+    }
+  });
+
+  it("drops 'solid' entries and unknown style values on parse", () => {
+    const json = JSON.stringify({
+      format: 'massimo-map',
+      doc: {
+        ...makeDoc({
+          stations: [
+            makeStation({ id: 's1', stops: [makeStop('L1')] }),
+            makeStation({ id: 's2', stops: [makeStop('L1')] }),
+          ],
+          lines: [
+            makeLine({
+              id: 'L1',
+              stations: ['s1', 's2'],
+              segmentStyles: {
+                's1|s2': 'solid',
+                'ghost|key': 'hatched' as never,
+                's1|s2-bogus': 'frosted' as never,
+              },
+            }),
+          ],
+        }),
+      },
+    });
+    const r = parse(json);
+    expect(r.ok).toBe(true);
+    if (r.ok) expect(r.doc.lines.L1.segmentStyles).toEqual({});
+  });
+
+  it("drops entries whose pair-key isn't an adjacency on the line", () => {
+    const doc = makeDoc({
+      stations: [
+        makeStation({ id: 's1', stops: [makeStop('L1')] }),
+        makeStation({ id: 's2', stops: [makeStop('L1')] }),
+        makeStation({ id: 's3', stops: [makeStop('L1')] }),
+      ],
+      lines: [
+        makeLine({
+          id: 'L1',
+          stations: ['s1', 's2', 's3'],
+          segmentStyles: {
+            's1|s2': 'hatched',
+            's1|s3': 'dashed', // not adjacent on the line
+          },
+        }),
+      ],
+    });
+    const r = parse(serialize(doc));
+    expect(r.ok).toBe(true);
+    if (r.ok) {
+      expect(r.doc.lines.L1.segmentStyles).toEqual({ 's1|s2': 'hatched' });
+    }
+  });
+
+  it('treats missing segmentStyles as undefined (older saves)', () => {
+    const doc = makeDoc({
+      stations: [makeStation({ id: 's1' })],
+      lines: [makeLine({ id: 'L1', stations: ['s1'] })],
+    });
+    const r = parse(serialize(doc));
+    expect(r.ok).toBe(true);
+    if (r.ok) expect(r.doc.lines.L1.segmentStyles).toBeUndefined();
+  });
+});
+
 describe('serialize / parse — dotShape', () => {
   it('round-trips a stop with dotShape', () => {
     const doc = makeDoc({
