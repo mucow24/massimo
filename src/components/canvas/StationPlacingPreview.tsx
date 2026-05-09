@@ -32,20 +32,8 @@ export function StationPlacingPreview({ world, name, lines }: Props) {
   const station = makePreviewStation(world, name);
   return (
     <g pointerEvents="none" opacity={0.5} data-station-preview="">
-      <StationView
-        station={station}
-        lines={lines}
-        layer="label"
-        zoom={1}
-        onStartDrag={NO_OP}
-      />
-      <StationView
-        station={station}
-        lines={lines}
-        layer="dots"
-        zoom={1}
-        onStartDrag={NO_OP}
-      />
+      <StationView station={station} lines={lines} layer="label" zoom={1} onStartDrag={NO_OP} />
+      <StationView station={station} lines={lines} layer="dots" zoom={1} onStartDrag={NO_OP} />
     </g>
   );
 }
