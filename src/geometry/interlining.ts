@@ -15,9 +15,11 @@ export interface SegmentBandSpec {
   paths: string[];
   warning: boolean;
   centerline: Vec2[];
-  // Z-priority: smallest = front-most. min over the band's lines' positions
-  // in lineOrder (or fallback = lineOrder.length when missing).
-  priority: number;
+  // Per-stripe z-priority: parallel to `lines` and `paths`. Smallest = front-most.
+  // Each stripe carries its own line's lineOrder index so a perpendicular
+  // line whose layer is sandwiched between two interlined lines renders
+  // between their stripes (not behind the whole band).
+  linePriorities: number[];
 }
 
 // A single colored stop square for one line at one station, with its
@@ -252,16 +254,52 @@ export function buildBands(
     }
   }
 
-  // 3. Tag each band with its z-priority (min lineIndex of any contained
-  // line). The actual sort happens in the renderer, where bands and stop
-  // markers are merged into one pass.
+  // 3. Tag each stripe in each band with its own line's lineIndex priority.
+  // The actual sort happens in buildOrderedRenderables, where each stripe is
+  // emitted as its own renderable so a perpendicular line at intermediate
+  // depth can interleave between the stripes of an interlined band.
   const lineIndex = buildLineIndex(lineOrder, lines);
   const fallback = Object.keys(lineIndex).length;
   for (const band of bands) {
-    band.priority = Math.min(...band.lines.map((l) => lineIndex[l.id] ?? fallback));
+    band.linePriorities = band.lines.map((l) => lineIndex[l.id] ?? fallback);
   }
 
   return bands;
+}
+
+// Flatten bands + markers into a single list of per-stripe renderables,
+// sorted back-to-front for paint order. Each stripe in a band ships at its
+// own line's z-priority so a line whose layer falls between two interlined
+// lines correctly renders between their stripes.
+//
+// `kind` distinguishes:
+//   - 'stripe' : one path of a band, identified by (band, stripeIndex).
+//   - 'warning': a band's centerline ⚠ glyph (when band.warning). Paints at
+//                the band's front-most stripe priority so it stays visible.
+//   - 'marker' : a stop square for one line at one station.
+export type OrderedRenderable =
+  | { kind: 'stripe'; band: SegmentBandSpec; stripeIndex: number; priority: number }
+  | { kind: 'warning'; band: SegmentBandSpec; priority: number }
+  | { kind: 'marker'; spec: StopMarkerSpec; priority: number };
+
+export function buildOrderedRenderables(
+  bands: SegmentBandSpec[],
+  markers: StopMarkerSpec[],
+): OrderedRenderable[] {
+  const list: OrderedRenderable[] = [];
+  for (const band of bands) {
+    for (let i = 0; i < band.lines.length; i++) {
+      list.push({ kind: 'stripe', band, stripeIndex: i, priority: band.linePriorities[i] });
+    }
+    if (band.warning && band.linePriorities.length > 0) {
+      list.push({ kind: 'warning', band, priority: Math.min(...band.linePriorities) });
+    }
+  }
+  for (const m of markers) {
+    list.push({ kind: 'marker', spec: m, priority: m.priority });
+  }
+  list.sort((a, b) => b.priority - a.priority);
+  return list;
 }
 
 // Reconcile persisted lineOrder against the lines dict (filter dead IDs,
@@ -433,6 +471,6 @@ function buildBandSpec(
     paths,
     warning: result.warning,
     centerline: result.vertices,
-    priority: 0, // overwritten in buildBands' final pass
+    linePriorities: [], // overwritten in buildBands' final pass
   };
 }

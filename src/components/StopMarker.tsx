@@ -1,5 +1,5 @@
 import type { StopMarkerSpec } from '../geometry/interlining';
-import { hatchPatternId, lineStyleStrokeAttrs } from './HatchPatterns';
+import { hatchPatternId, lineStyleStrokeAttrs, lineStyleUnderlayAttrs } from './HatchPatterns';
 import { STOP_SIZE } from '../geometry/orientation';
 
 const HALF = STOP_SIZE / 2;
@@ -36,18 +36,37 @@ export function StopMarker({ spec, effectiveColor }: Props) {
   if (spec.style === 'dashed') {
     if (!spec.outward) return null;
     const { stroke, strokeDasharray, strokeLinecap } = lineStyleStrokeAttrs('dashed', color);
+    const underlay = lineStyleUnderlayAttrs('dashed');
+    const x1 = spec.cx;
+    const y1 = spec.cy;
+    const x2 = spec.cx + spec.outward.x * HALF;
+    const y2 = spec.cy + spec.outward.y * HALF;
     return (
-      <line
-        x1={spec.cx}
-        y1={spec.cy}
-        x2={spec.cx + spec.outward.x * HALF}
-        y2={spec.cy + spec.outward.y * HALF}
-        stroke={stroke}
-        strokeWidth={STOP_SIZE}
-        strokeLinecap={strokeLinecap}
-        strokeDasharray={strokeDasharray}
-        pointerEvents="none"
-      />
+      <>
+        {underlay && (
+          <line
+            x1={x1}
+            y1={y1}
+            x2={x2}
+            y2={y2}
+            stroke={underlay.stroke}
+            strokeWidth={STOP_SIZE}
+            strokeLinecap={underlay.strokeLinecap}
+            pointerEvents="none"
+          />
+        )}
+        <line
+          x1={x1}
+          y1={y1}
+          x2={x2}
+          y2={y2}
+          stroke={stroke}
+          strokeWidth={STOP_SIZE}
+          strokeLinecap={strokeLinecap}
+          strokeDasharray={strokeDasharray}
+          pointerEvents="none"
+        />
+      </>
     );
   }
   return (

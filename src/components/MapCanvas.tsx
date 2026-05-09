@@ -1,4 +1,4 @@
-import { useMemo, useRef, useState } from 'react';
+import { Fragment, useMemo, useRef, useState } from 'react';
 
 import { beginHistoryGroup, dragState, useDoc, useSelection } from '../state/store';
 import { randomStationName } from '../state/stationNames';
@@ -6,13 +6,13 @@ import { useSnapPrefs } from '../state/snapPrefs';
 import { snapDraggedStation, type SnapGuide } from '../geometry/snap';
 import {
   buildBands,
+  buildOrderedRenderables,
   buildStopMarkers,
   SegmentBandSpec,
-  StopMarkerSpec,
 } from '../geometry/interlining';
 import { STOP_SIZE, stopCenterAt, travelDirLocal, rotateBy } from '../geometry/orientation';
-import { SegmentBand } from './SegmentBand';
-import { HatchPatterns, lineStyleStrokeAttrs } from './HatchPatterns';
+import { BandWarning, SegmentBand } from './SegmentBand';
+import { HatchPatterns, lineStyleStrokeAttrs, lineStyleUnderlayAttrs } from './HatchPatterns';
 import { StopMarker } from './StopMarker';
 import { StationView } from './StationView';
 import { useViewport } from './canvas/useViewport';
@@ -111,20 +111,14 @@ export function MapCanvas() {
     return Array.from(seen);
   }, [lines, colorMap]);
 
-  // Bands and stop markers merged into one pass, sorted by per-line z-priority
-  // so a back-stack stop square doesn't paint over a front-stack band passing
-  // through that station.
+  // Band stripes, band warnings, and stop markers merged into one pass and
+  // sorted back-to-front by per-stripe z-priority. Each stripe in an
+  // interlined band paints at its own line's lineOrder index, so a
+  // perpendicular line whose layer falls between two interlined lines
+  // renders between their stripes (not behind the whole band).
   const renderables = useMemo(() => {
     const markers = buildStopMarkers(stations, lines, lineOrder, bands);
-    type R =
-      | { kind: 'band'; spec: SegmentBandSpec; priority: number }
-      | { kind: 'marker'; spec: StopMarkerSpec; priority: number };
-    const list: R[] = [
-      ...bands.map((b) => ({ kind: 'band' as const, spec: b, priority: b.priority })),
-      ...markers.map((m) => ({ kind: 'marker' as const, spec: m, priority: m.priority })),
-    ];
-    list.sort((a, b) => b.priority - a.priority);
-    return list;
+    return buildOrderedRenderables(bands, markers);
   }, [bands, stations, lines, lineOrder]);
 
   const inHandMode = selection.toolMode === 'hand' || selection.spaceHeld;
@@ -493,34 +487,38 @@ export function MapCanvas() {
             ),
         )}
 
-        {/* bands and stop squares interleaved by per-line z-priority */}
-        {renderables.map((r, i) =>
-          r.kind === 'band' ? (
-            <SegmentBand
-              key={'b:' + r.spec.pairKey + ':' + r.spec.lines.map((l) => l.id).join(',')}
-              spec={r.spec}
-              interactive={selection.creatingLineTag}
-              colorMap={colorMap}
-              onLineSelect={
-                inHandMode
-                  ? undefined
-                  : (lineId, e) => {
-                      e.stopPropagation();
-                      selection.selectLine(lineId);
-                    }
-              }
-              {...(selection.creatingLineTag ? makeBandHandlers(r.spec) : {})}
-            />
-          ) : (
-            (() => {
-              const effectiveColor =
-                colorMap && r.spec.lineId !== highlightLineId
-                  ? (colorMap[r.spec.lineId] ?? r.spec.color)
-                  : r.spec.color;
-              return <StopMarker key={'m:' + i} spec={r.spec} effectiveColor={effectiveColor} />;
-            })()
-          ),
-        )}
+        {/* band stripes, warnings, and stop squares interleaved by per-stripe z-priority */}
+        {renderables.map((r, i) => {
+          if (r.kind === 'stripe') {
+            const stripeLineId = r.band.lines[r.stripeIndex].id;
+            return (
+              <SegmentBand
+                key={'s:' + r.band.pairKey + ':' + stripeLineId}
+                spec={r.band}
+                stripeIndex={r.stripeIndex}
+                interactive={selection.creatingLineTag}
+                colorMap={colorMap}
+                onLineSelect={
+                  inHandMode
+                    ? undefined
+                    : (lineId, e) => {
+                        e.stopPropagation();
+                        selection.selectLine(lineId);
+                      }
+                }
+                {...(selection.creatingLineTag ? makeBandHandlers(r.band) : {})}
+              />
+            );
+          }
+          if (r.kind === 'warning') {
+            return <BandWarning key={'w:' + r.band.pairKey} spec={r.band} />;
+          }
+          const effectiveColor =
+            colorMap && r.spec.lineId !== highlightLineId
+              ? (colorMap[r.spec.lineId] ?? r.spec.color)
+              : r.spec.color;
+          return <StopMarker key={'m:' + i} spec={r.spec} effectiveColor={effectiveColor} />;
+        })}
 
         {/* station backgrounds: hit areas, names, colored stop squares */}
         {Object.values(stations).map((st) => (
@@ -635,25 +633,36 @@ export function MapCanvas() {
         {highlightLineId && (
           <g pointerEvents="none">
             {renderables.map((r, i) => {
-              if (r.kind !== 'band') return null;
-              const k = r.spec.lines.findIndex((l) => l.id === highlightLineId);
-              if (k < 0) return null;
-              const ln = r.spec.lines[k];
+              if (r.kind !== 'stripe') return null;
+              const ln = r.band.lines[r.stripeIndex];
+              if (ln.id !== highlightLineId) return null;
               const { stroke, strokeDasharray, strokeLinecap } = lineStyleStrokeAttrs(
                 ln.style,
                 ln.color,
               );
+              const underlay = lineStyleUnderlayAttrs(ln.style);
               return (
-                <path
-                  key={'hl-b:' + i}
-                  d={r.spec.paths[k]}
-                  fill="none"
-                  stroke={stroke}
-                  strokeWidth={14}
-                  strokeLinecap={strokeLinecap}
-                  strokeLinejoin="round"
-                  strokeDasharray={strokeDasharray}
-                />
+                <Fragment key={'hl-b:' + i}>
+                  {underlay && (
+                    <path
+                      d={r.band.paths[r.stripeIndex]}
+                      fill="none"
+                      stroke={underlay.stroke}
+                      strokeWidth={14}
+                      strokeLinecap={underlay.strokeLinecap}
+                      strokeLinejoin="round"
+                    />
+                  )}
+                  <path
+                    d={r.band.paths[r.stripeIndex]}
+                    fill="none"
+                    stroke={stroke}
+                    strokeWidth={14}
+                    strokeLinecap={strokeLinecap}
+                    strokeLinejoin="round"
+                    strokeDasharray={strokeDasharray}
+                  />
+                </Fragment>
               );
             })}
             {renderables.map((r, i) => {
