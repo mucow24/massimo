@@ -47,7 +47,7 @@ const ids: IdFactory = defaultIdFactory();
 
 interface DocState extends MapDoc {
   // mutators
-  addStation: (x: number, y: number) => StationId;
+  addStation: (x: number, y: number, name?: string) => StationId;
   renameStation: (id: StationId, name: string) => void;
   moveStation: (id: StationId, x: number, y: number) => void;
   setDotShape: (stationId: StationId, lineId: LineId, shape: DotShape) => void;
@@ -130,10 +130,10 @@ export const useDoc = create<DocState>()(
       (set) => ({
         ...DEFAULT_DOC,
 
-        addStation: (x, y) => {
+        addStation: (x, y, name) => {
           const id = ids.stationId();
-          const name = randomStationName();
-          set((s) => T.addStation(s, x, y, id, name));
+          const finalName = name ?? randomStationName();
+          set((s) => T.addStation(s, x, y, id, finalName));
           return id;
         },
         renameStation: (id, name) => set((s) => T.renameStation(s, id, name)),
