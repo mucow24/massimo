@@ -1,5 +1,6 @@
 import { autoOrientLineStops } from './autoOrient';
 import { effectiveLineOrder } from './lineOrder';
+import { pairKeyOf } from './pairKey';
 import { rotateBy, stopCenterAt } from '../geometry/orientation';
 import { PALETTES, type PaletteId } from './palettes';
 import type {
@@ -8,6 +9,7 @@ import type {
   LabelValign,
   Line,
   LineId,
+  LineStyle,
   LineTag,
   MapDoc,
   Rotation,
@@ -674,6 +676,29 @@ export function updateLine(
   return { ...doc, lines: { ...doc.lines, [id]: { ...cur, ...patch } } };
 }
 
+export function setLineSegmentStyle(
+  doc: MapDoc,
+  id: LineId,
+  fromStationId: StationId,
+  toStationId: StationId,
+  style: LineStyle,
+): MapDoc {
+  const cur = doc.lines[id];
+  if (!cur) return doc;
+  const key = pairKeyOf(fromStationId, toStationId);
+  const prev = cur.segmentStyles ?? {};
+  let next: Record<string, LineStyle>;
+  if (style === 'solid') {
+    if (!(key in prev)) return doc;
+    const { [key]: _gone, ...rest } = prev;
+    next = rest;
+  } else {
+    if (prev[key] === style) return doc;
+    next = { ...prev, [key]: style };
+  }
+  return { ...doc, lines: { ...doc.lines, [id]: { ...cur, segmentStyles: next } } };
+}
+
 export function toggleStationOnLine(
   doc: MapDoc,
   lineId: LineId,
@@ -739,9 +764,10 @@ export function removeStationFromLine(doc: MapDoc, lineId: LineId, idx: number):
       [removedStationId]: { ...st, stops: st.stops.filter((c) => c.lineId !== lineId) },
     };
   }
+  const updatedLine = pruneOrphanSegmentStyles({ ...ln, stations: newStations });
   return pruneOrphanLineTags({
     ...doc,
-    lines: { ...doc.lines, [lineId]: { ...ln, stations: newStations } },
+    lines: { ...doc.lines, [lineId]: updatedLine },
     stations: autoOrientLineStops(stations, lineId, newStations),
   });
 }
@@ -1025,6 +1051,28 @@ function pruneOrphanLineTags(doc: MapDoc): MapDoc {
     next[tid] = tag;
   }
   return changed ? { ...doc, lineTags: next } : doc;
+}
+
+// Drop entries from `line.segmentStyles` whose pair-key no longer corresponds
+// to a station-pair adjacency on this line. Returns the input line unchanged
+// if `segmentStyles` is missing/empty or every key still maps to a real edge.
+function pruneOrphanSegmentStyles(line: Line): Line {
+  const styles = line.segmentStyles;
+  if (!styles) return line;
+  const validKeys = new Set<string>();
+  for (let i = 0; i < line.stations.length - 1; i++) {
+    validKeys.add(pairKeyOf(line.stations[i], line.stations[i + 1]));
+  }
+  let changed = false;
+  const next: Record<string, LineStyle> = {};
+  for (const key of Object.keys(styles)) {
+    if (validKeys.has(key)) {
+      next[key] = styles[key];
+    } else {
+      changed = true;
+    }
+  }
+  return changed ? { ...line, segmentStyles: next } : line;
 }
 
 function isLineEdge(line: Line, a: StationId, b: StationId): boolean {

@@ -11,6 +11,8 @@ import {
 } from '../geometry/interlining';
 import { STOP_SIZE, stopCenterAt, travelDirLocal, rotateBy } from '../geometry/orientation';
 import { SegmentBand } from './SegmentBand';
+import { HatchPatterns, lineStyleStrokeAttrs } from './HatchPatterns';
+import { StopMarker } from './StopMarker';
 import { StationView } from './StationView';
 import { useViewport } from './canvas/useViewport';
 import { useStationDrag } from './canvas/useStationDrag';
@@ -92,11 +94,26 @@ export function MapCanvas() {
     return map;
   }, [highlightLineId, lines]);
 
+  // Distinct colors of any line that has at least one hatched segment.
+  // Drives <pattern> emission in <defs>; each color gets one pattern that
+  // SegmentBand references via hatchPatternId().
+  const hatchedColors = useMemo(() => {
+    const seen = new Set<string>();
+    for (const ln of Object.values(lines)) {
+      if (!ln.segmentStyles) continue;
+      const hasHatch = Object.values(ln.segmentStyles).some((s) => s === 'hatched');
+      if (!hasHatch) continue;
+      const effective = colorMap?.[ln.id] ?? ln.color;
+      seen.add(effective);
+    }
+    return Array.from(seen);
+  }, [lines, colorMap]);
+
   // Bands and stop markers merged into one pass, sorted by per-line z-priority
   // so a back-stack stop square doesn't paint over a front-stack band passing
   // through that station.
   const renderables = useMemo(() => {
-    const markers = buildStopMarkers(stations, lines, lineOrder);
+    const markers = buildStopMarkers(stations, lines, lineOrder, bands);
     type R =
       | { kind: 'band'; spec: SegmentBandSpec; priority: number }
       | { kind: 'marker'; spec: StopMarkerSpec; priority: number };
@@ -417,6 +434,10 @@ export function MapCanvas() {
         onContextMenu={(e) => e.preventDefault()}
         onDragStart={(e) => e.preventDefault()}
       >
+        <defs>
+          <HatchPatterns colors={hatchedColors} />
+        </defs>
+
         {/* background hit target for panning */}
         <rect
           data-bg="1"
@@ -472,20 +493,13 @@ export function MapCanvas() {
               {...(selection.creatingLineTag ? makeBandHandlers(r.spec) : {})}
             />
           ) : (
-            <rect
-              key={'m:' + i}
-              x={-STOP_SIZE / 2}
-              y={-STOP_SIZE / 2}
-              width={STOP_SIZE}
-              height={STOP_SIZE}
-              fill={
+            (() => {
+              const effectiveColor =
                 colorMap && r.spec.lineId !== highlightLineId
                   ? (colorMap[r.spec.lineId] ?? r.spec.color)
-                  : r.spec.color
-              }
-              transform={`translate(${r.spec.cx} ${r.spec.cy}) rotate(${r.spec.rotationDeg})`}
-              pointerEvents="none"
-            />
+                  : r.spec.color;
+              return <StopMarker key={'m:' + i} spec={r.spec} effectiveColor={effectiveColor} />;
+            })()
           ),
         )}
 
@@ -596,32 +610,27 @@ export function MapCanvas() {
               if (r.kind !== 'band') return null;
               const k = r.spec.lines.findIndex((l) => l.id === highlightLineId);
               if (k < 0) return null;
+              const ln = r.spec.lines[k];
+              const { stroke, strokeDasharray, strokeLinecap } = lineStyleStrokeAttrs(
+                ln.style,
+                ln.color,
+              );
               return (
                 <path
                   key={'hl-b:' + i}
                   d={r.spec.paths[k]}
                   fill="none"
-                  stroke={r.spec.lines[k].color}
+                  stroke={stroke}
                   strokeWidth={14}
-                  strokeLinecap="square"
+                  strokeLinecap={strokeLinecap}
                   strokeLinejoin="round"
+                  strokeDasharray={strokeDasharray}
                 />
               );
             })}
             {renderables.map((r, i) => {
               if (r.kind !== 'marker' || r.spec.lineId !== highlightLineId) return null;
-              const m = r.spec;
-              return (
-                <rect
-                  key={'hl-m:' + i}
-                  x={-STOP_SIZE / 2}
-                  y={-STOP_SIZE / 2}
-                  width={STOP_SIZE}
-                  height={STOP_SIZE}
-                  fill={m.color}
-                  transform={`translate(${m.cx} ${m.cy}) rotate(${m.rotationDeg})`}
-                />
-              );
+              return <StopMarker key={'hl-m:' + i} spec={r.spec} />;
             })}
             {/* Direction triangles: small black arrow ~5px past each stop
                 dot pointing along the stop's own travel direction. */}

@@ -1108,3 +1108,86 @@ describe('setDotShape', () => {
     expect(next.stations.a.stops[0].dotShape).toBe('none');
   });
 });
+
+describe('setLineSegmentStyle', () => {
+  const docWithLine = () =>
+    makeDoc({
+      stations: [
+        makeStation({ id: 's1', stops: [makeStop('L1')] }),
+        makeStation({ id: 's2', stops: [makeStop('L1')] }),
+        makeStation({ id: 's3', stops: [makeStop('L1')] }),
+      ],
+      lines: [makeLine({ id: 'L1', stations: ['s1', 's2', 's3'] })],
+    });
+
+  it('writes a non-solid style under the canonical pair-key', () => {
+    const next = T.setLineSegmentStyle(docWithLine(), 'L1', 's1', 's2', 'hatched');
+    expect(next.lines.L1.segmentStyles).toEqual({ 's1|s2': 'hatched' });
+  });
+
+  it('canonicalizes argument order (b, a) -> a|b', () => {
+    const next = T.setLineSegmentStyle(docWithLine(), 'L1', 's2', 's1', 'dashed');
+    expect(next.lines.L1.segmentStyles).toEqual({ 's1|s2': 'dashed' });
+  });
+
+  it('setting solid deletes the entry rather than storing it', () => {
+    let doc = T.setLineSegmentStyle(docWithLine(), 'L1', 's1', 's2', 'hatched');
+    doc = T.setLineSegmentStyle(doc, 'L1', 's1', 's2', 'solid');
+    expect(doc.lines.L1.segmentStyles).toEqual({});
+  });
+
+  it('preserves entries on other segments when one segment changes', () => {
+    let doc = T.setLineSegmentStyle(docWithLine(), 'L1', 's1', 's2', 'hatched');
+    doc = T.setLineSegmentStyle(doc, 'L1', 's2', 's3', 'dashed');
+    expect(doc.lines.L1.segmentStyles).toEqual({
+      's1|s2': 'hatched',
+      's2|s3': 'dashed',
+    });
+  });
+
+  it('silently no-ops on unknown line id', () => {
+    const doc = docWithLine();
+    expect(T.setLineSegmentStyle(doc, 'ghost', 's1', 's2', 'hatched')).toEqual(doc);
+  });
+});
+
+describe('removeStationFromLine — segmentStyles cascade', () => {
+  it('drops segment-style entries whose corridor is no longer an edge', () => {
+    const doc = makeDoc({
+      stations: [
+        makeStation({ id: 's1', stops: [makeStop('L1')] }),
+        makeStation({ id: 's2', stops: [makeStop('L1')] }),
+        makeStation({ id: 's3', stops: [makeStop('L1')] }),
+      ],
+      lines: [
+        makeLine({
+          id: 'L1',
+          stations: ['s1', 's2', 's3'],
+          segmentStyles: { 's1|s2': 'hatched', 's2|s3': 'dashed' },
+        }),
+      ],
+    });
+    const next = T.removeStationFromLine(doc, 'L1', 1);
+    // After removing s2, only adjacency s1-s3 remains; both prior entries break.
+    expect(next.lines.L1.segmentStyles).toEqual({});
+  });
+
+  it('keeps segment-style entries whose corridor remains an edge', () => {
+    const doc = makeDoc({
+      stations: [
+        makeStation({ id: 's1', stops: [makeStop('L1')] }),
+        makeStation({ id: 's2', stops: [makeStop('L1')] }),
+        makeStation({ id: 's3', stops: [makeStop('L1')] }),
+      ],
+      lines: [
+        makeLine({
+          id: 'L1',
+          stations: ['s1', 's2', 's3'],
+          segmentStyles: { 's1|s2': 'hatched' },
+        }),
+      ],
+    });
+    const next = T.removeStationFromLine(doc, 'L1', 2);
+    expect(next.lines.L1.segmentStyles).toEqual({ 's1|s2': 'hatched' });
+  });
+});

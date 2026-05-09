@@ -1,5 +1,6 @@
 import { SegmentBandSpec } from '../geometry/interlining';
 import type { LineId } from '../model/types';
+import { lineStyleStrokeAttrs } from './HatchPatterns';
 
 interface Props {
   spec: SegmentBandSpec;
@@ -29,18 +30,21 @@ export function SegmentBand({
   return (
     <g>
       {spec.paths.map((d, i) => {
-        const lineId = spec.lines[i].id;
-        const color = colorMap?.[lineId] ?? spec.lines[i].color;
+        const line = spec.lines[i];
+        const lineId = line.id;
+        const color = colorMap?.[lineId] ?? line.color;
         const selectable = !interactive && !!onLineSelect;
+        const { stroke, strokeDasharray, strokeLinecap } = lineStyleStrokeAttrs(line.style, color);
         return (
           <path
             key={lineId}
             d={d}
             fill="none"
-            stroke={color}
+            stroke={stroke}
             strokeWidth={14}
-            strokeLinecap="square"
+            strokeLinecap={strokeLinecap}
             strokeLinejoin="round"
+            strokeDasharray={strokeDasharray}
             pointerEvents={interactive || selectable ? 'stroke' : undefined}
             style={
               interactive ? { cursor: 'crosshair' } : selectable ? { cursor: 'pointer' } : undefined
