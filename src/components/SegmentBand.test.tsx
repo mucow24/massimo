@@ -31,32 +31,52 @@ const renderBand = (spec: SegmentBandSpec) =>
 describe('<SegmentBand> — style switching', () => {
   it('renders a solid stroke for solid segments (current behavior)', () => {
     const { container } = renderBand(baseSpec(['solid']));
-    const path = container.querySelector('path');
-    expect(path?.getAttribute('stroke')).toBe('#EF374B');
-    expect(path?.getAttribute('stroke-dasharray')).toBeNull();
+    const paths = container.querySelectorAll('path');
+    expect(paths.length).toBe(1);
+    expect(paths[0].getAttribute('stroke')).toBe('#EF374B');
+    expect(paths[0].getAttribute('stroke-dasharray')).toBeNull();
   });
 
-  it('applies stroke-dasharray for dashed segments', () => {
+  it('applies stroke-dasharray for dashed segments and renders a solid white underlay beneath', () => {
     const { container } = renderBand(baseSpec(['dashed']));
-    const path = container.querySelector('path');
-    expect(path?.getAttribute('stroke')).toBe('#EF374B');
-    expect(path?.getAttribute('stroke-dasharray')).toBeTruthy();
+    const paths = container.querySelectorAll('path');
+    expect(paths.length).toBe(2);
+    const [underlay, foreground] = paths;
+    expect(underlay.getAttribute('stroke')).toBe('#fff');
+    expect(underlay.getAttribute('stroke-dasharray')).toBeNull();
+    expect(foreground.getAttribute('stroke')).toBe('#EF374B');
+    expect(foreground.getAttribute('stroke-dasharray')).toBeTruthy();
   });
 
-  it('uses the hatch pattern url for hatched segments', () => {
+  it('uses the hatch pattern url for hatched segments (no underlay; white is baked into the pattern)', () => {
     const { container } = renderBand(baseSpec(['hatched']));
-    const path = container.querySelector('path');
-    expect(path?.getAttribute('stroke')).toBe(`url(#${hatchPatternId('#EF374B')})`);
-    expect(path?.getAttribute('stroke-dasharray')).toBeNull();
+    const paths = container.querySelectorAll('path');
+    expect(paths.length).toBe(1);
+    expect(paths[0].getAttribute('stroke')).toBe(`url(#${hatchPatternId('#EF374B')})`);
+    expect(paths[0].getAttribute('stroke-dasharray')).toBeNull();
   });
 
   it('switches each line in a multi-line band independently', () => {
     const { container } = renderBand(baseSpec(['solid', 'dashed', 'hatched']));
-    const paths = container.querySelectorAll('path');
-    expect(paths.length).toBe(3);
-    expect(paths[0].getAttribute('stroke-dasharray')).toBeNull();
-    expect(paths[0].getAttribute('stroke')).toBe('#EF374B');
-    expect(paths[1].getAttribute('stroke-dasharray')).toBeTruthy();
-    expect(paths[2].getAttribute('stroke')).toBe(`url(#${hatchPatternId('#EF374B')})`);
+    const paths = Array.from(container.querySelectorAll('path'));
+    // solid: 1 path; dashed: 2 (white underlay + colored dashed); hatched: 1.
+    expect(paths.length).toBe(4);
+
+    const solid = paths.filter(
+      (p) => p.getAttribute('stroke') === '#EF374B' && !p.getAttribute('stroke-dasharray'),
+    );
+    expect(solid.length).toBe(1);
+
+    const dashed = paths.filter((p) => p.getAttribute('stroke-dasharray'));
+    expect(dashed.length).toBe(1);
+    expect(dashed[0].getAttribute('stroke')).toBe('#EF374B');
+
+    const underlay = paths.filter((p) => p.getAttribute('stroke') === '#fff');
+    expect(underlay.length).toBe(1);
+
+    const hatched = paths.filter(
+      (p) => p.getAttribute('stroke') === `url(#${hatchPatternId('#EF374B')})`,
+    );
+    expect(hatched.length).toBe(1);
   });
 });

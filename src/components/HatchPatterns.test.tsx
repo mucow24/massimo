@@ -6,6 +6,7 @@ import {
   HatchPatterns,
   hatchPatternId,
   lineStyleStrokeAttrs,
+  lineStyleUnderlayAttrs,
 } from './HatchPatterns';
 
 describe('hatchPatternId', () => {
@@ -60,9 +61,17 @@ describe('<HatchPatterns>', () => {
 
   it('paints the stripe rect at the locked-in width using the line color', () => {
     const { container } = renderSvg(['#EF374B']);
-    const rect = container.querySelector('pattern rect');
-    expect(rect?.getAttribute('width')).toBe(String(HATCH_STRIPE_WIDTH));
-    expect(rect?.getAttribute('fill')).toBe('#EF374B');
+    const rects = container.querySelectorAll('pattern rect');
+    const colorRect = Array.from(rects).find((r) => r.getAttribute('fill') === '#EF374B');
+    expect(colorRect?.getAttribute('width')).toBe(String(HATCH_STRIPE_WIDTH));
+  });
+
+  it('fills the gap between stripes with opaque white so lines behind do not show through', () => {
+    const { container } = renderSvg(['#EF374B']);
+    const rects = container.querySelectorAll('pattern rect');
+    const whiteRect = Array.from(rects).find((r) => r.getAttribute('fill') === '#fff');
+    expect(whiteRect?.getAttribute('width')).toBe(String(HATCH_GAP_WIDTH));
+    expect(whiteRect?.getAttribute('x')).toBe(String(HATCH_STRIPE_WIDTH));
   });
 
   it('tile width is stripe + gap clamped to >= 1', () => {
@@ -96,5 +105,22 @@ describe('lineStyleStrokeAttrs', () => {
     expect(a.stroke).toBe(`url(#${hatchPatternId('#EF374B')})`);
     expect(a.strokeDasharray).toBeUndefined();
     expect(a.strokeLinecap).toBe('square');
+  });
+});
+
+describe('lineStyleUnderlayAttrs', () => {
+  it('returns null for solid (no underlay needed)', () => {
+    expect(lineStyleUnderlayAttrs('solid')).toBeNull();
+  });
+
+  it('returns null for hatched (white is baked into the SVG pattern)', () => {
+    expect(lineStyleUnderlayAttrs('hatched')).toBeNull();
+  });
+
+  it('returns a white butt-capped underlay for dashed so gaps occlude lines behind', () => {
+    expect(lineStyleUnderlayAttrs('dashed')).toEqual({
+      stroke: '#fff',
+      strokeLinecap: 'butt',
+    });
   });
 });

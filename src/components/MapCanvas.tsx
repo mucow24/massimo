@@ -1,4 +1,4 @@
-import { useMemo, useRef, useState } from 'react';
+import { Fragment, useMemo, useRef, useState } from 'react';
 
 import { beginHistoryGroup, dragState, useDoc, useSelection } from '../state/store';
 import { randomStationName } from '../state/stationNames';
@@ -12,7 +12,7 @@ import {
 } from '../geometry/interlining';
 import { STOP_SIZE, stopCenterAt, travelDirLocal, rotateBy } from '../geometry/orientation';
 import { SegmentBand } from './SegmentBand';
-import { HatchPatterns, lineStyleStrokeAttrs } from './HatchPatterns';
+import { HatchPatterns, lineStyleStrokeAttrs, lineStyleUnderlayAttrs } from './HatchPatterns';
 import { StopMarker } from './StopMarker';
 import { StationView } from './StationView';
 import { useViewport } from './canvas/useViewport';
@@ -643,17 +643,29 @@ export function MapCanvas() {
                 ln.style,
                 ln.color,
               );
+              const underlay = lineStyleUnderlayAttrs(ln.style);
               return (
-                <path
-                  key={'hl-b:' + i}
-                  d={r.spec.paths[k]}
-                  fill="none"
-                  stroke={stroke}
-                  strokeWidth={14}
-                  strokeLinecap={strokeLinecap}
-                  strokeLinejoin="round"
-                  strokeDasharray={strokeDasharray}
-                />
+                <Fragment key={'hl-b:' + i}>
+                  {underlay && (
+                    <path
+                      d={r.spec.paths[k]}
+                      fill="none"
+                      stroke={underlay.stroke}
+                      strokeWidth={14}
+                      strokeLinecap={underlay.strokeLinecap}
+                      strokeLinejoin="round"
+                    />
+                  )}
+                  <path
+                    d={r.spec.paths[k]}
+                    fill="none"
+                    stroke={stroke}
+                    strokeWidth={14}
+                    strokeLinecap={strokeLinecap}
+                    strokeLinejoin="round"
+                    strokeDasharray={strokeDasharray}
+                  />
+                </Fragment>
               );
             })}
             {renderables.map((r, i) => {

@@ -1,6 +1,7 @@
+import { Fragment } from 'react';
 import { SegmentBandSpec } from '../geometry/interlining';
 import type { LineId } from '../model/types';
-import { lineStyleStrokeAttrs } from './HatchPatterns';
+import { lineStyleStrokeAttrs, lineStyleUnderlayAttrs } from './HatchPatterns';
 
 interface Props {
   spec: SegmentBandSpec;
@@ -35,30 +36,49 @@ export function SegmentBand({
         const color = colorMap?.[lineId] ?? line.color;
         const selectable = !interactive && !!onLineSelect;
         const { stroke, strokeDasharray, strokeLinecap } = lineStyleStrokeAttrs(line.style, color);
+        const underlay = lineStyleUnderlayAttrs(line.style);
         return (
-          <path
-            key={lineId}
-            d={d}
-            fill="none"
-            stroke={stroke}
-            strokeWidth={14}
-            strokeLinecap={strokeLinecap}
-            strokeLinejoin="round"
-            strokeDasharray={strokeDasharray}
-            pointerEvents={interactive || selectable ? 'stroke' : undefined}
-            style={
-              interactive ? { cursor: 'crosshair' } : selectable ? { cursor: 'pointer' } : undefined
-            }
-            onPointerMove={interactive && onLineHover ? (e) => onLineHover(lineId, e) : undefined}
-            onPointerLeave={interactive && onLineLeave ? (e) => onLineLeave(lineId, e) : undefined}
-            onClick={
-              interactive && onLineClick
-                ? (e) => onLineClick(lineId, e)
-                : selectable
-                  ? (e) => onLineSelect!(lineId, e)
-                  : undefined
-            }
-          />
+          <Fragment key={lineId}>
+            {underlay && (
+              <path
+                d={d}
+                fill="none"
+                stroke={underlay.stroke}
+                strokeWidth={14}
+                strokeLinecap={underlay.strokeLinecap}
+                strokeLinejoin="round"
+                pointerEvents="none"
+              />
+            )}
+            <path
+              d={d}
+              fill="none"
+              stroke={stroke}
+              strokeWidth={14}
+              strokeLinecap={strokeLinecap}
+              strokeLinejoin="round"
+              strokeDasharray={strokeDasharray}
+              pointerEvents={interactive || selectable ? 'stroke' : undefined}
+              style={
+                interactive
+                  ? { cursor: 'crosshair' }
+                  : selectable
+                    ? { cursor: 'pointer' }
+                    : undefined
+              }
+              onPointerMove={interactive && onLineHover ? (e) => onLineHover(lineId, e) : undefined}
+              onPointerLeave={
+                interactive && onLineLeave ? (e) => onLineLeave(lineId, e) : undefined
+              }
+              onClick={
+                interactive && onLineClick
+                  ? (e) => onLineClick(lineId, e)
+                  : selectable
+                    ? (e) => onLineSelect!(lineId, e)
+                    : undefined
+              }
+            />
+          </Fragment>
         );
       })}
       {spec.warning && spec.centerline.length > 0 && (
