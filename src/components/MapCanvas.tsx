@@ -1,4 +1,4 @@
-import { Fragment, useMemo, useRef, useState } from 'react';
+import { Fragment, useMemo, useRef, useState, type ReactNode } from 'react';
 
 import { beginHistoryGroup, dragState, useDoc, useSelection } from '../state/store';
 import { randomStationName } from '../state/stationNames';
@@ -636,43 +636,67 @@ export function MapCanvas() {
         )}
         {highlightLineId && (
           <g pointerEvents="none">
-            {renderables.map((r, i) => {
-              if (r.kind !== 'stripe') return null;
-              const ln = r.band.lines[r.stripeIndex];
-              if (ln.id !== highlightLineId) return null;
-              const { stroke, strokeDasharray, strokeLinecap } = lineStyleStrokeAttrs(
-                ln.style,
-                ln.color,
-              );
-              const underlay = lineStyleUnderlayAttrs(ln.style);
+            {(() => {
+              const hov = selection.hoveredInspectorSegment;
+              const hovPairKey = hov ? pairKeyOf(hov.fromStationId, hov.toStationId) : null;
+              const dimNonHovered = (matched: boolean, key: string, node: ReactNode) =>
+                hov && !matched ? (
+                  <g key={key} opacity={0.2}>
+                    {node}
+                  </g>
+                ) : (
+                  <Fragment key={key}>{node}</Fragment>
+                );
               return (
-                <Fragment key={'hl-b:' + i}>
-                  {underlay && (
-                    <path
-                      d={r.band.paths[r.stripeIndex]}
-                      fill="none"
-                      stroke={underlay.stroke}
-                      strokeWidth={14}
-                      strokeLinecap={underlay.strokeLinecap}
-                      strokeLinejoin="round"
-                    />
-                  )}
-                  <path
-                    d={r.band.paths[r.stripeIndex]}
-                    fill="none"
-                    stroke={stroke}
-                    strokeWidth={14}
-                    strokeLinecap={strokeLinecap}
-                    strokeLinejoin="round"
-                    strokeDasharray={strokeDasharray}
-                  />
-                </Fragment>
+                <>
+                  {renderables.map((r, i) => {
+                    if (r.kind !== 'stripe') return null;
+                    const ln = r.band.lines[r.stripeIndex];
+                    if (ln.id !== highlightLineId) return null;
+                    const { stroke, strokeDasharray, strokeLinecap } = lineStyleStrokeAttrs(
+                      ln.style,
+                      ln.color,
+                    );
+                    const underlay = lineStyleUnderlayAttrs(ln.style);
+                    const matched = !!hov && hov.lineId === ln.id && r.band.pairKey === hovPairKey;
+                    return dimNonHovered(
+                      matched,
+                      'hl-b:' + i,
+                      <>
+                        {underlay && (
+                          <path
+                            d={r.band.paths[r.stripeIndex]}
+                            fill="none"
+                            stroke={underlay.stroke}
+                            strokeWidth={14}
+                            strokeLinecap={underlay.strokeLinecap}
+                            strokeLinejoin="round"
+                          />
+                        )}
+                        <path
+                          d={r.band.paths[r.stripeIndex]}
+                          fill="none"
+                          stroke={stroke}
+                          strokeWidth={14}
+                          strokeLinecap={strokeLinecap}
+                          strokeLinejoin="round"
+                          strokeDasharray={strokeDasharray}
+                        />
+                      </>,
+                    );
+                  })}
+                  {renderables.map((r, i) => {
+                    if (r.kind !== 'marker' || r.spec.lineId !== highlightLineId) return null;
+                    const matched =
+                      !!hov &&
+                      hov.lineId === r.spec.lineId &&
+                      (r.spec.stationId === hov.fromStationId ||
+                        r.spec.stationId === hov.toStationId);
+                    return dimNonHovered(matched, 'hl-m:' + i, <StopMarker spec={r.spec} />);
+                  })}
+                </>
               );
-            })}
-            {renderables.map((r, i) => {
-              if (r.kind !== 'marker' || r.spec.lineId !== highlightLineId) return null;
-              return <StopMarker key={'hl-m:' + i} spec={r.spec} />;
-            })}
+            })()}
             {/* Direction triangles: small black arrow ~5px past each stop
                 dot pointing along the stop's own travel direction. */}
             {(() => {
@@ -704,6 +728,7 @@ export function MapCanvas() {
               const height = 5;
               const baseDist = dotR + gap;
               const apexDist = baseDist + height;
+              const hov = selection.hoveredInspectorSegment;
               return points.map((p, i) => {
                 // Hint resolves auto-* sign; for explicit orientations it's
                 // ignored. Use the segment toward the next stop (or back from
@@ -736,6 +761,7 @@ export function MapCanvas() {
                 const rX = baseCx - px * halfW;
                 const rY = baseCy - py * halfW;
                 const isTerminus = i === points.length - 1;
+                const dimmed = !!hov && p.sid !== hov.fromStationId && p.sid !== hov.toStationId;
                 return (
                   <path
                     key={'hl-tri:' + p.sid}
@@ -745,6 +771,7 @@ export function MapCanvas() {
                     strokeWidth={isTerminus ? 10 : undefined}
                     strokeLinejoin={isTerminus ? 'miter' : undefined}
                     paintOrder={isTerminus ? 'stroke fill' : undefined}
+                    opacity={dimmed ? 0.2 : undefined}
                   />
                 );
               });
@@ -782,20 +809,30 @@ export function MapCanvas() {
                 selection.insertAfterIndex >= 0
                   ? ln.stations[selection.insertAfterIndex]
                   : null;
+              const hov = selection.hoveredInspectorSegment;
               return ln.stations.flatMap((sid) => {
                 if (sid === starterId) return [];
                 const st = stations[sid];
                 if (!st) return [];
-                return [
+                const labelEl = (
                   <StationView
-                    key={'hl-l:' + sid}
                     station={st}
                     lines={lines}
                     zoom={view.viewport.zoom}
                     onStartDrag={drag.onStartDrag}
                     layer="highlight-label"
-                  />,
-                ];
+                  />
+                );
+                const isHoverEndpoint =
+                  !!hov && (sid === hov.fromStationId || sid === hov.toStationId);
+                if (hov && !isHoverEndpoint) {
+                  return [
+                    <g key={'hl-l:' + sid} opacity={0.2}>
+                      {labelEl}
+                    </g>,
+                  ];
+                }
+                return [<Fragment key={'hl-l:' + sid}>{labelEl}</Fragment>];
               });
             })()}
             {/* In append mode, surface stations not yet on the line as
@@ -930,50 +967,6 @@ export function MapCanvas() {
 
         {/* Line tags: in-band labels that ride each line's stripe. */}
         <LineTagsLayer bands={bands} zoom={view.viewport.zoom} svgRef={svgRef} />
-
-        {/* Inspector segment hover: when a segment-style divider in the line
-            editor is hovered, paint a soft white wash over the whole map and
-            re-render just that segment's stripe + endpoint dots on top, so
-            the user can see which corridor on the map the divider controls. */}
-        {selection.hoveredInspectorSegment &&
-          (() => {
-            const hov = selection.hoveredInspectorSegment;
-            const hoverPairKey = pairKeyOf(hov.fromStationId, hov.toStationId);
-            return (
-              <>
-                <rect
-                  x={view.vbX}
-                  y={view.vbY}
-                  width={view.vbW}
-                  height={view.vbH}
-                  fill="#fff"
-                  opacity={0.5}
-                  pointerEvents="none"
-                />
-                <g pointerEvents="none">
-                  {renderables.map((r, i) => {
-                    if (r.kind === 'stripe') {
-                      if (r.band.pairKey !== hoverPairKey) return null;
-                      if (r.band.lines[r.stripeIndex].id !== hov.lineId) return null;
-                      return (
-                        <SegmentBand key={'hov-s:' + i} spec={r.band} stripeIndex={r.stripeIndex} />
-                      );
-                    }
-                    if (r.kind === 'marker') {
-                      if (r.spec.lineId !== hov.lineId) return null;
-                      if (
-                        r.spec.stationId !== hov.fromStationId &&
-                        r.spec.stationId !== hov.toStationId
-                      )
-                        return null;
-                      return <StopMarker key={'hov-m:' + i} spec={r.spec} />;
-                    }
-                    return null;
-                  })}
-                </g>
-              </>
-            );
-          })()}
 
         {/* Match-stroke: gray outline on each station whose layout matches
             the selected station while mirror mode is on. Drawn beneath the
