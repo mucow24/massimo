@@ -1,4 +1,4 @@
-import { Fragment } from 'react';
+import { Fragment, useState } from 'react';
 import { useDoc, useSelection } from '../../state/store';
 import type { LineId, LineStyle } from '../../model/types';
 import { pairKeyOf } from '../../model/pairKey';
@@ -8,6 +8,7 @@ import { HatchPatterns, lineStyleStrokeAttrs, lineStyleUnderlayAttrs } from '../
 
 const STATION_ROW_H = 20;
 const GAP_ROW_H = 16;
+const INSERT_ROW_H = 16;
 const BAND_W = 14;
 const MARKER_W = 24;
 
@@ -18,11 +19,58 @@ const NEXT_STYLE: Record<LineStyle, LineStyle> = {
   'hatched-mirror': 'solid',
 };
 
+function InsertZone({
+  isActive,
+  color,
+  height,
+  onClick,
+}: {
+  isActive: boolean;
+  color: string;
+  height: number;
+  onClick: () => void;
+}) {
+  const [hovered, setHovered] = useState(false);
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      onMouseEnter={() => setHovered(true)}
+      onMouseLeave={() => setHovered(false)}
+      title={
+        isActive
+          ? 'Stops will be inserted here. Click to stop adding.'
+          : 'Click to insert stops here'
+      }
+      style={{
+        flex: 1,
+        height,
+        padding: '0 8px',
+        margin: 0,
+        background: isActive ? color : hovered ? 'rgba(0,0,0,0.04)' : 'transparent',
+        border: isActive ? `1px solid ${color}` : `1px dashed ${color}`,
+        borderRadius: 3,
+        textAlign: 'left',
+        cursor: 'pointer',
+        font: 'inherit',
+        fontSize: 11,
+        color: isActive ? '#fff' : color,
+        boxSizing: 'border-box',
+        opacity: isActive ? 1 : 0.7,
+      }}
+    >
+      {isActive ? '↓ Inserting stops here' : '+ Insert stops here'}
+    </button>
+  );
+}
+
 export function LineInspector({ id }: { id: LineId }) {
   const line = useDoc((s) => s.lines[id]);
   const stations = useDoc((s) => s.stations);
   const updateLine = useDoc((s) => s.updateLine);
   const setLineSegmentStyle = useDoc((s) => s.setLineSegmentStyle);
+  const reorderLineStations = useDoc((s) => s.reorderLineStations);
+  const removeStationFromLine = useDoc((s) => s.removeStationFromLine);
   const selection = useSelection();
   const serviceField = useFieldHistory();
 
@@ -32,6 +80,14 @@ export function LineInspector({ id }: { id: LineId }) {
     const key = pairKeyOf(fromStationId, toStationId);
     const cur = (line.segmentStyles?.[key] ?? 'solid') as LineStyle;
     setLineSegmentStyle(line.id, fromStationId, toStationId, NEXT_STYLE[cur]);
+  };
+
+  const moveSt = (idx: number, dir: -1 | 1) => {
+    const arr = [...line.stations];
+    const j = idx + dir;
+    if (j < 0 || j >= arr.length) return;
+    [arr[idx], arr[j]] = [arr[j], arr[idx]];
+    reorderLineStations(line.id, arr);
   };
 
   const isAppending = selection.appendingToLineId === line.id;
@@ -54,59 +110,34 @@ export function LineInspector({ id }: { id: LineId }) {
       </div>
       <div className="field">
         <label>Stations ({line.stations.length})</label>
-        {line.stations.length === 0 && (
-          <button
-            className="btn-mini"
-            onClick={() => selection.startAppendAt(line.id, -1)}
-            style={
-              isAppending
-                ? { background: line.color, color: '#fff', borderColor: line.color }
-                : undefined
+        <button
+          className="btn-mini"
+          onClick={() => {
+            if (isAppending) {
+              selection.setAppending(null);
+            } else {
+              const startIdx = line.stations.length > 0 ? line.stations.length - 1 : -1;
+              selection.startAppendAt(line.id, startIdx);
             }
-          >
-            {isAppending ? 'Stop adding' : 'Add stations from map'}
-          </button>
-        )}
-        {line.stations.length > 0 &&
-          (() => {
-            const isStartCursor = isAppending && selection.insertAfterIndex === -1;
-            return (
-              <>
-                <button
-                  className="btn-mini"
-                  onClick={() =>
-                    isStartCursor
-                      ? selection.setAppending(null)
-                      : selection.startAppendAt(line.id, -1)
-                  }
-                  style={{
-                    width: '100%',
-                    padding: '1px 6px',
-                    ...(isStartCursor
-                      ? { background: line.color, color: '#fff', borderColor: line.color }
-                      : {}),
-                  }}
-                  title="Insert stations before the first station"
-                >
-                  {isStartCursor ? 'Stop adding' : '+ Add before start'}
-                </button>
-                {isStartCursor && (
-                  <div
-                    style={{
-                      height: 3,
-                      background: line.color,
-                      margin: '2px 0',
-                      borderRadius: 1.5,
-                    }}
-                  />
-                )}
-              </>
-            );
-          })()}
+          }}
+          title={
+            isAppending
+              ? 'Done editing. Reorder, remove, or pick stations on the map to add stops.'
+              : 'Edit this line: reorder, remove, or add stops.'
+          }
+          style={{
+            width: '100%',
+            ...(isAppending
+              ? { background: line.color, color: '#fff', borderColor: line.color }
+              : {}),
+          }}
+        >
+          {isAppending ? 'Done' : 'Edit stops'}
+        </button>
         {line.stations.length > 0 &&
           (() => {
             const N = line.stations.length;
-            const totalH = N * STATION_ROW_H + Math.max(0, N - 1) * GAP_ROW_H;
+            const totalBandH = N * STATION_ROW_H + Math.max(0, N - 1) * GAP_ROW_H;
             const cap = BAND_W / 2;
             const centerOf = (idx: number) =>
               idx * (STATION_ROW_H + GAP_ROW_H) + STATION_ROW_H / 2;
@@ -132,16 +163,19 @@ export function LineInspector({ id }: { id: LineId }) {
               (s) => s.style === 'hatched' || s.style === 'hatched-mirror',
             );
             const hovered = selection.hoveredInspectorSegment;
+            const isActiveAt = (idx: number) =>
+              isAppending && selection.insertAfterIndex === idx;
+            const moveCursor = (idx: number) => selection.setInsertAfterIndex(idx);
             return (
               <div
                 style={{ position: 'relative', display: 'flex', flexDirection: 'column' }}
               >
                 <svg
                   width={MARKER_W}
-                  height={totalH}
+                  height={totalBandH}
                   style={{
                     position: 'absolute',
-                    top: 0,
+                    top: isAppending ? INSERT_ROW_H : 0,
                     left: 0,
                     pointerEvents: 'none',
                   }}
@@ -203,6 +237,17 @@ export function LineInspector({ id }: { id: LineId }) {
                       ),
                   )}
                 </svg>
+                {isAppending && (
+                  <div style={{ display: 'flex', height: INSERT_ROW_H }}>
+                    <div style={{ width: MARKER_W, flexShrink: 0 }} />
+                    <InsertZone
+                      isActive={isActiveAt(-1)}
+                      color={line.color}
+                      height={INSERT_ROW_H}
+                      onClick={() => moveCursor(-1)}
+                    />
+                  </div>
+                )}
                 {line.stations.map((sid, i) => {
                   const st = stations[sid];
                   if (!st) return null;
@@ -213,7 +258,7 @@ export function LineInspector({ id }: { id: LineId }) {
                         className="list-row"
                         style={{
                           padding: '0 12px 0 0',
-                          gap: 0,
+                          gap: isAppending ? 6 : 0,
                           height: STATION_ROW_H,
                           boxSizing: 'border-box',
                         }}
@@ -230,6 +275,33 @@ export function LineInspector({ id }: { id: LineId }) {
                         <span className="grow" style={{ paddingLeft: 8 }}>
                           {st.name}
                         </span>
+                        {isAppending && (
+                          <>
+                            <button
+                              className="btn-mini icon"
+                              disabled={i === 0}
+                              onClick={() => moveSt(i, -1)}
+                              title="Move up"
+                            >
+                              ↑
+                            </button>
+                            <button
+                              className="btn-mini icon"
+                              disabled={i === N - 1}
+                              onClick={() => moveSt(i, 1)}
+                              title="Move down"
+                            >
+                              ↓
+                            </button>
+                            <button
+                              className="btn-mini danger"
+                              onClick={() => removeStationFromLine(line.id, i)}
+                              title="Remove from line"
+                            >
+                              ×
+                            </button>
+                          </>
+                        )}
                       </div>
                       {!isLast &&
                         (() => {
@@ -266,12 +338,31 @@ export function LineInspector({ id }: { id: LineId }) {
                                   cursor: 'pointer',
                                 }}
                               />
+                              {isAppending && (
+                                <InsertZone
+                                  isActive={isActiveAt(i)}
+                                  color={line.color}
+                                  height={GAP_ROW_H}
+                                  onClick={() => moveCursor(i)}
+                                />
+                              )}
                             </div>
                           );
                         })()}
                     </Fragment>
                   );
                 })}
+                {isAppending && (
+                  <div style={{ display: 'flex', height: INSERT_ROW_H }}>
+                    <div style={{ width: MARKER_W, flexShrink: 0 }} />
+                    <InsertZone
+                      isActive={isActiveAt(N - 1)}
+                      color={line.color}
+                      height={INSERT_ROW_H}
+                      onClick={() => moveCursor(N - 1)}
+                    />
+                  </div>
+                )}
               </div>
             );
           })()}
