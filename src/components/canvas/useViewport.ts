@@ -70,7 +70,7 @@ export function useViewport(svgRef: RefObject<SVGSVGElement | null>): ViewportAp
     e.preventDefault();
     const before = screenToWorld(e.clientX, e.clientY);
     const factor = Math.exp(-e.deltaY * 0.0015);
-    const newZoom = Math.max(0.1, Math.min(8, viewport.zoom * factor));
+    const newZoom = Math.max(0.1, Math.min(64, viewport.zoom * factor));
     // adjust viewport so cursor stays at same world point
     const rect = svgRef.current!.getBoundingClientRect();
     const relX = (e.clientX - rect.left) / rect.width;
