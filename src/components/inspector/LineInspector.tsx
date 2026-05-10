@@ -183,9 +183,8 @@ export function LineInspector({ id }: { id: LineId }) {
         <ColorPalette value={line.color} onChange={(c) => updateLine(line.id, { color: c })} />
       </div>
       <div className="field">
-        <label>Stations ({line.stations.length})</label>
         <button
-          className="btn-mini"
+          type="button"
           onClick={() => {
             if (isAppending) {
               selection.setAppending(null);
@@ -201,13 +200,18 @@ export function LineInspector({ id }: { id: LineId }) {
           }
           style={{
             width: '100%',
-            ...(isAppending
-              ? {
-                  background: line.color,
-                  color: legibleTextOn(line.color),
-                  borderColor: line.color,
-                }
-              : {}),
+            marginBottom: 3,
+            padding: '8px 12px',
+            border: 'none',
+            borderRadius: 0,
+            background: isAppending ? line.color : '#000',
+            color: isAppending ? legibleTextOn(line.color) : '#fff',
+            fontFamily: 'inherit',
+            fontWeight: 500,
+            fontSize: 13,
+            letterSpacing: '0.04em',
+            textTransform: 'uppercase',
+            cursor: 'pointer',
           }}
         >
           {isAppending ? 'Done' : 'Edit stops'}
