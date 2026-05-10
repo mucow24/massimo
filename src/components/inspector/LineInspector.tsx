@@ -205,11 +205,10 @@ export function LineInspector({ id }: { id: LineId }) {
             fontWeight: 500,
             fontSize: 13,
             letterSpacing: '0.04em',
-            textTransform: 'uppercase',
             cursor: 'pointer',
           }}
         >
-          {isAppending ? 'Done' : 'Edit stops'}
+          {isAppending ? 'Done' : 'Edit Stops'}
         </button>
         {line.stations.length > 0 &&
           (() => {
@@ -477,9 +476,9 @@ export function LineInspector({ id }: { id: LineId }) {
                     </Fragment>
                   );
                 })}
-                {isAppending && (
-                  <div style={{ display: 'flex', height: INSERT_ROW_H }}>
-                    <div style={{ width: MARKER_W, flexShrink: 0 }} />
+                <div style={{ display: 'flex', height: INSERT_ROW_H }}>
+                  <div style={{ width: MARKER_W, flexShrink: 0 }} />
+                  {isAppending && (
                     <InsertZone
                       isActive={isActiveAt(N - 1)}
                       color={line.color}
@@ -487,8 +486,8 @@ export function LineInspector({ id }: { id: LineId }) {
                       onClick={() => moveCursor(N - 1)}
                       onHoverChange={hoverPredecessor(line.stations[N - 1])}
                     />
-                  </div>
-                )}
+                  )}
+                </div>
               </div>
             );
           })()}
