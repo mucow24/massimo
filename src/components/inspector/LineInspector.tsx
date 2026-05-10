@@ -1,10 +1,73 @@
-import { Fragment, useState } from 'react';
+import { Fragment, useEffect, useRef, useState } from 'react';
 import { useDoc, useSelection } from '../../state/store';
-import type { LineId, LineStyle } from '../../model/types';
+import type { DotShape, LineId, LineStyle } from '../../model/types';
 import { pairKeyOf } from '../../model/pairKey';
 import { ColorPalette } from './ColorPalette';
 import { useFieldHistory } from '../useFieldHistory';
 import { HatchPatterns, lineStyleStrokeAttrs, lineStyleUnderlayAttrs } from '../HatchPatterns';
+import { StopGlyph } from '../StopGlyph';
+
+const DOT_SHAPES: Array<{ shape: DotShape; label: string }> = [
+  { shape: 'filled-black', label: 'Filled black' },
+  { shape: 'open-black', label: 'Open black' },
+  { shape: 'filled-black-white-stroke', label: 'Filled black with white stroke' },
+  { shape: 'filled-white', label: 'Filled white' },
+  { shape: 'open-white', label: 'Open white' },
+  { shape: 'filled-white-black-stroke', label: 'Filled white with black stroke' },
+  { shape: 'filled-black-diamond', label: 'Filled black diamond' },
+  { shape: 'filled-white-diamond', label: 'Filled white diamond' },
+  { shape: 'none', label: 'None' },
+];
+
+function DotShapePopover({
+  onPick,
+  onClose,
+  style,
+}: {
+  onPick: (shape: DotShape) => void;
+  onClose: () => void;
+  style: React.CSSProperties;
+}) {
+  const ref = useRef<HTMLDivElement | null>(null);
+  useEffect(() => {
+    const onDocClick = (e: globalThis.MouseEvent) => {
+      if (ref.current && !ref.current.contains(e.target as Node)) onClose();
+    };
+    const onKey = (e: globalThis.KeyboardEvent) => {
+      if (e.key === 'Escape') onClose();
+    };
+    const t = setTimeout(() => document.addEventListener('mousedown', onDocClick), 0);
+    document.addEventListener('keydown', onKey);
+    return () => {
+      clearTimeout(t);
+      document.removeEventListener('mousedown', onDocClick);
+      document.removeEventListener('keydown', onKey);
+    };
+  }, [onClose]);
+  return (
+    <div
+      className="shape-grid"
+      role="menu"
+      ref={ref}
+      style={{ ...style, right: 'auto' }}
+    >
+      {DOT_SHAPES.map(({ shape, label }) => (
+        <button
+          key={shape}
+          type="button"
+          role="menuitem"
+          className="shape-option"
+          aria-label={label}
+          onClick={() => onPick(shape)}
+        >
+          <svg width={20} height={20} viewBox="-10 -10 20 20">
+            <StopGlyph cx={0} cy={0} shape={shape} />
+          </svg>
+        </button>
+      ))}
+    </div>
+  );
+}
 
 const STATION_ROW_H = 20;
 const GAP_ROW_H = 16;
@@ -72,8 +135,10 @@ export function LineInspector({ id }: { id: LineId }) {
   const setLineSegmentStyle = useDoc((s) => s.setLineSegmentStyle);
   const reorderLineStations = useDoc((s) => s.reorderLineStations);
   const removeStationFromLine = useDoc((s) => s.removeStationFromLine);
+  const setDotShape = useDoc((s) => s.setDotShape);
   const selection = useSelection();
   const serviceField = useFieldHistory();
+  const [openPickerSid, setOpenPickerSid] = useState<string | null>(null);
 
   if (!line) return null;
 
@@ -225,19 +290,51 @@ export function LineInspector({ id }: { id: LineId }) {
                       </Fragment>
                     );
                   })}
-                  {line.stations.map(
-                    (sid, i) =>
-                      stations[sid] && (
+                  {line.stations.map((sid, i) => {
+                    const station = stations[sid];
+                    if (!station) return null;
+                    const stop = station.stops.find((s) => s.lineId === line.id);
+                    const shape: DotShape = stop?.dotShape ?? 'filled-black';
+                    return (
+                      <g
+                        key={i + ':' + sid}
+                        style={{ cursor: 'pointer' }}
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          setOpenPickerSid((cur) => (cur === sid ? null : sid));
+                        }}
+                      >
                         <circle
-                          key={i + ':' + sid}
                           cx={MARKER_W / 2}
                           cy={centerOf(i)}
-                          r={4}
-                          fill="#000"
+                          r={7}
+                          fill="transparent"
+                          style={{ pointerEvents: 'visible' }}
                         />
-                      ),
-                  )}
+                        <StopGlyph cx={MARKER_W / 2} cy={centerOf(i)} shape={shape} />
+                      </g>
+                    );
+                  })}
                 </svg>
+                {openPickerSid !== null &&
+                  (() => {
+                    const idx = line.stations.indexOf(openPickerSid);
+                    if (idx < 0) return null;
+                    return (
+                      <DotShapePopover
+                        onPick={(shape) => {
+                          setDotShape(openPickerSid, line.id, shape);
+                          setOpenPickerSid(null);
+                        }}
+                        onClose={() => setOpenPickerSid(null)}
+                        style={{
+                          position: 'absolute',
+                          top: INSERT_ROW_H + centerOf(idx) + 10,
+                          left: MARKER_W + 4,
+                        }}
+                      />
+                    );
+                  })()}
                 <div style={{ display: 'flex', height: INSERT_ROW_H }}>
                   <div style={{ width: MARKER_W, flexShrink: 0 }} />
                   {isAppending && (
