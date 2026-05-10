@@ -27,11 +27,17 @@ interface Props {
 //             of the dot area.
 export function StopMarker({ spec, effectiveColor }: Props) {
   const color = effectiveColor ?? spec.color;
-  if (spec.style === 'hatched') {
+  if (spec.style === 'hatched' || spec.style === 'hatched-mirror') {
     const pts = rotatedSquareCorners(spec.cx, spec.cy, HALF, spec.rotationDeg)
       .map((p) => `${p.x},${p.y}`)
       .join(' ');
-    return <polygon points={pts} fill={`url(#${hatchPatternId(color)})`} pointerEvents="none" />;
+    return (
+      <polygon
+        points={pts}
+        fill={`url(#${hatchPatternId(color, spec.style)})`}
+        pointerEvents="none"
+      />
+    );
   }
   if (spec.style === 'dashed') {
     if (!spec.outward) return null;

@@ -96,14 +96,17 @@ export function MapCanvas() {
     return map;
   }, [highlightLineId, lines]);
 
-  // Distinct colors of any line that has at least one hatched segment.
-  // Drives <pattern> emission in <defs>; each color gets one pattern that
-  // SegmentBand references via hatchPatternId().
+  // Distinct colors of any line that has at least one hatched segment (in
+  // either direction). Drives <pattern> emission in <defs>; each color gets
+  // both hatch patterns (+45° and -45°) so SegmentBand can reference whichever
+  // variant a stripe needs via hatchPatternId(color, variant).
   const hatchedColors = useMemo(() => {
     const seen = new Set<string>();
     for (const ln of Object.values(lines)) {
       if (!ln.segmentStyles) continue;
-      const hasHatch = Object.values(ln.segmentStyles).some((s) => s === 'hatched');
+      const hasHatch = Object.values(ln.segmentStyles).some(
+        (s) => s === 'hatched' || s === 'hatched-mirror',
+      );
       if (!hasHatch) continue;
       const effective = colorMap?.[ln.id] ?? ln.color;
       seen.add(effective);

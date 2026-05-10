@@ -406,11 +406,11 @@ function terminusOutwardFromBand(
 }
 
 // Derive the marker style from this line's segment styles at the adjacencies
-// incident to `stationId`. Rule: hatched iff every adjacency is hatched; else
-// dashed iff every adjacency is dashed; else solid. A mixed junction (e.g.
-// one hatched + one solid, or one hatched + one dashed) resolves to solid so
-// the solid dot covers the inner half of the patterned segment and the
-// pattern visually starts past the dot's edge.
+// incident to `stationId`. Rule: if every adjacency shares the same non-solid
+// style (dashed, hatched, or hatched-mirror), the dot inherits that style;
+// otherwise it's solid. A mixed junction (e.g. one hatched + one solid, or
+// hatched + hatched-mirror) resolves to solid so the dot covers the inner half
+// of the patterned segment and the pattern visually starts past the dot's edge.
 function stationMarkerStyle(line: Line, stationId: StationId): LineStyle {
   const styles = line.segmentStyles;
   if (!styles) return 'solid';
@@ -424,8 +424,9 @@ function stationMarkerStyle(line: Line, stationId: StationId): LineStyle {
       adjacencies.push(styles[pairKeyOf(stationId, line.stations[i + 1])] ?? 'solid');
     }
   }
-  if (adjacencies.length > 0 && adjacencies.every((s) => s === 'hatched')) return 'hatched';
-  if (adjacencies.length > 0 && adjacencies.every((s) => s === 'dashed')) return 'dashed';
+  if (adjacencies.length === 0) return 'solid';
+  const first = adjacencies[0];
+  if (first !== 'solid' && adjacencies.every((s) => s === first)) return first;
   return 'solid';
 }
 

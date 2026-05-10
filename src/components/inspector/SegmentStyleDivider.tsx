@@ -11,7 +11,8 @@ const HEIGHT = 8;
 const TITLE: Record<LineStyle, string> = {
   solid: 'Segment style: solid (click to set dashed)',
   dashed: 'Segment style: dashed (click to set hatched)',
-  hatched: 'Segment style: hatched (click to set solid)',
+  hatched: 'Segment style: hatched (click to set hatched-mirror)',
+  'hatched-mirror': 'Segment style: hatched-mirror (click to set solid)',
 };
 
 // Compact preview row that mirrors the rendered look of a segment between two
@@ -50,7 +51,7 @@ export function SegmentStyleDivider({ style, color, onClick }: Props) {
         viewBox={`0 0 100 ${HEIGHT}`}
         style={{ display: 'block' }}
       >
-        {style === 'hatched' && (
+        {(style === 'hatched' || style === 'hatched-mirror') && (
           <defs>
             <HatchPatterns colors={[color]} />
           </defs>

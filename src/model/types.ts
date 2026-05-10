@@ -89,8 +89,9 @@ export interface Station {
 
 // Visual style for a single segment of a line. `solid` is the historical
 // default and is never explicitly stored — a missing entry in `segmentStyles`
-// means solid.
-export type LineStyle = 'solid' | 'dashed' | 'hatched';
+// means solid. `hatched` and `hatched-mirror` are the two diagonal hatch
+// patterns (45° and -45°) — visually mirrored across the line's tangent.
+export type LineStyle = 'solid' | 'dashed' | 'hatched' | 'hatched-mirror';
 
 export interface Line {
   id: LineId;

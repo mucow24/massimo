@@ -3,7 +3,7 @@ import { pairKeyOf } from './pairKey';
 import { PALETTES, type PaletteId } from './palettes';
 import type { Line, LineStyle, MapDoc } from './types';
 
-const KNOWN_LINE_STYLES = new Set<LineStyle>(['solid', 'dashed', 'hatched']);
+const KNOWN_LINE_STYLES = new Set<LineStyle>(['solid', 'dashed', 'hatched', 'hatched-mirror']);
 
 const KNOWN_PALETTE_IDS = new Set<PaletteId>(PALETTES.map((p) => p.id));
 

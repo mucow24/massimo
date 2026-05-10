@@ -23,6 +23,16 @@ describe('hatchPatternId', () => {
     expect(id).not.toContain('#');
     expect(id).toMatch(/^[A-Za-z][A-Za-z0-9_-]*$/);
   });
+
+  it('returns different ids for the two hatch variants of the same color', () => {
+    expect(hatchPatternId('#EF374B', 'hatched')).not.toBe(
+      hatchPatternId('#EF374B', 'hatched-mirror'),
+    );
+  });
+
+  it('mirror id also satisfies SVG-id charset rules', () => {
+    expect(hatchPatternId('#EF374B', 'hatched-mirror')).toMatch(/^[A-Za-z][A-Za-z0-9_-]*$/);
+  });
 });
 
 describe('<HatchPatterns>', () => {
@@ -33,13 +43,15 @@ describe('<HatchPatterns>', () => {
       </svg>,
     );
 
-  it('emits one <pattern> per provided color', () => {
+  it('emits both hatch variants per provided color', () => {
     const { container } = renderSvg(['#EF374B', '#0039A6']);
     const patterns = container.querySelectorAll('pattern');
-    expect(patterns.length).toBe(2);
+    expect(patterns.length).toBe(4);
     const ids = Array.from(patterns).map((p) => p.id);
-    expect(ids).toContain(hatchPatternId('#EF374B'));
-    expect(ids).toContain(hatchPatternId('#0039A6'));
+    expect(ids).toContain(hatchPatternId('#EF374B', 'hatched'));
+    expect(ids).toContain(hatchPatternId('#EF374B', 'hatched-mirror'));
+    expect(ids).toContain(hatchPatternId('#0039A6', 'hatched'));
+    expect(ids).toContain(hatchPatternId('#0039A6', 'hatched-mirror'));
   });
 
   it('emits no <pattern> when the color list is empty', () => {
@@ -47,10 +59,16 @@ describe('<HatchPatterns>', () => {
     expect(container.querySelectorAll('pattern').length).toBe(0);
   });
 
-  it('rotates stripes 45° via patternTransform', () => {
+  it('rotates the +45 variant via patternTransform', () => {
     const { container } = renderSvg(['#EF374B']);
-    const p = container.querySelector('pattern');
+    const p = container.querySelector(`pattern#${hatchPatternId('#EF374B', 'hatched')}`);
     expect(p?.getAttribute('patternTransform')).toMatch(/rotate\(45/);
+  });
+
+  it('rotates the mirror variant via patternTransform with negative angle', () => {
+    const { container } = renderSvg(['#EF374B']);
+    const p = container.querySelector(`pattern#${hatchPatternId('#EF374B', 'hatched-mirror')}`);
+    expect(p?.getAttribute('patternTransform')).toMatch(/rotate\(-45/);
   });
 
   it('uses userSpaceOnUse so stripes hold their angle as the line bends', () => {
@@ -102,7 +120,14 @@ describe('lineStyleStrokeAttrs', () => {
 
   it('hatched: stroke points at the hatch pattern url for this color', () => {
     const a = lineStyleStrokeAttrs('hatched', '#EF374B');
-    expect(a.stroke).toBe(`url(#${hatchPatternId('#EF374B')})`);
+    expect(a.stroke).toBe(`url(#${hatchPatternId('#EF374B', 'hatched')})`);
+    expect(a.strokeDasharray).toBeUndefined();
+    expect(a.strokeLinecap).toBe('square');
+  });
+
+  it('hatched-mirror: stroke points at the mirrored hatch pattern url for this color', () => {
+    const a = lineStyleStrokeAttrs('hatched-mirror', '#EF374B');
+    expect(a.stroke).toBe(`url(#${hatchPatternId('#EF374B', 'hatched-mirror')})`);
     expect(a.strokeDasharray).toBeUndefined();
     expect(a.strokeLinecap).toBe('square');
   });
@@ -115,6 +140,10 @@ describe('lineStyleUnderlayAttrs', () => {
 
   it('returns null for hatched (white is baked into the SVG pattern)', () => {
     expect(lineStyleUnderlayAttrs('hatched')).toBeNull();
+  });
+
+  it('returns null for hatched-mirror (same: white baked into the pattern)', () => {
+    expect(lineStyleUnderlayAttrs('hatched-mirror')).toBeNull();
   });
 
   it('returns a white butt-capped underlay for dashed so gaps occlude lines behind', () => {
