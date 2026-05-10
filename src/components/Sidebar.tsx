@@ -1,8 +1,11 @@
-import { useEffect, useRef } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { effectiveLineOrder, useDoc, useSelection } from '../state/store';
 import { LineInspector, StationInspector } from './inspector';
 import type { Line } from '../model/types';
 import { legibleTextOn } from '../util/color';
+
+type StationSortColumn = 'name' | 'stops';
+type SortDirection = 'asc' | 'desc';
 
 export function Sidebar() {
   const stations = useDoc((s) => s.stations);
@@ -13,7 +16,9 @@ export function Sidebar() {
   const deleteLine = useDoc((s) => s.deleteLine);
   const moveLineInOrder = useDoc((s) => s.moveLineInOrder);
 
-  const stationList = Object.values(stations);
+  const [stationSortBy, setStationSortBy] = useState<StationSortColumn>('name');
+  const [stationSortDir, setStationSortDir] = useState<SortDirection>('desc');
+
   const orderedLineIds = effectiveLineOrder(lineOrder, lines);
 
   // Per-station: lines that stop here, alphabetical by service code.
@@ -21,6 +26,28 @@ export function Sidebar() {
     Object.values(lines)
       .filter((ln) => ln.stations.includes(stationId))
       .sort((a, b) => a.service.localeCompare(b.service));
+
+  const stopsKey = (stationId: string): string =>
+    linesAtStation(stationId)
+      .map((ln) => ln.service)
+      .join(' ');
+
+  const stationList = Object.values(stations).sort((a, b) => {
+    const cmp =
+      stationSortBy === 'name'
+        ? a.name.localeCompare(b.name)
+        : stopsKey(a.id).localeCompare(stopsKey(b.id));
+    return stationSortDir === 'asc' ? cmp : -cmp;
+  });
+
+  const handleStationSortClick = (col: StationSortColumn) => {
+    if (stationSortBy === col) {
+      setStationSortDir((d) => (d === 'asc' ? 'desc' : 'asc'));
+    } else {
+      setStationSortBy(col);
+      setStationSortDir('desc');
+    }
+  };
 
   // Scroll the expanded editor into view when something gets selected from
   // outside the sidebar (e.g. clicking a station on the canvas). Use the
@@ -65,6 +92,29 @@ export function Sidebar() {
       <div className="scroll">
         {selection.activeTab === 'stations' && (
           <section>
+            <div className="list-header">
+              <button
+                type="button"
+                className={'sort-header grow' + (stationSortBy === 'name' ? ' active' : '')}
+                onClick={() => handleStationSortClick('name')}
+              >
+                Station
+                {stationSortBy === 'name' && (
+                  <span className="sort-arrow">{stationSortDir === 'asc' ? '▲' : '▼'}</span>
+                )}
+              </button>
+              <button
+                type="button"
+                className={'sort-header' + (stationSortBy === 'stops' ? ' active' : '')}
+                onClick={() => handleStationSortClick('stops')}
+              >
+                Stops
+                {stationSortBy === 'stops' && (
+                  <span className="sort-arrow">{stationSortDir === 'asc' ? '▲' : '▼'}</span>
+                )}
+              </button>
+              <span className="header-spacer" aria-hidden />
+            </div>
             {stationList.length === 0 && <div className="empty">No stations yet.</div>}
             {stationList.map((st) => {
               const ids = selection.selectedStationIds;
