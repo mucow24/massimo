@@ -182,6 +182,9 @@ export function LineInspector({ id }: { id: LineId }) {
                     <SegmentStyleDivider
                       style={style}
                       color={line.color}
+                      lineId={line.id}
+                      fromStationId={sid}
+                      toStationId={nextSid}
                       onClick={() => cycleSegmentStyle(sid, nextSid)}
                     />
                   );

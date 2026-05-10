@@ -35,6 +35,7 @@ import {
 } from '../geometry/lineTagGeometry';
 import type { LineId, Station, StopCell } from '../model/types';
 import { findMatchingStations } from '../model/matching';
+import { pairKeyOf } from '../model/pairKey';
 import { desaturateColor, legibleTextOn } from '../util/color';
 
 const DIM_COLOR = '#000000';
@@ -929,6 +930,50 @@ export function MapCanvas() {
 
         {/* Line tags: in-band labels that ride each line's stripe. */}
         <LineTagsLayer bands={bands} zoom={view.viewport.zoom} svgRef={svgRef} />
+
+        {/* Inspector segment hover: when a segment-style divider in the line
+            editor is hovered, paint a soft white wash over the whole map and
+            re-render just that segment's stripe + endpoint dots on top, so
+            the user can see which corridor on the map the divider controls. */}
+        {selection.hoveredInspectorSegment &&
+          (() => {
+            const hov = selection.hoveredInspectorSegment;
+            const hoverPairKey = pairKeyOf(hov.fromStationId, hov.toStationId);
+            return (
+              <>
+                <rect
+                  x={view.vbX}
+                  y={view.vbY}
+                  width={view.vbW}
+                  height={view.vbH}
+                  fill="#fff"
+                  opacity={0.5}
+                  pointerEvents="none"
+                />
+                <g pointerEvents="none">
+                  {renderables.map((r, i) => {
+                    if (r.kind === 'stripe') {
+                      if (r.band.pairKey !== hoverPairKey) return null;
+                      if (r.band.lines[r.stripeIndex].id !== hov.lineId) return null;
+                      return (
+                        <SegmentBand key={'hov-s:' + i} spec={r.band} stripeIndex={r.stripeIndex} />
+                      );
+                    }
+                    if (r.kind === 'marker') {
+                      if (r.spec.lineId !== hov.lineId) return null;
+                      if (
+                        r.spec.stationId !== hov.fromStationId &&
+                        r.spec.stationId !== hov.toStationId
+                      )
+                        return null;
+                      return <StopMarker key={'hov-m:' + i} spec={r.spec} />;
+                    }
+                    return null;
+                  })}
+                </g>
+              </>
+            );
+          })()}
 
         {/* Match-stroke: gray outline on each station whose layout matches
             the selected station while mirror mode is on. Drawn beneath the
