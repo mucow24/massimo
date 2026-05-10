@@ -144,7 +144,7 @@ describe('filletPath', () => {
       ],
       24,
     );
-    expect(d).toBe('M 0.00 0.00 L 50.00 0.00');
+    expect(d).toBe('M 0.000000 0.000000 L 50.000000 0.000000');
   });
 
   it('emits an arc command for a 3-vertex L with a real bend', () => {
@@ -182,7 +182,7 @@ describe('offsetFilletPath', () => {
       24,
       10,
     );
-    expect(d).toBe('M 0.00 -10.00 L 100.00 -10.00');
+    expect(d).toBe('M 0.000000 -10.000000 L 100.000000 -10.000000');
   });
 
   it('shifts the opposite direction for negative offset', () => {
@@ -194,7 +194,7 @@ describe('offsetFilletPath', () => {
       24,
       -10,
     );
-    expect(d).toBe('M 0.00 10.00 L 100.00 10.00');
+    expect(d).toBe('M 0.000000 10.000000 L 100.000000 10.000000');
   });
 });
 
