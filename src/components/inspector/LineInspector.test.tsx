@@ -62,7 +62,7 @@ describe('<LineInspector /> — segment style dividers', () => {
     expect(dividers[1].getAttribute('data-style')).toBe('hatched');
   });
 
-  it('clicking a divider cycles solid → dashed → hatched → solid', async () => {
+  it('clicking a divider cycles solid → dashed → hatched → hatched-mirror → solid', async () => {
     seedThreeStationLine();
     const user = userEvent.setup();
     render(<LineInspector id="L1" />);
@@ -74,6 +74,9 @@ describe('<LineInspector /> — segment style dividers', () => {
 
     await user.click(divider);
     expect(useDoc.getState().lines.L1.segmentStyles).toEqual({ 's1|s2': 'hatched' });
+
+    await user.click(divider);
+    expect(useDoc.getState().lines.L1.segmentStyles).toEqual({ 's1|s2': 'hatched-mirror' });
 
     await user.click(divider);
     // Back to solid -> entry deleted entirely.
