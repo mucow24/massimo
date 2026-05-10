@@ -730,18 +730,33 @@ export function toggleStationOnLine(
   // Spawn at (0, maxCol+1) of existing footprint; (0, 0) when empty.
   const hasCell = st.stops.some((c) => c.lineId === lineId);
   let newStops = st.stops;
+  let newLabel = st.label;
   if (!hasCell) {
     const maxCol =
       st.stops.length === 0 ? -1 : st.stops.reduce((m, c) => (c.col > m ? c.col : m), -Infinity);
+    const newRow = 0;
+    const newCol = maxCol + 1;
     const newCell: StopCell = {
       lineId,
-      row: 0,
-      col: maxCol + 1,
+      row: newRow,
+      col: newCol,
       orientation: 'auto-vertical',
     };
     newStops = [...st.stops, newCell];
+    // If the auto-placed label sits exactly where the new stop is landing,
+    // step it past the stop block so the new line doesn't paint over it.
+    // We only nudge auto labels — manual alignments are user-pinned and
+    // shouldn't move out from under the user.
+    if (st.label.align === 'auto' && st.label.row === newRow && st.label.col === newCol) {
+      let lc = newCol;
+      while (newStops.some((c) => c.row === newRow && c.col === lc)) lc += 1;
+      newLabel = { ...st.label, row: newRow, col: lc };
+    }
   }
-  const stationsAfter = { ...doc.stations, [stationId]: { ...st, stops: newStops } };
+  const stationsAfter = {
+    ...doc.stations,
+    [stationId]: { ...st, stops: newStops, label: newLabel },
+  };
   return {
     ...doc,
     lines: { ...doc.lines, [lineId]: { ...ln, stations: newStations } },
