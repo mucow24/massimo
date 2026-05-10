@@ -577,6 +577,50 @@ select {
   flex-shrink: 0;
 }
 
+.list-header {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 4px 12px;
+  background: #f0f3f8;
+  border-bottom: 1px solid #e0e4eb;
+  font-size: 12px;
+  font-weight: 600;
+  color: #555;
+  position: sticky;
+  top: 0;
+  z-index: 1;
+}
+.list-header .sort-header {
+  background: transparent;
+  border: 0;
+  padding: 2px 0;
+  font: inherit;
+  color: inherit;
+  cursor: pointer;
+  text-align: left;
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+}
+.list-header .sort-header:hover {
+  color: #000;
+}
+.list-header .sort-header.active {
+  color: #000;
+}
+.list-header .sort-header.grow {
+  flex: 1;
+}
+.list-header .sort-arrow {
+  font-size: 9px;
+  line-height: 1;
+}
+.list-header .header-spacer {
+  width: 22px;
+  flex-shrink: 0;
+}
+
 .list-row {
   display: flex;
   align-items: center;
