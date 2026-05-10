@@ -137,15 +137,31 @@ export function Sidebar() {
                 <div
                   key={ln.id}
                   data-line-row={ln.id}
-                  style={expanded ? { border: `4px solid ${ln.color}` } : undefined}
+                  style={{
+                    padding: '4px 0',
+                    ...(expanded
+                      ? { outline: `4px solid ${ln.color}`, outlineOffset: -4 }
+                      : {}),
+                  }}
                 >
                   <div
                     className={'list-row' + (expanded ? ' selected' : '')}
                     onClick={() => selection.selectLine(expanded ? null : ln.id)}
                     title="Top of list = front-most. Use ↑/↓ to reorder."
                   >
-                    <span className="swatch" style={{ background: ln.color }} />
-                    <strong style={{ width: 28 }}>{ln.service}</strong>
+                    <span
+                      className="line-badge"
+                      style={{
+                        background: ln.color,
+                        color: legibleTextOn(ln.color),
+                        width: 24,
+                        height: 24,
+                        fontSize: 12,
+                        fontWeight: 700,
+                      }}
+                    >
+                      {ln.service}
+                    </span>
                     <span className="grow">{ln.stations.length} stations</span>
                     <button
                       className="btn-mini icon"

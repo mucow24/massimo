@@ -370,7 +370,12 @@ export function LineInspector({ id }: { id: LineId }) {
                         }}
                       >
                         <div style={{ width: MARKER_W, flexShrink: 0 }} />
-                        <span className="grow" style={{ paddingLeft: 8 }}>
+                        <span
+                          className="grow"
+                          style={{ paddingLeft: 8, cursor: 'pointer' }}
+                          title="Open station editor"
+                          onClick={() => selection.selectStation(sid)}
+                        >
                           {st.name}
                         </span>
                         {isAppending && (
