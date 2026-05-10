@@ -7,6 +7,13 @@ import { offsetFilletPath } from './router';
 
 export interface SegmentBandSpec {
   pairKey: string;
+  // Stable per-band identity for React keying. A station-pair can have
+  // multiple bands (different axis buckets, or non-contiguous perpendicular
+  // groups within a bucket); each band's line set is disjoint from its
+  // siblings, so `pairKey + sorted(line ids)` is unique. Without this,
+  // sibling bands collide on `pairKey` keys and React's reconciler leaks
+  // stale fibers across renders.
+  bandKey: string;
   fromId: StationId;
   toId: StationId;
   // Lines in this band, in render order (perpendicular to direction of travel).
@@ -469,8 +476,14 @@ function buildBandSpec(
     paths.push(offsetFilletPath(result.vertices, R, offset));
   }
 
+  const sortedLineIds = linesArr
+    .map((l) => l.id)
+    .slice()
+    .sort();
+
   return {
     pairKey,
+    bandKey: `${pairKey}#${sortedLineIds.join(',')}`,
     fromId: group[0].fromId,
     toId: group[0].toId,
     lines: linesArr,
