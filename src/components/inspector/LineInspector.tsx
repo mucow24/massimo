@@ -182,8 +182,8 @@ export function LineInspector({ id }: { id: LineId }) {
             if (isAppending) {
               selection.setAppending(null);
             } else {
-              const startIdx = line.stations.length > 0 ? line.stations.length - 1 : -1;
-              selection.startAppendAt(line.id, startIdx);
+              selection.setAppending(line.id);
+              selection.setInsertAfterIndex(null);
             }
           }}
           title={
