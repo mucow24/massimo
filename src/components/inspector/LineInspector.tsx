@@ -6,6 +6,7 @@ import { ColorPalette } from './ColorPalette';
 import { useFieldHistory } from '../useFieldHistory';
 import { HatchPatterns, lineStyleStrokeAttrs, lineStyleUnderlayAttrs } from '../HatchPatterns';
 import { StopGlyph } from '../StopGlyph';
+import { blendOver, legibleTextOn, withAlpha } from '../../util/color';
 
 const DOT_SHAPES: Array<{ shape: DotShape; label: string }> = [
   { shape: 'filled-black', label: 'Filled black' },
@@ -87,19 +88,28 @@ function InsertZone({
   color,
   height,
   onClick,
+  onHoverChange,
 }: {
   isActive: boolean;
   color: string;
   height: number;
   onClick: () => void;
+  onHoverChange?: (hovered: boolean) => void;
 }) {
   const [hovered, setHovered] = useState(false);
+  const tintAlpha = hovered ? 0.6 : 0.4;
   return (
     <button
       type="button"
       onClick={onClick}
-      onMouseEnter={() => setHovered(true)}
-      onMouseLeave={() => setHovered(false)}
+      onMouseEnter={() => {
+        setHovered(true);
+        onHoverChange?.(true);
+      }}
+      onMouseLeave={() => {
+        setHovered(false);
+        onHoverChange?.(false);
+      }}
       title={
         isActive
           ? 'Stops will be inserted here. Click to stop adding.'
@@ -110,20 +120,18 @@ function InsertZone({
         height,
         padding: '0 8px',
         margin: 0,
-        background: isActive ? color : hovered ? 'rgba(0,0,0,0.04)' : 'transparent',
+        background: isActive ? color : withAlpha(color, tintAlpha),
         border: 'none',
-        borderRadius: 3,
-        textAlign: 'left',
+        borderRadius: height / 2,
+        textAlign: 'center',
         cursor: 'pointer',
         font: 'inherit',
         fontSize: 11,
-        fontWeight: 700,
-        color: isActive ? '#fff' : color,
+        color: isActive ? legibleTextOn(color) : legibleTextOn(blendOver(color, tintAlpha)),
         boxSizing: 'border-box',
-        opacity: isActive ? 1 : 0.7,
       }}
     >
-      {isActive ? '↓ Inserting stops here' : '+ Insert stops here'}
+      +
     </button>
   );
 }
@@ -194,7 +202,11 @@ export function LineInspector({ id }: { id: LineId }) {
           style={{
             width: '100%',
             ...(isAppending
-              ? { background: line.color, color: '#fff', borderColor: line.color }
+              ? {
+                  background: line.color,
+                  color: legibleTextOn(line.color),
+                  borderColor: line.color,
+                }
               : {}),
           }}
         >
@@ -232,6 +244,16 @@ export function LineInspector({ id }: { id: LineId }) {
             const isActiveAt = (idx: number) =>
               isAppending && selection.insertAfterIndex === idx;
             const moveCursor = (idx: number) => selection.setInsertAfterIndex(idx);
+            const hoverPredecessor =
+              (predSid: string | null) => (h: boolean) => {
+                if (h && predSid) {
+                  selection.setHoveredLineStop({ lineId: line.id, stationId: predSid });
+                  selection.setHoveredStation(predSid);
+                } else {
+                  selection.setHoveredLineStop(null);
+                  selection.setHoveredStation(null);
+                }
+              };
             return (
               <div
                 style={{ position: 'relative', display: 'flex', flexDirection: 'column' }}
@@ -372,7 +394,11 @@ export function LineInspector({ id }: { id: LineId }) {
                         <div style={{ width: MARKER_W, flexShrink: 0 }} />
                         <span
                           className="grow"
-                          style={{ paddingLeft: 8, cursor: 'pointer' }}
+                          style={{
+                            paddingLeft: 8,
+                            cursor: 'pointer',
+                            fontWeight: isAppending ? 700 : undefined,
+                          }}
                           title="Open station editor"
                           onClick={() => selection.selectStation(sid)}
                         >
@@ -450,6 +476,7 @@ export function LineInspector({ id }: { id: LineId }) {
                                   color={line.color}
                                   height={GAP_ROW_H}
                                   onClick={() => moveCursor(i)}
+                                  onHoverChange={hoverPredecessor(sid)}
                                 />
                               )}
                             </div>
@@ -466,6 +493,7 @@ export function LineInspector({ id }: { id: LineId }) {
                       color={line.color}
                       height={INSERT_ROW_H}
                       onClick={() => moveCursor(N - 1)}
+                      onHoverChange={hoverPredecessor(line.stations[N - 1])}
                     />
                   </div>
                 )}
