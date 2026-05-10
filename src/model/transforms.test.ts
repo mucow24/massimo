@@ -585,6 +585,59 @@ describe('toggleStationOnLine', () => {
     expect(next.lines.L1.stations).toEqual([]);
     expect(next.stations.s1.stops).toEqual([]);
   });
+
+  it('nudges an auto-placed label that sits where the new stop is landing', () => {
+    // Stop on L1 at (0,0), label moved to (0,1) (right side, auto mode).
+    // Adding L2 places a stop at (0, 1) — the label cell. The label should
+    // step to (0, 2) so the new line doesn't paint over it.
+    const doc = makeDoc({
+      stations: [
+        makeStation({
+          id: 's1',
+          stops: [makeStop('L1', { row: 0, col: 0 })],
+          label: { row: 0, col: 1, rotation: 0, offset: 0, align: 'auto', valign: 'middle' },
+        }),
+      ],
+      lines: [makeLine({ id: 'L1', stations: ['s1'] }), makeLine({ id: 'L2', stations: [] })],
+    });
+    const next = T.toggleStationOnLine(doc, 'L2', 's1');
+    expect(next.stations.s1.stops).toEqual(
+      expect.arrayContaining([expect.objectContaining({ lineId: 'L2', row: 0, col: 1 })]),
+    );
+    expect(next.stations.s1.label).toMatchObject({ row: 0, col: 2 });
+  });
+
+  it('leaves a manually-aligned label alone even when the new stop overlaps it', () => {
+    // Same setup as above but align='end' — user has pinned the label, so
+    // we don't move it out from under them.
+    const doc = makeDoc({
+      stations: [
+        makeStation({
+          id: 's1',
+          stops: [makeStop('L1', { row: 0, col: 0 })],
+          label: { row: 0, col: 1, rotation: 0, offset: 0, align: 'end', valign: 'middle' },
+        }),
+      ],
+      lines: [makeLine({ id: 'L1', stations: ['s1'] }), makeLine({ id: 'L2', stations: [] })],
+    });
+    const next = T.toggleStationOnLine(doc, 'L2', 's1');
+    expect(next.stations.s1.label).toMatchObject({ row: 0, col: 1, align: 'end' });
+  });
+
+  it('leaves the label alone when the new stop lands elsewhere', () => {
+    // Default label at (0, -1); new stop lands at (0, 1). No collision.
+    const doc = makeDoc({
+      stations: [
+        makeStation({
+          id: 's1',
+          stops: [makeStop('L1', { row: 0, col: 0 })],
+        }),
+      ],
+      lines: [makeLine({ id: 'L1', stations: ['s1'] }), makeLine({ id: 'L2', stations: [] })],
+    });
+    const next = T.toggleStationOnLine(doc, 'L2', 's1');
+    expect(next.stations.s1.label).toMatchObject({ row: 0, col: -1 });
+  });
 });
 
 describe('removeStationFromLine', () => {
