@@ -318,9 +318,9 @@ describe('buildStopMarkers', () => {
       expect(markerForStation(doc, 's2')?.style).toBe('solid');
     });
 
-    it('hatched if any incident adjacency is hatched (interior station)', () => {
+    it('solid at an interior station with one hatched and one solid adjacency', () => {
       const doc = docWith({ 's1|s2': 'hatched' });
-      expect(markerForStation(doc, 's2')?.style).toBe('hatched');
+      expect(markerForStation(doc, 's2')?.style).toBe('solid');
     });
 
     it('hatched at a terminus when its only adjacency is hatched', () => {
@@ -328,8 +328,13 @@ describe('buildStopMarkers', () => {
       expect(markerForStation(doc, 's1')?.style).toBe('hatched');
     });
 
-    it('hatched wins over dashed at a junction (one hatched + one dashed adjacency)', () => {
+    it('solid at a junction with one hatched and one dashed adjacency', () => {
       const doc = docWith({ 's1|s2': 'hatched', 's2|s3': 'dashed' });
+      expect(markerForStation(doc, 's2')?.style).toBe('solid');
+    });
+
+    it('hatched only when EVERY adjacency is hatched (interior between two hatched)', () => {
+      const doc = docWith({ 's1|s2': 'hatched', 's2|s3': 'hatched' });
       expect(markerForStation(doc, 's2')?.style).toBe('hatched');
     });
 
