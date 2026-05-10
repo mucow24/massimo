@@ -151,6 +151,82 @@ describe('buildBands — interlining', () => {
   });
 });
 
+describe('buildBands — bandKey identity', () => {
+  // Without unique bandKeys, sibling bands sharing a pairKey collide on
+  // React keys and the reconciler leaks fibers across renders — surfaces
+  // as stale ⚠ warning glyphs that survive a drag that resolves the
+  // routing warning.
+  it('assigns distinct bandKeys to sibling bands that share a pairKey', () => {
+    const doc = makeDoc({
+      stations: [
+        makeStation({
+          id: 's1',
+          x: 0,
+          y: 0,
+          stops: [makeStop('L1', { col: 0 }), makeStop('L2', { col: 5 })],
+        }),
+        makeStation({
+          id: 's2',
+          x: 0,
+          y: 100,
+          stops: [makeStop('L1', { col: 0 }), makeStop('L2', { col: 5 })],
+        }),
+      ],
+      lines: [
+        makeLine({ id: 'L1', stations: ['s1', 's2'] }),
+        makeLine({ id: 'L2', stations: ['s1', 's2'] }),
+      ],
+    });
+    const bands = buildBands(doc.stations, doc.lines, 24, doc.lineOrder);
+    expect(bands).toHaveLength(2);
+    expect(bands[0].pairKey).toBe(bands[1].pairKey);
+    expect(bands[0].bandKey).not.toBe(bands[1].bandKey);
+    // Every band's bandKey is unique across the whole result.
+    const keys = bands.map((b) => b.bandKey);
+    expect(new Set(keys).size).toBe(keys.length);
+  });
+
+  it('produces a stable bandKey regardless of incoming line order', () => {
+    // Same two stations, same two lines, but lineOrder reversed. The
+    // bandKey must not depend on iteration order or the React key
+    // would reshuffle whenever lineOrder changes — wrecking
+    // reconciliation across an unrelated user action.
+    const stations = [
+      makeStation({
+        id: 's1',
+        x: 0,
+        y: 0,
+        stops: [makeStop('L1', { col: 0 }), makeStop('L2', { col: 1 })],
+      }),
+      makeStation({
+        id: 's2',
+        x: 0,
+        y: 100,
+        stops: [makeStop('L1', { col: 0 }), makeStop('L2', { col: 1 })],
+      }),
+    ];
+    const lines = [
+      makeLine({ id: 'L1', stations: ['s1', 's2'] }),
+      makeLine({ id: 'L2', stations: ['s1', 's2'] }),
+    ];
+    const a = buildBands(
+      makeDoc({ stations, lines, lineOrder: ['L1', 'L2'] }).stations,
+      makeDoc({ stations, lines, lineOrder: ['L1', 'L2'] }).lines,
+      24,
+      ['L1', 'L2'],
+    );
+    const b = buildBands(
+      makeDoc({ stations, lines, lineOrder: ['L2', 'L1'] }).stations,
+      makeDoc({ stations, lines, lineOrder: ['L2', 'L1'] }).lines,
+      24,
+      ['L2', 'L1'],
+    );
+    expect(a).toHaveLength(1);
+    expect(b).toHaveLength(1);
+    expect(a[0].bandKey).toBe(b[0].bandKey);
+  });
+});
+
 describe('buildBands — priority', () => {
   it('tags each stripe with its own line priority (parallel to lines/paths)', () => {
     const doc = makeDoc({
