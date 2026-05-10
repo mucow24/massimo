@@ -139,9 +139,7 @@ export function Sidebar() {
                   data-line-row={ln.id}
                   style={{
                     padding: '4px 0',
-                    ...(expanded
-                      ? { outline: `4px solid ${ln.color}`, outlineOffset: -4 }
-                      : {}),
+                    ...(expanded ? { outline: `4px solid ${ln.color}`, outlineOffset: -4 } : {}),
                   }}
                 >
                   <div
