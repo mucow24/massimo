@@ -38,22 +38,24 @@ const UNDERLAY_COLOR = '#fff';
 // every code path that paints a band-stroke (SegmentBand + the selected-line
 // highlight overlay in MapCanvas). Keeps both call sites in lockstep.
 //
-// Note: dashed switches `strokeLinecap` to 'butt'. With the band's default
-// 'square' caps, each dash is extended by strokeWidth/2 on each end; gaps
-// shorter than strokeWidth would disappear and the line would render solid.
+// All styles use `strokeLinecap: 'butt'`. Dashed needs it so dashes aren't
+// extended by strokeWidth/2 (which would collapse the gaps). Solid and
+// hatched use it so the linecap extension doesn't poke past the colored
+// stop-marker square at the marker's perpendicular edge — a sub-pixel
+// rasterization artifact that flickered with the band's hatch pattern.
 export function lineStyleStrokeAttrs(
   style: LineStyle,
   color: string,
 ): {
   stroke: string;
   strokeDasharray: string | undefined;
-  strokeLinecap: 'butt' | 'square';
+  strokeLinecap: 'butt';
 } {
   if (style === 'hatched' || style === 'hatched-mirror') {
     return {
       stroke: `url(#${hatchPatternId(color, style)})`,
       strokeDasharray: undefined,
-      strokeLinecap: 'square',
+      strokeLinecap: 'butt',
     };
   }
   if (style === 'dashed') {
@@ -63,7 +65,7 @@ export function lineStyleStrokeAttrs(
       strokeLinecap: 'butt',
     };
   }
-  return { stroke: color, strokeDasharray: undefined, strokeLinecap: 'square' };
+  return { stroke: color, strokeDasharray: undefined, strokeLinecap: 'butt' };
 }
 
 // Companion to lineStyleStrokeAttrs: when a style needs a solid underlay
@@ -73,7 +75,7 @@ export function lineStyleStrokeAttrs(
 // needed (solid; hatched bakes white into the SVG <pattern> directly).
 export function lineStyleUnderlayAttrs(
   style: LineStyle,
-): { stroke: string; strokeLinecap: 'butt' | 'square' } | null {
+): { stroke: string; strokeLinecap: 'butt' } | null {
   if (style === 'dashed') return { stroke: UNDERLAY_COLOR, strokeLinecap: 'butt' };
   return null;
 }
