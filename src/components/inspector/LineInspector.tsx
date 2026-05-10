@@ -48,12 +48,13 @@ function InsertZone({
         padding: '0 8px',
         margin: 0,
         background: isActive ? color : hovered ? 'rgba(0,0,0,0.04)' : 'transparent',
-        border: isActive ? `1px solid ${color}` : `1px dashed ${color}`,
+        border: 'none',
         borderRadius: 3,
         textAlign: 'left',
         cursor: 'pointer',
         font: 'inherit',
         fontSize: 11,
+        fontWeight: 700,
         color: isActive ? '#fff' : color,
         boxSizing: 'border-box',
         opacity: isActive ? 1 : 0.7,
@@ -175,7 +176,7 @@ export function LineInspector({ id }: { id: LineId }) {
                   height={totalBandH}
                   style={{
                     position: 'absolute',
-                    top: isAppending ? INSERT_ROW_H : 0,
+                    top: INSERT_ROW_H,
                     left: 0,
                     pointerEvents: 'none',
                   }}
@@ -237,17 +238,17 @@ export function LineInspector({ id }: { id: LineId }) {
                       ),
                   )}
                 </svg>
-                {isAppending && (
-                  <div style={{ display: 'flex', height: INSERT_ROW_H }}>
-                    <div style={{ width: MARKER_W, flexShrink: 0 }} />
+                <div style={{ display: 'flex', height: INSERT_ROW_H }}>
+                  <div style={{ width: MARKER_W, flexShrink: 0 }} />
+                  {isAppending && (
                     <InsertZone
                       isActive={isActiveAt(-1)}
                       color={line.color}
                       height={INSERT_ROW_H}
                       onClick={() => moveCursor(-1)}
                     />
-                  </div>
-                )}
+                  )}
+                </div>
                 {line.stations.map((sid, i) => {
                   const st = stations[sid];
                   if (!st) return null;
@@ -258,7 +259,7 @@ export function LineInspector({ id }: { id: LineId }) {
                         className="list-row"
                         style={{
                           padding: '0 12px 0 0',
-                          gap: isAppending ? 6 : 0,
+                          gap: 0,
                           height: STATION_ROW_H,
                           boxSizing: 'border-box',
                         }}
@@ -282,6 +283,7 @@ export function LineInspector({ id }: { id: LineId }) {
                               disabled={i === 0}
                               onClick={() => moveSt(i, -1)}
                               title="Move up"
+                              style={{ marginLeft: 6 }}
                             >
                               ↑
                             </button>
@@ -290,6 +292,7 @@ export function LineInspector({ id }: { id: LineId }) {
                               disabled={i === N - 1}
                               onClick={() => moveSt(i, 1)}
                               title="Move down"
+                              style={{ marginLeft: 6 }}
                             >
                               ↓
                             </button>
@@ -297,6 +300,7 @@ export function LineInspector({ id }: { id: LineId }) {
                               className="btn-mini danger"
                               onClick={() => removeStationFromLine(line.id, i)}
                               title="Remove from line"
+                              style={{ marginLeft: 6 }}
                             >
                               ×
                             </button>
