@@ -411,6 +411,15 @@ interface SelectionState {
   // The (lineId, stationId) currently hovered in the line editor's station
   // list. Used to highlight the corresponding stop dot on the canvas.
   hoveredLineStop: { lineId: LineId; stationId: StationId } | null;
+  // The segment whose style-divider button is currently being hovered/focused
+  // in the line editor. While set, the canvas paints a soft white wash and
+  // re-renders only this segment + its endpoint dots so the user can see
+  // which corridor on the map the divider corresponds to.
+  hoveredInspectorSegment: {
+    lineId: LineId;
+    fromStationId: StationId;
+    toStationId: StationId;
+  } | null;
   // The lineId of the currently-selected stop cell within the active station
   // inspector. Cleared whenever a different station is selected.
   selectedStopLineId: LineId | null;
@@ -460,6 +469,9 @@ interface SelectionState {
   setPlacingStation: (placing: boolean) => void;
   setHoveredStation: (id: StationId | null) => void;
   setHoveredLineStop: (v: { lineId: LineId; stationId: StationId } | null) => void;
+  setHoveredInspectorSegment: (
+    v: { lineId: LineId; fromStationId: StationId; toStationId: StationId } | null,
+  ) => void;
   setSelectedStopLineId: (id: LineId | null) => void;
   setLabelSelected: (selected: boolean) => void;
   setEditingStationId: (id: StationId | null) => void;
@@ -487,6 +499,7 @@ export const useSelection = create<SelectionState>((set, get) => ({
   placingStation: false,
   hoveredStationId: null,
   hoveredLineStop: null,
+  hoveredInspectorSegment: null,
   selectedStopLineId: null,
   labelSelected: false,
   editingStationId: null,
@@ -643,6 +656,7 @@ export const useSelection = create<SelectionState>((set, get) => ({
     }),
   setHoveredStation: (id) => set({ hoveredStationId: id }),
   setHoveredLineStop: (v) => set({ hoveredLineStop: v }),
+  setHoveredInspectorSegment: (v) => set({ hoveredInspectorSegment: v }),
   setSelectedStopLineId: (id) =>
     set({ selectedStopLineId: id, labelSelected: id === null ? get().labelSelected : false }),
   setLabelSelected: (selected) =>

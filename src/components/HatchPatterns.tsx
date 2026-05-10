@@ -2,13 +2,20 @@ import type { LineStyle } from '../model/types';
 
 // Stable, deterministic SVG-id derived from a color string. Both the pattern
 // emitter (this component) and any consumer (e.g. SegmentBand) call this so
-// neither side has to know the format.
+// neither side has to know the format. The `variant` selects between the two
+// hatch directions: `'hatched'` is the +45° pattern, `'hatched-mirror'` is the
+// -45° (mirrored) pattern. Defaults to `'hatched'` so existing callers don't
+// have to change.
 //
 // SVG ids must start with a letter and contain only [A-Za-z0-9_-]; we replace
 // every other char with '-'.
-export function hatchPatternId(color: string): string {
+export function hatchPatternId(
+  color: string,
+  variant: 'hatched' | 'hatched-mirror' = 'hatched',
+): string {
   const safe = color.replace(/[^A-Za-z0-9]/g, '-');
-  return `hatch-${safe || 'x'}`;
+  const prefix = variant === 'hatched-mirror' ? 'hatch-m' : 'hatch';
+  return `${prefix}-${safe || 'x'}`;
 }
 
 // Locked-in pattern geometry, both tuned visually against the NYC subway
@@ -42,9 +49,9 @@ export function lineStyleStrokeAttrs(
   strokeDasharray: string | undefined;
   strokeLinecap: 'butt' | 'square';
 } {
-  if (style === 'hatched') {
+  if (style === 'hatched' || style === 'hatched-mirror') {
     return {
-      stroke: `url(#${hatchPatternId(color)})`,
+      stroke: `url(#${hatchPatternId(color, style)})`,
       strokeDasharray: undefined,
       strokeLinecap: 'square',
     };
@@ -79,32 +86,40 @@ interface Props {
 // stroke widths (band stroke is STOP_SIZE = 14).
 const TILE_HEIGHT = 32;
 
-// Emits one <pattern> per color. Place inside an enclosing <svg>'s <defs>.
-// Patterns reference each other only by id (via hatchPatternId) so consumers
-// don't have to thread the registry around.
+// Emits both hatch <pattern> variants (+45° and -45°) per color. Place inside
+// an enclosing <svg>'s <defs>. Patterns reference each other only by id (via
+// hatchPatternId) so consumers don't have to thread the registry around.
+// Always emitting both variants is cheap (a few <pattern> defs) and keeps the
+// caller from having to know which variants are in use.
 export function HatchPatterns({ colors }: Props) {
   const tileWidth = Math.max(1, HATCH_STRIPE_WIDTH + HATCH_GAP_WIDTH);
+  const variants: Array<{ variant: 'hatched' | 'hatched-mirror'; rotate: number }> = [
+    { variant: 'hatched', rotate: 45 },
+    { variant: 'hatched-mirror', rotate: -45 },
+  ];
   return (
     <>
-      {colors.map((color) => (
-        <pattern
-          key={color}
-          id={hatchPatternId(color)}
-          patternUnits="userSpaceOnUse"
-          width={tileWidth}
-          height={TILE_HEIGHT}
-          patternTransform="rotate(45)"
-        >
-          <rect x={0} y={0} width={HATCH_STRIPE_WIDTH} height={TILE_HEIGHT} fill={color} />
-          <rect
-            x={HATCH_STRIPE_WIDTH}
-            y={0}
-            width={HATCH_GAP_WIDTH}
+      {colors.flatMap((color) =>
+        variants.map(({ variant, rotate }) => (
+          <pattern
+            key={`${variant}-${color}`}
+            id={hatchPatternId(color, variant)}
+            patternUnits="userSpaceOnUse"
+            width={tileWidth}
             height={TILE_HEIGHT}
-            fill={UNDERLAY_COLOR}
-          />
-        </pattern>
-      ))}
+            patternTransform={`rotate(${rotate})`}
+          >
+            <rect x={0} y={0} width={HATCH_STRIPE_WIDTH} height={TILE_HEIGHT} fill={color} />
+            <rect
+              x={HATCH_STRIPE_WIDTH}
+              y={0}
+              width={HATCH_GAP_WIDTH}
+              height={TILE_HEIGHT}
+              fill={UNDERLAY_COLOR}
+            />
+          </pattern>
+        )),
+      )}
     </>
   );
 }

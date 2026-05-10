@@ -1,4 +1,4 @@
-import { Fragment, useMemo, useRef, useState } from 'react';
+import { Fragment, useMemo, useRef, useState, type ReactNode } from 'react';
 
 import { beginHistoryGroup, dragState, useDoc, useSelection } from '../state/store';
 import { randomStationName } from '../state/stationNames';
@@ -35,6 +35,7 @@ import {
 } from '../geometry/lineTagGeometry';
 import type { LineId, Station, StopCell } from '../model/types';
 import { findMatchingStations } from '../model/matching';
+import { pairKeyOf } from '../model/pairKey';
 import { desaturateColor, legibleTextOn } from '../util/color';
 
 const DIM_COLOR = '#000000';
@@ -96,14 +97,17 @@ export function MapCanvas() {
     return map;
   }, [highlightLineId, lines]);
 
-  // Distinct colors of any line that has at least one hatched segment.
-  // Drives <pattern> emission in <defs>; each color gets one pattern that
-  // SegmentBand references via hatchPatternId().
+  // Distinct colors of any line that has at least one hatched segment (in
+  // either direction). Drives <pattern> emission in <defs>; each color gets
+  // both hatch patterns (+45° and -45°) so SegmentBand can reference whichever
+  // variant a stripe needs via hatchPatternId(color, variant).
   const hatchedColors = useMemo(() => {
     const seen = new Set<string>();
     for (const ln of Object.values(lines)) {
       if (!ln.segmentStyles) continue;
-      const hasHatch = Object.values(ln.segmentStyles).some((s) => s === 'hatched');
+      const hasHatch = Object.values(ln.segmentStyles).some(
+        (s) => s === 'hatched' || s === 'hatched-mirror',
+      );
       if (!hasHatch) continue;
       const effective = colorMap?.[ln.id] ?? ln.color;
       seen.add(effective);
@@ -632,48 +636,69 @@ export function MapCanvas() {
         )}
         {highlightLineId && (
           <g pointerEvents="none">
-            {renderables.map((r, i) => {
-              if (r.kind !== 'stripe') return null;
-              const ln = r.band.lines[r.stripeIndex];
-              if (ln.id !== highlightLineId) return null;
-              const { stroke, strokeDasharray, strokeLinecap } = lineStyleStrokeAttrs(
-                ln.style,
-                ln.color,
-              );
-              const underlay = lineStyleUnderlayAttrs(ln.style);
-              return (
-                <Fragment key={'hl-b:' + i}>
-                  {underlay && (
-                    <path
-                      d={r.band.paths[r.stripeIndex]}
-                      fill="none"
-                      stroke={underlay.stroke}
-                      strokeWidth={14}
-                      strokeLinecap={underlay.strokeLinecap}
-                      strokeLinejoin="round"
-                    />
-                  )}
-                  <path
-                    d={r.band.paths[r.stripeIndex]}
-                    fill="none"
-                    stroke={stroke}
-                    strokeWidth={14}
-                    strokeLinecap={strokeLinecap}
-                    strokeLinejoin="round"
-                    strokeDasharray={strokeDasharray}
-                  />
-                </Fragment>
-              );
-            })}
-            {renderables.map((r, i) => {
-              if (r.kind !== 'marker' || r.spec.lineId !== highlightLineId) return null;
-              return <StopMarker key={'hl-m:' + i} spec={r.spec} />;
-            })}
-            {/* Direction triangles: small black arrow ~5px past each stop
-                dot pointing along the stop's own travel direction. */}
             {(() => {
               const ln = lines[highlightLineId];
               if (!ln) return null;
+              const hov = selection.hoveredInspectorSegment;
+              const hovPairKey = hov ? pairKeyOf(hov.fromStationId, hov.toStationId) : null;
+              const isHoverStation = (sid: string) =>
+                !!hov && (sid === hov.fromStationId || sid === hov.toStationId);
+              // Two buckets so dimmed stripe + colored stop square + direction
+              // triangle at one station composite *together* into one isolated
+              // group (children overdraw normally, then the group composites
+              // once at 0.2). Without this each dimmed element composites to
+              // the background separately and you see the stripe tinting
+              // through the marker, the marker tinting through the triangle,
+              // etc. When no divider is hovered, everything goes into the
+              // matched bucket and renders flat.
+              const dimmed: ReactNode[] = [];
+              const matched: ReactNode[] = [];
+              const push = (m: boolean, node: ReactNode) =>
+                (m || !hov ? matched : dimmed).push(node);
+              renderables.forEach((r, i) => {
+                if (r.kind !== 'stripe') return;
+                const stripeLn = r.band.lines[r.stripeIndex];
+                if (stripeLn.id !== highlightLineId) return;
+                const { stroke, strokeDasharray, strokeLinecap } = lineStyleStrokeAttrs(
+                  stripeLn.style,
+                  stripeLn.color,
+                );
+                const underlay = lineStyleUnderlayAttrs(stripeLn.style);
+                const m = !!hov && hov.lineId === stripeLn.id && r.band.pairKey === hovPairKey;
+                push(
+                  m,
+                  <Fragment key={'hl-b:' + i}>
+                    {underlay && (
+                      <path
+                        d={r.band.paths[r.stripeIndex]}
+                        fill="none"
+                        stroke={underlay.stroke}
+                        strokeWidth={14}
+                        strokeLinecap={underlay.strokeLinecap}
+                        strokeLinejoin="round"
+                      />
+                    )}
+                    <path
+                      d={r.band.paths[r.stripeIndex]}
+                      fill="none"
+                      stroke={stroke}
+                      strokeWidth={14}
+                      strokeLinecap={strokeLinecap}
+                      strokeLinejoin="round"
+                      strokeDasharray={strokeDasharray}
+                    />
+                  </Fragment>,
+                );
+              });
+              renderables.forEach((r, i) => {
+                if (r.kind !== 'marker' || r.spec.lineId !== highlightLineId) return;
+                push(
+                  isHoverStation(r.spec.stationId),
+                  <StopMarker key={'hl-m:' + i} spec={r.spec} />,
+                );
+              });
+              // Direction triangles: small arrow ~5px past each stop dot
+              // pointing along the stop's own travel direction.
               type P = { sid: string; x: number; y: number; st: Station; cell: StopCell };
               const points: P[] = [];
               for (const sid of ln.stations) {
@@ -693,96 +718,89 @@ export function MapCanvas() {
                   y: st.y + local.x * sn + local.y * cs,
                 });
               }
-              if (points.length < 2) return null;
-              const dotR = STOP_SIZE * 0.28;
-              const gap = 2;
-              const halfW = 3;
-              const height = 5;
-              const baseDist = dotR + gap;
-              const apexDist = baseDist + height;
-              return points.map((p, i) => {
-                // Hint resolves auto-* sign; for explicit orientations it's
-                // ignored. Use the segment toward the next stop (or back from
-                // the previous stop at the terminus).
-                const ref = i < points.length - 1 ? points[i + 1] : points[i - 1];
-                const sign = i < points.length - 1 ? 1 : -1;
-                const worldHint = {
-                  x: (ref.x - p.x) * sign,
-                  y: (ref.y - p.y) * sign,
-                };
-                const aInv = -(p.st.rotation * Math.PI) / 4;
-                const ci = Math.cos(aInv);
-                const si = Math.sin(aInv);
-                const localHint = {
-                  x: worldHint.x * ci - worldHint.y * si,
-                  y: worldHint.x * si + worldHint.y * ci,
-                };
-                const localDir = travelDirLocal(p.cell.orientation, localHint);
-                const worldDir = rotateBy(localDir, p.st.rotation);
-                const dx = worldDir.x;
-                const dy = worldDir.y;
-                const px = -dy;
-                const py = dx;
-                const baseCx = p.x + dx * baseDist;
-                const baseCy = p.y + dy * baseDist;
-                const apexX = p.x + dx * apexDist;
-                const apexY = p.y + dy * apexDist;
-                const lX = baseCx + px * halfW;
-                const lY = baseCy + py * halfW;
-                const rX = baseCx - px * halfW;
-                const rY = baseCy - py * halfW;
-                const isTerminus = i === points.length - 1;
-                return (
-                  <path
-                    key={'hl-tri:' + p.sid}
-                    d={`M ${apexX} ${apexY} L ${lX} ${lY} L ${rX} ${rY} Z`}
-                    fill={isTerminus ? ln.color : '#000'}
-                    stroke={isTerminus ? ln.color : undefined}
-                    strokeWidth={isTerminus ? 10 : undefined}
-                    strokeLinejoin={isTerminus ? 'miter' : undefined}
-                    paintOrder={isTerminus ? 'stroke fill' : undefined}
-                  />
-                );
-              });
-            })()}
-            {/* Re-render the selected line's stop dots on top so the
-                colored markers and direction triangles don't swallow them. */}
-            {(() => {
-              const ln = lines[highlightLineId];
-              if (!ln) return null;
-              return ln.stations.flatMap((sid) => {
+              if (points.length >= 2) {
+                const dotR = STOP_SIZE * 0.28;
+                const gap = 2;
+                const halfW = 3;
+                const height = 5;
+                const baseDist = dotR + gap;
+                const apexDist = baseDist + height;
+                points.forEach((p, i) => {
+                  // Hint resolves auto-* sign; for explicit orientations it's
+                  // ignored. Use the segment toward the next stop (or back from
+                  // the previous stop at the terminus).
+                  const ref = i < points.length - 1 ? points[i + 1] : points[i - 1];
+                  const sign = i < points.length - 1 ? 1 : -1;
+                  const worldHint = { x: (ref.x - p.x) * sign, y: (ref.y - p.y) * sign };
+                  const aInv = -(p.st.rotation * Math.PI) / 4;
+                  const ci = Math.cos(aInv);
+                  const si = Math.sin(aInv);
+                  const localHint = {
+                    x: worldHint.x * ci - worldHint.y * si,
+                    y: worldHint.x * si + worldHint.y * ci,
+                  };
+                  const localDir = travelDirLocal(p.cell.orientation, localHint);
+                  const worldDir = rotateBy(localDir, p.st.rotation);
+                  const dx = worldDir.x;
+                  const dy = worldDir.y;
+                  const px = -dy;
+                  const py = dx;
+                  const baseCx = p.x + dx * baseDist;
+                  const baseCy = p.y + dy * baseDist;
+                  const apexX = p.x + dx * apexDist;
+                  const apexY = p.y + dy * apexDist;
+                  const lX = baseCx + px * halfW;
+                  const lY = baseCy + py * halfW;
+                  const rX = baseCx - px * halfW;
+                  const rY = baseCy - py * halfW;
+                  const isTerminus = i === points.length - 1;
+                  push(
+                    isHoverStation(p.sid),
+                    <path
+                      key={'hl-tri:' + p.sid}
+                      d={`M ${apexX} ${apexY} L ${lX} ${lY} L ${rX} ${rY} Z`}
+                      fill={isTerminus ? ln.color : '#000'}
+                      stroke={isTerminus ? ln.color : undefined}
+                      strokeWidth={isTerminus ? 10 : undefined}
+                      strokeLinejoin={isTerminus ? 'miter' : undefined}
+                      paintOrder={isTerminus ? 'stroke fill' : undefined}
+                    />,
+                  );
+                });
+              }
+              // Re-render the selected line's stop dots on top so the colored
+              // markers and direction triangles don't swallow them.
+              for (const sid of ln.stations) {
                 const st = stations[sid];
-                if (!st) return [];
+                if (!st) continue;
                 const cell = st.stops.find((c) => c.lineId === highlightLineId);
-                if (!cell) return [];
+                if (!cell) continue;
                 const local = stopCenterAt(cell.row, cell.col);
                 const a = (st.rotation * Math.PI) / 4;
                 const cs = Math.cos(a);
                 const sn = Math.sin(a);
                 const cx = st.x + local.x * cs - local.y * sn;
                 const cy = st.y + local.x * sn + local.y * cs;
-                return [
+                push(
+                  isHoverStation(sid),
                   <circle key={'hl-d:' + sid} cx={cx} cy={cy} r={STOP_SIZE * 0.28} fill="#000" />,
-                ];
-              });
-            })()}
-            {/* Selected line's station names rendered in white above dim.
-                The append-mode "starter" station gets its own treatment
-                below (line-color name + arrowhead), so skip it here. */}
-            {(() => {
-              const ln = lines[highlightLineId];
-              if (!ln) return null;
+                );
+              }
+              // Selected line's station names rendered in white above dim.
+              // The append-mode "starter" station gets its own treatment
+              // below (line-color name + arrowhead), so skip it here.
               const starterId =
                 selection.appendingToLineId === highlightLineId &&
                 selection.insertAfterIndex != null &&
                 selection.insertAfterIndex >= 0
                   ? ln.stations[selection.insertAfterIndex]
                   : null;
-              return ln.stations.flatMap((sid) => {
-                if (sid === starterId) return [];
+              for (const sid of ln.stations) {
+                if (sid === starterId) continue;
                 const st = stations[sid];
-                if (!st) return [];
-                return [
+                if (!st) continue;
+                push(
+                  isHoverStation(sid),
                   <StationView
                     key={'hl-l:' + sid}
                     station={st}
@@ -791,8 +809,14 @@ export function MapCanvas() {
                     onStartDrag={drag.onStartDrag}
                     layer="highlight-label"
                   />,
-                ];
-              });
+                );
+              }
+              return (
+                <>
+                  {dimmed.length > 0 && <g opacity={0.2}>{dimmed}</g>}
+                  {matched}
+                </>
+              );
             })()}
             {/* In append mode, surface stations not yet on the line as
                 light gray labels above the dim, plus highlight the

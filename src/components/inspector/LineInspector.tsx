@@ -8,7 +8,8 @@ import { SegmentStyleDivider } from './SegmentStyleDivider';
 const NEXT_STYLE: Record<LineStyle, LineStyle> = {
   solid: 'dashed',
   dashed: 'hatched',
-  hatched: 'solid',
+  hatched: 'hatched-mirror',
+  'hatched-mirror': 'solid',
 };
 
 export function LineInspector({ id }: { id: LineId }) {
@@ -181,6 +182,9 @@ export function LineInspector({ id }: { id: LineId }) {
                     <SegmentStyleDivider
                       style={style}
                       color={line.color}
+                      lineId={line.id}
+                      fromStationId={sid}
+                      toStationId={nextSid}
                       onClick={() => cycleSegmentStyle(sid, nextSid)}
                     />
                   );
