@@ -31,6 +31,24 @@ function toHex(r: number, g: number, b: number): string {
   return `#${h(r)}${h(g)}${h(b)}`;
 }
 
+// Returns a CSS rgba() string with the given alpha applied to a hex color.
+// Use for tints/chips where you want the line color blended with whatever
+// is behind it.
+export function withAlpha(hex: string, alpha: number): string {
+  const [r, g, b] = parseHex(hex);
+  return `rgba(${r}, ${g}, ${b}, ${alpha})`;
+}
+
+// Returns the effective hex color of `fg` at the given alpha drawn over
+// `bg` (default white). Useful for feeding the *resolved* color into
+// legibleTextOn when picking text color against a tinted chip.
+export function blendOver(fg: string, alpha: number, bg = '#ffffff'): string {
+  const [fr, fgg, fb] = parseHex(fg);
+  const [br, bgg, bb] = parseHex(bg);
+  const a = Math.max(0, Math.min(1, alpha));
+  return toHex(fr * a + br * (1 - a), fgg * a + bgg * (1 - a), fb * a + bb * (1 - a));
+}
+
 // Mix between original and luma greyscale. amount=1 keeps original color,
 // amount=0 returns the per-pixel luma (full greyscale).
 export function desaturateColor(hex: string, amount: number): string {

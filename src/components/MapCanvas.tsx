@@ -14,6 +14,7 @@ import { STOP_SIZE, stopCenterAt, travelDirLocal, rotateBy } from '../geometry/o
 import { BandWarning, SegmentBand } from './SegmentBand';
 import { HatchPatterns, lineStyleStrokeAttrs, lineStyleUnderlayAttrs } from './HatchPatterns';
 import { StopMarker } from './StopMarker';
+import { StopGlyph } from './StopGlyph';
 import { StationView } from './StationView';
 import { useViewport } from './canvas/useViewport';
 import { useStationDrag } from './canvas/useStationDrag';
@@ -789,7 +790,14 @@ export function MapCanvas() {
                 const cy = st.y + local.x * sn + local.y * cs;
                 push(
                   isHoverStation(sid),
-                  <circle key={'hl-d:' + sid} cx={cx} cy={cy} r={STOP_SIZE * 0.28} fill="#000" />,
+                  <StopGlyph
+                    key={'hl-d:' + sid}
+                    cx={cx}
+                    cy={cy}
+                    shape={cell.dotShape}
+                    stationId={sid}
+                    lineId={cell.lineId}
+                  />,
                 );
               }
               // Selected line's station names rendered in white above dim.

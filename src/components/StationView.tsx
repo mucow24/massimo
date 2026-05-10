@@ -150,10 +150,14 @@ export function StationView({
     if (selection.appendingToLineId) {
       const ln = lines[selection.appendingToLineId];
       const wasInLine = ln?.stations.includes(station.id) ?? false;
-      const cursor = selection.insertAfterIndex ?? -1;
-      toggleStationOnLine(selection.appendingToLineId, station.id, cursor);
+      const cursor = selection.insertAfterIndex;
+      // No cursor: refuse to add a new stop. Removing an existing stop is
+      // still allowed since it doesn't depend on an insertion point.
+      if (!wasInLine && cursor === null) return;
+      const effectiveCursor = cursor ?? -1;
+      toggleStationOnLine(selection.appendingToLineId, station.id, effectiveCursor);
       if (!wasInLine) {
-        selection.setInsertAfterIndex(cursor + 1);
+        selection.setInsertAfterIndex(effectiveCursor + 1);
       }
       return;
     }
