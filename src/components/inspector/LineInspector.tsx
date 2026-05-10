@@ -46,12 +46,7 @@ function DotShapePopover({
     };
   }, [onClose]);
   return (
-    <div
-      className="shape-grid"
-      role="menu"
-      ref={ref}
-      style={{ ...style, right: 'auto' }}
-    >
+    <div className="shape-grid" role="menu" ref={ref} style={{ ...style, right: 'auto' }}>
       {DOT_SHAPES.map(({ shape, label }) => (
         <button
           key={shape}
@@ -221,8 +216,7 @@ export function LineInspector({ id }: { id: LineId }) {
             const N = line.stations.length;
             const totalBandH = N * STATION_ROW_H + Math.max(0, N - 1) * GAP_ROW_H;
             const cap = BAND_W / 2;
-            const centerOf = (idx: number) =>
-              idx * (STATION_ROW_H + GAP_ROW_H) + STATION_ROW_H / 2;
+            const centerOf = (idx: number) => idx * (STATION_ROW_H + GAP_ROW_H) + STATION_ROW_H / 2;
             const segments: Array<{
               i: number;
               sid: string;
@@ -245,23 +239,19 @@ export function LineInspector({ id }: { id: LineId }) {
               (s) => s.style === 'hatched' || s.style === 'hatched-mirror',
             );
             const hovered = selection.hoveredInspectorSegment;
-            const isActiveAt = (idx: number) =>
-              isAppending && selection.insertAfterIndex === idx;
+            const isActiveAt = (idx: number) => isAppending && selection.insertAfterIndex === idx;
             const moveCursor = (idx: number) => selection.setInsertAfterIndex(idx);
-            const hoverPredecessor =
-              (predSid: string | null) => (h: boolean) => {
-                if (h && predSid) {
-                  selection.setHoveredLineStop({ lineId: line.id, stationId: predSid });
-                  selection.setHoveredStation(predSid);
-                } else {
-                  selection.setHoveredLineStop(null);
-                  selection.setHoveredStation(null);
-                }
-              };
+            const hoverPredecessor = (predSid: string | null) => (h: boolean) => {
+              if (h && predSid) {
+                selection.setHoveredLineStop({ lineId: line.id, stationId: predSid });
+                selection.setHoveredStation(predSid);
+              } else {
+                selection.setHoveredLineStop(null);
+                selection.setHoveredStation(null);
+              }
+            };
             return (
-              <div
-                style={{ position: 'relative', display: 'flex', flexDirection: 'column' }}
-              >
+              <div style={{ position: 'relative', display: 'flex', flexDirection: 'column' }}>
                 <svg
                   width={MARKER_W}
                   height={totalBandH}
@@ -278,10 +268,7 @@ export function LineInspector({ id }: { id: LineId }) {
                     </defs>
                   )}
                   {segments.map((seg) => {
-                    const { stroke, strokeDasharray } = lineStyleStrokeAttrs(
-                      seg.style,
-                      line.color,
-                    );
+                    const { stroke, strokeDasharray } = lineStyleStrokeAttrs(seg.style, line.color);
                     const underlay = lineStyleUnderlayAttrs(seg.style);
                     const isHovered =
                       hovered?.lineId === line.id &&
@@ -451,8 +438,7 @@ export function LineInspector({ id }: { id: LineId }) {
                               fromStationId: sid,
                               toStationId: nextSid,
                             });
-                          const clearHover = () =>
-                            selection.setHoveredInspectorSegment(null);
+                          const clearHover = () => selection.setHoveredInspectorSegment(null);
                           return (
                             <div style={{ display: 'flex', height: GAP_ROW_H }}>
                               <button
@@ -462,6 +448,8 @@ export function LineInspector({ id }: { id: LineId }) {
                                 onMouseLeave={clearHover}
                                 onFocus={setHover}
                                 onBlur={clearHover}
+                                data-segment-style-divider
+                                data-style={segStyle}
                                 title={`Segment style: ${segStyle} (click to cycle)`}
                                 aria-label={`Segment style: ${segStyle} (click to cycle)`}
                                 style={{
