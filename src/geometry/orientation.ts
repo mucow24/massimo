@@ -154,8 +154,8 @@ export interface SegmentEndpoints {
  * band, though the function tolerates per-end values for flexibility.
  *
  * The endpoints are placed at the stop center (the local point as given);
- * the renderer's stroke-linecap="square" extends the band into the stop
- * area, masking any seam at the colored square.
+ * the colored stop-marker square (rendered on top of the band) covers the
+ * area around the stop center where the bands meet.
  */
 export const segmentEndpoints = (
   from: { x: number; y: number; rotation: Rotation },

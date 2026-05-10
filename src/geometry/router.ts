@@ -296,7 +296,11 @@ function solveUTurn(start: Vec2, sDir: Vec2, end: Vec2, eDir: Vec2, R: number): 
   return null;
 }
 
-const fmt = (p: Vec2) => `${p.x.toFixed(2)} ${p.y.toFixed(2)}`;
+// 6 decimals = sub-micropixel even at 64× zoom. Lower precision (toFixed(2))
+// caused a sub-pixel offset between the band stroke and the colored stop-
+// marker rect, which surfaced as a flickery hash bleed at the marker's
+// perpendicular edges.
+const fmt = (p: Vec2) => `${p.x.toFixed(6)} ${p.y.toFixed(6)}`;
 
 /**
  * For a polyline, compute the effective arc radius and bend angle at each

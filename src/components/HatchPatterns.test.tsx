@@ -102,16 +102,16 @@ describe('<HatchPatterns>', () => {
 });
 
 describe('lineStyleStrokeAttrs', () => {
-  it('solid: plain stroke, no dasharray, square linecap', () => {
+  it('solid: plain stroke, no dasharray, butt linecap', () => {
     const a = lineStyleStrokeAttrs('solid', '#EF374B');
     expect(a).toEqual({
       stroke: '#EF374B',
       strokeDasharray: undefined,
-      strokeLinecap: 'square',
+      strokeLinecap: 'butt',
     });
   });
 
-  it('dashed: emits a dasharray and switches linecap to butt', () => {
+  it('dashed: emits a dasharray and uses butt linecap', () => {
     const a = lineStyleStrokeAttrs('dashed', '#EF374B');
     expect(a.stroke).toBe('#EF374B');
     expect(a.strokeDasharray).toMatch(/^\d+ \d+$/);
@@ -122,14 +122,14 @@ describe('lineStyleStrokeAttrs', () => {
     const a = lineStyleStrokeAttrs('hatched', '#EF374B');
     expect(a.stroke).toBe(`url(#${hatchPatternId('#EF374B', 'hatched')})`);
     expect(a.strokeDasharray).toBeUndefined();
-    expect(a.strokeLinecap).toBe('square');
+    expect(a.strokeLinecap).toBe('butt');
   });
 
   it('hatched-mirror: stroke points at the mirrored hatch pattern url for this color', () => {
     const a = lineStyleStrokeAttrs('hatched-mirror', '#EF374B');
     expect(a.stroke).toBe(`url(#${hatchPatternId('#EF374B', 'hatched-mirror')})`);
     expect(a.strokeDasharray).toBeUndefined();
-    expect(a.strokeLinecap).toBe('square');
+    expect(a.strokeLinecap).toBe('butt');
   });
 });
 
