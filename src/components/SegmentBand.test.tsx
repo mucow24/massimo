@@ -7,19 +7,27 @@ import type { SegmentBandSpec } from '../geometry/interlining';
 const baseSpec = (
   styles: Array<'solid' | 'dashed' | 'hatched'>,
   color = '#EF374B',
-): SegmentBandSpec => ({
-  pairKey: 's1|s2',
-  fromId: 's1',
-  toId: 's2',
-  lines: styles.map((style, i) => ({ id: `L${i + 1}`, color, style })),
-  paths: styles.map(() => 'M0,0 L100,0'),
-  warning: false,
-  centerline: [
-    { x: 0, y: 0 },
-    { x: 100, y: 0 },
-  ],
-  linePriorities: styles.map((_, i) => i),
-});
+): SegmentBandSpec => {
+  const lines = styles.map((style, i) => ({ id: `L${i + 1}`, color, style }));
+  const sortedIds = lines
+    .map((l) => l.id)
+    .slice()
+    .sort();
+  return {
+    pairKey: 's1|s2',
+    bandKey: `s1|s2#${sortedIds.join(',')}`,
+    fromId: 's1',
+    toId: 's2',
+    lines,
+    paths: styles.map(() => 'M0,0 L100,0'),
+    warning: false,
+    centerline: [
+      { x: 0, y: 0 },
+      { x: 100, y: 0 },
+    ],
+    linePriorities: styles.map((_, i) => i),
+  };
+};
 
 const renderStripe = (spec: SegmentBandSpec, stripeIndex: number) =>
   render(

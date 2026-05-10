@@ -22,12 +22,12 @@ export function WarningToasts() {
   if (warnings.length === 0) return null;
   return (
     <div className="warning-toasts">
-      {warnings.map((w, i) => {
+      {warnings.map((w) => {
         const a = stations[w.fromId]?.name ?? '?';
         const b = stations[w.toId]?.name ?? '?';
         return (
           <div
-            key={i}
+            key={w.bandKey}
             className="toast"
             onClick={() => {
               const c = w.centerline[Math.floor(w.centerline.length / 2)];

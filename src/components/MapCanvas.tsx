@@ -492,12 +492,12 @@ export function MapCanvas() {
         )}
 
         {/* band stripes, warnings, and stop squares interleaved by per-stripe z-priority */}
-        {renderables.map((r, i) => {
+        {renderables.map((r) => {
           if (r.kind === 'stripe') {
             const stripeLineId = r.band.lines[r.stripeIndex].id;
             return (
               <SegmentBand
-                key={'s:' + r.band.pairKey + ':' + stripeLineId}
+                key={'s:' + r.band.bandKey + ':' + stripeLineId}
                 spec={r.band}
                 stripeIndex={r.stripeIndex}
                 interactive={selection.creatingLineTag}
@@ -515,13 +515,19 @@ export function MapCanvas() {
             );
           }
           if (r.kind === 'warning') {
-            return <BandWarning key={'w:' + r.band.pairKey} spec={r.band} />;
+            return <BandWarning key={'w:' + r.band.bandKey} spec={r.band} />;
           }
           const effectiveColor =
             colorMap && r.spec.lineId !== highlightLineId
               ? (colorMap[r.spec.lineId] ?? r.spec.color)
               : r.spec.color;
-          return <StopMarker key={'m:' + i} spec={r.spec} effectiveColor={effectiveColor} />;
+          return (
+            <StopMarker
+              key={'m:' + r.spec.stationId + ':' + r.spec.lineId}
+              spec={r.spec}
+              effectiveColor={effectiveColor}
+            />
+          );
         })}
 
         {/* station backgrounds: hit areas, names, colored stop squares */}
