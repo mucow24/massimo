@@ -372,6 +372,26 @@ export function beginHistoryGroup(): { commit: () => void; cancel: () => void } 
   };
 }
 
+/**
+ * Cancel append-to-line mode and garbage-collect a freshly-created empty
+ * line. "Add → Line" commits the line eagerly so the inspector and banner
+ * can preview its color/service letter; if the user cancels (Esc, right-
+ * click, or canvas-background click) before adding any stations, that
+ * placeholder has no presence on the map and should disappear with the mode.
+ */
+export function cancelAppendMode(): void {
+  const sel = useSelection.getState();
+  const lineId = sel.appendingToLineId;
+  if (lineId) {
+    const doc = useDoc.getState();
+    const line = doc.lines[lineId];
+    if (line && line.stations.length === 0) {
+      doc.deleteLine(lineId);
+    }
+  }
+  sel.setAppending(null);
+}
+
 // ----- Drag-vs-click suppression (module-level, not persisted) -----
 export const dragState = { suppressClick: false };
 
