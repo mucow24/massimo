@@ -68,4 +68,27 @@ describe('autoOrientLineStops', () => {
     const twice = autoOrientLineStops(once, 'L1', ['s1', 's2']);
     expect(twice).toEqual(once);
   });
+
+  it('settles rotation = 7 for a line traveling SE (45° diagonal)', () => {
+    // Stations on a perfect SE line: (0,0) → (100, 100). rotateBy({0,1}, 7)
+    // = (√2/2, √2/2) = SE in screen-y-down. So local +y aligning with the
+    // SE world tangent is rotation 7 for both stations.
+    const s1 = makeStation({
+      id: 's1',
+      x: 0,
+      y: 0,
+      rotation: 0,
+      stops: [makeStop('L1', { orientation: 'auto-nw-se' })],
+    });
+    const s2 = makeStation({
+      id: 's2',
+      x: 100,
+      y: 100,
+      rotation: 0,
+      stops: [makeStop('L1', { orientation: 'auto-nw-se' })],
+    });
+    const out = autoOrientLineStops(dictOf(s1, s2), 'L1', ['s1', 's2']);
+    expect(out.s1.rotation).toBe(7);
+    expect(out.s2.rotation).toBe(7);
+  });
 });

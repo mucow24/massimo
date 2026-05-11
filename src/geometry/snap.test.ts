@@ -99,6 +99,24 @@ describe('alignmentPairs', () => {
     expect(alignmentPairs('d', 0, draggedStops, target, lines)).toEqual([]);
   });
 
+  it('emits a NE-SW diagonal axis for an auto-ne-sw target stop', () => {
+    const SQRT2_2 = Math.SQRT1_2;
+    const target = makeStation({
+      id: 't',
+      x: 100,
+      y: -100,
+      rotation: 0,
+      stops: [makeStop('L1', { row: 0, col: 0, orientation: 'auto-ne-sw' })],
+    });
+    const draggedStops: StopCell[] = [
+      makeStop('L1', { row: 0, col: 0, orientation: 'auto-ne-sw' }),
+    ];
+    const lines = linesOf(lineOf('L1', ['d', 't']));
+    const pairs = alignmentPairs('d', 0, draggedStops, target, lines);
+    expect(pairs).toHaveLength(1);
+    expect(parallel(pairs[0].axis, { x: SQRT2_2, y: -SQRT2_2 })).toBe(true);
+  });
+
   it('per-line adjacency: emit a pair only on lines where the stations are adjacent', () => {
     // L1: d → t (adjacent). L2: d → x → t (not adjacent).
     const target = makeStation({

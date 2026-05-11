@@ -355,6 +355,13 @@ export function buildStopMarkers(
       const s = Math.sin(a);
       const cx = station.x + local.x * c - local.y * s;
       const cy = station.y + local.x * s + local.y * c;
+      // Rotate the marker square so its edges run parallel/perpendicular to
+      // the stop's world-frame travel axis. For cardinal-axis stops this is
+      // equivalent to station.rotation * 45 (mod 90, which the square's
+      // 4-fold symmetry makes invisible); for diagonal stops it adds the
+      // extra 45° needed to keep the square flush with the band edges.
+      const worldTangent = rotateBy(travelDirLocal(cell.orientation), station.rotation);
+      const rotationDeg = (Math.atan2(worldTangent.y, worldTangent.x) * 180) / Math.PI;
       const style = stationMarkerStyle(line, station.id);
       markers.push({
         cx,
@@ -362,7 +369,7 @@ export function buildStopMarkers(
         color: line.color,
         lineId: cell.lineId,
         stationId: station.id,
-        rotationDeg: station.rotation * 45,
+        rotationDeg,
         priority: lineIndex[cell.lineId] ?? fallback,
         style,
         outward: style === 'dashed' ? terminusOutwardFromBand(line, station.id, bandByPair) : null,

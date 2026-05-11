@@ -3,7 +3,6 @@ import {
   DIR_8,
   STOP_SIZE,
   inputEdgeOffsetLocal,
-  isVerticalAxis,
   outputEdgeOffsetLocal,
   rotateBy,
   rotateGridDelta,
@@ -12,6 +11,8 @@ import {
   travelDirLocal,
 } from './orientation';
 import type { Rotation, StopOrientation } from '../model/types';
+
+const SQRT2_2 = Math.SQRT1_2;
 
 describe('rotateBy', () => {
   it('returns the input for rotation 0', () => {
@@ -42,13 +43,6 @@ describe('rotateBy', () => {
 });
 
 describe('travelDirLocal', () => {
-  it('returns the named axis for explicit orientations', () => {
-    expect(travelDirLocal('up')).toEqual({ x: 0, y: -1 });
-    expect(travelDirLocal('down')).toEqual({ x: 0, y: 1 });
-    expect(travelDirLocal('left')).toEqual({ x: -1, y: 0 });
-    expect(travelDirLocal('right')).toEqual({ x: 1, y: 0 });
-  });
-
   it('auto-vertical defaults to +y when no hint is supplied', () => {
     expect(travelDirLocal('auto-vertical', null)).toEqual({ x: 0, y: 1 });
   });
@@ -66,16 +60,56 @@ describe('travelDirLocal', () => {
     expect(travelDirLocal('auto-horizontal', { x: 0.5, y: 0 })).toEqual({ x: 1, y: 0 });
     expect(travelDirLocal('auto-horizontal', { x: -0.5, y: 0 })).toEqual({ x: -1, y: 0 });
   });
+
+  it('auto-ne-sw defaults to NE (+x, -y) when no hint is supplied', () => {
+    const d = travelDirLocal('auto-ne-sw', null);
+    expect(d.x).toBeCloseTo(SQRT2_2, 10);
+    expect(d.y).toBeCloseTo(-SQRT2_2, 10);
+  });
+
+  it('auto-ne-sw follows the sign of (hint.x - hint.y)', () => {
+    // hint pointing NE (e.g. +x, -y): (1) - (-1) = 2 > 0 → NE.
+    const ne = travelDirLocal('auto-ne-sw', { x: 1, y: -1 });
+    expect(ne.x).toBeCloseTo(SQRT2_2, 10);
+    expect(ne.y).toBeCloseTo(-SQRT2_2, 10);
+    // hint pointing SW (-x, +y): (-1) - (1) = -2 < 0 → SW.
+    const sw = travelDirLocal('auto-ne-sw', { x: -1, y: 1 });
+    expect(sw.x).toBeCloseTo(-SQRT2_2, 10);
+    expect(sw.y).toBeCloseTo(SQRT2_2, 10);
+  });
+
+  it('auto-nw-se defaults to SE (+x, +y) when no hint is supplied', () => {
+    const d = travelDirLocal('auto-nw-se', null);
+    expect(d.x).toBeCloseTo(SQRT2_2, 10);
+    expect(d.y).toBeCloseTo(SQRT2_2, 10);
+  });
+
+  it('auto-nw-se follows the sign of (hint.x + hint.y)', () => {
+    // hint pointing SE (+x, +y): 1 + 1 = 2 > 0 → SE.
+    const se = travelDirLocal('auto-nw-se', { x: 1, y: 1 });
+    expect(se.x).toBeCloseTo(SQRT2_2, 10);
+    expect(se.y).toBeCloseTo(SQRT2_2, 10);
+    // hint pointing NW (-x, -y): -1 + -1 = -2 < 0 → NW.
+    const nw = travelDirLocal('auto-nw-se', { x: -1, y: -1 });
+    expect(nw.x).toBeCloseTo(-SQRT2_2, 10);
+    expect(nw.y).toBeCloseTo(-SQRT2_2, 10);
+  });
+
+  it('returns a unit vector for every orientation', () => {
+    const all: StopOrientation[] = ['auto-vertical', 'auto-horizontal', 'auto-ne-sw', 'auto-nw-se'];
+    for (const o of all) {
+      const d = travelDirLocal(o);
+      expect(Math.hypot(d.x, d.y)).toBeCloseTo(1, 10);
+    }
+  });
 });
 
 describe('inputEdgeOffsetLocal / outputEdgeOffsetLocal', () => {
   const orientations: StopOrientation[] = [
-    'up',
-    'down',
-    'left',
-    'right',
     'auto-vertical',
     'auto-horizontal',
+    'auto-ne-sw',
+    'auto-nw-se',
   ];
 
   it('input offset is opposite to output offset for every orientation', () => {
@@ -92,20 +126,6 @@ describe('inputEdgeOffsetLocal / outputEdgeOffsetLocal', () => {
       const out = outputEdgeOffsetLocal(o);
       expect(Math.hypot(out.x, out.y)).toBeCloseTo(STOP_SIZE / 2, 10);
     }
-  });
-});
-
-describe('isVerticalAxis', () => {
-  it('flags up/down/auto-vertical as vertical', () => {
-    expect(isVerticalAxis('up')).toBe(true);
-    expect(isVerticalAxis('down')).toBe(true);
-    expect(isVerticalAxis('auto-vertical')).toBe(true);
-  });
-
-  it('flags left/right/auto-horizontal as not vertical', () => {
-    expect(isVerticalAxis('left')).toBe(false);
-    expect(isVerticalAxis('right')).toBe(false);
-    expect(isVerticalAxis('auto-horizontal')).toBe(false);
   });
 });
 
@@ -147,10 +167,10 @@ describe('segmentEndpoints', () => {
     const e = segmentEndpoints(
       { x: 0, y: 0, rotation: 0 },
       { x: 10, y: 0 },
-      'down',
+      'auto-vertical',
       { x: 100, y: 100, rotation: 0 },
       { x: 10, y: 0 },
-      'down',
+      'auto-vertical',
     );
     expect(e.start).toEqual({ x: 10, y: 0 });
     expect(e.end).toEqual({ x: 110, y: 100 });
@@ -160,14 +180,14 @@ describe('segmentEndpoints', () => {
 
   it('rotates local point and direction by the station rotation', () => {
     // Station at origin, rotation=2 (90° CW in screen-y-down). A local point
-    // (10, 0) maps to world (0, 10); 'down' direction (0, 1) maps to (-1, 0).
+    // (10, 0) maps to world (0, 10); auto-vertical +y direction maps to (-1, 0).
     const e = segmentEndpoints(
       { x: 0, y: 0, rotation: 2 },
       { x: 10, y: 0 },
-      'down',
+      'auto-vertical',
       { x: 0, y: 0, rotation: 0 },
       { x: 0, y: 0 },
-      'down',
+      'auto-vertical',
     );
     expect(e.start.x).toBeCloseTo(0, 5);
     expect(e.start.y).toBeCloseTo(10, 5);
@@ -188,6 +208,39 @@ describe('segmentEndpoints', () => {
     );
     expect(e.startDir.y).toBe(-1);
     expect(e.endDir.y).toBe(-1);
+  });
+
+  it('resolves auto-ne-sw to the NE/SW unit vector matching the world hint', () => {
+    // Two stations both rotation 0, both auto-ne-sw, world hint pointing NE.
+    const e = segmentEndpoints(
+      { x: 0, y: 0, rotation: 0 },
+      { x: 0, y: 0 },
+      'auto-ne-sw',
+      { x: 100, y: -100, rotation: 0 },
+      { x: 0, y: 0 },
+      'auto-ne-sw',
+      { x: SQRT2_2, y: -SQRT2_2 },
+    );
+    expect(e.startDir.x).toBeCloseTo(SQRT2_2, 10);
+    expect(e.startDir.y).toBeCloseTo(-SQRT2_2, 10);
+    expect(e.endDir.x).toBeCloseTo(SQRT2_2, 10);
+    expect(e.endDir.y).toBeCloseTo(-SQRT2_2, 10);
+  });
+
+  it('resolves auto-nw-se to the NW/SE unit vector matching the world hint', () => {
+    const e = segmentEndpoints(
+      { x: 0, y: 0, rotation: 0 },
+      { x: 0, y: 0 },
+      'auto-nw-se',
+      { x: 100, y: 100, rotation: 0 },
+      { x: 0, y: 0 },
+      'auto-nw-se',
+      { x: SQRT2_2, y: SQRT2_2 },
+    );
+    expect(e.startDir.x).toBeCloseTo(SQRT2_2, 10);
+    expect(e.startDir.y).toBeCloseTo(SQRT2_2, 10);
+    expect(e.endDir.x).toBeCloseTo(SQRT2_2, 10);
+    expect(e.endDir.y).toBeCloseTo(SQRT2_2, 10);
   });
 });
 

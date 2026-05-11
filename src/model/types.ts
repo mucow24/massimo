@@ -6,23 +6,18 @@ export type LineId = string;
 
 export type Rotation = 0 | 1 | 2 | 3 | 4 | 5 | 6 | 7;
 
-// Per-stop travel direction in the unrotated station-local frame.
-//
-// `up`/`down`/`left`/`right` pin the stop's tangent to a specific signed axis
-// — the line is forced to enter from the opposite edge and exit through the
-// named edge.
-//
-// `auto-vertical`/`auto-horizontal` pin only the AXIS; the sign falls out of
-// the line's actual direction of travel at this station (computed from
-// neighbor positions). With no neighbors to consult, auto falls back to
-// `down` / `right`.
+// Per-stop travel direction in the unrotated station-local frame. Each
+// variant pins only the AXIS — N/S, E/W, NE/SW, or NW/SE; the sign (which
+// way along that axis the line actually flows at this station) falls out
+// of the world tangent derived from neighbor positions. With no neighbors
+// to consult, each variant falls back to a fixed +axis default
+// (`auto-vertical` → +y, `auto-horizontal` → +x, `auto-ne-sw` → NE,
+// `auto-nw-se` → SE).
 export type StopOrientation =
-  | 'up'
-  | 'down'
-  | 'auto-vertical'
-  | 'left'
-  | 'right'
-  | 'auto-horizontal';
+  | 'auto-vertical' // N/S
+  | 'auto-ne-sw' // NE/SW
+  | 'auto-horizontal' // E/W
+  | 'auto-nw-se'; // NW/SE
 
 // Glyph rendered at a stop. `undefined` is treated as `'filled-black'` (the
 // historical default) — no migration is needed for older saves.

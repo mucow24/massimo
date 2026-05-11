@@ -124,6 +124,44 @@ describe('buildBands — interlining', () => {
     expect(bands[0].lines).toHaveLength(2);
   });
 
+  it('builds a band for a single line with auto-ne-sw stops on a NE-going pair', () => {
+    // Stations on a NE-pointing line (screen-y-down: dy < 0). Stops at
+    // rotation 0 with auto-ne-sw resolve to the NE world tangent via the
+    // worldHint that buildBands derives from the line direction.
+    const doc = makeDoc({
+      stations: [
+        makeStation({
+          id: 's1',
+          x: 0,
+          y: 0,
+          rotation: 0,
+          stops: [makeStop('L1', { orientation: 'auto-ne-sw' })],
+        }),
+        makeStation({
+          id: 's2',
+          x: 100,
+          y: -100,
+          rotation: 0,
+          stops: [makeStop('L1', { orientation: 'auto-ne-sw' })],
+        }),
+      ],
+      lines: [makeLine({ id: 'L1', stations: ['s1', 's2'] })],
+    });
+    const bands = buildBands(doc.stations, doc.lines, 24, doc.lineOrder);
+    expect(bands).toHaveLength(1);
+    expect(bands[0].lines).toHaveLength(1);
+    expect(bands[0].paths).toHaveLength(1);
+    // Centerline endpoints should match the station centers (no
+    // perpendicular offset for a single-stripe band).
+    const v = bands[0].centerline;
+    expect(v[0].x).toBeCloseTo(0, 5);
+    expect(v[0].y).toBeCloseTo(0, 5);
+    expect(v[v.length - 1].x).toBeCloseTo(100, 5);
+    expect(v[v.length - 1].y).toBeCloseTo(-100, 5);
+    // No fillet warning — the world tangent matches the stop axis.
+    expect(bands[0].warning).toBe(false);
+  });
+
   it('keeps non-adjacent lines on a shared pair in separate bands', () => {
     // L1 at col=0, L2 at col=5 (non-adjacent → no interline merge).
     const doc = makeDoc({
@@ -331,22 +369,60 @@ describe('buildStopMarkers', () => {
     expect(markers).toHaveLength(3);
   });
 
-  it('encodes the station rotation as degrees in rotationDeg', () => {
-    const doc = makeDoc({
+  it('rotates the marker square to the world tangent of the stop axis', () => {
+    // The marker square should be flush with the band edges, so its rotation
+    // tracks the world-frame travel axis of the stop — station rotation alone
+    // isn't enough once diagonal stop orientations exist.
+    //
+    // Case 1: auto-vertical at station rotation 0 → world tangent +y (90°).
+    const doc1 = makeDoc({
       stations: [
         makeStation({
           id: 's1',
           x: 0,
           y: 0,
-          rotation: 2, // 90°
-          stops: [makeStop('L1')],
+          rotation: 0,
+          stops: [makeStop('L1', { orientation: 'auto-vertical' })],
         }),
       ],
       lines: [makeLine({ id: 'L1' })],
     });
-    const markers = buildStopMarkers(doc.stations, doc.lines, doc.lineOrder);
-    expect(markers).toHaveLength(1);
-    expect(markers[0].rotationDeg).toBe(90);
+    const m1 = buildStopMarkers(doc1.stations, doc1.lines, doc1.lineOrder);
+    expect(m1).toHaveLength(1);
+    expect(m1[0].rotationDeg).toBeCloseTo(90, 5);
+
+    // Case 2: auto-nw-se at station rotation 0 → world tangent SE (45°).
+    // (Square's 4-fold symmetry means 0 vs 45 is the visible difference.)
+    const doc2 = makeDoc({
+      stations: [
+        makeStation({
+          id: 's1',
+          x: 0,
+          y: 0,
+          rotation: 0,
+          stops: [makeStop('L1', { orientation: 'auto-nw-se' })],
+        }),
+      ],
+      lines: [makeLine({ id: 'L1' })],
+    });
+    const m2 = buildStopMarkers(doc2.stations, doc2.lines, doc2.lineOrder);
+    expect(m2[0].rotationDeg).toBeCloseTo(45, 5);
+
+    // Case 3: auto-ne-sw at station rotation 0 → world tangent NE (-45°).
+    const doc3 = makeDoc({
+      stations: [
+        makeStation({
+          id: 's1',
+          x: 0,
+          y: 0,
+          rotation: 0,
+          stops: [makeStop('L1', { orientation: 'auto-ne-sw' })],
+        }),
+      ],
+      lines: [makeLine({ id: 'L1' })],
+    });
+    const m3 = buildStopMarkers(doc3.stations, doc3.lines, doc3.lineOrder);
+    expect(m3[0].rotationDeg).toBeCloseTo(-45, 5);
   });
 
   it('skips stop cells whose line was deleted', () => {
