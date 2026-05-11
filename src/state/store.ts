@@ -75,7 +75,10 @@ interface DocState extends MapDoc {
   setLabelValign: (stationId: StationId, valign: LabelValign) => void;
 
   addLine: () => LineId;
-  updateLine: (id: LineId, patch: Partial<Pick<Line, 'service' | 'color' | 'stations'>>) => void;
+  updateLine: (
+    id: LineId,
+    patch: Partial<Pick<Line, 'service' | 'name' | 'color' | 'stations'>>,
+  ) => void;
   toggleStationOnLine: (lineId: LineId, stationId: StationId, insertAfterIndex?: number) => void;
   removeStationFromLine: (lineId: LineId, idx: number) => void;
   reorderLineStations: (lineId: LineId, stations: StationId[]) => void;
@@ -245,6 +248,22 @@ export const useDoc = create<DocState>()(
       {
         name: 'vignelli-map-doc-v1',
         storage: createJSONStorage(() => localStorage),
+        version: 1,
+        // v0 → v1: backfill `line.name` with `${service} line` for lines saved
+        // before the field existed. Mirrors the same backfill in serialize.ts
+        // parse() for the file-load path.
+        migrate: (persisted, version) => {
+          const s = persisted as { lines?: Record<LineId, Line> };
+          if (version < 1 && s.lines) {
+            const next: Record<LineId, Line> = {};
+            for (const id of Object.keys(s.lines)) {
+              const ln = s.lines[id];
+              next[id] = ln.name ? ln : { ...ln, name: `${ln.service} line` };
+            }
+            return { ...s, lines: next } as DocState;
+          }
+          return s as DocState;
+        },
         partialize: (s) => ({
           stations: s.stations,
           lines: s.lines,

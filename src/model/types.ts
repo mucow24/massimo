@@ -96,6 +96,7 @@ export type LineStyle = 'solid' | 'dashed' | 'hatched' | 'hatched-mirror';
 export interface Line {
   id: LineId;
   service: string;
+  name: string;
   color: string;
   stations: StationId[];
   waypoints?: Record<string, Vec2[]>;

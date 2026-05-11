@@ -8,6 +8,7 @@ import type { Line, LineId, Station, StationId, StopCell } from '../model/types'
 const lineOf = (id: LineId, stationIds: StationId[]): Line => ({
   id,
   service: id,
+  name: `${id} line`,
   color: '#000',
   stations: stationIds,
 });

@@ -53,12 +53,16 @@ export function parse(json: string): ParseResult {
   }
   // Sanitize per-line segment styles: drop unknown style values, drop 'solid'
   // (never persisted), and drop any entry whose pair-key isn't a station-pair
-  // adjacency on the line.
+  // adjacency on the line. Also backfill `name` for legacy files saved before
+  // the field existed.
   const cleanedLines: Record<string, Line> = {};
   let linesChanged = false;
   for (const id of Object.keys(merged.lines)) {
     const line = merged.lines[id];
-    const cleaned = sanitizeSegmentStyles(line);
+    let cleaned = sanitizeSegmentStyles(line);
+    if (!cleaned.name) {
+      cleaned = { ...cleaned, name: `${cleaned.service} line` };
+    }
     if (cleaned !== line) linesChanged = true;
     cleanedLines[id] = cleaned;
   }

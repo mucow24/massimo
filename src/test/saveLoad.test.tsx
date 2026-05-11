@@ -179,6 +179,60 @@ describe('save/load round-trip', () => {
     }
   });
 
+  it('backfills line.name for legacy files (no name field) with "${service} line"', () => {
+    const legacy = JSON.stringify({
+      format: SCHEMA_FORMAT,
+      doc: {
+        stations: {},
+        lines: {
+          L1: { id: 'L1', service: 'A', color: '#0039A6', stations: [] },
+          L2: { id: 'L2', service: 'M15', color: '#FF6319', stations: [] },
+        },
+        lineOrder: ['L1', 'L2'],
+        curveRadius: 24,
+        lineCounter: 0,
+        lineTags: {},
+        routeBullets: {},
+        transfers: {},
+      },
+    });
+    const result = parse(legacy);
+    expect(result.ok).toBe(true);
+    if (result.ok) {
+      expect(result.doc.lines.L1.name).toBe('A line');
+      expect(result.doc.lines.L2.name).toBe('M15 line');
+    }
+  });
+
+  it('preserves a custom line.name on load (does not overwrite)', () => {
+    const fixture = JSON.stringify({
+      format: SCHEMA_FORMAT,
+      doc: {
+        stations: {},
+        lines: {
+          L1: {
+            id: 'L1',
+            service: 'A',
+            name: 'Eighth Avenue Express',
+            color: '#0039A6',
+            stations: [],
+          },
+        },
+        lineOrder: ['L1'],
+        curveRadius: 24,
+        lineCounter: 0,
+        lineTags: {},
+        routeBullets: {},
+        transfers: {},
+      },
+    });
+    const result = parse(fixture);
+    expect(result.ok).toBe(true);
+    if (result.ok) {
+      expect(result.doc.lines.L1.name).toBe('Eighth Avenue Express');
+    }
+  });
+
   it('parse normalises activePalettes containing only unknown ids to [mta]', () => {
     const malformed = JSON.stringify({
       format: SCHEMA_FORMAT,

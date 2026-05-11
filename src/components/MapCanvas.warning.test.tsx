@@ -80,8 +80,20 @@ describe('MapCanvas — warning glyph reconciliation', () => {
       ],
       label: { row: 0, col: -1, rotation: 0, offset: 0, align: 'auto', valign: 'middle' },
     };
-    const l1: Line = { id: 'L1', service: 'L1', color: '#0039A6', stations: ['s1', 's2'] };
-    const l2: Line = { id: 'L2', service: 'L2', color: '#EE352E', stations: ['s1', 's2'] };
+    const l1: Line = {
+      id: 'L1',
+      service: 'L1',
+      name: 'L1 line',
+      color: '#0039A6',
+      stations: ['s1', 's2'],
+    };
+    const l2: Line = {
+      id: 'L2',
+      service: 'L2',
+      name: 'L2 line',
+      color: '#EE352E',
+      stations: ['s1', 's2'],
+    };
 
     act(() => {
       useDoc.setState({
