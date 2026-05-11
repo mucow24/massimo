@@ -140,6 +140,7 @@ export function LineInspector({ id }: { id: LineId }) {
   const removeStationFromLine = useDoc((s) => s.removeStationFromLine);
   const setDotShape = useDoc((s) => s.setDotShape);
   const selection = useSelection();
+  const nameField = useFieldHistory();
   const serviceField = useFieldHistory();
   const [openPickerSid, setOpenPickerSid] = useState<string | null>(null);
 
@@ -163,6 +164,15 @@ export function LineInspector({ id }: { id: LineId }) {
 
   return (
     <section className="inspector">
+      <div className="field">
+        <label>Line name</label>
+        <input
+          type="text"
+          value={line.name}
+          onChange={(e) => updateLine(line.id, { name: e.target.value })}
+          {...nameField}
+        />
+      </div>
       <div className="field">
         <label>Service code</label>
         <input

@@ -537,6 +537,11 @@ describe('addLine', () => {
     expect(next.lineOrder).toEqual(['C', 'A', 'B']);
     expect(next.lines.C).toMatchObject({ id: 'C', service: 'C', color: '#fff', stations: [] });
   });
+  it('defaults the line name to "${service} line"', () => {
+    const doc = makeDoc({});
+    const next = T.addLine(doc, 'L1', 'A', '#000');
+    expect(next.lines.L1.name).toBe('A line');
+  });
 });
 
 describe('updateLine', () => {
@@ -546,6 +551,14 @@ describe('updateLine', () => {
     });
     const next = T.updateLine(doc, 'L1', { service: 'B' });
     expect(next.lines.L1).toMatchObject({ service: 'B', color: '#000', stations: ['s1'] });
+  });
+  it('patches the line name', () => {
+    const doc = makeDoc({
+      lines: [makeLine({ id: 'L1', service: 'A', name: 'A line' })],
+    });
+    const next = T.updateLine(doc, 'L1', { name: 'Eighth Avenue Express' });
+    expect(next.lines.L1.name).toBe('Eighth Avenue Express');
+    expect(next.lines.L1.service).toBe('A');
   });
 });
 

@@ -48,8 +48,10 @@ export function makeLabel(overrides: Partial<LabelCell> = {}): LabelCell {
 }
 
 export function makeLine(overrides: Partial<Line> & { id: LineId }): Line {
+  const service = overrides.service ?? overrides.id.toUpperCase();
   return {
-    service: overrides.id.toUpperCase(),
+    service,
+    name: `${service} line`,
     color: '#0039A6',
     stations: [],
     ...overrides,
