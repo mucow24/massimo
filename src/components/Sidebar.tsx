@@ -213,7 +213,9 @@ export function Sidebar() {
                     >
                       {ln.service}
                     </span>
-                    <span className="grow">{ln.stations.length} stations</span>
+                    <span className="grow">
+                      {ln.name || `${ln.service} line`} · {ln.stations.length} stations
+                    </span>
                     <button
                       className="btn-mini icon"
                       disabled={i === 0}

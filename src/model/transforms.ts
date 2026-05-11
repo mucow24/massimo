@@ -655,7 +655,7 @@ export function setLabelValign(doc: MapDoc, stationId: StationId, valign: LabelV
 // ---------- Lines ----------
 
 export function addLine(doc: MapDoc, id: LineId, service: string, color: string): MapDoc {
-  const line: Line = { id, service, color, stations: [] };
+  const line: Line = { id, service, name: `${service} line`, color, stations: [] };
   // New line goes on top of the layer stack (front-most).
   const order = effectiveLineOrder(doc.lineOrder, doc.lines);
   return {
@@ -669,7 +669,7 @@ export function addLine(doc: MapDoc, id: LineId, service: string, color: string)
 export function updateLine(
   doc: MapDoc,
   id: LineId,
-  patch: Partial<Pick<Line, 'service' | 'color' | 'stations'>>,
+  patch: Partial<Pick<Line, 'service' | 'name' | 'color' | 'stations'>>,
 ): MapDoc {
   const cur = doc.lines[id];
   if (!cur) return doc;
