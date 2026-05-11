@@ -45,6 +45,8 @@ export default [
         SVGSVGElement: 'readonly',
         SVGPathElement: 'readonly',
         SVGTextElement: 'readonly',
+        HTMLCanvasElement: 'readonly',
+        CanvasRenderingContext2D: 'readonly',
       },
     },
     plugins: {

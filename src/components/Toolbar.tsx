@@ -55,6 +55,9 @@ export function Toolbar() {
   const onAddTransfer = () => {
     selection.setCreatingTransfer(!selection.creatingTransfer);
   };
+  const onAddLabel = () => {
+    selection.setPlacingLabel(!selection.placingLabel);
+  };
   const onAddLine = () => {
     const id = addLine();
     selection.startAppendAt(id, -1);
@@ -66,11 +69,13 @@ export function Toolbar() {
     selection.selectLineTag(null);
     selection.selectRouteBullet(null);
     selection.selectTransfer(null);
+    selection.selectLabel(null);
     selection.setAppending(null);
     selection.setPlacingStation(false);
     selection.setCreatingLineTag(false);
     selection.setCreatingRouteBullet(false);
     selection.setCreatingTransfer(false);
+    selection.setPlacingLabel(false);
     selection.setEditingStationId(null);
     clearAll();
   };
@@ -86,6 +91,7 @@ export function Toolbar() {
       lineTags: doc.lineTags,
       routeBullets: doc.routeBullets,
       transfers: doc.transfers,
+      textLabels: doc.textLabels,
       labelFontSize: doc.labelFontSize,
       labelBold: doc.labelBold,
       labelItalic: doc.labelItalic,
@@ -147,6 +153,7 @@ export function Toolbar() {
         <MenuItem onClick={onAddLineTag}>Line tags</MenuItem>
         <MenuItem onClick={onAddRouteBullet}>Route bullets</MenuItem>
         <MenuItem onClick={onAddTransfer}>Transfer</MenuItem>
+        <MenuItem onClick={onAddLabel}>Label</MenuItem>
       </Menu>
       <ToolButtons />
       <span className="tool-group-divider" aria-hidden="true" />

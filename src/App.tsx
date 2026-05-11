@@ -10,9 +10,11 @@ export default function App() {
   const setCreatingLineTag = useSelection((s) => s.setCreatingLineTag);
   const setCreatingRouteBullet = useSelection((s) => s.setCreatingRouteBullet);
   const setCreatingTransfer = useSelection((s) => s.setCreatingTransfer);
+  const setPlacingLabel = useSelection((s) => s.setPlacingLabel);
   const selectLineTag = useSelection((s) => s.selectLineTag);
   const selectRouteBullet = useSelection((s) => s.selectRouteBullet);
   const selectTransfer = useSelection((s) => s.selectTransfer);
+  const selectLabel = useSelection((s) => s.selectLabel);
   const setToolMode = useSelection((s) => s.setToolMode);
   const setSpaceHeld = useSelection((s) => s.setSpaceHeld);
 
@@ -31,26 +33,31 @@ export default function App() {
         setCreatingLineTag(false);
         setCreatingRouteBullet(false);
         setCreatingTransfer(false);
+        setPlacingLabel(false);
         selectLineTag(null);
         selectRouteBullet(null);
         selectTransfer(null);
+        selectLabel(null);
         return;
       }
       if ((e.key === 'Delete' || e.key === 'Backspace') && !inForm) {
         const sel = useSelection.getState();
-        // Mixed station + bullet multi-selection takes priority over the
-        // single-element delete paths below; one history entry covers
+        // Mixed station + bullet + label multi-selection takes priority over
+        // the single-element delete paths below; one history entry covers
         // every removed item so a single Ctrl-Z reverts the lot.
         const stationIds = sel.selectedStationIds;
         const bulletIds = sel.selectedRouteBulletIds;
-        if (stationIds.length + bulletIds.length > 0) {
+        const labelIds = sel.selectedLabelIds;
+        if (stationIds.length + bulletIds.length + labelIds.length > 0) {
           e.preventDefault();
           sel.selectStation(null);
           sel.selectRouteBullet(null);
+          sel.selectLabel(null);
           const group = beginHistoryGroup();
           const doc = useDoc.getState();
           for (const id of stationIds) doc.deleteStation(id);
           for (const id of bulletIds) doc.deleteRouteBullet(id);
+          for (const id of labelIds) doc.deleteTextLabel(id);
           group.commit();
           return;
         }
@@ -176,9 +183,11 @@ export default function App() {
     setCreatingLineTag,
     setCreatingRouteBullet,
     setCreatingTransfer,
+    setPlacingLabel,
     selectLineTag,
     selectRouteBullet,
     selectTransfer,
+    selectLabel,
     setToolMode,
     setSpaceHeld,
   ]);
@@ -194,7 +203,8 @@ export default function App() {
         sel.creatingLineTag ||
         sel.appendingToLineId ||
         sel.creatingRouteBullet ||
-        sel.creatingTransfer
+        sel.creatingTransfer ||
+        sel.placingLabel
       ) {
         e.preventDefault();
         e.stopPropagation();
@@ -203,6 +213,7 @@ export default function App() {
         cancelAppendMode();
         sel.setCreatingRouteBullet(false);
         sel.setCreatingTransfer(false);
+        sel.setPlacingLabel(false);
       }
     };
     document.addEventListener('contextmenu', onContextMenu, true);

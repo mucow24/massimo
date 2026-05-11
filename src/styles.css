@@ -1,3 +1,28 @@
+/* Helvetica Neue — full weight + style coverage of the files shipped in
+   /public/fonts/. The text-label popover lets the user pick any of the 8
+   weights and toggle italic; CSS selects the right file via @font-face
+   matching. */
+@font-face {
+  font-family: 'Helvetica Neue';
+  src: url('/fonts/HelveticaNeueThin.otf') format('opentype');
+  font-weight: 100;
+  font-style: normal;
+  font-display: swap;
+}
+@font-face {
+  font-family: 'Helvetica Neue';
+  src: url('/fonts/HelveticaNeueUltraLight.otf') format('opentype');
+  font-weight: 200;
+  font-style: normal;
+  font-display: swap;
+}
+@font-face {
+  font-family: 'Helvetica Neue';
+  src: url('/fonts/HelveticaNeueLight.otf') format('opentype');
+  font-weight: 300;
+  font-style: normal;
+  font-display: swap;
+}
 @font-face {
   font-family: 'Helvetica Neue';
   src: url('/fonts/HelveticaNeueRoman.otf') format('opentype');
@@ -24,6 +49,69 @@
   src: url('/fonts/HelveticaNeueHeavy.otf') format('opentype');
   font-weight: 800;
   font-style: normal;
+  font-display: swap;
+}
+@font-face {
+  font-family: 'Helvetica Neue';
+  src: url('/fonts/HelveticaNeueBlack.otf') format('opentype');
+  font-weight: 900;
+  font-style: normal;
+  font-display: swap;
+}
+@font-face {
+  font-family: 'Helvetica Neue';
+  src: url('/fonts/HelveticaNeueThinItalic.otf') format('opentype');
+  font-weight: 100;
+  font-style: italic;
+  font-display: swap;
+}
+@font-face {
+  font-family: 'Helvetica Neue';
+  src: url('/fonts/HelveticaNeueUltraLightItalic.otf') format('opentype');
+  font-weight: 200;
+  font-style: italic;
+  font-display: swap;
+}
+@font-face {
+  font-family: 'Helvetica Neue';
+  src: url('/fonts/HelveticaNeueLightItalic.otf') format('opentype');
+  font-weight: 300;
+  font-style: italic;
+  font-display: swap;
+}
+@font-face {
+  font-family: 'Helvetica Neue';
+  src: url('/fonts/HelveticaNeueItalic.ttf') format('truetype');
+  font-weight: 400;
+  font-style: italic;
+  font-display: swap;
+}
+@font-face {
+  font-family: 'Helvetica Neue';
+  src: url('/fonts/HelveticaNeueMediumItalic.otf') format('opentype');
+  font-weight: 500;
+  font-style: italic;
+  font-display: swap;
+}
+@font-face {
+  font-family: 'Helvetica Neue';
+  src: url('/fonts/HelveticaNeueBoldItalic.otf') format('opentype');
+  font-weight: 700;
+  font-style: italic;
+  font-display: swap;
+}
+@font-face {
+  font-family: 'Helvetica Neue';
+  src: url('/fonts/HelveticaNeueHeavyItalic.otf') format('opentype');
+  font-weight: 800;
+  font-style: italic;
+  font-display: swap;
+}
+@font-face {
+  font-family: 'Helvetica Neue';
+  src: url('/fonts/HelveticaNeueBlackItalic.otf') format('opentype');
+  font-weight: 900;
+  font-style: italic;
   font-display: swap;
 }
 
@@ -290,7 +378,8 @@ select {
   overflow: hidden;
 }
 
-.bullet-popover {
+.bullet-popover,
+.text-label-popover {
   background: #fff;
   border: 3px solid #000;
   box-shadow: 0 4px 12px rgba(0, 0, 0, 0.2);
@@ -299,39 +388,47 @@ select {
   display: flex;
   flex-direction: column;
 }
-.bullet-popover .header {
+.bullet-popover .header,
+.text-label-popover .header {
   height: 10px;
   background: #000;
   flex-shrink: 0;
 }
-.bullet-popover .body {
+.bullet-popover .body,
+.text-label-popover .body {
   padding: 10px 12px;
   display: flex;
   flex-direction: column;
   gap: 10px;
 }
-.bullet-popover .row {
+.bullet-popover .row,
+.text-label-popover .row {
   display: flex;
   align-items: center;
   gap: 8px;
 }
-.bullet-popover .row label {
+.bullet-popover .row label,
+.text-label-popover .row label {
   width: 48px;
   flex-shrink: 0;
   color: #000;
   font-weight: 700;
 }
 .bullet-popover .row select,
-.bullet-popover .row input[type='range'] {
+.bullet-popover .row input[type='range'],
+.text-label-popover .row select,
+.text-label-popover .row input[type='range'] {
   flex: 1;
   min-width: 0;
 }
-.bullet-popover .shape-group {
+.bullet-popover .shape-group,
+.text-label-popover .shape-group {
   display: inline-flex;
   gap: 4px;
   flex: 1;
 }
-.bullet-popover .shape-btn {
+.bullet-popover .shape-btn,
+.text-label-popover .shape-btn {
   flex: 1;
   display: inline-flex;
   align-items: center;
@@ -343,21 +440,26 @@ select {
   padding: 0;
   cursor: pointer;
 }
-.bullet-popover .shape-btn:hover {
+.bullet-popover .shape-btn:hover,
+.text-label-popover .shape-btn:hover {
   background: #f0f0f0;
 }
-.bullet-popover .shape-btn.active {
+.bullet-popover .shape-btn.active,
+.text-label-popover .shape-btn.active {
   background: #d6e4ff;
   border-color: #6a8ed6;
 }
-.bullet-popover .shape-btn svg {
+.bullet-popover .shape-btn svg,
+.text-label-popover .shape-btn svg {
   display: block;
 }
-.bullet-popover .footer {
+.bullet-popover .footer,
+.text-label-popover .footer {
   display: flex;
   justify-content: flex-end;
 }
-.bullet-popover .delete-btn {
+.bullet-popover .delete-btn,
+.text-label-popover .delete-btn {
   background: #fff;
   color: #c33;
   border: 1px solid #c33;
@@ -367,9 +469,62 @@ select {
   font-weight: 600;
   cursor: pointer;
 }
-.bullet-popover .delete-btn:hover {
+.bullet-popover .delete-btn:hover,
+.text-label-popover .delete-btn:hover {
   background: #c33;
   color: #fff;
+}
+.text-label-popover .row-block {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  align-items: stretch;
+}
+.text-label-popover .row-block textarea {
+  width: 100%;
+  resize: vertical;
+  min-height: 44px;
+  font: inherit;
+  padding: 4px 6px;
+  border: 1px solid #bbb;
+  border-radius: 3px;
+  box-sizing: border-box;
+}
+.text-label-popover .size-spin {
+  width: 44px;
+  text-align: right;
+}
+.text-label-popover .align-btn,
+.text-label-popover .italic-btn {
+  flex: 1;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  height: 26px;
+  background: #fff;
+  border: 1px solid #bbb;
+  border-radius: 3px;
+  padding: 0;
+  font: inherit;
+  font-size: 12px;
+  cursor: pointer;
+}
+.text-label-popover .align-btn:hover,
+.text-label-popover .italic-btn:hover {
+  background: #f0f0f0;
+}
+.text-label-popover .align-btn.active,
+.text-label-popover .italic-btn.active {
+  background: #d6e4ff;
+  border-color: #6a8ed6;
+}
+.text-label-popover .italic-btn {
+  flex: 0 0 36px;
+  font-style: italic;
+  font-weight: 600;
+}
+.text-label-popover .weight-select option {
+  font-family: 'Helvetica Neue', Helvetica, Arial, sans-serif;
 }
 
 .tool-group {

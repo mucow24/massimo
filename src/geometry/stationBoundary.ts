@@ -1,8 +1,9 @@
 import type { Pt } from './polygonUnion';
-import type { RouteBullet, Station, StationId } from '../model/types';
+import type { RouteBullet, Station, StationId, TextLabel } from '../model/types';
 import { STOP_SIZE, stopCenterAt } from './orientation';
 import { labelLayoutLocal } from './labelLayout';
 import { rectIntersectsPolygon, type AABB } from './rectPolygon';
+import { measureTextLabel } from './textMeasure';
 
 const HALF = STOP_SIZE / 2;
 const HIT_PAD = 2;
@@ -93,6 +94,49 @@ export function stationsForRect(stations: Record<StationId, Station>, rect: AABB
     if (rectIntersectsPolygon(rect, cellsWorld) || rectIntersectsPolygon(rect, labelWorld)) {
       hits.push(id);
     }
+  }
+  return hits;
+}
+
+// Visual padding around the measured text bbox — matches the dashed ring's
+// outer offset in LabelView so marquee hits reflect what the user can see.
+export const TEXT_LABEL_HIT_PAD = 4;
+
+/**
+ * The 4 corners of a TextLabel's hit polygon in world coords. The label is
+ * a rectangle centered on (x, y) with size (measuredWidth + 2*PAD,
+ * measuredHeight + 2*PAD) in its own unrotated frame, rotated by
+ * `rotation * 45°` clockwise (matching the existing `Rotation` semantics).
+ */
+export function textLabelHitPolygon(label: TextLabel): Pt[] {
+  const m = measureTextLabel(label);
+  const halfW = m.width / 2 + TEXT_LABEL_HIT_PAD;
+  const halfH = m.height / 2 + TEXT_LABEL_HIT_PAD;
+  const corners: Pt[] = [
+    { x: -halfW, y: -halfH },
+    { x: halfW, y: -halfH },
+    { x: halfW, y: halfH },
+    { x: -halfW, y: halfH },
+  ];
+  const a = (label.rotation * Math.PI) / 4;
+  const c = Math.cos(a);
+  const s = Math.sin(a);
+  return corners.map((p) => ({
+    x: label.x + p.x * c - p.y * s,
+    y: label.y + p.x * s + p.y * c,
+  }));
+}
+
+/**
+ * Ids of every TextLabel whose rotated hit polygon overlaps `rect` (world
+ * coords). Empty-text labels still have a small hit polygon from the padding,
+ * so a freshly-placed "New Label" can still be selected.
+ */
+export function textLabelsForRect(labels: Record<string, TextLabel>, rect: AABB): string[] {
+  const hits: string[] = [];
+  for (const id of Object.keys(labels)) {
+    const poly = textLabelHitPolygon(labels[id]);
+    if (rectIntersectsPolygon(rect, poly)) hits.push(id);
   }
   return hits;
 }

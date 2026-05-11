@@ -34,6 +34,7 @@ describe('save/load round-trip', () => {
       lineTags: useDoc.getState().lineTags,
       routeBullets: useDoc.getState().routeBullets,
       transfers: useDoc.getState().transfers,
+      textLabels: useDoc.getState().textLabels,
       labelFontSize: useDoc.getState().labelFontSize,
       labelBold: useDoc.getState().labelBold,
       labelItalic: useDoc.getState().labelItalic,
@@ -99,6 +100,32 @@ describe('save/load round-trip', () => {
       expect(result.doc.labelFontSize).toBe(12);
       expect(result.doc.labelBold).toBe(false);
       expect(result.doc.labelItalic).toBe(false);
+      // Pre-textLabels saves default to empty.
+      expect(result.doc.textLabels).toEqual({});
+    }
+  });
+
+  it('round-trips textLabels with all properties intact', () => {
+    const fixture = makeDoc({
+      textLabels: [
+        {
+          id: 'g1',
+          x: 12,
+          y: 34,
+          rotation: 3,
+          text: 'Riverdale\nNorth',
+          fontSize: 28,
+          weight: 700,
+          italic: true,
+          align: 'center',
+        },
+      ],
+    });
+    const json = serialize(fixture);
+    const result = parse(json);
+    expect(result.ok).toBe(true);
+    if (result.ok) {
+      expect(result.doc.textLabels.g1).toEqual(fixture.textLabels.g1);
     }
   });
 
@@ -122,6 +149,7 @@ describe('save/load round-trip', () => {
       lineTags: s.lineTags,
       routeBullets: s.routeBullets,
       transfers: s.transfers,
+      textLabels: s.textLabels,
       labelFontSize: s.labelFontSize,
       labelBold: s.labelBold,
       labelItalic: s.labelItalic,
