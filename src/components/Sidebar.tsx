@@ -17,7 +17,7 @@ export function Sidebar() {
   const moveLineInOrder = useDoc((s) => s.moveLineInOrder);
 
   const [stationSortBy, setStationSortBy] = useState<StationSortColumn>('name');
-  const [stationSortDir, setStationSortDir] = useState<SortDirection>('desc');
+  const [stationSortDir, setStationSortDir] = useState<SortDirection>('asc');
 
   const orderedLineIds = effectiveLineOrder(lineOrder, lines);
 
@@ -45,7 +45,7 @@ export function Sidebar() {
       setStationSortDir((d) => (d === 'asc' ? 'desc' : 'asc'));
     } else {
       setStationSortBy(col);
-      setStationSortDir('desc');
+      setStationSortDir('asc');
     }
   };
 
@@ -108,7 +108,7 @@ export function Sidebar() {
                 className={'sort-header' + (stationSortBy === 'stops' ? ' active' : '')}
                 onClick={() => handleStationSortClick('stops')}
               >
-                Stops
+                Lines
                 {stationSortBy === 'stops' && (
                   <span className="sort-arrow">{stationSortDir === 'asc' ? '▲' : '▼'}</span>
                 )}
