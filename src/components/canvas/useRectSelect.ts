@@ -1,6 +1,10 @@
 import { RefObject, useRef, useState } from 'react';
 import { dragState, useDoc, useSelection } from '../../state/store';
-import { routeBulletsForRect, stationsForRect } from '../../geometry/stationBoundary';
+import {
+  routeBulletsForRect,
+  stationsForRect,
+  textLabelsForRect,
+} from '../../geometry/stationBoundary';
 import type { Pt } from '../../geometry/polygonUnion';
 import type { StationId } from '../../model/types';
 
@@ -20,6 +24,8 @@ export interface RectSelectApi {
   previewStationIds: StationId[] | null;
   /** Bullets the selection WILL contain on release. Null when not dragging. */
   previewBulletIds: string[] | null;
+  /** Text labels the selection WILL contain on release. Null when not dragging. */
+  previewLabelIds: string[] | null;
   onPointerDown: (e: React.PointerEvent) => void;
   onPointerMove: (e: React.PointerEvent) => void;
   onPointerUp: (e: React.PointerEvent) => void;
@@ -82,6 +88,7 @@ export function useRectSelect(
   const [rect, setRect] = useState<RectSelectRect | null>(null);
   const [previewStationIds, setPreviewStationIds] = useState<StationId[] | null>(null);
   const [previewBulletIds, setPreviewBulletIds] = useState<string[] | null>(null);
+  const [previewLabelIds, setPreviewLabelIds] = useState<string[] | null>(null);
 
   const onPointerDown = (e: React.PointerEvent) => {
     if (e.button !== 0) return;
@@ -129,17 +136,19 @@ export function useRectSelect(
     setRect(nextRect);
 
     // Per-frame preview of the resulting selection. Reads stations,
-    // bullets, and the current selection straight from the stores so we
-    // don't carry stale copies through the closure. Modifiers come from
-    // this pointer event, so changing shift/ctrl mid-drag updates the
+    // bullets, labels, and the current selection straight from the stores
+    // so we don't carry stale copies through the closure. Modifiers come
+    // from this pointer event, so changing shift/ctrl mid-drag updates the
     // preview on the next move.
     const doc = useDoc.getState();
     const sel = useSelection.getState();
     const mode = modeFromEvent(e);
     const stationHits = stationsForRect(doc.stations, nextRect);
     const bulletHits = routeBulletsForRect(doc.routeBullets, nextRect);
+    const labelHits = textLabelsForRect(doc.textLabels, nextRect);
     setPreviewStationIds(applyMode(sel.selectedStationIds, stationHits, mode));
     setPreviewBulletIds(applyMode(sel.selectedRouteBulletIds, bulletHits, mode));
+    setPreviewLabelIds(applyMode(sel.selectedLabelIds, labelHits, mode));
   };
 
   const onPointerUp = (e: React.PointerEvent) => {
@@ -151,6 +160,7 @@ export function useRectSelect(
       setRect(null);
       setPreviewStationIds(null);
       setPreviewBulletIds(null);
+      setPreviewLabelIds(null);
       return;
     }
     const end = screenToWorld(e.clientX, e.clientY);
@@ -163,22 +173,27 @@ export function useRectSelect(
     setRect(null);
     setPreviewStationIds(null);
     setPreviewBulletIds(null);
+    setPreviewLabelIds(null);
 
     const doc = useDoc.getState();
     const stationHits = stationsForRect(doc.stations, finalRect);
     const bulletHits = routeBulletsForRect(doc.routeBullets, finalRect);
+    const labelHits = textLabelsForRect(doc.textLabels, finalRect);
 
     const sel = useSelection.getState();
     const mode = modeFromEvent(e);
     if (mode === 'xor') {
       sel.xorStationsToSelection(stationHits);
       sel.xorRouteBulletsToSelection(bulletHits);
+      sel.xorLabelsToSelection(labelHits);
     } else if (mode === 'add') {
       sel.addStationsToSelection(stationHits);
       sel.addRouteBulletsToSelection(bulletHits);
+      sel.addLabelsToSelection(labelHits);
     } else {
       sel.setStationSelection(stationHits);
       sel.setRouteBulletSelection(bulletHits);
+      sel.setLabelSelection(labelHits);
     }
 
     try {
@@ -195,6 +210,7 @@ export function useRectSelect(
     rect,
     previewStationIds,
     previewBulletIds,
+    previewLabelIds,
     onPointerDown,
     onPointerMove,
     onPointerUp,

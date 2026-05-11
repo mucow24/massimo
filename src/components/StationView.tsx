@@ -187,18 +187,20 @@ export function StationView({
     e.stopPropagation();
     // Right-click on a station that's part of a multi-selection rotates
     // the whole group rigidly around this station: each member rotates
-    // in place AND non-pivot members orbit 45° around the pivot. When
-    // bullets are also selected they orbit too via `rotateItemsAround`.
+    // in place AND non-pivot members orbit 45° around the pivot. Bullets
+    // and labels in the selection orbit too via `rotateItemsAround`.
     const ids = selection.selectedStationIds;
     const bulletIds = selection.selectedRouteBulletIds;
-    const totalSelected = ids.length + bulletIds.length;
+    const labelIds = selection.selectedLabelIds;
+    const totalSelected = ids.length + bulletIds.length + labelIds.length;
     if (totalSelected > 1 && ids.includes(station.id)) {
-      if (bulletIds.length === 0) {
+      if (bulletIds.length === 0 && labelIds.length === 0) {
         rotateStationsAround(station.id, ids);
       } else {
-        const members: { type: 'station' | 'bullet'; id: string }[] = [
+        const members: { type: 'station' | 'bullet' | 'label'; id: string }[] = [
           ...ids.map((id) => ({ type: 'station' as const, id })),
           ...bulletIds.map((id) => ({ type: 'bullet' as const, id })),
+          ...labelIds.map((id) => ({ type: 'label' as const, id })),
         ];
         rotateItemsAround({ type: 'station', id: station.id }, members);
       }

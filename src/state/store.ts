@@ -11,6 +11,7 @@ import type {
   MapDoc,
   RouteBullet,
   StationId,
+  TextLabel,
 } from '../model/types';
 import type { Vec2 } from '../geometry/vec';
 import { effectiveLineOrder } from '../model/lineOrder';
@@ -125,6 +126,13 @@ interface DocState extends MapDoc {
   ) => string;
   deleteTransfer: (id: string) => void;
 
+  addTextLabel: (x: number, y: number) => string;
+  addTextLabelWith: (fields: Omit<TextLabel, 'id'>) => string;
+  moveTextLabel: (id: string, x: number, y: number) => void;
+  rotateTextLabel: (id: string) => void;
+  updateTextLabel: (id: string, patch: Partial<Omit<TextLabel, 'id'>>) => void;
+  deleteTextLabel: (id: string) => void;
+
   setCurveRadius: (r: number) => void;
   setLabelFontSize: (n: number) => void;
   setLabelBold: (b: boolean) => void;
@@ -237,6 +245,21 @@ export const useDoc = create<DocState>()(
 
         deleteTransfer: (id) => set((s) => T.deleteTransfer(s, id)),
 
+        addTextLabel: (x, y) => {
+          const id = ids.textLabelId();
+          set((s) => T.addTextLabel(s, id, x, y));
+          return id;
+        },
+        addTextLabelWith: (fields) => {
+          const id = ids.textLabelId();
+          set((s) => T.addTextLabelWith(s, id, fields));
+          return id;
+        },
+        moveTextLabel: (id, x, y) => set((s) => T.moveTextLabel(s, id, x, y)),
+        rotateTextLabel: (id) => set((s) => T.rotateTextLabel(s, id)),
+        updateTextLabel: (id, patch) => set((s) => T.updateTextLabel(s, id, patch)),
+        deleteTextLabel: (id) => set((s) => T.deleteTextLabel(s, id)),
+
         setCurveRadius: (r) => set((s) => T.setCurveRadius(s, r)),
         setLabelFontSize: (n) => set((s) => T.setLabelFontSize(s, n)),
         setLabelBold: (b) => set((s) => T.setLabelBold(s, b)),
@@ -273,6 +296,7 @@ export const useDoc = create<DocState>()(
           lineTags: s.lineTags,
           routeBullets: s.routeBullets,
           transfers: s.transfers,
+          textLabels: s.textLabels,
           labelFontSize: s.labelFontSize,
           labelBold: s.labelBold,
           labelItalic: s.labelItalic,
@@ -293,6 +317,7 @@ export const useDoc = create<DocState>()(
         lineTags: state.lineTags,
         routeBullets: state.routeBullets,
         transfers: state.transfers,
+        textLabels: state.textLabels,
         labelFontSize: state.labelFontSize,
         labelBold: state.labelBold,
         labelItalic: state.labelItalic,
@@ -317,6 +342,7 @@ type DocSnapshot = Pick<
   | 'lineTags'
   | 'routeBullets'
   | 'transfers'
+  | 'textLabels'
   | 'labelFontSize'
   | 'labelBold'
   | 'labelItalic'
@@ -333,6 +359,7 @@ function snapshotDoc(s: DocState): DocSnapshot {
     lineTags: s.lineTags,
     routeBullets: s.routeBullets,
     transfers: s.transfers,
+    textLabels: s.textLabels,
     labelFontSize: s.labelFontSize,
     labelBold: s.labelBold,
     labelItalic: s.labelItalic,
@@ -372,7 +399,10 @@ export function beginHistoryGroup(): { commit: () => void; cancel: () => void } 
         cur.lineOrder === snapshot.lineOrder &&
         cur.curveRadius === snapshot.curveRadius &&
         cur.lineCounter === snapshot.lineCounter &&
-        cur.lineTags === snapshot.lineTags
+        cur.lineTags === snapshot.lineTags &&
+        cur.routeBullets === snapshot.routeBullets &&
+        cur.transfers === snapshot.transfers &&
+        cur.textLabels === snapshot.textLabels
       ) {
         return;
       }
@@ -486,6 +516,11 @@ interface SelectionState {
   creatingTransfer: boolean;
   transferAnchor: { stationId: StationId; lineId: LineId | null } | null;
   selectedTransferId: string | null;
+  // Text-label selection + placement mode. Multi-selection: parallel to
+  // `selectedStationIds` / `selectedRouteBulletIds`. The last entry is the
+  // anchor used by the popover when length === 1.
+  placingLabel: boolean;
+  selectedLabelIds: string[];
   // When true, edits made via the StationInspector (stop layout + label)
   // mirror to all directly-connected stations whose unrotated stop layouts
   // are identical. Resets to false whenever a different station is selected.
@@ -528,6 +563,12 @@ interface SelectionState {
   setCreatingTransfer: (creating: boolean) => void;
   setTransferAnchor: (anchor: { stationId: StationId; lineId: LineId | null } | null) => void;
   setMirrorMatching: (on: boolean) => void;
+  selectLabel: (id: string | null) => void;
+  toggleLabelSelection: (id: string) => void;
+  setLabelSelection: (ids: string[]) => void;
+  addLabelsToSelection: (ids: string[]) => void;
+  xorLabelsToSelection: (ids: string[]) => void;
+  setPlacingLabel: (placing: boolean) => void;
 }
 
 export const useSelection = create<SelectionState>((set, get) => ({
@@ -551,6 +592,8 @@ export const useSelection = create<SelectionState>((set, get) => ({
   creatingTransfer: false,
   transferAnchor: null,
   selectedTransferId: null,
+  placingLabel: false,
+  selectedLabelIds: [],
   mirrorMatching: false,
   toolMode: 'arrow',
   spaceHeld: false,
@@ -561,6 +604,7 @@ export const useSelection = create<SelectionState>((set, get) => ({
       selectedStationIds: id == null ? [] : [id],
       // Plain click is exclusive across types: clears bullets too.
       selectedRouteBulletIds: [],
+      selectedLabelIds: [],
       selectedLineId: null,
       selectedLineTagId: null,
       selectedStopLineId: null,
@@ -658,6 +702,7 @@ export const useSelection = create<SelectionState>((set, get) => ({
     set({
       selectedLineId: id,
       selectedStationIds: [],
+      selectedLabelIds: id === null ? get().selectedLabelIds : [],
       selectedLineTagId: null,
       appendingToLineId: switchingToDifferent ? null : get().appendingToLineId,
       insertAfterIndex: switchingToDifferent ? null : get().insertAfterIndex,
@@ -692,6 +737,7 @@ export const useSelection = create<SelectionState>((set, get) => ({
       creatingLineTag: placing ? false : get().creatingLineTag,
       selectedLineTagId: placing ? null : get().selectedLineTagId,
       lineTagHoverPreview: placing ? null : get().lineTagHoverPreview,
+      placingLabel: placing ? false : get().placingLabel,
     }),
   setHoveredStation: (id) => set({ hoveredStationId: id }),
   setHoveredLineStop: (v) => set({ hoveredLineStop: v }),
@@ -710,12 +756,14 @@ export const useSelection = create<SelectionState>((set, get) => ({
       selectedLineTagId: id,
       selectedStationIds: [],
       selectedLineId: null,
+      selectedLabelIds: id === null ? get().selectedLabelIds : [],
       selectedStopLineId: null,
       labelSelected: false,
       editingStationId: null,
       // Selecting a tag exits placement modes.
       creatingLineTag: id === null ? get().creatingLineTag : false,
       placingStation: id === null ? get().placingStation : false,
+      placingLabel: id === null ? get().placingLabel : false,
       appendingToLineId: id === null ? get().appendingToLineId : null,
       insertAfterIndex: id === null ? get().insertAfterIndex : null,
       lineTagHoverPreview: null,
@@ -725,9 +773,11 @@ export const useSelection = create<SelectionState>((set, get) => ({
       creatingLineTag: creating,
       // Entering tag mode clears all other modes + selections.
       placingStation: creating ? false : get().placingStation,
+      placingLabel: creating ? false : get().placingLabel,
       appendingToLineId: creating ? null : get().appendingToLineId,
       insertAfterIndex: creating ? null : get().insertAfterIndex,
       selectedStationIds: creating ? [] : get().selectedStationIds,
+      selectedLabelIds: creating ? [] : get().selectedLabelIds,
       selectedLineId: creating ? null : get().selectedLineId,
       selectedLineTagId: creating ? null : get().selectedLineTagId,
       lineTagHoverPreview: creating ? get().lineTagHoverPreview : null,
@@ -738,12 +788,14 @@ export const useSelection = create<SelectionState>((set, get) => ({
       selectedRouteBulletIds: id == null ? [] : [id],
       // Selecting a bullet clears other selections + placement modes.
       selectedStationIds: id === null ? get().selectedStationIds : [],
+      selectedLabelIds: id === null ? get().selectedLabelIds : [],
       selectedLineId: id === null ? get().selectedLineId : null,
       selectedLineTagId: id === null ? get().selectedLineTagId : null,
       labelSelected: false,
       editingStationId: null,
       creatingLineTag: id === null ? get().creatingLineTag : false,
       placingStation: id === null ? get().placingStation : false,
+      placingLabel: id === null ? get().placingLabel : false,
       appendingToLineId: id === null ? get().appendingToLineId : null,
       insertAfterIndex: id === null ? get().insertAfterIndex : null,
       creatingRouteBullet: id === null ? get().creatingRouteBullet : false,
@@ -798,6 +850,7 @@ export const useSelection = create<SelectionState>((set, get) => ({
       creatingRouteBullet: creating,
       // Entering bullet-creation mode clears all other modes + selections.
       placingStation: creating ? false : get().placingStation,
+      placingLabel: creating ? false : get().placingLabel,
       creatingLineTag: creating ? false : get().creatingLineTag,
       appendingToLineId: creating ? null : get().appendingToLineId,
       insertAfterIndex: creating ? null : get().insertAfterIndex,
@@ -807,6 +860,7 @@ export const useSelection = create<SelectionState>((set, get) => ({
       selectedLineId: creating ? null : get().selectedLineId,
       selectedLineTagId: creating ? null : get().selectedLineTagId,
       selectedRouteBulletIds: creating ? [] : get().selectedRouteBulletIds,
+      selectedLabelIds: creating ? [] : get().selectedLabelIds,
       selectedTransferId: creating ? null : get().selectedTransferId,
     }),
   selectTransfer: (id) =>
@@ -816,9 +870,11 @@ export const useSelection = create<SelectionState>((set, get) => ({
       selectedLineId: id === null ? get().selectedLineId : null,
       selectedLineTagId: id === null ? get().selectedLineTagId : null,
       selectedRouteBulletIds: id === null ? get().selectedRouteBulletIds : [],
+      selectedLabelIds: id === null ? get().selectedLabelIds : [],
       labelSelected: false,
       editingStationId: null,
       placingStation: id === null ? get().placingStation : false,
+      placingLabel: id === null ? get().placingLabel : false,
       creatingLineTag: id === null ? get().creatingLineTag : false,
       creatingRouteBullet: id === null ? get().creatingRouteBullet : false,
       creatingTransfer: id === null ? get().creatingTransfer : false,
@@ -831,6 +887,7 @@ export const useSelection = create<SelectionState>((set, get) => ({
       creatingTransfer: creating,
       transferAnchor: null,
       placingStation: creating ? false : get().placingStation,
+      placingLabel: creating ? false : get().placingLabel,
       creatingLineTag: creating ? false : get().creatingLineTag,
       creatingRouteBullet: creating ? false : get().creatingRouteBullet,
       appendingToLineId: creating ? null : get().appendingToLineId,
@@ -839,8 +896,96 @@ export const useSelection = create<SelectionState>((set, get) => ({
       selectedLineId: creating ? null : get().selectedLineId,
       selectedLineTagId: creating ? null : get().selectedLineTagId,
       selectedRouteBulletIds: creating ? [] : get().selectedRouteBulletIds,
+      selectedLabelIds: creating ? [] : get().selectedLabelIds,
       selectedTransferId: creating ? null : get().selectedTransferId,
     }),
   setTransferAnchor: (anchor) => set({ transferAnchor: anchor }),
   setMirrorMatching: (on) => set({ mirrorMatching: on }),
+  selectLabel: (id) =>
+    set({
+      selectedLabelIds: id == null ? [] : [id],
+      // Selecting a label is exclusive: clear every other selection type +
+      // exit any placement / creation mode.
+      selectedStationIds: id === null ? get().selectedStationIds : [],
+      selectedRouteBulletIds: id === null ? get().selectedRouteBulletIds : [],
+      selectedLineId: id === null ? get().selectedLineId : null,
+      selectedLineTagId: id === null ? get().selectedLineTagId : null,
+      selectedTransferId: id === null ? get().selectedTransferId : null,
+      selectedStopLineId: null,
+      labelSelected: false,
+      editingStationId: null,
+      placingStation: id === null ? get().placingStation : false,
+      placingLabel: id === null ? get().placingLabel : false,
+      creatingLineTag: id === null ? get().creatingLineTag : false,
+      creatingRouteBullet: id === null ? get().creatingRouteBullet : false,
+      creatingTransfer: id === null ? get().creatingTransfer : false,
+      transferAnchor: id === null ? get().transferAnchor : null,
+      appendingToLineId: id === null ? get().appendingToLineId : null,
+      insertAfterIndex: id === null ? get().insertAfterIndex : null,
+      lineTagHoverPreview: null,
+    }),
+  toggleLabelSelection: (id) =>
+    set((s) => {
+      const idx = s.selectedLabelIds.indexOf(id);
+      if (idx >= 0) {
+        const next = s.selectedLabelIds.slice();
+        next.splice(idx, 1);
+        return { selectedLabelIds: next };
+      }
+      return {
+        selectedLabelIds: [...s.selectedLabelIds, id],
+        selectedLineId: null,
+        selectedLineTagId: null,
+      };
+    }),
+  setLabelSelection: (ids) =>
+    set(() => {
+      const lastIdx = new Map<string, number>();
+      ids.forEach((id, i) => lastIdx.set(id, i));
+      const dedup: string[] = [];
+      for (let i = 0; i < ids.length; i++) {
+        if (lastIdx.get(ids[i]) === i) dedup.push(ids[i]);
+      }
+      return { selectedLabelIds: dedup };
+    }),
+  addLabelsToSelection: (ids) =>
+    set((s) => {
+      const have = new Set(s.selectedLabelIds);
+      const novel = ids.filter((id) => !have.has(id));
+      if (novel.length === 0) return {};
+      return { selectedLabelIds: [...s.selectedLabelIds, ...novel] };
+    }),
+  xorLabelsToSelection: (ids) =>
+    set((s) => {
+      const have = new Set(s.selectedLabelIds);
+      const removeSet = new Set<string>();
+      const appendList: string[] = [];
+      for (const id of ids) {
+        if (have.has(id)) removeSet.add(id);
+        else appendList.push(id);
+      }
+      if (removeSet.size === 0 && appendList.length === 0) return {};
+      const next = s.selectedLabelIds.filter((id) => !removeSet.has(id));
+      next.push(...appendList);
+      return { selectedLabelIds: next };
+    }),
+  setPlacingLabel: (placing) =>
+    set({
+      placingLabel: placing,
+      // Entering place-label mode clears all other modes + selections.
+      placingStation: placing ? false : get().placingStation,
+      creatingLineTag: placing ? false : get().creatingLineTag,
+      creatingRouteBullet: placing ? false : get().creatingRouteBullet,
+      creatingTransfer: placing ? false : get().creatingTransfer,
+      transferAnchor: placing ? null : get().transferAnchor,
+      appendingToLineId: placing ? null : get().appendingToLineId,
+      insertAfterIndex: placing ? null : get().insertAfterIndex,
+      selectedStationIds: placing ? [] : get().selectedStationIds,
+      selectedLineId: placing ? null : get().selectedLineId,
+      selectedLineTagId: placing ? null : get().selectedLineTagId,
+      selectedRouteBulletIds: placing ? [] : get().selectedRouteBulletIds,
+      selectedTransferId: placing ? null : get().selectedTransferId,
+      selectedLabelIds: placing ? [] : get().selectedLabelIds,
+      lineTagHoverPreview: placing ? null : get().lineTagHoverPreview,
+    }),
 }));

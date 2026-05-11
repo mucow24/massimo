@@ -4,8 +4,10 @@ import {
   stationBoundaryRectsLocal,
   stationLocalToWorld,
   stationsForRect,
+  textLabelHitPolygon,
+  textLabelsForRect,
 } from './stationBoundary';
-import { makeStation, makeStop, stationWithStop } from '../test/fixtures';
+import { makeStation, makeStop, makeTextLabel, stationWithStop } from '../test/fixtures';
 import { STOP_SIZE } from './orientation';
 import type { RouteBullet } from '../model/types';
 
@@ -150,5 +152,85 @@ describe('routeBulletsForRect', () => {
     // Rect from (50, 50) to (-50, -50) — same area, inverted endpoints.
     const rect = { x0: 50, y0: 50, x1: -50, y1: -50 };
     expect(routeBulletsForRect({ b }, rect)).toEqual(['b']);
+  });
+});
+
+describe('textLabelHitPolygon', () => {
+  it('returns 4 corners', () => {
+    const poly = textLabelHitPolygon(makeTextLabel({ id: 'g', text: 'Hi', fontSize: 16 }));
+    expect(poly).toHaveLength(4);
+  });
+
+  it('unrotated polygon is axis-aligned', () => {
+    const poly = textLabelHitPolygon(
+      makeTextLabel({ id: 'g', text: 'Hi', fontSize: 16, rotation: 0 }),
+    );
+    const xs = new Set(poly.map((p) => Math.round(p.x * 100) / 100));
+    const ys = new Set(poly.map((p) => Math.round(p.y * 100) / 100));
+    expect(xs.size).toBe(2);
+    expect(ys.size).toBe(2);
+  });
+
+  it('rotation=1 (45°) yields a non-axis-aligned polygon', () => {
+    const poly = textLabelHitPolygon(
+      makeTextLabel({ id: 'g', text: 'Hi', fontSize: 16, rotation: 1 }),
+    );
+    const xs = new Set(poly.map((p) => Math.round(p.x * 100) / 100));
+    expect(xs.size).toBeGreaterThan(2);
+  });
+
+  it('translates polygon by the label x/y', () => {
+    const at0 = textLabelHitPolygon(makeTextLabel({ id: 'g', text: 'Hi', x: 0, y: 0 }));
+    const at100 = textLabelHitPolygon(makeTextLabel({ id: 'g', text: 'Hi', x: 100, y: 50 }));
+    for (let i = 0; i < 4; i++) {
+      expect(at100[i].x - at0[i].x).toBeCloseTo(100, 5);
+      expect(at100[i].y - at0[i].y).toBeCloseTo(50, 5);
+    }
+  });
+});
+
+describe('textLabelsForRect', () => {
+  it('returns the label ids whose hit polygon overlaps the rect', () => {
+    const labels = {
+      a: makeTextLabel({ id: 'a', x: 0, y: 0, text: 'Hello' }),
+      b: makeTextLabel({ id: 'b', x: 1000, y: 1000, text: 'Hello' }),
+    };
+    const rect = { x0: -50, y0: -50, x1: 50, y1: 50 };
+    expect(textLabelsForRect(labels, rect)).toEqual(['a']);
+  });
+
+  it('returns empty when no label intersects', () => {
+    const labels = { a: makeTextLabel({ id: 'a', x: 0, y: 0, text: 'Hello' }) };
+    const rect = { x0: 1000, y0: 1000, x1: 2000, y1: 2000 };
+    expect(textLabelsForRect(labels, rect)).toEqual([]);
+  });
+
+  it('handles inverted rect endpoints', () => {
+    const labels = { a: makeTextLabel({ id: 'a', x: 0, y: 0, text: 'Hi' }) };
+    const rect = { x0: 50, y0: 50, x1: -50, y1: -50 };
+    expect(textLabelsForRect(labels, rect)).toEqual(['a']);
+  });
+
+  it('hits a rotated label whose corners enter the rect after rotation', () => {
+    // Wide label at the origin, rotated 90°. Rect placed where one of the
+    // rotated corners lands should pick it up.
+    const label = makeTextLabel({
+      id: 'a',
+      x: 0,
+      y: 0,
+      text: 'AAAAAAAAAAAAAAAA',
+      fontSize: 40,
+      rotation: 2, // 90°
+    });
+    // After 90° rotation, the wide bbox extends vertically; check a small
+    // rect above the origin sees it.
+    const rect = { x0: -10, y0: 60, x1: 10, y1: 100 };
+    expect(textLabelsForRect({ a: label }, rect)).toEqual(['a']);
+  });
+
+  it('still hits an empty-text label via its hit padding', () => {
+    const labels = { a: makeTextLabel({ id: 'a', x: 0, y: 0, text: '', fontSize: 16 }) };
+    const rect = { x0: -2, y0: -2, x1: 2, y1: 2 };
+    expect(textLabelsForRect(labels, rect)).toEqual(['a']);
   });
 });
