@@ -1,7 +1,14 @@
 import { describe, it, expect } from 'vitest';
 import * as T from './transforms';
-import { makeDoc, makeLine, makeStation, makeStop, stationWithStop } from '../test/fixtures';
-import type { MapDoc, RouteBullet, Station } from './types';
+import {
+  makeDoc,
+  makeLine,
+  makeStation,
+  makeStop,
+  makeTextLabel,
+  stationWithStop,
+} from '../test/fixtures';
+import type { MapDoc, RouteBullet, Station, TextLabel } from './types';
 
 describe('addStation', () => {
   it('inserts a station with default rotation/stops/label at the given coords', () => {
@@ -1242,5 +1249,155 @@ describe('removeStationFromLine — segmentStyles cascade', () => {
     });
     const next = T.removeStationFromLine(doc, 'L1', 2);
     expect(next.lines.L1.segmentStyles).toEqual({ 's1|s2': 'hatched' });
+  });
+});
+
+describe('addTextLabel', () => {
+  it('inserts a label with documented defaults at the given coords', () => {
+    const doc0 = makeDoc({});
+    const doc = T.addTextLabel(doc0, 'g1', 25, 75);
+    expect(doc.textLabels.g1).toEqual({
+      id: 'g1',
+      x: 25,
+      y: 75,
+      rotation: 0,
+      text: 'New Label',
+      fontSize: 16,
+      weight: 400,
+      italic: false,
+      align: 'left',
+    });
+  });
+});
+
+describe('addTextLabelWith', () => {
+  it('inserts a fully-specified label', () => {
+    const doc0 = makeDoc({});
+    const fields: Omit<TextLabel, 'id'> = {
+      x: 10,
+      y: 20,
+      rotation: 3,
+      text: 'Hello\nWorld',
+      fontSize: 32,
+      weight: 700,
+      italic: true,
+      align: 'center',
+    };
+    const doc = T.addTextLabelWith(doc0, 'g1', fields);
+    expect(doc.textLabels.g1).toEqual({ id: 'g1', ...fields });
+  });
+});
+
+describe('moveTextLabel', () => {
+  it('updates x/y, leaves other fields untouched', () => {
+    const doc = makeDoc({
+      textLabels: [makeTextLabel({ id: 'g1', x: 0, y: 0, text: 'Hi', rotation: 2 })],
+    });
+    const next = T.moveTextLabel(doc, 'g1', 50, 60);
+    expect(next.textLabels.g1).toMatchObject({ x: 50, y: 60, text: 'Hi', rotation: 2 });
+  });
+  it('is a no-op when id is missing', () => {
+    const doc = makeDoc({});
+    expect(T.moveTextLabel(doc, 'nope', 10, 10)).toBe(doc);
+  });
+});
+
+describe('rotateTextLabel', () => {
+  it('cycles rotation 0..7 with wrap', () => {
+    let doc = makeDoc({ textLabels: [makeTextLabel({ id: 'g1', rotation: 7 })] });
+    doc = T.rotateTextLabel(doc, 'g1');
+    expect(doc.textLabels.g1.rotation).toBe(0);
+  });
+  it('eight rotations is identity', () => {
+    let doc = makeDoc({ textLabels: [makeTextLabel({ id: 'g1', rotation: 0 })] });
+    for (let i = 0; i < 8; i++) doc = T.rotateTextLabel(doc, 'g1');
+    expect(doc.textLabels.g1.rotation).toBe(0);
+  });
+  it('is a no-op for missing ids', () => {
+    const doc = makeDoc({});
+    expect(T.rotateTextLabel(doc, 'nope')).toBe(doc);
+  });
+});
+
+describe('updateTextLabel', () => {
+  it('partial-merges into the existing label', () => {
+    const doc = makeDoc({
+      textLabels: [makeTextLabel({ id: 'g1', text: 'A', fontSize: 16, italic: false })],
+    });
+    const next = T.updateTextLabel(doc, 'g1', { text: 'B', italic: true });
+    expect(next.textLabels.g1).toMatchObject({ text: 'B', italic: true, fontSize: 16 });
+  });
+  it('clamps fontSize to [1, 96] and rounds to integer', () => {
+    const doc = makeDoc({ textLabels: [makeTextLabel({ id: 'g1', fontSize: 16 })] });
+    expect(T.updateTextLabel(doc, 'g1', { fontSize: 0 }).textLabels.g1.fontSize).toBe(1);
+    expect(T.updateTextLabel(doc, 'g1', { fontSize: 999 }).textLabels.g1.fontSize).toBe(96);
+    expect(T.updateTextLabel(doc, 'g1', { fontSize: 23.7 }).textLabels.g1.fontSize).toBe(24);
+  });
+  it('is a no-op for missing ids', () => {
+    const doc = makeDoc({});
+    expect(T.updateTextLabel(doc, 'nope', { text: 'X' })).toBe(doc);
+  });
+});
+
+describe('deleteTextLabel', () => {
+  it('removes the entry', () => {
+    const doc = makeDoc({ textLabels: [makeTextLabel({ id: 'g1' })] });
+    expect(T.deleteTextLabel(doc, 'g1').textLabels.g1).toBeUndefined();
+  });
+  it('is a no-op for missing ids (preserves reference)', () => {
+    const doc = makeDoc({ textLabels: [makeTextLabel({ id: 'g1' })] });
+    expect(T.deleteTextLabel(doc, 'nope')).toBe(doc);
+  });
+});
+
+describe('rotateItemsAround — labels', () => {
+  const SQRT2_2 = Math.SQRT2 / 2;
+  const lb = (id: string): T.ItemRef => ({ type: 'label', id });
+  const st = (id: string): T.ItemRef => ({ type: 'station', id });
+
+  it('label pivot: pivot stays, label sibling orbits', () => {
+    const doc = makeDoc({
+      textLabels: [
+        makeTextLabel({ id: 'p', x: 0, y: 0, rotation: 0 }),
+        makeTextLabel({ id: 's', x: 100, y: 0, rotation: 0 }),
+      ],
+    });
+    const next = T.rotateItemsAround(doc, lb('p'), [lb('p'), lb('s')]);
+    expect(next.textLabels.p).toMatchObject({ rotation: 1, x: 0, y: 0 });
+    expect(next.textLabels.s.rotation).toBe(1);
+    expect(next.textLabels.s.x).toBeCloseTo(100 * SQRT2_2, 5);
+    expect(next.textLabels.s.y).toBeCloseTo(100 * SQRT2_2, 5);
+  });
+
+  it('label pivot orbits a station sibling around the label position', () => {
+    const doc = makeDoc({
+      stations: [makeStation({ id: 's', x: 100, y: 0 })],
+      textLabels: [makeTextLabel({ id: 'p', x: 0, y: 0 })],
+    });
+    const next = T.rotateItemsAround(doc, lb('p'), [lb('p'), st('s')]);
+    expect(next.textLabels.p).toMatchObject({ rotation: 1, x: 0, y: 0 });
+    expect(next.stations.s.x).toBeCloseTo(100 * SQRT2_2, 5);
+    expect(next.stations.s.y).toBeCloseTo(100 * SQRT2_2, 5);
+  });
+
+  it('station pivot orbits a label sibling', () => {
+    const doc = makeDoc({
+      stations: [makeStation({ id: 'p', x: 0, y: 0 })],
+      textLabels: [makeTextLabel({ id: 's', x: 100, y: 0 })],
+    });
+    const next = T.rotateItemsAround(doc, st('p'), [st('p'), lb('s')]);
+    expect(next.stations.p).toMatchObject({ rotation: 1, x: 0, y: 0 });
+    expect(next.textLabels.s.rotation).toBe(1);
+    expect(next.textLabels.s.x).toBeCloseTo(100 * SQRT2_2, 5);
+    expect(next.textLabels.s.y).toBeCloseTo(100 * SQRT2_2, 5);
+  });
+
+  it('skips label members missing from the doc', () => {
+    const doc = makeDoc({
+      textLabels: [makeTextLabel({ id: 'p', x: 0, y: 0 })],
+    });
+    const next = T.rotateItemsAround(doc, lb('p'), [lb('p'), lb('ghost')]);
+    expect(next.textLabels.p.rotation).toBe(1);
+    expect(Object.keys(next.textLabels)).toEqual(['p']);
   });
 });

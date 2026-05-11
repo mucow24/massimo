@@ -8,6 +8,7 @@ import type {
   StationId,
   StopCell,
   StopOrientation,
+  TextLabel,
 } from '../model/types';
 
 export function makeStation(overrides: Partial<Station> & { id: StationId }): Station {
@@ -56,6 +57,20 @@ export function makeLine(overrides: Partial<Line> & { id: LineId }): Line {
   };
 }
 
+export function makeTextLabel(overrides: Partial<TextLabel> & { id: string }): TextLabel {
+  return {
+    x: 0,
+    y: 0,
+    rotation: 0,
+    text: 'Label',
+    fontSize: 16,
+    weight: 400,
+    italic: false,
+    align: 'left',
+    ...overrides,
+  };
+}
+
 export function makeDoc(parts: {
   stations?: Station[];
   lines?: Line[];
@@ -63,6 +78,7 @@ export function makeDoc(parts: {
   curveRadius?: number;
   lineTags?: import('../model/types').LineTag[];
   transfers?: import('../model/types').Transfer[];
+  textLabels?: TextLabel[];
   labelFontSize?: number;
   labelBold?: boolean;
   labelItalic?: boolean;
@@ -76,6 +92,8 @@ export function makeDoc(parts: {
   for (const t of parts.lineTags ?? []) lineTags[t.id] = t;
   const transfers: Record<string, import('../model/types').Transfer> = {};
   for (const x of parts.transfers ?? []) transfers[x.id] = x;
+  const textLabels: Record<string, TextLabel> = {};
+  for (const g of parts.textLabels ?? []) textLabels[g.id] = g;
   return {
     stations,
     lines,
@@ -85,6 +103,7 @@ export function makeDoc(parts: {
     lineTags,
     routeBullets: {},
     transfers,
+    textLabels,
     labelFontSize: parts.labelFontSize ?? 12,
     labelBold: parts.labelBold ?? false,
     labelItalic: parts.labelItalic ?? false,

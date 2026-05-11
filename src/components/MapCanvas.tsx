@@ -25,8 +25,11 @@ import { EditingBanner } from './canvas/EditingBanner';
 import { SnapGuides } from './canvas/SnapGuides';
 import { LineTagsLayer } from './canvas/LineTagsLayer';
 import { StationPlacingPreview } from './canvas/StationPlacingPreview';
+import { LabelPlacingPreview } from './canvas/LabelPlacingPreview';
 import { RouteBulletView } from './RouteBulletView';
 import { RouteBulletPopover } from './RouteBulletPopover';
+import { LabelView } from './LabelView';
+import { TextLabelPopover } from './TextLabelPopover';
 import { TransferLayer, transferEndWorld } from './TransferLayer';
 import {
   closestParamOnOffsetPath,
@@ -57,6 +60,10 @@ export function MapCanvas() {
   const moveRouteBullet = useDoc((s) => s.moveRouteBullet);
   const rotateRouteBullet = useDoc((s) => s.rotateRouteBullet);
   const transfers = useDoc((s) => s.transfers);
+  const textLabels = useDoc((s) => s.textLabels);
+  const addTextLabel = useDoc((s) => s.addTextLabel);
+  const moveTextLabel = useDoc((s) => s.moveTextLabel);
+  const rotateTextLabel = useDoc((s) => s.rotateTextLabel);
   const selection = useSelection();
   const snapModes = useSnapPrefs((s) => s.modes);
   const highlightLineId = selection.selectedLineId;
@@ -71,6 +78,7 @@ export function MapCanvas() {
   // selected on release.
   const washIds = rectSelect.previewStationIds ?? selection.selectedStationIds;
   const bulletSelectedIds = rectSelect.previewBulletIds ?? selection.selectedRouteBulletIds;
+  const labelSelectedIds = rectSelect.previewLabelIds ?? selection.selectedLabelIds;
 
   const bands = useMemo(
     () => buildBands(stations, lines, curveRadius, lineOrder),
@@ -142,6 +150,21 @@ export function MapCanvas() {
     stationSiblings: { id: string; startX: number; startY: number }[];
     history: ReturnType<typeof beginHistoryGroup>;
   } | null>(null);
+  // Text-label drag state. Same shape as bulletDragRef, minus snap (labels
+  // don't snap in this iteration). Tracks group-drag siblings (other labels,
+  // stations, bullets) so the whole multi-selection moves as a rigid body.
+  const labelDragRef = useRef<{
+    id: string;
+    startWX: number;
+    startWY: number;
+    startMX: number;
+    startMY: number;
+    moved: boolean;
+    labelSiblings: { id: string; startX: number; startY: number }[];
+    bulletSiblings: { id: string; startX: number; startY: number }[];
+    stationSiblings: { id: string; startX: number; startY: number }[];
+    history: ReturnType<typeof beginHistoryGroup>;
+  } | null>(null);
   const [bulletSnapGuides, setBulletSnapGuides] = useState<SnapGuide[]>([]);
   // Cursor position in world coords — drives the in-progress transfer line
   // from the anchor dot to the cursor, and the station-placing-mode ghost
@@ -180,7 +203,11 @@ export function MapCanvas() {
     view.onPointerMove(e);
     drag.onPointerMove(e);
     rectSelect.onPointerMove(e);
-    if ((selection.creatingTransfer && selection.transferAnchor) || selection.placingStation) {
+    if (
+      (selection.creatingTransfer && selection.transferAnchor) ||
+      selection.placingStation ||
+      selection.placingLabel
+    ) {
       setCursorWorld(view.screenToWorld(e.clientX, e.clientY));
     } else if (cursorWorld) {
       setCursorWorld(null);
@@ -237,6 +264,36 @@ export function MapCanvas() {
         }
       }
     }
+    const ld = labelDragRef.current;
+    if (ld) {
+      const dxScreen = e.clientX - ld.startMX;
+      const dyScreen = e.clientY - ld.startMY;
+      if (!ld.moved && Math.hypot(dxScreen, dyScreen) > 4) {
+        ld.moved = true;
+        dragState.suppressClick = true;
+        svgRef.current?.setPointerCapture(e.pointerId);
+      }
+      if (ld.moved) {
+        const dx = dxScreen / view.viewport.zoom;
+        const dy = dyScreen / view.viewport.zoom;
+        const nx = ld.startWX + dx;
+        const ny = ld.startWY + dy;
+        moveTextLabel(ld.id, nx, ny);
+        const inGroupDrag =
+          ld.labelSiblings.length + ld.bulletSiblings.length + ld.stationSiblings.length > 0;
+        if (inGroupDrag) {
+          for (const ls of ld.labelSiblings) {
+            moveTextLabel(ls.id, ls.startX + dx, ls.startY + dy);
+          }
+          for (const bs of ld.bulletSiblings) {
+            moveRouteBullet(bs.id, bs.startX + dx, bs.startY + dy);
+          }
+          for (const ss of ld.stationSiblings) {
+            useDoc.getState().moveStation(ss.id, ss.startX + dx, ss.startY + dy);
+          }
+        }
+      }
+    }
   };
   const onPointerUp = (e: React.PointerEvent) => {
     view.onPointerUp(e);
@@ -259,6 +316,24 @@ export function MapCanvas() {
         }, 0);
       } else {
         bd.history.cancel();
+      }
+    }
+    const ld = labelDragRef.current;
+    if (ld) {
+      const wasMoved = ld.moved;
+      labelDragRef.current = null;
+      if (wasMoved) {
+        ld.history.commit();
+        try {
+          svgRef.current?.releasePointerCapture(e.pointerId);
+        } catch {
+          // pointer may not have been captured
+        }
+        setTimeout(() => {
+          dragState.suppressClick = false;
+        }, 0);
+      } else {
+        ld.history.cancel();
       }
     }
   };
@@ -319,20 +394,103 @@ export function MapCanvas() {
     e.stopPropagation();
     // Right-click on a bullet that's part of a multi-selection rotates
     // the whole group rigidly around this bullet, mirroring the station
-    // gesture; both bullets and stations orbit via rotateItemsAround.
+    // gesture. Stations, bullets, and labels all orbit via the unified
+    // rotateItemsAround.
     const sel = useSelection.getState();
     const stIds = sel.selectedStationIds;
     const blIds = sel.selectedRouteBulletIds;
-    const total = stIds.length + blIds.length;
+    const lbIds = sel.selectedLabelIds;
+    const total = stIds.length + blIds.length + lbIds.length;
     if (total > 1 && blIds.includes(id)) {
-      const members: { type: 'station' | 'bullet'; id: string }[] = [
+      const members: { type: 'station' | 'bullet' | 'label'; id: string }[] = [
         ...stIds.map((sid) => ({ type: 'station' as const, id: sid })),
         ...blIds.map((bid) => ({ type: 'bullet' as const, id: bid })),
+        ...lbIds.map((gid) => ({ type: 'label' as const, id: gid })),
       ];
       useDoc.getState().rotateItemsAround({ type: 'bullet', id }, members);
       return;
     }
     rotateRouteBullet(id);
+  };
+
+  const onLabelClick = (id: string, e: React.MouseEvent) => {
+    if (dragState.suppressClick) return;
+    if (inHandMode) return;
+    e.stopPropagation();
+    // Shift-click toggles membership (matching stations / bullets). Plain
+    // click replaces the whole selection with just this label, which also
+    // opens the popover (popover gates on `selectedLabelIds.length === 1`).
+    if (e.shiftKey) {
+      selection.toggleLabelSelection(id);
+      return;
+    }
+    selection.selectLabel(id);
+  };
+  const onLabelContextMenu = (id: string, e: React.MouseEvent) => {
+    e.preventDefault();
+    e.stopPropagation();
+    // Right-click on a label that's part of a multi-selection rotates the
+    // whole group rigidly around this label, mirroring station + bullet
+    // gestures. All three item types orbit via the unified rotateItemsAround.
+    const sel = useSelection.getState();
+    const stIds = sel.selectedStationIds;
+    const blIds = sel.selectedRouteBulletIds;
+    const lbIds = sel.selectedLabelIds;
+    const total = stIds.length + blIds.length + lbIds.length;
+    if (total > 1 && lbIds.includes(id)) {
+      const members: { type: 'station' | 'bullet' | 'label'; id: string }[] = [
+        ...stIds.map((sid) => ({ type: 'station' as const, id: sid })),
+        ...blIds.map((bid) => ({ type: 'bullet' as const, id: bid })),
+        ...lbIds.map((gid) => ({ type: 'label' as const, id: gid })),
+      ];
+      useDoc.getState().rotateItemsAround({ type: 'label', id }, members);
+      return;
+    }
+    rotateTextLabel(id);
+  };
+  const onLabelPointerDown = (id: string, e: React.PointerEvent) => {
+    if (e.button !== 0) return;
+    if (inHandMode) return;
+    const lbl = textLabels[id];
+    if (!lbl) return;
+    e.stopPropagation();
+    // Group-drag: if the grabbed label is part of the multi-selection,
+    // every other selected item (labels + bullets + stations) tags along.
+    const sel = useSelection.getState();
+    const includesGrabbed = sel.selectedLabelIds.includes(id);
+    const labelSiblings: { id: string; startX: number; startY: number }[] = [];
+    const bulletSiblings: { id: string; startX: number; startY: number }[] = [];
+    const stationSiblings: { id: string; startX: number; startY: number }[] = [];
+    if (includesGrabbed) {
+      for (const gid of sel.selectedLabelIds) {
+        if (gid === id) continue;
+        const sg = textLabels[gid];
+        if (!sg) continue;
+        labelSiblings.push({ id: gid, startX: sg.x, startY: sg.y });
+      }
+      for (const bid of sel.selectedRouteBulletIds) {
+        const sb = routeBullets[bid];
+        if (!sb) continue;
+        bulletSiblings.push({ id: bid, startX: sb.x, startY: sb.y });
+      }
+      for (const sid of sel.selectedStationIds) {
+        const ss = stations[sid];
+        if (!ss) continue;
+        stationSiblings.push({ id: sid, startX: ss.x, startY: ss.y });
+      }
+    }
+    labelDragRef.current = {
+      id,
+      startWX: lbl.x,
+      startWY: lbl.y,
+      startMX: e.clientX,
+      startMY: e.clientY,
+      moved: false,
+      labelSiblings,
+      bulletSiblings,
+      stationSiblings,
+      history: beginHistoryGroup(),
+    };
   };
 
   const onCanvasClick = (e: React.MouseEvent) => {
@@ -375,10 +533,22 @@ export function MapCanvas() {
       selection.setCreatingTransfer(false);
       return;
     }
+    if (selection.placingLabel) {
+      // Single-shot: place one label, exit placing mode, and auto-select the
+      // new label so the popover opens. Different from station / bullet
+      // placement, which stay in mode for rapid click-click-click drops —
+      // labels are heavier (text edit) so the single-shot flow makes sense.
+      const w = view.screenToWorld(e.clientX, e.clientY);
+      const id = addTextLabel(w.x, w.y);
+      selection.setPlacingLabel(false);
+      selection.selectLabel(id);
+      return;
+    }
     selection.selectStation(null);
     selection.selectLineTag(null);
     selection.selectRouteBullet(null);
     selection.selectTransfer(null);
+    selection.selectLabel(null);
   };
 
   // Hover/click handlers passed to SegmentBand when in add-line-tag mode.
@@ -612,6 +782,10 @@ export function MapCanvas() {
           name={previewName}
           lines={lines}
         />
+        {/* Label-placing-mode ghost: a faint "New Label" following the cursor
+            before the click. Single-shot placement, so it disappears as soon
+            as the user clicks (the click handler exits placingLabel). */}
+        <LabelPlacingPreview world={selection.placingLabel ? cursorWorld : null} />
 
         {/* Route bullets: rendered before the dim so they fade with the
             rest of the map when a line is selected. */}
@@ -624,6 +798,21 @@ export function MapCanvas() {
             onPointerDown={onBulletPointerDown}
             onClick={onBulletClick}
             onContextMenu={onBulletContextMenu}
+          />
+        ))}
+
+        {/* Text labels: free-floating annotations on top of stations + bullets
+            but beneath the selection stroke ring. Dimmed alongside the rest
+            of the map when a line is selected. */}
+        {Object.values(textLabels).map((g) => (
+          <LabelView
+            key={g.id}
+            label={g}
+            selected={labelSelectedIds.includes(g.id)}
+            layer="bg"
+            onPointerDown={onLabelPointerDown}
+            onClick={onLabelClick}
+            onContextMenu={onLabelContextMenu}
           />
         ))}
 
@@ -1001,6 +1190,17 @@ export function MapCanvas() {
             ),
         )}
 
+        {/* Selection stroke for text labels: dashed black ring around each
+            selected label's rotated bbox. Painted in this pass so it sits
+            above the dim overlay and on top of the network — matching how
+            stations and bullets handle their outlines. */}
+        {labelSelectedIds.map(
+          (gid) =>
+            textLabels[gid] && (
+              <LabelView key={gid + ':stroke'} label={textLabels[gid]} selected layer="stroke" />
+            ),
+        )}
+
         {/* Rubber-band rect for the rect-select gesture. World coords; the
             stroke width compensates for zoom so the dashed line stays a
             consistent screen weight. */}
@@ -1040,6 +1240,25 @@ export function MapCanvas() {
               bullet={b}
               anchor={{ x, y }}
               onClose={() => selection.selectRouteBullet(null)}
+            />
+          );
+        })()}
+
+      {selection.selectedLabelIds.length === 1 &&
+        selection.selectedStationIds.length === 0 &&
+        selection.selectedRouteBulletIds.length === 0 &&
+        textLabels[selection.selectedLabelIds[0]] &&
+        view.vbW > 0 &&
+        view.vbH > 0 &&
+        (() => {
+          const g = textLabels[selection.selectedLabelIds[0]];
+          const x = ((g.x - view.vbX) / view.vbW) * view.size.w;
+          const y = ((g.y - view.vbY) / view.vbH) * view.size.h;
+          return (
+            <TextLabelPopover
+              label={g}
+              anchor={{ x, y }}
+              onClose={() => selection.selectLabel(null)}
             />
           );
         })()}

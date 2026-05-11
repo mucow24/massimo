@@ -18,6 +18,7 @@ import type {
   StationId,
   StopCell,
   StopOrientation,
+  TextLabel,
   Transfer,
 } from './types';
 
@@ -34,10 +35,24 @@ export const DEFAULT_DOC: MapDoc = {
   lineTags: {},
   routeBullets: {},
   transfers: {},
+  textLabels: {},
   labelFontSize: LABEL_FONT_SIZE_DEFAULT,
   labelBold: false,
   labelItalic: false,
   activePalettes: ['mta'],
+};
+
+// TextLabel constants and defaults — exported so the popover, placement
+// preview, and tests share a single source of truth.
+export const TEXT_LABEL_FONT_SIZE_MIN = 1;
+export const TEXT_LABEL_FONT_SIZE_MAX = 96;
+export const TEXT_LABEL_DEFAULTS: Omit<TextLabel, 'id' | 'x' | 'y'> = {
+  rotation: 0,
+  text: 'New Label',
+  fontSize: 16,
+  weight: 400,
+  italic: false,
+  align: 'left',
 };
 
 // ---------- Stations ----------
@@ -282,24 +297,29 @@ export function rotateStationsAround(doc: MapDoc, pivotId: StationId, ids: Stati
 }
 
 /**
- * Reference to a member of a station+bullet multi-selection. Used by
+ * Reference to a member of a station+bullet+label multi-selection. Used by
  * `rotateItemsAround` to identify which doc collection each member lives
  * in without requiring callers to pre-split by type.
  */
 export interface ItemRef {
-  type: 'station' | 'bullet';
+  type: 'station' | 'bullet' | 'label';
   id: string;
 }
 
 /**
  * Generalized version of `rotateStationsAround` that handles a mixed
- * station+bullet selection. Pivot can be either type. Each member's own
- * rotation steps by one; non-pivot members orbit 45° clockwise around
- * the pivot's world position. Members whose ids are missing from the doc
- * are silently skipped — selection state can outlive a doc edit (undo).
+ * station+bullet+label selection. Pivot can be any of the three types. Each
+ * member's own rotation steps by one; non-pivot members orbit 45° clockwise
+ * around the pivot's world position. Members whose ids are missing from the
+ * doc are silently skipped — selection state can outlive a doc edit (undo).
  */
 export function rotateItemsAround(doc: MapDoc, pivot: ItemRef, members: ItemRef[]): MapDoc {
-  const pivotItem = pivot.type === 'station' ? doc.stations[pivot.id] : doc.routeBullets[pivot.id];
+  const pivotItem =
+    pivot.type === 'station'
+      ? doc.stations[pivot.id]
+      : pivot.type === 'bullet'
+        ? doc.routeBullets[pivot.id]
+        : doc.textLabels[pivot.id];
   if (!pivotItem) return doc;
   const px = pivotItem.x;
   const py = pivotItem.y;
@@ -309,6 +329,7 @@ export function rotateItemsAround(doc: MapDoc, pivot: ItemRef, members: ItemRef[
 
   let stations = doc.stations;
   let routeBullets = doc.routeBullets;
+  let textLabels = doc.textLabels;
 
   for (const m of members) {
     const isPivot = m.type === pivot.type && m.id === pivot.id;
@@ -325,7 +346,7 @@ export function rotateItemsAround(doc: MapDoc, pivot: ItemRef, members: ItemRef[
         ny = py + dx * sn + dy * cs;
       }
       stations = { ...stations, [m.id]: { ...cur, rotation: nextRot, x: nx, y: ny } };
-    } else {
+    } else if (m.type === 'bullet') {
       const cur = routeBullets[m.id];
       if (!cur) continue;
       const nextRot = ((cur.rotation + 1) % 8) as Rotation;
@@ -341,9 +362,25 @@ export function rotateItemsAround(doc: MapDoc, pivot: ItemRef, members: ItemRef[
         ...routeBullets,
         [m.id]: { ...cur, rotation: nextRot, x: nx, y: ny },
       };
+    } else {
+      const cur = textLabels[m.id];
+      if (!cur) continue;
+      const nextRot = ((cur.rotation + 1) % 8) as Rotation;
+      let nx = cur.x;
+      let ny = cur.y;
+      if (!isPivot) {
+        const dx = cur.x - px;
+        const dy = cur.y - py;
+        nx = px + dx * cs - dy * sn;
+        ny = py + dx * sn + dy * cs;
+      }
+      textLabels = {
+        ...textLabels,
+        [m.id]: { ...cur, rotation: nextRot, x: nx, y: ny },
+      };
     }
   }
-  return { ...doc, stations, routeBullets };
+  return { ...doc, stations, routeBullets, textLabels };
 }
 
 /**
@@ -1019,6 +1056,61 @@ export function deleteRouteBullet(doc: MapDoc, id: string): MapDoc {
   if (!doc.routeBullets[id]) return doc;
   const { [id]: _gone, ...rest } = doc.routeBullets;
   return { ...doc, routeBullets: rest };
+}
+
+// ---------- Text labels ----------
+
+export function addTextLabel(doc: MapDoc, id: string, x: number, y: number): MapDoc {
+  const label: TextLabel = { id, x, y, ...TEXT_LABEL_DEFAULTS };
+  return { ...doc, textLabels: { ...doc.textLabels, [id]: label } };
+}
+
+// Insert a fully-specified label (used by duplicate + paste).
+export function addTextLabelWith(doc: MapDoc, id: string, fields: Omit<TextLabel, 'id'>): MapDoc {
+  const label: TextLabel = { id, ...fields };
+  return { ...doc, textLabels: { ...doc.textLabels, [id]: label } };
+}
+
+export function moveTextLabel(doc: MapDoc, id: string, x: number, y: number): MapDoc {
+  const cur = doc.textLabels[id];
+  if (!cur) return doc;
+  return { ...doc, textLabels: { ...doc.textLabels, [id]: { ...cur, x, y } } };
+}
+
+export function rotateTextLabel(doc: MapDoc, id: string): MapDoc {
+  const cur = doc.textLabels[id];
+  if (!cur) return doc;
+  const next = ((cur.rotation + 1) % 8) as Rotation;
+  return {
+    ...doc,
+    textLabels: { ...doc.textLabels, [id]: { ...cur, rotation: next } },
+  };
+}
+
+export function updateTextLabel(
+  doc: MapDoc,
+  id: string,
+  patch: Partial<Omit<TextLabel, 'id'>>,
+): MapDoc {
+  const cur = doc.textLabels[id];
+  if (!cur) return doc;
+  // Clamp font size to the allowed range so callers (slider, spinbutton,
+  // paste) can't push us out of band. Mirrors `setLabelFontSize`.
+  let nextPatch = patch;
+  if (typeof patch.fontSize === 'number') {
+    const clamped = Math.max(
+      TEXT_LABEL_FONT_SIZE_MIN,
+      Math.min(TEXT_LABEL_FONT_SIZE_MAX, Math.round(patch.fontSize)),
+    );
+    nextPatch = { ...patch, fontSize: clamped };
+  }
+  return { ...doc, textLabels: { ...doc.textLabels, [id]: { ...cur, ...nextPatch } } };
+}
+
+export function deleteTextLabel(doc: MapDoc, id: string): MapDoc {
+  if (!doc.textLabels[id]) return doc;
+  const { [id]: _gone, ...rest } = doc.textLabels;
+  return { ...doc, textLabels: rest };
 }
 
 // ---------- Transfers ----------

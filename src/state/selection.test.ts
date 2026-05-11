@@ -5,10 +5,12 @@ beforeEach(() => {
   useSelection.setState({
     selectedStationIds: [],
     selectedRouteBulletIds: [],
+    selectedLabelIds: [],
     selectedLineId: null,
     appendingToLineId: null,
     insertAfterIndex: null,
     placingStation: false,
+    placingLabel: false,
     selectedLineTagId: null,
     selectedTransferId: null,
     creatingLineTag: false,
@@ -205,6 +207,125 @@ describe('selection — route bullets (parallel array)', () => {
       useSelection.setState({ selectedRouteBulletIds: ['b1', 'b2', 'b3'] });
       useSelection.getState().xorRouteBulletsToSelection(['b2', 'b4']);
       expect(useSelection.getState().selectedRouteBulletIds).toEqual(['b1', 'b3', 'b4']);
+    });
+  });
+});
+
+describe('selection — text labels (parallel array)', () => {
+  it('initial state: empty array', () => {
+    expect(useSelection.getState().selectedLabelIds).toEqual([]);
+  });
+
+  describe('selectLabel', () => {
+    it('replaces with [id]', () => {
+      useSelection.getState().selectLabel('g1');
+      expect(useSelection.getState().selectedLabelIds).toEqual(['g1']);
+    });
+
+    it('null clears the array', () => {
+      useSelection.getState().selectLabel('g1');
+      useSelection.getState().selectLabel(null);
+      expect(useSelection.getState().selectedLabelIds).toEqual([]);
+    });
+
+    it('clears stations and bullets when picking a label', () => {
+      useSelection.setState({
+        selectedStationIds: ['A'],
+        selectedRouteBulletIds: ['b1'],
+      });
+      useSelection.getState().selectLabel('g1');
+      expect(useSelection.getState().selectedStationIds).toEqual([]);
+      expect(useSelection.getState().selectedRouteBulletIds).toEqual([]);
+      expect(useSelection.getState().selectedLabelIds).toEqual(['g1']);
+    });
+
+    it('selectStation clears labels too — plain click is exclusive', () => {
+      useSelection.setState({ selectedLabelIds: ['g1', 'g2'] });
+      useSelection.getState().selectStation('S1');
+      expect(useSelection.getState().selectedLabelIds).toEqual([]);
+    });
+
+    it('selectRouteBullet clears labels too', () => {
+      useSelection.setState({ selectedLabelIds: ['g1'] });
+      useSelection.getState().selectRouteBullet('b1');
+      expect(useSelection.getState().selectedLabelIds).toEqual([]);
+    });
+  });
+
+  describe('toggleLabelSelection', () => {
+    it('appends a new id', () => {
+      useSelection.getState().toggleLabelSelection('g1');
+      useSelection.getState().toggleLabelSelection('g2');
+      expect(useSelection.getState().selectedLabelIds).toEqual(['g1', 'g2']);
+    });
+
+    it('removes an existing id', () => {
+      useSelection.setState({ selectedLabelIds: ['g1', 'g2', 'g3'] });
+      useSelection.getState().toggleLabelSelection('g2');
+      expect(useSelection.getState().selectedLabelIds).toEqual(['g1', 'g3']);
+    });
+  });
+
+  describe('setLabelSelection', () => {
+    it('replaces with the given ids exactly, deduped last-wins', () => {
+      useSelection.setState({ selectedLabelIds: ['x'] });
+      useSelection.getState().setLabelSelection(['g1', 'g2', 'g1']);
+      expect(useSelection.getState().selectedLabelIds).toEqual(['g2', 'g1']);
+    });
+  });
+
+  describe('addLabelsToSelection', () => {
+    it('unions, preserving prior order', () => {
+      useSelection.setState({ selectedLabelIds: ['g1', 'g2'] });
+      useSelection.getState().addLabelsToSelection(['g2', 'g3']);
+      expect(useSelection.getState().selectedLabelIds).toEqual(['g1', 'g2', 'g3']);
+    });
+  });
+
+  describe('xorLabelsToSelection', () => {
+    it('removes intersection, appends rest', () => {
+      useSelection.setState({ selectedLabelIds: ['g1', 'g2', 'g3'] });
+      useSelection.getState().xorLabelsToSelection(['g2', 'g4']);
+      expect(useSelection.getState().selectedLabelIds).toEqual(['g1', 'g3', 'g4']);
+    });
+  });
+
+  describe('setPlacingLabel', () => {
+    it('entering label-placement clears other modes and selections', () => {
+      useSelection.setState({
+        placingStation: true,
+        creatingLineTag: true,
+        creatingRouteBullet: true,
+        creatingTransfer: true,
+        appendingToLineId: 'L1',
+        insertAfterIndex: 0,
+        selectedStationIds: ['A'],
+        selectedRouteBulletIds: ['b1'],
+        selectedLineId: 'L1',
+      });
+      useSelection.getState().setPlacingLabel(true);
+      const s = useSelection.getState();
+      expect(s.placingLabel).toBe(true);
+      expect(s.placingStation).toBe(false);
+      expect(s.creatingLineTag).toBe(false);
+      expect(s.creatingRouteBullet).toBe(false);
+      expect(s.creatingTransfer).toBe(false);
+      expect(s.appendingToLineId).toBeNull();
+      expect(s.selectedStationIds).toEqual([]);
+      expect(s.selectedRouteBulletIds).toEqual([]);
+      expect(s.selectedLineId).toBeNull();
+    });
+
+    it('setPlacingStation(true) cancels placingLabel', () => {
+      useSelection.setState({ placingLabel: true });
+      useSelection.getState().setPlacingStation(true);
+      expect(useSelection.getState().placingLabel).toBe(false);
+    });
+
+    it('setCreatingRouteBullet(true) cancels placingLabel', () => {
+      useSelection.setState({ placingLabel: true });
+      useSelection.getState().setCreatingRouteBullet(true);
+      expect(useSelection.getState().placingLabel).toBe(false);
     });
   });
 });

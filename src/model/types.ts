@@ -177,6 +177,8 @@ export interface MapDoc {
   routeBullets: Record<string, RouteBullet>;
   // Inter-station transfer indicators (a black line between two stations).
   transfers: Record<string, Transfer>;
+  // Free-floating text annotations ("Labels" in the UI). Keyed by label id.
+  textLabels: Record<string, TextLabel>;
   // Global station-label styling. Applies to every station name; line tags
   // and route bullets keep their always-bold pill styling.
   labelFontSize: number;
@@ -185,6 +187,31 @@ export interface MapDoc {
   // Which color palettes are available in the line editor. Invariant:
   // never empty (enforced by transforms / parse sanitiser).
   activePalettes: PaletteId[];
+}
+
+// Multi-line horizontal text alignment inside a TextLabel.
+export type TextLabelAlign = 'left' | 'center' | 'right';
+
+// Helvetica Neue weights we ship in /public/fonts/.
+export type TextLabelWeight = 100 | 200 | 300 | 400 | 500 | 700 | 800 | 900;
+
+// A free-floating, rotatable text annotation rendered on top of the map. Used
+// for neighborhood names, river labels, legend headings, etc. Position is the
+// label's center in world coords; rotation is the existing 8-step 45° axis.
+// The popover controls text content, font size (1..96), weight, italic, and
+// multi-line horizontal alignment. Not tied to any station or line.
+export interface TextLabel {
+  id: string;
+  x: number;
+  y: number;
+  rotation: Rotation;
+  // Multiline; '\n'-separated.
+  text: string;
+  // Integer in [1, 96].
+  fontSize: number;
+  weight: TextLabelWeight;
+  italic: boolean;
+  align: TextLabelAlign;
 }
 
 // One endpoint of a transfer: a specific dot on a station. `lineId` picks
