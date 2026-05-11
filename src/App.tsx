@@ -2,11 +2,10 @@ import { useEffect } from 'react';
 import { Toolbar } from './components/Toolbar';
 import { Sidebar } from './components/Sidebar';
 import { MapCanvas } from './components/MapCanvas';
-import { beginHistoryGroup, useDoc, useSelection } from './state/store';
+import { beginHistoryGroup, cancelAppendMode, useDoc, useSelection } from './state/store';
 import { readClipboard, writeClipboard } from './model/clipboard';
 
 export default function App() {
-  const setAppending = useSelection((s) => s.setAppending);
   const setPlacingStation = useSelection((s) => s.setPlacingStation);
   const setCreatingLineTag = useSelection((s) => s.setCreatingLineTag);
   const setCreatingRouteBullet = useSelection((s) => s.setCreatingRouteBullet);
@@ -27,7 +26,7 @@ export default function App() {
         tag === 'INPUT' || tag === 'TEXTAREA' || tag === 'SELECT' || target?.isContentEditable;
 
       if (e.key === 'Escape') {
-        setAppending(null);
+        cancelAppendMode();
         setPlacingStation(false);
         setCreatingLineTag(false);
         setCreatingRouteBullet(false);
@@ -173,7 +172,6 @@ export default function App() {
       window.removeEventListener('keyup', onKeyUp);
     };
   }, [
-    setAppending,
     setPlacingStation,
     setCreatingLineTag,
     setCreatingRouteBullet,
@@ -202,7 +200,7 @@ export default function App() {
         e.stopPropagation();
         sel.setPlacingStation(false);
         sel.setCreatingLineTag(false);
-        sel.setAppending(null);
+        cancelAppendMode();
         sel.setCreatingRouteBullet(false);
         sel.setCreatingTransfer(false);
       }
