@@ -135,7 +135,10 @@ export function Sidebar() {
                   >
                     <span className="grow">{st.name}</span>
                     <span className="line-badges">
-                      {linesAtStation(st.id).map((ln) => (
+                      {linesAtStation(st.id)
+                        .slice()
+                        .reverse()
+                        .map((ln) => (
                         <span
                           key={ln.id}
                           className="line-badge"
