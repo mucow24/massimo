@@ -17,7 +17,7 @@ export function Sidebar() {
   const moveLineInOrder = useDoc((s) => s.moveLineInOrder);
 
   const [stationSortBy, setStationSortBy] = useState<StationSortColumn>('name');
-  const [stationSortDir, setStationSortDir] = useState<SortDirection>('desc');
+  const [stationSortDir, setStationSortDir] = useState<SortDirection>('asc');
 
   const orderedLineIds = effectiveLineOrder(lineOrder, lines);
 
@@ -45,7 +45,7 @@ export function Sidebar() {
       setStationSortDir((d) => (d === 'asc' ? 'desc' : 'asc'));
     } else {
       setStationSortBy(col);
-      setStationSortDir('desc');
+      setStationSortDir('asc');
     }
   };
 
@@ -108,7 +108,7 @@ export function Sidebar() {
                 className={'sort-header' + (stationSortBy === 'stops' ? ' active' : '')}
                 onClick={() => handleStationSortClick('stops')}
               >
-                Stops
+                Lines
                 {stationSortBy === 'stops' && (
                   <span className="sort-arrow">{stationSortDir === 'asc' ? '▲' : '▼'}</span>
                 )}
@@ -135,25 +135,28 @@ export function Sidebar() {
                   >
                     <span className="grow">{st.name}</span>
                     <span className="line-badges">
-                      {linesAtStation(st.id).map((ln) => (
-                        <span
-                          key={ln.id}
-                          className="line-badge"
-                          style={{
-                            background: ln.color,
-                            color: legibleTextOn(ln.color),
-                            cursor: 'pointer',
-                          }}
-                          title={`Edit line ${ln.service}`}
-                          onClick={(e) => {
-                            e.stopPropagation();
-                            selection.setHoveredStation(null);
-                            selection.selectLine(ln.id);
-                          }}
-                        >
-                          {ln.service}
-                        </span>
-                      ))}
+                      {linesAtStation(st.id)
+                        .slice()
+                        .reverse()
+                        .map((ln) => (
+                          <span
+                            key={ln.id}
+                            className="line-badge"
+                            style={{
+                              background: ln.color,
+                              color: legibleTextOn(ln.color),
+                              cursor: 'pointer',
+                            }}
+                            title={`Edit line ${ln.service}`}
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              selection.setHoveredStation(null);
+                              selection.selectLine(ln.id);
+                            }}
+                          >
+                            {ln.service}
+                          </span>
+                        ))}
                     </span>
                     <button
                       className="btn-mini danger"
