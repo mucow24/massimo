@@ -1,6 +1,12 @@
 import { Fragment, useMemo, useRef, useState, type ReactNode } from 'react';
 
-import { beginHistoryGroup, dragState, useDoc, useSelection } from '../state/store';
+import {
+  beginHistoryGroup,
+  cancelAppendMode,
+  dragState,
+  useDoc,
+  useSelection,
+} from '../state/store';
 import { randomStationName } from '../state/stationNames';
 import { useSnapPrefs } from '../state/snapPrefs';
 import { snapDraggedStation, type SnapGuide } from '../geometry/snap';
@@ -367,7 +373,7 @@ export function MapCanvas() {
       return;
     }
     if (selection.appendingToLineId) {
-      selection.setAppending(null);
+      cancelAppendMode();
       return;
     }
     if (selection.creatingTransfer) {
