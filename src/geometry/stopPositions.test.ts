@@ -328,6 +328,118 @@ describe('computeRenderedStopPositions', () => {
     expect(p2.x - p1.x).toBeCloseTo(0, 5); // pure-perp compression, no parallel slip
   });
 
+  it('places a cell-adjacent trailer at the would-be next slot of the compressed band', () => {
+    // Screenshot scenario: three auto-nw-se stops form a perp-adjacent run
+    // (cells (1,2), (2,1), (3,0)) and get compressed. A fourth stop on a
+    // different axis (auto-horizontal) sits at cell (4,-1) — one diagonal
+    // king-step past the SW end of the run, AND one cellStep past green's
+    // cell perp along the band's perp axis. The trailer should slot into
+    // the band's rhythm at "k+1 perp", landing STOP_SIZE perp-distance past
+    // green's compressed position — not STOP_SIZE·√2 (the cell-grid step).
+    const st = makeStation({
+      id: 's1',
+      x: 0,
+      y: 0,
+      rotation: 0,
+      stops: [
+        makeStop('L1', { row: 1, col: 2, orientation: 'auto-nw-se' }),
+        makeStop('L2', { row: 2, col: 1, orientation: 'auto-nw-se' }),
+        makeStop('L3', { row: 3, col: 0, orientation: 'auto-nw-se' }),
+        makeStop('L4', { row: 4, col: -1, orientation: 'auto-horizontal' }),
+      ],
+    });
+    const get = computeRenderedStopPositions(dictOf(st));
+    const p3 = get('s1', 'L3');
+    const p4 = get('s1', 'L4');
+    // p4 should be exactly STOP_SIZE past p3 along the band's perp axis
+    // (NW-SE band → perp axis NE-SW; the slot-extension direction is the
+    // one toward larger perp in my code's perpAxis convention).
+    const dist = Math.hypot(p4.x - p3.x, p4.y - p3.y);
+    expect(dist).toBeCloseTo(STOP_SIZE, 5);
+    // And the parallel-axis offset between them is zero — they're on the
+    // same band-perp line through the station.
+    // Band travel axis is NW-SE = (√2/2, √2/2); parallel projection of (p4-p3) is 0.
+    const par = (p4.x - p3.x) * Math.SQRT1_2 + (p4.y - p3.y) * Math.SQRT1_2;
+    expect(par).toBeCloseTo(0, 5);
+  });
+
+  it('chains trailer slot extension across multiple cell-adjacent non-group stops', () => {
+    // Two-stop diagonal group at the NE end (perp-adjacent on auto-ne-sw).
+    // Trailer A is king-adjacent to one of the group members; trailer B is
+    // king-adjacent to trailer A only. Slot extension walks the chain:
+    // A lands at "slot 2" (one perp-step past L2 at slot 1), B at "slot 3".
+    // Each consecutive pair sits STOP_SIZE perp apart in world.
+    const st = makeStation({
+      id: 's1',
+      x: 0,
+      y: 0,
+      rotation: 0,
+      stops: [
+        makeStop('L1', { row: 0, col: 0, orientation: 'auto-ne-sw' }),
+        makeStop('L2', { row: 1, col: 1, orientation: 'auto-ne-sw' }),
+        // Trailer A at (2, 2): king-adjacent to L2 (chebyshev = 1) but not L1.
+        // Same band-parallel position as L1/L2 (i.e. colinear along band's perp axis).
+        makeStop('LA', { row: 2, col: 2, orientation: 'auto-horizontal' }),
+        // Trailer B at (3, 3): king-adjacent to LA only, colinear.
+        makeStop('LB', { row: 3, col: 3, orientation: 'auto-horizontal' }),
+      ],
+    });
+    const get = computeRenderedStopPositions(dictOf(st));
+    const p2 = get('s1', 'L2');
+    const pA = get('s1', 'LA');
+    const pB = get('s1', 'LB');
+    // Each successive pair is STOP_SIZE apart in world (along the perp axis).
+    expect(Math.hypot(pA.x - p2.x, pA.y - p2.y)).toBeCloseTo(STOP_SIZE, 5);
+    expect(Math.hypot(pB.x - pA.x, pB.y - pA.y)).toBeCloseTo(STOP_SIZE, 5);
+  });
+
+  it('pulls a non-perp-axis-aligned trailer one stripe-width in its cell-grid direction', () => {
+    // Trailer (silver) is directly south of green in the local cell grid —
+    // not along the band's perp axis (which is NE-SW for an NW-SE band).
+    // After compression, silver should sit STOP_SIZE south of green's
+    // compressed position — preserving the visual "one cell apart"
+    // relationship even though the band is on a diagonal axis.
+    const st = makeStation({
+      id: 's1',
+      x: 0,
+      y: 0,
+      rotation: 0,
+      stops: [
+        makeStop('L1', { row: 1, col: 2, orientation: 'auto-nw-se' }),
+        makeStop('L2', { row: 2, col: 1, orientation: 'auto-nw-se' }),
+        makeStop('L3', { row: 3, col: 0, orientation: 'auto-nw-se' }),
+        // Silver directly south of L3 in cells.
+        makeStop('L4', { row: 4, col: 0, orientation: 'auto-horizontal' }),
+      ],
+    });
+    const get = computeRenderedStopPositions(dictOf(st));
+    const p3 = get('s1', 'L3');
+    const p4 = get('s1', 'L4');
+    // Silver should be exactly STOP_SIZE south of green's compressed position.
+    expect(p4.x - p3.x).toBeCloseTo(0, 5);
+    expect(p4.y - p3.y).toBeCloseTo(STOP_SIZE, 5);
+  });
+
+  it('leaves stops alone when they are NOT cell-adjacent to any compressed group', () => {
+    // Diagonal group at the NE end; a faraway stop with no adjacency to it.
+    const st = makeStation({
+      id: 's1',
+      x: 0,
+      y: 0,
+      rotation: 0,
+      stops: [
+        makeStop('L1', { row: 0, col: 0, orientation: 'auto-ne-sw' }),
+        makeStop('L2', { row: 1, col: 1, orientation: 'auto-ne-sw' }),
+        // Trailer at (5, 5): chebyshev distance to L2 is 4 — not adjacent.
+        makeStop('LX', { row: 5, col: 5, orientation: 'auto-horizontal' }),
+      ],
+    });
+    const get = computeRenderedStopPositions(dictOf(st));
+    const pX = get('s1', 'LX');
+    // No shift: rendered position equals cell position.
+    expect(pX).toEqual({ x: 5 * STOP_SIZE, y: 5 * STOP_SIZE });
+  });
+
   it('returns the station anchor for an unknown (stationId, lineId)', () => {
     const st = makeStation({ id: 's1', x: 42, y: 88, stops: [makeStop('L1')] });
     const get = computeRenderedStopPositions(dictOf(st));
