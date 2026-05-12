@@ -5,6 +5,7 @@ import {
   buildOrderedRenderables,
   buildStopMarkers,
 } from './interlining';
+import { STOP_SIZE } from './orientation';
 import { makeDoc, makeLine, makeStation, makeStop, stationWithStop } from '../test/fixtures';
 import type { LineStyle } from '../model/types';
 
@@ -160,6 +161,130 @@ describe('buildBands — interlining', () => {
     expect(v[v.length - 1].y).toBeCloseTo(-100, 5);
     // No fillet warning — the world tangent matches the stop axis.
     expect(bands[0].warning).toBe(false);
+  });
+
+  it('merges two diagonal-adjacent lines on a NE-going pair into one band', () => {
+    // auto-ne-sw band perp axis is NW-SE; perp-adjacent cells differ by
+    // (dRow=+1, dCol=+1). At rotation 0 cells (0,0) and (1,1) have world
+    // delta (STOP_SIZE, STOP_SIZE) = SE along the perp axis. After
+    // compression the two stripes sit at ±STOP_SIZE/2 perp from the band
+    // centerline, packing exactly like cardinal interlining.
+    const doc = makeDoc({
+      stations: [
+        makeStation({
+          id: 's1',
+          x: 0,
+          y: 0,
+          rotation: 0,
+          stops: [
+            makeStop('L1', { row: 0, col: 0, orientation: 'auto-ne-sw' }),
+            makeStop('L2', { row: 1, col: 1, orientation: 'auto-ne-sw' }),
+          ],
+        }),
+        makeStation({
+          id: 's2',
+          x: 100,
+          y: -100,
+          rotation: 0,
+          stops: [
+            makeStop('L1', { row: 0, col: 0, orientation: 'auto-ne-sw' }),
+            makeStop('L2', { row: 1, col: 1, orientation: 'auto-ne-sw' }),
+          ],
+        }),
+      ],
+      lines: [
+        makeLine({ id: 'L1', stations: ['s1', 's2'] }),
+        makeLine({ id: 'L2', stations: ['s1', 's2'] }),
+      ],
+    });
+    const bands = buildBands(doc.stations, doc.lines, 24, doc.lineOrder);
+    expect(bands).toHaveLength(1);
+    expect(bands[0].lines).toHaveLength(2);
+    expect(bands[0].paths).toHaveLength(2);
+    // Centerline endpoints at each station's group centroid (cell-grid mean).
+    // s1 centroid: (STOP_SIZE/2, STOP_SIZE/2). s2 centroid offset by (100, -100).
+    const v = bands[0].centerline;
+    expect(v[0].x).toBeCloseTo(STOP_SIZE / 2, 5);
+    expect(v[0].y).toBeCloseTo(STOP_SIZE / 2, 5);
+    expect(v[v.length - 1].x).toBeCloseTo(100 + STOP_SIZE / 2, 5);
+    expect(v[v.length - 1].y).toBeCloseTo(-100 + STOP_SIZE / 2, 5);
+    expect(bands[0].warning).toBe(false);
+  });
+
+  it('merges three diagonal-adjacent lines on the same pair into a single 3-stripe band', () => {
+    // Three perp-adjacent auto-nw-se stops: cells (0,0), (-1,1), (-2,2).
+    // Perp axis NE-SW; consecutive cells differ by STOP_SIZE·√2 along NE
+    // (world delta (STOP_SIZE, -STOP_SIZE) each step).
+    const doc = makeDoc({
+      stations: [
+        makeStation({
+          id: 's1',
+          x: 0,
+          y: 0,
+          rotation: 0,
+          stops: [
+            makeStop('L1', { row: 0, col: 0, orientation: 'auto-nw-se' }),
+            makeStop('L2', { row: -1, col: 1, orientation: 'auto-nw-se' }),
+            makeStop('L3', { row: -2, col: 2, orientation: 'auto-nw-se' }),
+          ],
+        }),
+        makeStation({
+          id: 's2',
+          x: 200,
+          y: 200,
+          rotation: 0,
+          stops: [
+            makeStop('L1', { row: 0, col: 0, orientation: 'auto-nw-se' }),
+            makeStop('L2', { row: -1, col: 1, orientation: 'auto-nw-se' }),
+            makeStop('L3', { row: -2, col: 2, orientation: 'auto-nw-se' }),
+          ],
+        }),
+      ],
+      lines: [
+        makeLine({ id: 'L1', stations: ['s1', 's2'] }),
+        makeLine({ id: 'L2', stations: ['s1', 's2'] }),
+        makeLine({ id: 'L3', stations: ['s1', 's2'] }),
+      ],
+    });
+    const bands = buildBands(doc.stations, doc.lines, 24, doc.lineOrder);
+    expect(bands).toHaveLength(1);
+    expect(bands[0].lines).toHaveLength(3);
+    expect(bands[0].paths).toHaveLength(3);
+  });
+
+  it('non-perp-adjacent diagonal stops on the same pair stay in separate bands', () => {
+    // cells (0,0) and (3,3) for auto-ne-sw — 3·STOP_SIZE·√2 perp apart,
+    // far beyond the adjacency tolerance. Should produce two bands.
+    const doc = makeDoc({
+      stations: [
+        makeStation({
+          id: 's1',
+          x: 0,
+          y: 0,
+          rotation: 0,
+          stops: [
+            makeStop('L1', { row: 0, col: 0, orientation: 'auto-ne-sw' }),
+            makeStop('L2', { row: 3, col: 3, orientation: 'auto-ne-sw' }),
+          ],
+        }),
+        makeStation({
+          id: 's2',
+          x: 100,
+          y: -100,
+          rotation: 0,
+          stops: [
+            makeStop('L1', { row: 0, col: 0, orientation: 'auto-ne-sw' }),
+            makeStop('L2', { row: 3, col: 3, orientation: 'auto-ne-sw' }),
+          ],
+        }),
+      ],
+      lines: [
+        makeLine({ id: 'L1', stations: ['s1', 's2'] }),
+        makeLine({ id: 'L2', stations: ['s1', 's2'] }),
+      ],
+    });
+    const bands = buildBands(doc.stations, doc.lines, 24, doc.lineOrder);
+    expect(bands).toHaveLength(2);
   });
 
   it('keeps non-adjacent lines on a shared pair in separate bands', () => {

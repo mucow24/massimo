@@ -4,6 +4,7 @@ import { Vec2 } from './vec';
 import { route } from './router';
 import { rotateBy, STOP_SIZE, stopCenterAt, travelDirLocal } from './orientation';
 import { offsetFilletPath } from './router';
+import { computeRenderedStopPositions, type RenderedStopPositions } from './stopPositions';
 
 export interface SegmentBandSpec {
   pairKey: string;
@@ -74,7 +75,11 @@ interface SegInfo {
 }
 
 // Stop center in WORLD coords (anchor + cell offset rotated by station rotation).
-function stopPosWorld(cell: StopCell, station: Station): Vec2 {
+// This is the *cell-grid* world position — the literal location of the stop's
+// cell. For visual placement (markers, bands, transfers, snap candidates), use
+// `computeRenderedStopPositions` instead, which compresses diagonal interline
+// groups so stripes pack at STOP_SIZE perp spacing.
+export function stopPosWorld(cell: StopCell, station: Station): Vec2 {
   const local = stopCenterAt(cell.row, cell.col);
   const a = (station.rotation * Math.PI) / 4;
   const c = Math.cos(a);
@@ -94,13 +99,13 @@ function worldToStationLocal(v: Vec2, station: Station): Vec2 {
   return { x: v.x * c - v.y * s, y: v.x * s + v.y * c };
 }
 
-function travelDirWorld(cell: StopCell, station: Station, worldHint: Vec2 | null): Vec2 {
+export function travelDirWorld(cell: StopCell, station: Station, worldHint: Vec2 | null): Vec2 {
   const localHint = worldHint ? worldToStationLocal(worldHint, station) : null;
   return rotateBy(travelDirLocal(cell.orientation, localHint), station.rotation);
 }
 
 // Quantize a unit vector to one of 8 compass directions.
-function dirIndex8(v: Vec2): number {
+export function dirIndex8(v: Vec2): number {
   const a = Math.atan2(v.y, v.x);
   return ((Math.round(a / (Math.PI / 4)) % 8) + 8) % 8;
 }
@@ -117,6 +122,7 @@ export function buildBands(
   lines: Record<LineId, Line>,
   curveRadius: number,
   lineOrder: LineId[] = [],
+  renderedPos: RenderedStopPositions = computeRenderedStopPositions(stations),
 ): SegmentBandSpec[] {
   // 1. Collect per-line segments keyed by sorted station pair, with stop cells.
   const groups: Record<string, SegInfo[]> = {};
@@ -206,8 +212,8 @@ export function buildBands(
         tParPos: number;
       };
       const enriched: Enriched[] = bucket.map((s) => {
-        const fp = stopPosWorld(s.fromCell, stations[s.fromId]);
-        const tp = stopPosWorld(s.toCell, stations[s.toId]);
+        const fp = renderedPos(s.fromId, s.lineId);
+        const tp = renderedPos(s.toId, s.lineId);
         return {
           seg: s,
           fPerpPos: fp.x * fPerp.x + fp.y * fPerp.y,
@@ -226,11 +232,11 @@ export function buildBands(
         bands.push(
           buildBandSpec(
             group.map((e) => e.seg),
-            stations,
             curveRadius,
             pairKey,
             fDir,
             tDir,
+            renderedPos,
           ),
         );
         group = [];
@@ -337,6 +343,7 @@ export function buildStopMarkers(
   lines: Record<LineId, Line>,
   lineOrder: LineId[],
   bands: SegmentBandSpec[] = [],
+  renderedPos: RenderedStopPositions = computeRenderedStopPositions(stations),
 ): StopMarkerSpec[] {
   const lineIndex = buildLineIndex(lineOrder, lines);
   const fallback = Object.keys(lineIndex).length;
@@ -348,13 +355,7 @@ export function buildStopMarkers(
     for (const cell of station.stops) {
       const line = lines[cell.lineId];
       if (!line) continue;
-      const local = stopCenterAt(cell.row, cell.col);
-      // Apply station rotation to local point to get world center.
-      const a = (station.rotation * Math.PI) / 4;
-      const c = Math.cos(a);
-      const s = Math.sin(a);
-      const cx = station.x + local.x * c - local.y * s;
-      const cy = station.y + local.x * s + local.y * c;
+      const { x: cx, y: cy } = renderedPos(station.id, cell.lineId);
       // Rotate the marker square so its edges run parallel/perpendicular to
       // the stop's world-frame travel axis. For cardinal-axis stops this is
       // equivalent to station.rotation * 45 (mod 90, which the square's
@@ -448,7 +449,6 @@ function stationMarkerStyle(line: Line, stationId: StationId): LineStyle {
 
 function buildBandSpec(
   group: SegInfo[],
-  stations: Record<StationId, Station>,
   R: number,
   pairKey: string,
   // The band's canonical-direction tangents (signed canonFrom→canonTo). Must
@@ -456,16 +456,15 @@ function buildBandSpec(
   // router and the merge basis agree.
   fromDir: Vec2,
   toDir: Vec2,
+  renderedPos: RenderedStopPositions,
 ): SegmentBandSpec {
-  const fromStation = stations[group[0].fromId];
-  const toStation = stations[group[0].toId];
-
-  // Centerline endpoints are the mean of the band's per-line stop centers in
-  // WORLD coords. Travel directions also come from world (per-stop orientation
-  // rotated by station rotation), so a band can span stations whose local
-  // orientations differ as long as the world tangent matches.
-  const fromWorlds = group.map((g) => stopPosWorld(g.fromCell, fromStation));
-  const toWorlds = group.map((g) => stopPosWorld(g.toCell, toStation));
+  // Centerline endpoints are the mean of the band's per-line stop RENDERED
+  // positions. For cardinal bands rendered = cell position; for diagonal
+  // interline groups each stop is compressed perpendicular-to-band so stripes
+  // pack at STOP_SIZE. By construction the centroid is invariant under
+  // compression, so the centerline stays anchored where it was.
+  const fromWorlds = group.map((g) => renderedPos(g.fromId, g.lineId));
+  const toWorlds = group.map((g) => renderedPos(g.toId, g.lineId));
   const meanVec = (vs: Vec2[]): Vec2 => ({
     x: vs.reduce((a, p) => a + p.x, 0) / vs.length,
     y: vs.reduce((a, p) => a + p.y, 0) / vs.length,
