@@ -14,7 +14,7 @@ describe('serialize / parse round-trip', () => {
           rotation: 3,
           stops: [
             makeStop('L1', { row: 0, col: 0 }),
-            makeStop('L2', { row: 0, col: 1, orientation: 'left' }),
+            makeStop('L2', { row: 0, col: 1, orientation: 'auto-horizontal' }),
           ],
           label: { row: 1, col: 2, rotation: 5, offset: 12, align: 'auto', valign: 'middle' },
         }),
@@ -145,6 +145,84 @@ describe('serialize / parse — segmentStyles', () => {
     const r = parse(serialize(doc));
     expect(r.ok).toBe(true);
     if (r.ok) expect(r.doc.lines.L1.segmentStyles).toBeUndefined();
+  });
+});
+
+describe('parse — legacy stop orientation migration', () => {
+  // Older docs (and any hand-written ones) may carry the vestigial
+  // explicit cardinals `up`/`down`/`left`/`right` or unknown garbage in
+  // `orientation`. parse() coerces them to the canonical auto-* axes;
+  // re-serialization writes only the four canonical strings.
+  const buildLegacyPayload = (orientations: string[]) =>
+    JSON.stringify({
+      format: 'massimo-map',
+      doc: {
+        stations: Object.fromEntries(
+          orientations.map((o, i) => [
+            `s${i}`,
+            {
+              id: `s${i}`,
+              name: `S${i}`,
+              x: 0,
+              y: i * 50,
+              rotation: 0,
+              stops: [{ lineId: 'L1', row: 0, col: 0, orientation: o }],
+              label: { row: 0, col: -1, rotation: 0, offset: 0, align: 'auto', valign: 'middle' },
+            },
+          ]),
+        ),
+        lines: {
+          L1: {
+            id: 'L1',
+            service: 'A',
+            name: 'A line',
+            color: '#0039A6',
+            stations: orientations.map((_, i) => `s${i}`),
+          },
+        },
+        lineOrder: ['L1'],
+        curveRadius: 20,
+        lineCounter: 1,
+        lineTags: {},
+        routeBullets: {},
+        transfers: {},
+        textLabels: {},
+        labelFontSize: 14,
+        labelBold: false,
+        labelItalic: false,
+        activePalettes: ['mta'],
+      },
+    });
+
+  it('coerces up/down to auto-vertical and left/right to auto-horizontal', () => {
+    const r = parse(buildLegacyPayload(['up', 'down', 'left', 'right']));
+    expect(r.ok).toBe(true);
+    if (!r.ok) return;
+    expect(r.doc.stations.s0.stops[0].orientation).toBe('auto-vertical');
+    expect(r.doc.stations.s1.stops[0].orientation).toBe('auto-vertical');
+    expect(r.doc.stations.s2.stops[0].orientation).toBe('auto-horizontal');
+    expect(r.doc.stations.s3.stops[0].orientation).toBe('auto-horizontal');
+  });
+
+  it('falls back unknown orientation values to auto-vertical', () => {
+    const r = parse(buildLegacyPayload(['nonsense', '', 'AUTO-VERTICAL']));
+    expect(r.ok).toBe(true);
+    if (!r.ok) return;
+    for (const id of ['s0', 's1', 's2']) {
+      expect(r.doc.stations[id].stops[0].orientation).toBe('auto-vertical');
+    }
+  });
+
+  it('leaves canonical auto-* values untouched', () => {
+    const r = parse(
+      buildLegacyPayload(['auto-vertical', 'auto-horizontal', 'auto-ne-sw', 'auto-nw-se']),
+    );
+    expect(r.ok).toBe(true);
+    if (!r.ok) return;
+    expect(r.doc.stations.s0.stops[0].orientation).toBe('auto-vertical');
+    expect(r.doc.stations.s1.stops[0].orientation).toBe('auto-horizontal');
+    expect(r.doc.stations.s2.stops[0].orientation).toBe('auto-ne-sw');
+    expect(r.doc.stations.s3.stops[0].orientation).toBe('auto-nw-se');
   });
 });
 

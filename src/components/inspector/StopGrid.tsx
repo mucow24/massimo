@@ -1,20 +1,17 @@
 import { useState } from 'react';
-
-type GridStopOrientation = 'up' | 'down' | 'auto-vertical' | 'left' | 'right' | 'auto-horizontal';
+import type { StopOrientation } from '../../model/types';
 
 type GridStation = {
   rotation: number;
-  stops: { lineId: string; row: number; col: number; orientation: GridStopOrientation }[];
+  stops: { lineId: string; row: number; col: number; orientation: StopOrientation }[];
   label: { row: number; col: number; rotation: number };
 };
 
-const ORIENTATION_GLYPH: Record<GridStopOrientation, string> = {
+const ORIENTATION_GLYPH: Record<StopOrientation, string> = {
   'auto-vertical': '↕',
-  up: '↑',
-  down: '↓',
+  'auto-ne-sw': '⤢',
   'auto-horizontal': '↔',
-  left: '←',
-  right: '→',
+  'auto-nw-se': '⤡',
 };
 
 type CellKind = 'label' | 'stop' | 'empty';

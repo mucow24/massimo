@@ -1,11 +1,67 @@
 import { DEFAULT_DOC } from './transforms';
 import { pairKeyOf } from './pairKey';
 import { PALETTES, type PaletteId } from './palettes';
-import type { Line, LineStyle, MapDoc } from './types';
+import type { Line, LineStyle, MapDoc, Station, StopOrientation } from './types';
 
 const KNOWN_LINE_STYLES = new Set<LineStyle>(['solid', 'dashed', 'hatched', 'hatched-mirror']);
 
 const KNOWN_PALETTE_IDS = new Set<PaletteId>(PALETTES.map((p) => p.id));
+
+const KNOWN_ORIENTATIONS = new Set<StopOrientation>([
+  'auto-vertical',
+  'auto-horizontal',
+  'auto-ne-sw',
+  'auto-nw-se',
+]);
+
+// Vestigial cardinals from earlier schema versions: collapse to the
+// matching auto-* axis. Unknown values fall back to 'auto-vertical'.
+const LEGACY_ORIENTATION_MIGRATIONS: Record<string, StopOrientation> = {
+  up: 'auto-vertical',
+  down: 'auto-vertical',
+  left: 'auto-horizontal',
+  right: 'auto-horizontal',
+};
+
+function migrateStopOrientation(o: unknown): StopOrientation {
+  if (typeof o === 'string') {
+    if (KNOWN_ORIENTATIONS.has(o as StopOrientation)) return o as StopOrientation;
+    const mapped = LEGACY_ORIENTATION_MIGRATIONS[o];
+    if (mapped) return mapped;
+  }
+  return 'auto-vertical';
+}
+
+// Re-apply the legacy-orientation migration to a stations dict. Used by
+// `parse()` (file-import path) and by the zustand persist `migrate` hook
+// (localStorage rehydration path) so legacy values from BOTH entry points
+// are normalized before any consumer reads them.
+export function sanitizeStations(stations: Record<string, Station>): {
+  stations: Record<string, Station>;
+  changed: boolean;
+} {
+  let changed = false;
+  const out: Record<string, Station> = {};
+  for (const id of Object.keys(stations)) {
+    const st = stations[id];
+    let stopsChanged = false;
+    const stops = st.stops.map((c) => {
+      const migrated = migrateStopOrientation(c.orientation);
+      if (migrated !== c.orientation) {
+        stopsChanged = true;
+        return { ...c, orientation: migrated };
+      }
+      return c;
+    });
+    if (stopsChanged) {
+      changed = true;
+      out[id] = { ...st, stops };
+    } else {
+      out[id] = st;
+    }
+  }
+  return { stations: out, changed };
+}
 
 export const SCHEMA_FORMAT = 'massimo-map';
 
@@ -67,6 +123,8 @@ export function parse(json: string): ParseResult {
     cleanedLines[id] = cleaned;
   }
   if (linesChanged) merged.lines = cleanedLines;
+  const sanitized = sanitizeStations(merged.stations);
+  if (sanitized.changed) merged.stations = sanitized.stations;
   return { ok: true, doc: merged };
 }
 
