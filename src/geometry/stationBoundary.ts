@@ -13,20 +13,25 @@ const HIT_PAD = 2;
  * **station-local** coords: the cells AABB and the (rotated) label rect.
  * Both are 4-vertex polygons. Their union is what the yellow wash and black
  * stroke render; for hit-testing it's cheaper (and equivalent) to test against
- * each rect separately.
+ * each rect separately. For a waypoint station the label rect is omitted
+ * entirely (no painted name → nothing to silhouette).
  */
 export interface StationBoundaryRects {
   cells: Pt[];
-  label: Pt[];
+  label?: Pt[];
 }
 
 export function stationBoundaryRectsLocal(station: Station): StationBoundaryRects {
   const stops = station.stops;
   const label = station.label;
-  const phantomDot = stops.length === 0 ? { row: label.row, col: label.col + 1 } : null;
+  const isWp = !!station.isWaypoint;
+  const phantomDot = !isWp && stops.length === 0 ? { row: label.row, col: label.col + 1 } : null;
 
-  const allCells: { row: number; col: number }[] = [...stops, label];
+  // Waypoints exclude the label cell so the wash/stroke silhouette hugs
+  // only the visible stop positions.
+  const allCells: { row: number; col: number }[] = isWp ? [...stops] : [...stops, label];
   if (phantomDot) allCells.push(phantomDot);
+  if (allCells.length === 0) allCells.push(label); // empty-waypoint fallback
   const minRow = Math.min(...allCells.map((c) => c.row));
   const maxRow = Math.max(...allCells.map((c) => c.row));
   const minCol = Math.min(...allCells.map((c) => c.col));
@@ -43,6 +48,8 @@ export function stationBoundaryRectsLocal(station: Station): StationBoundaryRect
     { x: cellsHitX + cellsHitW, y: cellsHitY + cellsHitH },
     { x: cellsHitX, y: cellsHitY + cellsHitH },
   ];
+
+  if (isWp) return { cells };
 
   // Label rect — same layout the renderer uses, then rotated about the
   // anchor so the polygon aligns with the painted text.
@@ -90,9 +97,13 @@ export function stationsForRect(stations: Record<StationId, Station>, rect: AABB
     const st = stations[id];
     const b = stationBoundaryRectsLocal(st);
     const cellsWorld = b.cells.map((p) => stationLocalToWorld(st, p));
-    const labelWorld = b.label.map((p) => stationLocalToWorld(st, p));
-    if (rectIntersectsPolygon(rect, cellsWorld) || rectIntersectsPolygon(rect, labelWorld)) {
+    if (rectIntersectsPolygon(rect, cellsWorld)) {
       hits.push(id);
+      continue;
+    }
+    if (b.label) {
+      const labelWorld = b.label.map((p) => stationLocalToWorld(st, p));
+      if (rectIntersectsPolygon(rect, labelWorld)) hits.push(id);
     }
   }
   return hits;
