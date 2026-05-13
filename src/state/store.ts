@@ -19,6 +19,8 @@ import { defaultIdFactory, IdFactory } from '../model/ids';
 import { DEFAULT_DOC } from '../model/transforms';
 import * as T from '../model/transforms';
 import { cyclingColors, type PaletteId } from '../model/palettes';
+import { sanitizeStations } from '../model/serialize';
+import type { Station } from '../model/types';
 import { randomStationName } from './stationNames';
 
 // Re-export so callers (Sidebar, etc.) keep working with one source of truth.
@@ -271,21 +273,38 @@ export const useDoc = create<DocState>()(
       {
         name: 'vignelli-map-doc-v1',
         storage: createJSONStorage(() => localStorage),
-        version: 1,
+        version: 2,
         // v0 → v1: backfill `line.name` with `${service} line` for lines saved
-        // before the field existed. Mirrors the same backfill in serialize.ts
-        // parse() for the file-load path.
+        // before the field existed.
+        // v1 → v2: migrate legacy stop orientations (`up`/`down`/`left`/`right`
+        //   and any unknown garbage strings) to the four canonical auto-*
+        //   axes. Without this, docs that were saved before the diagonal-
+        //   stops migration shipped would carry orientation values that no
+        //   longer have switch arms in travelDirLocal — crashing on render.
+        //   `parse()` in serialize.ts runs the same migration for the
+        //   file-import path; here we run it for the localStorage path.
         migrate: (persisted, version) => {
-          const s = persisted as { lines?: Record<LineId, Line> };
-          if (version < 1 && s.lines) {
+          const s = persisted as {
+            lines?: Record<LineId, Line>;
+            stations?: Record<string, Station>;
+          };
+          // Corrupt or missing version is treated as v0 so all migrations
+          // run — preferable to silently rendering with stale data.
+          const v = typeof version === 'number' ? version : 0;
+          let out: typeof s = s;
+          if (v < 1 && out.lines) {
             const next: Record<LineId, Line> = {};
-            for (const id of Object.keys(s.lines)) {
-              const ln = s.lines[id];
+            for (const id of Object.keys(out.lines)) {
+              const ln = out.lines[id];
               next[id] = ln.name ? ln : { ...ln, name: `${ln.service} line` };
             }
-            return { ...s, lines: next } as DocState;
+            out = { ...out, lines: next };
           }
-          return s as DocState;
+          if (v < 2 && out.stations) {
+            const { stations: cleaned, changed } = sanitizeStations(out.stations);
+            if (changed) out = { ...out, stations: cleaned };
+          }
+          return out as DocState;
         },
         partialize: (s) => ({
           stations: s.stations,

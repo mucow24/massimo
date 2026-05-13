@@ -32,7 +32,11 @@ function migrateStopOrientation(o: unknown): StopOrientation {
   return 'auto-vertical';
 }
 
-function sanitizeStations(stations: Record<string, Station>): {
+// Re-apply the legacy-orientation migration to a stations dict. Used by
+// `parse()` (file-import path) and by the zustand persist `migrate` hook
+// (localStorage rehydration path) so legacy values from BOTH entry points
+// are normalized before any consumer reads them.
+export function sanitizeStations(stations: Record<string, Station>): {
   stations: Record<string, Station>;
   changed: boolean;
 } {
