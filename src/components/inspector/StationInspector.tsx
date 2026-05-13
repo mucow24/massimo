@@ -26,6 +26,7 @@ export function StationInspector({ id }: { id: StationId }) {
   const cycleLabelValign = useDoc((s) => s.cycleLabelValign);
   const setLabelValign = useDoc((s) => s.setLabelValign);
   const setDotShape = useDoc((s) => s.setDotShape);
+  const setStationWaypoint = useDoc((s) => s.setStationWaypoint);
   const selection = useSelection();
   const nameField = useFieldHistory();
   const xField = useFieldHistory();
@@ -172,6 +173,54 @@ export function StationInspector({ id }: { id: StationId }) {
               }}
             />
           </div>
+          <button
+            type="button"
+            className={`btn-mini${station.isWaypoint ? ' wp-on' : ''}`}
+            aria-pressed={!!station.isWaypoint}
+            aria-label="Waypoint"
+            title={
+              station.isWaypoint
+                ? 'Waypoint on — name + bullets hidden'
+                : 'Mark as waypoint (hide name + bullets)'
+            }
+            onClick={() => setStationWaypoint(station.id, !station.isWaypoint)}
+          >
+            WP
+          </button>
+        </div>
+      </div>
+      <div className="field">
+        <label>Stop layout</label>
+        <div ref={stopAreaRef} style={{ display: 'flex', justifyContent: 'center' }}>
+          <StopGrid
+            station={station}
+            lines={linesAll}
+            selectedLineId={selectedLineId}
+            labelSelected={labelSelected}
+            onSelectStop={(lid) => selection.setSelectedStopLineId(lid)}
+            onSelectLabel={() => selection.setLabelSelected(true)}
+            onRotateStop={(lid) => dispatchAll((sid) => rotateStopAction(sid, lid))}
+            onRotateLabel={() => dispatchAll((sid) => rotateLabelAction(sid))}
+            onMoveStop={(lid, dRow, dCol) =>
+              dispatchAll((sid, k) => {
+                // Local-frame deltas must be rotated by the match's
+                // layoutOffset so the world-frame edit matches the source.
+                const d = rotateGridDelta(dRow, dCol, k);
+                moveStopAction(sid, lid, d.dRow, d.dCol);
+              })
+            }
+            onMoveLabel={(dRow, dCol) =>
+              dispatchAll((sid, k) => {
+                const d = rotateGridDelta(dRow, dCol, k);
+                moveLabelAction(sid, d.dRow, d.dCol);
+              })
+            }
+          />
+        </div>
+      </div>
+      <div className="field">
+        <label>Label</label>
+        <div style={{ display: 'flex', gap: 6 }}>
           <LabelAlignButton
             align={station.label.align}
             onCycle={() => {
@@ -207,38 +256,9 @@ export function StationInspector({ id }: { id: StationId }) {
             }}
           />
         </div>
-      </div>
-      <div className="field">
-        <label>Stop layout</label>
-        <div ref={stopAreaRef} style={{ display: 'flex', justifyContent: 'center' }}>
-          <StopGrid
-            station={station}
-            lines={linesAll}
-            selectedLineId={selectedLineId}
-            labelSelected={labelSelected}
-            onSelectStop={(lid) => selection.setSelectedStopLineId(lid)}
-            onSelectLabel={() => selection.setLabelSelected(true)}
-            onRotateStop={(lid) => dispatchAll((sid) => rotateStopAction(sid, lid))}
-            onRotateLabel={() => dispatchAll((sid) => rotateLabelAction(sid))}
-            onMoveStop={(lid, dRow, dCol) =>
-              dispatchAll((sid, k) => {
-                // Local-frame deltas must be rotated by the match's
-                // layoutOffset so the world-frame edit matches the source.
-                const d = rotateGridDelta(dRow, dCol, k);
-                moveStopAction(sid, lid, d.dRow, d.dCol);
-              })
-            }
-            onMoveLabel={(dRow, dCol) =>
-              dispatchAll((sid, k) => {
-                const d = rotateGridDelta(dRow, dCol, k);
-                moveLabelAction(sid, d.dRow, d.dCol);
-              })
-            }
-          />
+        <div style={{ fontSize: 11, color: '#777', marginTop: 4 }}>
+          Offset (along reading direction)
         </div>
-      </div>
-      <div className="field">
-        <label>Label offset (along reading direction)</label>
         <LabelOffsetControl
           value={station.label.offset}
           onChange={(v) => dispatchAll((sid) => setLabelOffset(sid, v))}

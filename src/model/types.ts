@@ -85,6 +85,13 @@ export interface Station {
   rotation: Rotation;
   stops: StopCell[];
   label: LabelCell;
+  // Marks a "routing point" station: the name and all bullet glyphs are
+  // hidden on the canvas, and the label hit rect is dropped. The station
+  // remains selectable/draggable via the hit rect around its stop cells.
+  // Per-stop `dotShape` values are NOT mutated when this flips — rendering
+  // simply treats all bullets as hidden while the flag is on. Omitted/false
+  // means "regular station".
+  isWaypoint?: boolean;
 }
 
 // Visual style for a single segment of a line. `solid` is the historical

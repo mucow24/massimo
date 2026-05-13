@@ -1182,6 +1182,54 @@ describe('setDotShape', () => {
   });
 });
 
+describe('setStationWaypoint', () => {
+  it('sets isWaypoint to true', () => {
+    const doc = makeDoc({ stations: [makeStation({ id: 'a' })] });
+    const next = T.setStationWaypoint(doc, 'a', true);
+    expect(next.stations.a.isWaypoint).toBe(true);
+  });
+
+  it('sets isWaypoint to false (clears the flag)', () => {
+    const doc = makeDoc({ stations: [makeStation({ id: 'a', isWaypoint: true })] });
+    const next = T.setStationWaypoint(doc, 'a', false);
+    expect(next.stations.a.isWaypoint).toBe(false);
+  });
+
+  it('preserves the rest of the station (name, stops, label)', () => {
+    const doc = makeDoc({
+      stations: [
+        makeStation({
+          id: 'a',
+          name: 'Anvil',
+          stops: [makeStop('L1', { dotShape: 'filled-white' })],
+        }),
+      ],
+    });
+    const next = T.setStationWaypoint(doc, 'a', true);
+    expect(next.stations.a).toMatchObject({
+      id: 'a',
+      name: 'Anvil',
+      isWaypoint: true,
+    });
+    expect(next.stations.a.stops[0].dotShape).toBe('filled-white');
+  });
+
+  it('returns the same doc reference (no-op) when value is unchanged', () => {
+    const doc = makeDoc({ stations: [makeStation({ id: 'a', isWaypoint: true })] });
+    expect(T.setStationWaypoint(doc, 'a', true)).toBe(doc);
+  });
+
+  it('treats undefined isWaypoint and false as equivalent for no-op detection', () => {
+    const doc = makeDoc({ stations: [makeStation({ id: 'a' })] });
+    expect(T.setStationWaypoint(doc, 'a', false)).toBe(doc);
+  });
+
+  it('silently no-ops on unknown station id', () => {
+    const doc = makeDoc({ stations: [makeStation({ id: 'a' })] });
+    expect(T.setStationWaypoint(doc, 'ghost', true)).toBe(doc);
+  });
+});
+
 describe('setLineSegmentStyle', () => {
   const docWithLine = () =>
     makeDoc({
