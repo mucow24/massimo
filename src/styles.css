@@ -715,6 +715,21 @@ select {
   border-bottom: 1px solid #e7eaf0;
 }
 
+.wp-pill {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  height: 18px;
+  padding: 0 6px;
+  margin-left: 6px;
+  border-radius: 9px;
+  background: #6b7280;
+  color: #fff;
+  font-size: 10px;
+  font-weight: 600;
+  flex-shrink: 0;
+}
+
 .line-badges {
   display: inline-flex;
   gap: 3px;
@@ -821,6 +836,19 @@ select {
 }
 .btn-mini.mirror-on:hover:not(:disabled) {
   background: #c91f1f;
+}
+
+/* Waypoint toggle in the station inspector — neutral gray when active
+   (distinct from mirror-on's red) so it reads as a state flag, not a
+   warning. Matches the gray of the .wp-pill in the station list. */
+.btn-mini.wp-on {
+  background: #6b7280;
+  border-color: #4b5563;
+  color: #fff;
+  font-weight: 600;
+}
+.btn-mini.wp-on:hover:not(:disabled) {
+  background: #5b6470;
 }
 
 /* Range input in "indeterminate" state — multiple matching stations have

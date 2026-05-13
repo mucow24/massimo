@@ -1,6 +1,9 @@
 import { defineConfig, devices } from '@playwright/test';
 
-const PORT = 5173;
+// Honor PORT env var so parallel worktrees can run e2e tests without
+// colliding on the default Vite port. Falls back to Vite's default (5173)
+// when unset, preserving the prior behavior.
+const PORT = Number(process.env.PORT ?? 5173);
 
 export default defineConfig({
   testDir: './e2e',
@@ -16,7 +19,7 @@ export default defineConfig({
   },
   projects: [{ name: 'chromium', use: { ...devices['Desktop Chrome'] } }],
   webServer: {
-    command: 'npm run dev',
+    command: `npm run dev -- --port ${PORT}`,
     url: `http://localhost:${PORT}`,
     reuseExistingServer: !process.env.CI,
     timeout: 60_000,

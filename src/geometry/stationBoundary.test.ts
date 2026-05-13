@@ -51,6 +51,34 @@ describe('stationBoundaryRectsLocal', () => {
     expect(Math.max(...ys)).toBeCloseTo(HALF + PAD, 5);
   });
 
+  it('isWaypoint omits the label polygon entirely', () => {
+    const st = makeStation({
+      id: 'A',
+      isWaypoint: true,
+      stops: [makeStop('L1', { row: 0, col: 0 })],
+    });
+    const { cells, label } = stationBoundaryRectsLocal(st);
+    expect(cells).toHaveLength(4);
+    expect(label).toBeUndefined();
+  });
+
+  it('isWaypoint cells AABB excludes the label cell (tight to stops only)', () => {
+    // Default label sits at (row 0, col -1). With isWaypoint, the AABB should
+    // NOT extend left to include that cell — it should hug just the stop at
+    // (row 0, col 0).
+    const st = makeStation({
+      id: 'A',
+      isWaypoint: true,
+      stops: [makeStop('L1', { row: 0, col: 0 })],
+    });
+    const { cells } = stationBoundaryRectsLocal(st);
+    const xs = cells.map((p) => p.x);
+    const HALF = STOP_SIZE / 2;
+    const PAD = 2;
+    expect(Math.min(...xs)).toBeCloseTo(-HALF - PAD, 5);
+    expect(Math.max(...xs)).toBeCloseTo(HALF + PAD, 5);
+  });
+
   it('label rect rotates about the label anchor when label.rotation is non-zero', () => {
     const stUpright = stationWithStop('A', 'L1', { x: 0, y: 0 });
     const stDiag = makeStation({
@@ -63,14 +91,16 @@ describe('stationBoundaryRectsLocal', () => {
     });
     const upright = stationBoundaryRectsLocal(stUpright).label;
     const diag = stationBoundaryRectsLocal(stDiag).label;
+    expect(upright).toBeDefined();
+    expect(diag).toBeDefined();
     // The 45° label should not have axis-aligned vertices.
     const isAxisAligned = (poly: { x: number; y: number }[]) => {
       const xs = new Set(poly.map((p) => Math.round(p.x * 100) / 100));
       const ys = new Set(poly.map((p) => Math.round(p.y * 100) / 100));
       return xs.size === 2 && ys.size === 2;
     };
-    expect(isAxisAligned(upright)).toBe(true);
-    expect(isAxisAligned(diag)).toBe(false);
+    expect(isAxisAligned(upright!)).toBe(true);
+    expect(isAxisAligned(diag!)).toBe(false);
   });
 });
 
@@ -120,6 +150,20 @@ describe('stationsForRect', () => {
     const a = stationWithStop('A', 'L1', { x: 0, y: 0 });
     const stations = { A: a };
     const rect = { x0: 1000, y0: 1000, x1: 2000, y1: 2000 };
+    expect(stationsForRect(stations, rect)).toEqual([]);
+  });
+
+  it('a waypoint station does NOT match a rect that only overlaps where the label would be', () => {
+    // Same setup as the label-rect coverage test above, but with isWaypoint
+    // — the rect over the label area should miss because the waypoint has
+    // no label polygon and its cells AABB is tight to the stop only.
+    const st = makeStation({
+      id: 'A',
+      isWaypoint: true,
+      stops: [makeStop('L1', { row: 0, col: 0 })],
+    });
+    const stations = { A: st };
+    const rect = { x0: -30, y0: -7, x1: -10, y1: 7 };
     expect(stationsForRect(stations, rect)).toEqual([]);
   });
 });

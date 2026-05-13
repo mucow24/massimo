@@ -217,13 +217,23 @@ export function StationView({
   };
 
   const half = STOP_SIZE / 2;
+  const isWp = !!station.isWaypoint;
   // Empty stations get a single phantom dot one cell to the right of the
   // label, so there's something visible and the name has an anchor.
+  // Waypoints never show a phantom (the whole point is "no visible station").
   const label = station.label;
-  const phantomDot = stops.length === 0 ? { row: label.row, col: label.col + 1 } : null;
+  const phantomDot = !isWp && stops.length === 0 ? { row: label.row, col: label.col + 1 } : null;
 
-  const allCells: { row: number; col: number }[] = [...stops, label];
+  // For a waypoint, the cells AABB hugs only the bullet positions — the
+  // label cell is excluded so the hit rect and selection wash don't extend
+  // into invisible space. Regular stations include the label cell so the
+  // selection silhouette covers the painted name.
+  const allCells: { row: number; col: number }[] = isWp ? [...stops] : [...stops, label];
   if (phantomDot) allCells.push(phantomDot);
+  // Empty waypoint (0 stops, isWp) is a degenerate edge case — fall back to
+  // the label cell so we still produce a finite AABB. Not the supported case;
+  // just keeps Math.min/max from returning Infinity.
+  if (allCells.length === 0) allCells.push(label);
   const minRow = Math.min(...allCells.map((c) => c.row));
   const maxRow = Math.max(...allCells.map((c) => c.row));
   const minCol = Math.min(...allCells.map((c) => c.col));
@@ -271,7 +281,9 @@ export function StationView({
     // ONLY (each vertex of the union is a corner of the actual silhouette),
     // so there are no rounded-corner artifacts where the rects meet.
     const { cells, label: labelPoly } = stationBoundaryRectsLocal(station);
-    const pathStr = polygonsToPath(unionConvex(cells, labelPoly), SELECTION_CORNER_RADIUS);
+    // Waypoint: no label polygon to merge, render the cells rect alone.
+    const polygons = labelPoly ? unionConvex(cells, labelPoly) : [cells];
+    const pathStr = polygonsToPath(polygons, SELECTION_CORNER_RADIUS);
 
     if (layer === 'wash') {
       return (
@@ -354,19 +366,22 @@ export function StationView({
         style={{ cursor }}
       >
         <rect x={cellsHitX} y={cellsHitY} width={cellsHitW} height={cellsHitH} {...hitProps} />
-        <rect
-          x={labelHitX}
-          y={labelHitY}
-          width={labelHitW}
-          height={labelHitH}
-          transform={labelHitTransform}
-          {...hitProps}
-        />
+        {!isWp && (
+          <rect
+            x={labelHitX}
+            y={labelHitY}
+            width={labelHitW}
+            height={labelHitH}
+            transform={labelHitTransform}
+            {...hitProps}
+          />
+        )}
       </g>
     );
   }
 
   if (layer === 'starter-label') {
+    if (isWp) return null;
     // Append-mode "starter" station: name in the line color, with a
     // contrasting 1px stroke for legibility against the dim layer. Always
     // bold so the eye lands on it as the insertion anchor.
@@ -400,6 +415,7 @@ export function StationView({
   }
 
   if (layer === 'highlight-label') {
+    if (isWp) return null;
     // Same positioning as 'label' but always renders text (never the
     // inline editor), in white. Used above the dim overlay so the selected
     // line's station names stay legible.
@@ -430,6 +446,7 @@ export function StationView({
   }
 
   if (layer === 'label') {
+    if (isWp) return null;
     // Labels render in their own pass after all bg washes so that a selected
     // station's wash can never cover a neighboring station's label. When a
     // line is selected, the highlight pass re-renders labels above the dim
@@ -485,6 +502,7 @@ export function StationView({
   }
 
   if (layer === 'highlight-dots') {
+    if (isWp) return null;
     // Dots above the dim/highlight passes, used for not-yet-on-line stations
     // during append mode. Color overridable via highlightColor.
     return (
@@ -505,6 +523,7 @@ export function StationView({
   }
 
   // layer === 'dots'
+  if (isWp) return null;
   const hoveredStop = selection.hoveredLineStop;
   return (
     <g transform={`translate(${station.x} ${station.y}) rotate(${angle})`} pointerEvents="none">

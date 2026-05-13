@@ -213,6 +213,77 @@ describe('<StationInspector /> — shape picker wiring', () => {
     expect(circle?.getAttribute('fill')).toBe('#fff');
   });
 
+  it('Waypoint button toggles aria-pressed and writes isWaypoint on the station', async () => {
+    const user = userEvent.setup();
+    useDoc.setState({
+      ...DEFAULT_DOC,
+      ...makeDoc({
+        stations: [makeStation({ id: 'a', stops: [makeStop('L1')] })],
+        lines: [makeLine({ id: 'L1', stations: ['a'] })],
+      }),
+    });
+    useSelection.setState({ ...SELECTION_BLANK, selectedStationIds: ['a'] });
+
+    render(<StationInspector id="a" />);
+    const wpBtn = screen.getByRole('button', { name: 'Waypoint' });
+    expect(wpBtn).toHaveAttribute('aria-pressed', 'false');
+    expect(wpBtn).not.toHaveClass('wp-on');
+
+    await user.click(wpBtn);
+    expect(useDoc.getState().stations.a.isWaypoint).toBe(true);
+    const wpBtnOn = screen.getByRole('button', { name: 'Waypoint' });
+    expect(wpBtnOn).toHaveAttribute('aria-pressed', 'true');
+    expect(wpBtnOn).toHaveClass('wp-on');
+
+    await user.click(screen.getByRole('button', { name: 'Waypoint' }));
+    const wpBtnOff = screen.getByRole('button', { name: 'Waypoint' });
+    expect(useDoc.getState().stations.a.isWaypoint).toBe(false);
+    expect(wpBtnOff).toHaveAttribute('aria-pressed', 'false');
+    expect(wpBtnOff).not.toHaveClass('wp-on');
+  });
+
+  it('Waypoint button starts pressed when the station is already a waypoint', () => {
+    useDoc.setState({
+      ...DEFAULT_DOC,
+      ...makeDoc({
+        stations: [makeStation({ id: 'a', isWaypoint: true, stops: [makeStop('L1')] })],
+        lines: [makeLine({ id: 'L1', stations: ['a'] })],
+      }),
+    });
+    useSelection.setState({ ...SELECTION_BLANK, selectedStationIds: ['a'] });
+
+    render(<StationInspector id="a" />);
+    const wpBtn = screen.getByRole('button', { name: 'Waypoint' });
+    expect(wpBtn).toHaveAttribute('aria-pressed', 'true');
+    expect(wpBtn).toHaveClass('wp-on');
+  });
+
+  it('Waypoint toggle does NOT mirror-propagate to matching stations', async () => {
+    const user = userEvent.setup();
+    useDoc.setState({
+      ...DEFAULT_DOC,
+      ...makeDoc({
+        stations: [
+          makeStation({ id: 'a', stops: [makeStop('L1')] }),
+          makeStation({ id: 'b', stops: [makeStop('L1')] }),
+        ],
+        lines: [makeLine({ id: 'L1', stations: ['a', 'b'] })],
+      }),
+    });
+    useSelection.setState({
+      ...SELECTION_BLANK,
+      selectedStationIds: ['a'],
+      mirrorMatching: true,
+    });
+
+    render(<StationInspector id="a" />);
+    await user.click(screen.getByRole('button', { name: 'Waypoint' }));
+
+    const doc = useDoc.getState();
+    expect(doc.stations.a.isWaypoint).toBe(true);
+    expect(doc.stations.b.isWaypoint).toBeFalsy();
+  });
+
   it('mirror mode propagates the per-stop shape change to matching stations and collapses to one undo step', async () => {
     const user = userEvent.setup();
     useDoc.setState({

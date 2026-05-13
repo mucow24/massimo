@@ -100,6 +100,16 @@ export function setDotShape(
   return { ...doc, stations: { ...doc.stations, [stationId]: { ...cur, stops } } };
 }
 
+export function setStationWaypoint(doc: MapDoc, stationId: StationId, isWaypoint: boolean): MapDoc {
+  const cur = doc.stations[stationId];
+  if (!cur) return doc;
+  if (!!cur.isWaypoint === isWaypoint) return doc;
+  return {
+    ...doc,
+    stations: { ...doc.stations, [stationId]: { ...cur, isWaypoint } },
+  };
+}
+
 // For every line that contains both startId and endId, evenly redistribute
 // the intervening stops by arc length along the existing polyline through
 // those stops. If a station is intervening on multiple matching lines (its

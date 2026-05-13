@@ -53,6 +53,7 @@ interface DocState extends MapDoc {
   renameStation: (id: StationId, name: string) => void;
   moveStation: (id: StationId, x: number, y: number) => void;
   setDotShape: (stationId: StationId, lineId: LineId, shape: DotShape) => void;
+  setStationWaypoint: (stationId: StationId, isWaypoint: boolean) => void;
   redistributeBetween: (
     startId: StationId,
     endId: StationId,
@@ -158,6 +159,8 @@ export const useDoc = create<DocState>()(
         moveStation: (id, x, y) => set((s) => T.moveStation(s, id, x, y)),
         setDotShape: (stationId, lineId, shape) =>
           set((s) => T.setDotShape(s, stationId, lineId, shape)),
+        setStationWaypoint: (stationId, isWaypoint) =>
+          set((s) => T.setStationWaypoint(s, stationId, isWaypoint)),
         redistributeBetween: (startId, endId, mode = 'arc-bends') =>
           set((s) => T.redistributeBetween(s, startId, endId, mode)),
         rotateStation: (id) => set((s) => T.rotateStation(s, id)),
