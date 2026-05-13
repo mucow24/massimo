@@ -99,6 +99,24 @@ describe('alignmentPairs', () => {
     expect(alignmentPairs('d', 0, draggedStops, target, lines)).toEqual([]);
   });
 
+  it('emits a NE-SW diagonal axis for an auto-ne-sw target stop', () => {
+    const SQRT2_2 = Math.SQRT1_2;
+    const target = makeStation({
+      id: 't',
+      x: 100,
+      y: -100,
+      rotation: 0,
+      stops: [makeStop('L1', { row: 0, col: 0, orientation: 'auto-ne-sw' })],
+    });
+    const draggedStops: StopCell[] = [
+      makeStop('L1', { row: 0, col: 0, orientation: 'auto-ne-sw' }),
+    ];
+    const lines = linesOf(lineOf('L1', ['d', 't']));
+    const pairs = alignmentPairs('d', 0, draggedStops, target, lines);
+    expect(pairs).toHaveLength(1);
+    expect(parallel(pairs[0].axis, { x: SQRT2_2, y: -SQRT2_2 })).toBe(true);
+  });
+
   it('per-line adjacency: emit a pair only on lines where the stations are adjacent', () => {
     // L1: d → t (adjacent). L2: d → x → t (not adjacent).
     const target = makeStation({
@@ -168,6 +186,53 @@ describe('snapDraggedStation', () => {
     expect(r.x).toBe(105);
     expect(r.y).toBe(50);
     expect(r.guides).toEqual([]);
+  });
+
+  it('snaps the dragged stop onto a target whose stop is in a diagonal interline group', () => {
+    // Target station has two auto-ne-sw stops at cells (0,0) and (1,1) — a
+    // diagonal interline group. The L1 stop's cell position is (0, 0); but
+    // after compression it sits halfway between, on the band centerline.
+    // The dragged station should snap so its L1 stop lines up with the
+    // *compressed* target position, not the literal cell position.
+    const STOP_SIZE = 14;
+    const target = makeStation({
+      id: 't',
+      x: 0,
+      y: 0,
+      rotation: 0,
+      stops: [
+        makeStop('L1', { row: 0, col: 0, orientation: 'auto-ne-sw' }),
+        makeStop('L2', { row: 1, col: 1, orientation: 'auto-ne-sw' }),
+      ],
+    });
+    const dragged = makeStation({
+      id: 'd',
+      x: 0,
+      y: 0,
+      stops: [makeStop('L1', { row: 0, col: 0, orientation: 'auto-ne-sw' })],
+    });
+    // Compressed target L1 position: cell (0,0) shifted +STOP_SIZE·(√2-1)/2
+    // along the NW-SE perp axis (toward the centroid of the group).
+    const shift = (STOP_SIZE * (Math.SQRT2 - 1)) / 2;
+    const compressedTL1 = {
+      x: shift * Math.SQRT1_2,
+      y: shift * Math.SQRT1_2,
+    };
+    // Drag the dragged station near the compressed L1 position. Snap should
+    // land it exactly on the compressed position.
+    const r = snapDraggedStation({
+      draggedId: 'd',
+      proposedX: compressedTL1.x + 4, // off-axis nudge to force a snap projection
+      proposedY: compressedTL1.y + 4,
+      draggedRotation: 0,
+      draggedStops: dragged.stops,
+      stations: stations(dragged, target),
+      lines: linesOf(lineOf('L1', ['d', 't'])),
+    });
+    // After snap, dragged anchor + L1 cell offset = compressed target L1.
+    // Dragged station has no compression (single stop), so its rendered L1 = anchor.
+    expect(r.x).toBeCloseTo(compressedTL1.x, 4);
+    expect(r.y).toBeCloseTo(compressedTL1.y, 4);
   });
 
   it('single-axis snap projects the dragged stop onto the target axis line', () => {

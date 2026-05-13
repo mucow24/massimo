@@ -190,7 +190,7 @@ describe('rotateStationAndLayout', () => {
         makeStation({
           id: 's1',
           rotation: 3,
-          stops: [makeStop('L1', { row: 1, col: 2, orientation: 'up' })],
+          stops: [makeStop('L1', { row: 1, col: 2, orientation: 'auto-vertical' })],
           label: { row: 0, col: -1, rotation: 1, offset: 0, align: 'auto', valign: 'middle' },
         }),
       ],
@@ -199,6 +199,48 @@ describe('rotateStationAndLayout', () => {
     expect(round.stations.s1.rotation).toBe(doc0.stations.s1.rotation);
     expect(round.stations.s1.stops).toEqual(doc0.stations.s1.stops);
     expect(round.stations.s1.label).toEqual(doc0.stations.s1.label);
+  });
+
+  it('swaps auto-vertical ↔ auto-horizontal under ±90°', () => {
+    for (const dir of [1, -1] as const) {
+      const doc = makeDoc({
+        stations: [
+          makeStation({
+            id: 's1',
+            stops: [makeStop('L1', { orientation: 'auto-vertical' })],
+          }),
+        ],
+      });
+      const next = T.rotateStationAndLayout(doc, 's1', dir);
+      expect(next.stations.s1.stops[0].orientation).toBe('auto-horizontal');
+    }
+  });
+
+  it('swaps auto-ne-sw ↔ auto-nw-se under ±90°', () => {
+    for (const dir of [1, -1] as const) {
+      const docNeSw = makeDoc({
+        stations: [
+          makeStation({
+            id: 's1',
+            stops: [makeStop('L1', { orientation: 'auto-ne-sw' })],
+          }),
+        ],
+      });
+      expect(T.rotateStationAndLayout(docNeSw, 's1', dir).stations.s1.stops[0].orientation).toBe(
+        'auto-nw-se',
+      );
+      const docNwSe = makeDoc({
+        stations: [
+          makeStation({
+            id: 's1',
+            stops: [makeStop('L1', { orientation: 'auto-nw-se' })],
+          }),
+        ],
+      });
+      expect(T.rotateStationAndLayout(docNwSe, 's1', dir).stations.s1.stops[0].orientation).toBe(
+        'auto-ne-sw',
+      );
+    }
   });
 });
 
@@ -397,7 +439,7 @@ describe('moveStop', () => {
 });
 
 describe('rotateStop', () => {
-  it('toggles between auto-vertical and auto-horizontal', () => {
+  it('cycles through the 4-axis order N/S → NE/SW → E/W → NW/SE → N/S', () => {
     let doc = makeDoc({
       stations: [
         makeStation({
@@ -407,39 +449,13 @@ describe('rotateStop', () => {
       ],
     });
     doc = T.rotateStop(doc, 's1', 'L1');
+    expect(doc.stations.s1.stops[0].orientation).toBe('auto-ne-sw');
+    doc = T.rotateStop(doc, 's1', 'L1');
     expect(doc.stations.s1.stops[0].orientation).toBe('auto-horizontal');
     doc = T.rotateStop(doc, 's1', 'L1');
+    expect(doc.stations.s1.stops[0].orientation).toBe('auto-nw-se');
+    doc = T.rotateStop(doc, 's1', 'L1');
     expect(doc.stations.s1.stops[0].orientation).toBe('auto-vertical');
-  });
-
-  it('collapses explicit vertical orientations (up/down) to auto-horizontal', () => {
-    for (const start of ['up', 'down'] as const) {
-      const doc = makeDoc({
-        stations: [
-          makeStation({
-            id: 's1',
-            stops: [makeStop('L1', { orientation: start })],
-          }),
-        ],
-      });
-      const next = T.rotateStop(doc, 's1', 'L1');
-      expect(next.stations.s1.stops[0].orientation).toBe('auto-horizontal');
-    }
-  });
-
-  it('collapses explicit horizontal orientations (left/right) to auto-vertical', () => {
-    for (const start of ['left', 'right'] as const) {
-      const doc = makeDoc({
-        stations: [
-          makeStation({
-            id: 's1',
-            stops: [makeStop('L1', { orientation: start })],
-          }),
-        ],
-      });
-      const next = T.rotateStop(doc, 's1', 'L1');
-      expect(next.stations.s1.stops[0].orientation).toBe('auto-vertical');
-    }
   });
 });
 
@@ -1131,7 +1147,7 @@ describe('setDotShape', () => {
       stations: [
         makeStation({
           id: 'a',
-          stops: [makeStop('L1', { row: 2, col: 3, orientation: 'left' })],
+          stops: [makeStop('L1', { row: 2, col: 3, orientation: 'auto-horizontal' })],
         }),
       ],
     });
@@ -1140,7 +1156,7 @@ describe('setDotShape', () => {
       lineId: 'L1',
       row: 2,
       col: 3,
-      orientation: 'left',
+      orientation: 'auto-horizontal',
       dotShape: 'filled-black-diamond',
     });
   });

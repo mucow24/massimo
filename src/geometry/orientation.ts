@@ -8,6 +8,7 @@ export const STOP_DOT_RADIUS = STOP_SIZE * 0.28;
 export type Rotation = 0 | 1 | 2 | 3 | 4 | 5 | 6 | 7;
 
 const HALF = STOP_SIZE / 2;
+const SQRT2_2 = Math.SQRT1_2;
 
 export const rotRad = (r: Rotation) => (r * Math.PI) / 4;
 
@@ -29,35 +30,34 @@ export const stopCenterAt = (row: number, col: number): Vec2 => ({
 
 /**
  * Travel direction in the unrotated local frame for a stop with the given
- * orientation. Returns a unit vector along ±x or ±y.
+ * orientation. Returns a unit vector along one of the four 45°-spaced axes.
  *
- * For explicit orientations (`up`/`down`/`left`/`right`) the result is fixed.
- * For `auto-*` orientations the sign comes from `lineHintLocal` — the line's
- * actual local-frame direction at this station, derived from the world
- * tangent rotated by `-station.rotation`. If no hint is supplied (e.g.
- * orphan stops with no line connected), auto falls back to +axis (down/right)
- * to match the legacy behavior.
+ * Each variant pins only the axis; the sign comes from `lineHintLocal` — the
+ * line's actual local-frame direction at this station, derived from the
+ * world tangent rotated by `-station.rotation`. With no hint (e.g. orphan
+ * stops with no line connected), each variant falls back to its +axis
+ * default: `auto-vertical` → +y, `auto-horizontal` → +x, `auto-ne-sw` → NE
+ * (+x, −y), `auto-nw-se` → SE (+x, +y).
  */
 export const travelDirLocal = (o: StopOrientation, lineHintLocal: Vec2 | null = null): Vec2 => {
   switch (o) {
-    case 'down':
-      return { x: 0, y: 1 };
-    case 'up':
-      return { x: 0, y: -1 };
-    case 'right':
-      return { x: 1, y: 0 };
-    case 'left':
-      return { x: -1, y: 0 };
     case 'auto-vertical':
       return { x: 0, y: lineHintLocal && lineHintLocal.y < 0 ? -1 : 1 };
     case 'auto-horizontal':
       return { x: lineHintLocal && lineHintLocal.x < 0 ? -1 : 1, y: 0 };
+    case 'auto-ne-sw': {
+      // Axis NE↔SW (screen-y-down): NE = (+x, −y), SW = (−x, +y).
+      // Along-axis sign from hint · (1, −1); default = NE.
+      const s = lineHintLocal && lineHintLocal.x - lineHintLocal.y < 0 ? -1 : 1;
+      return { x: s * SQRT2_2, y: -s * SQRT2_2 };
+    }
+    case 'auto-nw-se': {
+      // Axis NW↔SE: NW = (−x, −y), SE = (+x, +y). Default = SE.
+      const s = lineHintLocal && lineHintLocal.x + lineHintLocal.y < 0 ? -1 : 1;
+      return { x: s * SQRT2_2, y: s * SQRT2_2 };
+    }
   }
 };
-
-/** Whether a stop's orientation runs along the local Y axis (vertical). */
-export const isVerticalAxis = (o: StopOrientation): boolean =>
-  o === 'up' || o === 'down' || o === 'auto-vertical';
 
 /**
  * Rotate a grid-frame displacement (dRow, dCol) by k 90°-steps. One step

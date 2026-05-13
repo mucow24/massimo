@@ -422,23 +422,13 @@ export function rotateStationLayoutBy90(station: Station, dir: -1 | 1): Station 
   const rotateGrid = (col: number, row: number) =>
     dir === 1 ? { col: -row, row: col } : { col: row, row: -col };
   // Orientation maps so that the WORLD tangent direction is preserved across
-  // the change in station rotation.
-  // R+ (station CCW 90°): up→right, right→down, down→left, left→up.
-  // R− (station CW 90°): up→left, left→down, down→right, right→up.
+  // the change in station rotation. A ±90° rotation swaps each axis with its
+  // perpendicular partner: N/S ↔ E/W, NE/SW ↔ NW/SE.
   const rotOrient = (o: StopOrientation): StopOrientation => {
     if (o === 'auto-vertical') return 'auto-horizontal';
     if (o === 'auto-horizontal') return 'auto-vertical';
-    if (dir === 1) {
-      if (o === 'up') return 'right';
-      if (o === 'right') return 'down';
-      if (o === 'down') return 'left';
-      return 'up'; // o === 'left'
-    } else {
-      if (o === 'up') return 'left';
-      if (o === 'left') return 'down';
-      if (o === 'down') return 'right';
-      return 'up'; // o === 'right'
-    }
+    if (o === 'auto-ne-sw') return 'auto-nw-se';
+    return 'auto-ne-sw';
   };
   const stops = station.stops.map((c) => {
     const r = rotateGrid(c.col, c.row);
@@ -505,19 +495,21 @@ export function moveStop(
   return { ...doc, stations: { ...doc.stations, [stationId]: { ...st, stops: newStops } } };
 }
 
+const AXIS_CYCLE: StopOrientation[] = [
+  'auto-vertical', // 0 — N/S
+  'auto-ne-sw', // 1 — NE/SW
+  'auto-horizontal', // 2 — E/W
+  'auto-nw-se', // 3 — NW/SE
+];
+
 export function rotateStop(doc: MapDoc, stationId: StationId, lineId: LineId): MapDoc {
   const st = doc.stations[stationId];
   if (!st) return doc;
   const i = st.stops.findIndex((c) => c.lineId === lineId);
   if (i < 0) return doc;
   const cur = st.stops[i];
-  // The UI exposes only the two auto-axis orientations; this toggles between
-  // them. Explicit `up`/`down`/`left`/`right` remain valid in the model (and
-  // in persisted docs), but rotating from one of those collapses to the auto
-  // orientation on the opposite axis.
-  const wasVertical =
-    cur.orientation === 'auto-vertical' || cur.orientation === 'up' || cur.orientation === 'down';
-  const next: StopOrientation = wasVertical ? 'auto-horizontal' : 'auto-vertical';
+  const idx = AXIS_CYCLE.indexOf(cur.orientation);
+  const next = AXIS_CYCLE[(idx + 1) % 4];
   if (next === cur.orientation) return doc;
   const newStops = st.stops.slice();
   newStops[i] = { ...cur, orientation: next };

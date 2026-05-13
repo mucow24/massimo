@@ -8,6 +8,7 @@ import { stationBoundaryRectsLocal } from '../geometry/stationBoundary';
 import { pathBetweenStations } from '../model/pathSelect';
 import { legibleTextOn } from '../util/color';
 import { StopGlyph } from './StopGlyph';
+import type { RenderedStopPositions } from '../geometry/stopPositions';
 
 // Map a click on a station to the closest dot's lineId. Used to pin a
 // transfer endpoint to the specific stop the user clicked on, rather than
@@ -63,6 +64,12 @@ interface Props {
     | 'match-stroke';
   // Override fill for the highlight-* layers (default white).
   highlightColor?: string;
+  // World-frame stop positions (compression-aware). Used for the 'dots' and
+  // 'highlight-dots' layers so the colored dot lands on the band stripe for
+  // stops in a diagonal interline group. Phantom dots (drag previews) stay
+  // at cell positions — they reflect the logical layout the editor is about
+  // to commit, not the visual band.
+  renderedPos?: RenderedStopPositions;
 }
 
 export function StationView({
@@ -71,6 +78,7 @@ export function StationView({
   onStartDrag,
   layer,
   highlightColor = '#fff',
+  renderedPos,
 }: Props) {
   const selection = useSelection();
   const rotateStation = useDoc((s) => s.rotateStation);
@@ -506,16 +514,25 @@ export function StationView({
     // Dots above the dim/highlight passes, used for not-yet-on-line stations
     // during append mode. Color overridable via highlightColor.
     return (
-      <g transform={`translate(${station.x} ${station.y}) rotate(${angle})`} pointerEvents="none">
-        {phantomDot &&
-          (() => {
-            const c = stopCenterAt(phantomDot.row, phantomDot.col);
-            return <circle cx={c.x} cy={c.y} r={STOP_DOT_RADIUS} fill={highlightColor} />;
-          })()}
+      <g pointerEvents="none">
+        {/* Phantom dot is a drag preview — render at cell position, in the
+            station's local frame. */}
+        {phantomDot && (
+          <g transform={`translate(${station.x} ${station.y}) rotate(${angle})`}>
+            {(() => {
+              const c = stopCenterAt(phantomDot.row, phantomDot.col);
+              return <circle cx={c.x} cy={c.y} r={STOP_DOT_RADIUS} fill={highlightColor} />;
+            })()}
+          </g>
+        )}
+        {/* Real stop dots use rendered (compression-aware) world positions so
+            they sit on band stripes within diagonal interline groups. */}
         {stops.map((cell) => {
-          const c = stopCenterAt(cell.row, cell.col);
+          const w = renderedPos
+            ? renderedPos(station.id, cell.lineId)
+            : worldFromCell(station, cell.row, cell.col);
           return (
-            <circle key={cell.lineId} cx={c.x} cy={c.y} r={STOP_DOT_RADIUS} fill={highlightColor} />
+            <circle key={cell.lineId} cx={w.x} cy={w.y} r={STOP_DOT_RADIUS} fill={highlightColor} />
           );
         })}
       </g>
@@ -526,21 +543,30 @@ export function StationView({
   if (isWp) return null;
   const hoveredStop = selection.hoveredLineStop;
   return (
-    <g transform={`translate(${station.x} ${station.y}) rotate(${angle})`} pointerEvents="none">
-      {phantomDot &&
-        (() => {
-          const c = stopCenterAt(phantomDot.row, phantomDot.col);
-          return <circle cx={c.x} cy={c.y} r={STOP_DOT_RADIUS} fill="#000" />;
-        })()}
+    <g pointerEvents="none">
+      {/* Phantom dot is a drag preview — render at cell position, in the
+          station's local frame. */}
+      {phantomDot && (
+        <g transform={`translate(${station.x} ${station.y}) rotate(${angle})`}>
+          {(() => {
+            const c = stopCenterAt(phantomDot.row, phantomDot.col);
+            return <circle cx={c.x} cy={c.y} r={STOP_DOT_RADIUS} fill="#000" />;
+          })()}
+        </g>
+      )}
+      {/* Real stop dots use rendered (compression-aware) world positions so
+          they sit on band stripes within diagonal interline groups. */}
       {stops.map((cell) => {
-        const c = stopCenterAt(cell.row, cell.col);
+        const w = renderedPos
+          ? renderedPos(station.id, cell.lineId)
+          : worldFromCell(station, cell.row, cell.col);
         const isHovered =
           hoveredStop?.stationId === station.id && hoveredStop?.lineId === cell.lineId;
         return (
           <StopGlyph
             key={cell.lineId}
-            cx={c.x}
-            cy={c.y}
+            cx={w.x}
+            cy={w.y}
             shape={cell.dotShape}
             isHovered={isHovered}
             stationId={station.id}
@@ -550,6 +576,20 @@ export function StationView({
       })}
     </g>
   );
+}
+
+// Fallback cell-grid world position when no rendered-position lookup is
+// threaded through. Equivalent to `stopPosWorld` in interlining.ts but
+// inlined here to avoid a cross-module import.
+function worldFromCell(station: Station, row: number, col: number) {
+  const local = stopCenterAt(row, col);
+  const a = (station.rotation * Math.PI) / 4;
+  const c = Math.cos(a);
+  const s = Math.sin(a);
+  return {
+    x: station.x + local.x * c - local.y * s,
+    y: station.y + local.x * s + local.y * c,
+  };
 }
 
 function NameEditor({
