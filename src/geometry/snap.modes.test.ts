@@ -103,8 +103,9 @@ describe('snapDraggedStation: equidistant mode', () => {
     expect(r.y).toBe(0.5);
   });
 
-  it('does nothing when there is no next neighbor on the same line', () => {
-    // Line is [A, B] only — B is the terminus, no C.
+  it('does nothing on a terminus when the line has fewer than 3 stations', () => {
+    // Line is [A, B] only — B is the terminus, and there's no prev-prev
+    // to extrapolate a cadence from. Equidistant must stay inert.
     const a = makeStation({ id: 'a', x: 0, y: 0, stops: [horizontalStop('L1')] });
     const b = makeStation({ id: 'b', x: 50, y: 0, stops: [horizontalStop('L1')] });
     const r = snapDraggedStation({
@@ -157,6 +158,241 @@ describe('snapDraggedStation: equidistant mode', () => {
     // Just line snap to A's axis — equidistant must skip.
     expect(r.x).toBeCloseTo(24, 5);
     expect(r.y).toBeCloseTo(0, 5);
+  });
+
+  it('snaps the end terminus to extend the prev-prev → prev cadence', () => {
+    // Line [A, B, C, D] with B↔C = 40. Dragging D near 118 should snap to
+    // x=120 so D↔C = 40 = the prev-prev → prev cadence.
+    const a = makeStation({ id: 'a', x: 0, y: 0, stops: [horizontalStop('L1')] });
+    const b = makeStation({ id: 'b', x: 40, y: 0, stops: [horizontalStop('L1')] });
+    const c = makeStation({ id: 'c', x: 80, y: 0, stops: [horizontalStop('L1')] });
+    const d = makeStation({ id: 'd', x: 110, y: 0, stops: [horizontalStop('L1')] });
+    const r = snapDraggedStation({
+      draggedId: 'd',
+      proposedX: 118,
+      proposedY: 0.5,
+      draggedRotation: 0,
+      draggedStops: d.stops,
+      stations: stations(a, b, c, d),
+      lines: linesOf(lineOf('L1', ['a', 'b', 'c', 'd'])),
+      modes: { ...LINE_ONLY, equidistant: true },
+    });
+    expect(r.x).toBeCloseTo(120, 5);
+    expect(r.y).toBeCloseTo(0, 5);
+    // The yellow tooltip should reflect the matched cadence.
+    const labels = r.guides.map((g) => g.label).filter(Boolean);
+    expect(labels).toContain('40');
+  });
+
+  it('snaps the start terminus by mirroring the next → next-next cadence', () => {
+    // Same line but A is dragged — A↔B should snap to B↔C = 40.
+    const a = makeStation({ id: 'a', x: 5, y: 0, stops: [horizontalStop('L1')] });
+    const b = makeStation({ id: 'b', x: 40, y: 0, stops: [horizontalStop('L1')] });
+    const c = makeStation({ id: 'c', x: 80, y: 0, stops: [horizontalStop('L1')] });
+    const d = makeStation({ id: 'd', x: 120, y: 0, stops: [horizontalStop('L1')] });
+    const r = snapDraggedStation({
+      draggedId: 'a',
+      proposedX: 2,
+      proposedY: 0.5,
+      draggedRotation: 0,
+      draggedStops: a.stops,
+      stations: stations(a, b, c, d),
+      lines: linesOf(lineOf('L1', ['a', 'b', 'c', 'd'])),
+      modes: { ...LINE_ONLY, equidistant: true },
+    });
+    expect(r.x).toBeCloseTo(0, 5);
+    expect(r.y).toBeCloseTo(0, 5);
+    const labels = r.guides.map((g) => g.label).filter(Boolean);
+    expect(labels).toContain('40');
+  });
+
+  it('fires on a 3-station line — the smallest case with a prev-prev', () => {
+    // Minimum-length case: [A, B, C]. Dragging C, prev=B, prev-prev=A.
+    const a = makeStation({ id: 'a', x: 0, y: 0, stops: [horizontalStop('L1')] });
+    const b = makeStation({ id: 'b', x: 30, y: 0, stops: [horizontalStop('L1')] });
+    const c = makeStation({ id: 'c', x: 55, y: 0, stops: [horizontalStop('L1')] });
+    const r = snapDraggedStation({
+      draggedId: 'c',
+      proposedX: 58,
+      proposedY: 0.5,
+      draggedRotation: 0,
+      draggedStops: c.stops,
+      stations: stations(a, b, c),
+      lines: linesOf(lineOf('L1', ['a', 'b', 'c'])),
+      modes: { ...LINE_ONLY, equidistant: true },
+    });
+    // A↔B = 30, so C snaps to B + 30 = 60.
+    expect(r.x).toBeCloseTo(60, 5);
+    expect(r.y).toBeCloseTo(0, 5);
+  });
+
+  it('uses only the immediate prev-prev distance, not averaged spacing', () => {
+    // [A, B, C, D] with A↔B = 40 but B↔C = 10. Dragging D, the new branch
+    // must use the B↔C = 10 cadence (immediate prev-prev), NOT the A↔B = 40
+    // cadence and NOT some average.
+    const a = makeStation({ id: 'a', x: 0, y: 0, stops: [horizontalStop('L1')] });
+    const b = makeStation({ id: 'b', x: 40, y: 0, stops: [horizontalStop('L1')] });
+    const c = makeStation({ id: 'c', x: 50, y: 0, stops: [horizontalStop('L1')] });
+    const d = makeStation({ id: 'd', x: 56, y: 0, stops: [horizontalStop('L1')] });
+    const r = snapDraggedStation({
+      draggedId: 'd',
+      proposedX: 58,
+      proposedY: 0.5,
+      draggedRotation: 0,
+      draggedStops: d.stops,
+      stations: stations(a, b, c, d),
+      lines: linesOf(lineOf('L1', ['a', 'b', 'c', 'd'])),
+      modes: { ...LINE_ONLY, equidistant: true },
+    });
+    expect(r.x).toBeCloseTo(60, 5);
+    expect(r.y).toBeCloseTo(0, 5);
+  });
+
+  it('skips when the prev-prev stop is not parallel to the drag axis', () => {
+    // [A, B, C, D] with B's stop vertical — the prev-prev for D's
+    // extrapolation chain is B, and a vertical stop fails axisOk against
+    // D's horizontal drag axis. The new branch must NOT push a candidate.
+    const a = makeStation({ id: 'a', x: 0, y: 0, stops: [horizontalStop('L1')] });
+    const b = makeStation({
+      id: 'b',
+      x: 40,
+      y: 0,
+      stops: [makeStop('L1', { row: 0, col: 0, orientation: 'auto-vertical' })],
+    });
+    const c = makeStation({ id: 'c', x: 80, y: 0, stops: [horizontalStop('L1')] });
+    const d = makeStation({ id: 'd', x: 115, y: 0, stops: [horizontalStop('L1')] });
+    const r = snapDraggedStation({
+      draggedId: 'd',
+      proposedX: 118,
+      proposedY: 0.5,
+      draggedRotation: 0,
+      draggedStops: d.stops,
+      stations: stations(a, b, c, d),
+      lines: linesOf(lineOf('L1', ['a', 'b', 'c', 'd'])),
+      modes: { ...LINE_ONLY, equidistant: true },
+    });
+    // Only line snap fires — projects onto y=0 through C's horizontal axis.
+    expect(r.x).toBeCloseTo(118, 5);
+    expect(r.y).toBeCloseTo(0, 5);
+  });
+
+  it('terminus branch is inert during Ctrl-drag (redistributeAnchor)', () => {
+    // Same [A(0), B(40), C(80), D] cadence-extrapolation setup, but the
+    // user is Ctrl-dragging D toward anchor A. The new terminus branch
+    // must NOT fire — it would fight the redistribute intent by pulling
+    // D's along-axis position onto the local A↔B cadence.
+    const a = makeStation({ id: 'a', x: 0, y: 0, stops: [horizontalStop('L1')] });
+    const b = makeStation({ id: 'b', x: 40, y: 0, stops: [horizontalStop('L1')] });
+    const c = makeStation({ id: 'c', x: 80, y: 0, stops: [horizontalStop('L1')] });
+    const d = makeStation({ id: 'd', x: 200, y: 0, stops: [horizontalStop('L1')] });
+    const r = snapDraggedStation({
+      draggedId: 'd',
+      proposedX: 125,
+      proposedY: 0.5,
+      draggedRotation: 0,
+      draggedStops: d.stops,
+      stations: stations(a, b, c, d),
+      lines: linesOf(lineOf('L1', ['a', 'b', 'c', 'd'])),
+      // Ctrl-drag: snap exclusively to anchor A. The new branch would
+      // otherwise pull x from 125 → 120 (extrapolated B↔C cadence).
+      redistributeAnchor: 'a',
+      modes: { ...LINE_ONLY, equidistant: true },
+    });
+    // Anchor axis pulls y back onto the line (perp dist 0.5 → 0). x stays
+    // at 125 — terminus equidistant must NOT pull it to 120.
+    expect(r.x).toBeCloseTo(125, 5);
+    expect(r.y).toBeCloseTo(0, 5);
+  });
+
+  it('emits a source-cadence guide from prev-prev to prev on end terminus snap', () => {
+    // [A(0), B(40), C(80), D] horizontal. Dragging D, the terminus branch
+    // fires. Two guides expected: the primary D↔C alignment guide and a
+    // new source guide showing the B→C segment whose cadence (40) we
+    // extrapolated to position D at 120.
+    const a = makeStation({ id: 'a', x: 0, y: 0, stops: [horizontalStop('L1')] });
+    const b = makeStation({ id: 'b', x: 40, y: 0, stops: [horizontalStop('L1')] });
+    const c = makeStation({ id: 'c', x: 80, y: 0, stops: [horizontalStop('L1')] });
+    const d = makeStation({ id: 'd', x: 110, y: 0, stops: [horizontalStop('L1')] });
+    const r = snapDraggedStation({
+      draggedId: 'd',
+      proposedX: 118,
+      proposedY: 0.5,
+      draggedRotation: 0,
+      draggedStops: d.stops,
+      stations: stations(a, b, c, d),
+      lines: linesOf(lineOf('L1', ['a', 'b', 'c', 'd'])),
+      modes: { ...LINE_ONLY, equidistant: true },
+    });
+    expect(r.x).toBeCloseTo(120, 5);
+    // Source guide: B(40,0) → C(80,0) — prev-prev → prev for terminus D.
+    const sourceGuide = r.guides.find(
+      (g) =>
+        Math.abs(g.from.x - 40) < 1e-6 &&
+        Math.abs(g.from.y - 0) < 1e-6 &&
+        Math.abs(g.to.x - 80) < 1e-6 &&
+        Math.abs(g.to.y - 0) < 1e-6,
+    );
+    expect(sourceGuide).toBeDefined();
+    expect(sourceGuide?.label).toBe('40');
+  });
+
+  it('emits a source-cadence guide from next-next to next on start terminus snap', () => {
+    // Mirror of the end terminus: [A, B(40), C(80), D(120)] with A
+    // dragged. Source guide should go from C → B (next-next → next).
+    const a = makeStation({ id: 'a', x: 5, y: 0, stops: [horizontalStop('L1')] });
+    const b = makeStation({ id: 'b', x: 40, y: 0, stops: [horizontalStop('L1')] });
+    const c = makeStation({ id: 'c', x: 80, y: 0, stops: [horizontalStop('L1')] });
+    const d = makeStation({ id: 'd', x: 120, y: 0, stops: [horizontalStop('L1')] });
+    const r = snapDraggedStation({
+      draggedId: 'a',
+      proposedX: 2,
+      proposedY: 0.5,
+      draggedRotation: 0,
+      draggedStops: a.stops,
+      stations: stations(a, b, c, d),
+      lines: linesOf(lineOf('L1', ['a', 'b', 'c', 'd'])),
+      modes: { ...LINE_ONLY, equidistant: true },
+    });
+    expect(r.x).toBeCloseTo(0, 5);
+    // Source guide: C(80,0) → B(40,0).
+    const sourceGuide = r.guides.find(
+      (g) =>
+        Math.abs(g.from.x - 80) < 1e-6 &&
+        Math.abs(g.from.y - 0) < 1e-6 &&
+        Math.abs(g.to.x - 40) < 1e-6 &&
+        Math.abs(g.to.y - 0) < 1e-6,
+    );
+    expect(sourceGuide).toBeDefined();
+    expect(sourceGuide?.label).toBe('40');
+  });
+
+  it('does not emit a source-cadence guide on the interior midpoint case', () => {
+    // [A(0), B, C(100)] dragging B near the midpoint. Source guide is
+    // a terminus-only concept — for interior equidistant the existing
+    // alignment pairs and opposite-direction guide already convey the
+    // midpoint snap. All guides should originate from the dragged stop
+    // (pushGuide and addOppositeGuide both set from = dragged stop);
+    // a source guide is the only kind whose `from` is at a non-dragged
+    // station, so checking for that anomaly catches a regression.
+    const a = makeStation({ id: 'a', x: 0, y: 0, stops: [horizontalStop('L1')] });
+    const b = makeStation({ id: 'b', x: 50, y: 0, stops: [horizontalStop('L1')] });
+    const c = makeStation({ id: 'c', x: 100, y: 0, stops: [horizontalStop('L1')] });
+    const r = snapDraggedStation({
+      draggedId: 'b',
+      proposedX: 53,
+      proposedY: 0.5,
+      draggedRotation: 0,
+      draggedStops: b.stops,
+      stations: stations(a, b, c),
+      lines: linesOf(lineOf('L1', ['a', 'b', 'c'])),
+      modes: { ...LINE_ONLY, equidistant: true },
+    });
+    expect(r.x).toBeCloseTo(50, 5);
+    // Snapped B's stop is at x=50, y=0. Every guide must originate there.
+    for (const g of r.guides) {
+      expect(g.from.x).toBeCloseTo(50, 5);
+      expect(g.from.y).toBeCloseTo(0, 5);
+    }
   });
 });
 
@@ -316,6 +552,29 @@ describe('snapDraggedStation: equidistant + tens together', () => {
       modes: { line: true, equidistant: true, tens: true, all: false },
     });
     expect(r.x).toBeCloseTo(47, 5);
+    expect(r.y).toBeCloseTo(0, 5);
+  });
+
+  it('on a terminus, equidistant target wins over tens when closer', () => {
+    // [A(0), B(37), C(74), D] — non-uniform spacing chosen so the two
+    // modes disagree: equidistant terminus target = C + 37 = 111;
+    // tens-from-C nearest is 74 + 40 = 114. Proposed = 110 (1 from 111,
+    // 4 from 114) → equidistant must win.
+    const a = makeStation({ id: 'a', x: 0, y: 0, stops: [horizontalStop('L1')] });
+    const b = makeStation({ id: 'b', x: 37, y: 0, stops: [horizontalStop('L1')] });
+    const c = makeStation({ id: 'c', x: 74, y: 0, stops: [horizontalStop('L1')] });
+    const d = makeStation({ id: 'd', x: 105, y: 0, stops: [horizontalStop('L1')] });
+    const r = snapDraggedStation({
+      draggedId: 'd',
+      proposedX: 110,
+      proposedY: 0.5,
+      draggedRotation: 0,
+      draggedStops: d.stops,
+      stations: stations(a, b, c, d),
+      lines: linesOf(lineOf('L1', ['a', 'b', 'c', 'd'])),
+      modes: { line: true, equidistant: true, tens: true, all: false },
+    });
+    expect(r.x).toBeCloseTo(111, 5);
     expect(r.y).toBeCloseTo(0, 5);
   });
 });

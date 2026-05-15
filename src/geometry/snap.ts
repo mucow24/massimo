@@ -343,6 +343,7 @@ export function snapDraggedStation(input: SnapInput): SnapResult {
   // to a line-mode anchor that wasn't part of the candidate pool).
   // Equidistant has no meaning for bullets (no A-B-C neighbors); the helper
   // gates that internally.
+  let refinedSourceGuide: { from: Vec2; to: Vec2 } | undefined;
   if (!secondary && primary.kind === 'line' && (modes.equidistant || modes.tens)) {
     const refined = refineAlongAxis({
       sx,
@@ -357,11 +358,13 @@ export function snapDraggedStation(input: SnapInput): SnapResult {
       modes,
       tolerance,
       bulletLineId,
+      redistributeAnchor,
       renderedPos,
     });
     if (refined) {
       sx = refined.sx;
       sy = refined.sy;
+      refinedSourceGuide = refined.sourceGuide;
     }
   }
 
@@ -445,6 +448,15 @@ export function snapDraggedStation(input: SnapInput): SnapResult {
   };
   addOppositeGuide(primary);
   if (secondary) addOppositeGuide(secondary);
+
+  // Source-cadence guide for terminus equidistant: shows the prev-prev →
+  // prev (or next-next → next) segment whose distance was extrapolated.
+  // Drawn as a regular alignment guide with a matching distance label, so
+  // the user sees the same number on both sides of the snap point.
+  if (refinedSourceGuide) {
+    const { from, to } = refinedSourceGuide;
+    guides.push({ from, to, label: labelFor(from, to, false) });
+  }
 
   return { x: sx, y: sy, guides };
 }
@@ -571,9 +583,20 @@ export function allAxesPairs(
 
 /**
  * Phase-3 along-axis refinement: equidistant + tens. Adjusts (sx, sy) along
- * `axis` to either the midpoint between same-line prev/next neighbors
- * (`equidistant`), or the nearest multiple of `TENS_INTERVAL` measured from
- * a stable along-axis anchor (`tens`).
+ * `axis` to either an equidistant target (`equidistant`), or the nearest
+ * multiple of `TENS_INTERVAL` measured from a stable along-axis anchor
+ * (`tens`).
+ *
+ * Anchor selection for equidistant:
+ *   - Interior: midpoint between same-line prev and next neighbors, when
+ *     both have axis-parallel stops.
+ *   - Terminus: extrapolate the line's last segment outward — on a line
+ *     A-B-C-D, dragging D snaps to `C + (C - B)` along the drag axis (so
+ *     D↔C matches B↔C). Mirrored for the start terminus. Requires the line
+ *     to have ≥3 stations and the prev-prev/next-next stop to also be
+ *     axis-parallel; a bend anywhere in the chain disables the snap.
+ *   - Bullets: skipped — there's no A-B-C concept for a free-floating
+ *     bullet.
  *
  * Anchor selection for tens:
  *   - Station drag: the dragged station's prev-in-line-ordering neighbor on
@@ -581,15 +604,17 @@ export function allAxesPairs(
  *     a line behave symmetrically.
  *   - Bullet drag: the line's first station's stop. Bullets aren't part of
  *     `line.stations`, so a stable line-anchored grid (every 10 from the
- *     start of the line) is the natural extension. Equidistant is skipped
- *     for bullets — there's no A-B-C concept for a free-floating bullet.
+ *     start of the line) is the natural extension.
  *
  * When both modes apply, the candidate closest to the proposed position
  * wins; equidistant wins exact ties.
  *
  * Returns null if no refinement applies. Otherwise returns the refined
- * (sx, sy). The caller rebuilds guides afterward, so labels reflect the
- * refined distance automatically.
+ * (sx, sy) plus an optional `sourceGuide` — set only when a terminus
+ * equidistant candidate wins — describing the prev-prev → prev (or
+ * next-next → next) segment whose cadence was extrapolated. The caller
+ * rebuilds the regular alignment guides afterward and appends the source
+ * guide so the user sees the matched cadence on both sides.
  */
 function refineAlongAxis(args: {
   sx: number;
@@ -606,8 +631,13 @@ function refineAlongAxis(args: {
   /** Set in bullet mode. Selects the bullet-specific anchor logic and
    *  disables equidistant. */
   bulletLineId?: LineId;
+  /** Set during Ctrl-drag (redistribute). Disables the terminus
+   *  extrapolation branches of equidistant — they would otherwise fight
+   *  the user's intent by pulling the terminus onto the local A↔B cadence
+   *  instead of toward the chosen anchor. */
+  redistributeAnchor?: StationId;
   renderedPos: RenderedStopPositions;
-}): { sx: number; sy: number } | null {
+}): { sx: number; sy: number; sourceGuide?: { from: Vec2; to: Vec2 } } | null {
   const {
     sx,
     sy,
@@ -621,6 +651,7 @@ function refineAlongAxis(args: {
     modes,
     tolerance,
     bulletLineId,
+    redistributeAnchor,
     renderedPos,
   } = args;
   if (!modes.equidistant && !modes.tens) return null;
@@ -639,7 +670,15 @@ function refineAlongAxis(args: {
     return { x: w.x, y: w.y, axisOk: parallel(stopAxis, axis) };
   };
 
-  type Refinement = { delta: number; kind: 'equidistant' | 'tens' };
+  type Refinement = {
+    delta: number;
+    kind: 'equidistant' | 'tens';
+    /** Set only for terminus equidistant candidates — describes the
+     *  prev-prev → prev (or next-next → next) segment whose cadence was
+     *  extrapolated. The caller emits a second alignment guide for this
+     *  segment so the user sees the matched cadence on both sides. */
+    sourceGuide?: { from: Vec2; to: Vec2 };
+  };
   const candidates: Refinement[] = [];
 
   // Bullet path: tens-only, anchored at the bound line's start stop.
@@ -675,12 +714,58 @@ function refineAlongAxis(args: {
     const prevStop = prev ? stopWorldFor(prev, line.id) : null;
     const nextStop = next ? stopWorldFor(next, line.id) : null;
 
-    if (modes.equidistant && prevStop?.axisOk && nextStop?.axisOk) {
-      const midX = (prevStop.x + nextStop.x) / 2;
-      const midY = (prevStop.y + nextStop.y) / 2;
-      const along = (midX - dStopX) * axis.x + (midY - dStopY) * axis.y;
+    // Closure — parallels `pushGuide` in the caller. Pushes an equidistant
+    // candidate iff the proposed dStop is within tolerance of (targetX,
+    // targetY) measured along `axis`. `sourceGuide` is set only by the
+    // terminus branches; it surfaces the cadence-source segment to the
+    // caller for rendering.
+    const pushEquiCandidate = (
+      targetX: number,
+      targetY: number,
+      sourceGuide?: { from: Vec2; to: Vec2 },
+    ) => {
+      const along = (targetX - dStopX) * axis.x + (targetY - dStopY) * axis.y;
       if (Math.abs(along) <= tolerance) {
-        candidates.push({ delta: along, kind: 'equidistant' });
+        candidates.push({ delta: along, kind: 'equidistant', sourceGuide });
+      }
+    };
+
+    if (modes.equidistant) {
+      if (prevStop?.axisOk && nextStop?.axisOk) {
+        // Interior: midpoint of same-line prev/next.
+        pushEquiCandidate((prevStop.x + nextStop.x) / 2, (prevStop.y + nextStop.y) / 2);
+      } else if (!redistributeAnchor && nextId === null && prevStop?.axisOk && dIdx >= 2) {
+        // End terminus: extend the prev-prev → prev segment outward by its
+        // along-axis length so terminus↔prev matches prev↔prev-prev.
+        // Disabled during Ctrl-drag so we don't override the redistribute
+        // anchor with the local A↔B cadence.
+        const prevPrev = stationsRec[line.stations[dIdx - 2]];
+        const prevPrevStop = prevPrev ? stopWorldFor(prevPrev, line.id) : null;
+        if (prevPrevStop?.axisOk) {
+          const ref =
+            (prevStop.x - prevPrevStop.x) * axis.x + (prevStop.y - prevPrevStop.y) * axis.y;
+          pushEquiCandidate(prevStop.x + ref * axis.x, prevStop.y + ref * axis.y, {
+            from: { x: prevPrevStop.x, y: prevPrevStop.y },
+            to: { x: prevStop.x, y: prevStop.y },
+          });
+        }
+      } else if (
+        !redistributeAnchor &&
+        prevId === null &&
+        nextStop?.axisOk &&
+        dIdx + 2 < line.stations.length
+      ) {
+        // Start terminus: mirror of the end case. Same Ctrl-drag gate.
+        const nextNext = stationsRec[line.stations[dIdx + 2]];
+        const nextNextStop = nextNext ? stopWorldFor(nextNext, line.id) : null;
+        if (nextNextStop?.axisOk) {
+          const ref =
+            (nextNextStop.x - nextStop.x) * axis.x + (nextNextStop.y - nextStop.y) * axis.y;
+          pushEquiCandidate(nextStop.x - ref * axis.x, nextStop.y - ref * axis.y, {
+            from: { x: nextNextStop.x, y: nextNextStop.y },
+            to: { x: nextStop.x, y: nextStop.y },
+          });
+        }
       }
     }
 
@@ -717,6 +802,7 @@ function refineAlongAxis(args: {
   return {
     sx: sx + chosen.delta * axis.x,
     sy: sy + chosen.delta * axis.y,
+    sourceGuide: chosen.sourceGuide,
   };
 }
 
