@@ -95,6 +95,31 @@ test.describe('Snap modes wired through to the engine', () => {
     expect(pos.y).toBeCloseTo(0, 1);
   });
 
+  test('Equidistant: end terminus extrapolates the prev-prev → prev cadence', async ({
+    page,
+  }) => {
+    await seedAndOpen(page, verticalLine);
+
+    // Toggle equidistant on. Line is on by default.
+    await page.getByRole('button', { name: 'Snap to equidistant' }).click();
+
+    // Vertical line A(0,-100), B(0,0), C(0,100). C is the end terminus —
+    // the prev-prev → prev (A → B) cadence is 100, so the snap target for
+    // C is B + 100 = (0, 100), which is where C already sits. Drag C
+    // slightly off cadence (+5 x, +7 y); within the 10-unit tolerance the
+    // new branch should pull y back to 100 (line snap alone would only fix
+    // x, leaving y at ~107).
+    const c = await stationCenter(page, 'C');
+    await page.mouse.move(c.x, c.y);
+    await page.mouse.down();
+    await page.mouse.move(c.x + 5, c.y + 7, { steps: 3 });
+    await page.mouse.up();
+
+    const pos = await stationWorldPos(page, 'C');
+    expect(pos.x).toBeCloseTo(0, 1);
+    expect(pos.y).toBeCloseTo(100, 1);
+  });
+
   test('Equidistant off: middle station only snaps to the line, not the midpoint', async ({
     page,
   }) => {
