@@ -1,8 +1,8 @@
 import {
-  RulerHorizontalIcon,
+  SliderIcon,
   SpaceEvenlyHorizontallyIcon,
-  RowSpacingIcon,
-  Crosshair2Icon,
+  RulerHorizontalIcon,
+  AllSidesIcon,
 } from '@radix-ui/react-icons';
 import { useSnapPrefs } from '../state/snapPrefs';
 import type { SnapModes } from '../geometry/snap';
@@ -21,7 +21,7 @@ const TOGGLES: ToggleSpec[] = [
     key: 'line',
     label: 'Snap to line',
     hint: 'Lock to the direction of the existing line',
-    Icon: RulerHorizontalIcon,
+    Icon: SliderIcon,
   },
   {
     key: 'equidistant',
@@ -34,14 +34,14 @@ const TOGGLES: ToggleSpec[] = [
     key: 'tens',
     label: "Snap to 10's",
     hint: 'Snap to multiples of 10 from the previous neighbor',
-    Icon: RowSpacingIcon,
+    Icon: RulerHorizontalIcon,
     requiresLine: true,
   },
   {
     key: 'all',
     label: 'Snap to all',
     hint: 'Snap to vertical, horizontal, or diagonal alignment with any stop',
-    Icon: Crosshair2Icon,
+    Icon: AllSidesIcon,
   },
 ];
 
