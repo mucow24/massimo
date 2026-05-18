@@ -55,6 +55,27 @@ export function maybeSnapToGrid<T extends { x: number; y: number } | null>(
 }
 
 /**
+ * Grid-snap a text label registered by its upper-left bbox corner.
+ *
+ * Labels are positioned by their bbox center (label.x, label.y) — but for
+ * grid snapping the natural reference point is the visual upper-left, so
+ * each label's top edge lands on a grid row and its left edge on a grid
+ * column. Returns the new center such that center − (width/2, height/2)
+ * is grid-aligned. Rotation is ignored (the upper-left is taken in the
+ * label's unrotated local frame).
+ */
+export function snapLabelToGrid(
+  center: { x: number; y: number },
+  width: number,
+  height: number,
+): { x: number; y: number } {
+  const halfW = width / 2;
+  const halfH = height / 2;
+  const ul = snapPointToGrid(center.x - halfW, center.y - halfH);
+  return { x: ul.x + halfW, y: ul.y + halfH };
+}
+
+/**
  * User-toggleable snap modes. All four are independent flags but
  * `equidistant` and `tens` are no-ops unless `line` is also true.
  */

@@ -1,5 +1,11 @@
 import { describe, it, expect } from 'vitest';
-import { maybeSnapToGrid, snapDraggedStation, snapPointToGrid, type SnapModes } from './snap';
+import {
+  maybeSnapToGrid,
+  snapDraggedStation,
+  snapLabelToGrid,
+  snapPointToGrid,
+  type SnapModes,
+} from './snap';
 import { makeStation, makeStop } from '../test/fixtures';
 import type { Line, LineId, Station, StationId, StopCell } from '../model/types';
 
@@ -890,6 +896,27 @@ describe('snapPointToGrid', () => {
   it('treats exact halfway as a round-to-even-or-up (JS Math.round)', () => {
     // 5 → 10 (rounds up), 15 → 20, -5 → 0 (Math.round(-0.5) === 0).
     expect(snapPointToGrid(5, 15)).toEqual({ x: 10, y: 20 });
+  });
+});
+
+describe('snapLabelToGrid', () => {
+  // A label's (x, y) is its bbox center. snapLabelToGrid snaps the upper-left
+  // corner of the bbox to a grid intersection and returns the corresponding
+  // center.
+  it('snaps the upper-left to grid; center adjusts accordingly', () => {
+    // Width 40, height 20 → halfW 20, halfH 10. Center (50, 50) → UL (30, 40)
+    // which is already grid-aligned → center stays at (50, 50).
+    expect(snapLabelToGrid({ x: 50, y: 50 }, 40, 20)).toEqual({ x: 50, y: 50 });
+  });
+  it('moves the center when the upper-left is off-grid', () => {
+    // Width 40, height 20. Center (53, 47) → UL (33, 37) → snap to (30, 40)
+    // → center back at (50, 50).
+    expect(snapLabelToGrid({ x: 53, y: 47 }, 40, 20)).toEqual({ x: 50, y: 50 });
+  });
+  it('handles odd bbox sizes — UL on grid, center off-grid by half-bbox', () => {
+    // Width 25, height 15 → halfW 12.5, halfH 7.5. Center (12.5, 7.5) →
+    // UL (0, 0) → already on grid → center stays at (12.5, 7.5).
+    expect(snapLabelToGrid({ x: 12.5, y: 7.5 }, 25, 15)).toEqual({ x: 12.5, y: 7.5 });
   });
 });
 

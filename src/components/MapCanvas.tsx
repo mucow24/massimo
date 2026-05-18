@@ -13,9 +13,12 @@ import { useViewportStore } from '../state/viewportStore';
 import {
   maybeSnapToGrid,
   snapDraggedStation,
+  snapLabelToGrid,
   snapPointToGrid,
   type SnapGuide,
 } from '../geometry/snap';
+import { measureTextLabel } from '../geometry/textMeasure';
+import { TEXT_LABEL_HIT_PAD } from '../geometry/stationBoundary';
 import {
   buildBands,
   buildOrderedRenderables,
@@ -312,11 +315,24 @@ export function MapCanvas() {
         let nx = ld.startWX + rawDx;
         let ny = ld.startWY + rawDy;
         // Labels don't go through the snap engine (no axis/orientation), but
-        // grid snap still applies — Shift bypasses like elsewhere.
+        // grid snap still applies. Register the label by its upper-left
+        // bbox corner so the visible edge lands on a grid line. Shift
+        // bypasses like elsewhere.
         if (snapModes.grid && !e.shiftKey) {
-          const g = snapPointToGrid(nx, ny);
-          nx = g.x;
-          ny = g.y;
+          const cur = textLabels[ld.id];
+          if (cur) {
+            const m = measureTextLabel(cur);
+            // Snap the VISIBLE upper-left (the dashed selection ring), which
+            // includes hit-test padding around the text bbox — that's the
+            // corner the user actually sees on screen.
+            const snapped = snapLabelToGrid(
+              { x: nx, y: ny },
+              m.width + 2 * TEXT_LABEL_HIT_PAD,
+              m.height + 2 * TEXT_LABEL_HIT_PAD,
+            );
+            nx = snapped.x;
+            ny = snapped.y;
+          }
         }
         const dx = nx - ld.startWX;
         const dy = ny - ld.startWY;
