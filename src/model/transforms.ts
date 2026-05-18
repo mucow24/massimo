@@ -471,6 +471,12 @@ export function deleteStation(doc: MapDoc, id: StationId): MapDoc {
 
 // ---------- Stops ----------
 
+// Float-tolerant "same cell" — row/col are no longer constrained to integers
+// (diagonal moves use ±√2/2), so equality must allow small drift.
+const CELL_EPS = 1e-4;
+const sameCell = (a: { row: number; col: number }, b: { row: number; col: number }): boolean =>
+  Math.abs(a.row - b.row) < CELL_EPS && Math.abs(a.col - b.col) < CELL_EPS;
+
 export function moveStop(
   doc: MapDoc,
   stationId: StationId,
@@ -485,9 +491,10 @@ export function moveStop(
   const cell = st.stops[i];
   const newRow = cell.row + dRow;
   const newCol = cell.col + dCol;
+  const target = { row: newRow, col: newCol };
   // Stops can swap with another stop, but cannot enter the label cell.
-  if (st.label.row === newRow && st.label.col === newCol) return doc;
-  const j = st.stops.findIndex((c) => c.row === newRow && c.col === newCol);
+  if (sameCell(st.label, target)) return doc;
+  const j = st.stops.findIndex((c) => sameCell(c, target));
   const newStops = st.stops.slice();
   if (j >= 0 && j !== i) {
     newStops[j] = { ...newStops[j], row: cell.row, col: cell.col };
@@ -522,13 +529,15 @@ export function rotateStop(doc: MapDoc, stationId: StationId, lineId: LineId): M
 export function moveLabel(doc: MapDoc, stationId: StationId, dRow: number, dCol: number): MapDoc {
   const st = doc.stations[stationId];
   if (!st) return doc;
-  if (dRow === 0 && dCol === 0) return doc;
+  if (Math.abs(dRow) < CELL_EPS && Math.abs(dCol) < CELL_EPS) return doc;
   // Step in the requested direction; if a stop occupies the destination, keep
   // stepping until we land on an empty cell. So [Label] O O O + → ends up
-  // O O O [Label].
+  // O O O [Label]. Bounded by stop count so a degenerate step (all zeros)
+  // can't spin — already guarded above, but belt + suspenders.
   let newRow = st.label.row + dRow;
   let newCol = st.label.col + dCol;
-  while (st.stops.some((c) => c.row === newRow && c.col === newCol)) {
+  for (let safety = 0; safety < st.stops.length + 1; safety++) {
+    if (!st.stops.some((c) => sameCell(c, { row: newRow, col: newCol }))) break;
     newRow += dRow;
     newCol += dCol;
   }
@@ -603,8 +612,8 @@ export function mirrorLabel(doc: MapDoc, stationId: StationId): MapDoc {
   for (let k = 0; k < 1000; k++) {
     newRow += dRow;
     newCol += dCol;
-    const beyond = proj(newRow, newCol) > maxProj;
-    const empty = !st.stops.some((c) => c.row === newRow && c.col === newCol);
+    const beyond = proj(newRow, newCol) > maxProj + CELL_EPS;
+    const empty = !st.stops.some((c) => sameCell(c, { row: newRow, col: newCol }));
     if (beyond && empty) break;
   }
   const next = ((st.label.rotation + 4) % 8) as Rotation;
@@ -767,15 +776,20 @@ export function toggleStationOnLine(
       : Math.min(ln.stations.length, Math.max(0, insertAfterIndex + 1));
   const newStations = [...ln.stations.slice(0, idx), stationId, ...ln.stations.slice(idx)];
   // Add a stop cell if this line doesn't yet have one at the station.
-  // Spawn at (0, maxCol+1) of existing footprint; (0, 0) when empty.
+  // Spawn one column east of the rightmost existing stop (or at (0, 0) when
+  // empty). Anchoring on a real stop — not the bounding-box corner — keeps
+  // the new cell 8-adjacent to that stop, so the layout never gains an
+  // orphan even when existing stops sit at non-zero rows.
   const hasCell = st.stops.some((c) => c.lineId === lineId);
   let newStops = st.stops;
   let newLabel = st.label;
   if (!hasCell) {
-    const maxCol =
-      st.stops.length === 0 ? -1 : st.stops.reduce((m, c) => (c.col > m ? c.col : m), -Infinity);
-    const newRow = 0;
-    const newCol = maxCol + 1;
+    const anchor =
+      st.stops.length === 0
+        ? null
+        : st.stops.reduce((best, c) => (c.col > best.col ? c : best), st.stops[0]);
+    const newRow = anchor ? anchor.row : 0;
+    const newCol = anchor ? anchor.col + 1 : 0;
     const newCell: StopCell = {
       lineId,
       row: newRow,
@@ -787,9 +801,9 @@ export function toggleStationOnLine(
     // step it past the stop block so the new line doesn't paint over it.
     // We only nudge auto labels — manual alignments are user-pinned and
     // shouldn't move out from under the user.
-    if (st.label.align === 'auto' && st.label.row === newRow && st.label.col === newCol) {
+    if (st.label.align === 'auto' && sameCell(st.label, { row: newRow, col: newCol })) {
       let lc = newCol;
-      while (newStops.some((c) => c.row === newRow && c.col === lc)) lc += 1;
+      while (newStops.some((c) => sameCell(c, { row: newRow, col: lc }))) lc += 1;
       newLabel = { ...st.label, row: newRow, col: lc };
     }
   }

@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useRef, useState } from 'react';
 import type { StopOrientation } from '../../model/types';
 
 type GridStation = {
@@ -14,31 +14,70 @@ const ORIENTATION_GLYPH: Record<StopOrientation, string> = {
   'auto-nw-se': '⤡',
 };
 
-type CellKind = 'label' | 'stop' | 'empty';
+// Display pitch (inspector-local pixels per unit in row/col space).
+// Circle radius = pitch / 2 so two nodes at unit distance in (row, col) space
+// are tangent — true for all 8 compass directions, including diagonals.
+const PITCH = 22;
+const RADIUS = PITCH / 2;
+const DRAG_THRESHOLD_PX = 4;
+
+// 8 angular offsets at distance 1 in (row, col) space. The 4 cardinals are
+// integer steps; the 4 diagonals use ±√2/2 so the center distance stays 1
+// (i.e. tangent), not √2 (corner-touch).
+const HALF_SQRT2 = Math.SQRT1_2;
+const SLOT_OFFSETS: { dRow: number; dCol: number }[] = [
+  { dRow: -1, dCol: 0 }, // N
+  { dRow: -HALF_SQRT2, dCol: HALF_SQRT2 }, // NE
+  { dRow: 0, dCol: 1 }, // E
+  { dRow: HALF_SQRT2, dCol: HALF_SQRT2 }, // SE
+  { dRow: 1, dCol: 0 }, // S
+  { dRow: HALF_SQRT2, dCol: -HALF_SQRT2 }, // SW
+  { dRow: 0, dCol: -1 }, // W
+  { dRow: -HALF_SQRT2, dCol: -HALF_SQRT2 }, // NW
+];
+
+// Overlap epsilon — a ghost slot is rejected if it would land within
+// (1 - EPS) of any existing node (other than the source / anchor itself).
+// Two nodes at exact unit distance are tangent, which is allowed.
+const EPS = 1e-4;
+
+// Bounding-box padding (in row/col units) so the viewBox always has room for
+// ghost slots without reflowing when a drag starts. Ghosts are at most 1
+// unit out from any anchor, and the anchor is always one of the existing
+// nodes, so 1-unit padding covers every reachable ghost.
+const VIEW_PAD = 1;
 
 type DragSource =
   | { kind: 'stop'; lineId: string; row: number; col: number }
   | { kind: 'label'; row: number; col: number };
+
+type TargetKind = 'ghost' | 'stop' | 'label';
+
+type DragTarget = { row: number; col: number; kind: TargetKind };
 
 type DragState = {
   source: DragSource;
   startX: number;
   startY: number;
   isDragging: boolean;
-  // null when the pointer is over an invalid drop target (e.g. label drag
-  // hovering a stop, or pointer outside the grid).
-  overCell: { row: number; col: number } | null;
+  // Cursor position in (row, col) space. Tracked once isDragging crosses the
+  // threshold — drives the "nearest non-source node = anchor" computation.
+  cursor: { row: number; col: number } | null;
+  over: DragTarget | null;
 };
 
-const DRAG_THRESHOLD_PX = 4;
+const dist = (a: { row: number; col: number }, b: { row: number; col: number }): number =>
+  Math.hypot(a.row - b.row, a.col - b.col);
 
-// A target cell kind is a valid drop for a given source. Labels can only
-// land on empty cells; stops can land on empty cells (move) or other stops
-// (swap). Neither kind can land on the label cell.
-const isValidDropTarget = (sourceKind: 'stop' | 'label', targetKind: CellKind): boolean => {
-  if (targetKind === 'label') return false;
-  if (sourceKind === 'label') return targetKind === 'empty';
-  return true;
+const sameCell = (a: { row: number; col: number }, b: { row: number; col: number }): boolean =>
+  Math.abs(a.row - b.row) < EPS && Math.abs(a.col - b.col) < EPS;
+
+const fmt = (n: number) => n.toFixed(6);
+
+const isValidTarget = (sourceKind: 'stop' | 'label', target: TargetKind): boolean => {
+  if (target === 'ghost') return true;
+  if (target === 'label') return false;
+  return sourceKind === 'stop';
 };
 
 export function StopGrid({
@@ -64,205 +103,343 @@ export function StopGrid({
   onMoveStop: (lineId: string, dRow: number, dCol: number) => void;
   onMoveLabel: (dRow: number, dCol: number) => void;
 }) {
+  const svgRef = useRef<SVGSVGElement | null>(null);
   const [drag, setDrag] = useState<DragState | null>(null);
   const stops = station.stops;
   const label = station.label;
-  const occupied: { row: number; col: number }[] = [
-    ...stops.map((c) => ({ row: c.row, col: c.col })),
-    { row: label.row, col: label.col },
-  ];
-  // Bounding box, padded one cell on each side.
-  const minRow = Math.min(...occupied.map((c) => c.row)) - 1;
-  const maxRow = Math.max(...occupied.map((c) => c.row)) + 1;
-  const minCol = Math.min(...occupied.map((c) => c.col)) - 1;
-  const maxCol = Math.max(...occupied.map((c) => c.col)) + 1;
-  const stopByPos: Record<string, (typeof stops)[number]> = {};
-  for (const c of stops) stopByPos[`${c.row},${c.col}`] = c;
-  const cellSize = 22;
 
-  const cells: React.ReactElement[] = [];
-  for (let r = minRow; r <= maxRow; r++) {
-    for (let c = minCol; c <= maxCol; c++) {
-      const isLabel = label.row === r && label.col === c;
-      const stop = !isLabel ? stopByPos[`${r},${c}`] : undefined;
-      const line = stop ? lines[stop.lineId] : null;
-      const cellKind: CellKind = isLabel ? 'label' : stop ? 'stop' : 'empty';
-      const selected = (isLabel && labelSelected) || (!!stop && stop.lineId === selectedLineId);
-      const isDragSource =
-        !!drag &&
-        ((drag.source.kind === 'stop' &&
-          cellKind === 'stop' &&
-          drag.source.lineId === stop!.lineId) ||
-          (drag.source.kind === 'label' && cellKind === 'label'));
-      const isDropTarget =
-        !!drag &&
-        drag.isDragging &&
-        !!drag.overCell &&
-        drag.overCell.row === r &&
-        drag.overCell.col === c &&
-        !isDragSource;
-      const startDrag = (e: React.PointerEvent, source: DragSource) => {
-        (e.currentTarget as HTMLElement).setPointerCapture(e.pointerId);
-        setDrag({
-          source,
-          startX: e.clientX,
-          startY: e.clientY,
-          isDragging: false,
-          overCell: null,
-        });
-      };
-      cells.push(
-        <div
-          key={`${r},${c}`}
-          data-cell-row={r}
-          data-cell-col={c}
-          data-cell-kind={cellKind}
-          data-line-id={stop?.lineId}
-          onPointerDown={(e) => {
-            if (e.button !== 0) return;
-            if (cellKind === 'stop') {
-              startDrag(e, { kind: 'stop', lineId: stop!.lineId, row: stop!.row, col: stop!.col });
-            } else if (cellKind === 'label') {
-              startDrag(e, { kind: 'label', row: label.row, col: label.col });
-            }
-          }}
-          onPointerMove={(e) => {
-            if (!drag || !isDragSource) return;
-            const dx = e.clientX - drag.startX;
-            const dy = e.clientY - drag.startY;
-            const isDragging = drag.isDragging || Math.hypot(dx, dy) > DRAG_THRESHOLD_PX;
-            let overCell: DragState['overCell'] = null;
-            if (isDragging) {
-              const el = document.elementFromPoint(e.clientX, e.clientY) as HTMLElement | null;
-              const cellEl = el?.closest('[data-cell-row]') as HTMLElement | null;
-              if (cellEl) {
-                const tRow = Number(cellEl.dataset.cellRow);
-                const tCol = Number(cellEl.dataset.cellCol);
-                const tKind = (cellEl.dataset.cellKind ?? 'empty') as CellKind;
-                if (isValidDropTarget(drag.source.kind, tKind)) {
-                  overCell = { row: tRow, col: tCol };
-                }
-              }
-            }
-            if (
-              isDragging !== drag.isDragging ||
-              overCell?.row !== drag.overCell?.row ||
-              overCell?.col !== drag.overCell?.col
-            ) {
-              setDrag({ ...drag, isDragging, overCell });
-            }
-          }}
-          onPointerUp={() => {
-            if (!drag || !isDragSource) return;
-            if (drag.isDragging) {
-              if (drag.overCell) {
-                const dRow = drag.overCell.row - drag.source.row;
-                const dCol = drag.overCell.col - drag.source.col;
-                if (dRow !== 0 || dCol !== 0) {
-                  if (drag.source.kind === 'stop') onMoveStop(drag.source.lineId, dRow, dCol);
-                  else onMoveLabel(dRow, dCol);
-                }
-              }
-            } else {
-              // Click-without-drag: select.
-              if (drag.source.kind === 'stop') onSelectStop(drag.source.lineId);
-              else onSelectLabel();
-            }
-            setDrag(null);
-          }}
-          onPointerCancel={() => {
-            if (drag && isDragSource) setDrag(null);
-          }}
-          onClick={() => {
-            // Stops and label are handled in onPointerUp (so we can
-            // distinguish click from drag). Only empty cells fall through.
-            if (cellKind === 'empty') onSelectStop(null);
-          }}
-          onContextMenu={(e) => {
-            if (isLabel) {
-              e.preventDefault();
-              onSelectLabel();
-              onRotateLabel();
-            } else if (stop) {
-              e.preventDefault();
-              onSelectStop(stop.lineId);
-              onRotateStop(stop.lineId);
-            }
-          }}
-          style={{
-            width: cellSize,
-            height: cellSize,
-            background: isLabel ? '#fff' : stop && line ? line.color : 'transparent',
-            border: selected
-              ? '2px solid #000'
-              : isLabel
-                ? '1px solid rgba(0,0,0,0.4)'
-                : stop
-                  ? '1px solid rgba(0,0,0,0.2)'
-                  : '1px dashed rgba(0,0,0,0.12)',
-            borderRadius: 2,
-            display: 'flex',
-            alignItems: 'center',
-            justifyContent: 'center',
-            color: isLabel ? '#222' : '#fff',
-            fontSize: 12,
-            fontWeight: 700,
-            cursor:
-              cellKind === 'stop' || cellKind === 'label'
-                ? isDragSource && drag?.isDragging
-                  ? 'grabbing'
-                  : 'grab'
-                : 'default',
-            textShadow: isLabel ? undefined : '0 0 2px rgba(0,0,0,0.6)',
-            boxSizing: 'border-box',
-            transform: isLabel ? `rotate(${label.rotation * 45}deg)` : undefined,
-            opacity: isDragSource && drag.isDragging ? 0.4 : 1,
-            outline: isDropTarget ? '2px solid #1a4ea8' : undefined,
-            outlineOffset: isDropTarget ? '-2px' : undefined,
-            touchAction: cellKind === 'stop' || cellKind === 'label' ? 'none' : undefined,
-            userSelect: 'none',
-            WebkitUserSelect: 'none',
-          }}
-          title={
-            isLabel
-              ? `Label at (${r}, ${c}) rot ${label.rotation * 45}°`
-              : stop
-                ? `${line?.service ?? ''} at (${r}, ${c}) ${stop.orientation}`
-                : `(${r}, ${c}) empty`
-          }
-        >
-          {isLabel ? 'L' : stop ? ORIENTATION_GLYPH[stop.orientation] : ''}
-        </div>,
-      );
+  const sourceCell = drag ? { row: drag.source.row, col: drag.source.col } : null;
+
+  const nodesAll: { row: number; col: number; kind: 'stop' | 'label' }[] = [
+    ...stops.map((s) => ({ row: s.row, col: s.col, kind: 'stop' as const })),
+    { row: label.row, col: label.col, kind: 'label' as const },
+  ];
+  // Non-source nodes — these are the candidates for "the anchor" and the
+  // things ghost slots must not overlap.
+  const otherNodes = sourceCell ? nodesAll.filter((n) => !sameCell(n, sourceCell)) : nodesAll;
+
+  // Anchor = nearest non-source node to the cursor (only while dragging).
+  // Nothing renders ghosts when not dragging.
+  let anchor: { row: number; col: number; kind: 'stop' | 'label' } | null = null;
+  if (drag?.isDragging && drag.cursor && otherNodes.length > 0) {
+    let best = Infinity;
+    for (const n of otherNodes) {
+      const d = dist(drag.cursor, n);
+      if (d < best) {
+        best = d;
+        anchor = n;
+      }
     }
   }
 
-  const cols = maxCol - minCol + 1;
-  const rows = maxRow - minRow + 1;
-  const gap = 2;
-  const gridW = cols * cellSize + (cols - 1) * gap;
-  const gridH = rows * cellSize + (rows - 1) * gap;
+  // 8 ghost slots around the anchor, minus ones that would overlap another
+  // non-source non-anchor node. Tangent positions (distance == 1) are allowed.
+  const ghosts: { row: number; col: number }[] = [];
+  if (anchor) {
+    for (const o of SLOT_OFFSETS) {
+      const g = { row: anchor.row + o.dRow, col: anchor.col + o.dCol };
+      let overlap = false;
+      for (const n of otherNodes) {
+        if (sameCell(n, anchor)) continue;
+        if (dist(g, n) < 1 - EPS) {
+          overlap = true;
+          break;
+        }
+      }
+      if (overlap) continue;
+      ghosts.push(g);
+    }
+  }
+
+  // ViewBox: padded bounding box of the static nodes (not ghosts). Constant
+  // 1-unit padding means viewBox never changes during drag → no jitter.
+  const rows = nodesAll.map((c) => c.row);
+  const cols = nodesAll.map((c) => c.col);
+  const minRow = Math.min(...rows) - VIEW_PAD;
+  const maxRow = Math.max(...rows) + VIEW_PAD;
+  const minCol = Math.min(...cols) - VIEW_PAD;
+  const maxCol = Math.max(...cols) + VIEW_PAD;
+  const vbX = (minCol - 0.5) * PITCH;
+  const vbY = (minRow - 0.5) * PITCH;
+  const vbW = (maxCol - minCol + 1) * PITCH;
+  const vbH = (maxRow - minRow + 1) * PITCH;
+
+  // Rotation-tolerant outer wrapper — keeps the inspector controls below from
+  // reflowing when station.rotation changes (every 45° step).
+  const wrapSize = Math.max(vbW, vbH, (vbW + vbH) * Math.SQRT1_2);
   const angleDeg = station.rotation * 45;
-  // Reserve space for the largest bounding box across all 8 rotations so the
-  // controls below the grid never reflow when the station is rotated. The
-  // worst case at 45° offsets is (gridW + gridH) * √2/2; orthogonal cases
-  // can win for very elongated grids, so take the max of all three.
-  const wrapSize = Math.max(gridW, gridH, (gridW + gridH) * Math.SQRT1_2);
+
+  // Convert client (screen) coords to (row, col) in our SVG's local frame.
+  // Uses getScreenCTM so the wrapper's CSS rotate(...) is accounted for.
+  const cursorRowCol = (clientX: number, clientY: number): { row: number; col: number } | null => {
+    const svg = svgRef.current;
+    if (!svg) return null;
+    const ctm = svg.getScreenCTM();
+    if (!ctm) return null;
+    const pt = svg.createSVGPoint();
+    pt.x = clientX;
+    pt.y = clientY;
+    const sp = pt.matrixTransform(ctm.inverse());
+    return { row: sp.y / PITCH, col: sp.x / PITCH };
+  };
+
+  const startDrag = (e: React.PointerEvent, source: DragSource) => {
+    svgRef.current?.setPointerCapture(e.pointerId);
+    setDrag({
+      source,
+      startX: e.clientX,
+      startY: e.clientY,
+      isDragging: false,
+      cursor: null,
+      over: null,
+    });
+  };
+
+  const onSvgPointerMove = (e: React.PointerEvent) => {
+    if (!drag) return;
+    const dx = e.clientX - drag.startX;
+    const dy = e.clientY - drag.startY;
+    const isDragging = drag.isDragging || Math.hypot(dx, dy) > DRAG_THRESHOLD_PX;
+    const cursor = isDragging ? cursorRowCol(e.clientX, e.clientY) : null;
+    let over: DragTarget | null = null;
+    if (isDragging) {
+      const el = document.elementFromPoint(e.clientX, e.clientY) as Element | null;
+      const cellEl = el?.closest('[data-cell-row]') as Element | null;
+      if (cellEl) {
+        const ds = (cellEl as HTMLElement).dataset;
+        const tRow = Number(ds.cellRow);
+        const tCol = Number(ds.cellCol);
+        const tKind = ds.cellKind as TargetKind | undefined;
+        if (tKind && isValidTarget(drag.source.kind, tKind)) {
+          const isSelf =
+            drag.source.kind === 'stop'
+              ? tKind === 'stop' && ds.lineId === drag.source.lineId
+              : tKind === 'label';
+          if (!isSelf) over = { row: tRow, col: tCol, kind: tKind };
+        }
+      }
+    }
+    if (
+      isDragging !== drag.isDragging ||
+      cursor?.row !== drag.cursor?.row ||
+      cursor?.col !== drag.cursor?.col ||
+      over?.row !== drag.over?.row ||
+      over?.col !== drag.over?.col ||
+      over?.kind !== drag.over?.kind
+    ) {
+      setDrag({ ...drag, isDragging, cursor, over });
+    }
+  };
+
+  const onSvgPointerUp = () => {
+    if (!drag) return;
+    if (drag.isDragging) {
+      if (drag.over) {
+        const dRow = drag.over.row - drag.source.row;
+        const dCol = drag.over.col - drag.source.col;
+        if (Math.abs(dRow) > EPS || Math.abs(dCol) > EPS) {
+          if (drag.source.kind === 'stop') onMoveStop(drag.source.lineId, dRow, dCol);
+          else onMoveLabel(dRow, dCol);
+        }
+      }
+    } else {
+      if (drag.source.kind === 'stop') onSelectStop(drag.source.lineId);
+      else onSelectLabel();
+    }
+    setDrag(null);
+  };
+
+  const onSvgPointerCancel = () => setDrag(null);
+
   return (
     <div style={{ position: 'relative', width: wrapSize, height: wrapSize }}>
-      <div
+      <svg
+        ref={svgRef}
+        viewBox={`${vbX} ${vbY} ${vbW} ${vbH}`}
+        width={vbW}
+        height={vbH}
+        onPointerMove={onSvgPointerMove}
+        onPointerUp={onSvgPointerUp}
+        onPointerCancel={onSvgPointerCancel}
         style={{
           position: 'absolute',
           left: '50%',
           top: '50%',
           transform: `translate(-50%, -50%) rotate(${angleDeg}deg)`,
-          display: 'grid',
-          gridTemplateColumns: `repeat(${cols}, ${cellSize}px)`,
-          gap,
+          overflow: 'visible',
+          touchAction: 'none',
+          userSelect: 'none',
+          WebkitUserSelect: 'none',
         }}
       >
-        {cells}
-      </div>
+        {/* Background — clicks deselect. */}
+        <rect
+          x={vbX}
+          y={vbY}
+          width={vbW}
+          height={vbH}
+          fill="transparent"
+          onClick={() => {
+            if (!drag) onSelectStop(null);
+          }}
+        />
+
+        {/* Ghost slots — only rendered while dragging, around the anchor. */}
+        {ghosts.map((g) => {
+          const isOver =
+            drag?.over?.kind === 'ghost' &&
+            Math.abs(drag.over.row - g.row) < EPS &&
+            Math.abs(drag.over.col - g.col) < EPS;
+          return (
+            <circle
+              key={`g-${fmt(g.row)},${fmt(g.col)}`}
+              data-cell-row={g.row}
+              data-cell-col={g.col}
+              data-cell-kind="ghost"
+              cx={g.col * PITCH}
+              cy={g.row * PITCH}
+              r={RADIUS - 1}
+              fill={isOver ? 'rgba(26,78,168,0.18)' : 'rgba(255,255,255,0.75)'}
+              stroke={isOver ? '#1a4ea8' : 'rgba(0,0,0,0.35)'}
+              strokeWidth={isOver ? 2 : 1.25}
+              strokeDasharray={isOver ? undefined : '3 2'}
+            />
+          );
+        })}
+
+        {/* Stops */}
+        {stops.map((s) => {
+          const line = lines[s.lineId];
+          const selected = selectedLineId === s.lineId;
+          const isSource = drag?.source.kind === 'stop' && drag.source.lineId === s.lineId;
+          const isSwapTarget =
+            drag?.over?.kind === 'stop' &&
+            Math.abs(drag.over.row - s.row) < EPS &&
+            Math.abs(drag.over.col - s.col) < EPS;
+          return (
+            <g
+              key={`s-${s.lineId}`}
+              data-cell-row={s.row}
+              data-cell-col={s.col}
+              data-cell-kind="stop"
+              data-line-id={s.lineId}
+              onPointerDown={(e) => {
+                if (e.button !== 0) return;
+                startDrag(e, { kind: 'stop', lineId: s.lineId, row: s.row, col: s.col });
+              }}
+              onContextMenu={(e) => {
+                e.preventDefault();
+                onSelectStop(s.lineId);
+                onRotateStop(s.lineId);
+              }}
+              style={{
+                cursor: isSource && drag?.isDragging ? 'grabbing' : 'grab',
+                opacity: isSource && drag?.isDragging ? 0.4 : 1,
+              }}
+            >
+              <circle
+                cx={s.col * PITCH}
+                cy={s.row * PITCH}
+                r={RADIUS}
+                fill={line?.color ?? '#888'}
+                stroke={selected ? '#000' : isSwapTarget ? '#1a4ea8' : 'rgba(0,0,0,0.2)'}
+                strokeWidth={selected || isSwapTarget ? 2 : 1}
+              />
+              <text
+                x={s.col * PITCH}
+                y={s.row * PITCH}
+                textAnchor="middle"
+                dominantBaseline="central"
+                fontSize={12}
+                fontWeight={700}
+                fill="#fff"
+                style={{
+                  pointerEvents: 'none',
+                  userSelect: 'none',
+                  textShadow: '0 0 2px rgba(0,0,0,0.6)',
+                }}
+              >
+                {ORIENTATION_GLYPH[s.orientation]}
+              </text>
+              <title>{`${line?.service ?? ''} at (${s.row.toFixed(3)}, ${s.col.toFixed(3)}) ${s.orientation}`}</title>
+            </g>
+          );
+        })}
+
+        {/* Label */}
+        {(() => {
+          const isSource = drag?.source.kind === 'label';
+          return (
+            <g
+              data-cell-row={label.row}
+              data-cell-col={label.col}
+              data-cell-kind="label"
+              onPointerDown={(e) => {
+                if (e.button !== 0) return;
+                startDrag(e, { kind: 'label', row: label.row, col: label.col });
+              }}
+              onContextMenu={(e) => {
+                e.preventDefault();
+                onSelectLabel();
+                onRotateLabel();
+              }}
+              transform={`rotate(${label.rotation * 45} ${label.col * PITCH} ${label.row * PITCH})`}
+              style={{
+                cursor: isSource && drag?.isDragging ? 'grabbing' : 'grab',
+                opacity: isSource && drag?.isDragging ? 0.4 : 1,
+              }}
+            >
+              <circle
+                cx={label.col * PITCH}
+                cy={label.row * PITCH}
+                r={RADIUS}
+                fill="#fff"
+                stroke={labelSelected ? '#000' : 'rgba(0,0,0,0.4)'}
+                strokeWidth={labelSelected ? 2 : 1}
+              />
+              <text
+                x={label.col * PITCH}
+                y={label.row * PITCH}
+                textAnchor="middle"
+                dominantBaseline="central"
+                fontSize={12}
+                fontWeight={700}
+                fill="#222"
+                style={{ pointerEvents: 'none', userSelect: 'none' }}
+              >
+                L
+              </text>
+              <title>{`Label at (${label.row.toFixed(3)}, ${label.col.toFixed(3)}) rot ${label.rotation * 45}°`}</title>
+            </g>
+          );
+        })()}
+
+        {/* Anchor highlight — rendered LAST so it sits on top of any
+            neighboring stops/labels that would otherwise overlap and obscure
+            it. Stroke-only (no fill) so the anchor's color stays visible
+            underneath the ring. Dark thin pair around the white ring keeps it
+            legible on both light and dark backgrounds. */}
+        {anchor && (
+          <g pointerEvents="none">
+            <circle
+              cx={anchor.col * PITCH}
+              cy={anchor.row * PITCH}
+              r={RADIUS + 1.5}
+              fill="none"
+              stroke="rgba(0,0,0,0.5)"
+              strokeWidth={3}
+            />
+            <circle
+              cx={anchor.col * PITCH}
+              cy={anchor.row * PITCH}
+              r={RADIUS + 1.5}
+              fill="none"
+              stroke="#fff"
+              strokeWidth={1.5}
+            />
+          </g>
+        )}
+      </svg>
     </div>
   );
 }
