@@ -23,6 +23,37 @@ export const TIGHT_PERP_TOLERANCE = 0.5;
 /** "Snap to 10's" interval, in world units. */
 export const TENS_INTERVAL = 10;
 
+/** "Snap to grid" cell size, in world units. Matches the visible Grid step. */
+export const GRID_INTERVAL = 10;
+
+/**
+ * Snap an arbitrary (x, y) point to the nearest grid intersection. Pure and
+ * stateless — used both by the snap engine's grid mode and by the label drag
+ * path, which doesn't go through the engine.
+ */
+export function snapPointToGrid(x: number, y: number): { x: number; y: number } {
+  // `+ 0` normalizes -0 → 0 so callers don't see signed-zero leakage from
+  // Math.round on small negative inputs.
+  return {
+    x: Math.round(x / GRID_INTERVAL) * GRID_INTERVAL + 0,
+    y: Math.round(y / GRID_INTERVAL) * GRID_INTERVAL + 0,
+  };
+}
+
+/**
+ * Gate for grid snap at a placement site. Returns the world point snapped
+ * to the nearest grid intersection when `modes.grid` is on; otherwise the
+ * point unchanged. Null passes through so callers can pipe a cursor that
+ * may be unset.
+ */
+export function maybeSnapToGrid<T extends { x: number; y: number } | null>(
+  world: T,
+  modes: SnapModes,
+): T {
+  if (!world || !modes.grid) return world;
+  return snapPointToGrid(world.x, world.y) as T;
+}
+
 /**
  * User-toggleable snap modes. All four are independent flags but
  * `equidistant` and `tens` are no-ops unless `line` is also true.
@@ -42,6 +73,11 @@ export interface SnapModes {
    *  aligned with any other stop (line membership and travel direction
    *  ignored). Composes with `line` via the existing 2-axis solver. */
   all: boolean;
+  /** Snap the dragged anchor to the nearest GRID_INTERVAL multiple in both
+   *  axes. Independent of the other modes; when another mode engages (any
+   *  guides emitted) the engine's result wins so the user doesn't see grid
+   *  fighting an explicit alignment. */
+  grid: boolean;
 }
 
 export const DEFAULT_SNAP_MODES: SnapModes = {
@@ -49,6 +85,7 @@ export const DEFAULT_SNAP_MODES: SnapModes = {
   equidistant: false,
   tens: false,
   all: false,
+  grid: false,
 };
 
 export interface SnapGuide {
@@ -234,6 +271,13 @@ export function snapDraggedStation(input: SnapInput): SnapResult {
   }
 
   if (all.length === 0) {
+    // No alignment engaged — fall through to grid snap if enabled. Grid is
+    // a fallback so explicit alignments (line/equidistant/tens/all) always
+    // win when they fire.
+    if (modes.grid) {
+      const g = snapPointToGrid(proposedX, proposedY);
+      return { x: g.x, y: g.y, guides: [] };
+    }
     return { x: proposedX, y: proposedY, guides: [] };
   }
 

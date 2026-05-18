@@ -10,7 +10,12 @@ import {
 import { randomStationName } from '../state/stationNames';
 import { useSnapPrefs } from '../state/snapPrefs';
 import { useViewportStore } from '../state/viewportStore';
-import { snapDraggedStation, type SnapGuide } from '../geometry/snap';
+import {
+  maybeSnapToGrid,
+  snapDraggedStation,
+  snapPointToGrid,
+  type SnapGuide,
+} from '../geometry/snap';
 import {
   buildBands,
   buildOrderedRenderables,
@@ -224,7 +229,12 @@ export function MapCanvas() {
       selection.placingStation ||
       selection.placingLabel
     ) {
-      setCursorWorld(view.screenToWorld(e.clientX, e.clientY));
+      const raw = view.screenToWorld(e.clientX, e.clientY);
+      // Grid-snap the placement preview for new stations so the user sees
+      // exactly where it'll land. Other placement modes keep the raw
+      // cursor — grid snap is scoped to stations for now.
+      const w = selection.placingStation ? maybeSnapToGrid(raw, snapModes) : raw;
+      setCursorWorld(w);
     } else if (cursorWorld) {
       setCursorWorld(null);
     }
@@ -264,8 +274,15 @@ export function MapCanvas() {
           nx = snap.x;
           ny = snap.y;
           setBulletSnapGuides(snap.guides);
-        } else if (bulletSnapGuides.length > 0) {
-          setBulletSnapGuides([]);
+        } else {
+          if (bulletSnapGuides.length > 0) setBulletSnapGuides([]);
+          // Grid snap fallback when the snap engine wasn't called (unbound
+          // bullet or group drag). Shift still bypasses.
+          if (snapModes.grid && !e.shiftKey) {
+            const g = snapPointToGrid(nx, ny);
+            nx = g.x;
+            ny = g.y;
+          }
         }
         moveRouteBullet(bd.id, nx, ny);
         if (inGroupDrag) {
@@ -290,10 +307,19 @@ export function MapCanvas() {
         svgRef.current?.setPointerCapture(e.pointerId);
       }
       if (ld.moved) {
-        const dx = dxScreen / view.viewport.zoom;
-        const dy = dyScreen / view.viewport.zoom;
-        const nx = ld.startWX + dx;
-        const ny = ld.startWY + dy;
+        const rawDx = dxScreen / view.viewport.zoom;
+        const rawDy = dyScreen / view.viewport.zoom;
+        let nx = ld.startWX + rawDx;
+        let ny = ld.startWY + rawDy;
+        // Labels don't go through the snap engine (no axis/orientation), but
+        // grid snap still applies — Shift bypasses like elsewhere.
+        if (snapModes.grid && !e.shiftKey) {
+          const g = snapPointToGrid(nx, ny);
+          nx = g.x;
+          ny = g.y;
+        }
+        const dx = nx - ld.startWX;
+        const dy = ny - ld.startWY;
         moveTextLabel(ld.id, nx, ny);
         const inGroupDrag =
           ld.labelSiblings.length + ld.bulletSiblings.length + ld.stationSiblings.length > 0;
@@ -516,7 +542,7 @@ export function MapCanvas() {
     if (!onBackground) return;
     if (dragState.suppressClick) return;
     if (selection.placingStation) {
-      const w = view.screenToWorld(e.clientX, e.clientY);
+      const w = maybeSnapToGrid(view.screenToWorld(e.clientX, e.clientY), snapModes);
       addStation(w.x, w.y, previewName ?? undefined);
       setPreviewName(randomStationName());
       // Stay in place-station mode; user clicks again or hits Esc / the
