@@ -170,6 +170,7 @@ export function TextLabelPopover({ label, anchor, onClose }: Props) {
             value={label.text}
             onChange={(e) => setText(e.target.value)}
             rows={Math.max(2, label.text.split('\n').length)}
+            wrap="off"
             {...textField}
           />
         </div>
