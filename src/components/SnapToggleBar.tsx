@@ -5,6 +5,7 @@ import {
   AllSidesIcon,
 } from '@radix-ui/react-icons';
 import { useSnapPrefs } from '../state/snapPrefs';
+import { useSelection } from '../state/store';
 import type { SnapModes } from '../geometry/snap';
 
 interface ToggleSpec {
@@ -48,12 +49,19 @@ const TOGGLES: ToggleSpec[] = [
 export function SnapToggleBar() {
   const modes = useSnapPrefs((s) => s.modes);
   const setMode = useSnapPrefs((s) => s.setMode);
+  // Text labels are free-floating annotations that don't snap, so the snap
+  // toggles are meaningless while any label is selected.
+  const labelSelected = useSelection((s) => s.selectedLabelIds.length > 0);
   return (
     <div className="tool-group" role="group" aria-label="Snap modes">
       {TOGGLES.map(({ key, label, hint, Icon, requiresLine }) => {
-        const disabled = !!requiresLine && !modes.line;
+        const disabled = labelSelected || (!!requiresLine && !modes.line);
         const active = modes[key];
-        const title = disabled ? `${label} — enable Snap to line first` : `${label} — ${hint}`;
+        const title = labelSelected
+          ? `${label} — not applicable to labels`
+          : disabled
+            ? `${label} — enable Snap to line first`
+            : `${label} — ${hint}`;
         return (
           <button
             key={key}
