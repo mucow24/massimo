@@ -23,20 +23,20 @@ const SELECTION_STROKE_COLOR = '#000000';
 const SELECTION_STROKE_WIDTH = 2;
 const SELECTION_DASH = '4 3';
 
-// Per-line x offset that combines with text-anchor to anchor each <tspan> at
-// the correct horizontal point given the label's align mode. The whole text
-// block is centered on the label's origin, so the alignment anchor moves with
-// the block.
-function tspanXFor(align: TextLabel['align'], halfWidth: number): number {
-  if (align === 'center') return 0;
-  if (align === 'right') return halfWidth;
-  return -halfWidth;
-}
-
-function textAnchorFor(align: TextLabel['align']): 'start' | 'middle' | 'end' {
-  if (align === 'center') return 'middle';
-  if (align === 'right') return 'end';
-  return 'start';
+// Per-line cursor X. Each line is positioned by its own ink bearings so the
+// visible left/right ink edges align with the bbox edges — fonts at
+// different weights have different side bearings, and we don't want that
+// leakage to push the visible glyph row past the label's bbox.
+function lineCursorX(
+  align: TextLabel['align'],
+  halfWidth: number,
+  bearingLeft: number,
+  bearingRight: number,
+): number {
+  if (align === 'right') return halfWidth - bearingRight;
+  if (align === 'center') return (bearingLeft - bearingRight) / 2;
+  // left
+  return -halfWidth + bearingLeft;
 }
 
 export function LabelView({
@@ -53,8 +53,6 @@ export function LabelView({
   const halfH = m.height / 2;
   const lines = label.text.length === 0 ? [''] : label.text.split('\n');
   const lineSpacing = label.fontSize * LINE_HEIGHT;
-  const tspanX = tspanXFor(label.align, halfW);
-  const anchor = textAnchorFor(label.align);
 
   if (layer === 'stroke') {
     if (!selected) return null;
@@ -105,7 +103,7 @@ export function LabelView({
       <text
         x={0}
         y={-halfH}
-        textAnchor={anchor}
+        textAnchor="start"
         dominantBaseline="hanging"
         fontFamily="'Helvetica Neue', Helvetica, Arial, sans-serif"
         fontSize={label.fontSize}
@@ -115,11 +113,15 @@ export function LabelView({
         pointerEvents="none"
         style={{ userSelect: 'none', whiteSpace: 'pre' }}
       >
-        {lines.map((ln, i) => (
-          <tspan key={i} x={tspanX} dy={i === 0 ? 0 : lineSpacing}>
-            {ln === '' ? ' ' : ln}
-          </tspan>
-        ))}
+        {lines.map((ln, i) => {
+          const lm = m.lines[i] ?? { bearingLeft: 0, bearingRight: 0, inkWidth: 0 };
+          const cursorX = lineCursorX(label.align, halfW, lm.bearingLeft, lm.bearingRight);
+          return (
+            <tspan key={i} x={cursorX} dy={i === 0 ? 0 : lineSpacing}>
+              {ln === '' ? ' ' : ln}
+            </tspan>
+          );
+        })}
       </text>
     </g>
   );

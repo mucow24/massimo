@@ -57,4 +57,30 @@ describe('measureTextLabel', () => {
     // returned objects must be independent measurements.
     expect(a).not.toBe(b);
   });
+
+  it('returns per-line ink metrics (bearingLeft, bearingRight, inkWidth)', () => {
+    const m = measureTextLabel(makeTextLabel({ id: 'g', text: 'Hello\nWorld' }));
+    expect(m.lines).toHaveLength(2);
+    for (const ln of m.lines) {
+      expect(typeof ln.bearingLeft).toBe('number');
+      expect(typeof ln.bearingRight).toBe('number');
+      expect(typeof ln.inkWidth).toBe('number');
+      // The ink span is bearingLeft + bearingRight.
+      expect(ln.inkWidth).toBeCloseTo(ln.bearingLeft + ln.bearingRight, 5);
+    }
+  });
+
+  it('bbox width is the max ink width across lines', () => {
+    const m = measureTextLabel(
+      makeTextLabel({ id: 'g', text: 'short\nmuchlonger', fontSize: 16 }),
+    );
+    expect(m.width).toBe(Math.max(m.lines[0].inkWidth, m.lines[1].inkWidth));
+  });
+
+  it('empty line has zero ink width and zero bearings', () => {
+    const m = measureTextLabel(makeTextLabel({ id: 'g', text: 'a\n\nb' }));
+    expect(m.lines[1].inkWidth).toBe(0);
+    expect(m.lines[1].bearingLeft).toBe(0);
+    expect(m.lines[1].bearingRight).toBe(0);
+  });
 });
