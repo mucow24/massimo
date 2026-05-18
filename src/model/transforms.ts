@@ -2,6 +2,7 @@ import { autoOrientLineStops } from './autoOrient';
 import { effectiveLineOrder } from './lineOrder';
 import { pairKeyOf } from './pairKey';
 import { rotateBy, stopCenterAt } from '../geometry/orientation';
+import { measureTextLabel } from '../geometry/textMeasure';
 import { PALETTES, type PaletteId } from './palettes';
 import type {
   DotShape,
@@ -1106,7 +1107,28 @@ export function updateTextLabel(
     );
     nextPatch = { ...patch, fontSize: clamped };
   }
-  return { ...doc, textLabels: { ...doc.textLabels, [id]: { ...cur, ...nextPatch } } };
+  let next = { ...cur, ...nextPatch };
+  // Re-anchor on the upper-left bbox corner whenever a resize-affecting
+  // property changes — text content, font size, weight, or italic. The
+  // label's (x, y) is the bbox center, so without this the visible top-
+  // left would drift on every edit. Skipped when the caller explicitly
+  // sets x or y (e.g. a drag): then the move is intentional.
+  const resizes =
+    nextPatch.text !== undefined ||
+    nextPatch.fontSize !== undefined ||
+    nextPatch.weight !== undefined ||
+    nextPatch.italic !== undefined;
+  const movedExplicitly = nextPatch.x !== undefined || nextPatch.y !== undefined;
+  if (resizes && !movedExplicitly) {
+    const before = measureTextLabel(cur);
+    const after = measureTextLabel(next);
+    next = {
+      ...next,
+      x: cur.x + (after.width - before.width) / 2,
+      y: cur.y + (after.height - before.height) / 2,
+    };
+  }
+  return { ...doc, textLabels: { ...doc.textLabels, [id]: next } };
 }
 
 export function deleteTextLabel(doc: MapDoc, id: string): MapDoc {
