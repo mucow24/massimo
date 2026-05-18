@@ -67,10 +67,7 @@ describe('<LabelView /> — inline bullets', () => {
     });
     const { container } = render(
       <svg>
-        <LabelView
-          label={makeTextLabel({ id: 'g1', text: 'Take <A1> uptown' })}
-          selected={false}
-        />
+        <LabelView label={makeTextLabel({ id: 'g1', text: 'Take <A1> uptown' })} selected={false} />
       </svg>,
     );
     // The label group contains TWO text segments (before and after the bullet),

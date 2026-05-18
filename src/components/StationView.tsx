@@ -568,8 +568,7 @@ export function StationView({
           stroke: strokeColor,
           strokeWidth: 2,
           paintOrder: 'stroke',
-          textDecoration:
-            selection.hoveredStationId === station.id ? 'underline' : undefined,
+          textDecoration: selection.hoveredStationId === station.id ? 'underline' : undefined,
           anchorX: labelAnchorX,
           anchorY: labelAnchorY,
           textAnchor: labelTextAnchor,
@@ -594,8 +593,7 @@ export function StationView({
           fontSize: labelFontSize,
           fontWeight: labelBold || selection.hoveredStationId === station.id ? 700 : 400,
           fontStyle: labelItalic ? 'italic' : undefined,
-          textDecoration:
-            selection.hoveredStationId === station.id ? 'underline' : undefined,
+          textDecoration: selection.hoveredStationId === station.id ? 'underline' : undefined,
           fill: highlightColor,
           anchorX: labelAnchorX,
           anchorY: labelAnchorY,
@@ -645,8 +643,7 @@ export function StationView({
             fontSize: labelFontSize,
             fontWeight: labelBold || selection.hoveredStationId === station.id ? 700 : 400,
             fontStyle: labelItalic ? 'italic' : undefined,
-            textDecoration:
-              selection.hoveredStationId === station.id ? 'underline' : undefined,
+            textDecoration: selection.hoveredStationId === station.id ? 'underline' : undefined,
             fill: '#111',
             anchorX: labelAnchorX,
             anchorY: labelAnchorY,

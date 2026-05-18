@@ -71,9 +71,7 @@ describe('measureTextLabel', () => {
   });
 
   it('bbox width is the max ink width across lines', () => {
-    const m = measureTextLabel(
-      makeTextLabel({ id: 'g', text: 'short\nmuchlonger', fontSize: 16 }),
-    );
+    const m = measureTextLabel(makeTextLabel({ id: 'g', text: 'short\nmuchlonger', fontSize: 16 }));
     expect(m.width).toBe(Math.max(m.lines[0].inkWidth, m.lines[1].inkWidth));
   });
 
@@ -85,9 +83,7 @@ describe('measureTextLabel', () => {
   });
 
   it('exposes parsed segments per line', () => {
-    const m = measureTextLabel(
-      makeTextLabel({ id: 'g', text: 'Take <A1> uptown\nstraight' }),
-    );
+    const m = measureTextLabel(makeTextLabel({ id: 'g', text: 'Take <A1> uptown\nstraight' }));
     expect(m.lines[0].segments.map((s) => s.kind)).toEqual(['text', 'bullet', 'text']);
     expect(m.lines[1].segments.map((s) => s.kind)).toEqual(['text']);
   });

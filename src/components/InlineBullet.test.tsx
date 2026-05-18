@@ -41,13 +41,7 @@ describe('<InlineBullet />', () => {
   it('renders a gray "?" bullet when the code does not resolve', () => {
     const { container } = render(
       <svg>
-        <InlineBullet
-          code="UNKNOWN"
-          diameter={16}
-          cx={0}
-          cy={0}
-          lineByService={lineMap([])}
-        />
+        <InlineBullet code="UNKNOWN" diameter={16} cx={0} cy={0} lineByService={lineMap([])} />
       </svg>,
     );
     const circle = container.querySelector('circle');
@@ -59,13 +53,7 @@ describe('<InlineBullet />', () => {
   it('positions the bullet at the given (cx, cy) via a translate transform', () => {
     const { container } = render(
       <svg>
-        <InlineBullet
-          code="X"
-          diameter={10}
-          cx={123}
-          cy={456}
-          lineByService={lineMap([])}
-        />
+        <InlineBullet code="X" diameter={10} cx={123} cy={456} lineByService={lineMap([])} />
       </svg>,
     );
     const g = container.querySelector('[data-inline-bullet]');

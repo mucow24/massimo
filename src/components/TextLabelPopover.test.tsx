@@ -28,9 +28,7 @@ describe('<TextLabelPopover /> — anchor freezes at mount', () => {
     );
     const popover = container.querySelector('.text-label-popover') as HTMLElement;
     const before = positionOf(popover);
-    rerender(
-      <TextLabelPopover label={label} anchor={{ x: 500, y: 600 }} onClose={() => {}} />,
-    );
+    rerender(<TextLabelPopover label={label} anchor={{ x: 500, y: 600 }} onClose={() => {}} />);
     const after = positionOf(popover);
     expect(after.left).toBe(before.left);
     expect(after.top).toBe(before.top);
