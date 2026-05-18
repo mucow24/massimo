@@ -3,8 +3,10 @@ import {
   SpaceEvenlyHorizontallyIcon,
   RulerHorizontalIcon,
   AllSidesIcon,
+  GridIcon,
 } from '@radix-ui/react-icons';
 import { useSnapPrefs } from '../state/snapPrefs';
+import { useSelection } from '../state/store';
 import type { SnapModes } from '../geometry/snap';
 
 interface ToggleSpec {
@@ -14,6 +16,9 @@ interface ToggleSpec {
   Icon: React.ComponentType;
   /** When true, this toggle is disabled unless `modes.line` is also on. */
   requiresLine?: boolean;
+  /** When true, this toggle applies to text labels too — so it stays
+   *  enabled while a label is selected. Defaults to false. */
+  appliesToLabels?: boolean;
 }
 
 const TOGGLES: ToggleSpec[] = [
@@ -43,17 +48,32 @@ const TOGGLES: ToggleSpec[] = [
     hint: 'Snap to vertical, horizontal, or diagonal alignment with any stop',
     Icon: AllSidesIcon,
   },
+  {
+    key: 'grid',
+    label: 'Snap to grid',
+    hint: 'Snap the dragged item to the nearest grid intersection',
+    Icon: GridIcon,
+    appliesToLabels: true,
+  },
 ];
 
 export function SnapToggleBar() {
   const modes = useSnapPrefs((s) => s.modes);
   const setMode = useSnapPrefs((s) => s.setMode);
+  // Text labels are free-floating annotations that don't snap, so the snap
+  // toggles are meaningless while any label is selected.
+  const labelSelected = useSelection((s) => s.selectedLabelIds.length > 0);
   return (
     <div className="tool-group" role="group" aria-label="Snap modes">
-      {TOGGLES.map(({ key, label, hint, Icon, requiresLine }) => {
-        const disabled = !!requiresLine && !modes.line;
+      {TOGGLES.map(({ key, label, hint, Icon, requiresLine, appliesToLabels }) => {
+        const labelGated = labelSelected && !appliesToLabels;
+        const disabled = labelGated || (!!requiresLine && !modes.line);
         const active = modes[key];
-        const title = disabled ? `${label} — enable Snap to line first` : `${label} — ${hint}`;
+        const title = labelGated
+          ? `${label} — not applicable to labels`
+          : disabled
+            ? `${label} — enable Snap to line first`
+            : `${label} — ${hint}`;
         return (
           <button
             key={key}

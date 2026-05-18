@@ -11,12 +11,32 @@ describe('<SnapToggleBar />', () => {
     useSnapPrefs.setState({ modes: { ...DEFAULT_SNAP_MODES } });
   });
 
-  it('renders four toggles labeled Line, Equidistant, Tens, All', () => {
+  it('renders five toggles labeled Line, Equidistant, Tens, All, Grid', () => {
     render(<SnapToggleBar />);
     expect(screen.getByRole('button', { name: 'Snap to line' })).toBeInTheDocument();
     expect(screen.getByRole('button', { name: 'Snap to equidistant' })).toBeInTheDocument();
     expect(screen.getByRole('button', { name: "Snap to 10's" })).toBeInTheDocument();
     expect(screen.getByRole('button', { name: 'Snap to all' })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Snap to grid' })).toBeInTheDocument();
+  });
+
+  it('Grid toggle works independently of Line', async () => {
+    const user = userEvent.setup();
+    useSnapPrefs.setState({ modes: { ...DEFAULT_SNAP_MODES, line: false } });
+    render(<SnapToggleBar />);
+    const grid = screen.getByRole('button', { name: 'Snap to grid' });
+    expect(grid).toHaveAttribute('aria-disabled', 'false');
+    await user.click(grid);
+    expect(useSnapPrefs.getState().modes.grid).toBe(true);
+  });
+
+  it('renders Grid to the right of All', () => {
+    render(<SnapToggleBar />);
+    const buttons = screen.getAllByRole('button');
+    const names = buttons.map((b) => b.getAttribute('aria-label'));
+    const allIdx = names.indexOf('Snap to all');
+    const gridIdx = names.indexOf('Snap to grid');
+    expect(gridIdx).toBe(allIdx + 1);
   });
 
   it('shows Line as active by default; toggling it clears the active state', async () => {
@@ -53,7 +73,7 @@ describe('<SnapToggleBar />', () => {
   it('re-enabling Line restores Equidistant interactability without changing its value', async () => {
     const user = userEvent.setup();
     useSnapPrefs.setState({
-      modes: { line: false, equidistant: true, tens: false, all: false },
+      modes: { line: false, equidistant: true, tens: false, all: false, grid: false },
     });
     render(<SnapToggleBar />);
     const line = screen.getByRole('button', { name: 'Snap to line' });

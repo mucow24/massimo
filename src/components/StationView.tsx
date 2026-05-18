@@ -1,4 +1,4 @@
-import { useEffect, useLayoutEffect, useRef, useState } from 'react';
+import { useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import { Line, LineId, Station } from '../model/types';
 import { beginHistoryGroup, dragState, useDoc, useSelection } from '../state/store';
 import { STOP_DOT_RADIUS, STOP_SIZE, stopCenterAt } from '../geometry/orientation';
@@ -9,6 +9,8 @@ import { pathBetweenStations } from '../model/pathSelect';
 import { legibleTextOn } from '../util/color';
 import { StopGlyph } from './StopGlyph';
 import type { RenderedStopPositions } from '../geometry/stopPositions';
+import { BASELINE_FRACTION, LINE_HEIGHT, measureTextLabel } from '../geometry/textMeasure';
+import { InlineBullet } from './InlineBullet';
 
 // Map a click on a station to the closest dot's lineId. Used to pin a
 // transfer endpoint to the specific stop the user clicked on, rather than
@@ -46,6 +48,160 @@ const SELECTION_STROKE_WIDTH = 2;
 const SELECTION_CORNER_RADIUS = 5;
 const MATCH_STROKE_COLOR = '#888';
 const MATCH_STROKE_WIDTH = 1.5;
+
+interface RenderLabelTextArgs {
+  text: string;
+  fontSize: number;
+  fontWeight: number;
+  fontStyle?: 'italic';
+  fill: string;
+  stroke?: string;
+  strokeWidth?: number;
+  paintOrder?: string;
+  textDecoration?: 'underline';
+  anchorX: number;
+  anchorY: number;
+  textAnchor: 'start' | 'middle' | 'end';
+  baseline: 'central' | 'text-before-edge' | 'text-after-edge';
+  firstLineDy: string;
+  rotationDeg: number;
+  lineByService: Map<string, Line>;
+}
+
+const BULLET_TOKEN_RE = /<[^<>]+>/;
+
+/**
+ * Render a station label's text content. For plain text (no <CODE> bullet
+ * tokens) this falls back to the historical single-`<text>` + `<tspan>`
+ * pattern with its existing dominantBaseline/firstLineDy positioning, so
+ * the wash silhouette / hit rect / unit tests stay byte-for-byte the same.
+ * Labels that contain inline bullets switch to per-segment positioning:
+ * each line is laid out explicitly via the segment-aware measurement, and
+ * bullets render as a small circle with their service code (gray "?" when
+ * the code doesn't resolve). Bullets always render in their own line
+ * color and skip the contrast stroke — they're filled and self-legible.
+ */
+function renderStationLabelText({
+  text,
+  fontSize,
+  fontWeight,
+  fontStyle,
+  fill,
+  stroke,
+  strokeWidth,
+  paintOrder,
+  textDecoration,
+  anchorX,
+  anchorY,
+  textAnchor,
+  baseline,
+  firstLineDy,
+  rotationDeg,
+  lineByService,
+}: RenderLabelTextArgs): React.ReactNode {
+  const hasBullet = BULLET_TOKEN_RE.test(text);
+  const lines = text.split('\n');
+  if (!hasBullet) {
+    return (
+      <text
+        x={anchorX}
+        y={anchorY}
+        textAnchor={textAnchor}
+        dominantBaseline={baseline}
+        fontSize={fontSize}
+        fontWeight={fontWeight}
+        fontStyle={fontStyle}
+        textDecoration={textDecoration}
+        pointerEvents="none"
+        fill={fill}
+        stroke={stroke}
+        strokeWidth={strokeWidth}
+        paintOrder={paintOrder}
+        xmlSpace="preserve"
+        transform={`rotate(${rotationDeg} ${anchorX} ${anchorY})`}
+      >
+        {lines.map((line, i) => (
+          <tspan key={i} x={anchorX} dy={i === 0 ? firstLineDy : '1.2em'}>
+            {line}
+          </tspan>
+        ))}
+      </text>
+    );
+  }
+
+  // Bullet path: measure segment-aware and emit explicit per-segment
+  // elements. measureTextLabel accepts StyledText, so station labels can
+  // pass their style props directly without fabricating a TextLabel.
+  const m = measureTextLabel({
+    text,
+    fontSize,
+    weight: fontWeight,
+    italic: fontStyle === 'italic',
+  });
+  const lineSpacing = fontSize * LINE_HEIGHT;
+  const blockHeight = m.lineCount * lineSpacing;
+  let blockTopY: number;
+  if (baseline === 'text-before-edge') blockTopY = anchorY;
+  else if (baseline === 'text-after-edge') blockTopY = anchorY - blockHeight;
+  else blockTopY = anchorY - blockHeight / 2;
+
+  const lineStartX = (bL: number, bR: number): number => {
+    if (textAnchor === 'start') return anchorX + bL;
+    if (textAnchor === 'end') return anchorX - bR;
+    return anchorX + (bL - bR) / 2;
+  };
+
+  return (
+    <g transform={`rotate(${rotationDeg} ${anchorX} ${anchorY})`} pointerEvents="none">
+      {m.lines.map((lm, i) => {
+        if (lm.segments.length === 0) return null;
+        const yTop = blockTopY + i * lineSpacing;
+        const baselineY = yTop + fontSize * BASELINE_FRACTION;
+        let cursor = lineStartX(lm.bearingLeft, lm.bearingRight);
+        const nodes: React.ReactNode[] = [];
+        lm.segments.forEach((seg, j) => {
+          const segCursor = cursor;
+          cursor += seg.advance;
+          if (seg.kind === 'text') {
+            nodes.push(
+              <text
+                key={`${i}-${j}-t`}
+                x={segCursor}
+                y={yTop}
+                textAnchor="start"
+                dominantBaseline="hanging"
+                fontSize={fontSize}
+                fontWeight={fontWeight}
+                fontStyle={fontStyle}
+                textDecoration={textDecoration}
+                fill={fill}
+                stroke={stroke}
+                strokeWidth={strokeWidth}
+                paintOrder={paintOrder}
+                xmlSpace="preserve"
+              >
+                {seg.value}
+              </text>,
+            );
+          } else {
+            const r = seg.diameter / 2;
+            nodes.push(
+              <InlineBullet
+                key={`${i}-${j}-b`}
+                code={seg.code}
+                diameter={seg.diameter}
+                cx={segCursor + r}
+                cy={baselineY - r}
+                lineByService={lineByService}
+              />,
+            );
+          }
+        });
+        return <g key={i}>{nodes}</g>;
+      })}
+    </g>
+  );
+}
 
 interface Props {
   station: Station;
@@ -91,6 +247,14 @@ export function StationView({
   const labelFontSize = useDoc((s) => s.labelFontSize);
   const labelBold = useDoc((s) => s.labelBold);
   const labelItalic = useDoc((s) => s.labelItalic);
+  // Service-code lookup for inline bullets. Only walked when a label's text
+  // contains a <CODE> token; building once per render keeps the bullet
+  // resolution path cheap.
+  const lineByService = useMemo(() => {
+    const map = new Map<string, Line>();
+    for (const ln of Object.values(lines)) map.set(ln.service, ln);
+    return map;
+  }, [lines]);
 
   const stops = station.stops;
   const angle = station.rotation * 45;
@@ -396,28 +560,23 @@ export function StationView({
     const strokeColor = legibleTextOn(highlightColor);
     return (
       <g transform={`translate(${station.x} ${station.y}) rotate(${angle})`}>
-        <text
-          x={labelAnchorX}
-          y={labelAnchorY}
-          textAnchor={labelTextAnchor}
-          dominantBaseline={labelBaseline}
-          fontSize={12}
-          fontWeight={700}
-          textDecoration={selection.hoveredStationId === station.id ? 'underline' : undefined}
-          pointerEvents="none"
-          fill={highlightColor}
-          stroke={strokeColor}
-          strokeWidth={2}
-          paintOrder="stroke"
-          xmlSpace="preserve"
-          transform={`rotate(${label.rotation * 45} ${labelAnchorX} ${labelAnchorY})`}
-        >
-          {nameLines.map((line, i) => (
-            <tspan key={i} x={labelAnchorX} dy={i === 0 ? labelFirstLineDy : '1.2em'}>
-              {line}
-            </tspan>
-          ))}
-        </text>
+        {renderStationLabelText({
+          text: station.name,
+          fontSize: 12,
+          fontWeight: 700,
+          fill: highlightColor,
+          stroke: strokeColor,
+          strokeWidth: 2,
+          paintOrder: 'stroke',
+          textDecoration: selection.hoveredStationId === station.id ? 'underline' : undefined,
+          anchorX: labelAnchorX,
+          anchorY: labelAnchorY,
+          textAnchor: labelTextAnchor,
+          baseline: labelBaseline,
+          firstLineDy: labelFirstLineDy,
+          rotationDeg: label.rotation * 45,
+          lineByService,
+        })}
       </g>
     );
   }
@@ -429,26 +588,21 @@ export function StationView({
     // line's station names stay legible.
     return (
       <g transform={`translate(${station.x} ${station.y}) rotate(${angle})`}>
-        <text
-          x={labelAnchorX}
-          y={labelAnchorY}
-          textAnchor={labelTextAnchor}
-          dominantBaseline={labelBaseline}
-          fontSize={labelFontSize}
-          fontWeight={labelBold || selection.hoveredStationId === station.id ? 700 : 400}
-          fontStyle={labelItalic ? 'italic' : undefined}
-          textDecoration={selection.hoveredStationId === station.id ? 'underline' : undefined}
-          pointerEvents="none"
-          fill={highlightColor}
-          xmlSpace="preserve"
-          transform={`rotate(${label.rotation * 45} ${labelAnchorX} ${labelAnchorY})`}
-        >
-          {nameLines.map((line, i) => (
-            <tspan key={i} x={labelAnchorX} dy={i === 0 ? labelFirstLineDy : '1.2em'}>
-              {line}
-            </tspan>
-          ))}
-        </text>
+        {renderStationLabelText({
+          text: station.name,
+          fontSize: labelFontSize,
+          fontWeight: labelBold || selection.hoveredStationId === station.id ? 700 : 400,
+          fontStyle: labelItalic ? 'italic' : undefined,
+          textDecoration: selection.hoveredStationId === station.id ? 'underline' : undefined,
+          fill: highlightColor,
+          anchorX: labelAnchorX,
+          anchorY: labelAnchorY,
+          textAnchor: labelTextAnchor,
+          baseline: labelBaseline,
+          firstLineDy: labelFirstLineDy,
+          rotationDeg: label.rotation * 45,
+          lineByService,
+        })}
       </g>
     );
   }
@@ -484,26 +638,21 @@ export function StationView({
             onCommit={() => selection.setEditingStationId(null)}
           />
         ) : (
-          <text
-            x={labelAnchorX}
-            y={labelAnchorY}
-            textAnchor={labelTextAnchor}
-            dominantBaseline={labelBaseline}
-            fontSize={labelFontSize}
-            fontWeight={labelBold || selection.hoveredStationId === station.id ? 700 : 400}
-            fontStyle={labelItalic ? 'italic' : undefined}
-            textDecoration={selection.hoveredStationId === station.id ? 'underline' : undefined}
-            pointerEvents="none"
-            fill="#111"
-            xmlSpace="preserve"
-            transform={`rotate(${label.rotation * 45} ${labelAnchorX} ${labelAnchorY})`}
-          >
-            {nameLines.map((line, i) => (
-              <tspan key={i} x={labelAnchorX} dy={i === 0 ? labelFirstLineDy : '1.2em'}>
-                {line}
-              </tspan>
-            ))}
-          </text>
+          renderStationLabelText({
+            text: station.name,
+            fontSize: labelFontSize,
+            fontWeight: labelBold || selection.hoveredStationId === station.id ? 700 : 400,
+            fontStyle: labelItalic ? 'italic' : undefined,
+            textDecoration: selection.hoveredStationId === station.id ? 'underline' : undefined,
+            fill: '#111',
+            anchorX: labelAnchorX,
+            anchorY: labelAnchorY,
+            textAnchor: labelTextAnchor,
+            baseline: labelBaseline,
+            firstLineDy: labelFirstLineDy,
+            rotationDeg: label.rotation * 45,
+            lineByService,
+          })
         )}
       </g>
     );

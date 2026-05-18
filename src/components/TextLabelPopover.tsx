@@ -6,7 +6,10 @@ import type { TextLabel, TextLabelAlign, TextLabelWeight } from '../model/types'
 
 interface Props {
   label: TextLabel;
-  // Anchor in screen pixels (the label's screen-space position).
+  // Anchor in screen pixels — only the value at mount is used. The popover
+  // captures it once and stays put after that, even if the underlying
+  // label's screen position changes (drag, resize, zoom). User-initiated
+  // moves happen via the header drag.
   anchor: { x: number; y: number };
   onClose: () => void;
 }
@@ -31,6 +34,48 @@ const ALIGNS: { value: TextLabelAlign; icon: string; title: string }[] = [
 export function TextLabelPopover({ label, anchor, onClose }: Props) {
   const updateTextLabel = useDoc((s) => s.updateTextLabel);
   const deleteTextLabel = useDoc((s) => s.deleteTextLabel);
+
+  // Freeze the anchor at mount. Subsequent changes to `anchor` (which
+  // tracks the label's screen position) are ignored — the popover must
+  // stay where it opened so resizes/edits don't slide controls out from
+  // under the user's cursor. User drags still move it via dragOffset.
+  const [frozenAnchor] = useState(anchor);
+
+  // Drag offset (added to the frozen anchor). Persists while the popover
+  // stays open so the popover stays where the user put it.
+  const [dragOffset, setDragOffset] = useState<{ x: number; y: number }>({ x: 0, y: 0 });
+  const dragStart = useRef<{
+    mouseX: number;
+    mouseY: number;
+    offX: number;
+    offY: number;
+  } | null>(null);
+  const onHeaderPointerDown = (e: React.PointerEvent<HTMLDivElement>) => {
+    if (e.button !== 0) return;
+    e.preventDefault();
+    e.stopPropagation();
+    dragStart.current = {
+      mouseX: e.clientX,
+      mouseY: e.clientY,
+      offX: dragOffset.x,
+      offY: dragOffset.y,
+    };
+    (e.currentTarget as HTMLDivElement).setPointerCapture(e.pointerId);
+  };
+  const onHeaderPointerMove = (e: React.PointerEvent<HTMLDivElement>) => {
+    const s = dragStart.current;
+    if (!s) return;
+    setDragOffset({ x: s.offX + (e.clientX - s.mouseX), y: s.offY + (e.clientY - s.mouseY) });
+  };
+  const onHeaderPointerUp = (e: React.PointerEvent<HTMLDivElement>) => {
+    if (!dragStart.current) return;
+    dragStart.current = null;
+    try {
+      (e.currentTarget as HTMLDivElement).releasePointerCapture(e.pointerId);
+    } catch {
+      /* ignore */
+    }
+  };
 
   const textField = useFieldHistory();
   const sizeField = useFieldHistory();
@@ -95,8 +140,8 @@ export function TextLabelPopover({ label, anchor, onClose }: Props) {
       className="text-label-popover"
       style={{
         position: 'absolute',
-        left: anchor.x + 14,
-        top: anchor.y + 14,
+        left: frozenAnchor.x + 14 + dragOffset.x,
+        top: frozenAnchor.y + 14 + dragOffset.y,
         zIndex: 1100,
       }}
       // Stop pointer events from reaching the canvas so clicks inside the
@@ -108,7 +153,13 @@ export function TextLabelPopover({ label, anchor, onClose }: Props) {
         e.stopPropagation();
       }}
     >
-      <div className="header" />
+      <div
+        className="header"
+        onPointerDown={onHeaderPointerDown}
+        onPointerMove={onHeaderPointerMove}
+        onPointerUp={onHeaderPointerUp}
+        onPointerCancel={onHeaderPointerUp}
+      />
       <div className="body">
         <div className="row-block">
           <label htmlFor={`label-text-${label.id}`}>
@@ -119,6 +170,7 @@ export function TextLabelPopover({ label, anchor, onClose }: Props) {
             value={label.text}
             onChange={(e) => setText(e.target.value)}
             rows={Math.max(2, label.text.split('\n').length)}
+            wrap="off"
             {...textField}
           />
         </div>

@@ -394,6 +394,10 @@ select {
   background: #000;
   flex-shrink: 0;
 }
+.text-label-popover .header {
+  cursor: move;
+  touch-action: none;
+}
 .bullet-popover .body,
 .text-label-popover .body {
   padding: 10px 12px;
@@ -488,6 +492,10 @@ select {
   padding: 4px 6px;
   border: 1px solid #bbb;
   border-radius: 3px;
+  /* Match the wrap="off" attribute: a long line scrolls horizontally
+     instead of wrapping. */
+  white-space: pre;
+  overflow-x: auto;
   box-sizing: border-box;
 }
 .text-label-popover .size-spin {

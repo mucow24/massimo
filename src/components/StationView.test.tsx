@@ -72,6 +72,48 @@ describe('<StationView /> — label styling', () => {
   });
 });
 
+describe('<StationView /> — inline bullets in station names', () => {
+  it('renders no bullets and a single <text> for plain station names', () => {
+    const station = makeStation({ id: 's1', name: 'Plain', x: 0, y: 0 });
+    const { container } = render(
+      <svg>
+        <StationView station={station} lines={{}} zoom={1} onStartDrag={vi.fn()} layer="label" />
+      </svg>,
+    );
+    expect(container.querySelectorAll('[data-inline-bullet]')).toHaveLength(0);
+    // Plain text path is intentionally kept as a single <text> + <tspan>s so
+    // the wash silhouette and hit-test rect stay byte-for-byte the same.
+    expect(container.querySelectorAll('text')).toHaveLength(1);
+  });
+
+  it('emits a colored inline bullet when the name contains <CODE>', () => {
+    const station = makeStation({ id: 's1', name: 'Hub <A1>', x: 0, y: 0 });
+    const lines = {
+      L1: makeLine({ id: 'L1', service: 'A1', color: '#abc123' }),
+    };
+    const { container } = render(
+      <svg>
+        <StationView station={station} lines={lines} zoom={1} onStartDrag={vi.fn()} layer="label" />
+      </svg>,
+    );
+    const bullets = container.querySelectorAll('[data-inline-bullet]');
+    expect(bullets).toHaveLength(1);
+    expect(bullets[0].querySelector('circle')?.getAttribute('fill')).toBe('#abc123');
+  });
+
+  it('falls back to a gray "?" bullet for an unknown code', () => {
+    const station = makeStation({ id: 's1', name: '<ZZ>', x: 0, y: 0 });
+    const { container } = render(
+      <svg>
+        <StationView station={station} lines={{}} zoom={1} onStartDrag={vi.fn()} layer="label" />
+      </svg>,
+    );
+    const bullet = container.querySelector('[data-inline-bullet]');
+    expect(bullet?.querySelector('circle')?.getAttribute('fill')).toBe('#888');
+    expect(bullet?.querySelector('text')?.textContent).toBe('?');
+  });
+});
+
 describe('<StationView /> — dot layer renders at compressed positions', () => {
   it('three diagonal stops at a station render dots at the compressed world coords', () => {
     // Three perp-adjacent auto-nw-se stops at one station — should compress

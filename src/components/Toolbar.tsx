@@ -4,7 +4,7 @@ import { useViewportStore } from '../state/viewportStore';
 import { parse, serialize } from '../model/serialize';
 import { DEFAULT_DOC } from '../model/transforms';
 import { Menu, MenuItem, MenuSeparator } from './Menu';
-import { CursorArrowIcon, HandIcon } from '@radix-ui/react-icons';
+import { CursorArrowIcon, FrameIcon, HandIcon } from '@radix-ui/react-icons';
 import { SnapToggleBar } from './SnapToggleBar';
 import { OptionsPopover } from './OptionsPopover';
 
@@ -36,6 +36,8 @@ function ToolButtons() {
 export function Toolbar() {
   const zoom = useViewportStore((s) => s.zoom);
   const setViewport = useViewportStore((s) => s.setViewport);
+  const gridVisible = useViewportStore((s) => s.gridVisible);
+  const setGridVisible = useViewportStore((s) => s.setGridVisible);
   const clearAll = useDoc((s) => s.clearAll);
   const addLine = useDoc((s) => s.addLine);
   const selection = useSelection();
@@ -159,7 +161,19 @@ export function Toolbar() {
       <span className="tool-group-divider" aria-hidden="true" />
       <SnapToggleBar />
       <span className="tool-group-divider" aria-hidden="true" />
-      <OptionsPopover />
+      <div className="tool-group">
+        <OptionsPopover />
+        <button
+          type="button"
+          className={'tool-btn' + (gridVisible ? ' active' : '')}
+          title={gridVisible ? 'Hide grid' : 'Show grid'}
+          aria-label="Toggle grid"
+          aria-pressed={gridVisible}
+          onClick={() => setGridVisible(!gridVisible)}
+        >
+          <FrameIcon />
+        </button>
+      </div>
       <input
         ref={fileInputRef}
         type="file"
