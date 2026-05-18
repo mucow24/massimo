@@ -9,6 +9,7 @@ import {
 } from '../state/store';
 import { randomStationName } from '../state/stationNames';
 import { useSnapPrefs } from '../state/snapPrefs';
+import { useViewportStore } from '../state/viewportStore';
 import { snapDraggedStation, type SnapGuide } from '../geometry/snap';
 import {
   buildBands,
@@ -73,6 +74,7 @@ export function MapCanvas() {
   const rotateTextLabel = useDoc((s) => s.rotateTextLabel);
   const selection = useSelection();
   const snapModes = useSnapPrefs((s) => s.modes);
+  const gridVisible = useViewportStore((s) => s.gridVisible);
   const highlightLineId = selection.selectedLineId;
 
   const svgRef = useRef<SVGSVGElement | null>(null);
@@ -650,13 +652,15 @@ export function MapCanvas() {
           fill="#fafafa"
         />
 
-        <Grid
-          vbX={view.vbX}
-          vbY={view.vbY}
-          vbW={view.vbW}
-          vbH={view.vbH}
-          zoom={view.viewport.zoom}
-        />
+        {gridVisible && (
+          <Grid
+            vbX={view.vbX}
+            vbY={view.vbY}
+            vbW={view.vbW}
+            vbH={view.vbH}
+            zoom={view.viewport.zoom}
+          />
+        )}
 
         {/* selection wash: painted before bands so the wash sits behind
             line segments, markers, dots, and labels — all the way in the

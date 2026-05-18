@@ -6,9 +6,9 @@ interface Props {
   zoom: number;
 }
 
-/** Subtle background grid; line spacing scales by zoom for a sane density. */
+/** Subtle background grid; fixed 10-unit spacing in world coordinates. */
 export function Grid({ vbX, vbY, vbW, vbH, zoom }: Props) {
-  const step = zoom < 0.5 ? 80 : zoom < 1.5 ? 40 : 20;
+  const step = 10;
   const x0 = Math.floor(vbX / step) * step;
   const y0 = Math.floor(vbY / step) * step;
   const lines: React.ReactElement[] = [];
