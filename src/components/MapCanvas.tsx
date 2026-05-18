@@ -9,7 +9,16 @@ import {
 } from '../state/store';
 import { randomStationName } from '../state/stationNames';
 import { useSnapPrefs } from '../state/snapPrefs';
-import { snapDraggedStation, type SnapGuide } from '../geometry/snap';
+import { useViewportStore } from '../state/viewportStore';
+import {
+  maybeSnapToGrid,
+  snapDraggedStation,
+  snapLabelToGrid,
+  snapPointToGrid,
+  type SnapGuide,
+} from '../geometry/snap';
+import { measureTextLabel } from '../geometry/textMeasure';
+import { TEXT_LABEL_HIT_PAD } from '../geometry/stationBoundary';
 import {
   buildBands,
   buildOrderedRenderables,
@@ -73,6 +82,7 @@ export function MapCanvas() {
   const rotateTextLabel = useDoc((s) => s.rotateTextLabel);
   const selection = useSelection();
   const snapModes = useSnapPrefs((s) => s.modes);
+  const gridVisible = useViewportStore((s) => s.gridVisible);
   const highlightLineId = selection.selectedLineId;
 
   const svgRef = useRef<SVGSVGElement | null>(null);
@@ -222,7 +232,12 @@ export function MapCanvas() {
       selection.placingStation ||
       selection.placingLabel
     ) {
-      setCursorWorld(view.screenToWorld(e.clientX, e.clientY));
+      const raw = view.screenToWorld(e.clientX, e.clientY);
+      // Grid-snap the placement preview for new stations so the user sees
+      // exactly where it'll land. Other placement modes keep the raw
+      // cursor — grid snap is scoped to stations for now.
+      const w = selection.placingStation ? maybeSnapToGrid(raw, snapModes) : raw;
+      setCursorWorld(w);
     } else if (cursorWorld) {
       setCursorWorld(null);
     }
@@ -262,8 +277,15 @@ export function MapCanvas() {
           nx = snap.x;
           ny = snap.y;
           setBulletSnapGuides(snap.guides);
-        } else if (bulletSnapGuides.length > 0) {
-          setBulletSnapGuides([]);
+        } else {
+          if (bulletSnapGuides.length > 0) setBulletSnapGuides([]);
+          // Grid snap fallback when the snap engine wasn't called (unbound
+          // bullet or group drag). Shift still bypasses.
+          if (snapModes.grid && !e.shiftKey) {
+            const g = snapPointToGrid(nx, ny);
+            nx = g.x;
+            ny = g.y;
+          }
         }
         moveRouteBullet(bd.id, nx, ny);
         if (inGroupDrag) {
@@ -288,10 +310,32 @@ export function MapCanvas() {
         svgRef.current?.setPointerCapture(e.pointerId);
       }
       if (ld.moved) {
-        const dx = dxScreen / view.viewport.zoom;
-        const dy = dyScreen / view.viewport.zoom;
-        const nx = ld.startWX + dx;
-        const ny = ld.startWY + dy;
+        const rawDx = dxScreen / view.viewport.zoom;
+        const rawDy = dyScreen / view.viewport.zoom;
+        let nx = ld.startWX + rawDx;
+        let ny = ld.startWY + rawDy;
+        // Labels don't go through the snap engine (no axis/orientation), but
+        // grid snap still applies. Register the label by its upper-left
+        // bbox corner so the visible edge lands on a grid line. Shift
+        // bypasses like elsewhere.
+        if (snapModes.grid && !e.shiftKey) {
+          const cur = textLabels[ld.id];
+          if (cur) {
+            const m = measureTextLabel(cur);
+            // Snap the VISIBLE upper-left (the dashed selection ring), which
+            // includes hit-test padding around the text bbox — that's the
+            // corner the user actually sees on screen.
+            const snapped = snapLabelToGrid(
+              { x: nx, y: ny },
+              m.width + 2 * TEXT_LABEL_HIT_PAD,
+              m.height + 2 * TEXT_LABEL_HIT_PAD,
+            );
+            nx = snapped.x;
+            ny = snapped.y;
+          }
+        }
+        const dx = nx - ld.startWX;
+        const dy = ny - ld.startWY;
         moveTextLabel(ld.id, nx, ny);
         const inGroupDrag =
           ld.labelSiblings.length + ld.bulletSiblings.length + ld.stationSiblings.length > 0;
@@ -514,7 +558,7 @@ export function MapCanvas() {
     if (!onBackground) return;
     if (dragState.suppressClick) return;
     if (selection.placingStation) {
-      const w = view.screenToWorld(e.clientX, e.clientY);
+      const w = maybeSnapToGrid(view.screenToWorld(e.clientX, e.clientY), snapModes);
       addStation(w.x, w.y, previewName ?? undefined);
       setPreviewName(randomStationName());
       // Stay in place-station mode; user clicks again or hits Esc / the
@@ -650,13 +694,15 @@ export function MapCanvas() {
           fill="#fafafa"
         />
 
-        <Grid
-          vbX={view.vbX}
-          vbY={view.vbY}
-          vbW={view.vbW}
-          vbH={view.vbH}
-          zoom={view.viewport.zoom}
-        />
+        {gridVisible && (
+          <Grid
+            vbX={view.vbX}
+            vbY={view.vbY}
+            vbW={view.vbW}
+            vbH={view.vbH}
+            zoom={view.viewport.zoom}
+          />
+        )}
 
         {/* selection wash: painted before bands so the wash sits behind
             line segments, markers, dots, and labels — all the way in the

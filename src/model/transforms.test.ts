@@ -1,5 +1,6 @@
 import { describe, it, expect } from 'vitest';
 import * as T from './transforms';
+import { measureTextLabel } from '../geometry/textMeasure';
 import {
   makeDoc,
   makeLine,
@@ -1413,6 +1414,58 @@ describe('updateTextLabel', () => {
   it('is a no-op for missing ids', () => {
     const doc = makeDoc({});
     expect(T.updateTextLabel(doc, 'nope', { text: 'X' })).toBe(doc);
+  });
+
+  // Resize-preserves-upper-left: text size / lines / weight / italic can all
+  // change the bbox. The label's (x, y) is its bbox center, so naive merging
+  // grows the bbox symmetrically out of the center — drift the visual top-
+  // left every time. Anchor on the upper-left instead.
+  const upperLeftOf = (label: TextLabel) => {
+    const m = measureTextLabel(label);
+    return { x: label.x - m.width / 2, y: label.y - m.height / 2 };
+  };
+  it('preserves the upper-left corner when fontSize grows', () => {
+    const doc = makeDoc({
+      textLabels: [makeTextLabel({ id: 'g1', x: 100, y: 100, fontSize: 16 })],
+    });
+    const before = upperLeftOf(doc.textLabels.g1);
+    const next = T.updateTextLabel(doc, 'g1', { fontSize: 32 });
+    const after = upperLeftOf(next.textLabels.g1);
+    expect(after.x).toBeCloseTo(before.x, 5);
+    expect(after.y).toBeCloseTo(before.y, 5);
+  });
+
+  it('preserves the upper-left corner when text adds new lines', () => {
+    const doc = makeDoc({
+      textLabels: [makeTextLabel({ id: 'g1', x: 50, y: 50, text: 'A' })],
+    });
+    const before = upperLeftOf(doc.textLabels.g1);
+    const next = T.updateTextLabel(doc, 'g1', { text: 'A\nB\nC' });
+    const after = upperLeftOf(next.textLabels.g1);
+    expect(after.x).toBeCloseTo(before.x, 5);
+    expect(after.y).toBeCloseTo(before.y, 5);
+  });
+
+  it('preserves the upper-left corner when italic flips', () => {
+    const doc = makeDoc({
+      textLabels: [makeTextLabel({ id: 'g1', x: 30, y: 30, italic: false })],
+    });
+    const before = upperLeftOf(doc.textLabels.g1);
+    const next = T.updateTextLabel(doc, 'g1', { italic: true });
+    const after = upperLeftOf(next.textLabels.g1);
+    expect(after.x).toBeCloseTo(before.x, 5);
+    expect(after.y).toBeCloseTo(before.y, 5);
+  });
+
+  it('explicit x/y in the patch overrides upper-left preservation', () => {
+    // Caller is moving the label (e.g. drag) — don't second-guess by re-
+    // anchoring on the old top-left.
+    const doc = makeDoc({
+      textLabels: [makeTextLabel({ id: 'g1', x: 0, y: 0, fontSize: 16 })],
+    });
+    const next = T.updateTextLabel(doc, 'g1', { fontSize: 32, x: 200, y: 300 });
+    expect(next.textLabels.g1.x).toBe(200);
+    expect(next.textLabels.g1.y).toBe(300);
   });
 });
 

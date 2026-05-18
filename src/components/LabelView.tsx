@@ -1,6 +1,14 @@
-import type { TextLabel } from '../model/types';
-import { LINE_HEIGHT, measureTextLabel, type MeasuredBBox } from '../geometry/textMeasure';
+import { useMemo } from 'react';
+import type { Line, TextLabel } from '../model/types';
+import {
+  BASELINE_FRACTION,
+  LINE_HEIGHT,
+  measureTextLabel,
+  type MeasuredBBox,
+} from '../geometry/textMeasure';
 import { TEXT_LABEL_HIT_PAD } from '../geometry/stationBoundary';
+import { useDoc } from '../state/store';
+import { InlineBullet } from './InlineBullet';
 
 export type LabelLayer = 'bg' | 'stroke';
 
@@ -23,20 +31,20 @@ const SELECTION_STROKE_COLOR = '#000000';
 const SELECTION_STROKE_WIDTH = 2;
 const SELECTION_DASH = '4 3';
 
-// Per-line x offset that combines with text-anchor to anchor each <tspan> at
-// the correct horizontal point given the label's align mode. The whole text
-// block is centered on the label's origin, so the alignment anchor moves with
-// the block.
-function tspanXFor(align: TextLabel['align'], halfWidth: number): number {
-  if (align === 'center') return 0;
-  if (align === 'right') return halfWidth;
-  return -halfWidth;
-}
-
-function textAnchorFor(align: TextLabel['align']): 'start' | 'middle' | 'end' {
-  if (align === 'center') return 'middle';
-  if (align === 'right') return 'end';
-  return 'start';
+// Per-line cursor X. Each line is positioned by its own ink bearings so the
+// visible left/right ink edges align with the bbox edges — fonts at
+// different weights have different side bearings, and we don't want that
+// leakage to push the visible glyph row past the label's bbox.
+function lineCursorX(
+  align: TextLabel['align'],
+  halfWidth: number,
+  bearingLeft: number,
+  bearingRight: number,
+): number {
+  if (align === 'right') return halfWidth - bearingRight;
+  if (align === 'center') return (bearingLeft - bearingRight) / 2;
+  // left
+  return -halfWidth + bearingLeft;
 }
 
 export function LabelView({
@@ -47,14 +55,18 @@ export function LabelView({
   onClick,
   onContextMenu,
 }: Props) {
+  const docLines = useDoc((s) => s.lines);
+  const lineByService = useMemo(() => {
+    const map = new Map<string, Line>();
+    for (const ln of Object.values(docLines)) map.set(ln.service, ln);
+    return map;
+  }, [docLines]);
+
   const m: MeasuredBBox = measureTextLabel(label);
   const angle = label.rotation * 45;
   const halfW = m.width / 2;
   const halfH = m.height / 2;
-  const lines = label.text.length === 0 ? [''] : label.text.split('\n');
   const lineSpacing = label.fontSize * LINE_HEIGHT;
-  const tspanX = tspanXFor(label.align, halfW);
-  const anchor = textAnchorFor(label.align);
 
   if (layer === 'stroke') {
     if (!selected) return null;
@@ -102,25 +114,56 @@ export function LabelView({
           fill="transparent"
         />
       )}
-      <text
-        x={0}
-        y={-halfH}
-        textAnchor={anchor}
-        dominantBaseline="hanging"
-        fontFamily="'Helvetica Neue', Helvetica, Arial, sans-serif"
-        fontSize={label.fontSize}
-        fontWeight={label.weight}
-        fontStyle={label.italic ? 'italic' : 'normal'}
-        fill="#111"
-        pointerEvents="none"
-        style={{ userSelect: 'none', whiteSpace: 'pre' }}
-      >
-        {lines.map((ln, i) => (
-          <tspan key={i} x={tspanX} dy={i === 0 ? 0 : lineSpacing}>
-            {ln === '' ? ' ' : ln}
-          </tspan>
-        ))}
-      </text>
+      {m.lines.map((lm, i) => {
+        if (lm.segments.length === 0) return null;
+        const yTop = -halfH + i * lineSpacing;
+        // Bullet bottom sits on the text baseline; see BASELINE_FRACTION.
+        const baselineY = yTop + label.fontSize * BASELINE_FRACTION;
+        const lineStartX = lineCursorX(label.align, halfW, lm.bearingLeft, lm.bearingRight);
+        let cursor = lineStartX;
+        const nodes: React.ReactNode[] = [];
+        lm.segments.forEach((seg, j) => {
+          const segCursor = cursor;
+          cursor += seg.advance;
+          if (seg.kind === 'text') {
+            nodes.push(
+              <text
+                key={`${i}-${j}-t`}
+                x={segCursor}
+                y={yTop}
+                textAnchor="start"
+                dominantBaseline="hanging"
+                fontFamily="'Helvetica Neue', Helvetica, Arial, sans-serif"
+                fontSize={label.fontSize}
+                fontWeight={label.weight}
+                fontStyle={label.italic ? 'italic' : 'normal'}
+                fill="#111"
+                pointerEvents="none"
+                style={{ userSelect: 'none', whiteSpace: 'pre' }}
+              >
+                {seg.value}
+              </text>,
+            );
+          } else {
+            const r = seg.diameter / 2;
+            nodes.push(
+              <InlineBullet
+                key={`${i}-${j}-b`}
+                code={seg.code}
+                diameter={seg.diameter}
+                cx={segCursor + r}
+                cy={baselineY - r}
+                lineByService={lineByService}
+              />,
+            );
+          }
+        });
+        return (
+          <g key={i} data-label-line={i}>
+            {nodes}
+          </g>
+        );
+      })}
     </g>
   );
 }

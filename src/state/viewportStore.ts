@@ -4,6 +4,8 @@ import type { Viewport } from '../model/types';
 
 interface ViewportState extends Viewport {
   setViewport: (v: Viewport) => void;
+  gridVisible: boolean;
+  setGridVisible: (visible: boolean) => void;
 }
 
 /**
@@ -18,11 +20,13 @@ export const useViewportStore = create<ViewportState>()(
       y: 0,
       zoom: 1,
       setViewport: (v) => set(v),
+      gridVisible: true,
+      setGridVisible: (gridVisible) => set({ gridVisible }),
     }),
     {
       name: 'massimo-viewport',
       storage: createJSONStorage(() => localStorage),
-      partialize: (s) => ({ x: s.x, y: s.y, zoom: s.zoom }),
+      partialize: (s) => ({ x: s.x, y: s.y, zoom: s.zoom, gridVisible: s.gridVisible }),
     },
   ),
 );
