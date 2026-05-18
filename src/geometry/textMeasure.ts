@@ -1,14 +1,35 @@
 import type { TextLabel } from '../model/types';
+import { inlineBulletDiameter, parseLabelLine } from './labelTokens';
+
+export type SegmentMetric =
+  | {
+      kind: 'text';
+      value: string;
+      /** Distance the cursor moves rightward after rendering. */
+      advance: number;
+      /** Overhang LEFT of the segment cursor (positive = ink left of cursor). */
+      bearingLeft: number;
+      /** Overhang RIGHT of the segment cursor (positive = ink right of cursor). */
+      bearingRight: number;
+    }
+  | {
+      kind: 'bullet';
+      code: string;
+      /** Both advance and visible width of the bullet circle. */
+      advance: number;
+      diameter: number;
+    };
 
 export interface LineMetrics {
-  /** Ink width — distance from leftmost ink to rightmost ink (= bearingLeft + bearingRight). */
+  /** Ink width — distance from leftmost ink to rightmost ink across all segments. */
   inkWidth: number;
-  /** Distance from the cursor to the leftmost ink pixel (positive when ink
-   *  overhangs LEFT of the cursor; matches TextMetrics.actualBoundingBoxLeft). */
+  /** Distance from the line-start cursor going LEFT to the leftmost ink pixel. */
   bearingLeft: number;
-  /** Distance from the cursor to the rightmost ink pixel (positive when ink
-   *  extends RIGHT of the cursor; matches TextMetrics.actualBoundingBoxRight). */
+  /** Distance from the line-start cursor going RIGHT to the rightmost ink pixel. */
   bearingRight: number;
+  /** Parsed segments along this line, with their measurements. Empty for an
+   *  empty line. */
+  segments: SegmentMetric[];
 }
 
 export interface MeasuredBBox {
@@ -57,55 +78,99 @@ function approximateLineWidth(line: string, fontSize: number): number {
   return line.length * fontSize * 0.55;
 }
 
+function measureTextSegment(
+  value: string,
+  fontSize: number,
+  measureCtx: CanvasRenderingContext2D | null,
+  fontDecl: string,
+): { advance: number; bearingLeft: number; bearingRight: number } {
+  if (value.length === 0) return { advance: 0, bearingLeft: 0, bearingRight: 0 };
+  if (measureCtx) {
+    measureCtx.font = fontDecl;
+    const tm = measureCtx.measureText(value);
+    const bL = tm.actualBoundingBoxLeft ?? 0;
+    const bR = tm.actualBoundingBoxRight ?? 0;
+    const advance = tm.width;
+    if (bL > 0 || bR > 0) {
+      return { advance: advance > 0 ? advance : bL + bR, bearingLeft: bL, bearingRight: bR };
+    }
+    if (advance > 0) {
+      // Real canvas advance but no ink bounds — treat the whole advance as ink.
+      return { advance, bearingLeft: 0, bearingRight: advance };
+    }
+  }
+  const approx = approximateLineWidth(value, fontSize);
+  return { advance: approx, bearingLeft: 0, bearingRight: approx };
+}
+
+function computeLineMetrics(
+  raw: string,
+  fontSize: number,
+  measureCtx: CanvasRenderingContext2D | null,
+  fontDecl: string,
+): LineMetrics {
+  const segments = parseLabelLine(raw);
+  if (segments.length === 0) {
+    return { inkWidth: 0, bearingLeft: 0, bearingRight: 0, segments: [] };
+  }
+  const segMetrics: SegmentMetric[] = segments.map((seg) => {
+    if (seg.kind === 'bullet') {
+      const d = inlineBulletDiameter(fontSize);
+      return { kind: 'bullet', code: seg.code, advance: d, diameter: d };
+    }
+    const t = measureTextSegment(seg.value, fontSize, measureCtx, fontDecl);
+    return { kind: 'text', value: seg.value, ...t };
+  });
+
+  // Walk segments to compute the line's ink extent.
+  let cursor = 0;
+  let inkLeft = Infinity;
+  let inkRight = -Infinity;
+  for (const sm of segMetrics) {
+    const leftAbs = cursor + (sm.kind === 'text' ? -sm.bearingLeft : 0);
+    const rightAbs = cursor + (sm.kind === 'text' ? sm.bearingRight : sm.diameter);
+    if (leftAbs < inkLeft) inkLeft = leftAbs;
+    if (rightAbs > inkRight) inkRight = rightAbs;
+    cursor += sm.advance;
+  }
+  if (!Number.isFinite(inkLeft) || !Number.isFinite(inkRight)) {
+    return { inkWidth: 0, bearingLeft: 0, bearingRight: 0, segments: segMetrics };
+  }
+  return {
+    inkWidth: inkRight - inkLeft,
+    bearingLeft: -inkLeft,
+    bearingRight: inkRight,
+    segments: segMetrics,
+  };
+}
+
 /**
  * Measure the unrotated bounding box of a TextLabel's rendered text.
  *
- * Width is the max line width via canvas `measureText` (or a fontSize-based
- * approximation when no real canvas is available). Height = lineCount *
- * fontSize * LINE_HEIGHT. Returned values are cached by content+style.
+ * Each line is parsed into text + bullet segments; widths combine the canvas
+ * `measureText` (or a fontSize-based approximation when no real canvas is
+ * available) with the inline-bullet diameter. Height = lineCount * fontSize
+ * * LINE_HEIGHT. Returned values are cached by content+style.
  */
 export function measureTextLabel(label: TextLabel): MeasuredBBox {
   const key = cacheKey(label);
   const hit = cache.get(key);
   if (hit) return hit;
 
-  const lines = label.text.length === 0 ? [''] : label.text.split('\n');
+  const rawLines = label.text.length === 0 ? [''] : label.text.split('\n');
   const measureCtx = getCtx();
   const fontDecl = `${label.italic ? 'italic ' : ''}${label.weight} ${label.fontSize}px "Helvetica Neue", Helvetica, Arial, sans-serif`;
-  if (measureCtx) measureCtx.font = fontDecl;
 
-  const lineMetrics: LineMetrics[] = lines.map((line) => {
-    if (line.length === 0) {
-      return { inkWidth: 0, bearingLeft: 0, bearingRight: 0 };
-    }
-    if (measureCtx) {
-      const tm = measureCtx.measureText(line);
-      // Prefer the actual ink bounds (actualBoundingBoxLeft/Right) over the
-      // advance width — that's what gives "F" and "Fo" the same visible left
-      // edge regardless of side bearing. Some environments (jsdom) leave
-      // these undefined or report 0 across the board; fall back to the
-      // approximation so tests still see a sensible bbox.
-      const bL = tm.actualBoundingBoxLeft ?? 0;
-      const bR = tm.actualBoundingBoxRight ?? 0;
-      if (bL > 0 || bR > 0) {
-        return { inkWidth: bL + bR, bearingLeft: bL, bearingRight: bR };
-      }
-      if (tm.width > 0) {
-        // Advance available but no ink bounds — treat the whole advance as
-        // ink to the right of the cursor (matches the old behavior).
-        return { inkWidth: tm.width, bearingLeft: 0, bearingRight: tm.width };
-      }
-    }
-    const approx = approximateLineWidth(line, label.fontSize);
-    return { inkWidth: approx, bearingLeft: 0, bearingRight: approx };
-  });
+  const lineMetrics: LineMetrics[] = rawLines.map((raw) =>
+    computeLineMetrics(raw, label.fontSize, measureCtx, fontDecl),
+  );
   const lineWidths = lineMetrics.map((m) => m.inkWidth);
   const width = lineWidths.reduce((m, w) => (w > m ? w : m), 0);
-  const height = lines.length * label.fontSize * LINE_HEIGHT;
+  const height = rawLines.length * label.fontSize * LINE_HEIGHT;
   const result: MeasuredBBox = {
     width,
     height,
-    lineCount: lines.length,
+    lineCount: rawLines.length,
     lineWidths,
     lines: lineMetrics,
   };

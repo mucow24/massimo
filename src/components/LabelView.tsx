@@ -1,6 +1,9 @@
-import type { TextLabel } from '../model/types';
+import { useMemo } from 'react';
+import type { Line, TextLabel } from '../model/types';
 import { LINE_HEIGHT, measureTextLabel, type MeasuredBBox } from '../geometry/textMeasure';
 import { TEXT_LABEL_HIT_PAD } from '../geometry/stationBoundary';
+import { useDoc } from '../state/store';
+import { legibleTextOn } from '../util/color';
 
 export type LabelLayer = 'bg' | 'stroke';
 
@@ -47,11 +50,17 @@ export function LabelView({
   onClick,
   onContextMenu,
 }: Props) {
+  const docLines = useDoc((s) => s.lines);
+  const lineByService = useMemo(() => {
+    const map = new Map<string, Line>();
+    for (const ln of Object.values(docLines)) map.set(ln.service, ln);
+    return map;
+  }, [docLines]);
+
   const m: MeasuredBBox = measureTextLabel(label);
   const angle = label.rotation * 45;
   const halfW = m.width / 2;
   const halfH = m.height / 2;
-  const lines = label.text.length === 0 ? [''] : label.text.split('\n');
   const lineSpacing = label.fontSize * LINE_HEIGHT;
 
   if (layer === 'stroke') {
@@ -100,29 +109,79 @@ export function LabelView({
           fill="transparent"
         />
       )}
-      <text
-        x={0}
-        y={-halfH}
-        textAnchor="start"
-        dominantBaseline="hanging"
-        fontFamily="'Helvetica Neue', Helvetica, Arial, sans-serif"
-        fontSize={label.fontSize}
-        fontWeight={label.weight}
-        fontStyle={label.italic ? 'italic' : 'normal'}
-        fill="#111"
-        pointerEvents="none"
-        style={{ userSelect: 'none', whiteSpace: 'pre' }}
-      >
-        {lines.map((ln, i) => {
-          const lm = m.lines[i] ?? { bearingLeft: 0, bearingRight: 0, inkWidth: 0 };
-          const cursorX = lineCursorX(label.align, halfW, lm.bearingLeft, lm.bearingRight);
-          return (
-            <tspan key={i} x={cursorX} dy={i === 0 ? 0 : lineSpacing}>
-              {ln === '' ? ' ' : ln}
-            </tspan>
-          );
-        })}
-      </text>
+      {m.lines.map((lm, i) => {
+        const yTop = -halfH + i * lineSpacing;
+        // Bullet sits with its bottom on the text baseline. SVG's `hanging`
+        // baseline puts y at the text top; the baseline is roughly 0.8 *
+        // fontSize down (em-ascent for Helvetica-like fonts).
+        const baseline = yTop + label.fontSize * 0.8;
+        const lineStartX = lineCursorX(label.align, halfW, lm.bearingLeft, lm.bearingRight);
+        if (lm.segments.length === 0) {
+          // Empty line — still emit a stub so the SVG tree shape matches
+          // line count for snapshot/debug tools.
+          return <g key={i} data-empty-line="" />;
+        }
+        let cursor = lineStartX;
+        const nodes: React.ReactNode[] = [];
+        lm.segments.forEach((seg, j) => {
+          const segCursor = cursor;
+          if (seg.kind === 'text') {
+            nodes.push(
+              <text
+                key={`${i}-${j}-t`}
+                x={segCursor}
+                y={yTop}
+                textAnchor="start"
+                dominantBaseline="hanging"
+                fontFamily="'Helvetica Neue', Helvetica, Arial, sans-serif"
+                fontSize={label.fontSize}
+                fontWeight={label.weight}
+                fontStyle={label.italic ? 'italic' : 'normal'}
+                fill="#111"
+                pointerEvents="none"
+                style={{ userSelect: 'none', whiteSpace: 'pre' }}
+              >
+                {seg.value}
+              </text>,
+            );
+          } else {
+            const r = seg.diameter / 2;
+            const bulletCY = baseline - r;
+            const line = lineByService.get(seg.code);
+            const fill = line?.color ?? '#888';
+            const textColor = line ? legibleTextOn(fill) : '#fff';
+            const code = line?.service ?? '?';
+            nodes.push(
+              <g
+                key={`${i}-${j}-b`}
+                transform={`translate(${segCursor + r} ${bulletCY})`}
+                pointerEvents="none"
+              >
+                <circle cx={0} cy={0} r={r} fill={fill} />
+                <text
+                  x={0}
+                  y={0}
+                  textAnchor="middle"
+                  dominantBaseline="central"
+                  fontFamily="'Helvetica Neue', Helvetica, Arial, sans-serif"
+                  fontSize={r * 1.1}
+                  fontWeight={700}
+                  fill={textColor}
+                  style={{ userSelect: 'none' }}
+                >
+                  {code}
+                </text>
+              </g>,
+            );
+          }
+          cursor += seg.advance;
+        });
+        return (
+          <g key={i} data-label-line={i}>
+            {nodes}
+          </g>
+        );
+      })}
     </g>
   );
 }

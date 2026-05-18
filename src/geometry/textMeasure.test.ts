@@ -83,4 +83,25 @@ describe('measureTextLabel', () => {
     expect(m.lines[1].bearingLeft).toBe(0);
     expect(m.lines[1].bearingRight).toBe(0);
   });
+
+  it('exposes parsed segments per line', () => {
+    const m = measureTextLabel(
+      makeTextLabel({ id: 'g', text: 'Take <A1> uptown\nstraight' }),
+    );
+    expect(m.lines[0].segments.map((s) => s.kind)).toEqual(['text', 'bullet', 'text']);
+    expect(m.lines[1].segments.map((s) => s.kind)).toEqual(['text']);
+  });
+
+  it('bullet segment width scales with fontSize', () => {
+    const small = measureTextLabel(makeTextLabel({ id: 'g', text: '<A1>', fontSize: 12 }));
+    const big = measureTextLabel(makeTextLabel({ id: 'g', text: '<A1>', fontSize: 48 }));
+    expect(big.lines[0].inkWidth).toBeGreaterThan(small.lines[0].inkWidth);
+  });
+
+  it('bullet diameter is less than fontSize (shorter than the font height)', () => {
+    const fontSize = 16;
+    const m = measureTextLabel(makeTextLabel({ id: 'g', text: '<A1>', fontSize }));
+    expect(m.lines[0].inkWidth).toBeLessThan(fontSize);
+    expect(m.lines[0].inkWidth).toBeGreaterThan(fontSize * 0.5);
+  });
 });
