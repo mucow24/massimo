@@ -1,5 +1,5 @@
 import { useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
-import { Line, LineId, Station, TextLabel, TextLabelWeight } from '../model/types';
+import { Line, LineId, Station } from '../model/types';
 import { beginHistoryGroup, dragState, useDoc, useSelection } from '../state/store';
 import { STOP_DOT_RADIUS, STOP_SIZE, stopCenterAt } from '../geometry/orientation';
 import { polygonsToPath, unionConvex } from '../geometry/polygonUnion';
@@ -9,7 +9,8 @@ import { pathBetweenStations } from '../model/pathSelect';
 import { legibleTextOn } from '../util/color';
 import { StopGlyph } from './StopGlyph';
 import type { RenderedStopPositions } from '../geometry/stopPositions';
-import { LINE_HEIGHT, measureTextLabel } from '../geometry/textMeasure';
+import { BASELINE_FRACTION, LINE_HEIGHT, measureTextLabel } from '../geometry/textMeasure';
+import { InlineBullet } from './InlineBullet';
 
 // Map a click on a station to the closest dot's lineId. Used to pin a
 // transfer endpoint to the specific stop the user clicked on, rather than
@@ -128,21 +129,15 @@ function renderStationLabelText({
     );
   }
 
-  // Bullet path: measure each line segment-aware and emit explicit per-
-  // segment elements. measureTextLabel keys on text+fontSize+weight+italic,
-  // so a fake TextLabel built from these matches the existing cache.
-  const fake: TextLabel = {
-    id: '_stationLabel',
-    x: 0,
-    y: 0,
-    rotation: 0,
+  // Bullet path: measure segment-aware and emit explicit per-segment
+  // elements. measureTextLabel accepts StyledText, so station labels can
+  // pass their style props directly without fabricating a TextLabel.
+  const m = measureTextLabel({
     text,
     fontSize,
-    weight: fontWeight as TextLabelWeight,
+    weight: fontWeight,
     italic: fontStyle === 'italic',
-    align: 'left',
-  };
-  const m = measureTextLabel(fake);
+  });
   const lineSpacing = fontSize * LINE_HEIGHT;
   const blockHeight = m.lineCount * lineSpacing;
   let blockTopY: number;
@@ -161,7 +156,7 @@ function renderStationLabelText({
       {m.lines.map((lm, i) => {
         if (lm.segments.length === 0) return null;
         const yTop = blockTopY + i * lineSpacing;
-        const baselineY = yTop + fontSize * 0.8;
+        const baselineY = yTop + fontSize * BASELINE_FRACTION;
         let cursor = lineStartX(lm.bearingLeft, lm.bearingRight);
         const nodes: React.ReactNode[] = [];
         lm.segments.forEach((seg, j) => {
@@ -190,27 +185,15 @@ function renderStationLabelText({
             );
           } else {
             const r = seg.diameter / 2;
-            const bulletCY = baselineY - r;
-            const ln = lineByService.get(seg.code);
-            const bFill = ln?.color ?? '#888';
-            const bText = ln ? legibleTextOn(bFill) : '#fff';
-            const code = ln?.service ?? '?';
             nodes.push(
-              <g key={`${i}-${j}-b`} transform={`translate(${segCursor + r} ${bulletCY})`}>
-                <circle cx={0} cy={0} r={r} fill={bFill} />
-                <text
-                  x={0}
-                  y={0}
-                  textAnchor="middle"
-                  dominantBaseline="central"
-                  fontSize={r * 1.1}
-                  fontWeight={700}
-                  fill={bText}
-                  style={{ userSelect: 'none' }}
-                >
-                  {code}
-                </text>
-              </g>,
+              <InlineBullet
+                key={`${i}-${j}-b`}
+                code={seg.code}
+                diameter={seg.diameter}
+                cx={segCursor + r}
+                cy={baselineY - r}
+                lineByService={lineByService}
+              />,
             );
           }
         });

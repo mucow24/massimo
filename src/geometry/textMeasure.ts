@@ -1,5 +1,17 @@
-import type { TextLabel } from '../model/types';
 import { inlineBulletDiameter, parseLabelLine } from './labelTokens';
+
+/**
+ * Minimum surface needed to measure a styled multi-line text block. Both
+ * TextLabel and station-name renderers satisfy this — the measurer
+ * intentionally doesn't depend on the rest of the TextLabel shape so it
+ * can serve both without forcing callers to fabricate a fake label.
+ */
+export interface StyledText {
+  text: string;
+  fontSize: number;
+  weight: number;
+  italic: boolean;
+}
 
 export type SegmentMetric =
   | {
@@ -48,14 +60,21 @@ export interface MeasuredBBox {
 
 export const LINE_HEIGHT = 1.2;
 
+/**
+ * Fraction of fontSize from the line's top (the `dominantBaseline="hanging"`
+ * anchor) down to the visual baseline, for Helvetica-like fonts. Used by
+ * inline-bullet renderers to sit the bullet's bottom on the text baseline.
+ */
+export const BASELINE_FRACTION = 0.8;
+
 // Internal cache: keyed by (text, fontSize, weight, italic). Marquee hit
 // testing re-measures every label on every move; without a cache the canvas
 // API churn would dominate. Bounded by a soft cap; oldest entries evicted.
 const CACHE_LIMIT = 256;
 const cache = new Map<string, MeasuredBBox>();
 
-function cacheKey(label: TextLabel): string {
-  return `${label.weight}|${label.italic ? 'i' : 'n'}|${label.fontSize}|${label.text}`;
+function cacheKey(styled: StyledText): string {
+  return `${styled.weight}|${styled.italic ? 'i' : 'n'}|${styled.fontSize}|${styled.text}`;
 }
 
 // Lazily-initialised measurement context. Falls back to a heuristic when
@@ -145,28 +164,31 @@ function computeLineMetrics(
 }
 
 /**
- * Measure the unrotated bounding box of a TextLabel's rendered text.
+ * Measure the unrotated bounding box of a styled multi-line text block.
  *
  * Each line is parsed into text + bullet segments; widths combine the canvas
  * `measureText` (or a fontSize-based approximation when no real canvas is
  * available) with the inline-bullet diameter. Height = lineCount * fontSize
  * * LINE_HEIGHT. Returned values are cached by content+style.
+ *
+ * Both `TextLabel` and station-name renderers can pass themselves here —
+ * `StyledText` is the structural subset of fields the measurer uses.
  */
-export function measureTextLabel(label: TextLabel): MeasuredBBox {
-  const key = cacheKey(label);
+export function measureTextLabel(styled: StyledText): MeasuredBBox {
+  const key = cacheKey(styled);
   const hit = cache.get(key);
   if (hit) return hit;
 
-  const rawLines = label.text.length === 0 ? [''] : label.text.split('\n');
+  const rawLines = styled.text.length === 0 ? [''] : styled.text.split('\n');
   const measureCtx = getCtx();
-  const fontDecl = `${label.italic ? 'italic ' : ''}${label.weight} ${label.fontSize}px "Helvetica Neue", Helvetica, Arial, sans-serif`;
+  const fontDecl = `${styled.italic ? 'italic ' : ''}${styled.weight} ${styled.fontSize}px "Helvetica Neue", Helvetica, Arial, sans-serif`;
 
   const lineMetrics: LineMetrics[] = rawLines.map((raw) =>
-    computeLineMetrics(raw, label.fontSize, measureCtx, fontDecl),
+    computeLineMetrics(raw, styled.fontSize, measureCtx, fontDecl),
   );
   const lineWidths = lineMetrics.map((m) => m.inkWidth);
   const width = lineWidths.reduce((m, w) => (w > m ? w : m), 0);
-  const height = rawLines.length * label.fontSize * LINE_HEIGHT;
+  const height = rawLines.length * styled.fontSize * LINE_HEIGHT;
   const result: MeasuredBBox = {
     width,
     height,

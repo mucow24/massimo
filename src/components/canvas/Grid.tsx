@@ -1,3 +1,5 @@
+import { GRID_INTERVAL } from '../../geometry/snap';
+
 interface Props {
   vbX: number;
   vbY: number;
@@ -6,9 +8,9 @@ interface Props {
   zoom: number;
 }
 
-/** Subtle background grid; fixed 10-unit spacing in world coordinates. */
+/** Subtle background grid; spacing matches the snap engine's GRID_INTERVAL. */
 export function Grid({ vbX, vbY, vbW, vbH, zoom }: Props) {
-  const step = 10;
+  const step = GRID_INTERVAL;
   const x0 = Math.floor(vbX / step) * step;
   const y0 = Math.floor(vbY / step) * step;
   const lines: React.ReactElement[] = [];

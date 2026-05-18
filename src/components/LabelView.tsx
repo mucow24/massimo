@@ -1,9 +1,14 @@
 import { useMemo } from 'react';
 import type { Line, TextLabel } from '../model/types';
-import { LINE_HEIGHT, measureTextLabel, type MeasuredBBox } from '../geometry/textMeasure';
+import {
+  BASELINE_FRACTION,
+  LINE_HEIGHT,
+  measureTextLabel,
+  type MeasuredBBox,
+} from '../geometry/textMeasure';
 import { TEXT_LABEL_HIT_PAD } from '../geometry/stationBoundary';
 import { useDoc } from '../state/store';
-import { legibleTextOn } from '../util/color';
+import { InlineBullet } from './InlineBullet';
 
 export type LabelLayer = 'bg' | 'stroke';
 
@@ -110,21 +115,16 @@ export function LabelView({
         />
       )}
       {m.lines.map((lm, i) => {
+        if (lm.segments.length === 0) return null;
         const yTop = -halfH + i * lineSpacing;
-        // Bullet sits with its bottom on the text baseline. SVG's `hanging`
-        // baseline puts y at the text top; the baseline is roughly 0.8 *
-        // fontSize down (em-ascent for Helvetica-like fonts).
-        const baseline = yTop + label.fontSize * 0.8;
+        // Bullet bottom sits on the text baseline; see BASELINE_FRACTION.
+        const baselineY = yTop + label.fontSize * BASELINE_FRACTION;
         const lineStartX = lineCursorX(label.align, halfW, lm.bearingLeft, lm.bearingRight);
-        if (lm.segments.length === 0) {
-          // Empty line — still emit a stub so the SVG tree shape matches
-          // line count for snapshot/debug tools.
-          return <g key={i} data-empty-line="" />;
-        }
         let cursor = lineStartX;
         const nodes: React.ReactNode[] = [];
         lm.segments.forEach((seg, j) => {
           const segCursor = cursor;
+          cursor += seg.advance;
           if (seg.kind === 'text') {
             nodes.push(
               <text
@@ -146,35 +146,17 @@ export function LabelView({
             );
           } else {
             const r = seg.diameter / 2;
-            const bulletCY = baseline - r;
-            const line = lineByService.get(seg.code);
-            const fill = line?.color ?? '#888';
-            const textColor = line ? legibleTextOn(fill) : '#fff';
-            const code = line?.service ?? '?';
             nodes.push(
-              <g
+              <InlineBullet
                 key={`${i}-${j}-b`}
-                transform={`translate(${segCursor + r} ${bulletCY})`}
-                pointerEvents="none"
-              >
-                <circle cx={0} cy={0} r={r} fill={fill} />
-                <text
-                  x={0}
-                  y={0}
-                  textAnchor="middle"
-                  dominantBaseline="central"
-                  fontFamily="'Helvetica Neue', Helvetica, Arial, sans-serif"
-                  fontSize={r * 1.1}
-                  fontWeight={700}
-                  fill={textColor}
-                  style={{ userSelect: 'none' }}
-                >
-                  {code}
-                </text>
-              </g>,
+                code={seg.code}
+                diameter={seg.diameter}
+                cx={segCursor + r}
+                cy={baselineY - r}
+                lineByService={lineByService}
+              />,
             );
           }
-          cursor += seg.advance;
         });
         return (
           <g key={i} data-label-line={i}>
