@@ -64,9 +64,11 @@ describe('<StopGrid /> — orientation glyphs', () => {
     });
     const cell = container.querySelector(
       '[data-cell-row="0"][data-cell-col="0"][data-cell-kind="stop"][data-line-id="L1"]',
-    ) as HTMLElement | null;
+    );
     expect(cell).not.toBeNull();
-    expect(cell?.textContent).toBe(glyph);
+    // Glyph lives in a <text> child; the <g> also contains a <title> sibling
+    // so the group's full textContent is the concatenation of both.
+    expect(cell?.querySelector('text')?.textContent).toBe(glyph);
   });
 
   it('cell title reflects the orientation string for accessibility', () => {
@@ -79,8 +81,8 @@ describe('<StopGrid /> — orientation glyphs', () => {
     });
     const cell = container.querySelector(
       '[data-cell-row="0"][data-cell-col="0"][data-cell-kind="stop"][data-line-id="L1"]',
-    ) as HTMLElement;
-    expect(cell.getAttribute('title')).toContain('auto-ne-sw');
+    );
+    expect(cell?.querySelector('title')?.textContent).toContain('auto-ne-sw');
   });
 
   it('covers all four canonical orientations in its glyph map', () => {
@@ -98,8 +100,8 @@ describe('<StopGrid /> — orientation glyphs', () => {
       });
       const cell = container.querySelector(
         '[data-cell-row="0"][data-cell-col="0"][data-cell-kind="stop"]',
-      ) as HTMLElement;
-      allGlyphs.push(cell.textContent ?? '');
+      );
+      allGlyphs.push(cell?.querySelector('text')?.textContent ?? '');
       unmount();
     }
     expect(new Set(allGlyphs)).toEqual(expectedGlyphs);
@@ -117,7 +119,7 @@ describe('<StopGrid /> — right-click rotates', () => {
     });
     const cell = container.querySelector(
       '[data-cell-row="0"][data-cell-col="0"][data-cell-kind="stop"]',
-    ) as HTMLElement;
+    ) as Element;
 
     fireEvent.contextMenu(cell);
     expect(onRotateStop).toHaveBeenCalledTimes(1);
@@ -126,7 +128,9 @@ describe('<StopGrid /> — right-click rotates', () => {
     expect(onSelectStop).toHaveBeenCalledWith('L1');
   });
 
-  it('right-click on an empty cell does NOT fire onRotateStop', () => {
+  it('right-click on the background does NOT fire onRotateStop', () => {
+    // Ghost slots only render during a drag now, so the idle background is
+    // the only "non-node" area to right-click. It must not rotate anything.
     const { container, onRotateStop } = renderGrid({
       station: {
         rotation: 0,
@@ -134,16 +138,15 @@ describe('<StopGrid /> — right-click rotates', () => {
         label: { row: -1, col: -1, rotation: 0 },
       },
     });
-    // The 3×3 padded grid includes empty cells; pick one well away from (0,0).
-    const empty = container.querySelector('[data-cell-kind="empty"]') as HTMLElement | null;
-    expect(empty).not.toBeNull();
-    fireEvent.contextMenu(empty!);
+    const bg = container.querySelector('svg > rect');
+    expect(bg).not.toBeNull();
+    fireEvent.contextMenu(bg!);
     expect(onRotateStop).not.toHaveBeenCalled();
   });
 });
 
 describe('<StopGrid /> — selection on click', () => {
-  it('clicking an empty cell deselects (onSelectStop(null))', () => {
+  it('clicking the background deselects (onSelectStop(null))', () => {
     const { container, onSelectStop } = renderGrid({
       station: {
         rotation: 0,
@@ -151,9 +154,11 @@ describe('<StopGrid /> — selection on click', () => {
         label: { row: -1, col: -1, rotation: 0 },
       },
     });
-    const empty = container.querySelector('[data-cell-kind="empty"]') as HTMLElement | null;
-    expect(empty).not.toBeNull();
-    fireEvent.click(empty!);
+    // The first <rect> in the SVG is the transparent background that captures
+    // clicks on empty area and dispatches a deselect.
+    const bg = container.querySelector('svg > rect');
+    expect(bg).not.toBeNull();
+    fireEvent.click(bg!);
     expect(onSelectStop).toHaveBeenCalledWith(null);
   });
 });

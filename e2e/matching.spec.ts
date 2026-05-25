@@ -1,5 +1,6 @@
 import { test, expect, type Page } from '@playwright/test';
 import { seedAndOpen, stationCenter, type Seed } from './fixtures';
+import { PITCH } from '../src/components/inspector/stopGridDrag';
 
 // Three stations on one line. A and B are identical (rotation 0, label cell
 // at (-1, -1) reading rotation 0). C is the 180° layout-mirror of A: station
@@ -66,15 +67,42 @@ async function stopWorldOffset(
 
 // StopGrid uses pointer events (not native HTML5 drag), so Playwright's
 // dragTo is a no-op. Drive the gesture manually: down on source, threshold-
-// crossing nudge, then move to target, up.
-async function dragCell(page: Page, fromSel: string, toSel: string): Promise<void> {
+// crossing nudge, then move to the destination, up.
+//
+// Drop targets in the new editor are ghost slots that only render WHILE a
+// drag is in progress, so we can't locate them by selector pre-drag. Instead,
+// compute the screen-pixel destination from a (dRow, dCol) in the source's
+// station-local frame by projecting through the SVG's CTM (which captures
+// the editor's CSS rotation for the station's 8-way `rotation`).
+async function dragStopByLocalDelta(
+  page: Page,
+  fromSel: string,
+  dRow: number,
+  dCol: number,
+): Promise<void> {
   const fromBox = await page.locator(fromSel).boundingBox();
-  const toBox = await page.locator(toSel).boundingBox();
-  if (!fromBox || !toBox) throw new Error('drag boxes missing');
+  if (!fromBox) throw new Error('drag source missing');
   const fx = fromBox.x + fromBox.width / 2;
   const fy = fromBox.y + fromBox.height / 2;
-  const tx = toBox.x + toBox.width / 2;
-  const ty = toBox.y + toBox.height / 2;
+
+  const delta = await page.evaluate(
+    ({ sel, dRow, dCol, PITCH }) => {
+      const g = document.querySelector(sel);
+      const svg = g?.closest('svg');
+      const ctm = svg?.getScreenCTM();
+      if (!ctm) return null;
+      // Linear-part transform of the (dCol·PITCH, dRow·PITCH) SVG vector.
+      return {
+        x: dCol * PITCH * ctm.a + dRow * PITCH * ctm.c,
+        y: dCol * PITCH * ctm.b + dRow * PITCH * ctm.d,
+      };
+    },
+    { sel: fromSel, dRow, dCol, PITCH },
+  );
+  if (!delta) throw new Error('no editor svg CTM');
+  const tx = fx + delta.x;
+  const ty = fy + delta.y;
+
   await page.mouse.move(fx, fy);
   await page.mouse.down();
   await page.mouse.move(fx + 6, fy + 6);
@@ -119,10 +147,11 @@ test.describe('matching — visually-identical mirror stations', () => {
     // a trivial match) and C should also track — but only if Part 2's edit-
     // rotation transform is in place. Without it, C's stop moves the
     // opposite world direction.
-    await dragCell(
+    await dragStopByLocalDelta(
       page,
       '[data-cell-row="0"][data-cell-col="0"][data-cell-kind="stop"][data-line-id="L1"]',
-      '[data-cell-row="1"][data-cell-col="0"]',
+      1,
+      0,
     );
 
     const after = {
