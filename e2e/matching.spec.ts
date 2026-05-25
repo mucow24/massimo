@@ -1,5 +1,6 @@
 import { test, expect, type Page } from '@playwright/test';
 import { seedAndOpen, stationCenter, type Seed } from './fixtures';
+import { PITCH } from '../src/components/inspector/stopGridDrag';
 
 // Three stations on one line. A and B are identical (rotation 0, label cell
 // at (-1, -1) reading rotation 0). C is the 180° layout-mirror of A: station
@@ -84,8 +85,6 @@ async function dragStopByLocalDelta(
   const fx = fromBox.x + fromBox.width / 2;
   const fy = fromBox.y + fromBox.height / 2;
 
-  // Pitch is the editor's pixels-per-(row,col)-unit, hardcoded in StopGrid.
-  const PITCH = 22;
   const delta = await page.evaluate(
     ({ sel, dRow, dCol, PITCH }) => {
       const g = document.querySelector(sel);
