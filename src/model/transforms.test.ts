@@ -437,6 +437,50 @@ describe('moveStop', () => {
     const next = T.moveStop(doc, 's1', 'L1', 0, 1);
     expect(next).toEqual(doc);
   });
+
+  it('swaps with another stop at a float-equal diagonal position', () => {
+    // With true 8-way adjacency, row/col are no longer integers — diagonal
+    // moves use ±√2/2. Two stops at the same diagonal position must still
+    // be detected as swap candidates despite float arithmetic.
+    const h = Math.SQRT1_2;
+    const doc = makeDoc({
+      stations: [
+        makeStation({
+          id: 's1',
+          stops: [
+            // L1 at the origin; L2 at NE-tangent (one diagonal hop away).
+            makeStop('L1', { row: 0, col: 0 }),
+            makeStop('L2', { row: -h, col: h }),
+          ],
+        }),
+      ],
+    });
+    // Move L1 by exactly the NE delta. Even though (-h, +h) arose from a
+    // different arithmetic path than L2's stored position, the swap-detection
+    // tolerance must recognize them as the same cell.
+    const next = T.moveStop(doc, 's1', 'L1', -h, h);
+    const byLine = (id: string) => next.stations.s1.stops.find((c) => c.lineId === id)!;
+    expect(byLine('L1').row).toBeCloseTo(-h, 6);
+    expect(byLine('L1').col).toBeCloseTo(h, 6);
+    // L2 should have been pushed back to L1's old (0, 0) cell.
+    expect(byLine('L2')).toMatchObject({ row: 0, col: 0 });
+  });
+
+  it('refuses to move into a label sitting at a float-equal diagonal position', () => {
+    const h = Math.SQRT1_2;
+    const doc = makeDoc({
+      stations: [
+        makeStation({
+          id: 's1',
+          stops: [makeStop('L1', { row: 0, col: 0 })],
+          label: { row: -h, col: h, rotation: 0, offset: 0, align: 'auto', valign: 'middle' },
+        }),
+      ],
+    });
+    // Move would land on the label's cell (within EPS). Should be a no-op.
+    const next = T.moveStop(doc, 's1', 'L1', -h, h);
+    expect(next).toEqual(doc);
+  });
 });
 
 describe('rotateStop', () => {
@@ -479,6 +523,31 @@ describe('moveLabel', () => {
   it('is a no-op for (0,0)', () => {
     const doc = makeDoc({ stations: [makeStation({ id: 's1' })] });
     expect(T.moveLabel(doc, 's1', 0, 0)).toEqual(doc);
+  });
+
+  it('jumps past a stop at a float-equal diagonal position', () => {
+    // Label at NW-tangent of the station; a stop sits directly E of the
+    // label at a diagonal-arithmetic position. Stepping the label one E
+    // should land beyond the blocking stop.
+    const h = Math.SQRT1_2;
+    const doc = makeDoc({
+      stations: [
+        makeStation({
+          id: 's1',
+          // Stop at (0, 1·SQRT2) — relative to label, exactly +√2 east.
+          // (The exact value doesn't matter; what matters is that moveLabel
+          //  uses sameCell to detect collision regardless of float drift.)
+          stops: [makeStop('L1', { row: -h, col: h + Math.SQRT2 })],
+          label: { row: -h, col: h, rotation: 0, offset: 0, align: 'auto', valign: 'middle' },
+        }),
+      ],
+    });
+    // Step +√2 east. Without epsilon tolerance, the stops.some(...) check
+    // would miss the blocker and the label would land on top of the stop.
+    const next = T.moveLabel(doc, 's1', 0, Math.SQRT2);
+    // Label should have stepped PAST the stop, landing at +2·SQRT2 east.
+    expect(next.stations.s1.label.col).toBeCloseTo(h + 2 * Math.SQRT2, 6);
+    expect(next.stations.s1.label.row).toBeCloseTo(-h, 6);
   });
 });
 

@@ -114,6 +114,12 @@ function layoutOffsetOf(srcKey: string, candKeys: readonly string[]): LayoutOffs
  * stations that are otherwise identical but have slightly different offsets
  * are still "the same kind of station" for mass-editing purposes.
  */
+// Round row/col to a stable string at 4 dp so float drift from diagonal
+// (±√2/2) arithmetic doesn't fragment otherwise-identical layouts. 4 dp is
+// well below the 1-unit cell pitch and well above any plausible cumulative
+// rounding error.
+const q = (n: number): string => n.toFixed(4);
+
 function stopsKey(st: Station, lines: MatchingScope['lines']): string {
   const parts: string[] = [];
   for (const c of st.stops) {
@@ -122,9 +128,9 @@ function stopsKey(st: Station, lines: MatchingScope['lines']): string {
   }
   parts.sort();
   const lab = st.label;
-  return `r${st.rotation}|L${lab.row},${lab.col},${lab.rotation}|${parts.join('|')}`;
+  return `r${st.rotation}|L${q(lab.row)},${q(lab.col)},${lab.rotation}|${parts.join('|')}`;
 }
 
 function stopKey(c: StopCell): string {
-  return `${c.lineId}:${c.row},${c.col}:${c.orientation}`;
+  return `${c.lineId}:${q(c.row)},${q(c.col)}:${c.orientation}`;
 }
