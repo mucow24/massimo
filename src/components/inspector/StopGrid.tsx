@@ -156,13 +156,23 @@ export function StopGrid({
   // Orthogonal (default): (a, b) → (dRow = a, dCol = b) — cardinal basis.
   // Diagonal (shift): (a, b) → a·NE + b·SE — 45°-rotated basis. The two
   // lattices are complementary; positions don't overlap.
+  //
+  // The SVG wrapper applies CSS rotate(station.rotation·45°), so when
+  // rotation is odd, the local-frame orthogonal lattice paints as on-screen
+  // diagonal (and vice versa). Swap which lattice each mode generates so the
+  // user sees an on-screen orthogonal grid by default and an on-screen
+  // diagonal grid on Shift, regardless of station rotation. The (dRow, dCol)
+  // we hand to onMoveStop is still in local frame — only the visual
+  // selection rule swaps.
+  const oddStationRotation = station.rotation % 2 === 1;
+  const useDiagonalLattice = shiftHeld !== oddStationRotation;
   const ghosts: { row: number; col: number }[] = [];
   if (anchor) {
     const offsets: { dRow: number; dCol: number }[] = [];
     for (let a = -GRID_RADIUS; a <= GRID_RADIUS; a++) {
       for (let b = -GRID_RADIUS; b <= GRID_RADIUS; b++) {
         if (a === 0 && b === 0) continue;
-        if (shiftHeld) {
+        if (useDiagonalLattice) {
           // a·NE + b·SE where NE = (-√2/2, +√2/2), SE = (+√2/2, +√2/2).
           offsets.push({ dRow: (b - a) * HALF_SQRT2, dCol: (a + b) * HALF_SQRT2 });
         } else {
