@@ -53,7 +53,9 @@ async function orientationGlyphFor(page: Page, stationId: string): Promise<strin
     '[data-cell-row="0"][data-cell-col="0"][data-cell-kind="stop"][data-line-id="L1"]',
   );
   await expect(cell).toBeVisible();
-  return (await cell.textContent()) ?? '';
+  // The cell <g> contains both a glyph <text> and a <title> sibling, so
+  // scope to the <text> child to read just the glyph.
+  return (await cell.locator('text').textContent()) ?? '';
 }
 
 test.describe('Legacy stop-orientation migration on load', () => {
