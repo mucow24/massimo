@@ -12,6 +12,7 @@ import type {
   RouteBullet,
   StationId,
   TextLabel,
+  TextLabelWeight,
 } from '../model/types';
 import type { Vec2 } from '../geometry/vec';
 import { effectiveLineOrder } from '../model/lineOrder';
@@ -138,7 +139,8 @@ interface DocState extends MapDoc {
 
   setCurveRadius: (r: number) => void;
   setLabelFontSize: (n: number) => void;
-  setLabelBold: (b: boolean) => void;
+  setLabelWeight: (w: TextLabelWeight) => void;
+  setStationLabelBold: (stationId: StationId, bold: boolean) => void;
   setLabelItalic: (i: boolean) => void;
   setActivePalettes: (ids: PaletteId[]) => void;
   togglePalette: (id: PaletteId) => void;
@@ -267,7 +269,9 @@ export const useDoc = create<DocState>()(
 
         setCurveRadius: (r) => set((s) => T.setCurveRadius(s, r)),
         setLabelFontSize: (n) => set((s) => T.setLabelFontSize(s, n)),
-        setLabelBold: (b) => set((s) => T.setLabelBold(s, b)),
+        setLabelWeight: (w) => set((s) => T.setLabelWeight(s, w)),
+        setStationLabelBold: (stationId, bold) =>
+          set((s) => T.setStationLabelBold(s, stationId, bold)),
         setLabelItalic: (i) => set((s) => T.setLabelItalic(s, i)),
         setActivePalettes: (idsArr) => set((s) => T.setActivePalettes(s, idsArr)),
         togglePalette: (id) => set((s) => T.togglePalette(s, id)),
@@ -276,7 +280,7 @@ export const useDoc = create<DocState>()(
       {
         name: 'vignelli-map-doc-v1',
         storage: createJSONStorage(() => localStorage),
-        version: 2,
+        version: 3,
         // v0 → v1: backfill `line.name` with `${service} line` for lines saved
         // before the field existed.
         // v1 → v2: migrate legacy stop orientations (`up`/`down`/`left`/`right`
@@ -286,10 +290,15 @@ export const useDoc = create<DocState>()(
         //   longer have switch arms in travelDirLocal — crashing on render.
         //   `parse()` in serialize.ts runs the same migration for the
         //   file-import path; here we run it for the localStorage path.
+        // v2 → v3: translate legacy `labelBold: boolean` to `labelWeight:
+        //   TextLabelWeight` (true → 700, false → 400). Matches the
+        //   labelBold-migration path in `parse()` for file imports.
         migrate: (persisted, version) => {
           const s = persisted as {
             lines?: Record<LineId, Line>;
             stations?: Record<string, Station>;
+            labelBold?: boolean;
+            labelWeight?: TextLabelWeight;
           };
           // Corrupt or missing version is treated as v0 so all migrations
           // run — preferable to silently rendering with stale data.
@@ -307,6 +316,15 @@ export const useDoc = create<DocState>()(
             const { stations: cleaned, changed } = sanitizeStations(out.stations);
             if (changed) out = { ...out, stations: cleaned };
           }
+          if (v < 3 && 'labelBold' in out) {
+            const { labelBold, ...rest } = out;
+            // Existing `labelWeight` wins if both fields are present.
+            if (rest.labelWeight === undefined) {
+              out = { ...rest, labelWeight: labelBold ? 700 : 400 };
+            } else {
+              out = rest;
+            }
+          }
           return out as DocState;
         },
         partialize: (s) => ({
@@ -320,7 +338,7 @@ export const useDoc = create<DocState>()(
           transfers: s.transfers,
           textLabels: s.textLabels,
           labelFontSize: s.labelFontSize,
-          labelBold: s.labelBold,
+          labelWeight: s.labelWeight,
           labelItalic: s.labelItalic,
           activePalettes: s.activePalettes,
         }),
@@ -341,7 +359,7 @@ export const useDoc = create<DocState>()(
         transfers: state.transfers,
         textLabels: state.textLabels,
         labelFontSize: state.labelFontSize,
-        labelBold: state.labelBold,
+        labelWeight: state.labelWeight,
         labelItalic: state.labelItalic,
         activePalettes: state.activePalettes,
       }),
@@ -366,7 +384,7 @@ type DocSnapshot = Pick<
   | 'transfers'
   | 'textLabels'
   | 'labelFontSize'
-  | 'labelBold'
+  | 'labelWeight'
   | 'labelItalic'
   | 'activePalettes'
 >;
@@ -383,7 +401,7 @@ function snapshotDoc(s: DocState): DocSnapshot {
     transfers: s.transfers,
     textLabels: s.textLabels,
     labelFontSize: s.labelFontSize,
-    labelBold: s.labelBold,
+    labelWeight: s.labelWeight,
     labelItalic: s.labelItalic,
     activePalettes: s.activePalettes,
   };

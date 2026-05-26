@@ -27,6 +27,7 @@ export function StationInspector({ id }: { id: StationId }) {
   const setLabelValign = useDoc((s) => s.setLabelValign);
   const setDotShape = useDoc((s) => s.setDotShape);
   const setStationWaypoint = useDoc((s) => s.setStationWaypoint);
+  const setStationLabelBold = useDoc((s) => s.setStationLabelBold);
   const selection = useSelection();
   const nameField = useFieldHistory();
   const xField = useFieldHistory();
@@ -255,6 +256,20 @@ export function StationInspector({ id }: { id: StationId }) {
               group?.commit();
             }}
           />
+          <button
+            type="button"
+            className={`btn-mini${station.labelBold ? ' active' : ''}`}
+            aria-pressed={!!station.labelBold}
+            aria-label="Bold"
+            title={
+              station.labelBold
+                ? 'Bold on — text renders two weights heavier than the default'
+                : 'Bold this station (renders two weights heavier than the default)'
+            }
+            onClick={() => setStationLabelBold(station.id, !station.labelBold)}
+          >
+            <strong>B</strong>
+          </button>
         </div>
         <div style={{ fontSize: 11, color: '#777', marginTop: 4 }}>
           Offset (along reading direction)

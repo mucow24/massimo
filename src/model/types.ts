@@ -92,6 +92,11 @@ export interface Station {
   // simply treats all bullets as hidden while the flag is on. Omitted/false
   // means "regular station".
   isWaypoint?: boolean;
+  // Per-station bold flag. When true, the rendered weight is bumped two
+  // steps along LABEL_WEIGHT_VALUES (Regular → Bold, Light → Roman, etc.),
+  // clamped at Black (900). Omitted/false means "use the doc's labelWeight
+  // as-is".
+  labelBold?: boolean;
 }
 
 // Visual style for a single segment of a line. `solid` is the historical
@@ -188,9 +193,12 @@ export interface MapDoc {
   // Free-floating text annotations ("Labels" in the UI). Keyed by label id.
   textLabels: Record<string, TextLabel>;
   // Global station-label styling. Applies to every station name; line tags
-  // and route bullets keep their always-bold pill styling.
+  // and route bullets keep their always-bold pill styling. `labelWeight` is
+  // one of the Helvetica Neue weights we ship in /public/fonts/ (no 600).
+  // Per-station `labelBold` bumps the rendered weight two steps heavier on
+  // top of this default.
   labelFontSize: number;
-  labelBold: boolean;
+  labelWeight: TextLabelWeight;
   labelItalic: boolean;
   // Which color palettes are available in the line editor. Invariant:
   // never empty (enforced by transforms / parse sanitiser).

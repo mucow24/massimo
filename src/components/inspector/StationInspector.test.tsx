@@ -242,6 +242,96 @@ describe('<StationInspector /> — shape picker wiring', () => {
     expect(wpBtnOff).not.toHaveClass('wp-on');
   });
 
+  describe('Bold button', () => {
+    it('renders next to the label alignment buttons inside the Label field', () => {
+      useDoc.setState({
+        ...DEFAULT_DOC,
+        ...makeDoc({
+          stations: [makeStation({ id: 'a' })],
+          lines: [],
+        }),
+      });
+      useSelection.setState({ ...SELECTION_BLANK, selectedStationIds: ['a'] });
+
+      render(<StationInspector id="a" />);
+      const bold = screen.getByRole('button', { name: 'Bold' });
+      // Same parent (row) as the H/V alignment buttons.
+      const hAlign = screen.getByRole('button', { name: /Label horizontal alignment/i });
+      expect(bold.parentElement).toBe(hAlign.parentElement);
+      // DOM order: H-align → V-align → Bold.
+      const siblings = Array.from(bold.parentElement!.children);
+      expect(siblings.indexOf(bold)).toBeGreaterThan(siblings.indexOf(hAlign));
+    });
+
+    it('starts unpressed when the station has no labelBold flag', () => {
+      useDoc.setState({
+        ...DEFAULT_DOC,
+        ...makeDoc({ stations: [makeStation({ id: 'a' })] }),
+      });
+      useSelection.setState({ ...SELECTION_BLANK, selectedStationIds: ['a'] });
+      render(<StationInspector id="a" />);
+      expect(screen.getByRole('button', { name: 'Bold' })).toHaveAttribute('aria-pressed', 'false');
+    });
+
+    it('starts pressed when the station already has labelBold:true', () => {
+      useDoc.setState({
+        ...DEFAULT_DOC,
+        ...makeDoc({
+          stations: [{ ...makeStation({ id: 'a' }), labelBold: true }],
+        }),
+      });
+      useSelection.setState({ ...SELECTION_BLANK, selectedStationIds: ['a'] });
+      render(<StationInspector id="a" />);
+      expect(screen.getByRole('button', { name: 'Bold' })).toHaveAttribute('aria-pressed', 'true');
+    });
+
+    it('toggles labelBold on the station when clicked', async () => {
+      const user = userEvent.setup();
+      useDoc.setState({
+        ...DEFAULT_DOC,
+        ...makeDoc({ stations: [makeStation({ id: 'a' })] }),
+      });
+      useSelection.setState({ ...SELECTION_BLANK, selectedStationIds: ['a'] });
+      render(<StationInspector id="a" />);
+
+      await user.click(screen.getByRole('button', { name: 'Bold' }));
+      expect(useDoc.getState().stations.a.labelBold).toBe(true);
+      expect(screen.getByRole('button', { name: 'Bold' })).toHaveAttribute('aria-pressed', 'true');
+
+      await user.click(screen.getByRole('button', { name: 'Bold' }));
+      expect(useDoc.getState().stations.a.labelBold).toBeFalsy();
+      expect(screen.getByRole('button', { name: 'Bold' })).toHaveAttribute('aria-pressed', 'false');
+    });
+
+    it('does NOT mirror-propagate to matching stations', async () => {
+      // Same expectation as the Waypoint button: per-station styling decisions
+      // should stay per-station even with mirror on.
+      const user = userEvent.setup();
+      useDoc.setState({
+        ...DEFAULT_DOC,
+        ...makeDoc({
+          stations: [
+            makeStation({ id: 'a', stops: [makeStop('L1')] }),
+            makeStation({ id: 'b', stops: [makeStop('L1')] }),
+          ],
+          lines: [makeLine({ id: 'L1', stations: ['a', 'b'] })],
+        }),
+      });
+      useSelection.setState({
+        ...SELECTION_BLANK,
+        selectedStationIds: ['a'],
+        mirrorMatching: true,
+      });
+
+      render(<StationInspector id="a" />);
+      await user.click(screen.getByRole('button', { name: 'Bold' }));
+
+      const doc = useDoc.getState();
+      expect(doc.stations.a.labelBold).toBe(true);
+      expect(doc.stations.b.labelBold).toBeFalsy();
+    });
+  });
+
   it('Waypoint button starts pressed when the station is already a waypoint', () => {
     useDoc.setState({
       ...DEFAULT_DOC,

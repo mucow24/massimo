@@ -188,7 +188,7 @@ describe('parse — legacy stop orientation migration', () => {
         transfers: {},
         textLabels: {},
         labelFontSize: 14,
-        labelBold: false,
+        labelWeight: 400,
         labelItalic: false,
         activePalettes: ['mta'],
       },
@@ -223,6 +223,78 @@ describe('parse — legacy stop orientation migration', () => {
     expect(r.doc.stations.s1.stops[0].orientation).toBe('auto-horizontal');
     expect(r.doc.stations.s2.stops[0].orientation).toBe('auto-ne-sw');
     expect(r.doc.stations.s3.stops[0].orientation).toBe('auto-nw-se');
+  });
+});
+
+describe('parse — labelBold → labelWeight migration', () => {
+  // Older docs stored station-label boldness as a single boolean. The schema
+  // now has a per-doc `labelWeight` (one of 100/200/300/400/500/700/800/900)
+  // and an optional per-station `labelBold` flag that bumps two indices on
+  // top of that. parse() must translate the legacy boolean so saves made
+  // before the change still load correctly.
+  const buildLegacy = (labelBold: boolean) =>
+    JSON.stringify({
+      format: 'massimo-map',
+      doc: {
+        stations: {},
+        lines: {},
+        lineOrder: [],
+        curveRadius: 24,
+        lineCounter: 0,
+        lineTags: {},
+        routeBullets: {},
+        transfers: {},
+        textLabels: {},
+        labelFontSize: 12,
+        labelBold,
+        labelItalic: false,
+        activePalettes: ['mta'],
+      },
+    });
+
+  it('translates labelBold:true to labelWeight:700', () => {
+    const r = parse(buildLegacy(true));
+    expect(r.ok).toBe(true);
+    if (r.ok) expect(r.doc.labelWeight).toBe(700);
+  });
+
+  it('translates labelBold:false to labelWeight:400', () => {
+    const r = parse(buildLegacy(false));
+    expect(r.ok).toBe(true);
+    if (r.ok) expect(r.doc.labelWeight).toBe(400);
+  });
+
+  it('strips labelBold from the doc after migrating', () => {
+    const r = parse(buildLegacy(true));
+    expect(r.ok).toBe(true);
+    if (r.ok) expect('labelBold' in r.doc).toBe(false);
+  });
+
+  it('prefers an explicit labelWeight over a legacy labelBold', () => {
+    // If both fields are present, labelWeight wins — the writer knew about
+    // the new field.
+    const json = JSON.stringify({
+      format: 'massimo-map',
+      doc: {
+        stations: {},
+        lines: {},
+        lineOrder: [],
+        curveRadius: 24,
+        lineCounter: 0,
+        lineTags: {},
+        routeBullets: {},
+        transfers: {},
+        textLabels: {},
+        labelFontSize: 12,
+        labelBold: false,
+        labelWeight: 500,
+        labelItalic: false,
+        activePalettes: ['mta'],
+      },
+    });
+    const r = parse(json);
+    expect(r.ok).toBe(true);
+    if (r.ok) expect(r.doc.labelWeight).toBe(500);
   });
 });
 

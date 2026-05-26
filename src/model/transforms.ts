@@ -20,12 +20,33 @@ import type {
   StopCell,
   StopOrientation,
   TextLabel,
+  TextLabelWeight,
   Transfer,
 } from './types';
 
 export const LABEL_FONT_SIZE_MIN = 2;
 export const LABEL_FONT_SIZE_MAX = 24;
 export const LABEL_FONT_SIZE_DEFAULT = 12;
+
+// Helvetica Neue weights we ship in /public/fonts/. No 600 — we don't have a
+// SemiBold face. Single source of truth for both the text-label popover and
+// the station-label settings dropdown.
+export const LABEL_WEIGHT_VALUES: readonly TextLabelWeight[] = [
+  100, 200, 300, 400, 500, 700, 800, 900,
+] as const;
+
+export const LABEL_WEIGHT_NAMES: readonly { value: TextLabelWeight; name: string }[] = [
+  { value: 100, name: 'Thin' },
+  { value: 200, name: 'UltraLight' },
+  { value: 300, name: 'Light' },
+  { value: 400, name: 'Roman' },
+  { value: 500, name: 'Medium' },
+  { value: 700, name: 'Bold' },
+  { value: 800, name: 'Heavy' },
+  { value: 900, name: 'Black' },
+] as const;
+
+export const LABEL_WEIGHT_DEFAULT: TextLabelWeight = 400;
 
 export const DEFAULT_DOC: MapDoc = {
   stations: {},
@@ -38,10 +59,37 @@ export const DEFAULT_DOC: MapDoc = {
   transfers: {},
   textLabels: {},
   labelFontSize: LABEL_FONT_SIZE_DEFAULT,
-  labelBold: false,
+  labelWeight: LABEL_WEIGHT_DEFAULT,
   labelItalic: false,
   activePalettes: ['mta'],
 };
+
+/**
+ * Shift a weight `delta` positions along LABEL_WEIGHT_VALUES (clamped at the
+ * ends). Used by the per-station bold flag (+2) and the hover bump (+2 from
+ * whatever the station currently resolves to).
+ *
+ * Unknown weights pass through unchanged — keeps the function tolerant if a
+ * file ever lands with an out-of-band value.
+ */
+export function bumpWeightByIndex(weight: TextLabelWeight, delta: number): TextLabelWeight {
+  const i = LABEL_WEIGHT_VALUES.indexOf(weight);
+  if (i < 0) return weight;
+  const next = Math.max(0, Math.min(LABEL_WEIGHT_VALUES.length - 1, i + delta));
+  return LABEL_WEIGHT_VALUES[next];
+}
+
+/**
+ * Resolve the rendered weight for a station label, given the doc default and
+ * the station's per-station bold flag. `stationBold` true bumps two indices
+ * heavier (Regular → Bold), saturating at Black.
+ */
+export function resolveStationLabelWeight(
+  defaultWeight: TextLabelWeight,
+  stationBold: boolean | undefined,
+): TextLabelWeight {
+  return stationBold ? bumpWeightByIndex(defaultWeight, 2) : defaultWeight;
+}
 
 // TextLabel constants and defaults — exported so the popover, placement
 // preview, and tests share a single source of truth.
@@ -908,9 +956,21 @@ export function setLabelFontSize(doc: MapDoc, n: number): MapDoc {
   return { ...doc, labelFontSize: clamped };
 }
 
-export function setLabelBold(doc: MapDoc, b: boolean): MapDoc {
-  if (b === doc.labelBold) return doc;
-  return { ...doc, labelBold: b };
+export function setLabelWeight(doc: MapDoc, w: TextLabelWeight): MapDoc {
+  if (w === doc.labelWeight) return doc;
+  return { ...doc, labelWeight: w };
+}
+
+export function setStationLabelBold(doc: MapDoc, stationId: StationId, bold: boolean): MapDoc {
+  const cur = doc.stations[stationId];
+  if (!cur) return doc;
+  if (!!cur.labelBold === bold) return doc;
+  if (bold) {
+    return { ...doc, stations: { ...doc.stations, [stationId]: { ...cur, labelBold: true } } };
+  }
+  // `false` is the default; omit the field so persisted state stays clean.
+  const { labelBold: _gone, ...rest } = cur;
+  return { ...doc, stations: { ...doc.stations, [stationId]: rest } };
 }
 
 export function setLabelItalic(doc: MapDoc, i: boolean): MapDoc {
