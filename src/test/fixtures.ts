@@ -18,7 +18,7 @@ export function makeStation(overrides: Partial<Station> & { id: StationId }): St
     y: 0,
     rotation: 0,
     stops: [],
-    label: { row: 0, col: -1, rotation: 0, offset: 0, align: 'auto', valign: 'middle' },
+    label: { row: 0, col: -1, rotation: 0, offset: 0, align: 'auto', valign: 'auto' },
     ...overrides,
   };
 }
@@ -43,7 +43,7 @@ export function makeLabel(overrides: Partial<LabelCell> = {}): LabelCell {
     rotation: 0,
     offset: 0,
     align: 'auto',
-    valign: 'middle',
+    valign: 'auto',
     ...overrides,
   };
 }

@@ -15,12 +15,14 @@ const ALIGN_TITLE: Record<LabelAlign, string> = {
 };
 
 const VALIGN_NEXT: Record<LabelValign, LabelValign> = {
+  auto: 'top',
   top: 'middle',
   middle: 'bottom',
-  bottom: 'top',
+  bottom: 'auto',
 };
 
 const VALIGN_TITLE: Record<LabelValign, string> = {
+  auto: 'auto (first line on cell, extra lines below)',
   top: 'top',
   middle: 'middle',
   bottom: 'bottom',
@@ -114,9 +116,13 @@ function VAlignIcon({ mode }: { mode: LabelValign }) {
   const W = ICON_SIZE;
   const H = ICON_SIZE;
   const totalLineH = 4 * LINE_THICKNESS + 3 * LINE_GAP;
+  // 'auto' lines from the icon's vertical middle and stack downward, so
+  // the first line sits on the cell-center mark and additional lines hang
+  // below. A faint tick at the left marks the anchor row.
   let yStart: number;
   if (mode === 'top') yStart = 2;
   else if (mode === 'bottom') yStart = H - 2 - totalLineH;
+  else if (mode === 'auto') yStart = (H - LINE_THICKNESS) / 2;
   else yStart = (H - totalLineH) / 2;
   return (
     <svg
@@ -131,6 +137,15 @@ function VAlignIcon({ mode }: { mode: LabelValign }) {
         const y = yStart + i * (LINE_THICKNESS + LINE_GAP);
         return <rect key={i} x={x} y={y} width={len} height={LINE_THICKNESS} fill="currentColor" />;
       })}
+      {mode === 'auto' && (
+        <rect
+          x={0}
+          y={(H - LINE_THICKNESS) / 2}
+          width={1.5}
+          height={LINE_THICKNESS}
+          fill="currentColor"
+        />
+      )}
     </svg>
   );
 }

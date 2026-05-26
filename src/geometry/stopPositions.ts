@@ -228,7 +228,7 @@ export function withDraggedSnapshot(
         y,
         rotation,
         stops,
-        label: { row: 0, col: 0, rotation: 0, offset: 0, align: 'auto', valign: 'middle' },
+        label: { row: 0, col: 0, rotation: 0, offset: 0, align: 'auto', valign: 'auto' },
       };
   return { ...stations, [draggedId]: synthesized };
 }

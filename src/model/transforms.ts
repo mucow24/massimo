@@ -66,7 +66,7 @@ export function addStation(doc: MapDoc, x: number, y: number, id: StationId, nam
     y,
     rotation: 0,
     stops: [],
-    label: { row: 0, col: -1, rotation: 0, offset: 0, align: 'auto', valign: 'middle' },
+    label: { row: 0, col: -1, rotation: 0, offset: 0, align: 'auto', valign: 'auto' },
   };
   return { ...doc, stations: { ...doc.stations, [id]: station } };
 }
@@ -671,7 +671,10 @@ export function setLabelAlign(doc: MapDoc, stationId: StationId, align: LabelAli
   };
 }
 
-const VALIGN_CYCLE: LabelValign[] = ['top', 'middle', 'bottom'];
+// 'auto' leads the cycle so the (new) default sits at index 0 — advancing
+// forward from a freshly created station immediately moves through the
+// classic block-aligned options.
+const VALIGN_CYCLE: LabelValign[] = ['auto', 'top', 'middle', 'bottom'];
 
 export function cycleLabelValign(doc: MapDoc, stationId: StationId): MapDoc {
   const st = doc.stations[stationId];
