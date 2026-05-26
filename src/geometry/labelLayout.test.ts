@@ -1,7 +1,7 @@
 import { describe, it, expect } from 'vitest';
 import { labelLayoutLocal } from './labelLayout';
 import { stopCenterAt, STOP_SIZE } from './orientation';
-import type { Rotation, Station } from '../model/types';
+import type { LabelValign, Rotation, Station } from '../model/types';
 
 const HALF = STOP_SIZE / 2;
 const LABEL_GAP = 5;
@@ -184,6 +184,102 @@ describe('labelLayoutLocal — auto-snap', () => {
       const lay = labelLayoutLocal(stationNoStops);
       expect(lay.textAnchor).toBe('end');
     });
+  });
+});
+
+// Builds a station with align='middle' (so anchor stays at cell center,
+// independent of stop position) and a configurable name/valign. Used for
+// vertical-alignment tests that only care about the y-axis layout.
+function vStation({
+  name = 'Foo',
+  valign,
+  rotation = 0,
+}: {
+  name?: string;
+  valign: LabelValign;
+  rotation?: Rotation;
+}): Station {
+  return {
+    id: 's',
+    name,
+    x: 0,
+    y: 0,
+    rotation: 0,
+    stops: [
+      // Perpendicular to any reading direction we use here; presence keeps
+      // the station valid without affecting horizontal snap.
+      { lineId: 'L1', row: 1, col: 0, orientation: 'auto-vertical' },
+    ],
+    label: { row: 0, col: 0, rotation, offset: 0, align: 'middle', valign },
+  };
+}
+
+describe("labelLayoutLocal — valign='auto'", () => {
+  // From labelLayout.ts: HIT_PAD=2, TEXT_HALF_H=7, LABEL_LINE_HEIGHT=14.
+  const HIT_PAD = 2;
+  const TEXT_HALF_H = 7;
+  const LINE_HEIGHT = 14;
+
+  it("single-line 'auto' is indistinguishable from 'middle'", () => {
+    const a = labelLayoutLocal(vStation({ name: 'Foo', valign: 'auto' }));
+    const m = labelLayoutLocal(vStation({ name: 'Foo', valign: 'middle' }));
+    expect(a.baseline).toBe(m.baseline);
+    expect(a.firstLineDy).toBe(m.firstLineDy);
+    expect(a.hitX).toBeCloseTo(m.hitX, 5);
+    expect(a.hitY).toBeCloseTo(m.hitY, 5);
+    expect(a.hitW).toBeCloseTo(m.hitW, 5);
+    expect(a.hitH).toBeCloseTo(m.hitH, 5);
+    expect(a.blockTopY).toBeCloseTo(m.blockTopY, 5);
+  });
+
+  it("multi-line 'auto' keeps first line centered on the anchor (no dy shift)", () => {
+    // anchor is at (0, 0) for vStation, so firstLineDy='0' + baseline='central'
+    // is the SVG combination that puts the first line's center on the anchor.
+    const lay = labelLayoutLocal(vStation({ name: 'Foo\nBar', valign: 'auto' }));
+    expect(lay.baseline).toBe('central');
+    expect(lay.firstLineDy).toBe('0');
+  });
+
+  it("multi-line 'auto' hit rect top sits at anchorY - TEXT_HALF_H regardless of line count", () => {
+    // For 'auto' the first line top is at anchorY - TEXT_HALF_H and the
+    // block grows downward; the hit-rect top should not move when extra
+    // lines appear below.
+    const oneLine = labelLayoutLocal(vStation({ name: 'Foo', valign: 'auto' }));
+    const twoLines = labelLayoutLocal(vStation({ name: 'Foo\nBar', valign: 'auto' }));
+    const threeLines = labelLayoutLocal(vStation({ name: 'Foo\nBar\nBaz', valign: 'auto' }));
+    expect(oneLine.hitY).toBeCloseTo(-TEXT_HALF_H - HIT_PAD, 5);
+    expect(twoLines.hitY).toBeCloseTo(-TEXT_HALF_H - HIT_PAD, 5);
+    expect(threeLines.hitY).toBeCloseTo(-TEXT_HALF_H - HIT_PAD, 5);
+    // Block heights still grow by one LINE_HEIGHT per extra line.
+    expect(twoLines.hitH - oneLine.hitH).toBeCloseTo(LINE_HEIGHT, 5);
+    expect(threeLines.hitH - twoLines.hitH).toBeCloseTo(LINE_HEIGHT, 5);
+  });
+
+  it("multi-line 'auto' vs 'middle' differ in hit-rect top by extraLines * LINE_HEIGHT / 2", () => {
+    const a = labelLayoutLocal(vStation({ name: 'Foo\nBar', valign: 'auto' }));
+    const m = labelLayoutLocal(vStation({ name: 'Foo\nBar', valign: 'middle' }));
+    // Auto's first line sits where middle's block center would be — i.e.
+    // auto's top is HIGHER (less negative) than middle's by half a line.
+    expect(a.hitY - m.hitY).toBeCloseTo(LINE_HEIGHT / 2, 5);
+    // Block heights are identical (same line count, same line height).
+    expect(a.hitH).toBeCloseTo(m.hitH, 5);
+  });
+
+  it('blockTopY tracks the rendered text block top for each valign', () => {
+    // 'auto' single-line and multi-line: blockTopY = anchorY - TEXT_HALF_H.
+    const aSingle = labelLayoutLocal(vStation({ name: 'Foo', valign: 'auto' }));
+    const aMulti = labelLayoutLocal(vStation({ name: 'Foo\nBar', valign: 'auto' }));
+    expect(aSingle.blockTopY).toBeCloseTo(-TEXT_HALF_H, 5);
+    expect(aMulti.blockTopY).toBeCloseTo(-TEXT_HALF_H, 5);
+    // 'middle' multi-line: block centered on the anchor.
+    const mMulti = labelLayoutLocal(vStation({ name: 'Foo\nBar', valign: 'middle' }));
+    expect(mMulti.blockTopY).toBeCloseTo(-(2 * TEXT_HALF_H + LINE_HEIGHT) / 2, 5);
+    // 'top' multi-line: block top at the anchor.
+    const tMulti = labelLayoutLocal(vStation({ name: 'Foo\nBar', valign: 'top' }));
+    expect(tMulti.blockTopY).toBeCloseTo(0, 5);
+    // 'bottom' multi-line: block bottom at the anchor.
+    const bMulti = labelLayoutLocal(vStation({ name: 'Foo\nBar', valign: 'bottom' }));
+    expect(bMulti.blockTopY).toBeCloseTo(-(2 * TEXT_HALF_H + LINE_HEIGHT), 5);
   });
 });
 

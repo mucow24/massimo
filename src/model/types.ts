@@ -54,7 +54,12 @@ export type LabelAlign = 'auto' | 'start' | 'middle' | 'end';
 // Vertical alignment in the label's own (unrotated) frame — i.e. relative to
 // the reading-direction's perpendicular axis. Maps to SVG dominant-baseline
 // at render time.
-export type LabelValign = 'top' | 'middle' | 'bottom';
+//
+// `auto` centers the FIRST line on the label cell, with any subsequent lines
+// stacking below. For a single-line label it's indistinguishable from
+// `middle`; for multi-line labels the first line stays put as the label
+// grows, instead of the whole block re-centering.
+export type LabelValign = 'auto' | 'top' | 'middle' | 'bottom';
 
 // The station's name lives in a single grid cell with its own 8-way rotation
 // (in the unrotated station-local frame). `align` controls how the rendered
