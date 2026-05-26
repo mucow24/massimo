@@ -60,7 +60,7 @@ describe('makePreviewStation', () => {
       rotation: 0,
       offset: 0,
       align: 'auto',
-      valign: 'middle',
+      valign: 'auto',
     });
   });
 });

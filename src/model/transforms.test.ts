@@ -29,8 +29,36 @@ describe('addStation', () => {
       rotation: 0,
       offset: 0,
       align: 'auto',
-      valign: 'middle',
+      valign: 'auto',
     });
+  });
+});
+
+describe('cycleLabelValign', () => {
+  // Cycle order: auto → top → middle → bottom → auto. 'auto' leads so a
+  // user advancing forward immediately reaches the (new) default.
+  it('walks the auto → top → middle → bottom → auto cycle', () => {
+    let doc = makeDoc({ stations: [makeStation({ id: 's1' })] });
+    doc = {
+      ...doc,
+      stations: {
+        ...doc.stations,
+        s1: { ...doc.stations.s1, label: { ...doc.stations.s1.label, valign: 'auto' } },
+      },
+    };
+    doc = T.cycleLabelValign(doc, 's1');
+    expect(doc.stations.s1.label.valign).toBe('top');
+    doc = T.cycleLabelValign(doc, 's1');
+    expect(doc.stations.s1.label.valign).toBe('middle');
+    doc = T.cycleLabelValign(doc, 's1');
+    expect(doc.stations.s1.label.valign).toBe('bottom');
+    doc = T.cycleLabelValign(doc, 's1');
+    expect(doc.stations.s1.label.valign).toBe('auto');
+  });
+
+  it('is a no-op for missing ids', () => {
+    const doc = makeDoc({ stations: [makeStation({ id: 's1' })] });
+    expect(T.cycleLabelValign(doc, 'nope')).toEqual(doc);
   });
 });
 

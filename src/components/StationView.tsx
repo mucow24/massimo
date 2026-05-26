@@ -64,6 +64,11 @@ interface RenderLabelTextArgs {
   textAnchor: 'start' | 'middle' | 'end';
   baseline: 'central' | 'text-before-edge' | 'text-after-edge';
   firstLineDy: string;
+  // Top of the text block in the rotated label frame. The bullet path
+  // renders explicit per-segment elements (no dy stacking), so it needs the
+  // already-resolved block top — baseline alone can't disambiguate 'middle'
+  // from 'auto'.
+  blockTopY: number;
   rotationDeg: number;
   lineByService: Map<string, Line>;
 }
@@ -96,6 +101,7 @@ function renderStationLabelText({
   textAnchor,
   baseline,
   firstLineDy,
+  blockTopY,
   rotationDeg,
   lineByService,
 }: RenderLabelTextArgs): React.ReactNode {
@@ -132,6 +138,8 @@ function renderStationLabelText({
   // Bullet path: measure segment-aware and emit explicit per-segment
   // elements. measureTextLabel accepts StyledText, so station labels can
   // pass their style props directly without fabricating a TextLabel.
+  // blockTopY comes from the layout, which already encodes the valign
+  // semantics (including 'auto' first-line-centered behavior).
   const m = measureTextLabel({
     text,
     fontSize,
@@ -139,11 +147,6 @@ function renderStationLabelText({
     italic: fontStyle === 'italic',
   });
   const lineSpacing = fontSize * LINE_HEIGHT;
-  const blockHeight = m.lineCount * lineSpacing;
-  let blockTopY: number;
-  if (baseline === 'text-before-edge') blockTopY = anchorY;
-  else if (baseline === 'text-after-edge') blockTopY = anchorY - blockHeight;
-  else blockTopY = anchorY - blockHeight / 2;
 
   const lineStartX = (bL: number, bR: number): number => {
     if (textAnchor === 'start') return anchorX + bL;
@@ -420,6 +423,7 @@ export function StationView({
     textAnchor: labelTextAnchor,
     baseline: labelBaseline,
     firstLineDy: labelFirstLineDy,
+    blockTopY: labelBlockTopY,
     hitX: labelHitX,
     hitY: labelHitY,
     hitW: labelHitW,
@@ -574,6 +578,7 @@ export function StationView({
           textAnchor: labelTextAnchor,
           baseline: labelBaseline,
           firstLineDy: labelFirstLineDy,
+          blockTopY: labelBlockTopY,
           rotationDeg: label.rotation * 45,
           lineByService,
         })}
@@ -600,6 +605,7 @@ export function StationView({
           textAnchor: labelTextAnchor,
           baseline: labelBaseline,
           firstLineDy: labelFirstLineDy,
+          blockTopY: labelBlockTopY,
           rotationDeg: label.rotation * 45,
           lineByService,
         })}
@@ -650,6 +656,7 @@ export function StationView({
             textAnchor: labelTextAnchor,
             baseline: labelBaseline,
             firstLineDy: labelFirstLineDy,
+            blockTopY: labelBlockTopY,
             rotationDeg: label.rotation * 45,
             lineByService,
           })

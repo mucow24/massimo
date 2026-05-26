@@ -1,10 +1,11 @@
 import type { Station } from '../model/types';
-import { DIR_8, stopCenterAt } from './orientation';
+import { DIR_8, STOP_SIZE, stopCenterAt } from './orientation';
 
 const HIT_PAD = 2;
-const LABEL_GAP = 5;
+const LABEL_GAP = 3;
 const TEXT_HALF_H = 7;
 const LABEL_LINE_HEIGHT = 14;
+const HALF = STOP_SIZE / 2;
 
 export type LabelBaseline = 'central' | 'text-before-edge' | 'text-after-edge';
 
@@ -29,6 +30,11 @@ export interface LabelLayout {
   hitY: number;
   hitW: number;
   hitH: number;
+  // Top of the painted text block (no HIT_PAD). The bullet-rendering path
+  // in StationView reads this directly so it doesn't have to re-derive the
+  // valign math — important for 'auto', where baseline='central' alone
+  // doesn't disambiguate from 'middle'.
+  blockTopY: number;
 }
 
 /**
@@ -70,19 +76,42 @@ export function labelLayoutLocal(station: Station): LabelLayout {
     // (perpendicular) doesn't snap. The 0 threshold is safe because in the
     // 8-cell grid the smallest non-zero |dot| is ~0.707; perpendicular
     // cells are exactly 0 (mod fp noise).
-    const adjPlus = anyStopInHalfPlane(stops, phantomDot, label, readCos, readSin, 1);
-    const adjMinus = anyStopInHalfPlane(stops, phantomDot, label, readCos, readSin, -1);
-    if (adjPlus) {
+    const plus = snapInfoInHalfPlane(stops, phantomDot, label, readCos, readSin, 1);
+    const minus = snapInfoInHalfPlane(stops, phantomDot, label, readCos, readSin, -1);
+    if (plus.inHalfPlane) {
       textAnchor = 'end';
       anchorX = labelCenter.x + dirPlus.anchor.x - LABEL_GAP * readCos;
       anchorY = labelCenter.y + dirPlus.anchor.y - LABEL_GAP * readSin;
-    } else if (adjMinus) {
+      // Stop-relative placement override. When a stop sits in the text's
+      // perpendicular envelope (not just diagonally off-axis), place the
+      // anchor at exactly HALF + LABEL_GAP behind the stop along reading.
+      // The dirPlus.anchor heuristic places the anchor at the label cell's
+      // boundary — for cardinal rotations that's an edge midpoint (HALF
+      // from labelCenter along reading), for diagonal rotations it's a
+      // corner (HALF*√2 ≈ 9.9 from labelCenter along reading). That ~2.9-
+      // unit asymmetry shows up as inconsistent gaps between cardinal and
+      // diagonal labels next to the same stop. Stop-relative placement
+      // pins the gap to the stop, so the visual spacing matches.
+      if (plus.inWayStopProj !== null) {
+        const target = plus.inWayStopProj * STOP_SIZE - (HALF + LABEL_GAP);
+        anchorX = labelCenter.x + target * readCos;
+        anchorY = labelCenter.y + target * readSin;
+      }
+    } else if (minus.inHalfPlane) {
       textAnchor = 'start';
       anchorX = labelCenter.x + dirMinus.anchor.x + LABEL_GAP * readCos;
       anchorY = labelCenter.y + dirMinus.anchor.y + LABEL_GAP * readSin;
+      if (minus.inWayStopProj !== null) {
+        const target = minus.inWayStopProj * STOP_SIZE + (HALF + LABEL_GAP);
+        anchorX = labelCenter.x + target * readCos;
+        anchorY = labelCenter.y + target * readSin;
+      }
     }
   }
 
+  // 'auto' and 'middle' both use central baseline; they differ in how
+  // multi-line blocks are shifted relative to the anchor (see firstLineDy /
+  // blockTopY below).
   let baseline: LabelBaseline = 'central';
   if (label.valign === 'top') baseline = 'text-before-edge';
   else if (label.valign === 'bottom') baseline = 'text-after-edge';
@@ -104,11 +133,13 @@ export function labelLayoutLocal(station: Station): LabelLayout {
   else if (textAnchor === 'end') textXMin = anchorX - textW;
   else textXMin = anchorX - textW / 2;
 
-  // Vertical alignment is in BLOCK terms, not first-line terms: 'top' puts
-  // the block top at the anchor, 'middle' centers the block, 'bottom' puts
-  // the block bottom at the anchor. We achieve this by shifting only the
-  // first line up; subsequent tspans stack 1.2em below it as before. The
-  // anchor itself stays on the L cell so rotation still pivots there.
+  // Vertical alignment, in BLOCK terms for top/middle/bottom and in
+  // FIRST-LINE terms for auto: 'top' puts the block top at the anchor,
+  // 'middle' centers the block, 'bottom' puts the block bottom at the
+  // anchor, 'auto' keeps the first line's center on the anchor with the
+  // rest of the block extending below it. We achieve this by shifting only
+  // the first line up; subsequent tspans stack 1.2em below it as before.
+  // The anchor itself stays on the L cell so rotation still pivots there.
   //
   // Lines stack down by `LABEL_LINE_HEIGHT` (~1.2em). The block's height is
   // `2*textHalfH + extraLines*LINE_HEIGHT`. The first line's natural y given
@@ -119,11 +150,12 @@ export function labelLayoutLocal(station: Station): LabelLayout {
   // To put the BLOCK at the desired position relative to anchorY, shift the
   // first line up by:
   //   - top   : 0
+  //   - auto  : 0  (first line center already at anchorY via central baseline)
   //   - middle: extraLines * LINE_HEIGHT / 2
   //   - bottom: extraLines * LINE_HEIGHT
   let firstLineShiftPx = 0;
-  if (baseline === 'central') firstLineShiftPx = (extraLines * LABEL_LINE_HEIGHT) / 2;
-  else if (baseline === 'text-after-edge') firstLineShiftPx = extraLines * LABEL_LINE_HEIGHT;
+  if (label.valign === 'middle') firstLineShiftPx = (extraLines * LABEL_LINE_HEIGHT) / 2;
+  else if (label.valign === 'bottom') firstLineShiftPx = extraLines * LABEL_LINE_HEIGHT;
   // Keep dy in em (matches the '1.2em' stacking on subsequent tspans), so it
   // tracks font-size if we ever change it.
   const FONT_SIZE_PX = 12;
@@ -131,12 +163,16 @@ export function labelLayoutLocal(station: Station): LabelLayout {
     firstLineShiftPx === 0 ? '0' : `${(-firstLineShiftPx / FONT_SIZE_PX).toFixed(3)}em`;
 
   // Top of the painted text block (already accounting for the first-line
-  // shift above): for 'top' the block top is at anchorY; for 'middle' it's
-  // half a block-height above; for 'bottom' it's a full block-height above.
+  // shift above):
+  //   - top   : block top at anchorY
+  //   - auto  : first line top at anchorY - TEXT_HALF_H, block grows down
+  //   - middle: half a block-height above anchorY
+  //   - bottom: a full block-height above anchorY
   const blockH = 2 * TEXT_HALF_H + extraLines * LABEL_LINE_HEIGHT;
   let textYMin: number;
-  if (baseline === 'text-before-edge') textYMin = anchorY;
-  else if (baseline === 'text-after-edge') textYMin = anchorY - blockH;
+  if (label.valign === 'top') textYMin = anchorY;
+  else if (label.valign === 'bottom') textYMin = anchorY - blockH;
+  else if (label.valign === 'auto') textYMin = anchorY - TEXT_HALF_H;
   else textYMin = anchorY - blockH / 2;
 
   return {
@@ -149,43 +185,67 @@ export function labelLayoutLocal(station: Station): LabelLayout {
     hitY: textYMin - HIT_PAD,
     hitW: textW + 2 * HIT_PAD,
     hitH: blockH + 2 * HIT_PAD,
+    blockTopY: textYMin,
   };
 }
 
+interface SnapInfo {
+  // Any adjacent stop on `sign`'s side of the reading direction? Drives
+  // the snap-or-don't decision.
+  inHalfPlane: boolean;
+  // Projection (in cell-space, along reading dir, from the label cell) of
+  // the closest stop on `sign`'s side that ALSO sits within the label's
+  // perpendicular text envelope. Used by the caller to clamp the snap
+  // anchor away from a stop that would otherwise collide with the text.
+  // Null when no such stop exists — e.g. diagonal-off-axis stops still
+  // trigger `inHalfPlane` (so the snap fires) but don't push the anchor
+  // out, because the text naturally clears them.
+  inWayStopProj: number | null;
+}
+
 /**
- * Is any stop (or the phantom dot) one cell away from the label, in the
- * half-plane on `sign`'s side of the reading direction? `sign` is +1 for
- * the "ahead" half-plane (dirPlus) or -1 for "behind" (dirMinus).
+ * Walk the label's neighbors once and collect: whether *any* stop falls in
+ * the given half-plane (the snap-fires bit), and the projection of the
+ * stop that the text most needs to clear (the anchor-clamp bit). `sign` is
+ * +1 for "ahead of reading" (dirPlus) or -1 for "behind" (dirMinus).
  */
-function anyStopInHalfPlane(
+function snapInfoInHalfPlane(
   stops: Station['stops'],
   phantomDot: { row: number; col: number } | null,
   label: Station['label'],
   readCos: number,
   readSin: number,
   sign: 1 | -1,
-): boolean {
-  // Threshold > 0 — perpendicular cells (dot ≈ 0) don't snap; cells in the
-  // half-plane have |dot| ≥ ~0.707 so a tiny floating-point epsilon would
-  // also work, but a strict > 0 (with sign applied) is fine for our 8-way
-  // grid.
-  const isInHalfPlane = (dRow: number, dCol: number) => {
-    const dx = dCol;
-    const dy = dRow;
-    const dot = dx * readCos + dy * readSin;
-    return sign * dot > 1e-6;
+): SnapInfo {
+  // Accept any cell whose Chebyshev distance is at most one cell. The dual
+  // grid editor (#36) places diagonal-grid neighbors at ±√2/2 per axis so
+  // they're tangent on screen; the old strict `=== 1` check rejected them
+  // and labels rendered unsnapped on top of the stop. A small epsilon
+  // keeps integer grid neighbors at exactly 1 unaffected.
+  const ADJ_MAX = 1 + 1e-4;
+  // Perpendicular gate in cell-space: HALF / STOP_SIZE = 0.5. A stop with
+  // |perp| > this sits outside the text's perpendicular envelope, so the
+  // text naturally clears it and no anchor clamp is needed.
+  const PERP_GATE = 0.5;
+  let inHalfPlane = false;
+  let inWayStopProj: number | null = null;
+  const consider = (dRow: number, dCol: number) => {
+    if (Math.max(Math.abs(dRow), Math.abs(dCol)) > ADJ_MAX) return;
+    const proj = dCol * readCos + dRow * readSin;
+    if (sign * proj <= 1e-6) return;
+    inHalfPlane = true;
+    // Perpendicular (CCW 90° from reading): (-readSin, readCos).
+    const perp = dCol * -readSin + dRow * readCos;
+    if (Math.abs(perp) > PERP_GATE) return;
+    // For adjMinus (sign=-1): proj is negative; track the LARGEST (closest
+    // to 0) — that's the stop nearest along reading, the one the anchor
+    // most needs to clear. For adjPlus, track the smallest (also closest
+    // to 0). In both cases: -sign * proj is positive and we minimize it.
+    if (inWayStopProj === null || -sign * proj < -sign * inWayStopProj) {
+      inWayStopProj = proj;
+    }
   };
-  for (const s of stops) {
-    const dRow = s.row - label.row;
-    const dCol = s.col - label.col;
-    // Only one-cell-away neighbors (Chebyshev distance == 1).
-    if (Math.max(Math.abs(dRow), Math.abs(dCol)) !== 1) continue;
-    if (isInHalfPlane(dRow, dCol)) return true;
-  }
-  if (phantomDot) {
-    const dRow = phantomDot.row - label.row;
-    const dCol = phantomDot.col - label.col;
-    if (Math.max(Math.abs(dRow), Math.abs(dCol)) === 1 && isInHalfPlane(dRow, dCol)) return true;
-  }
-  return false;
+  for (const s of stops) consider(s.row - label.row, s.col - label.col);
+  if (phantomDot) consider(phantomDot.row - label.row, phantomDot.col - label.col);
+  return { inHalfPlane, inWayStopProj };
 }
