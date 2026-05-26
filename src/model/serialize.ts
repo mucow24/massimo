@@ -1,7 +1,7 @@
-import { DEFAULT_DOC } from './transforms';
+import { DEFAULT_DOC, LABEL_WEIGHT_VALUES } from './transforms';
 import { pairKeyOf } from './pairKey';
 import { PALETTES, type PaletteId } from './palettes';
-import type { Line, LineStyle, MapDoc, Station, StopOrientation } from './types';
+import type { Line, LineStyle, MapDoc, Station, StopOrientation, TextLabelWeight } from './types';
 
 const KNOWN_LINE_STYLES = new Set<LineStyle>(['solid', 'dashed', 'hatched', 'hatched-mirror']);
 
@@ -97,7 +97,12 @@ export function parse(json: string): ParseResult {
   if (!file.doc || typeof file.doc !== 'object') {
     return { ok: false, error: 'Missing `doc` field' };
   }
-  const merged: MapDoc = { ...DEFAULT_DOC, ...file.doc };
+  // Pre-migration: older saves stored `labelBold: boolean`; the schema now
+  // uses `labelWeight: TextLabelWeight`. Translate before merging so the
+  // typed shape is clean and `labelBold` doesn't leak through.
+  const rawDoc = file.doc as unknown as Record<string, unknown>;
+  const docWithMigratedWeight = migrateLegacyLabelBold(rawDoc);
+  const merged: MapDoc = { ...DEFAULT_DOC, ...(docWithMigratedWeight as Partial<MapDoc>) };
   // Enforce the "at least one valid palette" invariant on load. A malformed
   // file with explicit `activePalettes: []` or only unknown ids would
   // otherwise leave the doc in an unreachable-from-UI state.
@@ -126,6 +131,28 @@ export function parse(json: string): ParseResult {
   const sanitized = sanitizeStations(merged.stations);
   if (sanitized.changed) merged.stations = sanitized.stations;
   return { ok: true, doc: merged };
+}
+
+// Legacy `labelBold: boolean` → `labelWeight: TextLabelWeight`. Older docs
+// only had a bold toggle (mapping to weight 700 when on, 400 when off);
+// the schema now has a full weight scale and a separate per-station bold
+// flag that bumps two steps heavier on top of the default.
+//
+// - If `labelWeight` is already present and valid, the legacy field is
+//   stripped (writer knew about the new field — trust it).
+// - Otherwise `labelBold` is translated and dropped.
+function migrateLegacyLabelBold(raw: Record<string, unknown>): Record<string, unknown> {
+  const hasLegacy = 'labelBold' in raw;
+  const explicitWeight = raw.labelWeight;
+  if (!hasLegacy) return raw;
+  const { labelBold, ...rest } = raw;
+  if (isValidWeight(explicitWeight)) return rest;
+  const translated: TextLabelWeight = labelBold === true ? 700 : 400;
+  return { ...rest, labelWeight: translated };
+}
+
+function isValidWeight(v: unknown): v is TextLabelWeight {
+  return typeof v === 'number' && (LABEL_WEIGHT_VALUES as readonly number[]).includes(v);
 }
 
 function sanitizeSegmentStyles(line: Line): Line {

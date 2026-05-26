@@ -36,7 +36,7 @@ describe('save/load round-trip', () => {
       transfers: useDoc.getState().transfers,
       textLabels: useDoc.getState().textLabels,
       labelFontSize: useDoc.getState().labelFontSize,
-      labelBold: useDoc.getState().labelBold,
+      labelWeight: useDoc.getState().labelWeight,
       labelItalic: useDoc.getState().labelItalic,
       activePalettes: useDoc.getState().activePalettes,
     });
@@ -61,10 +61,10 @@ describe('save/load round-trip', () => {
     expect(obj.doc).toBeDefined();
   });
 
-  it('round-trips labelFontSize / labelBold / labelItalic', () => {
+  it('round-trips labelFontSize / labelWeight / labelItalic', () => {
     const fixture = makeDoc({
       labelFontSize: 18,
-      labelBold: true,
+      labelWeight: 700,
       labelItalic: true,
     });
     const json = serialize(fixture);
@@ -72,7 +72,7 @@ describe('save/load round-trip', () => {
     expect(result.ok).toBe(true);
     if (result.ok) {
       expect(result.doc.labelFontSize).toBe(18);
-      expect(result.doc.labelBold).toBe(true);
+      expect(result.doc.labelWeight).toBe(700);
       expect(result.doc.labelItalic).toBe(true);
     }
   });
@@ -98,7 +98,7 @@ describe('save/load round-trip', () => {
     expect(result.ok).toBe(true);
     if (result.ok) {
       expect(result.doc.labelFontSize).toBe(12);
-      expect(result.doc.labelBold).toBe(false);
+      expect(result.doc.labelWeight).toBe(400);
       expect(result.doc.labelItalic).toBe(false);
       // Pre-textLabels saves default to empty.
       expect(result.doc.textLabels).toEqual({});
@@ -136,7 +136,7 @@ describe('save/load round-trip', () => {
     useDoc.setState({
       ...useDoc.getState(),
       labelFontSize: 20,
-      labelBold: true,
+      labelWeight: 700,
       labelItalic: false,
     });
     const s = useDoc.getState();
@@ -151,7 +151,7 @@ describe('save/load round-trip', () => {
       transfers: s.transfers,
       textLabels: s.textLabels,
       labelFontSize: s.labelFontSize,
-      labelBold: s.labelBold,
+      labelWeight: s.labelWeight,
       labelItalic: s.labelItalic,
       activePalettes: s.activePalettes,
     });
@@ -159,7 +159,7 @@ describe('save/load round-trip', () => {
     expect(result.ok).toBe(true);
     if (result.ok) {
       expect(result.doc.labelFontSize).toBe(20);
-      expect(result.doc.labelBold).toBe(true);
+      expect(result.doc.labelWeight).toBe(700);
       expect(result.doc.labelItalic).toBe(false);
     }
   });

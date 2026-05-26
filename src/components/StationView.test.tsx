@@ -39,36 +39,138 @@ describe('<StationView /> — label styling', () => {
     expect(text.getAttribute('font-style')).toBeNull();
   });
 
-  it('applies labelFontSize, labelBold, and labelItalic from the store', () => {
+  it('applies labelFontSize, labelWeight, and labelItalic from the store', () => {
     useDoc.setState({
       ...useDoc.getState(),
       labelFontSize: 18,
-      labelBold: true,
+      labelWeight: 500,
       labelItalic: true,
     });
     const { text } = renderLabel();
     expect(text.getAttribute('font-size')).toBe('18');
-    expect(text.getAttribute('font-weight')).toBe('700');
+    expect(text.getAttribute('font-weight')).toBe('500');
     expect(text.getAttribute('font-style')).toBe('italic');
   });
 
-  it('hover bumps weight to 700 even when labelBold is off', () => {
-    const { text, station } = (() => {
-      const station = makeStation({ id: 's1', name: 'Foo', x: 0, y: 0 });
-      useSelection.setState({ ...useSelection.getState(), hoveredStationId: station.id });
-      const { container } = render(
-        <svg>
-          <StationView station={station} lines={{}} zoom={1} onStartDrag={vi.fn()} layer="label" />
-        </svg>,
-      );
-      const text = container.querySelector('text');
-      if (!text) throw new Error('expected <text>');
-      return { text, station };
-    })();
-    expect(useDoc.getState().labelBold).toBe(false);
-    expect(text.getAttribute('font-weight')).toBe('700');
-    // Sanity: station was actually rendered.
-    expect(text.textContent).toContain(station.name);
+  it('per-station labelBold bumps the rendered weight two indices heavier (Regular → Bold)', () => {
+    const station = { ...makeStation({ id: 's1', name: 'Foo' }), labelBold: true as const };
+    const { container } = render(
+      <svg>
+        <StationView station={station} lines={{}} zoom={1} onStartDrag={vi.fn()} layer="label" />
+      </svg>,
+    );
+    const text = container.querySelector('text');
+    expect(text?.getAttribute('font-weight')).toBe('700'); // 400 → 700
+  });
+
+  it('per-station labelBold bumps two indices from a non-default labelWeight (Light → Medium)', () => {
+    useDoc.setState({ ...useDoc.getState(), labelWeight: 300 });
+    const station = { ...makeStation({ id: 's1', name: 'Foo' }), labelBold: true as const };
+    const { container } = render(
+      <svg>
+        <StationView station={station} lines={{}} zoom={1} onStartDrag={vi.fn()} layer="label" />
+      </svg>,
+    );
+    const text = container.querySelector('text');
+    expect(text?.getAttribute('font-weight')).toBe('500'); // 300 → 500
+  });
+
+  it('per-station labelBold saturates at Black (900) when the default is near the top', () => {
+    useDoc.setState({ ...useDoc.getState(), labelWeight: 800 });
+    const station = { ...makeStation({ id: 's1', name: 'Foo' }), labelBold: true as const };
+    const { container } = render(
+      <svg>
+        <StationView station={station} lines={{}} zoom={1} onStartDrag={vi.fn()} layer="label" />
+      </svg>,
+    );
+    const text = container.querySelector('text');
+    expect(text?.getAttribute('font-weight')).toBe('900');
+  });
+
+  it('hover bumps the rendered weight two indices heavier from the current weight (Regular → Bold)', () => {
+    const station = makeStation({ id: 's1', name: 'Foo' });
+    useSelection.setState({ ...useSelection.getState(), hoveredStationId: station.id });
+    const { container } = render(
+      <svg>
+        <StationView station={station} lines={{}} zoom={1} onStartDrag={vi.fn()} layer="label" />
+      </svg>,
+    );
+    const text = container.querySelector('text');
+    expect(text?.getAttribute('font-weight')).toBe('700');
+  });
+
+  it('hover stacks on top of per-station bold (400 → 700 → 900), saturating at Black', () => {
+    const station = { ...makeStation({ id: 's1', name: 'Foo' }), labelBold: true as const };
+    useSelection.setState({ ...useSelection.getState(), hoveredStationId: station.id });
+    const { container } = render(
+      <svg>
+        <StationView station={station} lines={{}} zoom={1} onStartDrag={vi.fn()} layer="label" />
+      </svg>,
+    );
+    const text = container.querySelector('text');
+    // 400 → +2 (station bold) → 700 → +2 (hover) → 900.
+    expect(text?.getAttribute('font-weight')).toBe('900');
+  });
+
+  it('non-hovered labels render no underline geometry and no text-decoration attribute', () => {
+    // The renderer draws the hover underline as an explicit <line> element
+    // (not the SVG `text-decoration` attribute, which leaks paint residue
+    // on rotated <text> in Chromium). When hover is off, there should be
+    // neither the line element nor the attribute.
+    const station = makeStation({ id: 's1', name: 'Foo' });
+    const { container } = render(
+      <svg>
+        <StationView station={station} lines={{}} zoom={1} onStartDrag={vi.fn()} layer="label" />
+      </svg>,
+    );
+    const text = container.querySelector('text');
+    expect(text?.getAttribute('text-decoration')).toBeNull();
+    expect(container.querySelectorAll('line')).toHaveLength(0);
+  });
+
+  it('hovered labels render one <line> underline per text line (replaces text-decoration)', () => {
+    const station = makeStation({ id: 's1', name: 'Foo\nBar' });
+    useSelection.setState({ ...useSelection.getState(), hoveredStationId: station.id });
+    const { container } = render(
+      <svg>
+        <StationView station={station} lines={{}} zoom={1} onStartDrag={vi.fn()} layer="label" />
+      </svg>,
+    );
+    // No SVG text-decoration attribute on the <text> — the underline is its
+    // own geometry.
+    const text = container.querySelector('text');
+    expect(text?.getAttribute('text-decoration')).toBeNull();
+    // One <line> per visible text line.
+    const lines = Array.from(container.querySelectorAll('line'));
+    expect(lines).toHaveLength(2);
+  });
+
+  it('hovered labels with an inline bullet still render <line> underlines (bullet render path)', () => {
+    const station = makeStation({ id: 's1', name: 'Hub <A1>' });
+    useSelection.setState({ ...useSelection.getState(), hoveredStationId: station.id });
+    const lines = {
+      L1: makeLine({ id: 'L1', service: 'A1', color: '#abc123' }),
+    };
+    const { container } = render(
+      <svg>
+        <StationView station={station} lines={lines} zoom={1} onStartDrag={vi.fn()} layer="label" />
+      </svg>,
+    );
+    expect(container.querySelector('text')?.getAttribute('text-decoration')).toBeNull();
+    expect(container.querySelectorAll('line').length).toBeGreaterThanOrEqual(1);
+  });
+
+  it('hover saturates at Black (900) when the doc default is already 900', () => {
+    useDoc.setState({ ...useDoc.getState(), labelWeight: 900 });
+    const station = makeStation({ id: 's1', name: 'Foo' });
+    useSelection.setState({ ...useSelection.getState(), hoveredStationId: station.id });
+    const { container } = render(
+      <svg>
+        <StationView station={station} lines={{}} zoom={1} onStartDrag={vi.fn()} layer="label" />
+      </svg>,
+    );
+    const text = container.querySelector('text');
+    expect(text?.getAttribute('font-weight')).toBe('900');
   });
 });
 

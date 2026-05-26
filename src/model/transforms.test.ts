@@ -881,7 +881,7 @@ describe('label font/style settings', () => {
 
   it('DEFAULT_DOC has sensible defaults', () => {
     expect(T.DEFAULT_DOC.labelFontSize).toBe(12);
-    expect(T.DEFAULT_DOC.labelBold).toBe(false);
+    expect(T.DEFAULT_DOC.labelWeight).toBe(400);
     expect(T.DEFAULT_DOC.labelItalic).toBe(false);
   });
 
@@ -907,16 +907,122 @@ describe('label font/style settings', () => {
     expect(T.setLabelFontSize(doc, 12.4).labelFontSize).toBe(12);
   });
 
-  it('setLabelBold flips the boolean', () => {
+  it('setLabelWeight accepts the supported Helvetica Neue weights', () => {
     const doc = makeDoc({});
-    expect(T.setLabelBold(doc, true).labelBold).toBe(true);
-    expect(T.setLabelBold(T.setLabelBold(doc, true), false).labelBold).toBe(false);
+    expect(T.setLabelWeight(doc, 100).labelWeight).toBe(100);
+    expect(T.setLabelWeight(doc, 700).labelWeight).toBe(700);
+    expect(T.setLabelWeight(doc, 900).labelWeight).toBe(900);
+  });
+
+  it('setLabelWeight is a no-op when the value is unchanged (reference equality)', () => {
+    const doc = makeDoc({ labelWeight: 500 });
+    expect(T.setLabelWeight(doc, 500)).toBe(doc);
   });
 
   it('setLabelItalic flips the boolean', () => {
     const doc = makeDoc({});
     expect(T.setLabelItalic(doc, true).labelItalic).toBe(true);
     expect(T.setLabelItalic(T.setLabelItalic(doc, true), false).labelItalic).toBe(false);
+  });
+});
+
+describe('LABEL_WEIGHT_VALUES', () => {
+  it('lists the Helvetica Neue weights we ship in /public/fonts/, in ascending order', () => {
+    // No 600 — we don't ship a SemiBold face.
+    expect(T.LABEL_WEIGHT_VALUES).toEqual([100, 200, 300, 400, 500, 700, 800, 900]);
+  });
+
+  it('LABEL_WEIGHT_NAMES is parallel to LABEL_WEIGHT_VALUES', () => {
+    expect(T.LABEL_WEIGHT_NAMES.map((w) => w.value)).toEqual(T.LABEL_WEIGHT_VALUES);
+    expect(T.LABEL_WEIGHT_NAMES.map((w) => w.name)).toEqual([
+      'Thin',
+      'UltraLight',
+      'Light',
+      'Roman',
+      'Medium',
+      'Bold',
+      'Heavy',
+      'Black',
+    ]);
+  });
+});
+
+describe('bumpWeightByIndex', () => {
+  it('walks +N steps through LABEL_WEIGHT_VALUES', () => {
+    expect(T.bumpWeightByIndex(400, 2)).toBe(700); // Regular → Bold
+    expect(T.bumpWeightByIndex(300, 1)).toBe(400); // Light → Roman
+    expect(T.bumpWeightByIndex(100, 2)).toBe(300);
+    expect(T.bumpWeightByIndex(500, 2)).toBe(800);
+  });
+
+  it('walks -N steps through LABEL_WEIGHT_VALUES', () => {
+    expect(T.bumpWeightByIndex(700, -2)).toBe(400);
+    expect(T.bumpWeightByIndex(400, -1)).toBe(300);
+  });
+
+  it('clamps at Black (900) when stepping past the top', () => {
+    expect(T.bumpWeightByIndex(800, 2)).toBe(900);
+    expect(T.bumpWeightByIndex(900, 2)).toBe(900);
+    expect(T.bumpWeightByIndex(900, 10)).toBe(900);
+  });
+
+  it('clamps at Thin (100) when stepping past the bottom', () => {
+    expect(T.bumpWeightByIndex(200, -5)).toBe(100);
+    expect(T.bumpWeightByIndex(100, -1)).toBe(100);
+  });
+
+  it('returns the input unchanged for delta=0', () => {
+    expect(T.bumpWeightByIndex(400, 0)).toBe(400);
+    expect(T.bumpWeightByIndex(900, 0)).toBe(900);
+  });
+});
+
+describe('resolveStationLabelWeight', () => {
+  it('returns the default weight when stationBold is undefined or false', () => {
+    expect(T.resolveStationLabelWeight(400, undefined)).toBe(400);
+    expect(T.resolveStationLabelWeight(400, false)).toBe(400);
+    expect(T.resolveStationLabelWeight(500, undefined)).toBe(500);
+  });
+
+  it('bumps two indices heavier when stationBold is true', () => {
+    expect(T.resolveStationLabelWeight(400, true)).toBe(700); // Regular → Bold
+    expect(T.resolveStationLabelWeight(300, true)).toBe(500); // Light → Medium
+    expect(T.resolveStationLabelWeight(200, true)).toBe(400); // UltraLight → Roman
+  });
+
+  it('saturates at Black (900) when default is near or at the top', () => {
+    expect(T.resolveStationLabelWeight(800, true)).toBe(900);
+    expect(T.resolveStationLabelWeight(900, true)).toBe(900);
+  });
+});
+
+describe('setStationLabelBold', () => {
+  it('writes labelBold:true on the station when called with true', () => {
+    const doc = makeDoc({ stations: [makeStation({ id: 'a' })] });
+    const next = T.setStationLabelBold(doc, 'a', true);
+    expect(next.stations.a.labelBold).toBe(true);
+  });
+
+  it('clears labelBold from the station when called with false', () => {
+    const doc = makeDoc({
+      stations: [{ ...makeStation({ id: 'a' }), labelBold: true }],
+    });
+    const next = T.setStationLabelBold(doc, 'a', false);
+    expect(next.stations.a.labelBold).toBeFalsy();
+    // Specifically: omitted, not set to false. Keeps existing saves clean.
+    expect('labelBold' in next.stations.a).toBe(false);
+  });
+
+  it('is a no-op (reference equality) when the value is unchanged', () => {
+    const doc = makeDoc({ stations: [makeStation({ id: 'a' })] });
+    expect(T.setStationLabelBold(doc, 'a', false)).toBe(doc);
+    const bolded = T.setStationLabelBold(doc, 'a', true);
+    expect(T.setStationLabelBold(bolded, 'a', true)).toBe(bolded);
+  });
+
+  it('is a no-op for missing ids', () => {
+    const doc = makeDoc({ stations: [makeStation({ id: 'a' })] });
+    expect(T.setStationLabelBold(doc, 'nope', true)).toBe(doc);
   });
 });
 

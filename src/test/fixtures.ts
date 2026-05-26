@@ -9,6 +9,7 @@ import type {
   StopCell,
   StopOrientation,
   TextLabel,
+  TextLabelWeight,
 } from '../model/types';
 
 export function makeStation(overrides: Partial<Station> & { id: StationId }): Station {
@@ -82,7 +83,7 @@ export function makeDoc(parts: {
   transfers?: import('../model/types').Transfer[];
   textLabels?: TextLabel[];
   labelFontSize?: number;
-  labelBold?: boolean;
+  labelWeight?: TextLabelWeight;
   labelItalic?: boolean;
   activePalettes?: import('../model/palettes').PaletteId[];
 }): MapDoc {
@@ -107,7 +108,7 @@ export function makeDoc(parts: {
     transfers,
     textLabels,
     labelFontSize: parts.labelFontSize ?? 12,
-    labelBold: parts.labelBold ?? false,
+    labelWeight: parts.labelWeight ?? 400,
     labelItalic: parts.labelItalic ?? false,
     activePalettes: parts.activePalettes ?? ['mta'],
   };
