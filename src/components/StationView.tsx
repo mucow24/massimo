@@ -64,11 +64,14 @@ interface RenderLabelTextArgs {
   textAnchor: 'start' | 'middle' | 'end';
   baseline: 'central' | 'text-before-edge' | 'text-after-edge';
   firstLineDy: string;
-  // Top of the text block in the rotated label frame. The bullet path
-  // renders explicit per-segment elements (no dy stacking), so it needs the
-  // already-resolved block top — baseline alone can't disambiguate 'middle'
-  // from 'auto'.
-  blockTopY: number;
+  // Visual center y of the first text line in the rotated label frame.
+  // The bullet path anchors each line with dominantBaseline='central' at
+  // firstLineCenterY + i*lineSpacing so it lines up exactly with the
+  // non-bullet path (also central-anchored). Without this, labels with
+  // inline bullets render their first line a few pixels above their
+  // bullet-free counterparts (SVG's 'hanging' anchor sits at the cap-line,
+  // not the EM-box top).
+  firstLineCenterY: number;
   rotationDeg: number;
   lineByService: Map<string, Line>;
 }
@@ -101,7 +104,7 @@ function renderStationLabelText({
   textAnchor,
   baseline,
   firstLineDy,
-  blockTopY,
+  firstLineCenterY,
   rotationDeg,
   lineByService,
 }: RenderLabelTextArgs): React.ReactNode {
@@ -136,10 +139,11 @@ function renderStationLabelText({
   }
 
   // Bullet path: measure segment-aware and emit explicit per-segment
-  // elements. measureTextLabel accepts StyledText, so station labels can
-  // pass their style props directly without fabricating a TextLabel.
-  // blockTopY comes from the layout, which already encodes the valign
-  // semantics (including 'auto' first-line-centered behavior).
+  // elements. Each line is anchored at its visual center with
+  // dominantBaseline='central' so it lines up with the non-bullet path
+  // (also central-anchored). firstLineCenterY comes from the layout and
+  // already encodes the valign semantics; line i sits lineSpacing below
+  // the previous one.
   const m = measureTextLabel({
     text,
     fontSize,
@@ -147,6 +151,11 @@ function renderStationLabelText({
     italic: fontStyle === 'italic',
   });
   const lineSpacing = fontSize * LINE_HEIGHT;
+  // BASELINE_FRACTION is the hanging→baseline distance; the central anchor
+  // sits at the EM-box midpoint (0.5 from top), so central→baseline is
+  // BASELINE_FRACTION − 0.5. Bullet circles still sit with their bottom
+  // on the text baseline.
+  const centralToBaseline = fontSize * (BASELINE_FRACTION - 0.5);
 
   const lineStartX = (bL: number, bR: number): number => {
     if (textAnchor === 'start') return anchorX + bL;
@@ -158,8 +167,8 @@ function renderStationLabelText({
     <g transform={`rotate(${rotationDeg} ${anchorX} ${anchorY})`} pointerEvents="none">
       {m.lines.map((lm, i) => {
         if (lm.segments.length === 0) return null;
-        const yTop = blockTopY + i * lineSpacing;
-        const baselineY = yTop + fontSize * BASELINE_FRACTION;
+        const yCenter = firstLineCenterY + i * lineSpacing;
+        const baselineY = yCenter + centralToBaseline;
         let cursor = lineStartX(lm.bearingLeft, lm.bearingRight);
         const nodes: React.ReactNode[] = [];
         lm.segments.forEach((seg, j) => {
@@ -170,9 +179,9 @@ function renderStationLabelText({
               <text
                 key={`${i}-${j}-t`}
                 x={segCursor}
-                y={yTop}
+                y={yCenter}
                 textAnchor="start"
-                dominantBaseline="hanging"
+                dominantBaseline="central"
                 fontSize={fontSize}
                 fontWeight={fontWeight}
                 fontStyle={fontStyle}
@@ -423,7 +432,7 @@ export function StationView({
     textAnchor: labelTextAnchor,
     baseline: labelBaseline,
     firstLineDy: labelFirstLineDy,
-    blockTopY: labelBlockTopY,
+    firstLineCenterY: labelFirstLineCenterY,
     hitX: labelHitX,
     hitY: labelHitY,
     hitW: labelHitW,
@@ -578,7 +587,7 @@ export function StationView({
           textAnchor: labelTextAnchor,
           baseline: labelBaseline,
           firstLineDy: labelFirstLineDy,
-          blockTopY: labelBlockTopY,
+          firstLineCenterY: labelFirstLineCenterY,
           rotationDeg: label.rotation * 45,
           lineByService,
         })}
@@ -605,7 +614,7 @@ export function StationView({
           textAnchor: labelTextAnchor,
           baseline: labelBaseline,
           firstLineDy: labelFirstLineDy,
-          blockTopY: labelBlockTopY,
+          firstLineCenterY: labelFirstLineCenterY,
           rotationDeg: label.rotation * 45,
           lineByService,
         })}
@@ -656,7 +665,7 @@ export function StationView({
             textAnchor: labelTextAnchor,
             baseline: labelBaseline,
             firstLineDy: labelFirstLineDy,
-            blockTopY: labelBlockTopY,
+            firstLineCenterY: labelFirstLineCenterY,
             rotationDeg: label.rotation * 45,
             lineByService,
           })

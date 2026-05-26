@@ -35,6 +35,15 @@ export interface LabelLayout {
   // valign math — important for 'auto', where baseline='central' alone
   // doesn't disambiguate from 'middle'.
   blockTopY: number;
+  // Visual center y of the first text line. The bullet-rendering path
+  // anchors each line with dominantBaseline='central' at
+  // firstLineCenterY + i*lineSpacing, matching the non-bullet path's
+  // central-baseline rendering exactly. If the bullet path positioned by
+  // text TOP instead (blockTopY + dominantBaseline='hanging'), labels
+  // containing bullets would render a few pixels higher than their
+  // bullet-free counterparts because SVG's 'hanging' anchor sits at the
+  // cap-line, not the EM-box top.
+  firstLineCenterY: number;
 }
 
 /**
@@ -175,6 +184,12 @@ export function labelLayoutLocal(station: Station): LabelLayout {
   else if (label.valign === 'auto') textYMin = anchorY - TEXT_HALF_H;
   else textYMin = anchorY - blockH / 2;
 
+  // First-line visual center, derived from the block-top + half a text body.
+  // Equivalent to (first line top + TEXT_HALF_H). The block-top math already
+  // encodes the valign semantics; adding TEXT_HALF_H walks down to the line's
+  // center.
+  const firstLineCenterY = textYMin + TEXT_HALF_H;
+
   return {
     anchorX,
     anchorY,
@@ -186,6 +201,7 @@ export function labelLayoutLocal(station: Station): LabelLayout {
     hitW: textW + 2 * HIT_PAD,
     hitH: blockH + 2 * HIT_PAD,
     blockTopY: textYMin,
+    firstLineCenterY,
   };
 }
 
