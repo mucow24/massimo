@@ -4,7 +4,7 @@ import { stopCenterAt, STOP_SIZE } from './orientation';
 import type { LabelValign, Rotation, Station } from '../model/types';
 
 const HALF = STOP_SIZE / 2;
-const LABEL_GAP = 5;
+const LABEL_GAP = 3;
 
 // Build a single-stop station whose label sits at (labelRow, labelCol) with
 // the given rotation, and whose stop sits at the given grid offset from
@@ -156,6 +156,38 @@ describe('labelLayoutLocal — auto-snap', () => {
         expect(lay.textAnchor).toBe('start');
       });
     }
+  });
+
+  describe('diagonal-grid adjacency (cells tangent at √2/2 per axis)', () => {
+    // Since the dual cardinal/diagonal grid editor (#36) landed, neighbors
+    // on the diagonal grid are at (row, col) offsets of ±√2/2 rather than
+    // ±1. The old strict `Chebyshev === 1` adjacency check rejected those,
+    // so labels sitting one diagonal-tangent step from a stop rendered
+    // unsnapped — anchor stayed at cell center, text landed on the stop.
+    const D = Math.SQRT1_2;
+
+    it('NE-reading label, SW-tangent stop on diagonal grid → snaps to start', () => {
+      const lay = labelLayoutLocal(station({ rotation: 7, stopOffsetRow: D, stopOffsetCol: -D }));
+      expect(lay.textAnchor).toBe('start');
+    });
+
+    it('NE-reading label, NE-tangent stop on diagonal grid → snaps to end', () => {
+      const lay = labelLayoutLocal(station({ rotation: 7, stopOffsetRow: -D, stopOffsetCol: D }));
+      expect(lay.textAnchor).toBe('end');
+    });
+
+    it('E-reading label, W-tangent stop on diagonal grid → snaps to start', () => {
+      // Mixed case: cardinal reading dir, stop at a diagonal-tangent
+      // position in the -reading half-plane.
+      const lay = labelLayoutLocal(station({ rotation: 0, stopOffsetRow: D, stopOffsetCol: -D }));
+      expect(lay.textAnchor).toBe('start');
+    });
+
+    it('does NOT snap to a perpendicular diagonal-tangent stop', () => {
+      // NE reading, stop at NW-tangent (dot product with reading dir = 0).
+      const lay = labelLayoutLocal(station({ rotation: 7, stopOffsetRow: -D, stopOffsetCol: -D }));
+      expect(lay.textAnchor).toBe('middle');
+    });
   });
 
   describe('explicit alignment overrides snap', () => {
