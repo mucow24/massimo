@@ -1,7 +1,8 @@
 import { Fragment, useEffect, useId, useRef, useState } from 'react';
 import { ChevronDownIcon, ChevronRightIcon, MixerHorizontalIcon } from '@radix-ui/react-icons';
 import { useDoc } from '../state/store';
-import { LABEL_FONT_SIZE_MAX, LABEL_FONT_SIZE_MIN } from '../model/transforms';
+import { LABEL_FONT_SIZE_MAX, LABEL_FONT_SIZE_MIN, LABEL_WEIGHT_NAMES } from '../model/transforms';
+import type { TextLabelWeight } from '../model/types';
 import { PALETTES } from '../model/palettes';
 import { useFieldHistory } from './useFieldHistory';
 import { usePopover } from './usePopover';
@@ -19,8 +20,8 @@ export function OptionsPopover() {
   const setCurveRadius = useDoc((s) => s.setCurveRadius);
   const labelFontSize = useDoc((s) => s.labelFontSize);
   const setLabelFontSize = useDoc((s) => s.setLabelFontSize);
-  const labelBold = useDoc((s) => s.labelBold);
-  const setLabelBold = useDoc((s) => s.setLabelBold);
+  const labelWeight = useDoc((s) => s.labelWeight);
+  const setLabelWeight = useDoc((s) => s.setLabelWeight);
   const labelItalic = useDoc((s) => s.labelItalic);
   const setLabelItalic = useDoc((s) => s.setLabelItalic);
   const activePalettes = useDoc((s) => s.activePalettes);
@@ -121,17 +122,33 @@ export function OptionsPopover() {
           </div>
 
           <div className="options-popover-row">
-            <span className="options-popover-label">Style</span>
-            <button
-              type="button"
-              className={'tool-btn' + (labelBold ? ' active' : '')}
-              aria-pressed={labelBold}
-              aria-label="Bold"
-              title="Bold station labels"
-              onClick={() => setLabelBold(!labelBold)}
+            <label htmlFor={`${panelId}-weight`} className="options-popover-label">
+              Weight
+            </label>
+            <select
+              id={`${panelId}-weight`}
+              aria-label="Weight"
+              className="weight-select"
+              value={labelWeight}
+              onChange={(e) => {
+                const n = Number(e.target.value) as TextLabelWeight;
+                setLabelWeight(n);
+              }}
             >
-              <strong>B</strong>
-            </button>
+              {LABEL_WEIGHT_NAMES.map((w) => (
+                <option
+                  key={w.value}
+                  value={w.value}
+                  style={{
+                    fontFamily: "'Helvetica Neue', Helvetica, Arial, sans-serif",
+                    fontWeight: w.value,
+                    fontStyle: labelItalic ? 'italic' : 'normal',
+                  }}
+                >
+                  {w.name}
+                </option>
+              ))}
+            </select>
             <button
               type="button"
               className={'tool-btn' + (labelItalic ? ' active' : '')}

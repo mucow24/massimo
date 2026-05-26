@@ -144,18 +144,51 @@ describe('<OptionsPopover />', () => {
     expect(spin.value).toBe('12'); // re-synced to the store
   });
 
-  it('Bold toggle reflects and flips labelBold', async () => {
+  it('Weight dropdown lists every shipped Helvetica Neue weight in ascending order', async () => {
     const user = userEvent.setup();
     render(<Toolbar />);
     await user.click(screen.getByRole('button', { name: 'Options' }));
-    const bold = screen.getByRole('button', { name: /bold/i });
-    expect(bold).toHaveAttribute('aria-pressed', 'false');
-    await user.click(bold);
-    expect(useDoc.getState().labelBold).toBe(true);
-    expect(bold).toHaveAttribute('aria-pressed', 'true');
-    await user.click(bold);
-    expect(useDoc.getState().labelBold).toBe(false);
-    expect(bold).toHaveAttribute('aria-pressed', 'false');
+    const select = screen.getByRole('combobox', { name: /weight/i }) as HTMLSelectElement;
+    const values = Array.from(select.options).map((o) => Number(o.value));
+    expect(values).toEqual([100, 200, 300, 400, 500, 700, 800, 900]);
+  });
+
+  it('Weight dropdown defaults to the store value (400 = Roman)', async () => {
+    const user = userEvent.setup();
+    render(<Toolbar />);
+    await user.click(screen.getByRole('button', { name: 'Options' }));
+    const select = screen.getByRole('combobox', { name: /weight/i }) as HTMLSelectElement;
+    expect(select.value).toBe('400');
+  });
+
+  it('Selecting a weight from the dropdown writes labelWeight to the store', async () => {
+    const user = userEvent.setup();
+    render(<Toolbar />);
+    await user.click(screen.getByRole('button', { name: 'Options' }));
+    const select = screen.getByRole('combobox', { name: /weight/i }) as HTMLSelectElement;
+    await user.selectOptions(select, '700');
+    expect(useDoc.getState().labelWeight).toBe(700);
+    await user.selectOptions(select, '300');
+    expect(useDoc.getState().labelWeight).toBe(300);
+  });
+
+  it('Weight dropdown reflects an externally-changed store value', () => {
+    useDoc.setState({ ...useDoc.getState(), labelWeight: 800 });
+    render(<Toolbar />);
+    // Open the popover via a click on the trigger.
+    fireEvent.click(screen.getByRole('button', { name: 'Options' }));
+    const select = screen.getByRole('combobox', { name: /weight/i }) as HTMLSelectElement;
+    expect(select.value).toBe('800');
+  });
+
+  it('The old Bold toggle button is gone (replaced by the weight dropdown)', async () => {
+    const user = userEvent.setup();
+    render(<Toolbar />);
+    await user.click(screen.getByRole('button', { name: 'Options' }));
+    // No button labelled "Bold" inside the dialog (the only one with /bold/i
+    // would have been the old toggle). The italic button stays.
+    expect(screen.queryByRole('button', { name: /^bold$/i })).toBeNull();
+    expect(screen.getByRole('button', { name: /italic/i })).toBeInTheDocument();
   });
 
   it('Italic toggle reflects and flips labelItalic', async () => {

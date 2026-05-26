@@ -6,6 +6,7 @@ import { polygonsToPath, unionConvex } from '../geometry/polygonUnion';
 import { labelLayoutLocal } from '../geometry/labelLayout';
 import { stationBoundaryRectsLocal } from '../geometry/stationBoundary';
 import { pathBetweenStations } from '../model/pathSelect';
+import { bumpWeightByIndex, resolveStationLabelWeight } from '../model/transforms';
 import { legibleTextOn } from '../util/color';
 import { StopGlyph } from './StopGlyph';
 import type { RenderedStopPositions } from '../geometry/stopPositions';
@@ -58,7 +59,12 @@ interface RenderLabelTextArgs {
   stroke?: string;
   strokeWidth?: number;
   paintOrder?: string;
-  textDecoration?: 'underline';
+  // Always written to the rendered <text> as an explicit value (never
+  // omitted). Chromium leaves stale underline pixels behind when the
+  // `text-decoration` SVG attribute toggles from "underline" back to absent
+  // on a rotated <text>; rendering 'none' forces a proper paint
+  // invalidation as hover clears.
+  textDecoration: 'underline' | 'none';
   anchorX: number;
   anchorY: number;
   textAnchor: 'start' | 'middle' | 'end';
@@ -110,31 +116,76 @@ function renderStationLabelText({
 }: RenderLabelTextArgs): React.ReactNode {
   const hasBullet = BULLET_TOKEN_RE.test(text);
   const lines = text.split('\n');
+  // Underline as explicit <line> geometry instead of the SVG `text-decoration`
+  // attribute. Chromium leaves one-pixel residue on rotated <text> when
+  // text-decoration toggles, and remounting via `key` breaks the cap-line
+  // paint on the fresh element. Real <line> elements invalidate correctly
+  // on mount AND unmount, so this sidesteps both bugs at once.
+  const showUnderline = textDecoration === 'underline';
+  // Measure ink widths so the explicit underline matches the visible text
+  // extent (the same width SVG's text-decoration would have drawn). The
+  // measurement is cached, so calling it here for the plain path is cheap.
+  const measured = showUnderline
+    ? measureTextLabel({ text, fontSize, weight: fontWeight, italic: fontStyle === 'italic' })
+    : null;
+  // Distance from the central-baseline anchor down to the text baseline.
+  // Reuses the constant the bullet path already relies on.
+  const centralToBaseline = fontSize * (BASELINE_FRACTION - 0.5);
+  // Underline geometry, in unrotated label-local px.
+  const UNDERLINE_OFFSET = 4;
+  const UNDERLINE_STROKE = 2;
+  // Compute the y position of the FIRST line's baseline given the active
+  // dominant-baseline mode. Subsequent lines stack 1.2em below.
+  const firstLineBaselineY =
+    baseline === 'central'
+      ? anchorY + centralToBaseline + parseEm(firstLineDy, fontSize)
+      : baseline === 'text-before-edge'
+        ? anchorY + fontSize * BASELINE_FRACTION + parseEm(firstLineDy, fontSize)
+        : anchorY - fontSize * (1 - BASELINE_FRACTION) + parseEm(firstLineDy, fontSize);
+  const lineSpacingPx = fontSize * LINE_HEIGHT;
   if (!hasBullet) {
     return (
-      <text
-        x={anchorX}
-        y={anchorY}
-        textAnchor={textAnchor}
-        dominantBaseline={baseline}
-        fontSize={fontSize}
-        fontWeight={fontWeight}
-        fontStyle={fontStyle}
-        textDecoration={textDecoration}
-        pointerEvents="none"
-        fill={fill}
-        stroke={stroke}
-        strokeWidth={strokeWidth}
-        paintOrder={paintOrder}
-        xmlSpace="preserve"
-        transform={`rotate(${rotationDeg} ${anchorX} ${anchorY})`}
-      >
-        {lines.map((line, i) => (
-          <tspan key={i} x={anchorX} dy={i === 0 ? firstLineDy : '1.2em'}>
-            {line}
-          </tspan>
-        ))}
-      </text>
+      <g transform={`rotate(${rotationDeg} ${anchorX} ${anchorY})`} pointerEvents="none">
+        <text
+          x={anchorX}
+          y={anchorY}
+          textAnchor={textAnchor}
+          dominantBaseline={baseline}
+          fontSize={fontSize}
+          fontWeight={fontWeight}
+          fontStyle={fontStyle}
+          fill={fill}
+          stroke={stroke}
+          strokeWidth={strokeWidth}
+          paintOrder={paintOrder}
+          xmlSpace="preserve"
+        >
+          {lines.map((line, i) => (
+            <tspan key={i} x={anchorX} dy={i === 0 ? firstLineDy : '1.2em'}>
+              {line}
+            </tspan>
+          ))}
+        </text>
+        {showUnderline &&
+          measured &&
+          measured.lines.map((lm, i) => {
+            if (lm.inkWidth <= 0) return null;
+            const x1 = lineStartX(textAnchor, anchorX, lm.bearingLeft, lm.bearingRight);
+            const x2 = x1 + lm.inkWidth;
+            const y = firstLineBaselineY + i * lineSpacingPx + UNDERLINE_OFFSET;
+            return (
+              <line
+                key={i}
+                x1={x1}
+                x2={x2}
+                y1={y}
+                y2={y}
+                stroke={fill}
+                strokeWidth={UNDERLINE_STROKE}
+              />
+            );
+          })}
+      </g>
     );
   }
 
@@ -144,24 +195,15 @@ function renderStationLabelText({
   // (also central-anchored). firstLineCenterY comes from the layout and
   // already encodes the valign semantics; line i sits lineSpacing below
   // the previous one.
-  const m = measureTextLabel({
-    text,
-    fontSize,
-    weight: fontWeight,
-    italic: fontStyle === 'italic',
-  });
+  const m =
+    measured ??
+    measureTextLabel({
+      text,
+      fontSize,
+      weight: fontWeight,
+      italic: fontStyle === 'italic',
+    });
   const lineSpacing = fontSize * LINE_HEIGHT;
-  // BASELINE_FRACTION is the hanging→baseline distance; the central anchor
-  // sits at the EM-box midpoint (0.5 from top), so central→baseline is
-  // BASELINE_FRACTION − 0.5. Bullet circles still sit with their bottom
-  // on the text baseline.
-  const centralToBaseline = fontSize * (BASELINE_FRACTION - 0.5);
-
-  const lineStartX = (bL: number, bR: number): number => {
-    if (textAnchor === 'start') return anchorX + bL;
-    if (textAnchor === 'end') return anchorX - bR;
-    return anchorX + (bL - bR) / 2;
-  };
 
   return (
     <g transform={`rotate(${rotationDeg} ${anchorX} ${anchorY})`} pointerEvents="none">
@@ -169,7 +211,8 @@ function renderStationLabelText({
         if (lm.segments.length === 0) return null;
         const yCenter = firstLineCenterY + i * lineSpacing;
         const baselineY = yCenter + centralToBaseline;
-        let cursor = lineStartX(lm.bearingLeft, lm.bearingRight);
+        const lineLeftX = lineStartX(textAnchor, anchorX, lm.bearingLeft, lm.bearingRight);
+        let cursor = lineLeftX;
         const nodes: React.ReactNode[] = [];
         lm.segments.forEach((seg, j) => {
           const segCursor = cursor;
@@ -185,7 +228,6 @@ function renderStationLabelText({
                 fontSize={fontSize}
                 fontWeight={fontWeight}
                 fontStyle={fontStyle}
-                textDecoration={textDecoration}
                 fill={fill}
                 stroke={stroke}
                 strokeWidth={strokeWidth}
@@ -209,10 +251,50 @@ function renderStationLabelText({
             );
           }
         });
+        // Explicit underline for this line (only when hover requests it).
+        // Spans the full line including any inline bullets so the visual
+        // result matches the plain-text path.
+        if (showUnderline && lm.inkWidth > 0) {
+          nodes.push(
+            <line
+              key={`${i}-u`}
+              x1={lineLeftX}
+              x2={lineLeftX + lm.inkWidth}
+              y1={baselineY + UNDERLINE_OFFSET}
+              y2={baselineY + UNDERLINE_OFFSET}
+              stroke={fill}
+              strokeWidth={UNDERLINE_STROKE}
+            />,
+          );
+        }
         return <g key={i}>{nodes}</g>;
       })}
     </g>
   );
+}
+
+// Where the line's leftmost ink lives, in unrotated label-local coords. The
+// underline geometry pivots off this same point so the painted underline
+// hugs the visible text on both ends regardless of text-anchor.
+function lineStartX(
+  textAnchor: 'start' | 'middle' | 'end',
+  anchorX: number,
+  bearingLeft: number,
+  bearingRight: number,
+): number {
+  if (textAnchor === 'start') return anchorX + bearingLeft;
+  if (textAnchor === 'end') return anchorX - bearingRight;
+  return anchorX + (bearingLeft - bearingRight) / 2;
+}
+
+// SVG `dy="0.5em"` style strings, converted to absolute pixels at the given
+// font size. Empty / "0" returns 0. Used to align the explicit underline
+// geometry with the same first-line shift the renderer applies to <tspan>.
+function parseEm(value: string, fontSize: number): number {
+  if (!value || value === '0') return 0;
+  const m = /^(-?\d*\.?\d+)em$/.exec(value);
+  if (!m) return 0;
+  return parseFloat(m[1]) * fontSize;
 }
 
 interface Props {
@@ -257,8 +339,15 @@ export function StationView({
   const redistributeBetween = useDoc((s) => s.redistributeBetween);
   const addTransfer = useDoc((s) => s.addTransfer);
   const labelFontSize = useDoc((s) => s.labelFontSize);
-  const labelBold = useDoc((s) => s.labelBold);
+  const labelWeight = useDoc((s) => s.labelWeight);
   const labelItalic = useDoc((s) => s.labelItalic);
+  // Resolve the rendered weight: doc default → +2 indices if the station's
+  // own bold flag is on → +2 more indices when the station is hovered. Each
+  // bump saturates at Black (900). This way a Regular default still escalates
+  // smoothly through Bold → Black as the user hovers a bolded station.
+  const stationWeight = resolveStationLabelWeight(labelWeight, station.labelBold);
+  const isHovered = selection.hoveredStationId === station.id;
+  const renderedWeight = isHovered ? bumpWeightByIndex(stationWeight, 2) : stationWeight;
   // Service-code lookup for inline bullets. Only walked when a label's text
   // contains a <CODE> token; building once per render keeps the bullet
   // resolution path cheap.
@@ -581,7 +670,7 @@ export function StationView({
           stroke: strokeColor,
           strokeWidth: 2,
           paintOrder: 'stroke',
-          textDecoration: selection.hoveredStationId === station.id ? 'underline' : undefined,
+          textDecoration: selection.hoveredStationId === station.id ? 'underline' : 'none',
           anchorX: labelAnchorX,
           anchorY: labelAnchorY,
           textAnchor: labelTextAnchor,
@@ -605,9 +694,9 @@ export function StationView({
         {renderStationLabelText({
           text: station.name,
           fontSize: labelFontSize,
-          fontWeight: labelBold || selection.hoveredStationId === station.id ? 700 : 400,
+          fontWeight: renderedWeight,
           fontStyle: labelItalic ? 'italic' : undefined,
-          textDecoration: selection.hoveredStationId === station.id ? 'underline' : undefined,
+          textDecoration: selection.hoveredStationId === station.id ? 'underline' : 'none',
           fill: highlightColor,
           anchorX: labelAnchorX,
           anchorY: labelAnchorY,
@@ -656,9 +745,9 @@ export function StationView({
           renderStationLabelText({
             text: station.name,
             fontSize: labelFontSize,
-            fontWeight: labelBold || selection.hoveredStationId === station.id ? 700 : 400,
+            fontWeight: renderedWeight,
             fontStyle: labelItalic ? 'italic' : undefined,
-            textDecoration: selection.hoveredStationId === station.id ? 'underline' : undefined,
+            textDecoration: selection.hoveredStationId === station.id ? 'underline' : 'none',
             fill: '#111',
             anchorX: labelAnchorX,
             anchorY: labelAnchorY,

@@ -95,7 +95,7 @@ export function Toolbar() {
       transfers: doc.transfers,
       textLabels: doc.textLabels,
       labelFontSize: doc.labelFontSize,
-      labelBold: doc.labelBold,
+      labelWeight: doc.labelWeight,
       labelItalic: doc.labelItalic,
       activePalettes: doc.activePalettes,
     });
