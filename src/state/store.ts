@@ -144,6 +144,10 @@ interface DocState extends MapDoc {
   setLabelItalic: (i: boolean) => void;
   setActivePalettes: (ids: PaletteId[]) => void;
   togglePalette: (id: PaletteId) => void;
+  setTransferThickness: (n: number) => void;
+  setTransferColor: (c: string) => void;
+  setTransferStrokeWidth: (n: number) => void;
+  setTransferStrokeColor: (c: string) => void;
   clearAll: () => void;
 }
 
@@ -275,6 +279,10 @@ export const useDoc = create<DocState>()(
         setLabelItalic: (i) => set((s) => T.setLabelItalic(s, i)),
         setActivePalettes: (idsArr) => set((s) => T.setActivePalettes(s, idsArr)),
         togglePalette: (id) => set((s) => T.togglePalette(s, id)),
+        setTransferThickness: (n) => set((s) => T.setTransferThickness(s, n)),
+        setTransferColor: (c) => set((s) => T.setTransferColor(s, c)),
+        setTransferStrokeWidth: (n) => set((s) => T.setTransferStrokeWidth(s, n)),
+        setTransferStrokeColor: (c) => set((s) => T.setTransferStrokeColor(s, c)),
         clearAll: () => set((s) => T.clearAll(s)),
       }),
       {
@@ -341,6 +349,10 @@ export const useDoc = create<DocState>()(
           labelWeight: s.labelWeight,
           labelItalic: s.labelItalic,
           activePalettes: s.activePalettes,
+          transferThickness: s.transferThickness,
+          transferColor: s.transferColor,
+          transferStrokeWidth: s.transferStrokeWidth,
+          transferStrokeColor: s.transferStrokeColor,
         }),
       },
     ),
@@ -362,6 +374,10 @@ export const useDoc = create<DocState>()(
         labelWeight: state.labelWeight,
         labelItalic: state.labelItalic,
         activePalettes: state.activePalettes,
+        transferThickness: state.transferThickness,
+        transferColor: state.transferColor,
+        transferStrokeWidth: state.transferStrokeWidth,
+        transferStrokeColor: state.transferStrokeColor,
       }),
       limit: 200,
     },
@@ -387,6 +403,10 @@ type DocSnapshot = Pick<
   | 'labelWeight'
   | 'labelItalic'
   | 'activePalettes'
+  | 'transferThickness'
+  | 'transferColor'
+  | 'transferStrokeWidth'
+  | 'transferStrokeColor'
 >;
 
 function snapshotDoc(s: DocState): DocSnapshot {
@@ -404,6 +424,10 @@ function snapshotDoc(s: DocState): DocSnapshot {
     labelWeight: s.labelWeight,
     labelItalic: s.labelItalic,
     activePalettes: s.activePalettes,
+    transferThickness: s.transferThickness,
+    transferColor: s.transferColor,
+    transferStrokeWidth: s.transferStrokeWidth,
+    transferStrokeColor: s.transferStrokeColor,
   };
 }
 
@@ -442,7 +466,11 @@ export function beginHistoryGroup(): { commit: () => void; cancel: () => void } 
         cur.lineTags === snapshot.lineTags &&
         cur.routeBullets === snapshot.routeBullets &&
         cur.transfers === snapshot.transfers &&
-        cur.textLabels === snapshot.textLabels
+        cur.textLabels === snapshot.textLabels &&
+        cur.transferThickness === snapshot.transferThickness &&
+        cur.transferColor === snapshot.transferColor &&
+        cur.transferStrokeWidth === snapshot.transferStrokeWidth &&
+        cur.transferStrokeColor === snapshot.transferStrokeColor
       ) {
         return;
       }

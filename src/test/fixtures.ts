@@ -86,6 +86,10 @@ export function makeDoc(parts: {
   labelWeight?: TextLabelWeight;
   labelItalic?: boolean;
   activePalettes?: import('../model/palettes').PaletteId[];
+  transferThickness?: number;
+  transferColor?: string;
+  transferStrokeWidth?: number;
+  transferStrokeColor?: string;
 }): MapDoc {
   const stations: Record<StationId, Station> = {};
   for (const s of parts.stations ?? []) stations[s.id] = s;
@@ -111,6 +115,10 @@ export function makeDoc(parts: {
     labelWeight: parts.labelWeight ?? 400,
     labelItalic: parts.labelItalic ?? false,
     activePalettes: parts.activePalettes ?? ['mta'],
+    transferThickness: parts.transferThickness ?? 2,
+    transferColor: parts.transferColor ?? '#000000',
+    transferStrokeWidth: parts.transferStrokeWidth ?? 0,
+    transferStrokeColor: parts.transferStrokeColor ?? '#ffffff',
   };
 }
 

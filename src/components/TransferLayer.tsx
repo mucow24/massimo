@@ -3,15 +3,25 @@ import {
   computeRenderedStopPositions,
   type RenderedStopPositions,
 } from '../geometry/stopPositions';
+import { legibleTextOn } from '../util/color';
 
 interface Props {
   transfers: Record<string, Transfer>;
   stations: Record<string, Station>;
+  color: string;
+  thickness: number;
+  strokeColor: string;
+  strokeWidth: number;
   selectedId: string | null;
-  zoom: number;
   onSelect: (id: string) => void;
   renderedPos?: RenderedStopPositions;
 }
+
+// World-unit padding added to each side of a selected transfer's outline
+// (in addition to the user's stroke, if any). Constant-in-world means the
+// outline stays a consistent thickness relative to the stroke at any zoom
+// — replaces the legacy `6/zoom` halo that vanished when zoomed out.
+const SELECTION_OUTLINE_PAD = 1;
 
 /**
  * World position of a station's specific dot. Falls back to the station's
@@ -42,22 +52,36 @@ function endpointWorld(
 }
 
 /**
- * Renders all inter-station transfers as 2px black lines, plus a transparent
- * thicker overlay per transfer so they're easy to click without forcing the
- * user onto the 2px stroke. Selected transfers get a teal halo.
+ * Renders all inter-station transfers as a concentric stack (outer → inner,
+ * painted in document order so each subsequent line lays on top):
+ *
+ *   1. Selection outline — only when selected. Color is the legible
+ *      black/white for the outermost visible color (the user stroke if
+ *      present, otherwise the body).
+ *   2. User stroke — only when `strokeWidth > 0`. A halo around the body in
+ *      the user's chosen color.
+ *   3. Body — the colored stroke at the user's chosen thickness.
+ *
+ * Both the body and the user stroke (when present) are click targets via
+ * `pointerEvents="stroke"`, so the click region matches the perceived width
+ * of the transfer. The selection outline is decorative only
+ * (`pointerEvents="none"`). Dot-click priority is preserved by the dots
+ * layer above: dot pixels absorb clicks and route to the station instead of
+ * passing through to the transfer underneath.
  */
 export function TransferLayer({
   transfers,
   stations,
+  color,
+  thickness,
+  strokeColor,
+  strokeWidth,
   selectedId,
-  zoom,
   onSelect,
   renderedPos,
 }: Props) {
   const list = Object.values(transfers);
   if (list.length === 0) return null;
-  // Generous hit width in screen pixels so easy to click.
-  const hitWidth = 14 / zoom;
   const positions = renderedPos ?? computeRenderedStopPositions(stations);
   return (
     <g>
@@ -65,19 +89,44 @@ export function TransferLayer({
         const a = endpointWorld(t.a, stations, positions);
         const b = endpointWorld(t.b, stations, positions);
         if (!a || !b) return null;
-        const isSelected = selectedId === t.id;
+        const isSelected = t.id === selectedId;
+        const hasUserStroke = strokeWidth > 0;
+        // Total visible width of the transfer ignoring the selection ring.
+        const visibleExtent = thickness + 2 * strokeWidth;
+        // Color the selection ring sits against: the user stroke if it's
+        // drawn, otherwise the body color.
+        const outermostVisibleColor = hasUserStroke ? strokeColor : color;
+        const selectionRingColor = legibleTextOn(outermostVisibleColor);
+        const onClick = (e: React.MouseEvent) => {
+          e.stopPropagation();
+          onSelect(t.id);
+        };
         return (
-          <g key={t.id}>
+          <g key={t.id} data-transfer-id={t.id}>
             {isSelected && (
               <line
                 x1={a.x}
                 y1={a.y}
                 x2={b.x}
                 y2={b.y}
-                stroke="#1488a0"
-                strokeWidth={6 / zoom}
+                stroke={selectionRingColor}
+                strokeWidth={visibleExtent + 2 * SELECTION_OUTLINE_PAD}
                 strokeLinecap="round"
                 pointerEvents="none"
+              />
+            )}
+            {hasUserStroke && (
+              <line
+                x1={a.x}
+                y1={a.y}
+                x2={b.x}
+                y2={b.y}
+                stroke={strokeColor}
+                strokeWidth={visibleExtent}
+                strokeLinecap="round"
+                pointerEvents="stroke"
+                style={{ cursor: 'pointer' }}
+                onClick={onClick}
               />
             )}
             <line
@@ -85,25 +134,12 @@ export function TransferLayer({
               y1={a.y}
               x2={b.x}
               y2={b.y}
-              stroke="#000"
-              strokeWidth={2}
-              strokeLinecap="round"
-              pointerEvents="none"
-            />
-            <line
-              x1={a.x}
-              y1={a.y}
-              x2={b.x}
-              y2={b.y}
-              stroke="transparent"
-              strokeWidth={hitWidth}
+              stroke={color}
+              strokeWidth={thickness}
               strokeLinecap="round"
               pointerEvents="stroke"
               style={{ cursor: 'pointer' }}
-              onClick={(e) => {
-                e.stopPropagation();
-                onSelect(t.id);
-              }}
+              onClick={onClick}
             />
           </g>
         );

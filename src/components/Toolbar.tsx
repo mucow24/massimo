@@ -98,6 +98,10 @@ export function Toolbar() {
       labelWeight: doc.labelWeight,
       labelItalic: doc.labelItalic,
       activePalettes: doc.activePalettes,
+      transferThickness: doc.transferThickness,
+      transferColor: doc.transferColor,
+      transferStrokeWidth: doc.transferStrokeWidth,
+      transferStrokeColor: doc.transferStrokeColor,
     });
     const blob = new Blob([json], { type: 'application/json' });
     const url = URL.createObjectURL(blob);

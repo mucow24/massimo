@@ -39,6 +39,10 @@ describe('save/load round-trip', () => {
       labelWeight: useDoc.getState().labelWeight,
       labelItalic: useDoc.getState().labelItalic,
       activePalettes: useDoc.getState().activePalettes,
+      transferThickness: useDoc.getState().transferThickness,
+      transferColor: useDoc.getState().transferColor,
+      transferStrokeWidth: useDoc.getState().transferStrokeWidth,
+      transferStrokeColor: useDoc.getState().transferStrokeColor,
     });
     const result = parse(json);
     expect(result.ok).toBe(true);
@@ -154,6 +158,10 @@ describe('save/load round-trip', () => {
       labelWeight: s.labelWeight,
       labelItalic: s.labelItalic,
       activePalettes: s.activePalettes,
+      transferThickness: s.transferThickness,
+      transferColor: s.transferColor,
+      transferStrokeWidth: s.transferStrokeWidth,
+      transferStrokeColor: s.transferStrokeColor,
     });
     const result = parse(json);
     expect(result.ok).toBe(true);
