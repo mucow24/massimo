@@ -21,11 +21,17 @@ export default function App() {
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
       // Ignore keystrokes in form fields so deleting text doesn't nuke
-      // the station you're renaming.
+      // the station you're renaming. Range sliders and color pickers have
+      // no native keystroke behavior to preserve, so they fall through to
+      // global shortcuts — otherwise Ctrl+Z is swallowed mid-slider-drag.
       const target = e.target as HTMLElement | null;
       const tag = target?.tagName;
+      const inputType = tag === 'INPUT' ? (target as HTMLInputElement).type : '';
       const inForm =
-        tag === 'INPUT' || tag === 'TEXTAREA' || tag === 'SELECT' || target?.isContentEditable;
+        (tag === 'INPUT' && inputType !== 'range' && inputType !== 'color') ||
+        tag === 'TEXTAREA' ||
+        tag === 'SELECT' ||
+        target?.isContentEditable;
 
       if (e.key === 'Escape') {
         cancelAppendMode();
@@ -79,6 +85,10 @@ export default function App() {
       const mod = e.metaKey || e.ctrlKey;
       if (mod && !inForm && (e.key === 'z' || e.key === 'Z')) {
         e.preventDefault();
+        // Blur first so any open useFieldHistory group (slider mid-drag,
+        // etc.) commits its entry to the past stack — otherwise undo
+        // would skip the in-progress edit and revert the action before it.
+        if (document.activeElement instanceof HTMLElement) document.activeElement.blur();
         const temporal = useDoc.temporal.getState();
         if (e.shiftKey) temporal.redo();
         else temporal.undo();
@@ -86,6 +96,7 @@ export default function App() {
       }
       if (mod && !inForm && (e.key === 'y' || e.key === 'Y')) {
         e.preventDefault();
+        if (document.activeElement instanceof HTMLElement) document.activeElement.blur();
         useDoc.temporal.getState().redo();
         return;
       }
