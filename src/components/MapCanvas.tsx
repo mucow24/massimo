@@ -26,6 +26,7 @@ import {
   SegmentBandSpec,
 } from '../geometry/interlining';
 import { computeRenderedStopPositions } from '../geometry/stopPositions';
+import { resolveDotShape } from '../model/transforms';
 import { STOP_SIZE, travelDirLocal, rotateBy } from '../geometry/orientation';
 import { BandWarning, SegmentBand } from './SegmentBand';
 import { HatchPatterns, lineStyleStrokeAttrs, lineStyleUnderlayAttrs } from './HatchPatterns';
@@ -1041,7 +1042,7 @@ export function MapCanvas() {
                     key={'hl-d:' + sid}
                     cx={cx}
                     cy={cy}
-                    shape={cell.dotShape}
+                    shape={resolveDotShape(ln, cell)}
                     stationId={sid}
                     lineId={cell.lineId}
                   />,
