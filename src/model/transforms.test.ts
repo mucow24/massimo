@@ -1006,6 +1006,112 @@ describe('label font/style settings', () => {
   });
 });
 
+describe('transfer styling settings', () => {
+  it('exposes thickness bounds as constants', () => {
+    expect(T.TRANSFER_THICKNESS_MIN).toBe(1);
+    expect(T.TRANSFER_THICKNESS_MAX).toBe(14);
+  });
+
+  it('exposes stroke-width bounds as constants', () => {
+    expect(T.TRANSFER_STROKE_WIDTH_MIN).toBe(0);
+    expect(T.TRANSFER_STROKE_WIDTH_MAX).toBe(5);
+  });
+
+  it('DEFAULT_DOC has the legacy hard-coded look as defaults', () => {
+    expect(T.DEFAULT_DOC.transferThickness).toBe(2);
+    expect(T.DEFAULT_DOC.transferColor).toBe('#000000');
+    // Stroke defaults to off; classic white when opted in.
+    expect(T.DEFAULT_DOC.transferStrokeWidth).toBe(0);
+    expect(T.DEFAULT_DOC.transferStrokeColor).toBe('#ffffff');
+  });
+
+  it('setTransferThickness sets a valid value', () => {
+    const doc = makeDoc({});
+    expect(T.setTransferThickness(doc, 5).transferThickness).toBe(5);
+  });
+
+  it('setTransferThickness clamps below the minimum', () => {
+    const doc = makeDoc({});
+    expect(T.setTransferThickness(doc, 0).transferThickness).toBe(1);
+    expect(T.setTransferThickness(doc, -3).transferThickness).toBe(1);
+  });
+
+  it('setTransferThickness does NOT clamp above the slider max (textbox accepts arbitrary)', () => {
+    const doc = makeDoc({});
+    expect(T.setTransferThickness(doc, 25).transferThickness).toBe(25);
+    expect(T.setTransferThickness(doc, 100).transferThickness).toBe(100);
+  });
+
+  it('setTransferThickness rounds fractional values', () => {
+    const doc = makeDoc({});
+    expect(T.setTransferThickness(doc, 4.7).transferThickness).toBe(5);
+    expect(T.setTransferThickness(doc, 4.4).transferThickness).toBe(4);
+  });
+
+  it('setTransferThickness ignores non-finite values', () => {
+    const doc = makeDoc({ transferThickness: 5 });
+    expect(T.setTransferThickness(doc, Number.NaN)).toBe(doc);
+    expect(T.setTransferThickness(doc, Number.POSITIVE_INFINITY)).toBe(doc);
+  });
+
+  it('setTransferThickness is a no-op when the value is unchanged (reference equality)', () => {
+    const doc = makeDoc({ transferThickness: 6 });
+    expect(T.setTransferThickness(doc, 6)).toBe(doc);
+  });
+
+  it('setTransferColor sets the value', () => {
+    const doc = makeDoc({});
+    expect(T.setTransferColor(doc, '#ff0080').transferColor).toBe('#ff0080');
+  });
+
+  it('setTransferColor is a no-op when unchanged (reference equality)', () => {
+    const doc = makeDoc({ transferColor: '#123456' });
+    expect(T.setTransferColor(doc, '#123456')).toBe(doc);
+  });
+
+  it('setTransferStrokeWidth sets a valid value', () => {
+    const doc = makeDoc({});
+    expect(T.setTransferStrokeWidth(doc, 3).transferStrokeWidth).toBe(3);
+  });
+
+  it('setTransferStrokeWidth clamps below MIN (0)', () => {
+    const doc = makeDoc({});
+    expect(T.setTransferStrokeWidth(doc, -2).transferStrokeWidth).toBe(0);
+  });
+
+  it('setTransferStrokeWidth clamps above MAX (5)', () => {
+    // Unlike transferThickness, stroke width has both bounds enforced —
+    // the spec gives a fixed [0, 5] range with no "arbitrary" textbox.
+    const doc = makeDoc({});
+    expect(T.setTransferStrokeWidth(doc, 12).transferStrokeWidth).toBe(5);
+  });
+
+  it('setTransferStrokeWidth rounds fractional values', () => {
+    const doc = makeDoc({});
+    expect(T.setTransferStrokeWidth(doc, 2.7).transferStrokeWidth).toBe(3);
+  });
+
+  it('setTransferStrokeWidth ignores non-finite values', () => {
+    const doc = makeDoc({ transferStrokeWidth: 2 });
+    expect(T.setTransferStrokeWidth(doc, Number.NaN)).toBe(doc);
+  });
+
+  it('setTransferStrokeWidth is a no-op when unchanged (reference equality)', () => {
+    const doc = makeDoc({ transferStrokeWidth: 2 });
+    expect(T.setTransferStrokeWidth(doc, 2)).toBe(doc);
+  });
+
+  it('setTransferStrokeColor sets the value', () => {
+    const doc = makeDoc({});
+    expect(T.setTransferStrokeColor(doc, '#abcdef').transferStrokeColor).toBe('#abcdef');
+  });
+
+  it('setTransferStrokeColor is a no-op when unchanged (reference equality)', () => {
+    const doc = makeDoc({ transferStrokeColor: '#abcdef' });
+    expect(T.setTransferStrokeColor(doc, '#abcdef')).toBe(doc);
+  });
+});
+
 describe('LABEL_WEIGHT_VALUES', () => {
   it('lists the Helvetica Neue weights we ship in /public/fonts/, in ascending order', () => {
     // No 600 — we don't ship a SemiBold face.

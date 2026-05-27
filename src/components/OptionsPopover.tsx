@@ -1,9 +1,18 @@
-import { Fragment, useEffect, useId, useRef, useState } from 'react';
+import { Fragment, useId, useState } from 'react';
 import { ChevronDownIcon, ChevronRightIcon, MixerHorizontalIcon } from '@radix-ui/react-icons';
 import { useDoc } from '../state/store';
-import { LABEL_FONT_SIZE_MAX, LABEL_FONT_SIZE_MIN, LABEL_WEIGHT_NAMES } from '../model/transforms';
+import {
+  LABEL_FONT_SIZE_MAX,
+  LABEL_FONT_SIZE_MIN,
+  LABEL_WEIGHT_NAMES,
+  TRANSFER_STROKE_WIDTH_MAX,
+  TRANSFER_STROKE_WIDTH_MIN,
+  TRANSFER_THICKNESS_MAX,
+  TRANSFER_THICKNESS_MIN,
+} from '../model/transforms';
 import type { TextLabelWeight } from '../model/types';
 import { PALETTES } from '../model/palettes';
+import { NumericFieldRow } from './NumericFieldRow';
 import { useFieldHistory } from './useFieldHistory';
 import { usePopover } from './usePopover';
 
@@ -26,20 +35,23 @@ export function OptionsPopover() {
   const setLabelItalic = useDoc((s) => s.setLabelItalic);
   const activePalettes = useDoc((s) => s.activePalettes);
   const togglePalette = useDoc((s) => s.togglePalette);
+  const transferThickness = useDoc((s) => s.transferThickness);
+  const setTransferThickness = useDoc((s) => s.setTransferThickness);
+  const transferColor = useDoc((s) => s.transferColor);
+  const setTransferColor = useDoc((s) => s.setTransferColor);
+  const transferStrokeWidth = useDoc((s) => s.transferStrokeWidth);
+  const setTransferStrokeWidth = useDoc((s) => s.setTransferStrokeWidth);
+  const transferStrokeColor = useDoc((s) => s.transferStrokeColor);
+  const setTransferStrokeColor = useDoc((s) => s.setTransferStrokeColor);
 
   const [palettesExpanded, setPalettesExpanded] = useState(false);
 
+  // Curve radius is slider-only (no spinbutton), so it stays inline with its
+  // own useFieldHistory. The slider+spinbutton fields all go through
+  // <NumericFieldRow />, which manages its own field history internally.
   const curveField = useFieldHistory();
-  const fontSizeField = useFieldHistory();
-
-  // Local mirror of the spinbutton's text — lets the user clear the field
-  // without immediately writing NaN to the store. Re-syncs to the store on
-  // blur (so out-of-range or empty values snap back to the clamped value).
-  const [fontSizeText, setFontSizeText] = useState(String(labelFontSize));
-  const focusedRef = useRef(false);
-  useEffect(() => {
-    if (!focusedRef.current) setFontSizeText(String(labelFontSize));
-  }, [labelFontSize]);
+  const transferColorField = useFieldHistory();
+  const transferStrokeColorField = useFieldHistory();
 
   return (
     <div className="options-popover-wrap" ref={wrapRef}>
@@ -74,52 +86,16 @@ export function OptionsPopover() {
             <span className="options-popover-value">{curveRadius}</span>
           </div>
 
-          <div className="options-popover-row">
-            <label htmlFor={`${panelId}-fontSize`} className="options-popover-label">
-              Font size
-            </label>
-            <input
-              id={`${panelId}-fontSize`}
-              type="range"
-              min={LABEL_FONT_SIZE_MIN}
-              max={LABEL_FONT_SIZE_MAX}
-              step={1}
-              value={labelFontSize}
-              onChange={(e) => setLabelFontSize(Number(e.target.value))}
-              {...fontSizeField}
-            />
-            <input
-              type="number"
-              aria-label="Font size"
-              min={LABEL_FONT_SIZE_MIN}
-              max={LABEL_FONT_SIZE_MAX}
-              step={1}
-              className="options-popover-spin"
-              value={fontSizeText}
-              onFocus={() => {
-                focusedRef.current = true;
-                fontSizeField.onFocus();
-              }}
-              onChange={(e) => {
-                const raw = e.target.value;
-                setFontSizeText(raw);
-                if (raw === '') return; // ignore empty mid-edit
-                const n = Number(raw);
-                if (!Number.isFinite(n)) return;
-                setLabelFontSize(n);
-              }}
-              onWheel={(e) => {
-                e.preventDefault();
-                const delta = e.deltaY < 0 ? 1 : -1;
-                setLabelFontSize(useDoc.getState().labelFontSize + delta);
-              }}
-              onBlur={() => {
-                focusedRef.current = false;
-                setFontSizeText(String(useDoc.getState().labelFontSize));
-                fontSizeField.onBlur();
-              }}
-            />
-          </div>
+          <NumericFieldRow
+            id={`${panelId}-fontSize`}
+            label="Font size"
+            min={LABEL_FONT_SIZE_MIN}
+            max={LABEL_FONT_SIZE_MAX}
+            step={1}
+            value={labelFontSize}
+            onChange={setLabelFontSize}
+            getCurrent={() => useDoc.getState().labelFontSize}
+          />
 
           <div className="options-popover-row">
             <label htmlFor={`${panelId}-weight`} className="options-popover-label">
@@ -159,6 +135,57 @@ export function OptionsPopover() {
             >
               <em>I</em>
             </button>
+          </div>
+
+          <NumericFieldRow
+            id={`${panelId}-transferThickness`}
+            label="Transfer thickness"
+            min={TRANSFER_THICKNESS_MIN}
+            max={TRANSFER_THICKNESS_MAX}
+            step={1}
+            value={transferThickness}
+            onChange={setTransferThickness}
+            getCurrent={() => useDoc.getState().transferThickness}
+            textboxAllowAboveMax
+          />
+
+          <div className="options-popover-row">
+            <label htmlFor={`${panelId}-transferColor`} className="options-popover-label">
+              Transfer color
+            </label>
+            <input
+              id={`${panelId}-transferColor`}
+              type="color"
+              aria-label="Transfer color"
+              value={transferColor}
+              onChange={(e) => setTransferColor(e.target.value)}
+              {...transferColorField}
+            />
+          </div>
+
+          <NumericFieldRow
+            id={`${panelId}-transferStrokeWidth`}
+            label="Transfer stroke"
+            min={TRANSFER_STROKE_WIDTH_MIN}
+            max={TRANSFER_STROKE_WIDTH_MAX}
+            step={1}
+            value={transferStrokeWidth}
+            onChange={setTransferStrokeWidth}
+            getCurrent={() => useDoc.getState().transferStrokeWidth}
+          />
+
+          <div className="options-popover-row">
+            <label htmlFor={`${panelId}-transferStrokeColor`} className="options-popover-label">
+              Transfer stroke color
+            </label>
+            <input
+              id={`${panelId}-transferStrokeColor`}
+              type="color"
+              aria-label="Transfer stroke color"
+              value={transferStrokeColor}
+              onChange={(e) => setTransferStrokeColor(e.target.value)}
+              {...transferStrokeColorField}
+            />
           </div>
 
           <div className="options-popover-row options-popover-row-block">
