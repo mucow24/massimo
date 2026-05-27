@@ -57,11 +57,13 @@ export type LabelAlign = 'auto' | 'start' | 'middle' | 'end';
 // the reading-direction's perpendicular axis. Maps to SVG dominant-baseline
 // at render time.
 //
-// `auto` centers the FIRST line on the label cell, with any subsequent lines
-// stacking below. For a single-line label it's indistinguishable from
-// `middle`; for multi-line labels the first line stays put as the label
-// grows, instead of the whole block re-centering.
-export type LabelValign = 'auto' | 'top' | 'middle' | 'bottom';
+// `auto-down` centers the FIRST line on the label cell, with any subsequent
+// lines stacking below — the block top stays put as the label grows.
+// `auto-up` is the mirror: it centers the LAST line on the label cell, with
+// earlier lines stacking above — the block bottom stays put. Both are
+// indistinguishable from `middle` for a single-line label; they only differ
+// once a second line shows up.
+export type LabelValign = 'auto-down' | 'top' | 'middle' | 'bottom' | 'auto-up';
 
 // The station's name lives in a single grid cell with its own 8-way rotation
 // (in the unrotated station-local frame). `align` controls how the rendered
@@ -69,12 +71,17 @@ export type LabelValign = 'auto' | 'top' | 'middle' | 'bottom';
 // does the same on the cross-reading axis. `offset` then shifts the rendered
 // label along its reading direction (so for upright text it's left/right,
 // for vertical text it's up/down, etc.) in pixels of unrotated-station-local
-// space. Positive = forward in reading dir.
+// space. Positive `offset` = forward in reading dir. `offsetPerp` is the
+// matching cross-axis shift (positive = the direction a new line of text
+// would stack, i.e. the `(-readSin, readCos)` unit vector — visually "down"
+// for a horizontal-reading label). Optional and defaults to 0 so saves made
+// before the field existed continue to load as-is.
 export interface LabelCell {
   row: number;
   col: number;
   rotation: Rotation;
   offset: number;
+  offsetPerp?: number;
   align: LabelAlign;
   valign: LabelValign;
 }

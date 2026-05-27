@@ -128,7 +128,15 @@ export function addStation(doc: MapDoc, x: number, y: number, id: StationId, nam
     y,
     rotation: 0,
     stops: [],
-    label: { row: 0, col: -1, rotation: 0, offset: 0, align: 'auto', valign: 'auto' },
+    label: {
+      row: 0,
+      col: -1,
+      rotation: 0,
+      offset: 0,
+      offsetPerp: 0,
+      align: 'auto',
+      valign: 'auto-down',
+    },
   };
   return { ...doc, stations: { ...doc.stations, [id]: station } };
 }
@@ -752,6 +760,19 @@ export function setLabelOffset(doc: MapDoc, stationId: StationId, offset: number
   };
 }
 
+export function setLabelOffsetPerp(doc: MapDoc, stationId: StationId, offsetPerp: number): MapDoc {
+  const st = doc.stations[stationId];
+  if (!st) return doc;
+  if ((st.label.offsetPerp ?? 0) === offsetPerp) return doc;
+  return {
+    ...doc,
+    stations: {
+      ...doc.stations,
+      [stationId]: { ...st, label: { ...st.label, offsetPerp } },
+    },
+  };
+}
+
 const ALIGN_CYCLE: LabelAlign[] = ['auto', 'start', 'middle', 'end'];
 
 export function cycleLabelAlign(doc: MapDoc, stationId: StationId): MapDoc {
@@ -782,10 +803,12 @@ export function setLabelAlign(doc: MapDoc, stationId: StationId, align: LabelAli
   };
 }
 
-// 'auto' leads the cycle so the (new) default sits at index 0 — advancing
-// forward from a freshly created station immediately moves through the
-// classic block-aligned options.
-const VALIGN_CYCLE: LabelValign[] = ['auto', 'top', 'middle', 'bottom'];
+// 'auto-down' leads the cycle so the (new) default sits at index 0 —
+// advancing forward from a freshly created station immediately moves through
+// the classic block-aligned options. The cycle order is geometrically
+// symmetric: auto-down (block top pinned, grows down) → top → middle → bottom
+// → auto-up (block bottom pinned, grows up) → back to auto-down.
+const VALIGN_CYCLE: LabelValign[] = ['auto-down', 'top', 'middle', 'bottom', 'auto-up'];
 
 export function cycleLabelValign(doc: MapDoc, stationId: StationId): MapDoc {
   const st = doc.stations[stationId];

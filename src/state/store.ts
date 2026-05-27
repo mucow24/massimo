@@ -113,6 +113,7 @@ interface DocState extends MapDoc {
   flipLabel: (stationId: StationId) => void;
   mirrorLabel: (stationId: StationId) => void;
   setLabelOffset: (stationId: StationId, offset: number) => void;
+  setLabelOffsetPerp: (stationId: StationId, offsetPerp: number) => void;
   cycleLabelAlign: (stationId: StationId) => void;
   setLabelAlign: (stationId: StationId, align: LabelAlign) => void;
   cycleLabelValign: (stationId: StationId) => void;
@@ -226,6 +227,8 @@ export const useDoc = create<DocState>()(
         flipLabel: (stationId) => set((s) => T.flipLabel(s, stationId)),
         mirrorLabel: (stationId) => set((s) => T.mirrorLabel(s, stationId)),
         setLabelOffset: (stationId, offset) => set((s) => T.setLabelOffset(s, stationId, offset)),
+        setLabelOffsetPerp: (stationId, offsetPerp) =>
+          set((s) => T.setLabelOffsetPerp(s, stationId, offsetPerp)),
         cycleLabelAlign: (stationId) => set((s) => T.cycleLabelAlign(s, stationId)),
         setLabelAlign: (stationId, align) => set((s) => T.setLabelAlign(s, stationId, align)),
         cycleLabelValign: (stationId) => set((s) => T.cycleLabelValign(s, stationId)),
@@ -330,7 +333,7 @@ export const useDoc = create<DocState>()(
       {
         name: 'vignelli-map-doc-v1',
         storage: createJSONStorage(() => localStorage),
-        version: 3,
+        version: 4,
         // v0 → v1: backfill `line.name` with `${service} line` for lines saved
         // before the field existed.
         // v1 → v2: migrate legacy stop orientations (`up`/`down`/`left`/`right`
@@ -343,6 +346,9 @@ export const useDoc = create<DocState>()(
         // v2 → v3: translate legacy `labelBold: boolean` to `labelWeight:
         //   TextLabelWeight` (true → 700, false → 400). Matches the
         //   labelBold-migration path in `parse()` for file imports.
+        // v3 → v4: translate legacy label `valign: 'auto'` to `'auto-down'`
+        //   (the new mirror option `'auto-up'` didn't exist yet). Lives in
+        //   sanitizeStations so the file-import path picks it up too.
         migrate: (persisted, version) => {
           const s = persisted as {
             lines?: Record<LineId, Line>;
@@ -362,7 +368,7 @@ export const useDoc = create<DocState>()(
             }
             out = { ...out, lines: next };
           }
-          if (v < 2 && out.stations) {
+          if (v < 4 && out.stations) {
             const { stations: cleaned, changed } = sanitizeStations(out.stations);
             if (changed) out = { ...out, stations: cleaned };
           }

@@ -15,17 +15,19 @@ const ALIGN_TITLE: Record<LabelAlign, string> = {
 };
 
 const VALIGN_NEXT: Record<LabelValign, LabelValign> = {
-  auto: 'top',
+  'auto-down': 'top',
   top: 'middle',
   middle: 'bottom',
-  bottom: 'auto',
+  bottom: 'auto-up',
+  'auto-up': 'auto-down',
 };
 
 const VALIGN_TITLE: Record<LabelValign, string> = {
-  auto: 'auto (first line on cell, extra lines below)',
+  'auto-down': 'auto-down (first line on cell, extra lines below)',
   top: 'top',
   middle: 'middle',
   bottom: 'bottom',
+  'auto-up': 'auto-up (last line on cell, extra lines above)',
 };
 
 const ICON_SIZE = 15;
@@ -116,14 +118,20 @@ function VAlignIcon({ mode }: { mode: LabelValign }) {
   const W = ICON_SIZE;
   const H = ICON_SIZE;
   const totalLineH = 4 * LINE_THICKNESS + 3 * LINE_GAP;
-  // 'auto' lines from the icon's vertical middle and stack downward, so
+  // 'auto-down' lines from the icon's vertical middle and stack downward, so
   // the first line sits on the cell-center mark and additional lines hang
-  // below. A faint tick at the left marks the anchor row.
+  // below. 'auto-up' is the mirror: the LAST line sits on the cell-center
+  // mark and earlier lines stack above. A faint tick at the left marks the
+  // anchor row in both auto modes.
+  const lineStep = LINE_THICKNESS + LINE_GAP;
   let yStart: number;
   if (mode === 'top') yStart = 2;
   else if (mode === 'bottom') yStart = H - 2 - totalLineH;
-  else if (mode === 'auto') yStart = (H - LINE_THICKNESS) / 2;
+  else if (mode === 'auto-down') yStart = (H - LINE_THICKNESS) / 2;
+  else if (mode === 'auto-up')
+    yStart = (H - LINE_THICKNESS) / 2 - (LINE_LENGTHS.length - 1) * lineStep;
   else yStart = (H - totalLineH) / 2;
+  const isAuto = mode === 'auto-down' || mode === 'auto-up';
   return (
     <svg
       width={W}
@@ -134,10 +142,10 @@ function VAlignIcon({ mode }: { mode: LabelValign }) {
     >
       {LINE_LENGTHS.map((len, i) => {
         const x = (W - len) / 2;
-        const y = yStart + i * (LINE_THICKNESS + LINE_GAP);
+        const y = yStart + i * lineStep;
         return <rect key={i} x={x} y={y} width={len} height={LINE_THICKNESS} fill="currentColor" />;
       })}
-      {mode === 'auto' && (
+      {isAuto && (
         <rect
           x={0}
           y={(H - LINE_THICKNESS) / 2}

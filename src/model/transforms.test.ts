@@ -28,22 +28,25 @@ describe('addStation', () => {
       col: -1,
       rotation: 0,
       offset: 0,
+      offsetPerp: 0,
       align: 'auto',
-      valign: 'auto',
+      valign: 'auto-down',
     });
   });
 });
 
 describe('cycleLabelValign', () => {
-  // Cycle order: auto → top → middle → bottom → auto. 'auto' leads so a
-  // user advancing forward immediately reaches the (new) default.
-  it('walks the auto → top → middle → bottom → auto cycle', () => {
+  // Cycle order: auto-down → top → middle → bottom → auto-up → auto-down.
+  // 'auto-down' leads so a user advancing forward immediately reaches the
+  // (new) default; the symmetric 'auto-up' option lives at the tail so it
+  // sits next to 'bottom', which it geometrically resembles.
+  it('walks the auto-down → top → middle → bottom → auto-up → auto-down cycle', () => {
     let doc = makeDoc({ stations: [makeStation({ id: 's1' })] });
     doc = {
       ...doc,
       stations: {
         ...doc.stations,
-        s1: { ...doc.stations.s1, label: { ...doc.stations.s1.label, valign: 'auto' } },
+        s1: { ...doc.stations.s1, label: { ...doc.stations.s1.label, valign: 'auto-down' } },
       },
     };
     doc = T.cycleLabelValign(doc, 's1');
@@ -53,12 +56,37 @@ describe('cycleLabelValign', () => {
     doc = T.cycleLabelValign(doc, 's1');
     expect(doc.stations.s1.label.valign).toBe('bottom');
     doc = T.cycleLabelValign(doc, 's1');
-    expect(doc.stations.s1.label.valign).toBe('auto');
+    expect(doc.stations.s1.label.valign).toBe('auto-up');
+    doc = T.cycleLabelValign(doc, 's1');
+    expect(doc.stations.s1.label.valign).toBe('auto-down');
   });
 
   it('is a no-op for missing ids', () => {
     const doc = makeDoc({ stations: [makeStation({ id: 's1' })] });
     expect(T.cycleLabelValign(doc, 'nope')).toEqual(doc);
+  });
+});
+
+describe('setLabelOffsetPerp', () => {
+  it('writes the value to the label', () => {
+    let doc = makeDoc({ stations: [makeStation({ id: 's1' })] });
+    doc = T.setLabelOffsetPerp(doc, 's1', 5);
+    expect(doc.stations.s1.label.offsetPerp).toBe(5);
+    doc = T.setLabelOffsetPerp(doc, 's1', -12);
+    expect(doc.stations.s1.label.offsetPerp).toBe(-12);
+  });
+
+  it('is reference-equal to input when the value is unchanged (treats missing as 0)', () => {
+    // makeStation labels omit offsetPerp — setting it to 0 should be a
+    // no-op so undo/history-batching equality checks short-circuit instead
+    // of accumulating cosmetic identity churn.
+    const doc = makeDoc({ stations: [makeStation({ id: 's1' })] });
+    expect(T.setLabelOffsetPerp(doc, 's1', 0)).toBe(doc);
+  });
+
+  it('is a no-op for missing ids', () => {
+    const doc = makeDoc({ stations: [makeStation({ id: 's1' })] });
+    expect(T.setLabelOffsetPerp(doc, 'nope', 9)).toBe(doc);
   });
 });
 

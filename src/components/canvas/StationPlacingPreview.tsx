@@ -13,7 +13,15 @@ export function makePreviewStation(world: Vec2, name: string): Station {
     y: world.y,
     rotation: 0,
     stops: [],
-    label: { row: 0, col: -1, rotation: 0, offset: 0, align: 'auto', valign: 'auto' },
+    label: {
+      row: 0,
+      col: -1,
+      rotation: 0,
+      offset: 0,
+      offsetPerp: 0,
+      align: 'auto',
+      valign: 'auto-down',
+    },
   };
 }
 

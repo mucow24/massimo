@@ -1,7 +1,15 @@
 import { DEFAULT_DOC, LABEL_WEIGHT_VALUES } from './transforms';
 import { pairKeyOf } from './pairKey';
 import { PALETTES, type PaletteId } from './palettes';
-import type { Line, LineStyle, MapDoc, Station, StopOrientation, TextLabelWeight } from './types';
+import type {
+  LabelValign,
+  Line,
+  LineStyle,
+  MapDoc,
+  Station,
+  StopOrientation,
+  TextLabelWeight,
+} from './types';
 
 const KNOWN_LINE_STYLES = new Set<LineStyle>(['solid', 'dashed', 'hatched', 'hatched-mirror']);
 
@@ -32,6 +40,14 @@ function migrateStopOrientation(o: unknown): StopOrientation {
   return 'auto-vertical';
 }
 
+// Legacy valign value seen in saves from before the auto-down/auto-up split.
+// The single 'auto' option grew the block downward from the anchor; we map it
+// to the new 'auto-down' which has the same geometry.
+function migrateLabelValign(v: unknown): LabelValign | null {
+  if (v === 'auto') return 'auto-down';
+  return null;
+}
+
 // Re-apply the legacy-orientation migration to a stations dict. Used by
 // `parse()` (file-import path) and by the zustand persist `migrate` hook
 // (localStorage rehydration path) so legacy values from BOTH entry points
@@ -53,9 +69,12 @@ export function sanitizeStations(stations: Record<string, Station>): {
       }
       return c;
     });
-    if (stopsChanged) {
+    const migratedValign = migrateLabelValign(st.label.valign);
+    const labelChanged = migratedValign !== null;
+    if (stopsChanged || labelChanged) {
       changed = true;
-      out[id] = { ...st, stops };
+      const nextLabel = labelChanged ? { ...st.label, valign: migratedValign } : st.label;
+      out[id] = { ...st, stops, label: nextLabel };
     } else {
       out[id] = st;
     }
