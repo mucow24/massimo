@@ -2,10 +2,12 @@ import { Fragment, useEffect, useRef, useState } from 'react';
 import { useDoc, useSelection } from '../../state/store';
 import type { DotShape, LineId, LineStyle } from '../../model/types';
 import { pairKeyOf } from '../../model/pairKey';
+import { resolveDotShape } from '../../model/transforms';
 import { ColorPalette } from './ColorPalette';
 import { useFieldHistory } from '../useFieldHistory';
 import { HatchPatterns, lineStyleStrokeAttrs, lineStyleUnderlayAttrs } from '../HatchPatterns';
 import { StopGlyph } from '../StopGlyph';
+import { StationShapePicker } from '../StationShapePicker';
 import { blendOver, legibleTextOn, withAlpha } from '../../util/color';
 
 const DOT_SHAPES: Array<{ shape: DotShape; label: string }> = [
@@ -139,6 +141,7 @@ export function LineInspector({ id }: { id: LineId }) {
   const reorderLineStations = useDoc((s) => s.reorderLineStations);
   const removeStationFromLine = useDoc((s) => s.removeStationFromLine);
   const setDotShape = useDoc((s) => s.setDotShape);
+  const setLineDefaultDotShape = useDoc((s) => s.setLineDefaultDotShape);
   const selection = useSelection();
   const nameField = useFieldHistory();
   const serviceField = useFieldHistory();
@@ -181,6 +184,14 @@ export function LineInspector({ id }: { id: LineId }) {
           value={line.service}
           onChange={(e) => updateLine(line.id, { service: e.target.value.toUpperCase() })}
           {...serviceField}
+        />
+      </div>
+      <div className="field">
+        <label>Default stop dot</label>
+        <StationShapePicker
+          disabled={false}
+          currentShape={line.defaultDotShape ?? 'filled-black'}
+          onPick={(shape) => setLineDefaultDotShape(line.id, shape)}
         />
       </div>
       <div className="field">
@@ -316,7 +327,7 @@ export function LineInspector({ id }: { id: LineId }) {
                     const station = stations[sid];
                     if (!station) return null;
                     const stop = station.stops.find((s) => s.lineId === line.id);
-                    const shape: DotShape = stop?.dotShape ?? 'filled-black';
+                    const shape: DotShape = resolveDotShape(line, stop);
                     return (
                       <g
                         key={i + ':' + sid}

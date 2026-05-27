@@ -6,7 +6,7 @@ import { polygonsToPath, unionConvex } from '../geometry/polygonUnion';
 import { labelLayoutLocal } from '../geometry/labelLayout';
 import { stationBoundaryRectsLocal } from '../geometry/stationBoundary';
 import { pathBetweenStations } from '../model/pathSelect';
-import { bumpWeightByIndex, resolveStationLabelWeight } from '../model/transforms';
+import { bumpWeightByIndex, resolveDotShape, resolveStationLabelWeight } from '../model/transforms';
 import { legibleTextOn } from '../util/color';
 import { StopGlyph } from './StopGlyph';
 import type { RenderedStopPositions } from '../geometry/stopPositions';
@@ -851,7 +851,7 @@ export function StationView({
             key={cell.lineId}
             cx={w.x}
             cy={w.y}
-            shape={cell.dotShape}
+            shape={resolveDotShape(lines[cell.lineId], cell)}
             isHovered={isHovered}
             stationId={station.id}
             lineId={cell.lineId}
