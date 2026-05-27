@@ -93,4 +93,43 @@ describe('beginHistoryGroup', () => {
     group.commit();
     expect(useDoc.temporal.getState().pastStates.length).toBe(beforeUndoStack);
   });
+
+  // Regression: the commit() equality check used to enumerate doc fields
+  // by hand and missed labelFontSize / labelWeight / labelItalic /
+  // activePalettes. Slider drags wrapped in useFieldHistory pause zundo
+  // and then the manual push thinks nothing changed, so the entire edit
+  // is silently lost from the undo stack.
+  describe('commits a history entry for every tracked doc field', () => {
+    it('labelFontSize', () => {
+      const before = useDoc.temporal.getState().pastStates.length;
+      const group = beginHistoryGroup();
+      useDoc.getState().setLabelFontSize(useDoc.getState().labelFontSize + 4);
+      group.commit();
+      expect(useDoc.temporal.getState().pastStates.length - before).toBe(1);
+    });
+
+    it('labelWeight', () => {
+      const before = useDoc.temporal.getState().pastStates.length;
+      const group = beginHistoryGroup();
+      useDoc.getState().setLabelWeight(700);
+      group.commit();
+      expect(useDoc.temporal.getState().pastStates.length - before).toBe(1);
+    });
+
+    it('labelItalic', () => {
+      const before = useDoc.temporal.getState().pastStates.length;
+      const group = beginHistoryGroup();
+      useDoc.getState().setLabelItalic(!useDoc.getState().labelItalic);
+      group.commit();
+      expect(useDoc.temporal.getState().pastStates.length - before).toBe(1);
+    });
+
+    it('activePalettes', () => {
+      const before = useDoc.temporal.getState().pastStates.length;
+      const group = beginHistoryGroup();
+      useDoc.getState().setActivePalettes(['mta', 'tokyo-subway']);
+      group.commit();
+      expect(useDoc.temporal.getState().pastStates.length - before).toBe(1);
+    });
+  });
 });
