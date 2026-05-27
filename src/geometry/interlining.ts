@@ -1,6 +1,6 @@
 import { Line, LineId, LineStyle, Station, StationId, StopCell } from '../model/types';
 import { pairKeyOf } from '../model/pairKey';
-import { Vec2 } from './vec';
+import { Vec2, sub, len, norm, dot } from './vec';
 import { route } from './router';
 import { rotateBy, STOP_SIZE, stopCenterAt, travelDirLocal } from './orientation';
 import { offsetFilletPath } from './router';
@@ -23,6 +23,14 @@ export interface SegmentBandSpec {
   paths: string[];
   warning: boolean;
   centerline: Vec2[];
+  // Effective centerline curve radius used to build `paths`. For an n-stripe
+  // band this is bumped above the configured `curveRadius` toward
+  // `R + (n-1)/2 * STOP_SIZE` so the innermost stripe still hits R, then
+  // capped per-endpoint so the stop marker (a STOP_SIZE square) fits within
+  // the post-fillet straight section. Callers sampling offset paths against
+  // `centerline` (line-tag layer, hover/click) MUST use this rather than the
+  // raw doc.curveRadius, or they'll desync from painted geometry.
+  radius: number;
   // Per-stripe z-priority: parallel to `lines` and `paths`. Smallest = front-most.
   // Each stripe carries its own line's lineOrder index so a perpendicular
   // line whose layer is sandwiched between two interlined lines renders
@@ -472,14 +480,57 @@ function buildBandSpec(
   const fromMeanWorld = meanVec(fromWorlds);
   const toMeanWorld = meanVec(toWorlds);
 
-  const result = route(fromMeanWorld, fromDir, toMeanWorld, toDir, R);
-
+  // Bump centerline radius so the INNERMOST stripe still has radius ≥ R.
+  // With n stripes at perp offsets `(k - (n-1)/2) * STOP_SIZE`, the extreme
+  // |offset| is `(n-1)/2 * STOP_SIZE` — the inside stripe's effective radius
+  // is `centerlineR − maxAbsOffset`, so we set centerlineR = R + maxAbsOffset
+  // so the inner stripe sits at exactly R. Without this, a 4–5-line interline
+  // collapses the inner curve toward a right angle as soon as |offset| ≥ R.
   const n = group.length;
+  const maxAbsOffset = n > 1 ? ((n - 1) / 2) * STOP_SIZE : 0;
+  const idealR = R + maxAbsOffset;
+
+  const result = route(fromMeanWorld, fromDir, toMeanWorld, toDir, idealR);
+
+  // Cap the centerline radius so the stop marker fits in the straight section
+  // at each band endpoint. The marker is a STOP_SIZE × STOP_SIZE rect aligned
+  // to the stop's local frame — it extends HALF (= STOP_SIZE/2) along travel
+  // from the stop. For the marker's flat far-edge not to spill into the
+  // curving arc (where it produces a visible stair-step at the marker's
+  // boundary), the straight section before the fillet must be ≥ HALF. That
+  // means at each end-corner i: r * tan(θ_i/2) ≤ edgeLen − HALF, so
+  // r ≤ (edgeLen − HALF) / tan(θ_i/2). Cap centerline R to satisfy this at
+  // both ends, but never below R (the user's configured min — they'd rather
+  // see right-angle degeneracy than violate it).
+  const verts = result.vertices;
+  const HALF = STOP_SIZE / 2;
+  let capR = idealR;
+  if (verts.length >= 3) {
+    const cornerCap = (edgeLen: number, inDir: Vec2, outDir: Vec2): number => {
+      const cosA = Math.max(-1, Math.min(1, dot(inDir, outDir)));
+      const theta = Math.acos(cosA);
+      if (theta < 1e-6) return Infinity;
+      const usable = edgeLen - HALF;
+      if (usable <= 0) return 0;
+      return usable / Math.tan(theta / 2);
+    };
+    const lastIdx = verts.length - 1;
+    const fromEdgeLen = len(sub(verts[1], verts[0]));
+    const fromIn = norm(sub(verts[1], verts[0]));
+    const fromOut = norm(sub(verts[2], verts[1]));
+    capR = Math.min(capR, cornerCap(fromEdgeLen, fromIn, fromOut));
+    const toEdgeLen = len(sub(verts[lastIdx], verts[lastIdx - 1]));
+    const toIn = norm(sub(verts[lastIdx - 1], verts[lastIdx - 2]));
+    const toOut = norm(sub(verts[lastIdx], verts[lastIdx - 1]));
+    capR = Math.min(capR, cornerCap(toEdgeLen, toIn, toOut));
+  }
+  const centerlineR = Math.max(R, Math.min(idealR, capR));
+
   const paths: string[] = [];
   const linesArr = group.map((g) => ({ id: g.lineId, color: g.color, style: g.style }));
   for (let k = 0; k < n; k++) {
     const offset = (k - (n - 1) / 2) * STOP_SIZE;
-    paths.push(offsetFilletPath(result.vertices, R, offset));
+    paths.push(offsetFilletPath(result.vertices, centerlineR, offset));
   }
 
   const sortedLineIds = linesArr
@@ -496,6 +547,7 @@ function buildBandSpec(
     paths,
     warning: result.warning,
     centerline: result.vertices,
+    radius: centerlineR,
     linePriorities: [], // overwritten in buildBands' final pass
   };
 }
