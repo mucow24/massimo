@@ -19,8 +19,10 @@ export type StopOrientation =
   | 'auto-horizontal' // E/W
   | 'auto-nw-se'; // NW/SE
 
-// Glyph rendered at a stop. `undefined` is treated as `'filled-black'` (the
-// historical default) — no migration is needed for older saves.
+// Glyph rendered at a stop. `undefined` on `StopCell.dotShape` defers to the
+// line's `defaultDotShape`; `undefined` on `Line.defaultDotShape` falls back
+// to `'filled-black'` (the historical default) — no migration needed for
+// older saves on either field.
 export type DotShape =
   | 'filled-black'
   | 'open-black'
@@ -116,6 +118,10 @@ export interface Line {
   // Missing key ⇒ 'solid'. Setters delete the key when called with 'solid'
   // so the default is never stored.
   segmentStyles?: Record<string, LineStyle>;
+  // Glyph used for stops on this line whose own `dotShape` is unset. Missing
+  // ⇒ `'filled-black'` (the historical default). Setters drop the field when
+  // called with `'filled-black'` so the default is never stored.
+  defaultDotShape?: DotShape;
 }
 
 // A movable label printed inside a line's color band (Vignelli-style).
@@ -203,6 +209,18 @@ export interface MapDoc {
   // Which color palettes are available in the line editor. Invariant:
   // never empty (enforced by transforms / parse sanitiser).
   activePalettes: PaletteId[];
+  // Global styling for inter-station transfers. Thickness is the visible
+  // colored body's stroke width in world units, clamped at MIN in
+  // transforms.ts (the slider tops out at MAX but the textbox accepts
+  // arbitrary larger values). Color is a 7-char hex string (`#rrggbb`),
+  // the format emitted by `<input type="color">`.
+  transferThickness: number;
+  transferColor: string;
+  // Optional always-on outline around the body (a "halo"). Width is the
+  // per-side padding added past the body in world units, clamped to
+  // [TRANSFER_STROKE_WIDTH_MIN, TRANSFER_STROKE_WIDTH_MAX]. 0 = no outline.
+  transferStrokeWidth: number;
+  transferStrokeColor: string;
 }
 
 // Multi-line horizontal text alignment inside a TextLabel.

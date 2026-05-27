@@ -68,6 +68,10 @@ const DOC_FIELDS = [
   'labelWeight',
   'labelItalic',
   'activePalettes',
+  'transferThickness',
+  'transferColor',
+  'transferStrokeWidth',
+  'transferStrokeColor',
 ] as const;
 type DocFieldName = (typeof DOC_FIELDS)[number];
 type DocSnapshot = Pick<MapDoc, DocFieldName>;
@@ -128,6 +132,7 @@ interface DocState extends MapDoc {
     toStationId: StationId,
     style: LineStyle,
   ) => void;
+  setLineDefaultDotShape: (lineId: LineId, shape: DotShape) => void;
   deleteLine: (id: LineId) => void;
   moveLineInOrder: (id: LineId, dir: -1 | 1) => void;
 
@@ -179,6 +184,10 @@ interface DocState extends MapDoc {
   setLabelItalic: (i: boolean) => void;
   setActivePalettes: (ids: PaletteId[]) => void;
   togglePalette: (id: PaletteId) => void;
+  setTransferThickness: (n: number) => void;
+  setTransferColor: (c: string) => void;
+  setTransferStrokeWidth: (n: number) => void;
+  setTransferStrokeColor: (c: string) => void;
   clearAll: () => void;
 }
 
@@ -240,6 +249,8 @@ export const useDoc = create<DocState>()(
           set((s) => T.reorderLineStations(s, lineId, stations)),
         setLineSegmentStyle: (lineId, fromStationId, toStationId, style) =>
           set((s) => T.setLineSegmentStyle(s, lineId, fromStationId, toStationId, style)),
+        setLineDefaultDotShape: (lineId, shape) =>
+          set((s) => T.setLineDefaultDotShape(s, lineId, shape)),
         deleteLine: (id) => set((s) => T.deleteLine(s, id)),
         moveLineInOrder: (id, dir) => set((s) => T.moveLineInOrder(s, id, dir)),
 
@@ -310,6 +321,10 @@ export const useDoc = create<DocState>()(
         setLabelItalic: (i) => set((s) => T.setLabelItalic(s, i)),
         setActivePalettes: (idsArr) => set((s) => T.setActivePalettes(s, idsArr)),
         togglePalette: (id) => set((s) => T.togglePalette(s, id)),
+        setTransferThickness: (n) => set((s) => T.setTransferThickness(s, n)),
+        setTransferColor: (c) => set((s) => T.setTransferColor(s, c)),
+        setTransferStrokeWidth: (n) => set((s) => T.setTransferStrokeWidth(s, n)),
+        setTransferStrokeColor: (c) => set((s) => T.setTransferStrokeColor(s, c)),
         clearAll: () => set((s) => T.clearAll(s)),
       }),
       {

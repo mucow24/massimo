@@ -346,3 +346,74 @@ describe('<StationView /> — dot layer renders at compressed positions', () => 
     expect(parseFloat(el.getAttribute('cy')!)).toBeCloseTo(0, 5);
   });
 });
+
+describe('<StationView /> — transfer-pick hover highlight', () => {
+  // closestStopLineId falls back to `station.stops[0].lineId` when there's no
+  // `.canvas-host svg` ancestor; these tests rely on that, so the picked
+  // lineId is just the first stop on each station.
+
+  function renderBg(station: ReturnType<typeof makeStation>) {
+    return render(
+      <svg>
+        <StationView station={station} lines={{}} zoom={1} onStartDrag={vi.fn()} layer="bg" />
+      </svg>,
+    );
+  }
+
+  it('first pick: pointerMove over a station sets hoveredLineStop', async () => {
+    const { fireEvent } = await import('@testing-library/react');
+    const station = makeStation({
+      id: 's1',
+      stops: [makeStop('L1')],
+    });
+    useSelection.setState({
+      ...useSelection.getState(),
+      creatingTransfer: true,
+      transferAnchor: null,
+      hoveredLineStop: null,
+    });
+    const { container } = renderBg(station);
+    const hitRect = container.querySelector('[data-station-id="s1"] rect');
+    if (!hitRect) throw new Error('no bg hit-rect');
+    fireEvent.pointerMove(hitRect);
+    expect(useSelection.getState().hoveredLineStop).toEqual({ stationId: 's1', lineId: 'L1' });
+  });
+
+  it('second pick: pointerMove over a different station still sets hoveredLineStop', async () => {
+    const { fireEvent } = await import('@testing-library/react');
+    const stationB = makeStation({
+      id: 's2',
+      stops: [makeStop('L2')],
+    });
+    useSelection.setState({
+      ...useSelection.getState(),
+      creatingTransfer: true,
+      transferAnchor: { stationId: 's1', lineId: 'L1' },
+      hoveredLineStop: null,
+    });
+    const { container } = renderBg(stationB);
+    const hitRect = container.querySelector('[data-station-id="s2"] rect');
+    if (!hitRect) throw new Error('no bg hit-rect');
+    fireEvent.pointerMove(hitRect);
+    expect(useSelection.getState().hoveredLineStop).toEqual({ stationId: 's2', lineId: 'L2' });
+  });
+
+  it('second pick: pointerMove over the anchor dot itself does NOT highlight (self-transfer guard)', async () => {
+    const { fireEvent } = await import('@testing-library/react');
+    const station = makeStation({
+      id: 's1',
+      stops: [makeStop('L1')],
+    });
+    useSelection.setState({
+      ...useSelection.getState(),
+      creatingTransfer: true,
+      transferAnchor: { stationId: 's1', lineId: 'L1' },
+      hoveredLineStop: null,
+    });
+    const { container } = renderBg(station);
+    const hitRect = container.querySelector('[data-station-id="s1"] rect');
+    if (!hitRect) throw new Error('no bg hit-rect');
+    fireEvent.pointerMove(hitRect);
+    expect(useSelection.getState().hoveredLineStop).toBeNull();
+  });
+});

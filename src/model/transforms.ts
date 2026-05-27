@@ -28,6 +28,16 @@ export const LABEL_FONT_SIZE_MIN = 2;
 export const LABEL_FONT_SIZE_MAX = 24;
 export const LABEL_FONT_SIZE_DEFAULT = 12;
 
+export const TRANSFER_THICKNESS_MIN = 1;
+export const TRANSFER_THICKNESS_MAX = 14;
+export const TRANSFER_THICKNESS_DEFAULT = 2;
+export const TRANSFER_COLOR_DEFAULT = '#000000';
+
+export const TRANSFER_STROKE_WIDTH_MIN = 0;
+export const TRANSFER_STROKE_WIDTH_MAX = 5;
+export const TRANSFER_STROKE_WIDTH_DEFAULT = 0;
+export const TRANSFER_STROKE_COLOR_DEFAULT = '#ffffff';
+
 // Helvetica Neue weights we ship in /public/fonts/. No 600 — we don't have a
 // SemiBold face. Single source of truth for both the text-label popover and
 // the station-label settings dropdown.
@@ -62,6 +72,10 @@ export const DEFAULT_DOC: MapDoc = {
   labelWeight: LABEL_WEIGHT_DEFAULT,
   labelItalic: false,
   activePalettes: ['mta'],
+  transferThickness: TRANSFER_THICKNESS_DEFAULT,
+  transferColor: TRANSFER_COLOR_DEFAULT,
+  transferStrokeWidth: TRANSFER_STROKE_WIDTH_DEFAULT,
+  transferStrokeColor: TRANSFER_STROKE_COLOR_DEFAULT,
 };
 
 /**
@@ -131,6 +145,14 @@ export function moveStation(doc: MapDoc, id: StationId, x: number, y: number): M
   return { ...doc, stations: { ...doc.stations, [id]: { ...cur, x, y } } };
 }
 
+/**
+ * Resolve the glyph for a stop: explicit per-stop `dotShape` wins, else the
+ * line's `defaultDotShape`, else the historical `'filled-black'` default.
+ */
+export function resolveDotShape(line: Line | undefined, stop: StopCell | undefined): DotShape {
+  return stop?.dotShape ?? line?.defaultDotShape ?? 'filled-black';
+}
+
 export function setDotShape(
   doc: MapDoc,
   stationId: StationId,
@@ -139,14 +161,55 @@ export function setDotShape(
 ): MapDoc {
   const cur = doc.stations[stationId];
   if (!cur) return doc;
+  // Picking the line's effective default for a stop clears the per-stop
+  // override so the stop tracks the default going forward (and so persisted
+  // state stays clean — same pattern as `segmentStyles` + 'solid').
+  const lineDefault = doc.lines[lineId]?.defaultDotShape ?? 'filled-black';
+  const targetShape: DotShape | undefined = shape === lineDefault ? undefined : shape;
   let changed = false;
   const stops = cur.stops.map((s) => {
     if (s.lineId !== lineId) return s;
+    if (s.dotShape === targetShape) return s;
     changed = true;
-    return { ...s, dotShape: shape };
+    if (targetShape === undefined) {
+      const { dotShape: _gone, ...rest } = s;
+      return rest;
+    }
+    return { ...s, dotShape: targetShape };
   });
   if (!changed) return doc;
   return { ...doc, stations: { ...doc.stations, [stationId]: { ...cur, stops } } };
+}
+
+export function setLineDefaultDotShape(doc: MapDoc, id: LineId, shape: DotShape): MapDoc {
+  const cur = doc.lines[id];
+  if (!cur) return doc;
+  // `'filled-black'` is the historical default; omit the field so persisted
+  // state stays clean (mirrors `setLineSegmentStyle` + 'solid').
+  let nextLine: Line;
+  if (shape === 'filled-black') {
+    if (cur.defaultDotShape === undefined) return doc;
+    const { defaultDotShape: _gone, ...rest } = cur;
+    nextLine = rest;
+  } else {
+    if (cur.defaultDotShape === shape) return doc;
+    nextLine = { ...cur, defaultDotShape: shape };
+  }
+  // Any per-stop override on this line that matches the NEW default is now
+  // redundant — drop it so the stop tracks the default going forward.
+  let stations = doc.stations;
+  for (const sid of Object.keys(stations)) {
+    const st = stations[sid];
+    let stopsChanged = false;
+    const stops = st.stops.map((s) => {
+      if (s.lineId !== id || s.dotShape !== shape) return s;
+      stopsChanged = true;
+      const { dotShape: _gone, ...rest } = s;
+      return rest;
+    });
+    if (stopsChanged) stations = { ...stations, [sid]: { ...st, stops } };
+  }
+  return { ...doc, lines: { ...doc.lines, [id]: nextLine }, stations };
 }
 
 export function setStationWaypoint(doc: MapDoc, stationId: StationId, isWaypoint: boolean): MapDoc {
@@ -987,6 +1050,41 @@ export function setLabelFontSize(doc: MapDoc, n: number): MapDoc {
   const clamped = Math.max(LABEL_FONT_SIZE_MIN, Math.min(LABEL_FONT_SIZE_MAX, Math.round(n)));
   if (clamped === doc.labelFontSize) return doc;
   return { ...doc, labelFontSize: clamped };
+}
+
+// Clamps at the bottom (MIN) so 0/negative are never persisted, but does NOT
+// clamp at the top — the textbox lets users enter arbitrary thicknesses
+// outside the slider's range. TRANSFER_THICKNESS_MAX constrains the slider
+// only.
+export function setTransferThickness(doc: MapDoc, n: number): MapDoc {
+  if (!Number.isFinite(n)) return doc;
+  const clamped = Math.max(TRANSFER_THICKNESS_MIN, Math.round(n));
+  if (clamped === doc.transferThickness) return doc;
+  return { ...doc, transferThickness: clamped };
+}
+
+export function setTransferColor(doc: MapDoc, c: string): MapDoc {
+  if (c === doc.transferColor) return doc;
+  return { ...doc, transferColor: c };
+}
+
+// Always-on outline around the colored body. Unlike thickness, this clamps
+// on BOTH ends: the slider's [0, 5] range is the meaningful design space
+// for a halo, and unbounded values would let users hide the body entirely
+// under a massive stroke.
+export function setTransferStrokeWidth(doc: MapDoc, n: number): MapDoc {
+  if (!Number.isFinite(n)) return doc;
+  const clamped = Math.max(
+    TRANSFER_STROKE_WIDTH_MIN,
+    Math.min(TRANSFER_STROKE_WIDTH_MAX, Math.round(n)),
+  );
+  if (clamped === doc.transferStrokeWidth) return doc;
+  return { ...doc, transferStrokeWidth: clamped };
+}
+
+export function setTransferStrokeColor(doc: MapDoc, c: string): MapDoc {
+  if (c === doc.transferStrokeColor) return doc;
+  return { ...doc, transferStrokeColor: c };
 }
 
 export function setLabelWeight(doc: MapDoc, w: TextLabelWeight): MapDoc {
