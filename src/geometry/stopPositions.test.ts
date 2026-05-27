@@ -420,6 +420,54 @@ describe('computeRenderedStopPositions', () => {
     expect(p4.y - p3.y).toBeCloseTo(STOP_SIZE, 5);
   });
 
+  it('"T" layout: trailer below the centre of a 3-stop cardinal band lands directly below the centre', () => {
+    // Three vertical-line stops form the top bar of a "T"; a fourth
+    // horizontal-line stop sits directly below the centre. Regression for a
+    // bug where the trailer was placed via whichever flanker came first in
+    // station.stops order — pulling it ≈0.293·STOP_SIZE off-centre toward
+    // that flanker because the diagonal cell-grid step is STOP_SIZE·√2.
+    // The cardinal anchor (centre vertical) must win.
+    const st = makeStation({
+      id: 's1',
+      x: 0,
+      y: 0,
+      rotation: 0,
+      stops: [
+        makeStop('L1', { row: 0, col: 0, orientation: 'auto-vertical' }),
+        makeStop('L2', { row: 0, col: 1, orientation: 'auto-vertical' }),
+        makeStop('L3', { row: 0, col: 2, orientation: 'auto-vertical' }),
+        makeStop('LH', { row: 1, col: 1, orientation: 'auto-horizontal' }),
+      ],
+    });
+    const get = computeRenderedStopPositions(dictOf(st));
+    const pH = get('s1', 'LH');
+    // LH cell-grid world position is (STOP_SIZE, STOP_SIZE); rendered should match.
+    expect(pH.x).toBeCloseTo(STOP_SIZE, 5);
+    expect(pH.y).toBeCloseTo(STOP_SIZE, 5);
+  });
+
+  it('"T" layout: result is independent of station.stops order', () => {
+    // Same layout as above but with the flanker (L1) listed last, which
+    // under the old BFS would have demoted it from the first-popped anchor
+    // — confirming our pick depends on adjacency, not iteration order.
+    const reordered = makeStation({
+      id: 's1',
+      x: 0,
+      y: 0,
+      rotation: 0,
+      stops: [
+        makeStop('LH', { row: 1, col: 1, orientation: 'auto-horizontal' }),
+        makeStop('L3', { row: 0, col: 2, orientation: 'auto-vertical' }),
+        makeStop('L2', { row: 0, col: 1, orientation: 'auto-vertical' }),
+        makeStop('L1', { row: 0, col: 0, orientation: 'auto-vertical' }),
+      ],
+    });
+    const get = computeRenderedStopPositions(dictOf(reordered));
+    const pH = get('s1', 'LH');
+    expect(pH.x).toBeCloseTo(STOP_SIZE, 5);
+    expect(pH.y).toBeCloseTo(STOP_SIZE, 5);
+  });
+
   it('leaves stops alone when they are NOT cell-adjacent to any compressed group', () => {
     // Diagonal group at the NE end; a faraway stop with no adjacency to it.
     const st = makeStation({
