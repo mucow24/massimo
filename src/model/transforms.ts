@@ -773,7 +773,40 @@ export function updateLine(
 ): MapDoc {
   const cur = doc.lines[id];
   if (!cur) return doc;
-  return { ...doc, lines: { ...doc.lines, [id]: { ...cur, ...patch } } };
+  const nextLine = { ...cur, ...patch };
+  const lines = { ...doc.lines, [id]: nextLine };
+  if (patch.service === undefined || patch.service === cur.service) {
+    return { ...doc, lines };
+  }
+  // Service code changed — rewrite any `<oldService>` inline-bullet tokens in
+  // station names and text labels to `<newService>` so bullet glyphs keep
+  // referring to the same line. Match is exact-substring on the literal
+  // bullet form: per parseLabelLine the bullet code can't contain `<` or `>`,
+  // so a `<code>` substring is always parsed as a bullet — no false hits.
+  const oldToken = `<${cur.service}>`;
+  const newToken = `<${nextLine.service}>`;
+  const rewrite = (s: string): string =>
+    s.includes(oldToken) ? s.split(oldToken).join(newToken) : s;
+  const stations = mapRecord(doc.stations, (st) => {
+    const name = rewrite(st.name);
+    return name === st.name ? st : { ...st, name };
+  });
+  const textLabels = mapRecord(doc.textLabels, (lbl) => {
+    const text = rewrite(lbl.text);
+    return text === lbl.text ? lbl : { ...lbl, text };
+  });
+  return { ...doc, lines, stations, textLabels };
+}
+
+function mapRecord<T>(rec: Record<string, T>, f: (v: T) => T): Record<string, T> {
+  let changed = false;
+  const out: Record<string, T> = {};
+  for (const [k, v] of Object.entries(rec)) {
+    const nv = f(v);
+    if (nv !== v) changed = true;
+    out[k] = nv;
+  }
+  return changed ? out : rec;
 }
 
 export function setLineSegmentStyle(
