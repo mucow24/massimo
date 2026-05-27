@@ -50,6 +50,41 @@ const pickNextLineName = (lines: Record<LineId, Line>): string => {
 
 const ids: IdFactory = defaultIdFactory();
 
+// Single source of truth for which MapDoc fields are part of the persisted /
+// undoable document. Drives partialize (persist + zundo), DocSnapshot,
+// pickDocSnapshot, and the change-detection equality check in
+// beginHistoryGroup. Adding a new doc field is a one-line edit here.
+const DOC_FIELDS = [
+  'stations',
+  'lines',
+  'lineOrder',
+  'curveRadius',
+  'lineCounter',
+  'lineTags',
+  'routeBullets',
+  'transfers',
+  'textLabels',
+  'labelFontSize',
+  'labelWeight',
+  'labelItalic',
+  'activePalettes',
+] as const;
+type DocFieldName = (typeof DOC_FIELDS)[number];
+type DocSnapshot = Pick<MapDoc, DocFieldName>;
+
+function pickDocSnapshot(s: DocSnapshot): DocSnapshot {
+  const out = {} as Record<DocFieldName, unknown>;
+  for (const k of DOC_FIELDS) out[k] = s[k];
+  return out as DocSnapshot;
+}
+
+function docSnapshotsEqual(a: DocSnapshot, b: DocSnapshot): boolean {
+  for (const k of DOC_FIELDS) {
+    if (a[k] !== b[k]) return false;
+  }
+  return true;
+}
+
 interface DocState extends MapDoc {
   // mutators
   addStation: (x: number, y: number, name?: string) => StationId;
@@ -327,85 +362,18 @@ export const useDoc = create<DocState>()(
           }
           return out as DocState;
         },
-        partialize: (s) => ({
-          stations: s.stations,
-          lines: s.lines,
-          lineOrder: s.lineOrder,
-          curveRadius: s.curveRadius,
-          lineCounter: s.lineCounter,
-          lineTags: s.lineTags,
-          routeBullets: s.routeBullets,
-          transfers: s.transfers,
-          textLabels: s.textLabels,
-          labelFontSize: s.labelFontSize,
-          labelWeight: s.labelWeight,
-          labelItalic: s.labelItalic,
-          activePalettes: s.activePalettes,
-        }),
+        partialize: (s) => pickDocSnapshot(s),
       },
     ),
     {
       // Track only the document data — viewport and selection are in their
       // own stores, and the mutator method references never change so they're
       // safe to leave in (Object.assign on undo preserves them).
-      partialize: (state) => ({
-        stations: state.stations,
-        lines: state.lines,
-        lineOrder: state.lineOrder,
-        curveRadius: state.curveRadius,
-        lineCounter: state.lineCounter,
-        lineTags: state.lineTags,
-        routeBullets: state.routeBullets,
-        transfers: state.transfers,
-        textLabels: state.textLabels,
-        labelFontSize: state.labelFontSize,
-        labelWeight: state.labelWeight,
-        labelItalic: state.labelItalic,
-        activePalettes: state.activePalettes,
-      }),
+      partialize: (state) => pickDocSnapshot(state),
       limit: 200,
     },
   ),
 );
-
-/**
- * Snapshot of the partialized doc fields tracked by zundo.
- * Matches the `partialize` config above.
- */
-type DocSnapshot = Pick<
-  MapDoc,
-  | 'stations'
-  | 'lines'
-  | 'lineOrder'
-  | 'curveRadius'
-  | 'lineCounter'
-  | 'lineTags'
-  | 'routeBullets'
-  | 'transfers'
-  | 'textLabels'
-  | 'labelFontSize'
-  | 'labelWeight'
-  | 'labelItalic'
-  | 'activePalettes'
->;
-
-function snapshotDoc(s: DocState): DocSnapshot {
-  return {
-    stations: s.stations,
-    lines: s.lines,
-    lineOrder: s.lineOrder,
-    curveRadius: s.curveRadius,
-    lineCounter: s.lineCounter,
-    lineTags: s.lineTags,
-    routeBullets: s.routeBullets,
-    transfers: s.transfers,
-    textLabels: s.textLabels,
-    labelFontSize: s.labelFontSize,
-    labelWeight: s.labelWeight,
-    labelItalic: s.labelItalic,
-    activePalettes: s.activePalettes,
-  };
-}
 
 /**
  * Open a history "group" around a multi-step user action — a station drag
@@ -421,7 +389,7 @@ function snapshotDoc(s: DocState): DocSnapshot {
  * no changes occurred but explicit at the call site.
  */
 export function beginHistoryGroup(): { commit: () => void; cancel: () => void } {
-  const snapshot = snapshotDoc(useDoc.getState());
+  const snapshot = pickDocSnapshot(useDoc.getState());
   const temporal = useDoc.temporal.getState();
   temporal.pause();
   let done = false;
@@ -430,22 +398,10 @@ export function beginHistoryGroup(): { commit: () => void; cancel: () => void } 
       if (done) return;
       done = true;
       temporal.resume();
-      const cur = snapshotDoc(useDoc.getState());
-      // Reference-equality check on the partialized fields: transforms
+      const cur = pickDocSnapshot(useDoc.getState());
+      // Reference-equality check across every tracked doc field. Transforms
       // produce new objects only when something changes, so this is sound.
-      if (
-        cur.stations === snapshot.stations &&
-        cur.lines === snapshot.lines &&
-        cur.lineOrder === snapshot.lineOrder &&
-        cur.curveRadius === snapshot.curveRadius &&
-        cur.lineCounter === snapshot.lineCounter &&
-        cur.lineTags === snapshot.lineTags &&
-        cur.routeBullets === snapshot.routeBullets &&
-        cur.transfers === snapshot.transfers &&
-        cur.textLabels === snapshot.textLabels
-      ) {
-        return;
-      }
+      if (docSnapshotsEqual(cur, snapshot)) return;
       // Manually push our snapshot as a single history entry. A new action
       // wipes the redo stack, mirroring zundo's default handler behavior.
       useDoc.temporal.setState((s) => ({
