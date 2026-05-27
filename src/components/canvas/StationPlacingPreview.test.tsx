@@ -59,8 +59,9 @@ describe('makePreviewStation', () => {
       col: -1,
       rotation: 0,
       offset: 0,
+      offsetPerp: 0,
       align: 'auto',
-      valign: 'auto',
+      valign: 'auto-down',
     });
   });
 });

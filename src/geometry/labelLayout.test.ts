@@ -246,14 +246,14 @@ function vStation({
   };
 }
 
-describe("labelLayoutLocal — valign='auto'", () => {
+describe("labelLayoutLocal — valign='auto-down'", () => {
   // From labelLayout.ts: HIT_PAD=2, TEXT_HALF_H=7, LABEL_LINE_HEIGHT=14.
   const HIT_PAD = 2;
   const TEXT_HALF_H = 7;
   const LINE_HEIGHT = 14;
 
-  it("single-line 'auto' is indistinguishable from 'middle'", () => {
-    const a = labelLayoutLocal(vStation({ name: 'Foo', valign: 'auto' }));
+  it("single-line 'auto-down' is indistinguishable from 'middle'", () => {
+    const a = labelLayoutLocal(vStation({ name: 'Foo', valign: 'auto-down' }));
     const m = labelLayoutLocal(vStation({ name: 'Foo', valign: 'middle' }));
     expect(a.baseline).toBe(m.baseline);
     expect(a.firstLineDy).toBe(m.firstLineDy);
@@ -264,21 +264,21 @@ describe("labelLayoutLocal — valign='auto'", () => {
     expect(a.blockTopY).toBeCloseTo(m.blockTopY, 5);
   });
 
-  it("multi-line 'auto' keeps first line centered on the anchor (no dy shift)", () => {
+  it("multi-line 'auto-down' keeps first line centered on the anchor (no dy shift)", () => {
     // anchor is at (0, 0) for vStation, so firstLineDy='0' + baseline='central'
     // is the SVG combination that puts the first line's center on the anchor.
-    const lay = labelLayoutLocal(vStation({ name: 'Foo\nBar', valign: 'auto' }));
+    const lay = labelLayoutLocal(vStation({ name: 'Foo\nBar', valign: 'auto-down' }));
     expect(lay.baseline).toBe('central');
     expect(lay.firstLineDy).toBe('0');
   });
 
-  it("multi-line 'auto' hit rect top sits at anchorY - TEXT_HALF_H regardless of line count", () => {
-    // For 'auto' the first line top is at anchorY - TEXT_HALF_H and the
+  it("multi-line 'auto-down' hit rect top sits at anchorY - TEXT_HALF_H regardless of line count", () => {
+    // For 'auto-down' the first line top is at anchorY - TEXT_HALF_H and the
     // block grows downward; the hit-rect top should not move when extra
     // lines appear below.
-    const oneLine = labelLayoutLocal(vStation({ name: 'Foo', valign: 'auto' }));
-    const twoLines = labelLayoutLocal(vStation({ name: 'Foo\nBar', valign: 'auto' }));
-    const threeLines = labelLayoutLocal(vStation({ name: 'Foo\nBar\nBaz', valign: 'auto' }));
+    const oneLine = labelLayoutLocal(vStation({ name: 'Foo', valign: 'auto-down' }));
+    const twoLines = labelLayoutLocal(vStation({ name: 'Foo\nBar', valign: 'auto-down' }));
+    const threeLines = labelLayoutLocal(vStation({ name: 'Foo\nBar\nBaz', valign: 'auto-down' }));
     expect(oneLine.hitY).toBeCloseTo(-TEXT_HALF_H - HIT_PAD, 5);
     expect(twoLines.hitY).toBeCloseTo(-TEXT_HALF_H - HIT_PAD, 5);
     expect(threeLines.hitY).toBeCloseTo(-TEXT_HALF_H - HIT_PAD, 5);
@@ -287,20 +287,21 @@ describe("labelLayoutLocal — valign='auto'", () => {
     expect(threeLines.hitH - twoLines.hitH).toBeCloseTo(LINE_HEIGHT, 5);
   });
 
-  it("multi-line 'auto' vs 'middle' differ in hit-rect top by extraLines * LINE_HEIGHT / 2", () => {
-    const a = labelLayoutLocal(vStation({ name: 'Foo\nBar', valign: 'auto' }));
+  it("multi-line 'auto-down' vs 'middle' differ in hit-rect top by extraLines * LINE_HEIGHT / 2", () => {
+    const a = labelLayoutLocal(vStation({ name: 'Foo\nBar', valign: 'auto-down' }));
     const m = labelLayoutLocal(vStation({ name: 'Foo\nBar', valign: 'middle' }));
-    // Auto's first line sits where middle's block center would be — i.e.
-    // auto's top is HIGHER (less negative) than middle's by half a line.
+    // Auto-down's first line sits where middle's block center would be —
+    // i.e. auto-down's top is HIGHER (less negative) than middle's by half
+    // a line.
     expect(a.hitY - m.hitY).toBeCloseTo(LINE_HEIGHT / 2, 5);
     // Block heights are identical (same line count, same line height).
     expect(a.hitH).toBeCloseTo(m.hitH, 5);
   });
 
   it('blockTopY tracks the rendered text block top for each valign', () => {
-    // 'auto' single-line and multi-line: blockTopY = anchorY - TEXT_HALF_H.
-    const aSingle = labelLayoutLocal(vStation({ name: 'Foo', valign: 'auto' }));
-    const aMulti = labelLayoutLocal(vStation({ name: 'Foo\nBar', valign: 'auto' }));
+    // 'auto-down' single-line and multi-line: blockTopY = anchorY - TEXT_HALF_H.
+    const aSingle = labelLayoutLocal(vStation({ name: 'Foo', valign: 'auto-down' }));
+    const aMulti = labelLayoutLocal(vStation({ name: 'Foo\nBar', valign: 'auto-down' }));
     expect(aSingle.blockTopY).toBeCloseTo(-TEXT_HALF_H, 5);
     expect(aMulti.blockTopY).toBeCloseTo(-TEXT_HALF_H, 5);
     // 'middle' multi-line: block centered on the anchor.
@@ -312,6 +313,187 @@ describe("labelLayoutLocal — valign='auto'", () => {
     // 'bottom' multi-line: block bottom at the anchor.
     const bMulti = labelLayoutLocal(vStation({ name: 'Foo\nBar', valign: 'bottom' }));
     expect(bMulti.blockTopY).toBeCloseTo(-(2 * TEXT_HALF_H + LINE_HEIGHT), 5);
+  });
+});
+
+describe("labelLayoutLocal — valign='auto-up'", () => {
+  // From labelLayout.ts: HIT_PAD=2, TEXT_HALF_H=7, LABEL_LINE_HEIGHT=14.
+  const HIT_PAD = 2;
+  const TEXT_HALF_H = 7;
+  const LINE_HEIGHT = 14;
+
+  it("single-line 'auto-up' is indistinguishable from 'middle'", () => {
+    const a = labelLayoutLocal(vStation({ name: 'Foo', valign: 'auto-up' }));
+    const m = labelLayoutLocal(vStation({ name: 'Foo', valign: 'middle' }));
+    expect(a.baseline).toBe(m.baseline);
+    expect(a.firstLineDy).toBe(m.firstLineDy);
+    expect(a.hitX).toBeCloseTo(m.hitX, 5);
+    expect(a.hitY).toBeCloseTo(m.hitY, 5);
+    expect(a.hitW).toBeCloseTo(m.hitW, 5);
+    expect(a.hitH).toBeCloseTo(m.hitH, 5);
+    expect(a.blockTopY).toBeCloseTo(m.blockTopY, 5);
+  });
+
+  it("multi-line 'auto-up' keeps the LAST line centered on the anchor (first line shifted up)", () => {
+    // The first line moves UP by extraLines*LINE_HEIGHT so that line N-1
+    // (which natively sits extraLines*LINE_HEIGHT below the first) lands on
+    // anchorY. dy is in em, negative = upward.
+    const FONT_SIZE_PX = 12;
+    const lay = labelLayoutLocal(vStation({ name: 'Foo\nBar', valign: 'auto-up' }));
+    expect(lay.baseline).toBe('central');
+    const expectedEm = (-LINE_HEIGHT / FONT_SIZE_PX).toFixed(3);
+    expect(lay.firstLineDy).toBe(`${expectedEm}em`);
+  });
+
+  it("multi-line 'auto-up' hit rect BOTTOM stays put (block grows upward as lines are added)", () => {
+    // Block bottom = blockTopY + blockH; for 'auto-up' that should equal
+    // anchorY + TEXT_HALF_H regardless of line count. Equivalently, hitY +
+    // hitH (which adds HIT_PAD to each side) is constant.
+    const oneLine = labelLayoutLocal(vStation({ name: 'Foo', valign: 'auto-up' }));
+    const twoLines = labelLayoutLocal(vStation({ name: 'Foo\nBar', valign: 'auto-up' }));
+    const threeLines = labelLayoutLocal(vStation({ name: 'Foo\nBar\nBaz', valign: 'auto-up' }));
+    const oneBot = oneLine.hitY + oneLine.hitH;
+    const twoBot = twoLines.hitY + twoLines.hitH;
+    const threeBot = threeLines.hitY + threeLines.hitH;
+    expect(oneBot).toBeCloseTo(TEXT_HALF_H + HIT_PAD, 5);
+    expect(twoBot).toBeCloseTo(TEXT_HALF_H + HIT_PAD, 5);
+    expect(threeBot).toBeCloseTo(TEXT_HALF_H + HIT_PAD, 5);
+    // Block heights still grow by one LINE_HEIGHT per extra line.
+    expect(twoLines.hitH - oneLine.hitH).toBeCloseTo(LINE_HEIGHT, 5);
+    expect(threeLines.hitH - twoLines.hitH).toBeCloseTo(LINE_HEIGHT, 5);
+  });
+
+  it("multi-line 'auto-up' vs 'middle' differ in hit-rect top by -extraLines * LINE_HEIGHT / 2", () => {
+    // Mirror of the auto-down case: auto-up's block top is LOWER (more
+    // negative) than middle's by half a line, since auto-up adds extra
+    // lines above the anchor while middle splits them above and below.
+    const a = labelLayoutLocal(vStation({ name: 'Foo\nBar', valign: 'auto-up' }));
+    const m = labelLayoutLocal(vStation({ name: 'Foo\nBar', valign: 'middle' }));
+    expect(a.hitY - m.hitY).toBeCloseTo(-LINE_HEIGHT / 2, 5);
+    expect(a.hitH).toBeCloseTo(m.hitH, 5);
+  });
+
+  it('auto-down and auto-up are vertical mirrors around the anchor', () => {
+    // For a two-line label, the block top under auto-down equals the
+    // negation of the block bottom under auto-up (both measured from
+    // anchorY = 0).
+    const d = labelLayoutLocal(vStation({ name: 'Foo\nBar', valign: 'auto-down' }));
+    const u = labelLayoutLocal(vStation({ name: 'Foo\nBar', valign: 'auto-up' }));
+    const dBlockH = d.hitH - 2 * HIT_PAD;
+    const uBlockH = u.hitH - 2 * HIT_PAD;
+    const dBottom = d.blockTopY + dBlockH;
+    const uBottom = u.blockTopY + uBlockH;
+    // auto-down: block top = -TEXT_HALF_H (anchor at top edge of first line center).
+    // auto-up:   block bot = +TEXT_HALF_H (anchor at bottom edge of last line center).
+    expect(d.blockTopY).toBeCloseTo(-TEXT_HALF_H, 5);
+    expect(uBottom).toBeCloseTo(TEXT_HALF_H, 5);
+    // And the mirror identity: u.blockTopY === -dBottom.
+    expect(u.blockTopY).toBeCloseTo(-dBottom, 5);
+  });
+
+  it("firstLineCenterY puts line 0 above the anchor for multi-line 'auto-up'", () => {
+    // The bullet-rendering path reads firstLineCenterY directly. For
+    // auto-up with two lines, line 0's center should sit one LINE_HEIGHT
+    // above the anchor (so line 1 lands on the anchor).
+    const lay = labelLayoutLocal(vStation({ name: 'Foo\nBar', valign: 'auto-up' }));
+    expect(lay.firstLineCenterY).toBeCloseTo(-LINE_HEIGHT, 5);
+  });
+});
+
+describe('labelLayoutLocal — label.offsetPerp', () => {
+  // Anchor without any offset, for diff baselines.
+  const baseline = (rotation: Rotation) =>
+    labelLayoutLocal({
+      ...vStation({ valign: 'middle', rotation }),
+      label: {
+        row: 0,
+        col: 0,
+        rotation,
+        offset: 0,
+        align: 'middle',
+        valign: 'middle',
+      },
+    });
+
+  const withPerp = (rotation: Rotation, perp: number) =>
+    labelLayoutLocal({
+      ...vStation({ valign: 'middle', rotation }),
+      label: {
+        row: 0,
+        col: 0,
+        rotation,
+        offset: 0,
+        offsetPerp: perp,
+        align: 'middle',
+        valign: 'middle',
+      },
+    });
+
+  it('rotation=0 (E-reading): positive perp pushes anchor south (no x shift)', () => {
+    const base = baseline(0);
+    const moved = withPerp(0, 7);
+    expect(moved.anchorX - base.anchorX).toBeCloseTo(0, 5);
+    expect(moved.anchorY - base.anchorY).toBeCloseTo(7, 5);
+  });
+
+  it('rotation=2 (S-reading): positive perp pushes anchor west (no y shift)', () => {
+    const base = baseline(2);
+    const moved = withPerp(2, 7);
+    expect(moved.anchorX - base.anchorX).toBeCloseTo(-7, 5);
+    expect(moved.anchorY - base.anchorY).toBeCloseTo(0, 5);
+  });
+
+  it('parallel and perp offsets compose without interference', () => {
+    // offset along reading is unchanged in size; perp is orthogonal — apply
+    // both, expect the anchor at (offset*read + perp*perpUnit) from baseline.
+    const rotation: Rotation = 1; // SE diagonal — cos=sin=√2/2
+    const base = baseline(rotation);
+    const both = labelLayoutLocal({
+      ...vStation({ valign: 'middle', rotation }),
+      label: {
+        row: 0,
+        col: 0,
+        rotation,
+        offset: 10,
+        offsetPerp: 4,
+        align: 'middle',
+        valign: 'middle',
+      },
+    });
+    const c = Math.cos((rotation * Math.PI) / 4);
+    const s = Math.sin((rotation * Math.PI) / 4);
+    const expectedDx = 10 * c + 4 * -s;
+    const expectedDy = 10 * s + 4 * c;
+    expect(both.anchorX - base.anchorX).toBeCloseTo(expectedDx, 5);
+    expect(both.anchorY - base.anchorY).toBeCloseTo(expectedDy, 5);
+  });
+
+  it('missing offsetPerp is treated as 0 (legacy-save compatibility)', () => {
+    const a = labelLayoutLocal({
+      ...vStation({ valign: 'middle' }),
+      label: {
+        row: 0,
+        col: 0,
+        rotation: 0,
+        offset: 0,
+        align: 'middle',
+        valign: 'middle',
+      },
+    });
+    const b = labelLayoutLocal({
+      ...vStation({ valign: 'middle' }),
+      label: {
+        row: 0,
+        col: 0,
+        rotation: 0,
+        offset: 0,
+        offsetPerp: 0,
+        align: 'middle',
+        valign: 'middle',
+      },
+    });
+    expect(a.anchorX).toBeCloseTo(b.anchorX, 5);
+    expect(a.anchorY).toBeCloseTo(b.anchorY, 5);
   });
 });
 

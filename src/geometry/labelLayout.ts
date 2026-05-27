@@ -32,8 +32,8 @@ export interface LabelLayout {
   hitH: number;
   // Top of the painted text block (no HIT_PAD). The bullet-rendering path
   // in StationView reads this directly so it doesn't have to re-derive the
-  // valign math — important for 'auto', where baseline='central' alone
-  // doesn't disambiguate from 'middle'.
+  // valign math — important for 'auto-down'/'auto-up', where baseline='central'
+  // alone doesn't disambiguate from 'middle'.
   blockTopY: number;
   // Visual center y of the first text line. The bullet-rendering path
   // anchors each line with dominantBaseline='central' at
@@ -118,9 +118,9 @@ export function labelLayoutLocal(station: Station): LabelLayout {
     }
   }
 
-  // 'auto' and 'middle' both use central baseline; they differ in how
-  // multi-line blocks are shifted relative to the anchor (see firstLineDy /
-  // blockTopY below).
+  // 'auto-down', 'auto-up', and 'middle' all use central baseline; they differ
+  // in how multi-line blocks are shifted relative to the anchor (see
+  // firstLineDy / blockTopY below).
   let baseline: LabelBaseline = 'central';
   if (label.valign === 'top') baseline = 'text-before-edge';
   else if (label.valign === 'bottom') baseline = 'text-after-edge';
@@ -128,6 +128,15 @@ export function labelLayoutLocal(station: Station): LabelLayout {
   if (label.offset) {
     anchorX += label.offset * readCos;
     anchorY += label.offset * readSin;
+  }
+  // Perpendicular offset: positive moves the anchor in the `(-readSin,
+  // readCos)` direction — same axis used by snapInfoInHalfPlane's `perp`,
+  // i.e. the side a new line of text would stack onto. Visually "down" for
+  // a rotation=0 (E-reading) label, "left" for rotation=2 (S-reading), etc.
+  const offsetPerp = label.offsetPerp ?? 0;
+  if (offsetPerp) {
+    anchorX += offsetPerp * -readSin;
+    anchorY += offsetPerp * readCos;
   }
 
   // Hit rect in unrotated local coords, *before* the label.rotation rotation
@@ -143,12 +152,14 @@ export function labelLayoutLocal(station: Station): LabelLayout {
   else textXMin = anchorX - textW / 2;
 
   // Vertical alignment, in BLOCK terms for top/middle/bottom and in
-  // FIRST-LINE terms for auto: 'top' puts the block top at the anchor,
-  // 'middle' centers the block, 'bottom' puts the block bottom at the
-  // anchor, 'auto' keeps the first line's center on the anchor with the
-  // rest of the block extending below it. We achieve this by shifting only
-  // the first line up; subsequent tspans stack 1.2em below it as before.
-  // The anchor itself stays on the L cell so rotation still pivots there.
+  // FIRST-/LAST-LINE terms for auto-down/auto-up: 'top' puts the block top at
+  // the anchor, 'middle' centers the block, 'bottom' puts the block bottom at
+  // the anchor, 'auto-down' keeps the first line's center on the anchor with
+  // the rest of the block extending below it, 'auto-up' keeps the last line's
+  // center on the anchor with earlier lines stacking above it. We achieve this
+  // by shifting only the first line up; subsequent tspans stack 1.2em below
+  // it as before. The anchor itself stays on the L cell so rotation still
+  // pivots there.
   //
   // Lines stack down by `LABEL_LINE_HEIGHT` (~1.2em). The block's height is
   // `2*textHalfH + extraLines*LINE_HEIGHT`. The first line's natural y given
@@ -158,13 +169,17 @@ export function labelLayoutLocal(station: Station): LabelLayout {
   //   - 'text-after-edge' : first line bottom= anchorY  (top = anchorY - 14)
   // To put the BLOCK at the desired position relative to anchorY, shift the
   // first line up by:
-  //   - top   : 0
-  //   - auto  : 0  (first line center already at anchorY via central baseline)
-  //   - middle: extraLines * LINE_HEIGHT / 2
-  //   - bottom: extraLines * LINE_HEIGHT
+  //   - top      : 0
+  //   - auto-down: 0  (first line center already at anchorY via central baseline)
+  //   - middle   : extraLines * LINE_HEIGHT / 2
+  //   - bottom   : extraLines * LINE_HEIGHT
+  //   - auto-up  : extraLines * LINE_HEIGHT  (lifts the first line so the LAST
+  //                line lands at anchorY; matches 'bottom' but offset by half
+  //                a text body, which the blockTopY math below accounts for)
   let firstLineShiftPx = 0;
   if (label.valign === 'middle') firstLineShiftPx = (extraLines * LABEL_LINE_HEIGHT) / 2;
-  else if (label.valign === 'bottom') firstLineShiftPx = extraLines * LABEL_LINE_HEIGHT;
+  else if (label.valign === 'bottom' || label.valign === 'auto-up')
+    firstLineShiftPx = extraLines * LABEL_LINE_HEIGHT;
   // Keep dy in em (matches the '1.2em' stacking on subsequent tspans), so it
   // tracks font-size if we ever change it.
   const FONT_SIZE_PX = 12;
@@ -173,15 +188,21 @@ export function labelLayoutLocal(station: Station): LabelLayout {
 
   // Top of the painted text block (already accounting for the first-line
   // shift above):
-  //   - top   : block top at anchorY
-  //   - auto  : first line top at anchorY - TEXT_HALF_H, block grows down
-  //   - middle: half a block-height above anchorY
-  //   - bottom: a full block-height above anchorY
+  //   - top      : block top at anchorY
+  //   - auto-down: first line top at anchorY - TEXT_HALF_H, block grows down
+  //                (block top stays put as lines are added)
+  //   - middle   : half a block-height above anchorY
+  //   - bottom   : a full block-height above anchorY
+  //   - auto-up  : last line bottom at anchorY + TEXT_HALF_H, block grows up
+  //                (block bottom stays put as lines are added) — i.e. block
+  //                top at anchorY - TEXT_HALF_H - extraLines*LINE_HEIGHT
   const blockH = 2 * TEXT_HALF_H + extraLines * LABEL_LINE_HEIGHT;
   let textYMin: number;
   if (label.valign === 'top') textYMin = anchorY;
   else if (label.valign === 'bottom') textYMin = anchorY - blockH;
-  else if (label.valign === 'auto') textYMin = anchorY - TEXT_HALF_H;
+  else if (label.valign === 'auto-down') textYMin = anchorY - TEXT_HALF_H;
+  else if (label.valign === 'auto-up')
+    textYMin = anchorY - TEXT_HALF_H - extraLines * LABEL_LINE_HEIGHT;
   else textYMin = anchorY - blockH / 2;
 
   // First-line visual center, derived from the block-top + half a text body.

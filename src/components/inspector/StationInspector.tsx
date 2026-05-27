@@ -22,6 +22,7 @@ export function StationInspector({ id }: { id: StationId }) {
   const moveLabelAction = useDoc((s) => s.moveLabel);
   const rotateLabelAction = useDoc((s) => s.rotateLabel);
   const setLabelOffset = useDoc((s) => s.setLabelOffset);
+  const setLabelOffsetPerp = useDoc((s) => s.setLabelOffsetPerp);
   const cycleLabelAlign = useDoc((s) => s.cycleLabelAlign);
   const setLabelAlign = useDoc((s) => s.setLabelAlign);
   const cycleLabelValign = useDoc((s) => s.cycleLabelValign);
@@ -283,6 +284,19 @@ export function StationInspector({ id }: { id: StationId }) {
           indeterminate={
             mirrorOn &&
             matches.some((m) => stationsAll[m.id]?.label.offset !== station.label.offset)
+          }
+        />
+        <div style={{ fontSize: 11, color: '#777', marginTop: 4 }}>
+          Offset (perpendicular to reading direction)
+        </div>
+        <LabelOffsetControl
+          value={station.label.offsetPerp ?? 0}
+          onChange={(v) => dispatchAll((sid) => setLabelOffsetPerp(sid, v))}
+          indeterminate={
+            mirrorOn &&
+            matches.some(
+              (m) => (stationsAll[m.id]?.label.offsetPerp ?? 0) !== (station.label.offsetPerp ?? 0),
+            )
           }
         />
       </div>
