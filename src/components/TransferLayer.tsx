@@ -97,50 +97,44 @@ export function TransferLayer({
         // drawn, otherwise the body color.
         const outermostVisibleColor = hasUserStroke ? strokeColor : color;
         const selectionRingColor = legibleTextOn(outermostVisibleColor);
-        const onClick = (e: React.MouseEvent) => {
-          e.stopPropagation();
-          onSelect(t.id);
+        // Shared across all three lines: endpoints + linecap stay constant
+        // between the selection ring, the user stroke, and the body.
+        const lineEnds = {
+          x1: a.x,
+          y1: a.y,
+          x2: b.x,
+          y2: b.y,
+          strokeLinecap: 'round' as const,
+        };
+        // Shared between the body and the user stroke (when present): both
+        // are click targets that select this transfer.
+        const clickProps = {
+          pointerEvents: 'stroke' as const,
+          style: { cursor: 'pointer' },
+          onClick: (e: React.MouseEvent) => {
+            e.stopPropagation();
+            onSelect(t.id);
+          },
         };
         return (
           <g key={t.id} data-transfer-id={t.id}>
             {isSelected && (
               <line
-                x1={a.x}
-                y1={a.y}
-                x2={b.x}
-                y2={b.y}
+                {...lineEnds}
                 stroke={selectionRingColor}
                 strokeWidth={visibleExtent + 2 * SELECTION_OUTLINE_PAD}
-                strokeLinecap="round"
                 pointerEvents="none"
               />
             )}
             {hasUserStroke && (
               <line
-                x1={a.x}
-                y1={a.y}
-                x2={b.x}
-                y2={b.y}
+                {...lineEnds}
                 stroke={strokeColor}
                 strokeWidth={visibleExtent}
-                strokeLinecap="round"
-                pointerEvents="stroke"
-                style={{ cursor: 'pointer' }}
-                onClick={onClick}
+                {...clickProps}
               />
             )}
-            <line
-              x1={a.x}
-              y1={a.y}
-              x2={b.x}
-              y2={b.y}
-              stroke={color}
-              strokeWidth={thickness}
-              strokeLinecap="round"
-              pointerEvents="stroke"
-              style={{ cursor: 'pointer' }}
-              onClick={onClick}
-            />
+            <line {...lineEnds} stroke={color} strokeWidth={thickness} {...clickProps} />
           </g>
         );
       })}
