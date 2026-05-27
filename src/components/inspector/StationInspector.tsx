@@ -8,6 +8,7 @@ import { LabelOffsetControl } from './LabelOffsetControl';
 import { LabelAlignButton, LabelValignButton } from './LabelAlignButtons';
 import { useFieldHistory } from '../useFieldHistory';
 import { StationShapePicker } from '../StationShapePicker';
+import { resolveDotShape } from '../../model/transforms';
 
 export function StationInspector({ id }: { id: StationId }) {
   const station = useDoc((s) => s.stations[id]);
@@ -162,10 +163,12 @@ export function StationInspector({ id }: { id: StationId }) {
             <StationShapePicker
               disabled={selectedLineId === null || labelSelected}
               currentShape={
-                (selectedLineId === null
-                  ? undefined
-                  : station.stops.find((s) => s.lineId === selectedLineId)?.dotShape) ??
-                'filled-black'
+                selectedLineId === null
+                  ? 'filled-black'
+                  : resolveDotShape(
+                      linesAll[selectedLineId],
+                      station.stops.find((s) => s.lineId === selectedLineId),
+                    )
               }
               onPick={(shape) => {
                 if (selectedLineId === null) return;

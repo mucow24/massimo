@@ -579,25 +579,28 @@ select {
 .shape-picker {
   position: relative;
   display: inline-flex;
+  align-self: flex-start;
 }
-.shape-picker-trigger {
+.btn-mini.shape-picker-trigger {
   display: inline-flex;
   align-items: center;
   justify-content: center;
   padding: 1px 4px;
   line-height: 1;
+  background: #808080;
+  border: 1px solid #6b6b6b;
 }
-.shape-picker-trigger[aria-disabled='true'] {
+.btn-mini.shape-picker-trigger:hover:not(:disabled):not([aria-disabled='true']) {
+  background: #808080;
+}
+.btn-mini.shape-picker-trigger[aria-disabled='true'] {
   opacity: 0.4;
   cursor: not-allowed;
-}
-.shape-picker-trigger:hover[aria-disabled='true'] {
-  background: transparent;
 }
 .shape-grid {
   position: absolute;
   top: calc(100% + 4px);
-  right: 0;
+  left: 0;
   z-index: 50;
   display: grid;
   grid-template-columns: repeat(3, 1fr);

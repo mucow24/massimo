@@ -93,6 +93,7 @@ interface DocState extends MapDoc {
     toStationId: StationId,
     style: LineStyle,
   ) => void;
+  setLineDefaultDotShape: (lineId: LineId, shape: DotShape) => void;
   deleteLine: (id: LineId) => void;
   moveLineInOrder: (id: LineId, dir: -1 | 1) => void;
 
@@ -205,6 +206,8 @@ export const useDoc = create<DocState>()(
           set((s) => T.reorderLineStations(s, lineId, stations)),
         setLineSegmentStyle: (lineId, fromStationId, toStationId, style) =>
           set((s) => T.setLineSegmentStyle(s, lineId, fromStationId, toStationId, style)),
+        setLineDefaultDotShape: (lineId, shape) =>
+          set((s) => T.setLineDefaultDotShape(s, lineId, shape)),
         deleteLine: (id) => set((s) => T.deleteLine(s, id)),
         moveLineInOrder: (id, dir) => set((s) => T.moveLineInOrder(s, id, dir)),
 

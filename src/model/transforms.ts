@@ -131,6 +131,14 @@ export function moveStation(doc: MapDoc, id: StationId, x: number, y: number): M
   return { ...doc, stations: { ...doc.stations, [id]: { ...cur, x, y } } };
 }
 
+/**
+ * Resolve the glyph for a stop: explicit per-stop `dotShape` wins, else the
+ * line's `defaultDotShape`, else the historical `'filled-black'` default.
+ */
+export function resolveDotShape(line: Line | undefined, stop: StopCell | undefined): DotShape {
+  return stop?.dotShape ?? line?.defaultDotShape ?? 'filled-black';
+}
+
 export function setDotShape(
   doc: MapDoc,
   stationId: StationId,
@@ -139,14 +147,55 @@ export function setDotShape(
 ): MapDoc {
   const cur = doc.stations[stationId];
   if (!cur) return doc;
+  // Picking the line's effective default for a stop clears the per-stop
+  // override so the stop tracks the default going forward (and so persisted
+  // state stays clean — same pattern as `segmentStyles` + 'solid').
+  const lineDefault = doc.lines[lineId]?.defaultDotShape ?? 'filled-black';
+  const targetShape: DotShape | undefined = shape === lineDefault ? undefined : shape;
   let changed = false;
   const stops = cur.stops.map((s) => {
     if (s.lineId !== lineId) return s;
+    if (s.dotShape === targetShape) return s;
     changed = true;
-    return { ...s, dotShape: shape };
+    if (targetShape === undefined) {
+      const { dotShape: _gone, ...rest } = s;
+      return rest;
+    }
+    return { ...s, dotShape: targetShape };
   });
   if (!changed) return doc;
   return { ...doc, stations: { ...doc.stations, [stationId]: { ...cur, stops } } };
+}
+
+export function setLineDefaultDotShape(doc: MapDoc, id: LineId, shape: DotShape): MapDoc {
+  const cur = doc.lines[id];
+  if (!cur) return doc;
+  // `'filled-black'` is the historical default; omit the field so persisted
+  // state stays clean (mirrors `setLineSegmentStyle` + 'solid').
+  let nextLine: Line;
+  if (shape === 'filled-black') {
+    if (cur.defaultDotShape === undefined) return doc;
+    const { defaultDotShape: _gone, ...rest } = cur;
+    nextLine = rest;
+  } else {
+    if (cur.defaultDotShape === shape) return doc;
+    nextLine = { ...cur, defaultDotShape: shape };
+  }
+  // Any per-stop override on this line that matches the NEW default is now
+  // redundant — drop it so the stop tracks the default going forward.
+  let stations = doc.stations;
+  for (const sid of Object.keys(stations)) {
+    const st = stations[sid];
+    let stopsChanged = false;
+    const stops = st.stops.map((s) => {
+      if (s.lineId !== id || s.dotShape !== shape) return s;
+      stopsChanged = true;
+      const { dotShape: _gone, ...rest } = s;
+      return rest;
+    });
+    if (stopsChanged) stations = { ...stations, [sid]: { ...st, stops } };
+  }
+  return { ...doc, lines: { ...doc.lines, [id]: nextLine }, stations };
 }
 
 export function setStationWaypoint(doc: MapDoc, stationId: StationId, isWaypoint: boolean): MapDoc {

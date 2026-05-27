@@ -1420,6 +1420,7 @@ describe('setDotShape', () => {
   it('writes the new shape onto the targeted stop only', () => {
     const doc = makeDoc({
       stations: [makeStation({ id: 'a', stops: [makeStop('L1'), makeStop('L2', { col: 1 })] })],
+      lines: [makeLine({ id: 'L1' }), makeLine({ id: 'L2' })],
     });
     const next = T.setDotShape(doc, 'a', 'L1', 'filled-black-diamond');
     expect(next.stations.a.stops[0].dotShape).toBe('filled-black-diamond');
@@ -1434,6 +1435,7 @@ describe('setDotShape', () => {
           stops: [makeStop('L1', { row: 2, col: 3, orientation: 'auto-horizontal' })],
         }),
       ],
+      lines: [makeLine({ id: 'L1' })],
     });
     const next = T.setDotShape(doc, 'a', 'L1', 'filled-black-diamond');
     expect(next.stations.a.stops[0]).toMatchObject({
@@ -1451,6 +1453,7 @@ describe('setDotShape', () => {
         makeStation({ id: 'a', stops: [makeStop('L1')] }),
         makeStation({ id: 'b', stops: [makeStop('L1')] }),
       ],
+      lines: [makeLine({ id: 'L1' })],
     });
     const next = T.setDotShape(doc, 'a', 'L1', 'open-white');
     expect(next.stations.a.stops[0].dotShape).toBe('open-white');
@@ -1460,6 +1463,7 @@ describe('setDotShape', () => {
   it('silently no-ops on unknown station id', () => {
     const doc = makeDoc({
       stations: [makeStation({ id: 'a', stops: [makeStop('L1')] })],
+      lines: [makeLine({ id: 'L1' })],
     });
     const next = T.setDotShape(doc, 'ghost', 'L1', 'filled-white');
     expect(next).toEqual(doc);
@@ -1468,6 +1472,7 @@ describe('setDotShape', () => {
   it('silently no-ops when the station has no stop on lineId', () => {
     const doc = makeDoc({
       stations: [makeStation({ id: 'a', stops: [makeStop('L1')] })],
+      lines: [makeLine({ id: 'L1' })],
     });
     const next = T.setDotShape(doc, 'a', 'L99', 'open-white');
     expect(next).toEqual(doc);
@@ -1476,9 +1481,123 @@ describe('setDotShape', () => {
   it("'none' is a plain assignment, not a removal", () => {
     const doc = makeDoc({
       stations: [makeStation({ id: 'a', stops: [makeStop('L1')] })],
+      lines: [makeLine({ id: 'L1' })],
     });
     const next = T.setDotShape(doc, 'a', 'L1', 'none');
     expect(next.stations.a.stops[0].dotShape).toBe('none');
+  });
+
+  it("clears an existing override when the new shape matches the line's default", () => {
+    const doc = makeDoc({
+      stations: [makeStation({ id: 'a', stops: [makeStop('L1', { dotShape: 'open-white' })] })],
+      lines: [makeLine({ id: 'L1', defaultDotShape: 'open-white' })],
+    });
+    const next = T.setDotShape(doc, 'a', 'L1', 'open-white');
+    expect(next.stations.a.stops[0].dotShape).toBeUndefined();
+  });
+
+  it("clears an existing override when the new shape matches the implicit 'filled-black' default", () => {
+    const doc = makeDoc({
+      stations: [makeStation({ id: 'a', stops: [makeStop('L1', { dotShape: 'open-white' })] })],
+      lines: [makeLine({ id: 'L1' })],
+    });
+    const next = T.setDotShape(doc, 'a', 'L1', 'filled-black');
+    expect(next.stations.a.stops[0].dotShape).toBeUndefined();
+  });
+
+  it("leaves dotShape undefined when picking the line's default on a stop with no override", () => {
+    const doc = makeDoc({
+      stations: [makeStation({ id: 'a', stops: [makeStop('L1')] })],
+      lines: [makeLine({ id: 'L1', defaultDotShape: 'open-white' })],
+    });
+    const next = T.setDotShape(doc, 'a', 'L1', 'open-white');
+    expect(next.stations.a.stops[0].dotShape).toBeUndefined();
+  });
+
+  it("stores 'filled-black' as an explicit override when the line's default is something else", () => {
+    const doc = makeDoc({
+      stations: [makeStation({ id: 'a', stops: [makeStop('L1')] })],
+      lines: [makeLine({ id: 'L1', defaultDotShape: 'open-white' })],
+    });
+    const next = T.setDotShape(doc, 'a', 'L1', 'filled-black');
+    expect(next.stations.a.stops[0].dotShape).toBe('filled-black');
+  });
+});
+
+describe('setLineDefaultDotShape', () => {
+  it('sets the field when the new shape is not filled-black', () => {
+    const doc = makeDoc({ lines: [makeLine({ id: 'L1' })] });
+    const next = T.setLineDefaultDotShape(doc, 'L1', 'open-white');
+    expect(next.lines.L1.defaultDotShape).toBe('open-white');
+  });
+
+  it("drops the field when the new shape is the historical default 'filled-black'", () => {
+    const doc = makeDoc({ lines: [makeLine({ id: 'L1', defaultDotShape: 'open-white' })] });
+    const next = T.setLineDefaultDotShape(doc, 'L1', 'filled-black');
+    expect(next.lines.L1.defaultDotShape).toBeUndefined();
+    expect('defaultDotShape' in next.lines.L1).toBe(false);
+  });
+
+  it('silently no-ops on unknown line id', () => {
+    const doc = makeDoc({ lines: [makeLine({ id: 'L1' })] });
+    expect(T.setLineDefaultDotShape(doc, 'ghost', 'open-white')).toBe(doc);
+  });
+
+  it('returns the same doc reference when the value is unchanged', () => {
+    const doc = makeDoc({ lines: [makeLine({ id: 'L1', defaultDotShape: 'open-white' })] });
+    expect(T.setLineDefaultDotShape(doc, 'L1', 'open-white')).toBe(doc);
+  });
+
+  it('returns the same doc reference when clearing an already-cleared default', () => {
+    const doc = makeDoc({ lines: [makeLine({ id: 'L1' })] });
+    expect(T.setLineDefaultDotShape(doc, 'L1', 'filled-black')).toBe(doc);
+  });
+
+  it('clears per-stop overrides that match the NEW default', () => {
+    const doc = makeDoc({
+      stations: [
+        makeStation({ id: 'a', stops: [makeStop('L1', { dotShape: 'open-white' })] }),
+        makeStation({ id: 'b', stops: [makeStop('L1', { dotShape: 'filled-black-diamond' })] }),
+        makeStation({ id: 'c', stops: [makeStop('L1')] }),
+      ],
+      lines: [makeLine({ id: 'L1' })],
+    });
+    const next = T.setLineDefaultDotShape(doc, 'L1', 'open-white');
+    // 'a' matched the new default — override cleared.
+    expect(next.stations.a.stops[0].dotShape).toBeUndefined();
+    expect('dotShape' in next.stations.a.stops[0]).toBe(false);
+    // 'b' had a different explicit shape — left alone.
+    expect(next.stations.b.stops[0].dotShape).toBe('filled-black-diamond');
+    // 'c' had no override — still none.
+    expect(next.stations.c.stops[0].dotShape).toBeUndefined();
+  });
+
+  it("clears per-stop 'filled-black' overrides when the default is reset to filled-black", () => {
+    const doc = makeDoc({
+      stations: [makeStation({ id: 'a', stops: [makeStop('L1', { dotShape: 'filled-black' })] })],
+      lines: [makeLine({ id: 'L1', defaultDotShape: 'open-white' })],
+    });
+    const next = T.setLineDefaultDotShape(doc, 'L1', 'filled-black');
+    expect(next.lines.L1.defaultDotShape).toBeUndefined();
+    expect(next.stations.a.stops[0].dotShape).toBeUndefined();
+  });
+
+  it('leaves overrides on OTHER lines untouched when a default changes', () => {
+    const doc = makeDoc({
+      stations: [
+        makeStation({
+          id: 'a',
+          stops: [
+            makeStop('L1', { dotShape: 'open-white' }),
+            makeStop('L2', { col: 1, dotShape: 'open-white' }),
+          ],
+        }),
+      ],
+      lines: [makeLine({ id: 'L1' }), makeLine({ id: 'L2' })],
+    });
+    const next = T.setLineDefaultDotShape(doc, 'L1', 'open-white');
+    expect(next.stations.a.stops[0].dotShape).toBeUndefined();
+    expect(next.stations.a.stops[1].dotShape).toBe('open-white');
   });
 });
 
