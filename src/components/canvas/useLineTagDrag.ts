@@ -129,7 +129,7 @@ export function useLineTagDrag(
       const k = band.lines.findIndex((l: { id: LineId }) => l.id === tag.lineId);
       const n = band.lines.length;
       const offset = (k - (n - 1) / 2) * STOP_SIZE;
-      const r = closestParamOnOffsetPath(band.centerline, docState.curveRadius, offset, target);
+      const r = closestParamOnOffsetPath(band.centerline, band.radius, offset, target);
       if (!best || r.dist < best.dist) {
         best = {
           band,
@@ -153,7 +153,7 @@ export function useLineTagDrag(
       candPairKey: best.pairKey,
       selfTagId: ds.tagId,
       bandCenterline: best.band.centerline,
-      curveRadius: docState.curveRadius,
+      curveRadius: best.band.radius,
       lineStripeOffset: (lineId) => {
         const idx = best.band.lines.findIndex((l: { id: LineId }) => l.id === lineId);
         if (idx < 0) return null;
@@ -166,7 +166,7 @@ export function useLineTagDrag(
 
     // Convert resolved canonical-t to (anchorEnd, distance) on the dragged
     // tag's stripe. Anchor follows the nearer endpoint at the new position.
-    const stripeTotal = offsetPathLength(best.band.centerline, docState.curveRadius, best.offset);
+    const stripeTotal = offsetPathLength(best.band.centerline, best.band.radius, best.offset);
     const arcLen = snap.canonT * stripeTotal;
     const anchorEnd: 'from' | 'to' = arcLen <= stripeTotal / 2 ? 'from' : 'to';
     const distance = anchorEnd === 'from' ? arcLen : stripeTotal - arcLen;

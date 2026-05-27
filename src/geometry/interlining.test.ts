@@ -67,6 +67,109 @@ describe('buildBands — single line', () => {
   });
 });
 
+describe('buildBands — centerline radius', () => {
+  // For an interlined band, the centerline must use a radius LARGER than the
+  // configured `curveRadius` (the user's min) so that the innermost stripe —
+  // offset by maxAbsOffset = (n-1)/2 * STOP_SIZE toward the inside of any
+  // bend — still has an arc radius ≥ curveRadius. Without this, the inside
+  // stripe of a 4-5-stripe band collapses to a right angle.
+  //
+  // But the bump can't go all the way to R + maxAbsOffset in tight layouts:
+  // each band endpoint carries a STOP_SIZE × STOP_SIZE stop-marker rect, and
+  // the marker's far edge spills HALF (=STOP_SIZE/2) past the stop along
+  // travel. If the fillet at the first/last polyline corner eats more than
+  // (edgeLen - HALF) of the edge, the marker rect extends INTO the curving
+  // arc section and produces a visible stair-step at the marker boundary.
+  // So the radius is capped per-endpoint so the post-fillet straight ≥ HALF.
+
+  // 5 lines interlined through adjacent stop cells at both stations. The
+  // stops at each station are perpendicular-adjacent so buildBands merges
+  // them into a single 5-stripe band.
+  const fiveStripeStations = (s1: { x: number; y: number }, s2: { x: number; y: number }) => [
+    makeStation({
+      id: 's1',
+      ...s1,
+      stops: [
+        makeStop('L1', { col: 0 }),
+        makeStop('L2', { col: 1 }),
+        makeStop('L3', { col: 2 }),
+        makeStop('L4', { col: 3 }),
+        makeStop('L5', { col: 4 }),
+      ],
+    }),
+    makeStation({
+      id: 's2',
+      ...s2,
+      stops: [
+        makeStop('L1', { col: 0 }),
+        makeStop('L2', { col: 1 }),
+        makeStop('L3', { col: 2 }),
+        makeStop('L4', { col: 3 }),
+        makeStop('L5', { col: 4 }),
+      ],
+    }),
+  ];
+  const fiveStripeLines = () =>
+    ['L1', 'L2', 'L3', 'L4', 'L5'].map((id) => makeLine({ id, stations: ['s1', 's2'] }));
+
+  it('single-stripe band: radius equals curveRadius (no bump, no cap)', () => {
+    const doc = makeDoc({
+      stations: [
+        stationWithStop('s1', 'L1', { x: 0, y: 0 }),
+        stationWithStop('s2', 'L1', { x: 0, y: 100 }),
+      ],
+      lines: [makeLine({ id: 'L1', stations: ['s1', 's2'] })],
+    });
+    const bands = buildBands(doc.stations, doc.lines, 24, doc.lineOrder);
+    expect(bands).toHaveLength(1);
+    expect(bands[0].radius).toBe(24);
+  });
+
+  it('5-stripe straight band: radius bumps to R + (n-1)/2 * STOP_SIZE (no bend → cap inactive)', () => {
+    // s1 and s2 vertically aligned: router produces a single straight edge
+    // (no corners), so the marker-fit cap never engages. Inner stripe gets
+    // exactly R.
+    const doc = makeDoc({
+      stations: fiveStripeStations({ x: 0, y: 0 }, { x: 0, y: 200 }),
+      lines: fiveStripeLines(),
+    });
+    const bands = buildBands(doc.stations, doc.lines, 20, doc.lineOrder);
+    expect(bands).toHaveLength(1);
+    expect(bands[0].lines).toHaveLength(5);
+    // n=5, STOP_SIZE=14 → maxAbsOffset = 2 * 14 = 28. ideal R = 20 + 28 = 48.
+    expect(bands[0].radius).toBe(48);
+  });
+
+  it('5-stripe band with ample edges around a 2-bend: cap clears the bump, radius hits ideal', () => {
+    // 2-bend Z routing with both south endpoints. tS = tE = ΔY/2 = 60, so
+    // each end-edge is 60. ideal tan budget at the corner = idealR=48 ≤
+    // edge−HALF = 60−7 = 53, so the cap doesn't engage and radius = ideal.
+    const doc = makeDoc({
+      stations: fiveStripeStations({ x: 0, y: 0 }, { x: 96, y: 120 }),
+      lines: fiveStripeLines(),
+    });
+    const bands = buildBands(doc.stations, doc.lines, 20, doc.lineOrder);
+    expect(bands).toHaveLength(1);
+    expect(bands[0].radius).toBe(48);
+  });
+
+  it('5-stripe band with tight edges: cap clamps below ideal so the stop marker fits', () => {
+    // 2-bend Z routing. tS = tE = 50, so each end-edge is 50. ideal tan
+    // budget = 48 leaves only 2 units between the fillet's end and the
+    // stop — not enough room for the 7-unit marker overhang. Cap engages:
+    // radius = (50 − 7)/tan(45°) = 43. Inner stripe ends up at 43−28 = 15,
+    // below the user's R=20 — that's the marker-fit / inner-stripe-respects-R
+    // trade-off, marker-fit wins unless it would drag centerline below R.
+    const doc = makeDoc({
+      stations: fiveStripeStations({ x: 0, y: 0 }, { x: 96, y: 100 }),
+      lines: fiveStripeLines(),
+    });
+    const bands = buildBands(doc.stations, doc.lines, 20, doc.lineOrder);
+    expect(bands).toHaveLength(1);
+    expect(bands[0].radius).toBeCloseTo(43, 6);
+  });
+});
+
 describe('buildBands — interlining', () => {
   it('merges two parallel-adjacent lines on a shared pair into one band', () => {
     // Two stations, both with stops for L1 at col=0 and L2 at col=1 (adjacent

@@ -625,8 +625,8 @@ export function MapCanvas() {
       const n = spec.lines.length;
       const offset = (k - (n - 1) / 2) * STOP_SIZE;
       const world = view.screenToWorld(e.clientX, e.clientY);
-      const closest = closestParamOnOffsetPath(spec.centerline, curveRadius, offset, world);
-      const sample = sampleOffsetPath(spec.centerline, curveRadius, offset, closest.t);
+      const closest = closestParamOnOffsetPath(spec.centerline, spec.radius, offset, world);
+      const sample = sampleOffsetPath(spec.centerline, spec.radius, offset, closest.t);
       // Determine canon vs line-traversal: the band's pairKey is canonical.
       // For this band's stations, fromCanon < toCanon. The line traverses
       // forward-canon iff line.stations contains (fromCanon, toCanon) as a
@@ -655,9 +655,9 @@ export function MapCanvas() {
       const n = spec.lines.length;
       const offset = (k - (n - 1) / 2) * STOP_SIZE;
       const world = view.screenToWorld(e.clientX, e.clientY);
-      const closest = closestParamOnOffsetPath(spec.centerline, curveRadius, offset, world);
+      const closest = closestParamOnOffsetPath(spec.centerline, spec.radius, offset, world);
       const [fromCanon, toCanon] = spec.pairKey.split('|');
-      const stripeTotal = offsetPathLength(spec.centerline, curveRadius, offset);
+      const stripeTotal = offsetPathLength(spec.centerline, spec.radius, offset);
       const arcLen = closest.t * stripeTotal;
       // Anchor to whichever endpoint is nearer at insertion time.
       const anchorEnd: 'from' | 'to' = arcLen <= stripeTotal / 2 ? 'from' : 'to';

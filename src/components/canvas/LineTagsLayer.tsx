@@ -42,7 +42,7 @@ export interface ResolvedTag {
 
 export function resolveTag(
   tag: LineTag,
-  doc: Pick<MapDoc, 'lines' | 'curveRadius'>,
+  doc: Pick<MapDoc, 'lines'>,
   bands: SegmentBandSpec[],
 ): ResolvedTag | null {
   const line = doc.lines[tag.lineId];
@@ -53,17 +53,15 @@ export function resolveTag(
   const k = band.lines.findIndex((l) => l.id === tag.lineId);
   const n = band.lines.length;
   const offset = (k - (n - 1) / 2) * STOP_SIZE;
-  const stripeTotal = offsetPathLength(band.centerline, doc.curveRadius, offset);
+  // band.radius is the effective centerline radius the router used — already
+  // bumped above doc.curveRadius for interlined bands so the inner stripes
+  // respect the min radius. Sample against the same radius or geometry desyncs.
+  const stripeTotal = offsetPathLength(band.centerline, band.radius, offset);
   // Walk from anchor endpoint by `distance` along the stripe. Clamps inside
   // sampleOffsetPathByArcLength when the corridor has shrunk below distance.
   const arcLenOnStripe =
     tag.anchorEnd === 'from' ? tag.distance : Math.max(0, stripeTotal - tag.distance);
-  const sample = sampleOffsetPathByArcLength(
-    band.centerline,
-    doc.curveRadius,
-    offset,
-    arcLenOnStripe,
-  );
+  const sample = sampleOffsetPathByArcLength(band.centerline, band.radius, offset, arcLenOnStripe);
   const forward = lineTraversesForwardCanon(line, tag.fromStationId, tag.toStationId);
   const tangent = forward ? sample.tangent : { x: -sample.tangent.x, y: -sample.tangent.y };
   return {
@@ -85,7 +83,6 @@ const ORIENTATION_OFFSET_DEG: Record<0 | 1 | 2 | 3, number> = {
 export function LineTagsLayer({ bands, zoom, svgRef }: Props) {
   const lines = useDoc((s) => s.lines);
   const lineTags = useDoc((s) => s.lineTags);
-  const curveRadius = useDoc((s) => s.curveRadius);
   const cycleLineTagOrientation = useDoc((s) => s.cycleLineTagOrientation);
   const deleteLineTag = useDoc((s) => s.deleteLineTag);
   const selection = useSelection();
@@ -94,11 +91,11 @@ export function LineTagsLayer({ bands, zoom, svgRef }: Props) {
   const resolved = useMemo(() => {
     const list: ResolvedTag[] = [];
     for (const id of Object.keys(lineTags)) {
-      const r = resolveTag(lineTags[id], { lines, curveRadius }, bands);
+      const r = resolveTag(lineTags[id], { lines }, bands);
       if (r) list.push(r);
     }
     return list;
-  }, [lineTags, lines, curveRadius, bands]);
+  }, [lineTags, lines, bands]);
 
   // Measure each unique service string once at fontSize=12 bold to know how
   // wide it is. Used to shrink perpendicular text so it fits in the band.
