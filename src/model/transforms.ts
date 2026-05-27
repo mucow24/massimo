@@ -28,6 +28,16 @@ export const LABEL_FONT_SIZE_MIN = 2;
 export const LABEL_FONT_SIZE_MAX = 24;
 export const LABEL_FONT_SIZE_DEFAULT = 12;
 
+export const TRANSFER_THICKNESS_MIN = 1;
+export const TRANSFER_THICKNESS_MAX = 14;
+export const TRANSFER_THICKNESS_DEFAULT = 2;
+export const TRANSFER_COLOR_DEFAULT = '#000000';
+
+export const TRANSFER_STROKE_WIDTH_MIN = 0;
+export const TRANSFER_STROKE_WIDTH_MAX = 5;
+export const TRANSFER_STROKE_WIDTH_DEFAULT = 0;
+export const TRANSFER_STROKE_COLOR_DEFAULT = '#ffffff';
+
 // Helvetica Neue weights we ship in /public/fonts/. No 600 — we don't have a
 // SemiBold face. Single source of truth for both the text-label popover and
 // the station-label settings dropdown.
@@ -62,6 +72,10 @@ export const DEFAULT_DOC: MapDoc = {
   labelWeight: LABEL_WEIGHT_DEFAULT,
   labelItalic: false,
   activePalettes: ['mta'],
+  transferThickness: TRANSFER_THICKNESS_DEFAULT,
+  transferColor: TRANSFER_COLOR_DEFAULT,
+  transferStrokeWidth: TRANSFER_STROKE_WIDTH_DEFAULT,
+  transferStrokeColor: TRANSFER_STROKE_COLOR_DEFAULT,
 };
 
 /**
@@ -987,6 +1001,41 @@ export function setLabelFontSize(doc: MapDoc, n: number): MapDoc {
   const clamped = Math.max(LABEL_FONT_SIZE_MIN, Math.min(LABEL_FONT_SIZE_MAX, Math.round(n)));
   if (clamped === doc.labelFontSize) return doc;
   return { ...doc, labelFontSize: clamped };
+}
+
+// Clamps at the bottom (MIN) so 0/negative are never persisted, but does NOT
+// clamp at the top — the textbox lets users enter arbitrary thicknesses
+// outside the slider's range. TRANSFER_THICKNESS_MAX constrains the slider
+// only.
+export function setTransferThickness(doc: MapDoc, n: number): MapDoc {
+  if (!Number.isFinite(n)) return doc;
+  const clamped = Math.max(TRANSFER_THICKNESS_MIN, Math.round(n));
+  if (clamped === doc.transferThickness) return doc;
+  return { ...doc, transferThickness: clamped };
+}
+
+export function setTransferColor(doc: MapDoc, c: string): MapDoc {
+  if (c === doc.transferColor) return doc;
+  return { ...doc, transferColor: c };
+}
+
+// Always-on outline around the colored body. Unlike thickness, this clamps
+// on BOTH ends: the slider's [0, 5] range is the meaningful design space
+// for a halo, and unbounded values would let users hide the body entirely
+// under a massive stroke.
+export function setTransferStrokeWidth(doc: MapDoc, n: number): MapDoc {
+  if (!Number.isFinite(n)) return doc;
+  const clamped = Math.max(
+    TRANSFER_STROKE_WIDTH_MIN,
+    Math.min(TRANSFER_STROKE_WIDTH_MAX, Math.round(n)),
+  );
+  if (clamped === doc.transferStrokeWidth) return doc;
+  return { ...doc, transferStrokeWidth: clamped };
+}
+
+export function setTransferStrokeColor(doc: MapDoc, c: string): MapDoc {
+  if (c === doc.transferStrokeColor) return doc;
+  return { ...doc, transferStrokeColor: c };
 }
 
 export function setLabelWeight(doc: MapDoc, w: TextLabelWeight): MapDoc {

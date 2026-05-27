@@ -203,6 +203,18 @@ export interface MapDoc {
   // Which color palettes are available in the line editor. Invariant:
   // never empty (enforced by transforms / parse sanitiser).
   activePalettes: PaletteId[];
+  // Global styling for inter-station transfers. Thickness is the visible
+  // colored body's stroke width in world units, clamped at MIN in
+  // transforms.ts (the slider tops out at MAX but the textbox accepts
+  // arbitrary larger values). Color is a 7-char hex string (`#rrggbb`),
+  // the format emitted by `<input type="color">`.
+  transferThickness: number;
+  transferColor: string;
+  // Optional always-on outline around the body (a "halo"). Width is the
+  // per-side padding added past the body in world units, clamped to
+  // [TRANSFER_STROKE_WIDTH_MIN, TRANSFER_STROKE_WIDTH_MAX]. 0 = no outline.
+  transferStrokeWidth: number;
+  transferStrokeColor: string;
 }
 
 // Multi-line horizontal text alignment inside a TextLabel.

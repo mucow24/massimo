@@ -39,6 +39,10 @@ describe('save/load round-trip', () => {
       labelWeight: useDoc.getState().labelWeight,
       labelItalic: useDoc.getState().labelItalic,
       activePalettes: useDoc.getState().activePalettes,
+      transferThickness: useDoc.getState().transferThickness,
+      transferColor: useDoc.getState().transferColor,
+      transferStrokeWidth: useDoc.getState().transferStrokeWidth,
+      transferStrokeColor: useDoc.getState().transferStrokeColor,
     });
     const result = parse(json);
     expect(result.ok).toBe(true);
@@ -154,6 +158,10 @@ describe('save/load round-trip', () => {
       labelWeight: s.labelWeight,
       labelItalic: s.labelItalic,
       activePalettes: s.activePalettes,
+      transferThickness: s.transferThickness,
+      transferColor: s.transferColor,
+      transferStrokeWidth: s.transferStrokeWidth,
+      transferStrokeColor: s.transferStrokeColor,
     });
     const result = parse(json);
     expect(result.ok).toBe(true);
@@ -171,6 +179,50 @@ describe('save/load round-trip', () => {
     expect(result.ok).toBe(true);
     if (result.ok) {
       expect(result.doc.activePalettes).toEqual(['mta', 'caltrain']);
+    }
+  });
+
+  it('round-trips all transfer styling fields', () => {
+    const fixture = makeDoc({
+      transferThickness: 7,
+      transferColor: '#abcdef',
+      transferStrokeWidth: 3,
+      transferStrokeColor: '#123456',
+    });
+    const json = serialize(fixture);
+    const result = parse(json);
+    expect(result.ok).toBe(true);
+    if (result.ok) {
+      expect(result.doc.transferThickness).toBe(7);
+      expect(result.doc.transferColor).toBe('#abcdef');
+      expect(result.doc.transferStrokeWidth).toBe(3);
+      expect(result.doc.transferStrokeColor).toBe('#123456');
+    }
+  });
+
+  it('legacy files (no transfer styling fields) parse with DEFAULT_DOC values', () => {
+    // Older saves predate the transfer styling options. parse() merges over
+    // DEFAULT_DOC, so the new fields get the defaults rather than `undefined`.
+    const legacy = JSON.stringify({
+      format: SCHEMA_FORMAT,
+      doc: {
+        stations: {},
+        lines: {},
+        lineOrder: [],
+        curveRadius: 24,
+        lineCounter: 0,
+        lineTags: {},
+        routeBullets: {},
+        transfers: {},
+      },
+    });
+    const result = parse(legacy);
+    expect(result.ok).toBe(true);
+    if (result.ok) {
+      expect(result.doc.transferThickness).toBe(2);
+      expect(result.doc.transferColor).toBe('#000000');
+      expect(result.doc.transferStrokeWidth).toBe(0);
+      expect(result.doc.transferStrokeColor).toBe('#ffffff');
     }
   });
 

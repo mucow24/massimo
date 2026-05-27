@@ -203,6 +203,124 @@ describe('<OptionsPopover />', () => {
     expect(useDoc.getState().labelItalic).toBe(false);
   });
 
+  describe('transfer styling', () => {
+    it('contains a Transfer thickness slider with bounds [1, 14] that updates the store', async () => {
+      const user = userEvent.setup();
+      render(<Toolbar />);
+      await user.click(screen.getByRole('button', { name: 'Options' }));
+      const slider = screen.getByRole('slider', { name: /transfer thickness/i });
+      expect(slider).toHaveAttribute('min', '1');
+      expect(slider).toHaveAttribute('max', '14');
+      expect(slider).toHaveAttribute('step', '1');
+      fireEvent.change(slider, { target: { value: '7' } });
+      expect(useDoc.getState().transferThickness).toBe(7);
+    });
+
+    it('contains a Transfer thickness spinbutton with no upper bound (accepts arbitrary)', async () => {
+      const user = userEvent.setup();
+      render(<Toolbar />);
+      await user.click(screen.getByRole('button', { name: 'Options' }));
+      const spin = screen.getByRole('spinbutton', { name: /transfer thickness/i });
+      expect(spin).toHaveAttribute('min', '1');
+      // No `max` attribute — the textbox lets users enter thicknesses beyond
+      // the slider's range.
+      expect(spin).not.toHaveAttribute('max');
+      expect(spin).toHaveAttribute('step', '1');
+      fireEvent.change(spin, { target: { value: '4' } });
+      expect(useDoc.getState().transferThickness).toBe(4);
+      // Above the slider max is allowed via the textbox.
+      fireEvent.change(spin, { target: { value: '25' } });
+      expect(useDoc.getState().transferThickness).toBe(25);
+    });
+
+    it('mousewheel on the thickness spinbutton increments freely above the slider max, clamps at MIN', async () => {
+      const user = userEvent.setup();
+      render(<Toolbar />);
+      await user.click(screen.getByRole('button', { name: 'Options' }));
+      const spin = screen.getByRole('spinbutton', { name: /transfer thickness/i });
+
+      // Default 2 → 3 → back to 2.
+      fireEvent.wheel(spin, { deltaY: -1 });
+      expect(useDoc.getState().transferThickness).toBe(3);
+      fireEvent.wheel(spin, { deltaY: 1 });
+      expect(useDoc.getState().transferThickness).toBe(2);
+
+      // No upper clamp — wheeling up from the slider max keeps incrementing.
+      useDoc.setState({ ...useDoc.getState(), transferThickness: 10 });
+      fireEvent.wheel(spin, { deltaY: -1 });
+      expect(useDoc.getState().transferThickness).toBe(11);
+
+      // Clamp at MIN = 1.
+      useDoc.setState({ ...useDoc.getState(), transferThickness: 1 });
+      fireEvent.wheel(spin, { deltaY: 1 });
+      expect(useDoc.getState().transferThickness).toBe(1);
+    });
+
+    it('empty thickness spinbutton input leaves store unchanged; blur snaps back', async () => {
+      const user = userEvent.setup();
+      render(<Toolbar />);
+      await user.click(screen.getByRole('button', { name: 'Options' }));
+      const spin = screen.getByRole('spinbutton', {
+        name: /transfer thickness/i,
+      }) as HTMLInputElement;
+      fireEvent.change(spin, { target: { value: '' } });
+      expect(useDoc.getState().transferThickness).toBe(2);
+      fireEvent.blur(spin);
+      expect(spin.value).toBe('2');
+    });
+
+    it('contains a Transfer color input (type=color) defaulting to #000000', async () => {
+      const user = userEvent.setup();
+      render(<Toolbar />);
+      await user.click(screen.getByRole('button', { name: 'Options' }));
+      // Native color input — role-based selectors don't surface type=color on
+      // all backends, so query by aria-label directly.
+      const color = screen.getByLabelText('Transfer color') as HTMLInputElement;
+      expect(color.type).toBe('color');
+      expect(color.value).toBe('#000000');
+      fireEvent.change(color, { target: { value: '#ff0080' } });
+      expect(useDoc.getState().transferColor).toBe('#ff0080');
+    });
+
+    it('contains a Transfer stroke slider with bounds [0, 5] that updates the store', async () => {
+      const user = userEvent.setup();
+      render(<Toolbar />);
+      await user.click(screen.getByRole('button', { name: 'Options' }));
+      const slider = screen.getByRole('slider', { name: /transfer stroke$/i });
+      expect(slider).toHaveAttribute('min', '0');
+      expect(slider).toHaveAttribute('max', '5');
+      expect(slider).toHaveAttribute('step', '1');
+      fireEvent.change(slider, { target: { value: '3' } });
+      expect(useDoc.getState().transferStrokeWidth).toBe(3);
+    });
+
+    it('contains a Transfer stroke spinbutton bounded to [0, 5]', async () => {
+      const user = userEvent.setup();
+      render(<Toolbar />);
+      await user.click(screen.getByRole('button', { name: 'Options' }));
+      const spin = screen.getByRole('spinbutton', { name: /transfer stroke$/i });
+      expect(spin).toHaveAttribute('min', '0');
+      expect(spin).toHaveAttribute('max', '5');
+      expect(spin).toHaveAttribute('step', '1');
+      fireEvent.change(spin, { target: { value: '2' } });
+      expect(useDoc.getState().transferStrokeWidth).toBe(2);
+      // Above max → clamped to 5.
+      fireEvent.change(spin, { target: { value: '99' } });
+      expect(useDoc.getState().transferStrokeWidth).toBe(5);
+    });
+
+    it('contains a Transfer stroke color input (type=color) defaulting to #ffffff', async () => {
+      const user = userEvent.setup();
+      render(<Toolbar />);
+      await user.click(screen.getByRole('button', { name: 'Options' }));
+      const color = screen.getByLabelText('Transfer stroke color') as HTMLInputElement;
+      expect(color.type).toBe('color');
+      expect(color.value).toBe('#ffffff');
+      fireEvent.change(color, { target: { value: '#123456' } });
+      expect(useDoc.getState().transferStrokeColor).toBe('#123456');
+    });
+  });
+
   describe('color-palette disclosure', () => {
     it('renders a "Color palettes" disclosure trigger; cards are hidden by default', async () => {
       const user = userEvent.setup();

@@ -76,6 +76,10 @@ export function MapCanvas() {
   const moveRouteBullet = useDoc((s) => s.moveRouteBullet);
   const rotateRouteBullet = useDoc((s) => s.rotateRouteBullet);
   const transfers = useDoc((s) => s.transfers);
+  const transferColor = useDoc((s) => s.transferColor);
+  const transferThickness = useDoc((s) => s.transferThickness);
+  const transferStrokeColor = useDoc((s) => s.transferStrokeColor);
+  const transferStrokeWidth = useDoc((s) => s.transferStrokeWidth);
   const textLabels = useDoc((s) => s.textLabels);
   const addTextLabel = useDoc((s) => s.addTextLabel);
   const moveTextLabel = useDoc((s) => s.moveTextLabel);
@@ -786,33 +790,25 @@ export function MapCanvas() {
           />
         ))}
 
-        {/* station dots: rendered last so the snap guide passes under them */}
-        {Object.values(stations).map((st) => (
-          <StationView
-            key={st.id + ':dots'}
-            station={st}
-            lines={lines}
-            zoom={view.viewport.zoom}
-            onStartDrag={drag.onStartDrag}
-            layer="dots"
-            renderedPos={renderedPos}
-          />
-        ))}
-
-        {/* Transfers: 2px black lines connecting two dots. Rendered BEFORE
-            the dim layer so they fade with everything else when a line is
-            selected, and the selected line's stripe paints on top of them. */}
+        {/* Transfers: user-styled lines connecting two dots. Rendered BEFORE
+            the station dots so the dots paint on top — a transfer never
+            obscures the dot it's connecting. */}
         <TransferLayer
           transfers={transfers}
           stations={stations}
+          color={transferColor}
+          thickness={transferThickness}
+          strokeColor={transferStrokeColor}
+          strokeWidth={transferStrokeWidth}
           selectedId={selection.selectedTransferId}
-          zoom={view.viewport.zoom}
           onSelect={(id) => selection.selectTransfer(id)}
           renderedPos={renderedPos}
         />
 
         {/* In-progress transfer preview line: from the anchor dot to the
-            cursor while waiting for the second click. */}
+            cursor while waiting for the second click. Matches the committed
+            transfer's color and thickness, and renders below the dots for
+            the same reason. */}
         {selection.creatingTransfer &&
           selection.transferAnchor &&
           cursorWorld &&
@@ -829,13 +825,26 @@ export function MapCanvas() {
                 y1={anchorWorld.y}
                 x2={cursorWorld.x}
                 y2={cursorWorld.y}
-                stroke="#000"
-                strokeWidth={2}
+                stroke={transferColor}
+                strokeWidth={transferThickness}
                 strokeLinecap="round"
                 pointerEvents="none"
               />
             );
           })()}
+
+        {/* station dots: rendered last so the snap guide passes under them */}
+        {Object.values(stations).map((st) => (
+          <StationView
+            key={st.id + ':dots'}
+            station={st}
+            lines={lines}
+            zoom={view.viewport.zoom}
+            onStartDrag={drag.onStartDrag}
+            layer="dots"
+            renderedPos={renderedPos}
+          />
+        ))}
 
         {/* Station-placing-mode ghost: a faint dot + name following the
             cursor before each click, so the user can see where (and what

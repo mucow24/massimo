@@ -601,43 +601,62 @@ export function StationView({
     );
   }
 
-  if (layer === 'bg') {
-    // In add-line-tag mode, station hit rects (which extend past the visible
-    // footprint) would block hover/click on bands passing nearby. Make them
-    // pass-through so the cursor goes straight to the band stripes.
-    const inTagMode = selection.creatingLineTag;
-    const inHandMode = selection.toolMode === 'hand' || selection.spaceHeld;
-    // While picking the FIRST endpoint of a transfer, surface a 3px white
-    // stroke on whichever dot the cursor is closest to so the user knows
-    // exactly which dot they'll attach the transfer to.
-    const inTransferPickFirst = selection.creatingTransfer && !selection.transferAnchor;
-    const onTransferPointerMove = (e: React.PointerEvent) => {
-      const lineId = closestStopLineId(station, e);
-      if (!lineId) return;
-      const cur = selection.hoveredLineStop;
-      if (cur && cur.stationId === station.id && cur.lineId === lineId) return;
-      selection.setHoveredLineStop({ stationId: station.id, lineId });
-    };
-    const onTransferPointerLeave = () => {
+  // Shared interaction state for both the bg hit-rect AND the dots layer.
+  // The dots wrapper reuses these so a click on a station dot is routed to
+  // the same station onClick logic the bg would have run — keeping dot
+  // pixels as a "click target for the station" even though the dots layer
+  // paints above transfers in z-order.
+  //
+  // In add-line-tag mode, station hit rects (which extend past the visible
+  // footprint) would block hover/click on bands passing nearby. We pass
+  // through so the cursor goes straight to the band stripes.
+  //
+  // While placing a transfer (either pick), surface a 3px white stroke on
+  // whichever dot the cursor is closest to. Active for BOTH the first and
+  // second picks; the second-pick code path also guards against highlighting
+  // the same dot as the already-committed anchor (a no-op self-transfer
+  // that the click handler would reject).
+  const inTagMode = selection.creatingLineTag;
+  const inHandMode = selection.toolMode === 'hand' || selection.spaceHeld;
+  const inTransferPick = selection.creatingTransfer;
+  const onTransferPointerMove = (e: React.PointerEvent) => {
+    const lineId = closestStopLineId(station, e);
+    if (!lineId) return;
+    const anchor = selection.transferAnchor;
+    if (anchor && anchor.stationId === station.id && anchor.lineId === lineId) {
       const cur = selection.hoveredLineStop;
       if (cur && cur.stationId === station.id) selection.setHoveredLineStop(null);
-    };
+      return;
+    }
+    const cur = selection.hoveredLineStop;
+    if (cur && cur.stationId === station.id && cur.lineId === lineId) return;
+    selection.setHoveredLineStop({ stationId: station.id, lineId });
+  };
+  const onTransferPointerLeave = () => {
+    const cur = selection.hoveredLineStop;
+    if (cur && cur.stationId === station.id) selection.setHoveredLineStop(null);
+  };
+  const stationInteractionHandlers = {
+    onPointerDown: inTagMode ? undefined : onPointerDown,
+    onClick: inTagMode || inHandMode ? undefined : onClick,
+    onDoubleClick: inTagMode || inHandMode ? undefined : onDoubleClick,
+    onContextMenu: inTagMode ? undefined : onContextMenu,
+    onPointerMove: inTransferPick ? onTransferPointerMove : undefined,
+    onPointerLeave: inTransferPick ? onTransferPointerLeave : undefined,
+  };
+  const stationCursor = inHandMode ? 'grab' : 'move';
+
+  if (layer === 'bg') {
     const hitProps = {
+      ...stationInteractionHandlers,
       fill: 'transparent',
       pointerEvents: inTagMode ? ('none' as const) : ('all' as const),
-      onPointerDown: inTagMode ? undefined : onPointerDown,
-      onClick: inTagMode || inHandMode ? undefined : onClick,
-      onDoubleClick: inTagMode || inHandMode ? undefined : onDoubleClick,
-      onContextMenu: inTagMode ? undefined : onContextMenu,
-      onPointerMove: inTransferPickFirst ? onTransferPointerMove : undefined,
-      onPointerLeave: inTransferPickFirst ? onTransferPointerLeave : undefined,
     };
-    const cursor = inHandMode ? 'grab' : 'move';
     return (
       <g
         data-station-id={station.id}
         transform={`translate(${station.x} ${station.y}) rotate(${angle})`}
-        style={{ cursor }}
+        style={{ cursor: stationCursor }}
       >
         <rect x={cellsHitX} y={cellsHitY} width={cellsHitW} height={cellsHitH} {...hitProps} />
         {!isWp && (
@@ -797,7 +816,18 @@ export function StationView({
   if (isWp) return null;
   const hoveredStop = selection.hoveredLineStop;
   return (
-    <g pointerEvents="none">
+    // The dots layer paints above transfers in z-order so transfers never
+    // obscure the dots they connect. To preserve dot-click-priority over
+    // transfers, the wrapper itself is hit-testable: each visible dot
+    // absorbs clicks per-pixel (default `visiblePainted`) and the click
+    // bubbles to the wrapper, which forwards to the same station-onClick
+    // logic the bg layer uses. `pointer-events: none` in tag-mode keeps
+    // band-stripe hover working when the cursor passes over a dot.
+    <g
+      pointerEvents={inTagMode ? 'none' : undefined}
+      style={{ cursor: stationCursor }}
+      {...stationInteractionHandlers}
+    >
       {/* Phantom dot is a drag preview — render at cell position, in the
           station's local frame. */}
       {phantomDot && (
