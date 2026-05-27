@@ -164,26 +164,48 @@ export function computeRenderedStopPositions(
     //   • Trailer off-axis (e.g. directly south of a band member): lands one
     //     stripe-width in the cell-grid direction (same as if the band
     //     weren't compressed).
+    // When a trailer has multiple king-adjacent anchors, prefer a cardinally-
+    // adjacent one (Manhattan = 1) over a diagonally-adjacent one
+    // (Manhattan = 2). A cardinal anchor places the trailer exactly at its
+    // cell position; a diagonal anchor pulls it ≈0.293·STOP_SIZE off-cell to
+    // sit STOP_SIZE away — desirable only as a fallback (e.g. a trailer in
+    // the band's perp slot extension where no cardinal neighbour exists).
+    // Without this preference, a stop directly south of the centre of a
+    // 3-stop cardinal band would be off-centered toward whichever flanker
+    // happened to come first in station.stops order.
     // Chain propagation: a trailer king-adjacent only to another trailer
     // still inherits a position via transitive BFS.
     const queue: StopCell[] = station.stops.filter((c) => positions.has(c.lineId));
     while (queue.length > 0) {
       const cur = queue.shift()!;
-      const curPos = positions.get(cur.lineId)!;
-      const curCellWorld = stopPosWorld(cur, station);
       for (const other of station.stops) {
         if (positions.has(other.lineId)) continue;
         const dr = Math.abs(other.row - cur.row);
         const dc = Math.abs(other.col - cur.col);
         if (dr > 1 || dc > 1 || (dr === 0 && dc === 0)) continue;
+        let bestAnchor: StopCell = cur;
+        let bestManhattan = dr + dc;
+        for (const cand of station.stops) {
+          if (cand === other || !positions.has(cand.lineId)) continue;
+          const cdr = Math.abs(other.row - cand.row);
+          const cdc = Math.abs(other.col - cand.col);
+          if (cdr > 1 || cdc > 1 || (cdr === 0 && cdc === 0)) continue;
+          const m = cdr + cdc;
+          if (m < bestManhattan) {
+            bestAnchor = cand;
+            bestManhattan = m;
+          }
+        }
+        const anchorPos = positions.get(bestAnchor.lineId)!;
+        const anchorCellWorld = stopPosWorld(bestAnchor, station);
         const otherCellWorld = stopPosWorld(other, station);
-        const dx = otherCellWorld.x - curCellWorld.x;
-        const dy = otherCellWorld.y - curCellWorld.y;
+        const dx = otherCellWorld.x - anchorCellWorld.x;
+        const dy = otherCellWorld.y - anchorCellWorld.y;
         const mag = Math.hypot(dx, dy);
         if (mag === 0) continue;
         positions.set(other.lineId, {
-          x: curPos.x + (STOP_SIZE * dx) / mag,
-          y: curPos.y + (STOP_SIZE * dy) / mag,
+          x: anchorPos.x + (STOP_SIZE * dx) / mag,
+          y: anchorPos.y + (STOP_SIZE * dy) / mag,
         });
         queue.push(other);
       }
