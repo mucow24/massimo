@@ -681,6 +681,86 @@ describe('updateLine', () => {
     expect(next.lines.L1.name).toBe('Eighth Avenue Express');
     expect(next.lines.L1.service).toBe('A');
   });
+
+  describe('service-code rename rewrites inline bullets', () => {
+    it('rewrites <oldService> bullets in TextLabel.text', () => {
+      const doc = makeDoc({
+        lines: [makeLine({ id: 'L1', service: 'L1' })],
+        textLabels: [makeTextLabel({ id: 't1', text: 'Take the <L1> uptown' })],
+      });
+      const next = T.updateLine(doc, 'L1', { service: 'A' });
+      expect(next.textLabels.t1.text).toBe('Take the <A> uptown');
+    });
+
+    it('rewrites <oldService> bullets in Station.name', () => {
+      const doc = makeDoc({
+        stations: [makeStation({ id: 's1', name: '<L1> Station' })],
+        lines: [makeLine({ id: 'L1', service: 'L1' })],
+      });
+      const next = T.updateLine(doc, 'L1', { service: 'A' });
+      expect(next.stations.s1.name).toBe('<A> Station');
+    });
+
+    it('replaces every occurrence in a single text', () => {
+      const doc = makeDoc({
+        lines: [makeLine({ id: 'L1', service: 'L1' })],
+        textLabels: [makeTextLabel({ id: 't1', text: '<L1> and <L1> meet at <L1>' })],
+      });
+      const next = T.updateLine(doc, 'L1', { service: 'A' });
+      expect(next.textLabels.t1.text).toBe('<A> and <A> meet at <A>');
+    });
+
+    it('leaves bullets for other service codes untouched', () => {
+      const doc = makeDoc({
+        lines: [makeLine({ id: 'L1', service: 'L1' }), makeLine({ id: 'L2', service: 'L2' })],
+        textLabels: [makeTextLabel({ id: 't1', text: '<L1> <L2> <L11>' })],
+      });
+      const next = T.updateLine(doc, 'L1', { service: 'A' });
+      // <L11> is a different bullet code (not L1) — must not be rewritten.
+      expect(next.textLabels.t1.text).toBe('<A> <L2> <L11>');
+    });
+
+    it('rewrites across multiple textLabels and stations', () => {
+      const doc = makeDoc({
+        stations: [
+          makeStation({ id: 's1', name: '<L1> North' }),
+          makeStation({ id: 's2', name: 'No bullet here' }),
+        ],
+        lines: [makeLine({ id: 'L1', service: 'L1' })],
+        textLabels: [
+          makeTextLabel({ id: 't1', text: 'Ride <L1>' }),
+          makeTextLabel({ id: 't2', text: 'Also <L1>' }),
+        ],
+      });
+      const next = T.updateLine(doc, 'L1', { service: 'A' });
+      expect(next.stations.s1.name).toBe('<A> North');
+      expect(next.stations.s2.name).toBe('No bullet here');
+      expect(next.textLabels.t1.text).toBe('Ride <A>');
+      expect(next.textLabels.t2.text).toBe('Also <A>');
+    });
+
+    it('does nothing to texts when the patch does not change the service code', () => {
+      const doc = makeDoc({
+        stations: [makeStation({ id: 's1', name: '<L1> North' })],
+        lines: [makeLine({ id: 'L1', service: 'L1' })],
+        textLabels: [makeTextLabel({ id: 't1', text: '<L1>' })],
+      });
+      const next = T.updateLine(doc, 'L1', { name: 'Renamed' });
+      expect(next.stations.s1).toBe(doc.stations.s1);
+      expect(next.textLabels.t1).toBe(doc.textLabels.t1);
+    });
+
+    it('does nothing when the new service equals the old', () => {
+      const doc = makeDoc({
+        stations: [makeStation({ id: 's1', name: '<L1>' })],
+        lines: [makeLine({ id: 'L1', service: 'L1' })],
+        textLabels: [makeTextLabel({ id: 't1', text: '<L1>' })],
+      });
+      const next = T.updateLine(doc, 'L1', { service: 'L1' });
+      expect(next.stations.s1).toBe(doc.stations.s1);
+      expect(next.textLabels.t1).toBe(doc.textLabels.t1);
+    });
+  });
 });
 
 describe('toggleStationOnLine', () => {
