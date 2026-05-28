@@ -769,7 +769,11 @@ select {
   height: 1.05em;
   border-radius: 50%;
   margin: 0 0.1em;
-  vertical-align: -0.18em;
+  /* Lift the badge so its center lands at the text's optical midpoint
+     (matches the SVG <InlineBullet> placement in station labels). The
+     default inline-flex baseline puts the badge bottom on the text
+     baseline, which renders too low against the cap-line. */
+  vertical-align: 0.22em;
   line-height: 1;
   box-sizing: border-box;
   flex-shrink: 0;
