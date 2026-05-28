@@ -4,6 +4,8 @@ import {
   clickAtWithModifiers,
   fourInLine,
   fourInLineWithBullets,
+  fourInLineWithBulletsAndLabel,
+  labelCenter,
   seedAndOpen,
   stationCenter,
 } from './fixtures';
@@ -25,6 +27,17 @@ async function bulletWorldPos(page: Page, id: string): Promise<{ x: number; y: n
   return await page.evaluate((bid) => {
     const el = document.querySelector(`[data-bullet-id="${bid}"]`);
     if (!el) throw new Error(`bullet ${bid} not in DOM`);
+    const t = el.getAttribute('transform') ?? '';
+    const m = t.match(/translate\(\s*(-?\d+(?:\.\d+)?)\s+(-?\d+(?:\.\d+)?)\s*\)/);
+    if (!m) throw new Error(`could not parse transform "${t}"`);
+    return { x: parseFloat(m[1]), y: parseFloat(m[2]) };
+  }, id);
+}
+
+async function labelWorldPos(page: Page, id: string): Promise<{ x: number; y: number }> {
+  return await page.evaluate((lid) => {
+    const el = document.querySelector(`[data-text-label-id="${lid}"]`);
+    if (!el) throw new Error(`label ${lid} not in DOM`);
     const t = el.getAttribute('transform') ?? '';
     const m = t.match(/translate\(\s*(-?\d+(?:\.\d+)?)\s+(-?\d+(?:\.\d+)?)\s*\)/);
     if (!m) throw new Error(`could not parse transform "${t}"`);
@@ -516,6 +529,57 @@ test.describe('multi-bullet selection', () => {
     expect((await stationWorldPos(page, 'A')).x).toBeCloseTo(before.A.x, 1);
     expect((await bulletWorldPos(page, 'b1')).x).toBeCloseTo(before.b1.x, 1);
     expect((await bulletWorldPos(page, 'b2')).x).toBeCloseTo(before.b2.x, 1);
+  });
+
+  test('group drag: dragging a selected bullet moves a selected label too', async ({ page }) => {
+    // Mirrors the bullet+station group-drag test below, but adds a label
+    // to the selection. The grabbed bullet should bring every selected
+    // sibling along — including the label.
+    await seedAndOpen(page, fourInLineWithBulletsAndLabel);
+
+    const a = await stationCenter(page, 'A');
+    const b1 = await bulletCenter(page, 'b1');
+
+    // Build a mixed selection: station A + bullet b1 + label g1.
+    await page.mouse.click(a.x, a.y);
+    await clickAtWithModifiers(page, b1, ['Shift']);
+    const g1 = await labelCenter(page, 'g1');
+    await clickAtWithModifiers(page, g1, ['Shift']);
+    // Sanity: label IS in the selected set (otherwise the rest of the
+    // test would silently degenerate to "drag bullet, label stays put").
+    await expect(page.locator('[data-text-label-id="g1"][data-text-label-selected]')).toBeVisible();
+
+    const before = {
+      A: await stationWorldPos(page, 'A'),
+      b1: await bulletWorldPos(page, 'b1'),
+      g1: await labelWorldPos(page, 'g1'),
+    };
+
+    // Drag b1 ~50px right. Hold shift to bypass snap so the delta is
+    // exact at zoom=1.
+    await page.keyboard.down('Shift');
+    await page.mouse.move(b1.x, b1.y);
+    await page.mouse.down();
+    await page.mouse.move(b1.x + 10, b1.y, { steps: 2 });
+    await page.mouse.move(b1.x + 50, b1.y, { steps: 5 });
+    await page.mouse.up();
+    await page.keyboard.up('Shift');
+
+    const after = {
+      A: await stationWorldPos(page, 'A'),
+      b1: await bulletWorldPos(page, 'b1'),
+      g1: await labelWorldPos(page, 'g1'),
+    };
+
+    const dxb1 = after.b1.x - before.b1.x;
+    expect(Math.abs(dxb1)).toBeGreaterThan(20);
+    // Station and label both moved by the same delta as the grabbed bullet.
+    expect(after.A.x - before.A.x).toBeCloseTo(dxb1, 1);
+    expect(after.g1.x - before.g1.x).toBeCloseTo(dxb1, 1);
+
+    // One Ctrl-Z reverts the entire group move (label included).
+    await page.keyboard.press('Control+z');
+    expect((await labelWorldPos(page, 'g1')).x).toBeCloseTo(before.g1.x, 1);
   });
 
   test('group drag: dragging a selected station moves every selected bullet too', async ({
