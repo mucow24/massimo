@@ -37,10 +37,23 @@ export interface SeedRouteBullet {
   size?: number;
 }
 
+export interface SeedTextLabel {
+  id: string;
+  x: number;
+  y: number;
+  rotation?: number;
+  text?: string;
+  fontSize?: number;
+  weight?: 100 | 200 | 300 | 400 | 500 | 700 | 800 | 900;
+  italic?: boolean;
+  align?: 'left' | 'center' | 'right';
+}
+
 export interface Seed {
   stations: SeedStation[];
   lines: SeedLine[];
   routeBullets?: SeedRouteBullet[];
+  textLabels?: SeedTextLabel[];
 }
 
 /**
@@ -96,6 +109,21 @@ export async function seedAndOpen(page: Page, seed: Seed): Promise<void> {
     };
   }
 
+  const textLabels: Record<string, unknown> = {};
+  for (const g of seed.textLabels ?? []) {
+    textLabels[g.id] = {
+      id: g.id,
+      x: g.x,
+      y: g.y,
+      rotation: g.rotation ?? 0,
+      text: g.text ?? 'Label',
+      fontSize: g.fontSize ?? 16,
+      weight: g.weight ?? 400,
+      italic: g.italic ?? false,
+      align: g.align ?? 'left',
+    };
+  }
+
   const persisted = {
     state: {
       stations,
@@ -106,6 +134,7 @@ export async function seedAndOpen(page: Page, seed: Seed): Promise<void> {
       lineTags: {},
       routeBullets,
       transfers: {},
+      textLabels,
     },
   };
 
@@ -155,6 +184,19 @@ export const fourInLineWithBullets: Seed = {
 };
 
 /**
+ * fourInLineWithBullets + a single free-floating text label well above
+ * the row. Used to exercise group-drag interactions that mix stations,
+ * bullets, and labels.
+ */
+export const fourInLineWithBulletsAndLabel: Seed = {
+  ...fourInLineWithBullets,
+  // Placed below the station row at y=200 — comfortably inside the
+  // default viewport (the row sits at y=0, bullets at y=-200, so the
+  // visible band extends well past y=200 at zoom=1).
+  textLabels: [{ id: 'g1', x: 0, y: 200, text: 'Midtown', fontSize: 20, weight: 700 }],
+};
+
+/**
  * Returns the centroid of a station's bg <g> as page coords. Stable hit
  * point for clicks/drags regardless of the station's rotation.
  */
@@ -170,6 +212,14 @@ export async function bulletCenter(page: Page, id: string): Promise<{ x: number;
   const handle = page.locator(`[data-bullet-id="${id}"]`);
   const box = await handle.boundingBox();
   if (!box) throw new Error(`bullet ${id} not visible`);
+  return { x: box.x + box.width / 2, y: box.y + box.height / 2 };
+}
+
+/** Page-coord centroid of a text label's <g>. */
+export async function labelCenter(page: Page, id: string): Promise<{ x: number; y: number }> {
+  const handle = page.locator(`[data-text-label-id="${id}"]`);
+  const box = await handle.boundingBox();
+  if (!box) throw new Error(`label ${id} not visible`);
   return { x: box.x + box.width / 2, y: box.y + box.height / 2 };
 }
 

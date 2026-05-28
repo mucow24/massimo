@@ -177,6 +177,7 @@ export function MapCanvas() {
     moved: boolean;
     bulletSiblings: { id: string; startX: number; startY: number }[];
     stationSiblings: { id: string; startX: number; startY: number }[];
+    labelSiblings: { id: string; startX: number; startY: number }[];
     history: ReturnType<typeof beginHistoryGroup>;
   } | null>(null);
   // Text-label drag state. Same shape as bulletDragRef, minus snap (labels
@@ -265,7 +266,10 @@ export function MapCanvas() {
         // Group-drag suppresses the bullet-line snap: siblings are moving,
         // so snap targets become unstable and a half-snapped grabbed
         // bullet would drag the whole group off-axis.
-        const inGroupDrag = bd.bulletSiblings.length > 0 || bd.stationSiblings.length > 0;
+        const inGroupDrag =
+          bd.bulletSiblings.length > 0 ||
+          bd.stationSiblings.length > 0 ||
+          bd.labelSiblings.length > 0;
         if (lineId && !e.shiftKey && !inGroupDrag) {
           // Reuse the station snap engine in bullet mode — it already
           // handles per-stop axis alignment, two-axis snap at corners,
@@ -301,6 +305,9 @@ export function MapCanvas() {
           }
           for (const ss of bd.stationSiblings) {
             useDoc.getState().moveStation(ss.id, ss.startX + deltaX, ss.startY + deltaY);
+          }
+          for (const ls of bd.labelSiblings) {
+            moveTextLabel(ls.id, ls.startX + deltaX, ls.startY + deltaY);
           }
         }
       }
@@ -414,6 +421,7 @@ export function MapCanvas() {
     const includesGrabbed = sel.selectedRouteBulletIds.includes(id);
     const bulletSiblings: { id: string; startX: number; startY: number }[] = [];
     const stationSiblings: { id: string; startX: number; startY: number }[] = [];
+    const labelSiblings: { id: string; startX: number; startY: number }[] = [];
     if (includesGrabbed) {
       for (const bid of sel.selectedRouteBulletIds) {
         if (bid === id) continue;
@@ -426,6 +434,11 @@ export function MapCanvas() {
         if (!ss) continue;
         stationSiblings.push({ id: sid, startX: ss.x, startY: ss.y });
       }
+      for (const lid of sel.selectedLabelIds) {
+        const lb = textLabels[lid];
+        if (!lb) continue;
+        labelSiblings.push({ id: lid, startX: lb.x, startY: lb.y });
+      }
     }
     bulletDragRef.current = {
       id,
@@ -436,6 +449,7 @@ export function MapCanvas() {
       moved: false,
       bulletSiblings,
       stationSiblings,
+      labelSiblings,
       history: beginHistoryGroup(),
     };
   };
