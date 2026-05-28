@@ -758,28 +758,6 @@ select {
   flex-shrink: 0;
 }
 
-/* Inline circular bullet rendered inside flowing text — mirrors the
-   in-label SVG <InlineBullet> for DOM contexts (sidebar list, line-editor
-   list). Sized in em so it scales with the surrounding text. */
-.inline-bullet-badge {
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  width: 1.05em;
-  height: 1.05em;
-  border-radius: 50%;
-  margin: 0 0.1em;
-  vertical-align: -0.18em;
-  line-height: 1;
-  box-sizing: border-box;
-  flex-shrink: 0;
-}
-.inline-bullet-badge__code {
-  font-size: 0.65em;
-  font-weight: 700;
-  letter-spacing: -0.02em;
-}
-
 .list-header {
   display: flex;
   align-items: center;

@@ -1,6 +1,6 @@
-import { Fragment, useEffect, useMemo, useRef, useState } from 'react';
+import { Fragment, useEffect, useRef, useState } from 'react';
 import { useDoc, useSelection } from '../../state/store';
-import type { DotShape, Line, LineId, LineStyle } from '../../model/types';
+import type { DotShape, LineId, LineStyle } from '../../model/types';
 import { pairKeyOf } from '../../model/pairKey';
 import { resolveDotShape } from '../../model/transforms';
 import { ColorPalette } from './ColorPalette';
@@ -9,7 +9,6 @@ import { HatchPatterns, lineStyleStrokeAttrs, lineStyleUnderlayAttrs } from '../
 import { StopGlyph } from '../StopGlyph';
 import { StationShapePicker } from '../StationShapePicker';
 import { blendOver, legibleTextOn, withAlpha } from '../../util/color';
-import { InlineBulletText } from '../InlineBulletText';
 
 const DOT_SHAPES: Array<{ shape: DotShape; label: string }> = [
   { shape: 'filled-black', label: 'Filled black' },
@@ -137,7 +136,6 @@ function InsertZone({
 export function LineInspector({ id }: { id: LineId }) {
   const line = useDoc((s) => s.lines[id]);
   const stations = useDoc((s) => s.stations);
-  const allLines = useDoc((s) => s.lines);
   const updateLine = useDoc((s) => s.updateLine);
   const setLineSegmentStyle = useDoc((s) => s.setLineSegmentStyle);
   const reorderLineStations = useDoc((s) => s.reorderLineStations);
@@ -148,12 +146,6 @@ export function LineInspector({ id }: { id: LineId }) {
   const nameField = useFieldHistory();
   const serviceField = useFieldHistory();
   const [openPickerSid, setOpenPickerSid] = useState<string | null>(null);
-  // Service-code → line lookup for inline `<CODE>` bullets in station names.
-  const lineByService = useMemo(() => {
-    const map = new Map<string, Line>();
-    for (const ln of Object.values(allLines)) map.set(ln.service, ln);
-    return map;
-  }, [allLines]);
 
   if (!line) return null;
 
@@ -421,7 +413,7 @@ export function LineInspector({ id }: { id: LineId }) {
                           title="Open station editor"
                           onClick={() => selection.selectStation(sid)}
                         >
-                          <InlineBulletText text={st.name} lineByService={lineByService} />
+                          {st.name}
                         </span>
                         {isAppending && (
                           <>

@@ -1,9 +1,8 @@
-import { useEffect, useMemo, useRef, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { effectiveLineOrder, useDoc, useSelection } from '../state/store';
 import { LineInspector, StationInspector } from './inspector';
 import type { Line } from '../model/types';
 import { legibleTextOn } from '../util/color';
-import { InlineBulletText } from './InlineBulletText';
 
 type StationSortColumn = 'name' | 'stops';
 type SortDirection = 'asc' | 'desc';
@@ -21,14 +20,6 @@ export function Sidebar() {
   const [stationSortDir, setStationSortDir] = useState<SortDirection>('asc');
 
   const orderedLineIds = effectiveLineOrder(lineOrder, lines);
-
-  // Service-code → line lookup for `<CODE>` bullet tokens that appear inline
-  // in station names. Built once per render; cheap to rebuild.
-  const lineByService = useMemo(() => {
-    const map = new Map<string, Line>();
-    for (const ln of Object.values(lines)) map.set(ln.service, ln);
-    return map;
-  }, [lines]);
 
   // Per-station: lines that stop here, alphabetical by service code.
   const linesAtStation = (stationId: string): Line[] =>
@@ -142,9 +133,7 @@ export function Sidebar() {
                     onMouseEnter={() => selection.setHoveredStation(st.id)}
                     onMouseLeave={() => selection.setHoveredStation(null)}
                   >
-                    <span className="grow">
-                      <InlineBulletText text={st.name} lineByService={lineByService} />
-                    </span>
+                    <span className="grow">{st.name}</span>
                     {st.isWaypoint && (
                       <span className="wp-pill" title="Waypoint">
                         WP
