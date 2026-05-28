@@ -245,7 +245,11 @@ function renderStationLabelText({
                 code={seg.code}
                 diameter={seg.diameter}
                 cx={segCursor + r}
-                cy={baselineY - r}
+                // Bullet center at the text's optical midpoint (≈0.3em above
+                // baseline) so the badge looks visually centered on mixed
+                // upper/lowercase. Older convention sat the bullet's bottom on
+                // the baseline, which left it riding above the cap-line.
+                cy={baselineY - fontSize * 0.3}
                 lineByService={lineByService}
               />,
             );
