@@ -15,8 +15,8 @@ interface Props {
 }
 
 const WEIGHTS: { value: TextLabelWeight; name: string }[] = [
-  { value: 100, name: 'Thin' },
-  { value: 200, name: 'UltraLight' },
+  { value: 100, name: 'UltraLight' },
+  { value: 200, name: 'Thin' },
   { value: 300, name: 'Light' },
   { value: 400, name: 'Roman' },
   { value: 500, name: 'Medium' },

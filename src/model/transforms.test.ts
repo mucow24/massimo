@@ -1149,8 +1149,8 @@ describe('LABEL_WEIGHT_VALUES', () => {
   it('LABEL_WEIGHT_NAMES is parallel to LABEL_WEIGHT_VALUES', () => {
     expect(T.LABEL_WEIGHT_NAMES.map((w) => w.value)).toEqual(T.LABEL_WEIGHT_VALUES);
     expect(T.LABEL_WEIGHT_NAMES.map((w) => w.name)).toEqual([
-      'Thin',
       'UltraLight',
+      'Thin',
       'Light',
       'Roman',
       'Medium',
@@ -1180,7 +1180,7 @@ describe('bumpWeightByIndex', () => {
     expect(T.bumpWeightByIndex(900, 10)).toBe(900);
   });
 
-  it('clamps at Thin (100) when stepping past the bottom', () => {
+  it('clamps at UltraLight (100) when stepping past the bottom', () => {
     expect(T.bumpWeightByIndex(200, -5)).toBe(100);
     expect(T.bumpWeightByIndex(100, -1)).toBe(100);
   });

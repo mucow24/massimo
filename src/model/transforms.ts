@@ -46,8 +46,8 @@ export const LABEL_WEIGHT_VALUES: readonly TextLabelWeight[] = [
 ] as const;
 
 export const LABEL_WEIGHT_NAMES: readonly { value: TextLabelWeight; name: string }[] = [
-  { value: 100, name: 'Thin' },
-  { value: 200, name: 'UltraLight' },
+  { value: 100, name: 'UltraLight' },
+  { value: 200, name: 'Thin' },
   { value: 300, name: 'Light' },
   { value: 400, name: 'Roman' },
   { value: 500, name: 'Medium' },
