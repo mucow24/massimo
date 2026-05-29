@@ -9,7 +9,7 @@ import { pathBetweenStations } from '../model/pathSelect';
 import { bumpWeightByIndex, resolveDotShape, resolveStationLabelWeight } from '../model/transforms';
 import { legibleTextOn } from '../util/color';
 import { StopGlyph } from './StopGlyph';
-import type { RenderedStopPositions } from '../geometry/stopPositions';
+import { stopPosWorld } from '../geometry/interlining';
 import { BASELINE_FRACTION, LINE_HEIGHT, measureTextLabel } from '../geometry/textMeasure';
 import { InlineBullet } from './InlineBullet';
 
@@ -318,12 +318,6 @@ interface Props {
     | 'match-stroke';
   // Override fill for the highlight-* layers (default white).
   highlightColor?: string;
-  // World-frame stop positions (compression-aware). Used for the 'dots' and
-  // 'highlight-dots' layers so the colored dot lands on the band stripe for
-  // stops in a diagonal interline group. Phantom dots (drag previews) stay
-  // at cell positions — they reflect the logical layout the editor is about
-  // to commit, not the visual band.
-  renderedPos?: RenderedStopPositions;
 }
 
 export function StationView({
@@ -332,7 +326,6 @@ export function StationView({
   onStartDrag,
   layer,
   highlightColor = '#fff',
-  renderedPos,
 }: Props) {
   const selection = useSelection();
   const rotateStation = useDoc((s) => s.rotateStation);
@@ -802,12 +795,8 @@ export function StationView({
             })()}
           </g>
         )}
-        {/* Real stop dots use rendered (compression-aware) world positions so
-            they sit on band stripes within diagonal interline groups. */}
         {stops.map((cell) => {
-          const w = renderedPos
-            ? renderedPos(station.id, cell.lineId)
-            : worldFromCell(station, cell.row, cell.col);
+          const w = stopPosWorld(cell, station);
           return (
             <circle key={cell.lineId} cx={w.x} cy={w.y} r={STOP_DOT_RADIUS} fill={highlightColor} />
           );
@@ -842,12 +831,8 @@ export function StationView({
           })()}
         </g>
       )}
-      {/* Real stop dots use rendered (compression-aware) world positions so
-          they sit on band stripes within diagonal interline groups. */}
       {stops.map((cell) => {
-        const w = renderedPos
-          ? renderedPos(station.id, cell.lineId)
-          : worldFromCell(station, cell.row, cell.col);
+        const w = stopPosWorld(cell, station);
         const isHovered =
           hoveredStop?.stationId === station.id && hoveredStop?.lineId === cell.lineId;
         return (
@@ -864,20 +849,6 @@ export function StationView({
       })}
     </g>
   );
-}
-
-// Fallback cell-grid world position when no rendered-position lookup is
-// threaded through. Equivalent to `stopPosWorld` in interlining.ts but
-// inlined here to avoid a cross-module import.
-function worldFromCell(station: Station, row: number, col: number) {
-  const local = stopCenterAt(row, col);
-  const a = (station.rotation * Math.PI) / 4;
-  const c = Math.cos(a);
-  const s = Math.sin(a);
-  return {
-    x: station.x + local.x * c - local.y * s,
-    y: station.y + local.x * s + local.y * c,
-  };
 }
 
 function NameEditor({
