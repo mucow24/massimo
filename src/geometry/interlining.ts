@@ -217,9 +217,12 @@ export function buildBands(
         tPerpPos: number;
         tParPos: number;
       };
+      // All SegInfo in a bucket share the canonical from/to station IDs,
+      // so the endpoint stations are fixed across the bucket — pull them
+      // off the sample once.
       const enriched: Enriched[] = bucket.map((s) => {
-        const fp = stopPosWorld(s.fromCell, stations[s.fromId]);
-        const tp = stopPosWorld(s.toCell, stations[s.toId]);
+        const fp = stopPosWorld(s.fromCell, fromS);
+        const tp = stopPosWorld(s.toCell, toS);
         return {
           seg: s,
           fPerpPos: fp.x * fPerp.x + fp.y * fPerp.y,
@@ -242,7 +245,8 @@ export function buildBands(
             pairKey,
             fDir,
             tDir,
-            stations,
+            fromS,
+            toS,
           ),
         );
         group = [];
@@ -461,12 +465,15 @@ function buildBandSpec(
   // router and the merge basis agree.
   fromDir: Vec2,
   toDir: Vec2,
-  stations: Record<StationId, Station>,
+  // The canonical endpoint stations for this band. All SegInfo in `group`
+  // share these IDs by construction (a band is one pairKey + one bucket).
+  fromStation: Station,
+  toStation: Station,
 ): SegmentBandSpec {
   // Centerline endpoints are the mean of the band's per-line stop world
   // positions — i.e. the centroid of the contributing stop cells at each end.
-  const fromWorlds = group.map((g) => stopPosWorld(g.fromCell, stations[g.fromId]));
-  const toWorlds = group.map((g) => stopPosWorld(g.toCell, stations[g.toId]));
+  const fromWorlds = group.map((g) => stopPosWorld(g.fromCell, fromStation));
+  const toWorlds = group.map((g) => stopPosWorld(g.toCell, toStation));
   const meanVec = (vs: Vec2[]): Vec2 => ({
     x: vs.reduce((a, p) => a + p.x, 0) / vs.length,
     y: vs.reduce((a, p) => a + p.y, 0) / vs.length,

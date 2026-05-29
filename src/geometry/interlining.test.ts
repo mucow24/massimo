@@ -966,4 +966,45 @@ describe('buildStopMarkers — rendered position equals cell-grid position', () 
     expect(dAfter.x).toBeCloseTo(dBefore.x, 6);
     expect(dAfter.y).toBeCloseTo(dBefore.y, 6);
   });
+
+  it('the invariant holds for every station rotation', () => {
+    // Same "move B, observe A and D" setup as above, but at each of the 8
+    // station rotations. Closes the rotation-coverage gap — a heuristic
+    // that fires at a specific rotation would still get caught here.
+    const stops0 = [
+      makeStop('A', { row: 0, col: 0, orientation: 'auto-vertical' }),
+      makeStop('B', { row: 0, col: 1, orientation: 'auto-vertical' }),
+      makeStop('D', { row: 1, col: -1, orientation: 'auto-nw-se' }),
+    ];
+    const stops1 = [
+      stops0[0],
+      makeStop('B', { row: -1, col: 1, orientation: 'auto-vertical' }),
+      stops0[2],
+    ];
+    const lines = [makeLine({ id: 'A' }), makeLine({ id: 'B' }), makeLine({ id: 'D' })];
+    for (let rot = 0; rot < 8; rot++) {
+      const r = rot as 0 | 1 | 2 | 3 | 4 | 5 | 6 | 7;
+      const before = makeStation({ id: 's', x: 50, y: 70, rotation: r, stops: stops0 });
+      const after = makeStation({ id: 's', x: 50, y: 70, rotation: r, stops: stops1 });
+      const dBefore = makeDoc({ stations: [before], lines });
+      const dAfter = makeDoc({ stations: [after], lines });
+      const mBefore = buildStopMarkers(dBefore.stations, dBefore.lines, dBefore.lineOrder);
+      const mAfter = buildStopMarkers(dAfter.stations, dAfter.lines, dAfter.lineOrder);
+
+      for (const lineId of ['A', 'D']) {
+        const b = markerFor(mBefore, 's', lineId);
+        const a = markerFor(mAfter, 's', lineId);
+        expect(a.x, `line ${lineId} x at rotation ${r}`).toBeCloseTo(b.x, 6);
+        expect(a.y, `line ${lineId} y at rotation ${r}`).toBeCloseTo(b.y, 6);
+      }
+
+      // And each stop's marker still sits at stopPosWorld of its cell.
+      for (const cell of before.stops) {
+        const got = markerFor(mBefore, 's', cell.lineId);
+        const want = stopPosWorld(cell, before);
+        expect(got.x, `${cell.lineId} at rotation ${r}`).toBeCloseTo(want.x, 6);
+        expect(got.y, `${cell.lineId} at rotation ${r}`).toBeCloseTo(want.y, 6);
+      }
+    }
+  });
 });
