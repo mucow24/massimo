@@ -2,11 +2,7 @@ import type { Line, LineId, Station, StationId, StopCell } from '../model/types'
 import type { Vec2 } from './vec';
 import { rotateBy, stopCenterAt, travelDirLocal } from './orientation';
 import type { Rotation } from './orientation';
-import {
-  computeRenderedStopPositions,
-  withDraggedSnapshot,
-  type RenderedStopPositions,
-} from './stopPositions';
+import { stopPosWorld } from './interlining';
 
 const SQRT2_2 = Math.SQRT2 / 2;
 
@@ -218,29 +214,10 @@ export function snapDraggedStation(input: SnapInput): SnapResult {
   // of the user's `modes.line` toggle — it's an explicit, modal interaction.
   const lineModeOn = modes.line || !!redistributeAnchor;
   const allModeOn = modes.all && !redistributeAnchor;
-  // Build a stations snapshot that pins the dragged station at the proposed
-  // position so its rendered stop offsets reflect any active diagonal
-  // interline compression with itself. (Compression is purely local to a
-  // station, so the dragged anchor's exact value doesn't change a station's
-  // OWN rendered offsets — but using the proposed position keeps absolute
-  // world positions consistent across both sides of the snap solver.)
-  const snapStations =
-    draggedId !== undefined && draggedRotation !== undefined
-      ? withDraggedSnapshot(
-          stations,
-          draggedId,
-          draggedStops ?? [],
-          proposedX,
-          proposedY,
-          draggedRotation,
-        )
-      : stations;
-  const renderedPos = computeRenderedStopPositions(snapStations);
-  const draggedAnchor: Vec2 = { x: proposedX, y: proposedY };
   for (const t of targets) {
     const linePairs: AlignmentPair[] = lineModeOn
       ? bulletLineId
-        ? bulletAlignmentPairs(t, bulletLineId, renderedPos)
+        ? bulletAlignmentPairs(t, bulletLineId)
         : alignmentPairs(
             draggedId as StationId,
             draggedRotation as Rotation,
@@ -248,19 +225,10 @@ export function snapDraggedStation(input: SnapInput): SnapResult {
             t,
             lines,
             requireAdjacency,
-            renderedPos,
-            draggedAnchor,
           )
       : [];
     const allPairs: AlignmentPair[] = allModeOn
-      ? allAxesPairs(
-          draggedId as StationId,
-          draggedStops ?? [],
-          (draggedRotation ?? 0) as Rotation,
-          t,
-          renderedPos,
-          draggedAnchor,
-        )
+      ? allAxesPairs(draggedStops ?? [], (draggedRotation ?? 0) as Rotation, t)
       : [];
     type TaggedPair = AlignmentPair & { kind: 'line' | 'all' };
     const pairs: TaggedPair[] = [
@@ -424,7 +392,6 @@ export function snapDraggedStation(input: SnapInput): SnapResult {
       tolerance,
       bulletLineId,
       redistributeAnchor,
-      renderedPos,
     });
     if (refined) {
       sx = refined.sx;
@@ -580,14 +547,10 @@ export interface AlignmentPair {
  * adjacency doesn't apply: a bullet labeling a line cares about every
  * stop on that line, not just neighbors.
  */
-export function bulletAlignmentPairs(
-  target: Station,
-  lineId: LineId,
-  renderedPos: RenderedStopPositions = computeRenderedStopPositions({ [target.id]: target }),
-): AlignmentPair[] {
+export function bulletAlignmentPairs(target: Station, lineId: LineId): AlignmentPair[] {
   const cell = target.stops.find((c) => c.lineId === lineId);
   if (!cell) return [];
-  const tWorld = renderedPos(target.id, lineId);
+  const tWorld = stopPosWorld(cell, target);
   return [
     {
       dOff: { x: 0, y: 0 },
@@ -613,32 +576,18 @@ const ALL_AXES: Vec2[] = [
   { x: SQRT2_2, y: -SQRT2_2 },
 ];
 export function allAxesPairs(
-  draggedId: StationId | undefined,
   draggedStops: StopCell[],
   draggedRotation: Rotation,
   target: Station,
-  renderedPos?: RenderedStopPositions,
-  draggedAnchor: Vec2 = { x: 0, y: 0 },
 ): AlignmentPair[] {
   if (target.stops.length === 0) return [];
-  const renderedFn = renderedPos ?? computeRenderedStopPositions({ [target.id]: target });
   const dOffs: Vec2[] =
     draggedStops.length === 0
       ? [{ x: 0, y: 0 }]
-      : draggedStops.map((c) => {
-          // Prefer rendered position (compression-aware) when the dragged
-          // station is queryable; otherwise fall back to the cell-grid
-          // offset rotated by the dragged rotation.
-          if (draggedId !== undefined) {
-            const w = renderedFn(draggedId, c.lineId);
-            return { x: w.x - draggedAnchor.x, y: w.y - draggedAnchor.y };
-          }
-          return rotateBy(stopCenterAt(c.row, c.col), draggedRotation);
-        });
+      : draggedStops.map((c) => rotateBy(stopCenterAt(c.row, c.col), draggedRotation));
   const out: AlignmentPair[] = [];
   for (const tCell of target.stops) {
-    const tWorld = renderedFn(target.id, tCell.lineId);
-    const tOff = { x: tWorld.x - target.x, y: tWorld.y - target.y };
+    const tOff = rotateBy(stopCenterAt(tCell.row, tCell.col), target.rotation);
     for (const dOff of dOffs) {
       for (const axis of ALL_AXES) out.push({ dOff, tOff, axis });
     }
@@ -701,7 +650,6 @@ function refineAlongAxis(args: {
    *  the user's intent by pulling the terminus onto the local A↔B cadence
    *  instead of toward the chosen anchor. */
   redistributeAnchor?: StationId;
-  renderedPos: RenderedStopPositions;
 }): { sx: number; sy: number; sourceGuide?: { from: Vec2; to: Vec2 } } | null {
   const {
     sx,
@@ -717,7 +665,6 @@ function refineAlongAxis(args: {
     tolerance,
     bulletLineId,
     redistributeAnchor,
-    renderedPos,
   } = args;
   if (!modes.equidistant && !modes.tens) return null;
 
@@ -730,7 +677,7 @@ function refineAlongAxis(args: {
   ): { x: number; y: number; axisOk: boolean } | null => {
     const cell = st.stops.find((c) => c.lineId === lineId);
     if (!cell) return null;
-    const w = renderedPos(st.id, lineId);
+    const w = stopPosWorld(cell, st);
     const stopAxis = rotateBy(travelDirLocal(cell.orientation), st.rotation);
     return { x: w.x, y: w.y, axisOk: parallel(stopAxis, axis) };
   };
@@ -881,13 +828,10 @@ export function alignmentPairs(
   // shared line where the travel directions are parallel. Used by the
   // Ctrl-drag (redistribute) snap path to align with a non-adjacent anchor.
   requireAdjacency: boolean = true,
-  renderedPos?: RenderedStopPositions,
-  draggedAnchor: Vec2 = { x: 0, y: 0 },
 ): AlignmentPair[] {
   if (draggedStops.length === 0 && target.stops.length === 0) {
     return [{ dOff: { x: 0, y: 0 }, tOff: { x: 0, y: 0 }, axis: axisForRotation(draggedRotation) }];
   }
-  const renderedFn = renderedPos ?? null;
   const out: AlignmentPair[] = [];
   for (const dCell of draggedStops) {
     const tCell = target.stops.find((c) => c.lineId === dCell.lineId);
@@ -905,18 +849,8 @@ export function alignmentPairs(
     const dWorldDir = rotateBy(travelDirLocal(dCell.orientation), draggedRotation);
     const tWorldDir = rotateBy(travelDirLocal(tCell.orientation), target.rotation);
     if (!parallel(dWorldDir, tWorldDir)) continue;
-    const dOff: Vec2 = renderedFn
-      ? (() => {
-          const w = renderedFn(draggedId, dCell.lineId);
-          return { x: w.x - draggedAnchor.x, y: w.y - draggedAnchor.y };
-        })()
-      : rotateBy(stopCenterAt(dCell.row, dCell.col), draggedRotation);
-    const tOff: Vec2 = renderedFn
-      ? (() => {
-          const w = renderedFn(target.id, tCell.lineId);
-          return { x: w.x - target.x, y: w.y - target.y };
-        })()
-      : rotateBy(stopCenterAt(tCell.row, tCell.col), target.rotation);
+    const dOff: Vec2 = rotateBy(stopCenterAt(dCell.row, dCell.col), draggedRotation);
+    const tOff: Vec2 = rotateBy(stopCenterAt(tCell.row, tCell.col), target.rotation);
     out.push({ dOff, tOff, axis: dWorldDir });
   }
   return out;

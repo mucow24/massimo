@@ -4,6 +4,7 @@ import {
   buildLineIndex,
   buildOrderedRenderables,
   buildStopMarkers,
+  stopPosWorld,
 } from './interlining';
 import { STOP_SIZE } from './orientation';
 import { makeDoc, makeLine, makeStation, makeStop, stationWithStop } from '../test/fixtures';
@@ -267,33 +268,19 @@ describe('buildBands — interlining', () => {
   });
 
   it('merges two diagonal-adjacent lines on a NE-going pair into one band', () => {
-    // auto-ne-sw band perp axis is NW-SE; perp-adjacent cells differ by
-    // (dRow=+1, dCol=+1). At rotation 0 cells (0,0) and (1,1) have world
-    // delta (STOP_SIZE, STOP_SIZE) = SE along the perp axis. After
-    // compression the two stripes sit at ±STOP_SIZE/2 perp from the band
-    // centerline, packing exactly like cardinal interlining.
+    // auto-ne-sw band perp axis is NW-SE. In the diagonal basis, perp-
+    // adjacent cells differ by (dRow=+√2/2, dCol=+√2/2) — a world delta of
+    // (STOP_SIZE·√2/2, STOP_SIZE·√2/2), magnitude STOP_SIZE along SE. Cells
+    // (0,0) and (√2/2, √2/2) form a valid 2-stripe diagonal band.
+    const H = Math.SQRT1_2;
+    const stops = (lineIds: [string, string]) => [
+      makeStop(lineIds[0], { row: 0, col: 0, orientation: 'auto-ne-sw' }),
+      makeStop(lineIds[1], { row: H, col: H, orientation: 'auto-ne-sw' }),
+    ];
     const doc = makeDoc({
       stations: [
-        makeStation({
-          id: 's1',
-          x: 0,
-          y: 0,
-          rotation: 0,
-          stops: [
-            makeStop('L1', { row: 0, col: 0, orientation: 'auto-ne-sw' }),
-            makeStop('L2', { row: 1, col: 1, orientation: 'auto-ne-sw' }),
-          ],
-        }),
-        makeStation({
-          id: 's2',
-          x: 100,
-          y: -100,
-          rotation: 0,
-          stops: [
-            makeStop('L1', { row: 0, col: 0, orientation: 'auto-ne-sw' }),
-            makeStop('L2', { row: 1, col: 1, orientation: 'auto-ne-sw' }),
-          ],
-        }),
+        makeStation({ id: 's1', x: 0, y: 0, rotation: 0, stops: stops(['L1', 'L2']) }),
+        makeStation({ id: 's2', x: 100, y: -100, rotation: 0, stops: stops(['L1', 'L2']) }),
       ],
       lines: [
         makeLine({ id: 'L1', stations: ['s1', 's2'] }),
@@ -305,43 +292,29 @@ describe('buildBands — interlining', () => {
     expect(bands[0].lines).toHaveLength(2);
     expect(bands[0].paths).toHaveLength(2);
     // Centerline endpoints at each station's group centroid (cell-grid mean).
-    // s1 centroid: (STOP_SIZE/2, STOP_SIZE/2). s2 centroid offset by (100, -100).
+    // s1 centroid: (H·STOP_SIZE/2, H·STOP_SIZE/2). s2 offset by (100, -100).
     const v = bands[0].centerline;
-    expect(v[0].x).toBeCloseTo(STOP_SIZE / 2, 5);
-    expect(v[0].y).toBeCloseTo(STOP_SIZE / 2, 5);
-    expect(v[v.length - 1].x).toBeCloseTo(100 + STOP_SIZE / 2, 5);
-    expect(v[v.length - 1].y).toBeCloseTo(-100 + STOP_SIZE / 2, 5);
+    expect(v[0].x).toBeCloseTo((H * STOP_SIZE) / 2, 5);
+    expect(v[0].y).toBeCloseTo((H * STOP_SIZE) / 2, 5);
+    expect(v[v.length - 1].x).toBeCloseTo(100 + (H * STOP_SIZE) / 2, 5);
+    expect(v[v.length - 1].y).toBeCloseTo(-100 + (H * STOP_SIZE) / 2, 5);
     expect(bands[0].warning).toBe(false);
   });
 
   it('merges three diagonal-adjacent lines on the same pair into a single 3-stripe band', () => {
-    // Three perp-adjacent auto-nw-se stops: cells (0,0), (-1,1), (-2,2).
-    // Perp axis NE-SW; consecutive cells differ by STOP_SIZE·√2 along NE
-    // (world delta (STOP_SIZE, -STOP_SIZE) each step).
+    // Three perp-adjacent auto-nw-se stops at diagonal-basis cells. Perp
+    // axis is NE-SW; one NE step is cell delta (dRow=-√2/2, dCol=+√2/2),
+    // world delta (STOP_SIZE·√2/2, -STOP_SIZE·√2/2) = NE at STOP_SIZE.
+    const H = Math.SQRT1_2;
+    const stops = (lineIds: [string, string, string]) => [
+      makeStop(lineIds[0], { row: 0, col: 0, orientation: 'auto-nw-se' }),
+      makeStop(lineIds[1], { row: -H, col: H, orientation: 'auto-nw-se' }),
+      makeStop(lineIds[2], { row: -2 * H, col: 2 * H, orientation: 'auto-nw-se' }),
+    ];
     const doc = makeDoc({
       stations: [
-        makeStation({
-          id: 's1',
-          x: 0,
-          y: 0,
-          rotation: 0,
-          stops: [
-            makeStop('L1', { row: 0, col: 0, orientation: 'auto-nw-se' }),
-            makeStop('L2', { row: -1, col: 1, orientation: 'auto-nw-se' }),
-            makeStop('L3', { row: -2, col: 2, orientation: 'auto-nw-se' }),
-          ],
-        }),
-        makeStation({
-          id: 's2',
-          x: 200,
-          y: 200,
-          rotation: 0,
-          stops: [
-            makeStop('L1', { row: 0, col: 0, orientation: 'auto-nw-se' }),
-            makeStop('L2', { row: -1, col: 1, orientation: 'auto-nw-se' }),
-            makeStop('L3', { row: -2, col: 2, orientation: 'auto-nw-se' }),
-          ],
-        }),
+        makeStation({ id: 's1', x: 0, y: 0, rotation: 0, stops: stops(['L1', 'L2', 'L3']) }),
+        makeStation({ id: 's2', x: 200, y: 200, rotation: 0, stops: stops(['L1', 'L2', 'L3']) }),
       ],
       lines: [
         makeLine({ id: 'L1', stations: ['s1', 's2'] }),
@@ -356,16 +329,19 @@ describe('buildBands — interlining', () => {
   });
 
   it('two perp-adjacent runs in the same axis bucket stay separate when parallel positions differ', () => {
-    // Four auto-ne-sw stops at one station: two pairs perp-adjacent within
-    // each pair, but the pairs are at DIFFERENT parallel positions along
-    // the band's travel axis. The compression pass must reject them as a
-    // single run-of-4; the merge in buildBands must also keep them as two
-    // bands (each interlined within itself).
+    // Four auto-ne-sw stops at one station: two diagonal-basis pairs that
+    // are each perp-adjacent within, but the pairs differ on the band's
+    // parallel axis. buildBands must keep them as two bands.
     //
-    // Cells (chosen so each pair is perp-adjacent locally but the two pairs
-    // differ on the band's parallel axis):
-    //   pair P: (0,0) + (1,1) — par projection 0.
-    //   pair Q: (10,0) + (11,1) — par projection differs from P by a full STOP_SIZE.
+    //   pair P: (0,0) + (√2/2, √2/2) — par projection 0.
+    //   pair Q: (10,0) + (10+√2/2, √2/2) — par offset differs by STOP_SIZE.
+    const H = Math.SQRT1_2;
+    const stops = (ids: [string, string, string, string]) => [
+      makeStop(ids[0], { row: 0, col: 0, orientation: 'auto-ne-sw' }),
+      makeStop(ids[1], { row: H, col: H, orientation: 'auto-ne-sw' }),
+      makeStop(ids[2], { row: 10, col: 0, orientation: 'auto-ne-sw' }),
+      makeStop(ids[3], { row: 10 + H, col: H, orientation: 'auto-ne-sw' }),
+    ];
     const doc = makeDoc({
       stations: [
         makeStation({
@@ -373,24 +349,14 @@ describe('buildBands — interlining', () => {
           x: 0,
           y: 0,
           rotation: 0,
-          stops: [
-            makeStop('L1', { row: 0, col: 0, orientation: 'auto-ne-sw' }),
-            makeStop('L2', { row: 1, col: 1, orientation: 'auto-ne-sw' }),
-            makeStop('L3', { row: 10, col: 0, orientation: 'auto-ne-sw' }),
-            makeStop('L4', { row: 11, col: 1, orientation: 'auto-ne-sw' }),
-          ],
+          stops: stops(['L1', 'L2', 'L3', 'L4']),
         }),
         makeStation({
           id: 's2',
           x: 100,
           y: -100,
           rotation: 0,
-          stops: [
-            makeStop('L1', { row: 0, col: 0, orientation: 'auto-ne-sw' }),
-            makeStop('L2', { row: 1, col: 1, orientation: 'auto-ne-sw' }),
-            makeStop('L3', { row: 10, col: 0, orientation: 'auto-ne-sw' }),
-            makeStop('L4', { row: 11, col: 1, orientation: 'auto-ne-sw' }),
-          ],
+          stops: stops(['L1', 'L2', 'L3', 'L4']),
         }),
       ],
       lines: [
@@ -407,11 +373,11 @@ describe('buildBands — interlining', () => {
   });
 
   it('asymmetric group sizes at each band endpoint keep the lines in separate bands', () => {
-    // At s1, L1/L2/L3 form a 3-stop diagonal interline group. At s2, only
-    // L1/L2 form a 2-stop group (L3 sits at an unrelated parallel position).
-    // The two ends don't have matching parallel positions at L3, so the
-    // buildBands sameParA/sameParB check should reject a single 3-band
-    // merge — leaving L1+L2 as one 2-stripe band and L3 as a singleton.
+    // At s1, L1/L2/L3 form a 3-stop diagonal interline group on the
+    // diagonal basis. At s2, L1/L2 still pair but L3 sits at an unrelated
+    // parallel position. buildBands' sameParA/sameParB check should reject
+    // a single 3-band merge — L1+L2 as a 2-stripe band, L3 as a singleton.
+    const H = Math.SQRT1_2;
     const doc = makeDoc({
       stations: [
         makeStation({
@@ -421,8 +387,8 @@ describe('buildBands — interlining', () => {
           rotation: 0,
           stops: [
             makeStop('L1', { row: 0, col: 0, orientation: 'auto-ne-sw' }),
-            makeStop('L2', { row: 1, col: 1, orientation: 'auto-ne-sw' }),
-            makeStop('L3', { row: 2, col: 2, orientation: 'auto-ne-sw' }),
+            makeStop('L2', { row: H, col: H, orientation: 'auto-ne-sw' }),
+            makeStop('L3', { row: 2 * H, col: 2 * H, orientation: 'auto-ne-sw' }),
           ],
         }),
         makeStation({
@@ -433,7 +399,7 @@ describe('buildBands — interlining', () => {
           stops: [
             // L1 and L2 still perp-adjacent at the same parallel as s1.
             makeStop('L1', { row: 0, col: 0, orientation: 'auto-ne-sw' }),
-            makeStop('L2', { row: 1, col: 1, orientation: 'auto-ne-sw' }),
+            makeStop('L2', { row: H, col: H, orientation: 'auto-ne-sw' }),
             // L3 displaced to a different parallel position (along NE-SW
             // travel axis), so it doesn't fit the run at this end.
             makeStop('L3', { row: 10, col: 10, orientation: 'auto-ne-sw' }),
@@ -457,69 +423,6 @@ describe('buildBands — interlining', () => {
     );
     expect(byLineSet).toContain('L1,L2');
     expect(byLineSet).toContain('L3');
-  });
-
-  it('trailers on BOTH sides of a diagonal band each pull in by STOP_SIZE', () => {
-    // Three-stop diagonal interline group with one trailer at each perp end:
-    //   T_NE (above the NE end) and T_SW (below the SW end).
-    // Each trailer should land STOP_SIZE in its king-direction from the
-    // nearest band stop's compressed position.
-    const doc = makeDoc({
-      stations: [
-        makeStation({
-          id: 's1',
-          x: 0,
-          y: 0,
-          rotation: 0,
-          stops: [
-            // 3-stop auto-nw-se diagonal band along the NE-SW perp chain.
-            makeStop('L1', { row: 1, col: 2, orientation: 'auto-nw-se' }),
-            makeStop('L2', { row: 2, col: 1, orientation: 'auto-nw-se' }),
-            makeStop('L3', { row: 3, col: 0, orientation: 'auto-nw-se' }),
-            // Trailer one diagonal step past the NE end (above L1).
-            makeStop('TNE', { row: 0, col: 3, orientation: 'auto-horizontal' }),
-            // Trailer one diagonal step past the SW end (below L3).
-            makeStop('TSW', { row: 4, col: -1, orientation: 'auto-horizontal' }),
-          ],
-        }),
-      ],
-      lines: [
-        makeLine({ id: 'L1', stations: ['s1'] }),
-        makeLine({ id: 'L2', stations: ['s1'] }),
-        makeLine({ id: 'L3', stations: ['s1'] }),
-        makeLine({ id: 'TNE', stations: ['s1'] }),
-        makeLine({ id: 'TSW', stations: ['s1'] }),
-      ],
-    });
-    // Use buildStopMarkers as a black-box: the marker positions are the
-    // rendered positions consumed by everything visual.
-    const markers = buildStopMarkers(doc.stations, doc.lines, doc.lineOrder);
-    const pos = (lineId: string) => {
-      const m = markers.find((x) => x.lineId === lineId);
-      if (!m) throw new Error(`no marker for ${lineId}`);
-      return { x: m.cx, y: m.cy };
-    };
-    const l1 = pos('L1');
-    const l3 = pos('L3');
-    const tne = pos('TNE');
-    const tsw = pos('TSW');
-
-    // TNE sits one king-direction step past L1 in the cell grid. Cell delta
-    // L1 → TNE = (-1, 1) → world delta (STOP_SIZE, -STOP_SIZE) → NE direction.
-    // Distance after pull-in: STOP_SIZE.
-    expect(Math.hypot(tne.x - l1.x, tne.y - l1.y)).toBeCloseTo(STOP_SIZE, 5);
-
-    // TSW sits one king-direction step past L3. Cell delta L3 → TSW =
-    // (1, -1) → SW direction. Distance: STOP_SIZE.
-    expect(Math.hypot(tsw.x - l3.x, tsw.y - l3.y)).toBeCloseTo(STOP_SIZE, 5);
-
-    // Each trailer is on the OUTSIDE of the band, not between band stops.
-    // Verify: distance from each trailer to the band centroid (L2's cell) is
-    // larger than 2·STOP_SIZE (i.e., beyond the band's compressed extent).
-    const centroidX = STOP_SIZE; // L2's col
-    const centroidY = 2 * STOP_SIZE; // L2's row
-    expect(Math.hypot(tne.x - centroidX, tne.y - centroidY)).toBeGreaterThan(2 * STOP_SIZE - 0.1);
-    expect(Math.hypot(tsw.x - centroidX, tsw.y - centroidY)).toBeGreaterThan(2 * STOP_SIZE - 0.1);
   });
 
   it('non-perp-adjacent diagonal stops on the same pair stay in separate bands', () => {
@@ -981,5 +884,127 @@ describe('buildStopMarkers', () => {
       const m = ms.find((x) => x.lineId === 'L1' && Math.abs(x.cx) < 1);
       expect(m?.outward).toBeNull();
     });
+  });
+});
+
+// Invariant: a stop's rendered world position equals its cell-grid world
+// position. Moving any one stop must NEVER reposition another stop. There
+// is no compression, no "trailer pulling", no neighbor-aware nudging — the
+// (row, col) coordinates and station rotation are the source of truth for
+// where a marker lands. Regressions here mean some heuristic crept back in.
+describe('buildStopMarkers — rendered position equals cell-grid position', () => {
+  const markerFor = (
+    markers: ReturnType<typeof buildStopMarkers>,
+    stationId: string,
+    lineId: string,
+  ) => {
+    const m = markers.find((x) => x.stationId === stationId && x.lineId === lineId);
+    if (!m) throw new Error(`no marker for (${stationId}, ${lineId})`);
+    return { x: m.cx, y: m.cy };
+  };
+
+  it('Canary Wharf regression: cardinal pair + king-adjacent diagonal leaves the diagonal at its cell', () => {
+    // The "before" layout from the user's repro: two auto-vertical stops
+    // at the same row (a cardinal interline pair) plus an auto-nw-se stop
+    // diagonally adjacent to one of them. Under the old heuristic the
+    // diagonal got "trailer-pulled" inward toward the cardinal anchor
+    // and rendered at STOP_SIZE/√2 instead of its true STOP_SIZE·√2.
+    const station = makeStation({
+      id: 's',
+      x: 0,
+      y: 0,
+      rotation: 0,
+      stops: [
+        makeStop('A', { row: 0, col: 0, orientation: 'auto-vertical' }),
+        makeStop('B', { row: 0, col: 1, orientation: 'auto-vertical' }),
+        makeStop('D', { row: 1, col: -1, orientation: 'auto-nw-se' }),
+      ],
+    });
+    const doc = makeDoc({
+      stations: [station],
+      lines: [makeLine({ id: 'A' }), makeLine({ id: 'B' }), makeLine({ id: 'D' })],
+    });
+    const markers = buildStopMarkers(doc.stations, doc.lines, doc.lineOrder);
+    for (const cell of station.stops) {
+      const got = markerFor(markers, 's', cell.lineId);
+      const want = stopPosWorld(cell, station);
+      expect(got.x).toBeCloseTo(want.x, 6);
+      expect(got.y).toBeCloseTo(want.y, 6);
+    }
+  });
+
+  it('moving one stop never shifts the rendered position of any other stop', () => {
+    // Start from the Canary Wharf config above; move B one cell up.
+    // A and D must render at the same world positions in both — the
+    // invariant the user is asking for.
+    const stops0 = [
+      makeStop('A', { row: 0, col: 0, orientation: 'auto-vertical' }),
+      makeStop('B', { row: 0, col: 1, orientation: 'auto-vertical' }),
+      makeStop('D', { row: 1, col: -1, orientation: 'auto-nw-se' }),
+    ];
+    const before = makeStation({ id: 's', x: 50, y: 70, rotation: 0, stops: stops0 });
+    const lines = [makeLine({ id: 'A' }), makeLine({ id: 'B' }), makeLine({ id: 'D' })];
+    const docBefore = makeDoc({ stations: [before], lines });
+    const mBefore = buildStopMarkers(docBefore.stations, docBefore.lines, docBefore.lineOrder);
+
+    const stops1 = [
+      stops0[0],
+      makeStop('B', { row: -1, col: 1, orientation: 'auto-vertical' }),
+      stops0[2],
+    ];
+    const after = makeStation({ id: 's', x: 50, y: 70, rotation: 0, stops: stops1 });
+    const docAfter = makeDoc({ stations: [after], lines });
+    const mAfter = buildStopMarkers(docAfter.stations, docAfter.lines, docAfter.lineOrder);
+
+    const aBefore = markerFor(mBefore, 's', 'A');
+    const aAfter = markerFor(mAfter, 's', 'A');
+    expect(aAfter.x).toBeCloseTo(aBefore.x, 6);
+    expect(aAfter.y).toBeCloseTo(aBefore.y, 6);
+
+    const dBefore = markerFor(mBefore, 's', 'D');
+    const dAfter = markerFor(mAfter, 's', 'D');
+    expect(dAfter.x).toBeCloseTo(dBefore.x, 6);
+    expect(dAfter.y).toBeCloseTo(dBefore.y, 6);
+  });
+
+  it('the invariant holds for every station rotation', () => {
+    // Same "move B, observe A and D" setup as above, but at each of the 8
+    // station rotations. Closes the rotation-coverage gap — a heuristic
+    // that fires at a specific rotation would still get caught here.
+    const stops0 = [
+      makeStop('A', { row: 0, col: 0, orientation: 'auto-vertical' }),
+      makeStop('B', { row: 0, col: 1, orientation: 'auto-vertical' }),
+      makeStop('D', { row: 1, col: -1, orientation: 'auto-nw-se' }),
+    ];
+    const stops1 = [
+      stops0[0],
+      makeStop('B', { row: -1, col: 1, orientation: 'auto-vertical' }),
+      stops0[2],
+    ];
+    const lines = [makeLine({ id: 'A' }), makeLine({ id: 'B' }), makeLine({ id: 'D' })];
+    for (let rot = 0; rot < 8; rot++) {
+      const r = rot as 0 | 1 | 2 | 3 | 4 | 5 | 6 | 7;
+      const before = makeStation({ id: 's', x: 50, y: 70, rotation: r, stops: stops0 });
+      const after = makeStation({ id: 's', x: 50, y: 70, rotation: r, stops: stops1 });
+      const dBefore = makeDoc({ stations: [before], lines });
+      const dAfter = makeDoc({ stations: [after], lines });
+      const mBefore = buildStopMarkers(dBefore.stations, dBefore.lines, dBefore.lineOrder);
+      const mAfter = buildStopMarkers(dAfter.stations, dAfter.lines, dAfter.lineOrder);
+
+      for (const lineId of ['A', 'D']) {
+        const b = markerFor(mBefore, 's', lineId);
+        const a = markerFor(mAfter, 's', lineId);
+        expect(a.x, `line ${lineId} x at rotation ${r}`).toBeCloseTo(b.x, 6);
+        expect(a.y, `line ${lineId} y at rotation ${r}`).toBeCloseTo(b.y, 6);
+      }
+
+      // And each stop's marker still sits at stopPosWorld of its cell.
+      for (const cell of before.stops) {
+        const got = markerFor(mBefore, 's', cell.lineId);
+        const want = stopPosWorld(cell, before);
+        expect(got.x, `${cell.lineId} at rotation ${r}`).toBeCloseTo(want.x, 6);
+        expect(got.y, `${cell.lineId} at rotation ${r}`).toBeCloseTo(want.y, 6);
+      }
+    }
   });
 });
