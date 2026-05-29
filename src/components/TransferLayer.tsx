@@ -1,8 +1,5 @@
 import type { LineId, Station, Transfer, TransferEnd } from '../model/types';
-import {
-  computeRenderedStopPositions,
-  type RenderedStopPositions,
-} from '../geometry/stopPositions';
+import { stopPosWorld } from '../geometry/interlining';
 import { legibleTextOn } from '../util/color';
 
 interface Props {
@@ -14,7 +11,6 @@ interface Props {
   strokeWidth: number;
   selectedId: string | null;
   onSelect: (id: string) => void;
-  renderedPos?: RenderedStopPositions;
 }
 
 // World-unit padding added to each side of a selected transfer's outline
@@ -26,29 +22,25 @@ const SELECTION_OUTLINE_PAD = 1;
 /**
  * World position of a station's specific dot. Falls back to the station's
  * anchor when no lineId is given or the line isn't on this station (e.g.,
- * after the line was deleted). For stops in a diagonal interline group, the
- * returned position is the compressed (band-flush) position so the transfer
- * line connects to the visible marker, not the cell-grid position.
+ * after the line was deleted).
  */
 export function transferEndWorld(
   station: Station,
   lineId: LineId | null,
-  renderedPos: RenderedStopPositions,
 ): { x: number; y: number } {
   if (!lineId) return { x: station.x, y: station.y };
   const cell = station.stops.find((c) => c.lineId === lineId);
   if (!cell) return { x: station.x, y: station.y };
-  return renderedPos(station.id, lineId);
+  return stopPosWorld(cell, station);
 }
 
 function endpointWorld(
   end: TransferEnd,
   stations: Record<string, Station>,
-  renderedPos: RenderedStopPositions,
 ): { x: number; y: number } | null {
   const st = stations[end.stationId];
   if (!st) return null;
-  return transferEndWorld(st, end.lineId, renderedPos);
+  return transferEndWorld(st, end.lineId);
 }
 
 /**
@@ -78,16 +70,14 @@ export function TransferLayer({
   strokeWidth,
   selectedId,
   onSelect,
-  renderedPos,
 }: Props) {
   const list = Object.values(transfers);
   if (list.length === 0) return null;
-  const positions = renderedPos ?? computeRenderedStopPositions(stations);
   return (
     <g>
       {list.map((t) => {
-        const a = endpointWorld(t.a, stations, positions);
-        const b = endpointWorld(t.b, stations, positions);
+        const a = endpointWorld(t.a, stations);
+        const b = endpointWorld(t.b, stations);
         if (!a || !b) return null;
         const isSelected = t.id === selectedId;
         const hasUserStroke = strokeWidth > 0;

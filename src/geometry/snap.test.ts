@@ -189,12 +189,10 @@ describe('snapDraggedStation', () => {
   });
 
   it('snaps the dragged stop onto a target whose stop is in a diagonal interline group', () => {
-    // Target station has two auto-ne-sw stops at cells (0,0) and (1,1) — a
-    // diagonal interline group. The L1 stop's cell position is (0, 0); but
-    // after compression it sits halfway between, on the band centerline.
-    // The dragged station should snap so its L1 stop lines up with the
-    // *compressed* target position, not the literal cell position.
-    const STOP_SIZE = 14;
+    // Target station has two perp-adjacent auto-ne-sw stops at diagonal-
+    // basis cells. The L1 stop sits at (0, 0); snap aligns the dragged
+    // station's L1 with that literal cell-grid position — no neighbor-aware
+    // shift applies.
     const target = makeStation({
       id: 't',
       x: 0,
@@ -202,7 +200,7 @@ describe('snapDraggedStation', () => {
       rotation: 0,
       stops: [
         makeStop('L1', { row: 0, col: 0, orientation: 'auto-ne-sw' }),
-        makeStop('L2', { row: 1, col: 1, orientation: 'auto-ne-sw' }),
+        makeStop('L2', { row: Math.SQRT1_2, col: Math.SQRT1_2, orientation: 'auto-ne-sw' }),
       ],
     });
     const dragged = makeStation({
@@ -211,28 +209,20 @@ describe('snapDraggedStation', () => {
       y: 0,
       stops: [makeStop('L1', { row: 0, col: 0, orientation: 'auto-ne-sw' })],
     });
-    // Compressed target L1 position: cell (0,0) shifted +STOP_SIZE·(√2-1)/2
-    // along the NW-SE perp axis (toward the centroid of the group).
-    const shift = (STOP_SIZE * (Math.SQRT2 - 1)) / 2;
-    const compressedTL1 = {
-      x: shift * Math.SQRT1_2,
-      y: shift * Math.SQRT1_2,
-    };
-    // Drag the dragged station near the compressed L1 position. Snap should
-    // land it exactly on the compressed position.
+    const targetL1 = { x: 0, y: 0 };
+    // Drag near the target L1 position; snap should land the dragged
+    // anchor directly on it (single-stop dragged has zero stop offset).
     const r = snapDraggedStation({
       draggedId: 'd',
-      proposedX: compressedTL1.x + 4, // off-axis nudge to force a snap projection
-      proposedY: compressedTL1.y + 4,
+      proposedX: targetL1.x + 4,
+      proposedY: targetL1.y + 4,
       draggedRotation: 0,
       draggedStops: dragged.stops,
       stations: stations(dragged, target),
       lines: linesOf(lineOf('L1', ['d', 't'])),
     });
-    // After snap, dragged anchor + L1 cell offset = compressed target L1.
-    // Dragged station has no compression (single stop), so its rendered L1 = anchor.
-    expect(r.x).toBeCloseTo(compressedTL1.x, 4);
-    expect(r.y).toBeCloseTo(compressedTL1.y, 4);
+    expect(r.x).toBeCloseTo(targetL1.x, 4);
+    expect(r.y).toBeCloseTo(targetL1.y, 4);
   });
 
   it('single-axis snap projects the dragged stop onto the target axis line', () => {

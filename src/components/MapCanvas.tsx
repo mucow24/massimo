@@ -25,7 +25,7 @@ import {
   buildStopMarkers,
   SegmentBandSpec,
 } from '../geometry/interlining';
-import { computeRenderedStopPositions } from '../geometry/stopPositions';
+import { stopPosWorld } from '../geometry/interlining';
 import { resolveDotShape } from '../model/transforms';
 import { STOP_SIZE, travelDirLocal, rotateBy } from '../geometry/orientation';
 import { BandWarning, SegmentBand } from './SegmentBand';
@@ -102,16 +102,9 @@ export function MapCanvas() {
   const bulletSelectedIds = rectSelect.previewBulletIds ?? selection.selectedRouteBulletIds;
   const labelSelectedIds = rectSelect.previewLabelIds ?? selection.selectedLabelIds;
 
-  // Canonical "rendered world position" per (station, line). For most stops
-  // this equals the cell-grid world position; for stops in a diagonal
-  // interline group at their station, it's compressed perpendicular-to-band
-  // so stripes pack at STOP_SIZE. Threaded into every visual consumer so
-  // markers, bands, transfers, and previews all agree on where a stop sits.
-  const renderedPos = useMemo(() => computeRenderedStopPositions(stations), [stations]);
-
   const bands = useMemo(
-    () => buildBands(stations, lines, curveRadius, lineOrder, renderedPos),
-    [stations, lines, curveRadius, lineOrder, renderedPos],
+    () => buildBands(stations, lines, curveRadius, lineOrder),
+    [stations, lines, curveRadius, lineOrder],
   );
 
   // When mirror-matching mode is on for the selected station, highlight the
@@ -159,9 +152,9 @@ export function MapCanvas() {
   // perpendicular line whose layer falls between two interlined lines
   // renders between their stripes (not behind the whole band).
   const renderables = useMemo(() => {
-    const markers = buildStopMarkers(stations, lines, lineOrder, bands, renderedPos);
+    const markers = buildStopMarkers(stations, lines, lineOrder, bands);
     return buildOrderedRenderables(bands, markers);
-  }, [bands, stations, lines, lineOrder, renderedPos]);
+  }, [bands, stations, lines, lineOrder]);
 
   const inHandMode = selection.toolMode === 'hand' || selection.spaceHeld;
 
@@ -817,7 +810,6 @@ export function MapCanvas() {
           strokeWidth={transferStrokeWidth}
           selectedId={selection.selectedTransferId}
           onSelect={(id) => selection.selectTransfer(id)}
-          renderedPos={renderedPos}
         />
 
         {/* In-progress transfer preview line: from the anchor dot to the
@@ -832,7 +824,6 @@ export function MapCanvas() {
             const anchorWorld = transferEndWorld(
               stations[selection.transferAnchor.stationId],
               selection.transferAnchor.lineId,
-              renderedPos,
             );
             return (
               <line
@@ -857,7 +848,6 @@ export function MapCanvas() {
             zoom={view.viewport.zoom}
             onStartDrag={drag.onStartDrag}
             layer="dots"
-            renderedPos={renderedPos}
           />
         ))}
 
@@ -989,7 +979,7 @@ export function MapCanvas() {
                 if (!st) continue;
                 const cell = st.stops.find((c) => c.lineId === highlightLineId);
                 if (!cell) continue;
-                const world = renderedPos(sid, highlightLineId);
+                const world = stopPosWorld(cell, st);
                 points.push({ sid, st, cell, x: world.x, y: world.y });
               }
               if (points.length >= 2) {
@@ -1049,7 +1039,7 @@ export function MapCanvas() {
                 if (!st) continue;
                 const cell = st.stops.find((c) => c.lineId === highlightLineId);
                 if (!cell) continue;
-                const { x: cx, y: cy } = renderedPos(sid, highlightLineId);
+                const { x: cx, y: cy } = stopPosWorld(cell, st);
                 push(
                   isHoverStation(sid),
                   <StopGlyph
@@ -1123,7 +1113,7 @@ export function MapCanvas() {
                   if (!st) return null;
                   const cell = st.stops.find((c) => c.lineId === highlightLineId);
                   if (!cell) return null;
-                  return renderedPos(sid, highlightLineId);
+                  return stopPosWorld(cell, st);
                 };
 
                 // Pick origin (the stop the arrow extends from) and the
