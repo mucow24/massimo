@@ -1,5 +1,6 @@
 import { describe, it, expect } from 'vitest';
 import {
+  axesForAllSnap,
   maybeSnapToGrid,
   snapDraggedStation,
   snapLabelToGrid,
@@ -33,15 +34,15 @@ const NO_MODES: SnapModes = {
   line: false,
   equidistant: false,
   tens: false,
-  all: false,
-  grid: false,
+  all: 'off',
+  grid: 'off',
 };
 const LINE_ONLY: SnapModes = {
   line: true,
   equidistant: false,
   tens: false,
-  all: false,
-  grid: false,
+  all: 'off',
+  grid: 'off',
 };
 
 // All horizontal-axis fixtures use auto-horizontal stops at rotation 0, so
@@ -567,7 +568,7 @@ describe('snapDraggedStation: equidistant + tens together', () => {
       draggedStops: b.stops,
       stations: stations(a, b, c),
       lines: linesOf(lineOf('L1', ['a', 'b', 'c'])),
-      modes: { line: true, equidistant: true, tens: true, all: false, grid: false },
+      modes: { line: true, equidistant: true, tens: true, all: 'off', grid: 'off' },
     });
     expect(r.x).toBeCloseTo(47, 5);
     expect(r.y).toBeCloseTo(0, 5);
@@ -590,7 +591,7 @@ describe('snapDraggedStation: equidistant + tens together', () => {
       draggedStops: d.stops,
       stations: stations(a, b, c, d),
       lines: linesOf(lineOf('L1', ['a', 'b', 'c', 'd'])),
-      modes: { line: true, equidistant: true, tens: true, all: false, grid: false },
+      modes: { line: true, equidistant: true, tens: true, all: 'off', grid: 'off' },
     });
     expect(r.x).toBeCloseTo(111, 5);
     expect(r.y).toBeCloseTo(0, 5);
@@ -611,7 +612,7 @@ describe('snapDraggedStation: snap-to-all mode', () => {
       stations: stations(a, b),
       // Different lines so line mode wouldn't help here even if on.
       lines: linesOf(lineOf('L1', ['a']), lineOf('L2', ['b'])),
-      modes: { line: false, equidistant: false, tens: false, all: true, grid: false },
+      modes: { line: false, equidistant: false, tens: false, all: 'all', grid: 'off' },
     });
     expect(r.x).toBeCloseTo(100, 5);
     expect(r.y).toBeCloseTo(200, 5);
@@ -628,7 +629,7 @@ describe('snapDraggedStation: snap-to-all mode', () => {
       draggedStops: b.stops,
       stations: stations(a, b),
       lines: linesOf(lineOf('L1', ['a']), lineOf('L2', ['b'])),
-      modes: { line: false, equidistant: false, tens: false, all: true, grid: false },
+      modes: { line: false, equidistant: false, tens: false, all: 'all', grid: 'off' },
     });
     expect(r.x).toBeCloseTo(300, 5);
     expect(r.y).toBeCloseTo(100, 5);
@@ -646,7 +647,7 @@ describe('snapDraggedStation: snap-to-all mode', () => {
       draggedStops: b.stops,
       stations: stations(a, b),
       lines: linesOf(lineOf('L1', ['a']), lineOf('L2', ['b'])),
-      modes: { line: false, equidistant: false, tens: false, all: true, grid: false },
+      modes: { line: false, equidistant: false, tens: false, all: 'all', grid: 'off' },
     });
     expect(r.x).toBeCloseTo(50.5, 3);
     expect(r.y).toBeCloseTo(50.5, 3);
@@ -664,7 +665,7 @@ describe('snapDraggedStation: snap-to-all mode', () => {
       draggedStops: b.stops,
       stations: stations(a, b),
       lines: linesOf(lineOf('L1', ['a']), lineOf('L2', ['b'])),
-      modes: { line: false, equidistant: false, tens: false, all: true, grid: false },
+      modes: { line: false, equidistant: false, tens: false, all: 'all', grid: 'off' },
     });
     expect(r.x).toBeCloseTo(50.5, 3);
     expect(r.y).toBeCloseTo(-50.5, 3);
@@ -686,10 +687,110 @@ describe('snapDraggedStation: snap-to-all mode', () => {
       draggedStops: b.stops,
       stations: stations(a, b, c),
       lines: linesOf(lineOf('L1', ['a', 'b']), lineOf('L2', ['c'])),
-      modes: { line: true, equidistant: false, tens: false, all: true, grid: false },
+      modes: { line: true, equidistant: false, tens: false, all: 'all', grid: 'off' },
     });
     expect(r.x).toBeCloseTo(100, 3);
     expect(r.y).toBeCloseTo(100, 3);
+  });
+});
+
+describe('axesForAllSnap', () => {
+  it('returns the axis family for each directional mode', () => {
+    expect(axesForAllSnap('off')).toEqual([]);
+    expect(axesForAllSnap('horizontal')).toEqual([{ x: 1, y: 0 }]);
+    expect(axesForAllSnap('vertical')).toEqual([{ x: 0, y: 1 }]);
+    expect(axesForAllSnap('diagonal')).toHaveLength(2);
+    // Diagonal is the two 45° families, not the cardinals.
+    for (const a of axesForAllSnap('diagonal')) {
+      expect(Math.abs(a.x)).toBeCloseTo(Math.SQRT2 / 2, 5);
+      expect(Math.abs(a.y)).toBeCloseTo(Math.SQRT2 / 2, 5);
+    }
+    expect(axesForAllSnap('all')).toHaveLength(4);
+  });
+});
+
+describe('snapDraggedStation: directional snap-to-all', () => {
+  // A vertically-aligned target (same x) at (100, 0) and a horizontally-
+  // aligned target (same y) at (0, 100). Dragging B from origin toward the
+  // corner (101, 99) — within tolerance of BOTH the vertical line x=100 and
+  // the horizontal line y=100 — lets each directional mode prove it engages
+  // only its own axis family.
+  const vTarget = makeStation({ id: 'v', x: 100, y: 0, stops: [makeStop('L1')] });
+  const hTarget = makeStation({ id: 'h', x: 0, y: 100, stops: [makeStop('L2')] });
+  const dragB = makeStation({ id: 'b', x: 0, y: 0, stops: [makeStop('L3')] });
+  const baseInput = {
+    draggedId: 'b' as StationId,
+    draggedRotation: 0 as const,
+    draggedStops: dragB.stops,
+    stations: stations(vTarget, hTarget, dragB),
+    lines: linesOf(lineOf('L1', ['v']), lineOf('L2', ['h']), lineOf('L3', ['b'])),
+  };
+
+  it("'horizontal' snaps Y to a horizontal target and ignores the vertical one", () => {
+    const r = snapDraggedStation({
+      ...baseInput,
+      proposedX: 101,
+      proposedY: 99,
+      modes: { line: false, equidistant: false, tens: false, all: 'horizontal', grid: 'off' },
+    });
+    // Y snaps onto the horizontal line through h (y=100); X stays free (101).
+    expect(r.y).toBeCloseTo(100, 5);
+    expect(r.x).toBeCloseTo(101, 5);
+  });
+
+  it("'vertical' snaps X to a vertical target and ignores the horizontal one", () => {
+    const r = snapDraggedStation({
+      ...baseInput,
+      proposedX: 101,
+      proposedY: 99,
+      modes: { line: false, equidistant: false, tens: false, all: 'vertical', grid: 'off' },
+    });
+    // X snaps onto the vertical line through v (x=100); Y stays free (99).
+    expect(r.x).toBeCloseTo(100, 5);
+    expect(r.y).toBeCloseTo(99, 5);
+  });
+
+  it("'diagonal' ignores cardinal alignments, snaps a 45° one", () => {
+    // Neither v nor h is diagonally aligned with the origin near (101, 99),
+    // so diagonal mode leaves the cardinal-only corner alone.
+    const cardinal = snapDraggedStation({
+      ...baseInput,
+      proposedX: 101,
+      proposedY: 99,
+      modes: { line: false, equidistant: false, tens: false, all: 'diagonal', grid: 'off' },
+    });
+    expect(cardinal.x).toBeCloseTo(101, 5);
+    expect(cardinal.y).toBeCloseTo(99, 5);
+
+    // But a stop on the y=x diagonal through the origin does engage. Use a
+    // dedicated single target at the origin so the only candidate is the
+    // +45° line through it (the v/h corridor fixture incidentally shares a
+    // -45° diagonal, which is a separate case).
+    const origin = makeStation({ id: 'o', x: 0, y: 0, stops: [makeStop('LO')] });
+    const diag = snapDraggedStation({
+      draggedId: 'b',
+      draggedRotation: 0,
+      draggedStops: dragB.stops,
+      stations: stations(origin, dragB),
+      lines: linesOf(lineOf('LO', ['o']), lineOf('L3', ['b'])),
+      proposedX: 50,
+      proposedY: 51,
+      modes: { line: false, equidistant: false, tens: false, all: 'diagonal', grid: 'off' },
+    });
+    expect(diag.x).toBeCloseTo(50.5, 3);
+    expect(diag.y).toBeCloseTo(50.5, 3);
+  });
+
+  it("'off' engages no alignment at all", () => {
+    const r = snapDraggedStation({
+      ...baseInput,
+      proposedX: 101,
+      proposedY: 99,
+      modes: { line: false, equidistant: false, tens: false, all: 'off', grid: 'off' },
+    });
+    expect(r.x).toBeCloseTo(101, 5);
+    expect(r.y).toBeCloseTo(99, 5);
+    expect(r.guides).toEqual([]);
   });
 });
 
@@ -721,7 +822,7 @@ describe('snapDraggedStation: bullet mode + snap modes', () => {
       stations: stations(a, b),
       lines: linesOf(lineOf('L1', ['a', 'b'])),
       bulletLineId: 'L1',
-      modes: { line: true, equidistant: true, tens: false, all: false, grid: false },
+      modes: { line: true, equidistant: true, tens: false, all: 'off', grid: 'off' },
     });
     const baseline = snapDraggedStation({
       proposedX: 5,
@@ -748,7 +849,7 @@ describe('snapDraggedStation: bullet mode + snap modes', () => {
       stations: stations(a, b),
       lines: linesOf(lineOf('L1', ['a', 'b'])),
       bulletLineId: 'L1',
-      modes: { line: true, equidistant: false, tens: true, all: false, grid: false },
+      modes: { line: true, equidistant: false, tens: true, all: 'off', grid: 'off' },
     });
     expect(r.x).toBeCloseTo(0, 5);
     expect(r.y).toBeCloseTo(50, 5);
@@ -768,7 +869,7 @@ describe('snapDraggedStation: bullet mode + snap modes', () => {
       bulletLineId: 'L1',
       // Line off so the bullet can't latch onto a's vertical axis at x=0;
       // the only thing that can engage is all-mode horizontal alignment.
-      modes: { line: false, equidistant: false, tens: false, all: true, grid: false },
+      modes: { line: false, equidistant: false, tens: false, all: 'all', grid: 'off' },
     });
     expect(r.x).toBeCloseTo(200, 5);
     expect(r.y).toBeCloseTo(0, 5);
@@ -787,6 +888,18 @@ describe('snapPointToGrid', () => {
   it('treats exact halfway as a round-to-even-or-up (JS Math.round)', () => {
     // 5 → 10 (rounds up), 15 → 20, -5 → 0 (Math.round(-0.5) === 0).
     expect(snapPointToGrid(5, 15)).toEqual({ x: 10, y: 20 });
+  });
+
+  it("'horizontal' locks Y onto grid rows, leaves X free", () => {
+    expect(snapPointToGrid(27, 43, 'horizontal')).toEqual({ x: 27, y: 40 });
+  });
+
+  it("'vertical' locks X onto grid columns, leaves Y free", () => {
+    expect(snapPointToGrid(27, 43, 'vertical')).toEqual({ x: 30, y: 43 });
+  });
+
+  it("'off' returns the point unchanged", () => {
+    expect(snapPointToGrid(27, 43, 'off')).toEqual({ x: 27, y: 43 });
   });
 });
 
@@ -809,6 +922,17 @@ describe('snapLabelToGrid', () => {
     // UL (0, 0) → already on grid → center stays at (12.5, 7.5).
     expect(snapLabelToGrid({ x: 12.5, y: 7.5 }, 25, 15)).toEqual({ x: 12.5, y: 7.5 });
   });
+
+  it("'horizontal' snaps only the UL's Y; X (center) is untouched", () => {
+    // Width 40, height 20 → halfW 20, halfH 10. Center (53, 47) → UL (33, 37).
+    // Only Y snaps: UL.y 37 → 40, UL.x stays 33 → center back to (53, 50).
+    expect(snapLabelToGrid({ x: 53, y: 47 }, 40, 20, 'horizontal')).toEqual({ x: 53, y: 50 });
+  });
+
+  it("'vertical' snaps only the UL's X; Y (center) is untouched", () => {
+    // UL (33, 37) → only X snaps to 30 → center back to (50, 47).
+    expect(snapLabelToGrid({ x: 53, y: 47 }, 40, 20, 'vertical')).toEqual({ x: 50, y: 47 });
+  });
 });
 
 describe('maybeSnapToGrid', () => {
@@ -816,21 +940,31 @@ describe('maybeSnapToGrid', () => {
     line: false,
     equidistant: false,
     tens: false,
-    all: false,
-    grid: false,
+    all: 'off',
+    grid: 'off',
   };
   it('returns the input unchanged when grid mode is off', () => {
     expect(maybeSnapToGrid({ x: 27, y: 43 }, ALL_OFF)).toEqual({ x: 27, y: 43 });
   });
   it('snaps to the nearest grid point when grid mode is on', () => {
-    expect(maybeSnapToGrid({ x: 27, y: 43 }, { ...ALL_OFF, grid: true })).toEqual({
+    expect(maybeSnapToGrid({ x: 27, y: 43 }, { ...ALL_OFF, grid: 'both' })).toEqual({
       x: 30,
       y: 40,
     });
   });
   it('passes null through unchanged', () => {
-    expect(maybeSnapToGrid(null, { ...ALL_OFF, grid: true })).toBeNull();
+    expect(maybeSnapToGrid(null, { ...ALL_OFF, grid: 'both' })).toBeNull();
     expect(maybeSnapToGrid(null, ALL_OFF)).toBeNull();
+  });
+  it("directional grid snaps only the locked axis ('horizontal' → Y)", () => {
+    expect(maybeSnapToGrid({ x: 27, y: 43 }, { ...ALL_OFF, grid: 'horizontal' })).toEqual({
+      x: 27,
+      y: 40,
+    });
+    expect(maybeSnapToGrid({ x: 27, y: 43 }, { ...ALL_OFF, grid: 'vertical' })).toEqual({
+      x: 30,
+      y: 43,
+    });
   });
 });
 
@@ -846,7 +980,7 @@ describe('snapDraggedStation: grid mode', () => {
       draggedStops: dragged.stops,
       stations: stations(dragged),
       lines: linesOf(lineOf('L1', ['d'])),
-      modes: { line: false, equidistant: false, tens: false, all: false, grid: true },
+      modes: { line: false, equidistant: false, tens: false, all: 'off', grid: 'both' },
     });
     expect(r.x).toBe(30);
     expect(r.y).toBe(40);
@@ -884,7 +1018,7 @@ describe('snapDraggedStation: grid mode', () => {
       draggedStops: dragged.stops,
       stations: stations(dragged, target),
       lines: linesOf(lineOf('L1', ['d', 't'])),
-      modes: { line: true, equidistant: false, tens: false, all: false, grid: true },
+      modes: { line: true, equidistant: false, tens: false, all: 'off', grid: 'both' },
     });
     expect(r.y).toBeCloseTo(0, 5);
     expect(r.x).toBeCloseTo(27, 5);
@@ -903,7 +1037,7 @@ describe('snapDraggedStation: grid mode', () => {
       draggedStops: dragged.stops,
       stations: stations(dragged),
       lines: linesOf(lineOf('L1', ['d'])),
-      modes: { line: true, equidistant: false, tens: false, all: false, grid: true },
+      modes: { line: true, equidistant: false, tens: false, all: 'off', grid: 'both' },
     });
     expect(r.x).toBe(30);
     expect(r.y).toBe(40);
@@ -919,9 +1053,39 @@ describe('snapDraggedStation: grid mode', () => {
       stations: stations(a),
       lines: linesOf(lineOf('L1', []), lineOf('L2', ['a'])),
       bulletLineId: 'L1',
-      modes: { line: true, equidistant: false, tens: false, all: false, grid: true },
+      modes: { line: true, equidistant: false, tens: false, all: 'off', grid: 'both' },
     });
     expect(r.x).toBe(30);
     expect(r.y).toBe(40);
+  });
+
+  it('directional grid fallback locks only the chosen axis', () => {
+    const dragged = makeStation({ id: 'd', x: 0, y: 0, stops: [makeStop('L1')] });
+    const horizontal = snapDraggedStation({
+      draggedId: 'd',
+      proposedX: 27,
+      proposedY: 43,
+      draggedRotation: 0,
+      draggedStops: dragged.stops,
+      stations: stations(dragged),
+      lines: linesOf(lineOf('L1', ['d'])),
+      modes: { line: false, equidistant: false, tens: false, all: 'off', grid: 'horizontal' },
+    });
+    // 'horizontal' locks Y to 40, leaves X at 27.
+    expect(horizontal.x).toBe(27);
+    expect(horizontal.y).toBe(40);
+
+    const vertical = snapDraggedStation({
+      draggedId: 'd',
+      proposedX: 27,
+      proposedY: 43,
+      draggedRotation: 0,
+      draggedStops: dragged.stops,
+      stations: stations(dragged),
+      lines: linesOf(lineOf('L1', ['d'])),
+      modes: { line: false, equidistant: false, tens: false, all: 'off', grid: 'vertical' },
+    });
+    expect(vertical.x).toBe(30);
+    expect(vertical.y).toBe(43);
   });
 });

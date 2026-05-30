@@ -3,17 +3,32 @@ import {
   SpaceEvenlyHorizontallyIcon,
   RulerHorizontalIcon,
   AllSidesIcon,
+  DividerHorizontalIcon,
+  DividerVerticalIcon,
+  SlashIcon,
   GridIcon,
+  RowsIcon,
+  ColumnsIcon,
 } from '@radix-ui/react-icons';
 import { useSnapPrefs } from '../state/snapPrefs';
 import { useSelection } from '../state/store';
 import type { SnapModes } from '../geometry/snap';
 
+/** One state in a toggle's cycle. Index 0 is always the "off" state. */
+interface SnapState {
+  value: SnapModes[keyof SnapModes];
+  Icon: React.ComponentType;
+  /** Short name of this state, shown in the tooltip (e.g. "Horizontal only"). */
+  name: string;
+}
+
 interface ToggleSpec {
   key: keyof SnapModes;
   label: string;
   hint: string;
-  Icon: React.ComponentType;
+  /** Ordered cycle of states; clicking advances to the next, wrapping back to
+   *  index 0. Boolean toggles are just two-state cycles. */
+  states: SnapState[];
   /** When true, this toggle is disabled unless `modes.line` is also on. */
   requiresLine?: boolean;
   /** When true, this toggle applies to text labels too — so it stays
@@ -21,38 +36,57 @@ interface ToggleSpec {
   appliesToLabels?: boolean;
 }
 
+/** A plain on/off toggle modeled as a two-state cycle with one icon. */
+function boolStates(Icon: React.ComponentType): SnapState[] {
+  return [
+    { value: false, Icon, name: 'Off' },
+    { value: true, Icon, name: 'On' },
+  ];
+}
+
 const TOGGLES: ToggleSpec[] = [
   {
     key: 'line',
     label: 'Snap to line',
     hint: 'Lock to the direction of the existing line',
-    Icon: SliderIcon,
+    states: boolStates(SliderIcon),
   },
   {
     key: 'equidistant',
     label: 'Snap to equidistant',
     hint: 'Snap to the midpoint between same-line neighbors',
-    Icon: SpaceEvenlyHorizontallyIcon,
+    states: boolStates(SpaceEvenlyHorizontallyIcon),
     requiresLine: true,
   },
   {
     key: 'tens',
     label: "Snap to 10's",
     hint: 'Snap to multiples of 10 from the previous neighbor',
-    Icon: RulerHorizontalIcon,
+    states: boolStates(RulerHorizontalIcon),
     requiresLine: true,
   },
   {
     key: 'all',
     label: 'Snap to all',
-    hint: 'Snap to vertical, horizontal, or diagonal alignment with any stop',
-    Icon: AllSidesIcon,
+    hint: 'Align with any stop; click to cycle the direction',
+    states: [
+      { value: 'off', Icon: AllSidesIcon, name: 'Off' },
+      { value: 'horizontal', Icon: DividerHorizontalIcon, name: 'Horizontal only' },
+      { value: 'vertical', Icon: DividerVerticalIcon, name: 'Vertical only' },
+      { value: 'diagonal', Icon: SlashIcon, name: 'Diagonal only' },
+      { value: 'all', Icon: AllSidesIcon, name: 'All directions' },
+    ],
   },
   {
     key: 'grid',
     label: 'Snap to grid',
-    hint: 'Snap the dragged item to the nearest grid intersection',
-    Icon: GridIcon,
+    hint: 'Snap to grid lines; click to cycle the direction',
+    states: [
+      { value: 'off', Icon: GridIcon, name: 'Off' },
+      { value: 'horizontal', Icon: RowsIcon, name: 'Horizontal lines' },
+      { value: 'vertical', Icon: ColumnsIcon, name: 'Vertical lines' },
+      { value: 'both', Icon: GridIcon, name: 'Both' },
+    ],
     appliesToLabels: true,
   },
 ];
@@ -65,15 +99,26 @@ export function SnapToggleBar() {
   const labelSelected = useSelection((s) => s.selectedLabelIds.length > 0);
   return (
     <div className="tool-group" role="group" aria-label="Snap modes">
-      {TOGGLES.map(({ key, label, hint, Icon, requiresLine, appliesToLabels }) => {
+      {TOGGLES.map(({ key, label, hint, states, requiresLine, appliesToLabels }) => {
         const labelGated = labelSelected && !appliesToLabels;
         const disabled = labelGated || (!!requiresLine && !modes.line);
-        const active = modes[key];
+        const value = modes[key];
+        const idx = Math.max(
+          0,
+          states.findIndex((s) => s.value === value),
+        );
+        const state = states[idx];
+        // "Active" = any state past Off (index 0). Drives the styling +
+        // aria-pressed; the exact sub-mode lives in title/data-snap-state.
+        const active = idx > 0;
+        const { Icon } = state;
         const title = labelGated
           ? `${label} — not applicable to labels`
           : disabled
             ? `${label} — enable Snap to line first`
-            : `${label} — ${hint}`;
+            : active
+              ? `${label}: ${state.name} — ${hint} · click to cycle`
+              : `${label} — ${hint} · click to cycle`;
         return (
           <button
             key={key}
@@ -82,10 +127,12 @@ export function SnapToggleBar() {
             aria-pressed={active}
             aria-disabled={disabled}
             aria-label={label}
+            data-snap-state={String(value)}
             title={title}
             onClick={() => {
               if (disabled) return;
-              setMode(key, !active);
+              const next = states[(idx + 1) % states.length];
+              setMode(key, next.value);
             }}
           >
             <Icon />

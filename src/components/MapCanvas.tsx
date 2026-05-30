@@ -283,8 +283,8 @@ export function MapCanvas() {
           if (bulletSnapGuides.length > 0) setBulletSnapGuides([]);
           // Grid snap fallback when the snap engine wasn't called (unbound
           // bullet or group drag). Shift still bypasses.
-          if (snapModes.grid && !e.shiftKey) {
-            const g = snapPointToGrid(nx, ny);
+          if (snapModes.grid !== 'off' && !e.shiftKey) {
+            const g = snapPointToGrid(nx, ny, snapModes.grid);
             nx = g.x;
             ny = g.y;
           }
@@ -323,7 +323,7 @@ export function MapCanvas() {
         // grid snap still applies. Register the label by its upper-left
         // bbox corner so the visible edge lands on a grid line. Shift
         // bypasses like elsewhere.
-        if (snapModes.grid && !e.shiftKey) {
+        if (snapModes.grid !== 'off' && !e.shiftKey) {
           const cur = textLabels[ld.id];
           if (cur) {
             const m = measureTextLabel(cur);
@@ -334,6 +334,7 @@ export function MapCanvas() {
               { x: nx, y: ny },
               m.width + 2 * TEXT_LABEL_HIT_PAD,
               m.height + 2 * TEXT_LABEL_HIT_PAD,
+              snapModes.grid,
             );
             nx = snapped.x;
             ny = snapped.y;

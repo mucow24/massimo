@@ -26,28 +26,39 @@ export const GRID_INTERVAL = 10;
  * Snap an arbitrary (x, y) point to the nearest grid intersection. Pure and
  * stateless — used both by the snap engine's grid mode and by the label drag
  * path, which doesn't go through the engine.
+ *
+ * `mode` selects which axes are constrained. Per the toolbar semantics,
+ * "horizontal" snaps onto horizontal grid lines (locks Y, free X) and
+ * "vertical" snaps onto vertical grid lines (locks X, free Y). Defaults to
+ * 'both' so existing callers keep the full two-axis snap.
  */
-export function snapPointToGrid(x: number, y: number): { x: number; y: number } {
+export function snapPointToGrid(
+  x: number,
+  y: number,
+  mode: GridSnap = 'both',
+): { x: number; y: number } {
+  const snapX = mode === 'vertical' || mode === 'both';
+  const snapY = mode === 'horizontal' || mode === 'both';
   // `+ 0` normalizes -0 → 0 so callers don't see signed-zero leakage from
   // Math.round on small negative inputs.
   return {
-    x: Math.round(x / GRID_INTERVAL) * GRID_INTERVAL + 0,
-    y: Math.round(y / GRID_INTERVAL) * GRID_INTERVAL + 0,
+    x: snapX ? Math.round(x / GRID_INTERVAL) * GRID_INTERVAL + 0 : x,
+    y: snapY ? Math.round(y / GRID_INTERVAL) * GRID_INTERVAL + 0 : y,
   };
 }
 
 /**
  * Gate for grid snap at a placement site. Returns the world point snapped
- * to the nearest grid intersection when `modes.grid` is on; otherwise the
- * point unchanged. Null passes through so callers can pipe a cursor that
- * may be unset.
+ * to the grid when `modes.grid` is on (any direction); otherwise the point
+ * unchanged. Null passes through so callers can pipe a cursor that may be
+ * unset.
  */
 export function maybeSnapToGrid<T extends { x: number; y: number } | null>(
   world: T,
   modes: SnapModes,
 ): T {
-  if (!world || !modes.grid) return world;
-  return snapPointToGrid(world.x, world.y) as T;
+  if (!world || modes.grid === 'off') return world;
+  return snapPointToGrid(world.x, world.y, modes.grid) as T;
 }
 
 /**
@@ -64,16 +75,32 @@ export function snapLabelToGrid(
   center: { x: number; y: number },
   width: number,
   height: number,
+  mode: GridSnap = 'both',
 ): { x: number; y: number } {
   const halfW = width / 2;
   const halfH = height / 2;
-  const ul = snapPointToGrid(center.x - halfW, center.y - halfH);
+  const ul = snapPointToGrid(center.x - halfW, center.y - halfH, mode);
   return { x: ul.x + halfW, y: ul.y + halfH };
 }
 
 /**
- * User-toggleable snap modes. All four are independent flags but
- * `equidistant` and `tens` are no-ops unless `line` is also true.
+ * Directional state for "Snap to all". The button cycles through these:
+ * off → horizontal-only → vertical-only → diagonal-only → all. Each value
+ * selects which world axes the alignment may engage (see {@link axesForAllSnap}).
+ */
+export type AllSnap = 'off' | 'horizontal' | 'vertical' | 'diagonal' | 'all';
+
+/**
+ * Directional state for "Snap to grid". The button cycles through these:
+ * off → horizontal → vertical → both. "horizontal" locks Y (snaps onto
+ * horizontal grid lines), "vertical" locks X, "both" snaps both axes.
+ */
+export type GridSnap = 'off' | 'horizontal' | 'vertical' | 'both';
+
+/**
+ * User-toggleable snap modes. `line`, `equidistant`, and `tens` are boolean
+ * flags (the latter two are no-ops unless `line` is also true); `all` and
+ * `grid` are directional cycles.
  */
 export interface SnapModes {
   /** Today's "lock to line direction" snap (project onto the axis defined by
@@ -86,23 +113,24 @@ export interface SnapModes {
   /** Along the line axis, snap the dragged stop to a multiple of TENS_INTERVAL
    *  measured from the prev-in-line-ordering neighbor. Gated on `line`. */
   tens: boolean;
-  /** Snap when the dragged stop is vertically, horizontally, or diagonally
-   *  aligned with any other stop (line membership and travel direction
-   *  ignored). Composes with `line` via the existing 2-axis solver. */
-  all: boolean;
-  /** Snap the dragged anchor to the nearest GRID_INTERVAL multiple in both
-   *  axes. Independent of the other modes; when another mode engages (any
-   *  guides emitted) the engine's result wins so the user doesn't see grid
-   *  fighting an explicit alignment. */
-  grid: boolean;
+  /** Snap when the dragged stop is aligned with any other stop along the
+   *  selected axis family (vertical, horizontal, and/or diagonal; line
+   *  membership and travel direction ignored). Composes with `line` via the
+   *  existing 2-axis solver. `'off'` disables it. */
+  all: AllSnap;
+  /** Snap the dragged anchor to the nearest GRID_INTERVAL multiple along the
+   *  selected axes. Independent of the other modes; when another mode engages
+   *  (any guides emitted) the engine's result wins so the user doesn't see
+   *  grid fighting an explicit alignment. `'off'` disables it. */
+  grid: GridSnap;
 }
 
 export const DEFAULT_SNAP_MODES: SnapModes = {
   line: true,
   equidistant: false,
   tens: false,
-  all: false,
-  grid: false,
+  all: 'off',
+  grid: 'off',
 };
 
 export interface SnapGuide {
@@ -213,7 +241,7 @@ export function snapDraggedStation(input: SnapInput): SnapResult {
   // Redistribute (Ctrl-drag) is treated like a line-mode operation regardless
   // of the user's `modes.line` toggle — it's an explicit, modal interaction.
   const lineModeOn = modes.line || !!redistributeAnchor;
-  const allModeOn = modes.all && !redistributeAnchor;
+  const allModeOn = modes.all !== 'off' && !redistributeAnchor;
   for (const t of targets) {
     const linePairs: AlignmentPair[] = lineModeOn
       ? bulletLineId
@@ -228,7 +256,7 @@ export function snapDraggedStation(input: SnapInput): SnapResult {
           )
       : [];
     const allPairs: AlignmentPair[] = allModeOn
-      ? allAxesPairs(draggedStops ?? [], (draggedRotation ?? 0) as Rotation, t)
+      ? allAxesPairs(draggedStops ?? [], (draggedRotation ?? 0) as Rotation, t, modes.all)
       : [];
     type TaggedPair = AlignmentPair & { kind: 'line' | 'all' };
     const pairs: TaggedPair[] = [
@@ -263,8 +291,8 @@ export function snapDraggedStation(input: SnapInput): SnapResult {
     // No alignment engaged — fall through to grid snap if enabled. Grid is
     // a fallback so explicit alignments (line/equidistant/tens/all) always
     // win when they fire.
-    if (modes.grid) {
-      const g = snapPointToGrid(proposedX, proposedY);
+    if (modes.grid !== 'off') {
+      const g = snapPointToGrid(proposedX, proposedY, modes.grid);
       return { x: g.x, y: g.y, guides: [] };
     }
     return { x: proposedX, y: proposedY, guides: [] };
@@ -575,12 +603,40 @@ const ALL_AXES: Vec2[] = [
   { x: SQRT2_2, y: SQRT2_2 },
   { x: SQRT2_2, y: -SQRT2_2 },
 ];
+
+/**
+ * The world axes a given "Snap to all" mode is allowed to align against.
+ * `axis` is the direction the alignment line runs, so "horizontal" alignment
+ * (two stops sharing a Y) is the {1,0} axis, "vertical" is {0,1}, and
+ * "diagonal" covers both 45° families. `'off'` yields no axes.
+ */
+export function axesForAllSnap(mode: AllSnap): Vec2[] {
+  switch (mode) {
+    case 'horizontal':
+      return [{ x: 1, y: 0 }];
+    case 'vertical':
+      return [{ x: 0, y: 1 }];
+    case 'diagonal':
+      return [
+        { x: SQRT2_2, y: SQRT2_2 },
+        { x: SQRT2_2, y: -SQRT2_2 },
+      ];
+    case 'all':
+      return ALL_AXES;
+    default:
+      return [];
+  }
+}
+
 export function allAxesPairs(
   draggedStops: StopCell[],
   draggedRotation: Rotation,
   target: Station,
+  mode: AllSnap = 'all',
 ): AlignmentPair[] {
   if (target.stops.length === 0) return [];
+  const axes = axesForAllSnap(mode);
+  if (axes.length === 0) return [];
   const dOffs: Vec2[] =
     draggedStops.length === 0
       ? [{ x: 0, y: 0 }]
@@ -589,7 +645,7 @@ export function allAxesPairs(
   for (const tCell of target.stops) {
     const tOff = rotateBy(stopCenterAt(tCell.row, tCell.col), target.rotation);
     for (const dOff of dOffs) {
-      for (const axis of ALL_AXES) out.push({ dOff, tOff, axis });
+      for (const axis of axes) out.push({ dOff, tOff, axis });
     }
   }
   return out;
