@@ -875,7 +875,7 @@ export function MapCanvas() {
             primacy. The hovered solid outline + the layer-number labels
             still paint at the very end so they stay on top. */}
         {selection.layeringMode && (
-          <LayeringDashedOutlines bands={bands} hovered={hoveredLayerStripe} />
+          <LayeringDashedOutlines bands={bands} lines={lines} hovered={hoveredLayerStripe} />
         )}
 
         {/* Transfers: user-styled lines connecting two dots. Rendered BEFORE
@@ -1380,7 +1380,7 @@ export function MapCanvas() {
             paint over it. */}
         {selection.layeringMode && (
           <>
-            <LayeringHoverOutline bands={bands} hovered={hoveredLayerStripe} />
+            <LayeringHoverOutline bands={bands} lines={lines} hovered={hoveredLayerStripe} />
             <LayerNumberLabels bands={bands} lines={lines} hovered={hoveredLayerStripe} />
           </>
         )}

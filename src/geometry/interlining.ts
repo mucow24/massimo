@@ -304,23 +304,27 @@ export function segmentPriority(line: Line | undefined, pairKey: string, lineIdx
   return lineIdx - layer * LAYER_WEIGHT;
 }
 
-// Layer to use for a stop marker at `stationId` on `line`. Takes the MAX over
-// incident segments (= the front-most band the stop joins) so the marker sits
-// on top of whichever incident band wins paint-order at this station. A
-// segment with no `segmentLayers` entry counts as 0. Returns 0 when the line
-// has no `segmentLayers` map or no incident segment.
+// Layer to use for a stop marker at `stationId` on `line`. Picks the
+// front-most non-zero incident layer (MAX over them), or 0 when every
+// incident segment is at layer 0.
 //
-// Crucially, we seed the running max with the first incident layer rather
-// than 0, so a station whose ONLY incident layers are negative correctly
-// returns a negative max (= keeps the marker behind layer-0 lines crossing
-// nearby). Without that seed, the marker would always float to ≥0 and a
-// fully-layered-down line would still have its dots on top of layer-0 bands.
+// Rule rationale: a layer-0 segment meeting a non-zero segment at the same
+// station should defer the dot to the layered side — the user explicitly
+// placed that segment at a non-default layer, so it "claims" the dot. Only
+// when ALL incident segments are at layer 0 (or there are no overrides at
+// all) do we leave the dot at the default 0. This also handles the
+// "wholly-negative line" regression: every incident at layer -1 keeps the
+// dot at -1 (behind any layer-0 crossing band), not at 0.
+//
+// Lines must NOT be filtered on render priority — same-band sibling stripes
+// run parallel and can't visually cover the target.
 export function stationLayerFor(line: Line, stationId: StationId): number {
   const layers = line.segmentLayers;
   if (!layers) return 0;
-  let max: number | null = null;
+  let nonZeroMax: number | null = null;
   const consider = (v: number) => {
-    max = max === null ? v : Math.max(max, v);
+    if (v === 0) return;
+    nonZeroMax = nonZeroMax === null ? v : Math.max(nonZeroMax, v);
   };
   for (let i = 0; i < line.stations.length; i++) {
     if (line.stations[i] !== stationId) continue;
@@ -328,7 +332,59 @@ export function stationLayerFor(line: Line, stationId: StationId): number {
     if (i < line.stations.length - 1)
       consider(layers[pairKeyOf(stationId, line.stations[i + 1])] ?? 0);
   }
-  return max ?? 0;
+  return nonZeroMax ?? 0;
+}
+
+/**
+ * Verdict for one endpoint of a band stripe — which of the two adjacent
+ * segments at this station "wins" the right to enclose the stop-dot square
+ * in its outline.
+ *
+ * - `win`  → THIS segment's layer is the {@link stationLayerFor} winner
+ *            (or this is a terminus, in which case the segment is the sole
+ *            owner). Layering-mode outlines extend OUTWARD past the station
+ *            so the full dot square sits inside.
+ * - `lose` → some other adjacency wins. Outlines retreat INWARD so the dot
+ *            square sits fully outside.
+ * - `tie`  → both adjacencies share a layer. Outlines cap at the station
+ *            center, splitting the dot down the middle (the prior behavior
+ *            for every non-terminus station).
+ */
+export type StripeEndpointFate = 'win' | 'lose' | 'tie';
+
+export function stripeEndpointFate(
+  line: Line,
+  thisPairKey: string,
+  stationId: StationId,
+): StripeEndpointFate {
+  const layers = line.segmentLayers ?? {};
+  const thisLayer = layers[thisPairKey] ?? 0;
+  // Aggregate every OTHER incident pair-key at this station the same way
+  // stationLayerFor does (filter zeros, then MAX). Returns null when there
+  // is no other incident, i.e. this station is a terminus.
+  let otherNonZeroMax: number | null = null;
+  let sawOther = false;
+  const considerOther = (k: string) => {
+    if (k === thisPairKey) return;
+    sawOther = true;
+    const v = layers[k] ?? 0;
+    if (v === 0) return;
+    otherNonZeroMax = otherNonZeroMax === null ? v : Math.max(otherNonZeroMax, v);
+  };
+  for (let i = 0; i < line.stations.length; i++) {
+    if (line.stations[i] !== stationId) continue;
+    if (i > 0) considerOther(pairKeyOf(line.stations[i - 1], stationId));
+    if (i < line.stations.length - 1) considerOther(pairKeyOf(stationId, line.stations[i + 1]));
+  }
+  if (!sawOther) return 'win'; // terminus — sole owner
+  const otherLayer = otherNonZeroMax ?? 0;
+  if (thisLayer === otherLayer) return 'tie';
+  // Same filter-then-MAX rule as stationLayerFor.
+  let winnerLayer: number;
+  if (thisLayer === 0) winnerLayer = otherLayer;
+  else if (otherLayer === 0) winnerLayer = thisLayer;
+  else winnerLayer = Math.max(thisLayer, otherLayer);
+  return winnerLayer === thisLayer ? 'win' : 'lose';
 }
 
 // ---------- Stripe-outline geometry (used by layering-mode rendering) ----------
@@ -349,6 +405,26 @@ export interface StripeOutline {
   segsB: OffsetPathSegment[];
 }
 
+/**
+ * Optional per-endpoint adjustments to the outline. Each value is the
+ * world-unit distance along the outward tangent at that endpoint:
+ *
+ * - Positive  → extend the outline OUTWARD past the station, so the stop-dot
+ *               square at that end sits fully inside the outline (the
+ *               "winning" segment case at a non-tie endpoint).
+ * - Negative  → retreat the outline INWARD before the station, so the dot
+ *               sits fully outside (the "losing" segment case).
+ * - 0 / unset → cap at the station center as before (the "tie" case).
+ *
+ * Because the adjustment slides along the existing first/last edge tangent,
+ * no new corner is introduced — `offsetFilletPath` and `emitOffsetSegments`
+ * just see a slightly longer / shorter straight section at the affected end.
+ */
+export interface StripeOutlineAdjust {
+  start?: number;
+  end?: number;
+}
+
 // Compute the outline geometry for stripe `stripeIndex` of `band`. The four
 // pieces (two long edges + two cap lines) join cleanly at shared coordinates,
 // and matching `segsA` / `segsB` are returned for callers that want to build
@@ -357,6 +433,7 @@ export interface StripeOutline {
 export function computeStripeOutline(
   band: SegmentBandSpec,
   stripeIndex: number,
+  adjust: StripeOutlineAdjust = {},
 ): StripeOutline | null {
   const verts = band.centerline;
   if (verts.length < 2) return null;
@@ -370,9 +447,29 @@ export function computeStripeOutline(
   const v1 = verts[1];
   const vN1 = verts[verts.length - 1];
   const vN2 = verts[verts.length - 2];
+
+  // Slide v0 and vN1 along their incident-edge tangents per the requested
+  // adjustments. Outward at v0 = away from v1 = -tangent; outward at vN1 =
+  // away from vN2 = +tangent. Positive adjust = outward, negative = inward.
+  const tangentUnit = (a: Vec2, b: Vec2) => {
+    const dx = b.x - a.x;
+    const dy = b.y - a.y;
+    const ln = Math.hypot(dx, dy) || 1;
+    return { x: dx / ln, y: dy / ln };
+  };
+  const startAdj = adjust.start ?? 0;
+  const endAdj = adjust.end ?? 0;
+  const t0 = tangentUnit(v0, v1);
+  const tN = tangentUnit(vN2, vN1);
+  const adjV0: Vec2 = { x: v0.x - t0.x * startAdj, y: v0.y - t0.y * startAdj };
+  const adjVN1: Vec2 = { x: vN1.x + tN.x * endAdj, y: vN1.y + tN.y * endAdj };
+  const adjustedVerts =
+    verts.length === 2 ? [adjV0, adjVN1] : [adjV0, ...verts.slice(1, -1), adjVN1];
+
   // Endpoint perpendiculars match the leftOf(norm(...)) convention used by
   // emitOffsetSegments at i=0 and i=last so the cap lines meet the long
-  // edges at exactly shared coordinates.
+  // edges at exactly shared coordinates. The perpendicular direction at
+  // each end is unchanged by the colinear slide above.
   const perpUnit = (a: Vec2, b: Vec2) => {
     const dx = b.x - a.x;
     const dy = b.y - a.y;
@@ -383,22 +480,22 @@ export function computeStripeOutline(
   const pN = perpUnit(vN2, vN1);
 
   return {
-    edgeAPath: offsetFilletPath(verts, band.radius, offsetA),
-    edgeBPath: offsetFilletPath(verts, band.radius, offsetB),
+    edgeAPath: offsetFilletPath(adjustedVerts, band.radius, offsetA),
+    edgeBPath: offsetFilletPath(adjustedVerts, band.radius, offsetB),
     capStart: {
-      x1: v0.x + p0.x * offsetA,
-      y1: v0.y + p0.y * offsetA,
-      x2: v0.x + p0.x * offsetB,
-      y2: v0.y + p0.y * offsetB,
+      x1: adjV0.x + p0.x * offsetA,
+      y1: adjV0.y + p0.y * offsetA,
+      x2: adjV0.x + p0.x * offsetB,
+      y2: adjV0.y + p0.y * offsetB,
     },
     capEnd: {
-      x1: vN1.x + pN.x * offsetA,
-      y1: vN1.y + pN.y * offsetA,
-      x2: vN1.x + pN.x * offsetB,
-      y2: vN1.y + pN.y * offsetB,
+      x1: adjVN1.x + pN.x * offsetA,
+      y1: adjVN1.y + pN.y * offsetA,
+      x2: adjVN1.x + pN.x * offsetB,
+      y2: adjVN1.y + pN.y * offsetB,
     },
-    segsA: emitOffsetSegments(verts, band.radius, offsetA),
-    segsB: emitOffsetSegments(verts, band.radius, offsetB),
+    segsA: emitOffsetSegments(adjustedVerts, band.radius, offsetA),
+    segsB: emitOffsetSegments(adjustedVerts, band.radius, offsetB),
   };
 }
 

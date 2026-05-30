@@ -2,6 +2,8 @@ import { describe, it, expect } from 'vitest';
 import { render } from '@testing-library/react';
 import { LayeringDashedOutlines, LayeringHoverOutline } from './LayeringOutlines';
 import type { SegmentBandSpec } from '../../geometry/interlining';
+import type { Line, LineId } from '../../model/types';
+import { makeLine } from '../../test/fixtures';
 
 const makeBand = (lineIds: string[]): SegmentBandSpec => {
   const lines = lineIds.map((id) => ({ id, color: '#EF374B', style: 'solid' as const }));
@@ -25,20 +27,22 @@ const makeBand = (lineIds: string[]): SegmentBandSpec => {
 const renderDashed = (
   bands: SegmentBandSpec[],
   hovered: { bandKey: string; lineId: string } | null = null,
+  lines: Record<LineId, Line> = {},
 ) =>
   render(
     <svg>
-      <LayeringDashedOutlines bands={bands} hovered={hovered} />
+      <LayeringDashedOutlines bands={bands} lines={lines} hovered={hovered} />
     </svg>,
   );
 
 const renderHover = (
   bands: SegmentBandSpec[],
   hovered: { bandKey: string; lineId: string } | null,
+  lines: Record<LineId, Line> = {},
 ) =>
   render(
     <svg>
-      <LayeringHoverOutline bands={bands} hovered={hovered} />
+      <LayeringHoverOutline bands={bands} lines={lines} hovered={hovered} />
     </svg>,
   );
 
@@ -72,6 +76,45 @@ describe('<LayeringDashedOutlines>', () => {
     const groups = container.querySelectorAll('[data-layering-outline]');
     expect(groups.length).toBe(1);
     expect(groups[0].getAttribute('data-line-id')).toBe('B');
+  });
+
+  it('shifts the cap line outward at a "win" endpoint (full dot enclosed)', () => {
+    // Three-station vertical line with a layered middle segment. At s2 the
+    // line has one layer-(-1) adjacency (s1|s2, the band we're outlining)
+    // and one layer-0 adjacency (s2|s3) — the layered side wins the dot.
+    // We render only the s1|s2 band so the dashed-cap at s2 should slide
+    // outward (in band-coords: along the centerline tangent at vN1) by
+    // STOP_SIZE/2 = 7.
+    const band: SegmentBandSpec = {
+      pairKey: 's1|s2',
+      bandKey: 's1|s2#A',
+      fromId: 's1',
+      toId: 's2',
+      lines: [{ id: 'A', color: '#000', style: 'solid' }],
+      paths: ['M0,0 L0,100'],
+      warning: false,
+      centerline: [
+        { x: 0, y: 0 },
+        { x: 0, y: 100 },
+      ],
+      radius: 24,
+      linePriorities: [0],
+    };
+    const lines: Record<LineId, Line> = {
+      A: makeLine({
+        id: 'A',
+        stations: ['s1', 's2', 's3'],
+        segmentLayers: { 's1|s2': -1 },
+      }),
+    };
+    const { container } = renderDashed([band], null, lines);
+    const lineEls = container.querySelector('[data-layering-outline]')!.querySelectorAll('line');
+    // capStart is the s1 terminus (no other adjacency) — terminus = win,
+    // outline extends OUTWARD past v0=(0,0) → y=-7.
+    expect(Number(lineEls[0].getAttribute('y1'))).toBeCloseTo(-7, 5);
+    // capEnd is at s2, layered-vs-0 → win, outline extends past v1=(0,100)
+    // → y=107.
+    expect(Number(lineEls[1].getAttribute('y1'))).toBeCloseTo(107, 5);
   });
 });
 

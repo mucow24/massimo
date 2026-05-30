@@ -4,9 +4,12 @@ import {
   buildLineIndex,
   buildOrderedRenderables,
   buildStopMarkers,
+  computeStripeOutline,
   LAYER_WEIGHT,
   segmentPriority,
   stationLayerFor,
+  stripeEndpointFate,
+  type SegmentBandSpec,
 } from './interlining';
 import { STOP_SIZE } from './orientation';
 import { makeDoc, makeLine, makeStation, makeStop, stationWithStop } from '../test/fixtures';
@@ -819,6 +822,108 @@ describe('stationLayerFor', () => {
     });
     expect(stationLayerFor(line, 's1')).toBe(-2);
     expect(stationLayerFor(line, 's2')).toBe(-2);
+  });
+
+  it('prefers a non-zero adjacency over a layer-0 adjacency at the same station', () => {
+    // New rule: a layer-0 segment meeting a layered (-1) segment at the same
+    // station defers the dot to the layered side, so the dot stays behind
+    // any layer-0 crossing band. Old MAX-from-0 would have returned 0,
+    // floating the dot up onto a crossing.
+    const line = makeLine({
+      id: 'L1',
+      stations: ['s1', 's2', 's3'],
+      segmentLayers: { 's1|s2': -1 }, // s2|s3 missing → layer 0
+    });
+    expect(stationLayerFor(line, 's2')).toBe(-1);
+  });
+});
+
+describe('stripeEndpointFate', () => {
+  it("returns 'win' at a terminus — the segment is the sole owner of the dot", () => {
+    const line = makeLine({ id: 'L1', stations: ['s1', 's2'] });
+    expect(stripeEndpointFate(line, 's1|s2', 's1')).toBe('win');
+    expect(stripeEndpointFate(line, 's1|s2', 's2')).toBe('win');
+  });
+
+  it("returns 'tie' when both adjacencies share a layer (including default 0)", () => {
+    const line = makeLine({ id: 'L1', stations: ['s1', 's2', 's3'] });
+    expect(stripeEndpointFate(line, 's1|s2', 's2')).toBe('tie');
+    expect(stripeEndpointFate(line, 's2|s3', 's2')).toBe('tie');
+    const layered = makeLine({
+      id: 'L2',
+      stations: ['s1', 's2', 's3'],
+      segmentLayers: { 's1|s2': 2, 's2|s3': 2 },
+    });
+    expect(stripeEndpointFate(layered, 's1|s2', 's2')).toBe('tie');
+  });
+
+  it("returns 'win' for the non-zero segment when the other is layer 0", () => {
+    const line = makeLine({
+      id: 'L1',
+      stations: ['s1', 's2', 's3'],
+      segmentLayers: { 's1|s2': -1 }, // s2|s3 is implicit 0
+    });
+    expect(stripeEndpointFate(line, 's1|s2', 's2')).toBe('win');
+    expect(stripeEndpointFate(line, 's2|s3', 's2')).toBe('lose');
+  });
+
+  it("returns 'win' for the MAX-layer segment when both adjacencies are non-zero", () => {
+    const line = makeLine({
+      id: 'L1',
+      stations: ['s1', 's2', 's3'],
+      segmentLayers: { 's1|s2': -1, 's2|s3': 2 },
+    });
+    expect(stripeEndpointFate(line, 's1|s2', 's2')).toBe('lose');
+    expect(stripeEndpointFate(line, 's2|s3', 's2')).toBe('win');
+  });
+});
+
+describe('computeStripeOutline — endpoint adjustments', () => {
+  // Minimal vertical band from (0,0)→(0,100), 1 stripe, radius 24.
+  const band: SegmentBandSpec = {
+    pairKey: 's1|s2',
+    bandKey: 's1|s2#A',
+    fromId: 's1',
+    toId: 's2',
+    lines: [{ id: 'A', color: '#000', style: 'solid' }],
+    paths: ['M0,0 L0,100'],
+    warning: false,
+    centerline: [
+      { x: 0, y: 0 },
+      { x: 0, y: 100 },
+    ],
+    radius: 24,
+    linePriorities: [0],
+  };
+
+  it('caps at the centerline endpoints when no adjustments are given', () => {
+    const out = computeStripeOutline(band, 0)!;
+    // capStart at y=0 (v0), capEnd at y=100 (vN1). Cap line x-coords are
+    // at ±HALF = ±7 (perpendicular to the vertical centerline).
+    expect(out.capStart.y1).toBeCloseTo(0, 5);
+    expect(out.capStart.y2).toBeCloseTo(0, 5);
+    expect(out.capEnd.y1).toBeCloseTo(100, 5);
+    expect(out.capEnd.y2).toBeCloseTo(100, 5);
+  });
+
+  it('extends both caps outward when both adjustments are positive (win/win)', () => {
+    const out = computeStripeOutline(band, 0, { start: 7, end: 7 })!;
+    // Tangent at v0 = (0, +1) so outward = (0, -1): capStart slides to y=-7.
+    // Tangent at vN1 = (0, +1) so outward = (0, +1): capEnd slides to y=107.
+    expect(out.capStart.y1).toBeCloseTo(-7, 5);
+    expect(out.capEnd.y1).toBeCloseTo(107, 5);
+  });
+
+  it('retreats inward when adjustments are negative (lose)', () => {
+    const out = computeStripeOutline(band, 0, { start: -7, end: -7 })!;
+    expect(out.capStart.y1).toBeCloseTo(7, 5);
+    expect(out.capEnd.y1).toBeCloseTo(93, 5);
+  });
+
+  it('handles mixed adjustments (win at start, lose at end)', () => {
+    const out = computeStripeOutline(band, 0, { start: 7, end: -7 })!;
+    expect(out.capStart.y1).toBeCloseTo(-7, 5);
+    expect(out.capEnd.y1).toBeCloseTo(93, 5);
   });
 });
 
