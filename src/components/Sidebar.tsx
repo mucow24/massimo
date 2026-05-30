@@ -15,6 +15,7 @@ export function Sidebar() {
   const selection = useSelection();
   const deleteStation = useDoc((s) => s.deleteStation);
   const deleteLine = useDoc((s) => s.deleteLine);
+  const moveLineInOrder = useDoc((s) => s.moveLineInOrder);
 
   const [stationSortBy, setStationSortBy] = useState<StationSortColumn>('name');
   const [stationSortDir, setStationSortDir] = useState<SortDirection>('asc');
@@ -197,7 +198,7 @@ export function Sidebar() {
         {selection.activeTab === 'lines' && (
           <section>
             {orderedLineIds.length === 0 && <div className="empty">No lines yet.</div>}
-            {orderedLineIds.map((id) => {
+            {orderedLineIds.map((id, i) => {
               const ln = lines[id];
               if (!ln) return null;
               const expanded = selection.selectedLineId === ln.id;
@@ -213,6 +214,7 @@ export function Sidebar() {
                   <div
                     className={'list-row' + (expanded ? ' selected' : '')}
                     onClick={() => selection.selectLine(expanded ? null : ln.id)}
+                    title="Same-layer tiebreaker: top of list = front-most among lines sharing a layer. Use ↑/↓ to reorder."
                   >
                     <span
                       className="line-badge"
@@ -230,6 +232,28 @@ export function Sidebar() {
                     <span className="grow">
                       {ln.name || `${ln.service} line`} · {ln.stations.length} stations
                     </span>
+                    <button
+                      className="btn-mini icon"
+                      disabled={i === 0}
+                      title="Move up (forward among same-layer lines)"
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        moveLineInOrder(ln.id, -1);
+                      }}
+                    >
+                      ↑
+                    </button>
+                    <button
+                      className="btn-mini icon"
+                      disabled={i === orderedLineIds.length - 1}
+                      title="Move down (backward among same-layer lines)"
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        moveLineInOrder(ln.id, 1);
+                      }}
+                    >
+                      ↓
+                    </button>
                     <button
                       className="btn-mini danger"
                       onClick={(e) => {
