@@ -1,5 +1,5 @@
 import { useRef, useState } from 'react';
-import { useDoc, useSelection } from '../state/store';
+import { useDoc, useSelection, type UiMode } from '../state/store';
 import { useViewportStore } from '../state/viewportStore';
 import { parse, serialize } from '../model/serialize';
 import { DEFAULT_DOC } from '../model/transforms';
@@ -45,21 +45,24 @@ export function Toolbar() {
   const fileInputRef = useRef<HTMLInputElement | null>(null);
   const [loadError, setLoadError] = useState<string | null>(null);
 
-  const onAddStation = () => {
-    selection.setPlacingStation(!selection.placingStation);
+  // Each "Add X" menu item toggles the matching uiMode variant: clicking it
+  // again (or while the variant is active) returns to idle.
+  const toggleMode = (
+    kind: Exclude<UiMode['kind'], 'idle' | 'appending-to-line' | 'creating-transfer'>,
+  ) => {
+    selection.setUiMode(selection.uiMode.kind === kind ? { kind: 'idle' } : { kind });
   };
-  const onAddLineTag = () => {
-    selection.setCreatingLineTag(!selection.creatingLineTag);
-  };
-  const onAddRouteBullet = () => {
-    selection.setCreatingRouteBullet(!selection.creatingRouteBullet);
-  };
+  const onAddStation = () => toggleMode('placing-station');
+  const onAddLineTag = () => toggleMode('creating-line-tag');
+  const onAddRouteBullet = () => toggleMode('creating-route-bullet');
   const onAddTransfer = () => {
-    selection.setCreatingTransfer(!selection.creatingTransfer);
+    selection.setUiMode(
+      selection.uiMode.kind === 'creating-transfer'
+        ? { kind: 'idle' }
+        : { kind: 'creating-transfer', anchor: null },
+    );
   };
-  const onAddLabel = () => {
-    selection.setPlacingLabel(!selection.placingLabel);
-  };
+  const onAddLabel = () => toggleMode('placing-label');
   const onAddLine = () => {
     const id = addLine();
     selection.startAppendAt(id, -1);
@@ -72,12 +75,7 @@ export function Toolbar() {
     selection.selectRouteBullet(null);
     selection.selectTransfer(null);
     selection.selectLabel(null);
-    selection.setAppending(null);
-    selection.setPlacingStation(false);
-    selection.setCreatingLineTag(false);
-    selection.setCreatingRouteBullet(false);
-    selection.setCreatingTransfer(false);
-    selection.setPlacingLabel(false);
+    selection.setUiMode({ kind: 'idle' });
     selection.setEditingStationId(null);
     clearAll();
   };
@@ -133,11 +131,7 @@ export function Toolbar() {
     selection.selectLineTag(null);
     selection.selectRouteBullet(null);
     selection.selectTransfer(null);
-    selection.setAppending(null);
-    selection.setPlacingStation(false);
-    selection.setCreatingLineTag(false);
-    selection.setCreatingRouteBullet(false);
-    selection.setCreatingTransfer(false);
+    selection.setUiMode({ kind: 'idle' });
     selection.setEditingStationId(null);
     // Replace doc state, preserving the mutator method references via merge.
     useDoc.setState({ ...DEFAULT_DOC, ...result.doc });

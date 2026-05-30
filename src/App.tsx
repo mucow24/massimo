@@ -6,11 +6,7 @@ import { beginHistoryGroup, cancelAppendMode, useDoc, useSelection } from './sta
 import { readClipboard, writeClipboard } from './model/clipboard';
 
 export default function App() {
-  const setPlacingStation = useSelection((s) => s.setPlacingStation);
-  const setCreatingLineTag = useSelection((s) => s.setCreatingLineTag);
-  const setCreatingRouteBullet = useSelection((s) => s.setCreatingRouteBullet);
-  const setCreatingTransfer = useSelection((s) => s.setCreatingTransfer);
-  const setPlacingLabel = useSelection((s) => s.setPlacingLabel);
+  const setUiMode = useSelection((s) => s.setUiMode);
   const selectLineTag = useSelection((s) => s.selectLineTag);
   const selectRouteBullet = useSelection((s) => s.selectRouteBullet);
   const selectTransfer = useSelection((s) => s.selectTransfer);
@@ -34,12 +30,10 @@ export default function App() {
         target?.isContentEditable;
 
       if (e.key === 'Escape') {
+        // cancelAppendMode runs first so a freshly-created empty line gets
+        // garbage-collected before setUiMode flips the variant.
         cancelAppendMode();
-        setPlacingStation(false);
-        setCreatingLineTag(false);
-        setCreatingRouteBullet(false);
-        setCreatingTransfer(false);
-        setPlacingLabel(false);
+        setUiMode({ kind: 'idle' });
         selectLineTag(null);
         selectRouteBullet(null);
         selectTransfer(null);
@@ -190,11 +184,7 @@ export default function App() {
       window.removeEventListener('keyup', onKeyUp);
     };
   }, [
-    setPlacingStation,
-    setCreatingLineTag,
-    setCreatingRouteBullet,
-    setCreatingTransfer,
-    setPlacingLabel,
+    setUiMode,
     selectLineTag,
     selectRouteBullet,
     selectTransfer,
@@ -209,22 +199,11 @@ export default function App() {
   useEffect(() => {
     const onContextMenu = (e: globalThis.MouseEvent) => {
       const sel = useSelection.getState();
-      if (
-        sel.placingStation ||
-        sel.creatingLineTag ||
-        sel.appendingToLineId ||
-        sel.creatingRouteBullet ||
-        sel.creatingTransfer ||
-        sel.placingLabel
-      ) {
+      if (sel.uiMode.kind !== 'idle') {
         e.preventDefault();
         e.stopPropagation();
-        sel.setPlacingStation(false);
-        sel.setCreatingLineTag(false);
         cancelAppendMode();
-        sel.setCreatingRouteBullet(false);
-        sel.setCreatingTransfer(false);
-        sel.setPlacingLabel(false);
+        sel.setUiMode({ kind: 'idle' });
       }
     };
     document.addEventListener('contextmenu', onContextMenu, true);

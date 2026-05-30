@@ -171,7 +171,10 @@ export function LineInspector({ id }: { id: LineId }) {
     reorderLineStations(line.id, arr);
   };
 
-  const isAppending = selection.appendingToLineId === line.id;
+  const isAppending =
+    selection.uiMode.kind === 'appending-to-line' && selection.uiMode.lineId === line.id;
+  const appendInsertAfterIndex =
+    selection.uiMode.kind === 'appending-to-line' ? selection.uiMode.insertAfterIndex : null;
 
   return (
     <section className="inspector">
@@ -267,7 +270,7 @@ export function LineInspector({ id }: { id: LineId }) {
               (s) => s.style === 'hatched' || s.style === 'hatched-mirror',
             );
             const hovered = selection.hoveredInspectorSegment;
-            const isActiveAt = (idx: number) => isAppending && selection.insertAfterIndex === idx;
+            const isActiveAt = (idx: number) => isAppending && appendInsertAfterIndex === idx;
             const moveCursor = (idx: number) => selection.setInsertAfterIndex(idx);
             const hoverPredecessor = (predSid: string | null) => (h: boolean) => {
               if (h && predSid) {

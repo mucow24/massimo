@@ -379,9 +379,10 @@ export function StationView({
     // Transfer-creation flow: first click sets the anchor, second commits.
     // Capture which specific dot was closest to the click so the transfer
     // pins to that stop instead of an arbitrary station-anchor location.
-    if (selection.creatingTransfer) {
+    if (selection.uiMode.kind === 'creating-transfer') {
       const lineId = closestStopLineId(station, e);
-      if (!selection.transferAnchor) {
+      const anchor = selection.uiMode.anchor;
+      if (!anchor) {
         selection.setTransferAnchor({ stationId: station.id, lineId });
         // Clear the first-pick hover highlight — the dot is now committed
         // as the anchor, no longer just hovered.
@@ -389,11 +390,11 @@ export function StationView({
       } else {
         // Same station + same dot is a no-op self-transfer; same station
         // + a DIFFERENT dot (interlined station) is allowed.
-        const sameStation = selection.transferAnchor.stationId === station.id;
-        const sameLine = selection.transferAnchor.lineId === lineId;
+        const sameStation = anchor.stationId === station.id;
+        const sameLine = anchor.lineId === lineId;
         if (!(sameStation && sameLine)) {
-          addTransfer(selection.transferAnchor, { stationId: station.id, lineId });
-          selection.setCreatingTransfer(false);
+          addTransfer(anchor, { stationId: station.id, lineId });
+          selection.setUiMode({ kind: 'idle' });
           selection.setHoveredLineStop(null);
         }
       }
@@ -412,20 +413,20 @@ export function StationView({
       redistributeBetween(selIds[0], station.id);
       return;
     }
-    if (selection.creatingLineTag) {
+    if (selection.uiMode.kind === 'creating-line-tag') {
       // "Click anywhere that isn't a valid place for line tags" exits the mode.
-      selection.setCreatingLineTag(false);
+      selection.setUiMode({ kind: 'idle' });
       return;
     }
-    if (selection.appendingToLineId) {
-      const ln = lines[selection.appendingToLineId];
+    if (selection.uiMode.kind === 'appending-to-line') {
+      const { lineId, insertAfterIndex } = selection.uiMode;
+      const ln = lines[lineId];
       const wasInLine = ln?.stations.includes(station.id) ?? false;
-      const cursor = selection.insertAfterIndex;
       // No cursor: refuse to add a new stop. Removing an existing stop is
       // still allowed since it doesn't depend on an insertion point.
-      if (!wasInLine && cursor === null) return;
-      const effectiveCursor = cursor ?? -1;
-      toggleStationOnLine(selection.appendingToLineId, station.id, effectiveCursor);
+      if (!wasInLine && insertAfterIndex === null) return;
+      const effectiveCursor = insertAfterIndex ?? -1;
+      toggleStationOnLine(lineId, station.id, effectiveCursor);
       if (!wasInLine) {
         selection.setInsertAfterIndex(effectiveCursor + 1);
       }
@@ -613,13 +614,13 @@ export function StationView({
   // second picks; the second-pick code path also guards against highlighting
   // the same dot as the already-committed anchor (a no-op self-transfer
   // that the click handler would reject).
-  const inTagMode = selection.creatingLineTag;
+  const inTagMode = selection.uiMode.kind === 'creating-line-tag';
   const inHandMode = selection.toolMode === 'hand' || selection.spaceHeld;
-  const inTransferPick = selection.creatingTransfer;
+  const inTransferPick = selection.uiMode.kind === 'creating-transfer';
   const onTransferPointerMove = (e: React.PointerEvent) => {
     const lineId = closestStopLineId(station, e);
     if (!lineId) return;
-    const anchor = selection.transferAnchor;
+    const anchor = selection.uiMode.kind === 'creating-transfer' ? selection.uiMode.anchor : null;
     if (anchor && anchor.stationId === station.id && anchor.lineId === lineId) {
       const cur = selection.hoveredLineStop;
       if (cur && cur.stationId === station.id) selection.setHoveredLineStop(null);
@@ -736,7 +737,9 @@ export function StationView({
     // underdraw don't bleed through the colored / white re-render.
     const highlightLineId = selection.selectedLineId;
     if (highlightLineId) {
-      const isAppending = selection.appendingToLineId === highlightLineId;
+      const isAppending =
+        selection.uiMode.kind === 'appending-to-line' &&
+        selection.uiMode.lineId === highlightLineId;
       if (isAppending) {
         // Append mode re-renders every station's label above the dim.
         return null;
