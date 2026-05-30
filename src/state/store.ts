@@ -188,6 +188,7 @@ interface DocState extends MapDoc {
   setLabelFontSize: (n: number) => void;
   setLabelWeight: (w: TextLabelWeight) => void;
   setStationLabelBold: (stationId: StationId, bold: boolean) => void;
+  setStationLabelItalic: (stationId: StationId, italic: boolean) => void;
   setLabelItalic: (i: boolean) => void;
   setActivePalettes: (ids: PaletteId[]) => void;
   togglePalette: (id: PaletteId) => void;
@@ -329,6 +330,8 @@ export const useDoc = create<DocState>()(
         setLabelWeight: (w) => set((s) => T.setLabelWeight(s, w)),
         setStationLabelBold: (stationId, bold) =>
           set((s) => T.setStationLabelBold(s, stationId, bold)),
+        setStationLabelItalic: (stationId, italic) =>
+          set((s) => T.setStationLabelItalic(s, stationId, italic)),
         setLabelItalic: (i) => set((s) => T.setLabelItalic(s, i)),
         setActivePalettes: (idsArr) => set((s) => T.setActivePalettes(s, idsArr)),
         togglePalette: (id) => set((s) => T.togglePalette(s, id)),

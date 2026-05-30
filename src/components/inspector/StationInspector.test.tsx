@@ -332,6 +332,102 @@ describe('<StationInspector /> — shape picker wiring', () => {
     });
   });
 
+  describe('Italic button', () => {
+    it('renders next to the Bold button inside the Label field', () => {
+      useDoc.setState({
+        ...DEFAULT_DOC,
+        ...makeDoc({ stations: [makeStation({ id: 'a' })], lines: [] }),
+      });
+      useSelection.setState({ ...SELECTION_BLANK, selectedStationIds: ['a'] });
+
+      render(<StationInspector id="a" />);
+      const italic = screen.getByRole('button', { name: 'Italic' });
+      const bold = screen.getByRole('button', { name: 'Bold' });
+      // Same parent (row) as Bold, and ordered right after it.
+      expect(italic.parentElement).toBe(bold.parentElement);
+      const siblings = Array.from(italic.parentElement!.children);
+      expect(siblings.indexOf(italic)).toBeGreaterThan(siblings.indexOf(bold));
+    });
+
+    it('starts unpressed when the station has no labelItalic flag', () => {
+      useDoc.setState({
+        ...DEFAULT_DOC,
+        ...makeDoc({ stations: [makeStation({ id: 'a' })] }),
+      });
+      useSelection.setState({ ...SELECTION_BLANK, selectedStationIds: ['a'] });
+      render(<StationInspector id="a" />);
+      expect(screen.getByRole('button', { name: 'Italic' })).toHaveAttribute(
+        'aria-pressed',
+        'false',
+      );
+    });
+
+    it('starts pressed when the station already has labelItalic:true', () => {
+      useDoc.setState({
+        ...DEFAULT_DOC,
+        ...makeDoc({
+          stations: [{ ...makeStation({ id: 'a' }), labelItalic: true }],
+        }),
+      });
+      useSelection.setState({ ...SELECTION_BLANK, selectedStationIds: ['a'] });
+      render(<StationInspector id="a" />);
+      expect(screen.getByRole('button', { name: 'Italic' })).toHaveAttribute(
+        'aria-pressed',
+        'true',
+      );
+    });
+
+    it('toggles labelItalic on the station when clicked', async () => {
+      const user = userEvent.setup();
+      useDoc.setState({
+        ...DEFAULT_DOC,
+        ...makeDoc({ stations: [makeStation({ id: 'a' })] }),
+      });
+      useSelection.setState({ ...SELECTION_BLANK, selectedStationIds: ['a'] });
+      render(<StationInspector id="a" />);
+
+      await user.click(screen.getByRole('button', { name: 'Italic' }));
+      expect(useDoc.getState().stations.a.labelItalic).toBe(true);
+      expect(screen.getByRole('button', { name: 'Italic' })).toHaveAttribute(
+        'aria-pressed',
+        'true',
+      );
+
+      await user.click(screen.getByRole('button', { name: 'Italic' }));
+      expect(useDoc.getState().stations.a.labelItalic).toBeFalsy();
+      expect(screen.getByRole('button', { name: 'Italic' })).toHaveAttribute(
+        'aria-pressed',
+        'false',
+      );
+    });
+
+    it('does NOT mirror-propagate to matching stations', async () => {
+      const user = userEvent.setup();
+      useDoc.setState({
+        ...DEFAULT_DOC,
+        ...makeDoc({
+          stations: [
+            makeStation({ id: 'a', stops: [makeStop('L1')] }),
+            makeStation({ id: 'b', stops: [makeStop('L1')] }),
+          ],
+          lines: [makeLine({ id: 'L1', stations: ['a', 'b'] })],
+        }),
+      });
+      useSelection.setState({
+        ...SELECTION_BLANK,
+        selectedStationIds: ['a'],
+        mirrorMatching: true,
+      });
+
+      render(<StationInspector id="a" />);
+      await user.click(screen.getByRole('button', { name: 'Italic' }));
+
+      const doc = useDoc.getState();
+      expect(doc.stations.a.labelItalic).toBe(true);
+      expect(doc.stations.b.labelItalic).toBeFalsy();
+    });
+  });
+
   it('Waypoint button starts pressed when the station is already a waypoint', () => {
     useDoc.setState({
       ...DEFAULT_DOC,

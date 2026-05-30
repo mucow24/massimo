@@ -343,6 +343,9 @@ export function StationView({
   // bump saturates at Black (900). This way a Regular default still escalates
   // smoothly through Bold → Black as the user hovers a bolded station.
   const stationWeight = resolveStationLabelWeight(labelWeight, station.labelBold);
+  // Per-station italic ORs with the doc-wide default: the label renders
+  // italic when either the global toggle or this station's own flag is set.
+  const stationItalic = labelItalic || !!station.labelItalic;
   const isHovered = selection.hoveredStationId === station.id;
   const renderedWeight = isHovered ? bumpWeightByIndex(stationWeight, 2) : stationWeight;
   // Service-code lookup for inline bullets. Only walked when a label's text
@@ -718,7 +721,7 @@ export function StationView({
           text: station.name,
           fontSize: labelFontSize,
           fontWeight: renderedWeight,
-          fontStyle: labelItalic ? 'italic' : undefined,
+          fontStyle: stationItalic ? 'italic' : undefined,
           textDecoration: selection.hoveredStationId === station.id ? 'underline' : 'none',
           fill: highlightColor,
           anchorX: labelAnchorX,
@@ -771,7 +774,7 @@ export function StationView({
             text: station.name,
             fontSize: labelFontSize,
             fontWeight: renderedWeight,
-            fontStyle: labelItalic ? 'italic' : undefined,
+            fontStyle: stationItalic ? 'italic' : undefined,
             textDecoration: selection.hoveredStationId === station.id ? 'underline' : 'none',
             fill: '#111',
             anchorX: labelAnchorX,
