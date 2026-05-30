@@ -56,6 +56,9 @@ export function SegmentBand({
       )}
       <path
         d={d}
+        data-band-stripe
+        data-band-key={spec.bandKey}
+        data-line-id={lineId}
         fill="none"
         stroke={stroke}
         strokeWidth={14}

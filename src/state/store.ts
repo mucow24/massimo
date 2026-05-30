@@ -507,6 +507,17 @@ export type UiMode =
   | { kind: 'appending-to-line'; lineId: LineId; insertAfterIndex: number | null }
   | { kind: 'layering' };
 
+/**
+ * UiMode kinds where a right-click does NOT cancel the mode. Lives next to
+ * the {@link UiMode} union so adding a new mode that wants right-click for
+ * its own gesture (layering uses it to decrement a segment's layer) is one
+ * edit, not a hunt across handlers.
+ */
+export const RIGHT_CLICK_PASSTHROUGH_MODES: ReadonlySet<UiMode['kind']> = new Set([
+  'idle',
+  'layering',
+]);
+
 // Selection fields that get wiped whenever the user enters a non-idle uiMode
 // or picks a primary selection of a different type. Centralized so adding a
 // new selection type means one line here, not a cross-clearing matrix across

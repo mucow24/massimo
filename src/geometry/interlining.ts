@@ -1,9 +1,9 @@
 import { Line, LineId, LineStyle, Station, StationId, StopCell } from '../model/types';
 import { pairKeyOf } from '../model/pairKey';
 import { Vec2, sub, len, norm, dot } from './vec';
-import { route } from './router';
+import { offsetFilletPath, route } from './router';
 import { rotateBy, STOP_SIZE, stopCenterAt, travelDirLocal } from './orientation';
-import { emitOffsetSegments, offsetFilletPath, type OffsetPathSegment } from './router';
+import { LAYER_WEIGHT, segmentPriority, stationLayerFor } from '../model/layerPriority';
 
 export interface SegmentBandSpec {
   pairKey: string;
@@ -123,12 +123,42 @@ export function dirIndex8(v: Vec2): number {
  * AND grid-adjacent cells along the perpendicular-to-travel axis at both
  * stations. Bands render with stroke-width = STOP_SIZE per line, perpendicular
  * offsets `(k − (n−1)/2) * STOP_SIZE`.
+ *
+ * Composes {@link buildBandGeometry} (depends only on stations + line
+ * topology) and {@link assignLinePriorities} (depends on `lineOrder` and
+ * `segmentLayers`). Callers that want geometry to survive priority-only
+ * changes (e.g. layering mode's outline / label memos) call the two halves
+ * directly instead of this convenience wrapper.
  */
 export function buildBands(
   stations: Record<StationId, Station>,
   lines: Record<LineId, Line>,
   curveRadius: number,
   lineOrder: LineId[] = [],
+): SegmentBandSpec[] {
+  const bands = buildBandGeometry(stations, lines, curveRadius);
+  assignLinePriorities(bands, lines, lineOrder);
+  return bands;
+}
+
+/**
+ * Geometric half of {@link buildBands}: groups lines by canonical
+ * station-pair, buckets by world travel axis, merges perpendicular-
+ * adjacency runs, and computes the routed centerline + per-stripe paths.
+ *
+ * Reads only `stations`, `line.stations`, `line.segmentStyles`, and
+ * `curveRadius`. None of those change on a per-segment layer cycle, so a
+ * caller that memoizes this output gets a stable bands reference across
+ * layer edits — that's how the layering-mode caches stay valid without
+ * a content-hash workaround.
+ *
+ * Returns bands with `linePriorities: []`; call {@link assignLinePriorities}
+ * to fill those in before consuming the array for paint order.
+ */
+export function buildBandGeometry(
+  stations: Record<StationId, Station>,
+  lines: Record<LineId, Line>,
+  curveRadius: number,
 ): SegmentBandSpec[] {
   // 1. Collect per-line segments keyed by sorted station pair, with stop cells.
   const groups: Record<string, SegInfo[]> = {};
@@ -278,11 +308,27 @@ export function buildBands(
     }
   }
 
-  // 3. Tag each stripe in each band with its own line's lineIndex priority,
-  // shifted by that line's per-segment layer override on this band's pair-key.
-  // The actual sort happens in buildOrderedRenderables, where each stripe is
-  // emitted as its own renderable so a perpendicular line at intermediate
-  // depth can interleave between the stripes of an interlined band.
+  return bands;
+}
+
+/**
+ * Priority half of {@link buildBands}: fills `band.linePriorities` from the
+ * global `lineOrder` and each line's per-segment layer override. Mutates
+ * the bands in place — the geometry array's reference is preserved, which
+ * is what the layering-mode memos rely on.
+ *
+ * Reading split: depends on `lineOrder` and `lines[id].segmentLayers`, but
+ * NOT on the geometric fields buildBandGeometry reads.
+ */
+export function assignLinePriorities(
+  bands: SegmentBandSpec[],
+  lines: Record<LineId, Line>,
+  lineOrder: LineId[],
+): void {
+  // The actual back-to-front sort happens in buildOrderedRenderables, where
+  // each stripe is emitted as its own renderable so a perpendicular line at
+  // intermediate depth can interleave between the stripes of an interlined
+  // band.
   const lineIndex = buildLineIndex(lineOrder, lines);
   const fallback = Object.keys(lineIndex).length;
   for (const band of bands) {
@@ -290,247 +336,6 @@ export function buildBands(
       segmentPriority(lines[l.id], band.pairKey, lineIndex[l.id] ?? fallback),
     );
   }
-
-  return bands;
-}
-
-// Priority weight per layer step. Must exceed the largest plausible
-// `lineIndex` so a +1 layer always beats any reordering within layer 0.
-export const LAYER_WEIGHT = 10000;
-
-// Compose a stripe's final paint priority from its global line index and any
-// per-segment layer override on this line. Smaller priority = renders later =
-// on top, matching the existing convention.
-export function segmentPriority(line: Line | undefined, pairKey: string, lineIdx: number): number {
-  const layer = line?.segmentLayers?.[pairKey] ?? 0;
-  return lineIdx - layer * LAYER_WEIGHT;
-}
-
-// Layer to use for a stop marker at `stationId` on `line`. Picks the
-// front-most non-zero incident layer (MAX over them), or 0 when every
-// incident segment is at layer 0.
-//
-// Rule rationale: a layer-0 segment meeting a non-zero segment at the same
-// station should defer the dot to the layered side — the user explicitly
-// placed that segment at a non-default layer, so it "claims" the dot. Only
-// when ALL incident segments are at layer 0 (or there are no overrides at
-// all) do we leave the dot at the default 0. This also handles the
-// "wholly-negative line" regression: every incident at layer -1 keeps the
-// dot at -1 (behind any layer-0 crossing band), not at 0.
-//
-// Lines must NOT be filtered on render priority — same-band sibling stripes
-// run parallel and can't visually cover the target.
-export function stationLayerFor(line: Line, stationId: StationId): number {
-  const layers = line.segmentLayers;
-  if (!layers) return 0;
-  let nonZeroMax: number | null = null;
-  const consider = (v: number) => {
-    if (v === 0) return;
-    nonZeroMax = nonZeroMax === null ? v : Math.max(nonZeroMax, v);
-  };
-  for (let i = 0; i < line.stations.length; i++) {
-    if (line.stations[i] !== stationId) continue;
-    if (i > 0) consider(layers[pairKeyOf(line.stations[i - 1], stationId)] ?? 0);
-    if (i < line.stations.length - 1)
-      consider(layers[pairKeyOf(stationId, line.stations[i + 1])] ?? 0);
-  }
-  return nonZeroMax ?? 0;
-}
-
-/**
- * Verdict for one endpoint of a band stripe — which of the two adjacent
- * segments at this station "wins" the right to enclose the stop-dot square
- * in its outline.
- *
- * - `win`  → THIS segment's layer is the {@link stationLayerFor} winner
- *            (or this is a terminus, in which case the segment is the sole
- *            owner). Layering-mode outlines extend OUTWARD past the station
- *            so the full dot square sits inside.
- * - `lose` → some other adjacency wins. Outlines retreat INWARD so the dot
- *            square sits fully outside.
- * - `tie`  → both adjacencies share a layer. Outlines cap at the station
- *            center, splitting the dot down the middle (the prior behavior
- *            for every non-terminus station).
- */
-export type StripeEndpointFate = 'win' | 'lose' | 'tie';
-
-export function stripeEndpointFate(
-  line: Line,
-  thisPairKey: string,
-  stationId: StationId,
-): StripeEndpointFate {
-  const layers = line.segmentLayers ?? {};
-  const thisLayer = layers[thisPairKey] ?? 0;
-  // Aggregate every OTHER incident pair-key at this station the same way
-  // stationLayerFor does (filter zeros, then MAX). Returns null when there
-  // is no other incident, i.e. this station is a terminus.
-  let otherNonZeroMax: number | null = null;
-  let sawOther = false;
-  const considerOther = (k: string) => {
-    if (k === thisPairKey) return;
-    sawOther = true;
-    const v = layers[k] ?? 0;
-    if (v === 0) return;
-    otherNonZeroMax = otherNonZeroMax === null ? v : Math.max(otherNonZeroMax, v);
-  };
-  for (let i = 0; i < line.stations.length; i++) {
-    if (line.stations[i] !== stationId) continue;
-    if (i > 0) considerOther(pairKeyOf(line.stations[i - 1], stationId));
-    if (i < line.stations.length - 1) considerOther(pairKeyOf(stationId, line.stations[i + 1]));
-  }
-  if (!sawOther) return 'win'; // terminus — sole owner
-  const otherLayer = otherNonZeroMax ?? 0;
-  if (thisLayer === otherLayer) return 'tie';
-  // Same filter-then-MAX rule as stationLayerFor.
-  let winnerLayer: number;
-  if (thisLayer === 0) winnerLayer = otherLayer;
-  else if (otherLayer === 0) winnerLayer = thisLayer;
-  else winnerLayer = Math.max(thisLayer, otherLayer);
-  return winnerLayer === thisLayer ? 'win' : 'lose';
-}
-
-// ---------- Stripe-outline geometry (used by layering-mode rendering) ----------
-
-export interface StripeOutline {
-  // SVG `d` for the +HALF / -HALF offset edges of stripe `k`.
-  edgeAPath: string;
-  edgeBPath: string;
-  // Endpoints of the perpendicular cap line at each band end. (x1,y1) is the
-  // edge-A endpoint, (x2,y2) is the edge-B endpoint, so each cap line and its
-  // adjacent long edges meet exactly at shared coordinates.
-  capStart: { x1: number; y1: number; x2: number; y2: number };
-  capEnd: { x1: number; y1: number; x2: number; y2: number };
-  // The raw offset-path segments at each edge, in canonical forward order.
-  // Exposed so `closedPerimeterPath` can build a single closed traversal
-  // without recomputing the offsets.
-  segsA: OffsetPathSegment[];
-  segsB: OffsetPathSegment[];
-}
-
-/**
- * Optional per-endpoint adjustments to the outline. Each value is the
- * world-unit distance along the outward tangent at that endpoint:
- *
- * - Positive  → extend the outline OUTWARD past the station, so the stop-dot
- *               square at that end sits fully inside the outline (the
- *               "winning" segment case at a non-tie endpoint).
- * - Negative  → retreat the outline INWARD before the station, so the dot
- *               sits fully outside (the "losing" segment case).
- * - 0 / unset → cap at the station center as before (the "tie" case).
- *
- * Because the adjustment slides along the existing first/last edge tangent,
- * no new corner is introduced — `offsetFilletPath` and `emitOffsetSegments`
- * just see a slightly longer / shorter straight section at the affected end.
- */
-export interface StripeOutlineAdjust {
-  start?: number;
-  end?: number;
-}
-
-// Compute the outline geometry for stripe `stripeIndex` of `band`. The four
-// pieces (two long edges + two cap lines) join cleanly at shared coordinates,
-// and matching `segsA` / `segsB` are returned for callers that want to build
-// the perimeter as a single closed path. Returns null when the band centerline
-// is degenerate (< 2 vertices).
-export function computeStripeOutline(
-  band: SegmentBandSpec,
-  stripeIndex: number,
-  adjust: StripeOutlineAdjust = {},
-): StripeOutline | null {
-  const verts = band.centerline;
-  if (verts.length < 2) return null;
-  const HALF = STOP_SIZE / 2;
-  const n = band.lines.length;
-  const stripeOffset = (stripeIndex - (n - 1) / 2) * STOP_SIZE;
-  const offsetA = stripeOffset + HALF;
-  const offsetB = stripeOffset - HALF;
-
-  const v0 = verts[0];
-  const v1 = verts[1];
-  const vN1 = verts[verts.length - 1];
-  const vN2 = verts[verts.length - 2];
-
-  // Slide v0 and vN1 along their incident-edge tangents per the requested
-  // adjustments. Outward at v0 = away from v1 = -tangent; outward at vN1 =
-  // away from vN2 = +tangent. Positive adjust = outward, negative = inward.
-  const tangentUnit = (a: Vec2, b: Vec2) => {
-    const dx = b.x - a.x;
-    const dy = b.y - a.y;
-    const ln = Math.hypot(dx, dy) || 1;
-    return { x: dx / ln, y: dy / ln };
-  };
-  const startAdj = adjust.start ?? 0;
-  const endAdj = adjust.end ?? 0;
-  const t0 = tangentUnit(v0, v1);
-  const tN = tangentUnit(vN2, vN1);
-  const adjV0: Vec2 = { x: v0.x - t0.x * startAdj, y: v0.y - t0.y * startAdj };
-  const adjVN1: Vec2 = { x: vN1.x + tN.x * endAdj, y: vN1.y + tN.y * endAdj };
-  const adjustedVerts =
-    verts.length === 2 ? [adjV0, adjVN1] : [adjV0, ...verts.slice(1, -1), adjVN1];
-
-  // Endpoint perpendiculars match the leftOf(norm(...)) convention used by
-  // emitOffsetSegments at i=0 and i=last so the cap lines meet the long
-  // edges at exactly shared coordinates. The perpendicular direction at
-  // each end is unchanged by the colinear slide above.
-  const perpUnit = (a: Vec2, b: Vec2) => {
-    const dx = b.x - a.x;
-    const dy = b.y - a.y;
-    const ln = Math.hypot(dx, dy) || 1;
-    return { x: dy / ln, y: -dx / ln };
-  };
-  const p0 = perpUnit(v0, v1);
-  const pN = perpUnit(vN2, vN1);
-
-  return {
-    edgeAPath: offsetFilletPath(adjustedVerts, band.radius, offsetA),
-    edgeBPath: offsetFilletPath(adjustedVerts, band.radius, offsetB),
-    capStart: {
-      x1: adjV0.x + p0.x * offsetA,
-      y1: adjV0.y + p0.y * offsetA,
-      x2: adjV0.x + p0.x * offsetB,
-      y2: adjV0.y + p0.y * offsetB,
-    },
-    capEnd: {
-      x1: adjVN1.x + pN.x * offsetA,
-      y1: adjVN1.y + pN.y * offsetA,
-      x2: adjVN1.x + pN.x * offsetB,
-      y2: adjVN1.y + pN.y * offsetB,
-    },
-    segsA: emitOffsetSegments(adjustedVerts, band.radius, offsetA),
-    segsB: emitOffsetSegments(adjustedVerts, band.radius, offsetB),
-  };
-}
-
-// Build a single closed `M ... Z` SVG path that traces the whole stripe
-// perimeter — edge A forward, the end cap, edge B in reverse, the start cap
-// (implicit via `Z`). With `strokeLinejoin="round"` this produces smoothly
-// joined corners that four separate strokes can't. Reversing each arc segment
-// flips its sweep flag; line segments swap from/to.
-export function closedPerimeterPath(
-  segsA: OffsetPathSegment[],
-  segsB: OffsetPathSegment[],
-): string {
-  if (segsA.length === 0 || segsB.length === 0) return '';
-  const fmt = (v: number) => v.toFixed(2);
-  const cmdFwd = (s: OffsetPathSegment): string => {
-    if (s.kind === 'line') return ` L ${fmt(s.to.x)} ${fmt(s.to.y)}`;
-    const sweep = s.sign === 1 ? 1 : 0;
-    return ` A ${fmt(s.r)} ${fmt(s.r)} 0 0 ${sweep} ${fmt(s.to.x)} ${fmt(s.to.y)}`;
-  };
-  const cmdRev = (s: OffsetPathSegment): string => {
-    if (s.kind === 'line') return ` L ${fmt(s.from.x)} ${fmt(s.from.y)}`;
-    const sweep = s.sign === 1 ? 0 : 1;
-    return ` A ${fmt(s.r)} ${fmt(s.r)} 0 0 ${sweep} ${fmt(s.from.x)} ${fmt(s.from.y)}`;
-  };
-  const startA = segsA[0].from;
-  let d = `M ${fmt(startA.x)} ${fmt(startA.y)}`;
-  for (const s of segsA) d += cmdFwd(s);
-  // Jump along the end cap to edge B's far end, then walk B back.
-  const endB = segsB[segsB.length - 1].to;
-  d += ` L ${fmt(endB.x)} ${fmt(endB.y)}`;
-  for (let i = segsB.length - 1; i >= 0; i--) d += cmdRev(segsB[i]);
-  d += ' Z';
-  return d;
 }
 
 // Flatten bands + markers into a single list of per-stripe renderables,

@@ -1,6 +1,10 @@
 import { describe, it, expect } from 'vitest';
-import { pickLayerLabelT } from './layerLabelPlacement';
+import { pickLayerLabelTUncached } from './layerLabelPlacement';
 import type { SegmentBandSpec } from './interlining';
+// Tests use the uncached wrapper so each call builds its own sampled-stripes
+// table. Production paths build the cache once per geometry change via
+// `sampleBandStripes` and call `pickLayerLabelT` directly — see
+// `LayerNumberLabels`.
 
 // Minimal SegmentBandSpec builder for placement tests. Only `bandKey`,
 // `centerline`, `radius`, and `lines.length` (for the stripe-offset math)
@@ -57,18 +61,16 @@ const horizBand = (x = 0) =>
   });
 
 describe('pickLayerLabelT', () => {
-  it('returns the default midpoint (0.5) when no other bands are present', () => {
+  // Both rows demonstrate the same property: when no candidate is more
+  // covered than another, the midpoint bias wins. Once with literally no
+  // other bands, once with a band that's far enough away to be effectively
+  // absent — distinct setups, same expectation.
+  it.each([
+    { label: 'no other bands', otherBands: () => [] as ReturnType<typeof horizBand>[] },
+    { label: 'far-away crossing', otherBands: () => [horizBand(500)] },
+  ])('returns the midpoint (0.5) when there is no contention ($label)', ({ otherBands }) => {
     const target = vertBand();
-    expect(pickLayerLabelT(target, 0, [target])).toBe(0.5);
-  });
-
-  it('returns 0.5 when other bands are far away from the midpoint', () => {
-    const target = vertBand();
-    // Horizontal band shifted far to the right so it never crosses near the
-    // vertical band's midpoint — all candidates are essentially equally
-    // clear, so the midpoint bias picks 0.5.
-    const farAway = horizBand(500);
-    expect(pickLayerLabelT(target, 0, [target, farAway])).toBe(0.5);
+    expect(pickLayerLabelTUncached(target, 0, [target, ...otherBands()])).toBe(0.5);
   });
 
   it('moves the label when a crossing band overlaps the midpoint, regardless of z-order', () => {
@@ -78,7 +80,7 @@ describe('pickLayerLabelT', () => {
     // as ambiguous. Both behind- and in-front-of crossings push the label.
     const target = vertBand();
     const crossing = horizBand();
-    expect(pickLayerLabelT(target, 0, [target, crossing])).not.toBe(0.5);
+    expect(pickLayerLabelTUncached(target, 0, [target, crossing])).not.toBe(0.5);
   });
 
   it('breaks ties between equal-clearance candidates by candidate-list order', () => {
@@ -99,7 +101,7 @@ describe('pickLayerLabelT', () => {
       lines: ['B'],
     });
     expect(
-      pickLayerLabelT(target, 0, [target, tinyAtMidpoint], { candidates: [0.5, 0.4, 0.6] }),
+      pickLayerLabelTUncached(target, 0, [target, tinyAtMidpoint], { candidates: [0.5, 0.4, 0.6] }),
     ).toBe(0.4);
   });
 
@@ -111,7 +113,7 @@ describe('pickLayerLabelT', () => {
     // candidate wins because it has the most breathing room.
     const target = vertBand();
     const crossing = horizBand();
-    expect(pickLayerLabelT(target, 0, [target, crossing])).toBe(0.2);
+    expect(pickLayerLabelTUncached(target, 0, [target, crossing])).toBe(0.2);
   });
 
   it('prefers 0.5 when every candidate is equally covered (degenerate hub)', () => {
@@ -128,7 +130,7 @@ describe('pickLayerLabelT', () => {
       ],
       lines: ['P'],
     });
-    expect(pickLayerLabelT(target, 0, [target, parallel])).toBe(0.5);
+    expect(pickLayerLabelTUncached(target, 0, [target, parallel])).toBe(0.5);
   });
 
   it('skips other stripes within the same band as the target', () => {
@@ -145,7 +147,7 @@ describe('pickLayerLabelT', () => {
       ],
       lines: ['A', 'B'],
     });
-    expect(pickLayerLabelT(target, 0, [target])).toBe(0.5);
+    expect(pickLayerLabelTUncached(target, 0, [target])).toBe(0.5);
   });
 
   it('respects a custom midpointBias: a high bias keeps the label at 0.5', () => {
@@ -161,8 +163,10 @@ describe('pickLayerLabelT', () => {
       ],
       lines: ['B'],
     });
-    expect(pickLayerLabelT(target, 0, [target, tinyAtMidpoint])).not.toBe(0.5);
-    expect(pickLayerLabelT(target, 0, [target, tinyAtMidpoint], { midpointBias: 10000 })).toBe(0.5);
+    expect(pickLayerLabelTUncached(target, 0, [target, tinyAtMidpoint])).not.toBe(0.5);
+    expect(
+      pickLayerLabelTUncached(target, 0, [target, tinyAtMidpoint], { midpointBias: 10000 }),
+    ).toBe(0.5);
   });
 
   it('respects a custom candidates array (forced order)', () => {
@@ -170,6 +174,8 @@ describe('pickLayerLabelT', () => {
     // is the only other option — it wins on clearance.
     const target = vertBand();
     const crossing = horizBand();
-    expect(pickLayerLabelT(target, 0, [target, crossing], { candidates: [0.5, 0.9] })).toBe(0.9);
+    expect(pickLayerLabelTUncached(target, 0, [target, crossing], { candidates: [0.5, 0.9] })).toBe(
+      0.9,
+    );
   });
 });

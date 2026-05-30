@@ -15,24 +15,6 @@ interface Props {
   hovered: { bandKey: string; lineId: LineId } | null;
 }
 
-// Signature of the band geometry that {@link pickLayerLabelT} reads
-// (`bandKey`, `radius`, `lines.length` for the stripe-offset math, and
-// every centerline vertex). The signature stays the same across pure
-// layer-cycle re-renders — `buildBands` rewrites `linePriorities` on every
-// `segmentLayers` change, which produces a new `bands` array reference but
-// not new geometry. Memoizing against the signature instead of the array
-// reference lets the per-stripe `t` cache survive layer cycles entirely.
-function bandsGeometrySignature(bands: SegmentBandSpec[]): string {
-  const parts: string[] = [];
-  for (const b of bands) {
-    parts.push(b.bandKey, b.radius.toFixed(3), String(b.lines.length));
-    for (const v of b.centerline) {
-      parts.push(v.x.toFixed(3), v.y.toFixed(3));
-    }
-  }
-  return parts.join('|');
-}
-
 /**
  * Layering-mode label overlay: a small layer-number label on every band
  * stripe whose layer is non-zero, plus the currently-hovered stripe — which
@@ -44,32 +26,26 @@ function bandsGeometrySignature(bands: SegmentBandSpec[]): string {
  * outward when the default spot is covered by another band's stripe.
  *
  * Performance: both the sampled-stripes cache and the per-stripe `t` table
- * are memoized against a band-GEOMETRY signature, not against the `bands`
- * array reference. Layer cycles change band linePriorities (and so
- * produce a new `bands` array) but not geometry, so the caches survive
- * cycles for free — without that, a single layer click on a busy map
- * burnt 300-500ms re-running the t-search.
+ * memoize on the `bands` reference. The caller is expected to pass the
+ * geometric-only bands array (split out of `buildBands` so layer cycles
+ * don't change its reference), which keeps the t-search from re-running
+ * on every layer click. Without that split a single click on a busy map
+ * burnt 300-500ms.
  *
  * Text fill picks black or white against the line's color via
  * {@link legibleTextOn}, so the number stays legible on any brand color.
  */
 export function LayerNumberLabels({ bands, lines, hovered }: Props) {
-  const geomSig = useMemo(() => bandsGeometrySignature(bands), [bands]);
-
   // Pre-sample every stripe so distance queries inside pickLayerLabelT skip
-  // the per-call `emitOffsetSegments` cost. Stable across layer cycles via
-  // the geometry signature.
-  const sampledStripes = useMemo(
-    () => sampleBandStripes(bands),
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-    [geomSig],
-  );
+  // the per-call `emitOffsetSegments` cost. Stable across layer cycles
+  // because `bands` is the geometry-only array from MapCanvas.
+  const sampledStripes = useMemo(() => sampleBandStripes(bands), [bands]);
 
   // Pre-compute t for every stripe of every band. We compute for stripes
   // at layer 0 too so a hover-into-a-layer-0 stripe doesn't fall off the
-  // cache (and the hover thrashes the search). All inputs here depend only
+  // cache (and the hover thrashes the search). pickLayerLabelT depends only
   // on geometry, not on segmentLayers, so the table is stable across layer
-  // cycles.
+  // cycles too.
   const tByKey = useMemo(() => {
     const out = new Map<string, number>();
     for (const band of bands) {
@@ -77,13 +53,12 @@ export function LayerNumberLabels({ bands, lines, hovered }: Props) {
         const stripeLine = band.lines[k];
         out.set(
           band.bandKey + '|' + stripeLine.id,
-          pickLayerLabelT(band, k, bands, { sampledStripes }),
+          pickLayerLabelT(band, k, bands, sampledStripes),
         );
       }
     }
     return out;
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [geomSig, sampledStripes]);
+  }, [bands, sampledStripes]);
 
   return (
     <>

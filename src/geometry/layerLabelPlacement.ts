@@ -73,14 +73,6 @@ export interface LayerLabelPlacementOptions {
    * more clearance. Defaults to {@link DEFAULT_MIDPOINT_BIAS}.
    */
   midpointBias?: number;
-  /**
-   * Pre-sampled offset-path points for every stripe in `allBands`. When
-   * provided, distance queries skip the per-call sampling cost and run
-   * directly against this table — required for any tight loop (e.g. the
-   * `LayerNumberLabels` render). When omitted, the helper samples inline
-   * at full cost (suitable for one-off tests, not for production).
-   */
-  sampledStripes?: SampledBandStripes;
 }
 
 /**
@@ -102,18 +94,21 @@ export interface LayerLabelPlacementOptions {
  * leak past the target's narrow band width, so labels in the overlap zone
  * read as ambiguous.
  *
- * Sample-to-stripe distances come from {@link closestParamOnOffsetPath},
- * which the line-tag layer already uses for drag-snap.
+ * The required `sampledStripes` argument forces callers to think about
+ * caching: in production it's built once per geometry change and reused
+ * across every render's stripes. {@link pickLayerLabelTUncached} is the
+ * one-off wrapper that builds the cache inline — suitable for tests and
+ * any other path where allocation cost is irrelevant.
  */
 export function pickLayerLabelT(
   band: SegmentBandSpec,
   stripeIndex: number,
   allBands: SegmentBandSpec[],
+  sampledStripes: SampledBandStripes,
   options: LayerLabelPlacementOptions = {},
 ): number {
   const candidates = options.candidates ?? DEFAULT_CANDIDATES;
   const midpointBias = options.midpointBias ?? DEFAULT_MIDPOINT_BIAS;
-  const sampled = options.sampledStripes ?? sampleBandStripes(allBands);
   const n = band.lines.length;
   const targetOffset = (stripeIndex - (n - 1) / 2) * STOP_SIZE;
 
@@ -121,7 +116,7 @@ export function pickLayerLabelT(
   let bestScore = -Infinity;
   for (const t of candidates) {
     const { p } = sampleOffsetPath(band.centerline, band.radius, targetOffset, t);
-    const distSq = nearestOtherBandDistanceSq(p, band, allBands, sampled);
+    const distSq = nearestOtherBandDistanceSq(p, band, allBands, sampledStripes);
     const score = Math.sqrt(distSq) - midpointBias * Math.abs(t - 0.5);
     // Strict `>` so the first candidate in the list wins ties — keeps the
     // midpoint-first ordering useful even when every score is identical
@@ -132,6 +127,22 @@ export function pickLayerLabelT(
     }
   }
   return bestT;
+}
+
+/**
+ * Convenience wrapper around {@link pickLayerLabelT} that builds the
+ * `sampledStripes` cache inline. Pays the per-call sampling cost —
+ * suitable for tests, one-off invocations, or anywhere allocation cost
+ * doesn't matter. Production rendering paths should build the cache once
+ * (with {@link sampleBandStripes}) and call `pickLayerLabelT` directly.
+ */
+export function pickLayerLabelTUncached(
+  band: SegmentBandSpec,
+  stripeIndex: number,
+  allBands: SegmentBandSpec[],
+  options: LayerLabelPlacementOptions = {},
+): number {
+  return pickLayerLabelT(band, stripeIndex, allBands, sampleBandStripes(allBands), options);
 }
 
 // Squared minimum distance from `point` to any other-band stripe's sampled

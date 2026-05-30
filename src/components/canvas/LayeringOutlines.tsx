@@ -1,11 +1,8 @@
 import type { Line, LineId } from '../../model/types';
-import {
-  closedPerimeterPath,
-  computeStripeOutline,
-  stripeEndpointFate,
-  type SegmentBandSpec,
-  type StripeOutlineAdjust,
-} from '../../geometry/interlining';
+import { stripeEndpointFate } from '../../model/layerPriority';
+import type { SegmentBandSpec } from '../../geometry/interlining';
+import { computeStripeOutline, type StripeOutlineAdjust } from '../../geometry/stripeOutline';
+import type { OffsetPathSegment } from '../../geometry/router';
 import { STOP_SIZE } from '../../geometry/orientation';
 
 // Dashed outline applied to every stripe except the hovered one.
@@ -137,4 +134,37 @@ export function LayeringHoverOutline({ bands, lines, hovered }: Props) {
       <path d={d} stroke="#000" strokeWidth={HOVER_BLACK_STROKE_WIDTH} />
     </g>
   );
+}
+
+/**
+ * Build a single closed `M ... Z` SVG path that traces a stripe's whole
+ * perimeter — edge A forward, the end cap, edge B in reverse, the start cap
+ * (implicit via `Z`). With `strokeLinejoin="round"` this produces smoothly
+ * joined corners that four separate strokes can't.
+ *
+ * Reversal rule: each arc segment keeps its radius but flips its sweep
+ * flag, and `from` / `to` swap; line segments just swap `from` / `to`.
+ */
+function closedPerimeterPath(segsA: OffsetPathSegment[], segsB: OffsetPathSegment[]): string {
+  if (segsA.length === 0 || segsB.length === 0) return '';
+  const fmt = (v: number) => v.toFixed(2);
+  const cmdFwd = (s: OffsetPathSegment): string => {
+    if (s.kind === 'line') return ` L ${fmt(s.to.x)} ${fmt(s.to.y)}`;
+    const sweep = s.sign === 1 ? 1 : 0;
+    return ` A ${fmt(s.r)} ${fmt(s.r)} 0 0 ${sweep} ${fmt(s.to.x)} ${fmt(s.to.y)}`;
+  };
+  const cmdRev = (s: OffsetPathSegment): string => {
+    if (s.kind === 'line') return ` L ${fmt(s.from.x)} ${fmt(s.from.y)}`;
+    const sweep = s.sign === 1 ? 0 : 1;
+    return ` A ${fmt(s.r)} ${fmt(s.r)} 0 0 ${sweep} ${fmt(s.from.x)} ${fmt(s.from.y)}`;
+  };
+  const startA = segsA[0].from;
+  let d = `M ${fmt(startA.x)} ${fmt(startA.y)}`;
+  for (const s of segsA) d += cmdFwd(s);
+  // Jump along the end cap to edge B's far end, then walk B back.
+  const endB = segsB[segsB.length - 1].to;
+  d += ` L ${fmt(endB.x)} ${fmt(endB.y)}`;
+  for (let i = segsB.length - 1; i >= 0; i--) d += cmdRev(segsB[i]);
+  d += ' Z';
+  return d;
 }

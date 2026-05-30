@@ -2,7 +2,13 @@ import { useEffect } from 'react';
 import { Toolbar } from './components/Toolbar';
 import { Sidebar } from './components/Sidebar';
 import { MapCanvas } from './components/MapCanvas';
-import { beginHistoryGroup, cancelAppendMode, useDoc, useSelection } from './state/store';
+import {
+  beginHistoryGroup,
+  cancelAppendMode,
+  RIGHT_CLICK_PASSTHROUGH_MODES,
+  useDoc,
+  useSelection,
+} from './state/store';
 import { readClipboard, writeClipboard } from './model/clipboard';
 
 export default function App() {
@@ -204,11 +210,11 @@ export default function App() {
   useEffect(() => {
     const onContextMenu = (e: globalThis.MouseEvent) => {
       const sel = useSelection.getState();
-      // Layering mode is intentionally excluded: right-click in layering
-      // mode is the decrement-layer gesture (handled per-segment in
-      // MapCanvas), not a mode-exit. Layer mode is exited via Esc, the
-      // toolbar button, or pressing L again.
-      if (sel.uiMode.kind === 'idle' || sel.uiMode.kind === 'layering') return;
+      // Modes in RIGHT_CLICK_PASSTHROUGH_MODES own the right-click gesture
+      // (layering uses it to decrement a segment's layer); everything else
+      // exits on right-click. The set lives next to UiMode in the store so
+      // a new variant declares its right-click policy in one place.
+      if (RIGHT_CLICK_PASSTHROUGH_MODES.has(sel.uiMode.kind)) return;
       e.preventDefault();
       e.stopPropagation();
       cancelAppendMode();

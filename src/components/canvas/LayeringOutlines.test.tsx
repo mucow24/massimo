@@ -47,15 +47,25 @@ const renderHover = (
   );
 
 describe('<LayeringDashedOutlines>', () => {
-  it('renders one dashed group per band stripe when nothing is hovered', () => {
-    const { container } = renderDashed([makeBand(['A', 'B'])]);
+  // All three cases test the same group-count behaviour: a stripe present in
+  // bands gets a dashed group unless it's the hovered one (which paints via
+  // LayeringHoverOutline). Parametrize so the table makes the rule obvious.
+  it.each([
+    { label: 'one group per stripe when nothing is hovered', bands: [['A', 'B']], expected: 2 },
+    { label: 'no groups for an empty band list', bands: [], expected: 0 },
+    { label: 'skips the hovered stripe', bands: [['A', 'B']], hovered: 'A', expected: 1 },
+  ])('$label', ({ bands, hovered, expected }) => {
+    const bandSpecs = (bands as string[][]).map((ids) => makeBand(ids));
+    const hoveredSpec =
+      hovered && bandSpecs[0] ? { bandKey: bandSpecs[0].bandKey, lineId: hovered } : null;
+    const { container } = renderDashed(bandSpecs, hoveredSpec);
     const groups = container.querySelectorAll('[data-layering-outline]');
-    expect(groups.length).toBe(2);
-  });
-
-  it('renders no groups for an empty band list', () => {
-    const { container } = renderDashed([]);
-    expect(container.querySelectorAll('[data-layering-outline]').length).toBe(0);
+    expect(groups.length).toBe(expected);
+    if (hovered) {
+      // The remaining stripe should be the non-hovered one.
+      const remaining = Array.from(groups).map((g) => g.getAttribute('data-line-id'));
+      expect(remaining).not.toContain(hovered);
+    }
   });
 
   it('dashed groups carry the expected stroke attributes', () => {

@@ -20,12 +20,13 @@ import {
 import { measureTextLabel } from '../geometry/textMeasure';
 import { TEXT_LABEL_HIT_PAD } from '../geometry/stationBoundary';
 import {
-  buildBands,
+  assignLinePriorities,
+  buildBandGeometry,
   buildOrderedRenderables,
   buildStopMarkers,
   SegmentBandSpec,
+  stopPosWorld,
 } from '../geometry/interlining';
-import { stopPosWorld } from '../geometry/interlining';
 import { resolveDotShape } from '../model/transforms';
 import { STOP_SIZE, travelDirLocal, rotateBy } from '../geometry/orientation';
 import { BandWarning, SegmentBand } from './SegmentBand';
@@ -110,10 +111,35 @@ export function MapCanvas() {
   const bulletSelectedIds = rectSelect.previewBulletIds ?? selection.selectedRouteBulletIds;
   const labelSelectedIds = rectSelect.previewLabelIds ?? selection.selectedLabelIds;
 
-  const bands = useMemo(
-    () => buildBands(stations, lines, curveRadius, lineOrder),
-    [stations, lines, curveRadius, lineOrder],
+  // Geometry hash for buildBandGeometry's inputs (stations + line topology +
+  // segmentStyles). EXCLUDES segmentLayers so layer cycles don't churn the
+  // geometry — `bandsGeometry`'s reference stays stable across them, which
+  // is what the layering-mode memos rely on. The hash itself runs once per
+  // render but is cheap (a string of stable shapes).
+  const linesGeometrySig = useMemo(() => {
+    const parts: string[] = [];
+    for (const id of Object.keys(lines)) {
+      const ln = lines[id];
+      parts.push(id, ln.stations.join('.'), Object.keys(ln.segmentStyles ?? {}).join('.'));
+    }
+    return parts.join('|');
+  }, [lines]);
+
+  const bandsGeometry = useMemo(
+    () => buildBandGeometry(stations, lines, curveRadius),
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [stations, linesGeometrySig, curveRadius],
   );
+
+  const bands = useMemo(() => {
+    // assignLinePriorities mutates in place; clone so memoized priorities
+    // don't leak between the two memo levels (matters once a future caller
+    // wants the geometry array without priorities — for layering-mode
+    // outlines we pass `bandsGeometry` directly).
+    const out = bandsGeometry.map((b) => ({ ...b }));
+    assignLinePriorities(out, lines, lineOrder);
+    return out;
+  }, [bandsGeometry, lines, lineOrder]);
 
   // When mirror-matching mode is on for the selected station, highlight the
   // adjacent stations whose unrotated stop layouts are identical. Mirror
@@ -736,7 +762,7 @@ export function MapCanvas() {
   });
 
   return (
-    <div className="canvas-host">
+    <div className="canvas-host" data-uimode={selection.uiMode.kind}>
       <EditingBanner />
       <svg
         ref={svgRef}
@@ -804,10 +830,7 @@ export function MapCanvas() {
                 key={'s:' + r.band.bandKey + ':' + stripeLineId}
                 spec={r.band}
                 stripeIndex={r.stripeIndex}
-                interactive={
-                  selection.uiMode.kind === 'creating-line-tag' ||
-                  selection.uiMode.kind === 'layering'
-                }
+                interactive={selection.uiMode.kind === 'creating-line-tag' || inLayeringMode}
                 colorMap={colorMap}
                 onLineSelect={
                   inHandMode
@@ -819,7 +842,7 @@ export function MapCanvas() {
                 }
                 {...(selection.uiMode.kind === 'creating-line-tag'
                   ? makeBandHandlers(r.band)
-                  : selection.uiMode.kind === 'layering'
+                  : inLayeringMode
                     ? makeLayerHandlers(r.band)
                     : {})}
               />
@@ -875,7 +898,11 @@ export function MapCanvas() {
             primacy. The hovered solid outline + the layer-number labels
             still paint at the very end so they stay on top. */}
         {inLayeringMode && (
-          <LayeringDashedOutlines bands={bands} lines={lines} hovered={hoveredLayerStripe} />
+          <LayeringDashedOutlines
+            bands={bandsGeometry}
+            lines={lines}
+            hovered={hoveredLayerStripe}
+          />
         )}
 
         {/* Transfers: user-styled lines connecting two dots. Rendered BEFORE
@@ -1384,8 +1411,12 @@ export function MapCanvas() {
             paint over it. */}
         {inLayeringMode && (
           <>
-            <LayeringHoverOutline bands={bands} lines={lines} hovered={hoveredLayerStripe} />
-            <LayerNumberLabels bands={bands} lines={lines} hovered={hoveredLayerStripe} />
+            <LayeringHoverOutline
+              bands={bandsGeometry}
+              lines={lines}
+              hovered={hoveredLayerStripe}
+            />
+            <LayerNumberLabels bands={bandsGeometry} lines={lines} hovered={hoveredLayerStripe} />
           </>
         )}
       </svg>
