@@ -27,7 +27,8 @@ describe('<SnapToggleBar />', () => {
     const grid = screen.getByRole('button', { name: 'Snap to grid' });
     expect(grid).toHaveAttribute('aria-disabled', 'false');
     await user.click(grid);
-    expect(useSnapPrefs.getState().modes.grid).toBe(true);
+    // First click advances Off → first directional state.
+    expect(useSnapPrefs.getState().modes.grid).toBe('horizontal');
   });
 
   it('renders Grid to the right of All', () => {
@@ -73,7 +74,7 @@ describe('<SnapToggleBar />', () => {
   it('re-enabling Line restores Equidistant interactability without changing its value', async () => {
     const user = userEvent.setup();
     useSnapPrefs.setState({
-      modes: { line: false, equidistant: true, tens: false, all: false, grid: false },
+      modes: { line: false, equidistant: true, tens: false, all: 'off', grid: 'off' },
     });
     render(<SnapToggleBar />);
     const line = screen.getByRole('button', { name: 'Snap to line' });
@@ -90,6 +91,43 @@ describe('<SnapToggleBar />', () => {
     render(<SnapToggleBar />);
     const all = screen.getByRole('button', { name: 'Snap to all' });
     await user.click(all);
-    expect(useSnapPrefs.getState().modes.all).toBe(true);
+    expect(useSnapPrefs.getState().modes.all).toBe('horizontal');
+  });
+
+  it('cycles Snap to all through off → horizontal → vertical → diagonal → all → off', async () => {
+    const user = userEvent.setup();
+    render(<SnapToggleBar />);
+    const all = screen.getByRole('button', { name: 'Snap to all' });
+    const expected = ['horizontal', 'vertical', 'diagonal', 'all', 'off'];
+    expect(all).toHaveAttribute('data-snap-state', 'off');
+    expect(all).toHaveAttribute('aria-pressed', 'false');
+    for (const want of expected) {
+      await user.click(all);
+      expect(useSnapPrefs.getState().modes.all).toBe(want);
+      expect(all).toHaveAttribute('data-snap-state', want);
+      // aria-pressed is true for every state except off.
+      expect(all).toHaveAttribute('aria-pressed', String(want !== 'off'));
+    }
+  });
+
+  it('cycles Snap to grid through off → horizontal → vertical → both → off', async () => {
+    const user = userEvent.setup();
+    render(<SnapToggleBar />);
+    const grid = screen.getByRole('button', { name: 'Snap to grid' });
+    const expected = ['horizontal', 'vertical', 'both', 'off'];
+    expect(grid).toHaveAttribute('data-snap-state', 'off');
+    for (const want of expected) {
+      await user.click(grid);
+      expect(useSnapPrefs.getState().modes.grid).toBe(want);
+      expect(grid).toHaveAttribute('data-snap-state', want);
+    }
+  });
+
+  it("reflects the active sub-mode in the button's tooltip", async () => {
+    const user = userEvent.setup();
+    render(<SnapToggleBar />);
+    const all = screen.getByRole('button', { name: 'Snap to all' });
+    await user.click(all); // → horizontal
+    expect(all.getAttribute('title')).toContain('Horizontal only');
   });
 });
