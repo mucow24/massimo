@@ -25,7 +25,7 @@ import {
   buildStopMarkers,
   SegmentBandSpec,
 } from '../geometry/interlining';
-import { computeRenderedStopPositions } from '../geometry/stopPositions';
+import { stopPosWorld } from '../geometry/interlining';
 import { resolveDotShape } from '../model/transforms';
 import { STOP_SIZE, travelDirLocal, rotateBy } from '../geometry/orientation';
 import { BandWarning, SegmentBand } from './SegmentBand';
@@ -110,16 +110,9 @@ export function MapCanvas() {
   const bulletSelectedIds = rectSelect.previewBulletIds ?? selection.selectedRouteBulletIds;
   const labelSelectedIds = rectSelect.previewLabelIds ?? selection.selectedLabelIds;
 
-  // Canonical "rendered world position" per (station, line). For most stops
-  // this equals the cell-grid world position; for stops in a diagonal
-  // interline group at their station, it's compressed perpendicular-to-band
-  // so stripes pack at STOP_SIZE. Threaded into every visual consumer so
-  // markers, bands, transfers, and previews all agree on where a stop sits.
-  const renderedPos = useMemo(() => computeRenderedStopPositions(stations), [stations]);
-
   const bands = useMemo(
-    () => buildBands(stations, lines, curveRadius, lineOrder, renderedPos),
-    [stations, lines, curveRadius, lineOrder, renderedPos],
+    () => buildBands(stations, lines, curveRadius, lineOrder),
+    [stations, lines, curveRadius, lineOrder],
   );
 
   // When mirror-matching mode is on for the selected station, highlight the
@@ -167,9 +160,9 @@ export function MapCanvas() {
   // perpendicular line whose layer falls between two interlined lines
   // renders between their stripes (not behind the whole band).
   const renderables = useMemo(() => {
-    const markers = buildStopMarkers(stations, lines, lineOrder, bands, renderedPos);
+    const markers = buildStopMarkers(stations, lines, lineOrder, bands);
     return buildOrderedRenderables(bands, markers);
-  }, [bands, stations, lines, lineOrder, renderedPos]);
+  }, [bands, stations, lines, lineOrder]);
 
   const inHandMode = selection.toolMode === 'hand' || selection.spaceHeld;
 
@@ -213,13 +206,14 @@ export function MapCanvas() {
   // the same name the user just saw. Reset when placing mode toggles via the
   // "adjust state during render" pattern — see
   // https://react.dev/learn/you-might-not-need-an-effect#adjusting-some-state-when-a-prop-changes
+  const placingStation = selection.uiMode.kind === 'placing-station';
   const [previewName, setPreviewName] = useState<string | null>(() =>
-    selection.placingStation ? randomStationName() : null,
+    placingStation ? randomStationName() : null,
   );
-  const [prevPlacing, setPrevPlacing] = useState(selection.placingStation);
-  if (selection.placingStation !== prevPlacing) {
-    setPrevPlacing(selection.placingStation);
-    setPreviewName(selection.placingStation ? randomStationName() : null);
+  const [prevPlacing, setPrevPlacing] = useState(placingStation);
+  if (placingStation !== prevPlacing) {
+    setPrevPlacing(placingStation);
+    setPreviewName(placingStation ? randomStationName() : null);
   }
 
   // Hovered stripe in layering mode: (bandKey, lineId) of the band stripe the
@@ -230,10 +224,11 @@ export function MapCanvas() {
     bandKey: string;
     lineId: LineId;
   } | null>(null);
-  const [prevLayering, setPrevLayering] = useState(selection.layeringMode);
-  if (selection.layeringMode !== prevLayering) {
-    setPrevLayering(selection.layeringMode);
-    if (!selection.layeringMode && hoveredLayerStripe) setHoveredLayerStripe(null);
+  const inLayeringMode = selection.uiMode.kind === 'layering';
+  const [prevLayering, setPrevLayering] = useState(inLayeringMode);
+  if (inLayeringMode !== prevLayering) {
+    setPrevLayering(inLayeringMode);
+    if (!inLayeringMode && hoveredLayerStripe) setHoveredLayerStripe(null);
   }
 
   const onPointerDown = (e: React.PointerEvent) => {
@@ -255,16 +250,17 @@ export function MapCanvas() {
     view.onPointerMove(e);
     drag.onPointerMove(e);
     rectSelect.onPointerMove(e);
-    if (
-      (selection.creatingTransfer && selection.transferAnchor) ||
-      selection.placingStation ||
-      selection.placingLabel
-    ) {
+    const mode = selection.uiMode;
+    const wantsCursorTrack =
+      (mode.kind === 'creating-transfer' && mode.anchor !== null) ||
+      mode.kind === 'placing-station' ||
+      mode.kind === 'placing-label';
+    if (wantsCursorTrack) {
       const raw = view.screenToWorld(e.clientX, e.clientY);
       // Grid-snap the placement preview for new stations so the user sees
       // exactly where it'll land. Other placement modes keep the raw
       // cursor — grid snap is scoped to stations for now.
-      const w = selection.placingStation ? maybeSnapToGrid(raw, snapModes) : raw;
+      const w = mode.kind === 'placing-station' ? maybeSnapToGrid(raw, snapModes) : raw;
       setCursorWorld(w);
     } else if (cursorWorld) {
       setCursorWorld(null);
@@ -598,7 +594,8 @@ export function MapCanvas() {
       e.target === svgRef.current || (e.target as Element).hasAttribute('data-bg');
     if (!onBackground) return;
     if (dragState.suppressClick) return;
-    if (selection.placingStation) {
+    const mode = selection.uiMode;
+    if (mode.kind === 'placing-station') {
       const w = maybeSnapToGrid(view.screenToWorld(e.clientX, e.clientY), snapModes);
       addStation(w.x, w.y, previewName ?? undefined);
       setPreviewName(randomStationName());
@@ -607,7 +604,7 @@ export function MapCanvas() {
       // would close the placing-mode banner via the inspector swap.
       return;
     }
-    if (selection.creatingRouteBullet) {
+    if (mode.kind === 'creating-route-bullet') {
       const w = view.screenToWorld(e.clientX, e.clientY);
       // Default new bullet to the first line in z-order so it has a
       // recognizable color/service immediately. User can change it via
@@ -618,33 +615,33 @@ export function MapCanvas() {
       addRouteBullet(w.x, w.y, defaultLineId);
       return;
     }
-    if (selection.creatingLineTag) {
+    if (mode.kind === 'creating-line-tag') {
       // Click on background while in tag mode = exit the mode.
-      selection.setCreatingLineTag(false);
+      selection.setUiMode({ kind: 'idle' });
       return;
     }
-    if (selection.layeringMode) {
+    if (mode.kind === 'layering') {
       // Click on background while in layering mode = exit the mode.
-      selection.setLayeringMode(false);
+      selection.setUiMode({ kind: 'idle' });
       return;
     }
-    if (selection.appendingToLineId) {
+    if (mode.kind === 'appending-to-line') {
       cancelAppendMode();
       return;
     }
-    if (selection.creatingTransfer) {
+    if (mode.kind === 'creating-transfer') {
       // Click on background while picking transfer endpoints exits the mode.
-      selection.setCreatingTransfer(false);
+      selection.setUiMode({ kind: 'idle' });
       return;
     }
-    if (selection.placingLabel) {
+    if (mode.kind === 'placing-label') {
       // Single-shot: place one label, exit placing mode, and auto-select the
       // new label so the popover opens. Different from station / bullet
       // placement, which stay in mode for rapid click-click-click drops —
       // labels are heavier (text edit) so the single-shot flow makes sense.
       const w = view.screenToWorld(e.clientX, e.clientY);
       const id = addTextLabel(w.x, w.y);
-      selection.setPlacingLabel(false);
+      selection.setUiMode({ kind: 'idle' });
       selection.selectLabel(id);
       return;
     }
@@ -807,7 +804,10 @@ export function MapCanvas() {
                 key={'s:' + r.band.bandKey + ':' + stripeLineId}
                 spec={r.band}
                 stripeIndex={r.stripeIndex}
-                interactive={selection.creatingLineTag || selection.layeringMode}
+                interactive={
+                  selection.uiMode.kind === 'creating-line-tag' ||
+                  selection.uiMode.kind === 'layering'
+                }
                 colorMap={colorMap}
                 onLineSelect={
                   inHandMode
@@ -817,9 +817,9 @@ export function MapCanvas() {
                         selection.selectLine(lineId);
                       }
                 }
-                {...(selection.creatingLineTag
+                {...(selection.uiMode.kind === 'creating-line-tag'
                   ? makeBandHandlers(r.band)
-                  : selection.layeringMode
+                  : selection.uiMode.kind === 'layering'
                     ? makeLayerHandlers(r.band)
                     : {})}
               />
@@ -856,7 +856,7 @@ export function MapCanvas() {
         {/* station labels: rendered after bg/wash so a selected station's
             orange wash never paints over a neighbor's label. Faded in
             layering mode so the focus stays on the band layers. */}
-        <g opacity={selection.layeringMode ? LAYERING_FADE_OPACITY : 1}>
+        <g opacity={inLayeringMode ? LAYERING_FADE_OPACITY : 1}>
           {Object.values(stations).map((st) => (
             <StationView
               key={st.id + ':label'}
@@ -874,7 +874,7 @@ export function MapCanvas() {
             BELOW transfers + station dots so those keep their visual
             primacy. The hovered solid outline + the layer-number labels
             still paint at the very end so they stay on top. */}
-        {selection.layeringMode && (
+        {inLayeringMode && (
           <LayeringDashedOutlines bands={bands} lines={lines} hovered={hoveredLayerStripe} />
         )}
 
@@ -892,23 +892,20 @@ export function MapCanvas() {
           strokeWidth={transferStrokeWidth}
           selectedId={selection.selectedTransferId}
           onSelect={(id) => selection.selectTransfer(id)}
-          renderedPos={renderedPos}
         />
 
         {/* In-progress transfer preview line: from the anchor dot to the
             cursor while waiting for the second click. Matches the committed
             transfer's color and thickness, and renders below the dots for
             the same reason. */}
-        {selection.creatingTransfer &&
-          selection.transferAnchor &&
+        {selection.uiMode.kind === 'creating-transfer' &&
+          selection.uiMode.anchor &&
           cursorWorld &&
-          stations[selection.transferAnchor.stationId] &&
+          stations[selection.uiMode.anchor.stationId] &&
           (() => {
-            const anchorWorld = transferEndWorld(
-              stations[selection.transferAnchor.stationId],
-              selection.transferAnchor.lineId,
-              renderedPos,
-            );
+            const anchor = selection.uiMode.anchor;
+            if (!anchor) return null;
+            const anchorWorld = transferEndWorld(stations[anchor.stationId], anchor.lineId);
             return (
               <line
                 x1={anchorWorld.x}
@@ -932,7 +929,6 @@ export function MapCanvas() {
             zoom={view.viewport.zoom}
             onStartDrag={drag.onStartDrag}
             layer="dots"
-            renderedPos={renderedPos}
           />
         ))}
 
@@ -940,18 +936,20 @@ export function MapCanvas() {
             cursor before each click, so the user can see where (and what
             name) the next placement will land. */}
         <StationPlacingPreview
-          world={selection.placingStation ? cursorWorld : null}
+          world={selection.uiMode.kind === 'placing-station' ? cursorWorld : null}
           name={previewName}
           lines={lines}
         />
         {/* Label-placing-mode ghost: a faint "New Label" following the cursor
             before the click. Single-shot placement, so it disappears as soon
-            as the user clicks (the click handler exits placingLabel). */}
-        <LabelPlacingPreview world={selection.placingLabel ? cursorWorld : null} />
+            as the user clicks (the click handler exits placing-label). */}
+        <LabelPlacingPreview
+          world={selection.uiMode.kind === 'placing-label' ? cursorWorld : null}
+        />
 
         {/* Route bullets: rendered before the dim so they fade with the
             rest of the map when a line is selected. Faded in layering mode. */}
-        <g opacity={selection.layeringMode ? LAYERING_FADE_OPACITY : 1}>
+        <g opacity={inLayeringMode ? LAYERING_FADE_OPACITY : 1}>
           {Object.values(routeBullets).map((b) => (
             <RouteBulletView
               key={b.id}
@@ -968,7 +966,7 @@ export function MapCanvas() {
         {/* Text labels: free-floating annotations on top of stations + bullets
             but beneath the selection stroke ring. Dimmed alongside the rest
             of the map when a line is selected. Faded in layering mode. */}
-        <g opacity={selection.layeringMode ? LAYERING_FADE_OPACITY : 1}>
+        <g opacity={inLayeringMode ? LAYERING_FADE_OPACITY : 1}>
           {Object.values(textLabels).map((g) => (
             <LabelView
               key={g.id}
@@ -1068,7 +1066,7 @@ export function MapCanvas() {
                 if (!st) continue;
                 const cell = st.stops.find((c) => c.lineId === highlightLineId);
                 if (!cell) continue;
-                const world = renderedPos(sid, highlightLineId);
+                const world = stopPosWorld(cell, st);
                 points.push({ sid, st, cell, x: world.x, y: world.y });
               }
               if (points.length >= 2) {
@@ -1128,7 +1126,7 @@ export function MapCanvas() {
                 if (!st) continue;
                 const cell = st.stops.find((c) => c.lineId === highlightLineId);
                 if (!cell) continue;
-                const { x: cx, y: cy } = renderedPos(sid, highlightLineId);
+                const { x: cx, y: cy } = stopPosWorld(cell, st);
                 push(
                   isHoverStation(sid),
                   <StopGlyph
@@ -1144,11 +1142,14 @@ export function MapCanvas() {
               // Selected line's station names rendered in white above dim.
               // The append-mode "starter" station gets its own treatment
               // below (line-color name + arrowhead), so skip it here.
+              const append =
+                selection.uiMode.kind === 'appending-to-line' ? selection.uiMode : null;
               const starterId =
-                selection.appendingToLineId === highlightLineId &&
-                selection.insertAfterIndex != null &&
-                selection.insertAfterIndex >= 0
-                  ? ln.stations[selection.insertAfterIndex]
+                append &&
+                append.lineId === highlightLineId &&
+                append.insertAfterIndex != null &&
+                append.insertAfterIndex >= 0
+                  ? ln.stations[append.insertAfterIndex]
                   : null;
               for (const sid of ln.stations) {
                 if (sid === starterId) continue;
@@ -1177,8 +1178,11 @@ export function MapCanvas() {
                 light gray labels above the dim, plus highlight the
                 "starter" stop and draw an arrowhead pointing at where
                 the next station will be inserted. */}
-            {selection.appendingToLineId === highlightLineId &&
+            {selection.uiMode.kind === 'appending-to-line' &&
+              selection.uiMode.lineId === highlightLineId &&
               (() => {
+                const append = selection.uiMode;
+                if (append.kind !== 'appending-to-line') return null;
                 const ln = lines[highlightLineId];
                 if (!ln) return null;
                 const onLine = new Set(ln.stations);
@@ -1196,13 +1200,13 @@ export function MapCanvas() {
                     />
                   ));
 
-                const idx = selection.insertAfterIndex ?? -1;
+                const idx = append.insertAfterIndex ?? -1;
                 const stopWorld = (sid: string) => {
                   const st = stations[sid];
                   if (!st) return null;
                   const cell = st.stops.find((c) => c.lineId === highlightLineId);
                   if (!cell) return null;
-                  return renderedPos(sid, highlightLineId);
+                  return stopPosWorld(cell, st);
                 };
 
                 // Pick origin (the stop the arrow extends from) and the
@@ -1299,7 +1303,7 @@ export function MapCanvas() {
         {/* Line tags: in-band labels that ride each line's stripe. Faded
             in layering mode so the tag text doesn't compete with the
             outline + layer-number overlays. */}
-        <g opacity={selection.layeringMode ? LAYERING_FADE_OPACITY : 1}>
+        <g opacity={inLayeringMode ? LAYERING_FADE_OPACITY : 1}>
           <LineTagsLayer bands={bands} zoom={view.viewport.zoom} svgRef={svgRef} />
         </g>
 
@@ -1378,7 +1382,7 @@ export function MapCanvas() {
             regardless of how busy the canvas is underneath. The dashed
             footprint is rendered earlier (above) so dots and transfers
             paint over it. */}
-        {selection.layeringMode && (
+        {inLayeringMode && (
           <>
             <LayeringHoverOutline bands={bands} lines={lines} hovered={hoveredLayerStripe} />
             <LayerNumberLabels bands={bands} lines={lines} hovered={hoveredLayerStripe} />

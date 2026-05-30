@@ -455,7 +455,8 @@ export function beginHistoryGroup(): { commit: () => void; cancel: () => void } 
  */
 export function cancelAppendMode(): void {
   const sel = useSelection.getState();
-  const lineId = sel.appendingToLineId;
+  const cur = sel.uiMode;
+  const lineId = cur.kind === 'appending-to-line' ? cur.lineId : null;
   if (lineId) {
     const doc = useDoc.getState();
     const line = doc.lines[lineId];
@@ -489,6 +490,42 @@ export interface LineTagHoverPreview {
   lineForwardMatchesCanon: boolean;
 }
 
+// Every mutually-exclusive editor mode lives in one discriminated union.
+// Variant payloads carry data only meaningful in that mode (transfer anchor,
+// append insertion-cursor). Adding a new mode is one variant + handlers — no
+// other setters need to learn about it.
+export type UiMode =
+  | { kind: 'idle' }
+  | { kind: 'placing-station' }
+  | { kind: 'creating-line-tag' }
+  | { kind: 'creating-route-bullet' }
+  | {
+      kind: 'creating-transfer';
+      anchor: { stationId: StationId; lineId: LineId | null } | null;
+    }
+  | { kind: 'placing-label' }
+  | { kind: 'appending-to-line'; lineId: LineId; insertAfterIndex: number | null }
+  | { kind: 'layering' };
+
+// Selection fields that get wiped whenever the user enters a non-idle uiMode
+// or picks a primary selection of a different type. Centralized so adding a
+// new selection type means one line here, not a cross-clearing matrix across
+// every setter. Within-station inspector micro-state (stopLine, labelSelected,
+// mirror, editingStation) belongs here too — it's bound to "which thing is
+// the current primary selection."
+const clearedSelections = () => ({
+  selectedStationIds: [] as StationId[],
+  selectedRouteBulletIds: [] as string[],
+  selectedLabelIds: [] as string[],
+  selectedLineId: null as LineId | null,
+  selectedLineTagId: null as string | null,
+  selectedTransferId: null as string | null,
+  selectedStopLineId: null as LineId | null,
+  labelSelected: false,
+  editingStationId: null as StationId | null,
+  mirrorMatching: false,
+});
+
 interface SelectionState {
   // Multi-station selection. Order is meaningful: the last entry is the
   // "anchor" (most recently single-clicked station), used as the source for
@@ -496,11 +533,11 @@ interface SelectionState {
   // when length === 1.
   selectedStationIds: StationId[];
   selectedLineId: LineId | null;
-  appendingToLineId: LineId | null;
-  // Insertion cursor for append-from-map. -1 means "insert at start".
-  // The inserted station ends up at index (insertAfterIndex + 1).
-  insertAfterIndex: number | null;
-  placingStation: boolean;
+  // Exactly one editor mode is active. Entering a non-idle mode wipes all
+  // selections; selecting a non-station primary item exits to idle (sticky
+  // selectStation is the documented exception, since placing-station mode
+  // calls it after each placement).
+  uiMode: UiMode;
   hoveredStationId: StationId | null;
   // The (lineId, stationId) currently hovered in the line editor's station
   // list. Used to highlight the corresponding stop dot on the canvas.
@@ -524,33 +561,17 @@ interface SelectionState {
   editingStationId: StationId | null;
   // Which sidebar tab is currently visible.
   activeTab: SidebarTab;
-  // Line tag selection + creation.
-  creatingLineTag: boolean;
   selectedLineTagId: string | null;
   lineTagHoverPreview: LineTagHoverPreview | null;
-  // Route bullet selection + creation. Multi-selection: parallel to
-  // `selectedStationIds`, with the same ordered-list semantics. The
-  // last entry is the anchor (used by the popover when length === 1).
-  creatingRouteBullet: boolean;
+  // Route bullet selection. Multi-selection: parallel to `selectedStationIds`,
+  // with the same ordered-list semantics. The last entry is the anchor (used
+  // by the popover when length === 1).
   selectedRouteBulletIds: string[];
-  // Transfer selection + creation. While `creatingTransfer` is true and
-  // `transferAnchor` is null, the next station-click picks the first dot.
-  // Once set, the next station-click picks the second dot and commits.
-  // The anchor records the specific dot (lineId) the user clicked on so
-  // the transfer pins to that stop.
-  creatingTransfer: boolean;
-  transferAnchor: { stationId: StationId; lineId: LineId | null } | null;
   selectedTransferId: string | null;
-  // Text-label selection + placement mode. Multi-selection: parallel to
-  // `selectedStationIds` / `selectedRouteBulletIds`. The last entry is the
-  // anchor used by the popover when length === 1.
-  placingLabel: boolean;
+  // Text-label selection. Multi-selection: parallel to `selectedStationIds` /
+  // `selectedRouteBulletIds`. The last entry is the anchor used by the popover
+  // when length === 1.
   selectedLabelIds: string[];
-  // Layering mode: while true, hovering a band stripe lightens it and shows
-  // its current layer; clicking cycles the per-segment layer (+1, or -1 with
-  // shift) on that line. Exclusive with every other placement / creation
-  // mode (toggling any of them off clears this one and vice versa).
-  layeringMode: boolean;
   // When true, edits made via the StationInspector (stop layout + label)
   // mirror to all directly-connected stations whose unrotated stop layouts
   // are identical. Resets to false whenever a different station is selected.
@@ -569,8 +590,10 @@ interface SelectionState {
   selectLine: (id: LineId | null) => void;
   startAppendAt: (lineId: LineId, insertAfterIndex: number) => void;
   setAppending: (id: LineId | null) => void;
+  // Narrowing helper: updates the appending-to-line variant's insertAfterIndex
+  // in place. No-op when uiMode.kind isn't 'appending-to-line'.
   setInsertAfterIndex: (idx: number | null) => void;
-  setPlacingStation: (placing: boolean) => void;
+  setUiMode: (mode: UiMode) => void;
   setHoveredStation: (id: StationId | null) => void;
   setHoveredLineStop: (v: { lineId: LineId; stationId: StationId } | null) => void;
   setHoveredInspectorSegment: (
@@ -581,16 +604,15 @@ interface SelectionState {
   setEditingStationId: (id: StationId | null) => void;
   setActiveTab: (tab: SidebarTab) => void;
   selectLineTag: (id: string | null) => void;
-  setCreatingLineTag: (creating: boolean) => void;
   setLineTagHoverPreview: (preview: LineTagHoverPreview | null) => void;
   selectRouteBullet: (id: string | null) => void;
   toggleRouteBulletSelection: (id: string) => void;
   setRouteBulletSelection: (ids: string[]) => void;
   addRouteBulletsToSelection: (ids: string[]) => void;
   xorRouteBulletsToSelection: (ids: string[]) => void;
-  setCreatingRouteBullet: (creating: boolean) => void;
   selectTransfer: (id: string | null) => void;
-  setCreatingTransfer: (creating: boolean) => void;
+  // Narrowing helper: updates the creating-transfer variant's anchor in place.
+  // No-op when uiMode.kind isn't 'creating-transfer'.
   setTransferAnchor: (anchor: { stationId: StationId; lineId: LineId | null } | null) => void;
   setMirrorMatching: (on: boolean) => void;
   selectLabel: (id: string | null) => void;
@@ -598,16 +620,12 @@ interface SelectionState {
   setLabelSelection: (ids: string[]) => void;
   addLabelsToSelection: (ids: string[]) => void;
   xorLabelsToSelection: (ids: string[]) => void;
-  setPlacingLabel: (placing: boolean) => void;
-  setLayeringMode: (on: boolean) => void;
 }
 
 export const useSelection = create<SelectionState>((set, get) => ({
   selectedStationIds: [],
   selectedLineId: null,
-  appendingToLineId: null,
-  insertAfterIndex: null,
-  placingStation: false,
+  uiMode: { kind: 'idle' },
   hoveredStationId: null,
   hoveredLineStop: null,
   hoveredInspectorSegment: null,
@@ -615,38 +633,39 @@ export const useSelection = create<SelectionState>((set, get) => ({
   labelSelected: false,
   editingStationId: null,
   activeTab: 'stations',
-  creatingLineTag: false,
   selectedLineTagId: null,
   lineTagHoverPreview: null,
-  creatingRouteBullet: false,
   selectedRouteBulletIds: [],
-  creatingTransfer: false,
-  transferAnchor: null,
   selectedTransferId: null,
-  placingLabel: false,
   selectedLabelIds: [],
-  layeringMode: false,
   mirrorMatching: false,
   toolMode: 'arrow',
   spaceHeld: false,
   setToolMode: (m) => set({ toolMode: m }),
   setSpaceHeld: (v) => set({ spaceHeld: v }),
+
+  // The single source of truth for mode transitions. Entering any non-idle
+  // mode wipes all primary selections; exiting just clears the line-tag
+  // hover preview (which is only meaningful inside creating-line-tag).
+  // Variant payloads (transferAnchor, insertAfterIndex) are updated in place
+  // via setTransferAnchor / setInsertAfterIndex.
+  setUiMode: (mode) =>
+    set(
+      mode.kind === 'idle'
+        ? { uiMode: mode, lineTagHoverPreview: null }
+        : { uiMode: mode, lineTagHoverPreview: null, ...clearedSelections() },
+    ),
+
+  // selectStation does NOT touch uiMode — placing-station and
+  // creating-route-bullet modes are sticky (canvas clicks place repeatedly;
+  // see MapCanvas onCanvasClick comments). The pure mode-cancellation rule
+  // applies to every OTHER select* setter.
   selectStation: (id) =>
     set({
+      ...clearedSelections(),
       selectedStationIds: id == null ? [] : [id],
-      // Plain click is exclusive across types: clears bullets too.
-      selectedRouteBulletIds: [],
-      selectedLabelIds: [],
-      selectedLineId: null,
-      selectedLineTagId: null,
-      selectedStopLineId: null,
-      labelSelected: false,
-      editingStationId: id === null ? null : get().editingStationId,
       activeTab: id === null ? get().activeTab : 'stations',
-      creatingLineTag: id === null ? get().creatingLineTag : false,
-      lineTagHoverPreview: null,
-      // Each new selection opts into mirror mode fresh.
-      mirrorMatching: false,
+      editingStationId: id === null ? null : get().editingStationId,
     }),
   toggleStationSelection: (id) =>
     set((s) => {
@@ -657,8 +676,7 @@ export const useSelection = create<SelectionState>((set, get) => ({
         return {
           selectedStationIds: next,
           // Multi-select implicitly clears the inspector-state pieces tied
-          // to a single station's grid editor. The line-tag preview is
-          // also stale.
+          // to a single station's grid editor.
           selectedStopLineId: null,
           labelSelected: false,
           mirrorMatching: false,
@@ -729,50 +747,57 @@ export const useSelection = create<SelectionState>((set, get) => ({
       };
     }),
   selectLine: (id) => {
-    const wasAppending = get().appendingToLineId !== null;
-    const switchingToDifferent = wasAppending && id !== get().appendingToLineId;
+    if (id === null) {
+      // Null clear is gentle: drops line + tag, preserves other primaries
+      // and uiMode (consistent with pre-refactor behavior at the call sites
+      // that pass null — e.g. canvas-background click).
+      set({
+        selectedStationIds: [],
+        selectedLineId: null,
+        selectedLineTagId: null,
+        lineTagHoverPreview: null,
+      });
+      return;
+    }
     set({
+      ...clearedSelections(),
+      uiMode: { kind: 'idle' },
       selectedLineId: id,
-      selectedStationIds: [],
-      selectedLabelIds: id === null ? get().selectedLabelIds : [],
-      selectedLineTagId: null,
-      appendingToLineId: switchingToDifferent ? null : get().appendingToLineId,
-      insertAfterIndex: switchingToDifferent ? null : get().insertAfterIndex,
-      activeTab: id === null ? get().activeTab : 'lines',
-      creatingLineTag: id === null ? get().creatingLineTag : false,
+      activeTab: 'lines',
       lineTagHoverPreview: null,
     });
   },
-  startAppendAt: (lineId, idx) =>
+  startAppendAt: (lineId, insertAfterIndex) =>
     set({
-      appendingToLineId: lineId,
-      insertAfterIndex: idx,
+      ...clearedSelections(),
+      uiMode: { kind: 'appending-to-line', lineId, insertAfterIndex },
       selectedLineId: lineId,
-      selectedLineTagId: null,
       activeTab: 'lines',
-      creatingLineTag: false,
       lineTagHoverPreview: null,
     }),
-  setAppending: (id) =>
+  setAppending: (lineId) => {
+    const cur = get().uiMode;
+    if (lineId === null) {
+      if (cur.kind === 'appending-to-line') {
+        set({ uiMode: { kind: 'idle' }, lineTagHoverPreview: null });
+      }
+      return;
+    }
+    // Preserve any in-progress insertion cursor only when re-entering the
+    // SAME line; switching lines resets it.
+    const insertAfterIndex =
+      cur.kind === 'appending-to-line' && cur.lineId === lineId ? cur.insertAfterIndex : null;
     set({
-      appendingToLineId: id,
-      insertAfterIndex: id === null ? null : get().insertAfterIndex,
-      selectedLineId: id ?? get().selectedLineId,
-      creatingLineTag: id === null ? get().creatingLineTag : false,
-      lineTagHoverPreview: id === null ? get().lineTagHoverPreview : null,
-      layeringMode: id === null ? get().layeringMode : false,
-    }),
-  setInsertAfterIndex: (idx) => set({ insertAfterIndex: idx }),
-  setPlacingStation: (placing) =>
-    set({
-      placingStation: placing,
-      // Entering place-station mode clears tag mode + tag selection.
-      creatingLineTag: placing ? false : get().creatingLineTag,
-      selectedLineTagId: placing ? null : get().selectedLineTagId,
-      lineTagHoverPreview: placing ? null : get().lineTagHoverPreview,
-      placingLabel: placing ? false : get().placingLabel,
-      layeringMode: placing ? false : get().layeringMode,
-    }),
+      uiMode: { kind: 'appending-to-line', lineId, insertAfterIndex },
+      selectedLineId: lineId,
+      lineTagHoverPreview: null,
+    });
+  },
+  setInsertAfterIndex: (idx) => {
+    const cur = get().uiMode;
+    if (cur.kind !== 'appending-to-line') return;
+    set({ uiMode: { ...cur, insertAfterIndex: idx } });
+  },
   setHoveredStation: (id) => set({ hoveredStationId: id }),
   setHoveredLineStop: (v) => set({ hoveredLineStop: v }),
   setHoveredInspectorSegment: (v) => set({ hoveredInspectorSegment: v }),
@@ -787,53 +812,18 @@ export const useSelection = create<SelectionState>((set, get) => ({
   setActiveTab: (tab) => set({ activeTab: tab }),
   selectLineTag: (id) =>
     set({
+      ...clearedSelections(),
+      uiMode: id === null ? get().uiMode : { kind: 'idle' },
       selectedLineTagId: id,
-      selectedStationIds: [],
-      selectedLineId: null,
-      selectedLabelIds: id === null ? get().selectedLabelIds : [],
-      selectedStopLineId: null,
-      labelSelected: false,
-      editingStationId: null,
-      // Selecting a tag exits placement modes.
-      creatingLineTag: id === null ? get().creatingLineTag : false,
-      placingStation: id === null ? get().placingStation : false,
-      placingLabel: id === null ? get().placingLabel : false,
-      appendingToLineId: id === null ? get().appendingToLineId : null,
-      insertAfterIndex: id === null ? get().insertAfterIndex : null,
       lineTagHoverPreview: null,
-    }),
-  setCreatingLineTag: (creating) =>
-    set({
-      creatingLineTag: creating,
-      // Entering tag mode clears all other modes + selections.
-      placingStation: creating ? false : get().placingStation,
-      placingLabel: creating ? false : get().placingLabel,
-      appendingToLineId: creating ? null : get().appendingToLineId,
-      insertAfterIndex: creating ? null : get().insertAfterIndex,
-      selectedStationIds: creating ? [] : get().selectedStationIds,
-      selectedLabelIds: creating ? [] : get().selectedLabelIds,
-      selectedLineId: creating ? null : get().selectedLineId,
-      selectedLineTagId: creating ? null : get().selectedLineTagId,
-      lineTagHoverPreview: creating ? get().lineTagHoverPreview : null,
-      layeringMode: creating ? false : get().layeringMode,
     }),
   setLineTagHoverPreview: (preview) => set({ lineTagHoverPreview: preview }),
   selectRouteBullet: (id) =>
     set({
+      ...clearedSelections(),
+      uiMode: id == null ? get().uiMode : { kind: 'idle' },
       selectedRouteBulletIds: id == null ? [] : [id],
-      // Selecting a bullet clears other selections + placement modes.
-      selectedStationIds: id === null ? get().selectedStationIds : [],
-      selectedLabelIds: id === null ? get().selectedLabelIds : [],
-      selectedLineId: id === null ? get().selectedLineId : null,
-      selectedLineTagId: id === null ? get().selectedLineTagId : null,
-      labelSelected: false,
-      editingStationId: null,
-      creatingLineTag: id === null ? get().creatingLineTag : false,
-      placingStation: id === null ? get().placingStation : false,
-      placingLabel: id === null ? get().placingLabel : false,
-      appendingToLineId: id === null ? get().appendingToLineId : null,
-      insertAfterIndex: id === null ? get().insertAfterIndex : null,
-      creatingRouteBullet: id === null ? get().creatingRouteBullet : false,
+      lineTagHoverPreview: null,
     }),
   toggleRouteBulletSelection: (id) =>
     set((s) => {
@@ -880,85 +870,24 @@ export const useSelection = create<SelectionState>((set, get) => ({
       next.push(...appendList);
       return { selectedRouteBulletIds: next };
     }),
-  setCreatingRouteBullet: (creating) =>
-    set({
-      creatingRouteBullet: creating,
-      // Entering bullet-creation mode clears all other modes + selections.
-      placingStation: creating ? false : get().placingStation,
-      placingLabel: creating ? false : get().placingLabel,
-      creatingLineTag: creating ? false : get().creatingLineTag,
-      appendingToLineId: creating ? null : get().appendingToLineId,
-      insertAfterIndex: creating ? null : get().insertAfterIndex,
-      creatingTransfer: creating ? false : get().creatingTransfer,
-      transferAnchor: creating ? null : get().transferAnchor,
-      selectedStationIds: creating ? [] : get().selectedStationIds,
-      selectedLineId: creating ? null : get().selectedLineId,
-      selectedLineTagId: creating ? null : get().selectedLineTagId,
-      selectedRouteBulletIds: creating ? [] : get().selectedRouteBulletIds,
-      selectedLabelIds: creating ? [] : get().selectedLabelIds,
-      selectedTransferId: creating ? null : get().selectedTransferId,
-      layeringMode: creating ? false : get().layeringMode,
-    }),
   selectTransfer: (id) =>
     set({
+      ...clearedSelections(),
+      uiMode: id === null ? get().uiMode : { kind: 'idle' },
       selectedTransferId: id,
-      selectedStationIds: id === null ? get().selectedStationIds : [],
-      selectedLineId: id === null ? get().selectedLineId : null,
-      selectedLineTagId: id === null ? get().selectedLineTagId : null,
-      selectedRouteBulletIds: id === null ? get().selectedRouteBulletIds : [],
-      selectedLabelIds: id === null ? get().selectedLabelIds : [],
-      labelSelected: false,
-      editingStationId: null,
-      placingStation: id === null ? get().placingStation : false,
-      placingLabel: id === null ? get().placingLabel : false,
-      creatingLineTag: id === null ? get().creatingLineTag : false,
-      creatingRouteBullet: id === null ? get().creatingRouteBullet : false,
-      creatingTransfer: id === null ? get().creatingTransfer : false,
-      transferAnchor: id === null ? get().transferAnchor : null,
-      appendingToLineId: id === null ? get().appendingToLineId : null,
-      insertAfterIndex: id === null ? get().insertAfterIndex : null,
+      lineTagHoverPreview: null,
     }),
-  setCreatingTransfer: (creating) =>
-    set({
-      creatingTransfer: creating,
-      transferAnchor: null,
-      placingStation: creating ? false : get().placingStation,
-      placingLabel: creating ? false : get().placingLabel,
-      creatingLineTag: creating ? false : get().creatingLineTag,
-      creatingRouteBullet: creating ? false : get().creatingRouteBullet,
-      appendingToLineId: creating ? null : get().appendingToLineId,
-      insertAfterIndex: creating ? null : get().insertAfterIndex,
-      selectedStationIds: creating ? [] : get().selectedStationIds,
-      selectedLineId: creating ? null : get().selectedLineId,
-      selectedLineTagId: creating ? null : get().selectedLineTagId,
-      selectedRouteBulletIds: creating ? [] : get().selectedRouteBulletIds,
-      selectedLabelIds: creating ? [] : get().selectedLabelIds,
-      selectedTransferId: creating ? null : get().selectedTransferId,
-      layeringMode: creating ? false : get().layeringMode,
-    }),
-  setTransferAnchor: (anchor) => set({ transferAnchor: anchor }),
+  setTransferAnchor: (anchor) => {
+    const cur = get().uiMode;
+    if (cur.kind !== 'creating-transfer') return;
+    set({ uiMode: { ...cur, anchor } });
+  },
   setMirrorMatching: (on) => set({ mirrorMatching: on }),
   selectLabel: (id) =>
     set({
+      ...clearedSelections(),
+      uiMode: id == null ? get().uiMode : { kind: 'idle' },
       selectedLabelIds: id == null ? [] : [id],
-      // Selecting a label is exclusive: clear every other selection type +
-      // exit any placement / creation mode.
-      selectedStationIds: id === null ? get().selectedStationIds : [],
-      selectedRouteBulletIds: id === null ? get().selectedRouteBulletIds : [],
-      selectedLineId: id === null ? get().selectedLineId : null,
-      selectedLineTagId: id === null ? get().selectedLineTagId : null,
-      selectedTransferId: id === null ? get().selectedTransferId : null,
-      selectedStopLineId: null,
-      labelSelected: false,
-      editingStationId: null,
-      placingStation: id === null ? get().placingStation : false,
-      placingLabel: id === null ? get().placingLabel : false,
-      creatingLineTag: id === null ? get().creatingLineTag : false,
-      creatingRouteBullet: id === null ? get().creatingRouteBullet : false,
-      creatingTransfer: id === null ? get().creatingTransfer : false,
-      transferAnchor: id === null ? get().transferAnchor : null,
-      appendingToLineId: id === null ? get().appendingToLineId : null,
-      insertAfterIndex: id === null ? get().insertAfterIndex : null,
       lineTagHoverPreview: null,
     }),
   toggleLabelSelection: (id) =>
@@ -1005,46 +934,5 @@ export const useSelection = create<SelectionState>((set, get) => ({
       const next = s.selectedLabelIds.filter((id) => !removeSet.has(id));
       next.push(...appendList);
       return { selectedLabelIds: next };
-    }),
-  setPlacingLabel: (placing) =>
-    set({
-      placingLabel: placing,
-      // Entering place-label mode clears all other modes + selections.
-      placingStation: placing ? false : get().placingStation,
-      creatingLineTag: placing ? false : get().creatingLineTag,
-      creatingRouteBullet: placing ? false : get().creatingRouteBullet,
-      creatingTransfer: placing ? false : get().creatingTransfer,
-      transferAnchor: placing ? null : get().transferAnchor,
-      appendingToLineId: placing ? null : get().appendingToLineId,
-      insertAfterIndex: placing ? null : get().insertAfterIndex,
-      selectedStationIds: placing ? [] : get().selectedStationIds,
-      selectedLineId: placing ? null : get().selectedLineId,
-      selectedLineTagId: placing ? null : get().selectedLineTagId,
-      selectedRouteBulletIds: placing ? [] : get().selectedRouteBulletIds,
-      selectedTransferId: placing ? null : get().selectedTransferId,
-      selectedLabelIds: placing ? [] : get().selectedLabelIds,
-      lineTagHoverPreview: placing ? null : get().lineTagHoverPreview,
-      layeringMode: placing ? false : get().layeringMode,
-    }),
-  setLayeringMode: (on) =>
-    set({
-      layeringMode: on,
-      // Entering layering mode clears every other mode + selection so the
-      // canvas surface is dedicated to layer cycling.
-      placingStation: on ? false : get().placingStation,
-      placingLabel: on ? false : get().placingLabel,
-      creatingLineTag: on ? false : get().creatingLineTag,
-      creatingRouteBullet: on ? false : get().creatingRouteBullet,
-      creatingTransfer: on ? false : get().creatingTransfer,
-      transferAnchor: on ? null : get().transferAnchor,
-      appendingToLineId: on ? null : get().appendingToLineId,
-      insertAfterIndex: on ? null : get().insertAfterIndex,
-      selectedStationIds: on ? [] : get().selectedStationIds,
-      selectedLineId: on ? null : get().selectedLineId,
-      selectedLineTagId: on ? null : get().selectedLineTagId,
-      selectedRouteBulletIds: on ? [] : get().selectedRouteBulletIds,
-      selectedTransferId: on ? null : get().selectedTransferId,
-      selectedLabelIds: on ? [] : get().selectedLabelIds,
-      lineTagHoverPreview: on ? null : get().lineTagHoverPreview,
     }),
 }));

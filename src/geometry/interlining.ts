@@ -4,7 +4,6 @@ import { Vec2, sub, len, norm, dot } from './vec';
 import { route } from './router';
 import { rotateBy, STOP_SIZE, stopCenterAt, travelDirLocal } from './orientation';
 import { emitOffsetSegments, offsetFilletPath, type OffsetPathSegment } from './router';
-import { computeRenderedStopPositions, type RenderedStopPositions } from './stopPositions';
 
 export interface SegmentBandSpec {
   pairKey: string;
@@ -83,10 +82,10 @@ interface SegInfo {
 }
 
 // Stop center in WORLD coords (anchor + cell offset rotated by station rotation).
-// This is the *cell-grid* world position — the literal location of the stop's
-// cell. For visual placement (markers, bands, transfers, snap candidates), use
-// `computeRenderedStopPositions` instead, which compresses diagonal interline
-// groups so stripes pack at STOP_SIZE perp spacing.
+// This IS the rendered position — every visual consumer (markers, bands,
+// transfers, snap candidates) reads world positions through here. Moving a
+// stop's (row, col) is the ONLY way to change its on-screen location;
+// neighboring stops have no effect.
 export function stopPosWorld(cell: StopCell, station: Station): Vec2 {
   const local = stopCenterAt(cell.row, cell.col);
   const a = (station.rotation * Math.PI) / 4;
@@ -130,7 +129,6 @@ export function buildBands(
   lines: Record<LineId, Line>,
   curveRadius: number,
   lineOrder: LineId[] = [],
-  renderedPos: RenderedStopPositions = computeRenderedStopPositions(stations),
 ): SegmentBandSpec[] {
   // 1. Collect per-line segments keyed by sorted station pair, with stop cells.
   const groups: Record<string, SegInfo[]> = {};
@@ -219,9 +217,12 @@ export function buildBands(
         tPerpPos: number;
         tParPos: number;
       };
+      // All SegInfo in a bucket share the canonical from/to station IDs,
+      // so the endpoint stations are fixed across the bucket — pull them
+      // off the sample once.
       const enriched: Enriched[] = bucket.map((s) => {
-        const fp = renderedPos(s.fromId, s.lineId);
-        const tp = renderedPos(s.toId, s.lineId);
+        const fp = stopPosWorld(s.fromCell, fromS);
+        const tp = stopPosWorld(s.toCell, toS);
         return {
           seg: s,
           fPerpPos: fp.x * fPerp.x + fp.y * fPerp.y,
@@ -244,7 +245,8 @@ export function buildBands(
             pairKey,
             fDir,
             tDir,
-            renderedPos,
+            fromS,
+            toS,
           ),
         );
         group = [];
@@ -593,7 +595,6 @@ export function buildStopMarkers(
   lines: Record<LineId, Line>,
   lineOrder: LineId[],
   bands: SegmentBandSpec[] = [],
-  renderedPos: RenderedStopPositions = computeRenderedStopPositions(stations),
 ): StopMarkerSpec[] {
   const lineIndex = buildLineIndex(lineOrder, lines);
   const fallback = Object.keys(lineIndex).length;
@@ -605,7 +606,7 @@ export function buildStopMarkers(
     for (const cell of station.stops) {
       const line = lines[cell.lineId];
       if (!line) continue;
-      const { x: cx, y: cy } = renderedPos(station.id, cell.lineId);
+      const { x: cx, y: cy } = stopPosWorld(cell, station);
       // Rotate the marker square so its edges run parallel/perpendicular to
       // the stop's world-frame travel axis. For cardinal-axis stops this is
       // equivalent to station.rotation * 45 (mod 90, which the square's
@@ -708,15 +709,15 @@ function buildBandSpec(
   // router and the merge basis agree.
   fromDir: Vec2,
   toDir: Vec2,
-  renderedPos: RenderedStopPositions,
+  // The canonical endpoint stations for this band. All SegInfo in `group`
+  // share these IDs by construction (a band is one pairKey + one bucket).
+  fromStation: Station,
+  toStation: Station,
 ): SegmentBandSpec {
-  // Centerline endpoints are the mean of the band's per-line stop RENDERED
-  // positions. For cardinal bands rendered = cell position; for diagonal
-  // interline groups each stop is compressed perpendicular-to-band so stripes
-  // pack at STOP_SIZE. By construction the centroid is invariant under
-  // compression, so the centerline stays anchored where it was.
-  const fromWorlds = group.map((g) => renderedPos(g.fromId, g.lineId));
-  const toWorlds = group.map((g) => renderedPos(g.toId, g.lineId));
+  // Centerline endpoints are the mean of the band's per-line stop world
+  // positions — i.e. the centroid of the contributing stop cells at each end.
+  const fromWorlds = group.map((g) => stopPosWorld(g.fromCell, fromStation));
+  const toWorlds = group.map((g) => stopPosWorld(g.toCell, toStation));
   const meanVec = (vs: Vec2[]): Vec2 => ({
     x: vs.reduce((a, p) => a + p.x, 0) / vs.length,
     y: vs.reduce((a, p) => a + p.y, 0) / vs.length,

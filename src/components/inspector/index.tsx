@@ -12,7 +12,8 @@ export function Inspector() {
   const selection = useSelection();
   // While appending to a line, the line inspector is sticky — even if a
   // station gets selected (e.g. via the sidebar), the line editor stays open.
-  if (selection.appendingToLineId) return <LineInspector id={selection.appendingToLineId} />;
+  if (selection.uiMode.kind === 'appending-to-line')
+    return <LineInspector id={selection.uiMode.lineId} />;
   // Single-selection only: multi-selection hides the station inspector.
   // A selected route bullet alongside the station also disqualifies —
   // the inspector is a single-item editor.

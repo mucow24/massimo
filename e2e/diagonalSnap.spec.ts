@@ -1,8 +1,6 @@
 import { test, expect, type Page } from '@playwright/test';
 import { seedAndOpen, stationCenter, type Seed } from './fixtures';
 
-const STOP_SIZE = 14;
-
 async function stationWorldPos(page: Page, id: string): Promise<{ x: number; y: number }> {
   return await page.evaluate((sid) => {
     const el = document.querySelector(`[data-station-id="${sid}"]`);
@@ -14,17 +12,14 @@ async function stationWorldPos(page: Page, id: string): Promise<{ x: number; y: 
   }, id);
 }
 
-// Target station T with two auto-ne-sw stops at cells (0,0) and (1,1) —
-// a diagonal interline group of 2. After compression, T's L1 stop sits at
-// world (T.x + shift, T.y + shift) where shift = STOP_SIZE·(√2−1)/2·(√2/2)
-// = STOP_SIZE·(2−√2)/4 along the NW-SE perp axis (i.e. SE direction).
-//
-// Dragged station D has a single L1 stop at cell (0,0) (no compression).
-// Drag D so its L1 stop lines up with T's *visible* (compressed) L1 stop —
-// the snap solver should resolve to T's compressed world position, not the
-// cell-grid position.
+// Target station T has two perp-adjacent auto-ne-sw stops at diagonal-basis
+// cells (0,0) and (√2/2, √2/2). Dragged station D has one L1 stop at cell
+// (0,0). Snap should align D so D.L1 sits exactly on T.L1's cell-grid world
+// position — there is no compression shifting T.L1 off its cell.
 
-const targetCompressionSeed: Seed = {
+const H = Math.SQRT1_2;
+
+const diagonalTargetSeed: Seed = {
   stations: [
     {
       id: 'T',
@@ -34,7 +29,7 @@ const targetCompressionSeed: Seed = {
       rotation: 0,
       stops: [
         { lineId: 'L1', row: 0, col: 0, orientation: 'auto-ne-sw' },
-        { lineId: 'L2', row: 1, col: 1, orientation: 'auto-ne-sw' },
+        { lineId: 'L2', row: H, col: H, orientation: 'auto-ne-sw' },
       ],
     },
     {
@@ -58,29 +53,18 @@ test.beforeEach(async ({ page }) => {
   await page.evaluate(() => localStorage.removeItem('massimo-snap-prefs-v1'));
 });
 
-test.describe('Drag-snap aligns with the compressed (visible) target position', () => {
-  test('dragging D near T snaps to T\'s compressed L1 position, not its cell-grid position', async ({
-    page,
-  }) => {
-    await seedAndOpen(page, targetCompressionSeed);
+test.describe('Drag-snap aligns with the target stop\'s cell-grid position', () => {
+  test("dragging D near T snaps D.L1 onto T.L1's cell-grid world position", async ({ page }) => {
+    await seedAndOpen(page, diagonalTargetSeed);
 
-    // Compute T's compressed L1 world position. T's L1 cell is at (0, 0)
-    // world; with the diagonal pair, L1 shifts toward L2's cell (STOP_SIZE,
-    // STOP_SIZE) along the NW-SE perp axis (= SE direction). The shift is
-    // STOP_SIZE·(√2−1)/2 perp units, which projects to STOP_SIZE·(√2−1)/2 ·
-    // (√2/2, √2/2) in world.
-    const shift = (STOP_SIZE * (Math.SQRT2 - 1)) / 2;
-    const tL1World = {
-      x: shift * Math.SQRT1_2,
-      y: shift * Math.SQRT1_2,
-    };
+    // T.L1 cell is at (0, 0) world. With the heuristic gone, the rendered
+    // position is the cell-grid position — nothing else to compute.
+    const tL1World = { x: 0, y: 0 };
 
-    // Drag D so its anchor (and thus its L1 stop, since D's stop is at cell
-    // (0,0) with no compression) lands NEAR T's compressed L1 position.
-    // Approach a few pixels off-axis to force the snap to engage.
-    // D starts at world (80, 80); to bring it to (~5, ~5) (a bit past T's
-    // compressed L1 at (~2.05, ~2.05)), drag by world (-75, -75). At zoom 1
-    // world delta equals page delta.
+    // Drag D so its anchor (and thus its L1 stop, since D's stop is at
+    // cell (0,0)) lands near T.L1. Approach a few pixels off-axis to force
+    // the snap to engage. D starts at world (80, 80); drag by (-75, -75)
+    // to bring it to ~(5, 5). At zoom 1, world delta equals page delta.
     const d = await stationCenter(page, 'D');
     await page.mouse.move(d.x, d.y);
     await page.mouse.down();
@@ -88,13 +72,8 @@ test.describe('Drag-snap aligns with the compressed (visible) target position', 
     await page.mouse.up();
 
     const dPos = await stationWorldPos(page, 'D');
-    // D's L1 stop (at cell (0,0) on D) ends up at D's world position.
-    // Snap should put D's anchor at T's compressed L1 position.
+    // D's single L1 stop lives at its anchor (cell offset is zero).
     expect(dPos.x).toBeCloseTo(tL1World.x, 1);
     expect(dPos.y).toBeCloseTo(tL1World.y, 1);
-
-    // Sanity: D didn't snap to the cell-grid position (0, 0). The compressed
-    // position differs from the cell position by ~2.05 units in each axis.
-    expect(Math.hypot(dPos.x - 0, dPos.y - 0)).toBeGreaterThan(2);
   });
 });

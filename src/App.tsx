@@ -6,12 +6,7 @@ import { beginHistoryGroup, cancelAppendMode, useDoc, useSelection } from './sta
 import { readClipboard, writeClipboard } from './model/clipboard';
 
 export default function App() {
-  const setPlacingStation = useSelection((s) => s.setPlacingStation);
-  const setCreatingLineTag = useSelection((s) => s.setCreatingLineTag);
-  const setCreatingRouteBullet = useSelection((s) => s.setCreatingRouteBullet);
-  const setCreatingTransfer = useSelection((s) => s.setCreatingTransfer);
-  const setPlacingLabel = useSelection((s) => s.setPlacingLabel);
-  const setLayeringMode = useSelection((s) => s.setLayeringMode);
+  const setUiMode = useSelection((s) => s.setUiMode);
   const selectLineTag = useSelection((s) => s.selectLineTag);
   const selectRouteBullet = useSelection((s) => s.selectRouteBullet);
   const selectTransfer = useSelection((s) => s.selectTransfer);
@@ -35,13 +30,10 @@ export default function App() {
         target?.isContentEditable;
 
       if (e.key === 'Escape') {
+        // cancelAppendMode runs first so a freshly-created empty line gets
+        // garbage-collected before setUiMode flips the variant.
         cancelAppendMode();
-        setPlacingStation(false);
-        setCreatingLineTag(false);
-        setCreatingRouteBullet(false);
-        setCreatingTransfer(false);
-        setPlacingLabel(false);
-        setLayeringMode(false);
+        setUiMode({ kind: 'idle' });
         selectLineTag(null);
         selectRouteBullet(null);
         selectTransfer(null);
@@ -177,7 +169,8 @@ export default function App() {
         return;
       }
       if (!inForm && !mod && (e.key === 'l' || e.key === 'L')) {
-        setLayeringMode(!useSelection.getState().layeringMode);
+        const cur = useSelection.getState().uiMode;
+        setUiMode(cur.kind === 'layering' ? { kind: 'idle' } : { kind: 'layering' });
         return;
       }
       if (!inForm && e.key === ' ' && !e.repeat) {
@@ -196,12 +189,7 @@ export default function App() {
       window.removeEventListener('keyup', onKeyUp);
     };
   }, [
-    setPlacingStation,
-    setCreatingLineTag,
-    setCreatingRouteBullet,
-    setCreatingTransfer,
-    setPlacingLabel,
-    setLayeringMode,
+    setUiMode,
     selectLineTag,
     selectRouteBullet,
     selectTransfer,
@@ -216,27 +204,15 @@ export default function App() {
   useEffect(() => {
     const onContextMenu = (e: globalThis.MouseEvent) => {
       const sel = useSelection.getState();
-      if (
-        sel.placingStation ||
-        sel.creatingLineTag ||
-        sel.appendingToLineId ||
-        sel.creatingRouteBullet ||
-        sel.creatingTransfer ||
-        sel.placingLabel
-      ) {
-        e.preventDefault();
-        e.stopPropagation();
-        sel.setPlacingStation(false);
-        sel.setCreatingLineTag(false);
-        cancelAppendMode();
-        sel.setCreatingRouteBullet(false);
-        sel.setCreatingTransfer(false);
-        sel.setPlacingLabel(false);
-      }
-      // Layering mode is NOT in the above list: right-click in layering mode
-      // is the decrement-layer gesture (handled per-segment in MapCanvas),
-      // not a mode-exit. Layer mode is exited via Esc, the toolbar button,
-      // or pressing L again.
+      // Layering mode is intentionally excluded: right-click in layering
+      // mode is the decrement-layer gesture (handled per-segment in
+      // MapCanvas), not a mode-exit. Layer mode is exited via Esc, the
+      // toolbar button, or pressing L again.
+      if (sel.uiMode.kind === 'idle' || sel.uiMode.kind === 'layering') return;
+      e.preventDefault();
+      e.stopPropagation();
+      cancelAppendMode();
+      sel.setUiMode({ kind: 'idle' });
     };
     document.addEventListener('contextmenu', onContextMenu, true);
     return () => document.removeEventListener('contextmenu', onContextMenu, true);

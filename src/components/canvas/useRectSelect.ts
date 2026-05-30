@@ -94,15 +94,10 @@ export function useRectSelect(
     if (e.button !== 0) return;
     const sel = useSelection.getState();
     if (sel.toolMode === 'hand' || sel.spaceHeld) return;
-    if (
-      sel.placingStation ||
-      sel.creatingLineTag ||
-      sel.creatingRouteBullet ||
-      sel.creatingTransfer ||
-      sel.appendingToLineId !== null ||
-      sel.layeringMode
-    )
-      return;
+    // Rectangle-select is disabled in every non-idle editor mode. placing-label
+    // is excluded here because it's a one-shot click; the others stay sticky
+    // and would conflict with the rect-select drag.
+    if (sel.uiMode.kind !== 'idle' && sel.uiMode.kind !== 'placing-label') return;
     const target = e.target as Element | null;
     const onBackground = target === svgRef.current || (target?.hasAttribute('data-bg') ?? false);
     if (!onBackground) return;
