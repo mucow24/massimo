@@ -1003,11 +1003,11 @@ describe('snapDraggedStation: grid mode', () => {
     expect(r.y).toBe(43);
   });
 
-  it('line-mode snap wins over grid when an alignment engages', () => {
-    // Two stations on a horizontal corridor — line snap should pull y onto
-    // the axis (y=0) even though grid would round y to 0/10. The engine
-    // doesn't snap along-axis here (no tens/equidistant), so x stays at the
-    // proposed value (27) — NOT grid-rounded to 30.
+  it('line locks the perpendicular while grid snaps the along-axis position', () => {
+    // Two stations on a horizontal corridor — line snap pulls y onto the
+    // axis (y=0). With grid also on, the along-axis position (x) snaps to
+    // the grid so the user can slide the station along the line in grid
+    // increments: x 27 → 30, y stays line-locked at 0.
     const target = makeStation({ id: 't', x: 100, y: 0, stops: [horizontalStop('L1')] });
     const dragged = makeStation({ id: 'd', x: 0, y: 0, stops: [horizontalStop('L1')] });
     const r = snapDraggedStation({
@@ -1021,7 +1021,7 @@ describe('snapDraggedStation: grid mode', () => {
       modes: { line: true, equidistant: false, tens: false, all: 'off', grid: 'both' },
     });
     expect(r.y).toBeCloseTo(0, 5);
-    expect(r.x).toBeCloseTo(27, 5);
+    expect(r.x).toBeCloseTo(30, 5);
     expect(r.guides.length).toBeGreaterThan(0);
   });
 
@@ -1087,5 +1087,186 @@ describe('snapDraggedStation: grid mode', () => {
     });
     expect(vertical.x).toBe(30);
     expect(vertical.y).toBe(43);
+  });
+});
+
+describe('snapDraggedStation: line + grid compose along the axis', () => {
+  // A vertical stop's world axis is +y; auto-vertical is the makeStop default.
+  const verticalStop = (lineId: LineId): StopCell =>
+    makeStop(lineId, { row: 0, col: 0, orientation: 'auto-vertical' });
+
+  it('vertical grid slides the station along a horizontal line in grid steps', () => {
+    // Horizontal corridor (axis +x). Line locks y=0; the cross-axis grid
+    // ('vertical' locks X) snaps the free along-axis coordinate to the grid.
+    const target = makeStation({ id: 't', x: 100, y: 0, stops: [horizontalStop('L1')] });
+    const dragged = makeStation({ id: 'd', x: 0, y: 0, stops: [horizontalStop('L1')] });
+    const r = snapDraggedStation({
+      draggedId: 'd',
+      proposedX: 27,
+      proposedY: 3,
+      draggedRotation: 0,
+      draggedStops: dragged.stops,
+      stations: stations(dragged, target),
+      lines: linesOf(lineOf('L1', ['d', 't'])),
+      modes: { line: true, equidistant: false, tens: false, all: 'off', grid: 'vertical' },
+    });
+    expect(r.x).toBeCloseTo(30, 5);
+    expect(r.y).toBeCloseTo(0, 5);
+  });
+
+  it('horizontal grid cannot slide a horizontal line (locks the perpendicular only)', () => {
+    // 'horizontal' grid locks Y — but Y is the line-locked perpendicular on a
+    // horizontal corridor, so there is no along-axis grid step to take. X is
+    // left wherever the line snap put it (27).
+    const target = makeStation({ id: 't', x: 100, y: 0, stops: [horizontalStop('L1')] });
+    const dragged = makeStation({ id: 'd', x: 0, y: 0, stops: [horizontalStop('L1')] });
+    const r = snapDraggedStation({
+      draggedId: 'd',
+      proposedX: 27,
+      proposedY: 3,
+      draggedRotation: 0,
+      draggedStops: dragged.stops,
+      stations: stations(dragged, target),
+      lines: linesOf(lineOf('L1', ['d', 't'])),
+      modes: { line: true, equidistant: false, tens: false, all: 'off', grid: 'horizontal' },
+    });
+    expect(r.x).toBeCloseTo(27, 5);
+    expect(r.y).toBeCloseTo(0, 5);
+  });
+
+  it('horizontal grid slides the station along a vertical line in grid steps', () => {
+    // Vertical corridor (axis +y). Line locks x=0; the cross-axis grid
+    // ('horizontal' locks Y) snaps the free along-axis coordinate to the grid.
+    const target = makeStation({ id: 't', x: 0, y: 100, stops: [verticalStop('L1')] });
+    const dragged = makeStation({ id: 'd', x: 0, y: 0, stops: [verticalStop('L1')] });
+    const r = snapDraggedStation({
+      draggedId: 'd',
+      proposedX: 3,
+      proposedY: 27,
+      draggedRotation: 0,
+      draggedStops: dragged.stops,
+      stations: stations(dragged, target),
+      lines: linesOf(lineOf('L1', ['d', 't'])),
+      modes: { line: true, equidistant: false, tens: false, all: 'off', grid: 'horizontal' },
+    });
+    expect(r.x).toBeCloseTo(0, 5);
+    expect(r.y).toBeCloseTo(30, 5);
+  });
+
+  it('vertical grid cannot slide a vertical line (locks the perpendicular only)', () => {
+    const target = makeStation({ id: 't', x: 0, y: 100, stops: [verticalStop('L1')] });
+    const dragged = makeStation({ id: 'd', x: 0, y: 0, stops: [verticalStop('L1')] });
+    const r = snapDraggedStation({
+      draggedId: 'd',
+      proposedX: 3,
+      proposedY: 27,
+      draggedRotation: 0,
+      draggedStops: dragged.stops,
+      stations: stations(dragged, target),
+      lines: linesOf(lineOf('L1', ['d', 't'])),
+      modes: { line: true, equidistant: false, tens: false, all: 'off', grid: 'vertical' },
+    });
+    expect(r.x).toBeCloseTo(0, 5);
+    expect(r.y).toBeCloseTo(27, 5);
+  });
+
+  it("grid 'both' preserves the line-locked perpendicular even when it's off-grid", () => {
+    // Corridor at y=5 (not a grid row). Line locks y=5; grid 'both' snaps the
+    // along-axis x to 30 but must NOT pull the perpendicular off the line.
+    const target = makeStation({ id: 't', x: 100, y: 5, stops: [horizontalStop('L1')] });
+    const dragged = makeStation({ id: 'd', x: 0, y: 5, stops: [horizontalStop('L1')] });
+    const r = snapDraggedStation({
+      draggedId: 'd',
+      proposedX: 27,
+      proposedY: 6,
+      draggedRotation: 0,
+      draggedStops: dragged.stops,
+      stations: stations(dragged, target),
+      lines: linesOf(lineOf('L1', ['d', 't'])),
+      modes: { line: true, equidistant: false, tens: false, all: 'off', grid: 'both' },
+    });
+    expect(r.x).toBeCloseTo(30, 5);
+    expect(r.y).toBeCloseTo(5, 5);
+  });
+
+  it('explicit tens cadence wins over grid along the axis', () => {
+    // [A(3), B] horizontal. tens anchors at A → multiples of 10 from x=3
+    // (…, 43, 53). Grid would snap to 50. With both on, tens must win → 43.
+    const a = makeStation({ id: 'a', x: 3, y: 0, stops: [horizontalStop('L1')] });
+    const b = makeStation({ id: 'b', x: 47, y: 0, stops: [horizontalStop('L1')] });
+    const r = snapDraggedStation({
+      draggedId: 'b',
+      proposedX: 47,
+      proposedY: 0.5,
+      draggedRotation: 0,
+      draggedStops: b.stops,
+      stations: stations(a, b),
+      lines: linesOf(lineOf('L1', ['a', 'b'])),
+      modes: { line: true, equidistant: false, tens: true, all: 'off', grid: 'vertical' },
+    });
+    expect(r.x).toBeCloseTo(43, 5);
+    expect(r.y).toBeCloseTo(0, 5);
+  });
+
+  it('is inert during Ctrl-drag (redistributeAnchor) — grid must not fight redistribute', () => {
+    // [A(0), B, C, D] horizontal, Ctrl-dragging D toward anchor A. The anchor
+    // alignment locks y=0; grid 'vertical' would otherwise notch D's x to 130.
+    // Redistribute is a modal interaction that ignores the grid toggle, same
+    // as the terminus equidistant/tens branches.
+    const a = makeStation({ id: 'a', x: 0, y: 0, stops: [horizontalStop('L1')] });
+    const b = makeStation({ id: 'b', x: 50, y: 0, stops: [horizontalStop('L1')] });
+    const c = makeStation({ id: 'c', x: 100, y: 0, stops: [horizontalStop('L1')] });
+    const d = makeStation({ id: 'd', x: 150, y: 0, stops: [horizontalStop('L1')] });
+    const r = snapDraggedStation({
+      draggedId: 'd',
+      proposedX: 125,
+      proposedY: 0.5,
+      draggedRotation: 0,
+      draggedStops: d.stops,
+      stations: stations(a, b, c, d),
+      lines: linesOf(lineOf('L1', ['a', 'b', 'c', 'd'])),
+      redistributeAnchor: 'a',
+      modes: { line: true, equidistant: false, tens: false, all: 'off', grid: 'vertical' },
+    });
+    expect(r.x).toBeCloseTo(125, 5);
+    expect(r.y).toBeCloseTo(0, 5);
+  });
+
+  it('slides a bullet along its bound line in grid steps', () => {
+    // Bullet bound to vertical line [A(0,0), B(0,100)]. Line snap locks the
+    // bullet onto the axis x=0; 'horizontal' grid snaps the free along-axis
+    // y to the grid (47 → 50). No bulletLineId guard — grid composes for
+    // bullets the same as for stations.
+    const a = makeStation({ id: 'a', x: 0, y: 0, stops: [verticalStop('L1')] });
+    const b = makeStation({ id: 'b', x: 0, y: 100, stops: [verticalStop('L1')] });
+    const r = snapDraggedStation({
+      proposedX: 1,
+      proposedY: 47,
+      stations: stations(a, b),
+      lines: linesOf(lineOf('L1', ['a', 'b'])),
+      bulletLineId: 'L1',
+      modes: { line: true, equidistant: false, tens: false, all: 'off', grid: 'horizontal' },
+    });
+    expect(r.x).toBeCloseTo(0, 5);
+    expect(r.y).toBeCloseTo(50, 5);
+  });
+
+  it('composes snap-to-all with grid along the engaged axis', () => {
+    // Vertical all-alignment with a stop at (100, 0) locks x=100; the
+    // cross-axis grid ('horizontal' locks Y) snaps the along-axis y to 50.
+    const a = makeStation({ id: 'a', x: 100, y: 0, stops: [makeStop('L1')] });
+    const b = makeStation({ id: 'b', x: 0, y: 0, stops: [makeStop('L2')] });
+    const r = snapDraggedStation({
+      draggedId: 'b',
+      proposedX: 101,
+      proposedY: 47,
+      draggedRotation: 0,
+      draggedStops: b.stops,
+      stations: stations(a, b),
+      lines: linesOf(lineOf('L1', ['a']), lineOf('L2', ['b'])),
+      modes: { line: false, equidistant: false, tens: false, all: 'vertical', grid: 'horizontal' },
+    });
+    expect(r.x).toBeCloseTo(100, 5);
+    expect(r.y).toBeCloseTo(50, 5);
   });
 });
