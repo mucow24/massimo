@@ -115,16 +115,16 @@ describe('pickLayerLabelT', () => {
   });
 
   it('prefers 0.5 when every candidate is equally covered (degenerate hub)', () => {
-    // A vertical centerline at x=0 lying on top of the target. Distance
-    // from every candidate sample to it is 0. With every candidate's
-    // clearance tied, the midpoint bias picks t=0.5 — the least-bad
-    // arbitrary choice.
+    // A second vertical centerline at x=0 lying directly on top of the
+    // target — same start/end so the sample-to-sample distance at every
+    // target candidate is 0. With every candidate's clearance tied, the
+    // midpoint bias picks t=0.5 — the least-bad arbitrary choice.
     const target = vertBand();
     const parallel = makeBand({
       bandKey: 'P',
       centerline: [
-        { x: 0, y: -10 },
-        { x: 0, y: 110 },
+        { x: 0, y: 0 },
+        { x: 0, y: 100 },
       ],
       lines: ['P'],
     });

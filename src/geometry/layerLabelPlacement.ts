@@ -1,6 +1,7 @@
 import type { SegmentBandSpec } from './interlining';
-import { closestParamOnOffsetPath, sampleOffsetPath } from './lineTagGeometry';
+import { sampleOffsetPath } from './lineTagGeometry';
 import { STOP_SIZE } from './orientation';
+import type { Vec2 } from './vec';
 
 // Arc-length fractions to try when placing a layer-number label on a band
 // stripe. The list spans the central 60% of the stripe so labels stay clear
@@ -13,6 +14,49 @@ const DEFAULT_CANDIDATES = [0.5, 0.4, 0.6, 0.3, 0.7, 0.2, 0.8];
 // clearance, the closer-to-midpoint one wins. Small enough that a genuinely
 // clearer off-center spot still beats the midpoint when it matters.
 const DEFAULT_MIDPOINT_BIAS = 4;
+
+// Number of evenly-spaced arc-length samples per band stripe used by the
+// fast point-to-polyline distance approximation. 20 samples give roughly
+// 1/40-of-stripe-length granularity — sufficient for label placement
+// precision, and small enough that distance queries are dominated by a
+// handful of subtractions / multiplications.
+const STRIPE_SAMPLES = 20;
+
+/**
+ * A precomputed table of sampled offset-path points for every (band stripe)
+ * in a map. Used by {@link pickLayerLabelT} to skip the per-call
+ * `closestParamOnOffsetPath` cost — instead, distance from a candidate to
+ * any other-band stripe is just `min over samples of |candidate - sample|`,
+ * which has no per-call allocation and runs at memory speed.
+ *
+ * Keys are `${bandKey}|${stripeIndex}`.
+ */
+export type SampledBandStripes = Map<string, Vec2[]>;
+
+/**
+ * Pre-sample every stripe in every band at {@link STRIPE_SAMPLES} + 1
+ * evenly-spaced arc-length fractions. Build once per band-geometry change
+ * and pass into every {@link pickLayerLabelT} call over the same band
+ * set — without it the placement helper does the equivalent work inline
+ * on every call, which became a real bottleneck during layer cycling on
+ * busy maps.
+ */
+export function sampleBandStripes(bands: SegmentBandSpec[]): SampledBandStripes {
+  const out: SampledBandStripes = new Map();
+  for (const band of bands) {
+    const n = band.lines.length;
+    for (let k = 0; k < n; k++) {
+      const offset = (k - (n - 1) / 2) * STOP_SIZE;
+      const samples: Vec2[] = [];
+      for (let i = 0; i <= STRIPE_SAMPLES; i++) {
+        const t = i / STRIPE_SAMPLES;
+        samples.push(sampleOffsetPath(band.centerline, band.radius, offset, t).p);
+      }
+      out.set(band.bandKey + '|' + k, samples);
+    }
+  }
+  return out;
+}
 
 export interface LayerLabelPlacementOptions {
   /**
@@ -29,6 +73,14 @@ export interface LayerLabelPlacementOptions {
    * more clearance. Defaults to {@link DEFAULT_MIDPOINT_BIAS}.
    */
   midpointBias?: number;
+  /**
+   * Pre-sampled offset-path points for every stripe in `allBands`. When
+   * provided, distance queries skip the per-call sampling cost and run
+   * directly against this table — required for any tight loop (e.g. the
+   * `LayerNumberLabels` render). When omitted, the helper samples inline
+   * at full cost (suitable for one-off tests, not for production).
+   */
+  sampledStripes?: SampledBandStripes;
 }
 
 /**
@@ -61,6 +113,7 @@ export function pickLayerLabelT(
 ): number {
   const candidates = options.candidates ?? DEFAULT_CANDIDATES;
   const midpointBias = options.midpointBias ?? DEFAULT_MIDPOINT_BIAS;
+  const sampled = options.sampledStripes ?? sampleBandStripes(allBands);
   const n = band.lines.length;
   const targetOffset = (stripeIndex - (n - 1) / 2) * STOP_SIZE;
 
@@ -68,8 +121,8 @@ export function pickLayerLabelT(
   let bestScore = -Infinity;
   for (const t of candidates) {
     const { p } = sampleOffsetPath(band.centerline, band.radius, targetOffset, t);
-    const dist = nearestOtherBandDistance(p, band, allBands);
-    const score = dist - midpointBias * Math.abs(t - 0.5);
+    const distSq = nearestOtherBandDistanceSq(p, band, allBands, sampled);
+    const score = Math.sqrt(distSq) - midpointBias * Math.abs(t - 0.5);
     // Strict `>` so the first candidate in the list wins ties — keeps the
     // midpoint-first ordering useful even when every score is identical
     // (e.g. when there are no other bands at all).
@@ -81,20 +134,29 @@ export function pickLayerLabelT(
   return bestT;
 }
 
-function nearestOtherBandDistance(
+// Squared minimum distance from `point` to any other-band stripe's sampled
+// polyline. Squared so the inner loop is pure arithmetic — sqrt is applied
+// once, at the caller, only to the winning candidate's distance.
+function nearestOtherBandDistanceSq(
   point: { x: number; y: number },
   targetBand: SegmentBandSpec,
   allBands: SegmentBandSpec[],
+  sampled: SampledBandStripes,
 ): number {
-  let nearest = Infinity;
+  let nearestSq = Infinity;
   for (const other of allBands) {
     if (other.bandKey === targetBand.bandKey) continue;
     const otherN = other.lines.length;
     for (let k = 0; k < otherN; k++) {
-      const otherOffset = (k - (otherN - 1) / 2) * STOP_SIZE;
-      const closest = closestParamOnOffsetPath(other.centerline, other.radius, otherOffset, point);
-      if (closest.dist < nearest) nearest = closest.dist;
+      const samples = sampled.get(other.bandKey + '|' + k);
+      if (!samples) continue;
+      for (const s of samples) {
+        const dx = point.x - s.x;
+        const dy = point.y - s.y;
+        const dSq = dx * dx + dy * dy;
+        if (dSq < nearestSq) nearestSq = dSq;
+      }
     }
   }
-  return nearest;
+  return nearestSq;
 }
