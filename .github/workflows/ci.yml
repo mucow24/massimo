@@ -12,6 +12,15 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
+  # Aggregate gate. Branch protection requires a check named `ci`; this job
+  # succeeds only once both checks and e2e pass, keeping that required-check
+  # name valid without coupling it to the individual job IDs.
+  ci:
+    needs: [checks, e2e]
+    runs-on: ubuntu-latest
+    steps:
+      - run: echo "all required jobs passed"
+
   # Fast checks: lint, format, unit tests, build. Runs in parallel with the
   # e2e job below on its own runner.
   checks:
