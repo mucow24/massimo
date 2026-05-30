@@ -112,4 +112,52 @@ describe('<LayerNumberLabels>', () => {
     const { container } = renderLabels([band], {}); // empty lines dict
     expect(container.querySelectorAll('[data-layer-number]').length).toBe(0);
   });
+
+  it('shifts the label away from a higher-priority crossing that covers the midpoint', () => {
+    // Vertical target band y=0→100 at x=0, painted BEHIND a horizontal
+    // crossing band that hides the midpoint. The label should not land on
+    // the centerline midpoint (0, 50); a t-search should pick a clearer
+    // spot. Asserted as |y - 50| > 0 (i.e. not the midpoint) rather than
+    // an exact value, so the assertion survives any future tweaks to the
+    // candidate-t set inside pickLayerLabelT.
+    const target: SegmentBandSpec = {
+      pairKey: 's1|s2',
+      bandKey: 'V',
+      fromId: 's1',
+      toId: 's2',
+      lines: [{ id: 'A', color: '#000000', style: 'solid' }],
+      paths: ['M0,0 L0,100'],
+      warning: false,
+      centerline: [
+        { x: 0, y: 0 },
+        { x: 0, y: 100 },
+      ],
+      radius: 24,
+      linePriorities: [10], // target painted BEHIND
+    };
+    const crossing: SegmentBandSpec = {
+      pairKey: 's3|s4',
+      bandKey: 'H',
+      fromId: 's3',
+      toId: 's4',
+      lines: [{ id: 'B', color: '#000000', style: 'solid' }],
+      paths: ['M-50,50 L50,50'],
+      warning: false,
+      centerline: [
+        { x: -50, y: 50 },
+        { x: 50, y: 50 },
+      ],
+      radius: 24,
+      linePriorities: [0], // crossing painted IN FRONT (covers midpoint)
+    };
+    const lines = {
+      A: makeLine({ id: 'A', segmentLayers: { 's1|s2': -1 } }),
+      B: makeLine({ id: 'B' }),
+    };
+    const { container } = renderLabels([target, crossing], lines);
+    const label = container.querySelector('[data-line-id="A"]') as SVGTextElement | null;
+    expect(label).not.toBeNull();
+    const y = Number(label!.getAttribute('y'));
+    expect(Math.abs(y - 50)).toBeGreaterThan(0);
+  });
 });
