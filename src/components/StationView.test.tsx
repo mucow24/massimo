@@ -51,6 +51,18 @@ describe('<StationView /> — label styling', () => {
     expect(text.getAttribute('font-style')).toBe('italic');
   });
 
+  it('per-station labelItalic renders italic even when the doc default is upright', () => {
+    useDoc.setState({ ...useDoc.getState(), labelItalic: false });
+    const station = { ...makeStation({ id: 's1', name: 'Foo' }), labelItalic: true as const };
+    const { container } = render(
+      <svg>
+        <StationView station={station} lines={{}} zoom={1} onStartDrag={vi.fn()} layer="label" />
+      </svg>,
+    );
+    const text = container.querySelector('text');
+    expect(text?.getAttribute('font-style')).toBe('italic');
+  });
+
   it('per-station labelBold bumps the rendered weight two indices heavier (Regular → Bold)', () => {
     const station = { ...makeStation({ id: 's1', name: 'Foo' }), labelBold: true as const };
     const { container } = render(

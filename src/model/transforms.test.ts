@@ -1240,6 +1240,36 @@ describe('setStationLabelBold', () => {
   });
 });
 
+describe('setStationLabelItalic', () => {
+  it('writes labelItalic:true on the station when called with true', () => {
+    const doc = makeDoc({ stations: [makeStation({ id: 'a' })] });
+    const next = T.setStationLabelItalic(doc, 'a', true);
+    expect(next.stations.a.labelItalic).toBe(true);
+  });
+
+  it('clears labelItalic from the station when called with false', () => {
+    const doc = makeDoc({
+      stations: [{ ...makeStation({ id: 'a' }), labelItalic: true }],
+    });
+    const next = T.setStationLabelItalic(doc, 'a', false);
+    expect(next.stations.a.labelItalic).toBeFalsy();
+    // Specifically: omitted, not set to false. Keeps existing saves clean.
+    expect('labelItalic' in next.stations.a).toBe(false);
+  });
+
+  it('is a no-op (reference equality) when the value is unchanged', () => {
+    const doc = makeDoc({ stations: [makeStation({ id: 'a' })] });
+    expect(T.setStationLabelItalic(doc, 'a', false)).toBe(doc);
+    const italicized = T.setStationLabelItalic(doc, 'a', true);
+    expect(T.setStationLabelItalic(italicized, 'a', true)).toBe(italicized);
+  });
+
+  it('is a no-op for missing ids', () => {
+    const doc = makeDoc({ stations: [makeStation({ id: 'a' })] });
+    expect(T.setStationLabelItalic(doc, 'nope', true)).toBe(doc);
+  });
+});
+
 describe('activePalettes', () => {
   it('DEFAULT_DOC.activePalettes is exactly [mta]', () => {
     expect(T.DEFAULT_DOC.activePalettes).toEqual(['mta']);

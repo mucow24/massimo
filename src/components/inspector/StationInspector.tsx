@@ -30,6 +30,7 @@ export function StationInspector({ id }: { id: StationId }) {
   const setDotShape = useDoc((s) => s.setDotShape);
   const setStationWaypoint = useDoc((s) => s.setStationWaypoint);
   const setStationLabelBold = useDoc((s) => s.setStationLabelBold);
+  const setStationLabelItalic = useDoc((s) => s.setStationLabelItalic);
   const selection = useSelection();
   const nameField = useFieldHistory();
   const xField = useFieldHistory();
@@ -273,6 +274,20 @@ export function StationInspector({ id }: { id: StationId }) {
             onClick={() => setStationLabelBold(station.id, !station.labelBold)}
           >
             <strong>B</strong>
+          </button>
+          <button
+            type="button"
+            className={`btn-mini${station.labelItalic ? ' active' : ''}`}
+            aria-pressed={!!station.labelItalic}
+            aria-label="Italic"
+            title={
+              station.labelItalic
+                ? 'Italic on — this station’s name renders italic'
+                : 'Italicize this station’s name'
+            }
+            onClick={() => setStationLabelItalic(station.id, !station.labelItalic)}
+          >
+            <em>I</em>
           </button>
         </div>
         <div style={{ fontSize: 11, color: '#777', marginTop: 4 }}>
