@@ -198,13 +198,14 @@ export function MapCanvas() {
   // the same name the user just saw. Reset when placing mode toggles via the
   // "adjust state during render" pattern — see
   // https://react.dev/learn/you-might-not-need-an-effect#adjusting-some-state-when-a-prop-changes
+  const placingStation = selection.uiMode.kind === 'placing-station';
   const [previewName, setPreviewName] = useState<string | null>(() =>
-    selection.placingStation ? randomStationName() : null,
+    placingStation ? randomStationName() : null,
   );
-  const [prevPlacing, setPrevPlacing] = useState(selection.placingStation);
-  if (selection.placingStation !== prevPlacing) {
-    setPrevPlacing(selection.placingStation);
-    setPreviewName(selection.placingStation ? randomStationName() : null);
+  const [prevPlacing, setPrevPlacing] = useState(placingStation);
+  if (placingStation !== prevPlacing) {
+    setPrevPlacing(placingStation);
+    setPreviewName(placingStation ? randomStationName() : null);
   }
 
   const onPointerDown = (e: React.PointerEvent) => {
@@ -226,16 +227,17 @@ export function MapCanvas() {
     view.onPointerMove(e);
     drag.onPointerMove(e);
     rectSelect.onPointerMove(e);
-    if (
-      (selection.creatingTransfer && selection.transferAnchor) ||
-      selection.placingStation ||
-      selection.placingLabel
-    ) {
+    const mode = selection.uiMode;
+    const wantsCursorTrack =
+      (mode.kind === 'creating-transfer' && mode.anchor !== null) ||
+      mode.kind === 'placing-station' ||
+      mode.kind === 'placing-label';
+    if (wantsCursorTrack) {
       const raw = view.screenToWorld(e.clientX, e.clientY);
       // Grid-snap the placement preview for new stations so the user sees
       // exactly where it'll land. Other placement modes keep the raw
       // cursor — grid snap is scoped to stations for now.
-      const w = selection.placingStation ? maybeSnapToGrid(raw, snapModes) : raw;
+      const w = mode.kind === 'placing-station' ? maybeSnapToGrid(raw, snapModes) : raw;
       setCursorWorld(w);
     } else if (cursorWorld) {
       setCursorWorld(null);
@@ -569,7 +571,8 @@ export function MapCanvas() {
       e.target === svgRef.current || (e.target as Element).hasAttribute('data-bg');
     if (!onBackground) return;
     if (dragState.suppressClick) return;
-    if (selection.placingStation) {
+    const mode = selection.uiMode;
+    if (mode.kind === 'placing-station') {
       const w = maybeSnapToGrid(view.screenToWorld(e.clientX, e.clientY), snapModes);
       addStation(w.x, w.y, previewName ?? undefined);
       setPreviewName(randomStationName());
@@ -578,7 +581,7 @@ export function MapCanvas() {
       // would close the placing-mode banner via the inspector swap.
       return;
     }
-    if (selection.creatingRouteBullet) {
+    if (mode.kind === 'creating-route-bullet') {
       const w = view.screenToWorld(e.clientX, e.clientY);
       // Default new bullet to the first line in z-order so it has a
       // recognizable color/service immediately. User can change it via
@@ -589,28 +592,28 @@ export function MapCanvas() {
       addRouteBullet(w.x, w.y, defaultLineId);
       return;
     }
-    if (selection.creatingLineTag) {
+    if (mode.kind === 'creating-line-tag') {
       // Click on background while in tag mode = exit the mode.
-      selection.setCreatingLineTag(false);
+      selection.setUiMode({ kind: 'idle' });
       return;
     }
-    if (selection.appendingToLineId) {
+    if (mode.kind === 'appending-to-line') {
       cancelAppendMode();
       return;
     }
-    if (selection.creatingTransfer) {
+    if (mode.kind === 'creating-transfer') {
       // Click on background while picking transfer endpoints exits the mode.
-      selection.setCreatingTransfer(false);
+      selection.setUiMode({ kind: 'idle' });
       return;
     }
-    if (selection.placingLabel) {
+    if (mode.kind === 'placing-label') {
       // Single-shot: place one label, exit placing mode, and auto-select the
       // new label so the popover opens. Different from station / bullet
       // placement, which stay in mode for rapid click-click-click drops —
       // labels are heavier (text edit) so the single-shot flow makes sense.
       const w = view.screenToWorld(e.clientX, e.clientY);
       const id = addTextLabel(w.x, w.y);
-      selection.setPlacingLabel(false);
+      selection.setUiMode({ kind: 'idle' });
       selection.selectLabel(id);
       return;
     }
@@ -743,7 +746,7 @@ export function MapCanvas() {
                 key={'s:' + r.band.bandKey + ':' + stripeLineId}
                 spec={r.band}
                 stripeIndex={r.stripeIndex}
-                interactive={selection.creatingLineTag}
+                interactive={selection.uiMode.kind === 'creating-line-tag'}
                 colorMap={colorMap}
                 onLineSelect={
                   inHandMode
@@ -753,7 +756,7 @@ export function MapCanvas() {
                         selection.selectLine(lineId);
                       }
                 }
-                {...(selection.creatingLineTag ? makeBandHandlers(r.band) : {})}
+                {...(selection.uiMode.kind === 'creating-line-tag' ? makeBandHandlers(r.band) : {})}
               />
             );
           }
@@ -816,15 +819,14 @@ export function MapCanvas() {
             cursor while waiting for the second click. Matches the committed
             transfer's color and thickness, and renders below the dots for
             the same reason. */}
-        {selection.creatingTransfer &&
-          selection.transferAnchor &&
+        {selection.uiMode.kind === 'creating-transfer' &&
+          selection.uiMode.anchor &&
           cursorWorld &&
-          stations[selection.transferAnchor.stationId] &&
+          stations[selection.uiMode.anchor.stationId] &&
           (() => {
-            const anchorWorld = transferEndWorld(
-              stations[selection.transferAnchor.stationId],
-              selection.transferAnchor.lineId,
-            );
+            const anchor = selection.uiMode.anchor;
+            if (!anchor) return null;
+            const anchorWorld = transferEndWorld(stations[anchor.stationId], anchor.lineId);
             return (
               <line
                 x1={anchorWorld.x}
@@ -855,14 +857,16 @@ export function MapCanvas() {
             cursor before each click, so the user can see where (and what
             name) the next placement will land. */}
         <StationPlacingPreview
-          world={selection.placingStation ? cursorWorld : null}
+          world={selection.uiMode.kind === 'placing-station' ? cursorWorld : null}
           name={previewName}
           lines={lines}
         />
         {/* Label-placing-mode ghost: a faint "New Label" following the cursor
             before the click. Single-shot placement, so it disappears as soon
-            as the user clicks (the click handler exits placingLabel). */}
-        <LabelPlacingPreview world={selection.placingLabel ? cursorWorld : null} />
+            as the user clicks (the click handler exits placing-label). */}
+        <LabelPlacingPreview
+          world={selection.uiMode.kind === 'placing-label' ? cursorWorld : null}
+        />
 
         {/* Route bullets: rendered before the dim so they fade with the
             rest of the map when a line is selected. */}
@@ -1055,11 +1059,14 @@ export function MapCanvas() {
               // Selected line's station names rendered in white above dim.
               // The append-mode "starter" station gets its own treatment
               // below (line-color name + arrowhead), so skip it here.
+              const append =
+                selection.uiMode.kind === 'appending-to-line' ? selection.uiMode : null;
               const starterId =
-                selection.appendingToLineId === highlightLineId &&
-                selection.insertAfterIndex != null &&
-                selection.insertAfterIndex >= 0
-                  ? ln.stations[selection.insertAfterIndex]
+                append &&
+                append.lineId === highlightLineId &&
+                append.insertAfterIndex != null &&
+                append.insertAfterIndex >= 0
+                  ? ln.stations[append.insertAfterIndex]
                   : null;
               for (const sid of ln.stations) {
                 if (sid === starterId) continue;
@@ -1088,8 +1095,11 @@ export function MapCanvas() {
                 light gray labels above the dim, plus highlight the
                 "starter" stop and draw an arrowhead pointing at where
                 the next station will be inserted. */}
-            {selection.appendingToLineId === highlightLineId &&
+            {selection.uiMode.kind === 'appending-to-line' &&
+              selection.uiMode.lineId === highlightLineId &&
               (() => {
+                const append = selection.uiMode;
+                if (append.kind !== 'appending-to-line') return null;
                 const ln = lines[highlightLineId];
                 if (!ln) return null;
                 const onLine = new Set(ln.stations);
@@ -1107,7 +1117,7 @@ export function MapCanvas() {
                     />
                   ));
 
-                const idx = selection.insertAfterIndex ?? -1;
+                const idx = append.insertAfterIndex ?? -1;
                 const stopWorld = (sid: string) => {
                   const st = stations[sid];
                   if (!st) return null;

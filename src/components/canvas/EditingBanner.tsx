@@ -8,67 +8,62 @@ import { legibleTextOn } from '../../util/color';
  */
 export function EditingBanner() {
   const lines = useDoc((s) => s.lines);
-  const placingStation = useSelection((s) => s.placingStation);
-  const appendingToLineId = useSelection((s) => s.appendingToLineId);
-  const creatingLineTag = useSelection((s) => s.creatingLineTag);
-  const creatingRouteBullet = useSelection((s) => s.creatingRouteBullet);
-  const creatingTransfer = useSelection((s) => s.creatingTransfer);
-  const transferAnchor = useSelection((s) => s.transferAnchor);
+  const uiMode = useSelection((s) => s.uiMode);
 
-  if (placingStation) {
-    return (
-      <>
-        <div className="append-frame" style={{ borderColor: '#1a4ea8' }} />
-        <div className="append-banner placing">
-          Click on the canvas to place a new station. Press Esc to cancel.
-        </div>
-      </>
-    );
+  switch (uiMode.kind) {
+    case 'placing-station':
+      return (
+        <>
+          <div className="append-frame" style={{ borderColor: '#1a4ea8' }} />
+          <div className="append-banner placing">
+            Click on the canvas to place a new station. Press Esc to cancel.
+          </div>
+        </>
+      );
+    case 'creating-line-tag':
+      return (
+        <>
+          <div className="append-frame" style={{ borderColor: '#1a4ea8' }} />
+          <div className="append-banner placing">
+            Click a colored line to place a tag. Press Esc to cancel.
+          </div>
+        </>
+      );
+    case 'creating-route-bullet':
+      return (
+        <>
+          <div className="append-frame" style={{ borderColor: '#1a4ea8' }} />
+          <div className="append-banner placing">
+            Click on the canvas to place a route bullet. Press Esc to cancel.
+          </div>
+        </>
+      );
+    case 'creating-transfer':
+      return (
+        <>
+          <div className="append-frame" style={{ borderColor: '#1a4ea8' }} />
+          <div className="append-banner placing">
+            {uiMode.anchor
+              ? 'Click the second station to complete the transfer. Press Esc to cancel.'
+              : 'Click the first station to start a transfer. Press Esc to cancel.'}
+          </div>
+        </>
+      );
+    case 'appending-to-line': {
+      const line = lines[uiMode.lineId];
+      if (!line) return null;
+      const text = legibleTextOn(line.color);
+      return (
+        <>
+          <div className="append-frame" style={{ borderColor: line.color }} />
+          <div className="append-banner" style={{ background: line.color, color: text }}>
+            Appending to line {line.service} — click stations to add or remove. Esc to stop.
+          </div>
+        </>
+      );
+    }
+    case 'placing-label':
+    case 'idle':
+      return null;
   }
-  if (creatingLineTag) {
-    return (
-      <>
-        <div className="append-frame" style={{ borderColor: '#1a4ea8' }} />
-        <div className="append-banner placing">
-          Click a colored line to place a tag. Press Esc to cancel.
-        </div>
-      </>
-    );
-  }
-  if (creatingRouteBullet) {
-    return (
-      <>
-        <div className="append-frame" style={{ borderColor: '#1a4ea8' }} />
-        <div className="append-banner placing">
-          Click on the canvas to place a route bullet. Press Esc to cancel.
-        </div>
-      </>
-    );
-  }
-  if (creatingTransfer) {
-    return (
-      <>
-        <div className="append-frame" style={{ borderColor: '#1a4ea8' }} />
-        <div className="append-banner placing">
-          {transferAnchor
-            ? 'Click the second station to complete the transfer. Press Esc to cancel.'
-            : 'Click the first station to start a transfer. Press Esc to cancel.'}
-        </div>
-      </>
-    );
-  }
-  if (appendingToLineId) {
-    const line = lines[appendingToLineId];
-    if (!line) return null;
-    const text = legibleTextOn(line.color);
-    return (
-      <>
-        <div className="append-frame" style={{ borderColor: line.color }} />
-        <div className="append-banner" style={{ background: line.color, color: text }}>
-          Appending to line {line.service} — click stations to add or remove. Esc to stop.
-        </div>
-      </>
-    );
-  }
-  return null;
 }

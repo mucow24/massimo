@@ -192,7 +192,7 @@ export function LineTagsLayer({ bands, zoom, svgRef }: Props) {
         })()}
 
       {/* Ghost preview while in add-line-tag mode and hovering a stripe. */}
-      {selection.creatingLineTag && selection.lineTagHoverPreview && (
+      {selection.uiMode.kind === 'creating-line-tag' && selection.lineTagHoverPreview && (
         <GhostPreview preview={selection.lineTagHoverPreview} widths={widths} />
       )}
     </g>
