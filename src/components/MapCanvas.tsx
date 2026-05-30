@@ -1429,15 +1429,11 @@ export function MapCanvas() {
         view.vbH > 0 &&
         (() => {
           const b = routeBullets[selection.selectedRouteBulletIds[0]];
-          // Canvas-host-relative pixel coords from the bullet's world
-          // position via the current viewport. No ref reads — keeps the
-          // react-hooks lint happy.
-          const x = ((b.x - view.vbX) / view.vbW) * view.size.w;
-          const y = ((b.y - view.vbY) / view.vbH) * view.size.h;
           return (
             <RouteBulletPopover
               bullet={b}
-              anchor={{ x, y }}
+              world={{ x: b.x, y: b.y }}
+              view={view}
               onClose={() => selection.selectRouteBullet(null)}
             />
           );
@@ -1451,12 +1447,11 @@ export function MapCanvas() {
         view.vbH > 0 &&
         (() => {
           const g = textLabels[selection.selectedLabelIds[0]];
-          const x = ((g.x - view.vbX) / view.vbW) * view.size.w;
-          const y = ((g.y - view.vbY) / view.vbH) * view.size.h;
           return (
             <TextLabelPopover
               label={g}
-              anchor={{ x, y }}
+              world={{ x: g.x, y: g.y }}
+              view={view}
               onClose={() => selection.selectLabel(null)}
             />
           );
