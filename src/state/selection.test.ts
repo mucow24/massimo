@@ -328,4 +328,95 @@ describe('selection — text labels (parallel array)', () => {
       expect(useSelection.getState().placingLabel).toBe(false);
     });
   });
+
+  describe('setLayeringMode', () => {
+    it('entering layering mode clears every other mode + selection', () => {
+      useSelection.setState({
+        placingStation: true,
+        placingLabel: true,
+        creatingLineTag: true,
+        creatingRouteBullet: true,
+        creatingTransfer: true,
+        transferAnchor: { stationId: 'A', lineId: 'L1' },
+        appendingToLineId: 'L1',
+        insertAfterIndex: 0,
+        selectedStationIds: ['A'],
+        selectedRouteBulletIds: ['b1'],
+        selectedLabelIds: ['g1'],
+        selectedLineId: 'L1',
+        selectedLineTagId: 't1',
+        selectedTransferId: 'x1',
+      });
+      useSelection.getState().setLayeringMode(true);
+      const s = useSelection.getState();
+      expect(s.layeringMode).toBe(true);
+      expect(s.placingStation).toBe(false);
+      expect(s.placingLabel).toBe(false);
+      expect(s.creatingLineTag).toBe(false);
+      expect(s.creatingRouteBullet).toBe(false);
+      expect(s.creatingTransfer).toBe(false);
+      expect(s.transferAnchor).toBeNull();
+      expect(s.appendingToLineId).toBeNull();
+      expect(s.insertAfterIndex).toBeNull();
+      expect(s.selectedStationIds).toEqual([]);
+      expect(s.selectedRouteBulletIds).toEqual([]);
+      expect(s.selectedLabelIds).toEqual([]);
+      expect(s.selectedLineId).toBeNull();
+      expect(s.selectedLineTagId).toBeNull();
+      expect(s.selectedTransferId).toBeNull();
+    });
+
+    it('setPlacingStation(true) cancels layeringMode', () => {
+      useSelection.setState({ layeringMode: true });
+      useSelection.getState().setPlacingStation(true);
+      expect(useSelection.getState().layeringMode).toBe(false);
+    });
+
+    it('setPlacingLabel(true) cancels layeringMode', () => {
+      useSelection.setState({ layeringMode: true });
+      useSelection.getState().setPlacingLabel(true);
+      expect(useSelection.getState().layeringMode).toBe(false);
+    });
+
+    it('setCreatingLineTag(true) cancels layeringMode', () => {
+      useSelection.setState({ layeringMode: true });
+      useSelection.getState().setCreatingLineTag(true);
+      expect(useSelection.getState().layeringMode).toBe(false);
+    });
+
+    it('setCreatingRouteBullet(true) cancels layeringMode', () => {
+      useSelection.setState({ layeringMode: true });
+      useSelection.getState().setCreatingRouteBullet(true);
+      expect(useSelection.getState().layeringMode).toBe(false);
+    });
+
+    it('setCreatingTransfer(true) cancels layeringMode', () => {
+      useSelection.setState({ layeringMode: true });
+      useSelection.getState().setCreatingTransfer(true);
+      expect(useSelection.getState().layeringMode).toBe(false);
+    });
+
+    it('setAppending(non-null) cancels layeringMode', () => {
+      useSelection.setState({ layeringMode: true });
+      useSelection.getState().setAppending('L1');
+      expect(useSelection.getState().layeringMode).toBe(false);
+    });
+
+    it('setLayeringMode(false) leaves other modes alone', () => {
+      // Cross-check: turning OFF layering mode is purely additive — it
+      // must not nuke unrelated state. Some other mode being active here
+      // shouldn't happen in practice (they're mutually exclusive), but the
+      // exit path should be a clean no-op against everything else.
+      useSelection.setState({
+        layeringMode: true,
+        selectedStationIds: ['A'],
+        selectedLineId: 'L1',
+      });
+      useSelection.getState().setLayeringMode(false);
+      const s = useSelection.getState();
+      expect(s.layeringMode).toBe(false);
+      expect(s.selectedStationIds).toEqual(['A']);
+      expect(s.selectedLineId).toBe('L1');
+    });
+  });
 });

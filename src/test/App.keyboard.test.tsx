@@ -9,7 +9,11 @@ beforeEach(() => {
   localStorage.clear();
   useDoc.setState({ ...useDoc.getState(), ...DEFAULT_DOC });
   useDoc.temporal.getState().clear();
-  useSelection.setState({ ...useSelection.getState(), spaceHeld: false });
+  useSelection.setState({
+    ...useSelection.getState(),
+    spaceHeld: false,
+    layeringMode: false,
+  });
 });
 
 describe('App keyboard shortcuts: inForm guard routing', () => {
@@ -79,6 +83,50 @@ describe('App keyboard shortcuts: inForm guard routing', () => {
     fireEvent.keyDown(bart, { key: ' ' });
 
     expect(useSelection.getState().spaceHeld).toBe(false);
+  });
+});
+
+describe('App keyboard shortcuts: layering mode', () => {
+  it('L toggles layeringMode on, then back off', () => {
+    render(<App />);
+    expect(useSelection.getState().layeringMode).toBe(false);
+    fireEvent.keyDown(window, { key: 'l' });
+    expect(useSelection.getState().layeringMode).toBe(true);
+    fireEvent.keyDown(window, { key: 'l' });
+    expect(useSelection.getState().layeringMode).toBe(false);
+  });
+
+  it('L is case-insensitive (Shift+L behaves the same)', () => {
+    render(<App />);
+    fireEvent.keyDown(window, { key: 'L' });
+    expect(useSelection.getState().layeringMode).toBe(true);
+  });
+
+  it('Esc exits layering mode', () => {
+    render(<App />);
+    useSelection.setState({ layeringMode: true });
+    fireEvent.keyDown(window, { key: 'Escape' });
+    expect(useSelection.getState().layeringMode).toBe(false);
+  });
+
+  it('L on a focused text input is suppressed (typing "l" in the input keeps mode untouched)', () => {
+    render(<App />);
+    const input = document.createElement('input');
+    input.type = 'text';
+    document.body.appendChild(input);
+    input.focus();
+    try {
+      fireEvent.keyDown(input, { key: 'l' });
+      expect(useSelection.getState().layeringMode).toBe(false);
+    } finally {
+      document.body.removeChild(input);
+    }
+  });
+
+  it('Ctrl+L is NOT bound (e.g. browser focus-address-bar gestures pass through)', () => {
+    render(<App />);
+    fireEvent.keyDown(window, { key: 'l', ctrlKey: true });
+    expect(useSelection.getState().layeringMode).toBe(false);
   });
 });
 
