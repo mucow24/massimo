@@ -386,15 +386,10 @@ export function snapDraggedStation(input: SnapInput): SnapResult {
     // Single-axis snap: project the dragged stop onto the primary's axis
     // line through its target stop.
     const c = primary;
-    const proposedDStopX = proposedX + c.dOff.x;
-    const proposedDStopY = proposedY + c.dOff.y;
-    const dxp = proposedDStopX - c.targetStopX;
-    const dyp = proposedDStopY - c.targetStopY;
-    const along = dxp * c.axis.x + dyp * c.axis.y;
-    const snappedDStopX = c.targetStopX + along * c.axis.x;
-    const snappedDStopY = c.targetStopY + along * c.axis.y;
-    sx = snappedDStopX - c.dOff.x;
-    sy = snappedDStopY - c.dOff.y;
+    const proposedDStop = { x: proposedX + c.dOff.x, y: proposedY + c.dOff.y };
+    const snapped = projectOntoAxis(proposedDStop, { x: c.targetStopX, y: c.targetStopY }, c.axis);
+    sx = snapped.x - c.dOff.x;
+    sy = snapped.y - c.dOff.y;
   }
 
   // Phase 3: along-axis refinement (equidistant + tens). Runs for any
@@ -405,6 +400,7 @@ export function snapDraggedStation(input: SnapInput): SnapResult {
   // Equidistant has no meaning for bullets (no A-B-C neighbors); the helper
   // gates that internally.
   let refinedSourceGuide: { from: Vec2; to: Vec2 } | undefined;
+  let alongAxisRefined = false;
   if (!secondary && primary.kind === 'line' && (modes.equidistant || modes.tens)) {
     const refined = refineAlongAxis({
       sx,
@@ -425,7 +421,27 @@ export function snapDraggedStation(input: SnapInput): SnapResult {
       sx = refined.sx;
       sy = refined.sy;
       refinedSourceGuide = refined.sourceGuide;
+      alongAxisRefined = true;
     }
+  }
+
+  // Phase 3b: along-axis grid refinement. Once a single-axis alignment has
+  // locked the dragged anchor onto a line/axis, grid mode snaps the *free*
+  // along-axis coordinate to the grid — so line-lock and grid compose: the
+  // user stays glued to the line while sliding along it in grid increments.
+  // We grid-snap the anchor and project the result back onto the axis, which
+  // keeps the perpendicular (the line lock) intact even when grid 'both' would
+  // otherwise pull it off an off-grid line. Skipped for 2-axis snaps (already
+  // fully locked), during Ctrl-drag (redistribute is a modal interaction that
+  // ignores the grid toggle, same as the terminus equidistant/tens branches),
+  // and when an explicit equidistant/tens cadence already won — those stay the
+  // fallback-overriding alignments, matching the no-alignment grid-as-fallback
+  // rule above.
+  if (!secondary && !redistributeAnchor && modes.grid !== 'off' && !alongAxisRefined) {
+    const g = snapPointToGrid(sx, sy, modes.grid);
+    const snapped = projectOntoAxis(g, { x: sx, y: sy }, primary.axis);
+    sx = snapped.x;
+    sy = snapped.y;
   }
 
   // Compute the per-station spacing for the Ctrl-drag readout. We use the
@@ -543,6 +559,18 @@ export function axisForRotation(rot: number): Vec2 {
 
 export function parallel(a: Vec2, b: Vec2): boolean {
   return Math.abs(a.x * b.y - a.y * b.x) < 1e-3;
+}
+
+/**
+ * Project point `p` onto the infinite line through `anchor` with unit
+ * direction `axis`. Used wherever a snap constrains a point to a line: the
+ * single-axis line snap (drop the proposed stop onto the target's axis) and
+ * the along-axis grid refinement (slide the grid-snapped anchor back onto the
+ * locked axis so the perpendicular stays put).
+ */
+export function projectOntoAxis(p: Vec2, anchor: Vec2, axis: Vec2): Vec2 {
+  const along = (p.x - anchor.x) * axis.x + (p.y - anchor.y) * axis.y;
+  return { x: anchor.x + along * axis.x, y: anchor.y + along * axis.y };
 }
 
 export interface AlignmentPair {
