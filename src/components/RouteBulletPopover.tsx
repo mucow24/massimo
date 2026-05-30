@@ -1,10 +1,13 @@
 import { useDoc } from '../state/store';
+import { projectToScreen, type ViewportProjection } from './canvas/screenAnchor';
 import type { RouteBullet, RouteBulletShape } from '../model/types';
 
 interface Props {
   bullet: RouteBullet;
-  // Anchor in screen pixels (the bullet's screen-space position).
-  anchor: { x: number; y: number };
+  // The bullet's world position. Projected through the live viewport every
+  // render so the popover tracks canvas pan/zoom.
+  world: { x: number; y: number };
+  view: ViewportProjection;
   onClose: () => void;
 }
 
@@ -31,7 +34,8 @@ function ShapeIcon({ shape }: { shape: RouteBulletShape }) {
   );
 }
 
-export function RouteBulletPopover({ bullet, anchor, onClose }: Props) {
+export function RouteBulletPopover({ bullet, world, view, onClose }: Props) {
+  const anchor = projectToScreen(world, view);
   const lines = useDoc((s) => s.lines);
   const lineOrder = useDoc((s) => s.lineOrder);
   const updateRouteBullet = useDoc((s) => s.updateRouteBullet);

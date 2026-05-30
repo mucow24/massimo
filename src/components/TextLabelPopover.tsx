@@ -1,16 +1,17 @@
 import { useEffect, useRef, useState } from 'react';
 import { useDoc } from '../state/store';
+import { projectToScreen, type ViewportProjection } from './canvas/screenAnchor';
 import { TEXT_LABEL_FONT_SIZE_MAX, TEXT_LABEL_FONT_SIZE_MIN } from '../model/transforms';
 import { useFieldHistory } from './useFieldHistory';
 import type { TextLabel, TextLabelAlign, TextLabelWeight } from '../model/types';
 
 interface Props {
   label: TextLabel;
-  // Anchor in screen pixels — only the value at mount is used. The popover
-  // captures it once and stays put after that, even if the underlying
-  // label's screen position changes (drag, resize, zoom). User-initiated
-  // moves happen via the header drag.
-  anchor: { x: number; y: number };
+  // The label's world position at the moment of selection. Frozen at mount
+  // (see frozenWorld below) but projected through the *live* viewport, so the
+  // popover tracks canvas pan/zoom while ignoring the label's own moves.
+  world: { x: number; y: number };
+  view: ViewportProjection;
   onClose: () => void;
 }
 
@@ -31,15 +32,18 @@ const ALIGNS: { value: TextLabelAlign; icon: string; title: string }[] = [
   { value: 'right', icon: '⇥', title: 'Align right' },
 ];
 
-export function TextLabelPopover({ label, anchor, onClose }: Props) {
+export function TextLabelPopover({ label, world, view, onClose }: Props) {
   const updateTextLabel = useDoc((s) => s.updateTextLabel);
   const deleteTextLabel = useDoc((s) => s.deleteTextLabel);
 
-  // Freeze the anchor at mount. Subsequent changes to `anchor` (which
-  // tracks the label's screen position) are ignored — the popover must
-  // stay where it opened so resizes/edits don't slide controls out from
-  // under the user's cursor. User drags still move it via dragOffset.
-  const [frozenAnchor] = useState(anchor);
+  // Freeze the label's *world* position at mount. Subsequent changes to the
+  // label's position (resize, edit) are ignored — the popover must stay put so
+  // controls don't slide out from under the cursor, and so the fontSize slider
+  // can't move the popover and feed back into itself (see the test). But we
+  // still project the frozen world point through the *live* viewport every
+  // render, so the popover tracks canvas pan/zoom. User drags add dragOffset.
+  const [frozenWorld] = useState(world);
+  const anchor = projectToScreen(frozenWorld, view);
 
   // Drag offset (added to the frozen anchor). Persists while the popover
   // stays open so the popover stays where the user put it.
@@ -140,8 +144,8 @@ export function TextLabelPopover({ label, anchor, onClose }: Props) {
       className="text-label-popover"
       style={{
         position: 'absolute',
-        left: frozenAnchor.x + 14 + dragOffset.x,
-        top: frozenAnchor.y + 14 + dragOffset.y,
+        left: anchor.x + 14 + dragOffset.x,
+        top: anchor.y + 14 + dragOffset.y,
         zIndex: 1100,
       }}
       // Stop pointer events from reaching the canvas so clicks inside the
