@@ -22,23 +22,23 @@ interface Props {
 }
 
 /**
- * Layering-mode outlines: a 1.5px dashed black border tracing every band
- * stripe's perimeter, and a 1px-black + 2px-white-halo solid border around
- * the hovered stripe. The hovered outline paints in a separate pass below
- * the dashed ones so it always sits on top — visible even when the stripe
- * itself is buried under a higher-layer crossing.
+ * The dashed-outline pass of layering mode: a 1.5px black border at 20%
+ * opacity tracing every band stripe's perimeter except the hovered one
+ * (which goes through {@link LayeringHoverOutline}). Rendered BELOW
+ * transfers and station dots so those keep their visual primacy and the
+ * dashed outline reads as a soft footprint on the band.
  *
  * The interior of each stripe is never repainted, so this overlay never
  * occludes a line that's currently in front of the stripe being outlined.
  */
-export function LayeringOutlines({ bands, hovered }: Props) {
+export function LayeringDashedOutlines({ bands, hovered }: Props) {
   return (
     <>
       {bands.flatMap((band) =>
         band.lines.map((stripeLine, k) => {
           const isHovered =
             !!hovered && hovered.bandKey === band.bandKey && hovered.lineId === stripeLine.id;
-          // The hovered stripe paints in the later pass.
+          // The hovered stripe paints via LayeringHoverOutline.
           if (isHovered) return null;
           const outline = computeStripeOutline(band, k);
           if (!outline) return null;
@@ -73,18 +73,19 @@ export function LayeringOutlines({ bands, hovered }: Props) {
           );
         }),
       )}
-      {hovered && <HoveredStripeOutline bands={bands} hovered={hovered} />}
     </>
   );
 }
 
-function HoveredStripeOutline({
-  bands,
-  hovered,
-}: {
-  bands: SegmentBandSpec[];
-  hovered: { bandKey: string; lineId: LineId };
-}) {
+/**
+ * The solid-outline pass of layering mode: a 1px black border + 2px white
+ * halo tracing the hovered stripe's full perimeter as a single closed path
+ * (so `strokeLinejoin="round"` joins every corner smoothly). Rendered ABOVE
+ * everything else — including station dots and transfers — so the click
+ * target stays visible no matter how busy the underlying canvas is.
+ */
+export function LayeringHoverOutline({ bands, hovered }: Props) {
+  if (!hovered) return null;
   const band = bands.find((b) => b.bandKey === hovered.bandKey);
   if (!band) return null;
   const k = band.lines.findIndex((l) => l.id === hovered.lineId);

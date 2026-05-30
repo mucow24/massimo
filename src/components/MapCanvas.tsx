@@ -41,7 +41,7 @@ import { WarningToasts } from './canvas/WarningToasts';
 import { EditingBanner } from './canvas/EditingBanner';
 import { SnapGuides } from './canvas/SnapGuides';
 import { LineTagsLayer } from './canvas/LineTagsLayer';
-import { LayeringOutlines } from './canvas/LayeringOutlines';
+import { LayeringDashedOutlines, LayeringHoverOutline } from './canvas/LayeringOutlines';
 import { LayerNumberLabels } from './canvas/LayerNumberLabels';
 import { StationPlacingPreview } from './canvas/StationPlacingPreview';
 import { LabelPlacingPreview } from './canvas/LabelPlacingPreview';
@@ -869,6 +869,15 @@ export function MapCanvas() {
           ))}
         </g>
 
+        {/* Layering-mode dashed outlines: a soft 1.5px dashed footprint per
+            non-hovered band stripe, painted ABOVE the colored bands but
+            BELOW transfers + station dots so those keep their visual
+            primacy. The hovered solid outline + the layer-number labels
+            still paint at the very end so they stay on top. */}
+        {selection.layeringMode && (
+          <LayeringDashedOutlines bands={bands} hovered={hoveredLayerStripe} />
+        )}
+
         {/* Transfers: user-styled lines connecting two dots. Rendered BEFORE
             the station dots so the dots paint on top — a transfer never
             obscures the dot it's connecting. Stay at full opacity in
@@ -1362,14 +1371,16 @@ export function MapCanvas() {
             labels sit on top of line tags and everything else. */}
         <SnapGuides guides={[...drag.snapGuides, ...bulletSnapGuides]} zoom={view.viewport.zoom} />
 
-        {/* Layering-mode overlays: dashed-outline-per-stripe + hovered-stripe
-            solid outline + small layer-number labels at non-zero / hovered
-            stripe midpoints. Outlines/labels both stay above the dim wash
-            and above every line so the user can read the layer even when
-            the stripe itself is buried under a higher-layer crossing. */}
+        {/* Layering-mode top overlays: the hovered-stripe solid outline +
+            small layer-number labels. Painted at the very end of the SVG
+            so they stay on top of station dots, transfers, and every other
+            line — the click target and the layer number stay readable
+            regardless of how busy the canvas is underneath. The dashed
+            footprint is rendered earlier (above) so dots and transfers
+            paint over it. */}
         {selection.layeringMode && (
           <>
-            <LayeringOutlines bands={bands} hovered={hoveredLayerStripe} />
+            <LayeringHoverOutline bands={bands} hovered={hoveredLayerStripe} />
             <LayerNumberLabels bands={bands} lines={lines} hovered={hoveredLayerStripe} />
           </>
         )}

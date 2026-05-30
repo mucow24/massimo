@@ -1,6 +1,6 @@
 import { describe, it, expect } from 'vitest';
 import { render } from '@testing-library/react';
-import { LayeringOutlines } from './LayeringOutlines';
+import { LayeringDashedOutlines, LayeringHoverOutline } from './LayeringOutlines';
 import type { SegmentBandSpec } from '../../geometry/interlining';
 
 const makeBand = (lineIds: string[]): SegmentBandSpec => {
@@ -22,32 +22,40 @@ const makeBand = (lineIds: string[]): SegmentBandSpec => {
   };
 };
 
-const renderOutlines = (
+const renderDashed = (
   bands: SegmentBandSpec[],
   hovered: { bandKey: string; lineId: string } | null = null,
 ) =>
   render(
     <svg>
-      <LayeringOutlines bands={bands} hovered={hovered} />
+      <LayeringDashedOutlines bands={bands} hovered={hovered} />
     </svg>,
   );
 
-describe('<LayeringOutlines>', () => {
-  it('renders one outline group per band stripe when nothing is hovered', () => {
-    const { container } = renderOutlines([makeBand(['A', 'B'])]);
+const renderHover = (
+  bands: SegmentBandSpec[],
+  hovered: { bandKey: string; lineId: string } | null,
+) =>
+  render(
+    <svg>
+      <LayeringHoverOutline bands={bands} hovered={hovered} />
+    </svg>,
+  );
+
+describe('<LayeringDashedOutlines>', () => {
+  it('renders one dashed group per band stripe when nothing is hovered', () => {
+    const { container } = renderDashed([makeBand(['A', 'B'])]);
     const groups = container.querySelectorAll('[data-layering-outline]');
     expect(groups.length).toBe(2);
-    expect(container.querySelector('[data-layering-hover-outline]')).toBeNull();
   });
 
-  it('renders no outline groups for an empty band list', () => {
-    const { container } = renderOutlines([]);
+  it('renders no groups for an empty band list', () => {
+    const { container } = renderDashed([]);
     expect(container.querySelectorAll('[data-layering-outline]').length).toBe(0);
-    expect(container.querySelector('[data-layering-hover-outline]')).toBeNull();
   });
 
   it('dashed groups carry the expected stroke attributes', () => {
-    const { container } = renderOutlines([makeBand(['A'])]);
+    const { container } = renderDashed([makeBand(['A'])]);
     const g = container.querySelector('[data-layering-outline]')!;
     expect(g.getAttribute('stroke')).toBe('#000');
     expect(g.getAttribute('stroke-width')).toBe('1.5');
@@ -58,20 +66,24 @@ describe('<LayeringOutlines>', () => {
     expect(g.querySelectorAll('line').length).toBe(2);
   });
 
-  it('hovered stripe drops the dashed group and renders the hover outline instead', () => {
+  it('skips the hovered stripe (it paints via LayeringHoverOutline instead)', () => {
     const band = makeBand(['A', 'B']);
-    const { container } = renderOutlines([band], { bandKey: band.bandKey, lineId: 'A' });
-    // 1 dashed group remains (for B); the hover outline takes A's slot.
-    const dashed = container.querySelectorAll('[data-layering-outline]');
-    expect(dashed.length).toBe(1);
-    expect(dashed[0].getAttribute('data-line-id')).toBe('B');
-    const hover = container.querySelector('[data-layering-hover-outline]')!;
-    expect(hover.getAttribute('data-line-id')).toBe('A');
+    const { container } = renderDashed([band], { bandKey: band.bandKey, lineId: 'A' });
+    const groups = container.querySelectorAll('[data-layering-outline]');
+    expect(groups.length).toBe(1);
+    expect(groups[0].getAttribute('data-line-id')).toBe('B');
+  });
+});
+
+describe('<LayeringHoverOutline>', () => {
+  it('renders nothing when hovered is null', () => {
+    const { container } = renderHover([makeBand(['A'])], null);
+    expect(container.querySelector('[data-layering-hover-outline]')).toBeNull();
   });
 
-  it('hover outline paints a 2px white halo then a 1px black stroke on the same closed path', () => {
+  it('renders a 2px white halo and a 1px black stroke over the same closed path', () => {
     const band = makeBand(['A']);
-    const { container } = renderOutlines([band], { bandKey: band.bandKey, lineId: 'A' });
+    const { container } = renderHover([band], { bandKey: band.bandKey, lineId: 'A' });
     const hover = container.querySelector('[data-layering-hover-outline]')!;
     const paths = hover.querySelectorAll('path');
     expect(paths.length).toBe(2);
@@ -85,15 +97,15 @@ describe('<LayeringOutlines>', () => {
     expect(halo.getAttribute('d')?.endsWith('Z')).toBe(true);
   });
 
-  it('hover with a missing bandKey is a no-op (no hover element rendered)', () => {
+  it('is a no-op when the hovered bandKey does not match any band', () => {
     const band = makeBand(['A']);
-    const { container } = renderOutlines([band], { bandKey: 'nope', lineId: 'A' });
+    const { container } = renderHover([band], { bandKey: 'nope', lineId: 'A' });
     expect(container.querySelector('[data-layering-hover-outline]')).toBeNull();
   });
 
-  it('hover with a missing lineId on a real band is a no-op', () => {
+  it('is a no-op when the hovered lineId is not in the matched band', () => {
     const band = makeBand(['A']);
-    const { container } = renderOutlines([band], { bandKey: band.bandKey, lineId: 'ghost' });
+    const { container } = renderHover([band], { bandKey: band.bandKey, lineId: 'ghost' });
     expect(container.querySelector('[data-layering-hover-outline]')).toBeNull();
   });
 });
