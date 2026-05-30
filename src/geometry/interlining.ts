@@ -276,17 +276,59 @@ export function buildBands(
     }
   }
 
-  // 3. Tag each stripe in each band with its own line's lineIndex priority.
+  // 3. Tag each stripe in each band with its own line's lineIndex priority,
+  // shifted by that line's per-segment layer override on this band's pair-key.
   // The actual sort happens in buildOrderedRenderables, where each stripe is
   // emitted as its own renderable so a perpendicular line at intermediate
   // depth can interleave between the stripes of an interlined band.
   const lineIndex = buildLineIndex(lineOrder, lines);
   const fallback = Object.keys(lineIndex).length;
   for (const band of bands) {
-    band.linePriorities = band.lines.map((l) => lineIndex[l.id] ?? fallback);
+    band.linePriorities = band.lines.map((l) =>
+      segmentPriority(lines[l.id], band.pairKey, lineIndex[l.id] ?? fallback),
+    );
   }
 
   return bands;
+}
+
+// Priority weight per layer step. Must exceed the largest plausible
+// `lineIndex` so a +1 layer always beats any reordering within layer 0.
+const LAYER_WEIGHT = 10000;
+
+// Compose a stripe's final paint priority from its global line index and any
+// per-segment layer override on this line. Smaller priority = renders later =
+// on top, matching the existing convention.
+function segmentPriority(line: Line | undefined, pairKey: string, lineIdx: number): number {
+  const layer = line?.segmentLayers?.[pairKey] ?? 0;
+  return lineIdx - layer * LAYER_WEIGHT;
+}
+
+// Layer to use for a stop marker at `stationId` on `line`. Takes the MAX over
+// incident segments (= the front-most band the stop joins) so the marker sits
+// on top of whichever incident band wins paint-order at this station. A
+// segment with no `segmentLayers` entry counts as 0. Returns 0 when the line
+// has no `segmentLayers` map or no incident segment.
+//
+// Crucially, we seed the running max with the first incident layer rather
+// than 0, so a station whose ONLY incident layers are negative correctly
+// returns a negative max (= keeps the marker behind layer-0 lines crossing
+// nearby). Without that seed, the marker would always float to ≥0 and a
+// fully-layered-down line would still have its dots on top of layer-0 bands.
+function stationLayerFor(line: Line, stationId: StationId): number {
+  const layers = line.segmentLayers;
+  if (!layers) return 0;
+  let max: number | null = null;
+  const consider = (v: number) => {
+    max = max === null ? v : Math.max(max, v);
+  };
+  for (let i = 0; i < line.stations.length; i++) {
+    if (line.stations[i] !== stationId) continue;
+    if (i > 0) consider(layers[pairKeyOf(line.stations[i - 1], stationId)] ?? 0);
+    if (i < line.stations.length - 1)
+      consider(layers[pairKeyOf(stationId, line.stations[i + 1])] ?? 0);
+  }
+  return max ?? 0;
 }
 
 // Flatten bands + markers into a single list of per-stripe renderables,
@@ -372,6 +414,8 @@ export function buildStopMarkers(
       const worldTangent = rotateBy(travelDirLocal(cell.orientation), station.rotation);
       const rotationDeg = (Math.atan2(worldTangent.y, worldTangent.x) * 180) / Math.PI;
       const style = stationMarkerStyle(line, station.id);
+      const stationLayer = stationLayerFor(line, station.id);
+      const basePriority = lineIndex[cell.lineId] ?? fallback;
       markers.push({
         cx,
         cy,
@@ -379,7 +423,7 @@ export function buildStopMarkers(
         lineId: cell.lineId,
         stationId: station.id,
         rotationDeg,
-        priority: lineIndex[cell.lineId] ?? fallback,
+        priority: basePriority - stationLayer * LAYER_WEIGHT,
         style,
         outward: style === 'dashed' ? terminusOutwardFromBand(line, station.id, bandByPair) : null,
       });

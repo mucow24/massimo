@@ -11,6 +11,7 @@ export default function App() {
   const setCreatingRouteBullet = useSelection((s) => s.setCreatingRouteBullet);
   const setCreatingTransfer = useSelection((s) => s.setCreatingTransfer);
   const setPlacingLabel = useSelection((s) => s.setPlacingLabel);
+  const setLayeringMode = useSelection((s) => s.setLayeringMode);
   const selectLineTag = useSelection((s) => s.selectLineTag);
   const selectRouteBullet = useSelection((s) => s.selectRouteBullet);
   const selectTransfer = useSelection((s) => s.selectTransfer);
@@ -40,6 +41,7 @@ export default function App() {
         setCreatingRouteBullet(false);
         setCreatingTransfer(false);
         setPlacingLabel(false);
+        setLayeringMode(false);
         selectLineTag(null);
         selectRouteBullet(null);
         selectTransfer(null);
@@ -174,6 +176,10 @@ export default function App() {
         setToolMode('hand');
         return;
       }
+      if (!inForm && !mod && (e.key === 'l' || e.key === 'L')) {
+        setLayeringMode(!useSelection.getState().layeringMode);
+        return;
+      }
       if (!inForm && e.key === ' ' && !e.repeat) {
         e.preventDefault();
         setSpaceHeld(true);
@@ -195,6 +201,7 @@ export default function App() {
     setCreatingRouteBullet,
     setCreatingTransfer,
     setPlacingLabel,
+    setLayeringMode,
     selectLineTag,
     selectRouteBullet,
     selectTransfer,
@@ -226,6 +233,10 @@ export default function App() {
         sel.setCreatingTransfer(false);
         sel.setPlacingLabel(false);
       }
+      // Layering mode is NOT in the above list: right-click in layering mode
+      // is the decrement-layer gesture (handled per-segment in MapCanvas),
+      // not a mode-exit. Layer mode is exited via Esc, the toolbar button,
+      // or pressing L again.
     };
     document.addEventListener('contextmenu', onContextMenu, true);
     return () => document.removeEventListener('contextmenu', onContextMenu, true);

@@ -28,6 +28,7 @@ import {
 import { computeRenderedStopPositions } from '../geometry/stopPositions';
 import { resolveDotShape } from '../model/transforms';
 import { STOP_SIZE, travelDirLocal, rotateBy } from '../geometry/orientation';
+import { emitOffsetSegments, offsetFilletPath, type OffsetPathSegment } from '../geometry/router';
 import { BandWarning, SegmentBand } from './SegmentBand';
 import { HatchPatterns, lineStyleStrokeAttrs, lineStyleUnderlayAttrs } from './HatchPatterns';
 import { StopMarker } from './StopMarker';
@@ -72,6 +73,7 @@ export function MapCanvas() {
   const lineOrder = useDoc((s) => s.lineOrder);
   const addStation = useDoc((s) => s.addStation);
   const addLineTag = useDoc((s) => s.addLineTag);
+  const cycleSegmentLayer = useDoc((s) => s.cycleSegmentLayer);
   const routeBullets = useDoc((s) => s.routeBullets);
   const addRouteBullet = useDoc((s) => s.addRouteBullet);
   const moveRouteBullet = useDoc((s) => s.moveRouteBullet);
@@ -212,6 +214,20 @@ export function MapCanvas() {
   if (selection.placingStation !== prevPlacing) {
     setPrevPlacing(selection.placingStation);
     setPreviewName(selection.placingStation ? randomStationName() : null);
+  }
+
+  // Hovered stripe in layering mode: (bandKey, lineId) of the band stripe the
+  // pointer is currently over. Drives the lightened-color preview + the small
+  // layer-number text rendered at the stripe's midpoint. Cleared whenever we
+  // leave layering mode (via the render-pattern below).
+  const [hoveredLayerStripe, setHoveredLayerStripe] = useState<{
+    bandKey: string;
+    lineId: LineId;
+  } | null>(null);
+  const [prevLayering, setPrevLayering] = useState(selection.layeringMode);
+  if (selection.layeringMode !== prevLayering) {
+    setPrevLayering(selection.layeringMode);
+    if (!selection.layeringMode && hoveredLayerStripe) setHoveredLayerStripe(null);
   }
 
   const onPointerDown = (e: React.PointerEvent) => {
@@ -601,6 +617,11 @@ export function MapCanvas() {
       selection.setCreatingLineTag(false);
       return;
     }
+    if (selection.layeringMode) {
+      // Click on background while in layering mode = exit the mode.
+      selection.setLayeringMode(false);
+      return;
+    }
     if (selection.appendingToLineId) {
       cancelAppendMode();
       return;
@@ -681,6 +702,36 @@ export function MapCanvas() {
     },
   });
 
+  // Hover/click handlers for layering mode. Hovering a stripe records the
+  // (band, line) pair so the renderer can draw the layer-number overlay +
+  // black outline; left-click bumps the per-segment layer up by 1 (down with
+  // shift), right-click bumps it down by 1.
+  const makeLayerHandlers = (spec: SegmentBandSpec) => ({
+    onLineHover: (lineId: LineId) => {
+      setHoveredLayerStripe((cur) =>
+        cur && cur.bandKey === spec.bandKey && cur.lineId === lineId
+          ? cur
+          : { bandKey: spec.bandKey, lineId },
+      );
+    },
+    onLineLeave: (lineId: LineId) => {
+      setHoveredLayerStripe((cur) =>
+        cur && cur.bandKey === spec.bandKey && cur.lineId === lineId ? null : cur,
+      );
+    },
+    onLineClick: (lineId: LineId, e: React.MouseEvent) => {
+      e.stopPropagation();
+      const [fromCanon, toCanon] = spec.pairKey.split('|');
+      cycleSegmentLayer(lineId, fromCanon, toCanon, e.shiftKey ? -1 : 1);
+    },
+    onLineContextMenu: (lineId: LineId, e: React.MouseEvent) => {
+      e.preventDefault();
+      e.stopPropagation();
+      const [fromCanon, toCanon] = spec.pairKey.split('|');
+      cycleSegmentLayer(lineId, fromCanon, toCanon, -1);
+    },
+  });
+
   return (
     <div className="canvas-host">
       <EditingBanner />
@@ -750,7 +801,7 @@ export function MapCanvas() {
                 key={'s:' + r.band.bandKey + ':' + stripeLineId}
                 spec={r.band}
                 stripeIndex={r.stripeIndex}
-                interactive={selection.creatingLineTag}
+                interactive={selection.creatingLineTag || selection.layeringMode}
                 colorMap={colorMap}
                 onLineSelect={
                   inHandMode
@@ -760,7 +811,11 @@ export function MapCanvas() {
                         selection.selectLine(lineId);
                       }
                 }
-                {...(selection.creatingLineTag ? makeBandHandlers(r.band) : {})}
+                {...(selection.creatingLineTag
+                  ? makeBandHandlers(r.band)
+                  : selection.layeringMode
+                    ? makeLayerHandlers(r.band)
+                    : {})}
               />
             );
           }
@@ -793,21 +848,26 @@ export function MapCanvas() {
         ))}
 
         {/* station labels: rendered after bg/wash so a selected station's
-            orange wash never paints over a neighbor's label. */}
-        {Object.values(stations).map((st) => (
-          <StationView
-            key={st.id + ':label'}
-            station={st}
-            lines={lines}
-            zoom={view.viewport.zoom}
-            onStartDrag={drag.onStartDrag}
-            layer="label"
-          />
-        ))}
+            orange wash never paints over a neighbor's label. Fade to 50%
+            in layering mode so the focus stays on the band layers. */}
+        <g opacity={selection.layeringMode ? 0.25 : 1}>
+          {Object.values(stations).map((st) => (
+            <StationView
+              key={st.id + ':label'}
+              station={st}
+              lines={lines}
+              zoom={view.viewport.zoom}
+              onStartDrag={drag.onStartDrag}
+              layer="label"
+            />
+          ))}
+        </g>
 
         {/* Transfers: user-styled lines connecting two dots. Rendered BEFORE
             the station dots so the dots paint on top — a transfer never
-            obscures the dot it's connecting. */}
+            obscures the dot it's connecting. Stay at full opacity in
+            layering mode (they ride between line stops so they're part of
+            the route-network reading, not background annotation). */}
         <TransferLayer
           transfers={transfers}
           stations={stations}
@@ -875,33 +935,37 @@ export function MapCanvas() {
         <LabelPlacingPreview world={selection.placingLabel ? cursorWorld : null} />
 
         {/* Route bullets: rendered before the dim so they fade with the
-            rest of the map when a line is selected. */}
-        {Object.values(routeBullets).map((b) => (
-          <RouteBulletView
-            key={b.id}
-            bullet={b}
-            lines={lines}
-            selected={bulletSelectedIds.includes(b.id)}
-            onPointerDown={onBulletPointerDown}
-            onClick={onBulletClick}
-            onContextMenu={onBulletContextMenu}
-          />
-        ))}
+            rest of the map when a line is selected. Faded in layering mode. */}
+        <g opacity={selection.layeringMode ? 0.25 : 1}>
+          {Object.values(routeBullets).map((b) => (
+            <RouteBulletView
+              key={b.id}
+              bullet={b}
+              lines={lines}
+              selected={bulletSelectedIds.includes(b.id)}
+              onPointerDown={onBulletPointerDown}
+              onClick={onBulletClick}
+              onContextMenu={onBulletContextMenu}
+            />
+          ))}
+        </g>
 
         {/* Text labels: free-floating annotations on top of stations + bullets
             but beneath the selection stroke ring. Dimmed alongside the rest
-            of the map when a line is selected. */}
-        {Object.values(textLabels).map((g) => (
-          <LabelView
-            key={g.id}
-            label={g}
-            selected={labelSelectedIds.includes(g.id)}
-            layer="bg"
-            onPointerDown={onLabelPointerDown}
-            onClick={onLabelClick}
-            onContextMenu={onLabelContextMenu}
-          />
-        ))}
+            of the map when a line is selected. Faded in layering mode. */}
+        <g opacity={selection.layeringMode ? 0.25 : 1}>
+          {Object.values(textLabels).map((g) => (
+            <LabelView
+              key={g.id}
+              label={g}
+              selected={labelSelectedIds.includes(g.id)}
+              layer="bg"
+              onPointerDown={onLabelPointerDown}
+              onClick={onLabelClick}
+              onContextMenu={onLabelContextMenu}
+            />
+          ))}
+        </g>
 
         {/* Debug highlight: dim overlay + re-painted selected line on top.
             Painted after dots so other lines' stop dots can't punch through
@@ -1217,8 +1281,12 @@ export function MapCanvas() {
           </g>
         )}
 
-        {/* Line tags: in-band labels that ride each line's stripe. */}
-        <LineTagsLayer bands={bands} zoom={view.viewport.zoom} svgRef={svgRef} />
+        {/* Line tags: in-band labels that ride each line's stripe. Faded
+            in layering mode so the tag text doesn't compete with the
+            outline + layer-number overlays. */}
+        <g opacity={selection.layeringMode ? 0.25 : 1}>
+          <LineTagsLayer bands={bands} zoom={view.viewport.zoom} svgRef={svgRef} />
+        </g>
 
         {/* Match-stroke: gray outline on each station whose layout matches
             the selected station while mirror mode is on. Drawn beneath the
@@ -1287,6 +1355,163 @@ export function MapCanvas() {
         {/* Snap guides: rendered last so the dotted lines + measurement
             labels sit on top of line tags and everything else. */}
         <SnapGuides guides={[...drag.snapGuides, ...bulletSnapGuides]} zoom={view.viewport.zoom} />
+
+        {/* Layering-mode outlines: a 1px black border tracing the full
+            perimeter of every band stripe — two long edges at the stripe's
+            perpendicular offset ± STOP_SIZE/2 from the centerline, plus two
+            end caps. Painted on top of every line so an outline is visible
+            even when its stripe is buried under others; the interior is
+            never repainted so we don't overdraw any line currently in
+            front. All outlines are dashed except the hovered stripe, which
+            goes solid to single it out for the click. */}
+        {selection.layeringMode &&
+          bands.flatMap((band) => {
+            const verts = band.centerline;
+            if (verts.length < 2) return [];
+            const v0 = verts[0];
+            const v1 = verts[1];
+            const vN1 = verts[verts.length - 1];
+            const vN2 = verts[verts.length - 2];
+            // Endpoint perpendiculars match the leftOf(norm(...)) convention
+            // used by emitOffsetSegments at i=0 and i=last so the cap lines
+            // hit the long edges exactly at their endpoints.
+            const perpUnit = (a: typeof v0, b: typeof v0) => {
+              const dx = b.x - a.x;
+              const dy = b.y - a.y;
+              const ln = Math.hypot(dx, dy) || 1;
+              return { x: dy / ln, y: -dx / ln };
+            };
+            const p0 = perpUnit(v0, v1);
+            const pN = perpUnit(vN2, vN1);
+            const HALF = STOP_SIZE / 2;
+            const n = band.lines.length;
+            return band.lines.map((stripeLine, k) => {
+              const stripeOffset = (k - (n - 1) / 2) * STOP_SIZE;
+              const isHovered =
+                !!hoveredLayerStripe &&
+                hoveredLayerStripe.bandKey === band.bandKey &&
+                hoveredLayerStripe.lineId === stripeLine.id;
+              // The hovered stripe paints in a separate later pass (below)
+              // so its solid outline sits on top of every dashed outline.
+              if (isHovered) return null;
+              const edgeAPath = offsetFilletPath(verts, band.radius, stripeOffset + HALF);
+              const edgeBPath = offsetFilletPath(verts, band.radius, stripeOffset - HALF);
+              const capStartX1 = v0.x + p0.x * (stripeOffset + HALF);
+              const capStartY1 = v0.y + p0.y * (stripeOffset + HALF);
+              const capStartX2 = v0.x + p0.x * (stripeOffset - HALF);
+              const capStartY2 = v0.y + p0.y * (stripeOffset - HALF);
+              const capEndX1 = vN1.x + pN.x * (stripeOffset + HALF);
+              const capEndY1 = vN1.y + pN.y * (stripeOffset + HALF);
+              const capEndX2 = vN1.x + pN.x * (stripeOffset - HALF);
+              const capEndY2 = vN1.y + pN.y * (stripeOffset - HALF);
+              return (
+                <g
+                  key={'outline:' + band.bandKey + ':' + stripeLine.id}
+                  pointerEvents="none"
+                  stroke="#000"
+                  strokeWidth={1.5}
+                  strokeOpacity={0.2}
+                  strokeLinecap="butt"
+                  strokeDasharray="4 2"
+                >
+                  <path d={edgeAPath} fill="none" strokeLinejoin="round" />
+                  <path d={edgeBPath} fill="none" strokeLinejoin="round" />
+                  <line x1={capStartX1} y1={capStartY1} x2={capStartX2} y2={capStartY2} />
+                  <line x1={capEndX1} y1={capEndY1} x2={capEndX2} y2={capEndY2} />
+                </g>
+              );
+            });
+          })}
+
+        {/* Hovered-stripe solid outline: a single closed path tracing the
+            whole stripe perimeter (one long edge forward, then the other
+            edge in reverse, joined by the two cap lines). Painted as a 2px
+            white halo with a 1px black stroke on top, in this separate pass
+            so it sits above EVERY dashed outline from the previous block. */}
+        {selection.layeringMode &&
+          hoveredLayerStripe &&
+          (() => {
+            const band = bands.find((b) => b.bandKey === hoveredLayerStripe.bandKey);
+            if (!band) return null;
+            const k = band.lines.findIndex((l) => l.id === hoveredLayerStripe.lineId);
+            if (k < 0) return null;
+            const verts = band.centerline;
+            if (verts.length < 2) return null;
+            const HALF = STOP_SIZE / 2;
+            const n = band.lines.length;
+            const stripeOffset = (k - (n - 1) / 2) * STOP_SIZE;
+            const segsA = emitOffsetSegments(verts, band.radius, stripeOffset + HALF);
+            const segsB = emitOffsetSegments(verts, band.radius, stripeOffset - HALF);
+            if (segsA.length === 0 || segsB.length === 0) return null;
+            const fmt = (v: number) => v.toFixed(2);
+            const cmdFwd = (s: OffsetPathSegment) => {
+              if (s.kind === 'line') return ` L ${fmt(s.to.x)} ${fmt(s.to.y)}`;
+              const sweep = s.sign === 1 ? 1 : 0;
+              return ` A ${fmt(s.r)} ${fmt(s.r)} 0 0 ${sweep} ${fmt(s.to.x)} ${fmt(s.to.y)}`;
+            };
+            // Walking segments in reverse: each arc keeps its radius but
+            // flips its sweep flag, and the endpoint becomes the start.
+            const cmdRev = (s: OffsetPathSegment) => {
+              if (s.kind === 'line') return ` L ${fmt(s.from.x)} ${fmt(s.from.y)}`;
+              const sweep = s.sign === 1 ? 0 : 1;
+              return ` A ${fmt(s.r)} ${fmt(s.r)} 0 0 ${sweep} ${fmt(s.from.x)} ${fmt(s.from.y)}`;
+            };
+            const startA = segsA[0].from;
+            let d = `M ${fmt(startA.x)} ${fmt(startA.y)}`;
+            for (const s of segsA) d += cmdFwd(s);
+            // Jump along the end cap to edge B's far end, then walk B back.
+            const endB = segsB[segsB.length - 1].to;
+            d += ` L ${fmt(endB.x)} ${fmt(endB.y)}`;
+            for (let i = segsB.length - 1; i >= 0; i--) d += cmdRev(segsB[i]);
+            d += ' Z';
+            return (
+              <g pointerEvents="none" strokeLinejoin="round" strokeLinecap="butt" fill="none">
+                <path d={d} stroke="#fff" strokeWidth={2} />
+                <path d={d} stroke="#000" strokeWidth={1} />
+              </g>
+            );
+          })()}
+
+        {/* Layering-mode overlay: small layer-number labels at the midpoint
+            of every band stripe whose layer is non-zero, plus the currently-
+            hovered stripe (which shows even when layer is 0 so the user can
+            tell what they're about to cycle from). Text color picks black /
+            white against the rendered band color. */}
+        {selection.layeringMode &&
+          bands.flatMap((band) =>
+            band.lines.map((stripeLine, k) => {
+              const line = lines[stripeLine.id];
+              if (!line) return null;
+              const layer = line.segmentLayers?.[band.pairKey] ?? 0;
+              const isHovered =
+                !!hoveredLayerStripe &&
+                hoveredLayerStripe.bandKey === band.bandKey &&
+                hoveredLayerStripe.lineId === stripeLine.id;
+              if (layer === 0 && !isHovered) return null;
+              const n = band.lines.length;
+              const offset = (k - (n - 1) / 2) * STOP_SIZE;
+              const mid = sampleOffsetPath(band.centerline, band.radius, offset, 0.5);
+              const label = layer === 0 ? '0' : layer > 0 ? `+${layer}` : `${layer}`;
+              const base = colorMap?.[stripeLine.id] ?? stripeLine.color;
+              const textColor = legibleTextOn(base);
+              return (
+                <text
+                  key={'layer:' + band.bandKey + ':' + stripeLine.id}
+                  x={mid.p.x}
+                  y={mid.p.y}
+                  fontSize={9}
+                  fontWeight={700}
+                  fill={textColor}
+                  textAnchor="middle"
+                  dominantBaseline="central"
+                  pointerEvents="none"
+                  style={{ userSelect: 'none' }}
+                >
+                  {label}
+                </text>
+              );
+            }),
+          )}
       </svg>
 
       {selection.selectedRouteBulletIds.length === 1 &&

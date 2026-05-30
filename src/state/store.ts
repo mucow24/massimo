@@ -133,6 +133,12 @@ interface DocState extends MapDoc {
     toStationId: StationId,
     style: LineStyle,
   ) => void;
+  cycleSegmentLayer: (
+    lineId: LineId,
+    fromStationId: StationId,
+    toStationId: StationId,
+    dir: -1 | 1,
+  ) => void;
   setLineDefaultDotShape: (lineId: LineId, shape: DotShape) => void;
   deleteLine: (id: LineId) => void;
   moveLineInOrder: (id: LineId, dir: -1 | 1) => void;
@@ -252,6 +258,8 @@ export const useDoc = create<DocState>()(
           set((s) => T.reorderLineStations(s, lineId, stations)),
         setLineSegmentStyle: (lineId, fromStationId, toStationId, style) =>
           set((s) => T.setLineSegmentStyle(s, lineId, fromStationId, toStationId, style)),
+        cycleSegmentLayer: (lineId, fromStationId, toStationId, dir) =>
+          set((s) => T.cycleSegmentLayer(s, lineId, fromStationId, toStationId, dir)),
         setLineDefaultDotShape: (lineId, shape) =>
           set((s) => T.setLineDefaultDotShape(s, lineId, shape)),
         deleteLine: (id) => set((s) => T.deleteLine(s, id)),
@@ -538,6 +546,11 @@ interface SelectionState {
   // anchor used by the popover when length === 1.
   placingLabel: boolean;
   selectedLabelIds: string[];
+  // Layering mode: while true, hovering a band stripe lightens it and shows
+  // its current layer; clicking cycles the per-segment layer (+1, or -1 with
+  // shift) on that line. Exclusive with every other placement / creation
+  // mode (toggling any of them off clears this one and vice versa).
+  layeringMode: boolean;
   // When true, edits made via the StationInspector (stop layout + label)
   // mirror to all directly-connected stations whose unrotated stop layouts
   // are identical. Resets to false whenever a different station is selected.
@@ -586,6 +599,7 @@ interface SelectionState {
   addLabelsToSelection: (ids: string[]) => void;
   xorLabelsToSelection: (ids: string[]) => void;
   setPlacingLabel: (placing: boolean) => void;
+  setLayeringMode: (on: boolean) => void;
 }
 
 export const useSelection = create<SelectionState>((set, get) => ({
@@ -611,6 +625,7 @@ export const useSelection = create<SelectionState>((set, get) => ({
   selectedTransferId: null,
   placingLabel: false,
   selectedLabelIds: [],
+  layeringMode: false,
   mirrorMatching: false,
   toolMode: 'arrow',
   spaceHeld: false,
@@ -745,6 +760,7 @@ export const useSelection = create<SelectionState>((set, get) => ({
       selectedLineId: id ?? get().selectedLineId,
       creatingLineTag: id === null ? get().creatingLineTag : false,
       lineTagHoverPreview: id === null ? get().lineTagHoverPreview : null,
+      layeringMode: id === null ? get().layeringMode : false,
     }),
   setInsertAfterIndex: (idx) => set({ insertAfterIndex: idx }),
   setPlacingStation: (placing) =>
@@ -755,6 +771,7 @@ export const useSelection = create<SelectionState>((set, get) => ({
       selectedLineTagId: placing ? null : get().selectedLineTagId,
       lineTagHoverPreview: placing ? null : get().lineTagHoverPreview,
       placingLabel: placing ? false : get().placingLabel,
+      layeringMode: placing ? false : get().layeringMode,
     }),
   setHoveredStation: (id) => set({ hoveredStationId: id }),
   setHoveredLineStop: (v) => set({ hoveredLineStop: v }),
@@ -798,6 +815,7 @@ export const useSelection = create<SelectionState>((set, get) => ({
       selectedLineId: creating ? null : get().selectedLineId,
       selectedLineTagId: creating ? null : get().selectedLineTagId,
       lineTagHoverPreview: creating ? get().lineTagHoverPreview : null,
+      layeringMode: creating ? false : get().layeringMode,
     }),
   setLineTagHoverPreview: (preview) => set({ lineTagHoverPreview: preview }),
   selectRouteBullet: (id) =>
@@ -879,6 +897,7 @@ export const useSelection = create<SelectionState>((set, get) => ({
       selectedRouteBulletIds: creating ? [] : get().selectedRouteBulletIds,
       selectedLabelIds: creating ? [] : get().selectedLabelIds,
       selectedTransferId: creating ? null : get().selectedTransferId,
+      layeringMode: creating ? false : get().layeringMode,
     }),
   selectTransfer: (id) =>
     set({
@@ -915,6 +934,7 @@ export const useSelection = create<SelectionState>((set, get) => ({
       selectedRouteBulletIds: creating ? [] : get().selectedRouteBulletIds,
       selectedLabelIds: creating ? [] : get().selectedLabelIds,
       selectedTransferId: creating ? null : get().selectedTransferId,
+      layeringMode: creating ? false : get().layeringMode,
     }),
   setTransferAnchor: (anchor) => set({ transferAnchor: anchor }),
   setMirrorMatching: (on) => set({ mirrorMatching: on }),
@@ -1004,5 +1024,27 @@ export const useSelection = create<SelectionState>((set, get) => ({
       selectedTransferId: placing ? null : get().selectedTransferId,
       selectedLabelIds: placing ? [] : get().selectedLabelIds,
       lineTagHoverPreview: placing ? null : get().lineTagHoverPreview,
+      layeringMode: placing ? false : get().layeringMode,
+    }),
+  setLayeringMode: (on) =>
+    set({
+      layeringMode: on,
+      // Entering layering mode clears every other mode + selection so the
+      // canvas surface is dedicated to layer cycling.
+      placingStation: on ? false : get().placingStation,
+      placingLabel: on ? false : get().placingLabel,
+      creatingLineTag: on ? false : get().creatingLineTag,
+      creatingRouteBullet: on ? false : get().creatingRouteBullet,
+      creatingTransfer: on ? false : get().creatingTransfer,
+      transferAnchor: on ? null : get().transferAnchor,
+      appendingToLineId: on ? null : get().appendingToLineId,
+      insertAfterIndex: on ? null : get().insertAfterIndex,
+      selectedStationIds: on ? [] : get().selectedStationIds,
+      selectedLineId: on ? null : get().selectedLineId,
+      selectedLineTagId: on ? null : get().selectedLineTagId,
+      selectedRouteBulletIds: on ? [] : get().selectedRouteBulletIds,
+      selectedTransferId: on ? null : get().selectedTransferId,
+      selectedLabelIds: on ? [] : get().selectedLabelIds,
+      lineTagHoverPreview: on ? null : get().lineTagHoverPreview,
     }),
 }));

@@ -99,7 +99,8 @@ export function useRectSelect(
       sel.creatingLineTag ||
       sel.creatingRouteBullet ||
       sel.creatingTransfer ||
-      sel.appendingToLineId !== null
+      sel.appendingToLineId !== null ||
+      sel.layeringMode
     )
       return;
     const target = e.target as Element | null;

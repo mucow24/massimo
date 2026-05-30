@@ -14,7 +14,19 @@ export function EditingBanner() {
   const creatingRouteBullet = useSelection((s) => s.creatingRouteBullet);
   const creatingTransfer = useSelection((s) => s.creatingTransfer);
   const transferAnchor = useSelection((s) => s.transferAnchor);
+  const layeringMode = useSelection((s) => s.layeringMode);
 
+  if (layeringMode) {
+    return (
+      <>
+        <div className="append-frame" style={{ borderColor: '#c46b00' }} />
+        <div className="append-banner placing" style={{ background: '#c46b00' }}>
+          Layering mode — click a line segment to cycle its layer, shift-click to decrement. Press
+          Esc to exit.
+        </div>
+      </>
+    );
+  }
   if (placingStation) {
     return (
       <>
