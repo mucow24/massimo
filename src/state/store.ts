@@ -133,6 +133,12 @@ interface DocState extends MapDoc {
     toStationId: StationId,
     style: LineStyle,
   ) => void;
+  cycleSegmentLayer: (
+    lineId: LineId,
+    fromStationId: StationId,
+    toStationId: StationId,
+    dir: -1 | 1,
+  ) => void;
   setLineDefaultDotShape: (lineId: LineId, shape: DotShape) => void;
   deleteLine: (id: LineId) => void;
   moveLineInOrder: (id: LineId, dir: -1 | 1) => void;
@@ -252,6 +258,8 @@ export const useDoc = create<DocState>()(
           set((s) => T.reorderLineStations(s, lineId, stations)),
         setLineSegmentStyle: (lineId, fromStationId, toStationId, style) =>
           set((s) => T.setLineSegmentStyle(s, lineId, fromStationId, toStationId, style)),
+        cycleSegmentLayer: (lineId, fromStationId, toStationId, dir) =>
+          set((s) => T.cycleSegmentLayer(s, lineId, fromStationId, toStationId, dir)),
         setLineDefaultDotShape: (lineId, shape) =>
           set((s) => T.setLineDefaultDotShape(s, lineId, shape)),
         deleteLine: (id) => set((s) => T.deleteLine(s, id)),
@@ -496,7 +504,19 @@ export type UiMode =
       anchor: { stationId: StationId; lineId: LineId | null } | null;
     }
   | { kind: 'placing-label' }
-  | { kind: 'appending-to-line'; lineId: LineId; insertAfterIndex: number | null };
+  | { kind: 'appending-to-line'; lineId: LineId; insertAfterIndex: number | null }
+  | { kind: 'layering' };
+
+/**
+ * UiMode kinds where a right-click does NOT cancel the mode. Lives next to
+ * the {@link UiMode} union so adding a new mode that wants right-click for
+ * its own gesture (layering uses it to decrement a segment's layer) is one
+ * edit, not a hunt across handlers.
+ */
+export const RIGHT_CLICK_PASSTHROUGH_MODES: ReadonlySet<UiMode['kind']> = new Set([
+  'idle',
+  'layering',
+]);
 
 // Selection fields that get wiped whenever the user enters a non-idle uiMode
 // or picks a primary selection of a different type. Centralized so adding a

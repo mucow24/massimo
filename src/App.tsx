@@ -2,7 +2,13 @@ import { useEffect } from 'react';
 import { Toolbar } from './components/Toolbar';
 import { Sidebar } from './components/Sidebar';
 import { MapCanvas } from './components/MapCanvas';
-import { beginHistoryGroup, cancelAppendMode, useDoc, useSelection } from './state/store';
+import {
+  beginHistoryGroup,
+  cancelAppendMode,
+  RIGHT_CLICK_PASSTHROUGH_MODES,
+  useDoc,
+  useSelection,
+} from './state/store';
 import { readClipboard, writeClipboard } from './model/clipboard';
 
 export default function App() {
@@ -168,6 +174,11 @@ export default function App() {
         setToolMode('hand');
         return;
       }
+      if (!inForm && !mod && (e.key === 'l' || e.key === 'L')) {
+        const cur = useSelection.getState().uiMode;
+        setUiMode(cur.kind === 'layering' ? { kind: 'idle' } : { kind: 'layering' });
+        return;
+      }
       if (!inForm && e.key === ' ' && !e.repeat) {
         e.preventDefault();
         setSpaceHeld(true);
@@ -199,12 +210,15 @@ export default function App() {
   useEffect(() => {
     const onContextMenu = (e: globalThis.MouseEvent) => {
       const sel = useSelection.getState();
-      if (sel.uiMode.kind !== 'idle') {
-        e.preventDefault();
-        e.stopPropagation();
-        cancelAppendMode();
-        sel.setUiMode({ kind: 'idle' });
-      }
+      // Modes in RIGHT_CLICK_PASSTHROUGH_MODES own the right-click gesture
+      // (layering uses it to decrement a segment's layer); everything else
+      // exits on right-click. The set lives next to UiMode in the store so
+      // a new variant declares its right-click policy in one place.
+      if (RIGHT_CLICK_PASSTHROUGH_MODES.has(sel.uiMode.kind)) return;
+      e.preventDefault();
+      e.stopPropagation();
+      cancelAppendMode();
+      sel.setUiMode({ kind: 'idle' });
     };
     document.addEventListener('contextmenu', onContextMenu, true);
     return () => document.removeEventListener('contextmenu', onContextMenu, true);

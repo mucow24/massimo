@@ -615,8 +615,14 @@ export function StationView({
   // the same dot as the already-committed anchor (a no-op self-transfer
   // that the click handler would reject).
   const inTagMode = selection.uiMode.kind === 'creating-line-tag';
+  const inLayerMode = selection.uiMode.kind === 'layering';
   const inHandMode = selection.toolMode === 'hand' || selection.spaceHeld;
   const inTransferPick = selection.uiMode.kind === 'creating-transfer';
+  // Layering mode disables all station interaction the same way tag mode does
+  // — clicks/drags pass straight through hit areas to the underlying band
+  // stripes so any pixel of a line segment is reachable, even where it sits
+  // beneath a station's hitbox.
+  const inHitlessMode = inTagMode || inLayerMode;
   const onTransferPointerMove = (e: React.PointerEvent) => {
     const lineId = closestStopLineId(station, e);
     if (!lineId) return;
@@ -635,10 +641,10 @@ export function StationView({
     if (cur && cur.stationId === station.id) selection.setHoveredLineStop(null);
   };
   const stationInteractionHandlers = {
-    onPointerDown: inTagMode ? undefined : onPointerDown,
-    onClick: inTagMode || inHandMode ? undefined : onClick,
-    onDoubleClick: inTagMode || inHandMode ? undefined : onDoubleClick,
-    onContextMenu: inTagMode ? undefined : onContextMenu,
+    onPointerDown: inHitlessMode ? undefined : onPointerDown,
+    onClick: inHitlessMode || inHandMode ? undefined : onClick,
+    onDoubleClick: inHitlessMode || inHandMode ? undefined : onDoubleClick,
+    onContextMenu: inHitlessMode ? undefined : onContextMenu,
     onPointerMove: inTransferPick ? onTransferPointerMove : undefined,
     onPointerLeave: inTransferPick ? onTransferPointerLeave : undefined,
   };
@@ -648,7 +654,7 @@ export function StationView({
     const hitProps = {
       ...stationInteractionHandlers,
       fill: 'transparent',
-      pointerEvents: inTagMode ? ('none' as const) : ('all' as const),
+      pointerEvents: inHitlessMode ? ('none' as const) : ('all' as const),
     };
     return (
       <g
@@ -820,7 +826,7 @@ export function StationView({
     // logic the bg layer uses. `pointer-events: none` in tag-mode keeps
     // band-stripe hover working when the cursor passes over a dot.
     <g
-      pointerEvents={inTagMode ? 'none' : undefined}
+      pointerEvents={inHitlessMode ? 'none' : undefined}
       style={{ cursor: stationCursor }}
       {...stationInteractionHandlers}
     >

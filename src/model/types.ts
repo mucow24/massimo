@@ -125,6 +125,11 @@ export interface Line {
   // Missing key ⇒ 'solid'. Setters delete the key when called with 'solid'
   // so the default is never stored.
   segmentStyles?: Record<string, LineStyle>;
+  // Per-segment z-layer override keyed by canonical pair-key. Missing key ⇒ 0.
+  // Higher = closer to the viewer. Uncapped — the layering UI just ±1's the
+  // value, so it can drift as far positive or negative as the user clicks.
+  // Setters delete the key when value lands on 0 so the default isn't stored.
+  segmentLayers?: Record<string, number>;
   // Glyph used for stops on this line whose own `dotShape` is unset. Missing
   // ⇒ `'filled-black'` (the historical default). Setters drop the field when
   // called with `'filled-black'` so the default is never stored.
