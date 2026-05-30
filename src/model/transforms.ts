@@ -1127,6 +1127,18 @@ export function setStationLabelBold(doc: MapDoc, stationId: StationId, bold: boo
   return { ...doc, stations: { ...doc.stations, [stationId]: rest } };
 }
 
+export function setStationLabelItalic(doc: MapDoc, stationId: StationId, italic: boolean): MapDoc {
+  const cur = doc.stations[stationId];
+  if (!cur) return doc;
+  if (!!cur.labelItalic === italic) return doc;
+  if (italic) {
+    return { ...doc, stations: { ...doc.stations, [stationId]: { ...cur, labelItalic: true } } };
+  }
+  // `false` is the default; omit the field so persisted state stays clean.
+  const { labelItalic: _gone, ...rest } = cur;
+  return { ...doc, stations: { ...doc.stations, [stationId]: rest } };
+}
+
 export function setLabelItalic(doc: MapDoc, i: boolean): MapDoc {
   if (i === doc.labelItalic) return doc;
   return { ...doc, labelItalic: i };

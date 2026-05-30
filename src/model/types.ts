@@ -106,6 +106,11 @@ export interface Station {
   // clamped at Black (900). Omitted/false means "use the doc's labelWeight
   // as-is".
   labelBold?: boolean;
+  // Per-station italic flag. When true, this station's name renders italic
+  // even if the doc's global `labelItalic` is off. Combined with the global
+  // flag (OR): the label is italic when either is set. Omitted/false means
+  // "use the doc's labelItalic as-is".
+  labelItalic?: boolean;
 }
 
 // Visual style for a single segment of a line. `solid` is the historical
