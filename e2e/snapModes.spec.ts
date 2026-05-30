@@ -156,9 +156,12 @@ test.describe('Snap modes wired through to the engine', () => {
     };
     await seedAndOpen(page, seed);
 
-    // Turn line off; turn all on.
+    // Turn line off; cycle "Snap to all" to its final "All directions" state
+    // (off → horizontal → vertical → diagonal → all = 4 clicks).
     await page.getByRole('button', { name: 'Snap to line' }).click();
-    await page.getByRole('button', { name: 'Snap to all' }).click();
+    const allBtn = page.getByRole('button', { name: 'Snap to all' });
+    for (let i = 0; i < 4; i++) await allBtn.click();
+    await expect(allBtn).toHaveAttribute('data-snap-state', 'all');
 
     const b = await stationCenter(page, 'B');
     // Drag B toward x ≈ 200 (close enough to engage the snap-to-all
@@ -174,5 +177,84 @@ test.describe('Snap modes wired through to the engine', () => {
     // Expect x=200 exactly (vertical alignment with X), y≈0.
     expect(pos.x).toBeCloseTo(200, 0);
     expect(Math.abs(pos.y)).toBeLessThan(2);
+  });
+
+  // X sits at (200, -300): vertically aligned with B's column (x=200) but NOT
+  // horizontally aligned (different y). So "Vertical only" should snap B's x
+  // to 200, while "Horizontal only" should leave it alone.
+  const verticalOnlySeed: Seed = {
+    stations: [
+      { id: 'X', name: 'X', x: 200, y: -300, stops: [{ lineId: 'LX', row: 0, col: 0 }] },
+      { id: 'B', name: 'B', x: 0, y: 0, stops: [{ lineId: 'LB', row: 0, col: 0 }] },
+    ],
+    lines: [
+      { id: 'LX', service: 'X', color: '#0039A6', stations: ['X'] },
+      { id: 'LB', service: 'B', color: '#A00033', stations: ['B'] },
+    ],
+  };
+
+  test('Snap-to-all Horizontal-only ignores a vertical alignment', async ({ page }) => {
+    await seedAndOpen(page, verticalOnlySeed);
+    await page.getByRole('button', { name: 'Snap to line' }).click();
+    // One click: off → horizontal.
+    const allBtn = page.getByRole('button', { name: 'Snap to all' });
+    await allBtn.click();
+    await expect(allBtn).toHaveAttribute('data-snap-state', 'horizontal');
+
+    const b = await stationCenter(page, 'B');
+    await page.mouse.move(b.x, b.y);
+    await page.mouse.down();
+    await page.mouse.move(b.x + 198, b.y, { steps: 5 });
+    await page.mouse.up();
+
+    const pos = await stationWorldPos(page, 'B');
+    // Vertical alignment with X is ignored in horizontal-only mode — x is NOT
+    // pulled to 200.
+    expect(pos.x).toBeCloseTo(198, 0);
+  });
+
+  test('Snap-to-all Vertical-only snaps a vertical alignment', async ({ page }) => {
+    await seedAndOpen(page, verticalOnlySeed);
+    await page.getByRole('button', { name: 'Snap to line' }).click();
+    // Two clicks: off → horizontal → vertical.
+    const allBtn = page.getByRole('button', { name: 'Snap to all' });
+    await allBtn.click();
+    await allBtn.click();
+    await expect(allBtn).toHaveAttribute('data-snap-state', 'vertical');
+
+    const b = await stationCenter(page, 'B');
+    await page.mouse.move(b.x, b.y);
+    await page.mouse.down();
+    await page.mouse.move(b.x + 198, b.y, { steps: 5 });
+    await page.mouse.up();
+
+    const pos = await stationWorldPos(page, 'B');
+    expect(pos.x).toBeCloseTo(200, 0);
+  });
+
+  test('Snap-to-grid Horizontal-only snaps Y to the grid, leaves X free', async ({ page }) => {
+    // A lone station with no neighbors — nothing aligns, so the grid fallback
+    // is the only thing that can move it.
+    const loneSeed: Seed = {
+      stations: [{ id: 'B', name: 'B', x: 0, y: 0, stops: [{ lineId: 'LB', row: 0, col: 0 }] }],
+      lines: [{ id: 'LB', service: 'B', color: '#A00033', stations: ['B'] }],
+    };
+    await seedAndOpen(page, loneSeed);
+    await page.getByRole('button', { name: 'Snap to line' }).click();
+    // One click: off → horizontal (locks Y).
+    const gridBtn = page.getByRole('button', { name: 'Snap to grid' });
+    await gridBtn.click();
+    await expect(gridBtn).toHaveAttribute('data-snap-state', 'horizontal');
+
+    const b = await stationCenter(page, 'B');
+    // Drag +23 x, +27 y. Horizontal grid locks Y → 30; X stays ~23.
+    await page.mouse.move(b.x, b.y);
+    await page.mouse.down();
+    await page.mouse.move(b.x + 23, b.y + 27, { steps: 5 });
+    await page.mouse.up();
+
+    const pos = await stationWorldPos(page, 'B');
+    expect(pos.y).toBeCloseTo(30, 0);
+    expect(pos.x).toBeCloseTo(23, 0);
   });
 });
