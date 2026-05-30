@@ -12,7 +12,18 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
+  # Aggregate gate. Branch protection requires a check named `ci`; this job
+  # succeeds only once both checks and e2e pass, keeping that required-check
+  # name valid without coupling it to the individual job IDs.
   ci:
+    needs: [checks, e2e]
+    runs-on: ubuntu-latest
+    steps:
+      - run: echo "all required jobs passed"
+
+  # Fast checks: lint, format, unit tests, build. Runs in parallel with the
+  # e2e job below on its own runner.
+  checks:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -40,6 +51,21 @@ jobs:
 
       - name: Build
         run: npm run build
+
+  # End-to-end tests on a second runner. The Chromium download + Playwright
+  # run is the long pole, so isolating it here roughly halves wall-clock time
+  # on green runs.
+  e2e:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+
+      - run: npm install --no-audit --no-fund
 
       # Cache the Chromium download so we don't pay the ~120 MB hit on
       # every CI run. Keyed by package-lock — bumping @playwright/test

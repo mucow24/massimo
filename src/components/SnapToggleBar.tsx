@@ -2,13 +2,13 @@ import {
   SliderIcon,
   SpaceEvenlyHorizontallyIcon,
   RulerHorizontalIcon,
-  AllSidesIcon,
-  DividerHorizontalIcon,
-  DividerVerticalIcon,
+  MoveIcon,
+  WidthIcon,
+  HeightIcon,
   SizeIcon,
   GridIcon,
-  RowsIcon,
-  ColumnsIcon,
+  ViewHorizontalIcon,
+  ViewVerticalIcon,
 } from '@radix-ui/react-icons';
 import { useSnapPrefs } from '../state/snapPrefs';
 import { useSelection } from '../state/store';
@@ -70,11 +70,11 @@ const TOGGLES: ToggleSpec[] = [
     label: 'Snap to all',
     hint: 'Align with any stop; click to cycle the direction',
     states: [
-      { value: 'off', Icon: AllSidesIcon, name: 'Off' },
-      { value: 'horizontal', Icon: DividerHorizontalIcon, name: 'Horizontal only' },
-      { value: 'vertical', Icon: DividerVerticalIcon, name: 'Vertical only' },
+      { value: 'off', Icon: MoveIcon, name: 'Off' },
+      { value: 'horizontal', Icon: WidthIcon, name: 'Horizontal only' },
+      { value: 'vertical', Icon: HeightIcon, name: 'Vertical only' },
       { value: 'diagonal', Icon: SizeIcon, name: 'Diagonal only' },
-      { value: 'all', Icon: AllSidesIcon, name: 'All directions' },
+      { value: 'all', Icon: MoveIcon, name: 'All directions' },
     ],
   },
   {
@@ -83,8 +83,8 @@ const TOGGLES: ToggleSpec[] = [
     hint: 'Snap to grid lines; click to cycle the direction',
     states: [
       { value: 'off', Icon: GridIcon, name: 'Off' },
-      { value: 'horizontal', Icon: RowsIcon, name: 'Horizontal lines' },
-      { value: 'vertical', Icon: ColumnsIcon, name: 'Vertical lines' },
+      { value: 'horizontal', Icon: ViewHorizontalIcon, name: 'Horizontal lines' },
+      { value: 'vertical', Icon: ViewVerticalIcon, name: 'Vertical lines' },
       { value: 'both', Icon: GridIcon, name: 'Both' },
     ],
     appliesToLabels: true,

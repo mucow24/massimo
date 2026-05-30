@@ -257,4 +257,29 @@ test.describe('Snap modes wired through to the engine', () => {
     expect(pos.y).toBeCloseTo(30, 0);
     expect(pos.x).toBeCloseTo(23, 0);
   });
+
+  test('Line + grid compose: line locks the perpendicular while grid steps along the axis', async ({
+    page,
+  }) => {
+    // Vertical line A(0,-100), B(0,0), C(0,100) — axis at B is +y. Line is on
+    // by default; turn grid to 'horizontal' (locks Y). Dragging B should stay
+    // glued to the line (x→0) while the free along-axis coordinate (y) snaps
+    // to the grid — proving the two modes work together, not one-or-the-other.
+    await seedAndOpen(page, verticalLine);
+    const gridBtn = page.getByRole('button', { name: 'Snap to grid' });
+    await gridBtn.click(); // off → horizontal (locks Y)
+    await expect(gridBtn).toHaveAttribute('data-snap-state', 'horizontal');
+
+    const b = await stationCenter(page, 'B');
+    // Drag +5 x, +23 y. Line snap pulls x back to 0 (perpendicular lock);
+    // horizontal grid snaps the along-axis y from 23 → 20.
+    await page.mouse.move(b.x, b.y);
+    await page.mouse.down();
+    await page.mouse.move(b.x + 5, b.y + 23, { steps: 5 });
+    await page.mouse.up();
+
+    const pos = await stationWorldPos(page, 'B');
+    expect(pos.x).toBeCloseTo(0, 0);
+    expect(pos.y).toBeCloseTo(20, 0);
+  });
 });
