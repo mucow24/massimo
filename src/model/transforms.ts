@@ -918,6 +918,34 @@ export function setLineSegmentStyle(
   return { ...doc, lines: { ...doc.lines, [id]: { ...cur, segmentStyles: next } } };
 }
 
+// Bump this segment's layer by `dir`. Uncapped — keep clicking to drive the
+// value further positive or negative. Layer 0 is the default and is never
+// stored, so when the bump lands on 0 the entry is dropped.
+export function cycleSegmentLayer(
+  doc: MapDoc,
+  id: LineId,
+  fromStationId: StationId,
+  toStationId: StationId,
+  dir: -1 | 1,
+): MapDoc {
+  const cur = doc.lines[id];
+  if (!cur) return doc;
+  const key = pairKeyOf(fromStationId, toStationId);
+  const prev = cur.segmentLayers ?? {};
+  const curLayer = prev[key] ?? 0;
+  const nextLayer = curLayer + dir;
+  let next: Record<string, number>;
+  if (nextLayer === 0) {
+    if (!(key in prev)) return doc;
+    const { [key]: _gone, ...rest } = prev;
+    next = rest;
+  } else {
+    if (prev[key] === nextLayer) return doc;
+    next = { ...prev, [key]: nextLayer };
+  }
+  return { ...doc, lines: { ...doc.lines, [id]: { ...cur, segmentLayers: next } } };
+}
+
 export function toggleStationOnLine(
   doc: MapDoc,
   lineId: LineId,
@@ -1415,26 +1443,46 @@ function pruneOrphanLineTags(doc: MapDoc): MapDoc {
   return changed ? { ...doc, lineTags: next } : doc;
 }
 
-// Drop entries from `line.segmentStyles` whose pair-key no longer corresponds
-// to a station-pair adjacency on this line. Returns the input line unchanged
-// if `segmentStyles` is missing/empty or every key still maps to a real edge.
+// Drop entries from `line.segmentStyles` and `line.segmentLayers` whose
+// pair-key no longer corresponds to a station-pair adjacency on this line.
+// Returns the input line unchanged if both maps are missing/empty or every
+// key still maps to a real edge.
 function pruneOrphanSegmentStyles(line: Line): Line {
   const styles = line.segmentStyles;
-  if (!styles) return line;
+  const layers = line.segmentLayers;
+  if (!styles && !layers) return line;
   const validKeys = new Set<string>();
   for (let i = 0; i < line.stations.length - 1; i++) {
     validKeys.add(pairKeyOf(line.stations[i], line.stations[i + 1]));
   }
   let changed = false;
-  const next: Record<string, LineStyle> = {};
-  for (const key of Object.keys(styles)) {
-    if (validKeys.has(key)) {
-      next[key] = styles[key];
-    } else {
+  let nextStyles = styles;
+  if (styles) {
+    const filtered: Record<string, LineStyle> = {};
+    let stylesChanged = false;
+    for (const key of Object.keys(styles)) {
+      if (validKeys.has(key)) filtered[key] = styles[key];
+      else stylesChanged = true;
+    }
+    if (stylesChanged) {
+      nextStyles = filtered;
       changed = true;
     }
   }
-  return changed ? { ...line, segmentStyles: next } : line;
+  let nextLayers = layers;
+  if (layers) {
+    const filtered: Record<string, number> = {};
+    let layersChanged = false;
+    for (const key of Object.keys(layers)) {
+      if (validKeys.has(key)) filtered[key] = layers[key];
+      else layersChanged = true;
+    }
+    if (layersChanged) {
+      nextLayers = filtered;
+      changed = true;
+    }
+  }
+  return changed ? { ...line, segmentStyles: nextStyles, segmentLayers: nextLayers } : line;
 }
 
 function isLineEdge(line: Line, a: StationId, b: StationId): boolean {

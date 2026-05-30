@@ -4,7 +4,7 @@ import { useViewportStore } from '../state/viewportStore';
 import { parse, serialize } from '../model/serialize';
 import { DEFAULT_DOC } from '../model/transforms';
 import { Menu, MenuItem, MenuSeparator } from './Menu';
-import { CursorArrowIcon, FrameIcon, HandIcon } from '@radix-ui/react-icons';
+import { CursorArrowIcon, FrameIcon, HandIcon, LayersIcon } from '@radix-ui/react-icons';
 import { SnapToggleBar } from './SnapToggleBar';
 import { OptionsPopover } from './OptionsPopover';
 
@@ -170,6 +170,24 @@ export function Toolbar() {
           onClick={() => setGridVisible(!gridVisible)}
         >
           <FrameIcon />
+        </button>
+        <button
+          type="button"
+          className={'tool-btn' + (selection.uiMode.kind === 'layering' ? ' active' : '')}
+          title={
+            selection.uiMode.kind === 'layering'
+              ? 'Exit layering mode (Esc)'
+              : 'Layering mode: click segments to cycle layer (shift to decrement)'
+          }
+          aria-label="Toggle layering mode"
+          aria-pressed={selection.uiMode.kind === 'layering'}
+          onClick={() =>
+            selection.setUiMode(
+              selection.uiMode.kind === 'layering' ? { kind: 'idle' } : { kind: 'layering' },
+            )
+          }
+        >
+          <LayersIcon />
         </button>
       </div>
       <input

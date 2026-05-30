@@ -16,6 +16,7 @@ interface Props {
   onLineHover?: (lineId: LineId, e: React.PointerEvent<SVGPathElement>) => void;
   onLineLeave?: (lineId: LineId, e: React.PointerEvent<SVGPathElement>) => void;
   onLineClick?: (lineId: LineId, e: React.MouseEvent<SVGPathElement>) => void;
+  onLineContextMenu?: (lineId: LineId, e: React.MouseEvent<SVGPathElement>) => void;
   // Default-mode click handler: selects a line by clicking its stripe.
   onLineSelect?: (lineId: LineId, e: React.MouseEvent<SVGPathElement>) => void;
   // Optional per-line color override (e.g. for desaturating non-selected lines).
@@ -29,6 +30,7 @@ export function SegmentBand({
   onLineHover,
   onLineLeave,
   onLineClick,
+  onLineContextMenu,
   onLineSelect,
   colorMap,
 }: Props) {
@@ -54,6 +56,9 @@ export function SegmentBand({
       )}
       <path
         d={d}
+        data-band-stripe
+        data-band-key={spec.bandKey}
+        data-line-id={lineId}
         fill="none"
         stroke={stroke}
         strokeWidth={14}
@@ -72,6 +77,9 @@ export function SegmentBand({
             : selectable
               ? (e) => onLineSelect!(lineId, e)
               : undefined
+        }
+        onContextMenu={
+          interactive && onLineContextMenu ? (e) => onLineContextMenu(lineId, e) : undefined
         }
       />
     </Fragment>

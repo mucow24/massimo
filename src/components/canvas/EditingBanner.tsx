@@ -4,7 +4,7 @@ import { legibleTextOn } from '../../util/color';
 /**
  * Renders the colored top banner + 4-side frame around the map area when in
  * placing-station or appending-to-line mode. Color matches the active mode
- * (blue for placing, the line's color for appending).
+ * (blue for placing, the line's color for appending, orange for layering).
  */
 export function EditingBanner() {
   const lines = useDoc((s) => s.lines);
@@ -62,6 +62,16 @@ export function EditingBanner() {
         </>
       );
     }
+    case 'layering':
+      return (
+        <>
+          <div className="append-frame" style={{ borderColor: '#c46b00' }} />
+          <div className="append-banner placing" style={{ background: '#c46b00' }}>
+            Layering mode — click a line segment to cycle its layer, shift-click to decrement. Press
+            Esc to exit.
+          </div>
+        </>
+      );
     case 'placing-label':
     case 'idle':
       return null;

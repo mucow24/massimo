@@ -1,9 +1,9 @@
 import { Line, LineId, LineStyle, Station, StationId, StopCell } from '../model/types';
 import { pairKeyOf } from '../model/pairKey';
 import { Vec2, sub, len, norm, dot } from './vec';
-import { route } from './router';
+import { offsetFilletPath, route } from './router';
 import { rotateBy, STOP_SIZE, stopCenterAt, travelDirLocal } from './orientation';
-import { offsetFilletPath } from './router';
+import { LAYER_WEIGHT, segmentPriority, stationLayerFor } from '../model/layerPriority';
 
 export interface SegmentBandSpec {
   pairKey: string;
@@ -123,12 +123,42 @@ export function dirIndex8(v: Vec2): number {
  * AND grid-adjacent cells along the perpendicular-to-travel axis at both
  * stations. Bands render with stroke-width = STOP_SIZE per line, perpendicular
  * offsets `(k − (n−1)/2) * STOP_SIZE`.
+ *
+ * Composes {@link buildBandGeometry} (depends only on stations + line
+ * topology) and {@link assignLinePriorities} (depends on `lineOrder` and
+ * `segmentLayers`). Callers that want geometry to survive priority-only
+ * changes (e.g. layering mode's outline / label memos) call the two halves
+ * directly instead of this convenience wrapper.
  */
 export function buildBands(
   stations: Record<StationId, Station>,
   lines: Record<LineId, Line>,
   curveRadius: number,
   lineOrder: LineId[] = [],
+): SegmentBandSpec[] {
+  const bands = buildBandGeometry(stations, lines, curveRadius);
+  assignLinePriorities(bands, lines, lineOrder);
+  return bands;
+}
+
+/**
+ * Geometric half of {@link buildBands}: groups lines by canonical
+ * station-pair, buckets by world travel axis, merges perpendicular-
+ * adjacency runs, and computes the routed centerline + per-stripe paths.
+ *
+ * Reads only `stations`, `line.stations`, `line.segmentStyles`, and
+ * `curveRadius`. None of those change on a per-segment layer cycle, so a
+ * caller that memoizes this output gets a stable bands reference across
+ * layer edits — that's how the layering-mode caches stay valid without
+ * a content-hash workaround.
+ *
+ * Returns bands with `linePriorities: []`; call {@link assignLinePriorities}
+ * to fill those in before consuming the array for paint order.
+ */
+export function buildBandGeometry(
+  stations: Record<StationId, Station>,
+  lines: Record<LineId, Line>,
+  curveRadius: number,
 ): SegmentBandSpec[] {
   // 1. Collect per-line segments keyed by sorted station pair, with stop cells.
   const groups: Record<string, SegInfo[]> = {};
@@ -278,17 +308,34 @@ export function buildBands(
     }
   }
 
-  // 3. Tag each stripe in each band with its own line's lineIndex priority.
-  // The actual sort happens in buildOrderedRenderables, where each stripe is
-  // emitted as its own renderable so a perpendicular line at intermediate
-  // depth can interleave between the stripes of an interlined band.
+  return bands;
+}
+
+/**
+ * Priority half of {@link buildBands}: fills `band.linePriorities` from the
+ * global `lineOrder` and each line's per-segment layer override. Mutates
+ * the bands in place — the geometry array's reference is preserved, which
+ * is what the layering-mode memos rely on.
+ *
+ * Reading split: depends on `lineOrder` and `lines[id].segmentLayers`, but
+ * NOT on the geometric fields buildBandGeometry reads.
+ */
+export function assignLinePriorities(
+  bands: SegmentBandSpec[],
+  lines: Record<LineId, Line>,
+  lineOrder: LineId[],
+): void {
+  // The actual back-to-front sort happens in buildOrderedRenderables, where
+  // each stripe is emitted as its own renderable so a perpendicular line at
+  // intermediate depth can interleave between the stripes of an interlined
+  // band.
   const lineIndex = buildLineIndex(lineOrder, lines);
   const fallback = Object.keys(lineIndex).length;
   for (const band of bands) {
-    band.linePriorities = band.lines.map((l) => lineIndex[l.id] ?? fallback);
+    band.linePriorities = band.lines.map((l) =>
+      segmentPriority(lines[l.id], band.pairKey, lineIndex[l.id] ?? fallback),
+    );
   }
-
-  return bands;
 }
 
 // Flatten bands + markers into a single list of per-stripe renderables,
@@ -373,6 +420,8 @@ export function buildStopMarkers(
       const worldTangent = rotateBy(travelDirLocal(cell.orientation), station.rotation);
       const rotationDeg = (Math.atan2(worldTangent.y, worldTangent.x) * 180) / Math.PI;
       const style = stationMarkerStyle(line, station.id);
+      const stationLayer = stationLayerFor(line, station.id);
+      const basePriority = lineIndex[cell.lineId] ?? fallback;
       markers.push({
         cx,
         cy,
@@ -380,7 +429,7 @@ export function buildStopMarkers(
         lineId: cell.lineId,
         stationId: station.id,
         rotationDeg,
-        priority: lineIndex[cell.lineId] ?? fallback,
+        priority: basePriority - stationLayer * LAYER_WEIGHT,
         style,
         outward: style === 'dashed' ? terminusOutwardFromBand(line, station.id, bandByPair) : null,
       });

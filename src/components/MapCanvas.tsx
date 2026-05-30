@@ -20,12 +20,13 @@ import {
 import { measureTextLabel } from '../geometry/textMeasure';
 import { TEXT_LABEL_HIT_PAD } from '../geometry/stationBoundary';
 import {
-  buildBands,
+  assignLinePriorities,
+  buildBandGeometry,
   buildOrderedRenderables,
   buildStopMarkers,
   SegmentBandSpec,
+  stopPosWorld,
 } from '../geometry/interlining';
-import { stopPosWorld } from '../geometry/interlining';
 import { resolveDotShape } from '../model/transforms';
 import { STOP_SIZE, travelDirLocal, rotateBy } from '../geometry/orientation';
 import { BandWarning, SegmentBand } from './SegmentBand';
@@ -41,6 +42,8 @@ import { WarningToasts } from './canvas/WarningToasts';
 import { EditingBanner } from './canvas/EditingBanner';
 import { SnapGuides } from './canvas/SnapGuides';
 import { LineTagsLayer } from './canvas/LineTagsLayer';
+import { LayeringDashedOutlines, LayeringHoverOutline } from './canvas/LayeringOutlines';
+import { LayerNumberLabels } from './canvas/LayerNumberLabels';
 import { StationPlacingPreview } from './canvas/StationPlacingPreview';
 import { LabelPlacingPreview } from './canvas/LabelPlacingPreview';
 import { RouteBulletView } from './RouteBulletView';
@@ -63,6 +66,11 @@ const DIM_COLOR = '#000000';
 const DIM_ALPHA = 0.75;
 // 1 = full color, 0 = greyscale.
 const OTHER_LINE_SATURATION = 0.5;
+// Annotations (station labels, route bullets, text labels, line tags) drop to
+// this opacity while layering mode is on, so the focus is on the band layers
+// + their outlines. Transfers stay at full opacity (they're part of the
+// route-network reading, not background annotation).
+const LAYERING_FADE_OPACITY = 0.25;
 const BULLET_SNAP_TOLERANCE = 10;
 
 export function MapCanvas() {
@@ -72,6 +80,7 @@ export function MapCanvas() {
   const lineOrder = useDoc((s) => s.lineOrder);
   const addStation = useDoc((s) => s.addStation);
   const addLineTag = useDoc((s) => s.addLineTag);
+  const cycleSegmentLayer = useDoc((s) => s.cycleSegmentLayer);
   const routeBullets = useDoc((s) => s.routeBullets);
   const addRouteBullet = useDoc((s) => s.addRouteBullet);
   const moveRouteBullet = useDoc((s) => s.moveRouteBullet);
@@ -102,10 +111,35 @@ export function MapCanvas() {
   const bulletSelectedIds = rectSelect.previewBulletIds ?? selection.selectedRouteBulletIds;
   const labelSelectedIds = rectSelect.previewLabelIds ?? selection.selectedLabelIds;
 
-  const bands = useMemo(
-    () => buildBands(stations, lines, curveRadius, lineOrder),
-    [stations, lines, curveRadius, lineOrder],
+  // Geometry hash for buildBandGeometry's inputs (stations + line topology +
+  // segmentStyles). EXCLUDES segmentLayers so layer cycles don't churn the
+  // geometry — `bandsGeometry`'s reference stays stable across them, which
+  // is what the layering-mode memos rely on. The hash itself runs once per
+  // render but is cheap (a string of stable shapes).
+  const linesGeometrySig = useMemo(() => {
+    const parts: string[] = [];
+    for (const id of Object.keys(lines)) {
+      const ln = lines[id];
+      parts.push(id, ln.stations.join('.'), Object.keys(ln.segmentStyles ?? {}).join('.'));
+    }
+    return parts.join('|');
+  }, [lines]);
+
+  const bandsGeometry = useMemo(
+    () => buildBandGeometry(stations, lines, curveRadius),
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [stations, linesGeometrySig, curveRadius],
   );
+
+  const bands = useMemo(() => {
+    // assignLinePriorities mutates in place; clone so memoized priorities
+    // don't leak between the two memo levels (matters once a future caller
+    // wants the geometry array without priorities — for layering-mode
+    // outlines we pass `bandsGeometry` directly).
+    const out = bandsGeometry.map((b) => ({ ...b }));
+    assignLinePriorities(out, lines, lineOrder);
+    return out;
+  }, [bandsGeometry, lines, lineOrder]);
 
   // When mirror-matching mode is on for the selected station, highlight the
   // adjacent stations whose unrotated stop layouts are identical. Mirror
@@ -206,6 +240,21 @@ export function MapCanvas() {
   if (placingStation !== prevPlacing) {
     setPrevPlacing(placingStation);
     setPreviewName(placingStation ? randomStationName() : null);
+  }
+
+  // Hovered stripe in layering mode: (bandKey, lineId) of the band stripe the
+  // pointer is currently over. Drives the lightened-color preview + the small
+  // layer-number text rendered at the stripe's midpoint. Cleared whenever we
+  // leave layering mode (via the render-pattern below).
+  const [hoveredLayerStripe, setHoveredLayerStripe] = useState<{
+    bandKey: string;
+    lineId: LineId;
+  } | null>(null);
+  const inLayeringMode = selection.uiMode.kind === 'layering';
+  const [prevLayering, setPrevLayering] = useState(inLayeringMode);
+  if (inLayeringMode !== prevLayering) {
+    setPrevLayering(inLayeringMode);
+    if (!inLayeringMode && hoveredLayerStripe) setHoveredLayerStripe(null);
   }
 
   const onPointerDown = (e: React.PointerEvent) => {
@@ -598,6 +647,11 @@ export function MapCanvas() {
       selection.setUiMode({ kind: 'idle' });
       return;
     }
+    if (mode.kind === 'layering') {
+      // Click on background while in layering mode = exit the mode.
+      selection.setUiMode({ kind: 'idle' });
+      return;
+    }
     if (mode.kind === 'appending-to-line') {
       cancelAppendMode();
       return;
@@ -678,8 +732,38 @@ export function MapCanvas() {
     },
   });
 
+  // Hover/click handlers for layering mode. Hovering a stripe records the
+  // (band, line) pair so the renderer can draw the layer-number overlay +
+  // black outline; left-click bumps the per-segment layer up by 1 (down with
+  // shift), right-click bumps it down by 1.
+  const makeLayerHandlers = (spec: SegmentBandSpec) => ({
+    onLineHover: (lineId: LineId) => {
+      setHoveredLayerStripe((cur) =>
+        cur && cur.bandKey === spec.bandKey && cur.lineId === lineId
+          ? cur
+          : { bandKey: spec.bandKey, lineId },
+      );
+    },
+    onLineLeave: (lineId: LineId) => {
+      setHoveredLayerStripe((cur) =>
+        cur && cur.bandKey === spec.bandKey && cur.lineId === lineId ? null : cur,
+      );
+    },
+    onLineClick: (lineId: LineId, e: React.MouseEvent) => {
+      e.stopPropagation();
+      const [fromCanon, toCanon] = spec.pairKey.split('|');
+      cycleSegmentLayer(lineId, fromCanon, toCanon, e.shiftKey ? -1 : 1);
+    },
+    onLineContextMenu: (lineId: LineId, e: React.MouseEvent) => {
+      e.preventDefault();
+      e.stopPropagation();
+      const [fromCanon, toCanon] = spec.pairKey.split('|');
+      cycleSegmentLayer(lineId, fromCanon, toCanon, -1);
+    },
+  });
+
   return (
-    <div className="canvas-host">
+    <div className="canvas-host" data-uimode={selection.uiMode.kind}>
       <EditingBanner />
       <svg
         ref={svgRef}
@@ -747,7 +831,7 @@ export function MapCanvas() {
                 key={'s:' + r.band.bandKey + ':' + stripeLineId}
                 spec={r.band}
                 stripeIndex={r.stripeIndex}
-                interactive={selection.uiMode.kind === 'creating-line-tag'}
+                interactive={selection.uiMode.kind === 'creating-line-tag' || inLayeringMode}
                 colorMap={colorMap}
                 onLineSelect={
                   inHandMode
@@ -757,7 +841,11 @@ export function MapCanvas() {
                         selection.selectLine(lineId);
                       }
                 }
-                {...(selection.uiMode.kind === 'creating-line-tag' ? makeBandHandlers(r.band) : {})}
+                {...(selection.uiMode.kind === 'creating-line-tag'
+                  ? makeBandHandlers(r.band)
+                  : inLayeringMode
+                    ? makeLayerHandlers(r.band)
+                    : {})}
               />
             );
           }
@@ -790,21 +878,39 @@ export function MapCanvas() {
         ))}
 
         {/* station labels: rendered after bg/wash so a selected station's
-            orange wash never paints over a neighbor's label. */}
-        {Object.values(stations).map((st) => (
-          <StationView
-            key={st.id + ':label'}
-            station={st}
+            orange wash never paints over a neighbor's label. Faded in
+            layering mode so the focus stays on the band layers. */}
+        <g opacity={inLayeringMode ? LAYERING_FADE_OPACITY : 1}>
+          {Object.values(stations).map((st) => (
+            <StationView
+              key={st.id + ':label'}
+              station={st}
+              lines={lines}
+              zoom={view.viewport.zoom}
+              onStartDrag={drag.onStartDrag}
+              layer="label"
+            />
+          ))}
+        </g>
+
+        {/* Layering-mode dashed outlines: a soft 1.5px dashed footprint per
+            non-hovered band stripe, painted ABOVE the colored bands but
+            BELOW transfers + station dots so those keep their visual
+            primacy. The hovered solid outline + the layer-number labels
+            still paint at the very end so they stay on top. */}
+        {inLayeringMode && (
+          <LayeringDashedOutlines
+            bands={bandsGeometry}
             lines={lines}
-            zoom={view.viewport.zoom}
-            onStartDrag={drag.onStartDrag}
-            layer="label"
+            hovered={hoveredLayerStripe}
           />
-        ))}
+        )}
 
         {/* Transfers: user-styled lines connecting two dots. Rendered BEFORE
             the station dots so the dots paint on top — a transfer never
-            obscures the dot it's connecting. */}
+            obscures the dot it's connecting. Stay at full opacity in
+            layering mode (they ride between line stops so they're part of
+            the route-network reading, not background annotation). */}
         <TransferLayer
           transfers={transfers}
           stations={stations}
@@ -870,33 +976,37 @@ export function MapCanvas() {
         />
 
         {/* Route bullets: rendered before the dim so they fade with the
-            rest of the map when a line is selected. */}
-        {Object.values(routeBullets).map((b) => (
-          <RouteBulletView
-            key={b.id}
-            bullet={b}
-            lines={lines}
-            selected={bulletSelectedIds.includes(b.id)}
-            onPointerDown={onBulletPointerDown}
-            onClick={onBulletClick}
-            onContextMenu={onBulletContextMenu}
-          />
-        ))}
+            rest of the map when a line is selected. Faded in layering mode. */}
+        <g opacity={inLayeringMode ? LAYERING_FADE_OPACITY : 1}>
+          {Object.values(routeBullets).map((b) => (
+            <RouteBulletView
+              key={b.id}
+              bullet={b}
+              lines={lines}
+              selected={bulletSelectedIds.includes(b.id)}
+              onPointerDown={onBulletPointerDown}
+              onClick={onBulletClick}
+              onContextMenu={onBulletContextMenu}
+            />
+          ))}
+        </g>
 
         {/* Text labels: free-floating annotations on top of stations + bullets
             but beneath the selection stroke ring. Dimmed alongside the rest
-            of the map when a line is selected. */}
-        {Object.values(textLabels).map((g) => (
-          <LabelView
-            key={g.id}
-            label={g}
-            selected={labelSelectedIds.includes(g.id)}
-            layer="bg"
-            onPointerDown={onLabelPointerDown}
-            onClick={onLabelClick}
-            onContextMenu={onLabelContextMenu}
-          />
-        ))}
+            of the map when a line is selected. Faded in layering mode. */}
+        <g opacity={inLayeringMode ? LAYERING_FADE_OPACITY : 1}>
+          {Object.values(textLabels).map((g) => (
+            <LabelView
+              key={g.id}
+              label={g}
+              selected={labelSelectedIds.includes(g.id)}
+              layer="bg"
+              onPointerDown={onLabelPointerDown}
+              onClick={onLabelClick}
+              onContextMenu={onLabelContextMenu}
+            />
+          ))}
+        </g>
 
         {/* Debug highlight: dim overlay + re-painted selected line on top.
             Painted after dots so other lines' stop dots can't punch through
@@ -1218,8 +1328,12 @@ export function MapCanvas() {
           </g>
         )}
 
-        {/* Line tags: in-band labels that ride each line's stripe. */}
-        <LineTagsLayer bands={bands} zoom={view.viewport.zoom} svgRef={svgRef} />
+        {/* Line tags: in-band labels that ride each line's stripe. Faded
+            in layering mode so the tag text doesn't compete with the
+            outline + layer-number overlays. */}
+        <g opacity={inLayeringMode ? LAYERING_FADE_OPACITY : 1}>
+          <LineTagsLayer bands={bands} zoom={view.viewport.zoom} svgRef={svgRef} />
+        </g>
 
         {/* Match-stroke: gray outline on each station whose layout matches
             the selected station while mirror mode is on. Drawn beneath the
@@ -1288,6 +1402,24 @@ export function MapCanvas() {
         {/* Snap guides: rendered last so the dotted lines + measurement
             labels sit on top of line tags and everything else. */}
         <SnapGuides guides={[...drag.snapGuides, ...bulletSnapGuides]} zoom={view.viewport.zoom} />
+
+        {/* Layering-mode top overlays: the hovered-stripe solid outline +
+            small layer-number labels. Painted at the very end of the SVG
+            so they stay on top of station dots, transfers, and every other
+            line — the click target and the layer number stay readable
+            regardless of how busy the canvas is underneath. The dashed
+            footprint is rendered earlier (above) so dots and transfers
+            paint over it. */}
+        {inLayeringMode && (
+          <>
+            <LayeringHoverOutline
+              bands={bandsGeometry}
+              lines={lines}
+              hovered={hoveredLayerStripe}
+            />
+            <LayerNumberLabels bands={bandsGeometry} lines={lines} hovered={hoveredLayerStripe} />
+          </>
+        )}
       </svg>
 
       {selection.selectedRouteBulletIds.length === 1 &&

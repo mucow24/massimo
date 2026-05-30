@@ -6,6 +6,7 @@ import {
   buildStopMarkers,
   stopPosWorld,
 } from './interlining';
+import { LAYER_WEIGHT } from '../model/layerPriority';
 import { STOP_SIZE } from './orientation';
 import { makeDoc, makeLine, makeStation, makeStop, stationWithStop } from '../test/fixtures';
 import type { LineStyle } from '../model/types';
@@ -646,6 +647,118 @@ describe('buildOrderedRenderables — cross-band layering', () => {
     // then D, then C — so D paints over A and C paints over D.
     expect(aPos).toBeLessThan(dPos);
     expect(dPos).toBeLessThan(cPos);
+  });
+});
+
+describe('buildBands — segmentLayer priority', () => {
+  it('a layer-+1 stripe paints in front of a layer-0 stripe regardless of lineOrder', () => {
+    // Two crossing lines, A globally behind B. If we bump A's only segment
+    // to layer +1, A's stripe priority should now be smaller (front-most)
+    // than B's despite A being later in lineOrder.
+    const doc = makeDoc({
+      stations: [
+        stationWithStop('s1', 'A', { x: 0, y: 0 }),
+        stationWithStop('s2', 'A', { x: 0, y: 100 }),
+        stationWithStop('s3', 'B', { x: -50, y: 50 }, { orientation: 'auto-horizontal' }),
+        stationWithStop('s4', 'B', { x: 50, y: 50 }, { orientation: 'auto-horizontal' }),
+      ],
+      lines: [
+        makeLine({ id: 'A', stations: ['s1', 's2'], segmentLayers: { 's1|s2': 1 } }),
+        makeLine({ id: 'B', stations: ['s3', 's4'] }),
+      ],
+      lineOrder: ['B', 'A'], // B in front by default
+    });
+    const bands = buildBands(doc.stations, doc.lines, 24, doc.lineOrder);
+    const aBand = bands.find((b) => b.lines.some((l) => l.id === 'A'))!;
+    const bBand = bands.find((b) => b.lines.some((l) => l.id === 'B'))!;
+    // Smaller priority = front-most. A at layer +1 wins despite lineOrder.
+    expect(aBand.linePriorities[0]).toBeLessThan(bBand.linePriorities[0]);
+  });
+
+  it('a layer-(-1) stripe paints behind a layer-0 stripe', () => {
+    const doc = makeDoc({
+      stations: [
+        stationWithStop('s1', 'A', { x: 0, y: 0 }),
+        stationWithStop('s2', 'A', { x: 0, y: 100 }),
+        stationWithStop('s3', 'B', { x: -50, y: 50 }, { orientation: 'auto-horizontal' }),
+        stationWithStop('s4', 'B', { x: 50, y: 50 }, { orientation: 'auto-horizontal' }),
+      ],
+      lines: [
+        makeLine({ id: 'A', stations: ['s1', 's2'], segmentLayers: { 's1|s2': -1 } }),
+        makeLine({ id: 'B', stations: ['s3', 's4'] }),
+      ],
+      lineOrder: ['A', 'B'], // A in front by default
+    });
+    const bands = buildBands(doc.stations, doc.lines, 24, doc.lineOrder);
+    const aBand = bands.find((b) => b.lines.some((l) => l.id === 'A'))!;
+    const bBand = bands.find((b) => b.lines.some((l) => l.id === 'B'))!;
+    expect(aBand.linePriorities[0]).toBeGreaterThan(bBand.linePriorities[0]);
+  });
+
+  it('a bare line (no segmentLayers map) keeps its pre-layering priority', () => {
+    const doc = makeDoc({
+      stations: [
+        stationWithStop('s1', 'A', { x: 0, y: 0 }),
+        stationWithStop('s2', 'A', { x: 0, y: 100 }),
+      ],
+      lines: [makeLine({ id: 'A', stations: ['s1', 's2'] })],
+    });
+    const bands = buildBands(doc.stations, doc.lines, 24, doc.lineOrder);
+    expect(bands[0].linePriorities[0]).toBe(0);
+  });
+});
+
+describe('buildStopMarkers — segmentLayer priority', () => {
+  it('a marker for a wholly-negative line stays behind a layer-0 crossing', () => {
+    // Reproduces the prototype-iteration bug: stationLayerFor seeded at 0
+    // used to clamp a negative-only line's marker priority to 0, so its
+    // dots painted ON TOP of a layer-0 line crossing right through the
+    // station. With the seed-at-first-incident fix, the marker priority is
+    // strictly greater than the layer-0 stripe's priority (further back).
+    const doc = makeDoc({
+      stations: [
+        stationWithStop('s1', 'A', { x: 0, y: 0 }),
+        stationWithStop('s2', 'A', { x: 0, y: 100 }),
+        stationWithStop('s3', 'A', { x: 0, y: 200 }),
+        stationWithStop('s4', 'B', { x: -50, y: 100 }, { orientation: 'auto-horizontal' }),
+        stationWithStop('s5', 'B', { x: 50, y: 100 }, { orientation: 'auto-horizontal' }),
+      ],
+      lines: [
+        makeLine({
+          id: 'A',
+          stations: ['s1', 's2', 's3'],
+          segmentLayers: { 's1|s2': -1, 's2|s3': -1 },
+        }),
+        makeLine({ id: 'B', stations: ['s4', 's5'] }),
+      ],
+    });
+    const bands = buildBands(doc.stations, doc.lines, 24, doc.lineOrder);
+    const markers = buildStopMarkers(doc.stations, doc.lines, doc.lineOrder, bands);
+    const aMid = markers.find((m) => m.stationId === 's2' && m.lineId === 'A')!;
+    const bBand = bands.find((b) => b.lines.some((l) => l.id === 'B'))!;
+    // Marker further back than B's stripe → larger priority (paints earlier).
+    expect(aMid.priority).toBeGreaterThan(bBand.linePriorities[0]);
+  });
+
+  it('a marker is bumped to the front-most incident layer (MAX rule)', () => {
+    const doc = makeDoc({
+      stations: [
+        stationWithStop('s1', 'A', { x: 0, y: 0 }),
+        stationWithStop('s2', 'A', { x: 0, y: 100 }),
+        stationWithStop('s3', 'A', { x: 0, y: 200 }),
+      ],
+      lines: [
+        makeLine({
+          id: 'A',
+          stations: ['s1', 's2', 's3'],
+          segmentLayers: { 's1|s2': 0, 's2|s3': 2 }, // mixed at s2
+        }),
+      ],
+    });
+    const markers = buildStopMarkers(doc.stations, doc.lines, doc.lineOrder);
+    const m = markers.find((mk) => mk.stationId === 's2' && mk.lineId === 'A')!;
+    // lineIdx for A is 0 (only line), bumped by -2 * LAYER_WEIGHT.
+    expect(m.priority).toBe(0 - 2 * LAYER_WEIGHT);
   });
 });
 

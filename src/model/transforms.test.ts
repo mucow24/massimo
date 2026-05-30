@@ -1866,6 +1866,92 @@ describe('removeStationFromLine — segmentStyles cascade', () => {
   });
 });
 
+describe('cycleSegmentLayer', () => {
+  const docWithLine = () =>
+    makeDoc({
+      stations: [
+        makeStation({ id: 's1', stops: [makeStop('L1')] }),
+        makeStation({ id: 's2', stops: [makeStop('L1')] }),
+        makeStation({ id: 's3', stops: [makeStop('L1')] }),
+      ],
+      lines: [makeLine({ id: 'L1', stations: ['s1', 's2', 's3'] })],
+    });
+
+  it('writes a non-zero layer under the canonical pair-key on +1', () => {
+    const next = T.cycleSegmentLayer(docWithLine(), 'L1', 's1', 's2', 1);
+    expect(next.lines.L1.segmentLayers).toEqual({ 's1|s2': 1 });
+  });
+
+  it('writes a negative layer on -1', () => {
+    const next = T.cycleSegmentLayer(docWithLine(), 'L1', 's1', 's2', -1);
+    expect(next.lines.L1.segmentLayers).toEqual({ 's1|s2': -1 });
+  });
+
+  it('canonicalizes argument order (b, a) -> a|b', () => {
+    const next = T.cycleSegmentLayer(docWithLine(), 'L1', 's2', 's1', 1);
+    expect(next.lines.L1.segmentLayers).toEqual({ 's1|s2': 1 });
+  });
+
+  it('accumulates: repeated +1 climbs uncapped', () => {
+    let doc = docWithLine();
+    for (let i = 0; i < 5; i++) doc = T.cycleSegmentLayer(doc, 'L1', 's1', 's2', 1);
+    expect(doc.lines.L1.segmentLayers).toEqual({ 's1|s2': 5 });
+  });
+
+  it('returning to 0 deletes the entry rather than storing it', () => {
+    let doc = T.cycleSegmentLayer(docWithLine(), 'L1', 's1', 's2', 1);
+    doc = T.cycleSegmentLayer(doc, 'L1', 's1', 's2', -1);
+    expect(doc.lines.L1.segmentLayers).toEqual({});
+  });
+
+  it('preserves entries on other segments when one segment changes', () => {
+    let doc = T.cycleSegmentLayer(docWithLine(), 'L1', 's1', 's2', 1);
+    doc = T.cycleSegmentLayer(doc, 'L1', 's2', 's3', -1);
+    expect(doc.lines.L1.segmentLayers).toEqual({
+      's1|s2': 1,
+      's2|s3': -1,
+    });
+  });
+
+  it('silently no-ops on unknown line id', () => {
+    const doc = docWithLine();
+    expect(T.cycleSegmentLayer(doc, 'ghost', 's1', 's2', 1)).toEqual(doc);
+  });
+});
+
+describe('removeStationFromLine — segmentLayers cascade', () => {
+  it('drops segment-layer entries whose corridor is no longer an edge', () => {
+    let doc = makeDoc({
+      stations: [
+        makeStation({ id: 's1', stops: [makeStop('L1')] }),
+        makeStation({ id: 's2', stops: [makeStop('L1')] }),
+        makeStation({ id: 's3', stops: [makeStop('L1')] }),
+      ],
+      lines: [makeLine({ id: 'L1', stations: ['s1', 's2', 's3'] })],
+    });
+    doc = T.cycleSegmentLayer(doc, 'L1', 's1', 's2', 1);
+    doc = T.cycleSegmentLayer(doc, 'L1', 's2', 's3', -1);
+    const next = T.removeStationFromLine(doc, 'L1', 1);
+    // After removing s2, only s1-s3 remains as an edge; both prior keys break.
+    expect(next.lines.L1.segmentLayers).toEqual({});
+  });
+
+  it('keeps segment-layer entries whose corridor remains an edge', () => {
+    let doc = makeDoc({
+      stations: [
+        makeStation({ id: 's1', stops: [makeStop('L1')] }),
+        makeStation({ id: 's2', stops: [makeStop('L1')] }),
+        makeStation({ id: 's3', stops: [makeStop('L1')] }),
+      ],
+      lines: [makeLine({ id: 'L1', stations: ['s1', 's2', 's3'] })],
+    });
+    doc = T.cycleSegmentLayer(doc, 'L1', 's1', 's2', 1);
+    doc = T.cycleSegmentLayer(doc, 'L1', 's1', 's2', 1);
+    const next = T.removeStationFromLine(doc, 'L1', 2);
+    expect(next.lines.L1.segmentLayers).toEqual({ 's1|s2': 2 });
+  });
+});
+
 describe('addTextLabel', () => {
   it('inserts a label with documented defaults at the given coords', () => {
     const doc0 = makeDoc({});

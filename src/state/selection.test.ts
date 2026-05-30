@@ -300,6 +300,7 @@ const NON_IDLE_MODES: UiMode[] = [
   { kind: 'creating-transfer', anchor: null },
   { kind: 'placing-label' },
   { kind: 'appending-to-line', lineId: 'L1' as LineId, insertAfterIndex: null },
+  { kind: 'layering' },
 ];
 
 describe('uiMode transitions', () => {
