@@ -13,7 +13,7 @@ beforeEach(() => {
     hoveredStationId: null,
     selectedStationIds: [],
     selectedLineId: null,
-    appendingToLineId: null,
+    uiMode: { kind: 'idle' },
   });
 });
 
@@ -280,8 +280,7 @@ describe('<StationView /> — transfer-pick hover highlight', () => {
     });
     useSelection.setState({
       ...useSelection.getState(),
-      creatingTransfer: true,
-      transferAnchor: null,
+      uiMode: { kind: 'creating-transfer', anchor: null },
       hoveredLineStop: null,
     });
     const { container } = renderBg(station);
@@ -299,8 +298,10 @@ describe('<StationView /> — transfer-pick hover highlight', () => {
     });
     useSelection.setState({
       ...useSelection.getState(),
-      creatingTransfer: true,
-      transferAnchor: { stationId: 's1', lineId: 'L1' },
+      uiMode: {
+        kind: 'creating-transfer',
+        anchor: { stationId: 's1', lineId: 'L1' },
+      },
       hoveredLineStop: null,
     });
     const { container } = renderBg(stationB);
@@ -318,8 +319,10 @@ describe('<StationView /> — transfer-pick hover highlight', () => {
     });
     useSelection.setState({
       ...useSelection.getState(),
-      creatingTransfer: true,
-      transferAnchor: { stationId: 's1', lineId: 'L1' },
+      uiMode: {
+        kind: 'creating-transfer',
+        anchor: { stationId: 's1', lineId: 'L1' },
+      },
       hoveredLineStop: null,
     });
     const { container } = renderBg(station);
