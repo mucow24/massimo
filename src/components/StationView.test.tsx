@@ -2,6 +2,7 @@ import { describe, it, expect, beforeEach, vi } from 'vitest';
 import { render } from '@testing-library/react';
 import { StationView } from './StationView';
 import { useDoc, useSelection } from '../state/store';
+import { useViewportStore } from '../state/viewportStore';
 import { DEFAULT_DOC } from '../model/transforms';
 import { makeLine, makeStation, makeStop } from '../test/fixtures';
 import { STOP_SIZE } from '../geometry/orientation';
@@ -15,6 +16,7 @@ beforeEach(() => {
     selectedLineId: null,
     uiMode: { kind: 'idle' },
   });
+  useViewportStore.setState({ darkMode: false });
 });
 
 function renderLabel() {
@@ -29,6 +31,18 @@ function renderLabel() {
   if (!text) throw new Error('expected <text> for station label');
   return { text, station };
 }
+
+describe('<StationView /> — label color follows the theme', () => {
+  it('paints the label near-black in light mode', () => {
+    useViewportStore.setState({ darkMode: false });
+    expect(renderLabel().text.getAttribute('fill')).toBe('#111111');
+  });
+
+  it('paints the label white in dark mode', () => {
+    useViewportStore.setState({ darkMode: true });
+    expect(renderLabel().text.getAttribute('fill')).toBe('#ffffff');
+  });
+});
 
 describe('<StationView /> — label styling', () => {
   it('uses the document defaults: fontSize 12, weight 400, no italic', () => {

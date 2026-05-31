@@ -1,6 +1,6 @@
 import { Fragment } from 'react';
-import { SegmentBandSpec } from '../geometry/interlining';
-import type { LineId } from '../model/types';
+import { resolveSegmentStyle, SegmentBandSpec } from '../geometry/interlining';
+import type { Line, LineId } from '../model/types';
 import { lineStyleStrokeAttrs, lineStyleUnderlayAttrs } from './HatchPatterns';
 
 interface Props {
@@ -19,6 +19,10 @@ interface Props {
   onLineContextMenu?: (lineId: LineId, e: React.MouseEvent<SVGPathElement>) => void;
   // Default-mode click handler: selects a line by clicking its stripe.
   onLineSelect?: (lineId: LineId, e: React.MouseEvent<SVGPathElement>) => void;
+  // Live line map. Color and per-segment style are resolved from here at
+  // render time (the spec is presentation-free), so edits repaint without a
+  // geometry rebuild.
+  lines: Record<LineId, Line>;
   // Optional per-line color override (e.g. for desaturating non-selected lines).
   colorMap?: Record<LineId, string>;
   // Gap/underlay color for non-solid styles; matches the canvas background.
@@ -34,16 +38,21 @@ export function SegmentBand({
   onLineClick,
   onLineContextMenu,
   onLineSelect,
+  lines,
   colorMap,
   underlayColor,
 }: Props) {
-  const line = spec.lines[stripeIndex];
+  const lineId = spec.lines[stripeIndex].id;
   const d = spec.paths[stripeIndex];
-  const lineId = line.id;
-  const color = colorMap?.[lineId] ?? line.color;
+  const live = lines[lineId];
+  // Resolve presentation live (spec carries only the id): desaturation
+  // override wins for color, then the line's own color; style is the
+  // per-segment resolution keyed on this band's pairKey.
+  const color = colorMap?.[lineId] ?? live.color;
+  const style = resolveSegmentStyle(live, spec.pairKey);
   const selectable = !interactive && !!onLineSelect;
-  const { stroke, strokeDasharray, strokeLinecap } = lineStyleStrokeAttrs(line.style, color);
-  const underlay = lineStyleUnderlayAttrs(line.style, underlayColor);
+  const { stroke, strokeDasharray, strokeLinecap } = lineStyleStrokeAttrs(style, color);
+  const underlay = lineStyleUnderlayAttrs(style, underlayColor);
   return (
     <Fragment>
       {underlay && (

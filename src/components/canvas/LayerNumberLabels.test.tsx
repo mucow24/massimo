@@ -6,8 +6,8 @@ import type { Line, LineId } from '../../model/types';
 import { makeLine } from '../../test/fixtures';
 import * as placement from '../../geometry/layerLabelPlacement';
 
-const makeBand = (lineIds: string[], color = '#EF374B'): SegmentBandSpec => {
-  const lines = lineIds.map((id) => ({ id, color, style: 'solid' as const }));
+const makeBand = (lineIds: string[]): SegmentBandSpec => {
+  const lines = lineIds.map((id) => ({ id }));
   return {
     pairKey: 's1|s2',
     bandKey: `s1|s2#${lineIds.slice().sort().join(',')}`,
@@ -79,13 +79,16 @@ describe('<LayerNumberLabels>', () => {
   });
 
   it('picks a legible fill against the line color (white on dark, black on light)', () => {
-    const darkBand = makeBand(['A'], '#000000');
-    const lightBand = makeBand(['B'], '#ffffff');
+    // Color drives the legible-text choice and now comes from the live lines
+    // map (the spec is presentation-free), so the dark/light contrast lives
+    // on the lines, not the band fixtures.
+    const darkBand = makeBand(['A']);
+    const lightBand = makeBand(['B']);
     lightBand.pairKey = 's3|s4';
     lightBand.bandKey = `s3|s4#B`;
     const lines = {
-      A: makeLine({ id: 'A', segmentLayers: { 's1|s2': 1 } }),
-      B: makeLine({ id: 'B', segmentLayers: { 's3|s4': 1 } }),
+      A: makeLine({ id: 'A', color: '#000000', segmentLayers: { 's1|s2': 1 } }),
+      B: makeLine({ id: 'B', color: '#ffffff', segmentLayers: { 's3|s4': 1 } }),
     };
     const { container } = renderLabels([darkBand, lightBand], lines);
     const labels = container.querySelectorAll('[data-layer-number]');
@@ -115,7 +118,7 @@ describe('<LayerNumberLabels>', () => {
       bandKey: 'V',
       fromId: 's1',
       toId: 's2',
-      lines: [{ id: 'A', color: '#000000', style: 'solid' }],
+      lines: [{ id: 'A' }],
       paths: ['M0,0 L0,100'],
       warning: false,
       centerline: [
@@ -130,7 +133,7 @@ describe('<LayerNumberLabels>', () => {
       bandKey: 'H',
       fromId: 's3',
       toId: 's4',
-      lines: [{ id: 'B', color: '#000000', style: 'solid' }],
+      lines: [{ id: 'B' }],
       paths: ['M-50,50 L50,50'],
       warning: false,
       centerline: [

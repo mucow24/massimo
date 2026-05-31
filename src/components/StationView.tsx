@@ -8,7 +8,7 @@ import { stationBoundaryRectsLocal } from '../geometry/stationBoundary';
 import { pathBetweenStations } from '../model/pathSelect';
 import { bumpWeightByIndex, resolveDotShape, resolveStationLabelWeight } from '../model/transforms';
 import { legibleTextOn } from '../util/color';
-import { useViewportStore } from '../state/viewportStore';
+import { useThemeColors } from '../state/theme';
 import { StopGlyph } from './StopGlyph';
 import { stopPosWorld } from '../geometry/interlining';
 import { BASELINE_FRACTION, LINE_HEIGHT, measureTextLabel } from '../geometry/textMeasure';
@@ -329,7 +329,7 @@ export function StationView({
   highlightColor = '#fff',
 }: Props) {
   const selection = useSelection();
-  const darkMode = useViewportStore((s) => s.darkMode);
+  const labelColor = useThemeColors().label;
   const rotateStation = useDoc((s) => s.rotateStation);
   const rotateStationsAround = useDoc((s) => s.rotateStationsAround);
   const rotateItemsAround = useDoc((s) => s.rotateItemsAround);
@@ -778,7 +778,7 @@ export function StationView({
             fontWeight: renderedWeight,
             fontStyle: stationItalic ? 'italic' : undefined,
             textDecoration: selection.hoveredStationId === station.id ? 'underline' : 'none',
-            fill: darkMode ? '#fff' : '#111',
+            fill: labelColor,
             anchorX: labelAnchorX,
             anchorY: labelAnchorY,
             textAnchor: labelTextAnchor,
@@ -881,7 +881,7 @@ function NameEditor({
   onCommit: () => void;
 }) {
   const ref = useRef<HTMLTextAreaElement | null>(null);
-  const darkMode = useViewportStore((s) => s.darkMode);
+  const theme = useThemeColors();
   const [editorHeight, setEditorHeight] = useState(20);
   // Open a history group on mount. Doing this in useEffect (rather than via
   // an onFocus handler) sidesteps any uncertainty about whether the synthetic
@@ -975,8 +975,8 @@ function NameEditor({
           padding: '1px 3px',
           border: '1px solid #1a4ea8',
           borderRadius: 2,
-          background: darkMode ? '#000' : '#fff',
-          color: darkMode ? '#fff' : '#111',
+          background: theme.editorBg,
+          color: theme.editorText,
           textAlign: 'right',
           fontFamily: 'inherit',
           lineHeight: '1.2',

@@ -1,6 +1,6 @@
 import { Fragment, useEffect, useMemo, useRef, useState } from 'react';
 import { useDoc, useSelection } from '../../state/store';
-import { useViewportStore } from '../../state/viewportStore';
+import { useThemeColors } from '../../state/theme';
 import type { DotShape, Line, LineId, LineStyle } from '../../model/types';
 import { pairKeyOf } from '../../model/pairKey';
 import { resolveDotShape } from '../../model/transforms';
@@ -146,9 +146,8 @@ export function LineInspector({ id }: { id: LineId }) {
   const setDotShape = useDoc((s) => s.setDotShape);
   const setLineDefaultDotShape = useDoc((s) => s.setLineDefaultDotShape);
   const selection = useSelection();
-  const darkMode = useViewportStore((s) => s.darkMode);
   // Gap color matches the canvas so the band preview mirrors the on-canvas look.
-  const underlayColor = darkMode ? '#000000' : '#ffffff';
+  const underlayColor = useThemeColors().underlay;
   const nameField = useFieldHistory();
   const serviceField = useFieldHistory();
   const [openPickerSid, setOpenPickerSid] = useState<string | null>(null);

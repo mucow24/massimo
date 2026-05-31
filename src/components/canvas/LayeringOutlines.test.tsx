@@ -6,7 +6,7 @@ import type { Line, LineId } from '../../model/types';
 import { makeLine } from '../../test/fixtures';
 
 const makeBand = (lineIds: string[]): SegmentBandSpec => {
-  const lines = lineIds.map((id) => ({ id, color: '#EF374B', style: 'solid' as const }));
+  const lines = lineIds.map((id) => ({ id }));
   return {
     pairKey: 's1|s2',
     bandKey: `s1|s2#${lineIds.slice().sort().join(',')}`,
@@ -100,7 +100,7 @@ describe('<LayeringDashedOutlines>', () => {
       bandKey: 's1|s2#A',
       fromId: 's1',
       toId: 's2',
-      lines: [{ id: 'A', color: '#000', style: 'solid' }],
+      lines: [{ id: 'A' }],
       paths: ['M0,0 L0,100'],
       warning: false,
       centerline: [

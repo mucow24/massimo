@@ -1,6 +1,6 @@
 import type { LineId, LineStyle, StationId } from '../../model/types';
 import { useSelection } from '../../state/store';
-import { useViewportStore } from '../../state/viewportStore';
+import { useThemeColors } from '../../state/theme';
 import { HatchPatterns, lineStyleStrokeAttrs, lineStyleUnderlayAttrs } from '../HatchPatterns';
 
 interface Props {
@@ -33,9 +33,8 @@ export function SegmentStyleDivider({
   toStationId,
   onClick,
 }: Props) {
-  const darkMode = useViewportStore((s) => s.darkMode);
   // Gap color matches the canvas so the preview mirrors the on-canvas look.
-  const underlayColor = darkMode ? '#000000' : '#ffffff';
+  const underlayColor = useThemeColors().underlay;
   const { stroke, strokeDasharray } = lineStyleStrokeAttrs(style, color);
   const underlay = lineStyleUnderlayAttrs(style, underlayColor);
   const setHoveredInspectorSegment = useSelection((s) => s.setHoveredInspectorSegment);

@@ -1031,6 +1031,10 @@ input[type='range'].indeterminate {
   background: #141414;
   color: #e4e4e4;
   --ui-label-color: #c4c4c4;
+  /* Opt native UI into dark rendering: select dropdown popups, number-spinner
+     arrows, date pickers, and scrollbars within the app pick up dark chrome
+     for free, instead of staying light against the dark surfaces. */
+  color-scheme: dark;
 }
 
 .app[data-theme='dark'] .toolbar {

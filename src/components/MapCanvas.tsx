@@ -10,6 +10,7 @@ import {
 import { randomStationName } from '../state/stationNames';
 import { useSnapPrefs } from '../state/snapPrefs';
 import { useViewportStore } from '../state/viewportStore';
+import { useThemeColors } from '../state/theme';
 import {
   maybeSnapToGrid,
   snapDraggedStation,
@@ -98,10 +99,10 @@ export function MapCanvas() {
   const selection = useSelection();
   const snapModes = useSnapPrefs((s) => s.modes);
   const gridVisible = useViewportStore((s) => s.gridVisible);
-  const darkMode = useViewportStore((s) => s.darkMode);
-  // Gap/underlay color for dashed + hatched styles. Matches the canvas
+  const theme = useThemeColors();
+  // Gap/underlay color for dashed + hatched styles: matches the canvas
   // background so the "off" stripes read as empty canvas, not stale white.
-  const underlayColor = darkMode ? '#000000' : '#ffffff';
+  const underlayColor = theme.underlay;
   const highlightLineId = selection.selectedLineId;
 
   const svgRef = useRef<SVGSVGElement | null>(null);
@@ -140,24 +141,11 @@ export function MapCanvas() {
     // assignLinePriorities mutates in place; clone so memoized priorities
     // don't leak between the two memo levels (matters once a future caller
     // wants the geometry array without priorities — for layering-mode
-    // outlines we pass `bandsGeometry` directly).
-    //
-    // Also refresh each stripe's presentation (color + per-segment style)
-    // from the live `lines` map. Both are baked into the geometry at build
-    // time, but `linesGeometrySig` (and thus `bandsGeometry`) intentionally
-    // ignores presentation so color/style edits don't churn geometry — which
-    // otherwise leaves stripes painting the stale color/style until a reload.
-    // Re-deriving here (via the same `resolveSegmentStyle` the geometry uses)
-    // is cheap and keeps every stripe consumer — the main render and the
-    // selected-line highlight overlay, both reading off these bands — in sync.
-    const out = bandsGeometry.map((b) => ({
-      ...b,
-      lines: b.lines.map((l) => {
-        const live = lines[l.id];
-        if (!live) return l;
-        return { ...l, color: live.color, style: resolveSegmentStyle(live, b.pairKey) };
-      }),
-    }));
+    // outlines we pass `bandsGeometry` directly). The spec is presentation-
+    // free, so color/style aren't carried here — stripe consumers resolve
+    // them live from `lines`, which is why a color/style edit repaints
+    // without the (intentionally presentation-blind) geometry memo rebuilding.
+    const out = bandsGeometry.map((b) => ({ ...b }));
     assignLinePriorities(out, lines, lineOrder);
     return out;
   }, [bandsGeometry, lines, lineOrder]);
@@ -812,7 +800,7 @@ export function MapCanvas() {
           y={view.vbY}
           width={view.vbW}
           height={view.vbH}
-          fill={darkMode ? '#000000' : '#fafafa'}
+          fill={theme.canvasBg}
         />
 
         {gridVisible && (
@@ -853,6 +841,7 @@ export function MapCanvas() {
                 spec={r.band}
                 stripeIndex={r.stripeIndex}
                 interactive={selection.uiMode.kind === 'creating-line-tag' || inLayeringMode}
+                lines={lines}
                 colorMap={colorMap}
                 underlayColor={underlayColor}
                 onLineSelect={
@@ -1070,11 +1059,14 @@ export function MapCanvas() {
                 if (r.kind !== 'stripe') return;
                 const stripeLn = r.band.lines[r.stripeIndex];
                 if (stripeLn.id !== highlightLineId) return;
+                // Presentation resolved live from the highlighted line (the
+                // spec carries only the id); style is per-segment via pairKey.
+                const style = resolveSegmentStyle(ln, r.band.pairKey);
                 const { stroke, strokeDasharray, strokeLinecap } = lineStyleStrokeAttrs(
-                  stripeLn.style,
-                  stripeLn.color,
+                  style,
+                  ln.color,
                 );
-                const underlay = lineStyleUnderlayAttrs(stripeLn.style, underlayColor);
+                const underlay = lineStyleUnderlayAttrs(style, underlayColor);
                 const m = !!hov && hov.lineId === stripeLn.id && r.band.pairKey === hovPairKey;
                 push(
                   m,

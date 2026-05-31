@@ -1,5 +1,5 @@
 import { GRID_INTERVAL } from '../../geometry/snap';
-import { useViewportStore } from '../../state/viewportStore';
+import { useThemeColors } from '../../state/theme';
 
 interface Props {
   vbX: number;
@@ -11,10 +11,7 @@ interface Props {
 
 /** Subtle background grid; spacing matches the snap engine's GRID_INTERVAL. */
 export function Grid({ vbX, vbY, vbW, vbH, zoom }: Props) {
-  const darkMode = useViewportStore((s) => s.darkMode);
-  // Faint light lines read as a grid on black; the light theme keeps its
-  // near-white #eee.
-  const stroke = darkMode ? '#222' : '#eee';
+  const stroke = useThemeColors().grid;
   const step = GRID_INTERVAL;
   const x0 = Math.floor(vbX / step) * step;
   const y0 = Math.floor(vbY / step) * step;
