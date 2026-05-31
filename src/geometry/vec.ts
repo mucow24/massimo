@@ -21,3 +21,8 @@ export const rotate = (a: Vec2, rad: number): Vec2 => {
   const s = Math.sin(rad);
   return { x: a.x * c - a.y * s, y: a.x * s + a.y * c };
 };
+
+// Component of a unit vector along a 45° diagonal: √2/2 = 1/√2 ≈ 0.7071.
+// The single home for this constant; octolinear direction tables and snap
+// axes all reference it.
+export const SQRT2_2 = Math.SQRT1_2;

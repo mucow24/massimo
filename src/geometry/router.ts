@@ -1,7 +1,6 @@
-import { Vec2, add, sub, scale, dot, perp, len, norm } from './vec';
+import { Vec2, add, sub, scale, dot, perp, len, norm, SQRT2_2 } from './vec';
 
 const TAU = Math.PI * 2;
-const SQRT2_2 = Math.SQRT2 / 2;
 
 export const DIRS_8: Vec2[] = [
   { x: 1, y: 0 }, // 0: E

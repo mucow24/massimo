@@ -1,4 +1,4 @@
-import { Vec2 } from './vec';
+import { Vec2, SQRT2_2 } from './vec';
 import type { StopOrientation } from '../model/types';
 
 export const STOP_SIZE = 14;
@@ -8,7 +8,6 @@ export const STOP_DOT_RADIUS = STOP_SIZE * 0.28;
 export type Rotation = 0 | 1 | 2 | 3 | 4 | 5 | 6 | 7;
 
 const HALF = STOP_SIZE / 2;
-const SQRT2_2 = Math.SQRT1_2;
 
 export const rotRad = (r: Rotation) => (r * Math.PI) / 4;
 
