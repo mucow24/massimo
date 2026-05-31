@@ -564,8 +564,18 @@ function buildBandSpec(
   // boundary), the straight section before the fillet must be ≥ HALF. That
   // means at each end-corner i: r * tan(θ_i/2) ≤ edgeLen − HALF, so
   // r ≤ (edgeLen − HALF) / tan(θ_i/2). Cap centerline R to satisfy this at
-  // both ends, but never below R (the user's configured min — they'd rather
-  // see right-angle degeneracy than violate it).
+  // both ends.
+  //
+  // For a single-stripe band there are no offset stripes to keep above R, so
+  // the cap is allowed to pull the centerline below the configured R when a
+  // terminus is too cramped to fit the fillet plus the HALF run-in. Without
+  // this, a single line keeps curving inside the (axis-aligned) stop marker and
+  // stair-steps at the marker's near edge — the curve appears to meet the
+  // station at its far edge instead of running straight in from the near edge.
+  // A tighter-than-configured curve in a cramped layout reads as intentional;
+  // the stair-step reads as a bug. Multi-stripe bands keep the R floor —
+  // dropping the centerline below R there would collapse the inner stripes
+  // (the inner-stripe-respects-R trade-off; see the 5-stripe cap tests).
   const verts = result.vertices;
   const HALF = STOP_SIZE / 2;
   let capR = idealR;
@@ -588,7 +598,12 @@ function buildBandSpec(
     const toOut = norm(sub(verts[lastIdx], verts[lastIdx - 1]));
     capR = Math.min(capR, cornerCap(toEdgeLen, toIn, toOut));
   }
-  const centerlineR = Math.max(R, Math.min(idealR, capR));
+  // capR ≤ 0 means even a zero-radius fillet can't clear the marker (a terminal
+  // edge ≤ HALF) — no radius helps, so fall back to R. Otherwise a single-stripe
+  // band honors the marker-fit cap (which may be below R); multi-stripe floors
+  // at R.
+  const fit = Math.min(idealR, capR);
+  const centerlineR = n === 1 && capR > 0 ? fit : Math.max(R, fit);
 
   const paths: string[] = [];
   const linesArr = group.map((g) => ({ id: g.lineId }));
