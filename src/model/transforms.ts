@@ -1389,11 +1389,11 @@ export function updateTextLabel(
     nextPatch = { ...patch, fontSize: clamped };
   }
   let next = { ...cur, ...nextPatch };
-  // Re-anchor on the upper-left bbox corner whenever a resize-affecting
-  // property changes — text content, font size, weight, or italic. The
-  // label's (x, y) is the bbox center, so without this the visible top-
-  // left would drift on every edit. Skipped when the caller explicitly
-  // sets x or y (e.g. a drag): then the move is intentional.
+  // Re-anchor whenever a resize-affecting property changes — text content,
+  // font size, weight, or italic. The label's (x, y) is the bbox CENTER, so
+  // without this the box would grow symmetrically out of the center and drift
+  // on every edit. Skipped when the caller explicitly sets x or y (e.g. a
+  // drag): then the move is intentional.
   const resizes =
     nextPatch.text !== undefined ||
     nextPatch.fontSize !== undefined ||
@@ -1403,9 +1403,17 @@ export function updateTextLabel(
   if (resizes && !movedExplicitly) {
     const before = measureTextLabel(cur);
     const after = measureTextLabel(next);
+    const dW = after.width - before.width;
+    // Pin the edge that horizontal alignment keys off, so a width change grows
+    // the box away from that edge rather than recentering it. Otherwise editing
+    // one line of a multiline label drags its siblings sideways (each line is
+    // placed relative to that same edge). Left → left edge (+dW/2); right →
+    // right edge (-dW/2); center → the center stays put (no x shift).
+    // Vertically the block is always top-anchored, so pin the top edge.
+    const dx = next.align === 'center' ? 0 : next.align === 'right' ? -dW / 2 : dW / 2;
     next = {
       ...next,
-      x: cur.x + (after.width - before.width) / 2,
+      x: cur.x + dx,
       y: cur.y + (after.height - before.height) / 2,
     };
   }
