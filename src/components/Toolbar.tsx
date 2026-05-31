@@ -1,9 +1,18 @@
 import { useRef, useState } from 'react';
+import { flushSync } from 'react-dom';
 import { pickDocSnapshot, useDoc, useSelection, type UiMode } from '../state/store';
 import { useViewportStore } from '../state/viewportStore';
 import { parse, serialize } from '../model/serialize';
 import { DEFAULT_DOC } from '../model/transforms';
-import { Menu, MenuItem, MenuSeparator } from './Menu';
+import { themeColors } from '../state/theme';
+import {
+  downloadBlob,
+  exportCanvasPng,
+  exportCanvasSvg,
+  getCanvasSvg,
+  mapFileBasename,
+} from '../export/exportCanvas';
+import { Menu, MenuItem, MenuSeparator, SubMenu } from './Menu';
 import {
   CursorArrowIcon,
   FrameIcon,
@@ -52,7 +61,7 @@ export function Toolbar() {
   const selection = useSelection();
 
   const fileInputRef = useRef<HTMLInputElement | null>(null);
-  const [loadError, setLoadError] = useState<string | null>(null);
+  const [menuError, setMenuError] = useState<string | null>(null);
 
   // Each "Add X" menu item toggles the matching uiMode variant: clicking it
   // again (or while the variant is active) returns to idle.
@@ -94,16 +103,36 @@ export function Toolbar() {
     // from the model when a field is added.
     const json = serialize(pickDocSnapshot(useDoc.getState()));
     const blob = new Blob([json], { type: 'application/json' });
-    const url = URL.createObjectURL(blob);
-    const a = document.createElement('a');
-    const date = new Date().toISOString().slice(0, 10);
-    a.href = url;
-    a.download = `map-${date}.massimo.json`;
-    document.body.appendChild(a);
-    a.click();
-    document.body.removeChild(a);
-    URL.revokeObjectURL(url);
+    downloadBlob(blob, `${mapFileBasename()}.massimo.json`);
   };
+
+  // Export the rendered map as an image. Both share the live canvas SVG and the
+  // active theme's background; failures surface in the toolbar alert.
+  const runExport = async (fn: (svg: SVGSVGElement, bg: string) => Promise<void>) => {
+    const svg = getCanvasSvg();
+    if (!svg) {
+      setMenuError('Canvas not ready to export yet.');
+      return;
+    }
+    // A selected line desaturates the others on the live canvas; that recoloring
+    // would bake into the clone. Drop the line selection for the capture and
+    // restore it afterward so the export shows the finished map in full color
+    // regardless of what's selected. flushSync commits the repaint to the DOM
+    // synchronously, so the clone we read is guaranteed clean — no frame-timing
+    // race.
+    const prevLineId = useSelection.getState().selectedLineId;
+    try {
+      setMenuError(null);
+      if (prevLineId) flushSync(() => useSelection.getState().selectLine(null));
+      await fn(svg, themeColors(darkMode).canvasBg);
+    } catch (err) {
+      setMenuError(err instanceof Error ? err.message : 'Export failed.');
+    } finally {
+      if (prevLineId) flushSync(() => useSelection.getState().selectLine(prevLineId));
+    }
+  };
+  const onExportPng = () => void runExport(exportCanvasPng);
+  const onExportSvg = () => void runExport(exportCanvasSvg);
 
   const onLoadClick = () => fileInputRef.current?.click();
 
@@ -114,10 +143,10 @@ export function Toolbar() {
     const text = await f.text();
     const result = parse(text);
     if (!result.ok) {
-      setLoadError(result.error);
+      setMenuError(result.error);
       return;
     }
-    setLoadError(null);
+    setMenuError(null);
     selection.selectStation(null);
     selection.selectLine(null);
     selection.selectLineTag(null);
@@ -136,6 +165,10 @@ export function Toolbar() {
       <Menu label="Canvas">
         <MenuItem onClick={onSave}>Save</MenuItem>
         <MenuItem onClick={onLoadClick}>Load…</MenuItem>
+        <SubMenu label="Export">
+          <MenuItem onClick={onExportPng}>PNG</MenuItem>
+          <MenuItem onClick={onExportSvg}>SVG</MenuItem>
+        </SubMenu>
         <MenuSeparator />
         <MenuItem onClick={onClear}>Clear</MenuItem>
       </Menu>
@@ -205,14 +238,14 @@ export function Toolbar() {
         <span style={{ width: 36 }}>{(zoom * 100).toFixed(0)}%</span>
       </label>
       <button onClick={onResetView}>Reset view</button>
-      {loadError && (
+      {menuError && (
         <span
           role="alert"
           style={{ color: '#a22', marginLeft: 8 }}
-          onClick={() => setLoadError(null)}
+          onClick={() => setMenuError(null)}
           title="Click to dismiss"
         >
-          ⚠ {loadError}
+          ⚠ {menuError}
         </span>
       )}
     </div>
