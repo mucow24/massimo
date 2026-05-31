@@ -3,9 +3,9 @@ import { render } from '@testing-library/react';
 import { LabelView } from './LabelView';
 import { useDoc } from '../state/store';
 import { useViewportStore } from '../state/viewportStore';
-import { DEFAULT_DOC } from '../model/transforms';
+import { DEFAULT_DOC, updateTextLabel } from '../model/transforms';
 import { makeTextLabel } from '../test/fixtures';
-import type { Line } from '../model/types';
+import type { Line, TextLabel, TextLabelAlign } from '../model/types';
 
 const seedLine = (overrides: Partial<Line> & Pick<Line, 'id' | 'service'>): Line => ({
   id: overrides.id,
@@ -97,5 +97,48 @@ describe('<LabelView /> — inline bullets', () => {
     expect(texts).toContain('Take ');
     expect(texts).toContain(' uptown');
     expect(container.querySelectorAll('[data-inline-bullet]')).toHaveLength(1);
+  });
+});
+
+describe('<LabelView /> — editing one line never shifts a sibling line', () => {
+  // Regression: a multiline label's (x, y) is its bbox CENTER, and per-line
+  // horizontal placement keys off the shared bbox width. So a width-changing
+  // edit to one line (e.g. typing a leading space, now that whitespace counts)
+  // recenters the box and drags the *other* lines sideways. updateTextLabel's
+  // re-anchor must pin the alignment edge that the line positions key off:
+  // left edge for 'left', center for 'center', right edge for 'right'.
+  const ALIGNS: TextLabelAlign[] = ['left', 'center', 'right'];
+
+  // World-space x of the first text segment on `lineIndex`. The label is drawn
+  // inside a translate(x y) group, so the segment's local x must be lifted by
+  // label.x to compare across edits that move the center.
+  function lineWorldX(label: TextLabel, lineIndex: number): number {
+    const { container } = render(
+      <svg>
+        <LabelView label={label} selected={false} />
+      </svg>,
+    );
+    const text = container.querySelector(`[data-label-line="${lineIndex}"] text`);
+    if (!text) throw new Error(`no <text> for line ${lineIndex}`);
+    return label.x + parseFloat(text.getAttribute('x') ?? '0');
+  }
+
+  const editText = (label: TextLabel, text: string): TextLabel => {
+    const doc = { ...DEFAULT_DOC, textLabels: { [label.id]: label } };
+    return updateTextLabel(doc, label.id, { text }).textLabels[label.id];
+  };
+
+  it.each(ALIGNS)('a leading space on line 1 leaves line 2 put (align=%s)', (align) => {
+    const base = makeTextLabel({ id: 'g1', x: 100, y: 100, text: 'AAAA\nBBBB', align });
+    const before = lineWorldX(base, 1);
+    const after = lineWorldX(editText(base, ' AAAA\nBBBB'), 1);
+    expect(after).toBeCloseTo(before, 5);
+  });
+
+  it.each(ALIGNS)('a leading space on line 2 leaves line 1 put (align=%s)', (align) => {
+    const base = makeTextLabel({ id: 'g1', x: 100, y: 100, text: 'AAAA\nBBBB', align });
+    const before = lineWorldX(base, 0);
+    const after = lineWorldX(editText(base, 'AAAA\n BBBB'), 0);
+    expect(after).toBeCloseTo(before, 5);
   });
 });
