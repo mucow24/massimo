@@ -131,6 +131,50 @@ describe('App keyboard shortcuts: layering mode', () => {
   });
 });
 
+describe('App keyboard shortcuts: add-transfer mode', () => {
+  it("T toggles uiMode to 'creating-transfer', then back to 'idle'", () => {
+    render(<App />);
+    expect(useSelection.getState().uiMode.kind).toBe('idle');
+    fireEvent.keyDown(window, { key: 't' });
+    expect(useSelection.getState().uiMode.kind).toBe('creating-transfer');
+    fireEvent.keyDown(window, { key: 't' });
+    expect(useSelection.getState().uiMode.kind).toBe('idle');
+  });
+
+  it('T is case-insensitive (Shift+T behaves the same)', () => {
+    render(<App />);
+    fireEvent.keyDown(window, { key: 'T' });
+    expect(useSelection.getState().uiMode.kind).toBe('creating-transfer');
+  });
+
+  it('Esc exits add-transfer mode', () => {
+    render(<App />);
+    useSelection.setState({ uiMode: { kind: 'creating-transfer', anchor: null } });
+    fireEvent.keyDown(window, { key: 'Escape' });
+    expect(useSelection.getState().uiMode.kind).toBe('idle');
+  });
+
+  it('T on a focused text input is suppressed (typing "t" keeps mode untouched)', () => {
+    render(<App />);
+    const input = document.createElement('input');
+    input.type = 'text';
+    document.body.appendChild(input);
+    input.focus();
+    try {
+      fireEvent.keyDown(input, { key: 't' });
+      expect(useSelection.getState().uiMode.kind).toBe('idle');
+    } finally {
+      document.body.removeChild(input);
+    }
+  });
+
+  it('Ctrl+T is NOT bound (browser new-tab gesture passes through)', () => {
+    render(<App />);
+    fireEvent.keyDown(window, { key: 't', ctrlKey: true });
+    expect(useSelection.getState().uiMode.kind).toBe('idle');
+  });
+});
+
 describe('App keyboard shortcuts: blur-then-undo', () => {
   it('Ctrl+Z mid-slider-drag commits the open useFieldHistory group, then undoes the drag', async () => {
     const user = userEvent.setup();
