@@ -28,7 +28,7 @@ function makeBand({
     bandKey,
     fromId: 's1',
     toId: 's2',
-    lines: lines.map((id) => ({ id, color: '#000', style: 'solid' as const })),
+    lines: lines.map((id) => ({ id })),
     paths: lines.map(() => ''),
     warning: false,
     centerline,

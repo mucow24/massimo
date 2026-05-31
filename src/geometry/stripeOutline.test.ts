@@ -10,7 +10,7 @@ const band: SegmentBandSpec = {
   bandKey: 's1|s2#A',
   fromId: 's1',
   toId: 's2',
-  lines: [{ id: 'A', color: '#000', style: 'solid' }],
+  lines: [{ id: 'A' }],
   paths: ['M0,0 L0,100'],
   warning: false,
   centerline: [

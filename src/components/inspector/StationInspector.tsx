@@ -290,9 +290,7 @@ export function StationInspector({ id }: { id: StationId }) {
             <em>I</em>
           </button>
         </div>
-        <div style={{ fontSize: 11, color: '#777', marginTop: 4 }}>
-          Offset (along reading direction)
-        </div>
+        <div className="field-hint">Offset (along reading direction)</div>
         <LabelOffsetControl
           value={station.label.offset}
           onChange={(v) => dispatchAll((sid) => setLabelOffset(sid, v))}
@@ -301,9 +299,7 @@ export function StationInspector({ id }: { id: StationId }) {
             matches.some((m) => stationsAll[m.id]?.label.offset !== station.label.offset)
           }
         />
-        <div style={{ fontSize: 11, color: '#777', marginTop: 4 }}>
-          Offset (perpendicular to reading direction)
-        </div>
+        <div className="field-hint">Offset (perpendicular to reading direction)</div>
         <LabelOffsetControl
           value={station.label.offsetPerp ?? 0}
           onChange={(v) => dispatchAll((sid) => setLabelOffsetPerp(sid, v))}

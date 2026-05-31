@@ -4,12 +4,31 @@ import {
   buildLineIndex,
   buildOrderedRenderables,
   buildStopMarkers,
+  resolveSegmentStyle,
   stopPosWorld,
 } from './interlining';
 import { LAYER_WEIGHT } from '../model/layerPriority';
 import { STOP_SIZE } from './orientation';
 import { makeDoc, makeLine, makeStation, makeStop, stationWithStop } from '../test/fixtures';
 import type { LineStyle } from '../model/types';
+
+describe('resolveSegmentStyle', () => {
+  it('defaults to solid when the line has no per-segment overrides', () => {
+    const line = makeLine({ id: 'L1', stations: ['s1', 's2'] });
+    expect(resolveSegmentStyle(line, 's1|s2')).toBe('solid');
+  });
+
+  it('returns the override for the matching pairKey only', () => {
+    const line = makeLine({
+      id: 'L1',
+      stations: ['s1', 's2', 's3'],
+      segmentStyles: { 's1|s2': 'hatched' },
+    });
+    expect(resolveSegmentStyle(line, 's1|s2')).toBe('hatched');
+    // A different segment on the same line stays solid.
+    expect(resolveSegmentStyle(line, 's2|s3')).toBe('solid');
+  });
+});
 
 describe('buildLineIndex', () => {
   it('numbers IDs in lineOrder front-to-back', () => {

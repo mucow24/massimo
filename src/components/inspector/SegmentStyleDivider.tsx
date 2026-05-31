@@ -1,5 +1,6 @@
 import type { LineId, LineStyle, StationId } from '../../model/types';
 import { useSelection } from '../../state/store';
+import { useThemeColors } from '../../state/theme';
 import { HatchPatterns, lineStyleStrokeAttrs, lineStyleUnderlayAttrs } from '../HatchPatterns';
 
 interface Props {
@@ -32,8 +33,10 @@ export function SegmentStyleDivider({
   toStationId,
   onClick,
 }: Props) {
+  // Gap color matches the canvas so the preview mirrors the on-canvas look.
+  const underlayColor = useThemeColors().underlay;
   const { stroke, strokeDasharray } = lineStyleStrokeAttrs(style, color);
-  const underlay = lineStyleUnderlayAttrs(style);
+  const underlay = lineStyleUnderlayAttrs(style, underlayColor);
   const setHoveredInspectorSegment = useSelection((s) => s.setHoveredInspectorSegment);
   const enter = () => setHoveredInspectorSegment({ lineId, fromStationId, toStationId });
   const leave = () => setHoveredInspectorSegment(null);
@@ -71,7 +74,7 @@ export function SegmentStyleDivider({
       >
         {(style === 'hatched' || style === 'hatched-mirror') && (
           <defs>
-            <HatchPatterns colors={[color]} />
+            <HatchPatterns colors={[color]} underlayColor={underlayColor} />
           </defs>
         )}
         {underlay && (
