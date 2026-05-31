@@ -2183,3 +2183,123 @@ describe('rotateItemsAround — labels', () => {
     expect(Object.keys(next.textLabels)).toEqual(['p']);
   });
 });
+
+describe('redistributeBetween', () => {
+  // Each station has a single stop at its local origin with rotation 0, so the
+  // stop world position equals the station center and the expected positions
+  // are easy to reason about.
+  const doc5 = (positions: Array<[string, number, number]>): MapDoc =>
+    makeDoc({
+      stations: positions.map(([id, x, y]) => stationWithStop(id, 'L1', { x, y })),
+      lines: [makeLine({ id: 'L1', stations: positions.map(([id]) => id) })],
+    });
+
+  it('evenly spaces intermediate stops in straight mode', () => {
+    const doc = doc5([
+      ['a', 0, 0],
+      ['m1', 5, 5],
+      ['m2', 5, 5],
+      ['m3', 5, 5],
+      ['b', 40, 0],
+    ]);
+    const next = T.redistributeBetween(doc, 'a', 'b', 'straight');
+    expect(next.stations.m1).toMatchObject({ x: 10, y: 0 });
+    expect(next.stations.m2).toMatchObject({ x: 20, y: 0 });
+    expect(next.stations.m3).toMatchObject({ x: 30, y: 0 });
+    // Endpoints stay put.
+    expect(next.stations.a).toMatchObject({ x: 0, y: 0 });
+    expect(next.stations.b).toMatchObject({ x: 40, y: 0 });
+  });
+
+  it('evenly spaces by arc length along a collinear chain (arc-bends mode)', () => {
+    const doc = doc5([
+      ['a', 0, 0],
+      ['m1', 5, 0],
+      ['m2', 15, 0],
+      ['m3', 35, 0],
+      ['b', 40, 0],
+    ]);
+    const next = T.redistributeBetween(doc, 'a', 'b', 'arc-bends');
+    expect(next.stations.m1).toMatchObject({ x: 10, y: 0 });
+    expect(next.stations.m2).toMatchObject({ x: 20, y: 0 });
+    expect(next.stations.m3).toMatchObject({ x: 30, y: 0 });
+  });
+
+  it('anchors a station at a real (>5°) bend in arc-bends mode — identity return', () => {
+    const doc = doc5([
+      ['a', 0, 0],
+      ['m', 10, 10],
+      ['b', 20, 0],
+    ]);
+    // The 90° corner at m is detected as a bend and anchored; with no other
+    // intermediate station there is nothing left to redistribute, so the doc
+    // comes back by reference (keeps undo-batching equality cheap).
+    expect(T.redistributeBetween(doc, 'a', 'b', 'arc-bends')).toBe(doc);
+  });
+
+  it('ignores bends in straight mode and pulls the station onto the A–B line', () => {
+    const doc = doc5([
+      ['a', 0, 0],
+      ['m', 10, 10],
+      ['b', 20, 0],
+    ]);
+    const next = T.redistributeBetween(doc, 'a', 'b', 'straight');
+    expect(next.stations.m).toMatchObject({ x: 10, y: 0 });
+  });
+
+  it('skips a station two lines disagree about (conflict) — identity return', () => {
+    // x and y lie between a and b on two lines but in swapped order, so the two
+    // lines propose different positions for each → both conflicts are dropped.
+    const doc = makeDoc({
+      stations: [
+        stationWithStop('a', 'L1', { x: 0, y: 0 }),
+        stationWithStop('b', 'L1', { x: 40, y: 0 }),
+        makeStation({ id: 'x', x: 5, y: 5, stops: [makeStop('L1'), makeStop('L2')] }),
+        makeStation({ id: 'y', x: 5, y: 5, stops: [makeStop('L1'), makeStop('L2')] }),
+      ],
+      lines: [
+        makeLine({ id: 'L1', stations: ['a', 'x', 'y', 'b'] }),
+        makeLine({ id: 'L2', stations: ['a', 'y', 'x', 'b'] }),
+      ],
+    });
+    expect(T.redistributeBetween(doc, 'a', 'b', 'straight')).toBe(doc);
+  });
+
+  it('returns the same doc when arc-mode targets are already within a pixel', () => {
+    const doc = doc5([
+      ['a', 0, 0],
+      ['m1', 10, 0],
+      ['m2', 20, 0],
+      ['m3', 30, 0],
+      ['b', 40, 0],
+    ]);
+    expect(T.redistributeBetween(doc, 'a', 'b', 'arc-bends')).toBe(doc);
+  });
+
+  it('is a no-op when start === end', () => {
+    const doc = doc5([
+      ['a', 0, 0],
+      ['b', 10, 0],
+    ]);
+    expect(T.redistributeBetween(doc, 'a', 'a')).toBe(doc);
+  });
+
+  it('is a no-op when an endpoint is missing', () => {
+    const doc = doc5([
+      ['a', 0, 0],
+      ['b', 10, 0],
+    ]);
+    expect(T.redistributeBetween(doc, 'a', 'nope')).toBe(doc);
+  });
+
+  it('is a no-op when no single line connects the two stations', () => {
+    const doc = makeDoc({
+      stations: [
+        stationWithStop('a', 'L1', { x: 0, y: 0 }),
+        stationWithStop('b', 'L2', { x: 40, y: 0 }),
+      ],
+      lines: [makeLine({ id: 'L1', stations: ['a'] }), makeLine({ id: 'L2', stations: ['b'] })],
+    });
+    expect(T.redistributeBetween(doc, 'a', 'b')).toBe(doc);
+  });
+});
