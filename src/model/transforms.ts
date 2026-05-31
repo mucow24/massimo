@@ -1,4 +1,4 @@
-import { autoOrientLineStops } from './autoOrient';
+import { autoOrientNewStation } from './autoOrient';
 import { effectiveLineOrder } from './lineOrder';
 import { pairKeyOf } from './pairKey';
 import { rotateBy, stopCenterAt } from '../geometry/orientation';
@@ -965,7 +965,9 @@ export function toggleStationOnLine(
     return {
       ...doc,
       lines: { ...doc.lines, [lineId]: { ...ln, stations: newStations } },
-      stations: autoOrientLineStops(stationsAfter, lineId, newStations),
+      // Removing a station never gives any station its first line, so nothing
+      // is auto-oriented — every station here is already served.
+      stations: stationsAfter,
     };
   }
   const idx =
@@ -1012,7 +1014,13 @@ export function toggleStationOnLine(
   return {
     ...doc,
     lines: { ...doc.lines, [lineId]: { ...ln, stations: newStations } },
-    stations: autoOrientLineStops(stationsAfter, lineId, newStations),
+    // Auto-orient only a brand-new station (one with no prior line) to the line
+    // tangent. A station already served by a line keeps the rotation the user
+    // gave it — adding it to another line must not disturb it.
+    stations:
+      st.stops.length === 0
+        ? autoOrientNewStation(stationsAfter, newStations, stationId)
+        : stationsAfter,
   };
 }
 
@@ -1035,7 +1043,8 @@ export function removeStationFromLine(doc: MapDoc, lineId: LineId, idx: number):
   return pruneOrphanLineTags({
     ...doc,
     lines: { ...doc.lines, [lineId]: updatedLine },
-    stations: autoOrientLineStops(stations, lineId, newStations),
+    // No station gains its first line on removal, so nothing is auto-oriented.
+    stations,
   });
 }
 
@@ -1045,7 +1054,8 @@ export function reorderLineStations(doc: MapDoc, lineId: LineId, stations: Stati
   return {
     ...doc,
     lines: { ...doc.lines, [lineId]: { ...ln, stations } },
-    stations: autoOrientLineStops(doc.stations, lineId, stations),
+    // Reordering only rearranges already-served stations, so none re-rotate.
+    stations: doc.stations,
   };
 }
 
