@@ -2,9 +2,8 @@ import { useMemo } from 'react';
 import { Line, LineId, Station } from '../model/types';
 import { dragState, useDoc, useSelection } from '../state/store';
 import { STOP_DOT_RADIUS, stopCenterAt } from '../geometry/orientation';
-import { polygonsToPath, unionConvex } from '../geometry/polygonUnion';
 import { labelLayoutLocal } from '../geometry/labelLayout';
-import { cellsAABBLocal, stationBoundaryRectsLocal } from '../geometry/stationBoundary';
+import { cellsAABBLocal } from '../geometry/stationBoundary';
 import { pathBetweenStations } from '../model/pathSelect';
 import {
   buildRotateMembers,
@@ -16,6 +15,7 @@ import { legibleTextOn } from '../util/color';
 import { useThemeColors } from '../state/theme';
 import { StopGlyph } from './StopGlyph';
 import { StationNameEditor } from './StationNameEditor';
+import { StationSilhouette } from './StationSilhouette';
 import { stopPosWorld } from '../geometry/interlining';
 import { BASELINE_FRACTION, LINE_HEIGHT, measureTextLabel } from '../geometry/textMeasure';
 import { InlineBullet } from './InlineBullet';
@@ -43,13 +43,6 @@ function closestStopLineId(station: Station, e: React.MouseEvent): LineId | null
   }
   return bestId;
 }
-
-const SELECTION_WASH_COLOR = '#f0ff00';
-const SELECTION_WASH_OPACITY = 0.2;
-const SELECTION_STROKE_WIDTH = 2;
-const SELECTION_CORNER_RADIUS = 5;
-const MATCH_STROKE_COLOR = '#888';
-const MATCH_STROKE_WIDTH = 1.5;
 
 interface RenderLabelTextArgs {
   text: string;
@@ -532,67 +525,7 @@ export function StationView({
     : null;
 
   if (layer === 'wash' || layer === 'stroke' || layer === 'match-stroke') {
-    // The station being renamed shows the inline editor, which has its own
-    // border and grows to fit the raw "<CODE>" tokens. Skip the selection
-    // silhouette for it — sized to the collapsed label, it would overdraw the
-    // wider editor box.
-    if (isEditing) return null;
-    // MapCanvas decides which stations get wash/stroke/match-stroke layers
-    // (selected set, plus the rect-select preview, plus mirror-matching
-    // stations). StationView trusts that filtering — no redundant gate.
-    // Smooth the union of the cells rect + (rotated) label rect with
-    // quadratic Beziers. Smoothing applies to the outer-boundary corners
-    // ONLY (each vertex of the union is a corner of the actual silhouette),
-    // so there are no rounded-corner artifacts where the rects meet.
-    const { cells, label: labelPoly } = stationBoundaryRectsLocal(station, {
-      fontSize: labelFontSize,
-      weight: stationWeight,
-      italic: labelItalic,
-    });
-    // Waypoint: no label polygon to merge, render the cells rect alone.
-    const polygons = labelPoly ? unionConvex(cells, labelPoly) : [cells];
-    const pathStr = polygonsToPath(polygons, SELECTION_CORNER_RADIUS);
-
-    if (layer === 'wash') {
-      return (
-        <g
-          data-station-wash={station.id}
-          transform={`translate(${station.x} ${station.y}) rotate(${angle})`}
-          pointerEvents="none"
-        >
-          <path
-            d={pathStr}
-            fill={SELECTION_WASH_COLOR}
-            fillOpacity={SELECTION_WASH_OPACITY}
-            fillRule="nonzero"
-          />
-        </g>
-      );
-    }
-    if (layer === 'match-stroke') {
-      return (
-        <g transform={`translate(${station.x} ${station.y}) rotate(${angle})`} pointerEvents="none">
-          <path
-            d={pathStr}
-            fill="none"
-            stroke={MATCH_STROKE_COLOR}
-            strokeWidth={MATCH_STROKE_WIDTH}
-            strokeLinejoin="round"
-          />
-        </g>
-      );
-    }
-    return (
-      <g transform={`translate(${station.x} ${station.y}) rotate(${angle})`} pointerEvents="none">
-        <path
-          d={pathStr}
-          fill="none"
-          stroke={themeColors.selectionStroke}
-          strokeWidth={SELECTION_STROKE_WIDTH}
-          strokeLinejoin="round"
-        />
-      </g>
-    );
+    return <StationSilhouette station={station} layer={layer} />;
   }
 
   // Shared interaction state for both the bg hit-rect AND the dots layer.
