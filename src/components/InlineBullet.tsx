@@ -1,5 +1,5 @@
 import type { Line } from '../model/types';
-import { legibleTextOn } from '../util/color';
+import { badgeColors } from './badge';
 
 interface Props {
   /** Service code from the user's text (`<CODE>`). */
@@ -21,10 +21,7 @@ interface Props {
  */
 export function InlineBullet({ code, diameter, cx, cy, lineByService }: Props) {
   const r = diameter / 2;
-  const line = lineByService.get(code);
-  const fill = line?.color ?? '#888';
-  const textColor = line ? legibleTextOn(fill) : '#fff';
-  const display = line?.service ?? '?';
+  const { fill, textColor, code: display } = badgeColors(lineByService.get(code));
   return (
     <g transform={`translate(${cx} ${cy})`} pointerEvents="none" data-inline-bullet={code}>
       <circle cx={0} cy={0} r={r} fill={fill} />

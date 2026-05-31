@@ -1,7 +1,6 @@
-import { Vec2, add, sub, scale, dot, perp, len, norm } from './vec';
+import { Vec2, add, sub, scale, dot, perp, len, norm, SQRT2_2, leftNormal } from './vec';
 
 const TAU = Math.PI * 2;
-const SQRT2_2 = Math.SQRT2 / 2;
 
 export const DIRS_8: Vec2[] = [
   { x: 1, y: 0 }, // 0: E
@@ -406,14 +405,13 @@ export function emitOffsetSegments(verts: Vec2[], R: number, offset: number): Of
 
   // Offset every vertex perpendicular to its incident edges. See offsetFilletPath
   // history for the bisector-cap rationale.
-  const leftOf = (d: Vec2): Vec2 => ({ x: d.y, y: -d.x });
   const offV: Vec2[] = verts.map((p, i) => {
     let n: Vec2;
-    if (i === 0) n = leftOf(norm(sub(verts[1], verts[0])));
-    else if (i === verts.length - 1) n = leftOf(norm(sub(verts[i], verts[i - 1])));
+    if (i === 0) n = leftNormal(norm(sub(verts[1], verts[0])));
+    else if (i === verts.length - 1) n = leftNormal(norm(sub(verts[i], verts[i - 1])));
     else {
-      const a = leftOf(norm(sub(verts[i], verts[i - 1])));
-      const b = leftOf(norm(sub(verts[i + 1], verts[i])));
+      const a = leftNormal(norm(sub(verts[i], verts[i - 1])));
+      const b = leftNormal(norm(sub(verts[i + 1], verts[i])));
       const sum = { x: a.x + b.x, y: a.y + b.y };
       const ln = Math.hypot(sum.x, sum.y);
       n = ln < EPS ? a : { x: sum.x / ln, y: sum.y / ln };

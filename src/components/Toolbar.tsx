@@ -1,5 +1,5 @@
 import { useRef, useState } from 'react';
-import { useDoc, useSelection, type UiMode } from '../state/store';
+import { pickDocSnapshot, useDoc, useSelection, type UiMode } from '../state/store';
 import { useViewportStore } from '../state/viewportStore';
 import { parse, serialize } from '../model/serialize';
 import { DEFAULT_DOC } from '../model/transforms';
@@ -90,26 +90,9 @@ export function Toolbar() {
   };
 
   const onSave = () => {
-    const doc = useDoc.getState();
-    const json = serialize({
-      stations: doc.stations,
-      lines: doc.lines,
-      lineOrder: doc.lineOrder,
-      curveRadius: doc.curveRadius,
-      lineCounter: doc.lineCounter,
-      lineTags: doc.lineTags,
-      routeBullets: doc.routeBullets,
-      transfers: doc.transfers,
-      textLabels: doc.textLabels,
-      labelFontSize: doc.labelFontSize,
-      labelWeight: doc.labelWeight,
-      labelItalic: doc.labelItalic,
-      activePalettes: doc.activePalettes,
-      transferThickness: doc.transferThickness,
-      transferColor: doc.transferColor,
-      transferStrokeWidth: doc.transferStrokeWidth,
-      transferStrokeColor: doc.transferStrokeColor,
-    });
+    // Serialize the canonical doc slice (DOC_FIELDS) so the save never drifts
+    // from the model when a field is added.
+    const json = serialize(pickDocSnapshot(useDoc.getState()));
     const blob = new Blob([json], { type: 'application/json' });
     const url = URL.createObjectURL(blob);
     const a = document.createElement('a');

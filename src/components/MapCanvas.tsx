@@ -1,40 +1,24 @@
-import { Fragment, useMemo, useRef, useState, type ReactNode } from 'react';
+import { useMemo, useRef, useState } from 'react';
 
-import {
-  beginHistoryGroup,
-  cancelAppendMode,
-  dragState,
-  useDoc,
-  useSelection,
-} from '../state/store';
+import { cancelAppendMode, dragState, useDoc, useSelection } from '../state/store';
 import { randomStationName } from '../state/stationNames';
 import { useSnapPrefs } from '../state/snapPrefs';
 import { useViewportStore } from '../state/viewportStore';
 import { useThemeColors } from '../state/theme';
-import {
-  maybeSnapToGrid,
-  snapDraggedStation,
-  snapLabelToGrid,
-  snapPointToGrid,
-  type SnapGuide,
-} from '../geometry/snap';
-import { measureTextLabel } from '../geometry/textMeasure';
-import { TEXT_LABEL_HIT_PAD } from '../geometry/stationBoundary';
+import { maybeSnapToGrid } from '../geometry/snap';
 import {
   assignLinePriorities,
   buildBandGeometry,
   buildOrderedRenderables,
   buildStopMarkers,
-  resolveSegmentStyle,
   SegmentBandSpec,
-  stopPosWorld,
 } from '../geometry/interlining';
-import { resolveDotShape } from '../model/transforms';
-import { STOP_SIZE, travelDirLocal, rotateBy } from '../geometry/orientation';
+import { stripeOffset } from '../geometry/orientation';
+import { buildRotateMembers } from '../model/transforms';
+import { legibleTextOn } from '../util/color';
 import { BandWarning, SegmentBand } from './SegmentBand';
-import { HatchPatterns, lineStyleStrokeAttrs, lineStyleUnderlayAttrs } from './HatchPatterns';
+import { HatchPatterns } from './HatchPatterns';
 import { StopMarker } from './StopMarker';
-import { StopGlyph } from './StopGlyph';
 import { StationView } from './StationView';
 import { useViewport } from './canvas/useViewport';
 import { useStationDrag } from './canvas/useStationDrag';
@@ -43,10 +27,12 @@ import { Grid } from './canvas/Grid';
 import { WarningToasts } from './canvas/WarningToasts';
 import { EditingBanner } from './canvas/EditingBanner';
 import { SnapGuides } from './canvas/SnapGuides';
+import { useItemDrag } from './canvas/useItemDrag';
 import { LineTagsLayer } from './canvas/LineTagsLayer';
 import { LayeringDashedOutlines, LayeringHoverOutline } from './canvas/LayeringOutlines';
 import { LayerNumberLabels } from './canvas/LayerNumberLabels';
 import { StationPlacingPreview } from './canvas/StationPlacingPreview';
+import { HighlightedLineLayer } from './canvas/HighlightedLineLayer';
 import { LabelPlacingPreview } from './canvas/LabelPlacingPreview';
 import { RouteBulletView } from './RouteBulletView';
 import { RouteBulletPopover } from './RouteBulletPopover';
@@ -59,13 +45,10 @@ import {
   offsetPathLength,
   sampleOffsetPath,
 } from '../geometry/lineTagGeometry';
-import type { LineId, Station, StopCell } from '../model/types';
+import type { LineId } from '../model/types';
 import { findMatchingStations } from '../model/matching';
-import { pairKeyOf } from '../model/pairKey';
-import { desaturateColor, legibleTextOn } from '../util/color';
+import { desaturateColor } from '../util/color';
 
-const DIM_COLOR = '#000000';
-const DIM_ALPHA = 0.75;
 // 1 = full color, 0 = greyscale.
 const OTHER_LINE_SATURATION = 0.5;
 // Annotations (station labels, route bullets, text labels, line tags) drop to
@@ -73,7 +56,6 @@ const OTHER_LINE_SATURATION = 0.5;
 // + their outlines. Transfers stay at full opacity (they're part of the
 // route-network reading, not background annotation).
 const LAYERING_FADE_OPACITY = 0.25;
-const BULLET_SNAP_TOLERANCE = 10;
 
 export function MapCanvas() {
   const stations = useDoc((s) => s.stations);
@@ -85,7 +67,6 @@ export function MapCanvas() {
   const cycleSegmentLayer = useDoc((s) => s.cycleSegmentLayer);
   const routeBullets = useDoc((s) => s.routeBullets);
   const addRouteBullet = useDoc((s) => s.addRouteBullet);
-  const moveRouteBullet = useDoc((s) => s.moveRouteBullet);
   const rotateRouteBullet = useDoc((s) => s.rotateRouteBullet);
   const transfers = useDoc((s) => s.transfers);
   const transferColor = useDoc((s) => s.transferColor);
@@ -94,7 +75,6 @@ export function MapCanvas() {
   const transferStrokeWidth = useDoc((s) => s.transferStrokeWidth);
   const textLabels = useDoc((s) => s.textLabels);
   const addTextLabel = useDoc((s) => s.addTextLabel);
-  const moveTextLabel = useDoc((s) => s.moveTextLabel);
   const rotateTextLabel = useDoc((s) => s.rotateTextLabel);
   const selection = useSelection();
   const snapModes = useSnapPrefs((s) => s.modes);
@@ -201,37 +181,7 @@ export function MapCanvas() {
 
   const inHandMode = selection.toolMode === 'hand' || selection.spaceHeld;
 
-  // Bullet drag state — minimal local ref to avoid a whole new hook for
-  // now. When the grabbed bullet is part of a multi-selection, sibling
-  // arrays carry every other selected item along by the same delta.
-  const bulletDragRef = useRef<{
-    id: string;
-    startWX: number;
-    startWY: number;
-    startMX: number;
-    startMY: number;
-    moved: boolean;
-    bulletSiblings: { id: string; startX: number; startY: number }[];
-    stationSiblings: { id: string; startX: number; startY: number }[];
-    labelSiblings: { id: string; startX: number; startY: number }[];
-    history: ReturnType<typeof beginHistoryGroup>;
-  } | null>(null);
-  // Text-label drag state. Same shape as bulletDragRef, minus snap (labels
-  // don't snap in this iteration). Tracks group-drag siblings (other labels,
-  // stations, bullets) so the whole multi-selection moves as a rigid body.
-  const labelDragRef = useRef<{
-    id: string;
-    startWX: number;
-    startWY: number;
-    startMX: number;
-    startMY: number;
-    moved: boolean;
-    labelSiblings: { id: string; startX: number; startY: number }[];
-    bulletSiblings: { id: string; startX: number; startY: number }[];
-    stationSiblings: { id: string; startX: number; startY: number }[];
-    history: ReturnType<typeof beginHistoryGroup>;
-  } | null>(null);
-  const [bulletSnapGuides, setBulletSnapGuides] = useState<SnapGuide[]>([]);
+  const itemDrag = useItemDrag(svgRef, view.viewport.zoom, inHandMode);
   // Cursor position in world coords — drives the in-progress transfer line
   // from the anchor dot to the cursor, and the station-placing-mode ghost
   // that follows the cursor before each click.
@@ -300,213 +250,15 @@ export function MapCanvas() {
     } else if (cursorWorld) {
       setCursorWorld(null);
     }
-    const bd = bulletDragRef.current;
-    if (bd) {
-      const dxScreen = e.clientX - bd.startMX;
-      const dyScreen = e.clientY - bd.startMY;
-      if (!bd.moved && Math.hypot(dxScreen, dyScreen) > 4) {
-        bd.moved = true;
-        dragState.suppressClick = true;
-        svgRef.current?.setPointerCapture(e.pointerId);
-      }
-      if (bd.moved) {
-        const dx = dxScreen / view.viewport.zoom;
-        const dy = dyScreen / view.viewport.zoom;
-        let nx = bd.startWX + dx;
-        let ny = bd.startWY + dy;
-        const cur = routeBullets[bd.id];
-        const lineId = cur?.lineId ?? null;
-        // Group-drag suppresses the bullet-line snap: siblings are moving,
-        // so snap targets become unstable and a half-snapped grabbed
-        // bullet would drag the whole group off-axis.
-        const inGroupDrag =
-          bd.bulletSiblings.length > 0 ||
-          bd.stationSiblings.length > 0 ||
-          bd.labelSiblings.length > 0;
-        if (lineId && !e.shiftKey && !inGroupDrag) {
-          // Reuse the station snap engine in bullet mode — it already
-          // handles per-stop axis alignment, two-axis snap at corners,
-          // and the "third in-line station" opposite-direction guide.
-          const snap = snapDraggedStation({
-            proposedX: nx,
-            proposedY: ny,
-            stations,
-            lines,
-            tolerance: BULLET_SNAP_TOLERANCE,
-            bulletLineId: lineId,
-            modes: snapModes,
-          });
-          nx = snap.x;
-          ny = snap.y;
-          setBulletSnapGuides(snap.guides);
-        } else {
-          if (bulletSnapGuides.length > 0) setBulletSnapGuides([]);
-          // Grid snap fallback when the snap engine wasn't called (unbound
-          // bullet or group drag). Shift still bypasses.
-          if (snapModes.grid !== 'off' && !e.shiftKey) {
-            const g = snapPointToGrid(nx, ny, snapModes.grid);
-            nx = g.x;
-            ny = g.y;
-          }
-        }
-        moveRouteBullet(bd.id, nx, ny);
-        if (inGroupDrag) {
-          const deltaX = nx - bd.startWX;
-          const deltaY = ny - bd.startWY;
-          for (const bs of bd.bulletSiblings) {
-            moveRouteBullet(bs.id, bs.startX + deltaX, bs.startY + deltaY);
-          }
-          for (const ss of bd.stationSiblings) {
-            useDoc.getState().moveStation(ss.id, ss.startX + deltaX, ss.startY + deltaY);
-          }
-          for (const ls of bd.labelSiblings) {
-            moveTextLabel(ls.id, ls.startX + deltaX, ls.startY + deltaY);
-          }
-        }
-      }
-    }
-    const ld = labelDragRef.current;
-    if (ld) {
-      const dxScreen = e.clientX - ld.startMX;
-      const dyScreen = e.clientY - ld.startMY;
-      if (!ld.moved && Math.hypot(dxScreen, dyScreen) > 4) {
-        ld.moved = true;
-        dragState.suppressClick = true;
-        svgRef.current?.setPointerCapture(e.pointerId);
-      }
-      if (ld.moved) {
-        const rawDx = dxScreen / view.viewport.zoom;
-        const rawDy = dyScreen / view.viewport.zoom;
-        let nx = ld.startWX + rawDx;
-        let ny = ld.startWY + rawDy;
-        // Labels don't go through the snap engine (no axis/orientation), but
-        // grid snap still applies. Register the label by its upper-left
-        // bbox corner so the visible edge lands on a grid line. Shift
-        // bypasses like elsewhere.
-        if (snapModes.grid !== 'off' && !e.shiftKey) {
-          const cur = textLabels[ld.id];
-          if (cur) {
-            const m = measureTextLabel(cur);
-            // Snap the VISIBLE upper-left (the dashed selection ring), which
-            // includes hit-test padding around the text bbox — that's the
-            // corner the user actually sees on screen.
-            const snapped = snapLabelToGrid(
-              { x: nx, y: ny },
-              m.width + 2 * TEXT_LABEL_HIT_PAD,
-              m.height + 2 * TEXT_LABEL_HIT_PAD,
-              snapModes.grid,
-            );
-            nx = snapped.x;
-            ny = snapped.y;
-          }
-        }
-        const dx = nx - ld.startWX;
-        const dy = ny - ld.startWY;
-        moveTextLabel(ld.id, nx, ny);
-        const inGroupDrag =
-          ld.labelSiblings.length + ld.bulletSiblings.length + ld.stationSiblings.length > 0;
-        if (inGroupDrag) {
-          for (const ls of ld.labelSiblings) {
-            moveTextLabel(ls.id, ls.startX + dx, ls.startY + dy);
-          }
-          for (const bs of ld.bulletSiblings) {
-            moveRouteBullet(bs.id, bs.startX + dx, bs.startY + dy);
-          }
-          for (const ss of ld.stationSiblings) {
-            useDoc.getState().moveStation(ss.id, ss.startX + dx, ss.startY + dy);
-          }
-        }
-      }
-    }
+    itemDrag.onPointerMove(e);
   };
   const onPointerUp = (e: React.PointerEvent) => {
     view.onPointerUp(e);
     drag.onPointerUp(e);
     rectSelect.onPointerUp(e);
-    const bd = bulletDragRef.current;
-    if (bd) {
-      const wasMoved = bd.moved;
-      bulletDragRef.current = null;
-      setBulletSnapGuides([]);
-      if (wasMoved) {
-        bd.history.commit();
-        try {
-          svgRef.current?.releasePointerCapture(e.pointerId);
-        } catch {
-          // pointer may not have been captured
-        }
-        setTimeout(() => {
-          dragState.suppressClick = false;
-        }, 0);
-      } else {
-        bd.history.cancel();
-      }
-    }
-    const ld = labelDragRef.current;
-    if (ld) {
-      const wasMoved = ld.moved;
-      labelDragRef.current = null;
-      if (wasMoved) {
-        ld.history.commit();
-        try {
-          svgRef.current?.releasePointerCapture(e.pointerId);
-        } catch {
-          // pointer may not have been captured
-        }
-        setTimeout(() => {
-          dragState.suppressClick = false;
-        }, 0);
-      } else {
-        ld.history.cancel();
-      }
-    }
+    itemDrag.onPointerUp(e);
   };
 
-  const onBulletPointerDown = (id: string, e: React.PointerEvent) => {
-    if (e.button !== 0) return;
-    if (inHandMode) return;
-    const b = routeBullets[id];
-    if (!b) return;
-    e.stopPropagation();
-    // Group-drag: if the grabbed bullet is part of the multi-selection,
-    // every other selected item (bullets + stations) tags along with the
-    // same delta on each pointer move.
-    const sel = useSelection.getState();
-    const includesGrabbed = sel.selectedRouteBulletIds.includes(id);
-    const bulletSiblings: { id: string; startX: number; startY: number }[] = [];
-    const stationSiblings: { id: string; startX: number; startY: number }[] = [];
-    const labelSiblings: { id: string; startX: number; startY: number }[] = [];
-    if (includesGrabbed) {
-      for (const bid of sel.selectedRouteBulletIds) {
-        if (bid === id) continue;
-        const sb = routeBullets[bid];
-        if (!sb) continue;
-        bulletSiblings.push({ id: bid, startX: sb.x, startY: sb.y });
-      }
-      for (const sid of sel.selectedStationIds) {
-        const ss = stations[sid];
-        if (!ss) continue;
-        stationSiblings.push({ id: sid, startX: ss.x, startY: ss.y });
-      }
-      for (const lid of sel.selectedLabelIds) {
-        const lb = textLabels[lid];
-        if (!lb) continue;
-        labelSiblings.push({ id: lid, startX: lb.x, startY: lb.y });
-      }
-    }
-    bulletDragRef.current = {
-      id,
-      startWX: b.x,
-      startWY: b.y,
-      startMX: e.clientX,
-      startMY: e.clientY,
-      moved: false,
-      bulletSiblings,
-      stationSiblings,
-      labelSiblings,
-      history: beginHistoryGroup(),
-    };
-  };
   const onBulletClick = (id: string, e: React.MouseEvent) => {
     if (dragState.suppressClick) return;
     if (inHandMode) return;
@@ -533,11 +285,7 @@ export function MapCanvas() {
     const lbIds = sel.selectedLabelIds;
     const total = stIds.length + blIds.length + lbIds.length;
     if (total > 1 && blIds.includes(id)) {
-      const members: { type: 'station' | 'bullet' | 'label'; id: string }[] = [
-        ...stIds.map((sid) => ({ type: 'station' as const, id: sid })),
-        ...blIds.map((bid) => ({ type: 'bullet' as const, id: bid })),
-        ...lbIds.map((gid) => ({ type: 'label' as const, id: gid })),
-      ];
+      const members = buildRotateMembers(stIds, blIds, lbIds);
       useDoc.getState().rotateItemsAround({ type: 'bullet', id }, members);
       return;
     }
@@ -569,61 +317,12 @@ export function MapCanvas() {
     const lbIds = sel.selectedLabelIds;
     const total = stIds.length + blIds.length + lbIds.length;
     if (total > 1 && lbIds.includes(id)) {
-      const members: { type: 'station' | 'bullet' | 'label'; id: string }[] = [
-        ...stIds.map((sid) => ({ type: 'station' as const, id: sid })),
-        ...blIds.map((bid) => ({ type: 'bullet' as const, id: bid })),
-        ...lbIds.map((gid) => ({ type: 'label' as const, id: gid })),
-      ];
+      const members = buildRotateMembers(stIds, blIds, lbIds);
       useDoc.getState().rotateItemsAround({ type: 'label', id }, members);
       return;
     }
     rotateTextLabel(id);
   };
-  const onLabelPointerDown = (id: string, e: React.PointerEvent) => {
-    if (e.button !== 0) return;
-    if (inHandMode) return;
-    const lbl = textLabels[id];
-    if (!lbl) return;
-    e.stopPropagation();
-    // Group-drag: if the grabbed label is part of the multi-selection,
-    // every other selected item (labels + bullets + stations) tags along.
-    const sel = useSelection.getState();
-    const includesGrabbed = sel.selectedLabelIds.includes(id);
-    const labelSiblings: { id: string; startX: number; startY: number }[] = [];
-    const bulletSiblings: { id: string; startX: number; startY: number }[] = [];
-    const stationSiblings: { id: string; startX: number; startY: number }[] = [];
-    if (includesGrabbed) {
-      for (const gid of sel.selectedLabelIds) {
-        if (gid === id) continue;
-        const sg = textLabels[gid];
-        if (!sg) continue;
-        labelSiblings.push({ id: gid, startX: sg.x, startY: sg.y });
-      }
-      for (const bid of sel.selectedRouteBulletIds) {
-        const sb = routeBullets[bid];
-        if (!sb) continue;
-        bulletSiblings.push({ id: bid, startX: sb.x, startY: sb.y });
-      }
-      for (const sid of sel.selectedStationIds) {
-        const ss = stations[sid];
-        if (!ss) continue;
-        stationSiblings.push({ id: sid, startX: ss.x, startY: ss.y });
-      }
-    }
-    labelDragRef.current = {
-      id,
-      startWX: lbl.x,
-      startWY: lbl.y,
-      startMX: e.clientX,
-      startMY: e.clientY,
-      moved: false,
-      labelSiblings,
-      bulletSiblings,
-      stationSiblings,
-      history: beginHistoryGroup(),
-    };
-  };
-
   const onCanvasClick = (e: React.MouseEvent) => {
     if (inHandMode) return;
     const onBackground =
@@ -697,7 +396,7 @@ export function MapCanvas() {
       // Find this stripe's offset within the band.
       const k = spec.lines.findIndex((l) => l.id === lineId);
       const n = spec.lines.length;
-      const offset = (k - (n - 1) / 2) * STOP_SIZE;
+      const offset = stripeOffset(k, n);
       const world = view.screenToWorld(e.clientX, e.clientY);
       const closest = closestParamOnOffsetPath(spec.centerline, spec.radius, offset, world);
       const sample = sampleOffsetPath(spec.centerline, spec.radius, offset, closest.t);
@@ -727,7 +426,7 @@ export function MapCanvas() {
       if (!line) return;
       const k = spec.lines.findIndex((l) => l.id === lineId);
       const n = spec.lines.length;
-      const offset = (k - (n - 1) / 2) * STOP_SIZE;
+      const offset = stripeOffset(k, n);
       const world = view.screenToWorld(e.clientX, e.clientY);
       const closest = closestParamOnOffsetPath(spec.centerline, spec.radius, offset, world);
       const [fromCanon, toCanon] = spec.pairKey.split('|');
@@ -993,7 +692,7 @@ export function MapCanvas() {
               bullet={b}
               lines={lines}
               selected={bulletSelectedIds.includes(b.id)}
-              onPointerDown={onBulletPointerDown}
+              onPointerDown={itemDrag.onBulletPointerDown}
               onClick={onBulletClick}
               onContextMenu={onBulletContextMenu}
             />
@@ -1010,7 +709,7 @@ export function MapCanvas() {
               label={g}
               selected={labelSelectedIds.includes(g.id)}
               layer="bg"
-              onPointerDown={onLabelPointerDown}
+              onPointerDown={itemDrag.onLabelPointerDown}
               onClick={onLabelClick}
               onContextMenu={onLabelContextMenu}
             />
@@ -1020,324 +719,22 @@ export function MapCanvas() {
         {/* Debug highlight: dim overlay + re-painted selected line on top.
             Painted after dots so other lines' stop dots can't punch through
             the selected line's outline. */}
-        {highlightLineId && DIM_ALPHA > 0 && (
-          <rect
-            x={view.vbX}
-            y={view.vbY}
-            width={view.vbW}
-            height={view.vbH}
-            fill={DIM_COLOR}
-            fillOpacity={DIM_ALPHA}
-            pointerEvents="none"
-          />
-        )}
         {highlightLineId && (
-          <g pointerEvents="none">
-            {(() => {
-              const ln = lines[highlightLineId];
-              if (!ln) return null;
-              const hov = selection.hoveredInspectorSegment;
-              const hovPairKey = hov ? pairKeyOf(hov.fromStationId, hov.toStationId) : null;
-              const isHoverStation = (sid: string) =>
-                !!hov && (sid === hov.fromStationId || sid === hov.toStationId);
-              // Two buckets so dimmed stripe + colored stop square + direction
-              // triangle at one station composite *together* into one isolated
-              // group (children overdraw normally, then the group composites
-              // once at 0.2). Without this each dimmed element composites to
-              // the background separately and you see the stripe tinting
-              // through the marker, the marker tinting through the triangle,
-              // etc. When no divider is hovered, everything goes into the
-              // matched bucket and renders flat.
-              const dimmed: ReactNode[] = [];
-              const matched: ReactNode[] = [];
-              const push = (m: boolean, node: ReactNode) =>
-                (m || !hov ? matched : dimmed).push(node);
-              renderables.forEach((r, i) => {
-                if (r.kind !== 'stripe') return;
-                const stripeLn = r.band.lines[r.stripeIndex];
-                if (stripeLn.id !== highlightLineId) return;
-                // Presentation resolved live from the highlighted line (the
-                // spec carries only the id); style is per-segment via pairKey.
-                const style = resolveSegmentStyle(ln, r.band.pairKey);
-                const { stroke, strokeDasharray, strokeLinecap } = lineStyleStrokeAttrs(
-                  style,
-                  ln.color,
-                );
-                const underlay = lineStyleUnderlayAttrs(style, underlayColor);
-                const m = !!hov && hov.lineId === stripeLn.id && r.band.pairKey === hovPairKey;
-                push(
-                  m,
-                  <Fragment key={'hl-b:' + i}>
-                    {underlay && (
-                      <path
-                        d={r.band.paths[r.stripeIndex]}
-                        fill="none"
-                        stroke={underlay.stroke}
-                        strokeWidth={14}
-                        strokeLinecap={underlay.strokeLinecap}
-                        strokeLinejoin="round"
-                      />
-                    )}
-                    <path
-                      d={r.band.paths[r.stripeIndex]}
-                      fill="none"
-                      stroke={stroke}
-                      strokeWidth={14}
-                      strokeLinecap={strokeLinecap}
-                      strokeLinejoin="round"
-                      strokeDasharray={strokeDasharray}
-                    />
-                  </Fragment>,
-                );
-              });
-              renderables.forEach((r, i) => {
-                if (r.kind !== 'marker' || r.spec.lineId !== highlightLineId) return;
-                push(
-                  isHoverStation(r.spec.stationId),
-                  <StopMarker key={'hl-m:' + i} spec={r.spec} underlayColor={underlayColor} />,
-                );
-              });
-              // Direction triangles: small arrow ~5px past each stop dot
-              // pointing along the stop's own travel direction.
-              type P = { sid: string; x: number; y: number; st: Station; cell: StopCell };
-              const points: P[] = [];
-              for (const sid of ln.stations) {
-                const st = stations[sid];
-                if (!st) continue;
-                const cell = st.stops.find((c) => c.lineId === highlightLineId);
-                if (!cell) continue;
-                const world = stopPosWorld(cell, st);
-                points.push({ sid, st, cell, x: world.x, y: world.y });
-              }
-              if (points.length >= 2) {
-                const dotR = STOP_SIZE * 0.28;
-                const gap = 2;
-                const halfW = 3;
-                const height = 5;
-                const baseDist = dotR + gap;
-                const apexDist = baseDist + height;
-                points.forEach((p, i) => {
-                  // Hint resolves auto-* sign; for explicit orientations it's
-                  // ignored. Use the segment toward the next stop (or back from
-                  // the previous stop at the terminus).
-                  const ref = i < points.length - 1 ? points[i + 1] : points[i - 1];
-                  const sign = i < points.length - 1 ? 1 : -1;
-                  const worldHint = { x: (ref.x - p.x) * sign, y: (ref.y - p.y) * sign };
-                  const aInv = -(p.st.rotation * Math.PI) / 4;
-                  const ci = Math.cos(aInv);
-                  const si = Math.sin(aInv);
-                  const localHint = {
-                    x: worldHint.x * ci - worldHint.y * si,
-                    y: worldHint.x * si + worldHint.y * ci,
-                  };
-                  const localDir = travelDirLocal(p.cell.orientation, localHint);
-                  const worldDir = rotateBy(localDir, p.st.rotation);
-                  const dx = worldDir.x;
-                  const dy = worldDir.y;
-                  const px = -dy;
-                  const py = dx;
-                  const baseCx = p.x + dx * baseDist;
-                  const baseCy = p.y + dy * baseDist;
-                  const apexX = p.x + dx * apexDist;
-                  const apexY = p.y + dy * apexDist;
-                  const lX = baseCx + px * halfW;
-                  const lY = baseCy + py * halfW;
-                  const rX = baseCx - px * halfW;
-                  const rY = baseCy - py * halfW;
-                  const isTerminus = i === points.length - 1;
-                  push(
-                    isHoverStation(p.sid),
-                    <path
-                      key={'hl-tri:' + p.sid}
-                      d={`M ${apexX} ${apexY} L ${lX} ${lY} L ${rX} ${rY} Z`}
-                      fill={isTerminus ? ln.color : '#000'}
-                      stroke={isTerminus ? ln.color : undefined}
-                      strokeWidth={isTerminus ? 10 : undefined}
-                      strokeLinejoin={isTerminus ? 'miter' : undefined}
-                      paintOrder={isTerminus ? 'stroke fill' : undefined}
-                    />,
-                  );
-                });
-              }
-              // Re-render the selected line's stop dots on top so the colored
-              // markers and direction triangles don't swallow them.
-              for (const sid of ln.stations) {
-                const st = stations[sid];
-                if (!st) continue;
-                const cell = st.stops.find((c) => c.lineId === highlightLineId);
-                if (!cell) continue;
-                const { x: cx, y: cy } = stopPosWorld(cell, st);
-                push(
-                  isHoverStation(sid),
-                  <StopGlyph
-                    key={'hl-d:' + sid}
-                    cx={cx}
-                    cy={cy}
-                    shape={resolveDotShape(ln, cell)}
-                    stationId={sid}
-                    lineId={cell.lineId}
-                  />,
-                );
-              }
-              // Selected line's station names rendered in white above dim.
-              // The append-mode "starter" station gets its own treatment
-              // below (line-color name + arrowhead), so skip it here.
-              const append =
-                selection.uiMode.kind === 'appending-to-line' ? selection.uiMode : null;
-              const starterId =
-                append &&
-                append.lineId === highlightLineId &&
-                append.insertAfterIndex != null &&
-                append.insertAfterIndex >= 0
-                  ? ln.stations[append.insertAfterIndex]
-                  : null;
-              for (const sid of ln.stations) {
-                if (sid === starterId) continue;
-                const st = stations[sid];
-                if (!st) continue;
-                push(
-                  isHoverStation(sid),
-                  <StationView
-                    key={'hl-l:' + sid}
-                    station={st}
-                    lines={lines}
-                    zoom={view.viewport.zoom}
-                    onStartDrag={drag.onStartDrag}
-                    layer="highlight-label"
-                  />,
-                );
-              }
-              return (
-                <>
-                  {dimmed.length > 0 && <g opacity={0.2}>{dimmed}</g>}
-                  {matched}
-                </>
-              );
-            })()}
-            {/* In append mode, surface stations not yet on the line as
-                light gray labels above the dim, plus highlight the
-                "starter" stop and draw an arrowhead pointing at where
-                the next station will be inserted. */}
-            {selection.uiMode.kind === 'appending-to-line' &&
-              selection.uiMode.lineId === highlightLineId &&
-              (() => {
-                const append = selection.uiMode;
-                if (append.kind !== 'appending-to-line') return null;
-                const ln = lines[highlightLineId];
-                if (!ln) return null;
-                const onLine = new Set(ln.stations);
-                const addable = Object.values(stations)
-                  .filter((st) => !onLine.has(st.id))
-                  .map((st) => (
-                    <StationView
-                      key={'add-l:' + st.id}
-                      station={st}
-                      lines={lines}
-                      zoom={view.viewport.zoom}
-                      onStartDrag={drag.onStartDrag}
-                      layer="highlight-label"
-                      highlightColor="#bbb"
-                    />
-                  ));
-
-                const idx = append.insertAfterIndex ?? -1;
-                const stopWorld = (sid: string) => {
-                  const st = stations[sid];
-                  if (!st) return null;
-                  const cell = st.stops.find((c) => c.lineId === highlightLineId);
-                  if (!cell) return null;
-                  return stopPosWorld(cell, st);
-                };
-
-                // Pick origin (the stop the arrow extends from) and the
-                // direction in which insertion will happen.
-                let originIdx: number;
-                let dirToIdx: number | null;
-                let dirSign: 1 | -1 = 1;
-                if (idx === -1) {
-                  // Insert at start: arrow extends BEFORE station 0,
-                  // opposite of the 0→1 direction.
-                  originIdx = 0;
-                  dirToIdx = ln.stations.length > 1 ? 1 : null;
-                  dirSign = -1;
-                } else if (idx >= ln.stations.length - 1) {
-                  // After last station: arrow extends past it in the
-                  // direction of the final segment.
-                  originIdx = idx;
-                  dirToIdx = idx > 0 ? idx - 1 : null;
-                  dirSign = -1;
-                } else {
-                  // Between K and K+1: arrow points from K toward K+1.
-                  originIdx = idx;
-                  dirToIdx = idx + 1;
-                  dirSign = 1;
-                }
-
-                const originSid = ln.stations[originIdx];
-                const origin = originSid ? stopWorld(originSid) : null;
-                const dirRef = dirToIdx != null ? stopWorld(ln.stations[dirToIdx]) : null;
-                let arrow: React.ReactNode = null;
-                if (origin && dirRef) {
-                  const rdx = (dirRef.x - origin.x) * dirSign;
-                  const rdy = (dirRef.y - origin.y) * dirSign;
-                  const rlen = Math.hypot(rdx, rdy) || 1;
-                  const dx = rdx / rlen;
-                  const dy = rdy / rlen;
-                  const px = -dy;
-                  const py = dx;
-                  // Triangle: base STOP_SIZE wide centered just past the
-                  // dot, apex one stop further along the direction. For
-                  // the -1 ("add before start") case the arrow is rendered
-                  // outside station 0, but flipped 180° so it points back
-                  // down the line at station 0.
-                  const baseDist = STOP_SIZE * 0.85;
-                  const apexDist = baseDist + STOP_SIZE * 0.7;
-                  const halfW = STOP_SIZE * 0.55;
-                  const flipped = idx === -1;
-                  const baseR = flipped ? apexDist : baseDist;
-                  const apexR = flipped ? baseDist : apexDist;
-                  const baseCx = origin.x + dx * baseR;
-                  const baseCy = origin.y + dy * baseR;
-                  const apexX = origin.x + dx * apexR;
-                  const apexY = origin.y + dy * apexR;
-                  const lX = baseCx + px * halfW;
-                  const lY = baseCy + py * halfW;
-                  const rX = baseCx - px * halfW;
-                  const rY = baseCy - py * halfW;
-                  arrow = (
-                    <path
-                      d={`M ${apexX} ${apexY} L ${lX} ${lY} L ${rX} ${rY} Z`}
-                      fill={ln.color}
-                      stroke={legibleTextOn(ln.color)}
-                      strokeWidth={1}
-                      strokeLinejoin="round"
-                    />
-                  );
-                }
-
-                const starterSid = idx >= 0 ? ln.stations[idx] : null;
-                const starter =
-                  starterSid && stations[starterSid] ? (
-                    <StationView
-                      key={'starter:' + starterSid}
-                      station={stations[starterSid]}
-                      lines={lines}
-                      zoom={view.viewport.zoom}
-                      onStartDrag={drag.onStartDrag}
-                      layer="starter-label"
-                      highlightColor={ln.color}
-                    />
-                  ) : null;
-
-                return (
-                  <>
-                    {addable}
-                    {arrow}
-                    {starter}
-                  </>
-                );
-              })()}
-          </g>
+          <HighlightedLineLayer
+            highlightLineId={highlightLineId}
+            lines={lines}
+            stations={stations}
+            renderables={renderables}
+            underlayColor={underlayColor}
+            hoveredInspectorSegment={selection.hoveredInspectorSegment}
+            uiMode={selection.uiMode}
+            zoom={view.viewport.zoom}
+            onStartDrag={drag.onStartDrag}
+            vbX={view.vbX}
+            vbY={view.vbY}
+            vbW={view.vbW}
+            vbH={view.vbH}
+          />
         )}
 
         {/* Line tags: in-band labels that ride each line's stripe. Faded
@@ -1413,7 +810,10 @@ export function MapCanvas() {
 
         {/* Snap guides: rendered last so the dotted lines + measurement
             labels sit on top of line tags and everything else. */}
-        <SnapGuides guides={[...drag.snapGuides, ...bulletSnapGuides]} zoom={view.viewport.zoom} />
+        <SnapGuides
+          guides={[...drag.snapGuides, ...itemDrag.bulletSnapGuides]}
+          zoom={view.viewport.zoom}
+        />
 
         {/* Layering-mode top overlays: the hovered-stripe solid outline +
             small layer-number labels. Painted at the very end of the SVG

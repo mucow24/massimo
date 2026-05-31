@@ -8,13 +8,21 @@ import { pairKeyOf } from './pairKey';
 export const LAYER_WEIGHT = 10000;
 
 /**
+ * Effective per-segment z-layer override on `line` at `pairKey`. Missing ⇒ 0
+ * (the default, never persisted) — one named home for the field default,
+ * shared by the priority math and the layer-number overlay.
+ */
+export function resolveSegmentLayer(line: Line | undefined, pairKey: string): number {
+  return line?.segmentLayers?.[pairKey] ?? 0;
+}
+
+/**
  * Compose a stripe's final paint priority from its global line index and
  * any per-segment layer override on this line. Smaller priority = renders
  * later = on top, matching the existing convention.
  */
 export function segmentPriority(line: Line | undefined, pairKey: string, lineIdx: number): number {
-  const layer = line?.segmentLayers?.[pairKey] ?? 0;
-  return lineIdx - layer * LAYER_WEIGHT;
+  return lineIdx - resolveSegmentLayer(line, pairKey) * LAYER_WEIGHT;
 }
 
 /**

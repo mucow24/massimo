@@ -39,10 +39,10 @@ export interface LabelLayout {
   // SVG attribute values: which side of the anchor the text aligns to.
   textAnchor: 'start' | 'middle' | 'end';
   baseline: LabelBaseline;
-  // dy for the FIRST tspan, used to shift multi-line blocks so that valign
-  // refers to the BLOCK rather than just the first line. Subsequent tspans
-  // stack 1.2em below this one. Empty string means "no dy attribute".
-  firstLineDy: string;
+  // First-line baseline shift in px (negative = up), shifting a multi-line
+  // block so `valign` refers to the BLOCK, not just the first line. Subsequent
+  // lines stack one line-height below. 0 = no shift.
+  firstLineDyPx: number;
   // Tight box around the rendered text in unrotated station-local coords,
   // padded by HIT_PAD on each side. Used by:
   //  - the bg hit-test rect (rotated about (anchorX, anchorY) for hit-testing)
@@ -75,6 +75,11 @@ export interface LabelLayout {
 export function labelLayoutLocal(
   station: Station,
   style: LabelStyle = DEFAULT_LABEL_STYLE,
+  // Injected for deterministic tests; defaults to the real (canvas-backed)
+  // measurer so production callers are unaffected. Under jsdom the default
+  // falls back to a width heuristic, which is why exact-geometry tests pass a
+  // stub instead of trusting it.
+  measure: typeof measureTextLabel = measureTextLabel,
 ): LabelLayout {
   const stops = station.stops;
   const label = station.label;
@@ -172,7 +177,7 @@ export function labelLayoutLocal(
   // as its literal characters) and font-size-aware, so the hit rect / wash
   // silhouette hugs the painted glyphs instead of a per-character guess that
   // ballooned for small fonts and labels containing inline route bullets.
-  const measured = measureTextLabel({
+  const measured = measure({
     text: station.name,
     fontSize: style.fontSize,
     weight: style.weight,
@@ -225,10 +230,9 @@ export function labelLayoutLocal(
   if (label.valign === 'middle') firstLineShiftPx = (extraLines * labelLineHeight) / 2;
   else if (label.valign === 'bottom' || label.valign === 'auto-up')
     firstLineShiftPx = extraLines * labelLineHeight;
-  // Keep dy in em (matches the '1.2em' stacking on subsequent tspans), so it
-  // tracks font-size.
-  const firstLineDy =
-    firstLineShiftPx === 0 ? '0' : `${(-firstLineShiftPx / style.fontSize).toFixed(3)}em`;
+  // First-line baseline shift in px (negative = up). The renderer applies the
+  // per-line stacking in px too, so no em round-trip is needed.
+  const firstLineDyPx = firstLineShiftPx === 0 ? 0 : -firstLineShiftPx;
 
   // Top of the painted text block (already accounting for the first-line
   // shift above):
@@ -260,7 +264,7 @@ export function labelLayoutLocal(
     anchorY,
     textAnchor,
     baseline,
-    firstLineDy,
+    firstLineDyPx,
     hitX: textXMin - HIT_PAD,
     hitY: textYMin - HIT_PAD,
     hitW: textW + 2 * HIT_PAD,

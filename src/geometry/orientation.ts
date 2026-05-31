@@ -1,4 +1,4 @@
-import { Vec2 } from './vec';
+import { Vec2, SQRT2_2 } from './vec';
 import type { StopOrientation } from '../model/types';
 
 export const STOP_SIZE = 14;
@@ -8,7 +8,6 @@ export const STOP_DOT_RADIUS = STOP_SIZE * 0.28;
 export type Rotation = 0 | 1 | 2 | 3 | 4 | 5 | 6 | 7;
 
 const HALF = STOP_SIZE / 2;
-const SQRT2_2 = Math.SQRT1_2;
 
 export const rotRad = (r: Rotation) => (r * Math.PI) / 4;
 
@@ -27,6 +26,12 @@ export const stopCenterAt = (row: number, col: number): Vec2 => ({
   x: col * (STOP_SIZE + STOP_GAP),
   y: row * (STOP_SIZE + STOP_GAP),
 });
+
+// Perpendicular offset of stripe `k` (0-based) within an n-stripe interlined
+// band, in world units. Stripes straddle the centerline symmetrically. This
+// invariant MUST agree across band paint, outline, label placement, and the
+// hit/drag paths or the rendered geometry desyncs — so it lives in one place.
+export const stripeOffset = (k: number, n: number): number => (k - (n - 1) / 2) * STOP_SIZE;
 
 /**
  * Travel direction in the unrotated local frame for a stop with the given
@@ -137,6 +142,11 @@ export const localToWorld = (
 
 export const localDirToWorld = (local: Vec2, rotation: Rotation): Vec2 => rotateBy(local, rotation);
 
+// Inverse of localDirToWorld: rotate a world-frame direction back into a
+// station's unrotated local frame (rotation only, no translation).
+export const worldDirToLocal = (world: Vec2, rotation: Rotation): Vec2 =>
+  rotateBy(world, ((8 - rotation) % 8) as Rotation);
+
 export interface SegmentEndpoints {
   start: Vec2;
   startDir: Vec2;
@@ -169,12 +179,8 @@ export const segmentEndpoints = (
   // fall back to its +axis default).
   worldTravelDir: Vec2 | null = null,
 ): SegmentEndpoints => {
-  const fromHintLocal = worldTravelDir
-    ? rotateBy(worldTravelDir, ((-from.rotation + 8) % 8) as Rotation)
-    : null;
-  const toHintLocal = worldTravelDir
-    ? rotateBy(worldTravelDir, ((-to.rotation + 8) % 8) as Rotation)
-    : null;
+  const fromHintLocal = worldTravelDir ? worldDirToLocal(worldTravelDir, from.rotation) : null;
+  const toHintLocal = worldTravelDir ? worldDirToLocal(worldTravelDir, to.rotation) : null;
   const start = localToWorld(fromLocalPoint, from);
   const startDir = localDirToWorld(travelDirLocal(fromOrientation, fromHintLocal), from.rotation);
   const end = localToWorld(toLocalPoint, to);

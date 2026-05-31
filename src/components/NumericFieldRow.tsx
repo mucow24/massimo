@@ -1,5 +1,4 @@
-import { useEffect, useRef, useState } from 'react';
-import { useFieldHistory } from './useFieldHistory';
+import { useNumericField } from './useNumericField';
 
 interface Props {
   /** Used as the slider's `id` (for `<label htmlFor>` association) and the
@@ -44,12 +43,8 @@ export function NumericFieldRow({
   getCurrent,
   textboxAllowAboveMax,
 }: Props) {
-  const field = useFieldHistory();
-  const [text, setText] = useState(String(value));
-  const focusedRef = useRef(false);
-  useEffect(() => {
-    if (!focusedRef.current) setText(String(value));
-  }, [value]);
+  const { text, history, onNumberFocus, onNumberChange, onNumberWheel, onNumberBlur } =
+    useNumericField(value, onChange, getCurrent);
 
   return (
     <div className="options-popover-row">
@@ -64,7 +59,7 @@ export function NumericFieldRow({
         step={step}
         value={value}
         onChange={(e) => onChange(Number(e.target.value))}
-        {...field}
+        {...history}
       />
       <input
         type="number"
@@ -74,28 +69,10 @@ export function NumericFieldRow({
         step={step}
         className="options-popover-spin"
         value={text}
-        onFocus={() => {
-          focusedRef.current = true;
-          field.onFocus();
-        }}
-        onChange={(e) => {
-          const raw = e.target.value;
-          setText(raw);
-          if (raw === '') return; // ignore empty mid-edit
-          const n = Number(raw);
-          if (!Number.isFinite(n)) return;
-          onChange(n);
-        }}
-        onWheel={(e) => {
-          e.preventDefault();
-          const delta = e.deltaY < 0 ? 1 : -1;
-          onChange(getCurrent() + delta);
-        }}
-        onBlur={() => {
-          focusedRef.current = false;
-          setText(String(getCurrent()));
-          field.onBlur();
-        }}
+        onFocus={onNumberFocus}
+        onChange={onNumberChange}
+        onWheel={onNumberWheel}
+        onBlur={onNumberBlur}
       />
     </div>
   );

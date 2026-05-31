@@ -1,28 +1,19 @@
-import { Fragment, useEffect, useMemo, useRef, useState } from 'react';
+import { Fragment, useMemo, useRef, useState } from 'react';
 import { useDoc, useSelection } from '../../state/store';
 import { useThemeColors } from '../../state/theme';
 import type { DotShape, Line, LineId, LineStyle } from '../../model/types';
 import { pairKeyOf } from '../../model/pairKey';
 import { resolveDotShape } from '../../model/transforms';
+import { resolveSegmentStyle } from '../../geometry/interlining';
 import { ColorPalette } from './ColorPalette';
 import { useFieldHistory } from '../useFieldHistory';
+import { useDismiss } from '../usePopover';
 import { HatchPatterns, lineStyleStrokeAttrs, lineStyleUnderlayAttrs } from '../HatchPatterns';
 import { StopGlyph } from '../StopGlyph';
-import { StationShapePicker } from '../StationShapePicker';
+import { StationShapePicker, SHAPES } from '../StationShapePicker';
 import { blendOver, legibleTextOn, withAlpha } from '../../util/color';
 import { InlineBulletText } from '../InlineBulletText';
-
-const DOT_SHAPES: Array<{ shape: DotShape; label: string }> = [
-  { shape: 'filled-black', label: 'Filled black' },
-  { shape: 'open-black', label: 'Open black' },
-  { shape: 'filled-black-white-stroke', label: 'Filled black with white stroke' },
-  { shape: 'filled-white', label: 'Filled white' },
-  { shape: 'open-white', label: 'Open white' },
-  { shape: 'filled-white-black-stroke', label: 'Filled white with black stroke' },
-  { shape: 'filled-black-diamond', label: 'Filled black diamond' },
-  { shape: 'filled-white-diamond', label: 'Filled white diamond' },
-  { shape: 'none', label: 'None' },
-];
+import { stationBandLayout, STATION_ROW_H, GAP_ROW_H, BAND_W } from './stationBandGeometry';
 
 function DotShapePopover({
   onPick,
@@ -34,24 +25,10 @@ function DotShapePopover({
   style: React.CSSProperties;
 }) {
   const ref = useRef<HTMLDivElement | null>(null);
-  useEffect(() => {
-    const onDocClick = (e: globalThis.MouseEvent) => {
-      if (ref.current && !ref.current.contains(e.target as Node)) onClose();
-    };
-    const onKey = (e: globalThis.KeyboardEvent) => {
-      if (e.key === 'Escape') onClose();
-    };
-    const t = setTimeout(() => document.addEventListener('mousedown', onDocClick), 0);
-    document.addEventListener('keydown', onKey);
-    return () => {
-      clearTimeout(t);
-      document.removeEventListener('mousedown', onDocClick);
-      document.removeEventListener('keydown', onKey);
-    };
-  }, [onClose]);
+  useDismiss(true, onClose, [ref]);
   return (
     <div className="shape-grid" role="menu" ref={ref} style={{ ...style, right: 'auto' }}>
-      {DOT_SHAPES.map(({ shape, label }) => (
+      {SHAPES.map(({ shape, label }) => (
         <button
           key={shape}
           type="button"
@@ -69,10 +46,7 @@ function DotShapePopover({
   );
 }
 
-const STATION_ROW_H = 20;
-const GAP_ROW_H = 16;
 const INSERT_ROW_H = 16;
-const BAND_W = 14;
 const MARKER_W = 24;
 
 const NEXT_STYLE: Record<LineStyle, LineStyle> = {
@@ -162,7 +136,7 @@ export function LineInspector({ id }: { id: LineId }) {
 
   const cycleSegmentStyle = (fromStationId: string, toStationId: string) => {
     const key = pairKeyOf(fromStationId, toStationId);
-    const cur = (line.segmentStyles?.[key] ?? 'solid') as LineStyle;
+    const cur = resolveSegmentStyle(line, key);
     setLineSegmentStyle(line.id, fromStationId, toStationId, NEXT_STYLE[cur]);
   };
 
@@ -248,27 +222,11 @@ export function LineInspector({ id }: { id: LineId }) {
         {line.stations.length > 0 &&
           (() => {
             const N = line.stations.length;
-            const totalBandH = N * STATION_ROW_H + Math.max(0, N - 1) * GAP_ROW_H;
-            const cap = BAND_W / 2;
-            const centerOf = (idx: number) => idx * (STATION_ROW_H + GAP_ROW_H) + STATION_ROW_H / 2;
-            const segments: Array<{
-              i: number;
-              sid: string;
-              nextSid: string;
-              style: LineStyle;
-              y1: number;
-              y2: number;
-            }> = [];
-            for (let i = 0; i < N - 1; i++) {
-              const sid = line.stations[i];
-              const nextSid = line.stations[i + 1];
-              if (!stations[sid] || !stations[nextSid]) continue;
-              const key = pairKeyOf(sid, nextSid);
-              const style = (line.segmentStyles?.[key] ?? 'solid') as LineStyle;
-              const y1 = i === 0 ? centerOf(0) - cap : centerOf(i);
-              const y2 = i === N - 2 ? centerOf(N - 1) + cap : centerOf(i + 1);
-              segments.push({ i, sid, nextSid, style, y1, y2 });
-            }
+            const {
+              totalHeight: totalBandH,
+              centerOf,
+              segments,
+            } = stationBandLayout(line, stations);
             const needsHatchDefs = segments.some(
               (s) => s.style === 'hatched' || s.style === 'hatched-mirror',
             );
@@ -465,7 +423,7 @@ export function LineInspector({ id }: { id: LineId }) {
                           const nextSid = line.stations[i + 1];
                           if (!stations[nextSid]) return null;
                           const key = pairKeyOf(sid, nextSid);
-                          const segStyle = (line.segmentStyles?.[key] ?? 'solid') as LineStyle;
+                          const segStyle = resolveSegmentStyle(line, key);
                           const setHover = () =>
                             selection.setHoveredInspectorSegment({
                               lineId: line.id,

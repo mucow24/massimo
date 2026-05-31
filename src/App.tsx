@@ -9,9 +9,10 @@ import {
   useDoc,
   useSelection,
 } from './state/store';
-import { readClipboard, writeClipboard } from './model/clipboard';
+import { readClipboard, routeBulletPayload, writeClipboard } from './model/clipboard';
 import { _clearTextMeasureCache } from './geometry/textMeasure';
 import { useViewportStore } from './state/viewportStore';
+import { redo, undo } from './state/history';
 
 export default function App() {
   const darkMode = useViewportStore((s) => s.darkMode);
@@ -120,15 +121,14 @@ export default function App() {
         // etc.) commits its entry to the past stack — otherwise undo
         // would skip the in-progress edit and revert the action before it.
         if (document.activeElement instanceof HTMLElement) document.activeElement.blur();
-        const temporal = useDoc.temporal.getState();
-        if (e.shiftKey) temporal.redo();
-        else temporal.undo();
+        if (e.shiftKey) redo();
+        else undo();
         return;
       }
       if (mod && !inForm && (e.key === 'y' || e.key === 'Y')) {
         e.preventDefault();
         if (document.activeElement instanceof HTMLElement) document.activeElement.blur();
-        useDoc.temporal.getState().redo();
+        redo();
         return;
       }
       // Copy / paste / duplicate for a single selected route bullet (the
@@ -139,21 +139,9 @@ export default function App() {
         const sel = useSelection.getState();
         const bullets = sel.selectedRouteBulletIds;
         if (bullets.length !== 1 || sel.selectedStationIds.length > 0) return;
-        const bid = bullets[0];
-        const b = useDoc.getState().routeBullets[bid];
+        const b = useDoc.getState().routeBullets[bullets[0]];
         if (!b) return;
-        const text = writeClipboard({
-          kind: 'route-bullet',
-          data: {
-            x: b.x,
-            y: b.y,
-            rotation: b.rotation,
-            lineId: b.lineId,
-            shape: b.shape,
-            size: b.size,
-          },
-        });
-        navigator.clipboard?.writeText(text).catch(() => {});
+        navigator.clipboard?.writeText(writeClipboard(routeBulletPayload(b))).catch(() => {});
         e.preventDefault();
         return;
       }
@@ -164,15 +152,7 @@ export default function App() {
           .then((text) => {
             const payload = readClipboard(text);
             if (!payload || payload.kind !== 'route-bullet') return;
-            const d = payload.data;
-            const newId = useDoc.getState().addRouteBulletWith({
-              x: d.x + 15,
-              y: d.y + 15,
-              rotation: d.rotation,
-              lineId: d.lineId,
-              shape: d.shape,
-              size: d.size,
-            });
+            const newId = useDoc.getState().pasteRouteBullet(payload.data);
             useSelection.getState().selectRouteBullet(newId);
           })
           .catch(() => {});
@@ -182,19 +162,9 @@ export default function App() {
         const sel = useSelection.getState();
         const bullets = sel.selectedRouteBulletIds;
         if (bullets.length !== 1 || sel.selectedStationIds.length > 0) return;
-        const bid = bullets[0];
-        const b = useDoc.getState().routeBullets[bid];
-        if (!b) return;
         e.preventDefault();
-        const newId = useDoc.getState().addRouteBulletWith({
-          x: b.x + 15,
-          y: b.y + 15,
-          rotation: b.rotation,
-          lineId: b.lineId,
-          shape: b.shape,
-          size: b.size,
-        });
-        useSelection.getState().selectRouteBullet(newId);
+        const newId = useDoc.getState().duplicateRouteBullet(bullets[0]);
+        if (newId) useSelection.getState().selectRouteBullet(newId);
         return;
       }
       if (!inForm && !mod && (e.key === 'a' || e.key === 'A')) {

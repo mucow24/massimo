@@ -13,6 +13,11 @@ export const norm = (a: Vec2): Vec2 => {
   return { x: a.x / L, y: a.y / L };
 };
 export const perp = (a: Vec2): Vec2 => ({ x: -a.y, y: a.x });
+// 90° normal to the LEFT of travel direction `a` in the y-DOWN screen frame
+// (a = east → north). The band/stripe offset convention used by the router and
+// interlining. Intentionally the negation of `perp` (which uses the math y-up
+// convention) — keep the two distinct.
+export const leftNormal = (a: Vec2): Vec2 => ({ x: a.y, y: -a.x });
 export const eq = (a: Vec2, b: Vec2, eps = 1e-6) =>
   Math.abs(a.x - b.x) < eps && Math.abs(a.y - b.y) < eps;
 
@@ -21,3 +26,8 @@ export const rotate = (a: Vec2, rad: number): Vec2 => {
   const s = Math.sin(rad);
   return { x: a.x * c - a.y * s, y: a.x * s + a.y * c };
 };
+
+// Component of a unit vector along a 45° diagonal: √2/2 = 1/√2 ≈ 0.7071.
+// The single home for this constant; octolinear direction tables and snap
+// axes all reference it.
+export const SQRT2_2 = Math.SQRT1_2;

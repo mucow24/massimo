@@ -3,7 +3,8 @@ import type { Line, LineId } from '../../model/types';
 import type { SegmentBandSpec } from '../../geometry/interlining';
 import { sampleOffsetPath } from '../../geometry/lineTagGeometry';
 import { pickLayerLabelT, sampleBandStripes } from '../../geometry/layerLabelPlacement';
-import { STOP_SIZE } from '../../geometry/orientation';
+import { stripeOffset } from '../../geometry/orientation';
+import { resolveSegmentLayer } from '../../model/layerPriority';
 import { legibleTextOn } from '../../util/color';
 
 const FONT_SIZE = 9;
@@ -66,12 +67,12 @@ export function LayerNumberLabels({ bands, lines, hovered }: Props) {
         band.lines.map((stripeLine, k) => {
           const line = lines[stripeLine.id];
           if (!line) return null;
-          const layer = line.segmentLayers?.[band.pairKey] ?? 0;
+          const layer = resolveSegmentLayer(line, band.pairKey);
           const isHovered =
             !!hovered && hovered.bandKey === band.bandKey && hovered.lineId === stripeLine.id;
           if (layer === 0 && !isHovered) return null;
           const n = band.lines.length;
-          const offset = (k - (n - 1) / 2) * STOP_SIZE;
+          const offset = stripeOffset(k, n);
           const cacheKey = band.bandKey + '|' + stripeLine.id;
           // Cache covers every stripe on the current geometry — the lookup
           // is a guaranteed hit. The `?? 0.5` fallback is only there to

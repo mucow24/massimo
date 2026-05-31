@@ -1,6 +1,10 @@
 import { describe, it, expect } from 'vitest';
+import fc from 'fast-check';
 import { parse, serialize } from './serialize';
+import * as T from './transforms';
+import { counterIdFactory } from './ids';
 import { makeDoc, makeLine, makeStation, makeStop } from '../test/fixtures';
+import type { MapDoc } from './types';
 
 describe('serialize / parse round-trip', () => {
   it('round-trips a multi-line, multi-station fixture losslessly', () => {
@@ -321,5 +325,104 @@ describe('serialize / parse — dotShape', () => {
     const result = parse(json);
     expect(result.ok).toBe(true);
     if (result.ok) expect(result.doc.stations.s1.stops[0].dotShape).toBe('filled-black-diamond');
+  });
+});
+
+describe('serialize / parse — round-trip property', () => {
+  // A "canonical" doc is anything the pure transforms can build from the empty
+  // default doc: ids minted in order, lineOrder maintained, stops + auto
+  // orientations only where the model put them. parse() must return such a doc
+  // byte-for-byte equal — it only ever changes NON-canonical (legacy/hand-
+  // edited) input, which the explicit cases above cover.
+  type Action =
+    | { kind: 'addStation' }
+    | { kind: 'addLine' }
+    | { kind: 'toggleStationOnLine' }
+    | { kind: 'rotateStation' }
+    | { kind: 'moveStation'; x: number; y: number }
+    | { kind: 'deleteStation' }
+    | { kind: 'deleteLine' }
+    | { kind: 'moveLineInOrder'; dir: -1 | 1 };
+
+  const actionArb = fc.oneof(
+    fc.constant<Action>({ kind: 'addStation' }),
+    fc.constant<Action>({ kind: 'addLine' }),
+    fc.constant<Action>({ kind: 'toggleStationOnLine' }),
+    fc.constant<Action>({ kind: 'rotateStation' }),
+    fc.record({
+      kind: fc.constant<'moveStation'>('moveStation'),
+      x: fc.integer({ min: -500, max: 500 }),
+      y: fc.integer({ min: -500, max: 500 }),
+    }),
+    fc.constant<Action>({ kind: 'deleteStation' }),
+    fc.constant<Action>({ kind: 'deleteLine' }),
+    fc.record({
+      kind: fc.constant<'moveLineInOrder'>('moveLineInOrder'),
+      dir: fc.constantFrom<-1 | 1>(-1, 1),
+    }),
+  );
+
+  const firstKey = (rec: Record<string, unknown>): string | null => Object.keys(rec)[0] ?? null;
+  const lastKey = (rec: Record<string, unknown>): string | null => {
+    const ks = Object.keys(rec);
+    return ks.length ? ks[ks.length - 1] : null;
+  };
+
+  const build = (actions: Action[]): MapDoc => {
+    const ids = counterIdFactory();
+    let doc: MapDoc = { ...T.DEFAULT_DOC };
+    for (const a of actions) {
+      switch (a.kind) {
+        case 'addStation':
+          doc = T.addStation(doc, 0, 0, ids.stationId(), 'S');
+          break;
+        case 'addLine':
+          doc = T.addLine(doc, ids.lineId(), 'X', '#0039A6');
+          break;
+        case 'toggleStationOnLine': {
+          const l = firstKey(doc.lines);
+          const s = lastKey(doc.stations);
+          if (l && s) doc = T.toggleStationOnLine(doc, l, s);
+          break;
+        }
+        case 'rotateStation': {
+          const s = firstKey(doc.stations);
+          if (s) doc = T.rotateStation(doc, s);
+          break;
+        }
+        case 'moveStation': {
+          const s = firstKey(doc.stations);
+          if (s) doc = T.moveStation(doc, s, a.x, a.y);
+          break;
+        }
+        case 'deleteStation': {
+          const s = firstKey(doc.stations);
+          if (s) doc = T.deleteStation(doc, s);
+          break;
+        }
+        case 'deleteLine': {
+          const l = firstKey(doc.lines);
+          if (l) doc = T.deleteLine(doc, l);
+          break;
+        }
+        case 'moveLineInOrder': {
+          const l = firstKey(doc.lines);
+          if (l) doc = T.moveLineInOrder(doc, l, a.dir);
+          break;
+        }
+      }
+    }
+    return doc;
+  };
+
+  it('parse(serialize(doc)) deep-equals any transform-built doc', () => {
+    fc.assert(
+      fc.property(fc.array(actionArb, { maxLength: 40 }), (actions) => {
+        const doc = build(actions);
+        const result = parse(serialize(doc));
+        expect(result.ok).toBe(true);
+        if (result.ok) expect(result.doc).toEqual(doc);
+      }),
+    );
   });
 });

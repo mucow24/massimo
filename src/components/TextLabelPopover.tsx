@@ -3,6 +3,7 @@ import { useDoc } from '../state/store';
 import { projectToScreen, type ViewportProjection } from './canvas/screenAnchor';
 import { TEXT_LABEL_FONT_SIZE_MAX, TEXT_LABEL_FONT_SIZE_MIN } from '../model/transforms';
 import { useFieldHistory } from './useFieldHistory';
+import { useNumericField } from './useNumericField';
 import type { TextLabel, TextLabelAlign, TextLabelWeight } from '../model/types';
 
 interface Props {
@@ -82,20 +83,17 @@ export function TextLabelPopover({ label, world, view, onClose }: Props) {
   };
 
   const textField = useFieldHistory();
-  const sizeField = useFieldHistory();
-  const [sizeText, setSizeText] = useState<string>(String(label.fontSize));
-  // While the spin/slider field is focused locally, hold off on overwriting
-  // the user's in-progress text from the store. Mirrors OptionsPopover.
-  const sizeFocused = useRef(false);
-  useEffect(() => {
-    if (!sizeFocused.current) setSizeText(String(label.fontSize));
-  }, [label.fontSize]);
 
   const setText = (text: string) => updateTextLabel(label.id, { text });
   const setFontSize = (n: number) => updateTextLabel(label.id, { fontSize: n });
   const setAlign = (align: TextLabelAlign) => updateTextLabel(label.id, { align });
   const setItalic = (italic: boolean) => updateTextLabel(label.id, { italic });
   const setWeight = (weight: TextLabelWeight) => updateTextLabel(label.id, { weight });
+  const size = useNumericField(
+    label.fontSize,
+    setFontSize,
+    () => useDoc.getState().textLabels[label.id]?.fontSize ?? label.fontSize,
+  );
   const onDelete = () => {
     deleteTextLabel(label.id);
     onClose();
@@ -104,18 +102,6 @@ export function TextLabelPopover({ label, world, view, onClose }: Props) {
   const onSizeRange = (e: React.ChangeEvent<HTMLInputElement>) => {
     const n = Number(e.target.value);
     if (Number.isFinite(n)) setFontSize(n);
-  };
-  const onSizeNumberChange = (e: React.ChangeEvent<HTMLInputElement>) => {
-    const raw = e.target.value;
-    setSizeText(raw);
-    if (raw === '') return;
-    const n = Number(raw);
-    if (Number.isFinite(n)) setFontSize(n);
-  };
-  const onSizeNumberWheel = (e: React.WheelEvent<HTMLInputElement>) => {
-    e.preventDefault();
-    const delta = e.deltaY < 0 ? 1 : -1;
-    setFontSize(label.fontSize + delta);
   };
 
   // Escape closes; outside click does NOT (the canvas's onCanvasClick handles
@@ -179,7 +165,7 @@ export function TextLabelPopover({ label, world, view, onClose }: Props) {
           />
         </div>
 
-        <div className="row" onWheel={onSizeNumberWheel}>
+        <div className="row" onWheel={size.onNumberWheel}>
           <label>Size</label>
           <input
             type="range"
@@ -188,8 +174,8 @@ export function TextLabelPopover({ label, world, view, onClose }: Props) {
             step={1}
             value={label.fontSize}
             onChange={onSizeRange}
-            onMouseDown={sizeField.onFocus}
-            onMouseUp={sizeField.onBlur}
+            onMouseDown={size.history.onFocus}
+            onMouseUp={size.history.onBlur}
           />
           <input
             type="number"
@@ -197,18 +183,11 @@ export function TextLabelPopover({ label, world, view, onClose }: Props) {
             min={TEXT_LABEL_FONT_SIZE_MIN}
             max={TEXT_LABEL_FONT_SIZE_MAX}
             step={1}
-            value={sizeText}
-            onChange={onSizeNumberChange}
-            onWheel={onSizeNumberWheel}
-            onFocus={() => {
-              sizeFocused.current = true;
-              sizeField.onFocus();
-            }}
-            onBlur={() => {
-              sizeFocused.current = false;
-              setSizeText(String(label.fontSize));
-              sizeField.onBlur();
-            }}
+            value={size.text}
+            onChange={size.onNumberChange}
+            onWheel={size.onNumberWheel}
+            onFocus={size.onNumberFocus}
+            onBlur={size.onNumberBlur}
           />
         </div>
 

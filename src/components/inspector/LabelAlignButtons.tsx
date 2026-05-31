@@ -1,25 +1,18 @@
 import type { LabelAlign, LabelValign } from '../../model/types';
+import { ALIGN_CYCLE, VALIGN_CYCLE } from '../../model/transforms';
 
-const ALIGN_NEXT: Record<LabelAlign, LabelAlign> = {
-  auto: 'start',
-  start: 'middle',
-  middle: 'end',
-  end: 'auto',
-};
+// The tooltip "→ next" target is derived from the canonical cycles in
+// transforms.ts so it can never drift from the actual click behavior.
+function nextInCycle<T>(cycle: readonly T[], cur: T): T {
+  const i = cycle.indexOf(cur);
+  return cycle[(i + 1) % cycle.length];
+}
 
 const ALIGN_TITLE: Record<LabelAlign, string> = {
   auto: 'auto (snap against adjacent stop)',
   start: 'left',
   middle: 'center',
   end: 'right',
-};
-
-const VALIGN_NEXT: Record<LabelValign, LabelValign> = {
-  'auto-down': 'top',
-  top: 'middle',
-  middle: 'bottom',
-  bottom: 'auto-up',
-  'auto-up': 'auto-down',
 };
 
 const VALIGN_TITLE: Record<LabelValign, string> = {
@@ -49,7 +42,7 @@ export function LabelAlignButton({
       type="button"
       className="btn-mini label-align-btn"
       aria-label={`Label horizontal alignment: ${ALIGN_TITLE[align]}`}
-      title={`H-align: ${ALIGN_TITLE[align]} → ${ALIGN_TITLE[ALIGN_NEXT[align]]}`}
+      title={`H-align: ${ALIGN_TITLE[align]} → ${ALIGN_TITLE[nextInCycle(ALIGN_CYCLE, align)]}`}
       onClick={onCycle}
       disabled={disabled}
     >
@@ -72,7 +65,7 @@ export function LabelValignButton({
       type="button"
       className="btn-mini label-align-btn"
       aria-label={`Label vertical alignment: ${VALIGN_TITLE[valign]}`}
-      title={`V-align: ${VALIGN_TITLE[valign]} → ${VALIGN_TITLE[VALIGN_NEXT[valign]]}`}
+      title={`V-align: ${VALIGN_TITLE[valign]} → ${VALIGN_TITLE[nextInCycle(VALIGN_CYCLE, valign)]}`}
       onClick={onCycle}
       disabled={disabled}
     >

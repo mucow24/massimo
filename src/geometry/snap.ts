@@ -1,10 +1,9 @@
 import type { Line, LineId, Station, StationId, StopCell } from '../model/types';
 import type { Vec2 } from './vec';
+import { SQRT2_2 } from './vec';
 import { rotateBy, stopCenterAt, travelDirLocal } from './orientation';
 import type { Rotation } from './orientation';
 import { stopPosWorld } from './interlining';
-
-const SQRT2_2 = Math.SQRT2 / 2;
 
 /** Default perpendicular tolerance for engaging a snap, in world units. */
 export const SNAP_PERP_TOLERANCE = 10;

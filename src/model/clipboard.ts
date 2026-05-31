@@ -19,6 +19,12 @@ export function writeClipboard(payload: ClipPayload): string {
   return JSON.stringify({ format: FORMAT, version: VERSION, payload });
 }
 
+// Build the clipboard payload for a route bullet (drops its id).
+export function routeBulletPayload(b: RouteBullet): ClipPayload {
+  const { id: _id, ...data } = b;
+  return { kind: 'route-bullet', data };
+}
+
 /**
  * Parse a string that may or may not be one of our clipboard payloads.
  * Returns the typed payload if it matches our format/version and validates;

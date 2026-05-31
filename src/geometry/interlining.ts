@@ -1,8 +1,16 @@
 import { Line, LineId, LineStyle, Station, StationId, StopCell } from '../model/types';
 import { pairKeyOf } from '../model/pairKey';
-import { Vec2, sub, len, norm, dot } from './vec';
-import { offsetFilletPath, route } from './router';
-import { rotateBy, STOP_SIZE, stopCenterAt, travelDirLocal } from './orientation';
+import { Vec2, sub, len, norm, dot, leftNormal } from './vec';
+import { dirIndex, offsetFilletPath, route } from './router';
+import {
+  localToWorld,
+  rotateBy,
+  STOP_SIZE,
+  stopCenterAt,
+  stripeOffset,
+  travelDirLocal,
+  worldDirToLocal,
+} from './orientation';
 import { LAYER_WEIGHT, segmentPriority, stationLayerFor } from '../model/layerPriority';
 
 export interface SegmentBandSpec {
@@ -88,34 +96,18 @@ interface SegInfo {
 // stop's (row, col) is the ONLY way to change its on-screen location;
 // neighboring stops have no effect.
 export function stopPosWorld(cell: StopCell, station: Station): Vec2 {
-  const local = stopCenterAt(cell.row, cell.col);
-  const a = (station.rotation * Math.PI) / 4;
-  const c = Math.cos(a);
-  const s = Math.sin(a);
-  return {
-    x: station.x + local.x * c - local.y * s,
-    y: station.y + local.x * s + local.y * c,
-  };
+  return localToWorld(stopCenterAt(cell.row, cell.col), station);
 }
 
 // Rotate a world-frame vector into the unrotated station-local frame so that
 // `travelDirLocal` can decide which way an auto-axis stop should travel.
 function worldToStationLocal(v: Vec2, station: Station): Vec2 {
-  const a = -(station.rotation * Math.PI) / 4;
-  const c = Math.cos(a);
-  const s = Math.sin(a);
-  return { x: v.x * c - v.y * s, y: v.x * s + v.y * c };
+  return worldDirToLocal(v, station.rotation);
 }
 
 export function travelDirWorld(cell: StopCell, station: Station, worldHint: Vec2 | null): Vec2 {
   const localHint = worldHint ? worldToStationLocal(worldHint, station) : null;
   return rotateBy(travelDirLocal(cell.orientation, localHint), station.rotation);
-}
-
-// Quantize a unit vector to one of 8 compass directions.
-export function dirIndex8(v: Vec2): number {
-  const a = Math.atan2(v.y, v.x);
-  return ((Math.round(a / (Math.PI / 4)) % 8) + 8) % 8;
 }
 
 /**
@@ -221,8 +213,8 @@ export function buildBandGeometry(
       const fromS = stations[s.fromId];
       const toS = stations[s.toId];
       if (!fromS || !toS) continue;
-      const fAxis = dirIndex8(travelDirWorld(s.fromCell, fromS, s.worldHint)) % 4;
-      const tAxis = dirIndex8(travelDirWorld(s.toCell, toS, s.worldHint)) % 4;
+      const fAxis = dirIndex(travelDirWorld(s.fromCell, fromS, s.worldHint)) % 4;
+      const tAxis = dirIndex(travelDirWorld(s.toCell, toS, s.worldHint)) % 4;
       const key = `${fAxis}|${tAxis}`;
       (buckets[key] ||= []).push(s);
     }
@@ -249,8 +241,8 @@ export function buildBandGeometry(
       // offsetFilletPath. With this, sorting ascending by perp-projection
       // assigns lower-k indices to lines on the negative-offset (right of
       // motion) side — exactly what `(k − (n−1)/2) * STOP_SIZE` produces.
-      const fPerp: Vec2 = { x: fDir.y, y: -fDir.x };
-      const tPerp: Vec2 = { x: tDir.y, y: -tDir.x };
+      const fPerp: Vec2 = leftNormal(fDir);
+      const tPerp: Vec2 = leftNormal(tDir);
 
       // Enrich with world perp/parallel positions at each end for sorting and
       // adjacency comparison.
@@ -518,6 +510,38 @@ function stationMarkerStyle(line: Line, stationId: StationId): LineStyle {
   return 'solid';
 }
 
+// Centroid (mean) of a set of points. Pure.
+export function bandCentroid(points: Vec2[]): Vec2 {
+  let x = 0;
+  let y = 0;
+  for (const p of points) {
+    x += p.x;
+    y += p.y;
+  }
+  return { x: x / points.length, y: y / points.length };
+}
+
+// Centerline radius bumped so the INNERMOST stripe of an n-stripe band still
+// has radius >= the configured curveRadius. Stripes sit at perp offsets
+// (k-(n-1)/2)*STOP_SIZE, so the extreme |offset| is (n-1)/2*STOP_SIZE.
+export function idealBandRadius(curveRadius: number, stripeCount: number): number {
+  const maxAbsOffset = stripeCount > 1 ? ((stripeCount - 1) / 2) * STOP_SIZE : 0;
+  return curveRadius + maxAbsOffset;
+}
+
+// Largest centerline radius whose fillet still leaves a straight run >= HALF
+// (= STOP_SIZE/2) before the corner, so the stop marker doesn't spill into the
+// arc. The turn angle comes from inDir·outDir; returns Infinity for a ~straight
+// corner and 0 when there's no usable straight run.
+export function cornerCapRadius(edgeLen: number, inDir: Vec2, outDir: Vec2): number {
+  const cosA = Math.max(-1, Math.min(1, dot(inDir, outDir)));
+  const theta = Math.acos(cosA);
+  if (theta < 1e-6) return Infinity;
+  const usable = edgeLen - STOP_SIZE / 2;
+  if (usable <= 0) return 0;
+  return usable / Math.tan(theta / 2);
+}
+
 function buildBandSpec(
   group: SegInfo[],
   R: number,
@@ -536,12 +560,8 @@ function buildBandSpec(
   // positions — i.e. the centroid of the contributing stop cells at each end.
   const fromWorlds = group.map((g) => stopPosWorld(g.fromCell, fromStation));
   const toWorlds = group.map((g) => stopPosWorld(g.toCell, toStation));
-  const meanVec = (vs: Vec2[]): Vec2 => ({
-    x: vs.reduce((a, p) => a + p.x, 0) / vs.length,
-    y: vs.reduce((a, p) => a + p.y, 0) / vs.length,
-  });
-  const fromMeanWorld = meanVec(fromWorlds);
-  const toMeanWorld = meanVec(toWorlds);
+  const fromMeanWorld = bandCentroid(fromWorlds);
+  const toMeanWorld = bandCentroid(toWorlds);
 
   // Bump centerline radius so the INNERMOST stripe still has radius ≥ R.
   // With n stripes at perp offsets `(k - (n-1)/2) * STOP_SIZE`, the extreme
@@ -550,8 +570,7 @@ function buildBandSpec(
   // so the inner stripe sits at exactly R. Without this, a 4–5-line interline
   // collapses the inner curve toward a right angle as soon as |offset| ≥ R.
   const n = group.length;
-  const maxAbsOffset = n > 1 ? ((n - 1) / 2) * STOP_SIZE : 0;
-  const idealR = R + maxAbsOffset;
+  const idealR = idealBandRadius(R, n);
 
   const result = route(fromMeanWorld, fromDir, toMeanWorld, toDir, idealR);
 
@@ -576,26 +595,17 @@ function buildBandSpec(
   // dropping the centerline below R there would collapse the inner stripes
   // (the inner-stripe-respects-R trade-off; see the 5-stripe cap tests).
   const verts = result.vertices;
-  const HALF = STOP_SIZE / 2;
   let capR = idealR;
   if (verts.length >= 3) {
-    const cornerCap = (edgeLen: number, inDir: Vec2, outDir: Vec2): number => {
-      const cosA = Math.max(-1, Math.min(1, dot(inDir, outDir)));
-      const theta = Math.acos(cosA);
-      if (theta < 1e-6) return Infinity;
-      const usable = edgeLen - HALF;
-      if (usable <= 0) return 0;
-      return usable / Math.tan(theta / 2);
-    };
     const lastIdx = verts.length - 1;
     const fromEdgeLen = len(sub(verts[1], verts[0]));
     const fromIn = norm(sub(verts[1], verts[0]));
     const fromOut = norm(sub(verts[2], verts[1]));
-    capR = Math.min(capR, cornerCap(fromEdgeLen, fromIn, fromOut));
+    capR = Math.min(capR, cornerCapRadius(fromEdgeLen, fromIn, fromOut));
     const toEdgeLen = len(sub(verts[lastIdx], verts[lastIdx - 1]));
     const toIn = norm(sub(verts[lastIdx - 1], verts[lastIdx - 2]));
     const toOut = norm(sub(verts[lastIdx], verts[lastIdx - 1]));
-    capR = Math.min(capR, cornerCap(toEdgeLen, toIn, toOut));
+    capR = Math.min(capR, cornerCapRadius(toEdgeLen, toIn, toOut));
   }
   // capR ≤ 0 means even a zero-radius fillet can't clear the marker (a terminal
   // edge ≤ HALF) — no radius helps, so fall back to R. Otherwise a single-stripe
@@ -607,7 +617,7 @@ function buildBandSpec(
   const paths: string[] = [];
   const linesArr = group.map((g) => ({ id: g.lineId }));
   for (let k = 0; k < n; k++) {
-    const offset = (k - (n - 1) / 2) * STOP_SIZE;
+    const offset = stripeOffset(k, n);
     paths.push(offsetFilletPath(result.vertices, centerlineR, offset));
   }
 
