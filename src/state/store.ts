@@ -81,7 +81,7 @@ const DOC_FIELDS = [
 type DocFieldName = (typeof DOC_FIELDS)[number];
 export type DocSnapshot = Pick<MapDoc, DocFieldName>;
 
-function pickDocSnapshot(s: DocSnapshot): DocSnapshot {
+export function pickDocSnapshot(s: DocSnapshot): DocSnapshot {
   const out = {} as Record<DocFieldName, unknown>;
   for (const k of DOC_FIELDS) out[k] = s[k];
   return out as DocSnapshot;

@@ -1,4 +1,4 @@
-import { Fragment, useEffect, useMemo, useRef, useState } from 'react';
+import { Fragment, useMemo, useRef, useState } from 'react';
 import { useDoc, useSelection } from '../../state/store';
 import { useThemeColors } from '../../state/theme';
 import type { DotShape, Line, LineId, LineStyle } from '../../model/types';
@@ -7,6 +7,7 @@ import { resolveDotShape } from '../../model/transforms';
 import { resolveSegmentStyle } from '../../geometry/interlining';
 import { ColorPalette } from './ColorPalette';
 import { useFieldHistory } from '../useFieldHistory';
+import { useDismiss } from '../usePopover';
 import { HatchPatterns, lineStyleStrokeAttrs, lineStyleUnderlayAttrs } from '../HatchPatterns';
 import { StopGlyph } from '../StopGlyph';
 import { StationShapePicker, SHAPES } from '../StationShapePicker';
@@ -23,21 +24,7 @@ function DotShapePopover({
   style: React.CSSProperties;
 }) {
   const ref = useRef<HTMLDivElement | null>(null);
-  useEffect(() => {
-    const onDocClick = (e: globalThis.MouseEvent) => {
-      if (ref.current && !ref.current.contains(e.target as Node)) onClose();
-    };
-    const onKey = (e: globalThis.KeyboardEvent) => {
-      if (e.key === 'Escape') onClose();
-    };
-    const t = setTimeout(() => document.addEventListener('mousedown', onDocClick), 0);
-    document.addEventListener('keydown', onKey);
-    return () => {
-      clearTimeout(t);
-      document.removeEventListener('mousedown', onDocClick);
-      document.removeEventListener('keydown', onKey);
-    };
-  }, [onClose]);
+  useDismiss(true, onClose, [ref]);
   return (
     <div className="shape-grid" role="menu" ref={ref} style={{ ...style, right: 'auto' }}>
       {SHAPES.map(({ shape, label }) => (
