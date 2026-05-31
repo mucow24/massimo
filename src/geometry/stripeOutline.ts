@@ -1,5 +1,5 @@
 import type { SegmentBandSpec } from './interlining';
-import { STOP_SIZE } from './orientation';
+import { STOP_SIZE, stripeOffset } from './orientation';
 import { emitOffsetSegments, offsetFilletPath, type OffsetPathSegment } from './router';
 import type { Vec2 } from './vec';
 
@@ -59,9 +59,9 @@ export function computeStripeOutline(
   if (verts.length < 2) return null;
   const HALF = STOP_SIZE / 2;
   const n = band.lines.length;
-  const stripeOffset = (stripeIndex - (n - 1) / 2) * STOP_SIZE;
-  const offsetA = stripeOffset + HALF;
-  const offsetB = stripeOffset - HALF;
+  const offset = stripeOffset(stripeIndex, n);
+  const offsetA = offset + HALF;
+  const offsetB = offset - HALF;
 
   const v0 = verts[0];
   const v1 = verts[1];

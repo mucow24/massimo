@@ -1,13 +1,8 @@
 // Pick black or white text for legibility against an arbitrary hex bg.
 // Uses the W3C relative-luminance formula.
 export function legibleTextOn(hex: string): string {
-  const m = hex.replace('#', '');
-  const v =
-    m.length === 3
-      ? [m[0] + m[0], m[1] + m[1], m[2] + m[2]]
-      : [m.slice(0, 2), m.slice(2, 4), m.slice(4, 6)];
-  const [r, g, b] = v.map((h) => {
-    const c = parseInt(h, 16) / 255;
+  const [r, g, b] = parseHex(hex).map((n) => {
+    const c = n / 255;
     return c <= 0.03928 ? c / 12.92 : Math.pow((c + 0.055) / 1.055, 2.4);
   });
   const L = 0.2126 * r + 0.7152 * g + 0.0722 * b;

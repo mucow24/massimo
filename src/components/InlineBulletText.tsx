@@ -1,7 +1,7 @@
 import { Fragment } from 'react';
 import type { Line } from '../model/types';
 import { parseLabelLine } from '../geometry/labelTokens';
-import { legibleTextOn } from '../util/color';
+import { badgeColors } from './badge';
 
 interface Props {
   text: string;
@@ -25,14 +25,12 @@ export function InlineBulletText({ text, lineByService }: Props) {
     <>
       {segments.map((seg, i) => {
         if (seg.kind === 'text') return <Fragment key={i}>{seg.value}</Fragment>;
-        const line = lineByService.get(seg.code);
-        const fill = line?.color ?? '#888';
-        const display = line?.service ?? '?';
+        const { fill, textColor, code: display } = badgeColors(lineByService.get(seg.code));
         return (
           <span
             key={i}
             className="inline-bullet-badge"
-            style={{ background: fill, color: legibleTextOn(fill) }}
+            style={{ background: fill, color: textColor }}
             data-inline-bullet={seg.code}
           >
             <span className="inline-bullet-badge__code">{display}</span>

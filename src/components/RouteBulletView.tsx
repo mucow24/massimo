@@ -1,5 +1,5 @@
 import type { Line, RouteBullet } from '../model/types';
-import { legibleTextOn } from '../util/color';
+import { badgeColors } from './badge';
 import { useThemeColors } from '../state/theme';
 
 interface Props {
@@ -20,10 +20,11 @@ export function RouteBulletView({
   onContextMenu,
 }: Props) {
   const themeColors = useThemeColors();
-  const line = bullet.lineId ? lines[bullet.lineId] : null;
-  const fill = line?.color ?? '#888';
-  const textColor = legibleTextOn(fill);
-  const service = line?.service ?? '?';
+  const {
+    fill,
+    textColor,
+    code: service,
+  } = badgeColors(bullet.lineId ? lines[bullet.lineId] : null);
   const r = bullet.size;
   const angle = bullet.rotation * 45;
 

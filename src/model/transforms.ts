@@ -7,6 +7,7 @@ import { PALETTES, type PaletteId } from './palettes';
 import type {
   DotShape,
   LabelAlign,
+  LabelCell,
   LabelValign,
   Line,
   LineId,
@@ -159,6 +160,15 @@ export function moveStation(doc: MapDoc, id: StationId, x: number, y: number): M
  */
 export function resolveDotShape(line: Line | undefined, stop: StopCell | undefined): DotShape {
   return stop?.dotShape ?? line?.defaultDotShape ?? 'filled-black';
+}
+
+/**
+ * Effective perpendicular label offset. The field defaults to 0 when absent
+ * (older saves) or when the label is missing — one named home for that default
+ * so read-sites stop re-spelling `?? 0`.
+ */
+export function resolveOffsetPerp(label: LabelCell | undefined): number {
+  return label?.offsetPerp ?? 0;
 }
 
 export function setDotShape(
@@ -394,37 +404,23 @@ export function rotateStation(doc: MapDoc, id: StationId): MapDoc {
   return { ...doc, stations: { ...doc.stations, [id]: { ...cur, rotation: next } } };
 }
 
-/**
- * Rotate a group of stations 45° clockwise around a pivot. Each station's
- * own rotation field advances by one step (matching the single-station
- * `rotateStation` behavior), so each station's stops/label rotate in place
- * as if right-clicked individually. In addition, every non-pivot station's
- * world position is rotated 45° around the pivot's center, preserving the
- * group's relative geometry as a rigid body.
- */
-export function rotateStationsAround(doc: MapDoc, pivotId: StationId, ids: StationId[]): MapDoc {
-  const pivot = doc.stations[pivotId];
-  if (!pivot) return doc;
-  const ang = Math.PI / 4;
-  const cs = Math.cos(ang);
-  const sn = Math.sin(ang);
-  let stations = doc.stations;
-  for (const id of ids) {
-    const cur = stations[id];
-    if (!cur) continue;
-    const nextRot = ((cur.rotation + 1) % 8) as Rotation;
-    let nx = cur.x;
-    let ny = cur.y;
-    if (id !== pivotId) {
-      const dx = cur.x - pivot.x;
-      const dy = cur.y - pivot.y;
-      nx = pivot.x + dx * cs - dy * sn;
-      ny = pivot.y + dx * sn + dy * cs;
-    }
-    stations = { ...stations, [id]: { ...cur, rotation: nextRot, x: nx, y: ny } };
-  }
-  return { ...doc, stations };
-}
+// One 45°-clockwise step of an entity's own rotation field (wraps 7 → 0).
+const stepRotation = (r: Rotation): Rotation => ((r + 1) % 8) as Rotation;
+
+// Orbit a point 45° clockwise around a pivot, using precomputed cos/sin of the
+// step angle. Shared by every branch of `rotateItemsAround`.
+const orbitPoint = (
+  x: number,
+  y: number,
+  px: number,
+  py: number,
+  cs: number,
+  sn: number,
+): { x: number; y: number } => {
+  const dx = x - px;
+  const dy = y - py;
+  return { x: px + dx * cs - dy * sn, y: py + dx * sn + dy * cs };
+};
 
 /**
  * Reference to a member of a station+bullet+label multi-selection. Used by
@@ -466,51 +462,46 @@ export function rotateItemsAround(doc: MapDoc, pivot: ItemRef, members: ItemRef[
     if (m.type === 'station') {
       const cur = stations[m.id];
       if (!cur) continue;
-      const nextRot = ((cur.rotation + 1) % 8) as Rotation;
-      let nx = cur.x;
-      let ny = cur.y;
-      if (!isPivot) {
-        const dx = cur.x - px;
-        const dy = cur.y - py;
-        nx = px + dx * cs - dy * sn;
-        ny = py + dx * sn + dy * cs;
-      }
-      stations = { ...stations, [m.id]: { ...cur, rotation: nextRot, x: nx, y: ny } };
+      const p = isPivot ? cur : orbitPoint(cur.x, cur.y, px, py, cs, sn);
+      stations = {
+        ...stations,
+        [m.id]: { ...cur, rotation: stepRotation(cur.rotation), x: p.x, y: p.y },
+      };
     } else if (m.type === 'bullet') {
       const cur = routeBullets[m.id];
       if (!cur) continue;
-      const nextRot = ((cur.rotation + 1) % 8) as Rotation;
-      let nx = cur.x;
-      let ny = cur.y;
-      if (!isPivot) {
-        const dx = cur.x - px;
-        const dy = cur.y - py;
-        nx = px + dx * cs - dy * sn;
-        ny = py + dx * sn + dy * cs;
-      }
+      const p = isPivot ? cur : orbitPoint(cur.x, cur.y, px, py, cs, sn);
       routeBullets = {
         ...routeBullets,
-        [m.id]: { ...cur, rotation: nextRot, x: nx, y: ny },
+        [m.id]: { ...cur, rotation: stepRotation(cur.rotation), x: p.x, y: p.y },
       };
     } else {
       const cur = textLabels[m.id];
       if (!cur) continue;
-      const nextRot = ((cur.rotation + 1) % 8) as Rotation;
-      let nx = cur.x;
-      let ny = cur.y;
-      if (!isPivot) {
-        const dx = cur.x - px;
-        const dy = cur.y - py;
-        nx = px + dx * cs - dy * sn;
-        ny = py + dx * sn + dy * cs;
-      }
+      const p = isPivot ? cur : orbitPoint(cur.x, cur.y, px, py, cs, sn);
       textLabels = {
         ...textLabels,
-        [m.id]: { ...cur, rotation: nextRot, x: nx, y: ny },
+        [m.id]: { ...cur, rotation: stepRotation(cur.rotation), x: p.x, y: p.y },
       };
     }
   }
   return { ...doc, stations, routeBullets, textLabels };
+}
+
+/**
+ * Flatten the three selection id lists into the ItemRef[] that
+ * `rotateItemsAround` consumes. Order is irrelevant to the rotation result.
+ */
+export function buildRotateMembers(
+  stationIds: string[],
+  bulletIds: string[],
+  labelIds: string[],
+): ItemRef[] {
+  return [
+    ...stationIds.map((id): ItemRef => ({ type: 'station', id })),
+    ...bulletIds.map((id): ItemRef => ({ type: 'bullet', id })),
+    ...labelIds.map((id): ItemRef => ({ type: 'label', id })),
+  ];
 }
 
 /**
@@ -763,7 +754,7 @@ export function setLabelOffset(doc: MapDoc, stationId: StationId, offset: number
 export function setLabelOffsetPerp(doc: MapDoc, stationId: StationId, offsetPerp: number): MapDoc {
   const st = doc.stations[stationId];
   if (!st) return doc;
-  if ((st.label.offsetPerp ?? 0) === offsetPerp) return doc;
+  if (resolveOffsetPerp(st.label) === offsetPerp) return doc;
   return {
     ...doc,
     stations: {
@@ -773,7 +764,7 @@ export function setLabelOffsetPerp(doc: MapDoc, stationId: StationId, offsetPerp
   };
 }
 
-const ALIGN_CYCLE: LabelAlign[] = ['auto', 'start', 'middle', 'end'];
+export const ALIGN_CYCLE: LabelAlign[] = ['auto', 'start', 'middle', 'end'];
 
 export function cycleLabelAlign(doc: MapDoc, stationId: StationId): MapDoc {
   const st = doc.stations[stationId];
@@ -808,7 +799,7 @@ export function setLabelAlign(doc: MapDoc, stationId: StationId, align: LabelAli
 // the classic block-aligned options. The cycle order is geometrically
 // symmetric: auto-down (block top pinned, grows down) → top → middle → bottom
 // → auto-up (block bottom pinned, grows up) → back to auto-down.
-const VALIGN_CYCLE: LabelValign[] = ['auto-down', 'top', 'middle', 'bottom', 'auto-up'];
+export const VALIGN_CYCLE: LabelValign[] = ['auto-down', 'top', 'middle', 'bottom', 'auto-up'];
 
 export function cycleLabelValign(doc: MapDoc, stationId: StationId): MapDoc {
   const st = doc.stations[stationId];
@@ -855,7 +846,7 @@ export function addLine(doc: MapDoc, id: LineId, service: string, color: string)
 export function updateLine(
   doc: MapDoc,
   id: LineId,
-  patch: Partial<Pick<Line, 'service' | 'name' | 'color' | 'stations'>>,
+  patch: Partial<Pick<Line, 'service' | 'name' | 'color'>>,
 ): MapDoc {
   const cur = doc.lines[id];
   if (!cur) return doc;
@@ -962,13 +953,16 @@ export function toggleStationOnLine(
     const stillStops = newStations.includes(stationId);
     const newStops = stillStops ? st.stops : st.stops.filter((c) => c.lineId !== lineId);
     const stationsAfter = { ...doc.stations, [stationId]: { ...st, stops: newStops } };
-    return {
+    // Removal changes adjacencies, so prune overrides / tags keyed to edges
+    // that no longer exist (same contract as removeStationFromLine).
+    const updatedLine = pruneOrphanSegmentStyles({ ...ln, stations: newStations });
+    return pruneOrphanLineTags({
       ...doc,
-      lines: { ...doc.lines, [lineId]: { ...ln, stations: newStations } },
+      lines: { ...doc.lines, [lineId]: updatedLine },
       // Removing a station never gives any station its first line, so nothing
       // is auto-oriented — every station here is already served.
       stations: stationsAfter,
-    };
+    });
   }
   const idx =
     insertAfterIndex === undefined
@@ -1051,12 +1045,17 @@ export function removeStationFromLine(doc: MapDoc, lineId: LineId, idx: number):
 export function reorderLineStations(doc: MapDoc, lineId: LineId, stations: StationId[]): MapDoc {
   const ln = doc.lines[lineId];
   if (!ln) return doc;
-  return {
+  // A reorder changes which station-pairs are adjacent, so per-segment style /
+  // layer overrides and line tags keyed to the OLD adjacencies must be pruned
+  // (same contract as removeStationFromLine) — otherwise a cleared override
+  // resurrects if the corridor is reordered away and back.
+  const updatedLine = pruneOrphanSegmentStyles({ ...ln, stations });
+  return pruneOrphanLineTags({
     ...doc,
-    lines: { ...doc.lines, [lineId]: { ...ln, stations } },
+    lines: { ...doc.lines, [lineId]: updatedLine },
     // Reordering only rearranges already-served stations, so none re-rotate.
     stations: doc.stations,
-  };
+  });
 }
 
 export function deleteLine(doc: MapDoc, id: LineId): MapDoc {

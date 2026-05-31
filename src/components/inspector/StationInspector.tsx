@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef } from 'react';
+import { useCallback, useMemo, useRef } from 'react';
 import { beginHistoryGroup, useDoc, useSelection } from '../../state/store';
 import type { StationId } from '../../model/types';
 import { findMatchingStations, type LayoutOffset } from '../../model/matching';
@@ -7,8 +7,9 @@ import { StopGrid } from './StopGrid';
 import { LabelOffsetControl } from './LabelOffsetControl';
 import { LabelAlignButton, LabelValignButton } from './LabelAlignButtons';
 import { useFieldHistory } from '../useFieldHistory';
+import { useDismiss } from '../usePopover';
 import { StationShapePicker } from '../StationShapePicker';
-import { resolveDotShape } from '../../model/transforms';
+import { resolveDotShape, resolveOffsetPerp } from '../../model/transforms';
 
 export function StationInspector({ id }: { id: StationId }) {
   const station = useDoc((s) => s.stations[id]);
@@ -70,31 +71,13 @@ export function StationInspector({ id }: { id: StationId }) {
   // (the StopGrid). Clicks on canvas/sidebar already deselect via
   // selectStation; this covers the remaining "click on something else
   // within the inspector" case.
-  useEffect(() => {
-    if (!hasSelection) return;
-    const clear = () => {
-      selection.setSelectedStopLineId(null);
-      selection.setLabelSelected(false);
-    };
-    const onMouseDown = (e: MouseEvent) => {
-      const stopRoot = stopAreaRef.current;
-      if (stopRoot && stopRoot.contains(e.target as Node)) return;
-      // The shape picker acts on the selected stop, so clicks inside it must
-      // not deselect — otherwise opening the menu would disable it.
-      const pickerRoot = shapePickerRef.current;
-      if (pickerRoot && pickerRoot.contains(e.target as Node)) return;
-      clear();
-    };
-    const onKeyDown = (e: KeyboardEvent) => {
-      if (e.key === 'Escape') clear();
-    };
-    document.addEventListener('mousedown', onMouseDown);
-    document.addEventListener('keydown', onKeyDown);
-    return () => {
-      document.removeEventListener('mousedown', onMouseDown);
-      document.removeEventListener('keydown', onKeyDown);
-    };
-  }, [hasSelection, selection]);
+  // Clicks inside the StopGrid (stopAreaRef) and the shape picker
+  // (shapePickerRef) act on the selected stop, so they must not deselect.
+  const clearStopSelection = useCallback(() => {
+    selection.setSelectedStopLineId(null);
+    selection.setLabelSelected(false);
+  }, [selection]);
+  useDismiss(hasSelection, clearStopSelection, [stopAreaRef, shapePickerRef]);
 
   if (!station) return null;
 
@@ -301,12 +284,13 @@ export function StationInspector({ id }: { id: StationId }) {
         />
         <div className="field-hint">Offset (perpendicular to reading direction)</div>
         <LabelOffsetControl
-          value={station.label.offsetPerp ?? 0}
+          value={resolveOffsetPerp(station.label)}
           onChange={(v) => dispatchAll((sid) => setLabelOffsetPerp(sid, v))}
           indeterminate={
             mirrorOn &&
             matches.some(
-              (m) => (stationsAll[m.id]?.label.offsetPerp ?? 0) !== (station.label.offsetPerp ?? 0),
+              (m) =>
+                resolveOffsetPerp(stationsAll[m.id]?.label) !== resolveOffsetPerp(station.label),
             )
           }
         />

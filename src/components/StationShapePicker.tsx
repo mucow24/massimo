@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from 'react';
+import { usePopover } from './usePopover';
 import { StopGlyph } from './StopGlyph';
 import type { DotShape } from '../model/types';
 
@@ -7,7 +7,7 @@ interface ShapeOption {
   label: string;
 }
 
-const SHAPES: ShapeOption[] = [
+export const SHAPES: ShapeOption[] = [
   { shape: 'filled-black', label: 'Filled black' },
   { shape: 'open-black', label: 'Open black' },
   { shape: 'filled-black-white-stroke', label: 'Filled black with white stroke' },
@@ -31,25 +31,7 @@ export function StationShapePicker({
   currentShape: DotShape;
   onPick: (shape: DotShape) => void;
 }) {
-  const [open, setOpen] = useState(false);
-  const wrapRef = useRef<HTMLDivElement | null>(null);
-
-  useEffect(() => {
-    if (!open) return;
-    const onDocClick = (e: globalThis.MouseEvent) => {
-      if (wrapRef.current && !wrapRef.current.contains(e.target as Node)) setOpen(false);
-    };
-    const onKey = (e: globalThis.KeyboardEvent) => {
-      if (e.key === 'Escape') setOpen(false);
-    };
-    const t = setTimeout(() => document.addEventListener('mousedown', onDocClick), 0);
-    document.addEventListener('keydown', onKey);
-    return () => {
-      clearTimeout(t);
-      document.removeEventListener('mousedown', onDocClick);
-      document.removeEventListener('keydown', onKey);
-    };
-  }, [open]);
+  const { open, setOpen, wrapRef } = usePopover();
 
   const onTriggerClick = () => {
     if (disabled) return;
