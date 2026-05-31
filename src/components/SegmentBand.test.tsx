@@ -151,22 +151,12 @@ describe('<SegmentBand> — single-stripe renderer', () => {
 });
 
 describe('<BandWarning>', () => {
-  it('renders the warning glyph at the centerline midpoint when band.warning is true', () => {
-    const spec = baseSpec(['L1']);
+  const warnSpec = (lineIds: LineId[], centerline: { x: number; y: number }[]): SegmentBandSpec => {
+    const spec = baseSpec(lineIds);
     spec.warning = true;
-    spec.centerline = [
-      { x: 0, y: 0 },
-      { x: 100, y: 0 },
-      { x: 200, y: 0 },
-    ];
-    const { container } = render(
-      <svg>
-        <BandWarning spec={spec} />
-      </svg>,
-    );
-    const text = container.querySelector('text');
-    expect(text?.textContent).toBe('⚠');
-  });
+    spec.centerline = centerline;
+    return spec;
+  };
 
   it('renders nothing when band.warning is false', () => {
     const { container } = render(
@@ -175,5 +165,97 @@ describe('<BandWarning>', () => {
       </svg>,
     );
     expect(container.querySelector('text')).toBeNull();
+    expect(container.querySelectorAll('path').length).toBe(0);
+  });
+
+  it('centers the ⚠ glyph on the segment midpoint (not the middle vertex)', () => {
+    // 3 vertices: the middle vertex is at x=100, but the true segment center
+    // (mean of the endpoints) is also x=100 here — use an asymmetric layout
+    // so the two would disagree if the old floor(length/2) logic returned.
+    const spec = warnSpec(
+      ['L1'],
+      [
+        { x: 0, y: 0 },
+        { x: 10, y: 0 },
+        { x: 200, y: 0 },
+      ],
+    );
+    const { container } = render(
+      <svg>
+        <BandWarning spec={spec} />
+      </svg>,
+    );
+    const text = container.querySelector('text')!;
+    expect(text.textContent).toBe('⚠');
+    // Midpoint of first/last vertex = (0+200)/2 = 100, NOT the middle vertex (10).
+    expect(text.getAttribute('x')).toBe('100');
+    expect(text.getAttribute('y')).toBe('0');
+  });
+
+  it('frames the bad segment with a 1px white stroke over a 3px red stroke', () => {
+    const spec = warnSpec(
+      ['L1'],
+      [
+        { x: 0, y: 0 },
+        { x: 100, y: 0 },
+      ],
+    );
+    const { container } = render(
+      <svg>
+        <BandWarning spec={spec} />
+      </svg>,
+    );
+    const paths = Array.from(container.querySelectorAll('path'));
+    expect(paths.length).toBe(2);
+    const [red, white] = paths;
+    // Red is painted first (underneath) so the white core sits on top.
+    expect(red.getAttribute('stroke')).toBe('#d00');
+    expect(red.getAttribute('stroke-width')).toBe('3');
+    expect(white.getAttribute('stroke')).toBe('#fff');
+    expect(white.getAttribute('stroke-width')).toBe('1');
+    // Both trace the same rectangle so the white sits centered in the red.
+    expect(white.getAttribute('d')).toBe(red.getAttribute('d'));
+  });
+
+  it('sizes the frame to the band width (n stripes × STOP_SIZE)', () => {
+    // Horizontal segment, 2 stripes → half-width = 2 * 14 / 2 = 14, so the
+    // rectangle's long edges sit at y = ±14 around the centerline.
+    const spec = warnSpec(
+      ['L1', 'L2'],
+      [
+        { x: 0, y: 0 },
+        { x: 100, y: 0 },
+      ],
+    );
+    const { container } = render(
+      <svg>
+        <BandWarning spec={spec} />
+      </svg>,
+    );
+    expect(container.querySelector('path')!.getAttribute('d')).toBe(
+      'M 0 -14 L 100 -14 L 100 14 L 0 14 Z',
+    );
+  });
+
+  it('defaults the glyph fill to black and honors the iconColor prop', () => {
+    const spec = warnSpec(
+      ['L1'],
+      [
+        { x: 0, y: 0 },
+        { x: 100, y: 0 },
+      ],
+    );
+    const def = render(
+      <svg>
+        <BandWarning spec={spec} />
+      </svg>,
+    );
+    expect(def.container.querySelector('text')!.getAttribute('fill')).toBe('#000');
+    const custom = render(
+      <svg>
+        <BandWarning spec={spec} iconColor="#fff" />
+      </svg>,
+    );
+    expect(custom.container.querySelector('text')!.getAttribute('fill')).toBe('#fff');
   });
 });
