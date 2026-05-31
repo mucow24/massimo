@@ -70,18 +70,24 @@ export function lineStyleStrokeAttrs(
 
 // Companion to lineStyleStrokeAttrs: when a style needs a solid underlay
 // painted beneath the foreground stroke (so its "off" positions read as
-// opaque white instead of letting the line behind show through), this
-// returns the underlay's stroke attrs. Returns null when no underlay is
-// needed (solid; hatched bakes white into the SVG <pattern> directly).
+// opaque background color instead of letting the line behind show through),
+// this returns the underlay's stroke attrs. Returns null when no underlay is
+// needed (solid; hatched bakes the gap color into the SVG <pattern> directly).
+// `underlayColor` matches the canvas background — white normally, black in
+// dark mode — so the gaps read as empty canvas, not a stale white.
 export function lineStyleUnderlayAttrs(
   style: LineStyle,
+  underlayColor: string = UNDERLAY_COLOR,
 ): { stroke: string; strokeLinecap: 'butt' } | null {
-  if (style === 'dashed') return { stroke: UNDERLAY_COLOR, strokeLinecap: 'butt' };
+  if (style === 'dashed') return { stroke: underlayColor, strokeLinecap: 'butt' };
   return null;
 }
 
 interface Props {
   colors: string[];
+  // Gap color baked into each hatch tile; matches the canvas background so
+  // the "off" stripes read as empty canvas. Defaults to white.
+  underlayColor?: string;
 }
 
 // Tall enough that the rotated tile doesn't show edge artifacts at typical
@@ -93,7 +99,7 @@ const TILE_HEIGHT = 32;
 // hatchPatternId) so consumers don't have to thread the registry around.
 // Always emitting both variants is cheap (a few <pattern> defs) and keeps the
 // caller from having to know which variants are in use.
-export function HatchPatterns({ colors }: Props) {
+export function HatchPatterns({ colors, underlayColor = UNDERLAY_COLOR }: Props) {
   const tileWidth = Math.max(1, HATCH_STRIPE_WIDTH + HATCH_GAP_WIDTH);
   const variants: Array<{ variant: 'hatched' | 'hatched-mirror'; rotate: number }> = [
     { variant: 'hatched', rotate: 45 },
@@ -117,7 +123,7 @@ export function HatchPatterns({ colors }: Props) {
               y={0}
               width={HATCH_GAP_WIDTH}
               height={TILE_HEIGHT}
-              fill={UNDERLAY_COLOR}
+              fill={underlayColor}
             />
           </pattern>
         )),

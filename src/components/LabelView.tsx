@@ -8,6 +8,7 @@ import {
 } from '../geometry/textMeasure';
 import { TEXT_LABEL_HIT_PAD } from '../geometry/stationBoundary';
 import { useDoc } from '../state/store';
+import { useThemeColors } from '../state/theme';
 import { InlineBullet } from './InlineBullet';
 
 export type LabelLayer = 'bg' | 'stroke';
@@ -56,6 +57,7 @@ export function LabelView({
   onContextMenu,
 }: Props) {
   const docLines = useDoc((s) => s.lines);
+  const labelColor = useThemeColors().label;
   const lineByService = useMemo(() => {
     const map = new Map<string, Line>();
     for (const ln of Object.values(docLines)) map.set(ln.service, ln);
@@ -137,7 +139,7 @@ export function LabelView({
                 fontSize={label.fontSize}
                 fontWeight={label.weight}
                 fontStyle={label.italic ? 'italic' : 'normal'}
-                fill="#111"
+                fill={labelColor}
                 pointerEvents="none"
                 style={{ userSelect: 'none', whiteSpace: 'pre' }}
               >

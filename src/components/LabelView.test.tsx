@@ -2,6 +2,7 @@ import { describe, it, expect, beforeEach } from 'vitest';
 import { render } from '@testing-library/react';
 import { LabelView } from './LabelView';
 import { useDoc } from '../state/store';
+import { useViewportStore } from '../state/viewportStore';
 import { DEFAULT_DOC } from '../model/transforms';
 import { makeTextLabel } from '../test/fixtures';
 import type { Line } from '../model/types';
@@ -16,6 +17,26 @@ const seedLine = (overrides: Partial<Line> & Pick<Line, 'id' | 'service'>): Line
 
 beforeEach(() => {
   useDoc.setState({ ...useDoc.getState(), ...DEFAULT_DOC });
+  useViewportStore.setState({ darkMode: false });
+});
+
+describe('<LabelView /> — text color follows the theme', () => {
+  const renderPlain = () =>
+    render(
+      <svg>
+        <LabelView label={makeTextLabel({ id: 'g1', text: 'Midtown' })} selected={false} />
+      </svg>,
+    );
+
+  it('paints text near-black in light mode', () => {
+    useViewportStore.setState({ darkMode: false });
+    expect(renderPlain().container.querySelector('text')?.getAttribute('fill')).toBe('#111111');
+  });
+
+  it('paints text white in dark mode', () => {
+    useViewportStore.setState({ darkMode: true });
+    expect(renderPlain().container.querySelector('text')?.getAttribute('fill')).toBe('#ffffff');
+  });
 });
 
 describe('<LabelView /> — inline bullets', () => {

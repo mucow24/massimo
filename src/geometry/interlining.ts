@@ -17,8 +17,11 @@ export interface SegmentBandSpec {
   fromId: StationId;
   toId: StationId;
   // Lines in this band, in render order (perpendicular to direction of travel).
-  // `style` is the per-segment override resolved at build time (solid by default).
-  lines: { id: LineId; color: string; style: LineStyle }[];
+  // Presentation-free by design: only the line id lives here. Color and
+  // per-segment style are resolved at render time from the live `lines` map
+  // (color via the line itself, style via {@link resolveSegmentStyle} keyed on
+  // `pairKey`), so a color/style edit repaints without rebuilding geometry.
+  lines: { id: LineId }[];
   paths: string[];
   warning: boolean;
   centerline: Vec2[];
@@ -72,8 +75,6 @@ interface SegInfo {
   fromCell: StopCell;
   toCell: StopCell;
   lineId: LineId;
-  color: string;
-  style: LineStyle;
   // Unit world vector along this LINE'S travel direction at this segment
   // (line.stations[i] → line.stations[i+1]). Drives auto-axis orientation
   // resolution. Not necessarily canonFrom→canonTo — a line traversing the
@@ -115,6 +116,21 @@ export function travelDirWorld(cell: StopCell, station: Station, worldHint: Vec2
 export function dirIndex8(v: Vec2): number {
   const a = Math.atan2(v.y, v.x);
   return ((Math.round(a / (Math.PI / 4)) % 8) + 8) % 8;
+}
+
+/**
+ * Resolve the rendered style of one line on one segment (identified by its
+ * canonical {@link pairKeyOf} key). Per-segment overrides live in
+ * `line.segmentStyles`; absent an override, a segment is solid.
+ *
+ * Single source of truth shared by geometry building (which bakes the style
+ * into each stripe) and MapCanvas's render-time presentation refresh (which
+ * re-derives it live, since the geometry memo intentionally ignores
+ * presentation — see the `bands` memo). Keeping both on this one resolver
+ * means a style edit can never disagree between the two.
+ */
+export function resolveSegmentStyle(line: Line, pairKey: string): LineStyle {
+  return line.segmentStyles?.[pairKey] ?? 'solid';
 }
 
 /**
@@ -186,8 +202,6 @@ export function buildBandGeometry(
         fromCell: forward ? fromCell : toCell,
         toCell: forward ? toCell : fromCell,
         lineId,
-        color: line.color,
-        style: line.segmentStyles?.[key] ?? 'solid',
         worldHint: { x: dxLine / lineLen, y: dyLine / lineLen },
       });
     }
@@ -577,7 +591,7 @@ function buildBandSpec(
   const centerlineR = Math.max(R, Math.min(idealR, capR));
 
   const paths: string[] = [];
-  const linesArr = group.map((g) => ({ id: g.lineId, color: g.color, style: g.style }));
+  const linesArr = group.map((g) => ({ id: g.lineId }));
   for (let k = 0; k < n; k++) {
     const offset = (k - (n - 1) / 2) * STOP_SIZE;
     paths.push(offsetFilletPath(result.vertices, centerlineR, offset));

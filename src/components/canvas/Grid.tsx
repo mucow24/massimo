@@ -1,4 +1,5 @@
 import { GRID_INTERVAL } from '../../geometry/snap';
+import { useThemeColors } from '../../state/theme';
 
 interface Props {
   vbX: number;
@@ -10,6 +11,7 @@ interface Props {
 
 /** Subtle background grid; spacing matches the snap engine's GRID_INTERVAL. */
 export function Grid({ vbX, vbY, vbW, vbH, zoom }: Props) {
+  const stroke = useThemeColors().grid;
   const step = GRID_INTERVAL;
   const x0 = Math.floor(vbX / step) * step;
   const y0 = Math.floor(vbY / step) * step;
@@ -22,7 +24,7 @@ export function Grid({ vbX, vbY, vbW, vbH, zoom }: Props) {
         y1={vbY}
         x2={x}
         y2={vbY + vbH}
-        stroke="#eee"
+        stroke={stroke}
         strokeWidth={1 / zoom}
       />,
     );
@@ -35,7 +37,7 @@ export function Grid({ vbX, vbY, vbW, vbH, zoom }: Props) {
         y1={y}
         x2={vbX + vbW}
         y2={y}
-        stroke="#eee"
+        stroke={stroke}
         strokeWidth={1 / zoom}
       />,
     );

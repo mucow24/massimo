@@ -79,7 +79,7 @@ export function LayerNumberLabels({ bands, lines, hovered }: Props) {
           const t = tByKey.get(cacheKey) ?? 0.5;
           const at = sampleOffsetPath(band.centerline, band.radius, offset, t);
           const label = formatLayer(layer);
-          const textColor = legibleTextOn(stripeLine.color);
+          const textColor = legibleTextOn(line.color);
           return (
             <text
               key={'layer:' + band.bandKey + ':' + stripeLine.id}

@@ -9,6 +9,9 @@ interface Props {
   // Optional override (selection desaturation). Pattern id is derived from
   // the effective color so the pattern emitter and consumer agree.
   effectiveColor?: string;
+  // Gap/underlay color for the dashed terminus stub; matches the canvas
+  // background. Defaults to white.
+  underlayColor?: string;
 }
 
 // One stop-square marker for one line at one station.
@@ -25,7 +28,7 @@ interface Props {
 //             TERMINUS (`outward` set), paints a 7-unit dashed stub
 //             continuing outward, so the dashes also fill the outer half
 //             of the dot area.
-export function StopMarker({ spec, effectiveColor }: Props) {
+export function StopMarker({ spec, effectiveColor, underlayColor }: Props) {
   const color = effectiveColor ?? spec.color;
   if (spec.style === 'hatched' || spec.style === 'hatched-mirror') {
     const pts = rotatedSquareCorners(spec.cx, spec.cy, HALF, spec.rotationDeg)
@@ -42,7 +45,7 @@ export function StopMarker({ spec, effectiveColor }: Props) {
   if (spec.style === 'dashed') {
     if (!spec.outward) return null;
     const { stroke, strokeDasharray, strokeLinecap } = lineStyleStrokeAttrs('dashed', color);
-    const underlay = lineStyleUnderlayAttrs('dashed');
+    const underlay = lineStyleUnderlayAttrs('dashed', underlayColor);
     const x1 = spec.cx;
     const y1 = spec.cy;
     const x2 = spec.cx + spec.outward.x * HALF;

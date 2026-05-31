@@ -36,10 +36,10 @@ describe('hatchPatternId', () => {
 });
 
 describe('<HatchPatterns>', () => {
-  const renderSvg = (colors: string[]) =>
+  const renderSvg = (colors: string[], underlayColor?: string) =>
     render(
       <svg>
-        <HatchPatterns colors={colors} />
+        <HatchPatterns colors={colors} underlayColor={underlayColor} />
       </svg>,
     );
 
@@ -90,6 +90,16 @@ describe('<HatchPatterns>', () => {
     const whiteRect = Array.from(rects).find((r) => r.getAttribute('fill') === '#fff');
     expect(whiteRect?.getAttribute('width')).toBe(String(HATCH_GAP_WIDTH));
     expect(whiteRect?.getAttribute('x')).toBe(String(HATCH_STRIPE_WIDTH));
+  });
+
+  it('fills the gap with the supplied underlayColor (dark mode → black, not stale white)', () => {
+    const { container } = renderSvg(['#EF374B'], '#000000');
+    const rects = Array.from(container.querySelectorAll('pattern rect'));
+    // No white gap remains; the gap rect is the dark underlay at x = stripe width.
+    expect(rects.some((r) => r.getAttribute('fill') === '#fff')).toBe(false);
+    const gap = rects.find((r) => r.getAttribute('x') === String(HATCH_STRIPE_WIDTH));
+    expect(gap?.getAttribute('fill')).toBe('#000000');
+    expect(gap?.getAttribute('width')).toBe(String(HATCH_GAP_WIDTH));
   });
 
   it('tile width is stripe + gap clamped to >= 1', () => {
@@ -149,6 +159,13 @@ describe('lineStyleUnderlayAttrs', () => {
   it('returns a white butt-capped underlay for dashed so gaps occlude lines behind', () => {
     expect(lineStyleUnderlayAttrs('dashed')).toEqual({
       stroke: '#fff',
+      strokeLinecap: 'butt',
+    });
+  });
+
+  it('honors a custom underlayColor for dashed (dark mode passes black)', () => {
+    expect(lineStyleUnderlayAttrs('dashed', '#000000')).toEqual({
+      stroke: '#000000',
       strokeLinecap: 'butt',
     });
   });

@@ -4,7 +4,14 @@ import { useViewportStore } from '../state/viewportStore';
 import { parse, serialize } from '../model/serialize';
 import { DEFAULT_DOC } from '../model/transforms';
 import { Menu, MenuItem, MenuSeparator } from './Menu';
-import { CursorArrowIcon, FrameIcon, HandIcon, LayersIcon } from '@radix-ui/react-icons';
+import {
+  CursorArrowIcon,
+  FrameIcon,
+  HandIcon,
+  LayersIcon,
+  MoonIcon,
+  SunIcon,
+} from '@radix-ui/react-icons';
 import { SnapToggleBar } from './SnapToggleBar';
 import { OptionsPopover } from './OptionsPopover';
 
@@ -38,6 +45,8 @@ export function Toolbar() {
   const setViewport = useViewportStore((s) => s.setViewport);
   const gridVisible = useViewportStore((s) => s.gridVisible);
   const setGridVisible = useViewportStore((s) => s.setGridVisible);
+  const darkMode = useViewportStore((s) => s.darkMode);
+  const setDarkMode = useViewportStore((s) => s.setDarkMode);
   const clearAll = useDoc((s) => s.clearAll);
   const addLine = useDoc((s) => s.addLine);
   const selection = useSelection();
@@ -188,6 +197,16 @@ export function Toolbar() {
           }
         >
           <LayersIcon />
+        </button>
+        <button
+          type="button"
+          className={'tool-btn' + (darkMode ? ' active' : '')}
+          title={darkMode ? 'Switch to light mode' : 'Switch to dark mode'}
+          aria-label="Toggle dark mode"
+          aria-pressed={darkMode}
+          onClick={() => setDarkMode(!darkMode)}
+        >
+          {darkMode ? <SunIcon /> : <MoonIcon />}
         </button>
       </div>
       <input
