@@ -4,6 +4,7 @@ import { useThemeColors } from '../../state/theme';
 import type { DotShape, Line, LineId, LineStyle } from '../../model/types';
 import { pairKeyOf } from '../../model/pairKey';
 import { resolveDotShape } from '../../model/transforms';
+import { resolveSegmentStyle } from '../../geometry/interlining';
 import { ColorPalette } from './ColorPalette';
 import { useFieldHistory } from '../useFieldHistory';
 import { HatchPatterns, lineStyleStrokeAttrs, lineStyleUnderlayAttrs } from '../HatchPatterns';
@@ -150,7 +151,7 @@ export function LineInspector({ id }: { id: LineId }) {
 
   const cycleSegmentStyle = (fromStationId: string, toStationId: string) => {
     const key = pairKeyOf(fromStationId, toStationId);
-    const cur = (line.segmentStyles?.[key] ?? 'solid') as LineStyle;
+    const cur = resolveSegmentStyle(line, key);
     setLineSegmentStyle(line.id, fromStationId, toStationId, NEXT_STYLE[cur]);
   };
 
@@ -252,7 +253,7 @@ export function LineInspector({ id }: { id: LineId }) {
               const nextSid = line.stations[i + 1];
               if (!stations[sid] || !stations[nextSid]) continue;
               const key = pairKeyOf(sid, nextSid);
-              const style = (line.segmentStyles?.[key] ?? 'solid') as LineStyle;
+              const style = resolveSegmentStyle(line, key);
               const y1 = i === 0 ? centerOf(0) - cap : centerOf(i);
               const y2 = i === N - 2 ? centerOf(N - 1) + cap : centerOf(i + 1);
               segments.push({ i, sid, nextSid, style, y1, y2 });
@@ -453,7 +454,7 @@ export function LineInspector({ id }: { id: LineId }) {
                           const nextSid = line.stations[i + 1];
                           if (!stations[nextSid]) return null;
                           const key = pairKeyOf(sid, nextSid);
-                          const segStyle = (line.segmentStyles?.[key] ?? 'solid') as LineStyle;
+                          const segStyle = resolveSegmentStyle(line, key);
                           const setHover = () =>
                             selection.setHoveredInspectorSegment({
                               lineId: line.id,

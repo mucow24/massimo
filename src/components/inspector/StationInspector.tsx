@@ -8,7 +8,7 @@ import { LabelOffsetControl } from './LabelOffsetControl';
 import { LabelAlignButton, LabelValignButton } from './LabelAlignButtons';
 import { useFieldHistory } from '../useFieldHistory';
 import { StationShapePicker } from '../StationShapePicker';
-import { resolveDotShape } from '../../model/transforms';
+import { resolveDotShape, resolveOffsetPerp } from '../../model/transforms';
 
 export function StationInspector({ id }: { id: StationId }) {
   const station = useDoc((s) => s.stations[id]);
@@ -301,12 +301,13 @@ export function StationInspector({ id }: { id: StationId }) {
         />
         <div className="field-hint">Offset (perpendicular to reading direction)</div>
         <LabelOffsetControl
-          value={station.label.offsetPerp ?? 0}
+          value={resolveOffsetPerp(station.label)}
           onChange={(v) => dispatchAll((sid) => setLabelOffsetPerp(sid, v))}
           indeterminate={
             mirrorOn &&
             matches.some(
-              (m) => (stationsAll[m.id]?.label.offsetPerp ?? 0) !== (station.label.offsetPerp ?? 0),
+              (m) =>
+                resolveOffsetPerp(stationsAll[m.id]?.label) !== resolveOffsetPerp(station.label),
             )
           }
         />

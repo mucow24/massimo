@@ -7,6 +7,7 @@ import { PALETTES, type PaletteId } from './palettes';
 import type {
   DotShape,
   LabelAlign,
+  LabelCell,
   LabelValign,
   Line,
   LineId,
@@ -159,6 +160,15 @@ export function moveStation(doc: MapDoc, id: StationId, x: number, y: number): M
  */
 export function resolveDotShape(line: Line | undefined, stop: StopCell | undefined): DotShape {
   return stop?.dotShape ?? line?.defaultDotShape ?? 'filled-black';
+}
+
+/**
+ * Effective perpendicular label offset. The field defaults to 0 when absent
+ * (older saves) or when the label is missing — one named home for that default
+ * so read-sites stop re-spelling `?? 0`.
+ */
+export function resolveOffsetPerp(label: LabelCell | undefined): number {
+  return label?.offsetPerp ?? 0;
 }
 
 export function setDotShape(
@@ -744,7 +754,7 @@ export function setLabelOffset(doc: MapDoc, stationId: StationId, offset: number
 export function setLabelOffsetPerp(doc: MapDoc, stationId: StationId, offsetPerp: number): MapDoc {
   const st = doc.stations[stationId];
   if (!st) return doc;
-  if ((st.label.offsetPerp ?? 0) === offsetPerp) return doc;
+  if (resolveOffsetPerp(st.label) === offsetPerp) return doc;
   return {
     ...doc,
     stations: {
