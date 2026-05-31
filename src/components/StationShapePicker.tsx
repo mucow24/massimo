@@ -7,7 +7,7 @@ interface ShapeOption {
   label: string;
 }
 
-const SHAPES: ShapeOption[] = [
+export const SHAPES: ShapeOption[] = [
   { shape: 'filled-black', label: 'Filled black' },
   { shape: 'open-black', label: 'Open black' },
   { shape: 'filled-black-white-stroke', label: 'Filled black with white stroke' },

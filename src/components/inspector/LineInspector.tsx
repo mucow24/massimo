@@ -8,21 +8,9 @@ import { ColorPalette } from './ColorPalette';
 import { useFieldHistory } from '../useFieldHistory';
 import { HatchPatterns, lineStyleStrokeAttrs, lineStyleUnderlayAttrs } from '../HatchPatterns';
 import { StopGlyph } from '../StopGlyph';
-import { StationShapePicker } from '../StationShapePicker';
+import { StationShapePicker, SHAPES } from '../StationShapePicker';
 import { blendOver, legibleTextOn, withAlpha } from '../../util/color';
 import { InlineBulletText } from '../InlineBulletText';
-
-const DOT_SHAPES: Array<{ shape: DotShape; label: string }> = [
-  { shape: 'filled-black', label: 'Filled black' },
-  { shape: 'open-black', label: 'Open black' },
-  { shape: 'filled-black-white-stroke', label: 'Filled black with white stroke' },
-  { shape: 'filled-white', label: 'Filled white' },
-  { shape: 'open-white', label: 'Open white' },
-  { shape: 'filled-white-black-stroke', label: 'Filled white with black stroke' },
-  { shape: 'filled-black-diamond', label: 'Filled black diamond' },
-  { shape: 'filled-white-diamond', label: 'Filled white diamond' },
-  { shape: 'none', label: 'None' },
-];
 
 function DotShapePopover({
   onPick,
@@ -51,7 +39,7 @@ function DotShapePopover({
   }, [onClose]);
   return (
     <div className="shape-grid" role="menu" ref={ref} style={{ ...style, right: 'auto' }}>
-      {DOT_SHAPES.map(({ shape, label }) => (
+      {SHAPES.map(({ shape, label }) => (
         <button
           key={shape}
           type="button"
