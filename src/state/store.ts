@@ -119,10 +119,7 @@ interface DocState extends MapDoc {
   setLabelValign: (stationId: StationId, valign: LabelValign) => void;
 
   addLine: () => LineId;
-  updateLine: (
-    id: LineId,
-    patch: Partial<Pick<Line, 'service' | 'name' | 'color'>>,
-  ) => void;
+  updateLine: (id: LineId, patch: Partial<Pick<Line, 'service' | 'name' | 'color'>>) => void;
   toggleStationOnLine: (lineId: LineId, stationId: StationId, insertAfterIndex?: number) => void;
   removeStationFromLine: (lineId: LineId, idx: number) => void;
   reorderLineStations: (lineId: LineId, stations: StationId[]) => void;
@@ -634,6 +631,38 @@ interface SelectionState {
   xorLabelsToSelection: (ids: string[]) => void;
 }
 
+// ---- selection id-list algebra: pure helpers shared by all three kinds ----
+
+// Dedupe preserving each id's LAST occurrence (later position wins).
+function dedupeLastWins<Id extends string>(ids: Id[]): Id[] {
+  const lastIdx = new Map<Id, number>();
+  ids.forEach((id, i) => lastIdx.set(id, i));
+  return ids.filter((id, i) => lastIdx.get(id) === i);
+}
+
+// Append the ids not already present, preserving order. Returns `prev`
+// unchanged (same reference) when nothing is novel, so callers can collapse the
+// set() to a no-op for free.
+function unionAppendNovel<Id extends string>(prev: Id[], ids: Id[]): Id[] {
+  const have = new Set(prev);
+  const novel = ids.filter((id) => !have.has(id));
+  return novel.length === 0 ? prev : [...prev, ...novel];
+}
+
+// Symmetric-difference toggle: ids already present are removed, the rest are
+// appended. Returns `prev` unchanged when `ids` is empty.
+function xorAppend<Id extends string>(prev: Id[], ids: Id[]): Id[] {
+  if (ids.length === 0) return prev;
+  const have = new Set(prev);
+  const removeSet = new Set<Id>();
+  const appendList: Id[] = [];
+  for (const id of ids) {
+    if (have.has(id)) removeSet.add(id);
+    else appendList.push(id);
+  }
+  return [...prev.filter((id) => !removeSet.has(id)), ...appendList];
+}
+
 export const useSelection = create<SelectionState>((set, get) => ({
   selectedStationIds: [],
   selectedLineId: null,
@@ -708,32 +737,22 @@ export const useSelection = create<SelectionState>((set, get) => ({
       };
     }),
   setStationSelection: (ids) =>
-    set(() => {
-      // Dedupe preserving each id's LAST occurrence (later position wins).
-      const lastIdx = new Map<StationId, number>();
-      ids.forEach((id, i) => lastIdx.set(id, i));
-      const dedup: StationId[] = [];
-      for (let i = 0; i < ids.length; i++) {
-        if (lastIdx.get(ids[i]) === i) dedup.push(ids[i]);
-      }
-      return {
-        selectedStationIds: dedup,
-        selectedLineId: null,
-        selectedLineTagId: null,
-        selectedStopLineId: null,
-        labelSelected: false,
-        editingStationId: null,
-        activeTab: 'stations',
-        mirrorMatching: false,
-      };
-    }),
+    set(() => ({
+      selectedStationIds: dedupeLastWins(ids),
+      selectedLineId: null,
+      selectedLineTagId: null,
+      selectedStopLineId: null,
+      labelSelected: false,
+      editingStationId: null,
+      activeTab: 'stations',
+      mirrorMatching: false,
+    })),
   addStationsToSelection: (ids) =>
     set((s) => {
-      const have = new Set(s.selectedStationIds);
-      const novel = ids.filter((id) => !have.has(id));
-      if (novel.length === 0) return {};
+      const next = unionAppendNovel(s.selectedStationIds, ids);
+      if (next === s.selectedStationIds) return {};
       return {
-        selectedStationIds: [...s.selectedStationIds, ...novel],
+        selectedStationIds: next,
         selectedLineId: null,
         selectedLineTagId: null,
         mirrorMatching: false,
@@ -741,16 +760,8 @@ export const useSelection = create<SelectionState>((set, get) => ({
     }),
   xorStationsToSelection: (ids) =>
     set((s) => {
-      const have = new Set(s.selectedStationIds);
-      const removeSet = new Set<StationId>();
-      const appendList: StationId[] = [];
-      for (const id of ids) {
-        if (have.has(id)) removeSet.add(id);
-        else appendList.push(id);
-      }
-      if (removeSet.size === 0 && appendList.length === 0) return {};
-      const next = s.selectedStationIds.filter((id) => !removeSet.has(id));
-      next.push(...appendList);
+      const next = xorAppend(s.selectedStationIds, ids);
+      if (next === s.selectedStationIds) return {};
       return {
         selectedStationIds: next,
         selectedLineId: null,
@@ -851,36 +862,16 @@ export const useSelection = create<SelectionState>((set, get) => ({
         selectedLineTagId: null,
       };
     }),
-  setRouteBulletSelection: (ids) =>
-    set(() => {
-      const lastIdx = new Map<string, number>();
-      ids.forEach((id, i) => lastIdx.set(id, i));
-      const dedup: string[] = [];
-      for (let i = 0; i < ids.length; i++) {
-        if (lastIdx.get(ids[i]) === i) dedup.push(ids[i]);
-      }
-      return { selectedRouteBulletIds: dedup };
-    }),
+  setRouteBulletSelection: (ids) => set(() => ({ selectedRouteBulletIds: dedupeLastWins(ids) })),
   addRouteBulletsToSelection: (ids) =>
     set((s) => {
-      const have = new Set(s.selectedRouteBulletIds);
-      const novel = ids.filter((id) => !have.has(id));
-      if (novel.length === 0) return {};
-      return { selectedRouteBulletIds: [...s.selectedRouteBulletIds, ...novel] };
+      const next = unionAppendNovel(s.selectedRouteBulletIds, ids);
+      return next === s.selectedRouteBulletIds ? {} : { selectedRouteBulletIds: next };
     }),
   xorRouteBulletsToSelection: (ids) =>
     set((s) => {
-      const have = new Set(s.selectedRouteBulletIds);
-      const removeSet = new Set<string>();
-      const appendList: string[] = [];
-      for (const id of ids) {
-        if (have.has(id)) removeSet.add(id);
-        else appendList.push(id);
-      }
-      if (removeSet.size === 0 && appendList.length === 0) return {};
-      const next = s.selectedRouteBulletIds.filter((id) => !removeSet.has(id));
-      next.push(...appendList);
-      return { selectedRouteBulletIds: next };
+      const next = xorAppend(s.selectedRouteBulletIds, ids);
+      return next === s.selectedRouteBulletIds ? {} : { selectedRouteBulletIds: next };
     }),
   selectTransfer: (id) =>
     set({
@@ -916,35 +907,15 @@ export const useSelection = create<SelectionState>((set, get) => ({
         selectedLineTagId: null,
       };
     }),
-  setLabelSelection: (ids) =>
-    set(() => {
-      const lastIdx = new Map<string, number>();
-      ids.forEach((id, i) => lastIdx.set(id, i));
-      const dedup: string[] = [];
-      for (let i = 0; i < ids.length; i++) {
-        if (lastIdx.get(ids[i]) === i) dedup.push(ids[i]);
-      }
-      return { selectedLabelIds: dedup };
-    }),
+  setLabelSelection: (ids) => set(() => ({ selectedLabelIds: dedupeLastWins(ids) })),
   addLabelsToSelection: (ids) =>
     set((s) => {
-      const have = new Set(s.selectedLabelIds);
-      const novel = ids.filter((id) => !have.has(id));
-      if (novel.length === 0) return {};
-      return { selectedLabelIds: [...s.selectedLabelIds, ...novel] };
+      const next = unionAppendNovel(s.selectedLabelIds, ids);
+      return next === s.selectedLabelIds ? {} : { selectedLabelIds: next };
     }),
   xorLabelsToSelection: (ids) =>
     set((s) => {
-      const have = new Set(s.selectedLabelIds);
-      const removeSet = new Set<string>();
-      const appendList: string[] = [];
-      for (const id of ids) {
-        if (have.has(id)) removeSet.add(id);
-        else appendList.push(id);
-      }
-      if (removeSet.size === 0 && appendList.length === 0) return {};
-      const next = s.selectedLabelIds.filter((id) => !removeSet.has(id));
-      next.push(...appendList);
-      return { selectedLabelIds: next };
+      const next = xorAppend(s.selectedLabelIds, ids);
+      return next === s.selectedLabelIds ? {} : { selectedLabelIds: next };
     }),
 }));
