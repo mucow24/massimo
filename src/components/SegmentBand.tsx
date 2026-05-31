@@ -21,6 +21,8 @@ interface Props {
   onLineSelect?: (lineId: LineId, e: React.MouseEvent<SVGPathElement>) => void;
   // Optional per-line color override (e.g. for desaturating non-selected lines).
   colorMap?: Record<LineId, string>;
+  // Gap/underlay color for non-solid styles; matches the canvas background.
+  underlayColor?: string;
 }
 
 export function SegmentBand({
@@ -33,6 +35,7 @@ export function SegmentBand({
   onLineContextMenu,
   onLineSelect,
   colorMap,
+  underlayColor,
 }: Props) {
   const line = spec.lines[stripeIndex];
   const d = spec.paths[stripeIndex];
@@ -40,7 +43,7 @@ export function SegmentBand({
   const color = colorMap?.[lineId] ?? line.color;
   const selectable = !interactive && !!onLineSelect;
   const { stroke, strokeDasharray, strokeLinecap } = lineStyleStrokeAttrs(line.style, color);
-  const underlay = lineStyleUnderlayAttrs(line.style);
+  const underlay = lineStyleUnderlayAttrs(line.style, underlayColor);
   return (
     <Fragment>
       {underlay && (

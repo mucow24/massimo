@@ -118,6 +118,21 @@ export function dirIndex8(v: Vec2): number {
 }
 
 /**
+ * Resolve the rendered style of one line on one segment (identified by its
+ * canonical {@link pairKeyOf} key). Per-segment overrides live in
+ * `line.segmentStyles`; absent an override, a segment is solid.
+ *
+ * Single source of truth shared by geometry building (which bakes the style
+ * into each stripe) and MapCanvas's render-time presentation refresh (which
+ * re-derives it live, since the geometry memo intentionally ignores
+ * presentation — see the `bands` memo). Keeping both on this one resolver
+ * means a style edit can never disagree between the two.
+ */
+export function resolveSegmentStyle(line: Line, pairKey: string): LineStyle {
+  return line.segmentStyles?.[pairKey] ?? 'solid';
+}
+
+/**
  * Build all colored bands for the map. A "band" is one or more lines that
  * share a station-pair and pass through it with matching stop orientations
  * AND grid-adjacent cells along the perpendicular-to-travel axis at both
@@ -187,7 +202,7 @@ export function buildBandGeometry(
         toCell: forward ? toCell : fromCell,
         lineId,
         color: line.color,
-        style: line.segmentStyles?.[key] ?? 'solid',
+        style: resolveSegmentStyle(line, key),
         worldHint: { x: dxLine / lineLen, y: dyLine / lineLen },
       });
     }

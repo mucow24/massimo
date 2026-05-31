@@ -10,8 +10,10 @@ import {
   useSelection,
 } from './state/store';
 import { readClipboard, writeClipboard } from './model/clipboard';
+import { useViewportStore } from './state/viewportStore';
 
 export default function App() {
+  const darkMode = useViewportStore((s) => s.darkMode);
   const setUiMode = useSelection((s) => s.setUiMode);
   const selectLineTag = useSelection((s) => s.selectLineTag);
   const selectRouteBullet = useSelection((s) => s.selectRouteBullet);
@@ -225,7 +227,7 @@ export default function App() {
   }, []);
 
   return (
-    <div className="app">
+    <div className="app" data-theme={darkMode ? 'dark' : undefined}>
       <Toolbar />
       <MapCanvas />
       <Sidebar />

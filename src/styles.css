@@ -153,6 +153,10 @@ select {
     'toolbar toolbar'
     'canvas sidebar';
   height: 100vh;
+  /* Single source of truth for muted "UI label" text — the small captions
+     beside controls in the station/line inspectors and the options panel.
+     Overridden once for dark mode (see .app[data-theme='dark']). */
+  --ui-label-color: #777;
 }
 
 .toolbar {
@@ -268,7 +272,7 @@ select {
 .options-popover-label {
   width: 72px;
   flex-shrink: 0;
-  color: #555;
+  color: var(--ui-label-color);
 }
 .options-popover-row input[type='range'] {
   flex: 1;
@@ -277,7 +281,7 @@ select {
 .options-popover-value {
   width: 24px;
   text-align: right;
-  color: #555;
+  color: var(--ui-label-color);
 }
 .options-popover-spin {
   width: 44px;
@@ -298,7 +302,7 @@ select {
   background: transparent;
   border: 0;
   padding: 2px 0;
-  color: #555;
+  color: var(--ui-label-color);
   cursor: pointer;
   font-size: 12px;
 }
@@ -368,7 +372,10 @@ select {
   display: inline-flex;
   align-items: center;
   gap: 6px;
-  color: #555;
+  /* Same muted "UI label" token as the inspectors. This selector also wins
+     over `.options-popover-label` (higher specificity), so routing it through
+     the variable is what actually colors the options-panel labels too. */
+  color: var(--ui-label-color);
 }
 
 .canvas-host {
@@ -936,7 +943,12 @@ input[type='range'].indeterminate {
 }
 .inspector .field > label {
   font-size: 11px;
-  color: #777;
+  color: var(--ui-label-color);
+}
+.inspector .field-hint {
+  font-size: 11px;
+  color: var(--ui-label-color);
+  margin-top: 4px;
 }
 
 .inspector input[type='text'],
@@ -1007,4 +1019,221 @@ input[type='range'].indeterminate {
   cursor: grab;
   color: #aaa;
   user-select: none;
+}
+
+/* ───────────────────────── Dark mode ─────────────────────────
+   Toggled from the toolbar; the `data-theme="dark"` attribute lands on the
+   .app grid root (see App.tsx). Dark-dominant chrome: surfaces go near-black,
+   borders mid-gray, text light. The canvas background + on-canvas label color
+   are handled in the SVG itself (MapCanvas / StationView / LabelView /
+   Grid read darkMode from the viewport store), not here. */
+.app[data-theme='dark'] {
+  background: #141414;
+  color: #e4e4e4;
+  --ui-label-color: #c4c4c4;
+}
+
+.app[data-theme='dark'] .toolbar {
+  background: #1d1d1d;
+  border-bottom-color: #383838;
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.5);
+}
+.app[data-theme='dark'] .toolbar button {
+  background: #2a2a2a;
+  border-color: #444;
+  color: #e4e4e4;
+}
+.app[data-theme='dark'] .toolbar button:hover {
+  background: #353535;
+}
+.app[data-theme='dark'] .tool-group-divider {
+  background: #444;
+}
+
+.app[data-theme='dark'] .toolbar button.menu-trigger {
+  background: transparent;
+  color: #e4e4e4;
+}
+.app[data-theme='dark'] .toolbar button.menu-trigger:hover,
+.app[data-theme='dark'] .toolbar button.menu-trigger.open {
+  background: transparent;
+  color: #fff;
+}
+.app[data-theme='dark'] .menu-panel {
+  background: #262626;
+  border-color: #404040;
+  box-shadow: 0 6px 16px rgba(0, 0, 0, 0.5);
+}
+.app[data-theme='dark'] .toolbar button.menu-item {
+  background: transparent;
+  color: #e4e4e4;
+}
+.app[data-theme='dark'] .toolbar button.menu-item:hover {
+  background: #4a4a4a;
+}
+.app[data-theme='dark'] .menu-separator {
+  background: #404040;
+}
+
+.app[data-theme='dark'] .toolbar button.tool-btn {
+  background: #2a2a2a;
+  border-color: #444;
+  color: #e4e4e4;
+}
+.app[data-theme='dark'] .toolbar button.tool-btn:hover {
+  background: #353535;
+}
+.app[data-theme='dark'] .toolbar button.tool-btn.active {
+  background: #27406b;
+  border-color: #4f7bc4;
+}
+.app[data-theme='dark'] .toolbar button.tool-btn[aria-disabled='true']:hover {
+  background: #2a2a2a;
+}
+
+.app[data-theme='dark'] .options-popover {
+  background: #262626;
+  border-color: #404040;
+  color: #e4e4e4;
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.5);
+}
+.app[data-theme='dark'] .options-popover-spin {
+  background: #000;
+  border-color: #444;
+  color: #fff;
+}
+.app[data-theme='dark'] .options-palette-disclosure:hover {
+  color: #e4e4e4;
+}
+.app[data-theme='dark'] .options-palette-separator {
+  border-top-color: #404040;
+}
+.app[data-theme='dark'] .options-palette-card {
+  border-color: #383838;
+}
+.app[data-theme='dark'] .color-palette-section-label {
+  color: #7a7a7a;
+}
+
+.app[data-theme='dark'] .canvas-host {
+  background: #000;
+}
+
+.app[data-theme='dark'] .sidebar {
+  background: #1d1d1d;
+  border-left-color: #383838;
+  box-shadow: -4px 0 12px rgba(0, 0, 0, 0.5);
+}
+.app[data-theme='dark'] .sidebar h2 {
+  color: #7a7a7a;
+}
+.app[data-theme='dark'] .tab-actions {
+  border-bottom-color: #333;
+}
+.app[data-theme='dark'] .tab-actions button {
+  background: #2a2a2a;
+  border-color: #444;
+  color: #e4e4e4;
+}
+.app[data-theme='dark'] .tab-actions button:hover {
+  background: #353535;
+}
+.app[data-theme='dark'] .inline-editor {
+  background: #232323;
+  border-top-color: #383838;
+  border-bottom-color: #383838;
+}
+
+.app[data-theme='dark'] .list-header {
+  background: #232323;
+  border-bottom-color: #383838;
+  color: #9a9a9a;
+}
+.app[data-theme='dark'] .list-header .sort-header:hover,
+.app[data-theme='dark'] .list-header .sort-header.active {
+  color: #fff;
+}
+.app[data-theme='dark'] .list-row:hover {
+  background: #2a2a2a;
+}
+.app[data-theme='dark'] .list-row.selected {
+  background: #27406b;
+}
+.app[data-theme='dark'] .list-row .swatch {
+  border-color: rgba(255, 255, 255, 0.25);
+}
+
+.app[data-theme='dark'] .btn-mini {
+  border-color: #444;
+  color: #e4e4e4;
+}
+.app[data-theme='dark'] .btn-mini:hover:not(:disabled) {
+  background: #353535;
+}
+.app[data-theme='dark'] .btn-mini.icon {
+  border-color: transparent;
+  color: #777;
+}
+.app[data-theme='dark'] .btn-mini.icon:hover:not(:disabled) {
+  background: transparent;
+  color: #e4e4e4;
+}
+.app[data-theme='dark'] .btn-mini.icon:disabled {
+  color: #3a3a3a;
+}
+.app[data-theme='dark'] .btn-mini.danger {
+  color: #777;
+}
+
+/* All text-entry controls: black background, white text. Covers the inspector
+   name/position fields, the options-popover spin boxes, popover textareas, and
+   <select> menus (which otherwise render white-on-white in dark mode). */
+.app[data-theme='dark'] input[type='text'],
+.app[data-theme='dark'] input[type='number'],
+.app[data-theme='dark'] input[type='search'],
+.app[data-theme='dark'] textarea,
+.app[data-theme='dark'] select {
+  background: #000;
+  color: #fff;
+  border-color: #444;
+}
+.app[data-theme='dark'] select option {
+  background: #000;
+  color: #fff;
+}
+
+.app[data-theme='dark'] .empty {
+  color: #777;
+}
+
+/* Styled popovers keep their signature black border + header bar; only the
+   white body needs darkening so the controls inside read on dark. */
+.app[data-theme='dark'] .bullet-popover,
+.app[data-theme='dark'] .text-label-popover {
+  background: #1d1d1d;
+  border-color: #000;
+}
+.app[data-theme='dark'] .bullet-popover .row label,
+.app[data-theme='dark'] .text-label-popover .row label {
+  color: #e4e4e4;
+}
+.app[data-theme='dark'] .bullet-popover .shape-btn,
+.app[data-theme='dark'] .text-label-popover .shape-btn,
+.app[data-theme='dark'] .text-label-popover .align-btn,
+.app[data-theme='dark'] .text-label-popover .italic-btn {
+  background: #2a2a2a;
+  border-color: #444;
+  color: #e4e4e4;
+}
+.app[data-theme='dark'] .bullet-popover .shape-btn:hover,
+.app[data-theme='dark'] .text-label-popover .shape-btn:hover,
+.app[data-theme='dark'] .text-label-popover .align-btn:hover,
+.app[data-theme='dark'] .text-label-popover .italic-btn:hover {
+  background: #353535;
+}
+
+.app[data-theme='dark'] .shape-grid {
+  background: #262626;
+  border-color: #404040;
+  box-shadow: 0 6px 16px rgba(0, 0, 0, 0.5);
 }

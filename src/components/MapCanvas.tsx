@@ -24,6 +24,7 @@ import {
   buildBandGeometry,
   buildOrderedRenderables,
   buildStopMarkers,
+  resolveSegmentStyle,
   SegmentBandSpec,
   stopPosWorld,
 } from '../geometry/interlining';
@@ -97,6 +98,10 @@ export function MapCanvas() {
   const selection = useSelection();
   const snapModes = useSnapPrefs((s) => s.modes);
   const gridVisible = useViewportStore((s) => s.gridVisible);
+  const darkMode = useViewportStore((s) => s.darkMode);
+  // Gap/underlay color for dashed + hatched styles. Matches the canvas
+  // background so the "off" stripes read as empty canvas, not stale white.
+  const underlayColor = darkMode ? '#000000' : '#ffffff';
   const highlightLineId = selection.selectedLineId;
 
   const svgRef = useRef<SVGSVGElement | null>(null);
@@ -136,7 +141,23 @@ export function MapCanvas() {
     // don't leak between the two memo levels (matters once a future caller
     // wants the geometry array without priorities — for layering-mode
     // outlines we pass `bandsGeometry` directly).
-    const out = bandsGeometry.map((b) => ({ ...b }));
+    //
+    // Also refresh each stripe's presentation (color + per-segment style)
+    // from the live `lines` map. Both are baked into the geometry at build
+    // time, but `linesGeometrySig` (and thus `bandsGeometry`) intentionally
+    // ignores presentation so color/style edits don't churn geometry — which
+    // otherwise leaves stripes painting the stale color/style until a reload.
+    // Re-deriving here (via the same `resolveSegmentStyle` the geometry uses)
+    // is cheap and keeps every stripe consumer — the main render and the
+    // selected-line highlight overlay, both reading off these bands — in sync.
+    const out = bandsGeometry.map((b) => ({
+      ...b,
+      lines: b.lines.map((l) => {
+        const live = lines[l.id];
+        if (!live) return l;
+        return { ...l, color: live.color, style: resolveSegmentStyle(live, b.pairKey) };
+      }),
+    }));
     assignLinePriorities(out, lines, lineOrder);
     return out;
   }, [bandsGeometry, lines, lineOrder]);
@@ -781,7 +802,7 @@ export function MapCanvas() {
         onDragStart={(e) => e.preventDefault()}
       >
         <defs>
-          <HatchPatterns colors={hatchedColors} />
+          <HatchPatterns colors={hatchedColors} underlayColor={underlayColor} />
         </defs>
 
         {/* background hit target for panning */}
@@ -791,7 +812,7 @@ export function MapCanvas() {
           y={view.vbY}
           width={view.vbW}
           height={view.vbH}
-          fill="#fafafa"
+          fill={darkMode ? '#000000' : '#fafafa'}
         />
 
         {gridVisible && (
@@ -833,6 +854,7 @@ export function MapCanvas() {
                 stripeIndex={r.stripeIndex}
                 interactive={selection.uiMode.kind === 'creating-line-tag' || inLayeringMode}
                 colorMap={colorMap}
+                underlayColor={underlayColor}
                 onLineSelect={
                   inHandMode
                     ? undefined
@@ -861,6 +883,7 @@ export function MapCanvas() {
               key={'m:' + r.spec.stationId + ':' + r.spec.lineId}
               spec={r.spec}
               effectiveColor={effectiveColor}
+              underlayColor={underlayColor}
             />
           );
         })}
@@ -1051,7 +1074,7 @@ export function MapCanvas() {
                   stripeLn.style,
                   stripeLn.color,
                 );
-                const underlay = lineStyleUnderlayAttrs(stripeLn.style);
+                const underlay = lineStyleUnderlayAttrs(stripeLn.style, underlayColor);
                 const m = !!hov && hov.lineId === stripeLn.id && r.band.pairKey === hovPairKey;
                 push(
                   m,
@@ -1082,7 +1105,7 @@ export function MapCanvas() {
                 if (r.kind !== 'marker' || r.spec.lineId !== highlightLineId) return;
                 push(
                   isHoverStation(r.spec.stationId),
-                  <StopMarker key={'hl-m:' + i} spec={r.spec} />,
+                  <StopMarker key={'hl-m:' + i} spec={r.spec} underlayColor={underlayColor} />,
                 );
               });
               // Direction triangles: small arrow ~5px past each stop dot
