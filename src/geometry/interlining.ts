@@ -1,6 +1,6 @@
 import { Line, LineId, LineStyle, Station, StationId, StopCell } from '../model/types';
 import { pairKeyOf } from '../model/pairKey';
-import { Vec2, sub, len, norm, dot } from './vec';
+import { Vec2, sub, len, norm, dot, leftNormal } from './vec';
 import { dirIndex, offsetFilletPath, route } from './router';
 import {
   localToWorld,
@@ -240,8 +240,8 @@ export function buildBandGeometry(
       // offsetFilletPath. With this, sorting ascending by perp-projection
       // assigns lower-k indices to lines on the negative-offset (right of
       // motion) side — exactly what `(k − (n−1)/2) * STOP_SIZE` produces.
-      const fPerp: Vec2 = { x: fDir.y, y: -fDir.x };
-      const tPerp: Vec2 = { x: tDir.y, y: -tDir.x };
+      const fPerp: Vec2 = leftNormal(fDir);
+      const tPerp: Vec2 = leftNormal(tDir);
 
       // Enrich with world perp/parallel positions at each end for sorting and
       // adjacency comparison.
