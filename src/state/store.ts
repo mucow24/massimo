@@ -50,6 +50,10 @@ const pickNextLineName = (lines: Record<LineId, Line>): string => {
 
 const ids: IdFactory = defaultIdFactory();
 
+// Offset applied when pasting or duplicating a route bullet, so the copy lands
+// just off the original instead of exactly on top of it.
+const ROUTE_BULLET_DROP_OFFSET = 15;
+
 // Single source of truth for which MapDoc fields are part of the persisted /
 // undoable document. Drives partialize (persist + zundo), DocSnapshot,
 // pickDocSnapshot, and the change-detection equality check in
@@ -159,6 +163,8 @@ interface DocState extends MapDoc {
 
   addRouteBullet: (x: number, y: number, lineId: LineId | null) => string;
   addRouteBulletWith: (fields: Omit<RouteBullet, 'id'>) => string;
+  duplicateRouteBullet: (id: string) => string | null;
+  pasteRouteBullet: (data: Omit<RouteBullet, 'id'>) => string;
   moveRouteBullet: (id: string, x: number, y: number) => void;
   rotateRouteBullet: (id: string) => void;
   updateRouteBullet: (
@@ -198,7 +204,7 @@ interface DocState extends MapDoc {
 export const useDoc = create<DocState>()(
   temporal(
     persist(
-      (set) => ({
+      (set, get) => ({
         ...DEFAULT_DOC,
 
         addStation: (x, y, name) => {
@@ -291,6 +297,20 @@ export const useDoc = create<DocState>()(
           const id = ids.routeBulletId();
           set((s) => T.addRouteBulletWith(s, id, fields));
           return id;
+        },
+        // Add a bullet from a clipboard payload, nudged by the drop offset.
+        pasteRouteBullet: (data) =>
+          get().addRouteBulletWith({
+            ...data,
+            x: data.x + ROUTE_BULLET_DROP_OFFSET,
+            y: data.y + ROUTE_BULLET_DROP_OFFSET,
+          }),
+        // Duplicate an existing bullet at the drop offset; null if it's gone.
+        duplicateRouteBullet: (id) => {
+          const b = get().routeBullets[id];
+          if (!b) return null;
+          const { id: _id, ...data } = b;
+          return get().pasteRouteBullet(data);
         },
         moveRouteBullet: (id, x, y) => set((s) => T.moveRouteBullet(s, id, x, y)),
         rotateRouteBullet: (id) => set((s) => T.rotateRouteBullet(s, id)),

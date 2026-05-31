@@ -9,7 +9,7 @@ import {
   useDoc,
   useSelection,
 } from './state/store';
-import { readClipboard, writeClipboard } from './model/clipboard';
+import { readClipboard, routeBulletPayload, writeClipboard } from './model/clipboard';
 import { useViewportStore } from './state/viewportStore';
 
 export default function App() {
@@ -110,21 +110,9 @@ export default function App() {
         const sel = useSelection.getState();
         const bullets = sel.selectedRouteBulletIds;
         if (bullets.length !== 1 || sel.selectedStationIds.length > 0) return;
-        const bid = bullets[0];
-        const b = useDoc.getState().routeBullets[bid];
+        const b = useDoc.getState().routeBullets[bullets[0]];
         if (!b) return;
-        const text = writeClipboard({
-          kind: 'route-bullet',
-          data: {
-            x: b.x,
-            y: b.y,
-            rotation: b.rotation,
-            lineId: b.lineId,
-            shape: b.shape,
-            size: b.size,
-          },
-        });
-        navigator.clipboard?.writeText(text).catch(() => {});
+        navigator.clipboard?.writeText(writeClipboard(routeBulletPayload(b))).catch(() => {});
         e.preventDefault();
         return;
       }
@@ -135,15 +123,7 @@ export default function App() {
           .then((text) => {
             const payload = readClipboard(text);
             if (!payload || payload.kind !== 'route-bullet') return;
-            const d = payload.data;
-            const newId = useDoc.getState().addRouteBulletWith({
-              x: d.x + 15,
-              y: d.y + 15,
-              rotation: d.rotation,
-              lineId: d.lineId,
-              shape: d.shape,
-              size: d.size,
-            });
+            const newId = useDoc.getState().pasteRouteBullet(payload.data);
             useSelection.getState().selectRouteBullet(newId);
           })
           .catch(() => {});
@@ -153,19 +133,9 @@ export default function App() {
         const sel = useSelection.getState();
         const bullets = sel.selectedRouteBulletIds;
         if (bullets.length !== 1 || sel.selectedStationIds.length > 0) return;
-        const bid = bullets[0];
-        const b = useDoc.getState().routeBullets[bid];
-        if (!b) return;
         e.preventDefault();
-        const newId = useDoc.getState().addRouteBulletWith({
-          x: b.x + 15,
-          y: b.y + 15,
-          rotation: b.rotation,
-          lineId: b.lineId,
-          shape: b.shape,
-          size: b.size,
-        });
-        useSelection.getState().selectRouteBullet(newId);
+        const newId = useDoc.getState().duplicateRouteBullet(bullets[0]);
+        if (newId) useSelection.getState().selectRouteBullet(newId);
         return;
       }
       if (!inForm && !mod && (e.key === 'a' || e.key === 'A')) {
