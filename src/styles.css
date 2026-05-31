@@ -241,6 +241,33 @@ select {
   margin: 4px 0;
 }
 
+/* Nested flyout submenu (e.g. Canvas → Export → PNG/SVG). */
+.menu-sub {
+  position: relative;
+}
+.toolbar button.menu-sub-trigger {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  width: 100%;
+}
+.toolbar button.menu-sub-trigger:hover,
+.toolbar button.menu-sub-trigger.open {
+  background: #f0f0f0;
+}
+.menu-sub-caret {
+  font-size: 13px;
+  line-height: 1;
+  opacity: 0.6;
+}
+.menu-sub-panel {
+  top: -5px;
+  /* Butt up against the parent panel's edge (no gap) so moving the pointer
+     into the flyout doesn't cross a dead zone that fires onMouseLeave. */
+  left: 100%;
+}
+
 .options-popover-wrap {
   position: relative;
   display: inline-flex;
@@ -1073,6 +1100,10 @@ input[type='range'].indeterminate {
   color: #e4e4e4;
 }
 .app[data-theme='dark'] .toolbar button.menu-item:hover {
+  background: #4a4a4a;
+}
+.app[data-theme='dark'] .toolbar button.menu-sub-trigger:hover,
+.app[data-theme='dark'] .toolbar button.menu-sub-trigger.open {
   background: #4a4a4a;
 }
 .app[data-theme='dark'] .menu-separator {
