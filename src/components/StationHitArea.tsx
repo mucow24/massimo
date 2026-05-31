@@ -1,0 +1,71 @@
+import { Line, Station } from '../model/types';
+import { useDoc } from '../state/store';
+import { labelLayoutLocal } from '../geometry/labelLayout';
+import { cellsAABBLocal } from '../geometry/stationBoundary';
+import { resolveStationLabelWeight } from '../model/transforms';
+import { useStationInteraction } from './useStationInteraction';
+
+/**
+ * A station's transparent hit area, painted in the 'bg' pass beneath
+ * everything visible: an axis-aligned rect over the cells AABB plus a rotated
+ * rect over the label, both forwarding pointer events to the shared station
+ * interaction handlers so any pixel of the station's footprint is clickable.
+ * Waypoints omit the label rect (no painted name to click).
+ */
+export function StationHitArea({
+  station,
+  lines,
+  onStartDrag,
+}: {
+  station: Station;
+  lines: Record<string, Line>;
+  onStartDrag: (id: string, ev: React.PointerEvent, redistributeAnchor?: string) => void;
+}) {
+  const labelFontSize = useDoc((s) => s.labelFontSize);
+  const labelWeight = useDoc((s) => s.labelWeight);
+  const labelItalic = useDoc((s) => s.labelItalic);
+  const { handlers, cursor, inHitlessMode } = useStationInteraction(station, onStartDrag, lines);
+
+  const angle = station.rotation * 45;
+  const isWp = !!station.isWaypoint;
+  const label = station.label;
+  const cellsBox = cellsAABBLocal(station);
+  const {
+    anchorX: labelAnchorX,
+    anchorY: labelAnchorY,
+    hitX,
+    hitY,
+    hitW,
+    hitH,
+  } = labelLayoutLocal(station, {
+    fontSize: labelFontSize,
+    weight: resolveStationLabelWeight(labelWeight, station.labelBold),
+    italic: labelItalic,
+  });
+  const labelHitTransform = `rotate(${label.rotation * 45} ${labelAnchorX} ${labelAnchorY})`;
+
+  const hitProps = {
+    ...handlers,
+    fill: 'transparent',
+    pointerEvents: inHitlessMode ? ('none' as const) : ('all' as const),
+  };
+  return (
+    <g
+      data-station-id={station.id}
+      transform={`translate(${station.x} ${station.y}) rotate(${angle})`}
+      style={{ cursor }}
+    >
+      <rect x={cellsBox.x} y={cellsBox.y} width={cellsBox.w} height={cellsBox.h} {...hitProps} />
+      {!isWp && (
+        <rect
+          x={hitX}
+          y={hitY}
+          width={hitW}
+          height={hitH}
+          transform={labelHitTransform}
+          {...hitProps}
+        />
+      )}
+    </g>
+  );
+}

@@ -3,13 +3,13 @@ import { Line, Station } from '../model/types';
 import { useDoc, useSelection } from '../state/store';
 import { STOP_DOT_RADIUS, stopCenterAt } from '../geometry/orientation';
 import { labelLayoutLocal } from '../geometry/labelLayout';
-import { cellsAABBLocal } from '../geometry/stationBoundary';
 import { bumpWeightByIndex, resolveDotShape, resolveStationLabelWeight } from '../model/transforms';
 import { legibleTextOn } from '../util/color';
 import { useThemeColors } from '../state/theme';
 import { StopGlyph } from './StopGlyph';
 import { StationNameEditor } from './StationNameEditor';
 import { StationSilhouette } from './StationSilhouette';
+import { StationHitArea } from './StationHitArea';
 import { stopPosWorld } from '../geometry/interlining';
 import { renderStationLabelText } from './stationLabelText';
 import { useStationInteraction } from './useStationInteraction';
@@ -102,9 +102,6 @@ export function StationView({
     italic: labelItalic,
   });
 
-  // Cells AABB hit rect — shared with the selection silhouette via
-  // stationBoundary so the two can't drift.
-  const cellsBox = cellsAABBLocal(station);
   const labelHitTransform = `rotate(${label.rotation * 45} ${labelAnchorX} ${labelAnchorY})`;
 
   // The inline rename editor overlays the painted label 1:1: it reuses the
@@ -137,30 +134,7 @@ export function StationView({
   }
 
   if (layer === 'bg') {
-    const hitProps = {
-      ...stationInteractionHandlers,
-      fill: 'transparent',
-      pointerEvents: inHitlessMode ? ('none' as const) : ('all' as const),
-    };
-    return (
-      <g
-        data-station-id={station.id}
-        transform={`translate(${station.x} ${station.y}) rotate(${angle})`}
-        style={{ cursor: stationCursor }}
-      >
-        <rect x={cellsBox.x} y={cellsBox.y} width={cellsBox.w} height={cellsBox.h} {...hitProps} />
-        {!isWp && (
-          <rect
-            x={labelHitX}
-            y={labelHitY}
-            width={labelHitW}
-            height={labelHitH}
-            transform={labelHitTransform}
-            {...hitProps}
-          />
-        )}
-      </g>
-    );
+    return <StationHitArea station={station} lines={lines} onStartDrag={onStartDrag} />;
   }
 
   if (layer === 'starter-label') {
