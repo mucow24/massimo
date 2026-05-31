@@ -21,17 +21,26 @@ export interface StationBoundaryRects {
   label?: Pt[];
 }
 
-export function stationBoundaryRectsLocal(
-  station: Station,
-  style: LabelStyle = DEFAULT_LABEL_STYLE,
-): StationBoundaryRects {
+export interface AABBRect {
+  x: number;
+  y: number;
+  w: number;
+  h: number;
+}
+
+/**
+ * Axis-aligned bounding box (station-local) around a station's stop cells —
+ * plus the label cell for a regular station, plus a phantom dot for an empty
+ * one — padded by HIT_PAD. The "cells" half of the selection silhouette / hit
+ * rect. Shared with StationView's bg hit rect so the two can never drift.
+ */
+export function cellsAABBLocal(station: Station): AABBRect {
   const stops = station.stops;
   const label = station.label;
   const isWp = !!station.isWaypoint;
   const phantomDot = !isWp && stops.length === 0 ? { row: label.row, col: label.col + 1 } : null;
-
-  // Waypoints exclude the label cell so the wash/stroke silhouette hugs
-  // only the visible stop positions.
+  // Waypoints exclude the label cell so the silhouette hugs only the visible
+  // stop positions.
   const allCells: { row: number; col: number }[] = isWp ? [...stops] : [...stops, label];
   if (phantomDot) allCells.push(phantomDot);
   if (allCells.length === 0) allCells.push(label); // empty-waypoint fallback
@@ -39,17 +48,25 @@ export function stationBoundaryRectsLocal(
   const maxRow = Math.max(...allCells.map((c) => c.row));
   const minCol = Math.min(...allCells.map((c) => c.col));
   const maxCol = Math.max(...allCells.map((c) => c.col));
+  const x = stopCenterAt(0, minCol).x - HALF - HIT_PAD;
+  const y = stopCenterAt(minRow, 0).y - HALF - HIT_PAD;
+  const w = stopCenterAt(0, maxCol).x + HALF + HIT_PAD - x;
+  const h = stopCenterAt(maxRow, 0).y + HALF + HIT_PAD - y;
+  return { x, y, w, h };
+}
 
-  const cellsHitX = stopCenterAt(0, minCol).x - HALF - HIT_PAD;
-  const cellsHitY = stopCenterAt(minRow, 0).y - HALF - HIT_PAD;
-  const cellsHitW = stopCenterAt(0, maxCol).x + HALF + HIT_PAD - cellsHitX;
-  const cellsHitH = stopCenterAt(maxRow, 0).y + HALF + HIT_PAD - cellsHitY;
-
+export function stationBoundaryRectsLocal(
+  station: Station,
+  style: LabelStyle = DEFAULT_LABEL_STYLE,
+): StationBoundaryRects {
+  const label = station.label;
+  const isWp = !!station.isWaypoint;
+  const { x, y, w, h } = cellsAABBLocal(station);
   const cells: Pt[] = [
-    { x: cellsHitX, y: cellsHitY },
-    { x: cellsHitX + cellsHitW, y: cellsHitY },
-    { x: cellsHitX + cellsHitW, y: cellsHitY + cellsHitH },
-    { x: cellsHitX, y: cellsHitY + cellsHitH },
+    { x, y },
+    { x: x + w, y },
+    { x: x + w, y: y + h },
+    { x, y: y + h },
   ];
 
   if (isWp) return { cells };

@@ -1,10 +1,10 @@
 import { useMemo } from 'react';
 import { Line, LineId, Station } from '../model/types';
 import { dragState, useDoc, useSelection } from '../state/store';
-import { STOP_DOT_RADIUS, STOP_SIZE, stopCenterAt } from '../geometry/orientation';
+import { STOP_DOT_RADIUS, stopCenterAt } from '../geometry/orientation';
 import { polygonsToPath, unionConvex } from '../geometry/polygonUnion';
 import { labelLayoutLocal } from '../geometry/labelLayout';
-import { stationBoundaryRectsLocal } from '../geometry/stationBoundary';
+import { cellsAABBLocal, stationBoundaryRectsLocal } from '../geometry/stationBoundary';
 import { pathBetweenStations } from '../model/pathSelect';
 import {
   buildRotateMembers,
@@ -31,15 +31,10 @@ function closestStopLineId(station: Station, e: React.MouseEvent): LineId | null
   const vb = svg.viewBox.baseVal;
   const wx = vb.x + ((e.clientX - r.left) / r.width) * vb.width;
   const wy = vb.y + ((e.clientY - r.top) / r.height) * vb.height;
-  const a = (station.rotation * Math.PI) / 4;
-  const cs = Math.cos(a);
-  const sn = Math.sin(a);
   let bestId = station.stops[0].lineId;
   let bestDist = Infinity;
   for (const cell of station.stops) {
-    const local = stopCenterAt(cell.row, cell.col);
-    const sx = station.x + local.x * cs - local.y * sn;
-    const sy = station.y + local.x * sn + local.y * cs;
+    const { x: sx, y: sy } = stopPosWorld(cell, station);
     const d = Math.hypot(wx - sx, wy - sy);
     if (d < bestDist) {
       bestDist = d;
@@ -489,28 +484,12 @@ export function StationView({
     selection.setEditingStationId(station.id);
   };
 
-  const half = STOP_SIZE / 2;
   const isWp = !!station.isWaypoint;
   // Empty stations get a single phantom dot one cell to the right of the
   // label, so there's something visible and the name has an anchor.
   // Waypoints never show a phantom (the whole point is "no visible station").
   const label = station.label;
   const phantomDot = !isWp && stops.length === 0 ? { row: label.row, col: label.col + 1 } : null;
-
-  // For a waypoint, the cells AABB hugs only the bullet positions — the
-  // label cell is excluded so the hit rect and selection wash don't extend
-  // into invisible space. Regular stations include the label cell so the
-  // selection silhouette covers the painted name.
-  const allCells: { row: number; col: number }[] = isWp ? [...stops] : [...stops, label];
-  if (phantomDot) allCells.push(phantomDot);
-  // Empty waypoint (0 stops, isWp) is a degenerate edge case — fall back to
-  // the label cell so we still produce a finite AABB. Not the supported case;
-  // just keeps Math.min/max from returning Infinity.
-  if (allCells.length === 0) allCells.push(label);
-  const minRow = Math.min(...allCells.map((c) => c.row));
-  const maxRow = Math.max(...allCells.map((c) => c.row));
-  const minCol = Math.min(...allCells.map((c) => c.col));
-  const maxCol = Math.max(...allCells.map((c) => c.col));
 
   // Label layout — anchor, text-anchor, dominant baseline, and the hit rect
   // around the painted text. Shared with stationBoundary so the wash
@@ -532,12 +511,9 @@ export function StationView({
     italic: labelItalic,
   });
 
-  // Cells AABB hit rect.
-  const HIT_PAD = 2;
-  const cellsHitX = stopCenterAt(0, minCol).x - half - HIT_PAD;
-  const cellsHitY = stopCenterAt(minRow, 0).y - half - HIT_PAD;
-  const cellsHitW = stopCenterAt(0, maxCol).x + half + HIT_PAD - cellsHitX;
-  const cellsHitH = stopCenterAt(maxRow, 0).y + half + HIT_PAD - cellsHitY;
+  // Cells AABB hit rect — shared with the selection silhouette via
+  // stationBoundary so the two can't drift.
+  const cellsBox = cellsAABBLocal(station);
   const labelHitTransform = `rotate(${label.rotation * 45} ${labelAnchorX} ${labelAnchorY})`;
 
   // The inline rename editor overlays the painted label 1:1: it reuses the
@@ -692,7 +668,7 @@ export function StationView({
         transform={`translate(${station.x} ${station.y}) rotate(${angle})`}
         style={{ cursor: stationCursor }}
       >
-        <rect x={cellsHitX} y={cellsHitY} width={cellsHitW} height={cellsHitH} {...hitProps} />
+        <rect x={cellsBox.x} y={cellsBox.y} width={cellsBox.w} height={cellsBox.h} {...hitProps} />
         {!isWp && (
           <rect
             x={labelHitX}
