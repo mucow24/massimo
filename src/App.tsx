@@ -1,4 +1,4 @@
-import { useEffect } from 'react';
+import { useEffect, useState } from 'react';
 import { Toolbar } from './components/Toolbar';
 import { Sidebar } from './components/Sidebar';
 import { MapCanvas } from './components/MapCanvas';
@@ -10,10 +10,39 @@ import {
   useSelection,
 } from './state/store';
 import { readClipboard, writeClipboard } from './model/clipboard';
+import { _clearTextMeasureCache } from './geometry/textMeasure';
 import { useViewportStore } from './state/viewportStore';
 
 export default function App() {
   const darkMode = useViewportStore((s) => s.darkMode);
+  // Force a re-measure + re-render once the web fonts finish loading. Label
+  // geometry is measured against the canvas and cached by text+style; the very
+  // first paint runs before Helvetica Neue is ready, so those measurements use
+  // the fallback font (whose side bearings differ by a pixel or two) and get
+  // cached. Without invalidation the labels stay a hair off until the next edit
+  // re-measures them — which looked like a line "shifting" when you edited a
+  // sibling line. Dropping the stale cache and bumping this counter on font
+  // load lets every label settle at its real metrics up front.
+  const [, setFontEpoch] = useState(0);
+  useEffect(() => {
+    const fonts = document.fonts;
+    if (!fonts) return;
+    let cancelled = false;
+    const refresh = () => {
+      if (cancelled) return;
+      _clearTextMeasureCache();
+      setFontEpoch((e) => e + 1);
+    };
+    // `ready` covers the fonts in use at first paint; `loadingdone` covers
+    // weights that load later (e.g. switching a label to a weight not yet
+    // fetched), so those re-measure too.
+    fonts.ready.then(refresh);
+    fonts.addEventListener('loadingdone', refresh);
+    return () => {
+      cancelled = true;
+      fonts.removeEventListener('loadingdone', refresh);
+    };
+  }, []);
   const setUiMode = useSelection((s) => s.setUiMode);
   const selectLineTag = useSelection((s) => s.selectLineTag);
   const selectRouteBullet = useSelection((s) => s.selectRouteBullet);
