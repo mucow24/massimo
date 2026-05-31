@@ -180,6 +180,15 @@ export default function App() {
         setUiMode(cur.kind === 'layering' ? { kind: 'idle' } : { kind: 'layering' });
         return;
       }
+      if (!inForm && !mod && (e.key === 't' || e.key === 'T')) {
+        const cur = useSelection.getState().uiMode;
+        setUiMode(
+          cur.kind === 'creating-transfer'
+            ? { kind: 'idle' }
+            : { kind: 'creating-transfer', anchor: null },
+        );
+        return;
+      }
       if (!inForm && e.key === ' ' && !e.repeat) {
         e.preventDefault();
         setSpaceHeld(true);
