@@ -19,6 +19,13 @@ export interface LabelStyle {
   fontSize: number;
   weight: number;
   italic: boolean;
+  /**
+   * Size the box against the literal `<CODE>` text instead of the collapsed
+   * bullets. Set by the inline rename editor so its box fits the raw tokens
+   * the textarea shows. Only affects width (the hit rect / textXMin); the
+   * anchor, baseline, and height are bullet-independent.
+   */
+  literalBullets?: boolean;
 }
 
 export const DEFAULT_LABEL_STYLE: LabelStyle = { fontSize: 12, weight: 400, italic: false };
@@ -171,6 +178,7 @@ export function labelLayoutLocal(
     weight: style.weight,
     // Per-station italic ORs with the doc-wide default, matching the renderer.
     italic: style.italic || !!station.labelItalic,
+    literalBullets: style.literalBullets,
   });
   const textW = Math.max(20, measured.width);
 

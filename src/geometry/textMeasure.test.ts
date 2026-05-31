@@ -101,3 +101,36 @@ describe('measureTextLabel', () => {
     expect(m.lines[0].inkWidth).toBeGreaterThan(fontSize * 0.5);
   });
 });
+
+describe('measureTextLabel — literalBullets (edit-mode measurement)', () => {
+  beforeEach(() => {
+    _clearTextMeasureCache();
+  });
+
+  it('measures <CODE> tokens as their literal glyphs, not a collapsed bullet', () => {
+    const styled = { text: 'Hub <A1> <B2>', fontSize: 12, weight: 400, italic: false };
+    const collapsed = measureTextLabel(styled);
+    const literal = measureTextLabel({ ...styled, literalBullets: true });
+    // The raw "<A1>" string is wider than the bullet it collapses to, so the
+    // literal measurement (what the textarea shows in edit mode) is wider.
+    expect(literal.width).toBeGreaterThan(collapsed.width);
+    // Literal path emits no bullet segments — the line is plain text.
+    expect(literal.lines[0].segments.every((s) => s.kind === 'text')).toBe(true);
+    expect(collapsed.lines[0].segments.some((s) => s.kind === 'bullet')).toBe(true);
+  });
+
+  it('keeps literal vs collapsed measurements in distinct cache entries', () => {
+    const styled = { text: 'Hub <A1>', fontSize: 12, weight: 400, italic: false };
+    const collapsed = measureTextLabel(styled);
+    const literal = measureTextLabel({ ...styled, literalBullets: true });
+    expect(literal).not.toBe(collapsed);
+  });
+
+  it('is a no-op for names without tokens (plain text measures the same)', () => {
+    const styled = { text: 'Plain Name', fontSize: 12, weight: 400, italic: false };
+    const collapsed = measureTextLabel(styled);
+    _clearTextMeasureCache();
+    const literal = measureTextLabel({ ...styled, literalBullets: true });
+    expect(literal.width).toBeCloseTo(collapsed.width, 5);
+  });
+});

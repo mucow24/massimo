@@ -553,7 +553,27 @@ export function StationView({
 
   const isEditing = selection.editingStationId === station.id;
 
+  // When editing, the textarea shows the raw "<CODE>" tokens, which are wider
+  // than the bullets they render as. Re-measure the box against that literal
+  // text so a bullet-heavy name doesn't overflow its collapsed hit rect. Only
+  // the width grows — anchor, rotation, and height match the painted label, so
+  // the box still tracks where the label sits. Gated on isEditing so the
+  // second layout pass only runs for the one station being renamed.
+  const editorHit = isEditing
+    ? labelLayoutLocal(station, {
+        fontSize: labelFontSize,
+        weight: stationWeight,
+        italic: labelItalic,
+        literalBullets: true,
+      })
+    : null;
+
   if (layer === 'wash' || layer === 'stroke' || layer === 'match-stroke') {
+    // The station being renamed shows the inline editor, which has its own
+    // border and grows to fit the raw "<CODE>" tokens. Skip the selection
+    // silhouette for it — sized to the collapsed label, it would overdraw the
+    // wider editor box.
+    if (isEditing) return null;
     // MapCanvas decides which stations get wash/stroke/match-stroke layers
     // (selected set, plus the rect-select preview, plus mirror-matching
     // stations). StationView trusts that filtering — no redundant gate.
@@ -772,10 +792,10 @@ export function StationView({
       <g transform={`translate(${station.x} ${station.y}) rotate(${angle})`}>
         {isEditing ? (
           <NameEditor
-            x={labelHitX}
-            y={labelHitY}
-            width={labelHitW}
-            minHeight={labelHitH}
+            x={editorHit ? editorHit.hitX : labelHitX}
+            y={editorHit ? editorHit.hitY : labelHitY}
+            width={editorHit ? editorHit.hitW : labelHitW}
+            minHeight={editorHit ? editorHit.hitH : labelHitH}
             transform={labelHitTransform}
             fontSize={labelFontSize}
             fontWeight={stationWeight}

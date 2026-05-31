@@ -329,6 +329,55 @@ describe('<StationView /> — inline label editor matches the painted label', ()
     const { ta } = renderEditor(station);
     expect(ta.style.textAlign).toBe('center');
   });
+
+  it('grows the editor box to fit expanded <CODE> tokens so they never clip', () => {
+    // The textarea shows the raw "<A1>" tokens, which are wider than the
+    // bullets they render as. The box must be sized to that literal text, not
+    // the collapsed-bullet label hit rect, or the tokens overflow/clip.
+    const station = makeStation({ id: 's1', name: 'Hub <A1> <B2>', x: 100, y: 100 });
+    const collapsed = labelLayoutLocal(station, defaultStyle);
+    const literal = labelLayoutLocal(station, { ...defaultStyle, literalBullets: true });
+    const { fo } = renderEditor(station);
+    expect(parseFloat(fo.getAttribute('width')!)).toBeCloseTo(literal.hitW, 5);
+    expect(parseFloat(fo.getAttribute('x')!)).toBeCloseTo(literal.hitX, 5);
+    // Sanity: the literal box is genuinely wider than the rendered label box.
+    expect(literal.hitW).toBeGreaterThan(collapsed.hitW);
+  });
+});
+
+describe('<StationView /> — selection silhouette during inline edit', () => {
+  function renderSilhouette(
+    station: ReturnType<typeof makeStation>,
+    layer: 'wash' | 'stroke',
+    editing: boolean,
+  ) {
+    if (editing) {
+      useSelection.setState({ ...useSelection.getState(), editingStationId: station.id });
+    }
+    const { container } = render(
+      <svg>
+        <StationView station={station} lines={{}} zoom={1} onStartDrag={vi.fn()} layer={layer} />
+      </svg>,
+    );
+    return container;
+  }
+
+  it('draws the silhouette for a selected, non-editing station (premise)', () => {
+    const station = makeStation({ id: 's1', name: 'Hub <A1>' });
+    expect(renderSilhouette(station, 'stroke', false).querySelector('path')).not.toBeNull();
+  });
+
+  it('suppresses the stroke silhouette while the station is being edited', () => {
+    // The grown editor box already delineates the edit area; the collapsed
+    // silhouette would otherwise overdraw the expanded textbox.
+    const station = makeStation({ id: 's1', name: 'Hub <A1>' });
+    expect(renderSilhouette(station, 'stroke', true).querySelector('path')).toBeNull();
+  });
+
+  it('suppresses the wash silhouette while the station is being edited', () => {
+    const station = makeStation({ id: 's1', name: 'Hub <A1>' });
+    expect(renderSilhouette(station, 'wash', true).querySelector('path')).toBeNull();
+  });
 });
 
 describe('<StationView /> — inline bullets in station names', () => {
