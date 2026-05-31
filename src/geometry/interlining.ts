@@ -359,12 +359,14 @@ export function assignLinePriorities(
 //
 // `kind` distinguishes:
 //   - 'stripe' : one path of a band, identified by (band, stripeIndex).
-//   - 'warning': a band's centerline ⚠ glyph (when band.warning). Paints at
-//                the band's front-most stripe priority so it stays visible.
 //   - 'marker' : a stop square for one line at one station.
+//
+// Band routing warnings are NOT emitted here — they paint in a dedicated
+// top-most overlay (see <BandWarning> in MapCanvas) so the ⚠ marker and its
+// red frame sit above every stripe, dot, and label rather than at a stripe's
+// z-priority.
 export type OrderedRenderable =
   | { kind: 'stripe'; band: SegmentBandSpec; stripeIndex: number; priority: number }
-  | { kind: 'warning'; band: SegmentBandSpec; priority: number }
   | { kind: 'marker'; spec: StopMarkerSpec; priority: number };
 
 export function buildOrderedRenderables(
@@ -375,9 +377,6 @@ export function buildOrderedRenderables(
   for (const band of bands) {
     for (let i = 0; i < band.lines.length; i++) {
       list.push({ kind: 'stripe', band, stripeIndex: i, priority: band.linePriorities[i] });
-    }
-    if (band.warning && band.linePriorities.length > 0) {
-      list.push({ kind: 'warning', band, priority: Math.min(...band.linePriorities) });
     }
   }
   for (const m of markers) {

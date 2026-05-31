@@ -1,5 +1,6 @@
 import { Fragment } from 'react';
 import { resolveSegmentStyle, SegmentBandSpec } from '../geometry/interlining';
+import { STOP_SIZE } from '../geometry/orientation';
 import type { Line, LineId } from '../model/types';
 import { lineStyleStrokeAttrs, lineStyleUnderlayAttrs } from './HatchPatterns';
 
@@ -98,15 +99,59 @@ export function SegmentBand({
   );
 }
 
-// Centerline ⚠ glyph for a band with a routing warning. Rendered as its own
-// renderable so its z-position can be picked independently of the stripes
-// (paints at the band's front-most stripe priority — see buildOrderedRenderables).
-export function BandWarning({ spec }: { spec: SegmentBandSpec }) {
-  if (!spec.warning || spec.centerline.length === 0) return null;
-  const mid = spec.centerline[Math.floor(spec.centerline.length / 2)];
+// Warning decoration for a band the router couldn't route cleanly. When a
+// band warns, its centerline collapses to a straight start→end segment (see
+// route()), which we paint as a crude straight line. Here we frame that bad
+// segment with a 2px red outline and drop a ⚠ glyph over its exact center.
+//
+// Rendered in a dedicated top-most layer (see MapCanvas) — not interleaved
+// with the stripes — so the glyph sits above every stripe, dot, and label and
+// can never be occluded.
+//
+// `iconColor` is the glyph fill — the caller passes whichever of black/white
+// is more legible against the stripe beneath the glyph's center (via
+// legibleTextOn). Defaults to black for standalone/test renders.
+export function BandWarning({
+  spec,
+  iconColor = '#000',
+}: {
+  spec: SegmentBandSpec;
+  iconColor?: string;
+}) {
+  const verts = spec.centerline;
+  if (!spec.warning || verts.length < 2) return null;
+  const a = verts[0];
+  const b = verts[verts.length - 1];
+  // Unit vector along the segment and its left-perpendicular. The bad segment
+  // spans n stripes of STOP_SIZE each, so its half-width is n·STOP_SIZE / 2.
+  const dx = b.x - a.x;
+  const dy = b.y - a.y;
+  const len = Math.hypot(dx, dy) || 1;
+  const px = dy / len;
+  const py = -dx / len;
+  const hw = (spec.lines.length * STOP_SIZE) / 2;
+  const corner = (p: { x: number; y: number }, sign: number) =>
+    `${p.x + px * hw * sign} ${p.y + py * hw * sign}`;
+  // Rectangle tracing the band's perimeter; the 2px stroke straddles the edge.
+  const outline = `M ${corner(a, 1)} L ${corner(b, 1)} L ${corner(b, -1)} L ${corner(a, -1)} Z`;
+  const cx = (a.x + b.x) / 2;
+  const cy = (a.y + b.y) / 2;
   return (
-    <text x={mid.x} y={mid.y - 4} fontSize={14} fill="#a22" textAnchor="middle">
-      ⚠
-    </text>
+    <g pointerEvents="none">
+      {/* 1px white core over a 3px red stroke: paint the red stroke first,
+          then the white stroke centered on top. */}
+      <path d={outline} fill="none" stroke="#d00" strokeWidth={3} strokeLinejoin="round" />
+      <path d={outline} fill="none" stroke="#fff" strokeWidth={1} strokeLinejoin="round" />
+      <text
+        x={cx}
+        y={cy}
+        fontSize={14}
+        fill={iconColor}
+        textAnchor="middle"
+        dominantBaseline="central"
+      >
+        ⚠
+      </text>
+    </g>
   );
 }
