@@ -121,7 +121,7 @@ interface DocState extends MapDoc {
   addLine: () => LineId;
   updateLine: (
     id: LineId,
-    patch: Partial<Pick<Line, 'service' | 'name' | 'color' | 'stations'>>,
+    patch: Partial<Pick<Line, 'service' | 'name' | 'color'>>,
   ) => void;
   toggleStationOnLine: (lineId: LineId, stationId: StationId, insertAfterIndex?: number) => void;
   removeStationFromLine: (lineId: LineId, idx: number) => void;

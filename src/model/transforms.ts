@@ -836,7 +836,7 @@ export function addLine(doc: MapDoc, id: LineId, service: string, color: string)
 export function updateLine(
   doc: MapDoc,
   id: LineId,
-  patch: Partial<Pick<Line, 'service' | 'name' | 'color' | 'stations'>>,
+  patch: Partial<Pick<Line, 'service' | 'name' | 'color'>>,
 ): MapDoc {
   const cur = doc.lines[id];
   if (!cur) return doc;
@@ -943,13 +943,16 @@ export function toggleStationOnLine(
     const stillStops = newStations.includes(stationId);
     const newStops = stillStops ? st.stops : st.stops.filter((c) => c.lineId !== lineId);
     const stationsAfter = { ...doc.stations, [stationId]: { ...st, stops: newStops } };
-    return {
+    // Removal changes adjacencies, so prune overrides / tags keyed to edges
+    // that no longer exist (same contract as removeStationFromLine).
+    const updatedLine = pruneOrphanSegmentStyles({ ...ln, stations: newStations });
+    return pruneOrphanLineTags({
       ...doc,
-      lines: { ...doc.lines, [lineId]: { ...ln, stations: newStations } },
+      lines: { ...doc.lines, [lineId]: updatedLine },
       // Removing a station never gives any station its first line, so nothing
       // is auto-oriented — every station here is already served.
       stations: stationsAfter,
-    };
+    });
   }
   const idx =
     insertAfterIndex === undefined
@@ -1032,12 +1035,17 @@ export function removeStationFromLine(doc: MapDoc, lineId: LineId, idx: number):
 export function reorderLineStations(doc: MapDoc, lineId: LineId, stations: StationId[]): MapDoc {
   const ln = doc.lines[lineId];
   if (!ln) return doc;
-  return {
+  // A reorder changes which station-pairs are adjacent, so per-segment style /
+  // layer overrides and line tags keyed to the OLD adjacencies must be pruned
+  // (same contract as removeStationFromLine) — otherwise a cleared override
+  // resurrects if the corridor is reordered away and back.
+  const updatedLine = pruneOrphanSegmentStyles({ ...ln, stations });
+  return pruneOrphanLineTags({
     ...doc,
-    lines: { ...doc.lines, [lineId]: { ...ln, stations } },
+    lines: { ...doc.lines, [lineId]: updatedLine },
     // Reordering only rearranges already-served stations, so none re-rotate.
     stations: doc.stations,
-  };
+  });
 }
 
 export function deleteLine(doc: MapDoc, id: LineId): MapDoc {

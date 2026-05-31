@@ -2303,3 +2303,29 @@ describe('redistributeBetween', () => {
     expect(T.redistributeBetween(doc, 'a', 'b')).toBe(doc);
   });
 });
+
+describe('reorderLineStations', () => {
+  it('prunes segment overrides orphaned by a reorder; they do not resurrect on reorder-back', () => {
+    const base = makeDoc({
+      stations: [
+        makeStation({ id: 'a', stops: [makeStop('L1')] }),
+        makeStation({ id: 'b', stops: [makeStop('L1')] }),
+        makeStation({ id: 'c', stops: [makeStop('L1')] }),
+      ],
+      lines: [
+        makeLine({
+          id: 'L1',
+          stations: ['a', 'b', 'c'],
+          // Canonical pair-key for the (a, b) edge.
+          segmentStyles: { 'a|b': 'hatched' },
+        }),
+      ],
+    });
+    // Reorder so a and b are no longer adjacent → the a|b override is orphaned.
+    const reordered = T.reorderLineStations(base, 'L1', ['a', 'c', 'b']);
+    expect(reordered.lines.L1.segmentStyles).toEqual({});
+    // Reordering back must NOT resurrect the pruned override.
+    const back = T.reorderLineStations(reordered, 'L1', ['a', 'b', 'c']);
+    expect(back.lines.L1.segmentStyles).toEqual({});
+  });
+});
