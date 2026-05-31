@@ -1,4 +1,5 @@
 import { describe, it, expect } from 'vitest';
+import { computeArcRadii } from './router';
 import {
   buildBands,
   buildLineIndex,
@@ -188,6 +189,62 @@ describe('buildBands — centerline radius', () => {
     const bands = buildBands(doc.stations, doc.lines, 20, doc.lineOrder);
     expect(bands).toHaveLength(1);
     expect(bands[0].radius).toBeCloseTo(43, 6);
+  });
+
+  it('single-stripe band caps below R at a cramped perpendicular terminus so the stop marker still fits', () => {
+    // Regression for the Osterley/Stonebridge bug. A single line whose two ends
+    // approach on perpendicular axes (s1 vertical, s2 horizontal) and sit close
+    // together routes as a tight 2-bend band. The terminal edge is too short to
+    // fit both a full-R fillet AND the HALF marker run-in. A single-stripe band
+    // has no offset stripes to keep above R, so the marker-fit cap is allowed to
+    // pull the centerline below the configured R. Before the fix the cap floored
+    // at R (idealR === R for one stripe), so the band kept curving inside the
+    // axis-aligned stop marker and stair-stepped at the marker's near edge — the
+    // curve appeared to meet the station at its far edge instead of running in
+    // straight from the near edge.
+    const R = 24;
+    const doc = makeDoc({
+      stations: [
+        makeStation({
+          id: 's1',
+          x: 0,
+          y: 0,
+          rotation: 0,
+          stops: [makeStop('L1', { orientation: 'auto-vertical' })],
+        }),
+        makeStation({
+          id: 's2',
+          x: 24,
+          y: -37,
+          rotation: 2, // 90° → the auto-vertical stop resolves to a horizontal world axis
+          stops: [makeStop('L1', { orientation: 'auto-vertical' })],
+        }),
+      ],
+      lines: [makeLine({ id: 'L1', stations: ['s2', 's1'] })],
+    });
+    const bands = buildBands(doc.stations, doc.lines, R, doc.lineOrder);
+    expect(bands).toHaveLength(1);
+    const band = bands[0];
+    // The cap engaged below the configured R (old behavior floored at R = 24).
+    expect(band.radius).toBeLessThan(R);
+    expect(band.radius).toBeGreaterThan(0);
+    // A clean tighter curve, not the straight-line routing-warning fallback.
+    expect(band.warning).toBe(false);
+
+    // The invariant that actually kills the stair-step: the post-fillet straight
+    // section at each terminus is ≥ HALF, so the STOP_SIZE marker square sits
+    // entirely within the straight run rather than spilling onto the arc.
+    const HALF = STOP_SIZE / 2;
+    const v = band.centerline;
+    expect(v.length).toBeGreaterThanOrEqual(3);
+    const { rs, angles } = computeArcRadii(v, band.radius);
+    const edge = (a: { x: number; y: number }, b: { x: number; y: number }) =>
+      Math.hypot(b.x - a.x, b.y - a.y);
+    const last = v.length - 1;
+    const fromRunIn = edge(v[0], v[1]) - rs[1] * Math.tan(angles[1] / 2);
+    const toRunIn = edge(v[last - 1], v[last]) - rs[last - 1] * Math.tan(angles[last - 1] / 2);
+    expect(fromRunIn).toBeGreaterThanOrEqual(HALF - 1e-6);
+    expect(toRunIn).toBeGreaterThanOrEqual(HALF - 1e-6);
   });
 });
 
