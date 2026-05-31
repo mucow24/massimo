@@ -13,6 +13,7 @@ import { StopGlyph } from '../StopGlyph';
 import { StationShapePicker, SHAPES } from '../StationShapePicker';
 import { blendOver, legibleTextOn, withAlpha } from '../../util/color';
 import { InlineBulletText } from '../InlineBulletText';
+import { stationBandLayout, STATION_ROW_H, GAP_ROW_H, BAND_W } from './stationBandGeometry';
 
 function DotShapePopover({
   onPick,
@@ -45,10 +46,7 @@ function DotShapePopover({
   );
 }
 
-const STATION_ROW_H = 20;
-const GAP_ROW_H = 16;
 const INSERT_ROW_H = 16;
-const BAND_W = 14;
 const MARKER_W = 24;
 
 const NEXT_STYLE: Record<LineStyle, LineStyle> = {
@@ -224,27 +222,11 @@ export function LineInspector({ id }: { id: LineId }) {
         {line.stations.length > 0 &&
           (() => {
             const N = line.stations.length;
-            const totalBandH = N * STATION_ROW_H + Math.max(0, N - 1) * GAP_ROW_H;
-            const cap = BAND_W / 2;
-            const centerOf = (idx: number) => idx * (STATION_ROW_H + GAP_ROW_H) + STATION_ROW_H / 2;
-            const segments: Array<{
-              i: number;
-              sid: string;
-              nextSid: string;
-              style: LineStyle;
-              y1: number;
-              y2: number;
-            }> = [];
-            for (let i = 0; i < N - 1; i++) {
-              const sid = line.stations[i];
-              const nextSid = line.stations[i + 1];
-              if (!stations[sid] || !stations[nextSid]) continue;
-              const key = pairKeyOf(sid, nextSid);
-              const style = resolveSegmentStyle(line, key);
-              const y1 = i === 0 ? centerOf(0) - cap : centerOf(i);
-              const y2 = i === N - 2 ? centerOf(N - 1) + cap : centerOf(i + 1);
-              segments.push({ i, sid, nextSid, style, y1, y2 });
-            }
+            const {
+              totalHeight: totalBandH,
+              centerOf,
+              segments,
+            } = stationBandLayout(line, stations);
             const needsHatchDefs = segments.some(
               (s) => s.style === 'hatched' || s.style === 'hatched-mirror',
             );
