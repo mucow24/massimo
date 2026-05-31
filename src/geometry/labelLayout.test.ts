@@ -43,6 +43,40 @@ function station({
   };
 }
 
+describe('labelLayoutLocal — literalBullets (edit-mode box)', () => {
+  // A station whose name carries inline route bullets. In edit mode the
+  // textarea shows the raw "<A1>" tokens, so the box must be sized against
+  // that literal text rather than the collapsed-bullet render.
+  const bulletStation: Station = {
+    id: 's',
+    name: 'Hub <A1> <B2>',
+    x: 0,
+    y: 0,
+    rotation: 0,
+    stops: [{ lineId: 'L1', row: 0, col: 1, orientation: 'auto-vertical' }],
+    label: { row: 0, col: 0, rotation: 0, offset: 0, align: 'auto', valign: 'middle' },
+  };
+  const style = { fontSize: 12, weight: 400, italic: false };
+
+  it('widens the hit box for literal tokens, leaving height and anchor put', () => {
+    const collapsed = labelLayoutLocal(bulletStation, style);
+    const literal = labelLayoutLocal(bulletStation, { ...style, literalBullets: true });
+    expect(literal.hitW).toBeGreaterThan(collapsed.hitW);
+    // Only width changes — vertical metrics and the anchor are unaffected.
+    expect(literal.hitH).toBeCloseTo(collapsed.hitH, 5);
+    expect(literal.anchorX).toBeCloseTo(collapsed.anchorX, 5);
+    expect(literal.anchorY).toBeCloseTo(collapsed.anchorY, 5);
+    expect(literal.textAnchor).toBe(collapsed.textAnchor);
+  });
+
+  it('is a no-op for token-free names', () => {
+    const plain: Station = { ...bulletStation, name: 'Plain Name' };
+    const collapsed = labelLayoutLocal(plain, style);
+    const literal = labelLayoutLocal(plain, { ...style, literalBullets: true });
+    expect(literal.hitW).toBeCloseTo(collapsed.hitW, 5);
+  });
+});
+
 describe('labelLayoutLocal — auto-snap', () => {
   describe('cardinal reading direction (rotation=0, "E")', () => {
     it('snaps to W cell (strict adjMinus)', () => {
