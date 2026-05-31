@@ -199,6 +199,41 @@ describe('<StationView /> — label styling', () => {
   });
 });
 
+describe('<StationView /> — whitespace is not collapsed', () => {
+  // Typed leading/trailing spaces must render at their real width. The
+  // proven mechanism (used by free-floating <LabelView /> text) is the CSS
+  // `white-space: pre` property; the deprecated `xml:space` attribute does
+  // not reliably preserve leading whitespace in inline SVG.
+  it('renders the plain-text label with white-space: pre', () => {
+    const station = makeStation({ id: 's1', name: '     Foo', x: 0, y: 0 });
+    const { container } = render(
+      <svg>
+        <StationView station={station} lines={{}} zoom={1} onStartDrag={vi.fn()} layer="label" />
+      </svg>,
+    );
+    const text = container.querySelector('text') as SVGTextElement;
+    expect(text).toBeTruthy();
+    expect(text.style.whiteSpace).toBe('pre');
+  });
+
+  it('renders bullet-path text segments with white-space: pre', () => {
+    const station = makeStation({ id: 's1', name: '  Hub <A1>  ', x: 0, y: 0 });
+    const lines = { L1: makeLine({ id: 'L1', service: 'A1', color: '#abc123' }) };
+    const { container } = render(
+      <svg>
+        <StationView station={station} lines={lines} zoom={1} onStartDrag={vi.fn()} layer="label" />
+      </svg>,
+    );
+    const segTexts = Array.from(container.querySelectorAll('text')).filter(
+      (t) => !t.closest('[data-inline-bullet]'),
+    );
+    expect(segTexts.length).toBeGreaterThan(0);
+    for (const t of segTexts) {
+      expect((t as SVGTextElement).style.whiteSpace).toBe('pre');
+    }
+  });
+});
+
 describe('<StationView /> — inline bullets in station names', () => {
   it('renders no bullets and a single <text> for plain station names', () => {
     const station = makeStation({ id: 's1', name: 'Plain', x: 0, y: 0 });
