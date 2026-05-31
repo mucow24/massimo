@@ -28,7 +28,6 @@ interface Props {
   onContextMenu?: (id: string, e: React.MouseEvent) => void;
 }
 
-const SELECTION_STROKE_COLOR = '#000000';
 const SELECTION_STROKE_WIDTH = 2;
 const SELECTION_DASH = '4 3';
 
@@ -57,7 +56,8 @@ export function LabelView({
   onContextMenu,
 }: Props) {
   const docLines = useDoc((s) => s.lines);
-  const labelColor = useThemeColors().label;
+  const themeColors = useThemeColors();
+  const labelColor = themeColors.label;
   const lineByService = useMemo(() => {
     const map = new Map<string, Line>();
     for (const ln of Object.values(docLines)) map.set(ln.service, ln);
@@ -84,7 +84,7 @@ export function LabelView({
           width={m.width + 2 * TEXT_LABEL_HIT_PAD}
           height={m.height + 2 * TEXT_LABEL_HIT_PAD}
           fill="none"
-          stroke={SELECTION_STROKE_COLOR}
+          stroke={themeColors.selectionStroke}
           strokeWidth={SELECTION_STROKE_WIDTH}
           strokeDasharray={SELECTION_DASH}
         />

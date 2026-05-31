@@ -1,5 +1,6 @@
 import type { Line, RouteBullet } from '../model/types';
 import { legibleTextOn } from '../util/color';
+import { useThemeColors } from '../state/theme';
 
 interface Props {
   bullet: RouteBullet;
@@ -18,6 +19,7 @@ export function RouteBulletView({
   onClick,
   onContextMenu,
 }: Props) {
+  const themeColors = useThemeColors();
   const line = bullet.lineId ? lines[bullet.lineId] : null;
   const fill = line?.color ?? '#888';
   const textColor = legibleTextOn(fill);
@@ -54,7 +56,7 @@ export function RouteBulletView({
           cy={0}
           r={r + 3}
           fill="none"
-          stroke="#1488a0"
+          stroke={themeColors.selectionStroke}
           strokeWidth={2}
           strokeDasharray="4 3"
           pointerEvents="none"
