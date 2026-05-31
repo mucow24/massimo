@@ -45,7 +45,6 @@ function closestStopLineId(station: Station, e: React.MouseEvent): LineId | null
 
 const SELECTION_WASH_COLOR = '#f0ff00';
 const SELECTION_WASH_OPACITY = 0.2;
-const SELECTION_STROKE_COLOR = '#000000';
 const SELECTION_STROKE_WIDTH = 2;
 const SELECTION_CORNER_RADIUS = 5;
 const MATCH_STROKE_COLOR = '#888';
@@ -329,7 +328,8 @@ export function StationView({
   highlightColor = '#fff',
 }: Props) {
   const selection = useSelection();
-  const labelColor = useThemeColors().label;
+  const themeColors = useThemeColors();
+  const labelColor = themeColors.label;
   const rotateStation = useDoc((s) => s.rotateStation);
   const rotateStationsAround = useDoc((s) => s.rotateStationsAround);
   const rotateItemsAround = useDoc((s) => s.rotateItemsAround);
@@ -604,7 +604,7 @@ export function StationView({
         <path
           d={pathStr}
           fill="none"
-          stroke={SELECTION_STROKE_COLOR}
+          stroke={themeColors.selectionStroke}
           strokeWidth={SELECTION_STROKE_WIDTH}
           strokeLinejoin="round"
         />

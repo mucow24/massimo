@@ -23,6 +23,8 @@ export interface ThemeColors {
   canvasBg: string;
   /** Station names + free text labels painted on the canvas. */
   label: string;
+  /** Outline stroke around a selected station's selection highlight. */
+  selectionStroke: string;
   /** Background grid lines. */
   grid: string;
   /**
@@ -39,6 +41,7 @@ export interface ThemeColors {
 const LIGHT: ThemeColors = {
   canvasBg: '#fafafa',
   label: '#111111',
+  selectionStroke: '#000000',
   grid: '#eeeeee',
   underlay: '#ffffff',
   editorBg: '#ffffff',
@@ -48,6 +51,7 @@ const LIGHT: ThemeColors = {
 const DARK: ThemeColors = {
   canvasBg: '#000000',
   label: '#ffffff',
+  selectionStroke: '#ffffff',
   grid: '#222222',
   underlay: '#000000',
   editorBg: '#000000',

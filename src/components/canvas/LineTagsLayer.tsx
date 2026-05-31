@@ -8,6 +8,7 @@ import {
 } from '../../geometry/lineTagGeometry';
 import { STOP_SIZE } from '../../geometry/orientation';
 import { dragState, useDoc, useSelection } from '../../state/store';
+import { useThemeColors } from '../../state/theme';
 import type { Vec2 } from '../../geometry/vec';
 import { useLineTagDrag } from './useLineTagDrag';
 
@@ -16,7 +17,6 @@ const TEXT_PAD = 1;
 
 const SELECTION_WASH_COLOR = '#f0ff00';
 const SELECTION_WASH_OPACITY = 0.3;
-const SELECTION_STROKE_COLOR = '#000000';
 const SELECTION_STROKE_WIDTH = 1.5;
 
 interface Props {
@@ -209,6 +209,7 @@ interface TagShapeProps {
 }
 
 function TagShape({ r, widths, layer, onPointerDown, onClick, onContextMenu }: TagShapeProps) {
+  const themeColors = useThemeColors();
   const orientation = r.tag.orientation;
   const tangentAngleDeg = (Math.atan2(r.tangent.y, r.tangent.x) * 180) / Math.PI;
   const rotateDeg = tangentAngleDeg + ORIENTATION_OFFSET_DEG[orientation];
@@ -259,7 +260,7 @@ function TagShape({ r, widths, layer, onPointerDown, onClick, onContextMenu }: T
         ry={2}
         fill={layer === 'wash' ? SELECTION_WASH_COLOR : 'none'}
         fillOpacity={layer === 'wash' ? SELECTION_WASH_OPACITY : undefined}
-        stroke={layer === 'stroke' ? SELECTION_STROKE_COLOR : undefined}
+        stroke={layer === 'stroke' ? themeColors.selectionStroke : undefined}
         strokeWidth={layer === 'stroke' ? SELECTION_STROKE_WIDTH : undefined}
       />
     </g>
