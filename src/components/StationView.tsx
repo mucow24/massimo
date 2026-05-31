@@ -529,7 +529,11 @@ export function StationView({
     hitY: labelHitY,
     hitW: labelHitW,
     hitH: labelHitH,
-  } = labelLayoutLocal(station);
+  } = labelLayoutLocal(station, {
+    fontSize: labelFontSize,
+    weight: stationWeight,
+    italic: labelItalic,
+  });
   const nameLines = station.name.split('\n');
 
   // Cells AABB hit rect.
@@ -557,7 +561,11 @@ export function StationView({
     // quadratic Beziers. Smoothing applies to the outer-boundary corners
     // ONLY (each vertex of the union is a corner of the actual silhouette),
     // so there are no rounded-corner artifacts where the rects meet.
-    const { cells, label: labelPoly } = stationBoundaryRectsLocal(station);
+    const { cells, label: labelPoly } = stationBoundaryRectsLocal(station, {
+      fontSize: labelFontSize,
+      weight: stationWeight,
+      italic: labelItalic,
+    });
     // Waypoint: no label polygon to merge, render the cells rect alone.
     const polygons = labelPoly ? unionConvex(cells, labelPoly) : [cells];
     const pathStr = polygonsToPath(polygons, SELECTION_CORNER_RADIUS);

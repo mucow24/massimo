@@ -247,10 +247,12 @@ function vStation({
 }
 
 describe("labelLayoutLocal — valign='auto-down'", () => {
-  // From labelLayout.ts: HIT_PAD=2, TEXT_HALF_H=7, LABEL_LINE_HEIGHT=14.
+  // labelLayout derives vertical metrics from the rendered font size: a line
+  // is fontSize * LINE_HEIGHT (1.2) tall, and the central half-extent is half
+  // of that. At the default 12px style that's 14.4 / 7.2.
   const HIT_PAD = 2;
-  const TEXT_HALF_H = 7;
-  const LINE_HEIGHT = 14;
+  const TEXT_HALF_H = 7.2;
+  const LINE_HEIGHT = 14.4;
 
   it("single-line 'auto-down' is indistinguishable from 'middle'", () => {
     const a = labelLayoutLocal(vStation({ name: 'Foo', valign: 'auto-down' }));
@@ -317,10 +319,11 @@ describe("labelLayoutLocal — valign='auto-down'", () => {
 });
 
 describe("labelLayoutLocal — valign='auto-up'", () => {
-  // From labelLayout.ts: HIT_PAD=2, TEXT_HALF_H=7, LABEL_LINE_HEIGHT=14.
+  // Vertical metrics derive from font size: line = fontSize * LINE_HEIGHT
+  // (1.2), half-extent = half a line. At the default 12px style → 14.4 / 7.2.
   const HIT_PAD = 2;
-  const TEXT_HALF_H = 7;
-  const LINE_HEIGHT = 14;
+  const TEXT_HALF_H = 7.2;
+  const LINE_HEIGHT = 14.4;
 
   it("single-line 'auto-up' is indistinguishable from 'middle'", () => {
     const a = labelLayoutLocal(vStation({ name: 'Foo', valign: 'auto-up' }));
@@ -494,6 +497,30 @@ describe('labelLayoutLocal — label.offsetPerp', () => {
     });
     expect(a.anchorX).toBeCloseTo(b.anchorX, 5);
     expect(a.anchorY).toBeCloseTo(b.anchorY, 5);
+  });
+});
+
+describe('labelLayoutLocal — hit-rect width hugs the rendered glyphs', () => {
+  const base = (name: string, fontSize = 12) =>
+    labelLayoutLocal(
+      { ...vStation({ name, valign: 'middle' }) },
+      { fontSize, weight: 400, italic: false },
+    );
+
+  it('inline bullet tokens are measured as compact circles, not literal characters', () => {
+    // "<C><S><T><X>" is 12 literal characters but renders as four small
+    // bullets. The old per-character heuristic (len * 7) ballooned the hit
+    // rect; measuring treats each token as one bullet diameter, so a line of
+    // four bullets is far narrower than 12 chars of text would be.
+    const bullets = base('<C><S><T><X>');
+    const asChars = base('CSTXCSTXCSTX'); // same 12 characters, plain text
+    expect(bullets.hitW).toBeLessThan(asChars.hitW);
+  });
+
+  it('hit-rect width scales with font size (no hard-coded 7px/char)', () => {
+    const small = base('Floptropolis', 8);
+    const large = base('Floptropolis', 20);
+    expect(large.hitW).toBeGreaterThan(small.hitW);
   });
 });
 

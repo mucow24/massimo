@@ -139,7 +139,11 @@ export function useRectSelect(
     const doc = useDoc.getState();
     const sel = useSelection.getState();
     const mode = modeFromEvent(e);
-    const stationHits = stationsForRect(doc.stations, nextRect);
+    const stationHits = stationsForRect(doc.stations, nextRect, {
+      fontSize: doc.labelFontSize,
+      weight: doc.labelWeight,
+      italic: doc.labelItalic,
+    });
     const bulletHits = routeBulletsForRect(doc.routeBullets, nextRect);
     const labelHits = textLabelsForRect(doc.textLabels, nextRect);
     setPreviewStationIds(applyMode(sel.selectedStationIds, stationHits, mode));
@@ -172,7 +176,11 @@ export function useRectSelect(
     setPreviewLabelIds(null);
 
     const doc = useDoc.getState();
-    const stationHits = stationsForRect(doc.stations, finalRect);
+    const stationHits = stationsForRect(doc.stations, finalRect, {
+      fontSize: doc.labelFontSize,
+      weight: doc.labelWeight,
+      italic: doc.labelItalic,
+    });
     const bulletHits = routeBulletsForRect(doc.routeBullets, finalRect);
     const labelHits = textLabelsForRect(doc.textLabels, finalRect);
 

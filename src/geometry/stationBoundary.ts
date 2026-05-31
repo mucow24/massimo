@@ -1,7 +1,7 @@
 import type { Pt } from './polygonUnion';
 import type { RouteBullet, Station, StationId, TextLabel } from '../model/types';
 import { STOP_SIZE, stopCenterAt } from './orientation';
-import { labelLayoutLocal } from './labelLayout';
+import { DEFAULT_LABEL_STYLE, labelLayoutLocal, type LabelStyle } from './labelLayout';
 import { rectIntersectsPolygon, type AABB } from './rectPolygon';
 import { measureTextLabel } from './textMeasure';
 
@@ -21,7 +21,10 @@ export interface StationBoundaryRects {
   label?: Pt[];
 }
 
-export function stationBoundaryRectsLocal(station: Station): StationBoundaryRects {
+export function stationBoundaryRectsLocal(
+  station: Station,
+  style: LabelStyle = DEFAULT_LABEL_STYLE,
+): StationBoundaryRects {
   const stops = station.stops;
   const label = station.label;
   const isWp = !!station.isWaypoint;
@@ -53,7 +56,7 @@ export function stationBoundaryRectsLocal(station: Station): StationBoundaryRect
 
   // Label rect — same layout the renderer uses, then rotated about the
   // anchor so the polygon aligns with the painted text.
-  const lay = labelLayoutLocal(station);
+  const lay = labelLayoutLocal(station, style);
   const labelAng = (label.rotation * Math.PI) / 4;
   const cosL = Math.cos(labelAng);
   const sinL = Math.sin(labelAng);
@@ -91,11 +94,15 @@ export function stationLocalToWorld(station: Station, p: Pt): Pt {
  * A station is a hit if either its cells rect or its (rotated) label rect
  * intersects the rect.
  */
-export function stationsForRect(stations: Record<StationId, Station>, rect: AABB): StationId[] {
+export function stationsForRect(
+  stations: Record<StationId, Station>,
+  rect: AABB,
+  style: LabelStyle = DEFAULT_LABEL_STYLE,
+): StationId[] {
   const hits: StationId[] = [];
   for (const id of Object.keys(stations)) {
     const st = stations[id];
-    const b = stationBoundaryRectsLocal(st);
+    const b = stationBoundaryRectsLocal(st, style);
     const cellsWorld = b.cells.map((p) => stationLocalToWorld(st, p));
     if (rectIntersectsPolygon(rect, cellsWorld)) {
       hits.push(id);
