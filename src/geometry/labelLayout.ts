@@ -1,13 +1,27 @@
 import type { Station } from '../model/types';
 import { DIR_8, STOP_SIZE, stopCenterAt } from './orientation';
+import { LINE_HEIGHT, measureTextLabel } from './textMeasure';
 
 const HIT_PAD = 2;
 const LABEL_GAP = 3;
-const TEXT_HALF_H = 7;
-const LABEL_LINE_HEIGHT = 14;
 const HALF = STOP_SIZE / 2;
 
 export type LabelBaseline = 'central' | 'text-before-edge' | 'text-after-edge';
+
+/**
+ * Rendered font metrics for a station label. Threaded into the layout so the
+ * hit rect / wash silhouette width is measured against the *actual* glyphs
+ * (font size, weight, inline route-bullet circles) rather than a per-character
+ * guess. The default mirrors the historical 12px Regular assumption so callers
+ * that don't care about exact width (and the unit tests) keep working.
+ */
+export interface LabelStyle {
+  fontSize: number;
+  weight: number;
+  italic: boolean;
+}
+
+export const DEFAULT_LABEL_STYLE: LabelStyle = { fontSize: 12, weight: 400, italic: false };
 
 export interface LabelLayout {
   // Anchor point of the rendered <text> element in unrotated station-local
@@ -51,7 +65,10 @@ export interface LabelLayout {
  * paints; consumed by both the renderer and the selection/hit geometry so
  * the wash silhouette and the hit rect always agree with the visible text.
  */
-export function labelLayoutLocal(station: Station): LabelLayout {
+export function labelLayoutLocal(
+  station: Station,
+  style: LabelStyle = DEFAULT_LABEL_STYLE,
+): LabelLayout {
   const stops = station.stops;
   const label = station.label;
   const phantomDot = stops.length === 0 ? { row: label.row, col: label.col + 1 } : null;
@@ -142,9 +159,29 @@ export function labelLayoutLocal(station: Station): LabelLayout {
   // Hit rect in unrotated local coords, *before* the label.rotation rotation
   // is applied to it.
   const nameLines = station.name.split('\n');
-  const longestLineLen = nameLines.reduce((m, l) => Math.max(m, l.length), 0);
-  const textW = Math.max(20, longestLineLen * 7);
   const extraLines = nameLines.length - 1;
+  // Measure the widest line's true ink width at the rendered font metrics.
+  // This is bullet-aware (a `<CODE>` token measures as one small circle, not
+  // as its literal characters) and font-size-aware, so the hit rect / wash
+  // silhouette hugs the painted glyphs instead of a per-character guess that
+  // ballooned for small fonts and labels containing inline route bullets.
+  const measured = measureTextLabel({
+    text: station.name,
+    fontSize: style.fontSize,
+    weight: style.weight,
+    // Per-station italic ORs with the doc-wide default, matching the renderer.
+    italic: style.italic || !!station.labelItalic,
+  });
+  const textW = Math.max(20, measured.width);
+
+  // Vertical metrics derived from the rendered font size, using the same
+  // LINE_HEIGHT ratio the renderer stacks lines by. A single line's block is
+  // one line height; half a line height is the central-baseline half-extent.
+  // This keeps the hit rect / wash silhouette height equal to
+  // measureTextLabel's height at any font size, instead of the old constants
+  // (7 / 14) that were tuned for a fixed ~12px font.
+  const labelLineHeight = style.fontSize * LINE_HEIGHT;
+  const textHalfH = labelLineHeight / 2;
 
   let textXMin: number;
   if (textAnchor === 'start') textXMin = anchorX;
@@ -161,30 +198,29 @@ export function labelLayoutLocal(station: Station): LabelLayout {
   // it as before. The anchor itself stays on the L cell so rotation still
   // pivots there.
   //
-  // Lines stack down by `LABEL_LINE_HEIGHT` (~1.2em). The block's height is
-  // `2*textHalfH + extraLines*LINE_HEIGHT`. The first line's natural y given
-  // the dominant baseline is:
+  // Lines stack down by `labelLineHeight` (fontSize * LINE_HEIGHT, ~1.2em).
+  // The block's height is `2*textHalfH + extraLines*labelLineHeight`. The
+  // first line's natural y given the dominant baseline is:
   //   - 'text-before-edge': first line top   = anchorY
-  //   - 'central'         : first line center= anchorY  (top = anchorY - 7)
-  //   - 'text-after-edge' : first line bottom= anchorY  (top = anchorY - 14)
+  //   - 'central'         : first line center= anchorY  (top = anchorY - textHalfH)
+  //   - 'text-after-edge' : first line bottom= anchorY  (top = anchorY - labelLineHeight)
   // To put the BLOCK at the desired position relative to anchorY, shift the
   // first line up by:
   //   - top      : 0
   //   - auto-down: 0  (first line center already at anchorY via central baseline)
-  //   - middle   : extraLines * LINE_HEIGHT / 2
-  //   - bottom   : extraLines * LINE_HEIGHT
-  //   - auto-up  : extraLines * LINE_HEIGHT  (lifts the first line so the LAST
+  //   - middle   : extraLines * labelLineHeight / 2
+  //   - bottom   : extraLines * labelLineHeight
+  //   - auto-up  : extraLines * labelLineHeight  (lifts the first line so the LAST
   //                line lands at anchorY; matches 'bottom' but offset by half
   //                a text body, which the blockTopY math below accounts for)
   let firstLineShiftPx = 0;
-  if (label.valign === 'middle') firstLineShiftPx = (extraLines * LABEL_LINE_HEIGHT) / 2;
+  if (label.valign === 'middle') firstLineShiftPx = (extraLines * labelLineHeight) / 2;
   else if (label.valign === 'bottom' || label.valign === 'auto-up')
-    firstLineShiftPx = extraLines * LABEL_LINE_HEIGHT;
+    firstLineShiftPx = extraLines * labelLineHeight;
   // Keep dy in em (matches the '1.2em' stacking on subsequent tspans), so it
-  // tracks font-size if we ever change it.
-  const FONT_SIZE_PX = 12;
+  // tracks font-size.
   const firstLineDy =
-    firstLineShiftPx === 0 ? '0' : `${(-firstLineShiftPx / FONT_SIZE_PX).toFixed(3)}em`;
+    firstLineShiftPx === 0 ? '0' : `${(-firstLineShiftPx / style.fontSize).toFixed(3)}em`;
 
   // Top of the painted text block (already accounting for the first-line
   // shift above):
@@ -196,20 +232,20 @@ export function labelLayoutLocal(station: Station): LabelLayout {
   //   - auto-up  : last line bottom at anchorY + TEXT_HALF_H, block grows up
   //                (block bottom stays put as lines are added) — i.e. block
   //                top at anchorY - TEXT_HALF_H - extraLines*LINE_HEIGHT
-  const blockH = 2 * TEXT_HALF_H + extraLines * LABEL_LINE_HEIGHT;
+  const blockH = 2 * textHalfH + extraLines * labelLineHeight;
   let textYMin: number;
   if (label.valign === 'top') textYMin = anchorY;
   else if (label.valign === 'bottom') textYMin = anchorY - blockH;
-  else if (label.valign === 'auto-down') textYMin = anchorY - TEXT_HALF_H;
+  else if (label.valign === 'auto-down') textYMin = anchorY - textHalfH;
   else if (label.valign === 'auto-up')
-    textYMin = anchorY - TEXT_HALF_H - extraLines * LABEL_LINE_HEIGHT;
+    textYMin = anchorY - textHalfH - extraLines * labelLineHeight;
   else textYMin = anchorY - blockH / 2;
 
   // First-line visual center, derived from the block-top + half a text body.
-  // Equivalent to (first line top + TEXT_HALF_H). The block-top math already
-  // encodes the valign semantics; adding TEXT_HALF_H walks down to the line's
+  // Equivalent to (first line top + textHalfH). The block-top math already
+  // encodes the valign semantics; adding textHalfH walks down to the line's
   // center.
-  const firstLineCenterY = textYMin + TEXT_HALF_H;
+  const firstLineCenterY = textYMin + textHalfH;
 
   return {
     anchorX,
