@@ -362,8 +362,7 @@ describe('serialize / parse — round-trip property', () => {
     }),
   );
 
-  const firstKey = (rec: Record<string, unknown>): string | null =>
-    Object.keys(rec)[0] ?? null;
+  const firstKey = (rec: Record<string, unknown>): string | null => Object.keys(rec)[0] ?? null;
   const lastKey = (rec: Record<string, unknown>): string | null => {
     const ks = Object.keys(rec);
     return ks.length ? ks[ks.length - 1] : null;
