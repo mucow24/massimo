@@ -6,7 +6,7 @@ import {
   offsetPathLength,
   snapNeighborTag,
 } from '../../geometry/lineTagGeometry';
-import { STOP_SIZE } from '../../geometry/orientation';
+import { stripeOffset } from '../../geometry/orientation';
 import { buildBands, SegmentBandSpec } from '../../geometry/interlining';
 
 export interface LineTagDragApi {
@@ -128,7 +128,7 @@ export function useLineTagDrag(
       if (!band) continue;
       const k = band.lines.findIndex((l: { id: LineId }) => l.id === tag.lineId);
       const n = band.lines.length;
-      const offset = (k - (n - 1) / 2) * STOP_SIZE;
+      const offset = stripeOffset(k, n);
       const r = closestParamOnOffsetPath(band.centerline, band.radius, offset, target);
       if (!best || r.dist < best.dist) {
         best = {
@@ -158,7 +158,7 @@ export function useLineTagDrag(
         const idx = best.band.lines.findIndex((l: { id: LineId }) => l.id === lineId);
         if (idx < 0) return null;
         const n = best.band.lines.length;
-        return (idx - (n - 1) / 2) * STOP_SIZE;
+        return stripeOffset(idx, n);
       },
       lineTags: docState.lineTags,
       tol: SNAP_TOL,

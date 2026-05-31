@@ -6,7 +6,7 @@ import {
   offsetPathLength,
   sampleOffsetPathByArcLength,
 } from '../../geometry/lineTagGeometry';
-import { STOP_SIZE } from '../../geometry/orientation';
+import { stripeOffset } from '../../geometry/orientation';
 import { dragState, useDoc, useSelection } from '../../state/store';
 import { useThemeColors } from '../../state/theme';
 import type { Vec2 } from '../../geometry/vec';
@@ -52,7 +52,7 @@ export function resolveTag(
   if (!band) return null;
   const k = band.lines.findIndex((l) => l.id === tag.lineId);
   const n = band.lines.length;
-  const offset = (k - (n - 1) / 2) * STOP_SIZE;
+  const offset = stripeOffset(k, n);
   // band.radius is the effective centerline radius the router used — already
   // bumped above doc.curveRadius for interlined bands so the inner stripes
   // respect the min radius. Sample against the same radius or geometry desyncs.

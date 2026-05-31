@@ -30,7 +30,7 @@ import {
   stopPosWorld,
 } from '../geometry/interlining';
 import { resolveDotShape } from '../model/transforms';
-import { STOP_SIZE, travelDirLocal, rotateBy } from '../geometry/orientation';
+import { STOP_SIZE, travelDirLocal, rotateBy, stripeOffset } from '../geometry/orientation';
 import { BandWarning, SegmentBand } from './SegmentBand';
 import { HatchPatterns, lineStyleStrokeAttrs, lineStyleUnderlayAttrs } from './HatchPatterns';
 import { StopMarker } from './StopMarker';
@@ -697,7 +697,7 @@ export function MapCanvas() {
       // Find this stripe's offset within the band.
       const k = spec.lines.findIndex((l) => l.id === lineId);
       const n = spec.lines.length;
-      const offset = (k - (n - 1) / 2) * STOP_SIZE;
+      const offset = stripeOffset(k, n);
       const world = view.screenToWorld(e.clientX, e.clientY);
       const closest = closestParamOnOffsetPath(spec.centerline, spec.radius, offset, world);
       const sample = sampleOffsetPath(spec.centerline, spec.radius, offset, closest.t);
@@ -727,7 +727,7 @@ export function MapCanvas() {
       if (!line) return;
       const k = spec.lines.findIndex((l) => l.id === lineId);
       const n = spec.lines.length;
-      const offset = (k - (n - 1) / 2) * STOP_SIZE;
+      const offset = stripeOffset(k, n);
       const world = view.screenToWorld(e.clientX, e.clientY);
       const closest = closestParamOnOffsetPath(spec.centerline, spec.radius, offset, world);
       const [fromCanon, toCanon] = spec.pairKey.split('|');

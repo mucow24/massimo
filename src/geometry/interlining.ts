@@ -7,6 +7,7 @@ import {
   rotateBy,
   STOP_SIZE,
   stopCenterAt,
+  stripeOffset,
   travelDirLocal,
   worldDirToLocal,
 } from './orientation';
@@ -584,7 +585,7 @@ function buildBandSpec(
   const paths: string[] = [];
   const linesArr = group.map((g) => ({ id: g.lineId }));
   for (let k = 0; k < n; k++) {
-    const offset = (k - (n - 1) / 2) * STOP_SIZE;
+    const offset = stripeOffset(k, n);
     paths.push(offsetFilletPath(result.vertices, centerlineR, offset));
   }
 

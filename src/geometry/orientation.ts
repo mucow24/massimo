@@ -27,6 +27,12 @@ export const stopCenterAt = (row: number, col: number): Vec2 => ({
   y: row * (STOP_SIZE + STOP_GAP),
 });
 
+// Perpendicular offset of stripe `k` (0-based) within an n-stripe interlined
+// band, in world units. Stripes straddle the centerline symmetrically. This
+// invariant MUST agree across band paint, outline, label placement, and the
+// hit/drag paths or the rendered geometry desyncs — so it lives in one place.
+export const stripeOffset = (k: number, n: number): number => (k - (n - 1) / 2) * STOP_SIZE;
+
 /**
  * Travel direction in the unrotated local frame for a stop with the given
  * orientation. Returns a unit vector along one of the four 45°-spaced axes.
