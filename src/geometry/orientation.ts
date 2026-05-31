@@ -136,6 +136,11 @@ export const localToWorld = (
 
 export const localDirToWorld = (local: Vec2, rotation: Rotation): Vec2 => rotateBy(local, rotation);
 
+// Inverse of localDirToWorld: rotate a world-frame direction back into a
+// station's unrotated local frame (rotation only, no translation).
+export const worldDirToLocal = (world: Vec2, rotation: Rotation): Vec2 =>
+  rotateBy(world, ((8 - rotation) % 8) as Rotation);
+
 export interface SegmentEndpoints {
   start: Vec2;
   startDir: Vec2;
@@ -168,12 +173,8 @@ export const segmentEndpoints = (
   // fall back to its +axis default).
   worldTravelDir: Vec2 | null = null,
 ): SegmentEndpoints => {
-  const fromHintLocal = worldTravelDir
-    ? rotateBy(worldTravelDir, ((-from.rotation + 8) % 8) as Rotation)
-    : null;
-  const toHintLocal = worldTravelDir
-    ? rotateBy(worldTravelDir, ((-to.rotation + 8) % 8) as Rotation)
-    : null;
+  const fromHintLocal = worldTravelDir ? worldDirToLocal(worldTravelDir, from.rotation) : null;
+  const toHintLocal = worldTravelDir ? worldDirToLocal(worldTravelDir, to.rotation) : null;
   const start = localToWorld(fromLocalPoint, from);
   const startDir = localDirToWorld(travelDirLocal(fromOrientation, fromHintLocal), from.rotation);
   const end = localToWorld(toLocalPoint, to);

@@ -1,6 +1,6 @@
 import type { Pt } from './polygonUnion';
 import type { RouteBullet, Station, StationId, TextLabel } from '../model/types';
-import { STOP_SIZE, stopCenterAt } from './orientation';
+import { STOP_SIZE, localToWorld, stopCenterAt } from './orientation';
 import { DEFAULT_LABEL_STYLE, labelLayoutLocal, type LabelStyle } from './labelLayout';
 import { rectIntersectsPolygon, type AABB } from './rectPolygon';
 import { measureTextLabel } from './textMeasure';
@@ -80,13 +80,7 @@ export function stationBoundaryRectsLocal(
 
 /** Apply the station's rotation+translation to a local-frame point. */
 export function stationLocalToWorld(station: Station, p: Pt): Pt {
-  const a = (station.rotation * Math.PI) / 4;
-  const c = Math.cos(a);
-  const s = Math.sin(a);
-  return {
-    x: station.x + p.x * c - p.y * s,
-    y: station.y + p.x * s + p.y * c,
-  };
+  return localToWorld(p, station);
 }
 
 /**
@@ -136,13 +130,7 @@ export function textLabelHitPolygon(label: TextLabel): Pt[] {
     { x: halfW, y: halfH },
     { x: -halfW, y: halfH },
   ];
-  const a = (label.rotation * Math.PI) / 4;
-  const c = Math.cos(a);
-  const s = Math.sin(a);
-  return corners.map((p) => ({
-    x: label.x + p.x * c - p.y * s,
-    y: label.y + p.x * s + p.y * c,
-  }));
+  return corners.map((p) => localToWorld(p, label));
 }
 
 /**

@@ -2,7 +2,14 @@ import { Line, LineId, LineStyle, Station, StationId, StopCell } from '../model/
 import { pairKeyOf } from '../model/pairKey';
 import { Vec2, sub, len, norm, dot } from './vec';
 import { dirIndex, offsetFilletPath, route } from './router';
-import { rotateBy, STOP_SIZE, stopCenterAt, travelDirLocal } from './orientation';
+import {
+  localToWorld,
+  rotateBy,
+  STOP_SIZE,
+  stopCenterAt,
+  travelDirLocal,
+  worldDirToLocal,
+} from './orientation';
 import { LAYER_WEIGHT, segmentPriority, stationLayerFor } from '../model/layerPriority';
 
 export interface SegmentBandSpec {
@@ -88,23 +95,13 @@ interface SegInfo {
 // stop's (row, col) is the ONLY way to change its on-screen location;
 // neighboring stops have no effect.
 export function stopPosWorld(cell: StopCell, station: Station): Vec2 {
-  const local = stopCenterAt(cell.row, cell.col);
-  const a = (station.rotation * Math.PI) / 4;
-  const c = Math.cos(a);
-  const s = Math.sin(a);
-  return {
-    x: station.x + local.x * c - local.y * s,
-    y: station.y + local.x * s + local.y * c,
-  };
+  return localToWorld(stopCenterAt(cell.row, cell.col), station);
 }
 
 // Rotate a world-frame vector into the unrotated station-local frame so that
 // `travelDirLocal` can decide which way an auto-axis stop should travel.
 function worldToStationLocal(v: Vec2, station: Station): Vec2 {
-  const a = -(station.rotation * Math.PI) / 4;
-  const c = Math.cos(a);
-  const s = Math.sin(a);
-  return { x: v.x * c - v.y * s, y: v.x * s + v.y * c };
+  return worldDirToLocal(v, station.rotation);
 }
 
 export function travelDirWorld(cell: StopCell, station: Station, worldHint: Vec2 | null): Vec2 {
