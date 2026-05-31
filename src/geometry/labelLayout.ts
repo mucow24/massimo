@@ -75,6 +75,11 @@ export interface LabelLayout {
 export function labelLayoutLocal(
   station: Station,
   style: LabelStyle = DEFAULT_LABEL_STYLE,
+  // Injected for deterministic tests; defaults to the real (canvas-backed)
+  // measurer so production callers are unaffected. Under jsdom the default
+  // falls back to a width heuristic, which is why exact-geometry tests pass a
+  // stub instead of trusting it.
+  measure: typeof measureTextLabel = measureTextLabel,
 ): LabelLayout {
   const stops = station.stops;
   const label = station.label;
@@ -172,7 +177,7 @@ export function labelLayoutLocal(
   // as its literal characters) and font-size-aware, so the hit rect / wash
   // silhouette hugs the painted glyphs instead of a per-character guess that
   // ballooned for small fonts and labels containing inline route bullets.
-  const measured = measureTextLabel({
+  const measured = measure({
     text: station.name,
     fontSize: style.fontSize,
     weight: style.weight,

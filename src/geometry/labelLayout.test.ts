@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { labelLayoutLocal } from './labelLayout';
+import { labelLayoutLocal, DEFAULT_LABEL_STYLE } from './labelLayout';
 import { stopCenterAt, STOP_SIZE } from './orientation';
 import type { LabelValign, Rotation, Station } from '../model/types';
 
@@ -42,6 +42,27 @@ function station({
     label: { row: labelRow, col: labelCol, rotation, offset: 0, align, valign: 'middle' },
   };
 }
+
+describe('labelLayoutLocal — injected measurement', () => {
+  // A deterministic stub measurer (the real one needs a canvas; under jsdom it
+  // falls back to a heuristic, so exact-geometry assertions inject instead).
+  const measureWidth = (w: number) => () => ({
+    width: w,
+    height: 12,
+    lineCount: 1,
+    lineWidths: [w],
+    lines: [],
+  });
+
+  it('sizes the hit box from the injected measurer', () => {
+    const st = station({ rotation: 0, stopOffsetRow: 0, stopOffsetCol: 1 });
+    const wide = labelLayoutLocal(st, DEFAULT_LABEL_STYLE, measureWidth(200));
+    const narrow = labelLayoutLocal(st, DEFAULT_LABEL_STYLE, measureWidth(40));
+    expect(wide.hitW).toBeGreaterThan(narrow.hitW);
+    // Same padding both sides, so the hit-width delta tracks the width delta.
+    expect(wide.hitW - narrow.hitW).toBe(160);
+  });
+});
 
 describe('labelLayoutLocal — literalBullets (edit-mode box)', () => {
   // A station whose name carries inline route bullets. In edit mode the
