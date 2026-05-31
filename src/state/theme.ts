@@ -36,6 +36,12 @@ export interface ThemeColors {
   /** On-canvas station rename editor (inline-styled `<textarea>`). */
   editorBg: string;
   editorText: string;
+  /**
+   * Fill for an empty station's phantom dot — the lone marker anchoring a
+   * station that has no lines yet. Flips with the theme so it stays visible
+   * against the canvas (black on light, white on dark).
+   */
+  phantomDot: string;
 }
 
 const LIGHT: ThemeColors = {
@@ -46,6 +52,7 @@ const LIGHT: ThemeColors = {
   underlay: '#ffffff',
   editorBg: '#ffffff',
   editorText: '#111111',
+  phantomDot: '#000000',
 };
 
 const DARK: ThemeColors = {
@@ -56,6 +63,7 @@ const DARK: ThemeColors = {
   underlay: '#000000',
   editorBg: '#000000',
   editorText: '#ffffff',
+  phantomDot: '#ffffff',
 };
 
 /** Pure mode → palette mapping. Exported for unit tests and non-React callers. */
