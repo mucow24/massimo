@@ -70,7 +70,7 @@ interface RenderLabelTextArgs {
   anchorY: number;
   textAnchor: 'start' | 'middle' | 'end';
   baseline: 'central' | 'text-before-edge' | 'text-after-edge';
-  firstLineDy: string;
+  firstLineDyPx: number;
   // Visual center y of the first text line in the rotated label frame.
   // The bullet path anchors each line with dominantBaseline='central' at
   // firstLineCenterY + i*lineSpacing so it lines up exactly with the
@@ -110,7 +110,7 @@ function renderStationLabelText({
   anchorY,
   textAnchor,
   baseline,
-  firstLineDy,
+  firstLineDyPx,
   firstLineCenterY,
   rotationDeg,
   lineByService,
@@ -139,10 +139,10 @@ function renderStationLabelText({
   // dominant-baseline mode. Subsequent lines stack 1.2em below.
   const firstLineBaselineY =
     baseline === 'central'
-      ? anchorY + centralToBaseline + parseEm(firstLineDy, fontSize)
+      ? anchorY + centralToBaseline + firstLineDyPx
       : baseline === 'text-before-edge'
-        ? anchorY + fontSize * BASELINE_FRACTION + parseEm(firstLineDy, fontSize)
-        : anchorY - fontSize * (1 - BASELINE_FRACTION) + parseEm(firstLineDy, fontSize);
+        ? anchorY + fontSize * BASELINE_FRACTION + firstLineDyPx
+        : anchorY - fontSize * (1 - BASELINE_FRACTION) + firstLineDyPx;
   const lineSpacingPx = fontSize * LINE_HEIGHT;
   if (!hasBullet) {
     return (
@@ -162,7 +162,7 @@ function renderStationLabelText({
           style={{ whiteSpace: 'pre' }}
         >
           {lines.map((line, i) => (
-            <tspan key={i} x={anchorX} dy={i === 0 ? firstLineDy : '1.2em'}>
+            <tspan key={i} x={anchorX} dy={i === 0 ? firstLineDyPx : lineSpacingPx}>
               {line}
             </tspan>
           ))}
@@ -290,16 +290,6 @@ function lineStartX(
   if (textAnchor === 'start') return anchorX + bearingLeft;
   if (textAnchor === 'end') return anchorX - bearingRight;
   return anchorX + (bearingLeft - bearingRight) / 2;
-}
-
-// SVG `dy="0.5em"` style strings, converted to absolute pixels at the given
-// font size. Empty / "0" returns 0. Used to align the explicit underline
-// geometry with the same first-line shift the renderer applies to <tspan>.
-function parseEm(value: string, fontSize: number): number {
-  if (!value || value === '0') return 0;
-  const m = /^(-?\d*\.?\d+)em$/.exec(value);
-  if (!m) return 0;
-  return parseFloat(m[1]) * fontSize;
 }
 
 interface Props {
@@ -499,7 +489,7 @@ export function StationView({
     anchorY: labelAnchorY,
     textAnchor: labelTextAnchor,
     baseline: labelBaseline,
-    firstLineDy: labelFirstLineDy,
+    firstLineDyPx: labelFirstLineDyPx,
     firstLineCenterY: labelFirstLineCenterY,
     hitX: labelHitX,
     hitY: labelHitY,
@@ -704,7 +694,7 @@ export function StationView({
           anchorY: labelAnchorY,
           textAnchor: labelTextAnchor,
           baseline: labelBaseline,
-          firstLineDy: labelFirstLineDy,
+          firstLineDyPx: labelFirstLineDyPx,
           firstLineCenterY: labelFirstLineCenterY,
           rotationDeg: label.rotation * 45,
           lineByService,
@@ -731,7 +721,7 @@ export function StationView({
           anchorY: labelAnchorY,
           textAnchor: labelTextAnchor,
           baseline: labelBaseline,
-          firstLineDy: labelFirstLineDy,
+          firstLineDyPx: labelFirstLineDyPx,
           firstLineCenterY: labelFirstLineCenterY,
           rotationDeg: label.rotation * 45,
           lineByService,
@@ -790,7 +780,7 @@ export function StationView({
             anchorY: labelAnchorY,
             textAnchor: labelTextAnchor,
             baseline: labelBaseline,
-            firstLineDy: labelFirstLineDy,
+            firstLineDyPx: labelFirstLineDyPx,
             firstLineCenterY: labelFirstLineCenterY,
             rotationDeg: label.rotation * 45,
             lineByService,

@@ -313,7 +313,7 @@ describe("labelLayoutLocal — valign='auto-down'", () => {
     const a = labelLayoutLocal(vStation({ name: 'Foo', valign: 'auto-down' }));
     const m = labelLayoutLocal(vStation({ name: 'Foo', valign: 'middle' }));
     expect(a.baseline).toBe(m.baseline);
-    expect(a.firstLineDy).toBe(m.firstLineDy);
+    expect(a.firstLineDyPx).toBe(m.firstLineDyPx);
     expect(a.hitX).toBeCloseTo(m.hitX, 5);
     expect(a.hitY).toBeCloseTo(m.hitY, 5);
     expect(a.hitW).toBeCloseTo(m.hitW, 5);
@@ -326,7 +326,7 @@ describe("labelLayoutLocal — valign='auto-down'", () => {
     // is the SVG combination that puts the first line's center on the anchor.
     const lay = labelLayoutLocal(vStation({ name: 'Foo\nBar', valign: 'auto-down' }));
     expect(lay.baseline).toBe('central');
-    expect(lay.firstLineDy).toBe('0');
+    expect(lay.firstLineDyPx).toBe(0);
   });
 
   it("multi-line 'auto-down' hit rect top sits at anchorY - TEXT_HALF_H regardless of line count", () => {
@@ -384,7 +384,7 @@ describe("labelLayoutLocal — valign='auto-up'", () => {
     const a = labelLayoutLocal(vStation({ name: 'Foo', valign: 'auto-up' }));
     const m = labelLayoutLocal(vStation({ name: 'Foo', valign: 'middle' }));
     expect(a.baseline).toBe(m.baseline);
-    expect(a.firstLineDy).toBe(m.firstLineDy);
+    expect(a.firstLineDyPx).toBe(m.firstLineDyPx);
     expect(a.hitX).toBeCloseTo(m.hitX, 5);
     expect(a.hitY).toBeCloseTo(m.hitY, 5);
     expect(a.hitW).toBeCloseTo(m.hitW, 5);
@@ -393,14 +393,11 @@ describe("labelLayoutLocal — valign='auto-up'", () => {
   });
 
   it("multi-line 'auto-up' keeps the LAST line centered on the anchor (first line shifted up)", () => {
-    // The first line moves UP by extraLines*LINE_HEIGHT so that line N-1
-    // (which natively sits extraLines*LINE_HEIGHT below the first) lands on
-    // anchorY. dy is in em, negative = upward.
-    const FONT_SIZE_PX = 12;
+    // The first line moves UP by one line-height (px) so the last line lands
+    // on anchorY. Negative = upward.
     const lay = labelLayoutLocal(vStation({ name: 'Foo\nBar', valign: 'auto-up' }));
     expect(lay.baseline).toBe('central');
-    const expectedEm = (-LINE_HEIGHT / FONT_SIZE_PX).toFixed(3);
-    expect(lay.firstLineDy).toBe(`${expectedEm}em`);
+    expect(lay.firstLineDyPx).toBeCloseTo(-LINE_HEIGHT, 5);
   });
 
   it("multi-line 'auto-up' hit rect BOTTOM stays put (block grows upward as lines are added)", () => {
