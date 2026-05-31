@@ -111,7 +111,20 @@ function measureTextSegment(
     const bR = tm.actualBoundingBoxRight ?? 0;
     const advance = tm.width;
     if (bL > 0 || bR > 0) {
-      return { advance: advance > 0 ? advance : bL + bR, bearingLeft: bL, bearingRight: bR };
+      const adv = advance > 0 ? advance : bL + bR;
+      // Leading/trailing whitespace carries advance but no ink, so the canvas
+      // ink box (actualBoundingBox*) excludes it. The user typed those spaces
+      // and expects them to occupy real width, so extend the segment extent to
+      // the pen origin on the left / the full advance on the right whenever the
+      // segment begins/ends with whitespace. Interior glyph side bearings stay
+      // tight (no ink leakage past the bbox) for the common no-whitespace case.
+      const startsWithWs = /^\s/.test(value);
+      const endsWithWs = /\s$/.test(value);
+      return {
+        advance: adv,
+        bearingLeft: startsWithWs ? 0 : bL,
+        bearingRight: endsWithWs ? adv : bR,
+      };
     }
     if (advance > 0) {
       // Real canvas advance but no ink bounds — treat the whole advance as ink.

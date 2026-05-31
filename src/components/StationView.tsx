@@ -158,7 +158,7 @@ function renderStationLabelText({
           stroke={stroke}
           strokeWidth={strokeWidth}
           paintOrder={paintOrder}
-          xmlSpace="preserve"
+          style={{ whiteSpace: 'pre' }}
         >
           {lines.map((line, i) => (
             <tspan key={i} x={anchorX} dy={i === 0 ? firstLineDy : '1.2em'}>
@@ -232,7 +232,7 @@ function renderStationLabelText({
                 stroke={stroke}
                 strokeWidth={strokeWidth}
                 paintOrder={paintOrder}
-                xmlSpace="preserve"
+                style={{ whiteSpace: 'pre' }}
               >
                 {seg.value}
               </text>,
