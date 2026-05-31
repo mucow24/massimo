@@ -3,6 +3,7 @@ import { render, screen, fireEvent } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import App from '../App';
 import { useDoc, useSelection } from '../state/store';
+import { historyDepth, redoDepth } from '../state/history';
 import { DEFAULT_DOC } from '../model/transforms';
 
 beforeEach(() => {
@@ -22,7 +23,7 @@ describe('App keyboard shortcuts: inForm guard routing', () => {
     render(<App />);
     // Create an undoable entry so Ctrl+Z has something to pop.
     useDoc.getState().addStation(50, 50);
-    const pastBefore = useDoc.temporal.getState().pastStates.length;
+    const pastBefore = historyDepth();
     const stationsBefore = Object.keys(useDoc.getState().stations).length;
 
     await user.click(screen.getByRole('button', { name: 'Options' }));
@@ -31,14 +32,14 @@ describe('App keyboard shortcuts: inForm guard routing', () => {
 
     fireEvent.keyDown(slider, { key: 'z', ctrlKey: true });
 
-    expect(useDoc.temporal.getState().pastStates.length).toBe(pastBefore - 1);
+    expect(historyDepth()).toBe(pastBefore - 1);
     expect(Object.keys(useDoc.getState().stations).length).toBe(stationsBefore - 1);
   });
 
   it('Ctrl+Z is suppressed on a focused text input (preserves native text undo)', () => {
     render(<App />);
     useDoc.getState().addStation(50, 50);
-    const pastBefore = useDoc.temporal.getState().pastStates.length;
+    const pastBefore = historyDepth();
 
     const input = document.createElement('input');
     input.type = 'text';
@@ -46,7 +47,7 @@ describe('App keyboard shortcuts: inForm guard routing', () => {
     input.focus();
     try {
       fireEvent.keyDown(input, { key: 'z', ctrlKey: true });
-      expect(useDoc.temporal.getState().pastStates.length).toBe(pastBefore);
+      expect(historyDepth()).toBe(pastBefore);
     } finally {
       document.body.removeChild(input);
     }
@@ -55,7 +56,7 @@ describe('App keyboard shortcuts: inForm guard routing', () => {
   it('Ctrl+Z fires on a focused color picker (no native text undo to preserve)', () => {
     render(<App />);
     useDoc.getState().addStation(50, 50);
-    const pastBefore = useDoc.temporal.getState().pastStates.length;
+    const pastBefore = historyDepth();
 
     const input = document.createElement('input');
     input.type = 'color';
@@ -63,7 +64,7 @@ describe('App keyboard shortcuts: inForm guard routing', () => {
     input.focus();
     try {
       fireEvent.keyDown(input, { key: 'z', ctrlKey: true });
-      expect(useDoc.temporal.getState().pastStates.length).toBe(pastBefore - 1);
+      expect(historyDepth()).toBe(pastBefore - 1);
     } finally {
       document.body.removeChild(input);
     }
@@ -137,7 +138,7 @@ describe('App keyboard shortcuts: blur-then-undo', () => {
     await user.click(screen.getByRole('button', { name: 'Options' }));
     const slider = screen.getByRole('slider', { name: /font size/i }) as HTMLInputElement;
     const initialFontSize = useDoc.getState().labelFontSize;
-    const pastBaseline = useDoc.temporal.getState().pastStates.length;
+    const pastBaseline = historyDepth();
 
     // Simulate focus → mid-drag → Ctrl+Z without intervening blur. The focus
     // opens a useFieldHistory group (pauses zundo); the change mutates state
@@ -154,7 +155,7 @@ describe('App keyboard shortcuts: blur-then-undo', () => {
     fireEvent.keyDown(slider, { key: 'z', ctrlKey: true });
 
     expect(useDoc.getState().labelFontSize).toBe(initialFontSize);
-    expect(useDoc.temporal.getState().pastStates.length).toBe(pastBaseline);
-    expect(useDoc.temporal.getState().futureStates.length).toBe(1);
+    expect(historyDepth()).toBe(pastBaseline);
+    expect(redoDepth()).toBe(1);
   });
 });

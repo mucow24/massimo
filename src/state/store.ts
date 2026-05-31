@@ -23,6 +23,7 @@ import { cyclingColors, type PaletteId } from '../model/palettes';
 import { sanitizeStations } from '../model/serialize';
 import type { Station } from '../model/types';
 import { randomStationName } from './stationNames';
+import { pauseHistory, pushHistory, resumeHistory } from './history';
 
 // Re-export so callers (Sidebar, etc.) keep working with one source of truth.
 export { effectiveLineOrder };
@@ -78,7 +79,7 @@ const DOC_FIELDS = [
   'transferStrokeColor',
 ] as const;
 type DocFieldName = (typeof DOC_FIELDS)[number];
-type DocSnapshot = Pick<MapDoc, DocFieldName>;
+export type DocSnapshot = Pick<MapDoc, DocFieldName>;
 
 function pickDocSnapshot(s: DocSnapshot): DocSnapshot {
   const out = {} as Record<DocFieldName, unknown>;
@@ -437,29 +438,24 @@ export const useDoc = create<DocState>()(
  */
 export function beginHistoryGroup(): { commit: () => void; cancel: () => void } {
   const snapshot = pickDocSnapshot(useDoc.getState());
-  const temporal = useDoc.temporal.getState();
-  temporal.pause();
+  pauseHistory();
   let done = false;
   return {
     commit: () => {
       if (done) return;
       done = true;
-      temporal.resume();
+      resumeHistory();
       const cur = pickDocSnapshot(useDoc.getState());
       // Reference-equality check across every tracked doc field. Transforms
       // produce new objects only when something changes, so this is sound.
       if (docSnapshotsEqual(cur, snapshot)) return;
-      // Manually push our snapshot as a single history entry. A new action
-      // wipes the redo stack, mirroring zundo's default handler behavior.
-      useDoc.temporal.setState((s) => ({
-        pastStates: [...s.pastStates, snapshot],
-        futureStates: [],
-      }));
+      // One entry covering the whole group; the adapter owns the zundo shape.
+      pushHistory(snapshot);
     },
     cancel: () => {
       if (done) return;
       done = true;
-      temporal.resume();
+      resumeHistory();
     },
   };
 }

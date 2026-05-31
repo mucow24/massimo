@@ -3,6 +3,7 @@ import { render, screen } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { StationInspector } from './StationInspector';
 import { useDoc, useSelection } from '../../state/store';
+import { historyDepth } from '../../state/history';
 import { DEFAULT_DOC } from '../../model/transforms';
 import { makeDoc, makeStation, makeStop, makeLine } from '../../test/fixtures';
 
@@ -488,7 +489,7 @@ describe('<StationInspector /> — shape picker wiring', () => {
       mirrorMatching: true,
     });
 
-    const pastBefore = useDoc.temporal.getState().pastStates.length;
+    const pastBefore = historyDepth();
 
     render(<StationInspector id="a" />);
     const stopCell = document.querySelector(
@@ -502,7 +503,7 @@ describe('<StationInspector /> — shape picker wiring', () => {
     expect(doc.stations.a.stops[0].dotShape).toBe('open-white');
     expect(doc.stations.b.stops[0].dotShape).toBe('open-white');
 
-    const pastAfter = useDoc.temporal.getState().pastStates.length;
+    const pastAfter = historyDepth();
     expect(pastAfter - pastBefore).toBe(1);
   });
 });

@@ -11,6 +11,7 @@ import {
 } from './state/store';
 import { readClipboard, routeBulletPayload, writeClipboard } from './model/clipboard';
 import { useViewportStore } from './state/viewportStore';
+import { redo, undo } from './state/history';
 
 export default function App() {
   const darkMode = useViewportStore((s) => s.darkMode);
@@ -91,15 +92,14 @@ export default function App() {
         // etc.) commits its entry to the past stack — otherwise undo
         // would skip the in-progress edit and revert the action before it.
         if (document.activeElement instanceof HTMLElement) document.activeElement.blur();
-        const temporal = useDoc.temporal.getState();
-        if (e.shiftKey) temporal.redo();
-        else temporal.undo();
+        if (e.shiftKey) redo();
+        else undo();
         return;
       }
       if (mod && !inForm && (e.key === 'y' || e.key === 'Y')) {
         e.preventDefault();
         if (document.activeElement instanceof HTMLElement) document.activeElement.blur();
-        useDoc.temporal.getState().redo();
+        redo();
         return;
       }
       // Copy / paste / duplicate for a single selected route bullet (the
