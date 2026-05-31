@@ -1,25 +1,11 @@
 import { useMemo, useRef, useState } from 'react';
 
-import {
-  beginHistoryGroup,
-  cancelAppendMode,
-  dragState,
-  useDoc,
-  useSelection,
-} from '../state/store';
+import { cancelAppendMode, dragState, useDoc, useSelection } from '../state/store';
 import { randomStationName } from '../state/stationNames';
 import { useSnapPrefs } from '../state/snapPrefs';
 import { useViewportStore } from '../state/viewportStore';
 import { useThemeColors } from '../state/theme';
-import {
-  maybeSnapToGrid,
-  snapDraggedStation,
-  snapLabelToGrid,
-  snapPointToGrid,
-  type SnapGuide,
-} from '../geometry/snap';
-import { measureTextLabel } from '../geometry/textMeasure';
-import { TEXT_LABEL_HIT_PAD } from '../geometry/stationBoundary';
+import { maybeSnapToGrid } from '../geometry/snap';
 import {
   assignLinePriorities,
   buildBandGeometry,
@@ -40,6 +26,7 @@ import { Grid } from './canvas/Grid';
 import { WarningToasts } from './canvas/WarningToasts';
 import { EditingBanner } from './canvas/EditingBanner';
 import { SnapGuides } from './canvas/SnapGuides';
+import { useItemDrag } from './canvas/useItemDrag';
 import { LineTagsLayer } from './canvas/LineTagsLayer';
 import { LayeringDashedOutlines, LayeringHoverOutline } from './canvas/LayeringOutlines';
 import { LayerNumberLabels } from './canvas/LayerNumberLabels';
@@ -68,7 +55,6 @@ const OTHER_LINE_SATURATION = 0.5;
 // + their outlines. Transfers stay at full opacity (they're part of the
 // route-network reading, not background annotation).
 const LAYERING_FADE_OPACITY = 0.25;
-const BULLET_SNAP_TOLERANCE = 10;
 
 export function MapCanvas() {
   const stations = useDoc((s) => s.stations);
@@ -80,7 +66,6 @@ export function MapCanvas() {
   const cycleSegmentLayer = useDoc((s) => s.cycleSegmentLayer);
   const routeBullets = useDoc((s) => s.routeBullets);
   const addRouteBullet = useDoc((s) => s.addRouteBullet);
-  const moveRouteBullet = useDoc((s) => s.moveRouteBullet);
   const rotateRouteBullet = useDoc((s) => s.rotateRouteBullet);
   const transfers = useDoc((s) => s.transfers);
   const transferColor = useDoc((s) => s.transferColor);
@@ -89,7 +74,6 @@ export function MapCanvas() {
   const transferStrokeWidth = useDoc((s) => s.transferStrokeWidth);
   const textLabels = useDoc((s) => s.textLabels);
   const addTextLabel = useDoc((s) => s.addTextLabel);
-  const moveTextLabel = useDoc((s) => s.moveTextLabel);
   const rotateTextLabel = useDoc((s) => s.rotateTextLabel);
   const selection = useSelection();
   const snapModes = useSnapPrefs((s) => s.modes);
@@ -196,37 +180,7 @@ export function MapCanvas() {
 
   const inHandMode = selection.toolMode === 'hand' || selection.spaceHeld;
 
-  // Bullet drag state — minimal local ref to avoid a whole new hook for
-  // now. When the grabbed bullet is part of a multi-selection, sibling
-  // arrays carry every other selected item along by the same delta.
-  const bulletDragRef = useRef<{
-    id: string;
-    startWX: number;
-    startWY: number;
-    startMX: number;
-    startMY: number;
-    moved: boolean;
-    bulletSiblings: { id: string; startX: number; startY: number }[];
-    stationSiblings: { id: string; startX: number; startY: number }[];
-    labelSiblings: { id: string; startX: number; startY: number }[];
-    history: ReturnType<typeof beginHistoryGroup>;
-  } | null>(null);
-  // Text-label drag state. Same shape as bulletDragRef, minus snap (labels
-  // don't snap in this iteration). Tracks group-drag siblings (other labels,
-  // stations, bullets) so the whole multi-selection moves as a rigid body.
-  const labelDragRef = useRef<{
-    id: string;
-    startWX: number;
-    startWY: number;
-    startMX: number;
-    startMY: number;
-    moved: boolean;
-    labelSiblings: { id: string; startX: number; startY: number }[];
-    bulletSiblings: { id: string; startX: number; startY: number }[];
-    stationSiblings: { id: string; startX: number; startY: number }[];
-    history: ReturnType<typeof beginHistoryGroup>;
-  } | null>(null);
-  const [bulletSnapGuides, setBulletSnapGuides] = useState<SnapGuide[]>([]);
+  const itemDrag = useItemDrag(svgRef, view.viewport.zoom, inHandMode);
   // Cursor position in world coords — drives the in-progress transfer line
   // from the anchor dot to the cursor, and the station-placing-mode ghost
   // that follows the cursor before each click.
@@ -295,213 +249,15 @@ export function MapCanvas() {
     } else if (cursorWorld) {
       setCursorWorld(null);
     }
-    const bd = bulletDragRef.current;
-    if (bd) {
-      const dxScreen = e.clientX - bd.startMX;
-      const dyScreen = e.clientY - bd.startMY;
-      if (!bd.moved && Math.hypot(dxScreen, dyScreen) > 4) {
-        bd.moved = true;
-        dragState.suppressClick = true;
-        svgRef.current?.setPointerCapture(e.pointerId);
-      }
-      if (bd.moved) {
-        const dx = dxScreen / view.viewport.zoom;
-        const dy = dyScreen / view.viewport.zoom;
-        let nx = bd.startWX + dx;
-        let ny = bd.startWY + dy;
-        const cur = routeBullets[bd.id];
-        const lineId = cur?.lineId ?? null;
-        // Group-drag suppresses the bullet-line snap: siblings are moving,
-        // so snap targets become unstable and a half-snapped grabbed
-        // bullet would drag the whole group off-axis.
-        const inGroupDrag =
-          bd.bulletSiblings.length > 0 ||
-          bd.stationSiblings.length > 0 ||
-          bd.labelSiblings.length > 0;
-        if (lineId && !e.shiftKey && !inGroupDrag) {
-          // Reuse the station snap engine in bullet mode — it already
-          // handles per-stop axis alignment, two-axis snap at corners,
-          // and the "third in-line station" opposite-direction guide.
-          const snap = snapDraggedStation({
-            proposedX: nx,
-            proposedY: ny,
-            stations,
-            lines,
-            tolerance: BULLET_SNAP_TOLERANCE,
-            bulletLineId: lineId,
-            modes: snapModes,
-          });
-          nx = snap.x;
-          ny = snap.y;
-          setBulletSnapGuides(snap.guides);
-        } else {
-          if (bulletSnapGuides.length > 0) setBulletSnapGuides([]);
-          // Grid snap fallback when the snap engine wasn't called (unbound
-          // bullet or group drag). Shift still bypasses.
-          if (snapModes.grid !== 'off' && !e.shiftKey) {
-            const g = snapPointToGrid(nx, ny, snapModes.grid);
-            nx = g.x;
-            ny = g.y;
-          }
-        }
-        moveRouteBullet(bd.id, nx, ny);
-        if (inGroupDrag) {
-          const deltaX = nx - bd.startWX;
-          const deltaY = ny - bd.startWY;
-          for (const bs of bd.bulletSiblings) {
-            moveRouteBullet(bs.id, bs.startX + deltaX, bs.startY + deltaY);
-          }
-          for (const ss of bd.stationSiblings) {
-            useDoc.getState().moveStation(ss.id, ss.startX + deltaX, ss.startY + deltaY);
-          }
-          for (const ls of bd.labelSiblings) {
-            moveTextLabel(ls.id, ls.startX + deltaX, ls.startY + deltaY);
-          }
-        }
-      }
-    }
-    const ld = labelDragRef.current;
-    if (ld) {
-      const dxScreen = e.clientX - ld.startMX;
-      const dyScreen = e.clientY - ld.startMY;
-      if (!ld.moved && Math.hypot(dxScreen, dyScreen) > 4) {
-        ld.moved = true;
-        dragState.suppressClick = true;
-        svgRef.current?.setPointerCapture(e.pointerId);
-      }
-      if (ld.moved) {
-        const rawDx = dxScreen / view.viewport.zoom;
-        const rawDy = dyScreen / view.viewport.zoom;
-        let nx = ld.startWX + rawDx;
-        let ny = ld.startWY + rawDy;
-        // Labels don't go through the snap engine (no axis/orientation), but
-        // grid snap still applies. Register the label by its upper-left
-        // bbox corner so the visible edge lands on a grid line. Shift
-        // bypasses like elsewhere.
-        if (snapModes.grid !== 'off' && !e.shiftKey) {
-          const cur = textLabels[ld.id];
-          if (cur) {
-            const m = measureTextLabel(cur);
-            // Snap the VISIBLE upper-left (the dashed selection ring), which
-            // includes hit-test padding around the text bbox — that's the
-            // corner the user actually sees on screen.
-            const snapped = snapLabelToGrid(
-              { x: nx, y: ny },
-              m.width + 2 * TEXT_LABEL_HIT_PAD,
-              m.height + 2 * TEXT_LABEL_HIT_PAD,
-              snapModes.grid,
-            );
-            nx = snapped.x;
-            ny = snapped.y;
-          }
-        }
-        const dx = nx - ld.startWX;
-        const dy = ny - ld.startWY;
-        moveTextLabel(ld.id, nx, ny);
-        const inGroupDrag =
-          ld.labelSiblings.length + ld.bulletSiblings.length + ld.stationSiblings.length > 0;
-        if (inGroupDrag) {
-          for (const ls of ld.labelSiblings) {
-            moveTextLabel(ls.id, ls.startX + dx, ls.startY + dy);
-          }
-          for (const bs of ld.bulletSiblings) {
-            moveRouteBullet(bs.id, bs.startX + dx, bs.startY + dy);
-          }
-          for (const ss of ld.stationSiblings) {
-            useDoc.getState().moveStation(ss.id, ss.startX + dx, ss.startY + dy);
-          }
-        }
-      }
-    }
+    itemDrag.onPointerMove(e);
   };
   const onPointerUp = (e: React.PointerEvent) => {
     view.onPointerUp(e);
     drag.onPointerUp(e);
     rectSelect.onPointerUp(e);
-    const bd = bulletDragRef.current;
-    if (bd) {
-      const wasMoved = bd.moved;
-      bulletDragRef.current = null;
-      setBulletSnapGuides([]);
-      if (wasMoved) {
-        bd.history.commit();
-        try {
-          svgRef.current?.releasePointerCapture(e.pointerId);
-        } catch {
-          // pointer may not have been captured
-        }
-        setTimeout(() => {
-          dragState.suppressClick = false;
-        }, 0);
-      } else {
-        bd.history.cancel();
-      }
-    }
-    const ld = labelDragRef.current;
-    if (ld) {
-      const wasMoved = ld.moved;
-      labelDragRef.current = null;
-      if (wasMoved) {
-        ld.history.commit();
-        try {
-          svgRef.current?.releasePointerCapture(e.pointerId);
-        } catch {
-          // pointer may not have been captured
-        }
-        setTimeout(() => {
-          dragState.suppressClick = false;
-        }, 0);
-      } else {
-        ld.history.cancel();
-      }
-    }
+    itemDrag.onPointerUp(e);
   };
 
-  const onBulletPointerDown = (id: string, e: React.PointerEvent) => {
-    if (e.button !== 0) return;
-    if (inHandMode) return;
-    const b = routeBullets[id];
-    if (!b) return;
-    e.stopPropagation();
-    // Group-drag: if the grabbed bullet is part of the multi-selection,
-    // every other selected item (bullets + stations) tags along with the
-    // same delta on each pointer move.
-    const sel = useSelection.getState();
-    const includesGrabbed = sel.selectedRouteBulletIds.includes(id);
-    const bulletSiblings: { id: string; startX: number; startY: number }[] = [];
-    const stationSiblings: { id: string; startX: number; startY: number }[] = [];
-    const labelSiblings: { id: string; startX: number; startY: number }[] = [];
-    if (includesGrabbed) {
-      for (const bid of sel.selectedRouteBulletIds) {
-        if (bid === id) continue;
-        const sb = routeBullets[bid];
-        if (!sb) continue;
-        bulletSiblings.push({ id: bid, startX: sb.x, startY: sb.y });
-      }
-      for (const sid of sel.selectedStationIds) {
-        const ss = stations[sid];
-        if (!ss) continue;
-        stationSiblings.push({ id: sid, startX: ss.x, startY: ss.y });
-      }
-      for (const lid of sel.selectedLabelIds) {
-        const lb = textLabels[lid];
-        if (!lb) continue;
-        labelSiblings.push({ id: lid, startX: lb.x, startY: lb.y });
-      }
-    }
-    bulletDragRef.current = {
-      id,
-      startWX: b.x,
-      startWY: b.y,
-      startMX: e.clientX,
-      startMY: e.clientY,
-      moved: false,
-      bulletSiblings,
-      stationSiblings,
-      labelSiblings,
-      history: beginHistoryGroup(),
-    };
-  };
   const onBulletClick = (id: string, e: React.MouseEvent) => {
     if (dragState.suppressClick) return;
     if (inHandMode) return;
@@ -566,51 +322,6 @@ export function MapCanvas() {
     }
     rotateTextLabel(id);
   };
-  const onLabelPointerDown = (id: string, e: React.PointerEvent) => {
-    if (e.button !== 0) return;
-    if (inHandMode) return;
-    const lbl = textLabels[id];
-    if (!lbl) return;
-    e.stopPropagation();
-    // Group-drag: if the grabbed label is part of the multi-selection,
-    // every other selected item (labels + bullets + stations) tags along.
-    const sel = useSelection.getState();
-    const includesGrabbed = sel.selectedLabelIds.includes(id);
-    const labelSiblings: { id: string; startX: number; startY: number }[] = [];
-    const bulletSiblings: { id: string; startX: number; startY: number }[] = [];
-    const stationSiblings: { id: string; startX: number; startY: number }[] = [];
-    if (includesGrabbed) {
-      for (const gid of sel.selectedLabelIds) {
-        if (gid === id) continue;
-        const sg = textLabels[gid];
-        if (!sg) continue;
-        labelSiblings.push({ id: gid, startX: sg.x, startY: sg.y });
-      }
-      for (const bid of sel.selectedRouteBulletIds) {
-        const sb = routeBullets[bid];
-        if (!sb) continue;
-        bulletSiblings.push({ id: bid, startX: sb.x, startY: sb.y });
-      }
-      for (const sid of sel.selectedStationIds) {
-        const ss = stations[sid];
-        if (!ss) continue;
-        stationSiblings.push({ id: sid, startX: ss.x, startY: ss.y });
-      }
-    }
-    labelDragRef.current = {
-      id,
-      startWX: lbl.x,
-      startWY: lbl.y,
-      startMX: e.clientX,
-      startMY: e.clientY,
-      moved: false,
-      labelSiblings,
-      bulletSiblings,
-      stationSiblings,
-      history: beginHistoryGroup(),
-    };
-  };
-
   const onCanvasClick = (e: React.MouseEvent) => {
     if (inHandMode) return;
     const onBackground =
@@ -983,7 +694,7 @@ export function MapCanvas() {
               bullet={b}
               lines={lines}
               selected={bulletSelectedIds.includes(b.id)}
-              onPointerDown={onBulletPointerDown}
+              onPointerDown={itemDrag.onBulletPointerDown}
               onClick={onBulletClick}
               onContextMenu={onBulletContextMenu}
             />
@@ -1000,7 +711,7 @@ export function MapCanvas() {
               label={g}
               selected={labelSelectedIds.includes(g.id)}
               layer="bg"
-              onPointerDown={onLabelPointerDown}
+              onPointerDown={itemDrag.onLabelPointerDown}
               onClick={onLabelClick}
               onContextMenu={onLabelContextMenu}
             />
@@ -1101,7 +812,10 @@ export function MapCanvas() {
 
         {/* Snap guides: rendered last so the dotted lines + measurement
             labels sit on top of line tags and everything else. */}
-        <SnapGuides guides={[...drag.snapGuides, ...bulletSnapGuides]} zoom={view.viewport.zoom} />
+        <SnapGuides
+          guides={[...drag.snapGuides, ...itemDrag.bulletSnapGuides]}
+          zoom={view.viewport.zoom}
+        />
 
         {/* Layering-mode top overlays: the hovered-stripe solid outline +
             small layer-number labels. Painted at the very end of the SVG
