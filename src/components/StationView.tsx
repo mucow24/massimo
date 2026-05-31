@@ -1,18 +1,15 @@
 import { useMemo } from 'react';
 import { Line, Station } from '../model/types';
 import { useDoc, useSelection } from '../state/store';
-import { STOP_DOT_RADIUS, stopCenterAt } from '../geometry/orientation';
 import { labelLayoutLocal } from '../geometry/labelLayout';
-import { bumpWeightByIndex, resolveDotShape, resolveStationLabelWeight } from '../model/transforms';
+import { bumpWeightByIndex, resolveStationLabelWeight } from '../model/transforms';
 import { legibleTextOn } from '../util/color';
 import { useThemeColors } from '../state/theme';
-import { StopGlyph } from './StopGlyph';
 import { StationNameEditor } from './StationNameEditor';
 import { StationSilhouette } from './StationSilhouette';
 import { StationHitArea } from './StationHitArea';
-import { stopPosWorld } from '../geometry/interlining';
+import { StationDots, StationHighlightDots } from './StationDots';
 import { renderStationLabelText } from './stationLabelText';
-import { useStationInteraction } from './useStationInteraction';
 
 interface Props {
   station: Station;
@@ -66,21 +63,9 @@ export function StationView({
     return map;
   }, [lines]);
 
-  const stops = station.stops;
   const angle = station.rotation * 45;
-
-  const {
-    handlers: stationInteractionHandlers,
-    cursor: stationCursor,
-    inHitlessMode,
-  } = useStationInteraction(station, onStartDrag, lines);
-
   const isWp = !!station.isWaypoint;
-  // Empty stations get a single phantom dot one cell to the right of the
-  // label, so there's something visible and the name has an anchor.
-  // Waypoints never show a phantom (the whole point is "no visible station").
   const label = station.label;
-  const phantomDot = !isWp && stops.length === 0 ? { row: label.row, col: label.col + 1 } : null;
 
   // Label layout — anchor, text-anchor, dominant baseline, and the hit rect
   // around the painted text. Shared with stationBoundary so the wash
@@ -255,73 +240,9 @@ export function StationView({
   }
 
   if (layer === 'highlight-dots') {
-    if (isWp) return null;
-    // Dots above the dim/highlight passes, used for not-yet-on-line stations
-    // during append mode. Color overridable via highlightColor.
-    return (
-      <g pointerEvents="none">
-        {/* Phantom dot is a drag preview — render at cell position, in the
-            station's local frame. */}
-        {phantomDot && (
-          <g transform={`translate(${station.x} ${station.y}) rotate(${angle})`}>
-            {(() => {
-              const c = stopCenterAt(phantomDot.row, phantomDot.col);
-              return <circle cx={c.x} cy={c.y} r={STOP_DOT_RADIUS} fill={highlightColor} />;
-            })()}
-          </g>
-        )}
-        {stops.map((cell) => {
-          const w = stopPosWorld(cell, station);
-          return (
-            <circle key={cell.lineId} cx={w.x} cy={w.y} r={STOP_DOT_RADIUS} fill={highlightColor} />
-          );
-        })}
-      </g>
-    );
+    return <StationHighlightDots station={station} highlightColor={highlightColor} />;
   }
 
   // layer === 'dots'
-  if (isWp) return null;
-  const hoveredStop = selection.hoveredLineStop;
-  return (
-    // The dots layer paints above transfers in z-order so transfers never
-    // obscure the dots they connect. To preserve dot-click-priority over
-    // transfers, the wrapper itself is hit-testable: each visible dot
-    // absorbs clicks per-pixel (default `visiblePainted`) and the click
-    // bubbles to the wrapper, which forwards to the same station-onClick
-    // logic the bg layer uses. `pointer-events: none` in tag-mode keeps
-    // band-stripe hover working when the cursor passes over a dot.
-    <g
-      pointerEvents={inHitlessMode ? 'none' : undefined}
-      style={{ cursor: stationCursor }}
-      {...stationInteractionHandlers}
-    >
-      {/* Phantom dot is a drag preview — render at cell position, in the
-          station's local frame. */}
-      {phantomDot && (
-        <g transform={`translate(${station.x} ${station.y}) rotate(${angle})`}>
-          {(() => {
-            const c = stopCenterAt(phantomDot.row, phantomDot.col);
-            return <circle cx={c.x} cy={c.y} r={STOP_DOT_RADIUS} fill="#000" />;
-          })()}
-        </g>
-      )}
-      {stops.map((cell) => {
-        const w = stopPosWorld(cell, station);
-        const isHovered =
-          hoveredStop?.stationId === station.id && hoveredStop?.lineId === cell.lineId;
-        return (
-          <StopGlyph
-            key={cell.lineId}
-            cx={w.x}
-            cy={w.y}
-            shape={resolveDotShape(lines[cell.lineId], cell)}
-            isHovered={isHovered}
-            stationId={station.id}
-            lineId={cell.lineId}
-          />
-        );
-      })}
-    </g>
-  );
+  return <StationDots station={station} lines={lines} onStartDrag={onStartDrag} />;
 }
