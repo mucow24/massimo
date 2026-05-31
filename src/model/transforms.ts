@@ -773,7 +773,7 @@ export function setLabelOffsetPerp(doc: MapDoc, stationId: StationId, offsetPerp
   };
 }
 
-const ALIGN_CYCLE: LabelAlign[] = ['auto', 'start', 'middle', 'end'];
+export const ALIGN_CYCLE: LabelAlign[] = ['auto', 'start', 'middle', 'end'];
 
 export function cycleLabelAlign(doc: MapDoc, stationId: StationId): MapDoc {
   const st = doc.stations[stationId];
@@ -808,7 +808,7 @@ export function setLabelAlign(doc: MapDoc, stationId: StationId, align: LabelAli
 // the classic block-aligned options. The cycle order is geometrically
 // symmetric: auto-down (block top pinned, grows down) → top → middle → bottom
 // → auto-up (block bottom pinned, grows up) → back to auto-down.
-const VALIGN_CYCLE: LabelValign[] = ['auto-down', 'top', 'middle', 'bottom', 'auto-up'];
+export const VALIGN_CYCLE: LabelValign[] = ['auto-down', 'top', 'middle', 'bottom', 'auto-up'];
 
 export function cycleLabelValign(doc: MapDoc, stationId: StationId): MapDoc {
   const st = doc.stations[stationId];
