@@ -875,7 +875,7 @@ export function StationView({
         <g transform={`translate(${station.x} ${station.y}) rotate(${angle})`}>
           {(() => {
             const c = stopCenterAt(phantomDot.row, phantomDot.col);
-            return <circle cx={c.x} cy={c.y} r={STOP_DOT_RADIUS} fill="#000" />;
+            return <circle cx={c.x} cy={c.y} r={STOP_DOT_RADIUS} fill={themeColors.phantomDot} />;
           })()}
         </g>
       )}
