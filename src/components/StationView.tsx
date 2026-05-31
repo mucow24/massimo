@@ -534,7 +534,6 @@ export function StationView({
     weight: stationWeight,
     italic: labelItalic,
   });
-  const nameLines = station.name.split('\n');
 
   // Cells AABB hit rect.
   const HIT_PAD = 2;
@@ -544,16 +543,37 @@ export function StationView({
   const cellsHitH = stopCenterAt(maxRow, 0).y + half + HIT_PAD - cellsHitY;
   const labelHitTransform = `rotate(${label.rotation * 45} ${labelAnchorX} ${labelAnchorY})`;
 
-  // Inline rename editor anchors to the label cell (not the text anchor),
-  // so the textarea always opens centered on the L cell regardless of
-  // alignment.
-  const labelCenter = stopCenterAt(label.row, label.col);
-  const longestLineLen = nameLines.reduce((m, l) => Math.max(m, l.length), 0);
-  const textW = Math.max(20, longestLineLen * 7);
+  // The inline rename editor overlays the painted label 1:1: it reuses the
+  // label hit rect for its box and the same rotation transform, so it tracks
+  // the label's anchor, measured size, and rotation instead of floating over
+  // the L cell. textAnchor maps to CSS text-align so the glyphs land on the
+  // same side of the anchor the label paints them.
+  const editorTextAlign: 'left' | 'center' | 'right' =
+    labelTextAnchor === 'start' ? 'left' : labelTextAnchor === 'end' ? 'right' : 'center';
 
   const isEditing = selection.editingStationId === station.id;
 
+  // When editing, the textarea shows the raw "<CODE>" tokens, which are wider
+  // than the bullets they render as. Re-measure the box against that literal
+  // text so a bullet-heavy name doesn't overflow its collapsed hit rect. Only
+  // the width grows — anchor, rotation, and height match the painted label, so
+  // the box still tracks where the label sits. Gated on isEditing so the
+  // second layout pass only runs for the one station being renamed.
+  const editorHit = isEditing
+    ? labelLayoutLocal(station, {
+        fontSize: labelFontSize,
+        weight: stationWeight,
+        italic: labelItalic,
+        literalBullets: true,
+      })
+    : null;
+
   if (layer === 'wash' || layer === 'stroke' || layer === 'match-stroke') {
+    // The station being renamed shows the inline editor, which has its own
+    // border and grows to fit the raw "<CODE>" tokens. Skip the selection
+    // silhouette for it — sized to the collapsed label, it would overdraw the
+    // wider editor box.
+    if (isEditing) return null;
     // MapCanvas decides which stations get wash/stroke/match-stroke layers
     // (selected set, plus the rect-select preview, plus mirror-matching
     // stations). StationView trusts that filtering — no redundant gate.
@@ -772,9 +792,15 @@ export function StationView({
       <g transform={`translate(${station.x} ${station.y}) rotate(${angle})`}>
         {isEditing ? (
           <NameEditor
-            x={labelCenter.x - (textW + 8) / 2}
-            y={labelCenter.y - 10}
-            width={textW + 8}
+            x={editorHit ? editorHit.hitX : labelHitX}
+            y={editorHit ? editorHit.hitY : labelHitY}
+            width={editorHit ? editorHit.hitW : labelHitW}
+            minHeight={editorHit ? editorHit.hitH : labelHitH}
+            transform={labelHitTransform}
+            fontSize={labelFontSize}
+            fontWeight={stationWeight}
+            italic={stationItalic}
+            textAlign={editorTextAlign}
             value={station.name}
             onChange={(v) => renameStation(station.id, v)}
             onCommit={() => selection.setEditingStationId(null)}
@@ -877,6 +903,12 @@ function NameEditor({
   x,
   y,
   width,
+  minHeight,
+  transform,
+  fontSize,
+  fontWeight,
+  italic,
+  textAlign,
   value,
   onChange,
   onCommit,
@@ -884,13 +916,25 @@ function NameEditor({
   x: number;
   y: number;
   width: number;
+  // Label hit-rect height — the floor for the textarea so it opens covering
+  // the painted label and only grows past it when extra lines are added.
+  minHeight: number;
+  // Rotation transform shared with the label hit rect, so the editor pivots
+  // about the label anchor exactly like the rendered text does.
+  transform: string;
+  // Font metrics mirrored from the rendered label so the editor glyphs match
+  // it 1:1 (no forced bold, no fixed size).
+  fontSize: number;
+  fontWeight: number;
+  italic: boolean;
+  textAlign: 'left' | 'center' | 'right';
   value: string;
   onChange: (v: string) => void;
   onCommit: () => void;
 }) {
   const ref = useRef<HTMLTextAreaElement | null>(null);
   const theme = useThemeColors();
-  const [editorHeight, setEditorHeight] = useState(20);
+  const [editorHeight, setEditorHeight] = useState(minHeight);
   // Open a history group on mount. Doing this in useEffect (rather than via
   // an onFocus handler) sidesteps any uncertainty about whether the synthetic
   // focus event fires for an input inside a foreignObject when el.focus() is
@@ -908,15 +952,16 @@ function NameEditor({
   }, []);
 
   // Reset to 'auto' before reading scrollHeight so the textarea can shrink
-  // when lines are removed, then snap to content height (with a sane floor).
+  // when lines are removed, then snap to content height (floored at the label
+  // box so a single-line edit stays the same height as the label it covers).
   useLayoutEffect(() => {
     const el = ref.current;
     if (!el) return;
     el.style.height = 'auto';
-    const h = Math.max(20, el.scrollHeight);
+    const h = Math.max(minHeight, el.scrollHeight);
     el.style.height = h + 'px';
     setEditorHeight((prev) => (prev === h ? prev : h));
-  }, [value]);
+  }, [value, minHeight, fontSize]);
 
   const closeEditor = () => {
     groupRef.current?.commit();
@@ -964,7 +1009,14 @@ function NameEditor({
   };
 
   return (
-    <foreignObject x={x} y={y} width={width} height={editorHeight} style={{ overflow: 'visible' }}>
+    <foreignObject
+      x={x}
+      y={y}
+      width={width}
+      height={editorHeight}
+      transform={transform}
+      style={{ overflow: 'visible' }}
+    >
       <textarea
         ref={ref}
         rows={1}
@@ -978,16 +1030,20 @@ function NameEditor({
         onDoubleClick={(e) => e.stopPropagation()}
         style={{
           width: '100%',
-          fontSize: 11,
-          fontWeight: 600,
-          padding: '1px 3px',
+          fontSize,
+          fontWeight,
+          fontStyle: italic ? 'italic' : undefined,
+          // 1px border + 1px padding (with border-box) insets the text 2px on
+          // every side — the same HIT_PAD the label hit rect adds around the
+          // glyphs — so the editable text lands exactly where the label paints.
+          padding: 1,
           border: '1px solid #1a4ea8',
           borderRadius: 2,
           background: theme.editorBg,
           color: theme.editorText,
-          textAlign: 'right',
+          textAlign,
           fontFamily: 'inherit',
-          lineHeight: '1.2',
+          lineHeight: LINE_HEIGHT,
           boxSizing: 'border-box',
           resize: 'none',
           overflow: 'hidden',

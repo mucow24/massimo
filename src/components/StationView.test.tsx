@@ -4,8 +4,9 @@ import { StationView } from './StationView';
 import { useDoc, useSelection } from '../state/store';
 import { useViewportStore } from '../state/viewportStore';
 import { DEFAULT_DOC } from '../model/transforms';
-import { makeLine, makeStation, makeStop } from '../test/fixtures';
+import { makeLabel, makeLine, makeStation, makeStop } from '../test/fixtures';
 import { STOP_SIZE } from '../geometry/orientation';
+import { labelLayoutLocal } from '../geometry/labelLayout';
 
 beforeEach(() => {
   useDoc.setState({ ...useDoc.getState(), ...DEFAULT_DOC });
@@ -14,6 +15,7 @@ beforeEach(() => {
     hoveredStationId: null,
     selectedStationIds: [],
     selectedLineId: null,
+    editingStationId: null,
     uiMode: { kind: 'idle' },
   });
   useViewportStore.setState({ darkMode: false });
@@ -231,6 +233,150 @@ describe('<StationView /> — whitespace is not collapsed', () => {
     for (const t of segTexts) {
       expect((t as SVGTextElement).style.whiteSpace).toBe('pre');
     }
+  });
+});
+
+describe('<StationView /> — inline label editor matches the painted label', () => {
+  // Open the inline rename editor for `station` and hand back its DOM nodes.
+  // The textarea lives directly inside the <foreignObject>, so its parent IS
+  // the foreignObject — read positioning attrs off that.
+  function renderEditor(station: ReturnType<typeof makeStation>) {
+    useSelection.setState({ ...useSelection.getState(), editingStationId: station.id });
+    const { container } = render(
+      <svg>
+        <StationView station={station} lines={{}} zoom={1} onStartDrag={vi.fn()} layer="label" />
+      </svg>,
+    );
+    const ta = container.querySelector('textarea');
+    if (!ta) throw new Error('expected a <textarea> for the inline editor');
+    const fo = ta.parentElement;
+    if (!fo) throw new Error('expected the textarea to live inside a <foreignObject>');
+    return { ta, fo };
+  }
+
+  // The style the renderer feeds labelLayoutLocal with the default doc:
+  // 12px / Regular / upright. Mirrored here to derive the editor's expected
+  // geometry from the same source of truth the label uses.
+  const defaultStyle = { fontSize: 12, weight: 400, italic: false };
+
+  it('drops the hardcoded bold — editor weight matches the label weight (400)', () => {
+    const { ta } = renderEditor(makeStation({ id: 's1', name: 'Foo', x: 100, y: 100 }));
+    expect(ta.style.fontWeight).toBe('400');
+  });
+
+  it('matches a bold label default (700) instead of forcing a fixed weight', () => {
+    useDoc.setState({ ...useDoc.getState(), labelWeight: 700 });
+    const { ta } = renderEditor(makeStation({ id: 's1', name: 'Foo' }));
+    expect(ta.style.fontWeight).toBe('700');
+  });
+
+  it('renders the editor at the document label font size', () => {
+    useDoc.setState({ ...useDoc.getState(), labelFontSize: 18 });
+    const { ta } = renderEditor(makeStation({ id: 's1', name: 'Foo' }));
+    expect(ta.style.fontSize).toBe('18px');
+  });
+
+  it('renders the editor italic when the label is italic', () => {
+    useDoc.setState({ ...useDoc.getState(), labelItalic: true });
+    const { ta } = renderEditor(makeStation({ id: 's1', name: 'Foo' }));
+    expect(ta.style.fontStyle).toBe('italic');
+  });
+
+  it('rotates the editor to match a rotated label', () => {
+    const station = makeStation({
+      id: 's1',
+      name: 'Foo',
+      x: 100,
+      y: 100,
+      label: makeLabel({ rotation: 2 }),
+    });
+    const layout = labelLayoutLocal(station, defaultStyle);
+    const { fo } = renderEditor(station);
+    expect(fo.getAttribute('transform')).toBe(`rotate(90 ${layout.anchorX} ${layout.anchorY})`);
+  });
+
+  it('positions + sizes the editor over the painted label box, not the cell center', () => {
+    const station = makeStation({ id: 's1', name: 'Foo', x: 100, y: 100 });
+    const layout = labelLayoutLocal(station, defaultStyle);
+    const { fo } = renderEditor(station);
+    expect(parseFloat(fo.getAttribute('x')!)).toBeCloseTo(layout.hitX, 5);
+    expect(parseFloat(fo.getAttribute('y')!)).toBeCloseTo(layout.hitY, 5);
+    expect(parseFloat(fo.getAttribute('width')!)).toBeCloseTo(layout.hitW, 5);
+    expect(parseFloat(fo.getAttribute('height')!)).toBeCloseTo(layout.hitH, 5);
+  });
+
+  it('right-aligns the editor text for an end-anchored label', () => {
+    const station = makeStation({ id: 's1', name: 'Foo' });
+    expect(labelLayoutLocal(station, defaultStyle).textAnchor).toBe('end'); // premise
+    const { ta } = renderEditor(station);
+    expect(ta.style.textAlign).toBe('right');
+  });
+
+  it('left-aligns the editor text for a start-anchored label', () => {
+    const station = makeStation({
+      id: 's1',
+      name: 'Foo',
+      stops: [makeStop('L1', { row: 0, col: -2 })],
+    });
+    expect(labelLayoutLocal(station, defaultStyle).textAnchor).toBe('start'); // premise
+    const { ta } = renderEditor(station);
+    expect(ta.style.textAlign).toBe('left');
+  });
+
+  it('center-aligns the editor text for a middle-anchored label', () => {
+    const station = makeStation({ id: 's1', name: 'Foo', label: makeLabel({ align: 'middle' }) });
+    expect(labelLayoutLocal(station, defaultStyle).textAnchor).toBe('middle'); // premise
+    const { ta } = renderEditor(station);
+    expect(ta.style.textAlign).toBe('center');
+  });
+
+  it('grows the editor box to fit expanded <CODE> tokens so they never clip', () => {
+    // The textarea shows the raw "<A1>" tokens, which are wider than the
+    // bullets they render as. The box must be sized to that literal text, not
+    // the collapsed-bullet label hit rect, or the tokens overflow/clip.
+    const station = makeStation({ id: 's1', name: 'Hub <A1> <B2>', x: 100, y: 100 });
+    const collapsed = labelLayoutLocal(station, defaultStyle);
+    const literal = labelLayoutLocal(station, { ...defaultStyle, literalBullets: true });
+    const { fo } = renderEditor(station);
+    expect(parseFloat(fo.getAttribute('width')!)).toBeCloseTo(literal.hitW, 5);
+    expect(parseFloat(fo.getAttribute('x')!)).toBeCloseTo(literal.hitX, 5);
+    // Sanity: the literal box is genuinely wider than the rendered label box.
+    expect(literal.hitW).toBeGreaterThan(collapsed.hitW);
+  });
+});
+
+describe('<StationView /> — selection silhouette during inline edit', () => {
+  function renderSilhouette(
+    station: ReturnType<typeof makeStation>,
+    layer: 'wash' | 'stroke',
+    editing: boolean,
+  ) {
+    if (editing) {
+      useSelection.setState({ ...useSelection.getState(), editingStationId: station.id });
+    }
+    const { container } = render(
+      <svg>
+        <StationView station={station} lines={{}} zoom={1} onStartDrag={vi.fn()} layer={layer} />
+      </svg>,
+    );
+    return container;
+  }
+
+  it('draws the silhouette for a selected, non-editing station (premise)', () => {
+    const station = makeStation({ id: 's1', name: 'Hub <A1>' });
+    expect(renderSilhouette(station, 'stroke', false).querySelector('path')).not.toBeNull();
+  });
+
+  it('suppresses the stroke silhouette while the station is being edited', () => {
+    // The grown editor box already delineates the edit area; the collapsed
+    // silhouette would otherwise overdraw the expanded textbox.
+    const station = makeStation({ id: 's1', name: 'Hub <A1>' });
+    expect(renderSilhouette(station, 'stroke', true).querySelector('path')).toBeNull();
+  });
+
+  it('suppresses the wash silhouette while the station is being edited', () => {
+    const station = makeStation({ id: 's1', name: 'Hub <A1>' });
+    expect(renderSilhouette(station, 'wash', true).querySelector('path')).toBeNull();
   });
 });
 

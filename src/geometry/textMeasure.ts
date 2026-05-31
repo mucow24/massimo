@@ -1,4 +1,4 @@
-import { inlineBulletDiameter, parseLabelLine } from './labelTokens';
+import { inlineBulletDiameter, parseLabelLine, type LabelSegment } from './labelTokens';
 
 /**
  * Minimum surface needed to measure a styled multi-line text block. Both
@@ -11,6 +11,12 @@ export interface StyledText {
   fontSize: number;
   weight: number;
   italic: boolean;
+  /**
+   * When true, `<CODE>` tokens are measured as their literal glyphs rather
+   * than collapsing to a bullet circle. The inline rename editor sets this:
+   * its textarea shows the raw tokens, so the box must be sized to fit them.
+   */
+  literalBullets?: boolean;
 }
 
 export type SegmentMetric =
@@ -74,7 +80,8 @@ const CACHE_LIMIT = 256;
 const cache = new Map<string, MeasuredBBox>();
 
 function cacheKey(styled: StyledText): string {
-  return `${styled.weight}|${styled.italic ? 'i' : 'n'}|${styled.fontSize}|${styled.text}`;
+  const bulletMode = styled.literalBullets ? 'L' : 'b';
+  return `${styled.weight}|${styled.italic ? 'i' : 'n'}|${bulletMode}|${styled.fontSize}|${styled.text}`;
 }
 
 // Lazily-initialised measurement context. Falls back to a heuristic when
@@ -140,8 +147,15 @@ function computeLineMetrics(
   fontSize: number,
   measureCtx: CanvasRenderingContext2D | null,
   fontDecl: string,
+  literalBullets: boolean,
 ): LineMetrics {
-  const segments = parseLabelLine(raw);
+  // Edit mode measures the raw "<CODE>" text; the normal render path parses
+  // tokens into bullet segments.
+  const segments: LabelSegment[] = literalBullets
+    ? raw.length === 0
+      ? []
+      : [{ kind: 'text', value: raw }]
+    : parseLabelLine(raw);
   if (segments.length === 0) {
     return { inkWidth: 0, bearingLeft: 0, bearingRight: 0, segments: [] };
   }
@@ -197,7 +211,7 @@ export function measureTextLabel(styled: StyledText): MeasuredBBox {
   const fontDecl = `${styled.italic ? 'italic ' : ''}${styled.weight} ${styled.fontSize}px "Helvetica Neue", Helvetica, Arial, sans-serif`;
 
   const lineMetrics: LineMetrics[] = rawLines.map((raw) =>
-    computeLineMetrics(raw, styled.fontSize, measureCtx, fontDecl),
+    computeLineMetrics(raw, styled.fontSize, measureCtx, fontDecl, styled.literalBullets ?? false),
   );
   const lineWidths = lineMetrics.map((m) => m.inkWidth);
   const width = lineWidths.reduce((m, w) => (w > m ? w : m), 0);
