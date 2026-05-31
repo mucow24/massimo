@@ -511,6 +511,38 @@ function stationMarkerStyle(line: Line, stationId: StationId): LineStyle {
   return 'solid';
 }
 
+// Centroid (mean) of a set of points. Pure.
+export function bandCentroid(points: Vec2[]): Vec2 {
+  let x = 0;
+  let y = 0;
+  for (const p of points) {
+    x += p.x;
+    y += p.y;
+  }
+  return { x: x / points.length, y: y / points.length };
+}
+
+// Centerline radius bumped so the INNERMOST stripe of an n-stripe band still
+// has radius >= the configured curveRadius. Stripes sit at perp offsets
+// (k-(n-1)/2)*STOP_SIZE, so the extreme |offset| is (n-1)/2*STOP_SIZE.
+export function idealBandRadius(curveRadius: number, stripeCount: number): number {
+  const maxAbsOffset = stripeCount > 1 ? ((stripeCount - 1) / 2) * STOP_SIZE : 0;
+  return curveRadius + maxAbsOffset;
+}
+
+// Largest centerline radius whose fillet still leaves a straight run >= HALF
+// (= STOP_SIZE/2) before the corner, so the stop marker doesn't spill into the
+// arc. The turn angle comes from inDir·outDir; returns Infinity for a ~straight
+// corner and 0 when there's no usable straight run.
+export function cornerCapRadius(edgeLen: number, inDir: Vec2, outDir: Vec2): number {
+  const cosA = Math.max(-1, Math.min(1, dot(inDir, outDir)));
+  const theta = Math.acos(cosA);
+  if (theta < 1e-6) return Infinity;
+  const usable = edgeLen - STOP_SIZE / 2;
+  if (usable <= 0) return 0;
+  return usable / Math.tan(theta / 2);
+}
+
 function buildBandSpec(
   group: SegInfo[],
   R: number,
@@ -529,12 +561,8 @@ function buildBandSpec(
   // positions — i.e. the centroid of the contributing stop cells at each end.
   const fromWorlds = group.map((g) => stopPosWorld(g.fromCell, fromStation));
   const toWorlds = group.map((g) => stopPosWorld(g.toCell, toStation));
-  const meanVec = (vs: Vec2[]): Vec2 => ({
-    x: vs.reduce((a, p) => a + p.x, 0) / vs.length,
-    y: vs.reduce((a, p) => a + p.y, 0) / vs.length,
-  });
-  const fromMeanWorld = meanVec(fromWorlds);
-  const toMeanWorld = meanVec(toWorlds);
+  const fromMeanWorld = bandCentroid(fromWorlds);
+  const toMeanWorld = bandCentroid(toWorlds);
 
   // Bump centerline radius so the INNERMOST stripe still has radius ≥ R.
   // With n stripes at perp offsets `(k - (n-1)/2) * STOP_SIZE`, the extreme
@@ -543,8 +571,7 @@ function buildBandSpec(
   // so the inner stripe sits at exactly R. Without this, a 4–5-line interline
   // collapses the inner curve toward a right angle as soon as |offset| ≥ R.
   const n = group.length;
-  const maxAbsOffset = n > 1 ? ((n - 1) / 2) * STOP_SIZE : 0;
-  const idealR = R + maxAbsOffset;
+  const idealR = idealBandRadius(R, n);
 
   const result = route(fromMeanWorld, fromDir, toMeanWorld, toDir, idealR);
 
@@ -559,26 +586,17 @@ function buildBandSpec(
   // both ends, but never below R (the user's configured min — they'd rather
   // see right-angle degeneracy than violate it).
   const verts = result.vertices;
-  const HALF = STOP_SIZE / 2;
   let capR = idealR;
   if (verts.length >= 3) {
-    const cornerCap = (edgeLen: number, inDir: Vec2, outDir: Vec2): number => {
-      const cosA = Math.max(-1, Math.min(1, dot(inDir, outDir)));
-      const theta = Math.acos(cosA);
-      if (theta < 1e-6) return Infinity;
-      const usable = edgeLen - HALF;
-      if (usable <= 0) return 0;
-      return usable / Math.tan(theta / 2);
-    };
     const lastIdx = verts.length - 1;
     const fromEdgeLen = len(sub(verts[1], verts[0]));
     const fromIn = norm(sub(verts[1], verts[0]));
     const fromOut = norm(sub(verts[2], verts[1]));
-    capR = Math.min(capR, cornerCap(fromEdgeLen, fromIn, fromOut));
+    capR = Math.min(capR, cornerCapRadius(fromEdgeLen, fromIn, fromOut));
     const toEdgeLen = len(sub(verts[lastIdx], verts[lastIdx - 1]));
     const toIn = norm(sub(verts[lastIdx - 1], verts[lastIdx - 2]));
     const toOut = norm(sub(verts[lastIdx], verts[lastIdx - 1]));
-    capR = Math.min(capR, cornerCap(toEdgeLen, toIn, toOut));
+    capR = Math.min(capR, cornerCapRadius(toEdgeLen, toIn, toOut));
   }
   const centerlineR = Math.max(R, Math.min(idealR, capR));
 

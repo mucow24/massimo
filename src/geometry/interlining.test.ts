@@ -1,9 +1,12 @@
 import { describe, it, expect } from 'vitest';
 import {
+  bandCentroid,
   buildBands,
   buildLineIndex,
   buildOrderedRenderables,
   buildStopMarkers,
+  cornerCapRadius,
+  idealBandRadius,
   resolveSegmentStyle,
   stopPosWorld,
 } from './interlining';
@@ -11,6 +14,41 @@ import { LAYER_WEIGHT } from '../model/layerPriority';
 import { STOP_SIZE } from './orientation';
 import { makeDoc, makeLine, makeStation, makeStop, stationWithStop } from '../test/fixtures';
 import type { LineStyle } from '../model/types';
+
+describe('band geometry helpers', () => {
+  it('bandCentroid averages the points', () => {
+    expect(bandCentroid([{ x: 0, y: 0 }])).toEqual({ x: 0, y: 0 });
+    expect(
+      bandCentroid([
+        { x: 0, y: 0 },
+        { x: 10, y: 20 },
+      ]),
+    ).toEqual({ x: 5, y: 10 });
+    expect(
+      bandCentroid([
+        { x: 0, y: 0 },
+        { x: 6, y: 0 },
+        { x: 0, y: 9 },
+      ]),
+    ).toEqual({ x: 2, y: 3 });
+  });
+
+  it('idealBandRadius bumps by (n-1)/2 * STOP_SIZE; a single stripe is a no-op', () => {
+    expect(idealBandRadius(24, 1)).toBe(24);
+    expect(idealBandRadius(24, 3)).toBe(24 + STOP_SIZE);
+    expect(idealBandRadius(24, 5)).toBe(24 + 2 * STOP_SIZE);
+  });
+
+  it('cornerCapRadius: Infinity when straight, edge-limited at a turn, 0 with no straight run', () => {
+    const east = { x: 1, y: 0 };
+    const south = { x: 0, y: 1 };
+    expect(cornerCapRadius(100, east, east)).toBe(Infinity);
+    // 90° turn: r ≤ (edgeLen − HALF) / tan(45°) = edgeLen − HALF.
+    expect(cornerCapRadius(50, east, south)).toBeCloseTo(50 - STOP_SIZE / 2, 6);
+    // Edge shorter than HALF → no usable straight run.
+    expect(cornerCapRadius(STOP_SIZE / 2 - 1, east, south)).toBe(0);
+  });
+});
 
 describe('resolveSegmentStyle', () => {
   it('defaults to solid when the line has no per-segment overrides', () => {
