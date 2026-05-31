@@ -1,5 +1,6 @@
 import { Line, Station } from '../model/types';
 import { useSelection } from '../state/store';
+import { useThemeColors } from '../state/theme';
 import { STOP_DOT_RADIUS, stopCenterAt } from '../geometry/orientation';
 import { stopPosWorld } from '../geometry/interlining';
 import { resolveDotShape } from '../model/transforms';
@@ -36,6 +37,7 @@ export function StationDots({
 }) {
   const hoveredStop = useSelection((s) => s.hoveredLineStop);
   const { handlers, cursor, inHitlessMode } = useStationInteraction(station, onStartDrag, lines);
+  const themeColors = useThemeColors();
   if (station.isWaypoint) return null;
   const angle = station.rotation * 45;
   const phantomDot = phantomDotCell(station);
@@ -47,7 +49,7 @@ export function StationDots({
         <g transform={`translate(${station.x} ${station.y}) rotate(${angle})`}>
           {(() => {
             const c = stopCenterAt(phantomDot.row, phantomDot.col);
-            return <circle cx={c.x} cy={c.y} r={STOP_DOT_RADIUS} fill="#000" />;
+            return <circle cx={c.x} cy={c.y} r={STOP_DOT_RADIUS} fill={themeColors.phantomDot} />;
           })()}
         </g>
       )}

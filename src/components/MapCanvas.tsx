@@ -15,6 +15,7 @@ import {
 } from '../geometry/interlining';
 import { stripeOffset } from '../geometry/orientation';
 import { buildRotateMembers } from '../model/transforms';
+import { legibleTextOn } from '../util/color';
 import { BandWarning, SegmentBand } from './SegmentBand';
 import { HatchPatterns } from './HatchPatterns';
 import { StopMarker } from './StopMarker';
@@ -558,9 +559,6 @@ export function MapCanvas() {
               />
             );
           }
-          if (r.kind === 'warning') {
-            return <BandWarning key={'w:' + r.band.bandKey} spec={r.band} />;
-          }
           const effectiveColor =
             colorMap && r.spec.lineId !== highlightLineId
               ? (colorMap[r.spec.lineId] ?? r.spec.color)
@@ -834,6 +832,23 @@ export function MapCanvas() {
             <LayerNumberLabels bands={bandsGeometry} lines={lines} hovered={hoveredLayerStripe} />
           </>
         )}
+
+        {/* Routing warnings: a red+white frame around each unrouteable band's
+            crude straight segment plus a ⚠ over its center. Painted at the
+            very end of the SVG so the marker draws on top of every stripe,
+            dot, and label and is never occluded. The ⚠ takes whichever of
+            black/white is legible against the stripe under its center. */}
+        {bands.map((b) => {
+          if (!b.warning) return null;
+          // Color under the glyph = the band's center stripe, resolved the
+          // same way SegmentBand paints it (desaturation override, else live).
+          const centerId = b.lines[Math.floor(b.lines.length / 2)]?.id;
+          const centerColor = centerId
+            ? (colorMap?.[centerId] ?? lines[centerId]?.color)
+            : undefined;
+          const iconColor = centerColor ? legibleTextOn(centerColor) : '#000';
+          return <BandWarning key={'w:' + b.bandKey} spec={b} iconColor={iconColor} />;
+        })}
       </svg>
 
       {selection.selectedRouteBulletIds.length === 1 &&

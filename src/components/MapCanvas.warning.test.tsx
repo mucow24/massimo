@@ -4,6 +4,7 @@ import App from '../App';
 import { useDoc } from '../state/store';
 import { buildBands } from '../geometry/interlining';
 import { DEFAULT_DOC } from '../model/transforms';
+import { legibleTextOn } from '../util/color';
 import type { Line, Station } from '../model/types';
 
 beforeEach(() => {
@@ -167,5 +168,75 @@ describe('MapCanvas — warning glyph reconciliation', () => {
         ) || args.some((a) => typeof a === 'string' && a.startsWith('w:')),
     );
     expect(dupKeyCall, `unexpected dup-key warning: ${JSON.stringify(dupKeyCall)}`).toBeUndefined();
+  });
+
+  // The ⚠ glyph is painted in whichever of black/white is legible against the
+  // stripe under its center (the band's center line, resolved live). Two
+  // separate single-line warning bands with contrasting colors should get
+  // contrasting glyphs.
+  it('paints each ⚠ in the legible color for its band’s center stripe', () => {
+    render(<App />);
+
+    // Same geometry as the reconciliation test: L1 @ col 0 and L2 @ col 5 on
+    // both stations, S2 rotated + very close, so the pair yields two distinct
+    // single-line bands that both warn.
+    const stops: Station['stops'] = [
+      { lineId: 'L1', row: 0, col: 0, orientation: 'auto-vertical' },
+      { lineId: 'L2', row: 0, col: 5, orientation: 'auto-vertical' },
+    ];
+    const label: Station['label'] = {
+      row: 0,
+      col: -1,
+      rotation: 0,
+      offset: 0,
+      align: 'auto',
+      valign: 'middle',
+    };
+    const s1: Station = { id: 's1', name: 'S1', x: 0, y: 0, rotation: 0, stops, label };
+    const s2: Station = { id: 's2', name: 'S2', x: 0, y: 20, rotation: 2, stops, label };
+    // L1 dark → white glyph; L2 light → black glyph.
+    const l1: Line = {
+      id: 'L1',
+      service: 'L1',
+      name: 'L1',
+      color: '#0039A6',
+      stations: ['s1', 's2'],
+    };
+    const l2: Line = {
+      id: 'L2',
+      service: 'L2',
+      name: 'L2',
+      color: '#FFD700',
+      stations: ['s1', 's2'],
+    };
+
+    act(() => {
+      useDoc.setState({
+        ...useDoc.getState(),
+        stations: { s1, s2 },
+        lines: { L1: l1, L2: l2 },
+        lineOrder: ['L1', 'L2'],
+        curveRadius: 80,
+      });
+    });
+
+    // Sanity: exactly two warning bands, each carrying a single line.
+    const warnBands = buildBands(
+      useDoc.getState().stations,
+      useDoc.getState().lines,
+      useDoc.getState().curveRadius,
+      useDoc.getState().lineOrder,
+    ).filter((b) => b.warning);
+    expect(warnBands).toHaveLength(2);
+    expect(warnBands.every((b) => b.lines.length === 1)).toBe(true);
+
+    const fills = Array.from(document.querySelectorAll('svg text'))
+      .filter((t) => t.textContent === '⚠')
+      .map((t) => t.getAttribute('fill'));
+    expect(fills).toHaveLength(2);
+    // One glyph legible on the dark line (white), one on the light line (black).
+    expect(legibleTextOn('#0039A6')).toBe('#fff');
+    expect(legibleTextOn('#FFD700')).toBe('#000');
+    expect(new Set(fills)).toEqual(new Set(['#fff', '#000']));
   });
 });
