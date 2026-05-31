@@ -1,7 +1,7 @@
 import { Line, LineId, LineStyle, Station, StationId, StopCell } from '../model/types';
 import { pairKeyOf } from '../model/pairKey';
 import { Vec2, sub, len, norm, dot } from './vec';
-import { offsetFilletPath, route } from './router';
+import { dirIndex, offsetFilletPath, route } from './router';
 import { rotateBy, STOP_SIZE, stopCenterAt, travelDirLocal } from './orientation';
 import { LAYER_WEIGHT, segmentPriority, stationLayerFor } from '../model/layerPriority';
 
@@ -112,12 +112,6 @@ export function travelDirWorld(cell: StopCell, station: Station, worldHint: Vec2
   return rotateBy(travelDirLocal(cell.orientation, localHint), station.rotation);
 }
 
-// Quantize a unit vector to one of 8 compass directions.
-export function dirIndex8(v: Vec2): number {
-  const a = Math.atan2(v.y, v.x);
-  return ((Math.round(a / (Math.PI / 4)) % 8) + 8) % 8;
-}
-
 /**
  * Resolve the rendered style of one line on one segment (identified by its
  * canonical {@link pairKeyOf} key). Per-segment overrides live in
@@ -221,8 +215,8 @@ export function buildBandGeometry(
       const fromS = stations[s.fromId];
       const toS = stations[s.toId];
       if (!fromS || !toS) continue;
-      const fAxis = dirIndex8(travelDirWorld(s.fromCell, fromS, s.worldHint)) % 4;
-      const tAxis = dirIndex8(travelDirWorld(s.toCell, toS, s.worldHint)) % 4;
+      const fAxis = dirIndex(travelDirWorld(s.fromCell, fromS, s.worldHint)) % 4;
+      const tAxis = dirIndex(travelDirWorld(s.toCell, toS, s.worldHint)) % 4;
       const key = `${fAxis}|${tAxis}`;
       (buckets[key] ||= []).push(s);
     }
