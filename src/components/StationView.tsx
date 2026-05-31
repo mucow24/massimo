@@ -6,7 +6,12 @@ import { polygonsToPath, unionConvex } from '../geometry/polygonUnion';
 import { labelLayoutLocal } from '../geometry/labelLayout';
 import { stationBoundaryRectsLocal } from '../geometry/stationBoundary';
 import { pathBetweenStations } from '../model/pathSelect';
-import { bumpWeightByIndex, resolveDotShape, resolveStationLabelWeight } from '../model/transforms';
+import {
+  buildRotateMembers,
+  bumpWeightByIndex,
+  resolveDotShape,
+  resolveStationLabelWeight,
+} from '../model/transforms';
 import { legibleTextOn } from '../util/color';
 import { useThemeColors } from '../state/theme';
 import { StopGlyph } from './StopGlyph';
@@ -331,7 +336,6 @@ export function StationView({
   const themeColors = useThemeColors();
   const labelColor = themeColors.label;
   const rotateStation = useDoc((s) => s.rotateStation);
-  const rotateStationsAround = useDoc((s) => s.rotateStationsAround);
   const rotateItemsAround = useDoc((s) => s.rotateItemsAround);
   const renameStation = useDoc((s) => s.renameStation);
   const toggleStationOnLine = useDoc((s) => s.toggleStationOnLine);
@@ -470,16 +474,8 @@ export function StationView({
     const labelIds = selection.selectedLabelIds;
     const totalSelected = ids.length + bulletIds.length + labelIds.length;
     if (totalSelected > 1 && ids.includes(station.id)) {
-      if (bulletIds.length === 0 && labelIds.length === 0) {
-        rotateStationsAround(station.id, ids);
-      } else {
-        const members: { type: 'station' | 'bullet' | 'label'; id: string }[] = [
-          ...ids.map((id) => ({ type: 'station' as const, id })),
-          ...bulletIds.map((id) => ({ type: 'bullet' as const, id })),
-          ...labelIds.map((id) => ({ type: 'label' as const, id })),
-        ];
-        rotateItemsAround({ type: 'station', id: station.id }, members);
-      }
+      const members = buildRotateMembers(ids, bulletIds, labelIds);
+      rotateItemsAround({ type: 'station', id: station.id }, members);
       return;
     }
     rotateStation(station.id);

@@ -31,6 +31,7 @@ import {
 } from '../geometry/interlining';
 import { resolveDotShape } from '../model/transforms';
 import { STOP_SIZE, travelDirLocal, rotateBy, stripeOffset } from '../geometry/orientation';
+import { buildRotateMembers } from '../model/transforms';
 import { BandWarning, SegmentBand } from './SegmentBand';
 import { HatchPatterns, lineStyleStrokeAttrs, lineStyleUnderlayAttrs } from './HatchPatterns';
 import { StopMarker } from './StopMarker';
@@ -533,11 +534,7 @@ export function MapCanvas() {
     const lbIds = sel.selectedLabelIds;
     const total = stIds.length + blIds.length + lbIds.length;
     if (total > 1 && blIds.includes(id)) {
-      const members: { type: 'station' | 'bullet' | 'label'; id: string }[] = [
-        ...stIds.map((sid) => ({ type: 'station' as const, id: sid })),
-        ...blIds.map((bid) => ({ type: 'bullet' as const, id: bid })),
-        ...lbIds.map((gid) => ({ type: 'label' as const, id: gid })),
-      ];
+      const members = buildRotateMembers(stIds, blIds, lbIds);
       useDoc.getState().rotateItemsAround({ type: 'bullet', id }, members);
       return;
     }
@@ -569,11 +566,7 @@ export function MapCanvas() {
     const lbIds = sel.selectedLabelIds;
     const total = stIds.length + blIds.length + lbIds.length;
     if (total > 1 && lbIds.includes(id)) {
-      const members: { type: 'station' | 'bullet' | 'label'; id: string }[] = [
-        ...stIds.map((sid) => ({ type: 'station' as const, id: sid })),
-        ...blIds.map((bid) => ({ type: 'bullet' as const, id: bid })),
-        ...lbIds.map((gid) => ({ type: 'label' as const, id: gid })),
-      ];
+      const members = buildRotateMembers(stIds, blIds, lbIds);
       useDoc.getState().rotateItemsAround({ type: 'label', id }, members);
       return;
     }

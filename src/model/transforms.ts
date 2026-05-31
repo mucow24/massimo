@@ -394,37 +394,23 @@ export function rotateStation(doc: MapDoc, id: StationId): MapDoc {
   return { ...doc, stations: { ...doc.stations, [id]: { ...cur, rotation: next } } };
 }
 
-/**
- * Rotate a group of stations 45° clockwise around a pivot. Each station's
- * own rotation field advances by one step (matching the single-station
- * `rotateStation` behavior), so each station's stops/label rotate in place
- * as if right-clicked individually. In addition, every non-pivot station's
- * world position is rotated 45° around the pivot's center, preserving the
- * group's relative geometry as a rigid body.
- */
-export function rotateStationsAround(doc: MapDoc, pivotId: StationId, ids: StationId[]): MapDoc {
-  const pivot = doc.stations[pivotId];
-  if (!pivot) return doc;
-  const ang = Math.PI / 4;
-  const cs = Math.cos(ang);
-  const sn = Math.sin(ang);
-  let stations = doc.stations;
-  for (const id of ids) {
-    const cur = stations[id];
-    if (!cur) continue;
-    const nextRot = ((cur.rotation + 1) % 8) as Rotation;
-    let nx = cur.x;
-    let ny = cur.y;
-    if (id !== pivotId) {
-      const dx = cur.x - pivot.x;
-      const dy = cur.y - pivot.y;
-      nx = pivot.x + dx * cs - dy * sn;
-      ny = pivot.y + dx * sn + dy * cs;
-    }
-    stations = { ...stations, [id]: { ...cur, rotation: nextRot, x: nx, y: ny } };
-  }
-  return { ...doc, stations };
-}
+// One 45°-clockwise step of an entity's own rotation field (wraps 7 → 0).
+const stepRotation = (r: Rotation): Rotation => ((r + 1) % 8) as Rotation;
+
+// Orbit a point 45° clockwise around a pivot, using precomputed cos/sin of the
+// step angle. Shared by every branch of `rotateItemsAround`.
+const orbitPoint = (
+  x: number,
+  y: number,
+  px: number,
+  py: number,
+  cs: number,
+  sn: number,
+): { x: number; y: number } => {
+  const dx = x - px;
+  const dy = y - py;
+  return { x: px + dx * cs - dy * sn, y: py + dx * sn + dy * cs };
+};
 
 /**
  * Reference to a member of a station+bullet+label multi-selection. Used by
@@ -466,51 +452,46 @@ export function rotateItemsAround(doc: MapDoc, pivot: ItemRef, members: ItemRef[
     if (m.type === 'station') {
       const cur = stations[m.id];
       if (!cur) continue;
-      const nextRot = ((cur.rotation + 1) % 8) as Rotation;
-      let nx = cur.x;
-      let ny = cur.y;
-      if (!isPivot) {
-        const dx = cur.x - px;
-        const dy = cur.y - py;
-        nx = px + dx * cs - dy * sn;
-        ny = py + dx * sn + dy * cs;
-      }
-      stations = { ...stations, [m.id]: { ...cur, rotation: nextRot, x: nx, y: ny } };
+      const p = isPivot ? cur : orbitPoint(cur.x, cur.y, px, py, cs, sn);
+      stations = {
+        ...stations,
+        [m.id]: { ...cur, rotation: stepRotation(cur.rotation), x: p.x, y: p.y },
+      };
     } else if (m.type === 'bullet') {
       const cur = routeBullets[m.id];
       if (!cur) continue;
-      const nextRot = ((cur.rotation + 1) % 8) as Rotation;
-      let nx = cur.x;
-      let ny = cur.y;
-      if (!isPivot) {
-        const dx = cur.x - px;
-        const dy = cur.y - py;
-        nx = px + dx * cs - dy * sn;
-        ny = py + dx * sn + dy * cs;
-      }
+      const p = isPivot ? cur : orbitPoint(cur.x, cur.y, px, py, cs, sn);
       routeBullets = {
         ...routeBullets,
-        [m.id]: { ...cur, rotation: nextRot, x: nx, y: ny },
+        [m.id]: { ...cur, rotation: stepRotation(cur.rotation), x: p.x, y: p.y },
       };
     } else {
       const cur = textLabels[m.id];
       if (!cur) continue;
-      const nextRot = ((cur.rotation + 1) % 8) as Rotation;
-      let nx = cur.x;
-      let ny = cur.y;
-      if (!isPivot) {
-        const dx = cur.x - px;
-        const dy = cur.y - py;
-        nx = px + dx * cs - dy * sn;
-        ny = py + dx * sn + dy * cs;
-      }
+      const p = isPivot ? cur : orbitPoint(cur.x, cur.y, px, py, cs, sn);
       textLabels = {
         ...textLabels,
-        [m.id]: { ...cur, rotation: nextRot, x: nx, y: ny },
+        [m.id]: { ...cur, rotation: stepRotation(cur.rotation), x: p.x, y: p.y },
       };
     }
   }
   return { ...doc, stations, routeBullets, textLabels };
+}
+
+/**
+ * Flatten the three selection id lists into the ItemRef[] that
+ * `rotateItemsAround` consumes. Order is irrelevant to the rotation result.
+ */
+export function buildRotateMembers(
+  stationIds: string[],
+  bulletIds: string[],
+  labelIds: string[],
+): ItemRef[] {
+  return [
+    ...stationIds.map((id): ItemRef => ({ type: 'station', id })),
+    ...bulletIds.map((id): ItemRef => ({ type: 'bullet', id })),
+    ...labelIds.map((id): ItemRef => ({ type: 'label', id })),
+  ];
 }
 
 /**

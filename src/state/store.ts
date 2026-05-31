@@ -102,7 +102,6 @@ interface DocState extends MapDoc {
     mode?: 'arc-bends' | 'straight',
   ) => void;
   rotateStation: (id: StationId) => void;
-  rotateStationsAround: (pivotId: StationId, ids: StationId[]) => void;
   rotateItemsAround: (pivot: T.ItemRef, members: T.ItemRef[]) => void;
   rotateStationAndLayout: (id: StationId, dir: -1 | 1) => void;
   deleteStation: (id: StationId) => void;
@@ -220,7 +219,6 @@ export const useDoc = create<DocState>()(
         redistributeBetween: (startId, endId, mode = 'arc-bends') =>
           set((s) => T.redistributeBetween(s, startId, endId, mode)),
         rotateStation: (id) => set((s) => T.rotateStation(s, id)),
-        rotateStationsAround: (pivotId, ids) => set((s) => T.rotateStationsAround(s, pivotId, ids)),
         rotateItemsAround: (pivot, members) => set((s) => T.rotateItemsAround(s, pivot, members)),
         rotateStationAndLayout: (id, dir) => set((s) => T.rotateStationAndLayout(s, id, dir)),
         deleteStation: (id) => set((s) => T.deleteStation(s, id)),
