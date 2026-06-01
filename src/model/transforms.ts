@@ -2,7 +2,9 @@ import { autoOrientNewStation } from './autoOrient';
 import { effectiveLineOrder } from './lineOrder';
 import { pairKeyOf } from './pairKey';
 import { rotateBy, stopCenterAt } from '../geometry/orientation';
+import { polygonCentroid, edgeMidpoint } from '../geometry/polygon';
 import { measureTextLabel } from '../geometry/textMeasure';
+import type { Vec2 } from '../geometry/vec';
 import { PALETTES, type PaletteId } from './palettes';
 import type {
   DotShape,
@@ -14,6 +16,7 @@ import type {
   LineStyle,
   LineTag,
   MapDoc,
+  Polygon,
   Rotation,
   RouteBullet,
   Station,
@@ -69,6 +72,7 @@ export const DEFAULT_DOC: MapDoc = {
   routeBullets: {},
   transfers: {},
   textLabels: {},
+  polygons: {},
   labelFontSize: LABEL_FONT_SIZE_DEFAULT,
   labelWeight: LABEL_WEIGHT_DEFAULT,
   labelItalic: false,
@@ -428,7 +432,7 @@ const orbitPoint = (
  * in without requiring callers to pre-split by type.
  */
 export interface ItemRef {
-  type: 'station' | 'bullet' | 'label';
+  type: 'station' | 'bullet' | 'label' | 'polygon';
   id: string;
 }
 
@@ -440,15 +444,27 @@ export interface ItemRef {
  * doc are silently skipped — selection state can outlive a doc edit (undo).
  */
 export function rotateItemsAround(doc: MapDoc, pivot: ItemRef, members: ItemRef[]): MapDoc {
-  const pivotItem =
-    pivot.type === 'station'
-      ? doc.stations[pivot.id]
-      : pivot.type === 'bullet'
-        ? doc.routeBullets[pivot.id]
-        : doc.textLabels[pivot.id];
-  if (!pivotItem) return doc;
-  const px = pivotItem.x;
-  const py = pivotItem.y;
+  // Pivot world point. Stations/bullets/labels carry an (x, y); a polygon
+  // pivots about its vertex centroid.
+  let px: number;
+  let py: number;
+  if (pivot.type === 'polygon') {
+    const pv = doc.polygons[pivot.id];
+    if (!pv) return doc;
+    const c = polygonCentroid(pv.vertices);
+    px = c.x;
+    py = c.y;
+  } else {
+    const pivotItem =
+      pivot.type === 'station'
+        ? doc.stations[pivot.id]
+        : pivot.type === 'bullet'
+          ? doc.routeBullets[pivot.id]
+          : doc.textLabels[pivot.id];
+    if (!pivotItem) return doc;
+    px = pivotItem.x;
+    py = pivotItem.y;
+  }
   const ang = Math.PI / 4;
   const cs = Math.cos(ang);
   const sn = Math.sin(ang);
@@ -456,6 +472,7 @@ export function rotateItemsAround(doc: MapDoc, pivot: ItemRef, members: ItemRef[
   let stations = doc.stations;
   let routeBullets = doc.routeBullets;
   let textLabels = doc.textLabels;
+  let polygons = doc.polygons;
 
   for (const m of members) {
     const isPivot = m.type === pivot.type && m.id === pivot.id;
@@ -475,7 +492,7 @@ export function rotateItemsAround(doc: MapDoc, pivot: ItemRef, members: ItemRef[
         ...routeBullets,
         [m.id]: { ...cur, rotation: stepRotation(cur.rotation), x: p.x, y: p.y },
       };
-    } else {
+    } else if (m.type === 'label') {
       const cur = textLabels[m.id];
       if (!cur) continue;
       const p = isPivot ? cur : orbitPoint(cur.x, cur.y, px, py, cs, sn);
@@ -483,24 +500,35 @@ export function rotateItemsAround(doc: MapDoc, pivot: ItemRef, members: ItemRef[
         ...textLabels,
         [m.id]: { ...cur, rotation: stepRotation(cur.rotation), x: p.x, y: p.y },
       };
+    } else {
+      // Polygon: orbit every vertex about the pivot. When the polygon IS the
+      // pivot, orbiting about its own centroid is exactly an in-place 45°
+      // rotation — no separate rotation field to step.
+      const cur = polygons[m.id];
+      if (!cur) continue;
+      const vertices = cur.vertices.map((vert) => orbitPoint(vert.x, vert.y, px, py, cs, sn));
+      polygons = { ...polygons, [m.id]: { ...cur, vertices } };
     }
   }
-  return { ...doc, stations, routeBullets, textLabels };
+  return { ...doc, stations, routeBullets, textLabels, polygons };
 }
 
 /**
- * Flatten the three selection id lists into the ItemRef[] that
- * `rotateItemsAround` consumes. Order is irrelevant to the rotation result.
+ * Flatten the selection id lists into the ItemRef[] that `rotateItemsAround`
+ * consumes. Order is irrelevant to the rotation result. `polygonIds` is
+ * optional so existing call sites (station+bullet+label) need no change.
  */
 export function buildRotateMembers(
   stationIds: string[],
   bulletIds: string[],
   labelIds: string[],
+  polygonIds: string[] = [],
 ): ItemRef[] {
   return [
     ...stationIds.map((id): ItemRef => ({ type: 'station', id })),
     ...bulletIds.map((id): ItemRef => ({ type: 'bullet', id })),
     ...labelIds.map((id): ItemRef => ({ type: 'label', id })),
+    ...polygonIds.map((id): ItemRef => ({ type: 'polygon', id })),
   ];
 }
 
@@ -1423,6 +1451,119 @@ export function deleteTextLabel(doc: MapDoc, id: string): MapDoc {
   if (!doc.textLabels[id]) return doc;
   const { [id]: _gone, ...rest } = doc.textLabels;
   return { ...doc, textLabels: rest };
+}
+
+// ---------- Polygons ----------
+
+export const POLYGON_STROKE_WIDTH_MIN = 0;
+export const POLYGON_STROKE_WIDTH_MAX = 10;
+export const POLYGON_STROKE_WIDTH_DEFAULT = 1;
+export const POLYGON_FILL_DEFAULT = '#cfe3f2';
+export const POLYGON_STROKE_DEFAULT = '#000000';
+// Half-side of the default square, in world units.
+export const POLYGON_DEFAULT_HALF = 30;
+// A polygon never drops below a triangle, so deleting a vertex is a no-op here.
+export const POLYGON_MIN_VERTICES = 3;
+
+const clampPolygonStrokeWidth = (w: number): number =>
+  Math.max(POLYGON_STROKE_WIDTH_MIN, Math.min(POLYGON_STROKE_WIDTH_MAX, w));
+
+// Default square centered on (x, y). Vertices are clockwise from the top-left
+// in the y-down screen frame.
+export function addPolygon(doc: MapDoc, id: string, x: number, y: number): MapDoc {
+  const h = POLYGON_DEFAULT_HALF;
+  const polygon: Polygon = {
+    id,
+    vertices: [
+      { x: x - h, y: y - h },
+      { x: x + h, y: y - h },
+      { x: x + h, y: y + h },
+      { x: x - h, y: y + h },
+    ],
+    fill: POLYGON_FILL_DEFAULT,
+    stroke: POLYGON_STROKE_DEFAULT,
+    strokeWidth: POLYGON_STROKE_WIDTH_DEFAULT,
+  };
+  return { ...doc, polygons: { ...doc.polygons, [id]: polygon } };
+}
+
+// Insert a fully-specified polygon (used by duplicate + paste).
+export function addPolygonWith(doc: MapDoc, id: string, fields: Omit<Polygon, 'id'>): MapDoc {
+  const polygon: Polygon = { id, ...fields };
+  return { ...doc, polygons: { ...doc.polygons, [id]: polygon } };
+}
+
+// Absolute vertex setter — used by whole-polygon drag and group-tow, which
+// recompute the full vertex list from the gesture's start snapshot each frame.
+export function setPolygonVertices(doc: MapDoc, id: string, vertices: Vec2[]): MapDoc {
+  const cur = doc.polygons[id];
+  if (!cur) return doc;
+  return { ...doc, polygons: { ...doc.polygons, [id]: { ...cur, vertices } } };
+}
+
+export function moveVertex(doc: MapDoc, id: string, index: number, x: number, y: number): MapDoc {
+  const cur = doc.polygons[id];
+  if (!cur) return doc;
+  if (index < 0 || index >= cur.vertices.length) return doc;
+  const vertices = cur.vertices.slice();
+  vertices[index] = { x, y };
+  return { ...doc, polygons: { ...doc.polygons, [id]: { ...cur, vertices } } };
+}
+
+// Split the edge `edgeIndex -> (edgeIndex + 1) % n` by inserting its midpoint
+// right after `edgeIndex` (wraps the last edge back to the first vertex).
+export function insertVertex(doc: MapDoc, id: string, edgeIndex: number): MapDoc {
+  const cur = doc.polygons[id];
+  if (!cur) return doc;
+  const n = cur.vertices.length;
+  if (edgeIndex < 0 || edgeIndex >= n) return doc;
+  const mid = edgeMidpoint(cur.vertices, edgeIndex);
+  const vertices = cur.vertices.slice();
+  vertices.splice(edgeIndex + 1, 0, mid);
+  return { ...doc, polygons: { ...doc.polygons, [id]: { ...cur, vertices } } };
+}
+
+// Remove a vertex; a no-op at the 3-vertex floor so a polygon never degenerates.
+export function deleteVertex(doc: MapDoc, id: string, index: number): MapDoc {
+  const cur = doc.polygons[id];
+  if (!cur) return doc;
+  if (cur.vertices.length <= POLYGON_MIN_VERTICES) return doc;
+  if (index < 0 || index >= cur.vertices.length) return doc;
+  const vertices = cur.vertices.slice();
+  vertices.splice(index, 1);
+  return { ...doc, polygons: { ...doc.polygons, [id]: { ...cur, vertices } } };
+}
+
+export function updatePolygon(
+  doc: MapDoc,
+  id: string,
+  patch: Partial<Pick<Polygon, 'fill' | 'stroke' | 'strokeWidth' | 'vertices'>>,
+): MapDoc {
+  const cur = doc.polygons[id];
+  if (!cur) return doc;
+  const nextPatch =
+    typeof patch.strokeWidth === 'number'
+      ? { ...patch, strokeWidth: clampPolygonStrokeWidth(patch.strokeWidth) }
+      : patch;
+  return { ...doc, polygons: { ...doc.polygons, [id]: { ...cur, ...nextPatch } } };
+}
+
+// Rotate every vertex 45° clockwise about the polygon's centroid.
+export function rotatePolygon(doc: MapDoc, id: string): MapDoc {
+  const cur = doc.polygons[id];
+  if (!cur) return doc;
+  const c = polygonCentroid(cur.vertices);
+  const ang = Math.PI / 4;
+  const cs = Math.cos(ang);
+  const sn = Math.sin(ang);
+  const vertices = cur.vertices.map((vert) => orbitPoint(vert.x, vert.y, c.x, c.y, cs, sn));
+  return { ...doc, polygons: { ...doc.polygons, [id]: { ...cur, vertices } } };
+}
+
+export function deletePolygon(doc: MapDoc, id: string): MapDoc {
+  if (!doc.polygons[id]) return doc;
+  const { [id]: _gone, ...rest } = doc.polygons;
+  return { ...doc, polygons: rest };
 }
 
 // ---------- Transfers ----------

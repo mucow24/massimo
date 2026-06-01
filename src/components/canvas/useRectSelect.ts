@@ -1,6 +1,7 @@
 import { RefObject, useRef, useState } from 'react';
 import { dragState, useDoc, useSelection } from '../../state/store';
 import {
+  polygonsForRect,
   routeBulletsForRect,
   stationsForRect,
   textLabelsForRect,
@@ -26,6 +27,8 @@ export interface RectSelectApi {
   previewBulletIds: string[] | null;
   /** Text labels the selection WILL contain on release. Null when not dragging. */
   previewLabelIds: string[] | null;
+  /** Polygons the selection WILL contain on release. Null when not dragging. */
+  previewPolygonIds: string[] | null;
   onPointerDown: (e: React.PointerEvent) => void;
   onPointerMove: (e: React.PointerEvent) => void;
   onPointerUp: (e: React.PointerEvent) => void;
@@ -89,6 +92,7 @@ export function useRectSelect(
   const [previewStationIds, setPreviewStationIds] = useState<StationId[] | null>(null);
   const [previewBulletIds, setPreviewBulletIds] = useState<string[] | null>(null);
   const [previewLabelIds, setPreviewLabelIds] = useState<string[] | null>(null);
+  const [previewPolygonIds, setPreviewPolygonIds] = useState<string[] | null>(null);
 
   const onPointerDown = (e: React.PointerEvent) => {
     if (e.button !== 0) return;
@@ -146,9 +150,11 @@ export function useRectSelect(
     });
     const bulletHits = routeBulletsForRect(doc.routeBullets, nextRect);
     const labelHits = textLabelsForRect(doc.textLabels, nextRect);
+    const polygonHits = polygonsForRect(doc.polygons, nextRect);
     setPreviewStationIds(applyMode(sel.selectedStationIds, stationHits, mode));
     setPreviewBulletIds(applyMode(sel.selectedRouteBulletIds, bulletHits, mode));
     setPreviewLabelIds(applyMode(sel.selectedLabelIds, labelHits, mode));
+    setPreviewPolygonIds(applyMode(sel.selectedPolygonIds, polygonHits, mode));
   };
 
   const onPointerUp = (e: React.PointerEvent) => {
@@ -161,6 +167,7 @@ export function useRectSelect(
       setPreviewStationIds(null);
       setPreviewBulletIds(null);
       setPreviewLabelIds(null);
+      setPreviewPolygonIds(null);
       return;
     }
     const end = screenToWorld(e.clientX, e.clientY);
@@ -174,6 +181,7 @@ export function useRectSelect(
     setPreviewStationIds(null);
     setPreviewBulletIds(null);
     setPreviewLabelIds(null);
+    setPreviewPolygonIds(null);
 
     const doc = useDoc.getState();
     const stationHits = stationsForRect(doc.stations, finalRect, {
@@ -183,6 +191,7 @@ export function useRectSelect(
     });
     const bulletHits = routeBulletsForRect(doc.routeBullets, finalRect);
     const labelHits = textLabelsForRect(doc.textLabels, finalRect);
+    const polygonHits = polygonsForRect(doc.polygons, finalRect);
 
     const sel = useSelection.getState();
     const mode = modeFromEvent(e);
@@ -190,14 +199,17 @@ export function useRectSelect(
       sel.xorStationsToSelection(stationHits);
       sel.xorRouteBulletsToSelection(bulletHits);
       sel.xorLabelsToSelection(labelHits);
+      sel.xorPolygonsToSelection(polygonHits);
     } else if (mode === 'add') {
       sel.addStationsToSelection(stationHits);
       sel.addRouteBulletsToSelection(bulletHits);
       sel.addLabelsToSelection(labelHits);
+      sel.addPolygonsToSelection(polygonHits);
     } else {
       sel.setStationSelection(stationHits);
       sel.setRouteBulletSelection(bulletHits);
       sel.setLabelSelection(labelHits);
+      sel.setPolygonSelection(polygonHits);
     }
 
     try {
@@ -215,6 +227,7 @@ export function useRectSelect(
     previewStationIds,
     previewBulletIds,
     previewLabelIds,
+    previewPolygonIds,
     onPointerDown,
     onPointerMove,
     onPointerUp,

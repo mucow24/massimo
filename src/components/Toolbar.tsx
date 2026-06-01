@@ -81,6 +81,7 @@ export function Toolbar() {
     );
   };
   const onAddLabel = () => toggleMode('placing-label');
+  const onAddPolygon = () => toggleMode('creating-polygon');
   const onAddLine = () => {
     const id = addLine();
     selection.startAppendAt(id, -1);
@@ -179,6 +180,7 @@ export function Toolbar() {
         <MenuItem onClick={onAddRouteBullet}>Route bullets</MenuItem>
         <MenuItem onClick={onAddTransfer}>Transfer</MenuItem>
         <MenuItem onClick={onAddLabel}>Label</MenuItem>
+        <MenuItem onClick={onAddPolygon}>Polygon</MenuItem>
       </Menu>
       <ToolButtons />
       <span className="tool-group-divider" aria-hidden="true" />

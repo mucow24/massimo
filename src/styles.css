@@ -496,6 +496,21 @@ select {
   display: flex;
   justify-content: flex-end;
 }
+/* The polygon popover reuses the bullet-popover shell but embeds a
+   NumericFieldRow (which carries its own bottom margin) inside the body's
+   gap-based column — zero it out so spacing stays even, and let the color
+   row labels size to their text rather than the fixed bullet-row width. */
+.polygon-popover .options-popover-row {
+  margin-bottom: 0;
+}
+.polygon-popover .row label {
+  width: auto;
+}
+/* Draggable header (matches the text-label popover). */
+.polygon-popover .header {
+  cursor: move;
+  touch-action: none;
+}
 .bullet-popover .delete-btn,
 .text-label-popover .delete-btn {
   background: #fff;

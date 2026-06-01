@@ -7,6 +7,7 @@ export interface IdFactory {
   routeBulletId(): string;
   transferId(): string;
   textLabelId(): string;
+  polygonId(): string;
 }
 
 /**
@@ -22,6 +23,7 @@ export function defaultIdFactory(): IdFactory {
     routeBulletId: uid,
     transferId: uid,
     textLabelId: uid,
+    polygonId: uid,
   };
 }
 
@@ -36,6 +38,7 @@ export function counterIdFactory(seed = 0): IdFactory {
   let b = seed;
   let x = seed;
   let g = seed;
+  let p = seed;
   return {
     stationId: () => `s${s++}`,
     lineId: () => `l${l++}`,
@@ -43,5 +46,6 @@ export function counterIdFactory(seed = 0): IdFactory {
     routeBulletId: () => `b${b++}`,
     transferId: () => `x${x++}`,
     textLabelId: () => `g${g++}`,
+    polygonId: () => `p${p++}`,
   };
 }
