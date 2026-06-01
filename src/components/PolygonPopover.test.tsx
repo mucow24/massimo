@@ -53,4 +53,18 @@ describe('<PolygonPopover />', () => {
     expect(useDoc.getState().polygons['p0']).toBeUndefined();
     expect(onClose).toHaveBeenCalled();
   });
+
+  it('dragging the header moves the popover by the pointer delta', () => {
+    const { container } = renderPopover();
+    const popover = container.querySelector('.polygon-popover') as HTMLElement;
+    const header = container.querySelector('.polygon-popover .header') as HTMLElement;
+    // Centroid (0,0) projects to (0,0); base offset is +14/+14.
+    expect(popover.style.left).toBe('14px');
+    expect(popover.style.top).toBe('14px');
+    fireEvent.pointerDown(header, { clientX: 100, clientY: 100, button: 0 });
+    fireEvent.pointerMove(header, { clientX: 130, clientY: 120 });
+    fireEvent.pointerUp(header, { clientX: 130, clientY: 120 });
+    expect(popover.style.left).toBe('44px'); // 14 + 30
+    expect(popover.style.top).toBe('34px'); // 14 + 20
+  });
 });

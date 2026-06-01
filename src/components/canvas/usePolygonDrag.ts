@@ -25,7 +25,10 @@ type WholeDragState = {
   history: ReturnType<typeof beginHistoryGroup>;
 };
 
-// Single-vertex drag: snap the dragged vertex itself.
+// Single-vertex drag: snap the dragged vertex itself. `forceCommit` is set for
+// a drag that began by inserting a vertex (the edge "+"): the insert is a real
+// change, so the gesture commits one history entry even if the pointer never
+// moved past the threshold.
 type VertexDragState = {
   polygonId: string;
   index: number;
@@ -33,6 +36,7 @@ type VertexDragState = {
   startMX: number;
   startMY: number;
   moved: boolean;
+  forceCommit: boolean;
   history: ReturnType<typeof beginHistoryGroup>;
 };
 
@@ -40,6 +44,9 @@ export interface PolygonDragApi {
   polygonSnapGuides: SnapGuide[];
   onPolygonPointerDown: (id: string, e: React.PointerEvent) => void;
   onVertexPointerDown: (polygonId: string, index: number, e: React.PointerEvent) => void;
+  // Inserts the edge midpoint as a real vertex and immediately starts dragging
+  // it; a plain click leaves the new vertex at the midpoint.
+  onEdgeAddPointerDown: (polygonId: string, edgeIndex: number, e: React.PointerEvent) => void;
   onPointerMove: (e: React.PointerEvent) => void;
   onPointerUp: (e: React.PointerEvent) => void;
 }
@@ -172,7 +179,42 @@ export function usePolygonDrag(
       startMX: e.clientX,
       startMY: e.clientY,
       moved: false,
+      forceCommit: false,
       history: beginHistoryGroup(),
+    };
+  };
+
+  const onEdgeAddPointerDown = (polygonId: string, edgeIndex: number, e: React.PointerEvent) => {
+    if (e.button !== 0) return;
+    if (inHandMode) return;
+    const doc = useDoc.getState();
+    if (!doc.polygons[polygonId]) return;
+    e.stopPropagation();
+    // Suppress the trailing click so a no-drag "+" tap doesn't re-trigger
+    // polygon/background click handlers (which would clear the vertex we just
+    // inserted + selected). Reset on pointerup.
+    dragState.suppressClick = true;
+    // One history entry for the whole gesture: pause first, insert the midpoint
+    // vertex (lands at edgeIndex + 1), then drag it. forceCommit makes even a
+    // no-move click persist the insert.
+    const history = beginHistoryGroup();
+    doc.insertVertex(polygonId, edgeIndex);
+    const newIndex = edgeIndex + 1;
+    const v = useDoc.getState().polygons[polygonId]?.vertices[newIndex];
+    if (!v) {
+      history.cancel();
+      return;
+    }
+    useSelection.getState().selectVertex({ polygonId, index: newIndex });
+    vertexDragRef.current = {
+      polygonId,
+      index: newIndex,
+      startVert: { ...v },
+      startMX: e.clientX,
+      startMY: e.clientY,
+      moved: false,
+      forceCommit: true,
+      history,
     };
   };
 
@@ -299,7 +341,11 @@ export function usePolygonDrag(
       const wasMoved = vd.moved;
       vertexDragRef.current = null;
       setPolygonSnapGuides([]);
-      if (wasMoved) {
+      // Commit when the vertex actually moved, or when the gesture inserted a
+      // vertex (the "+"); otherwise it was a no-op click — discard the entry.
+      // Either committed path also releases capture and clears suppressClick
+      // (set on move, or up-front for the "+").
+      if (wasMoved || vd.forceCommit) {
         vd.history.commit();
         try {
           svgRef.current?.releasePointerCapture(e.pointerId);
@@ -319,6 +365,7 @@ export function usePolygonDrag(
     polygonSnapGuides,
     onPolygonPointerDown,
     onVertexPointerDown,
+    onEdgeAddPointerDown,
     onPointerMove,
     onPointerUp,
   };

@@ -19,7 +19,9 @@ interface Props {
   onContextMenu: (id: string, e: React.MouseEvent) => void;
   onVertexPointerDown: (id: string, index: number, e: React.PointerEvent) => void;
   onVertexClick: (id: string, index: number, e: React.MouseEvent) => void;
-  onEdgeAddClick: (id: string, edgeIndex: number, e: React.MouseEvent) => void;
+  // Pointer-down on an edge "+" inserts the midpoint vertex and immediately
+  // begins dragging it (a plain click leaves it at the midpoint).
+  onEdgeAddPointerDown: (id: string, edgeIndex: number, e: React.PointerEvent) => void;
 }
 
 const pointsAttr = (vertices: Polygon['vertices']) =>
@@ -35,9 +37,14 @@ export function PolygonView({
   onContextMenu,
   onVertexPointerDown,
   onVertexClick,
-  onEdgeAddClick,
+  onEdgeAddPointerDown,
 }: Props) {
   const themeColors = useThemeColors();
+  // Adornment colors flip with the theme: marks drawn ON the selection-colored
+  // disc/handle use the canvas background so they stay legible in both modes
+  // (selectionStroke is black on light, white on dark).
+  const accent = themeColors.selectionStroke;
+  const contrast = themeColors.canvasBg;
   const verts = polygon.vertices;
   const n = verts.length;
 
@@ -68,7 +75,7 @@ export function PolygonView({
       <polygon
         points={pointsAttr(verts)}
         fill="none"
-        stroke={themeColors.selectionStroke}
+        stroke={accent}
         strokeWidth={1.5}
         strokeDasharray="4 3"
         pointerEvents="none"
@@ -81,15 +88,15 @@ export function PolygonView({
           <g
             key={`edge-${i}`}
             data-polygon-edge-add={i}
-            onClick={(e) => onEdgeAddClick(polygon.id, i, e)}
+            onPointerDown={(e) => onEdgeAddPointerDown(polygon.id, i, e)}
             style={{ cursor: 'copy' }}
           >
             <circle
               cx={mx}
               cy={my}
               r={EDGE_ADD_R}
-              fill={themeColors.selectionStroke}
-              stroke="#fff"
+              fill={accent}
+              stroke={contrast}
               strokeWidth={1}
             />
             <line
@@ -97,7 +104,7 @@ export function PolygonView({
               y1={my}
               x2={mx + EDGE_ADD_R / 2}
               y2={my}
-              stroke="#fff"
+              stroke={contrast}
               strokeWidth={1.5}
               pointerEvents="none"
             />
@@ -106,7 +113,7 @@ export function PolygonView({
               y1={my - EDGE_ADD_R / 2}
               x2={mx}
               y2={my + EDGE_ADD_R / 2}
-              stroke="#fff"
+              stroke={contrast}
               strokeWidth={1.5}
               pointerEvents="none"
             />
@@ -121,8 +128,8 @@ export function PolygonView({
           y={v.y - VERTEX_HANDLE_HALF}
           width={VERTEX_HANDLE_HALF * 2}
           height={VERTEX_HANDLE_HALF * 2}
-          fill={i === selectedVertexIndex ? themeColors.selectionStroke : '#fff'}
-          stroke={themeColors.selectionStroke}
+          fill={i === selectedVertexIndex ? accent : contrast}
+          stroke={accent}
           strokeWidth={1.5}
           onPointerDown={(e) => onVertexPointerDown(polygon.id, i, e)}
           onClick={(e) => onVertexClick(polygon.id, i, e)}

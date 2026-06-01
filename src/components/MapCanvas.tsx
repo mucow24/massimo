@@ -81,7 +81,6 @@ export function MapCanvas() {
   const rotateTextLabel = useDoc((s) => s.rotateTextLabel);
   const polygons = useDoc((s) => s.polygons);
   const addPolygon = useDoc((s) => s.addPolygon);
-  const insertVertex = useDoc((s) => s.insertVertex);
   const rotatePolygon = useDoc((s) => s.rotatePolygon);
   const selection = useSelection();
   const snapModes = useSnapPrefs((s) => s.modes);
@@ -374,11 +373,6 @@ export function MapCanvas() {
     // Delete removes it.
     selection.selectVertex({ polygonId: id, index });
   };
-  const onEdgeAddClick = (id: string, edgeIndex: number, e: React.MouseEvent) => {
-    if (inHandMode) return;
-    e.stopPropagation();
-    insertVertex(id, edgeIndex);
-  };
   const onCanvasClick = (e: React.MouseEvent) => {
     if (inHandMode) return;
     const onBackground =
@@ -599,7 +593,7 @@ export function MapCanvas() {
             onContextMenu={onPolygonContextMenu}
             onVertexPointerDown={polyDrag.onVertexPointerDown}
             onVertexClick={onVertexClick}
-            onEdgeAddClick={onEdgeAddClick}
+            onEdgeAddPointerDown={polyDrag.onEdgeAddPointerDown}
           />
         ))}
 
@@ -903,7 +897,7 @@ export function MapCanvas() {
                 onContextMenu={onPolygonContextMenu}
                 onVertexPointerDown={polyDrag.onVertexPointerDown}
                 onVertexClick={onVertexClick}
-                onEdgeAddClick={onEdgeAddClick}
+                onEdgeAddPointerDown={polyDrag.onEdgeAddPointerDown}
               />
             ),
         )}

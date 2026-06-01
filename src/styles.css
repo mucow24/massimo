@@ -479,6 +479,11 @@ select {
 .polygon-popover .row label {
   width: auto;
 }
+/* Draggable header (matches the text-label popover). */
+.polygon-popover .header {
+  cursor: move;
+  touch-action: none;
+}
 .bullet-popover .delete-btn,
 .text-label-popover .delete-btn {
   background: #fff;
