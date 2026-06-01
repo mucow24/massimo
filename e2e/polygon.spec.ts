@@ -7,6 +7,8 @@ interface PolygonState {
   fill: string;
   stroke: string;
   strokeWidth: number;
+  fillOpacity?: number;
+  locked?: boolean;
 }
 
 async function readPolygons(page: Page): Promise<Record<string, PolygonState>> {
@@ -115,5 +117,111 @@ test.describe('Polygon shapes', () => {
     const polys = await readPolygons(page);
     expect(polys[id]).toBeDefined();
     expect(polys[id].vertices).toHaveLength(4);
+  });
+});
+
+async function polygonOrder(page: Page): Promise<string[]> {
+  return await page.evaluate(() => {
+    const raw = localStorage.getItem('vignelli-map-doc-v1');
+    return raw ? (JSON.parse(raw).state.polygonOrder ?? []) : [];
+  });
+}
+
+async function domPolygonIds(page: Page): Promise<string[]> {
+  return await page.evaluate(() =>
+    Array.from(document.querySelectorAll('polygon[data-polygon-id]')).map((el) =>
+      el.getAttribute('data-polygon-id'),
+    ),
+  );
+}
+
+test.describe('Polygon opacity, layering, placement, lock', () => {
+  test('the fill-opacity slider drives the body fill-opacity', async ({ page }) => {
+    await seedAndOpen(page, { stations: [], lines: [] });
+    await addPolygonAt(page, CENTER.x, CENTER.y);
+    await page.getByRole('slider', { name: 'Fill opacity' }).fill('40');
+    const opacity = await page.evaluate(() =>
+      document.querySelector('polygon[data-polygon-id]')?.getAttribute('fill-opacity'),
+    );
+    expect(Number(opacity)).toBeCloseTo(0.4, 5);
+  });
+
+  test('Move down reorders the polygon paint order (DOM matches polygonOrder)', async ({
+    page,
+  }) => {
+    await seedAndOpen(page, { stations: [], lines: [] });
+    await addPolygonAt(page, 600, 400);
+    await addPolygonAt(page, 640, 430); // second polygon, now selected (popover open)
+    const before = await polygonOrder(page);
+    expect(before).toHaveLength(2);
+    // The selected (second) polygon is on top; send it to the back.
+    await page.getByRole('button', { name: 'Move polygon down' }).click();
+    const after = await polygonOrder(page);
+    expect(after).toEqual([before[1], before[0]]);
+    // Body paint order in the DOM matches the stored order (later = on top).
+    expect(await domPolygonIds(page)).toEqual(after);
+  });
+
+  test('a starter-square ghost follows the cursor before placement, then resolves to the polygon', async ({
+    page,
+  }) => {
+    await seedAndOpen(page, { stations: [], lines: [] });
+    await page.getByRole('button', { name: 'Add', exact: true }).click();
+    await page.getByRole('menuitem', { name: 'Polygon', exact: true }).click();
+    // Move (no click): the semitransparent ghost appears and is centered on
+    // the cursor; no real polygon exists yet.
+    await page.mouse.move(CENTER.x, CENTER.y);
+    const ghost = page.locator('[data-polygon-preview]');
+    await expect(ghost).toHaveCount(1);
+    await expect(ghost).toHaveAttribute('opacity', '0.5');
+    expect(Object.keys(await readPolygons(page))).toHaveLength(0);
+    // Click places it; single-shot mode exits, so the ghost is gone and a real
+    // polygon remains.
+    await page.mouse.click(CENTER.x, CENTER.y);
+    await expect(page.locator('[data-polygon-preview]')).toHaveCount(0);
+    expect(Object.keys(await readPolygons(page))).toHaveLength(1);
+  });
+
+  test('a click-to-place tool places through a polygon instead of selecting it', async ({
+    page,
+  }) => {
+    await seedAndOpen(page, { stations: [], lines: [] });
+    await addPolygonAt(page, CENTER.x, CENTER.y);
+    // Enter "place station" mode (clears the polygon selection), then click
+    // inside the polygon body.
+    await page.getByRole('button', { name: 'Add', exact: true }).click();
+    await page.getByRole('menuitem', { name: 'Stations', exact: true }).click();
+    await page.mouse.click(CENTER.x, CENTER.y);
+    // A station was placed, and the polygon was NOT selected.
+    const stationCount = await page.evaluate(() => {
+      const raw = localStorage.getItem('vignelli-map-doc-v1');
+      return raw ? Object.keys(JSON.parse(raw).state.stations ?? {}).length : 0;
+    });
+    expect(stationCount).toBe(1);
+    await expect(page.locator('.polygon-popover')).toHaveCount(0);
+  });
+
+  test('locking hides edit handles and prevents dragging; unlocking restores them', async ({
+    page,
+  }) => {
+    await seedAndOpen(page, { stations: [], lines: [] });
+    await addPolygonAt(page, CENTER.x, CENTER.y);
+    // Lock it.
+    await page.getByRole('button', { name: 'Lock polygon' }).click();
+    expect((await onlyPolygon(page)).locked).toBe(true);
+    await expect(page.locator('[data-polygon-vertex]')).toHaveCount(0);
+    await expect(page.locator('[data-polygon-edge-add]')).toHaveCount(0);
+
+    // Dragging the locked body does nothing.
+    const before = JSON.stringify((await onlyPolygon(page)).vertices);
+    await page.mouse.move(CENTER.x, CENTER.y);
+    await page.mouse.down();
+    await page.mouse.move(CENTER.x + 60, CENTER.y + 40, { steps: 4 });
+    await page.mouse.up();
+    expect(JSON.stringify((await onlyPolygon(page)).vertices)).toBe(before);
+
+    // Unlock → handles return.
+    await page.getByRole('button', { name: 'Unlock polygon' }).click();
+    await expect(page.locator('[data-polygon-vertex]')).toHaveCount(4);
   });
 });

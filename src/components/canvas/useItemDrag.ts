@@ -102,7 +102,7 @@ export function useItemDrag(
       }
       for (const pid of sel.selectedPolygonIds) {
         const pg = polygons[pid];
-        if (!pg) continue;
+        if (!pg || pg.locked) continue;
         polygonSiblings.push({ id: pid, startVerts: pg.vertices.map((v) => ({ ...v })) });
       }
     }
@@ -154,7 +154,7 @@ export function useItemDrag(
       }
       for (const pid of sel.selectedPolygonIds) {
         const pg = polygons[pid];
-        if (!pg) continue;
+        if (!pg || pg.locked) continue;
         polygonSiblings.push({ id: pid, startVerts: pg.vertices.map((v) => ({ ...v })) });
       }
     }

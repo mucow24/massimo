@@ -4,7 +4,13 @@ import { projectToScreen, type ViewportProjection } from './canvas/screenAnchor'
 import { NumericFieldRow } from './NumericFieldRow';
 import { useFieldHistory } from './useFieldHistory';
 import { polygonCentroid } from '../geometry/polygon';
-import { POLYGON_STROKE_WIDTH_MAX, POLYGON_STROKE_WIDTH_MIN } from '../model/transforms';
+import {
+  POLYGON_FILL_OPACITY_DEFAULT,
+  POLYGON_FILL_OPACITY_MAX,
+  POLYGON_FILL_OPACITY_MIN,
+  POLYGON_STROKE_WIDTH_MAX,
+  POLYGON_STROKE_WIDTH_MIN,
+} from '../model/transforms';
 import type { Polygon } from '../model/types';
 
 interface Props {
@@ -28,10 +34,15 @@ export function PolygonPopover({ polygon, view, onClose }: Props) {
   const anchor = projectToScreen(frozenWorld, view);
   const updatePolygon = useDoc((s) => s.updatePolygon);
   const deletePolygon = useDoc((s) => s.deletePolygon);
+  const movePolygonUp = useDoc((s) => s.movePolygonUp);
+  const movePolygonDown = useDoc((s) => s.movePolygonDown);
   // Group each color picker's continuous edits into one undo entry, matching
   // the Transfer color control in the Options popover.
   const fillField = useFieldHistory();
   const strokeField = useFieldHistory();
+
+  const locked = polygon.locked ?? false;
+  const fillOpacity = polygon.fillOpacity ?? POLYGON_FILL_OPACITY_DEFAULT;
 
   // Header drag — same mechanism as the text-label popover.
   const [dragOffset, setDragOffset] = useState<{ x: number; y: number }>({ x: 0, y: 0 });
@@ -68,6 +79,8 @@ export function PolygonPopover({ polygon, view, onClose }: Props) {
   const onFill = (fill: string) => updatePolygon(polygon.id, { fill });
   const onStroke = (stroke: string) => updatePolygon(polygon.id, { stroke });
   const onStrokeWidth = (strokeWidth: number) => updatePolygon(polygon.id, { strokeWidth });
+  const onFillOpacity = (o: number) => updatePolygon(polygon.id, { fillOpacity: o });
+  const onToggleLock = () => updatePolygon(polygon.id, { locked: !locked });
   const onDelete = () => {
     deletePolygon(polygon.id);
     onClose();
@@ -106,10 +119,24 @@ export function PolygonPopover({ polygon, view, onClose }: Props) {
             type="color"
             aria-label="Polygon color"
             value={polygon.fill}
+            disabled={locked}
             onChange={(e) => onFill(e.target.value)}
             {...fillField}
           />
         </div>
+        <NumericFieldRow
+          id="polygon-fill-opacity"
+          label="Fill opacity"
+          min={POLYGON_FILL_OPACITY_MIN}
+          max={POLYGON_FILL_OPACITY_MAX}
+          step={1}
+          value={fillOpacity}
+          onChange={onFillOpacity}
+          getCurrent={() =>
+            useDoc.getState().polygons[polygon.id]?.fillOpacity ?? POLYGON_FILL_OPACITY_DEFAULT
+          }
+          disabled={locked}
+        />
         <NumericFieldRow
           id="polygon-stroke-width"
           label="Stroke width"
@@ -119,6 +146,7 @@ export function PolygonPopover({ polygon, view, onClose }: Props) {
           value={polygon.strokeWidth}
           onChange={onStrokeWidth}
           getCurrent={() => useDoc.getState().polygons[polygon.id]?.strokeWidth ?? 0}
+          disabled={locked}
         />
         <div className="row">
           <label htmlFor="polygon-stroke">Stroke color</label>
@@ -127,12 +155,48 @@ export function PolygonPopover({ polygon, view, onClose }: Props) {
             type="color"
             aria-label="Stroke color"
             value={polygon.stroke}
+            disabled={locked}
             onChange={(e) => onStroke(e.target.value)}
             {...strokeField}
           />
         </div>
+        <div className="row">
+          <label>Layer</label>
+          <div className="shape-group">
+            <button
+              type="button"
+              className="shape-btn"
+              aria-label="Move polygon down"
+              title="Send backward"
+              disabled={locked}
+              onClick={() => movePolygonDown(polygon.id)}
+            >
+              ↓
+            </button>
+            <button
+              type="button"
+              className="shape-btn"
+              aria-label="Move polygon up"
+              title="Bring forward"
+              disabled={locked}
+              onClick={() => movePolygonUp(polygon.id)}
+            >
+              ↑
+            </button>
+          </div>
+        </div>
         <div className="footer">
-          <button className="delete-btn" onClick={onDelete}>
+          <button
+            type="button"
+            className={'lock-btn' + (locked ? ' active' : '')}
+            aria-label={locked ? 'Unlock polygon' : 'Lock polygon'}
+            aria-pressed={locked}
+            title={locked ? 'Unlock' : 'Lock (prevents editing)'}
+            onClick={onToggleLock}
+          >
+            {locked ? '🔒 Locked' : '🔓 Lock'}
+          </button>
+          <button className="delete-btn" onClick={onDelete} disabled={locked}>
             Delete
           </button>
         </div>

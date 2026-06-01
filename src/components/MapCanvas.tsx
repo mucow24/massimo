@@ -14,7 +14,7 @@ import {
   SegmentBandSpec,
 } from '../geometry/interlining';
 import { stripeOffset } from '../geometry/orientation';
-import { buildRotateMembers } from '../model/transforms';
+import { buildRotateMembers, effectivePolygonOrder } from '../model/transforms';
 import { legibleTextOn } from '../util/color';
 import { BandWarning, SegmentBand } from './SegmentBand';
 import { HatchPatterns } from './HatchPatterns';
@@ -33,6 +33,7 @@ import { LineTagsLayer } from './canvas/LineTagsLayer';
 import { LayeringDashedOutlines, LayeringHoverOutline } from './canvas/LayeringOutlines';
 import { LayerNumberLabels } from './canvas/LayerNumberLabels';
 import { StationPlacingPreview } from './canvas/StationPlacingPreview';
+import { PolygonPlacingPreview } from './canvas/PolygonPlacingPreview';
 import { HighlightedLineLayer } from './canvas/HighlightedLineLayer';
 import { LabelPlacingPreview } from './canvas/LabelPlacingPreview';
 import { RouteBulletView } from './RouteBulletView';
@@ -80,6 +81,7 @@ export function MapCanvas() {
   const addTextLabel = useDoc((s) => s.addTextLabel);
   const rotateTextLabel = useDoc((s) => s.rotateTextLabel);
   const polygons = useDoc((s) => s.polygons);
+  const polygonOrder = useDoc((s) => s.polygonOrder);
   const addPolygon = useDoc((s) => s.addPolygon);
   const rotatePolygon = useDoc((s) => s.rotatePolygon);
   const selection = useSelection();
@@ -103,6 +105,15 @@ export function MapCanvas() {
   const bulletSelectedIds = rectSelect.previewBulletIds ?? selection.selectedRouteBulletIds;
   const labelSelectedIds = rectSelect.previewLabelIds ?? selection.selectedLabelIds;
   const polygonSelectedIds = rectSelect.previewPolygonIds ?? selection.selectedPolygonIds;
+  // Paint order for polygon bodies (later = on top, among polygons only).
+  const polygonRenderOrder = useMemo(
+    () => effectivePolygonOrder(polygons, polygonOrder),
+    [polygons, polygonOrder],
+  );
+  // While a click-to-place tool is active (any non-idle mode), polygon bodies
+  // ignore pointer events so a canvas click places the item over them instead
+  // of selecting the polygon.
+  const polygonsInteractive = selection.uiMode.kind === 'idle';
 
   // Geometry hash for buildBandGeometry's inputs (stations + line topology +
   // segmentStyles). EXCLUDES segmentLayers so layer cycles don't churn the
@@ -247,7 +258,8 @@ export function MapCanvas() {
     const wantsCursorTrack =
       (mode.kind === 'creating-transfer' && mode.anchor !== null) ||
       mode.kind === 'placing-station' ||
-      mode.kind === 'placing-label';
+      mode.kind === 'placing-label' ||
+      mode.kind === 'creating-polygon';
     if (wantsCursorTrack) {
       const raw = view.screenToWorld(e.clientX, e.clientY);
       // Grid-snap the placement preview for new stations so the user sees
@@ -579,25 +591,27 @@ export function MapCanvas() {
             content (bands, stations, dots, labels) so background shapes like
             rivers/lakes always sit underneath everything else. Their selection
             handles + "+" buttons render in a separate top overlay pass below. */}
-        {Object.values(polygons).map((poly) => (
-          <PolygonView
-            key={poly.id}
-            polygon={poly}
-            layer="body"
-            selected={polygonSelectedIds.includes(poly.id)}
-            selectedVertexIndex={
-              selection.selectedVertex?.polygonId === poly.id
-                ? selection.selectedVertex.index
-                : null
-            }
-            onPointerDown={polyDrag.onPolygonPointerDown}
-            onClick={onPolygonClick}
-            onContextMenu={onPolygonContextMenu}
-            onVertexPointerDown={polyDrag.onVertexPointerDown}
-            onVertexClick={onVertexClick}
-            onEdgeAddPointerDown={polyDrag.onEdgeAddPointerDown}
-          />
-        ))}
+        {polygonRenderOrder.map((pid) => {
+          const poly = polygons[pid];
+          return (
+            <PolygonView
+              key={pid}
+              polygon={poly}
+              layer="body"
+              selected={polygonSelectedIds.includes(pid)}
+              selectedVertexIndex={
+                selection.selectedVertex?.polygonId === pid ? selection.selectedVertex.index : null
+              }
+              interactive={polygonsInteractive}
+              onPointerDown={polyDrag.onPolygonPointerDown}
+              onClick={onPolygonClick}
+              onContextMenu={onPolygonContextMenu}
+              onVertexPointerDown={polyDrag.onVertexPointerDown}
+              onVertexClick={onVertexClick}
+              onEdgeAddPointerDown={polyDrag.onEdgeAddPointerDown}
+            />
+          );
+        })}
 
         {/* selection wash: painted before bands so the wash sits behind
             line segments, markers, dots, and labels — all the way in the
@@ -775,6 +789,11 @@ export function MapCanvas() {
           <LabelPlacingPreview
             world={selection.uiMode.kind === 'placing-label' ? cursorWorld : null}
           />
+          {/* Polygon-placing-mode ghost: a faint starter square following the
+              cursor before the click, matching the shape that will drop. */}
+          <PolygonPlacingPreview
+            world={selection.uiMode.kind === 'creating-polygon' ? cursorWorld : null}
+          />
         </g>
 
         {/* Route bullets: rendered before the dim so they fade with the
@@ -912,6 +931,7 @@ export function MapCanvas() {
                       ? selection.selectedVertex.index
                       : null
                   }
+                  interactive={polygonsInteractive}
                   onPointerDown={polyDrag.onPolygonPointerDown}
                   onClick={onPolygonClick}
                   onContextMenu={onPolygonContextMenu}

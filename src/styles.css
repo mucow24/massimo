@@ -511,6 +511,35 @@ select {
   cursor: move;
   touch-action: none;
 }
+/* Footer holds the lock toggle (left) and Delete (right). */
+.polygon-popover .footer {
+  justify-content: space-between;
+}
+.polygon-popover .lock-btn {
+  background: #fff;
+  border: 1px solid #bbb;
+  border-radius: 3px;
+  padding: 3px 10px;
+  font-size: 12px;
+  font-weight: 600;
+  cursor: pointer;
+  color: #111;
+}
+.polygon-popover .lock-btn:hover {
+  background: #f0f0f0;
+}
+.polygon-popover .lock-btn.active {
+  background: #d6e4ff;
+  border-color: #6a8ed6;
+}
+.app[data-theme='dark'] .polygon-popover .lock-btn {
+  background: #2a2a2a;
+  border-color: #444;
+  color: #e4e4e4;
+}
+.app[data-theme='dark'] .polygon-popover .lock-btn:hover {
+  background: #353535;
+}
 .bullet-popover .delete-btn,
 .text-label-popover .delete-btn {
   background: #fff;

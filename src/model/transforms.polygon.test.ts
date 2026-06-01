@@ -10,8 +10,13 @@ import {
   deletePolygon,
   buildRotateMembers,
   rotateItemsAround,
+  movePolygonUp,
+  movePolygonDown,
+  effectivePolygonOrder,
   POLYGON_STROKE_WIDTH_MIN,
   POLYGON_STROKE_WIDTH_MAX,
+  POLYGON_FILL_OPACITY_MIN,
+  POLYGON_FILL_OPACITY_MAX,
 } from './transforms';
 import { makeDoc, makePolygon } from '../test/fixtures';
 
@@ -102,11 +107,52 @@ describe('polygon transforms', () => {
     expect(cy).toBeCloseTo(0, 6);
   });
 
-  it('deletePolygon removes the polygon', () => {
+  it('deletePolygon removes the polygon and its entry in polygonOrder', () => {
     const doc = makeDoc({ polygons: [makePolygon({ id: 'p0' }), makePolygon({ id: 'p1' })] });
     const next = deletePolygon(doc, 'p0');
     expect(next.polygons['p0']).toBeUndefined();
     expect(next.polygons['p1']).toBeDefined();
+    expect(next.polygonOrder).toEqual(['p1']);
+  });
+
+  it('updatePolygon sets + clamps fillOpacity and toggles locked', () => {
+    const doc = makeDoc({ polygons: [makePolygon({ id: 'p0' })] });
+    expect(updatePolygon(doc, 'p0', { fillOpacity: 40 }).polygons['p0'].fillOpacity).toBe(40);
+    expect(updatePolygon(doc, 'p0', { fillOpacity: 999 }).polygons['p0'].fillOpacity).toBe(
+      POLYGON_FILL_OPACITY_MAX,
+    );
+    expect(updatePolygon(doc, 'p0', { fillOpacity: -5 }).polygons['p0'].fillOpacity).toBe(
+      POLYGON_FILL_OPACITY_MIN,
+    );
+    expect(updatePolygon(doc, 'p0', { locked: true }).polygons['p0'].locked).toBe(true);
+  });
+
+  it('addPolygon appends to polygonOrder; move up/down reorders (later = on top)', () => {
+    let doc = makeDoc({});
+    doc = addPolygon(doc, 'a', 0, 0);
+    doc = addPolygon(doc, 'b', 0, 0);
+    doc = addPolygon(doc, 'c', 0, 0);
+    expect(doc.polygonOrder).toEqual(['a', 'b', 'c']); // c on top
+
+    doc = movePolygonUp(doc, 'a'); // a moves toward top
+    expect(doc.polygonOrder).toEqual(['b', 'a', 'c']);
+
+    doc = movePolygonDown(doc, 'c'); // c moves toward bottom
+    expect(doc.polygonOrder).toEqual(['b', 'c', 'a']);
+
+    // No-ops at the ends.
+    expect(movePolygonUp(doc, 'a').polygonOrder).toEqual(['b', 'c', 'a']); // 'a' already top
+    expect(movePolygonDown(doc, 'b').polygonOrder).toEqual(['b', 'c', 'a']); // 'b' already bottom
+  });
+
+  it('effectivePolygonOrder backfills ids missing from a legacy/partial order', () => {
+    const polys = {
+      p0: makePolygon({ id: 'p0' }),
+      p1: makePolygon({ id: 'p1' }),
+      p2: makePolygon({ id: 'p2' }),
+    };
+    // Stored order omits p2 (legacy) and references a stale id.
+    expect(effectivePolygonOrder(polys, ['p1', 'gone', 'p0'])).toEqual(['p1', 'p0', 'p2']);
   });
 
   it('rotateItemsAround orbits polygon members and supports a polygon pivot', () => {

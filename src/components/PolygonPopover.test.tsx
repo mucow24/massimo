@@ -12,6 +12,7 @@ beforeEach(() => {
     ...useDoc.getState(),
     ...DEFAULT_DOC,
     polygons: { p0: makePolygon({ id: 'p0', fill: '#112233', stroke: '#445566', strokeWidth: 2 }) },
+    polygonOrder: ['p0'],
   });
 });
 
@@ -66,5 +67,52 @@ describe('<PolygonPopover />', () => {
     fireEvent.pointerUp(header, { clientX: 130, clientY: 120 });
     expect(popover.style.left).toBe('44px'); // 14 + 30
     expect(popover.style.top).toBe('34px'); // 14 + 20
+  });
+
+  it('the fill-opacity slider (0–100) writes through to the store', () => {
+    renderPopover();
+    const slider = screen.getByRole('slider', { name: 'Fill opacity' });
+    expect(slider).toHaveAttribute('min', '0');
+    expect(slider).toHaveAttribute('max', '100');
+    fireEvent.change(slider, { target: { value: '40' } });
+    expect(useDoc.getState().polygons['p0'].fillOpacity).toBe(40);
+  });
+
+  it('layer up/down buttons reorder the polygon among its peers', () => {
+    // Two polygons, p0 at the bottom of the order.
+    useDoc.setState({
+      ...useDoc.getState(),
+      polygons: { p0: makePolygon({ id: 'p0' }), p1: makePolygon({ id: 'p1' }) },
+      polygonOrder: ['p0', 'p1'],
+    });
+    renderPopover();
+    fireEvent.click(screen.getByRole('button', { name: 'Move polygon up' }));
+    expect(useDoc.getState().polygonOrder).toEqual(['p1', 'p0']); // p0 now on top
+    fireEvent.click(screen.getByRole('button', { name: 'Move polygon down' }));
+    expect(useDoc.getState().polygonOrder).toEqual(['p0', 'p1']);
+  });
+
+  it('the lock toggle flips locked and the label updates', () => {
+    renderPopover();
+    fireEvent.click(screen.getByRole('button', { name: 'Lock polygon' }));
+    expect(useDoc.getState().polygons['p0'].locked).toBe(true);
+  });
+
+  it('when locked, editing controls are disabled but the lock toggle stays active', () => {
+    useDoc.setState({
+      ...useDoc.getState(),
+      polygons: { p0: makePolygon({ id: 'p0', locked: true }) },
+      polygonOrder: ['p0'],
+    });
+    renderPopover();
+    expect(screen.getByRole('slider', { name: 'Fill opacity' })).toBeDisabled();
+    expect(screen.getByRole('slider', { name: 'Stroke width' })).toBeDisabled();
+    expect(screen.getByRole('button', { name: 'Move polygon up' })).toBeDisabled();
+    expect(screen.getByRole('button', { name: 'Delete' })).toBeDisabled();
+    // The unlock control remains usable.
+    const unlock = screen.getByRole('button', { name: 'Unlock polygon' });
+    expect(unlock).toBeEnabled();
+    fireEvent.click(unlock);
+    expect(useDoc.getState().polygons['p0'].locked).toBe(false);
   });
 });
