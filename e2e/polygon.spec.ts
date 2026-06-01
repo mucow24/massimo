@@ -162,6 +162,26 @@ test.describe('Polygon opacity, layering, placement, lock', () => {
     expect(await domPolygonIds(page)).toEqual(after);
   });
 
+  test('a starter-square ghost follows the cursor before placement, then resolves to the polygon', async ({
+    page,
+  }) => {
+    await seedAndOpen(page, { stations: [], lines: [] });
+    await page.getByRole('button', { name: 'Add', exact: true }).click();
+    await page.getByRole('menuitem', { name: 'Polygon', exact: true }).click();
+    // Move (no click): the semitransparent ghost appears and is centered on
+    // the cursor; no real polygon exists yet.
+    await page.mouse.move(CENTER.x, CENTER.y);
+    const ghost = page.locator('[data-polygon-preview]');
+    await expect(ghost).toHaveCount(1);
+    await expect(ghost).toHaveAttribute('opacity', '0.5');
+    expect(Object.keys(await readPolygons(page))).toHaveLength(0);
+    // Click places it; single-shot mode exits, so the ghost is gone and a real
+    // polygon remains.
+    await page.mouse.click(CENTER.x, CENTER.y);
+    await expect(page.locator('[data-polygon-preview]')).toHaveCount(0);
+    expect(Object.keys(await readPolygons(page))).toHaveLength(1);
+  });
+
   test('a click-to-place tool places through a polygon instead of selecting it', async ({
     page,
   }) => {

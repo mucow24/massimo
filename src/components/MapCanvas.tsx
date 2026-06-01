@@ -33,6 +33,7 @@ import { LineTagsLayer } from './canvas/LineTagsLayer';
 import { LayeringDashedOutlines, LayeringHoverOutline } from './canvas/LayeringOutlines';
 import { LayerNumberLabels } from './canvas/LayerNumberLabels';
 import { StationPlacingPreview } from './canvas/StationPlacingPreview';
+import { PolygonPlacingPreview } from './canvas/PolygonPlacingPreview';
 import { HighlightedLineLayer } from './canvas/HighlightedLineLayer';
 import { LabelPlacingPreview } from './canvas/LabelPlacingPreview';
 import { RouteBulletView } from './RouteBulletView';
@@ -257,7 +258,8 @@ export function MapCanvas() {
     const wantsCursorTrack =
       (mode.kind === 'creating-transfer' && mode.anchor !== null) ||
       mode.kind === 'placing-station' ||
-      mode.kind === 'placing-label';
+      mode.kind === 'placing-label' ||
+      mode.kind === 'creating-polygon';
     if (wantsCursorTrack) {
       const raw = view.screenToWorld(e.clientX, e.clientY);
       // Grid-snap the placement preview for new stations so the user sees
@@ -786,6 +788,11 @@ export function MapCanvas() {
               as the user clicks (the click handler exits placing-label). */}
           <LabelPlacingPreview
             world={selection.uiMode.kind === 'placing-label' ? cursorWorld : null}
+          />
+          {/* Polygon-placing-mode ghost: a faint starter square following the
+              cursor before the click, matching the shape that will drop. */}
+          <PolygonPlacingPreview
+            world={selection.uiMode.kind === 'creating-polygon' ? cursorWorld : null}
           />
         </g>
 

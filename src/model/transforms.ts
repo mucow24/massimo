@@ -1475,18 +1475,24 @@ const clampPolygonStrokeWidth = (w: number): number =>
 const clampPolygonFillOpacity = (o: number): number =>
   Math.max(POLYGON_FILL_OPACITY_MIN, Math.min(POLYGON_FILL_OPACITY_MAX, Math.round(o)));
 
-// Default square centered on (x, y). Vertices are clockwise from the top-left
-// in the y-down screen frame.
-export function addPolygon(doc: MapDoc, id: string, x: number, y: number): MapDoc {
+// The default-square vertices centered on (x, y), clockwise from the top-left
+// in the y-down screen frame. Shared by `addPolygon` and the placement ghost so
+// the preview matches exactly what gets dropped.
+export function starterPolygonVertices(x: number, y: number): Vec2[] {
   const h = POLYGON_DEFAULT_HALF;
+  return [
+    { x: x - h, y: y - h },
+    { x: x + h, y: y - h },
+    { x: x + h, y: y + h },
+    { x: x - h, y: y + h },
+  ];
+}
+
+// Default square centered on (x, y).
+export function addPolygon(doc: MapDoc, id: string, x: number, y: number): MapDoc {
   const polygon: Polygon = {
     id,
-    vertices: [
-      { x: x - h, y: y - h },
-      { x: x + h, y: y - h },
-      { x: x + h, y: y + h },
-      { x: x - h, y: y + h },
-    ],
+    vertices: starterPolygonVertices(x, y),
     fill: POLYGON_FILL_DEFAULT,
     stroke: POLYGON_STROKE_DEFAULT,
     strokeWidth: POLYGON_STROKE_WIDTH_DEFAULT,
