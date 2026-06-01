@@ -4,6 +4,7 @@ import { useSnapPrefs } from '../../state/snapPrefs';
 import type { StationId } from '../../model/types';
 import { Rotation } from '../../geometry/orientation';
 import { snapDraggedStation, SnapGuide, SNAP_PERP_TOLERANCE } from '../../geometry/snap';
+import type { Vec2 } from '../../geometry/vec';
 
 export interface StationDragApi {
   snapGuides: SnapGuide[];
@@ -29,6 +30,7 @@ export function useStationDrag(
   const moveStation = useDoc((s) => s.moveStation);
   const moveRouteBullet = useDoc((s) => s.moveRouteBullet);
   const moveTextLabel = useDoc((s) => s.moveTextLabel);
+  const setPolygonVertices = useDoc((s) => s.setPolygonVertices);
   const redistributeBetween = useDoc((s) => s.redistributeBetween);
   const snapModes = useSnapPrefs((s) => s.modes);
 
@@ -53,6 +55,9 @@ export function useStationDrag(
     // Selected text labels that tag along. Same delta; labels never snap
     // when towed by a station.
     labelSiblings: { id: string; startX: number; startY: number }[];
+    // Selected polygons that tag along. Each carries its full start vertex
+    // list so the same delta translates every vertex.
+    polygonSiblings: { id: string; startVerts: Vec2[] }[];
     history: ReturnType<typeof beginHistoryGroup>;
   } | null>(null);
   const [snapGuides, setSnapGuides] = useState<SnapGuide[]>([]);
@@ -82,6 +87,7 @@ export function useStationDrag(
     // selected items is the natural "drag everything as one group" gesture.
     const bulletSiblings: { id: string; startX: number; startY: number }[] = [];
     const labelSiblings: { id: string; startX: number; startY: number }[] = [];
+    const polygonSiblings: { id: string; startVerts: Vec2[] }[] = [];
     const includesGrabbed = ids.includes(id);
     if (!redistributeAnchor && includesGrabbed) {
       if (sel.selectedRouteBulletIds.length > 0) {
@@ -100,6 +106,14 @@ export function useStationDrag(
           labelSiblings.push({ id: lid, startX: lb.x, startY: lb.y });
         }
       }
+      if (sel.selectedPolygonIds.length > 0) {
+        const docPolygons = useDoc.getState().polygons;
+        for (const pid of sel.selectedPolygonIds) {
+          const pg = docPolygons[pid];
+          if (!pg) continue;
+          polygonSiblings.push({ id: pid, startVerts: pg.vertices.map((v) => ({ ...v })) });
+        }
+      }
     }
     dragStationRef.current = {
       id,
@@ -113,6 +127,7 @@ export function useStationDrag(
       siblingIdSet: new Set(siblings.map((s) => s.id)),
       bulletSiblings,
       labelSiblings,
+      polygonSiblings,
       // Snapshot the doc and pause history. If the gesture turns out to be
       // a drag, we'll commit one entry on pointerup; if it's just a click,
       // we cancel without recording anything.
@@ -174,7 +189,12 @@ export function useStationDrag(
     moveStation(ds.id, nx, ny);
     // Group-drag: apply the same delta to every selected sibling — station
     // siblings, bullet siblings, and label siblings.
-    if (ds.siblings.length > 0 || ds.bulletSiblings.length > 0 || ds.labelSiblings.length > 0) {
+    if (
+      ds.siblings.length > 0 ||
+      ds.bulletSiblings.length > 0 ||
+      ds.labelSiblings.length > 0 ||
+      ds.polygonSiblings.length > 0
+    ) {
       const deltaX = nx - ds.startWX;
       const deltaY = ny - ds.startWY;
       for (const sib of ds.siblings) {
@@ -185,6 +205,12 @@ export function useStationDrag(
       }
       for (const ls of ds.labelSiblings) {
         moveTextLabel(ls.id, ls.startX + deltaX, ls.startY + deltaY);
+      }
+      for (const ps of ds.polygonSiblings) {
+        setPolygonVertices(
+          ps.id,
+          ps.startVerts.map((v) => ({ x: v.x + deltaX, y: v.y + deltaY })),
+        );
       }
     }
     if (ds.redistributeAnchor) {

@@ -8,6 +8,7 @@ import type {
   StationId,
   StopCell,
   StopOrientation,
+  Polygon,
   TextLabel,
   TextLabelWeight,
 } from '../model/types';
@@ -74,6 +75,21 @@ export function makeTextLabel(overrides: Partial<TextLabel> & { id: string }): T
   };
 }
 
+export function makePolygon(overrides: Partial<Polygon> & { id: string }): Polygon {
+  return {
+    vertices: [
+      { x: -30, y: -30 },
+      { x: 30, y: -30 },
+      { x: 30, y: 30 },
+      { x: -30, y: 30 },
+    ],
+    fill: '#cfe3f2',
+    stroke: '#000000',
+    strokeWidth: 1,
+    ...overrides,
+  };
+}
+
 export function makeDoc(parts: {
   stations?: Station[];
   lines?: Line[];
@@ -82,6 +98,7 @@ export function makeDoc(parts: {
   lineTags?: import('../model/types').LineTag[];
   transfers?: import('../model/types').Transfer[];
   textLabels?: TextLabel[];
+  polygons?: Polygon[];
   labelFontSize?: number;
   labelWeight?: TextLabelWeight;
   labelItalic?: boolean;
@@ -101,6 +118,8 @@ export function makeDoc(parts: {
   for (const x of parts.transfers ?? []) transfers[x.id] = x;
   const textLabels: Record<string, TextLabel> = {};
   for (const g of parts.textLabels ?? []) textLabels[g.id] = g;
+  const polygons: Record<string, Polygon> = {};
+  for (const pg of parts.polygons ?? []) polygons[pg.id] = pg;
   return {
     stations,
     lines,
@@ -111,6 +130,7 @@ export function makeDoc(parts: {
     routeBullets: {},
     transfers,
     textLabels,
+    polygons,
     labelFontSize: parts.labelFontSize ?? 12,
     labelWeight: parts.labelWeight ?? 400,
     labelItalic: parts.labelItalic ?? false,

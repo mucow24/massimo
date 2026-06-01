@@ -9,6 +9,7 @@ import type {
   LineId,
   LineStyle,
   MapDoc,
+  Polygon,
   RouteBullet,
   StationId,
   TextLabel,
@@ -69,6 +70,7 @@ const DOC_FIELDS = [
   'routeBullets',
   'transfers',
   'textLabels',
+  'polygons',
   'labelFontSize',
   'labelWeight',
   'labelItalic',
@@ -186,6 +188,19 @@ interface DocState extends MapDoc {
   rotateTextLabel: (id: string) => void;
   updateTextLabel: (id: string, patch: Partial<Omit<TextLabel, 'id'>>) => void;
   deleteTextLabel: (id: string) => void;
+
+  addPolygon: (x: number, y: number) => string;
+  addPolygonWith: (fields: Omit<Polygon, 'id'>) => string;
+  setPolygonVertices: (id: string, vertices: Polygon['vertices']) => void;
+  moveVertex: (id: string, index: number, x: number, y: number) => void;
+  insertVertex: (id: string, edgeIndex: number) => void;
+  deleteVertex: (id: string, index: number) => void;
+  updatePolygon: (
+    id: string,
+    patch: Partial<Pick<Polygon, 'fill' | 'stroke' | 'strokeWidth' | 'vertices'>>,
+  ) => void;
+  rotatePolygon: (id: string) => void;
+  deletePolygon: (id: string) => void;
 
   setCurveRadius: (r: number) => void;
   setLabelFontSize: (n: number) => void;
@@ -340,6 +355,24 @@ export const useDoc = create<DocState>()(
         rotateTextLabel: (id) => set((s) => T.rotateTextLabel(s, id)),
         updateTextLabel: (id, patch) => set((s) => T.updateTextLabel(s, id, patch)),
         deleteTextLabel: (id) => set((s) => T.deleteTextLabel(s, id)),
+
+        addPolygon: (x, y) => {
+          const id = ids.polygonId();
+          set((s) => T.addPolygon(s, id, x, y));
+          return id;
+        },
+        addPolygonWith: (fields) => {
+          const id = ids.polygonId();
+          set((s) => T.addPolygonWith(s, id, fields));
+          return id;
+        },
+        setPolygonVertices: (id, vertices) => set((s) => T.setPolygonVertices(s, id, vertices)),
+        moveVertex: (id, index, x, y) => set((s) => T.moveVertex(s, id, index, x, y)),
+        insertVertex: (id, edgeIndex) => set((s) => T.insertVertex(s, id, edgeIndex)),
+        deleteVertex: (id, index) => set((s) => T.deleteVertex(s, id, index)),
+        updatePolygon: (id, patch) => set((s) => T.updatePolygon(s, id, patch)),
+        rotatePolygon: (id) => set((s) => T.rotatePolygon(s, id)),
+        deletePolygon: (id) => set((s) => T.deletePolygon(s, id)),
 
         setCurveRadius: (r) => set((s) => T.setCurveRadius(s, r)),
         setLabelFontSize: (n) => set((s) => T.setLabelFontSize(s, n)),

@@ -36,6 +36,7 @@ export type UiMode =
       anchor: { stationId: StationId; lineId: LineId | null } | null;
     }
   | { kind: 'placing-label' }
+  | { kind: 'creating-polygon' }
   | { kind: 'appending-to-line'; lineId: LineId; insertAfterIndex: number | null }
   | { kind: 'layering' };
 
@@ -60,6 +61,8 @@ const clearedSelections = () => ({
   selectedStationIds: [] as StationId[],
   selectedRouteBulletIds: [] as string[],
   selectedLabelIds: [] as string[],
+  selectedPolygonIds: [] as string[],
+  selectedVertex: null as { polygonId: string; index: number } | null,
   selectedLineId: null as LineId | null,
   selectedLineTagId: null as string | null,
   selectedTransferId: null as string | null,
@@ -115,6 +118,13 @@ interface SelectionState {
   // `selectedRouteBulletIds`. The last entry is the anchor used by the popover
   // when length === 1.
   selectedLabelIds: string[];
+  // Polygon selection. Multi-selection: parallel to the other id lists. The
+  // last entry is the anchor used by the popover when length === 1.
+  selectedPolygonIds: string[];
+  // A single selected polygon vertex (for handle highlight + Delete). Set by
+  // clicking a vertex handle; independent of `selectedPolygonIds` so the
+  // polygon stays selected (and its popover open) while a vertex is active.
+  selectedVertex: { polygonId: string; index: number } | null;
   // When true, edits made via the StationInspector (stop layout + label)
   // mirror to all directly-connected stations whose unrotated stop layouts
   // are identical. Resets to false whenever a different station is selected.
@@ -163,6 +173,14 @@ interface SelectionState {
   setLabelSelection: (ids: string[]) => void;
   addLabelsToSelection: (ids: string[]) => void;
   xorLabelsToSelection: (ids: string[]) => void;
+  selectPolygon: (id: string | null) => void;
+  togglePolygonSelection: (id: string) => void;
+  setPolygonSelection: (ids: string[]) => void;
+  addPolygonsToSelection: (ids: string[]) => void;
+  xorPolygonsToSelection: (ids: string[]) => void;
+  // Select a single vertex of a polygon (or clear with null). Does NOT touch
+  // selectedPolygonIds — the polygon remains the primary selection.
+  selectVertex: (sel: { polygonId: string; index: number } | null) => void;
 }
 
 // ---- selection id-list algebra: pure helpers shared by all three kinds ----
@@ -213,6 +231,8 @@ export const useSelection = create<SelectionState>((set, get) => ({
   selectedRouteBulletIds: [],
   selectedTransferId: null,
   selectedLabelIds: [],
+  selectedPolygonIds: [],
+  selectedVertex: null,
   mirrorMatching: false,
   toolMode: 'arrow',
   spaceHeld: false,
@@ -452,4 +472,38 @@ export const useSelection = create<SelectionState>((set, get) => ({
       const next = xorAppend(s.selectedLabelIds, ids);
       return next === s.selectedLabelIds ? {} : { selectedLabelIds: next };
     }),
+  selectPolygon: (id) =>
+    set({
+      ...clearedSelections(),
+      uiMode: id == null ? get().uiMode : { kind: 'idle' },
+      selectedPolygonIds: id == null ? [] : [id],
+      lineTagHoverPreview: null,
+    }),
+  togglePolygonSelection: (id) =>
+    set((s) => {
+      const idx = s.selectedPolygonIds.indexOf(id);
+      if (idx >= 0) {
+        const next = s.selectedPolygonIds.slice();
+        next.splice(idx, 1);
+        return { selectedPolygonIds: next, selectedVertex: null };
+      }
+      return {
+        selectedPolygonIds: [...s.selectedPolygonIds, id],
+        selectedLineId: null,
+        selectedLineTagId: null,
+        selectedVertex: null,
+      };
+    }),
+  setPolygonSelection: (ids) => set(() => ({ selectedPolygonIds: dedupeLastWins(ids) })),
+  addPolygonsToSelection: (ids) =>
+    set((s) => {
+      const next = unionAppendNovel(s.selectedPolygonIds, ids);
+      return next === s.selectedPolygonIds ? {} : { selectedPolygonIds: next };
+    }),
+  xorPolygonsToSelection: (ids) =>
+    set((s) => {
+      const next = xorAppend(s.selectedPolygonIds, ids);
+      return next === s.selectedPolygonIds ? {} : { selectedPolygonIds: next };
+    }),
+  selectVertex: (sel) => set({ selectedVertex: sel }),
 }));

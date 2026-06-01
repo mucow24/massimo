@@ -80,22 +80,35 @@ export default function App() {
       }
       if ((e.key === 'Delete' || e.key === 'Backspace') && !inForm) {
         const sel = useSelection.getState();
-        // Mixed station + bullet + label multi-selection takes priority over
-        // the single-element delete paths below; one history entry covers
-        // every removed item so a single Ctrl-Z reverts the lot.
+        // A selected polygon vertex takes top priority: remove just that vertex
+        // (the transform no-ops at the 3-vertex floor) and keep the polygon
+        // selected so the user can keep editing.
+        if (sel.selectedVertex) {
+          e.preventDefault();
+          const { polygonId, index } = sel.selectedVertex;
+          sel.selectVertex(null);
+          useDoc.getState().deleteVertex(polygonId, index);
+          return;
+        }
+        // Mixed station + bullet + label + polygon multi-selection takes
+        // priority over the single-element delete paths below; one history
+        // entry covers every removed item so a single Ctrl-Z reverts the lot.
         const stationIds = sel.selectedStationIds;
         const bulletIds = sel.selectedRouteBulletIds;
         const labelIds = sel.selectedLabelIds;
-        if (stationIds.length + bulletIds.length + labelIds.length > 0) {
+        const polygonIds = sel.selectedPolygonIds;
+        if (stationIds.length + bulletIds.length + labelIds.length + polygonIds.length > 0) {
           e.preventDefault();
           sel.selectStation(null);
           sel.selectRouteBullet(null);
           sel.selectLabel(null);
+          sel.selectPolygon(null);
           const group = beginHistoryGroup();
           const doc = useDoc.getState();
           for (const id of stationIds) doc.deleteStation(id);
           for (const id of bulletIds) doc.deleteRouteBullet(id);
           for (const id of labelIds) doc.deleteTextLabel(id);
+          for (const id of polygonIds) doc.deletePolygon(id);
           group.commit();
           return;
         }

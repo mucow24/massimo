@@ -1,5 +1,5 @@
 import type { Pt } from './polygonUnion';
-import type { RouteBullet, Station, StationId, TextLabel } from '../model/types';
+import type { Polygon, RouteBullet, Station, StationId, TextLabel } from '../model/types';
 import { STOP_SIZE, localToWorld, stopCenterAt } from './orientation';
 import { DEFAULT_LABEL_STYLE, labelLayoutLocal, type LabelStyle } from './labelLayout';
 import { rectIntersectsPolygon, type AABB } from './rectPolygon';
@@ -160,6 +160,19 @@ export function textLabelsForRect(labels: Record<string, TextLabel>, rect: AABB)
   for (const id of Object.keys(labels)) {
     const poly = textLabelHitPolygon(labels[id]);
     if (rectIntersectsPolygon(rect, poly)) hits.push(id);
+  }
+  return hits;
+}
+
+/**
+ * Ids of every polygon whose filled body overlaps `rect` (world coords). The
+ * polygon's own vertices are already world-space, so the rect/polygon overlap
+ * test is direct — dragging a rubber band over any part of a polygon selects it.
+ */
+export function polygonsForRect(polygons: Record<string, Polygon>, rect: AABB): string[] {
+  const hits: string[] = [];
+  for (const id of Object.keys(polygons)) {
+    if (rectIntersectsPolygon(rect, polygons[id].vertices)) hits.push(id);
   }
   return hits;
 }
