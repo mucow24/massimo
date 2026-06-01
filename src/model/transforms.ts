@@ -73,6 +73,7 @@ export const DEFAULT_DOC: MapDoc = {
   transfers: {},
   textLabels: {},
   polygons: {},
+  polygonOrder: [],
   labelFontSize: LABEL_FONT_SIZE_DEFAULT,
   labelWeight: LABEL_WEIGHT_DEFAULT,
   labelItalic: false,
@@ -1460,6 +1461,10 @@ export const POLYGON_STROKE_WIDTH_MAX = 10;
 export const POLYGON_STROKE_WIDTH_DEFAULT = 1;
 export const POLYGON_FILL_DEFAULT = '#cfe3f2';
 export const POLYGON_STROKE_DEFAULT = '#000000';
+// Fill opacity is a percentage; missing ⇒ fully opaque.
+export const POLYGON_FILL_OPACITY_MIN = 0;
+export const POLYGON_FILL_OPACITY_MAX = 100;
+export const POLYGON_FILL_OPACITY_DEFAULT = 100;
 // Half-side of the default square, in world units.
 export const POLYGON_DEFAULT_HALF = 30;
 // A polygon never drops below a triangle, so deleting a vertex is a no-op here.
@@ -1467,6 +1472,8 @@ export const POLYGON_MIN_VERTICES = 3;
 
 const clampPolygonStrokeWidth = (w: number): number =>
   Math.max(POLYGON_STROKE_WIDTH_MIN, Math.min(POLYGON_STROKE_WIDTH_MAX, w));
+const clampPolygonFillOpacity = (o: number): number =>
+  Math.max(POLYGON_FILL_OPACITY_MIN, Math.min(POLYGON_FILL_OPACITY_MAX, Math.round(o)));
 
 // Default square centered on (x, y). Vertices are clockwise from the top-left
 // in the y-down screen frame.
@@ -1484,13 +1491,21 @@ export function addPolygon(doc: MapDoc, id: string, x: number, y: number): MapDo
     stroke: POLYGON_STROKE_DEFAULT,
     strokeWidth: POLYGON_STROKE_WIDTH_DEFAULT,
   };
-  return { ...doc, polygons: { ...doc.polygons, [id]: polygon } };
+  return {
+    ...doc,
+    polygons: { ...doc.polygons, [id]: polygon },
+    polygonOrder: [...doc.polygonOrder, id],
+  };
 }
 
 // Insert a fully-specified polygon (used by duplicate + paste).
 export function addPolygonWith(doc: MapDoc, id: string, fields: Omit<Polygon, 'id'>): MapDoc {
   const polygon: Polygon = { id, ...fields };
-  return { ...doc, polygons: { ...doc.polygons, [id]: polygon } };
+  return {
+    ...doc,
+    polygons: { ...doc.polygons, [id]: polygon },
+    polygonOrder: [...doc.polygonOrder, id],
+  };
 }
 
 // Absolute vertex setter — used by whole-polygon drag and group-tow, which
@@ -1537,14 +1552,19 @@ export function deleteVertex(doc: MapDoc, id: string, index: number): MapDoc {
 export function updatePolygon(
   doc: MapDoc,
   id: string,
-  patch: Partial<Pick<Polygon, 'fill' | 'stroke' | 'strokeWidth' | 'vertices'>>,
+  patch: Partial<
+    Pick<Polygon, 'fill' | 'stroke' | 'strokeWidth' | 'fillOpacity' | 'locked' | 'vertices'>
+  >,
 ): MapDoc {
   const cur = doc.polygons[id];
   if (!cur) return doc;
-  const nextPatch =
-    typeof patch.strokeWidth === 'number'
-      ? { ...patch, strokeWidth: clampPolygonStrokeWidth(patch.strokeWidth) }
-      : patch;
+  let nextPatch = patch;
+  if (typeof nextPatch.strokeWidth === 'number') {
+    nextPatch = { ...nextPatch, strokeWidth: clampPolygonStrokeWidth(nextPatch.strokeWidth) };
+  }
+  if (typeof nextPatch.fillOpacity === 'number') {
+    nextPatch = { ...nextPatch, fillOpacity: clampPolygonFillOpacity(nextPatch.fillOpacity) };
+  }
   return { ...doc, polygons: { ...doc.polygons, [id]: { ...cur, ...nextPatch } } };
 }
 
@@ -1563,7 +1583,46 @@ export function rotatePolygon(doc: MapDoc, id: string): MapDoc {
 export function deletePolygon(doc: MapDoc, id: string): MapDoc {
   if (!doc.polygons[id]) return doc;
   const { [id]: _gone, ...rest } = doc.polygons;
-  return { ...doc, polygons: rest };
+  return { ...doc, polygons: rest, polygonOrder: doc.polygonOrder.filter((pid) => pid !== id) };
+}
+
+/**
+ * The polygon ids in paint order: stored `polygonOrder` filtered to ones that
+ * still exist, then any polygons missing from it appended (legacy saves, or a
+ * race between add and order update) so nothing ever drops out. Later = on top.
+ */
+export function effectivePolygonOrder(
+  polygons: Record<string, Polygon>,
+  order: string[],
+): string[] {
+  const existing = order.filter((id) => polygons[id]);
+  const seen = new Set(existing);
+  const missing = Object.keys(polygons).filter((id) => !seen.has(id));
+  return [...existing, ...missing];
+}
+
+// Shift a polygon one step toward the top (`dir: +1`) or bottom (`dir: -1`) of
+// the polygon paint order. Reconciles legacy/partial order first so the swap is
+// always well-defined. No-op at the respective end.
+function movePolygonBy(doc: MapDoc, id: string, dir: 1 | -1): MapDoc {
+  if (!doc.polygons[id]) return doc;
+  const order = effectivePolygonOrder(doc.polygons, doc.polygonOrder);
+  const i = order.indexOf(id);
+  const j = i + dir;
+  if (i < 0 || j < 0 || j >= order.length) return doc;
+  const next = order.slice();
+  [next[i], next[j]] = [next[j], next[i]];
+  return { ...doc, polygonOrder: next };
+}
+
+// Toward the top (rendered in front of the other polygons).
+export function movePolygonUp(doc: MapDoc, id: string): MapDoc {
+  return movePolygonBy(doc, id, 1);
+}
+
+// Toward the bottom (rendered behind the other polygons).
+export function movePolygonDown(doc: MapDoc, id: string): MapDoc {
+  return movePolygonBy(doc, id, -1);
 }
 
 // ---------- Transfers ----------

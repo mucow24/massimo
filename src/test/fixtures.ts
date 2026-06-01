@@ -99,6 +99,7 @@ export function makeDoc(parts: {
   transfers?: import('../model/types').Transfer[];
   textLabels?: TextLabel[];
   polygons?: Polygon[];
+  polygonOrder?: string[];
   labelFontSize?: number;
   labelWeight?: TextLabelWeight;
   labelItalic?: boolean;
@@ -131,6 +132,7 @@ export function makeDoc(parts: {
     transfers,
     textLabels,
     polygons,
+    polygonOrder: parts.polygonOrder ?? Object.keys(polygons),
     labelFontSize: parts.labelFontSize ?? 12,
     labelWeight: parts.labelWeight ?? 400,
     labelItalic: parts.labelItalic ?? false,

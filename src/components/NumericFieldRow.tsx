@@ -20,6 +20,8 @@ interface Props {
    *  values above the slider's range. The slider itself still tops out at
    *  `max`. The transform's clamping decides the actual upper bound. */
   textboxAllowAboveMax?: boolean;
+  /** Greys out + disables both the slider and the spinbutton. */
+  disabled?: boolean;
 }
 
 /**
@@ -42,6 +44,7 @@ export function NumericFieldRow({
   onChange,
   getCurrent,
   textboxAllowAboveMax,
+  disabled,
 }: Props) {
   const { text, history, onNumberFocus, onNumberChange, onNumberWheel, onNumberBlur } =
     useNumericField(value, onChange, getCurrent);
@@ -58,6 +61,7 @@ export function NumericFieldRow({
         max={max}
         step={step}
         value={value}
+        disabled={disabled}
         onChange={(e) => onChange(Number(e.target.value))}
         {...history}
       />
@@ -69,6 +73,7 @@ export function NumericFieldRow({
         step={step}
         className="options-popover-spin"
         value={text}
+        disabled={disabled}
         onFocus={onNumberFocus}
         onChange={onNumberChange}
         onWheel={onNumberWheel}

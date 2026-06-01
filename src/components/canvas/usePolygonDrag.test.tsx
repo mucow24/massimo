@@ -177,3 +177,38 @@ describe('usePolygonDrag — edge "+" insert-and-drag', () => {
     expect(verts[1]).toEqual({ x: 0, y: -30 });
   });
 });
+
+describe('usePolygonDrag — locked polygons are inert', () => {
+  beforeEach(() => {
+    useDoc.setState({
+      ...useDoc.getState(),
+      polygons: { p0: makePolygon({ id: 'p0', locked: true }) },
+    });
+    useSelection.setState({ ...useSelection.getState(), selectedPolygonIds: ['p0'] });
+  });
+
+  it('whole-drag does not move a locked polygon', () => {
+    const before = useDoc.getState().polygons['p0'].vertices;
+    const r = render();
+    r.current.onPolygonPointerDown('p0', pointerEvent({ clientX: 200, clientY: 200 }));
+    r.current.onPointerMove(pointerEvent({ clientX: 260, clientY: 220 }));
+    r.current.onPointerUp(pointerEvent({ clientX: 260, clientY: 220 }));
+    expect(useDoc.getState().polygons['p0'].vertices).toEqual(before);
+  });
+
+  it('vertex-drag does not move a locked polygon vertex', () => {
+    const before = useDoc.getState().polygons['p0'].vertices;
+    const r = render();
+    r.current.onVertexPointerDown('p0', 0, pointerEvent({ clientX: 200, clientY: 200 }));
+    r.current.onPointerMove(pointerEvent({ clientX: 260, clientY: 220 }));
+    r.current.onPointerUp(pointerEvent({ clientX: 260, clientY: 220 }));
+    expect(useDoc.getState().polygons['p0'].vertices).toEqual(before);
+  });
+
+  it('edge "+" does not insert a vertex on a locked polygon', () => {
+    const r = render();
+    r.current.onEdgeAddPointerDown('p0', 0, pointerEvent({ clientX: 200, clientY: 200 }));
+    r.current.onPointerUp(pointerEvent({ clientX: 200, clientY: 200 }));
+    expect(useDoc.getState().polygons['p0'].vertices).toHaveLength(4);
+  });
+});
