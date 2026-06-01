@@ -195,6 +195,19 @@ export interface RouteBullet {
   size: number;
 }
 
+// A free-floating background shape (river, lake, park, …). Rendered UNDER all
+// other map content. Vertices are stored in WORLD coordinates (length >= 3, in
+// order); there is no separate center/rotation — rotation rewrites the vertices
+// around the centroid via the shared `orbitPoint` primitive. `fill`/`stroke`
+// are 7-char hex (`#rrggbb`); `strokeWidth` is in world units, clamped [0, 10].
+export interface Polygon {
+  id: string;
+  vertices: Vec2[];
+  fill: string;
+  stroke: string;
+  strokeWidth: number;
+}
+
 export interface MapDoc {
   stations: Record<StationId, Station>;
   lines: Record<LineId, Line>;
@@ -215,6 +228,9 @@ export interface MapDoc {
   transfers: Record<string, Transfer>;
   // Free-floating text annotations ("Labels" in the UI). Keyed by label id.
   textLabels: Record<string, TextLabel>;
+  // Free-floating background shapes (rivers, lakes, …). Rendered under all
+  // other map content. Keyed by polygon id.
+  polygons: Record<string, Polygon>;
   // Global station-label styling. Applies to every station name; line tags
   // and route bullets keep their always-bold pill styling. `labelWeight` is
   // one of the Helvetica Neue weights we ship in /public/fonts/ (no 600).

@@ -28,6 +28,7 @@ import { WarningToasts } from './canvas/WarningToasts';
 import { EditingBanner } from './canvas/EditingBanner';
 import { SnapGuides } from './canvas/SnapGuides';
 import { useItemDrag } from './canvas/useItemDrag';
+import { usePolygonDrag } from './canvas/usePolygonDrag';
 import { LineTagsLayer } from './canvas/LineTagsLayer';
 import { LayeringDashedOutlines, LayeringHoverOutline } from './canvas/LayeringOutlines';
 import { LayerNumberLabels } from './canvas/LayerNumberLabels';
@@ -38,6 +39,8 @@ import { RouteBulletView } from './RouteBulletView';
 import { RouteBulletPopover } from './RouteBulletPopover';
 import { LabelView } from './LabelView';
 import { TextLabelPopover } from './TextLabelPopover';
+import { PolygonView } from './PolygonView';
+import { PolygonPopover } from './PolygonPopover';
 import { TransferLayer, transferEndWorld } from './TransferLayer';
 import {
   closestParamOnOffsetPath,
@@ -76,6 +79,10 @@ export function MapCanvas() {
   const textLabels = useDoc((s) => s.textLabels);
   const addTextLabel = useDoc((s) => s.addTextLabel);
   const rotateTextLabel = useDoc((s) => s.rotateTextLabel);
+  const polygons = useDoc((s) => s.polygons);
+  const addPolygon = useDoc((s) => s.addPolygon);
+  const insertVertex = useDoc((s) => s.insertVertex);
+  const rotatePolygon = useDoc((s) => s.rotatePolygon);
   const selection = useSelection();
   const snapModes = useSnapPrefs((s) => s.modes);
   const gridVisible = useViewportStore((s) => s.gridVisible);
@@ -96,6 +103,7 @@ export function MapCanvas() {
   const washIds = rectSelect.previewStationIds ?? selection.selectedStationIds;
   const bulletSelectedIds = rectSelect.previewBulletIds ?? selection.selectedRouteBulletIds;
   const labelSelectedIds = rectSelect.previewLabelIds ?? selection.selectedLabelIds;
+  const polygonSelectedIds = rectSelect.previewPolygonIds ?? selection.selectedPolygonIds;
 
   // Geometry hash for buildBandGeometry's inputs (stations + line topology +
   // segmentStyles). EXCLUDES segmentLayers so layer cycles don't churn the
@@ -182,6 +190,7 @@ export function MapCanvas() {
   const inHandMode = selection.toolMode === 'hand' || selection.spaceHeld;
 
   const itemDrag = useItemDrag(svgRef, view.viewport.zoom, inHandMode);
+  const polyDrag = usePolygonDrag(svgRef, view.viewport.zoom, inHandMode);
   // Cursor position in world coords — drives the in-progress transfer line
   // from the anchor dot to the cursor, and the station-placing-mode ghost
   // that follows the cursor before each click.
@@ -251,12 +260,14 @@ export function MapCanvas() {
       setCursorWorld(null);
     }
     itemDrag.onPointerMove(e);
+    polyDrag.onPointerMove(e);
   };
   const onPointerUp = (e: React.PointerEvent) => {
     view.onPointerUp(e);
     drag.onPointerUp(e);
     rectSelect.onPointerUp(e);
     itemDrag.onPointerUp(e);
+    polyDrag.onPointerUp(e);
   };
 
   const onBulletClick = (id: string, e: React.MouseEvent) => {
@@ -323,6 +334,51 @@ export function MapCanvas() {
     }
     rotateTextLabel(id);
   };
+  const onPolygonClick = (id: string, e: React.MouseEvent) => {
+    if (dragState.suppressClick) return;
+    if (inHandMode) return;
+    e.stopPropagation();
+    // Clicking the body clears any active vertex selection (so the handles
+    // un-highlight) and selects the polygon, opening its popover.
+    selection.selectVertex(null);
+    // Shift-click toggles polygon membership; plain click replaces selection.
+    if (e.shiftKey && !(e.ctrlKey || e.metaKey)) {
+      selection.togglePolygonSelection(id);
+      return;
+    }
+    selection.selectPolygon(id);
+  };
+  const onPolygonContextMenu = (id: string, e: React.MouseEvent) => {
+    e.preventDefault();
+    e.stopPropagation();
+    // Right-click on a polygon that's part of a multi-selection rotates the
+    // whole group rigidly around this polygon (mirrors station/bullet/label).
+    const sel = useSelection.getState();
+    const stIds = sel.selectedStationIds;
+    const blIds = sel.selectedRouteBulletIds;
+    const lbIds = sel.selectedLabelIds;
+    const pgIds = sel.selectedPolygonIds;
+    const total = stIds.length + blIds.length + lbIds.length + pgIds.length;
+    if (total > 1 && pgIds.includes(id)) {
+      const members = buildRotateMembers(stIds, blIds, lbIds, pgIds);
+      useDoc.getState().rotateItemsAround({ type: 'polygon', id }, members);
+      return;
+    }
+    rotatePolygon(id);
+  };
+  const onVertexClick = (id: string, index: number, e: React.MouseEvent) => {
+    if (dragState.suppressClick) return;
+    if (inHandMode) return;
+    e.stopPropagation();
+    // Keep the polygon selected (popover stays open) and mark the vertex so
+    // Delete removes it.
+    selection.selectVertex({ polygonId: id, index });
+  };
+  const onEdgeAddClick = (id: string, edgeIndex: number, e: React.MouseEvent) => {
+    if (inHandMode) return;
+    e.stopPropagation();
+    insertVertex(id, edgeIndex);
+  };
   const onCanvasClick = (e: React.MouseEvent) => {
     if (inHandMode) return;
     const onBackground =
@@ -380,11 +436,22 @@ export function MapCanvas() {
       selection.selectLabel(id);
       return;
     }
+    if (mode.kind === 'creating-polygon') {
+      // Single-shot like labels: drop a default square, exit placing mode, and
+      // select it so the popover + vertex handles appear for immediate editing.
+      const w = view.screenToWorld(e.clientX, e.clientY);
+      const id = addPolygon(w.x, w.y);
+      selection.setUiMode({ kind: 'idle' });
+      selection.selectPolygon(id);
+      return;
+    }
     selection.selectStation(null);
     selection.selectLineTag(null);
     selection.selectRouteBullet(null);
     selection.selectTransfer(null);
     selection.selectLabel(null);
+    selection.selectPolygon(null);
+    selection.selectVertex(null);
   };
 
   // Hover/click handlers passed to SegmentBand when in add-line-tag mode.
@@ -511,6 +578,30 @@ export function MapCanvas() {
             zoom={view.viewport.zoom}
           />
         )}
+
+        {/* Polygon bodies: painted just above the grid and below ALL map
+            content (bands, stations, dots, labels) so background shapes like
+            rivers/lakes always sit underneath everything else. Their selection
+            handles + "+" buttons render in a separate top overlay pass below. */}
+        {Object.values(polygons).map((poly) => (
+          <PolygonView
+            key={poly.id}
+            polygon={poly}
+            layer="body"
+            selected={polygonSelectedIds.includes(poly.id)}
+            selectedVertexIndex={
+              selection.selectedVertex?.polygonId === poly.id
+                ? selection.selectedVertex.index
+                : null
+            }
+            onPointerDown={polyDrag.onPolygonPointerDown}
+            onClick={onPolygonClick}
+            onContextMenu={onPolygonContextMenu}
+            onVertexPointerDown={polyDrag.onVertexPointerDown}
+            onVertexClick={onVertexClick}
+            onEdgeAddClick={onEdgeAddClick}
+          />
+        ))}
 
         {/* selection wash: painted before bands so the wash sits behind
             line segments, markers, dots, and labels — all the way in the
@@ -791,6 +882,32 @@ export function MapCanvas() {
             ),
         )}
 
+        {/* Polygon selection overlay: dashed outline, vertex handles, and edge
+            "+" buttons. Painted in this top pass so the handles stay clickable
+            above all map content. Only selected polygons render here. */}
+        {polygonSelectedIds.map(
+          (pid) =>
+            polygons[pid] && (
+              <PolygonView
+                key={pid + ':overlay'}
+                polygon={polygons[pid]}
+                layer="overlay"
+                selected
+                selectedVertexIndex={
+                  selection.selectedVertex?.polygonId === pid
+                    ? selection.selectedVertex.index
+                    : null
+                }
+                onPointerDown={polyDrag.onPolygonPointerDown}
+                onClick={onPolygonClick}
+                onContextMenu={onPolygonContextMenu}
+                onVertexPointerDown={polyDrag.onVertexPointerDown}
+                onVertexClick={onVertexClick}
+                onEdgeAddClick={onEdgeAddClick}
+              />
+            ),
+        )}
+
         {/* Rubber-band rect for the rect-select gesture. World coords; the
             stroke width compensates for zoom so the dashed line stays a
             consistent screen weight. */}
@@ -811,7 +928,7 @@ export function MapCanvas() {
         {/* Snap guides: rendered last so the dotted lines + measurement
             labels sit on top of line tags and everything else. */}
         <SnapGuides
-          guides={[...drag.snapGuides, ...itemDrag.bulletSnapGuides]}
+          guides={[...drag.snapGuides, ...itemDrag.bulletSnapGuides, ...polyDrag.polygonSnapGuides]}
           zoom={view.viewport.zoom}
         />
 
@@ -885,6 +1002,20 @@ export function MapCanvas() {
             />
           );
         })()}
+
+      {selection.selectedPolygonIds.length === 1 &&
+        selection.selectedStationIds.length === 0 &&
+        selection.selectedRouteBulletIds.length === 0 &&
+        selection.selectedLabelIds.length === 0 &&
+        polygons[selection.selectedPolygonIds[0]] &&
+        view.vbW > 0 &&
+        view.vbH > 0 && (
+          <PolygonPopover
+            polygon={polygons[selection.selectedPolygonIds[0]]}
+            view={view}
+            onClose={() => selection.selectPolygon(null)}
+          />
+        )}
 
       <WarningToasts />
     </div>

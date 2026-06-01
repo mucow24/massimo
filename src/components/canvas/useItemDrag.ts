@@ -9,6 +9,7 @@ import {
 } from '../../geometry/snap';
 import { measureTextLabel } from '../../geometry/textMeasure';
 import { TEXT_LABEL_HIT_PAD } from '../../geometry/stationBoundary';
+import type { Vec2 } from '../../geometry/vec';
 
 const BULLET_SNAP_TOLERANCE = 10;
 
@@ -25,6 +26,7 @@ type ItemDragState = {
   bulletSiblings: { id: string; startX: number; startY: number }[];
   stationSiblings: { id: string; startX: number; startY: number }[];
   labelSiblings: { id: string; startX: number; startY: number }[];
+  polygonSiblings: { id: string; startVerts: Vec2[] }[];
   history: ReturnType<typeof beginHistoryGroup>;
 };
 
@@ -58,6 +60,8 @@ export function useItemDrag(
   const lines = useDoc((s) => s.lines);
   const moveRouteBullet = useDoc((s) => s.moveRouteBullet);
   const moveTextLabel = useDoc((s) => s.moveTextLabel);
+  const setPolygonVertices = useDoc((s) => s.setPolygonVertices);
+  const polygons = useDoc((s) => s.polygons);
   const snapModes = useSnapPrefs((s) => s.modes);
 
   const bulletDragRef = useRef<ItemDragState | null>(null);
@@ -78,6 +82,7 @@ export function useItemDrag(
     const bulletSiblings: { id: string; startX: number; startY: number }[] = [];
     const stationSiblings: { id: string; startX: number; startY: number }[] = [];
     const labelSiblings: { id: string; startX: number; startY: number }[] = [];
+    const polygonSiblings: { id: string; startVerts: Vec2[] }[] = [];
     if (includesGrabbed) {
       for (const bid of sel.selectedRouteBulletIds) {
         if (bid === id) continue;
@@ -95,6 +100,11 @@ export function useItemDrag(
         if (!lb) continue;
         labelSiblings.push({ id: lid, startX: lb.x, startY: lb.y });
       }
+      for (const pid of sel.selectedPolygonIds) {
+        const pg = polygons[pid];
+        if (!pg) continue;
+        polygonSiblings.push({ id: pid, startVerts: pg.vertices.map((v) => ({ ...v })) });
+      }
     }
     bulletDragRef.current = {
       id,
@@ -106,6 +116,7 @@ export function useItemDrag(
       bulletSiblings,
       stationSiblings,
       labelSiblings,
+      polygonSiblings,
       history: beginHistoryGroup(),
     };
   };
@@ -123,6 +134,7 @@ export function useItemDrag(
     const labelSiblings: { id: string; startX: number; startY: number }[] = [];
     const bulletSiblings: { id: string; startX: number; startY: number }[] = [];
     const stationSiblings: { id: string; startX: number; startY: number }[] = [];
+    const polygonSiblings: { id: string; startVerts: Vec2[] }[] = [];
     if (includesGrabbed) {
       for (const gid of sel.selectedLabelIds) {
         if (gid === id) continue;
@@ -140,6 +152,11 @@ export function useItemDrag(
         if (!ss) continue;
         stationSiblings.push({ id: sid, startX: ss.x, startY: ss.y });
       }
+      for (const pid of sel.selectedPolygonIds) {
+        const pg = polygons[pid];
+        if (!pg) continue;
+        polygonSiblings.push({ id: pid, startVerts: pg.vertices.map((v) => ({ ...v })) });
+      }
     }
     labelDragRef.current = {
       id,
@@ -151,6 +168,7 @@ export function useItemDrag(
       labelSiblings,
       bulletSiblings,
       stationSiblings,
+      polygonSiblings,
       history: beginHistoryGroup(),
     };
   };
@@ -178,7 +196,8 @@ export function useItemDrag(
         const inGroupDrag =
           bd.bulletSiblings.length > 0 ||
           bd.stationSiblings.length > 0 ||
-          bd.labelSiblings.length > 0;
+          bd.labelSiblings.length > 0 ||
+          bd.polygonSiblings.length > 0;
         if (lineId && !e.shiftKey && !inGroupDrag) {
           // Reuse the station snap engine in bullet mode — it already
           // handles per-stop axis alignment, two-axis snap at corners,
@@ -217,6 +236,12 @@ export function useItemDrag(
           }
           for (const ls of bd.labelSiblings) {
             moveTextLabel(ls.id, ls.startX + deltaX, ls.startY + deltaY);
+          }
+          for (const ps of bd.polygonSiblings) {
+            setPolygonVertices(
+              ps.id,
+              ps.startVerts.map((v) => ({ x: v.x + deltaX, y: v.y + deltaY })),
+            );
           }
         }
       }
@@ -260,7 +285,11 @@ export function useItemDrag(
         const dy = ny - ld.startWY;
         moveTextLabel(ld.id, nx, ny);
         const inGroupDrag =
-          ld.labelSiblings.length + ld.bulletSiblings.length + ld.stationSiblings.length > 0;
+          ld.labelSiblings.length +
+            ld.bulletSiblings.length +
+            ld.stationSiblings.length +
+            ld.polygonSiblings.length >
+          0;
         if (inGroupDrag) {
           for (const ls of ld.labelSiblings) {
             moveTextLabel(ls.id, ls.startX + dx, ls.startY + dy);
@@ -270,6 +299,12 @@ export function useItemDrag(
           }
           for (const ss of ld.stationSiblings) {
             useDoc.getState().moveStation(ss.id, ss.startX + dx, ss.startY + dy);
+          }
+          for (const ps of ld.polygonSiblings) {
+            setPolygonVertices(
+              ps.id,
+              ps.startVerts.map((v) => ({ x: v.x + dx, y: v.y + dy })),
+            );
           }
         }
       }
