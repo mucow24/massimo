@@ -206,6 +206,14 @@ export interface Polygon {
   fill: string;
   stroke: string;
   strokeWidth: number;
+  // Fill opacity as a percentage, 0..100. Optional; missing ⇒ 100 (fully
+  // opaque), so polygons saved before this field continue to render solid.
+  fillOpacity?: number;
+  // When locked, the polygon can't be dragged, vertex-edited, deleted, or
+  // marquee-selected, and its popover controls (other than the lock toggle)
+  // are disabled. It can still be click-selected so the user can unlock it.
+  // Optional; missing ⇒ unlocked.
+  locked?: boolean;
 }
 
 export interface MapDoc {
@@ -231,6 +239,11 @@ export interface MapDoc {
   // Free-floating background shapes (rivers, lakes, …). Rendered under all
   // other map content. Keyed by polygon id.
   polygons: Record<string, Polygon>;
+  // Relative paint order of polygons among themselves (all still sit beneath
+  // every other map element). Later in the array = painted later = on top.
+  // Ids missing from this list (legacy saves, races) fall back to insertion
+  // order and render on top — see `effectivePolygonOrder`.
+  polygonOrder: string[];
   // Global station-label styling. Applies to every station name; line tags
   // and route bullets keep their always-bold pill styling. `labelWeight` is
   // one of the Helvetica Neue weights we ship in /public/fonts/ (no 600).

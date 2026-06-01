@@ -172,7 +172,10 @@ export function textLabelsForRect(labels: Record<string, TextLabel>, rect: AABB)
 export function polygonsForRect(polygons: Record<string, Polygon>, rect: AABB): string[] {
   const hits: string[] = [];
   for (const id of Object.keys(polygons)) {
-    if (rectIntersectsPolygon(rect, polygons[id].vertices)) hits.push(id);
+    const poly = polygons[id];
+    // Locked polygons are excluded from marquee selection.
+    if (poly.locked) continue;
+    if (rectIntersectsPolygon(rect, poly.vertices)) hits.push(id);
   }
   return hits;
 }

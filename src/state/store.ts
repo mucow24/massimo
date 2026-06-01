@@ -71,6 +71,7 @@ const DOC_FIELDS = [
   'transfers',
   'textLabels',
   'polygons',
+  'polygonOrder',
   'labelFontSize',
   'labelWeight',
   'labelItalic',
@@ -197,9 +198,13 @@ interface DocState extends MapDoc {
   deleteVertex: (id: string, index: number) => void;
   updatePolygon: (
     id: string,
-    patch: Partial<Pick<Polygon, 'fill' | 'stroke' | 'strokeWidth' | 'vertices'>>,
+    patch: Partial<
+      Pick<Polygon, 'fill' | 'stroke' | 'strokeWidth' | 'fillOpacity' | 'locked' | 'vertices'>
+    >,
   ) => void;
   rotatePolygon: (id: string) => void;
+  movePolygonUp: (id: string) => void;
+  movePolygonDown: (id: string) => void;
   deletePolygon: (id: string) => void;
 
   setCurveRadius: (r: number) => void;
@@ -372,6 +377,8 @@ export const useDoc = create<DocState>()(
         deleteVertex: (id, index) => set((s) => T.deleteVertex(s, id, index)),
         updatePolygon: (id, patch) => set((s) => T.updatePolygon(s, id, patch)),
         rotatePolygon: (id) => set((s) => T.rotatePolygon(s, id)),
+        movePolygonUp: (id) => set((s) => T.movePolygonUp(s, id)),
+        movePolygonDown: (id) => set((s) => T.movePolygonDown(s, id)),
         deletePolygon: (id) => set((s) => T.deletePolygon(s, id)),
 
         setCurveRadius: (r) => set((s) => T.setCurveRadius(s, r)),

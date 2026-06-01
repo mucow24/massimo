@@ -119,9 +119,17 @@ export function usePolygonDrag(
     const doc = useDoc.getState();
     const poly = doc.polygons[id];
     if (!poly) return;
+    // A locked polygon can't be dragged. Swallow the pointerdown so the canvas
+    // doesn't pan/rect-select, but leave the click to select it (so the popover
+    // — and its unlock toggle — stays reachable).
+    if (poly.locked) {
+      e.stopPropagation();
+      return;
+    }
     e.stopPropagation();
     // Group-drag: if the grabbed polygon is part of the multi-selection, every
-    // other selected item tags along by the same per-frame delta.
+    // other selected item tags along by the same per-frame delta. Locked
+    // polygons are skipped — they don't move with the group.
     const sel = useSelection.getState();
     const includesGrabbed = sel.selectedPolygonIds.includes(id);
     const polygonSiblings: { id: string; startVerts: Vec2[] }[] = [];
@@ -132,7 +140,7 @@ export function usePolygonDrag(
       for (const pid of sel.selectedPolygonIds) {
         if (pid === id) continue;
         const p = doc.polygons[pid];
-        if (!p) continue;
+        if (!p || p.locked) continue;
         polygonSiblings.push({ id: pid, startVerts: p.vertices.map((v) => ({ ...v })) });
       }
       for (const sid of sel.selectedStationIds) {
@@ -170,7 +178,7 @@ export function usePolygonDrag(
     if (inHandMode) return;
     const poly = useDoc.getState().polygons[polygonId];
     const v = poly?.vertices[index];
-    if (!v) return;
+    if (!v || poly?.locked) return;
     e.stopPropagation();
     vertexDragRef.current = {
       polygonId,
@@ -188,7 +196,8 @@ export function usePolygonDrag(
     if (e.button !== 0) return;
     if (inHandMode) return;
     const doc = useDoc.getState();
-    if (!doc.polygons[polygonId]) return;
+    const poly = doc.polygons[polygonId];
+    if (!poly || poly.locked) return;
     e.stopPropagation();
     // Suppress the trailing click so a no-drag "+" tap doesn't re-trigger
     // polygon/background click handlers (which would clear the vertex we just

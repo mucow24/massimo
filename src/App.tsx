@@ -84,11 +84,14 @@ export default function App() {
         // (the transform no-ops at the 3-vertex floor) and keep the polygon
         // selected so the user can keep editing.
         if (sel.selectedVertex) {
-          e.preventDefault();
           const { polygonId, index } = sel.selectedVertex;
-          sel.selectVertex(null);
-          useDoc.getState().deleteVertex(polygonId, index);
-          return;
+          // Locked polygons can't be edited; ignore the vertex delete.
+          if (!useDoc.getState().polygons[polygonId]?.locked) {
+            e.preventDefault();
+            sel.selectVertex(null);
+            useDoc.getState().deleteVertex(polygonId, index);
+            return;
+          }
         }
         // Mixed station + bullet + label + polygon multi-selection takes
         // priority over the single-element delete paths below; one history
@@ -96,7 +99,10 @@ export default function App() {
         const stationIds = sel.selectedStationIds;
         const bulletIds = sel.selectedRouteBulletIds;
         const labelIds = sel.selectedLabelIds;
-        const polygonIds = sel.selectedPolygonIds;
+        // Locked polygons are protected from deletion.
+        const polygonIds = sel.selectedPolygonIds.filter(
+          (id) => !useDoc.getState().polygons[id]?.locked,
+        );
         if (stationIds.length + bulletIds.length + labelIds.length + polygonIds.length > 0) {
           e.preventDefault();
           sel.selectStation(null);

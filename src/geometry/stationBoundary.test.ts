@@ -1,5 +1,6 @@
 import { describe, it, expect } from 'vitest';
 import {
+  polygonsForRect,
   routeBulletsForRect,
   stationBoundaryRectsLocal,
   stationLocalToWorld,
@@ -7,7 +8,13 @@ import {
   textLabelHitPolygon,
   textLabelsForRect,
 } from './stationBoundary';
-import { makeStation, makeStop, makeTextLabel, stationWithStop } from '../test/fixtures';
+import {
+  makePolygon,
+  makeStation,
+  makeStop,
+  makeTextLabel,
+  stationWithStop,
+} from '../test/fixtures';
 import { STOP_SIZE } from './orientation';
 import type { RouteBullet } from '../model/types';
 
@@ -276,5 +283,34 @@ describe('textLabelsForRect', () => {
     const labels = { a: makeTextLabel({ id: 'a', x: 0, y: 0, text: '', fontSize: 16 }) };
     const rect = { x0: -2, y0: -2, x1: 2, y1: 2 };
     expect(textLabelsForRect(labels, rect)).toEqual(['a']);
+  });
+});
+
+describe('polygonsForRect', () => {
+  // makePolygon's default square spans (-30,-30)..(30,30).
+  it('returns polygons whose body overlaps the rect', () => {
+    const polygons = {
+      a: makePolygon({ id: 'a' }),
+      b: makePolygon({
+        id: 'b',
+        vertices: [
+          { x: 970, y: 970 },
+          { x: 1030, y: 970 },
+          { x: 1030, y: 1030 },
+          { x: 970, y: 1030 },
+        ],
+      }),
+    };
+    const rect = { x0: -50, y0: -50, x1: 50, y1: 50 };
+    expect(polygonsForRect(polygons, rect)).toEqual(['a']);
+  });
+
+  it('excludes locked polygons from marquee selection', () => {
+    const polygons = {
+      a: makePolygon({ id: 'a', locked: true }),
+      b: makePolygon({ id: 'b' }),
+    };
+    const rect = { x0: -50, y0: -50, x1: 50, y1: 50 };
+    expect(polygonsForRect(polygons, rect)).toEqual(['b']);
   });
 });
