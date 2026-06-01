@@ -564,13 +564,15 @@ export function MapCanvas() {
         />
 
         {gridVisible && (
-          <Grid
-            vbX={view.vbX}
-            vbY={view.vbY}
-            vbW={view.vbW}
-            vbH={view.vbH}
-            zoom={view.viewport.zoom}
-          />
+          <g data-export-exclude="1">
+            <Grid
+              vbX={view.vbX}
+              vbY={view.vbY}
+              vbW={view.vbW}
+              vbH={view.vbH}
+              zoom={view.viewport.zoom}
+            />
+          </g>
         )}
 
         {/* Polygon bodies: painted just above the grid and below ALL map
@@ -601,19 +603,21 @@ export function MapCanvas() {
             line segments, markers, dots, and labels — all the way in the
             background. One per selected station (or per previewed station
             during a rect-select drag). */}
-        {washIds.map(
-          (sid) =>
-            stations[sid] && (
-              <StationView
-                key={sid + ':wash'}
-                station={stations[sid]}
-                lines={lines}
-                zoom={view.viewport.zoom}
-                onStartDrag={drag.onStartDrag}
-                layer="wash"
-              />
-            ),
-        )}
+        <g data-export-exclude="1">
+          {washIds.map(
+            (sid) =>
+              stations[sid] && (
+                <StationView
+                  key={sid + ':wash'}
+                  station={stations[sid]}
+                  lines={lines}
+                  zoom={view.viewport.zoom}
+                  onStartDrag={drag.onStartDrag}
+                  layer="wash"
+                />
+              ),
+          )}
+        </g>
 
         {/* band stripes, warnings, and stop squares interleaved by per-stripe z-priority */}
         {renderables.map((r) => {
@@ -692,11 +696,13 @@ export function MapCanvas() {
             primacy. The hovered solid outline + the layer-number labels
             still paint at the very end so they stay on top. */}
         {inLayeringMode && (
-          <LayeringDashedOutlines
-            bands={bandsGeometry}
-            lines={lines}
-            hovered={hoveredLayerStripe}
-          />
+          <g data-export-exclude="1">
+            <LayeringDashedOutlines
+              bands={bandsGeometry}
+              lines={lines}
+              hovered={hoveredLayerStripe}
+            />
+          </g>
         )}
 
         {/* Transfers: user-styled lines connecting two dots. Rendered BEFORE
@@ -729,6 +735,7 @@ export function MapCanvas() {
             const anchorWorld = transferEndWorld(stations[anchor.stationId], anchor.lineId);
             return (
               <line
+                data-export-exclude="1"
                 x1={anchorWorld.x}
                 y1={anchorWorld.y}
                 x2={cursorWorld.x}
@@ -756,17 +763,19 @@ export function MapCanvas() {
         {/* Station-placing-mode ghost: a faint dot + name following the
             cursor before each click, so the user can see where (and what
             name) the next placement will land. */}
-        <StationPlacingPreview
-          world={selection.uiMode.kind === 'placing-station' ? cursorWorld : null}
-          name={previewName}
-          lines={lines}
-        />
-        {/* Label-placing-mode ghost: a faint "New Label" following the cursor
-            before the click. Single-shot placement, so it disappears as soon
-            as the user clicks (the click handler exits placing-label). */}
-        <LabelPlacingPreview
-          world={selection.uiMode.kind === 'placing-label' ? cursorWorld : null}
-        />
+        <g data-export-exclude="1">
+          <StationPlacingPreview
+            world={selection.uiMode.kind === 'placing-station' ? cursorWorld : null}
+            name={previewName}
+            lines={lines}
+          />
+          {/* Label-placing-mode ghost: a faint "New Label" following the cursor
+              before the click. Single-shot placement, so it disappears as soon
+              as the user clicks (the click handler exits placing-label). */}
+          <LabelPlacingPreview
+            world={selection.uiMode.kind === 'placing-label' ? cursorWorld : null}
+          />
+        </g>
 
         {/* Route bullets: rendered before the dim so they fade with the
             rest of the map when a line is selected. Faded in layering mode. */}
@@ -805,21 +814,23 @@ export function MapCanvas() {
             Painted after dots so other lines' stop dots can't punch through
             the selected line's outline. */}
         {highlightLineId && (
-          <HighlightedLineLayer
-            highlightLineId={highlightLineId}
-            lines={lines}
-            stations={stations}
-            renderables={renderables}
-            underlayColor={underlayColor}
-            hoveredInspectorSegment={selection.hoveredInspectorSegment}
-            uiMode={selection.uiMode}
-            zoom={view.viewport.zoom}
-            onStartDrag={drag.onStartDrag}
-            vbX={view.vbX}
-            vbY={view.vbY}
-            vbW={view.vbW}
-            vbH={view.vbH}
-          />
+          <g data-export-exclude="1">
+            <HighlightedLineLayer
+              highlightLineId={highlightLineId}
+              lines={lines}
+              stations={stations}
+              renderables={renderables}
+              underlayColor={underlayColor}
+              hoveredInspectorSegment={selection.hoveredInspectorSegment}
+              uiMode={selection.uiMode}
+              zoom={view.viewport.zoom}
+              onStartDrag={drag.onStartDrag}
+              vbX={view.vbX}
+              vbY={view.vbY}
+              vbW={view.vbW}
+              vbH={view.vbH}
+            />
+          </g>
         )}
 
         {/* Line tags: in-band labels that ride each line's stripe. Faded
@@ -833,80 +844,91 @@ export function MapCanvas() {
             the selected station while mirror mode is on. Drawn beneath the
             selection stroke so the selected station's black outline still
             stands out. */}
-        {matchingIds.map(
-          (sid) =>
-            stations[sid] && (
-              <StationView
-                key={sid + ':match-stroke'}
-                station={stations[sid]}
-                lines={lines}
-                zoom={view.viewport.zoom}
-                onStartDrag={drag.onStartDrag}
-                layer="match-stroke"
-              />
-            ),
-        )}
+        <g data-export-exclude="1">
+          {matchingIds.map(
+            (sid) =>
+              stations[sid] && (
+                <StationView
+                  key={sid + ':match-stroke'}
+                  station={stations[sid]}
+                  lines={lines}
+                  zoom={view.viewport.zoom}
+                  onStartDrag={drag.onStartDrag}
+                  layer="match-stroke"
+                />
+              ),
+          )}
+        </g>
 
         {/* selection stroke: 2px black ring around the merged silhouette,
             painted on top of everything so the outline is never occluded.
             One per selected station (or per previewed station during a
             rect-select drag). */}
-        {washIds.map(
-          (sid) =>
-            stations[sid] && (
-              <StationView
-                key={sid + ':stroke'}
-                station={stations[sid]}
-                lines={lines}
-                zoom={view.viewport.zoom}
-                onStartDrag={drag.onStartDrag}
-                layer="stroke"
-              />
-            ),
-        )}
+        <g data-export-exclude="1">
+          {washIds.map(
+            (sid) =>
+              stations[sid] && (
+                <StationView
+                  key={sid + ':stroke'}
+                  station={stations[sid]}
+                  lines={lines}
+                  zoom={view.viewport.zoom}
+                  onStartDrag={drag.onStartDrag}
+                  layer="stroke"
+                />
+              ),
+          )}
+        </g>
 
         {/* Selection stroke for text labels: dashed black ring around each
             selected label's rotated bbox. Painted in this pass so it sits
             above the dim overlay and on top of the network — matching how
             stations and bullets handle their outlines. */}
-        {labelSelectedIds.map(
-          (gid) =>
-            textLabels[gid] && (
-              <LabelView key={gid + ':stroke'} label={textLabels[gid]} selected layer="stroke" />
-            ),
-        )}
+        <g data-export-exclude="1">
+          {labelSelectedIds.map(
+            (gid) =>
+              textLabels[gid] && (
+                <LabelView key={gid + ':stroke'} label={textLabels[gid]} selected layer="stroke" />
+              ),
+          )}
+        </g>
 
         {/* Polygon selection overlay: dashed outline, vertex handles, and edge
             "+" buttons. Painted in this top pass so the handles stay clickable
-            above all map content. Only selected polygons render here. */}
-        {polygonSelectedIds.map(
-          (pid) =>
-            polygons[pid] && (
-              <PolygonView
-                key={pid + ':overlay'}
-                polygon={polygons[pid]}
-                layer="overlay"
-                selected
-                selectedVertexIndex={
-                  selection.selectedVertex?.polygonId === pid
-                    ? selection.selectedVertex.index
-                    : null
-                }
-                onPointerDown={polyDrag.onPolygonPointerDown}
-                onClick={onPolygonClick}
-                onContextMenu={onPolygonContextMenu}
-                onVertexPointerDown={polyDrag.onVertexPointerDown}
-                onVertexClick={onVertexClick}
-                onEdgeAddPointerDown={polyDrag.onEdgeAddPointerDown}
-              />
-            ),
-        )}
+            above all map content. Only selected polygons render here. Excluded
+            from image export — it's selection chrome, not map content (the
+            polygon bodies above ARE exported). */}
+        <g data-export-exclude="1">
+          {polygonSelectedIds.map(
+            (pid) =>
+              polygons[pid] && (
+                <PolygonView
+                  key={pid + ':overlay'}
+                  polygon={polygons[pid]}
+                  layer="overlay"
+                  selected
+                  selectedVertexIndex={
+                    selection.selectedVertex?.polygonId === pid
+                      ? selection.selectedVertex.index
+                      : null
+                  }
+                  onPointerDown={polyDrag.onPolygonPointerDown}
+                  onClick={onPolygonClick}
+                  onContextMenu={onPolygonContextMenu}
+                  onVertexPointerDown={polyDrag.onVertexPointerDown}
+                  onVertexClick={onVertexClick}
+                  onEdgeAddPointerDown={polyDrag.onEdgeAddPointerDown}
+                />
+              ),
+          )}
+        </g>
 
         {/* Rubber-band rect for the rect-select gesture. World coords; the
             stroke width compensates for zoom so the dashed line stays a
             consistent screen weight. */}
         {rectSelect.rect && (
           <rect
+            data-export-exclude="1"
             x={Math.min(rectSelect.rect.x0, rectSelect.rect.x1)}
             y={Math.min(rectSelect.rect.y0, rectSelect.rect.y1)}
             width={Math.abs(rectSelect.rect.x1 - rectSelect.rect.x0)}
@@ -921,10 +943,12 @@ export function MapCanvas() {
 
         {/* Snap guides: rendered last so the dotted lines + measurement
             labels sit on top of line tags and everything else. */}
-        <SnapGuides
-          guides={[...drag.snapGuides, ...itemDrag.bulletSnapGuides, ...polyDrag.polygonSnapGuides]}
-          zoom={view.viewport.zoom}
-        />
+        <g data-export-exclude="1">
+          <SnapGuides
+            guides={[...drag.snapGuides, ...itemDrag.bulletSnapGuides, ...polyDrag.polygonSnapGuides]}
+            zoom={view.viewport.zoom}
+          />
+        </g>
 
         {/* Layering-mode top overlays: the hovered-stripe solid outline +
             small layer-number labels. Painted at the very end of the SVG
@@ -934,14 +958,14 @@ export function MapCanvas() {
             footprint is rendered earlier (above) so dots and transfers
             paint over it. */}
         {inLayeringMode && (
-          <>
+          <g data-export-exclude="1">
             <LayeringHoverOutline
               bands={bandsGeometry}
               lines={lines}
               hovered={hoveredLayerStripe}
             />
             <LayerNumberLabels bands={bandsGeometry} lines={lines} hovered={hoveredLayerStripe} />
-          </>
+          </g>
         )}
 
         {/* Routing warnings: a red+white frame around each unrouteable band's
@@ -949,17 +973,19 @@ export function MapCanvas() {
             very end of the SVG so the marker draws on top of every stripe,
             dot, and label and is never occluded. The ⚠ takes whichever of
             black/white is legible against the stripe under its center. */}
-        {bands.map((b) => {
-          if (!b.warning) return null;
-          // Color under the glyph = the band's center stripe, resolved the
-          // same way SegmentBand paints it (desaturation override, else live).
-          const centerId = b.lines[Math.floor(b.lines.length / 2)]?.id;
-          const centerColor = centerId
-            ? (colorMap?.[centerId] ?? lines[centerId]?.color)
-            : undefined;
-          const iconColor = centerColor ? legibleTextOn(centerColor) : '#000';
-          return <BandWarning key={'w:' + b.bandKey} spec={b} iconColor={iconColor} />;
-        })}
+        <g data-export-exclude="1">
+          {bands.map((b) => {
+            if (!b.warning) return null;
+            // Color under the glyph = the band's center stripe, resolved the
+            // same way SegmentBand paints it (desaturation override, else live).
+            const centerId = b.lines[Math.floor(b.lines.length / 2)]?.id;
+            const centerColor = centerId
+              ? (colorMap?.[centerId] ?? lines[centerId]?.color)
+              : undefined;
+            const iconColor = centerColor ? legibleTextOn(centerColor) : '#000';
+            return <BandWarning key={'w:' + b.bandKey} spec={b} iconColor={iconColor} />;
+          })}
+        </g>
       </svg>
 
       {selection.selectedRouteBulletIds.length === 1 &&
