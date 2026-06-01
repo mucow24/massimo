@@ -945,7 +945,11 @@ export function MapCanvas() {
             labels sit on top of line tags and everything else. */}
         <g data-export-exclude="1">
           <SnapGuides
-            guides={[...drag.snapGuides, ...itemDrag.bulletSnapGuides, ...polyDrag.polygonSnapGuides]}
+            guides={[
+              ...drag.snapGuides,
+              ...itemDrag.bulletSnapGuides,
+              ...polyDrag.polygonSnapGuides,
+            ]}
             zoom={view.viewport.zoom}
           />
         </g>
