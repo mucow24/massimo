@@ -40,9 +40,15 @@ export function PolygonPopover({ polygon, view, onClose }: Props) {
   // the Transfer color control in the Options popover.
   const fillField = useFieldHistory();
   const strokeField = useFieldHistory();
+  const darkFillField = useFieldHistory();
+  const darkStrokeField = useFieldHistory();
 
   const locked = polygon.locked ?? false;
   const fillOpacity = polygon.fillOpacity ?? POLYGON_FILL_OPACITY_DEFAULT;
+  // Dark-mode colors are concrete (initialized to the light colors at creation,
+  // independent thereafter).
+  const darkFill = polygon.darkFill;
+  const darkStroke = polygon.darkStroke;
 
   // Header drag — same mechanism as the text-label popover.
   const [dragOffset, setDragOffset] = useState<{ x: number; y: number }>({ x: 0, y: 0 });
@@ -78,6 +84,8 @@ export function PolygonPopover({ polygon, view, onClose }: Props) {
 
   const onFill = (fill: string) => updatePolygon(polygon.id, { fill });
   const onStroke = (stroke: string) => updatePolygon(polygon.id, { stroke });
+  const onDarkFill = (darkFill: string) => updatePolygon(polygon.id, { darkFill });
+  const onDarkStroke = (darkStroke: string) => updatePolygon(polygon.id, { darkStroke });
   const onStrokeWidth = (strokeWidth: number) => updatePolygon(polygon.id, { strokeWidth });
   const onFillOpacity = (o: number) => updatePolygon(polygon.id, { fillOpacity: o });
   const onToggleLock = () => updatePolygon(polygon.id, { locked: !locked });
@@ -114,14 +122,27 @@ export function PolygonPopover({ polygon, view, onClose }: Props) {
       <div className="body">
         <div className="row">
           <label htmlFor="polygon-fill">Color</label>
+          <span aria-hidden="true">☀️</span>
           <input
             id="polygon-fill"
             type="color"
             aria-label="Polygon color"
+            title="Light mode fill"
             value={polygon.fill}
             disabled={locked}
             onChange={(e) => onFill(e.target.value)}
             {...fillField}
+          />
+          <span aria-hidden="true">🌙</span>
+          <input
+            id="polygon-dark-fill"
+            type="color"
+            aria-label="Dark mode color"
+            title="Dark mode fill"
+            value={darkFill}
+            disabled={locked}
+            onChange={(e) => onDarkFill(e.target.value)}
+            {...darkFillField}
           />
         </div>
         <NumericFieldRow
@@ -150,14 +171,27 @@ export function PolygonPopover({ polygon, view, onClose }: Props) {
         />
         <div className="row">
           <label htmlFor="polygon-stroke">Stroke color</label>
+          <span aria-hidden="true">☀️</span>
           <input
             id="polygon-stroke"
             type="color"
             aria-label="Stroke color"
+            title="Light mode stroke"
             value={polygon.stroke}
             disabled={locked}
             onChange={(e) => onStroke(e.target.value)}
             {...strokeField}
+          />
+          <span aria-hidden="true">🌙</span>
+          <input
+            id="polygon-dark-stroke"
+            type="color"
+            aria-label="Dark mode stroke color"
+            title="Dark mode stroke"
+            value={darkStroke}
+            disabled={locked}
+            onChange={(e) => onDarkStroke(e.target.value)}
+            {...darkStrokeField}
           />
         </div>
         <div className="row">

@@ -49,11 +49,24 @@ export interface SeedTextLabel {
   align?: 'left' | 'center' | 'right';
 }
 
+export interface SeedPolygon {
+  id: string;
+  vertices: { x: number; y: number }[];
+  fill: string;
+  stroke: string;
+  strokeWidth?: number;
+  // Omit to simulate a polygon saved before the dark-mode fields existed (the
+  // store's migrate should backfill them on rehydrate).
+  darkFill?: string;
+  darkStroke?: string;
+}
+
 export interface Seed {
   stations: SeedStation[];
   lines: SeedLine[];
   routeBullets?: SeedRouteBullet[];
   textLabels?: SeedTextLabel[];
+  polygons?: SeedPolygon[];
 }
 
 /**
@@ -124,7 +137,27 @@ export async function seedAndOpen(page: Page, seed: Seed): Promise<void> {
     };
   }
 
+  const polygons: Record<string, unknown> = {};
+  for (const p of seed.polygons ?? []) {
+    polygons[p.id] = {
+      id: p.id,
+      vertices: p.vertices,
+      fill: p.fill,
+      stroke: p.stroke,
+      strokeWidth: p.strokeWidth ?? 1,
+      // Only include the dark fields when provided, so an omitted pair persists
+      // as a pre-dark-mode (legacy) polygon for the migration to backfill.
+      ...(p.darkFill !== undefined ? { darkFill: p.darkFill } : {}),
+      ...(p.darkStroke !== undefined ? { darkStroke: p.darkStroke } : {}),
+    };
+  }
+
+  // `version` must be a number below the store's current persist version, or
+  // zustand skips `migrate` entirely (it only migrates a numeric, mismatched
+  // version). 4 == the last version shipped before dark-mode colors, so every
+  // seeded doc exercises the real 4 → current upgrade path on rehydrate.
   const persisted = {
+    version: 4,
     state: {
       stations,
       lines,
@@ -135,6 +168,8 @@ export async function seedAndOpen(page: Page, seed: Seed): Promise<void> {
       routeBullets,
       transfers: {},
       textLabels,
+      polygons,
+      polygonOrder: (seed.polygons ?? []).map((p) => p.id),
     },
   };
 

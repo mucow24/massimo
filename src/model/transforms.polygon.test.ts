@@ -13,6 +13,7 @@ import {
   movePolygonUp,
   movePolygonDown,
   effectivePolygonOrder,
+  resolvePolygonColors,
   POLYGON_STROKE_WIDTH_MIN,
   POLYGON_STROKE_WIDTH_MAX,
   POLYGON_FILL_OPACITY_MIN,
@@ -127,6 +128,41 @@ describe('polygon transforms', () => {
     expect(updatePolygon(doc, 'p0', { locked: true }).polygons['p0'].locked).toBe(true);
   });
 
+  it('updatePolygon sets the dark-mode fill and stroke independently of the light colors', () => {
+    const doc = makeDoc({
+      polygons: [makePolygon({ id: 'p0', fill: '#112233', stroke: '#445566' })],
+    });
+    const next = updatePolygon(doc, 'p0', { darkFill: '#101010', darkStroke: '#202020' });
+    expect(next.polygons['p0'].darkFill).toBe('#101010');
+    expect(next.polygons['p0'].darkStroke).toBe('#202020');
+    // Light colors untouched.
+    expect(next.polygons['p0'].fill).toBe('#112233');
+    expect(next.polygons['p0'].stroke).toBe('#445566');
+  });
+
+  it('addPolygon initializes the dark colors equal to the light colors', () => {
+    const p = addPolygon(makeDoc({}), 'p0', 0, 0).polygons['p0'];
+    expect(p.darkFill).toBe(p.fill);
+    expect(p.darkStroke).toBe(p.stroke);
+  });
+
+  it('changing a light color leaves the dark color untouched — they are independent', () => {
+    const doc = addPolygon(makeDoc({}), 'p0', 0, 0);
+    const original = doc.polygons['p0'];
+    const next = updatePolygon(doc, 'p0', { fill: '#ff0000', stroke: '#00ff00' });
+    // Light colors update as asked...
+    expect(next.polygons['p0'].fill).toBe('#ff0000');
+    expect(next.polygons['p0'].stroke).toBe('#00ff00');
+    // ...and the dark colors keep their creation values rather than tracking
+    // the light ones.
+    expect(next.polygons['p0'].darkFill).toBe(original.darkFill);
+    expect(next.polygons['p0'].darkStroke).toBe(original.darkStroke);
+    expect(resolvePolygonColors(next.polygons['p0'], true)).toEqual({
+      fill: original.fill,
+      stroke: original.stroke,
+    });
+  });
+
   it('addPolygon appends to polygonOrder; move up/down reorders (later = on top)', () => {
     let doc = makeDoc({});
     doc = addPolygon(doc, 'a', 0, 0);
@@ -153,6 +189,35 @@ describe('polygon transforms', () => {
     };
     // Stored order omits p2 (legacy) and references a stale id.
     expect(effectivePolygonOrder(polys, ['p1', 'gone', 'p0'])).toEqual(['p1', 'p0', 'p2']);
+  });
+
+  describe('resolvePolygonColors', () => {
+    it('returns the light fill/stroke in light mode, ignoring any dark overrides', () => {
+      const poly = makePolygon({
+        id: 'p0',
+        fill: '#aaaaaa',
+        stroke: '#bbbbbb',
+        darkFill: '#111111',
+        darkStroke: '#222222',
+      });
+      expect(resolvePolygonColors(poly, false)).toEqual({ fill: '#aaaaaa', stroke: '#bbbbbb' });
+    });
+
+    it('returns the dark overrides in dark mode when present', () => {
+      const poly = makePolygon({
+        id: 'p0',
+        fill: '#aaaaaa',
+        stroke: '#bbbbbb',
+        darkFill: '#111111',
+        darkStroke: '#222222',
+      });
+      expect(resolvePolygonColors(poly, true)).toEqual({ fill: '#111111', stroke: '#222222' });
+    });
+
+    it('returns the light colors in dark mode when the dark colors equal them (uncustomized)', () => {
+      const poly = makePolygon({ id: 'p0', fill: '#aaaaaa', stroke: '#bbbbbb' });
+      expect(resolvePolygonColors(poly, true)).toEqual({ fill: '#aaaaaa', stroke: '#bbbbbb' });
+    });
   });
 
   it('rotateItemsAround orbits polygon members and supports a polygon pivot', () => {
