@@ -39,6 +39,48 @@ describe('<PolygonPopover />', () => {
     expect(screen.getByRole('button', { name: 'Delete' })).toBeInTheDocument();
   });
 
+  it('renders dark-mode fill + stroke pickers that fall back to the light colors when unset', () => {
+    renderPopover();
+    // No dark overrides on the fixture → the dark pickers mirror the light colors.
+    expect(screen.getByLabelText('Dark mode color')).toHaveValue('#112233');
+    expect(screen.getByLabelText('Dark mode stroke color')).toHaveValue('#445566');
+  });
+
+  it('the dark-mode pickers reflect explicit dark colors when set', () => {
+    useDoc.setState({
+      ...useDoc.getState(),
+      polygons: {
+        p0: makePolygon({
+          id: 'p0',
+          fill: '#112233',
+          stroke: '#445566',
+          darkFill: '#778899',
+          darkStroke: '#99aabb',
+        }),
+      },
+      polygonOrder: ['p0'],
+    });
+    renderPopover();
+    expect(screen.getByLabelText('Dark mode color')).toHaveValue('#778899');
+    expect(screen.getByLabelText('Dark mode stroke color')).toHaveValue('#99aabb');
+  });
+
+  it('editing the dark-mode fill writes darkFill, leaving the light fill alone', () => {
+    renderPopover();
+    fireEvent.change(screen.getByLabelText('Dark mode color'), { target: { value: '#0a0a0a' } });
+    expect(useDoc.getState().polygons['p0'].darkFill).toBe('#0a0a0a');
+    expect(useDoc.getState().polygons['p0'].fill).toBe('#112233');
+  });
+
+  it('editing the dark-mode stroke writes darkStroke, leaving the light stroke alone', () => {
+    renderPopover();
+    fireEvent.change(screen.getByLabelText('Dark mode stroke color'), {
+      target: { value: '#0b0b0b' },
+    });
+    expect(useDoc.getState().polygons['p0'].darkStroke).toBe('#0b0b0b');
+    expect(useDoc.getState().polygons['p0'].stroke).toBe('#445566');
+  });
+
   it('editing the stroke-width slider writes through to the store', () => {
     renderPopover();
     fireEvent.change(screen.getByRole('slider', { name: 'Stroke width' }), {

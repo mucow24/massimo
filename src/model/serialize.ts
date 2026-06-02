@@ -6,6 +6,7 @@ import type {
   Line,
   LineStyle,
   MapDoc,
+  Polygon,
   Station,
   StopOrientation,
   TextLabelWeight,
@@ -149,7 +150,30 @@ export function parse(json: string): ParseResult {
   if (linesChanged) merged.lines = cleanedLines;
   const sanitized = sanitizeStations(merged.stations);
   if (sanitized.changed) merged.stations = sanitized.stations;
+  const cleanedPolygons = backfillPolygonDarkColors(merged.polygons);
+  if (cleanedPolygons.changed) merged.polygons = cleanedPolygons.polygons;
   return { ok: true, doc: merged };
+}
+
+// Backfill the dark-mode colors for polygons saved before those fields existed.
+// Each missing field is set once to the matching light color; from then on the
+// two are independent. (Polygons written by the current app already carry them.)
+function backfillPolygonDarkColors(polygons: Record<string, Polygon>): {
+  polygons: Record<string, Polygon>;
+  changed: boolean;
+} {
+  let changed = false;
+  const next: Record<string, Polygon> = {};
+  for (const id of Object.keys(polygons)) {
+    const p = polygons[id];
+    if (p.darkFill === undefined || p.darkStroke === undefined) {
+      next[id] = { ...p, darkFill: p.darkFill ?? p.fill, darkStroke: p.darkStroke ?? p.stroke };
+      changed = true;
+    } else {
+      next[id] = p;
+    }
+  }
+  return { polygons: next, changed };
 }
 
 // Legacy `labelBold: boolean` → `labelWeight: TextLabelWeight`. Older docs

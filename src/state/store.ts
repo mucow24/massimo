@@ -199,7 +199,17 @@ interface DocState extends MapDoc {
   updatePolygon: (
     id: string,
     patch: Partial<
-      Pick<Polygon, 'fill' | 'stroke' | 'strokeWidth' | 'fillOpacity' | 'locked' | 'vertices'>
+      Pick<
+        Polygon,
+        | 'fill'
+        | 'stroke'
+        | 'darkFill'
+        | 'darkStroke'
+        | 'strokeWidth'
+        | 'fillOpacity'
+        | 'locked'
+        | 'vertices'
+      >
     >,
   ) => void;
   rotatePolygon: (id: string) => void;

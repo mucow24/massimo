@@ -206,6 +206,13 @@ export interface Polygon {
   fill: string;
   stroke: string;
   strokeWidth: number;
+  // Dark-mode colors, used in place of `fill`/`stroke` when the canvas is in
+  // dark mode. Initialized equal to the light colors at creation and fully
+  // independent thereafter — editing one never changes the other. Old saves
+  // predating these fields are backfilled to the light colors once on load
+  // (see serialize.ts), so they are always present at runtime. Same 7-char hex.
+  darkFill: string;
+  darkStroke: string;
   // Fill opacity as a percentage, 0..100. Optional; missing ⇒ 100 (fully
   // opaque), so polygons saved before this field continue to render solid.
   fillOpacity?: number;
