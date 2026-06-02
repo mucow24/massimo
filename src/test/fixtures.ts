@@ -76,7 +76,7 @@ export function makeTextLabel(overrides: Partial<TextLabel> & { id: string }): T
 }
 
 export function makePolygon(overrides: Partial<Polygon> & { id: string }): Polygon {
-  return {
+  const base = {
     vertices: [
       { x: -30, y: -30 },
       { x: 30, y: -30 },
@@ -87,6 +87,12 @@ export function makePolygon(overrides: Partial<Polygon> & { id: string }): Polyg
     stroke: '#000000',
     strokeWidth: 1,
     ...overrides,
+  };
+  // Dark colors default to the light colors (as at creation) unless overridden.
+  return {
+    ...base,
+    darkFill: overrides.darkFill ?? base.fill,
+    darkStroke: overrides.darkStroke ?? base.stroke,
   };
 }
 

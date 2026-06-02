@@ -17,6 +17,7 @@ import type {
   LineTag,
   MapDoc,
   Polygon,
+  PolygonStylePatch,
   Rotation,
   RouteBullet,
   Station,
@@ -1495,6 +1496,9 @@ export function addPolygon(doc: MapDoc, id: string, x: number, y: number): MapDo
     vertices: starterPolygonVertices(x, y),
     fill: POLYGON_FILL_DEFAULT,
     stroke: POLYGON_STROKE_DEFAULT,
+    // Dark colors start equal to the light colors; independent once edited.
+    darkFill: POLYGON_FILL_DEFAULT,
+    darkStroke: POLYGON_STROKE_DEFAULT,
     strokeWidth: POLYGON_STROKE_WIDTH_DEFAULT,
   };
   return {
@@ -1555,13 +1559,7 @@ export function deleteVertex(doc: MapDoc, id: string, index: number): MapDoc {
   return { ...doc, polygons: { ...doc.polygons, [id]: { ...cur, vertices } } };
 }
 
-export function updatePolygon(
-  doc: MapDoc,
-  id: string,
-  patch: Partial<
-    Pick<Polygon, 'fill' | 'stroke' | 'strokeWidth' | 'fillOpacity' | 'locked' | 'vertices'>
-  >,
-): MapDoc {
+export function updatePolygon(doc: MapDoc, id: string, patch: PolygonStylePatch): MapDoc {
   const cur = doc.polygons[id];
   if (!cur) return doc;
   let nextPatch = patch;
@@ -1572,6 +1570,18 @@ export function updatePolygon(
     nextPatch = { ...nextPatch, fillOpacity: clampPolygonFillOpacity(nextPatch.fillOpacity) };
   }
   return { ...doc, polygons: { ...doc.polygons, [id]: { ...cur, ...nextPatch } } };
+}
+
+// The effective fill/stroke for the active theme — the dark colors in dark
+// mode, the light colors otherwise. Both are always concrete (initialized at
+// creation, backfilled on load), so there is no fallback here.
+export function resolvePolygonColors(
+  polygon: Pick<Polygon, 'fill' | 'stroke' | 'darkFill' | 'darkStroke'>,
+  darkMode: boolean,
+): { fill: string; stroke: string } {
+  return darkMode
+    ? { fill: polygon.darkFill, stroke: polygon.darkStroke }
+    : { fill: polygon.fill, stroke: polygon.stroke };
 }
 
 // Rotate every vertex 45° clockwise about the polygon's centroid.

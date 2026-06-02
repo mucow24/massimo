@@ -1,5 +1,7 @@
 import type { Polygon } from '../model/types';
 import { useThemeColors } from '../state/theme';
+import { useViewportStore } from '../state/viewportStore';
+import { resolvePolygonColors } from '../model/transforms';
 
 // Half-size of a square vertex handle, and the radius of an edge "+" button,
 // in world units (they scale with zoom like the other selection adornments).
@@ -44,6 +46,9 @@ export function PolygonView({
   onEdgeAddPointerDown,
 }: Props) {
   const themeColors = useThemeColors();
+  const darkMode = useViewportStore((s) => s.darkMode);
+  // The body paints the dark colors in dark mode, the light colors otherwise.
+  const { fill, stroke } = resolvePolygonColors(polygon, darkMode);
   // Adornment colors flip with the theme: marks drawn ON the selection-colored
   // disc/handle use the canvas background so they stay legible in both modes
   // (selectionStroke is black on light, white on dark).
@@ -59,9 +64,9 @@ export function PolygonView({
         data-polygon-selected={selected || undefined}
         data-polygon-locked={polygon.locked || undefined}
         points={pointsAttr(verts)}
-        fill={polygon.fill}
+        fill={fill}
         fillOpacity={(polygon.fillOpacity ?? 100) / 100}
-        stroke={polygon.stroke}
+        stroke={stroke}
         strokeWidth={polygon.strokeWidth}
         // strokeWidth 0 already hides the stroke; linejoin keeps thin corners clean.
         strokeLinejoin="round"
