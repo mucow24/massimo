@@ -122,6 +122,7 @@ export function PolygonPopover({ polygon, view, onClose }: Props) {
       <div className="body">
         <div className="row">
           <label htmlFor="polygon-fill">Color</label>
+          <span aria-hidden="true">☀️</span>
           <input
             id="polygon-fill"
             type="color"
@@ -132,6 +133,7 @@ export function PolygonPopover({ polygon, view, onClose }: Props) {
             onChange={(e) => onFill(e.target.value)}
             {...fillField}
           />
+          <span aria-hidden="true">🌙</span>
           <input
             id="polygon-dark-fill"
             type="color"
@@ -169,6 +171,7 @@ export function PolygonPopover({ polygon, view, onClose }: Props) {
         />
         <div className="row">
           <label htmlFor="polygon-stroke">Stroke color</label>
+          <span aria-hidden="true">☀️</span>
           <input
             id="polygon-stroke"
             type="color"
@@ -179,6 +182,7 @@ export function PolygonPopover({ polygon, view, onClose }: Props) {
             onChange={(e) => onStroke(e.target.value)}
             {...strokeField}
           />
+          <span aria-hidden="true">🌙</span>
           <input
             id="polygon-dark-stroke"
             type="color"
