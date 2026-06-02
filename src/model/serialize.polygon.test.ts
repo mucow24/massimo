@@ -16,6 +16,28 @@ describe('polygon serialization', () => {
     expect(result.doc.polygons['p0'].vertices).toHaveLength(4);
   });
 
+  it('round-trips dark colors distinct from the light colors', () => {
+    const doc = makeDoc({
+      polygons: [
+        makePolygon({
+          id: 'p0',
+          fill: '#112233',
+          stroke: '#445566',
+          darkFill: '#778899',
+          darkStroke: '#99aabb',
+        }),
+      ],
+    });
+    const result = parse(serialize(doc));
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    const p = result.doc.polygons['p0'];
+    expect(p.fill).toBe('#112233');
+    expect(p.stroke).toBe('#445566');
+    expect(p.darkFill).toBe('#778899');
+    expect(p.darkStroke).toBe('#99aabb');
+  });
+
   it('backfills missing dark colors on load to equal the light colors', () => {
     const legacy = JSON.stringify({
       format: SCHEMA_FORMAT,

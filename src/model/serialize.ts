@@ -158,7 +158,7 @@ export function parse(json: string): ParseResult {
 // Backfill the dark-mode colors for polygons saved before those fields existed.
 // Each missing field is set once to the matching light color; from then on the
 // two are independent. (Polygons written by the current app already carry them.)
-function backfillPolygonDarkColors(polygons: Record<string, Polygon>): {
+export function backfillPolygonDarkColors(polygons: Record<string, Polygon>): {
   polygons: Record<string, Polygon>;
   changed: boolean;
 } {

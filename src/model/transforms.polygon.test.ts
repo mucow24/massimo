@@ -214,7 +214,7 @@ describe('polygon transforms', () => {
       expect(resolvePolygonColors(poly, true)).toEqual({ fill: '#111111', stroke: '#222222' });
     });
 
-    it('falls back to the light fill/stroke in dark mode when overrides are absent', () => {
+    it('returns the light colors in dark mode when the dark colors equal them (uncustomized)', () => {
       const poly = makePolygon({ id: 'p0', fill: '#aaaaaa', stroke: '#bbbbbb' });
       expect(resolvePolygonColors(poly, true)).toEqual({ fill: '#aaaaaa', stroke: '#bbbbbb' });
     });

@@ -47,8 +47,7 @@ export function PolygonView({
 }: Props) {
   const themeColors = useThemeColors();
   const darkMode = useViewportStore((s) => s.darkMode);
-  // The body's painted fill/stroke resolve through the dark-mode overrides
-  // (falling back to the light colors when unset).
+  // The body paints the dark colors in dark mode, the light colors otherwise.
   const { fill, stroke } = resolvePolygonColors(polygon, darkMode);
   // Adornment colors flip with the theme: marks drawn ON the selection-colored
   // disc/handle use the canvas background so they stay legible in both modes

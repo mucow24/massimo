@@ -32,4 +32,52 @@ test.describe('dark mode', () => {
       '#ffffff',
     );
   });
+
+  // Polygons carry independent light/dark colors. This covers the rehydrate
+  // path specifically: a polygon seeded WITHOUT dark fields (a pre-dark-mode
+  // save) must be backfilled by the store's migrate step, or it would paint
+  // `undefined` in dark mode. A second polygon with explicit dark colors
+  // confirms the override is used.
+  test('polygon dark colors paint in dark mode; legacy polygons are backfilled on load', async ({
+    page,
+  }) => {
+    const square = (cx: number) => [
+      { x: cx - 40, y: -40 },
+      { x: cx + 40, y: -40 },
+      { x: cx + 40, y: 40 },
+      { x: cx - 40, y: 40 },
+    ];
+    await seedAndOpen(page, {
+      stations: [],
+      lines: [],
+      polygons: [
+        {
+          id: 'pDark',
+          vertices: square(-150),
+          fill: '#112233',
+          stroke: '#445566',
+          darkFill: '#778899',
+          darkStroke: '#99aabb',
+        },
+        // No dark fields → simulates a save predating dark mode.
+        { id: 'pLegacy', vertices: square(150), fill: '#abcdef', stroke: '#123456' },
+      ],
+    });
+
+    const dark = page.locator('[data-polygon-id="pDark"]');
+    const legacy = page.locator('[data-polygon-id="pLegacy"]');
+
+    // Light mode shows the light colors.
+    await expect(dark).toHaveAttribute('fill', '#112233');
+    await expect(legacy).toHaveAttribute('fill', '#abcdef');
+
+    await page.getByRole('button', { name: 'Toggle dark mode' }).click();
+
+    // Explicit dark overrides win.
+    await expect(dark).toHaveAttribute('fill', '#778899');
+    await expect(dark).toHaveAttribute('stroke', '#99aabb');
+    // Legacy polygon was backfilled on rehydrate → dark == light, not empty.
+    await expect(legacy).toHaveAttribute('fill', '#abcdef');
+    await expect(legacy).toHaveAttribute('stroke', '#123456');
+  });
 });

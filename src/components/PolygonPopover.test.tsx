@@ -39,9 +39,9 @@ describe('<PolygonPopover />', () => {
     expect(screen.getByRole('button', { name: 'Delete' })).toBeInTheDocument();
   });
 
-  it('renders dark-mode fill + stroke pickers that fall back to the light colors when unset', () => {
+  it('renders dark-mode pickers initialized to the light colors', () => {
     renderPopover();
-    // No dark overrides on the fixture → the dark pickers mirror the light colors.
+    // Uncustomized fixture → the dark colors equal the light colors.
     expect(screen.getByLabelText('Dark mode color')).toHaveValue('#112233');
     expect(screen.getByLabelText('Dark mode stroke color')).toHaveValue('#445566');
   });
@@ -151,6 +151,11 @@ describe('<PolygonPopover />', () => {
     expect(screen.getByRole('slider', { name: 'Stroke width' })).toBeDisabled();
     expect(screen.getByRole('button', { name: 'Move polygon up' })).toBeDisabled();
     expect(screen.getByRole('button', { name: 'Delete' })).toBeDisabled();
+    // All four color pickers (light + dark, fill + stroke) are disabled too.
+    expect(screen.getByLabelText('Polygon color')).toBeDisabled();
+    expect(screen.getByLabelText('Dark mode color')).toBeDisabled();
+    expect(screen.getByLabelText('Stroke color')).toBeDisabled();
+    expect(screen.getByLabelText('Dark mode stroke color')).toBeDisabled();
     // The unlock control remains usable.
     const unlock = screen.getByRole('button', { name: 'Unlock polygon' });
     expect(unlock).toBeEnabled();

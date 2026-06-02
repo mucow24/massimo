@@ -17,6 +17,7 @@ import type {
   LineTag,
   MapDoc,
   Polygon,
+  PolygonStylePatch,
   Rotation,
   RouteBullet,
   Station,
@@ -1558,23 +1559,7 @@ export function deleteVertex(doc: MapDoc, id: string, index: number): MapDoc {
   return { ...doc, polygons: { ...doc.polygons, [id]: { ...cur, vertices } } };
 }
 
-export function updatePolygon(
-  doc: MapDoc,
-  id: string,
-  patch: Partial<
-    Pick<
-      Polygon,
-      | 'fill'
-      | 'stroke'
-      | 'darkFill'
-      | 'darkStroke'
-      | 'strokeWidth'
-      | 'fillOpacity'
-      | 'locked'
-      | 'vertices'
-    >
-  >,
-): MapDoc {
+export function updatePolygon(doc: MapDoc, id: string, patch: PolygonStylePatch): MapDoc {
   const cur = doc.polygons[id];
   if (!cur) return doc;
   let nextPatch = patch;

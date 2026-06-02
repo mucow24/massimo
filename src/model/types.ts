@@ -223,6 +223,23 @@ export interface Polygon {
   locked?: boolean;
 }
 
+// The mutable style/geometry fields of a Polygon accepted by `updatePolygon`
+// (everything except `id`). Shared by the transform and the store action so
+// the two never drift.
+export type PolygonStylePatch = Partial<
+  Pick<
+    Polygon,
+    | 'fill'
+    | 'stroke'
+    | 'darkFill'
+    | 'darkStroke'
+    | 'strokeWidth'
+    | 'fillOpacity'
+    | 'locked'
+    | 'vertices'
+  >
+>;
+
 export interface MapDoc {
   stations: Record<StationId, Station>;
   lines: Record<LineId, Line>;

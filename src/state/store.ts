@@ -10,6 +10,7 @@ import type {
   LineStyle,
   MapDoc,
   Polygon,
+  PolygonStylePatch,
   RouteBullet,
   StationId,
   TextLabel,
@@ -21,7 +22,7 @@ import { defaultIdFactory, IdFactory } from '../model/ids';
 import { DEFAULT_DOC } from '../model/transforms';
 import * as T from '../model/transforms';
 import { cyclingColors, type PaletteId } from '../model/palettes';
-import { sanitizeStations } from '../model/serialize';
+import { sanitizeStations, backfillPolygonDarkColors } from '../model/serialize';
 import type { Station } from '../model/types';
 import { randomStationName } from './stationNames';
 import { pauseHistory, pushHistory, resumeHistory } from './history';
@@ -196,22 +197,7 @@ interface DocState extends MapDoc {
   moveVertex: (id: string, index: number, x: number, y: number) => void;
   insertVertex: (id: string, edgeIndex: number) => void;
   deleteVertex: (id: string, index: number) => void;
-  updatePolygon: (
-    id: string,
-    patch: Partial<
-      Pick<
-        Polygon,
-        | 'fill'
-        | 'stroke'
-        | 'darkFill'
-        | 'darkStroke'
-        | 'strokeWidth'
-        | 'fillOpacity'
-        | 'locked'
-        | 'vertices'
-      >
-    >,
-  ) => void;
+  updatePolygon: (id: string, patch: PolygonStylePatch) => void;
   rotatePolygon: (id: string) => void;
   movePolygonUp: (id: string) => void;
   movePolygonDown: (id: string) => void;
@@ -410,7 +396,7 @@ export const useDoc = create<DocState>()(
       {
         name: 'vignelli-map-doc-v1',
         storage: createJSONStorage(() => localStorage),
-        version: 4,
+        version: 5,
         // v0 → v1: backfill `line.name` with `${service} line` for lines saved
         // before the field existed.
         // v1 → v2: migrate legacy stop orientations (`up`/`down`/`left`/`right`
@@ -426,10 +412,16 @@ export const useDoc = create<DocState>()(
         // v3 → v4: translate legacy label `valign: 'auto'` to `'auto-down'`
         //   (the new mirror option `'auto-up'` didn't exist yet). Lives in
         //   sanitizeStations so the file-import path picks it up too.
+        // v4 → v5: backfill polygon `darkFill`/`darkStroke` (equal to the light
+        //   colors) for polygons saved before the dark-mode fields existed.
+        //   Mirrors `backfillPolygonDarkColors` in `parse()` for file imports —
+        //   without it, persisted polygons hydrate with undefined dark colors
+        //   and render nothing in dark mode.
         migrate: (persisted, version) => {
           const s = persisted as {
             lines?: Record<LineId, Line>;
             stations?: Record<string, Station>;
+            polygons?: Record<string, Polygon>;
             labelBold?: boolean;
             labelWeight?: TextLabelWeight;
           };
@@ -448,6 +440,10 @@ export const useDoc = create<DocState>()(
           if (v < 4 && out.stations) {
             const { stations: cleaned, changed } = sanitizeStations(out.stations);
             if (changed) out = { ...out, stations: cleaned };
+          }
+          if (v < 5 && out.polygons) {
+            const { polygons: cleaned, changed } = backfillPolygonDarkColors(out.polygons);
+            if (changed) out = { ...out, polygons: cleaned };
           }
           if (v < 3 && 'labelBold' in out) {
             const { labelBold, ...rest } = out;

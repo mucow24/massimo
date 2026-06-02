@@ -64,7 +64,7 @@ describe('<PolygonView /> dark-mode colors', () => {
     expect(body(container).getAttribute('stroke')).toBe('#99aabb');
   });
 
-  it('falls back to the light colors in dark mode when no override is set', () => {
+  it('shows the light colors in dark mode when dark equals light (uncustomized)', () => {
     useViewportStore.setState({ darkMode: true });
     const { container } = renderBody(makePolygon({ id: 'p0', fill: '#112233', stroke: '#445566' }));
     expect(body(container).getAttribute('fill')).toBe('#112233');
