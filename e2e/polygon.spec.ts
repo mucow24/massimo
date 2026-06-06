@@ -9,6 +9,7 @@ interface PolygonState {
   strokeWidth: number;
   fillOpacity?: number;
   locked?: boolean;
+  curveRadius?: number;
 }
 
 async function readPolygons(page: Page): Promise<Record<string, PolygonState>> {
@@ -75,6 +76,21 @@ test.describe('Polygon shapes', () => {
     expect((await onlyPolygon(page)).strokeWidth).toBe(6);
   });
 
+  test('the popover sets a curve radius that rounds the body into a path with curves', async ({
+    page,
+  }) => {
+    await seedAndOpen(page, { stations: [], lines: [] });
+    await addPolygonAt(page, CENTER.x, CENTER.y);
+
+    const slider = page.getByRole('slider', { name: 'Curve radius' });
+    await slider.fill('20');
+    expect((await onlyPolygon(page)).curveRadius).toBe(20);
+
+    // The body is a <path> whose `d` contains quadratic curves once rounded.
+    const d = await page.locator('path[data-polygon-id]').first().getAttribute('d');
+    expect(d).toContain('Q');
+  });
+
   test('clicking "+" splits an edge; selecting a vertex + Delete removes it (min 3)', async ({
     page,
   }) => {
@@ -129,7 +145,7 @@ async function polygonOrder(page: Page): Promise<string[]> {
 
 async function domPolygonIds(page: Page): Promise<string[]> {
   return await page.evaluate(() =>
-    Array.from(document.querySelectorAll('polygon[data-polygon-id]')).map((el) =>
+    Array.from(document.querySelectorAll('path[data-polygon-id]')).map((el) =>
       el.getAttribute('data-polygon-id'),
     ),
   );
@@ -141,7 +157,7 @@ test.describe('Polygon opacity, layering, placement, lock', () => {
     await addPolygonAt(page, CENTER.x, CENTER.y);
     await page.getByRole('slider', { name: 'Fill opacity' }).fill('40');
     const opacity = await page.evaluate(() =>
-      document.querySelector('polygon[data-polygon-id]')?.getAttribute('fill-opacity'),
+      document.querySelector('path[data-polygon-id]')?.getAttribute('fill-opacity'),
     );
     expect(Number(opacity)).toBeCloseTo(0.4, 5);
   });

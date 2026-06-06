@@ -18,6 +18,8 @@ import {
   POLYGON_STROKE_WIDTH_MAX,
   POLYGON_FILL_OPACITY_MIN,
   POLYGON_FILL_OPACITY_MAX,
+  POLYGON_CURVE_RADIUS_MIN,
+  POLYGON_CURVE_RADIUS_MAX,
 } from './transforms';
 import { makeDoc, makePolygon } from '../test/fixtures';
 
@@ -126,6 +128,20 @@ describe('polygon transforms', () => {
       POLYGON_FILL_OPACITY_MIN,
     );
     expect(updatePolygon(doc, 'p0', { locked: true }).polygons['p0'].locked).toBe(true);
+  });
+
+  it('updatePolygon sets + clamps curveRadius to [0, 50] without disturbing other fields', () => {
+    const doc = makeDoc({ polygons: [makePolygon({ id: 'p0', strokeWidth: 3 })] });
+    expect(updatePolygon(doc, 'p0', { curveRadius: 20 }).polygons['p0'].curveRadius).toBe(20);
+    expect(updatePolygon(doc, 'p0', { curveRadius: 999 }).polygons['p0'].curveRadius).toBe(
+      POLYGON_CURVE_RADIUS_MAX,
+    );
+    expect(updatePolygon(doc, 'p0', { curveRadius: -5 }).polygons['p0'].curveRadius).toBe(
+      POLYGON_CURVE_RADIUS_MIN,
+    );
+    const next = updatePolygon(doc, 'p0', { curveRadius: 12 });
+    expect(next.polygons['p0'].vertices).toEqual(doc.polygons['p0'].vertices);
+    expect(next.polygons['p0'].strokeWidth).toBe(3);
   });
 
   it('updatePolygon sets the dark-mode fill and stroke independently of the light colors', () => {

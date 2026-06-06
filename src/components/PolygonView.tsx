@@ -2,6 +2,7 @@ import type { Polygon } from '../model/types';
 import { useThemeColors } from '../state/theme';
 import { useViewportStore } from '../state/viewportStore';
 import { resolvePolygonColors } from '../model/transforms';
+import { polygonPathData } from '../geometry/polygon';
 
 // Half-size of a square vertex handle, and the radius of an edge "+" button,
 // in world units (they scale with zoom like the other selection adornments).
@@ -58,12 +59,15 @@ export function PolygonView({
   const n = verts.length;
 
   if (layer === 'body') {
+    // A single <path> handles both sharp and rounded corners: radius 0 yields a
+    // straight M/L/…/Z, identical to a <polygon>. Export clones this live DOM, so
+    // the rounded shape carries into PNG/SVG for free.
     return (
-      <polygon
+      <path
         data-polygon-id={polygon.id}
         data-polygon-selected={selected || undefined}
         data-polygon-locked={polygon.locked || undefined}
-        points={pointsAttr(verts)}
+        d={polygonPathData(verts, polygon.curveRadius ?? 0)}
         fill={fill}
         fillOpacity={(polygon.fillOpacity ?? 100) / 100}
         stroke={stroke}

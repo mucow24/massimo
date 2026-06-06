@@ -28,7 +28,7 @@ function renderBody(polygon: Polygon) {
 }
 
 const body = (container: HTMLElement) =>
-  container.querySelector('polygon[data-polygon-id="p0"]') as Element;
+  container.querySelector('path[data-polygon-id="p0"]') as Element;
 
 describe('<PolygonView /> dark-mode colors', () => {
   beforeEach(() => {
@@ -69,5 +69,27 @@ describe('<PolygonView /> dark-mode colors', () => {
     const { container } = renderBody(makePolygon({ id: 'p0', fill: '#112233', stroke: '#445566' }));
     expect(body(container).getAttribute('fill')).toBe('#112233');
     expect(body(container).getAttribute('stroke')).toBe('#445566');
+  });
+});
+
+describe('<PolygonView /> corner rounding', () => {
+  beforeEach(() => {
+    useViewportStore.setState({ darkMode: false });
+  });
+
+  it('draws straight edges (no quadratic) when curveRadius is unset', () => {
+    const { container } = renderBody(makePolygon({ id: 'p0' }));
+    const d = body(container).getAttribute('d') ?? '';
+    expect(d).not.toContain('Q');
+  });
+
+  it('rounds the corners (quadratics) when curveRadius > 0, keeping fill/stroke', () => {
+    const { container } = renderBody(
+      makePolygon({ id: 'p0', fill: '#112233', stroke: '#445566', curveRadius: 12 }),
+    );
+    const el = body(container);
+    expect(el.getAttribute('d') ?? '').toContain('Q');
+    expect(el.getAttribute('fill')).toBe('#112233');
+    expect(el.getAttribute('stroke')).toBe('#445566');
   });
 });

@@ -5,6 +5,9 @@ import { NumericFieldRow } from './NumericFieldRow';
 import { useFieldHistory } from './useFieldHistory';
 import { polygonCentroid } from '../geometry/polygon';
 import {
+  POLYGON_CURVE_RADIUS_DEFAULT,
+  POLYGON_CURVE_RADIUS_MAX,
+  POLYGON_CURVE_RADIUS_MIN,
   POLYGON_FILL_OPACITY_DEFAULT,
   POLYGON_FILL_OPACITY_MAX,
   POLYGON_FILL_OPACITY_MIN,
@@ -88,6 +91,7 @@ export function PolygonPopover({ polygon, view, onClose }: Props) {
   const onDarkStroke = (darkStroke: string) => updatePolygon(polygon.id, { darkStroke });
   const onStrokeWidth = (strokeWidth: number) => updatePolygon(polygon.id, { strokeWidth });
   const onFillOpacity = (o: number) => updatePolygon(polygon.id, { fillOpacity: o });
+  const onCurveRadius = (r: number) => updatePolygon(polygon.id, { curveRadius: r });
   const onToggleLock = () => updatePolygon(polygon.id, { locked: !locked });
   const onDelete = () => {
     deletePolygon(polygon.id);
@@ -167,6 +171,19 @@ export function PolygonPopover({ polygon, view, onClose }: Props) {
           value={polygon.strokeWidth}
           onChange={onStrokeWidth}
           getCurrent={() => useDoc.getState().polygons[polygon.id]?.strokeWidth ?? 0}
+          disabled={locked}
+        />
+        <NumericFieldRow
+          id="polygon-curve-radius"
+          label="Curve radius"
+          min={POLYGON_CURVE_RADIUS_MIN}
+          max={POLYGON_CURVE_RADIUS_MAX}
+          step={1}
+          value={polygon.curveRadius ?? POLYGON_CURVE_RADIUS_DEFAULT}
+          onChange={onCurveRadius}
+          getCurrent={() =>
+            useDoc.getState().polygons[polygon.id]?.curveRadius ?? POLYGON_CURVE_RADIUS_DEFAULT
+          }
           disabled={locked}
         />
         <div className="row">
