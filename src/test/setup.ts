@@ -13,7 +13,8 @@ class NoopResizeObserver {
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   (globalThis as any).ResizeObserver ?? NoopResizeObserver;
 
-// jsdom's SVGElement doesn't implement pointer-capture methods either.
+// jsdom's SVGElement doesn't implement pointer-capture methods either, and it
+// has no scrollIntoView (the sidebar scrolls the selected station row into view).
 if (typeof Element !== 'undefined') {
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const proto = Element.prototype as any;
@@ -22,6 +23,7 @@ if (typeof Element !== 'undefined') {
   proto.hasPointerCapture ??= function () {
     return false;
   };
+  proto.scrollIntoView ??= function () {};
 }
 
 afterEach(() => {
