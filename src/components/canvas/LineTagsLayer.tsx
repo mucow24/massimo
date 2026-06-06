@@ -9,6 +9,7 @@ import {
 import { stripeOffset } from '../../geometry/orientation';
 import { dragState, useDoc, useSelection } from '../../state/store';
 import { useThemeColors } from '../../state/theme';
+import { legibleTextOn } from '../../util/color';
 import type { Vec2 } from '../../geometry/vec';
 import { useLineTagDrag } from './useLineTagDrag';
 
@@ -193,7 +194,11 @@ export function LineTagsLayer({ bands, zoom, svgRef }: Props) {
 
       {/* Ghost preview while in add-line-tag mode and hovering a stripe. */}
       {selection.uiMode.kind === 'creating-line-tag' && selection.lineTagHoverPreview && (
-        <GhostPreview preview={selection.lineTagHoverPreview} widths={widths} />
+        <GhostPreview
+          preview={selection.lineTagHoverPreview}
+          color={lines[selection.lineTagHoverPreview.lineId]?.color ?? '#000'}
+          widths={widths}
+        />
       )}
     </g>
   );
@@ -237,7 +242,7 @@ function TagShape({ r, widths, layer, onPointerDown, onClick, onContextMenu }: T
           dominantBaseline="central"
           fontSize={fontSize}
           fontWeight={700}
-          fill="#000"
+          fill={legibleTextOn(r.color)}
           pointerEvents="none"
         >
           {r.service}
@@ -269,9 +274,11 @@ function TagShape({ r, widths, layer, onPointerDown, onClick, onContextMenu }: T
 
 function GhostPreview({
   preview,
+  color,
   widths,
 }: {
   preview: NonNullable<ReturnType<typeof useSelection.getState>['lineTagHoverPreview']>;
+  color: string;
   widths: Map<string, number>;
 }) {
   const orientation: 0 | 1 | 2 | 3 = 0; // ghost defaults to along-forward
@@ -295,7 +302,7 @@ function GhostPreview({
         dominantBaseline="central"
         fontSize={fontSize}
         fontWeight={700}
-        fill="#000"
+        fill={legibleTextOn(color)}
         opacity={0.5}
       >
         {preview.service}
