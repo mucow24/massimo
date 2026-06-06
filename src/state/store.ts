@@ -53,9 +53,10 @@ const pickNextLineName = (lines: Record<LineId, Line>): string => {
 
 const ids: IdFactory = defaultIdFactory();
 
-// Offset applied when pasting or duplicating a route bullet, so the copy lands
-// just off the original instead of exactly on top of it.
-const ROUTE_BULLET_DROP_OFFSET = 15;
+// Offset applied when pasting or duplicating any canvas item, so the copy lands
+// just off the original instead of exactly on top of it. A single uniform
+// (dx, dy) keeps a multi-item paste's relative layout intact.
+const DROP_OFFSET = 15;
 
 // Single source of truth for which MapDoc fields are part of the persisted /
 // undoable document. Drives partialize (persist + zundo), DocSnapshot,
@@ -186,6 +187,8 @@ interface DocState extends MapDoc {
 
   addTextLabel: (x: number, y: number) => string;
   addTextLabelWith: (fields: Omit<TextLabel, 'id'>) => string;
+  pasteTextLabel: (data: Omit<TextLabel, 'id'>) => string;
+  duplicateTextLabel: (id: string) => string | null;
   moveTextLabel: (id: string, x: number, y: number) => void;
   rotateTextLabel: (id: string) => void;
   updateTextLabel: (id: string, patch: Partial<Omit<TextLabel, 'id'>>) => void;
@@ -193,6 +196,8 @@ interface DocState extends MapDoc {
 
   addPolygon: (x: number, y: number) => string;
   addPolygonWith: (fields: Omit<Polygon, 'id'>) => string;
+  pastePolygon: (data: Omit<Polygon, 'id'>) => string;
+  duplicatePolygon: (id: string) => string | null;
   setPolygonVertices: (id: string, vertices: Polygon['vertices']) => void;
   moveVertex: (id: string, index: number, x: number, y: number) => void;
   insertVertex: (id: string, edgeIndex: number) => void;
@@ -319,8 +324,8 @@ export const useDoc = create<DocState>()(
         pasteRouteBullet: (data) =>
           get().addRouteBulletWith({
             ...data,
-            x: data.x + ROUTE_BULLET_DROP_OFFSET,
-            y: data.y + ROUTE_BULLET_DROP_OFFSET,
+            x: data.x + DROP_OFFSET,
+            y: data.y + DROP_OFFSET,
           }),
         // Duplicate an existing bullet at the drop offset; null if it's gone.
         duplicateRouteBullet: (id) => {
@@ -352,6 +357,20 @@ export const useDoc = create<DocState>()(
           set((s) => T.addTextLabelWith(s, id, fields));
           return id;
         },
+        // Add a label from a clipboard payload, nudged by the drop offset.
+        pasteTextLabel: (data) =>
+          get().addTextLabelWith({
+            ...data,
+            x: data.x + DROP_OFFSET,
+            y: data.y + DROP_OFFSET,
+          }),
+        // Duplicate an existing label at the drop offset; null if it's gone.
+        duplicateTextLabel: (id) => {
+          const l = get().textLabels[id];
+          if (!l) return null;
+          const { id: _id, ...data } = l;
+          return get().pasteTextLabel(data);
+        },
         moveTextLabel: (id, x, y) => set((s) => T.moveTextLabel(s, id, x, y)),
         rotateTextLabel: (id) => set((s) => T.rotateTextLabel(s, id)),
         updateTextLabel: (id, patch) => set((s) => T.updateTextLabel(s, id, patch)),
@@ -366,6 +385,24 @@ export const useDoc = create<DocState>()(
           const id = ids.polygonId();
           set((s) => T.addPolygonWith(s, id, fields));
           return id;
+        },
+        // Add a polygon from a clipboard payload, translating every vertex by
+        // the drop offset (polygons have no center — geometry lives in
+        // `vertices`, in world coords). The fresh copy comes out UNLOCKED even
+        // if the source was locked, so it's immediately movable/editable.
+        pastePolygon: (data) => {
+          const { locked: _locked, ...rest } = data;
+          return get().addPolygonWith({
+            ...rest,
+            vertices: data.vertices.map((v) => ({ x: v.x + DROP_OFFSET, y: v.y + DROP_OFFSET })),
+          });
+        },
+        // Duplicate an existing polygon at the drop offset; null if it's gone.
+        duplicatePolygon: (id) => {
+          const p = get().polygons[id];
+          if (!p) return null;
+          const { id: _id, ...data } = p;
+          return get().pastePolygon(data);
         },
         setPolygonVertices: (id, vertices) => set((s) => T.setPolygonVertices(s, id, vertices)),
         moveVertex: (id, index, x, y) => set((s) => T.moveVertex(s, id, index, x, y)),
