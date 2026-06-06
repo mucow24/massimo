@@ -1,10 +1,11 @@
-import { describe, it, expect, beforeEach } from 'vitest';
-import { render, screen, fireEvent } from '@testing-library/react';
+import { describe, it, expect, beforeEach, vi } from 'vitest';
+import { render, screen, fireEvent, waitFor } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import App from '../App';
 import { useDoc, useSelection } from '../state/store';
 import { historyDepth, redoDepth } from '../state/history';
 import { DEFAULT_DOC } from '../model/transforms';
+import { readClipboard, writeClipboard, type ClipPayload } from '../model/clipboard';
 
 beforeEach(() => {
   localStorage.clear();
@@ -201,5 +202,166 @@ describe('App keyboard shortcuts: blur-then-undo', () => {
     expect(useDoc.getState().labelFontSize).toBe(initialFontSize);
     expect(historyDepth()).toBe(pastBaseline);
     expect(redoDepth()).toBe(1);
+  });
+});
+
+describe('App keyboard shortcuts: copy / paste / duplicate', () => {
+  let writeText: ReturnType<typeof vi.fn>;
+  let readText: ReturnType<typeof vi.fn>;
+
+  // jsdom has no real clipboard — stub one. Copy is synchronous (writeText is
+  // fire-and-forget); paste reads through a promise, so those tests `waitFor`.
+  beforeEach(() => {
+    writeText = vi.fn().mockResolvedValue(undefined);
+    readText = vi.fn().mockResolvedValue('');
+    Object.defineProperty(navigator, 'clipboard', {
+      value: { writeText, readText },
+      configurable: true,
+    });
+    // The outer beforeEach doesn't reset the selection id-lists; clear them so
+    // stale selection from a prior test can't leak into these assertions.
+    useSelection.getState().selectStation(null);
+  });
+
+  const labelClip = (): ClipPayload => ({
+    kind: 'text-label',
+    data: {
+      x: 0,
+      y: 0,
+      rotation: 0,
+      text: 't',
+      fontSize: 24,
+      weight: 400,
+      italic: false,
+      align: 'left',
+    },
+  });
+  const polygonClip = (): ClipPayload => ({
+    kind: 'polygon',
+    data: {
+      vertices: [
+        { x: 0, y: 0 },
+        { x: 5, y: 0 },
+        { x: 5, y: 5 },
+      ],
+      fill: '#ffffff',
+      stroke: '#000000',
+      darkFill: '#ffffff',
+      darkStroke: '#000000',
+      strokeWidth: 1,
+    },
+  });
+  const bulletClip = (): ClipPayload => ({
+    kind: 'route-bullet',
+    data: { x: 0, y: 0, rotation: 0, lineId: null, shape: 'circle', size: 10 },
+  });
+
+  it('Ctrl+C writes the selected label + polygon to the clipboard', () => {
+    render(<App />);
+    const labelId = useDoc.getState().addTextLabel(10, 10);
+    const polyId = useDoc.getState().addPolygon(20, 20);
+    useSelection.getState().setMixedSelection({ labels: [labelId], polygons: [polyId] });
+
+    fireEvent.keyDown(window, { key: 'c', ctrlKey: true });
+
+    expect(writeText).toHaveBeenCalledTimes(1);
+    const items = readClipboard(writeText.mock.calls[0][0] as string);
+    expect(items?.map((i) => i.kind).sort()).toEqual(['polygon', 'text-label']);
+  });
+
+  it('Ctrl+C is a no-op when only a station is selected (native copy survives)', () => {
+    render(<App />);
+    const s = useDoc.getState().addStation(10, 10);
+    useSelection.getState().selectStation(s);
+
+    fireEvent.keyDown(window, { key: 'c', ctrlKey: true });
+
+    expect(writeText).not.toHaveBeenCalled();
+  });
+
+  it('Ctrl+V pastes a mixed clipboard as ONE undo step and selects the new items', async () => {
+    render(<App />);
+    readText.mockResolvedValue(writeClipboard([bulletClip(), labelClip(), polygonClip()]));
+    const bulletsBefore = Object.keys(useDoc.getState().routeBullets).length;
+    const labelsBefore = Object.keys(useDoc.getState().textLabels).length;
+    const polysBefore = Object.keys(useDoc.getState().polygons).length;
+    const pastBefore = historyDepth();
+
+    fireEvent.keyDown(window, { key: 'v', ctrlKey: true });
+
+    await waitFor(() =>
+      expect(Object.keys(useDoc.getState().routeBullets).length).toBe(bulletsBefore + 1),
+    );
+    expect(Object.keys(useDoc.getState().textLabels).length).toBe(labelsBefore + 1);
+    expect(Object.keys(useDoc.getState().polygons).length).toBe(polysBefore + 1);
+    // One grouped history entry for the whole paste.
+    expect(historyDepth()).toBe(pastBefore + 1);
+    const sel = useSelection.getState();
+    expect(sel.selectedRouteBulletIds).toHaveLength(1);
+    expect(sel.selectedLabelIds).toHaveLength(1);
+    expect(sel.selectedPolygonIds).toHaveLength(1);
+  });
+
+  it('Ctrl+V ignores a foreign / unparseable clipboard', async () => {
+    render(<App />);
+    readText.mockResolvedValue('not our clipboard');
+    const labelsBefore = Object.keys(useDoc.getState().textLabels).length;
+
+    fireEvent.keyDown(window, { key: 'v', ctrlKey: true });
+
+    // Give the promise a chance to resolve, then assert nothing changed.
+    await Promise.resolve();
+    await Promise.resolve();
+    expect(Object.keys(useDoc.getState().textLabels).length).toBe(labelsBefore);
+  });
+
+  it('Ctrl+D duplicates a mixed selection as ONE undo step and selects the copies', () => {
+    render(<App />);
+    const b = useDoc.getState().addRouteBullet(0, 0, null);
+    const l = useDoc.getState().addTextLabel(0, 0);
+    const p = useDoc.getState().addPolygon(0, 0);
+    useSelection.getState().setMixedSelection({ bullets: [b], labels: [l], polygons: [p] });
+    const bulletsBefore = Object.keys(useDoc.getState().routeBullets).length;
+    const pastBefore = historyDepth();
+
+    fireEvent.keyDown(window, { key: 'd', ctrlKey: true });
+
+    expect(Object.keys(useDoc.getState().routeBullets).length).toBe(bulletsBefore + 1);
+    expect(Object.keys(useDoc.getState().textLabels).length).toBe(2);
+    expect(Object.keys(useDoc.getState().polygons).length).toBe(2);
+    expect(historyDepth()).toBe(pastBefore + 1);
+    const sel = useSelection.getState();
+    expect(sel.selectedRouteBulletIds).toHaveLength(1);
+    expect(sel.selectedLabelIds).toHaveLength(1);
+    expect(sel.selectedPolygonIds).toHaveLength(1);
+    // Selection points at the duplicates, not the sources.
+    expect(sel.selectedRouteBulletIds[0]).not.toBe(b);
+  });
+
+  it('Ctrl+D is a no-op when nothing copyable is selected', () => {
+    render(<App />);
+    const pastBefore = historyDepth();
+
+    fireEvent.keyDown(window, { key: 'd', ctrlKey: true });
+
+    expect(historyDepth()).toBe(pastBefore);
+  });
+
+  it('Ctrl+D on a focused text input is suppressed (inForm guard)', () => {
+    render(<App />);
+    const b = useDoc.getState().addRouteBullet(0, 0, null);
+    useSelection.getState().selectRouteBullet(b);
+    const before = Object.keys(useDoc.getState().routeBullets).length;
+
+    const input = document.createElement('input');
+    input.type = 'text';
+    document.body.appendChild(input);
+    input.focus();
+    try {
+      fireEvent.keyDown(input, { key: 'd', ctrlKey: true });
+      expect(Object.keys(useDoc.getState().routeBullets).length).toBe(before);
+    } finally {
+      document.body.removeChild(input);
+    }
   });
 });

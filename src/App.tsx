@@ -9,7 +9,14 @@ import {
   useDoc,
   useSelection,
 } from './state/store';
-import { readClipboard, routeBulletPayload, writeClipboard } from './model/clipboard';
+import {
+  readClipboard,
+  routeBulletPayload,
+  textLabelPayload,
+  polygonPayload,
+  writeClipboard,
+  type ClipPayload,
+} from './model/clipboard';
 import { _clearTextMeasureCache } from './geometry/textMeasure';
 import { useViewportStore } from './state/viewportStore';
 import { redo, undo } from './state/history';
@@ -150,17 +157,29 @@ export default function App() {
         redo();
         return;
       }
-      // Copy / paste / duplicate for a single selected route bullet (the
-      // shortcut only fires when exactly one bullet is the current
-      // selection, matching the existing single-bullet UX). Stay out of
-      // form fields so native text-editing shortcuts keep working.
+      // Copy / paste / duplicate for the current selection — any mix of route
+      // bullets, text labels, and polygons. Stations (and other primaries) are
+      // ignored. Stay out of form fields so native text-editing shortcuts keep
+      // working; when nothing copyable is selected we fall through WITHOUT
+      // preventDefault so native copy/paste still works.
       if (mod && !inForm && (e.key === 'c' || e.key === 'C')) {
         const sel = useSelection.getState();
-        const bullets = sel.selectedRouteBulletIds;
-        if (bullets.length !== 1 || sel.selectedStationIds.length > 0) return;
-        const b = useDoc.getState().routeBullets[bullets[0]];
-        if (!b) return;
-        navigator.clipboard?.writeText(writeClipboard(routeBulletPayload(b))).catch(() => {});
+        const doc = useDoc.getState();
+        const items: ClipPayload[] = [];
+        for (const id of sel.selectedRouteBulletIds) {
+          const b = doc.routeBullets[id];
+          if (b) items.push(routeBulletPayload(b));
+        }
+        for (const id of sel.selectedLabelIds) {
+          const l = doc.textLabels[id];
+          if (l) items.push(textLabelPayload(l));
+        }
+        for (const id of sel.selectedPolygonIds) {
+          const p = doc.polygons[id];
+          if (p) items.push(polygonPayload(p));
+        }
+        if (items.length === 0) return;
+        navigator.clipboard?.writeText(writeClipboard(items)).catch(() => {});
         e.preventDefault();
         return;
       }
@@ -169,21 +188,44 @@ export default function App() {
         navigator.clipboard
           ?.readText()
           .then((text) => {
-            const payload = readClipboard(text);
-            if (!payload || payload.kind !== 'route-bullet') return;
-            const newId = useDoc.getState().pasteRouteBullet(payload.data);
-            useSelection.getState().selectRouteBullet(newId);
+            const items = readClipboard(text);
+            if (!items) return;
+            const doc = useDoc.getState();
+            const bullets: string[] = [];
+            const labels: string[] = [];
+            const polygons: string[] = [];
+            const group = beginHistoryGroup();
+            for (const item of items) {
+              if (item.kind === 'route-bullet') bullets.push(doc.pasteRouteBullet(item.data));
+              else if (item.kind === 'text-label') labels.push(doc.pasteTextLabel(item.data));
+              else if (item.kind === 'polygon') polygons.push(doc.pastePolygon(item.data));
+            }
+            group.commit();
+            useSelection.getState().setMixedSelection({ bullets, labels, polygons });
           })
           .catch(() => {});
         return;
       }
       if (mod && !inForm && (e.key === 'd' || e.key === 'D')) {
         const sel = useSelection.getState();
-        const bullets = sel.selectedRouteBulletIds;
-        if (bullets.length !== 1 || sel.selectedStationIds.length > 0) return;
+        const bulletIds = sel.selectedRouteBulletIds;
+        const labelIds = sel.selectedLabelIds;
+        const polygonIds = sel.selectedPolygonIds;
+        if (bulletIds.length + labelIds.length + polygonIds.length === 0) return;
         e.preventDefault();
-        const newId = useDoc.getState().duplicateRouteBullet(bullets[0]);
-        if (newId) useSelection.getState().selectRouteBullet(newId);
+        const doc = useDoc.getState();
+        const group = beginHistoryGroup();
+        const bullets = bulletIds
+          .map((id) => doc.duplicateRouteBullet(id))
+          .filter((id): id is string => id != null);
+        const labels = labelIds
+          .map((id) => doc.duplicateTextLabel(id))
+          .filter((id): id is string => id != null);
+        const polygons = polygonIds
+          .map((id) => doc.duplicatePolygon(id))
+          .filter((id): id is string => id != null);
+        group.commit();
+        useSelection.getState().setMixedSelection({ bullets, labels, polygons });
         return;
       }
       if (!inForm && !mod && (e.key === 'a' || e.key === 'A')) {

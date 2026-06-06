@@ -181,6 +181,10 @@ interface SelectionState {
   // Select a single vertex of a polygon (or clear with null). Does NOT touch
   // selectedPolygonIds — the polygon remains the primary selection.
   selectVertex: (sel: { polygonId: string; index: number } | null) => void;
+  // Replace the whole selection with a mixed set of bullets/labels/polygons in
+  // one atomic update (used after a multi-item paste/duplicate). Clears every
+  // other selection and exits to idle, like the single-type select* setters.
+  setMixedSelection: (ids: { bullets?: string[]; labels?: string[]; polygons?: string[] }) => void;
 }
 
 // ---- selection id-list algebra: pure helpers shared by all three kinds ----
@@ -506,4 +510,12 @@ export const useSelection = create<SelectionState>((set, get) => ({
       return next === s.selectedPolygonIds ? {} : { selectedPolygonIds: next };
     }),
   selectVertex: (sel) => set({ selectedVertex: sel }),
+  setMixedSelection: (ids) =>
+    set({
+      ...clearedSelections(),
+      uiMode: { kind: 'idle' },
+      selectedRouteBulletIds: dedupeLastWins(ids.bullets ?? []),
+      selectedLabelIds: dedupeLastWins(ids.labels ?? []),
+      selectedPolygonIds: dedupeLastWins(ids.polygons ?? []),
+    }),
 }));
