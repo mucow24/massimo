@@ -9,6 +9,7 @@ interface PolygonState {
   strokeWidth: number;
   fillOpacity?: number;
   locked?: boolean;
+  curveRadius?: number;
 }
 
 async function readPolygons(page: Page): Promise<Record<string, PolygonState>> {
@@ -73,6 +74,21 @@ test.describe('Polygon shapes', () => {
     const slider = page.getByRole('slider', { name: 'Stroke width' });
     await slider.fill('6');
     expect((await onlyPolygon(page)).strokeWidth).toBe(6);
+  });
+
+  test('the popover sets a curve radius that rounds the body into a path with curves', async ({
+    page,
+  }) => {
+    await seedAndOpen(page, { stations: [], lines: [] });
+    await addPolygonAt(page, CENTER.x, CENTER.y);
+
+    const slider = page.getByRole('slider', { name: 'Curve radius' });
+    await slider.fill('20');
+    expect((await onlyPolygon(page)).curveRadius).toBe(20);
+
+    // The body is a <path> whose `d` contains quadratic curves once rounded.
+    const d = await page.locator('path[data-polygon-id]').first().getAttribute('d');
+    expect(d).toContain('Q');
   });
 
   test('clicking "+" splits an edge; selecting a vertex + Delete removes it (min 3)', async ({

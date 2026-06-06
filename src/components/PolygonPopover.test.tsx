@@ -120,6 +120,15 @@ describe('<PolygonPopover />', () => {
     expect(useDoc.getState().polygons['p0'].fillOpacity).toBe(40);
   });
 
+  it('the curve-radius slider (0–50) writes through to the store', () => {
+    renderPopover();
+    const slider = screen.getByRole('slider', { name: 'Curve radius' });
+    expect(slider).toHaveAttribute('min', '0');
+    expect(slider).toHaveAttribute('max', '50');
+    fireEvent.change(slider, { target: { value: '20' } });
+    expect(useDoc.getState().polygons['p0'].curveRadius).toBe(20);
+  });
+
   it('layer up/down buttons reorder the polygon among its peers', () => {
     // Two polygons, p0 at the bottom of the order.
     useDoc.setState({
@@ -149,6 +158,7 @@ describe('<PolygonPopover />', () => {
     renderPopover();
     expect(screen.getByRole('slider', { name: 'Fill opacity' })).toBeDisabled();
     expect(screen.getByRole('slider', { name: 'Stroke width' })).toBeDisabled();
+    expect(screen.getByRole('slider', { name: 'Curve radius' })).toBeDisabled();
     expect(screen.getByRole('button', { name: 'Move polygon up' })).toBeDisabled();
     expect(screen.getByRole('button', { name: 'Delete' })).toBeDisabled();
     // All four color pickers (light + dark, fill + stroke) are disabled too.

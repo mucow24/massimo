@@ -1,4 +1,5 @@
 import type { Vec2 } from './vec';
+import { polygonsToPath } from './polygonUnion';
 
 /**
  * The drag-snap anchor for a whole-polygon move: the **highest, then leftmost**
@@ -39,4 +40,15 @@ export function edgeMidpoint(vertices: Vec2[], edgeIndex: number): Vec2 {
   const a = vertices[edgeIndex % n];
   const b = vertices[(edgeIndex + 1) % n];
   return { x: (a.x + b.x) / 2, y: (a.y + b.y) / 2 };
+}
+
+/**
+ * SVG path `d` for a single polygon. When `radius > 0`, every corner is rounded
+ * with a quadratic Bézier whose trim is clamped per-corner to half the shorter
+ * adjacent edge (so a large radius never overshoots); `radius <= 0` yields
+ * straight edges (`M`/`L`/…/`Z`). Delegates to the shared rounding routine in
+ * {@link polygonsToPath} rather than duplicating the Bézier math.
+ */
+export function polygonPathData(vertices: Vec2[], radius = 0): string {
+  return polygonsToPath([vertices], radius);
 }

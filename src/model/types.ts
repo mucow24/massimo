@@ -221,6 +221,9 @@ export interface Polygon {
   // are disabled. It can still be click-selected so the user can unlock it.
   // Optional; missing ⇒ unlocked.
   locked?: boolean;
+  // Corner-rounding radius in world units, 0..50. Optional; missing ⇒ 0 (sharp
+  // corners), so polygons saved before this field render unchanged.
+  curveRadius?: number;
 }
 
 // The mutable style/geometry fields of a Polygon accepted by `updatePolygon`
@@ -236,6 +239,7 @@ export type PolygonStylePatch = Partial<
     | 'strokeWidth'
     | 'fillOpacity'
     | 'locked'
+    | 'curveRadius'
     | 'vertices'
   >
 >;
