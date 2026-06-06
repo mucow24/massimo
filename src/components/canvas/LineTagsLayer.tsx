@@ -16,6 +16,40 @@ import { useLineTagDrag } from './useLineTagDrag';
 const ALONG_FONT_SIZE = 12;
 const TEXT_PAD = 1;
 
+// Chevron geometry: a solid ">" band (drawn pointing +x before rotation) that
+// fills the full 14px stripe height, so each arm runs out to the line edge and
+// ends in a flat segment parallel to it. Sharp corners — no rounding.
+const CHEVRON_HALF_H = 7; // half the stripe width — arms reach the edges
+const CHEVRON_DEPTH = 6; // how far the V point juts forward
+const CHEVRON_THICK = 4; // band thickness measured along the line
+// Bleed the arms a hair past the line edge so the chevron overlaps the stripe
+// instead of abutting it — two coincident antialiased edges otherwise leak a
+// hairline of the line color through the seam. Expressed in *screen* pixels and
+// divided by zoom at render time so the overlap stays a constant sub-pixel
+// sliver at every zoom: big enough to cover the seam, too small to visibly
+// spill onto a touching interlined neighbor.
+const CHEVRON_EDGE_BLEED_PX = 0.33;
+// Front face left x, chosen so the band's bounding box is centered on x=0.
+const CHEVRON_FRONT_X = (CHEVRON_THICK - CHEVRON_DEPTH) / 2;
+// Half-extents of the chevron's hit/selection box.
+const CHEVRON_BOX_HALF_W = (CHEVRON_DEPTH + CHEVRON_THICK) / 2;
+const CHEVRON_BOX_HALF_H = CHEVRON_HALF_H;
+// Closed polygon: front V (top→tip→bottom) then back V (bottom→tip→top); the
+// connecting top/bottom edges are the flat segments along the line edges.
+// `armH` is the half-height including the zoom-aware bleed.
+function chevronPoints(armH: number): string {
+  return [
+    [CHEVRON_FRONT_X, -armH],
+    [CHEVRON_FRONT_X + CHEVRON_DEPTH, 0],
+    [CHEVRON_FRONT_X, armH],
+    [CHEVRON_FRONT_X - CHEVRON_THICK, armH],
+    [CHEVRON_FRONT_X - CHEVRON_THICK + CHEVRON_DEPTH, 0],
+    [CHEVRON_FRONT_X - CHEVRON_THICK, -armH],
+  ]
+    .map(([x, y]) => `${x},${y}`)
+    .join(' ');
+}
+
 const SELECTION_WASH_COLOR = '#f0ff00';
 const SELECTION_WASH_OPACITY = 0.3;
 const SELECTION_STROKE_WIDTH = 1.5;
@@ -35,6 +69,7 @@ export interface ResolvedTag {
   tag: LineTag;
   service: string;
   color: string;
+  kind: 'text' | 'chevron';
   p: Vec2;
   // Tangent in line-traversal frame (already flipped if the line traverses
   // the corridor reverse-canonically). Unit vector.
@@ -69,6 +104,7 @@ export function resolveTag(
     tag,
     service: line.service,
     color: line.color,
+    kind: tag.kind ?? 'text',
     p: sample.p,
     tangent,
   };
@@ -155,6 +191,7 @@ export function LineTagsLayer({ bands, zoom, svgRef }: Props) {
               r={r}
               widths={widths}
               layer="wash"
+              zoom={zoom}
               onPointerDown={(e) => onTagPointerDown(e, r.tag.id)}
               onClick={(e) => onTagClick(e, r.tag.id)}
               onContextMenu={(e) => onTagContextMenu(e, r.tag.id)}
@@ -169,6 +206,7 @@ export function LineTagsLayer({ bands, zoom, svgRef }: Props) {
           r={r}
           widths={widths}
           layer="text"
+          zoom={zoom}
           onPointerDown={(e) => onTagPointerDown(e, r.tag.id)}
           onClick={(e) => onTagClick(e, r.tag.id)}
           onContextMenu={(e) => onTagContextMenu(e, r.tag.id)}
@@ -185,6 +223,7 @@ export function LineTagsLayer({ bands, zoom, svgRef }: Props) {
               r={r}
               widths={widths}
               layer="stroke"
+              zoom={zoom}
               onPointerDown={(e) => onTagPointerDown(e, r.tag.id)}
               onClick={(e) => onTagClick(e, r.tag.id)}
               onContextMenu={(e) => onTagContextMenu(e, r.tag.id)}
@@ -208,52 +247,73 @@ interface TagShapeProps {
   r: ResolvedTag;
   widths: Map<string, number>;
   layer: 'wash' | 'text' | 'stroke';
+  zoom: number;
   onPointerDown: (e: React.PointerEvent) => void;
   onClick: (e: React.MouseEvent) => void;
   onContextMenu: (e: React.MouseEvent) => void;
 }
 
-function TagShape({ r, widths, layer, onPointerDown, onClick, onContextMenu }: TagShapeProps) {
+function TagShape({
+  r,
+  widths,
+  layer,
+  zoom,
+  onPointerDown,
+  onClick,
+  onContextMenu,
+}: TagShapeProps) {
   const themeColors = useThemeColors();
   const orientation = r.tag.orientation;
   const tangentAngleDeg = (Math.atan2(r.tangent.y, r.tangent.x) * 180) / Math.PI;
   const rotateDeg = tangentAngleDeg + ORIENTATION_OFFSET_DEG[orientation];
-  const { fontSize, textWidth, textHeight } = sizingFor(r.service, orientation, widths);
+  const isChevron = r.kind === 'chevron';
+  const { textWidth, textHeight } = sizingFor(r.service, orientation, widths);
+  // Half-extents of the hit/selection box, per kind.
+  const halfW = isChevron ? CHEVRON_BOX_HALF_W : textWidth / 2 + TEXT_PAD;
+  const halfH = isChevron ? CHEVRON_BOX_HALF_H : textHeight / 2 + TEXT_PAD;
 
   if (layer === 'text') {
     return (
       <g transform={`translate(${r.p.x} ${r.p.y}) rotate(${rotateDeg})`} style={{ cursor: 'move' }}>
-        {/* Invisible hit rect that picks up pointer events even where the text glyphs are sparse. */}
+        {/* Invisible hit rect that picks up pointer events even where the glyphs/chevron are sparse. */}
         <rect
-          x={-textWidth / 2 - TEXT_PAD}
-          y={-textHeight / 2 - TEXT_PAD}
-          width={textWidth + 2 * TEXT_PAD}
-          height={textHeight + 2 * TEXT_PAD}
+          x={-halfW}
+          y={-halfH}
+          width={2 * halfW}
+          height={2 * halfH}
           fill="transparent"
           pointerEvents="all"
           onPointerDown={onPointerDown}
           onClick={onClick}
           onContextMenu={onContextMenu}
         />
-        <text
-          x={0}
-          y={0}
-          textAnchor="middle"
-          dominantBaseline="central"
-          fontSize={fontSize}
-          fontWeight={700}
-          fill={legibleTextOn(r.color)}
-          pointerEvents="none"
-        >
-          {r.service}
-        </text>
+        {isChevron ? (
+          <polygon
+            points={chevronPoints(CHEVRON_HALF_H + CHEVRON_EDGE_BLEED_PX / zoom)}
+            fill={legibleTextOn(r.color)}
+            pointerEvents="none"
+          />
+        ) : (
+          <text
+            x={0}
+            y={0}
+            textAnchor="middle"
+            dominantBaseline="central"
+            fontSize={ALONG_FONT_SIZE}
+            fontWeight={700}
+            fill={legibleTextOn(r.color)}
+            pointerEvents="none"
+          >
+            {r.service}
+          </text>
+        )}
       </g>
     );
   }
 
   // Wash + stroke share the same rounded-rect outline.
-  const w = textWidth + 2 * TEXT_PAD;
-  const h = textHeight + 2 * TEXT_PAD;
+  const w = 2 * halfW;
+  const h = 2 * halfH;
   return (
     <g transform={`translate(${r.p.x} ${r.p.y}) rotate(${rotateDeg})`} pointerEvents="none">
       <rect

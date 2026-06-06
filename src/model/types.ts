@@ -157,7 +157,13 @@ export interface Line {
 //
 // `orientation` is in *line-traversal* frame so the user's notion of "forward"
 // matches how they drew the line; the renderer flips when the line traverses
-// the corridor in reverse-canonical order. Cycle: 0 → 1 → 2 → 3 → 0.
+// the corridor in reverse-canonical order.
+//
+// A tag renders either as its service text (`kind: 'text'`, the default) or as
+// a directional chevron (`kind: 'chevron'`). The right-click cycle walks all
+// six states in order: text up → right → down → left → chevron-forward →
+// chevron-reverse → back to text. For chevrons only `orientation` 0 (points
+// along line-forward) and 2 (line-reverse) are meaningful.
 export interface LineTag {
   id: string;
   lineId: LineId;
@@ -169,6 +175,8 @@ export interface LineTag {
   // Renderer clamps to the stripe length if the corridor shrinks below it.
   distance: number;
   orientation: 0 | 1 | 2 | 3;
+  // Undefined (legacy saves) is treated as 'text'.
+  kind?: 'text' | 'chevron';
 }
 
 export interface Viewport {

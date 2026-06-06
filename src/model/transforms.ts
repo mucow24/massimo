@@ -1295,11 +1295,26 @@ export function moveLineTag(
   };
 }
 
+// Six-state right-click cycle: text up → right → down → left →
+// chevron-forward → chevron-reverse → back to text up. Chevrons only use
+// orientations 0 (line-forward) and 2 (line-reverse).
 export function cycleLineTagOrientation(doc: MapDoc, id: string): MapDoc {
   const cur = doc.lineTags[id];
   if (!cur) return doc;
-  const next = ((cur.orientation + 1) % 4) as 0 | 1 | 2 | 3;
-  return { ...doc, lineTags: { ...doc.lineTags, [id]: { ...cur, orientation: next } } };
+  const kind = cur.kind ?? 'text';
+  let next: Pick<LineTag, 'kind' | 'orientation'>;
+  if (kind === 'text') {
+    next =
+      cur.orientation < 3
+        ? { kind: 'text', orientation: ((cur.orientation + 1) % 4) as 0 | 1 | 2 | 3 }
+        : { kind: 'chevron', orientation: 0 };
+  } else {
+    next =
+      cur.orientation === 0
+        ? { kind: 'chevron', orientation: 2 }
+        : { kind: 'text', orientation: 0 };
+  }
+  return { ...doc, lineTags: { ...doc.lineTags, [id]: { ...cur, ...next } } };
 }
 
 export function deleteLineTag(doc: MapDoc, id: string): MapDoc {
