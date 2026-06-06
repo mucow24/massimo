@@ -1388,7 +1388,7 @@ describe('moveLineTag', () => {
 });
 
 describe('cycleLineTagOrientation', () => {
-  it('cycles 0 → 1 → 2 → 3 → 0', () => {
+  it('cycles text 0→1→2→3 → chevron fwd → chevron rev → text 0', () => {
     let doc = makeDoc({
       lineTags: [
         {
@@ -1402,14 +1402,21 @@ describe('cycleLineTagOrientation', () => {
         },
       ],
     });
+    // Legacy tags lack `kind`; the first three steps stay text.
     doc = T.cycleLineTagOrientation(doc, 't1');
-    expect(doc.lineTags.t1.orientation).toBe(1);
+    expect(doc.lineTags.t1).toMatchObject({ kind: 'text', orientation: 1 });
     doc = T.cycleLineTagOrientation(doc, 't1');
-    expect(doc.lineTags.t1.orientation).toBe(2);
+    expect(doc.lineTags.t1).toMatchObject({ kind: 'text', orientation: 2 });
     doc = T.cycleLineTagOrientation(doc, 't1');
-    expect(doc.lineTags.t1.orientation).toBe(3);
+    expect(doc.lineTags.t1).toMatchObject({ kind: 'text', orientation: 3 });
+    // Past the four text orientations come the two chevron directions.
     doc = T.cycleLineTagOrientation(doc, 't1');
-    expect(doc.lineTags.t1.orientation).toBe(0);
+    expect(doc.lineTags.t1).toMatchObject({ kind: 'chevron', orientation: 0 });
+    doc = T.cycleLineTagOrientation(doc, 't1');
+    expect(doc.lineTags.t1).toMatchObject({ kind: 'chevron', orientation: 2 });
+    // ...then wrap back to text up.
+    doc = T.cycleLineTagOrientation(doc, 't1');
+    expect(doc.lineTags.t1).toMatchObject({ kind: 'text', orientation: 0 });
   });
 });
 
