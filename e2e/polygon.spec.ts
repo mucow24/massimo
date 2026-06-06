@@ -145,7 +145,7 @@ async function polygonOrder(page: Page): Promise<string[]> {
 
 async function domPolygonIds(page: Page): Promise<string[]> {
   return await page.evaluate(() =>
-    Array.from(document.querySelectorAll('polygon[data-polygon-id]')).map((el) =>
+    Array.from(document.querySelectorAll('path[data-polygon-id]')).map((el) =>
       el.getAttribute('data-polygon-id'),
     ),
   );
@@ -157,7 +157,7 @@ test.describe('Polygon opacity, layering, placement, lock', () => {
     await addPolygonAt(page, CENTER.x, CENTER.y);
     await page.getByRole('slider', { name: 'Fill opacity' }).fill('40');
     const opacity = await page.evaluate(() =>
-      document.querySelector('polygon[data-polygon-id]')?.getAttribute('fill-opacity'),
+      document.querySelector('path[data-polygon-id]')?.getAttribute('fill-opacity'),
     );
     expect(Number(opacity)).toBeCloseTo(0.4, 5);
   });
