@@ -141,6 +141,70 @@ export default function App() {
         }
       }
       const mod = e.metaKey || e.ctrlKey;
+      // Arrow keys nudge the current selection: 1px per press, 5px with Shift.
+      // Distances are in world units (1px at 100% zoom). Transfers and line
+      // tags are skipped — their positions are constrained (between stations /
+      // along a line), so a free x/y nudge has no meaning there.
+      if (
+        !inForm &&
+        !mod &&
+        (e.key === 'ArrowUp' ||
+          e.key === 'ArrowDown' ||
+          e.key === 'ArrowLeft' ||
+          e.key === 'ArrowRight')
+      ) {
+        const step = e.shiftKey ? 5 : 1;
+        const dx = e.key === 'ArrowLeft' ? -step : e.key === 'ArrowRight' ? step : 0;
+        const dy = e.key === 'ArrowUp' ? -step : e.key === 'ArrowDown' ? step : 0;
+        const sel = useSelection.getState();
+        const doc = useDoc.getState();
+        // A selected polygon vertex takes top priority (mirrors Delete): nudge
+        // just that handle, leaving the rest of the polygon put.
+        if (sel.selectedVertex) {
+          const { polygonId, index } = sel.selectedVertex;
+          const poly = doc.polygons[polygonId];
+          if (poly && !poly.locked) {
+            e.preventDefault();
+            const v = poly.vertices[index];
+            const group = beginHistoryGroup();
+            doc.moveVertex(polygonId, index, v.x + dx, v.y + dy);
+            group.commit();
+          }
+          return;
+        }
+        const stationIds = sel.selectedStationIds;
+        const bulletIds = sel.selectedRouteBulletIds;
+        const labelIds = sel.selectedLabelIds;
+        // Locked polygons don't move.
+        const polygonIds = sel.selectedPolygonIds.filter((id) => !doc.polygons[id]?.locked);
+        if (stationIds.length + bulletIds.length + labelIds.length + polygonIds.length > 0) {
+          e.preventDefault();
+          const group = beginHistoryGroup();
+          for (const id of stationIds) {
+            const s = doc.stations[id];
+            if (s) doc.moveStation(id, s.x + dx, s.y + dy);
+          }
+          for (const id of bulletIds) {
+            const b = doc.routeBullets[id];
+            if (b) doc.moveRouteBullet(id, b.x + dx, b.y + dy);
+          }
+          for (const id of labelIds) {
+            const l = doc.textLabels[id];
+            if (l) doc.moveTextLabel(id, l.x + dx, l.y + dy);
+          }
+          for (const id of polygonIds) {
+            const p = doc.polygons[id];
+            if (p) {
+              doc.setPolygonVertices(
+                id,
+                p.vertices.map((v) => ({ x: v.x + dx, y: v.y + dy })),
+              );
+            }
+          }
+          group.commit();
+        }
+        return;
+      }
       if (mod && !inForm && (e.key === 'z' || e.key === 'Z')) {
         e.preventDefault();
         // Blur first so any open useFieldHistory group (slider mid-drag,
