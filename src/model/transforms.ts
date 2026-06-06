@@ -1466,6 +1466,10 @@ export const POLYGON_STROKE_DEFAULT = '#000000';
 export const POLYGON_FILL_OPACITY_MIN = 0;
 export const POLYGON_FILL_OPACITY_MAX = 100;
 export const POLYGON_FILL_OPACITY_DEFAULT = 100;
+// Corner-rounding radius in world units; missing ⇒ 0 (sharp corners).
+export const POLYGON_CURVE_RADIUS_MIN = 0;
+export const POLYGON_CURVE_RADIUS_MAX = 50;
+export const POLYGON_CURVE_RADIUS_DEFAULT = 0;
 // Half-side of the default square, in world units.
 export const POLYGON_DEFAULT_HALF = 30;
 // A polygon never drops below a triangle, so deleting a vertex is a no-op here.
@@ -1475,6 +1479,9 @@ const clampPolygonStrokeWidth = (w: number): number =>
   Math.max(POLYGON_STROKE_WIDTH_MIN, Math.min(POLYGON_STROKE_WIDTH_MAX, w));
 const clampPolygonFillOpacity = (o: number): number =>
   Math.max(POLYGON_FILL_OPACITY_MIN, Math.min(POLYGON_FILL_OPACITY_MAX, Math.round(o)));
+// Clamp only (no rounding), matching the sibling world-unit size `strokeWidth`.
+const clampPolygonCurveRadius = (r: number): number =>
+  Math.max(POLYGON_CURVE_RADIUS_MIN, Math.min(POLYGON_CURVE_RADIUS_MAX, r));
 
 // The default-square vertices centered on (x, y), clockwise from the top-left
 // in the y-down screen frame. Shared by `addPolygon` and the placement ghost so
@@ -1568,6 +1575,9 @@ export function updatePolygon(doc: MapDoc, id: string, patch: PolygonStylePatch)
   }
   if (typeof nextPatch.fillOpacity === 'number') {
     nextPatch = { ...nextPatch, fillOpacity: clampPolygonFillOpacity(nextPatch.fillOpacity) };
+  }
+  if (typeof nextPatch.curveRadius === 'number') {
+    nextPatch = { ...nextPatch, curveRadius: clampPolygonCurveRadius(nextPatch.curveRadius) };
   }
   return { ...doc, polygons: { ...doc.polygons, [id]: { ...cur, ...nextPatch } } };
 }
