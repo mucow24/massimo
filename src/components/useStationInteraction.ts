@@ -1,5 +1,6 @@
 import { Line, LineId, Station } from '../model/types';
 import { dragState, useDoc, useSelection } from '../state/store';
+import { useSnapPrefs } from '../state/snapPrefs';
 import { stopPosWorld } from '../geometry/interlining';
 import { pathBetweenStations } from '../model/pathSelect';
 import { buildRotateMembers } from '../model/transforms';
@@ -59,6 +60,7 @@ export function useStationInteraction(
   const toggleStationOnLine = useDoc((s) => s.toggleStationOnLine);
   const redistributeBetween = useDoc((s) => s.redistributeBetween);
   const addTransfer = useDoc((s) => s.addTransfer);
+  const gridMode = useSnapPrefs((s) => s.modes.grid);
 
   const onPointerDown = (e: React.PointerEvent) => {
     if (e.button !== 0) return;
@@ -113,7 +115,7 @@ export function useStationInteraction(
       selIds.length === 1 &&
       selIds[0] !== station.id
     ) {
-      redistributeBetween(selIds[0], station.id);
+      redistributeBetween(selIds[0], station.id, 'arc-bends', gridMode);
       return;
     }
     if (selection.uiMode.kind === 'creating-line-tag') {

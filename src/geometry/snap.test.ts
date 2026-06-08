@@ -1,5 +1,14 @@
 import { describe, it, expect } from 'vitest';
-import { alignmentPairs, axisForRotation, parallel, snapDraggedStation } from './snap';
+import {
+  alignmentPairs,
+  axisForRotation,
+  gridConstrains,
+  isGridMultiple,
+  parallel,
+  reconcileCorner,
+  reconcileLockWithGrid,
+  snapDraggedStation,
+} from './snap';
 import { makeStation, makeStop } from '../test/fixtures';
 import type { Line, LineId, Station, StationId, StopCell } from '../model/types';
 
@@ -549,5 +558,152 @@ describe('snapDraggedStation', () => {
     });
     // 1 primary guide + 1 opposite-direction guide.
     expect(r.guides.length).toBeGreaterThanOrEqual(2);
+  });
+});
+
+describe('gridConstrains', () => {
+  it('maps each directional grid mode to the axes it constrains', () => {
+    expect(gridConstrains('off')).toEqual({ gx: false, gy: false });
+    expect(gridConstrains('vertical')).toEqual({ gx: true, gy: false });
+    expect(gridConstrains('horizontal')).toEqual({ gx: false, gy: true });
+    expect(gridConstrains('both')).toEqual({ gx: true, gy: true });
+  });
+});
+
+describe('isGridMultiple', () => {
+  it('accepts exact multiples (and zero) and rejects off-grid values', () => {
+    expect(isGridMultiple(0)).toBe(true);
+    expect(isGridMultiple(10)).toBe(true);
+    expect(isGridMultiple(-30)).toBe(true);
+    expect(isGridMultiple(5)).toBe(false);
+    expect(isGridMultiple(30.001)).toBe(false);
+  });
+  it('tolerates sub-epsilon float drift', () => {
+    expect(isGridMultiple(30 + 1e-9)).toBe(true);
+  });
+});
+
+describe('reconcileLockWithGrid', () => {
+  const H = { x: 1, y: 0 }; // horizontal lock (perp Y)
+  const V = { x: 0, y: 1 }; // vertical lock (perp X)
+  // NE-SW diagonal, σ = sign(x*y) = -1, line y + x = c.
+  const D = { x: Math.SQRT1_2, y: -Math.SQRT1_2 };
+
+  it('horizontal lock, grid vertical: notches along-X, perp Y rides off-grid neighbor', () => {
+    const r = reconcileLockWithGrid({ x: 0, y: 5 }, H, { x: 27, y: 6 }, 'vertical');
+    expect(r.engaged).toBe(true);
+    expect(r.x).toBeCloseTo(30, 5);
+    expect(r.y).toBeCloseTo(5, 5);
+  });
+
+  it('horizontal lock, grid both: rejects an off-grid perpendicular', () => {
+    expect(reconcileLockWithGrid({ x: 0, y: 5 }, H, { x: 27, y: 6 }, 'both').engaged).toBe(false);
+    expect(reconcileLockWithGrid({ x: 0, y: 5 }, H, { x: 27, y: 6 }, 'horizontal').engaged).toBe(
+      false,
+    );
+  });
+
+  it('horizontal lock, grid horizontal: engages on-grid perp, leaves along-X free', () => {
+    const r = reconcileLockWithGrid({ x: 0, y: 0 }, H, { x: 27, y: 3 }, 'horizontal');
+    expect(r).toMatchObject({ engaged: true });
+    expect(r.x).toBeCloseTo(27, 5); // along free
+    expect(r.y).toBeCloseTo(0, 5);
+  });
+
+  it('vertical lock, grid vertical: rejects an off-grid perpendicular X', () => {
+    expect(reconcileLockWithGrid({ x: 5, y: 0 }, V, { x: 6, y: 27 }, 'vertical').engaged).toBe(
+      false,
+    );
+  });
+
+  it('vertical lock, grid horizontal: notches along-Y, perp X free', () => {
+    const r = reconcileLockWithGrid({ x: 5, y: 0 }, V, { x: 6, y: 27 }, 'horizontal');
+    expect(r.engaged).toBe(true);
+    expect(r.x).toBeCloseTo(5, 5);
+    expect(r.y).toBeCloseTo(30, 5);
+  });
+
+  it('diagonal lock, grid both: engages on the lattice and rejects off it', () => {
+    // c = q.y + q.x. q=(0,0) → c=0 (on lattice): snap along the line in grid
+    // steps. proposed on the line y=-x at (23,-23) → nearest lattice (20,-20).
+    const on = reconcileLockWithGrid({ x: 0, y: 0 }, D, { x: 23, y: -23 }, 'both');
+    expect(on.engaged).toBe(true);
+    expect(on.x).toBeCloseTo(20, 5);
+    expect(on.y).toBeCloseTo(-20, 5);
+    // q=(5,0) → c=5, not a grid multiple → no lattice points on the line.
+    expect(reconcileLockWithGrid({ x: 5, y: 0 }, D, { x: 23, y: -23 }, 'both').engaged).toBe(false);
+  });
+
+  it('diagonal lock, single-axis grid: intersects the grid line with the diagonal', () => {
+    // grid vertical pins X; Y follows y = c - x (c=0). proposed.x=23 → x=20, y=-20.
+    const gv = reconcileLockWithGrid({ x: 0, y: 0 }, D, { x: 23, y: -50 }, 'vertical');
+    expect(gv.engaged).toBe(true);
+    expect(gv.x).toBeCloseTo(20, 5);
+    expect(gv.y).toBeCloseTo(-20, 5);
+    // grid horizontal pins Y; X follows. proposed.y=-23 → y=-20, x=20.
+    const gh = reconcileLockWithGrid({ x: 0, y: 0 }, D, { x: 50, y: -23 }, 'horizontal');
+    expect(gh.engaged).toBe(true);
+    expect(gh.x).toBeCloseTo(20, 5);
+    expect(gh.y).toBeCloseTo(-20, 5);
+  });
+});
+
+describe('reconcileCorner', () => {
+  const H = { x: 1, y: 0 }; // horizontal lock (perp Y)
+  const V = { x: 0, y: 1 }; // vertical lock (perp X)
+  it('keeps a grid-valid corner', () => {
+    const r = reconcileCorner(
+      10,
+      20,
+      { q: { x: 10, y: 0 }, axis: V },
+      { q: { x: 0, y: 20 }, axis: H },
+      { x: 12, y: 22 },
+      'both',
+    );
+    expect(r.kept).toBe('both');
+    expect(r.x).toBeCloseTo(10, 5);
+    expect(r.y).toBeCloseTo(20, 5);
+  });
+  it('degrades an off-grid corner to the primary when it can engage', () => {
+    // Corner (5,20): primary horizontal lock (perp Y=0 on grid) engages → X
+    // notches to 10. (X=5 from the vertical lock is off-grid and dropped.)
+    const r = reconcileCorner(
+      5,
+      20,
+      { q: { x: 0, y: 0 }, axis: H },
+      { q: { x: 5, y: 0 }, axis: V },
+      { x: 8, y: 1 },
+      'both',
+    );
+    expect(r.kept).toBe('primary');
+    expect(r.x).toBeCloseTo(10, 5);
+    expect(r.y).toBeCloseTo(0, 5);
+  });
+  it('falls back to the secondary when the primary cannot satisfy the grid', () => {
+    // Primary vertical lock has an off-grid perp X=5 → can't engage under grid
+    // 'both'; the secondary horizontal lock (perp Y=0 on grid) does.
+    const r = reconcileCorner(
+      5,
+      0,
+      { q: { x: 5, y: 0 }, axis: V },
+      { q: { x: 0, y: 0 }, axis: H },
+      { x: 6, y: 1 },
+      'both',
+    );
+    expect(r.kept).toBe('secondary');
+    expect(r.x).toBeCloseTo(10, 5);
+    expect(r.y).toBeCloseTo(0, 5);
+  });
+  it('reports none when neither lock can satisfy the grid', () => {
+    // Both perpendiculars off-grid under grid 'both'.
+    const r = reconcileCorner(
+      5,
+      5,
+      { q: { x: 5, y: 0 }, axis: V },
+      { q: { x: 0, y: 5 }, axis: H },
+      { x: 6, y: 6 },
+      'both',
+    );
+    expect(r.kept).toBe('none');
   });
 });

@@ -118,9 +118,11 @@ export interface SnapModes {
    *  existing 2-axis solver. `'off'` disables it. */
   all: AllSnap;
   /** Snap the dragged anchor to the nearest GRID_INTERVAL multiple along the
-   *  selected axes. Independent of the other modes; when another mode engages
-   *  (any guides emitted) the engine's result wins so the user doesn't see
-   *  grid fighting an explicit alignment. `'off'` disables it. */
+   *  selected axes. A **hard constraint**: when grid is on, the result is
+   *  always on the grid. The other modes only narrow *which* grid point is
+   *  chosen, and engage only when their target is itself grid-valid — when a
+   *  line/all/corner/cadence alignment can't be reconciled with the grid it
+   *  simply doesn't fire (no guide). `'off'` disables it. */
   grid: GridSnap;
 }
 
@@ -352,7 +354,7 @@ export function snapDraggedStation(input: SnapInput): SnapResult {
   // it picks the better-aligned axis as primary.
   bests.sort((a, b) => a.perpDist - b.perpDist);
 
-  const primary = bests[0];
+  let primary = bests[0];
   // Find a non-parallel secondary (so the two constraints solve uniquely).
   let secondary: Cand | null = null;
   for (let i = 1; i < bests.length; i++) {
@@ -363,6 +365,7 @@ export function snapDraggedStation(input: SnapInput): SnapResult {
     }
   }
 
+  const gridOn = modes.grid !== 'off';
   let sx: number;
   let sy: number;
 
@@ -381,6 +384,39 @@ export function snapDraggedStation(input: SnapInput): SnapResult {
     const det = p1.x * p2.y - p1.y * p2.x;
     sx = (k1 * p2.y - k2 * p1.y) / det;
     sy = (p1.x * k2 - p2.x * k1) / det;
+
+    // Grid is a hard constraint: the corner can't slide, so keep it only when
+    // it's grid-valid; otherwise degrade to whichever single lock can be
+    // reconciled (or plain grid if neither can).
+    if (gridOn) {
+      const lockOf = (c: Cand): GridLock => ({
+        q: { x: c.targetStopX - c.dOff.x, y: c.targetStopY - c.dOff.y },
+        axis: c.axis,
+      });
+      const r = reconcileCorner(
+        sx,
+        sy,
+        lockOf(primary),
+        lockOf(secondary),
+        { x: proposedX, y: proposedY },
+        modes.grid,
+      );
+      if (r.kept === 'none') {
+        const g = snapPointToGrid(proposedX, proposedY, modes.grid);
+        return { x: g.x, y: g.y, guides: [] };
+      }
+      sx = r.x;
+      sy = r.y;
+      // Collapse to the surviving lock so guide-building emits the right
+      // guide(s): 'primary' keeps primary only, 'secondary' promotes it to
+      // primary, 'both' leaves the pair intact.
+      if (r.kept === 'secondary') {
+        primary = secondary;
+        secondary = null;
+      } else if (r.kept === 'primary') {
+        secondary = null;
+      }
+    }
   } else {
     // Single-axis snap: project the dragged stop onto the primary's axis
     // line through its target stop.
@@ -389,6 +425,21 @@ export function snapDraggedStation(input: SnapInput): SnapResult {
     const snapped = projectOntoAxis(proposedDStop, { x: c.targetStopX, y: c.targetStopY }, c.axis);
     sx = snapped.x - c.dOff.x;
     sy = snapped.y - c.dOff.y;
+
+    // Grid as a hard constraint: reconcile the line lock with the grid. When
+    // the lock can't be reconciled (off-grid perpendicular, or a diagonal that
+    // misses the lattice), the alignment doesn't engage — fall back to a plain
+    // grid snap with no guide.
+    if (gridOn) {
+      const q = { x: c.targetStopX - c.dOff.x, y: c.targetStopY - c.dOff.y };
+      const r = reconcileLockWithGrid(q, c.axis, { x: proposedX, y: proposedY }, modes.grid);
+      if (!r.engaged) {
+        const g = snapPointToGrid(proposedX, proposedY, modes.grid);
+        return { x: g.x, y: g.y, guides: [] };
+      }
+      sx = r.x;
+      sy = r.y;
+    }
   }
 
   // Phase 3: along-axis refinement (equidistant + tens). Runs for any
@@ -397,10 +448,17 @@ export function snapDraggedStation(input: SnapInput): SnapResult {
   // primaries are skipped (refining off them would silently slide the snap
   // to a line-mode anchor that wasn't part of the candidate pool).
   // Equidistant has no meaning for bullets (no A-B-C neighbors); the helper
-  // gates that internally.
+  // gates that internally. Skipped when the grid pins the along-axis: there
+  // the grid owns the along coordinate (an on-grid cadence anchor already
+  // coincides with the grid; an off-grid one is dropped by design).
+  const gridPinsAlong = gridOn && gridConstrainsAlong(primary.axis, modes.grid);
   let refinedSourceGuide: { from: Vec2; to: Vec2 } | undefined;
-  let alongAxisRefined = false;
-  if (!secondary && primary.kind === 'line' && (modes.equidistant || modes.tens)) {
+  if (
+    !secondary &&
+    primary.kind === 'line' &&
+    (modes.equidistant || modes.tens) &&
+    !gridPinsAlong
+  ) {
     const refined = refineAlongAxis({
       sx,
       sy,
@@ -420,27 +478,7 @@ export function snapDraggedStation(input: SnapInput): SnapResult {
       sx = refined.sx;
       sy = refined.sy;
       refinedSourceGuide = refined.sourceGuide;
-      alongAxisRefined = true;
     }
-  }
-
-  // Phase 3b: along-axis grid refinement. Once a single-axis alignment has
-  // locked the dragged anchor onto a line/axis, grid mode snaps the *free*
-  // along-axis coordinate to the grid — so line-lock and grid compose: the
-  // user stays glued to the line while sliding along it in grid increments.
-  // We grid-snap the anchor and project the result back onto the axis, which
-  // keeps the perpendicular (the line lock) intact even when grid 'both' would
-  // otherwise pull it off an off-grid line. Skipped for 2-axis snaps (already
-  // fully locked), during Ctrl-drag (redistribute is a modal interaction that
-  // ignores the grid toggle, same as the terminus equidistant/tens branches),
-  // and when an explicit equidistant/tens cadence already won — those stay the
-  // fallback-overriding alignments, matching the no-alignment grid-as-fallback
-  // rule above.
-  if (!secondary && !redistributeAnchor && modes.grid !== 'off' && !alongAxisRefined) {
-    const g = snapPointToGrid(sx, sy, modes.grid);
-    const snapped = projectOntoAxis(g, { x: sx, y: sy }, primary.axis);
-    sx = snapped.x;
-    sy = snapped.y;
   }
 
   // Compute the per-station spacing for the Ctrl-drag readout. We use the
@@ -570,6 +608,129 @@ export function parallel(a: Vec2, b: Vec2): boolean {
 export function projectOntoAxis(p: Vec2, anchor: Vec2, axis: Vec2): Vec2 {
   const along = (p.x - anchor.x) * axis.x + (p.y - anchor.y) * axis.y;
   return { x: anchor.x + along * axis.x, y: anchor.y + along * axis.y };
+}
+
+/** Tolerance for "is this coordinate a grid multiple", in world units. Grid-
+ *  placed coordinates are exact `round(v/10)*10`; line-locked anchors whose
+ *  stop offsets cancel are exact too — so a tight epsilon is right. */
+const GRID_EPS = 1e-6;
+
+/** Which world axes the directional grid mode constrains. */
+export function gridConstrains(mode: GridSnap): { gx: boolean; gy: boolean } {
+  return {
+    gx: mode === 'vertical' || mode === 'both',
+    gy: mode === 'horizontal' || mode === 'both',
+  };
+}
+
+/** True when `v` sits on a grid line (multiple of {@link GRID_INTERVAL}). */
+export function isGridMultiple(v: number, eps: number = GRID_EPS): boolean {
+  return Math.abs(v - Math.round(v / GRID_INTERVAL) * GRID_INTERVAL) < eps;
+}
+
+/** Does the grid constrain motion *along* this lock axis (vs only its
+ *  perpendicular)? Used to decide whether grid pins the along-axis coordinate
+ *  (skipping equidistant/tens) or leaves it free for cadence. */
+function gridConstrainsAlong(axis: Vec2, mode: GridSnap): boolean {
+  const { gx, gy } = gridConstrains(mode);
+  return (gx && Math.abs(axis.x) > 1e-9) || (gy && Math.abs(axis.y) > 1e-9);
+}
+
+const snapToGridMultiple = (v: number): number => Math.round(v / GRID_INTERVAL) * GRID_INTERVAL + 0;
+
+export interface LockGridResult {
+  x: number;
+  y: number;
+  /** False when the lock cannot be reconciled with the grid (its grid-
+   *  constrained perpendicular is off-grid, or a diagonal misses the lattice).
+   *  The caller then falls back to a plain grid snap with no guide. */
+  engaged: boolean;
+}
+
+/**
+ * Reconcile a single line lock (anchor on the line through `q` with unit
+ * direction `axis`) with the directional grid. Closed-form: every axis the
+ * engine produces is horizontal, vertical, or exactly 45°.
+ *
+ * - Horizontal/vertical: the perpendicular is a single world axis. If grid
+ *   constrains the perpendicular, engage only when the perp coordinate is on
+ *   grid. The along-axis is snapped to grid when grid constrains it, else left
+ *   at the proposed position (free for cadence).
+ * - Diagonal (`y − σx = c`, `σ = sign(axis.x·axis.y)`): grid `both` engages
+ *   only when `c` is a grid multiple (then every grid column meets the line at
+ *   a grid point); single-axis grid pins the constrained coordinate and rides
+ *   the line for the other.
+ */
+export function reconcileLockWithGrid(
+  q: Vec2,
+  axis: Vec2,
+  proposed: Vec2,
+  mode: GridSnap,
+): LockGridResult {
+  const { gx, gy } = gridConstrains(mode);
+  const m = snapToGridMultiple;
+
+  if (Math.abs(axis.y) < 1e-9) {
+    // Horizontal lock: along X, perp Y = q.y.
+    if (gy && !isGridMultiple(q.y)) return { x: 0, y: 0, engaged: false };
+    return { x: gx ? m(proposed.x) : proposed.x, y: q.y, engaged: true };
+  }
+  if (Math.abs(axis.x) < 1e-9) {
+    // Vertical lock: along Y, perp X = q.x.
+    if (gx && !isGridMultiple(q.x)) return { x: 0, y: 0, engaged: false };
+    return { x: q.x, y: gy ? m(proposed.y) : proposed.y, engaged: true };
+  }
+  // Diagonal lock.
+  const sigma = Math.sign(axis.x * axis.y);
+  const c = q.y - sigma * q.x;
+  if (gx && gy) {
+    if (!isGridMultiple(c)) return { x: 0, y: 0, engaged: false };
+    const foot = projectOntoAxis(proposed, q, axis);
+    const x = m(foot.x);
+    return { x, y: c + sigma * x, engaged: true };
+  }
+  if (gx) {
+    const x = m(proposed.x);
+    return { x, y: c + sigma * x, engaged: true };
+  }
+  const y = m(proposed.y);
+  return { x: sigma * (y - c), y, engaged: true };
+}
+
+/** A single line lock, expressed for grid reconciliation: anchor on the line
+ *  through `q` with unit direction `axis`. */
+export interface GridLock {
+  q: Vec2;
+  axis: Vec2;
+}
+
+/**
+ * Reconcile a 2-axis corner (the fixed intersection of two non-parallel locks)
+ * with the grid. The corner can't slide, so keep both locks only when the
+ * corner is already grid-valid. Otherwise degrade to a single lock — preferring
+ * the (better-aligned) primary, but falling back to the secondary when the
+ * primary can't be reconciled with the grid — so a grid-valid lock is never
+ * dropped in favor of an off-grid one. `kept` says which lock(s) survived, so
+ * the caller can emit the matching guide(s); `'none'` means neither could
+ * engage → plain grid snap.
+ */
+export function reconcileCorner(
+  cornerX: number,
+  cornerY: number,
+  primary: GridLock,
+  secondary: GridLock,
+  proposed: Vec2,
+  mode: GridSnap,
+): { x: number; y: number; kept: 'both' | 'primary' | 'secondary' | 'none' } {
+  const { gx, gy } = gridConstrains(mode);
+  if ((!gx || isGridMultiple(cornerX)) && (!gy || isGridMultiple(cornerY))) {
+    return { x: cornerX, y: cornerY, kept: 'both' };
+  }
+  const rp = reconcileLockWithGrid(primary.q, primary.axis, proposed, mode);
+  if (rp.engaged) return { x: rp.x, y: rp.y, kept: 'primary' };
+  const rs = reconcileLockWithGrid(secondary.q, secondary.axis, proposed, mode);
+  if (rs.engaged) return { x: rs.x, y: rs.y, kept: 'secondary' };
+  return { x: 0, y: 0, kept: 'none' };
 }
 
 export interface AlignmentPair {

@@ -1,6 +1,7 @@
 import { create } from 'zustand';
 import { persist, createJSONStorage } from 'zustand/middleware';
 import { temporal } from 'zundo';
+import type { GridSnap } from '../geometry/snap';
 import type {
   DotShape,
   LabelAlign,
@@ -110,6 +111,7 @@ interface DocState extends MapDoc {
     startId: StationId,
     endId: StationId,
     mode?: 'arc-bends' | 'straight',
+    gridMode?: GridSnap,
   ) => void;
   rotateStation: (id: StationId) => void;
   rotateItemsAround: (pivot: T.ItemRef, members: T.ItemRef[]) => void;
@@ -241,8 +243,8 @@ export const useDoc = create<DocState>()(
           set((s) => T.setDotShape(s, stationId, lineId, shape)),
         setStationWaypoint: (stationId, isWaypoint) =>
           set((s) => T.setStationWaypoint(s, stationId, isWaypoint)),
-        redistributeBetween: (startId, endId, mode = 'arc-bends') =>
-          set((s) => T.redistributeBetween(s, startId, endId, mode)),
+        redistributeBetween: (startId, endId, mode = 'arc-bends', gridMode = 'off') =>
+          set((s) => T.redistributeBetween(s, startId, endId, mode, gridMode)),
         rotateStation: (id) => set((s) => T.rotateStation(s, id)),
         rotateItemsAround: (pivot, members) => set((s) => T.rotateItemsAround(s, pivot, members)),
         rotateStationAndLayout: (id, dir) => set((s) => T.rotateStationAndLayout(s, id, dir)),

@@ -2,6 +2,8 @@ import type { Vec2 } from './vec';
 import { add, scale, sub, dot, cross } from './vec';
 import {
   axesForAllSnap,
+  reconcileCorner,
+  reconcileLockWithGrid,
   snapPointToGrid,
   SNAP_PERP_TOLERANCE,
   type SnapGuide,
@@ -49,9 +51,11 @@ function projectOntoAxis(p: Vec2, t: Vec2, a: Vec2): { foot: Vec2; perpDist: num
  * Decomposed — no 2×2 solver: a *vertical* axis snaps X, a *horizontal* axis
  * snaps Y (the two compose into a corner snap for free), and a *diagonal* axis
  * projects onto the ±45° line. When a diagonal competes with the V/H combo, the
- * smaller displacement wins. An explicit alignment overrides grid (so the user
- * never sees grid fighting an alignment); grid only applies when nothing aligns.
- * Pure — no React, no DOM.
+ * smaller displacement wins. Grid is a **hard constraint**: when on, the result
+ * is always on the grid, and a chosen alignment engages only when it can be
+ * reconciled with the grid (otherwise it yields to a plain grid snap, no guide)
+ * — see {@link reconcileLockWithGrid}/{@link reconcileCorner}. Pure — no React,
+ * no DOM.
  */
 export function snapPolygonPoint(input: PolygonSnapInput): PolygonSnapResult {
   const { proposed, lineTargets, allTargets, modes } = input;
@@ -69,7 +73,7 @@ export function snapPolygonPoint(input: PolygonSnapInput): PolygonSnapResult {
   // Best vertical (snaps X), best horizontal (snaps Y), best diagonal (projects).
   let bestV: { value: number; perp: number; target: Vec2 } | null = null;
   let bestH: { value: number; perp: number; target: Vec2 } | null = null;
-  let bestD: { foot: Vec2; perp: number; target: Vec2 } | null = null;
+  let bestD: { foot: Vec2; perp: number; target: Vec2; axis: Vec2 } | null = null;
 
   for (const { target, axis } of candidates) {
     const { foot, perpDist } = projectOntoAxis(proposed, target, axis);
@@ -83,23 +87,50 @@ export function snapPolygonPoint(input: PolygonSnapInput): PolygonSnapResult {
       const d = Math.abs(proposed.y - target.y);
       if (!bestH || d < bestH.perp) bestH = { value: target.y, perp: d, target };
     } else if (!bestD || perpDist < bestD.perp) {
-      bestD = { foot, perp: perpDist, target };
+      bestD = { foot, perp: perpDist, target, axis };
     }
   }
+
+  const gridOn = modes.grid !== 'off';
+  // Grid is a hard constraint: when an alignment can't be reconciled with the
+  // grid it yields entirely and we snap purely to grid (no guide).
+  const plainGrid = (): PolygonSnapResult => {
+    if (!gridOn) return { x: proposed.x, y: proposed.y, guides: [] };
+    const g = snapPointToGrid(proposed.x, proposed.y, modes.grid);
+    return { x: g.x, y: g.y, guides: [] };
+  };
+  const guideTo = (target: Vec2, p: Vec2): SnapGuide => ({ from: { ...target }, to: { ...p } });
 
   // A corner — both X and Y lock onto a target — is the strongest snap: take it
   // outright (snapping to the V×H intersection), even over a diagonal that
   // happens to pass through the proposed point with zero displacement.
   if (bestV && bestH) {
-    const p: Vec2 = { x: bestV.value, y: bestH.value };
-    return {
-      x: p.x,
-      y: p.y,
-      guides: [
-        { from: { ...bestV.target }, to: { ...p } },
-        { from: { ...bestH.target }, to: { ...p } },
-      ],
-    };
+    const cornerX = bestV.value;
+    const cornerY = bestH.value;
+    if (!gridOn) {
+      const p: Vec2 = { x: cornerX, y: cornerY };
+      return { x: p.x, y: p.y, guides: [guideTo(bestV.target, p), guideTo(bestH.target, p)] };
+    }
+    // Reconcile the corner with the grid. V is a vertical lock (perp X), H a
+    // horizontal lock (perp Y); prefer the better-aligned axis as primary.
+    const vIsPrimary = bestV.perp <= bestH.perp;
+    const vLock = { q: { x: cornerX, y: proposed.y }, axis: { x: 0, y: 1 } };
+    const hLock = { q: { x: proposed.x, y: cornerY }, axis: { x: 1, y: 0 } };
+    const r = reconcileCorner(
+      cornerX,
+      cornerY,
+      vIsPrimary ? vLock : hLock,
+      vIsPrimary ? hLock : vLock,
+      proposed,
+      modes.grid,
+    );
+    if (r.kept === 'none') return plainGrid();
+    const p: Vec2 = { x: r.x, y: r.y };
+    if (r.kept === 'both') {
+      return { x: p.x, y: p.y, guides: [guideTo(bestV.target, p), guideTo(bestH.target, p)] };
+    }
+    const keptIsV = r.kept === 'primary' ? vIsPrimary : !vIsPrimary;
+    return { x: p.x, y: p.y, guides: [guideTo(keptIsV ? bestV.target : bestH.target, p)] };
   }
 
   // Single-axis alignment vs. a diagonal: the smaller displacement wins.
@@ -111,25 +142,28 @@ export function snapPolygonPoint(input: PolygonSnapInput): PolygonSnapResult {
     };
     const comboDisp = Math.hypot(combo.x - proposed.x, combo.y - proposed.y);
     if (!bestD || comboDisp <= bestD.perp) {
-      return {
-        x: combo.x,
-        y: combo.y,
-        guides: [{ from: { ...singleAxis.target }, to: { ...combo } }],
-      };
+      if (!gridOn) {
+        return { x: combo.x, y: combo.y, guides: [guideTo(singleAxis.target, combo)] };
+      }
+      const lock = bestV
+        ? { q: { x: bestV.value, y: proposed.y }, axis: { x: 0, y: 1 } }
+        : { q: { x: proposed.x, y: bestH!.value }, axis: { x: 1, y: 0 } };
+      const r = reconcileLockWithGrid(lock.q, lock.axis, proposed, modes.grid);
+      if (!r.engaged) return plainGrid();
+      const p: Vec2 = { x: r.x, y: r.y };
+      return { x: p.x, y: p.y, guides: [guideTo(singleAxis.target, p)] };
     }
   }
   if (bestD) {
-    return {
-      x: bestD.foot.x,
-      y: bestD.foot.y,
-      guides: [{ from: { ...bestD.target }, to: { ...bestD.foot } }],
-    };
+    if (!gridOn) {
+      return { x: bestD.foot.x, y: bestD.foot.y, guides: [guideTo(bestD.target, bestD.foot)] };
+    }
+    const r = reconcileLockWithGrid(bestD.target, bestD.axis, proposed, modes.grid);
+    if (!r.engaged) return plainGrid();
+    const p: Vec2 = { x: r.x, y: r.y };
+    return { x: p.x, y: p.y, guides: [guideTo(bestD.target, p)] };
   }
 
   // No alignment engaged — grid is the only thing that can move the point.
-  if (modes.grid !== 'off') {
-    const g = snapPointToGrid(proposed.x, proposed.y, modes.grid);
-    return { x: g.x, y: g.y, guides: [] };
-  }
-  return { x: proposed.x, y: proposed.y, guides: [] };
+  return plainGrid();
 }

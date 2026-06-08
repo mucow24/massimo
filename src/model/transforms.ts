@@ -2,6 +2,7 @@ import { autoOrientNewStation } from './autoOrient';
 import { effectiveLineOrder } from './lineOrder';
 import { pairKeyOf } from './pairKey';
 import { rotateBy, stopCenterAt } from '../geometry/orientation';
+import { snapPointToGrid, type GridSnap } from '../geometry/snap';
 import { polygonCentroid, edgeMidpoint } from '../geometry/polygon';
 import { measureTextLabel } from '../geometry/textMeasure';
 import type { Vec2 } from '../geometry/vec';
@@ -263,6 +264,11 @@ export function redistributeBetween(
   startId: StationId,
   endId: StationId,
   mode: RedistributeMode = 'arc-bends',
+  // When set, each redistributed station's center is rounded to the nearest
+  // grid point — keeping the hard-grid invariant (a thing placed with grid on
+  // never falls off the grid). This trades perfectly-even spacing for staying
+  // on grid; an infrequent, accepted approximation.
+  gridMode: GridSnap = 'off',
 ): MapDoc {
   if (startId === endId) return doc;
   if (!doc.stations[startId] || !doc.stations[endId]) return doc;
@@ -370,8 +376,14 @@ export function redistributeBetween(
       for (let k = 1; k <= subN; k++) {
         const idx = from + k;
         const t = targets[k - 1];
-        const px = t.x - stopOffsets[idx].x;
-        const py = t.y - stopOffsets[idx].y;
+        const cx = t.x - stopOffsets[idx].x;
+        const cy = t.y - stopOffsets[idx].y;
+        // Hard-grid: round the station center to the grid. Done before the
+        // drift-skip and conflict-dedup below so both compare the snapped
+        // value (and two lines proposing within a grid cell agree).
+        const snapped = gridMode === 'off' ? { x: cx, y: cy } : snapPointToGrid(cx, cy, gridMode);
+        const px = snapped.x;
+        const py = snapped.y;
         const cur = sts[idx];
         // In arc modes, skip sub-pixel drift to avoid breaking perfect snap
         // alignments via floating-point error. Straight-line is exact by
