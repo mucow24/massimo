@@ -124,6 +124,8 @@ describe('save/load round-trip', () => {
           weight: 700,
           italic: true,
           align: 'center',
+          color: '#ff0000',
+          darkColor: '#00ff00',
         },
       ],
     });

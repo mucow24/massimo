@@ -328,6 +328,15 @@ export interface TextLabel {
   weight: TextLabelWeight;
   italic: boolean;
   align: TextLabelAlign;
+  // Day/night text colors. `color` paints in light mode, `darkColor` in dark
+  // mode. Unlike a polygon (whose dark color is initialized equal to its light
+  // color), a label's two defaults differ (#111111 / #ffffff) so the text stays
+  // legible in both modes — matching the theme-driven color labels used before
+  // these fields existed. Independent once edited. Old saves predating these
+  // fields are backfilled to the defaults once on load (see serialize.ts), so
+  // they are always present at runtime. 7-char hex (`#rrggbb`).
+  color: string;
+  darkColor: string;
 }
 
 // One endpoint of a transfer: a specific dot on a station. `lineId` picks

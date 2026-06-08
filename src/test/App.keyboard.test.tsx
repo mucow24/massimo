@@ -234,6 +234,8 @@ describe('App keyboard shortcuts: copy / paste / duplicate', () => {
       weight: 400,
       italic: false,
       align: 'left',
+      color: '#111111',
+      darkColor: '#ffffff',
     },
   });
   const polygonClip = (): ClipPayload => ({

@@ -39,6 +39,33 @@ describe('<LabelView /> — text color follows the theme', () => {
   });
 });
 
+describe('<LabelView /> — per-label day/night colors', () => {
+  const renderColored = () =>
+    render(
+      <svg>
+        <LabelView
+          label={makeTextLabel({
+            id: 'g1',
+            text: 'Midtown',
+            color: '#ff0000',
+            darkColor: '#00ff00',
+          })}
+          selected={false}
+        />
+      </svg>,
+    );
+
+  it('paints the day color in light mode', () => {
+    useViewportStore.setState({ darkMode: false });
+    expect(renderColored().container.querySelector('text')?.getAttribute('fill')).toBe('#ff0000');
+  });
+
+  it('paints the night color in dark mode', () => {
+    useViewportStore.setState({ darkMode: true });
+    expect(renderColored().container.querySelector('text')?.getAttribute('fill')).toBe('#00ff00');
+  });
+});
+
 describe('<LabelView /> — inline bullets', () => {
   it('renders an inline bullet with the line color when text contains <CODE>', () => {
     useDoc.setState({
