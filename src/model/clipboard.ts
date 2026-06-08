@@ -132,6 +132,8 @@ function parseTextLabelData(raw: unknown): Omit<TextLabel, 'id'> | null {
     return null;
   if (typeof d.italic !== 'boolean') return null;
   if (typeof d.align !== 'string' || !VALID_ALIGNS.includes(d.align as TextLabelAlign)) return null;
+  if (typeof d.color !== 'string' || !HEX7.test(d.color)) return null;
+  if (typeof d.darkColor !== 'string' || !HEX7.test(d.darkColor)) return null;
   return {
     x: d.x,
     y: d.y,
@@ -141,6 +143,8 @@ function parseTextLabelData(raw: unknown): Omit<TextLabel, 'id'> | null {
     weight: d.weight as TextLabelWeight,
     italic: d.italic,
     align: d.align as TextLabelAlign,
+    color: d.color,
+    darkColor: d.darkColor,
   };
 }
 

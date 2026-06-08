@@ -1,4 +1,9 @@
-import { DEFAULT_DOC, LABEL_WEIGHT_VALUES } from './transforms';
+import {
+  DEFAULT_DOC,
+  LABEL_WEIGHT_VALUES,
+  TEXT_LABEL_COLOR_DEFAULT,
+  TEXT_LABEL_DARK_COLOR_DEFAULT,
+} from './transforms';
 import { pairKeyOf } from './pairKey';
 import { PALETTES, type PaletteId } from './palettes';
 import type {
@@ -9,6 +14,7 @@ import type {
   Polygon,
   Station,
   StopOrientation,
+  TextLabel,
   TextLabelWeight,
 } from './types';
 
@@ -152,7 +158,34 @@ export function parse(json: string): ParseResult {
   if (sanitized.changed) merged.stations = sanitized.stations;
   const cleanedPolygons = backfillPolygonDarkColors(merged.polygons);
   if (cleanedPolygons.changed) merged.polygons = cleanedPolygons.polygons;
+  const cleanedLabels = backfillTextLabelColors(merged.textLabels);
+  if (cleanedLabels.changed) merged.textLabels = cleanedLabels.textLabels;
   return { ok: true, doc: merged };
+}
+
+// Backfill the day/night colors for labels saved before those fields existed.
+// Old labels rendered with the theme colors (#111111 / #ffffff), so each
+// missing field is set once to the matching default; independent thereafter.
+export function backfillTextLabelColors(textLabels: Record<string, TextLabel>): {
+  textLabels: Record<string, TextLabel>;
+  changed: boolean;
+} {
+  let changed = false;
+  const next: Record<string, TextLabel> = {};
+  for (const id of Object.keys(textLabels)) {
+    const g = textLabels[id];
+    if (g.color === undefined || g.darkColor === undefined) {
+      next[id] = {
+        ...g,
+        color: g.color ?? TEXT_LABEL_COLOR_DEFAULT,
+        darkColor: g.darkColor ?? TEXT_LABEL_DARK_COLOR_DEFAULT,
+      };
+      changed = true;
+    } else {
+      next[id] = g;
+    }
+  }
+  return { textLabels: next, changed };
 }
 
 // Backfill the dark-mode colors for polygons saved before those fields existed.

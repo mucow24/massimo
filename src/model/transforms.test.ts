@@ -2003,6 +2003,8 @@ describe('addTextLabel', () => {
       weight: 400,
       italic: false,
       align: 'left',
+      color: '#111111',
+      darkColor: '#ffffff',
     });
   });
 });
@@ -2019,6 +2021,8 @@ describe('addTextLabelWith', () => {
       weight: 700,
       italic: true,
       align: 'center',
+      color: '#ff0000',
+      darkColor: '#00ff00',
     };
     const doc = T.addTextLabelWith(doc0, 'g1', fields);
     expect(doc.textLabels.g1).toEqual({ id: 'g1', ...fields });
@@ -2125,6 +2129,40 @@ describe('updateTextLabel', () => {
     const next = T.updateTextLabel(doc, 'g1', { fontSize: 32, x: 200, y: 300 });
     expect(next.textLabels.g1.x).toBe(200);
     expect(next.textLabels.g1.y).toBe(300);
+  });
+
+  it('sets the day and night colors independently of each other', () => {
+    const doc = makeDoc({
+      textLabels: [makeTextLabel({ id: 'g1', color: '#111111', darkColor: '#ffffff' })],
+    });
+    const afterDay = T.updateTextLabel(doc, 'g1', { color: '#ff0000' });
+    expect(afterDay.textLabels.g1.color).toBe('#ff0000');
+    // Night color untouched.
+    expect(afterDay.textLabels.g1.darkColor).toBe('#ffffff');
+    const afterNight = T.updateTextLabel(afterDay, 'g1', { darkColor: '#00ff00' });
+    expect(afterNight.textLabels.g1.darkColor).toBe('#00ff00');
+    // Day color untouched.
+    expect(afterNight.textLabels.g1.color).toBe('#ff0000');
+  });
+
+  it('a color-only edit does not re-anchor (colors are not resize-affecting)', () => {
+    const doc = makeDoc({
+      textLabels: [makeTextLabel({ id: 'g1', x: 40, y: 60 })],
+    });
+    const next = T.updateTextLabel(doc, 'g1', { color: '#abcdef', darkColor: '#123456' });
+    expect(next.textLabels.g1.x).toBe(40);
+    expect(next.textLabels.g1.y).toBe(60);
+  });
+});
+
+describe('resolveTextLabelColor', () => {
+  it('returns the day color in light mode, ignoring the night color', () => {
+    const label = makeTextLabel({ id: 'g1', color: '#aaaaaa', darkColor: '#222222' });
+    expect(T.resolveTextLabelColor(label, false)).toBe('#aaaaaa');
+  });
+  it('returns the night color in dark mode', () => {
+    const label = makeTextLabel({ id: 'g1', color: '#aaaaaa', darkColor: '#222222' });
+    expect(T.resolveTextLabelColor(label, true)).toBe('#222222');
   });
 });
 

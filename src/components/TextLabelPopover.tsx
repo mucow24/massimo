@@ -83,12 +83,18 @@ export function TextLabelPopover({ label, world, view, onClose }: Props) {
   };
 
   const textField = useFieldHistory();
+  // Group each color picker's continuous edits into one undo entry, mirroring
+  // the polygon popover's day/night fill controls.
+  const colorField = useFieldHistory();
+  const darkColorField = useFieldHistory();
 
   const setText = (text: string) => updateTextLabel(label.id, { text });
   const setFontSize = (n: number) => updateTextLabel(label.id, { fontSize: n });
   const setAlign = (align: TextLabelAlign) => updateTextLabel(label.id, { align });
   const setItalic = (italic: boolean) => updateTextLabel(label.id, { italic });
   const setWeight = (weight: TextLabelWeight) => updateTextLabel(label.id, { weight });
+  const setColor = (color: string) => updateTextLabel(label.id, { color });
+  const setDarkColor = (darkColor: string) => updateTextLabel(label.id, { darkColor });
   const size = useNumericField(
     label.fontSize,
     setFontSize,
@@ -255,6 +261,30 @@ export function TextLabelPopover({ label, world, view, onClose }: Props) {
               </option>
             ))}
           </select>
+        </div>
+
+        <div className="row">
+          <label htmlFor={`label-color-${label.id}`}>Color</label>
+          <span aria-hidden="true">☀️</span>
+          <input
+            id={`label-color-${label.id}`}
+            type="color"
+            aria-label="Label color"
+            title="Light mode color"
+            value={label.color}
+            onChange={(e) => setColor(e.target.value)}
+            {...colorField}
+          />
+          <span aria-hidden="true">🌙</span>
+          <input
+            id={`label-dark-color-${label.id}`}
+            type="color"
+            aria-label="Dark mode label color"
+            title="Dark mode color"
+            value={label.darkColor}
+            onChange={(e) => setDarkColor(e.target.value)}
+            {...darkColorField}
+          />
         </div>
 
         <div className="footer">
