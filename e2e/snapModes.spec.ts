@@ -282,4 +282,50 @@ test.describe('Snap modes wired through to the engine', () => {
     expect(pos.x).toBeCloseTo(0, 0);
     expect(pos.y).toBeCloseTo(20, 0);
   });
+
+  test("Grid 'both' drops a line lock to an off-grid neighbor → lands on grid", async ({
+    page,
+  }) => {
+    // Horizontal line A(0,5) — B(40,5) sits at y=5 (off the grid). With grid
+    // 'both', dragging B toward A cannot reconcile the line lock with the grid
+    // (it would sit at y=5), so the line yields entirely and B snaps purely to
+    // the grid — NOT to the off-grid line.
+    const offGridLine: Seed = {
+      stations: [
+        {
+          id: 'A',
+          name: 'A',
+          x: 0,
+          y: 5,
+          stops: [{ lineId: 'L1', row: 0, col: 0, orientation: 'auto-horizontal' }],
+        },
+        {
+          id: 'B',
+          name: 'B',
+          x: 40,
+          y: 5,
+          stops: [{ lineId: 'L1', row: 0, col: 0, orientation: 'auto-horizontal' }],
+        },
+      ],
+      lines: [{ id: 'L1', service: 'L', color: '#0039A6', stations: ['A', 'B'] }],
+    };
+    await seedAndOpen(page, offGridLine);
+    const gridBtn = page.getByRole('button', { name: 'Snap to grid' });
+    await gridBtn.click(); // off → horizontal
+    await gridBtn.click(); // horizontal → vertical
+    await gridBtn.click(); // vertical → both
+    await expect(gridBtn).toHaveAttribute('data-snap-state', 'both');
+
+    const b = await stationCenter(page, 'B');
+    // Drag B by -13 x, +1 y → world ≈ (27, 6). Off-grid line lock would hold
+    // y=5; grid 'both' snaps to the nearest grid point (30, 10) instead.
+    await page.mouse.move(b.x, b.y);
+    await page.mouse.down();
+    await page.mouse.move(b.x - 13, b.y + 1, { steps: 5 });
+    await page.mouse.up();
+
+    const pos = await stationWorldPos(page, 'B');
+    expect(pos.x).toBeCloseTo(30, 0);
+    expect(pos.y).toBeCloseTo(10, 0);
+  });
 });

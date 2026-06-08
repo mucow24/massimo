@@ -216,8 +216,14 @@ export function useStationDrag(
     if (ds.redistributeAnchor) {
       // Drag-mode redistribute uses straight-line interpolation between A
       // and B's stop positions so spacing stays predictable and intermediates
-      // don't wobble off-axis as the polyline reshapes each frame.
-      redistributeBetween(ds.redistributeAnchor, ds.id, 'straight');
+      // don't wobble off-axis as the polyline reshapes each frame. Hard-grid
+      // applies to the intermediates too (Shift bypasses snapping entirely).
+      redistributeBetween(
+        ds.redistributeAnchor,
+        ds.id,
+        'straight',
+        shouldSnap ? snapModes.grid : 'off',
+      );
     }
   };
 

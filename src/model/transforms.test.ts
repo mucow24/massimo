@@ -2347,6 +2347,73 @@ describe('redistributeBetween', () => {
     });
     expect(T.redistributeBetween(doc, 'a', 'b')).toBe(doc);
   });
+
+  describe('hard-grid (gridMode)', () => {
+    it("gridMode 'both' rounds each intermediate center to the nearest grid point", () => {
+      // Endpoints 44 apart → even centers fall at 11, 22, 33 (all off-grid);
+      // grid 'both' rounds each individually to 10, 20, 30.
+      const doc = doc5([
+        ['a', 0, 0],
+        ['m1', 5, 5],
+        ['m2', 5, 5],
+        ['m3', 5, 5],
+        ['b', 44, 0],
+      ]);
+      const next = T.redistributeBetween(doc, 'a', 'b', 'straight', 'both');
+      expect(next.stations.m1).toMatchObject({ x: 10, y: 0 });
+      expect(next.stations.m2).toMatchObject({ x: 20, y: 0 });
+      expect(next.stations.m3).toMatchObject({ x: 30, y: 0 });
+      // Endpoints untouched (the dragged endpoint is gridded by the engine).
+      expect(next.stations.a).toMatchObject({ x: 0, y: 0 });
+      expect(next.stations.b).toMatchObject({ x: 44, y: 0 });
+    });
+
+    it("gridMode 'vertical' notches only X; Y follows the interpolation", () => {
+      const doc = doc5([
+        ['a', 0, 0],
+        ['m1', 0, 0],
+        ['m2', 0, 0],
+        ['m3', 0, 0],
+        ['b', 44, 40],
+      ]);
+      const next = T.redistributeBetween(doc, 'a', 'b', 'straight', 'vertical');
+      // t = 1/4,2/4,3/4 → x = 11,22,33 → grid X 10,20,30; y = 10,20,30 (free).
+      expect(next.stations.m1).toMatchObject({ x: 10, y: 10 });
+      expect(next.stations.m2).toMatchObject({ x: 20, y: 20 });
+      expect(next.stations.m3).toMatchObject({ x: 30, y: 30 });
+    });
+
+    it('quantizes unevenly when centers fall near a cell boundary (accepted trade)', () => {
+      // Endpoints 33 apart → centers 8.25, 16.5, 24.75 → grid 10, 20, 20. The
+      // last two collapse onto the same grid point: spacing is no longer even,
+      // and two stations can coincide. This is the explicitly-accepted edge.
+      const doc = doc5([
+        ['a', 0, 0],
+        ['m1', 5, 5],
+        ['m2', 5, 5],
+        ['m3', 5, 5],
+        ['b', 33, 0],
+      ]);
+      const next = T.redistributeBetween(doc, 'a', 'b', 'straight', 'both');
+      expect(next.stations.m1).toMatchObject({ x: 10, y: 0 });
+      expect(next.stations.m2).toMatchObject({ x: 20, y: 0 });
+      expect(next.stations.m3).toMatchObject({ x: 20, y: 0 });
+    });
+
+    it("gridMode 'off' (default) is unchanged — even spacing preserved", () => {
+      const doc = doc5([
+        ['a', 0, 0],
+        ['m1', 5, 5],
+        ['m2', 5, 5],
+        ['m3', 5, 5],
+        ['b', 40, 0],
+      ]);
+      const next = T.redistributeBetween(doc, 'a', 'b', 'straight', 'off');
+      expect(next.stations.m1).toMatchObject({ x: 10, y: 0 });
+      expect(next.stations.m2).toMatchObject({ x: 20, y: 0 });
+      expect(next.stations.m3).toMatchObject({ x: 30, y: 0 });
+    });
+  });
 });
 
 describe('reorderLineStations', () => {
