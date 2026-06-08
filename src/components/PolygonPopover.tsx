@@ -33,8 +33,7 @@ export function PolygonPopover({ polygon, view, onClose }: Props) {
   // Freeze the centroid at mount so vertex edits / whole-polygon drags don't
   // slide the popover out from under the cursor. Still projected live for
   // pan/zoom; user drags add dragOffset on top.
-  const [frozenWorld] = useState(() => polygonCentroid(polygon.vertices));
-  const anchor = projectToScreen(frozenWorld, view);
+  const [frozenWorld, setFrozenWorld] = useState(() => polygonCentroid(polygon.vertices));
   const updatePolygon = useDoc((s) => s.updatePolygon);
   const deletePolygon = useDoc((s) => s.deletePolygon);
   const movePolygonUp = useDoc((s) => s.movePolygonUp);
@@ -58,6 +57,18 @@ export function PolygonPopover({ polygon, view, onClose }: Props) {
   const dragStart = useRef<{ mouseX: number; mouseY: number; offX: number; offY: number } | null>(
     null,
   );
+
+  // MapCanvas renders a single <PolygonPopover> with no per-polygon key, so
+  // selecting a *different* polygon reuses this instance — useState alone would
+  // keep the previous polygon's frozen centroid and the popover would anchor at
+  // the old polygon. Re-freeze (and drop any drag) when the selection changes.
+  const [prevId, setPrevId] = useState(polygon.id);
+  if (prevId !== polygon.id) {
+    setPrevId(polygon.id);
+    setFrozenWorld(polygonCentroid(polygon.vertices));
+    setDragOffset({ x: 0, y: 0 });
+  }
+  const anchor = projectToScreen(frozenWorld, view);
   const onHeaderPointerDown = (e: React.PointerEvent<HTMLDivElement>) => {
     if (e.button !== 0) return;
     e.preventDefault();
