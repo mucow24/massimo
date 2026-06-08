@@ -62,6 +62,11 @@ export function ColorPalette({
         title={isCustom ? `Custom (${value})` : 'Custom'}
         style={{
           ...SWATCH_BASE,
+          // Containing block for the absolutely-positioned native color input
+          // below. Without it the input is positioned against the page, and its
+          // static offset (deep inside a scrolled line inspector) stretches the
+          // document, adding a spurious window scrollbar on line selection.
+          position: 'relative',
           display: 'inline-flex',
           alignItems: 'center',
           justifyContent: 'center',
