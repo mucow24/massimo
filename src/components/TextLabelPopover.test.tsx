@@ -78,6 +78,36 @@ describe('<TextLabelPopover /> — world position freezes, viewport tracks live'
     expect(after.left).toBe(before.left - 50);
     expect(after.top).toBe(before.top - 30);
   });
+
+  // Regression: selecting a *different* label reuses the same popover instance
+  // (MapCanvas renders one <TextLabelPopover> with no per-label key). The frozen
+  // world must re-freeze to the new label, or the popover anchors at the old
+  // label's position — e.g. a far-right label's controls appearing next to the
+  // far-left label you clicked first.
+  it('re-freezes to the new world when a different label is selected', () => {
+    const left = makeTextLabel({ id: 'g1', text: 'L' });
+    const { container, rerender } = render(
+      <TextLabelPopover
+        label={left}
+        world={{ x: 100, y: 100 }}
+        view={identityView}
+        onClose={() => {}}
+      />,
+    );
+    const popover = container.querySelector('.text-label-popover') as HTMLElement;
+    expect(positionOf(popover)).toEqual({ left: 114, top: 114 }); // 100 + 14 base offset
+
+    const right = makeTextLabel({ id: 'g2', text: 'R' });
+    rerender(
+      <TextLabelPopover
+        label={right}
+        world={{ x: 700, y: 500 }}
+        view={identityView}
+        onClose={() => {}}
+      />,
+    );
+    expect(positionOf(popover)).toEqual({ left: 714, top: 514 }); // tracks the new label
+  });
 });
 
 describe('<TextLabelPopover /> — day/night color pickers', () => {
