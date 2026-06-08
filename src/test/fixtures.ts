@@ -71,6 +71,8 @@ export function makeTextLabel(overrides: Partial<TextLabel> & { id: string }): T
     weight: 400,
     italic: false,
     align: 'left',
+    color: '#111111',
+    darkColor: '#ffffff',
     ...overrides,
   };
 }

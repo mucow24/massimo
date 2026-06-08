@@ -21,9 +21,18 @@ describe('pasteTextLabel / duplicateTextLabel', () => {
       weight: 400,
       italic: false,
       align: 'left',
+      color: '#ff0000',
+      darkColor: '#00ff00',
     });
     const label = useDoc.getState().textLabels[newId];
-    expect(label).toMatchObject({ x: 100 + OFFSET, y: 200 + OFFSET, text: 'Hi' });
+    expect(label).toMatchObject({
+      x: 100 + OFFSET,
+      y: 200 + OFFSET,
+      text: 'Hi',
+      // Day/night colors carry through the paste path unchanged.
+      color: '#ff0000',
+      darkColor: '#00ff00',
+    });
   });
 
   it('duplicateTextLabel copies the source offset and leaves the source untouched', () => {

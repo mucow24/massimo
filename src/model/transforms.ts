@@ -116,6 +116,12 @@ export function resolveStationLabelWeight(
 // preview, and tests share a single source of truth.
 export const TEXT_LABEL_FONT_SIZE_MIN = 1;
 export const TEXT_LABEL_FONT_SIZE_MAX = 96;
+// Default day/night text colors for new labels. Kept as independent literals
+// (not imported from state/theme.ts — the pure model must not pull in the
+// zustand store) but chosen to match the historical theme label colors so
+// existing labels are visually unchanged once backfilled.
+export const TEXT_LABEL_COLOR_DEFAULT = '#111111';
+export const TEXT_LABEL_DARK_COLOR_DEFAULT = '#ffffff';
 export const TEXT_LABEL_DEFAULTS: Omit<TextLabel, 'id' | 'x' | 'y'> = {
   rotation: 0,
   text: 'New Label',
@@ -123,6 +129,8 @@ export const TEXT_LABEL_DEFAULTS: Omit<TextLabel, 'id' | 'x' | 'y'> = {
   weight: 400,
   italic: false,
   align: 'left',
+  color: TEXT_LABEL_COLOR_DEFAULT,
+  darkColor: TEXT_LABEL_DARK_COLOR_DEFAULT,
 };
 
 // ---------- Stations ----------
@@ -1468,6 +1476,16 @@ export function deleteTextLabel(doc: MapDoc, id: string): MapDoc {
   if (!doc.textLabels[id]) return doc;
   const { [id]: _gone, ...rest } = doc.textLabels;
   return { ...doc, textLabels: rest };
+}
+
+// Pick the text color for the active theme: the night color in dark mode, the
+// day color otherwise. Mirrors `resolvePolygonColors`. Pure — exported for the
+// renderer and unit tests.
+export function resolveTextLabelColor(
+  label: Pick<TextLabel, 'color' | 'darkColor'>,
+  darkMode: boolean,
+): string {
+  return darkMode ? label.darkColor : label.color;
 }
 
 // ---------- Polygons ----------

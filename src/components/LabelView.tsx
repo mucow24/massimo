@@ -9,6 +9,8 @@ import {
 import { TEXT_LABEL_HIT_PAD } from '../geometry/stationBoundary';
 import { useDoc } from '../state/store';
 import { useThemeColors } from '../state/theme';
+import { useViewportStore } from '../state/viewportStore';
+import { resolveTextLabelColor } from '../model/transforms';
 import { InlineBullet } from './InlineBullet';
 
 export type LabelLayer = 'bg' | 'stroke';
@@ -57,7 +59,10 @@ export function LabelView({
 }: Props) {
   const docLines = useDoc((s) => s.lines);
   const themeColors = useThemeColors();
-  const labelColor = themeColors.label;
+  const darkMode = useViewportStore((s) => s.darkMode);
+  // Per-label day/night color (defaults match the old theme-driven colors).
+  // The selection ring below still uses the theme's selectionStroke.
+  const labelColor = resolveTextLabelColor(label, darkMode);
   const lineByService = useMemo(() => {
     const map = new Map<string, Line>();
     for (const ln of Object.values(docLines)) map.set(ln.service, ln);

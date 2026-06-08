@@ -1,5 +1,5 @@
 import { describe, it, expect, beforeEach } from 'vitest';
-import { render } from '@testing-library/react';
+import { render, screen, fireEvent } from '@testing-library/react';
 import { TextLabelPopover } from './TextLabelPopover';
 import { useDoc } from '../state/store';
 import { DEFAULT_DOC } from '../model/transforms';
@@ -77,5 +77,46 @@ describe('<TextLabelPopover /> — world position freezes, viewport tracks live'
     const after = positionOf(popover);
     expect(after.left).toBe(before.left - 50);
     expect(after.top).toBe(before.top - 30);
+  });
+});
+
+describe('<TextLabelPopover /> — day/night color pickers', () => {
+  function seedAndRender(
+    label = makeTextLabel({ id: 'g1', color: '#112233', darkColor: '#445566' }),
+  ) {
+    useDoc.setState({
+      ...useDoc.getState(),
+      textLabels: { g1: label },
+    });
+    return render(
+      <TextLabelPopover
+        label={useDoc.getState().textLabels['g1']}
+        world={{ x: 0, y: 0 }}
+        view={identityView}
+        onClose={() => {}}
+      />,
+    );
+  }
+
+  it('renders day + night pickers initialized to the label colors', () => {
+    seedAndRender();
+    expect(screen.getByLabelText('Label color')).toHaveValue('#112233');
+    expect(screen.getByLabelText('Dark mode label color')).toHaveValue('#445566');
+  });
+
+  it('editing the day color writes color, leaving darkColor alone', () => {
+    seedAndRender();
+    fireEvent.change(screen.getByLabelText('Label color'), { target: { value: '#0a0a0a' } });
+    expect(useDoc.getState().textLabels['g1'].color).toBe('#0a0a0a');
+    expect(useDoc.getState().textLabels['g1'].darkColor).toBe('#445566');
+  });
+
+  it('editing the night color writes darkColor, leaving color alone', () => {
+    seedAndRender();
+    fireEvent.change(screen.getByLabelText('Dark mode label color'), {
+      target: { value: '#fafafa' },
+    });
+    expect(useDoc.getState().textLabels['g1'].darkColor).toBe('#fafafa');
+    expect(useDoc.getState().textLabels['g1'].color).toBe('#112233');
   });
 });
