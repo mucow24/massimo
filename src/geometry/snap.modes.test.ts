@@ -1170,9 +1170,11 @@ describe('snapDraggedStation: line + grid compose along the axis', () => {
     expect(r.y).toBeCloseTo(27, 5);
   });
 
-  it("grid 'both' preserves the line-locked perpendicular even when it's off-grid", () => {
-    // Corridor at y=5 (not a grid row). Line locks y=5; grid 'both' snaps the
-    // along-axis x to 30 but must NOT pull the perpendicular off the line.
+  it("grid 'both' drops a line lock to an off-grid neighbor → plain grid, no guide", () => {
+    // Corridor at y=5 (not a grid row). Grid 'both' constrains Y too, so the
+    // line lock can't be reconciled with the grid (the anchor would sit at
+    // y=5, off-grid). The line yields entirely: snap purely to grid (30,10),
+    // no alignment guide. This is the hard-constraint contract.
     const target = makeStation({ id: 't', x: 100, y: 5, stops: [horizontalStop('L1')] });
     const dragged = makeStation({ id: 'd', x: 0, y: 5, stops: [horizontalStop('L1')] });
     const r = snapDraggedStation({
@@ -1186,12 +1188,14 @@ describe('snapDraggedStation: line + grid compose along the axis', () => {
       modes: { line: true, equidistant: false, tens: false, all: 'off', grid: 'both' },
     });
     expect(r.x).toBeCloseTo(30, 5);
-    expect(r.y).toBeCloseTo(5, 5);
+    expect(r.y).toBeCloseTo(10, 5);
+    expect(r.guides).toEqual([]);
   });
 
-  it('explicit tens cadence wins over grid along the axis', () => {
+  it('grid overrides an off-grid tens cadence along the constrained axis', () => {
     // [A(3), B] horizontal. tens anchors at A → multiples of 10 from x=3
-    // (…, 43, 53). Grid would snap to 50. With both on, tens must win → 43.
+    // (…, 43, 53), all off-grid. Grid 'vertical' constrains the along-axis (X),
+    // so grid wins: x snaps to 50, not the off-grid tens target 43.
     const a = makeStation({ id: 'a', x: 3, y: 0, stops: [horizontalStop('L1')] });
     const b = makeStation({ id: 'b', x: 47, y: 0, stops: [horizontalStop('L1')] });
     const r = snapDraggedStation({
@@ -1204,15 +1208,15 @@ describe('snapDraggedStation: line + grid compose along the axis', () => {
       lines: linesOf(lineOf('L1', ['a', 'b'])),
       modes: { line: true, equidistant: false, tens: true, all: 'off', grid: 'vertical' },
     });
-    expect(r.x).toBeCloseTo(43, 5);
+    expect(r.x).toBeCloseTo(50, 5);
     expect(r.y).toBeCloseTo(0, 5);
   });
 
-  it('is inert during Ctrl-drag (redistributeAnchor) — grid must not fight redistribute', () => {
+  it('notches the dragged endpoint to grid during Ctrl-drag (redistributeAnchor)', () => {
     // [A(0), B, C, D] horizontal, Ctrl-dragging D toward anchor A. The anchor
-    // alignment locks y=0; grid 'vertical' would otherwise notch D's x to 130.
-    // Redistribute is a modal interaction that ignores the grid toggle, same
-    // as the terminus equidistant/tens branches.
+    // alignment locks y=0; grid 'vertical' now notches D's x to 130 (the hard-
+    // grid rule applies to the dragged endpoint — intermediates are gridded
+    // separately by redistributeBetween).
     const a = makeStation({ id: 'a', x: 0, y: 0, stops: [horizontalStop('L1')] });
     const b = makeStation({ id: 'b', x: 50, y: 0, stops: [horizontalStop('L1')] });
     const c = makeStation({ id: 'c', x: 100, y: 0, stops: [horizontalStop('L1')] });
@@ -1228,7 +1232,7 @@ describe('snapDraggedStation: line + grid compose along the axis', () => {
       redistributeAnchor: 'a',
       modes: { line: true, equidistant: false, tens: false, all: 'off', grid: 'vertical' },
     });
-    expect(r.x).toBeCloseTo(125, 5);
+    expect(r.x).toBeCloseTo(130, 5);
     expect(r.y).toBeCloseTo(0, 5);
   });
 
@@ -1268,5 +1272,191 @@ describe('snapDraggedStation: line + grid compose along the axis', () => {
     });
     expect(r.x).toBeCloseTo(100, 5);
     expect(r.y).toBeCloseTo(50, 5);
+  });
+
+  it('grid vertical still line-locks an off-grid horizontal neighbor (perp Y free)', () => {
+    // Corridor at y=5 (off-grid). Grid 'vertical' constrains only X, so the
+    // perpendicular Y is free to ride the off-grid neighbor: X notches to 30,
+    // Y stays on the line at 5. The headline "off-grid neighbor" user case.
+    const target = makeStation({ id: 't', x: 100, y: 5, stops: [horizontalStop('L1')] });
+    const dragged = makeStation({ id: 'd', x: 0, y: 5, stops: [horizontalStop('L1')] });
+    const r = snapDraggedStation({
+      draggedId: 'd',
+      proposedX: 27,
+      proposedY: 6,
+      draggedRotation: 0,
+      draggedStops: dragged.stops,
+      stations: stations(dragged, target),
+      lines: linesOf(lineOf('L1', ['d', 't'])),
+      modes: { line: true, equidistant: false, tens: false, all: 'off', grid: 'vertical' },
+    });
+    expect(r.x).toBeCloseTo(30, 5);
+    expect(r.y).toBeCloseTo(5, 5);
+    expect(r.guides).toHaveLength(1);
+  });
+
+  it("grid 'both' slides along an on-grid horizontal line in grid steps", () => {
+    const target = makeStation({ id: 't', x: 100, y: 0, stops: [horizontalStop('L1')] });
+    const dragged = makeStation({ id: 'd', x: 0, y: 0, stops: [horizontalStop('L1')] });
+    const r = snapDraggedStation({
+      draggedId: 'd',
+      proposedX: 27,
+      proposedY: 3,
+      draggedRotation: 0,
+      draggedStops: dragged.stops,
+      stations: stations(dragged, target),
+      lines: linesOf(lineOf('L1', ['d', 't'])),
+      modes: { line: true, equidistant: false, tens: false, all: 'off', grid: 'both' },
+    });
+    expect(r.x).toBeCloseTo(30, 5);
+    expect(r.y).toBeCloseTo(0, 5);
+    expect(r.guides).toHaveLength(1);
+  });
+
+  it("grid 'both' slides along an on-grid vertical line in grid steps", () => {
+    const target = makeStation({ id: 't', x: 0, y: 100, stops: [verticalStop('L1')] });
+    const dragged = makeStation({ id: 'd', x: 0, y: 0, stops: [verticalStop('L1')] });
+    const r = snapDraggedStation({
+      draggedId: 'd',
+      proposedX: 3,
+      proposedY: 27,
+      draggedRotation: 0,
+      draggedStops: dragged.stops,
+      stations: stations(dragged, target),
+      lines: linesOf(lineOf('L1', ['d', 't'])),
+      modes: { line: true, equidistant: false, tens: false, all: 'off', grid: 'both' },
+    });
+    expect(r.x).toBeCloseTo(0, 5);
+    expect(r.y).toBeCloseTo(30, 5);
+    expect(r.guides).toHaveLength(1);
+  });
+
+  it('grid vertical drops a line lock to an off-grid vertical neighbor (perp X on grid)', () => {
+    // Vertical corridor at x=5 (off-grid). Grid 'vertical' constrains X — which
+    // is the perpendicular here — so the lock can't be reconciled: plain grid.
+    const target = makeStation({ id: 't', x: 5, y: 100, stops: [verticalStop('L1')] });
+    const dragged = makeStation({ id: 'd', x: 5, y: 0, stops: [verticalStop('L1')] });
+    const r = snapDraggedStation({
+      draggedId: 'd',
+      proposedX: 6,
+      proposedY: 27,
+      draggedRotation: 0,
+      draggedStops: dragged.stops,
+      stations: stations(dragged, target),
+      lines: linesOf(lineOf('L1', ['d', 't'])),
+      modes: { line: true, equidistant: false, tens: false, all: 'off', grid: 'vertical' },
+    });
+    expect(r.x).toBeCloseTo(10, 5);
+    expect(r.y).toBeCloseTo(27, 5);
+    expect(r.guides).toEqual([]);
+  });
+
+  it('grid horizontal (perp-only) lets an on-grid tens cadence survive along X', () => {
+    // [A(3), B] horizontal line at y=0. Grid 'horizontal' constrains Y (the
+    // perpendicular), leaving the along-axis X free — so tens still fires → 43.
+    const a = makeStation({ id: 'a', x: 3, y: 0, stops: [horizontalStop('L1')] });
+    const b = makeStation({ id: 'b', x: 47, y: 0, stops: [horizontalStop('L1')] });
+    const r = snapDraggedStation({
+      draggedId: 'b',
+      proposedX: 47,
+      proposedY: 0.5,
+      draggedRotation: 0,
+      draggedStops: b.stops,
+      stations: stations(a, b),
+      lines: linesOf(lineOf('L1', ['a', 'b'])),
+      modes: { line: true, equidistant: false, tens: true, all: 'off', grid: 'horizontal' },
+    });
+    expect(r.x).toBeCloseTo(43, 5);
+    expect(r.y).toBeCloseTo(0, 5);
+  });
+
+  it("grid 'both' keeps an on-grid 2-axis corner", () => {
+    // Vertical line x=10 (on grid) ∩ horizontal line y=0 (on grid) → corner
+    // (10,0) is grid-valid, so the corner is kept.
+    const t1 = makeStation({ id: 't1', x: 10, y: 0, stops: [verticalStop('L1')] });
+    const t2 = makeStation({
+      id: 't2',
+      x: 0,
+      y: 0,
+      rotation: 2,
+      stops: [makeStop('L2', { row: 0, col: 0, orientation: 'auto-vertical' })],
+    });
+    const dragged = makeStation({
+      id: 'd',
+      x: 0,
+      y: 0,
+      stops: [
+        makeStop('L1', { row: 0, col: 0, orientation: 'auto-vertical' }),
+        makeStop('L2', { row: 0, col: 1, orientation: 'auto-horizontal' }),
+      ],
+    });
+    const r = snapDraggedStation({
+      draggedId: 'd',
+      proposedX: 12,
+      proposedY: 2,
+      draggedRotation: 0,
+      draggedStops: dragged.stops,
+      stations: stations(dragged, t1, t2),
+      lines: linesOf(lineOf('L1', ['d', 't1']), lineOf('L2', ['d', 't2'])),
+      modes: { line: true, equidistant: false, tens: false, all: 'off', grid: 'both' },
+    });
+    expect(r.x).toBeCloseTo(10, 3);
+    expect(r.y).toBeCloseTo(0, 3);
+    expect(r.guides.length).toBeGreaterThanOrEqual(2);
+  });
+
+  it("grid 'both' degrades an off-grid 2-axis corner to the primary axis", () => {
+    // Vertical line x=5 (off grid) ∩ horizontal line y=0 (on grid). Corner
+    // (5,0) is off-grid; the horizontal lock is the better-aligned primary
+    // (proposed is nearer y=0). Degrade → primary only: X notches to grid (10),
+    // Y stays on the on-grid line → (10,0) with a single guide.
+    const t1 = makeStation({ id: 't1', x: 5, y: 0, stops: [verticalStop('L1')] });
+    const t2 = makeStation({
+      id: 't2',
+      x: 0,
+      y: 0,
+      rotation: 2,
+      stops: [makeStop('L2', { row: 0, col: 0, orientation: 'auto-vertical' })],
+    });
+    const dragged = makeStation({
+      id: 'd',
+      x: 0,
+      y: 0,
+      stops: [
+        makeStop('L1', { row: 0, col: 0, orientation: 'auto-vertical' }),
+        makeStop('L2', { row: 0, col: 1, orientation: 'auto-horizontal' }),
+      ],
+    });
+    const r = snapDraggedStation({
+      draggedId: 'd',
+      proposedX: 8,
+      proposedY: 1,
+      draggedRotation: 0,
+      draggedStops: dragged.stops,
+      stations: stations(dragged, t1, t2),
+      lines: linesOf(lineOf('L1', ['d', 't1']), lineOf('L2', ['d', 't2'])),
+      modes: { line: true, equidistant: false, tens: false, all: 'off', grid: 'both' },
+    });
+    expect(r.x).toBeCloseTo(10, 3);
+    expect(r.y).toBeCloseTo(0, 3);
+    expect(r.guides).toHaveLength(1);
+  });
+
+  it("drops a bullet's line lock to an off-grid line under grid 'both'", () => {
+    // Bullet bound to vertical line at x=5 (off grid). Grid 'both' constrains
+    // X (the perpendicular) → lock rejected → plain grid (10,50), no guide.
+    const a = makeStation({ id: 'a', x: 5, y: 0, stops: [verticalStop('L1')] });
+    const b = makeStation({ id: 'b', x: 5, y: 100, stops: [verticalStop('L1')] });
+    const r = snapDraggedStation({
+      proposedX: 6,
+      proposedY: 47,
+      stations: stations(a, b),
+      lines: linesOf(lineOf('L1', ['a', 'b'])),
+      bulletLineId: 'L1',
+      modes: { line: true, equidistant: false, tens: false, all: 'off', grid: 'both' },
+    });
+    expect(r.x).toBeCloseTo(10, 5);
+    expect(r.y).toBeCloseTo(50, 5);
+    expect(r.guides).toEqual([]);
   });
 });

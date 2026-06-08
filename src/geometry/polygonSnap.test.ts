@@ -145,4 +145,106 @@ describe('snapPolygonPoint', () => {
     expect(r).toMatchObject({ x: 500, y: 123 });
     expect(r.guides).toHaveLength(0);
   });
+
+  describe('grid as a hard constraint', () => {
+    it('grid vertical drops a vertical lock to an off-grid sibling → plain grid', () => {
+      // Vertical line at x=5 (off grid). Grid 'vertical' constrains X (the
+      // perpendicular) → the lock can't engage → snap purely to grid.
+      const r = snapPolygonPoint({
+        proposed: { x: 6, y: 50 },
+        lineTargets: [{ x: 5, y: 0 }],
+        allTargets: [],
+        modes: modes({ line: true, grid: 'vertical' }),
+      });
+      expect(r.x).toBeCloseTo(10, 6);
+      expect(r.y).toBeCloseTo(50, 6);
+      expect(r.guides).toHaveLength(0);
+    });
+
+    it('grid vertical keeps a horizontal lock (perp Y free) and notches X', () => {
+      // Horizontal line at y=20 (on grid). Grid 'vertical' constrains only X,
+      // so the lock holds Y=20 and X notches to 30.
+      const r = snapPolygonPoint({
+        proposed: { x: 27, y: 23 },
+        lineTargets: [{ x: 0, y: 20 }],
+        allTargets: [],
+        modes: modes({ line: true, grid: 'vertical' }),
+      });
+      expect(r.x).toBeCloseTo(30, 6);
+      expect(r.y).toBeCloseTo(20, 6);
+      expect(r.guides).toHaveLength(1);
+    });
+
+    it("grid 'both' keeps an on-grid corner", () => {
+      const r = snapPolygonPoint({
+        proposed: { x: 12, y: 22 },
+        lineTargets: [
+          { x: 10, y: 0 }, // shares X (on grid)
+          { x: 0, y: 20 }, // shares Y (on grid)
+        ],
+        allTargets: [],
+        modes: modes({ line: true, grid: 'both' }),
+      });
+      expect(r.x).toBeCloseTo(10, 6);
+      expect(r.y).toBeCloseTo(20, 6);
+      expect(r.guides).toHaveLength(2);
+    });
+
+    it("grid 'both' degrades an off-grid corner to its grid-valid axis", () => {
+      // Corner (5,20): X=5 off grid, Y=20 on grid. The horizontal (Y) lock
+      // survives; X notches to grid.
+      const r = snapPolygonPoint({
+        proposed: { x: 7, y: 22 },
+        lineTargets: [
+          { x: 5, y: 0 }, // shares X=5 (off grid)
+          { x: 0, y: 20 }, // shares Y=20 (on grid)
+        ],
+        allTargets: [],
+        modes: modes({ line: true, grid: 'both' }),
+      });
+      expect(r.x).toBeCloseTo(10, 6);
+      expect(r.y).toBeCloseTo(20, 6);
+      expect(r.guides).toHaveLength(1);
+    });
+
+    it('grid vertical intersects a diagonal lock with the grid column', () => {
+      // +45° line y=x through origin; grid 'vertical' pins X=20, Y follows.
+      const r = snapPolygonPoint({
+        proposed: { x: 23, y: 25 },
+        lineTargets: [{ x: 0, y: 0 }],
+        allTargets: [],
+        modes: modes({ line: true, grid: 'vertical' }),
+      });
+      expect(r.x).toBeCloseTo(20, 6);
+      expect(r.y).toBeCloseTo(20, 6);
+      expect(r.guides).toHaveLength(1);
+    });
+
+    it("grid 'both' snaps a diagonal lock to the lattice when it exists", () => {
+      // y=x through origin → c=0 is a grid multiple → grid points on the line.
+      const r = snapPolygonPoint({
+        proposed: { x: 23, y: 25 },
+        lineTargets: [{ x: 0, y: 0 }],
+        allTargets: [],
+        modes: modes({ line: true, grid: 'both' }),
+      });
+      expect(r.x).toBeCloseTo(20, 6);
+      expect(r.y).toBeCloseTo(20, 6);
+      expect(r.guides).toHaveLength(1);
+    });
+
+    it("grid 'both' drops a diagonal lock that misses the lattice", () => {
+      // Line y=x−5 through (5,0): c=−5 is not a grid multiple → no grid points
+      // on the line → plain grid, no guide.
+      const r = snapPolygonPoint({
+        proposed: { x: 28, y: 23 },
+        lineTargets: [{ x: 5, y: 0 }],
+        allTargets: [],
+        modes: modes({ line: true, grid: 'both' }),
+      });
+      expect(r.x).toBeCloseTo(30, 6);
+      expect(r.y).toBeCloseTo(20, 6);
+      expect(r.guides).toHaveLength(0);
+    });
+  });
 });
