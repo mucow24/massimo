@@ -22,7 +22,11 @@ import { defaultIdFactory, IdFactory } from '../model/ids';
 import { DEFAULT_DOC } from '../model/transforms';
 import * as T from '../model/transforms';
 import { cyclingColors, type PaletteId } from '../model/palettes';
-import { sanitizeStations, backfillPolygonDarkColors } from '../model/serialize';
+import {
+  sanitizeStations,
+  backfillPolygonDarkColors,
+  backfillTextLabelColors,
+} from '../model/serialize';
 import type { Station } from '../model/types';
 import { randomStationName } from './stationNames';
 import { pauseHistory, pushHistory, resumeHistory } from './history';
@@ -433,7 +437,7 @@ export const useDoc = create<DocState>()(
       {
         name: 'vignelli-map-doc-v1',
         storage: createJSONStorage(() => localStorage),
-        version: 5,
+        version: 6,
         // v0 → v1: backfill `line.name` with `${service} line` for lines saved
         // before the field existed.
         // v1 → v2: migrate legacy stop orientations (`up`/`down`/`left`/`right`
@@ -454,11 +458,17 @@ export const useDoc = create<DocState>()(
         //   Mirrors `backfillPolygonDarkColors` in `parse()` for file imports —
         //   without it, persisted polygons hydrate with undefined dark colors
         //   and render nothing in dark mode.
+        // v5 → v6: backfill text-label `color`/`darkColor` (to the theme-
+        //   matching #111111 / #ffffff defaults) for labels saved before the
+        //   per-label color fields existed. Mirrors `backfillTextLabelColors`
+        //   in `parse()` — without it, persisted labels hydrate with undefined
+        //   colors and render no `fill` at all.
         migrate: (persisted, version) => {
           const s = persisted as {
             lines?: Record<LineId, Line>;
             stations?: Record<string, Station>;
             polygons?: Record<string, Polygon>;
+            textLabels?: Record<string, TextLabel>;
             labelBold?: boolean;
             labelWeight?: TextLabelWeight;
           };
@@ -481,6 +491,10 @@ export const useDoc = create<DocState>()(
           if (v < 5 && out.polygons) {
             const { polygons: cleaned, changed } = backfillPolygonDarkColors(out.polygons);
             if (changed) out = { ...out, polygons: cleaned };
+          }
+          if (v < 6 && out.textLabels) {
+            const { textLabels: cleaned, changed } = backfillTextLabelColors(out.textLabels);
+            if (changed) out = { ...out, textLabels: cleaned };
           }
           if (v < 3 && 'labelBold' in out) {
             const { labelBold, ...rest } = out;
