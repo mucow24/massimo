@@ -73,4 +73,26 @@ describe('<ColorPalette /> sections', () => {
     const customLabel = document.querySelector('label[title^="Custom"]');
     expect(customLabel?.getAttribute('title')).toBe('Custom');
   });
+
+  // Regression: the hidden native color input is taken out of flow so it stays
+  // invisible while the wrapping label remains the click target. If nothing
+  // establishes a containing block for it, the input is positioned against the
+  // page and its static offset — deep inside a scrolled line inspector — pushes
+  // the document taller than the viewport, adding a spurious window scrollbar
+  // whenever a line is selected. Its containing block MUST be a positioned
+  // ancestor (the label) so it can't escape the inspector's scroll container.
+  it('the hidden color input is positioned and has a positioned ancestor as its containing block', () => {
+    useDoc.setState({ ...useDoc.getState(), activePalettes: ['mta'] });
+    render(<ColorPalette value="#0039A6" onChange={vi.fn()} />);
+    const input = document.querySelector('input[type="color"]') as HTMLElement | null;
+    expect(input).not.toBeNull();
+    // It's removed from flow to hide it (absolute), so it needs a containing block.
+    expect(window.getComputedStyle(input!).position).toBe('absolute');
+    const isPositioned = (el: HTMLElement) =>
+      ['relative', 'absolute', 'fixed', 'sticky'].includes(window.getComputedStyle(el).position);
+    let cb: HTMLElement | null = input!.parentElement;
+    while (cb && !isPositioned(cb)) cb = cb.parentElement;
+    expect(cb).not.toBeNull();
+    expect(cb!.tagName).toBe('LABEL');
+  });
 });
