@@ -43,12 +43,23 @@ export function TextLabelPopover({ label, world, view, onClose }: Props) {
   // can't move the popover and feed back into itself (see the test). But we
   // still project the frozen world point through the *live* viewport every
   // render, so the popover tracks canvas pan/zoom. User drags add dragOffset.
-  const [frozenWorld] = useState(world);
-  const anchor = projectToScreen(frozenWorld, view);
+  const [frozenWorld, setFrozenWorld] = useState(world);
 
   // Drag offset (added to the frozen anchor). Persists while the popover
   // stays open so the popover stays where the user put it.
   const [dragOffset, setDragOffset] = useState<{ x: number; y: number }>({ x: 0, y: 0 });
+
+  // MapCanvas renders a single <TextLabelPopover> with no per-label key, so
+  // selecting a *different* label reuses this instance — useState alone would
+  // keep the previous label's frozen world and the popover would anchor at the
+  // old label. Re-freeze (and drop any drag) when the selected label changes.
+  const [prevId, setPrevId] = useState(label.id);
+  if (prevId !== label.id) {
+    setPrevId(label.id);
+    setFrozenWorld(world);
+    setDragOffset({ x: 0, y: 0 });
+  }
+  const anchor = projectToScreen(frozenWorld, view);
   const dragStart = useRef<{
     mouseX: number;
     mouseY: number;

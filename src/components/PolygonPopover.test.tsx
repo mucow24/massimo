@@ -111,6 +111,33 @@ describe('<PolygonPopover />', () => {
     expect(popover.style.top).toBe('34px'); // 14 + 20
   });
 
+  it('re-freezes the centroid when a different polygon is selected', () => {
+    // MapCanvas renders one <PolygonPopover> with no per-polygon key, so
+    // selecting a different polygon reuses this instance. The frozen centroid
+    // must re-freeze to the new polygon — otherwise a far-away polygon's
+    // controls anchor at the previously selected polygon's position.
+    const left = makePolygon({ id: 'p0' }); // centroid (0,0)
+    const { container, rerender } = render(
+      <PolygonPopover polygon={left} view={view} onClose={() => {}} />,
+    );
+    const popover = container.querySelector('.polygon-popover') as HTMLElement;
+    expect(popover.style.left).toBe('14px'); // 0 + 14 base offset
+    expect(popover.style.top).toBe('14px');
+
+    const right = makePolygon({
+      id: 'p1',
+      vertices: [
+        { x: 60, y: 40 },
+        { x: 80, y: 40 },
+        { x: 80, y: 60 },
+        { x: 60, y: 60 },
+      ],
+    }); // centroid (70,50)
+    rerender(<PolygonPopover polygon={right} view={view} onClose={() => {}} />);
+    expect(popover.style.left).toBe('84px'); // 70 + 14
+    expect(popover.style.top).toBe('64px'); // 50 + 14
+  });
+
   it('the fill-opacity slider (0–100) writes through to the store', () => {
     renderPopover();
     const slider = screen.getByRole('slider', { name: 'Fill opacity' });
