@@ -5,7 +5,9 @@ import { resolvePolygonColors } from '../model/transforms';
 import { polygonPathData } from '../geometry/polygon';
 
 // Half-size of a square vertex handle, and the radius of an edge "+" button,
-// in world units (they scale with zoom like the other selection adornments).
+// authored in world units at zoom 1. The overlay divides every adornment
+// dimension (and stroke) by zoom so they stay a CONSTANT size on screen at any
+// zoom — keeping handles out of the way during detail work when zoomed in.
 const VERTEX_HANDLE_HALF = 5;
 const EDGE_ADD_R = 7;
 
@@ -48,6 +50,7 @@ export function PolygonView({
 }: Props) {
   const themeColors = useThemeColors();
   const darkMode = useViewportStore((s) => s.darkMode);
+  const zoom = useViewportStore((s) => s.zoom);
   // The body paints the dark colors in dark mode, the light colors otherwise.
   const { fill, stroke } = resolvePolygonColors(polygon, darkMode);
   // Adornment colors flip with the theme: marks drawn ON the selection-colored
@@ -88,14 +91,21 @@ export function PolygonView({
   // Overlay: dashed outline + an edge "+" at each midpoint + a handle at each
   // vertex. Rendered only when selected.
   if (!selected) return null;
+  // Inverse-zoom scale: every adornment dimension and stroke is multiplied by
+  // `s` so it renders at a constant screen size regardless of zoom (matches the
+  // `1 / zoom` idiom in Grid.tsx). Hit-testing IS the rendered element, so the
+  // clickable area stays constant on screen too.
+  const s = 1 / zoom;
+  const half = VERTEX_HANDLE_HALF * s;
+  const r = EDGE_ADD_R * s;
   return (
     <g data-polygon-overlay={polygon.id}>
       <polygon
         points={pointsAttr(verts)}
         fill="none"
         stroke={accent}
-        strokeWidth={1.5}
-        strokeDasharray="4 3"
+        strokeWidth={1.5 * s}
+        strokeDasharray={`${4 * s} ${3 * s}`}
         pointerEvents="none"
       />
       {/* A locked polygon shows only the selection outline — no editing
@@ -114,30 +124,23 @@ export function PolygonView({
                 onPointerDown={(e) => onEdgeAddPointerDown(polygon.id, i, e)}
                 style={{ cursor: 'copy' }}
               >
-                <circle
-                  cx={mx}
-                  cy={my}
-                  r={EDGE_ADD_R}
-                  fill={accent}
-                  stroke={contrast}
-                  strokeWidth={1}
-                />
+                <circle cx={mx} cy={my} r={r} fill={accent} stroke={contrast} strokeWidth={1 * s} />
                 <line
-                  x1={mx - EDGE_ADD_R / 2}
+                  x1={mx - r / 2}
                   y1={my}
-                  x2={mx + EDGE_ADD_R / 2}
+                  x2={mx + r / 2}
                   y2={my}
                   stroke={contrast}
-                  strokeWidth={1.5}
+                  strokeWidth={1.5 * s}
                   pointerEvents="none"
                 />
                 <line
                   x1={mx}
-                  y1={my - EDGE_ADD_R / 2}
+                  y1={my - r / 2}
                   x2={mx}
-                  y2={my + EDGE_ADD_R / 2}
+                  y2={my + r / 2}
                   stroke={contrast}
-                  strokeWidth={1.5}
+                  strokeWidth={1.5 * s}
                   pointerEvents="none"
                 />
               </g>
@@ -147,13 +150,13 @@ export function PolygonView({
             <rect
               key={`vert-${i}`}
               data-polygon-vertex={i}
-              x={v.x - VERTEX_HANDLE_HALF}
-              y={v.y - VERTEX_HANDLE_HALF}
-              width={VERTEX_HANDLE_HALF * 2}
-              height={VERTEX_HANDLE_HALF * 2}
+              x={v.x - half}
+              y={v.y - half}
+              width={half * 2}
+              height={half * 2}
               fill={i === selectedVertexIndex ? accent : contrast}
               stroke={accent}
-              strokeWidth={1.5}
+              strokeWidth={1.5 * s}
               onPointerDown={(e) => onVertexPointerDown(polygon.id, i, e)}
               onClick={(e) => onVertexClick(polygon.id, i, e)}
               style={{ cursor: 'move' }}

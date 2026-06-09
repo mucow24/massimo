@@ -42,9 +42,9 @@ beforeEach(() => {
   dragState.suppressClick = false;
 });
 
-function render() {
+function render(zoom = 1) {
   const svgRef = createRef<SVGSVGElement>() as RefObject<SVGSVGElement | null>;
-  return renderHook(() => usePolygonDrag(svgRef, 1, false)).result;
+  return renderHook(() => usePolygonDrag(svgRef, zoom, false)).result;
 }
 
 describe('usePolygonDrag — whole-polygon drag', () => {
@@ -121,6 +121,44 @@ describe('usePolygonDrag — vertex drag', () => {
     // Base corners untouched.
     expect(verts[0]).toEqual({ x: 0, y: 0 });
     expect(verts[1]).toEqual({ x: 100, y: 0 });
+  });
+
+  it('snap engages within a constant SCREEN distance — zooming in shrinks the world radius', () => {
+    setModes({ line: true, all: 'off', grid: 'off' });
+    // Triangle: apex at (50,80); base corners at (0,0) and (100,0). The apex's
+    // X can snap onto vertex 0's x=0. We drag the apex to the SAME world point
+    // (7, 80) at two zooms; 7 world units off the axis.
+    const seed = () =>
+      useDoc.setState({
+        ...useDoc.getState(),
+        polygons: {
+          p0: makePolygon({
+            id: 'p0',
+            vertices: [
+              { x: 0, y: 0 },
+              { x: 100, y: 0 },
+              { x: 50, y: 80 },
+            ],
+          }),
+        },
+      });
+
+    // Zoom 1: 7 ≤ 10px radius → snaps to x=0 (baseline, unchanged by this work).
+    seed();
+    const r1 = render(1);
+    r1.current.onVertexPointerDown('p0', 2, pointerEvent({ clientX: 200, clientY: 200 }));
+    r1.current.onPointerMove(pointerEvent({ clientX: 157, clientY: 200 })); // dx -43 → world (7,80)
+    r1.current.onPointerUp(pointerEvent({ clientX: 157, clientY: 200 }));
+    expect(useDoc.getState().polygons['p0'].vertices[2].x).toBeCloseTo(0, 6);
+
+    // Zoom 2: same world point (7,80), but the screen radius is now 10px / 2 = 5
+    // world units. 7 > 5 → no snap; the vertex stays at x=7.
+    seed();
+    const r2 = render(2);
+    r2.current.onVertexPointerDown('p0', 2, pointerEvent({ clientX: 200, clientY: 200 }));
+    r2.current.onPointerMove(pointerEvent({ clientX: 114, clientY: 200 })); // dx -86 /2 → world (7,80)
+    r2.current.onPointerUp(pointerEvent({ clientX: 114, clientY: 200 }));
+    expect(useDoc.getState().polygons['p0'].vertices[2].x).toBeCloseTo(7, 6);
   });
 
   it('shift bypasses the vertex snap', () => {

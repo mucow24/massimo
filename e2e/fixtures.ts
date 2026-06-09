@@ -74,7 +74,14 @@ export interface Seed {
  * dev server. Selection state is intentionally NOT persisted, so every test
  * starts with no selection.
  */
-export async function seedAndOpen(page: Page, seed: Seed): Promise<void> {
+export async function seedAndOpen(
+  page: Page,
+  seed: Seed,
+  // Optional camera seed. Defaults to the origin at zoom 1 (existing behavior),
+  // so callers that don't care about the camera are unaffected. Tests that need
+  // a specific zoom (e.g. zoom-aware snapping / constant-size handles) pass it.
+  opts: { zoom?: number; x?: number; y?: number } = {},
+): Promise<void> {
   // Pre-navigation: localStorage isn't writable until a page exists in the
   // origin. Open `/` once so the origin is established, then write, then
   // reload.
@@ -182,7 +189,10 @@ export async function seedAndOpen(page: Page, seed: Seed): Promise<void> {
       'vignelli-map-doc-v1',
       JSON.stringify(persisted),
       'massimo-viewport',
-      JSON.stringify({ state: { x: 0, y: 0, zoom: 1 }, version: 0 }),
+      JSON.stringify({
+        state: { x: opts.x ?? 0, y: opts.y ?? 0, zoom: opts.zoom ?? 1 },
+        version: 0,
+      }),
     ],
   );
 
