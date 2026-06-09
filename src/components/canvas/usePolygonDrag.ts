@@ -7,21 +7,24 @@ import { stopPosWorld } from '../../geometry/interlining';
 import { SNAP_PERP_TOLERANCE, type SnapGuide } from '../../geometry/snap';
 import type { Vec2 } from '../../geometry/vec';
 import type { MapDoc, Station } from '../../model/types';
+import { finishDrag, trackDragMove } from './dragGesture';
+import {
+  collectGroupSiblings,
+  hasGroupSiblings,
+  translateSiblings,
+  type GroupSiblings,
+} from './groupDrag';
 
 // Whole-polygon drag: snapshot every vertex at pointer-down; each move snaps the
 // highest-then-leftmost vertex and translates the whole shape by that delta.
-// Group siblings (other selected polygons / stations / bullets / labels) tow by
-// the same delta.
+// Group siblings (other selected items of every type) tow by the same delta.
 type WholeDragState = {
   id: string;
   startVerts: Vec2[];
   startMX: number;
   startMY: number;
   moved: boolean;
-  polygonSiblings: { id: string; startVerts: Vec2[] }[];
-  stationSiblings: { id: string; startX: number; startY: number }[];
-  bulletSiblings: { id: string; startX: number; startY: number }[];
-  labelSiblings: { id: string; startX: number; startY: number }[];
+  siblings: GroupSiblings;
   history: ReturnType<typeof beginHistoryGroup>;
 };
 
@@ -94,11 +97,12 @@ function polygonVerticesExceptVertex(
 }
 
 /**
- * Owns drag state for polygons: whole-shape moves and single-vertex edits.
- * Mirrors {@link useItemDrag} — 4px move threshold, one history entry per
- * gesture, pointer capture, click suppression — but routes snapping through
- * {@link snapPolygonPoint} so "Snap to line" aligns to the current polygon's
- * own vertices and "Snap to all" aligns to stations + every polygon vertex.
+ * Owns drag state for polygons: whole-shape moves and single-vertex edits. The
+ * gesture lifecycle (4px threshold, one history entry, pointer capture, click
+ * suppression) and the whole-shape group-drag towing are shared with the other
+ * drag hooks via dragGesture + groupDrag; snapping routes through
+ * {@link snapPolygonPoint} so "Snap to line" aligns to the polygon's own
+ * vertices and "Snap to all" aligns to stations + every polygon vertex.
  */
 export function usePolygonDrag(
   svgRef: RefObject<SVGSVGElement | null>,
@@ -127,48 +131,15 @@ export function usePolygonDrag(
       return;
     }
     e.stopPropagation();
-    // Group-drag: if the grabbed polygon is part of the multi-selection, every
-    // other selected item tags along by the same per-frame delta. Locked
-    // polygons are skipped — they don't move with the group.
-    const sel = useSelection.getState();
-    const includesGrabbed = sel.selectedPolygonIds.includes(id);
-    const polygonSiblings: { id: string; startVerts: Vec2[] }[] = [];
-    const stationSiblings: { id: string; startX: number; startY: number }[] = [];
-    const bulletSiblings: { id: string; startX: number; startY: number }[] = [];
-    const labelSiblings: { id: string; startX: number; startY: number }[] = [];
-    if (includesGrabbed) {
-      for (const pid of sel.selectedPolygonIds) {
-        if (pid === id) continue;
-        const p = doc.polygons[pid];
-        if (!p || p.locked) continue;
-        polygonSiblings.push({ id: pid, startVerts: p.vertices.map((v) => ({ ...v })) });
-      }
-      for (const sid of sel.selectedStationIds) {
-        const ss = doc.stations[sid];
-        if (!ss) continue;
-        stationSiblings.push({ id: sid, startX: ss.x, startY: ss.y });
-      }
-      for (const bid of sel.selectedRouteBulletIds) {
-        const sb = doc.routeBullets[bid];
-        if (!sb) continue;
-        bulletSiblings.push({ id: bid, startX: sb.x, startY: sb.y });
-      }
-      for (const lid of sel.selectedLabelIds) {
-        const lb = doc.textLabels[lid];
-        if (!lb) continue;
-        labelSiblings.push({ id: lid, startX: lb.x, startY: lb.y });
-      }
-    }
     wholeDragRef.current = {
       id,
       startVerts: poly.vertices.map((v) => ({ ...v })),
       startMX: e.clientX,
       startMY: e.clientY,
       moved: false,
-      polygonSiblings,
-      stationSiblings,
-      bulletSiblings,
-      labelSiblings,
+      // Group-drag: tow every other selected item by the same delta. Locked
+      // polygons are skipped (handled in collectGroupSiblings).
+      siblings: collectGroupSiblings('polygon', id),
       history: beginHistoryGroup(),
     };
   };
@@ -201,7 +172,7 @@ export function usePolygonDrag(
     e.stopPropagation();
     // Suppress the trailing click so a no-drag "+" tap doesn't re-trigger
     // polygon/background click handlers (which would clear the vertex we just
-    // inserted + selected). Reset on pointerup.
+    // inserted + selected). finishDrag resets it after the (forced) commit.
     dragState.suppressClick = true;
     // One history entry for the whole gesture: pause first, insert the midpoint
     // vertex (lands at edgeIndex + 1), then drag it. forceCommit makes even a
@@ -230,26 +201,15 @@ export function usePolygonDrag(
   const onPointerMove = (e: React.PointerEvent) => {
     const wd = wholeDragRef.current;
     if (wd) {
-      const dxScreen = e.clientX - wd.startMX;
-      const dyScreen = e.clientY - wd.startMY;
-      if (!wd.moved && Math.hypot(dxScreen, dyScreen) > 4) {
-        wd.moved = true;
-        dragState.suppressClick = true;
-        svgRef.current?.setPointerCapture(e.pointerId);
-      }
-      if (wd.moved) {
+      const { moved, dxScreen, dyScreen } = trackDragMove(wd, e, svgRef);
+      if (moved) {
         const startAnchor = polygonSnapAnchor(wd.startVerts);
         let anchor: Vec2 = {
           x: startAnchor.x + dxScreen / zoom,
           y: startAnchor.y + dyScreen / zoom,
         };
         let guides: SnapGuide[] = [];
-        const inGroupDrag =
-          wd.polygonSiblings.length +
-            wd.stationSiblings.length +
-            wd.bulletSiblings.length +
-            wd.labelSiblings.length >
-          0;
+        const inGroupDrag = hasGroupSiblings(wd.siblings);
         if (!e.shiftKey) {
           const doc = useDoc.getState();
           // During a group drag the other selected polygons are moving, so they
@@ -276,34 +236,14 @@ export function usePolygonDrag(
           wd.startVerts.map((v) => ({ x: v.x + dx, y: v.y + dy })),
         );
         setPolygonSnapGuides(guides);
-        for (const ps of wd.polygonSiblings) {
-          setPolygonVertices(
-            ps.id,
-            ps.startVerts.map((v) => ({ x: v.x + dx, y: v.y + dy })),
-          );
-        }
-        for (const ss of wd.stationSiblings) {
-          useDoc.getState().moveStation(ss.id, ss.startX + dx, ss.startY + dy);
-        }
-        for (const bs of wd.bulletSiblings) {
-          useDoc.getState().moveRouteBullet(bs.id, bs.startX + dx, bs.startY + dy);
-        }
-        for (const ls of wd.labelSiblings) {
-          useDoc.getState().moveTextLabel(ls.id, ls.startX + dx, ls.startY + dy);
-        }
+        if (inGroupDrag) translateSiblings(wd.siblings, dx, dy);
       }
     }
 
     const vd = vertexDragRef.current;
     if (vd) {
-      const dxScreen = e.clientX - vd.startMX;
-      const dyScreen = e.clientY - vd.startMY;
-      if (!vd.moved && Math.hypot(dxScreen, dyScreen) > 4) {
-        vd.moved = true;
-        dragState.suppressClick = true;
-        svgRef.current?.setPointerCapture(e.pointerId);
-      }
-      if (vd.moved) {
+      const { moved, dxScreen, dyScreen } = trackDragMove(vd, e, svgRef);
+      if (moved) {
         let p: Vec2 = {
           x: vd.startVert.x + dxScreen / zoom,
           y: vd.startVert.y + dyScreen / zoom,
@@ -337,45 +277,15 @@ export function usePolygonDrag(
   const onPointerUp = (e: React.PointerEvent) => {
     const wd = wholeDragRef.current;
     if (wd) {
-      const wasMoved = wd.moved;
       wholeDragRef.current = null;
       setPolygonSnapGuides([]);
-      if (wasMoved) {
-        wd.history.commit();
-        try {
-          svgRef.current?.releasePointerCapture(e.pointerId);
-        } catch {
-          // pointer may not have been captured
-        }
-        setTimeout(() => {
-          dragState.suppressClick = false;
-        }, 0);
-      } else {
-        wd.history.cancel();
-      }
+      finishDrag(wd, e, svgRef);
     }
     const vd = vertexDragRef.current;
     if (vd) {
-      const wasMoved = vd.moved;
       vertexDragRef.current = null;
       setPolygonSnapGuides([]);
-      // Commit when the vertex actually moved, or when the gesture inserted a
-      // vertex (the "+"); otherwise it was a no-op click — discard the entry.
-      // Either committed path also releases capture and clears suppressClick
-      // (set on move, or up-front for the "+").
-      if (wasMoved || vd.forceCommit) {
-        vd.history.commit();
-        try {
-          svgRef.current?.releasePointerCapture(e.pointerId);
-        } catch {
-          // pointer may not have been captured
-        }
-        setTimeout(() => {
-          dragState.suppressClick = false;
-        }, 0);
-      } else {
-        vd.history.cancel();
-      }
+      finishDrag(vd, e, svgRef);
     }
   };
 
