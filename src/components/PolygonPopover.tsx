@@ -26,15 +26,15 @@ interface Props {
  * Editing popover for a selected polygon: fill color, stroke width, stroke
  * color, and delete. The anchor (centroid) is frozen at mount and projected
  * through the live viewport so it tracks pan/zoom without sliding when vertices
- * move; the header drags the popover via `dragOffset` (mirrors
- * {@link TextLabelPopover}).
+ * move; the header drag (world-space, via useDraggablePopover) stays pinned to
+ * the canvas through zoom. Mirrors {@link TextLabelPopover}.
  */
 export function PolygonPopover({ polygon, view, onClose }: Props) {
   // Frozen-anchor + header-drag mechanism (freeze the centroid at mount so
   // vertex edits / whole-polygon drags don't slide the popover; re-freeze when
   // the selected polygon changes; project live for pan/zoom). Shared with the
   // text-label popover.
-  const { anchor, dragOffset, headerHandlers } = useDraggablePopover(
+  const { anchor, headerHandlers } = useDraggablePopover(
     polygon.id,
     polygonCentroid(polygon.vertices),
     view,
@@ -75,8 +75,8 @@ export function PolygonPopover({ polygon, view, onClose }: Props) {
       className="bullet-popover polygon-popover"
       style={{
         position: 'absolute',
-        left: anchor.x + 14 + dragOffset.x,
-        top: anchor.y + 14 + dragOffset.y,
+        left: anchor.x + 14,
+        top: anchor.y + 14,
         zIndex: 1100,
       }}
       // Keep pointer events from reaching the canvas (which would deselect the

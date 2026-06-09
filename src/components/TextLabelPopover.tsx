@@ -36,7 +36,7 @@ export function TextLabelPopover({ label, world, view, onClose }: Props) {
   // slider can't move the popover and feed back into itself; re-freeze when the
   // selected label changes; project live for pan/zoom). Shared with the polygon
   // popover.
-  const { anchor, dragOffset, headerHandlers } = useDraggablePopover(label.id, world, view);
+  const { anchor, headerHandlers } = useDraggablePopover(label.id, world, view);
 
   const textField = useFieldHistory();
   // Group each color picker's continuous edits into one undo entry, mirroring
@@ -92,8 +92,8 @@ export function TextLabelPopover({ label, world, view, onClose }: Props) {
       className="text-label-popover"
       style={{
         position: 'absolute',
-        left: anchor.x + 14 + dragOffset.x,
-        top: anchor.y + 14 + dragOffset.y,
+        left: anchor.x + 14,
+        top: anchor.y + 14,
         zIndex: 1100,
       }}
       // Stop pointer events from reaching the canvas so clicks inside the
