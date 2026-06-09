@@ -4,7 +4,7 @@ import { useSnapPrefs } from '../../state/snapPrefs';
 import { snapPolygonPoint } from '../../geometry/polygonSnap';
 import { polygonSnapAnchor } from '../../geometry/polygon';
 import { stopPosWorld } from '../../geometry/interlining';
-import type { SnapGuide } from '../../geometry/snap';
+import { SNAP_PERP_TOLERANCE, type SnapGuide } from '../../geometry/snap';
 import type { Vec2 } from '../../geometry/vec';
 import type { MapDoc, Station } from '../../model/types';
 
@@ -263,6 +263,8 @@ export function usePolygonDrag(
             lineTargets: [],
             allTargets,
             modes: snapModes,
+            // Constant screen-pixel engage radius (see useStationDrag).
+            tolerance: SNAP_PERP_TOLERANCE / zoom,
           });
           anchor = { x: snap.x, y: snap.y };
           guides = snap.guides;
@@ -315,7 +317,14 @@ export function usePolygonDrag(
             ...stationStopCenters(doc.stations),
             ...polygonVerticesExceptVertex(doc.polygons, vd.polygonId, vd.index),
           ];
-          const snap = snapPolygonPoint({ proposed: p, lineTargets, allTargets, modes: snapModes });
+          const snap = snapPolygonPoint({
+            proposed: p,
+            lineTargets,
+            allTargets,
+            modes: snapModes,
+            // Constant screen-pixel engage radius (see useStationDrag).
+            tolerance: SNAP_PERP_TOLERANCE / zoom,
+          });
           p = { x: snap.x, y: snap.y };
           guides = snap.guides;
         }

@@ -5,7 +5,12 @@ import { rotateBy, stopCenterAt, travelDirLocal } from './orientation';
 import type { Rotation } from './orientation';
 import { stopPosWorld } from './interlining';
 
-/** Default perpendicular tolerance for engaging a snap, in world units. */
+/**
+ * Default perpendicular tolerance for engaging a snap, in world units — this is
+ * the value at zoom 1. Drag handlers pass `SNAP_PERP_TOLERANCE / zoom` so the
+ * engage radius stays constant in *screen* pixels: zooming in shrinks the
+ * world-space radius, allowing finer positioning before a snap takes effect.
+ */
 export const SNAP_PERP_TOLERANCE = 10;
 
 /**
