@@ -15,12 +15,16 @@ export interface AABB {
  *   2. Any rect corner lies inside the polygon.
  *   3. Any polygon edge crosses any rect edge.
  *
+ * `closed = false` tests an OPEN vertex chain instead: there is no interior
+ * (case 2 is skipped) and no closing edge (the last→first segment is excluded
+ * from case 3), so only contact with the stroke chain counts as overlap.
+ *
  * For touch-only contact (shared edge or single point) callers should treat
  * that as "no overlap" — segIntersect uses an inclusive epsilon, so coincident
  * boundaries register as crossings; if needed, callers can shrink the rect.
  */
-export function rectIntersectsPolygon(rect: AABB, poly: Pt[]): boolean {
-  if (poly.length < 3) return false;
+export function rectIntersectsPolygon(rect: AABB, poly: Pt[], closed: boolean = true): boolean {
+  if (poly.length < (closed ? 3 : 2)) return false;
 
   const xLo = Math.min(rect.x0, rect.x1);
   const xHi = Math.max(rect.x0, rect.x1);
@@ -37,11 +41,14 @@ export function rectIntersectsPolygon(rect: AABB, poly: Pt[]): boolean {
     { x: xHi, y: yHi },
     { x: xLo, y: yHi },
   ];
-  for (const c of corners) {
-    if (pointInPolygon(c, poly)) return true;
+  if (closed) {
+    for (const c of corners) {
+      if (pointInPolygon(c, poly)) return true;
+    }
   }
 
-  for (let i = 0; i < poly.length; i++) {
+  const edgeCount = closed ? poly.length : poly.length - 1;
+  for (let i = 0; i < edgeCount; i++) {
     const a = poly[i];
     const b = poly[(i + 1) % poly.length];
     for (let j = 0; j < 4; j++) {

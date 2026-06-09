@@ -167,7 +167,9 @@ export function textLabelsForRect(labels: Record<string, TextLabel>, rect: AABB)
 /**
  * Ids of every polygon whose filled body overlaps `rect` (world coords). The
  * polygon's own vertices are already world-space, so the rect/polygon overlap
- * test is direct — dragging a rubber band over any part of a polygon selects it.
+ * test is direct — dragging a rubber band over any part of a polygon selects
+ * it. Open polygons have no filled body, so only the stroke chain counts —
+ * a marquee fully inside an open polygon's vertex loop selects nothing.
  */
 export function polygonsForRect(polygons: Record<string, Polygon>, rect: AABB): string[] {
   const hits: string[] = [];
@@ -175,7 +177,7 @@ export function polygonsForRect(polygons: Record<string, Polygon>, rect: AABB): 
     const poly = polygons[id];
     // Locked polygons are excluded from marquee selection.
     if (poly.locked) continue;
-    if (rectIntersectsPolygon(rect, poly.vertices)) hits.push(id);
+    if (rectIntersectsPolygon(rect, poly.vertices, poly.closed !== false)) hits.push(id);
   }
   return hits;
 }
