@@ -588,6 +588,9 @@ export const dragState = { suppressClick: false };
 export { useSelection };
 export {
   RIGHT_CLICK_PASSTHROUGH_MODES,
+  soleSelection,
+  getCopyableSelection,
+  type SoleSelection,
   type UiMode,
   type LineTagHoverPreview,
   type SidebarTab,

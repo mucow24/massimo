@@ -1,4 +1,4 @@
-import { useSelection } from '../../state/store';
+import { soleSelection, useSelection } from '../../state/store';
 import { StationInspector } from './StationInspector';
 import { LineInspector } from './LineInspector';
 
@@ -14,11 +14,11 @@ export function Inspector() {
   // station gets selected (e.g. via the sidebar), the line editor stays open.
   if (selection.uiMode.kind === 'appending-to-line')
     return <LineInspector id={selection.uiMode.lineId} />;
-  // Single-selection only: multi-selection hides the station inspector.
-  // A selected route bullet alongside the station also disqualifies —
-  // the inspector is a single-item editor.
-  if (selection.selectedStationIds.length === 1 && selection.selectedRouteBulletIds.length === 0)
-    return <StationInspector id={selection.selectedStationIds[0]} />;
+  // Single-selection only: the station inspector shows iff a station is the
+  // SOLE selected item across every type. A co-selected bullet/label/polygon —
+  // or a multi-station selection — hides it; it's a single-item editor.
+  const sole = soleSelection(selection);
+  if (sole?.type === 'station') return <StationInspector id={sole.id} />;
   if (selection.selectedLineId) return <LineInspector id={selection.selectedLineId} />;
   return null;
 }

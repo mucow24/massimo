@@ -1,6 +1,6 @@
 import { useMemo, useRef, useState } from 'react';
 
-import { cancelAppendMode, dragState, useDoc, useSelection } from '../state/store';
+import { cancelAppendMode, dragState, soleSelection, useDoc, useSelection } from '../state/store';
 import { randomStationName } from '../state/stationNames';
 import { useSnapPrefs } from '../state/snapPrefs';
 import { useViewportStore } from '../state/viewportStore';
@@ -14,7 +14,8 @@ import {
   SegmentBandSpec,
 } from '../geometry/interlining';
 import { stripeOffset } from '../geometry/orientation';
-import { buildRotateMembers, effectivePolygonOrder } from '../model/transforms';
+import { effectivePolygonOrder } from '../model/transforms';
+import { rotateItemOnContextMenu } from './canvas/groupRotate';
 import { legibleTextOn } from '../util/color';
 import { BandWarning, SegmentBand } from './SegmentBand';
 import { HatchPatterns } from './HatchPatterns';
@@ -92,6 +93,13 @@ export function MapCanvas() {
   // background so the "off" stripes read as empty canvas, not stale white.
   const underlayColor = theme.underlay;
   const highlightLineId = selection.selectedLineId;
+
+  // Item popovers open only for a SOLE selection (exactly one item across every
+  // type), so a co-selected item of another type can't leak its popover open.
+  const sole = soleSelection(selection);
+  const solePopoverBullet = sole?.type === 'bullet' ? routeBullets[sole.id] : undefined;
+  const solePopoverLabel = sole?.type === 'label' ? textLabels[sole.id] : undefined;
+  const solePopoverPolygon = sole?.type === 'polygon' ? polygons[sole.id] : undefined;
 
   const svgRef = useRef<SVGSVGElement | null>(null);
   const view = useViewport(svgRef);
@@ -297,21 +305,7 @@ export function MapCanvas() {
   const onBulletContextMenu = (id: string, e: React.MouseEvent) => {
     e.preventDefault();
     e.stopPropagation();
-    // Right-click on a bullet that's part of a multi-selection rotates
-    // the whole group rigidly around this bullet, mirroring the station
-    // gesture. Stations, bullets, and labels all orbit via the unified
-    // rotateItemsAround.
-    const sel = useSelection.getState();
-    const stIds = sel.selectedStationIds;
-    const blIds = sel.selectedRouteBulletIds;
-    const lbIds = sel.selectedLabelIds;
-    const total = stIds.length + blIds.length + lbIds.length;
-    if (total > 1 && blIds.includes(id)) {
-      const members = buildRotateMembers(stIds, blIds, lbIds);
-      useDoc.getState().rotateItemsAround({ type: 'bullet', id }, members);
-      return;
-    }
-    rotateRouteBullet(id);
+    rotateItemOnContextMenu({ type: 'bullet', id }, () => rotateRouteBullet(id));
   };
 
   const onLabelClick = (id: string, e: React.MouseEvent) => {
@@ -330,20 +324,7 @@ export function MapCanvas() {
   const onLabelContextMenu = (id: string, e: React.MouseEvent) => {
     e.preventDefault();
     e.stopPropagation();
-    // Right-click on a label that's part of a multi-selection rotates the
-    // whole group rigidly around this label, mirroring station + bullet
-    // gestures. All three item types orbit via the unified rotateItemsAround.
-    const sel = useSelection.getState();
-    const stIds = sel.selectedStationIds;
-    const blIds = sel.selectedRouteBulletIds;
-    const lbIds = sel.selectedLabelIds;
-    const total = stIds.length + blIds.length + lbIds.length;
-    if (total > 1 && lbIds.includes(id)) {
-      const members = buildRotateMembers(stIds, blIds, lbIds);
-      useDoc.getState().rotateItemsAround({ type: 'label', id }, members);
-      return;
-    }
-    rotateTextLabel(id);
+    rotateItemOnContextMenu({ type: 'label', id }, () => rotateTextLabel(id));
   };
   const onPolygonClick = (id: string, e: React.MouseEvent) => {
     if (dragState.suppressClick) return;
@@ -362,20 +343,7 @@ export function MapCanvas() {
   const onPolygonContextMenu = (id: string, e: React.MouseEvent) => {
     e.preventDefault();
     e.stopPropagation();
-    // Right-click on a polygon that's part of a multi-selection rotates the
-    // whole group rigidly around this polygon (mirrors station/bullet/label).
-    const sel = useSelection.getState();
-    const stIds = sel.selectedStationIds;
-    const blIds = sel.selectedRouteBulletIds;
-    const lbIds = sel.selectedLabelIds;
-    const pgIds = sel.selectedPolygonIds;
-    const total = stIds.length + blIds.length + lbIds.length + pgIds.length;
-    if (total > 1 && pgIds.includes(id)) {
-      const members = buildRotateMembers(stIds, blIds, lbIds, pgIds);
-      useDoc.getState().rotateItemsAround({ type: 'polygon', id }, members);
-      return;
-    }
-    rotatePolygon(id);
+    rotateItemOnContextMenu({ type: 'polygon', id }, () => rotatePolygon(id));
   };
   const onVertexClick = (id: string, index: number, e: React.MouseEvent) => {
     if (dragState.suppressClick) return;
@@ -1012,54 +980,31 @@ export function MapCanvas() {
         </g>
       </svg>
 
-      {selection.selectedRouteBulletIds.length === 1 &&
-        selection.selectedStationIds.length === 0 &&
-        routeBullets[selection.selectedRouteBulletIds[0]] &&
-        view.vbW > 0 &&
-        view.vbH > 0 &&
-        (() => {
-          const b = routeBullets[selection.selectedRouteBulletIds[0]];
-          return (
-            <RouteBulletPopover
-              bullet={b}
-              world={{ x: b.x, y: b.y }}
-              view={view}
-              onClose={() => selection.selectRouteBullet(null)}
-            />
-          );
-        })()}
+      {solePopoverBullet && view.vbW > 0 && view.vbH > 0 && (
+        <RouteBulletPopover
+          bullet={solePopoverBullet}
+          world={{ x: solePopoverBullet.x, y: solePopoverBullet.y }}
+          view={view}
+          onClose={() => selection.selectRouteBullet(null)}
+        />
+      )}
 
-      {selection.selectedLabelIds.length === 1 &&
-        selection.selectedStationIds.length === 0 &&
-        selection.selectedRouteBulletIds.length === 0 &&
-        textLabels[selection.selectedLabelIds[0]] &&
-        view.vbW > 0 &&
-        view.vbH > 0 &&
-        (() => {
-          const g = textLabels[selection.selectedLabelIds[0]];
-          return (
-            <TextLabelPopover
-              label={g}
-              world={{ x: g.x, y: g.y }}
-              view={view}
-              onClose={() => selection.selectLabel(null)}
-            />
-          );
-        })()}
+      {solePopoverLabel && view.vbW > 0 && view.vbH > 0 && (
+        <TextLabelPopover
+          label={solePopoverLabel}
+          world={{ x: solePopoverLabel.x, y: solePopoverLabel.y }}
+          view={view}
+          onClose={() => selection.selectLabel(null)}
+        />
+      )}
 
-      {selection.selectedPolygonIds.length === 1 &&
-        selection.selectedStationIds.length === 0 &&
-        selection.selectedRouteBulletIds.length === 0 &&
-        selection.selectedLabelIds.length === 0 &&
-        polygons[selection.selectedPolygonIds[0]] &&
-        view.vbW > 0 &&
-        view.vbH > 0 && (
-          <PolygonPopover
-            polygon={polygons[selection.selectedPolygonIds[0]]}
-            view={view}
-            onClose={() => selection.selectPolygon(null)}
-          />
-        )}
+      {solePopoverPolygon && view.vbW > 0 && view.vbH > 0 && (
+        <PolygonPopover
+          polygon={solePopoverPolygon}
+          view={view}
+          onClose={() => selection.selectPolygon(null)}
+        />
+      )}
 
       <WarningToasts />
     </div>
