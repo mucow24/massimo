@@ -1,7 +1,7 @@
 import type { SegmentBandSpec } from './interlining';
 import { STOP_SIZE, stripeOffset } from './orientation';
 import { emitOffsetSegments, offsetFilletPath, type OffsetPathSegment } from './router';
-import type { Vec2 } from './vec';
+import { leftNormal, norm, sub, type Vec2 } from './vec';
 
 export interface StripeOutline {
   /** SVG `d` for the +HALF / -HALF offset edges of the stripe. */
@@ -71,33 +71,21 @@ export function computeStripeOutline(
   // Slide v0 and vN1 along their incident-edge tangents per the requested
   // adjustments. Outward at v0 = away from v1 = -tangent; outward at vN1 =
   // away from vN2 = +tangent. Positive adjust = outward, negative = inward.
-  const tangentUnit = (a: Vec2, b: Vec2) => {
-    const dx = b.x - a.x;
-    const dy = b.y - a.y;
-    const ln = Math.hypot(dx, dy) || 1;
-    return { x: dx / ln, y: dy / ln };
-  };
   const startAdj = adjust.start ?? 0;
   const endAdj = adjust.end ?? 0;
-  const t0 = tangentUnit(v0, v1);
-  const tN = tangentUnit(vN2, vN1);
+  const t0 = norm(sub(v1, v0));
+  const tN = norm(sub(vN1, vN2));
   const adjV0: Vec2 = { x: v0.x - t0.x * startAdj, y: v0.y - t0.y * startAdj };
   const adjVN1: Vec2 = { x: vN1.x + tN.x * endAdj, y: vN1.y + tN.y * endAdj };
   const adjustedVerts =
     verts.length === 2 ? [adjV0, adjVN1] : [adjV0, ...verts.slice(1, -1), adjVN1];
 
-  // Endpoint perpendiculars match the leftOf(norm(...)) convention used by
-  // emitOffsetSegments at i=0 and i=last so the cap lines meet the long
-  // edges at exactly shared coordinates. The perpendicular direction at
-  // each end is unchanged by the colinear slide above.
-  const perpUnit = (a: Vec2, b: Vec2) => {
-    const dx = b.x - a.x;
-    const dy = b.y - a.y;
-    const ln = Math.hypot(dx, dy) || 1;
-    return { x: dy / ln, y: -dx / ln };
-  };
-  const p0 = perpUnit(v0, v1);
-  const pN = perpUnit(vN2, vN1);
+  // Endpoint perpendiculars use the SAME leftNormal(norm(...)) that the
+  // router's emitOffsetSegments applies at i=0 and i=last, so the cap lines
+  // meet the long edges at exactly shared coordinates. Derived from the same
+  // unit tangent as the slide above (which the colinear slide leaves unchanged).
+  const p0 = leftNormal(t0);
+  const pN = leftNormal(tN);
 
   return {
     edgeAPath: offsetFilletPath(adjustedVerts, band.radius, offsetA),

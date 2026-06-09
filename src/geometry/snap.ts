@@ -26,6 +26,14 @@ export const TENS_INTERVAL = 10;
 /** "Snap to grid" cell size, in world units. Matches the visible Grid step. */
 export const GRID_INTERVAL = 10;
 
+// Both gate on |cross(unitAxisA, unitAxisB)| = |sin(angle between the axes)|,
+// at two different scales. PARALLEL_SIN_EPS treats two axes as parallel (a true
+// degeneracy check). SECONDARY_AXIS_SIN_GATE is the looser "different enough"
+// bar a candidate secondary axis must clear so the two-constraint snap solve is
+// well-conditioned (well above the parallel epsilon).
+const PARALLEL_SIN_EPS = 1e-3;
+const SECONDARY_AXIS_SIN_GATE = 0.1;
+
 /**
  * Snap an arbitrary (x, y) point to the nearest grid intersection. Pure and
  * stateless — used both by the snap engine's grid mode and by the label drag
@@ -364,7 +372,7 @@ export function snapDraggedStation(input: SnapInput): SnapResult {
   let secondary: Cand | null = null;
   for (let i = 1; i < bests.length; i++) {
     const cz = primary.axis.x * bests[i].axis.y - primary.axis.y * bests[i].axis.x;
-    if (Math.abs(cz) > 0.1) {
+    if (Math.abs(cz) > SECONDARY_AXIS_SIN_GATE) {
       secondary = bests[i];
       break;
     }
@@ -600,7 +608,7 @@ export function axisForRotation(rot: number): Vec2 {
 }
 
 export function parallel(a: Vec2, b: Vec2): boolean {
-  return Math.abs(a.x * b.y - a.y * b.x) < 1e-3;
+  return Math.abs(a.x * b.y - a.y * b.x) < PARALLEL_SIN_EPS;
 }
 
 /**

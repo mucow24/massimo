@@ -108,6 +108,39 @@ describe('<TextLabelPopover /> — world position freezes, viewport tracks live'
     );
     expect(positionOf(popover)).toEqual({ left: 714, top: 514 }); // tracks the new label
   });
+
+  // Regression: the header-drag offset used to be stored in screen pixels and
+  // added on top of the live-projected anchor, so zooming after a move left the
+  // dragged offset a fixed pixel size while the anchor scaled — the popover slid
+  // relative to the canvas. Storing the drag in world space makes the moved
+  // offset track zoom exactly like the anchor.
+  it('keeps a dragged popover pinned to the canvas when zooming', () => {
+    const label = makeTextLabel({ id: 'g1', text: 'X' });
+    const { container, rerender } = render(
+      <TextLabelPopover
+        label={label}
+        world={{ x: 0, y: 0 }} // anchor at the origin → screen (0,0)
+        view={identityView}
+        onClose={() => {}}
+      />,
+    );
+    const popover = container.querySelector('.text-label-popover') as HTMLElement;
+    const header = container.querySelector('.text-label-popover .header') as HTMLElement;
+
+    // Move the popover +30/+20 screen px at zoom 1 (→ world drag of 30/20).
+    fireEvent.pointerDown(header, { clientX: 0, clientY: 0, button: 0 });
+    fireEvent.pointerMove(header, { clientX: 30, clientY: 20 });
+    fireEvent.pointerUp(header, { clientX: 30, clientY: 20 });
+    expect(positionOf(popover)).toEqual({ left: 44, top: 34 }); // 14 + 30 / 14 + 20
+
+    // Zoom 2× centered on the anchor (world origin stays at screen 0,0). The
+    // dragged offset must double with the canvas — not stay a fixed 30/20 px.
+    const zoom2 = { vbX: 0, vbY: 0, vbW: 400, vbH: 300, size: { w: 800, h: 600 } };
+    rerender(
+      <TextLabelPopover label={label} world={{ x: 0, y: 0 }} view={zoom2} onClose={() => {}} />,
+    );
+    expect(positionOf(popover)).toEqual({ left: 74, top: 54 }); // 14 + 60 / 14 + 40
+  });
 });
 
 describe('<TextLabelPopover /> — day/night color pickers', () => {
@@ -202,7 +235,8 @@ describe('<TextLabelPopover /> — text / size / align / weight controls', () =>
   });
 });
 
-describe('<TextLabelPopover /> — header drag + escape', () => {
+// Header drag (incl. across zoom) is covered by the world-position describe above.
+describe('<TextLabelPopover /> — escape handling', () => {
   const identityView = { vbX: 0, vbY: 0, vbW: 800, vbH: 600, size: { w: 800, h: 600 } };
 
   function seedAndRender(onClose = () => {}) {
@@ -218,21 +252,6 @@ describe('<TextLabelPopover /> — header drag + escape', () => {
     );
     return { container };
   }
-
-  it('drags the popover by its header, offsetting left/top', () => {
-    const { container } = seedAndRender();
-    const popover = container.querySelector('.text-label-popover') as HTMLElement;
-    const header = container.querySelector('.header') as HTMLElement;
-    const left0 = parseFloat(popover.style.left);
-    const top0 = parseFloat(popover.style.top);
-
-    fireEvent.pointerDown(header, { button: 0, clientX: 0, clientY: 0, pointerId: 1 });
-    fireEvent.pointerMove(header, { clientX: 30, clientY: 20, pointerId: 1 });
-    fireEvent.pointerUp(header, { pointerId: 1 });
-
-    expect(parseFloat(popover.style.left)).toBe(left0 + 30);
-    expect(parseFloat(popover.style.top)).toBe(top0 + 20);
-  });
 
   it('closes on Escape pressed outside a form field', () => {
     const onClose = vi.fn();

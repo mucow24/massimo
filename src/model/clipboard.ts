@@ -172,6 +172,11 @@ function parsePolygonData(raw: unknown): Omit<Polygon, 'id'> | null {
   )
     return null;
   if (d.locked !== undefined && typeof d.locked !== 'boolean') return null;
+  if (
+    d.curveRadius !== undefined &&
+    (typeof d.curveRadius !== 'number' || !Number.isFinite(d.curveRadius))
+  )
+    return null;
   const out: Omit<Polygon, 'id'> = {
     vertices,
     fill: d.fill,
@@ -182,5 +187,8 @@ function parsePolygonData(raw: unknown): Omit<Polygon, 'id'> | null {
   };
   if (d.fillOpacity !== undefined) out.fillOpacity = d.fillOpacity as number;
   if (d.locked !== undefined) out.locked = d.locked as boolean;
+  // curveRadius rides along like the other optional fields; addPolygon/
+  // updatePolygon clamp it to [0,50] downstream, so no clamp here.
+  if (d.curveRadius !== undefined) out.curveRadius = d.curveRadius as number;
   return out;
 }

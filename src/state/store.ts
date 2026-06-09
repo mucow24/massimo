@@ -25,6 +25,7 @@ import * as T from '../model/transforms';
 import { cyclingColors, type PaletteId } from '../model/palettes';
 import {
   sanitizeStations,
+  backfillLineNames,
   backfillPolygonDarkColors,
   backfillTextLabelColors,
 } from '../model/serialize';
@@ -140,14 +141,11 @@ export function migrateDoc(persisted: unknown, version: number): DocState {
   // Corrupt or missing version is treated as v0 so all migrations run —
   // preferable to silently rendering with stale data.
   const v = typeof version === 'number' ? version : 0;
+  // Blocks operate on disjoint fields, so order is immaterial.
   let out: typeof s = s;
   if (v < 1 && out.lines) {
-    const next: Record<LineId, Line> = {};
-    for (const id of Object.keys(out.lines)) {
-      const ln = out.lines[id];
-      next[id] = ln.name ? ln : { ...ln, name: `${ln.service} line` };
-    }
-    out = { ...out, lines: next };
+    const { lines: cleaned, changed } = backfillLineNames(out.lines);
+    if (changed) out = { ...out, lines: cleaned };
   }
   if (v < 4 && out.stations) {
     const { stations: cleaned, changed } = sanitizeStations(out.stations);
@@ -591,6 +589,9 @@ export const dragState = { suppressClick: false };
 export { useSelection };
 export {
   RIGHT_CLICK_PASSTHROUGH_MODES,
+  soleSelection,
+  getCopyableSelection,
+  type SoleSelection,
   type UiMode,
   type LineTagHoverPreview,
   type SidebarTab,

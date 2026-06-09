@@ -1,4 +1,4 @@
-import { add, len, scale, sub, Vec2 } from './vec';
+import { perp, Vec2 } from './vec';
 import { emitOffsetSegments, OffsetPathSegment } from './router';
 import type { Line, LineId, LineTag, StationId } from '../model/types';
 
@@ -84,9 +84,9 @@ function sampleSegment(s: OffsetPathSegment, u: number): { p: Vec2; tangent: Vec
   // We use the rotation matrix interpretation: rotate(inDir, sign * ψ) with
   // standard matrix [[cos α, -sin α], [sin α, cos α]] gives a CCW rotation in
   // math y-up. The position formula derived in tests uses:
-  //   p(ψ) = from + r * (sin(ψ) * inDir + sign * (1 - cos(ψ)) * perpL(inDir))
-  // where perpL((x,y)) = (-y, x) — the math y-up CCW perpendicular.
-  const perpL = { x: -s.inDir.y, y: s.inDir.x };
+  //   p(ψ) = from + r * (sin(ψ) * inDir + sign * (1 - cos(ψ)) * perp(inDir))
+  // where perp((x,y)) = (-y, x) — the math y-up CCW perpendicular (vec.perp).
+  const perpL = perp(s.inDir);
   const p: Vec2 = {
     x: s.from.x + s.r * (sin * s.inDir.x + s.sign * (1 - cos) * perpL.x),
     y: s.from.y + s.r * (sin * s.inDir.y + s.sign * (1 - cos) * perpL.y),
@@ -226,8 +226,3 @@ export function snapNeighborTag(args: {
 
 // Re-export Vec2 type used by callers.
 export type { Vec2 } from './vec';
-// Quiet "unused imports" warnings; these helpers may move into helpers later.
-void add;
-void len;
-void scale;
-void sub;

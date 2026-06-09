@@ -1,5 +1,5 @@
 import { describe, it, expect, beforeEach } from 'vitest';
-import { useDoc } from '../state/store';
+import { pickDocSnapshot, useDoc } from '../state/store';
 import { DEFAULT_DOC } from '../model/transforms';
 import { parse, serialize, SCHEMA_FORMAT } from '../model/serialize';
 import { makeDoc, makeLine, makeStation, makeStop } from './fixtures';
@@ -25,27 +25,10 @@ describe('save/load round-trip', () => {
       lineOrder: ['L1'],
     });
     useDoc.setState({ ...useDoc.getState(), ...fixture });
-    const json = serialize({
-      stations: useDoc.getState().stations,
-      lines: useDoc.getState().lines,
-      lineOrder: useDoc.getState().lineOrder,
-      curveRadius: useDoc.getState().curveRadius,
-      lineCounter: useDoc.getState().lineCounter,
-      lineTags: useDoc.getState().lineTags,
-      routeBullets: useDoc.getState().routeBullets,
-      transfers: useDoc.getState().transfers,
-      textLabels: useDoc.getState().textLabels,
-      polygons: useDoc.getState().polygons,
-      polygonOrder: useDoc.getState().polygonOrder,
-      labelFontSize: useDoc.getState().labelFontSize,
-      labelWeight: useDoc.getState().labelWeight,
-      labelItalic: useDoc.getState().labelItalic,
-      activePalettes: useDoc.getState().activePalettes,
-      transferThickness: useDoc.getState().transferThickness,
-      transferColor: useDoc.getState().transferColor,
-      transferStrokeWidth: useDoc.getState().transferStrokeWidth,
-      transferStrokeColor: useDoc.getState().transferStrokeColor,
-    });
+    // Serialize the same way Toolbar onSave does — via the DOC_FIELDS-driven
+    // pickDocSnapshot — so this can't drift from the real save path or omit a
+    // newly-added persisted field.
+    const json = serialize(pickDocSnapshot(useDoc.getState()));
     const result = parse(json);
     expect(result.ok).toBe(true);
     if (result.ok) {
@@ -138,37 +121,16 @@ describe('save/load round-trip', () => {
   });
 
   it('Toolbar onSave path round-trips label settings', () => {
-    // Mirror Toolbar.tsx onSave: reads each field off the live store and
-    // hands them to serialize(). This guards against onSave forgetting a
-    // newly-added MapDoc field.
+    // Mirror Toolbar.tsx onSave exactly: serialize(pickDocSnapshot(state)).
+    // Using the same DOC_FIELDS-driven snapshot the production path uses means
+    // this guard cannot silently omit a newly-added persisted MapDoc field.
     useDoc.setState({
       ...useDoc.getState(),
       labelFontSize: 20,
       labelWeight: 700,
       labelItalic: false,
     });
-    const s = useDoc.getState();
-    const json = serialize({
-      stations: s.stations,
-      lines: s.lines,
-      lineOrder: s.lineOrder,
-      curveRadius: s.curveRadius,
-      lineCounter: s.lineCounter,
-      lineTags: s.lineTags,
-      routeBullets: s.routeBullets,
-      transfers: s.transfers,
-      textLabels: s.textLabels,
-      polygons: s.polygons,
-      polygonOrder: s.polygonOrder,
-      labelFontSize: s.labelFontSize,
-      labelWeight: s.labelWeight,
-      labelItalic: s.labelItalic,
-      activePalettes: s.activePalettes,
-      transferThickness: s.transferThickness,
-      transferColor: s.transferColor,
-      transferStrokeWidth: s.transferStrokeWidth,
-      transferStrokeColor: s.transferStrokeColor,
-    });
+    const json = serialize(pickDocSnapshot(useDoc.getState()));
     const result = parse(json);
     expect(result.ok).toBe(true);
     if (result.ok) {

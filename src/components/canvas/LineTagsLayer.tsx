@@ -123,7 +123,7 @@ export function LineTagsLayer({ bands, zoom, svgRef }: Props) {
   const cycleLineTagOrientation = useDoc((s) => s.cycleLineTagOrientation);
   const deleteLineTag = useDoc((s) => s.deleteLineTag);
   const selection = useSelection();
-  const drag = useLineTagDrag(svgRef, zoom);
+  const drag = useLineTagDrag(svgRef);
 
   const resolved = useMemo(() => {
     const list: ResolvedTag[] = [];

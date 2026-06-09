@@ -1,6 +1,6 @@
 import { Line, LineId, LineStyle, Station, StationId, StopCell } from '../model/types';
 import { pairKeyOf } from '../model/pairKey';
-import { Vec2, sub, len, norm, dot, leftNormal } from './vec';
+import { Vec2, sub, len, norm, leftNormal, angleBetween, tanHalf } from './vec';
 import { dirIndex, offsetFilletPath, route } from './router';
 import {
   localToWorld,
@@ -534,12 +534,11 @@ export function idealBandRadius(curveRadius: number, stripeCount: number): numbe
 // arc. The turn angle comes from inDir·outDir; returns Infinity for a ~straight
 // corner and 0 when there's no usable straight run.
 export function cornerCapRadius(edgeLen: number, inDir: Vec2, outDir: Vec2): number {
-  const cosA = Math.max(-1, Math.min(1, dot(inDir, outDir)));
-  const theta = Math.acos(cosA);
+  const theta = angleBetween(inDir, outDir);
   if (theta < 1e-6) return Infinity;
   const usable = edgeLen - STOP_SIZE / 2;
   if (usable <= 0) return 0;
-  return usable / Math.tan(theta / 2);
+  return usable / tanHalf(theta);
 }
 
 function buildBandSpec(

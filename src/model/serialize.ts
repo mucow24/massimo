@@ -1,11 +1,11 @@
 import {
   DEFAULT_DOC,
-  LABEL_WEIGHT_VALUES,
+  isLabelWeight,
   TEXT_LABEL_COLOR_DEFAULT,
   TEXT_LABEL_DARK_COLOR_DEFAULT,
 } from './transforms';
 import { pairKeyOf } from './pairKey';
-import { PALETTES, type PaletteId } from './palettes';
+import { KNOWN_PALETTE_IDS } from './palettes';
 import type {
   LabelValign,
   Line,
@@ -19,8 +19,6 @@ import type {
 } from './types';
 
 const KNOWN_LINE_STYLES = new Set<LineStyle>(['solid', 'dashed', 'hatched', 'hatched-mirror']);
-
-const KNOWN_PALETTE_IDS = new Set<PaletteId>(PALETTES.map((p) => p.id));
 
 const KNOWN_ORIENTATIONS = new Set<StopOrientation>([
   'auto-vertical',
@@ -146,14 +144,12 @@ export function parse(json: string): ParseResult {
   let linesChanged = false;
   for (const id of Object.keys(merged.lines)) {
     const line = merged.lines[id];
-    let cleaned = sanitizeSegmentStyles(line);
-    if (!cleaned.name) {
-      cleaned = { ...cleaned, name: `${cleaned.service} line` };
-    }
+    const cleaned = sanitizeSegmentStyles(line);
     if (cleaned !== line) linesChanged = true;
     cleanedLines[id] = cleaned;
   }
-  if (linesChanged) merged.lines = cleanedLines;
+  const named = backfillLineNames(cleanedLines);
+  if (linesChanged || named.changed) merged.lines = named.lines;
   const sanitized = sanitizeStations(merged.stations);
   if (sanitized.changed) merged.stations = sanitized.stations;
   const cleanedPolygons = backfillPolygonDarkColors(merged.polygons);
@@ -161,6 +157,28 @@ export function parse(json: string): ParseResult {
   const cleanedLabels = backfillTextLabelColors(merged.textLabels);
   if (cleanedLabels.changed) merged.textLabels = cleanedLabels.textLabels;
   return { ok: true, doc: merged };
+}
+
+// Backfill `line.name` for legacy files saved before the field existed, using
+// the historical `${service} line` default. Shared by parse() (file import) and
+// the zustand persist `migrate` hook (localStorage rehydration), so both entry
+// points stay in step — like the other backfills.
+export function backfillLineNames(lines: Record<string, Line>): {
+  lines: Record<string, Line>;
+  changed: boolean;
+} {
+  let changed = false;
+  const next: Record<string, Line> = {};
+  for (const id of Object.keys(lines)) {
+    const ln = lines[id];
+    if (!ln.name) {
+      next[id] = { ...ln, name: `${ln.service} line` };
+      changed = true;
+    } else {
+      next[id] = ln;
+    }
+  }
+  return { lines: next, changed };
 }
 
 // Backfill the day/night colors for labels saved before those fields existed.
@@ -222,13 +240,9 @@ function migrateLegacyLabelBold(raw: Record<string, unknown>): Record<string, un
   const explicitWeight = raw.labelWeight;
   if (!hasLegacy) return raw;
   const { labelBold, ...rest } = raw;
-  if (isValidWeight(explicitWeight)) return rest;
+  if (isLabelWeight(explicitWeight)) return rest;
   const translated: TextLabelWeight = labelBold === true ? 700 : 400;
   return { ...rest, labelWeight: translated };
-}
-
-function isValidWeight(v: unknown): v is TextLabelWeight {
-  return typeof v === 'number' && (LABEL_WEIGHT_VALUES as readonly number[]).includes(v);
 }
 
 function sanitizeSegmentStyles(line: Line): Line {

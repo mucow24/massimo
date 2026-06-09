@@ -1,4 +1,4 @@
-import { describe, it, expect, beforeEach } from 'vitest';
+import { describe, it, expect, beforeEach, afterEach } from 'vitest';
 import { renderHook } from '@testing-library/react';
 import { useLineTagDrag } from './useLineTagDrag';
 import { useDoc, dragState } from '../../state/store';
@@ -37,9 +37,16 @@ beforeEach(() => {
   dragState.suppressClick = false;
 });
 
+// The hook wires move/up onto window and only unregisters on pointerup. End any
+// in-flight gesture so a failed assertion mid-drag can't leak a window listener
+// into the next test.
+afterEach(() => {
+  dispatchWindowPointer('pointerup', { clientX: 0, clientY: 0 });
+});
+
 function render() {
   const { ref, svg } = fakeSvgRef();
-  const { result } = renderHook(() => useLineTagDrag(ref, 1));
+  const { result } = renderHook(() => useLineTagDrag(ref));
   return { result, svg };
 }
 

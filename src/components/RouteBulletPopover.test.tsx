@@ -2,7 +2,8 @@ import { describe, it, expect, beforeEach, vi } from 'vitest';
 import { render, screen, fireEvent } from '@testing-library/react';
 import { RouteBulletPopover } from './RouteBulletPopover';
 import { useDoc } from '../state/store';
-import { DEFAULT_DOC } from '../model/transforms';
+import { historyDepth } from '../state/history';
+import { DEFAULT_DOC, ROUTE_BULLET_SIZE_MAX } from '../model/transforms';
 import { makeLine } from '../test/fixtures';
 import type { RouteBullet } from '../model/types';
 
@@ -31,24 +32,24 @@ const bulletFixture = (over: Partial<RouteBullet> = {}): RouteBullet => ({
   ...over,
 });
 
-beforeEach(() => {
-  useDoc.setState({ ...useDoc.getState(), ...DEFAULT_DOC });
-});
+describe('RouteBulletPopover — line / shape / delete', () => {
+  beforeEach(() => {
+    useDoc.setState({ ...useDoc.getState(), ...DEFAULT_DOC });
+  });
 
-function renderPopover(bullet: RouteBullet, onClose = vi.fn()) {
-  seed(bullet);
-  render(
-    <RouteBulletPopover
-      bullet={bullet}
-      world={{ x: 0, y: 0 }}
-      view={identityView}
-      onClose={onClose}
-    />,
-  );
-  return { onClose };
-}
+  function renderPopover(bullet: RouteBullet, onClose = vi.fn()) {
+    seed(bullet);
+    render(
+      <RouteBulletPopover
+        bullet={bullet}
+        world={{ x: 0, y: 0 }}
+        view={identityView}
+        onClose={onClose}
+      />,
+    );
+    return { onClose };
+  }
 
-describe('RouteBulletPopover', () => {
   it('changes the bound line via the dropdown', () => {
     renderPopover(bulletFixture());
     fireEvent.change(screen.getByRole('combobox'), { target: { value: 'L2' } });
@@ -67,22 +68,58 @@ describe('RouteBulletPopover', () => {
     expect(useDoc.getState().routeBullets['b1'].shape).toBe('square');
   });
 
-  it('changes the size via the range slider', () => {
-    renderPopover(bulletFixture());
-    fireEvent.change(screen.getByRole('slider'), { target: { value: '20' } });
-    expect(useDoc.getState().routeBullets['b1'].size).toBe(20);
-  });
-
-  it('nudges the size with the mouse wheel (clamped 6–48)', () => {
-    renderPopover(bulletFixture({ size: 10 }));
-    fireEvent.wheel(screen.getByRole('slider'), { deltaY: -1 }); // up → +1
-    expect(useDoc.getState().routeBullets['b1'].size).toBe(11);
-  });
-
   it('deletes the bullet and closes', () => {
     const { onClose } = renderPopover(bulletFixture());
     fireEvent.click(screen.getByRole('button', { name: 'Delete' }));
     expect(useDoc.getState().routeBullets['b1']).toBeUndefined();
     expect(onClose).toHaveBeenCalledTimes(1);
+  });
+});
+
+// Size control was unified onto the useNumericField / useFieldHistory idiom in
+// the arch cleanup; these tests come from that change.
+const VIEW = { vbX: 0, vbY: 0, vbW: 100, vbH: 100, size: { w: 100, h: 100 } };
+
+const BULLET: RouteBullet = {
+  id: 'b1',
+  x: 10,
+  y: 10,
+  rotation: 0,
+  lineId: null,
+  shape: 'circle',
+  size: 14,
+};
+
+describe('<RouteBulletPopover /> size control', () => {
+  beforeEach(() => {
+    localStorage.clear();
+    useDoc.setState({ ...DEFAULT_DOC, routeBullets: { b1: { ...BULLET } } });
+    useDoc.temporal.getState().clear();
+  });
+
+  it('groups a size-slider drag into a single undo entry', () => {
+    render(
+      <RouteBulletPopover
+        bullet={BULLET}
+        world={{ x: 10, y: 10 }}
+        view={VIEW}
+        onClose={() => {}}
+      />,
+    );
+    const slider = screen.getByRole('slider');
+    const before = historyDepth();
+    // A drag: press, several value changes, release. useFieldHistory opens one
+    // group on mousedown and commits exactly one entry on mouseup.
+    fireEvent.mouseDown(slider);
+    fireEvent.change(slider, { target: { value: '20' } });
+    fireEvent.change(slider, { target: { value: '30' } });
+    fireEvent.mouseUp(slider);
+    expect(useDoc.getState().routeBullets.b1.size).toBe(30);
+    expect(historyDepth() - before).toBe(1);
+  });
+
+  it('clamps an out-of-range size in the transform', () => {
+    useDoc.getState().updateRouteBullet('b1', { size: 999 });
+    expect(useDoc.getState().routeBullets.b1.size).toBe(ROUTE_BULLET_SIZE_MAX);
   });
 });

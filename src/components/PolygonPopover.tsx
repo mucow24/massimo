@@ -1,6 +1,6 @@
-import { useRef, useState } from 'react';
 import { useDoc } from '../state/store';
-import { projectToScreen, type ViewportProjection } from './canvas/screenAnchor';
+import { type ViewportProjection } from './canvas/screenAnchor';
+import { useDraggablePopover } from './canvas/useDraggablePopover';
 import { NumericFieldRow } from './NumericFieldRow';
 import { useFieldHistory } from './useFieldHistory';
 import { polygonCentroid } from '../geometry/polygon';
@@ -26,14 +26,19 @@ interface Props {
  * Editing popover for a selected polygon: fill color, stroke width, stroke
  * color, and delete. The anchor (centroid) is frozen at mount and projected
  * through the live viewport so it tracks pan/zoom without sliding when vertices
- * move; the header drags the popover via `dragOffset` (mirrors
- * {@link TextLabelPopover}).
+ * move; the header drag (world-space, via useDraggablePopover) stays pinned to
+ * the canvas through zoom. Mirrors {@link TextLabelPopover}.
  */
 export function PolygonPopover({ polygon, view, onClose }: Props) {
-  // Freeze the centroid at mount so vertex edits / whole-polygon drags don't
-  // slide the popover out from under the cursor. Still projected live for
-  // pan/zoom; user drags add dragOffset on top.
-  const [frozenWorld, setFrozenWorld] = useState(() => polygonCentroid(polygon.vertices));
+  // Frozen-anchor + header-drag mechanism (freeze the centroid at mount so
+  // vertex edits / whole-polygon drags don't slide the popover; re-freeze when
+  // the selected polygon changes; project live for pan/zoom). Shared with the
+  // text-label popover.
+  const { anchor, headerHandlers } = useDraggablePopover(
+    polygon.id,
+    polygonCentroid(polygon.vertices),
+    view,
+  );
   const updatePolygon = useDoc((s) => s.updatePolygon);
   const deletePolygon = useDoc((s) => s.deletePolygon);
   const movePolygonUp = useDoc((s) => s.movePolygonUp);
@@ -51,50 +56,6 @@ export function PolygonPopover({ polygon, view, onClose }: Props) {
   // independent thereafter).
   const darkFill = polygon.darkFill;
   const darkStroke = polygon.darkStroke;
-
-  // Header drag — same mechanism as the text-label popover.
-  const [dragOffset, setDragOffset] = useState<{ x: number; y: number }>({ x: 0, y: 0 });
-  const dragStart = useRef<{ mouseX: number; mouseY: number; offX: number; offY: number } | null>(
-    null,
-  );
-
-  // MapCanvas renders a single <PolygonPopover> with no per-polygon key, so
-  // selecting a *different* polygon reuses this instance — useState alone would
-  // keep the previous polygon's frozen centroid and the popover would anchor at
-  // the old polygon. Re-freeze (and drop any drag) when the selection changes.
-  const [prevId, setPrevId] = useState(polygon.id);
-  if (prevId !== polygon.id) {
-    setPrevId(polygon.id);
-    setFrozenWorld(polygonCentroid(polygon.vertices));
-    setDragOffset({ x: 0, y: 0 });
-  }
-  const anchor = projectToScreen(frozenWorld, view);
-  const onHeaderPointerDown = (e: React.PointerEvent<HTMLDivElement>) => {
-    if (e.button !== 0) return;
-    e.preventDefault();
-    e.stopPropagation();
-    dragStart.current = {
-      mouseX: e.clientX,
-      mouseY: e.clientY,
-      offX: dragOffset.x,
-      offY: dragOffset.y,
-    };
-    e.currentTarget.setPointerCapture(e.pointerId);
-  };
-  const onHeaderPointerMove = (e: React.PointerEvent<HTMLDivElement>) => {
-    const s = dragStart.current;
-    if (!s) return;
-    setDragOffset({ x: s.offX + (e.clientX - s.mouseX), y: s.offY + (e.clientY - s.mouseY) });
-  };
-  const onHeaderPointerUp = (e: React.PointerEvent<HTMLDivElement>) => {
-    if (!dragStart.current) return;
-    dragStart.current = null;
-    try {
-      e.currentTarget.releasePointerCapture(e.pointerId);
-    } catch {
-      /* ignore */
-    }
-  };
 
   const onFill = (fill: string) => updatePolygon(polygon.id, { fill });
   const onStroke = (stroke: string) => updatePolygon(polygon.id, { stroke });
@@ -114,8 +75,8 @@ export function PolygonPopover({ polygon, view, onClose }: Props) {
       className="bullet-popover polygon-popover"
       style={{
         position: 'absolute',
-        left: anchor.x + 14 + dragOffset.x,
-        top: anchor.y + 14 + dragOffset.y,
+        left: anchor.x + 14,
+        top: anchor.y + 14,
         zIndex: 1100,
       }}
       // Keep pointer events from reaching the canvas (which would deselect the
@@ -127,13 +88,7 @@ export function PolygonPopover({ polygon, view, onClose }: Props) {
         e.stopPropagation();
       }}
     >
-      <div
-        className="header"
-        onPointerDown={onHeaderPointerDown}
-        onPointerMove={onHeaderPointerMove}
-        onPointerUp={onHeaderPointerUp}
-        onPointerCancel={onHeaderPointerUp}
-      />
+      <div className="header" {...headerHandlers} />
       <div className="body">
         <div className="row">
           <label htmlFor="polygon-fill">Color</label>

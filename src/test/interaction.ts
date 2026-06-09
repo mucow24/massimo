@@ -138,18 +138,19 @@ export function fakeSvgRef(opts: FakeSvgOpts = {}): {
 /**
  * Dispatch a window-level pointer event. `useLineTagDrag` wires its move/up
  * handlers onto `window` (not the returned API), so its tests drive the drag
- * by dispatching here. The handlers only read clientX/clientY, so a MouseEvent
- * carrying the matching `type` string is enough (jsdom has no PointerEvent ctor).
+ * by dispatching here. The shared drag primitives read clientX/clientY AND
+ * pointerId (for capture), so we carry pointerId on the MouseEvent (jsdom has
+ * no PointerEvent ctor; the property name matches what the handlers read).
  */
 export function dispatchWindowPointer(
   type: 'pointermove' | 'pointerup',
   opts: PointerOpts = {},
 ): void {
-  window.dispatchEvent(
-    new MouseEvent(type, {
-      clientX: opts.clientX ?? 0,
-      clientY: opts.clientY ?? 0,
-      button: opts.button ?? 0,
-    }),
-  );
+  const ev = new MouseEvent(type, {
+    clientX: opts.clientX ?? 0,
+    clientY: opts.clientY ?? 0,
+    button: opts.button ?? 0,
+  });
+  Object.assign(ev, { pointerId: opts.pointerId ?? 1 });
+  window.dispatchEvent(ev);
 }
