@@ -436,6 +436,14 @@ export function MapCanvas() {
         viewBox={`${view.vbX} ${view.vbY} ${view.vbW} ${view.vbH}`}
         className={(inHandMode ? 'tool-hand' : 'tool-arrow') + (view.panning ? ' panning' : '')}
         onWheel={view.onWheel}
+        // Self-heal a stranded click-suppress flag at the start of every fresh
+        // gesture. A drag cancelled without a pointerup (lost capture,
+        // pointercancel) would otherwise leave dragState.suppressClick = true
+        // and silently swallow the next click. Capture phase so it runs before
+        // any child's stopPropagation; the drag re-sets the flag on first move.
+        onPointerDownCapture={() => {
+          dragState.suppressClick = false;
+        }}
         onPointerDown={onPointerDown}
         onPointerMove={onPointerMove}
         onPointerUp={onPointerUp}
