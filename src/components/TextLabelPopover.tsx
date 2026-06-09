@@ -1,6 +1,7 @@
-import { useEffect, useRef, useState } from 'react';
+import { useEffect } from 'react';
 import { useDoc } from '../state/store';
-import { projectToScreen, type ViewportProjection } from './canvas/screenAnchor';
+import { type ViewportProjection } from './canvas/screenAnchor';
+import { useDraggablePopover } from './canvas/useDraggablePopover';
 import { TEXT_LABEL_FONT_SIZE_MAX, TEXT_LABEL_FONT_SIZE_MIN } from '../model/transforms';
 import { useFieldHistory } from './useFieldHistory';
 import { useNumericField } from './useNumericField';
@@ -37,61 +38,11 @@ export function TextLabelPopover({ label, world, view, onClose }: Props) {
   const updateTextLabel = useDoc((s) => s.updateTextLabel);
   const deleteTextLabel = useDoc((s) => s.deleteTextLabel);
 
-  // Freeze the label's *world* position at mount. Subsequent changes to the
-  // label's position (resize, edit) are ignored — the popover must stay put so
-  // controls don't slide out from under the cursor, and so the fontSize slider
-  // can't move the popover and feed back into itself (see the test). But we
-  // still project the frozen world point through the *live* viewport every
-  // render, so the popover tracks canvas pan/zoom. User drags add dragOffset.
-  const [frozenWorld, setFrozenWorld] = useState(world);
-
-  // Drag offset (added to the frozen anchor). Persists while the popover
-  // stays open so the popover stays where the user put it.
-  const [dragOffset, setDragOffset] = useState<{ x: number; y: number }>({ x: 0, y: 0 });
-
-  // MapCanvas renders a single <TextLabelPopover> with no per-label key, so
-  // selecting a *different* label reuses this instance — useState alone would
-  // keep the previous label's frozen world and the popover would anchor at the
-  // old label. Re-freeze (and drop any drag) when the selected label changes.
-  const [prevId, setPrevId] = useState(label.id);
-  if (prevId !== label.id) {
-    setPrevId(label.id);
-    setFrozenWorld(world);
-    setDragOffset({ x: 0, y: 0 });
-  }
-  const anchor = projectToScreen(frozenWorld, view);
-  const dragStart = useRef<{
-    mouseX: number;
-    mouseY: number;
-    offX: number;
-    offY: number;
-  } | null>(null);
-  const onHeaderPointerDown = (e: React.PointerEvent<HTMLDivElement>) => {
-    if (e.button !== 0) return;
-    e.preventDefault();
-    e.stopPropagation();
-    dragStart.current = {
-      mouseX: e.clientX,
-      mouseY: e.clientY,
-      offX: dragOffset.x,
-      offY: dragOffset.y,
-    };
-    (e.currentTarget as HTMLDivElement).setPointerCapture(e.pointerId);
-  };
-  const onHeaderPointerMove = (e: React.PointerEvent<HTMLDivElement>) => {
-    const s = dragStart.current;
-    if (!s) return;
-    setDragOffset({ x: s.offX + (e.clientX - s.mouseX), y: s.offY + (e.clientY - s.mouseY) });
-  };
-  const onHeaderPointerUp = (e: React.PointerEvent<HTMLDivElement>) => {
-    if (!dragStart.current) return;
-    dragStart.current = null;
-    try {
-      (e.currentTarget as HTMLDivElement).releasePointerCapture(e.pointerId);
-    } catch {
-      /* ignore */
-    }
-  };
+  // Frozen-anchor + header-drag mechanism (freeze world at mount so the size
+  // slider can't move the popover and feed back into itself; re-freeze when the
+  // selected label changes; project live for pan/zoom). Shared with the polygon
+  // popover.
+  const { anchor, dragOffset, headerHandlers } = useDraggablePopover(label.id, world, view);
 
   const textField = useFieldHistory();
   // Group each color picker's continuous edits into one undo entry, mirroring
@@ -160,13 +111,7 @@ export function TextLabelPopover({ label, world, view, onClose }: Props) {
         e.stopPropagation();
       }}
     >
-      <div
-        className="header"
-        onPointerDown={onHeaderPointerDown}
-        onPointerMove={onHeaderPointerMove}
-        onPointerUp={onHeaderPointerUp}
-        onPointerCancel={onHeaderPointerUp}
-      />
+      <div className="header" {...headerHandlers} />
       <div className="body">
         <div className="row-block">
           <label htmlFor={`label-text-${label.id}`}>
