@@ -1,11 +1,11 @@
 import {
   DEFAULT_DOC,
-  LABEL_WEIGHT_VALUES,
+  isLabelWeight,
   TEXT_LABEL_COLOR_DEFAULT,
   TEXT_LABEL_DARK_COLOR_DEFAULT,
 } from './transforms';
 import { pairKeyOf } from './pairKey';
-import { PALETTES, type PaletteId } from './palettes';
+import { KNOWN_PALETTE_IDS } from './palettes';
 import type {
   LabelValign,
   Line,
@@ -19,8 +19,6 @@ import type {
 } from './types';
 
 const KNOWN_LINE_STYLES = new Set<LineStyle>(['solid', 'dashed', 'hatched', 'hatched-mirror']);
-
-const KNOWN_PALETTE_IDS = new Set<PaletteId>(PALETTES.map((p) => p.id));
 
 const KNOWN_ORIENTATIONS = new Set<StopOrientation>([
   'auto-vertical',
@@ -222,13 +220,9 @@ function migrateLegacyLabelBold(raw: Record<string, unknown>): Record<string, un
   const explicitWeight = raw.labelWeight;
   if (!hasLegacy) return raw;
   const { labelBold, ...rest } = raw;
-  if (isValidWeight(explicitWeight)) return rest;
+  if (isLabelWeight(explicitWeight)) return rest;
   const translated: TextLabelWeight = labelBold === true ? 700 : 400;
   return { ...rest, labelWeight: translated };
-}
-
-function isValidWeight(v: unknown): v is TextLabelWeight {
-  return typeof v === 'number' && (LABEL_WEIGHT_VALUES as readonly number[]).includes(v);
 }
 
 function sanitizeSegmentStyles(line: Line): Line {

@@ -6,7 +6,7 @@ import { snapPointToGrid, type GridSnap } from '../geometry/snap';
 import { polygonCentroid, edgeMidpoint } from '../geometry/polygon';
 import { measureTextLabel } from '../geometry/textMeasure';
 import type { Vec2 } from '../geometry/vec';
-import { PALETTES, type PaletteId } from './palettes';
+import { normalizePaletteIds, type PaletteId } from './palettes';
 import type {
   DotShape,
   LabelAlign,
@@ -50,6 +50,13 @@ export const TRANSFER_STROKE_COLOR_DEFAULT = '#ffffff';
 export const LABEL_WEIGHT_VALUES: readonly TextLabelWeight[] = [
   100, 200, 300, 400, 500, 700, 800, 900,
 ] as const;
+
+// The single membership check for "is this a shippable Helvetica Neue weight"
+// (note: no 600). Used by the serialize migration and the label popover's
+// <select>, neither of which re-derives the 8-way comparison.
+export function isLabelWeight(v: unknown): v is TextLabelWeight {
+  return typeof v === 'number' && (LABEL_WEIGHT_VALUES as readonly number[]).includes(v);
+}
 
 export const LABEL_WEIGHT_NAMES: readonly { value: TextLabelWeight; name: string }[] = [
   { value: 100, name: 'UltraLight' },
@@ -1189,14 +1196,6 @@ export function setStationLabelItalic(doc: MapDoc, stationId: StationId, italic:
 export function setLabelItalic(doc: MapDoc, i: boolean): MapDoc {
   if (i === doc.labelItalic) return doc;
   return { ...doc, labelItalic: i };
-}
-
-const PALETTE_DECLARATION_ORDER: PaletteId[] = PALETTES.map((p) => p.id);
-const KNOWN_PALETTE_IDS = new Set<PaletteId>(PALETTE_DECLARATION_ORDER);
-
-function normalizePaletteIds(ids: readonly PaletteId[]): PaletteId[] {
-  const set = new Set(ids.filter((id) => KNOWN_PALETTE_IDS.has(id)));
-  return PALETTE_DECLARATION_ORDER.filter((id) => set.has(id));
 }
 
 function arraysEqual<T>(a: readonly T[], b: readonly T[]): boolean {

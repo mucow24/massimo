@@ -322,14 +322,26 @@ export const PALETTES: readonly Palette[] = [
   },
 ] as const;
 
-const KNOWN_IDS = new Set<PaletteId>(PALETTES.map((p) => p.id));
+// The single source of truth for "which palette ids exist" + the canonical
+// (PALETTES declaration) order. Used by the transforms storage normaliser and
+// the serialize-time validity check so neither re-derives its own copy.
+export const KNOWN_PALETTE_IDS = new Set<PaletteId>(PALETTES.map((p) => p.id));
+
+/**
+ * Dedupe + drop unknown ids, returning the result in canonical (PALETTES)
+ * declaration order. The storage normaliser for `MapDoc.activePalettes`.
+ */
+export function normalizePaletteIds(ids: readonly PaletteId[]): PaletteId[] {
+  const set = new Set(ids.filter((id) => KNOWN_PALETTE_IDS.has(id)));
+  return PALETTES.filter((p) => set.has(p.id)).map((p) => p.id);
+}
 
 /**
  * Return the active palettes in canonical (PALETTES) declaration order,
  * silently dropping unknown ids.
  */
 export function activePalettes(active: readonly PaletteId[]): Palette[] {
-  const set = new Set(active.filter((id) => KNOWN_IDS.has(id)));
+  const set = new Set(active.filter((id) => KNOWN_PALETTE_IDS.has(id)));
   return PALETTES.filter((p) => set.has(p.id));
 }
 

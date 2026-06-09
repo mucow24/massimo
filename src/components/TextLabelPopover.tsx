@@ -2,7 +2,12 @@ import { useEffect } from 'react';
 import { useDoc } from '../state/store';
 import { type ViewportProjection } from './canvas/screenAnchor';
 import { useDraggablePopover } from './canvas/useDraggablePopover';
-import { TEXT_LABEL_FONT_SIZE_MAX, TEXT_LABEL_FONT_SIZE_MIN } from '../model/transforms';
+import {
+  isLabelWeight,
+  LABEL_WEIGHT_NAMES,
+  TEXT_LABEL_FONT_SIZE_MAX,
+  TEXT_LABEL_FONT_SIZE_MIN,
+} from '../model/transforms';
 import { useFieldHistory } from './useFieldHistory';
 import { useNumericField } from './useNumericField';
 import type { TextLabel, TextLabelAlign, TextLabelWeight } from '../model/types';
@@ -16,17 +21,6 @@ interface Props {
   view: ViewportProjection;
   onClose: () => void;
 }
-
-const WEIGHTS: { value: TextLabelWeight; name: string }[] = [
-  { value: 100, name: 'UltraLight' },
-  { value: 200, name: 'Thin' },
-  { value: 300, name: 'Light' },
-  { value: 400, name: 'Roman' },
-  { value: 500, name: 'Medium' },
-  { value: 700, name: 'Bold' },
-  { value: 800, name: 'Heavy' },
-  { value: 900, name: 'Black' },
-];
 
 const ALIGNS: { value: TextLabelAlign; icon: string; title: string }[] = [
   { value: 'left', icon: '⇤', title: 'Align left' },
@@ -189,21 +183,10 @@ export function TextLabelPopover({ label, world, view, onClose }: Props) {
             value={label.weight}
             onChange={(e) => {
               const n = Number(e.target.value);
-              if (
-                n === 100 ||
-                n === 200 ||
-                n === 300 ||
-                n === 400 ||
-                n === 500 ||
-                n === 700 ||
-                n === 800 ||
-                n === 900
-              ) {
-                setWeight(n);
-              }
+              if (isLabelWeight(n)) setWeight(n);
             }}
           >
-            {WEIGHTS.map((w) => (
+            {LABEL_WEIGHT_NAMES.map((w) => (
               <option
                 key={w.value}
                 value={w.value}
