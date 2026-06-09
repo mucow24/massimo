@@ -259,16 +259,8 @@ export function polygonsToPath(polys: Pt[][], radius: number = 0): string {
 
 function polygonSubpath(poly: Pt[], radius: number): string {
   const n = poly.length;
-  const hasDegenerateEdge = (() => {
-    for (let i = 0; i < n; i++) {
-      const a = poly[i];
-      const b = poly[(i + 1) % n];
-      if (Math.hypot(b.x - a.x, b.y - a.y) < EPS) return true;
-    }
-    return false;
-  })();
-
-  if (radius <= 0 || hasDegenerateEdge) {
+  // Wrap edge included: the closing edge can be degenerate too.
+  if (radius <= 0 || hasDegenerateEdge(poly, true)) {
     let d = `M ${fmt(poly[0].x)} ${fmt(poly[0].y)}`;
     for (let i = 1; i < n; i++) d += ` L ${fmt(poly[i].x)} ${fmt(poly[i].y)}`;
     return d + ' Z';
@@ -279,27 +271,67 @@ function polygonSubpath(poly: Pt[], radius: number): string {
     const prev = poly[(i + n - 1) % n];
     const curr = poly[i];
     const next = poly[(i + 1) % n];
-
-    const inDx = curr.x - prev.x;
-    const inDy = curr.y - prev.y;
-    const inLen = Math.hypot(inDx, inDy);
-    const outDx = next.x - curr.x;
-    const outDy = next.y - curr.y;
-    const outLen = Math.hypot(outDx, outDy);
-
-    const inTrim = Math.min(radius, inLen / 2);
-    const outTrim = Math.min(radius, outLen / 2);
-
-    const q1x = curr.x - (inDx / inLen) * inTrim;
-    const q1y = curr.y - (inDy / inLen) * inTrim;
-    const q2x = curr.x + (outDx / outLen) * outTrim;
-    const q2y = curr.y + (outDy / outLen) * outTrim;
-
-    if (i === 0) d += `M ${fmt(q1x)} ${fmt(q1y)}`;
-    else d += ` L ${fmt(q1x)} ${fmt(q1y)}`;
-    d += ` Q ${fmt(curr.x)} ${fmt(curr.y)} ${fmt(q2x)} ${fmt(q2y)}`;
+    const { q1, q2 } = cornerTrimPoints(prev, curr, next, radius);
+    if (i === 0) d += `M ${fmt(q1.x)} ${fmt(q1.y)}`;
+    else d += ` L ${fmt(q1.x)} ${fmt(q1.y)}`;
+    d += ` Q ${fmt(curr.x)} ${fmt(curr.y)} ${fmt(q2.x)} ${fmt(q2.y)}`;
   }
   return d + ' Z';
+}
+
+// Render an OPEN vertex chain as an SVG path: stroke runs v0 → v(n-1) with no
+// closing edge (no `Z`). When `radius > 0` the interior vertices get the same
+// quadratic rounding as polygonSubpath; the two endpoints stay exact so the
+// chain visibly starts and ends on its vertices.
+export function openPolylinePath(poly: Pt[], radius: number = 0): string {
+  const n = poly.length;
+  if (n < 2) return '';
+
+  if (radius <= 0 || n === 2 || hasDegenerateEdge(poly, false)) {
+    let d = `M ${fmt(poly[0].x)} ${fmt(poly[0].y)}`;
+    for (let i = 1; i < n; i++) d += ` L ${fmt(poly[i].x)} ${fmt(poly[i].y)}`;
+    return d;
+  }
+
+  let d = `M ${fmt(poly[0].x)} ${fmt(poly[0].y)}`;
+  for (let i = 1; i < n - 1; i++) {
+    const { q1, q2 } = cornerTrimPoints(poly[i - 1], poly[i], poly[i + 1], radius);
+    d += ` L ${fmt(q1.x)} ${fmt(q1.y)} Q ${fmt(poly[i].x)} ${fmt(poly[i].y)} ${fmt(q2.x)} ${fmt(q2.y)}`;
+  }
+  return d + ` L ${fmt(poly[n - 1].x)} ${fmt(poly[n - 1].y)}`;
+}
+
+// True iff any consecutive edge is shorter than EPS; `wrap` also checks the
+// closing edge (last vertex back to the first). Degenerate edges would divide
+// by ~0 in the corner trim math, so callers fall back to straight segments.
+function hasDegenerateEdge(poly: Pt[], wrap: boolean): boolean {
+  const last = wrap ? poly.length : poly.length - 1;
+  for (let i = 0; i < last; i++) {
+    const a = poly[i];
+    const b = poly[(i + 1) % poly.length];
+    if (Math.hypot(b.x - a.x, b.y - a.y) < EPS) return true;
+  }
+  return false;
+}
+
+// The two trim points of a rounded corner at `curr`: q1 sits on the incoming
+// edge, q2 on the outgoing edge, each pulled back by the radius clamped to
+// half its edge so adjacent corners never overshoot each other.
+function cornerTrimPoints(prev: Pt, curr: Pt, next: Pt, radius: number): { q1: Pt; q2: Pt } {
+  const inDx = curr.x - prev.x;
+  const inDy = curr.y - prev.y;
+  const inLen = Math.hypot(inDx, inDy);
+  const outDx = next.x - curr.x;
+  const outDy = next.y - curr.y;
+  const outLen = Math.hypot(outDx, outDy);
+
+  const inTrim = Math.min(radius, inLen / 2);
+  const outTrim = Math.min(radius, outLen / 2);
+
+  return {
+    q1: { x: curr.x - (inDx / inLen) * inTrim, y: curr.y - (inDy / inLen) * inTrim },
+    q2: { x: curr.x + (outDx / outLen) * outTrim, y: curr.y + (outDy / outLen) * outTrim },
+  };
 }
 
 function fmt(n: number): string {

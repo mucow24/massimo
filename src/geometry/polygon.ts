@@ -1,5 +1,5 @@
 import type { Vec2 } from './vec';
-import { polygonsToPath } from './polygonUnion';
+import { openPolylinePath, polygonsToPath } from './polygonUnion';
 
 /**
  * The drag-snap anchor for a whole-polygon move: the **highest, then leftmost**
@@ -48,7 +48,11 @@ export function edgeMidpoint(vertices: Vec2[], edgeIndex: number): Vec2 {
  * adjacent edge (so a large radius never overshoots); `radius <= 0` yields
  * straight edges (`M`/`L`/…/`Z`). Delegates to the shared rounding routine in
  * {@link polygonsToPath} rather than duplicating the Bézier math.
+ *
+ * `closed = false` renders the OPEN variant instead: the stroke follows the
+ * vertex chain with no closing edge (no `Z`), rounding only the interior
+ * vertices — the endpoints stay exact.
  */
-export function polygonPathData(vertices: Vec2[], radius = 0): string {
-  return polygonsToPath([vertices], radius);
+export function polygonPathData(vertices: Vec2[], radius = 0, closed = true): string {
+  return closed ? polygonsToPath([vertices], radius) : openPolylinePath(vertices, radius);
 }

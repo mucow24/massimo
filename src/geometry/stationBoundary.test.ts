@@ -313,4 +313,25 @@ describe('polygonsForRect', () => {
     const rect = { x0: -50, y0: -50, x1: 50, y1: 50 };
     expect(polygonsForRect(polygons, rect)).toEqual(['b']);
   });
+
+  it('selects an open polygon via its stroke chain only, never its empty interior', () => {
+    const big = [
+      { x: -100, y: -100 },
+      { x: 100, y: -100 },
+      { x: 100, y: 100 },
+      { x: -100, y: 100 },
+    ];
+    const polygons = {
+      open: makePolygon({ id: 'open', vertices: big, closed: false }),
+      solid: makePolygon({ id: 'solid', vertices: big }),
+    };
+    // A marquee fully inside the vertex loop: the filled polygon hits, the
+    // open one (no interior) does not.
+    expect(polygonsForRect(polygons, { x0: -10, y0: -10, x1: 10, y1: 10 })).toEqual(['solid']);
+    // A marquee straddling the top edge (not the closing edge) hits both.
+    expect(polygonsForRect(polygons, { x0: -10, y0: -110, x1: 10, y1: -90 })).toEqual([
+      'open',
+      'solid',
+    ]);
+  });
 });

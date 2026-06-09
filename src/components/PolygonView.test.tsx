@@ -136,6 +136,76 @@ describe('<PolygonView /> overlay handles are a constant screen size', () => {
   });
 });
 
+describe('<PolygonView /> open polygons (closed: false)', () => {
+  beforeEach(() => {
+    useViewportStore.setState({ darkMode: false, zoom: 1 });
+  });
+
+  function renderOverlay(polygon: Polygon) {
+    return render(
+      <svg>
+        <PolygonView
+          polygon={polygon}
+          layer="overlay"
+          selected
+          selectedVertexIndex={null}
+          interactive
+          onPointerDown={noop}
+          onClick={noop}
+          onContextMenu={noop}
+          onVertexPointerDown={noop}
+          onVertexClick={noop}
+          onEdgeAddPointerDown={noop}
+        />
+      </svg>,
+    ).container;
+  }
+
+  it('renders the body stroke-only: no fill, no closing edge, stroke hit-testing', () => {
+    const { container } = renderBody(
+      makePolygon({ id: 'p0', fill: '#112233', stroke: '#445566', closed: false }),
+    );
+    const el = body(container);
+    expect(el.getAttribute('fill')).toBe('none');
+    expect(el.getAttribute('d') ?? '').not.toContain('Z');
+    expect(el.getAttribute('stroke')).toBe('#445566');
+    expect(el.getAttribute('pointer-events')).toBe('stroke');
+    expect(el.getAttribute('data-polygon-open')).toBe('true');
+  });
+
+  it('a closed body keeps its fill, closing edge, and whole-body hit-testing', () => {
+    const { container } = renderBody(makePolygon({ id: 'p0', fill: '#112233' }));
+    const el = body(container);
+    expect(el.getAttribute('fill')).toBe('#112233');
+    expect(el.getAttribute('d') ?? '').toContain('Z');
+    expect(el.getAttribute('pointer-events')).toBeNull();
+    expect(el.getAttribute('data-polygon-open')).toBeNull();
+  });
+
+  it('keeps corner rounding on interior vertices only (endpoints stay sharp)', () => {
+    const { container } = renderBody(makePolygon({ id: 'p0', closed: false, curveRadius: 10 }));
+    const d = body(container).getAttribute('d') ?? '';
+    expect((d.match(/Q/g) ?? []).length).toBe(2); // 4 vertices → 2 interior corners
+    expect(d).not.toContain('Z');
+  });
+
+  it('the overlay drops the closing edge: polyline outline + n-1 edge "+" buttons', () => {
+    const c = renderOverlay(makePolygon({ id: 'p0', closed: false }));
+    expect(c.querySelector('g[data-polygon-overlay] > polyline')).not.toBeNull();
+    expect(c.querySelector('g[data-polygon-overlay] > polygon')).toBeNull();
+    expect(c.querySelectorAll('[data-polygon-edge-add]')).toHaveLength(3);
+    expect(c.querySelector('[data-polygon-edge-add="3"]')).toBeNull();
+    // All vertices keep their handles — only the closing edge is gone.
+    expect(c.querySelectorAll('[data-polygon-vertex]')).toHaveLength(4);
+  });
+
+  it('a closed overlay keeps the polygon outline and an edge "+" per edge', () => {
+    const c = renderOverlay(makePolygon({ id: 'p0' }));
+    expect(c.querySelector('g[data-polygon-overlay] > polygon')).not.toBeNull();
+    expect(c.querySelectorAll('[data-polygon-edge-add]')).toHaveLength(4);
+  });
+});
+
 describe('<PolygonView /> corner rounding', () => {
   beforeEach(() => {
     useViewportStore.setState({ darkMode: false });
