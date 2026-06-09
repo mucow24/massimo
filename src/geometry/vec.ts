@@ -27,6 +27,15 @@ export const rotate = (a: Vec2, rad: number): Vec2 => {
   return { x: a.x * c - a.y * s, y: a.x * s + a.y * c };
 };
 
+// Unsigned angle in radians ([0, π]) between two UNIT vectors, via their
+// clamped dot product (the clamp guards acos against FP drift past ±1). Callers
+// pass unit tangents/directions; this does NOT normalize its inputs.
+export const angleBetween = (a: Vec2, b: Vec2): number =>
+  Math.acos(Math.max(-1, Math.min(1, dot(a, b))));
+
+// Half-angle tangent tan(θ/2) — the fillet / corner tangent-length factor.
+export const tanHalf = (theta: number): number => Math.tan(theta / 2);
+
 // Component of a unit vector along a 45° diagonal: √2/2 = 1/√2 ≈ 0.7071.
 // The single home for this constant; octolinear direction tables and snap
 // axes all reference it.
