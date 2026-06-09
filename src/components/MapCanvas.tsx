@@ -1,7 +1,6 @@
 import { useMemo, useRef, useState } from 'react';
 
-import { cancelAppendMode, dragState, soleSelection, useDoc, useSelection } from '../state/store';
-import { randomStationName } from '../state/stationNames';
+import { dragState, useDoc, useSelection } from '../state/store';
 import { useSnapPrefs } from '../state/snapPrefs';
 import { useViewportStore } from '../state/viewportStore';
 import { useThemeColors } from '../state/theme';
@@ -38,11 +37,10 @@ import { PolygonPlacingPreview } from './canvas/PolygonPlacingPreview';
 import { HighlightedLineLayer } from './canvas/HighlightedLineLayer';
 import { LabelPlacingPreview } from './canvas/LabelPlacingPreview';
 import { RouteBulletView } from './RouteBulletView';
-import { RouteBulletPopover } from './RouteBulletPopover';
 import { LabelView } from './LabelView';
-import { TextLabelPopover } from './TextLabelPopover';
 import { PolygonView } from './PolygonView';
-import { PolygonPopover } from './PolygonPopover';
+import { ItemPopovers } from './canvas/ItemPopovers';
+import { usePlacementDispatch } from './canvas/usePlacementDispatch';
 import { TransferLayer, transferEndWorld } from './TransferLayer';
 import {
   closestParamOnOffsetPath,
@@ -67,11 +65,9 @@ export function MapCanvas() {
   const lines = useDoc((s) => s.lines);
   const curveRadius = useDoc((s) => s.curveRadius);
   const lineOrder = useDoc((s) => s.lineOrder);
-  const addStation = useDoc((s) => s.addStation);
   const addLineTag = useDoc((s) => s.addLineTag);
   const cycleSegmentLayer = useDoc((s) => s.cycleSegmentLayer);
   const routeBullets = useDoc((s) => s.routeBullets);
-  const addRouteBullet = useDoc((s) => s.addRouteBullet);
   const rotateRouteBullet = useDoc((s) => s.rotateRouteBullet);
   const transfers = useDoc((s) => s.transfers);
   const transferColor = useDoc((s) => s.transferColor);
@@ -79,11 +75,9 @@ export function MapCanvas() {
   const transferStrokeColor = useDoc((s) => s.transferStrokeColor);
   const transferStrokeWidth = useDoc((s) => s.transferStrokeWidth);
   const textLabels = useDoc((s) => s.textLabels);
-  const addTextLabel = useDoc((s) => s.addTextLabel);
   const rotateTextLabel = useDoc((s) => s.rotateTextLabel);
   const polygons = useDoc((s) => s.polygons);
   const polygonOrder = useDoc((s) => s.polygonOrder);
-  const addPolygon = useDoc((s) => s.addPolygon);
   const rotatePolygon = useDoc((s) => s.rotatePolygon);
   const selection = useSelection();
   const snapModes = useSnapPrefs((s) => s.modes);
@@ -94,15 +88,9 @@ export function MapCanvas() {
   const underlayColor = theme.underlay;
   const highlightLineId = selection.selectedLineId;
 
-  // Item popovers open only for a SOLE selection (exactly one item across every
-  // type), so a co-selected item of another type can't leak its popover open.
-  const sole = soleSelection(selection);
-  const solePopoverBullet = sole?.type === 'bullet' ? routeBullets[sole.id] : undefined;
-  const solePopoverLabel = sole?.type === 'label' ? textLabels[sole.id] : undefined;
-  const solePopoverPolygon = sole?.type === 'polygon' ? polygons[sole.id] : undefined;
-
   const svgRef = useRef<SVGSVGElement | null>(null);
   const view = useViewport(svgRef);
+  const placement = usePlacementDispatch(view);
   const drag = useStationDrag(svgRef, view.viewport.zoom);
   const rectSelect = useRectSelect(svgRef, view.screenToWorld);
   // While a rect-select drag is in flight, render selection visuals
@@ -213,20 +201,6 @@ export function MapCanvas() {
   // from the anchor dot to the cursor, and the station-placing-mode ghost
   // that follows the cursor before each click.
   const [cursorWorld, setCursorWorld] = useState<{ x: number; y: number } | null>(null);
-  // Pre-rolled name for the next station that'll drop in placing mode, so
-  // the ghost shows the actual name (not a placeholder) and the click commits
-  // the same name the user just saw. Reset when placing mode toggles via the
-  // "adjust state during render" pattern — see
-  // https://react.dev/learn/you-might-not-need-an-effect#adjusting-some-state-when-a-prop-changes
-  const placingStation = selection.uiMode.kind === 'placing-station';
-  const [previewName, setPreviewName] = useState<string | null>(() =>
-    placingStation ? randomStationName() : null,
-  );
-  const [prevPlacing, setPrevPlacing] = useState(placingStation);
-  if (placingStation !== prevPlacing) {
-    setPrevPlacing(placingStation);
-    setPreviewName(placingStation ? randomStationName() : null);
-  }
 
   // Hovered stripe in layering mode: (bandKey, lineId) of the band stripe the
   // pointer is currently over. Drives the lightened-color preview + the small
@@ -359,66 +333,9 @@ export function MapCanvas() {
       e.target === svgRef.current || (e.target as Element).hasAttribute('data-bg');
     if (!onBackground) return;
     if (dragState.suppressClick) return;
-    const mode = selection.uiMode;
-    if (mode.kind === 'placing-station') {
-      const w = maybeSnapToGrid(view.screenToWorld(e.clientX, e.clientY), snapModes);
-      addStation(w.x, w.y, previewName ?? undefined);
-      setPreviewName(randomStationName());
-      // Stay in place-station mode; user clicks again or hits Esc / the
-      // toolbar button to exit. Don't auto-select the new station — that
-      // would close the placing-mode banner via the inspector swap.
-      return;
-    }
-    if (mode.kind === 'creating-route-bullet') {
-      const w = view.screenToWorld(e.clientX, e.clientY);
-      // Default new bullet to the first line in z-order so it has a
-      // recognizable color/service immediately. User can change it via
-      // the popover after exiting placement mode (Esc / right-click).
-      // Don't auto-select — that would close the placement banner and
-      // break the click-click-click drop pattern, like place-station mode.
-      const defaultLineId = lineOrder.find((id) => lines[id]) ?? null;
-      addRouteBullet(w.x, w.y, defaultLineId);
-      return;
-    }
-    if (mode.kind === 'creating-line-tag') {
-      // Click on background while in tag mode = exit the mode.
-      selection.setUiMode({ kind: 'idle' });
-      return;
-    }
-    if (mode.kind === 'layering') {
-      // Click on background while in layering mode = exit the mode.
-      selection.setUiMode({ kind: 'idle' });
-      return;
-    }
-    if (mode.kind === 'appending-to-line') {
-      cancelAppendMode();
-      return;
-    }
-    if (mode.kind === 'creating-transfer') {
-      // Click on background while picking transfer endpoints exits the mode.
-      selection.setUiMode({ kind: 'idle' });
-      return;
-    }
-    if (mode.kind === 'placing-label') {
-      // Single-shot: place one label, exit placing mode, and auto-select the
-      // new label so the popover opens. Different from station / bullet
-      // placement, which stay in mode for rapid click-click-click drops —
-      // labels are heavier (text edit) so the single-shot flow makes sense.
-      const w = view.screenToWorld(e.clientX, e.clientY);
-      const id = addTextLabel(w.x, w.y);
-      selection.setUiMode({ kind: 'idle' });
-      selection.selectLabel(id);
-      return;
-    }
-    if (mode.kind === 'creating-polygon') {
-      // Single-shot like labels: drop a default square, exit placing mode, and
-      // select it so the popover + vertex handles appear for immediate editing.
-      const w = view.screenToWorld(e.clientX, e.clientY);
-      const id = addPolygon(w.x, w.y);
-      selection.setUiMode({ kind: 'idle' });
-      selection.selectPolygon(id);
-      return;
-    }
+    // A click-to-place tool / active mode consumes the background click (drop an
+    // item or exit the mode); only a plain idle click falls through to deselect.
+    if (placement.handleCanvasPlace(e)) return;
     selection.selectStation(null);
     selection.selectLineTag(null);
     selection.selectRouteBullet(null);
@@ -748,7 +665,7 @@ export function MapCanvas() {
         <g data-export-exclude="1">
           <StationPlacingPreview
             world={selection.uiMode.kind === 'placing-station' ? cursorWorld : null}
-            name={previewName}
+            name={placement.previewName}
             lines={lines}
           />
           {/* Label-placing-mode ghost: a faint "New Label" following the cursor
@@ -980,31 +897,7 @@ export function MapCanvas() {
         </g>
       </svg>
 
-      {solePopoverBullet && view.vbW > 0 && view.vbH > 0 && (
-        <RouteBulletPopover
-          bullet={solePopoverBullet}
-          world={{ x: solePopoverBullet.x, y: solePopoverBullet.y }}
-          view={view}
-          onClose={() => selection.selectRouteBullet(null)}
-        />
-      )}
-
-      {solePopoverLabel && view.vbW > 0 && view.vbH > 0 && (
-        <TextLabelPopover
-          label={solePopoverLabel}
-          world={{ x: solePopoverLabel.x, y: solePopoverLabel.y }}
-          view={view}
-          onClose={() => selection.selectLabel(null)}
-        />
-      )}
-
-      {solePopoverPolygon && view.vbW > 0 && view.vbH > 0 && (
-        <PolygonPopover
-          polygon={solePopoverPolygon}
-          view={view}
-          onClose={() => selection.selectPolygon(null)}
-        />
-      )}
+      <ItemPopovers view={view} />
 
       <WarningToasts />
     </div>
