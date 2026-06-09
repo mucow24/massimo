@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { legibleTextOn } from './color';
+import { legibleTextOn, withAlpha, blendOver, desaturateColor } from './color';
 import { PALETTES } from '../model/palettes';
 
 describe('legibleTextOn', () => {
@@ -33,5 +33,81 @@ describe('legibleTextOn', () => {
         expect(['#000', '#fff']).toContain(out);
       }
     }
+  });
+});
+
+describe('withAlpha', () => {
+  it('formats a 6-char hex as rgba()', () => {
+    expect(withAlpha('#112233', 0.5)).toBe('rgba(17, 34, 51, 0.5)');
+  });
+
+  it('expands 3-char hex shorthand before formatting', () => {
+    // #abc → #aabbcc → (170, 187, 204)
+    expect(withAlpha('#abc', 1)).toBe('rgba(170, 187, 204, 1)');
+    expect(withAlpha('#abc', 0.25)).toBe(withAlpha('#aabbcc', 0.25));
+  });
+
+  it('passes the alpha through verbatim (no clamping)', () => {
+    expect(withAlpha('#000000', 0)).toBe('rgba(0, 0, 0, 0)');
+    expect(withAlpha('#ffffff', 1)).toBe('rgba(255, 255, 255, 1)');
+  });
+});
+
+describe('blendOver', () => {
+  it('returns the foreground unchanged at alpha 1', () => {
+    expect(blendOver('#3a7bd5', 1)).toBe('#3a7bd5');
+  });
+
+  it('returns the background (white by default) at alpha 0', () => {
+    expect(blendOver('#3a7bd5', 0)).toBe('#ffffff');
+  });
+
+  it('honors a custom background', () => {
+    expect(blendOver('#ffffff', 0, '#000000')).toBe('#000000');
+    // Half-blend of white over black → mid grey (128 after rounding).
+    expect(blendOver('#ffffff', 0.5, '#000000')).toBe('#808080');
+  });
+
+  it('clamps alpha below 0 to fully transparent (returns bg)', () => {
+    expect(blendOver('#3a7bd5', -1)).toBe('#ffffff');
+  });
+
+  it('clamps alpha above 1 to fully opaque (returns fg)', () => {
+    expect(blendOver('#3a7bd5', 2)).toBe('#3a7bd5');
+  });
+
+  it('rounds each channel of the blended result', () => {
+    // fg #010101 at 0.5 over #000000 → 0.5 per channel → rounds to 1 → #010101.
+    expect(blendOver('#010101', 0.5, '#000000')).toBe('#010101');
+  });
+});
+
+describe('desaturateColor', () => {
+  it('returns the input unchanged when amount >= 1', () => {
+    expect(desaturateColor('#3a7bd5', 1)).toBe('#3a7bd5');
+    expect(desaturateColor('#3a7bd5', 2)).toBe('#3a7bd5');
+  });
+
+  it('collapses to per-pixel luma greyscale at amount 0', () => {
+    // Pure red #ff0000 → luma 0.2126*255 ≈ 54 → #363636.
+    expect(desaturateColor('#ff0000', 0)).toBe('#363636');
+  });
+
+  it('leaves greys unchanged regardless of amount (luma == channel)', () => {
+    expect(desaturateColor('#808080', 0)).toBe('#808080');
+    expect(desaturateColor('#000000', 0)).toBe('#000000');
+    expect(desaturateColor('#ffffff', 0)).toBe('#ffffff');
+  });
+
+  it('clamps negative amounts to full greyscale', () => {
+    expect(desaturateColor('#ff0000', -1)).toBe(desaturateColor('#ff0000', 0));
+  });
+
+  it('mixes toward grey at a fractional amount', () => {
+    // Halfway between the original red (255) and its luma (54) on the R channel.
+    const out = desaturateColor('#ff0000', 0.5);
+    const r = parseInt(out.slice(1, 3), 16);
+    expect(r).toBeGreaterThan(54);
+    expect(r).toBeLessThan(255);
   });
 });
