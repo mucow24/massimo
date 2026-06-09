@@ -1,0 +1,221 @@
+import { describe, it, expect, beforeEach } from 'vitest';
+import { act, renderHook } from '@testing-library/react';
+import { useRectSelect, type RectSelectApi } from './useRectSelect';
+import { useDoc, useSelection, dragState } from '../../state/store';
+import { DEFAULT_DOC } from '../../model/transforms';
+import { makeLine, makePolygon, makeTextLabel, stationWithStop } from '../../test/fixtures';
+import { fakeSvgRef, pointerEvent } from '../../test/interaction';
+import type { Pt } from '../../geometry/polygonUnion';
+import type { StationId } from '../../model/types';
+
+// Identity screen→world so a pointer at client (x, y) lands at world (x, y).
+const identity = (mx: number, my: number): Pt => ({ x: mx, y: my });
+
+type Result = { current: RectSelectApi };
+
+// Hook handlers call React setState, so each invocation is wrapped in act() to
+// flush before the test reads `result.current` (rect / preview ids).
+const down = (r: Result, e: React.PointerEvent) => act(() => r.current.onPointerDown(e));
+const move = (r: Result, e: React.PointerEvent) => act(() => r.current.onPointerMove(e));
+const up = (r: Result, e: React.PointerEvent) => act(() => r.current.onPointerUp(e));
+
+function resetSelection(over: Record<string, unknown> = {}) {
+  useSelection.setState({
+    ...useSelection.getState(),
+    toolMode: 'arrow',
+    spaceHeld: false,
+    uiMode: { kind: 'idle' },
+    selectedStationIds: [],
+    selectedRouteBulletIds: [],
+    selectedLabelIds: [],
+    selectedPolygonIds: [],
+    ...over,
+  });
+}
+
+beforeEach(() => {
+  useDoc.setState({ ...useDoc.getState(), ...DEFAULT_DOC });
+  resetSelection();
+  dragState.suppressClick = false;
+});
+
+function render() {
+  const { ref, svg } = fakeSvgRef();
+  const { result } = renderHook(() => useRectSelect(ref, identity));
+  return { result, ref, svg };
+}
+
+describe('useRectSelect — activation guards', () => {
+  it('ignores non-left buttons', () => {
+    const { result, ref } = render();
+    down(result, pointerEvent({ clientX: 10, clientY: 10, button: 2, target: ref.current }));
+    move(result, pointerEvent({ clientX: 100, clientY: 100 }));
+    expect(result.current.rect).toBeNull();
+  });
+
+  it('ignores pointerdowns that did not land on the background', () => {
+    const { result } = render();
+    const notBg = { hasAttribute: () => false } as unknown as Element;
+    down(result, pointerEvent({ clientX: 10, clientY: 10, target: notBg }));
+    move(result, pointerEvent({ clientX: 100, clientY: 100 }));
+    expect(result.current.rect).toBeNull();
+  });
+
+  it('is disabled in hand mode', () => {
+    resetSelection({ toolMode: 'hand' });
+    const { result, ref } = render();
+    down(result, pointerEvent({ clientX: 10, clientY: 10, target: ref.current }));
+    move(result, pointerEvent({ clientX: 100, clientY: 100 }));
+    expect(result.current.rect).toBeNull();
+  });
+
+  it('is disabled in a sticky non-idle ui mode', () => {
+    resetSelection({ uiMode: { kind: 'placing-station' } });
+    const { result, ref } = render();
+    down(result, pointerEvent({ clientX: 10, clientY: 10, target: ref.current }));
+    move(result, pointerEvent({ clientX: 100, clientY: 100 }));
+    expect(result.current.rect).toBeNull();
+  });
+});
+
+describe('useRectSelect — drag threshold + capture', () => {
+  it('does not start a rect until the pointer moves past 4px', () => {
+    const { result, ref, svg } = render();
+    down(result, pointerEvent({ clientX: 10, clientY: 10, target: ref.current }));
+    move(result, pointerEvent({ clientX: 12, clientY: 12 })); // ~2.8px
+    expect(result.current.rect).toBeNull();
+    expect(svg.hasPointerCapture(1)).toBe(false);
+    expect(dragState.suppressClick).toBe(false);
+  });
+
+  it('starts the rect, captures the pointer, and suppresses click once past 4px', () => {
+    const { result, ref, svg } = render();
+    down(result, pointerEvent({ clientX: 10, clientY: 10, target: ref.current }));
+    move(result, pointerEvent({ clientX: 50, clientY: 50 }));
+    expect(result.current.rect).toEqual({ x0: 10, y0: 10, x1: 50, y1: 50 });
+    expect(svg.hasPointerCapture(1)).toBe(true);
+    expect(dragState.suppressClick).toBe(true);
+  });
+
+  it('a click (down + up without crossing threshold) clears state and changes nothing', () => {
+    useSelection.setState({ ...useSelection.getState(), selectedStationIds: ['A' as StationId] });
+    const { result, ref } = render();
+    down(result, pointerEvent({ clientX: 10, clientY: 10, target: ref.current }));
+    up(result, pointerEvent({ clientX: 11, clientY: 11 }));
+    expect(result.current.rect).toBeNull();
+    expect(result.current.previewStationIds).toBeNull();
+    expect(useSelection.getState().selectedStationIds).toEqual(['A']);
+  });
+});
+
+describe('useRectSelect — preview + commit across all object types', () => {
+  beforeEach(() => {
+    useDoc.setState({
+      ...useDoc.getState(),
+      lines: { L1: makeLine({ id: 'L1', stations: ['S'] }) },
+      lineOrder: ['L1'],
+      stations: { S: stationWithStop('S' as StationId, 'L1', { x: 50, y: 50 }) },
+      routeBullets: {
+        b1: { id: 'b1', x: 50, y: 50, rotation: 0, lineId: 'L1', shape: 'circle', size: 8 },
+      },
+      textLabels: { g1: makeTextLabel({ id: 'g1', x: 50, y: 50 }) },
+      polygons: {
+        p1: makePolygon({
+          id: 'p1',
+          vertices: [
+            { x: 30, y: 30 },
+            { x: 70, y: 30 },
+            { x: 70, y: 70 },
+            { x: 30, y: 70 },
+          ],
+        }),
+      },
+      polygonOrder: ['p1'],
+    });
+  });
+
+  it('previews every object type inside the rubber band while dragging', () => {
+    const { result, ref } = render();
+    down(result, pointerEvent({ clientX: 0, clientY: 0, target: ref.current }));
+    move(result, pointerEvent({ clientX: 150, clientY: 150 }));
+    expect(result.current.previewStationIds).toContain('S');
+    expect(result.current.previewBulletIds).toContain('b1');
+    expect(result.current.previewLabelIds).toContain('g1');
+    expect(result.current.previewPolygonIds).toContain('p1');
+  });
+
+  it('commits the hits to the selection store and clears the preview on release', () => {
+    const { result, ref } = render();
+    down(result, pointerEvent({ clientX: 0, clientY: 0, target: ref.current }));
+    move(result, pointerEvent({ clientX: 150, clientY: 150 }));
+    up(result, pointerEvent({ clientX: 150, clientY: 150 }));
+
+    const sel = useSelection.getState();
+    expect(sel.selectedStationIds).toContain('S');
+    expect(sel.selectedRouteBulletIds).toContain('b1');
+    expect(sel.selectedLabelIds).toContain('g1');
+    expect(sel.selectedPolygonIds).toContain('p1');
+    expect(result.current.rect).toBeNull();
+    expect(result.current.previewStationIds).toBeNull();
+  });
+});
+
+describe('useRectSelect — modifier semantics', () => {
+  beforeEach(() => {
+    useDoc.setState({
+      ...useDoc.getState(),
+      lines: { L1: makeLine({ id: 'L1', stations: ['A', 'B'] }) },
+      lineOrder: ['L1'],
+      stations: {
+        A: stationWithStop('A' as StationId, 'L1', { x: 50, y: 50 }),
+        B: stationWithStop('B' as StationId, 'L1', { x: 200, y: 200 }),
+      },
+    });
+  });
+
+  // Drag a rect from `from` to `to` with the given modifiers, then commit.
+  function dragRect(
+    result: Result,
+    ref: { current: SVGSVGElement | null },
+    from: Pt,
+    to: Pt,
+    mods: { shiftKey?: boolean; ctrlKey?: boolean } = {},
+  ) {
+    down(result, pointerEvent({ clientX: from.x, clientY: from.y, target: ref.current }));
+    move(result, pointerEvent({ clientX: to.x, clientY: to.y, ...mods }));
+    up(result, pointerEvent({ clientX: to.x, clientY: to.y, ...mods }));
+  }
+
+  it('no modifier replaces the selection (set)', () => {
+    useSelection.setState({ ...useSelection.getState(), selectedStationIds: ['A' as StationId] });
+    const { result, ref } = render();
+    dragRect(result, ref, { x: 160, y: 160 }, { x: 260, y: 260 }); // over B only
+    expect(useSelection.getState().selectedStationIds).toEqual(['B']);
+  });
+
+  it('shift adds rect hits to the selection (add)', () => {
+    useSelection.setState({ ...useSelection.getState(), selectedStationIds: ['A' as StationId] });
+    const { result, ref } = render();
+    dragRect(result, ref, { x: 160, y: 160 }, { x: 260, y: 260 }, { shiftKey: true });
+    expect(useSelection.getState().selectedStationIds).toEqual(['A', 'B']);
+  });
+
+  it('shift+ctrl removes an already-selected hit (xor)', () => {
+    useSelection.setState({ ...useSelection.getState(), selectedStationIds: ['A' as StationId] });
+    const { result, ref } = render();
+    dragRect(result, ref, { x: 0, y: 0 }, { x: 100, y: 100 }, { shiftKey: true, ctrlKey: true }); // over A
+    expect(useSelection.getState().selectedStationIds).toEqual([]);
+  });
+
+  it('shift+ctrl adds a novel hit (xor)', () => {
+    const { result, ref } = render();
+    dragRect(
+      result,
+      ref,
+      { x: 160, y: 160 },
+      { x: 260, y: 260 },
+      { shiftKey: true, ctrlKey: true },
+    );
+    expect(useSelection.getState().selectedStationIds).toEqual(['B']);
+  });
+});
