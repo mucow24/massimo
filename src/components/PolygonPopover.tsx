@@ -137,6 +137,7 @@ export function PolygonPopover({ polygon, view, onClose }: Props) {
           value={polygon.strokeWidth}
           onChange={onStrokeWidth}
           getCurrent={() => useDoc.getState().polygons[polygon.id]?.strokeWidth ?? 0}
+          textboxAllowAboveMax
           disabled={locked}
         />
         <NumericFieldRow
@@ -150,6 +151,7 @@ export function PolygonPopover({ polygon, view, onClose }: Props) {
           getCurrent={() =>
             useDoc.getState().polygons[polygon.id]?.curveRadius ?? POLYGON_CURVE_RADIUS_DEFAULT
           }
+          textboxAllowAboveMax
           disabled={locked}
         />
         <div className="row">

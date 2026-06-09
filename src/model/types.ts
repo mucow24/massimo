@@ -299,8 +299,9 @@ export interface MapDoc {
   transferThickness: number;
   transferColor: string;
   // Optional always-on outline around the body (a "halo"). Width is the
-  // per-side padding added past the body in world units, clamped to
-  // [TRANSFER_STROKE_WIDTH_MIN, TRANSFER_STROKE_WIDTH_MAX]. 0 = no outline.
+  // per-side padding added past the body in world units, clamped at
+  // TRANSFER_STROKE_WIDTH_MIN in transforms.ts (the slider tops out at MAX
+  // but the textbox accepts arbitrary larger values). 0 = no outline.
   transferStrokeWidth: number;
   transferStrokeColor: string;
 }

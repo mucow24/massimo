@@ -19,7 +19,6 @@ import {
   POLYGON_FILL_OPACITY_MIN,
   POLYGON_FILL_OPACITY_MAX,
   POLYGON_CURVE_RADIUS_MIN,
-  POLYGON_CURVE_RADIUS_MAX,
 } from './transforms';
 import { makeDoc, makePolygon } from '../test/fixtures';
 
@@ -83,15 +82,13 @@ describe('polygon transforms', () => {
     expect(stillTri).toBe(tri); // unchanged reference
   });
 
-  it('updatePolygon patches style and clamps strokeWidth to [0, 10]', () => {
+  it('updatePolygon patches style and clamps strokeWidth at MIN only (textbox accepts arbitrary above)', () => {
     const doc = makeDoc({ polygons: [makePolygon({ id: 'p0' })] });
     const a = updatePolygon(doc, 'p0', { fill: '#ff0000', stroke: '#00ff00', strokeWidth: 4 });
     expect(a.polygons['p0'].fill).toBe('#ff0000');
     expect(a.polygons['p0'].stroke).toBe('#00ff00');
     expect(a.polygons['p0'].strokeWidth).toBe(4);
-    expect(updatePolygon(doc, 'p0', { strokeWidth: 999 }).polygons['p0'].strokeWidth).toBe(
-      POLYGON_STROKE_WIDTH_MAX,
-    );
+    expect(updatePolygon(doc, 'p0', { strokeWidth: 999 }).polygons['p0'].strokeWidth).toBe(999);
     expect(updatePolygon(doc, 'p0', { strokeWidth: -5 }).polygons['p0'].strokeWidth).toBe(
       POLYGON_STROKE_WIDTH_MIN,
     );
@@ -130,12 +127,12 @@ describe('polygon transforms', () => {
     expect(updatePolygon(doc, 'p0', { locked: true }).polygons['p0'].locked).toBe(true);
   });
 
-  it('updatePolygon sets + clamps curveRadius to [0, 50] without disturbing other fields', () => {
+  it('updatePolygon sets curveRadius, clamping at MIN only, without disturbing other fields', () => {
     const doc = makeDoc({ polygons: [makePolygon({ id: 'p0', strokeWidth: 3 })] });
     expect(updatePolygon(doc, 'p0', { curveRadius: 20 }).polygons['p0'].curveRadius).toBe(20);
-    expect(updatePolygon(doc, 'p0', { curveRadius: 999 }).polygons['p0'].curveRadius).toBe(
-      POLYGON_CURVE_RADIUS_MAX,
-    );
+    // Above the slider max is allowed (the renderer caps the effective radius
+    // per-corner at half the shorter adjacent edge).
+    expect(updatePolygon(doc, 'p0', { curveRadius: 999 }).polygons['p0'].curveRadius).toBe(999);
     expect(updatePolygon(doc, 'p0', { curveRadius: -5 }).polygons['p0'].curveRadius).toBe(
       POLYGON_CURVE_RADIUS_MIN,
     );

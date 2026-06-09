@@ -95,6 +95,7 @@ export function OptionsPopover() {
             value={labelFontSize}
             onChange={setLabelFontSize}
             getCurrent={() => useDoc.getState().labelFontSize}
+            textboxAllowAboveMax
           />
 
           <div className="options-popover-row">
@@ -172,6 +173,7 @@ export function OptionsPopover() {
             value={transferStrokeWidth}
             onChange={setTransferStrokeWidth}
             getCurrent={() => useDoc.getState().transferStrokeWidth}
+            textboxAllowAboveMax
           />
 
           <div className="options-popover-row">
