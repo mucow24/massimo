@@ -47,3 +47,30 @@ describe('rectIntersectsPolygon', () => {
     expect(rectIntersectsPolygon(rect, square(20, 5, 5))).toBe(false);
   });
 });
+
+describe('rectIntersectsPolygon (open chains, closed = false)', () => {
+  it('a rect fully inside the vertex loop hits a closed polygon but not an open chain', () => {
+    const rect = { x0: -1, y0: -1, x1: 1, y1: 1 };
+    expect(rectIntersectsPolygon(rect, square(0, 0, 100), true)).toBe(true);
+    expect(rectIntersectsPolygon(rect, square(0, 0, 100), false)).toBe(false);
+  });
+
+  it('crossing only the closing edge (last → first) counts only when closed', () => {
+    // square()'s closing edge is the left side x = -10. This rect straddles
+    // that edge mid-height: no vertex inside, no other edge near it.
+    const rect = { x0: -12, y0: -2, x1: -8, y1: 2 };
+    expect(rectIntersectsPolygon(rect, square(0, 0, 10), true)).toBe(true);
+    expect(rectIntersectsPolygon(rect, square(0, 0, 10), false)).toBe(false);
+  });
+
+  it('still hits an open chain when a vertex lies inside the rect', () => {
+    const rect = { x0: -15, y0: -15, x1: -5, y1: -5 }; // contains vertex (-10,-10)
+    expect(rectIntersectsPolygon(rect, square(0, 0, 10), false)).toBe(true);
+  });
+
+  it('still hits an open chain when a non-closing edge crosses the rect', () => {
+    // The top edge y = -10 passes through with both endpoints outside.
+    const rect = { x0: -5, y0: -12, x1: 5, y1: -8 };
+    expect(rectIntersectsPolygon(rect, square(0, 0, 10), false)).toBe(true);
+  });
+});

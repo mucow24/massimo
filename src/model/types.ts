@@ -232,6 +232,11 @@ export interface Polygon {
   // Corner-rounding radius in world units, 0..50. Optional; missing ⇒ 0 (sharp
   // corners), so polygons saved before this field render unchanged.
   curveRadius?: number;
+  // When false, the polygon is OPEN: the stroke runs along the vertex chain
+  // with no closing edge and no fill, and hit-testing follows the stroke
+  // instead of the filled body. Optional; missing ⇒ true (closed), so polygons
+  // saved before this field render unchanged.
+  closed?: boolean;
 }
 
 // The mutable style/geometry fields of a Polygon accepted by `updatePolygon`
@@ -248,6 +253,7 @@ export type PolygonStylePatch = Partial<
     | 'fillOpacity'
     | 'locked'
     | 'curveRadius'
+    | 'closed'
     | 'vertices'
   >
 >;

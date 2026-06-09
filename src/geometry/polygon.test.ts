@@ -42,3 +42,30 @@ describe('polygonPathData', () => {
     expect(d.trimEnd().endsWith('Z')).toBe(true);
   });
 });
+
+describe('polygonPathData (open, closed = false)', () => {
+  it('renders the vertex chain with no closing Z and n-1 line segments', () => {
+    const d = polygonPathData(square(30), 0, false);
+    expect(d.startsWith('M')).toBe(true);
+    expect(d).not.toContain('Z');
+    expect(count(d, 'L')).toBe(3);
+  });
+
+  it('rounds only the interior vertices when radius > 0 — endpoints stay exact', () => {
+    const verts = square(30);
+    const d = polygonPathData(verts, 10, false);
+    expect(d).not.toContain('Z');
+    // 4 vertices → 2 interior corners get a quadratic; the two ends don't.
+    expect(count(d, 'Q')).toBe(verts.length - 2);
+    // The chain starts ON vertex 0 and ends ON the last vertex, untrimmed.
+    expect(d.startsWith('M -30.000 -30.000')).toBe(true);
+    expect(d.endsWith('L -30.000 30.000')).toBe(true);
+  });
+
+  it('clamps an oversized radius on the open chain without producing NaN', () => {
+    const d = polygonPathData(square(30), 1000, false);
+    expect(d).not.toContain('NaN');
+    expect(count(d, 'Q')).toBe(2);
+    expect(d).not.toContain('Z');
+  });
+});
