@@ -1,20 +1,15 @@
 import { describe, it, expect, beforeEach } from 'vitest';
 import { useSelection, type UiMode } from './store';
+import { clearedSelections, getCopyableSelection, soleSelection } from './selection';
 import type { LineId, StationId } from '../model/types';
 
 beforeEach(() => {
+  // Reset through the production full-wipe helper so this can't drift from the
+  // real set of selection fields (it already missed selectedPolygonIds /
+  // selectedVertex before being routed through clearedSelections).
   useSelection.setState({
-    selectedStationIds: [],
-    selectedRouteBulletIds: [],
-    selectedLabelIds: [],
-    selectedLineId: null,
+    ...clearedSelections(),
     uiMode: { kind: 'idle' },
-    mirrorMatching: false,
-    selectedStopLineId: null,
-    labelSelected: false,
-    editingStationId: null,
-    selectedLineTagId: null,
-    selectedTransferId: null,
     lineTagHoverPreview: null,
   });
 });
@@ -540,5 +535,80 @@ describe('uiMode entry clears all selections (no leftover cross-type selection)'
     });
     expect(s.selectedLineId).toBe('L1');
     expect(s.activeTab).toBe('lines');
+  });
+});
+
+describe('multi-item selection clears a stale selected line (regression)', () => {
+  // Before the shared SIBLING_PRIMARY_CLEAR, add*/xor* for bullets/labels/
+  // polygons cleared nothing, so a shift-rubber-band over non-station items
+  // left selectedLineId set — the line stayed highlighted and the wrong
+  // inspector opened. Every list-mutating verb on a non-station kind must drop
+  // it now.
+  it('addRouteBulletsToSelection clears a previously-selected line', () => {
+    useSelection.getState().selectLine('L1' as LineId);
+    expect(useSelection.getState().selectedLineId).toBe('L1');
+    useSelection.getState().addRouteBulletsToSelection(['b1']);
+    expect(useSelection.getState().selectedLineId).toBeNull();
+    expect(useSelection.getState().selectedRouteBulletIds).toEqual(['b1']);
+  });
+
+  it('xorLabelsToSelection clears a previously-selected line', () => {
+    useSelection.getState().selectLine('L1' as LineId);
+    useSelection.getState().xorLabelsToSelection(['g1']);
+    expect(useSelection.getState().selectedLineId).toBeNull();
+    expect(useSelection.getState().selectedLabelIds).toEqual(['g1']);
+  });
+
+  it('toggle (append branch) clears the line, remove branch leaves it', () => {
+    useSelection.getState().selectLine('L1' as LineId);
+    useSelection.getState().togglePolygonSelection('p1'); // append → clears line
+    expect(useSelection.getState().selectedLineId).toBeNull();
+    // Re-pin a line, then remove the polygon: removal must NOT wipe the line.
+    useSelection.setState({ selectedLineId: 'L1' as LineId });
+    useSelection.getState().togglePolygonSelection('p1'); // remove
+    expect(useSelection.getState().selectedPolygonIds).toEqual([]);
+    expect(useSelection.getState().selectedLineId).toBe('L1');
+  });
+
+  it('a no-op add (no novel ids) leaves the line untouched', () => {
+    useSelection.setState({ selectedRouteBulletIds: ['b1'], selectedLineId: 'L1' as LineId });
+    useSelection.getState().addRouteBulletsToSelection(['b1']); // already present → no-op
+    expect(useSelection.getState().selectedLineId).toBe('L1');
+  });
+});
+
+describe('soleSelection', () => {
+  it('returns the single selected item across any one list', () => {
+    useSelection.getState().selectStation('s1' as StationId);
+    expect(soleSelection(useSelection.getState())).toEqual({ type: 'station', id: 's1' });
+    useSelection.getState().selectRouteBullet('b1');
+    expect(soleSelection(useSelection.getState())).toEqual({ type: 'bullet', id: 'b1' });
+    useSelection.getState().selectPolygon('p1');
+    expect(soleSelection(useSelection.getState())).toEqual({ type: 'polygon', id: 'p1' });
+  });
+
+  it('returns null for an empty or multi-item selection (across types too)', () => {
+    expect(soleSelection(useSelection.getState())).toBeNull();
+    useSelection.setState({ selectedStationIds: ['s1', 's2'] as StationId[] });
+    expect(soleSelection(useSelection.getState())).toBeNull();
+    // One station + one bullet across two lists is still "multi".
+    useSelection.setState({ selectedStationIds: ['s1'] as StationId[], selectedLabelIds: ['g1'] });
+    expect(soleSelection(useSelection.getState())).toBeNull();
+  });
+});
+
+describe('getCopyableSelection', () => {
+  it('returns bullets/labels/polygons but never stations', () => {
+    useSelection.setState({
+      selectedStationIds: ['s1'] as StationId[],
+      selectedRouteBulletIds: ['b1'],
+      selectedLabelIds: ['g1'],
+      selectedPolygonIds: ['p1'],
+    });
+    expect(getCopyableSelection(useSelection.getState())).toEqual({
+      bullets: ['b1'],
+      labels: ['g1'],
+      polygons: ['p1'],
+    });
   });
 });

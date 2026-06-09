@@ -3,7 +3,7 @@ import { dragState, useDoc, useSelection } from '../state/store';
 import { useSnapPrefs } from '../state/snapPrefs';
 import { stopPosWorld } from '../geometry/interlining';
 import { pathBetweenStations } from '../model/pathSelect';
-import { buildRotateMembers } from '../model/transforms';
+import { rotateItemOnContextMenu } from './canvas/groupRotate';
 
 // Map a click on a station to the closest dot's lineId. Used to pin a
 // transfer endpoint to the specific stop the user clicked on, rather than
@@ -56,7 +56,6 @@ export function useStationInteraction(
 ) {
   const selection = useSelection();
   const rotateStation = useDoc((s) => s.rotateStation);
-  const rotateItemsAround = useDoc((s) => s.rotateItemsAround);
   const toggleStationOnLine = useDoc((s) => s.toggleStationOnLine);
   const redistributeBetween = useDoc((s) => s.redistributeBetween);
   const addTransfer = useDoc((s) => s.addTransfer);
@@ -161,20 +160,12 @@ export function useStationInteraction(
   const onContextMenu = (e: React.MouseEvent) => {
     e.preventDefault();
     e.stopPropagation();
-    // Right-click on a station that's part of a multi-selection rotates
-    // the whole group rigidly around this station: each member rotates
-    // in place AND non-pivot members orbit 45° around the pivot. Bullets
-    // and labels in the selection orbit too via `rotateItemsAround`.
-    const ids = selection.selectedStationIds;
-    const bulletIds = selection.selectedRouteBulletIds;
-    const labelIds = selection.selectedLabelIds;
-    const totalSelected = ids.length + bulletIds.length + labelIds.length;
-    if (totalSelected > 1 && ids.includes(station.id)) {
-      const members = buildRotateMembers(ids, bulletIds, labelIds);
-      rotateItemsAround({ type: 'station', id: station.id }, members);
-      return;
-    }
-    rotateStation(station.id);
+    // Right-click on a station that's part of a multi-selection rotates the
+    // whole group rigidly around this station (each member rotates in place AND
+    // non-pivot members — bullets, labels, AND polygons — orbit 45° around the
+    // pivot); otherwise it rotates just this station. Shared with the bullet/
+    // label/polygon handlers so every type participates.
+    rotateItemOnContextMenu({ type: 'station', id: station.id }, () => rotateStation(station.id));
   };
 
   const onDoubleClick = (e: React.MouseEvent) => {

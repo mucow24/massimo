@@ -1,5 +1,5 @@
 import { RefObject, useRef } from 'react';
-import { beginHistoryGroup, dragState, useDoc, useSelection } from '../../state/store';
+import { beginHistoryGroup, useDoc } from '../../state/store';
 import type { LineId, StationId } from '../../model/types';
 import {
   closestParamOnOffsetPath,
@@ -8,6 +8,7 @@ import {
 } from '../../geometry/lineTagGeometry';
 import { stripeOffset } from '../../geometry/orientation';
 import { buildBands, SegmentBandSpec } from '../../geometry/interlining';
+import { finishDrag, trackDragMove } from './dragGesture';
 
 export interface LineTagDragApi {
   onStartDrag: (id: string, e: React.PointerEvent) => void;
@@ -24,10 +25,7 @@ const SNAP_TOL = 10; // world px
  * across all segments + snaps to neighbouring tags in the same band,
  * pointerup commits one history entry.
  */
-export function useLineTagDrag(
-  svgRef: RefObject<SVGSVGElement | null>,
-  viewportZoom: number,
-): LineTagDragApi {
+export function useLineTagDrag(svgRef: RefObject<SVGSVGElement | null>): LineTagDragApi {
   const moveLineTag = useDoc((s) => s.moveLineTag);
 
   const dragRef = useRef<{
@@ -36,7 +34,6 @@ export function useLineTagDrag(
     startMY: number;
     moved: boolean;
     history: ReturnType<typeof beginHistoryGroup>;
-    pointerId: number;
     onMove: (e: PointerEvent) => void;
     onUp: (e: PointerEvent) => void;
   } | null>(null);
@@ -50,7 +47,6 @@ export function useLineTagDrag(
       startMY: e.clientY,
       moved: false,
       history: beginHistoryGroup(),
-      pointerId: e.pointerId,
       onMove,
       onUp,
     };
@@ -61,18 +57,11 @@ export function useLineTagDrag(
   const onPointerMove = (e: PointerEvent) => {
     const ds = dragRef.current;
     if (!ds) return;
-    const dxScreen = e.clientX - ds.startMX;
-    const dyScreen = e.clientY - ds.startMY;
-    if (!ds.moved && Math.hypot(dxScreen, dyScreen) > 4) {
-      ds.moved = true;
-      dragState.suppressClick = true;
-      try {
-        svgRef.current?.setPointerCapture(ds.pointerId);
-      } catch {
-        // ignored
-      }
-    }
-    if (!ds.moved) return;
+    // Shared threshold/capture/suppress-click; native PointerEvents satisfy the
+    // structural pointer shape, so the same primitive backs this window-level
+    // drag and the React-handler hooks.
+    const { moved } = trackDragMove(ds, e, svgRef);
+    if (!moved) return;
 
     const docState = useDoc.getState();
     const tag = docState.lineTags[ds.tagId];
@@ -176,30 +165,13 @@ export function useLineTagDrag(
   const onPointerUp = (e: PointerEvent) => {
     const ds = dragRef.current;
     if (!ds) return;
-    const wasMoved = ds.moved;
     window.removeEventListener('pointermove', ds.onMove);
     window.removeEventListener('pointerup', ds.onUp);
     dragRef.current = null;
-    if (!wasMoved) {
-      ds.history.cancel();
-      return;
-    }
-    ds.history.commit();
-    try {
-      svgRef.current?.releasePointerCapture(ds.pointerId);
-    } catch {
-      // ignored
-    }
-    setTimeout(() => {
-      dragState.suppressClick = false;
-    }, 0);
-    void e;
+    // Shared commit/cancel: one history entry + capture release + click-suppress
+    // clear when the gesture moved, else cancel (a pure click).
+    finishDrag(ds, e, svgRef);
   };
-
-  // Suppress unused parameter warnings — viewportZoom is a hint that caller
-  // tracks the value, but the drag uses CTM to convert pointer coords.
-  void viewportZoom;
-  void useSelection;
 
   return { onStartDrag };
 }

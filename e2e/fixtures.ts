@@ -16,7 +16,7 @@ export interface SeedStation {
     rotation: number;
     offset: number;
     align?: 'auto' | 'start' | 'middle' | 'end';
-    valign?: 'top' | 'middle' | 'bottom';
+    valign?: 'auto-down' | 'top' | 'middle' | 'bottom' | 'auto-up';
   };
 }
 

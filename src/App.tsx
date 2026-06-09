@@ -5,6 +5,7 @@ import { MapCanvas } from './components/MapCanvas';
 import {
   beginHistoryGroup,
   cancelAppendMode,
+  getCopyableSelection,
   RIGHT_CLICK_PASSTHROUGH_MODES,
   useDoc,
   useSelection,
@@ -20,6 +21,13 @@ import {
 import { _clearTextMeasureCache } from './geometry/textMeasure';
 import { useViewportStore } from './state/viewportStore';
 import { redo, undo } from './state/history';
+
+// Selected polygons minus locked ones — locked polygons resist both Delete and
+// arrow-nudge, so both keyboard paths filter the same way.
+function unlockedSelectedPolygonIds(): string[] {
+  const doc = useDoc.getState();
+  return useSelection.getState().selectedPolygonIds.filter((id) => !doc.polygons[id]?.locked);
+}
 
 export default function App() {
   const darkMode = useViewportStore((s) => s.darkMode);
@@ -107,9 +115,7 @@ export default function App() {
         const bulletIds = sel.selectedRouteBulletIds;
         const labelIds = sel.selectedLabelIds;
         // Locked polygons are protected from deletion.
-        const polygonIds = sel.selectedPolygonIds.filter(
-          (id) => !useDoc.getState().polygons[id]?.locked,
-        );
+        const polygonIds = unlockedSelectedPolygonIds();
         if (stationIds.length + bulletIds.length + labelIds.length + polygonIds.length > 0) {
           e.preventDefault();
           sel.selectStation(null);
@@ -176,7 +182,7 @@ export default function App() {
         const bulletIds = sel.selectedRouteBulletIds;
         const labelIds = sel.selectedLabelIds;
         // Locked polygons don't move.
-        const polygonIds = sel.selectedPolygonIds.filter((id) => !doc.polygons[id]?.locked);
+        const polygonIds = unlockedSelectedPolygonIds();
         if (stationIds.length + bulletIds.length + labelIds.length + polygonIds.length > 0) {
           e.preventDefault();
           const group = beginHistoryGroup();
@@ -227,18 +233,18 @@ export default function App() {
       // working; when nothing copyable is selected we fall through WITHOUT
       // preventDefault so native copy/paste still works.
       if (mod && !inForm && (e.key === 'c' || e.key === 'C')) {
-        const sel = useSelection.getState();
+        const { bullets, labels, polygons } = getCopyableSelection(useSelection.getState());
         const doc = useDoc.getState();
         const items: ClipPayload[] = [];
-        for (const id of sel.selectedRouteBulletIds) {
+        for (const id of bullets) {
           const b = doc.routeBullets[id];
           if (b) items.push(routeBulletPayload(b));
         }
-        for (const id of sel.selectedLabelIds) {
+        for (const id of labels) {
           const l = doc.textLabels[id];
           if (l) items.push(textLabelPayload(l));
         }
-        for (const id of sel.selectedPolygonIds) {
+        for (const id of polygons) {
           const p = doc.polygons[id];
           if (p) items.push(polygonPayload(p));
         }
@@ -271,10 +277,11 @@ export default function App() {
         return;
       }
       if (mod && !inForm && (e.key === 'd' || e.key === 'D')) {
-        const sel = useSelection.getState();
-        const bulletIds = sel.selectedRouteBulletIds;
-        const labelIds = sel.selectedLabelIds;
-        const polygonIds = sel.selectedPolygonIds;
+        const {
+          bullets: bulletIds,
+          labels: labelIds,
+          polygons: polygonIds,
+        } = getCopyableSelection(useSelection.getState());
         if (bulletIds.length + labelIds.length + polygonIds.length === 0) return;
         e.preventDefault();
         const doc = useDoc.getState();
