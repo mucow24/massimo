@@ -199,6 +199,56 @@ describe('<PolygonPopover />', () => {
     expect(useDoc.getState().polygonOrder).toEqual(['p0', 'p1']);
   });
 
+  it('the Closed checkbox is checked by default and unchecking writes closed: false', () => {
+    renderPopover();
+    const box = screen.getByRole('checkbox', { name: 'Closed' });
+    expect(box).toBeChecked();
+    fireEvent.click(box);
+    expect(useDoc.getState().polygons['p0'].closed).toBe(false);
+  });
+
+  it('re-checking Closed restores a closed polygon', () => {
+    useDoc.setState({
+      ...useDoc.getState(),
+      polygons: { p0: makePolygon({ id: 'p0', closed: false }) },
+      polygonOrder: ['p0'],
+    });
+    renderPopover();
+    const box = screen.getByRole('checkbox', { name: 'Closed' });
+    expect(box).not.toBeChecked();
+    fireEvent.click(box);
+    expect(useDoc.getState().polygons['p0'].closed).toBe(true);
+  });
+
+  it('when open, the fill controls are disabled but stroke controls stay active', () => {
+    useDoc.setState({
+      ...useDoc.getState(),
+      polygons: { p0: makePolygon({ id: 'p0', closed: false }) },
+      polygonOrder: ['p0'],
+    });
+    renderPopover();
+    // Fill has no effect on a stroke-only shape.
+    expect(screen.getByLabelText('Polygon color')).toBeDisabled();
+    expect(screen.getByLabelText('Dark mode color')).toBeDisabled();
+    expect(screen.getByRole('slider', { name: 'Fill opacity' })).toBeDisabled();
+    // Everything stroke-related (and the checkbox itself) remains editable.
+    expect(screen.getByLabelText('Stroke color')).toBeEnabled();
+    expect(screen.getByLabelText('Dark mode stroke color')).toBeEnabled();
+    expect(screen.getByRole('slider', { name: 'Stroke width' })).toBeEnabled();
+    expect(screen.getByRole('slider', { name: 'Curve radius' })).toBeEnabled();
+    expect(screen.getByRole('checkbox', { name: 'Closed' })).toBeEnabled();
+  });
+
+  it('when locked, the Closed checkbox is disabled like the other editing controls', () => {
+    useDoc.setState({
+      ...useDoc.getState(),
+      polygons: { p0: makePolygon({ id: 'p0', locked: true }) },
+      polygonOrder: ['p0'],
+    });
+    renderPopover();
+    expect(screen.getByRole('checkbox', { name: 'Closed' })).toBeDisabled();
+  });
+
   it('the lock toggle flips locked and the label updates', () => {
     renderPopover();
     fireEvent.click(screen.getByRole('button', { name: 'Lock polygon' }));

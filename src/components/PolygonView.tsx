@@ -60,26 +60,32 @@ export function PolygonView({
   const contrast = themeColors.canvasBg;
   const verts = polygon.vertices;
   const n = verts.length;
+  const closed = polygon.closed !== false;
 
   if (layer === 'body') {
     // A single <path> handles both sharp and rounded corners: radius 0 yields a
     // straight M/L/…/Z, identical to a <polygon>. Export clones this live DOM, so
-    // the rounded shape carries into PNG/SVG for free.
+    // the rounded shape carries into PNG/SVG for free. An OPEN polygon renders
+    // stroke-only along the vertex chain (no fill, no closing edge), with hit
+    // testing on the stroke (pointerEvents="stroke", matching TransferLayer).
     return (
       <path
         data-polygon-id={polygon.id}
         data-polygon-selected={selected || undefined}
         data-polygon-locked={polygon.locked || undefined}
-        d={polygonPathData(verts, polygon.curveRadius ?? 0)}
-        fill={fill}
-        fillOpacity={(polygon.fillOpacity ?? 100) / 100}
+        data-polygon-open={!closed || undefined}
+        d={polygonPathData(verts, polygon.curveRadius ?? 0, closed)}
+        fill={closed ? fill : 'none'}
+        fillOpacity={closed ? (polygon.fillOpacity ?? 100) / 100 : undefined}
         stroke={stroke}
         strokeWidth={polygon.strokeWidth}
         // strokeWidth 0 already hides the stroke; linejoin keeps thin corners clean.
         strokeLinejoin="round"
+        // Round caps so an open chain's loose ends match its rounded joins.
+        strokeLinecap={closed ? undefined : 'round'}
         // Ignore pointer events while a placement tool is active so the click
         // reaches the canvas and places the item over the polygon.
-        pointerEvents={interactive ? undefined : 'none'}
+        pointerEvents={interactive ? (closed ? undefined : 'stroke') : 'none'}
         onPointerDown={(e) => onPointerDown(polygon.id, e)}
         onClick={(e) => onClick(polygon.id, e)}
         onContextMenu={(e) => onContextMenu(polygon.id, e)}
@@ -98,9 +104,13 @@ export function PolygonView({
   const s = 1 / zoom;
   const half = VERTEX_HANDLE_HALF * s;
   const r = EDGE_ADD_R * s;
+  // An open polygon's dashed outline and edge "+" buttons skip the closing
+  // edge — there is nothing to select or split between the two loose ends.
+  const Outline = closed ? 'polygon' : 'polyline';
+  const edgeIndices = Array.from({ length: closed ? n : n - 1 }, (_, i) => i);
   return (
     <g data-polygon-overlay={polygon.id}>
-      <polygon
+      <Outline
         points={pointsAttr(verts)}
         fill="none"
         stroke={accent}
@@ -113,7 +123,8 @@ export function PolygonView({
           popover's unlock toggle is reachable. */}
       {!polygon.locked && (
         <>
-          {verts.map((v, i) => {
+          {edgeIndices.map((i) => {
+            const v = verts[i];
             const next = verts[(i + 1) % n];
             const mx = (v.x + next.x) / 2;
             const my = (v.y + next.y) / 2;

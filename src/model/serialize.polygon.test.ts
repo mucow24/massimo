@@ -68,6 +68,18 @@ describe('polygon serialization', () => {
     expect(result.doc.polygons['p0'].darkStroke).toBe('#abcdef');
   });
 
+  it('round-trips an open polygon (closed: false); the field stays absent when unset', () => {
+    const doc = makeDoc({
+      polygons: [makePolygon({ id: 'p0', closed: false }), makePolygon({ id: 'p1' })],
+    });
+    const result = parse(serialize(doc));
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    expect(result.doc.polygons['p0'].closed).toBe(false);
+    // No backfill: missing ⇒ closed, so legacy polygons render unchanged.
+    expect(result.doc.polygons['p1'].closed).toBeUndefined();
+  });
+
   it('defaults polygons to {} for a legacy file saved before the field existed', () => {
     const legacy = JSON.stringify({
       format: SCHEMA_FORMAT,

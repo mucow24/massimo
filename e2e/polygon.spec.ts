@@ -10,6 +10,7 @@ interface PolygonState {
   fillOpacity?: number;
   locked?: boolean;
   curveRadius?: number;
+  closed?: boolean;
 }
 
 async function readPolygons(page: Page): Promise<Record<string, PolygonState>> {
@@ -112,6 +113,30 @@ test.describe('Polygon shapes', () => {
     await page.mouse.click(hb.x + hb.width / 2, hb.y + hb.height / 2);
     await page.keyboard.press('Delete');
     expect((await onlyPolygon(page)).vertices).toHaveLength(4);
+  });
+
+  test('unchecking Closed renders an open, stroke-only body; re-checking restores the fill', async ({
+    page,
+  }) => {
+    await seedAndOpen(page, { stations: [], lines: [] });
+    await addPolygonAt(page, CENTER.x, CENTER.y);
+
+    await page.getByRole('checkbox', { name: 'Closed' }).uncheck();
+    expect((await onlyPolygon(page)).closed).toBe(false);
+
+    // Stroke-only body: no fill, no closing edge in the path data.
+    const el = page.locator('path[data-polygon-id]').first();
+    await expect(el).toHaveAttribute('fill', 'none');
+    expect(await el.getAttribute('d')).not.toContain('Z');
+    // The closing edge has no "+" button — only 3 of the 4 edges are splittable.
+    await expect(page.locator('[data-polygon-edge-add]')).toHaveCount(3);
+
+    // Re-checking restores the filled, closed body.
+    await page.getByRole('checkbox', { name: 'Closed' }).check();
+    expect((await onlyPolygon(page)).closed).toBe(true);
+    await expect(el).not.toHaveAttribute('fill', 'none');
+    expect(await el.getAttribute('d')).toContain('Z');
+    await expect(page.locator('[data-polygon-edge-add]')).toHaveCount(4);
   });
 
   test('right-click rotates the polygon 45°', async ({ page }) => {

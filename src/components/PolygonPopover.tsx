@@ -51,6 +51,7 @@ export function PolygonPopover({ polygon, view, onClose }: Props) {
   const darkStrokeField = useFieldHistory();
 
   const locked = polygon.locked ?? false;
+  const closed = polygon.closed !== false;
   const fillOpacity = polygon.fillOpacity ?? POLYGON_FILL_OPACITY_DEFAULT;
   // Dark-mode colors are concrete (initialized to the light colors at creation,
   // independent thereafter).
@@ -64,6 +65,7 @@ export function PolygonPopover({ polygon, view, onClose }: Props) {
   const onStrokeWidth = (strokeWidth: number) => updatePolygon(polygon.id, { strokeWidth });
   const onFillOpacity = (o: number) => updatePolygon(polygon.id, { fillOpacity: o });
   const onCurveRadius = (r: number) => updatePolygon(polygon.id, { curveRadius: r });
+  const onClosed = (c: boolean) => updatePolygon(polygon.id, { closed: c });
   const onToggleLock = () => updatePolygon(polygon.id, { locked: !locked });
   const onDelete = () => {
     deletePolygon(polygon.id);
@@ -99,7 +101,7 @@ export function PolygonPopover({ polygon, view, onClose }: Props) {
             aria-label="Polygon color"
             title="Light mode fill"
             value={polygon.fill}
-            disabled={locked}
+            disabled={locked || !closed}
             onChange={(e) => onFill(e.target.value)}
             {...fillField}
           />
@@ -110,7 +112,7 @@ export function PolygonPopover({ polygon, view, onClose }: Props) {
             aria-label="Dark mode color"
             title="Dark mode fill"
             value={darkFill}
-            disabled={locked}
+            disabled={locked || !closed}
             onChange={(e) => onDarkFill(e.target.value)}
             {...darkFillField}
           />
@@ -126,7 +128,7 @@ export function PolygonPopover({ polygon, view, onClose }: Props) {
           getCurrent={() =>
             useDoc.getState().polygons[polygon.id]?.fillOpacity ?? POLYGON_FILL_OPACITY_DEFAULT
           }
-          disabled={locked}
+          disabled={locked || !closed}
         />
         <NumericFieldRow
           id="polygon-stroke-width"
@@ -154,6 +156,20 @@ export function PolygonPopover({ polygon, view, onClose }: Props) {
           textboxAllowAboveMax
           disabled={locked}
         />
+        {/* Open polygons render stroke-only along the vertex chain — no fill,
+            no closing edge — so unchecking this also greys the fill controls. */}
+        <div className="row">
+          <label htmlFor="polygon-closed">Closed</label>
+          <input
+            id="polygon-closed"
+            type="checkbox"
+            aria-label="Closed"
+            title="Closed (uncheck for an open, stroke-only polygon)"
+            checked={closed}
+            disabled={locked}
+            onChange={(e) => onClosed(e.target.checked)}
+          />
+        </div>
         <div className="row">
           <label htmlFor="polygon-stroke">Stroke color</label>
           <span aria-hidden="true">☀️</span>

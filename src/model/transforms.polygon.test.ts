@@ -127,6 +127,17 @@ describe('polygon transforms', () => {
     expect(updatePolygon(doc, 'p0', { locked: true }).polygons['p0'].locked).toBe(true);
   });
 
+  it('updatePolygon toggles closed; addPolygon leaves it unset (closed by default)', () => {
+    const doc = makeDoc({ polygons: [makePolygon({ id: 'p0' })] });
+    expect(updatePolygon(doc, 'p0', { closed: false }).polygons['p0'].closed).toBe(false);
+    const reopened = updatePolygon(updatePolygon(doc, 'p0', { closed: false }), 'p0', {
+      closed: true,
+    });
+    expect(reopened.polygons['p0'].closed).toBe(true);
+    // New polygons omit the field — missing ⇒ closed, like legacy saves.
+    expect(addPolygon(makeDoc({}), 'p1', 0, 0).polygons['p1'].closed).toBeUndefined();
+  });
+
   it('updatePolygon sets curveRadius, clamping at MIN only, without disturbing other fields', () => {
     const doc = makeDoc({ polygons: [makePolygon({ id: 'p0', strokeWidth: 3 })] });
     expect(updatePolygon(doc, 'p0', { curveRadius: 20 }).polygons['p0'].curveRadius).toBe(20);
