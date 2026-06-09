@@ -111,6 +111,35 @@ describe('<PolygonPopover />', () => {
     expect(popover.style.top).toBe('34px'); // 14 + 20
   });
 
+  it('keeps a dragged popover pinned to the canvas when zooming', () => {
+    // Regression: the drag offset used to be stored in screen pixels and added
+    // on top of the live-projected anchor, so zooming after a move left the
+    // dragged offset a fixed pixel size while the anchor scaled — the popover
+    // slid relative to the canvas. Storing the drag in world space makes the
+    // moved offset track zoom exactly like the anchor.
+    const polygon = useDoc.getState().polygons['p0']; // centroid (0,0)
+    const zoom1 = { vbX: 0, vbY: 0, vbW: 100, vbH: 100, size: { w: 100, h: 100 } };
+    const { container, rerender } = render(
+      <PolygonPopover polygon={polygon} view={zoom1} onClose={() => {}} />,
+    );
+    const popover = container.querySelector('.polygon-popover') as HTMLElement;
+    const header = container.querySelector('.polygon-popover .header') as HTMLElement;
+
+    // Move the popover +30/+20 screen px at zoom 1 (→ world drag of 30/20).
+    fireEvent.pointerDown(header, { clientX: 0, clientY: 0, button: 0 });
+    fireEvent.pointerMove(header, { clientX: 30, clientY: 20 });
+    fireEvent.pointerUp(header, { clientX: 30, clientY: 20 });
+    expect(popover.style.left).toBe('44px'); // 14 + 30
+    expect(popover.style.top).toBe('34px'); // 14 + 20
+
+    // Zoom 2× centered on the anchor (world origin stays at screen 0,0). The
+    // dragged offset must double with the canvas — not stay a fixed 30/20 px.
+    const zoom2 = { vbX: 0, vbY: 0, vbW: 50, vbH: 50, size: { w: 100, h: 100 } };
+    rerender(<PolygonPopover polygon={polygon} view={zoom2} onClose={() => {}} />);
+    expect(popover.style.left).toBe('74px'); // 14 + 60 (30 world × 2)
+    expect(popover.style.top).toBe('54px'); // 14 + 40 (20 world × 2)
+  });
+
   it('re-freezes the centroid when a different polygon is selected', () => {
     // MapCanvas renders one <PolygonPopover> with no per-polygon key, so
     // selecting a different polygon reuses this instance. The frozen centroid

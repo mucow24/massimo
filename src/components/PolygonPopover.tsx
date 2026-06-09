@@ -1,6 +1,10 @@
 import { useRef, useState } from 'react';
 import { useDoc } from '../state/store';
-import { projectToScreen, type ViewportProjection } from './canvas/screenAnchor';
+import {
+  projectToScreen,
+  screenDeltaToWorld,
+  type ViewportProjection,
+} from './canvas/screenAnchor';
 import { NumericFieldRow } from './NumericFieldRow';
 import { useFieldHistory } from './useFieldHistory';
 import { polygonCentroid } from '../geometry/polygon';
@@ -52,8 +56,11 @@ export function PolygonPopover({ polygon, view, onClose }: Props) {
   const darkFill = polygon.darkFill;
   const darkStroke = polygon.darkStroke;
 
-  // Header drag — same mechanism as the text-label popover.
-  const [dragOffset, setDragOffset] = useState<{ x: number; y: number }>({ x: 0, y: 0 });
+  // Header drag — same mechanism as the text-label popover. Stored in *world*
+  // space (not screen pixels) so the moved offset tracks zoom exactly like the
+  // projected anchor; a screen-pixel offset would slide the popover relative to
+  // the canvas when zooming after a move.
+  const [dragWorld, setDragWorld] = useState<{ x: number; y: number }>({ x: 0, y: 0 });
   const dragStart = useRef<{ mouseX: number; mouseY: number; offX: number; offY: number } | null>(
     null,
   );
@@ -66,9 +73,14 @@ export function PolygonPopover({ polygon, view, onClose }: Props) {
   if (prevId !== polygon.id) {
     setPrevId(polygon.id);
     setFrozenWorld(polygonCentroid(polygon.vertices));
-    setDragOffset({ x: 0, y: 0 });
+    setDragWorld({ x: 0, y: 0 });
   }
-  const anchor = projectToScreen(frozenWorld, view);
+  // Project the frozen anchor *plus* the world-space drag through the live
+  // viewport, so both pan/zoom and the user's move stay pinned to the canvas.
+  const anchor = projectToScreen(
+    { x: frozenWorld.x + dragWorld.x, y: frozenWorld.y + dragWorld.y },
+    view,
+  );
   const onHeaderPointerDown = (e: React.PointerEvent<HTMLDivElement>) => {
     if (e.button !== 0) return;
     e.preventDefault();
@@ -76,15 +88,18 @@ export function PolygonPopover({ polygon, view, onClose }: Props) {
     dragStart.current = {
       mouseX: e.clientX,
       mouseY: e.clientY,
-      offX: dragOffset.x,
-      offY: dragOffset.y,
+      offX: dragWorld.x,
+      offY: dragWorld.y,
     };
     e.currentTarget.setPointerCapture(e.pointerId);
   };
   const onHeaderPointerMove = (e: React.PointerEvent<HTMLDivElement>) => {
     const s = dragStart.current;
     if (!s) return;
-    setDragOffset({ x: s.offX + (e.clientX - s.mouseX), y: s.offY + (e.clientY - s.mouseY) });
+    // Convert the screen-pixel pointer delta to world units before storing, so
+    // the offset scales with zoom like the anchor.
+    const dw = screenDeltaToWorld({ x: e.clientX - s.mouseX, y: e.clientY - s.mouseY }, view);
+    setDragWorld({ x: s.offX + dw.x, y: s.offY + dw.y });
   };
   const onHeaderPointerUp = (e: React.PointerEvent<HTMLDivElement>) => {
     if (!dragStart.current) return;
@@ -114,8 +129,8 @@ export function PolygonPopover({ polygon, view, onClose }: Props) {
       className="bullet-popover polygon-popover"
       style={{
         position: 'absolute',
-        left: anchor.x + 14 + dragOffset.x,
-        top: anchor.y + 14 + dragOffset.y,
+        left: anchor.x + 14,
+        top: anchor.y + 14,
         zIndex: 1100,
       }}
       // Keep pointer events from reaching the canvas (which would deselect the

@@ -1,6 +1,10 @@
 import { useEffect, useRef, useState } from 'react';
 import { useDoc } from '../state/store';
-import { projectToScreen, type ViewportProjection } from './canvas/screenAnchor';
+import {
+  projectToScreen,
+  screenDeltaToWorld,
+  type ViewportProjection,
+} from './canvas/screenAnchor';
 import { TEXT_LABEL_FONT_SIZE_MAX, TEXT_LABEL_FONT_SIZE_MIN } from '../model/transforms';
 import { useFieldHistory } from './useFieldHistory';
 import { useNumericField } from './useNumericField';
@@ -45,9 +49,12 @@ export function TextLabelPopover({ label, world, view, onClose }: Props) {
   // render, so the popover tracks canvas pan/zoom. User drags add dragOffset.
   const [frozenWorld, setFrozenWorld] = useState(world);
 
-  // Drag offset (added to the frozen anchor). Persists while the popover
-  // stays open so the popover stays where the user put it.
-  const [dragOffset, setDragOffset] = useState<{ x: number; y: number }>({ x: 0, y: 0 });
+  // Drag offset (added to the frozen anchor). Persists while the popover stays
+  // open so the popover stays where the user put it. Stored in *world* space
+  // (not screen pixels) so the moved offset tracks zoom exactly like the
+  // projected anchor; a screen-pixel offset would slide the popover relative to
+  // the canvas when zooming after a move.
+  const [dragWorld, setDragWorld] = useState<{ x: number; y: number }>({ x: 0, y: 0 });
 
   // MapCanvas renders a single <TextLabelPopover> with no per-label key, so
   // selecting a *different* label reuses this instance — useState alone would
@@ -57,9 +64,14 @@ export function TextLabelPopover({ label, world, view, onClose }: Props) {
   if (prevId !== label.id) {
     setPrevId(label.id);
     setFrozenWorld(world);
-    setDragOffset({ x: 0, y: 0 });
+    setDragWorld({ x: 0, y: 0 });
   }
-  const anchor = projectToScreen(frozenWorld, view);
+  // Project the frozen anchor *plus* the world-space drag through the live
+  // viewport, so both pan/zoom and the user's move stay pinned to the canvas.
+  const anchor = projectToScreen(
+    { x: frozenWorld.x + dragWorld.x, y: frozenWorld.y + dragWorld.y },
+    view,
+  );
   const dragStart = useRef<{
     mouseX: number;
     mouseY: number;
@@ -73,15 +85,18 @@ export function TextLabelPopover({ label, world, view, onClose }: Props) {
     dragStart.current = {
       mouseX: e.clientX,
       mouseY: e.clientY,
-      offX: dragOffset.x,
-      offY: dragOffset.y,
+      offX: dragWorld.x,
+      offY: dragWorld.y,
     };
     (e.currentTarget as HTMLDivElement).setPointerCapture(e.pointerId);
   };
   const onHeaderPointerMove = (e: React.PointerEvent<HTMLDivElement>) => {
     const s = dragStart.current;
     if (!s) return;
-    setDragOffset({ x: s.offX + (e.clientX - s.mouseX), y: s.offY + (e.clientY - s.mouseY) });
+    // Convert the screen-pixel pointer delta to world units before storing, so
+    // the offset scales with zoom like the anchor.
+    const dw = screenDeltaToWorld({ x: e.clientX - s.mouseX, y: e.clientY - s.mouseY }, view);
+    setDragWorld({ x: s.offX + dw.x, y: s.offY + dw.y });
   };
   const onHeaderPointerUp = (e: React.PointerEvent<HTMLDivElement>) => {
     if (!dragStart.current) return;
@@ -147,8 +162,8 @@ export function TextLabelPopover({ label, world, view, onClose }: Props) {
       className="text-label-popover"
       style={{
         position: 'absolute',
-        left: anchor.x + 14 + dragOffset.x,
-        top: anchor.y + 14 + dragOffset.y,
+        left: anchor.x + 14,
+        top: anchor.y + 14,
         zIndex: 1100,
       }}
       // Stop pointer events from reaching the canvas so clicks inside the
