@@ -1228,7 +1228,9 @@ export function togglePalette(doc: MapDoc, id: PaletteId): MapDoc {
 }
 
 export function clearAll(_doc: MapDoc): MapDoc {
-  return { ...DEFAULT_DOC, lineTags: {} };
+  // DEFAULT_DOC already supplies empty lineTags (and every other collection);
+  // no field needs special re-zeroing here.
+  return { ...DEFAULT_DOC };
 }
 
 // ---------- Line tags ----------

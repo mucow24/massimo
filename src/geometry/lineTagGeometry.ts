@@ -1,4 +1,4 @@
-import { add, len, perp, scale, sub, Vec2 } from './vec';
+import { perp, Vec2 } from './vec';
 import { emitOffsetSegments, OffsetPathSegment } from './router';
 import type { Line, LineId, LineTag, StationId } from '../model/types';
 
@@ -226,8 +226,3 @@ export function snapNeighborTag(args: {
 
 // Re-export Vec2 type used by callers.
 export type { Vec2 } from './vec';
-// Quiet "unused imports" warnings; these helpers may move into helpers later.
-void add;
-void len;
-void scale;
-void sub;

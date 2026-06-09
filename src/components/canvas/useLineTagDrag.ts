@@ -1,5 +1,5 @@
 import { RefObject, useRef } from 'react';
-import { beginHistoryGroup, useDoc, useSelection } from '../../state/store';
+import { beginHistoryGroup, useDoc } from '../../state/store';
 import type { LineId, StationId } from '../../model/types';
 import {
   closestParamOnOffsetPath,
@@ -25,10 +25,7 @@ const SNAP_TOL = 10; // world px
  * across all segments + snaps to neighbouring tags in the same band,
  * pointerup commits one history entry.
  */
-export function useLineTagDrag(
-  svgRef: RefObject<SVGSVGElement | null>,
-  viewportZoom: number,
-): LineTagDragApi {
+export function useLineTagDrag(svgRef: RefObject<SVGSVGElement | null>): LineTagDragApi {
   const moveLineTag = useDoc((s) => s.moveLineTag);
 
   const dragRef = useRef<{
@@ -175,11 +172,6 @@ export function useLineTagDrag(
     // clear when the gesture moved, else cancel (a pure click).
     finishDrag(ds, e, svgRef);
   };
-
-  // Suppress unused parameter warnings — viewportZoom is a hint that caller
-  // tracks the value, but the drag uses CTM to convert pointer coords.
-  void viewportZoom;
-  void useSelection;
 
   return { onStartDrag };
 }

@@ -25,6 +25,7 @@ import * as T from '../model/transforms';
 import { cyclingColors, type PaletteId } from '../model/palettes';
 import {
   sanitizeStations,
+  backfillLineNames,
   backfillPolygonDarkColors,
   backfillTextLabelColors,
 } from '../model/serialize';
@@ -477,14 +478,21 @@ export const useDoc = create<DocState>()(
           // Corrupt or missing version is treated as v0 so all migrations
           // run — preferable to silently rendering with stale data.
           const v = typeof version === 'number' ? version : 0;
+          // Blocks operate on disjoint fields, so order is immaterial; kept
+          // ascending by target version to match the doc-comment above.
           let out: typeof s = s;
           if (v < 1 && out.lines) {
-            const next: Record<LineId, Line> = {};
-            for (const id of Object.keys(out.lines)) {
-              const ln = out.lines[id];
-              next[id] = ln.name ? ln : { ...ln, name: `${ln.service} line` };
+            const { lines: cleaned, changed } = backfillLineNames(out.lines);
+            if (changed) out = { ...out, lines: cleaned };
+          }
+          if (v < 3 && 'labelBold' in out) {
+            const { labelBold, ...rest } = out;
+            // Existing `labelWeight` wins if both fields are present.
+            if (rest.labelWeight === undefined) {
+              out = { ...rest, labelWeight: labelBold ? 700 : 400 };
+            } else {
+              out = rest;
             }
-            out = { ...out, lines: next };
           }
           if (v < 4 && out.stations) {
             const { stations: cleaned, changed } = sanitizeStations(out.stations);
@@ -497,15 +505,6 @@ export const useDoc = create<DocState>()(
           if (v < 6 && out.textLabels) {
             const { textLabels: cleaned, changed } = backfillTextLabelColors(out.textLabels);
             if (changed) out = { ...out, textLabels: cleaned };
-          }
-          if (v < 3 && 'labelBold' in out) {
-            const { labelBold, ...rest } = out;
-            // Existing `labelWeight` wins if both fields are present.
-            if (rest.labelWeight === undefined) {
-              out = { ...rest, labelWeight: labelBold ? 700 : 400 };
-            } else {
-              out = rest;
-            }
           }
           return out as DocState;
         },
