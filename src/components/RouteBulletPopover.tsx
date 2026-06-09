@@ -1,5 +1,7 @@
 import { useDoc } from '../state/store';
 import { projectToScreen, type ViewportProjection } from './canvas/screenAnchor';
+import { useNumericField } from './useNumericField';
+import { ROUTE_BULLET_SIZE_MAX, ROUTE_BULLET_SIZE_MIN } from '../model/transforms';
 import type { RouteBullet, RouteBulletShape } from '../model/types';
 
 interface Props {
@@ -47,13 +49,13 @@ export function RouteBulletPopover({ bullet, world, view, onClose }: Props) {
   const onLine = (lineId: string) =>
     updateRouteBullet(bullet.id, { lineId: lineId === '' ? null : lineId });
   const onSize = (size: number) => updateRouteBullet(bullet.id, { size });
-  const onSizeWheel = (e: React.WheelEvent) => {
-    e.preventDefault();
-    e.stopPropagation();
-    const delta = e.deltaY < 0 ? 1 : -1;
-    const next = Math.max(6, Math.min(48, bullet.size + delta));
-    if (next !== bullet.size) onSize(next);
-  };
+  // Standard numeric-field-with-history idiom (matches the other popovers): one
+  // undo entry per slider drag / spinbutton edit instead of ~one per frame.
+  const size = useNumericField(
+    bullet.size,
+    onSize,
+    () => useDoc.getState().routeBullets[bullet.id]?.size ?? bullet.size,
+  );
   const onDelete = () => {
     deleteRouteBullet(bullet.id);
     onClose();
@@ -104,17 +106,30 @@ export function RouteBulletPopover({ bullet, world, view, onClose }: Props) {
             ))}
           </div>
         </div>
-        <div className="row" onWheel={onSizeWheel}>
+        <div className="row" onWheel={size.onNumberWheel}>
           <label>Size</label>
           <input
             type="range"
-            min={6}
-            max={48}
+            min={ROUTE_BULLET_SIZE_MIN}
+            max={ROUTE_BULLET_SIZE_MAX}
             step={1}
             value={bullet.size}
             onChange={(e) => onSize(Number(e.target.value))}
+            onMouseDown={size.history.onFocus}
+            onMouseUp={size.history.onBlur}
           />
-          <span style={{ width: 28, textAlign: 'right' }}>{bullet.size}</span>
+          <input
+            type="number"
+            className="size-spin"
+            min={ROUTE_BULLET_SIZE_MIN}
+            max={ROUTE_BULLET_SIZE_MAX}
+            step={1}
+            value={size.text}
+            onChange={size.onNumberChange}
+            onWheel={size.onNumberWheel}
+            onFocus={size.onNumberFocus}
+            onBlur={size.onNumberBlur}
+          />
         </div>
         <div className="footer">
           <button className="delete-btn" onClick={onDelete}>

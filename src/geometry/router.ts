@@ -1,4 +1,17 @@
-import { Vec2, add, sub, scale, dot, perp, len, norm, SQRT2_2, leftNormal } from './vec';
+import {
+  Vec2,
+  add,
+  sub,
+  scale,
+  dot,
+  perp,
+  len,
+  norm,
+  SQRT2_2,
+  leftNormal,
+  angleBetween,
+  tanHalf,
+} from './vec';
 
 const TAU = Math.PI * 2;
 
@@ -25,7 +38,7 @@ export const bendAngle = (i1: number, i2: number): number => {
   return diff * (Math.PI / 4);
 };
 
-const tanLen = (R: number, theta: number) => R * Math.tan(theta / 2);
+const tanLen = (R: number, theta: number) => R * tanHalf(theta);
 
 export interface RouteResult {
   vertices: Vec2[]; // polyline corners (including start, end)
@@ -145,8 +158,7 @@ function routeLeg(start: Vec2, sDir: Vec2, end: Vec2, eDir: Vec2, R: number): Ro
   for (let i = 1; i < best.vertices.length - 1 && !warning; i++) {
     const inDir = norm(sub(best.vertices[i], best.vertices[i - 1]));
     const outDir = norm(sub(best.vertices[i + 1], best.vertices[i]));
-    const cosA = Math.max(-1, Math.min(1, dot(inDir, outDir)));
-    const θ = Math.acos(cosA);
+    const θ = angleBetween(inDir, outDir);
     if (θ > (3 * Math.PI) / 4 - 0.01) warning = true; // ≥ 135°
   }
   if (!warning) {
@@ -185,7 +197,7 @@ function solveOneBend(start: Vec2, sDir: Vec2, end: Vec2, eDir: Vec2, R: number)
   const tS = (Δ.x * eDir.y - Δ.y * eDir.x) / det;
   const tE = (sDir.x * Δ.y - Δ.x * sDir.y) / det;
   if (tS <= 0 || tE <= 0) return null;
-  const θ = Math.acos(Math.max(-1, Math.min(1, dot(sDir, eDir))));
+  const θ = angleBetween(sDir, eDir);
   const need = tanLen(R, θ);
   if (tS < need - EPS || tE < need - EPS) return null;
   return add(start, scale(sDir, tS));

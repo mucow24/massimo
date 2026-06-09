@@ -46,6 +46,7 @@ const polygonItem: ClipPayload = {
     strokeWidth: 2,
     fillOpacity: 50,
     locked: true,
+    curveRadius: 12,
   },
 };
 
@@ -97,6 +98,7 @@ describe('writeClipboard / readClipboard roundtrip', () => {
     expect(parsed).toEqual([item]);
     expect(parsed![0].data).not.toHaveProperty('fillOpacity');
     expect(parsed![0].data).not.toHaveProperty('locked');
+    expect(parsed![0].data).not.toHaveProperty('curveRadius');
   });
 });
 

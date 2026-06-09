@@ -1,0 +1,57 @@
+import { soleSelection, useDoc, useSelection } from '../../state/store';
+import type { ViewportProjection } from './screenAnchor';
+import { RouteBulletPopover } from '../RouteBulletPopover';
+import { TextLabelPopover } from '../TextLabelPopover';
+import { PolygonPopover } from '../PolygonPopover';
+
+/**
+ * Mounts the single floating popover for the current sole selection — a route
+ * bullet, text label, or polygon. Driven by `soleSelection`, so a popover only
+ * shows when exactly one item across every type is selected (a co-selected item
+ * of another type can't leak one open). Peeled out of MapCanvas so the canvas
+ * no longer carries the three near-identical gating blocks + their popover
+ * imports + the add/select wiring they implied.
+ */
+export function ItemPopovers({ view }: { view: ViewportProjection }) {
+  const selection = useSelection();
+  const routeBullets = useDoc((s) => s.routeBullets);
+  const textLabels = useDoc((s) => s.textLabels);
+  const polygons = useDoc((s) => s.polygons);
+
+  // The popover anchors against the live viewport; a zero-size viewport (first
+  // paint) has no screen mapping yet, so wait for a real box.
+  if (!(view.vbW > 0 && view.vbH > 0)) return null;
+  const sole = soleSelection(selection);
+  if (!sole) return null;
+
+  if (sole.type === 'bullet') {
+    const b = routeBullets[sole.id];
+    if (!b) return null;
+    return (
+      <RouteBulletPopover
+        bullet={b}
+        world={{ x: b.x, y: b.y }}
+        view={view}
+        onClose={() => selection.selectRouteBullet(null)}
+      />
+    );
+  }
+  if (sole.type === 'label') {
+    const g = textLabels[sole.id];
+    if (!g) return null;
+    return (
+      <TextLabelPopover
+        label={g}
+        world={{ x: g.x, y: g.y }}
+        view={view}
+        onClose={() => selection.selectLabel(null)}
+      />
+    );
+  }
+  if (sole.type === 'polygon') {
+    const p = polygons[sole.id];
+    if (!p) return null;
+    return <PolygonPopover polygon={p} view={view} onClose={() => selection.selectPolygon(null)} />;
+  }
+  return null;
+}
