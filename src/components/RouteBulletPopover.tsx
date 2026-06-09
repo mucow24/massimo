@@ -121,8 +121,9 @@ export function RouteBulletPopover({ bullet, world, view, onClose }: Props) {
           <input
             type="number"
             className="size-spin"
+            // No `max` — the spinbutton (typing and step buttons) accepts sizes
+            // beyond the slider's range; the transform clamps at MIN only.
             min={ROUTE_BULLET_SIZE_MIN}
-            max={ROUTE_BULLET_SIZE_MAX}
             step={1}
             value={size.text}
             onChange={size.onNumberChange}
