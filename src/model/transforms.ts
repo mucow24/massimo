@@ -136,6 +136,53 @@ export const TEXT_LABEL_DEFAULTS: Omit<TextLabel, 'id' | 'x' | 'y'> = {
 
 // ---------- Stations ----------
 
+// --- single-record immutable-update helpers ---
+// Collapse the recurring "fetch by id, bail if absent, spread the one changed
+// field back through doc -> collection -> record" dance. The mapper returns the
+// SAME reference to signal a no-op, so a setter's early-out (return `doc`
+// unchanged — which history grouping relies on for change detection) is just
+// `return cur`/`return st`. Multi-record edits (redistribute, cascade deletes)
+// keep their own bespoke loops.
+
+type RecordCollectionKey =
+  | 'lines'
+  | 'routeBullets'
+  | 'textLabels'
+  | 'polygons'
+  | 'lineTags'
+  | 'transfers';
+
+function updateRecord<K extends RecordCollectionKey>(
+  doc: MapDoc,
+  key: K,
+  id: string,
+  fn: (cur: MapDoc[K][string]) => MapDoc[K][string],
+): MapDoc {
+  // The cast pins the value type across the generic key index — TS can't prove
+  // `doc[key][id]` is `MapDoc[K][string]` on its own.
+  const coll = doc[key] as Record<string, MapDoc[K][string]>;
+  const cur = coll[id];
+  if (!cur) return doc;
+  const next = fn(cur);
+  if (next === cur) return doc;
+  return { ...doc, [key]: { ...coll, [id]: next } } as MapDoc;
+}
+
+function updateStation(doc: MapDoc, id: StationId, fn: (st: Station) => Station): MapDoc {
+  const cur = doc.stations[id];
+  if (!cur) return doc;
+  const next = fn(cur);
+  if (next === cur) return doc;
+  return { ...doc, stations: { ...doc.stations, [id]: next } };
+}
+
+function updateLabel(doc: MapDoc, id: StationId, fn: (label: LabelCell) => LabelCell): MapDoc {
+  return updateStation(doc, id, (st) => {
+    const next = fn(st.label);
+    return next === st.label ? st : { ...st, label: next };
+  });
+}
+
 export function addStation(doc: MapDoc, x: number, y: number, id: StationId, name: string): MapDoc {
   const station: Station = {
     id,
@@ -158,15 +205,11 @@ export function addStation(doc: MapDoc, x: number, y: number, id: StationId, nam
 }
 
 export function renameStation(doc: MapDoc, id: StationId, name: string): MapDoc {
-  const cur = doc.stations[id];
-  if (!cur) return doc;
-  return { ...doc, stations: { ...doc.stations, [id]: { ...cur, name } } };
+  return updateStation(doc, id, (st) => ({ ...st, name }));
 }
 
 export function moveStation(doc: MapDoc, id: StationId, x: number, y: number): MapDoc {
-  const cur = doc.stations[id];
-  if (!cur) return doc;
-  return { ...doc, stations: { ...doc.stations, [id]: { ...cur, x, y } } };
+  return updateStation(doc, id, (st) => ({ ...st, x, y }));
 }
 
 /**
@@ -192,26 +235,25 @@ export function setDotShape(
   lineId: LineId,
   shape: DotShape,
 ): MapDoc {
-  const cur = doc.stations[stationId];
-  if (!cur) return doc;
   // Picking the line's effective default for a stop clears the per-stop
   // override so the stop tracks the default going forward (and so persisted
   // state stays clean — same pattern as `segmentStyles` + 'solid').
   const lineDefault = doc.lines[lineId]?.defaultDotShape ?? 'filled-black';
   const targetShape: DotShape | undefined = shape === lineDefault ? undefined : shape;
-  let changed = false;
-  const stops = cur.stops.map((s) => {
-    if (s.lineId !== lineId) return s;
-    if (s.dotShape === targetShape) return s;
-    changed = true;
-    if (targetShape === undefined) {
-      const { dotShape: _gone, ...rest } = s;
-      return rest;
-    }
-    return { ...s, dotShape: targetShape };
+  return updateStation(doc, stationId, (cur) => {
+    let changed = false;
+    const stops = cur.stops.map((s) => {
+      if (s.lineId !== lineId) return s;
+      if (s.dotShape === targetShape) return s;
+      changed = true;
+      if (targetShape === undefined) {
+        const { dotShape: _gone, ...rest } = s;
+        return rest;
+      }
+      return { ...s, dotShape: targetShape };
+    });
+    return changed ? { ...cur, stops } : cur;
   });
-  if (!changed) return doc;
-  return { ...doc, stations: { ...doc.stations, [stationId]: { ...cur, stops } } };
 }
 
 export function setLineDefaultDotShape(doc: MapDoc, id: LineId, shape: DotShape): MapDoc {
@@ -246,13 +288,9 @@ export function setLineDefaultDotShape(doc: MapDoc, id: LineId, shape: DotShape)
 }
 
 export function setStationWaypoint(doc: MapDoc, stationId: StationId, isWaypoint: boolean): MapDoc {
-  const cur = doc.stations[stationId];
-  if (!cur) return doc;
-  if (!!cur.isWaypoint === isWaypoint) return doc;
-  return {
-    ...doc,
-    stations: { ...doc.stations, [stationId]: { ...cur, isWaypoint } },
-  };
+  return updateStation(doc, stationId, (st) =>
+    !!st.isWaypoint === isWaypoint ? st : { ...st, isWaypoint },
+  );
 }
 
 // For every line that contains both startId and endId, evenly redistribute
@@ -644,23 +682,23 @@ export function moveStop(
   dRow: number,
   dCol: number,
 ): MapDoc {
-  const st = doc.stations[stationId];
-  if (!st) return doc;
-  const i = st.stops.findIndex((c) => c.lineId === lineId);
-  if (i < 0) return doc;
-  const cell = st.stops[i];
-  const newRow = cell.row + dRow;
-  const newCol = cell.col + dCol;
-  const target = { row: newRow, col: newCol };
-  // Stops can swap with another stop, but cannot enter the label cell.
-  if (sameCell(st.label, target)) return doc;
-  const j = st.stops.findIndex((c) => sameCell(c, target));
-  const newStops = st.stops.slice();
-  if (j >= 0 && j !== i) {
-    newStops[j] = { ...newStops[j], row: cell.row, col: cell.col };
-  }
-  newStops[i] = { ...cell, row: newRow, col: newCol };
-  return { ...doc, stations: { ...doc.stations, [stationId]: { ...st, stops: newStops } } };
+  return updateStation(doc, stationId, (st) => {
+    const i = st.stops.findIndex((c) => c.lineId === lineId);
+    if (i < 0) return st;
+    const cell = st.stops[i];
+    const newRow = cell.row + dRow;
+    const newCol = cell.col + dCol;
+    const target = { row: newRow, col: newCol };
+    // Stops can swap with another stop, but cannot enter the label cell.
+    if (sameCell(st.label, target)) return st;
+    const j = st.stops.findIndex((c) => sameCell(c, target));
+    const newStops = st.stops.slice();
+    if (j >= 0 && j !== i) {
+      newStops[j] = { ...newStops[j], row: cell.row, col: cell.col };
+    }
+    newStops[i] = { ...cell, row: newRow, col: newCol };
+    return { ...st, stops: newStops };
+  });
 }
 
 const AXIS_CYCLE: StopOrientation[] = [
@@ -671,177 +709,114 @@ const AXIS_CYCLE: StopOrientation[] = [
 ];
 
 export function rotateStop(doc: MapDoc, stationId: StationId, lineId: LineId): MapDoc {
-  const st = doc.stations[stationId];
-  if (!st) return doc;
-  const i = st.stops.findIndex((c) => c.lineId === lineId);
-  if (i < 0) return doc;
-  const cur = st.stops[i];
-  const idx = AXIS_CYCLE.indexOf(cur.orientation);
-  const next = AXIS_CYCLE[(idx + 1) % 4];
-  if (next === cur.orientation) return doc;
-  const newStops = st.stops.slice();
-  newStops[i] = { ...cur, orientation: next };
-  return { ...doc, stations: { ...doc.stations, [stationId]: { ...st, stops: newStops } } };
+  return updateStation(doc, stationId, (st) => {
+    const i = st.stops.findIndex((c) => c.lineId === lineId);
+    if (i < 0) return st;
+    const cur = st.stops[i];
+    const idx = AXIS_CYCLE.indexOf(cur.orientation);
+    const next = AXIS_CYCLE[(idx + 1) % 4];
+    if (next === cur.orientation) return st;
+    const newStops = st.stops.slice();
+    newStops[i] = { ...cur, orientation: next };
+    return { ...st, stops: newStops };
+  });
 }
 
 // ---------- Label ----------
 
 export function moveLabel(doc: MapDoc, stationId: StationId, dRow: number, dCol: number): MapDoc {
-  const st = doc.stations[stationId];
-  if (!st) return doc;
   if (Math.abs(dRow) < CELL_EPS && Math.abs(dCol) < CELL_EPS) return doc;
-  // Step in the requested direction; if a stop occupies the destination, keep
-  // stepping until we land on an empty cell. So [Label] O O O + → ends up
-  // O O O [Label]. Bounded by stop count so a degenerate step (all zeros)
-  // can't spin — already guarded above, but belt + suspenders.
-  let newRow = st.label.row + dRow;
-  let newCol = st.label.col + dCol;
-  for (let safety = 0; safety < st.stops.length + 1; safety++) {
-    if (!st.stops.some((c) => sameCell(c, { row: newRow, col: newCol }))) break;
-    newRow += dRow;
-    newCol += dCol;
-  }
-  return {
-    ...doc,
-    stations: {
-      ...doc.stations,
-      [stationId]: { ...st, label: { ...st.label, row: newRow, col: newCol } },
-    },
-  };
+  return updateStation(doc, stationId, (st) => {
+    // Step in the requested direction; if a stop occupies the destination, keep
+    // stepping until we land on an empty cell. So [Label] O O O + → ends up
+    // O O O [Label]. Bounded by stop count so a degenerate step (all zeros)
+    // can't spin — already guarded above, but belt + suspenders.
+    let newRow = st.label.row + dRow;
+    let newCol = st.label.col + dCol;
+    for (let safety = 0; safety < st.stops.length + 1; safety++) {
+      if (!st.stops.some((c) => sameCell(c, { row: newRow, col: newCol }))) break;
+      newRow += dRow;
+      newCol += dCol;
+    }
+    return { ...st, label: { ...st.label, row: newRow, col: newCol } };
+  });
 }
 
 export function rotateLabel(doc: MapDoc, stationId: StationId): MapDoc {
-  const st = doc.stations[stationId];
-  if (!st) return doc;
-  const next = ((st.label.rotation + 1) % 8) as Rotation;
-  return {
-    ...doc,
-    stations: {
-      ...doc.stations,
-      [stationId]: { ...st, label: { ...st.label, rotation: next } },
-    },
-  };
+  return updateLabel(doc, stationId, (label) => ({
+    ...label,
+    rotation: ((label.rotation + 1) % 8) as Rotation,
+  }));
 }
 
 export function flipLabel(doc: MapDoc, stationId: StationId): MapDoc {
-  const st = doc.stations[stationId];
-  if (!st) return doc;
-  const next = ((st.label.rotation + 4) % 8) as Rotation;
-  return {
-    ...doc,
-    stations: {
-      ...doc.stations,
-      [stationId]: { ...st, label: { ...st.label, rotation: next } },
-    },
-  };
+  return updateLabel(doc, stationId, (label) => ({
+    ...label,
+    rotation: ((label.rotation + 4) % 8) as Rotation,
+  }));
 }
 
 export function mirrorLabel(doc: MapDoc, stationId: StationId): MapDoc {
-  const st = doc.stations[stationId];
-  if (!st) return doc;
-  if (st.stops.length === 0) {
-    // Just flip the rotation; nothing to mirror around.
+  return updateStation(doc, stationId, (st) => {
+    if (st.stops.length === 0) {
+      // Just flip the rotation; nothing to mirror around.
+      const next = ((st.label.rotation + 4) % 8) as Rotation;
+      return { ...st, label: { ...st.label, rotation: next } };
+    }
+    // Direction from the label to the stops' centroid (quantized to a single
+    // dominant cardinal axis). The mirrored label sits one step past the
+    // FURTHEST stop along that direction (and any stops beyond), so a label on
+    // one side ends up on the opposite side of the entire footprint.
+    const cx = st.stops.reduce((a, c) => a + c.col, 0) / st.stops.length;
+    const cy = st.stops.reduce((a, c) => a + c.row, 0) / st.stops.length;
+    const drRaw = cy - st.label.row;
+    const dcRaw = cx - st.label.col;
+    let dRow = 0;
+    let dCol = 0;
+    if (Math.abs(drRaw) > Math.abs(dcRaw)) dRow = Math.sign(drRaw) || 1;
+    else dCol = Math.sign(dcRaw) || 1;
+    // Furthest stop along (dRow, dCol).
+    const proj = (r: number, c: number) => r * dRow + c * dCol;
+    const maxProj = st.stops.reduce((m, cell) => Math.max(m, proj(cell.row, cell.col)), -Infinity);
+    // Step past the max-projected stop (and any other stops at the same
+    // projection level beyond) until we land on an empty cell. Safety bound.
+    let newRow = st.label.row;
+    let newCol = st.label.col;
+    for (let k = 0; k < 1000; k++) {
+      newRow += dRow;
+      newCol += dCol;
+      const beyond = proj(newRow, newCol) > maxProj + CELL_EPS;
+      const empty = !st.stops.some((c) => sameCell(c, { row: newRow, col: newCol }));
+      if (beyond && empty) break;
+    }
     const next = ((st.label.rotation + 4) % 8) as Rotation;
-    return {
-      ...doc,
-      stations: {
-        ...doc.stations,
-        [stationId]: { ...st, label: { ...st.label, rotation: next } },
-      },
-    };
-  }
-  // Direction from the label to the stops' centroid (quantized to a single
-  // dominant cardinal axis). The mirrored label sits one step past the
-  // FURTHEST stop along that direction (and any stops beyond), so a label on
-  // one side ends up on the opposite side of the entire footprint.
-  const cx = st.stops.reduce((a, c) => a + c.col, 0) / st.stops.length;
-  const cy = st.stops.reduce((a, c) => a + c.row, 0) / st.stops.length;
-  const drRaw = cy - st.label.row;
-  const dcRaw = cx - st.label.col;
-  let dRow = 0;
-  let dCol = 0;
-  if (Math.abs(drRaw) > Math.abs(dcRaw)) dRow = Math.sign(drRaw) || 1;
-  else dCol = Math.sign(dcRaw) || 1;
-  // Furthest stop along (dRow, dCol).
-  const proj = (r: number, c: number) => r * dRow + c * dCol;
-  const maxProj = st.stops.reduce((m, cell) => Math.max(m, proj(cell.row, cell.col)), -Infinity);
-  // Step past the max-projected stop (and any other stops at the same
-  // projection level beyond) until we land on an empty cell. Safety bound.
-  let newRow = st.label.row;
-  let newCol = st.label.col;
-  for (let k = 0; k < 1000; k++) {
-    newRow += dRow;
-    newCol += dCol;
-    const beyond = proj(newRow, newCol) > maxProj + CELL_EPS;
-    const empty = !st.stops.some((c) => sameCell(c, { row: newRow, col: newCol }));
-    if (beyond && empty) break;
-  }
-  const next = ((st.label.rotation + 4) % 8) as Rotation;
-  return {
-    ...doc,
-    stations: {
-      ...doc.stations,
-      [stationId]: {
-        ...st,
-        label: { ...st.label, row: newRow, col: newCol, rotation: next },
-      },
-    },
-  };
+    return { ...st, label: { ...st.label, row: newRow, col: newCol, rotation: next } };
+  });
 }
 
 export function setLabelOffset(doc: MapDoc, stationId: StationId, offset: number): MapDoc {
-  const st = doc.stations[stationId];
-  if (!st) return doc;
-  return {
-    ...doc,
-    stations: {
-      ...doc.stations,
-      [stationId]: { ...st, label: { ...st.label, offset } },
-    },
-  };
+  return updateLabel(doc, stationId, (label) => ({ ...label, offset }));
 }
 
 export function setLabelOffsetPerp(doc: MapDoc, stationId: StationId, offsetPerp: number): MapDoc {
-  const st = doc.stations[stationId];
-  if (!st) return doc;
-  if (resolveOffsetPerp(st.label) === offsetPerp) return doc;
-  return {
-    ...doc,
-    stations: {
-      ...doc.stations,
-      [stationId]: { ...st, label: { ...st.label, offsetPerp } },
-    },
-  };
+  return updateLabel(doc, stationId, (label) =>
+    resolveOffsetPerp(label) === offsetPerp ? label : { ...label, offsetPerp },
+  );
 }
 
 export const ALIGN_CYCLE: LabelAlign[] = ['auto', 'start', 'middle', 'end'];
 
 export function cycleLabelAlign(doc: MapDoc, stationId: StationId): MapDoc {
-  const st = doc.stations[stationId];
-  if (!st) return doc;
-  const cur = st.label.align;
-  const i = ALIGN_CYCLE.indexOf(cur);
-  const next = ALIGN_CYCLE[(i + 1) % ALIGN_CYCLE.length];
-  return {
-    ...doc,
-    stations: {
-      ...doc.stations,
-      [stationId]: { ...st, label: { ...st.label, align: next } },
-    },
-  };
+  return updateLabel(doc, stationId, (label) => {
+    const i = ALIGN_CYCLE.indexOf(label.align);
+    return { ...label, align: ALIGN_CYCLE[(i + 1) % ALIGN_CYCLE.length] };
+  });
 }
 
 export function setLabelAlign(doc: MapDoc, stationId: StationId, align: LabelAlign): MapDoc {
-  const st = doc.stations[stationId];
-  if (!st) return doc;
-  if (st.label.align === align) return doc;
-  return {
-    ...doc,
-    stations: {
-      ...doc.stations,
-      [stationId]: { ...st, label: { ...st.label, align } },
-    },
-  };
+  return updateLabel(doc, stationId, (label) =>
+    label.align === align ? label : { ...label, align },
+  );
 }
 
 // 'auto-down' leads the cycle so the (new) default sits at index 0 —
@@ -852,31 +827,16 @@ export function setLabelAlign(doc: MapDoc, stationId: StationId, align: LabelAli
 export const VALIGN_CYCLE: LabelValign[] = ['auto-down', 'top', 'middle', 'bottom', 'auto-up'];
 
 export function cycleLabelValign(doc: MapDoc, stationId: StationId): MapDoc {
-  const st = doc.stations[stationId];
-  if (!st) return doc;
-  const cur = st.label.valign;
-  const i = VALIGN_CYCLE.indexOf(cur);
-  const next = VALIGN_CYCLE[(i + 1) % VALIGN_CYCLE.length];
-  return {
-    ...doc,
-    stations: {
-      ...doc.stations,
-      [stationId]: { ...st, label: { ...st.label, valign: next } },
-    },
-  };
+  return updateLabel(doc, stationId, (label) => {
+    const i = VALIGN_CYCLE.indexOf(label.valign);
+    return { ...label, valign: VALIGN_CYCLE[(i + 1) % VALIGN_CYCLE.length] };
+  });
 }
 
 export function setLabelValign(doc: MapDoc, stationId: StationId, valign: LabelValign): MapDoc {
-  const st = doc.stations[stationId];
-  if (!st) return doc;
-  if (st.label.valign === valign) return doc;
-  return {
-    ...doc,
-    stations: {
-      ...doc.stations,
-      [stationId]: { ...st, label: { ...st.label, valign } },
-    },
-  };
+  return updateLabel(doc, stationId, (label) =>
+    label.valign === valign ? label : { ...label, valign },
+  );
 }
 
 // ---------- Lines ----------
@@ -1304,37 +1264,35 @@ export function moveLineTag(
   anchorEnd: 'from' | 'to',
   distance: number,
 ): MapDoc {
-  const cur = doc.lineTags[id];
-  if (!cur) return doc;
-  return {
-    ...doc,
-    lineTags: {
-      ...doc.lineTags,
-      [id]: { ...cur, fromStationId, toStationId, anchorEnd, distance },
-    },
-  };
+  return updateRecord(doc, 'lineTags', id, (cur) => ({
+    ...cur,
+    fromStationId,
+    toStationId,
+    anchorEnd,
+    distance,
+  }));
 }
 
 // Six-state right-click cycle: text up → right → down → left →
 // chevron-forward → chevron-reverse → back to text up. Chevrons only use
 // orientations 0 (line-forward) and 2 (line-reverse).
 export function cycleLineTagOrientation(doc: MapDoc, id: string): MapDoc {
-  const cur = doc.lineTags[id];
-  if (!cur) return doc;
-  const kind = cur.kind ?? 'text';
-  let next: Pick<LineTag, 'kind' | 'orientation'>;
-  if (kind === 'text') {
-    next =
-      cur.orientation < 3
-        ? { kind: 'text', orientation: ((cur.orientation + 1) % 4) as 0 | 1 | 2 | 3 }
-        : { kind: 'chevron', orientation: 0 };
-  } else {
-    next =
-      cur.orientation === 0
-        ? { kind: 'chevron', orientation: 2 }
-        : { kind: 'text', orientation: 0 };
-  }
-  return { ...doc, lineTags: { ...doc.lineTags, [id]: { ...cur, ...next } } };
+  return updateRecord(doc, 'lineTags', id, (cur) => {
+    const kind = cur.kind ?? 'text';
+    let next: Pick<LineTag, 'kind' | 'orientation'>;
+    if (kind === 'text') {
+      next =
+        cur.orientation < 3
+          ? { kind: 'text', orientation: ((cur.orientation + 1) % 4) as 0 | 1 | 2 | 3 }
+          : { kind: 'chevron', orientation: 0 };
+    } else {
+      next =
+        cur.orientation === 0
+          ? { kind: 'chevron', orientation: 2 }
+          : { kind: 'text', orientation: 0 };
+    }
+    return { ...cur, ...next };
+  });
 }
 
 export function deleteLineTag(doc: MapDoc, id: string): MapDoc {
@@ -1375,19 +1333,14 @@ export function addRouteBulletWith(
 }
 
 export function moveRouteBullet(doc: MapDoc, id: string, x: number, y: number): MapDoc {
-  const cur = doc.routeBullets[id];
-  if (!cur) return doc;
-  return { ...doc, routeBullets: { ...doc.routeBullets, [id]: { ...cur, x, y } } };
+  return updateRecord(doc, 'routeBullets', id, (cur) => ({ ...cur, x, y }));
 }
 
 export function rotateRouteBullet(doc: MapDoc, id: string): MapDoc {
-  const cur = doc.routeBullets[id];
-  if (!cur) return doc;
-  const next = ((cur.rotation + 1) % 8) as Rotation;
-  return {
-    ...doc,
-    routeBullets: { ...doc.routeBullets, [id]: { ...cur, rotation: next } },
-  };
+  return updateRecord(doc, 'routeBullets', id, (cur) => ({
+    ...cur,
+    rotation: ((cur.rotation + 1) % 8) as Rotation,
+  }));
 }
 
 export function updateRouteBullet(
@@ -1395,9 +1348,7 @@ export function updateRouteBullet(
   id: string,
   patch: Partial<Pick<RouteBullet, 'lineId' | 'shape' | 'size'>>,
 ): MapDoc {
-  const cur = doc.routeBullets[id];
-  if (!cur) return doc;
-  return { ...doc, routeBullets: { ...doc.routeBullets, [id]: { ...cur, ...patch } } };
+  return updateRecord(doc, 'routeBullets', id, (cur) => ({ ...cur, ...patch }));
 }
 
 export function deleteRouteBullet(doc: MapDoc, id: string): MapDoc {
@@ -1420,19 +1371,14 @@ export function addTextLabelWith(doc: MapDoc, id: string, fields: Omit<TextLabel
 }
 
 export function moveTextLabel(doc: MapDoc, id: string, x: number, y: number): MapDoc {
-  const cur = doc.textLabels[id];
-  if (!cur) return doc;
-  return { ...doc, textLabels: { ...doc.textLabels, [id]: { ...cur, x, y } } };
+  return updateRecord(doc, 'textLabels', id, (cur) => ({ ...cur, x, y }));
 }
 
 export function rotateTextLabel(doc: MapDoc, id: string): MapDoc {
-  const cur = doc.textLabels[id];
-  if (!cur) return doc;
-  const next = ((cur.rotation + 1) % 8) as Rotation;
-  return {
-    ...doc,
-    textLabels: { ...doc.textLabels, [id]: { ...cur, rotation: next } },
-  };
+  return updateRecord(doc, 'textLabels', id, (cur) => ({
+    ...cur,
+    rotation: ((cur.rotation + 1) % 8) as Rotation,
+  }));
 }
 
 export function updateTextLabel(
@@ -1440,48 +1386,48 @@ export function updateTextLabel(
   id: string,
   patch: Partial<Omit<TextLabel, 'id'>>,
 ): MapDoc {
-  const cur = doc.textLabels[id];
-  if (!cur) return doc;
-  // Clamp font size to the allowed range so callers (slider, spinbutton,
-  // paste) can't push us out of band. Mirrors `setLabelFontSize`.
-  let nextPatch = patch;
-  if (typeof patch.fontSize === 'number') {
-    const clamped = Math.max(
-      TEXT_LABEL_FONT_SIZE_MIN,
-      Math.min(TEXT_LABEL_FONT_SIZE_MAX, Math.round(patch.fontSize)),
-    );
-    nextPatch = { ...patch, fontSize: clamped };
-  }
-  let next = { ...cur, ...nextPatch };
-  // Re-anchor whenever a resize-affecting property changes — text content,
-  // font size, weight, or italic. The label's (x, y) is the bbox CENTER, so
-  // without this the box would grow symmetrically out of the center and drift
-  // on every edit. Skipped when the caller explicitly sets x or y (e.g. a
-  // drag): then the move is intentional.
-  const resizes =
-    nextPatch.text !== undefined ||
-    nextPatch.fontSize !== undefined ||
-    nextPatch.weight !== undefined ||
-    nextPatch.italic !== undefined;
-  const movedExplicitly = nextPatch.x !== undefined || nextPatch.y !== undefined;
-  if (resizes && !movedExplicitly) {
-    const before = measureTextLabel(cur);
-    const after = measureTextLabel(next);
-    const dW = after.width - before.width;
-    // Pin the edge that horizontal alignment keys off, so a width change grows
-    // the box away from that edge rather than recentering it. Otherwise editing
-    // one line of a multiline label drags its siblings sideways (each line is
-    // placed relative to that same edge). Left → left edge (+dW/2); right →
-    // right edge (-dW/2); center → the center stays put (no x shift).
-    // Vertically the block is always top-anchored, so pin the top edge.
-    const dx = next.align === 'center' ? 0 : next.align === 'right' ? -dW / 2 : dW / 2;
-    next = {
-      ...next,
-      x: cur.x + dx,
-      y: cur.y + (after.height - before.height) / 2,
-    };
-  }
-  return { ...doc, textLabels: { ...doc.textLabels, [id]: next } };
+  return updateRecord(doc, 'textLabels', id, (cur) => {
+    // Clamp font size to the allowed range so callers (slider, spinbutton,
+    // paste) can't push us out of band. Mirrors `setLabelFontSize`.
+    let nextPatch = patch;
+    if (typeof patch.fontSize === 'number') {
+      const clamped = Math.max(
+        TEXT_LABEL_FONT_SIZE_MIN,
+        Math.min(TEXT_LABEL_FONT_SIZE_MAX, Math.round(patch.fontSize)),
+      );
+      nextPatch = { ...patch, fontSize: clamped };
+    }
+    let next = { ...cur, ...nextPatch };
+    // Re-anchor whenever a resize-affecting property changes — text content,
+    // font size, weight, or italic. The label's (x, y) is the bbox CENTER, so
+    // without this the box would grow symmetrically out of the center and drift
+    // on every edit. Skipped when the caller explicitly sets x or y (e.g. a
+    // drag): then the move is intentional.
+    const resizes =
+      nextPatch.text !== undefined ||
+      nextPatch.fontSize !== undefined ||
+      nextPatch.weight !== undefined ||
+      nextPatch.italic !== undefined;
+    const movedExplicitly = nextPatch.x !== undefined || nextPatch.y !== undefined;
+    if (resizes && !movedExplicitly) {
+      const before = measureTextLabel(cur);
+      const after = measureTextLabel(next);
+      const dW = after.width - before.width;
+      // Pin the edge that horizontal alignment keys off, so a width change grows
+      // the box away from that edge rather than recentering it. Otherwise editing
+      // one line of a multiline label drags its siblings sideways (each line is
+      // placed relative to that same edge). Left → left edge (+dW/2); right →
+      // right edge (-dW/2); center → the center stays put (no x shift).
+      // Vertically the block is always top-anchored, so pin the top edge.
+      const dx = next.align === 'center' ? 0 : next.align === 'right' ? -dW / 2 : dW / 2;
+      next = {
+        ...next,
+        x: cur.x + dx,
+        y: cur.y + (after.height - before.height) / 2,
+      };
+    }
+    return next;
+  });
 }
 
 export function deleteTextLabel(doc: MapDoc, id: string): MapDoc {
@@ -1573,58 +1519,56 @@ export function addPolygonWith(doc: MapDoc, id: string, fields: Omit<Polygon, 'i
 // Absolute vertex setter — used by whole-polygon drag and group-tow, which
 // recompute the full vertex list from the gesture's start snapshot each frame.
 export function setPolygonVertices(doc: MapDoc, id: string, vertices: Vec2[]): MapDoc {
-  const cur = doc.polygons[id];
-  if (!cur) return doc;
-  return { ...doc, polygons: { ...doc.polygons, [id]: { ...cur, vertices } } };
+  return updateRecord(doc, 'polygons', id, (cur) => ({ ...cur, vertices }));
 }
 
 export function moveVertex(doc: MapDoc, id: string, index: number, x: number, y: number): MapDoc {
-  const cur = doc.polygons[id];
-  if (!cur) return doc;
-  if (index < 0 || index >= cur.vertices.length) return doc;
-  const vertices = cur.vertices.slice();
-  vertices[index] = { x, y };
-  return { ...doc, polygons: { ...doc.polygons, [id]: { ...cur, vertices } } };
+  return updateRecord(doc, 'polygons', id, (cur) => {
+    if (index < 0 || index >= cur.vertices.length) return cur;
+    const vertices = cur.vertices.slice();
+    vertices[index] = { x, y };
+    return { ...cur, vertices };
+  });
 }
 
 // Split the edge `edgeIndex -> (edgeIndex + 1) % n` by inserting its midpoint
 // right after `edgeIndex` (wraps the last edge back to the first vertex).
 export function insertVertex(doc: MapDoc, id: string, edgeIndex: number): MapDoc {
-  const cur = doc.polygons[id];
-  if (!cur) return doc;
-  const n = cur.vertices.length;
-  if (edgeIndex < 0 || edgeIndex >= n) return doc;
-  const mid = edgeMidpoint(cur.vertices, edgeIndex);
-  const vertices = cur.vertices.slice();
-  vertices.splice(edgeIndex + 1, 0, mid);
-  return { ...doc, polygons: { ...doc.polygons, [id]: { ...cur, vertices } } };
+  return updateRecord(doc, 'polygons', id, (cur) => {
+    const n = cur.vertices.length;
+    if (edgeIndex < 0 || edgeIndex >= n) return cur;
+    const mid = edgeMidpoint(cur.vertices, edgeIndex);
+    const vertices = cur.vertices.slice();
+    vertices.splice(edgeIndex + 1, 0, mid);
+    return { ...cur, vertices };
+  });
 }
 
 // Remove a vertex; a no-op at the 3-vertex floor so a polygon never degenerates.
 export function deleteVertex(doc: MapDoc, id: string, index: number): MapDoc {
-  const cur = doc.polygons[id];
-  if (!cur) return doc;
-  if (cur.vertices.length <= POLYGON_MIN_VERTICES) return doc;
-  if (index < 0 || index >= cur.vertices.length) return doc;
-  const vertices = cur.vertices.slice();
-  vertices.splice(index, 1);
-  return { ...doc, polygons: { ...doc.polygons, [id]: { ...cur, vertices } } };
+  return updateRecord(doc, 'polygons', id, (cur) => {
+    if (cur.vertices.length <= POLYGON_MIN_VERTICES) return cur;
+    if (index < 0 || index >= cur.vertices.length) return cur;
+    const vertices = cur.vertices.slice();
+    vertices.splice(index, 1);
+    return { ...cur, vertices };
+  });
 }
 
 export function updatePolygon(doc: MapDoc, id: string, patch: PolygonStylePatch): MapDoc {
-  const cur = doc.polygons[id];
-  if (!cur) return doc;
-  let nextPatch = patch;
-  if (typeof nextPatch.strokeWidth === 'number') {
-    nextPatch = { ...nextPatch, strokeWidth: clampPolygonStrokeWidth(nextPatch.strokeWidth) };
-  }
-  if (typeof nextPatch.fillOpacity === 'number') {
-    nextPatch = { ...nextPatch, fillOpacity: clampPolygonFillOpacity(nextPatch.fillOpacity) };
-  }
-  if (typeof nextPatch.curveRadius === 'number') {
-    nextPatch = { ...nextPatch, curveRadius: clampPolygonCurveRadius(nextPatch.curveRadius) };
-  }
-  return { ...doc, polygons: { ...doc.polygons, [id]: { ...cur, ...nextPatch } } };
+  return updateRecord(doc, 'polygons', id, (cur) => {
+    let nextPatch = patch;
+    if (typeof nextPatch.strokeWidth === 'number') {
+      nextPatch = { ...nextPatch, strokeWidth: clampPolygonStrokeWidth(nextPatch.strokeWidth) };
+    }
+    if (typeof nextPatch.fillOpacity === 'number') {
+      nextPatch = { ...nextPatch, fillOpacity: clampPolygonFillOpacity(nextPatch.fillOpacity) };
+    }
+    if (typeof nextPatch.curveRadius === 'number') {
+      nextPatch = { ...nextPatch, curveRadius: clampPolygonCurveRadius(nextPatch.curveRadius) };
+    }
+    return { ...cur, ...nextPatch };
+  });
 }
 
 // The effective fill/stroke for the active theme — the dark colors in dark
@@ -1641,14 +1585,14 @@ export function resolvePolygonColors(
 
 // Rotate every vertex 45° clockwise about the polygon's centroid.
 export function rotatePolygon(doc: MapDoc, id: string): MapDoc {
-  const cur = doc.polygons[id];
-  if (!cur) return doc;
-  const c = polygonCentroid(cur.vertices);
-  const ang = Math.PI / 4;
-  const cs = Math.cos(ang);
-  const sn = Math.sin(ang);
-  const vertices = cur.vertices.map((vert) => orbitPoint(vert.x, vert.y, c.x, c.y, cs, sn));
-  return { ...doc, polygons: { ...doc.polygons, [id]: { ...cur, vertices } } };
+  return updateRecord(doc, 'polygons', id, (cur) => {
+    const c = polygonCentroid(cur.vertices);
+    const ang = Math.PI / 4;
+    const cs = Math.cos(ang);
+    const sn = Math.sin(ang);
+    const vertices = cur.vertices.map((vert) => orbitPoint(vert.x, vert.y, c.x, c.y, cs, sn));
+    return { ...cur, vertices };
+  });
 }
 
 export function deletePolygon(doc: MapDoc, id: string): MapDoc {
