@@ -103,13 +103,18 @@ describe('<OptionsPopover />', () => {
     await user.click(screen.getByRole('button', { name: 'Options' }));
     const spin = screen.getByRole('spinbutton', { name: /font size/i });
     expect(spin).toHaveAttribute('min', '2');
-    expect(spin).toHaveAttribute('max', '24');
+    // No `max` attribute — the textbox lets users enter sizes beyond the
+    // slider's range.
+    expect(spin).not.toHaveAttribute('max');
     expect(spin).toHaveAttribute('step', '1');
     fireEvent.change(spin, { target: { value: '7' } });
     expect(useDoc.getState().labelFontSize).toBe(7);
+    // Above the slider max is allowed via the textbox.
+    fireEvent.change(spin, { target: { value: '40' } });
+    expect(useDoc.getState().labelFontSize).toBe(40);
   });
 
-  it('mousewheel on the spinbutton increments and decrements by 1, clamped to bounds', async () => {
+  it('mousewheel on the spinbutton increments freely above the slider max, clamps at MIN', async () => {
     const user = userEvent.setup();
     render(<Toolbar />);
     await user.click(screen.getByRole('button', { name: 'Options' }));
@@ -122,10 +127,10 @@ describe('<OptionsPopover />', () => {
     fireEvent.wheel(spin, { deltaY: 1 });
     expect(useDoc.getState().labelFontSize).toBe(11);
 
-    // Clamp to MAX.
+    // No upper clamp — wheeling up from the slider max keeps incrementing.
     useDoc.setState({ ...useDoc.getState(), labelFontSize: 24 });
     fireEvent.wheel(spin, { deltaY: -1 });
-    expect(useDoc.getState().labelFontSize).toBe(24);
+    expect(useDoc.getState().labelFontSize).toBe(25);
 
     // Clamp to MIN.
     useDoc.setState({ ...useDoc.getState(), labelFontSize: 2 });
@@ -294,19 +299,21 @@ describe('<OptionsPopover />', () => {
       expect(useDoc.getState().transferStrokeWidth).toBe(3);
     });
 
-    it('contains a Transfer stroke spinbutton bounded to [0, 5]', async () => {
+    it('contains a Transfer stroke spinbutton with no upper bound (accepts arbitrary)', async () => {
       const user = userEvent.setup();
       render(<Toolbar />);
       await user.click(screen.getByRole('button', { name: 'Options' }));
       const spin = screen.getByRole('spinbutton', { name: /transfer stroke$/i });
       expect(spin).toHaveAttribute('min', '0');
-      expect(spin).toHaveAttribute('max', '5');
+      // No `max` attribute — the textbox lets users enter widths beyond the
+      // slider's range.
+      expect(spin).not.toHaveAttribute('max');
       expect(spin).toHaveAttribute('step', '1');
       fireEvent.change(spin, { target: { value: '2' } });
       expect(useDoc.getState().transferStrokeWidth).toBe(2);
-      // Above max → clamped to 5.
+      // Above the slider max is allowed via the textbox.
       fireEvent.change(spin, { target: { value: '99' } });
-      expect(useDoc.getState().transferStrokeWidth).toBe(5);
+      expect(useDoc.getState().transferStrokeWidth).toBe(99);
     });
 
     it('contains a Transfer stroke color input (type=color) defaulting to #ffffff', async () => {

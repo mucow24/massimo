@@ -136,8 +136,9 @@ export function TextLabelPopover({ label, world, view, onClose }: Props) {
           <input
             type="number"
             className="size-spin"
+            // No `max` — the spinbutton (typing and step buttons) accepts sizes
+            // beyond the slider's range; the transform clamps at MIN only.
             min={TEXT_LABEL_FONT_SIZE_MIN}
-            max={TEXT_LABEL_FONT_SIZE_MAX}
             step={1}
             value={size.text}
             onChange={size.onNumberChange}

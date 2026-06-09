@@ -3,7 +3,7 @@ import { render, screen, fireEvent } from '@testing-library/react';
 import { RouteBulletPopover } from './RouteBulletPopover';
 import { useDoc } from '../state/store';
 import { historyDepth } from '../state/history';
-import { DEFAULT_DOC, ROUTE_BULLET_SIZE_MAX } from '../model/transforms';
+import { DEFAULT_DOC, ROUTE_BULLET_SIZE_MIN } from '../model/transforms';
 import { makeLine } from '../test/fixtures';
 import type { RouteBullet } from '../model/types';
 
@@ -118,8 +118,10 @@ describe('<RouteBulletPopover /> size control', () => {
     expect(historyDepth() - before).toBe(1);
   });
 
-  it('clamps an out-of-range size in the transform', () => {
+  it('clamps size at MIN only in the transform (above the slider max is allowed)', () => {
     useDoc.getState().updateRouteBullet('b1', { size: 999 });
-    expect(useDoc.getState().routeBullets.b1.size).toBe(ROUTE_BULLET_SIZE_MAX);
+    expect(useDoc.getState().routeBullets.b1.size).toBe(999);
+    useDoc.getState().updateRouteBullet('b1', { size: -3 });
+    expect(useDoc.getState().routeBullets.b1.size).toBe(ROUTE_BULLET_SIZE_MIN);
   });
 });

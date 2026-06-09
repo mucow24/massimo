@@ -1123,8 +1123,10 @@ export function setCurveRadius(doc: MapDoc, r: number): MapDoc {
   return { ...doc, curveRadius: r };
 }
 
+// Clamps at the bottom only; the spinbutton accepts sizes beyond the slider's
+// range (LABEL_FONT_SIZE_MAX constrains the slider, not the value).
 export function setLabelFontSize(doc: MapDoc, n: number): MapDoc {
-  const clamped = Math.max(LABEL_FONT_SIZE_MIN, Math.min(LABEL_FONT_SIZE_MAX, Math.round(n)));
+  const clamped = Math.max(LABEL_FONT_SIZE_MIN, Math.round(n));
   if (clamped === doc.labelFontSize) return doc;
   return { ...doc, labelFontSize: clamped };
 }
@@ -1145,16 +1147,12 @@ export function setTransferColor(doc: MapDoc, c: string): MapDoc {
   return { ...doc, transferColor: c };
 }
 
-// Always-on outline around the colored body. Unlike thickness, this clamps
-// on BOTH ends: the slider's [0, 5] range is the meaningful design space
-// for a halo, and unbounded values would let users hide the body entirely
-// under a massive stroke.
+// Always-on outline around the colored body. Like thickness, clamps at the
+// bottom only — the spinbutton accepts widths beyond the slider's range
+// (TRANSFER_STROKE_WIDTH_MAX constrains the slider, not the value).
 export function setTransferStrokeWidth(doc: MapDoc, n: number): MapDoc {
   if (!Number.isFinite(n)) return doc;
-  const clamped = Math.max(
-    TRANSFER_STROKE_WIDTH_MIN,
-    Math.min(TRANSFER_STROKE_WIDTH_MAX, Math.round(n)),
-  );
+  const clamped = Math.max(TRANSFER_STROKE_WIDTH_MIN, Math.round(n));
   if (clamped === doc.transferStrokeWidth) return doc;
   return { ...doc, transferStrokeWidth: clamped };
 }
@@ -1309,8 +1307,10 @@ export const ROUTE_BULLET_SIZE_MIN = 6;
 export const ROUTE_BULLET_SIZE_MAX = 48;
 export const ROUTE_BULLET_SIZE_DEFAULT = 14;
 
+// Clamps at the bottom only; the spinbutton accepts sizes beyond the slider's
+// range (ROUTE_BULLET_SIZE_MAX constrains the slider, not the value).
 export function clampRouteBulletSize(n: number): number {
-  return Math.max(ROUTE_BULLET_SIZE_MIN, Math.min(ROUTE_BULLET_SIZE_MAX, Math.round(n)));
+  return Math.max(ROUTE_BULLET_SIZE_MIN, Math.round(n));
 }
 
 export function addRouteBullet(
@@ -1403,14 +1403,12 @@ export function updateTextLabel(
   patch: Partial<Omit<TextLabel, 'id'>>,
 ): MapDoc {
   return updateRecord(doc, 'textLabels', id, (cur) => {
-    // Clamp font size to the allowed range so callers (slider, spinbutton,
-    // paste) can't push us out of band. Mirrors `setLabelFontSize`.
+    // Clamp font size at the bottom only so callers (slider, spinbutton,
+    // paste) can't push it to 0/negative; the spinbutton accepts sizes beyond
+    // the slider's range. Mirrors `setLabelFontSize`.
     let nextPatch = patch;
     if (typeof patch.fontSize === 'number') {
-      const clamped = Math.max(
-        TEXT_LABEL_FONT_SIZE_MIN,
-        Math.min(TEXT_LABEL_FONT_SIZE_MAX, Math.round(patch.fontSize)),
-      );
+      const clamped = Math.max(TEXT_LABEL_FONT_SIZE_MIN, Math.round(patch.fontSize));
       nextPatch = { ...patch, fontSize: clamped };
     }
     let next = { ...cur, ...nextPatch };
@@ -1482,13 +1480,15 @@ export const POLYGON_DEFAULT_HALF = 30;
 // A polygon never drops below a triangle, so deleting a vertex is a no-op here.
 export const POLYGON_MIN_VERTICES = 3;
 
-const clampPolygonStrokeWidth = (w: number): number =>
-  Math.max(POLYGON_STROKE_WIDTH_MIN, Math.min(POLYGON_STROKE_WIDTH_MAX, w));
+// Stroke width and curve radius clamp at the bottom only; their spinbuttons
+// accept values beyond the slider ranges (the _MAX constants constrain the
+// sliders, not the values). Fill opacity is a percentage, so it stays bounded
+// to [0, 100] on both ends.
+const clampPolygonStrokeWidth = (w: number): number => Math.max(POLYGON_STROKE_WIDTH_MIN, w);
 const clampPolygonFillOpacity = (o: number): number =>
   Math.max(POLYGON_FILL_OPACITY_MIN, Math.min(POLYGON_FILL_OPACITY_MAX, Math.round(o)));
 // Clamp only (no rounding), matching the sibling world-unit size `strokeWidth`.
-const clampPolygonCurveRadius = (r: number): number =>
-  Math.max(POLYGON_CURVE_RADIUS_MIN, Math.min(POLYGON_CURVE_RADIUS_MAX, r));
+const clampPolygonCurveRadius = (r: number): number => Math.max(POLYGON_CURVE_RADIUS_MIN, r);
 
 // The default-square vertices centered on (x, y), clockwise from the top-left
 // in the y-down screen frame. Shared by `addPolygon` and the placement ghost so

@@ -1004,9 +1004,9 @@ describe('label font/style settings', () => {
     expect(T.setLabelFontSize(doc, -5).labelFontSize).toBe(2);
   });
 
-  it('setLabelFontSize clamps above the maximum', () => {
+  it('setLabelFontSize does NOT clamp above the slider max (textbox accepts arbitrary)', () => {
     const doc = makeDoc({});
-    expect(T.setLabelFontSize(doc, 99).labelFontSize).toBe(24);
+    expect(T.setLabelFontSize(doc, 99).labelFontSize).toBe(99);
   });
 
   it('setLabelFontSize rounds fractional values', () => {
@@ -1107,11 +1107,11 @@ describe('transfer styling settings', () => {
     expect(T.setTransferStrokeWidth(doc, -2).transferStrokeWidth).toBe(0);
   });
 
-  it('setTransferStrokeWidth clamps above MAX (5)', () => {
-    // Unlike transferThickness, stroke width has both bounds enforced —
-    // the spec gives a fixed [0, 5] range with no "arbitrary" textbox.
+  it('setTransferStrokeWidth does NOT clamp above the slider max (textbox accepts arbitrary)', () => {
+    // Like transferThickness, only the bottom bound is enforced —
+    // TRANSFER_STROKE_WIDTH_MAX constrains the slider, not the value.
     const doc = makeDoc({});
-    expect(T.setTransferStrokeWidth(doc, 12).transferStrokeWidth).toBe(5);
+    expect(T.setTransferStrokeWidth(doc, 12).transferStrokeWidth).toBe(12);
   });
 
   it('setTransferStrokeWidth rounds fractional values', () => {
@@ -2068,10 +2068,10 @@ describe('updateTextLabel', () => {
     const next = T.updateTextLabel(doc, 'g1', { text: 'B', italic: true });
     expect(next.textLabels.g1).toMatchObject({ text: 'B', italic: true, fontSize: 16 });
   });
-  it('clamps fontSize to [1, 96] and rounds to integer', () => {
+  it('clamps fontSize at MIN only (textbox accepts arbitrary above) and rounds to integer', () => {
     const doc = makeDoc({ textLabels: [makeTextLabel({ id: 'g1', fontSize: 16 })] });
     expect(T.updateTextLabel(doc, 'g1', { fontSize: 0 }).textLabels.g1.fontSize).toBe(1);
-    expect(T.updateTextLabel(doc, 'g1', { fontSize: 999 }).textLabels.g1.fontSize).toBe(96);
+    expect(T.updateTextLabel(doc, 'g1', { fontSize: 999 }).textLabels.g1.fontSize).toBe(999);
     expect(T.updateTextLabel(doc, 'g1', { fontSize: 23.7 }).textLabels.g1.fontSize).toBe(24);
   });
   it('is a no-op for missing ids', () => {
