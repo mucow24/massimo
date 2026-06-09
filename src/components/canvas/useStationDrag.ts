@@ -170,7 +170,11 @@ export function useStationDrag(
         draggedStops,
         stations,
         lines,
-        tolerance: SNAP_PERP_TOLERANCE,
+        // Constant screen-pixel engage radius: dividing by zoom shrinks the
+        // world-space tolerance as you zoom in, mirroring the screen-space drag
+        // threshold above. Grid snap (a hard constraint) is unaffected — this
+        // only gates which alignment candidates survive before grid reconciles.
+        tolerance: SNAP_PERP_TOLERANCE / viewportZoom,
         // Ctrl-drag: snap exclusively to the anchor (the originally
         // selected station). Intermediates are moving with the
         // redistribute and would be unstable snap targets.

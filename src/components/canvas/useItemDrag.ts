@@ -207,7 +207,9 @@ export function useItemDrag(
             proposedY: ny,
             stations,
             lines,
-            tolerance: BULLET_SNAP_TOLERANCE,
+            // Constant screen-pixel engage radius (see useStationDrag): / zoom
+            // keeps the bullet's snap reach the same on screen at any zoom.
+            tolerance: BULLET_SNAP_TOLERANCE / zoom,
             bulletLineId: lineId,
             modes: snapModes,
           });

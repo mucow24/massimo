@@ -72,6 +72,70 @@ describe('<PolygonView /> dark-mode colors', () => {
   });
 });
 
+describe('<PolygonView /> overlay handles are a constant screen size', () => {
+  beforeEach(() => {
+    useViewportStore.setState({ darkMode: false, zoom: 1 });
+  });
+
+  function renderOverlay(zoom: number) {
+    useViewportStore.setState({ zoom });
+    return render(
+      <svg>
+        <PolygonView
+          polygon={makePolygon({ id: 'p0' })}
+          layer="overlay"
+          selected
+          selectedVertexIndex={null}
+          interactive
+          onPointerDown={noop}
+          onClick={noop}
+          onContextMenu={noop}
+          onVertexPointerDown={noop}
+          onVertexClick={noop}
+          onEdgeAddPointerDown={noop}
+        />
+      </svg>,
+    ).container;
+  }
+
+  // makePolygon's default square has vertex 0 at (-30,-30); edge 0's midpoint is
+  // (0,-30). Authored sizes: VERTEX_HANDLE_HALF=5 (10×10 box), EDGE_ADD_R=7. On
+  // screen these must stay constant, so each world dimension scales by 1/zoom and
+  // `dimension × zoom` is invariant across zoom levels.
+  it('vertex handle: width/stroke constant on screen, stays centered on the vertex', () => {
+    for (const zoom of [1, 2]) {
+      const c = renderOverlay(zoom);
+      const rect = c.querySelector('rect[data-polygon-vertex="0"]')!;
+      const w = Number(rect.getAttribute('width'));
+      expect(w * zoom).toBeCloseTo(10);
+      expect(Number(rect.getAttribute('height')) * zoom).toBeCloseTo(10);
+      expect(Number(rect.getAttribute('stroke-width')) * zoom).toBeCloseTo(1.5);
+      // Center (x + width/2) stays on the world vertex x = -30 at every zoom.
+      expect(Number(rect.getAttribute('x')) + w / 2).toBeCloseTo(-30);
+    }
+  });
+
+  it('edge "+" circle radius is constant on screen', () => {
+    for (const zoom of [1, 2]) {
+      const c = renderOverlay(zoom);
+      const circle = c.querySelector('[data-polygon-edge-add="0"] circle')!;
+      expect(Number(circle.getAttribute('r')) * zoom).toBeCloseTo(7);
+      // Circle stays centered on edge 0's midpoint (0,-30).
+      expect(Number(circle.getAttribute('cx'))).toBeCloseTo(0);
+      expect(Number(circle.getAttribute('cy'))).toBeCloseTo(-30);
+    }
+  });
+
+  it('dashed selection outline keeps a constant stroke width + dash spacing', () => {
+    for (const zoom of [1, 2]) {
+      const c = renderOverlay(zoom);
+      const outline = c.querySelector('g[data-polygon-overlay] > polygon')!;
+      expect(Number(outline.getAttribute('stroke-width')) * zoom).toBeCloseTo(1.5);
+      expect(outline.getAttribute('stroke-dasharray')).toBe(`${4 / zoom} ${3 / zoom}`);
+    }
+  });
+});
+
 describe('<PolygonView /> corner rounding', () => {
   beforeEach(() => {
     useViewportStore.setState({ darkMode: false });
