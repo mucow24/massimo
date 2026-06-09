@@ -1,20 +1,15 @@
 import { describe, it, expect, beforeEach } from 'vitest';
 import { useSelection, type UiMode } from './store';
+import { clearedSelections } from './selection';
 import type { LineId, StationId } from '../model/types';
 
 beforeEach(() => {
+  // Reset through the production full-wipe helper so this can't drift from the
+  // real set of selection fields (it already missed selectedPolygonIds /
+  // selectedVertex before being routed through clearedSelections).
   useSelection.setState({
-    selectedStationIds: [],
-    selectedRouteBulletIds: [],
-    selectedLabelIds: [],
-    selectedLineId: null,
+    ...clearedSelections(),
     uiMode: { kind: 'idle' },
-    mirrorMatching: false,
-    selectedStopLineId: null,
-    labelSelected: false,
-    editingStationId: null,
-    selectedLineTagId: null,
-    selectedTransferId: null,
     lineTagHoverPreview: null,
   });
 });

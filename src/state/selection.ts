@@ -57,7 +57,7 @@ export const RIGHT_CLICK_PASSTHROUGH_MODES: ReadonlySet<UiMode['kind']> = new Se
 // every setter. Within-station inspector micro-state (stopLine, labelSelected,
 // mirror, editingStation) belongs here too — it's bound to "which thing is
 // the current primary selection."
-const clearedSelections = () => ({
+export const clearedSelections = () => ({
   selectedStationIds: [] as StationId[],
   selectedRouteBulletIds: [] as string[],
   selectedLabelIds: [] as string[],

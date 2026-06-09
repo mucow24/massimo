@@ -1,18 +1,16 @@
 import { describe, it, expect, beforeEach } from 'vitest';
-import { useSelection } from './selection';
+import { clearedSelections, useSelection } from './selection';
 
 const sel = () => useSelection.getState();
 
 describe('polygon selection', () => {
   beforeEach(() => {
+    // Reset via the production full-wipe helper so the set of cleared fields
+    // can't drift from clearedSelections().
     useSelection.setState({
-      selectedPolygonIds: [],
-      selectedVertex: null,
-      selectedStationIds: [],
-      selectedRouteBulletIds: [],
-      selectedLabelIds: [],
-      selectedLineId: null,
+      ...clearedSelections(),
       uiMode: { kind: 'idle' },
+      lineTagHoverPreview: null,
     });
   });
 
