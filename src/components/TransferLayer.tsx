@@ -44,15 +44,20 @@ function endpointWorld(
 }
 
 /**
- * Renders all inter-station transfers as a concentric stack (outer → inner,
- * painted in document order so each subsequent line lays on top):
+ * Renders all inter-station transfers in three flat passes across the whole
+ * set (painted in document order so each subsequent pass lays on top):
  *
- *   1. Selection outline — only when selected. Color is the legible
- *      black/white for the outermost visible color (the user stroke if
- *      present, otherwise the body).
- *   2. User stroke — only when `strokeWidth > 0`. A halo around the body in
- *      the user's chosen color.
- *   3. Body — the colored stroke at the user's chosen thickness.
+ *   1. Selection outlines — only for the selected transfer. Color is the
+ *      legible black/white for the outermost visible color (the user stroke
+ *      if present, otherwise the body).
+ *   2. User strokes — only when `strokeWidth > 0`. A halo around each body
+ *      in the user's chosen color.
+ *   3. Bodies — the colored stroke at the user's chosen thickness.
+ *
+ * Flat passes (rather than per-transfer groups) mean every body paints above
+ * every halo, so where thick transfers overlap the halo traces only the
+ * outside of their union — one transfer's halo never cuts across another's
+ * body, preserving the continuous-capsule look.
  *
  * Both the body and the user stroke (when present) are click targets via
  * `pointerEvents="stroke"`, so the click region matches the perceived width
@@ -73,61 +78,78 @@ export function TransferLayer({
 }: Props) {
   const list = Object.values(transfers);
   if (list.length === 0) return null;
+  const hasUserStroke = strokeWidth > 0;
+  // Total visible width of a transfer ignoring the selection ring.
+  const visibleExtent = thickness + 2 * strokeWidth;
+  // Color the selection ring sits against: the user stroke if it's drawn,
+  // otherwise the body color.
+  const outermostVisibleColor = hasUserStroke ? strokeColor : color;
+  const selectionRingColor = legibleTextOn(outermostVisibleColor);
+
+  // Resolve endpoints once; each pass below iterates this same list in the
+  // same order. Endpoints + linecap stay constant between the selection
+  // ring, the user stroke, and the body.
+  const drawable = list.flatMap((t) => {
+    const a = endpointWorld(t.a, stations);
+    const b = endpointWorld(t.b, stations);
+    if (!a || !b) return [];
+    const lineEnds = {
+      x1: a.x,
+      y1: a.y,
+      x2: b.x,
+      y2: b.y,
+      strokeLinecap: 'round' as const,
+    };
+    return [{ t, lineEnds }];
+  });
+
+  // Shared between each body and user stroke: both are click targets that
+  // select their transfer.
+  const clickProps = (id: string) => ({
+    pointerEvents: 'stroke' as const,
+    style: { cursor: 'pointer' },
+    onClick: (e: React.MouseEvent) => {
+      e.stopPropagation();
+      onSelect(id);
+    },
+  });
+
   return (
     <g>
-      {list.map((t) => {
-        const a = endpointWorld(t.a, stations);
-        const b = endpointWorld(t.b, stations);
-        if (!a || !b) return null;
-        const isSelected = t.id === selectedId;
-        const hasUserStroke = strokeWidth > 0;
-        // Total visible width of the transfer ignoring the selection ring.
-        const visibleExtent = thickness + 2 * strokeWidth;
-        // Color the selection ring sits against: the user stroke if it's
-        // drawn, otherwise the body color.
-        const outermostVisibleColor = hasUserStroke ? strokeColor : color;
-        const selectionRingColor = legibleTextOn(outermostVisibleColor);
-        // Shared across all three lines: endpoints + linecap stay constant
-        // between the selection ring, the user stroke, and the body.
-        const lineEnds = {
-          x1: a.x,
-          y1: a.y,
-          x2: b.x,
-          y2: b.y,
-          strokeLinecap: 'round' as const,
-        };
-        // Shared between the body and the user stroke (when present): both
-        // are click targets that select this transfer.
-        const clickProps = {
-          pointerEvents: 'stroke' as const,
-          style: { cursor: 'pointer' },
-          onClick: (e: React.MouseEvent) => {
-            e.stopPropagation();
-            onSelect(t.id);
-          },
-        };
-        return (
-          <g key={t.id} data-transfer-id={t.id}>
-            {isSelected && (
-              <line
-                {...lineEnds}
-                stroke={selectionRingColor}
-                strokeWidth={visibleExtent + 2 * SELECTION_OUTLINE_PAD}
-                pointerEvents="none"
-              />
-            )}
-            {hasUserStroke && (
-              <line
-                {...lineEnds}
-                stroke={strokeColor}
-                strokeWidth={visibleExtent}
-                {...clickProps}
-              />
-            )}
-            <line {...lineEnds} stroke={color} strokeWidth={thickness} {...clickProps} />
-          </g>
-        );
-      })}
+      {drawable.map(
+        ({ t, lineEnds }) =>
+          t.id === selectedId && (
+            <line
+              key={`sel-${t.id}`}
+              data-transfer-id={t.id}
+              {...lineEnds}
+              stroke={selectionRingColor}
+              strokeWidth={visibleExtent + 2 * SELECTION_OUTLINE_PAD}
+              pointerEvents="none"
+            />
+          ),
+      )}
+      {hasUserStroke &&
+        drawable.map(({ t, lineEnds }) => (
+          <line
+            key={`halo-${t.id}`}
+            data-transfer-id={t.id}
+            {...lineEnds}
+            stroke={strokeColor}
+            strokeWidth={visibleExtent}
+            {...clickProps(t.id)}
+          />
+        ))}
+      {drawable.map(({ t, lineEnds }) => (
+        <line
+          key={t.id}
+          data-transfer-id={t.id}
+          {...lineEnds}
+          stroke={color}
+          strokeWidth={thickness}
+          {...clickProps(t.id)}
+        />
+      ))}
     </g>
   );
 }

@@ -71,12 +71,13 @@ function seedTwoStationsWithTransfer() {
   });
 }
 
-// Each transfer renders 1-3 stacked <line>s inside `[data-transfer-id]`.
-// The body is the narrowest (innermost); the user stroke (when > 0) is in
-// the middle; the selection ring (when selected) is the widest. Tests pick
-// by relative width to stay robust against color collisions.
+// Each transfer renders 1-3 <line>s tagged `data-transfer-id`, spread across
+// three flat passes (selection rings, then halos, then bodies). The body is
+// the narrowest; the user stroke (when > 0) is in the middle; the selection
+// ring (when selected) is the widest. Tests pick by relative width to stay
+// robust against color collisions.
 function transferLines(id: string): Element[] {
-  return Array.from(document.querySelectorAll(`[data-transfer-id="${id}"] line`));
+  return Array.from(document.querySelectorAll(`line[data-transfer-id="${id}"]`));
 }
 
 function transferBody(id: string): Element {
@@ -194,6 +195,46 @@ describe('TransferLayer — DOM rendering', () => {
       // Stroke must precede body in document order (body paints on top).
       const PRECEDING = Node.DOCUMENT_POSITION_PRECEDING;
       expect(body.compareDocumentPosition(stroke) & PRECEDING).toBeTruthy();
+    });
+
+    it('paints in flat passes: every halo precedes every body across all transfers', () => {
+      seedTwoStationsWithTransfer();
+      act(() => {
+        useDoc.setState({
+          ...useDoc.getState(),
+          transferStrokeWidth: 3,
+          transfers: {
+            ...useDoc.getState().transfers,
+            x2: {
+              id: 'x2',
+              a: { stationId: 's1', lineId: 'L1' },
+              b: { stationId: 's2', lineId: 'L2' },
+            },
+          },
+        });
+      });
+      render(<App />);
+
+      const all = Array.from(document.querySelectorAll('line[data-transfer-id]'));
+      // visibleExtent = 2 + 2*3 = 8 (halo); body = 2.
+      const halos = all.filter((el) => el.getAttribute('stroke-width') === '8');
+      const bodies = all.filter((el) => el.getAttribute('stroke-width') === '2');
+      expect(halos.length).toBe(2);
+      expect(bodies.length).toBe(2);
+
+      // Were halos and bodies grouped per transfer, x2's halo would follow
+      // x1's body. Flat passes guarantee every halo precedes every body.
+      const PRECEDING = Node.DOCUMENT_POSITION_PRECEDING;
+      for (const halo of halos) {
+        for (const body of bodies) {
+          expect(body.compareDocumentPosition(halo) & PRECEDING).toBeTruthy();
+        }
+      }
+
+      // Each pass iterates transfers in the same (document) order.
+      const haloIds = halos.map((el) => el.getAttribute('data-transfer-id'));
+      const bodyIds = bodies.map((el) => el.getAttribute('data-transfer-id'));
+      expect(haloIds).toEqual(bodyIds);
     });
   });
 
