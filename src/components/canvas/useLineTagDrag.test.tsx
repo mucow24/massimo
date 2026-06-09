@@ -1,0 +1,91 @@
+import { describe, it, expect, beforeEach } from 'vitest';
+import { renderHook } from '@testing-library/react';
+import { useLineTagDrag } from './useLineTagDrag';
+import { useDoc, dragState } from '../../state/store';
+import { historyDepth } from '../../state/history';
+import { DEFAULT_DOC } from '../../model/transforms';
+import { makeLine, stationWithStop } from '../../test/fixtures';
+import { fakeSvgRef, pointerEvent, dispatchWindowPointer } from '../../test/interaction';
+import type { LineId, StationId } from '../../model/types';
+
+// A horizontal A—B segment on line L1, with one text tag anchored 20 units from
+// the 'from' (A) end. The fake svg uses an identity CTM, so a pointer at screen
+// (x, y) projects onto the segment at world (x, y).
+beforeEach(() => {
+  useDoc.setState({
+    ...useDoc.getState(),
+    ...DEFAULT_DOC,
+    lines: { L1: makeLine({ id: 'L1' as LineId, stations: ['A', 'B'] as StationId[] }) },
+    lineOrder: ['L1' as LineId],
+    stations: {
+      A: stationWithStop('A' as StationId, 'L1' as LineId, { x: 0, y: 0 }),
+      B: stationWithStop('B' as StationId, 'L1' as LineId, { x: 100, y: 0 }),
+    },
+    lineTags: {
+      T: {
+        id: 'T',
+        lineId: 'L1' as LineId,
+        fromStationId: 'A' as StationId,
+        toStationId: 'B' as StationId,
+        anchorEnd: 'from',
+        distance: 20,
+        orientation: 0,
+      },
+    },
+  });
+  useDoc.temporal.getState().clear();
+  dragState.suppressClick = false;
+});
+
+function render() {
+  const { ref, svg } = fakeSvgRef();
+  const { result } = renderHook(() => useLineTagDrag(ref, 1));
+  return { result, svg };
+}
+
+describe('useLineTagDrag', () => {
+  it('projects the cursor onto the segment and re-anchors the tag', () => {
+    const { result, svg } = render();
+    result.current.onStartDrag('T', pointerEvent({ clientX: 20, clientY: 0 }));
+    dispatchWindowPointer('pointermove', { clientX: 50, clientY: 0 }); // mid-segment
+
+    const tag = useDoc.getState().lineTags['T'];
+    expect(tag.fromStationId).toBe('A');
+    expect(tag.toStationId).toBe('B');
+    // Re-anchored to roughly the segment midpoint (~50 along a ~100-unit stripe).
+    expect(tag.distance).toBeGreaterThan(30);
+    expect(tag.distance).toBeLessThan(70);
+    expect(dragState.suppressClick).toBe(true);
+    expect(svg.hasPointerCapture(1)).toBe(true);
+
+    dispatchWindowPointer('pointerup', { clientX: 50, clientY: 0 });
+  });
+
+  it('does not move the tag until the pointer passes the 4px threshold', () => {
+    const { result } = render();
+    result.current.onStartDrag('T', pointerEvent({ clientX: 20, clientY: 0 }));
+    dispatchWindowPointer('pointermove', { clientX: 22, clientY: 0 }); // 2px
+    expect(useDoc.getState().lineTags['T'].distance).toBe(20);
+    expect(dragState.suppressClick).toBe(false);
+    dispatchWindowPointer('pointerup', { clientX: 22, clientY: 0 });
+  });
+
+  it('cancels the history group on a click with no drag', () => {
+    const before = historyDepth();
+    const { result } = render();
+    result.current.onStartDrag('T', pointerEvent({ clientX: 20, clientY: 0 }));
+    dispatchWindowPointer('pointerup', { clientX: 21, clientY: 0 }); // no move
+    expect(historyDepth()).toBe(before);
+    expect(useDoc.getState().lineTags['T'].distance).toBe(20);
+  });
+
+  it('commits one history entry and releases capture after a real drag', () => {
+    const before = historyDepth();
+    const { result, svg } = render();
+    result.current.onStartDrag('T', pointerEvent({ clientX: 20, clientY: 0 }));
+    dispatchWindowPointer('pointermove', { clientX: 60, clientY: 0 });
+    dispatchWindowPointer('pointerup', { clientX: 60, clientY: 0 });
+    expect(historyDepth()).toBe(before + 1);
+    expect(svg.hasPointerCapture(1)).toBe(false);
+  });
+});

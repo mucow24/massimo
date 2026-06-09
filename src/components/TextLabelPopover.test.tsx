@@ -1,4 +1,4 @@
-import { describe, it, expect, beforeEach } from 'vitest';
+import { describe, it, expect, beforeEach, vi } from 'vitest';
 import { render, screen, fireEvent } from '@testing-library/react';
 import { TextLabelPopover } from './TextLabelPopover';
 import { useDoc } from '../state/store';
@@ -148,5 +148,103 @@ describe('<TextLabelPopover /> — day/night color pickers', () => {
     });
     expect(useDoc.getState().textLabels['g1'].darkColor).toBe('#fafafa');
     expect(useDoc.getState().textLabels['g1'].color).toBe('#112233');
+  });
+});
+
+describe('<TextLabelPopover /> — text / size / align / weight controls', () => {
+  const identityView = { vbX: 0, vbY: 0, vbW: 800, vbH: 600, size: { w: 800, h: 600 } };
+
+  function seedAndRender(onClose = () => {}) {
+    const label = makeTextLabel({ id: 'g1', text: 'Hi', fontSize: 16, weight: 400, align: 'left' });
+    useDoc.setState({ ...useDoc.getState(), textLabels: { g1: label } });
+    render(
+      <TextLabelPopover
+        label={useDoc.getState().textLabels['g1']}
+        world={{ x: 0, y: 0 }}
+        view={identityView}
+        onClose={onClose}
+      />,
+    );
+  }
+
+  it('edits the label text', () => {
+    seedAndRender();
+    fireEvent.change(screen.getByRole('textbox'), { target: { value: 'Hello' } });
+    expect(useDoc.getState().textLabels['g1'].text).toBe('Hello');
+  });
+
+  it('changes the font size via the range slider', () => {
+    seedAndRender();
+    fireEvent.change(screen.getByRole('slider'), { target: { value: '24' } });
+    expect(useDoc.getState().textLabels['g1'].fontSize).toBe(24);
+  });
+
+  it('changes alignment and toggles italic', () => {
+    seedAndRender();
+    fireEvent.click(screen.getByLabelText('Align center'));
+    expect(useDoc.getState().textLabels['g1'].align).toBe('center');
+    fireEvent.click(screen.getByLabelText('Italic'));
+    expect(useDoc.getState().textLabels['g1'].italic).toBe(true);
+  });
+
+  it('changes the weight via the dropdown', () => {
+    seedAndRender();
+    fireEvent.change(screen.getByRole('combobox'), { target: { value: '700' } });
+    expect(useDoc.getState().textLabels['g1'].weight).toBe(700);
+  });
+
+  it('deletes the label and closes', () => {
+    const onClose = vi.fn();
+    seedAndRender(onClose);
+    fireEvent.click(screen.getByRole('button', { name: 'Delete' }));
+    expect(useDoc.getState().textLabels['g1']).toBeUndefined();
+    expect(onClose).toHaveBeenCalledTimes(1);
+  });
+});
+
+describe('<TextLabelPopover /> — header drag + escape', () => {
+  const identityView = { vbX: 0, vbY: 0, vbW: 800, vbH: 600, size: { w: 800, h: 600 } };
+
+  function seedAndRender(onClose = () => {}) {
+    const label = makeTextLabel({ id: 'g1', text: 'Hi' });
+    useDoc.setState({ ...useDoc.getState(), textLabels: { g1: label } });
+    const { container } = render(
+      <TextLabelPopover
+        label={useDoc.getState().textLabels['g1']}
+        world={{ x: 0, y: 0 }}
+        view={identityView}
+        onClose={onClose}
+      />,
+    );
+    return { container };
+  }
+
+  it('drags the popover by its header, offsetting left/top', () => {
+    const { container } = seedAndRender();
+    const popover = container.querySelector('.text-label-popover') as HTMLElement;
+    const header = container.querySelector('.header') as HTMLElement;
+    const left0 = parseFloat(popover.style.left);
+    const top0 = parseFloat(popover.style.top);
+
+    fireEvent.pointerDown(header, { button: 0, clientX: 0, clientY: 0, pointerId: 1 });
+    fireEvent.pointerMove(header, { clientX: 30, clientY: 20, pointerId: 1 });
+    fireEvent.pointerUp(header, { pointerId: 1 });
+
+    expect(parseFloat(popover.style.left)).toBe(left0 + 30);
+    expect(parseFloat(popover.style.top)).toBe(top0 + 20);
+  });
+
+  it('closes on Escape pressed outside a form field', () => {
+    const onClose = vi.fn();
+    seedAndRender(onClose);
+    fireEvent.keyDown(document.body, { key: 'Escape' });
+    expect(onClose).toHaveBeenCalledTimes(1);
+  });
+
+  it('does NOT close on Escape while focused in a field', () => {
+    const onClose = vi.fn();
+    seedAndRender(onClose);
+    fireEvent.keyDown(screen.getByRole('textbox'), { key: 'Escape' });
+    expect(onClose).not.toHaveBeenCalled();
   });
 });
