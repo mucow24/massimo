@@ -1303,6 +1303,15 @@ export function deleteLineTag(doc: MapDoc, id: string): MapDoc {
 
 // ---------- Route bullets ----------
 
+// Half-extent in world units (radius for circle, half-side for square/diamond).
+export const ROUTE_BULLET_SIZE_MIN = 6;
+export const ROUTE_BULLET_SIZE_MAX = 48;
+export const ROUTE_BULLET_SIZE_DEFAULT = 14;
+
+export function clampRouteBulletSize(n: number): number {
+  return Math.max(ROUTE_BULLET_SIZE_MIN, Math.min(ROUTE_BULLET_SIZE_MAX, Math.round(n)));
+}
+
 export function addRouteBullet(
   doc: MapDoc,
   id: string,
@@ -1317,7 +1326,7 @@ export function addRouteBullet(
     rotation: 0,
     lineId,
     shape: 'circle',
-    size: 14,
+    size: ROUTE_BULLET_SIZE_DEFAULT,
   };
   return { ...doc, routeBullets: { ...doc.routeBullets, [id]: bullet } };
 }
@@ -1348,7 +1357,13 @@ export function updateRouteBullet(
   id: string,
   patch: Partial<Pick<RouteBullet, 'lineId' | 'shape' | 'size'>>,
 ): MapDoc {
-  return updateRecord(doc, 'routeBullets', id, (cur) => ({ ...cur, ...patch }));
+  return updateRecord(doc, 'routeBullets', id, (cur) => {
+    // Clamp size so callers (slider, spinbutton, paste, duplicate) can't push
+    // it out of band. Mirrors updatePolygon's clamps.
+    const nextPatch =
+      typeof patch.size === 'number' ? { ...patch, size: clampRouteBulletSize(patch.size) } : patch;
+    return { ...cur, ...nextPatch };
+  });
 }
 
 export function deleteRouteBullet(doc: MapDoc, id: string): MapDoc {
