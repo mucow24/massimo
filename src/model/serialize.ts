@@ -5,6 +5,12 @@ import {
   TEXT_LABEL_DARK_COLOR_DEFAULT,
 } from './transforms';
 import { LINE_WIDTH_DEFAULT, LINE_WIDTH_MIN } from './lineWidth';
+import {
+  LINE_STROKE_COLOR_DEFAULT,
+  LINE_STROKE_STEP,
+  LINE_STROKE_WIDTH_DEFAULT,
+  LINE_STROKE_WIDTH_MIN,
+} from './lineStroke';
 import { pairKeyOf } from './pairKey';
 import { KNOWN_PALETTE_IDS } from './palettes';
 import type {
@@ -145,7 +151,7 @@ export function parse(json: string): ParseResult {
   let linesChanged = false;
   for (const id of Object.keys(merged.lines)) {
     const line = merged.lines[id];
-    const cleaned = sanitizeLineWidth(sanitizeSegmentStyles(line));
+    const cleaned = sanitizeLineStroke(sanitizeLineWidth(sanitizeSegmentStyles(line)));
     if (cleaned !== line) linesChanged = true;
     cleanedLines[id] = cleaned;
   }
@@ -263,6 +269,47 @@ function sanitizeLineWidth(line: Line): Line {
   }
   const { width: _gone, ...rest } = line;
   return rest;
+}
+
+// Normalize hand-edited / legacy casing fields to the canonical stored form
+// the transforms maintain: strokeWidth on the half-pixel grid and ≥
+// LINE_STROKE_WIDTH_MIN, strokeColor a lowercase string, and each field
+// absent when it equals its default (the app never stores defaults).
+// Non-numbers / non-finite widths and non-string colors are dropped.
+// File-import hygiene only — localStorage rehydration never sees
+// uncanonical values because every write goes through the setters'
+// normalization.
+function sanitizeLineStroke(line: Line): Line {
+  let next = line;
+  if ('strokeWidth' in line) {
+    const raw = line.strokeWidth as unknown;
+    let stored: number | undefined;
+    if (typeof raw === 'number' && Number.isFinite(raw)) {
+      const norm = Math.max(
+        LINE_STROKE_WIDTH_MIN,
+        Math.round(raw / LINE_STROKE_STEP) * LINE_STROKE_STEP,
+      );
+      stored = norm === LINE_STROKE_WIDTH_DEFAULT ? undefined : norm;
+    }
+    if (stored === undefined) {
+      const { strokeWidth: _gone, ...rest } = next;
+      next = rest;
+    } else if (stored !== next.strokeWidth) {
+      next = { ...next, strokeWidth: stored };
+    }
+  }
+  if ('strokeColor' in line) {
+    const raw = line.strokeColor as unknown;
+    const norm = typeof raw === 'string' ? raw.toLowerCase() : undefined;
+    const stored = norm === LINE_STROKE_COLOR_DEFAULT ? undefined : norm;
+    if (stored === undefined) {
+      const { strokeColor: _gone, ...rest } = next;
+      next = rest;
+    } else if (stored !== next.strokeColor) {
+      next = { ...next, strokeColor: stored };
+    }
+  }
+  return next;
 }
 
 function sanitizeSegmentStyles(line: Line): Line {

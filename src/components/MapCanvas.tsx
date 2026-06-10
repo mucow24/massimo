@@ -198,7 +198,9 @@ export function MapCanvas() {
   // sorted back-to-front by per-stripe z-priority. Each stripe in an
   // interlined band paints at its own line's lineOrder index, so a
   // perpendicular line whose layer falls between two interlined lines
-  // renders between their stripes (not behind the whole band).
+  // renders between their stripes (not behind the whole band). Per-line
+  // casing rails need no entries of their own — they paint inside their
+  // body within SegmentBand/StopMarker.
   const renderables = useMemo(() => {
     const markers = buildStopMarkers(stations, lines, lineOrder, bands);
     return buildOrderedRenderables(bands, markers);
@@ -574,6 +576,7 @@ export function MapCanvas() {
               spec={r.spec}
               effectiveColor={effectiveColor}
               underlayColor={underlayColor}
+              lines={lines}
             />
           );
         })}

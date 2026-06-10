@@ -110,3 +110,144 @@ describe('StopMarker', () => {
     });
   });
 });
+
+describe('StopMarker — casing rails (centered on the body edges)', () => {
+  const strokedLines = (strokeWidth: number, strokeColor?: string) => ({
+    L1: { strokeWidth: strokeWidth > 0 ? strokeWidth : undefined, strokeColor },
+  });
+
+  function renderWithStroke(s: StopMarkerSpec, strokeWidth: number, strokeColor?: string) {
+    return render(
+      <svg>
+        <StopMarker spec={s} lines={strokedLines(strokeWidth, strokeColor)} />
+      </svg>,
+    );
+  }
+
+  it('paints two rails AFTER the body, centered on its travel-axis edges', () => {
+    // rotationDeg 0 ⇒ travel along +x: rails are width-long rects straddling
+    // local y = ±w/2 — along the body, never across its ends.
+    const { container } = renderWithStroke(spec(), 4, '#ff0000');
+    const rects = Array.from(container.querySelectorAll('rect'));
+    expect(rects.length).toBe(3); // body + 2 rails
+    expect(rects[0].hasAttribute('data-marker-casing')).toBe(false);
+    const rails = rects.slice(1);
+    for (const r of rails) {
+      expect(r.hasAttribute('data-marker-casing')).toBe(true);
+      expect(r.getAttribute('data-line-id')).toBe('L1');
+      expect(r.getAttribute('fill')).toBe('#ff0000');
+      expect(r.getAttribute('width')).toBe('14'); // along travel
+      expect(r.getAttribute('height')).toBe('4'); // rail thick
+      expect(r.getAttribute('x')).toBe('-7');
+      expect(r.getAttribute('transform')).toContain('translate(10 20)');
+    }
+    const ys = rails.map((r) => Number(r.getAttribute('y'))).sort((a, b) => a - b);
+    expect(ys).toEqual([-9, 5]); // [−w/2 − s/2, w/2 − s/2]
+  });
+
+  it('defaults the rail color to white and follows the marker rotation', () => {
+    const { container } = renderWithStroke(spec({ rotationDeg: 90 }), 4);
+    const rails = Array.from(container.querySelectorAll('[data-marker-casing]'));
+    expect(rails.length).toBe(2);
+    for (const r of rails) {
+      expect(r.getAttribute('fill')).toBe('#ffffff');
+      expect(r.getAttribute('transform')).toContain('rotate(90)');
+    }
+  });
+
+  it('rails a hatched marker the same way as a solid one', () => {
+    const { container } = renderWithStroke(spec({ style: 'hatched' }), 3, '#ff0000');
+    expect(container.querySelector('polygon')).not.toBeNull();
+    expect(container.querySelectorAll('[data-marker-casing]').length).toBe(2);
+  });
+
+  it('renders nothing extra for a dashed interior stop (matching the body)', () => {
+    const { container } = renderWithStroke(spec({ style: 'dashed', outward: null }), 4);
+    expect(container.querySelector('rect')).toBeNull();
+    expect(container.querySelector('line')).toBeNull();
+  });
+
+  it('rails a dashed terminus stub straddling its edges, plus an end cap', () => {
+    const { container } = renderWithStroke(
+      spec({ style: 'dashed', outward: { x: 1, y: 0 }, cx: 0, cy: 0 }),
+      4,
+      '#ff0000',
+    );
+    const casings = Array.from(container.querySelectorAll('line[data-marker-casing]'));
+    expect(casings.length).toBe(3); // 2 side rails + 1 end cap
+    for (const l of casings) {
+      expect(l.getAttribute('stroke')).toBe('#ff0000');
+      expect(l.getAttribute('stroke-width')).toBe('4');
+      expect(l.getAttribute('stroke-dasharray')).toBeNull();
+    }
+    // Side rails run along the stub (x 0 → 7) at perpendicular ±w/2 = ±7.
+    const sideRails = casings.filter((l) => l.getAttribute('y1') === l.getAttribute('y2'));
+    expect(sideRails.length).toBe(2);
+    for (const l of sideRails) {
+      expect(Number(l.getAttribute('x1'))).toBeCloseTo(0, 6);
+      expect(Number(l.getAttribute('x2'))).toBeCloseTo(7, 6);
+    }
+    const ys = sideRails.map((l) => Number(l.getAttribute('y1'))).sort((a, b) => a - b);
+    expect(ys).toEqual([-7, 7]);
+    // The cap straddles the stub's far end (x = w/2), spanning w + railW.
+    const cap = casings.find((l) => l.getAttribute('x1') === l.getAttribute('x2'))!;
+    expect(cap).toBeTruthy();
+    expect(Number(cap.getAttribute('x1'))).toBeCloseTo(7, 6);
+    const capYs = [Number(cap.getAttribute('y1')), Number(cap.getAttribute('y2'))].sort(
+      (a, b) => a - b,
+    );
+    expect(capYs).toEqual([-9, 9]); // ±(w/2 + railW/2)
+  });
+
+  it('caps a SOLID line end at a terminus (outward set)', () => {
+    const { container } = renderWithStroke(spec({ outward: { x: 1, y: 0 } }), 4, '#ff0000');
+    // Body rect + 2 rail rects + 1 cap line.
+    expect(container.querySelectorAll('rect').length).toBe(3);
+    const cap = container.querySelector('line[data-marker-casing]')!;
+    expect(cap).not.toBeNull();
+    expect(cap.getAttribute('stroke')).toBe('#ff0000');
+    expect(cap.getAttribute('stroke-width')).toBe('4');
+    // Straddles the end edge at world x = cx + w/2 = 17, spanning w + railW
+    // around cy = 20.
+    expect(Number(cap.getAttribute('x1'))).toBeCloseTo(17, 6);
+    expect(Number(cap.getAttribute('x2'))).toBeCloseTo(17, 6);
+    const ys = [Number(cap.getAttribute('y1')), Number(cap.getAttribute('y2'))].sort(
+      (a, b) => a - b,
+    );
+    expect(ys).toEqual([11, 29]); // 20 ± (7 + 2)
+  });
+
+  it('paints no cap at an interior stop (outward null)', () => {
+    const { container } = renderWithStroke(spec(), 4);
+    expect(container.querySelector('line')).toBeNull();
+  });
+
+  it('suppresses the end cap when noEndCap is set (highlight arrow tip)', () => {
+    const { container } = render(
+      <svg>
+        <StopMarker
+          spec={spec({ outward: { x: 1, y: 0 } })}
+          lines={strokedLines(4, '#ff0000')}
+          noEndCap
+        />
+      </svg>,
+    );
+    // Side rails stay; only the cap goes.
+    expect(container.querySelectorAll('rect').length).toBe(3);
+    expect(container.querySelector('line')).toBeNull();
+  });
+
+  it('clamps the rendered rail at the marker width', () => {
+    const { container } = renderWithStroke(spec(), 30);
+    const rails = Array.from(container.querySelectorAll('[data-marker-casing]'));
+    expect(rails.length).toBe(2);
+    for (const r of rails) expect(r.getAttribute('height')).toBe('14');
+  });
+
+  it('renders no rails for a stroke-less line or without a lines map', () => {
+    const stroked = renderWithStroke(spec(), 0);
+    expect(stroked.container.querySelectorAll('rect').length).toBe(1);
+    const bare = renderMarker({ spec: spec() });
+    expect(bare.container.querySelectorAll('rect').length).toBe(1);
+  });
+});

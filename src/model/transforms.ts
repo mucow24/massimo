@@ -1,6 +1,12 @@
 import { autoOrientNewStation } from './autoOrient';
 import { effectiveLineOrder } from './lineOrder';
 import { LINE_WIDTH_DEFAULT, LINE_WIDTH_MIN } from './lineWidth';
+import {
+  LINE_STROKE_COLOR_DEFAULT,
+  LINE_STROKE_STEP,
+  LINE_STROKE_WIDTH_DEFAULT,
+  LINE_STROKE_WIDTH_MIN,
+} from './lineStroke';
 import { pairKeyOf } from './pairKey';
 import { rotateBy, stopCenterAt } from '../geometry/orientation';
 import { snapPointToGrid, type GridSnap } from '../geometry/snap';
@@ -314,6 +320,48 @@ export function setLineWidth(doc: MapDoc, id: LineId, w: number): MapDoc {
     nextLine = rest;
   } else {
     nextLine = { ...cur, width: stored };
+  }
+  return { ...doc, lines: { ...doc.lines, [id]: nextLine } };
+}
+
+// Per-line casing width. Same contract as setLineWidth except the grid:
+// non-finite input is ignored, the value is rounded to the nearest
+// LINE_STROKE_STEP (0.5) and clamped to ≥ LINE_STROKE_WIDTH_MIN, and the
+// field is dropped when the result lands on the default (0 = no casing) so
+// it is never stored. Reference-equal no-ops keep slider ticks out of the
+// undo history.
+export function setLineStrokeWidth(doc: MapDoc, id: LineId, w: number): MapDoc {
+  const cur = doc.lines[id];
+  if (!cur || !Number.isFinite(w)) return doc;
+  const norm = Math.max(LINE_STROKE_WIDTH_MIN, Math.round(w / LINE_STROKE_STEP) * LINE_STROKE_STEP);
+  const stored = norm === LINE_STROKE_WIDTH_DEFAULT ? undefined : norm;
+  if (cur.strokeWidth === stored) return doc;
+  let nextLine: Line;
+  if (stored === undefined) {
+    const { strokeWidth: _gone, ...rest } = cur;
+    nextLine = rest;
+  } else {
+    nextLine = { ...cur, strokeWidth: stored };
+  }
+  return { ...doc, lines: { ...doc.lines, [id]: nextLine } };
+}
+
+// Per-line casing color. Normalized to lowercase before compare/store (the
+// color input emits lowercase, but hand-edited files may carry `#FFFFFF`),
+// and the field is dropped at the default so it is never stored — the
+// invariant is "stored color is lowercase and never the default".
+export function setLineStrokeColor(doc: MapDoc, id: LineId, c: string): MapDoc {
+  const cur = doc.lines[id];
+  if (!cur) return doc;
+  const norm = c.toLowerCase();
+  const stored = norm === LINE_STROKE_COLOR_DEFAULT ? undefined : norm;
+  if (cur.strokeColor === stored) return doc;
+  let nextLine: Line;
+  if (stored === undefined) {
+    const { strokeColor: _gone, ...rest } = cur;
+    nextLine = rest;
+  } else {
+    nextLine = { ...cur, strokeColor: stored };
   }
   return { ...doc, lines: { ...doc.lines, [id]: nextLine } };
 }

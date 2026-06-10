@@ -384,6 +384,87 @@ describe('parse — line width sanitizing', () => {
   });
 });
 
+describe('parse — line stroke sanitizing', () => {
+  // Builds a file whose single line carries arbitrary raw stroke fields, as
+  // a hand-edited or legacy file might.
+  const buildWithStroke = (fields: Record<string, unknown>) =>
+    JSON.stringify({
+      format: 'massimo-map',
+      doc: {
+        ...makeDoc({ lines: [makeLine({ id: 'L1' })] }),
+        lines: { L1: { ...makeLine({ id: 'L1' }), ...fields } },
+      },
+    });
+
+  it('round-trips a non-default stroke losslessly', () => {
+    const doc = makeDoc({
+      lines: [makeLine({ id: 'L1', strokeWidth: 4, strokeColor: '#ff0000' })],
+    });
+    const result = parse(serialize(doc));
+    expect(result.ok).toBe(true);
+    if (result.ok) expect(result.doc).toEqual(doc);
+  });
+
+  it('drops an explicit zero stroke width (the default is never stored)', () => {
+    const result = parse(buildWithStroke({ strokeWidth: 0 }));
+    expect(result.ok).toBe(true);
+    if (result.ok) expect('strokeWidth' in result.doc.lines.L1).toBe(false);
+  });
+
+  it('drops non-numeric stroke widths', () => {
+    for (const junk of ['thick', null, true, {}]) {
+      const result = parse(buildWithStroke({ strokeWidth: junk }));
+      expect(result.ok).toBe(true);
+      if (result.ok) expect('strokeWidth' in result.doc.lines.L1).toBe(false);
+    }
+  });
+
+  it('clamps and rounds numeric stroke widths to the canonical 0.5-grid form', () => {
+    // Negative clamps to 0 = the default, so the field is dropped.
+    const low = parse(buildWithStroke({ strokeWidth: -3 }));
+    expect(low.ok).toBe(true);
+    if (low.ok) expect('strokeWidth' in low.doc.lines.L1).toBe(false);
+    const frac = parse(buildWithStroke({ strokeWidth: 3.6 }));
+    expect(frac.ok).toBe(true);
+    if (frac.ok) expect(frac.doc.lines.L1.strokeWidth).toBe(3.5);
+    const half = parse(buildWithStroke({ strokeWidth: 1.5 }));
+    expect(half.ok).toBe(true);
+    if (half.ok) expect(half.doc.lines.L1.strokeWidth).toBe(1.5);
+  });
+
+  it('drops non-finite stroke widths', () => {
+    const json = buildWithStroke({ strokeWidth: 0 }).replace(
+      '"strokeWidth":0',
+      '"strokeWidth":1e999',
+    );
+    const result = parse(json);
+    expect(result.ok).toBe(true);
+    if (result.ok) expect('strokeWidth' in result.doc.lines.L1).toBe(false);
+  });
+
+  it('lowercases stored stroke colors', () => {
+    const result = parse(buildWithStroke({ strokeColor: '#AB12CD' }));
+    expect(result.ok).toBe(true);
+    if (result.ok) expect(result.doc.lines.L1.strokeColor).toBe('#ab12cd');
+  });
+
+  it('drops the default stroke color in any case', () => {
+    for (const def of ['#ffffff', '#FFFFFF']) {
+      const result = parse(buildWithStroke({ strokeColor: def }));
+      expect(result.ok).toBe(true);
+      if (result.ok) expect('strokeColor' in result.doc.lines.L1).toBe(false);
+    }
+  });
+
+  it('drops non-string stroke colors', () => {
+    for (const junk of [5, null, true, {}]) {
+      const result = parse(buildWithStroke({ strokeColor: junk }));
+      expect(result.ok).toBe(true);
+      if (result.ok) expect('strokeColor' in result.doc.lines.L1).toBe(false);
+    }
+  });
+});
+
 describe('serialize / parse — round-trip property', () => {
   // A "canonical" doc is anything the pure transforms can build from the empty
   // default doc: ids minted in order, lineOrder maintained, stops + auto
