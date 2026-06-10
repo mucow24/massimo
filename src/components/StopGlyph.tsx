@@ -1,6 +1,10 @@
 import { STOP_DOT_RADIUS } from '../geometry/orientation';
 import type { DotShape } from '../model/types';
 
+// 'filled-black-service-code' uses a larger disc than STOP_DOT_RADIUS so the
+// code inside stays legible.
+export const SERVICE_CODE_DOT_RADIUS = 6;
+
 interface Props {
   cx: number;
   cy: number;
@@ -8,6 +12,9 @@ interface Props {
   // Fill for 'filled-line-color'; falls back to black when the caller has no
   // line in scope (e.g. a picker preview outside any line context).
   lineColor?: string;
+  // Text for 'filled-black-service-code'; falls back to '?' when the caller
+  // has no line in scope (same convention as badgeColors).
+  serviceCode?: string;
   isHovered?: boolean;
   // Tagged for E2E selection. The test seam is more reliable than guessing
   // by element type + fill, especially for "none" (where there's no element).
@@ -18,7 +25,16 @@ interface Props {
 const DIAMOND_POINTS = (cx: number, cy: number, r: number) =>
   `${cx},${cy - r} ${cx + r},${cy} ${cx},${cy + r} ${cx - r},${cy}`;
 
-export function StopGlyph({ cx, cy, shape, lineColor, isHovered, stationId, lineId }: Props) {
+export function StopGlyph({
+  cx,
+  cy,
+  shape,
+  lineColor,
+  serviceCode,
+  isHovered,
+  stationId,
+  lineId,
+}: Props) {
   const resolved: DotShape = shape ?? 'filled-black';
   if (resolved === 'none') return null;
 
@@ -42,6 +58,29 @@ export function StopGlyph({ cx, cy, shape, lineColor, isHovered, stationId, line
         {...(hoverStroke ?? {})}
         {...dataAttrs}
       />
+    );
+  }
+
+  if (resolved === 'filled-black-service-code') {
+    const cr = SERVICE_CODE_DOT_RADIUS;
+    return (
+      <g {...dataAttrs}>
+        <circle cx={cx} cy={cy} r={cr} fill="#000" {...(hoverStroke ?? {})} />
+        <text
+          x={cx}
+          y={cy}
+          textAnchor="middle"
+          dominantBaseline="central"
+          fontFamily="'Helvetica Neue', Helvetica, Arial, sans-serif"
+          fontSize={cr * 1.2}
+          fontWeight={700}
+          fill="#fff"
+          pointerEvents="none"
+          style={{ userSelect: 'none' }}
+        >
+          {serviceCode ?? '?'}
+        </text>
+      </g>
     );
   }
 

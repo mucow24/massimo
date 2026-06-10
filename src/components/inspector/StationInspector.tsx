@@ -156,6 +156,7 @@ export function StationInspector({ id }: { id: StationId }) {
                     )
               }
               lineColor={selectedLineId === null ? undefined : linesAll[selectedLineId]?.color}
+              serviceCode={selectedLineId === null ? undefined : linesAll[selectedLineId]?.service}
               onPick={(shape) => {
                 if (selectedLineId === null) return;
                 dispatchAll((sid) => setDotShape(sid, selectedLineId, shape));

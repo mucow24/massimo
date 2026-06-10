@@ -64,6 +64,7 @@ export function StationDots({
             cy={w.y}
             shape={resolveDotShape(lines[cell.lineId], cell)}
             lineColor={lines[cell.lineId]?.color}
+            serviceCode={lines[cell.lineId]?.service}
             isHovered={isHovered}
             stationId={station.id}
             lineId={cell.lineId}
