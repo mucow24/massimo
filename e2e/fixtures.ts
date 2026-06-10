@@ -28,6 +28,10 @@ export interface SeedLine {
   // Per-line stripe width in world units. Omit to simulate a line saved
   // before the field existed (renders at the default width).
   width?: number;
+  // Per-line casing. Omit to simulate a line saved before the fields
+  // existed (renders with no casing / the default white).
+  strokeWidth?: number;
+  strokeColor?: string;
 }
 
 export interface SeedRouteBullet {
@@ -117,8 +121,10 @@ export async function seedAndOpen(
       color: l.color,
       stations: l.stations,
       // Only include width when provided, so an omitted value persists as a
-      // pre-width (legacy) line.
+      // pre-width (legacy) line. Same for the casing fields.
       ...(l.width !== undefined ? { width: l.width } : {}),
+      ...(l.strokeWidth !== undefined ? { strokeWidth: l.strokeWidth } : {}),
+      ...(l.strokeColor !== undefined ? { strokeColor: l.strokeColor } : {}),
     };
   }
 

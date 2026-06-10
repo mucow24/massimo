@@ -82,6 +82,7 @@ export function ColorPalette({
         ?
         <input
           type="color"
+          aria-label="Custom color"
           value={value}
           onChange={(e) => onChange(e.target.value)}
           {...customField}

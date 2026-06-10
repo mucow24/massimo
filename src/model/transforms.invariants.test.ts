@@ -2,6 +2,7 @@ import { describe, it, expect } from 'vitest';
 import fc from 'fast-check';
 import * as T from './transforms';
 import { LINE_WIDTH_DEFAULT, LINE_WIDTH_MIN } from './lineWidth';
+import { LINE_STROKE_COLOR_DEFAULT, LINE_STROKE_WIDTH_DEFAULT } from './lineStroke';
 import type { MapDoc } from './types';
 import { counterIdFactory } from './ids';
 
@@ -16,7 +17,9 @@ type Action =
   | { kind: 'toggleStationOnLine' }
   | { kind: 'rotateStation' }
   | { kind: 'moveLineInOrder'; dir: -1 | 1 }
-  | { kind: 'setLineWidth'; w: number };
+  | { kind: 'setLineWidth'; w: number }
+  | { kind: 'setLineStrokeWidth'; w: number }
+  | { kind: 'setLineStrokeColor'; c: string };
 
 const actionArb = fc.oneof(
   fc.constant<Action>({ kind: 'addStation' }),
@@ -38,6 +41,20 @@ const actionArb = fc.oneof(
       fc.double({ min: 0, max: 40, noNaN: true }),
       fc.constant(Number.NaN),
     ),
+  }),
+  fc.record({
+    kind: fc.constant<'setLineStrokeWidth'>('setLineStrokeWidth'),
+    w: fc.oneof(
+      fc.integer({ min: -5, max: 40 }),
+      fc.double({ min: 0, max: 40, noNaN: true }),
+      fc.constant(Number.NaN),
+    ),
+  }),
+  fc.record({
+    kind: fc.constant<'setLineStrokeColor'>('setLineStrokeColor'),
+    // Mixed-case defaults and non-defaults to exercise the lowercase
+    // normalization + drop-at-default paths.
+    c: fc.constantFrom('#ffffff', '#FFFFFF', '#ab12cd', '#AB12CD', '#000000'),
   }),
 );
 
@@ -76,6 +93,14 @@ function applyOne(doc: MapDoc, action: Action, ids: ReturnType<typeof counterIdF
     case 'setLineWidth': {
       const id = pickKey(doc.lines);
       return id ? T.setLineWidth(doc, id, action.w) : doc;
+    }
+    case 'setLineStrokeWidth': {
+      const id = pickKey(doc.lines);
+      return id ? T.setLineStrokeWidth(doc, id, action.w) : doc;
+    }
+    case 'setLineStrokeColor': {
+      const id = pickKey(doc.lines);
+      return id ? T.setLineStrokeColor(doc, id, action.c) : doc;
     }
   }
 }
@@ -139,6 +164,26 @@ describe('transforms invariants (property-based)', () => {
           expect(Number.isInteger(w)).toBe(true);
           expect(w).toBeGreaterThanOrEqual(LINE_WIDTH_MIN);
           expect(w).not.toBe(LINE_WIDTH_DEFAULT);
+        }
+      }),
+    );
+  });
+
+  it('line stroke fields are always in canonical stored form', () => {
+    fc.assert(
+      fc.property(fc.array(actionArb, { maxLength: 30 }), (actions) => {
+        const doc = applyAll(actions);
+        for (const lid of Object.keys(doc.lines)) {
+          const { strokeWidth, strokeColor } = doc.lines[lid];
+          if (strokeWidth !== undefined) {
+            // On the half-pixel grid, never the (dropped) default.
+            expect(Number.isInteger(strokeWidth * 2)).toBe(true);
+            expect(strokeWidth).toBeGreaterThan(LINE_STROKE_WIDTH_DEFAULT);
+          }
+          if (strokeColor !== undefined) {
+            expect(strokeColor).toBe(strokeColor.toLowerCase());
+            expect(strokeColor).not.toBe(LINE_STROKE_COLOR_DEFAULT);
+          }
         }
       }),
     );

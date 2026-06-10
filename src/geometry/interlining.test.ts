@@ -1189,7 +1189,7 @@ describe('buildStopMarkers', () => {
     });
   });
 
-  describe('outward direction (dashed terminus cap-extension)', () => {
+  describe('outward direction (terminus tangent)', () => {
     const dashedDoc = () =>
       makeDoc({
         stations: [
@@ -1235,7 +1235,7 @@ describe('buildStopMarkers', () => {
       expect(findMarker(doc, 's2')?.outward).toBeNull();
     });
 
-    it('outward is null on a non-dashed terminus', () => {
+    it('outward is set on a SOLID terminus too (stroke end caps need it)', () => {
       const doc = makeDoc({
         stations: [
           stationWithStop('s1', 'L1', { x: 0, y: 0 }),
@@ -1243,7 +1243,9 @@ describe('buildStopMarkers', () => {
         ],
         lines: [makeLine({ id: 'L1', stations: ['s1', 's2'] })],
       });
-      expect(findMarker(doc, 's1')?.outward).toBeNull();
+      const m = findMarker(doc, 's1');
+      expect(m?.outward?.x).toBeLessThan(0);
+      expect(Math.abs(m?.outward?.y ?? 1)).toBeLessThan(0.01);
     });
 
     it('outward is null when bands are not supplied', () => {

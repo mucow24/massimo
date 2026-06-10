@@ -73,10 +73,13 @@ export interface SegmentBandSpec {
 // dashed (so two dashed corridors meet cleanly at the stop center with no
 // painted marker breaking up the dash rhythm); otherwise solid.
 //
-// `outward` is set only when this is a TERMINUS on a dashed run (single
-// dashed adjacency). The renderer paints a short cap-extension stub
-// outward along this unit vector so the dashes fill the outer half of the
-// dot — without it the dashed line would visually end mid-dot.
+// `outward` is set when this stop is a TERMINUS for the line (single
+// adjacency, band available): the unit vector pointing out of the line's
+// end along the band's tangent. Dashed termini use it to paint the
+// cap-extension stub (so the dashes fill the outer half of the dot —
+// without it the dashed line would visually end mid-dot); stroked lines of
+// any style use it to place the casing's end-cap rail across the line's
+// end. Null at interior stations and when bands aren't supplied.
 export interface StopMarkerSpec {
   cx: number;
   cy: number;
@@ -384,6 +387,11 @@ export function assignLinePriorities(
 //   - 'stripe' : one path of a band, identified by (band, stripeIndex).
 //   - 'marker' : a stop square for one line at one station.
 //
+// Per-line stroke (casing) needs no renderable of its own: the rails paint
+// INSIDE the line's footprint, immediately after their body, within
+// <SegmentBand> / <StopMarker> — they can never collide with another
+// renderable's paint, so ordering is purely the per-stripe priority sort.
+//
 // Band routing warnings are NOT emitted here — they paint in a dedicated
 // top-most overlay (see <BandWarning> in MapCanvas) so the ⚠ marker and its
 // red frame sit above every stripe, dot, and label rather than at a stripe's
@@ -467,7 +475,7 @@ export function buildStopMarkers(
         rotationDeg,
         priority: basePriority - stationLayer * LAYER_WEIGHT,
         style,
-        outward: style === 'dashed' ? terminusOutwardFromBand(line, station.id, bandByPair) : null,
+        outward: terminusOutwardFromBand(line, station.id, bandByPair),
         width: lineWidthOf(line),
       });
     }

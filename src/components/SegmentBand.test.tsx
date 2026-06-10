@@ -156,6 +156,123 @@ describe('<SegmentBand> — single-stripe renderer', () => {
   });
 });
 
+describe('<SegmentBand> — casing rails (centered on the body edges)', () => {
+  const strokedLines = (strokeWidth: number, strokeColor?: string): Record<LineId, Line> => ({
+    L1: makeLine({
+      id: 'L1',
+      stations: ['s1', 's2'],
+      ...(strokeWidth > 0 ? { strokeWidth } : {}),
+      ...(strokeColor ? { strokeColor } : {}),
+    }),
+  });
+
+  const renderStroked = (lines: Record<LineId, Line>, spec = baseSpec(['L1']), idx = 0) =>
+    render(
+      <svg>
+        <SegmentBand spec={spec} stripeIndex={idx} lines={lines} />
+      </svg>,
+    );
+
+  // First M-coordinate pair of a path's d — for a straight horizontal band
+  // this is the rail's y position.
+  const startY = (p: Element) => Number(p.getAttribute('d')!.match(/M [\d.-]+ ([\d.-]+)/)![1]);
+
+  it('paints two rails AFTER the body, centered on its edges', () => {
+    const { container } = renderStroked(strokedLines(4, '#ff0000'));
+    const paths = Array.from(container.querySelectorAll('path'));
+    expect(paths.length).toBe(3); // body + 2 rails
+    expect(paths[0].hasAttribute('data-band-stripe')).toBe(true);
+    for (const rail of paths.slice(1)) {
+      expect(rail.hasAttribute('data-band-casing')).toBe(true);
+      expect(rail.getAttribute('data-line-id')).toBe('L1');
+      expect(rail.getAttribute('stroke')).toBe('#ff0000');
+      expect(rail.getAttribute('stroke-width')).toBe('4');
+      expect(rail.getAttribute('stroke-dasharray')).toBeNull();
+      expect(rail.getAttribute('pointer-events')).toBe('none');
+    }
+    // Rail centers at ±14/2 = ±7 — straddling the body edges.
+    expect(
+      paths
+        .slice(1)
+        .map(startY)
+        .sort((a, b) => a - b),
+    ).toEqual([-7, 7]);
+  });
+
+  it('defaults the rail color to white', () => {
+    const { container } = renderStroked(strokedLines(4));
+    const rail = container.querySelector('[data-band-casing]')!;
+    expect(rail.getAttribute('stroke')).toBe('#ffffff');
+  });
+
+  it('offsets against the stripe’s own width and offset in a mixed-width band', () => {
+    // Widths [14, 28] ⇒ offsets [−10.5, +10.5]. Stripe 1 (width 28):
+    // rail centers at 10.5 ± 14 = [−3.5, 24.5]. (Offsets are along the left
+    // normal — screen-up for an east segment — so +offset lands at −y.)
+    const spec = makeBandSpec(['L1', 'L2'], { stripeWidths: [14, 28] });
+    const lines: Record<LineId, Line> = {
+      L1: makeLine({ id: 'L1', stations: ['s1', 's2'] }),
+      L2: makeLine({ id: 'L2', stations: ['s1', 's2'], strokeWidth: 3 }),
+    };
+    const { container } = renderStroked(lines, spec, 1);
+    const rails = Array.from(container.querySelectorAll('[data-band-casing]'));
+    expect(rails.length).toBe(2);
+    expect(rails.map(startY).sort((a, b) => a - b)).toEqual([-24.5, 3.5]);
+    for (const r of rails) expect(r.getAttribute('stroke-width')).toBe('3');
+  });
+
+  it('clamps the rendered rail at the stripe width', () => {
+    // Stored stroke 30 on a 14-wide stripe: rails render 14 wide, still
+    // centered on the edges (they meet exactly at the centerline).
+    const { container } = renderStroked(strokedLines(30));
+    const rails = Array.from(container.querySelectorAll('[data-band-casing]'));
+    expect(rails.length).toBe(2);
+    for (const r of rails) expect(r.getAttribute('stroke-width')).toBe('14');
+    expect(rails.map(startY).sort((a, b) => a - b)).toEqual([-7, 7]);
+  });
+
+  it('renders no rails for a stroke-less line', () => {
+    const { container } = renderStroked(strokedLines(0));
+    expect(container.querySelectorAll('path').length).toBe(1);
+    expect(container.querySelector('[data-band-casing]')).toBeNull();
+  });
+
+  it('keeps the rails solid over a dashed body', () => {
+    const lines: Record<LineId, Line> = {
+      L1: makeLine({
+        id: 'L1',
+        stations: ['s1', 's2'],
+        segmentStyles: { 's1|s2': 'dashed' },
+        strokeWidth: 2,
+      }),
+    };
+    const { container } = renderStroked(lines);
+    const paths = Array.from(container.querySelectorAll('path'));
+    expect(paths.length).toBe(4); // underlay + dashes + 2 rails
+    const rails = paths.filter((p) => p.hasAttribute('data-band-casing'));
+    expect(rails.length).toBe(2);
+    for (const r of rails) expect(r.getAttribute('stroke-dasharray')).toBeNull();
+  });
+
+  it('resolves the stroke live from the lines map — an edit repaints without a new spec', () => {
+    const spec = baseSpec(['L1']);
+    const { container, rerender } = render(
+      <svg>
+        <SegmentBand spec={spec} stripeIndex={0} lines={strokedLines(4, '#ff0000')} />
+      </svg>,
+    );
+    expect(container.querySelector('[data-band-casing]')!.getAttribute('stroke')).toBe('#ff0000');
+    rerender(
+      <svg>
+        <SegmentBand spec={spec} stripeIndex={0} lines={strokedLines(1.5, '#00aa55')} />
+      </svg>,
+    );
+    const rail = container.querySelector('[data-band-casing]')!;
+    expect(rail.getAttribute('stroke')).toBe('#00aa55');
+    expect(rail.getAttribute('stroke-width')).toBe('1.5');
+  });
+});
+
 describe('<BandWarning>', () => {
   const warnSpec = (lineIds: LineId[], centerline: { x: number; y: number }[]): SegmentBandSpec => {
     const spec = baseSpec(lineIds);
