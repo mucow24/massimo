@@ -13,14 +13,14 @@ describe('<StationShapePicker />', () => {
     expect(screen.queryByRole('menu')).toBeNull();
   });
 
-  it('trigger is enabled when disabled=false; clicking opens a menu with 10 menuitems', async () => {
+  it('trigger is enabled when disabled=false; clicking opens a menu with 11 menuitems', async () => {
     const user = userEvent.setup();
     render(<StationShapePicker disabled={false} currentShape="filled-black" onPick={vi.fn()} />);
     const trigger = screen.getByRole('button', { name: 'Stop shape' });
     expect(trigger).toHaveAttribute('aria-disabled', 'false');
     await user.click(trigger);
     expect(screen.getByRole('menu')).toBeInTheDocument();
-    expect(screen.getAllByRole('menuitem')).toHaveLength(10);
+    expect(screen.getAllByRole('menuitem')).toHaveLength(11);
   });
 
   it('menu items carry human-readable aria-labels for every shape', async () => {
@@ -38,6 +38,9 @@ describe('<StationShapePicker />', () => {
       screen.getByRole('menuitem', { name: 'Filled white with black stroke' }),
     ).toBeInTheDocument();
     expect(screen.getByRole('menuitem', { name: 'Filled line color' })).toBeInTheDocument();
+    expect(
+      screen.getByRole('menuitem', { name: 'Filled black with service code' }),
+    ).toBeInTheDocument();
     expect(screen.getByRole('menuitem', { name: 'Filled black diamond' })).toBeInTheDocument();
     expect(screen.getByRole('menuitem', { name: 'Filled white diamond' })).toBeInTheDocument();
     expect(screen.getByRole('menuitem', { name: 'None' })).toBeInTheDocument();
@@ -56,6 +59,23 @@ describe('<StationShapePicker />', () => {
     await user.click(screen.getByRole('button', { name: 'Stop shape' }));
     const item = screen.getByRole('menuitem', { name: 'Filled line color' });
     expect(item.querySelector('circle')?.getAttribute('fill')).toBe('#e6002d');
+  });
+
+  it('previews the filled-black-service-code option with the provided serviceCode', async () => {
+    const user = userEvent.setup();
+    render(
+      <StationShapePicker
+        disabled={false}
+        currentShape="filled-black"
+        lineColor="#e6002d"
+        serviceCode="A"
+        onPick={vi.fn()}
+      />,
+    );
+    await user.click(screen.getByRole('button', { name: 'Stop shape' }));
+    const item = screen.getByRole('menuitem', { name: 'Filled black with service code' });
+    expect(item.querySelector('circle')?.getAttribute('fill')).toBe('#000');
+    expect(item.querySelector('text')?.textContent).toBe('A');
   });
 
   it('trigger renders the currentShape glyph (filled-line-color → lineColor-fill circle)', () => {

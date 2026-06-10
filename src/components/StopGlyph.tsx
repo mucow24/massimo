@@ -8,6 +8,9 @@ interface Props {
   // Fill for 'filled-line-color'; falls back to black when the caller has no
   // line in scope (e.g. a picker preview outside any line context).
   lineColor?: string;
+  // Text for 'filled-black-service-code'; falls back to '?' when the caller
+  // has no line in scope (same convention as badgeColors).
+  serviceCode?: string;
   isHovered?: boolean;
   // Tagged for E2E selection. The test seam is more reliable than guessing
   // by element type + fill, especially for "none" (where there's no element).
@@ -18,7 +21,16 @@ interface Props {
 const DIAMOND_POINTS = (cx: number, cy: number, r: number) =>
   `${cx},${cy - r} ${cx + r},${cy} ${cx},${cy + r} ${cx - r},${cy}`;
 
-export function StopGlyph({ cx, cy, shape, lineColor, isHovered, stationId, lineId }: Props) {
+export function StopGlyph({
+  cx,
+  cy,
+  shape,
+  lineColor,
+  serviceCode,
+  isHovered,
+  stationId,
+  lineId,
+}: Props) {
   const resolved: DotShape = shape ?? 'filled-black';
   if (resolved === 'none') return null;
 
@@ -42,6 +54,28 @@ export function StopGlyph({ cx, cy, shape, lineColor, isHovered, stationId, line
         {...(hoverStroke ?? {})}
         {...dataAttrs}
       />
+    );
+  }
+
+  if (resolved === 'filled-black-service-code') {
+    return (
+      <g {...dataAttrs}>
+        <circle cx={cx} cy={cy} r={r} fill="#000" {...(hoverStroke ?? {})} />
+        <text
+          x={cx}
+          y={cy}
+          textAnchor="middle"
+          dominantBaseline="central"
+          fontFamily="'Helvetica Neue', Helvetica, Arial, sans-serif"
+          fontSize={r * 1.1}
+          fontWeight={700}
+          fill="#fff"
+          pointerEvents="none"
+          style={{ userSelect: 'none' }}
+        >
+          {serviceCode ?? '?'}
+        </text>
+      </g>
     );
   }
 

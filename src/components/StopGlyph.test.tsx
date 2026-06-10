@@ -4,7 +4,12 @@ import { StopGlyph } from './StopGlyph';
 import { STOP_DOT_RADIUS } from '../geometry/orientation';
 import type { DotShape } from '../model/types';
 
-function renderGlyph(shape: DotShape | undefined, isHovered = false, lineColor?: string) {
+function renderGlyph(
+  shape: DotShape | undefined,
+  isHovered = false,
+  lineColor?: string,
+  serviceCode?: string,
+) {
   const { container } = render(
     <svg>
       <StopGlyph
@@ -12,6 +17,7 @@ function renderGlyph(shape: DotShape | undefined, isHovered = false, lineColor?:
         cy={0}
         shape={shape}
         lineColor={lineColor}
+        serviceCode={serviceCode}
         isHovered={isHovered}
         stationId="A"
         lineId="L1"
@@ -89,6 +95,31 @@ describe('<StopGlyph />', () => {
     const svg = renderGlyph('filled-line-color');
     const c = svg.querySelector('circle')!;
     expect(c.getAttribute('fill')).toBe('#000');
+  });
+
+  it('renders filled-black-service-code as a black circle with the service code in white', () => {
+    const svg = renderGlyph('filled-black-service-code', false, '#e6002d', 'A');
+    const c = svg.querySelector('circle')!;
+    expect(c.getAttribute('fill')).toBe('#000');
+    expect(parseFloat(c.getAttribute('r')!)).toBeCloseTo(STOP_DOT_RADIUS, 5);
+    const t = svg.querySelector('text')!;
+    expect(t.textContent).toBe('A');
+    expect(t.getAttribute('fill')).toBe('#fff');
+    expect(svg.querySelector('g')!.getAttribute('data-stop-shape')).toBe(
+      'filled-black-service-code',
+    );
+  });
+
+  it('filled-black-service-code falls back to "?" when no serviceCode is provided', () => {
+    const svg = renderGlyph('filled-black-service-code');
+    expect(svg.querySelector('text')!.textContent).toBe('?');
+  });
+
+  it('hover on filled-black-service-code strokes the circle white 3px', () => {
+    const svg = renderGlyph('filled-black-service-code', true, undefined, 'A');
+    const c = svg.querySelector('circle')!;
+    expect(c.getAttribute('stroke')).toBe('#fff');
+    expect(c.getAttribute('stroke-width')).toBe('3');
   });
 
   it('renders filled-black-diamond as a polygon', () => {
