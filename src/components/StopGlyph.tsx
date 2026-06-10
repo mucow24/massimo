@@ -1,10 +1,9 @@
 import { STOP_DOT_RADIUS } from '../geometry/orientation';
-import { LINE_WIDTH_DEFAULT } from '../model/lineWidth';
 import type { DotShape } from '../model/types';
 
-// 'filled-black-service-code' fills the full default line width (vs the
-// smaller STOP_DOT_RADIUS dot) so the code inside stays legible.
-export const SERVICE_CODE_DOT_RADIUS = LINE_WIDTH_DEFAULT / 2;
+// 'filled-black-service-code' uses a larger disc than STOP_DOT_RADIUS so the
+// code inside stays legible.
+export const SERVICE_CODE_DOT_RADIUS = 6;
 
 interface Props {
   cx: number;
@@ -73,7 +72,7 @@ export function StopGlyph({
           textAnchor="middle"
           dominantBaseline="central"
           fontFamily="'Helvetica Neue', Helvetica, Arial, sans-serif"
-          fontSize={cr * 1.3}
+          fontSize={cr * 1.2}
           fontWeight={700}
           fill="#fff"
           pointerEvents="none"
