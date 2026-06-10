@@ -230,6 +230,7 @@ export function HighlightedLineLayer({
                 cx={cx}
                 cy={cy}
                 shape={resolveDotShape(ln, cell)}
+                lineColor={ln.color}
                 stationId={sid}
                 lineId={cell.lineId}
               />,

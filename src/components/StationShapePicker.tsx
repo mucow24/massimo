@@ -14,6 +14,7 @@ export const SHAPES: ShapeOption[] = [
   { shape: 'filled-white', label: 'Filled white' },
   { shape: 'open-white', label: 'Open white' },
   { shape: 'filled-white-black-stroke', label: 'Filled white with black stroke' },
+  { shape: 'filled-line-color', label: 'Filled line color' },
   { shape: 'filled-black-diamond', label: 'Filled black diamond' },
   { shape: 'filled-white-diamond', label: 'Filled white diamond' },
   { shape: 'none', label: 'None' },
@@ -25,10 +26,12 @@ const TRIGGER_SIZE = 15;
 export function StationShapePicker({
   disabled,
   currentShape,
+  lineColor,
   onPick,
 }: {
   disabled: boolean;
   currentShape: DotShape;
+  lineColor?: string;
   onPick: (shape: DotShape) => void;
 }) {
   const { open, setOpen, wrapRef } = usePopover();
@@ -61,7 +64,7 @@ export function StationShapePicker({
           viewBox={`${-TRIGGER_SIZE / 2} ${-TRIGGER_SIZE / 2} ${TRIGGER_SIZE} ${TRIGGER_SIZE}`}
           aria-hidden="true"
         >
-          <StopGlyph cx={0} cy={0} shape={currentShape} />
+          <StopGlyph cx={0} cy={0} shape={currentShape} lineColor={lineColor} />
         </svg>
       </button>
       {open && (
@@ -80,7 +83,7 @@ export function StationShapePicker({
                 height={PREVIEW_SIZE}
                 viewBox={`${-PREVIEW_SIZE / 2} ${-PREVIEW_SIZE / 2} ${PREVIEW_SIZE} ${PREVIEW_SIZE}`}
               >
-                <StopGlyph cx={0} cy={0} shape={shape} />
+                <StopGlyph cx={0} cy={0} shape={shape} lineColor={lineColor} />
               </svg>
             </button>
           ))}
