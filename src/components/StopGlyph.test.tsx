@@ -4,10 +4,18 @@ import { StopGlyph } from './StopGlyph';
 import { STOP_DOT_RADIUS } from '../geometry/orientation';
 import type { DotShape } from '../model/types';
 
-function renderGlyph(shape: DotShape | undefined, isHovered = false) {
+function renderGlyph(shape: DotShape | undefined, isHovered = false, lineColor?: string) {
   const { container } = render(
     <svg>
-      <StopGlyph cx={0} cy={0} shape={shape} isHovered={isHovered} stationId="A" lineId="L1" />
+      <StopGlyph
+        cx={0}
+        cy={0}
+        shape={shape}
+        lineColor={lineColor}
+        isHovered={isHovered}
+        stationId="A"
+        lineId="L1"
+      />
     </svg>,
   );
   return container.querySelector('svg')!;
@@ -67,6 +75,20 @@ describe('<StopGlyph />', () => {
     expect(c.getAttribute('fill')).toBe('#fff');
     expect(c.getAttribute('stroke')).toBe('#000');
     expect(c.getAttribute('stroke-width')).toBe('2');
+  });
+
+  it("renders filled-line-color as a circle filled with the line's color, no stroke", () => {
+    const svg = renderGlyph('filled-line-color', false, '#e6002d');
+    const c = svg.querySelector('circle')!;
+    expect(c.getAttribute('fill')).toBe('#e6002d');
+    expect(c.getAttribute('stroke')).toBeNull();
+    expect(parseFloat(c.getAttribute('r')!)).toBeCloseTo(STOP_DOT_RADIUS, 5);
+  });
+
+  it('filled-line-color falls back to black when no lineColor is provided', () => {
+    const svg = renderGlyph('filled-line-color');
+    const c = svg.querySelector('circle')!;
+    expect(c.getAttribute('fill')).toBe('#000');
   });
 
   it('renders filled-black-diamond as a polygon', () => {

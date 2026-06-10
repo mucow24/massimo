@@ -13,14 +13,14 @@ describe('<StationShapePicker />', () => {
     expect(screen.queryByRole('menu')).toBeNull();
   });
 
-  it('trigger is enabled when disabled=false; clicking opens a menu with 9 menuitems', async () => {
+  it('trigger is enabled when disabled=false; clicking opens a menu with 10 menuitems', async () => {
     const user = userEvent.setup();
     render(<StationShapePicker disabled={false} currentShape="filled-black" onPick={vi.fn()} />);
     const trigger = screen.getByRole('button', { name: 'Stop shape' });
     expect(trigger).toHaveAttribute('aria-disabled', 'false');
     await user.click(trigger);
     expect(screen.getByRole('menu')).toBeInTheDocument();
-    expect(screen.getAllByRole('menuitem')).toHaveLength(9);
+    expect(screen.getAllByRole('menuitem')).toHaveLength(10);
   });
 
   it('menu items carry human-readable aria-labels for every shape', async () => {
@@ -37,9 +37,38 @@ describe('<StationShapePicker />', () => {
     expect(
       screen.getByRole('menuitem', { name: 'Filled white with black stroke' }),
     ).toBeInTheDocument();
+    expect(screen.getByRole('menuitem', { name: 'Filled line color' })).toBeInTheDocument();
     expect(screen.getByRole('menuitem', { name: 'Filled black diamond' })).toBeInTheDocument();
     expect(screen.getByRole('menuitem', { name: 'Filled white diamond' })).toBeInTheDocument();
     expect(screen.getByRole('menuitem', { name: 'None' })).toBeInTheDocument();
+  });
+
+  it('previews the filled-line-color option in the provided lineColor', async () => {
+    const user = userEvent.setup();
+    render(
+      <StationShapePicker
+        disabled={false}
+        currentShape="filled-black"
+        lineColor="#e6002d"
+        onPick={vi.fn()}
+      />,
+    );
+    await user.click(screen.getByRole('button', { name: 'Stop shape' }));
+    const item = screen.getByRole('menuitem', { name: 'Filled line color' });
+    expect(item.querySelector('circle')?.getAttribute('fill')).toBe('#e6002d');
+  });
+
+  it('trigger renders the currentShape glyph (filled-line-color → lineColor-fill circle)', () => {
+    render(
+      <StationShapePicker
+        disabled={false}
+        currentShape="filled-line-color"
+        lineColor="#0055ff"
+        onPick={vi.fn()}
+      />,
+    );
+    const trigger = screen.getByRole('button', { name: 'Stop shape' });
+    expect(trigger.querySelector('circle')?.getAttribute('fill')).toBe('#0055ff');
   });
 
   it('clicking a menu item calls onPick with that shape and closes the menu', async () => {
