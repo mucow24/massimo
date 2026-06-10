@@ -16,7 +16,7 @@ test.describe('Waypoint toggle', () => {
 
     // Baseline: B has a visible black dot, and the sidebar has no WP pill.
     await expect(
-      page.locator('[data-stop-station="B"][data-stop-shape="filled-black"]'),
+      page.locator('[data-stop-station="B"][data-stop-shape="circle"]'),
     ).toBeVisible();
     await expect(page.locator('.wp-pill')).toHaveCount(0);
 
@@ -29,7 +29,7 @@ test.describe('Waypoint toggle', () => {
     await expect(page.locator('[data-station-id="B"]')).toBeVisible();
     // Sibling A's glyph is unaffected.
     await expect(
-      page.locator('[data-stop-station="A"][data-stop-shape="filled-black"]'),
+      page.locator('[data-stop-station="A"][data-stop-shape="circle"]'),
     ).toBeVisible();
     // WP pill present in the sidebar.
     await expect(page.locator('.wp-pill')).toBeVisible();
@@ -45,7 +45,7 @@ test.describe('Waypoint toggle', () => {
     await page.getByRole('button', { name: 'Stop shape' }).click();
     await page.getByRole('menuitem', { name: 'Filled black diamond' }).click();
     await expect(
-      page.locator('[data-stop-station="B"][data-stop-shape="filled-black-diamond"]'),
+      page.locator('[data-stop-station="B"][data-stop-shape="diamond"]'),
     ).toBeVisible();
 
     // Toggle waypoint on, then off.
@@ -55,7 +55,7 @@ test.describe('Waypoint toggle', () => {
 
     // Diamond shape restored.
     await expect(
-      page.locator('[data-stop-station="B"][data-stop-shape="filled-black-diamond"]'),
+      page.locator('[data-stop-station="B"][data-stop-shape="diamond"]'),
     ).toBeVisible();
   });
 
@@ -70,7 +70,7 @@ test.describe('Waypoint toggle', () => {
     await page.keyboard.press('Control+z');
     await expect(page.locator('.wp-pill')).toHaveCount(0);
     await expect(
-      page.locator('[data-stop-station="B"][data-stop-shape="filled-black"]'),
+      page.locator('[data-stop-station="B"][data-stop-shape="circle"]'),
     ).toBeVisible();
   });
 });

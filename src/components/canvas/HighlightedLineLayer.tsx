@@ -7,7 +7,7 @@ import {
   type OrderedRenderable,
 } from '../../geometry/interlining';
 import { pairKeyOf } from '../../model/pairKey';
-import { resolveDotShape } from '../../model/transforms';
+import { resolveDotStyle } from '../../model/transforms';
 import { STOP_SIZE, travelDirLocal, rotateBy } from '../../geometry/orientation';
 import { lineStyleStrokeAttrs, lineStyleUnderlayAttrs } from '../HatchPatterns';
 import { offsetFilletPath } from '../../geometry/router';
@@ -303,7 +303,7 @@ export function HighlightedLineLayer({
                 key={'hl-d:' + sid}
                 cx={cx}
                 cy={cy}
-                shape={resolveDotShape(ln, cell)}
+                style={resolveDotStyle(ln, cell)}
                 lineColor={ln.color}
                 serviceCode={ln.service}
                 stationId={sid}

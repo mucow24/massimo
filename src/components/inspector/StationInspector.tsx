@@ -9,7 +9,8 @@ import { LabelAlignButton, LabelValignButton } from './LabelAlignButtons';
 import { useFieldHistory } from '../useFieldHistory';
 import { useDismiss } from '../usePopover';
 import { StationShapePicker } from '../StationShapePicker';
-import { resolveDotShape, resolveOffsetPerp } from '../../model/transforms';
+import { resolveDotStyle, resolveOffsetPerp } from '../../model/transforms';
+import { DEFAULT_DOT_STYLE, DOT_SHAPE_PRESETS } from '../../model/dotStyle';
 
 export function StationInspector({ id }: { id: StationId }) {
   const station = useDoc((s) => s.stations[id]);
@@ -28,7 +29,7 @@ export function StationInspector({ id }: { id: StationId }) {
   const setLabelAlign = useDoc((s) => s.setLabelAlign);
   const cycleLabelValign = useDoc((s) => s.cycleLabelValign);
   const setLabelValign = useDoc((s) => s.setLabelValign);
-  const setDotShape = useDoc((s) => s.setDotShape);
+  const setDotStyle = useDoc((s) => s.setDotStyle);
   const setStationWaypoint = useDoc((s) => s.setStationWaypoint);
   const setStationLabelBold = useDoc((s) => s.setStationLabelBold);
   const setStationLabelItalic = useDoc((s) => s.setStationLabelItalic);
@@ -147,10 +148,10 @@ export function StationInspector({ id }: { id: StationId }) {
           <div ref={shapePickerRef} style={{ display: 'inline-flex' }}>
             <StationShapePicker
               disabled={selectedLineId === null || labelSelected}
-              currentShape={
+              currentStyle={
                 selectedLineId === null
-                  ? 'filled-black'
-                  : resolveDotShape(
+                  ? DEFAULT_DOT_STYLE
+                  : resolveDotStyle(
                       linesAll[selectedLineId],
                       station.stops.find((s) => s.lineId === selectedLineId),
                     )
@@ -159,8 +160,8 @@ export function StationInspector({ id }: { id: StationId }) {
               serviceCode={selectedLineId === null ? undefined : linesAll[selectedLineId]?.service}
               onPick={(shape) => {
                 if (selectedLineId === null) return;
-                dispatchAll((sid) => setDotShape(sid, selectedLineId, shape));
-                // dotShape is rotation-invariant — no per-match transform.
+                dispatchAll((sid) => setDotStyle(sid, selectedLineId, DOT_SHAPE_PRESETS[shape]));
+                // dotStyle is rotation-invariant — no per-match transform.
               }}
             />
           </div>

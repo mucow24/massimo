@@ -6,8 +6,10 @@ import {
   TEXT_LABEL_COLOR_DEFAULT,
   TEXT_LABEL_DARK_COLOR_DEFAULT,
 } from '../model/transforms';
+import { DOT_SHAPE_PRESETS } from '../model/dotStyle';
 import { makeLine, makeStation, makeStop, makeLabel, stationWithStop } from '../test/fixtures';
 import type {
+  DotStyle,
   LineId,
   StationId,
   StopOrientation,
@@ -19,8 +21,17 @@ import type {
 // Loose view of the migrated doc so we can read fields without fighting the
 // branded id types / partial-shape casts.
 type AnyDoc = {
-  lines?: Record<string, { name?: string; service?: string }>;
-  stations?: Record<string, { stops: { orientation: string }[]; label: { valign: string } }>;
+  lines?: Record<
+    string,
+    { name?: string; service?: string; defaultDotShape?: string; defaultDotStyle?: DotStyle }
+  >;
+  stations?: Record<
+    string,
+    {
+      stops: { orientation: string; dotShape?: string; dotStyle?: DotStyle }[];
+      label: { valign: string };
+    }
+  >;
   polygons?: Record<string, Polygon>;
   textLabels?: Record<string, TextLabel>;
   labelWeight?: number;
@@ -121,6 +132,53 @@ describe('migrateDoc', () => {
     });
   });
 
+  describe('v6 → v7: dotShape preset ids → DotStyle objects', () => {
+    const stationWithDotShape = (dotShape?: string) => ({
+      ...makeStation({ id: 'S' as StationId }),
+      stops: [dotShape ? { ...makeStop('L1' as LineId), dotShape } : makeStop('L1' as LineId)],
+    });
+
+    it('converts a per-stop dotShape preset id to its style object and strips the key', () => {
+      const out = run({ stations: { S: stationWithDotShape('filled-black-diamond') } }, 6);
+      const stop = out.stations!.S.stops[0];
+      expect(stop.dotStyle).toEqual(DOT_SHAPE_PRESETS['filled-black-diamond']);
+      expect('dotShape' in stop).toBe(false);
+    });
+
+    it("converts a line's defaultDotShape and strips the key", () => {
+      const out = run(
+        {
+          lines: {
+            L1: { service: 'A', name: 'A line', stations: [], defaultDotShape: 'open-white' },
+          },
+        },
+        6,
+      );
+      expect(out.lines!.L1.defaultDotStyle).toEqual(DOT_SHAPE_PRESETS['open-white']);
+      expect('defaultDotShape' in out.lines!.L1).toBe(false);
+    });
+
+    it("converts a legacy 'none' to the invisible style", () => {
+      const out = run({ stations: { S: stationWithDotShape('none') } }, 6);
+      expect(out.stations!.S.stops[0].dotStyle).toEqual(DOT_SHAPE_PRESETS['none']);
+    });
+
+    it('passes a doc without legacy dot fields through by reference', () => {
+      const input = {
+        stations: { S: stationWithDotShape() },
+        lines: { L1: { service: 'A', name: 'A line', stations: [] } },
+      };
+      expect(run(input, 6)).toBe(input);
+    });
+
+    it('does not convert at version >= 7', () => {
+      const out = run({ stations: { S: stationWithDotShape('filled-white') } }, 7);
+      const stop = out.stations!.S.stops[0];
+      expect(stop.dotShape).toBe('filled-white');
+      expect(stop.dotStyle).toBeUndefined();
+    });
+  });
+
   describe('version handling', () => {
     it('treats a missing/corrupt version as v0 so every migration runs', () => {
       const out = run(
@@ -135,7 +193,7 @@ describe('migrateDoc', () => {
       // with a runtime default, so it needs NO migration (and adding one
       // would break this reference-equality pin).
       const input = { lines: { L1: { service: 'A', name: 'A line', stations: [], width: 21 } } };
-      const out = run(input, 6);
+      const out = run(input, 7);
       // No migration applies → same reference passes straight through.
       expect(out).toBe(input);
     });

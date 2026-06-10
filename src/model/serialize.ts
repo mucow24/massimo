@@ -11,15 +11,22 @@ import {
   LINE_STROKE_WIDTH_DEFAULT,
   LINE_STROKE_WIDTH_MIN,
 } from './lineStroke';
+import { DEFAULT_DOT_STYLE, DOT_SHAPE_PRESETS, dotStylesEqual } from './dotStyle';
 import { pairKeyOf } from './pairKey';
 import { KNOWN_PALETTE_IDS } from './palettes';
 import type {
+  DotBaseShape,
+  DotFill,
+  DotShape,
+  DotStrokeColor,
+  DotStyle,
   LabelValign,
   Line,
   LineStyle,
   MapDoc,
   Polygon,
   Station,
+  StopCell,
   StopOrientation,
   TextLabel,
   TextLabelWeight,
@@ -159,6 +166,14 @@ export function parse(json: string): ParseResult {
   if (linesChanged || named.changed) merged.lines = named.lines;
   const sanitized = sanitizeStations(merged.stations);
   if (sanitized.changed) merged.stations = sanitized.stations;
+  // Convert legacy dotShape preset ids to DotStyle objects and validate any
+  // explicit style objects (after the line/station passes so it sees their
+  // cleaned output).
+  const dots = convertLegacyDotShapes(merged.stations, merged.lines);
+  if (dots.changed) {
+    merged.stations = dots.stations;
+    merged.lines = dots.lines;
+  }
   const cleanedPolygons = backfillPolygonDarkColors(merged.polygons);
   if (cleanedPolygons.changed) merged.polygons = cleanedPolygons.polygons;
   const cleanedLabels = backfillTextLabelColors(merged.textLabels);
@@ -232,6 +247,145 @@ export function backfillPolygonDarkColors(polygons: Record<string, Polygon>): {
     }
   }
   return { polygons: next, changed };
+}
+
+const KNOWN_DOT_BASE_SHAPES = new Set<DotBaseShape>(['circle', 'square', 'diamond', 'x']);
+
+// Validate + normalize one raw dot color from a hand-edited file: the 'line'
+// sentinel, the 'none' sentinel (fills only), or a {day, night} string pair
+// (lowercased). Returns undefined when the value doesn't conform.
+function sanitizeDotColor(raw: unknown, allowNone: boolean): DotFill | undefined {
+  if (raw === 'line') return 'line';
+  if (raw === 'none') return allowNone ? 'none' : undefined;
+  if (!raw || typeof raw !== 'object') return undefined;
+  const o = raw as Record<string, unknown>;
+  if (typeof o.day !== 'string' || typeof o.night !== 'string') return undefined;
+  return { day: o.day.toLowerCase(), night: o.night.toLowerCase() };
+}
+
+// Validate + normalize one raw `dotStyle` value. Returns the canonical style,
+// or undefined when the value doesn't conform — callers drop the field so the
+// default chain takes over. File-import hygiene only; app-written styles are
+// canonical by construction.
+function sanitizeDotStyle(raw: unknown): DotStyle | undefined {
+  if (!raw || typeof raw !== 'object') return undefined;
+  const o = raw as Record<string, unknown>;
+  if (typeof o.shape !== 'string' || !KNOWN_DOT_BASE_SHAPES.has(o.shape as DotBaseShape)) {
+    return undefined;
+  }
+  const fill = sanitizeDotColor(o.fill, true);
+  if (fill === undefined) return undefined;
+  const strokeColor = sanitizeDotColor(o.strokeColor, false) as DotStrokeColor | undefined;
+  if (strokeColor === undefined) return undefined;
+  if (typeof o.strokeWidth !== 'number' || !Number.isFinite(o.strokeWidth)) return undefined;
+  if (typeof o.showServiceCode !== 'boolean') return undefined;
+  return {
+    shape: o.shape as DotBaseShape,
+    fill,
+    strokeWidth: Math.max(0, o.strokeWidth),
+    strokeColor,
+    showServiceCode: o.showServiceCode,
+  };
+}
+
+// "Already canonical" check for an existing dotStyle value: stringify-equal to
+// its sanitized rebuild (field order is fixed by construction everywhere the
+// app writes styles, so this is exact for app-written docs; hand-edited docs
+// just get rebuilt).
+const isCanonicalDotStyle = (orig: unknown, cleaned: DotStyle): boolean =>
+  JSON.stringify(orig) === JSON.stringify(cleaned);
+
+function convertStopDotFields(stop: StopCell): StopCell {
+  let next = stop;
+  if ('dotShape' in next) {
+    const { dotShape, ...rest } = next as StopCell & { dotShape?: unknown };
+    if (rest.dotStyle === undefined) {
+      // Legacy preset id → its pinned style. Unknown ids are dropped so the
+      // stop falls back to the line default, like other garbage fallbacks.
+      const preset =
+        typeof dotShape === 'string' ? DOT_SHAPE_PRESETS[dotShape as DotShape] : undefined;
+      next = preset ? { ...rest, dotStyle: preset } : rest;
+    } else {
+      // Both fields present: the writer knew about the new field — trust it.
+      next = rest;
+    }
+  }
+  if (next.dotStyle !== undefined) {
+    const cleaned = sanitizeDotStyle(next.dotStyle);
+    if (cleaned === undefined) {
+      const { dotStyle: _gone, ...rest } = next;
+      next = rest;
+    } else if (!isCanonicalDotStyle(next.dotStyle, cleaned)) {
+      next = { ...next, dotStyle: cleaned };
+    }
+  }
+  return next;
+}
+
+function convertLineDotFields(line: Line): Line {
+  let next = line;
+  if ('defaultDotShape' in next) {
+    const { defaultDotShape, ...rest } = next as Line & { defaultDotShape?: unknown };
+    if (rest.defaultDotStyle === undefined) {
+      const preset =
+        typeof defaultDotShape === 'string'
+          ? DOT_SHAPE_PRESETS[defaultDotShape as DotShape]
+          : undefined;
+      next = preset ? { ...rest, defaultDotStyle: preset } : rest;
+    } else {
+      next = rest;
+    }
+  }
+  if (next.defaultDotStyle !== undefined) {
+    const cleaned = sanitizeDotStyle(next.defaultDotStyle);
+    // Drop when invalid, or when it lands on the default (never stored —
+    // mirrors `setLineDefaultDotStyle`).
+    if (cleaned === undefined || dotStylesEqual(cleaned, DEFAULT_DOT_STYLE)) {
+      const { defaultDotStyle: _gone, ...rest } = next;
+      next = rest;
+    } else if (!isCanonicalDotStyle(next.defaultDotStyle, cleaned)) {
+      next = { ...next, defaultDotStyle: cleaned };
+    }
+  }
+  return next;
+}
+
+// Convert legacy `dotShape`/`defaultDotShape` preset ids (pre-v7 saves) to
+// DotStyle objects, and validate any explicit style objects. Shared by
+// `parse()` (file-import path) and the zustand persist `migrate` hook
+// (localStorage rehydration path) so legacy values from BOTH entry points are
+// converted before any consumer reads them.
+export function convertLegacyDotShapes(
+  stations: Record<string, Station>,
+  lines: Record<string, Line>,
+): { stations: Record<string, Station>; lines: Record<string, Line>; changed: boolean } {
+  let changed = false;
+  const nextLines: Record<string, Line> = {};
+  for (const id of Object.keys(lines)) {
+    const ln = lines[id];
+    const cleaned = convertLineDotFields(ln);
+    if (cleaned !== ln) changed = true;
+    nextLines[id] = cleaned;
+  }
+  const nextStations: Record<string, Station> = {};
+  for (const id of Object.keys(stations)) {
+    const st = stations[id];
+    let stopsChanged = false;
+    const stops = st.stops.map((s) => {
+      const cleaned = convertStopDotFields(s);
+      if (cleaned !== s) stopsChanged = true;
+      return cleaned;
+    });
+    if (stopsChanged) {
+      changed = true;
+      nextStations[id] = { ...st, stops };
+    } else {
+      nextStations[id] = st;
+    }
+  }
+  return changed
+    ? { stations: nextStations, lines: nextLines, changed }
+    : { stations, lines, changed };
 }
 
 // Legacy `labelBold: boolean` → `labelWeight: TextLabelWeight`. Older docs
