@@ -41,11 +41,13 @@ function DotShapePopover({
   onClose,
   style,
   lineColor,
+  serviceCode,
 }: {
   onPick: (shape: DotShape) => void;
   onClose: () => void;
   style: React.CSSProperties;
   lineColor: string;
+  serviceCode: string;
 }) {
   const ref = useRef<HTMLDivElement | null>(null);
   useDismiss(true, onClose, [ref]);
@@ -61,7 +63,13 @@ function DotShapePopover({
           onClick={() => onPick(shape)}
         >
           <svg width={20} height={20} viewBox="-10 -10 20 20">
-            <StopGlyph cx={0} cy={0} shape={shape} lineColor={lineColor} />
+            <StopGlyph
+              cx={0}
+              cy={0}
+              shape={shape}
+              lineColor={lineColor}
+              serviceCode={serviceCode}
+            />
           </svg>
         </button>
       ))}
@@ -207,6 +215,7 @@ export function LineInspector({ id }: { id: LineId }) {
           disabled={false}
           currentShape={line.defaultDotShape ?? 'filled-black'}
           lineColor={line.color}
+          serviceCode={line.service}
           onPick={(shape) => setLineDefaultDotShape(line.id, shape)}
         />
       </div>
@@ -406,6 +415,7 @@ export function LineInspector({ id }: { id: LineId }) {
                           cy={centerOf(i)}
                           shape={shape}
                           lineColor={line.color}
+                          serviceCode={line.service}
                         />
                       </g>
                     );
@@ -418,6 +428,7 @@ export function LineInspector({ id }: { id: LineId }) {
                     return (
                       <DotShapePopover
                         lineColor={line.color}
+                        serviceCode={line.service}
                         onPick={(shape) => {
                           setDotShape(openPickerSid, line.id, shape);
                           setOpenPickerSid(null);
