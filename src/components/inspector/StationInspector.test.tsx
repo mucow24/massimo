@@ -5,6 +5,7 @@ import { StationInspector } from './StationInspector';
 import { useDoc, useSelection } from '../../state/store';
 import { historyDepth } from '../../state/history';
 import { DEFAULT_DOC } from '../../model/transforms';
+import { DOT_SHAPE_PRESETS } from '../../model/dotStyle';
 import { makeDoc, makeStation, makeStop, makeLine } from '../../test/fixtures';
 
 const SELECTION_BLANK = {
@@ -133,7 +134,7 @@ describe('<StationInspector /> — shape picker wiring', () => {
     expect(screen.getByRole('menu')).toBeInTheDocument();
   });
 
-  it("trigger reflects the selected stop's explicit dotShape", async () => {
+  it("trigger reflects the selected stop's explicit dotStyle", async () => {
     const user = userEvent.setup();
     useDoc.setState({
       ...DEFAULT_DOC,
@@ -141,7 +142,7 @@ describe('<StationInspector /> — shape picker wiring', () => {
         stations: [
           makeStation({
             id: 'a',
-            stops: [makeStop('L1', { dotShape: 'filled-white' })],
+            stops: [makeStop('L1', { dotStyle: DOT_SHAPE_PRESETS['filled-white'] })],
           }),
         ],
         lines: [makeLine({ id: 'L1', stations: ['a'] })],
@@ -158,10 +159,10 @@ describe('<StationInspector /> — shape picker wiring', () => {
     const trigger = screen.getByRole('button', { name: 'Stop shape' });
     const circle = trigger.querySelector('circle');
     expect(circle).not.toBeNull();
-    expect(circle?.getAttribute('fill')).toBe('#fff');
+    expect(circle?.getAttribute('fill')).toBe('#ffffff');
   });
 
-  it('trigger shows the filled-black default when the selected stop has no dotShape set', async () => {
+  it('trigger shows the filled-black default when the selected stop has no dotStyle set', async () => {
     const user = userEvent.setup();
     useDoc.setState({
       ...DEFAULT_DOC,
@@ -181,7 +182,7 @@ describe('<StationInspector /> — shape picker wiring', () => {
     const trigger = screen.getByRole('button', { name: 'Stop shape' });
     const circle = trigger.querySelector('circle');
     expect(circle).not.toBeNull();
-    expect(circle?.getAttribute('fill')).toBe('#000');
+    expect(circle?.getAttribute('fill')).toBe('#000000');
   });
 
   it('with mirror on and matching neighbors disagreeing, trigger still reflects the inspected station', async () => {
@@ -190,8 +191,14 @@ describe('<StationInspector /> — shape picker wiring', () => {
       ...DEFAULT_DOC,
       ...makeDoc({
         stations: [
-          makeStation({ id: 'a', stops: [makeStop('L1', { dotShape: 'filled-white' })] }),
-          makeStation({ id: 'b', stops: [makeStop('L1', { dotShape: 'filled-black' })] }),
+          makeStation({
+            id: 'a',
+            stops: [makeStop('L1', { dotStyle: DOT_SHAPE_PRESETS['filled-white'] })],
+          }),
+          makeStation({
+            id: 'b',
+            stops: [makeStop('L1', { dotStyle: DOT_SHAPE_PRESETS['filled-black'] })],
+          }),
         ],
         lines: [makeLine({ id: 'L1', stations: ['a', 'b'] })],
       }),
@@ -211,7 +218,7 @@ describe('<StationInspector /> — shape picker wiring', () => {
     const trigger = screen.getByRole('button', { name: 'Stop shape' });
     const circle = trigger.querySelector('circle');
     expect(circle).not.toBeNull();
-    expect(circle?.getAttribute('fill')).toBe('#fff');
+    expect(circle?.getAttribute('fill')).toBe('#ffffff');
   });
 
   it('Waypoint button toggles aria-pressed and writes isWaypoint on the station', async () => {
@@ -500,8 +507,8 @@ describe('<StationInspector /> — shape picker wiring', () => {
     await user.click(screen.getByRole('menuitem', { name: 'Open white' }));
 
     const doc = useDoc.getState();
-    expect(doc.stations.a.stops[0].dotShape).toBe('open-white');
-    expect(doc.stations.b.stops[0].dotShape).toBe('open-white');
+    expect(doc.stations.a.stops[0].dotStyle).toEqual(DOT_SHAPE_PRESETS['open-white']);
+    expect(doc.stations.b.stops[0].dotStyle).toEqual(DOT_SHAPE_PRESETS['open-white']);
 
     const pastAfter = historyDepth();
     expect(pastAfter - pastBefore).toBe(1);

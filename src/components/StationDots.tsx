@@ -3,7 +3,7 @@ import { useSelection } from '../state/store';
 import { useThemeColors } from '../state/theme';
 import { STOP_DOT_RADIUS, stopCenterAt } from '../geometry/orientation';
 import { stopPosWorld } from '../geometry/interlining';
-import { resolveDotShape } from '../model/transforms';
+import { resolveDotStyle } from '../model/transforms';
 import { StopGlyph } from './StopGlyph';
 import { useStationInteraction } from './useStationInteraction';
 
@@ -62,7 +62,7 @@ export function StationDots({
             key={cell.lineId}
             cx={w.x}
             cy={w.y}
-            shape={resolveDotShape(lines[cell.lineId], cell)}
+            style={resolveDotStyle(lines[cell.lineId], cell)}
             lineColor={lines[cell.lineId]?.color}
             serviceCode={lines[cell.lineId]?.service}
             isHovered={isHovered}

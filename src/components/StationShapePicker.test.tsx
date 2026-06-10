@@ -2,30 +2,49 @@ import { describe, it, expect, vi } from 'vitest';
 import { render, screen } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { StationShapePicker } from './StationShapePicker';
+import { DOT_SHAPE_PRESETS } from '../model/dotStyle';
 
 describe('<StationShapePicker />', () => {
   it('trigger has aria-disabled=true when disabled prop is true; click does not open the menu', async () => {
     const user = userEvent.setup();
-    render(<StationShapePicker disabled currentShape="filled-black" onPick={vi.fn()} />);
+    render(
+      <StationShapePicker
+        disabled
+        currentStyle={DOT_SHAPE_PRESETS['filled-black']}
+        onPick={vi.fn()}
+      />,
+    );
     const trigger = screen.getByRole('button', { name: 'Stop shape' });
     expect(trigger).toHaveAttribute('aria-disabled', 'true');
     await user.click(trigger);
     expect(screen.queryByRole('menu')).toBeNull();
   });
 
-  it('trigger is enabled when disabled=false; clicking opens a menu with 11 menuitems', async () => {
+  it('trigger is enabled when disabled=false; clicking opens a menu with 13 menuitems', async () => {
     const user = userEvent.setup();
-    render(<StationShapePicker disabled={false} currentShape="filled-black" onPick={vi.fn()} />);
+    render(
+      <StationShapePicker
+        disabled={false}
+        currentStyle={DOT_SHAPE_PRESETS['filled-black']}
+        onPick={vi.fn()}
+      />,
+    );
     const trigger = screen.getByRole('button', { name: 'Stop shape' });
     expect(trigger).toHaveAttribute('aria-disabled', 'false');
     await user.click(trigger);
     expect(screen.getByRole('menu')).toBeInTheDocument();
-    expect(screen.getAllByRole('menuitem')).toHaveLength(11);
+    expect(screen.getAllByRole('menuitem')).toHaveLength(13);
   });
 
   it('menu items carry human-readable aria-labels for every shape', async () => {
     const user = userEvent.setup();
-    render(<StationShapePicker disabled={false} currentShape="filled-black" onPick={vi.fn()} />);
+    render(
+      <StationShapePicker
+        disabled={false}
+        currentStyle={DOT_SHAPE_PRESETS['filled-black']}
+        onPick={vi.fn()}
+      />,
+    );
     await user.click(screen.getByRole('button', { name: 'Stop shape' }));
     expect(screen.getByRole('menuitem', { name: 'Filled black' })).toBeInTheDocument();
     expect(screen.getByRole('menuitem', { name: 'Open black' })).toBeInTheDocument();
@@ -43,6 +62,8 @@ describe('<StationShapePicker />', () => {
     ).toBeInTheDocument();
     expect(screen.getByRole('menuitem', { name: 'Filled black diamond' })).toBeInTheDocument();
     expect(screen.getByRole('menuitem', { name: 'Filled white diamond' })).toBeInTheDocument();
+    expect(screen.getByRole('menuitem', { name: 'Filled black X' })).toBeInTheDocument();
+    expect(screen.getByRole('menuitem', { name: 'Filled white X' })).toBeInTheDocument();
     expect(screen.getByRole('menuitem', { name: 'None' })).toBeInTheDocument();
   });
 
@@ -51,7 +72,7 @@ describe('<StationShapePicker />', () => {
     render(
       <StationShapePicker
         disabled={false}
-        currentShape="filled-black"
+        currentStyle={DOT_SHAPE_PRESETS['filled-black']}
         lineColor="#e6002d"
         onPick={vi.fn()}
       />,
@@ -66,7 +87,7 @@ describe('<StationShapePicker />', () => {
     render(
       <StationShapePicker
         disabled={false}
-        currentShape="filled-black"
+        currentStyle={DOT_SHAPE_PRESETS['filled-black']}
         lineColor="#e6002d"
         serviceCode="A"
         onPick={vi.fn()}
@@ -74,15 +95,15 @@ describe('<StationShapePicker />', () => {
     );
     await user.click(screen.getByRole('button', { name: 'Stop shape' }));
     const item = screen.getByRole('menuitem', { name: 'Filled black with service code' });
-    expect(item.querySelector('circle')?.getAttribute('fill')).toBe('#000');
+    expect(item.querySelector('circle')?.getAttribute('fill')).toBe('#000000');
     expect(item.querySelector('text')?.textContent).toBe('A');
   });
 
-  it('trigger renders the currentShape glyph (filled-line-color → lineColor-fill circle)', () => {
+  it('trigger renders the currentStyle glyph (filled-line-color → lineColor-fill circle)', () => {
     render(
       <StationShapePicker
         disabled={false}
-        currentShape="filled-line-color"
+        currentStyle={DOT_SHAPE_PRESETS['filled-line-color']}
         lineColor="#0055ff"
         onPick={vi.fn()}
       />,
@@ -94,7 +115,13 @@ describe('<StationShapePicker />', () => {
   it('clicking a menu item calls onPick with that shape and closes the menu', async () => {
     const user = userEvent.setup();
     const onPick = vi.fn();
-    render(<StationShapePicker disabled={false} currentShape="filled-black" onPick={onPick} />);
+    render(
+      <StationShapePicker
+        disabled={false}
+        currentStyle={DOT_SHAPE_PRESETS['filled-black']}
+        onPick={onPick}
+      />,
+    );
 
     await user.click(screen.getByRole('button', { name: 'Stop shape' }));
     await user.click(screen.getByRole('menuitem', { name: 'Filled black diamond' }));
@@ -104,24 +131,40 @@ describe('<StationShapePicker />', () => {
     expect(screen.queryByRole('menu')).toBeNull();
   });
 
-  it('trigger renders the currentShape glyph (diamond → polygon)', () => {
+  it('trigger renders the currentStyle glyph (diamond → polygon)', () => {
     render(
-      <StationShapePicker disabled={false} onPick={vi.fn()} currentShape="filled-black-diamond" />,
+      <StationShapePicker
+        disabled={false}
+        onPick={vi.fn()}
+        currentStyle={DOT_SHAPE_PRESETS['filled-black-diamond']}
+      />,
     );
     const trigger = screen.getByRole('button', { name: 'Stop shape' });
     expect(trigger.querySelector('polygon')).not.toBeNull();
   });
 
-  it('trigger renders the currentShape glyph (filled-black → black-fill circle)', () => {
-    render(<StationShapePicker disabled={false} currentShape="filled-black" onPick={vi.fn()} />);
+  it('trigger renders the currentStyle glyph (filled-black → black-fill circle)', () => {
+    render(
+      <StationShapePicker
+        disabled={false}
+        currentStyle={DOT_SHAPE_PRESETS['filled-black']}
+        onPick={vi.fn()}
+      />,
+    );
     const trigger = screen.getByRole('button', { name: 'Stop shape' });
     const circle = trigger.querySelector('circle');
     expect(circle).not.toBeNull();
-    expect(circle?.getAttribute('fill')).toBe('#000');
+    expect(circle?.getAttribute('fill')).toBe('#000000');
   });
 
   it('disabled trigger still renders a glyph (so the button is not visually empty)', () => {
-    render(<StationShapePicker disabled currentShape="filled-black" onPick={vi.fn()} />);
+    render(
+      <StationShapePicker
+        disabled
+        currentStyle={DOT_SHAPE_PRESETS['filled-black']}
+        onPick={vi.fn()}
+      />,
+    );
     const trigger = screen.getByRole('button', { name: 'Stop shape' });
     expect(trigger.querySelector('circle, polygon')).not.toBeNull();
   });
@@ -129,7 +172,13 @@ describe('<StationShapePicker />', () => {
   it('Escape closes the menu without firing onPick', async () => {
     const user = userEvent.setup();
     const onPick = vi.fn();
-    render(<StationShapePicker disabled={false} currentShape="filled-black" onPick={onPick} />);
+    render(
+      <StationShapePicker
+        disabled={false}
+        currentStyle={DOT_SHAPE_PRESETS['filled-black']}
+        onPick={onPick}
+      />,
+    );
 
     await user.click(screen.getByRole('button', { name: 'Stop shape' }));
     expect(screen.getByRole('menu')).toBeInTheDocument();
@@ -143,7 +192,11 @@ describe('<StationShapePicker />', () => {
     const onPick = vi.fn();
     render(
       <div>
-        <StationShapePicker disabled={false} currentShape="filled-black" onPick={onPick} />
+        <StationShapePicker
+          disabled={false}
+          currentStyle={DOT_SHAPE_PRESETS['filled-black']}
+          onPick={onPick}
+        />
         <button data-testid="outside">outside</button>
       </div>,
     );
@@ -157,13 +210,23 @@ describe('<StationShapePicker />', () => {
 
   it('tooltip text differs by disabled state', () => {
     const { rerender } = render(
-      <StationShapePicker disabled currentShape="filled-black" onPick={vi.fn()} />,
+      <StationShapePicker
+        disabled
+        currentStyle={DOT_SHAPE_PRESETS['filled-black']}
+        onPick={vi.fn()}
+      />,
     );
     expect(screen.getByRole('button', { name: 'Stop shape' })).toHaveAttribute(
       'title',
       'Stop shape — select a stop first',
     );
-    rerender(<StationShapePicker disabled={false} currentShape="filled-black" onPick={vi.fn()} />);
+    rerender(
+      <StationShapePicker
+        disabled={false}
+        currentStyle={DOT_SHAPE_PRESETS['filled-black']}
+        onPick={vi.fn()}
+      />,
+    );
     expect(screen.getByRole('button', { name: 'Stop shape' })).toHaveAttribute(
       'title',
       'Stop shape',

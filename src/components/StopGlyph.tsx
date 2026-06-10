@@ -1,139 +1,140 @@
-import { STOP_DOT_RADIUS } from '../geometry/orientation';
-import type { DotShape } from '../model/types';
-
-// 'filled-black-service-code' uses a larger disc than STOP_DOT_RADIUS so the
-// code inside stays legible.
-export const SERVICE_CODE_DOT_RADIUS = 6;
+import { DEFAULT_DOT_STYLE, resolveDotRender, type DotRenderParams } from '../model/dotStyle';
+import { useViewportStore } from '../state/viewportStore';
+import type { DotStyle } from '../model/types';
 
 interface Props {
   cx: number;
   cy: number;
-  shape: DotShape | undefined;
-  // Fill for 'filled-line-color'; falls back to black when the caller has no
+  // Resolved procedural style; undefined falls back to DEFAULT_DOT_STYLE
+  // (callers like picker previews don't always have a style in hand).
+  style: DotStyle | undefined;
+  // Resolves 'line' fills/strokes; falls back to black when the caller has no
   // line in scope (e.g. a picker preview outside any line context).
   lineColor?: string;
-  // Text for 'filled-black-service-code'; falls back to '?' when the caller
+  // Text for styles with showServiceCode; falls back to '?' when the caller
   // has no line in scope (same convention as badgeColors).
   serviceCode?: string;
   isHovered?: boolean;
   // Tagged for E2E selection. The test seam is more reliable than guessing
-  // by element type + fill, especially for "none" (where there's no element).
+  // by element type + fill, especially for invisible styles (where there's
+  // no element).
   stationId?: string;
   lineId?: string;
 }
 
-const DIAMOND_POINTS = (cx: number, cy: number, r: number) =>
+export const DIAMOND_POINTS = (cx: number, cy: number, r: number) =>
   `${cx},${cy - r} ${cx + r},${cy} ${cx},${cy + r} ${cx - r},${cy}`;
 
+// Arm thickness of the X glyph as a fraction of its pre-rotation arm length.
+// Lowering this both thins AND lengthens the arms: the saltire always spans
+// the same 2r box, so thinner arms reach further into its corners.
+const X_ARM_RATIO = 0.2;
+
+// 12-vertex saltire spanning the same 2r box as the other shapes: a plus
+// polygon rotated 45°, scaled so the rotated corners land on the box edges.
+// A filled polygon (not two crossed strokes) keeps fill/stroke semantics
+// uniform across base shapes.
+export const X_POINTS = (cx: number, cy: number, r: number): string => {
+  const s = (r * Math.SQRT2) / (1 + X_ARM_RATIO);
+  const w = X_ARM_RATIO * s;
+  const plus: [number, number][] = [
+    [-w, -s],
+    [w, -s],
+    [w, -w],
+    [s, -w],
+    [s, w],
+    [w, w],
+    [w, s],
+    [-w, s],
+    [-w, w],
+    [-s, w],
+    [-s, -w],
+    [-w, -w],
+  ];
+  return plus
+    .map(([x, y]) => `${cx + (x - y) / Math.SQRT2},${cy + (x + y) / Math.SQRT2}`)
+    .join(' ');
+};
+
+function shapeElement(
+  params: DotRenderParams,
+  cx: number,
+  cy: number,
+  attrs: Record<string, unknown>,
+) {
+  const { shape, r } = params;
+  switch (shape) {
+    case 'circle':
+      return <circle cx={cx} cy={cy} r={r} {...attrs} />;
+    case 'square':
+      return <rect x={cx - r} y={cy - r} width={2 * r} height={2 * r} {...attrs} />;
+    case 'diamond':
+      return <polygon points={DIAMOND_POINTS(cx, cy, r)} {...attrs} />;
+    case 'x':
+      return <polygon points={X_POINTS(cx, cy, r)} {...attrs} />;
+  }
+}
+
+/**
+ * One stop dot, rendered procedurally: `resolveDotRender` makes every styling
+ * decision (colors, radius, code legibility); this component only assembles
+ * SVG, applies the hover affordance, and tags the E2E data attributes.
+ */
 export function StopGlyph({
   cx,
   cy,
-  shape,
+  style,
   lineColor,
   serviceCode,
   isHovered,
   stationId,
   lineId,
 }: Props) {
-  const resolved: DotShape = shape ?? 'filled-black';
-  if (resolved === 'none') return null;
+  const darkMode = useViewportStore((s) => s.darkMode);
+  const params = resolveDotRender(style ?? DEFAULT_DOT_STYLE, lineColor, serviceCode, darkMode);
+  if (!params) return null;
 
-  const r = STOP_DOT_RADIUS;
   const dataAttrs = {
-    'data-stop-shape': resolved,
+    'data-stop-shape': params.shape,
     ...(stationId ? { 'data-stop-station': stationId } : {}),
     ...(lineId ? { 'data-stop-line': lineId } : {}),
   };
 
   // Hover overrides any base stroke with a 3px white outline so the
   // affordance is uniform across shapes.
-  const hoverStroke = isHovered ? { stroke: '#fff', strokeWidth: 3 } : null;
+  const strokeAttrs = isHovered
+    ? { stroke: '#fff', strokeWidth: 3 }
+    : params.stroke !== undefined
+      ? { stroke: params.stroke, strokeWidth: params.strokeWidth }
+      : {};
 
-  if (resolved === 'filled-black-diamond' || resolved === 'filled-white-diamond') {
-    const fill = resolved === 'filled-black-diamond' ? '#000' : '#fff';
-    return (
-      <polygon
-        points={DIAMOND_POINTS(cx, cy, r)}
-        fill={fill}
-        {...(hoverStroke ?? {})}
-        {...dataAttrs}
-      />
-    );
-  }
-
-  if (resolved === 'filled-black-service-code') {
-    const cr = SERVICE_CODE_DOT_RADIUS;
-    return (
-      <g {...dataAttrs}>
-        <circle cx={cx} cy={cy} r={cr} fill="#000" {...(hoverStroke ?? {})} />
-        <text
-          x={cx}
-          y={cy}
-          textAnchor="middle"
-          dominantBaseline="central"
-          fontFamily="'Helvetica Neue', Helvetica, Arial, sans-serif"
-          fontSize={cr * 1.2}
-          fontWeight={700}
-          fill="#fff"
-          pointerEvents="none"
-          style={{ userSelect: 'none' }}
-        >
-          {serviceCode ?? '?'}
-        </text>
-      </g>
-    );
-  }
-
-  // Circle variants
-  let fill = '#000';
-  let stroke: string | undefined;
-  let strokeWidth: number | undefined;
-  switch (resolved) {
-    case 'filled-black':
-      fill = '#000';
-      break;
-    case 'open-black':
-      fill = 'none';
-      stroke = '#000';
-      strokeWidth = 1.5;
-      break;
-    case 'filled-black-white-stroke':
-      fill = '#000';
-      stroke = '#fff';
-      strokeWidth = 2;
-      break;
-    case 'filled-white':
-      fill = '#fff';
-      break;
-    case 'open-white':
-      fill = 'none';
-      stroke = '#fff';
-      strokeWidth = 1.5;
-      break;
-    case 'filled-white-black-stroke':
-      fill = '#fff';
-      stroke = '#000';
-      strokeWidth = 2;
-      break;
-    case 'filled-line-color':
-      fill = lineColor ?? '#000';
-      break;
-  }
-
-  if (hoverStroke) {
-    stroke = hoverStroke.stroke;
-    strokeWidth = hoverStroke.strokeWidth;
-  }
+  const { code } = params;
+  // With a code, the data attrs live on the wrapping <g> so the test seam
+  // stays one element per stop.
+  const el = shapeElement(params, cx, cy, {
+    fill: params.fill,
+    ...strokeAttrs,
+    ...(code ? {} : dataAttrs),
+  });
+  if (!code) return el;
 
   return (
-    <circle
-      cx={cx}
-      cy={cy}
-      r={r}
-      fill={fill}
-      stroke={stroke}
-      strokeWidth={strokeWidth}
-      {...dataAttrs}
-    />
+    <g {...dataAttrs}>
+      {el}
+      <text
+        x={cx}
+        y={cy}
+        textAnchor="middle"
+        dominantBaseline="central"
+        fontFamily="'Helvetica Neue', Helvetica, Arial, sans-serif"
+        fontSize={params.r * 1.2}
+        fontWeight={700}
+        fill={code.color}
+        pointerEvents="none"
+        style={{ userSelect: 'none' }}
+      >
+        {code.text}
+      </text>
+    </g>
   );
 }

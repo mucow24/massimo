@@ -7,6 +7,7 @@ import {
   LINE_STROKE_WIDTH_DEFAULT,
   LINE_STROKE_WIDTH_MIN,
 } from './lineStroke';
+import { DEFAULT_DOT_STYLE, dotStylesEqual } from './dotStyle';
 import { pairKeyOf } from './pairKey';
 import { rotateBy, stopCenterAt } from '../geometry/orientation';
 import { snapPointToGrid, type GridSnap } from '../geometry/snap';
@@ -15,7 +16,7 @@ import { measureTextLabel } from '../geometry/textMeasure';
 import type { Vec2 } from '../geometry/vec';
 import { normalizePaletteIds, type PaletteId } from './palettes';
 import type {
-  DotShape,
+  DotStyle,
   LabelAlign,
   LabelCell,
   LabelValign,
@@ -227,11 +228,12 @@ export function moveStation(doc: MapDoc, id: StationId, x: number, y: number): M
 }
 
 /**
- * Resolve the glyph for a stop: explicit per-stop `dotShape` wins, else the
- * line's `defaultDotShape`, else the historical `'filled-black'` default.
+ * Resolve the style for a stop: explicit per-stop `dotStyle` wins, else the
+ * line's `defaultDotStyle`, else DEFAULT_DOT_STYLE (the historical
+ * filled-black).
  */
-export function resolveDotShape(line: Line | undefined, stop: StopCell | undefined): DotShape {
-  return stop?.dotShape ?? line?.defaultDotShape ?? 'filled-black';
+export function resolveDotStyle(line: Line | undefined, stop: StopCell | undefined): DotStyle {
+  return stop?.dotStyle ?? line?.defaultDotStyle ?? DEFAULT_DOT_STYLE;
 }
 
 /**
@@ -243,46 +245,51 @@ export function resolveOffsetPerp(label: LabelCell | undefined): number {
   return label?.offsetPerp ?? 0;
 }
 
-export function setDotShape(
+export function setDotStyle(
   doc: MapDoc,
   stationId: StationId,
   lineId: LineId,
-  shape: DotShape,
+  style: DotStyle,
 ): MapDoc {
   // Picking the line's effective default for a stop clears the per-stop
   // override so the stop tracks the default going forward (and so persisted
-  // state stays clean — same pattern as `segmentStyles` + 'solid').
-  const lineDefault = doc.lines[lineId]?.defaultDotShape ?? 'filled-black';
-  const targetShape: DotShape | undefined = shape === lineDefault ? undefined : shape;
+  // state stays clean — same pattern as `segmentStyles` + 'solid'). Style
+  // equality is structural (`dotStylesEqual`), never reference identity.
+  const lineDefault = doc.lines[lineId]?.defaultDotStyle ?? DEFAULT_DOT_STYLE;
+  const clears = dotStylesEqual(style, lineDefault);
   return updateStation(doc, stationId, (cur) => {
     let changed = false;
     const stops = cur.stops.map((s) => {
       if (s.lineId !== lineId) return s;
-      if (s.dotShape === targetShape) return s;
-      changed = true;
-      if (targetShape === undefined) {
-        const { dotShape: _gone, ...rest } = s;
+      if (clears) {
+        if (s.dotStyle === undefined) return s;
+        changed = true;
+        const { dotStyle: _gone, ...rest } = s;
         return rest;
       }
-      return { ...s, dotShape: targetShape };
+      if (s.dotStyle !== undefined && dotStylesEqual(s.dotStyle, style)) return s;
+      changed = true;
+      return { ...s, dotStyle: style };
     });
     return changed ? { ...cur, stops } : cur;
   });
 }
 
-export function setLineDefaultDotShape(doc: MapDoc, id: LineId, shape: DotShape): MapDoc {
+export function setLineDefaultDotStyle(doc: MapDoc, id: LineId, style: DotStyle): MapDoc {
   const cur = doc.lines[id];
   if (!cur) return doc;
-  // `'filled-black'` is the historical default; omit the field so persisted
+  // DEFAULT_DOT_STYLE is the historical default; omit the field so persisted
   // state stays clean (mirrors `setLineSegmentStyle` + 'solid').
   let nextLine: Line;
-  if (shape === 'filled-black') {
-    if (cur.defaultDotShape === undefined) return doc;
-    const { defaultDotShape: _gone, ...rest } = cur;
+  if (dotStylesEqual(style, DEFAULT_DOT_STYLE)) {
+    if (cur.defaultDotStyle === undefined) return doc;
+    const { defaultDotStyle: _gone, ...rest } = cur;
     nextLine = rest;
   } else {
-    if (cur.defaultDotShape === shape) return doc;
-    nextLine = { ...cur, defaultDotShape: shape };
+    if (cur.defaultDotStyle !== undefined && dotStylesEqual(cur.defaultDotStyle, style)) {
+      return doc;
+    }
+    nextLine = { ...cur, defaultDotStyle: style };
   }
   // Any per-stop override on this line that matches the NEW default is now
   // redundant — drop it so the stop tracks the default going forward.
@@ -291,9 +298,11 @@ export function setLineDefaultDotShape(doc: MapDoc, id: LineId, shape: DotShape)
     const st = stations[sid];
     let stopsChanged = false;
     const stops = st.stops.map((s) => {
-      if (s.lineId !== id || s.dotShape !== shape) return s;
+      if (s.lineId !== id || s.dotStyle === undefined || !dotStylesEqual(s.dotStyle, style)) {
+        return s;
+      }
       stopsChanged = true;
-      const { dotShape: _gone, ...rest } = s;
+      const { dotStyle: _gone, ...rest } = s;
       return rest;
     });
     if (stopsChanged) stations = { ...stations, [sid]: { ...st, stops } };
@@ -304,7 +313,7 @@ export function setLineDefaultDotShape(doc: MapDoc, id: LineId, shape: DotShape)
 // Per-line stripe width. Non-finite input is ignored; otherwise the value is
 // rounded and clamped to ≥ LINE_WIDTH_MIN, and the field is dropped when the
 // result lands on LINE_WIDTH_DEFAULT so the default is never stored (mirrors
-// `setLineDefaultDotShape` + 'filled-black'). Returns the input doc unchanged
+// `setLineDefaultDotStyle` + DEFAULT_DOT_STYLE). Returns the input doc unchanged
 // when the effective stored form wouldn't change — the slider fires this on
 // every drag tick, and reference equality is what keeps no-op ticks out of
 // the undo history.

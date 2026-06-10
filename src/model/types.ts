@@ -19,10 +19,10 @@ export type StopOrientation =
   | 'auto-horizontal' // E/W
   | 'auto-nw-se'; // NW/SE
 
-// Glyph rendered at a stop. `undefined` on `StopCell.dotShape` defers to the
-// line's `defaultDotShape`; `undefined` on `Line.defaultDotShape` falls back
-// to `'filled-black'` (the historical default) — no migration needed for
-// older saves on either field.
+// Preset ids for the built-in stop-dot styles. Documents no longer store
+// these — stops/lines carry full `DotStyle` objects — but the ids remain the
+// currency of the shape pickers and of legacy-save conversion (each id maps
+// to a pinned `DotStyle` in `DOT_SHAPE_PRESETS`, see dotStyle.ts).
 export type DotShape =
   | 'filled-black'
   | 'open-black'
@@ -34,14 +34,57 @@ export type DotShape =
   | 'filled-black-service-code'
   | 'filled-black-diamond'
   | 'filled-white-diamond'
+  | 'filled-black-x'
+  | 'filled-white-x'
   | 'none';
+
+// A color that resolves per theme: `day` paints in light mode, `night` in
+// dark mode. Both 7-char lowercase hex.
+export interface DayNightColor {
+  day: string;
+  night: string;
+}
+
+export type DotBaseShape = 'circle' | 'square' | 'diamond' | 'x';
+
+// Base color of a dot. 'line' = the owning line's color, resolved at render
+// time; 'none' = transparent (the line band shows through — the "open" dots).
+export type DotFill = DayNightColor | 'line' | 'none';
+
+// Stroke color of a dot. No 'none' here — strokeWidth 0 is how a style says
+// "no stroke".
+export type DotStrokeColor = DayNightColor | 'line';
+
+// A procedurally-defined stop dot. All fields are required — a deliberate
+// divergence from the optional-field-plus-named-default convention on `Line`:
+// style objects are canonical by construction so plain deep equality
+// (`dotStylesEqual`) works everywhere. The clean-persisted-state convention
+// lives one level up instead, in the presence/absence of `StopCell.dotStyle`
+// and `Line.defaultDotStyle`. Size is intentionally NOT part of the style —
+// it will become a line option; rendering uses the fixed radii for now.
+export interface DotStyle {
+  shape: DotBaseShape;
+  fill: DotFill;
+  // World units; 0 = no stroke (stroke attrs omitted at render).
+  strokeWidth: number;
+  strokeColor: DotStrokeColor;
+  // Render the line's service code centered on the dot, in whichever of
+  // black/white is legible on the resolved fill. Implies the larger
+  // SERVICE_CODE_DOT_RADIUS disc so the code stays readable.
+  showServiceCode: boolean;
+}
 
 export interface StopCell {
   lineId: LineId;
   row: number;
   col: number;
   orientation: StopOrientation;
-  dotShape?: DotShape;
+  // Per-stop style override. `undefined` defers to the line's
+  // `defaultDotStyle`; setters drop the field when the chosen style equals
+  // the line's effective default so persisted state stays clean. Legacy
+  // saves carried a `dotShape` preset id here — converted on load (see
+  // convertLegacyDotShapes in serialize.ts).
+  dotStyle?: DotStyle;
 }
 
 // Alignment of the rendered label text relative to the label cell, expressed
@@ -99,7 +142,7 @@ export interface Station {
   // Marks a "routing point" station: the name and all bullet glyphs are
   // hidden on the canvas, and the label hit rect is dropped. The station
   // remains selectable/draggable via the hit rect around its stop cells.
-  // Per-stop `dotShape` values are NOT mutated when this flips — rendering
+  // Per-stop `dotStyle` values are NOT mutated when this flips — rendering
   // simply treats all bullets as hidden while the flag is on. Omitted/false
   // means "regular station".
   isWaypoint?: boolean;
@@ -137,10 +180,12 @@ export interface Line {
   // value, so it can drift as far positive or negative as the user clicks.
   // Setters delete the key when value lands on 0 so the default isn't stored.
   segmentLayers?: Record<string, number>;
-  // Glyph used for stops on this line whose own `dotShape` is unset. Missing
-  // ⇒ `'filled-black'` (the historical default). Setters drop the field when
-  // called with `'filled-black'` so the default is never stored.
-  defaultDotShape?: DotShape;
+  // Style for stops on this line whose own `dotStyle` is unset. Missing ⇒
+  // DEFAULT_DOT_STYLE (the filled-black preset, the historical default).
+  // Setters drop the field when the chosen style equals the default so it is
+  // never stored. Legacy saves carried a `defaultDotShape` preset id —
+  // converted on load (see convertLegacyDotShapes in serialize.ts).
+  defaultDotStyle?: DotStyle;
   // Stripe width in world units. Missing ⇒ LINE_WIDTH_DEFAULT (= STOP_SIZE,
   // the historical constant) — no migration needed for older saves. The
   // setter (`setLineWidth`) clamps to ≥ LINE_WIDTH_MIN, rounds to an integer,

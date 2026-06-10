@@ -1,6 +1,7 @@
 import { describe, it, expect } from 'vitest';
 import fc from 'fast-check';
 import { parse, serialize } from './serialize';
+import { DEFAULT_DOT_STYLE, DOT_SHAPE_PRESETS } from './dotStyle';
 import * as T from './transforms';
 import { counterIdFactory } from './ids';
 import { makeDoc, makeLine, makeStation, makeStop } from '../test/fixtures';
@@ -302,29 +303,209 @@ describe('parse — labelBold → labelWeight migration', () => {
   });
 });
 
-describe('serialize / parse — dotShape', () => {
-  it('round-trips a stop with dotShape', () => {
+describe('serialize / parse — dot styles', () => {
+  // Builds a file whose single stop and line carry arbitrary raw dot fields,
+  // as a legacy or hand-edited file might.
+  const buildDotPayload = (
+    stopExtra: Record<string, unknown> = {},
+    lineExtra: Record<string, unknown> = {},
+  ) =>
+    JSON.stringify({
+      format: 'massimo-map',
+      doc: {
+        stations: {
+          s1: {
+            id: 's1',
+            name: 'S1',
+            x: 0,
+            y: 0,
+            rotation: 0,
+            stops: [{ lineId: 'L1', row: 0, col: 0, orientation: 'auto-vertical', ...stopExtra }],
+            label: { row: 0, col: -1, rotation: 0, offset: 0, align: 'auto', valign: 'middle' },
+          },
+        },
+        lines: {
+          L1: {
+            id: 'L1',
+            service: 'A',
+            name: 'A line',
+            color: '#0039a6',
+            stations: ['s1'],
+            ...lineExtra,
+          },
+        },
+        lineOrder: ['L1'],
+        curveRadius: 24,
+        lineCounter: 1,
+        lineTags: {},
+        routeBullets: {},
+        transfers: {},
+        textLabels: {},
+        labelFontSize: 12,
+        labelWeight: 400,
+        labelItalic: false,
+        activePalettes: ['mta'],
+      },
+    });
+
+  it('round-trips a stop dotStyle and a line defaultDotStyle losslessly', () => {
     const doc = makeDoc({
       stations: [
         makeStation({
           id: 's1',
-          stops: [
-            {
-              lineId: 'L1',
-              row: 0,
-              col: 0,
-              orientation: 'auto-vertical',
-              dotShape: 'filled-black-diamond',
-            },
-          ],
+          stops: [makeStop('L1', { dotStyle: DOT_SHAPE_PRESETS['open-black'] })],
         }),
       ],
-      lines: [makeLine({ id: 'L1', stations: ['s1'] })],
+      lines: [
+        makeLine({
+          id: 'L1',
+          stations: ['s1'],
+          defaultDotStyle: DOT_SHAPE_PRESETS['filled-line-color'],
+        }),
+      ],
     });
-    const json = serialize(doc);
-    const result = parse(json);
+    const result = parse(serialize(doc));
     expect(result.ok).toBe(true);
-    if (result.ok) expect(result.doc.stations.s1.stops[0].dotShape).toBe('filled-black-diamond');
+    if (result.ok) expect(result.doc).toEqual(doc);
+  });
+
+  it('converts a legacy per-stop dotShape string to its preset style and strips the key', () => {
+    const r = parse(buildDotPayload({ dotShape: 'filled-black-diamond' }));
+    expect(r.ok).toBe(true);
+    if (!r.ok) return;
+    const stop = r.doc.stations.s1.stops[0];
+    expect(stop.dotStyle).toEqual(DOT_SHAPE_PRESETS['filled-black-diamond']);
+    expect('dotShape' in stop).toBe(false);
+  });
+
+  it('converts a legacy line defaultDotShape string and strips the key', () => {
+    const r = parse(buildDotPayload({}, { defaultDotShape: 'open-white' }));
+    expect(r.ok).toBe(true);
+    if (!r.ok) return;
+    expect(r.doc.lines.L1.defaultDotStyle).toEqual(DOT_SHAPE_PRESETS['open-white']);
+    expect('defaultDotShape' in r.doc.lines.L1).toBe(false);
+  });
+
+  it("drops a legacy defaultDotShape of 'filled-black' (the default is never stored)", () => {
+    const r = parse(buildDotPayload({}, { defaultDotShape: 'filled-black' }));
+    expect(r.ok).toBe(true);
+    if (!r.ok) return;
+    expect('defaultDotShape' in r.doc.lines.L1).toBe(false);
+    expect('defaultDotStyle' in r.doc.lines.L1).toBe(false);
+  });
+
+  it("converts a legacy 'none' to the invisible preset", () => {
+    const r = parse(buildDotPayload({ dotShape: 'none' }));
+    expect(r.ok).toBe(true);
+    if (!r.ok) return;
+    expect(r.doc.stations.s1.stops[0].dotStyle).toEqual(DOT_SHAPE_PRESETS['none']);
+  });
+
+  it('drops unknown legacy dotShape strings — the default chain takes over', () => {
+    const r = parse(buildDotPayload({ dotShape: 'gibberish' }, { defaultDotShape: 42 }));
+    expect(r.ok).toBe(true);
+    if (!r.ok) return;
+    const stop = r.doc.stations.s1.stops[0];
+    expect('dotShape' in stop).toBe(false);
+    expect(stop.dotStyle).toBeUndefined();
+    expect('defaultDotShape' in r.doc.lines.L1).toBe(false);
+    expect(r.doc.lines.L1.defaultDotStyle).toBeUndefined();
+  });
+
+  it('re-serializing a converted legacy doc emits dotStyle and never dotShape', () => {
+    const r = parse(buildDotPayload({ dotShape: 'open-white' }, { defaultDotShape: 'open-black' }));
+    expect(r.ok).toBe(true);
+    if (!r.ok) return;
+    const json = serialize(r.doc);
+    expect(json).toContain('"dotStyle"');
+    expect(json).toContain('"defaultDotStyle"');
+    expect(json).not.toContain('"dotShape"');
+    expect(json).not.toContain('"defaultDotShape"');
+    // …and parsing the re-serialized doc is a fixed point.
+    const r2 = parse(json);
+    expect(r2.ok).toBe(true);
+    if (r2.ok) expect(r2.doc).toEqual(r.doc);
+  });
+
+  it('prefers a modern dotStyle over a stale legacy dotShape on the same stop', () => {
+    const r = parse(
+      buildDotPayload({ dotShape: 'filled-white', dotStyle: DOT_SHAPE_PRESETS['open-black'] }),
+    );
+    expect(r.ok).toBe(true);
+    if (!r.ok) return;
+    const stop = r.doc.stations.s1.stops[0];
+    expect(stop.dotStyle).toEqual(DOT_SHAPE_PRESETS['open-black']);
+    expect('dotShape' in stop).toBe(false);
+  });
+
+  it('drops malformed dotStyle objects', () => {
+    const junkStyles: unknown[] = [
+      'filled-black', // a preset id where an object belongs
+      { shape: 'blob', fill: 'none', strokeWidth: 0, strokeColor: 'line', showServiceCode: false },
+      {
+        shape: 'circle',
+        fill: 'nope',
+        strokeWidth: 0,
+        strokeColor: 'line',
+        showServiceCode: false,
+      },
+      {
+        shape: 'circle',
+        fill: 'none',
+        strokeWidth: 'fat',
+        strokeColor: 'line',
+        showServiceCode: false,
+      },
+      {
+        shape: 'circle',
+        fill: 'none',
+        strokeWidth: 0,
+        strokeColor: 'none',
+        showServiceCode: false,
+      },
+      { shape: 'circle', fill: 'none', strokeWidth: 0, strokeColor: 'line' }, // missing showServiceCode
+      null,
+      7,
+    ];
+    for (const junk of junkStyles) {
+      const r = parse(buildDotPayload({ dotStyle: junk }, { defaultDotStyle: junk }));
+      expect(r.ok).toBe(true);
+      if (!r.ok) continue;
+      expect(r.doc.stations.s1.stops[0].dotStyle).toBeUndefined();
+      expect(r.doc.lines.L1.defaultDotStyle).toBeUndefined();
+    }
+  });
+
+  it('drops a modern defaultDotStyle equal to DEFAULT_DOT_STYLE (never stored)', () => {
+    // The payload goes through JSON.stringify anyway, so passing the default
+    // object itself already exercises by-value comparison on the other side.
+    const r = parse(buildDotPayload({}, { defaultDotStyle: DEFAULT_DOT_STYLE }));
+    expect(r.ok).toBe(true);
+    if (!r.ok) return;
+    expect('defaultDotStyle' in r.doc.lines.L1).toBe(false);
+  });
+
+  it('normalizes color-pair hex casing and clamps negative stroke widths', () => {
+    const r = parse(
+      buildDotPayload({
+        dotStyle: {
+          shape: 'square',
+          fill: { day: '#AABBCC', night: '#DDEEFF' },
+          strokeWidth: -2,
+          strokeColor: 'line',
+          showServiceCode: false,
+        },
+      }),
+    );
+    expect(r.ok).toBe(true);
+    if (!r.ok) return;
+    expect(r.doc.stations.s1.stops[0].dotStyle).toEqual({
+      shape: 'square',
+      fill: { day: '#aabbcc', night: '#ddeeff' },
+      strokeWidth: 0,
+      strokeColor: 'line',
+      showServiceCode: false,
+    });
   });
 });
 
