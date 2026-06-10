@@ -30,6 +30,16 @@ export const HATCH_GAP_WIDTH = 2;
 const DASH_ON = 2;
 const DASH_OFF = 2;
 
+// Width-proportional geometry for the two "open" styles (transparent gaps —
+// no underlay, so whatever is behind the line shows through). `dotted` paints
+// zero-length round-capped dashes — circles of diameter = strokeWidth — every
+// DOT_SPACING × strokeWidth along the path. `dashed-open` paints butt-capped
+// dashes scaled to the stroke width so the rhythm reads the same at any line
+// width (unlike `dashed`, whose fixed fine ticks deliberately don't scale).
+const DOT_SPACING = 1.5; // dot center-to-center distance, × strokeWidth
+const OPEN_DASH_ON = 2.5; // dash length, × strokeWidth
+const OPEN_DASH_OFF = 1.5; // gap length, × strokeWidth
+
 // Opaque fill painted in the "off" positions of dashed/hatched strokes so
 // lines passing behind them are fully occluded instead of bleeding through.
 const UNDERLAY_COLOR = '#fff';
@@ -37,19 +47,24 @@ const UNDERLAY_COLOR = '#fff';
 // Resolve a per-segment line style into the SVG stroke attributes shared by
 // every code path that paints a band-stroke (SegmentBand + the selected-line
 // highlight overlay in MapCanvas). Keeps both call sites in lockstep.
+// `strokeWidth` is the width the caller will paint at — the open styles scale
+// their dash geometry to it (the others ignore it).
 //
-// All styles use `strokeLinecap: 'butt'`. Dashed needs it so dashes aren't
-// extended by strokeWidth/2 (which would collapse the gaps). Solid and
-// hatched use it so the linecap extension doesn't poke past the colored
-// stop-marker square at the marker's perpendicular edge — a sub-pixel
+// Every style except `dotted` uses `strokeLinecap: 'butt'`. Dashed needs it
+// so dashes aren't extended by strokeWidth/2 (which would collapse the gaps).
+// Solid and hatched use it so the linecap extension doesn't poke past the
+// colored stop-marker square at the marker's perpendicular edge — a sub-pixel
 // rasterization artifact that flickered with the band's hatch pattern.
+// `dotted` is the exception: its circles ARE round linecaps painted on
+// zero-length dashes, so the cap is the whole point.
 export function lineStyleStrokeAttrs(
   style: LineStyle,
   color: string,
+  strokeWidth: number,
 ): {
   stroke: string;
   strokeDasharray: string | undefined;
-  strokeLinecap: 'butt';
+  strokeLinecap: 'butt' | 'round';
 } {
   if (style === 'hatched' || style === 'hatched-mirror') {
     return {
@@ -65,6 +80,20 @@ export function lineStyleStrokeAttrs(
       strokeLinecap: 'butt',
     };
   }
+  if (style === 'dotted') {
+    return {
+      stroke: color,
+      strokeDasharray: `0 ${DOT_SPACING * strokeWidth}`,
+      strokeLinecap: 'round',
+    };
+  }
+  if (style === 'dashed-open') {
+    return {
+      stroke: color,
+      strokeDasharray: `${OPEN_DASH_ON * strokeWidth} ${OPEN_DASH_OFF * strokeWidth}`,
+      strokeLinecap: 'butt',
+    };
+  }
   return { stroke: color, strokeDasharray: undefined, strokeLinecap: 'butt' };
 }
 
@@ -72,9 +101,11 @@ export function lineStyleStrokeAttrs(
 // painted beneath the foreground stroke (so its "off" positions read as
 // opaque background color instead of letting the line behind show through),
 // this returns the underlay's stroke attrs. Returns null when no underlay is
-// needed (solid; hatched bakes the gap color into the SVG <pattern> directly).
-// `underlayColor` matches the canvas background — white normally, black in
-// dark mode — so the gaps read as empty canvas, not a stale white.
+// needed (solid; hatched bakes the gap color into the SVG <pattern> directly;
+// dotted/dashed-open are the "open" styles whose gaps are INTENTIONALLY
+// transparent). `underlayColor` matches the canvas background — white
+// normally, black in dark mode — so the gaps read as empty canvas, not a
+// stale white.
 export function lineStyleUnderlayAttrs(
   style: LineStyle,
   underlayColor: string = UNDERLAY_COLOR,
