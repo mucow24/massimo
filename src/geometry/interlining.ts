@@ -68,18 +68,17 @@ export interface SegmentBandSpec {
 // stop square doesn't paint over a front-stack line's band passing through.
 //
 // `style` is derived from this line's segmentStyles at the incident
-// adjacencies: any hatched adjacency wins (so the hatch pattern visually
-// flows through the station); otherwise dashed only if EVERY adjacency is
-// dashed (so two dashed corridors meet cleanly at the stop center with no
-// painted marker breaking up the dash rhythm); otherwise solid.
+// adjacencies: a uniform non-solid style across every adjacency wins (so
+// the pattern visually flows through the station); any mix resolves to
+// solid (see stationMarkerStyle).
 //
 // `outward` is set when this stop is a TERMINUS for the line (single
 // adjacency, band available): the unit vector pointing out of the line's
-// end along the band's tangent. Dashed termini use it to paint the
-// cap-extension stub (so the dashes fill the outer half of the dot —
-// without it the dashed line would visually end mid-dot); stroked lines of
-// any style use it to place the casing's end-cap rail across the line's
-// end. Null at interior stations and when bands aren't supplied.
+// end along the band's tangent. Dashed/dotted/dashed-open termini use it to
+// paint the cap-extension stub (so the pattern fills the outer half of the
+// dot — without it the patterned line would visually end mid-dot); stroked
+// lines of any style use it to place the casing's end-cap rail across the
+// line's end. Null at interior stations and when bands aren't supplied.
 export interface StopMarkerSpec {
   cx: number;
   cy: number;
@@ -527,8 +526,8 @@ function terminusOutwardFromBand(
 
 // Derive the marker style from this line's segment styles at the adjacencies
 // incident to `stationId`. Rule: if every adjacency shares the same non-solid
-// style (dashed, hatched, or hatched-mirror), the dot inherits that style;
-// otherwise it's solid. A mixed junction (e.g. one hatched + one solid, or
+// style (dashed, hatched/-mirror, dotted, dashed-open), the dot inherits that
+// style; otherwise it's solid. A mixed junction (e.g. one hatched + one solid, or
 // hatched + hatched-mirror) resolves to solid so the dot covers the inner half
 // of the patterned segment and the pattern visually starts past the dot's edge.
 function stationMarkerStyle(line: Line, stationId: StationId): LineStyle {

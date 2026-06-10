@@ -55,7 +55,11 @@ export function SegmentBand({
   const style = resolveSegmentStyle(live, spec.pairKey);
   const strokeWidth = spec.stripeWidths[stripeIndex];
   const selectable = !interactive && !!onLineSelect;
-  const { stroke, strokeDasharray, strokeLinecap } = lineStyleStrokeAttrs(style, color);
+  const { stroke, strokeDasharray, strokeLinecap } = lineStyleStrokeAttrs(
+    style,
+    color,
+    strokeWidth,
+  );
   const underlay = lineStyleUnderlayAttrs(style, underlayColor);
   const railW = lineStrokeRailWidth(lineStrokeWidthOf(live), strokeWidth);
   return (

@@ -89,6 +89,31 @@ describe('serialize / parse — segmentStyles', () => {
     }
   });
 
+  it("round-trips the open styles ('dotted', 'dashed-open')", () => {
+    const doc = makeDoc({
+      stations: [
+        makeStation({ id: 's1', stops: [makeStop('L1')] }),
+        makeStation({ id: 's2', stops: [makeStop('L1')] }),
+        makeStation({ id: 's3', stops: [makeStop('L1')] }),
+      ],
+      lines: [
+        makeLine({
+          id: 'L1',
+          stations: ['s1', 's2', 's3'],
+          segmentStyles: { 's1|s2': 'dotted', 's2|s3': 'dashed-open' },
+        }),
+      ],
+    });
+    const r = parse(serialize(doc));
+    expect(r.ok).toBe(true);
+    if (r.ok) {
+      expect(r.doc.lines.L1.segmentStyles).toEqual({
+        's1|s2': 'dotted',
+        's2|s3': 'dashed-open',
+      });
+    }
+  });
+
   it("drops 'solid' entries and unknown style values on parse", () => {
     const json = JSON.stringify({
       format: 'massimo-map',

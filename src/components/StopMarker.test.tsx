@@ -66,6 +66,33 @@ describe('StopMarker', () => {
     expect(dashed).toBeTruthy();
   });
 
+  it('renders nothing for the open styles at an interior station', () => {
+    for (const style of ['dotted', 'dashed-open'] as const) {
+      const { container } = renderMarker({ spec: spec({ style, outward: null }) });
+      expect(container.querySelector('line')).toBeNull();
+      expect(container.querySelector('rect')).toBeNull();
+    }
+  });
+
+  it('paints an open-style terminus stub with NO underlay line (gaps stay transparent)', () => {
+    for (const style of ['dotted', 'dashed-open'] as const) {
+      const { container } = renderMarker({
+        spec: spec({ style, outward: { x: 1, y: 0 } }),
+      });
+      const lines = Array.from(container.querySelectorAll('line'));
+      expect(lines.length).toBe(1); // the patterned stroke only
+      expect(lines[0].getAttribute('stroke-dasharray')).toBeTruthy();
+      expect(lines[0].getAttribute('stroke')).toBe('#ff0000');
+    }
+  });
+
+  it('the dotted stub uses a round linecap so its dashes render as circles', () => {
+    const { container } = renderMarker({
+      spec: spec({ style: 'dotted', outward: { x: 1, y: 0 } }),
+    });
+    expect(container.querySelector('line')!.getAttribute('stroke-linecap')).toBe('round');
+  });
+
   describe('per-line width', () => {
     it('sizes the solid square to spec.width (default output unchanged)', () => {
       const def = renderMarker({ spec: spec() }).container.querySelector('rect')!;
