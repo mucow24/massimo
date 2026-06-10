@@ -1,9 +1,10 @@
 import { Fragment, useMemo, useRef, useState } from 'react';
 import { useDoc, useSelection } from '../../state/store';
 import { useThemeColors } from '../../state/theme';
-import type { DotShape, Line, LineId, LineStyle } from '../../model/types';
+import type { DotShape, DotStyle, Line, LineId, LineStyle } from '../../model/types';
 import { pairKeyOf } from '../../model/pairKey';
-import { resolveDotShape } from '../../model/transforms';
+import { resolveDotStyle } from '../../model/transforms';
+import { DEFAULT_DOT_STYLE, DOT_SHAPE_PRESETS } from '../../model/dotStyle';
 import { resolveSegmentStyle } from '../../geometry/interlining';
 import { ColorPalette } from './ColorPalette';
 import { useFieldHistory } from '../useFieldHistory';
@@ -66,7 +67,7 @@ function DotShapePopover({
             <StopGlyph
               cx={0}
               cy={0}
-              shape={shape}
+              style={DOT_SHAPE_PRESETS[shape]}
               lineColor={lineColor}
               serviceCode={serviceCode}
             />
@@ -148,8 +149,8 @@ export function LineInspector({ id }: { id: LineId }) {
   const setLineSegmentStyle = useDoc((s) => s.setLineSegmentStyle);
   const reorderLineStations = useDoc((s) => s.reorderLineStations);
   const removeStationFromLine = useDoc((s) => s.removeStationFromLine);
-  const setDotShape = useDoc((s) => s.setDotShape);
-  const setLineDefaultDotShape = useDoc((s) => s.setLineDefaultDotShape);
+  const setDotStyle = useDoc((s) => s.setDotStyle);
+  const setLineDefaultDotStyle = useDoc((s) => s.setLineDefaultDotStyle);
   const setLineWidth = useDoc((s) => s.setLineWidth);
   const setLineStrokeWidth = useDoc((s) => s.setLineStrokeWidth);
   const setLineStrokeColor = useDoc((s) => s.setLineStrokeColor);
@@ -213,10 +214,10 @@ export function LineInspector({ id }: { id: LineId }) {
         <label>Default stop dot</label>
         <StationShapePicker
           disabled={false}
-          currentShape={line.defaultDotShape ?? 'filled-black'}
+          currentStyle={line.defaultDotStyle ?? DEFAULT_DOT_STYLE}
           lineColor={line.color}
           serviceCode={line.service}
-          onPick={(shape) => setLineDefaultDotShape(line.id, shape)}
+          onPick={(shape) => setLineDefaultDotStyle(line.id, DOT_SHAPE_PRESETS[shape])}
         />
       </div>
       <div className="field">
@@ -393,7 +394,7 @@ export function LineInspector({ id }: { id: LineId }) {
                     const station = stations[sid];
                     if (!station) return null;
                     const stop = station.stops.find((s) => s.lineId === line.id);
-                    const shape: DotShape = resolveDotShape(line, stop);
+                    const style: DotStyle = resolveDotStyle(line, stop);
                     return (
                       <g
                         key={i + ':' + sid}
@@ -413,7 +414,7 @@ export function LineInspector({ id }: { id: LineId }) {
                         <StopGlyph
                           cx={MARKER_W / 2}
                           cy={centerOf(i)}
-                          shape={shape}
+                          style={style}
                           lineColor={line.color}
                           serviceCode={line.service}
                         />
@@ -430,7 +431,7 @@ export function LineInspector({ id }: { id: LineId }) {
                         lineColor={line.color}
                         serviceCode={line.service}
                         onPick={(shape) => {
-                          setDotShape(openPickerSid, line.id, shape);
+                          setDotStyle(openPickerSid, line.id, DOT_SHAPE_PRESETS[shape]);
                           setOpenPickerSid(null);
                         }}
                         onClose={() => setOpenPickerSid(null)}

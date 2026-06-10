@@ -17,9 +17,9 @@ test.describe('Stop shape picker — smoke', () => {
   }) => {
     await seedAndOpen(page, fourInLine);
 
-    // Default: every station's stop is filled-black.
+    // Default: every station's stop is the filled-black circle.
     await expect(
-      page.locator('[data-stop-station="A"][data-stop-shape="filled-black"]'),
+      page.locator('[data-stop-station="A"][data-stop-shape="circle"]'),
     ).toBeVisible();
 
     const a = await stationCenter(page, 'A');
@@ -32,21 +32,21 @@ test.describe('Stop shape picker — smoke', () => {
     await page.getByRole('button', { name: 'Stop shape' }).click();
     await page.getByRole('menuitem', { name: 'Filled black diamond' }).click();
 
-    // A's dot is now a polygon, tagged with the new shape.
-    const dot = page.locator('[data-stop-station="A"][data-stop-shape="filled-black-diamond"]');
+    // A's dot is now a polygon, tagged with the new base shape.
+    const dot = page.locator('[data-stop-station="A"][data-stop-shape="diamond"]');
     await expect(dot).toBeVisible();
     await expect(dot).toHaveJSProperty('tagName', 'polygon');
-    await expect(dot).toHaveAttribute('fill', '#000');
+    await expect(dot).toHaveAttribute('fill', '#000000');
 
     // Sibling stations untouched.
     await expect(
-      page.locator('[data-stop-station="B"][data-stop-shape="filled-black"]'),
+      page.locator('[data-stop-station="B"][data-stop-shape="circle"]'),
     ).toBeVisible();
     await expect(
-      page.locator('[data-stop-station="C"][data-stop-shape="filled-black"]'),
+      page.locator('[data-stop-station="C"][data-stop-shape="circle"]'),
     ).toBeVisible();
     await expect(
-      page.locator('[data-stop-station="D"][data-stop-shape="filled-black"]'),
+      page.locator('[data-stop-station="D"][data-stop-shape="circle"]'),
     ).toBeVisible();
   });
 });
@@ -106,12 +106,12 @@ test.describe('Stop shape picker — coverage', () => {
     await page.getByRole('button', { name: 'Stop shape' }).click();
     await page.getByRole('menuitem', { name: 'Filled black diamond' }).click();
     await expect(
-      page.locator('[data-stop-station="A"][data-stop-shape="filled-black-diamond"]'),
+      page.locator('[data-stop-station="A"][data-stop-shape="diamond"]'),
     ).toBeVisible();
 
     await page.keyboard.press('Control+z');
     await expect(
-      page.locator('[data-stop-station="A"][data-stop-shape="filled-black"]'),
+      page.locator('[data-stop-station="A"][data-stop-shape="circle"]'),
     ).toBeVisible();
   });
 
@@ -126,7 +126,7 @@ test.describe('Stop shape picker — coverage', () => {
 
     await page.reload();
     await expect(
-      page.locator('[data-stop-station="A"][data-stop-shape="filled-black-diamond"]'),
+      page.locator('[data-stop-station="A"][data-stop-shape="diamond"]'),
     ).toBeVisible();
   });
 });

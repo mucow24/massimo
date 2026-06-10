@@ -1,7 +1,10 @@
 import { usePopover } from './usePopover';
 import { StopGlyph } from './StopGlyph';
-import type { DotShape } from '../model/types';
+import { DOT_SHAPE_PRESETS } from '../model/dotStyle';
+import type { DotShape, DotStyle } from '../model/types';
 
+// Menu options stay keyed by preset id — the picker's currency is presets;
+// each pick writes the preset's full DotStyle into the doc.
 interface ShapeOption {
   shape: DotShape;
   label: string;
@@ -18,6 +21,8 @@ export const SHAPES: ShapeOption[] = [
   { shape: 'filled-black-service-code', label: 'Filled black with service code' },
   { shape: 'filled-black-diamond', label: 'Filled black diamond' },
   { shape: 'filled-white-diamond', label: 'Filled white diamond' },
+  { shape: 'filled-black-x', label: 'Filled black X' },
+  { shape: 'filled-white-x', label: 'Filled white X' },
   { shape: 'none', label: 'None' },
 ];
 
@@ -26,13 +31,13 @@ const TRIGGER_SIZE = 15;
 
 export function StationShapePicker({
   disabled,
-  currentShape,
+  currentStyle,
   lineColor,
   serviceCode,
   onPick,
 }: {
   disabled: boolean;
-  currentShape: DotShape;
+  currentStyle: DotStyle;
   lineColor?: string;
   serviceCode?: string;
   onPick: (shape: DotShape) => void;
@@ -70,7 +75,7 @@ export function StationShapePicker({
           <StopGlyph
             cx={0}
             cy={0}
-            shape={currentShape}
+            style={currentStyle}
             lineColor={lineColor}
             serviceCode={serviceCode}
           />
@@ -95,7 +100,7 @@ export function StationShapePicker({
                 <StopGlyph
                   cx={0}
                   cy={0}
-                  shape={shape}
+                  style={DOT_SHAPE_PRESETS[shape]}
                   lineColor={lineColor}
                   serviceCode={serviceCode}
                 />

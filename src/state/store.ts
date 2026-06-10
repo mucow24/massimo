@@ -3,7 +3,7 @@ import { persist, createJSONStorage } from 'zustand/middleware';
 import { temporal } from 'zundo';
 import type { GridSnap } from '../geometry/snap';
 import type {
-  DotShape,
+  DotStyle,
   LabelAlign,
   LabelValign,
   Line,
@@ -28,6 +28,7 @@ import {
   backfillLineNames,
   backfillPolygonDarkColors,
   backfillTextLabelColors,
+  convertLegacyDotShapes,
 } from '../model/serialize';
 import type { Station } from '../model/types';
 import { randomStationName } from './stationNames';
@@ -106,7 +107,7 @@ function docSnapshotsEqual(a: DocSnapshot, b: DocSnapshot): boolean {
 }
 
 /**
- * Persisted-document version migration (v0 → v6). Exported and pure so it can
+ * Persisted-document version migration (v0 → v7). Exported and pure so it can
  * be unit-tested in isolation; the persist config below just delegates here.
  * Never mutates `persisted` — returns a possibly-new doc snapshot.
  *
@@ -128,6 +129,9 @@ function docSnapshotsEqual(a: DocSnapshot, b: DocSnapshot): boolean {
  * - v5 → v6: backfill text-label `color`/`darkColor` (to the theme-matching
  *   #111111 / #ffffff defaults) for labels saved before the per-label color
  *   fields existed. Mirrors `backfillTextLabelColors` in `parse()`.
+ * - v6 → v7: convert legacy `dotShape`/`defaultDotShape` preset ids to
+ *   procedural `DotStyle` objects via the pinned preset table. Mirrors
+ *   `convertLegacyDotShapes` in `parse()`.
  */
 export function migrateDoc(persisted: unknown, version: number): DocState {
   const s = persisted as {
@@ -159,6 +163,18 @@ export function migrateDoc(persisted: unknown, version: number): DocState {
     const { textLabels: cleaned, changed } = backfillTextLabelColors(out.textLabels);
     if (changed) out = { ...out, textLabels: cleaned };
   }
+  if (v < 7 && (out.stations || out.lines)) {
+    // Legacy dotShape/defaultDotShape preset ids → DotStyle objects (same
+    // converter parse() uses on the file-import path).
+    const converted = convertLegacyDotShapes(out.stations ?? {}, out.lines ?? {});
+    if (converted.changed) {
+      out = {
+        ...out,
+        ...(out.stations ? { stations: converted.stations } : {}),
+        ...(out.lines ? { lines: converted.lines } : {}),
+      };
+    }
+  }
   if (v < 3 && 'labelBold' in out) {
     const { labelBold, ...rest } = out;
     // Existing `labelWeight` wins if both fields are present.
@@ -176,7 +192,7 @@ interface DocState extends MapDoc {
   addStation: (x: number, y: number, name?: string) => StationId;
   renameStation: (id: StationId, name: string) => void;
   moveStation: (id: StationId, x: number, y: number) => void;
-  setDotShape: (stationId: StationId, lineId: LineId, shape: DotShape) => void;
+  setDotStyle: (stationId: StationId, lineId: LineId, style: DotStyle) => void;
   setStationWaypoint: (stationId: StationId, isWaypoint: boolean) => void;
   redistributeBetween: (
     startId: StationId,
@@ -218,7 +234,7 @@ interface DocState extends MapDoc {
     toStationId: StationId,
     dir: -1 | 1,
   ) => void;
-  setLineDefaultDotShape: (lineId: LineId, shape: DotShape) => void;
+  setLineDefaultDotStyle: (lineId: LineId, style: DotStyle) => void;
   setLineWidth: (lineId: LineId, w: number) => void;
   setLineStrokeWidth: (lineId: LineId, w: number) => void;
   setLineStrokeColor: (lineId: LineId, c: string) => void;
@@ -313,8 +329,8 @@ export const useDoc = create<DocState>()(
         },
         renameStation: (id, name) => set((s) => T.renameStation(s, id, name)),
         moveStation: (id, x, y) => set((s) => T.moveStation(s, id, x, y)),
-        setDotShape: (stationId, lineId, shape) =>
-          set((s) => T.setDotShape(s, stationId, lineId, shape)),
+        setDotStyle: (stationId, lineId, style) =>
+          set((s) => T.setDotStyle(s, stationId, lineId, style)),
         setStationWaypoint: (stationId, isWaypoint) =>
           set((s) => T.setStationWaypoint(s, stationId, isWaypoint)),
         redistributeBetween: (startId, endId, mode = 'arc-bends', gridMode = 'off') =>
@@ -360,8 +376,8 @@ export const useDoc = create<DocState>()(
           set((s) => T.setLineSegmentStyle(s, lineId, fromStationId, toStationId, style)),
         cycleSegmentLayer: (lineId, fromStationId, toStationId, dir) =>
           set((s) => T.cycleSegmentLayer(s, lineId, fromStationId, toStationId, dir)),
-        setLineDefaultDotShape: (lineId, shape) =>
-          set((s) => T.setLineDefaultDotShape(s, lineId, shape)),
+        setLineDefaultDotStyle: (lineId, style) =>
+          set((s) => T.setLineDefaultDotStyle(s, lineId, style)),
         setLineWidth: (lineId, w) => set((s) => T.setLineWidth(s, lineId, w)),
         setLineStrokeWidth: (lineId, w) => set((s) => T.setLineStrokeWidth(s, lineId, w)),
         setLineStrokeColor: (lineId, c) => set((s) => T.setLineStrokeColor(s, lineId, c)),
@@ -512,8 +528,8 @@ export const useDoc = create<DocState>()(
       {
         name: 'vignelli-map-doc-v1',
         storage: createJSONStorage(() => localStorage),
-        version: 6,
-        // Version migration chain v0 → v6 lives in `migrateDoc` (above), which
+        version: 7,
+        // Version migration chain v0 → v7 lives in `migrateDoc` (above), which
         // is exported and unit-tested. See its doc comment for each step.
         migrate: (persisted, version) => migrateDoc(persisted, version),
         partialize: (s) => pickDocSnapshot(s),

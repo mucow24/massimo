@@ -18,7 +18,7 @@ export const LINE_WIDTH_MAX = 28;
 /**
  * Effective render width of a line. Missing field ⇒ LINE_WIDTH_DEFAULT, so
  * saves from before the field existed need no migration (same idiom as
- * `Line.defaultDotShape`). Structural parameter so narrowed line shapes
+ * `Line.defaultDotStyle`). Structural parameter so narrowed line shapes
  * (e.g. StopGrid's lines prop) pass through.
  */
 export const lineWidthOf = (line: { width?: number } | null | undefined): number =>
