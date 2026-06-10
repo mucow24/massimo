@@ -6,6 +6,7 @@ import {
   stationsForRect,
   textLabelsForRect,
 } from '../../geometry/stationBoundary';
+import { stopHalfOf } from '../../model/lineWidth';
 import type { Pt } from '../../geometry/polygonUnion';
 import type { StationId } from '../../model/types';
 
@@ -143,11 +144,16 @@ export function useRectSelect(
     const doc = useDoc.getState();
     const sel = useSelection.getState();
     const mode = modeFromEvent(e);
-    const stationHits = stationsForRect(doc.stations, nextRect, {
-      fontSize: doc.labelFontSize,
-      weight: doc.labelWeight,
-      italic: doc.labelItalic,
-    });
+    const stationHits = stationsForRect(
+      doc.stations,
+      nextRect,
+      {
+        fontSize: doc.labelFontSize,
+        weight: doc.labelWeight,
+        italic: doc.labelItalic,
+      },
+      stopHalfOf(doc.lines),
+    );
     const bulletHits = routeBulletsForRect(doc.routeBullets, nextRect);
     const labelHits = textLabelsForRect(doc.textLabels, nextRect);
     const polygonHits = polygonsForRect(doc.polygons, nextRect);
@@ -184,11 +190,16 @@ export function useRectSelect(
     setPreviewPolygonIds(null);
 
     const doc = useDoc.getState();
-    const stationHits = stationsForRect(doc.stations, finalRect, {
-      fontSize: doc.labelFontSize,
-      weight: doc.labelWeight,
-      italic: doc.labelItalic,
-    });
+    const stationHits = stationsForRect(
+      doc.stations,
+      finalRect,
+      {
+        fontSize: doc.labelFontSize,
+        weight: doc.labelWeight,
+        italic: doc.labelItalic,
+      },
+      stopHalfOf(doc.lines),
+    );
     const bulletHits = routeBulletsForRect(doc.routeBullets, finalRect);
     const labelHits = textLabelsForRect(doc.textLabels, finalRect);
     const polygonHits = polygonsForRect(doc.polygons, finalRect);

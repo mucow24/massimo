@@ -3,7 +3,6 @@ import { stripeEndpointFate } from '../../model/layerPriority';
 import type { SegmentBandSpec } from '../../geometry/interlining';
 import { computeStripeOutline, type StripeOutlineAdjust } from '../../geometry/stripeOutline';
 import type { OffsetPathSegment } from '../../geometry/router';
-import { STOP_SIZE } from '../../geometry/orientation';
 
 // Dashed outline applied to every stripe except the hovered one.
 const DASHED_STROKE_WIDTH = 1.5;
@@ -16,35 +15,37 @@ const DASHED_DASH = '4 2';
 const HOVER_BLACK_STROKE_WIDTH = 1;
 const HOVER_HALO_STROKE_WIDTH = 2;
 
-// Outward extension (positive) or inward retreat (negative) applied at a
-// stripe endpoint depending on which adjacency wins the stop-dot at that
-// station. Half a stop-dot in each direction puts the cap line exactly at
-// the outer or inner edge of the dot square.
-const ENDPOINT_ADJUST = STOP_SIZE / 2;
-
-interface Props {
-  bands: SegmentBandSpec[];
-  lines: Record<LineId, Line>;
-  hovered: { bandKey: string; lineId: LineId } | null;
-}
-
 // Compute the per-endpoint outline adjustment for one band stripe. At each
 // endpoint we look at how the line's two adjacencies (if any) compare under
-// the {@link stripeEndpointFate} rule:
-//   - 'win'  → +ENDPOINT_ADJUST (extend outward; full dot inside outline)
-//   - 'lose' → -ENDPOINT_ADJUST (retreat inward; dot outside outline)
+// the {@link stripeEndpointFate} rule. The shift magnitude is half the
+// stripe's own width — the stop-dot square is width × width, so half a dot
+// in each direction puts the cap line exactly at the outer or inner edge of
+// the dot square:
+//   - 'win'  → +width/2 (extend outward; full dot inside outline)
+//   - 'lose' → -width/2 (retreat inward; dot outside outline)
 //   - 'tie'  → 0 (cap at station center; dot split, prior behavior)
-function adjustmentFor(band: SegmentBandSpec, line: Line | undefined): StripeOutlineAdjust {
+function adjustmentFor(
+  band: SegmentBandSpec,
+  stripeIndex: number,
+  line: Line | undefined,
+): StripeOutlineAdjust {
   if (!line) return {};
+  const endpointAdjust = band.stripeWidths[stripeIndex] / 2;
   const fateToDelta = (fate: ReturnType<typeof stripeEndpointFate>): number => {
-    if (fate === 'win') return ENDPOINT_ADJUST;
-    if (fate === 'lose') return -ENDPOINT_ADJUST;
+    if (fate === 'win') return endpointAdjust;
+    if (fate === 'lose') return -endpointAdjust;
     return 0;
   };
   return {
     start: fateToDelta(stripeEndpointFate(line, band.pairKey, band.fromId)),
     end: fateToDelta(stripeEndpointFate(line, band.pairKey, band.toId)),
   };
+}
+
+interface Props {
+  bands: SegmentBandSpec[];
+  lines: Record<LineId, Line>;
+  hovered: { bandKey: string; lineId: LineId } | null;
 }
 
 /**
@@ -66,7 +67,11 @@ export function LayeringDashedOutlines({ bands, lines, hovered }: Props) {
             !!hovered && hovered.bandKey === band.bandKey && hovered.lineId === stripeLine.id;
           // The hovered stripe paints via LayeringHoverOutline.
           if (isHovered) return null;
-          const outline = computeStripeOutline(band, k, adjustmentFor(band, lines[stripeLine.id]));
+          const outline = computeStripeOutline(
+            band,
+            k,
+            adjustmentFor(band, k, lines[stripeLine.id]),
+          );
           if (!outline) return null;
           return (
             <g
@@ -116,7 +121,7 @@ export function LayeringHoverOutline({ bands, lines, hovered }: Props) {
   if (!band) return null;
   const k = band.lines.findIndex((l) => l.id === hovered.lineId);
   if (k < 0) return null;
-  const outline = computeStripeOutline(band, k, adjustmentFor(band, lines[hovered.lineId]));
+  const outline = computeStripeOutline(band, k, adjustmentFor(band, k, lines[hovered.lineId]));
   if (!outline) return null;
   const d = closedPerimeterPath(outline.segsA, outline.segsB);
   if (!d) return null;

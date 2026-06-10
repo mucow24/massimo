@@ -139,7 +139,7 @@ export function HighlightedLineLayer({
                     d={r.band.paths[r.stripeIndex]}
                     fill="none"
                     stroke={underlay.stroke}
-                    strokeWidth={14}
+                    strokeWidth={r.band.stripeWidths[r.stripeIndex]}
                     strokeLinecap={underlay.strokeLinecap}
                     strokeLinejoin="round"
                   />
@@ -148,7 +148,7 @@ export function HighlightedLineLayer({
                   d={r.band.paths[r.stripeIndex]}
                   fill="none"
                   stroke={stroke}
-                  strokeWidth={14}
+                  strokeWidth={r.band.stripeWidths[r.stripeIndex]}
                   strokeLinecap={strokeLinecap}
                   strokeLinejoin="round"
                   strokeDasharray={strokeDasharray}

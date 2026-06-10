@@ -219,6 +219,7 @@ interface DocState extends MapDoc {
     dir: -1 | 1,
   ) => void;
   setLineDefaultDotShape: (lineId: LineId, shape: DotShape) => void;
+  setLineWidth: (lineId: LineId, w: number) => void;
   deleteLine: (id: LineId) => void;
   moveLineInOrder: (id: LineId, dir: -1 | 1) => void;
 
@@ -359,6 +360,7 @@ export const useDoc = create<DocState>()(
           set((s) => T.cycleSegmentLayer(s, lineId, fromStationId, toStationId, dir)),
         setLineDefaultDotShape: (lineId, shape) =>
           set((s) => T.setLineDefaultDotShape(s, lineId, shape)),
+        setLineWidth: (lineId, w) => set((s) => T.setLineWidth(s, lineId, w)),
         deleteLine: (id) => set((s) => T.deleteLine(s, id)),
         moveLineInOrder: (id, dir) => set((s) => T.moveLineInOrder(s, id, dir)),
 

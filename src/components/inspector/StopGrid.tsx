@@ -1,12 +1,13 @@
 import { useEffect, useRef, useState } from 'react';
 import type { StopOrientation } from '../../model/types';
-import type { Rotation } from '../../geometry/orientation';
+import { STOP_SIZE, tangentGap, type Rotation } from '../../geometry/orientation';
 import {
   latticeOffsets,
   projectScreenToLocal,
   type RowCol,
   type LatticeBasis,
 } from '../../geometry/lattice';
+import { lineWidthOf } from '../../model/lineWidth';
 import { findDropTarget, nearestNode, PITCH } from './stopGridDrag';
 export { PITCH } from './stopGridDrag';
 
@@ -15,6 +16,8 @@ type GridStation = {
   stops: { lineId: string; row: number; col: number; orientation: StopOrientation }[];
   label: { row: number; col: number; rotation: number };
 };
+
+type GridLines = Record<string, { color: string; service: string; width?: number }>;
 
 const ORIENTATION_GLYPH: Record<StopOrientation, string> = {
   'auto-vertical': '↕',
@@ -40,11 +43,16 @@ const EPS = 1e-4;
 const VIEW_PAD = Math.ceil(GRID_RADIUS * Math.SQRT2);
 
 // Cursor-to-ghost snap radius (in row/col units). Inside this radius the
-// nearest ghost wins; outside, no drop target.
+// nearest ghost wins; outside, no drop target. NOT scaled with line width:
+// at pair-tangency factors above ~2 (a textbox width beyond 42 against a
+// default-width anchor) the midpoint between ring-1 ghosts falls outside
+// this radius, leaving small dead zones — accepted; the ghosts themselves
+// remain reachable.
 const GHOST_SNAP_RADIUS = 1.0;
-// Cursor-to-stop swap radius — must be physically on the stop circle to
-// register a swap (so a tangent ghost right next to a stop doesn't get
-// hijacked by a distant cursor).
+// Cursor-to-stop swap radius for a DEFAULT-width stop — must be physically
+// on the stop circle to register a swap (so a tangent ghost right next to a
+// stop doesn't get hijacked by a distant cursor). Wider stops scale this via
+// findDropTarget's swapRadiusFor (their circles draw bigger).
 const STOP_SWAP_RADIUS = 0.6;
 
 type DragSource =
@@ -102,7 +110,7 @@ export function StopGrid({
   onMoveLabel,
 }: {
   station: GridStation;
-  lines: Record<string, { color: string; service: string }>;
+  lines: GridLines;
   selectedLineId: string | null;
   labelSelected: boolean;
   onSelectStop: (lineId: string | null) => void;
@@ -118,10 +126,19 @@ export function StopGrid({
   const stops = station.stops;
   const label = station.label;
 
+  // Effective world width of a node: a stop's is its line's width; the label
+  // cell stays unit-sized. Drives node circle radii, ghost tangency, and
+  // overlap filtering so the editor mirrors the canvas's touching-stripes
+  // semantics.
+  const nodeW = (n: { kind: 'stop' | 'label'; lineId?: string }): number =>
+    n.kind === 'label' ? STOP_SIZE : lineWidthOf(lines[n.lineId!]);
+  const nodeR = (n: { kind: 'stop' | 'label'; lineId?: string }): number =>
+    (nodeW(n) / STOP_SIZE) * RADIUS;
+
   const sourceCell = drag ? { row: drag.source.row, col: drag.source.col } : null;
 
-  const nodesAll: { row: number; col: number; kind: 'stop' | 'label' }[] = [
-    ...stops.map((s) => ({ row: s.row, col: s.col, kind: 'stop' as const })),
+  const nodesAll: { row: number; col: number; kind: 'stop' | 'label'; lineId?: string }[] = [
+    ...stops.map((s) => ({ row: s.row, col: s.col, kind: 'stop' as const, lineId: s.lineId })),
     { row: label.row, col: label.col, kind: 'label' as const },
   ];
   // Non-source nodes — candidates for "anchor" and the things ghost slots
@@ -130,6 +147,9 @@ export function StopGrid({
 
   // Anchor = nearest non-source node to the cursor (only while dragging).
   const anchor = drag?.isDragging && drag.cursor ? nearestNode(drag.cursor, otherNodes) : null;
+
+  // The dragged node's own width (label drags as a unit cell).
+  const wSrc = drag?.source.kind === 'stop' ? lineWidthOf(lines[drag.source.lineId]) : STOP_SIZE;
 
   // Generate the ghost lattice in SCREEN frame and project into the SVG's
   // local frame via the inverse of the station's rotation.
@@ -148,15 +168,24 @@ export function StopGrid({
   const basis: LatticeBasis = shiftHeld ? 'diagonal' : 'orthogonal';
   const ghosts: RowCol[] = [];
   if (anchor) {
+    // Scale the unit lattice by the drag-pair tangency factor: ring-1 ghosts
+    // land where the dragged node's body exactly touches the anchor's —
+    // 1 for two default-width nodes, e.g. 1.5 for a width-28 stop against a
+    // default one. Farther rings scale uniformly (an approximation: a
+    // different-width node between them would shift true tangency).
+    const t = tangentGap(wSrc, nodeW(anchor)) / STOP_SIZE;
     const localOffsets = projectScreenToLocal(latticeOffsets(basis, GRID_RADIUS), stationRotation);
     for (const o of localOffsets) {
-      const g = { row: anchor.row + o.row, col: anchor.col + o.col };
+      const g = { row: anchor.row + o.row * t, col: anchor.col + o.col * t };
       let overlap = false;
       for (const n of otherNodes) {
         if (sameCell(n, anchor)) continue;
-        // Ghosts at distance < 1 from any other node overlap visually.
-        // Tangent (distance == 1) is allowed.
-        if (Math.hypot(g.row - n.row, g.col - n.col) < 1 - EPS) {
+        // A ghost closer to another node than their mutual tangency distance
+        // would overlap it visually once dropped. Tangent is allowed.
+        if (
+          Math.hypot(g.row - n.row, g.col - n.col) <
+          tangentGap(wSrc, nodeW(n)) / STOP_SIZE - EPS
+        ) {
           overlap = true;
           break;
         }
@@ -177,7 +206,14 @@ export function StopGrid({
             : { kind: 'label' },
           stops,
           ghosts,
-          { swapRadius: STOP_SWAP_RADIUS, snapRadius: GHOST_SNAP_RADIUS },
+          {
+            swapRadius: STOP_SWAP_RADIUS,
+            snapRadius: GHOST_SNAP_RADIUS,
+            // Wider stops draw bigger circles; "on the circle" scales with
+            // them (default-width stops reproduce STOP_SWAP_RADIUS exactly:
+            // 14/(2·14) + 0.1 = 0.6).
+            swapRadiusFor: (s) => lineWidthOf(lines[s.lineId]) / (2 * STOP_SIZE) + 0.1,
+          },
         )
       : null;
 
@@ -367,7 +403,7 @@ export function StopGrid({
               <circle
                 cx={s.col * PITCH}
                 cy={s.row * PITCH}
-                r={RADIUS}
+                r={nodeR({ kind: 'stop', lineId: s.lineId })}
                 fill={line?.color ?? '#888'}
                 stroke={selected ? '#000' : isSwapTarget ? '#1a4ea8' : 'rgba(0,0,0,0.2)'}
                 strokeWidth={selected || isSwapTarget ? 2 : 1}
@@ -449,7 +485,7 @@ export function StopGrid({
             <circle
               cx={anchor.col * PITCH}
               cy={anchor.row * PITCH}
-              r={RADIUS + 1.5}
+              r={nodeR(anchor) + 1.5}
               fill="none"
               stroke="rgba(0,0,0,0.5)"
               strokeWidth={3}
@@ -457,7 +493,7 @@ export function StopGrid({
             <circle
               cx={anchor.col * PITCH}
               cy={anchor.row * PITCH}
-              r={RADIUS + 1.5}
+              r={nodeR(anchor) + 1.5}
               fill="none"
               stroke="#fff"
               strokeWidth={1.5}

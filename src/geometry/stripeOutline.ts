@@ -1,10 +1,9 @@
 import type { SegmentBandSpec } from './interlining';
-import { STOP_SIZE, stripeOffset } from './orientation';
 import { emitOffsetSegments, offsetFilletPath, type OffsetPathSegment } from './router';
 import { leftNormal, norm, sub, type Vec2 } from './vec';
 
 export interface StripeOutline {
-  /** SVG `d` for the +HALF / -HALF offset edges of the stripe. */
+  /** SVG `d` for the stripe's two long edges (offset ± width/2). */
   edgeAPath: string;
   edgeBPath: string;
   /**
@@ -57,9 +56,10 @@ export function computeStripeOutline(
 ): StripeOutline | null {
   const verts = band.centerline;
   if (verts.length < 2) return null;
-  const HALF = STOP_SIZE / 2;
-  const n = band.lines.length;
-  const offset = stripeOffset(stripeIndex, n);
+  // Read the baked per-stripe geometry — re-deriving offsets here would
+  // desync the outline from the painted paths the moment widths differ.
+  const HALF = band.stripeWidths[stripeIndex] / 2;
+  const offset = band.stripeOffsets[stripeIndex];
   const offsetA = offset + HALF;
   const offsetB = offset - HALF;
 

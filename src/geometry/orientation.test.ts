@@ -1,4 +1,5 @@
 import { describe, it, expect } from 'vitest';
+import fc from 'fast-check';
 import {
   DIR_8,
   STOP_SIZE,
@@ -8,6 +9,8 @@ import {
   rotateGridDelta,
   segmentEndpoints,
   stopCenterAt,
+  stripeOffsetsForWidths,
+  tangentGap,
   travelDirLocal,
 } from './orientation';
 import type { Rotation, StopOrientation } from '../model/types';
@@ -285,5 +288,104 @@ describe('rotateGridDelta', () => {
       c = out.dCol;
     }
     expect({ dRow: r, dCol: c }).toEqual({ dRow: 3, dCol: -2 });
+  });
+});
+
+describe('tangentGap', () => {
+  it('is the mean of the two widths (center distance at which stripes touch)', () => {
+    expect(tangentGap(14, 14)).toBe(14);
+    expect(tangentGap(14, 28)).toBe(21);
+    expect(tangentGap(2, 28)).toBe(15);
+  });
+});
+
+describe('stripeOffsetsForWidths', () => {
+  it('reduces bit-exactly to the historical (k - (n-1)/2) * STOP_SIZE for uniform default widths', () => {
+    for (let n = 1; n <= 6; n++) {
+      const offsets = stripeOffsetsForWidths(Array(n).fill(STOP_SIZE));
+      for (let k = 0; k < n; k++) {
+        // Strict toBe, not closeTo: legacy docs must render byte-identically.
+        expect(offsets[k]).toBe((k - (n - 1) / 2) * STOP_SIZE);
+      }
+    }
+  });
+
+  it('returns [] for no widths and [0] for a single stripe of any width', () => {
+    expect(stripeOffsetsForWidths([])).toEqual([]);
+    expect(stripeOffsetsForWidths([5])).toEqual([0]);
+    expect(stripeOffsetsForWidths([28])).toEqual([0]);
+  });
+
+  it('handles the canonical mixed pair: [14, 28] -> [-10.5, +10.5]', () => {
+    expect(stripeOffsetsForWidths([14, 28])).toEqual([-10.5, 10.5]);
+  });
+
+  it('consecutive PRE-CENTERED positions differ by exactly tangentGap (exact dyadic arithmetic)', () => {
+    // The tangency recurrence p_k = p_{k-1} + (w_{k-1}+w_k)/2 is exact for
+    // integer widths (halves are dyadic). Assert it on the offsets via
+    // pairwise differences of RECONSTRUCTED positions: offsets differ from
+    // positions by one shared mean, so consecutive deltas survive centering
+    // up to float rounding -- pin the exact property on re-accumulated
+    // positions instead of the centered values.
+    fc.assert(
+      fc.property(
+        fc.array(fc.integer({ min: 1, max: 60 }), { minLength: 2, maxLength: 8 }),
+        (widths) => {
+          let p = 0;
+          const positions = widths.map((w, k) => {
+            if (k === 0) return 0;
+            p += (widths[k - 1] + w) / 2;
+            return p;
+          });
+          for (let k = 0; k + 1 < widths.length; k++) {
+            expect(positions[k + 1] - positions[k]).toBe(tangentGap(widths[k], widths[k + 1]));
+          }
+          // And the centered offsets track those positions to float precision.
+          const offsets = stripeOffsetsForWidths(widths);
+          for (let k = 0; k + 1 < widths.length; k++) {
+            expect(offsets[k + 1] - offsets[k]).toBeCloseTo(
+              tangentGap(widths[k], widths[k + 1]),
+              9,
+            );
+          }
+        },
+      ),
+    );
+  });
+
+  it('offsets are mean-centered (sum ~ 0) and reverse-antisymmetric', () => {
+    fc.assert(
+      fc.property(
+        fc.array(fc.integer({ min: 1, max: 60 }), { minLength: 1, maxLength: 8 }),
+        (widths) => {
+          const offsets = stripeOffsetsForWidths(widths);
+          const sum = offsets.reduce((a, b) => a + b, 0);
+          expect(Math.abs(sum)).toBeLessThan(1e-9 * Math.max(1, ...offsets.map(Math.abs)) + 1e-12);
+          // Reversing the widths mirrors the offsets: offsets(reverse(w)) ===
+          // reverse(-offsets(w)) up to float noise.
+          const rev = stripeOffsetsForWidths([...widths].reverse());
+          const mirrored = offsets.map((o) => -o).reverse();
+          for (let k = 0; k < offsets.length; k++) {
+            expect(rev[k]).toBeCloseTo(mirrored[k], 9);
+          }
+        },
+      ),
+    );
+  });
+
+  it('the band envelope spans exactly the summed widths', () => {
+    fc.assert(
+      fc.property(
+        fc.array(fc.integer({ min: 1, max: 60 }), { minLength: 1, maxLength: 8 }),
+        (widths) => {
+          const offsets = stripeOffsetsForWidths(widths);
+          const n = widths.length;
+          const lo = offsets[0] - widths[0] / 2;
+          const hi = offsets[n - 1] + widths[n - 1] / 2;
+          const total = widths.reduce((a, b) => a + b, 0);
+          expect(hi - lo).toBeCloseTo(total, 9);
+        },
+      ),
+    );
   });
 });

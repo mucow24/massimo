@@ -145,6 +145,112 @@ describe('<StopGrid /> — right-click rotates', () => {
   });
 });
 
+describe('<StopGrid /> — per-line widths', () => {
+  const PITCH = 22;
+  const RADIUS = PITCH / 2;
+
+  // jsdom implements neither SVG geometry nor pointer capture; patch the
+  // prototypes with an identity screen↔svg mapping so drags can run (mirrors
+  // test/interaction.ts's fakeSvg, but StopGrid owns its ref internally).
+  const patchSvgGeometry = () => {
+    const proto = SVGSVGElement.prototype as unknown as Record<string, unknown>;
+    const elProto = Element.prototype as unknown as Record<string, unknown>;
+    const restore: Array<() => void> = [];
+    const put = (target: Record<string, unknown>, key: string, value: unknown) => {
+      const prev = target[key];
+      target[key] = value;
+      restore.push(() => {
+        target[key] = prev;
+      });
+    };
+    put(proto, 'getScreenCTM', () => ({ inverse: () => ({}) }));
+    put(proto, 'createSVGPoint', () => {
+      const p = { x: 0, y: 0, matrixTransform: () => ({ x: p.x, y: p.y }) };
+      return p;
+    });
+    if (!('setPointerCapture' in elProto)) put(elProto, 'setPointerCapture', () => {});
+    return () => restore.forEach((f) => f());
+  };
+
+  const mixedLines: Record<string, { color: string; service: string; width?: number }> = {
+    L1: { color: '#0039A6', service: 'L1' },
+    L2: { color: '#EE352E', service: 'L2', width: 28 },
+  };
+
+  const mixedStation: GridStation = {
+    rotation: 0,
+    stops: [
+      { lineId: 'L1', row: 0, col: 0, orientation: 'auto-horizontal' },
+      { lineId: 'L2', row: 2, col: 0, orientation: 'auto-horizontal' },
+    ],
+    label: { row: -3, col: -3, rotation: 0 },
+  };
+
+  const stopCircle = (container: HTMLElement, lineId: string) =>
+    container.querySelector(`[data-cell-kind="stop"][data-line-id="${lineId}"] circle`)!;
+
+  it('scales each stop node to its line width (label node stays unit-sized)', () => {
+    const { container } = render(
+      <StopGrid
+        station={mixedStation}
+        lines={mixedLines}
+        selectedLineId={null}
+        labelSelected={false}
+        onSelectStop={() => {}}
+        onSelectLabel={() => {}}
+        onRotateStop={() => {}}
+        onRotateLabel={() => {}}
+        onMoveStop={() => {}}
+        onMoveLabel={() => {}}
+      />,
+    );
+    expect(Number(stopCircle(container, 'L1').getAttribute('r'))).toBeCloseTo(RADIUS, 5);
+    expect(Number(stopCircle(container, 'L2').getAttribute('r'))).toBeCloseTo(
+      (28 / 14) * RADIUS,
+      5,
+    );
+    const labelCircle = container.querySelector('[data-cell-kind="label"] circle')!;
+    expect(Number(labelCircle.getAttribute('r'))).toBeCloseTo(RADIUS, 5);
+  });
+
+  it('scales the ghost lattice to the drag-pair tangency', () => {
+    const restoreSvg = patchSvgGeometry();
+    try {
+      const { container } = render(
+        <StopGrid
+          station={mixedStation}
+          lines={mixedLines}
+          selectedLineId={null}
+          labelSelected={false}
+          onSelectStop={() => {}}
+          onSelectLabel={() => {}}
+          onRotateStop={() => {}}
+          onRotateLabel={() => {}}
+          onMoveStop={() => {}}
+          onMoveLabel={() => {}}
+        />,
+      );
+      // Drag the wide L2 stop (row 2) toward L1 at the origin. With the
+      // identity CTM, cursor (clientX, clientY) = (col·PITCH, row·PITCH).
+      const cell = container.querySelector('[data-cell-kind="stop"][data-line-id="L2"]') as Element;
+      fireEvent.pointerDown(cell, { button: 0, clientX: 0, clientY: 2 * PITCH });
+      const svg = container.querySelector('svg')!;
+      fireEvent.pointerMove(svg, { clientX: 0, clientY: 1.2 * PITCH });
+
+      // Anchor = L1 at the origin; tangency factor t = (28+14)/(2·14) = 1.5,
+      // so the ring-1 ghost below the anchor sits at row 1.5 — NOT the unit
+      // row 1 of the legacy lattice.
+      const ghostYs = Array.from(container.querySelectorAll('circle'))
+        .filter((c) => Number(c.getAttribute('cx')) === 0)
+        .map((c) => Number(c.getAttribute('cy')));
+      expect(ghostYs.some((y) => Math.abs(y - 1.5 * PITCH) < 1e-6)).toBe(true);
+      expect(ghostYs.some((y) => Math.abs(y - 1 * PITCH) < 1e-6)).toBe(false);
+    } finally {
+      restoreSvg();
+    }
+  });
+});
+
 describe('<StopGrid /> — selection on click', () => {
   it('clicking the background deselects (onSelectStop(null))', () => {
     const { container, onSelectStop } = renderGrid({

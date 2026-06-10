@@ -13,7 +13,20 @@ import { StopGlyph } from '../StopGlyph';
 import { StationShapePicker, SHAPES } from '../StationShapePicker';
 import { blendOver, legibleTextOn, withAlpha } from '../../util/color';
 import { InlineBulletText } from '../InlineBulletText';
-import { stationBandLayout, STATION_ROW_H, GAP_ROW_H, BAND_W } from './stationBandGeometry';
+import { NumericFieldRow } from '../NumericFieldRow';
+import {
+  LINE_WIDTH_MAX,
+  LINE_WIDTH_MIN,
+  LINE_WIDTH_SLIDER_MIN,
+  lineWidthOf,
+} from '../../model/lineWidth';
+import {
+  stationBandLayout,
+  STATION_ROW_H,
+  GAP_ROW_H,
+  PREVIEW_W_MIN,
+  PREVIEW_W_MAX,
+} from './stationBandGeometry';
 
 function DotShapePopover({
   onPick,
@@ -119,6 +132,7 @@ export function LineInspector({ id }: { id: LineId }) {
   const removeStationFromLine = useDoc((s) => s.removeStationFromLine);
   const setDotShape = useDoc((s) => s.setDotShape);
   const setLineDefaultDotShape = useDoc((s) => s.setLineDefaultDotShape);
+  const setLineWidth = useDoc((s) => s.setLineWidth);
   const selection = useSelection();
   // Gap color matches the canvas so the band preview mirrors the on-canvas look.
   const underlayColor = useThemeColors().underlay;
@@ -186,6 +200,18 @@ export function LineInspector({ id }: { id: LineId }) {
         <label>Color</label>
         <ColorPalette value={line.color} onChange={(c) => updateLine(line.id, { color: c })} />
       </div>
+      <NumericFieldRow
+        id={`line-width-${line.id}`}
+        label="Width"
+        min={LINE_WIDTH_SLIDER_MIN}
+        max={LINE_WIDTH_MAX}
+        step={1}
+        value={lineWidthOf(line)}
+        onChange={(n) => setLineWidth(line.id, n)}
+        getCurrent={() => lineWidthOf(useDoc.getState().lines[id])}
+        textboxAllowAboveMax
+        textboxMin={LINE_WIDTH_MIN}
+      />
       <div className="field">
         <button
           type="button"
@@ -222,11 +248,14 @@ export function LineInspector({ id }: { id: LineId }) {
         {line.stations.length > 0 &&
           (() => {
             const N = line.stations.length;
+            // Preview the line's actual width, clamped so the band stays
+            // inside the fixed marker column.
+            const previewW = Math.min(Math.max(lineWidthOf(line), PREVIEW_W_MIN), PREVIEW_W_MAX);
             const {
               totalHeight: totalBandH,
               centerOf,
               segments,
-            } = stationBandLayout(line, stations);
+            } = stationBandLayout(line, stations, previewW);
             const needsHatchDefs = segments.some(
               (s) => s.style === 'hatched' || s.style === 'hatched-mirror',
             );
@@ -276,7 +305,7 @@ export function LineInspector({ id }: { id: LineId }) {
                             x2={MARKER_W / 2}
                             y2={seg.y2}
                             stroke={underlay.stroke}
-                            strokeWidth={BAND_W}
+                            strokeWidth={previewW}
                             strokeLinecap="butt"
                             style={filter ? { filter } : undefined}
                           />
@@ -287,7 +316,7 @@ export function LineInspector({ id }: { id: LineId }) {
                           x2={MARKER_W / 2}
                           y2={seg.y2}
                           stroke={stroke}
-                          strokeWidth={BAND_W}
+                          strokeWidth={previewW}
                           strokeLinecap="butt"
                           strokeDasharray={strokeDasharray}
                           style={filter ? { filter } : undefined}

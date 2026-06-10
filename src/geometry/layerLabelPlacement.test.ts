@@ -1,15 +1,15 @@
 import { describe, it, expect } from 'vitest';
-import { pickLayerLabelTUncached } from './layerLabelPlacement';
+import { pickLayerLabelTUncached, sampleBandStripes } from './layerLabelPlacement';
 import type { SegmentBandSpec } from './interlining';
+import { makeBandSpec } from '../test/fixtures';
 // Tests use the uncached wrapper so each call builds its own sampled-stripes
 // table. Production paths build the cache once per geometry change via
 // `sampleBandStripes` and call `pickLayerLabelT` directly — see
 // `LayerNumberLabels`.
 
 // Minimal SegmentBandSpec builder for placement tests. Only `bandKey`,
-// `centerline`, `radius`, and `lines.length` (for the stripe-offset math)
-// are read by the helper; the rest are set to plausible defaults so the
-// spec type-checks.
+// `centerline`, `radius`, and the per-stripe offset fields are read by the
+// helper; the rest come from the shared fixture's plausible defaults.
 interface BandOpts {
   bandKey: string;
   centerline: Array<{ x: number; y: number }>;
@@ -23,18 +23,13 @@ function makeBand({
   lines = ['L1'],
   linePriorities = lines.map((_, i) => i),
 }: BandOpts): SegmentBandSpec {
-  return {
+  return makeBandSpec(lines, {
     pairKey: bandKey,
     bandKey,
-    fromId: 's1',
-    toId: 's2',
-    lines: lines.map((id) => ({ id })),
     paths: lines.map(() => ''),
-    warning: false,
     centerline,
-    radius: 24,
     linePriorities,
-  };
+  });
 }
 
 // A vertical band from (0,0) to (0,100); midpoint at (0, 50).
@@ -59,6 +54,18 @@ const horizBand = (x = 0) =>
     ],
     lines: ['B'],
   });
+
+describe('sampleBandStripes — per-stripe baked offsets', () => {
+  it('samples each stripe of a mixed-width band at its baked offset', () => {
+    // Widths [14, 28] → offsets ±10.5; the wide stripe's samples must sit at
+    // |y| = 10.5 off the horizontal centerline, not the legacy uniform ±7.
+    const band = makeBandSpec(['A', 'B'], { stripeWidths: [14, 28] });
+    const sampled = sampleBandStripes([band]);
+    const wide = sampled.get(band.bandKey + '|1')!;
+    expect(wide.length).toBeGreaterThan(0);
+    for (const p of wide) expect(Math.abs(p.y)).toBeCloseTo(10.5, 6);
+  });
+});
 
 describe('pickLayerLabelT', () => {
   // Both rows demonstrate the same property: when no candidate is more

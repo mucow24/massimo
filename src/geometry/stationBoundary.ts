@@ -1,7 +1,13 @@
 import type { Pt } from './polygonUnion';
 import type { Polygon, RouteBullet, Station, StationId, TextLabel } from '../model/types';
 import { STOP_SIZE, localToWorld, stopCenterAt } from './orientation';
-import { DEFAULT_LABEL_STYLE, labelLayoutLocal, type LabelStyle } from './labelLayout';
+import {
+  DEFAULT_LABEL_STYLE,
+  DEFAULT_STOP_HALF,
+  labelLayoutLocal,
+  type LabelStyle,
+  type StopHalfFn,
+} from './labelLayout';
 import { rectIntersectsPolygon, type AABB } from './rectPolygon';
 import { measureTextLabel } from './textMeasure';
 
@@ -33,35 +39,55 @@ export interface AABBRect {
  * plus the label cell for a regular station, plus a phantom dot for an empty
  * one — padded by HIT_PAD. The "cells" half of the selection silhouette / hit
  * rect. Shared with StationView's bg hit rect so the two can never drift.
+ *
+ * Each cell contributes its OWN half-extent (a stop's is half its line's
+ * width via `stopHalf`; the label cell and phantom dot stay STOP_SIZE/2), so
+ * the extents are per-cell min/max — the dominating edge can come from a
+ * wide stop whose CENTER is not extremal.
  */
-export function cellsAABBLocal(station: Station): AABBRect {
+export function cellsAABBLocal(
+  station: Station,
+  stopHalf: StopHalfFn = DEFAULT_STOP_HALF,
+): AABBRect {
   const stops = station.stops;
   const label = station.label;
   const isWp = !!station.isWaypoint;
   const phantomDot = !isWp && stops.length === 0 ? { row: label.row, col: label.col + 1 } : null;
   // Waypoints exclude the label cell so the silhouette hugs only the visible
   // stop positions.
-  const allCells: { row: number; col: number }[] = isWp ? [...stops] : [...stops, label];
-  if (phantomDot) allCells.push(phantomDot);
-  if (allCells.length === 0) allCells.push(label); // empty-waypoint fallback
-  const minRow = Math.min(...allCells.map((c) => c.row));
-  const maxRow = Math.max(...allCells.map((c) => c.row));
-  const minCol = Math.min(...allCells.map((c) => c.col));
-  const maxCol = Math.max(...allCells.map((c) => c.col));
-  const x = stopCenterAt(0, minCol).x - HALF - HIT_PAD;
-  const y = stopCenterAt(minRow, 0).y - HALF - HIT_PAD;
-  const w = stopCenterAt(0, maxCol).x + HALF + HIT_PAD - x;
-  const h = stopCenterAt(maxRow, 0).y + HALF + HIT_PAD - y;
-  return { x, y, w, h };
+  const allCells: { row: number; col: number; half: number }[] = stops.map((s) => ({
+    row: s.row,
+    col: s.col,
+    half: stopHalf(s.lineId),
+  }));
+  if (!isWp) allCells.push({ row: label.row, col: label.col, half: HALF });
+  if (phantomDot) allCells.push({ ...phantomDot, half: HALF });
+  if (allCells.length === 0) allCells.push({ row: label.row, col: label.col, half: HALF }); // empty-waypoint fallback
+  let minX = Infinity;
+  let maxX = -Infinity;
+  let minY = Infinity;
+  let maxY = -Infinity;
+  for (const c of allCells) {
+    const cx = stopCenterAt(0, c.col).x;
+    const cy = stopCenterAt(c.row, 0).y;
+    minX = Math.min(minX, cx - c.half);
+    maxX = Math.max(maxX, cx + c.half);
+    minY = Math.min(minY, cy - c.half);
+    maxY = Math.max(maxY, cy + c.half);
+  }
+  const x = minX - HIT_PAD;
+  const y = minY - HIT_PAD;
+  return { x, y, w: maxX + HIT_PAD - x, h: maxY + HIT_PAD - y };
 }
 
 export function stationBoundaryRectsLocal(
   station: Station,
   style: LabelStyle = DEFAULT_LABEL_STYLE,
+  stopHalf: StopHalfFn = DEFAULT_STOP_HALF,
 ): StationBoundaryRects {
   const label = station.label;
   const isWp = !!station.isWaypoint;
-  const { x, y, w, h } = cellsAABBLocal(station);
+  const { x, y, w, h } = cellsAABBLocal(station, stopHalf);
   const cells: Pt[] = [
     { x, y },
     { x: x + w, y },
@@ -71,9 +97,10 @@ export function stationBoundaryRectsLocal(
 
   if (isWp) return { cells };
 
-  // Label rect — same layout the renderer uses, then rotated about the
-  // anchor so the polygon aligns with the painted text.
-  const lay = labelLayoutLocal(station, style);
+  // Label rect — same layout the renderer uses (including the same per-stop
+  // width lookup, so label snapping agrees), then rotated about the anchor
+  // so the polygon aligns with the painted text.
+  const lay = labelLayoutLocal(station, style, undefined, stopHalf);
   const labelAng = (label.rotation * Math.PI) / 4;
   const cosL = Math.cos(labelAng);
   const sinL = Math.sin(labelAng);
@@ -109,11 +136,12 @@ export function stationsForRect(
   stations: Record<StationId, Station>,
   rect: AABB,
   style: LabelStyle = DEFAULT_LABEL_STYLE,
+  stopHalf: StopHalfFn = DEFAULT_STOP_HALF,
 ): StationId[] {
   const hits: StationId[] = [];
   for (const id of Object.keys(stations)) {
     const st = stations[id];
-    const b = stationBoundaryRectsLocal(st, style);
+    const b = stationBoundaryRectsLocal(st, style, stopHalf);
     const cellsWorld = b.cells.map((p) => stationLocalToWorld(st, p));
     if (rectIntersectsPolygon(rect, cellsWorld)) {
       hits.push(id);

@@ -6,6 +6,17 @@ const HIT_PAD = 2;
 const LABEL_GAP = 3;
 const HALF = STOP_SIZE / 2;
 
+/**
+ * Per-stop half-extent lookup (world units), keyed by line id — how far a
+ * stop's marker square extends from its center. Production callers pass
+ * `stopHalfOf(lines)` (model/lineWidth.ts); the default reproduces the
+ * uniform STOP_SIZE/2 every stop had before per-line widths. Shared with
+ * stationBoundary so the renderer and the hit geometry read widths through
+ * the same shape.
+ */
+export type StopHalfFn = (lineId: string) => number;
+export const DEFAULT_STOP_HALF: StopHalfFn = () => HALF;
+
 export type LabelBaseline = 'central' | 'text-before-edge' | 'text-after-edge';
 
 /**
@@ -80,6 +91,10 @@ export function labelLayoutLocal(
   // falls back to a width heuristic, which is why exact-geometry tests pass a
   // stub instead of trusting it.
   measure: typeof measureTextLabel = measureTextLabel,
+  // Per-stop half-extent lookup. Renderer (StationLabel) and hit geometry
+  // (stationBoundary) MUST pass the same lookup or the wash/hit rect drifts
+  // off the painted text next to a non-default-width stop.
+  stopHalf: StopHalfFn = DEFAULT_STOP_HALF,
 ): LabelLayout {
   const stops = station.stops;
   const label = station.label;
@@ -114,8 +129,8 @@ export function labelLayoutLocal(
     // (perpendicular) doesn't snap. The 0 threshold is safe because in the
     // 8-cell grid the smallest non-zero |dot| is ~0.707; perpendicular
     // cells are exactly 0 (mod fp noise).
-    const plus = snapInfoInHalfPlane(stops, phantomDot, label, readCos, readSin, 1);
-    const minus = snapInfoInHalfPlane(stops, phantomDot, label, readCos, readSin, -1);
+    const plus = snapInfoInHalfPlane(stops, phantomDot, label, readCos, readSin, 1, stopHalf);
+    const minus = snapInfoInHalfPlane(stops, phantomDot, label, readCos, readSin, -1, stopHalf);
     if (plus.inHalfPlane) {
       textAnchor = 'end';
       anchorX = labelCenter.x + dirPlus.anchor.x - LABEL_GAP * readCos;
@@ -131,7 +146,10 @@ export function labelLayoutLocal(
       // diagonal labels next to the same stop. Stop-relative placement
       // pins the gap to the stop, so the visual spacing matches.
       if (plus.inWayStopProj !== null) {
-        const target = plus.inWayStopProj * STOP_SIZE - (HALF + LABEL_GAP);
+        // `proj * STOP_SIZE` stays — the projection is in lattice units and
+        // the lattice does NOT scale with width; only the stop's own
+        // half-extent does.
+        const target = plus.inWayStopProj * STOP_SIZE - ((plus.inWayStopHalf ?? HALF) + LABEL_GAP);
         anchorX = labelCenter.x + target * readCos;
         anchorY = labelCenter.y + target * readSin;
       }
@@ -140,7 +158,8 @@ export function labelLayoutLocal(
       anchorX = labelCenter.x + dirMinus.anchor.x + LABEL_GAP * readCos;
       anchorY = labelCenter.y + dirMinus.anchor.y + LABEL_GAP * readSin;
       if (minus.inWayStopProj !== null) {
-        const target = minus.inWayStopProj * STOP_SIZE + (HALF + LABEL_GAP);
+        const target =
+          minus.inWayStopProj * STOP_SIZE + ((minus.inWayStopHalf ?? HALF) + LABEL_GAP);
         anchorX = labelCenter.x + target * readCos;
         anchorY = labelCenter.y + target * readSin;
       }
@@ -286,6 +305,10 @@ interface SnapInfo {
   // trigger `inHalfPlane` (so the snap fires) but don't push the anchor
   // out, because the text naturally clears them.
   inWayStopProj: number | null;
+  // The winning in-way stop's half-extent (world units) — the anchor clamp
+  // clears the stop's ACTUAL edge, not the default STOP_SIZE/2. Null
+  // whenever `inWayStopProj` is null.
+  inWayStopHalf: number | null;
 }
 
 /**
@@ -301,21 +324,27 @@ function snapInfoInHalfPlane(
   readCos: number,
   readSin: number,
   sign: 1 | -1,
+  stopHalf: StopHalfFn,
 ): SnapInfo {
-  // Accept any cell whose Chebyshev distance is at most one cell. The dual
-  // grid editor (#36) places diagonal-grid neighbors at ±√2/2 per axis so
-  // they're tangent on screen; the old strict `=== 1` check rejected them
-  // and labels rendered unsnapped on top of the stop. A small epsilon
-  // keeps integer grid neighbors at exactly 1 unaffected.
-  const ADJ_MAX = 1 + 1e-4;
   // Perpendicular gate in cell-space: HALF / STOP_SIZE = 0.5. A stop with
   // |perp| > this sits outside the text's perpendicular envelope, so the
-  // text naturally clears it and no anchor clamp is needed.
+  // text naturally clears it and no anchor clamp is needed. Intentionally
+  // NOT width-scaled: it gates on the TEXT's perpendicular extent (a font
+  // metric in label-cell units), not on the stop's body.
   const PERP_GATE = 0.5;
   let inHalfPlane = false;
   let inWayStopProj: number | null = null;
-  const consider = (dRow: number, dCol: number) => {
-    if (Math.max(Math.abs(dRow), Math.abs(dCol)) > ADJ_MAX) return;
+  let inWayStopHalf: number | null = null;
+  const consider = (dRow: number, dCol: number, half: number) => {
+    // Accept any cell whose Chebyshev distance is at most the TANGENCY
+    // distance between the unit label cell and this stop — (half + HALF) in
+    // world units, divided back into cell units. For a default-width stop
+    // that's the historical 1-cell gate; a width-28 stop tangent to the
+    // label sits 1.5 cells away and must still snap. The dual grid editor
+    // (#36) places diagonal-grid neighbors at ±√2/2 per axis so they're
+    // tangent on screen; a small epsilon keeps exact-tangent neighbors in.
+    const adjMax = (half + HALF) / STOP_SIZE + 1e-4;
+    if (Math.max(Math.abs(dRow), Math.abs(dCol)) > adjMax) return;
     const proj = dCol * readCos + dRow * readSin;
     if (sign * proj <= 1e-6) return;
     inHalfPlane = true;
@@ -328,9 +357,10 @@ function snapInfoInHalfPlane(
     // to 0). In both cases: -sign * proj is positive and we minimize it.
     if (inWayStopProj === null || -sign * proj < -sign * inWayStopProj) {
       inWayStopProj = proj;
+      inWayStopHalf = half;
     }
   };
-  for (const s of stops) consider(s.row - label.row, s.col - label.col);
-  if (phantomDot) consider(phantomDot.row - label.row, phantomDot.col - label.col);
-  return { inHalfPlane, inWayStopProj };
+  for (const s of stops) consider(s.row - label.row, s.col - label.col, stopHalf(s.lineId));
+  if (phantomDot) consider(phantomDot.row - label.row, phantomDot.col - label.col, HALF);
+  return { inHalfPlane, inWayStopProj, inWayStopHalf };
 }

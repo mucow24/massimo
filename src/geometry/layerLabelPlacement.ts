@@ -1,6 +1,5 @@
 import type { SegmentBandSpec } from './interlining';
 import { sampleOffsetPath } from './lineTagGeometry';
-import { stripeOffset } from './orientation';
 import type { Vec2 } from './vec';
 
 // Arc-length fractions to try when placing a layer-number label on a band
@@ -46,7 +45,7 @@ export function sampleBandStripes(bands: SegmentBandSpec[]): SampledBandStripes 
   for (const band of bands) {
     const n = band.lines.length;
     for (let k = 0; k < n; k++) {
-      const offset = stripeOffset(k, n);
+      const offset = band.stripeOffsets[k];
       const samples: Vec2[] = [];
       for (let i = 0; i <= STRIPE_SAMPLES; i++) {
         const t = i / STRIPE_SAMPLES;
@@ -109,8 +108,7 @@ export function pickLayerLabelT(
 ): number {
   const candidates = options.candidates ?? DEFAULT_CANDIDATES;
   const midpointBias = options.midpointBias ?? DEFAULT_MIDPOINT_BIAS;
-  const n = band.lines.length;
-  const targetOffset = stripeOffset(stripeIndex, n);
+  const targetOffset = band.stripeOffsets[stripeIndex];
 
   let bestT = candidates[0] ?? 0.5;
   let bestScore = -Infinity;
