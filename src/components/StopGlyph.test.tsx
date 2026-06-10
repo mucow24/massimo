@@ -1,6 +1,6 @@
 import { describe, it, expect } from 'vitest';
 import { render } from '@testing-library/react';
-import { StopGlyph } from './StopGlyph';
+import { StopGlyph, SERVICE_CODE_DOT_RADIUS } from './StopGlyph';
 import { STOP_DOT_RADIUS } from '../geometry/orientation';
 import type { DotShape } from '../model/types';
 
@@ -101,7 +101,8 @@ describe('<StopGlyph />', () => {
     const svg = renderGlyph('filled-black-service-code', false, '#e6002d', 'A');
     const c = svg.querySelector('circle')!;
     expect(c.getAttribute('fill')).toBe('#000');
-    expect(parseFloat(c.getAttribute('r')!)).toBeCloseTo(STOP_DOT_RADIUS, 5);
+    // Full default-line-width disc, not the smaller standard dot.
+    expect(parseFloat(c.getAttribute('r')!)).toBeCloseTo(SERVICE_CODE_DOT_RADIUS, 5);
     const t = svg.querySelector('text')!;
     expect(t.textContent).toBe('A');
     expect(t.getAttribute('fill')).toBe('#fff');
