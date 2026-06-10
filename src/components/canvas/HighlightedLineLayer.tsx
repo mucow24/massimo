@@ -10,6 +10,9 @@ import { pairKeyOf } from '../../model/pairKey';
 import { resolveDotShape } from '../../model/transforms';
 import { STOP_SIZE, travelDirLocal, rotateBy } from '../../geometry/orientation';
 import { lineStyleStrokeAttrs, lineStyleUnderlayAttrs } from '../HatchPatterns';
+import { offsetFilletPath } from '../../geometry/router';
+import { lineStrokeColorOf, lineStrokeRailWidth, lineStrokeWidthOf } from '../../model/lineStroke';
+import { lineWidthOf } from '../../model/lineWidth';
 import { StopMarker } from '../StopMarker';
 import { StopGlyph } from '../StopGlyph';
 import { StationView } from '../StationView';
@@ -130,6 +133,8 @@ export function HighlightedLineLayer({
               ln.color,
             );
             const underlay = lineStyleUnderlayAttrs(style, underlayColor);
+            const stripeW = r.band.stripeWidths[r.stripeIndex];
+            const railW = lineStrokeRailWidth(lineStrokeWidthOf(ln), stripeW);
             const m = !!hov && hov.lineId === stripeLn.id && r.band.pairKey === hovPairKey;
             push(
               m,
@@ -139,7 +144,7 @@ export function HighlightedLineLayer({
                     d={r.band.paths[r.stripeIndex]}
                     fill="none"
                     stroke={underlay.stroke}
-                    strokeWidth={r.band.stripeWidths[r.stripeIndex]}
+                    strokeWidth={stripeW}
                     strokeLinecap={underlay.strokeLinecap}
                     strokeLinejoin="round"
                   />
@@ -148,19 +153,51 @@ export function HighlightedLineLayer({
                   d={r.band.paths[r.stripeIndex]}
                   fill="none"
                   stroke={stroke}
-                  strokeWidth={r.band.stripeWidths[r.stripeIndex]}
+                  strokeWidth={stripeW}
                   strokeLinecap={strokeLinecap}
                   strokeLinejoin="round"
                   strokeDasharray={strokeDasharray}
                 />
+                {/* Casing rails centered on the body edges, mirroring
+                    SegmentBand. */}
+                {railW > 0 &&
+                  [-1, 1].map((side) => (
+                    <path
+                      key={side}
+                      d={offsetFilletPath(
+                        r.band.centerline,
+                        r.band.radius,
+                        r.band.stripeOffsets[r.stripeIndex] + (side * stripeW) / 2,
+                      )}
+                      fill="none"
+                      stroke={lineStrokeColorOf(ln)}
+                      strokeWidth={railW}
+                      strokeLinecap="butt"
+                      strokeLinejoin="round"
+                    />
+                  ))}
               </Fragment>,
             );
           });
+          // The arrow-tip station (last stop with ≥2 stops on the line):
+          // its cased arrowhead replaces the line's end, so the marker's
+          // end-cap rail is suppressed there — one smooth border from body
+          // into arrow.
+          const stopsOnLine = ln.stations.filter((sid) =>
+            stations[sid]?.stops.some((c) => c.lineId === highlightLineId),
+          );
+          const arrowTipSid = stopsOnLine.length >= 2 ? stopsOnLine[stopsOnLine.length - 1] : null;
           renderables.forEach((r, i) => {
             if (r.kind !== 'marker' || r.spec.lineId !== highlightLineId) return;
             push(
               isHoverStation(r.spec.stationId),
-              <StopMarker key={'hl-m:' + i} spec={r.spec} underlayColor={underlayColor} />,
+              <StopMarker
+                key={'hl-m:' + i}
+                spec={r.spec}
+                underlayColor={underlayColor}
+                lines={lines}
+                noEndCap={r.spec.stationId === arrowTipSid}
+              />,
             );
           });
           // Direction triangles: small arrow ~5px past each stop dot
@@ -201,17 +238,54 @@ export function HighlightedLineLayer({
               const dx = worldDir.x;
               const dy = worldDir.y;
               const isTerminus = i === points.length - 1;
+              // A stroked line's terminus arrow gets a casing rim too: an
+              // underlay copy fattened by 2× the line's stroke width in the
+              // stroke color, so the arrow reads as part of the cased line.
+              const arrowStroke = isTerminus ? lineStrokeWidthOf(ln) : 0;
+              const bodyW = lineWidthOf(ln);
+              const railW = lineStrokeRailWidth(arrowStroke, bodyW);
+              const d = arrowTrianglePath(p.x, p.y, dx, dy, baseDist, apexDist, halfW);
               push(
                 isHoverStation(p.sid),
-                <path
-                  key={'hl-tri:' + p.sid}
-                  d={arrowTrianglePath(p.x, p.y, dx, dy, baseDist, apexDist, halfW)}
-                  fill={isTerminus ? ln.color : '#000'}
-                  stroke={isTerminus ? ln.color : undefined}
-                  strokeWidth={isTerminus ? 10 : undefined}
-                  strokeLinejoin={isTerminus ? 'miter' : undefined}
-                  paintOrder={isTerminus ? 'stroke fill' : undefined}
-                />,
+                <Fragment key={'hl-tri:' + p.sid}>
+                  {arrowStroke > 0 && (
+                    <path
+                      d={d}
+                      fill={lineStrokeColorOf(ln)}
+                      stroke={lineStrokeColorOf(ln)}
+                      strokeWidth={10 + 2 * arrowStroke}
+                      strokeLinejoin="miter"
+                      paintOrder="stroke fill"
+                    />
+                  )}
+                  <path
+                    d={d}
+                    fill={isTerminus ? ln.color : '#000'}
+                    stroke={isTerminus ? ln.color : undefined}
+                    strokeWidth={isTerminus ? 10 : undefined}
+                    strokeLinejoin={isTerminus ? 'miter' : undefined}
+                    paintOrder={isTerminus ? 'stroke fill' : undefined}
+                  />
+                  {/* Junction patch: the underlay is a CLOSED triangle, so
+                      its fattened stroke also rims the arrow's BASE edge —
+                      a stroke-colored bar across the body where the arrow
+                      overlaps it. Repaint the body color between the rails
+                      (width − rail wide) from just behind the stop into the
+                      arrow base, so the body flows seamlessly into the
+                      arrowhead while the rim survives only around the
+                      arrow's exposed silhouette. */}
+                  {arrowStroke > 0 && (
+                    <line
+                      x1={p.x - dx * railW}
+                      y1={p.y - dy * railW}
+                      x2={p.x + dx * baseDist}
+                      y2={p.y + dy * baseDist}
+                      stroke={ln.color}
+                      strokeWidth={bodyW - railW}
+                      strokeLinecap="butt"
+                    />
+                  )}
+                </Fragment>,
               );
             });
           }

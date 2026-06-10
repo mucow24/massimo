@@ -835,6 +835,89 @@ describe('setLineWidth', () => {
   });
 });
 
+describe('setLineStrokeWidth', () => {
+  it('stores a non-default stroke width, including half steps', () => {
+    const doc = makeDoc({ lines: [makeLine({ id: 'L1' })] });
+    expect(T.setLineStrokeWidth(doc, 'L1', 4).lines.L1.strokeWidth).toBe(4);
+    expect(T.setLineStrokeWidth(doc, 'L1', 1.5).lines.L1.strokeWidth).toBe(1.5);
+  });
+
+  it('drops the field entirely when set back to 0', () => {
+    const doc = makeDoc({ lines: [makeLine({ id: 'L1', strokeWidth: 4 })] });
+    const next = T.setLineStrokeWidth(doc, 'L1', 0);
+    expect('strokeWidth' in next.lines.L1).toBe(false);
+  });
+
+  it('returns the input doc unchanged when setting 0 on a stroke-less line', () => {
+    const doc = makeDoc({ lines: [makeLine({ id: 'L1' })] });
+    expect(T.setLineStrokeWidth(doc, 'L1', 0)).toBe(doc);
+  });
+
+  it('returns the input doc unchanged when the stroke width is already stored', () => {
+    const doc = makeDoc({ lines: [makeLine({ id: 'L1', strokeWidth: 4 })] });
+    expect(T.setLineStrokeWidth(doc, 'L1', 4)).toBe(doc);
+  });
+
+  it('clamps to the floor and rounds to the 0.5 grid', () => {
+    const doc = makeDoc({ lines: [makeLine({ id: 'L1' })] });
+    // Below-floor clamps to 0 = the default, so the field is never stored.
+    expect(T.setLineStrokeWidth(doc, 'L1', -3)).toBe(doc);
+    expect(T.setLineStrokeWidth(doc, 'L1', 3.6).lines.L1.strokeWidth).toBe(3.5);
+    expect(T.setLineStrokeWidth(doc, 'L1', 3.8).lines.L1.strokeWidth).toBe(4);
+    // Rounds-to-zero is dropped like an exact 0.
+    expect(T.setLineStrokeWidth(doc, 'L1', 0.2)).toBe(doc);
+  });
+
+  it('ignores non-finite input (same reference out)', () => {
+    const doc = makeDoc({ lines: [makeLine({ id: 'L1', strokeWidth: 4 })] });
+    expect(T.setLineStrokeWidth(doc, 'L1', NaN)).toBe(doc);
+    expect(T.setLineStrokeWidth(doc, 'L1', Infinity)).toBe(doc);
+  });
+
+  it('returns the input doc for an unknown line id', () => {
+    const doc = makeDoc({ lines: [makeLine({ id: 'L1' })] });
+    expect(T.setLineStrokeWidth(doc, 'ghost', 4)).toBe(doc);
+  });
+});
+
+describe('setLineStrokeColor', () => {
+  it('stores a non-default stroke color', () => {
+    const doc = makeDoc({ lines: [makeLine({ id: 'L1' })] });
+    const next = T.setLineStrokeColor(doc, 'L1', '#ff0000');
+    expect(next.lines.L1.strokeColor).toBe('#ff0000');
+  });
+
+  it('normalizes to lowercase before storing', () => {
+    const doc = makeDoc({ lines: [makeLine({ id: 'L1' })] });
+    const next = T.setLineStrokeColor(doc, 'L1', '#AB12CD');
+    expect(next.lines.L1.strokeColor).toBe('#ab12cd');
+  });
+
+  it('drops the field when set to the default, in any case', () => {
+    for (const def of ['#ffffff', '#FFFFFF']) {
+      const doc = makeDoc({ lines: [makeLine({ id: 'L1', strokeColor: '#ff0000' })] });
+      const next = T.setLineStrokeColor(doc, 'L1', def);
+      expect('strokeColor' in next.lines.L1).toBe(false);
+    }
+  });
+
+  it('returns the input doc unchanged when the color is already stored', () => {
+    const doc = makeDoc({ lines: [makeLine({ id: 'L1', strokeColor: '#ff0000' })] });
+    expect(T.setLineStrokeColor(doc, 'L1', '#ff0000')).toBe(doc);
+    expect(T.setLineStrokeColor(doc, 'L1', '#FF0000')).toBe(doc);
+  });
+
+  it('returns the input doc unchanged when setting the default on a bare line', () => {
+    const doc = makeDoc({ lines: [makeLine({ id: 'L1' })] });
+    expect(T.setLineStrokeColor(doc, 'L1', '#ffffff')).toBe(doc);
+  });
+
+  it('returns the input doc for an unknown line id', () => {
+    const doc = makeDoc({ lines: [makeLine({ id: 'L1' })] });
+    expect(T.setLineStrokeColor(doc, 'ghost', '#ff0000')).toBe(doc);
+  });
+});
+
 describe('toggleStationOnLine', () => {
   it('adds a station + stop cell when not present', () => {
     const doc = makeDoc({

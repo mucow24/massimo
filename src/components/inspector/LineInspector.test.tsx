@@ -183,3 +183,116 @@ describe('<LineInspector /> — width control', () => {
     }
   });
 });
+
+describe('<LineInspector /> — stroke controls', () => {
+  beforeEach(() => {
+    localStorage.clear();
+    useDoc.setState({ ...DEFAULT_DOC });
+    useSelection.setState(SELECTION_BLANK);
+    useDoc.temporal.getState().clear();
+  });
+
+  const seed = (over: { strokeWidth?: number; strokeColor?: string } = {}) => {
+    useDoc.setState({
+      ...DEFAULT_DOC,
+      ...makeDoc({
+        stations: [
+          makeStation({ id: 's1', stops: [makeStop('L1')] }),
+          makeStation({ id: 's2', stops: [makeStop('L1')] }),
+        ],
+        // Spread conditionally — an explicit `undefined` would plant the
+        // key, and the canonical stroke-less form has no key at all.
+        lines: [makeLine({ id: 'L1', stations: ['s1', 's2'], ...over })],
+      }),
+    });
+  };
+
+  it('renders a 0–10 half-step slider at the line’s effective stroke width', () => {
+    seed();
+    render(<LineInspector id="L1" />);
+    const slider = screen.getByRole('slider', { name: 'Stroke' }) as HTMLInputElement;
+    expect(slider.getAttribute('min')).toBe('0');
+    expect(slider.getAttribute('max')).toBe('10');
+    expect(slider.getAttribute('step')).toBe('0.5');
+    expect(slider.value).toBe('0');
+  });
+
+  it('slider edits write the stroke width (half steps included); zero drops the key', () => {
+    seed();
+    render(<LineInspector id="L1" />);
+    const slider = screen.getByRole('slider', { name: 'Stroke' });
+    fireEvent.change(slider, { target: { value: '1.5' } });
+    expect(useDoc.getState().lines.L1.strokeWidth).toBe(1.5);
+    fireEvent.change(slider, { target: { value: '0' } });
+    expect('strokeWidth' in useDoc.getState().lines.L1).toBe(false);
+  });
+
+  it('the spinbutton steps by 0.5 and is uncapped above the slider max', () => {
+    seed();
+    render(<LineInspector id="L1" />);
+    const spin = screen.getByRole('spinbutton', { name: 'Stroke' });
+    expect(spin.getAttribute('min')).toBe('0');
+    expect(spin.getAttribute('max')).toBeNull();
+    expect(spin.getAttribute('step')).toBe('0.5');
+    fireEvent.change(spin, { target: { value: '30' } });
+    expect(useDoc.getState().lines.L1.strokeWidth).toBe(30);
+  });
+
+  it('the color input reflects the effective stroke color and writes edits', () => {
+    seed({ strokeColor: '#ff0000' });
+    render(<LineInspector id="L1" />);
+    const input = screen.getByLabelText('Stroke color') as HTMLInputElement;
+    expect(input.value).toBe('#ff0000');
+    fireEvent.change(input, { target: { value: '#00aa55' } });
+    expect(useDoc.getState().lines.L1.strokeColor).toBe('#00aa55');
+    // Picking the default drops the key (never stored).
+    fireEvent.change(input, { target: { value: '#ffffff' } });
+    expect('strokeColor' in useDoc.getState().lines.L1).toBe(false);
+  });
+
+  it('defaults the color input to white for a stroke-less line', () => {
+    seed();
+    render(<LineInspector id="L1" />);
+    expect((screen.getByLabelText('Stroke color') as HTMLInputElement).value).toBe('#ffffff');
+  });
+
+  it('one slider focus-arc collapses to a single undo entry', () => {
+    seed();
+    useDoc.temporal.getState().clear();
+    render(<LineInspector id="L1" />);
+    const slider = screen.getByRole('slider', { name: 'Stroke' });
+    const before = historyDepth();
+    fireEvent.focus(slider);
+    fireEvent.change(slider, { target: { value: '2' } });
+    fireEvent.change(slider, { target: { value: '4' } });
+    fireEvent.change(slider, { target: { value: '6' } });
+    fireEvent.blur(slider);
+    expect(historyDepth()).toBe(before + 1);
+    useDoc.temporal.getState().undo();
+    expect('strokeWidth' in useDoc.getState().lines.L1).toBe(false);
+  });
+
+  it('the stop-band preview paints two edge-centered rails per segment', () => {
+    seed({ strokeWidth: 4, strokeColor: '#ff0000' });
+    const { container } = render(<LineInspector id="L1" />);
+    const casings = Array.from(container.querySelectorAll('svg line[data-preview-casing]'));
+    expect(casings.length).toBe(2); // one segment × two rails
+    for (const l of casings) {
+      expect(l.getAttribute('stroke')).toBe('#ff0000');
+      expect(l.getAttribute('stroke-width')).toBe('4'); // the rail itself
+    }
+    // Rails straddle the body edges at ±previewW/2 = ±7 around the marker
+    // column center (12).
+    const xs = casings.map((l) => Number(l.getAttribute('x1'))).sort((a, b) => a - b);
+    expect(xs).toEqual([5, 19]);
+    // The body paints first; the rails follow it in document order.
+    const first = container.querySelector('svg line');
+    expect(first?.hasAttribute('data-preview-casing')).toBe(false);
+  });
+
+  it('the preview paints no casing for a stroke-less line', () => {
+    seed();
+    const { container } = render(<LineInspector id="L1" />);
+    expect(container.querySelectorAll('[data-preview-casing]').length).toBe(0);
+  });
+});

@@ -1,5 +1,7 @@
 import { Fragment } from 'react';
 import { resolveSegmentStyle, SegmentBandSpec } from '../geometry/interlining';
+import { offsetFilletPath } from '../geometry/router';
+import { lineStrokeColorOf, lineStrokeRailWidth, lineStrokeWidthOf } from '../model/lineStroke';
 import type { Line, LineId } from '../model/types';
 import { lineStyleStrokeAttrs, lineStyleUnderlayAttrs } from './HatchPatterns';
 
@@ -55,6 +57,7 @@ export function SegmentBand({
   const selectable = !interactive && !!onLineSelect;
   const { stroke, strokeDasharray, strokeLinecap } = lineStyleStrokeAttrs(style, color);
   const underlay = lineStyleUnderlayAttrs(style, underlayColor);
+  const railW = lineStrokeRailWidth(lineStrokeWidthOf(live), strokeWidth);
   return (
     <Fragment>
       {underlay && (
@@ -96,6 +99,35 @@ export function SegmentBand({
           interactive && onLineContextMenu ? (e) => onLineContextMenu(lineId, e) : undefined
         }
       />
+      {/* Casing rails: two railW-wide paths CENTERED on the body's edges
+          (±stripeWidth/2 from the stripe offset — half in, half out, like
+          SVG's own stroke on a shape boundary), painted immediately after
+          the body. Centering makes two tangent stroked neighbors' facing
+          rails COINCIDE — one separator, not two stacked — so an interlined
+          band reads with uniform stroke weight on every edge, and the
+          separator's position can never depend on draw order or layering
+          (see lineStroke.ts). Built by the same offsetFilletPath machinery
+          that baked the body path so they hug its fillets exactly. Solid
+          regardless of the body's dashed/hatched style. */}
+      {railW > 0 &&
+        [-1, 1].map((side) => (
+          <path
+            key={side}
+            d={offsetFilletPath(
+              spec.centerline,
+              spec.radius,
+              spec.stripeOffsets[stripeIndex] + (side * strokeWidth) / 2,
+            )}
+            data-band-casing
+            data-line-id={lineId}
+            fill="none"
+            stroke={lineStrokeColorOf(live)}
+            strokeWidth={railW}
+            strokeLinecap="butt"
+            strokeLinejoin="round"
+            pointerEvents="none"
+          />
+        ))}
     </Fragment>
   );
 }

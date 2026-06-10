@@ -146,6 +146,16 @@ export interface Line {
   // stored. Width is GEOMETRY, not presentation: stop-cell tangency, band
   // merging, and stripe offsets all derive from it (see lineWidth.ts).
   width?: number;
+  // Casing rails CENTERED on the line's body edges — half in, half out —
+  // in world units per side (MTA-style separators; see lineStroke.ts for
+  // why centered). Missing ⇒ 0 (no casing). Unlike `width`, stroke is
+  // PRESENTATION: it never moves paths or changes band merging, so
+  // renderers resolve it live. The setter clamps to ≥ 0, rounds to the
+  // 0.5 grid, and drops the field at 0 so the default is never stored.
+  strokeWidth?: number;
+  // Casing color, 7-char lowercase hex. Missing ⇒ '#ffffff'. The setter
+  // normalizes to lowercase and drops the field at the default.
+  strokeColor?: string;
 }
 
 // A movable label printed inside a line's color band (Vignelli-style).

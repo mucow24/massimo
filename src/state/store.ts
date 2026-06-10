@@ -220,6 +220,8 @@ interface DocState extends MapDoc {
   ) => void;
   setLineDefaultDotShape: (lineId: LineId, shape: DotShape) => void;
   setLineWidth: (lineId: LineId, w: number) => void;
+  setLineStrokeWidth: (lineId: LineId, w: number) => void;
+  setLineStrokeColor: (lineId: LineId, c: string) => void;
   deleteLine: (id: LineId) => void;
   moveLineInOrder: (id: LineId, dir: -1 | 1) => void;
 
@@ -361,6 +363,8 @@ export const useDoc = create<DocState>()(
         setLineDefaultDotShape: (lineId, shape) =>
           set((s) => T.setLineDefaultDotShape(s, lineId, shape)),
         setLineWidth: (lineId, w) => set((s) => T.setLineWidth(s, lineId, w)),
+        setLineStrokeWidth: (lineId, w) => set((s) => T.setLineStrokeWidth(s, lineId, w)),
+        setLineStrokeColor: (lineId, c) => set((s) => T.setLineStrokeColor(s, lineId, c)),
         deleteLine: (id) => set((s) => T.deleteLine(s, id)),
         moveLineInOrder: (id, dir) => set((s) => T.moveLineInOrder(s, id, dir)),
 

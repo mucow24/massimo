@@ -21,6 +21,14 @@ import {
   lineWidthOf,
 } from '../../model/lineWidth';
 import {
+  LINE_STROKE_STEP,
+  LINE_STROKE_WIDTH_MAX,
+  LINE_STROKE_WIDTH_MIN,
+  lineStrokeColorOf,
+  lineStrokeRailWidth,
+  lineStrokeWidthOf,
+} from '../../model/lineStroke';
+import {
   stationBandLayout,
   STATION_ROW_H,
   GAP_ROW_H,
@@ -133,11 +141,14 @@ export function LineInspector({ id }: { id: LineId }) {
   const setDotShape = useDoc((s) => s.setDotShape);
   const setLineDefaultDotShape = useDoc((s) => s.setLineDefaultDotShape);
   const setLineWidth = useDoc((s) => s.setLineWidth);
+  const setLineStrokeWidth = useDoc((s) => s.setLineStrokeWidth);
+  const setLineStrokeColor = useDoc((s) => s.setLineStrokeColor);
   const selection = useSelection();
   // Gap color matches the canvas so the band preview mirrors the on-canvas look.
   const underlayColor = useThemeColors().underlay;
   const nameField = useFieldHistory();
   const serviceField = useFieldHistory();
+  const strokeColorField = useFieldHistory();
   const [openPickerSid, setOpenPickerSid] = useState<string | null>(null);
   // Service-code → line lookup for inline `<CODE>` bullets in station names.
   const lineByService = useMemo(() => {
@@ -212,6 +223,30 @@ export function LineInspector({ id }: { id: LineId }) {
         textboxAllowAboveMax
         textboxMin={LINE_WIDTH_MIN}
       />
+      <NumericFieldRow
+        id={`line-stroke-${line.id}`}
+        label="Stroke"
+        min={LINE_STROKE_WIDTH_MIN}
+        max={LINE_STROKE_WIDTH_MAX}
+        step={LINE_STROKE_STEP}
+        value={lineStrokeWidthOf(line)}
+        onChange={(n) => setLineStrokeWidth(line.id, n)}
+        getCurrent={() => lineStrokeWidthOf(useDoc.getState().lines[id])}
+        textboxAllowAboveMax
+      />
+      <div className="options-popover-row">
+        <label htmlFor={`line-stroke-color-${line.id}`} className="options-popover-label">
+          Stroke color
+        </label>
+        <input
+          id={`line-stroke-color-${line.id}`}
+          type="color"
+          aria-label="Stroke color"
+          value={lineStrokeColorOf(line)}
+          onChange={(e) => setLineStrokeColor(line.id, e.target.value)}
+          {...strokeColorField}
+        />
+      </div>
       <div className="field">
         <button
           type="button"
@@ -296,6 +331,9 @@ export function LineInspector({ id }: { id: LineId }) {
                       hovered?.fromStationId === seg.sid &&
                       hovered?.toStationId === seg.nextSid;
                     const filter = isHovered ? 'brightness(1.4) saturate(1.2)' : undefined;
+                    // Casing rails in the preview band, mirroring the
+                    // canvas: two lines centered on the body's edges.
+                    const previewRailW = lineStrokeRailWidth(lineStrokeWidthOf(line), previewW);
                     return (
                       <Fragment key={seg.i}>
                         {underlay && (
@@ -321,6 +359,21 @@ export function LineInspector({ id }: { id: LineId }) {
                           strokeDasharray={strokeDasharray}
                           style={filter ? { filter } : undefined}
                         />
+                        {previewRailW > 0 &&
+                          [-1, 1].map((side) => (
+                            <line
+                              key={side}
+                              data-preview-casing
+                              x1={MARKER_W / 2 + (side * previewW) / 2}
+                              y1={seg.y1}
+                              x2={MARKER_W / 2 + (side * previewW) / 2}
+                              y2={seg.y2}
+                              stroke={lineStrokeColorOf(line)}
+                              strokeWidth={previewRailW}
+                              strokeLinecap="butt"
+                              style={filter ? { filter } : undefined}
+                            />
+                          ))}
                       </Fragment>
                     );
                   })}
