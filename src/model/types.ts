@@ -30,6 +30,7 @@ export type DotShape =
   | 'filled-white'
   | 'open-white'
   | 'filled-white-black-stroke'
+  | 'filled-line-color'
   | 'filled-black-diamond'
   | 'filled-white-diamond'
   | 'none';

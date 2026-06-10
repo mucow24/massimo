@@ -155,6 +155,7 @@ export function StationInspector({ id }: { id: StationId }) {
                       station.stops.find((s) => s.lineId === selectedLineId),
                     )
               }
+              lineColor={selectedLineId === null ? undefined : linesAll[selectedLineId]?.color}
               onPick={(shape) => {
                 if (selectedLineId === null) return;
                 dispatchAll((sid) => setDotShape(sid, selectedLineId, shape));

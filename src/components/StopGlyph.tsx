@@ -5,6 +5,9 @@ interface Props {
   cx: number;
   cy: number;
   shape: DotShape | undefined;
+  // Fill for 'filled-line-color'; falls back to black when the caller has no
+  // line in scope (e.g. a picker preview outside any line context).
+  lineColor?: string;
   isHovered?: boolean;
   // Tagged for E2E selection. The test seam is more reliable than guessing
   // by element type + fill, especially for "none" (where there's no element).
@@ -15,7 +18,7 @@ interface Props {
 const DIAMOND_POINTS = (cx: number, cy: number, r: number) =>
   `${cx},${cy - r} ${cx + r},${cy} ${cx},${cy + r} ${cx - r},${cy}`;
 
-export function StopGlyph({ cx, cy, shape, isHovered, stationId, lineId }: Props) {
+export function StopGlyph({ cx, cy, shape, lineColor, isHovered, stationId, lineId }: Props) {
   const resolved: DotShape = shape ?? 'filled-black';
   if (resolved === 'none') return null;
 
@@ -72,6 +75,9 @@ export function StopGlyph({ cx, cy, shape, isHovered, stationId, lineId }: Props
       fill = '#fff';
       stroke = '#000';
       strokeWidth = 2;
+      break;
+    case 'filled-line-color':
+      fill = lineColor ?? '#000';
       break;
   }
 
