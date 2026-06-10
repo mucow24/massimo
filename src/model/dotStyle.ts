@@ -93,6 +93,8 @@ export const DOT_SHAPE_PRESETS: Record<DotShape, DotStyle> = {
     strokeColor: K,
     showServiceCode: false,
   },
+  'filled-black-x': { shape: 'x', fill: K, strokeWidth: 0, strokeColor: W, showServiceCode: false },
+  'filled-white-x': { shape: 'x', fill: W, strokeWidth: 0, strokeColor: K, showServiceCode: false },
   none: { shape: 'circle', fill: 'none', strokeWidth: 0, strokeColor: K, showServiceCode: false },
 };
 

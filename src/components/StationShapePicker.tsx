@@ -21,6 +21,8 @@ export const SHAPES: ShapeOption[] = [
   { shape: 'filled-black-service-code', label: 'Filled black with service code' },
   { shape: 'filled-black-diamond', label: 'Filled black diamond' },
   { shape: 'filled-white-diamond', label: 'Filled white diamond' },
+  { shape: 'filled-black-x', label: 'Filled black X' },
+  { shape: 'filled-white-x', label: 'Filled white X' },
   { shape: 'none', label: 'None' },
 ];
 

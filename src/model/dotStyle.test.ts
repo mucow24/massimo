@@ -170,6 +170,8 @@ describe('DOT_SHAPE_PRESETS', () => {
       'filled-black-service-code': style({ showServiceCode: true }),
       'filled-black-diamond': style({ shape: 'diamond' }),
       'filled-white-diamond': style({ shape: 'diamond', fill: W, strokeColor: K }),
+      'filled-black-x': style({ shape: 'x' }),
+      'filled-white-x': style({ shape: 'x', fill: W, strokeColor: K }),
       none: style({ fill: 'none', strokeColor: K }),
     };
     expect(DOT_SHAPE_PRESETS).toEqual(expected);

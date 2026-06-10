@@ -153,6 +153,14 @@ describe('<StopGlyph /> presets', () => {
     expect(svg.querySelector('polygon')!.getAttribute('fill')).toBe('#ffffff');
   });
 
+  it('renders the X presets as black/white saltire polygons', () => {
+    const black = renderGlyph(P['filled-black-x']).querySelector('polygon')!;
+    expect(black.getAttribute('fill')).toBe('#000000');
+    expect(black.getAttribute('data-stop-shape')).toBe('x');
+    const white = renderGlyph(P['filled-white-x']).querySelector('polygon')!;
+    expect(white.getAttribute('fill')).toBe('#ffffff');
+  });
+
   it("'none' renders nothing — no circle, no polygon, no data-stop-shape", () => {
     const svg = renderGlyph(P['none']);
     expect(svg.querySelector('circle')).toBeNull();

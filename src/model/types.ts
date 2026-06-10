@@ -34,6 +34,8 @@ export type DotShape =
   | 'filled-black-service-code'
   | 'filled-black-diamond'
   | 'filled-white-diamond'
+  | 'filled-black-x'
+  | 'filled-white-x'
   | 'none';
 
 // A color that resolves per theme: `day` paints in light mode, `night` in
