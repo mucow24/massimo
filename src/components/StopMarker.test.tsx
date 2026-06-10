@@ -15,6 +15,7 @@ function spec(over: Partial<StopMarkerSpec> = {}): StopMarkerSpec {
     priority: 0,
     style: 'solid' as LineStyle,
     outward: null,
+    width: 14,
     ...over,
   };
 }
@@ -63,5 +64,49 @@ describe('StopMarker', () => {
     expect(lines.length).toBeGreaterThanOrEqual(1);
     const dashed = Array.from(lines).find((l) => l.getAttribute('stroke-dasharray'));
     expect(dashed).toBeTruthy();
+  });
+
+  describe('per-line width', () => {
+    it('sizes the solid square to spec.width (default output unchanged)', () => {
+      const def = renderMarker({ spec: spec() }).container.querySelector('rect')!;
+      expect(def.getAttribute('width')).toBe('14');
+      expect(def.getAttribute('height')).toBe('14');
+      expect(def.getAttribute('x')).toBe('-7');
+      expect(def.getAttribute('y')).toBe('-7');
+
+      const wide = renderMarker({ spec: spec({ width: 28 }) }).container.querySelector('rect')!;
+      expect(wide.getAttribute('width')).toBe('28');
+      expect(wide.getAttribute('height')).toBe('28');
+      expect(wide.getAttribute('x')).toBe('-14');
+      expect(wide.getAttribute('y')).toBe('-14');
+    });
+
+    it('sizes the hatched polygon corners to width/2', () => {
+      const { container } = renderMarker({
+        spec: spec({ style: 'hatched', width: 28, cx: 0, cy: 0 }),
+      });
+      const pts = container
+        .querySelector('polygon')!
+        .getAttribute('points')!
+        .split(' ')
+        .map((p) => p.split(',').map(Number));
+      for (const [x, y] of pts) {
+        expect(Math.abs(x)).toBeCloseTo(14, 6);
+        expect(Math.abs(y)).toBeCloseTo(14, 6);
+      }
+    });
+
+    it('scales the dashed terminus stub stroke and length with width', () => {
+      const { container } = renderMarker({
+        spec: spec({ style: 'dashed', outward: { x: 1, y: 0 }, width: 28, cx: 0, cy: 0 }),
+      });
+      const lines = Array.from(container.querySelectorAll('line'));
+      expect(lines.length).toBeGreaterThanOrEqual(1);
+      for (const l of lines) {
+        expect(l.getAttribute('stroke-width')).toBe('28');
+        // Stub runs width/2 = 14 outward along +x.
+        expect(Number(l.getAttribute('x2'))).toBeCloseTo(14, 6);
+      }
+    });
   });
 });

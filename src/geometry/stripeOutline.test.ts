@@ -1,25 +1,18 @@
 import { describe, it, expect } from 'vitest';
 import { computeStripeOutline } from './stripeOutline';
 import type { SegmentBandSpec } from './interlining';
+import { makeBandSpec } from '../test/fixtures';
 
 // Minimal vertical band from (0,0)→(0,100), 1 stripe, radius 24. Re-used
 // across every case here so the assertions only have to reason about the
 // adjustment values.
-const band: SegmentBandSpec = {
-  pairKey: 's1|s2',
-  bandKey: 's1|s2#A',
-  fromId: 's1',
-  toId: 's2',
-  lines: [{ id: 'A' }],
+const band: SegmentBandSpec = makeBandSpec(['A'], {
   paths: ['M0,0 L0,100'],
-  warning: false,
   centerline: [
     { x: 0, y: 0 },
     { x: 0, y: 100 },
   ],
-  radius: 24,
-  linePriorities: [0],
-};
+});
 
 describe('computeStripeOutline — endpoint adjustments', () => {
   it('caps at the centerline endpoints when no adjustments are given', () => {
@@ -58,5 +51,28 @@ describe('computeStripeOutline — endpoint adjustments', () => {
       centerline: [{ x: 0, y: 0 }],
     };
     expect(computeStripeOutline(degenerate, 0)).toBeNull();
+  });
+
+  it('derives the stripe edges from the baked offsets and per-stripe widths', () => {
+    // Mixed band [14, 28]: offsets ±10.5. Each stripe's outline must hug its
+    // OWN width (edge spread = width) centered on its OWN baked offset — not
+    // the uniform STOP_SIZE/2 ± stripeOffset(k, n) legacy math.
+    const mixed = makeBandSpec(['A', 'B'], {
+      stripeWidths: [14, 28],
+      paths: ['M0,0 L0,100', 'M0,0 L0,100'],
+      centerline: [
+        { x: 0, y: 0 },
+        { x: 0, y: 100 },
+      ],
+    });
+    const out0 = computeStripeOutline(mixed, 0)!;
+    const out1 = computeStripeOutline(mixed, 1)!;
+    expect(Math.abs(out0.capStart.x1 - out0.capStart.x2)).toBeCloseTo(14, 6);
+    expect(Math.abs(out1.capStart.x1 - out1.capStart.x2)).toBeCloseTo(28, 6);
+    const mid0 = (out0.capStart.x1 + out0.capStart.x2) / 2;
+    const mid1 = (out1.capStart.x1 + out1.capStart.x2) / 2;
+    expect(Math.abs(mid0)).toBeCloseTo(10.5, 6);
+    expect(Math.abs(mid1)).toBeCloseTo(10.5, 6);
+    expect(Math.sign(mid0)).toBe(-Math.sign(mid1));
   });
 });

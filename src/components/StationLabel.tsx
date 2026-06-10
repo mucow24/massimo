@@ -3,6 +3,7 @@ import { Line, Station } from '../model/types';
 import { useDoc, useSelection } from '../state/store';
 import { useThemeColors } from '../state/theme';
 import { labelLayoutLocal } from '../geometry/labelLayout';
+import { stopHalfOf } from '../model/lineWidth';
 import { bumpWeightByIndex, resolveStationLabelWeight } from '../model/transforms';
 import { legibleTextOn } from '../util/color';
 import { renderStationLabelText } from './stationLabelText';
@@ -35,12 +36,19 @@ function useStationLabelLayout(station: Station, lines: Record<string, Line>) {
     for (const ln of Object.values(lines)) map.set(ln.service, ln);
     return map;
   }, [lines]);
-  // Label layout uses the doc-level italic (matching the hit rect / silhouette).
-  const lay = labelLayoutLocal(station, {
-    fontSize: labelFontSize,
-    weight: stationWeight,
-    italic: labelItalic,
-  });
+  // Label layout uses the doc-level italic (matching the hit rect /
+  // silhouette) and the same per-stop width lookup, so the painted anchor
+  // agrees with the boundary geometry next to wide stops.
+  const lay = labelLayoutLocal(
+    station,
+    {
+      fontSize: labelFontSize,
+      weight: stationWeight,
+      italic: labelItalic,
+    },
+    undefined,
+    stopHalfOf(lines),
+  );
   return {
     angle: station.rotation * 45,
     rotationDeg: station.label.rotation * 45,
@@ -197,12 +205,17 @@ export function StationLabel({
   // than the bullets they render as. Re-measure the box against that literal
   // text so a bullet-heavy name doesn't overflow its collapsed hit rect.
   const editorHit = isEditing
-    ? labelLayoutLocal(station, {
-        fontSize: labelFontSize,
-        weight: stationWeight,
-        italic: labelItalic,
-        literalBullets: true,
-      })
+    ? labelLayoutLocal(
+        station,
+        {
+          fontSize: labelFontSize,
+          weight: stationWeight,
+          italic: labelItalic,
+          literalBullets: true,
+        },
+        undefined,
+        stopHalfOf(lines),
+      )
     : null;
 
   return (

@@ -1,8 +1,5 @@
 import type { StopMarkerSpec } from '../geometry/interlining';
 import { hatchPatternId, lineStyleStrokeAttrs, lineStyleUnderlayAttrs } from './HatchPatterns';
-import { STOP_SIZE } from '../geometry/orientation';
-
-const HALF = STOP_SIZE / 2;
 
 interface Props {
   spec: StopMarkerSpec;
@@ -14,7 +11,8 @@ interface Props {
   underlayColor?: string;
 }
 
-// One stop-square marker for one line at one station.
+// One stop-square marker for one line at one station, sized to the line's
+// effective width (spec.width × spec.width; 14 for default-width lines).
 //
 //   solid   → rotated <rect> (current default).
 //   hatched → polygon with corners pre-rotated into world space + hatch
@@ -25,13 +23,14 @@ interface Props {
 //   dashed  → at an interior station (no `outward`), renders nothing so
 //             the two dashed corridors meet cleanly at the stop center
 //             without a solid square breaking up the dash rhythm. At a
-//             TERMINUS (`outward` set), paints a 7-unit dashed stub
+//             TERMINUS (`outward` set), paints a width/2-long dashed stub
 //             continuing outward, so the dashes also fill the outer half
 //             of the dot area.
 export function StopMarker({ spec, effectiveColor, underlayColor }: Props) {
   const color = effectiveColor ?? spec.color;
+  const half = spec.width / 2;
   if (spec.style === 'hatched' || spec.style === 'hatched-mirror') {
-    const pts = rotatedSquareCorners(spec.cx, spec.cy, HALF, spec.rotationDeg)
+    const pts = rotatedSquareCorners(spec.cx, spec.cy, half, spec.rotationDeg)
       .map((p) => `${p.x},${p.y}`)
       .join(' ');
     return (
@@ -48,8 +47,8 @@ export function StopMarker({ spec, effectiveColor, underlayColor }: Props) {
     const underlay = lineStyleUnderlayAttrs('dashed', underlayColor);
     const x1 = spec.cx;
     const y1 = spec.cy;
-    const x2 = spec.cx + spec.outward.x * HALF;
-    const y2 = spec.cy + spec.outward.y * HALF;
+    const x2 = spec.cx + spec.outward.x * half;
+    const y2 = spec.cy + spec.outward.y * half;
     return (
       <>
         {underlay && (
@@ -59,7 +58,7 @@ export function StopMarker({ spec, effectiveColor, underlayColor }: Props) {
             x2={x2}
             y2={y2}
             stroke={underlay.stroke}
-            strokeWidth={STOP_SIZE}
+            strokeWidth={spec.width}
             strokeLinecap={underlay.strokeLinecap}
             pointerEvents="none"
           />
@@ -70,7 +69,7 @@ export function StopMarker({ spec, effectiveColor, underlayColor }: Props) {
           x2={x2}
           y2={y2}
           stroke={stroke}
-          strokeWidth={STOP_SIZE}
+          strokeWidth={spec.width}
           strokeLinecap={strokeLinecap}
           strokeDasharray={strokeDasharray}
           pointerEvents="none"
@@ -80,10 +79,10 @@ export function StopMarker({ spec, effectiveColor, underlayColor }: Props) {
   }
   return (
     <rect
-      x={-HALF}
-      y={-HALF}
-      width={STOP_SIZE}
-      height={STOP_SIZE}
+      x={-half}
+      y={-half}
+      width={spec.width}
+      height={spec.width}
       fill={color}
       transform={`translate(${spec.cx} ${spec.cy}) rotate(${spec.rotationDeg})`}
       pointerEvents="none"

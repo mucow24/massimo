@@ -1,6 +1,7 @@
 import { describe, it, expect } from 'vitest';
 import fc from 'fast-check';
 import * as T from './transforms';
+import { LINE_WIDTH_DEFAULT, LINE_WIDTH_MIN } from './lineWidth';
 import type { MapDoc } from './types';
 import { counterIdFactory } from './ids';
 
@@ -14,7 +15,8 @@ type Action =
   | { kind: 'deleteLine' }
   | { kind: 'toggleStationOnLine' }
   | { kind: 'rotateStation' }
-  | { kind: 'moveLineInOrder'; dir: -1 | 1 };
+  | { kind: 'moveLineInOrder'; dir: -1 | 1 }
+  | { kind: 'setLineWidth'; w: number };
 
 const actionArb = fc.oneof(
   fc.constant<Action>({ kind: 'addStation' }),
@@ -26,6 +28,16 @@ const actionArb = fc.oneof(
   fc.record({
     kind: fc.constant<'moveLineInOrder'>('moveLineInOrder'),
     dir: fc.constantFrom<-1 | 1>(-1, 1),
+  }),
+  fc.record({
+    kind: fc.constant<'setLineWidth'>('setLineWidth'),
+    // Exercise below-floor, fractional, default, above-slider-max, and
+    // non-finite inputs.
+    w: fc.oneof(
+      fc.integer({ min: -5, max: 40 }),
+      fc.double({ min: 0, max: 40, noNaN: true }),
+      fc.constant(Number.NaN),
+    ),
   }),
 );
 
@@ -60,6 +72,10 @@ function applyOne(doc: MapDoc, action: Action, ids: ReturnType<typeof counterIdF
     case 'moveLineInOrder': {
       const id = pickKey(doc.lines);
       return id ? T.moveLineInOrder(doc, id, action.dir) : doc;
+    }
+    case 'setLineWidth': {
+      const id = pickKey(doc.lines);
+      return id ? T.setLineWidth(doc, id, action.w) : doc;
     }
   }
 }
@@ -108,6 +124,21 @@ describe('transforms invariants (property-based)', () => {
           for (const stop of doc.stations[sid].stops) {
             expect(doc.lines[stop.lineId]).toBeDefined();
           }
+        }
+      }),
+    );
+  });
+
+  it('line.width is always in canonical stored form (integer ≥ MIN, never the default)', () => {
+    fc.assert(
+      fc.property(fc.array(actionArb, { maxLength: 30 }), (actions) => {
+        const doc = applyAll(actions);
+        for (const lid of Object.keys(doc.lines)) {
+          const w = doc.lines[lid].width;
+          if (w === undefined) continue;
+          expect(Number.isInteger(w)).toBe(true);
+          expect(w).toBeGreaterThanOrEqual(LINE_WIDTH_MIN);
+          expect(w).not.toBe(LINE_WIDTH_DEFAULT);
         }
       }),
     );

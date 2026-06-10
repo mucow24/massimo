@@ -1,6 +1,7 @@
 import { describe, it, expect } from 'vitest';
 import { labelLayoutLocal, DEFAULT_LABEL_STYLE } from './labelLayout';
 import { stopCenterAt, STOP_SIZE } from './orientation';
+import { stopHalfOf } from '../model/lineWidth';
 import type { LabelValign, Rotation, Station } from '../model/types';
 
 const HALF = STOP_SIZE / 2;
@@ -42,6 +43,40 @@ function station({
     label: { row: labelRow, col: labelCol, rotation, offset: 0, align, valign: 'middle' },
   };
 }
+
+describe('labelLayoutLocal — per-stop widths', () => {
+  const half28 = stopHalfOf({ L1: { width: 28 } });
+
+  it('snaps against a wide stop at its tangent distance (Chebyshev 1.5)', () => {
+    // A width-28 stop tangent to the unit label cell sits 1.5 cells away —
+    // outside the legacy 1-cell adjacency gate, so today's layout doesn't
+    // snap at all and the label floats centered on its own cell.
+    const st = station({ rotation: 0, stopOffsetRow: 0, stopOffsetCol: 1.5 });
+    const legacy = labelLayoutLocal(st);
+    expect(legacy.textAnchor).toBe('middle');
+
+    const lay = labelLayoutLocal(st, DEFAULT_LABEL_STYLE, undefined, half28);
+    expect(lay.textAnchor).toBe('end');
+    // Anchor clamps to the stop's near edge: 1.5·14 − (28/2 + LABEL_GAP) = 4.
+    expect(lay.anchorX).toBeCloseTo(1.5 * STOP_SIZE - (14 + LABEL_GAP), 6);
+    expect(lay.anchorY).toBeCloseTo(0, 6);
+  });
+
+  it('pushes the anchor clear of a wide in-way stop using ITS half-extent', () => {
+    // Stop one cell ahead (snap fires either way); the clamp must use the
+    // stop's 14-unit half, not the default 7.
+    const st = station({ rotation: 0, stopOffsetRow: 0, stopOffsetCol: 1 });
+    const lay = labelLayoutLocal(st, DEFAULT_LABEL_STYLE, undefined, half28);
+    expect(lay.anchorX).toBeCloseTo(STOP_SIZE - (14 + LABEL_GAP), 6); // = -3
+  });
+
+  it('behind-side snap mirrors the wide-stop clamp', () => {
+    const st = station({ rotation: 0, stopOffsetRow: 0, stopOffsetCol: -1.5 });
+    const lay = labelLayoutLocal(st, DEFAULT_LABEL_STYLE, undefined, half28);
+    expect(lay.textAnchor).toBe('start');
+    expect(lay.anchorX).toBeCloseTo(-1.5 * STOP_SIZE + (14 + LABEL_GAP), 6);
+  });
+});
 
 describe('labelLayoutLocal — injected measurement', () => {
   // A deterministic stub measurer (the real one needs a canvas; under jsdom it

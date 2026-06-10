@@ -3,26 +3,9 @@ import { render } from '@testing-library/react';
 import { LayeringDashedOutlines, LayeringHoverOutline } from './LayeringOutlines';
 import type { SegmentBandSpec } from '../../geometry/interlining';
 import type { Line, LineId } from '../../model/types';
-import { makeLine } from '../../test/fixtures';
+import { makeBandSpec, makeLine } from '../../test/fixtures';
 
-const makeBand = (lineIds: string[]): SegmentBandSpec => {
-  const lines = lineIds.map((id) => ({ id }));
-  return {
-    pairKey: 's1|s2',
-    bandKey: `s1|s2#${lineIds.slice().sort().join(',')}`,
-    fromId: 's1',
-    toId: 's2',
-    lines,
-    paths: lineIds.map(() => 'M0,0 L100,0'),
-    warning: false,
-    centerline: [
-      { x: 0, y: 0 },
-      { x: 100, y: 0 },
-    ],
-    radius: 24,
-    linePriorities: lineIds.map((_, i) => i),
-  };
-};
+const makeBand = (lineIds: string[]): SegmentBandSpec => makeBandSpec(lineIds);
 
 const renderDashed = (
   bands: SegmentBandSpec[],
@@ -95,21 +78,13 @@ describe('<LayeringDashedOutlines>', () => {
     // We render only the s1|s2 band so the dashed-cap at s2 should slide
     // outward (in band-coords: along the centerline tangent at vN1) by
     // STOP_SIZE/2 = 7.
-    const band: SegmentBandSpec = {
-      pairKey: 's1|s2',
-      bandKey: 's1|s2#A',
-      fromId: 's1',
-      toId: 's2',
-      lines: [{ id: 'A' }],
+    const band: SegmentBandSpec = makeBandSpec(['A'], {
       paths: ['M0,0 L0,100'],
-      warning: false,
       centerline: [
         { x: 0, y: 0 },
         { x: 0, y: 100 },
       ],
-      radius: 24,
-      linePriorities: [0],
-    };
+    });
     const lines: Record<LineId, Line> = {
       A: makeLine({
         id: 'A',
@@ -125,6 +100,32 @@ describe('<LayeringDashedOutlines>', () => {
     // capEnd is at s2, layered-vs-0 → win, outline extends past v1=(0,100)
     // → y=107.
     expect(Number(lineEls[1].getAttribute('y1'))).toBeCloseTo(107, 5);
+  });
+
+  it('scales the win/lose cap shift to the stripe’s own width', () => {
+    // Same win/win setup as above but on a width-28 line: the dot square is
+    // 28×28, so the cap must slide a full 14 (not the default 7) to enclose
+    // it.
+    const band: SegmentBandSpec = makeBandSpec(['A'], {
+      stripeWidths: [28],
+      paths: ['M0,0 L0,100'],
+      centerline: [
+        { x: 0, y: 0 },
+        { x: 0, y: 100 },
+      ],
+    });
+    const lines: Record<LineId, Line> = {
+      A: makeLine({
+        id: 'A',
+        stations: ['s1', 's2', 's3'],
+        width: 28,
+        segmentLayers: { 's1|s2': -1 },
+      }),
+    };
+    const { container } = renderDashed([band], null, lines);
+    const lineEls = container.querySelector('[data-layering-outline]')!.querySelectorAll('line');
+    expect(Number(lineEls[0].getAttribute('y1'))).toBeCloseTo(-14, 5);
+    expect(Number(lineEls[1].getAttribute('y1'))).toBeCloseTo(114, 5);
   });
 });
 

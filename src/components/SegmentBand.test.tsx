@@ -4,28 +4,14 @@ import { BandWarning, SegmentBand } from './SegmentBand';
 import { hatchPatternId } from './HatchPatterns';
 import type { SegmentBandSpec } from '../geometry/interlining';
 import type { Line, LineId } from '../model/types';
-import { makeLine } from '../test/fixtures';
+import { makeBandSpec, makeLine } from '../test/fixtures';
 
 type StripeStyle = 'solid' | 'dashed' | 'hatched';
 
 // Presentation-free band over the canonical station pair s1|s2. The spec
 // carries only line ids; color + per-segment style are resolved at render
 // from the live `lines` map (mirrors how MapCanvas drives the real render).
-const baseSpec = (lineIds: LineId[]): SegmentBandSpec => ({
-  pairKey: 's1|s2',
-  bandKey: `s1|s2#${lineIds.slice().sort().join(',')}`,
-  fromId: 's1',
-  toId: 's2',
-  lines: lineIds.map((id) => ({ id })),
-  paths: lineIds.map(() => 'M0,0 L100,0'),
-  warning: false,
-  centerline: [
-    { x: 0, y: 0 },
-    { x: 100, y: 0 },
-  ],
-  radius: 24,
-  linePriorities: lineIds.map((_, i) => i),
-});
+const baseSpec = (lineIds: LineId[]): SegmentBandSpec => makeBandSpec(lineIds);
 
 // Live lines map: a per-stripe style becomes a segmentStyles override on the
 // band's pairKey, exactly as the doc stores it. Solid carries no override.
@@ -148,6 +134,26 @@ describe('<SegmentBand> — single-stripe renderer', () => {
     const [underlay] = container.querySelectorAll('path');
     expect(underlay.getAttribute('stroke')).toBe('#000000');
   });
+
+  it('strokes each stripe of a mixed-width band at its own width (underlay included)', () => {
+    const spec = makeBandSpec(['L1', 'L2'], { stripeWidths: [14, 28] });
+    const lines = linesFor(['solid', 'dashed']);
+    const narrow = render(
+      <svg>
+        <SegmentBand spec={spec} stripeIndex={0} lines={lines} />
+      </svg>,
+    );
+    expect(narrow.container.querySelector('path')!.getAttribute('stroke-width')).toBe('14');
+    const wide = render(
+      <svg>
+        <SegmentBand spec={spec} stripeIndex={1} lines={lines} />
+      </svg>,
+    );
+    const paths = wide.container.querySelectorAll('path');
+    expect(paths).toHaveLength(2); // dashed → underlay + foreground
+    expect(paths[0].getAttribute('stroke-width')).toBe('28');
+    expect(paths[1].getAttribute('stroke-width')).toBe('28');
+  });
 });
 
 describe('<BandWarning>', () => {
@@ -234,6 +240,25 @@ describe('<BandWarning>', () => {
     );
     expect(container.querySelector('path')!.getAttribute('d')).toBe(
       'M 0 -14 L 100 -14 L 100 14 L 0 14 Z',
+    );
+  });
+
+  it('frames a mixed-width band asymmetrically about the (mean) centerline', () => {
+    // Widths [14, 28] → offsets [−10.5, +10.5]; the envelope runs from
+    // offsets[0] − 7 = −17.5 to offsets[1] + 14 = +24.5 around the centroid
+    // centerline — NOT a symmetric ±Σw/2 = ±21. (Perp for an east segment is
+    // screen-up, so the +24.5 edge lands at y = −24.5.)
+    const spec = makeBandSpec(['L1', 'L2'], {
+      stripeWidths: [14, 28],
+      warning: true,
+    });
+    const { container } = render(
+      <svg>
+        <BandWarning spec={spec} />
+      </svg>,
+    );
+    expect(container.querySelector('path')!.getAttribute('d')).toBe(
+      'M 0 -24.5 L 100 -24.5 L 100 17.5 L 0 17.5 Z',
     );
   });
 

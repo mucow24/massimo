@@ -139,6 +139,13 @@ export interface Line {
   // ⇒ `'filled-black'` (the historical default). Setters drop the field when
   // called with `'filled-black'` so the default is never stored.
   defaultDotShape?: DotShape;
+  // Stripe width in world units. Missing ⇒ LINE_WIDTH_DEFAULT (= STOP_SIZE,
+  // the historical constant) — no migration needed for older saves. The
+  // setter (`setLineWidth`) clamps to ≥ LINE_WIDTH_MIN, rounds to an integer,
+  // and drops the field when the result lands on the default so it is never
+  // stored. Width is GEOMETRY, not presentation: stop-cell tangency, band
+  // merging, and stripe offsets all derive from it (see lineWidth.ts).
+  width?: number;
 }
 
 // A movable label printed inside a line's color band (Vignelli-style).

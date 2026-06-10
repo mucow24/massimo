@@ -131,7 +131,10 @@ describe('migrateDoc', () => {
     });
 
     it('returns the input as-is when already at the current version', () => {
-      const input = { lines: { L1: { service: 'A', name: 'A line', stations: [] } } };
+      // `width` rides along untouched — the per-line width field is optional
+      // with a runtime default, so it needs NO migration (and adding one
+      // would break this reference-equality pin).
+      const input = { lines: { L1: { service: 'A', name: 'A line', stations: [], width: 21 } } };
       const out = run(input, 6);
       // No migration applies → same reference passes straight through.
       expect(out).toBe(input);

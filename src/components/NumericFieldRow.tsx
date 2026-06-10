@@ -20,6 +20,11 @@ interface Props {
    *  values above the slider's range. The slider itself still tops out at
    *  `max`. The transform's clamping decides the actual upper bound. */
   textboxAllowAboveMax?: boolean;
+  /** Spinbutton-only lower bound, when it differs from the slider's `min`
+   *  (mirror of `textboxAllowAboveMax` for the floor — e.g. a 2..28 slider
+   *  whose textbox/steppers accept down to 1). The transform's clamping
+   *  decides the actual lower bound. */
+  textboxMin?: number;
   /** Greys out + disables both the slider and the spinbutton. */
   disabled?: boolean;
 }
@@ -44,6 +49,7 @@ export function NumericFieldRow({
   onChange,
   getCurrent,
   textboxAllowAboveMax,
+  textboxMin,
   disabled,
 }: Props) {
   const { text, history, onNumberFocus, onNumberChange, onNumberWheel, onNumberBlur } =
@@ -68,7 +74,7 @@ export function NumericFieldRow({
       <input
         type="number"
         aria-label={label}
-        min={min}
+        min={textboxMin ?? min}
         max={textboxAllowAboveMax ? undefined : max}
         step={step}
         className="options-popover-spin"

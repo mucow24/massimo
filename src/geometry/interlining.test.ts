@@ -1,4 +1,5 @@
 import { describe, it, expect } from 'vitest';
+import fc from 'fast-check';
 import { computeArcRadii } from './router';
 import {
   bandCentroid,
@@ -12,7 +13,7 @@ import {
   stopPosWorld,
 } from './interlining';
 import { LAYER_WEIGHT } from '../model/layerPriority';
-import { STOP_SIZE } from './orientation';
+import { STOP_SIZE, stripeOffsetsForWidths, tangentGap } from './orientation';
 import { makeDoc, makeLine, makeStation, makeStop, stationWithStop } from '../test/fixtures';
 import type { LineStyle } from '../model/types';
 
@@ -34,10 +35,14 @@ describe('band geometry helpers', () => {
     ).toEqual({ x: 2, y: 3 });
   });
 
-  it('idealBandRadius bumps by (n-1)/2 * STOP_SIZE; a single stripe is a no-op', () => {
-    expect(idealBandRadius(24, 1)).toBe(24);
-    expect(idealBandRadius(24, 3)).toBe(24 + STOP_SIZE);
-    expect(idealBandRadius(24, 5)).toBe(24 + 2 * STOP_SIZE);
+  it('idealBandRadius bumps by the extreme stripe-center offset; a single stripe is a no-op', () => {
+    // Signature takes max|stripe offset| directly; the uniform-width values
+    // are the historical (n−1)/2 · STOP_SIZE bumps.
+    expect(idealBandRadius(24, 0)).toBe(24); // n = 1
+    expect(idealBandRadius(24, STOP_SIZE)).toBe(24 + STOP_SIZE); // n = 3 uniform
+    expect(idealBandRadius(24, 2 * STOP_SIZE)).toBe(24 + 2 * STOP_SIZE); // n = 5 uniform
+    // Mixed-width example: widths [14, 28, 14] → offsets [−21, 0, 21].
+    expect(idealBandRadius(24, 21)).toBe(45);
   });
 
   it('cornerCapRadius: Infinity when straight, edge-limited at a turn, 0 with no straight run', () => {
@@ -48,6 +53,8 @@ describe('band geometry helpers', () => {
     expect(cornerCapRadius(50, east, south)).toBeCloseTo(50 - STOP_SIZE / 2, 6);
     // Edge shorter than HALF → no usable straight run.
     expect(cornerCapRadius(STOP_SIZE / 2 - 1, east, south)).toBe(0);
+    // Wider marker (width-28 line) eats a bigger run-in: markerHalf = 14.
+    expect(cornerCapRadius(50, east, south, 14)).toBeCloseTo(50 - 14, 6);
   });
 });
 
@@ -599,6 +606,141 @@ describe('buildBands — interlining', () => {
     });
     const bands = buildBands(doc.stations, doc.lines, 24, doc.lineOrder);
     expect(bands).toHaveLength(2);
+  });
+});
+
+describe('buildBands — per-line widths', () => {
+  // Two horizontal lines through the same pair, L2's stop `rowGap` rows below
+  // L1's. One lattice row = STOP_SIZE world units, so the perpendicular
+  // center distance is rowGap · STOP_SIZE.
+  const twoLineDoc = (rowGap: number, widths: { L1?: number; L2?: number } = {}) => {
+    const stops = () => [
+      makeStop('L1', { row: 0, col: 0, orientation: 'auto-horizontal' }),
+      makeStop('L2', { row: rowGap, col: 0, orientation: 'auto-horizontal' }),
+    ];
+    return makeDoc({
+      stations: [
+        makeStation({ id: 's1', x: 0, y: 0, stops: stops() }),
+        makeStation({ id: 's2', x: 200, y: 0, stops: stops() }),
+      ],
+      lines: [
+        makeLine({ id: 'L1', stations: ['s1', 's2'], width: widths.L1 }),
+        makeLine({ id: 'L2', stations: ['s1', 's2'], width: widths.L2 }),
+      ],
+    });
+  };
+
+  it('merges a mixed-width pair whose stop centers sit exactly tangentGap apart', () => {
+    // gap = (14 + 28) / 2 = 21 world units = 1.5 rows.
+    const doc = twoLineDoc(1.5, { L2: 28 });
+    const bands = buildBands(doc.stations, doc.lines, 24, doc.lineOrder);
+    expect(bands).toHaveLength(1);
+    // stripeWidths is parallel to lines (the band's perp-sorted order).
+    const widthByLine: Record<string, number> = { L1: 14, L2: 28 };
+    expect(bands[0].stripeWidths).toEqual(bands[0].lines.map((l) => widthByLine[l.id]));
+    // Offsets straddle the centerline at the tangency spacing.
+    expect(bands[0].stripeOffsets).toEqual([-10.5, 10.5]);
+    expect(bands[0].paths).toHaveLength(2);
+  });
+
+  it('keeps a mixed-width pair at the legacy unit gap separate (stripes would overlap)', () => {
+    const doc = twoLineDoc(1, { L2: 28 });
+    expect(buildBands(doc.stations, doc.lines, 24, doc.lineOrder)).toHaveLength(2);
+  });
+
+  it('merges a uniform non-default-width pair at its own tangent gap', () => {
+    // Both width 20 → tangent gap 20 world units = 20/14 rows.
+    const doc = twoLineDoc(20 / STOP_SIZE, { L1: 20, L2: 20 });
+    const bands = buildBands(doc.stations, doc.lines, 24, doc.lineOrder);
+    expect(bands).toHaveLength(1);
+    expect(bands[0].stripeWidths).toEqual([20, 20]);
+    expect(bands[0].stripeOffsets).toEqual([-10, 10]);
+  });
+
+  it('bakes legacy-equivalent stripe fields for an all-default band', () => {
+    const doc = twoLineDoc(1);
+    const bands = buildBands(doc.stations, doc.lines, 24, doc.lineOrder);
+    expect(bands).toHaveLength(1);
+    expect(bands[0].stripeWidths).toEqual([STOP_SIZE, STOP_SIZE]);
+    expect(bands[0].stripeOffsets).toEqual([-STOP_SIZE / 2, STOP_SIZE / 2]);
+  });
+
+  it('any tangent widths vector merges into ONE band whose offsets reproduce the stop spacing', () => {
+    fc.assert(
+      fc.property(
+        fc.array(fc.integer({ min: 1, max: 40 }), { minLength: 2, maxLength: 5 }),
+        (widths) => {
+          // Stops at cumulative tangency spacing (in rows).
+          const rows: number[] = [0];
+          for (let k = 1; k < widths.length; k++) {
+            rows.push(rows[k - 1] + tangentGap(widths[k - 1], widths[k]) / STOP_SIZE);
+          }
+          const ids = widths.map((_, i) => `L${i + 1}`);
+          const stops = () =>
+            ids.map((id, i) =>
+              makeStop(id, { row: rows[i], col: 0, orientation: 'auto-horizontal' }),
+            );
+          const doc = makeDoc({
+            stations: [
+              makeStation({ id: 's1', x: 0, y: 0, stops: stops() }),
+              makeStation({ id: 's2', x: 400, y: 0, stops: stops() }),
+            ],
+            lines: ids.map((id, i) => makeLine({ id, stations: ['s1', 's2'], width: widths[i] })),
+          });
+          const bands = buildBands(doc.stations, doc.lines, 24, doc.lineOrder);
+          expect(bands).toHaveLength(1);
+          const band = bands[0];
+          expect(band.paths).toHaveLength(widths.length);
+
+          // The band sorts stripes by perpendicular projection, which may run
+          // in either direction relative to our row order — accept either.
+          const widthByLine = Object.fromEntries(ids.map((id, i) => [id, widths[i]]));
+          const bandWidths = band.lines.map((l) => widthByLine[l.id]);
+          expect(band.stripeWidths).toEqual(bandWidths);
+
+          // Offsets land each stripe exactly on its stop: stop world y minus
+          // the centroid y equals ±offset (one consistent sign across the band).
+          const rowByLine = Object.fromEntries(ids.map((id, i) => [id, rows[i]]));
+          const ys = band.lines.map((l) => rowByLine[l.id] * STOP_SIZE);
+          const meanY = ys.reduce((a, b) => a + b, 0) / ys.length;
+          const rel = ys.map((y) => y - meanY);
+          const sign =
+            rel.find((r) => Math.abs(r) > 1e-9)! *
+              band.stripeOffsets.find((o) => Math.abs(o) > 1e-9)! >=
+            0
+              ? 1
+              : -1;
+          band.stripeOffsets.forEach((o, k) => {
+            expect(o * sign).toBeCloseTo(rel[k], 9);
+          });
+
+          // Straight band, no corners: the marker-fit cap never engages, so
+          // the centerline radius is exactly R + max|offset|.
+          const maxAbs = Math.max(...band.stripeOffsets.map(Math.abs));
+          expect(band.radius).toBeCloseTo(24 + maxAbs, 9);
+        },
+      ),
+    );
+  });
+
+  it('the all-default uniform property holds for any stripe count (legacy generalization)', () => {
+    fc.assert(
+      fc.property(fc.integer({ min: 2, max: 6 }), (n) => {
+        const ids = Array.from({ length: n }, (_, i) => `L${i + 1}`);
+        const stops = () =>
+          ids.map((id, i) => makeStop(id, { row: i, col: 0, orientation: 'auto-horizontal' }));
+        const doc = makeDoc({
+          stations: [
+            makeStation({ id: 's1', x: 0, y: 0, stops: stops() }),
+            makeStation({ id: 's2', x: 400, y: 0, stops: stops() }),
+          ],
+          lines: ids.map((id) => makeLine({ id, stations: ['s1', 's2'] })),
+        });
+        const bands = buildBands(doc.stations, doc.lines, 24, doc.lineOrder);
+        expect(bands).toHaveLength(1);
+        expect(bands[0].stripeOffsets).toEqual(stripeOffsetsForWidths(Array(n).fill(STOP_SIZE)));
+      }),
+    );
   });
 });
 

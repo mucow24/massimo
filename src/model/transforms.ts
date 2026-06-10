@@ -1,5 +1,6 @@
 import { autoOrientNewStation } from './autoOrient';
 import { effectiveLineOrder } from './lineOrder';
+import { LINE_WIDTH_DEFAULT, LINE_WIDTH_MIN } from './lineWidth';
 import { pairKeyOf } from './pairKey';
 import { rotateBy, stopCenterAt } from '../geometry/orientation';
 import { snapPointToGrid, type GridSnap } from '../geometry/snap';
@@ -292,6 +293,29 @@ export function setLineDefaultDotShape(doc: MapDoc, id: LineId, shape: DotShape)
     if (stopsChanged) stations = { ...stations, [sid]: { ...st, stops } };
   }
   return { ...doc, lines: { ...doc.lines, [id]: nextLine }, stations };
+}
+
+// Per-line stripe width. Non-finite input is ignored; otherwise the value is
+// rounded and clamped to ≥ LINE_WIDTH_MIN, and the field is dropped when the
+// result lands on LINE_WIDTH_DEFAULT so the default is never stored (mirrors
+// `setLineDefaultDotShape` + 'filled-black'). Returns the input doc unchanged
+// when the effective stored form wouldn't change — the slider fires this on
+// every drag tick, and reference equality is what keeps no-op ticks out of
+// the undo history.
+export function setLineWidth(doc: MapDoc, id: LineId, w: number): MapDoc {
+  const cur = doc.lines[id];
+  if (!cur || !Number.isFinite(w)) return doc;
+  const norm = Math.max(LINE_WIDTH_MIN, Math.round(w));
+  const stored = norm === LINE_WIDTH_DEFAULT ? undefined : norm;
+  if (cur.width === stored) return doc;
+  let nextLine: Line;
+  if (stored === undefined) {
+    const { width: _gone, ...rest } = cur;
+    nextLine = rest;
+  } else {
+    nextLine = { ...cur, width: stored };
+  }
+  return { ...doc, lines: { ...doc.lines, [id]: nextLine } };
 }
 
 export function setStationWaypoint(doc: MapDoc, stationId: StationId, isWaypoint: boolean): MapDoc {

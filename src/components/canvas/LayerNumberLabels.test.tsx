@@ -3,27 +3,10 @@ import { render } from '@testing-library/react';
 import { LayerNumberLabels } from './LayerNumberLabels';
 import type { SegmentBandSpec } from '../../geometry/interlining';
 import type { Line, LineId } from '../../model/types';
-import { makeLine } from '../../test/fixtures';
+import { makeBandSpec, makeLine } from '../../test/fixtures';
 import * as placement from '../../geometry/layerLabelPlacement';
 
-const makeBand = (lineIds: string[]): SegmentBandSpec => {
-  const lines = lineIds.map((id) => ({ id }));
-  return {
-    pairKey: 's1|s2',
-    bandKey: `s1|s2#${lineIds.slice().sort().join(',')}`,
-    fromId: 's1',
-    toId: 's2',
-    lines,
-    paths: lineIds.map(() => 'M0,0 L100,0'),
-    warning: false,
-    centerline: [
-      { x: 0, y: 0 },
-      { x: 100, y: 0 },
-    ],
-    radius: 24,
-    linePriorities: lineIds.map((_, i) => i),
-  };
-};
+const makeBand = (lineIds: string[]): SegmentBandSpec => makeBandSpec(lineIds);
 
 const renderLabels = (
   bands: SegmentBandSpec[],
@@ -61,6 +44,21 @@ describe('<LayerNumberLabels>', () => {
       expect(labels[0].textContent).toBe(text);
       expect(labels[0].getAttribute('data-layer')).toBe(String(layer));
     }
+  });
+
+  it('places the label at the stripe’s baked offset in a mixed-width band', () => {
+    // Widths [14, 28] → offsets ±10.5. The wide stripe (B, layer +1) must get
+    // its label at |y| = 10.5 off the horizontal centerline — the legacy
+    // stripeOffset(k, n) math would put it at ±7.
+    const band = makeBandSpec(['A', 'B'], { stripeWidths: [14, 28] });
+    const lines = {
+      A: makeLine({ id: 'A' }),
+      B: makeLine({ id: 'B', segmentLayers: { 's1|s2': 1 } }),
+    };
+    const { container } = renderLabels([band], lines);
+    const label = container.querySelector('[data-line-id="B"]')!;
+    expect(label).not.toBeNull();
+    expect(Math.abs(Number(label.getAttribute('y')))).toBeCloseTo(10.5, 5);
   });
 
   it('renders only the hovered + non-zero labels in a multi-stripe band', () => {
@@ -113,36 +111,27 @@ describe('<LayerNumberLabels>', () => {
     // spot. Asserted as |y - 50| > 0 (i.e. not the midpoint) rather than
     // an exact value, so the assertion survives any future tweaks to the
     // candidate-t set inside pickLayerLabelT.
-    const target: SegmentBandSpec = {
-      pairKey: 's1|s2',
+    const target: SegmentBandSpec = makeBandSpec(['A'], {
       bandKey: 'V',
-      fromId: 's1',
-      toId: 's2',
-      lines: [{ id: 'A' }],
       paths: ['M0,0 L0,100'],
-      warning: false,
       centerline: [
         { x: 0, y: 0 },
         { x: 0, y: 100 },
       ],
-      radius: 24,
       linePriorities: [10], // target painted BEHIND
-    };
-    const crossing: SegmentBandSpec = {
+    });
+    const crossing: SegmentBandSpec = makeBandSpec(['B'], {
       pairKey: 's3|s4',
       bandKey: 'H',
       fromId: 's3',
       toId: 's4',
-      lines: [{ id: 'B' }],
       paths: ['M-50,50 L50,50'],
-      warning: false,
       centerline: [
         { x: -50, y: 50 },
         { x: 50, y: 50 },
       ],
-      radius: 24,
       linePriorities: [0], // crossing painted IN FRONT (covers midpoint)
-    };
+    });
     const lines = {
       A: makeLine({ id: 'A', segmentLayers: { 's1|s2': -1 } }),
       B: makeLine({ id: 'B' }),

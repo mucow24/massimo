@@ -4,6 +4,7 @@ import {
   TEXT_LABEL_COLOR_DEFAULT,
   TEXT_LABEL_DARK_COLOR_DEFAULT,
 } from './transforms';
+import { LINE_WIDTH_DEFAULT, LINE_WIDTH_MIN } from './lineWidth';
 import { pairKeyOf } from './pairKey';
 import { KNOWN_PALETTE_IDS } from './palettes';
 import type {
@@ -144,7 +145,7 @@ export function parse(json: string): ParseResult {
   let linesChanged = false;
   for (const id of Object.keys(merged.lines)) {
     const line = merged.lines[id];
-    const cleaned = sanitizeSegmentStyles(line);
+    const cleaned = sanitizeLineWidth(sanitizeSegmentStyles(line));
     if (cleaned !== line) linesChanged = true;
     cleanedLines[id] = cleaned;
   }
@@ -243,6 +244,25 @@ function migrateLegacyLabelBold(raw: Record<string, unknown>): Record<string, un
   if (isLabelWeight(explicitWeight)) return rest;
   const translated: TextLabelWeight = labelBold === true ? 700 : 400;
   return { ...rest, labelWeight: translated };
+}
+
+// Normalize a hand-edited / legacy `width` to the canonical stored form the
+// transforms maintain: integer ≥ LINE_WIDTH_MIN, and absent when it equals
+// the default (the app never stores the default). Non-numbers and non-finite
+// values are dropped. File-import hygiene only — localStorage rehydration
+// never sees uncanonical widths because every write goes through
+// `setLineWidth`'s clamp.
+function sanitizeLineWidth(line: Line): Line {
+  if (!('width' in line)) return line;
+  const raw = line.width as unknown;
+  if (typeof raw === 'number' && Number.isFinite(raw)) {
+    const norm = Math.max(LINE_WIDTH_MIN, Math.round(raw));
+    if (norm !== LINE_WIDTH_DEFAULT) {
+      return norm === line.width ? line : { ...line, width: norm };
+    }
+  }
+  const { width: _gone, ...rest } = line;
+  return rest;
 }
 
 function sanitizeSegmentStyles(line: Line): Line {

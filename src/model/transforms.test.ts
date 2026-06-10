@@ -791,6 +791,50 @@ describe('updateLine', () => {
   });
 });
 
+describe('setLineWidth', () => {
+  it('stores a non-default width', () => {
+    const doc = makeDoc({ lines: [makeLine({ id: 'L1' })] });
+    const next = T.setLineWidth(doc, 'L1', 20);
+    expect(next.lines.L1.width).toBe(20);
+  });
+
+  it('drops the field entirely when set back to the default', () => {
+    const doc = makeDoc({ lines: [makeLine({ id: 'L1', width: 20 })] });
+    const next = T.setLineWidth(doc, 'L1', 14);
+    expect('width' in next.lines.L1).toBe(false);
+  });
+
+  it('returns the input doc unchanged when setting the default on a width-less line', () => {
+    const doc = makeDoc({ lines: [makeLine({ id: 'L1' })] });
+    expect(T.setLineWidth(doc, 'L1', 14)).toBe(doc);
+  });
+
+  it('returns the input doc unchanged when the width is already stored', () => {
+    const doc = makeDoc({ lines: [makeLine({ id: 'L1', width: 20 })] });
+    expect(T.setLineWidth(doc, 'L1', 20)).toBe(doc);
+  });
+
+  it('clamps to the floor and rounds to an integer', () => {
+    const doc = makeDoc({ lines: [makeLine({ id: 'L1' })] });
+    expect(T.setLineWidth(doc, 'L1', 0).lines.L1.width).toBe(1);
+    expect(T.setLineWidth(doc, 'L1', -3).lines.L1.width).toBe(1);
+    expect(T.setLineWidth(doc, 'L1', 9.6).lines.L1.width).toBe(10);
+    // Rounds-to-default drops the field, same as an exact 14.
+    expect('width' in T.setLineWidth(doc, 'L1', 14.4).lines.L1).toBe(false);
+  });
+
+  it('ignores non-finite input (same reference out)', () => {
+    const doc = makeDoc({ lines: [makeLine({ id: 'L1', width: 20 })] });
+    expect(T.setLineWidth(doc, 'L1', NaN)).toBe(doc);
+    expect(T.setLineWidth(doc, 'L1', Infinity)).toBe(doc);
+  });
+
+  it('returns the input doc for an unknown line id', () => {
+    const doc = makeDoc({ lines: [makeLine({ id: 'L1' })] });
+    expect(T.setLineWidth(doc, 'ghost', 20)).toBe(doc);
+  });
+});
+
 describe('toggleStationOnLine', () => {
   it('adds a station + stop cell when not present', () => {
     const doc = makeDoc({

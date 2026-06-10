@@ -6,7 +6,6 @@ import {
   offsetPathLength,
   snapNeighborTag,
 } from '../../geometry/lineTagGeometry';
-import { stripeOffset } from '../../geometry/orientation';
 import { buildBands, SegmentBandSpec } from '../../geometry/interlining';
 import { finishDrag, trackDragMove } from './dragGesture';
 
@@ -116,8 +115,7 @@ export function useLineTagDrag(svgRef: RefObject<SVGSVGElement | null>): LineTag
       );
       if (!band) continue;
       const k = band.lines.findIndex((l: { id: LineId }) => l.id === tag.lineId);
-      const n = band.lines.length;
-      const offset = stripeOffset(k, n);
+      const offset = band.stripeOffsets[k];
       const r = closestParamOnOffsetPath(band.centerline, band.radius, offset, target);
       if (!best || r.dist < best.dist) {
         best = {
@@ -146,8 +144,7 @@ export function useLineTagDrag(svgRef: RefObject<SVGSVGElement | null>): LineTag
       lineStripeOffset: (lineId) => {
         const idx = best.band.lines.findIndex((l: { id: LineId }) => l.id === lineId);
         if (idx < 0) return null;
-        const n = best.band.lines.length;
-        return stripeOffset(idx, n);
+        return best.band.stripeOffsets[idx];
       },
       lineTags: docState.lineTags,
       tol: SNAP_TOL,
