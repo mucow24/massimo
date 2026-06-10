@@ -6,7 +6,7 @@ import type { SegmentBandSpec } from '../geometry/interlining';
 import type { Line, LineId } from '../model/types';
 import { makeBandSpec, makeLine } from '../test/fixtures';
 
-type StripeStyle = 'solid' | 'dashed' | 'hatched';
+type StripeStyle = 'solid' | 'dashed' | 'hatched' | 'dotted' | 'dashed-open';
 
 // Presentation-free band over the canonical station pair s1|s2. The spec
 // carries only line ids; color + per-segment style are resolved at render
@@ -74,6 +74,24 @@ describe('<SegmentBand> — single-stripe renderer', () => {
     expect(paths.length).toBe(1);
     expect(paths[0].getAttribute('stroke')).toBe(`url(#${hatchPatternId('#EF374B')})`);
     expect(paths[0].getAttribute('stroke-dasharray')).toBeNull();
+  });
+
+  it('renders dotted stripes as one round-capped zero-dash path with NO underlay', () => {
+    const { container } = renderStripe(['dotted'], 0);
+    const paths = container.querySelectorAll('path');
+    expect(paths.length).toBe(1); // transparent gaps — no underlay path
+    expect(paths[0].getAttribute('stroke')).toBe('#EF374B');
+    expect(paths[0].getAttribute('stroke-linecap')).toBe('round');
+    expect(paths[0].getAttribute('stroke-dasharray')).toMatch(/^0 /);
+  });
+
+  it('renders dashed-open stripes as one butt-capped dashed path with NO underlay', () => {
+    const { container } = renderStripe(['dashed-open'], 0);
+    const paths = container.querySelectorAll('path');
+    expect(paths.length).toBe(1); // transparent gaps — no underlay path
+    expect(paths[0].getAttribute('stroke')).toBe('#EF374B');
+    expect(paths[0].getAttribute('stroke-linecap')).toBe('butt');
+    expect(paths[0].getAttribute('stroke-dasharray')).toBeTruthy();
   });
 
   it('selects the requested stripe out of a multi-stripe band', () => {

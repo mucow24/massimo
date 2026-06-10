@@ -162,7 +162,16 @@ export interface Station {
 // default and is never explicitly stored — a missing entry in `segmentStyles`
 // means solid. `hatched` and `hatched-mirror` are the two diagonal hatch
 // patterns (45° and -45°) — visually mirrored across the line's tangent.
-export type LineStyle = 'solid' | 'dashed' | 'hatched' | 'hatched-mirror';
+// `dotted` and `dashed-open` are the two "open" styles: repeated circles and
+// width-scaled dashes, both with transparent gaps (no backing fill) — unlike
+// `dashed`, whose gaps are painted in the canvas background color.
+export type LineStyle =
+  | 'solid'
+  | 'dashed'
+  | 'hatched'
+  | 'hatched-mirror'
+  | 'dotted'
+  | 'dashed-open';
 
 export interface Line {
   id: LineId;

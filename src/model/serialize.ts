@@ -32,7 +32,14 @@ import type {
   TextLabelWeight,
 } from './types';
 
-const KNOWN_LINE_STYLES = new Set<LineStyle>(['solid', 'dashed', 'hatched', 'hatched-mirror']);
+const KNOWN_LINE_STYLES = new Set<LineStyle>([
+  'solid',
+  'dashed',
+  'hatched',
+  'hatched-mirror',
+  'dotted',
+  'dashed-open',
+]);
 
 const KNOWN_ORIENTATIONS = new Set<StopOrientation>([
   'auto-vertical',

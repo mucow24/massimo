@@ -85,7 +85,9 @@ const NEXT_STYLE: Record<LineStyle, LineStyle> = {
   solid: 'dashed',
   dashed: 'hatched',
   hatched: 'hatched-mirror',
-  'hatched-mirror': 'solid',
+  'hatched-mirror': 'dotted',
+  dotted: 'dashed-open',
+  'dashed-open': 'solid',
 };
 
 function InsertZone({
@@ -337,7 +339,11 @@ export function LineInspector({ id }: { id: LineId }) {
                     </defs>
                   )}
                   {segments.map((seg) => {
-                    const { stroke, strokeDasharray } = lineStyleStrokeAttrs(seg.style, line.color);
+                    const { stroke, strokeDasharray, strokeLinecap } = lineStyleStrokeAttrs(
+                      seg.style,
+                      line.color,
+                      previewW,
+                    );
                     const underlay = lineStyleUnderlayAttrs(seg.style, underlayColor);
                     const isHovered =
                       hovered?.lineId === line.id &&
@@ -368,7 +374,7 @@ export function LineInspector({ id }: { id: LineId }) {
                           y2={seg.y2}
                           stroke={stroke}
                           strokeWidth={previewW}
-                          strokeLinecap="butt"
+                          strokeLinecap={strokeLinecap}
                           strokeDasharray={strokeDasharray}
                           style={filter ? { filter } : undefined}
                         />

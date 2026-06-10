@@ -113,7 +113,7 @@ describe('<HatchPatterns>', () => {
 
 describe('lineStyleStrokeAttrs', () => {
   it('solid: plain stroke, no dasharray, butt linecap', () => {
-    const a = lineStyleStrokeAttrs('solid', '#EF374B');
+    const a = lineStyleStrokeAttrs('solid', '#EF374B', 14);
     expect(a).toEqual({
       stroke: '#EF374B',
       strokeDasharray: undefined,
@@ -122,24 +122,56 @@ describe('lineStyleStrokeAttrs', () => {
   });
 
   it('dashed: emits a dasharray and uses butt linecap', () => {
-    const a = lineStyleStrokeAttrs('dashed', '#EF374B');
+    const a = lineStyleStrokeAttrs('dashed', '#EF374B', 14);
     expect(a.stroke).toBe('#EF374B');
     expect(a.strokeDasharray).toMatch(/^\d+ \d+$/);
     expect(a.strokeLinecap).toBe('butt');
   });
 
+  it('dashed: the fine tick pattern does NOT scale with stroke width', () => {
+    expect(lineStyleStrokeAttrs('dashed', '#EF374B', 14).strokeDasharray).toBe(
+      lineStyleStrokeAttrs('dashed', '#EF374B', 28).strokeDasharray,
+    );
+  });
+
   it('hatched: stroke points at the hatch pattern url for this color', () => {
-    const a = lineStyleStrokeAttrs('hatched', '#EF374B');
+    const a = lineStyleStrokeAttrs('hatched', '#EF374B', 14);
     expect(a.stroke).toBe(`url(#${hatchPatternId('#EF374B', 'hatched')})`);
     expect(a.strokeDasharray).toBeUndefined();
     expect(a.strokeLinecap).toBe('butt');
   });
 
   it('hatched-mirror: stroke points at the mirrored hatch pattern url for this color', () => {
-    const a = lineStyleStrokeAttrs('hatched-mirror', '#EF374B');
+    const a = lineStyleStrokeAttrs('hatched-mirror', '#EF374B', 14);
     expect(a.stroke).toBe(`url(#${hatchPatternId('#EF374B', 'hatched-mirror')})`);
     expect(a.strokeDasharray).toBeUndefined();
     expect(a.strokeLinecap).toBe('butt');
+  });
+
+  it('dotted: zero-length round-capped dashes — circles of diameter = strokeWidth', () => {
+    const a = lineStyleStrokeAttrs('dotted', '#EF374B', 14);
+    expect(a.stroke).toBe('#EF374B');
+    expect(a.strokeLinecap).toBe('round');
+    const [on, off] = a.strokeDasharray!.split(' ').map(Number);
+    expect(on).toBe(0);
+    // Center-to-center spacing exceeds the dot diameter so the circles
+    // never touch, and scales with the stroke width.
+    expect(off).toBeGreaterThan(14);
+    const wide = lineStyleStrokeAttrs('dotted', '#EF374B', 28);
+    expect(Number(wide.strokeDasharray!.split(' ')[1])).toBe(off * 2);
+  });
+
+  it('dashed-open: width-proportional dashes, butt linecap', () => {
+    const a = lineStyleStrokeAttrs('dashed-open', '#EF374B', 14);
+    expect(a.stroke).toBe('#EF374B');
+    expect(a.strokeLinecap).toBe('butt');
+    const [on, off] = a.strokeDasharray!.split(' ').map(Number);
+    expect(on).toBeGreaterThan(0);
+    expect(off).toBeGreaterThan(0);
+    const wide = lineStyleStrokeAttrs('dashed-open', '#EF374B', 28);
+    const [wideOn, wideOff] = wide.strokeDasharray!.split(' ').map(Number);
+    expect(wideOn).toBe(on * 2);
+    expect(wideOff).toBe(off * 2);
   });
 });
 
@@ -168,5 +200,10 @@ describe('lineStyleUnderlayAttrs', () => {
       stroke: '#000000',
       strokeLinecap: 'butt',
     });
+  });
+
+  it('returns null for the open styles — their gaps are intentionally transparent', () => {
+    expect(lineStyleUnderlayAttrs('dotted')).toBeNull();
+    expect(lineStyleUnderlayAttrs('dashed-open')).toBeNull();
   });
 });

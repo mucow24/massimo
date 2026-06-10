@@ -128,12 +128,13 @@ export function HighlightedLineLayer({
             // Presentation resolved live from the highlighted line (the
             // spec carries only the id); style is per-segment via pairKey.
             const style = resolveSegmentStyle(ln, r.band.pairKey);
+            const stripeW = r.band.stripeWidths[r.stripeIndex];
             const { stroke, strokeDasharray, strokeLinecap } = lineStyleStrokeAttrs(
               style,
               ln.color,
+              stripeW,
             );
             const underlay = lineStyleUnderlayAttrs(style, underlayColor);
-            const stripeW = r.band.stripeWidths[r.stripeIndex];
             const railW = lineStrokeRailWidth(lineStrokeWidthOf(ln), stripeW);
             const m = !!hov && hov.lineId === stripeLn.id && r.band.pairKey === hovPairKey;
             push(

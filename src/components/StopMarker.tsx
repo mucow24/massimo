@@ -30,12 +30,13 @@ interface Props {
 //             userSpaceOnUse patterns inherit the parent transform, which
 //             would re-rotate the stripes and break alignment with the
 //             surrounding band.
-//   dashed  → at an interior station (no `outward`), renders nothing so
-//             the two dashed corridors meet cleanly at the stop center
-//             without a solid square breaking up the dash rhythm. At a
-//             TERMINUS (`outward` set), paints a width/2-long dashed stub
-//             continuing outward, so the dashes also fill the outer half
-//             of the dot area.
+//   dashed / dotted / dashed-open
+//           → at an interior station (no `outward`), renders nothing so
+//             the two patterned corridors meet cleanly at the stop center
+//             without a solid square breaking up the pattern rhythm. At a
+//             TERMINUS (`outward` set), paints a width/2-long stub in the
+//             same pattern continuing outward, so the pattern also fills
+//             the outer half of the dot area.
 //
 // A stroked line's marker additionally paints two casing rails CENTERED on
 // the edges parallel to the travel axis (local +x after rotationDeg),
@@ -110,10 +111,14 @@ export function StopMarker({ spec, effectiveColor, underlayColor, lines, noEndCa
       </>
     );
   }
-  if (spec.style === 'dashed') {
+  if (spec.style !== 'solid') {
     if (!spec.outward) return null;
-    const { stroke, strokeDasharray, strokeLinecap } = lineStyleStrokeAttrs('dashed', color);
-    const underlay = lineStyleUnderlayAttrs('dashed', underlayColor);
+    const { stroke, strokeDasharray, strokeLinecap } = lineStyleStrokeAttrs(
+      spec.style,
+      color,
+      spec.width,
+    );
+    const underlay = lineStyleUnderlayAttrs(spec.style, underlayColor);
     const x1 = spec.cx;
     const y1 = spec.cy;
     const x2 = spec.cx + spec.outward.x * half;
