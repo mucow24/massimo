@@ -26,7 +26,9 @@ export const DIAMOND_POINTS = (cx: number, cy: number, r: number) =>
   `${cx},${cy - r} ${cx + r},${cy} ${cx},${cy + r} ${cx - r},${cy}`;
 
 // Arm thickness of the X glyph as a fraction of its pre-rotation arm length.
-const X_ARM_RATIO = 0.4;
+// Lowering this both thins AND lengthens the arms: the saltire always spans
+// the same 2r box, so thinner arms reach further into its corners.
+const X_ARM_RATIO = 0.2;
 
 // 12-vertex saltire spanning the same 2r box as the other shapes: a plus
 // polygon rotated 45°, scaled so the rotated corners land on the box edges.
