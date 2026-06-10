@@ -2,6 +2,7 @@ import { Line, Station } from '../model/types';
 import { useDoc } from '../state/store';
 import { labelLayoutLocal } from '../geometry/labelLayout';
 import { cellsAABBLocal } from '../geometry/stationBoundary';
+import { stopHalfOf } from '../model/lineWidth';
 import { resolveStationLabelWeight } from '../model/transforms';
 import { useStationInteraction } from './useStationInteraction';
 
@@ -29,7 +30,8 @@ export function StationHitArea({
   const angle = station.rotation * 45;
   const isWp = !!station.isWaypoint;
   const label = station.label;
-  const cellsBox = cellsAABBLocal(station);
+  const stopHalf = stopHalfOf(lines);
+  const cellsBox = cellsAABBLocal(station, stopHalf);
   const {
     anchorX: labelAnchorX,
     anchorY: labelAnchorY,
@@ -37,11 +39,16 @@ export function StationHitArea({
     hitY,
     hitW,
     hitH,
-  } = labelLayoutLocal(station, {
-    fontSize: labelFontSize,
-    weight: resolveStationLabelWeight(labelWeight, station.labelBold),
-    italic: labelItalic,
-  });
+  } = labelLayoutLocal(
+    station,
+    {
+      fontSize: labelFontSize,
+      weight: resolveStationLabelWeight(labelWeight, station.labelBold),
+      italic: labelItalic,
+    },
+    undefined,
+    stopHalf,
+  );
   const labelHitTransform = `rotate(${label.rotation * 45} ${labelAnchorX} ${labelAnchorY})`;
 
   const hitProps = {

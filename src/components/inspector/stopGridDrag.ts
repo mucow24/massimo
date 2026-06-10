@@ -3,8 +3,10 @@
 // and consumed by Playwright e2e helpers without pulling in React.
 import type { RowCol } from '../../geometry/lattice';
 
-/** Inspector-local pixels per unit in row/col space. Circle radius =
- *  PITCH/2 so two nodes at unit distance are tangent in the editor. */
+/** Inspector-local pixels per unit in row/col space. A default-width node's
+ *  circle radius = PITCH/2, so two default-width nodes at unit distance are
+ *  tangent in the editor; non-default-width nodes scale their radius (and
+ *  their tangency distance) by width/STOP_SIZE. */
 export const PITCH = 22;
 
 const dist = (a: RowCol, b: RowCol): number => Math.hypot(a.row - b.row, a.col - b.col);
@@ -34,13 +36,19 @@ export interface DropOptions {
   swapRadius: number;
   /** Cursor distance below which the nearest ghost becomes the snap target. */
   snapRadius: number;
+  /**
+   * Per-stop override of `swapRadius` — a wide line's node draws bigger in
+   * the editor, so "physically on the circle" scales with it. Falls back to
+   * the flat `swapRadius` when absent.
+   */
+  swapRadiusFor?: (stop: RowCol & { lineId: string }) => number;
 }
 
 /**
  * Two-tier snap rule:
  *
  *   1. If the source is a stop and the cursor lies INSIDE a non-source
- *      stop's circle (distance < swapRadius), that stop wins as a swap
+ *      stop's circle (distance < its swap radius), that stop wins as a swap
  *      target. Labels never swap.
  *   2. Otherwise, the nearest ghost within snapRadius wins.
  *   3. Otherwise, no target.
@@ -55,7 +63,7 @@ export function findDropTarget<S extends RowCol & { lineId: string }>(
   if (source.kind === 'stop') {
     for (const s of stops) {
       if (s.lineId === source.lineId) continue;
-      if (dist(cursor, s) < opts.swapRadius) {
+      if (dist(cursor, s) < (opts.swapRadiusFor?.(s) ?? opts.swapRadius)) {
         return { kind: 'stop', row: s.row, col: s.col, lineId: s.lineId };
       }
     }

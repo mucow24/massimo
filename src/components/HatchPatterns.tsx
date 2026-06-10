@@ -91,8 +91,11 @@ interface Props {
 }
 
 // Tall enough that the rotated tile doesn't show edge artifacts at typical
-// stroke widths (band stroke is STOP_SIZE = 14).
-const TILE_HEIGHT = 32;
+// stroke widths. Band strokes are per-line widths now (default 14, slider up
+// to 28, textbox uncapped) — the tile content is vertically uniform so extra
+// height is visually inert, and the taller tile keeps seam count low on wide
+// stripes.
+const TILE_HEIGHT = 96;
 
 // Emits both hatch <pattern> variants (+45° and -45°) per color. Place inside
 // an enclosing <svg>'s <defs>. Patterns reference each other only by id (via

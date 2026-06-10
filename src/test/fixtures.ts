@@ -12,6 +12,8 @@ import type {
   TextLabel,
   TextLabelWeight,
 } from '../model/types';
+import type { SegmentBandSpec } from '../geometry/interlining';
+import { STOP_SIZE, stripeOffsetsForWidths } from '../geometry/orientation';
 
 export function makeStation(overrides: Partial<Station> & { id: StationId }): Station {
   return {
@@ -58,6 +60,42 @@ export function makeLine(overrides: Partial<Line> & { id: LineId }): Line {
     color: '#0039A6',
     stations: [],
     ...overrides,
+  };
+}
+
+/**
+ * Hand-rolled SegmentBandSpec for component/geometry tests that don't want to
+ * run the full buildBands pipeline: a horizontal s1→s2 band at (0,0)→(100,0)
+ * with one stripe per line id. Centralized so adding a field to the spec is a
+ * one-place change instead of a sweep over every test's local builder.
+ * `lines` always derives from `lineIds` (not overridable) so the parallel
+ * arrays can't fall out of step.
+ */
+export function makeBandSpec(
+  lineIds: string[],
+  // `stripeOffsets` is NOT overridable: it always derives from
+  // `stripeWidths`, so a fixture can never encode an impossible band
+  // (offsets that disagree with the widths' tangency positions).
+  overrides: Partial<Omit<SegmentBandSpec, 'lines' | 'stripeOffsets'>> = {},
+): SegmentBandSpec {
+  const stripeWidths = overrides.stripeWidths ?? lineIds.map(() => STOP_SIZE);
+  return {
+    pairKey: 's1|s2',
+    bandKey: `s1|s2#${lineIds.slice().sort().join(',')}`,
+    fromId: 's1',
+    toId: 's2',
+    lines: lineIds.map((id) => ({ id })),
+    paths: lineIds.map(() => 'M0,0 L100,0'),
+    warning: false,
+    centerline: [
+      { x: 0, y: 0 },
+      { x: 100, y: 0 },
+    ],
+    radius: 24,
+    linePriorities: lineIds.map((_, i) => i),
+    ...overrides,
+    stripeWidths,
+    stripeOffsets: stripeOffsetsForWidths(stripeWidths),
   };
 }
 

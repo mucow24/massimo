@@ -7,6 +7,11 @@ import { resolveSegmentStyle } from '../../geometry/interlining';
 export const STATION_ROW_H = 20;
 export const GAP_ROW_H = 16;
 export const BAND_W = 14;
+// The preview band reflects the line's actual width, clamped so the
+// inspector's fixed-width marker column never overflows (MARKER_W = 24 in
+// LineInspector) and a hairline width stays visible.
+export const PREVIEW_W_MIN = 2;
+export const PREVIEW_W_MAX = 20;
 
 export interface BandSegment {
   i: number;
@@ -26,16 +31,18 @@ export interface StationBandLayout {
 /**
  * Vertical layout for the LineInspector's stop band: each station row's center
  * y, the total band height, and the styled segment spans. The first/last
- * segment is capped half a band-width past the end dot so the band visually
- * reaches the terminus. Pure — depends only on the line's station order, which
- * stations currently exist, and the per-segment styles.
+ * segment is capped half the RENDERED band-width past the end dot so the band
+ * visually reaches the terminus at whatever (clamped) width the preview
+ * paints. Pure — depends only on the line's station order, which stations
+ * currently exist, the per-segment styles, and the preview width.
  */
 export function stationBandLayout(
   line: Line,
   stations: Record<StationId, Station>,
+  bandW: number = BAND_W,
 ): StationBandLayout {
   const N = line.stations.length;
-  const cap = BAND_W / 2;
+  const cap = bandW / 2;
   const centerOf = (idx: number) => idx * (STATION_ROW_H + GAP_ROW_H) + STATION_ROW_H / 2;
   const totalHeight = N * STATION_ROW_H + Math.max(0, N - 1) * GAP_ROW_H;
   const segments: BandSegment[] = [];

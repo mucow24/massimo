@@ -27,11 +27,40 @@ export const stopCenterAt = (row: number, col: number): Vec2 => ({
   y: row * (STOP_SIZE + STOP_GAP),
 });
 
-// Perpendicular offset of stripe `k` (0-based) within an n-stripe interlined
-// band, in world units. Stripes straddle the centerline symmetrically. This
-// invariant MUST agree across band paint, outline, label placement, and the
-// hit/drag paths or the rendered geometry desyncs — so it lives in one place.
-export const stripeOffset = (k: number, n: number): number => (k - (n - 1) / 2) * STOP_SIZE;
+// Center-to-center distance at which two stripes of the given widths are
+// exactly TANGENT (edges touching, no overlap). The uniform-width special
+// case is the historical STOP_SIZE step. Shared by the band merge gate, the
+// offset recurrence below, and the StopGrid's ghost/overlap math (which
+// divides by STOP_SIZE to convert into lattice units).
+export const tangentGap = (wA: number, wB: number): number => (wA + wB) / 2;
+
+/**
+ * Perpendicular offsets for n mutually-tangent stripes of the given widths,
+ * in world units, relative to the band centerline. Tangency positions:
+ * p_0 = 0; p_k = p_{k-1} + tangentGap(w_{k-1}, w_k). The run is then
+ * mean-centered (offset_k = p_k − mean(p)) so it straddles the band's
+ * centerline exactly as the stop cells straddle their centroid — the band
+ * centerline IS bandCentroid(stop positions) (the mean), so mean-centered
+ * offsets land each stripe precisely on its stop.
+ *
+ * Uniform widths reduce BIT-EXACTLY to the historical
+ * `(k − (n−1)/2) · width` — for w = 14 every intermediate (prefix sums,
+ * their mean) is exactly representable, which is what keeps legacy
+ * all-default docs rendering byte-identically.
+ *
+ * These offsets MUST agree across band paint, outline, label placement, and
+ * the hit/drag paths or the rendered geometry desyncs — so they are computed
+ * once (in buildBandSpec) and baked onto SegmentBandSpec.stripeOffsets for
+ * every consumer to read.
+ */
+export function stripeOffsetsForWidths(widths: readonly number[]): number[] {
+  const n = widths.length;
+  if (n === 0) return [];
+  const p: number[] = [0];
+  for (let k = 1; k < n; k++) p.push(p[k - 1] + tangentGap(widths[k - 1], widths[k]));
+  const mean = p.reduce((a, b) => a + b, 0) / n;
+  return p.map((x) => x - mean);
+}
 
 /**
  * Travel direction in the unrotated local frame for a stop with the given

@@ -25,6 +25,9 @@ export interface SeedLine {
   service: string;
   color: string;
   stations: string[];
+  // Per-line stripe width in world units. Omit to simulate a line saved
+  // before the field existed (renders at the default width).
+  width?: number;
 }
 
 export interface SeedRouteBullet {
@@ -113,6 +116,9 @@ export async function seedAndOpen(
       service: l.service,
       color: l.color,
       stations: l.stations,
+      // Only include width when provided, so an omitted value persists as a
+      // pre-width (legacy) line.
+      ...(l.width !== undefined ? { width: l.width } : {}),
     };
   }
 

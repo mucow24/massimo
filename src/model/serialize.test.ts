@@ -328,6 +328,62 @@ describe('serialize / parse — dotShape', () => {
   });
 });
 
+describe('parse — line width sanitizing', () => {
+  // Builds a file whose single line carries an arbitrary raw `width` value,
+  // as a hand-edited or legacy file might.
+  const buildWithWidth = (width: unknown) =>
+    JSON.stringify({
+      format: 'massimo-map',
+      doc: {
+        ...makeDoc({ lines: [makeLine({ id: 'L1' })] }),
+        lines: { L1: { ...makeLine({ id: 'L1' }), width } },
+      },
+    });
+
+  it('round-trips a non-default width losslessly (pin — relies only on the optional field)', () => {
+    const doc = makeDoc({ lines: [makeLine({ id: 'L1', width: 21 })] });
+    const result = parse(serialize(doc));
+    expect(result.ok).toBe(true);
+    if (result.ok) expect(result.doc).toEqual(doc);
+  });
+
+  it('drops an explicit default width on parse (the default is never stored)', () => {
+    const result = parse(buildWithWidth(14));
+    expect(result.ok).toBe(true);
+    if (result.ok) expect('width' in result.doc.lines.L1).toBe(false);
+  });
+
+  it('drops non-numeric widths', () => {
+    for (const junk of ['wide', null, true, {}]) {
+      const result = parse(buildWithWidth(junk));
+      expect(result.ok).toBe(true);
+      if (result.ok) expect('width' in result.doc.lines.L1).toBe(false);
+    }
+  });
+
+  it('clamps and rounds numeric widths to the canonical stored form', () => {
+    const low = parse(buildWithWidth(-3));
+    expect(low.ok).toBe(true);
+    if (low.ok) expect(low.doc.lines.L1.width).toBe(1);
+    const frac = parse(buildWithWidth(9.6));
+    expect(frac.ok).toBe(true);
+    if (frac.ok) expect(frac.doc.lines.L1.width).toBe(10);
+    // Rounds-to-default is dropped like an exact 14.
+    const nearDefault = parse(buildWithWidth(14.4));
+    expect(nearDefault.ok).toBe(true);
+    if (nearDefault.ok) expect('width' in nearDefault.doc.lines.L1).toBe(false);
+  });
+
+  it('drops non-finite widths', () => {
+    // JSON.stringify can't emit a non-finite number, so splice the literal
+    // into the raw text: 1e999 overflows to Infinity in JSON.parse.
+    const json = buildWithWidth(0).replace('"width":0', '"width":1e999');
+    const result = parse(json);
+    expect(result.ok).toBe(true);
+    if (result.ok) expect('width' in result.doc.lines.L1).toBe(false);
+  });
+});
+
 describe('serialize / parse — round-trip property', () => {
   // A "canonical" doc is anything the pure transforms can build from the empty
   // default doc: ids minted in order, lineOrder maintained, stops + auto
@@ -342,7 +398,8 @@ describe('serialize / parse — round-trip property', () => {
     | { kind: 'moveStation'; x: number; y: number }
     | { kind: 'deleteStation' }
     | { kind: 'deleteLine' }
-    | { kind: 'moveLineInOrder'; dir: -1 | 1 };
+    | { kind: 'moveLineInOrder'; dir: -1 | 1 }
+    | { kind: 'setLineWidth'; w: number };
 
   const actionArb = fc.oneof(
     fc.constant<Action>({ kind: 'addStation' }),
@@ -359,6 +416,10 @@ describe('serialize / parse — round-trip property', () => {
     fc.record({
       kind: fc.constant<'moveLineInOrder'>('moveLineInOrder'),
       dir: fc.constantFrom<-1 | 1>(-1, 1),
+    }),
+    fc.record({
+      kind: fc.constant<'setLineWidth'>('setLineWidth'),
+      w: fc.integer({ min: -5, max: 40 }),
     }),
   );
 
@@ -408,6 +469,11 @@ describe('serialize / parse — round-trip property', () => {
         case 'moveLineInOrder': {
           const l = firstKey(doc.lines);
           if (l) doc = T.moveLineInOrder(doc, l, a.dir);
+          break;
+        }
+        case 'setLineWidth': {
+          const l = firstKey(doc.lines);
+          if (l) doc = T.setLineWidth(doc, l, a.w);
           break;
         }
       }

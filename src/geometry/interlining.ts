@@ -7,11 +7,13 @@ import {
   rotateBy,
   STOP_SIZE,
   stopCenterAt,
-  stripeOffset,
+  stripeOffsetsForWidths,
+  tangentGap,
   travelDirLocal,
   worldDirToLocal,
 } from './orientation';
 import { LAYER_WEIGHT, segmentPriority, stationLayerFor } from '../model/layerPriority';
+import { lineWidthOf } from '../model/lineWidth';
 
 export interface SegmentBandSpec {
   pairKey: string;
@@ -35,17 +37,30 @@ export interface SegmentBandSpec {
   centerline: Vec2[];
   // Effective centerline curve radius used to build `paths`. For an n-stripe
   // band this is bumped above the configured `curveRadius` toward
-  // `R + (n-1)/2 * STOP_SIZE` so the innermost stripe still hits R, then
-  // capped per-endpoint so the stop marker (a STOP_SIZE square) fits within
-  // the post-fillet straight section. Callers sampling offset paths against
-  // `centerline` (line-tag layer, hover/click) MUST use this rather than the
-  // raw doc.curveRadius, or they'll desync from painted geometry.
+  // `R + max|stripeOffsets|` so the innermost stripe still hits R, then
+  // capped per-endpoint so the widest stop marker (a width × width square)
+  // fits within the post-fillet straight section. Callers sampling offset
+  // paths against `centerline` (line-tag layer, hover/click) MUST use this
+  // rather than the raw doc.curveRadius, or they'll desync from painted
+  // geometry.
   radius: number;
   // Per-stripe z-priority: parallel to `lines` and `paths`. Smallest = front-most.
   // Each stripe carries its own line's lineOrder index so a perpendicular
   // line whose layer is sandwiched between two interlined lines renders
   // between their stripes (not behind the whole band).
   linePriorities: number[];
+  // Per-stripe perpendicular offsets from the centerline, parallel to
+  // `lines`/`paths`: the mean-centered tangency positions of the per-line
+  // widths (see stripeOffsetsForWidths). The single source of truth formerly
+  // held by the uniform stripeOffset(k, n) formula — every consumer (outline,
+  // tag/label placement, hit sampling) MUST read these rather than re-derive,
+  // or it desyncs from the baked `paths`.
+  stripeOffsets: number[];
+  // Per-stripe stroke widths (each line's effective width at build time).
+  // Unlike color/style, width is GEOMETRY, not presentation: a width edit
+  // moves `paths`, so the band is rebuilt anyway and baking the widths
+  // costs no repaint flexibility.
+  stripeWidths: number[];
 }
 
 // A single colored stop square for one line at one station, with its
@@ -72,6 +87,9 @@ export interface StopMarkerSpec {
   priority: number;
   style: LineStyle;
   outward: Vec2 | null;
+  // The line's effective width: the marker renders as a width × width square
+  // (and the dashed terminus stub at this stroke width).
+  width: number;
 }
 
 interface SegInfo {
@@ -128,9 +146,11 @@ export function resolveSegmentStyle(line: Line, pairKey: string): LineStyle {
 /**
  * Build all colored bands for the map. A "band" is one or more lines that
  * share a station-pair and pass through it with matching stop orientations
- * AND grid-adjacent cells along the perpendicular-to-travel axis at both
- * stations. Bands render with stroke-width = STOP_SIZE per line, perpendicular
- * offsets `(k − (n−1)/2) * STOP_SIZE`.
+ * AND exactly-tangent cells along the perpendicular-to-travel axis at both
+ * stations (consecutive stop centers tangentGap(wA, wB) apart). Bands render
+ * with per-stripe stroke-width = the line's effective width, perpendicular
+ * offsets `stripeOffsetsForWidths(widths)` (mean-centered tangency
+ * positions; `(k − (n−1)/2) * STOP_SIZE` in the uniform default case).
  *
  * Composes {@link buildBandGeometry} (depends only on stations + line
  * topology) and {@link assignLinePriorities} (depends on `lineOrder` and
@@ -154,11 +174,12 @@ export function buildBands(
  * station-pair, buckets by world travel axis, merges perpendicular-
  * adjacency runs, and computes the routed centerline + per-stripe paths.
  *
- * Reads only `stations`, `line.stations`, `line.segmentStyles`, and
- * `curveRadius`. None of those change on a per-segment layer cycle, so a
- * caller that memoizes this output gets a stable bands reference across
- * layer edits — that's how the layering-mode caches stay valid without
- * a content-hash workaround.
+ * Reads only `stations`, `line.stations`, `line.segmentStyles`,
+ * `line.width`, and `curveRadius`. None of those change on a per-segment
+ * layer cycle, so a caller that memoizes this output gets a stable bands
+ * reference across layer edits — that's how the layering-mode caches stay
+ * valid without a content-hash workaround. (A width edit DOES rebuild —
+ * width is geometry; MapCanvas's linesGeometrySig must include it.)
  *
  * Returns bands with `linePriorities: []`; call {@link assignLinePriorities}
  * to fill those in before consuming the array for paint order.
@@ -240,14 +261,17 @@ export function buildBandGeometry(
       // leftOf(motion) — must match the perpendicular convention used by
       // offsetFilletPath. With this, sorting ascending by perp-projection
       // assigns lower-k indices to lines on the negative-offset (right of
-      // motion) side — exactly what `(k − (n−1)/2) * STOP_SIZE` produces.
+      // motion) side — exactly what the ascending stripeOffsetsForWidths
+      // run produces.
       const fPerp: Vec2 = leftNormal(fDir);
       const tPerp: Vec2 = leftNormal(tDir);
 
       // Enrich with world perp/parallel positions at each end for sorting and
-      // adjacency comparison.
+      // adjacency comparison, plus the line's effective width (which sets the
+      // pairwise tangency distance below).
       type Enriched = {
         seg: SegInfo;
+        width: number;
         fPerpPos: number;
         fParPos: number;
         tPerpPos: number;
@@ -261,6 +285,7 @@ export function buildBandGeometry(
         const tp = stopPosWorld(s.toCell, toS);
         return {
           seg: s,
+          width: lineWidthOf(lines[s.lineId]),
           fPerpPos: fp.x * fPerp.x + fp.y * fPerp.y,
           fParPos: fp.x * fDir.x + fp.y * fDir.y,
           tPerpPos: tp.x * tPerp.x + tp.y * tPerp.y,
@@ -269,14 +294,19 @@ export function buildBandGeometry(
       });
       enriched.sort((a, b) => a.fPerpPos - b.fPerpPos);
 
-      // Greedily merge contiguous perp-adjacency in WORLD coords (≈ STOP_SIZE
-      // step) at both ends, with matching parallel position at both ends.
+      // Greedily merge contiguous perp-adjacency in WORLD coords at both
+      // ends, with matching parallel position at both ends. "Adjacent" =
+      // EXACTLY tangent: the perp step between consecutive stop centers must
+      // equal tangentGap(width, width) (= STOP_SIZE for two default-width
+      // lines). Stops that are not tangent — including mixed-width pairs
+      // still at the legacy unit spacing — stay in separate bands.
       let group: Enriched[] = [];
       const flush = () => {
         if (group.length === 0) return;
         bands.push(
           buildBandSpec(
             group.map((e) => e.seg),
+            group.map((e) => e.width),
             curveRadius,
             pairKey,
             fDir,
@@ -296,11 +326,12 @@ export function buildBandGeometry(
         const prev = group[group.length - 1];
         const dFromPerp = e.fPerpPos - prev.fPerpPos;
         const dToPerp = e.tPerpPos - prev.tPerpPos;
+        const tangent = tangentGap(prev.width, e.width);
         const sameParA = Math.abs(e.fParPos - prev.fParPos) < TOL;
         const sameParB = Math.abs(e.tParPos - prev.tParPos) < TOL;
         if (
-          Math.abs(dFromPerp - STOP_SIZE) < TOL &&
-          Math.abs(dToPerp - STOP_SIZE) < TOL &&
+          Math.abs(dFromPerp - tangent) < TOL &&
+          Math.abs(dToPerp - tangent) < TOL &&
           sameParA &&
           sameParB
         ) {
@@ -437,6 +468,7 @@ export function buildStopMarkers(
         priority: basePriority - stationLayer * LAYER_WEIGHT,
         style,
         outward: style === 'dashed' ? terminusOutwardFromBand(line, station.id, bandByPair) : null,
+        width: lineWidthOf(line),
       });
     }
   }
@@ -521,28 +553,39 @@ export function bandCentroid(points: Vec2[]): Vec2 {
   return { x: x / points.length, y: y / points.length };
 }
 
-// Centerline radius bumped so the INNERMOST stripe of an n-stripe band still
-// has radius >= the configured curveRadius. Stripes sit at perp offsets
-// (k-(n-1)/2)*STOP_SIZE, so the extreme |offset| is (n-1)/2*STOP_SIZE.
-export function idealBandRadius(curveRadius: number, stripeCount: number): number {
-  const maxAbsOffset = stripeCount > 1 ? ((stripeCount - 1) / 2) * STOP_SIZE : 0;
+// Centerline radius bumped so the INNERMOST stripe of a band still has
+// radius >= the configured curveRadius. `maxAbsOffset` is the extreme
+// |stripe-center offset| (max |stripeOffsetsForWidths(widths)|) — for a
+// uniform-width band that's the historical (n-1)/2 * width.
+export function idealBandRadius(curveRadius: number, maxAbsOffset: number): number {
   return curveRadius + maxAbsOffset;
 }
 
-// Largest centerline radius whose fillet still leaves a straight run >= HALF
-// (= STOP_SIZE/2) before the corner, so the stop marker doesn't spill into the
-// arc. The turn angle comes from inDir·outDir; returns Infinity for a ~straight
-// corner and 0 when there's no usable straight run.
-export function cornerCapRadius(edgeLen: number, inDir: Vec2, outDir: Vec2): number {
+// Largest centerline radius whose fillet still leaves a straight run >=
+// `markerHalf` before the corner, so the stop marker doesn't spill into the
+// arc. The marker is a width × width square extending width/2 along travel;
+// callers pass the binding (largest) marker half among the band's lines.
+// Defaults to the standard STOP_SIZE/2. The turn angle comes from
+// inDir·outDir; returns Infinity for a ~straight corner and 0 when there's
+// no usable straight run.
+export function cornerCapRadius(
+  edgeLen: number,
+  inDir: Vec2,
+  outDir: Vec2,
+  markerHalf: number = STOP_SIZE / 2,
+): number {
   const theta = angleBetween(inDir, outDir);
   if (theta < 1e-6) return Infinity;
-  const usable = edgeLen - STOP_SIZE / 2;
+  const usable = edgeLen - markerHalf;
   if (usable <= 0) return 0;
   return usable / tanHalf(theta);
 }
 
 function buildBandSpec(
   group: SegInfo[],
+  // Per-line effective widths, parallel to `group` (already in the bucket's
+  // perp-sorted order).
+  widths: number[],
   R: number,
   pairKey: string,
   // The band's canonical-direction tangents (signed canonFrom→canonTo). Must
@@ -562,26 +605,33 @@ function buildBandSpec(
   const fromMeanWorld = bandCentroid(fromWorlds);
   const toMeanWorld = bandCentroid(toWorlds);
 
-  // Bump centerline radius so the INNERMOST stripe still has radius ≥ R.
-  // With n stripes at perp offsets `(k - (n-1)/2) * STOP_SIZE`, the extreme
-  // |offset| is `(n-1)/2 * STOP_SIZE` — the inside stripe's effective radius
-  // is `centerlineR − maxAbsOffset`, so we set centerlineR = R + maxAbsOffset
-  // so the inner stripe sits at exactly R. Without this, a 4–5-line interline
-  // collapses the inner curve toward a right angle as soon as |offset| ≥ R.
+  // Per-stripe offsets: mean-centered tangency positions of the widths. The
+  // merge gate guaranteed the actual stop centers sit at exactly these
+  // spacings, and the centerline is the stop centroid (the mean), so
+  // centerline + offset_k reproduces each stop position.
   const n = group.length;
-  const idealR = idealBandRadius(R, n);
+  const offsets = stripeOffsetsForWidths(widths);
+  const maxAbsOffset = offsets.reduce((m, o) => Math.max(m, Math.abs(o)), 0);
+
+  // Bump centerline radius so the INNERMOST stripe still has radius ≥ R.
+  // The inside stripe's effective radius is `centerlineR − maxAbsOffset`, so
+  // we set centerlineR = R + maxAbsOffset so the inner stripe's CENTER sits
+  // at exactly R. Without this, a 4–5-line interline collapses the inner
+  // curve toward a right angle as soon as |offset| ≥ R.
+  const idealR = idealBandRadius(R, maxAbsOffset);
 
   const result = route(fromMeanWorld, fromDir, toMeanWorld, toDir, idealR);
 
   // Cap the centerline radius so the stop marker fits in the straight section
-  // at each band endpoint. The marker is a STOP_SIZE × STOP_SIZE rect aligned
-  // to the stop's local frame — it extends HALF (= STOP_SIZE/2) along travel
-  // from the stop. For the marker's flat far-edge not to spill into the
-  // curving arc (where it produces a visible stair-step at the marker's
-  // boundary), the straight section before the fillet must be ≥ HALF. That
-  // means at each end-corner i: r * tan(θ_i/2) ≤ edgeLen − HALF, so
-  // r ≤ (edgeLen − HALF) / tan(θ_i/2). Cap centerline R to satisfy this at
-  // both ends.
+  // at each band endpoint. Each line's marker is a width × width rect aligned
+  // to the stop's local frame — it extends width/2 along travel from the
+  // stop; the binding constraint is the band's WIDEST marker. For the
+  // marker's flat far-edge not to spill into the curving arc (where it
+  // produces a visible stair-step at the marker's boundary), the straight
+  // section before the fillet must be ≥ markerHalf. That means at each
+  // end-corner i: r * tan(θ_i/2) ≤ edgeLen − markerHalf, so
+  // r ≤ (edgeLen − markerHalf) / tan(θ_i/2). Cap centerline R to satisfy
+  // this at both ends.
   //
   // For a single-stripe band there are no offset stripes to keep above R, so
   // the cap is allowed to pull the centerline below the configured R when a
@@ -597,27 +647,27 @@ function buildBandSpec(
   let capR = idealR;
   if (verts.length >= 3) {
     const lastIdx = verts.length - 1;
+    const markerHalf = Math.max(...widths) / 2;
     const fromEdgeLen = len(sub(verts[1], verts[0]));
     const fromIn = norm(sub(verts[1], verts[0]));
     const fromOut = norm(sub(verts[2], verts[1]));
-    capR = Math.min(capR, cornerCapRadius(fromEdgeLen, fromIn, fromOut));
+    capR = Math.min(capR, cornerCapRadius(fromEdgeLen, fromIn, fromOut, markerHalf));
     const toEdgeLen = len(sub(verts[lastIdx], verts[lastIdx - 1]));
     const toIn = norm(sub(verts[lastIdx - 1], verts[lastIdx - 2]));
     const toOut = norm(sub(verts[lastIdx], verts[lastIdx - 1]));
-    capR = Math.min(capR, cornerCapRadius(toEdgeLen, toIn, toOut));
+    capR = Math.min(capR, cornerCapRadius(toEdgeLen, toIn, toOut, markerHalf));
   }
   // capR ≤ 0 means even a zero-radius fillet can't clear the marker (a terminal
-  // edge ≤ HALF) — no radius helps, so fall back to R. Otherwise a single-stripe
-  // band honors the marker-fit cap (which may be below R); multi-stripe floors
-  // at R.
+  // edge ≤ markerHalf) — no radius helps, so fall back to R. Otherwise a
+  // single-stripe band honors the marker-fit cap (which may be below R);
+  // multi-stripe floors at R.
   const fit = Math.min(idealR, capR);
   const centerlineR = n === 1 && capR > 0 ? fit : Math.max(R, fit);
 
   const paths: string[] = [];
   const linesArr = group.map((g) => ({ id: g.lineId }));
   for (let k = 0; k < n; k++) {
-    const offset = stripeOffset(k, n);
-    paths.push(offsetFilletPath(result.vertices, centerlineR, offset));
+    paths.push(offsetFilletPath(result.vertices, centerlineR, offsets[k]));
   }
 
   const sortedLineIds = linesArr
@@ -636,5 +686,7 @@ function buildBandSpec(
     centerline: result.vertices,
     radius: centerlineR,
     linePriorities: [], // overwritten in buildBands' final pass
+    stripeOffsets: offsets,
+    stripeWidths: widths,
   };
 }

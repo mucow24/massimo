@@ -6,7 +6,6 @@ import {
   offsetPathLength,
   sampleOffsetPathByArcLength,
 } from '../../geometry/lineTagGeometry';
-import { stripeOffset } from '../../geometry/orientation';
 import { dragState, useDoc, useSelection } from '../../state/store';
 import { useThemeColors } from '../../state/theme';
 import { legibleTextOn } from '../../util/color';
@@ -17,9 +16,9 @@ const ALONG_FONT_SIZE = 12;
 const TEXT_PAD = 1;
 
 // Chevron geometry: a solid ">" band (drawn pointing +x before rotation) that
-// fills the full 14px stripe height, so each arm runs out to the line edge and
-// ends in a flat segment parallel to it. Sharp corners — no rounding.
-const CHEVRON_HALF_H = 7; // half the stripe width — arms reach the edges
+// fills its stripe's full height (the line's width — half-height comes from
+// ResolvedTag.stripeWidth at render time), so each arm runs out to the line
+// edge and ends in a flat segment parallel to it. Sharp corners — no rounding.
 const CHEVRON_DEPTH = 6; // how far the V point juts forward
 const CHEVRON_THICK = 4; // band thickness measured along the line
 // Bleed the arms a hair past the line edge so the chevron overlaps the stripe
@@ -31,9 +30,9 @@ const CHEVRON_THICK = 4; // band thickness measured along the line
 const CHEVRON_EDGE_BLEED_PX = 0.33;
 // Front face left x, chosen so the band's bounding box is centered on x=0.
 const CHEVRON_FRONT_X = (CHEVRON_THICK - CHEVRON_DEPTH) / 2;
-// Half-extents of the chevron's hit/selection box.
+// Along-line half-extent of the chevron's hit/selection box. The cross-line
+// half-extent is the stripe's half-width (so the box tracks the scaled arms).
 const CHEVRON_BOX_HALF_W = (CHEVRON_DEPTH + CHEVRON_THICK) / 2;
-const CHEVRON_BOX_HALF_H = CHEVRON_HALF_H;
 // Closed polygon: front V (top→tip→bottom) then back V (bottom→tip→top); the
 // connecting top/bottom edges are the flat segments along the line edges.
 // `armH` is the half-height including the zoom-aware bleed.
@@ -74,6 +73,9 @@ export interface ResolvedTag {
   // Tangent in line-traversal frame (already flipped if the line traverses
   // the corridor reverse-canonically). Unit vector.
   tangent: Vec2;
+  // The stripe's baked stroke width — sizes the chevron arms (and their
+  // hit/selection box) to the line's painted body.
+  stripeWidth: number;
 }
 
 export function resolveTag(
@@ -87,8 +89,7 @@ export function resolveTag(
   const band = bands.find((b) => b.pairKey === pairKey && b.lines.some((l) => l.id === tag.lineId));
   if (!band) return null;
   const k = band.lines.findIndex((l) => l.id === tag.lineId);
-  const n = band.lines.length;
-  const offset = stripeOffset(k, n);
+  const offset = band.stripeOffsets[k];
   // band.radius is the effective centerline radius the router used — already
   // bumped above doc.curveRadius for interlined bands so the inner stripes
   // respect the min radius. Sample against the same radius or geometry desyncs.
@@ -107,6 +108,7 @@ export function resolveTag(
     kind: tag.kind ?? 'text',
     p: sample.p,
     tangent,
+    stripeWidth: band.stripeWidths[k],
   };
 }
 
@@ -268,9 +270,10 @@ function TagShape({
   const rotateDeg = tangentAngleDeg + ORIENTATION_OFFSET_DEG[orientation];
   const isChevron = r.kind === 'chevron';
   const { textWidth, textHeight } = sizingFor(r.service, orientation, widths);
-  // Half-extents of the hit/selection box, per kind.
+  // Half-extents of the hit/selection box, per kind. A chevron's cross-line
+  // extent is its stripe's half-width so the box tracks the scaled arms.
   const halfW = isChevron ? CHEVRON_BOX_HALF_W : textWidth / 2 + TEXT_PAD;
-  const halfH = isChevron ? CHEVRON_BOX_HALF_H : textHeight / 2 + TEXT_PAD;
+  const halfH = isChevron ? r.stripeWidth / 2 : textHeight / 2 + TEXT_PAD;
 
   if (layer === 'text') {
     return (
@@ -289,7 +292,7 @@ function TagShape({
         />
         {isChevron ? (
           <polygon
-            points={chevronPoints(CHEVRON_HALF_H + CHEVRON_EDGE_BLEED_PX / zoom)}
+            points={chevronPoints(r.stripeWidth / 2 + CHEVRON_EDGE_BLEED_PX / zoom)}
             fill={legibleTextOn(r.color)}
             pointerEvents="none"
           />

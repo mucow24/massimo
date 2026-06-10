@@ -1,6 +1,5 @@
 import { Fragment } from 'react';
 import { resolveSegmentStyle, SegmentBandSpec } from '../geometry/interlining';
-import { STOP_SIZE } from '../geometry/orientation';
 import type { Line, LineId } from '../model/types';
 import { lineStyleStrokeAttrs, lineStyleUnderlayAttrs } from './HatchPatterns';
 
@@ -48,9 +47,11 @@ export function SegmentBand({
   const live = lines[lineId];
   // Resolve presentation live (spec carries only the id): desaturation
   // override wins for color, then the line's own color; style is the
-  // per-segment resolution keyed on this band's pairKey.
+  // per-segment resolution keyed on this band's pairKey. Width, by contrast,
+  // is GEOMETRY — baked into the spec alongside the paths it shaped.
   const color = colorMap?.[lineId] ?? live.color;
   const style = resolveSegmentStyle(live, spec.pairKey);
+  const strokeWidth = spec.stripeWidths[stripeIndex];
   const selectable = !interactive && !!onLineSelect;
   const { stroke, strokeDasharray, strokeLinecap } = lineStyleStrokeAttrs(style, color);
   const underlay = lineStyleUnderlayAttrs(style, underlayColor);
@@ -61,7 +62,7 @@ export function SegmentBand({
           d={d}
           fill="none"
           stroke={underlay.stroke}
-          strokeWidth={14}
+          strokeWidth={strokeWidth}
           strokeLinecap={underlay.strokeLinecap}
           strokeLinejoin="round"
           pointerEvents="none"
@@ -74,7 +75,7 @@ export function SegmentBand({
         data-line-id={lineId}
         fill="none"
         stroke={stroke}
-        strokeWidth={14}
+        strokeWidth={strokeWidth}
         strokeLinecap={strokeLinecap}
         strokeLinejoin="round"
         strokeDasharray={strokeDasharray}
@@ -122,18 +123,23 @@ export function BandWarning({
   if (!spec.warning || verts.length < 2) return null;
   const a = verts[0];
   const b = verts[verts.length - 1];
-  // Unit vector along the segment and its left-perpendicular. The bad segment
-  // spans n stripes of STOP_SIZE each, so its half-width is n·STOP_SIZE / 2.
+  // Unit vector along the segment and its left-perpendicular. The band's
+  // envelope runs from the first stripe's near edge to the last stripe's far
+  // edge — for mixed widths that's ASYMMETRIC about the (mean) centerline,
+  // so the edges come from the baked offsets ± half-widths rather than a
+  // symmetric ±Σw/2.
   const dx = b.x - a.x;
   const dy = b.y - a.y;
   const len = Math.hypot(dx, dy) || 1;
   const px = dy / len;
   const py = -dx / len;
-  const hw = (spec.lines.length * STOP_SIZE) / 2;
-  const corner = (p: { x: number; y: number }, sign: number) =>
-    `${p.x + px * hw * sign} ${p.y + py * hw * sign}`;
+  const n = spec.lines.length;
+  const lo = spec.stripeOffsets[0] - spec.stripeWidths[0] / 2;
+  const hi = spec.stripeOffsets[n - 1] + spec.stripeWidths[n - 1] / 2;
+  const corner = (p: { x: number; y: number }, off: number) =>
+    `${p.x + px * off} ${p.y + py * off}`;
   // Rectangle tracing the band's perimeter; the 2px stroke straddles the edge.
-  const outline = `M ${corner(a, 1)} L ${corner(b, 1)} L ${corner(b, -1)} L ${corner(a, -1)} Z`;
+  const outline = `M ${corner(a, hi)} L ${corner(b, hi)} L ${corner(b, lo)} L ${corner(a, lo)} Z`;
   const cx = (a.x + b.x) / 2;
   const cy = (a.y + b.y) / 2;
   return (

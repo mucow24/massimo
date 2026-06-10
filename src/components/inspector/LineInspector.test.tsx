@@ -1,8 +1,9 @@
 import { describe, it, expect, beforeEach } from 'vitest';
-import { render, screen } from '@testing-library/react';
+import { fireEvent, render, screen } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { LineInspector } from './LineInspector';
 import { useDoc, useSelection } from '../../state/store';
+import { historyDepth } from '../../state/history';
 import { DEFAULT_DOC } from '../../model/transforms';
 import { makeDoc, makeLine, makeStation, makeStop } from '../../test/fixtures';
 
@@ -93,5 +94,92 @@ describe('<LineInspector /> — segment style dividers', () => {
     });
     const { container } = render(<LineInspector id="L1" />);
     expect(container.querySelectorAll('[data-segment-style-divider]').length).toBe(0);
+  });
+});
+
+describe('<LineInspector /> — width control', () => {
+  beforeEach(() => {
+    localStorage.clear();
+    useDoc.setState({ ...DEFAULT_DOC });
+    useSelection.setState(SELECTION_BLANK);
+    useDoc.temporal.getState().clear();
+  });
+
+  const seed = (width?: number) => {
+    useDoc.setState({
+      ...DEFAULT_DOC,
+      ...makeDoc({
+        stations: [
+          makeStation({ id: 's1', stops: [makeStop('L1')] }),
+          makeStation({ id: 's2', stops: [makeStop('L1')] }),
+        ],
+        lines: [
+          // Spread conditionally — `width: undefined` would plant the KEY,
+          // and the canonical width-less form has no key at all.
+          makeLine({ id: 'L1', stations: ['s1', 's2'], ...(width !== undefined ? { width } : {}) }),
+        ],
+      }),
+    });
+  };
+
+  it('renders a 2–28 step-1 slider at the line’s effective width', () => {
+    seed();
+    render(<LineInspector id="L1" />);
+    const slider = screen.getByRole('slider', { name: 'Width' }) as HTMLInputElement;
+    expect(slider.getAttribute('min')).toBe('2');
+    expect(slider.getAttribute('max')).toBe('28');
+    expect(slider.getAttribute('step')).toBe('1');
+    expect(slider.value).toBe('14');
+  });
+
+  it('slider edits write the width; the default drops the key', () => {
+    seed();
+    render(<LineInspector id="L1" />);
+    const slider = screen.getByRole('slider', { name: 'Width' });
+    fireEvent.change(slider, { target: { value: '20' } });
+    expect(useDoc.getState().lines.L1.width).toBe(20);
+    fireEvent.change(slider, { target: { value: '14' } });
+    expect('width' in useDoc.getState().lines.L1).toBe(false);
+  });
+
+  it('the spinbutton floors at 1 and is uncapped above the slider max', () => {
+    seed();
+    render(<LineInspector id="L1" />);
+    const spin = screen.getByRole('spinbutton', { name: 'Width' });
+    expect(spin.getAttribute('min')).toBe('1');
+    expect(spin.getAttribute('max')).toBeNull();
+    fireEvent.change(spin, { target: { value: '40' } });
+    expect(useDoc.getState().lines.L1.width).toBe(40);
+  });
+
+  it('one slider focus-arc collapses to a single undo entry', () => {
+    seed();
+    useDoc.temporal.getState().clear();
+    render(<LineInspector id="L1" />);
+    const slider = screen.getByRole('slider', { name: 'Width' });
+    const before = historyDepth();
+    fireEvent.focus(slider);
+    fireEvent.change(slider, { target: { value: '16' } });
+    fireEvent.change(slider, { target: { value: '20' } });
+    fireEvent.change(slider, { target: { value: '24' } });
+    fireEvent.blur(slider);
+    expect(historyDepth()).toBe(before + 1);
+    useDoc.temporal.getState().undo();
+    expect('width' in useDoc.getState().lines.L1).toBe(false);
+  });
+
+  it('the stop-band preview renders at the line width, clamped to fit its column', () => {
+    seed(28);
+    const wide = render(<LineInspector id="L1" />);
+    const wideBand = wide.container.querySelectorAll('svg line');
+    expect(wideBand.length).toBeGreaterThan(0);
+    for (const l of wideBand) expect(l.getAttribute('stroke-width')).toBe('20'); // clamped
+    wide.unmount();
+
+    seed();
+    const def = render(<LineInspector id="L1" />);
+    for (const l of def.container.querySelectorAll('svg line')) {
+      expect(l.getAttribute('stroke-width')).toBe('14');
+    }
   });
 });

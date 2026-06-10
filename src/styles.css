@@ -1021,6 +1021,16 @@ input[type='range'].indeterminate {
   color: var(--ui-label-color);
   margin-top: 4px;
 }
+/* The Line inspector embeds a NumericFieldRow (the popover slider idiom)
+   between its .field rows — align its label styling and spacing with the
+   surrounding fields (same shim pattern as .polygon-popover above). */
+.inspector .options-popover-row {
+  margin-bottom: 8px;
+}
+.inspector .options-popover-label {
+  width: auto;
+  font-size: 11px;
+}
 
 .inspector input[type='text'],
 .inspector input[type='color'],

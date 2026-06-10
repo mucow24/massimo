@@ -1,5 +1,6 @@
 import { describe, it, expect } from 'vitest';
 import {
+  cellsAABBLocal,
   polygonsForRect,
   routeBulletsForRect,
   stationBoundaryRectsLocal,
@@ -16,6 +17,7 @@ import {
   stationWithStop,
 } from '../test/fixtures';
 import { STOP_SIZE } from './orientation';
+import { stopHalfOf } from '../model/lineWidth';
 import type { RouteBullet } from '../model/types';
 
 const makeBullet = (id: string, x: number, y: number, size = 12): RouteBullet => ({
@@ -26,6 +28,47 @@ const makeBullet = (id: string, x: number, y: number, size = 12): RouteBullet =>
   lineId: null,
   shape: 'circle',
   size,
+});
+
+describe('cellsAABBLocal — per-stop widths', () => {
+  // One stop at (0,0) on L1, label at the default (0,-1). HIT_PAD = 2.
+  const st = () => makeStation({ id: 'A', stops: [makeStop('L1', { row: 0, col: 0 })] });
+
+  it('keeps the legacy geometry when no lookup is supplied', () => {
+    expect(cellsAABBLocal(st())).toEqual({ x: -23, y: -9, w: 32, h: 18 });
+  });
+
+  it('grows each side by the dominating cell’s own half-extent', () => {
+    // L1 at width 28: the stop contributes ±14 on every side it dominates;
+    // the label cell stays unit-sized (±7) and still wins the left edge.
+    const box = cellsAABBLocal(st(), stopHalfOf({ L1: { width: 28 } }));
+    expect(box).toEqual({ x: -23, y: -16, w: 39, h: 32 });
+  });
+
+  it('a wider inner stop can dominate an edge over a farther-out narrow stop', () => {
+    // L1 (col 0, w 28) vs L2 (col 0.5, w 2): the right edge comes from L1's
+    // 0 + 14, NOT from the extremal-center L2 at 7 + 1 — per-cell extents,
+    // not max-center + uniform pad.
+    const station = makeStation({
+      id: 'A',
+      stops: [makeStop('L1', { row: 0, col: 0 }), makeStop('L2', { row: 0, col: 0.5 })],
+    });
+    const box = cellsAABBLocal(station, stopHalfOf({ L1: { width: 28 }, L2: { width: 2 } }));
+    expect(box.x + box.w).toBeCloseTo(16, 6); // 14 + HIT_PAD
+  });
+});
+
+describe('stationsForRect — per-stop widths', () => {
+  it('a marquee over only the widened margin hits the station', () => {
+    // Wide stop's cells AABB right edge sits at 16; the default-width edge
+    // is 9. A rect spanning x ∈ [10, 12] touches only the widened margin.
+    const st = makeStation({ id: 'A', stops: [makeStop('L1', { row: 0, col: 0 })] });
+    const rect = { x0: 10, y0: -2, x1: 12, y1: 2 };
+    expect(stationsForRect({ A: st }, rect)).toEqual([]);
+    expect(stationsForRect({ A: st }, rect, undefined, stopHalfOf({ L1: { width: 28 } }))).toEqual([
+      'A',
+    ]);
+  });
 });
 
 describe('stationBoundaryRectsLocal', () => {

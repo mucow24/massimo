@@ -25,6 +25,22 @@ describe('nearestNode', () => {
   });
 });
 
+describe('findDropTarget — per-stop swap radius', () => {
+  it('a wide stop accepts a swap from beyond the default radius via swapRadiusFor', () => {
+    const stops = [{ lineId: 'A', row: 0, col: 0 }];
+    const cursor = { row: 0.8, col: 0 }; // outside the 0.6 default, inside a width-28 node
+    const base = { swapRadius: 0.6, snapRadius: 1.0 };
+    expect(findDropTarget(cursor, { kind: 'stop', lineId: 'B' }, stops, [], base)).toBeNull();
+    expect(
+      findDropTarget(cursor, { kind: 'stop', lineId: 'B' }, stops, [], {
+        ...base,
+        // width-28 node in the editor: 28/(2·14) + 0.1 = 1.1 row/col units.
+        swapRadiusFor: () => 1.1,
+      }),
+    ).toEqual({ kind: 'stop', row: 0, col: 0, lineId: 'A' });
+  });
+});
+
 describe('findDropTarget', () => {
   const opts = { swapRadius: 0.6, snapRadius: 1.0 };
   const stops = [

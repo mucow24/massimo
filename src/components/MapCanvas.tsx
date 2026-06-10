@@ -12,7 +12,6 @@ import {
   buildStopMarkers,
   SegmentBandSpec,
 } from '../geometry/interlining';
-import { stripeOffset } from '../geometry/orientation';
 import { effectivePolygonOrder } from '../model/transforms';
 import { rotateItemOnContextMenu } from './canvas/groupRotate';
 import { legibleTextOn } from '../util/color';
@@ -112,15 +111,24 @@ export function MapCanvas() {
   const polygonsInteractive = selection.uiMode.kind === 'idle';
 
   // Geometry hash for buildBandGeometry's inputs (stations + line topology +
-  // segmentStyles). EXCLUDES segmentLayers so layer cycles don't churn the
-  // geometry — `bandsGeometry`'s reference stays stable across them, which
-  // is what the layering-mode memos rely on. The hash itself runs once per
+  // segmentStyles + per-line width). EXCLUDES segmentLayers so layer cycles
+  // don't churn the geometry — `bandsGeometry`'s reference stays stable
+  // across them, which is what the layering-mode memos rely on. Color is
+  // also intentionally absent: a color edit must repaint WITHOUT a geometry
+  // rebuild (stripes resolve color live). Width, by contrast, IS geometry —
+  // it moves the baked paths and changes band merging — so it must be in
+  // the hash or width edits never repaint. The hash itself runs once per
   // render but is cheap (a string of stable shapes).
   const linesGeometrySig = useMemo(() => {
     const parts: string[] = [];
     for (const id of Object.keys(lines)) {
       const ln = lines[id];
-      parts.push(id, ln.stations.join('.'), Object.keys(ln.segmentStyles ?? {}).join('.'));
+      parts.push(
+        id,
+        ln.stations.join('.'),
+        Object.keys(ln.segmentStyles ?? {}).join('.'),
+        String(ln.width ?? ''),
+      );
     }
     return parts.join('|');
   }, [lines]);
@@ -138,7 +146,10 @@ export function MapCanvas() {
     // outlines we pass `bandsGeometry` directly). The spec is presentation-
     // free, so color/style aren't carried here — stripe consumers resolve
     // them live from `lines`, which is why a color/style edit repaints
-    // without the (intentionally presentation-blind) geometry memo rebuilding.
+    // without the (intentionally presentation-blind) geometry memo
+    // rebuilding. Per-stripe widths/offsets ARE on the spec — width is
+    // geometry (it shapes `paths`), so width edits flow through the
+    // geometry rebuild instead.
     const out = bandsGeometry.map((b) => ({ ...b }));
     assignLinePriorities(out, lines, lineOrder);
     return out;
@@ -351,10 +362,9 @@ export function MapCanvas() {
     onLineHover: (lineId: LineId, e: React.PointerEvent) => {
       const line = lines[lineId];
       if (!line) return;
-      // Find this stripe's offset within the band.
+      // Find this stripe's baked offset within the band.
       const k = spec.lines.findIndex((l) => l.id === lineId);
-      const n = spec.lines.length;
-      const offset = stripeOffset(k, n);
+      const offset = spec.stripeOffsets[k];
       const world = view.screenToWorld(e.clientX, e.clientY);
       const closest = closestParamOnOffsetPath(spec.centerline, spec.radius, offset, world);
       const sample = sampleOffsetPath(spec.centerline, spec.radius, offset, closest.t);
@@ -383,8 +393,7 @@ export function MapCanvas() {
       const line = lines[lineId];
       if (!line) return;
       const k = spec.lines.findIndex((l) => l.id === lineId);
-      const n = spec.lines.length;
-      const offset = stripeOffset(k, n);
+      const offset = spec.stripeOffsets[k];
       const world = view.screenToWorld(e.clientX, e.clientY);
       const closest = closestParamOnOffsetPath(spec.centerline, spec.radius, offset, world);
       const [fromCanon, toCanon] = spec.pairKey.split('|');

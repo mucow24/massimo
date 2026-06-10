@@ -3,6 +3,7 @@ import { useThemeColors } from '../state/theme';
 import type { Station } from '../model/types';
 import { resolveStationLabelWeight } from '../model/transforms';
 import { stationBoundaryRectsLocal } from '../geometry/stationBoundary';
+import { stopHalfOf } from '../model/lineWidth';
 import { polygonsToPath, unionConvex } from '../geometry/polygonUnion';
 
 const SELECTION_WASH_COLOR = '#f0ff00';
@@ -31,6 +32,7 @@ export function StationSilhouette({
   const labelFontSize = useDoc((s) => s.labelFontSize);
   const labelWeight = useDoc((s) => s.labelWeight);
   const labelItalic = useDoc((s) => s.labelItalic);
+  const lines = useDoc((s) => s.lines);
   const editingStationId = useSelection((s) => s.editingStationId);
   const themeColors = useThemeColors();
 
@@ -39,11 +41,15 @@ export function StationSilhouette({
   const angle = station.rotation * 45;
   // Smooth the union of the cells rect + (rotated) label rect; smoothing
   // applies to the outer-boundary corners only, so the rects meet cleanly.
-  const { cells, label: labelPoly } = stationBoundaryRectsLocal(station, {
-    fontSize: labelFontSize,
-    weight: resolveStationLabelWeight(labelWeight, station.labelBold),
-    italic: labelItalic,
-  });
+  const { cells, label: labelPoly } = stationBoundaryRectsLocal(
+    station,
+    {
+      fontSize: labelFontSize,
+      weight: resolveStationLabelWeight(labelWeight, station.labelBold),
+      italic: labelItalic,
+    },
+    stopHalfOf(lines),
+  );
   // Waypoint: no label polygon to merge, render the cells rect alone.
   const polygons = labelPoly ? unionConvex(cells, labelPoly) : [cells];
   const pathStr = polygonsToPath(polygons, SELECTION_CORNER_RADIUS);
