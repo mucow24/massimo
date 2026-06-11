@@ -263,3 +263,56 @@ describe('<StopGlyph /> procedural styles', () => {
     expect(svg.querySelector('[data-stop-shape]')).toBeNull();
   });
 });
+
+// ——— Size overrides (the stop/line dot-size chain) ———
+
+describe('<StopGlyph /> size override', () => {
+  function renderSized(style: DotStyle, sizeOverride: number | undefined, serviceCode?: string) {
+    const { container } = render(
+      <svg>
+        <StopGlyph
+          cx={0}
+          cy={0}
+          style={style}
+          serviceCode={serviceCode}
+          sizeOverride={sizeOverride}
+          stationId="A"
+          lineId="L1"
+        />
+      </svg>,
+    );
+    return container.querySelector('svg')!;
+  }
+
+  it('halves an explicit diameter into the circle r', () => {
+    const svg = renderSized(P['filled-black'], 12);
+    expect(svg.querySelector('circle')!.getAttribute('r')).toBe('6');
+  });
+
+  it('scales non-circle shapes through the same radius', () => {
+    const svg = renderSized({ ...P['filled-black-diamond'] }, 12);
+    const ys = parsePoints(svg.querySelector('polygon')!.getAttribute('points')!).map((c) => c[1]);
+    expect(Math.max(...ys) - Math.min(...ys)).toBeCloseTo(12, 5);
+  });
+
+  it('resizes a service-code disc and its label font with it', () => {
+    const svg = renderSized(P['filled-black-service-code'], 16, 'A');
+    const c = svg.querySelector('circle')!;
+    expect(c.getAttribute('r')).toBe('8');
+    // Code font tracks the resolved radius (r × 1.2).
+    expect(parseFloat(svg.querySelector('text')!.getAttribute('font-size')!)).toBeCloseTo(9.6, 5);
+  });
+
+  it('keeps the per-style fixed radii when no override is passed (pin)', () => {
+    const plain = renderSized(P['filled-black'], undefined);
+    expect(parseFloat(plain.querySelector('circle')!.getAttribute('r')!)).toBeCloseTo(
+      STOP_DOT_RADIUS,
+      5,
+    );
+    const code = renderSized(P['filled-black-service-code'], undefined, 'A');
+    expect(parseFloat(code.querySelector('circle')!.getAttribute('r')!)).toBeCloseTo(
+      SERVICE_CODE_DOT_RADIUS,
+      5,
+    );
+  });
+});

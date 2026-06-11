@@ -4,6 +4,7 @@ import { useThemeColors } from '../state/theme';
 import { STOP_DOT_RADIUS, stopCenterAt } from '../geometry/orientation';
 import { stopPosWorld } from '../geometry/interlining';
 import { resolveDotStyle } from '../model/transforms';
+import { dotSizeOverride } from '../model/dotSize';
 import { StopGlyph } from './StopGlyph';
 import { useStationInteraction } from './useStationInteraction';
 
@@ -65,6 +66,7 @@ export function StationDots({
             style={resolveDotStyle(lines[cell.lineId], cell)}
             lineColor={lines[cell.lineId]?.color}
             serviceCode={lines[cell.lineId]?.service}
+            sizeOverride={dotSizeOverride(lines[cell.lineId], cell)}
             isHovered={isHovered}
             stationId={station.id}
             lineId={cell.lineId}

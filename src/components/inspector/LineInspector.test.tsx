@@ -190,6 +190,93 @@ describe('<LineInspector /> — width control', () => {
   });
 });
 
+describe('<LineInspector /> — dot size control', () => {
+  beforeEach(() => {
+    localStorage.clear();
+    useDoc.setState({ ...DEFAULT_DOC });
+    useSelection.setState(SELECTION_BLANK);
+    useDoc.temporal.getState().clear();
+  });
+
+  const seed = (defaultDotSize?: number) => {
+    useDoc.setState({
+      ...DEFAULT_DOC,
+      ...makeDoc({
+        stations: [
+          makeStation({ id: 's1', stops: [makeStop('L1')] }),
+          makeStation({ id: 's2', stops: [makeStop('L1')] }),
+        ],
+        lines: [
+          // Spread conditionally — an explicit `undefined` would plant the
+          // key, and the canonical size-less form has no key at all.
+          makeLine({
+            id: 'L1',
+            stations: ['s1', 's2'],
+            ...(defaultDotSize !== undefined ? { defaultDotSize } : {}),
+          }),
+        ],
+      }),
+    });
+  };
+
+  it('renders a 0–20 step-1 slider at the line’s effective default dot size', () => {
+    seed();
+    render(<LineInspector id="L1" />);
+    const slider = screen.getByRole('slider', { name: 'Dot size' }) as HTMLInputElement;
+    expect(slider.getAttribute('min')).toBe('0');
+    expect(slider.getAttribute('max')).toBe('20');
+    expect(slider.getAttribute('step')).toBe('1');
+    expect(slider.value).toBe('8');
+  });
+
+  it('sits below the "Default stop dot" control and above Color', () => {
+    seed();
+    render(<LineInspector id="L1" />);
+    const picker = screen.getByText('Default stop dot');
+    const sizeLabel = screen.getByText('Dot size');
+    const color = screen.getByText('Color');
+    // DOCUMENT_POSITION_FOLLOWING = 4: the argument follows the receiver.
+    expect(picker.compareDocumentPosition(sizeLabel) & 4).toBe(4);
+    expect(sizeLabel.compareDocumentPosition(color) & 4).toBe(4);
+  });
+
+  it('slider edits write defaultDotSize; the default drops the key', () => {
+    seed();
+    render(<LineInspector id="L1" />);
+    const slider = screen.getByRole('slider', { name: 'Dot size' });
+    fireEvent.change(slider, { target: { value: '12' } });
+    expect(useDoc.getState().lines.L1.defaultDotSize).toBe(12);
+    fireEvent.change(slider, { target: { value: '8' } });
+    expect('defaultDotSize' in useDoc.getState().lines.L1).toBe(false);
+  });
+
+  it('the spinbutton floors at 0 and is uncapped above the slider max', () => {
+    seed();
+    render(<LineInspector id="L1" />);
+    const spin = screen.getByRole('spinbutton', { name: 'Dot size' });
+    expect(spin.getAttribute('min')).toBe('0');
+    expect(spin.getAttribute('max')).toBeNull();
+    fireEvent.change(spin, { target: { value: '32' } });
+    expect(useDoc.getState().lines.L1.defaultDotSize).toBe(32);
+  });
+
+  it('one slider focus-arc collapses to a single undo entry', () => {
+    seed();
+    useDoc.temporal.getState().clear();
+    render(<LineInspector id="L1" />);
+    const slider = screen.getByRole('slider', { name: 'Dot size' });
+    const before = historyDepth();
+    fireEvent.focus(slider);
+    fireEvent.change(slider, { target: { value: '10' } });
+    fireEvent.change(slider, { target: { value: '14' } });
+    fireEvent.change(slider, { target: { value: '16' } });
+    fireEvent.blur(slider);
+    expect(historyDepth()).toBe(before + 1);
+    useDoc.temporal.getState().undo();
+    expect('defaultDotSize' in useDoc.getState().lines.L1).toBe(false);
+  });
+});
+
 describe('<LineInspector /> — stroke controls', () => {
   beforeEach(() => {
     localStorage.clear();
