@@ -1,6 +1,7 @@
 import { describe, it, expect } from 'vitest';
 import * as T from './transforms';
 import { DEFAULT_DOT_STYLE, DOT_SHAPE_PRESETS } from './dotStyle';
+import { DOT_SIZE_DEFAULT } from './dotSize';
 import { measureTextLabel } from '../geometry/textMeasure';
 import {
   makeDoc,
@@ -1944,6 +1945,199 @@ describe('setLineDefaultDotStyle', () => {
     const next = T.setLineDefaultDotStyle(doc, 'L1', DOT_SHAPE_PRESETS['open-white']);
     expect(next.stations.a.stops[0].dotStyle).toBeUndefined();
     expect(next.stations.a.stops[1].dotStyle).toEqual(DOT_SHAPE_PRESETS['open-white']);
+  });
+});
+
+describe('setDotSize', () => {
+  it('writes the size onto the targeted stop only', () => {
+    const doc = makeDoc({
+      stations: [makeStation({ id: 'a', stops: [makeStop('L1'), makeStop('L2', { col: 1 })] })],
+      lines: [makeLine({ id: 'L1' }), makeLine({ id: 'L2' })],
+    });
+    const next = T.setDotSize(doc, 'a', 'L1', 16);
+    expect(next.stations.a.stops[0].dotSize).toBe(16);
+    expect(next.stations.a.stops[1].dotSize).toBeUndefined();
+  });
+
+  it('leaves sibling stations untouched', () => {
+    const doc = makeDoc({
+      stations: [
+        makeStation({ id: 'a', stops: [makeStop('L1')] }),
+        makeStation({ id: 'b', stops: [makeStop('L1')] }),
+      ],
+      lines: [makeLine({ id: 'L1' })],
+    });
+    const next = T.setDotSize(doc, 'a', 'L1', 16);
+    expect(next.stations.a.stops[0].dotSize).toBe(16);
+    expect(next.stations.b.stops[0].dotSize).toBeUndefined();
+  });
+
+  it("clears an existing override when set to the line's EFFECTIVE default", () => {
+    const doc = makeDoc({
+      stations: [makeStation({ id: 'a', stops: [makeStop('L1', { dotSize: 12 })] })],
+      lines: [makeLine({ id: 'L1', defaultDotSize: 10 })],
+    });
+    const next = T.setDotSize(doc, 'a', 'L1', 10);
+    expect('dotSize' in next.stations.a.stops[0]).toBe(false);
+  });
+
+  it('clears an existing override when set to the implicit default', () => {
+    const doc = makeDoc({
+      stations: [makeStation({ id: 'a', stops: [makeStop('L1', { dotSize: 12 })] })],
+      lines: [makeLine({ id: 'L1' })],
+    });
+    const next = T.setDotSize(doc, 'a', 'L1', DOT_SIZE_DEFAULT);
+    expect('dotSize' in next.stations.a.stops[0]).toBe(false);
+  });
+
+  it("stores the global default as an explicit override when the line's default differs", () => {
+    const doc = makeDoc({
+      stations: [makeStation({ id: 'a', stops: [makeStop('L1')] })],
+      lines: [makeLine({ id: 'L1', defaultDotSize: 10 })],
+    });
+    const next = T.setDotSize(doc, 'a', 'L1', DOT_SIZE_DEFAULT);
+    expect(next.stations.a.stops[0].dotSize).toBe(DOT_SIZE_DEFAULT);
+  });
+
+  it('rounds to the integer grid and clamps to ≥ DOT_SIZE_MIN', () => {
+    const doc = makeDoc({
+      stations: [makeStation({ id: 'a', stops: [makeStop('L1')] })],
+      lines: [makeLine({ id: 'L1' })],
+    });
+    expect(T.setDotSize(doc, 'a', 'L1', 7.4).stations.a.stops[0].dotSize).toBe(7);
+    expect(T.setDotSize(doc, 'a', 'L1', -3).stations.a.stops[0].dotSize).toBe(0);
+  });
+
+  it('ignores non-finite input (same reference out)', () => {
+    const doc = makeDoc({
+      stations: [makeStation({ id: 'a', stops: [makeStop('L1')] })],
+      lines: [makeLine({ id: 'L1' })],
+    });
+    expect(T.setDotSize(doc, 'a', 'L1', NaN)).toBe(doc);
+    expect(T.setDotSize(doc, 'a', 'L1', Infinity)).toBe(doc);
+  });
+
+  it('returns the same doc reference when the stored form is unchanged', () => {
+    const doc = makeDoc({
+      stations: [makeStation({ id: 'a', stops: [makeStop('L1', { dotSize: 16 })] })],
+      lines: [makeLine({ id: 'L1' })],
+    });
+    expect(T.setDotSize(doc, 'a', 'L1', 16)).toBe(doc);
+    // A tracking stop set to the effective default is equally a no-op.
+    const tracking = makeDoc({
+      stations: [makeStation({ id: 'b', stops: [makeStop('L1')] })],
+      lines: [makeLine({ id: 'L1' })],
+    });
+    expect(T.setDotSize(tracking, 'b', 'L1', DOT_SIZE_DEFAULT)).toBe(tracking);
+  });
+
+  it('silently no-ops on unknown station / line without a stop', () => {
+    const doc = makeDoc({
+      stations: [makeStation({ id: 'a', stops: [makeStop('L1')] })],
+      lines: [makeLine({ id: 'L1' })],
+    });
+    expect(T.setDotSize(doc, 'ghost', 'L1', 16)).toBe(doc);
+    expect(T.setDotSize(doc, 'a', 'L99', 16)).toBe(doc);
+  });
+});
+
+describe('setLineDefaultDotSize', () => {
+  it('stores a non-default size', () => {
+    const doc = makeDoc({ lines: [makeLine({ id: 'L1' })] });
+    const next = T.setLineDefaultDotSize(doc, 'L1', 12);
+    expect(next.lines.L1.defaultDotSize).toBe(12);
+  });
+
+  it('drops the field when set to DOT_SIZE_DEFAULT', () => {
+    const doc = makeDoc({ lines: [makeLine({ id: 'L1', defaultDotSize: 12 })] });
+    const next = T.setLineDefaultDotSize(doc, 'L1', DOT_SIZE_DEFAULT);
+    expect('defaultDotSize' in next.lines.L1).toBe(false);
+  });
+
+  it('a value that rounds onto the default is dropped like an exact one', () => {
+    const doc = makeDoc({ lines: [makeLine({ id: 'L1', defaultDotSize: 12 })] });
+    const next = T.setLineDefaultDotSize(doc, 'L1', DOT_SIZE_DEFAULT + 0.3);
+    expect('defaultDotSize' in next.lines.L1).toBe(false);
+  });
+
+  it('reference-equal no-ops: unchanged value, unknown id, non-finite input', () => {
+    const doc = makeDoc({ lines: [makeLine({ id: 'L1', defaultDotSize: 12 })] });
+    expect(T.setLineDefaultDotSize(doc, 'L1', 12)).toBe(doc);
+    expect(T.setLineDefaultDotSize(doc, 'ghost', 16)).toBe(doc);
+    expect(T.setLineDefaultDotSize(doc, 'L1', NaN)).toBe(doc);
+    const bare = makeDoc({ lines: [makeLine({ id: 'L1' })] });
+    expect(T.setLineDefaultDotSize(bare, 'L1', DOT_SIZE_DEFAULT)).toBe(bare);
+  });
+
+  it('clears per-stop overrides equal to the NEW default; different overrides untouched', () => {
+    const doc = makeDoc({
+      stations: [
+        makeStation({ id: 'a', stops: [makeStop('L1', { dotSize: 10 })] }),
+        makeStation({ id: 'b', stops: [makeStop('L1', { dotSize: 16 })] }),
+        makeStation({ id: 'c', stops: [makeStop('L1')] }),
+      ],
+      lines: [makeLine({ id: 'L1' })],
+    });
+    const next = T.setLineDefaultDotSize(doc, 'L1', 10);
+    // 'a' matched the new default — override cleared.
+    expect('dotSize' in next.stations.a.stops[0]).toBe(false);
+    // 'b' had a different explicit size — left alone.
+    expect(next.stations.b.stops[0].dotSize).toBe(16);
+    // 'c' had no override — still none.
+    expect(next.stations.c.stops[0].dotSize).toBeUndefined();
+  });
+
+  it('leaves overrides on OTHER lines untouched when a default changes', () => {
+    const doc = makeDoc({
+      stations: [
+        makeStation({
+          id: 'a',
+          stops: [makeStop('L1', { dotSize: 10 }), makeStop('L2', { col: 1, dotSize: 10 })],
+        }),
+      ],
+      lines: [makeLine({ id: 'L1' }), makeLine({ id: 'L2' })],
+    });
+    const next = T.setLineDefaultDotSize(doc, 'L1', 10);
+    expect('dotSize' in next.stations.a.stops[0]).toBe(false);
+    expect(next.stations.a.stops[1].dotSize).toBe(10);
+  });
+
+  it('clears per-stop default-size overrides when the default is reset to the default', () => {
+    const doc = makeDoc({
+      stations: [makeStation({ id: 'a', stops: [makeStop('L1', { dotSize: DOT_SIZE_DEFAULT })] })],
+      lines: [makeLine({ id: 'L1', defaultDotSize: 12 })],
+    });
+    const next = T.setLineDefaultDotSize(doc, 'L1', DOT_SIZE_DEFAULT);
+    expect('defaultDotSize' in next.lines.L1).toBe(false);
+    expect('dotSize' in next.stations.a.stops[0]).toBe(false);
+  });
+
+  it('acceptance: default 7, stop at 8 — 7→9 keeps 8; 7→8 absorbs it; 8→9 moves the stop', () => {
+    let doc = makeDoc({
+      stations: [
+        makeStation({ id: 's', stops: [makeStop('L1')] }),
+        makeStation({ id: 't', stops: [makeStop('L1')] }),
+      ],
+      lines: [makeLine({ id: 'L1' })],
+    });
+    doc = T.setLineDefaultDotSize(doc, 'L1', 7);
+    doc = T.setDotSize(doc, 's', 'L1', 8);
+    expect(doc.stations.s.stops[0].dotSize).toBe(8);
+
+    // 7 → 9: S's explicit 8 is untouched; tracking T follows the default.
+    doc = T.setLineDefaultDotSize(doc, 'L1', 9);
+    expect(doc.stations.s.stops[0].dotSize).toBe(8);
+    expect(doc.stations.t.stops[0].dotSize).toBeUndefined();
+    expect(doc.lines.L1.defaultDotSize).toBe(9);
+
+    // 9 → 8: S's override equals the new default — absorbed.
+    doc = T.setLineDefaultDotSize(doc, 'L1', 8);
+    expect('dotSize' in doc.stations.s.stops[0]).toBe(false);
+
+    // 8 → 9: S now tracks the default along with T.
+    doc = T.setLineDefaultDotSize(doc, 'L1', 9);
+    expect(doc.stations.s.stops[0].dotSize).toBeUndefined();
+    expect(doc.lines.L1.defaultDotSize).toBe(9);
   });
 });
 

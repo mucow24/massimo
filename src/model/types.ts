@@ -61,7 +61,8 @@ export type DotStrokeColor = DayNightColor | 'line';
 // (`dotStylesEqual`) works everywhere. The clean-persisted-state convention
 // lives one level up instead, in the presence/absence of `StopCell.dotStyle`
 // and `Line.defaultDotStyle`. Size is intentionally NOT part of the style —
-// it will become a line option; rendering uses the fixed radii for now.
+// it's the orthogonal `StopCell.dotSize` / `Line.defaultDotSize` pair, so
+// picking a shape preset never clobbers a size (and vice versa).
 export interface DotStyle {
   shape: DotBaseShape;
   fill: DotFill;
@@ -85,6 +86,11 @@ export interface StopCell {
   // saves carried a `dotShape` preset id here — converted on load (see
   // convertLegacyDotShapes in serialize.ts).
   dotStyle?: DotStyle;
+  // Per-stop dot size override — the dot's DIAMETER in px. `undefined`
+  // defers to the line's `defaultDotSize`; the setter (`setDotSize`) drops
+  // the field when the chosen size equals the line's effective default, so
+  // the stop tracks the default going forward (same contract as `dotStyle`).
+  dotSize?: number;
 }
 
 // Alignment of the rendered label text relative to the label cell, expressed
@@ -195,6 +201,15 @@ export interface Line {
   // never stored. Legacy saves carried a `defaultDotShape` preset id —
   // converted on load (see convertLegacyDotShapes in serialize.ts).
   defaultDotStyle?: DotStyle;
+  // Dot DIAMETER in px for stops on this line whose own `dotSize` is unset.
+  // Missing ⇒ DOT_SIZE_DEFAULT (= 2 × STOP_DOT_RADIUS) — no migration needed
+  // for older saves, same idiom as `width`. The setter
+  // (`setLineDefaultDotSize`) clamps to ≥ DOT_SIZE_MIN, rounds to an
+  // integer, and drops the field at the default so it is never stored. An
+  // EXPLICIT size (here or per-stop) applies to every dot style including
+  // service-code discs; only the fully-default chain keeps the larger
+  // SERVICE_CODE_DOT_RADIUS (see resolveDotRender's sizeOverride param).
+  defaultDotSize?: number;
   // Stripe width in world units. Missing ⇒ LINE_WIDTH_DEFAULT (= STOP_SIZE,
   // the historical constant) — no migration needed for older saves. The
   // setter (`setLineWidth`) clamps to ≥ LINE_WIDTH_MIN, rounds to an integer,

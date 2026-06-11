@@ -87,6 +87,39 @@ describe('resolveDotRender', () => {
     );
   });
 
+  describe('size override', () => {
+    it('halves an explicit diameter into r', () => {
+      expect(resolveDotRender(style(), undefined, undefined, false, 9)!.r).toBe(4.5);
+      expect(resolveDotRender(style(), undefined, undefined, false, 16)!.r).toBe(8);
+    });
+
+    it('applies the explicit size to service-code discs too, keeping the code', () => {
+      const withCode = style({ showServiceCode: true });
+      const out = resolveDotRender(withCode, undefined, 'A', false, 8)!;
+      expect(out.r).toBe(4);
+      expect(out.code).toEqual({ text: 'A', color: '#fff' });
+    });
+
+    it('keeps the per-style fixed radii when no override exists (pin)', () => {
+      expect(resolveDotRender(style(), undefined, undefined, false, undefined)!.r).toBe(
+        STOP_DOT_RADIUS,
+      );
+      const withCode = style({ showServiceCode: true });
+      expect(resolveDotRender(withCode, undefined, 'A', false, undefined)!.r).toBe(
+        SERVICE_CODE_DOT_RADIUS,
+      );
+    });
+
+    it('size 0 resolves to r 0 (invisible but present)', () => {
+      expect(resolveDotRender(style(), undefined, undefined, false, 0)!.r).toBe(0);
+    });
+
+    it('an invisible style stays null regardless of size', () => {
+      const s = style({ fill: 'none', strokeWidth: 0 });
+      expect(resolveDotRender(s, undefined, undefined, false, 12)).toBeNull();
+    });
+  });
+
   describe('service code', () => {
     it("falls back to '?' when the caller has no line in scope", () => {
       const out = resolveDotRender(style({ showServiceCode: true }), undefined, undefined, false)!;

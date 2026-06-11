@@ -14,6 +14,10 @@ interface Props {
   // Text for styles with showServiceCode; falls back to '?' when the caller
   // has no line in scope (same convention as badgeColors).
   serviceCode?: string;
+  // Explicit dot DIAMETER from the stop/line override chain — pass
+  // `dotSizeOverride(line, stop)`, NOT the resolved size, or
+  // default-tracking service-code discs would shrink from r 6 to r 4.
+  sizeOverride?: number;
   isHovered?: boolean;
   // Tagged for E2E selection. The test seam is more reliable than guessing
   // by element type + fill, especially for invisible styles (where there's
@@ -86,12 +90,19 @@ export function StopGlyph({
   style,
   lineColor,
   serviceCode,
+  sizeOverride,
   isHovered,
   stationId,
   lineId,
 }: Props) {
   const darkMode = useViewportStore((s) => s.darkMode);
-  const params = resolveDotRender(style ?? DEFAULT_DOT_STYLE, lineColor, serviceCode, darkMode);
+  const params = resolveDotRender(
+    style ?? DEFAULT_DOT_STYLE,
+    lineColor,
+    serviceCode,
+    darkMode,
+    sizeOverride,
+  );
   if (!params) return null;
 
   const dataAttrs = {

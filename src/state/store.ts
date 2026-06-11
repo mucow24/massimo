@@ -193,6 +193,7 @@ interface DocState extends MapDoc {
   renameStation: (id: StationId, name: string) => void;
   moveStation: (id: StationId, x: number, y: number) => void;
   setDotStyle: (stationId: StationId, lineId: LineId, style: DotStyle) => void;
+  setDotSize: (stationId: StationId, lineId: LineId, size: number) => void;
   setStationWaypoint: (stationId: StationId, isWaypoint: boolean) => void;
   redistributeBetween: (
     startId: StationId,
@@ -235,6 +236,7 @@ interface DocState extends MapDoc {
     dir: -1 | 1,
   ) => void;
   setLineDefaultDotStyle: (lineId: LineId, style: DotStyle) => void;
+  setLineDefaultDotSize: (lineId: LineId, size: number) => void;
   setLineWidth: (lineId: LineId, w: number) => void;
   setLineStrokeWidth: (lineId: LineId, w: number) => void;
   setLineStrokeColor: (lineId: LineId, c: string) => void;
@@ -331,6 +333,8 @@ export const useDoc = create<DocState>()(
         moveStation: (id, x, y) => set((s) => T.moveStation(s, id, x, y)),
         setDotStyle: (stationId, lineId, style) =>
           set((s) => T.setDotStyle(s, stationId, lineId, style)),
+        setDotSize: (stationId, lineId, size) =>
+          set((s) => T.setDotSize(s, stationId, lineId, size)),
         setStationWaypoint: (stationId, isWaypoint) =>
           set((s) => T.setStationWaypoint(s, stationId, isWaypoint)),
         redistributeBetween: (startId, endId, mode = 'arc-bends', gridMode = 'off') =>
@@ -378,6 +382,8 @@ export const useDoc = create<DocState>()(
           set((s) => T.cycleSegmentLayer(s, lineId, fromStationId, toStationId, dir)),
         setLineDefaultDotStyle: (lineId, style) =>
           set((s) => T.setLineDefaultDotStyle(s, lineId, style)),
+        setLineDefaultDotSize: (lineId, size) =>
+          set((s) => T.setLineDefaultDotSize(s, lineId, size)),
         setLineWidth: (lineId, w) => set((s) => T.setLineWidth(s, lineId, w)),
         setLineStrokeWidth: (lineId, w) => set((s) => T.setLineStrokeWidth(s, lineId, w)),
         setLineStrokeColor: (lineId, c) => set((s) => T.setLineStrokeColor(s, lineId, c)),

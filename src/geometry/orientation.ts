@@ -3,7 +3,10 @@ import type { StopOrientation } from '../model/types';
 
 export const STOP_SIZE = 14;
 export const STOP_GAP = 0;
-export const STOP_DOT_RADIUS = STOP_SIZE * 0.28;
+// Historically STOP_SIZE * 0.28 = 3.92; pinned to 4 so the default dot
+// DIAMETER (DOT_SIZE_DEFAULT = 2 × this) is a clean integer reachable from
+// the step-1 dot-size slider. ~2% visual growth, accepted.
+export const STOP_DOT_RADIUS = 4;
 
 export type Rotation = 0 | 1 | 2 | 3 | 4 | 5 | 6 | 7;
 

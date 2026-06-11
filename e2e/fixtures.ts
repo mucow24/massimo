@@ -9,7 +9,9 @@ export interface SeedStation {
   x: number;
   y: number;
   rotation?: number;
-  stops: { lineId: string; row: number; col: number; orientation?: string }[];
+  // dotSize: per-stop dot diameter override in px. Omit to simulate a stop
+  // saved before the field existed (tracks the line default).
+  stops: { lineId: string; row: number; col: number; orientation?: string; dotSize?: number }[];
   label?: {
     row: number;
     col: number;
@@ -32,6 +34,9 @@ export interface SeedLine {
   // existed (renders with no casing / the default white).
   strokeWidth?: number;
   strokeColor?: string;
+  // Default stop dot diameter in px. Omit to simulate a line saved before
+  // the field existed (dots render at the global default size).
+  defaultDotSize?: number;
 }
 
 export interface SeedRouteBullet {
@@ -107,6 +112,9 @@ export async function seedAndOpen(
         row: c.row,
         col: c.col,
         orientation: c.orientation ?? 'auto-vertical',
+        // Only include dotSize when provided, so an omitted value persists
+        // as a pre-dot-size (legacy) stop.
+        ...(c.dotSize !== undefined ? { dotSize: c.dotSize } : {}),
       })),
       label: s.label
         ? { align: 'auto', valign: 'middle', ...s.label }
@@ -125,6 +133,7 @@ export async function seedAndOpen(
       ...(l.width !== undefined ? { width: l.width } : {}),
       ...(l.strokeWidth !== undefined ? { strokeWidth: l.strokeWidth } : {}),
       ...(l.strokeColor !== undefined ? { strokeColor: l.strokeColor } : {}),
+      ...(l.defaultDotSize !== undefined ? { defaultDotSize: l.defaultDotSize } : {}),
     };
   }
 

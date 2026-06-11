@@ -1,4 +1,4 @@
-import { STOP_SIZE } from '../../geometry/orientation';
+import { STOP_DOT_RADIUS } from '../../geometry/orientation';
 import type { SnapGuide } from '../../geometry/snap';
 
 interface Props {
@@ -35,7 +35,7 @@ export function SnapGuides({ guides, zoom }: Props) {
             <circle
               cx={g.from.x}
               cy={g.from.y}
-              r={STOP_SIZE * 0.28 + 1 / zoom}
+              r={STOP_DOT_RADIUS + 1 / zoom}
               fill="none"
               stroke="rgb(185, 218, 255)"
               strokeWidth={5 / zoom}
@@ -43,7 +43,7 @@ export function SnapGuides({ guides, zoom }: Props) {
             <circle
               cx={g.to.x}
               cy={g.to.y}
-              r={STOP_SIZE * 0.28 + 1 / zoom}
+              r={STOP_DOT_RADIUS + 1 / zoom}
               fill="none"
               stroke="rgb(185, 218, 255)"
               strokeWidth={5 / zoom}
