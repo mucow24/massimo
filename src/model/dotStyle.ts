@@ -144,12 +144,23 @@ export function resolveDotRender(
   lineColor: string | undefined,
   serviceCode: string | undefined,
   darkMode: boolean,
+  // Explicit dot DIAMETER from the stop/line override chain
+  // (`dotSizeOverride`), halved into r. undefined = fully tracking
+  // defaults: keep SERVICE_CODE_DOT_RADIUS for code discs and
+  // STOP_DOT_RADIUS otherwise. Callers must pass the override, never the
+  // resolved size, or default-tracking code discs would shrink to r 4.
+  sizeOverride?: number,
 ): DotRenderParams | null {
   if (style.fill === 'none' && style.strokeWidth === 0 && !style.showServiceCode) return null;
   const fill = resolveFill(style.fill, lineColor, darkMode);
   const out: DotRenderParams = {
     shape: style.shape,
-    r: style.showServiceCode ? SERVICE_CODE_DOT_RADIUS : STOP_DOT_RADIUS,
+    r:
+      sizeOverride !== undefined
+        ? sizeOverride / 2
+        : style.showServiceCode
+          ? SERVICE_CODE_DOT_RADIUS
+          : STOP_DOT_RADIUS,
     fill,
   };
   if (style.strokeWidth > 0) {

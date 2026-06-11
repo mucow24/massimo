@@ -5,6 +5,7 @@ import {
   TEXT_LABEL_DARK_COLOR_DEFAULT,
 } from './transforms';
 import { LINE_WIDTH_DEFAULT, LINE_WIDTH_MIN } from './lineWidth';
+import { DOT_SIZE_DEFAULT, DOT_SIZE_MIN } from './dotSize';
 import {
   LINE_STROKE_COLOR_DEFAULT,
   LINE_STROKE_STEP,
@@ -158,7 +159,9 @@ export function parse(json: string): ParseResult {
   let linesChanged = false;
   for (const id of Object.keys(merged.lines)) {
     const line = merged.lines[id];
-    const cleaned = sanitizeLineStroke(sanitizeLineWidth(sanitizeSegmentStyles(line)));
+    const cleaned = sanitizeLineDotSize(
+      sanitizeLineStroke(sanitizeLineWidth(sanitizeSegmentStyles(line))),
+    );
     if (cleaned !== line) linesChanged = true;
     cleanedLines[id] = cleaned;
   }
@@ -174,6 +177,11 @@ export function parse(json: string): ParseResult {
     merged.stations = dots.stations;
     merged.lines = dots.lines;
   }
+  // Sanitize per-stop dot sizes AFTER the line pass: the canonical stored
+  // form depends on the line's effective default, so the comparison must use
+  // sanitized line values.
+  const sizes = sanitizeStopDotSizes(merged.stations, merged.lines);
+  if (sizes.changed) merged.stations = sizes.stations;
   const cleanedPolygons = backfillPolygonDarkColors(merged.polygons);
   if (cleanedPolygons.changed) merged.polygons = cleanedPolygons.polygons;
   const cleanedLabels = backfillTextLabelColors(merged.textLabels);
@@ -423,6 +431,65 @@ function sanitizeLineWidth(line: Line): Line {
   }
   const { width: _gone, ...rest } = line;
   return rest;
+}
+
+// Normalize a hand-edited / legacy `defaultDotSize` to the canonical stored
+// form the transforms maintain: integer ≥ DOT_SIZE_MIN, and absent when it
+// equals the default (the app never stores the default). Non-numbers and
+// non-finite values are dropped. File-import hygiene only — localStorage
+// rehydration never sees uncanonical sizes because every write goes through
+// `setLineDefaultDotSize`'s clamp.
+function sanitizeLineDotSize(line: Line): Line {
+  if (!('defaultDotSize' in line)) return line;
+  const raw = line.defaultDotSize as unknown;
+  if (typeof raw === 'number' && Number.isFinite(raw)) {
+    const norm = Math.max(DOT_SIZE_MIN, Math.round(raw));
+    if (norm !== DOT_SIZE_DEFAULT) {
+      return norm === line.defaultDotSize ? line : { ...line, defaultDotSize: norm };
+    }
+  }
+  const { defaultDotSize: _gone, ...rest } = line;
+  return rest;
+}
+
+// Normalize hand-edited / legacy per-stop `dotSize` values to the canonical
+// stored form `setDotSize` maintains: integer ≥ DOT_SIZE_MIN, and absent
+// when it equals the line's EFFECTIVE default. Needs line context, so it
+// runs after the per-line cleaning — the comparison must use sanitized
+// line defaults. Non-numbers and non-finite values are dropped.
+export function sanitizeStopDotSizes(
+  stations: Record<string, Station>,
+  lines: Record<string, Line>,
+): { stations: Record<string, Station>; changed: boolean } {
+  let changed = false;
+  const next: Record<string, Station> = {};
+  for (const sid of Object.keys(stations)) {
+    const st = stations[sid];
+    let stopsChanged = false;
+    const stops = st.stops.map((s) => {
+      if (!('dotSize' in s)) return s;
+      const raw = s.dotSize as unknown;
+      if (typeof raw === 'number' && Number.isFinite(raw)) {
+        const norm = Math.max(DOT_SIZE_MIN, Math.round(raw));
+        const effDefault = lines[s.lineId]?.defaultDotSize ?? DOT_SIZE_DEFAULT;
+        if (norm !== effDefault) {
+          if (norm === s.dotSize) return s;
+          stopsChanged = true;
+          return { ...s, dotSize: norm };
+        }
+      }
+      stopsChanged = true;
+      const { dotSize: _gone, ...rest } = s;
+      return rest;
+    });
+    if (stopsChanged) {
+      changed = true;
+      next[sid] = { ...st, stops };
+    } else {
+      next[sid] = st;
+    }
+  }
+  return { stations: next, changed };
 }
 
 // Normalize hand-edited / legacy casing fields to the canonical stored form

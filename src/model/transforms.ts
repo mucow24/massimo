@@ -1,6 +1,7 @@
 import { autoOrientNewStation } from './autoOrient';
 import { effectiveLineOrder } from './lineOrder';
 import { LINE_WIDTH_DEFAULT, LINE_WIDTH_MIN } from './lineWidth';
+import { DOT_SIZE_DEFAULT, DOT_SIZE_MIN } from './dotSize';
 import {
   LINE_STROKE_COLOR_DEFAULT,
   LINE_STROKE_STEP,
@@ -303,6 +304,72 @@ export function setLineDefaultDotStyle(doc: MapDoc, id: LineId, style: DotStyle)
       }
       stopsChanged = true;
       const { dotStyle: _gone, ...rest } = s;
+      return rest;
+    });
+    if (stopsChanged) stations = { ...stations, [sid]: { ...st, stops } };
+  }
+  return { ...doc, lines: { ...doc.lines, [id]: nextLine }, stations };
+}
+
+// Per-stop dot size override — the dot's DIAMETER in px. Non-finite input is
+// ignored; otherwise the value is rounded and clamped to ≥ DOT_SIZE_MIN.
+// Setting the line's EFFECTIVE default clears the override so the stop
+// tracks the default going forward (same contract as `setDotStyle`).
+// Reference-equal no-ops keep textbox keystrokes out of the undo history.
+export function setDotSize(
+  doc: MapDoc,
+  stationId: StationId,
+  lineId: LineId,
+  size: number,
+): MapDoc {
+  if (!Number.isFinite(size)) return doc;
+  const norm = Math.max(DOT_SIZE_MIN, Math.round(size));
+  const effDefault = doc.lines[lineId]?.defaultDotSize ?? DOT_SIZE_DEFAULT;
+  const stored = norm === effDefault ? undefined : norm;
+  return updateStation(doc, stationId, (cur) => {
+    let changed = false;
+    const stops = cur.stops.map((s) => {
+      if (s.lineId !== lineId || s.dotSize === stored) return s;
+      changed = true;
+      if (stored === undefined) {
+        const { dotSize: _gone, ...rest } = s;
+        return rest;
+      }
+      return { ...s, dotSize: stored };
+    });
+    return changed ? { ...cur, stops } : cur;
+  });
+}
+
+// Per-line default dot size (DIAMETER in px). Same normalization grid as
+// `setLineWidth` (non-finite ignored, rounded, floor-clamped, dropped at the
+// default, reference-equal no-ops) PLUS the `setLineDefaultDotStyle`
+// cascade: any per-stop override equal to the NEW effective default is now
+// redundant — drop it so those stops track the default going forward.
+export function setLineDefaultDotSize(doc: MapDoc, id: LineId, size: number): MapDoc {
+  const cur = doc.lines[id];
+  if (!cur || !Number.isFinite(size)) return doc;
+  const norm = Math.max(DOT_SIZE_MIN, Math.round(size));
+  const stored = norm === DOT_SIZE_DEFAULT ? undefined : norm;
+  if (cur.defaultDotSize === stored) return doc;
+  let nextLine: Line;
+  if (stored === undefined) {
+    const { defaultDotSize: _gone, ...rest } = cur;
+    nextLine = rest;
+  } else {
+    nextLine = { ...cur, defaultDotSize: stored };
+  }
+  // The cascade compares against `norm` (the new EFFECTIVE default), not
+  // `stored` — resetting to the global default must also absorb overrides
+  // that equal DOT_SIZE_DEFAULT.
+  let stations = doc.stations;
+  for (const sid of Object.keys(stations)) {
+    const st = stations[sid];
+    let stopsChanged = false;
+    const stops = st.stops.map((s) => {
+      if (s.lineId !== id || s.dotSize !== norm) return s;
+      stopsChanged = true;
+      const { dotSize: _gone, ...rest } = s;
       return rest;
     });
     if (stopsChanged) stations = { ...stations, [sid]: { ...st, stops } };

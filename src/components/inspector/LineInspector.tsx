@@ -22,6 +22,12 @@ import {
   lineWidthOf,
 } from '../../model/lineWidth';
 import {
+  DOT_SIZE_MAX,
+  DOT_SIZE_MIN,
+  dotSizeOverride,
+  lineDefaultDotSizeOf,
+} from '../../model/dotSize';
+import {
   LINE_STROKE_STEP,
   LINE_STROKE_WIDTH_MAX,
   LINE_STROKE_WIDTH_MIN,
@@ -151,6 +157,7 @@ export function LineInspector({ id }: { id: LineId }) {
   const removeStationFromLine = useDoc((s) => s.removeStationFromLine);
   const setDotStyle = useDoc((s) => s.setDotStyle);
   const setLineDefaultDotStyle = useDoc((s) => s.setLineDefaultDotStyle);
+  const setLineDefaultDotSize = useDoc((s) => s.setLineDefaultDotSize);
   const setLineWidth = useDoc((s) => s.setLineWidth);
   const setLineStrokeWidth = useDoc((s) => s.setLineStrokeWidth);
   const setLineStrokeColor = useDoc((s) => s.setLineStrokeColor);
@@ -220,6 +227,17 @@ export function LineInspector({ id }: { id: LineId }) {
           onPick={(shape) => setLineDefaultDotStyle(line.id, DOT_SHAPE_PRESETS[shape])}
         />
       </div>
+      <NumericFieldRow
+        id={`line-dot-size-${line.id}`}
+        label="Dot size"
+        min={DOT_SIZE_MIN}
+        max={DOT_SIZE_MAX}
+        step={1}
+        value={lineDefaultDotSizeOf(line)}
+        onChange={(n) => setLineDefaultDotSize(line.id, n)}
+        getCurrent={() => lineDefaultDotSizeOf(useDoc.getState().lines[id])}
+        textboxAllowAboveMax
+      />
       <div className="field">
         <label>Color</label>
         <ColorPalette value={line.color} onChange={(c) => updateLine(line.id, { color: c })} />
@@ -417,6 +435,7 @@ export function LineInspector({ id }: { id: LineId }) {
                           style={style}
                           lineColor={line.color}
                           serviceCode={line.service}
+                          sizeOverride={dotSizeOverride(line, stop)}
                         />
                       </g>
                     );

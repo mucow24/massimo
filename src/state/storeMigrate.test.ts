@@ -189,10 +189,21 @@ describe('migrateDoc', () => {
     });
 
     it('returns the input as-is when already at the current version', () => {
-      // `width` rides along untouched — the per-line width field is optional
-      // with a runtime default, so it needs NO migration (and adding one
-      // would break this reference-equality pin).
-      const input = { lines: { L1: { service: 'A', name: 'A line', stations: [], width: 21 } } };
+      // `width`, `defaultDotSize`, and per-stop `dotSize` ride along
+      // untouched — each field is optional with a runtime default, so none
+      // needs a migration (and adding one would break this
+      // reference-equality pin).
+      const input = {
+        stations: {
+          S: {
+            ...makeStation({ id: 'S' as StationId }),
+            stops: [{ ...makeStop('L1' as LineId), dotSize: 16 }],
+          },
+        },
+        lines: {
+          L1: { service: 'A', name: 'A line', stations: ['S'], width: 21, defaultDotSize: 12 },
+        },
+      };
       const out = run(input, 7);
       // No migration applies → same reference passes straight through.
       expect(out).toBe(input);

@@ -7,10 +7,12 @@ import { StopGrid } from './StopGrid';
 import { LabelOffsetControl } from './LabelOffsetControl';
 import { LabelAlignButton, LabelValignButton } from './LabelAlignButtons';
 import { useFieldHistory } from '../useFieldHistory';
+import { useNumericField } from '../useNumericField';
 import { useDismiss } from '../usePopover';
 import { StationShapePicker } from '../StationShapePicker';
 import { resolveDotStyle, resolveOffsetPerp } from '../../model/transforms';
 import { DEFAULT_DOT_STYLE, DOT_SHAPE_PRESETS } from '../../model/dotStyle';
+import { DOT_SIZE_DEFAULT, DOT_SIZE_MIN, resolveDotSize } from '../../model/dotSize';
 
 export function StationInspector({ id }: { id: StationId }) {
   const station = useDoc((s) => s.stations[id]);
@@ -30,6 +32,7 @@ export function StationInspector({ id }: { id: StationId }) {
   const cycleLabelValign = useDoc((s) => s.cycleLabelValign);
   const setLabelValign = useDoc((s) => s.setLabelValign);
   const setDotStyle = useDoc((s) => s.setDotStyle);
+  const setDotSize = useDoc((s) => s.setDotSize);
   const setStationWaypoint = useDoc((s) => s.setStationWaypoint);
   const setStationLabelBold = useDoc((s) => s.setStationLabelBold);
   const setStationLabelItalic = useDoc((s) => s.setStationLabelItalic);
@@ -67,6 +70,33 @@ export function StationInspector({ id }: { id: StationId }) {
   const selectedLineId = selection.selectedStopLineId;
   const labelSelected = selection.labelSelected;
   const hasSelection = !!(selectedLineId || labelSelected);
+
+  // Temporary per-stop size override control (a picker UI comes later).
+  // Shows the selected stop's RESOLVED size; writing the line's effective
+  // default back clears the override via `setDotSize`'s contract.
+  const dotSizeDisabled = selectedLineId === null || labelSelected;
+  const dotSizeField = useNumericField(
+    selectedLineId === null
+      ? DOT_SIZE_DEFAULT
+      : resolveDotSize(
+          linesAll[selectedLineId],
+          station?.stops.find((s) => s.lineId === selectedLineId),
+        ),
+    (n) => {
+      if (selectedLineId === null) return;
+      // dotSize is rotation-invariant — no per-match transform.
+      dispatchAll((sid) => setDotSize(sid, selectedLineId, n));
+    },
+    () => {
+      const lid = useSelection.getState().selectedStopLineId;
+      if (lid === null) return DOT_SIZE_DEFAULT;
+      const docNow = useDoc.getState();
+      return resolveDotSize(
+        docNow.lines[lid],
+        docNow.stations[id]?.stops.find((s) => s.lineId === lid),
+      );
+    },
+  );
 
   // Standard deselect: Escape, or mousedown anywhere outside the stop area
   // (the StopGrid). Clicks on canvas/sidebar already deselect via
@@ -145,7 +175,10 @@ export function StationInspector({ id }: { id: StationId }) {
           >
             all
           </button>
-          <div ref={shapePickerRef} style={{ display: 'inline-flex' }}>
+          <div
+            ref={shapePickerRef}
+            style={{ display: 'inline-flex', gap: 4, alignItems: 'center' }}
+          >
             <StationShapePicker
               disabled={selectedLineId === null || labelSelected}
               currentStyle={
@@ -163,6 +196,22 @@ export function StationInspector({ id }: { id: StationId }) {
                 dispatchAll((sid) => setDotStyle(sid, selectedLineId, DOT_SHAPE_PRESETS[shape]));
                 // dotStyle is rotation-invariant — no per-match transform.
               }}
+            />
+            {/* Inside shapePickerRef so useDismiss treats clicks here as
+                acting on the selected stop rather than deselecting it. */}
+            <input
+              type="number"
+              aria-label="Stop dot size"
+              min={DOT_SIZE_MIN}
+              step={1}
+              style={{ width: 44 }}
+              disabled={dotSizeDisabled}
+              value={dotSizeField.text}
+              title={dotSizeDisabled ? 'Stop dot size — select a stop first' : 'Stop dot size (px)'}
+              onFocus={dotSizeField.onNumberFocus}
+              onChange={dotSizeField.onNumberChange}
+              onWheel={dotSizeField.onNumberWheel}
+              onBlur={dotSizeField.onNumberBlur}
             />
           </div>
           <button

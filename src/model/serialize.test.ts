@@ -565,6 +565,100 @@ describe('parse — line width sanitizing', () => {
   });
 });
 
+describe('parse — dot size sanitizing', () => {
+  // Builds a file whose single stop and line carry arbitrary raw dot-size
+  // values, as a hand-edited or legacy file might.
+  const buildDotSizePayload = (
+    stopExtra: Record<string, unknown>,
+    lineExtra: Record<string, unknown>,
+  ) =>
+    JSON.stringify({
+      format: 'massimo-map',
+      doc: {
+        ...makeDoc({ lines: [makeLine({ id: 'L1', stations: ['s1'] })] }),
+        stations: {
+          s1: {
+            id: 's1',
+            name: 'S1',
+            x: 0,
+            y: 0,
+            rotation: 0,
+            stops: [{ lineId: 'L1', row: 0, col: 0, orientation: 'auto-vertical', ...stopExtra }],
+            label: { row: 0, col: -1, rotation: 0, offset: 0, align: 'auto', valign: 'middle' },
+          },
+        },
+        lines: { L1: { ...makeLine({ id: 'L1', stations: ['s1'] }), ...lineExtra } },
+      },
+    });
+
+  it('round-trips non-default line and stop sizes losslessly (pin — relies only on the optional fields)', () => {
+    const doc = makeDoc({
+      stations: [makeStation({ id: 's1', stops: [makeStop('L1', { dotSize: 16 })] })],
+      lines: [makeLine({ id: 'L1', stations: ['s1'], defaultDotSize: 12 })],
+    });
+    const result = parse(serialize(doc));
+    expect(result.ok).toBe(true);
+    if (result.ok) expect(result.doc).toEqual(doc);
+  });
+
+  it('drops an explicit default line size on parse (the default is never stored)', () => {
+    const result = parse(buildDotSizePayload({}, { defaultDotSize: 8 }));
+    expect(result.ok).toBe(true);
+    if (result.ok) expect('defaultDotSize' in result.doc.lines.L1).toBe(false);
+  });
+
+  it("drops a stop override equal to the line's effective default (after line sanitizing)", () => {
+    // The line's raw 10.4 rounds to 10 first; the stop's 10 must compare
+    // against the SANITIZED default — catching a sanitizer-ordering bug.
+    const result = parse(buildDotSizePayload({ dotSize: 10 }, { defaultDotSize: 10.4 }));
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    expect(result.doc.lines.L1.defaultDotSize).toBe(10);
+    expect('dotSize' in result.doc.stations.s1.stops[0]).toBe(false);
+  });
+
+  it('keeps a stop override of the global default when the line default differs', () => {
+    const result = parse(buildDotSizePayload({ dotSize: 8 }, { defaultDotSize: 10 }));
+    expect(result.ok).toBe(true);
+    if (result.ok) expect(result.doc.stations.s1.stops[0].dotSize).toBe(8);
+  });
+
+  it('drops non-numeric sizes on both fields', () => {
+    for (const junk of ['big', null, true, {}]) {
+      const result = parse(buildDotSizePayload({ dotSize: junk }, { defaultDotSize: junk }));
+      expect(result.ok).toBe(true);
+      if (!result.ok) return;
+      expect('defaultDotSize' in result.doc.lines.L1).toBe(false);
+      expect('dotSize' in result.doc.stations.s1.stops[0]).toBe(false);
+    }
+  });
+
+  it('clamps and rounds numeric sizes to the canonical stored form', () => {
+    const low = parse(buildDotSizePayload({ dotSize: -3 }, { defaultDotSize: 9.6 }));
+    expect(low.ok).toBe(true);
+    if (!low.ok) return;
+    expect(low.doc.lines.L1.defaultDotSize).toBe(10);
+    expect(low.doc.stations.s1.stops[0].dotSize).toBe(0);
+    // Rounds-to-default is dropped like an exact 8.
+    const nearDefault = parse(buildDotSizePayload({}, { defaultDotSize: 8.4 }));
+    expect(nearDefault.ok).toBe(true);
+    if (nearDefault.ok) expect('defaultDotSize' in nearDefault.doc.lines.L1).toBe(false);
+  });
+
+  it('drops non-finite sizes', () => {
+    // JSON.stringify can't emit a non-finite number, so splice the literal
+    // into the raw text: 1e999 overflows to Infinity in JSON.parse.
+    const json = buildDotSizePayload({ dotSize: 0 }, { defaultDotSize: 0 })
+      .replace('"dotSize":0', '"dotSize":1e999')
+      .replace('"defaultDotSize":0', '"defaultDotSize":1e999');
+    const result = parse(json);
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    expect('defaultDotSize' in result.doc.lines.L1).toBe(false);
+    expect('dotSize' in result.doc.stations.s1.stops[0]).toBe(false);
+  });
+});
+
 describe('parse — line stroke sanitizing', () => {
   // Builds a file whose single line carries arbitrary raw stroke fields, as
   // a hand-edited or legacy file might.

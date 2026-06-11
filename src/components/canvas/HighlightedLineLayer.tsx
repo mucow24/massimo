@@ -8,11 +8,12 @@ import {
 } from '../../geometry/interlining';
 import { pairKeyOf } from '../../model/pairKey';
 import { resolveDotStyle } from '../../model/transforms';
-import { STOP_SIZE, travelDirLocal, rotateBy } from '../../geometry/orientation';
+import { STOP_SIZE, STOP_DOT_RADIUS, travelDirLocal, rotateBy } from '../../geometry/orientation';
 import { lineStyleStrokeAttrs, lineStyleUnderlayAttrs } from '../HatchPatterns';
 import { offsetFilletPath } from '../../geometry/router';
 import { lineStrokeColorOf, lineStrokeRailWidth, lineStrokeWidthOf } from '../../model/lineStroke';
 import { lineWidthOf } from '../../model/lineWidth';
+import { dotSizeOverride } from '../../model/dotSize';
 import { StopMarker } from '../StopMarker';
 import { StopGlyph } from '../StopGlyph';
 import { StationView } from '../StationView';
@@ -213,7 +214,7 @@ export function HighlightedLineLayer({
             points.push({ sid, st, cell, x: world.x, y: world.y });
           }
           if (points.length >= 2) {
-            const dotR = STOP_SIZE * 0.28;
+            const dotR = STOP_DOT_RADIUS;
             const gap = 2;
             const halfW = 3;
             const height = 5;
@@ -306,6 +307,7 @@ export function HighlightedLineLayer({
                 style={resolveDotStyle(ln, cell)}
                 lineColor={ln.color}
                 serviceCode={ln.service}
+                sizeOverride={dotSizeOverride(ln, cell)}
                 stationId={sid}
                 lineId={cell.lineId}
               />,

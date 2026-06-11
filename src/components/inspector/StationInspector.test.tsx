@@ -1,5 +1,5 @@
 import { describe, it, expect, beforeEach } from 'vitest';
-import { render, screen } from '@testing-library/react';
+import { fireEvent, render, screen } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { StationInspector } from './StationInspector';
 import { useDoc, useSelection } from '../../state/store';
@@ -512,5 +512,141 @@ describe('<StationInspector /> — shape picker wiring', () => {
 
     const pastAfter = historyDepth();
     expect(pastAfter - pastBefore).toBe(1);
+  });
+});
+
+describe('<StationInspector /> — stop dot size textbox', () => {
+  beforeEach(() => {
+    localStorage.clear();
+    useDoc.setState({ ...DEFAULT_DOC });
+    useSelection.setState(SELECTION_BLANK);
+    useDoc.temporal.getState().clear();
+  });
+
+  const seed = (over: { stopDotSize?: number; lineDefaultDotSize?: number } = {}) => {
+    useDoc.setState({
+      ...DEFAULT_DOC,
+      ...makeDoc({
+        stations: [
+          makeStation({
+            id: 'a',
+            stops: [
+              makeStop('L1', over.stopDotSize !== undefined ? { dotSize: over.stopDotSize } : {}),
+            ],
+          }),
+        ],
+        lines: [
+          makeLine({
+            id: 'L1',
+            stations: ['a'],
+            ...(over.lineDefaultDotSize !== undefined
+              ? { defaultDotSize: over.lineDefaultDotSize }
+              : {}),
+          }),
+        ],
+      }),
+    });
+    useSelection.setState({ ...SELECTION_BLANK, selectedStationIds: ['a'] });
+  };
+
+  const sizeBox = () => screen.getByRole('spinbutton', { name: 'Stop dot size' });
+
+  const selectStop = async (user: ReturnType<typeof userEvent.setup>) => {
+    const stopCell = document.querySelector(
+      '[data-cell-kind="stop"][data-line-id="L1"]',
+    ) as HTMLElement;
+    await user.click(stopCell);
+  };
+
+  it('is disabled, showing the global default, when no stop is selected', () => {
+    seed();
+    render(<StationInspector id="a" />);
+    expect(sizeBox()).toBeDisabled();
+    expect(sizeBox()).toHaveValue(8);
+  });
+
+  it('is disabled when only the label is selected', () => {
+    seed();
+    useSelection.setState({
+      ...SELECTION_BLANK,
+      selectedStationIds: ['a'],
+      labelSelected: true,
+    });
+    render(<StationInspector id="a" />);
+    expect(sizeBox()).toBeDisabled();
+  });
+
+  it("shows the selected stop's resolved size: explicit override first, then the line default", async () => {
+    const user = userEvent.setup();
+    seed({ stopDotSize: 16, lineDefaultDotSize: 10 });
+    render(<StationInspector id="a" />);
+    await selectStop(user);
+    expect(sizeBox()).toHaveValue(16);
+  });
+
+  it('falls back to the line default for a tracking stop', async () => {
+    const user = userEvent.setup();
+    seed({ lineDefaultDotSize: 10 });
+    render(<StationInspector id="a" />);
+    await selectStop(user);
+    expect(sizeBox()).toHaveValue(10);
+  });
+
+  it('editing writes the override; typing the effective default clears it', async () => {
+    const user = userEvent.setup();
+    seed();
+    render(<StationInspector id="a" />);
+    await selectStop(user);
+
+    fireEvent.change(sizeBox(), { target: { value: '12' } });
+    expect(useDoc.getState().stations.a.stops[0].dotSize).toBe(12);
+
+    fireEvent.change(sizeBox(), { target: { value: '8' } });
+    expect('dotSize' in useDoc.getState().stations.a.stops[0]).toBe(false);
+  });
+
+  it('clicking into the textbox does not deselect the stop', async () => {
+    const user = userEvent.setup();
+    seed();
+    render(<StationInspector id="a" />);
+    await selectStop(user);
+    expect(useSelection.getState().selectedStopLineId).toBe('L1');
+
+    await user.click(sizeBox());
+
+    expect(useSelection.getState().selectedStopLineId).toBe('L1');
+    expect(sizeBox()).toBeEnabled();
+  });
+
+  it('mirror mode propagates the size to matching stations and collapses to one undo step', async () => {
+    const user = userEvent.setup();
+    useDoc.setState({
+      ...DEFAULT_DOC,
+      ...makeDoc({
+        stations: [
+          makeStation({ id: 'a', stops: [makeStop('L1')] }),
+          makeStation({ id: 'b', stops: [makeStop('L1')] }),
+        ],
+        lines: [makeLine({ id: 'L1', stations: ['a', 'b'] })],
+      }),
+    });
+    useSelection.setState({
+      ...SELECTION_BLANK,
+      selectedStationIds: ['a'],
+      mirrorMatching: true,
+    });
+
+    render(<StationInspector id="a" />);
+    await selectStop(user);
+
+    const pastBefore = historyDepth();
+    // Bare change (no focus arc) — dispatchAll's history group is the only
+    // entry, matching the shape-picker mirror test.
+    fireEvent.change(sizeBox(), { target: { value: '16' } });
+
+    const doc = useDoc.getState();
+    expect(doc.stations.a.stops[0].dotSize).toBe(16);
+    expect(doc.stations.b.stops[0].dotSize).toBe(16);
+    expect(historyDepth() - pastBefore).toBe(1);
   });
 });
