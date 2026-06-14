@@ -129,12 +129,7 @@ export function StopGlyph({
         { stroke: params.stroke, strokeWidth: params.strokeWidth ?? 0 }
       : null;
 
-  // Open dots (transparent fill) are a ring: the stroke IS the mark, so it
-  // isn't split into an outer border (a fill below would hide nothing). The
-  // ring rides the stroke pass; the fill pass carries an invisible seam so the
-  // dot stays selectable and stays one data-* element per dot.
-  const isOpen = params.fill === 'none';
-  // For a filled, stroked dot the outline shows as a band of width strokeWidth,
+  // A filled, stroked dot's outline shows as a band of width strokeWidth
   // straddling radius r (a centered SVG stroke spans r ± strokeWidth/2). The
   // two-pass split reproduces that band as a FILLED silhouette outset by
   // strokeWidth/2 (stroke pass) with the body INSET by the same amount (fill
@@ -145,33 +140,28 @@ export function StopGlyph({
   // Outset/inset in RADIUS units so the visible band is a uniform strokeWidth on
   // every edge. A circle/square has its edges at radius r (delta = h), but a
   // diamond's edges are only r/√2 from center, so moving them by h needs √2×
-  // the radius delta. The saltire 'x' is concave — no single radius delta
-  // offsets it uniformly — so a stroked X is NOT split: it keeps a centered
-  // stroke on the fill pass (exact outline; overlapping stroked X dots, which
-  // are rare, simply don't merge).
+  // the radius delta.
   const off = params.shape === 'diamond' ? h * Math.SQRT2 : h;
-  const splitBorder = !!strokeAttrs && !isOpen && params.shape !== 'x';
+  // Only filled, stroked, non-x dots split into a silhouette + inset body.
+  // Everything else keeps its outline on the single fill-pass element:
+  //   - open rings (fill='none'): no fill to merge against, and the seam
+  //     element must carry the stroke so it stays selectable + matches the
+  //     pre-split render;
+  //   - the saltire 'x': concave, so no single radius delta offsets it
+  //     uniformly (overlapping stroked X dots are rare, so they don't merge);
+  //   - borderless dots: nothing to split.
+  const splitBorder =
+    !!strokeAttrs && params.fill !== 'none' && params.shape !== 'x';
 
-  // Stroke pass: the outline only, painted UNDER every fill. Carries
+  // Stroke pass: the silhouette only, painted UNDER every fill. Carries
   // data-stop-stroke (a separate seam) — the canonical data-stop-* attrs stay
   // on the fill pass so they remain one element per dot.
   if (pass === 'stroke') {
-    if (!strokeAttrs) return null;
-    const strokeSeam = {
-      'data-stop-stroke': '',
-      ...(lineId ? { 'data-stop-line': lineId } : {}),
-    };
-    // Open ring: the visible stroke at its true width — nothing covers it.
-    if (isOpen) {
-      return shapeElement(params, cx, cy, { fill: 'none', ...strokeAttrs, ...strokeSeam });
-    }
-    // X keeps its outline on the fill pass — no silhouette here.
-    if (!splitBorder) return null;
-    // Filled dot: a silhouette in the stroke color, outset so its outer edge
-    // matches a centered stroke.
+    if (!splitBorder || !strokeAttrs) return null;
     return shapeElement({ ...params, r: params.r + off }, cx, cy, {
       fill: strokeAttrs.stroke,
-      ...strokeSeam,
+      'data-stop-stroke': '',
+      ...(lineId ? { 'data-stop-line': lineId } : {}),
     });
   }
 
@@ -203,12 +193,9 @@ export function StopGlyph({
 
   // Fill pass: the body fill (+ service code), painted OVER every stroke.
   if (pass === 'fill') {
-    // Open dot: invisible seam (its ring is the stroke pass).
-    if (isOpen) {
-      return withCode(shapeElement(params, cx, cy, { fill: 'none', ...(code ? {} : dataAttrs) }));
-    }
-    // X (or a borderless dot): any outline stays centered on this one element —
-    // there's no separate silhouette to inset against.
+    // Open ring, stroked X, or a borderless dot: the whole glyph (fill +
+    // any outline) stays on this one element — there's no separate silhouette
+    // to inset against, so it renders exactly like a lone combined dot.
     if (!splitBorder) {
       return withCode(
         shapeElement(params, cx, cy, {

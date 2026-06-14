@@ -397,14 +397,16 @@ describe('<StopGlyph /> stroke/fill split (pass prop)', () => {
     expect(c.getAttribute('data-stop-shape')).toBe('circle');
   });
 
-  it('an open style strokes in the stroke pass and keeps an invisible seam in the fill pass', () => {
-    const sc = renderPass(P['open-black'], 'stroke').querySelector('circle')!;
-    expect(sc.getAttribute('fill')).toBe('none');
-    expect(sc.getAttribute('stroke')).toBe('#000000');
+  it('an open style keeps its ring (stroke + fill) on the single fill-pass element', () => {
+    // No fill to merge against, so an open dot isn't split — and the seam
+    // element keeps the stroke so it stays selectable and matches the pre-split
+    // render (the v6→v7 migration e2e asserts stroke on this element).
+    expect(renderPass(P['open-black'], 'stroke').querySelector('circle')).toBeNull();
     const fc = renderPass(P['open-black'], 'fill').querySelector('circle')!;
     expect(fc.getAttribute('fill')).toBe('none');
-    expect(fc.getAttribute('stroke')).toBeNull();
-    // Still selectable even though the fill is transparent.
+    expect(fc.getAttribute('stroke')).toBe('#000000');
+    expect(fc.getAttribute('stroke-width')).toBe('1.5');
+    expect(fc.getAttribute('data-stop-shape')).toBe('circle');
     expect(fc.getAttribute('data-stop-line')).toBe('L1');
   });
 
