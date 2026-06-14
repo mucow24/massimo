@@ -316,3 +316,162 @@ describe('<StopGlyph /> size override', () => {
     );
   });
 });
+
+// ——— Two-pass split: strokes render before fills (the `pass` prop) ———
+//
+// StationDots paints all dot strokes (pass="stroke") and then all dot fills
+// (pass="fill"), so overlapping dots share one continuous outer border. Each
+// pass renders only its half; the canonical E2E seam (data-stop-shape /
+// -station / -line) lives on the fill pass so it stays one element per dot.
+
+describe('<StopGlyph /> stroke/fill split (pass prop)', () => {
+  function renderPass(
+    style: DotStyle | undefined,
+    pass: 'stroke' | 'fill',
+    opts: { isHovered?: boolean; lineColor?: string; serviceCode?: string } = {},
+  ) {
+    const { container } = render(
+      <svg>
+        <StopGlyph
+          cx={0}
+          cy={0}
+          style={style}
+          pass={pass}
+          isHovered={opts.isHovered}
+          lineColor={opts.lineColor}
+          serviceCode={opts.serviceCode}
+          stationId="A"
+          lineId="L1"
+        />
+      </svg>,
+    );
+    return container.querySelector('svg')!;
+  }
+
+  it('stroke pass draws the outline as a filled silhouette in the stroke color, outset by half the width', () => {
+    const svg = renderPass(P['filled-white-black-stroke'], 'stroke');
+    const c = svg.querySelector('circle')!;
+    // A filled silhouette (the border color as fill), NOT an SVG stroke.
+    expect(c.getAttribute('fill')).toBe('#000000');
+    expect(c.getAttribute('stroke')).toBeNull();
+    // Outset by strokeWidth/2 = 1, so with the body inset by 1 a 2px band shows.
+    expect(parseFloat(c.getAttribute('r')!)).toBeCloseTo(STOP_DOT_RADIUS + 1, 5);
+    expect(c.hasAttribute('data-stop-stroke')).toBe(true);
+    // The canonical seam stays on the fill pass — never on the stroke element.
+    expect(c.getAttribute('data-stop-shape')).toBeNull();
+    expect(svg.querySelector('text')).toBeNull();
+  });
+
+  it('fill pass draws the body inset by half the stroke width, no stroke, carrying the data attrs', () => {
+    const svg = renderPass(P['filled-white-black-stroke'], 'fill');
+    const c = svg.querySelector('circle')!;
+    expect(c.getAttribute('fill')).toBe('#ffffff');
+    expect(c.getAttribute('stroke')).toBeNull();
+    // Inset by strokeWidth/2 = 1 so the silhouette below shows exactly 2px.
+    expect(parseFloat(c.getAttribute('r')!)).toBeCloseTo(STOP_DOT_RADIUS - 1, 5);
+    expect(c.getAttribute('data-stop-shape')).toBe('circle');
+    expect(c.getAttribute('data-stop-station')).toBe('A');
+    expect(c.getAttribute('data-stop-line')).toBe('L1');
+    expect(c.hasAttribute('data-stop-stroke')).toBe(false);
+  });
+
+  it('a lone filled dot keeps its footprint: outer edge of the silhouette equals a centered stroke', () => {
+    // filled-white-black-stroke has strokeWidth 2 → ±1 split. The silhouette's
+    // outer edge (r + 1) matches a centered 2px stroke's outer edge, and the
+    // body's inner edge (r − 1) matches its inner edge — so a single dot looks
+    // identical to the old combined render while overlaps now merge.
+    const sil = renderPass(P['filled-white-black-stroke'], 'stroke').querySelector('circle')!;
+    const body = renderPass(P['filled-white-black-stroke'], 'fill').querySelector('circle')!;
+    expect(parseFloat(sil.getAttribute('r')!)).toBeCloseTo(STOP_DOT_RADIUS + 1, 5);
+    expect(parseFloat(body.getAttribute('r')!)).toBeCloseTo(STOP_DOT_RADIUS - 1, 5);
+  });
+
+  it('stroke pass renders nothing for a stroke-less style', () => {
+    const svg = renderPass(P['filled-black'], 'stroke');
+    expect(svg.querySelector('circle, rect, polygon, g, text')).toBeNull();
+  });
+
+  it('fill pass still renders the body for a stroke-less style', () => {
+    const c = renderPass(P['filled-black'], 'fill').querySelector('circle')!;
+    expect(c.getAttribute('fill')).toBe('#000000');
+    expect(c.getAttribute('data-stop-shape')).toBe('circle');
+  });
+
+  it('an open style keeps its ring (stroke + fill) on the single fill-pass element', () => {
+    // No fill to merge against, so an open dot isn't split — and the seam
+    // element keeps the stroke so it stays selectable and matches the pre-split
+    // render (the v6→v7 migration e2e asserts stroke on this element).
+    expect(renderPass(P['open-black'], 'stroke').querySelector('circle')).toBeNull();
+    const fc = renderPass(P['open-black'], 'fill').querySelector('circle')!;
+    expect(fc.getAttribute('fill')).toBe('none');
+    expect(fc.getAttribute('stroke')).toBe('#000000');
+    expect(fc.getAttribute('stroke-width')).toBe('1.5');
+    expect(fc.getAttribute('data-stop-shape')).toBe('circle');
+    expect(fc.getAttribute('data-stop-line')).toBe('L1');
+  });
+
+  it('hover paints the white 3px affordance as a silhouette in the stroke pass', () => {
+    const c = renderPass(P['filled-black'], 'stroke', { isHovered: true }).querySelector('circle')!;
+    // White silhouette outset by 3/2 = 1.5; the black body (inset 1.5) leaves a
+    // 3px white ring around it.
+    expect(c.getAttribute('fill')).toBe('#fff');
+    expect(c.getAttribute('stroke')).toBeNull();
+    expect(parseFloat(c.getAttribute('r')!)).toBeCloseTo(STOP_DOT_RADIUS + 1.5, 5);
+  });
+
+  it('a service-code dot puts the code + disc in the fill pass; an unstroked code dot has an empty stroke pass', () => {
+    const fillSvg = renderPass(P['filled-black-service-code'], 'fill', { serviceCode: 'A' });
+    expect(fillSvg.querySelector('text')!.textContent).toBe('A');
+    expect(fillSvg.querySelector('g')!.getAttribute('data-stop-shape')).toBe('circle');
+    // filled-black-service-code has strokeWidth 0 → nothing in the stroke pass.
+    const strokeSvg = renderPass(P['filled-black-service-code'], 'stroke', { serviceCode: 'A' });
+    expect(strokeSvg.querySelector('circle, text')).toBeNull();
+  });
+
+  it("'none' renders nothing in either pass", () => {
+    expect(
+      renderPass(P['none'], 'stroke').querySelector('circle, rect, polygon, g, text'),
+    ).toBeNull();
+    expect(
+      renderPass(P['none'], 'fill').querySelector('circle, rect, polygon, g, text'),
+    ).toBeNull();
+  });
+
+  // The silhouette/inset distance is in radius units, so it must be shape-aware
+  // to keep the border a uniform width on every edge.
+  const strokedDiamond: DotStyle = {
+    shape: 'diamond',
+    fill: { day: '#ffffff', night: '#ffffff' },
+    strokeWidth: 2,
+    strokeColor: { day: '#000000', night: '#000000' },
+    showServiceCode: false,
+  };
+  const strokedX: DotStyle = { ...strokedDiamond, shape: 'x' };
+  const yExtent = (p: Element) => {
+    const ys = parsePoints(p.getAttribute('points')!).map((c) => c[1]);
+    return Math.max(...ys) - Math.min(...ys);
+  };
+
+  it('offsets a diamond silhouette by √2× the half-width so its border is uniform', () => {
+    // strokeWidth 2 → half-width 1; a diamond's edges are r/√2 from center, so
+    // the radius delta is 1 × √2. Silhouette outset, body inset by that.
+    const sil = renderPass(strokedDiamond, 'stroke').querySelector('polygon')!;
+    const body = renderPass(strokedDiamond, 'fill').querySelector('polygon')!;
+    expect(sil.getAttribute('fill')).toBe('#000000');
+    expect(sil.hasAttribute('data-stop-stroke')).toBe(true);
+    expect(yExtent(sil)).toBeCloseTo(2 * (STOP_DOT_RADIUS + Math.SQRT2), 5);
+    expect(body.getAttribute('fill')).toBe('#ffffff');
+    expect(yExtent(body)).toBeCloseTo(2 * (STOP_DOT_RADIUS - Math.SQRT2), 5);
+  });
+
+  it('keeps a stroked X on a centered stroke (fill pass) with no silhouette', () => {
+    // The saltire is concave; a radius offset can't make its border uniform, so
+    // it isn't split — the outline rides the fill pass centered, as before.
+    expect(renderPass(strokedX, 'stroke').querySelector('polygon')).toBeNull();
+    const body = renderPass(strokedX, 'fill').querySelector('polygon')!;
+    expect(body.getAttribute('fill')).toBe('#ffffff');
+    expect(body.getAttribute('stroke')).toBe('#000000');
+    expect(body.getAttribute('stroke-width')).toBe('2');
+    expect(body.getAttribute('data-stop-shape')).toBe('x');
+  });
+});
