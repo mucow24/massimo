@@ -234,6 +234,7 @@ export function StationInspector({ id }: { id: StationId }) {
         <label>Stop layout</label>
         <div ref={stopAreaRef} style={{ display: 'flex', justifyContent: 'center' }}>
           <StopGrid
+            key={id}
             station={station}
             lines={linesAll}
             selectedLineId={selectedLineId}
