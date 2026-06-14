@@ -54,25 +54,33 @@ export function StationDots({
           })()}
         </g>
       )}
-      {station.stops.map((cell) => {
-        const w = stopPosWorld(cell, station);
-        const isHovered =
-          hoveredStop?.stationId === station.id && hoveredStop?.lineId === cell.lineId;
-        return (
-          <StopGlyph
-            key={cell.lineId}
-            cx={w.x}
-            cy={w.y}
-            style={resolveDotStyle(lines[cell.lineId], cell)}
-            lineColor={lines[cell.lineId]?.color}
-            serviceCode={lines[cell.lineId]?.service}
-            sizeOverride={dotSizeOverride(lines[cell.lineId], cell)}
-            isHovered={isHovered}
-            stationId={station.id}
-            lineId={cell.lineId}
-          />
-        );
-      })}
+      {/* Two passes so overlapping dots in this station share one continuous
+          outer border: every dot's stroke is painted first, then every dot's
+          fill on top covers the inner half of each stroke beneath it. A single
+          per-dot pass would let a later dot's fill punch a hole in its
+          neighbor's border. */}
+      {(['stroke', 'fill'] as const).map((pass) =>
+        station.stops.map((cell) => {
+          const w = stopPosWorld(cell, station);
+          const isHovered =
+            hoveredStop?.stationId === station.id && hoveredStop?.lineId === cell.lineId;
+          return (
+            <StopGlyph
+              key={pass + ':' + cell.lineId}
+              pass={pass}
+              cx={w.x}
+              cy={w.y}
+              style={resolveDotStyle(lines[cell.lineId], cell)}
+              lineColor={lines[cell.lineId]?.color}
+              serviceCode={lines[cell.lineId]?.service}
+              sizeOverride={dotSizeOverride(lines[cell.lineId], cell)}
+              isHovered={isHovered}
+              stationId={station.id}
+              lineId={cell.lineId}
+            />
+          );
+        }),
+      )}
     </g>
   );
 }
