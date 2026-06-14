@@ -150,8 +150,7 @@ export function StopGlyph({
   //   - the saltire 'x': concave, so no single radius delta offsets it
   //     uniformly (overlapping stroked X dots are rare, so they don't merge);
   //   - borderless dots: nothing to split.
-  const splitBorder =
-    !!strokeAttrs && params.fill !== 'none' && params.shape !== 'x';
+  const splitBorder = !!strokeAttrs && params.fill !== 'none' && params.shape !== 'x';
 
   // Stroke pass: the silhouette only, painted UNDER every fill. Carries
   // data-stop-stroke (a separate seam) — the canonical data-stop-* attrs stay
