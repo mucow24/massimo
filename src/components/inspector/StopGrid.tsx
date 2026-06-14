@@ -55,6 +55,19 @@ const GHOST_SNAP_RADIUS = 1.0;
 // findDropTarget's swapRadiusFor (their circles draw bigger).
 const STOP_SWAP_RADIUS = 0.6;
 
+// --- Camera (pan / zoom) ---
+// The editor is a local mini-canvas: content is drawn at the fixed PITCH and
+// the camera is applied as a CSS transform on the SVG. getScreenCTM() (already
+// used by cursorRowCol) folds pan + zoom + rotation into one matrix, so the
+// drag/ghost/snap math needs no changes — only the view does.
+const EDITOR_HEIGHT = 240;
+const ZOOM_MIN = 0.15;
+const ZOOM_MAX = 16;
+// Don't over-zoom a tiny station when fitting (a lone stop shouldn't fill the
+// pane).
+const FIT_MAX = 4;
+const clampZoom = (z: number) => Math.max(ZOOM_MIN, Math.min(ZOOM_MAX, z));
+
 type DragSource =
   | { kind: 'stop'; lineId: string; row: number; col: number }
   | { kind: 'label'; row: number; col: number };
@@ -121,8 +134,20 @@ export function StopGrid({
   onMoveLabel: (dRow: number, dCol: number) => void;
 }) {
   const svgRef = useRef<SVGSVGElement | null>(null);
+  const containerRef = useRef<HTMLDivElement | null>(null);
   const [drag, setDrag] = useState<DragState | null>(null);
   const [shiftHeld, setShiftHeld] = useShiftHeld(!!drag?.isDragging);
+  // Camera: panX/panY are screen pixels, zoom is a multiplier on the fixed
+  // PITCH rendering. Applied as a CSS transform on the SVG below.
+  const [cam, setCam] = useState({ panX: 0, panY: 0, zoom: 1 });
+  const [panning, setPanning] = useState(false);
+  const panRef = useRef<{
+    sx: number;
+    sy: number;
+    px: number;
+    py: number;
+    moved: boolean;
+  } | null>(null);
   const stops = station.stops;
   const label = station.label;
 
@@ -150,6 +175,9 @@ export function StopGrid({
 
   // The dragged node's own width (label drags as a unit cell).
   const wSrc = drag?.source.kind === 'stop' ? lineWidthOf(lines[drag.source.lineId]) : STOP_SIZE;
+  // Radius the dragged node will draw at, so the blue drop-preview matches the
+  // size (line width) of the item that will actually land there.
+  const dragR = (wSrc / STOP_SIZE) * RADIUS;
 
   // Generate the ghost lattice in SCREEN frame and project into the SVG's
   // local frame via the inverse of the station's rotation.
@@ -249,6 +277,9 @@ export function StopGrid({
   };
 
   const startDrag = (e: React.PointerEvent, source: DragSource) => {
+    // Keep the press from bubbling to the container's pan handler — grabbing a
+    // stop is a drag, not a pan.
+    e.stopPropagation();
     svgRef.current?.setPointerCapture(e.pointerId);
     // Seed shiftHeld from the pointer event — if Shift is already held when
     // the drag begins, no keydown fires after our listeners attach, so we'd
@@ -301,8 +332,128 @@ export function StopGrid({
 
   const onSvgPointerCancel = () => setDrag(null);
 
+  // --- Camera helpers (fit / wheel-zoom / pan) ---
+  // Frame all content with a small margin, clamped so a tiny station doesn't
+  // balloon. `wrapSize` already accounts for the rotation-tolerant bounding
+  // square, so the fit holds at any station rotation.
+  const fitView = () => {
+    const el = containerRef.current;
+    if (!el) return;
+    const r = el.getBoundingClientRect();
+    if (r.width <= 0 || r.height <= 0) return;
+    const z = clampZoom(Math.min((Math.min(r.width, r.height) / wrapSize) * 0.9, FIT_MAX));
+    setCam({ panX: 0, panY: 0, zoom: z });
+  };
+
+  // Fit on mount. StationInspector keys StopGrid by station id, so the camera
+  // resets per station. Retries a few frames in case layout isn't measured yet.
+  useEffect(() => {
+    let raf = 0;
+    const attempt = (n: number) => {
+      const el = containerRef.current;
+      if (!el) return;
+      const r = el.getBoundingClientRect();
+      if (r.width > 0 && r.height > 0) {
+        fitView();
+        return;
+      }
+      if (n < 5 && typeof requestAnimationFrame !== 'undefined') {
+        raf = requestAnimationFrame(() => attempt(n + 1));
+      }
+    };
+    attempt(0);
+    return () => {
+      if (raf && typeof cancelAnimationFrame !== 'undefined') cancelAnimationFrame(raf);
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  // Wheel zooms toward the cursor: keep the world point under the pointer fixed
+  // by re-deriving pan from the zoom ratio. Pure screen-pixel math — rotation
+  // cancels because the cursor's screen position is held constant.
+  //
+  // Attached as a NON-PASSIVE native listener rather than React's onWheel:
+  // React registers wheel at the root passively, so preventDefault() there is a
+  // no-op and the surrounding sidebar/station list scrolls. A native
+  // { passive: false } listener lets preventDefault actually take effect.
+  useEffect(() => {
+    const el = containerRef.current;
+    if (!el) return;
+    const onWheel = (e: WheelEvent) => {
+      e.preventDefault();
+      const r = el.getBoundingClientRect();
+      const relX = e.clientX - (r.left + r.width / 2);
+      const relY = e.clientY - (r.top + r.height / 2);
+      const factor = Math.exp(-e.deltaY * 0.0015);
+      setCam((c) => {
+        const zoom = clampZoom(c.zoom * factor);
+        const k = zoom / c.zoom;
+        return { zoom, panX: relX * (1 - k) + c.panX * k, panY: relY * (1 - k) + c.panY * k };
+      });
+    };
+    el.addEventListener('wheel', onWheel, { passive: false });
+    return () => el.removeEventListener('wheel', onWheel);
+  }, []);
+
+  // Pan starts on an empty-space press: stop/label presses stopPropagation, so
+  // this only fires off the background. Capture on the container so the pan
+  // keeps tracking when the cursor leaves the editor.
+  const onContainerPointerDown = (e: React.PointerEvent) => {
+    if (e.button !== 0 && e.button !== 1) return;
+    if (drag) return;
+    if (e.button === 1) e.preventDefault();
+    containerRef.current?.setPointerCapture(e.pointerId);
+    panRef.current = { sx: e.clientX, sy: e.clientY, px: cam.panX, py: cam.panY, moved: false };
+    setPanning(true);
+  };
+
+  const onContainerPointerMove = (e: React.PointerEvent) => {
+    const p = panRef.current;
+    if (!p) return;
+    const dx = e.clientX - p.sx;
+    const dy = e.clientY - p.sy;
+    if (!p.moved && Math.hypot(dx, dy) > DRAG_THRESHOLD_PX) p.moved = true;
+    setCam((c) => ({ ...c, panX: p.px + dx, panY: p.py + dy }));
+  };
+
+  const onContainerPointerUp = (e: React.PointerEvent) => {
+    const p = panRef.current;
+    if (!p) return;
+    const moved = p.moved;
+    panRef.current = null;
+    setPanning(false);
+    try {
+      containerRef.current?.releasePointerCapture(e.pointerId);
+    } catch {
+      // already released
+    }
+    // A press-release with no movement on empty space deselects. (The captured
+    // gesture retargets the trailing click to the container, so the inner bg
+    // <rect> onClick only fires for synthetic clicks — e.g. in unit tests.)
+    if (!moved) onSelectStop(null);
+  };
+
   return (
-    <div style={{ position: 'relative', width: wrapSize, height: wrapSize }}>
+    <div
+      ref={containerRef}
+      onPointerDown={onContainerPointerDown}
+      onPointerMove={onContainerPointerMove}
+      onPointerUp={onContainerPointerUp}
+      onPointerCancel={onContainerPointerUp}
+      style={{
+        position: 'relative',
+        width: '100%',
+        height: EDITOR_HEIGHT,
+        overflow: 'hidden',
+        display: 'flex',
+        alignItems: 'center',
+        justifyContent: 'center',
+        border: '1px solid rgba(128, 128, 128, 0.3)',
+        borderRadius: 6,
+        touchAction: 'none',
+        cursor: panning ? 'grabbing' : 'grab',
+      }}
+    >
       <svg
         ref={svgRef}
         viewBox={`${vbX} ${vbY} ${vbW} ${vbH}`}
@@ -312,10 +463,9 @@ export function StopGrid({
         onPointerUp={onSvgPointerUp}
         onPointerCancel={onSvgPointerCancel}
         style={{
-          position: 'absolute',
-          left: '50%',
-          top: '50%',
-          transform: `translate(-50%, -50%) rotate(${angleDeg}deg)`,
+          flex: 'none',
+          transform: `translate(${cam.panX}px, ${cam.panY}px) scale(${cam.zoom}) rotate(${angleDeg}deg)`,
+          transformOrigin: 'center center',
           overflow: 'visible',
           touchAction: 'none',
           userSelect: 'none',
@@ -348,7 +498,7 @@ export function StopGrid({
                 key={`g-${fmt(g.row)},${fmt(g.col)}`}
                 cx={g.col * PITCH}
                 cy={g.row * PITCH}
-                r={RADIUS - 1}
+                r={dragR}
                 fill="rgba(26,78,168,0.18)"
                 stroke="#1a4ea8"
                 strokeWidth={2}
@@ -379,6 +529,7 @@ export function StopGrid({
             over?.kind === 'stop' &&
             Math.abs(over.row - s.row) < EPS &&
             Math.abs(over.col - s.col) < EPS;
+          const r = nodeR({ kind: 'stop', lineId: s.lineId });
           return (
             <g
               key={`s-${s.lineId}`}
@@ -403,7 +554,7 @@ export function StopGrid({
               <circle
                 cx={s.col * PITCH}
                 cy={s.row * PITCH}
-                r={nodeR({ kind: 'stop', lineId: s.lineId })}
+                r={r}
                 fill={line?.color ?? '#888'}
                 stroke={selected ? '#000' : isSwapTarget ? '#1a4ea8' : 'rgba(0,0,0,0.2)'}
                 strokeWidth={selected || isSwapTarget ? 2 : 1}
@@ -413,7 +564,7 @@ export function StopGrid({
                 y={s.row * PITCH}
                 textAnchor="middle"
                 dominantBaseline="central"
-                fontSize={12}
+                fontSize={r}
                 fontWeight={700}
                 fill="#fff"
                 style={{
@@ -501,6 +652,31 @@ export function StopGrid({
           </g>
         )}
       </svg>
+      <button
+        type="button"
+        onClick={(e) => {
+          e.stopPropagation();
+          fitView();
+        }}
+        onPointerDown={(e) => e.stopPropagation()}
+        title="Fit to contents"
+        aria-label="Fit to contents"
+        style={{
+          position: 'absolute',
+          top: 6,
+          right: 6,
+          padding: '2px 7px',
+          fontSize: 11,
+          lineHeight: 1.4,
+          color: 'inherit',
+          background: 'rgba(127, 127, 127, 0.18)',
+          border: '1px solid rgba(128, 128, 128, 0.35)',
+          borderRadius: 4,
+          cursor: 'pointer',
+        }}
+      >
+        Fit
+      </button>
     </div>
   );
 }
