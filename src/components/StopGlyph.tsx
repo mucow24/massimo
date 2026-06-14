@@ -1,3 +1,4 @@
+import type { ReactNode } from 'react';
 import { DEFAULT_DOT_STYLE, resolveDotRender, type DotRenderParams } from '../model/dotStyle';
 import { useViewportStore } from '../state/viewportStore';
 import type { DotStyle } from '../model/types';
@@ -24,6 +25,12 @@ interface Props {
   // no element).
   stationId?: string;
   lineId?: string;
+  // Two-pass split. StationDots paints all dot strokes ('stroke') and then all
+  // dot fills ('fill'), so overlapping dots share one continuous outer border
+  // (each fill covers the inner half of every stroke beneath it). Omitted by
+  // isolated callers (pickers/inspector previews) that never overlap — they get
+  // the combined fill+stroke element as before.
+  pass?: 'stroke' | 'fill';
 }
 
 export const DIAMOND_POINTS = (cx: number, cy: number, r: number) =>
@@ -94,6 +101,7 @@ export function StopGlyph({
   isHovered,
   stationId,
   lineId,
+  pass,
 }: Props) {
   const darkMode = useViewportStore((s) => s.darkMode);
   const params = resolveDotRender(
@@ -112,40 +120,107 @@ export function StopGlyph({
   };
 
   // Hover overrides any base stroke with a 3px white outline so the
-  // affordance is uniform across shapes.
+  // affordance is uniform across shapes. Null = this dot has no stroke.
   const strokeAttrs = isHovered
     ? { stroke: '#fff', strokeWidth: 3 }
     : params.stroke !== undefined
-      ? { stroke: params.stroke, strokeWidth: params.strokeWidth }
-      : {};
+      ? // resolveDotRender always sets strokeWidth alongside stroke; `?? 0` is
+        // only here to satisfy the optional type on DotRenderParams.
+        { stroke: params.stroke, strokeWidth: params.strokeWidth ?? 0 }
+      : null;
+
+  // A filled, stroked dot's outline shows as a band of width strokeWidth
+  // straddling radius r (a centered SVG stroke spans r ± strokeWidth/2). The
+  // two-pass split reproduces that band as a FILLED silhouette outset by
+  // strokeWidth/2 (stroke pass) with the body INSET by the same amount (fill
+  // pass) — identical to the centered stroke for a lone dot (outer edge still
+  // r + strokeWidth/2), but overlapping dots now merge into one outer border
+  // because every silhouette is painted before every body.
+  const h = strokeAttrs ? strokeAttrs.strokeWidth / 2 : 0;
+  // Outset/inset in RADIUS units so the visible band is a uniform strokeWidth on
+  // every edge. A circle/square has its edges at radius r (delta = h), but a
+  // diamond's edges are only r/√2 from center, so moving them by h needs √2×
+  // the radius delta.
+  const off = params.shape === 'diamond' ? h * Math.SQRT2 : h;
+  // Only filled, stroked, non-x dots split into a silhouette + inset body.
+  // Everything else keeps its outline on the single fill-pass element:
+  //   - open rings (fill='none'): no fill to merge against, and the seam
+  //     element must carry the stroke so it stays selectable + matches the
+  //     pre-split render;
+  //   - the saltire 'x': concave, so no single radius delta offsets it
+  //     uniformly (overlapping stroked X dots are rare, so they don't merge);
+  //   - borderless dots: nothing to split.
+  const splitBorder = !!strokeAttrs && params.fill !== 'none' && params.shape !== 'x';
+
+  // Stroke pass: the silhouette only, painted UNDER every fill. Carries
+  // data-stop-stroke (a separate seam) — the canonical data-stop-* attrs stay
+  // on the fill pass so they remain one element per dot.
+  if (pass === 'stroke') {
+    if (!splitBorder || !strokeAttrs) return null;
+    return shapeElement({ ...params, r: params.r + off }, cx, cy, {
+      fill: strokeAttrs.stroke,
+      'data-stop-stroke': '',
+      ...(lineId ? { 'data-stop-line': lineId } : {}),
+    });
+  }
 
   const { code } = params;
   // With a code, the data attrs live on the wrapping <g> so the test seam
   // stays one element per stop.
-  const el = shapeElement(params, cx, cy, {
-    fill: params.fill,
-    ...strokeAttrs,
-    ...(code ? {} : dataAttrs),
-  });
-  if (!code) return el;
+  const withCode = (el: ReactNode) =>
+    !code ? (
+      el
+    ) : (
+      <g {...dataAttrs}>
+        {el}
+        <text
+          x={cx}
+          y={cy}
+          textAnchor="middle"
+          dominantBaseline="central"
+          fontFamily="'Helvetica Neue', Helvetica, Arial, sans-serif"
+          fontSize={params.r * 1.2}
+          fontWeight={700}
+          fill={code.color}
+          pointerEvents="none"
+          style={{ userSelect: 'none' }}
+        >
+          {code.text}
+        </text>
+      </g>
+    );
 
-  return (
-    <g {...dataAttrs}>
-      {el}
-      <text
-        x={cx}
-        y={cy}
-        textAnchor="middle"
-        dominantBaseline="central"
-        fontFamily="'Helvetica Neue', Helvetica, Arial, sans-serif"
-        fontSize={params.r * 1.2}
-        fontWeight={700}
-        fill={code.color}
-        pointerEvents="none"
-        style={{ userSelect: 'none' }}
-      >
-        {code.text}
-      </text>
-    </g>
+  // Fill pass: the body fill (+ service code), painted OVER every stroke.
+  if (pass === 'fill') {
+    // Open ring, stroked X, or a borderless dot: the whole glyph (fill +
+    // any outline) stays on this one element — there's no separate silhouette
+    // to inset against, so it renders exactly like a lone combined dot.
+    if (!splitBorder) {
+      return withCode(
+        shapeElement(params, cx, cy, {
+          fill: params.fill,
+          ...(strokeAttrs ?? {}),
+          ...(code ? {} : dataAttrs),
+        }),
+      );
+    }
+    // Filled dot body, inset by the same amount the silhouette was outset so the
+    // silhouette beneath shows exactly strokeWidth of outline.
+    return withCode(
+      shapeElement({ ...params, r: params.r - off }, cx, cy, {
+        fill: params.fill,
+        ...(code ? {} : dataAttrs),
+      }),
+    );
+  }
+
+  // Combined (default): fill + centered stroke on one element — unchanged for
+  // the isolated previews that never overlap.
+  return withCode(
+    shapeElement(params, cx, cy, {
+      fill: params.fill,
+      ...(strokeAttrs ?? {}),
+      ...(code ? {} : dataAttrs),
+    }),
   );
 }
