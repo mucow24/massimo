@@ -78,8 +78,15 @@ jobs:
           path: ~/.cache/ms-playwright
           key: playwright-${{ runner.os }}-${{ hashFiles('package-lock.json') }}
 
+      # No `--with-deps`: that flag shells out to apt to install system
+      # libraries + fonts on every run (apt packages can't be cached on the
+      # ephemeral runner), which is the job's variable long pole — 30s to
+      # 5min+. The ubuntu-latest image already ships the shared libs Chromium
+      # needs to launch, and our e2e suite has no pixel/screenshot tests, so
+      # missing system fonts don't affect correctness. The browser binary
+      # itself is still restored from the cache above.
       - name: Install Playwright Chromium
-        run: npx playwright install --with-deps chromium
+        run: npx playwright install chromium
 
       - name: E2E
         run: npm run e2e
