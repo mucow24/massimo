@@ -1,6 +1,7 @@
 import { RefObject, useRef, useState } from 'react';
 import { beginHistoryGroup, dragState, useDoc, useSelection } from '../../state/store';
 import { useSnapPrefs } from '../../state/snapPrefs';
+import { useViewportStore } from '../../state/viewportStore';
 import { snapPolygonPoint } from '../../geometry/polygonSnap';
 import { polygonSnapAnchor } from '../../geometry/polygon';
 import { stopPosWorld } from '../../geometry/interlining';
@@ -112,6 +113,7 @@ export function usePolygonDrag(
   const setPolygonVertices = useDoc((s) => s.setPolygonVertices);
   const moveVertex = useDoc((s) => s.moveVertex);
   const snapModes = useSnapPrefs((s) => s.modes);
+  const gridSize = useViewportStore((s) => s.gridSize);
 
   const wholeDragRef = useRef<WholeDragState | null>(null);
   const vertexDragRef = useRef<VertexDragState | null>(null);
@@ -225,6 +227,7 @@ export function usePolygonDrag(
             modes: snapModes,
             // Constant screen-pixel engage radius (see useStationDrag).
             tolerance: SNAP_PERP_TOLERANCE / zoom,
+            gridInterval: gridSize,
           });
           anchor = { x: snap.x, y: snap.y };
           guides = snap.guides;
@@ -264,6 +267,7 @@ export function usePolygonDrag(
             modes: snapModes,
             // Constant screen-pixel engage radius (see useStationDrag).
             tolerance: SNAP_PERP_TOLERANCE / zoom,
+            gridInterval: gridSize,
           });
           p = { x: snap.x, y: snap.y };
           guides = snap.guides;

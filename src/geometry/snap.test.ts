@@ -581,6 +581,21 @@ describe('isGridMultiple', () => {
   it('tolerates sub-epsilon float drift', () => {
     expect(isGridMultiple(30 + 1e-9)).toBe(true);
   });
+
+  it('honors a custom grid interval', () => {
+    // 5 is off a 10px grid but on a 5px grid.
+    expect(isGridMultiple(5, 5)).toBe(true);
+    expect(isGridMultiple(5, 10)).toBe(false);
+    expect(isGridMultiple(7, 5)).toBe(false);
+    expect(isGridMultiple(-15, 5)).toBe(true);
+  });
+
+  it('keeps the default epsilon when an interval is passed (param-order guard)', () => {
+    // gridInterval is the 2nd param, eps the 3rd — passing only the interval
+    // must still apply the tight default eps, not treat 5 as the tolerance.
+    expect(isGridMultiple(5 + 1e-9, 5)).toBe(true);
+    expect(isGridMultiple(5.01, 5)).toBe(false);
+  });
 });
 
 describe('reconcileLockWithGrid', () => {
@@ -705,5 +720,39 @@ describe('reconcileCorner', () => {
       'both',
     );
     expect(r.kept).toBe('none');
+  });
+});
+
+describe('grid reconciliation: 5px grid interval', () => {
+  const H = { x: 1, y: 0 };
+  const V = { x: 0, y: 1 };
+
+  it('reconcileLockWithGrid engages a perp of 5 (on the 5px lattice) and notches along by 5', () => {
+    // perp Y=5 is rejected on a 10px grid (see reconcileLockWithGrid suite) but
+    // accepted on a 5px grid; along-X then steps by 5 (27 → 25).
+    expect(reconcileLockWithGrid({ x: 0, y: 5 }, H, { x: 27, y: 6 }, 'both', 10).engaged).toBe(
+      false,
+    );
+    const r = reconcileLockWithGrid({ x: 0, y: 5 }, H, { x: 27, y: 6 }, 'both', 5);
+    expect(r.engaged).toBe(true);
+    expect(r.x).toBeCloseTo(25, 5);
+    expect(r.y).toBeCloseTo(5, 5);
+  });
+
+  it('reconcileCorner keeps a corner that is valid on the 5px lattice but not the 10px one', () => {
+    const locks = {
+      primary: { q: { x: 5, y: 0 }, axis: V },
+      secondary: { q: { x: 0, y: 20 }, axis: H },
+      proposed: { x: 6, y: 21 },
+    } as const;
+    // (5, 20): x=5 is off a 10px grid → corner degrades to a single lock.
+    expect(
+      reconcileCorner(5, 20, locks.primary, locks.secondary, locks.proposed, 'both', 10).kept,
+    ).not.toBe('both');
+    // On a 5px grid both coords are valid → the full corner is kept.
+    const r = reconcileCorner(5, 20, locks.primary, locks.secondary, locks.proposed, 'both', 5);
+    expect(r.kept).toBe('both');
+    expect(r.x).toBeCloseTo(5, 5);
+    expect(r.y).toBeCloseTo(20, 5);
   });
 });

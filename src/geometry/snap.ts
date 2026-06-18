@@ -43,19 +43,24 @@ const SECONDARY_AXIS_SIN_GATE = 0.1;
  * "horizontal" snaps onto horizontal grid lines (locks Y, free X) and
  * "vertical" snaps onto vertical grid lines (locks X, free Y). Defaults to
  * 'both' so existing callers keep the full two-axis snap.
+ *
+ * `gridInterval` is the grid cell size; defaults to {@link GRID_INTERVAL} (10)
+ * so existing callers keep the standard grid. The toolbar threads the active
+ * size (10 or 5) here so snapping tracks the visible grid.
  */
 export function snapPointToGrid(
   x: number,
   y: number,
   mode: GridSnap = 'both',
+  gridInterval: number = GRID_INTERVAL,
 ): { x: number; y: number } {
   const snapX = mode === 'vertical' || mode === 'both';
   const snapY = mode === 'horizontal' || mode === 'both';
   // `+ 0` normalizes -0 → 0 so callers don't see signed-zero leakage from
   // Math.round on small negative inputs.
   return {
-    x: snapX ? Math.round(x / GRID_INTERVAL) * GRID_INTERVAL + 0 : x,
-    y: snapY ? Math.round(y / GRID_INTERVAL) * GRID_INTERVAL + 0 : y,
+    x: snapX ? Math.round(x / gridInterval) * gridInterval + 0 : x,
+    y: snapY ? Math.round(y / gridInterval) * gridInterval + 0 : y,
   };
 }
 
@@ -68,9 +73,10 @@ export function snapPointToGrid(
 export function maybeSnapToGrid<T extends { x: number; y: number } | null>(
   world: T,
   modes: SnapModes,
+  gridInterval: number = GRID_INTERVAL,
 ): T {
   if (!world || modes.grid === 'off') return world;
-  return snapPointToGrid(world.x, world.y, modes.grid) as T;
+  return snapPointToGrid(world.x, world.y, modes.grid, gridInterval) as T;
 }
 
 /**
@@ -88,10 +94,11 @@ export function snapLabelToGrid(
   width: number,
   height: number,
   mode: GridSnap = 'both',
+  gridInterval: number = GRID_INTERVAL,
 ): { x: number; y: number } {
   const halfW = width / 2;
   const halfH = height / 2;
-  const ul = snapPointToGrid(center.x - halfW, center.y - halfH, mode);
+  const ul = snapPointToGrid(center.x - halfW, center.y - halfH, mode, gridInterval);
   return { x: ul.x + halfW, y: ul.y + halfH };
 }
 
@@ -130,8 +137,9 @@ export interface SnapModes {
    *  membership and travel direction ignored). Composes with `line` via the
    *  existing 2-axis solver. `'off'` disables it. */
   all: AllSnap;
-  /** Snap the dragged anchor to the nearest GRID_INTERVAL multiple along the
-   *  selected axes. A **hard constraint**: when grid is on, the result is
+  /** Snap the dragged anchor to the nearest grid-interval multiple along the
+   *  selected axes (the active grid size — see the `gridInterval` params). A
+   *  **hard constraint**: when grid is on, the result is
    *  always on the grid. The other modes only narrow *which* grid point is
    *  chosen, and engage only when their target is itself grid-valid — when a
    *  line/all/corner/cadence alignment can't be reconciled with the grid it
@@ -196,6 +204,9 @@ export interface SnapInput {
   /** Which snap modes are active. Defaults to {@link DEFAULT_SNAP_MODES}
    *  (line on, others off) so existing call sites preserve current behavior. */
   modes?: SnapModes;
+  /** Grid cell size in world units for the grid hard-constraint. Defaults to
+   *  {@link GRID_INTERVAL} (10); the toolbar threads the active size (10 or 5). */
+  gridInterval?: number;
 }
 
 /**
@@ -223,6 +234,7 @@ export function snapDraggedStation(input: SnapInput): SnapResult {
     redistributeAnchor,
     bulletLineId,
     modes = DEFAULT_SNAP_MODES,
+    gridInterval = GRID_INTERVAL,
   } = input;
 
   type Cand = {
@@ -306,7 +318,7 @@ export function snapDraggedStation(input: SnapInput): SnapResult {
     // a fallback so explicit alignments (line/equidistant/tens/all) always
     // win when they fire.
     if (modes.grid !== 'off') {
-      const g = snapPointToGrid(proposedX, proposedY, modes.grid);
+      const g = snapPointToGrid(proposedX, proposedY, modes.grid, gridInterval);
       return { x: g.x, y: g.y, guides: [] };
     }
     return { x: proposedX, y: proposedY, guides: [] };
@@ -413,9 +425,10 @@ export function snapDraggedStation(input: SnapInput): SnapResult {
         lockOf(secondary),
         { x: proposedX, y: proposedY },
         modes.grid,
+        gridInterval,
       );
       if (r.kept === 'none') {
-        const g = snapPointToGrid(proposedX, proposedY, modes.grid);
+        const g = snapPointToGrid(proposedX, proposedY, modes.grid, gridInterval);
         return { x: g.x, y: g.y, guides: [] };
       }
       sx = r.x;
@@ -445,9 +458,15 @@ export function snapDraggedStation(input: SnapInput): SnapResult {
     // grid snap with no guide.
     if (gridOn) {
       const q = { x: c.targetStopX - c.dOff.x, y: c.targetStopY - c.dOff.y };
-      const r = reconcileLockWithGrid(q, c.axis, { x: proposedX, y: proposedY }, modes.grid);
+      const r = reconcileLockWithGrid(
+        q,
+        c.axis,
+        { x: proposedX, y: proposedY },
+        modes.grid,
+        gridInterval,
+      );
       if (!r.engaged) {
-        const g = snapPointToGrid(proposedX, proposedY, modes.grid);
+        const g = snapPointToGrid(proposedX, proposedY, modes.grid, gridInterval);
         return { x: g.x, y: g.y, guides: [] };
       }
       sx = r.x;
@@ -624,8 +643,9 @@ export function projectOntoAxis(p: Vec2, anchor: Vec2, axis: Vec2): Vec2 {
 }
 
 /** Tolerance for "is this coordinate a grid multiple", in world units. Grid-
- *  placed coordinates are exact `round(v/10)*10`; line-locked anchors whose
- *  stop offsets cancel are exact too — so a tight epsilon is right. */
+ *  placed coordinates are exact `round(v/interval)*interval`; line-locked
+ *  anchors whose stop offsets cancel are exact too — so a tight, absolute
+ *  epsilon is right at any grid interval. */
 const GRID_EPS = 1e-6;
 
 /** Which world axes the directional grid mode constrains. */
@@ -636,9 +656,15 @@ export function gridConstrains(mode: GridSnap): { gx: boolean; gy: boolean } {
   };
 }
 
-/** True when `v` sits on a grid line (multiple of {@link GRID_INTERVAL}). */
-export function isGridMultiple(v: number, eps: number = GRID_EPS): boolean {
-  return Math.abs(v - Math.round(v / GRID_INTERVAL) * GRID_INTERVAL) < eps;
+/** True when `v` sits on a grid line (a multiple of `gridInterval`). `gridInterval`
+ *  comes before `eps` so the common call site `isGridMultiple(v, interval)` reads
+ *  naturally; both default so existing `isGridMultiple(v)` callers are unchanged. */
+export function isGridMultiple(
+  v: number,
+  gridInterval: number = GRID_INTERVAL,
+  eps: number = GRID_EPS,
+): boolean {
+  return Math.abs(v - Math.round(v / gridInterval) * gridInterval) < eps;
 }
 
 /** Does the grid constrain motion *along* this lock axis (vs only its
@@ -649,7 +675,8 @@ function gridConstrainsAlong(axis: Vec2, mode: GridSnap): boolean {
   return (gx && Math.abs(axis.x) > 1e-9) || (gy && Math.abs(axis.y) > 1e-9);
 }
 
-const snapToGridMultiple = (v: number): number => Math.round(v / GRID_INTERVAL) * GRID_INTERVAL + 0;
+const snapToGridMultiple = (v: number, gridInterval: number = GRID_INTERVAL): number =>
+  Math.round(v / gridInterval) * gridInterval + 0;
 
 export interface LockGridResult {
   x: number;
@@ -679,25 +706,26 @@ export function reconcileLockWithGrid(
   axis: Vec2,
   proposed: Vec2,
   mode: GridSnap,
+  gridInterval: number = GRID_INTERVAL,
 ): LockGridResult {
   const { gx, gy } = gridConstrains(mode);
-  const m = snapToGridMultiple;
+  const m = (v: number) => snapToGridMultiple(v, gridInterval);
 
   if (Math.abs(axis.y) < 1e-9) {
     // Horizontal lock: along X, perp Y = q.y.
-    if (gy && !isGridMultiple(q.y)) return { x: 0, y: 0, engaged: false };
+    if (gy && !isGridMultiple(q.y, gridInterval)) return { x: 0, y: 0, engaged: false };
     return { x: gx ? m(proposed.x) : proposed.x, y: q.y, engaged: true };
   }
   if (Math.abs(axis.x) < 1e-9) {
     // Vertical lock: along Y, perp X = q.x.
-    if (gx && !isGridMultiple(q.x)) return { x: 0, y: 0, engaged: false };
+    if (gx && !isGridMultiple(q.x, gridInterval)) return { x: 0, y: 0, engaged: false };
     return { x: q.x, y: gy ? m(proposed.y) : proposed.y, engaged: true };
   }
   // Diagonal lock.
   const sigma = Math.sign(axis.x * axis.y);
   const c = q.y - sigma * q.x;
   if (gx && gy) {
-    if (!isGridMultiple(c)) return { x: 0, y: 0, engaged: false };
+    if (!isGridMultiple(c, gridInterval)) return { x: 0, y: 0, engaged: false };
     const foot = projectOntoAxis(proposed, q, axis);
     const x = m(foot.x);
     return { x, y: c + sigma * x, engaged: true };
@@ -734,14 +762,18 @@ export function reconcileCorner(
   secondary: GridLock,
   proposed: Vec2,
   mode: GridSnap,
+  gridInterval: number = GRID_INTERVAL,
 ): { x: number; y: number; kept: 'both' | 'primary' | 'secondary' | 'none' } {
   const { gx, gy } = gridConstrains(mode);
-  if ((!gx || isGridMultiple(cornerX)) && (!gy || isGridMultiple(cornerY))) {
+  if (
+    (!gx || isGridMultiple(cornerX, gridInterval)) &&
+    (!gy || isGridMultiple(cornerY, gridInterval))
+  ) {
     return { x: cornerX, y: cornerY, kept: 'both' };
   }
-  const rp = reconcileLockWithGrid(primary.q, primary.axis, proposed, mode);
+  const rp = reconcileLockWithGrid(primary.q, primary.axis, proposed, mode, gridInterval);
   if (rp.engaged) return { x: rp.x, y: rp.y, kept: 'primary' };
-  const rs = reconcileLockWithGrid(secondary.q, secondary.axis, proposed, mode);
+  const rs = reconcileLockWithGrid(secondary.q, secondary.axis, proposed, mode, gridInterval);
   if (rs.engaged) return { x: rs.x, y: rs.y, kept: 'secondary' };
   return { x: 0, y: 0, kept: 'none' };
 }

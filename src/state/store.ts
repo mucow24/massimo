@@ -33,6 +33,7 @@ import {
 import type { Station } from '../model/types';
 import { randomStationName } from './stationNames';
 import { pauseHistory, pushHistory, resumeHistory } from './history';
+import { useViewportStore } from './viewportStore';
 
 // Re-export so callers (Sidebar, etc.) keep working with one source of truth.
 export { effectiveLineOrder };
@@ -338,7 +339,19 @@ export const useDoc = create<DocState>()(
         setStationWaypoint: (stationId, isWaypoint) =>
           set((s) => T.setStationWaypoint(s, stationId, isWaypoint)),
         redistributeBetween: (startId, endId, mode = 'arc-bends', gridMode = 'off') =>
-          set((s) => T.redistributeBetween(s, startId, endId, mode, gridMode)),
+          // gridMode is per-call intent (depends on Shift at the call site);
+          // gridInterval is ambient, so read the active grid size from the
+          // viewport store here rather than threading it through every caller.
+          set((s) =>
+            T.redistributeBetween(
+              s,
+              startId,
+              endId,
+              mode,
+              gridMode,
+              useViewportStore.getState().gridSize,
+            ),
+          ),
         rotateStation: (id) => set((s) => T.rotateStation(s, id)),
         rotateItemsAround: (pivot, members) => set((s) => T.rotateItemsAround(s, pivot, members)),
         rotateStationAndLayout: (id, dir) => set((s) => T.rotateStationAndLayout(s, id, dir)),

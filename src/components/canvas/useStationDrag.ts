@@ -1,6 +1,7 @@
 import { RefObject, useRef, useState } from 'react';
 import { beginHistoryGroup, useDoc } from '../../state/store';
 import { useSnapPrefs } from '../../state/snapPrefs';
+import { useViewportStore } from '../../state/viewportStore';
 import type { StationId } from '../../model/types';
 import { Rotation } from '../../geometry/orientation';
 import { snapDraggedStation, SnapGuide, SNAP_PERP_TOLERANCE } from '../../geometry/snap';
@@ -38,6 +39,7 @@ export function useStationDrag(
   const moveStation = useDoc((s) => s.moveStation);
   const redistributeBetween = useDoc((s) => s.redistributeBetween);
   const snapModes = useSnapPrefs((s) => s.modes);
+  const gridSize = useViewportStore((s) => s.gridSize);
 
   const dragStationRef = useRef<{
     id: StationId;
@@ -116,6 +118,7 @@ export function useStationDrag(
         // Group-drag: siblings move with the grab, so exclude them as targets.
         excludedIds: ds.siblingIdSet.size > 0 ? ds.siblingIdSet : undefined,
         modes: snapModes,
+        gridInterval: gridSize,
       });
       nx = snap.x;
       ny = snap.y;
