@@ -36,8 +36,9 @@ jobs:
       # `npm ci` rejects. See .github/workflows/ci.yml for the full note.
       - run: npm install --no-audit --no-fund
 
-      # Produces dist/ with asset URLs prefixed by the `/massimo/` base
-      # configured in vite.config.ts for production builds.
+      # Produces dist/ with relative asset URLs (production `base: './'` in
+      # vite.config.ts), which resolve under the /massimo/ Pages subpath and
+      # when served from root locally.
       - name: Build
         run: npm run build
 
