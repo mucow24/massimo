@@ -918,6 +918,13 @@ describe('grid interval: 5px grid', () => {
     expect(snapPointToGrid(7, 8, 'vertical', 5)).toEqual({ x: 5, y: 8 });
   });
 
+  it('snapPointToGrid rounds to the nearest 20 when gridInterval is 20', () => {
+    // (7,7), (13,13), (33,33) land differently on 20 vs 10 vs 5 grids.
+    expect(snapPointToGrid(7, 7, 'both', 20)).toEqual({ x: 0, y: 0 });
+    expect(snapPointToGrid(13, 13, 'both', 20)).toEqual({ x: 20, y: 20 });
+    expect(snapPointToGrid(33, 33, 'both', 20)).toEqual({ x: 40, y: 40 });
+  });
+
   it('snapLabelToGrid snaps the upper-left to a 5px lattice', () => {
     // Width 40, height 20 → halfW 20, halfH 10. Center (53, 47) → UL (33, 37)
     // → snap to (35, 35) on the 5px grid → center back to (55, 45).

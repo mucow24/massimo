@@ -37,29 +37,31 @@ test.beforeEach(async ({ page }) => {
 });
 
 test.describe('grid size toggle', () => {
-  test('button shows the current size, defaults to 10, and persists 5 across reload', async ({
-    page,
-  }) => {
+  test('button cycles 10 → 20 → 5 and persists across reload', async ({ page }) => {
     await seedAndOpen(page, loneStation);
-    const sizeBtn = page.getByRole('button', { name: 'Toggle grid size' });
+    const sizeBtn = page.getByRole('button', { name: 'Cycle grid size' });
 
     await expect(sizeBtn).toHaveText('10');
     await expect(sizeBtn).toHaveAttribute('data-grid-size', '10');
 
-    await sizeBtn.click();
+    await sizeBtn.click(); // 10 → 20
+    await expect(sizeBtn).toHaveText('20');
+    await sizeBtn.click(); // 20 → 5
     await expect(sizeBtn).toHaveText('5');
     await expect(sizeBtn).toHaveAttribute('data-grid-size', '5');
 
     // Persisted to localStorage → still 5 after a reload.
     await page.reload();
     await page.waitForSelector('.canvas-host svg');
-    await expect(page.getByRole('button', { name: 'Toggle grid size' })).toHaveAttribute(
+    await expect(page.getByRole('button', { name: 'Cycle grid size' })).toHaveAttribute(
       'data-grid-size',
       '5',
     );
   });
 
-  test('renders a denser grid (twice as many vertical lines) at 5px', async ({ page }) => {
+  test('grid density tracks the size: 20px is sparser, 5px is denser than 10px', async ({
+    page,
+  }) => {
     await seedAndOpen(page, loneStation);
     const verticalCount = () =>
       page.evaluate(() => {
@@ -68,10 +70,13 @@ test.describe('grid size toggle', () => {
           (l) => l.getAttribute('x1') === l.getAttribute('x2'),
         ).length;
       });
+    const btn = page.getByRole('button', { name: 'Cycle grid size' });
     const at10 = await verticalCount();
-    await page.getByRole('button', { name: 'Toggle grid size' }).click();
+    await btn.click(); // 10 → 20
+    const at20 = await verticalCount();
+    await btn.click(); // 20 → 5
     const at5 = await verticalCount();
-    // Halving the cell size doubles the column count across the same viewport.
+    expect(at20).toBeLessThan(at10);
     expect(at5).toBeGreaterThan(at10);
   });
 
@@ -85,8 +90,11 @@ test.describe('grid size toggle', () => {
     await gridBtn.click(); // vertical → both
     await expect(gridBtn).toHaveAttribute('data-snap-state', 'both');
 
-    // Set the grid to 5px.
-    await page.getByRole('button', { name: 'Toggle grid size' }).click();
+    // Cycle the grid to 5px (10 → 20 → 5).
+    const sizeBtn = page.getByRole('button', { name: 'Cycle grid size' });
+    await sizeBtn.click();
+    await sizeBtn.click();
+    await expect(sizeBtn).toHaveAttribute('data-grid-size', '5');
 
     // Drag B by +7,+7. World delta == page delta at zoom 1 → proposed (7,7),
     // which snaps to (5,5) on a 5px grid (it would be (10,10) on a 10px grid).
@@ -132,7 +140,10 @@ test.describe('grid size toggle', () => {
     await gridBtn.click();
     await gridBtn.click();
     await expect(gridBtn).toHaveAttribute('data-snap-state', 'both');
-    await page.getByRole('button', { name: 'Toggle grid size' }).click();
+    const sizeBtn = page.getByRole('button', { name: 'Cycle grid size' });
+    await sizeBtn.click();
+    await sizeBtn.click();
+    await expect(sizeBtn).toHaveAttribute('data-grid-size', '5');
 
     // Grab vertex 0's handle (centered on world origin) and drag +7,+7.
     const handle = page.locator('[data-polygon-vertex="0"]');

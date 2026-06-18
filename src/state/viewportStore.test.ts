@@ -1,5 +1,5 @@
 import { describe, it, expect, beforeEach } from 'vitest';
-import { useViewportStore } from './viewportStore';
+import { useViewportStore, nextGridSize, GRID_SIZES } from './viewportStore';
 
 beforeEach(() => {
   localStorage.clear();
@@ -30,6 +30,17 @@ describe('viewportStore — gridSize', () => {
     const raw = localStorage.getItem('massimo-viewport');
     expect(raw).toBeTruthy();
     expect(JSON.parse(raw!).state.gridSize).toBe(5);
+  });
+
+  it('nextGridSize cycles 5 → 10 → 20 → 5', () => {
+    expect(nextGridSize(5)).toBe(10);
+    expect(nextGridSize(10)).toBe(20);
+    expect(nextGridSize(20)).toBe(5);
+  });
+
+  it('nextGridSize falls back to the first size for an unknown value', () => {
+    expect(nextGridSize(7)).toBe(GRID_SIZES[0]);
+    expect(GRID_SIZES).toEqual([5, 10, 20]);
   });
 
   it('rehydrates a persisted blob without gridSize back to the default 10', async () => {

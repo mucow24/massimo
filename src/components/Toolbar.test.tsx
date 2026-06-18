@@ -55,15 +55,18 @@ describe('Toolbar — tool + view toggles', () => {
     expect(useViewportStore.getState().gridVisible).toBe(false);
   });
 
-  it('toggles grid size between 10 and 5', async () => {
+  it('cycles grid size 10 → 20 → 5 → 10', async () => {
     const user = userEvent.setup();
     render(<Toolbar />);
-    const btn = screen.getByLabelText('Toggle grid size');
-    expect(btn).toHaveTextContent('10');
-    await user.click(btn);
+    const btn = () => screen.getByLabelText('Cycle grid size');
+    expect(btn()).toHaveTextContent('10');
+    await user.click(btn());
+    expect(useViewportStore.getState().gridSize).toBe(20);
+    expect(btn()).toHaveTextContent('20');
+    await user.click(btn());
     expect(useViewportStore.getState().gridSize).toBe(5);
-    expect(screen.getByLabelText('Toggle grid size')).toHaveTextContent('5');
-    await user.click(screen.getByLabelText('Toggle grid size'));
+    expect(btn()).toHaveTextContent('5');
+    await user.click(btn());
     expect(useViewportStore.getState().gridSize).toBe(10);
   });
 

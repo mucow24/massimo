@@ -2,6 +2,19 @@ import { create } from 'zustand';
 import { persist, createJSONStorage } from 'zustand/middleware';
 import type { Viewport } from '../model/types';
 
+/** Grid cell sizes the toolbar button cycles through, in world units. */
+export const GRID_SIZES: readonly number[] = [5, 10, 20];
+
+/**
+ * The next grid size in the cycle (5 → 10 → 20 → 5). Falls back to the first
+ * size when `current` isn't one of the known sizes (e.g. a stale persisted
+ * value), so a click always lands on a valid grid.
+ */
+export function nextGridSize(current: number): number {
+  const i = GRID_SIZES.indexOf(current);
+  return GRID_SIZES[(i + 1) % GRID_SIZES.length];
+}
+
 interface ViewportState extends Viewport {
   setViewport: (v: Viewport) => void;
   gridVisible: boolean;
