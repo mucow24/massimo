@@ -2,6 +2,7 @@ import type { Vec2 } from './vec';
 import { add, scale, sub, dot, cross } from './vec';
 import {
   axesForAllSnap,
+  GRID_INTERVAL,
   reconcileCorner,
   reconcileLockWithGrid,
   snapPointToGrid,
@@ -22,6 +23,9 @@ export interface PolygonSnapInput {
   modes: SnapModes;
   /** Perpendicular tolerance in world units. Defaults to {@link SNAP_PERP_TOLERANCE}. */
   tolerance?: number;
+  /** Grid cell size in world units. Defaults to {@link GRID_INTERVAL} (10); the
+   *  toolbar threads the active size (10 or 5). */
+  gridInterval?: number;
 }
 
 export interface PolygonSnapResult {
@@ -60,6 +64,7 @@ function projectOntoAxis(p: Vec2, t: Vec2, a: Vec2): { foot: Vec2; perpDist: num
 export function snapPolygonPoint(input: PolygonSnapInput): PolygonSnapResult {
   const { proposed, lineTargets, allTargets, modes } = input;
   const tol = input.tolerance ?? SNAP_PERP_TOLERANCE;
+  const gridInterval = input.gridInterval ?? GRID_INTERVAL;
 
   const candidates: Candidate[] = [];
   if (modes.line) {
@@ -96,7 +101,7 @@ export function snapPolygonPoint(input: PolygonSnapInput): PolygonSnapResult {
   // grid it yields entirely and we snap purely to grid (no guide).
   const plainGrid = (): PolygonSnapResult => {
     if (!gridOn) return { x: proposed.x, y: proposed.y, guides: [] };
-    const g = snapPointToGrid(proposed.x, proposed.y, modes.grid);
+    const g = snapPointToGrid(proposed.x, proposed.y, modes.grid, gridInterval);
     return { x: g.x, y: g.y, guides: [] };
   };
   const guideTo = (target: Vec2, p: Vec2): SnapGuide => ({ from: { ...target }, to: { ...p } });
@@ -123,6 +128,7 @@ export function snapPolygonPoint(input: PolygonSnapInput): PolygonSnapResult {
       vIsPrimary ? hLock : vLock,
       proposed,
       modes.grid,
+      gridInterval,
     );
     if (r.kept === 'none') return plainGrid();
     const p: Vec2 = { x: r.x, y: r.y };
@@ -148,7 +154,7 @@ export function snapPolygonPoint(input: PolygonSnapInput): PolygonSnapResult {
       const lock = bestV
         ? { q: { x: bestV.value, y: proposed.y }, axis: { x: 0, y: 1 } }
         : { q: { x: proposed.x, y: bestH!.value }, axis: { x: 1, y: 0 } };
-      const r = reconcileLockWithGrid(lock.q, lock.axis, proposed, modes.grid);
+      const r = reconcileLockWithGrid(lock.q, lock.axis, proposed, modes.grid, gridInterval);
       if (!r.engaged) return plainGrid();
       const p: Vec2 = { x: r.x, y: r.y };
       return { x: p.x, y: p.y, guides: [guideTo(singleAxis.target, p)] };
@@ -158,7 +164,7 @@ export function snapPolygonPoint(input: PolygonSnapInput): PolygonSnapResult {
     if (!gridOn) {
       return { x: bestD.foot.x, y: bestD.foot.y, guides: [guideTo(bestD.target, bestD.foot)] };
     }
-    const r = reconcileLockWithGrid(bestD.target, bestD.axis, proposed, modes.grid);
+    const r = reconcileLockWithGrid(bestD.target, bestD.axis, proposed, modes.grid, gridInterval);
     if (!r.engaged) return plainGrid();
     const p: Vec2 = { x: r.x, y: r.y };
     return { x: p.x, y: p.y, guides: [guideTo(bestD.target, p)] };

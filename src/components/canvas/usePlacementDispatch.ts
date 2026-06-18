@@ -1,6 +1,7 @@
 import { useState } from 'react';
 import { cancelAppendMode, useDoc, useSelection } from '../../state/store';
 import { useSnapPrefs } from '../../state/snapPrefs';
+import { useViewportStore } from '../../state/viewportStore';
 import { randomStationName } from '../../state/stationNames';
 import { maybeSnapToGrid } from '../../geometry/snap';
 import type { ViewportApi } from './useViewport';
@@ -37,6 +38,7 @@ export function usePlacementDispatch(view: ViewportApi): PlacementDispatch {
   const lineOrder = useDoc((s) => s.lineOrder);
   const lines = useDoc((s) => s.lines);
   const snapModes = useSnapPrefs((s) => s.modes);
+  const gridSize = useViewportStore((s) => s.gridSize);
 
   // Pre-roll the next station name when placing-station mode turns on, via the
   // "adjust state during render" pattern — see
@@ -54,7 +56,7 @@ export function usePlacementDispatch(view: ViewportApi): PlacementDispatch {
   const handleCanvasPlace = (e: React.MouseEvent): boolean => {
     const mode = uiMode;
     if (mode.kind === 'placing-station') {
-      const w = maybeSnapToGrid(view.screenToWorld(e.clientX, e.clientY), snapModes);
+      const w = maybeSnapToGrid(view.screenToWorld(e.clientX, e.clientY), snapModes, gridSize);
       addStation(w.x, w.y, previewName ?? undefined);
       setPreviewName(randomStationName());
       // Stay in place-station mode; user clicks again or hits Esc / the

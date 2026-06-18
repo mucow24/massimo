@@ -27,7 +27,14 @@ beforeEach(() => {
     selectedStationIds: [],
     selectedLineId: null,
   });
-  useViewportStore.setState({ x: 0, y: 0, zoom: 1, gridVisible: true, darkMode: false });
+  useViewportStore.setState({
+    x: 0,
+    y: 0,
+    zoom: 1,
+    gridVisible: true,
+    gridSize: 10,
+    darkMode: false,
+  });
   vi.mocked(downloadBlob).mockClear();
 });
 
@@ -46,6 +53,18 @@ describe('Toolbar — tool + view toggles', () => {
     render(<Toolbar />);
     await user.click(screen.getByLabelText('Toggle grid'));
     expect(useViewportStore.getState().gridVisible).toBe(false);
+  });
+
+  it('toggles grid size between 10 and 5', async () => {
+    const user = userEvent.setup();
+    render(<Toolbar />);
+    const btn = screen.getByLabelText('Toggle grid size');
+    expect(btn).toHaveTextContent('10');
+    await user.click(btn);
+    expect(useViewportStore.getState().gridSize).toBe(5);
+    expect(screen.getByLabelText('Toggle grid size')).toHaveTextContent('5');
+    await user.click(screen.getByLabelText('Toggle grid size'));
+    expect(useViewportStore.getState().gridSize).toBe(10);
   });
 
   it('toggles layering mode', async () => {

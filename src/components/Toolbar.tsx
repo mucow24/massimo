@@ -54,6 +54,8 @@ export function Toolbar() {
   const setViewport = useViewportStore((s) => s.setViewport);
   const gridVisible = useViewportStore((s) => s.gridVisible);
   const setGridVisible = useViewportStore((s) => s.setGridVisible);
+  const gridSize = useViewportStore((s) => s.gridSize);
+  const setGridSize = useViewportStore((s) => s.setGridSize);
   const darkMode = useViewportStore((s) => s.darkMode);
   const setDarkMode = useViewportStore((s) => s.setDarkMode);
   const clearAll = useDoc((s) => s.clearAll);
@@ -197,6 +199,16 @@ export function Toolbar() {
           onClick={() => setGridVisible(!gridVisible)}
         >
           <FrameIcon />
+        </button>
+        <button
+          type="button"
+          className="tool-btn tool-btn-text"
+          title={`Grid: ${gridSize}px — click for ${gridSize === 10 ? 5 : 10}px`}
+          aria-label="Toggle grid size"
+          data-grid-size={gridSize}
+          onClick={() => setGridSize(gridSize === 10 ? 5 : 10)}
+        >
+          {gridSize}
         </button>
         <button
           type="button"

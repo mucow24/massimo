@@ -6,6 +6,10 @@ interface ViewportState extends Viewport {
   setViewport: (v: Viewport) => void;
   gridVisible: boolean;
   setGridVisible: (visible: boolean) => void;
+  /** Grid cell size in world units. Drives both the visible grid and all grid
+   *  snapping (toggled between 10 and 5 from the toolbar). */
+  gridSize: number;
+  setGridSize: (size: number) => void;
   darkMode: boolean;
   setDarkMode: (dark: boolean) => void;
 }
@@ -24,6 +28,8 @@ export const useViewportStore = create<ViewportState>()(
       setViewport: (v) => set(v),
       gridVisible: true,
       setGridVisible: (gridVisible) => set({ gridVisible }),
+      gridSize: 10,
+      setGridSize: (gridSize) => set({ gridSize }),
       darkMode: false,
       setDarkMode: (darkMode) => set({ darkMode }),
     }),
@@ -35,6 +41,7 @@ export const useViewportStore = create<ViewportState>()(
         y: s.y,
         zoom: s.zoom,
         gridVisible: s.gridVisible,
+        gridSize: s.gridSize,
         darkMode: s.darkMode,
       }),
     },

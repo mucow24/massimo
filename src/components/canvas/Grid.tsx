@@ -1,4 +1,3 @@
-import { GRID_INTERVAL } from '../../geometry/snap';
 import { useThemeColors } from '../../state/theme';
 
 interface Props {
@@ -7,12 +6,16 @@ interface Props {
   vbW: number;
   vbH: number;
   zoom: number;
+  /** Grid cell size in world units (the active toolbar grid size). Spacing
+   *  matches the snap engine's `gridInterval` so the visible grid and snapping
+   *  always agree. */
+  gridSize: number;
 }
 
-/** Subtle background grid; spacing matches the snap engine's GRID_INTERVAL. */
-export function Grid({ vbX, vbY, vbW, vbH, zoom }: Props) {
+/** Subtle background grid; spacing matches the snap engine's grid interval. */
+export function Grid({ vbX, vbY, vbW, vbH, zoom, gridSize }: Props) {
   const stroke = useThemeColors().grid;
-  const step = GRID_INTERVAL;
+  const step = gridSize;
   const x0 = Math.floor(vbX / step) * step;
   const y0 = Math.floor(vbY / step) * step;
   const lines: React.ReactElement[] = [];

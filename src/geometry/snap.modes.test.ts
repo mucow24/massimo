@@ -903,6 +903,77 @@ describe('snapPointToGrid', () => {
   });
 });
 
+describe('grid interval: 5px grid', () => {
+  it('snapPointToGrid rounds to the nearest 5 when gridInterval is 5', () => {
+    // (7, 7) rounds to (5, 5) on a 5px grid but (10, 10) on a 10px grid — the
+    // distinguishing case that proves the interval is actually honored.
+    expect(snapPointToGrid(7, 7, 'both', 5)).toEqual({ x: 5, y: 5 });
+    expect(snapPointToGrid(7, 7, 'both', 10)).toEqual({ x: 10, y: 10 });
+    expect(snapPointToGrid(8, 12, 'both', 5)).toEqual({ x: 10, y: 10 });
+    expect(snapPointToGrid(-7, -8, 'both', 5)).toEqual({ x: -5, y: -10 });
+  });
+
+  it('snapPointToGrid 5px respects the directional modes', () => {
+    expect(snapPointToGrid(7, 8, 'horizontal', 5)).toEqual({ x: 7, y: 10 });
+    expect(snapPointToGrid(7, 8, 'vertical', 5)).toEqual({ x: 5, y: 8 });
+  });
+
+  it('snapLabelToGrid snaps the upper-left to a 5px lattice', () => {
+    // Width 40, height 20 → halfW 20, halfH 10. Center (53, 47) → UL (33, 37)
+    // → snap to (35, 35) on the 5px grid → center back to (55, 45).
+    expect(snapLabelToGrid({ x: 53, y: 47 }, 40, 20, 'both', 5)).toEqual({ x: 55, y: 45 });
+  });
+
+  it('maybeSnapToGrid threads the interval', () => {
+    const modes: SnapModes = {
+      line: false,
+      equidistant: false,
+      tens: false,
+      all: 'off',
+      grid: 'both',
+    };
+    expect(maybeSnapToGrid({ x: 7, y: 7 }, modes, 5)).toEqual({ x: 5, y: 5 });
+  });
+
+  it('snapDraggedStation grid fallback notches to 5 when gridInterval is 5', () => {
+    const dragged = makeStation({ id: 'd', x: 0, y: 0, stops: [makeStop('L1')] });
+    const r = snapDraggedStation({
+      draggedId: 'd',
+      proposedX: 7,
+      proposedY: 7,
+      draggedRotation: 0,
+      draggedStops: dragged.stops,
+      stations: stations(dragged),
+      lines: linesOf(lineOf('L1', ['d'])),
+      modes: { line: false, equidistant: false, tens: false, all: 'off', grid: 'both' },
+      gridInterval: 5,
+    });
+    expect(r.x).toBe(5);
+    expect(r.y).toBe(5);
+    expect(r.guides).toEqual([]);
+  });
+
+  it('line + 5px grid: perpendicular line-locks while the along-axis steps by 5', () => {
+    // Horizontal corridor (line locks y=0); along-axis x=27 → 25 on a 5px grid
+    // (vs 30 on a 10px grid).
+    const target = makeStation({ id: 't', x: 100, y: 0, stops: [horizontalStop('L1')] });
+    const dragged = makeStation({ id: 'd', x: 0, y: 0, stops: [horizontalStop('L1')] });
+    const r = snapDraggedStation({
+      draggedId: 'd',
+      proposedX: 27,
+      proposedY: 3,
+      draggedRotation: 0,
+      draggedStops: dragged.stops,
+      stations: stations(dragged, target),
+      lines: linesOf(lineOf('L1', ['d', 't'])),
+      modes: { line: true, equidistant: false, tens: false, all: 'off', grid: 'both' },
+      gridInterval: 5,
+    });
+    expect(r.y).toBeCloseTo(0, 5);
+    expect(r.x).toBeCloseTo(25, 5);
+  });
+});
+
 describe('snapLabelToGrid', () => {
   // A label's (x, y) is its bbox center. snapLabelToGrid snaps the upper-left
   // corner of the bbox to a grid intersection and returns the corresponding

@@ -81,6 +81,7 @@ export function MapCanvas() {
   const selection = useSelection();
   const snapModes = useSnapPrefs((s) => s.modes);
   const gridVisible = useViewportStore((s) => s.gridVisible);
+  const gridSize = useViewportStore((s) => s.gridSize);
   const theme = useThemeColors();
   // Gap/underlay color for dashed + hatched styles: matches the canvas
   // background so the "off" stripes read as empty canvas, not stale white.
@@ -260,7 +261,7 @@ export function MapCanvas() {
       // Grid-snap the placement preview for new stations so the user sees
       // exactly where it'll land. Other placement modes keep the raw
       // cursor — grid snap is scoped to stations for now.
-      const w = mode.kind === 'placing-station' ? maybeSnapToGrid(raw, snapModes) : raw;
+      const w = mode.kind === 'placing-station' ? maybeSnapToGrid(raw, snapModes, gridSize) : raw;
       setCursorWorld(w);
     } else if (cursorWorld) {
       setCursorWorld(null);
@@ -487,6 +488,7 @@ export function MapCanvas() {
               vbW={view.vbW}
               vbH={view.vbH}
               zoom={view.viewport.zoom}
+              gridSize={gridSize}
             />
           </g>
         )}
