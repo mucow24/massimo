@@ -1,4 +1,5 @@
 import { useDoc, type DocSnapshot } from './store';
+import { useSelection } from './selection';
 
 // The ONE module that reaches into zundo's temporal-store internals — the
 // `pastStates` / `futureStates` arrays. Confining the private shape here means
@@ -22,11 +23,16 @@ export function resumeHistory(): void {
   useDoc.temporal.getState().resume();
 }
 
+// After moving through history, prune the (separate) selection store of any
+// ids the restored doc no longer contains — otherwise undoing the deletion of a
+// still-selected item leaves a dangling selection id behind.
 export function undo(): void {
   useDoc.temporal.getState().undo();
+  useSelection.getState().reconcileWithDoc(useDoc.getState());
 }
 export function redo(): void {
   useDoc.temporal.getState().redo();
+  useSelection.getState().reconcileWithDoc(useDoc.getState());
 }
 
 // Stack depths — for assertions and (future) UI enable/disable.

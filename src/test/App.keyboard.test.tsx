@@ -86,6 +86,48 @@ describe('App keyboard shortcuts: inForm guard routing', () => {
 
     expect(useSelection.getState().spaceHeld).toBe(false);
   });
+
+  // The non-modifier canvas shortcuts (Space-pan, a/h/l/t tools) must NOT fire
+  // while a range slider or color picker is focused — `inForm` lets those
+  // through for the Ctrl-combos, but `inFormControl` (the stricter test) gates
+  // the bare shortcuts so adjusting a slider can't hijack the canvas.
+  for (const type of ['range', 'color'] as const) {
+    it(`Space on a focused ${type} input does not trigger pan mode`, () => {
+      render(<App />);
+      const input = document.createElement('input');
+      input.type = type;
+      document.body.appendChild(input);
+      input.focus();
+      try {
+        fireEvent.keyDown(input, { key: ' ' });
+        expect(useSelection.getState().spaceHeld).toBe(false);
+      } finally {
+        document.body.removeChild(input);
+      }
+    });
+
+    it(`tool shortcut "t" on a focused ${type} input does not switch mode`, () => {
+      render(<App />);
+      const input = document.createElement('input');
+      input.type = type;
+      document.body.appendChild(input);
+      input.focus();
+      try {
+        fireEvent.keyDown(input, { key: 't' });
+        expect(useSelection.getState().uiMode.kind).toBe('idle');
+      } finally {
+        document.body.removeChild(input);
+      }
+    });
+  }
+
+  it('window blur resets a held Space (stuck-pan guard)', () => {
+    render(<App />);
+    fireEvent.keyDown(window, { key: ' ' });
+    expect(useSelection.getState().spaceHeld).toBe(true);
+    fireEvent.blur(window);
+    expect(useSelection.getState().spaceHeld).toBe(false);
+  });
 });
 
 describe('App keyboard shortcuts: layering mode', () => {

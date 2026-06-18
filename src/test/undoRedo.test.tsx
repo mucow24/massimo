@@ -38,14 +38,30 @@ describe('undo/redo', () => {
     expect(useViewportStore.getState().x).toBe(50);
   });
 
-  it('does NOT capture selection in history', () => {
+  it('an ungrouped no-op mutation does not push a redundant history entry', () => {
+    // moveLabel by (0,0) short-circuits and returns the doc unchanged. zundo
+    // has no diff/equality by default and pickDocSnapshot allocates fresh, so
+    // without the `equality: docSnapshotsEqual` guard this would still record a
+    // past entry — making the next Ctrl+Z appear to do nothing.
+    const id = useDoc.getState().addStation(0, 0);
+    const before = historyDepth();
+    useDoc.getState().moveLabel(id, 0, 0);
+    expect(historyDepth()).toBe(before);
+  });
+
+  it('reconciles selection against the doc after undo (drops dangling ids)', () => {
     const { addStation } = useDoc.getState();
     const id = addStation(0, 0);
     useSelection.getState().selectStation(id);
     expect(useSelection.getState().selectedStationIds).toEqual([id]);
     undo();
-    // Station gone, but selection store is independent.
-    expect(useSelection.getState().selectedStationIds).toEqual([id]);
+    // The selection store is separate from the undo snapshot, so undo never
+    // *restores* a prior selection — but it DOES reconcile the live selection
+    // against the restored doc. The station the undo removed is pruned rather
+    // than left as a dangling id that consumers would index into a missing
+    // station.
+    expect(useDoc.getState().stations[id]).toBeUndefined();
+    expect(useSelection.getState().selectedStationIds).toEqual([]);
   });
 });
 

@@ -1,7 +1,8 @@
 import { describe, it, expect, beforeEach } from 'vitest';
 import { useSelection, type UiMode } from './store';
 import { clearedSelections, getCopyableSelection, soleSelection } from './selection';
-import type { LineId, StationId } from '../model/types';
+import { DEFAULT_DOC } from '../model/transforms';
+import type { LineId, MapDoc, StationId } from '../model/types';
 
 beforeEach(() => {
   // Reset through the production full-wipe helper so this can't drift from the
@@ -594,6 +595,108 @@ describe('soleSelection', () => {
     // One station + one bullet across two lists is still "multi".
     useSelection.setState({ selectedStationIds: ['s1'] as StationId[], selectedLabelIds: ['g1'] });
     expect(soleSelection(useSelection.getState())).toBeNull();
+  });
+});
+
+describe('replace/set selection drops a stale sibling primary (transfer + line)', () => {
+  // The generic `replace` action (setLabelSelection / setRouteBulletSelection /
+  // setPolygonSelection) used to pass {} for the cross-clear, so a previously-
+  // selected line OR transfer survived a rect-select of a different item kind.
+  // SIBLING_PRIMARY_CLEAR now covers the transfer too, and replace folds it in.
+  it('setLabelSelection clears a previously-selected transfer', () => {
+    useSelection.setState({ selectedTransferId: 't1' });
+    useSelection.getState().setLabelSelection(['g1']);
+    expect(useSelection.getState().selectedTransferId).toBeNull();
+    expect(useSelection.getState().selectedLabelIds).toEqual(['g1']);
+  });
+
+  it('setRouteBulletSelection clears a stale line AND transfer', () => {
+    useSelection.setState({ selectedLineId: 'L1' as LineId, selectedTransferId: 't1' });
+    useSelection.getState().setRouteBulletSelection(['b1']);
+    const s = useSelection.getState();
+    expect(s.selectedLineId).toBeNull();
+    expect(s.selectedTransferId).toBeNull();
+    expect(s.selectedRouteBulletIds).toEqual(['b1']);
+  });
+
+  it('setStationSelection clears a stale transfer', () => {
+    useSelection.setState({ selectedTransferId: 't1' });
+    useSelection.getState().setStationSelection(['A'] as StationId[]);
+    expect(useSelection.getState().selectedTransferId).toBeNull();
+  });
+
+  it('addStationsToSelection clears a stale transfer (shared SIBLING_PRIMARY_CLEAR)', () => {
+    useSelection.setState({ selectedTransferId: 't1' });
+    useSelection.getState().addStationsToSelection(['A'] as StationId[]);
+    expect(useSelection.getState().selectedTransferId).toBeNull();
+  });
+
+  it('toggleStationSelection (append branch) clears a stale transfer', () => {
+    useSelection.setState({ selectedTransferId: 't1' });
+    useSelection.getState().toggleStationSelection('A' as StationId);
+    expect(useSelection.getState().selectedStationIds).toEqual(['A']);
+    expect(useSelection.getState().selectedTransferId).toBeNull();
+  });
+});
+
+describe('reconcileWithDoc', () => {
+  // Build a doc whose entity maps contain exactly the given ids. Values are
+  // presence-only — reconcileWithDoc just checks existence (and a polygon's
+  // vertex count).
+  const docWith = (present: {
+    stations?: string[];
+    lines?: string[];
+    lineTags?: string[];
+    transfers?: string[];
+    routeBullets?: string[];
+    textLabels?: string[];
+    polygons?: Record<string, { vertices: unknown[] }>;
+  }): MapDoc => {
+    const fill = (ids?: string[]) => Object.fromEntries((ids ?? []).map((id) => [id, {} as never]));
+    return {
+      ...DEFAULT_DOC,
+      stations: fill(present.stations),
+      lines: fill(present.lines),
+      lineTags: fill(present.lineTags),
+      transfers: fill(present.transfers),
+      routeBullets: fill(present.routeBullets),
+      textLabels: fill(present.textLabels),
+      polygons: (present.polygons ?? {}) as never,
+    } as MapDoc;
+  };
+
+  it('prunes ids missing from the doc and keeps present ones', () => {
+    useSelection.setState({
+      selectedStationIds: ['s1', 's2'] as StationId[],
+      selectedLabelIds: ['g1', 'g2'],
+      selectedTransferId: 't1',
+      selectedLineId: 'L1' as LineId,
+    });
+    useSelection
+      .getState()
+      .reconcileWithDoc(
+        docWith({ stations: ['s1'], textLabels: ['g2'], transfers: [], lines: [] }),
+      );
+    const s = useSelection.getState();
+    expect(s.selectedStationIds).toEqual(['s1']);
+    expect(s.selectedLabelIds).toEqual(['g2']);
+    expect(s.selectedTransferId).toBeNull();
+    expect(s.selectedLineId).toBeNull();
+  });
+
+  it('keeps the same array reference when nothing dangles (no spurious update)', () => {
+    const stationIds = ['s1', 's2'] as StationId[];
+    useSelection.setState({ selectedStationIds: stationIds });
+    useSelection.getState().reconcileWithDoc(docWith({ stations: ['s1', 's2'] }));
+    expect(useSelection.getState().selectedStationIds).toBe(stationIds);
+  });
+
+  it('drops a selected vertex whose polygon shrank past its index', () => {
+    useSelection.setState({ selectedVertex: { polygonId: 'p1', index: 4 } });
+    useSelection
+      .getState()
+      .reconcileWithDoc(docWith({ polygons: { p1: { vertices: [0, 0, 0] } } }));
+    expect(useSelection.getState().selectedVertex).toBeNull();
   });
 });
 

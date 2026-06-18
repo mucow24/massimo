@@ -14,7 +14,7 @@ import {
 } from './lineStroke';
 import { DEFAULT_DOT_STYLE, DOT_SHAPE_PRESETS, dotStylesEqual } from './dotStyle';
 import { pairKeyOf } from './pairKey';
-import { KNOWN_PALETTE_IDS } from './palettes';
+import { KNOWN_PALETTE_IDS, type PaletteId } from './palettes';
 import type {
   DotBaseShape,
   DotFill,
@@ -118,6 +118,16 @@ export interface SerializedFile {
 
 export type ParseResult = { ok: true; doc: MapDoc } | { ok: false; error: string };
 
+// Enforce the "at least one VALID active palette" invariant: drop unknown ids,
+// and fall back to the default set when nothing valid remains. Shared by
+// `parse()` (file import) and the zustand persist `migrate` hook (localStorage
+// rehydration) so both load paths keep the invariant in step — a doc with an
+// explicit empty / all-unknown `activePalettes` is unreachable from the UI.
+export function validActivePalettes(active: readonly PaletteId[] | undefined): PaletteId[] {
+  const valid = (active ?? []).filter((id) => KNOWN_PALETTE_IDS.has(id));
+  return valid.length > 0 ? valid : [...DEFAULT_DOC.activePalettes];
+}
+
 export function serialize(doc: MapDoc): string {
   const file: SerializedFile = { format: SCHEMA_FORMAT, doc };
   return JSON.stringify(file, null, 2);
@@ -151,13 +161,9 @@ export function parse(json: string): ParseResult {
   const merged: MapDoc = { ...DEFAULT_DOC, ...(docWithMigratedWeight as Partial<MapDoc>) };
   // Enforce the "at least one valid palette" invariant on load. A malformed
   // file with explicit `activePalettes: []` or only unknown ids would
-  // otherwise leave the doc in an unreachable-from-UI state.
-  const validPalettes = (merged.activePalettes ?? []).filter((id) => KNOWN_PALETTE_IDS.has(id));
-  if (validPalettes.length === 0) {
-    merged.activePalettes = [...DEFAULT_DOC.activePalettes];
-  } else {
-    merged.activePalettes = validPalettes;
-  }
+  // otherwise leave the doc in an unreachable-from-UI state. Shared with the
+  // localStorage rehydration path via `validActivePalettes`.
+  merged.activePalettes = validActivePalettes(merged.activePalettes);
   // Sanitize per-line segment styles: drop unknown style values, drop 'solid'
   // (never persisted), and drop any entry whose pair-key isn't a station-pair
   // adjacency on the line. Also backfill `name` for legacy files saved before

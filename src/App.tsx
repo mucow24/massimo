@@ -69,10 +69,19 @@ export default function App() {
 
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
-      // Ignore keystrokes in form fields so deleting text doesn't nuke
-      // the station you're renaming. Range sliders and color pickers have
-      // no native keystroke behavior to preserve, so they fall through to
-      // global shortcuts — otherwise Ctrl+Z is swallowed mid-slider-drag.
+      // Two-tier form-field guard.
+      //
+      // `inForm` excludes range sliders and color pickers so the Ctrl-combos
+      // (undo/redo/copy/paste/duplicate) still fire while one is focused —
+      // otherwise Ctrl+Z is swallowed mid-slider-drag (sliders/pickers have no
+      // native text-editing shortcuts worth preserving).
+      //
+      // `inFormControl` is the stricter "any focusable form control" test used
+      // by the non-modifier canvas shortcuts (Delete, arrow-nudge, the a/h/l/t
+      // tool toggles, and Space-pan). Those have no business firing while ANY
+      // input is focused — a bare letter is just typing, and Space/arrows would
+      // hijack the native slider/picker behavior (and strand pan mode if the
+      // window then blurred before keyup).
       const target = e.target as HTMLElement | null;
       const tag = target?.tagName;
       const inputType = tag === 'INPUT' ? (target as HTMLInputElement).type : '';
@@ -81,6 +90,8 @@ export default function App() {
         tag === 'TEXTAREA' ||
         tag === 'SELECT' ||
         target?.isContentEditable;
+      const inFormControl =
+        tag === 'INPUT' || tag === 'TEXTAREA' || tag === 'SELECT' || !!target?.isContentEditable;
 
       if (e.key === 'Escape') {
         // cancelAppendMode runs first so a freshly-created empty line gets
@@ -93,7 +104,7 @@ export default function App() {
         selectLabel(null);
         return;
       }
-      if ((e.key === 'Delete' || e.key === 'Backspace') && !inForm) {
+      if ((e.key === 'Delete' || e.key === 'Backspace') && !inFormControl) {
         const sel = useSelection.getState();
         // A selected polygon vertex takes top priority: remove just that vertex
         // (the transform no-ops at the 3-vertex floor) and keep the polygon
@@ -152,7 +163,7 @@ export default function App() {
       // tags are skipped — their positions are constrained (between stations /
       // along a line), so a free x/y nudge has no meaning there.
       if (
-        !inForm &&
+        !inFormControl &&
         !mod &&
         (e.key === 'ArrowUp' ||
           e.key === 'ArrowDown' ||
@@ -299,20 +310,20 @@ export default function App() {
         useSelection.getState().setMixedSelection({ bullets, labels, polygons });
         return;
       }
-      if (!inForm && !mod && (e.key === 'a' || e.key === 'A')) {
+      if (!inFormControl && !mod && (e.key === 'a' || e.key === 'A')) {
         setToolMode('arrow');
         return;
       }
-      if (!inForm && !mod && (e.key === 'h' || e.key === 'H')) {
+      if (!inFormControl && !mod && (e.key === 'h' || e.key === 'H')) {
         setToolMode('hand');
         return;
       }
-      if (!inForm && !mod && (e.key === 'l' || e.key === 'L')) {
+      if (!inFormControl && !mod && (e.key === 'l' || e.key === 'L')) {
         const cur = useSelection.getState().uiMode;
         setUiMode(cur.kind === 'layering' ? { kind: 'idle' } : { kind: 'layering' });
         return;
       }
-      if (!inForm && !mod && (e.key === 't' || e.key === 'T')) {
+      if (!inFormControl && !mod && (e.key === 't' || e.key === 'T')) {
         const cur = useSelection.getState().uiMode;
         setUiMode(
           cur.kind === 'creating-transfer'
@@ -321,7 +332,7 @@ export default function App() {
         );
         return;
       }
-      if (!inForm && e.key === ' ' && !e.repeat) {
+      if (!inFormControl && e.key === ' ' && !e.repeat) {
         e.preventDefault();
         setSpaceHeld(true);
         return;
@@ -330,11 +341,16 @@ export default function App() {
     const onKeyUp = (e: KeyboardEvent) => {
       if (e.key === ' ') setSpaceHeld(false);
     };
+    // If the window loses focus while Space is held (alt-tab mid hand-pan), the
+    // keyup never arrives and pan mode would stay stuck on. Reset on blur.
+    const onBlur = () => setSpaceHeld(false);
     window.addEventListener('keydown', onKey);
     window.addEventListener('keyup', onKeyUp);
+    window.addEventListener('blur', onBlur);
     return () => {
       window.removeEventListener('keydown', onKey);
       window.removeEventListener('keyup', onKeyUp);
+      window.removeEventListener('blur', onBlur);
     };
   }, [
     setUiMode,
