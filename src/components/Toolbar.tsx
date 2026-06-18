@@ -1,7 +1,7 @@
 import { useRef, useState } from 'react';
 import { flushSync } from 'react-dom';
 import { pickDocSnapshot, useDoc, useSelection, type UiMode } from '../state/store';
-import { useViewportStore } from '../state/viewportStore';
+import { useViewportStore, nextGridSize } from '../state/viewportStore';
 import { parse, serialize } from '../model/serialize';
 import { DEFAULT_DOC } from '../model/transforms';
 import { themeColors } from '../state/theme';
@@ -54,6 +54,8 @@ export function Toolbar() {
   const setViewport = useViewportStore((s) => s.setViewport);
   const gridVisible = useViewportStore((s) => s.gridVisible);
   const setGridVisible = useViewportStore((s) => s.setGridVisible);
+  const gridSize = useViewportStore((s) => s.gridSize);
+  const setGridSize = useViewportStore((s) => s.setGridSize);
   const darkMode = useViewportStore((s) => s.darkMode);
   const setDarkMode = useViewportStore((s) => s.setDarkMode);
   const clearAll = useDoc((s) => s.clearAll);
@@ -197,6 +199,16 @@ export function Toolbar() {
           onClick={() => setGridVisible(!gridVisible)}
         >
           <FrameIcon />
+        </button>
+        <button
+          type="button"
+          className="tool-btn tool-btn-text"
+          title={`Grid: ${gridSize}px — click for ${nextGridSize(gridSize)}px`}
+          aria-label="Cycle grid size"
+          data-grid-size={gridSize}
+          onClick={() => setGridSize(nextGridSize(gridSize))}
+        >
+          {gridSize}
         </button>
         <button
           type="button"

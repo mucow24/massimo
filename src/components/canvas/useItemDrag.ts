@@ -1,6 +1,7 @@
 import { RefObject, useRef, useState } from 'react';
 import { beginHistoryGroup, useDoc } from '../../state/store';
 import { useSnapPrefs } from '../../state/snapPrefs';
+import { useViewportStore } from '../../state/viewportStore';
 import {
   snapDraggedStation,
   snapLabelToGrid,
@@ -61,6 +62,7 @@ export function useItemDrag(
   const moveRouteBullet = useDoc((s) => s.moveRouteBullet);
   const moveTextLabel = useDoc((s) => s.moveTextLabel);
   const snapModes = useSnapPrefs((s) => s.modes);
+  const gridSize = useViewportStore((s) => s.gridSize);
 
   const dragRef = useRef<ItemDragState | null>(null);
   const [bulletSnapGuides, setBulletSnapGuides] = useState<SnapGuide[]>([]);
@@ -128,6 +130,7 @@ export function useItemDrag(
           tolerance: BULLET_SNAP_TOLERANCE / zoom,
           bulletLineId: lineId,
           modes: snapModes,
+          gridInterval: gridSize,
         });
         nx = snap.x;
         ny = snap.y;
@@ -137,7 +140,7 @@ export function useItemDrag(
         // Grid-snap fallback when the snap engine wasn't called (unbound bullet
         // or group drag). Shift still bypasses.
         if (snapModes.grid !== 'off' && !e.shiftKey) {
-          const g = snapPointToGrid(nx, ny, snapModes.grid);
+          const g = snapPointToGrid(nx, ny, snapModes.grid, gridSize);
           nx = g.x;
           ny = g.y;
         }
@@ -156,6 +159,7 @@ export function useItemDrag(
             m.width + 2 * TEXT_LABEL_HIT_PAD,
             m.height + 2 * TEXT_LABEL_HIT_PAD,
             snapModes.grid,
+            gridSize,
           );
           nx = snapped.x;
           ny = snapped.y;

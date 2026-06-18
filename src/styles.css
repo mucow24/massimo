@@ -631,6 +631,13 @@ select {
   cursor: pointer;
   box-sizing: border-box;
 }
+/* Numeric label variant (e.g. the grid-size toggle): the others hold icons. */
+.toolbar button.tool-btn.tool-btn-text {
+  font-size: 12px;
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+  line-height: 1;
+}
 .toolbar button.tool-btn:hover {
   background: #f0f0f0;
 }

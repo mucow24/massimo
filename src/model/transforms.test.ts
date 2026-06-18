@@ -2782,6 +2782,23 @@ describe('redistributeBetween', () => {
       expect(next.stations.m2).toMatchObject({ x: 20, y: 0 });
       expect(next.stations.m3).toMatchObject({ x: 30, y: 0 });
     });
+
+    it('rounds each intermediate to a 5px grid when gridInterval is 5', () => {
+      // Endpoints 24 apart → even centers fall at 6, 12, 18. A 5px grid rounds
+      // them to 5, 10, 20 (vs 10, 10, 20 on the default 10px grid) — the
+      // distinguishing values that prove the interval is threaded through.
+      const doc = doc5([
+        ['a', 0, 0],
+        ['m1', 5, 5],
+        ['m2', 5, 5],
+        ['m3', 5, 5],
+        ['b', 24, 0],
+      ]);
+      const next = T.redistributeBetween(doc, 'a', 'b', 'straight', 'both', 5);
+      expect(next.stations.m1).toMatchObject({ x: 5, y: 0 });
+      expect(next.stations.m2).toMatchObject({ x: 10, y: 0 });
+      expect(next.stations.m3).toMatchObject({ x: 20, y: 0 });
+    });
   });
 });
 

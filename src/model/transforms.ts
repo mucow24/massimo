@@ -11,7 +11,7 @@ import {
 import { DEFAULT_DOT_STYLE, dotStylesEqual } from './dotStyle';
 import { pairKeyOf } from './pairKey';
 import { rotateBy, stopCenterAt } from '../geometry/orientation';
-import { snapPointToGrid, type GridSnap } from '../geometry/snap';
+import { GRID_INTERVAL, snapPointToGrid, type GridSnap } from '../geometry/snap';
 import { polygonCentroid, edgeMidpoint } from '../geometry/polygon';
 import { measureTextLabel } from '../geometry/textMeasure';
 import type { Vec2 } from '../geometry/vec';
@@ -470,6 +470,10 @@ export function redistributeBetween(
   // never falls off the grid). This trades perfectly-even spacing for staying
   // on grid; an infrequent, accepted approximation.
   gridMode: GridSnap = 'off',
+  // Grid cell size in world units (defaults to the standard 10). The store
+  // wrapper threads the active grid size here so redistribute stays on the
+  // same lattice as everything else.
+  gridInterval: number = GRID_INTERVAL,
 ): MapDoc {
   if (startId === endId) return doc;
   if (!doc.stations[startId] || !doc.stations[endId]) return doc;
@@ -582,7 +586,8 @@ export function redistributeBetween(
         // Hard-grid: round the station center to the grid. Done before the
         // drift-skip and conflict-dedup below so both compare the snapped
         // value (and two lines proposing within a grid cell agree).
-        const snapped = gridMode === 'off' ? { x: cx, y: cy } : snapPointToGrid(cx, cy, gridMode);
+        const snapped =
+          gridMode === 'off' ? { x: cx, y: cy } : snapPointToGrid(cx, cy, gridMode, gridInterval);
         const px = snapped.x;
         const py = snapped.y;
         const cur = sts[idx];

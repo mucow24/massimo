@@ -58,6 +58,39 @@ describe('snapPolygonPoint', () => {
     ).toMatchObject({ x: 10, y: 23 });
   });
 
+  it('threads a 5px gridInterval through the plain-grid path', () => {
+    expect(
+      snapPolygonPoint({
+        proposed: { x: 7, y: 7 },
+        ...noTargets,
+        modes: modes({ grid: 'both' }),
+        gridInterval: 5,
+      }),
+    ).toMatchObject({ x: 5, y: 5 });
+    // Same input on the default 10px grid lands elsewhere.
+    expect(
+      snapPolygonPoint({ proposed: { x: 7, y: 7 }, ...noTargets, modes: modes({ grid: 'both' }) }),
+    ).toMatchObject({ x: 10, y: 10 });
+  });
+
+  it('threads a 5px gridInterval through the corner reconciliation path', () => {
+    // A vertical-aligned target (x=5) and a horizontal-aligned one (y=5) form a
+    // corner at (5,5): off the 10px lattice (would degrade) but valid on 5px.
+    const lineTargets = [
+      { x: 5, y: 999 },
+      { x: 999, y: 5 },
+    ];
+    const r = snapPolygonPoint({
+      proposed: { x: 6, y: 6 },
+      lineTargets,
+      allTargets: [],
+      modes: modes({ line: true, grid: 'both' }),
+      gridInterval: 5,
+    });
+    expect(r).toMatchObject({ x: 5, y: 5 });
+    expect(r.guides).toHaveLength(2);
+  });
+
   it('line mode aligns vertically to a sibling vertex (snaps x) and emits a guide', () => {
     const r = snapPolygonPoint({
       proposed: { x: 102, y: 50 },
