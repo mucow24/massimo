@@ -1,0 +1,61 @@
+name: Deploy to GitHub Pages
+
+# Rebuild and publish the site on every push to main. Manual runs are also
+# allowed via the Actions tab (workflow_dispatch).
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+# Permissions the official Pages deploy actions require: read the repo, write
+# the Pages deployment, and mint the OIDC token deploy-pages uses to publish.
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
+# Serialize deployments. Unlike CI, we do NOT cancel an in-progress run — a
+# half-finished production deploy shouldn't be interrupted by the next push.
+concurrency:
+  group: pages
+  cancel-in-progress: false
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+
+      # `npm install` (not `npm ci`) for the same reason as CI: Windows-
+      # generated lockfiles omit some platform-specific optional deps that
+      # `npm ci` rejects. See .github/workflows/ci.yml for the full note.
+      - run: npm install --no-audit --no-fund
+
+      # Produces dist/ with asset URLs prefixed by the `/massimo/` base
+      # configured in vite.config.ts for production builds.
+      - name: Build
+        run: npm run build
+
+      - name: Configure Pages
+        uses: actions/configure-pages@v5
+
+      - name: Upload artifact
+        uses: actions/upload-pages-artifact@v3
+        with:
+          path: dist
+
+  deploy:
+    needs: build
+    runs-on: ubuntu-latest
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - name: Deploy to GitHub Pages
+        id: deployment
+        uses: actions/deploy-pages@v4
