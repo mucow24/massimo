@@ -1,4 +1,4 @@
-import { Fragment } from 'react';
+import { Fragment, memo } from 'react';
 import { resolveSegmentStyle, SegmentBandSpec } from '../geometry/interlining';
 import { offsetFilletPath } from '../geometry/router';
 import { lineStrokeColorOf, lineStrokeRailWidth, lineStrokeWidthOf } from '../model/lineStroke';
@@ -31,7 +31,13 @@ interface Props {
   underlayColor?: string;
 }
 
-export function SegmentBand({
+// Memoized: a band emits one stripe renderable per line, so SegmentBand is one
+// of the highest-instance-count components on the canvas. Across a viewport pan
+// every prop is referentially stable (spec is from a doc-keyed memo; lines is
+// an immutable store ref; colorMap is memoized; onLineSelect is a stable
+// useCallback; interactive is constant outside line-tag/layering modes), so
+// React skips re-rendering the stripes when only the viewBox moves.
+export const SegmentBand = memo(function SegmentBand({
   spec,
   stripeIndex,
   interactive = false,
@@ -134,7 +140,7 @@ export function SegmentBand({
         ))}
     </Fragment>
   );
-}
+});
 
 // Warning decoration for a band the router couldn't route cleanly. When a
 // band warns, its centerline collapses to a straight start→end segment (see

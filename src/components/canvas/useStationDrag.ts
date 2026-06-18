@@ -1,4 +1,4 @@
-import { RefObject, useRef, useState } from 'react';
+import { RefObject, useCallback, useEffect, useRef, useState } from 'react';
 import { beginHistoryGroup, useDoc } from '../../state/store';
 import { useSnapPrefs } from '../../state/snapPrefs';
 import { useViewportStore } from '../../state/viewportStore';
@@ -58,32 +58,43 @@ export function useStationDrag(
   } | null>(null);
   const [snapGuides, setSnapGuides] = useState<SnapGuide[]>([]);
 
-  const onStartDrag = (id: StationId, e: React.PointerEvent, redistributeAnchor?: StationId) => {
-    const st = stations[id];
-    if (!st) return;
-    // Group-drag: tow the rest of the multi-selection (every type) by the same
-    // delta. Suppressed during a ctrl-drag redistribute (anchor set), where the
-    // intervening stops are reflowed instead. Snap runs on the grabbed station
-    // only; siblings translate.
-    const siblings = redistributeAnchor
-      ? emptyGroupSiblings()
-      : collectGroupSiblings('station', id);
-    dragStationRef.current = {
-      id,
-      startWX: st.x,
-      startWY: st.y,
-      startMX: e.clientX,
-      startMY: e.clientY,
-      moved: false,
-      redistributeAnchor: redistributeAnchor ?? null,
-      siblings,
-      siblingIdSet: new Set(siblings.stations.map((s) => s.id)),
-      // Snapshot the doc + pause history; commit one entry on drag, cancel on a
-      // pure click. Pointer capture is deferred to first movement (trackDragMove)
-      // so the synthesized click still lands on the station's rect.
-      history: beginHistoryGroup(),
-    };
-  };
+  // onStartDrag is passed to every (memoized) StationView; keep it referentially
+  // stable so a pan/zoom — or any unrelated edit — doesn't re-render every
+  // station. Read the live station map through a ref instead of closing over it.
+  const stationsRef = useRef(stations);
+  useEffect(() => {
+    stationsRef.current = stations;
+  }, [stations]);
+
+  const onStartDrag = useCallback(
+    (id: StationId, e: React.PointerEvent, redistributeAnchor?: StationId) => {
+      const st = stationsRef.current[id];
+      if (!st) return;
+      // Group-drag: tow the rest of the multi-selection (every type) by the same
+      // delta. Suppressed during a ctrl-drag redistribute (anchor set), where the
+      // intervening stops are reflowed instead. Snap runs on the grabbed station
+      // only; siblings translate.
+      const siblings = redistributeAnchor
+        ? emptyGroupSiblings()
+        : collectGroupSiblings('station', id);
+      dragStationRef.current = {
+        id,
+        startWX: st.x,
+        startWY: st.y,
+        startMX: e.clientX,
+        startMY: e.clientY,
+        moved: false,
+        redistributeAnchor: redistributeAnchor ?? null,
+        siblings,
+        siblingIdSet: new Set(siblings.stations.map((s) => s.id)),
+        // Snapshot the doc + pause history; commit one entry on drag, cancel on a
+        // pure click. Pointer capture is deferred to first movement (trackDragMove)
+        // so the synthesized click still lands on the station's rect.
+        history: beginHistoryGroup(),
+      };
+    },
+    [],
+  );
 
   const onPointerMove = (e: React.PointerEvent) => {
     const ds = dragStationRef.current;
