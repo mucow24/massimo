@@ -506,15 +506,18 @@ export function StopGrid({
               />
             );
           }
+          // The unsnapped dots are pure UI markers, not content — divide
+          // their radius/stroke by the camera zoom so they stay a constant
+          // size on screen regardless of how far the view is zoomed.
           return (
             <circle
               key={`g-${fmt(g.row)},${fmt(g.col)}`}
               cx={g.col * PITCH}
               cy={g.row * PITCH}
-              r={3}
+              r={3 / cam.zoom}
               fill="rgba(255,255,255,0.85)"
               stroke="rgba(0,0,0,0.4)"
-              strokeWidth={1.25}
+              strokeWidth={1.25 / cam.zoom}
               pointerEvents="none"
             />
           );
