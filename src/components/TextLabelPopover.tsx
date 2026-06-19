@@ -51,6 +51,8 @@ export function TextLabelPopover({ label, world, view, onClose }: Props) {
   const setWeight = (weight: TextLabelWeight) => updateTextLabel(label.id, { weight });
   const setColor = (color: string) => updateTextLabel(label.id, { color });
   const setDarkColor = (darkColor: string) => updateTextLabel(label.id, { darkColor });
+  const locked = label.locked ?? false;
+  const onToggleLock = () => updateTextLabel(label.id, { locked: !locked });
   const size = useNumericField(
     label.fontSize,
     setFontSize,
@@ -114,6 +116,7 @@ export function TextLabelPopover({ label, world, view, onClose }: Props) {
           <textarea
             id={`label-text-${label.id}`}
             value={label.text}
+            disabled={locked}
             onChange={(e) => setText(e.target.value)}
             rows={Math.max(2, label.text.split('\n').length)}
             wrap="off"
@@ -129,6 +132,7 @@ export function TextLabelPopover({ label, world, view, onClose }: Props) {
             max={TEXT_LABEL_FONT_SIZE_MAX}
             step={1}
             value={label.fontSize}
+            disabled={locked}
             onChange={onSizeRange}
             onMouseDown={size.history.onFocus}
             onMouseUp={size.history.onBlur}
@@ -141,6 +145,7 @@ export function TextLabelPopover({ label, world, view, onClose }: Props) {
             min={TEXT_LABEL_FONT_SIZE_MIN}
             step={1}
             value={size.text}
+            disabled={locked}
             onChange={size.onNumberChange}
             onWheel={size.onNumberWheel}
             onFocus={size.onNumberFocus}
@@ -156,6 +161,7 @@ export function TextLabelPopover({ label, world, view, onClose }: Props) {
                 key={a.value}
                 type="button"
                 className={'align-btn' + (label.align === a.value ? ' active' : '')}
+                disabled={locked}
                 onClick={() => setAlign(a.value)}
                 title={a.title}
                 aria-label={a.title}
@@ -167,6 +173,7 @@ export function TextLabelPopover({ label, world, view, onClose }: Props) {
             <button
               type="button"
               className={'italic-btn' + (label.italic ? ' active' : '')}
+              disabled={locked}
               onClick={() => setItalic(!label.italic)}
               title="Italic"
               aria-label="Italic"
@@ -182,6 +189,7 @@ export function TextLabelPopover({ label, world, view, onClose }: Props) {
           <select
             className="weight-select"
             value={label.weight}
+            disabled={locked}
             onChange={(e) => {
               const n = Number(e.target.value);
               if (isLabelWeight(n)) setWeight(n);
@@ -212,6 +220,7 @@ export function TextLabelPopover({ label, world, view, onClose }: Props) {
             aria-label="Label color"
             title="Light mode color"
             value={label.color}
+            disabled={locked}
             onChange={(e) => setColor(e.target.value)}
             {...colorField}
           />
@@ -222,13 +231,24 @@ export function TextLabelPopover({ label, world, view, onClose }: Props) {
             aria-label="Dark mode label color"
             title="Dark mode color"
             value={label.darkColor}
+            disabled={locked}
             onChange={(e) => setDarkColor(e.target.value)}
             {...darkColorField}
           />
         </div>
 
         <div className="footer">
-          <button className="delete-btn" onClick={onDelete}>
+          <button
+            type="button"
+            className={'lock-btn' + (locked ? ' active' : '')}
+            aria-label={locked ? 'Unlock label' : 'Lock label'}
+            aria-pressed={locked}
+            title={locked ? 'Unlock' : 'Lock (prevents editing)'}
+            onClick={onToggleLock}
+          >
+            {locked ? '🔒 Locked' : '🔓 Lock'}
+          </button>
+          <button className="delete-btn" onClick={onDelete} disabled={locked}>
             Delete
           </button>
         </div>

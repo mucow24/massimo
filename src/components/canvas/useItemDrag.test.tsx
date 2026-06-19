@@ -282,4 +282,71 @@ describe('useItemDrag — group drag tows every selected item type', () => {
     expect(doc.textLabels['g1'].x).toBe(40);
     expect(doc.polygons['p1'].vertices[0].x).toBe(40);
   });
+
+  it('a locked selected sibling stays put while the rest of the group tows', () => {
+    // Lock the sibling label g2 and sibling bullet b1: they must not move when
+    // the group is dragged by grabbing g1. Mirrors locked polygons never towing.
+    useDoc.setState({
+      ...useDoc.getState(),
+      routeBullets: {
+        b1: { ...useDoc.getState().routeBullets['b1'], locked: true },
+      },
+      textLabels: {
+        ...useDoc.getState().textLabels,
+        g2: { ...useDoc.getState().textLabels['g2'], locked: true },
+      },
+    });
+    const { ref } = fakeSvgRef();
+    const { result } = renderHook(() => useItemDrag(ref, 1, false));
+    labelDown(result, 'g1', pointerEvent({ clientX: 0, clientY: 0 }));
+    move(result, pointerEvent({ clientX: 40, clientY: 0 })); // delta = (40, 0)
+
+    const doc = useDoc.getState();
+    expect(doc.textLabels['g1'].x).toBe(40); // grabbed item moves
+    expect(doc.stations['S' as StationId].x).toBe(140); // unlocked sibling tows
+    expect(doc.textLabels['g2'].x).toBe(300); // locked sibling stays put
+    expect(doc.routeBullets['b1'].x).toBe(200); // locked sibling stays put
+  });
+});
+
+describe('useItemDrag — locked items are inert', () => {
+  beforeEach(() => {
+    useDoc.setState({
+      ...useDoc.getState(),
+      routeBullets: {
+        b1: {
+          id: 'b1',
+          x: 5,
+          y: 5,
+          rotation: 0,
+          lineId: null,
+          shape: 'circle',
+          size: 8,
+          locked: true,
+        },
+      },
+      textLabels: { g1: makeTextLabel({ id: 'g1', x: 0, y: 0, locked: true }) },
+    });
+    setModes({ line: false, all: 'off', grid: 'off' });
+  });
+
+  it('a drag does not move a locked bullet', () => {
+    const { ref } = fakeSvgRef();
+    const { result } = renderHook(() => useItemDrag(ref, 1, false));
+    bulletDown(result, 'b1', pointerEvent({ clientX: 0, clientY: 0 }));
+    move(result, pointerEvent({ clientX: 60, clientY: 20 }));
+    up(result, pointerEvent({ clientX: 60, clientY: 20 }));
+    expect(useDoc.getState().routeBullets['b1'].x).toBe(5);
+    expect(useDoc.getState().routeBullets['b1'].y).toBe(5);
+  });
+
+  it('a drag does not move a locked label', () => {
+    const { ref } = fakeSvgRef();
+    const { result } = renderHook(() => useItemDrag(ref, 1, false));
+    labelDown(result, 'g1', pointerEvent({ clientX: 0, clientY: 0 }));
+    move(result, pointerEvent({ clientX: 60, clientY: 20 }));
+    up(result, pointerEvent({ clientX: 60, clientY: 20 }));
+    expect(useDoc.getState().textLabels['g1'].x).toBe(0);
+    expect(useDoc.getState().textLabels['g1'].y).toBe(0);
+  });
 });

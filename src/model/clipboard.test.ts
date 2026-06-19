@@ -77,6 +77,29 @@ describe('writeClipboard / readClipboard roundtrip', () => {
     expect(readClipboard(writeClipboard([polygonItem]))).toEqual([polygonItem]);
   });
 
+  it('preserves the locked flag on a route-bullet item', () => {
+    const item: ClipPayload = {
+      kind: 'route-bullet',
+      data: { ...bulletItem.data, locked: true },
+    };
+    expect(readClipboard(writeClipboard([item]))).toEqual([item]);
+  });
+
+  it('preserves the locked flag on a text-label item', () => {
+    const item: ClipPayload = {
+      kind: 'text-label',
+      data: { ...labelItem.data, locked: true },
+    };
+    expect(readClipboard(writeClipboard([item]))).toEqual([item]);
+  });
+
+  it('leaves an absent locked flag absent on bullet / label items', () => {
+    const parsed = readClipboard(writeClipboard([bulletItem, labelItem]));
+    expect(parsed).toEqual([bulletItem, labelItem]);
+    expect(parsed![0].data).not.toHaveProperty('locked');
+    expect(parsed![1].data).not.toHaveProperty('locked');
+  });
+
   it('preserves order across a mixed multi-item payload', () => {
     const items = [bulletItem, labelItem, polygonItem];
     expect(readClipboard(writeClipboard(items))).toEqual(items);

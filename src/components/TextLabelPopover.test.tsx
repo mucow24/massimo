@@ -235,6 +235,46 @@ describe('<TextLabelPopover /> — text / size / align / weight controls', () =>
   });
 });
 
+describe('<TextLabelPopover /> — lock toggle', () => {
+  const identityView = { vbX: 0, vbY: 0, vbW: 800, vbH: 600, size: { w: 800, h: 600 } };
+
+  function seedAndRender(label = makeTextLabel({ id: 'g1', text: 'Hi' })) {
+    useDoc.setState({ ...useDoc.getState(), textLabels: { g1: label } });
+    render(
+      <TextLabelPopover
+        label={useDoc.getState().textLabels['g1']}
+        world={{ x: 0, y: 0 }}
+        view={identityView}
+        onClose={() => {}}
+      />,
+    );
+  }
+
+  it('the lock toggle flips locked', () => {
+    seedAndRender();
+    fireEvent.click(screen.getByRole('button', { name: 'Lock label' }));
+    expect(useDoc.getState().textLabels['g1'].locked).toBe(true);
+  });
+
+  it('when locked, editing controls are disabled but the lock toggle stays active', () => {
+    seedAndRender(makeTextLabel({ id: 'g1', text: 'Hi', locked: true }));
+    expect(screen.getByRole('textbox')).toBeDisabled();
+    expect(screen.getByRole('slider')).toBeDisabled();
+    expect(screen.getByRole('spinbutton')).toBeDisabled();
+    expect(screen.getByRole('combobox')).toBeDisabled();
+    expect(screen.getByLabelText('Align center')).toBeDisabled();
+    expect(screen.getByLabelText('Italic')).toBeDisabled();
+    expect(screen.getByLabelText('Label color')).toBeDisabled();
+    expect(screen.getByLabelText('Dark mode label color')).toBeDisabled();
+    expect(screen.getByRole('button', { name: 'Delete' })).toBeDisabled();
+    // The unlock control remains usable.
+    const unlock = screen.getByRole('button', { name: 'Unlock label' });
+    expect(unlock).toBeEnabled();
+    fireEvent.click(unlock);
+    expect(useDoc.getState().textLabels['g1'].locked).toBe(false);
+  });
+});
+
 // Header drag (incl. across zoom) is covered by the world-position describe above.
 describe('<TextLabelPopover /> — escape handling', () => {
   const identityView = { vbX: 0, vbY: 0, vbW: 800, vbH: 600, size: { w: 800, h: 600 } };

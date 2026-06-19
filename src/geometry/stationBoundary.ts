@@ -186,7 +186,10 @@ export function textLabelHitPolygon(label: TextLabel): Pt[] {
 export function textLabelsForRect(labels: Record<string, TextLabel>, rect: AABB): string[] {
   const hits: string[] = [];
   for (const id of Object.keys(labels)) {
-    const poly = textLabelHitPolygon(labels[id]);
+    const label = labels[id];
+    // Locked labels are excluded from marquee selection.
+    if (label.locked) continue;
+    const poly = textLabelHitPolygon(label);
     if (rectIntersectsPolygon(rect, poly)) hits.push(id);
   }
   return hits;
@@ -225,6 +228,8 @@ export function routeBulletsForRect(bullets: Record<string, RouteBullet>, rect: 
   const hits: string[] = [];
   for (const id of Object.keys(bullets)) {
     const b = bullets[id];
+    // Locked bullets are excluded from marquee selection.
+    if (b.locked) continue;
     if (b.x + b.size < xLo || b.x - b.size > xHi) continue;
     if (b.y + b.size < yLo || b.y - b.size > yHi) continue;
     hits.push(id);
