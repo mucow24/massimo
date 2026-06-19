@@ -74,6 +74,8 @@ export interface FakeRect {
 
 export interface FakeSvg {
   getBoundingClientRect(): FakeRect;
+  setAttribute(name: string, value: string): void;
+  getAttribute(name: string): string | null;
   setPointerCapture(id: number): void;
   releasePointerCapture(id: number): void;
   hasPointerCapture(id: number): boolean;
@@ -94,7 +96,12 @@ export function fakeSvg(opts: FakeSvgOpts = {}): FakeSvg {
   const left = opts.left ?? 0;
   const top = opts.top ?? 0;
   const captured = new Set<number>();
+  const attrs = new Map<string, string>();
   return {
+    setAttribute: (name: string, value: string) => {
+      attrs.set(name, value);
+    },
+    getAttribute: (name: string) => attrs.get(name) ?? null,
     getBoundingClientRect: (): FakeRect => ({
       left,
       top,

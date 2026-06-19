@@ -1,6 +1,21 @@
 import { RefObject, useEffect, useRef, useState } from 'react';
 import { dragState } from '../../state/store';
 import { useViewportStore } from '../../state/viewportStore';
+import type { Viewport } from '../../model/types';
+import {
+  computeWheelZoom,
+  panFromDelta,
+  screenToWorld as toWorld,
+  viewBoxFor,
+} from './viewportMath';
+
+const viewBoxStr = (vb: { vbX: number; vbY: number; vbW: number; vbH: number }) =>
+  `${vb.vbX} ${vb.vbY} ${vb.vbW} ${vb.vbH}`;
+
+// Once a wheel gesture goes quiet for this long, commit the zoom to the store so
+// React re-renders and reprojects zoom-dependent details (stroke widths, which
+// transiently scale during the gesture, and the grid) crisply at the final zoom.
+const ZOOM_SETTLE_MS = 90;
 
 export interface ViewportApi {
   size: { w: number; h: number };
@@ -21,6 +36,15 @@ export interface ViewportApi {
  * Owns viewport state, pan tracking, and wheel zoom. Returns viewBox coords,
  * a screenToWorld helper, and pointer/wheel handlers to wire onto the SVG.
  *
+ * Pan and zoom both write the SVG viewBox imperatively on each event and commit
+ * to the store once the gesture ends — pointer-up for a pan, a short settle
+ * timer for a wheel. A store write per event would re-render and reconcile the
+ * entire ~2.7k-node canvas every frame (~12ms), whereas the browser re-rasters
+ * the new viewBox region on its own far more cheaply (~8ms). It's synchronous,
+ * so the viewBox tracks the cursor with zero added latency. The trade-off for
+ * zoom: stroke widths (k/zoom) scale transiently mid-gesture until the settle
+ * commit re-renders them screen-constant. Numeric core: viewportMath.ts.
+ *
  * The handlers are panning-only — `useStationDrag`'s handlers handle the
  * station-drag side, and the shell composes both onto each pointer event.
  */
@@ -38,9 +62,16 @@ export function useViewport(svgRef: RefObject<SVGSVGElement | null>): ViewportAp
     my: number;
     vx: number;
     vy: number;
+    zoom: number;
     moved: boolean;
     captured: boolean;
   } | null>(null);
+  // Live un-committed viewport during an in-flight gesture (pan or wheel zoom):
+  // written to the SVG viewBox imperatively each event so the gesture stays
+  // smooth without re-rendering the ~2.7k-node tree, then committed to the store
+  // once the gesture ends.
+  const pendingRef = useRef<Viewport | null>(null);
+  const zoomSettleRef = useRef<number | null>(null);
 
   useEffect(() => {
     const el = svgRef.current?.parentElement;
@@ -53,48 +84,74 @@ export function useViewport(svgRef: RefObject<SVGSVGElement | null>): ViewportAp
     return () => ro.disconnect();
   }, [svgRef]);
 
+  // Don't leave a settle commit scheduled past unmount.
+  useEffect(
+    () => () => {
+      if (zoomSettleRef.current != null) clearTimeout(zoomSettleRef.current);
+    },
+    [],
+  );
+
   // viewBox: world coords; center of screen = (viewport.x, viewport.y), zoom scales.
-  const vbW = size.w / viewport.zoom;
-  const vbH = size.h / viewport.zoom;
-  const vbX = viewport.x - vbW / 2;
-  const vbY = viewport.y - vbH / 2;
+  const vb = viewBoxFor(viewport, size);
+  const { vbX, vbY, vbW, vbH } = vb;
 
   const screenToWorld = (mx: number, my: number) => {
     const rect = svgRef.current!.getBoundingClientRect();
-    const relX = (mx - rect.left) / rect.width;
-    const relY = (my - rect.top) / rect.height;
-    return { x: vbX + relX * vbW, y: vbY + relY * vbH };
+    return toWorld({ x: mx, y: my }, vb, rect);
+  };
+
+  // The latest intended viewport, including the current gesture's un-committed
+  // delta (falls back to the committed store value between gestures).
+  const liveViewport = () => pendingRef.current ?? viewport;
+
+  // Apply a viewport to the SVG viewBox now, without a store write (no React
+  // re-render); the gesture's end commits it.
+  const applyViewBox = (v: Viewport) => {
+    pendingRef.current = v;
+    svgRef.current?.setAttribute('viewBox', viewBoxStr(viewBoxFor(v, size)));
+  };
+
+  // Commit the in-flight gesture to the store (re-render + reproject) and stop
+  // any scheduled wheel-settle commit.
+  const commitPending = () => {
+    if (zoomSettleRef.current != null) {
+      clearTimeout(zoomSettleRef.current);
+      zoomSettleRef.current = null;
+    }
+    if (pendingRef.current) {
+      setViewport(pendingRef.current);
+      pendingRef.current = null;
+    }
   };
 
   const onWheel = (e: React.WheelEvent) => {
     e.preventDefault();
-    const before = screenToWorld(e.clientX, e.clientY);
-    const factor = Math.exp(-e.deltaY * 0.0015);
-    const newZoom = Math.max(0.1, Math.min(64, viewport.zoom * factor));
-    // adjust viewport so cursor stays at same world point
     const rect = svgRef.current!.getBoundingClientRect();
-    const relX = (e.clientX - rect.left) / rect.width;
-    const relY = (e.clientY - rect.top) / rect.height;
-    const newVbW = size.w / newZoom;
-    const newVbH = size.h / newZoom;
-    const newVbX = before.x - relX * newVbW;
-    const newVbY = before.y - relY * newVbH;
-    setViewport({
-      x: newVbX + newVbW / 2,
-      y: newVbY + newVbH / 2,
-      zoom: newZoom,
-    });
+    // Imperative viewBox zoom (like pan): smooth, no per-tick re-render. Based on
+    // the live viewport so rapid ticks compound; committed once the wheel settles.
+    applyViewBox(computeWheelZoom(liveViewport(), size, rect, e.clientX, e.clientY, e.deltaY));
+    if (zoomSettleRef.current != null) clearTimeout(zoomSettleRef.current);
+    zoomSettleRef.current = window.setTimeout(commitPending, ZOOM_SETTLE_MS);
   };
 
   // Pan starts only when the parent (MapCanvas) calls startPan (hand mode
   // left-button, or middle-button anywhere).
   const startPan = (e: React.PointerEvent) => {
     if (e.button !== 0 && e.button !== 1) return;
+    // Adopt any in-flight wheel zoom as the pan's base and cancel its settle —
+    // the pan commits on pointer-up instead.
+    if (zoomSettleRef.current != null) {
+      clearTimeout(zoomSettleRef.current);
+      zoomSettleRef.current = null;
+    }
+    const base = liveViewport();
     panStartRef.current = {
       mx: e.clientX,
       my: e.clientY,
-      vx: viewport.x,
-      vy: viewport.y,
+      vx: base.x,
+      vy: base.y,
+      zoom: base.zoom,
       moved: false,
       captured: false,
     };
@@ -112,17 +169,16 @@ export function useViewport(svgRef: RefObject<SVGSVGElement | null>): ViewportAp
     if (!panStartRef.current.moved && Math.hypot(mxDelta, myDelta) > 4) {
       panStartRef.current.moved = true;
     }
-    const dx = mxDelta / viewport.zoom;
-    const dy = myDelta / viewport.zoom;
-    setViewport({
-      x: panStartRef.current.vx - dx,
-      y: panStartRef.current.vy - dy,
-      zoom: viewport.zoom,
-    });
+    // Imperative viewBox write — no store commit (and so no React re-render) per
+    // move; the browser re-rasters the new region itself.
+    applyViewBox(panFromDelta(panStartRef.current, e.clientX, e.clientY, panStartRef.current.zoom));
   };
 
   const onPointerUp = (e: React.PointerEvent) => {
     if (!panStartRef.current) return;
+    // Commit the pan accumulated via imperative viewBox writes; React re-renders
+    // once here at the final position (re-syncing grid + background extent).
+    commitPending();
     const panMoved = panStartRef.current.moved;
     const wasCaptured = panStartRef.current.captured;
     panStartRef.current = null;

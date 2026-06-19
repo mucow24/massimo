@@ -1,3 +1,4 @@
+import { memo } from 'react';
 import type { StopMarkerSpec } from '../geometry/interlining';
 import { lineStrokeColorOf, lineStrokeRailWidth, lineStrokeWidthOf } from '../model/lineStroke';
 import { hatchPatternId, lineStyleStrokeAttrs, lineStyleUnderlayAttrs } from './HatchPatterns';
@@ -45,7 +46,18 @@ interface Props {
 // neighbors' facing rails coincide and anchors the separator to the edge
 // regardless of draw order or layering (see lineStroke.ts); rails only
 // ever run ALONG the marker, never across its ends.
-export function StopMarker({ spec, effectiveColor, underlayColor, lines, noEndCap }: Props) {
+//
+// Memoized: there's one marker per line per station and all props are
+// referentially/value-stable across a viewport pan (spec is from a doc-keyed
+// memo; effectiveColor/underlayColor are strings; lines is an immutable store
+// ref; no callbacks), so React bails out of re-rendering markers on a pan.
+export const StopMarker = memo(function StopMarker({
+  spec,
+  effectiveColor,
+  underlayColor,
+  lines,
+  noEndCap,
+}: Props) {
   const color = effectiveColor ?? spec.color;
   const half = spec.width / 2;
   const live = lines?.[spec.lineId];
@@ -188,7 +200,7 @@ export function StopMarker({ spec, effectiveColor, underlayColor, lines, noEndCa
       {cap}
     </>
   );
-}
+});
 
 function rotatedSquareCorners(cx: number, cy: number, half: number, deg: number) {
   const rad = (deg * Math.PI) / 180;
