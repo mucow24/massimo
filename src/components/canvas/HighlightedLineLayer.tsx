@@ -94,6 +94,7 @@ export function HighlightedLineLayer({
     <>
       {DIM_ALPHA > 0 && (
         <rect
+          data-dim="1"
           x={vbX}
           y={vbY}
           width={vbW}

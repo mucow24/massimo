@@ -36,6 +36,23 @@ export function viewBoxFor(v: Viewport, size: Size): ViewBox {
   return { vbX: v.x - vbW / 2, vbY: v.y - vbH / 2, vbW, vbH };
 }
 
+/**
+ * A viewBox grown one viewport-width/height in every direction — a 3×3 tile
+ * centered on the original. Full-viewport overlays (the background fill, the
+ * grid, and the line-highlight dim wash) are drawn at this extent so that an
+ * imperative-viewBox pan or zoom — which moves/scales the live viewBox WITHOUT
+ * re-rendering these elements until the gesture commits (see useViewport) —
+ * can't run past their edge and reveal a bare strip mid-gesture.
+ */
+export function overdrawnViewBox(vb: ViewBox): ViewBox {
+  return {
+    vbX: vb.vbX - vb.vbW,
+    vbY: vb.vbY - vb.vbH,
+    vbW: vb.vbW * 3,
+    vbH: vb.vbH * 3,
+  };
+}
+
 /** Map a client-pixel point to world coords through a viewBox + host rect. */
 export function screenToWorld(
   screen: { x: number; y: number },
