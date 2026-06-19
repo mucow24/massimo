@@ -54,22 +54,32 @@ async function selectStop(page: Page, stationId: string, lineId: string): Promis
   await page.locator(`[data-cell-kind="stop"][data-line-id="${lineId}"]`).click();
 }
 
-// Set the line's default dot size through the LineInspector spinbutton. A
-// short visibility timeout keeps the pre-implementation red fast instead of
-// a full default timeout while the control doesn't exist.
-async function setLineDotSizeTo(page: Page, value: string): Promise<void> {
-  const spin = page.getByRole('spinbutton', { name: 'Dot size', exact: true });
+// Replace a controlled number input's value, then blur to commit.
+//
+// These spinbuttons are React *controlled* inputs (value={text}). Playwright's
+// fill() clears-then-inserts in a single shot; on a controlled input the
+// clear's re-render can lag the insert, so when the field already shows a
+// value (e.g. the line default that a tracking stop displays) the new digits
+// get APPENDED rather than replacing it ("7" + "8" -> "78"). Filling '' first
+// is its own awaited step that settles the input to empty, so the real fill
+// then starts from a blank field and can't append. (This was a latent flake in
+// this spec, surfaced under sustained e2e load.)
+async function replaceNumber(page: Page, name: string, value: string): Promise<void> {
+  const spin = page.getByRole('spinbutton', { name, exact: true });
   await expect(spin).toBeVisible({ timeout: 2000 });
+  await spin.fill('');
   await spin.fill(value);
   await spin.blur();
 }
 
+// Set the line's default dot size through the LineInspector spinbutton.
+async function setLineDotSizeTo(page: Page, value: string): Promise<void> {
+  await replaceNumber(page, 'Dot size', value);
+}
+
 // Set the selected stop's dot size through the StationInspector textbox.
 async function setStopDotSizeTo(page: Page, value: string): Promise<void> {
-  const spin = page.getByRole('spinbutton', { name: 'Stop dot size', exact: true });
-  await expect(spin).toBeVisible({ timeout: 2000 });
-  await spin.fill(value);
-  await spin.blur();
+  await replaceNumber(page, 'Stop dot size', value);
 }
 
 test.beforeEach(async ({ page }) => {

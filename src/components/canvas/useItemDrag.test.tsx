@@ -377,3 +377,73 @@ describe('useItemDrag — locked items are inert', () => {
     expect(useDoc.getState().textLabels['g1'].y).toBe(0);
   });
 });
+
+describe('useItemDrag — a locked item lets the pointerdown bubble (marquee can begin over it)', () => {
+  // A locked item can't be dragged, so a drag starting on it should rubber-band
+  // rather than do nothing. That requires the pointerdown to bubble to the
+  // canvas — i.e. NOT be swallowed by stopPropagation. An unlocked item still
+  // swallows it so dragging the item doesn't also start a marquee.
+  function spyEvent(): { e: React.PointerEvent; stopped: () => boolean } {
+    let stopped = false;
+    const e = {
+      clientX: 0,
+      clientY: 0,
+      pointerId: 1,
+      button: 0,
+      shiftKey: false,
+      stopPropagation: () => {
+        stopped = true;
+      },
+    } as unknown as React.PointerEvent;
+    return { e, stopped: () => stopped };
+  }
+
+  it('a locked bullet does not stop propagation', () => {
+    useDoc.setState({
+      ...useDoc.getState(),
+      routeBullets: {
+        b1: {
+          id: 'b1',
+          x: 5,
+          y: 5,
+          rotation: 0,
+          lineId: null,
+          shape: 'circle',
+          size: 8,
+          locked: true,
+        },
+      },
+    });
+    const { ref } = fakeSvgRef();
+    const { result } = renderHook(() => useItemDrag(ref, 1, false));
+    const { e, stopped } = spyEvent();
+    bulletDown(result, 'b1', e);
+    expect(stopped()).toBe(false);
+  });
+
+  it('a locked label does not stop propagation', () => {
+    useDoc.setState({
+      ...useDoc.getState(),
+      textLabels: { g1: makeTextLabel({ id: 'g1', x: 0, y: 0, locked: true }) },
+    });
+    const { ref } = fakeSvgRef();
+    const { result } = renderHook(() => useItemDrag(ref, 1, false));
+    const { e, stopped } = spyEvent();
+    labelDown(result, 'g1', e);
+    expect(stopped()).toBe(false);
+  });
+
+  it('an unlocked bullet stops propagation so dragging it does not also rubber-band', () => {
+    useDoc.setState({
+      ...useDoc.getState(),
+      routeBullets: {
+        b1: { id: 'b1', x: 5, y: 5, rotation: 0, lineId: null, shape: 'circle', size: 8 },
+      },
+    });
+    const { ref } = fakeSvgRef();
+    const { result } = renderHook(() => useItemDrag(ref, 1, false));
+    const { e, stopped } = spyEvent();
+    bulletDown(result, 'b1', e);
+    expect(stopped()).toBe(true);
+  });
+});

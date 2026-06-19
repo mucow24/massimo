@@ -533,6 +533,7 @@ export function MapCanvas() {
                 selection.selectedVertex?.polygonId === pid ? selection.selectedVertex.index : null
               }
               interactive={polygonsInteractive}
+              inHandMode={inHandMode}
               onPointerDown={polyDrag.onPolygonPointerDown}
               onClick={onPolygonClick}
               onContextMenu={onPolygonContextMenu}
@@ -729,6 +730,7 @@ export function MapCanvas() {
               bullet={b}
               lines={lines}
               selected={bulletSelectedIds.includes(b.id)}
+              inHandMode={inHandMode}
               onPointerDown={itemDrag.onBulletPointerDown}
               onClick={onBulletClick}
               onContextMenu={onBulletContextMenu}
@@ -746,6 +748,7 @@ export function MapCanvas() {
               label={g}
               selected={labelSelectedIds.includes(g.id)}
               layer="bg"
+              inHandMode={inHandMode}
               onPointerDown={itemDrag.onLabelPointerDown}
               onClick={onLabelClick}
               onContextMenu={onLabelContextMenu}

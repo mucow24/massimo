@@ -4,6 +4,7 @@ import { useSnapPrefs } from '../state/snapPrefs';
 import { stopPosWorld } from '../geometry/interlining';
 import { pathBetweenStations } from '../model/pathSelect';
 import { rotateItemOnContextMenu } from './canvas/groupRotate';
+import { itemCursor } from './canvas/itemCursor';
 
 // Map a click on a station to the closest dot's lineId. Used to pin a
 // transfer endpoint to the specific stop the user clicked on, rather than
@@ -209,7 +210,10 @@ export function useStationInteraction(
     onPointerMove: inTransferPick ? onTransferPointerMove : undefined,
     onPointerLeave: inTransferPick ? onTransferPointerLeave : undefined,
   };
-  const cursor = inHandMode ? 'grab' : 'move';
+  // Hand mode → open hand (pannable). Otherwise a movable station shows the
+  // four-arrow move cursor; a locked station shows the pointing hand (it can
+  // still be clicked to select/edit, just not dragged).
+  const cursor = itemCursor(inHandMode, station.locked);
 
   return { handlers, cursor, inHitlessMode };
 }

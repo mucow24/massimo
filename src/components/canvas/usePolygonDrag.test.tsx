@@ -249,4 +249,41 @@ describe('usePolygonDrag — locked polygons are inert', () => {
     r.current.onPointerUp(pointerEvent({ clientX: 200, clientY: 200 }));
     expect(useDoc.getState().polygons['p0'].vertices).toHaveLength(4);
   });
+
+  it('lets the pointerdown bubble (no stopPropagation) so a marquee can begin over it', () => {
+    const r = render();
+    let stopped = false;
+    const e = {
+      clientX: 200,
+      clientY: 200,
+      pointerId: 1,
+      shiftKey: false,
+      button: 0,
+      stopPropagation: () => {
+        stopped = true;
+      },
+    } as unknown as React.PointerEvent;
+    r.current.onPolygonPointerDown('p0', e);
+    expect(stopped).toBe(false);
+  });
+});
+
+describe('usePolygonDrag — an unlocked polygon swallows its pointerdown', () => {
+  it('stops propagation so dragging the body does not also rubber-band', () => {
+    useDoc.setState({ ...useDoc.getState(), polygons: { p0: makePolygon({ id: 'p0' }) } });
+    const r = render();
+    let stopped = false;
+    const e = {
+      clientX: 200,
+      clientY: 200,
+      pointerId: 1,
+      shiftKey: false,
+      button: 0,
+      stopPropagation: () => {
+        stopped = true;
+      },
+    } as unknown as React.PointerEvent;
+    r.current.onPolygonPointerDown('p0', e);
+    expect(stopped).toBe(true);
+  });
 });

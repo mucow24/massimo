@@ -162,6 +162,12 @@ export interface Station {
   // flag (OR): the label is italic when either is set. Omitted/false means
   // "use the doc's labelItalic as-is".
   labelItalic?: boolean;
+  // When locked, the station can't be dragged, marquee-selected, group-towed,
+  // arrow-nudged, or deleted from the canvas — it can still be click-selected
+  // (so its inspector, including the lock toggle, stays reachable) and remains
+  // fully editable there. Optional; missing ⇒ unlocked. Mirrors Polygon.locked
+  // but is canvas-protection only (the station inspector is never disabled).
+  locked?: boolean;
 }
 
 // Visual style for a single segment of a line. `solid` is the historical

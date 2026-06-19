@@ -78,6 +78,22 @@ describe('useRectSelect — activation guards', () => {
   });
 });
 
+describe('useRectSelect — can begin over a locked element', () => {
+  // A locked item can't be dragged, so a drag starting over one should
+  // rubber-band instead of doing nothing. Locked elements carry `data-locked`,
+  // and the activation gate treats them as background for marquee purposes.
+  it('starts a marquee when the pointerdown lands inside a [data-locked] element', () => {
+    const { result } = render();
+    const lockedTarget = {
+      hasAttribute: () => false,
+      closest: (sel: string) => (sel === '[data-locked]' ? ({} as Element) : null),
+    } as unknown as Element;
+    down(result, pointerEvent({ clientX: 10, clientY: 10, target: lockedTarget }));
+    move(result, pointerEvent({ clientX: 50, clientY: 50 }));
+    expect(result.current.rect).toEqual({ x0: 10, y0: 10, x1: 50, y1: 50 });
+  });
+});
+
 describe('useRectSelect — drag threshold + capture', () => {
   it('does not start a rect until the pointer moves past 4px', () => {
     const { result, ref, svg } = render();

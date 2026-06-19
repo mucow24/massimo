@@ -104,7 +104,15 @@ export function useRectSelect(
     // and would conflict with the rect-select drag.
     if (sel.uiMode.kind !== 'idle' && sel.uiMode.kind !== 'placing-label') return;
     const target = e.target as Element | null;
-    const onBackground = target === svgRef.current || (target?.hasAttribute('data-bg') ?? false);
+    // A marquee begins on "empty" canvas — the svg itself or the data-bg rect —
+    // OR over a locked element. Locked items (polygons, stations) can't be
+    // dragged, so a drag starting on one should rubber-band rather than do
+    // nothing; they carry `data-locked` for exactly this. A plain no-move
+    // click still falls through to select the locked element.
+    const onBackground =
+      target === svgRef.current ||
+      (target?.hasAttribute('data-bg') ?? false) ||
+      target?.closest?.('[data-locked]') != null;
     if (!onBackground) return;
     dragRef.current = {
       startWorld: screenToWorld(e.clientX, e.clientY),

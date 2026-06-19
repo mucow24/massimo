@@ -169,3 +169,37 @@ describe('<LabelView /> — editing one line never shifts a sibling line', () =>
     expect(after).toBeCloseTo(before, 5);
   });
 });
+
+describe('<LabelView /> — locked label hit group', () => {
+  const renderInteractive = (label: TextLabel, inHandMode = false) =>
+    render(
+      <svg>
+        <LabelView
+          label={label}
+          selected={false}
+          onPointerDown={() => {}}
+          inHandMode={inHandMode}
+        />
+      </svg>,
+    );
+
+  it('marks the group [data-locked] and uses the pointing-hand cursor when locked', () => {
+    const { container } = renderInteractive(makeTextLabel({ id: 'g1', locked: true }));
+    const g = container.querySelector('[data-text-label-id="g1"]') as HTMLElement;
+    expect(g.getAttribute('data-locked')).toBe('true');
+    expect(g.style.cursor).toBe('pointer');
+  });
+
+  it('uses the four-arrow move cursor and omits data-locked when unlocked', () => {
+    const { container } = renderInteractive(makeTextLabel({ id: 'g1' }));
+    const g = container.querySelector('[data-text-label-id="g1"]') as HTMLElement;
+    expect(g.getAttribute('data-locked')).toBeNull();
+    expect(g.style.cursor).toBe('move');
+  });
+
+  it('uses the open hand in hand mode even when locked (pan wins)', () => {
+    const { container } = renderInteractive(makeTextLabel({ id: 'g1', locked: true }), true);
+    const g = container.querySelector('[data-text-label-id="g1"]') as HTMLElement;
+    expect(g.style.cursor).toBe('grab');
+  });
+});
