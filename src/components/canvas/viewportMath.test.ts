@@ -1,5 +1,11 @@
 import { describe, it, expect } from 'vitest';
-import { computeWheelZoom, panFromDelta, screenToWorld, viewBoxFor } from './viewportMath';
+import {
+  computeWheelZoom,
+  overdrawnViewBox,
+  panFromDelta,
+  screenToWorld,
+  viewBoxFor,
+} from './viewportMath';
 
 const SIZE = { w: 800, h: 600 };
 // Host pinned at the screen origin, so screen coords == client coords.
@@ -22,6 +28,24 @@ describe('viewBoxFor', () => {
       vbW: 400,
       vbH: 300,
     });
+  });
+});
+
+describe('overdrawnViewBox', () => {
+  it('grows the box one viewport-width/height in every direction (3× tile)', () => {
+    expect(overdrawnViewBox({ vbX: 10, vbY: 20, vbW: 100, vbH: 60 })).toEqual({
+      vbX: -90,
+      vbY: -40,
+      vbW: 300,
+      vbH: 180,
+    });
+  });
+
+  it('stays centered on the original box', () => {
+    const vb = { vbX: -400, vbY: -300, vbW: 800, vbH: 600 };
+    const od = overdrawnViewBox(vb);
+    expect(od.vbX + od.vbW / 2).toBe(vb.vbX + vb.vbW / 2);
+    expect(od.vbY + od.vbH / 2).toBe(vb.vbY + vb.vbH / 2);
   });
 });
 
