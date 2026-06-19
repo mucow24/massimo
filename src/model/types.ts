@@ -446,8 +446,8 @@ export interface TransferEnd {
 // A transfer is a 2px black line connecting one station dot to another. The
 // endpoints are anchored to specific stops so they follow the dot when
 // stations move, lines are reordered, or stops shift on a station.
-// Cascade-deleted when either endpoint station is removed; `lineId`
-// nulled if the referenced line is removed.
+// Cascade-deleted when either endpoint's stop is removed — by deleting the
+// station, deleting the line, or removing that line's stop from the station.
 export interface Transfer {
   id: string;
   a: TransferEnd;
