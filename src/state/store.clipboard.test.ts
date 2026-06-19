@@ -109,3 +109,50 @@ describe('pastePolygon / duplicatePolygon', () => {
     expect(useDoc.getState().duplicatePolygon('nope')).toBeNull();
   });
 });
+
+describe('pasteRouteBullet / duplicateRouteBullet', () => {
+  const bulletData = {
+    x: 100,
+    y: 200,
+    rotation: 0 as const,
+    lineId: 'L1',
+    shape: 'square' as const,
+    size: 12,
+  };
+
+  it('pasteRouteBullet offsets x/y by the drop offset, preserves fields, and returns a new id', () => {
+    const newId = useDoc.getState().pasteRouteBullet(bulletData);
+    const bullet = useDoc.getState().routeBullets[newId];
+    expect(bullet).toMatchObject({
+      x: 100 + OFFSET,
+      y: 200 + OFFSET,
+      // Non-position fields carry through the paste path unchanged.
+      lineId: 'L1',
+      shape: 'square',
+      size: 12,
+      rotation: 0,
+    });
+  });
+
+  it('duplicateRouteBullet copies the source offset and leaves the source untouched', () => {
+    const srcId = useDoc.getState().addRouteBullet(50, 60, 'L1');
+    const before = { ...useDoc.getState().routeBullets[srcId] };
+    const dupId = useDoc.getState().duplicateRouteBullet(srcId);
+    expect(dupId).not.toBeNull();
+    expect(dupId).not.toBe(srcId);
+    const dup = useDoc.getState().routeBullets[dupId!];
+    expect(dup).toMatchObject({
+      x: before.x + OFFSET,
+      y: before.y + OFFSET,
+      lineId: before.lineId,
+      shape: before.shape,
+      size: before.size,
+    });
+    // Source unchanged.
+    expect(useDoc.getState().routeBullets[srcId]).toEqual(before);
+  });
+
+  it('duplicateRouteBullet returns null for a missing id', () => {
+    expect(useDoc.getState().duplicateRouteBullet('nope')).toBeNull();
+  });
+});

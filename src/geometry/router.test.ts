@@ -75,13 +75,28 @@ describe('route — 1-bend', () => {
     expect(r.vertices[r.vertices.length - 1]).toEqual({ x: 100, y: 100 });
   });
 
-  it('emits exactly one corner for an axis-aligned L when chamfer is impossible', () => {
-    // With end directly above start (no horizontal offset), the 2-bend
-    // chamfer can't beat the 1-bend, so we get a clean L.
+  it('pins the chamfered 2-bend corner for an east→south quarter turn', () => {
+    // The router prefers a 2-bend chamfer over a clean L here because the
+    // diagonal middle leg is shorter than the right-angle path. Pin the actual
+    // committed geometry: start on the x-axis, end on the right edge, joined by
+    // a 45° diagonal middle segment. (The old test asserted only the endpoints
+    // and called itself "exactly one corner" — a lie; this is a 4-vertex Z.)
     const r = route({ x: 0, y: 0 }, east, { x: 50, y: 50 }, south, 24);
     expect(r.warning).toBe(false);
+    expect(r.vertices).toHaveLength(4);
     expect(r.vertices[0]).toEqual({ x: 0, y: 0 });
-    expect(r.vertices[r.vertices.length - 1]).toEqual({ x: 50, y: 50 });
+    expect(r.vertices[3]).toEqual({ x: 50, y: 50 });
+    const [, v1, v2] = r.vertices;
+    // First leg runs due east (corner stays on the x-axis), last leg runs due
+    // south (corner stays on the right edge x=50).
+    expect(v1.y).toBeCloseTo(0, 6);
+    expect(v2.x).toBeCloseTo(50, 6);
+    // The corner is genuinely chamfered inward, not at the L apex (50,0).
+    expect(v1.x).toBeGreaterThan(0);
+    expect(v1.x).toBeLessThan(50);
+    // Middle leg is a true 45° diagonal: equal horizontal and vertical run.
+    expect(v2.x - v1.x).toBeCloseTo(v2.y - v1.y, 6);
+    expect(v2.x - v1.x).toBeGreaterThan(0);
   });
 });
 
@@ -92,17 +107,37 @@ describe('route — 2-bend', () => {
     expect(r.vertices).toHaveLength(4);
     expect(r.vertices[0]).toEqual({ x: 0, y: 0 });
     expect(r.vertices[3]).toEqual({ x: 200, y: 80 });
+    const [, v1, v2] = r.vertices;
+    // The Z is east → diagonal → east: the first corner sits on the start row
+    // (y≈0), the second on the end row (y≈80), both interior x strictly inside
+    // the span. (It is NOT a rectangular Z — the interior x differ; the middle
+    // leg is a 45° diagonal.)
+    expect(v1.y).toBeCloseTo(0, 6);
+    expect(v2.y).toBeCloseTo(80, 6);
+    expect(v1.x).toBeGreaterThan(0);
+    expect(v1.x).toBeLessThan(v2.x);
+    expect(v2.x).toBeLessThan(200);
+    // Middle leg is a 45° diagonal: equal horizontal and vertical run.
+    expect(v2.x - v1.x).toBeCloseTo(v2.y - v1.y, 6);
   });
 });
 
 describe('route — U-turn', () => {
   it('produces a 3-bend rectangular detour for anti-parallel directions', () => {
     const r = route({ x: 0, y: 0 }, east, { x: 0, y: 200 }, west, 24);
-    // U-turn: east → some perpendicular → -east-ish → west. 5 vertices.
-    expect(r.vertices.length).toBeGreaterThanOrEqual(4);
+    // U-turn: east → south (perpendicular) → -east → west. Exactly 5 vertices.
+    expect(r.vertices).toHaveLength(5);
     expect(r.vertices[0]).toEqual({ x: 0, y: 0 });
-    const last = r.vertices[r.vertices.length - 1];
-    expect(last).toEqual({ x: 0, y: 200 });
+    expect(r.vertices[r.vertices.length - 1]).toEqual({ x: 0, y: 200 });
+    const [, v1, v2, v3] = r.vertices;
+    // Leaves outward along +x and stays on the start row before turning.
+    expect(v1.y).toBeCloseTo(0, 6);
+    expect(v1.x).toBeGreaterThan(0);
+    // The two long sides of the rectangle are vertical: V1 and V2 share an x.
+    // (Pins the rectangular shape, not the solver's chosen detour distance.)
+    expect(v2.x).toBeCloseTo(v1.x, 6);
+    // Comes back in on the end row.
+    expect(v3.y).toBeCloseTo(200, 6);
   });
 });
 

@@ -7,6 +7,7 @@ import { useSnapPrefs } from '../../state/snapPrefs';
 import { DEFAULT_DOC } from '../../model/transforms';
 import { DEFAULT_SNAP_MODES, type SnapModes } from '../../geometry/snap';
 import { makeTextLabel, stationWithStop, makeLine } from '../../test/fixtures';
+import { fakeSvgRef } from '../../test/interaction';
 import type { StationId } from '../../model/types';
 
 const setModes = (partial: Partial<SnapModes>) =>
@@ -66,6 +67,61 @@ describe('useStationDrag — snap engages within a constant screen distance', ()
     // Screen radius is 10px / 2 = 5 world units; 7 > 5 → no snap, X stays 93.
     expect(useDoc.getState().stations['D'].x).toBeCloseTo(93, 5);
     expect(useDoc.getState().stations['D'].y).toBeCloseTo(50, 5);
+  });
+
+  it('snaps a point INSIDE the radius to the axis (positive companion)', () => {
+    // Mirror of the negative case at the same zoom. A point 4 world units off
+    // the x=100 axis is inside the 5-unit world radius (10px / zoom 2), so it
+    // MUST snap to x=100. The negative-only test passes even if snapping is
+    // disabled / the tolerance collapses to 0; this one fails in that case.
+    setModes({ line: true, all: 'off', grid: 'off' });
+    useDoc.setState({
+      ...useDoc.getState(),
+      lines: { L1: makeLine({ id: 'L1', stations: ['D', 'T'] }) },
+      lineOrder: ['L1'],
+      stations: {
+        D: stationWithStop('D' as StationId, 'L1', { x: 0, y: 0 }),
+        T: stationWithStop('T' as StationId, 'L1', { x: 100, y: 0 }),
+      },
+    });
+
+    const svgRef = createRef<SVGSVGElement>() as RefObject<SVGSVGElement | null>;
+    const { result } = renderHook(() => useStationDrag(svgRef, 2));
+
+    // Drag D to world (96, 50): screen Δ = (192, 100) at zoom 2. Perp dist to
+    // axis x=100 is 4 < 5 → snaps.
+    result.current.onStartDrag('D' as StationId, pointerEvent({ clientX: 200, clientY: 200 }));
+    result.current.onPointerMove(pointerEvent({ clientX: 392, clientY: 300 }));
+    result.current.onPointerUp(pointerEvent({ clientX: 392, clientY: 300 }));
+
+    expect(useDoc.getState().stations['D'].x).toBeCloseTo(100, 5);
+    expect(useDoc.getState().stations['D'].y).toBeCloseTo(50, 5);
+  });
+});
+
+describe('useStationDrag — pointer capture', () => {
+  it('captures the pointer on the first move past threshold and releases on up', () => {
+    // The other drag hooks use fakeSvgRef and assert capture; this hook used a
+    // bare createRef, so setPointerCapture was a silent no-op and never tested.
+    useDoc.setState({
+      ...useDoc.getState(),
+      lines: { L1: makeLine({ id: 'L1', stations: ['A'] }) },
+      lineOrder: ['L1'],
+      stations: { A: stationWithStop('A' as StationId, 'L1', { x: 0, y: 0 }) },
+    });
+    const { ref, svg } = fakeSvgRef();
+    const { result } = renderHook(() => useStationDrag(ref, 1));
+
+    result.current.onStartDrag(
+      'A' as StationId,
+      pointerEvent({ clientX: 200, clientY: 200, pointerId: 7 }),
+    );
+    // Not yet captured — capture is deferred to the first move past threshold.
+    expect(svg.hasPointerCapture(7)).toBe(false);
+    result.current.onPointerMove(pointerEvent({ clientX: 220, clientY: 200, pointerId: 7 }));
+    expect(svg.hasPointerCapture(7)).toBe(true);
+    result.current.onPointerUp(pointerEvent({ clientX: 220, clientY: 200, pointerId: 7 }));
+    expect(svg.hasPointerCapture(7)).toBe(false);
   });
 });
 

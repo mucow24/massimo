@@ -7,6 +7,17 @@ import type { LabelValign, Rotation, Station } from '../model/types';
 const HALF = STOP_SIZE / 2;
 const LABEL_GAP = 3;
 
+// Project an anchor coordinate onto the label's reading direction. The auto-snap
+// places the anchor +ahead (dirPlus, → 'end') or −behind (dirMinus, → 'start')
+// along this direction, so the SIGN of the projection is the snap side — a
+// coordinate oracle that a textAnchor-only assertion misses. Works for every
+// rotation (cardinal anchors land on an axis; diagonal anchors split across
+// both, where Math.sign(anchorX) alone would be ambiguous).
+function readingProj(anchorX: number, anchorY: number, rotation: number): number {
+  const a = (rotation * Math.PI) / 4;
+  return anchorX * Math.cos(a) + anchorY * Math.sin(a);
+}
+
 // Build a single-stop station whose label sits at (labelRow, labelCol) with
 // the given rotation, and whose stop sits at the given grid offset from
 // the label cell. Station is at world origin with no station rotation, so
@@ -160,16 +171,25 @@ describe('labelLayoutLocal — auto-snap', () => {
     it('does NOT snap to a perpendicular (S) stop', () => {
       const lay = labelLayoutLocal(station({ rotation: 0, stopOffsetRow: 1, stopOffsetCol: 0 }));
       expect(lay.textAnchor).toBe('middle');
+      // Centered: the anchor stays on the cell center, no reading-direction nudge.
+      expect(lay.anchorX).toBeCloseTo(0, 5);
+      expect(lay.anchorY).toBeCloseTo(0, 5);
     });
 
     it('snaps with diagonal SW stop (in -reading half-plane)', () => {
       const lay = labelLayoutLocal(station({ rotation: 0, stopOffsetRow: 1, stopOffsetCol: -1 }));
       expect(lay.textAnchor).toBe('start');
+      // 'start' anchors at the W cell edge, gapped inward: -(HALF - LABEL_GAP).
+      expect(lay.anchorX).toBeCloseTo(-(HALF - LABEL_GAP), 5);
+      expect(lay.anchorY).toBeCloseTo(0, 5);
     });
 
     it('snaps with diagonal NE stop (in +reading half-plane)', () => {
       const lay = labelLayoutLocal(station({ rotation: 0, stopOffsetRow: -1, stopOffsetCol: 1 }));
       expect(lay.textAnchor).toBe('end');
+      // 'end' anchors at the E cell edge, gapped inward: +(HALF - LABEL_GAP).
+      expect(lay.anchorX).toBeCloseTo(HALF - LABEL_GAP, 5);
+      expect(lay.anchorY).toBeCloseTo(0, 5);
     });
   });
 
@@ -238,12 +258,18 @@ describe('labelLayoutLocal — auto-snap', () => {
           station({ rotation, stopOffsetRow: ahead[0], stopOffsetCol: ahead[1] }),
         );
         expect(lay.textAnchor).toBe('end');
+        // The anchor must be displaced AHEAD along the reading direction, not
+        // just labelled 'end'. (Math.sign(anchorX) can't see this for vertical
+        // rotations where anchorX≈0 — project onto the reading axis instead.)
+        expect(readingProj(lay.anchorX, lay.anchorY, rotation)).toBeGreaterThan(0.5);
       });
       it(`rotation ${rotation}: stop directly behind snaps to 'start'`, () => {
         const lay = labelLayoutLocal(
           station({ rotation, stopOffsetRow: behind[0], stopOffsetCol: behind[1] }),
         );
         expect(lay.textAnchor).toBe('start');
+        // Displaced BEHIND along the reading direction.
+        expect(readingProj(lay.anchorX, lay.anchorY, rotation)).toBeLessThan(-0.5);
       });
     }
   });

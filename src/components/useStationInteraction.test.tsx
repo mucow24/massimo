@@ -205,6 +205,43 @@ describe('useStationInteraction — transfer creation', () => {
     act(() => result.current.handlers.onPointerLeave?.());
     expect(useSelection.getState().hoveredLineStop).toBeNull();
   });
+
+  it('rejects a self-transfer: clicking the committed anchor dot is a no-op (E7a)', () => {
+    // Anchor already committed to S/L1; clicking the SAME station + SAME dot is
+    // a self-transfer (sameStation && sameLine) and must NOT addTransfer or
+    // exit the mode. closestStopLineId returns the first stop's lineId (L1)
+    // since there's no '.canvas-host svg' in the DOM.
+    useSelection.getState().setUiMode({
+      kind: 'creating-transfer',
+      anchor: { stationId: 'S' as StationId, lineId: 'L1' as LineId },
+    });
+    const { result } = setup();
+    click(result.current.handlers, pointerEvent({}) as unknown as React.MouseEvent);
+    expect(addTransfer).not.toHaveBeenCalled();
+    // Still in transfer mode with the anchor intact.
+    const uiMode = useSelection.getState().uiMode;
+    expect(uiMode.kind).toBe('creating-transfer');
+    if (uiMode.kind === 'creating-transfer') {
+      expect(uiMode.anchor).toEqual({ stationId: 'S', lineId: 'L1' });
+    }
+  });
+
+  it('anchor-suppression: pointerMove over the committed anchor clears (not sets) the highlight (E7b)', () => {
+    // Anchor committed to S/L1, and the hover highlight is currently on that
+    // same dot. Moving over it again must CLEAR the highlight (the dot is the
+    // anchor, not a hover target), never re-set it.
+    useSelection.getState().setUiMode({
+      kind: 'creating-transfer',
+      anchor: { stationId: 'S' as StationId, lineId: 'L1' as LineId },
+    });
+    useSelection.setState({
+      ...useSelection.getState(),
+      hoveredLineStop: { stationId: 'S' as StationId, lineId: 'L1' as LineId },
+    });
+    const { result } = setup();
+    act(() => result.current.handlers.onPointerMove?.(pointerEvent({ clientX: 0, clientY: 0 })));
+    expect(useSelection.getState().hoveredLineStop).toBeNull();
+  });
 });
 
 describe('useStationInteraction — append-to-line', () => {

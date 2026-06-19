@@ -164,16 +164,16 @@ export function parse(json: string): ParseResult {
   // otherwise leave the doc in an unreachable-from-UI state. Shared with the
   // localStorage rehydration path via `validActivePalettes`.
   merged.activePalettes = validActivePalettes(merged.activePalettes);
-  // Sanitize per-line segment styles: drop unknown style values, drop 'solid'
-  // (never persisted), and drop any entry whose pair-key isn't a station-pair
-  // adjacency on the line. Also backfill `name` for legacy files saved before
-  // the field existed.
+  // Sanitize per-line segment styles AND layers: drop unknown style values,
+  // drop the never-persisted defaults ('solid' / layer 0), and drop any entry
+  // whose pair-key isn't a station-pair adjacency on the line. Also backfill
+  // `name` for legacy files saved before the field existed.
   const cleanedLines: Record<string, Line> = {};
   let linesChanged = false;
   for (const id of Object.keys(merged.lines)) {
     const line = merged.lines[id];
     const cleaned = sanitizeLineDotSize(
-      sanitizeLineStroke(sanitizeLineWidth(sanitizeSegmentStyles(line))),
+      sanitizeLineStroke(sanitizeLineWidth(sanitizeSegments(line))),
     );
     if (cleaned !== line) linesChanged = true;
     cleanedLines[id] = cleaned;
@@ -546,21 +546,53 @@ function sanitizeLineStroke(line: Line): Line {
   return next;
 }
 
-function sanitizeSegmentStyles(line: Line): Line {
-  if (!line.segmentStyles) return line;
+function sanitizeSegments(line: Line): Line {
+  const styles = line.segmentStyles;
+  const layers = line.segmentLayers;
+  if (!styles && !layers) return line;
   const valid = new Set<string>();
   for (let i = 0; i < line.stations.length - 1; i++) {
     valid.add(pairKeyOf(line.stations[i], line.stations[i + 1]));
   }
   let changed = false;
-  const next: Record<string, LineStyle> = {};
-  for (const key of Object.keys(line.segmentStyles)) {
-    const style = line.segmentStyles[key];
-    if (!KNOWN_LINE_STYLES.has(style) || style === 'solid' || !valid.has(key)) {
-      changed = true;
-      continue;
+
+  let nextStyles = styles;
+  if (styles) {
+    const next: Record<string, LineStyle> = {};
+    let stylesChanged = false;
+    for (const key of Object.keys(styles)) {
+      const style = styles[key];
+      if (!KNOWN_LINE_STYLES.has(style) || style === 'solid' || !valid.has(key)) {
+        stylesChanged = true;
+        continue;
+      }
+      next[key] = style;
     }
-    next[key] = style;
+    if (stylesChanged) {
+      nextStyles = next;
+      changed = true;
+    }
   }
-  return changed ? { ...line, segmentStyles: next } : line;
+
+  // Mirror the segmentStyles healing for segmentLayers: drop the never-stored
+  // default (0), non-finite junk, and any key that isn't a real adjacency.
+  let nextLayers = layers;
+  if (layers) {
+    const next: Record<string, number> = {};
+    let layersChanged = false;
+    for (const key of Object.keys(layers)) {
+      const layer = layers[key];
+      if (!Number.isFinite(layer) || layer === 0 || !valid.has(key)) {
+        layersChanged = true;
+        continue;
+      }
+      next[key] = layer;
+    }
+    if (layersChanged) {
+      nextLayers = next;
+      changed = true;
+    }
+  }
+
+  return changed ? { ...line, segmentStyles: nextStyles, segmentLayers: nextLayers } : line;
 }

@@ -19,12 +19,47 @@ describe('undo/redo', () => {
     expect(Object.keys(useDoc.getState().stations)).toHaveLength(0);
   });
 
+  it('undo restores the station VALUE, not just the count', () => {
+    // Create a station, then mutate it (move + rename) inside one history group.
+    // Undo must roll the whole station back to its pre-group field values —
+    // asserting the count alone would pass even if undo restored a coord-blank
+    // shell.
+    const id = useDoc.getState().addStation(0, 0, 'Origin');
+    const group = beginHistoryGroup();
+    useDoc.getState().moveStation(id, 120, 90);
+    useDoc.getState().renameStation(id, 'Moved');
+    group.commit();
+    // Pre-undo: the post-group values are live.
+    expect(useDoc.getState().stations[id]).toMatchObject({ x: 120, y: 90, name: 'Moved' });
+    undo();
+    const st = useDoc.getState().stations[id];
+    expect(st.x).toBe(0);
+    expect(st.y).toBe(0);
+    expect(st.name).toBe('Origin');
+    expect(st.stops).toEqual([]);
+  });
+
   it('redoes after undo', () => {
     const { addStation } = useDoc.getState();
     addStation(0, 0);
     undo();
     redo();
     expect(Object.keys(useDoc.getState().stations)).toHaveLength(1);
+  });
+
+  it('redo restores the post-edit station VALUE, not just the count', () => {
+    const id = useDoc.getState().addStation(0, 0, 'Origin');
+    const group = beginHistoryGroup();
+    useDoc.getState().moveStation(id, 120, 90);
+    useDoc.getState().renameStation(id, 'Moved');
+    group.commit();
+    undo();
+    redo();
+    const st = useDoc.getState().stations[id];
+    expect(st.x).toBe(120);
+    expect(st.y).toBe(90);
+    expect(st.name).toBe('Moved');
+    expect(st.stops).toEqual([]);
   });
 
   it('does NOT capture viewport in history', () => {
@@ -60,6 +95,26 @@ describe('undo/redo', () => {
     // against the restored doc. The station the undo removed is pruned rather
     // than left as a dangling id that consumers would index into a missing
     // station.
+    expect(useDoc.getState().stations[id]).toBeUndefined();
+    expect(useSelection.getState().selectedStationIds).toEqual([]);
+  });
+
+  it('reconciles selection against the doc after REDO (drops dangling ids)', () => {
+    // Symmetric to the undo-side reconcile above, guarding history.ts:35.
+    // Select a station, delete it (history push), then undo the delete so the
+    // station — and its still-live selection — come back. Redoing the delete
+    // must prune the now-missing station from the selection, not leave it as a
+    // dangling id.
+    const id = useDoc.getState().addStation(0, 0);
+    useSelection.getState().selectStation(id);
+    useDoc.getState().deleteStation(id);
+    undo();
+    // After undo the station is back and is still selected.
+    expect(useDoc.getState().stations[id]).toBeDefined();
+    expect(useSelection.getState().selectedStationIds).toEqual([id]);
+    redo();
+    // Redo removes the station again; the selection is reconciled against the
+    // post-redo doc, so the dangling id is dropped.
     expect(useDoc.getState().stations[id]).toBeUndefined();
     expect(useSelection.getState().selectedStationIds).toEqual([]);
   });

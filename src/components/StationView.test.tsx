@@ -7,6 +7,7 @@ import { DEFAULT_DOC } from '../model/transforms';
 import { makeLabel, makeLine, makeStation, makeStop } from '../test/fixtures';
 import { STOP_SIZE } from '../geometry/orientation';
 import { labelLayoutLocal } from '../geometry/labelLayout';
+import { measureTextLabel, BASELINE_FRACTION } from '../geometry/textMeasure';
 
 beforeEach(() => {
   useDoc.setState({ ...useDoc.getState(), ...DEFAULT_DOC });
@@ -562,5 +563,112 @@ describe('<StationView /> — locked station hit area (bg layer)', () => {
     const g = renderBgLayer(makeStation({ id: 's1', name: 'Foo' }));
     expect(g).not.toHaveAttribute('data-locked');
     expect(g.style.cursor).toBe('move');
+  });
+});
+
+describe('<StationView /> — hover underline geometry (E1)', () => {
+  // The hover underline is drawn as an explicit <line> (renderStationLabelText
+  // draws it instead of the SVG text-decoration attribute). Earlier tests only
+  // count the <line>s; this pins the actual geometry: x1/x2 hug the ink extent
+  // off lineStartX, y sits UNDERLINE_OFFSET below the first baseline, stroke =
+  // the label fill. The expected values are derived from the SAME measurement +
+  // layout the renderer uses, so the test is an exact oracle (not a tautology:
+  // it re-derives the formula independently).
+  const UNDERLINE_OFFSET = 4;
+  const UNDERLINE_STROKE = 2;
+  const defaultStyle = { fontSize: 12, weight: 400, italic: false };
+
+  it('positions the <line> at the ink extent and one offset below the baseline', () => {
+    const station = makeStation({ id: 's1', name: 'Foo', x: 100, y: 100 });
+    useSelection.setState({ ...useSelection.getState(), hoveredStationId: station.id });
+    const { container } = render(
+      <svg>
+        <StationView station={station} lines={{}} zoom={1} onStartDrag={vi.fn()} layer="label" />
+      </svg>,
+    );
+
+    const line = container.querySelector('line');
+    if (!line) throw new Error('expected a hover <line> underline');
+
+    // Re-derive the expected geometry from the same primitives the renderer
+    // uses: labelLayoutLocal for the anchor/textAnchor/baseline, and
+    // measureTextLabel for the ink bearings/width.
+    const lay = labelLayoutLocal(station, defaultStyle);
+    const m = measureTextLabel({ text: 'Foo', fontSize: 12, weight: 400, italic: false });
+    const lm = m.lines[0];
+    expect(lm.inkWidth).toBeGreaterThan(0); // premise: there's an underline to draw
+
+    // lineStartX for an end-anchored label: anchorX − bearingRight.
+    expect(lay.textAnchor).toBe('end'); // premise for this station's layout
+    const expX1 = lay.anchorX - lm.bearingRight;
+    const expX2 = expX1 + lm.inkWidth;
+
+    // First baseline for the central-baseline path (the default label uses
+    // dominantBaseline='central'): anchorY + fontSize*(BASELINE_FRACTION−0.5)
+    // + firstLineDyPx. Single line ⇒ i=0, so y = baseline + UNDERLINE_OFFSET.
+    expect(lay.baseline).toBe('central'); // premise
+    const baselineY = lay.anchorY + 12 * (BASELINE_FRACTION - 0.5) + lay.firstLineDyPx;
+    const expY = baselineY + UNDERLINE_OFFSET;
+
+    expect(Number(line.getAttribute('x1'))).toBeCloseTo(expX1, 5);
+    expect(Number(line.getAttribute('x2'))).toBeCloseTo(expX2, 5);
+    expect(Number(line.getAttribute('y1'))).toBeCloseTo(expY, 5);
+    expect(Number(line.getAttribute('y2'))).toBeCloseTo(expY, 5);
+    // Underline paints in the label color (light-mode near-black) at the
+    // documented stroke width.
+    expect(line.getAttribute('stroke')).toBe('#111111');
+    expect(Number(line.getAttribute('stroke-width'))).toBe(UNDERLINE_STROKE);
+  });
+});
+
+describe('<StationView /> — selection silhouette geometry (E2)', () => {
+  // The stroke/wash/match-stroke silhouette paints a smoothed union path. Prior
+  // tests only assert the <path> is present; this pins the wash fill/opacity and
+  // the match-stroke width to their documented constants, plus a non-empty `d`
+  // for a multi-cell station.
+  const multiCellStation = () =>
+    makeStation({
+      id: 's1',
+      name: 'Hub',
+      x: 0,
+      y: 0,
+      stops: [makeStop('L1', { row: 0, col: 0 }), makeStop('L2', { row: 0, col: 1 })],
+    });
+
+  function renderLayer(layer: 'wash' | 'stroke' | 'match-stroke') {
+    return render(
+      <svg>
+        <StationView
+          station={multiCellStation()}
+          lines={{}}
+          zoom={1}
+          onStartDrag={vi.fn()}
+          layer={layer}
+        />
+      </svg>,
+    ).container;
+  }
+
+  it('draws a non-empty union path for a multi-cell station (wash layer)', () => {
+    const path = renderLayer('wash').querySelector('path');
+    if (!path) throw new Error('expected a silhouette <path>');
+    const d = path.getAttribute('d') ?? '';
+    expect(d.length).toBeGreaterThan(0);
+    // A real area, not a single point: at least one move + one line/curve.
+    expect(d).toMatch(/M/);
+    expect(d).toMatch(/[LCQ]/);
+  });
+
+  it('paints the wash fill #f0ff00 at 0.2 opacity', () => {
+    const path = renderLayer('wash').querySelector('path')!;
+    expect(path.getAttribute('fill')).toBe('#f0ff00');
+    expect(Number(path.getAttribute('fill-opacity'))).toBe(0.2);
+  });
+
+  it('paints the gray match-stroke at width 1.5, no fill', () => {
+    const path = renderLayer('match-stroke').querySelector('path')!;
+    expect(path.getAttribute('fill')).toBe('none');
+    expect(path.getAttribute('stroke')).toBe('#888');
+    expect(Number(path.getAttribute('stroke-width'))).toBe(1.5);
   });
 });
