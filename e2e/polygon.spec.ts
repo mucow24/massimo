@@ -253,7 +253,9 @@ test.describe('Polygon opacity, layering, placement, lock', () => {
     await expect(page.locator('[data-polygon-vertex]')).toHaveCount(0);
     await expect(page.locator('[data-polygon-edge-add]')).toHaveCount(0);
 
-    // Dragging the locked body does nothing.
+    // Dragging the locked body never moves it. A locked element reads as
+    // background for rubber-band selection, so the drag begins a marquee
+    // instead — and an empty marquee clears the selection (closing the popover).
     const before = JSON.stringify((await onlyPolygon(page)).vertices);
     await page.mouse.move(CENTER.x, CENTER.y);
     await page.mouse.down();
@@ -261,7 +263,9 @@ test.describe('Polygon opacity, layering, placement, lock', () => {
     await page.mouse.up();
     expect(JSON.stringify((await onlyPolygon(page)).vertices)).toBe(before);
 
-    // Unlock → handles return.
+    // Re-select the locked polygon (a plain click still selects it), then
+    // unlock → handles return.
+    await page.mouse.click(CENTER.x, CENTER.y);
     await page.getByRole('button', { name: 'Unlock polygon' }).click();
     await expect(page.locator('[data-polygon-vertex]')).toHaveCount(4);
   });

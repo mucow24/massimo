@@ -1504,6 +1504,36 @@ describe('setStationLabelItalic', () => {
   });
 });
 
+describe('setStationLocked', () => {
+  it('writes locked:true on the station when called with true', () => {
+    const doc = makeDoc({ stations: [makeStation({ id: 'a' })] });
+    const next = T.setStationLocked(doc, 'a', true);
+    expect(next.stations.a.locked).toBe(true);
+  });
+
+  it('clears locked from the station when called with false', () => {
+    const doc = makeDoc({
+      stations: [{ ...makeStation({ id: 'a' }), locked: true }],
+    });
+    const next = T.setStationLocked(doc, 'a', false);
+    expect(next.stations.a.locked).toBeFalsy();
+    // Specifically: omitted, not set to false. Keeps existing saves clean.
+    expect('locked' in next.stations.a).toBe(false);
+  });
+
+  it('is a no-op (reference equality) when the value is unchanged', () => {
+    const doc = makeDoc({ stations: [makeStation({ id: 'a' })] });
+    expect(T.setStationLocked(doc, 'a', false)).toBe(doc);
+    const locked = T.setStationLocked(doc, 'a', true);
+    expect(T.setStationLocked(locked, 'a', true)).toBe(locked);
+  });
+
+  it('is a no-op for missing ids', () => {
+    const doc = makeDoc({ stations: [makeStation({ id: 'a' })] });
+    expect(T.setStationLocked(doc, 'nope', true)).toBe(doc);
+  });
+});
+
 describe('activePalettes', () => {
   it('DEFAULT_DOC.activePalettes is exactly [mta]', () => {
     expect(T.DEFAULT_DOC.activePalettes).toEqual(['mta']);

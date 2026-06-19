@@ -34,6 +34,7 @@ export function StationInspector({ id }: { id: StationId }) {
   const setDotStyle = useDoc((s) => s.setDotStyle);
   const setDotSize = useDoc((s) => s.setDotSize);
   const setStationWaypoint = useDoc((s) => s.setStationWaypoint);
+  const setStationLocked = useDoc((s) => s.setStationLocked);
   const setStationLabelBold = useDoc((s) => s.setStationLabelBold);
   const setStationLabelItalic = useDoc((s) => s.setStationLabelItalic);
   const selection = useSelection();
@@ -227,6 +228,20 @@ export function StationInspector({ id }: { id: StationId }) {
             onClick={() => setStationWaypoint(station.id, !station.isWaypoint)}
           >
             WP
+          </button>
+          <button
+            type="button"
+            className={`btn-mini${station.locked ? ' lock-on' : ''}`}
+            aria-pressed={!!station.locked}
+            aria-label={station.locked ? 'Unlock station' : 'Lock station'}
+            title={
+              station.locked
+                ? 'Unlock — allow dragging, marquee-select, and delete'
+                : 'Lock (prevents dragging, marquee-select, and delete)'
+            }
+            onClick={() => setStationLocked(station.id, !station.locked)}
+          >
+            {station.locked ? '🔒' : '🔓'}
           </button>
         </div>
       </div>

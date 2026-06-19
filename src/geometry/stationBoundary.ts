@@ -141,6 +141,8 @@ export function stationsForRect(
   const hits: StationId[] = [];
   for (const id of Object.keys(stations)) {
     const st = stations[id];
+    // Locked stations are excluded from marquee selection (mirrors polygons).
+    if (st.locked) continue;
     const b = stationBoundaryRectsLocal(st, style, stopHalf);
     const cellsWorld = b.cells.map((p) => stationLocalToWorld(st, p));
     if (rectIntersectsPolygon(rect, cellsWorld)) {

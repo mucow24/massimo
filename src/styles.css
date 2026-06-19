@@ -965,16 +965,18 @@ select {
   background: #c91f1f;
 }
 
-/* Waypoint toggle in the station inspector — neutral gray when active
-   (distinct from mirror-on's red) so it reads as a state flag, not a
+/* Waypoint + lock toggles in the station inspector — neutral gray when active
+   (distinct from mirror-on's red) so they read as state flags, not a
    warning. Matches the gray of the .wp-pill in the station list. */
-.btn-mini.wp-on {
+.btn-mini.wp-on,
+.btn-mini.lock-on {
   background: #6b7280;
   border-color: #4b5563;
   color: #fff;
   font-weight: 600;
 }
-.btn-mini.wp-on:hover:not(:disabled) {
+.btn-mini.wp-on:hover:not(:disabled),
+.btn-mini.lock-on:hover:not(:disabled) {
   background: #5b6470;
 }
 

@@ -70,6 +70,10 @@ export function useStationDrag(
     (id: StationId, e: React.PointerEvent, redistributeAnchor?: StationId) => {
       const st = stationsRef.current[id];
       if (!st) return;
+      // A locked station can't be dragged. Bail without capturing a gesture;
+      // the pointerdown still bubbles to the canvas (the station's handler
+      // never stops propagation), so a drag over it begins a marquee instead.
+      if (st.locked) return;
       // Group-drag: tow the rest of the multi-selection (every type) by the same
       // delta. Suppressed during a ctrl-drag redistribute (anchor set), where the
       // intervening stops are reflowed instead. Snap runs on the grabbed station

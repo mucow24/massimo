@@ -1382,6 +1382,18 @@ export function setStationLabelItalic(doc: MapDoc, stationId: StationId, italic:
   return { ...doc, stations: { ...doc.stations, [stationId]: rest } };
 }
 
+export function setStationLocked(doc: MapDoc, stationId: StationId, locked: boolean): MapDoc {
+  const cur = doc.stations[stationId];
+  if (!cur) return doc;
+  if (!!cur.locked === locked) return doc;
+  if (locked) {
+    return { ...doc, stations: { ...doc.stations, [stationId]: { ...cur, locked: true } } };
+  }
+  // `false` is the default; omit the field so persisted state stays clean.
+  const { locked: _gone, ...rest } = cur;
+  return { ...doc, stations: { ...doc.stations, [stationId]: rest } };
+}
+
 export function setLabelItalic(doc: MapDoc, i: boolean): MapDoc {
   if (i === doc.labelItalic) return doc;
   return { ...doc, labelItalic: i };

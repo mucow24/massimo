@@ -59,6 +59,10 @@ export function StationHitArea({
   return (
     <g
       data-station-id={station.id}
+      // Generic lock marker (shared with polygons): the rect-select gate keys
+      // off [data-locked] so a drag starting on a locked station begins a
+      // marquee instead of doing nothing.
+      data-locked={station.locked || undefined}
       transform={`translate(${station.x} ${station.y}) rotate(${angle})`}
       style={{ cursor }}
     >

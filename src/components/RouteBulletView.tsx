@@ -1,11 +1,14 @@
 import type { Line, RouteBullet } from '../model/types';
 import { badgeColors } from './badge';
 import { useThemeColors } from '../state/theme';
+import { itemCursor } from './canvas/itemCursor';
 
 interface Props {
   bullet: RouteBullet;
   lines: Record<string, Line>;
   selected: boolean;
+  // Hand mode → grab cursor (pannable). Defaults false for non-canvas uses.
+  inHandMode?: boolean;
   onPointerDown: (id: string, e: React.PointerEvent) => void;
   onClick: (id: string, e: React.MouseEvent) => void;
   onContextMenu: (id: string, e: React.MouseEvent) => void;
@@ -15,6 +18,7 @@ export function RouteBulletView({
   bullet,
   lines,
   selected,
+  inHandMode = false,
   onPointerDown,
   onClick,
   onContextMenu,
@@ -44,11 +48,15 @@ export function RouteBulletView({
     <g
       data-bullet-id={bullet.id}
       data-bullet-selected={selected || undefined}
+      // Generic lock marker (shared with stations + polygons): the rect-select
+      // gate keys off [data-locked] so a drag over a locked bullet begins a
+      // marquee instead of doing nothing.
+      data-locked={bullet.locked || undefined}
       transform={`translate(${bullet.x} ${bullet.y}) rotate(${angle})`}
       onPointerDown={(e) => onPointerDown(bullet.id, e)}
       onClick={(e) => onClick(bullet.id, e)}
       onContextMenu={(e) => onContextMenu(bullet.id, e)}
-      style={{ cursor: 'pointer' }}
+      style={{ cursor: itemCursor(inHandMode, bullet.locked) }}
     >
       {shape}
       {selected && (

@@ -244,3 +244,21 @@ describe('useStationInteraction — mode gates', () => {
     expect(result.current.cursor).toBe('grab');
   });
 });
+
+describe('useStationInteraction — cursor', () => {
+  it('shows the four-arrow move cursor over an unlocked station in arrow mode', () => {
+    const { result } = setup();
+    expect(result.current.cursor).toBe('move');
+  });
+
+  it('shows the pointing-hand cursor over a locked station', () => {
+    const { result } = setup({ ...stationS(), locked: true });
+    expect(result.current.cursor).toBe('pointer');
+  });
+
+  it('shows the open hand over a locked station in hand mode (pan wins)', () => {
+    useSelection.setState({ ...useSelection.getState(), toolMode: 'hand' });
+    const { result } = setup({ ...stationS(), locked: true });
+    expect(result.current.cursor).toBe('grab');
+  });
+});

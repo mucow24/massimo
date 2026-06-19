@@ -468,3 +468,41 @@ describe('App keyboard: locked bullets and labels resist Delete and arrow-nudge'
     expect(doc.textLabels['lockL'].x).toBe(0);
   });
 });
+
+describe('App keyboard: locked stations resist Delete and arrow-nudge', () => {
+  // Seed one locked + one unlocked station, both selected.
+  function seedStations() {
+    const locked = useDoc.getState().addStation(0, 0);
+    const free = useDoc.getState().addStation(100, 0);
+    useDoc.getState().setStationLocked(locked, true);
+    useSelection.setState({
+      ...useSelection.getState(),
+      selectedRouteBulletIds: [],
+      selectedLabelIds: [],
+      selectedPolygonIds: [],
+      selectedVertex: null,
+      selectedStationIds: [locked, free],
+    });
+    return { locked, free };
+  }
+
+  it('Delete removes the unlocked station but keeps the locked one', () => {
+    render(<App />);
+    const { locked, free } = seedStations();
+    fireEvent.keyDown(window, { key: 'Delete' });
+    const doc = useDoc.getState();
+    expect(doc.stations[free]).toBeUndefined();
+    expect(doc.stations[locked]).toBeDefined();
+  });
+
+  it('Arrow nudge moves the unlocked station but not the locked one', () => {
+    render(<App />);
+    const { locked, free } = seedStations();
+    const lockedX = useDoc.getState().stations[locked].x;
+    const freeX = useDoc.getState().stations[free].x;
+    fireEvent.keyDown(window, { key: 'ArrowRight' });
+    const doc = useDoc.getState();
+    expect(doc.stations[free].x).toBe(freeX + 1);
+    expect(doc.stations[locked].x).toBe(lockedX);
+  });
+});

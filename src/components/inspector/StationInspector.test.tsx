@@ -250,6 +250,37 @@ describe('<StationInspector /> — shape picker wiring', () => {
     expect(wpBtnOff).not.toHaveClass('wp-on');
   });
 
+  it('Lock button toggles aria-pressed and writes locked on the station', async () => {
+    const user = userEvent.setup();
+    useDoc.setState({
+      ...DEFAULT_DOC,
+      ...makeDoc({
+        stations: [makeStation({ id: 'a', stops: [makeStop('L1')] })],
+        lines: [makeLine({ id: 'L1', stations: ['a'] })],
+      }),
+    });
+    useSelection.setState({ ...SELECTION_BLANK, selectedStationIds: ['a'] });
+
+    render(<StationInspector id="a" />);
+    const lockBtn = screen.getByRole('button', { name: 'Lock station' });
+    expect(lockBtn).toHaveAttribute('aria-pressed', 'false');
+    expect(lockBtn).not.toHaveClass('lock-on');
+
+    await user.click(lockBtn);
+    expect(useDoc.getState().stations.a.locked).toBe(true);
+    // The label flips to the unlock affordance once locked.
+    const lockBtnOn = screen.getByRole('button', { name: 'Unlock station' });
+    expect(lockBtnOn).toHaveAttribute('aria-pressed', 'true');
+    expect(lockBtnOn).toHaveClass('lock-on');
+
+    await user.click(screen.getByRole('button', { name: 'Unlock station' }));
+    expect(useDoc.getState().stations.a.locked).toBeFalsy();
+    expect(screen.getByRole('button', { name: 'Lock station' })).toHaveAttribute(
+      'aria-pressed',
+      'false',
+    );
+  });
+
   describe('Bold button', () => {
     it('renders next to the label alignment buttons inside the Label field', () => {
       useDoc.setState({

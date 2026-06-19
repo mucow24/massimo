@@ -196,3 +196,61 @@ describe('useStationDrag — selection-only label group drag', () => {
     expect(doc.textLabels['g1'].y).toBeCloseTo(-35, 5);
   });
 });
+
+describe('useStationDrag — locked stations', () => {
+  beforeEach(() => setModes({ line: false, all: 'off', grid: 'off' }));
+
+  it('does not move a locked station when dragged', () => {
+    useDoc.setState({
+      ...useDoc.getState(),
+      lines: { L1: makeLine({ id: 'L1', stations: ['A'] }) },
+      lineOrder: ['L1'],
+      stations: { A: { ...stationWithStop('A' as StationId, 'L1', { x: 0, y: 0 }), locked: true } },
+    });
+    const svgRef = createRef<SVGSVGElement>() as RefObject<SVGSVGElement | null>;
+    const { result } = renderHook(() => useStationDrag(svgRef, 1));
+
+    result.current.onStartDrag(
+      'A' as StationId,
+      pointerEvent({ clientX: 200, clientY: 200, shiftKey: true }),
+    );
+    result.current.onPointerMove(pointerEvent({ clientX: 260, clientY: 240, shiftKey: true }));
+    result.current.onPointerUp(pointerEvent({ clientX: 260, clientY: 240 }));
+
+    const doc = useDoc.getState();
+    expect(doc.stations['A'].x).toBe(0);
+    expect(doc.stations['A'].y).toBe(0);
+  });
+
+  it('does not tow a locked sibling in a group drag', () => {
+    useDoc.setState({
+      ...useDoc.getState(),
+      lines: { L1: makeLine({ id: 'L1', stations: ['A', 'B'] }) },
+      lineOrder: ['L1'],
+      stations: {
+        A: stationWithStop('A' as StationId, 'L1', { x: 0, y: 0 }),
+        B: { ...stationWithStop('B' as StationId, 'L1', { x: 100, y: 0 }), locked: true },
+      },
+    });
+    useSelection.setState({
+      ...useSelection.getState(),
+      selectedStationIds: ['A' as StationId, 'B' as StationId],
+    });
+    const svgRef = createRef<SVGSVGElement>() as RefObject<SVGSVGElement | null>;
+    const { result } = renderHook(() => useStationDrag(svgRef, 1));
+
+    result.current.onStartDrag(
+      'A' as StationId,
+      pointerEvent({ clientX: 200, clientY: 200, shiftKey: true }),
+    );
+    result.current.onPointerMove(pointerEvent({ clientX: 210, clientY: 200, shiftKey: true }));
+    result.current.onPointerMove(pointerEvent({ clientX: 240, clientY: 200, shiftKey: true }));
+    result.current.onPointerUp(pointerEvent({ clientX: 240, clientY: 200 }));
+
+    const doc = useDoc.getState();
+    // Grabbed station A moved +40; the locked sibling B stays put.
+    expect(doc.stations['A'].x).toBeCloseTo(40, 5);
+    expect(doc.stations['B'].x).toBe(100);
+    expect(doc.stations['B'].y).toBe(0);
+  });
+});

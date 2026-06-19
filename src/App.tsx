@@ -39,6 +39,13 @@ function unlockedSelectedLabelIds(): string[] {
   return useSelection.getState().selectedLabelIds.filter((id) => !doc.textLabels[id]?.locked);
 }
 
+// Selected stations minus locked ones — locked stations resist Delete and
+// arrow-nudge too, mirroring locked polygons.
+function unlockedSelectedStationIds() {
+  const doc = useDoc.getState();
+  return useSelection.getState().selectedStationIds.filter((id) => !doc.stations[id]?.locked);
+}
+
 export default function App() {
   const darkMode = useViewportStore((s) => s.darkMode);
   // Force a re-measure + re-render once the web fonts finish loading. Label
@@ -132,8 +139,8 @@ export default function App() {
         // Mixed station + bullet + label + polygon multi-selection takes
         // priority over the single-element delete paths below; one history
         // entry covers every removed item so a single Ctrl-Z reverts the lot.
-        const stationIds = sel.selectedStationIds;
-        // Locked bullets, labels, and polygons are all protected from deletion.
+        // Locked stations, bullets, labels, and polygons are all protected from deletion.
+        const stationIds = unlockedSelectedStationIds();
         const bulletIds = unlockedSelectedRouteBulletIds();
         const labelIds = unlockedSelectedLabelIds();
         const polygonIds = unlockedSelectedPolygonIds();
@@ -199,8 +206,8 @@ export default function App() {
           }
           return;
         }
-        const stationIds = sel.selectedStationIds;
-        // Locked bullets, labels, and polygons don't move.
+        // Locked stations, bullets, labels, and polygons don't move.
+        const stationIds = unlockedSelectedStationIds();
         const bulletIds = unlockedSelectedRouteBulletIds();
         const labelIds = unlockedSelectedLabelIds();
         const polygonIds = unlockedSelectedPolygonIds();

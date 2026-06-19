@@ -203,6 +203,14 @@ describe('stationsForRect', () => {
     expect(stationsForRect(stations, rect)).toEqual([]);
   });
 
+  it('excludes locked stations from marquee selection', () => {
+    const a = { ...stationWithStop('A', 'L1', { x: 0, y: 0 }), locked: true };
+    const b = stationWithStop('B', 'L1', { x: 10, y: 10 });
+    const stations = { A: a, B: b };
+    const rect = { x0: -100, y0: -100, x1: 100, y1: 100 };
+    expect(stationsForRect(stations, rect)).toEqual(['B']);
+  });
+
   it('a waypoint station does NOT match a rect that only overlaps where the label would be', () => {
     // Same setup as the label-rect coverage test above, but with isWaypoint
     // — the rect over the label area should miss because the waypoint has

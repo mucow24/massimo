@@ -539,3 +539,28 @@ describe('<StationView /> — transfer-pick hover highlight', () => {
     expect(useSelection.getState().hoveredLineStop).toBeNull();
   });
 });
+
+describe('<StationView /> — locked station hit area (bg layer)', () => {
+  function renderBgLayer(station: ReturnType<typeof makeStation>) {
+    const { container } = render(
+      <svg>
+        <StationView station={station} lines={{}} zoom={1} onStartDrag={vi.fn()} layer="bg" />
+      </svg>,
+    );
+    const g = container.querySelector('[data-station-id="s1"]');
+    if (!g) throw new Error('no station hit group');
+    return g as HTMLElement;
+  }
+
+  it('marks the hit group [data-locked] and uses the pointing-hand cursor when locked', () => {
+    const g = renderBgLayer({ ...makeStation({ id: 's1', name: 'Foo' }), locked: true as const });
+    expect(g).toHaveAttribute('data-locked', 'true');
+    expect(g.style.cursor).toBe('pointer');
+  });
+
+  it('omits data-locked and uses the move cursor when unlocked', () => {
+    const g = renderBgLayer(makeStation({ id: 's1', name: 'Foo' }));
+    expect(g).not.toHaveAttribute('data-locked');
+    expect(g.style.cursor).toBe('move');
+  });
+});
