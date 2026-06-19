@@ -51,6 +51,8 @@ const distinctBandKeys = () =>
   new Set(stripeEls().map((el) => el.getAttribute('data-band-key'))).size;
 const stripeD = (lineId: string) =>
   document.querySelector(`[data-band-stripe][data-line-id="${lineId}"]`)?.getAttribute('d');
+const stripeStroke = (lineId: string) =>
+  document.querySelector(`[data-band-stripe][data-line-id="${lineId}"]`)?.getAttribute('stroke');
 
 describe('MapCanvas — width edits rebuild band geometry', () => {
   // Width is GEOMETRY (it moves the baked stripe paths and changes band
@@ -82,6 +84,34 @@ describe('MapCanvas — width edits rebuild band geometry', () => {
     // stop regardless of band membership. A straight corridor's paths never
     // move under width edits — only grouping and stroke widths do.
     expect(stripeD('L1')).toBe(dBefore);
+  });
+
+  it('a COLOR edit repaints the stripe live but never moves band geometry (E5d)', () => {
+    // Inverse of the width-rebuild test: color is PRESENTATION (resolved live
+    // from the lines map at render time), not geometry. A color edit must
+    // repaint the stripe's stroke while the baked paths AND band merging stay
+    // byte-identical — the geometry memo (keyed on the color-free
+    // linesGeometrySig) must NOT rebuild.
+    render(<App />);
+    seedInterlinedPair();
+
+    // Starts merged; L1 paints in its seed color.
+    expect(distinctBandKeys()).toBe(1);
+    const dBefore = stripeD('L1');
+    expect(dBefore).toBeTruthy();
+    expect(stripeStroke('L1')).toBe('#0039A6');
+
+    act(() => {
+      useDoc.getState().updateLine('L1', { color: '#00aa55' });
+    });
+
+    // The new color paints immediately (live presentation repaint).
+    expect(stripeStroke('L1')).toBe('#00aa55');
+    // …and geometry is untouched: same band-key count, byte-identical path.
+    expect(distinctBandKeys()).toBe(1);
+    expect(stripeD('L1')).toBe(dBefore);
+    // The interlined neighbor's geometry is likewise undisturbed.
+    expect(stripeStroke('L2')).toBe('#EE352E');
   });
 
   it('the line-highlight overlay strokes the selected line at its own width', () => {

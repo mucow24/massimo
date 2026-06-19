@@ -206,6 +206,59 @@ describe('<PolygonView /> open polygons (closed: false)', () => {
   });
 });
 
+describe('<PolygonView /> locked polygons (E5c)', () => {
+  beforeEach(() => {
+    useViewportStore.setState({ darkMode: false, zoom: 1 });
+  });
+
+  function renderOverlay(polygon: Polygon) {
+    return render(
+      <svg>
+        <PolygonView
+          polygon={polygon}
+          layer="overlay"
+          selected
+          selectedVertexIndex={null}
+          interactive
+          onPointerDown={noop}
+          onClick={noop}
+          onContextMenu={noop}
+          onVertexPointerDown={noop}
+          onVertexClick={noop}
+          onEdgeAddPointerDown={noop}
+        />
+      </svg>,
+    ).container;
+  }
+
+  it('a locked, selected polygon keeps the selection outline but drops all editing adornments', () => {
+    const c = renderOverlay(makePolygon({ id: 'p0', locked: true }));
+    // Outline stays so the selection (and the popover's unlock toggle) is visible.
+    expect(c.querySelector('g[data-polygon-overlay] > polygon')).not.toBeNull();
+    // No vertex handles, no edge "+" buttons while locked.
+    expect(c.querySelectorAll('[data-polygon-vertex]')).toHaveLength(0);
+    expect(c.querySelectorAll('[data-polygon-edge-add]')).toHaveLength(0);
+  });
+
+  it('an UNlocked, selected polygon shows the handles (contrast — same fixture, lock off)', () => {
+    const c = renderOverlay(makePolygon({ id: 'p0' }));
+    expect(c.querySelectorAll('[data-polygon-vertex]')).toHaveLength(4);
+    expect(c.querySelectorAll('[data-polygon-edge-add]')).toHaveLength(4);
+  });
+
+  it('fillOpacity reaches the body fill: 60 → 0.6', () => {
+    const { container } = renderBody(makePolygon({ id: 'p0', fill: '#112233', fillOpacity: 60 }));
+    const el = body(container);
+    expect(el.getAttribute('fill')).toBe('#112233');
+    expect(Number(el.getAttribute('fill-opacity'))).toBeCloseTo(0.6, 6);
+  });
+
+  it('fillOpacity defaults to fully opaque (100 → 1) when unset', () => {
+    const { container } = renderBody(makePolygon({ id: 'p0', fill: '#112233' }));
+    expect(Number(body(container).getAttribute('fill-opacity'))).toBeCloseTo(1, 6);
+  });
+});
+
 describe('<PolygonView /> corner rounding', () => {
   beforeEach(() => {
     useViewportStore.setState({ darkMode: false });

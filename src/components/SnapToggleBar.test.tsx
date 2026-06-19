@@ -1,8 +1,9 @@
-import { describe, it, expect, beforeEach } from 'vitest';
+import { describe, it, expect, beforeEach, afterEach } from 'vitest';
 import { render, screen } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { SnapToggleBar } from './SnapToggleBar';
 import { useSnapPrefs } from '../state/snapPrefs';
+import { useSelection } from '../state/store';
 import { DEFAULT_SNAP_MODES } from '../geometry/snap';
 
 describe('<SnapToggleBar />', () => {
@@ -129,5 +130,51 @@ describe('<SnapToggleBar />', () => {
     const all = screen.getByRole('button', { name: 'Snap to all' });
     await user.click(all); // → horizontal
     expect(all.getAttribute('title')).toContain('Horizontal only');
+  });
+});
+
+describe('<SnapToggleBar /> — label-gated toggles (E6)', () => {
+  // With a text label selected, the snap toggles that don't apply to labels
+  // (line/equidistant/tens/all) disable and show the "not applicable to labels"
+  // tooltip, while grid (appliesToLabels) stays enabled. The rest of the suite
+  // never sets selectedLabelIds; we set it here and restore it after.
+  beforeEach(() => {
+    localStorage.clear();
+    useSnapPrefs.setState({ modes: { ...DEFAULT_SNAP_MODES } });
+    useSelection.setState({ ...useSelection.getState(), selectedLabelIds: ['g1'] });
+  });
+  afterEach(() => {
+    useSelection.setState({ ...useSelection.getState(), selectedLabelIds: [] });
+  });
+
+  it('disables every non-grid toggle and tags them "not applicable to labels"', () => {
+    render(<SnapToggleBar />);
+    for (const name of ['Snap to line', 'Snap to equidistant', "Snap to 10's", 'Snap to all']) {
+      const btn = screen.getByRole('button', { name });
+      expect(btn).toHaveAttribute('aria-disabled', 'true');
+      expect(btn.getAttribute('title')).toContain('not applicable to labels');
+    }
+  });
+
+  it('keeps Grid enabled (it applies to labels) without the label tooltip', () => {
+    render(<SnapToggleBar />);
+    const grid = screen.getByRole('button', { name: 'Snap to grid' });
+    expect(grid).toHaveAttribute('aria-disabled', 'false');
+    expect(grid.getAttribute('title')).not.toContain('not applicable to labels');
+  });
+
+  it('a disabled label-gated toggle does not flip the store on click', async () => {
+    const user = userEvent.setup();
+    render(<SnapToggleBar />);
+    // Line is on by default; clicking it while label-gated must leave it on.
+    await user.click(screen.getByRole('button', { name: 'Snap to line' }));
+    expect(useSnapPrefs.getState().modes.line).toBe(true);
+  });
+
+  it('Grid still cycles while a label is selected', async () => {
+    const user = userEvent.setup();
+    render(<SnapToggleBar />);
+    await user.click(screen.getByRole('button', { name: 'Snap to grid' }));
+    expect(useSnapPrefs.getState().modes.grid).toBe('horizontal');
   });
 });

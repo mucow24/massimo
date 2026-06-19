@@ -6,6 +6,7 @@ import { useDoc, useSelection } from '../../state/store';
 import { historyDepth } from '../../state/history';
 import { DEFAULT_DOC } from '../../model/transforms';
 import { makeDoc, makeLine, makeStation, makeStop } from '../../test/fixtures';
+import { DOT_SHAPE_PRESETS } from '../../model/dotStyle';
 
 const SELECTION_BLANK = {
   selectedStationIds: [] as string[],
@@ -100,6 +101,98 @@ describe('<LineInspector /> — segment style dividers', () => {
     });
     const { container } = render(<LineInspector id="L1" />);
     expect(container.querySelectorAll('[data-segment-style-divider]').length).toBe(0);
+  });
+});
+
+describe('<LineInspector /> — name / service / default-shape / station-list (E9)', () => {
+  beforeEach(() => {
+    localStorage.clear();
+    useDoc.setState({ ...DEFAULT_DOC });
+    // Reset uiMode too: the Edit-Stops / append flow flips it, and SELECTION_BLANK
+    // doesn't carry uiMode, so it would otherwise leak between these tests.
+    useSelection.setState({ ...SELECTION_BLANK, uiMode: { kind: 'idle' } });
+    useDoc.temporal.getState().clear();
+  });
+
+  const seedThree = () => {
+    useDoc.setState({
+      ...DEFAULT_DOC,
+      ...makeDoc({
+        stations: [
+          makeStation({ id: 's1', name: 'One', stops: [makeStop('L1')] }),
+          makeStation({ id: 's2', name: 'Two', stops: [makeStop('L1')] }),
+          makeStation({ id: 's3', name: 'Three', stops: [makeStop('L1')] }),
+        ],
+        lines: [makeLine({ id: 'L1', service: 'A', stations: ['s1', 's2', 's3'] })],
+      }),
+    });
+  };
+
+  // Labels in this inspector aren't htmlFor-associated; find the text input
+  // that follows a given <label> within its .field wrapper.
+  const fieldInput = (labelText: string): HTMLInputElement => {
+    const label = screen.getByText(labelText);
+    const input = label.parentElement?.querySelector('input[type="text"]') as HTMLInputElement;
+    if (!input) throw new Error(`no text input for field "${labelText}"`);
+    return input;
+  };
+
+  it('the Line name input writes through updateLine({name})', () => {
+    seedThree();
+    render(<LineInspector id="L1" />);
+    fireEvent.change(fieldInput('Line name'), { target: { value: 'Crosstown' } });
+    expect(useDoc.getState().lines.L1.name).toBe('Crosstown');
+  });
+
+  it('the Service code input upper-cases its value before writing', () => {
+    seedThree();
+    render(<LineInspector id="L1" />);
+    fireEvent.change(fieldInput('Service code'), { target: { value: 'bd' } });
+    // .toUpperCase() normalization (LineInspector.tsx:218).
+    expect(useDoc.getState().lines.L1.service).toBe('BD');
+  });
+
+  it('picking a default stop dot shape writes setLineDefaultDotStyle', async () => {
+    const user = userEvent.setup();
+    seedThree();
+    render(<LineInspector id="L1" />);
+    // The "Default stop dot" picker trigger is the only "Stop shape" button.
+    await user.click(screen.getByRole('button', { name: 'Stop shape' }));
+    await user.click(screen.getByRole('menuitem', { name: 'Open white' }));
+    expect(useDoc.getState().lines.L1.defaultDotStyle).toEqual(DOT_SHAPE_PRESETS['open-white']);
+  });
+
+  it('the station-list move-up button reorders via reorderLineStations', async () => {
+    const user = userEvent.setup();
+    seedThree();
+    render(<LineInspector id="L1" />);
+    // The up/down/remove buttons only render in append (Edit Stops) mode.
+    await user.click(screen.getByRole('button', { name: 'Edit Stops' }));
+    // Move the SECOND station up: ups[1] (the first row's up is disabled).
+    const ups = screen.getAllByTitle('Move up');
+    await user.click(ups[1]);
+    expect(useDoc.getState().lines.L1.stations).toEqual(['s2', 's1', 's3']);
+  });
+
+  it('the station-list move-down button reorders via reorderLineStations', async () => {
+    const user = userEvent.setup();
+    seedThree();
+    render(<LineInspector id="L1" />);
+    await user.click(screen.getByRole('button', { name: 'Edit Stops' }));
+    const downs = screen.getAllByTitle('Move down');
+    // Move the FIRST station down.
+    await user.click(downs[0]);
+    expect(useDoc.getState().lines.L1.stations).toEqual(['s2', 's1', 's3']);
+  });
+
+  it('the station-list remove button drops the stop via removeStationFromLine', async () => {
+    const user = userEvent.setup();
+    seedThree();
+    render(<LineInspector id="L1" />);
+    await user.click(screen.getByRole('button', { name: 'Edit Stops' }));
+    const removes = screen.getAllByTitle('Remove from line');
+    await user.click(removes[1]); // remove the middle station
+    expect(useDoc.getState().lines.L1.stations).toEqual(['s1', 's3']);
   });
 });
 

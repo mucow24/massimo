@@ -651,6 +651,113 @@ describe('<StationInspector /> — stop dot size textbox', () => {
   });
 });
 
+describe('<StationInspector /> — edit paths that reach the document (E8)', () => {
+  beforeEach(() => {
+    localStorage.clear();
+    useDoc.setState({ ...DEFAULT_DOC });
+    useSelection.setState(SELECTION_BLANK);
+    useDoc.temporal.getState().clear();
+  });
+
+  const seedStation = (over: Partial<ReturnType<typeof makeStation>> = {}) => {
+    useDoc.setState({
+      ...DEFAULT_DOC,
+      ...makeDoc({ stations: [makeStation({ id: 'a', x: 10, y: 20, ...over })] }),
+    });
+    useSelection.setState({ ...SELECTION_BLANK, selectedStationIds: ['a'] });
+  };
+
+  it('the ⟳ button rotates +45° (one step) on the station', async () => {
+    const user = userEvent.setup();
+    seedStation();
+    expect(useDoc.getState().stations.a.rotation).toBe(0);
+    render(<StationInspector id="a" />);
+    await user.click(screen.getByRole('button', { name: 'Rotate +45°' }));
+    expect(useDoc.getState().stations.a.rotation).toBe(1);
+  });
+
+  it('the ⟲ button rotates −45° net (seven forward steps wrap to 7)', async () => {
+    const user = userEvent.setup();
+    seedStation();
+    render(<StationInspector id="a" />);
+    await user.click(screen.getByRole('button', { name: 'Rotate −45°' }));
+    // rotateStation steps +1 mod 8; the button fires it 7×, so 0 → 7 (= −45°).
+    expect(useDoc.getState().stations.a.rotation).toBe(7);
+  });
+
+  it('the Name textarea writes through renameStation', () => {
+    seedStation({ name: 'Old' });
+    render(<StationInspector id="a" />);
+    const ta = screen.getByRole('textbox') as HTMLTextAreaElement;
+    fireEvent.change(ta, { target: { value: 'New Name' } });
+    expect(useDoc.getState().stations.a.name).toBe('New Name');
+  });
+
+  it('the X and Y inputs each move the station on their own axis', () => {
+    seedStation();
+    render(<StationInspector id="a" />);
+    const [xIn, yIn] = screen.getAllByRole('spinbutton') as HTMLInputElement[];
+    // X input writes x, leaves y.
+    fireEvent.change(xIn, { target: { value: '55' } });
+    expect(useDoc.getState().stations.a.x).toBe(55);
+    expect(useDoc.getState().stations.a.y).toBe(20);
+    // Y input writes y, leaves x.
+    fireEvent.change(yIn, { target: { value: '77' } });
+    expect(useDoc.getState().stations.a.y).toBe(77);
+    expect(useDoc.getState().stations.a.x).toBe(55);
+  });
+
+  it('the H-align button cycles label.align (auto → start)', async () => {
+    const user = userEvent.setup();
+    seedStation();
+    expect(useDoc.getState().stations.a.label.align).toBe('auto');
+    render(<StationInspector id="a" />);
+    await user.click(screen.getByRole('button', { name: /Label horizontal alignment/i }));
+    expect(useDoc.getState().stations.a.label.align).toBe('start');
+  });
+
+  it('the V-align button cycles label.valign (auto-down → top)', async () => {
+    const user = userEvent.setup();
+    seedStation();
+    expect(useDoc.getState().stations.a.label.valign).toBe('auto-down');
+    render(<StationInspector id="a" />);
+    await user.click(screen.getByRole('button', { name: /Label vertical alignment/i }));
+    expect(useDoc.getState().stations.a.label.valign).toBe('top');
+  });
+
+  it('H-align with mirror on propagates the SAME align to matching stations in one undo group', async () => {
+    const user = userEvent.setup();
+    useDoc.setState({
+      ...DEFAULT_DOC,
+      ...makeDoc({
+        stations: [
+          makeStation({ id: 'a', stops: [makeStop('L1')] }),
+          makeStation({ id: 'b', stops: [makeStop('L1')] }),
+        ],
+        lines: [makeLine({ id: 'L1', stations: ['a', 'b'] })],
+      }),
+    });
+    useSelection.setState({
+      ...SELECTION_BLANK,
+      selectedStationIds: ['a'],
+      mirrorMatching: true,
+    });
+    useDoc.temporal.getState().clear();
+    const before = historyDepth();
+
+    render(<StationInspector id="a" />);
+    await user.click(screen.getByRole('button', { name: /Label horizontal alignment/i }));
+
+    const doc = useDoc.getState();
+    expect(doc.stations.a.label.align).toBe('start');
+    // The matching neighbor is forced to the SAME resulting align (setLabelAlign),
+    // not its own cycle.
+    expect(doc.stations.b.label.align).toBe('start');
+    // The whole batch collapses to a single undo entry.
+    expect(historyDepth() - before).toBe(1);
+  });
+});
+
 describe('<StationInspector /> — label offset wiring (along vs perpendicular)', () => {
   beforeEach(() => {
     localStorage.clear();
