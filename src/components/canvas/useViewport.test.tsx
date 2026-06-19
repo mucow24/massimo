@@ -1,4 +1,4 @@
-import { describe, it, expect, beforeEach } from 'vitest';
+import { describe, it, expect, beforeEach, vi } from 'vitest';
 import { act, renderHook } from '@testing-library/react';
 import { useViewport, type ViewportApi } from './useViewport';
 import { useViewportStore } from '../../state/viewportStore';
@@ -47,33 +47,82 @@ describe('useViewport — sizing + screenToWorld', () => {
 });
 
 describe('useViewport — wheel zoom', () => {
-  it('zooms in on a negative deltaY by exp(-deltaY*0.0015)', () => {
-    const { result } = render();
+  it('writes the zoomed viewBox imperatively and defers the store commit', () => {
+    const { result, svg } = render();
+    const vbBefore = svg.getAttribute('viewBox');
     wheel(result, wheelEvent({ clientX: 400, clientY: 300, deltaY: -100 }));
-    expect(result.current.viewport.zoom).toBeCloseTo(Math.exp(0.15), 5);
+    // viewBox reflects the zoom immediately...
+    expect(svg.getAttribute('viewBox')).not.toBe(vbBefore);
+    // ...but the store waits for the gesture to settle (no per-tick re-render).
+    expect(result.current.viewport.zoom).toBe(1);
   });
 
-  it('keeps the world point under the cursor fixed while zooming', () => {
-    const { result } = render();
-    const cx = 600;
-    const cy = 200;
-    const before = result.current.screenToWorld(cx, cy);
-    wheel(result, wheelEvent({ clientX: cx, clientY: cy, deltaY: -120 }));
-    const after = result.current.screenToWorld(cx, cy);
-    expect(after.x).toBeCloseTo(before.x, 5);
-    expect(after.y).toBeCloseTo(before.y, 5);
+  it('commits the zoom by exp(-deltaY*0.0015) once the wheel settles', () => {
+    vi.useFakeTimers();
+    try {
+      const { result } = render();
+      wheel(result, wheelEvent({ clientX: 400, clientY: 300, deltaY: -100 }));
+      expect(result.current.viewport.zoom).toBe(1); // not yet
+      act(() => vi.runAllTimers());
+      expect(result.current.viewport.zoom).toBeCloseTo(Math.exp(0.15), 5);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it('compounds rapid ticks against the live zoom before committing', () => {
+    vi.useFakeTimers();
+    try {
+      const { result } = render();
+      wheel(result, wheelEvent({ clientX: 400, clientY: 300, deltaY: -100 }));
+      wheel(result, wheelEvent({ clientX: 400, clientY: 300, deltaY: -100 }));
+      act(() => vi.runAllTimers());
+      // Two ticks compound: exp(0.15)^2 = exp(0.30), not exp(0.15).
+      expect(result.current.viewport.zoom).toBeCloseTo(Math.exp(0.3), 5);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it('keeps the world point under the cursor fixed once the zoom settles', () => {
+    vi.useFakeTimers();
+    try {
+      const { result } = render();
+      const cx = 600;
+      const cy = 200;
+      const before = result.current.screenToWorld(cx, cy);
+      wheel(result, wheelEvent({ clientX: cx, clientY: cy, deltaY: -120 }));
+      act(() => vi.runAllTimers());
+      const after = result.current.screenToWorld(cx, cy);
+      expect(after.x).toBeCloseTo(before.x, 5);
+      expect(after.y).toBeCloseTo(before.y, 5);
+    } finally {
+      vi.useRealTimers();
+    }
   });
 
   it('clamps zoom to a max of 64', () => {
-    const { result } = render();
-    wheel(result, wheelEvent({ clientX: 400, clientY: 300, deltaY: -100000 }));
-    expect(result.current.viewport.zoom).toBe(64);
+    vi.useFakeTimers();
+    try {
+      const { result } = render();
+      wheel(result, wheelEvent({ clientX: 400, clientY: 300, deltaY: -100000 }));
+      act(() => vi.runAllTimers());
+      expect(result.current.viewport.zoom).toBe(64);
+    } finally {
+      vi.useRealTimers();
+    }
   });
 
   it('clamps zoom to a min of 0.1', () => {
-    const { result } = render();
-    wheel(result, wheelEvent({ clientX: 400, clientY: 300, deltaY: 100000 }));
-    expect(result.current.viewport.zoom).toBe(0.1);
+    vi.useFakeTimers();
+    try {
+      const { result } = render();
+      wheel(result, wheelEvent({ clientX: 400, clientY: 300, deltaY: 100000 }));
+      act(() => vi.runAllTimers());
+      expect(result.current.viewport.zoom).toBe(0.1);
+    } finally {
+      vi.useRealTimers();
+    }
   });
 });
 
@@ -91,13 +140,42 @@ describe('useViewport — panning', () => {
     expect(result.current.panning).toBe(false);
   });
 
-  it('translates the viewport by the screen delta divided by zoom', () => {
+  it('translates the viewport by the screen delta divided by zoom (committed on pointer-up)', () => {
     const { result } = render();
     down(result, pointerEvent({ clientX: 100, clientY: 100, button: 0 }));
     move(result, pointerEvent({ clientX: 150, clientY: 130 }));
+    up(result, pointerEvent({ clientX: 150, clientY: 130 }));
     // dx = 50/1, dy = 30/1 → viewport center moves opposite the drag.
     expect(result.current.viewport.x).toBe(-50);
     expect(result.current.viewport.y).toBe(-30);
+  });
+
+  it('writes the viewBox imperatively during a move, deferring the store commit to pointer-up', () => {
+    const { result, svg } = render();
+    down(result, pointerEvent({ clientX: 100, clientY: 100, button: 0 }));
+    move(result, pointerEvent({ clientX: 150, clientY: 130 }));
+    // viewBox tracks the pan immediately: next viewport {-50,-30,1} →
+    // vb {-450,-330,800,600}.
+    expect(svg.getAttribute('viewBox')).toBe('-450 -330 800 600');
+    // ...but the store stays put until pointer-up (no per-move re-render).
+    expect(result.current.viewport.x).toBe(0);
+    expect(result.current.viewport.y).toBe(0);
+    up(result, pointerEvent({ clientX: 150, clientY: 130 }));
+    expect(result.current.viewport.x).toBe(-50);
+  });
+
+  it('adopts an un-committed wheel zoom as the pan base (zoom, then pan before settle)', () => {
+    const { result } = render();
+    // Zoom in — pending, not yet committed to the store.
+    wheel(result, wheelEvent({ clientX: 400, clientY: 300, deltaY: -100 }));
+    expect(result.current.viewport.zoom).toBe(1);
+    // Grab-pan before the settle fires.
+    down(result, pointerEvent({ clientX: 100, clientY: 100, button: 0 }));
+    move(result, pointerEvent({ clientX: 150, clientY: 100 }));
+    up(result, pointerEvent({ clientX: 150, clientY: 100 }));
+    // The commit carries BOTH the zoom (not lost) and a pan scaled by that zoom.
+    expect(result.current.viewport.zoom).toBeCloseTo(Math.exp(0.15), 5);
+    expect(result.current.viewport.x).toBeCloseTo(-50 / Math.exp(0.15), 5);
   });
 
   it('does not suppress the click for a sub-threshold pan', () => {

@@ -1,4 +1,4 @@
-import { useMemo, useRef, useState } from 'react';
+import { useCallback, useMemo, useRef, useState } from 'react';
 
 import { dragState, useDoc, useSelection } from '../state/store';
 import { useSnapPrefs } from '../state/snapPrefs';
@@ -230,6 +230,18 @@ export function MapCanvas() {
     setPrevLayering(inLayeringMode);
     if (!inLayeringMode && hoveredLayerStripe) setHoveredLayerStripe(null);
   }
+
+  // Stable click handler for selecting a line by clicking its stripe. Passed to
+  // every (memoized) SegmentBand, so it must keep a constant identity across a
+  // pan; selection.selectLine is a stable Zustand action.
+  const selectLine = selection.selectLine;
+  const handleLineSelect = useCallback(
+    (lineId: LineId, e: React.MouseEvent<SVGPathElement>) => {
+      e.stopPropagation();
+      selectLine(lineId);
+    },
+    [selectLine],
+  );
 
   const onPointerDown = (e: React.PointerEvent) => {
     // Middle-button drag pans regardless of tool mode.
@@ -470,23 +482,30 @@ export function MapCanvas() {
           <HatchPatterns colors={hatchedColors} underlayColor={underlayColor} />
         </defs>
 
-        {/* background hit target for panning */}
+        {/* Background hit target for panning. Overdrawn one viewport-width in
+            every direction so an imperative-viewBox pan (which moves the viewBox
+            without re-rendering this rect until pointer-up) never reveals a bare
+            edge before it reprojects. */}
         <rect
           data-bg="1"
-          x={view.vbX}
-          y={view.vbY}
-          width={view.vbW}
-          height={view.vbH}
+          x={view.vbX - view.vbW}
+          y={view.vbY - view.vbH}
+          width={view.vbW * 3}
+          height={view.vbH * 3}
           fill={theme.canvasBg}
         />
 
         {gridVisible && (
           <g data-export-exclude="1">
+            {/* Overdrawn one viewport in each direction (like the background
+                rect) so an imperative-viewBox pan doesn't run past the drawn
+                grid before pointer-up reprojects it. Off-screen lines are
+                clipped by the browser, so this adds no per-frame raster cost. */}
             <Grid
-              vbX={view.vbX}
-              vbY={view.vbY}
-              vbW={view.vbW}
-              vbH={view.vbH}
+              vbX={view.vbX - view.vbW}
+              vbY={view.vbY - view.vbH}
+              vbW={view.vbW * 3}
+              vbH={view.vbH * 3}
               zoom={view.viewport.zoom}
               gridSize={gridSize}
             />
@@ -552,14 +571,7 @@ export function MapCanvas() {
                 lines={lines}
                 colorMap={colorMap}
                 underlayColor={underlayColor}
-                onLineSelect={
-                  inHandMode
-                    ? undefined
-                    : (lineId, e) => {
-                        e.stopPropagation();
-                        selection.selectLine(lineId);
-                      }
-                }
+                onLineSelect={inHandMode ? undefined : handleLineSelect}
                 {...(selection.uiMode.kind === 'creating-line-tag'
                   ? makeBandHandlers(r.band)
                   : inLayeringMode
