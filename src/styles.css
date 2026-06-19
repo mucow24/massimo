@@ -725,7 +725,12 @@ select {
 .canvas-host svg.tool-hand {
   cursor: grab;
 }
-.canvas-host svg.tool-hand.panning {
+/* Any in-flight pan shows the closed "panning hand": the hand-tool left-drag
+   AND the middle-button drag that pans regardless of tool. Keyed on .panning
+   alone (not .tool-hand.panning) so a middle-drag, which leaves the svg in
+   .tool-arrow, still gets grabbing. Sits after .tool-hand so it wins the
+   equal-specificity tie while a hand-tool pan is in flight. */
+.canvas-host svg.panning {
   cursor: grabbing;
 }
 
