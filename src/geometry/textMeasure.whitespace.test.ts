@@ -1,4 +1,4 @@
-import { describe, it, expect, beforeAll, afterAll, beforeEach } from 'vitest';
+import { describe, it, expect, beforeAll, afterAll, beforeEach, vi } from 'vitest';
 import { measureTextLabel, _clearTextMeasureCache } from './textMeasure';
 
 // A faithful-enough stand-in for a real browser 2D context. The point of the
@@ -72,5 +72,56 @@ describe('measureTextLabel — whitespace is not collapsed', () => {
     // the line's left ink edge sits at the pen origin (bearingLeft === 0).
     const lead = measureTextLabel(styled('     Foo'));
     expect(lead.lines[0].bearingLeft).toBeCloseTo(0, 5);
+  });
+});
+
+// The whitespace suite above only ever feeds the segment a 0 / negative left
+// bearing (its stub gives leading-space ink a -lead bearing, and no-ws words a
+// 0 bearing), so it never exercises the OTHER half of the bearing decomposition
+// (textMeasure.ts:120-134): a real interior glyph whose ink box has a POSITIVE
+// side bearing must keep that bearing — it must NOT be zeroed like a leading
+// space. (textMeasure.test.ts's ink-metric suite runs the length*0.55 fallback,
+// so this canvas path is dark there.)
+//
+// textMeasure memoizes its measurement context the first time it measures, so
+// the file-level stub above is already latched in. Reset the module registry
+// and install a DISTINCT stub (positive bearings, no whitespace) before the
+// fresh module's first measure so this suite gets its own context.
+describe('measureTextLabel — interior glyph bearings are kept, not zeroed', () => {
+  const BL = 2; // positive left ink bearing (ink box extends left of the origin)
+  const BR = 28; // right ink edge
+  const ADV = 30;
+  let originalGetContext: typeof HTMLCanvasElement.prototype.getContext;
+
+  beforeAll(() => {
+    originalGetContext = HTMLCanvasElement.prototype.getContext;
+    HTMLCanvasElement.prototype.getContext = function () {
+      return {
+        font: '',
+        // A no-whitespace word: positive bearings on both sides, advance > 0.
+        measureText: (_s: string) => ({
+          width: ADV,
+          actualBoundingBoxLeft: BL,
+          actualBoundingBoxRight: BR,
+        }),
+      } as unknown as CanvasRenderingContext2D;
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    } as any;
+    vi.resetModules();
+  });
+
+  afterAll(() => {
+    HTMLCanvasElement.prototype.getContext = originalGetContext;
+    vi.resetModules();
+  });
+
+  it('keeps the canvas ink bearings for a no-whitespace word', async () => {
+    // Fresh module → its lazy context picks up the positive-bearing stub above.
+    const { measureTextLabel: measure } = await import('./textMeasure');
+    const m = measure(styled('Foo'));
+    // The single line's bearings come straight from the segment's tight ink
+    // box — NOT collapsed to 0 (left) or to the full advance (right).
+    expect(m.lines[0].bearingLeft).toBeCloseTo(BL, 5);
+    expect(m.lines[0].bearingRight).toBeCloseTo(BR, 5);
   });
 });

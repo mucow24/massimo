@@ -69,6 +69,33 @@ describe('useItemDrag — bullet snap engages within a constant screen distance'
     expect(useDoc.getState().routeBullets['b1'].x).toBeCloseTo(7, 5);
     expect(useDoc.getState().routeBullets['b1'].y).toBeCloseTo(50, 5);
   });
+
+  it('snaps a bullet INSIDE the radius onto the axis (positive companion)', () => {
+    // Companion to the negative case at the same zoom. The negative-only test
+    // still passes if snapping is disabled / the radius collapses to 0; this
+    // one fails in that case.
+    useDoc.setState({
+      ...useDoc.getState(),
+      lines: { L1: makeLine({ id: 'L1', stations: ['A'] }) },
+      lineOrder: ['L1'],
+      stations: { A: stationWithStop('A' as StationId, 'L1', { x: 0, y: 0 }) },
+      routeBullets: {
+        b1: { id: 'b1', x: 50, y: 50, rotation: 0, lineId: 'L1', shape: 'circle', size: 8 },
+      },
+    });
+
+    const { ref } = fakeSvgRef();
+    const { result } = renderHook(() => useItemDrag(ref, 2, false));
+
+    // Drag b1 to world (4, 50): screen Δ = (-92, 0) at zoom 2. perp dist to axis
+    // x=0 is 4 < 5 → snaps to x=0.
+    bulletDown(result, 'b1', pointerEvent({ clientX: 200, clientY: 200 }));
+    move(result, pointerEvent({ clientX: 108, clientY: 200 }));
+    up(result, pointerEvent({ clientX: 108, clientY: 200 }));
+
+    expect(useDoc.getState().routeBullets['b1'].x).toBeCloseTo(0, 5);
+    expect(useDoc.getState().routeBullets['b1'].y).toBeCloseTo(50, 5);
+  });
 });
 
 describe('useItemDrag — unbound bullet grid-snap fallback', () => {
