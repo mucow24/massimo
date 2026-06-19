@@ -218,6 +218,44 @@ describe('useViewport — panning', () => {
     expect(result.current.viewport.x).toBeCloseTo(-50 / Math.exp(0.15), 5);
   });
 
+  it('keeps the grabbed world point under the cursor mid-pan', () => {
+    // A cursor-following overlay (e.g. the placing-station ghost) reprojects the
+    // cursor each move via screenToWorld. Because a pan writes the viewBox
+    // imperatively WITHOUT committing to the store, screenToWorld must read the
+    // live (pending) viewBox — otherwise the overlay drifts off the cursor by
+    // the full pan delta. Invariant: a grab-pan keeps the grabbed world point
+    // pinned under the cursor, so screenToWorld at the moving cursor returns the
+    // same world point it did at grab time.
+    const { result } = render();
+    const grabbed = result.current.screenToWorld(100, 100);
+    down(result, pointerEvent({ clientX: 100, clientY: 100, button: 1 }));
+    move(result, pointerEvent({ clientX: 250, clientY: 180 }));
+    const underCursor = result.current.screenToWorld(250, 180);
+    expect(underCursor.x).toBeCloseTo(grabbed.x, 5);
+    expect(underCursor.y).toBeCloseTo(grabbed.y, 5);
+  });
+
+  it('binds the returned viewBox to the committed viewport, not the in-flight pan', () => {
+    // Load-bearing partner to the test above: screenToWorld reads the LIVE
+    // viewBox, but the returned vb* fields (which the SVG's JSX viewBox binds
+    // to) must stay COMMITTED. The pan moves the viewBox imperatively; a
+    // mid-pan re-render (the cursor-track setState fires one every move) must
+    // NOT rewrite the viewBox attribute and clobber the imperative pan. React
+    // only skips that DOM write because the bound prop string is unchanged —
+    // which holds only while these fields track the committed viewport. If they
+    // ever tracked liveViewport() the clobber (and the drift) would return.
+    const { ref } = fakeSvgRef({ width: 800, height: 600 });
+    const { result, rerender } = renderHook(() => useViewport(ref));
+    down(result as Result, pointerEvent({ clientX: 100, clientY: 100, button: 1 }));
+    move(result as Result, pointerEvent({ clientX: 250, clientY: 180 }));
+    // Force the kind of re-render the cursor-track setState triggers mid-pan.
+    act(() => rerender());
+    // Committed store viewport is still {0,0,1} → vb stays {-400,-300,800,600},
+    // NOT the panned {-550,-380,...} that liveViewport() would produce.
+    expect(result.current.vbX).toBe(-400);
+    expect(result.current.vbY).toBe(-300);
+  });
+
   it('does not suppress the click for a sub-threshold pan', () => {
     const { result } = render();
     down(result, pointerEvent({ clientX: 100, clientY: 100, button: 0 }));
