@@ -1,4 +1,4 @@
-import { Fragment, useMemo, useRef, useState } from 'react';
+import { Fragment, useEffect, useMemo, useRef, useState } from 'react';
 import { useDoc, useSelection } from '../../state/store';
 import { useThemeColors } from '../../state/theme';
 import type { DotShape, DotStyle, Line, LineId, LineStyle } from '../../model/types';
@@ -37,6 +37,20 @@ import {
   lineStrokeWidthOf,
 } from '../../model/lineStroke';
 import { stationBandLayout, STATION_ROW_H, GAP_ROW_H } from './stationBandGeometry';
+
+// Clear the line editor's pointer-hover highlights (the white dot casing and
+// the segment-corridor wash). Call this whenever a hovered row/divider is
+// orphaned without an onMouseLeave/onBlur firing — the row is removed or
+// reordered out from under the cursor, or the inspector itself unmounts
+// (line deleted, a station selected, the panel collapsed). Otherwise the
+// highlight dangles on a now-stale stop/segment and re-appears on the canvas
+// if the action is undone. Reads the store imperatively so it needs no deps.
+function clearInspectorHovers() {
+  const s = useSelection.getState();
+  s.setHoveredLineStop(null);
+  s.setHoveredStation(null);
+  s.setHoveredInspectorSegment(null);
+}
 
 function DotShapePopover({
   onPick,
@@ -172,6 +186,11 @@ export function LineInspector({ id }: { id: LineId }) {
     return map;
   }, [allLines]);
 
+  // When this inspector unmounts (line deleted, a station selected, the panel
+  // collapsed, or a different line opened), any row/divider hovered at that
+  // moment never gets its onMouseLeave — so drop the hovers here.
+  useEffect(() => clearInspectorHovers, []);
+
   if (!line) return null;
 
   const cycleSegmentStyle = (fromStationId: string, toStationId: string) => {
@@ -185,6 +204,9 @@ export function LineInspector({ id }: { id: LineId }) {
     const j = idx + dir;
     if (j < 0 || j >= arr.length) return;
     [arr[idx], arr[j]] = [arr[j], arr[idx]];
+    // The reordered rows remount under the cursor without an onMouseLeave, so
+    // a row/divider hover would dangle on the old position.
+    clearInspectorHovers();
     reorderLineStations(line.id, arr);
   };
 
@@ -533,7 +555,13 @@ export function LineInspector({ id }: { id: LineId }) {
                             </button>
                             <button
                               className="btn-mini danger"
-                              onClick={() => removeStationFromLine(line.id, i)}
+                              onClick={() => {
+                                // The row (and the dividers of the segments it
+                                // bordered) unmount on removal without firing
+                                // onMouseLeave, so clear their hover highlights.
+                                clearInspectorHovers();
+                                removeStationFromLine(line.id, i);
+                              }}
                               title="Remove from line"
                               style={{ marginLeft: 6 }}
                             >

@@ -438,22 +438,25 @@ describe('deleteTransfer', () => {
 });
 
 describe('deleteLine: transfers', () => {
-  it('nulls out lineId on transfer endpoints that referenced the line', () => {
+  it('deletes transfers anchored at a stop of the removed line', () => {
     const doc = makeDoc({
       stations: [makeStation({ id: 's1' }), makeStation({ id: 's2' })],
       lines: [makeLine({ id: 'L1', stations: ['s1', 's2'] })],
       transfers: [
+        // both endpoints anchored at L1 stops — gone with the line.
         { id: 'x1', a: { stationId: 's1', lineId: 'L1' }, b: { stationId: 's2', lineId: 'L1' } },
-        { id: 'x2', a: { stationId: 's1', lineId: null }, b: { stationId: 's2', lineId: 'L2' } },
+        // one endpoint anchored at an L1 stop — also gone.
+        { id: 'x2', a: { stationId: 's1', lineId: null }, b: { stationId: 's2', lineId: 'L1' } },
+        // neither endpoint references L1 — survives untouched.
+        { id: 'x3', a: { stationId: 's1', lineId: null }, b: { stationId: 's2', lineId: 'L2' } },
       ],
     });
     const next = T.deleteLine(doc, 'L1');
-    // x1 endpoints both nulled out; transfer survives.
-    expect(next.transfers.x1.a.lineId).toBeNull();
-    expect(next.transfers.x1.b.lineId).toBeNull();
-    // x2 didn't reference L1 — untouched.
-    expect(next.transfers.x2.a.lineId).toBeNull();
-    expect(next.transfers.x2.b.lineId).toBe('L2');
+    expect(next.transfers.x1).toBeUndefined();
+    expect(next.transfers.x2).toBeUndefined();
+    expect(next.transfers.x3).toBeDefined();
+    expect(next.transfers.x3.a.lineId).toBeNull();
+    expect(next.transfers.x3.b.lineId).toBe('L2');
   });
 });
 
@@ -1062,6 +1065,86 @@ describe('removeStationFromLine', () => {
     });
     const next = T.removeStationFromLine(doc, 'L1', 0);
     expect(next.stations.s1.stops).toEqual([]);
+  });
+
+  it('deletes transfers anchored at the stop when the stop is dropped', () => {
+    const doc = makeDoc({
+      stations: [
+        makeStation({ id: 's1', stops: [makeStop('L1')] }),
+        makeStation({ id: 's2', stops: [makeStop('L1')] }),
+      ],
+      lines: [makeLine({ id: 'L1', stations: ['s1', 's2'] })],
+      transfers: [
+        // anchored at the (s1, L1) stop being removed — deleted.
+        { id: 'x1', a: { stationId: 's1', lineId: 'L1' }, b: { stationId: 's2', lineId: 'L1' } },
+        // anchored at the station, not the stop — survives.
+        { id: 'x2', a: { stationId: 's1', lineId: null }, b: { stationId: 's2', lineId: null } },
+      ],
+    });
+    const next = T.removeStationFromLine(doc, 'L1', 0);
+    expect(next.stations.s1.stops).toEqual([]);
+    expect(next.transfers.x1).toBeUndefined();
+    expect(next.transfers.x2).toBeDefined();
+  });
+
+  it('keeps anchored transfers when the stop survives (station still on the line)', () => {
+    // s1 is on L1 twice; removing one occurrence keeps the (s1, L1) stop, so
+    // the transfer anchored at it must NOT be deleted.
+    const doc = makeDoc({
+      stations: [
+        makeStation({ id: 's1', stops: [makeStop('L1')] }),
+        makeStation({ id: 's2', stops: [makeStop('L1')] }),
+      ],
+      lines: [makeLine({ id: 'L1', stations: ['s1', 's2', 's1'] })],
+      transfers: [
+        { id: 'x1', a: { stationId: 's1', lineId: 'L1' }, b: { stationId: 's2', lineId: 'L1' } },
+      ],
+    });
+    const next = T.removeStationFromLine(doc, 'L1', 0);
+    expect(next.stations.s1.stops).toHaveLength(1);
+    expect(next.transfers.x1).toBeDefined();
+  });
+});
+
+describe('toggleStationOnLine: transfers', () => {
+  it('deletes transfers anchored at the stop when the station is toggled off', () => {
+    const doc = makeDoc({
+      stations: [
+        makeStation({ id: 's1', stops: [makeStop('L1')] }),
+        makeStation({ id: 's2', stops: [makeStop('L1')] }),
+      ],
+      lines: [makeLine({ id: 'L1', stations: ['s1', 's2'] })],
+      transfers: [
+        // anchored at the (s1, L1) stop being removed — deleted.
+        { id: 'x1', a: { stationId: 's1', lineId: 'L1' }, b: { stationId: 's2', lineId: 'L1' } },
+        // anchored at the station, not the stop — survives.
+        { id: 'x2', a: { stationId: 's1', lineId: null }, b: { stationId: 's2', lineId: null } },
+      ],
+    });
+    const next = T.toggleStationOnLine(doc, 'L1', 's1');
+    expect(next.stations.s1.stops).toEqual([]);
+    expect(next.transfers.x1).toBeUndefined();
+    expect(next.transfers.x2).toBeDefined();
+  });
+
+  it('keeps anchored transfers when the station keeps a stop on another line', () => {
+    // Toggling s1 off L1 must not disturb a transfer anchored at its L2 stop.
+    const doc = makeDoc({
+      stations: [
+        makeStation({ id: 's1', stops: [makeStop('L1'), makeStop('L2', { col: 1 })] }),
+        makeStation({ id: 's2', stops: [makeStop('L2')] }),
+      ],
+      lines: [
+        makeLine({ id: 'L1', stations: ['s1'] }),
+        makeLine({ id: 'L2', stations: ['s1', 's2'] }),
+      ],
+      transfers: [
+        { id: 'x1', a: { stationId: 's1', lineId: 'L2' }, b: { stationId: 's2', lineId: 'L2' } },
+      ],
+    });
+    const next = T.toggleStationOnLine(doc, 'L1', 's1');
+    expect(next.stations.s1.stops.map((c) => c.lineId)).toEqual(['L2']);
+    expect(next.transfers.x1).toBeDefined();
   });
 });
 

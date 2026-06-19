@@ -37,6 +37,7 @@ import type {
   TextLabel,
   TextLabelWeight,
   Transfer,
+  TransferEnd,
 } from './types';
 
 export const LABEL_FONT_SIZE_MIN = 2;
@@ -819,6 +820,22 @@ export function rotateStationAndLayout(doc: MapDoc, id: StationId, dir: -1 | 1):
   };
 }
 
+// Drop every transfer that has an endpoint anchored at a stop the caller is
+// removing. `orphaned` decides whether an endpoint now points at a stop that
+// no longer exists — matched by (stationId, lineId) for a single stop, by
+// lineId for a whole line, or by stationId for a whole station.
+function pruneTransfers(
+  transfers: Record<string, Transfer>,
+  orphaned: (end: TransferEnd) => boolean,
+): Record<string, Transfer> {
+  const next: Record<string, Transfer> = {};
+  for (const xid of Object.keys(transfers)) {
+    const t = transfers[xid];
+    if (!orphaned(t.a) && !orphaned(t.b)) next[xid] = t;
+  }
+  return next;
+}
+
 export function deleteStation(doc: MapDoc, id: StationId): MapDoc {
   const { [id]: _gone, ...rest } = doc.stations;
   const lines: Record<LineId, Line> = {};
@@ -827,11 +844,7 @@ export function deleteStation(doc: MapDoc, id: StationId): MapDoc {
     lines[lid] = { ...ln, stations: ln.stations.filter((x) => x !== id) };
   }
   // Cascade-delete transfers that referenced the removed station.
-  const transfers: Record<string, Transfer> = {};
-  for (const xid of Object.keys(doc.transfers)) {
-    const t = doc.transfers[xid];
-    if (t.a.stationId !== id && t.b.stationId !== id) transfers[xid] = t;
-  }
+  const transfers = pruneTransfers(doc.transfers, (e) => e.stationId === id);
   return pruneOrphanLineTags({ ...doc, stations: rest, lines, transfers });
 }
 
@@ -1142,6 +1155,10 @@ export function toggleStationOnLine(
     const stillStops = newStations.includes(stationId);
     const newStops = stillStops ? st.stops : st.stops.filter((c) => c.lineId !== lineId);
     const stationsAfter = { ...doc.stations, [stationId]: { ...st, stops: newStops } };
+    // When the (station, line) stop is dropped, delete transfers anchored at it.
+    const transfersAfter = stillStops
+      ? doc.transfers
+      : pruneTransfers(doc.transfers, (e) => e.stationId === stationId && e.lineId === lineId);
     // Removal changes adjacencies, so prune overrides / tags keyed to edges
     // that no longer exist (same contract as removeStationFromLine).
     const updatedLine = pruneOrphanSegmentStyles({ ...ln, stations: newStations });
@@ -1151,6 +1168,7 @@ export function toggleStationOnLine(
       // Removing a station never gives any station its first line, so nothing
       // is auto-oriented — every station here is already served.
       stations: stationsAfter,
+      transfers: transfersAfter,
     });
   }
   const idx =
@@ -1215,12 +1233,18 @@ export function removeStationFromLine(doc: MapDoc, lineId: LineId, idx: number):
   // If the station is no longer on the line at all, drop its stop cell.
   const stillStops = newStations.includes(removedStationId);
   let stations = doc.stations;
+  let transfers = doc.transfers;
   if (!stillStops && stations[removedStationId]) {
     const st = stations[removedStationId];
     stations = {
       ...stations,
       [removedStationId]: { ...st, stops: st.stops.filter((c) => c.lineId !== lineId) },
     };
+    // The (station, line) stop is gone — delete transfers anchored at it.
+    transfers = pruneTransfers(
+      transfers,
+      (e) => e.stationId === removedStationId && e.lineId === lineId,
+    );
   }
   const updatedLine = pruneOrphanSegmentStyles({ ...ln, stations: newStations });
   return pruneOrphanLineTags({
@@ -1228,6 +1252,7 @@ export function removeStationFromLine(doc: MapDoc, lineId: LineId, idx: number):
     lines: { ...doc.lines, [lineId]: updatedLine },
     // No station gains its first line on removal, so nothing is auto-oriented.
     stations,
+    transfers,
   });
 }
 
@@ -1267,15 +1292,9 @@ export function deleteLine(doc: MapDoc, id: LineId): MapDoc {
     const b = doc.routeBullets[bid];
     routeBullets[bid] = b.lineId === id ? { ...b, lineId: null } : b;
   }
-  // Null out lineId on transfer endpoints that pointed at this line; the
-  // transfer stays in place, just falls back to the station anchor.
-  const transfers: Record<string, Transfer> = {};
-  for (const xid of Object.keys(doc.transfers)) {
-    const t = doc.transfers[xid];
-    const a = t.a.lineId === id ? { ...t.a, lineId: null } : t.a;
-    const b = t.b.lineId === id ? { ...t.b, lineId: null } : t.b;
-    transfers[xid] = a === t.a && b === t.b ? t : { ...t, a, b };
-  }
+  // Deleting the line removes all its stops, so delete every transfer anchored
+  // at one — an endpoint with lineId === id pointed at a stop that's now gone.
+  const transfers = pruneTransfers(doc.transfers, (e) => e.lineId === id);
   return { ...doc, lines: rest, stations, lineOrder: order, lineTags, routeBullets, transfers };
 }
 
