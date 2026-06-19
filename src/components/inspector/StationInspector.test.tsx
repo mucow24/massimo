@@ -4,7 +4,7 @@ import userEvent from '@testing-library/user-event';
 import { StationInspector } from './StationInspector';
 import { useDoc, useSelection } from '../../state/store';
 import { historyDepth } from '../../state/history';
-import { DEFAULT_DOC } from '../../model/transforms';
+import { DEFAULT_DOC, resolveOffsetPerp } from '../../model/transforms';
 import { DOT_SHAPE_PRESETS } from '../../model/dotStyle';
 import { makeDoc, makeStation, makeStop, makeLine } from '../../test/fixtures';
 
@@ -648,5 +648,164 @@ describe('<StationInspector /> — stop dot size textbox', () => {
     expect(doc.stations.a.stops[0].dotSize).toBe(16);
     expect(doc.stations.b.stops[0].dotSize).toBe(16);
     expect(historyDepth() - pastBefore).toBe(1);
+  });
+});
+
+describe('<StationInspector /> — edit paths that reach the document (E8)', () => {
+  beforeEach(() => {
+    localStorage.clear();
+    useDoc.setState({ ...DEFAULT_DOC });
+    useSelection.setState(SELECTION_BLANK);
+    useDoc.temporal.getState().clear();
+  });
+
+  const seedStation = (over: Partial<ReturnType<typeof makeStation>> = {}) => {
+    useDoc.setState({
+      ...DEFAULT_DOC,
+      ...makeDoc({ stations: [makeStation({ id: 'a', x: 10, y: 20, ...over })] }),
+    });
+    useSelection.setState({ ...SELECTION_BLANK, selectedStationIds: ['a'] });
+  };
+
+  it('the ⟳ button rotates +45° (one step) on the station', async () => {
+    const user = userEvent.setup();
+    seedStation();
+    expect(useDoc.getState().stations.a.rotation).toBe(0);
+    render(<StationInspector id="a" />);
+    await user.click(screen.getByRole('button', { name: 'Rotate +45°' }));
+    expect(useDoc.getState().stations.a.rotation).toBe(1);
+  });
+
+  it('the ⟲ button rotates −45° net (seven forward steps wrap to 7)', async () => {
+    const user = userEvent.setup();
+    seedStation();
+    render(<StationInspector id="a" />);
+    await user.click(screen.getByRole('button', { name: 'Rotate −45°' }));
+    // rotateStation steps +1 mod 8; the button fires it 7×, so 0 → 7 (= −45°).
+    expect(useDoc.getState().stations.a.rotation).toBe(7);
+  });
+
+  it('the Name textarea writes through renameStation', () => {
+    seedStation({ name: 'Old' });
+    render(<StationInspector id="a" />);
+    const ta = screen.getByRole('textbox') as HTMLTextAreaElement;
+    fireEvent.change(ta, { target: { value: 'New Name' } });
+    expect(useDoc.getState().stations.a.name).toBe('New Name');
+  });
+
+  it('the X and Y inputs each move the station on their own axis', () => {
+    seedStation();
+    render(<StationInspector id="a" />);
+    const [xIn, yIn] = screen.getAllByRole('spinbutton') as HTMLInputElement[];
+    // X input writes x, leaves y.
+    fireEvent.change(xIn, { target: { value: '55' } });
+    expect(useDoc.getState().stations.a.x).toBe(55);
+    expect(useDoc.getState().stations.a.y).toBe(20);
+    // Y input writes y, leaves x.
+    fireEvent.change(yIn, { target: { value: '77' } });
+    expect(useDoc.getState().stations.a.y).toBe(77);
+    expect(useDoc.getState().stations.a.x).toBe(55);
+  });
+
+  it('the H-align button cycles label.align (auto → start)', async () => {
+    const user = userEvent.setup();
+    seedStation();
+    expect(useDoc.getState().stations.a.label.align).toBe('auto');
+    render(<StationInspector id="a" />);
+    await user.click(screen.getByRole('button', { name: /Label horizontal alignment/i }));
+    expect(useDoc.getState().stations.a.label.align).toBe('start');
+  });
+
+  it('the V-align button cycles label.valign (auto-down → top)', async () => {
+    const user = userEvent.setup();
+    seedStation();
+    expect(useDoc.getState().stations.a.label.valign).toBe('auto-down');
+    render(<StationInspector id="a" />);
+    await user.click(screen.getByRole('button', { name: /Label vertical alignment/i }));
+    expect(useDoc.getState().stations.a.label.valign).toBe('top');
+  });
+
+  it('H-align with mirror on propagates the SAME align to matching stations in one undo group', async () => {
+    const user = userEvent.setup();
+    useDoc.setState({
+      ...DEFAULT_DOC,
+      ...makeDoc({
+        stations: [
+          makeStation({ id: 'a', stops: [makeStop('L1')] }),
+          makeStation({ id: 'b', stops: [makeStop('L1')] }),
+        ],
+        lines: [makeLine({ id: 'L1', stations: ['a', 'b'] })],
+      }),
+    });
+    useSelection.setState({
+      ...SELECTION_BLANK,
+      selectedStationIds: ['a'],
+      mirrorMatching: true,
+    });
+    useDoc.temporal.getState().clear();
+    const before = historyDepth();
+
+    render(<StationInspector id="a" />);
+    await user.click(screen.getByRole('button', { name: /Label horizontal alignment/i }));
+
+    const doc = useDoc.getState();
+    expect(doc.stations.a.label.align).toBe('start');
+    // The matching neighbor is forced to the SAME resulting align (setLabelAlign),
+    // not its own cycle.
+    expect(doc.stations.b.label.align).toBe('start');
+    // The whole batch collapses to a single undo entry.
+    expect(historyDepth() - before).toBe(1);
+  });
+});
+
+describe('<StationInspector /> — label offset wiring (along vs perpendicular)', () => {
+  beforeEach(() => {
+    localStorage.clear();
+    useDoc.setState({ ...DEFAULT_DOC });
+    useSelection.setState(SELECTION_BLANK);
+  });
+
+  const seedStation = () => {
+    useDoc.setState({
+      ...DEFAULT_DOC,
+      ...makeDoc({ stations: [makeStation({ id: 'a' })] }),
+    });
+    useSelection.setState({ ...SELECTION_BLANK, selectedStationIds: ['a'] });
+  };
+
+  // The two LabelOffsetControls are identical markup distinguished only by their
+  // preceding field-hint text. Find the number input belonging to the control
+  // that follows a given hint.
+  const offsetNumberInput = (hint: string): HTMLInputElement => {
+    const hintEl = screen.getByText(hint);
+    const control = hintEl.nextElementSibling as HTMLElement;
+    const input = control.querySelector('input[type="number"]') as HTMLInputElement;
+    expect(input).not.toBeNull();
+    return input;
+  };
+
+  it('the "along" control writes label.offset and leaves offsetPerp untouched', () => {
+    seedStation();
+    render(<StationInspector id="a" />);
+
+    const along = offsetNumberInput('Offset (along reading direction)');
+    fireEvent.change(along, { target: { value: '7' } });
+
+    const label = useDoc.getState().stations.a.label;
+    expect(label.offset).toBe(7);
+    // The perpendicular offset is unchanged (defaults to 0 via resolveOffsetPerp).
+    expect(resolveOffsetPerp(label)).toBe(0);
+  });
+
+  it('the "perpendicular" control writes offsetPerp and leaves label.offset untouched', () => {
+    seedStation();
+    render(<StationInspector id="a" />);
+
+    const perp = offsetNumberInput('Offset (perpendicular to reading direction)');
+    fireEvent.change(perp, { target: { value: '9' } });
+
+    const label = useDoc.getState().stations.a.label;
+    expect(resolveOffsetPerp(label)).toBe(9);
+    expect(label.offset).toBe(0);
   });
 });

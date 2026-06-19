@@ -72,3 +72,67 @@ describe('<LineTagsLayer> — chevron scales to its stripe', () => {
     expect(Number(hit.getAttribute('height'))).toBeCloseTo(28, 6);
   });
 });
+
+describe('<LineTagsLayer> — orientation rotation (E5a)', () => {
+  // TagShape rotates the tag by tangentAngleDeg + ORIENTATION_OFFSET_DEG[o].
+  // For the fixture's horizontal s1→s2 corridor the line-forward tangent is
+  // +x (angle 0), so the rendered rotate() is exactly the orientation offset:
+  // {0: 0, 1: -90, 2: 180, 3: 90}. We read it off the text-tag's transform.
+  const ORIENTATION_OFFSET_DEG: Record<0 | 1 | 2 | 3, number> = {
+    0: 0,
+    1: -90,
+    2: 180,
+    3: 90,
+  };
+
+  const seedTag = (orientation: 0 | 1 | 2 | 3) => {
+    useDoc.setState({
+      ...useDoc.getState(),
+      ...DEFAULT_DOC,
+      lines: { L2: makeLine({ id: 'L2', stations: ['s1', 's2'], width: 28 }) },
+      lineOrder: ['L2'],
+      lineTags: { T: tagOnL2({ orientation }) },
+    });
+    useDoc.temporal.getState().clear();
+  };
+
+  // The text-tag's outer <g> is the one carrying the move cursor; the hit rect
+  // lives inside it. Grab that group's rotate angle.
+  const tagRotation = (container: HTMLElement): number => {
+    const g = Array.from(container.querySelectorAll('g')).find(
+      (el) => (el as SVGGElement).style.cursor === 'move',
+    );
+    if (!g) throw new Error('expected the tag group');
+    const m = /rotate\(([-\d.]+)\)/.exec(g.getAttribute('transform') ?? '');
+    if (!m) throw new Error('expected a rotate() in the tag transform');
+    return Number(m[1]);
+  };
+
+  for (const orientation of [0, 1, 2, 3] as const) {
+    it(`rotates the tag by ${ORIENTATION_OFFSET_DEG[orientation]}° at orientation ${orientation}`, () => {
+      seedTag(orientation);
+      const { ref } = fakeSvgRef();
+      const { container } = render(
+        <svg>
+          <LineTagsLayer bands={[mixedBand()]} zoom={1} svgRef={ref} />
+        </svg>,
+      );
+      expect(tagRotation(container)).toBeCloseTo(ORIENTATION_OFFSET_DEG[orientation], 6);
+    });
+  }
+
+  it('the four orientations yield four distinct rotations', () => {
+    const seen = new Set<number>();
+    for (const orientation of [0, 1, 2, 3] as const) {
+      seedTag(orientation);
+      const { ref } = fakeSvgRef();
+      const { container } = render(
+        <svg>
+          <LineTagsLayer bands={[mixedBand()]} zoom={1} svgRef={ref} />
+        </svg>,
+      );
+      seen.add(tagRotation(container));
+    }
+    expect(seen.size).toBe(4);
+  });
+});

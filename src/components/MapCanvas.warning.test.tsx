@@ -139,21 +139,18 @@ describe('MapCanvas — warning glyph reconciliation', () => {
       }
     };
 
+    // Drive the same many-frame drag sweeps that previously orphaned a fiber
+    // per frame for each duplicate-key sibling. We deliberately do NOT assert a
+    // DOM-glyph "drift" count here: jsdom's reconciler cleans up orphaned
+    // dup-key fibers at commit, so the count never diverges in this environment
+    // regardless of the bug — the console.error spy below is the SOLE real
+    // regression catch. (A drift assertion would masquerade as a guard while
+    // being unable to fail on the bug this test exists for.)
     sweep(20, 400, 80);
-    const drift1 = countWarningGlyphs() - expectedWarningCount();
-
     sweep(400, 20, 80);
-    const drift2 = countWarningGlyphs() - expectedWarningCount();
-
     sweep(20, 400, 80);
     sweep(400, 20, 80);
-    const drift3 = countWarningGlyphs() - expectedWarningCount();
-
-    // No drift across any sample — DOM glyphs always equal the
-    // currently-warning bands. With the duplicate-key bug, drift would
-    // grow unboundedly through the loops in a real browser; jsdom hides
-    // the leak, so the next assertion is the actual regression catch.
-    expect([drift1, drift2, drift3]).toEqual([0, 0, 0]);
+    expect(countWarningGlyphs()).toBe(expectedWarningCount());
 
     // No duplicate-key warning was logged anywhere during setup or any
     // drag frame. If someone reverts <BandWarning>'s key to use only

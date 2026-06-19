@@ -59,9 +59,11 @@ describe('useLineTagDrag', () => {
     const tag = useDoc.getState().lineTags['T'];
     expect(tag.fromStationId).toBe('A');
     expect(tag.toStationId).toBe('B');
-    // Re-anchored to roughly the segment midpoint (~50 along a ~100-unit stripe).
-    expect(tag.distance).toBeGreaterThan(30);
-    expect(tag.distance).toBeLessThan(70);
+    // Re-anchored to the exact projected arc-length: the cursor at world x=50
+    // projects to the segment midpoint, 50 units from the 'from' (A at x=0) end
+    // of the 100-unit straight stripe. The old >30 && <70 window let a ~15-unit
+    // anchor error slip through.
+    expect(tag.distance).toBeCloseTo(50, 0);
     expect(dragState.suppressClick).toBe(true);
     expect(svg.hasPointerCapture(1)).toBe(true);
 

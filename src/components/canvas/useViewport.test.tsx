@@ -118,6 +118,29 @@ describe('useViewport — wheel zoom', () => {
     }
   });
 
+  it('keeps the cursor world point fixed when the host is NOT at screen origin', () => {
+    // Every other test pins the host at (0,0), so a "forgot to subtract
+    // rect.left/top" bug is invisible. With the svg at (left:100, top:60), the
+    // zoom-about-cursor invariant only holds if onWheel and screenToWorld both
+    // subtract the host offset. (viewportMath covers the pure fn with a
+    // non-origin rect; this closes the hook-level wiring.)
+    vi.useFakeTimers();
+    try {
+      const { ref } = fakeSvgRef({ width: 800, height: 600, left: 100, top: 60 });
+      const { result } = renderHook(() => useViewport(ref));
+      const cx = 600;
+      const cy = 200;
+      const before = result.current.screenToWorld(cx, cy);
+      wheel(result, wheelEvent({ clientX: cx, clientY: cy, deltaY: -120 }));
+      act(() => vi.runAllTimers());
+      const after = result.current.screenToWorld(cx, cy);
+      expect(after.x).toBeCloseTo(before.x, 5);
+      expect(after.y).toBeCloseTo(before.y, 5);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
   it('clamps zoom to a max of 64', () => {
     vi.useFakeTimers();
     try {
