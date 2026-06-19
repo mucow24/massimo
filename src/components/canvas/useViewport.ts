@@ -103,14 +103,19 @@ export function useViewport(svgRef: RefObject<SVGSVGElement | null>): ViewportAp
   const hostRect = () =>
     svgRef.current?.getBoundingClientRect() ?? { left: 0, top: 0, width: size.w, height: size.h };
 
-  const screenToWorld = (mx: number, my: number) => {
-    const rect = hostRect();
-    return toWorld({ x: mx, y: my }, vb, rect);
-  };
-
   // The latest intended viewport, including the current gesture's un-committed
   // delta (falls back to the committed store value between gestures).
   const liveViewport = () => pendingRef.current ?? viewport;
+
+  // Map through the LIVE viewBox, not the committed `vb`: during an imperative
+  // pan/zoom the store hasn't been written yet, so a cursor-following overlay
+  // (the placing-station ghost) reprojected via the stale `vb` would drift off
+  // the cursor by the gesture delta. Between gestures liveViewport() === the
+  // committed viewport, so this is identical to the old mapping then.
+  const screenToWorld = (mx: number, my: number) => {
+    const rect = hostRect();
+    return toWorld({ x: mx, y: my }, viewBoxFor(liveViewport(), size), rect);
+  };
 
   // Apply a viewport to the SVG viewBox now, without a store write (no React
   // re-render); the gesture's end commits it.
