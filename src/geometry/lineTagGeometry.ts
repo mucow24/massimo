@@ -35,15 +35,20 @@ export function sampleOffsetPathByArcLength(
     return { p: verts[0] ?? { x: 0, y: 0 }, tangent: { x: 1, y: 0 } };
   }
   const target = Math.max(0, Math.min(total, arcLen));
+  // Skip zero-length segments when selecting the sample segment: a degenerate
+  // leading (or trailing) line — e.g. from a coincident vertex — has no
+  // meaningful tangent, and sampleSegment would hand back (0, 0). Land on the
+  // nearest segment with real length so the tangent stays unit-length.
+  const lastReal = [...segs].reverse().find((s) => s.length >= 1e-9) ?? segs[segs.length - 1];
   let acc = 0;
   for (const s of segs) {
-    if (acc + s.length >= target - 1e-9 || s === segs[segs.length - 1]) {
-      const local = s.length < 1e-9 ? 0 : (target - acc) / s.length;
-      return sampleSegment(s, local);
+    if (s.length < 1e-9) continue;
+    if (acc + s.length >= target - 1e-9 || s === lastReal) {
+      return sampleSegment(s, (target - acc) / s.length);
     }
     acc += s.length;
   }
-  return sampleSegment(segs[segs.length - 1], 1);
+  return sampleSegment(lastReal, 1);
 }
 
 /**

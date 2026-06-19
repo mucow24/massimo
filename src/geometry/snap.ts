@@ -349,6 +349,12 @@ export function snapDraggedStation(input: SnapInput): SnapResult {
     const axis = g[0].axis;
     const perpX = -axis.y;
     const perpY = axis.x;
+    // Sort by the dragged-side perpendicular offset and take the MEDIAN (not
+    // the mean) so the chosen representative is a real stripe. Sorting by the
+    // dragged vs target side is immaterial for a genuine interline: its stripes
+    // keep the same perpendicular order at both endpoints, so both keys produce
+    // the same median pick. The median (vs an averaged offset) is what keeps the
+    // guide on a real band instead of between two.
     const sorted = [...g].sort(
       (a, b) => a.dOff.x * perpX + a.dOff.y * perpY - (b.dOff.x * perpX + b.dOff.y * perpY),
     );
@@ -513,9 +519,11 @@ export function snapDraggedStation(input: SnapInput): SnapResult {
     }
   }
 
-  // Compute the per-station spacing for the Ctrl-drag readout. We use the
-  // shared line where the dragged and anchor are furthest apart (most
-  // intermediates → tightest spacing), divided into the guide's distance.
+  // Compute the per-station spacing for the Ctrl-drag readout. Count
+  // intermediates only on shared line(s) whose corridor is aligned with the
+  // primary guide axis — a line on a different axis would report a spacing for
+  // stops the guide isn't drawn through. Among the parallel lines the gap is
+  // identical by construction, so Math.max is a safe conservative pick.
   const spacingDivisor = (() => {
     if (!redistributeAnchor) return 0;
     let segments = 0;
@@ -524,6 +532,13 @@ export function snapDraggedStation(input: SnapInput): SnapResult {
       const dIdx = line.stations.indexOf(draggedId);
       const tIdx = line.stations.indexOf(redistributeAnchor);
       if (dIdx < 0 || tIdx < 0) continue;
+      const dCell = (draggedStops ?? []).find((c) => c.lineId === line.id);
+      if (!dCell) continue;
+      const lineAxis = rotateBy(
+        travelDirLocal(dCell.orientation),
+        (draggedRotation ?? 0) as Rotation,
+      );
+      if (!parallel(lineAxis, primary.axis)) continue;
       segments = Math.max(segments, Math.abs(dIdx - tIdx));
     }
     return segments;
@@ -558,8 +573,12 @@ export function snapDraggedStation(input: SnapInput): SnapResult {
     const dStopX = sx + c.dOff.x;
     const dStopY = sy + c.dOff.y;
     const primaryAlong = (c.targetStopX - dStopX) * c.axis.x + (c.targetStopY - dStopY) * c.axis.y;
-    const oppositeSign = -Math.sign(primaryAlong) || 0;
-    if (oppositeSign === 0) return;
+    // A sub-epsilon FP residual in primaryAlong (near-coincident stops along
+    // the axis) would otherwise feed Math.sign an arbitrary ±1, flickering the
+    // third-station indicator on/off. Treat within GRID_EPS as coincident — no
+    // meaningful "primary side", so no opposite guide.
+    if (Math.abs(primaryAlong) < GRID_EPS) return;
+    const oppositeSign = -Math.sign(primaryAlong);
     let candidate: { from: Vec2; to: Vec2; alongAbs: number } | null = null;
     // Use consolidated (one entry per target+axis) so a third interlined
     // station doesn't get a separate guide per shared line.

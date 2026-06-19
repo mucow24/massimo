@@ -524,6 +524,53 @@ describe('snapDraggedStation', () => {
     expect(r.guides).toHaveLength(1);
   });
 
+  it('redistribute readout: spacing divisor follows the primary guide line, not a cross-axis line', () => {
+    // d and a share TWO lines with different gaps AND different axes:
+    //   L1 (vertical):   a — d            gap 1
+    //   L2 (horizontal): a — x — y — d    gap 3
+    // Dragging d onto a's vertical axis makes the primary guide vertical (L1),
+    // so the per-station readout must divide the 90px span by L1's gap (1 →
+    // "90"), not the larger cross-axis L2 gap (3 → "30") the old max-over-all-
+    // lines code used.
+    const a = makeStation({
+      id: 'a',
+      x: 100,
+      y: 0,
+      stops: [makeStop('L1'), makeStop('L2', { orientation: 'auto-horizontal' })],
+    });
+    const x = makeStation({
+      id: 'x',
+      x: 140,
+      y: 40,
+      stops: [makeStop('L2', { orientation: 'auto-horizontal' })],
+    });
+    const y = makeStation({
+      id: 'y',
+      x: 180,
+      y: 80,
+      stops: [makeStop('L2', { orientation: 'auto-horizontal' })],
+    });
+    const d = makeStation({
+      id: 'd',
+      x: 0,
+      y: 0,
+      stops: [makeStop('L1'), makeStop('L2', { orientation: 'auto-horizontal' })],
+    });
+    const r = snapDraggedStation({
+      draggedId: 'd',
+      proposedX: 100,
+      proposedY: 90,
+      draggedRotation: 0,
+      draggedStops: d.stops,
+      stations: stations(d, a, x, y),
+      lines: linesOf(lineOf('L1', ['a', 'd']), lineOf('L2', ['a', 'x', 'y', 'd'])),
+      redistributeAnchor: 'a',
+    });
+    // Snaps onto a's vertical axis (x=100); the anchor guide spans 90px.
+    expect(r.x).toBeCloseTo(100, 5);
+    expect(r.guides[0].label).toBe('90');
+  });
+
   it('emits an opposite-direction guide when a third in-line station exists', () => {
     // Three stations on a vertical corridor: target above (100, 0), third
     // below (100, 200), drag near (102, 100). Should emit a primary guide
@@ -558,6 +605,31 @@ describe('snapDraggedStation', () => {
     });
     // 1 primary guide + 1 opposite-direction guide.
     expect(r.guides.length).toBeGreaterThanOrEqual(2);
+  });
+
+  it('suppresses the opposite-direction guide when the dragged stop coincides with the target', () => {
+    // Drag d so its stop lands exactly on a's along the axis (proposedY === a.y
+    // === 0): primaryAlong is 0, so there's no meaningful "primary side" and no
+    // well-defined opposite side — only the primary guide fires. Pins the
+    // coincident → no-opposite-guide invariant the GRID_EPS band guards. (The
+    // sub-epsilon FP *flicker* the band hardens against isn't deterministically
+    // reproducible through this black-box API.)
+    const target = makeStation({ id: 'a', x: 100, y: 0, stops: [makeStop('L1')] });
+    const third = makeStation({ id: 'c', x: 100, y: 200, stops: [makeStop('L1')] });
+    const dragged = makeStation({ id: 'd', x: 0, y: 0, stops: [makeStop('L1')] });
+    const r = snapDraggedStation({
+      draggedId: 'd',
+      proposedX: 98,
+      proposedY: 0,
+      draggedRotation: 0,
+      draggedStops: dragged.stops,
+      lines: linesOf(lineOf('L1', ['a', 'd', 'c'])),
+      stations: stations(dragged, target, third),
+    });
+    expect(r.x).toBeCloseTo(100, 5);
+    expect(r.y).toBeCloseTo(0, 5);
+    // Only the primary guide to a — no opposite guide toward c.
+    expect(r.guides).toHaveLength(1);
   });
 });
 

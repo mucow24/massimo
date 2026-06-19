@@ -637,7 +637,15 @@ export function cancelAppendMode(): void {
     const doc = useDoc.getState();
     const line = doc.lines[lineId];
     if (line && line.stations.length === 0) {
-      doc.deleteLine(lineId);
+      // The placeholder line was committed eagerly by addLine, which also
+      // advanced lineCounter to pick its color. Cancelling before any station
+      // is placed must undo BOTH in one atomic set, so repeated Add→Esc doesn't
+      // walk the color cycle forward. (Real line deletion via T.deleteLine
+      // leaves lineCounter alone, which is why the rollback lives here.)
+      useDoc.setState((s) => ({
+        ...T.deleteLine(s, lineId),
+        lineCounter: Math.max(0, s.lineCounter - 1),
+      }));
     }
   }
   sel.setAppending(null);

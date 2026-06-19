@@ -46,6 +46,23 @@ describe('useViewport — sizing + screenToWorld', () => {
   });
 });
 
+describe('useViewport — null ref safety', () => {
+  // screenToWorld / onWheel used `svgRef.current!.getBoundingClientRect()`, which
+  // throws if a pointer/wheel event ever fires with a detached ref. They now
+  // fall back to a size-derived origin rect instead.
+  it('screenToWorld does not throw with a null ref', () => {
+    const { result } = renderHook(() => useViewport({ current: null }));
+    expect(() => result.current.screenToWorld(400, 300)).not.toThrow();
+  });
+
+  it('onWheel does not throw with a null ref', () => {
+    const { result } = renderHook(() => useViewport({ current: null }));
+    expect(() =>
+      wheel(result as Result, wheelEvent({ clientX: 400, clientY: 300, deltaY: -100 })),
+    ).not.toThrow();
+  });
+});
+
 describe('useViewport — wheel zoom', () => {
   it('writes the zoomed viewBox imperatively and defers the store commit', () => {
     const { result, svg } = render();

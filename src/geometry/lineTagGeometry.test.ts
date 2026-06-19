@@ -200,6 +200,22 @@ describe('sampleOffsetPathByArcLength', () => {
     const s = sampleOffsetPathByArcLength(verts, 24, 0, -50);
     expect(approxVec(s.p, { x: 0, y: 0 })).toBe(true);
   });
+
+  it('returns a unit start tangent when the first offset segment is zero-length', () => {
+    // A coincident leading vertex makes emitOffsetSegments emit a zero-length
+    // first line before the real geometry. Sampling at arcLen 0 must skip it and
+    // report the band's true start direction (east), not a degenerate (0,0)
+    // tangent (which the old code produced via hypot(0,0)||1).
+    const dupVerts = [
+      { x: 0, y: 0 },
+      { x: 0, y: 0 },
+      { x: 100, y: 0 },
+    ];
+    const s = sampleOffsetPathByArcLength(dupVerts, 24, 0, 0);
+    expect(approxVec(s.p, { x: 0, y: 0 })).toBe(true);
+    expect(approxVec(s.tangent, { x: 1, y: 0 })).toBe(true);
+    expect(eq(Math.hypot(s.tangent.x, s.tangent.y), 1)).toBe(true);
+  });
 });
 
 describe('lineTraversesForwardCanon', () => {

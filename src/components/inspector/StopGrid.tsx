@@ -303,11 +303,12 @@ export function StopGrid({
     // Re-read shift on every move — handles the case where the user pressed
     // Shift before starting the drag (no keydown to catch).
     if (e.shiftKey !== shiftHeld) setShiftHeld(e.shiftKey);
-    if (
-      isDragging !== drag.isDragging ||
-      cursor?.row !== drag.cursor?.row ||
-      cursor?.col !== drag.cursor?.col
-    ) {
+    // cursor is a continuous float (px / PITCH); compare with the same EPS
+    // tolerance as sameCell so same-cell sub-pixel moves short-circuit instead
+    // of re-rendering on every pointermove. (Guard the null<->set transitions.)
+    const cursorChanged =
+      !cursor !== !drag.cursor || (!!cursor && !!drag.cursor && !sameCell(cursor, drag.cursor));
+    if (isDragging !== drag.isDragging || cursorChanged) {
       setDrag({ ...drag, isDragging, cursor });
     }
   };
