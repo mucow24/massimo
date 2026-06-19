@@ -1,5 +1,5 @@
 import { describe, it, expect, beforeEach } from 'vitest';
-import { fireEvent, render, screen } from '@testing-library/react';
+import { act, fireEvent, render, screen } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { LineInspector } from './LineInspector';
 import { useDoc, useSelection } from '../../state/store';
@@ -467,5 +467,139 @@ describe('<LineInspector /> — empty line stop-adding', () => {
     const ui = useSelection.getState().uiMode;
     expect(ui.kind).toBe('appending-to-line');
     if (ui.kind === 'appending-to-line') expect(ui.insertAfterIndex).toBe(-1);
+  });
+});
+
+describe('<LineInspector /> — removing a station clears its dangling hover highlights', () => {
+  beforeEach(() => {
+    localStorage.clear();
+    useDoc.setState({ ...DEFAULT_DOC });
+    useSelection.setState(SELECTION_BLANK);
+    useSelection.getState().setUiMode({ kind: 'idle' });
+    useSelection.getState().setHoveredInspectorSegment(null);
+    useDoc.temporal.getState().clear();
+  });
+
+  const seedTwoStationLine = () => {
+    useDoc.setState({
+      ...DEFAULT_DOC,
+      ...makeDoc({
+        stations: [
+          makeStation({ id: 's1', stops: [makeStop('L1')] }),
+          makeStation({ id: 's2', stops: [makeStop('L1')] }),
+        ],
+        lines: [makeLine({ id: 'L1', stations: ['s1', 's2'] })],
+      }),
+    });
+  };
+
+  const seedThreeStationLine = () => {
+    useDoc.setState({
+      ...DEFAULT_DOC,
+      ...makeDoc({
+        stations: [
+          makeStation({ id: 's1', stops: [makeStop('L1')] }),
+          makeStation({ id: 's2', stops: [makeStop('L1')] }),
+          makeStation({ id: 's3', stops: [makeStop('L1')] }),
+        ],
+        lines: [makeLine({ id: 'L1', stations: ['s1', 's2', 's3'] })],
+      }),
+    });
+  };
+
+  it('clicking "×" on a hovered row clears hoveredLineStop / hoveredStation so undo cannot resurrect a phantom dot halo', () => {
+    seedTwoStationLine();
+    // Appending mode reveals the per-row remove "×" buttons.
+    useSelection.getState().setAppending('L1');
+    render(<LineInspector id="L1" />);
+
+    const removeButtons = screen.getAllByTitle('Remove from line');
+    expect(removeButtons).toHaveLength(2);
+    const s2Remove = removeButtons[1];
+    const s2Row = s2Remove.closest('.list-row') as HTMLElement;
+
+    // The user hovers the row to reach its "×" — drives the real hover state
+    // that paints the white casing on the (s2, L1) dot.
+    fireEvent.mouseEnter(s2Row);
+    expect(useSelection.getState().hoveredLineStop).toEqual({ lineId: 'L1', stationId: 's2' });
+    expect(useSelection.getState().hoveredStationId).toBe('s2');
+
+    // Removing the row unmounts it WITHOUT firing onMouseLeave.
+    fireEvent.click(s2Remove);
+    expect(useDoc.getState().lines.L1.stations).toEqual(['s1']);
+
+    // The hover must be cleared, or undo (which restores the stop) re-renders
+    // the stale white halo on the dot.
+    expect(useSelection.getState().hoveredLineStop).toBeNull();
+    expect(useSelection.getState().hoveredStationId).toBeNull();
+  });
+
+  it('clicking "×" clears a hovered segment divider whose endpoint is removed, so its corridor wash cannot survive undo', () => {
+    seedThreeStationLine();
+    // Appending mode reveals the "×" buttons.
+    useSelection.getState().setAppending('L1');
+    const { container } = render(<LineInspector id="L1" />);
+
+    // Hover the s1|s2 segment divider, exactly as the user would.
+    const dividers = container.querySelectorAll('[data-segment-style-divider]');
+    expect(dividers).toHaveLength(2);
+    fireEvent.mouseEnter(dividers[0]);
+    expect(useSelection.getState().hoveredInspectorSegment).toEqual({
+      lineId: 'L1',
+      fromStationId: 's1',
+      toStationId: 's2',
+    });
+
+    // Remove s2 — an endpoint of the hovered segment. Its divider unmounts
+    // WITHOUT firing onMouseLeave.
+    const removeButtons = screen.getAllByTitle('Remove from line');
+    fireEvent.click(removeButtons[1]);
+    expect(useDoc.getState().lines.L1.stations).toEqual(['s1', 's3']);
+
+    expect(useSelection.getState().hoveredInspectorSegment).toBeNull();
+  });
+
+  it('reordering a hovered row (move ↓) clears its hover so the highlight does not dangle on the moved dot', () => {
+    seedThreeStationLine();
+    // Appending mode reveals the move "↑/↓" buttons.
+    useSelection.getState().setAppending('L1');
+    render(<LineInspector id="L1" />);
+
+    const downButtons = screen.getAllByTitle('Move down');
+    const s2Down = downButtons[1];
+    const s2Row = s2Down.closest('.list-row') as HTMLElement;
+
+    fireEvent.mouseEnter(s2Row);
+    expect(useSelection.getState().hoveredLineStop).toEqual({ lineId: 'L1', stationId: 's2' });
+
+    // Moving s2 down remounts the rows under the cursor (no onMouseLeave).
+    fireEvent.click(s2Down);
+    expect(useDoc.getState().lines.L1.stations).toEqual(['s1', 's3', 's2']);
+
+    expect(useSelection.getState().hoveredLineStop).toBeNull();
+    expect(useSelection.getState().hoveredStationId).toBeNull();
+  });
+
+  it('unmounting the inspector (line deleted, a station selected, panel collapsed) clears lingering hovers', () => {
+    seedTwoStationLine();
+    const { unmount } = render(<LineInspector id="L1" />);
+
+    // A row + divider hover left set at the moment the inspector goes away —
+    // none of their onMouseLeave/onBlur handlers will ever fire.
+    act(() => {
+      useSelection.getState().setHoveredLineStop({ lineId: 'L1', stationId: 's2' });
+      useSelection.getState().setHoveredStation('s2');
+      useSelection.getState().setHoveredInspectorSegment({
+        lineId: 'L1',
+        fromStationId: 's1',
+        toStationId: 's2',
+      });
+    });
+
+    unmount();
+
+    expect(useSelection.getState().hoveredLineStop).toBeNull();
+    expect(useSelection.getState().hoveredStationId).toBeNull();
+    expect(useSelection.getState().hoveredInspectorSegment).toBeNull();
   });
 });
