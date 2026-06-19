@@ -392,6 +392,47 @@ describe('<LineInspector /> — stroke controls', () => {
   });
 });
 
+describe('<LineInspector /> — waypoint pill', () => {
+  beforeEach(() => {
+    localStorage.clear();
+    useDoc.setState({ ...DEFAULT_DOC });
+    useSelection.setState(SELECTION_BLANK);
+  });
+
+  const seed = () => {
+    useDoc.setState({
+      ...DEFAULT_DOC,
+      ...makeDoc({
+        stations: [
+          makeStation({ id: 's1', name: 'Alpha', stops: [makeStop('L1')] }),
+          makeStation({ id: 's2', name: 'Beta', isWaypoint: true, stops: [makeStop('L1')] }),
+        ],
+        lines: [makeLine({ id: 'L1', stations: ['s1', 's2'] })],
+      }),
+    });
+  };
+
+  it('renders a WP pill only on the waypoint stop, before its name', () => {
+    seed();
+    const { container } = render(<LineInspector id="L1" />);
+
+    // Exactly one pill — for the waypoint stop only.
+    const pills = container.querySelectorAll('.wp-pill');
+    expect(pills.length).toBe(1);
+
+    // The pill lives in Beta's row, not Alpha's.
+    const betaRow = screen.getByText('Beta').closest('.list-row');
+    const alphaRow = screen.getByText('Alpha').closest('.list-row');
+    const pill = betaRow?.querySelector('.wp-pill');
+    expect(pill).not.toBeNull();
+    expect(alphaRow?.querySelector('.wp-pill')).toBeNull();
+
+    // The pill precedes the name within the row.
+    // DOCUMENT_POSITION_FOLLOWING = 4: the argument follows the receiver.
+    expect(pill!.compareDocumentPosition(screen.getByText('Beta')) & 4).toBe(4);
+  });
+});
+
 describe('<LineInspector /> — empty line stop-adding', () => {
   beforeEach(() => {
     localStorage.clear();
