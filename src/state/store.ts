@@ -282,7 +282,7 @@ interface DocState extends MapDoc {
   rotateRouteBullet: (id: string) => void;
   updateRouteBullet: (
     id: string,
-    patch: Partial<Pick<RouteBullet, 'lineId' | 'shape' | 'size'>>,
+    patch: Partial<Pick<RouteBullet, 'lineId' | 'shape' | 'size' | 'locked'>>,
   ) => void;
   deleteRouteBullet: (id: string) => void;
 

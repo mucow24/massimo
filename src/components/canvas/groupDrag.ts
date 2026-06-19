@@ -21,7 +21,7 @@ export function emptyGroupSiblings(): GroupSiblings {
  * Snapshot the multi-selection siblings of the grabbed item (every type except
  * the grabbed item itself) at pointer-down. Returns no siblings unless the
  * grabbed item is itself part of the selection — dragging an unselected item
- * never tows the selection. Locked polygons never tow.
+ * never tows the selection. Locked items (bullets, labels, polygons) never tow.
  */
 export function collectGroupSiblings(grabbedKind: GrabbedKind, grabbedId: string): GroupSiblings {
   const sel = useSelection.getState();
@@ -45,12 +45,12 @@ export function collectGroupSiblings(grabbedKind: GrabbedKind, grabbedId: string
   for (const id of sel.selectedRouteBulletIds) {
     if (grabbedKind === 'bullet' && id === grabbedId) continue;
     const b = doc.routeBullets[id];
-    if (b) out.bullets.push({ id, startX: b.x, startY: b.y });
+    if (b && !b.locked) out.bullets.push({ id, startX: b.x, startY: b.y });
   }
   for (const id of sel.selectedLabelIds) {
     if (grabbedKind === 'label' && id === grabbedId) continue;
     const l = doc.textLabels[id];
-    if (l) out.labels.push({ id, startX: l.x, startY: l.y });
+    if (l && !l.locked) out.labels.push({ id, startX: l.x, startY: l.y });
   }
   for (const id of sel.selectedPolygonIds) {
     if (grabbedKind === 'polygon' && id === grabbedId) continue;
