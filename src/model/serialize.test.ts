@@ -39,6 +39,31 @@ describe('serialize / parse round-trip', () => {
   });
 });
 
+describe('parse — active palette invariant', () => {
+  // Symmetric with the migrate-path coverage in storeMigrate.test.ts: both load
+  // paths route through the shared validActivePalettes helper.
+  const fileWith = (activePalettes: unknown): string =>
+    JSON.stringify({ format: 'massimo-map', doc: { ...T.DEFAULT_DOC, activePalettes } });
+
+  it('replaces an explicit empty activePalettes with the default set', () => {
+    const r = parse(fileWith([]));
+    expect(r.ok).toBe(true);
+    if (r.ok) expect(r.doc.activePalettes).toEqual(T.DEFAULT_DOC.activePalettes);
+  });
+
+  it('falls back to the default set when no id is valid', () => {
+    const r = parse(fileWith(['bogus']));
+    expect(r.ok).toBe(true);
+    if (r.ok) expect(r.doc.activePalettes).toEqual(T.DEFAULT_DOC.activePalettes);
+  });
+
+  it('keeps the valid ids, dropping unknowns', () => {
+    const r = parse(fileWith(['mta', 'bogus']));
+    expect(r.ok).toBe(true);
+    if (r.ok) expect(r.doc.activePalettes).toEqual(['mta']);
+  });
+});
+
 describe('parse — error cases', () => {
   it('rejects malformed JSON without throwing', () => {
     const r = parse('not json {');

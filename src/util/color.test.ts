@@ -111,3 +111,37 @@ describe('desaturateColor', () => {
     expect(r).toBeLessThan(255);
   });
 });
+
+describe('parseHex robustness (malformed / alpha input)', () => {
+  it('ignores the alpha channel in 8-digit hex (#rrggbbaa)', () => {
+    expect(withAlpha('#ff000080', 0.5)).toBe('rgba(255, 0, 0, 0.5)');
+  });
+
+  it('ignores the alpha nibble in 4-digit shorthand (#rgba)', () => {
+    expect(withAlpha('#f008', 0.5)).toBe('rgba(255, 0, 0, 0.5)');
+  });
+
+  it('falls back to black for non-hex input instead of producing NaN', () => {
+    // The bug: any input that wasn't 3 or 6 hex digits took the 6-digit slice
+    // path and returned NaN channels, poisoning rgba()/luminance downstream.
+    // Reachable via a hand-edited map file whose colors aren't #rrggbb.
+    expect(withAlpha('rgb(1, 2, 3)', 1)).toBe('rgba(0, 0, 0, 1)');
+    expect(withAlpha('red', 1)).toBe('rgba(0, 0, 0, 1)');
+    expect(withAlpha('', 1)).toBe('rgba(0, 0, 0, 1)');
+    expect(withAlpha('#xyz', 1)).toBe('rgba(0, 0, 0, 1)');
+    // A 7-hex-digit string (invalid length) is the discriminating case: the old
+    // slice path silently mis-parsed it as #abcdef → rgba(171, 205, 239, 1);
+    // the new code rejects the bad length and falls back to black.
+    expect(withAlpha('#abcdef0', 1)).toBe('rgba(0, 0, 0, 1)');
+  });
+
+  it('legibleTextOn returns a real color (not NaN-driven) for malformed input', () => {
+    // Black fallback → dark background → white text.
+    expect(legibleTextOn('not-a-color')).toBe('#fff');
+  });
+
+  it('blendOver and desaturateColor stay valid hex for malformed input', () => {
+    expect(blendOver('bogus', 0.5)).toMatch(/^#[0-9a-f]{6}$/);
+    expect(desaturateColor('bogus', 0.5)).toMatch(/^#[0-9a-f]{6}$/);
+  });
+});

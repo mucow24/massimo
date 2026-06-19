@@ -209,6 +209,31 @@ describe('migrateDoc', () => {
       expect(out).toBe(input);
     });
   });
+
+  describe('active-palette invariant (not version-gated)', () => {
+    // parse() enforces "≥1 valid palette" on file import; the rehydrate path
+    // used to skip it, so a persisted explicit-empty / all-unknown
+    // `activePalettes` would rehydrate into the unreachable empty-palette state.
+    it('replaces an explicit empty activePalettes with the default set', () => {
+      expect(migrateDoc({ activePalettes: [] }, 7).activePalettes).toEqual(
+        DEFAULT_DOC.activePalettes,
+      );
+    });
+
+    it('drops unknown palette ids, keeping the valid ones', () => {
+      expect(migrateDoc({ activePalettes: ['mta', 'bogus'] }, 7).activePalettes).toEqual(['mta']);
+    });
+
+    it('falls back to the default set when no id is valid', () => {
+      expect(migrateDoc({ activePalettes: ['nope'] }, 7).activePalettes).toEqual(
+        DEFAULT_DOC.activePalettes,
+      );
+    });
+
+    it('leaves an ABSENT activePalettes untouched (persist merge fills it)', () => {
+      expect(migrateDoc({ lines: {} }, 7).activePalettes).toBeUndefined();
+    });
+  });
 });
 
 describe('beginHistoryGroup', () => {
