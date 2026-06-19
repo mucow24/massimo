@@ -354,13 +354,14 @@ describe('transforms invariants (property-based)', () => {
   // Two cascades stay out of reach even at this run count, so they are NOT relied
   // on here — they are guarded by deterministic unit tests in transforms.test.ts
   // instead: `deleteLine`'s line-tag drop (~0.05%-reachable by random search — see
-  // 'deleteLine — line tag cascade'), and `deleteStation`'s missing segment-override
-  // prune. NB the latter is a real source gap: `deleteStation` filters the station
-  // out of every line's `stations` but never prunes that line's `segmentStyles` /
-  // `segmentLayers`, so a deleted station's pair-key can dangle. `serialize.ts`'s
-  // `sanitizeSegmentStyles` heals `segmentStyles` on save but does NOT touch
-  // `segmentLayers`. The invariants below still ASSERT the correct property; they
-  // just can't reach that path reliably enough to serve as its regression guard.
+  // 'deleteLine — line tag cascade'), and `deleteStation`'s segment-override prune
+  // (see 'deleteStation — segment override cascade'). The latter was a real source
+  // gap this suite first surfaced — `deleteStation` filtered the station out of
+  // each line's `stations` but never pruned that line's `segmentStyles` /
+  // `segmentLayers`, and `serialize.ts` healed only `segmentStyles` on load — both
+  // now fixed (deleteStation calls pruneOrphanSegmentStyles; sanitizeSegments
+  // heals layers too). The invariants below assert the correct property; the
+  // deterministic tests are the regression guards for the narrow paths.
   const REFERENTIAL_RUNS = 2000;
 
   it('every segmentStyles key resolves to two existing stations and is non-default', () => {

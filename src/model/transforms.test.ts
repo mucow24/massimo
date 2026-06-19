@@ -1740,6 +1740,34 @@ describe('deleteStation — line tag cascade', () => {
   });
 });
 
+describe('deleteStation — segment override cascade', () => {
+  it('prunes segmentStyles AND segmentLayers whose pair-key referenced the deleted station', () => {
+    // L1 = a–b–c with a styled + layered (a,b) segment. Deleting `a` removes it
+    // from the line, so the (a,b) pair is no longer an edge; both the style and
+    // the layer override keyed on it must be pruned, not left dangling at a
+    // station that no longer exists. toggleStationOnLine / removeStationFromLine
+    // / deleteLine already do this — deleteStation must too.
+    let doc = makeDoc({
+      stations: [
+        makeStation({ id: 'a', stops: [makeStop('L1')] }),
+        makeStation({ id: 'b', stops: [makeStop('L1')] }),
+        makeStation({ id: 'c', stops: [makeStop('L1')] }),
+      ],
+      lines: [makeLine({ id: 'L1', stations: ['a', 'b', 'c'] })],
+    });
+    doc = T.setLineSegmentStyle(doc, 'L1', 'a', 'b', 'dashed');
+    doc = T.cycleSegmentLayer(doc, 'L1', 'a', 'b', 1);
+    // Sanity: exactly the (a,b) override exists before deletion.
+    expect(Object.keys(doc.lines.L1.segmentStyles ?? {})).toHaveLength(1);
+    expect(Object.keys(doc.lines.L1.segmentLayers ?? {})).toHaveLength(1);
+
+    const next = T.deleteStation(doc, 'a');
+    // The (a,b) edge is gone → both override maps drop the orphaned key.
+    expect(next.lines.L1.segmentStyles ?? {}).toEqual({});
+    expect(next.lines.L1.segmentLayers ?? {}).toEqual({});
+  });
+});
+
 describe('clearAll — line tags', () => {
   it('clears lineTags', () => {
     const doc = makeDoc({

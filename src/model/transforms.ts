@@ -824,7 +824,13 @@ export function deleteStation(doc: MapDoc, id: StationId): MapDoc {
   const lines: Record<LineId, Line> = {};
   for (const lid of Object.keys(doc.lines)) {
     const ln = doc.lines[lid];
-    lines[lid] = { ...ln, stations: ln.stations.filter((x) => x !== id) };
+    // Drop the station from the line, then prune any segment style/layer
+    // override whose pair-key is no longer an adjacency — same contract as
+    // removeStationFromLine / toggleStationOnLine / deleteLine.
+    lines[lid] = pruneOrphanSegmentStyles({
+      ...ln,
+      stations: ln.stations.filter((x) => x !== id),
+    });
   }
   // Cascade-delete transfers that referenced the removed station.
   const transfers: Record<string, Transfer> = {};

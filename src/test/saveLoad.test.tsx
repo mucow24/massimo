@@ -260,6 +260,26 @@ describe('save/load round-trip', () => {
       expect(result.doc.activePalettes).toEqual(['mta']);
     }
   });
+
+  it('load heals dangling and zero-valued segmentLayers entries (not just segmentStyles)', () => {
+    // A persisted line carrying an orphaned layer override (a pair-key that
+    // isn't an adjacency on the line) and a zero layer (the never-stored
+    // default). The load sanitizer must drop both — it previously healed
+    // segmentStyles only, so a dangling segmentLayers key survived a round-trip.
+    const fixture = makeDoc({
+      stations: [makeStation({ id: 'a' }), makeStation({ id: 'b' })],
+      lines: [makeLine({ id: 'L1', stations: ['a', 'b'] })],
+    });
+    fixture.lines.L1 = {
+      ...fixture.lines.L1,
+      segmentLayers: { 'a|zzz': 2, 'a|b': 0 }, // orphan key + zero default
+    };
+    const result = parse(JSON.stringify({ format: SCHEMA_FORMAT, doc: fixture }));
+    expect(result.ok).toBe(true);
+    if (result.ok) {
+      expect(result.doc.lines.L1.segmentLayers ?? {}).toEqual({});
+    }
+  });
 });
 
 describe('addLine auto-cycle across palettes', () => {
