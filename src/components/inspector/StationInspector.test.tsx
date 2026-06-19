@@ -4,7 +4,7 @@ import userEvent from '@testing-library/user-event';
 import { StationInspector } from './StationInspector';
 import { useDoc, useSelection } from '../../state/store';
 import { historyDepth } from '../../state/history';
-import { DEFAULT_DOC } from '../../model/transforms';
+import { DEFAULT_DOC, resolveOffsetPerp } from '../../model/transforms';
 import { DOT_SHAPE_PRESETS } from '../../model/dotStyle';
 import { makeDoc, makeStation, makeStop, makeLine } from '../../test/fixtures';
 
@@ -648,5 +648,57 @@ describe('<StationInspector /> — stop dot size textbox', () => {
     expect(doc.stations.a.stops[0].dotSize).toBe(16);
     expect(doc.stations.b.stops[0].dotSize).toBe(16);
     expect(historyDepth() - pastBefore).toBe(1);
+  });
+});
+
+describe('<StationInspector /> — label offset wiring (along vs perpendicular)', () => {
+  beforeEach(() => {
+    localStorage.clear();
+    useDoc.setState({ ...DEFAULT_DOC });
+    useSelection.setState(SELECTION_BLANK);
+  });
+
+  const seedStation = () => {
+    useDoc.setState({
+      ...DEFAULT_DOC,
+      ...makeDoc({ stations: [makeStation({ id: 'a' })] }),
+    });
+    useSelection.setState({ ...SELECTION_BLANK, selectedStationIds: ['a'] });
+  };
+
+  // The two LabelOffsetControls are identical markup distinguished only by their
+  // preceding field-hint text. Find the number input belonging to the control
+  // that follows a given hint.
+  const offsetNumberInput = (hint: string): HTMLInputElement => {
+    const hintEl = screen.getByText(hint);
+    const control = hintEl.nextElementSibling as HTMLElement;
+    const input = control.querySelector('input[type="number"]') as HTMLInputElement;
+    expect(input).not.toBeNull();
+    return input;
+  };
+
+  it('the "along" control writes label.offset and leaves offsetPerp untouched', () => {
+    seedStation();
+    render(<StationInspector id="a" />);
+
+    const along = offsetNumberInput('Offset (along reading direction)');
+    fireEvent.change(along, { target: { value: '7' } });
+
+    const label = useDoc.getState().stations.a.label;
+    expect(label.offset).toBe(7);
+    // The perpendicular offset is unchanged (defaults to 0 via resolveOffsetPerp).
+    expect(resolveOffsetPerp(label)).toBe(0);
+  });
+
+  it('the "perpendicular" control writes offsetPerp and leaves label.offset untouched', () => {
+    seedStation();
+    render(<StationInspector id="a" />);
+
+    const perp = offsetNumberInput('Offset (perpendicular to reading direction)');
+    fireEvent.change(perp, { target: { value: '9' } });
+
+    const label = useDoc.getState().stations.a.label;
+    expect(resolveOffsetPerp(label)).toBe(9);
+    expect(label.offset).toBe(0);
   });
 });

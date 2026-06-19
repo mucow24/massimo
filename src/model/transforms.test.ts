@@ -1099,6 +1099,27 @@ describe('deleteLine', () => {
     expect(next.lineOrder).toEqual(['L2']);
     expect(next.stations.s1.stops.map((c) => c.lineId)).toEqual(['L2']);
   });
+
+  it('nulls out the lineId of route bullets that referenced the deleted line (bullet survives)', () => {
+    const doc: MapDoc = {
+      ...makeDoc({
+        lines: [makeLine({ id: 'L1' }), makeLine({ id: 'L2' })],
+        lineOrder: ['L1', 'L2'],
+      }),
+      routeBullets: {
+        b1: { id: 'b1', x: 10, y: 20, rotation: 0, lineId: 'L1', shape: 'circle', size: 8 },
+        b2: { id: 'b2', x: 30, y: 40, rotation: 0, lineId: 'L2', shape: 'circle', size: 8 },
+      },
+    };
+    const next = T.deleteLine(doc, 'L1');
+    // The bullet pointing at L1 survives but reverts to "unset" (lineId null),
+    // keeping its position. The bullet on L2 is untouched.
+    expect(next.routeBullets.b1).toBeDefined();
+    expect(next.routeBullets.b1.lineId).toBeNull();
+    expect(next.routeBullets.b1.x).toBe(10);
+    expect(next.routeBullets.b1.y).toBe(20);
+    expect(next.routeBullets.b2.lineId).toBe('L2');
+  });
 });
 
 describe('moveLineInOrder', () => {
