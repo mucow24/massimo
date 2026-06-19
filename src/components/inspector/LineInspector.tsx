@@ -16,6 +16,7 @@ import { blendOver, legibleTextOn, withAlpha } from '../../util/color';
 import { InlineBulletText } from '../InlineBulletText';
 import { NumericFieldRow } from '../NumericFieldRow';
 import {
+  LINE_WIDTH_DEFAULT,
   LINE_WIDTH_MAX,
   LINE_WIDTH_MIN,
   LINE_WIDTH_SLIDER_MIN,
@@ -35,13 +36,7 @@ import {
   lineStrokeRailWidth,
   lineStrokeWidthOf,
 } from '../../model/lineStroke';
-import {
-  stationBandLayout,
-  STATION_ROW_H,
-  GAP_ROW_H,
-  PREVIEW_W_MIN,
-  PREVIEW_W_MAX,
-} from './stationBandGeometry';
+import { stationBandLayout, STATION_ROW_H, GAP_ROW_H } from './stationBandGeometry';
 
 function DotShapePopover({
   onPick,
@@ -316,9 +311,10 @@ export function LineInspector({ id }: { id: LineId }) {
         {line.stations.length > 0 &&
           (() => {
             const N = line.stations.length;
-            // Preview the line's actual width, clamped so the band stays
-            // inside the fixed marker column.
-            const previewW = Math.min(Math.max(lineWidthOf(line), PREVIEW_W_MIN), PREVIEW_W_MAX);
+            // The preview band always paints at the default line width — the
+            // actual width would render thin lines as near-invisible hairlines
+            // here, and the band is only a style affordance, not a width gauge.
+            const previewW = LINE_WIDTH_DEFAULT;
             const {
               totalHeight: totalBandH,
               centerOf,
