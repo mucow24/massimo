@@ -72,7 +72,10 @@ export function PolygonView({
       <path
         data-polygon-id={polygon.id}
         data-polygon-selected={selected || undefined}
-        data-polygon-locked={polygon.locked || undefined}
+        // Generic lock marker shared with stations: the rect-select gate keys
+        // off [data-locked] so a drag starting on any locked element begins a
+        // marquee instead of doing nothing.
+        data-locked={polygon.locked || undefined}
         data-polygon-open={!closed || undefined}
         d={polygonPathData(verts, polygon.curveRadius ?? 0, closed)}
         fill={closed ? fill : 'none'}
