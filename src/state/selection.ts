@@ -1,5 +1,5 @@
 import { create } from 'zustand';
-import type { LineId, StationId } from '../model/types';
+import type { LineId, MapDoc, StationId } from '../model/types';
 import type { Vec2 } from '../geometry/vec';
 
 // ----- Selection (ephemeral, not persisted) -----
@@ -73,14 +73,15 @@ export const clearedSelections = () => ({
 });
 
 // The "primary" selections a NON-primary selection change (adding a bullet /
-// label / polygon to the set) must drop, so the line/tag/mirror state can't
-// linger behind a now-foreign selection. Spread into the append branch of the
-// list toggles and into add/xor for every list kind — one shared home so the
-// cross-clear matrix can't drift per item type (the source of the stale-line
-// highlight bug it replaced).
+// label / polygon to the set) must drop, so a stale line / tag / transfer /
+// mirror state can't linger behind a now-foreign selection. Spread into the
+// append branch of the list toggles and into replace/add/xor for every list
+// kind — one shared home so the cross-clear matrix can't drift per item type
+// (the source of the stale-line highlight bug it replaced).
 const SIBLING_PRIMARY_CLEAR = {
   selectedLineId: null as LineId | null,
   selectedLineTagId: null as string | null,
+  selectedTransferId: null as string | null,
   mirrorMatching: false,
 };
 
@@ -197,6 +198,12 @@ interface SelectionState {
   // one atomic update (used after a multi-item paste/duplicate). Clears every
   // other selection and exits to idle, like the single-type select* setters.
   setMixedSelection: (ids: { bullets?: string[]; labels?: string[]; polygons?: string[] }) => void;
+  // Drop any selection ids that no longer resolve in `doc`. Called after
+  // undo/redo, which restore the doc store without touching this (separate)
+  // selection store — so an entity the undo removed would otherwise leave a
+  // dangling id behind (a null-deref hazard for consumers that index the doc
+  // by the selected id). A no-op when everything still resolves.
+  reconcileWithDoc: (doc: MapDoc) => void;
 }
 
 // ---- selection id-list algebra: pure helpers shared by all three kinds ----
@@ -246,9 +253,10 @@ type SelectionGet = () => SelectionState;
  * Build the five list-selection actions for one id-list field. `extraToggleClear`
  * is folded into BOTH branches of toggle (polygons clear their active vertex).
  * `SIBLING_PRIMARY_CLEAR` is folded into the append branch of toggle and into
- * add/xor so a multi-item selection always drops a stale line/tag/mirror — the
- * one rule, in one place, for every kind. `set`/`replace`/`add`/`xor` keep the
- * existing reference-equality no-op short-circuit (return `prev` unchanged).
+ * replace/add/xor so a multi-item selection always drops a stale
+ * line/tag/transfer/mirror — the one rule, in one place, for every kind.
+ * `add`/`xor` keep the reference-equality no-op short-circuit (return `prev`
+ * unchanged); `replace` always sets (it's an explicit "make it exactly this").
  */
 function makeIdListActions<
   Sel extends keyof SelectionState,
@@ -293,7 +301,8 @@ function makeIdListActions<
         }
         return patch({ ...SIBLING_PRIMARY_CLEAR, ...extraToggleClear }, [...cur, id]);
       }),
-    [names.replace]: (ids: string[]) => set(patch({}, dedupeLastWins(ids))),
+    [names.replace]: (ids: string[]) =>
+      set(patch({ ...SIBLING_PRIMARY_CLEAR }, dedupeLastWins(ids))),
     [names.add]: (ids: string[]) =>
       set((s) => {
         const next = unionAppendNovel(read(s), ids);
@@ -375,6 +384,7 @@ export const useSelection = create<SelectionState>((set, get) => ({
         selectedStationIds: [...s.selectedStationIds, id],
         selectedLineId: null,
         selectedLineTagId: null,
+        selectedTransferId: null,
         selectedStopLineId: null,
         labelSelected: false,
         editingStationId: null,
@@ -387,6 +397,7 @@ export const useSelection = create<SelectionState>((set, get) => ({
       selectedStationIds: dedupeLastWins(ids),
       selectedLineId: null,
       selectedLineTagId: null,
+      selectedTransferId: null,
       selectedStopLineId: null,
       labelSelected: false,
       editingStationId: null,
@@ -528,6 +539,42 @@ export const useSelection = create<SelectionState>((set, get) => ({
       selectedLabelIds: dedupeLastWins(ids.labels ?? []),
       selectedPolygonIds: dedupeLastWins(ids.polygons ?? []),
     }),
+  reconcileWithDoc: (doc) => {
+    const s = get();
+    const next: Partial<SelectionState> = {};
+    // Filter an id list against the doc; return the kept list only when it
+    // actually shrank, so an all-resolving list keeps its reference.
+    const prune = <T extends string>(ids: T[], exists: (id: T) => boolean): T[] | undefined => {
+      const kept = ids.filter(exists);
+      return kept.length === ids.length ? undefined : kept;
+    };
+    const stations = prune(s.selectedStationIds, (id) => !!doc.stations[id]);
+    if (stations) next.selectedStationIds = stations;
+    const bullets = prune(s.selectedRouteBulletIds, (id) => !!doc.routeBullets[id]);
+    if (bullets) next.selectedRouteBulletIds = bullets;
+    const labels = prune(s.selectedLabelIds, (id) => !!doc.textLabels[id]);
+    if (labels) next.selectedLabelIds = labels;
+    const polygons = prune(s.selectedPolygonIds, (id) => !!doc.polygons[id]);
+    if (polygons) next.selectedPolygonIds = polygons;
+    // Single primaries.
+    if (s.selectedLineId && !doc.lines[s.selectedLineId]) next.selectedLineId = null;
+    if (s.selectedLineTagId && !doc.lineTags[s.selectedLineTagId]) next.selectedLineTagId = null;
+    if (s.selectedTransferId && !doc.transfers[s.selectedTransferId])
+      next.selectedTransferId = null;
+    // Within-station inspector + hover state bound to a specific entity.
+    if (s.editingStationId && !doc.stations[s.editingStationId]) next.editingStationId = null;
+    if (s.selectedStopLineId && !doc.lines[s.selectedStopLineId]) next.selectedStopLineId = null;
+    if (s.hoveredStationId && !doc.stations[s.hoveredStationId]) next.hoveredStationId = null;
+    // A vertex handle dangles if its polygon is gone OR shrank past its index.
+    if (s.selectedVertex) {
+      const poly = doc.polygons[s.selectedVertex.polygonId];
+      if (!poly || s.selectedVertex.index >= poly.vertices.length) next.selectedVertex = null;
+    }
+    // Skip the set() entirely when nothing dangled — zustand notifies
+    // subscribers on every set (even an empty patch), so this keeps the common
+    // undo/redo path a true no-op rather than re-running every selector.
+    if (Object.keys(next).length > 0) set(next);
+  },
 }));
 
 // ---- derived-selection selectors: one named home for "what is selected" ----

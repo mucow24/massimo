@@ -29,6 +29,7 @@ import {
   backfillPolygonDarkColors,
   backfillTextLabelColors,
   convertLegacyDotShapes,
+  validActivePalettes,
 } from '../model/serialize';
 import type { Station } from '../model/types';
 import { randomStationName } from './stationNames';
@@ -142,6 +143,7 @@ export function migrateDoc(persisted: unknown, version: number): DocState {
     textLabels?: Record<string, TextLabel>;
     labelBold?: boolean;
     labelWeight?: TextLabelWeight;
+    activePalettes?: PaletteId[];
   };
   // Corrupt or missing version is treated as v0 so all migrations run —
   // preferable to silently rendering with stale data.
@@ -184,6 +186,16 @@ export function migrateDoc(persisted: unknown, version: number): DocState {
     } else {
       out = rest;
     }
+  }
+  // Non-version-gated invariant: at least one VALID active palette. Unlike the
+  // migrations above, this isn't tied to a schema bump — a persisted doc with
+  // an explicit empty / all-unknown `activePalettes` (tampering, or a
+  // pre-invariant build) would otherwise rehydrate into the unreachable-from-UI
+  // empty-palette state that `parse()` already guards on the file-import path,
+  // via the shared `validActivePalettes`. An ABSENT field is left untouched —
+  // zustand's persist merge fills it from the initial state.
+  if (out.activePalettes !== undefined) {
+    out = { ...out, activePalettes: validActivePalettes(out.activePalettes) };
   }
   return out as DocState;
 }
@@ -558,6 +570,15 @@ export const useDoc = create<DocState>()(
       // Track only the document data — viewport and selection are in their
       // own stores, and the mutator method references never change so they're
       // safe to leave in (Object.assign on undo preserves them).
+      //
+      // `equality` skips recording when the partialized snapshot is value-
+      // identical to the previous one. zundo has no diff/equality by default,
+      // and `pickDocSnapshot` allocates a fresh object on every `set`, so
+      // without this an ungrouped mutator that no-ops (a transform that returns
+      // the doc unchanged) would still push a redundant past entry — making one
+      // Ctrl+Z appear to do nothing. The grouped path (beginHistoryGroup) runs
+      // the same check before pushing; this extends it to the ungrouped writes.
+      equality: docSnapshotsEqual,
       partialize: (state) => pickDocSnapshot(state),
       limit: 200,
     },

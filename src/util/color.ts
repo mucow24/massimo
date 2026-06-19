@@ -10,12 +10,21 @@ export function legibleTextOn(hex: string): string {
 }
 
 function parseHex(hex: string): [number, number, number] {
-  const m = hex.replace('#', '');
-  const v =
-    m.length === 3
-      ? [m[0] + m[0], m[1] + m[1], m[2] + m[2]]
-      : [m.slice(0, 2), m.slice(2, 4), m.slice(4, 6)];
-  return [parseInt(v[0], 16), parseInt(v[1], 16), parseInt(v[2], 16)];
+  const m = hex.replace('#', '').trim();
+  // 3- or 4-digit shorthand (#rgb / #rgba): each nibble is doubled. Any alpha
+  // nibble (the 4th) is ignored — these helpers are RGB-only.
+  if (/^[0-9a-fA-F]{3}$/.test(m) || /^[0-9a-fA-F]{4}$/.test(m)) {
+    return [parseInt(m[0] + m[0], 16), parseInt(m[1] + m[1], 16), parseInt(m[2] + m[2], 16)];
+  }
+  // 6- or 8-digit (#rrggbb / #rrggbbaa): take the first three channels; any
+  // trailing alpha pair is ignored.
+  if (/^[0-9a-fA-F]{6}$/.test(m) || /^[0-9a-fA-F]{8}$/.test(m)) {
+    return [parseInt(m.slice(0, 2), 16), parseInt(m.slice(2, 4), 16), parseInt(m.slice(4, 6), 16)];
+  }
+  // Anything else (rgb()/hsl()/named colors, or malformed input from a
+  // hand-edited map file) — fall back to black rather than propagate NaN
+  // through the luminance / rgba() math downstream.
+  return [0, 0, 0];
 }
 
 function toHex(r: number, g: number, b: number): string {
