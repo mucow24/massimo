@@ -2846,6 +2846,49 @@ describe('redistributeBetween', () => {
       expect(next.stations.m3).toMatchObject({ x: 20, y: 0 });
     });
   });
+
+  // The 5° ANGLE_THRESHOLD (transforms.ts:526) decides, in arc-bends mode,
+  // whether an intermediate station is a real "bend" (anchored, left in place)
+  // or a smooth point (redistributed). The threshold is on the TURN angle —
+  // the deviation from straight, computed as acos of the dot product of the two
+  // adjacent stop-segment directions — and the test is `angle > ANGLE_THRESHOLD`
+  // in RADIANS. The chain a=(0,0), m=(40,h), b=(120,0) has a single intermediate
+  // m, so:
+  //   • a bend just UNDER 5° leaves m as a non-anchor → it redistributes to the
+  //     arc-length midpoint of a→m→b (≈20px away from m here) and the doc changes;
+  //   • a bend just OVER 5° anchors m → with no other intermediate there is
+  //     nothing left to redistribute, so the doc comes back by reference.
+  // The just-over case is the one that breaks if the conversion is dropped
+  // (degrees compared as radians): 5 radians ≈ 286°, so every realistic bend
+  // falls under it and m would wrongly redistribute. (Red-proof below.)
+  describe('arc-bends bend threshold (5°)', () => {
+    const bendDoc = (h: number): MapDoc =>
+      makeDoc({
+        stations: [
+          stationWithStop('a', 'L1', { x: 0, y: 0 }),
+          stationWithStop('m', 'L1', { x: 40, y: h }),
+          stationWithStop('b', 'L1', { x: 120, y: 0 }),
+        ],
+        lines: [makeLine({ id: 'L1', stations: ['a', 'm', 'b'] })],
+      });
+
+    it('redistributes the middle station when the bend is just under 5°', () => {
+      // h = 2.2 → turn angle ≈ 4.72° (< 5°): not a bend, so m is redistributed.
+      const doc = bendDoc(2.2);
+      const next = T.redistributeBetween(doc, 'a', 'b', 'arc-bends');
+      expect(next).not.toBe(doc);
+      // m lands on the arc-length midpoint of a→m→b, ~20px off its start (40, 2.2).
+      expect(next.stations.m.x).toBeCloseTo(59.98, 1);
+      expect(next.stations.m.y).toBeCloseTo(1.65, 1);
+    });
+
+    it('anchors the middle station when the bend is just over 5°', () => {
+      // h = 3.0 → turn angle ≈ 6.44° (> 5°): a real bend, so m is anchored and
+      // — being the only intermediate — nothing is redistributed (identity return).
+      const doc = bendDoc(3.0);
+      expect(T.redistributeBetween(doc, 'a', 'b', 'arc-bends')).toBe(doc);
+    });
+  });
 });
 
 describe('reorderLineStations', () => {
