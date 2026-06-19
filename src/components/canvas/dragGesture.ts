@@ -76,6 +76,11 @@ export function finishDrag(
       dragState.suppressClick = false;
     }, 0);
   } else {
+    // no suppressClick reset here on purpose: a gesture reaching this branch
+    // never moved, so trackDragMove never set the flag. cross-gesture stranding
+    // (a drag that moved then died without a pointerup) is cleared by the
+    // capture-phase self-heal on the MapCanvas svg (onPointerDownCapture), not
+    // here — finishDrag is not the safety net for that.
     state.history.cancel();
   }
   return committed;

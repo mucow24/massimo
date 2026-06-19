@@ -103,8 +103,14 @@ function routeLeg(start: Vec2, sDir: Vec2, end: Vec2, eDir: Vec2, R: number): Ro
     }
   }
 
-  // 1-bend
-  if (sIdx !== eIdx && Math.abs(sIdx - eIdx) % 8 !== 0) {
+  // 1-bend — skip the collinear cases: diff-0 (same direction) and diff-4
+  // (anti-parallel) both yield no clean single corner. `Math.abs(sIdx-eIdx) % 8`
+  // was a no-op (indices are 0..7) that didn't actually exclude the 180° case;
+  // gate on the real bend angle, matching the 2-bend gating below. This is
+  // behavior-preserving: solveOneBend already returns null for anti-parallel
+  // (det == 0), so excluding diff-4 here only avoids a dead call, no output change.
+  const bend1 = bendAngle(sIdx, eIdx);
+  if (bend1 > EPS && bend1 < Math.PI - EPS) {
     const v = solveOneBend(start, sDir, end, eDir, R);
     if (v) {
       const verts = [start, v, end];

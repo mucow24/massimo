@@ -32,4 +32,31 @@ describe('defaultIdFactory', () => {
     for (let i = 0; i < 100; i++) ids.add(f.stationId());
     expect(ids.size).toBe(100);
   });
+
+  it('produces fixed-width ids that do not depend on the call millisecond', () => {
+    // 1000 ids in a tight synchronous loop all share one Date.now ms; the old
+    // Math.random+Date.now form leaned on the random part (which could be <6
+    // chars on trailing-zero base-36 strings). UUIDs are fixed-width + unique.
+    const f = defaultIdFactory();
+    const ids: string[] = [];
+    for (let i = 0; i < 1000; i++) ids.push(f.stationId());
+    expect(new Set(ids).size).toBe(1000);
+    for (const id of ids) expect(id).toMatch(/^[0-9a-f-]{36}$/);
+  });
+
+  it('does not collide across id kinds within a single millisecond', () => {
+    // The old shared Date.now suffix meant cross-kind collision resistance
+    // rested only on the random part; UUIDs are independent per call.
+    const f = defaultIdFactory();
+    const ids = [
+      f.stationId(),
+      f.lineId(),
+      f.lineTagId(),
+      f.routeBulletId(),
+      f.transferId(),
+      f.textLabelId(),
+      f.polygonId(),
+    ];
+    expect(new Set(ids).size).toBe(7);
+  });
 });

@@ -11,11 +11,14 @@ export interface IdFactory {
 }
 
 /**
- * Default factory: Math.random + Date.now suffix. Unique enough for an
- * interactive editor; not stable across runs. Used by the live store.
+ * Default factory: `crypto.randomUUID()`. Collision-free for an interactive
+ * editor and fixed-width; not stable across runs. Used by the live store.
+ * (The previous `Math.random().slice(2,8) + Date.now()` form could emit a
+ * <6-char random part when the base-36 string had trailing zeros, and shared
+ * the same millisecond suffix across every id kind — both weakened uniqueness.)
  */
 export function defaultIdFactory(): IdFactory {
-  const uid = () => Math.random().toString(36).slice(2, 8) + Date.now().toString(36).slice(-4);
+  const uid = () => globalThis.crypto.randomUUID();
   return {
     stationId: uid,
     lineId: uid,
