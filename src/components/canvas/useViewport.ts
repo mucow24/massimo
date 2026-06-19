@@ -96,8 +96,15 @@ export function useViewport(svgRef: RefObject<SVGSVGElement | null>): ViewportAp
   const vb = viewBoxFor(viewport, size);
   const { vbX, vbY, vbW, vbH } = vb;
 
+  // getBoundingClientRect needs the live <svg>; fall back to an origin rect
+  // sized from `size` so screenToWorld/onWheel stay total if a pointer or wheel
+  // event ever fires with a detached ref (unmount mid-gesture, or a stale
+  // captured pointerup) instead of throwing on `svgRef.current!`.
+  const hostRect = () =>
+    svgRef.current?.getBoundingClientRect() ?? { left: 0, top: 0, width: size.w, height: size.h };
+
   const screenToWorld = (mx: number, my: number) => {
-    const rect = svgRef.current!.getBoundingClientRect();
+    const rect = hostRect();
     return toWorld({ x: mx, y: my }, vb, rect);
   };
 
@@ -127,7 +134,7 @@ export function useViewport(svgRef: RefObject<SVGSVGElement | null>): ViewportAp
 
   const onWheel = (e: React.WheelEvent) => {
     e.preventDefault();
-    const rect = svgRef.current!.getBoundingClientRect();
+    const rect = hostRect();
     // Imperative viewBox zoom (like pan): smooth, no per-tick re-render. Based on
     // the live viewport so rapid ticks compound; committed once the wheel settles.
     applyViewBox(computeWheelZoom(liveViewport(), size, rect, e.clientX, e.clientY, e.deltaY));

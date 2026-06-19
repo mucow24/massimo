@@ -10,7 +10,7 @@ import {
 } from './lineStroke';
 import { DEFAULT_DOT_STYLE, dotStylesEqual } from './dotStyle';
 import { pairKeyOf } from './pairKey';
-import { rotateBy, stopCenterAt } from '../geometry/orientation';
+import { DIR_8, rotateBy, stopCenterAt } from '../geometry/orientation';
 import { GRID_INTERVAL, snapPointToGrid, type GridSnap } from '../geometry/snap';
 import { polygonCentroid, edgeMidpoint } from '../geometry/polygon';
 import { measureTextLabel } from '../geometry/textMeasure';
@@ -460,6 +460,14 @@ export type RedistributeMode =
   // ctrl-drag — gives predictable, wiggle-free even spacing as B moves.
   | 'straight';
 
+// Shared per-station noise floor (world px) for redistributeBetween: one floor
+// for both the arc-mode drift-skip (ignore a proposed move smaller than this)
+// and the multi-line conflict-dedup (treat two lines' proposals for one shared
+// station as agreeing when they're within this). In arc modes the two must not
+// disagree — a move the drift-skip ignores must not then be flagged a conflict.
+// (The conflict check runs in all modes; the drift-skip is arc-only.)
+const REDISTRIBUTE_EPS = 1;
+
 export function redistributeBetween(
   doc: MapDoc,
   startId: StationId,
@@ -595,11 +603,11 @@ export function redistributeBetween(
         // alignments via floating-point error. Straight-line is exact by
         // construction — and in drag mode tiny per-frame shifts must apply
         // or stations near the anchor lag behind and wobble off the line.
-        if (mode !== 'straight' && Math.hypot(px - cur.x, py - cur.y) < 1) continue;
+        if (mode !== 'straight' && Math.hypot(px - cur.x, py - cur.y) < REDISTRIBUTE_EPS) continue;
         const stationId = ids[idx];
         const existing = proposals.get(stationId);
         if (existing) {
-          if (Math.hypot(existing.x - px, existing.y - py) > 0.5) {
+          if (Math.hypot(existing.x - px, existing.y - py) > REDISTRIBUTE_EPS) {
             conflicted.add(stationId);
           }
         } else {
@@ -933,8 +941,19 @@ export function mirrorLabel(doc: MapDoc, stationId: StationId): MapDoc {
     const dcRaw = cx - st.label.col;
     let dRow = 0;
     let dCol = 0;
-    if (Math.abs(drRaw) > Math.abs(dcRaw)) dRow = Math.sign(drRaw) || 1;
-    else dCol = Math.sign(dcRaw) || 1;
+    if (drRaw === 0 && dcRaw === 0) {
+      // Label sits exactly on the centroid (e.g. a symmetric vertical/horizontal
+      // stop pair): there is no centroid direction to mirror along, so fall back
+      // to the label's own facing direction (DIR_8[rotation]) instead of always
+      // defaulting east.
+      const read = DIR_8[st.label.rotation];
+      dRow = read.dRow;
+      dCol = read.dCol;
+    } else if (Math.abs(drRaw) > Math.abs(dcRaw)) {
+      dRow = Math.sign(drRaw) || 1;
+    } else {
+      dCol = Math.sign(dcRaw) || 1;
+    }
     // Furthest stop along (dRow, dCol).
     const proj = (r: number, c: number) => r * dRow + c * dCol;
     const maxProj = st.stops.reduce((m, cell) => Math.max(m, proj(cell.row, cell.col)), -Infinity);

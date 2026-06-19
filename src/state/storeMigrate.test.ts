@@ -295,6 +295,39 @@ describe('cancelAppendMode', () => {
     expect(useSelection.getState().uiMode.kind).toBe('idle');
   });
 
+  it('rolls back lineCounter when discarding the empty placeholder line', () => {
+    // addLine eagerly commits the placeholder AND advances lineCounter to pick
+    // its color; cancelling before any station is placed must undo both so
+    // repeated Add→Esc doesn't walk the color cycle forward.
+    useDoc.setState({
+      ...useDoc.getState(),
+      lines: { L1: makeLine({ id: 'L1' as LineId, stations: [] }) },
+      lineOrder: ['L1' as LineId],
+      lineCounter: 3, // addLine bumped it (2 → 3) for this placeholder
+    });
+    useSelection.getState().setAppending('L1' as LineId);
+
+    cancelAppendMode();
+
+    expect(useDoc.getState().lines['L1' as LineId]).toBeUndefined();
+    expect(useDoc.getState().lineCounter).toBe(2);
+  });
+
+  it('leaves lineCounter untouched when the line already has stations', () => {
+    useDoc.setState({
+      ...useDoc.getState(),
+      lines: { L1: makeLine({ id: 'L1' as LineId, stations: ['A' as StationId] }) },
+      lineOrder: ['L1' as LineId],
+      stations: { A: stationWithStop('A' as StationId, 'L1' as LineId, { x: 0, y: 0 }) },
+      lineCounter: 5,
+    });
+    useSelection.getState().setAppending('L1' as LineId);
+
+    cancelAppendMode();
+
+    expect(useDoc.getState().lineCounter).toBe(5);
+  });
+
   it('keeps a line that already has stations', () => {
     useDoc.setState({
       ...useDoc.getState(),

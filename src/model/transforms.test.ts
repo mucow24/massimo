@@ -673,6 +673,24 @@ describe('mirrorLabel', () => {
     const next = T.mirrorLabel(doc, 's1').stations.s1.label;
     expect(next).toMatchObject({ row: 0, col: 3, rotation: 4 });
   });
+
+  it('label centered on a symmetric pair mirrors along its reading axis, not east', () => {
+    // Stops at (0,-1) and (0,1) (centroid (0,0)); label at (0,0) reading
+    // vertically (rotation 2 = S). drRaw === dcRaw === 0, so the old code forced
+    // dCol=1 and stepped east through the footprint to (0,2). The fix mirrors
+    // along the label's own reading axis (south) → (1,0).
+    const doc = makeDoc({
+      stations: [
+        makeStation({
+          id: 's1',
+          stops: [makeStop('L1', { row: 0, col: -1 }), makeStop('L1', { row: 0, col: 1 })],
+          label: { row: 0, col: 0, rotation: 2, offset: 0, align: 'auto', valign: 'middle' },
+        }),
+      ],
+    });
+    const next = T.mirrorLabel(doc, 's1').stations.s1.label;
+    expect(next).toMatchObject({ row: 1, col: 0, rotation: 6 });
+  });
 });
 
 describe('setLabelOffset', () => {
@@ -2677,6 +2695,34 @@ describe('redistributeBetween', () => {
       ],
     });
     expect(T.redistributeBetween(doc, 'a', 'b', 'straight')).toBe(doc);
+  });
+
+  it('keeps a shared station when two lines agree within the noise floor (sub-pixel)', () => {
+    // s is the single intermediate on both L1 and L2 between a and b, so both
+    // lines target the same midpoint (20,0); their proposals differ only by s's
+    // two stop offsets — cell (0,0) vs (0,0.05) = 0.7px apart (STOP_SIZE 14 ×
+    // 0.05). 0.7px is below the shared REDISTRIBUTE_EPS (1px) noise floor, so it
+    // must NOT be flagged a conflict. The old code used a tighter 0.5px conflict
+    // threshold and dropped s (returning the doc unchanged by reference).
+    const doc = makeDoc({
+      stations: [
+        makeStation({ id: 'a', x: 0, y: 0, stops: [makeStop('L1'), makeStop('L2')] }),
+        makeStation({ id: 'b', x: 40, y: 0, stops: [makeStop('L1'), makeStop('L2')] }),
+        makeStation({
+          id: 's',
+          x: 5,
+          y: 5,
+          stops: [makeStop('L1', { row: 0, col: 0 }), makeStop('L2', { row: 0, col: 0.05 })],
+        }),
+      ],
+      lines: [
+        makeLine({ id: 'L1', stations: ['a', 's', 'b'] }),
+        makeLine({ id: 'L2', stations: ['a', 's', 'b'] }),
+      ],
+    });
+    const next = T.redistributeBetween(doc, 'a', 'b', 'straight');
+    expect(next).not.toBe(doc); // s was redistributed, not dropped as a conflict
+    expect(next.stations.s.x).not.toBe(5); // moved off its original position
   });
 
   it('returns the same doc when arc-mode targets are already within a pixel', () => {
