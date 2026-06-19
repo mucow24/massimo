@@ -20,6 +20,7 @@ import { HatchPatterns } from './HatchPatterns';
 import { StopMarker } from './StopMarker';
 import { StationView } from './StationView';
 import { useViewport } from './canvas/useViewport';
+import { overdrawnViewBox } from './canvas/viewportMath';
 import { useStationDrag } from './canvas/useStationDrag';
 import { useRectSelect } from './canvas/useRectSelect';
 import { Grid } from './canvas/Grid';
@@ -90,6 +91,10 @@ export function MapCanvas() {
 
   const svgRef = useRef<SVGSVGElement | null>(null);
   const view = useViewport(svgRef);
+  // Full-viewport overlays (background, grid, dim wash) are drawn at this
+  // overdrawn extent so an imperative-viewBox pan/zoom can't reveal a bare strip
+  // before the gesture commits and re-renders them. See overdrawnViewBox.
+  const overdrawn = overdrawnViewBox(view);
   const placement = usePlacementDispatch(view);
   const drag = useStationDrag(svgRef, view.viewport.zoom);
   const rectSelect = useRectSelect(svgRef, view.screenToWorld);
@@ -488,10 +493,10 @@ export function MapCanvas() {
             edge before it reprojects. */}
         <rect
           data-bg="1"
-          x={view.vbX - view.vbW}
-          y={view.vbY - view.vbH}
-          width={view.vbW * 3}
-          height={view.vbH * 3}
+          x={overdrawn.vbX}
+          y={overdrawn.vbY}
+          width={overdrawn.vbW}
+          height={overdrawn.vbH}
           fill={theme.canvasBg}
         />
 
@@ -502,10 +507,10 @@ export function MapCanvas() {
                 grid before pointer-up reprojects it. Off-screen lines are
                 clipped by the browser, so this adds no per-frame raster cost. */}
             <Grid
-              vbX={view.vbX - view.vbW}
-              vbY={view.vbY - view.vbH}
-              vbW={view.vbW * 3}
-              vbH={view.vbH * 3}
+              vbX={overdrawn.vbX}
+              vbY={overdrawn.vbY}
+              vbW={overdrawn.vbW}
+              vbH={overdrawn.vbH}
               zoom={view.viewport.zoom}
               gridSize={gridSize}
             />
@@ -763,10 +768,10 @@ export function MapCanvas() {
               uiMode={selection.uiMode}
               zoom={view.viewport.zoom}
               onStartDrag={drag.onStartDrag}
-              vbX={view.vbX}
-              vbY={view.vbY}
-              vbW={view.vbW}
-              vbH={view.vbH}
+              vbX={overdrawn.vbX}
+              vbY={overdrawn.vbY}
+              vbW={overdrawn.vbW}
+              vbH={overdrawn.vbH}
             />
           </g>
         )}

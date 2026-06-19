@@ -289,6 +289,11 @@ export interface RouteBullet {
   // Half-extent in world units (radius for circle, half-side for
   // square/diamond).
   size: number;
+  // When locked, the bullet can't be dragged, nudged, deleted, or
+  // marquee-selected, and its popover controls (other than the lock toggle)
+  // are disabled. It can still be click-selected so the user can unlock it.
+  // Optional; missing ⇒ unlocked. Mirrors Polygon.locked.
+  locked?: boolean;
 }
 
 // A free-floating background shape (river, lake, park, …). Rendered UNDER all
@@ -432,6 +437,11 @@ export interface TextLabel {
   // they are always present at runtime. 7-char hex (`#rrggbb`).
   color: string;
   darkColor: string;
+  // When locked, the label can't be dragged, nudged, deleted, or
+  // marquee-selected, and its popover controls (other than the lock toggle)
+  // are disabled. It can still be click-selected so the user can unlock it.
+  // Optional; missing ⇒ unlocked. Mirrors Polygon.locked.
+  locked?: boolean;
 }
 
 // One endpoint of a transfer: a specific dot on a station. `lineId` picks
@@ -446,8 +456,8 @@ export interface TransferEnd {
 // A transfer is a 2px black line connecting one station dot to another. The
 // endpoints are anchored to specific stops so they follow the dot when
 // stations move, lines are reordered, or stops shift on a station.
-// Cascade-deleted when either endpoint station is removed; `lineId`
-// nulled if the referenced line is removed.
+// Cascade-deleted when either endpoint's stop is removed — by deleting the
+// station, deleting the line, or removing that line's stop from the station.
 export interface Transfer {
   id: string;
   a: TransferEnd;

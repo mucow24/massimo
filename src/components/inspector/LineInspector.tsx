@@ -1,4 +1,4 @@
-import { Fragment, useMemo, useRef, useState } from 'react';
+import { Fragment, useEffect, useMemo, useRef, useState } from 'react';
 import { useDoc, useSelection } from '../../state/store';
 import { useThemeColors } from '../../state/theme';
 import type { DotShape, DotStyle, Line, LineId, LineStyle } from '../../model/types';
@@ -16,6 +16,7 @@ import { blendOver, legibleTextOn, withAlpha } from '../../util/color';
 import { InlineBulletText } from '../InlineBulletText';
 import { NumericFieldRow } from '../NumericFieldRow';
 import {
+  LINE_WIDTH_DEFAULT,
   LINE_WIDTH_MAX,
   LINE_WIDTH_MIN,
   LINE_WIDTH_SLIDER_MIN,
@@ -35,13 +36,21 @@ import {
   lineStrokeRailWidth,
   lineStrokeWidthOf,
 } from '../../model/lineStroke';
-import {
-  stationBandLayout,
-  STATION_ROW_H,
-  GAP_ROW_H,
-  PREVIEW_W_MIN,
-  PREVIEW_W_MAX,
-} from './stationBandGeometry';
+import { stationBandLayout, STATION_ROW_H, GAP_ROW_H } from './stationBandGeometry';
+
+// Clear the line editor's pointer-hover highlights (the white dot casing and
+// the segment-corridor wash). Call this whenever a hovered row/divider is
+// orphaned without an onMouseLeave/onBlur firing — the row is removed or
+// reordered out from under the cursor, or the inspector itself unmounts
+// (line deleted, a station selected, the panel collapsed). Otherwise the
+// highlight dangles on a now-stale stop/segment and re-appears on the canvas
+// if the action is undone. Reads the store imperatively so it needs no deps.
+function clearInspectorHovers() {
+  const s = useSelection.getState();
+  s.setHoveredLineStop(null);
+  s.setHoveredStation(null);
+  s.setHoveredInspectorSegment(null);
+}
 
 function DotShapePopover({
   onPick,
@@ -177,6 +186,11 @@ export function LineInspector({ id }: { id: LineId }) {
     return map;
   }, [allLines]);
 
+  // When this inspector unmounts (line deleted, a station selected, the panel
+  // collapsed, or a different line opened), any row/divider hovered at that
+  // moment never gets its onMouseLeave — so drop the hovers here.
+  useEffect(() => clearInspectorHovers, []);
+
   if (!line) return null;
 
   const cycleSegmentStyle = (fromStationId: string, toStationId: string) => {
@@ -190,6 +204,9 @@ export function LineInspector({ id }: { id: LineId }) {
     const j = idx + dir;
     if (j < 0 || j >= arr.length) return;
     [arr[idx], arr[j]] = [arr[j], arr[idx]];
+    // The reordered rows remount under the cursor without an onMouseLeave, so
+    // a row/divider hover would dangle on the old position.
+    clearInspectorHovers();
     reorderLineStations(line.id, arr);
   };
 
@@ -316,9 +333,10 @@ export function LineInspector({ id }: { id: LineId }) {
         {line.stations.length > 0 &&
           (() => {
             const N = line.stations.length;
-            // Preview the line's actual width, clamped so the band stays
-            // inside the fixed marker column.
-            const previewW = Math.min(Math.max(lineWidthOf(line), PREVIEW_W_MIN), PREVIEW_W_MAX);
+            // The preview band always paints at the default line width — the
+            // actual width would render thin lines as near-invisible hairlines
+            // here, and the band is only a style affordance, not a width gauge.
+            const previewW = LINE_WIDTH_DEFAULT;
             const {
               totalHeight: totalBandH,
               centerOf,
@@ -503,6 +521,11 @@ export function LineInspector({ id }: { id: LineId }) {
                         }}
                       >
                         <div style={{ width: MARKER_W, flexShrink: 0 }} />
+                        {st.isWaypoint && (
+                          <span className="wp-pill" title="Waypoint">
+                            WP
+                          </span>
+                        )}
                         <span
                           className="grow"
                           style={{
@@ -537,7 +560,13 @@ export function LineInspector({ id }: { id: LineId }) {
                             </button>
                             <button
                               className="btn-mini danger"
-                              onClick={() => removeStationFromLine(line.id, i)}
+                              onClick={() => {
+                                // The row (and the dividers of the segments it
+                                // bordered) unmount on removal without firing
+                                // onMouseLeave, so clear their hover highlights.
+                                clearInspectorHovers();
+                                removeStationFromLine(line.id, i);
+                              }}
                               title="Remove from line"
                               style={{ marginLeft: 6 }}
                             >
@@ -612,6 +641,21 @@ export function LineInspector({ id }: { id: LineId }) {
               </div>
             );
           })()}
+        {/* An empty line has no station band, so surface the same
+            "before the first stop" insert lozenge on its own. Clicking it
+            arms the cursor (-1) so map clicks add the first stop — identical
+            to the populated-line flow. */}
+        {isAppending && line.stations.length === 0 && (
+          <div style={{ display: 'flex', height: INSERT_ROW_H }}>
+            <div style={{ width: MARKER_W, flexShrink: 0 }} />
+            <InsertZone
+              isActive={appendInsertAfterIndex === -1}
+              color={line.color}
+              height={INSERT_ROW_H}
+              onClick={() => selection.setInsertAfterIndex(-1)}
+            />
+          </div>
+        )}
       </div>
     </section>
   );

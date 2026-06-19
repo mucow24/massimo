@@ -22,11 +22,21 @@ import { _clearTextMeasureCache } from './geometry/textMeasure';
 import { useViewportStore } from './state/viewportStore';
 import { redo, undo } from './state/history';
 
-// Selected polygons minus locked ones — locked polygons resist both Delete and
+// Selected items minus locked ones — locked items resist both Delete and
 // arrow-nudge, so both keyboard paths filter the same way.
 function unlockedSelectedPolygonIds(): string[] {
   const doc = useDoc.getState();
   return useSelection.getState().selectedPolygonIds.filter((id) => !doc.polygons[id]?.locked);
+}
+function unlockedSelectedRouteBulletIds(): string[] {
+  const doc = useDoc.getState();
+  return useSelection
+    .getState()
+    .selectedRouteBulletIds.filter((id) => !doc.routeBullets[id]?.locked);
+}
+function unlockedSelectedLabelIds(): string[] {
+  const doc = useDoc.getState();
+  return useSelection.getState().selectedLabelIds.filter((id) => !doc.textLabels[id]?.locked);
 }
 
 export default function App() {
@@ -123,9 +133,9 @@ export default function App() {
         // priority over the single-element delete paths below; one history
         // entry covers every removed item so a single Ctrl-Z reverts the lot.
         const stationIds = sel.selectedStationIds;
-        const bulletIds = sel.selectedRouteBulletIds;
-        const labelIds = sel.selectedLabelIds;
-        // Locked polygons are protected from deletion.
+        // Locked bullets, labels, and polygons are all protected from deletion.
+        const bulletIds = unlockedSelectedRouteBulletIds();
+        const labelIds = unlockedSelectedLabelIds();
         const polygonIds = unlockedSelectedPolygonIds();
         if (stationIds.length + bulletIds.length + labelIds.length + polygonIds.length > 0) {
           e.preventDefault();
@@ -190,9 +200,9 @@ export default function App() {
           return;
         }
         const stationIds = sel.selectedStationIds;
-        const bulletIds = sel.selectedRouteBulletIds;
-        const labelIds = sel.selectedLabelIds;
-        // Locked polygons don't move.
+        // Locked bullets, labels, and polygons don't move.
+        const bulletIds = unlockedSelectedRouteBulletIds();
+        const labelIds = unlockedSelectedLabelIds();
         const polygonIds = unlockedSelectedPolygonIds();
         if (stationIds.length + bulletIds.length + labelIds.length + polygonIds.length > 0) {
           e.preventDefault();

@@ -74,6 +74,26 @@ describe('RouteBulletPopover — line / shape / delete', () => {
     expect(useDoc.getState().routeBullets['b1']).toBeUndefined();
     expect(onClose).toHaveBeenCalledTimes(1);
   });
+
+  it('the lock toggle flips locked and the label updates', () => {
+    renderPopover(bulletFixture());
+    fireEvent.click(screen.getByRole('button', { name: 'Lock route bullet' }));
+    expect(useDoc.getState().routeBullets['b1'].locked).toBe(true);
+  });
+
+  it('when locked, editing controls are disabled but the lock toggle stays active', () => {
+    renderPopover(bulletFixture({ locked: true }));
+    expect(screen.getByRole('combobox')).toBeDisabled();
+    expect(screen.getByLabelText('square')).toBeDisabled();
+    expect(screen.getByRole('slider')).toBeDisabled();
+    expect(screen.getByRole('spinbutton')).toBeDisabled();
+    expect(screen.getByRole('button', { name: 'Delete' })).toBeDisabled();
+    // The unlock control remains usable.
+    const unlock = screen.getByRole('button', { name: 'Unlock route bullet' });
+    expect(unlock).toBeEnabled();
+    fireEvent.click(unlock);
+    expect(useDoc.getState().routeBullets['b1'].locked).toBe(false);
+  });
 });
 
 // Size control was unified onto the useNumericField / useFieldHistory idiom in

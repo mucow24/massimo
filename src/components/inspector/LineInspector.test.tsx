@@ -1,5 +1,5 @@
 import { describe, it, expect, beforeEach } from 'vitest';
-import { fireEvent, render, screen } from '@testing-library/react';
+import { act, fireEvent, render, screen } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { LineInspector } from './LineInspector';
 import { useDoc, useSelection } from '../../state/store';
@@ -267,19 +267,21 @@ describe('<LineInspector /> — width control', () => {
     expect('width' in useDoc.getState().lines.L1).toBe(false);
   });
 
-  it('the stop-band preview renders at the line width, clamped to fit its column', () => {
+  it('the stop-band preview always renders at the default width, ignoring the line width', () => {
+    // A wide line must not make the preview band thick...
     seed(28);
     const wide = render(<LineInspector id="L1" />);
     const wideBand = wide.container.querySelectorAll('svg line');
     expect(wideBand.length).toBeGreaterThan(0);
-    for (const l of wideBand) expect(l.getAttribute('stroke-width')).toBe('20'); // clamped
+    for (const l of wideBand) expect(l.getAttribute('stroke-width')).toBe('14');
     wide.unmount();
 
-    seed();
-    const def = render(<LineInspector id="L1" />);
-    for (const l of def.container.querySelectorAll('svg line')) {
-      expect(l.getAttribute('stroke-width')).toBe('14');
-    }
+    // ...nor a thin line make it a hairline.
+    seed(2);
+    const thin = render(<LineInspector id="L1" />);
+    const thinBand = thin.container.querySelectorAll('svg line');
+    expect(thinBand.length).toBeGreaterThan(0);
+    for (const l of thinBand) expect(l.getAttribute('stroke-width')).toBe('14');
   });
 });
 
@@ -480,5 +482,217 @@ describe('<LineInspector /> — stroke controls', () => {
     seed();
     const { container } = render(<LineInspector id="L1" />);
     expect(container.querySelectorAll('[data-preview-casing]').length).toBe(0);
+  });
+});
+
+describe('<LineInspector /> — waypoint pill', () => {
+  beforeEach(() => {
+    localStorage.clear();
+    useDoc.setState({ ...DEFAULT_DOC });
+    useSelection.setState(SELECTION_BLANK);
+  });
+
+  const seed = () => {
+    useDoc.setState({
+      ...DEFAULT_DOC,
+      ...makeDoc({
+        stations: [
+          makeStation({ id: 's1', name: 'Alpha', stops: [makeStop('L1')] }),
+          makeStation({ id: 's2', name: 'Beta', isWaypoint: true, stops: [makeStop('L1')] }),
+        ],
+        lines: [makeLine({ id: 'L1', stations: ['s1', 's2'] })],
+      }),
+    });
+  };
+
+  it('renders a WP pill only on the waypoint stop, before its name', () => {
+    seed();
+    const { container } = render(<LineInspector id="L1" />);
+
+    // Exactly one pill — for the waypoint stop only.
+    const pills = container.querySelectorAll('.wp-pill');
+    expect(pills.length).toBe(1);
+
+    // The pill lives in Beta's row, not Alpha's.
+    const betaRow = screen.getByText('Beta').closest('.list-row');
+    const alphaRow = screen.getByText('Alpha').closest('.list-row');
+    const pill = betaRow?.querySelector('.wp-pill');
+    expect(pill).not.toBeNull();
+    expect(alphaRow?.querySelector('.wp-pill')).toBeNull();
+
+    // The pill precedes the name within the row.
+    // DOCUMENT_POSITION_FOLLOWING = 4: the argument follows the receiver.
+    expect(pill!.compareDocumentPosition(screen.getByText('Beta')) & 4).toBe(4);
+  });
+});
+
+describe('<LineInspector /> — empty line stop-adding', () => {
+  beforeEach(() => {
+    localStorage.clear();
+    useDoc.setState({ ...DEFAULT_DOC });
+    useSelection.setState(SELECTION_BLANK);
+    useSelection.getState().setUiMode({ kind: 'idle' });
+  });
+
+  const seedEmptyLine = () => {
+    useDoc.setState({
+      ...DEFAULT_DOC,
+      ...makeDoc({ stations: [], lines: [makeLine({ id: 'L1', stations: [] })] }),
+    });
+  };
+
+  it('shows no insert "+" for an empty line when not editing', () => {
+    seedEmptyLine();
+    render(<LineInspector id="L1" />);
+    expect(screen.queryByRole('button', { name: '+' })).toBeNull();
+  });
+
+  it('reveals a single insert "+" while editing an empty line, and clicking it arms the cursor before the first stop', async () => {
+    seedEmptyLine();
+    useSelection.getState().setAppending('L1');
+    useSelection.getState().setInsertAfterIndex(null);
+    const user = userEvent.setup();
+    render(<LineInspector id="L1" />);
+
+    const plus = screen.getByRole('button', { name: '+' });
+    await user.click(plus);
+
+    const ui = useSelection.getState().uiMode;
+    expect(ui.kind).toBe('appending-to-line');
+    if (ui.kind === 'appending-to-line') expect(ui.insertAfterIndex).toBe(-1);
+  });
+});
+
+describe('<LineInspector /> — removing a station clears its dangling hover highlights', () => {
+  beforeEach(() => {
+    localStorage.clear();
+    useDoc.setState({ ...DEFAULT_DOC });
+    useSelection.setState(SELECTION_BLANK);
+    useSelection.getState().setUiMode({ kind: 'idle' });
+    useSelection.getState().setHoveredInspectorSegment(null);
+    useDoc.temporal.getState().clear();
+  });
+
+  const seedTwoStationLine = () => {
+    useDoc.setState({
+      ...DEFAULT_DOC,
+      ...makeDoc({
+        stations: [
+          makeStation({ id: 's1', stops: [makeStop('L1')] }),
+          makeStation({ id: 's2', stops: [makeStop('L1')] }),
+        ],
+        lines: [makeLine({ id: 'L1', stations: ['s1', 's2'] })],
+      }),
+    });
+  };
+
+  const seedThreeStationLine = () => {
+    useDoc.setState({
+      ...DEFAULT_DOC,
+      ...makeDoc({
+        stations: [
+          makeStation({ id: 's1', stops: [makeStop('L1')] }),
+          makeStation({ id: 's2', stops: [makeStop('L1')] }),
+          makeStation({ id: 's3', stops: [makeStop('L1')] }),
+        ],
+        lines: [makeLine({ id: 'L1', stations: ['s1', 's2', 's3'] })],
+      }),
+    });
+  };
+
+  it('clicking "×" on a hovered row clears hoveredLineStop / hoveredStation so undo cannot resurrect a phantom dot halo', () => {
+    seedTwoStationLine();
+    // Appending mode reveals the per-row remove "×" buttons.
+    useSelection.getState().setAppending('L1');
+    render(<LineInspector id="L1" />);
+
+    const removeButtons = screen.getAllByTitle('Remove from line');
+    expect(removeButtons).toHaveLength(2);
+    const s2Remove = removeButtons[1];
+    const s2Row = s2Remove.closest('.list-row') as HTMLElement;
+
+    // The user hovers the row to reach its "×" — drives the real hover state
+    // that paints the white casing on the (s2, L1) dot.
+    fireEvent.mouseEnter(s2Row);
+    expect(useSelection.getState().hoveredLineStop).toEqual({ lineId: 'L1', stationId: 's2' });
+    expect(useSelection.getState().hoveredStationId).toBe('s2');
+
+    // Removing the row unmounts it WITHOUT firing onMouseLeave.
+    fireEvent.click(s2Remove);
+    expect(useDoc.getState().lines.L1.stations).toEqual(['s1']);
+
+    // The hover must be cleared, or undo (which restores the stop) re-renders
+    // the stale white halo on the dot.
+    expect(useSelection.getState().hoveredLineStop).toBeNull();
+    expect(useSelection.getState().hoveredStationId).toBeNull();
+  });
+
+  it('clicking "×" clears a hovered segment divider whose endpoint is removed, so its corridor wash cannot survive undo', () => {
+    seedThreeStationLine();
+    // Appending mode reveals the "×" buttons.
+    useSelection.getState().setAppending('L1');
+    const { container } = render(<LineInspector id="L1" />);
+
+    // Hover the s1|s2 segment divider, exactly as the user would.
+    const dividers = container.querySelectorAll('[data-segment-style-divider]');
+    expect(dividers).toHaveLength(2);
+    fireEvent.mouseEnter(dividers[0]);
+    expect(useSelection.getState().hoveredInspectorSegment).toEqual({
+      lineId: 'L1',
+      fromStationId: 's1',
+      toStationId: 's2',
+    });
+
+    // Remove s2 — an endpoint of the hovered segment. Its divider unmounts
+    // WITHOUT firing onMouseLeave.
+    const removeButtons = screen.getAllByTitle('Remove from line');
+    fireEvent.click(removeButtons[1]);
+    expect(useDoc.getState().lines.L1.stations).toEqual(['s1', 's3']);
+
+    expect(useSelection.getState().hoveredInspectorSegment).toBeNull();
+  });
+
+  it('reordering a hovered row (move ↓) clears its hover so the highlight does not dangle on the moved dot', () => {
+    seedThreeStationLine();
+    // Appending mode reveals the move "↑/↓" buttons.
+    useSelection.getState().setAppending('L1');
+    render(<LineInspector id="L1" />);
+
+    const downButtons = screen.getAllByTitle('Move down');
+    const s2Down = downButtons[1];
+    const s2Row = s2Down.closest('.list-row') as HTMLElement;
+
+    fireEvent.mouseEnter(s2Row);
+    expect(useSelection.getState().hoveredLineStop).toEqual({ lineId: 'L1', stationId: 's2' });
+
+    // Moving s2 down remounts the rows under the cursor (no onMouseLeave).
+    fireEvent.click(s2Down);
+    expect(useDoc.getState().lines.L1.stations).toEqual(['s1', 's3', 's2']);
+
+    expect(useSelection.getState().hoveredLineStop).toBeNull();
+    expect(useSelection.getState().hoveredStationId).toBeNull();
+  });
+
+  it('unmounting the inspector (line deleted, a station selected, panel collapsed) clears lingering hovers', () => {
+    seedTwoStationLine();
+    const { unmount } = render(<LineInspector id="L1" />);
+
+    // A row + divider hover left set at the moment the inspector goes away —
+    // none of their onMouseLeave/onBlur handlers will ever fire.
+    act(() => {
+      useSelection.getState().setHoveredLineStop({ lineId: 'L1', stationId: 's2' });
+      useSelection.getState().setHoveredStation('s2');
+      useSelection.getState().setHoveredInspectorSegment({
+        lineId: 'L1',
+        fromStationId: 's1',
+        toStationId: 's2',
+      });
+    });
+
+    unmount();
+
+    expect(useSelection.getState().hoveredLineStop).toBeNull();
+    expect(useSelection.getState().hoveredStationId).toBeNull();
+    expect(useSelection.getState().hoveredInspectorSegment).toBeNull();
   });
 });

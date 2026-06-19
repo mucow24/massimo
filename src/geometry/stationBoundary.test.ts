@@ -247,6 +247,15 @@ describe('routeBulletsForRect', () => {
     const rect = { x0: 50, y0: 50, x1: -50, y1: -50 };
     expect(routeBulletsForRect({ b }, rect)).toEqual(['b']);
   });
+
+  it('excludes locked bullets from marquee selection', () => {
+    const bullets = {
+      a: { ...makeBullet('a', 0, 0, 12), locked: true },
+      b: makeBullet('b', 0, 0, 12),
+    };
+    const rect = { x0: -50, y0: -50, x1: 50, y1: 50 };
+    expect(routeBulletsForRect(bullets, rect)).toEqual(['b']);
+  });
 });
 
 describe('textLabelHitPolygon', () => {
@@ -326,6 +335,15 @@ describe('textLabelsForRect', () => {
     const labels = { a: makeTextLabel({ id: 'a', x: 0, y: 0, text: '', fontSize: 16 }) };
     const rect = { x0: -2, y0: -2, x1: 2, y1: 2 };
     expect(textLabelsForRect(labels, rect)).toEqual(['a']);
+  });
+
+  it('excludes locked labels from marquee selection', () => {
+    const labels = {
+      a: makeTextLabel({ id: 'a', x: 0, y: 0, text: 'Hello', locked: true }),
+      b: makeTextLabel({ id: 'b', x: 0, y: 0, text: 'Hello' }),
+    };
+    const rect = { x0: -50, y0: -50, x1: 50, y1: 50 };
+    expect(textLabelsForRect(labels, rect)).toEqual(['b']);
   });
 });
 

@@ -109,7 +109,9 @@ function parseRouteBulletData(raw: unknown): Omit<RouteBullet, 'id'> | null {
   if (d.lineId !== null && typeof d.lineId !== 'string') return null;
   if (typeof d.shape !== 'string') return null;
   if (!VALID_SHAPES.includes(d.shape as RouteBulletShape)) return null;
-  return {
+  // Optional: reject a present-but-wrong type; leave an absent flag absent.
+  if (d.locked !== undefined && typeof d.locked !== 'boolean') return null;
+  const out: Omit<RouteBullet, 'id'> = {
     x: d.x,
     y: d.y,
     rotation: d.rotation as Rotation,
@@ -117,6 +119,8 @@ function parseRouteBulletData(raw: unknown): Omit<RouteBullet, 'id'> | null {
     shape: d.shape as RouteBulletShape,
     size: d.size,
   };
+  if (d.locked !== undefined) out.locked = d.locked as boolean;
+  return out;
 }
 
 function parseTextLabelData(raw: unknown): Omit<TextLabel, 'id'> | null {
@@ -134,7 +138,9 @@ function parseTextLabelData(raw: unknown): Omit<TextLabel, 'id'> | null {
   if (typeof d.align !== 'string' || !VALID_ALIGNS.includes(d.align as TextLabelAlign)) return null;
   if (typeof d.color !== 'string' || !HEX7.test(d.color)) return null;
   if (typeof d.darkColor !== 'string' || !HEX7.test(d.darkColor)) return null;
-  return {
+  // Optional: reject a present-but-wrong type; leave an absent flag absent.
+  if (d.locked !== undefined && typeof d.locked !== 'boolean') return null;
+  const out: Omit<TextLabel, 'id'> = {
     x: d.x,
     y: d.y,
     rotation: d.rotation as Rotation,
@@ -146,6 +152,8 @@ function parseTextLabelData(raw: unknown): Omit<TextLabel, 'id'> | null {
     color: d.color,
     darkColor: d.darkColor,
   };
+  if (d.locked !== undefined) out.locked = d.locked as boolean;
+  return out;
 }
 
 function parsePolygonData(raw: unknown): Omit<Polygon, 'id'> | null {
