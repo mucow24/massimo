@@ -612,6 +612,21 @@ export function LineInspector({ id }: { id: LineId }) {
               </div>
             );
           })()}
+        {/* An empty line has no station band, so surface the same
+            "before the first stop" insert lozenge on its own. Clicking it
+            arms the cursor (-1) so map clicks add the first stop — identical
+            to the populated-line flow. */}
+        {isAppending && line.stations.length === 0 && (
+          <div style={{ display: 'flex', height: INSERT_ROW_H }}>
+            <div style={{ width: MARKER_W, flexShrink: 0 }} />
+            <InsertZone
+              isActive={appendInsertAfterIndex === -1}
+              color={line.color}
+              height={INSERT_ROW_H}
+              onClick={() => selection.setInsertAfterIndex(-1)}
+            />
+          </div>
+        )}
       </div>
     </section>
   );
