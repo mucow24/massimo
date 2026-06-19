@@ -289,6 +289,11 @@ export interface RouteBullet {
   // Half-extent in world units (radius for circle, half-side for
   // square/diamond).
   size: number;
+  // When locked, the bullet can't be dragged, nudged, deleted, or
+  // marquee-selected, and its popover controls (other than the lock toggle)
+  // are disabled. It can still be click-selected so the user can unlock it.
+  // Optional; missing ⇒ unlocked. Mirrors Polygon.locked.
+  locked?: boolean;
 }
 
 // A free-floating background shape (river, lake, park, …). Rendered UNDER all
@@ -432,6 +437,11 @@ export interface TextLabel {
   // they are always present at runtime. 7-char hex (`#rrggbb`).
   color: string;
   darkColor: string;
+  // When locked, the label can't be dragged, nudged, deleted, or
+  // marquee-selected, and its popover controls (other than the lock toggle)
+  // are disabled. It can still be click-selected so the user can unlock it.
+  // Optional; missing ⇒ unlocked. Mirrors Polygon.locked.
+  locked?: boolean;
 }
 
 // One endpoint of a transfer: a specific dot on a station. `lineId` picks

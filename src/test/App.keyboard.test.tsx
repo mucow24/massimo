@@ -6,6 +6,8 @@ import { useDoc, useSelection } from '../state/store';
 import { historyDepth, redoDepth } from '../state/history';
 import { DEFAULT_DOC } from '../model/transforms';
 import { readClipboard, writeClipboard, type ClipPayload } from '../model/clipboard';
+import { makeTextLabel } from '../test/fixtures';
+import type { RouteBullet } from '../model/types';
 
 beforeEach(() => {
   localStorage.clear();
@@ -407,5 +409,62 @@ describe('App keyboard shortcuts: copy / paste / duplicate', () => {
     } finally {
       document.body.removeChild(input);
     }
+  });
+});
+
+describe('App keyboard: locked bullets and labels resist Delete and arrow-nudge', () => {
+  const bullet = (over: Partial<RouteBullet> & { id: string }): RouteBullet => ({
+    x: 0,
+    y: 0,
+    rotation: 0,
+    lineId: null,
+    shape: 'circle',
+    size: 8,
+    ...over,
+  });
+
+  // Seed two bullets + two labels (one of each locked), all four selected.
+  function seedMixed() {
+    useDoc.setState({
+      ...useDoc.getState(),
+      routeBullets: {
+        lockB: bullet({ id: 'lockB', x: 0, y: 0, locked: true }),
+        freeB: bullet({ id: 'freeB', x: 100, y: 0 }),
+      },
+      textLabels: {
+        lockL: makeTextLabel({ id: 'lockL', x: 0, y: 0, locked: true }),
+        freeL: makeTextLabel({ id: 'freeL', x: 100, y: 0 }),
+      },
+    });
+    useSelection.setState({
+      ...useSelection.getState(),
+      selectedStationIds: [],
+      selectedPolygonIds: [],
+      selectedVertex: null,
+      selectedRouteBulletIds: ['lockB', 'freeB'],
+      selectedLabelIds: ['lockL', 'freeL'],
+    });
+  }
+
+  it('Delete removes the unlocked bullet/label but keeps the locked ones', () => {
+    render(<App />);
+    seedMixed();
+    fireEvent.keyDown(window, { key: 'Delete' });
+    const doc = useDoc.getState();
+    expect(doc.routeBullets['freeB']).toBeUndefined();
+    expect(doc.textLabels['freeL']).toBeUndefined();
+    expect(doc.routeBullets['lockB']).toBeDefined();
+    expect(doc.textLabels['lockL']).toBeDefined();
+  });
+
+  it('Arrow nudge moves the unlocked bullet/label but not the locked ones', () => {
+    render(<App />);
+    seedMixed();
+    fireEvent.keyDown(window, { key: 'ArrowRight' });
+    const doc = useDoc.getState();
+    expect(doc.routeBullets['freeB'].x).toBe(101);
+    expect(doc.textLabels['freeL'].x).toBe(101);
+    expect(doc.routeBullets['lockB'].x).toBe(0);
+    expect(doc.textLabels['lockL'].x).toBe(0);
   });
 });

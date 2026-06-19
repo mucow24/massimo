@@ -1547,7 +1547,7 @@ export function rotateRouteBullet(doc: MapDoc, id: string): MapDoc {
 export function updateRouteBullet(
   doc: MapDoc,
   id: string,
-  patch: Partial<Pick<RouteBullet, 'lineId' | 'shape' | 'size'>>,
+  patch: Partial<Pick<RouteBullet, 'lineId' | 'shape' | 'size' | 'locked'>>,
 ): MapDoc {
   return updateRecord(doc, 'routeBullets', id, (cur) => {
     // Clamp size so callers (slider, spinbutton, paste, duplicate) can't push

@@ -45,10 +45,12 @@ export function RouteBulletPopover({ bullet, world, view, onClose }: Props) {
 
   const orderedLines = lineOrder.map((id) => lines[id]).filter((l) => l);
 
+  const locked = bullet.locked ?? false;
   const onShape = (shape: RouteBulletShape) => updateRouteBullet(bullet.id, { shape });
   const onLine = (lineId: string) =>
     updateRouteBullet(bullet.id, { lineId: lineId === '' ? null : lineId });
   const onSize = (size: number) => updateRouteBullet(bullet.id, { size });
+  const onToggleLock = () => updateRouteBullet(bullet.id, { locked: !locked });
   // Standard numeric-field-with-history idiom (matches the other popovers): one
   // undo entry per slider drag / spinbutton edit instead of ~one per frame.
   const size = useNumericField(
@@ -81,7 +83,11 @@ export function RouteBulletPopover({ bullet, world, view, onClose }: Props) {
       <div className="body">
         <div className="row">
           <label>Line</label>
-          <select value={bullet.lineId ?? ''} onChange={(e) => onLine(e.target.value)}>
+          <select
+            value={bullet.lineId ?? ''}
+            disabled={locked}
+            onChange={(e) => onLine(e.target.value)}
+          >
             <option value="">— none —</option>
             {orderedLines.map((ln) => (
               <option key={ln.id} value={ln.id}>
@@ -97,6 +103,7 @@ export function RouteBulletPopover({ bullet, world, view, onClose }: Props) {
               <button
                 key={s}
                 className={'shape-btn' + (bullet.shape === s ? ' active' : '')}
+                disabled={locked}
                 onClick={() => onShape(s)}
                 title={s}
                 aria-label={s}
@@ -114,6 +121,7 @@ export function RouteBulletPopover({ bullet, world, view, onClose }: Props) {
             max={ROUTE_BULLET_SIZE_MAX}
             step={1}
             value={bullet.size}
+            disabled={locked}
             onChange={(e) => onSize(Number(e.target.value))}
             onMouseDown={size.history.onFocus}
             onMouseUp={size.history.onBlur}
@@ -126,6 +134,7 @@ export function RouteBulletPopover({ bullet, world, view, onClose }: Props) {
             min={ROUTE_BULLET_SIZE_MIN}
             step={1}
             value={size.text}
+            disabled={locked}
             onChange={size.onNumberChange}
             onWheel={size.onNumberWheel}
             onFocus={size.onNumberFocus}
@@ -133,7 +142,17 @@ export function RouteBulletPopover({ bullet, world, view, onClose }: Props) {
           />
         </div>
         <div className="footer">
-          <button className="delete-btn" onClick={onDelete}>
+          <button
+            type="button"
+            className={'lock-btn' + (locked ? ' active' : '')}
+            aria-label={locked ? 'Unlock route bullet' : 'Lock route bullet'}
+            aria-pressed={locked}
+            title={locked ? 'Unlock' : 'Lock (prevents editing)'}
+            onClick={onToggleLock}
+          >
+            {locked ? '🔒 Locked' : '🔓 Lock'}
+          </button>
+          <button className="delete-btn" onClick={onDelete} disabled={locked}>
             Delete
           </button>
         </div>
