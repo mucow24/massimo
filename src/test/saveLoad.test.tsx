@@ -9,6 +9,28 @@ beforeEach(() => {
   useDoc.temporal.getState().clear();
 });
 
+// A persisted file's canonical envelope wrapping a *sparse* doc (the shape an
+// older save had before a given field existed). `docOverrides` fills in the
+// non-empty parts a specific legacy case needs (e.g. some `lines`). Centralized
+// so adding a persisted field is a one-place change, not a sweep over every
+// legacy-parse test's hand-copied object.
+function legacyEnvelope(docOverrides: Record<string, unknown> = {}): string {
+  return JSON.stringify({
+    format: SCHEMA_FORMAT,
+    doc: {
+      stations: {},
+      lines: {},
+      lineOrder: [],
+      curveRadius: 24,
+      lineCounter: 0,
+      lineTags: {},
+      routeBullets: {},
+      transfers: {},
+      ...docOverrides,
+    },
+  });
+}
+
 describe('save/load round-trip', () => {
   it('serialized doc parses back to the same data', () => {
     const fixture = makeDoc({
@@ -70,19 +92,7 @@ describe('save/load round-trip', () => {
     // A file saved before label settings existed: only the canonical envelope
     // and a sparse doc. Parser should merge with DEFAULT_DOC so missing
     // fields fall back to defaults.
-    const legacy = JSON.stringify({
-      format: SCHEMA_FORMAT,
-      doc: {
-        stations: {},
-        lines: {},
-        lineOrder: [],
-        curveRadius: 24,
-        lineCounter: 0,
-        lineTags: {},
-        routeBullets: {},
-        transfers: {},
-      },
-    });
+    const legacy = legacyEnvelope();
     const result = parse(legacy);
     expect(result.ok).toBe(true);
     if (result.ok) {
@@ -171,19 +181,7 @@ describe('save/load round-trip', () => {
   it('legacy files (no transfer styling fields) parse with DEFAULT_DOC values', () => {
     // Older saves predate the transfer styling options. parse() merges over
     // DEFAULT_DOC, so the new fields get the defaults rather than `undefined`.
-    const legacy = JSON.stringify({
-      format: SCHEMA_FORMAT,
-      doc: {
-        stations: {},
-        lines: {},
-        lineOrder: [],
-        curveRadius: 24,
-        lineCounter: 0,
-        lineTags: {},
-        routeBullets: {},
-        transfers: {},
-      },
-    });
+    const legacy = legacyEnvelope();
     const result = parse(legacy);
     expect(result.ok).toBe(true);
     if (result.ok) {
@@ -195,19 +193,7 @@ describe('save/load round-trip', () => {
   });
 
   it('legacy files (no activePalettes) parse with [mta] from DEFAULT_DOC', () => {
-    const legacy = JSON.stringify({
-      format: SCHEMA_FORMAT,
-      doc: {
-        stations: {},
-        lines: {},
-        lineOrder: [],
-        curveRadius: 24,
-        lineCounter: 0,
-        lineTags: {},
-        routeBullets: {},
-        transfers: {},
-      },
-    });
+    const legacy = legacyEnvelope();
     const result = parse(legacy);
     expect(result.ok).toBe(true);
     if (result.ok) {
@@ -228,21 +214,12 @@ describe('save/load round-trip', () => {
   });
 
   it('backfills line.name for legacy files (no name field) with "${service} line"', () => {
-    const legacy = JSON.stringify({
-      format: SCHEMA_FORMAT,
-      doc: {
-        stations: {},
-        lines: {
-          L1: { id: 'L1', service: 'A', color: '#0039A6', stations: [] },
-          L2: { id: 'L2', service: 'M15', color: '#FF6319', stations: [] },
-        },
-        lineOrder: ['L1', 'L2'],
-        curveRadius: 24,
-        lineCounter: 0,
-        lineTags: {},
-        routeBullets: {},
-        transfers: {},
+    const legacy = legacyEnvelope({
+      lines: {
+        L1: { id: 'L1', service: 'A', color: '#0039A6', stations: [] },
+        L2: { id: 'L2', service: 'M15', color: '#FF6319', stations: [] },
       },
+      lineOrder: ['L1', 'L2'],
     });
     const result = parse(legacy);
     expect(result.ok).toBe(true);
@@ -253,26 +230,17 @@ describe('save/load round-trip', () => {
   });
 
   it('preserves a custom line.name on load (does not overwrite)', () => {
-    const fixture = JSON.stringify({
-      format: SCHEMA_FORMAT,
-      doc: {
-        stations: {},
-        lines: {
-          L1: {
-            id: 'L1',
-            service: 'A',
-            name: 'Eighth Avenue Express',
-            color: '#0039A6',
-            stations: [],
-          },
+    const fixture = legacyEnvelope({
+      lines: {
+        L1: {
+          id: 'L1',
+          service: 'A',
+          name: 'Eighth Avenue Express',
+          color: '#0039A6',
+          stations: [],
         },
-        lineOrder: ['L1'],
-        curveRadius: 24,
-        lineCounter: 0,
-        lineTags: {},
-        routeBullets: {},
-        transfers: {},
       },
+      lineOrder: ['L1'],
     });
     const result = parse(fixture);
     expect(result.ok).toBe(true);
