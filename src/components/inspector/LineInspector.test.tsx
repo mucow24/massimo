@@ -391,3 +391,40 @@ describe('<LineInspector /> — stroke controls', () => {
     expect(container.querySelectorAll('[data-preview-casing]').length).toBe(0);
   });
 });
+
+describe('<LineInspector /> — empty line stop-adding', () => {
+  beforeEach(() => {
+    localStorage.clear();
+    useDoc.setState({ ...DEFAULT_DOC });
+    useSelection.setState(SELECTION_BLANK);
+    useSelection.getState().setUiMode({ kind: 'idle' });
+  });
+
+  const seedEmptyLine = () => {
+    useDoc.setState({
+      ...DEFAULT_DOC,
+      ...makeDoc({ stations: [], lines: [makeLine({ id: 'L1', stations: [] })] }),
+    });
+  };
+
+  it('shows no insert "+" for an empty line when not editing', () => {
+    seedEmptyLine();
+    render(<LineInspector id="L1" />);
+    expect(screen.queryByRole('button', { name: '+' })).toBeNull();
+  });
+
+  it('reveals a single insert "+" while editing an empty line, and clicking it arms the cursor before the first stop', async () => {
+    seedEmptyLine();
+    useSelection.getState().setAppending('L1');
+    useSelection.getState().setInsertAfterIndex(null);
+    const user = userEvent.setup();
+    render(<LineInspector id="L1" />);
+
+    const plus = screen.getByRole('button', { name: '+' });
+    await user.click(plus);
+
+    const ui = useSelection.getState().uiMode;
+    expect(ui.kind).toBe('appending-to-line');
+    if (ui.kind === 'appending-to-line') expect(ui.insertAfterIndex).toBe(-1);
+  });
+});
