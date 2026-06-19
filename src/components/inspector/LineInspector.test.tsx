@@ -174,19 +174,21 @@ describe('<LineInspector /> — width control', () => {
     expect('width' in useDoc.getState().lines.L1).toBe(false);
   });
 
-  it('the stop-band preview renders at the line width, clamped to fit its column', () => {
+  it('the stop-band preview always renders at the default width, ignoring the line width', () => {
+    // A wide line must not make the preview band thick...
     seed(28);
     const wide = render(<LineInspector id="L1" />);
     const wideBand = wide.container.querySelectorAll('svg line');
     expect(wideBand.length).toBeGreaterThan(0);
-    for (const l of wideBand) expect(l.getAttribute('stroke-width')).toBe('20'); // clamped
+    for (const l of wideBand) expect(l.getAttribute('stroke-width')).toBe('14');
     wide.unmount();
 
-    seed();
-    const def = render(<LineInspector id="L1" />);
-    for (const l of def.container.querySelectorAll('svg line')) {
-      expect(l.getAttribute('stroke-width')).toBe('14');
-    }
+    // ...nor a thin line make it a hairline.
+    seed(2);
+    const thin = render(<LineInspector id="L1" />);
+    const thinBand = thin.container.querySelectorAll('svg line');
+    expect(thinBand.length).toBeGreaterThan(0);
+    for (const l of thinBand) expect(l.getAttribute('stroke-width')).toBe('14');
   });
 });
 
