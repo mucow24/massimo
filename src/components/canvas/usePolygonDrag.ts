@@ -125,13 +125,12 @@ export function usePolygonDrag(
     const doc = useDoc.getState();
     const poly = doc.polygons[id];
     if (!poly) return;
-    // A locked polygon can't be dragged. Swallow the pointerdown so the canvas
-    // doesn't pan/rect-select, but leave the click to select it (so the popover
-    // — and its unlock toggle — stays reachable).
-    if (poly.locked) {
-      e.stopPropagation();
-      return;
-    }
+    // A locked polygon can't be dragged. Don't stop propagation: let the event
+    // bubble to the canvas so a drag starting on it begins a marquee-select
+    // (the activation gate treats locked elements as background). A plain
+    // no-move click still falls through to select it, so the popover — and its
+    // unlock toggle — stays reachable.
+    if (poly.locked) return;
     e.stopPropagation();
     wholeDragRef.current = {
       id,

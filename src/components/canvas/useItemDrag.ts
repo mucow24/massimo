@@ -76,13 +76,14 @@ export function useItemDrag(
   ) => {
     if (e.button !== 0) return;
     if (inHandMode) return;
-    e.stopPropagation();
-    // A locked item can't be dragged. We've already swallowed the pointerdown
-    // (stopPropagation above) so the canvas doesn't pan/rect-select; bail before
-    // starting the drag, leaving the click to select it so the popover — and its
-    // unlock toggle — stays reachable. Mirrors usePolygonDrag's locked guard.
+    // A locked item can't be dragged. Bail BEFORE stopping propagation so the
+    // event bubbles to the canvas: a drag starting on it then begins a
+    // marquee-select (the rect-select gate treats [data-locked] as background).
+    // A plain no-move click still selects it, so the popover — and its unlock
+    // toggle — stays reachable. Mirrors usePolygonDrag's locked guard.
     const item = kind === 'bullet' ? routeBullets[id] : textLabels[id];
     if (item?.locked) return;
+    e.stopPropagation();
     dragRef.current = {
       kind,
       id,

@@ -208,6 +208,7 @@ interface DocState extends MapDoc {
   setDotStyle: (stationId: StationId, lineId: LineId, style: DotStyle) => void;
   setDotSize: (stationId: StationId, lineId: LineId, size: number) => void;
   setStationWaypoint: (stationId: StationId, isWaypoint: boolean) => void;
+  setStationLocked: (stationId: StationId, locked: boolean) => void;
   redistributeBetween: (
     startId: StationId,
     endId: StationId,
@@ -350,6 +351,8 @@ export const useDoc = create<DocState>()(
           set((s) => T.setDotSize(s, stationId, lineId, size)),
         setStationWaypoint: (stationId, isWaypoint) =>
           set((s) => T.setStationWaypoint(s, stationId, isWaypoint)),
+        setStationLocked: (stationId, locked) =>
+          set((s) => T.setStationLocked(s, stationId, locked)),
         redistributeBetween: (startId, endId, mode = 'arc-bends', gridMode = 'off') =>
           // gridMode is per-call intent (depends on Shift at the call site);
           // gridInterval is ambient, so read the active grid size from the

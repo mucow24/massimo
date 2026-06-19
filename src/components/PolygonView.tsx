@@ -3,6 +3,7 @@ import { useThemeColors } from '../state/theme';
 import { useViewportStore } from '../state/viewportStore';
 import { resolvePolygonColors } from '../model/transforms';
 import { polygonPathData } from '../geometry/polygon';
+import { itemCursor } from './canvas/itemCursor';
 
 // Half-size of a square vertex handle, and the radius of an edge "+" button,
 // authored in world units at zoom 1. The overlay divides every adornment
@@ -22,6 +23,8 @@ interface Props {
   // When false, the body ignores pointer events so a canvas click "falls
   // through" to placement (used while a click-to-place tool is active).
   interactive: boolean;
+  // Hand mode → grab cursor (pannable). Defaults false for non-canvas uses.
+  inHandMode?: boolean;
   onPointerDown: (id: string, e: React.PointerEvent) => void;
   onClick: (id: string, e: React.MouseEvent) => void;
   onContextMenu: (id: string, e: React.MouseEvent) => void;
@@ -41,6 +44,7 @@ export function PolygonView({
   selected,
   selectedVertexIndex,
   interactive,
+  inHandMode = false,
   onPointerDown,
   onClick,
   onContextMenu,
@@ -72,7 +76,10 @@ export function PolygonView({
       <path
         data-polygon-id={polygon.id}
         data-polygon-selected={selected || undefined}
-        data-polygon-locked={polygon.locked || undefined}
+        // Generic lock marker shared with stations: the rect-select gate keys
+        // off [data-locked] so a drag starting on any locked element begins a
+        // marquee instead of doing nothing.
+        data-locked={polygon.locked || undefined}
         data-polygon-open={!closed || undefined}
         d={polygonPathData(verts, polygon.curveRadius ?? 0, closed)}
         fill={closed ? fill : 'none'}
@@ -89,7 +96,7 @@ export function PolygonView({
         onPointerDown={(e) => onPointerDown(polygon.id, e)}
         onClick={(e) => onClick(polygon.id, e)}
         onContextMenu={(e) => onContextMenu(polygon.id, e)}
-        style={{ cursor: 'pointer' }}
+        style={{ cursor: itemCursor(inHandMode, polygon.locked) }}
       />
     );
   }

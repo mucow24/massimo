@@ -12,6 +12,7 @@ import { useThemeColors } from '../state/theme';
 import { useViewportStore } from '../state/viewportStore';
 import { resolveTextLabelColor } from '../model/transforms';
 import { InlineBullet } from './InlineBullet';
+import { itemCursor } from './canvas/itemCursor';
 
 export type LabelLayer = 'bg' | 'stroke';
 
@@ -28,6 +29,8 @@ interface Props {
   onPointerDown?: (id: string, e: React.PointerEvent) => void;
   onClick?: (id: string, e: React.MouseEvent) => void;
   onContextMenu?: (id: string, e: React.MouseEvent) => void;
+  // Hand mode → grab cursor (pannable). Defaults false for non-canvas uses.
+  inHandMode?: boolean;
 }
 
 const SELECTION_STROKE_WIDTH = 2;
@@ -56,6 +59,7 @@ export function LabelView({
   onPointerDown,
   onClick,
   onContextMenu,
+  inHandMode = false,
 }: Props) {
   const docLines = useDoc((s) => s.lines);
   const themeColors = useThemeColors();
@@ -104,10 +108,14 @@ export function LabelView({
       transform={`translate(${label.x} ${label.y}) rotate(${angle})`}
       data-text-label-id={label.id}
       data-text-label-selected={selected || undefined}
+      // Generic lock marker (shared with stations + polygons): the rect-select
+      // gate keys off [data-locked] so a drag over a locked label begins a
+      // marquee instead of doing nothing.
+      data-locked={label.locked || undefined}
       onPointerDown={onPointerDown ? (e) => onPointerDown(label.id, e) : undefined}
       onClick={onClick ? (e) => onClick(label.id, e) : undefined}
       onContextMenu={onContextMenu ? (e) => onContextMenu(label.id, e) : undefined}
-      style={interactive ? { cursor: 'pointer' } : undefined}
+      style={interactive ? { cursor: itemCursor(inHandMode, label.locked) } : undefined}
     >
       {/* Invisible hit rect covering the measured bbox + padding. Catches
           clicks, drags, and right-clicks anywhere inside the label's visual

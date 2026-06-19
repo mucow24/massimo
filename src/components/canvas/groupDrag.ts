@@ -40,7 +40,8 @@ export function collectGroupSiblings(grabbedKind: GrabbedKind, grabbedId: string
   for (const id of sel.selectedStationIds) {
     if (grabbedKind === 'station' && id === grabbedId) continue;
     const s = doc.stations[id];
-    if (s) out.stations.push({ id, startX: s.x, startY: s.y });
+    // Locked stations never tow (mirrors locked polygons below).
+    if (s && !s.locked) out.stations.push({ id, startX: s.x, startY: s.y });
   }
   for (const id of sel.selectedRouteBulletIds) {
     if (grabbedKind === 'bullet' && id === grabbedId) continue;

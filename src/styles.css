@@ -725,7 +725,12 @@ select {
 .canvas-host svg.tool-hand {
   cursor: grab;
 }
-.canvas-host svg.tool-hand.panning {
+/* Any in-flight pan shows the closed "panning hand": the hand-tool left-drag
+   AND the middle-button drag that pans regardless of tool. Keyed on .panning
+   alone (not .tool-hand.panning) so a middle-drag, which leaves the svg in
+   .tool-arrow, still gets grabbing. Sits after .tool-hand so it wins the
+   equal-specificity tie while a hand-tool pan is in flight. */
+.canvas-host svg.panning {
   cursor: grabbing;
 }
 
@@ -960,16 +965,18 @@ select {
   background: #c91f1f;
 }
 
-/* Waypoint toggle in the station inspector — neutral gray when active
-   (distinct from mirror-on's red) so it reads as a state flag, not a
+/* Waypoint + lock toggles in the station inspector — neutral gray when active
+   (distinct from mirror-on's red) so they read as state flags, not a
    warning. Matches the gray of the .wp-pill in the station list. */
-.btn-mini.wp-on {
+.btn-mini.wp-on,
+.btn-mini.lock-on {
   background: #6b7280;
   border-color: #4b5563;
   color: #fff;
   font-weight: 600;
 }
-.btn-mini.wp-on:hover:not(:disabled) {
+.btn-mini.wp-on:hover:not(:disabled),
+.btn-mini.lock-on:hover:not(:disabled) {
   background: #5b6470;
 }
 
