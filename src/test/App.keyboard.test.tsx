@@ -313,6 +313,23 @@ describe('App keyboard shortcuts: copy / paste / duplicate', () => {
     expect(writeText).toHaveBeenCalledTimes(1);
     const items = readClipboard(writeText.mock.calls[0][0] as string);
     expect(items?.map((i) => i.kind).sort()).toEqual(['polygon', 'text-label']);
+    // Beyond the kinds: each payload must carry ITS OWN item's data. Compare the
+    // serialized data against the live doc (minus the id) so a payload swap —
+    // which keeps the kinds intact — is caught.
+    const labelItem = items?.find((i) => i.kind === 'text-label');
+    const polyItem = items?.find((i) => i.kind === 'polygon');
+    const { id: _lid, ...labelData } = useDoc.getState().textLabels[labelId];
+    const { id: _pid, ...polyData } = useDoc.getState().polygons[polyId];
+    expect(labelItem?.data).toMatchObject({
+      x: 10,
+      y: 10,
+      text: labelData.text,
+      color: labelData.color,
+    });
+    expect(polyItem?.data).toMatchObject({
+      vertices: polyData.vertices,
+      fill: polyData.fill,
+    });
   });
 
   it('Ctrl+C is a no-op when only a station is selected (native copy survives)', () => {
@@ -363,12 +380,20 @@ describe('App keyboard shortcuts: copy / paste / duplicate', () => {
 
   it('Ctrl+D duplicates a mixed selection as ONE undo step and selects the copies', () => {
     render(<App />);
-    const b = useDoc.getState().addRouteBullet(0, 0, null);
-    const l = useDoc.getState().addTextLabel(0, 0);
-    const p = useDoc.getState().addPolygon(0, 0);
+    // Give the source items non-default fields so a "copies defaults instead of
+    // source" bug is visible in the duplicate.
+    const b = useDoc.getState().addRouteBullet(40, 40, null);
+    useDoc.getState().updateRouteBullet(b, { shape: 'diamond', size: 18 });
+    const l = useDoc.getState().addTextLabel(40, 40);
+    useDoc.getState().updateTextLabel(l, { text: 'SRC', color: '#abcdef' });
+    const p = useDoc.getState().addPolygon(40, 40);
     useSelection.getState().setMixedSelection({ bullets: [b], labels: [l], polygons: [p] });
     const bulletsBefore = Object.keys(useDoc.getState().routeBullets).length;
     const pastBefore = historyDepth();
+    // Snapshot the source field values to compare the duplicates against.
+    const srcBullet = useDoc.getState().routeBullets[b];
+    const srcLabel = useDoc.getState().textLabels[l];
+    const srcPoly = useDoc.getState().polygons[p];
 
     fireEvent.keyDown(window, { key: 'd', ctrlKey: true });
 
@@ -381,7 +406,35 @@ describe('App keyboard shortcuts: copy / paste / duplicate', () => {
     expect(sel.selectedLabelIds).toHaveLength(1);
     expect(sel.selectedPolygonIds).toHaveLength(1);
     // Selection points at the duplicates, not the sources.
-    expect(sel.selectedRouteBulletIds[0]).not.toBe(b);
+    const dupBulletId = sel.selectedRouteBulletIds[0];
+    const dupLabelId = sel.selectedLabelIds[0];
+    const dupPolyId = sel.selectedPolygonIds[0];
+    expect(dupBulletId).not.toBe(b);
+    expect(dupLabelId).not.toBe(l);
+    expect(dupPolyId).not.toBe(p);
+
+    // Each duplicate carries the SOURCE's field values, with a +15 drop offset
+    // on position (DROP_OFFSET). Catches a "copy defaults instead of source" bug
+    // that the count assertions miss.
+    const dupBullet = useDoc.getState().routeBullets[dupBulletId];
+    expect(dupBullet).toMatchObject({
+      shape: srcBullet.shape,
+      size: srcBullet.size,
+      rotation: srcBullet.rotation,
+      lineId: srcBullet.lineId,
+      x: srcBullet.x + 15,
+      y: srcBullet.y + 15,
+    });
+    const dupLabel = useDoc.getState().textLabels[dupLabelId];
+    expect(dupLabel).toMatchObject({
+      text: srcLabel.text,
+      color: srcLabel.color,
+      x: srcLabel.x + 15,
+      y: srcLabel.y + 15,
+    });
+    const dupPoly = useDoc.getState().polygons[dupPolyId];
+    expect(dupPoly.fill).toBe(srcPoly.fill);
+    expect(dupPoly.vertices).toEqual(srcPoly.vertices.map((v) => ({ x: v.x + 15, y: v.y + 15 })));
   });
 
   it('Ctrl+D is a no-op when nothing copyable is selected', () => {

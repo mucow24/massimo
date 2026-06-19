@@ -251,6 +251,83 @@ describe('<StopGrid /> — per-line widths', () => {
   });
 });
 
+describe('<StopGrid /> — drag-move commits the cell delta', () => {
+  const PITCH = 22;
+
+  // Copied from the per-line-widths suite: jsdom implements neither SVG
+  // geometry nor pointer capture, so patch the prototypes with an identity
+  // screen↔svg mapping (cursor (clientX, clientY) → svg (row=clientY/PITCH,
+  // col=clientX/PITCH)).
+  const patchSvgGeometry = () => {
+    const proto = SVGSVGElement.prototype as unknown as Record<string, unknown>;
+    const elProto = Element.prototype as unknown as Record<string, unknown>;
+    const restore: Array<() => void> = [];
+    const put = (target: Record<string, unknown>, key: string, value: unknown) => {
+      const prev = target[key];
+      target[key] = value;
+      restore.push(() => {
+        target[key] = prev;
+      });
+    };
+    put(proto, 'getScreenCTM', () => ({ inverse: () => ({}) }));
+    put(proto, 'createSVGPoint', () => {
+      const p = { x: 0, y: 0, matrixTransform: () => ({ x: p.x, y: p.y }) };
+      return p;
+    });
+    if (!('setPointerCapture' in elProto)) put(elProto, 'setPointerCapture', () => {});
+    return () => restore.forEach((f) => f());
+  };
+
+  it('pointerUp on a ghost fires onMoveStop with the (over - source) row/col delta', () => {
+    const restoreSvg = patchSvgGeometry();
+    const onMoveStop = vi.fn();
+    try {
+      // Two default-width stops; drag L2 (row 5) toward L1 (the origin anchor).
+      // The default-default tangency factor is 1, so the ring-1 ghost directly
+      // below the anchor sits at (row 1, col 0).
+      const station: GridStation = {
+        rotation: 0,
+        stops: [
+          { lineId: 'L1', row: 0, col: 0, orientation: 'auto-horizontal' },
+          { lineId: 'L2', row: 5, col: 0, orientation: 'auto-horizontal' },
+        ],
+        label: { row: -3, col: -3, rotation: 0 },
+      };
+      const { container } = render(
+        <StopGrid
+          station={station}
+          lines={{
+            L1: { color: '#0039A6', service: 'L1' },
+            L2: { color: '#EE352E', service: 'L2' },
+          }}
+          selectedLineId={null}
+          labelSelected={false}
+          onSelectStop={() => {}}
+          onSelectLabel={() => {}}
+          onRotateStop={() => {}}
+          onRotateLabel={() => {}}
+          onMoveStop={onMoveStop}
+          onMoveLabel={() => {}}
+        />,
+      );
+
+      const cell = container.querySelector('[data-cell-kind="stop"][data-line-id="L2"]') as Element;
+      const svg = container.querySelector('svg')!;
+      // Press on L2 (row 5), move past the threshold to (row 1.2, col 0) which
+      // snaps to the ghost at (row 1, col 0), then release.
+      fireEvent.pointerDown(cell, { button: 0, clientX: 0, clientY: 5 * PITCH });
+      fireEvent.pointerMove(svg, { clientX: 0, clientY: 1.2 * PITCH });
+      fireEvent.pointerUp(svg);
+
+      // dRow = over.row(1) - source.row(5) = -4; dCol = 0 - 0 = 0.
+      expect(onMoveStop).toHaveBeenCalledTimes(1);
+      expect(onMoveStop).toHaveBeenCalledWith('L2', -4, 0);
+    } finally {
+      restoreSvg();
+    }
+  });
+});
+
 describe('<StopGrid /> — selection on click', () => {
   it('clicking the background deselects (onSelectStop(null))', () => {
     const { container, onSelectStop } = renderGrid({

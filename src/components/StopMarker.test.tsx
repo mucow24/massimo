@@ -50,6 +50,24 @@ describe('StopMarker', () => {
     expect(container.querySelector('rect')).toBeNull();
   });
 
+  it('renders a hatched-mirror stop with the MIRROR pattern url, distinct from hatched (E5b)', () => {
+    // hatched-mirror must reference the -45° pattern (hatchPatternId(color,
+    // 'hatched-mirror') → 'hatch-m-…'), not the +45° 'hatch-…' that plain
+    // hatched uses, or the two styles render identically.
+    const mirror = renderMarker({ spec: spec({ style: 'hatched-mirror' }) });
+    const mPoly = mirror.container.querySelector('polygon')!;
+    expect(mPoly).not.toBeNull();
+    const mFill = mPoly.getAttribute('fill')!;
+    expect(mFill).toBe('url(#hatch-m--ff0000)');
+
+    const plain = renderMarker({ spec: spec({ style: 'hatched' }) });
+    const pFill = plain.container.querySelector('polygon')!.getAttribute('fill')!;
+    expect(pFill).toBe('url(#hatch--ff0000)');
+
+    // The mirror id is genuinely different from the non-mirror id.
+    expect(mFill).not.toBe(pFill);
+  });
+
   it('renders nothing for a dashed stop at an interior station', () => {
     const { container } = renderMarker({ spec: spec({ style: 'dashed', outward: null }) });
     expect(container.querySelector('line')).toBeNull();

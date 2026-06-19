@@ -1182,6 +1182,27 @@ describe('deleteLine', () => {
     expect(next.lineOrder).toEqual(['L2']);
     expect(next.stations.s1.stops.map((c) => c.lineId)).toEqual(['L2']);
   });
+
+  it('nulls out the lineId of route bullets that referenced the deleted line (bullet survives)', () => {
+    const doc: MapDoc = {
+      ...makeDoc({
+        lines: [makeLine({ id: 'L1' }), makeLine({ id: 'L2' })],
+        lineOrder: ['L1', 'L2'],
+      }),
+      routeBullets: {
+        b1: { id: 'b1', x: 10, y: 20, rotation: 0, lineId: 'L1', shape: 'circle', size: 8 },
+        b2: { id: 'b2', x: 30, y: 40, rotation: 0, lineId: 'L2', shape: 'circle', size: 8 },
+      },
+    };
+    const next = T.deleteLine(doc, 'L1');
+    // The bullet pointing at L1 survives but reverts to "unset" (lineId null),
+    // keeping its position. The bullet on L2 is untouched.
+    expect(next.routeBullets.b1).toBeDefined();
+    expect(next.routeBullets.b1.lineId).toBeNull();
+    expect(next.routeBullets.b1.x).toBe(10);
+    expect(next.routeBullets.b1.y).toBe(20);
+    expect(next.routeBullets.b2.lineId).toBe('L2');
+  });
 });
 
 describe('moveLineInOrder', () => {
@@ -1799,6 +1820,34 @@ describe('deleteStation — line tag cascade', () => {
     });
     const next = T.deleteStation(doc, 's2');
     expect(next.lineTags.t1).toBeUndefined();
+  });
+});
+
+describe('deleteStation — segment override cascade', () => {
+  it('prunes segmentStyles AND segmentLayers whose pair-key referenced the deleted station', () => {
+    // L1 = a–b–c with a styled + layered (a,b) segment. Deleting `a` removes it
+    // from the line, so the (a,b) pair is no longer an edge; both the style and
+    // the layer override keyed on it must be pruned, not left dangling at a
+    // station that no longer exists. toggleStationOnLine / removeStationFromLine
+    // / deleteLine already do this — deleteStation must too.
+    let doc = makeDoc({
+      stations: [
+        makeStation({ id: 'a', stops: [makeStop('L1')] }),
+        makeStation({ id: 'b', stops: [makeStop('L1')] }),
+        makeStation({ id: 'c', stops: [makeStop('L1')] }),
+      ],
+      lines: [makeLine({ id: 'L1', stations: ['a', 'b', 'c'] })],
+    });
+    doc = T.setLineSegmentStyle(doc, 'L1', 'a', 'b', 'dashed');
+    doc = T.cycleSegmentLayer(doc, 'L1', 'a', 'b', 1);
+    // Sanity: exactly the (a,b) override exists before deletion.
+    expect(Object.keys(doc.lines.L1.segmentStyles ?? {})).toHaveLength(1);
+    expect(Object.keys(doc.lines.L1.segmentLayers ?? {})).toHaveLength(1);
+
+    const next = T.deleteStation(doc, 'a');
+    // The (a,b) edge is gone → both override maps drop the orphaned key.
+    expect(next.lines.L1.segmentStyles ?? {}).toEqual({});
+    expect(next.lines.L1.segmentLayers ?? {}).toEqual({});
   });
 });
 
@@ -2927,6 +2976,49 @@ describe('redistributeBetween', () => {
       expect(next.stations.m1).toMatchObject({ x: 5, y: 0 });
       expect(next.stations.m2).toMatchObject({ x: 10, y: 0 });
       expect(next.stations.m3).toMatchObject({ x: 20, y: 0 });
+    });
+  });
+
+  // The 5° ANGLE_THRESHOLD (transforms.ts:526) decides, in arc-bends mode,
+  // whether an intermediate station is a real "bend" (anchored, left in place)
+  // or a smooth point (redistributed). The threshold is on the TURN angle —
+  // the deviation from straight, computed as acos of the dot product of the two
+  // adjacent stop-segment directions — and the test is `angle > ANGLE_THRESHOLD`
+  // in RADIANS. The chain a=(0,0), m=(40,h), b=(120,0) has a single intermediate
+  // m, so:
+  //   • a bend just UNDER 5° leaves m as a non-anchor → it redistributes to the
+  //     arc-length midpoint of a→m→b (≈20px away from m here) and the doc changes;
+  //   • a bend just OVER 5° anchors m → with no other intermediate there is
+  //     nothing left to redistribute, so the doc comes back by reference.
+  // The just-over case is the one that breaks if the conversion is dropped
+  // (degrees compared as radians): 5 radians ≈ 286°, so every realistic bend
+  // falls under it and m would wrongly redistribute. (Red-proof below.)
+  describe('arc-bends bend threshold (5°)', () => {
+    const bendDoc = (h: number): MapDoc =>
+      makeDoc({
+        stations: [
+          stationWithStop('a', 'L1', { x: 0, y: 0 }),
+          stationWithStop('m', 'L1', { x: 40, y: h }),
+          stationWithStop('b', 'L1', { x: 120, y: 0 }),
+        ],
+        lines: [makeLine({ id: 'L1', stations: ['a', 'm', 'b'] })],
+      });
+
+    it('redistributes the middle station when the bend is just under 5°', () => {
+      // h = 2.2 → turn angle ≈ 4.72° (< 5°): not a bend, so m is redistributed.
+      const doc = bendDoc(2.2);
+      const next = T.redistributeBetween(doc, 'a', 'b', 'arc-bends');
+      expect(next).not.toBe(doc);
+      // m lands on the arc-length midpoint of a→m→b, ~20px off its start (40, 2.2).
+      expect(next.stations.m.x).toBeCloseTo(59.98, 1);
+      expect(next.stations.m.y).toBeCloseTo(1.65, 1);
+    });
+
+    it('anchors the middle station when the bend is just over 5°', () => {
+      // h = 3.0 → turn angle ≈ 6.44° (> 5°): a real bend, so m is anchored and
+      // — being the only intermediate — nothing is redistributed (identity return).
+      const doc = bendDoc(3.0);
+      expect(T.redistributeBetween(doc, 'a', 'b', 'arc-bends')).toBe(doc);
     });
   });
 });
