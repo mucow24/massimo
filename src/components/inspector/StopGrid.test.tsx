@@ -296,7 +296,10 @@ describe('<StopGrid /> — drag-move commits the cell delta', () => {
       const { container } = render(
         <StopGrid
           station={station}
-          lines={{ L1: { color: '#0039A6', service: 'L1' }, L2: { color: '#EE352E', service: 'L2' } }}
+          lines={{
+            L1: { color: '#0039A6', service: 'L1' },
+            L2: { color: '#EE352E', service: 'L2' },
+          }}
           selectedLineId={null}
           labelSelected={false}
           onSelectStop={() => {}}

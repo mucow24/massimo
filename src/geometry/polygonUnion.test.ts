@@ -94,8 +94,6 @@ describe('unionConvex', () => {
     const result = unionConvex(A, B);
     expect(result.length).toBe(1);
     // The merged outline is exactly the outer square A's corners.
-    expect(vertexSet(result[0])).toEqual(
-      new Set(['-20,-20', '20,-20', '20,20', '-20,20']),
-    );
+    expect(vertexSet(result[0])).toEqual(new Set(['-20,-20', '20,-20', '20,20', '-20,20']));
   });
 });

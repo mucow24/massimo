@@ -7,8 +7,9 @@ const SVG_NS = 'http://www.w3.org/2000/svg';
 // SVGGraphicsElement prototype (which every <svg>/<g>/<circle> inherits) so
 // buildExportSvg's content-bounds measurement runs. Each test restores it.
 function stubGetBBox(box: { x: number; y: number; width: number; height: number }): () => void {
-  const proto = (globalThis as unknown as { SVGGraphicsElement: { prototype: Record<string, unknown> } })
-    .SVGGraphicsElement.prototype;
+  const proto = (
+    globalThis as unknown as { SVGGraphicsElement: { prototype: Record<string, unknown> } }
+  ).SVGGraphicsElement.prototype;
   const had = Object.prototype.hasOwnProperty.call(proto, 'getBBox');
   const prev = proto.getBBox;
   proto.getBBox = () => box;
@@ -66,7 +67,11 @@ describe('buildExportSvg', () => {
   it('frames to bounds + PADDING and scales width/height by pixelScale', async () => {
     restore = stubGetBBox({ x: 10, y: 20, width: 100, height: 80 });
     const svg = makeSourceSvg('<circle cx="50" cy="50" r="5"></circle>');
-    const { svg: out, width, height } = await buildExportSvg(svg, {
+    const {
+      svg: out,
+      width,
+      height,
+    } = await buildExportSvg(svg, {
       background: '#fff',
       pixelScale: 2,
     });

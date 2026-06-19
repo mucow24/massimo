@@ -236,10 +236,7 @@ describe('Toolbar — Export wiring', () => {
   };
 
   it('Export → SVG forwards the live canvas svg to exportCanvasSvg', async () => {
-    const fakeSvg = document.createElementNS(
-      'http://www.w3.org/2000/svg',
-      'svg',
-    ) as SVGSVGElement;
+    const fakeSvg = document.createElementNS('http://www.w3.org/2000/svg', 'svg') as SVGSVGElement;
     vi.mocked(getCanvasSvg).mockReturnValue(fakeSvg);
 
     const user = userEvent.setup();
