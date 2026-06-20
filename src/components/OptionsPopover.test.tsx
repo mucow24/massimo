@@ -3,12 +3,14 @@ import { render, screen, fireEvent } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { Toolbar } from './Toolbar';
 import { useDoc } from '../state/store';
+import { useCustomPalettes } from '../state/customPalettes';
 import { DEFAULT_DOC } from '../model/transforms';
 
 beforeEach(() => {
   localStorage.clear();
   useDoc.setState({ ...useDoc.getState(), ...DEFAULT_DOC });
   useDoc.temporal.getState().clear();
+  useCustomPalettes.setState({ palettes: [] });
 });
 
 describe('<OptionsPopover />', () => {
@@ -418,6 +420,83 @@ describe('<OptionsPopover />', () => {
       expect(useDoc.getState().activePalettes).toEqual(['mta']);
       const mta = screen.getByRole('checkbox', { name: 'MTA' }) as HTMLInputElement;
       expect(mta.disabled).toBe(true);
+    });
+  });
+
+  describe('custom palettes', () => {
+    const frrfFile = () =>
+      new File(
+        [
+          JSON.stringify({
+            name: 'frrf',
+            colors: [
+              { line: 1, human: '#c1272d' },
+              { line: 2, human: '#0061a8' },
+            ],
+          }),
+        ],
+        'frrf.json',
+        { type: 'application/json' },
+      );
+
+    const openPalettes = async (user: ReturnType<typeof userEvent.setup>) => {
+      await user.click(screen.getByRole('button', { name: 'Options' }));
+      await user.click(screen.getByRole('button', { name: /color palettes/i }));
+    };
+
+    it('shows a "Load palette…" button at the top of the palette list', async () => {
+      const user = userEvent.setup();
+      render(<Toolbar />);
+      await openPalettes(user);
+      expect(screen.getByRole('button', { name: /load palette/i })).toBeInTheDocument();
+    });
+
+    it('loads a palette file, adding an unchecked custom card with its swatches', async () => {
+      const user = userEvent.setup();
+      render(<Toolbar />);
+      await openPalettes(user);
+      fireEvent.change(screen.getByLabelText('Load palette file'), {
+        target: { files: [frrfFile()] },
+      });
+      const checkbox = (await screen.findByRole('checkbox', { name: 'frrf' })) as HTMLInputElement;
+      expect(checkbox.checked).toBe(false); // added unchecked
+      expect(useCustomPalettes.getState().palettes[0].swatches).toHaveLength(2);
+      // Loading does not mutate the doc's active set.
+      expect(useDoc.getState().activePalettes).toEqual(['mta']);
+    });
+
+    it('checking a custom palette activates it in the doc', async () => {
+      const user = userEvent.setup();
+      render(<Toolbar />);
+      await openPalettes(user);
+      fireEvent.change(screen.getByLabelText('Load palette file'), {
+        target: { files: [frrfFile()] },
+      });
+      await user.click(await screen.findByRole('checkbox', { name: 'frrf' }));
+      expect(useDoc.getState().activePalettes).toContain('custom:frrf');
+    });
+
+    it('the red × button deletes the custom palette', async () => {
+      const user = userEvent.setup();
+      render(<Toolbar />);
+      await openPalettes(user);
+      fireEvent.change(screen.getByLabelText('Load palette file'), {
+        target: { files: [frrfFile()] },
+      });
+      await screen.findByRole('checkbox', { name: 'frrf' });
+      await user.click(screen.getByRole('button', { name: 'Delete frrf' }));
+      expect(screen.queryByRole('checkbox', { name: 'frrf' })).toBeNull();
+      expect(useCustomPalettes.getState().palettes).toEqual([]);
+    });
+
+    it('shows an inline error for an invalid palette file', async () => {
+      const user = userEvent.setup();
+      render(<Toolbar />);
+      await openPalettes(user);
+      const bad = new File(['{not json'], 'bad.json', { type: 'application/json' });
+      fireEvent.change(screen.getByLabelText('Load palette file'), { target: { files: [bad] } });
+      expect(await screen.findByRole('alert')).toBeInTheDocument();
+      expect(useCustomPalettes.getState().palettes).toEqual([]);
     });
   });
 });

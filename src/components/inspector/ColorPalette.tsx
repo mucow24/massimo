@@ -1,4 +1,5 @@
 import { useDoc } from '../../state/store';
+import { useCustomPalettes } from '../../state/customPalettes';
 import { activePalettes as activePalettesOf } from '../../model/palettes';
 import { useFieldHistory } from '../useFieldHistory';
 
@@ -19,7 +20,8 @@ export function ColorPalette({
   onChange: (c: string) => void;
 }) {
   const activeIds = useDoc((s) => s.activePalettes);
-  const palettes = activePalettesOf(activeIds);
+  const custom = useCustomPalettes((s) => s.palettes);
+  const palettes = activePalettesOf(activeIds, custom);
   const v = value.toLowerCase();
   // `isCustom` is computed against the ACTIVE palettes only. A line whose
   // stored color isn't in any visible swatch group is shown as the custom
@@ -39,11 +41,11 @@ export function ColorPalette({
             {palette.name}
           </div>
           <div style={{ display: 'flex', flexWrap: 'wrap', gap: 4 }}>
-            {palette.swatches.map((p) => {
+            {palette.swatches.map((p, si) => {
               const selected = v === p.color.toLowerCase();
               return (
                 <button
-                  key={p.color}
+                  key={si}
                   type="button"
                   title={p.name}
                   onClick={() => onChange(p.color)}

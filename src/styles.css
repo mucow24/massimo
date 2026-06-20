@@ -371,6 +371,18 @@ select {
 .options-palette-card-row input[type='checkbox'] {
   margin: 0;
 }
+/* Load-palette button sits at the top of the list, left-aligned. */
+.options-palette-load {
+  align-self: flex-start;
+}
+/* Red "x" delete button on custom palette cards, pushed to the far right. */
+.options-palette-delete {
+  margin-left: auto;
+}
+.options-palette-error {
+  color: #c33;
+  font-size: 11px;
+}
 .options-palette-strip {
   display: flex;
   flex-wrap: wrap;

@@ -1581,7 +1581,6 @@ describe('activePalettes', () => {
 
   it('setActivePalettes returns the input doc unchanged when only unknown ids are given', () => {
     const doc = T.setActivePalettes(makeDoc({}), ['mta', 'bart']);
-    // @ts-expect-error - exercising the runtime guard with an unknown id
     expect(T.setActivePalettes(doc, ['nope'])).toBe(doc);
   });
 
@@ -1599,6 +1598,26 @@ describe('activePalettes', () => {
   it('togglePalette refuses to remove the last palette (invariant)', () => {
     const doc = T.setActivePalettes(makeDoc({}), ['mta']);
     expect(T.togglePalette(doc, 'mta')).toBe(doc);
+  });
+});
+
+describe('activePalettes — custom palettes', () => {
+  const custom = [{ id: 'custom:frrf', name: 'frrf', swatches: [{ name: '1', color: '#c1272d' }] }];
+
+  it('setActivePalettes keeps an active custom id when given the custom list', () => {
+    const doc = T.setActivePalettes(makeDoc({}), ['mta', 'custom:frrf'], custom);
+    // Custom palettes sort before built-ins.
+    expect(doc.activePalettes).toEqual(['custom:frrf', 'mta']);
+  });
+
+  it('togglePalette toggling a built-in does not drop an active custom palette', () => {
+    const doc = T.setActivePalettes(makeDoc({}), ['custom:frrf'], custom);
+    expect(T.togglePalette(doc, 'mta', custom).activePalettes).toEqual(['custom:frrf', 'mta']);
+  });
+
+  it('togglePalette removes a present custom id', () => {
+    const doc = T.setActivePalettes(makeDoc({}), ['mta', 'custom:frrf'], custom);
+    expect(T.togglePalette(doc, 'custom:frrf', custom).activePalettes).toEqual(['mta']);
   });
 });
 
