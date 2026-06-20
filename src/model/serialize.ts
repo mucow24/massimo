@@ -14,7 +14,7 @@ import {
 } from './lineStroke';
 import { DEFAULT_DOT_STYLE, DOT_SHAPE_PRESETS, dotStylesEqual } from './dotStyle';
 import { pairKeyOf } from './pairKey';
-import { KNOWN_PALETTE_IDS, type PaletteId } from './palettes';
+import { KNOWN_PALETTE_IDS, type Palette, type PaletteId } from './palettes';
 import type {
   DotBaseShape,
   DotFill,
@@ -123,8 +123,12 @@ export type ParseResult = { ok: true; doc: MapDoc } | { ok: false; error: string
 // `parse()` (file import) and the zustand persist `migrate` hook (localStorage
 // rehydration) so both load paths keep the invariant in step — a doc with an
 // explicit empty / all-unknown `activePalettes` is unreachable from the UI.
-export function validActivePalettes(active: readonly PaletteId[] | undefined): PaletteId[] {
-  const valid = (active ?? []).filter((id) => KNOWN_PALETTE_IDS.has(id));
+export function validActivePalettes(
+  active: readonly PaletteId[] | undefined,
+  custom: readonly Palette[] = [],
+): PaletteId[] {
+  const customIds = new Set(custom.map((p) => p.id));
+  const valid = (active ?? []).filter((id) => KNOWN_PALETTE_IDS.has(id) || customIds.has(id));
   return valid.length > 0 ? valid : [...DEFAULT_DOC.activePalettes];
 }
 
@@ -133,7 +137,7 @@ export function serialize(doc: MapDoc): string {
   return JSON.stringify(file, null, 2);
 }
 
-export function parse(json: string): ParseResult {
+export function parse(json: string, custom: readonly Palette[] = []): ParseResult {
   let raw: unknown;
   try {
     raw = JSON.parse(json);
@@ -163,7 +167,7 @@ export function parse(json: string): ParseResult {
   // file with explicit `activePalettes: []` or only unknown ids would
   // otherwise leave the doc in an unreachable-from-UI state. Shared with the
   // localStorage rehydration path via `validActivePalettes`.
-  merged.activePalettes = validActivePalettes(merged.activePalettes);
+  merged.activePalettes = validActivePalettes(merged.activePalettes, custom);
   // Sanitize per-line segment styles AND layers: drop unknown style values,
   // drop the never-persisted defaults ('solid' / layer 0), and drop any entry
   // whose pair-key isn't a station-pair adjacency on the line. Also backfill

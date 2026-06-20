@@ -4,6 +4,7 @@ import { pickDocSnapshot, useDoc, useSelection, type UiMode } from '../state/sto
 import { useViewportStore, nextGridSize } from '../state/viewportStore';
 import { parse, serialize } from '../model/serialize';
 import { DEFAULT_DOC } from '../model/transforms';
+import { useCustomPalettes } from '../state/customPalettes';
 import { themeColors } from '../state/theme';
 import {
   downloadBlob,
@@ -144,7 +145,9 @@ export function Toolbar() {
     e.target.value = ''; // allow re-picking the same file
     if (!f) return;
     const text = await f.text();
-    const result = parse(text);
+    // Custom palettes (localStorage) let a loaded map keep its custom active ids
+    // instead of dropping them as unknown.
+    const result = parse(text, useCustomPalettes.getState().palettes);
     if (!result.ok) {
       setMenuError(result.error);
       return;

@@ -64,6 +64,30 @@ describe('parse — active palette invariant', () => {
   });
 });
 
+describe('parse — custom palettes', () => {
+  const custom = [{ id: 'custom:frrf', name: 'frrf', swatches: [{ name: '1', color: '#c1272d' }] }];
+  const fileWith = (activePalettes: unknown): string =>
+    JSON.stringify({ format: 'massimo-map', doc: { ...T.DEFAULT_DOC, activePalettes } });
+
+  it('keeps a custom active id when its palette is supplied', () => {
+    const r = parse(fileWith(['mta', 'custom:frrf']), custom);
+    expect(r.ok).toBe(true);
+    if (r.ok) expect(r.doc.activePalettes).toEqual(['mta', 'custom:frrf']);
+  });
+
+  it('drops a dangling custom id whose palette is not supplied', () => {
+    const r = parse(fileWith(['mta', 'custom:gone']), custom);
+    expect(r.ok).toBe(true);
+    if (r.ok) expect(r.doc.activePalettes).toEqual(['mta']);
+  });
+
+  it('falls back to the default set when only a dangling custom id is present', () => {
+    const r = parse(fileWith(['custom:gone']), custom);
+    expect(r.ok).toBe(true);
+    if (r.ok) expect(r.doc.activePalettes).toEqual(T.DEFAULT_DOC.activePalettes);
+  });
+});
+
 describe('parse — error cases', () => {
   it('rejects malformed JSON without throwing', () => {
     const r = parse('not json {');

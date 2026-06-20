@@ -3,12 +3,14 @@ import { render, screen } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { ColorPalette } from './ColorPalette';
 import { useDoc } from '../../state/store';
+import { useCustomPalettes } from '../../state/customPalettes';
 import { DEFAULT_DOC } from '../../model/transforms';
 
 beforeEach(() => {
   localStorage.clear();
   useDoc.setState({ ...useDoc.getState(), ...DEFAULT_DOC });
   useDoc.temporal.getState().clear();
+  useCustomPalettes.setState({ palettes: [] });
 });
 
 describe('<ColorPalette /> sections', () => {
@@ -94,5 +96,43 @@ describe('<ColorPalette /> sections', () => {
     while (cb && !isPositioned(cb)) cb = cb.parentElement;
     expect(cb).not.toBeNull();
     expect(cb!.tagName).toBe('LABEL');
+  });
+});
+
+describe('<ColorPalette /> custom palettes', () => {
+  const seedFrrf = () =>
+    useCustomPalettes.setState({
+      palettes: [
+        {
+          id: 'custom:frrf',
+          name: 'frrf',
+          swatches: [
+            { name: '1', color: '#c1272d' },
+            { name: '2', color: '#0061a8' },
+          ],
+        },
+      ],
+    });
+
+  it('renders an active custom palette section with line-name swatch hovers', () => {
+    seedFrrf();
+    useDoc.setState({ ...useDoc.getState(), activePalettes: ['custom:frrf'] });
+    render(<ColorPalette value="#000000" onChange={vi.fn()} />);
+    const headers = Array.from(document.querySelectorAll('.color-palette-section-label')).map(
+      (el) => el.textContent,
+    );
+    expect(headers).toContain('frrf');
+    // Swatch hover (title) is the `line` field from the loaded file.
+    expect(screen.getByTitle('1')).toBeInTheDocument();
+    expect(screen.getByTitle('2')).toBeInTheDocument();
+  });
+
+  it('a color in an active custom palette is recognized (not the custom "?" chip)', () => {
+    seedFrrf();
+    useDoc.setState({ ...useDoc.getState(), activePalettes: ['custom:frrf'] });
+    render(<ColorPalette value="#c1272d" onChange={vi.fn()} />);
+    const customLabel = document.querySelector('label[title^="Custom"]');
+    // Recognized swatch hit → plain "Custom", not "Custom (#c1272d)".
+    expect(customLabel?.getAttribute('title')).toBe('Custom');
   });
 });

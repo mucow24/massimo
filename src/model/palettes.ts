@@ -6,25 +6,11 @@
 // display name within each continent. The popover renders a horizontal
 // separator between continent groups.
 
-export type PaletteId =
-  // Asia
-  | 'beijing-subway'
-  | 'mtr'
-  | 'shanghai-metro'
-  | 'tokyo-subway'
-  // Europe
-  | 'berlin-ubahn'
-  | 'paris-ratp'
-  | 'tfl'
-  // North America
-  | 'bart'
-  | 'caltrain'
-  | 'cta'
-  | 'la-metro'
-  | 'mbta'
-  | 'mta'
-  | 'muni'
-  | 'wmata';
+// A palette id. Built-in palettes use the stable slugs declared in PALETTES
+// below; user-imported custom palettes use arbitrary `custom:<slug>` ids, so the
+// type is an open string rather than a closed union. KNOWN_PALETTE_IDS is the
+// runtime source of truth for which built-in ids exist.
+export type PaletteId = string;
 
 export type Continent = 'asia' | 'europe' | 'na';
 
@@ -36,7 +22,9 @@ export interface PaletteSwatch {
 export interface Palette {
   id: PaletteId;
   name: string;
-  continent: Continent;
+  // Built-in palettes are grouped by continent in the options popover. Custom
+  // (user-imported) palettes have no continent and render in their own group.
+  continent?: Continent;
   swatches: PaletteSwatch[];
 }
 
@@ -322,33 +310,55 @@ export const PALETTES: readonly Palette[] = [
   },
 ] as const;
 
-// The single source of truth for "which palette ids exist" + the canonical
-// (PALETTES declaration) order. Used by the transforms storage normaliser and
-// the serialize-time validity check so neither re-derives its own copy.
-export const KNOWN_PALETTE_IDS = new Set<PaletteId>(PALETTES.map((p) => p.id));
+// The single source of truth for "which built-in palette ids exist". Custom
+// palettes live in a separate store, so resolution takes the active custom
+// palettes as an explicit argument rather than this module reaching into state.
+export const KNOWN_PALETTE_IDS = new Set<string>(PALETTES.map((p) => p.id));
 
-/**
- * Dedupe + drop unknown ids, returning the result in canonical (PALETTES)
- * declaration order. The storage normaliser for `MapDoc.activePalettes`.
- */
-export function normalizePaletteIds(ids: readonly PaletteId[]): PaletteId[] {
-  const set = new Set(ids.filter((id) => KNOWN_PALETTE_IDS.has(id)));
-  return PALETTES.filter((p) => set.has(p.id)).map((p) => p.id);
+// Resolve active ids to palette objects: active custom palettes first (in the
+// order supplied), then active built-ins in canonical (PALETTES) order. Ids that
+// match neither a custom palette nor a built-in are dropped. Because a custom id
+// can never collide with a built-in id (see makeCustomPaletteId), the result is
+// already deduplicated.
+function orderedActive(active: readonly PaletteId[], custom: readonly Palette[]): Palette[] {
+  const set = new Set(active);
+  const customHits = custom.filter((p) => set.has(p.id));
+  const builtinHits = PALETTES.filter((p) => set.has(p.id));
+  return [...customHits, ...builtinHits];
 }
 
 /**
- * Return the active palettes in canonical (PALETTES) declaration order,
- * silently dropping unknown ids.
+ * Dedupe + drop ids that are neither a built-in nor a supplied custom palette,
+ * returning custom-first then canonical (PALETTES) order. The storage normaliser
+ * for `MapDoc.activePalettes`.
  */
-export function activePalettes(active: readonly PaletteId[]): Palette[] {
-  const set = new Set(active.filter((id) => KNOWN_PALETTE_IDS.has(id)));
-  return PALETTES.filter((p) => set.has(p.id));
+export function normalizePaletteIds(
+  ids: readonly PaletteId[],
+  custom: readonly Palette[] = [],
+): PaletteId[] {
+  return orderedActive(ids, custom).map((p) => p.id);
 }
 
 /**
- * Flat list of colors from the active palettes in canonical declaration
- * order — used by `addLine` to auto-pick the next color.
+ * Return the active palettes — custom first, then built-ins in canonical order —
+ * silently dropping ids that resolve to neither.
  */
-export function cyclingColors(active: readonly PaletteId[]): string[] {
-  return activePalettes(active).flatMap((p) => p.swatches.map((s) => s.color));
+export function activePalettes(
+  active: readonly PaletteId[],
+  custom: readonly Palette[],
+): Palette[] {
+  return orderedActive(active, custom);
 }
+
+/**
+ * Flat list of colors from the active palettes (custom first) — used by
+ * `addLine` to auto-pick the next color.
+ */
+export function cyclingColors(active: readonly PaletteId[], custom: readonly Palette[]): string[] {
+  return activePalettes(active, custom).flatMap((p) => p.swatches.map((s) => s.color));
+}
+
+// Fallback line color when the active palettes yield no colors at all (e.g. every
+// active id is a dangling custom reference). Keeps `addLine` from selecting
+// `undefined` out of an empty cycle.
+export const FALLBACK_LINE_COLOR = '#888888';
