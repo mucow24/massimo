@@ -15,7 +15,7 @@ import { GRID_INTERVAL, snapPointToGrid, type GridSnap } from '../geometry/snap'
 import { polygonCentroid, edgeMidpoint } from '../geometry/polygon';
 import { measureTextLabel } from '../geometry/textMeasure';
 import type { Vec2 } from '../geometry/vec';
-import { normalizePaletteIds, type PaletteId } from './palettes';
+import { normalizePaletteIds, type Palette, type PaletteId } from './palettes';
 import type {
   DotStyle,
   LabelAlign,
@@ -1416,8 +1416,12 @@ function arraysEqual<T>(a: readonly T[], b: readonly T[]): boolean {
  * unknown ids) is rejected — the doc must always have at least one active
  * palette. Input is deduplicated and normalised to PALETTES declaration order.
  */
-export function setActivePalettes(doc: MapDoc, ids: readonly PaletteId[]): MapDoc {
-  const next = normalizePaletteIds(ids);
+export function setActivePalettes(
+  doc: MapDoc,
+  ids: readonly PaletteId[],
+  custom: readonly Palette[] = [],
+): MapDoc {
+  const next = normalizePaletteIds(ids, custom);
   if (next.length === 0) return doc;
   if (arraysEqual(next, doc.activePalettes)) return doc;
   return { ...doc, activePalettes: next };
@@ -1428,10 +1432,10 @@ export function setActivePalettes(doc: MapDoc, ids: readonly PaletteId[]): MapDo
  * last active palette (returns input doc unchanged), preserving the
  * "non-empty" invariant in one place.
  */
-export function togglePalette(doc: MapDoc, id: PaletteId): MapDoc {
+export function togglePalette(doc: MapDoc, id: PaletteId, custom: readonly Palette[] = []): MapDoc {
   const present = doc.activePalettes.includes(id);
   const next = present ? doc.activePalettes.filter((x) => x !== id) : [...doc.activePalettes, id];
-  return setActivePalettes(doc, next);
+  return setActivePalettes(doc, next, custom);
 }
 
 export function clearAll(_doc: MapDoc): MapDoc {

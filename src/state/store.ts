@@ -22,7 +22,8 @@ import { effectiveLineOrder } from '../model/lineOrder';
 import { defaultIdFactory, IdFactory } from '../model/ids';
 import { DEFAULT_DOC } from '../model/transforms';
 import * as T from '../model/transforms';
-import { cyclingColors, type PaletteId } from '../model/palettes';
+import { cyclingColors, FALLBACK_LINE_COLOR, type PaletteId } from '../model/palettes';
+import { useCustomPalettes } from './customPalettes';
 import {
   sanitizeStations,
   backfillLineNames,
@@ -195,7 +196,13 @@ export function migrateDoc(persisted: unknown, version: number): DocState {
   // via the shared `validActivePalettes`. An ABSENT field is left untouched —
   // zustand's persist merge fills it from the initial state.
   if (out.activePalettes !== undefined) {
-    out = { ...out, activePalettes: validActivePalettes(out.activePalettes) };
+    out = {
+      ...out,
+      activePalettes: validActivePalettes(
+        out.activePalettes,
+        useCustomPalettes.getState().palettes,
+      ),
+    };
   }
   return out as DocState;
 }
@@ -324,6 +331,10 @@ interface DocState extends MapDoc {
   setLabelItalic: (i: boolean) => void;
   setActivePalettes: (ids: PaletteId[]) => void;
   togglePalette: (id: PaletteId) => void;
+  /** Delete a custom palette definition (from the custom-palette store) and
+   *  prune it from this doc's active set, falling back to the default set if it
+   *  was the only active palette. */
+  deleteCustomPalette: (id: PaletteId) => void;
   setTransferThickness: (n: number) => void;
   setTransferColor: (c: string) => void;
   setTransferStrokeWidth: (n: number) => void;
@@ -391,8 +402,10 @@ export const useDoc = create<DocState>()(
         addLine: () => {
           const id = ids.lineId();
           set((s) => {
-            const cycle = cyclingColors(s.activePalettes);
-            const color = cycle[s.lineCounter % cycle.length];
+            const cycle = cyclingColors(s.activePalettes, useCustomPalettes.getState().palettes);
+            // Guard the empty cycle (e.g. every active id is a dangling custom
+            // reference): `n % 0` is NaN, which would index `undefined`.
+            const color = cycle.length ? cycle[s.lineCounter % cycle.length] : FALLBACK_LINE_COLOR;
             const service = pickNextLineName(s.lines);
             return T.addLine(s, id, service, color);
           });
@@ -551,8 +564,24 @@ export const useDoc = create<DocState>()(
         setStationLabelItalic: (stationId, italic) =>
           set((s) => T.setStationLabelItalic(s, stationId, italic)),
         setLabelItalic: (i) => set((s) => T.setLabelItalic(s, i)),
-        setActivePalettes: (idsArr) => set((s) => T.setActivePalettes(s, idsArr)),
-        togglePalette: (id) => set((s) => T.togglePalette(s, id)),
+        setActivePalettes: (idsArr) =>
+          set((s) => T.setActivePalettes(s, idsArr, useCustomPalettes.getState().palettes)),
+        togglePalette: (id) =>
+          set((s) => T.togglePalette(s, id, useCustomPalettes.getState().palettes)),
+        deleteCustomPalette: (id) => {
+          useCustomPalettes.getState().removePalette(id);
+          set((s) => {
+            const custom = useCustomPalettes.getState().palettes;
+            const next = s.activePalettes.filter((x) => x !== id);
+            // Keep the "≥1 active palette" invariant: if deleting the sole active
+            // palette would empty the set, fall back to the default.
+            return T.setActivePalettes(
+              s,
+              next.length ? next : [...DEFAULT_DOC.activePalettes],
+              custom,
+            );
+          });
+        },
         setTransferThickness: (n) => set((s) => T.setTransferThickness(s, n)),
         setTransferColor: (c) => set((s) => T.setTransferColor(s, c)),
         setTransferStrokeWidth: (n) => set((s) => T.setTransferStrokeWidth(s, n)),

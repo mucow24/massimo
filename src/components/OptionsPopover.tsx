@@ -1,4 +1,4 @@
-import { Fragment, useId, useState } from 'react';
+import { Fragment, useId, useRef, useState } from 'react';
 import { ChevronDownIcon, ChevronRightIcon, MixerHorizontalIcon } from '@radix-ui/react-icons';
 import { useDoc } from '../state/store';
 import {
@@ -12,6 +12,8 @@ import {
 } from '../model/transforms';
 import type { TextLabelWeight } from '../model/types';
 import { PALETTES } from '../model/palettes';
+import { parseCustomPalette } from '../model/customPalette';
+import { useCustomPalettes } from '../state/customPalettes';
 import { NumericFieldRow } from './NumericFieldRow';
 import { useFieldHistory } from './useFieldHistory';
 import { usePopover } from './usePopover';
@@ -45,6 +47,25 @@ export function OptionsPopover() {
   const setTransferStrokeColor = useDoc((s) => s.setTransferStrokeColor);
 
   const [palettesExpanded, setPalettesExpanded] = useState(false);
+
+  const customPalettes = useCustomPalettes((s) => s.palettes);
+  const addPalette = useCustomPalettes((s) => s.addPalette);
+  const deleteCustomPalette = useDoc((s) => s.deleteCustomPalette);
+  const paletteFileRef = useRef<HTMLInputElement>(null);
+  const [paletteError, setPaletteError] = useState<string | null>(null);
+
+  const onLoadPalette = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const f = e.target.files?.[0];
+    e.target.value = ''; // allow re-picking the same file
+    if (!f) return;
+    const result = parseCustomPalette(await f.text());
+    if (!result.ok) {
+      setPaletteError(result.error);
+      return;
+    }
+    setPaletteError(null);
+    addPalette({ name: result.name, swatches: result.swatches });
+  };
 
   // Curve radius is slider-only (no spinbutton), so it stays inline with its
   // own useFieldHistory. The slider+spinbutton fields all go through
@@ -202,6 +223,64 @@ export function OptionsPopover() {
             </button>
             {palettesExpanded && (
               <div className="options-palettes">
+                <button
+                  type="button"
+                  className="btn-mini options-palette-load"
+                  onClick={() => paletteFileRef.current?.click()}
+                >
+                  Load palette…
+                </button>
+                <input
+                  ref={paletteFileRef}
+                  type="file"
+                  accept=".json,application/json"
+                  aria-label="Load palette file"
+                  style={{ display: 'none' }}
+                  onChange={onLoadPalette}
+                />
+                {paletteError && (
+                  <div className="options-palette-error" role="alert">
+                    {paletteError}
+                  </div>
+                )}
+                {customPalettes.map((palette) => {
+                  const checked = activePalettes.includes(palette.id);
+                  const isLone = checked && activePalettes.length === 1;
+                  return (
+                    <label key={palette.id} className="options-palette-card" aria-disabled={isLone}>
+                      <div className="options-palette-card-row">
+                        <input
+                          type="checkbox"
+                          aria-label={palette.name}
+                          checked={checked}
+                          disabled={isLone}
+                          onChange={() => togglePalette(palette.id)}
+                        />
+                        <span>{palette.name}</span>
+                        <button
+                          type="button"
+                          className="btn-mini danger options-palette-delete"
+                          aria-label={`Delete ${palette.name}`}
+                          title={`Delete ${palette.name}`}
+                          onClick={(e) => {
+                            e.preventDefault();
+                            deleteCustomPalette(palette.id);
+                          }}
+                        >
+                          ×
+                        </button>
+                      </div>
+                      <div className="options-palette-strip" aria-hidden="true">
+                        {palette.swatches.map((s, si) => (
+                          <span key={si} style={{ background: s.color }} />
+                        ))}
+                      </div>
+                    </label>
+                  );
+                })}
+                {customPalettes.length > 0 && (
+                  <hr className="options-palette-separator" aria-hidden="true" />
+                )}
                 {PALETTES.map((palette, i) => {
                   const checked = activePalettes.includes(palette.id);
                   const isLone = checked && activePalettes.length === 1;
