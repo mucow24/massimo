@@ -15,6 +15,7 @@ import {
   routeBulletPayload,
   textLabelPayload,
   polygonPayload,
+  svgImagePayload,
   writeClipboard,
   type ClipPayload,
 } from './model/clipboard';
@@ -37,6 +38,10 @@ function unlockedSelectedRouteBulletIds(): string[] {
 function unlockedSelectedLabelIds(): string[] {
   const doc = useDoc.getState();
   return useSelection.getState().selectedLabelIds.filter((id) => !doc.textLabels[id]?.locked);
+}
+function unlockedSelectedSvgImageIds(): string[] {
+  const doc = useDoc.getState();
+  return useSelection.getState().selectedSvgImageIds.filter((id) => !doc.svgImages[id]?.locked);
 }
 
 // Selected stations minus locked ones — locked stations resist Delete and
@@ -81,6 +86,7 @@ export default function App() {
   const selectRouteBullet = useSelection((s) => s.selectRouteBullet);
   const selectTransfer = useSelection((s) => s.selectTransfer);
   const selectLabel = useSelection((s) => s.selectLabel);
+  const selectSvgImage = useSelection((s) => s.selectSvgImage);
   const setToolMode = useSelection((s) => s.setToolMode);
   const setSpaceHeld = useSelection((s) => s.setSpaceHeld);
 
@@ -119,6 +125,7 @@ export default function App() {
         selectRouteBullet(null);
         selectTransfer(null);
         selectLabel(null);
+        selectSvgImage(null);
         return;
       }
       if ((e.key === 'Delete' || e.key === 'Backspace') && !inFormControl) {
@@ -144,18 +151,28 @@ export default function App() {
         const bulletIds = unlockedSelectedRouteBulletIds();
         const labelIds = unlockedSelectedLabelIds();
         const polygonIds = unlockedSelectedPolygonIds();
-        if (stationIds.length + bulletIds.length + labelIds.length + polygonIds.length > 0) {
+        const svgImageIds = unlockedSelectedSvgImageIds();
+        if (
+          stationIds.length +
+            bulletIds.length +
+            labelIds.length +
+            polygonIds.length +
+            svgImageIds.length >
+          0
+        ) {
           e.preventDefault();
           sel.selectStation(null);
           sel.selectRouteBullet(null);
           sel.selectLabel(null);
           sel.selectPolygon(null);
+          sel.selectSvgImage(null);
           const group = beginHistoryGroup();
           const doc = useDoc.getState();
           for (const id of stationIds) doc.deleteStation(id);
           for (const id of bulletIds) doc.deleteRouteBullet(id);
           for (const id of labelIds) doc.deleteTextLabel(id);
           for (const id of polygonIds) doc.deletePolygon(id);
+          for (const id of svgImageIds) doc.deleteSvgImage(id);
           group.commit();
           return;
         }
@@ -211,7 +228,15 @@ export default function App() {
         const bulletIds = unlockedSelectedRouteBulletIds();
         const labelIds = unlockedSelectedLabelIds();
         const polygonIds = unlockedSelectedPolygonIds();
-        if (stationIds.length + bulletIds.length + labelIds.length + polygonIds.length > 0) {
+        const svgImageIds = unlockedSelectedSvgImageIds();
+        if (
+          stationIds.length +
+            bulletIds.length +
+            labelIds.length +
+            polygonIds.length +
+            svgImageIds.length >
+          0
+        ) {
           e.preventDefault();
           const group = beginHistoryGroup();
           for (const id of stationIds) {
@@ -227,6 +252,10 @@ export default function App() {
             if (l) doc.moveTextLabel(id, l.x + dx, l.y + dy);
           }
           for (const id of polygonIds) doc.movePolygon(id, dx, dy);
+          for (const id of svgImageIds) {
+            const im = doc.svgImages[id];
+            if (im) doc.moveSvgImage(id, im.x + dx, im.y + dy);
+          }
           group.commit();
         }
         return;
@@ -253,7 +282,9 @@ export default function App() {
       // working; when nothing copyable is selected we fall through WITHOUT
       // preventDefault so native copy/paste still works.
       if (mod && !inForm && (e.key === 'c' || e.key === 'C')) {
-        const { bullets, labels, polygons } = getCopyableSelection(useSelection.getState());
+        const { bullets, labels, polygons, svgImages } = getCopyableSelection(
+          useSelection.getState(),
+        );
         const doc = useDoc.getState();
         const items: ClipPayload[] = [];
         for (const id of bullets) {
@@ -267,6 +298,10 @@ export default function App() {
         for (const id of polygons) {
           const p = doc.polygons[id];
           if (p) items.push(polygonPayload(p));
+        }
+        for (const id of svgImages) {
+          const im = doc.svgImages[id];
+          if (im) items.push(svgImagePayload(im));
         }
         if (items.length === 0) return;
         navigator.clipboard?.writeText(writeClipboard(items)).catch(() => {});
@@ -284,14 +319,16 @@ export default function App() {
             const bullets: string[] = [];
             const labels: string[] = [];
             const polygons: string[] = [];
+            const svgImages: string[] = [];
             const group = beginHistoryGroup();
             for (const item of items) {
               if (item.kind === 'route-bullet') bullets.push(doc.pasteRouteBullet(item.data));
               else if (item.kind === 'text-label') labels.push(doc.pasteTextLabel(item.data));
               else if (item.kind === 'polygon') polygons.push(doc.pastePolygon(item.data));
+              else if (item.kind === 'svg-image') svgImages.push(doc.pasteSvgImage(item.data));
             }
             group.commit();
-            useSelection.getState().setMixedSelection({ bullets, labels, polygons });
+            useSelection.getState().setMixedSelection({ bullets, labels, polygons, svgImages });
           })
           .catch(() => {});
         return;
@@ -301,8 +338,10 @@ export default function App() {
           bullets: bulletIds,
           labels: labelIds,
           polygons: polygonIds,
+          svgImages: svgImageIds,
         } = getCopyableSelection(useSelection.getState());
-        if (bulletIds.length + labelIds.length + polygonIds.length === 0) return;
+        if (bulletIds.length + labelIds.length + polygonIds.length + svgImageIds.length === 0)
+          return;
         e.preventDefault();
         const doc = useDoc.getState();
         const group = beginHistoryGroup();
@@ -315,8 +354,11 @@ export default function App() {
         const polygons = polygonIds
           .map((id) => doc.duplicatePolygon(id))
           .filter((id): id is string => id != null);
+        const svgImages = svgImageIds
+          .map((id) => doc.duplicateSvgImage(id))
+          .filter((id): id is string => id != null);
         group.commit();
-        useSelection.getState().setMixedSelection({ bullets, labels, polygons });
+        useSelection.getState().setMixedSelection({ bullets, labels, polygons, svgImages });
         return;
       }
       if (!inFormControl && !mod && (e.key === 'a' || e.key === 'A')) {
@@ -367,6 +409,7 @@ export default function App() {
     selectRouteBullet,
     selectTransfer,
     selectLabel,
+    selectSvgImage,
     setToolMode,
     setSpaceHeld,
   ]);

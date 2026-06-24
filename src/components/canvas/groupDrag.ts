@@ -1,7 +1,7 @@
 import { useDoc, useSelection } from '../../state/store';
 import type { Vec2 } from '../../geometry/vec';
 
-export type GrabbedKind = 'station' | 'bullet' | 'label' | 'polygon';
+export type GrabbedKind = 'station' | 'bullet' | 'label' | 'polygon' | 'svgImage';
 
 // Every OTHER selected item, captured at pointer-down with its start position,
 // so a group drag can tow them by the grabbed item's per-frame delta. x/y items
@@ -11,10 +11,11 @@ export interface GroupSiblings {
   bullets: { id: string; startX: number; startY: number }[];
   labels: { id: string; startX: number; startY: number }[];
   polygons: { id: string; startVerts: Vec2[] }[];
+  svgImages: { id: string; startX: number; startY: number }[];
 }
 
 export function emptyGroupSiblings(): GroupSiblings {
-  return { stations: [], bullets: [], labels: [], polygons: [] };
+  return { stations: [], bullets: [], labels: [], polygons: [], svgImages: [] };
 }
 
 /**
@@ -32,7 +33,9 @@ export function collectGroupSiblings(grabbedKind: GrabbedKind, grabbedId: string
         ? sel.selectedRouteBulletIds.includes(grabbedId)
         : grabbedKind === 'label'
           ? sel.selectedLabelIds.includes(grabbedId)
-          : sel.selectedPolygonIds.includes(grabbedId);
+          : grabbedKind === 'polygon'
+            ? sel.selectedPolygonIds.includes(grabbedId)
+            : sel.selectedSvgImageIds.includes(grabbedId);
   if (!grabbedSelected) return emptyGroupSiblings();
 
   const doc = useDoc.getState();
@@ -58,11 +61,23 @@ export function collectGroupSiblings(grabbedKind: GrabbedKind, grabbedId: string
     const p = doc.polygons[id];
     if (p && !p.locked) out.polygons.push({ id, startVerts: p.vertices.map((v) => ({ ...v })) });
   }
+  for (const id of sel.selectedSvgImageIds) {
+    if (grabbedKind === 'svgImage' && id === grabbedId) continue;
+    const im = doc.svgImages[id];
+    if (im && !im.locked) out.svgImages.push({ id, startX: im.x, startY: im.y });
+  }
   return out;
 }
 
 export function hasGroupSiblings(s: GroupSiblings): boolean {
-  return s.stations.length + s.bullets.length + s.labels.length + s.polygons.length > 0;
+  return (
+    s.stations.length +
+      s.bullets.length +
+      s.labels.length +
+      s.polygons.length +
+      s.svgImages.length >
+    0
+  );
 }
 
 /** Translate every captured sibling by (dx, dy) through the store mutators. */
@@ -77,4 +92,5 @@ export function translateSiblings(s: GroupSiblings, dx: number, dy: number): voi
       ps.startVerts.map((v) => ({ x: v.x + dx, y: v.y + dy })),
     );
   }
+  for (const is of s.svgImages) doc.moveSvgImage(is.id, is.startX + dx, is.startY + dy);
 }

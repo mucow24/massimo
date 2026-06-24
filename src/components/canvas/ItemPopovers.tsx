@@ -3,6 +3,7 @@ import type { ViewportProjection } from './screenAnchor';
 import { RouteBulletPopover } from '../RouteBulletPopover';
 import { TextLabelPopover } from '../TextLabelPopover';
 import { PolygonPopover } from '../PolygonPopover';
+import { SvgImagePopover } from '../SvgImagePopover';
 
 /**
  * Mounts the single floating popover for the current sole selection — a route
@@ -17,6 +18,7 @@ export function ItemPopovers({ view }: { view: ViewportProjection }) {
   const routeBullets = useDoc((s) => s.routeBullets);
   const textLabels = useDoc((s) => s.textLabels);
   const polygons = useDoc((s) => s.polygons);
+  const svgImages = useDoc((s) => s.svgImages);
 
   // The popover anchors against the live viewport; a zero-size viewport (first
   // paint) has no screen mapping yet, so wait for a real box.
@@ -52,6 +54,13 @@ export function ItemPopovers({ view }: { view: ViewportProjection }) {
     const p = polygons[sole.id];
     if (!p) return null;
     return <PolygonPopover polygon={p} view={view} onClose={() => selection.selectPolygon(null)} />;
+  }
+  if (sole.type === 'svgImage') {
+    const im = svgImages[sole.id];
+    if (!im) return null;
+    return (
+      <SvgImagePopover image={im} view={view} onClose={() => selection.selectSvgImage(null)} />
+    );
   }
   return null;
 }

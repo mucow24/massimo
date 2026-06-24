@@ -31,10 +31,12 @@ export function usePlacementDispatch(view: ViewportApi): PlacementDispatch {
   const setUiMode = useSelection((s) => s.setUiMode);
   const selectLabel = useSelection((s) => s.selectLabel);
   const selectPolygon = useSelection((s) => s.selectPolygon);
+  const selectSvgImage = useSelection((s) => s.selectSvgImage);
   const addStation = useDoc((s) => s.addStation);
   const addRouteBullet = useDoc((s) => s.addRouteBullet);
   const addTextLabel = useDoc((s) => s.addTextLabel);
   const addPolygon = useDoc((s) => s.addPolygon);
+  const addSvgImage = useDoc((s) => s.addSvgImage);
   const lineOrder = useDoc((s) => s.lineOrder);
   const lines = useDoc((s) => s.lines);
   const snapModes = useSnapPrefs((s) => s.modes);
@@ -112,6 +114,16 @@ export function usePlacementDispatch(view: ViewportApi): PlacementDispatch {
       const id = addPolygon(w.x, w.y);
       setUiMode({ kind: 'idle' });
       selectPolygon(id);
+      return true;
+    }
+    if (mode.kind === 'placing-svg') {
+      // Single-shot like labels/polygons: drop the imported image centered at
+      // the cursor (no grid snap on placement), exit, and select it so the
+      // transform handles + popover appear for immediate manipulation.
+      const w = view.screenToWorld(e.clientX, e.clientY);
+      const id = addSvgImage({ ...mode.image, x: w.x, y: w.y, rotation: 0 });
+      setUiMode({ kind: 'idle' });
+      selectSvgImage(id);
       return true;
     }
     return false;

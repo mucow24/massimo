@@ -2,7 +2,7 @@ import { describe, it, expect, beforeEach, vi } from 'vitest';
 import { rotateItemOnContextMenu } from './groupRotate';
 import { useDoc, useSelection } from '../../state/store';
 import { DEFAULT_DOC } from '../../model/transforms';
-import { makeDoc, makeStation } from '../../test/fixtures';
+import { makeDoc, makeStation, makeSvgImage } from '../../test/fixtures';
 
 // Reset both stores; clear every selection id list so each test sets exactly
 // what it needs.
@@ -12,6 +12,7 @@ const blankSelection = () =>
     selectedRouteBulletIds: [],
     selectedLabelIds: [],
     selectedPolygonIds: [],
+    selectedSvgImageIds: [],
   });
 
 beforeEach(() => {
@@ -48,6 +49,47 @@ describe('rotateItemOnContextMenu', () => {
     // The pivot a stays put.
     expect(doc.stations.a.x).toBe(0);
     expect(doc.stations.a.y).toBe(0);
+  });
+
+  it('includes a co-selected svg image in the group rotation (no longer left behind)', () => {
+    useDoc.setState({
+      ...DEFAULT_DOC,
+      ...makeDoc({
+        stations: [makeStation({ id: 'a', x: 0, y: 0, rotation: 0 })],
+        svgImages: [makeSvgImage({ id: 'i0', x: 100, y: 0, rotation: 0 })],
+      }),
+    });
+    useSelection.setState({ selectedStationIds: ['a'], selectedSvgImageIds: ['i0'] });
+
+    const rotateSingle = vi.fn();
+    rotateItemOnContextMenu({ type: 'station', id: 'a' }, rotateSingle);
+
+    expect(rotateSingle).not.toHaveBeenCalled();
+    const doc = useDoc.getState();
+    // The svg image orbits 45° CW about the pivot and bumps its rotation by 45.
+    expect(doc.svgImages.i0.x).toBeCloseTo(100 * Math.cos(Math.PI / 4), 6);
+    expect(doc.svgImages.i0.y).toBeCloseTo(100 * Math.sin(Math.PI / 4), 6);
+    expect(doc.svgImages.i0.rotation).toBe(45);
+  });
+
+  it('group-rotates when the pivot itself is the svg image', () => {
+    useDoc.setState({
+      ...DEFAULT_DOC,
+      ...makeDoc({
+        stations: [makeStation({ id: 'a', x: 100, y: 0, rotation: 0 })],
+        svgImages: [makeSvgImage({ id: 'i0', x: 0, y: 0, rotation: 10 })],
+      }),
+    });
+    useSelection.setState({ selectedStationIds: ['a'], selectedSvgImageIds: ['i0'] });
+
+    const rotateSingle = vi.fn();
+    rotateItemOnContextMenu({ type: 'svgImage', id: 'i0' }, rotateSingle);
+
+    expect(rotateSingle).not.toHaveBeenCalled();
+    const doc = useDoc.getState();
+    // Pivot image stays put; its rotation steps 10 → 55. The station orbits it.
+    expect(doc.svgImages.i0).toMatchObject({ x: 0, y: 0, rotation: 55 });
+    expect(doc.stations.a.x).toBeCloseTo(100 * Math.cos(Math.PI / 4), 6);
   });
 
   it('rotates just the clicked item (rotateSingle) when nothing is selected', () => {

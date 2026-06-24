@@ -701,17 +701,19 @@ describe('reconcileWithDoc', () => {
 });
 
 describe('getCopyableSelection', () => {
-  it('returns bullets/labels/polygons but never stations', () => {
+  it('returns bullets/labels/polygons/svgImages but never stations', () => {
     useSelection.setState({
       selectedStationIds: ['s1'] as StationId[],
       selectedRouteBulletIds: ['b1'],
       selectedLabelIds: ['g1'],
       selectedPolygonIds: ['p1'],
+      selectedSvgImageIds: ['i1'],
     });
     expect(getCopyableSelection(useSelection.getState())).toEqual({
       bullets: ['b1'],
       labels: ['g1'],
       polygons: ['p1'],
+      svgImages: ['i1'],
     });
   });
 });

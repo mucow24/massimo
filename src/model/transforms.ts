@@ -13,6 +13,7 @@ import { pairKeyOf } from './pairKey';
 import { DIR_8, rotateBy, stopCenterAt } from '../geometry/orientation';
 import { GRID_INTERVAL, snapPointToGrid, type GridSnap } from '../geometry/snap';
 import { polygonCentroid, edgeMidpoint } from '../geometry/polygon';
+import { SVG_IMAGE_MIN_SIZE, normalizeRotation } from '../geometry/svgImage';
 import { measureTextLabel } from '../geometry/textMeasure';
 import type { Vec2 } from '../geometry/vec';
 import { normalizePaletteIds, type Palette, type PaletteId } from './palettes';
@@ -28,6 +29,8 @@ import type {
   MapDoc,
   Polygon,
   PolygonStylePatch,
+  SvgImage,
+  SvgImageStylePatch,
   Rotation,
   RouteBullet,
   Station,
@@ -93,6 +96,8 @@ export const DEFAULT_DOC: MapDoc = {
   textLabels: {},
   polygons: {},
   polygonOrder: [],
+  svgImages: {},
+  svgImageOrder: [],
   labelFontSize: LABEL_FONT_SIZE_DEFAULT,
   labelWeight: LABEL_WEIGHT_DEFAULT,
   labelItalic: false,
@@ -166,6 +171,7 @@ type RecordCollectionKey =
   | 'routeBullets'
   | 'textLabels'
   | 'polygons'
+  | 'svgImages'
   | 'lineTags'
   | 'transfers';
 
@@ -661,7 +667,7 @@ const orbitPoint = (
  * in without requiring callers to pre-split by type.
  */
 export interface ItemRef {
-  type: 'station' | 'bullet' | 'label' | 'polygon';
+  type: 'station' | 'bullet' | 'label' | 'polygon' | 'svgImage';
   id: string;
 }
 
@@ -683,6 +689,11 @@ export function rotateItemsAround(doc: MapDoc, pivot: ItemRef, members: ItemRef[
     const c = polygonCentroid(pv.vertices);
     px = c.x;
     py = c.y;
+  } else if (pivot.type === 'svgImage') {
+    const pv = doc.svgImages[pivot.id];
+    if (!pv) return doc;
+    px = pv.x;
+    py = pv.y;
   } else {
     const pivotItem =
       pivot.type === 'station'
@@ -702,6 +713,7 @@ export function rotateItemsAround(doc: MapDoc, pivot: ItemRef, members: ItemRef[
   let routeBullets = doc.routeBullets;
   let textLabels = doc.textLabels;
   let polygons = doc.polygons;
+  let svgImages = doc.svgImages;
 
   for (const m of members) {
     const isPivot = m.type === pivot.type && m.id === pivot.id;
@@ -729,7 +741,7 @@ export function rotateItemsAround(doc: MapDoc, pivot: ItemRef, members: ItemRef[
         ...textLabels,
         [m.id]: { ...cur, rotation: stepRotation(cur.rotation), x: p.x, y: p.y },
       };
-    } else {
+    } else if (m.type === 'polygon') {
       // Polygon: orbit every vertex about the pivot. When the polygon IS the
       // pivot, orbiting about its own centroid is exactly an in-place 45°
       // rotation — no separate rotation field to step.
@@ -737,9 +749,20 @@ export function rotateItemsAround(doc: MapDoc, pivot: ItemRef, members: ItemRef[
       if (!cur) continue;
       const vertices = cur.vertices.map((vert) => orbitPoint(vert.x, vert.y, px, py, cs, sn));
       polygons = { ...polygons, [m.id]: { ...cur, vertices } };
+    } else {
+      // Svg image: orbit the center (held fixed when it IS the pivot) and step
+      // its continuous rotation by 45° — a clean multiple of the 22.5° snap
+      // grid, so a group rotate never desyncs an image from that grid.
+      const cur = svgImages[m.id];
+      if (!cur) continue;
+      const p = isPivot ? { x: cur.x, y: cur.y } : orbitPoint(cur.x, cur.y, px, py, cs, sn);
+      svgImages = {
+        ...svgImages,
+        [m.id]: { ...cur, x: p.x, y: p.y, rotation: normalizeRotation(cur.rotation + 45) },
+      };
     }
   }
-  return { ...doc, stations, routeBullets, textLabels, polygons };
+  return { ...doc, stations, routeBullets, textLabels, polygons, svgImages };
 }
 
 /**
@@ -752,12 +775,14 @@ export function buildRotateMembers(
   bulletIds: string[],
   labelIds: string[],
   polygonIds: string[] = [],
+  svgImageIds: string[] = [],
 ): ItemRef[] {
   return [
     ...stationIds.map((id): ItemRef => ({ type: 'station', id })),
     ...bulletIds.map((id): ItemRef => ({ type: 'bullet', id })),
     ...labelIds.map((id): ItemRef => ({ type: 'label', id })),
     ...polygonIds.map((id): ItemRef => ({ type: 'polygon', id })),
+    ...svgImageIds.map((id): ItemRef => ({ type: 'svgImage', id })),
   ];
 }
 
@@ -1879,6 +1904,85 @@ export function movePolygonUp(doc: MapDoc, id: string): MapDoc {
 // Toward the bottom (rendered behind the other polygons).
 export function movePolygonDown(doc: MapDoc, id: string): MapDoc {
   return movePolygonBy(doc, id, -1);
+}
+
+// ---------- Svg images ----------
+
+// Insert a fully-specified imported svg image. Used by the placement drop and
+// by duplicate/paste (the store actions supply all fields).
+export function addSvgImage(doc: MapDoc, id: string, fields: Omit<SvgImage, 'id'>): MapDoc {
+  const image: SvgImage = { id, ...fields };
+  return {
+    ...doc,
+    svgImages: { ...doc.svgImages, [id]: image },
+    svgImageOrder: [...doc.svgImageOrder, id],
+  };
+}
+
+const clampSvgImageSize = (n: number): number => Math.max(SVG_IMAGE_MIN_SIZE, n);
+
+export function updateSvgImage(doc: MapDoc, id: string, patch: SvgImageStylePatch): MapDoc {
+  return updateRecord(doc, 'svgImages', id, (cur) => {
+    let next = patch;
+    if (typeof next.width === 'number') next = { ...next, width: clampSvgImageSize(next.width) };
+    if (typeof next.height === 'number') next = { ...next, height: clampSvgImageSize(next.height) };
+    if (typeof next.rotation === 'number') {
+      next = { ...next, rotation: normalizeRotation(next.rotation) };
+    }
+    return { ...cur, ...next };
+  });
+}
+
+// Absolute center setter — used by whole-image drag and group-tow, which
+// recompute the center from the gesture's start snapshot each frame.
+export function setSvgImageCenter(doc: MapDoc, id: string, x: number, y: number): MapDoc {
+  return updateRecord(doc, 'svgImages', id, (cur) => ({ ...cur, x, y }));
+}
+
+export function deleteSvgImage(doc: MapDoc, id: string): MapDoc {
+  if (!doc.svgImages[id]) return doc;
+  const { [id]: _gone, ...rest } = doc.svgImages;
+  return {
+    ...doc,
+    svgImages: rest,
+    svgImageOrder: doc.svgImageOrder.filter((iid) => iid !== id),
+  };
+}
+
+/**
+ * The svg-image ids in paint order: stored `svgImageOrder` filtered to ones
+ * that still exist, then any missing from it appended (legacy saves, races) so
+ * nothing drops out. Later = on top. Mirrors `effectivePolygonOrder`.
+ */
+export function effectiveSvgImageOrder(
+  svgImages: Record<string, SvgImage>,
+  order: string[],
+): string[] {
+  const existing = order.filter((id) => svgImages[id]);
+  const seen = new Set(existing);
+  const missing = Object.keys(svgImages).filter((id) => !seen.has(id));
+  return [...existing, ...missing];
+}
+
+function moveSvgImageBy(doc: MapDoc, id: string, dir: 1 | -1): MapDoc {
+  if (!doc.svgImages[id]) return doc;
+  const order = effectiveSvgImageOrder(doc.svgImages, doc.svgImageOrder);
+  const i = order.indexOf(id);
+  const j = i + dir;
+  if (i < 0 || j < 0 || j >= order.length) return doc;
+  const next = order.slice();
+  [next[i], next[j]] = [next[j], next[i]];
+  return { ...doc, svgImageOrder: next };
+}
+
+// Toward the top (rendered in front of the other images).
+export function moveSvgImageUp(doc: MapDoc, id: string): MapDoc {
+  return moveSvgImageBy(doc, id, 1);
+}
+
+// Toward the bottom (rendered behind the other images).
+export function moveSvgImageDown(doc: MapDoc, id: string): MapDoc {
+  return moveSvgImageBy(doc, id, -1);
 }
 
 // ---------- Transfers ----------
