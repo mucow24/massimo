@@ -28,6 +28,26 @@ interface ViewportState extends Viewport {
 }
 
 /**
+ * The live, un-committed viewport during an in-flight gesture (pan / wheel
+ * zoom), or null between gestures. useViewport writes the SVG viewBox
+ * imperatively each event and publishes the same viewport here so overlays
+ * pinned to the canvas (the item popovers) can track the gesture per frame —
+ * the only React subscriber is the small popover layer, so the ~2.7k-node SVG
+ * tree (which reads the committed `useViewportStore`) is never re-rendered
+ * mid-gesture. Kept OUT of `useViewportStore` precisely because that store is
+ * persisted: a per-frame write there would hammer localStorage.
+ */
+interface LiveViewportState {
+  pending: Viewport | null;
+  setPending: (v: Viewport | null) => void;
+}
+
+export const useLiveViewportStore = create<LiveViewportState>((set) => ({
+  pending: null,
+  setPending: (pending) => set({ pending }),
+}));
+
+/**
  * Camera state (pan + zoom) lives outside MapDoc. It's UI/session state,
  * not document data — saved files are camera-agnostic, but local camera
  * memory across reloads still works via its own localStorage key.

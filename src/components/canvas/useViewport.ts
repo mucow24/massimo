@@ -1,14 +1,28 @@
 import { RefObject, useEffect, useRef, useState } from 'react';
 import { dragState } from '../../state/store';
 import { DRAG_MOVE_THRESHOLD } from './dragGesture';
-import { useViewportStore } from '../../state/viewportStore';
+import { useLiveViewportStore, useViewportStore } from '../../state/viewportStore';
 import type { Viewport } from '../../model/types';
+import type { ViewportProjection } from './screenAnchor';
 import {
   computeWheelZoom,
+  liveProjection,
   panFromDelta,
   screenToWorld as toWorld,
   viewBoxFor,
 } from './viewportMath';
+
+/**
+ * The viewport projection an anchored overlay should render with this frame:
+ * the committed `view` between gestures, or the live in-flight viewport during
+ * an imperative-viewBox pan/zoom (so the overlay tracks the canvas instead of
+ * jumping at commit — see {@link liveProjection}). Subscribes only the calling
+ * overlay to the per-frame `pending` updates, never the SVG canvas.
+ */
+export function useLiveView(view: ViewportProjection): ViewportProjection {
+  const pending = useLiveViewportStore((s) => s.pending);
+  return liveProjection(view, pending);
+}
 
 const viewBoxStr = (vb: { vbX: number; vbY: number; vbW: number; vbH: number }) =>
   `${vb.vbX} ${vb.vbY} ${vb.vbW} ${vb.vbH}`;
@@ -55,6 +69,10 @@ export function useViewport(svgRef: RefObject<SVGSVGElement | null>): ViewportAp
   const zoom = useViewportStore((s) => s.zoom);
   const setViewport = useViewportStore((s) => s.setViewport);
   const viewport = { x, y, zoom };
+  // The live-viewport setter, NOT subscribed (getState/stable ref): writing the
+  // in-flight viewport here each gesture event must not re-render this hook (and
+  // so the whole canvas) — only the popover overlay subscribes to its value.
+  const setPending = useLiveViewportStore.getState().setPending;
 
   const [size, setSize] = useState({ w: 800, h: 600 });
   const [panning, setPanning] = useState(false);
@@ -67,11 +85,6 @@ export function useViewport(svgRef: RefObject<SVGSVGElement | null>): ViewportAp
     moved: boolean;
     captured: boolean;
   } | null>(null);
-  // Live un-committed viewport during an in-flight gesture (pan or wheel zoom):
-  // written to the SVG viewBox imperatively each event so the gesture stays
-  // smooth without re-rendering the ~2.7k-node tree, then committed to the store
-  // once the gesture ends.
-  const pendingRef = useRef<Viewport | null>(null);
   const zoomSettleRef = useRef<number | null>(null);
 
   useEffect(() => {
@@ -85,12 +98,14 @@ export function useViewport(svgRef: RefObject<SVGSVGElement | null>): ViewportAp
     return () => ro.disconnect();
   }, [svgRef]);
 
-  // Don't leave a settle commit scheduled past unmount.
+  // Don't leave a settle commit scheduled — or an in-flight gesture's live
+  // viewport — dangling past unmount.
   useEffect(
     () => () => {
       if (zoomSettleRef.current != null) clearTimeout(zoomSettleRef.current);
+      setPending(null);
     },
-    [],
+    [setPending],
   );
 
   // viewBox: world coords; center of screen = (viewport.x, viewport.y), zoom scales.
@@ -106,7 +121,7 @@ export function useViewport(svgRef: RefObject<SVGSVGElement | null>): ViewportAp
 
   // The latest intended viewport, including the current gesture's un-committed
   // delta (falls back to the committed store value between gestures).
-  const liveViewport = () => pendingRef.current ?? viewport;
+  const liveViewport = () => useLiveViewportStore.getState().pending ?? viewport;
 
   // Map through the LIVE viewBox, not the committed `vb`: during an imperative
   // pan/zoom the store hasn't been written yet, so a cursor-following overlay
@@ -118,23 +133,27 @@ export function useViewport(svgRef: RefObject<SVGSVGElement | null>): ViewportAp
     return toWorld({ x: mx, y: my }, viewBoxFor(liveViewport(), size), rect);
   };
 
-  // Apply a viewport to the SVG viewBox now, without a store write (no React
-  // re-render); the gesture's end commits it.
+  // Apply a viewport to the SVG viewBox now, without committing the camera (no
+  // re-render of the canvas tree). Also publishes the live viewport so the
+  // popover overlay tracks the gesture; the gesture's end commits the camera.
   const applyViewBox = (v: Viewport) => {
-    pendingRef.current = v;
+    setPending(v);
     svgRef.current?.setAttribute('viewBox', viewBoxStr(viewBoxFor(v, size)));
   };
 
   // Commit the in-flight gesture to the store (re-render + reproject) and stop
-  // any scheduled wheel-settle commit.
+  // any scheduled wheel-settle commit. Clearing `pending` last keeps the popover
+  // on the live viewport right up to the commit, so it lands where it already
+  // sat — no jump.
   const commitPending = () => {
     if (zoomSettleRef.current != null) {
       clearTimeout(zoomSettleRef.current);
       zoomSettleRef.current = null;
     }
-    if (pendingRef.current) {
-      setViewport(pendingRef.current);
-      pendingRef.current = null;
+    const pending = useLiveViewportStore.getState().pending;
+    if (pending) {
+      setViewport(pending);
+      setPending(null);
     }
   };
 

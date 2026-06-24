@@ -3,6 +3,7 @@
 // hook stays a thin stateful wrapper that reads one getBoundingClientRect per
 // gesture event and delegates the arithmetic here.
 import type { Viewport } from '../../model/types';
+import type { ViewportProjection } from './screenAnchor';
 
 export interface Size {
   w: number;
@@ -51,6 +52,23 @@ export function overdrawnViewBox(vb: ViewBox): ViewBox {
     vbW: vb.vbW * 3,
     vbH: vb.vbH * 3,
   };
+}
+
+/**
+ * The projection an anchored overlay (an item popover) should use this frame:
+ * the committed `view` between gestures, or one reprojected through the live
+ * `pending` viewport while a pan/zoom is in flight. During an imperative-viewBox
+ * gesture the committed store hasn't been written yet, so a popover projected
+ * via `view` alone would sit still until commit and then jump; reprojecting
+ * through `pending` lets it track the canvas frame-for-frame. At the commit
+ * instant `pending` equals the committed viewport, so the fallback is seamless.
+ */
+export function liveProjection(
+  view: ViewportProjection,
+  pending: Viewport | null,
+): ViewportProjection {
+  if (!pending) return view;
+  return { ...viewBoxFor(pending, view.size), size: view.size };
 }
 
 /** Map a client-pixel point to world coords through a viewBox + host rect. */
