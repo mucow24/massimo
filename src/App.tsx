@@ -226,15 +226,7 @@ export default function App() {
             const l = doc.textLabels[id];
             if (l) doc.moveTextLabel(id, l.x + dx, l.y + dy);
           }
-          for (const id of polygonIds) {
-            const p = doc.polygons[id];
-            if (p) {
-              doc.setPolygonVertices(
-                id,
-                p.vertices.map((v) => ({ x: v.x + dx, y: v.y + dy })),
-              );
-            }
-          }
+          for (const id of polygonIds) doc.movePolygon(id, dx, dy);
           group.commit();
         }
         return;
