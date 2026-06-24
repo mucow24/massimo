@@ -1,7 +1,7 @@
 import { describe, it, expect, beforeEach, vi } from 'vitest';
 import { act, renderHook } from '@testing-library/react';
 import { useViewport, type ViewportApi } from './useViewport';
-import { useViewportStore } from '../../state/viewportStore';
+import { useLiveViewportStore, useViewportStore } from '../../state/viewportStore';
 import { dragState } from '../../state/store';
 import { fakeSvgRef, pointerEvent, wheelEvent } from '../../test/interaction';
 
@@ -14,6 +14,7 @@ const wheel = (r: Result, e: React.WheelEvent) => act(() => r.current.onWheel(e)
 
 beforeEach(() => {
   useViewportStore.setState({ x: 0, y: 0, zoom: 1 });
+  useLiveViewportStore.setState({ pending: null });
   dragState.suppressClick = false;
 });
 
@@ -202,6 +203,32 @@ describe('useViewport — panning', () => {
     expect(result.current.viewport.y).toBe(0);
     up(result, pointerEvent({ clientX: 150, clientY: 130 }));
     expect(result.current.viewport.x).toBe(-50);
+  });
+
+  it('publishes the in-flight viewport to the live store for overlays, and clears it on commit', () => {
+    // The popover overlay tracks a pan by subscribing to the live viewport
+    // store (the SVG viewBox moves imperatively without a re-render, so a
+    // committed-only overlay would sit still and jump at commit). A move
+    // publishes the live viewport; pointer-up commits it and clears the live
+    // slot so the overlay falls back to the committed prop.
+    const { result } = render();
+    down(result, pointerEvent({ clientX: 100, clientY: 100, button: 1 }));
+    move(result, pointerEvent({ clientX: 150, clientY: 130 }));
+    expect(useLiveViewportStore.getState().pending).toEqual({ x: -50, y: -30, zoom: 1 });
+    up(result, pointerEvent({ clientX: 150, clientY: 130 }));
+    expect(useLiveViewportStore.getState().pending).toBeNull();
+    // The committed camera now equals where the live viewport last sat — no jump.
+    expect(result.current.viewport).toEqual({ x: -50, y: -30, zoom: 1 });
+  });
+
+  it('clears the live viewport on unmount so an abandoned gesture leaks nothing', () => {
+    const { ref } = fakeSvgRef({ width: 800, height: 600 });
+    const { result, unmount } = renderHook(() => useViewport(ref));
+    act(() => result.current.startPan(pointerEvent({ clientX: 100, clientY: 100, button: 1 })));
+    act(() => result.current.onPointerMove(pointerEvent({ clientX: 150, clientY: 130 })));
+    expect(useLiveViewportStore.getState().pending).not.toBeNull();
+    unmount();
+    expect(useLiveViewportStore.getState().pending).toBeNull();
   });
 
   it('adopts an un-committed wheel zoom as the pan base (zoom, then pan before settle)', () => {
