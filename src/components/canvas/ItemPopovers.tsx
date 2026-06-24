@@ -1,5 +1,6 @@
 import { soleSelection, useDoc, useSelection } from '../../state/store';
 import type { ViewportProjection } from './screenAnchor';
+import { useLiveView } from './useViewport';
 import { RouteBulletPopover } from '../RouteBulletPopover';
 import { TextLabelPopover } from '../TextLabelPopover';
 import { PolygonPopover } from '../PolygonPopover';
@@ -12,7 +13,11 @@ import { PolygonPopover } from '../PolygonPopover';
  * no longer carries the three near-identical gating blocks + their popover
  * imports + the add/select wiring they implied.
  */
-export function ItemPopovers({ view }: { view: ViewportProjection }) {
+export function ItemPopovers({ view: committed }: { view: ViewportProjection }) {
+  // Reproject through the in-flight viewport during a pan/zoom so the popover
+  // tracks the canvas frame-for-frame instead of jumping at gesture-commit;
+  // identical to `committed` between gestures.
+  const view = useLiveView(committed);
   const selection = useSelection();
   const routeBullets = useDoc((s) => s.routeBullets);
   const textLabels = useDoc((s) => s.textLabels);
