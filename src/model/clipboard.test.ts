@@ -47,6 +47,7 @@ const polygonItem: ClipPayload = {
     fillOpacity: 50,
     locked: true,
     curveRadius: 12,
+    closed: false,
   },
 };
 
@@ -122,6 +123,24 @@ describe('writeClipboard / readClipboard roundtrip', () => {
     expect(parsed![0].data).not.toHaveProperty('fillOpacity');
     expect(parsed![0].data).not.toHaveProperty('locked');
     expect(parsed![0].data).not.toHaveProperty('curveRadius');
+    expect(parsed![0].data).not.toHaveProperty('closed');
+  });
+
+  it('preserves closed:false so an open polygon does not paste as closed', () => {
+    // Regression: `closed` is optional (missing ⇒ closed). A parser that drops
+    // it turns a copied OPEN polygon into a CLOSED one on paste — data loss.
+    const item: ClipPayload = {
+      kind: 'polygon',
+      data: { ...polygonItem.data, closed: false },
+    };
+    const parsed = readClipboard(writeClipboard([item]));
+    expect(parsed).toEqual([item]);
+    expect((parsed![0].data as { closed?: boolean }).closed).toBe(false);
+  });
+
+  it('rejects a polygon whose closed flag is present but not a boolean', () => {
+    const bad = { ...polygonItem.data, closed: 'nope' };
+    expect(readClipboard(envelope([{ kind: 'polygon', data: bad }]))).toBeNull();
   });
 });
 

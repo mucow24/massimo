@@ -1,5 +1,6 @@
 import { RefObject, useEffect, useRef, useState } from 'react';
 import { dragState } from '../../state/store';
+import { DRAG_MOVE_THRESHOLD } from './dragGesture';
 import { useViewportStore } from '../../state/viewportStore';
 import type { Viewport } from '../../model/types';
 import {
@@ -178,7 +179,7 @@ export function useViewport(svgRef: RefObject<SVGSVGElement | null>): ViewportAp
     const myDelta = e.clientY - panStartRef.current.my;
     // Mark the pan as a real drag once it crosses a small threshold so the
     // synthesized click on pointerup can be distinguished from a tap.
-    if (!panStartRef.current.moved && Math.hypot(mxDelta, myDelta) > 4) {
+    if (!panStartRef.current.moved && Math.hypot(mxDelta, myDelta) > DRAG_MOVE_THRESHOLD) {
       panStartRef.current.moved = true;
     }
     // Imperative viewBox write — no store commit (and so no React re-render) per

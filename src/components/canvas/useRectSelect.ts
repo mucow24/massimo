@@ -1,5 +1,6 @@
 import { RefObject, useRef, useState } from 'react';
 import { dragState, useDoc, useSelection } from '../../state/store';
+import { DRAG_MOVE_THRESHOLD } from './dragGesture';
 import {
   polygonsForRect,
   routeBulletsForRect,
@@ -127,7 +128,7 @@ export function useRectSelect(
     if (!ds) return;
     const dxScreen = e.clientX - ds.startMX;
     const dyScreen = e.clientY - ds.startMY;
-    if (!ds.moved && Math.hypot(dxScreen, dyScreen) > 4) {
+    if (!ds.moved && Math.hypot(dxScreen, dyScreen) > DRAG_MOVE_THRESHOLD) {
       ds.moved = true;
       // Suppress the synthesized click on pointerup so onCanvasClick
       // doesn't immediately deselect what the rect just selected.

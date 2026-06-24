@@ -185,6 +185,7 @@ function parsePolygonData(raw: unknown): Omit<Polygon, 'id'> | null {
     (typeof d.curveRadius !== 'number' || !Number.isFinite(d.curveRadius))
   )
     return null;
+  if (d.closed !== undefined && typeof d.closed !== 'boolean') return null;
   const out: Omit<Polygon, 'id'> = {
     vertices,
     fill: d.fill,
@@ -195,8 +196,10 @@ function parsePolygonData(raw: unknown): Omit<Polygon, 'id'> | null {
   };
   if (d.fillOpacity !== undefined) out.fillOpacity = d.fillOpacity as number;
   if (d.locked !== undefined) out.locked = d.locked as boolean;
-  // curveRadius rides along like the other optional fields; addPolygon/
-  // updatePolygon clamp it to [0,50] downstream, so no clamp here.
+  // curveRadius and closed ride along like the other optional fields. Both are
+  // already validated finite/boolean above; `updatePolygon` re-clamps a later
+  // curveRadius edit at its lower bound, so no clamp is needed at paste time.
   if (d.curveRadius !== undefined) out.curveRadius = d.curveRadius as number;
+  if (d.closed !== undefined) out.closed = d.closed as boolean;
   return out;
 }

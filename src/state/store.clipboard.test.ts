@@ -35,6 +35,23 @@ describe('pasteTextLabel / duplicateTextLabel', () => {
     });
   });
 
+  it('pasteTextLabel unlocks the copy even when the source was locked', () => {
+    const newId = useDoc.getState().pasteTextLabel({
+      x: 100,
+      y: 200,
+      rotation: 0,
+      text: 'Hi',
+      fontSize: 24,
+      weight: 400,
+      italic: false,
+      align: 'left',
+      color: '#ff0000',
+      darkColor: '#00ff00',
+      locked: true,
+    });
+    expect(useDoc.getState().textLabels[newId].locked).toBeFalsy();
+  });
+
   it('duplicateTextLabel copies the source offset and leaves the source untouched', () => {
     const srcId = useDoc.getState().addTextLabel(50, 60);
     const before = { ...useDoc.getState().textLabels[srcId] };
@@ -132,6 +149,11 @@ describe('pasteRouteBullet / duplicateRouteBullet', () => {
       size: 12,
       rotation: 0,
     });
+  });
+
+  it('pasteRouteBullet unlocks the copy even when the source was locked', () => {
+    const newId = useDoc.getState().pasteRouteBullet({ ...bulletData, locked: true });
+    expect(useDoc.getState().routeBullets[newId].locked).toBeFalsy();
   });
 
   it('duplicateRouteBullet copies the source offset and leaves the source untouched', () => {

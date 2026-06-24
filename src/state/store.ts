@@ -314,6 +314,7 @@ interface DocState extends MapDoc {
   pastePolygon: (data: Omit<Polygon, 'id'>) => string;
   duplicatePolygon: (id: string) => string | null;
   setPolygonVertices: (id: string, vertices: Polygon['vertices']) => void;
+  movePolygon: (id: string, dx: number, dy: number) => void;
   moveVertex: (id: string, index: number, x: number, y: number) => void;
   insertVertex: (id: string, edgeIndex: number) => void;
   deleteVertex: (id: string, index: number) => void;
@@ -462,13 +463,17 @@ export const useDoc = create<DocState>()(
           set((s) => T.addRouteBulletWith(s, id, fields));
           return id;
         },
-        // Add a bullet from a clipboard payload, nudged by the drop offset.
-        pasteRouteBullet: (data) =>
-          get().addRouteBulletWith({
-            ...data,
+        // Add a bullet from a clipboard payload, nudged by the drop offset. The
+        // fresh copy comes out UNLOCKED even if the source was locked, so it's
+        // immediately movable (mirrors pastePolygon / pasteTextLabel).
+        pasteRouteBullet: (data) => {
+          const { locked: _locked, ...rest } = data;
+          return get().addRouteBulletWith({
+            ...rest,
             x: data.x + DROP_OFFSET,
             y: data.y + DROP_OFFSET,
-          }),
+          });
+        },
         // Duplicate an existing bullet at the drop offset; null if it's gone.
         duplicateRouteBullet: (id) => {
           const b = get().routeBullets[id];
@@ -499,13 +504,17 @@ export const useDoc = create<DocState>()(
           set((s) => T.addTextLabelWith(s, id, fields));
           return id;
         },
-        // Add a label from a clipboard payload, nudged by the drop offset.
-        pasteTextLabel: (data) =>
-          get().addTextLabelWith({
-            ...data,
+        // Add a label from a clipboard payload, nudged by the drop offset. The
+        // fresh copy comes out UNLOCKED even if the source was locked, so it's
+        // immediately movable (mirrors pastePolygon / pasteRouteBullet).
+        pasteTextLabel: (data) => {
+          const { locked: _locked, ...rest } = data;
+          return get().addTextLabelWith({
+            ...rest,
             x: data.x + DROP_OFFSET,
             y: data.y + DROP_OFFSET,
-          }),
+          });
+        },
         // Duplicate an existing label at the drop offset; null if it's gone.
         duplicateTextLabel: (id) => {
           const l = get().textLabels[id];
@@ -547,6 +556,7 @@ export const useDoc = create<DocState>()(
           return get().pastePolygon(data);
         },
         setPolygonVertices: (id, vertices) => set((s) => T.setPolygonVertices(s, id, vertices)),
+        movePolygon: (id, dx, dy) => set((s) => T.movePolygon(s, id, dx, dy)),
         moveVertex: (id, index, x, y) => set((s) => T.moveVertex(s, id, index, x, y)),
         insertVertex: (id, edgeIndex) => set((s) => T.insertVertex(s, id, edgeIndex)),
         deleteVertex: (id, index) => set((s) => T.deleteVertex(s, id, index)),

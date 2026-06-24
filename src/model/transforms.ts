@@ -1751,6 +1751,18 @@ export function setPolygonVertices(doc: MapDoc, id: string, vertices: Vec2[]): M
   return updateRecord(doc, 'polygons', id, (cur) => ({ ...cur, vertices }));
 }
 
+// Relative translation of the whole polygon. Polygons have no center anchor —
+// their geometry is the vertex list in world coords — so the polygon analogue
+// of moveStation/moveRouteBullet/moveTextLabel shifts every vertex by (dx, dy).
+// (Whole-polygon drag uses setPolygonVertices instead, since it re-derives from
+// a start snapshot each frame to avoid per-frame accumulation drift.)
+export function movePolygon(doc: MapDoc, id: string, dx: number, dy: number): MapDoc {
+  return updateRecord(doc, 'polygons', id, (cur) => ({
+    ...cur,
+    vertices: cur.vertices.map((v) => ({ x: v.x + dx, y: v.y + dy })),
+  }));
+}
+
 export function moveVertex(doc: MapDoc, id: string, index: number, x: number, y: number): MapDoc {
   return updateRecord(doc, 'polygons', id, (cur) => {
     if (index < 0 || index >= cur.vertices.length) return cur;

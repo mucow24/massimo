@@ -2,6 +2,7 @@ import { describe, it, expect } from 'vitest';
 import {
   addPolygon,
   setPolygonVertices,
+  movePolygon,
   moveVertex,
   insertVertex,
   deleteVertex,
@@ -50,6 +51,21 @@ describe('polygon transforms', () => {
     ]);
     expect(next.polygons['p0'].vertices).toHaveLength(3);
     expect(next.polygons['p0'].vertices[1]).toEqual({ x: 10, y: 0 });
+  });
+
+  it('movePolygon translates every vertex by (dx, dy)', () => {
+    const doc = makeDoc({ polygons: [makePolygon({ id: 'p0' })] });
+    const before = doc.polygons['p0'].vertices;
+    const next = movePolygon(doc, 'p0', 7, -3);
+    expect(next.polygons['p0'].vertices).toEqual(before.map((v) => ({ x: v.x + 7, y: v.y - 3 })));
+    // Pure: the input doc and its vertices are never mutated in place.
+    expect(doc.polygons['p0'].vertices).toEqual(before);
+    expect(next).not.toBe(doc);
+  });
+
+  it('movePolygon returns the input doc unchanged for an unknown id', () => {
+    const doc = makeDoc({ polygons: [makePolygon({ id: 'p0' })] });
+    expect(movePolygon(doc, 'missing', 5, 5)).toBe(doc);
   });
 
   it('moveVertex moves a single vertex by index', () => {
