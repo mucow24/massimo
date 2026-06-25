@@ -1,6 +1,7 @@
 import type { Pt } from './polygonUnion';
-import type { Polygon, RouteBullet, Station, StationId, TextLabel } from '../model/types';
+import type { Polygon, RouteBullet, Station, StationId, SvgImage, TextLabel } from '../model/types';
 import { STOP_SIZE, localToWorld, stopCenterAt } from './orientation';
+import { svgImageCorners } from './svgImage';
 import {
   DEFAULT_LABEL_STYLE,
   DEFAULT_STOP_HALF,
@@ -211,6 +212,21 @@ export function polygonsForRect(polygons: Record<string, Polygon>, rect: AABB): 
     // Locked polygons are excluded from marquee selection.
     if (poly.locked) continue;
     if (rectIntersectsPolygon(rect, poly.vertices, poly.closed !== false)) hits.push(id);
+  }
+  return hits;
+}
+
+/**
+ * Ids of every svg image whose (rotated) footprint overlaps `rect` (world
+ * coords). The four world corners form a closed quad, so the rect/quad overlap
+ * test is direct. Locked images are excluded from marquee selection.
+ */
+export function svgImagesForRect(svgImages: Record<string, SvgImage>, rect: AABB): string[] {
+  const hits: string[] = [];
+  for (const id of Object.keys(svgImages)) {
+    const im = svgImages[id];
+    if (im.locked) continue;
+    if (rectIntersectsPolygon(rect, svgImageCorners(im))) hits.push(id);
   }
   return hits;
 }

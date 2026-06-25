@@ -29,6 +29,7 @@ const resetSelection = (uiMode: UiMode) =>
     selectedRouteBulletIds: [],
     selectedLabelIds: [],
     selectedPolygonIds: [],
+    selectedSvgImageIds: [],
   });
 
 beforeEach(() => {
@@ -61,6 +62,33 @@ describe('usePlacementDispatch', () => {
     expect(stations[0].name).toBe(previewed);
     // The next preview was rerolled to a different name.
     expect(result.current.previewName).not.toBe(previewed);
+  });
+
+  it('placing-svg: drops the imported image centered at the click, exits, and selects it', () => {
+    resetSelection({
+      kind: 'placing-svg',
+      image: { href: 'data:image/svg+xml;base64,AAA', width: 80, height: 40 },
+    });
+    const { result } = renderHook(() => usePlacementDispatch(fakeView));
+
+    let consumed = false;
+    act(() => {
+      consumed = result.current.handleCanvasPlace(pointerEvent({ clientX: 12, clientY: 34 }));
+    });
+    expect(consumed).toBe(true);
+
+    const images = Object.values(useDoc.getState().svgImages);
+    expect(images).toHaveLength(1);
+    expect(images[0]).toMatchObject({
+      x: 12,
+      y: 34,
+      width: 80,
+      height: 40,
+      rotation: 0,
+      href: 'data:image/svg+xml;base64,AAA',
+    });
+    expect(useSelection.getState().uiMode.kind).toBe('idle');
+    expect(useSelection.getState().selectedSvgImageIds).toEqual([images[0].id]);
   });
 
   it('creating-route-bullet: adds a bullet bound to the first line in z-order', () => {

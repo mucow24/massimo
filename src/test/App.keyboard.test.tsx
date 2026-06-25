@@ -6,7 +6,7 @@ import { useDoc, useSelection } from '../state/store';
 import { historyDepth, redoDepth } from '../state/history';
 import { DEFAULT_DOC } from '../model/transforms';
 import { readClipboard, writeClipboard, type ClipPayload } from '../model/clipboard';
-import { makeTextLabel } from '../test/fixtures';
+import { makeSvgImage, makeTextLabel } from '../test/fixtures';
 import type { RouteBullet } from '../model/types';
 
 beforeEach(() => {
@@ -557,5 +557,33 @@ describe('App keyboard: locked stations resist Delete and arrow-nudge', () => {
     const doc = useDoc.getState();
     expect(doc.stations[free].x).toBe(freeX + 1);
     expect(doc.stations[locked].x).toBe(lockedX);
+  });
+});
+
+describe('App keyboard: svg images', () => {
+  it('Delete removes unlocked selected svg images but keeps locked ones', () => {
+    render(<App />);
+    useDoc.setState({
+      ...useDoc.getState(),
+      svgImages: { a: makeSvgImage({ id: 'a' }), b: makeSvgImage({ id: 'b', locked: true }) },
+      svgImageOrder: ['a', 'b'],
+    });
+    useSelection.setState({ ...useSelection.getState(), selectedSvgImageIds: ['a', 'b'] });
+    fireEvent.keyDown(window, { key: 'Delete' });
+    const doc = useDoc.getState();
+    expect(doc.svgImages.a).toBeUndefined();
+    expect(doc.svgImages.b).toBeDefined();
+  });
+
+  it('Arrow nudge moves a selected svg image by its center', () => {
+    render(<App />);
+    useDoc.setState({
+      ...useDoc.getState(),
+      svgImages: { a: makeSvgImage({ id: 'a', x: 10, y: 10 }) },
+      svgImageOrder: ['a'],
+    });
+    useSelection.setState({ ...useSelection.getState(), selectedSvgImageIds: ['a'] });
+    fireEvent.keyDown(window, { key: 'ArrowRight', shiftKey: true });
+    expect(useDoc.getState().svgImages.a).toMatchObject({ x: 15, y: 10 });
   });
 });

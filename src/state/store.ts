@@ -14,6 +14,8 @@ import type {
   PolygonStylePatch,
   RouteBullet,
   StationId,
+  SvgImage,
+  SvgImageStylePatch,
   TextLabel,
   TextLabelWeight,
 } from '../model/types';
@@ -84,6 +86,8 @@ const DOC_FIELDS = [
   'textLabels',
   'polygons',
   'polygonOrder',
+  'svgImages',
+  'svgImageOrder',
   'labelFontSize',
   'labelWeight',
   'labelItalic',
@@ -323,6 +327,16 @@ interface DocState extends MapDoc {
   movePolygonUp: (id: string) => void;
   movePolygonDown: (id: string) => void;
   deletePolygon: (id: string) => void;
+
+  addSvgImage: (fields: Omit<SvgImage, 'id'>) => string;
+  pasteSvgImage: (data: Omit<SvgImage, 'id'>) => string;
+  duplicateSvgImage: (id: string) => string | null;
+  moveSvgImage: (id: string, x: number, y: number) => void;
+  updateSvgImage: (id: string, patch: SvgImageStylePatch) => void;
+  rotateSvgImage45: (id: string) => void;
+  moveSvgImageUp: (id: string) => void;
+  moveSvgImageDown: (id: string) => void;
+  deleteSvgImage: (id: string) => void;
 
   setCurveRadius: (r: number) => void;
   setLabelFontSize: (n: number) => void;
@@ -565,6 +579,36 @@ export const useDoc = create<DocState>()(
         movePolygonUp: (id) => set((s) => T.movePolygonUp(s, id)),
         movePolygonDown: (id) => set((s) => T.movePolygonDown(s, id)),
         deletePolygon: (id) => set((s) => T.deletePolygon(s, id)),
+
+        addSvgImage: (fields) => {
+          const id = ids.svgImageId();
+          set((s) => T.addSvgImage(s, id, fields));
+          return id;
+        },
+        // Paste an svg image from a clipboard payload, offsetting its CENTER by
+        // the drop offset (an image has a center, unlike a polygon's vertices).
+        // The copy comes out UNLOCKED even if the source was locked.
+        pasteSvgImage: (data) => {
+          const { locked: _locked, ...rest } = data;
+          return get().addSvgImage({ ...rest, x: data.x + DROP_OFFSET, y: data.y + DROP_OFFSET });
+        },
+        // Duplicate an existing svg image at the drop offset; null if it's gone.
+        duplicateSvgImage: (id) => {
+          const im = get().svgImages[id];
+          if (!im) return null;
+          const { id: _id, ...data } = im;
+          return get().pasteSvgImage(data);
+        },
+        // Absolute center move — used by whole-image drag, group-tow, and nudge.
+        moveSvgImage: (id, x, y) => set((s) => T.setSvgImageCenter(s, id, x, y)),
+        updateSvgImage: (id, patch) => set((s) => T.updateSvgImage(s, id, patch)),
+        // Single 45°-clockwise step for the right-click rotate (mirrors
+        // rotatePolygon); updateSvgImage normalizes the result into [0, 360).
+        rotateSvgImage45: (id) =>
+          set((s) => T.updateSvgImage(s, id, { rotation: (s.svgImages[id]?.rotation ?? 0) + 45 })),
+        moveSvgImageUp: (id) => set((s) => T.moveSvgImageUp(s, id)),
+        moveSvgImageDown: (id) => set((s) => T.moveSvgImageDown(s, id)),
+        deleteSvgImage: (id) => set((s) => T.deleteSvgImage(s, id)),
 
         setCurveRadius: (r) => set((s) => T.setCurveRadius(s, r)),
         setLabelFontSize: (n) => set((s) => T.setLabelFontSize(s, n)),

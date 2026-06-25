@@ -9,6 +9,7 @@ import type {
   StopCell,
   StopOrientation,
   Polygon,
+  SvgImage,
   TextLabel,
   TextLabelWeight,
 } from '../model/types';
@@ -136,6 +137,21 @@ export function makePolygon(overrides: Partial<Polygon> & { id: string }): Polyg
   };
 }
 
+// A 100×60 image centered at the origin, unrotated, with a trivial valid
+// data-URI href. Defaults chosen so the unrotated corners land on round
+// numbers (±50, ±30) for readable geometry assertions.
+export function makeSvgImage(overrides: Partial<SvgImage> & { id: string }): SvgImage {
+  return {
+    x: 0,
+    y: 0,
+    width: 100,
+    height: 60,
+    rotation: 0,
+    href: 'data:image/svg+xml;base64,PHN2Zy8+',
+    ...overrides,
+  };
+}
+
 export function makeDoc(parts: {
   stations?: Station[];
   lines?: Line[];
@@ -146,6 +162,8 @@ export function makeDoc(parts: {
   textLabels?: TextLabel[];
   polygons?: Polygon[];
   polygonOrder?: string[];
+  svgImages?: SvgImage[];
+  svgImageOrder?: string[];
   labelFontSize?: number;
   labelWeight?: TextLabelWeight;
   labelItalic?: boolean;
@@ -167,6 +185,8 @@ export function makeDoc(parts: {
   for (const g of parts.textLabels ?? []) textLabels[g.id] = g;
   const polygons: Record<string, Polygon> = {};
   for (const pg of parts.polygons ?? []) polygons[pg.id] = pg;
+  const svgImages: Record<string, SvgImage> = {};
+  for (const im of parts.svgImages ?? []) svgImages[im.id] = im;
   return {
     stations,
     lines,
@@ -179,6 +199,8 @@ export function makeDoc(parts: {
     textLabels,
     polygons,
     polygonOrder: parts.polygonOrder ?? Object.keys(polygons),
+    svgImages,
+    svgImageOrder: parts.svgImageOrder ?? Object.keys(svgImages),
     labelFontSize: parts.labelFontSize ?? 12,
     labelWeight: parts.labelWeight ?? 400,
     labelItalic: parts.labelItalic ?? false,

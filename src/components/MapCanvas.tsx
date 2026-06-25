@@ -12,7 +12,7 @@ import {
   buildStopMarkers,
   SegmentBandSpec,
 } from '../geometry/interlining';
-import { effectivePolygonOrder } from '../model/transforms';
+import { effectivePolygonOrder, effectiveSvgImageOrder } from '../model/transforms';
 import { rotateItemOnContextMenu } from './canvas/groupRotate';
 import { legibleTextOn } from '../util/color';
 import { BandWarning, SegmentBand } from './SegmentBand';
@@ -29,16 +29,19 @@ import { EditingBanner } from './canvas/EditingBanner';
 import { SnapGuides } from './canvas/SnapGuides';
 import { useItemDrag } from './canvas/useItemDrag';
 import { usePolygonDrag } from './canvas/usePolygonDrag';
+import { useSvgImageDrag } from './canvas/useSvgImageDrag';
 import { LineTagsLayer } from './canvas/LineTagsLayer';
 import { LayeringDashedOutlines, LayeringHoverOutline } from './canvas/LayeringOutlines';
 import { LayerNumberLabels } from './canvas/LayerNumberLabels';
 import { StationPlacingPreview } from './canvas/StationPlacingPreview';
 import { PolygonPlacingPreview } from './canvas/PolygonPlacingPreview';
+import { SvgImagePlacingPreview } from './canvas/SvgImagePlacingPreview';
 import { HighlightedLineLayer } from './canvas/HighlightedLineLayer';
 import { LabelPlacingPreview } from './canvas/LabelPlacingPreview';
 import { RouteBulletView } from './RouteBulletView';
 import { LabelView } from './LabelView';
 import { PolygonView } from './PolygonView';
+import { SvgImageView } from './SvgImageView';
 import { ItemPopovers } from './canvas/ItemPopovers';
 import { usePlacementDispatch } from './canvas/usePlacementDispatch';
 import { TransferLayer, transferEndWorld } from './TransferLayer';
@@ -79,6 +82,9 @@ export function MapCanvas() {
   const polygons = useDoc((s) => s.polygons);
   const polygonOrder = useDoc((s) => s.polygonOrder);
   const rotatePolygon = useDoc((s) => s.rotatePolygon);
+  const svgImages = useDoc((s) => s.svgImages);
+  const svgImageOrder = useDoc((s) => s.svgImageOrder);
+  const rotateSvgImage45 = useDoc((s) => s.rotateSvgImage45);
   const selection = useSelection();
   const snapModes = useSnapPrefs((s) => s.modes);
   const gridVisible = useViewportStore((s) => s.gridVisible);
@@ -106,10 +112,16 @@ export function MapCanvas() {
   const bulletSelectedIds = rectSelect.previewBulletIds ?? selection.selectedRouteBulletIds;
   const labelSelectedIds = rectSelect.previewLabelIds ?? selection.selectedLabelIds;
   const polygonSelectedIds = rectSelect.previewPolygonIds ?? selection.selectedPolygonIds;
+  const svgImageSelectedIds = rectSelect.previewSvgImageIds ?? selection.selectedSvgImageIds;
   // Paint order for polygon bodies (later = on top, among polygons only).
   const polygonRenderOrder = useMemo(
     () => effectivePolygonOrder(polygons, polygonOrder),
     [polygons, polygonOrder],
+  );
+  // Paint order for svg images — same band as polygons; later = on top.
+  const svgImageRenderOrder = useMemo(
+    () => effectiveSvgImageOrder(svgImages, svgImageOrder),
+    [svgImages, svgImageOrder],
   );
   // While a click-to-place tool is active (any non-idle mode), polygon bodies
   // ignore pointer events so a canvas click places the item over them instead
@@ -216,6 +228,7 @@ export function MapCanvas() {
 
   const itemDrag = useItemDrag(svgRef, view.viewport.zoom, inHandMode);
   const polyDrag = usePolygonDrag(svgRef, view.viewport.zoom, inHandMode);
+  const svgDrag = useSvgImageDrag(svgRef, view.viewport.zoom, inHandMode, view.screenToWorld);
   // Cursor position in world coords — drives the in-progress transfer line
   // from the anchor dot to the cursor, and the station-placing-mode ghost
   // that follows the cursor before each click.
@@ -272,7 +285,8 @@ export function MapCanvas() {
       (mode.kind === 'creating-transfer' && mode.anchor !== null) ||
       mode.kind === 'placing-station' ||
       mode.kind === 'placing-label' ||
-      mode.kind === 'creating-polygon';
+      mode.kind === 'creating-polygon' ||
+      mode.kind === 'placing-svg';
     if (wantsCursorTrack) {
       const raw = view.screenToWorld(e.clientX, e.clientY);
       // Grid-snap the placement preview for new stations so the user sees
@@ -285,6 +299,7 @@ export function MapCanvas() {
     }
     itemDrag.onPointerMove(e);
     polyDrag.onPointerMove(e);
+    svgDrag.onPointerMove(e);
   };
   const onPointerUp = (e: React.PointerEvent) => {
     view.onPointerUp(e);
@@ -292,6 +307,7 @@ export function MapCanvas() {
     rectSelect.onPointerUp(e);
     itemDrag.onPointerUp(e);
     polyDrag.onPointerUp(e);
+    svgDrag.onPointerUp(e);
   };
 
   const onBulletClick = (id: string, e: React.MouseEvent) => {
@@ -349,6 +365,24 @@ export function MapCanvas() {
     e.preventDefault();
     e.stopPropagation();
     rotateItemOnContextMenu({ type: 'polygon', id }, () => rotatePolygon(id));
+  };
+  const onSvgImageClick = (id: string, e: React.MouseEvent) => {
+    if (dragState.suppressClick) return;
+    if (inHandMode) return;
+    e.stopPropagation();
+    // The whole <image> box is the hit target — clicks on transparent regions
+    // of the SVG still select it (an <image> has no per-pixel alpha hit test).
+    // Shift-click toggles membership; plain click replaces the selection.
+    if (e.shiftKey && !(e.ctrlKey || e.metaKey)) {
+      selection.toggleSvgImageSelection(id);
+      return;
+    }
+    selection.selectSvgImage(id);
+  };
+  const onSvgImageContextMenu = (id: string, e: React.MouseEvent) => {
+    e.preventDefault();
+    e.stopPropagation();
+    rotateItemOnContextMenu({ type: 'svgImage', id }, () => rotateSvgImage45(id));
   };
   const onVertexClick = (id: string, index: number, e: React.MouseEvent) => {
     if (dragState.suppressClick) return;
@@ -544,6 +578,30 @@ export function MapCanvas() {
           );
         })}
 
+        {/* Svg-image bodies: same band as polygons (above the grid, below ALL
+            map content), painted just on top of polygon bodies since an
+            imported graphic is usually a deliberate foreground. Their transform
+            handles render in the top overlay pass below. */}
+        {svgImageRenderOrder.map((iid) => {
+          const im = svgImages[iid];
+          return (
+            <SvgImageView
+              key={iid}
+              image={im}
+              layer="body"
+              selected={svgImageSelectedIds.includes(iid)}
+              interactive={polygonsInteractive}
+              inHandMode={inHandMode}
+              onPointerDown={svgDrag.onSvgImagePointerDown}
+              onClick={onSvgImageClick}
+              onContextMenu={onSvgImageContextMenu}
+              onCornerPointerDown={svgDrag.onSvgCornerPointerDown}
+              onEdgePointerDown={svgDrag.onSvgEdgePointerDown}
+              onRotatePointerDown={svgDrag.onSvgRotatePointerDown}
+            />
+          );
+        })}
+
         {/* selection wash: painted before bands so the wash sits behind
             line segments, markers, dots, and labels — all the way in the
             background. One per selected station (or per previewed station
@@ -719,6 +777,12 @@ export function MapCanvas() {
           <PolygonPlacingPreview
             world={selection.uiMode.kind === 'creating-polygon' ? cursorWorld : null}
           />
+          {/* Svg-image-placing ghost: the imported graphic at 50% opacity
+              following the cursor, centered, until the click drops it. */}
+          <SvgImagePlacingPreview
+            world={selection.uiMode.kind === 'placing-svg' ? cursorWorld : null}
+            image={selection.uiMode.kind === 'placing-svg' ? selection.uiMode.image : null}
+          />
         </g>
 
         {/* Route bullets: rendered before the dim so they fade with the
@@ -870,6 +934,32 @@ export function MapCanvas() {
           )}
         </g>
 
+        {/* Svg-image transform handles (corners, edges, rotation knob). Top
+            pass so they stay clickable above all content; only selected images
+            render here. Excluded from image export — selection chrome, not map
+            content (the image bodies above ARE exported). */}
+        <g data-export-exclude="1">
+          {svgImageSelectedIds.map(
+            (iid) =>
+              svgImages[iid] && (
+                <SvgImageView
+                  key={iid + ':overlay'}
+                  image={svgImages[iid]}
+                  layer="overlay"
+                  selected
+                  interactive={polygonsInteractive}
+                  inHandMode={inHandMode}
+                  onPointerDown={svgDrag.onSvgImagePointerDown}
+                  onClick={onSvgImageClick}
+                  onContextMenu={onSvgImageContextMenu}
+                  onCornerPointerDown={svgDrag.onSvgCornerPointerDown}
+                  onEdgePointerDown={svgDrag.onSvgEdgePointerDown}
+                  onRotatePointerDown={svgDrag.onSvgRotatePointerDown}
+                />
+              ),
+          )}
+        </g>
+
         {/* Rubber-band rect for the rect-select gesture. World coords; the
             stroke width compensates for zoom so the dashed line stays a
             consistent screen weight. */}
@@ -896,6 +986,7 @@ export function MapCanvas() {
               ...drag.snapGuides,
               ...itemDrag.bulletSnapGuides,
               ...polyDrag.polygonSnapGuides,
+              ...svgDrag.svgImageSnapGuides,
             ]}
             zoom={view.viewport.zoom}
           />

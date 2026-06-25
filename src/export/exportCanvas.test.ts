@@ -64,6 +64,23 @@ describe('buildExportSvg', () => {
     expect(out).not.toContain('foreignObject');
   });
 
+  it('keeps an svg-image <image> body but strips its selection handles', async () => {
+    restore = stubGetBBox({ x: 0, y: 0, width: 100, height: 100 });
+    const svg = makeSourceSvg(
+      [
+        '<g data-svg-image-id="i0" transform="translate(0 0) rotate(0)">',
+        '<image href="data:image/svg+xml;base64,PHN2Zy8+" x="-50" y="-30" width="100" height="60"></image>',
+        '</g>',
+        '<g data-export-exclude="1"><rect data-svg-image-handle="nw" x="0" y="0" width="10" height="10"></rect></g>',
+      ].join(''),
+    );
+    const { svg: out } = await buildExportSvg(svg, { background: '#fff' });
+    expect(out).toContain('<image');
+    expect(out).toContain('data:image/svg+xml;base64,PHN2Zy8+');
+    expect(out).not.toContain('data-svg-image-handle');
+    expect(out).not.toContain('data-export-exclude');
+  });
+
   it('frames to bounds + PADDING and scales width/height by pixelScale', async () => {
     restore = stubGetBBox({ x: 10, y: 20, width: 100, height: 80 });
     const svg = makeSourceSvg('<circle cx="50" cy="50" r="5"></circle>');

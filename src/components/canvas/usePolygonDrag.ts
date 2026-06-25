@@ -4,11 +4,11 @@ import { useSnapPrefs } from '../../state/snapPrefs';
 import { useViewportStore } from '../../state/viewportStore';
 import { snapPolygonPoint } from '../../geometry/polygonSnap';
 import { polygonSnapAnchor } from '../../geometry/polygon';
-import { stopPosWorld } from '../../geometry/interlining';
 import { SNAP_PERP_TOLERANCE, type SnapGuide } from '../../geometry/snap';
 import type { Vec2 } from '../../geometry/vec';
-import type { MapDoc, Station } from '../../model/types';
+import type { MapDoc } from '../../model/types';
 import { finishDrag, trackDragMove } from './dragGesture';
+import { allPolygonVertices, stationStopCenters } from './snapTargets';
 import {
   collectGroupSiblings,
   hasGroupSiblings,
@@ -53,31 +53,6 @@ export interface PolygonDragApi {
   onEdgeAddPointerDown: (polygonId: string, edgeIndex: number, e: React.PointerEvent) => void;
   onPointerMove: (e: React.PointerEvent) => void;
   onPointerUp: (e: React.PointerEvent) => void;
-}
-
-// Every station's stop-centers (its anchor when it has no stops). These are the
-// "Snap to all" targets that represent stations.
-function stationStopCenters(stations: Record<string, Station>): Vec2[] {
-  const out: Vec2[] = [];
-  for (const id of Object.keys(stations)) {
-    const st = stations[id];
-    if (st.stops.length === 0) {
-      out.push({ x: st.x, y: st.y });
-      continue;
-    }
-    for (const c of st.stops) out.push(stopPosWorld(c, st));
-  }
-  return out;
-}
-
-// All polygon vertices except the entire polygon `excludeId` (whole-drag).
-function otherPolygonVertices(polygons: MapDoc['polygons'], excludeId: string): Vec2[] {
-  const out: Vec2[] = [];
-  for (const id of Object.keys(polygons)) {
-    if (id === excludeId) continue;
-    for (const v of polygons[id].vertices) out.push(v);
-  }
-  return out;
 }
 
 // All polygon vertices except the single dragged vertex (vertex-drag) — so the
@@ -218,7 +193,7 @@ export function usePolygonDrag(
           // only grid act on the anchor, mirroring useItemDrag.
           const allTargets = inGroupDrag
             ? []
-            : [...stationStopCenters(doc.stations), ...otherPolygonVertices(doc.polygons, wd.id)];
+            : [...stationStopCenters(doc.stations), ...allPolygonVertices(doc.polygons, wd.id)];
           const snap = snapPolygonPoint({
             proposed: anchor,
             lineTargets: [],

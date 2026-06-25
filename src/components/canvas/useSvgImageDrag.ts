@@ -1,0 +1,306 @@
+import { RefObject, useRef, useState } from 'react';
+import { beginHistoryGroup, useDoc } from '../../state/store';
+import { useSnapPrefs } from '../../state/snapPrefs';
+import { useViewportStore } from '../../state/viewportStore';
+import { snapPolygonPoint } from '../../geometry/polygonSnap';
+import { SNAP_PERP_TOLERANCE, type SnapGuide } from '../../geometry/snap';
+import {
+  normalizeRotation,
+  resizeSvgImageCorner,
+  resizeSvgImageEdge,
+  rotateSvgImageTo,
+  svgImageCorners,
+  svgImageSnapAnchor,
+  type SvgImageGeom,
+} from '../../geometry/svgImage';
+import type { Vec2 } from '../../geometry/vec';
+import type { MapDoc } from '../../model/types';
+import { finishDrag, trackDragMove } from './dragGesture';
+import {
+  collectGroupSiblings,
+  hasGroupSiblings,
+  translateSiblings,
+  type GroupSiblings,
+} from './groupDrag';
+import { allPolygonVertices, stationStopCenters } from './snapTargets';
+
+type ScreenToWorld = (mx: number, my: number) => Vec2;
+
+// Whole-image move: snapshot the image at pointer-down; each move snaps the
+// highest-then-leftmost (rotated) corner and translates the center by that delta.
+type MoveState = {
+  id: string;
+  start: SvgImageGeom;
+  startMX: number;
+  startMY: number;
+  moved: boolean;
+  siblings: GroupSiblings;
+  history: ReturnType<typeof beginHistoryGroup>;
+};
+
+// Corner/edge resize: feed the live pointer (snapped when axis-aligned) and the
+// START image to the pure resize math, which pins the opposite corner/edge.
+type ResizeState = {
+  id: string;
+  kind: 'corner' | 'edge';
+  index: number;
+  start: SvgImageGeom;
+  startMX: number;
+  startMY: number;
+  moved: boolean;
+  history: ReturnType<typeof beginHistoryGroup>;
+};
+
+// Rotate: angle from the START center to the live pointer; Shift snaps to 22.5°.
+type RotateState = {
+  id: string;
+  start: SvgImageGeom;
+  startMX: number;
+  startMY: number;
+  moved: boolean;
+  history: ReturnType<typeof beginHistoryGroup>;
+};
+
+export interface SvgImageDragApi {
+  svgImageSnapGuides: SnapGuide[];
+  onSvgImagePointerDown: (id: string, e: React.PointerEvent) => void;
+  onSvgCornerPointerDown: (id: string, cornerIndex: number, e: React.PointerEvent) => void;
+  onSvgEdgePointerDown: (id: string, edgeIndex: number, e: React.PointerEvent) => void;
+  onSvgRotatePointerDown: (id: string, e: React.PointerEvent) => void;
+  onPointerMove: (e: React.PointerEvent) => void;
+  onPointerUp: (e: React.PointerEvent) => void;
+}
+
+const geomOf = (im: {
+  x: number;
+  y: number;
+  width: number;
+  height: number;
+  rotation: number;
+}): SvgImageGeom => ({
+  x: im.x,
+  y: im.y,
+  width: im.width,
+  height: im.height,
+  rotation: im.rotation,
+});
+
+// Every other image's rotated corners — "Snap to all" targets representing the
+// other images (excluding the one being dragged).
+function otherSvgImageCorners(svgImages: MapDoc['svgImages'], excludeId: string): Vec2[] {
+  const out: Vec2[] = [];
+  for (const id of Object.keys(svgImages)) {
+    if (id === excludeId) continue;
+    for (const c of svgImageCorners(svgImages[id])) out.push(c);
+  }
+  return out;
+}
+
+/**
+ * Owns drag state for svg images: whole-image moves, corner (proportional) and
+ * edge (single-axis) resizes, and rotation. The gesture lifecycle and the
+ * whole-image group-drag towing are shared with the other drag hooks via
+ * dragGesture + groupDrag. Move + axis-aligned resize snap through
+ * {@link snapPolygonPoint} (same targets as polygons); rotation snaps only to
+ * 22.5° multiples under Shift, never to the grid.
+ */
+export function useSvgImageDrag(
+  svgRef: RefObject<SVGSVGElement | null>,
+  zoom: number,
+  inHandMode: boolean,
+  screenToWorld: ScreenToWorld,
+): SvgImageDragApi {
+  const moveSvgImage = useDoc((s) => s.moveSvgImage);
+  const updateSvgImage = useDoc((s) => s.updateSvgImage);
+  const snapModes = useSnapPrefs((s) => s.modes);
+  const gridSize = useViewportStore((s) => s.gridSize);
+
+  const moveRef = useRef<MoveState | null>(null);
+  const resizeRef = useRef<ResizeState | null>(null);
+  const rotateRef = useRef<RotateState | null>(null);
+  const [svgImageSnapGuides, setSvgImageSnapGuides] = useState<SnapGuide[]>([]);
+
+  const onSvgImagePointerDown = (id: string, e: React.PointerEvent) => {
+    if (e.button !== 0 || inHandMode) return;
+    const im = useDoc.getState().svgImages[id];
+    if (!im) return;
+    // A locked image can't be dragged. Don't stop propagation: let the event
+    // bubble so a drag starting on it begins a marquee (the gate treats locked
+    // elements as background). A plain click still selects it (popover unlock).
+    if (im.locked) return;
+    e.stopPropagation();
+    moveRef.current = {
+      id,
+      start: geomOf(im),
+      startMX: e.clientX,
+      startMY: e.clientY,
+      moved: false,
+      siblings: collectGroupSiblings('svgImage', id),
+      history: beginHistoryGroup(),
+    };
+  };
+
+  const beginResize = (
+    id: string,
+    kind: 'corner' | 'edge',
+    index: number,
+    e: React.PointerEvent,
+  ) => {
+    if (e.button !== 0 || inHandMode) return;
+    const im = useDoc.getState().svgImages[id];
+    if (!im || im.locked) return;
+    e.stopPropagation();
+    resizeRef.current = {
+      id,
+      kind,
+      index,
+      start: geomOf(im),
+      startMX: e.clientX,
+      startMY: e.clientY,
+      moved: false,
+      history: beginHistoryGroup(),
+    };
+  };
+
+  const onSvgCornerPointerDown = (id: string, cornerIndex: number, e: React.PointerEvent) =>
+    beginResize(id, 'corner', cornerIndex, e);
+  const onSvgEdgePointerDown = (id: string, edgeIndex: number, e: React.PointerEvent) =>
+    beginResize(id, 'edge', edgeIndex, e);
+
+  const onSvgRotatePointerDown = (id: string, e: React.PointerEvent) => {
+    if (e.button !== 0 || inHandMode) return;
+    const im = useDoc.getState().svgImages[id];
+    if (!im || im.locked) return;
+    e.stopPropagation();
+    rotateRef.current = {
+      id,
+      start: geomOf(im),
+      startMX: e.clientX,
+      startMY: e.clientY,
+      moved: false,
+      history: beginHistoryGroup(),
+    };
+  };
+
+  const onPointerMove = (e: React.PointerEvent) => {
+    const mv = moveRef.current;
+    if (mv) {
+      const { moved, dxScreen, dyScreen } = trackDragMove(mv, e, svgRef);
+      if (moved) {
+        const startAnchor = svgImageSnapAnchor(mv.start);
+        let anchor: Vec2 = {
+          x: startAnchor.x + dxScreen / zoom,
+          y: startAnchor.y + dyScreen / zoom,
+        };
+        let guides: SnapGuide[] = [];
+        const inGroupDrag = hasGroupSiblings(mv.siblings);
+        if (!e.shiftKey) {
+          const doc = useDoc.getState();
+          // During a group drag the other images move too, so they're unstable
+          // targets — drop alignment and let only grid act on the anchor.
+          const allTargets = inGroupDrag
+            ? []
+            : [
+                ...stationStopCenters(doc.stations),
+                ...allPolygonVertices(doc.polygons),
+                ...otherSvgImageCorners(doc.svgImages, mv.id),
+              ];
+          const snap = snapPolygonPoint({
+            proposed: anchor,
+            lineTargets: [],
+            allTargets,
+            modes: snapModes,
+            tolerance: SNAP_PERP_TOLERANCE / zoom,
+            gridInterval: gridSize,
+          });
+          anchor = { x: snap.x, y: snap.y };
+          guides = snap.guides;
+        }
+        const dx = anchor.x - startAnchor.x;
+        const dy = anchor.y - startAnchor.y;
+        moveSvgImage(mv.id, mv.start.x + dx, mv.start.y + dy);
+        setSvgImageSnapGuides(guides);
+        if (inGroupDrag) translateSiblings(mv.siblings, dx, dy);
+      }
+    }
+
+    const rz = resizeRef.current;
+    if (rz) {
+      const { moved } = trackDragMove(rz, e, svgRef);
+      if (moved) {
+        let pointer = screenToWorld(e.clientX, e.clientY);
+        let guides: SnapGuide[] = [];
+        // Snap the moving handle only while the image is axis-aligned; once
+        // rotated off-axis, snapping a corner to a grid point would distort it.
+        const axisAligned = normalizeRotation(rz.start.rotation) % 90 === 0;
+        if (axisAligned && !e.shiftKey) {
+          const doc = useDoc.getState();
+          const allTargets = [
+            ...stationStopCenters(doc.stations),
+            ...allPolygonVertices(doc.polygons),
+            ...otherSvgImageCorners(doc.svgImages, rz.id),
+          ];
+          const snap = snapPolygonPoint({
+            proposed: pointer,
+            lineTargets: [],
+            allTargets,
+            modes: snapModes,
+            tolerance: SNAP_PERP_TOLERANCE / zoom,
+            gridInterval: gridSize,
+          });
+          pointer = { x: snap.x, y: snap.y };
+          guides = snap.guides;
+        }
+        const box =
+          rz.kind === 'corner'
+            ? resizeSvgImageCorner(rz.start, rz.index, pointer)
+            : resizeSvgImageEdge(rz.start, rz.index, pointer);
+        updateSvgImage(rz.id, box);
+        setSvgImageSnapGuides(guides);
+      }
+    }
+
+    const rot = rotateRef.current;
+    if (rot) {
+      const { moved } = trackDragMove(rot, e, svgRef);
+      if (moved) {
+        const pointer = screenToWorld(e.clientX, e.clientY);
+        const deg = rotateSvgImageTo(rot.start, pointer, e.shiftKey);
+        updateSvgImage(rot.id, { rotation: deg });
+        // Rotation never produces alignment guides.
+        setSvgImageSnapGuides([]);
+      }
+    }
+  };
+
+  const onPointerUp = (e: React.PointerEvent) => {
+    const mv = moveRef.current;
+    if (mv) {
+      moveRef.current = null;
+      setSvgImageSnapGuides([]);
+      finishDrag(mv, e, svgRef);
+    }
+    const rz = resizeRef.current;
+    if (rz) {
+      resizeRef.current = null;
+      setSvgImageSnapGuides([]);
+      finishDrag(rz, e, svgRef);
+    }
+    const rot = rotateRef.current;
+    if (rot) {
+      rotateRef.current = null;
+      setSvgImageSnapGuides([]);
+      finishDrag(rot, e, svgRef);
+    }
+  };
+
+  return {
+    svgImageSnapGuides,
+    onSvgImagePointerDown,
+    onSvgCornerPointerDown,
+    onSvgEdgePointerDown,
+    onSvgRotatePointerDown,
+    onPointerMove,
+    onPointerUp,
+  };
+}
