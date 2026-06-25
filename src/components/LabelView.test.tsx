@@ -1,5 +1,5 @@
-import { describe, it, expect, beforeEach } from 'vitest';
-import { render } from '@testing-library/react';
+import { describe, it, expect, beforeEach, vi } from 'vitest';
+import { render, fireEvent } from '@testing-library/react';
 import { LabelView } from './LabelView';
 import { useDoc } from '../state/store';
 import { useViewportStore } from '../state/viewportStore';
@@ -167,6 +167,53 @@ describe('<LabelView /> — editing one line never shifts a sibling line', () =>
     const before = lineWorldX(base, 0);
     const after = lineWorldX(editText(base, 'AAAA\n BBBB'), 0);
     expect(after).toBeCloseTo(before, 5);
+  });
+});
+
+describe('<LabelView /> hit proxy (selected-on-top drag target)', () => {
+  const renderHit = (label: TextLabel, onPointerDown: (id: string) => void = () => {}) =>
+    render(
+      <svg>
+        <LabelView label={label} selected layer="hit" onPointerDown={onPointerDown} />
+      </svg>,
+    ).container;
+
+  const hit = (c: HTMLElement) => c.querySelector('[data-text-label-hit="g1"]');
+
+  it('a selected, unlocked label renders a transparent bbox proxy with the label transform', () => {
+    const c = renderHit(makeTextLabel({ id: 'g1', x: 40, y: 70, text: 'Midtown' }));
+    const g = hit(c)!;
+    expect(g).not.toBeNull();
+    expect(g.getAttribute('transform')).toBe('translate(40 70) rotate(0)');
+    // Distinct from the body's data-text-label-id (avoids strict-mode locator clashes).
+    expect(g.getAttribute('data-text-label-id')).toBeNull();
+    const rect = g.querySelector('rect')!;
+    expect(rect.getAttribute('fill')).toBe('transparent');
+  });
+
+  it('routes a pointer-down to the label move handler with the id', () => {
+    const onPointerDown = vi.fn();
+    const c = renderHit(makeTextLabel({ id: 'g1' }), onPointerDown);
+    fireEvent.pointerDown(hit(c)!.querySelector('rect')!);
+    expect(onPointerDown).toHaveBeenCalledWith('g1', expect.anything());
+  });
+
+  it('renders no proxy when not selected', () => {
+    const c = render(
+      <svg>
+        <LabelView
+          label={makeTextLabel({ id: 'g1' })}
+          selected={false}
+          layer="hit"
+          onPointerDown={() => {}}
+        />
+      </svg>,
+    ).container;
+    expect(hit(c)).toBeNull();
+  });
+
+  it('renders no proxy when locked (a locked label is not draggable)', () => {
+    expect(hit(renderHit(makeTextLabel({ id: 'g1', locked: true })))).toBeNull();
   });
 });
 

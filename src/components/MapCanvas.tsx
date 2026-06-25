@@ -63,6 +63,13 @@ const OTHER_LINE_SATURATION = 0.5;
 // route-network reading, not background annotation).
 const LAYERING_FADE_OPACITY = 0.25;
 
+// Click / context-menu are intentionally inert on the drag proxies: the SVG's
+// onClickCapture/onContextMenuCapture intercept those events (rerouteProxyEvent-
+// Beneath) and re-dispatch them to the real element beneath, so selection
+// follows normal layer order. Stable identity so the (memoized) proxy views
+// don't re-render on pan.
+const proxyClickNoop = () => {};
+
 export function MapCanvas() {
   const stations = useDoc((s) => s.stations);
   const lines = useDoc((s) => s.lines);
@@ -96,6 +103,13 @@ export function MapCanvas() {
   const highlightLineId = selection.selectedLineId;
 
   const svgRef = useRef<SVGSVGElement | null>(null);
+  // The selected-item drag-proxy layer. Proxies sit on top so a SELECTED item
+  // wins the DRAG over anything stacked above it. A click / right-click on a
+  // proxy is re-routed to the real element beneath (rerouteProxyEventBeneath),
+  // so SELECTION still follows normal layer order — only dragging gets
+  // selected-item priority. The ref is used to scope "is this event on a proxy?"
+  // and to momentarily hide the layer for the beneath hit-test.
+  const proxyLayerRef = useRef<SVGGElement | null>(null);
   const view = useViewport(svgRef);
   // Full-viewport overlays (background, grid, dim wash) are drawn at this
   // overdrawn extent so an imperative-viewBox pan/zoom can't reveal a bare strip
@@ -310,6 +324,41 @@ export function MapCanvas() {
     svgDrag.onPointerUp(e);
   };
 
+  // A plain click / right-click that lands on a selected item's drag proxy must
+  // select by NORMAL layer order, not act on the proxy's item. Intercept in the
+  // capture phase (before the proxy's own handler), suppress it, and re-dispatch
+  // the event to the topmost REAL element beneath (proxies hidden only for that
+  // instantaneous hit-test) so that element's own handler runs. Drag is
+  // untouched — it's driven by pointer events, not click. After a drag,
+  // suppressClick is set, so we consume the trailing click without re-routing.
+  const rerouteProxyEventBeneath = (type: 'click' | 'contextmenu', e: React.MouseEvent) => {
+    const layer = proxyLayerRef.current;
+    if (!layer || !layer.contains(e.target as Node)) return;
+    // The press landed on a proxy. Stop the proxy's own click/contextmenu (and
+    // the canvas handler) from firing.
+    e.stopPropagation();
+    if (type === 'contextmenu') e.preventDefault();
+    if (dragState.suppressClick) return; // a drag just ended — no selection click
+    const prev = layer.style.display;
+    layer.style.display = 'none';
+    const beneath = document.elementFromPoint(e.clientX, e.clientY);
+    layer.style.display = prev;
+    if (!beneath || beneath === svgRef.current) return;
+    beneath.dispatchEvent(
+      new MouseEvent(type, {
+        bubbles: true,
+        cancelable: true,
+        clientX: e.clientX,
+        clientY: e.clientY,
+        shiftKey: e.shiftKey,
+        ctrlKey: e.ctrlKey,
+        metaKey: e.metaKey,
+        altKey: e.altKey,
+        button: type === 'contextmenu' ? 2 : 0,
+      }),
+    );
+  };
+
   const onBulletClick = (id: string, e: React.MouseEvent) => {
     if (dragState.suppressClick) return;
     if (inHandMode) return;
@@ -513,6 +562,12 @@ export function MapCanvas() {
         onPointerLeave={() => {
           if (cursorWorld) setCursorWorld(null);
         }}
+        // Re-route a click/right-click on a selected item's drag proxy to the
+        // real element beneath, so selection always follows normal layer order
+        // (only DRAG gets selected-item priority). Capture phase so it runs
+        // before the proxy's own handler and the canvas click handler.
+        onClickCapture={(e) => rerouteProxyEventBeneath('click', e)}
+        onContextMenuCapture={(e) => rerouteProxyEventBeneath('contextmenu', e)}
         onClick={onCanvasClick}
         onContextMenu={(e) => e.preventDefault()}
         onDragStart={(e) => e.preventDefault()}
@@ -900,6 +955,104 @@ export function MapCanvas() {
               textLabels[gid] && (
                 <LabelView key={gid + ':stroke'} label={textLabels[gid]} selected layer="stroke" />
               ),
+          )}
+        </g>
+
+        {/* Selected-item drag proxies: a transparent hit target per selected,
+            unlocked item, painted ABOVE all map content so a selected item wins
+            the DRAG over whatever is stacked above it — a selected polygon under
+            a station drags the polygon, not the station. onPointerDown routes to
+            the item's body drag handler. CLICK / right-click do NOT act on the
+            proxy: the SVG's onClickCapture/onContextMenuCapture intercept them and
+            re-dispatch to the real element beneath, so SELECTION follows normal
+            layer order (see rerouteProxyEventBeneath). That capture-phase
+            stopPropagation also means the proxies' own onClick/onContextMenu never
+            fire — hence the no-ops. Emitted in body paint order (polygon → svg
+            image → station → bullet → label) so when two SELECTED items overlap,
+            the one painted higher still wins its grab. The polygon/svg-image
+            MANIPULATION handle passes render BELOW this, so a selected item's own
+            corner/vertex handles still beat its body proxy. These iterate the
+            same preview-aware id lists as the handle overlays, harmless
+            mid-marquee since useRectSelect captures the pointer on first move.
+            Excluded from export — pure interaction chrome. */}
+        <g ref={proxyLayerRef} data-export-exclude="1">
+          {polygonSelectedIds.map((pid) =>
+            polygons[pid] ? (
+              <PolygonView
+                key={pid + ':hit'}
+                polygon={polygons[pid]}
+                layer="hit"
+                selected
+                selectedVertexIndex={null}
+                interactive={polygonsInteractive}
+                inHandMode={inHandMode}
+                onPointerDown={polyDrag.onPolygonPointerDown}
+                onClick={proxyClickNoop}
+                onContextMenu={proxyClickNoop}
+                onVertexPointerDown={polyDrag.onVertexPointerDown}
+                onVertexClick={onVertexClick}
+                onEdgeAddPointerDown={polyDrag.onEdgeAddPointerDown}
+              />
+            ) : null,
+          )}
+          {svgImageSelectedIds.map((iid) =>
+            svgImages[iid] ? (
+              <SvgImageView
+                key={iid + ':hit'}
+                image={svgImages[iid]}
+                layer="hit"
+                selected
+                interactive={polygonsInteractive}
+                inHandMode={inHandMode}
+                onPointerDown={svgDrag.onSvgImagePointerDown}
+                onClick={proxyClickNoop}
+                onContextMenu={proxyClickNoop}
+                onCornerPointerDown={svgDrag.onSvgCornerPointerDown}
+                onEdgePointerDown={svgDrag.onSvgEdgePointerDown}
+                onRotatePointerDown={svgDrag.onSvgRotatePointerDown}
+              />
+            ) : null,
+          )}
+          {washIds.map((sid) =>
+            stations[sid] && !stations[sid].locked ? (
+              <StationView
+                key={sid + ':hit'}
+                station={stations[sid]}
+                lines={lines}
+                zoom={view.viewport.zoom}
+                onStartDrag={drag.onStartDrag}
+                layer="hit"
+              />
+            ) : null,
+          )}
+          {bulletSelectedIds.map((id) =>
+            routeBullets[id] ? (
+              <RouteBulletView
+                key={id + ':hit'}
+                bullet={routeBullets[id]}
+                lines={lines}
+                selected
+                layer="hit"
+                inHandMode={inHandMode}
+                onPointerDown={itemDrag.onBulletPointerDown}
+                onClick={proxyClickNoop}
+                onContextMenu={proxyClickNoop}
+              />
+            ) : null,
+          )}
+          {labelSelectedIds.map((id) =>
+            textLabels[id] ? (
+              <LabelView
+                key={id + ':hit'}
+                label={textLabels[id]}
+                selected
+                layer="hit"
+                inHandMode={inHandMode}
+                onPointerDown={itemDrag.onLabelPointerDown}
+                onClick={proxyClickNoop}
+                onContextMenu={proxyClickNoop}
+              />
+            ) : null,
           )}
         </g>
 

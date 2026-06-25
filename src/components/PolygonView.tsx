@@ -11,12 +11,18 @@ import { itemCursor } from './canvas/itemCursor';
 // zoom — keeping handles out of the way during detail work when zoomed in.
 const VERTEX_HANDLE_HALF = 5;
 const EDGE_ADD_R = 7;
+// Minimum on-screen hit-corridor width (px) for an OPEN polygon's drag proxy, so
+// a thin or zero-width chain still has a grabbable stroke. Divided by zoom to
+// stay constant on screen, like the overlay adornments.
+const OPEN_HIT_MIN_PX = 10;
 
 interface Props {
   polygon: Polygon;
   // 'body' is painted under all map content; 'overlay' (selected only) is
-  // painted on top so the handles + "+" buttons stay clickable.
-  layer: 'body' | 'overlay';
+  // painted on top so the handles + "+" buttons stay clickable. 'hit' (selected
+  // only) is a transparent top-z copy of the body — the selected-on-top drag
+  // proxy — painted above all map content so the polygon wins pointer hits.
+  layer: 'body' | 'overlay' | 'hit';
   selected: boolean;
   // Index of the currently-selected vertex (for highlight), or null.
   selectedVertexIndex: number | null;
@@ -93,6 +99,41 @@ export function PolygonView({
         // Ignore pointer events while a placement tool is active so the click
         // reaches the canvas and places the item over the polygon.
         pointerEvents={interactive ? (closed ? undefined : 'stroke') : 'none'}
+        onPointerDown={(e) => onPointerDown(polygon.id, e)}
+        onClick={(e) => onClick(polygon.id, e)}
+        onContextMenu={(e) => onContextMenu(polygon.id, e)}
+        style={{ cursor: itemCursor(inHandMode, polygon.locked) }}
+      />
+    );
+  }
+
+  if (layer === 'hit') {
+    // Transparent, top-z drag proxy for a SELECTED polygon: re-asserts the
+    // body's exact grab footprint above all map content so the selected polygon
+    // wins pointer hit-testing over anything stacked on top of it. Routes to the
+    // same body handlers, so drag/click/rotate behavior is identical — only the
+    // z-order of the hit target changes. Skipped while locked (not draggable) or
+    // non-interactive (a placement tool is active, so clicks must fall through).
+    // Carries data-polygon-hit (never data-polygon-id) so it doesn't perturb the
+    // body's id-keyed document-order / strict-mode locators.
+    if (!selected || polygon.locked || !interactive) return null;
+    // Closed: fill-hit the whole interior PLUS the stroke band (a transparent
+    // stroke of the body's width, so the outer rim — grabbable on the body —
+    // stays grabbable on the proxy). Open: hit along the stroke like the body,
+    // but floor the corridor so a thin/zero-width chain stays grabbable.
+    const hitStroke = closed
+      ? polygon.strokeWidth
+      : Math.max(polygon.strokeWidth, OPEN_HIT_MIN_PX / zoom);
+    return (
+      <path
+        data-polygon-hit={polygon.id}
+        d={polygonPathData(verts, polygon.curveRadius ?? 0, closed)}
+        fill={closed ? 'transparent' : 'none'}
+        stroke="transparent"
+        strokeWidth={hitStroke}
+        strokeLinejoin="round"
+        strokeLinecap={closed ? undefined : 'round'}
+        pointerEvents={closed ? 'all' : 'stroke'}
         onPointerDown={(e) => onPointerDown(polygon.id, e)}
         onClick={(e) => onClick(polygon.id, e)}
         onContextMenu={(e) => onContextMenu(polygon.id, e)}

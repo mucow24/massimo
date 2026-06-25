@@ -1,5 +1,5 @@
 import { describe, it, expect, beforeEach, vi } from 'vitest';
-import { render } from '@testing-library/react';
+import { render, fireEvent } from '@testing-library/react';
 import { StationView } from './StationView';
 import { useDoc, useSelection } from '../state/store';
 import { useViewportStore } from '../state/viewportStore';
@@ -538,6 +538,44 @@ describe('<StationView /> — transfer-pick hover highlight', () => {
     if (!hitRect) throw new Error('no bg hit-rect');
     fireEvent.pointerMove(hitRect);
     expect(useSelection.getState().hoveredLineStop).toBeNull();
+  });
+});
+
+describe('<StationView /> — hit proxy (selected-on-top drag target)', () => {
+  function renderHit(station: ReturnType<typeof makeStation>, onStartDrag = vi.fn()) {
+    const { container } = render(
+      <svg>
+        <StationView station={station} lines={{}} zoom={1} onStartDrag={onStartDrag} layer="hit" />
+      </svg>,
+    );
+    return { container, onStartDrag };
+  }
+
+  it('renders a proxy hit group under data-station-hit, NOT data-station-id, with no data-locked', () => {
+    const { container } = renderHit(makeStation({ id: 's1', name: 'Foo' }));
+    const g = container.querySelector('[data-station-hit="s1"]') as HTMLElement;
+    expect(g).not.toBeNull();
+    // Distinct attribute so the e2e [data-station-id] locators stay single-match.
+    expect(container.querySelector('[data-station-id]')).toBeNull();
+    // No data-locked: it would make the rect-select gate treat the proxy as
+    // marquee-background and swallow the drag.
+    expect(g.getAttribute('data-locked')).toBeNull();
+    // The footprint rect is the same transparent, all-hit surface as the bg.
+    const rect = g.querySelector('rect') as Element;
+    expect(rect.getAttribute('fill')).toBe('transparent');
+    expect(rect.getAttribute('pointer-events')).toBe('all');
+  });
+
+  it('renders no proxy for a locked station (self-gate: not draggable)', () => {
+    const { container } = renderHit({ ...makeStation({ id: 's1', name: 'Foo' }), locked: true });
+    expect(container.querySelector('[data-station-hit]')).toBeNull();
+  });
+
+  it('routes a pointer-down through useStationInteraction to onStartDrag with the id', () => {
+    const { container, onStartDrag } = renderHit(makeStation({ id: 's1', name: 'Foo' }));
+    const rect = container.querySelector('[data-station-hit="s1"] rect') as HTMLElement;
+    fireEvent.pointerDown(rect, { button: 0 });
+    expect(onStartDrag).toHaveBeenCalledWith('s1', expect.anything(), undefined);
   });
 });
 

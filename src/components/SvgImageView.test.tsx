@@ -1,5 +1,5 @@
-import { describe, it, expect, beforeEach } from 'vitest';
-import { render } from '@testing-library/react';
+import { describe, it, expect, beforeEach, vi } from 'vitest';
+import { render, fireEvent } from '@testing-library/react';
 import { SvgImageView } from './SvgImageView';
 import { makeSvgImage } from '../test/fixtures';
 import { useViewportStore } from '../state/viewportStore';
@@ -9,7 +9,12 @@ const noop = () => {};
 
 function renderView(
   image: SvgImage,
-  opts: { layer?: 'body' | 'overlay'; selected?: boolean; interactive?: boolean } = {},
+  opts: {
+    layer?: 'body' | 'overlay' | 'hit';
+    selected?: boolean;
+    interactive?: boolean;
+    onPointerDown?: (id: string) => void;
+  } = {},
 ) {
   return render(
     <svg>
@@ -18,7 +23,7 @@ function renderView(
         layer={opts.layer ?? 'body'}
         selected={opts.selected ?? false}
         interactive={opts.interactive ?? true}
-        onPointerDown={noop}
+        onPointerDown={opts.onPointerDown ?? noop}
         onClick={noop}
         onContextMenu={noop}
         onCornerPointerDown={noop}
@@ -132,5 +137,58 @@ describe('<SvgImageView /> overlay', () => {
     // The box tracks the real image size regardless of zoom.
     expect(z1.boxW).toBe(100);
     expect(z2.boxW).toBe(100);
+  });
+});
+
+describe('<SvgImageView /> hit proxy (selected-on-top drag target)', () => {
+  beforeEach(() => useViewportStore.setState({ darkMode: false, zoom: 1 }));
+
+  const hit = (c: HTMLElement) => c.querySelector('[data-svg-image-hit="i0"]');
+
+  it('a selected, unlocked, interactive image renders a transparent box proxy with the box transform', () => {
+    const { container } = renderView(
+      makeSvgImage({ id: 'i0', x: 100, y: 50, width: 80, height: 40, rotation: 30 }),
+      { layer: 'hit', selected: true },
+    );
+    const g = hit(container)!;
+    expect(g).not.toBeNull();
+    // Matches the image box footprint (same translate+rotate as the body).
+    expect(g.getAttribute('transform')).toBe('translate(100 50) rotate(30)');
+    // Must NOT reuse data-svg-image-id (would break the body's id-keyed locators).
+    expect(g.getAttribute('data-svg-image-id')).toBeNull();
+    const rect = g.querySelector('rect')!;
+    expect(rect.getAttribute('fill')).toBe('transparent');
+    expect(rect.getAttribute('pointer-events')).toBe('all');
+    expect(rect.getAttribute('width')).toBe('80');
+    expect(rect.getAttribute('height')).toBe('40');
+  });
+
+  it('routes a pointer-down to the image move handler with the id', () => {
+    const onPointerDown = vi.fn();
+    const { container } = renderView(makeSvgImage({ id: 'i0' }), {
+      layer: 'hit',
+      selected: true,
+      onPointerDown,
+    });
+    fireEvent.pointerDown(hit(container)!.querySelector('rect')!);
+    expect(onPointerDown).toHaveBeenCalledWith('i0', expect.anything());
+  });
+
+  it('renders no proxy when not selected, locked, or non-interactive', () => {
+    expect(
+      hit(renderView(makeSvgImage({ id: 'i0' }), { layer: 'hit', selected: false }).container),
+    ).toBeNull();
+    expect(
+      hit(
+        renderView(makeSvgImage({ id: 'i0', locked: true }), { layer: 'hit', selected: true })
+          .container,
+      ),
+    ).toBeNull();
+    expect(
+      hit(
+        renderView(makeSvgImage({ id: 'i0' }), { layer: 'hit', selected: true, interactive: false })
+          .container,
+      ),
+    ).toBeNull();
   });
 });
