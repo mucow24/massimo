@@ -1,0 +1,32 @@
+// Shared z-order algebra for the keyed record collections that carry an
+// explicit paint order alongside the records themselves (lines, polygons, svg
+// images). Each used to hand-roll the identical reconcile/move logic; this is
+// the single source of truth they now delegate to.
+
+/**
+ * Reconcile a stored paint order against the records that actually exist: drop
+ * ids whose record is gone, then append any record ids missing from the order
+ * (legacy saves without an order, or a race between add and order update) so
+ * nothing ever silently drops out. Later in the array = painted on top.
+ */
+export function reconcileOrder(records: Record<string, unknown>, order: string[]): string[] {
+  const existing = order.filter((id) => records[id]);
+  const seen = new Set(existing);
+  const missing = Object.keys(records).filter((id) => !seen.has(id));
+  return [...existing, ...missing];
+}
+
+/**
+ * Swap the element `id` one step toward the end (`dir: +1`, toward the top of
+ * the paint order) or the start (`dir: -1`, toward the bottom) of `order`.
+ * Returns the SAME array reference when the move is a no-op (id absent, or
+ * already at the respective end) so callers can detect "nothing changed".
+ */
+export function moveInOrder(order: string[], id: string, dir: 1 | -1): string[] {
+  const i = order.indexOf(id);
+  const j = i + dir;
+  if (i < 0 || j < 0 || j >= order.length) return order;
+  const next = order.slice();
+  [next[i], next[j]] = [next[j], next[i]];
+  return next;
+}

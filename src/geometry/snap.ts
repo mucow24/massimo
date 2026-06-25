@@ -23,7 +23,8 @@ export const TIGHT_PERP_TOLERANCE = 0.5;
 /** "Snap to 10's" interval, in world units. */
 export const TENS_INTERVAL = 10;
 
-/** "Snap to grid" cell size, in world units. Matches the visible Grid step. */
+/** Default "snap to grid" cell size, in world units. The toolbar cycles the
+ *  active size through 5, 10, and 20 and threads it into the snap calls. */
 export const GRID_INTERVAL = 10;
 
 // Both gate on |cross(unitAxisA, unitAxisB)| = |sin(angle between the axes)|,
@@ -46,7 +47,7 @@ const SECONDARY_AXIS_SIN_GATE = 0.1;
  *
  * `gridInterval` is the grid cell size; defaults to {@link GRID_INTERVAL} (10)
  * so existing callers keep the standard grid. The toolbar threads the active
- * size (10 or 5) here so snapping tracks the visible grid.
+ * size (5, 10, or 20) here so snapping tracks the visible grid.
  */
 export function snapPointToGrid(
   x: number,
@@ -205,7 +206,7 @@ export interface SnapInput {
    *  (line on, others off) so existing call sites preserve current behavior. */
   modes?: SnapModes;
   /** Grid cell size in world units for the grid hard-constraint. Defaults to
-   *  {@link GRID_INTERVAL} (10); the toolbar threads the active size (10 or 5). */
+   *  {@link GRID_INTERVAL} (10); the toolbar threads the active size (5, 10, or 20). */
   gridInterval?: number;
 }
 

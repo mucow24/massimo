@@ -20,7 +20,7 @@ interface ViewportState extends Viewport {
   gridVisible: boolean;
   setGridVisible: (visible: boolean) => void;
   /** Grid cell size in world units. Drives both the visible grid and all grid
-   *  snapping (toggled between 10 and 5 from the toolbar). */
+   *  snapping (cycled through 5, 10, and 20 from the toolbar; see GRID_SIZES). */
   gridSize: number;
   setGridSize: (size: number) => void;
   darkMode: boolean;

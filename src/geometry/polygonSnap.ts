@@ -24,7 +24,7 @@ export interface PolygonSnapInput {
   /** Perpendicular tolerance in world units. Defaults to {@link SNAP_PERP_TOLERANCE}. */
   tolerance?: number;
   /** Grid cell size in world units. Defaults to {@link GRID_INTERVAL} (10); the
-   *  toolbar threads the active size (10 or 5). */
+   *  toolbar threads the active size (5, 10, or 20). */
   gridInterval?: number;
 }
 
