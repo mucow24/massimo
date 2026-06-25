@@ -189,7 +189,7 @@ is not a micro-optimization — it is the foundation of undo grouping:
 | `LabelCell.offset/offsetPerp` | **Pixels in unrotated-station-local space** |
 | Snap guides, viewBox, redistribute, curveRadius, line width/stroke, transfer thickness | **World** |
 | Drag thresholds (`DRAG_MOVE_THRESHOLD=4`), pointer start coords | **Screen pixels** |
-| Snap engage radii (`SNAP_PERP_TOLERANCE=10`) | **Screen px** — call sites divide by `zoom` so the world tolerance shrinks as you zoom in |
+| Snap engage radius (`SNAP_PERP_TOLERANCE=10`, **world units at zoom 1**) | Call sites pass `/zoom`, so the *effective* radius is constant in screen px (the world tolerance shrinks as you zoom in) |
 | Grid snap | **Hard world constraint** — unaffected by zoom |
 
 Screen y is **down** everywhere. `vec.leftNormal((x,y)) = (y,-x)` is "left of travel" in the
@@ -369,8 +369,12 @@ Files: [serialize.ts](src/model/serialize.ts), [store.ts](src/state/store.ts) (`
 There is **no `normalizeDoc()`**. Absent fields fill from `DEFAULT_DOC`. The small number of
 value-level fixups are **shared exported functions** — `sanitizeStations`, `backfillLineNames`,
 `backfillPolygonDarkColors`, `backfillTextLabelColors`, `convertLegacyDotShapes`,
-`sanitizeStopDotSizes`, `validActivePalettes` — each returning `{...cleaned, changed}` and
-**returning the same reference when unchanged**. They are called by **both** load paths.
+`sanitizeStopDotSizes`, `validActivePalettes` — each returning `{...cleaned, changed}`, where the
+**`changed` flag is the signal** callers use (`migrateDoc` re-spreads a field only when `changed` is
+true). The dict-level backfills allocate a fresh container even on a no-op, so don't rely on their
+reference identity (the per-line / per-dot sanitizers *do* return the same element ref when
+unchanged — distinct from the transform "same-reference-on-no-op" invariant). They are called by
+**both** load paths.
 
 ### Two load paths (keep them in sync)
 
@@ -585,8 +589,9 @@ update it without understanding why every painted path on every map would move.
 `snapDraggedStation(input)` (pure) supports modes `{line, equidistant, tens, all, grid}`
 (`equidistant`/`tens` are gated on `line`). Flow: pick a target pool → generate candidate
 alignment pairs per target (line-mode requires a shared line + parallel travel dirs + adjacency;
-all-mode ignores topology) keeping those within `SNAP_PERP_TOLERANCE` (= 10 screen px / zoom) →
-**consolidate interlined candidates by MEDIAN** offset (not mean — keeps the guide on a real
+all-mode ignores topology) keeping those whose perpendicular distance is within tolerance
+(`SNAP_PERP_TOLERANCE` = 10 world units at zoom 1, passed as `/zoom` so the engage radius is
+constant in screen px) → **consolidate interlined candidates by MEDIAN** offset (not mean — keeps the guide on a real
 stripe) → pick a primary + a non-parallel secondary axis → solve (2×2 intersection or projection)
 → apply grid as a **hard constraint** (when on, the result is always on-grid; an alignment fires
 only if reconcilable, else falls back to plain grid with no guide) → optional along-axis
@@ -747,8 +752,11 @@ preview of the resulting selection per type, through set/add/xor modifiers).
 
 **Group drag** ([groupDrag.ts](src/components/canvas/groupDrag.ts)): at pointerdown,
 `collectGroupSiblings` snapshots every *other* selected item — but only if the grabbed item is
-itself selected (dragging an unselected item never tows; locked items never tow). During group
-drag, **alignment snap is dropped** (siblings are unstable targets); only grid acts on the anchor.
+itself selected (dragging an unselected item never tows; locked items never tow). Snap during a
+group drag **splits by type**: a **station** keeps the full snap engine, merely excluding the
+moving siblings as targets (`excludedIds` in [useStationDrag.ts](src/components/canvas/useStationDrag.ts));
+a **bullet** drops its line-snap engine to a grid-only fallback (the `!inGroupDrag` gate in
+[useItemDrag.ts](src/components/canvas/useItemDrag.ts)), since its targets would be unstable.
 **Group rotate** ([groupRotate.ts](src/components/canvas/groupRotate.ts)): right-click rotates the
 whole multi-selection rigidly about the pivot via `rotateItemsAround` (fixed the bug where
 per-type handlers omitted other types).
@@ -821,8 +829,8 @@ in-DOM** `<svg>` into a standalone SVG or a 4× PNG.
    ghosts, guides, handles — tagged in `MapCanvas`), and `foreignObject` (inline editors).
 3. **Measure bounds offscreen** via `getBBox` (needs the element rendered → appended to an
    off-screen div, removed in `finally`).
-4. **Empty guard is an AND** — throws only when both bbox dims are 0 (a single horizontal line is
-   exportable).
+4. **Empty guard is an AND** — throws only when *neither* bbox dim is positive (`!(w>0) && !(h>0)`),
+   so a zero-height positive-width strip (a single horizontal line) is still exportable.
 5. **Frame** to content + `PADDING=24`; set `viewBox` to the frame and `width`/`height` to
    `frame × pixelScale` (**pixels**). For PNG, baking 4× into the SVG's own size rasterizes the
    vector natively at 4× (scaling the canvas context instead would upscale a 1× bitmap — blurry).
