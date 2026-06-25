@@ -4,6 +4,7 @@ import { pickDocSnapshot, useDoc, useSelection, type UiMode } from '../state/sto
 import { useViewportStore, nextGridSize } from '../state/viewportStore';
 import { parse, serialize } from '../model/serialize';
 import { DEFAULT_DOC } from '../model/transforms';
+import { parseSvgIntrinsicSize, svgTextToDataUri } from '../model/svgImport';
 import { useCustomPalettes } from '../state/customPalettes';
 import { themeColors } from '../state/theme';
 import {
@@ -64,12 +65,18 @@ export function Toolbar() {
   const selection = useSelection();
 
   const fileInputRef = useRef<HTMLInputElement | null>(null);
+  const svgInputRef = useRef<HTMLInputElement | null>(null);
   const [menuError, setMenuError] = useState<string | null>(null);
 
   // Each "Add X" menu item toggles the matching uiMode variant: clicking it
   // again (or while the variant is active) returns to idle.
   const toggleMode = (
-    kind: Exclude<UiMode['kind'], 'idle' | 'appending-to-line' | 'creating-transfer'>,
+    kind: Exclude<
+      UiMode['kind'],
+      // placing-svg carries a payload, so it can't be toggled into via a bare
+      // `{ kind }` — it's entered by the file-import handler instead.
+      'idle' | 'appending-to-line' | 'creating-transfer' | 'placing-svg'
+    >,
   ) => {
     selection.setUiMode(selection.uiMode.kind === kind ? { kind: 'idle' } : { kind });
   };
@@ -165,6 +172,19 @@ export function Toolbar() {
     useDoc.temporal.getState().clear();
   };
 
+  // Add → SVG…: read the file, parse its intrinsic size, encode it as an opaque
+  // data URI, and enter placing-svg mode so the next canvas click drops it.
+  const onAddSvg = () => svgInputRef.current?.click();
+  const onSvgChosen = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const f = e.target.files?.[0];
+    e.target.value = ''; // allow re-picking the same file
+    if (!f) return;
+    const text = await f.text();
+    const { width, height } = parseSvgIntrinsicSize(text);
+    const href = svgTextToDataUri(text);
+    selection.setUiMode({ kind: 'placing-svg', image: { href, width, height } });
+  };
+
   return (
     <div className="toolbar">
       <strong>Massimo</strong>
@@ -186,6 +206,7 @@ export function Toolbar() {
         <MenuItem onClick={onAddTransfer}>Transfer</MenuItem>
         <MenuItem onClick={onAddLabel}>Label</MenuItem>
         <MenuItem onClick={onAddPolygon}>Polygon</MenuItem>
+        <MenuItem onClick={onAddSvg}>SVG…</MenuItem>
       </Menu>
       <ToolButtons />
       <span className="tool-group-divider" aria-hidden="true" />
@@ -248,6 +269,14 @@ export function Toolbar() {
         accept=".json,.massimo,application/json"
         style={{ display: 'none' }}
         onChange={onFileChosen}
+      />
+      <input
+        ref={svgInputRef}
+        type="file"
+        accept=".svg,image/svg+xml"
+        aria-label="Import SVG file"
+        style={{ display: 'none' }}
+        onChange={onSvgChosen}
       />
       <span className="spacer" />
       <label>

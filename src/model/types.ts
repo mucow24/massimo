@@ -357,6 +357,36 @@ export type PolygonStylePatch = Partial<
   >
 >;
 
+// A free-floating imported SVG graphic, placed on the canvas as an OPAQUE
+// `<image href="data:image/svg+xml;base64,…">`. Rendered in the same band as
+// polygons (under all other map content). `x`/`y` are the WORLD coords of the
+// image CENTER; `width`/`height` are the unrotated bounding-box size in world
+// units (post-scale). `rotation` is a CONTINUOUS angle in degrees clockwise —
+// deliberately NOT the 8-step `Rotation` octant used elsewhere, because svg
+// images snap to 22.5° (half an octant) under Shift. `href` is the embedded
+// data URI, fixed at import and never edited.
+export interface SvgImage {
+  id: string;
+  x: number;
+  y: number;
+  width: number;
+  height: number;
+  rotation: number;
+  href: string;
+  // When locked, the image can't be dragged, resized, rotated, deleted, or
+  // marquee-selected, and its popover controls (other than the lock toggle)
+  // are disabled. It can still be click-selected so the user can unlock it.
+  // Optional; missing ⇒ unlocked. Mirrors Polygon.locked.
+  locked?: boolean;
+}
+
+// The mutable fields of an SvgImage accepted by `updateSvgImage` (everything
+// except `id` and the immutable `href`). Shared by the transform and the store
+// action so the two never drift.
+export type SvgImageStylePatch = Partial<
+  Pick<SvgImage, 'x' | 'y' | 'width' | 'height' | 'rotation' | 'locked'>
+>;
+
 export interface MapDoc {
   stations: Record<StationId, Station>;
   lines: Record<LineId, Line>;
@@ -385,6 +415,13 @@ export interface MapDoc {
   // Ids missing from this list (legacy saves, races) fall back to insertion
   // order and render on top — see `effectivePolygonOrder`.
   polygonOrder: string[];
+  // Free-floating imported SVG graphics, placed in the polygon band (under all
+  // other map content). Keyed by image id.
+  svgImages: Record<string, SvgImage>;
+  // Relative paint order of svg images among themselves (all still sit in the
+  // polygon band). Later in the array = painted later = on top. Ids missing
+  // from this list fall back to insertion order — see `effectiveSvgImageOrder`.
+  svgImageOrder: string[];
   // Global station-label styling. Applies to every station name; line tags
   // and route bullets keep their always-bold pill styling. `labelWeight` is
   // one of the Helvetica Neue weights we ship in /public/fonts/ (no 600).

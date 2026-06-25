@@ -10,10 +10,17 @@ describe('counterIdFactory', () => {
     expect(f.lineId()).toBe('l1');
   });
 
+  it('mints sequential svg-image ids with the `i` prefix', () => {
+    const f = counterIdFactory();
+    expect(f.svgImageId()).toBe('i0');
+    expect(f.svgImageId()).toBe('i1');
+  });
+
   it('respects the seed', () => {
     const f = counterIdFactory(10);
     expect(f.stationId()).toBe('s10');
     expect(f.lineId()).toBe('l10');
+    expect(f.svgImageId()).toBe('i10');
   });
 
   it('two factories from one call advance independently', () => {
@@ -56,7 +63,8 @@ describe('defaultIdFactory', () => {
       f.transferId(),
       f.textLabelId(),
       f.polygonId(),
+      f.svgImageId(),
     ];
-    expect(new Set(ids).size).toBe(7);
+    expect(new Set(ids).size).toBe(8);
   });
 });

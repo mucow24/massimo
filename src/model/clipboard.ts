@@ -3,6 +3,7 @@ import type {
   Rotation,
   RouteBullet,
   RouteBulletShape,
+  SvgImage,
   TextLabel,
   TextLabelAlign,
   TextLabelWeight,
@@ -18,7 +19,8 @@ import type { Vec2 } from '../geometry/vec';
 export type ClipPayload =
   | { kind: 'route-bullet'; data: Omit<RouteBullet, 'id'> }
   | { kind: 'text-label'; data: Omit<TextLabel, 'id'> }
-  | { kind: 'polygon'; data: Omit<Polygon, 'id'> };
+  | { kind: 'polygon'; data: Omit<Polygon, 'id'> }
+  | { kind: 'svg-image'; data: Omit<SvgImage, 'id'> };
 
 const FORMAT = 'massimo-clipboard';
 // v1 wrapped a single `payload`; v2 carries an ordered `items` array. A v1
@@ -51,6 +53,12 @@ export function textLabelPayload(l: TextLabel): ClipPayload {
 export function polygonPayload(p: Polygon): ClipPayload {
   const { id: _id, ...data } = p;
   return { kind: 'polygon', data };
+}
+
+// Build the clipboard payload for an svg image (drops its id).
+export function svgImagePayload(im: SvgImage): ClipPayload {
+  const { id: _id, ...data } = im;
+  return { kind: 'svg-image', data };
 }
 
 /**
@@ -95,7 +103,37 @@ function parseItem(raw: unknown): ClipPayload | null {
     const data = parsePolygonData(p.data);
     return data ? { kind: 'polygon', data } : null;
   }
+  if (p.kind === 'svg-image') {
+    const data = parseSvgImageData(p.data);
+    return data ? { kind: 'svg-image', data } : null;
+  }
   return null;
+}
+
+function parseSvgImageData(raw: unknown): Omit<SvgImage, 'id'> | null {
+  if (!raw || typeof raw !== 'object') return null;
+  const d = raw as Record<string, unknown>;
+  if (typeof d.x !== 'number' || !Number.isFinite(d.x)) return null;
+  if (typeof d.y !== 'number' || !Number.isFinite(d.y)) return null;
+  if (typeof d.width !== 'number' || !Number.isFinite(d.width) || d.width <= 0) return null;
+  if (typeof d.height !== 'number' || !Number.isFinite(d.height) || d.height <= 0) return null;
+  // Continuous rotation — finite is the only constraint (NOT the 0..7 octant).
+  if (typeof d.rotation !== 'number' || !Number.isFinite(d.rotation)) return null;
+  // Security: only an inline svg data URI is allowed. A remote/script href from
+  // a crafted clipboard string would break the opaque-sandbox guarantee.
+  if (typeof d.href !== 'string' || !d.href.startsWith('data:image/svg+xml')) return null;
+  // Optional: reject a present-but-wrong type; leave an absent flag absent.
+  if (d.locked !== undefined && typeof d.locked !== 'boolean') return null;
+  const out: Omit<SvgImage, 'id'> = {
+    x: d.x,
+    y: d.y,
+    width: d.width,
+    height: d.height,
+    rotation: d.rotation,
+    href: d.href,
+  };
+  if (d.locked !== undefined) out.locked = d.locked as boolean;
+  return out;
 }
 
 function parseRouteBulletData(raw: unknown): Omit<RouteBullet, 'id'> | null {
