@@ -1,5 +1,5 @@
 import { test, expect, type Page } from '@playwright/test';
-import { seedAndOpen, stationCenter } from './fixtures';
+import { seedAndOpen, stationCenter, labelCenter } from './fixtures';
 
 // Reads the persisted doc slice we assert on.
 async function readState(page: Page): Promise<{
@@ -132,5 +132,48 @@ test.describe('Selected items win drag hit-testing over higher-painted items', (
     expect(vertsKey(after.polygons.p0.vertices)).not.toBe(polyBefore);
     expect(after.stations.A.x).toBeCloseTo(stationBefore.x, 5);
     expect(after.stations.A.y).toBeCloseTo(stationBefore.y, 5);
+  });
+
+  // The flip side: a single CLICK always selects by normal layer order, even
+  // over a selected item. Selecting a polygon must NOT make its hit proxy steal
+  // clicks aimed at the text painted on top of it.
+  test('single-clicking a higher item over a selected polygon selects the higher item', async ({
+    page,
+  }) => {
+    await seedAndOpen(page, {
+      stations: [],
+      lines: [],
+      // Text label sits on top of the polygon (labels paint above polygons).
+      textLabels: [{ id: 'g1', x: 0, y: 0, text: 'Midtown', fontSize: 24 }],
+      polygons: [
+        {
+          id: 'p0',
+          vertices: [
+            { x: -150, y: -150 },
+            { x: 150, y: -150 },
+            { x: 150, y: 150 },
+            { x: -150, y: 150 },
+          ],
+          fill: '#cfe3f2',
+          stroke: '#000000',
+        },
+      ],
+    });
+
+    // Select the polygon by clicking a corner clear of the centered label.
+    const bb = await page.locator('path[data-polygon-id="p0"]').boundingBox();
+    if (!bb) throw new Error('polygon body not visible');
+    await page.mouse.click(bb.x + bb.width - 15, bb.y + bb.height - 15);
+    await expect(page.locator('[data-polygon-hit="p0"]')).toHaveCount(1);
+    await expect(page.locator('[data-text-label-id="g1"][data-text-label-selected]')).toHaveCount(0);
+
+    // Single-click the text (on top of the selected polygon).
+    const c = await labelCenter(page, 'g1');
+    await page.mouse.click(c.x, c.y);
+
+    // Normal layer order wins the click: the text is now selected and the
+    // polygon is deselected (its proxy is gone).
+    await expect(page.locator('[data-text-label-id="g1"][data-text-label-selected]')).toHaveCount(1);
+    await expect(page.locator('[data-polygon-hit]')).toHaveCount(0);
   });
 });

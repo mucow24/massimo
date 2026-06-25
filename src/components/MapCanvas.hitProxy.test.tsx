@@ -1,7 +1,7 @@
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
-import { act, render } from '@testing-library/react';
+import { act, render, fireEvent } from '@testing-library/react';
 import App from '../App';
-import { useDoc } from '../state/store';
+import { dragState, useDoc } from '../state/store';
 import { useSelection } from '../state/selection';
 import { useViewportStore } from '../state/viewportStore';
 import { DEFAULT_DOC } from '../model/transforms';
@@ -197,6 +197,45 @@ describe('MapCanvas — selected-item hit proxies win pointer hit-testing', () =
     // being swallowed by a proxy with no marker.
     const bodyDoc = document.querySelector('path[data-polygon-id="p0"]')!;
     expect(bodyDoc.getAttribute('data-locked')).toBe('true');
+  });
+
+  it('re-routes a click on a selected item proxy to the real element beneath (normal layer order)', () => {
+    render(<App />);
+    seedAll();
+    act(() => useSelection.getState().setPolygonSelection(['p0']));
+    expect(useSelection.getState().selectedPolygonIds).toEqual(['p0']);
+    const proxyEl = document.querySelector('[data-polygon-hit="p0"]')!;
+    // The "real element beneath" the proxy — jsdom can't hit-test, so stand in
+    // the label's hit rect as what elementFromPoint would return. (jsdom doesn't
+    // define elementFromPoint at all, so assign rather than spy.)
+    const beneath = document.querySelector('[data-text-label-id="g1"] rect')!;
+    (document as unknown as { elementFromPoint: () => Element }).elementFromPoint = () => beneath;
+    act(() => {
+      fireEvent.click(proxyEl, { button: 0, clientX: 10, clientY: 10 });
+    });
+    delete (document as unknown as { elementFromPoint?: unknown }).elementFromPoint;
+    // The proxy's own (no-op) click is suppressed; the re-dispatched click hits
+    // the label, so selection followed normal layer order: label in, polygon out.
+    expect(useSelection.getState().selectedLabelIds).toEqual(['g1']);
+    expect(useSelection.getState().selectedPolygonIds).toEqual([]);
+  });
+
+  it('does not re-route after a drag (suppressed click leaves selection alone)', () => {
+    render(<App />);
+    seedAll();
+    act(() => useSelection.getState().setPolygonSelection(['p0']));
+    const proxyEl = document.querySelector('[data-polygon-hit="p0"]')!;
+    const beneath = document.querySelector('[data-text-label-id="g1"] rect')!;
+    (document as unknown as { elementFromPoint: () => Element }).elementFromPoint = () => beneath;
+    dragState.suppressClick = true; // a drag just ended
+    act(() => {
+      fireEvent.click(proxyEl, { button: 0, clientX: 10, clientY: 10 });
+    });
+    dragState.suppressClick = false;
+    delete (document as unknown as { elementFromPoint?: unknown }).elementFromPoint;
+    // No re-route: the polygon stays selected, the label is untouched.
+    expect(useSelection.getState().selectedPolygonIds).toEqual(['p0']);
+    expect(useSelection.getState().selectedLabelIds).toEqual([]);
   });
 
   it('tears the proxy down when the selection is cleared', () => {
