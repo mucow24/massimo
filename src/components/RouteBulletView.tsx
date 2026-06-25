@@ -7,6 +7,11 @@ interface Props {
   bullet: RouteBullet;
   lines: Record<string, Line>;
   selected: boolean;
+  // 'full' (default) paints the colored badge + label + selection ring. 'hit'
+  // (selected only) is a transparent top-z copy of the shape — the
+  // selected-on-top drag proxy — painted above all map content so the bullet
+  // wins pointer hits over anything stacked above it.
+  layer?: 'full' | 'hit';
   // Hand mode → grab cursor (pannable). Defaults false for non-canvas uses.
   inHandMode?: boolean;
   onPointerDown: (id: string, e: React.PointerEvent) => void;
@@ -18,6 +23,7 @@ export function RouteBulletView({
   bullet,
   lines,
   selected,
+  layer = 'full',
   inHandMode = false,
   onPointerDown,
   onClick,
@@ -32,16 +38,33 @@ export function RouteBulletView({
   const r = bullet.size;
   const angle = bullet.rotation * 45;
 
-  let shape: React.ReactNode;
-  if (bullet.shape === 'circle') {
-    shape = <circle cx={0} cy={0} r={r} fill={fill} />;
-  } else if (bullet.shape === 'square') {
-    shape = <rect x={-r} y={-r} width={r * 2} height={r * 2} fill={fill} />;
-  } else {
+  // Shape geometry, parameterized by fill so the transparent hit proxy reuses the
+  // exact footprint (circle / square / diamond) the badge paints.
+  const renderShape = (shapeFill: string) => {
+    if (bullet.shape === 'circle') return <circle cx={0} cy={0} r={r} fill={shapeFill} />;
+    if (bullet.shape === 'square')
+      return <rect x={-r} y={-r} width={r * 2} height={r * 2} fill={shapeFill} />;
     // Diamond.
-    shape = <polygon points={`0,${-r} ${r},0 0,${r} ${-r},0`} fill={fill} />;
+    return <polygon points={`0,${-r} ${r},0 0,${r} ${-r},0`} fill={shapeFill} />;
+  };
+
+  if (layer === 'hit') {
+    if (!selected || bullet.locked) return null;
+    return (
+      <g
+        data-bullet-hit={bullet.id}
+        transform={`translate(${bullet.x} ${bullet.y}) rotate(${angle})`}
+        onPointerDown={(e) => onPointerDown(bullet.id, e)}
+        onClick={(e) => onClick(bullet.id, e)}
+        onContextMenu={(e) => onContextMenu(bullet.id, e)}
+        style={{ cursor: itemCursor(inHandMode, bullet.locked) }}
+      >
+        {renderShape('transparent')}
+      </g>
+    );
   }
 
+  const shape = renderShape(fill);
   const fontSize = r * 1.1;
 
   return (

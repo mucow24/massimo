@@ -17,10 +17,18 @@ export function StationHitArea({
   station,
   lines,
   onStartDrag,
+  proxy = false,
 }: {
   station: Station;
   lines: Record<string, Line>;
   onStartDrag: (id: string, ev: React.PointerEvent, redistributeAnchor?: string) => void;
+  // When true, render as the selected-on-top drag PROXY: the same geometry +
+  // interaction, but keyed under data-station-hit (not data-station-id) so it
+  // doesn't duplicate the body's id-locators, and WITHOUT data-locked — the
+  // proxy is only ever rendered for unlocked stations, and carrying data-locked
+  // would make the rect-select gate treat a pointerdown on it as marquee
+  // background and swallow the drag.
+  proxy?: boolean;
 }) {
   const labelFontSize = useDoc((s) => s.labelFontSize);
   const labelWeight = useDoc((s) => s.labelWeight);
@@ -58,11 +66,12 @@ export function StationHitArea({
   };
   return (
     <g
-      data-station-id={station.id}
+      data-station-id={proxy ? undefined : station.id}
+      data-station-hit={proxy ? station.id : undefined}
       // Generic lock marker (shared with polygons): the rect-select gate keys
       // off [data-locked] so a drag starting on a locked station begins a
-      // marquee instead of doing nothing.
-      data-locked={station.locked || undefined}
+      // marquee instead of doing nothing. Never set in proxy mode (see prop doc).
+      data-locked={proxy ? undefined : station.locked || undefined}
       transform={`translate(${station.x} ${station.y}) rotate(${angle})`}
       style={{ cursor }}
     >

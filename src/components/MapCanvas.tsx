@@ -903,6 +903,103 @@ export function MapCanvas() {
           )}
         </g>
 
+        {/* Selected-item drag proxies: a transparent hit target per selected,
+            unlocked item, painted ABOVE all map content so a selected item
+            always wins pointer hit-testing over whatever is stacked above it —
+            a selected polygon under a station drags the polygon, not the
+            station. Each routes to the SAME drag/click/context-menu handlers as
+            the item's body, so behavior is identical — only the z-order of the
+            hit target changes. Emitted in body paint order (polygon → svg image
+            → station → bullet → label) so when two SELECTED items overlap, the
+            one painted higher in the normal stack still wins its grab. The
+            polygon/svg-image MANIPULATION handle passes render BELOW this, so a
+            selected item's own corner/vertex handles still beat its body proxy.
+            These iterate the same preview-aware id lists as the handle overlays,
+            so mid-marquee they track the rubber-band preview; that's harmless —
+            useRectSelect captures the pointer on first move, so the in-flight
+            gesture is delivered to the SVG regardless of proxies mounted on top.
+            Excluded from export — pure interaction chrome. */}
+        <g data-export-exclude="1">
+          {polygonSelectedIds.map((pid) =>
+            polygons[pid] ? (
+              <PolygonView
+                key={pid + ':hit'}
+                polygon={polygons[pid]}
+                layer="hit"
+                selected
+                selectedVertexIndex={null}
+                interactive={polygonsInteractive}
+                inHandMode={inHandMode}
+                onPointerDown={polyDrag.onPolygonPointerDown}
+                onClick={onPolygonClick}
+                onContextMenu={onPolygonContextMenu}
+                onVertexPointerDown={polyDrag.onVertexPointerDown}
+                onVertexClick={onVertexClick}
+                onEdgeAddPointerDown={polyDrag.onEdgeAddPointerDown}
+              />
+            ) : null,
+          )}
+          {svgImageSelectedIds.map((iid) =>
+            svgImages[iid] ? (
+              <SvgImageView
+                key={iid + ':hit'}
+                image={svgImages[iid]}
+                layer="hit"
+                selected
+                interactive={polygonsInteractive}
+                inHandMode={inHandMode}
+                onPointerDown={svgDrag.onSvgImagePointerDown}
+                onClick={onSvgImageClick}
+                onContextMenu={onSvgImageContextMenu}
+                onCornerPointerDown={svgDrag.onSvgCornerPointerDown}
+                onEdgePointerDown={svgDrag.onSvgEdgePointerDown}
+                onRotatePointerDown={svgDrag.onSvgRotatePointerDown}
+              />
+            ) : null,
+          )}
+          {washIds.map((sid) =>
+            stations[sid] && !stations[sid].locked ? (
+              <StationView
+                key={sid + ':hit'}
+                station={stations[sid]}
+                lines={lines}
+                zoom={view.viewport.zoom}
+                onStartDrag={drag.onStartDrag}
+                layer="hit"
+              />
+            ) : null,
+          )}
+          {bulletSelectedIds.map((id) =>
+            routeBullets[id] ? (
+              <RouteBulletView
+                key={id + ':hit'}
+                bullet={routeBullets[id]}
+                lines={lines}
+                selected
+                layer="hit"
+                inHandMode={inHandMode}
+                onPointerDown={itemDrag.onBulletPointerDown}
+                onClick={onBulletClick}
+                onContextMenu={onBulletContextMenu}
+              />
+            ) : null,
+          )}
+          {labelSelectedIds.map((id) =>
+            textLabels[id] ? (
+              <LabelView
+                key={id + ':hit'}
+                label={textLabels[id]}
+                selected
+                layer="hit"
+                inHandMode={inHandMode}
+                onPointerDown={itemDrag.onLabelPointerDown}
+                onClick={onLabelClick}
+                onContextMenu={onLabelContextMenu}
+              />
+            ) : null,
+          )}
+        </g>
+
         {/* Polygon selection overlay: dashed outline, vertex handles, and edge
             "+" buttons. Painted in this top pass so the handles stay clickable
             above all map content. Only selected polygons render here. Excluded

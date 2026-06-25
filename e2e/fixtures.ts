@@ -67,6 +67,9 @@ export interface SeedPolygon {
   fill: string;
   stroke: string;
   strokeWidth?: number;
+  // Omit ⇒ closed (the store treats `closed !== false` as closed). Set false to
+  // seed an open, stroke-only chain.
+  closed?: boolean;
   // Omit to simulate a polygon saved before the dark-mode fields existed (the
   // store's migrate should backfill them on rehydrate).
   darkFill?: string;
@@ -173,6 +176,7 @@ export async function seedAndOpen(
       fill: p.fill,
       stroke: p.stroke,
       strokeWidth: p.strokeWidth ?? 1,
+      ...(p.closed !== undefined ? { closed: p.closed } : {}),
       // Only include the dark fields when provided, so an omitted pair persists
       // as a pre-dark-mode (legacy) polygon for the migration to backfill.
       ...(p.darkFill !== undefined ? { darkFill: p.darkFill } : {}),
