@@ -2,6 +2,7 @@ import { useDoc } from '../state/store';
 import { type ViewportProjection } from './canvas/screenAnchor';
 import { useDraggablePopover } from './canvas/useDraggablePopover';
 import { NumericFieldRow } from './NumericFieldRow';
+import { PopoverFooter } from './PopoverFooter';
 import { useFieldHistory } from './useFieldHistory';
 import { polygonCentroid } from '../geometry/polygon';
 import {
@@ -220,21 +221,12 @@ export function PolygonPopover({ polygon, view, onClose }: Props) {
             </button>
           </div>
         </div>
-        <div className="footer">
-          <button
-            type="button"
-            className={'lock-btn' + (locked ? ' active' : '')}
-            aria-label={locked ? 'Unlock polygon' : 'Lock polygon'}
-            aria-pressed={locked}
-            title={locked ? 'Unlock' : 'Lock (prevents editing)'}
-            onClick={onToggleLock}
-          >
-            {locked ? '🔒 Locked' : '🔓 Lock'}
-          </button>
-          <button className="delete-btn" onClick={onDelete} disabled={locked}>
-            Delete
-          </button>
-        </div>
+        <PopoverFooter
+          noun="polygon"
+          locked={locked}
+          onToggleLock={onToggleLock}
+          onDelete={onDelete}
+        />
       </div>
     </div>
   );

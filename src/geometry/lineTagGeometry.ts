@@ -1,5 +1,6 @@
 import { perp, Vec2 } from './vec';
 import { emitOffsetSegments, OffsetPathSegment } from './router';
+import { pairKeyOf } from '../model/pairKey';
 import type { Line, LineId, LineTag, StationId } from '../model/types';
 
 /**
@@ -210,7 +211,7 @@ export function snapNeighborTag(args: {
   for (const otherId of Object.keys(args.lineTags)) {
     if (otherId === args.selfTagId) continue;
     const other = args.lineTags[otherId];
-    const otherPairKey = `${other.fromStationId}|${other.toStationId}`;
+    const otherPairKey = pairKeyOf(other.fromStationId, other.toStationId);
     if (otherPairKey !== args.candPairKey) continue;
     const otherOffset = args.lineStripeOffset(other.lineId);
     if (otherOffset === null) continue;

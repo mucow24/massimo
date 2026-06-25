@@ -1,3 +1,4 @@
+import { reconcileOrder } from './recordOrder';
 import type { Line, LineId } from './types';
 
 /**
@@ -9,8 +10,5 @@ export function effectiveLineOrder(
   lineOrder: LineId[] | undefined,
   lines: Record<LineId, Line>,
 ): LineId[] {
-  const present = (lineOrder ?? []).filter((id) => lines[id]);
-  const seen = new Set(present);
-  for (const id of Object.keys(lines)) if (!seen.has(id)) present.push(id);
-  return present;
+  return reconcileOrder(lines, lineOrder ?? []);
 }
