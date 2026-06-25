@@ -401,6 +401,24 @@ describe('snapNeighborTag', () => {
     );
     expect(result.snapped).toBe(false);
   });
+
+  it('matches a neighbor on the same adjacency regardless of endpoint order', () => {
+    // candPairKey is canonical ('s1|s2'). The neighbor stores its endpoints in
+    // the opposite order ('s2'→'s1') for the *same* adjacency. Matching must be
+    // by unordered station-pair (pairKeyOf), so this still snaps.
+    const tag: LineTag = {
+      id: 't1',
+      lineId: 'L1',
+      fromStationId: 's2',
+      toStationId: 's1',
+      anchorEnd: 'from',
+      distance: 30,
+      orientation: 0,
+    };
+    const result = snapNeighborTag(makeArgs({ candCanonT: 0.305, lineTags: { t1: tag } }));
+    expect(result.snapped).toBe(true);
+    expect(result.canonT).toBeCloseTo(0.3, 6);
+  });
 });
 
 describe('offsetFilletPath cross-check (no drift between rendered and sampled)', () => {

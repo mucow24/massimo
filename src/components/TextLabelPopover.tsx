@@ -10,6 +10,7 @@ import {
 } from '../model/transforms';
 import { useFieldHistory } from './useFieldHistory';
 import { useNumericField } from './useNumericField';
+import { PopoverFooter } from './PopoverFooter';
 import type { TextLabel, TextLabelAlign, TextLabelWeight } from '../model/types';
 
 interface Props {
@@ -237,21 +238,12 @@ export function TextLabelPopover({ label, world, view, onClose }: Props) {
           />
         </div>
 
-        <div className="footer">
-          <button
-            type="button"
-            className={'lock-btn' + (locked ? ' active' : '')}
-            aria-label={locked ? 'Unlock label' : 'Lock label'}
-            aria-pressed={locked}
-            title={locked ? 'Unlock' : 'Lock (prevents editing)'}
-            onClick={onToggleLock}
-          >
-            {locked ? '🔒 Locked' : '🔓 Lock'}
-          </button>
-          <button className="delete-btn" onClick={onDelete} disabled={locked}>
-            Delete
-          </button>
-        </div>
+        <PopoverFooter
+          noun="label"
+          locked={locked}
+          onToggleLock={onToggleLock}
+          onDelete={onDelete}
+        />
       </div>
     </div>
   );

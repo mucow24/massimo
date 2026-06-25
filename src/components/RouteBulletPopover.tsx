@@ -1,6 +1,7 @@
 import { useDoc } from '../state/store';
 import { projectToScreen, type ViewportProjection } from './canvas/screenAnchor';
 import { useNumericField } from './useNumericField';
+import { PopoverFooter } from './PopoverFooter';
 import { ROUTE_BULLET_SIZE_MAX, ROUTE_BULLET_SIZE_MIN } from '../model/transforms';
 import type { RouteBullet, RouteBulletShape } from '../model/types';
 
@@ -141,21 +142,12 @@ export function RouteBulletPopover({ bullet, world, view, onClose }: Props) {
             onBlur={size.onNumberBlur}
           />
         </div>
-        <div className="footer">
-          <button
-            type="button"
-            className={'lock-btn' + (locked ? ' active' : '')}
-            aria-label={locked ? 'Unlock route bullet' : 'Lock route bullet'}
-            aria-pressed={locked}
-            title={locked ? 'Unlock' : 'Lock (prevents editing)'}
-            onClick={onToggleLock}
-          >
-            {locked ? '🔒 Locked' : '🔓 Lock'}
-          </button>
-          <button className="delete-btn" onClick={onDelete} disabled={locked}>
-            Delete
-          </button>
-        </div>
+        <PopoverFooter
+          noun="route bullet"
+          locked={locked}
+          onToggleLock={onToggleLock}
+          onDelete={onDelete}
+        />
       </div>
     </div>
   );

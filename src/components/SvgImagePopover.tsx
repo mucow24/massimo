@@ -1,6 +1,7 @@
 import { useDoc } from '../state/store';
 import { type ViewportProjection } from './canvas/screenAnchor';
 import { useDraggablePopover } from './canvas/useDraggablePopover';
+import { PopoverFooter } from './PopoverFooter';
 import type { SvgImage } from '../model/types';
 
 interface Props {
@@ -75,21 +76,12 @@ export function SvgImagePopover({ image, view, onClose }: Props) {
             </button>
           </div>
         </div>
-        <div className="footer">
-          <button
-            type="button"
-            className={'lock-btn' + (locked ? ' active' : '')}
-            aria-label={locked ? 'Unlock image' : 'Lock image'}
-            aria-pressed={locked}
-            title={locked ? 'Unlock' : 'Lock (prevents editing)'}
-            onClick={onToggleLock}
-          >
-            {locked ? '🔒 Locked' : '🔓 Lock'}
-          </button>
-          <button className="delete-btn" onClick={onDelete} disabled={locked}>
-            Delete
-          </button>
-        </div>
+        <PopoverFooter
+          noun="image"
+          locked={locked}
+          onToggleLock={onToggleLock}
+          onDelete={onDelete}
+        />
       </div>
     </div>
   );

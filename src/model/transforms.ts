@@ -1,5 +1,6 @@
 import { autoOrientNewStation } from './autoOrient';
 import { effectiveLineOrder } from './lineOrder';
+import { reconcileOrder, moveInOrder } from './recordOrder';
 import { LINE_WIDTH_DEFAULT, LINE_WIDTH_MIN } from './lineWidth';
 import { DOT_SIZE_DEFAULT, DOT_SIZE_MIN } from './dotSize';
 import {
@@ -1389,40 +1390,34 @@ export function setLabelWeight(doc: MapDoc, w: TextLabelWeight): MapDoc {
   return { ...doc, labelWeight: w };
 }
 
+// `false` is the default for these boolean station flags, so we store `true`
+// and omit the field entirely when off — keeping persisted docs clean. All
+// three setters share this through `updateStation` (returning `st` unchanged
+// on a no-op so history grouping still sees an untouched doc).
+function setStationBoolFlag(
+  doc: MapDoc,
+  stationId: StationId,
+  field: 'labelBold' | 'labelItalic' | 'locked',
+  value: boolean,
+): MapDoc {
+  return updateStation(doc, stationId, (st) => {
+    if (!!st[field] === value) return st;
+    if (value) return { ...st, [field]: true };
+    const { [field]: _gone, ...rest } = st;
+    return rest;
+  });
+}
+
 export function setStationLabelBold(doc: MapDoc, stationId: StationId, bold: boolean): MapDoc {
-  const cur = doc.stations[stationId];
-  if (!cur) return doc;
-  if (!!cur.labelBold === bold) return doc;
-  if (bold) {
-    return { ...doc, stations: { ...doc.stations, [stationId]: { ...cur, labelBold: true } } };
-  }
-  // `false` is the default; omit the field so persisted state stays clean.
-  const { labelBold: _gone, ...rest } = cur;
-  return { ...doc, stations: { ...doc.stations, [stationId]: rest } };
+  return setStationBoolFlag(doc, stationId, 'labelBold', bold);
 }
 
 export function setStationLabelItalic(doc: MapDoc, stationId: StationId, italic: boolean): MapDoc {
-  const cur = doc.stations[stationId];
-  if (!cur) return doc;
-  if (!!cur.labelItalic === italic) return doc;
-  if (italic) {
-    return { ...doc, stations: { ...doc.stations, [stationId]: { ...cur, labelItalic: true } } };
-  }
-  // `false` is the default; omit the field so persisted state stays clean.
-  const { labelItalic: _gone, ...rest } = cur;
-  return { ...doc, stations: { ...doc.stations, [stationId]: rest } };
+  return setStationBoolFlag(doc, stationId, 'labelItalic', italic);
 }
 
 export function setStationLocked(doc: MapDoc, stationId: StationId, locked: boolean): MapDoc {
-  const cur = doc.stations[stationId];
-  if (!cur) return doc;
-  if (!!cur.locked === locked) return doc;
-  if (locked) {
-    return { ...doc, stations: { ...doc.stations, [stationId]: { ...cur, locked: true } } };
-  }
-  // `false` is the default; omit the field so persisted state stays clean.
-  const { locked: _gone, ...rest } = cur;
-  return { ...doc, stations: { ...doc.stations, [stationId]: rest } };
+  return setStationBoolFlag(doc, stationId, 'locked', locked);
 }
 
 export function setLabelItalic(doc: MapDoc, i: boolean): MapDoc {
@@ -1876,10 +1871,7 @@ export function effectivePolygonOrder(
   polygons: Record<string, Polygon>,
   order: string[],
 ): string[] {
-  const existing = order.filter((id) => polygons[id]);
-  const seen = new Set(existing);
-  const missing = Object.keys(polygons).filter((id) => !seen.has(id));
-  return [...existing, ...missing];
+  return reconcileOrder(polygons, order);
 }
 
 // Shift a polygon one step toward the top (`dir: +1`) or bottom (`dir: -1`) of
@@ -1888,11 +1880,8 @@ export function effectivePolygonOrder(
 function movePolygonBy(doc: MapDoc, id: string, dir: 1 | -1): MapDoc {
   if (!doc.polygons[id]) return doc;
   const order = effectivePolygonOrder(doc.polygons, doc.polygonOrder);
-  const i = order.indexOf(id);
-  const j = i + dir;
-  if (i < 0 || j < 0 || j >= order.length) return doc;
-  const next = order.slice();
-  [next[i], next[j]] = [next[j], next[i]];
+  const next = moveInOrder(order, id, dir);
+  if (next === order) return doc;
   return { ...doc, polygonOrder: next };
 }
 
@@ -1958,20 +1947,14 @@ export function effectiveSvgImageOrder(
   svgImages: Record<string, SvgImage>,
   order: string[],
 ): string[] {
-  const existing = order.filter((id) => svgImages[id]);
-  const seen = new Set(existing);
-  const missing = Object.keys(svgImages).filter((id) => !seen.has(id));
-  return [...existing, ...missing];
+  return reconcileOrder(svgImages, order);
 }
 
 function moveSvgImageBy(doc: MapDoc, id: string, dir: 1 | -1): MapDoc {
   if (!doc.svgImages[id]) return doc;
   const order = effectiveSvgImageOrder(doc.svgImages, doc.svgImageOrder);
-  const i = order.indexOf(id);
-  const j = i + dir;
-  if (i < 0 || j < 0 || j >= order.length) return doc;
-  const next = order.slice();
-  [next[i], next[j]] = [next[j], next[i]];
+  const next = moveInOrder(order, id, dir);
+  if (next === order) return doc;
   return { ...doc, svgImageOrder: next };
 }
 
