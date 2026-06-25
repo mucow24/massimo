@@ -14,7 +14,7 @@ import { resolveTextLabelColor } from '../model/transforms';
 import { InlineBullet } from './InlineBullet';
 import { itemCursor } from './canvas/itemCursor';
 
-export type LabelLayer = 'bg' | 'stroke';
+export type LabelLayer = 'bg' | 'stroke' | 'hit';
 
 interface Props {
   label: TextLabel;
@@ -96,6 +96,33 @@ export function LabelView({
           stroke={themeColors.selectionStroke}
           strokeWidth={SELECTION_STROKE_WIDTH}
           strokeDasharray={SELECTION_DASH}
+        />
+      </g>
+    );
+  }
+
+  if (layer === 'hit') {
+    // Transparent, top-z drag proxy for a SELECTED label: re-asserts the label's
+    // bbox hit footprint above all map content so the selected label wins
+    // pointer hit-testing over anything stacked above it. Routes to the same
+    // move/click handlers. Skipped while locked (not draggable). Uses
+    // data-text-label-hit (never data-text-label-id).
+    if (!selected || label.locked) return null;
+    return (
+      <g
+        transform={`translate(${label.x} ${label.y}) rotate(${angle})`}
+        data-text-label-hit={label.id}
+        onPointerDown={onPointerDown ? (e) => onPointerDown(label.id, e) : undefined}
+        onClick={onClick ? (e) => onClick(label.id, e) : undefined}
+        onContextMenu={onContextMenu ? (e) => onContextMenu(label.id, e) : undefined}
+        style={{ cursor: itemCursor(inHandMode, label.locked) }}
+      >
+        <rect
+          x={-halfW - TEXT_LABEL_HIT_PAD}
+          y={-halfH - TEXT_LABEL_HIT_PAD}
+          width={m.width + 2 * TEXT_LABEL_HIT_PAD}
+          height={m.height + 2 * TEXT_LABEL_HIT_PAD}
+          fill="transparent"
         />
       </g>
     );

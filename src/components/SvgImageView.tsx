@@ -13,8 +13,10 @@ const ROTATE_KNOB_R = 6;
 interface Props {
   image: SvgImage;
   // 'body' is painted in the polygon band (under all map content); 'overlay'
-  // (selected only) is painted on top so the handles stay clickable.
-  layer: 'body' | 'overlay';
+  // (selected only) is painted on top so the handles stay clickable. 'hit'
+  // (selected only) is a transparent top-z copy of the box — the selected-on-top
+  // drag proxy — painted above all map content so the image wins pointer hits.
+  layer: 'body' | 'overlay' | 'hit';
   selected: boolean;
   // When false, the image ignores pointer events so a canvas click falls
   // through to placement (used while a click-to-place tool is active).
@@ -73,6 +75,32 @@ export function SvgImageView({
           // Ignore pointer events while a placement tool is active so the click
           // reaches the canvas and places the new item over the image.
           pointerEvents={interactive ? undefined : 'none'}
+          onPointerDown={(e) => onPointerDown(image.id, e)}
+          onClick={(e) => onClick(image.id, e)}
+          onContextMenu={(e) => onContextMenu(image.id, e)}
+          style={{ cursor: itemCursor(inHandMode, image.locked) }}
+        />
+      </g>
+    );
+  }
+
+  if (layer === 'hit') {
+    // Transparent, top-z drag proxy for a SELECTED image: re-asserts the box's
+    // grab footprint above all map content so the selected image wins pointer
+    // hit-testing over anything stacked above it. Routes to the same move
+    // handler; the transform handles render in the later 'overlay' pass, so
+    // corner/edge/rotate still win over this body proxy. Skipped while locked or
+    // non-interactive. Uses data-svg-image-hit (never data-svg-image-id).
+    if (!selected || image.locked || !interactive) return null;
+    return (
+      <g data-svg-image-hit={image.id} transform={transform}>
+        <rect
+          x={-hw}
+          y={-hh}
+          width={image.width}
+          height={image.height}
+          fill="transparent"
+          pointerEvents="all"
           onPointerDown={(e) => onPointerDown(image.id, e)}
           onClick={(e) => onClick(image.id, e)}
           onContextMenu={(e) => onContextMenu(image.id, e)}

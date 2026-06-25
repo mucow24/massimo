@@ -1,5 +1,5 @@
-import { describe, it, expect, beforeEach } from 'vitest';
-import { render } from '@testing-library/react';
+import { describe, it, expect, beforeEach, vi } from 'vitest';
+import { render, fireEvent } from '@testing-library/react';
 import { PolygonView } from './PolygonView';
 import { makePolygon } from '../test/fixtures';
 import { useViewportStore } from '../state/viewportStore';
@@ -256,6 +256,103 @@ describe('<PolygonView /> locked polygons (E5c)', () => {
   it('fillOpacity defaults to fully opaque (100 → 1) when unset', () => {
     const { container } = renderBody(makePolygon({ id: 'p0', fill: '#112233' }));
     expect(Number(body(container).getAttribute('fill-opacity'))).toBeCloseTo(1, 6);
+  });
+});
+
+describe('<PolygonView /> hit proxy (selected-on-top drag target)', () => {
+  beforeEach(() => useViewportStore.setState({ darkMode: false, zoom: 1 }));
+
+  function renderHit(
+    polygon: Polygon,
+    opts: { selected?: boolean; interactive?: boolean; onPointerDown?: (id: string) => void } = {},
+  ) {
+    return render(
+      <svg>
+        <PolygonView
+          polygon={polygon}
+          layer="hit"
+          selected={opts.selected ?? true}
+          selectedVertexIndex={null}
+          interactive={opts.interactive ?? true}
+          onPointerDown={opts.onPointerDown ?? noop}
+          onClick={noop}
+          onContextMenu={noop}
+          onVertexPointerDown={noop}
+          onVertexClick={noop}
+          onEdgeAddPointerDown={noop}
+        />
+      </svg>,
+    ).container;
+  }
+
+  const hit = (c: HTMLElement) => c.querySelector('[data-polygon-hit="p0"]');
+
+  it('a selected, unlocked, interactive CLOSED polygon renders a transparent whole-body hit path', () => {
+    const c = renderHit(makePolygon({ id: 'p0', fill: '#112233' }));
+    const el = hit(c)!;
+    expect(el).not.toBeNull();
+    expect(el.tagName.toLowerCase()).toBe('path');
+    // Transparent fill + pointer-events:all so the interior is grabbable without
+    // painting anything.
+    expect(el.getAttribute('fill')).toBe('transparent');
+    expect(el.getAttribute('pointer-events')).toBe('all');
+    // Must NOT reuse data-polygon-id — that would duplicate the body's id and
+    // break the e2e [data-polygon-id] document-order + strict-mode locators.
+    expect(el.getAttribute('data-polygon-id')).toBeNull();
+    // Same body geometry (rounded path data) so the grab footprint matches.
+    expect(el.getAttribute('d')).toBe(c.querySelector('[data-polygon-hit]')!.getAttribute('d'));
+    // Also covers the stroke BAND (transparent stroke of the body's width) so
+    // the outer rim — grabbable on the body — stays grabbable on the proxy.
+    expect(el.getAttribute('stroke')).toBe('transparent');
+    // makePolygon defaults strokeWidth: 1.
+    expect(Number(el.getAttribute('stroke-width'))).toBe(1);
+  });
+
+  it("the closed proxy's stroke band tracks the body's stroke width", () => {
+    const c = renderHit(makePolygon({ id: 'p0', strokeWidth: 4 }));
+    expect(Number(hit(c)!.getAttribute('stroke-width'))).toBe(4);
+  });
+
+  it('an OPEN polygon proxy is stroke-only and floors its hit corridor to OPEN_HIT_MIN_PX/zoom', () => {
+    // Body stroke 1 < the 10px floor, so the corridor floors to 10 at zoom 1.
+    const c = renderHit(makePolygon({ id: 'p0', closed: false, strokeWidth: 1 }));
+    const el = hit(c)!;
+    expect(el.getAttribute('fill')).toBe('none');
+    expect(el.getAttribute('pointer-events')).toBe('stroke');
+    expect(Number(el.getAttribute('stroke-width'))).toBe(10);
+    expect(el.getAttribute('d') ?? '').not.toContain('Z');
+  });
+
+  it('the open-polygon hit corridor scales with zoom (constant on screen)', () => {
+    useViewportStore.setState({ zoom: 0.5 });
+    const c = renderHit(makePolygon({ id: 'p0', closed: false, strokeWidth: 1 }));
+    // 10px floor / 0.5 zoom = 20 world units.
+    expect(Number(hit(c)!.getAttribute('stroke-width'))).toBe(20);
+  });
+
+  it('the open-polygon corridor honors a wider body stroke over the floor', () => {
+    const c = renderHit(makePolygon({ id: 'p0', closed: false, strokeWidth: 20 }));
+    // max(20, 10) = 20 — the visible stroke already exceeds the floor.
+    expect(Number(hit(c)!.getAttribute('stroke-width'))).toBe(20);
+  });
+
+  it('routes a pointer-down to the polygon body drag handler with the id', () => {
+    const onPointerDown = vi.fn();
+    const c = renderHit(makePolygon({ id: 'p0' }), { onPointerDown });
+    fireEvent.pointerDown(hit(c)!);
+    expect(onPointerDown).toHaveBeenCalledWith('p0', expect.anything());
+  });
+
+  it('renders no proxy when not selected', () => {
+    expect(hit(renderHit(makePolygon({ id: 'p0' }), { selected: false }))).toBeNull();
+  });
+
+  it('renders no proxy when locked (a locked polygon is not draggable)', () => {
+    expect(hit(renderHit(makePolygon({ id: 'p0', locked: true })))).toBeNull();
+  });
+
+  it('renders no proxy while non-interactive (placement tool active → clicks fall through)', () => {
+    expect(hit(renderHit(makePolygon({ id: 'p0' }), { interactive: false }))).toBeNull();
   });
 });
 

@@ -13,6 +13,7 @@ interface Props {
   layer:
     | 'wash'
     | 'bg'
+    | 'hit'
     | 'label'
     | 'highlight-label'
     | 'starter-label'
@@ -50,6 +51,17 @@ export const StationView = memo(function StationView({
       return <StationSilhouette station={station} layer={layer} />;
     case 'bg':
       return <StationHitArea station={station} lines={lines} onStartDrag={onStartDrag} />;
+    case 'hit':
+      // Selected-on-top drag proxy: the same transparent hit footprint as 'bg',
+      // re-asserted at top z (rendered by MapCanvas only for selected stations)
+      // so the station wins pointer hit-testing over anything stacked above it.
+      // Routes through the SAME station interaction as 'bg'. Self-gates on locked
+      // (defense-in-depth): a locked station can't be dragged, and a proxy with
+      // no data-locked would make the rect-select gate misread a pointerdown on
+      // it as marquee background.
+      return station.locked ? null : (
+        <StationHitArea station={station} lines={lines} onStartDrag={onStartDrag} proxy />
+      );
     case 'starter-label':
       return (
         <StationStarterLabel station={station} lines={lines} highlightColor={highlightColor} />
