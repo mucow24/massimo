@@ -788,16 +788,6 @@ export function buildRotateMembers(
 }
 
 /**
- * Rotate the station 180° and mirror the label so it stays on the same world
- * side as before.
- */
-export function flipStation(doc: MapDoc, id: StationId): MapDoc {
-  let next = doc;
-  for (let i = 0; i < 4; i++) next = rotateStation(next, id);
-  return mirrorLabel(next, id);
-}
-
-/**
  * Pure helper: rotate the layout (col/row of every stop + label) 90° while
  * rotating the station the OPPOSITE way, so world appearance stays the same
  * but the editor view of the unrotated grid is reoriented. Stop orientations
@@ -1331,13 +1321,10 @@ export function deleteLine(doc: MapDoc, id: LineId): MapDoc {
 }
 
 export function moveLineInOrder(doc: MapDoc, id: LineId, dir: -1 | 1): MapDoc {
-  const order = effectiveLineOrder(doc.lineOrder, doc.lines).slice();
-  const i = order.indexOf(id);
-  if (i < 0) return doc;
-  const j = i + dir;
-  if (j < 0 || j >= order.length) return doc;
-  [order[i], order[j]] = [order[j], order[i]];
-  return { ...doc, lineOrder: order };
+  const order = effectiveLineOrder(doc.lineOrder, doc.lines);
+  const next = moveInOrder(order, id, dir);
+  if (next === order) return doc;
+  return { ...doc, lineOrder: next };
 }
 
 // ---------- Misc ----------

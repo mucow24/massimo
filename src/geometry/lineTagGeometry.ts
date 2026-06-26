@@ -79,19 +79,9 @@ function sampleSegment(s: OffsetPathSegment, u: number): { p: Vec2; tangent: Vec
   const ψ = u * s.theta;
   const sin = Math.sin(ψ);
   const cos = Math.cos(ψ);
-  // leftPerp in math y-up: perpendicular CCW. Here we use the same leftOf
-  // convention as router.ts (positive offset = visual north when going east).
-  // For y-down screen coordinates: leftPerp((x,y)) = (-y, x) is the standard
-  // 90° CCW rotation in math; here we want the rotation matching emitOffsetSegments,
-  // which is { x: y, y: -x } for "leftOf" in y-down (= 90° rotation that takes
-  // east to north). The rotation here for the arc is about angles in *math*
-  // frame using the standard rotation matrix in vec.ts; for that frame, the
-  // 90° CCW rotation of (x, y) is (-y, x).
-  // We use the rotation matrix interpretation: rotate(inDir, sign * ψ) with
-  // standard matrix [[cos α, -sin α], [sin α, cos α]] gives a CCW rotation in
-  // math y-up. The position formula derived in tests uses:
-  //   p(ψ) = from + r * (sin(ψ) * inDir + sign * (1 - cos(ψ)) * perp(inDir))
-  // where perp((x,y)) = (-y, x) — the math y-up CCW perpendicular (vec.perp).
+  // perp = vec.perp = (-y, x), the math-y-up 90° CCW perpendicular. `sign` (±1)
+  // is the turn direction baked in by emitOffsetSegments. See the function
+  // docstring for the full p(ψ) / tangent(ψ) parametrization this implements.
   const perpL = perp(s.inDir);
   const p: Vec2 = {
     x: s.from.x + s.r * (sin * s.inDir.x + s.sign * (1 - cos) * perpL.x),
