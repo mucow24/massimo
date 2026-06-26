@@ -125,7 +125,7 @@ src/
     svgImage.ts                 # svg-image corners/resize/rotate/snap geometry
 
   state/                        # Zustand stores (5 of them) + history
-    store.ts                    # useDoc: temporal(persist(...)) + ~110 actions + migrateDoc
+    store.ts                    # useDoc: temporal(persist(...)) + ~95 actions + migrateDoc
     history.ts                  # the ONLY module touching zundo internals
     selection.ts                # useSelection: UiMode union + multi-select + reconcileWithDoc
     viewportStore.ts            # useViewportStore (committed) + useLiveViewportStore (in-flight)
@@ -404,7 +404,7 @@ disjoint fields (order immaterial), never mutating the input:
 | Gate | Fixup |
 |---|---|
 | `v<1` | `backfillLineNames` (`"${service} line"`) |
-| `v<2`/`v<4` | `sanitizeStations` (legacy stop orientations; `valign:'auto'`→`'auto-down'`) |
+| `v<4` | `sanitizeStations` (legacy stop orientations; `valign:'auto'`→`'auto-down'` — both fold into one runtime gate) |
 | `v<3` | `labelBold:boolean` → `labelWeight` (700/400; explicit weight wins) |
 | `v<5` | `backfillPolygonDarkColors` |
 | `v<6` | `backfillTextLabelColors` |
@@ -448,7 +448,7 @@ Five Zustand stores, split deliberately by lifecycle. Files in [src/state/](src/
 
 `create<DocState>()(temporal(persist((set, get) => ({...DEFAULT_DOC, ...actions}), persistCfg),
 temporalCfg))`. **`temporal` is the outer wrapper, `persist` the inner**; both use the same
-`partialize: pickDocSnapshot` over `DOC_FIELDS`. The ~110 actions are thin wrappers delegating to
+`partialize: pickDocSnapshot` over `DOC_FIELDS`. The ~95 actions are thin wrappers delegating to
 pure transforms (`import * as T from '../model/transforms'`): `moveStation: (id,x,y) => set((s)
 => T.moveStation(s, id, x, y))`. Adders mint an id from the module-level `ids` factory, call the
 transform, and return the id.

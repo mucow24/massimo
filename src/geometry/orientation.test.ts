@@ -4,9 +4,11 @@ import {
   DIR_8,
   STOP_SIZE,
   inputEdgeOffsetLocal,
+  localDirToWorld,
   outputEdgeOffsetLocal,
   rotateBy,
   rotateGridDelta,
+  worldDirToLocal,
   segmentEndpoints,
   stopCenterAt,
   stripeOffsetsForWidths,
@@ -42,6 +44,26 @@ describe('rotateBy', () => {
       const out = rotateBy({ x: 3, y: 4 }, r as Rotation);
       expect(Math.hypot(out.x, out.y)).toBeCloseTo(5, 10);
     }
+  });
+});
+
+describe('worldDirToLocal', () => {
+  it('is the exact inverse of localDirToWorld for every rotation', () => {
+    const world = { x: 3, y: -5 };
+    for (let r = 0; r < 8; r++) {
+      const local = worldDirToLocal(world, r as Rotation);
+      const back = localDirToWorld(local, r as Rotation);
+      expect(back.x).toBeCloseTo(world.x, 10);
+      expect(back.y).toBeCloseTo(world.y, 10);
+    }
+  });
+
+  it('undoes a 90° (rotation 2) station rotation', () => {
+    // A station rotated by 2 maps local +x to world (0, 1) in screen-y-down;
+    // so the inverse must map world (0, 1) back to local +x.
+    const local = worldDirToLocal({ x: 0, y: 1 }, 2);
+    expect(local.x).toBeCloseTo(1, 10);
+    expect(local.y).toBeCloseTo(0, 10);
   });
 });
 

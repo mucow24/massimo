@@ -8,7 +8,13 @@ import {
 } from '../../geometry/interlining';
 import { pairKeyOf } from '../../model/pairKey';
 import { resolveDotStyle } from '../../model/transforms';
-import { STOP_SIZE, STOP_DOT_RADIUS, travelDirLocal, rotateBy } from '../../geometry/orientation';
+import {
+  STOP_SIZE,
+  STOP_DOT_RADIUS,
+  travelDirLocal,
+  rotateBy,
+  worldDirToLocal,
+} from '../../geometry/orientation';
 import { lineStyleStrokeAttrs, lineStyleUnderlayAttrs } from '../HatchPatterns';
 import { offsetFilletPath } from '../../geometry/router';
 import { lineStrokeColorOf, lineStrokeRailWidth, lineStrokeWidthOf } from '../../model/lineStroke';
@@ -229,13 +235,7 @@ export function HighlightedLineLayer({
               const ref = i < points.length - 1 ? points[i + 1] : points[i - 1];
               const sign = i < points.length - 1 ? 1 : -1;
               const worldHint = { x: (ref.x - p.x) * sign, y: (ref.y - p.y) * sign };
-              const aInv = -(p.st.rotation * Math.PI) / 4;
-              const ci = Math.cos(aInv);
-              const si = Math.sin(aInv);
-              const localHint = {
-                x: worldHint.x * ci - worldHint.y * si,
-                y: worldHint.x * si + worldHint.y * ci,
-              };
+              const localHint = worldDirToLocal(worldHint, p.st.rotation);
               const localDir = travelDirLocal(p.cell.orientation, localHint);
               const worldDir = rotateBy(localDir, p.st.rotation);
               const dx = worldDir.x;
