@@ -108,6 +108,22 @@ describe('resizeSvgImageEdge (single-axis stretch)', () => {
     const c = svgImageCorners({ ...base(), ...box });
     near({ x: (c[2].x + c[3].x) / 2, y: (c[2].y + c[3].y) / 2 }, { x: 0, y: 30 });
   });
+  it('pins the opposite edge in world space when rotated 90° (right edge)', () => {
+    // The rotation term in resizeSvgImageEdge is only exercised here: at 0°
+    // `rotate()` is the identity, so the unrotated cases above would still pass
+    // even if the orientation handling were dropped. Resizing the right edge
+    // must keep the LEFT edge's world midpoint pinned at any rotation.
+    const img = base({ rotation: 90 });
+    const before = svgImageCorners(img);
+    const leftMidBefore = {
+      x: (before[0].x + before[3].x) / 2,
+      y: (before[0].y + before[3].y) / 2,
+    };
+    const box = resizeSvgImageEdge(img, 1, { x: 40, y: 25 });
+    expect(box.height).toBe(60); // cross-axis untouched
+    const after = svgImageCorners({ ...img, ...box });
+    near({ x: (after[0].x + after[3].x) / 2, y: (after[0].y + after[3].y) / 2 }, leftMidBefore);
+  });
 });
 
 describe('rotateSvgImageTo', () => {
