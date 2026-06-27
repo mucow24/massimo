@@ -29,14 +29,14 @@ describe('pathBetweenStations', () => {
   });
 
   it('breaks ties by lexicographically lowest lineId', () => {
+    // Two lines share A and B with equal-length (2-stop) slices but DIFFERENT
+    // intervening stations, registered out of lexical order. The tie-break must
+    // pick L1's slice (lowest id), not L2's, and not insertion order.
     const lines = linesIndex(
-      makeLine({ id: 'L2', stations: ['A', 'B'] }),
-      makeLine({ id: 'L1', stations: ['A', 'B'] }),
+      makeLine({ id: 'L2', stations: ['A', 'Y', 'B'] }),
+      makeLine({ id: 'L1', stations: ['A', 'X', 'B'] }),
     );
-    // Both lines yield ['B']; the result is the same regardless, but the
-    // tie-break ensures determinism if the slices were to differ in
-    // multi-stop cases.
-    expect(pathBetweenStations({ lines }, 'A', 'B')).toEqual(['B']);
+    expect(pathBetweenStations({ lines }, 'A', 'B')).toEqual(['X', 'B']);
   });
 
   it('returns null when no shared line contains both ids', () => {
