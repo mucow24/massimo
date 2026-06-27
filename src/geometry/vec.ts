@@ -36,6 +36,10 @@ export const angleBetween = (a: Vec2, b: Vec2): number =>
 // Half-angle tangent tan(θ/2) — the fillet / corner tangent-length factor.
 export const tanHalf = (theta: number): number => Math.tan(theta / 2);
 
+// Direction angle of a vector in DEGREES, measured from +x toward +y. Matches
+// the SVG `rotate(deg)` convention, so it feeds straight into a transform.
+export const angleDeg = (a: Vec2): number => (Math.atan2(a.y, a.x) * 180) / Math.PI;
+
 // Component of a unit vector along a 45° diagonal: √2/2 = 1/√2 ≈ 0.7071.
 // The single home for this constant; octolinear direction tables and snap
 // axes all reference it.

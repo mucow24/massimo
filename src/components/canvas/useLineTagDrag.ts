@@ -1,6 +1,7 @@
 import { RefObject, useRef } from 'react';
 import { beginHistoryGroup, useDoc } from '../../state/store';
 import type { LineId, StationId } from '../../model/types';
+import { pairKeyOf } from '../../model/pairKey';
 import {
   closestParamOnOffsetPath,
   offsetPathLength,
@@ -109,7 +110,7 @@ export function useLineTagDrag(svgRef: RefObject<SVGSVGElement | null>): LineTag
       const forward = a < b;
       const fromCanon = forward ? a : b;
       const toCanon = forward ? b : a;
-      const pairKey = `${fromCanon}|${toCanon}`;
+      const pairKey = pairKeyOf(a, b);
       const band = bands.find(
         (bb) => bb.pairKey === pairKey && bb.lines.some((l: { id: LineId }) => l.id === tag.lineId),
       );
