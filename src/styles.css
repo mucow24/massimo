@@ -428,6 +428,10 @@ select {
 .text-label-popover {
   background: #fff;
   border: 3px solid #000;
+  /* 1px white ring around the black border so the popover's edge stays visible
+     against a black canvas (dark mode / dark polygons), where the border alone
+     would disappear. */
+  outline: 1px solid #fff;
   box-shadow: 0 4px 12px rgba(0, 0, 0, 0.2);
   width: 240px;
   font-size: 12px;
