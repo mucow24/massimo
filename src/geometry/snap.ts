@@ -1,6 +1,6 @@
 import type { Line, LineId, Station, StationId, StopCell } from '../model/types';
 import type { Vec2 } from './vec';
-import { SQRT2_2 } from './vec';
+import { cross, SQRT2_2 } from './vec';
 import { rotateBy, stopCenterAt, travelDirLocal } from './orientation';
 import type { Rotation } from './orientation';
 import { stopPosWorld } from './interlining';
@@ -391,7 +391,7 @@ export function snapDraggedStation(input: SnapInput): SnapResult {
   // Find a non-parallel secondary (so the two constraints solve uniquely).
   let secondary: Cand | null = null;
   for (let i = 1; i < bests.length; i++) {
-    const cz = primary.axis.x * bests[i].axis.y - primary.axis.y * bests[i].axis.x;
+    const cz = cross(primary.axis, bests[i].axis);
     if (Math.abs(cz) > SECONDARY_AXIS_SIN_GATE) {
       secondary = bests[i];
       break;
@@ -648,7 +648,7 @@ export function axisForRotation(rot: number): Vec2 {
 }
 
 export function parallel(a: Vec2, b: Vec2): boolean {
-  return Math.abs(a.x * b.y - a.y * b.x) < PARALLEL_SIN_EPS;
+  return Math.abs(cross(a, b)) < PARALLEL_SIN_EPS;
 }
 
 /**
