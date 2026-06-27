@@ -32,6 +32,17 @@ describe('resolveTag — per-stripe geometry', () => {
     expect(Math.abs(r.p.y)).toBeCloseTo(10.5, 6);
     expect(r.stripeWidth).toBe(28);
   });
+
+  it('resolves a tag whose endpoints are stored in non-canonical order', () => {
+    const lines = { L2: makeLine({ id: 'L2', stations: ['s1', 's2'], width: 28 }) };
+    // The band's pairKey is canonical (s1|s2). A tag stored from→to as s2→s1
+    // must still find its band — resolution keys on the unordered station-pair,
+    // not the literal from|to concatenation.
+    const reversed = tagOnL2({ fromStationId: 's2', toStationId: 's1' });
+    const r = resolveTag(reversed, { lines }, [mixedBand()]);
+    expect(r).not.toBeNull();
+    expect(Math.abs(r!.p.y)).toBeCloseTo(10.5, 6);
+  });
 });
 
 describe('<LineTagsLayer> — chevron scales to its stripe', () => {

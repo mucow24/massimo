@@ -324,9 +324,11 @@ Right-click cycles all six states: text up→right→down→left → chevron-for
 **`Polygon`** — a free-floating background shape (river, park…), rendered **under all other map
 content**. `id, vertices: Vec2[]` (**world coords, ≥3, ordered; there is no center/rotation
 field — rotation rewrites the vertices** around the centroid), `fill, stroke` (`#rrggbb`),
-`strokeWidth` (world units, [0,10]), `darkFill, darkStroke` (independent dark-mode colors,
+`strokeWidth` (world units, floored at 0 — the slider caps at 10, but the spinbutton/stored
+value is unbounded above), `darkFill, darkStroke` (independent dark-mode colors,
 **backfilled to equal the light colors** on load for legacy saves). Optional: `fillOpacity?`
-(0–100, missing ⇒ 100), `locked?`, `curveRadius?` (0–50, missing ⇒ 0 = sharp), `closed?` (missing
+(genuinely clamped 0–100, missing ⇒ 100), `locked?`, `curveRadius?` (floored at 0, slider caps at
+50, stored value unbounded above; missing ⇒ 0 = sharp), `closed?` (missing
 ⇒ true; false = **open** chain: stroke-only, no fill, hit-test follows the stroke).
 `PolygonStylePatch` is the shared `Partial<Pick<…>>` used by both the transform and the store
 action so they never drift.
@@ -337,7 +339,8 @@ post-scale), `rotation: number` (**continuous degrees CW**, snaps to 22.5° unde
 (fixed at import, never edited), `locked?`. `SvgImageStylePatch` is the shared patch type.
 
 **`TextLabel`** — a free-floating, rotatable text annotation rendered **on top** of the map.
-`id, x, y` (center), `rotation: Rotation`, `text` (multiline `\n`), `fontSize` (int [1,96]),
+`id, x, y` (center), `rotation: Rotation`, `text` (multiline `\n`), `fontSize` (int, floored at 1 —
+the slider caps at 96, but the spinbutton/stored value is unbounded above),
 `weight: TextLabelWeight`, `italic`, `align: TextLabelAlign` (`left|center|right`), `color/
 darkColor` (day/night; **defaults DIFFER**: `#111111` / `#ffffff` for legibility — unlike a
 polygon whose dark default equals its light; backfilled on load), `locked?`.
@@ -659,7 +662,13 @@ instantiated **once per pass**. Top→bottom paint order (later = on top):
 6. Layering dashed outlines (layering mode only).
 7. `TransferLayer` (before dots).
 8. Station `dots` (**last** — dots paint over transfers and snap guides).
-9. Overlays: `match-stroke`/`stroke` silhouettes, label/polygon/image `overlay` handles, placement
+9. **Selected-item drag-proxies** — transparent hit targets for each unlocked selected item,
+   emitted in body paint order (`MapCanvas`'s `proxyLayerRef`). They sit above all map content so a
+   selected item wins a *drag* over anything stacked above it; a click/right-click on a proxy is
+   re-routed to the real element beneath (`rerouteProxyEventBeneath`), so *selection* still follows
+   normal paint order. Placed **before** the handle overlays, so an item's own corner/vertex handles
+   still beat its proxy.
+10. Overlays: `match-stroke`/`stroke` silhouettes, label/polygon/image `overlay` handles, placement
    previews.
 
 `StationView`'s props are referentially stable across a pan (immutable store refs, constant zoom,
@@ -727,7 +736,10 @@ pointer-up.
 `MapCanvas`'s `<svg>` has exactly:
 - `onPointerDown`: middle-button or hand-mode → `view.startPan`; else `rectSelect.onPointerDown`
   (self-gates). **Item drags start from the item's own pointer-down** (fired by the child view),
-  not the canvas handler.
+  not the canvas handler. A **selected** item additionally carries a top-z transparent drag-proxy
+  (see the paint-order list) so its drag wins over higher-painted items; proxy clicks/right-clicks
+  are re-routed to the element beneath via `rerouteProxyEventBeneath`, so hit-testing for *selection*
+  stays on normal paint order while *dragging* gets selected-item priority.
 - `onPointerMove`/`onPointerUp`: fan out to every hook; each early-returns if its drag ref is null.
 - `onPointerDownCapture`: self-heals `dragState.suppressClick = false` at the start of every fresh
   gesture (recovers from a drag killed without pointerup).
