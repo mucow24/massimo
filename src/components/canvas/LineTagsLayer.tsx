@@ -9,7 +9,8 @@ import {
 import { dragState, useDoc, useSelection } from '../../state/store';
 import { useThemeColors } from '../../state/theme';
 import { legibleTextOn } from '../../util/color';
-import type { Vec2 } from '../../geometry/vec';
+import { angleDeg, type Vec2 } from '../../geometry/vec';
+import { pairKeyOf } from '../../model/pairKey';
 import { useLineTagDrag } from './useLineTagDrag';
 
 const ALONG_FONT_SIZE = 12;
@@ -85,7 +86,7 @@ export function resolveTag(
 ): ResolvedTag | null {
   const line = doc.lines[tag.lineId];
   if (!line) return null;
-  const pairKey = `${tag.fromStationId}|${tag.toStationId}`;
+  const pairKey = pairKeyOf(tag.fromStationId, tag.toStationId);
   const band = bands.find((b) => b.pairKey === pairKey && b.lines.some((l) => l.id === tag.lineId));
   if (!band) return null;
   const k = band.lines.findIndex((l) => l.id === tag.lineId);
@@ -166,14 +167,7 @@ export function LineTagsLayer({ bands, zoom, svgRef }: Props) {
     cycleLineTagOrientation(tagId);
   };
 
-  // Esc clears any in-flight ghost preview when leaving mode (delegated to App)
-  // — but also clear hover preview when the layer unmounts.
-  useEffect(
-    () => () => {
-      // No-op on unmount; preview is cleared by mode-setters.
-    },
-    [],
-  );
+  // Hover/ghost preview is cleared by the mode-setters, not on unmount.
 
   // Delete is wired in App.tsx for keyboard.
   void deleteLineTag;
@@ -266,7 +260,7 @@ function TagShape({
 }: TagShapeProps) {
   const themeColors = useThemeColors();
   const orientation = r.tag.orientation;
-  const tangentAngleDeg = (Math.atan2(r.tangent.y, r.tangent.x) * 180) / Math.PI;
+  const tangentAngleDeg = angleDeg(r.tangent);
   const rotateDeg = tangentAngleDeg + ORIENTATION_OFFSET_DEG[orientation];
   const isChevron = r.kind === 'chevron';
   const { textWidth, textHeight } = sizingFor(r.service, orientation, widths);
@@ -350,7 +344,7 @@ function GhostPreview({
   const tangent = preview.lineForwardMatchesCanon
     ? preview.tangent
     : { x: -preview.tangent.x, y: -preview.tangent.y };
-  const tangentAngleDeg = (Math.atan2(tangent.y, tangent.x) * 180) / Math.PI;
+  const tangentAngleDeg = angleDeg(tangent);
   const rotateDeg = tangentAngleDeg + ORIENTATION_OFFSET_DEG[orientation];
   const { fontSize } = sizingFor(preview.service, orientation, widths);
   return (

@@ -1,6 +1,6 @@
 import { Line, LineId, LineStyle, Station, StationId, StopCell } from '../model/types';
 import { pairKeyOf } from '../model/pairKey';
-import { Vec2, sub, len, norm, leftNormal, angleBetween, tanHalf } from './vec';
+import { Vec2, sub, len, norm, leftNormal, angleBetween, tanHalf, angleDeg } from './vec';
 import { dirIndex, offsetFilletPath, route } from './router';
 import {
   localToWorld,
@@ -461,7 +461,7 @@ export function buildStopMarkers(
       // 4-fold symmetry makes invisible); for diagonal stops it adds the
       // extra 45° needed to keep the square flush with the band edges.
       const worldTangent = rotateBy(travelDirLocal(cell.orientation), station.rotation);
-      const rotationDeg = (Math.atan2(worldTangent.y, worldTangent.x) * 180) / Math.PI;
+      const rotationDeg = angleDeg(worldTangent);
       const style = stationMarkerStyle(line, station.id);
       const stationLayer = stationLayerFor(line, station.id);
       const basePriority = lineIndex[cell.lineId] ?? fallback;
