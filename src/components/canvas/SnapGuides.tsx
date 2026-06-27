@@ -1,5 +1,6 @@
 import { STOP_DOT_RADIUS } from '../../geometry/orientation';
 import type { SnapGuide } from '../../geometry/snap';
+import { norm, perp, sub } from '../../geometry/vec';
 
 interface Props {
   guides: SnapGuide[];
@@ -72,11 +73,7 @@ export function SnapGuides({ guides, zoom }: Props) {
         // regardless of the line's direction.
         const mx = (g.from.x + g.to.x) / 2;
         const my = (g.from.y + g.to.y) / 2;
-        const dx = g.to.x - g.from.x;
-        const dy = g.to.y - g.from.y;
-        const len = Math.hypot(dx, dy) || 1;
-        let px = -dy / len;
-        let py = dx / len;
+        let { x: px, y: py } = perp(norm(sub(g.to, g.from)));
         if (py > 0) {
           px = -px;
           py = -py;

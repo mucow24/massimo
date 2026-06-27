@@ -139,14 +139,28 @@ test.describe('Polygon shapes', () => {
     await expect(page.locator('[data-polygon-edge-add]')).toHaveCount(4);
   });
 
-  test('right-click rotates the polygon 45°', async ({ page }) => {
+  test('right-click rotates the polygon 45° clockwise about its centroid', async ({ page }) => {
     await seedAndOpen(page, { stations: [], lines: [] });
     await addPolygonAt(page, CENTER.x, CENTER.y);
-    const before = (await onlyPolygon(page)).vertices.map((v) => `${v.x.toFixed(1)},${v.y.toFixed(1)}`);
+    const before = (await onlyPolygon(page)).vertices;
     // Right-click the body center (clear of the corner handles).
     await page.mouse.click(CENTER.x, CENTER.y, { button: 'right' });
-    const after = (await onlyPolygon(page)).vertices.map((v) => `${v.x.toFixed(1)},${v.y.toFixed(1)}`);
-    expect(after).not.toEqual(before);
+    const after = (await onlyPolygon(page)).vertices;
+
+    // Each vertex is rotated 45° CW about the polygon centroid (the mean of the
+    // vertices), in the y-down screen frame: (dx,dy) → (dx·c − dy·s, dx·s + dy·c)
+    // with c = s = √2/2. "not.toEqual" alone would also pass for a translate,
+    // scale, or 1° nudge — so pin the exact per-vertex transform.
+    const SQRT2_2 = Math.SQRT2 / 2;
+    const cx = before.reduce((s, v) => s + v.x, 0) / before.length;
+    const cy = before.reduce((s, v) => s + v.y, 0) / before.length;
+    expect(after).toHaveLength(before.length);
+    for (let i = 0; i < before.length; i++) {
+      const dx = before[i].x - cx;
+      const dy = before[i].y - cy;
+      expect(after[i].x).toBeCloseTo(cx + dx * SQRT2_2 - dy * SQRT2_2, 3);
+      expect(after[i].y).toBeCloseTo(cy + dx * SQRT2_2 + dy * SQRT2_2, 3);
+    }
   });
 
   test('polygons persist across reload', async ({ page }) => {

@@ -218,8 +218,9 @@ export interface SnapInput {
  * axis line. Two-axis snap (e.g. dragging onto a transfer station): solves a
  * 2x2 system to put the drag at the unique intersection of two non-parallel
  * axes. Multiple lines that share a target+axis (interlined bands) are
- * consolidated to a single snap candidate using their mean offset, so the
- * user feels one band-wide click instead of N individual line clicks.
+ * consolidated to a single snap candidate using their median offset (a real
+ * stripe, not an averaged gap), so the user feels one band-wide click instead
+ * of N individual line clicks.
  */
 export function snapDraggedStation(input: SnapInput): SnapResult {
   const {

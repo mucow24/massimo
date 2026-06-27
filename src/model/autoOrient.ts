@@ -1,3 +1,4 @@
+import { add, norm, sub } from '../geometry/vec';
 import type { Rotation, Station, StationId } from './types';
 
 /** Rotation 0..7 whose local +y, once applied, points along world vector (wx, wy). */
@@ -33,11 +34,10 @@ export function autoOrientNewStation(
   let wx = 0;
   let wy = 0;
   if (prev && next) {
-    // Bisect the incoming and outgoing unit vectors.
-    const inN = Math.hypot(st.x - prev.x, st.y - prev.y) || 1;
-    const outN = Math.hypot(next.x - st.x, next.y - st.y) || 1;
-    wx = (st.x - prev.x) / inN + (next.x - st.x) / outN;
-    wy = (st.y - prev.y) / inN + (next.y - st.y) / outN;
+    // Bisect the incoming and outgoing unit travel vectors.
+    const bisector = add(norm(sub(st, prev)), norm(sub(next, st)));
+    wx = bisector.x;
+    wy = bisector.y;
   } else if (prev) {
     wx = st.x - prev.x;
     wy = st.y - prev.y;

@@ -306,7 +306,9 @@ export interface RouteBullet {
 // other map content. Vertices are stored in WORLD coordinates (length >= 3, in
 // order); there is no separate center/rotation — rotation rewrites the vertices
 // around the centroid via the shared `orbitPoint` primitive. `fill`/`stroke`
-// are 7-char hex (`#rrggbb`); `strokeWidth` is in world units, clamped [0, 10].
+// are 7-char hex (`#rrggbb`); `strokeWidth` is in world units, floored at 0
+// (unbounded above — the popover slider caps at 10, but the stored value does
+// not).
 export interface Polygon {
   id: string;
   vertices: Vec2[];

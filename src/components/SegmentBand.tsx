@@ -3,6 +3,7 @@ import { resolveSegmentStyle, SegmentBandSpec } from '../geometry/interlining';
 import { offsetFilletPath } from '../geometry/router';
 import { lineStrokeColorOf, lineStrokeRailWidth, lineStrokeWidthOf } from '../model/lineStroke';
 import type { Line, LineId } from '../model/types';
+import { leftNormal, norm, sub } from '../geometry/vec';
 import { lineStyleStrokeAttrs, lineStyleUnderlayAttrs } from './HatchPatterns';
 
 interface Props {
@@ -170,11 +171,7 @@ export function BandWarning({
   // edge — for mixed widths that's ASYMMETRIC about the (mean) centerline,
   // so the edges come from the baked offsets ± half-widths rather than a
   // symmetric ±Σw/2.
-  const dx = b.x - a.x;
-  const dy = b.y - a.y;
-  const len = Math.hypot(dx, dy) || 1;
-  const px = dy / len;
-  const py = -dx / len;
+  const { x: px, y: py } = leftNormal(norm(sub(b, a)));
   const n = spec.lines.length;
   const lo = spec.stripeOffsets[0] - spec.stripeWidths[0] / 2;
   const hi = spec.stripeOffsets[n - 1] + spec.stripeWidths[n - 1] / 2;

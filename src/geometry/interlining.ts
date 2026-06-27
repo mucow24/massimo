@@ -207,17 +207,14 @@ export function buildBandGeometry(
       if (!fromCell || !toCell) continue;
       const key = pairKeyOf(a, b);
       const forward = a < b;
-      // Line direction at this segment, regardless of canonical ordering.
-      const dxLine = sb.x - sa.x;
-      const dyLine = sb.y - sa.y;
-      const lineLen = Math.hypot(dxLine, dyLine) || 1;
       (groups[key] ||= []).push({
         fromId: forward ? a : b,
         toId: forward ? b : a,
         fromCell: forward ? fromCell : toCell,
         toCell: forward ? toCell : fromCell,
         lineId,
-        worldHint: { x: dxLine / lineLen, y: dyLine / lineLen },
+        // Unit line direction at this segment, regardless of canonical ordering.
+        worldHint: norm(sub(sb, sa)),
       });
     }
   }

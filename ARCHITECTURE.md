@@ -124,7 +124,7 @@ src/
     lineTagGeometry.ts          # offset-path arc-length sampling for in-band tags
     svgImage.ts                 # svg-image corners/resize/rotate/snap geometry
 
-  state/                        # Zustand stores (5 of them) + history
+  state/                        # Zustand stores (6 of them) + history
     store.ts                    # useDoc: temporal(persist(...)) + ~95 actions + migrateDoc
     history.ts                  # the ONLY module touching zundo internals
     selection.ts                # useSelection: UiMode union + multi-select + reconcileWithDoc
@@ -445,7 +445,8 @@ parts and shared one millisecond suffix across kinds.)
 
 ## State management
 
-Five Zustand stores, split deliberately by lifecycle. Files in [src/state/](src/state/).
+Six Zustand stores, split deliberately by lifecycle (`useDoc`, `useSelection`, `useViewportStore`
++ `useLiveViewportStore`, `useSnapPrefs`, `useCustomPalettes`). Files in [src/state/](src/state/).
 
 ### `useDoc` — the document store ([store.ts](src/state/store.ts))
 

@@ -1,5 +1,13 @@
 import { describe, it, expect } from 'vitest';
-import { dirIndex, bendAngle, route, filletPath, offsetFilletPath, DIRS_8 } from './router';
+import {
+  dirIndex,
+  bendAngle,
+  route,
+  filletPath,
+  offsetFilletPath,
+  computeArcRadii,
+  DIRS_8,
+} from './router';
 
 const east = { x: 1, y: 0 };
 const south = { x: 0, y: 1 };
@@ -193,6 +201,51 @@ describe('filletPath', () => {
     );
     expect(d).toContain(' A ');
     expect(d).toMatch(/^M /);
+  });
+});
+
+describe('computeArcRadii', () => {
+  // A short edge shared by two 90° corners can't fit both fillets at the
+  // requested radius. The two adjacent corners must shrink by the SAME factor,
+  // so they stay proportional and tangent to the common edge — this is what
+  // keeps every path in an interlined band concentric and keeps line-tag
+  // positions glued to the painted geometry.
+  it('shrinks two corners sharing a too-short edge by the same factor', () => {
+    const R = 20;
+    const { rs, angles } = computeArcRadii(
+      [
+        { x: 0, y: 0 },
+        { x: 100, y: 0 }, // corner 1: 90°
+        { x: 100, y: 10 }, // short shared edge (length 10) → corner 2: 90°
+        { x: 200, y: 10 },
+      ],
+      R,
+    );
+    expect(angles[1]).toBeCloseTo(Math.PI / 2, 10);
+    expect(angles[2]).toBeCloseTo(Math.PI / 2, 10);
+    // Both corners shrank below the requested radius...
+    expect(rs[1]).toBeLessThan(R);
+    expect(rs[2]).toBeLessThan(R);
+    // ...by the same factor (equal angles ⇒ equal radii)...
+    expect(rs[1]).toBeCloseTo(rs[2], 6);
+    // ...and their tangent lengths now exactly fill the 10-unit shared edge.
+    // At a 90° corner tan(θ/2) = 1, so tangent length === radius.
+    expect(rs[1] + rs[2]).toBeCloseTo(10, 4);
+  });
+
+  it('leaves radii at the requested R when every edge has room', () => {
+    const R = 5;
+    const { rs } = computeArcRadii(
+      [
+        { x: 0, y: 0 },
+        { x: 100, y: 0 },
+        { x: 100, y: 100 }, // long shared edge: no tangent collision
+        { x: 200, y: 100 },
+      ],
+      R,
+    );
+    expect(rs[1]).toBeCloseTo(R, 6);
+    expect(rs[2]).toBeCloseTo(R, 6);
   });
 });
 
