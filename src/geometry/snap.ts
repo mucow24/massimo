@@ -809,19 +809,6 @@ export interface AlignmentPair {
 }
 
 /**
- * Build alignment pairs between the dragged station and a target. For
- * shared-line pairs the axis is the world travel direction at that stop —
- * derived from per-stop orientation rotated by station rotation. A pair is
- * only emitted when (1) the two stops share a world axis (parallel travel
- * directions) and (2) the target is line-adjacent to the dragged station on
- * that line — i.e. the two stations are consecutive in `line.stations`.
- * Filtering by adjacency keeps the snap focused on a station's actual
- * neighbors instead of latching onto stations further along the same axis.
- *
- * When neither station has stops, fall back to anchor-to-anchor on the
- * dragged station's rotation axis (no line topology to consult).
- */
-/**
  * Bullet-mode alignment pairs. The bullet has no stops of its own, so the
  * dragged-side offset is zero — it anchors at its own world position. For
  * each target station that has a stop on the chosen line, emit one pair
@@ -1128,6 +1115,19 @@ function refineAlongAxis(args: {
   };
 }
 
+/**
+ * Build alignment pairs between the dragged station and a target. For
+ * shared-line pairs the axis is the world travel direction at that stop —
+ * derived from per-stop orientation rotated by station rotation. A pair is
+ * only emitted when (1) the two stops share a world axis (parallel travel
+ * directions) and (2) the target is line-adjacent to the dragged station on
+ * that line — i.e. the two stations are consecutive in `line.stations`.
+ * Filtering by adjacency keeps the snap focused on a station's actual
+ * neighbors instead of latching onto stations further along the same axis.
+ *
+ * When neither station has stops, fall back to anchor-to-anchor on the
+ * dragged station's rotation axis (no line topology to consult).
+ */
 export function alignmentPairs(
   draggedId: StationId,
   draggedRotation: Rotation,

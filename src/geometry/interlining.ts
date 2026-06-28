@@ -1,6 +1,6 @@
 import { Line, LineId, LineStyle, Station, StationId, StopCell } from '../model/types';
 import { pairKeyOf } from '../model/pairKey';
-import { Vec2, sub, len, norm, leftNormal, angleBetween, tanHalf, angleDeg } from './vec';
+import { Vec2, sub, dot, len, norm, leftNormal, angleBetween, tanHalf, angleDeg } from './vec';
 import { dirIndex, offsetFilletPath, route } from './router';
 import {
   localToWorld,
@@ -251,10 +251,9 @@ export function buildBandGeometry(
       // reverse alphabetic order, the router gets a U-turn input.
       const sampleFDir = travelDirWorld(sample.fromCell, fromS, sample.worldHint);
       const sampleTDir = travelDirWorld(sample.toCell, toS, sample.worldHint);
-      const canonDx = toS.x - fromS.x;
-      const canonDy = toS.y - fromS.y;
-      const fSign = sampleFDir.x * canonDx + sampleFDir.y * canonDy >= 0 ? 1 : -1;
-      const tSign = sampleTDir.x * canonDx + sampleTDir.y * canonDy >= 0 ? 1 : -1;
+      const canon = sub(toS, fromS);
+      const fSign = dot(sampleFDir, canon) >= 0 ? 1 : -1;
+      const tSign = dot(sampleTDir, canon) >= 0 ? 1 : -1;
       const fDir: Vec2 = { x: sampleFDir.x * fSign, y: sampleFDir.y * fSign };
       const tDir: Vec2 = { x: sampleTDir.x * tSign, y: sampleTDir.y * tSign };
       // leftOf(motion) — must match the perpendicular convention used by
@@ -285,10 +284,10 @@ export function buildBandGeometry(
         return {
           seg: s,
           width: lineWidthOf(lines[s.lineId]),
-          fPerpPos: fp.x * fPerp.x + fp.y * fPerp.y,
-          fParPos: fp.x * fDir.x + fp.y * fDir.y,
-          tPerpPos: tp.x * tPerp.x + tp.y * tPerp.y,
-          tParPos: tp.x * tDir.x + tp.y * tDir.y,
+          fPerpPos: dot(fp, fPerp),
+          fParPos: dot(fp, fDir),
+          tPerpPos: dot(tp, tPerp),
+          tParPos: dot(tp, tDir),
         };
       });
       enriched.sort((a, b) => a.fPerpPos - b.fPerpPos);
