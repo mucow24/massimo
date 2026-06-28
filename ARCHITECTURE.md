@@ -396,7 +396,7 @@ by the **Load…** menu. Pure, returns `{ok, doc}` or `{ok:false, error}`:
 9. `backfillPolygonDarkColors`, `backfillTextLabelColors`.
 
 Path A does **more** than Path B because hand-edited files can be non-canonical (the file-only
-sanitizers `sanitizeLineWidth/Stroke/Segments/StopDotSizes` exist for this).
+sanitizers `sanitizeLineWidth/Stroke/DotSize/Segments/StopDotSizes` exist for this).
 
 **Path B — localStorage rehydration: `migrateDoc(persisted, version)`** ([store.ts](src/state/store.ts)).
 The zustand `persist` config: `name: 'vignelli-map-doc-v1'`, `version: 7`, `migrate:

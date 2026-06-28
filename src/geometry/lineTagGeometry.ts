@@ -1,4 +1,4 @@
-import { perp, Vec2 } from './vec';
+import { perp, rotate, Vec2 } from './vec';
 import { emitOffsetSegments, OffsetPathSegment } from './router';
 import { pairKeyOf } from '../model/pairKey';
 import type { Line, LineId, LineTag, StationId } from '../model/types';
@@ -88,10 +88,7 @@ function sampleSegment(s: OffsetPathSegment, u: number): { p: Vec2; tangent: Vec
     y: s.from.y + s.r * (sin * s.inDir.y + s.sign * (1 - cos) * perpL.y),
   };
   const α = s.sign * ψ;
-  const tangent: Vec2 = {
-    x: s.inDir.x * Math.cos(α) - s.inDir.y * Math.sin(α),
-    y: s.inDir.x * Math.sin(α) + s.inDir.y * Math.cos(α),
-  };
+  const tangent = rotate(s.inDir, α);
   return { p, tangent };
 }
 
