@@ -11,6 +11,12 @@
  *
  * `FONT_TABLE` mirrors the `@font-face` blocks in styles.css 1:1 — keep the two
  * in sync if the shipped font set changes.
+ *
+ * File paths are stored base-relative (no leading slash) and prefixed with
+ * Vite's `BASE_URL` when fetched. A hardcoded `/fonts/…` 404s when the app is
+ * served from a subpath (e.g. GitHub Pages at /massimo/): Vite rewrites the
+ * `url()` in styles.css to be base-aware, but a literal fetch string is left
+ * untouched, so the embed must apply the base itself.
  */
 
 export const FONT_FAMILY = 'Helvetica Neue';
@@ -18,7 +24,8 @@ export const FONT_FAMILY = 'Helvetica Neue';
 export interface FontFaceSpec {
   weight: number;
   italic: boolean;
-  /** Public-path URL of the font file (served from /public/fonts/). */
+  /** Font file path relative to the app base (e.g. `fonts/Foo.otf`), served
+   * from /public/fonts/. Prefixed with `BASE_URL` at fetch time. */
   file: string;
   format: 'opentype' | 'truetype';
 }
@@ -26,7 +33,7 @@ export interface FontFaceSpec {
 const otf = (weight: number, italic: boolean, name: string): FontFaceSpec => ({
   weight,
   italic,
-  file: `/fonts/${name}.otf`,
+  file: `fonts/${name}.otf`,
   format: 'opentype',
 });
 
@@ -43,7 +50,7 @@ export const FONT_TABLE: FontFaceSpec[] = [
   otf(200, true, 'HelveticaNeueThinItalic'),
   otf(300, true, 'HelveticaNeueLightItalic'),
   // Weight-400 italic is the only .ttf in the shipped set.
-  { weight: 400, italic: true, file: '/fonts/HelveticaNeueItalic.ttf', format: 'truetype' },
+  { weight: 400, italic: true, file: 'fonts/HelveticaNeueItalic.ttf', format: 'truetype' },
   otf(500, true, 'HelveticaNeueMediumItalic'),
   otf(700, true, 'HelveticaNeueBoldItalic'),
   otf(800, true, 'HelveticaNeueHeavyItalic'),
@@ -124,15 +131,20 @@ function bytesToBase64(bytes: Uint8Array): string {
  * as a base64 data-URI. Fetches run in parallel; a face whose file fails to
  * load is skipped so export still succeeds (with partial font fidelity) rather
  * than throwing.
+ *
+ * `base` (Vite's `BASE_URL`, e.g. `/` in dev, `./` or `/massimo/` in prod) is
+ * prefixed to each face's base-relative path so the fetch resolves under the
+ * subpath the app is served from.
  */
 export async function buildEmbeddedFontCss(
   faces: FontFaceSpec[],
   fetchFn: typeof fetch = fetch,
+  base: string = import.meta.env.BASE_URL,
 ): Promise<string> {
   const rules = await Promise.all(
     faces.map(async (face) => {
       try {
-        const res = await fetchFn(face.file);
+        const res = await fetchFn(`${base}${face.file}`);
         if (!res.ok) return '';
         const buf = new Uint8Array(await res.arrayBuffer());
         const b64 = bytesToBase64(buf);

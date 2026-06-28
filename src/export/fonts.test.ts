@@ -36,9 +36,10 @@ describe('FONT_TABLE', () => {
     }
   });
 
-  it('points every face at a /fonts/ file with a matching format', () => {
+  it('points every face at a base-relative fonts/ file with a matching format', () => {
     for (const f of FONT_TABLE) {
-      expect(f.file).toMatch(/^\/fonts\/.+\.(otf|ttf)$/);
+      // No leading slash: base-relative so BASE_URL can be prefixed at fetch.
+      expect(f.file).toMatch(/^fonts\/.+\.(otf|ttf)$/);
       const ext = f.file.endsWith('.ttf') ? 'ttf' : 'otf';
       expect(f.format).toBe(ext === 'ttf' ? 'truetype' : 'opentype');
     }
@@ -125,6 +126,20 @@ describe('buildEmbeddedFontCss', () => {
     expect(css).toContain('font-style: italic');
     expect(css).toContain('base64,');
     expect(css).toContain("format('opentype')");
+  });
+
+  it('fetches each font file under the configured base path (subpath-safe)', async () => {
+    const faces = [FONT_TABLE.find((f) => f.weight === 400 && !f.italic)!];
+    const urls: string[] = [];
+    const recordingFetch: typeof fetch = async (input) => {
+      urls.push(String(input));
+      return { ok: true, arrayBuffer: async () => new Uint8Array([1, 2, 3, 4]).buffer } as Response;
+    };
+    // Production builds serve from a subpath (e.g. GitHub Pages /massimo/). The
+    // fetched URL must carry that base or it 404s and the face is silently
+    // dropped — the bug that made exports fall back from Helvetica to Arial.
+    await buildEmbeddedFontCss(faces, recordingFetch, '/massimo/');
+    expect(urls).toEqual(['/massimo/fonts/HelveticaNeueRoman.otf']);
   });
 
   it('skips faces whose font file fails to fetch', async () => {
