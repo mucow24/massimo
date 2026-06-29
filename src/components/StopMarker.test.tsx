@@ -141,6 +141,30 @@ describe('StopMarker', () => {
       }
     });
 
+    it('rotates the hatched polygon corners about the center', () => {
+      // rotationDeg 90 (screen, y-down): (x,y) → (-y, x), then offset by center.
+      // half = width/2 = 14, center (10,20): the unrotated corners
+      // (∓14, ∓14) map to (24,6) (24,34) (-4,34) (-4,6).
+      const { container } = renderMarker({
+        spec: spec({ style: 'hatched', width: 28, cx: 10, cy: 20, rotationDeg: 90 }),
+      });
+      const pts = container
+        .querySelector('polygon')!
+        .getAttribute('points')!
+        .split(' ')
+        .map((p) => p.split(',').map(Number));
+      const expected = [
+        [24, 6],
+        [24, 34],
+        [-4, 34],
+        [-4, 6],
+      ];
+      pts.forEach(([x, y], i) => {
+        expect(x).toBeCloseTo(expected[i][0], 6);
+        expect(y).toBeCloseTo(expected[i][1], 6);
+      });
+    });
+
     it('scales the dashed terminus stub stroke and length with width', () => {
       const { container } = renderMarker({
         spec: spec({ style: 'dashed', outward: { x: 1, y: 0 }, width: 28, cx: 0, cy: 0 }),
