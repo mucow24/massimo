@@ -1,4 +1,5 @@
 import { memo } from 'react';
+import { add, rotate, v } from '../geometry/vec';
 import type { StopMarkerSpec } from '../geometry/interlining';
 import { lineStrokeColorOf, lineStrokeRailWidth, lineStrokeWidthOf } from '../model/lineStroke';
 import { hatchPatternId, lineStyleStrokeAttrs, lineStyleUnderlayAttrs } from './HatchPatterns';
@@ -204,11 +205,7 @@ export const StopMarker = memo(function StopMarker({
 
 function rotatedSquareCorners(cx: number, cy: number, half: number, deg: number) {
   const rad = (deg * Math.PI) / 180;
-  const c = Math.cos(rad);
-  const s = Math.sin(rad);
-  const rot = (x: number, y: number) => ({
-    x: cx + x * c - y * s,
-    y: cy + x * s + y * c,
-  });
+  const center = v(cx, cy);
+  const rot = (x: number, y: number) => add(center, rotate(v(x, y), rad));
   return [rot(-half, -half), rot(half, -half), rot(half, half), rot(-half, half)];
 }

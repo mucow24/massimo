@@ -3,6 +3,7 @@ import { useThemeColors } from '../state/theme';
 import { useViewportStore } from '../state/viewportStore';
 import { resolvePolygonColors } from '../model/transforms';
 import { polygonPathData } from '../geometry/polygon';
+import { midpoint } from '../geometry/vec';
 import { itemCursor } from './canvas/itemCursor';
 
 // Half-size of a square vertex handle, and the radius of an edge "+" button,
@@ -174,8 +175,7 @@ export function PolygonView({
           {edgeIndices.map((i) => {
             const v = verts[i];
             const next = verts[(i + 1) % n];
-            const mx = (v.x + next.x) / 2;
-            const my = (v.y + next.y) / 2;
+            const { x: mx, y: my } = midpoint(v, next);
             return (
               <g
                 key={`edge-${i}`}

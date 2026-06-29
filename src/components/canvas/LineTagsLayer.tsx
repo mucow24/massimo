@@ -9,7 +9,7 @@ import {
 import { dragState, useDoc, useSelection } from '../../state/store';
 import { useThemeColors } from '../../state/theme';
 import { legibleTextOn } from '../../util/color';
-import { angleDeg, type Vec2 } from '../../geometry/vec';
+import { angleDeg, scale, type Vec2 } from '../../geometry/vec';
 import { pairKeyOf } from '../../model/pairKey';
 import { useLineTagDrag } from './useLineTagDrag';
 
@@ -101,7 +101,7 @@ export function resolveTag(
     tag.anchorEnd === 'from' ? tag.distance : Math.max(0, stripeTotal - tag.distance);
   const sample = sampleOffsetPathByArcLength(band.centerline, band.radius, offset, arcLenOnStripe);
   const forward = lineTraversesForwardCanon(line, tag.fromStationId, tag.toStationId);
-  const tangent = forward ? sample.tangent : { x: -sample.tangent.x, y: -sample.tangent.y };
+  const tangent = forward ? sample.tangent : scale(sample.tangent, -1);
   return {
     tag,
     service: line.service,
@@ -341,9 +341,7 @@ function GhostPreview({
   const orientation: 0 | 1 | 2 | 3 = 0; // ghost defaults to along-forward
   // Re-orient tangent to line-traversal frame (preview already gives canonical;
   // we flip if reverse-canonical).
-  const tangent = preview.lineForwardMatchesCanon
-    ? preview.tangent
-    : { x: -preview.tangent.x, y: -preview.tangent.y };
+  const tangent = preview.lineForwardMatchesCanon ? preview.tangent : scale(preview.tangent, -1);
   const tangentAngleDeg = angleDeg(tangent);
   const rotateDeg = tangentAngleDeg + ORIENTATION_OFFSET_DEG[orientation];
   const { fontSize } = sizingFor(preview.service, orientation, widths);
