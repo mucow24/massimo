@@ -13,6 +13,10 @@ export const norm = (a: Vec2): Vec2 => {
   return { x: a.x / L, y: a.y / L };
 };
 export const perp = (a: Vec2): Vec2 => ({ x: -a.y, y: a.x });
+export const midpoint = (a: Vec2, b: Vec2): Vec2 => ({
+  x: (a.x + b.x) / 2,
+  y: (a.y + b.y) / 2,
+});
 // 90° normal to the LEFT of travel direction `a` in the y-DOWN screen frame
 // (a = east → north). The band/stripe offset convention used by the router and
 // interlining. Intentionally the negation of `perp` (which uses the math y-up

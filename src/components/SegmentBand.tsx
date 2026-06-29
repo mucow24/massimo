@@ -3,7 +3,7 @@ import { resolveSegmentStyle, SegmentBandSpec } from '../geometry/interlining';
 import { offsetFilletPath } from '../geometry/router';
 import { lineStrokeColorOf, lineStrokeRailWidth, lineStrokeWidthOf } from '../model/lineStroke';
 import type { Line, LineId } from '../model/types';
-import { leftNormal, norm, sub } from '../geometry/vec';
+import { leftNormal, midpoint, norm, sub } from '../geometry/vec';
 import { lineStyleStrokeAttrs, lineStyleUnderlayAttrs } from './HatchPatterns';
 
 interface Props {
@@ -179,8 +179,7 @@ export function BandWarning({
     `${p.x + px * off} ${p.y + py * off}`;
   // Rectangle tracing the band's perimeter; the 2px stroke straddles the edge.
   const outline = `M ${corner(a, hi)} L ${corner(b, hi)} L ${corner(b, lo)} L ${corner(a, lo)} Z`;
-  const cx = (a.x + b.x) / 2;
-  const cy = (a.y + b.y) / 2;
+  const { x: cx, y: cy } = midpoint(a, b);
   return (
     <g pointerEvents="none">
       {/* 1px white core over a 3px red stroke: paint the red stroke first,

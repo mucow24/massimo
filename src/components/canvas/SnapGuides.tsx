@@ -1,6 +1,6 @@
 import { STOP_DOT_RADIUS } from '../../geometry/orientation';
 import type { SnapGuide } from '../../geometry/snap';
-import { norm, perp, sub } from '../../geometry/vec';
+import { midpoint, norm, perp, sub } from '../../geometry/vec';
 
 interface Props {
   guides: SnapGuide[];
@@ -71,8 +71,7 @@ export function SnapGuides({ guides, zoom }: Props) {
         // clear of the dotted line. "Above" = the side toward smaller y
         // (screen up) — the perpendicular flips to keep the label on top
         // regardless of the line's direction.
-        const mx = (g.from.x + g.to.x) / 2;
-        const my = (g.from.y + g.to.y) / 2;
+        const { x: mx, y: my } = midpoint(g.from, g.to);
         let { x: px, y: py } = perp(norm(sub(g.to, g.from)));
         if (py > 0) {
           px = -px;

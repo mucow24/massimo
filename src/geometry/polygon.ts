@@ -1,4 +1,4 @@
-import type { Vec2 } from './vec';
+import { midpoint, type Vec2 } from './vec';
 import { openPolylinePath, polygonsToPath } from './polygonUnion';
 
 /**
@@ -39,7 +39,7 @@ export function edgeMidpoint(vertices: Vec2[], edgeIndex: number): Vec2 {
   const n = vertices.length;
   const a = vertices[edgeIndex % n];
   const b = vertices[(edgeIndex + 1) % n];
-  return { x: (a.x + b.x) / 2, y: (a.y + b.y) / 2 };
+  return midpoint(a, b);
 }
 
 /**
