@@ -144,6 +144,13 @@ export function Toolbar() {
   };
   const onExportPng = () => void runExport(exportCanvasPng);
   const onExportSvg = () => void runExport(exportCanvasSvg);
+  // Lazy-loaded: jsPDF + svg2pdf are heavy and only needed on PDF export, so
+  // they stay out of the initial bundle (PNG/SVG don't pull them in).
+  const onExportPdf = () =>
+    void runExport(async (svg, bg) => {
+      const { exportCanvasPdf } = await import('../export/exportCanvasPdf');
+      await exportCanvasPdf(svg, bg);
+    });
 
   const onLoadClick = () => fileInputRef.current?.click();
 
@@ -194,6 +201,7 @@ export function Toolbar() {
         <SubMenu label="Export">
           <MenuItem onClick={onExportPng}>PNG</MenuItem>
           <MenuItem onClick={onExportSvg}>SVG</MenuItem>
+          <MenuItem onClick={onExportPdf}>PDF</MenuItem>
         </SubMenu>
         <MenuSeparator />
         <MenuItem onClick={onClear}>Clear</MenuItem>

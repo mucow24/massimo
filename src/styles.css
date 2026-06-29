@@ -4,77 +4,77 @@
    matching. */
 @font-face {
   font-family: 'Helvetica Neue';
-  src: url('/fonts/HelveticaNeueUltraLight.otf') format('opentype');
+  src: url('/fonts/HelveticaNeueUltraLight.ttf') format('truetype');
   font-weight: 100;
   font-style: normal;
   font-display: swap;
 }
 @font-face {
   font-family: 'Helvetica Neue';
-  src: url('/fonts/HelveticaNeueThin.otf') format('opentype');
+  src: url('/fonts/HelveticaNeueThin.ttf') format('truetype');
   font-weight: 200;
   font-style: normal;
   font-display: swap;
 }
 @font-face {
   font-family: 'Helvetica Neue';
-  src: url('/fonts/HelveticaNeueLight.otf') format('opentype');
+  src: url('/fonts/HelveticaNeueLight.ttf') format('truetype');
   font-weight: 300;
   font-style: normal;
   font-display: swap;
 }
 @font-face {
   font-family: 'Helvetica Neue';
-  src: url('/fonts/HelveticaNeueRoman.otf') format('opentype');
+  src: url('/fonts/HelveticaNeueRoman.ttf') format('truetype');
   font-weight: 400;
   font-style: normal;
   font-display: swap;
 }
 @font-face {
   font-family: 'Helvetica Neue';
-  src: url('/fonts/HelveticaNeueMedium.otf') format('opentype');
+  src: url('/fonts/HelveticaNeueMedium.ttf') format('truetype');
   font-weight: 500;
   font-style: normal;
   font-display: swap;
 }
 @font-face {
   font-family: 'Helvetica Neue';
-  src: url('/fonts/HelveticaNeueBold.otf') format('opentype');
+  src: url('/fonts/HelveticaNeueBold.ttf') format('truetype');
   font-weight: 700;
   font-style: normal;
   font-display: swap;
 }
 @font-face {
   font-family: 'Helvetica Neue';
-  src: url('/fonts/HelveticaNeueHeavy.otf') format('opentype');
+  src: url('/fonts/HelveticaNeueHeavy.ttf') format('truetype');
   font-weight: 800;
   font-style: normal;
   font-display: swap;
 }
 @font-face {
   font-family: 'Helvetica Neue';
-  src: url('/fonts/HelveticaNeueBlack.otf') format('opentype');
+  src: url('/fonts/HelveticaNeueBlack.ttf') format('truetype');
   font-weight: 900;
   font-style: normal;
   font-display: swap;
 }
 @font-face {
   font-family: 'Helvetica Neue';
-  src: url('/fonts/HelveticaNeueUltraLightItalic.otf') format('opentype');
+  src: url('/fonts/HelveticaNeueUltraLightItalic.ttf') format('truetype');
   font-weight: 100;
   font-style: italic;
   font-display: swap;
 }
 @font-face {
   font-family: 'Helvetica Neue';
-  src: url('/fonts/HelveticaNeueThinItalic.otf') format('opentype');
+  src: url('/fonts/HelveticaNeueThinItalic.ttf') format('truetype');
   font-weight: 200;
   font-style: italic;
   font-display: swap;
 }
 @font-face {
   font-family: 'Helvetica Neue';
-  src: url('/fonts/HelveticaNeueLightItalic.otf') format('opentype');
+  src: url('/fonts/HelveticaNeueLightItalic.ttf') format('truetype');
   font-weight: 300;
   font-style: italic;
   font-display: swap;
@@ -88,30 +88,39 @@
 }
 @font-face {
   font-family: 'Helvetica Neue';
-  src: url('/fonts/HelveticaNeueMediumItalic.otf') format('opentype');
+  src: url('/fonts/HelveticaNeueMediumItalic.ttf') format('truetype');
   font-weight: 500;
   font-style: italic;
   font-display: swap;
 }
 @font-face {
   font-family: 'Helvetica Neue';
-  src: url('/fonts/HelveticaNeueBoldItalic.otf') format('opentype');
+  src: url('/fonts/HelveticaNeueBoldItalic.ttf') format('truetype');
   font-weight: 700;
   font-style: italic;
   font-display: swap;
 }
 @font-face {
   font-family: 'Helvetica Neue';
-  src: url('/fonts/HelveticaNeueHeavyItalic.otf') format('opentype');
+  src: url('/fonts/HelveticaNeueHeavyItalic.ttf') format('truetype');
   font-weight: 800;
   font-style: italic;
   font-display: swap;
 }
 @font-face {
   font-family: 'Helvetica Neue';
-  src: url('/fonts/HelveticaNeueBlackItalic.otf') format('opentype');
+  src: url('/fonts/HelveticaNeueBlackItalic.ttf') format('truetype');
   font-weight: 900;
   font-style: italic;
+  font-display: swap;
+}
+
+/* Symbol/dingbat/arrow fallback for glyphs Helvetica Neue lacks (✈, ↔, ★, …).
+   Listed after 'Helvetica Neue' in the font stacks, so it only catches the
+   characters HN can't render. */
+@font-face {
+  font-family: 'DejaVu Sans';
+  src: url('/fonts/DejaVuSans.ttf') format('truetype');
   font-display: swap;
 }
 
@@ -125,7 +134,7 @@ body,
   margin: 0;
   padding: 0;
   height: 100%;
-  font-family: 'Helvetica Neue', 'Helvetica', 'Inter', 'Arial', sans-serif;
+  font-family: 'Helvetica Neue', 'DejaVu Sans', 'Helvetica', 'Inter', 'Arial', sans-serif;
   font-size: 13px;
   color: #111;
   background: #f4f4f4;
