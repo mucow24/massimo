@@ -165,6 +165,31 @@ describe('useViewport — wheel zoom', () => {
       vi.useRealTimers();
     }
   });
+
+  it('binds the wheel handler as a NON-passive native listener that preventDefaults', () => {
+    // React registers its onWheel prop as a PASSIVE root listener, so
+    // preventDefault() inside it warns and the page scrolls anyway. The hook
+    // must bind its own non-passive wheel listener on the <svg> instead.
+    const { svg } = render();
+    const entry = svg.eventListener('wheel');
+    expect(entry).toBeDefined();
+    // Non-passive is the whole point — a passive listener cannot preventDefault.
+    expect((entry!.options as { passive?: boolean }).passive).toBe(false);
+    // Invoking it cancels the page scroll and runs the imperative zoom.
+    const before = svg.getAttribute('viewBox');
+    const preventDefault = vi.fn();
+    entry!.listener({ clientX: 400, clientY: 300, deltaY: -100, preventDefault });
+    expect(preventDefault).toHaveBeenCalled();
+    expect(svg.getAttribute('viewBox')).not.toBe(before);
+  });
+
+  it('removes the wheel listener on unmount', () => {
+    const { ref, svg } = fakeSvgRef({ width: 800, height: 600 });
+    const { unmount } = renderHook(() => useViewport(ref));
+    expect(svg.eventListener('wheel')).toBeDefined();
+    unmount();
+    expect(svg.eventListener('wheel')).toBeUndefined();
+  });
 });
 
 describe('useViewport — panning', () => {
