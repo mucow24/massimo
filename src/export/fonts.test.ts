@@ -2,6 +2,7 @@ import { describe, it, expect } from 'vitest';
 import {
   FONT_TABLE,
   FONT_FAMILY,
+  fontUrl,
   normalizeWeight,
   collectUsedFontFaces,
   buildEmbeddedFontCss,
@@ -45,11 +46,29 @@ describe('FONT_TABLE', () => {
     }
   });
 
-  it('uses the .ttf / truetype face only for weight-400 italic', () => {
+  it('uses .ttf / truetype faces for all 16 entries', () => {
     const ttf = FONT_TABLE.filter((f) => f.format === 'truetype');
-    expect(ttf).toHaveLength(1);
-    expect(ttf[0]).toMatchObject({ weight: 400, italic: true });
-    expect(ttf[0].file).toMatch(/\.ttf$/);
+    expect(ttf).toHaveLength(16);
+    for (const f of FONT_TABLE) {
+      expect(f.format).toBe('truetype');
+      expect(f.file).toMatch(/\.ttf$/);
+    }
+  });
+});
+
+describe('fontUrl', () => {
+  it('prefixes the given base to a base-relative path', () => {
+    // Subpath prod build (e.g. GitHub Pages): the base must be carried through
+    // or the fetch 404s — the bug #135 fixed, now shared by every font fetch.
+    expect(fontUrl('fonts/HelveticaNeueRoman.ttf', '/massimo/')).toBe(
+      '/massimo/fonts/HelveticaNeueRoman.ttf',
+    );
+    expect(fontUrl('fonts/DejaVuSans.ttf', '/')).toBe('/fonts/DejaVuSans.ttf');
+    expect(fontUrl('fonts/DejaVuSans.ttf', './')).toBe('./fonts/DejaVuSans.ttf');
+  });
+
+  it('defaults to the build-time BASE_URL (root in dev/test)', () => {
+    expect(fontUrl('fonts/HelveticaNeueRoman.ttf')).toBe('/fonts/HelveticaNeueRoman.ttf');
   });
 });
 
@@ -125,7 +144,7 @@ describe('buildEmbeddedFontCss', () => {
     expect(css).toContain('font-weight: 700');
     expect(css).toContain('font-style: italic');
     expect(css).toContain('base64,');
-    expect(css).toContain("format('opentype')");
+    expect(css).toContain("format('truetype')");
   });
 
   it('fetches each font file under the configured base path (subpath-safe)', async () => {
@@ -139,7 +158,7 @@ describe('buildEmbeddedFontCss', () => {
     // fetched URL must carry that base or it 404s and the face is silently
     // dropped — the bug that made exports fall back from Helvetica to Arial.
     await buildEmbeddedFontCss(faces, recordingFetch, '/massimo/');
-    expect(urls).toEqual(['/massimo/fonts/HelveticaNeueRoman.otf']);
+    expect(urls).toEqual(['/massimo/fonts/HelveticaNeueRoman.ttf']);
   });
 
   it('skips faces whose font file fails to fetch', async () => {

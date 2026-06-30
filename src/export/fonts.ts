@@ -9,55 +9,73 @@
  * Only the weight/style combinations actually present in the map are fetched
  * and embedded, so the payload stays small.
  *
- * `FONT_TABLE` mirrors the `@font-face` blocks in styles.css 1:1 — keep the two
- * in sync if the shipped font set changes.
+ * Every shipped face is a TrueType `.ttf` (jsPDF, used by PDF export, can only
+ * embed TrueType outlines — not PostScript/CFF OpenType). `FONT_TABLE` mirrors
+ * the `@font-face` blocks in styles.css 1:1 — keep the two in sync if the
+ * shipped font set changes.
  *
  * File paths are stored base-relative (no leading slash) and prefixed with
- * Vite's `BASE_URL` when fetched. A hardcoded `/fonts/…` 404s when the app is
- * served from a subpath (e.g. GitHub Pages at /massimo/): Vite rewrites the
- * `url()` in styles.css to be base-aware, but a literal fetch string is left
- * untouched, so the embed must apply the base itself.
+ * Vite's `BASE_URL` when fetched (see `fontUrl`). A hardcoded `/fonts/…` 404s
+ * when the app is served from a subpath (e.g. GitHub Pages at /massimo/): Vite
+ * rewrites the `url()` in styles.css to be base-aware, but a literal fetch
+ * string is left untouched, so each runtime font fetch must apply the base.
  */
 
 export const FONT_FAMILY = 'Helvetica Neue';
 
+// Font stack for all on-screen + exported map text. Helvetica Neue first (the
+// map's type); DejaVu Sans then catches the symbol/dingbat/arrow glyphs HN lacks
+// (✈, ↔, ★, ■, …) so they render identically on screen and in the PDF.
+export const FONT_STACK = "'Helvetica Neue', 'DejaVu Sans', Helvetica, Arial, sans-serif";
+
 export interface FontFaceSpec {
   weight: number;
   italic: boolean;
-  /** Font file path relative to the app base (e.g. `fonts/Foo.otf`), served
-   * from /public/fonts/. Prefixed with `BASE_URL` at fetch time. */
+  /** Font file path relative to the app base (e.g. `fonts/Foo.ttf`), served
+   * from /public/fonts/. Prefixed with `BASE_URL` at fetch time via `fontUrl`. */
   file: string;
   format: 'opentype' | 'truetype';
 }
 
-const otf = (weight: number, italic: boolean, name: string): FontFaceSpec => ({
+const ttf = (weight: number, italic: boolean, name: string): FontFaceSpec => ({
   weight,
   italic,
-  file: `fonts/${name}.otf`,
-  format: 'opentype',
+  file: `fonts/${name}.ttf`,
+  format: 'truetype',
 });
 
 export const FONT_TABLE: FontFaceSpec[] = [
-  otf(100, false, 'HelveticaNeueUltraLight'),
-  otf(200, false, 'HelveticaNeueThin'),
-  otf(300, false, 'HelveticaNeueLight'),
-  otf(400, false, 'HelveticaNeueRoman'),
-  otf(500, false, 'HelveticaNeueMedium'),
-  otf(700, false, 'HelveticaNeueBold'),
-  otf(800, false, 'HelveticaNeueHeavy'),
-  otf(900, false, 'HelveticaNeueBlack'),
-  otf(100, true, 'HelveticaNeueUltraLightItalic'),
-  otf(200, true, 'HelveticaNeueThinItalic'),
-  otf(300, true, 'HelveticaNeueLightItalic'),
-  // Weight-400 italic is the only .ttf in the shipped set.
-  { weight: 400, italic: true, file: 'fonts/HelveticaNeueItalic.ttf', format: 'truetype' },
-  otf(500, true, 'HelveticaNeueMediumItalic'),
-  otf(700, true, 'HelveticaNeueBoldItalic'),
-  otf(800, true, 'HelveticaNeueHeavyItalic'),
-  otf(900, true, 'HelveticaNeueBlackItalic'),
+  ttf(100, false, 'HelveticaNeueUltraLight'),
+  ttf(200, false, 'HelveticaNeueThin'),
+  ttf(300, false, 'HelveticaNeueLight'),
+  ttf(400, false, 'HelveticaNeueRoman'),
+  ttf(500, false, 'HelveticaNeueMedium'),
+  ttf(700, false, 'HelveticaNeueBold'),
+  ttf(800, false, 'HelveticaNeueHeavy'),
+  ttf(900, false, 'HelveticaNeueBlack'),
+  ttf(100, true, 'HelveticaNeueUltraLightItalic'),
+  ttf(200, true, 'HelveticaNeueThinItalic'),
+  ttf(300, true, 'HelveticaNeueLightItalic'),
+  // Weight-400 italic ships under the bare "Italic" filename, not "RomanItalic".
+  ttf(400, true, 'HelveticaNeueItalic'),
+  ttf(500, true, 'HelveticaNeueMediumItalic'),
+  ttf(700, true, 'HelveticaNeueBoldItalic'),
+  ttf(800, true, 'HelveticaNeueHeavyItalic'),
+  ttf(900, true, 'HelveticaNeueBlackItalic'),
 ];
 
 const AVAILABLE_WEIGHTS = [100, 200, 300, 400, 500, 700, 800, 900];
+
+/**
+ * Resolve a base-relative font path (e.g. `fonts/Foo.ttf`) to a fetchable URL by
+ * prefixing Vite's `BASE_URL`. Every runtime font fetch — the `@font-face` embed
+ * and the PDF export's face/glyph loads — goes through here so it resolves under
+ * whatever subpath the app is served from (Vite only base-rewrites `url()` in
+ * CSS, not literal fetch strings). `base` is injectable for testing.
+ */
+export function fontUrl(file: string, base: string = import.meta.env.BASE_URL): string {
+  return `${base}${file}`;
+}
 
 /**
  * Normalize a raw SVG/CSS `font-weight` value to the nearest weight the font
@@ -115,7 +133,7 @@ export function collectUsedFontFaces(root: Element): FontFaceSpec[] {
   return out;
 }
 
-function bytesToBase64(bytes: Uint8Array): string {
+export function bytesToBase64(bytes: Uint8Array): string {
   // btoa needs a binary string; chunk to avoid blowing the call-stack arg cap
   // on multi-hundred-KB font files.
   let binary = '';
@@ -144,7 +162,7 @@ export async function buildEmbeddedFontCss(
   const rules = await Promise.all(
     faces.map(async (face) => {
       try {
-        const res = await fetchFn(`${base}${face.file}`);
+        const res = await fetchFn(fontUrl(face.file, base));
         if (!res.ok) return '';
         const buf = new Uint8Array(await res.arrayBuffer());
         const b64 = bytesToBase64(buf);
