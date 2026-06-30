@@ -79,6 +79,10 @@ export interface FakeSvg {
   setPointerCapture(id: number): void;
   releasePointerCapture(id: number): void;
   hasPointerCapture(id: number): boolean;
+  addEventListener(type: string, listener: (e: unknown) => void, options?: unknown): void;
+  removeEventListener(type: string, listener: (e: unknown) => void, options?: unknown): void;
+  /** Test introspection: the listener (and its options) bound for an event type. */
+  eventListener(type: string): { listener: (e: unknown) => void; options?: unknown } | undefined;
   parentElement: { clientWidth: number; clientHeight: number };
   createSVGPoint(): { x: number; y: number; matrixTransform(m: unknown): { x: number; y: number } };
   getScreenCTM(): { inverse(): unknown };
@@ -97,6 +101,7 @@ export function fakeSvg(opts: FakeSvgOpts = {}): FakeSvg {
   const top = opts.top ?? 0;
   const captured = new Set<number>();
   const attrs = new Map<string, string>();
+  const listeners = new Map<string, { listener: (e: unknown) => void; options?: unknown }>();
   return {
     setAttribute: (name: string, value: string) => {
       attrs.set(name, value);
@@ -120,6 +125,15 @@ export function fakeSvg(opts: FakeSvgOpts = {}): FakeSvg {
       captured.delete(id);
     },
     hasPointerCapture: (id: number) => captured.has(id),
+    // The viewport hook binds a non-passive native wheel listener. Record it so
+    // tests can assert the binding (and its passive flag) and invoke it.
+    addEventListener: (type: string, listener: (e: unknown) => void, options?: unknown) => {
+      listeners.set(type, { listener, options });
+    },
+    removeEventListener: (type: string, listener: (e: unknown) => void) => {
+      if (listeners.get(type)?.listener === listener) listeners.delete(type);
+    },
+    eventListener: (type: string) => listeners.get(type),
     parentElement: { clientWidth: width, clientHeight: height },
     createSVGPoint: () => {
       const p = {

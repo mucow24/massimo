@@ -32,6 +32,10 @@ const viewBoxStr = (vb: { vbX: number; vbY: number; vbW: number; vbH: number }) 
 // transiently scale during the gesture, and the grid) crisply at the final zoom.
 const ZOOM_SETTLE_MS = 90;
 
+/** The wheel-event fields the zoom handler reads — satisfied by both a native
+ *  WheelEvent and React's synthetic one. */
+type WheelInput = Pick<WheelEvent, 'clientX' | 'clientY' | 'deltaY' | 'preventDefault'>;
+
 export interface ViewportApi {
   size: { w: number; h: number };
   viewport: { x: number; y: number; zoom: number };
@@ -41,7 +45,7 @@ export interface ViewportApi {
   vbH: number;
   panning: boolean;
   screenToWorld: (mx: number, my: number) => { x: number; y: number };
-  onWheel: (e: React.WheelEvent) => void;
+  onWheel: (e: WheelInput) => void;
   startPan: (e: React.PointerEvent) => void;
   onPointerMove: (e: React.PointerEvent) => void;
   onPointerUp: (e: React.PointerEvent) => void;
@@ -157,7 +161,7 @@ export function useViewport(svgRef: RefObject<SVGSVGElement | null>): ViewportAp
     }
   };
 
-  const onWheel = (e: React.WheelEvent) => {
+  const onWheel = (e: WheelInput) => {
     e.preventDefault();
     const rect = hostRect();
     // Imperative viewBox zoom (like pan): smooth, no per-tick re-render. Based on
@@ -166,6 +170,22 @@ export function useViewport(svgRef: RefObject<SVGSVGElement | null>): ViewportAp
     if (zoomSettleRef.current != null) clearTimeout(zoomSettleRef.current);
     zoomSettleRef.current = window.setTimeout(commitPending, ZOOM_SETTLE_MS);
   };
+
+  // Bind the wheel handler as a NON-passive native listener. React's onWheel
+  // prop registers a passive root listener, so preventDefault() there warns and
+  // the page scrolls anyway. The ref keeps the native listener calling the
+  // latest closure (fresh `size`) without rebinding each render.
+  const onWheelRef = useRef(onWheel);
+  useEffect(() => {
+    onWheelRef.current = onWheel;
+  });
+  useEffect(() => {
+    const el = svgRef.current;
+    if (!el) return;
+    const handler = (e: WheelEvent) => onWheelRef.current(e);
+    el.addEventListener('wheel', handler, { passive: false });
+    return () => el.removeEventListener('wheel', handler);
+  }, [svgRef]);
 
   // Pan starts only when the parent (MapCanvas) calls startPan (hand mode
   // left-button, or middle-button anywhere).
