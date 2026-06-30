@@ -407,8 +407,8 @@ disjoint fields (order immaterial), never mutating the input:
 | Gate | Fixup |
 |---|---|
 | `v<1` | `backfillLineNames` (`"${service} line"`) |
-| `v<4` | `sanitizeStations` (legacy stop orientations; `valign:'auto'`→`'auto-down'` — both fold into one runtime gate) |
 | `v<3` | `labelBold:boolean` → `labelWeight` (700/400; explicit weight wins) |
+| `v<4` | `sanitizeStations` (legacy stop orientations; `valign:'auto'`→`'auto-down'` — both fold into one runtime gate) |
 | `v<5` | `backfillPolygonDarkColors` |
 | `v<6` | `backfillTextLabelColors` |
 | `v<7` | `convertLegacyDotShapes` (preset ids → procedural `DotStyle`) |
@@ -856,8 +856,10 @@ in-DOM** `<svg>` into a standalone SVG, a 4× PNG, or a vector PDF
 
 `FONT_TABLE` (16 faces = 8 weights × {normal, italic}; **all `.ttf`** — jsPDF, used by PDF export,
 can only embed TrueType outlines, not PostScript/CFF OpenType) **must stay 1:1 with the 16
-`@font-face` blocks in [styles.css](src/styles.css)** —
-two hand-maintained copies. `normalizeWeight` ties go **low** (600 → 500). PNG raster uses
+Helvetica Neue `@font-face` blocks in [styles.css](src/styles.css)** —
+two hand-maintained copies. (styles.css has a **17th** `@font-face`, the `DejaVu Sans` symbol/dingbat
+fallback; it is a screen-only fallback for glyphs Helvetica Neue lacks and is intentionally **absent**
+from `FONT_TABLE` — don't "sync" it in.) `normalizeWeight` ties go **low** (600 → 500). PNG raster uses
 `img.decode()` (not `onload`) so embedded data-URI fonts are ready before the draw.
 
 **PDF** ([exportCanvasPdf.ts](src/export/exportCanvasPdf.ts)) reuses `buildExportSvg`, then renders

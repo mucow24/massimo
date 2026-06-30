@@ -315,6 +315,11 @@ export function buildBandGeometry(
         );
         group = [];
       };
+      // Perpendicular/parallel proximity tolerance (world units) for deciding
+      // two adjacent lines are packed tightly enough to share one band. Slightly
+      // loose to absorb floating-point error in the merge gate's tangency math;
+      // too tight would split valid interlines into separate bands, too loose
+      // would merge lines that shouldn't share a corridor.
       const TOL = 0.5;
       for (const e of enriched) {
         if (group.length === 0) {
@@ -665,7 +670,11 @@ function buildBandSpec(
   // single-stripe band honors the marker-fit cap (which may be below R);
   // multi-stripe floors at R.
   const fit = Math.min(idealR, capR);
-  const centerlineR = n === 1 && capR > 0 ? fit : Math.max(R, fit);
+  // A single-stripe band may tighten below the configured R to fit the marker
+  // (capR > 0 means a positive radius still clears it); multi-stripe bands floor
+  // at R to keep the inner stripes from collapsing. See the comment block above.
+  const honorMarkerCap = n === 1 && capR > 0;
+  const centerlineR = honorMarkerCap ? fit : Math.max(R, fit);
 
   const paths: string[] = [];
   const linesArr = group.map((g) => ({ id: g.lineId }));
