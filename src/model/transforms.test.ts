@@ -1236,10 +1236,11 @@ describe('setCurveRadius / clearAll', () => {
 });
 
 describe('label font/style settings', () => {
-  it('exposes font-size bounds and default as constants', () => {
+  it('exposes font-size bounds, default, and step as constants', () => {
     expect(T.LABEL_FONT_SIZE_MIN).toBe(2);
     expect(T.LABEL_FONT_SIZE_MAX).toBe(24);
     expect(T.LABEL_FONT_SIZE_DEFAULT).toBe(12);
+    expect(T.FONT_SIZE_STEP).toBe(0.5);
   });
 
   it('DEFAULT_DOC has sensible defaults', () => {
@@ -1264,10 +1265,12 @@ describe('label font/style settings', () => {
     expect(T.setLabelFontSize(doc, 99).labelFontSize).toBe(99);
   });
 
-  it('setLabelFontSize rounds fractional values', () => {
+  it('setLabelFontSize snaps fractional values to the nearest 0.5', () => {
     const doc = makeDoc({});
-    expect(T.setLabelFontSize(doc, 12.7).labelFontSize).toBe(13);
-    expect(T.setLabelFontSize(doc, 12.4).labelFontSize).toBe(12);
+    expect(T.setLabelFontSize(doc, 12.7).labelFontSize).toBe(12.5);
+    expect(T.setLabelFontSize(doc, 12.2).labelFontSize).toBe(12);
+    expect(T.setLabelFontSize(doc, 12.8).labelFontSize).toBe(13);
+    expect(T.setLabelFontSize(doc, 12.5).labelFontSize).toBe(12.5);
   });
 
   it('setLabelWeight accepts the supported Helvetica Neue weights', () => {
@@ -2636,11 +2639,12 @@ describe('updateTextLabel', () => {
     const next = T.updateTextLabel(doc, 'g1', { text: 'B', italic: true });
     expect(next.textLabels.g1).toMatchObject({ text: 'B', italic: true, fontSize: 16 });
   });
-  it('clamps fontSize at MIN only (textbox accepts arbitrary above) and rounds to integer', () => {
+  it('clamps fontSize at MIN only (textbox accepts arbitrary above) and snaps to the nearest 0.5', () => {
     const doc = makeDoc({ textLabels: [makeTextLabel({ id: 'g1', fontSize: 16 })] });
     expect(T.updateTextLabel(doc, 'g1', { fontSize: 0 }).textLabels.g1.fontSize).toBe(1);
     expect(T.updateTextLabel(doc, 'g1', { fontSize: 999 }).textLabels.g1.fontSize).toBe(999);
-    expect(T.updateTextLabel(doc, 'g1', { fontSize: 23.7 }).textLabels.g1.fontSize).toBe(24);
+    expect(T.updateTextLabel(doc, 'g1', { fontSize: 23.7 }).textLabels.g1.fontSize).toBe(23.5);
+    expect(T.updateTextLabel(doc, 'g1', { fontSize: 23.5 }).textLabels.g1.fontSize).toBe(23.5);
   });
   it('is a no-op for missing ids', () => {
     const doc = makeDoc({});

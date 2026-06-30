@@ -12,6 +12,7 @@ import {
   POLYGON_FILL_OPACITY_DEFAULT,
   POLYGON_FILL_OPACITY_MAX,
   POLYGON_FILL_OPACITY_MIN,
+  POLYGON_STROKE_STEP,
   POLYGON_STROKE_WIDTH_MAX,
   POLYGON_STROKE_WIDTH_MIN,
 } from '../model/transforms';
@@ -136,7 +137,7 @@ export function PolygonPopover({ polygon, view, onClose }: Props) {
           label="Stroke width"
           min={POLYGON_STROKE_WIDTH_MIN}
           max={POLYGON_STROKE_WIDTH_MAX}
-          step={1}
+          step={POLYGON_STROKE_STEP}
           value={polygon.strokeWidth}
           onChange={onStrokeWidth}
           getCurrent={() => useDoc.getState().polygons[polygon.id]?.strokeWidth ?? 0}

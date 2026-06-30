@@ -37,7 +37,8 @@ interface Props {
  *
  * The spinbutton keeps a local text mirror so mid-edit empty / non-numeric
  * values don't write garbage to the store; on blur the text re-syncs to the
- * (clamped) store value. Wheel-scroll over the spinbutton increments by 1.
+ * (clamped) store value. Wheel-scroll over the spinbutton increments by `step`,
+ * and the mirror is shown to the step's decimal places.
  */
 export function NumericFieldRow({
   id,
@@ -53,7 +54,7 @@ export function NumericFieldRow({
   disabled,
 }: Props) {
   const { text, history, onNumberFocus, onNumberChange, onNumberWheel, onNumberBlur } =
-    useNumericField(value, onChange, getCurrent);
+    useNumericField(value, onChange, getCurrent, step);
 
   return (
     <div className="options-popover-row">

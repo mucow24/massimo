@@ -1,5 +1,5 @@
 import { describe, it, expect, beforeEach } from 'vitest';
-import { render, screen, fireEvent } from '@testing-library/react';
+import { render, screen, fireEvent, act } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { Toolbar } from './Toolbar';
 import { useDoc } from '../state/store';
@@ -94,7 +94,7 @@ describe('<OptionsPopover />', () => {
     const slider = screen.getByRole('slider', { name: /font size/i });
     expect(slider).toHaveAttribute('min', '2');
     expect(slider).toHaveAttribute('max', '24');
-    expect(slider).toHaveAttribute('step', '1');
+    expect(slider).toHaveAttribute('step', '0.5');
     fireEvent.change(slider, { target: { value: '18' } });
     expect(useDoc.getState().labelFontSize).toBe(18);
   });
@@ -108,7 +108,7 @@ describe('<OptionsPopover />', () => {
     // No `max` attribute — the textbox lets users enter sizes beyond the
     // slider's range.
     expect(spin).not.toHaveAttribute('max');
-    expect(spin).toHaveAttribute('step', '1');
+    expect(spin).toHaveAttribute('step', '0.5');
     fireEvent.change(spin, { target: { value: '7' } });
     expect(useDoc.getState().labelFontSize).toBe(7);
     // Above the slider max is allowed via the textbox.
@@ -116,23 +116,35 @@ describe('<OptionsPopover />', () => {
     expect(useDoc.getState().labelFontSize).toBe(40);
   });
 
-  it('mousewheel on the spinbutton increments freely above the slider max, clamps at MIN', async () => {
+  it('the font-size spinbutton displays one decimal place', async () => {
+    const user = userEvent.setup();
+    render(<Toolbar />);
+    await user.click(screen.getByRole('button', { name: 'Options' }));
+    const spin = screen.getByRole('spinbutton', { name: /font size/i }) as HTMLInputElement;
+    expect(spin.value).toBe('12.0');
+    act(() => {
+      useDoc.setState({ ...useDoc.getState(), labelFontSize: 7.5 });
+    });
+    expect(spin.value).toBe('7.5');
+  });
+
+  it('mousewheel on the spinbutton steps by 0.5, increments freely above the slider max, clamps at MIN', async () => {
     const user = userEvent.setup();
     render(<Toolbar />);
     await user.click(screen.getByRole('button', { name: 'Options' }));
     const spin = screen.getByRole('spinbutton', { name: /font size/i });
 
-    // Start at default 12.
+    // Start at default 12; each wheel tick moves by half a point.
     fireEvent.wheel(spin, { deltaY: -1 });
-    expect(useDoc.getState().labelFontSize).toBe(13);
+    expect(useDoc.getState().labelFontSize).toBe(12.5);
     fireEvent.wheel(spin, { deltaY: 1 });
     fireEvent.wheel(spin, { deltaY: 1 });
-    expect(useDoc.getState().labelFontSize).toBe(11);
+    expect(useDoc.getState().labelFontSize).toBe(11.5);
 
     // No upper clamp — wheeling up from the slider max keeps incrementing.
     useDoc.setState({ ...useDoc.getState(), labelFontSize: 24 });
     fireEvent.wheel(spin, { deltaY: -1 });
-    expect(useDoc.getState().labelFontSize).toBe(25);
+    expect(useDoc.getState().labelFontSize).toBe(24.5);
 
     // Clamp to MIN.
     useDoc.setState({ ...useDoc.getState(), labelFontSize: 2 });
@@ -148,7 +160,7 @@ describe('<OptionsPopover />', () => {
     fireEvent.change(spin, { target: { value: '' } });
     expect(useDoc.getState().labelFontSize).toBe(12); // unchanged
     fireEvent.blur(spin);
-    expect(spin.value).toBe('12'); // re-synced to the store
+    expect(spin.value).toBe('12.0'); // re-synced to the store, one decimal
   });
 
   it('Weight dropdown lists every shipped Helvetica Neue weight in ascending order', async () => {

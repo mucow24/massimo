@@ -1,6 +1,21 @@
 import { useEffect, useRef, useState, type ChangeEvent, type WheelEvent } from 'react';
 import { useFieldHistory } from './useFieldHistory';
 
+/** Decimal places implied by a step: 1 → 0, 0.5 → 1, 0.25 → 2. Drives how many
+ *  digits the text mirror shows so a half-step field reads "9.0" / "7.5". */
+function stepDecimals(step: number): number {
+  if (!Number.isFinite(step) || step <= 0) return 0;
+  const s = String(step);
+  const dot = s.indexOf('.');
+  return dot === -1 ? 0 : s.length - dot - 1;
+}
+
+/** Integer-step fields keep their bare `String(n)` mirror (no rounding); a
+ *  fractional step pads to its decimal places. */
+function formatValue(n: number, decimals: number): string {
+  return decimals > 0 ? n.toFixed(decimals) : String(n);
+}
+
 /**
  * Shared logic for a numeric spinbutton bound to a store value: a local text
  * mirror (so mid-edit empty / non-numeric input doesn't write garbage), a focus
@@ -13,18 +28,24 @@ import { useFieldHistory } from './useFieldHistory';
  * increments — usually `() => useStore.getState().field` — so a wheel tick that
  * fires before React re-renders an external change still steps from the live
  * value, not a stale prop.
+ *
+ * `step` is the field's granularity: each wheel tick moves by it, and the text
+ * mirror is padded to its decimal places (1 → "9", 0.5 → "9.0"). It should match
+ * the paired slider/spinbutton `step` attribute.
  */
 export function useNumericField(
   value: number,
   onChange: (n: number) => void,
   getCurrent: () => number,
+  step = 1,
 ) {
+  const decimals = stepDecimals(step);
   const history = useFieldHistory();
-  const [text, setText] = useState(String(value));
+  const [text, setText] = useState(formatValue(value, decimals));
   const focusedRef = useRef(false);
   useEffect(() => {
-    if (!focusedRef.current) setText(String(value));
-  }, [value]);
+    if (!focusedRef.current) setText(formatValue(value, decimals));
+  }, [value, decimals]);
 
   return {
     text,
@@ -42,11 +63,11 @@ export function useNumericField(
     },
     onNumberWheel: (e: WheelEvent<HTMLInputElement>) => {
       e.preventDefault();
-      onChange(getCurrent() + (e.deltaY < 0 ? 1 : -1));
+      onChange(getCurrent() + (e.deltaY < 0 ? step : -step));
     },
     onNumberBlur: () => {
       focusedRef.current = false;
-      setText(String(getCurrent()));
+      setText(formatValue(getCurrent(), decimals));
       history.onBlur();
     },
   };

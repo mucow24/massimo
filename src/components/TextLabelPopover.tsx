@@ -3,6 +3,7 @@ import { useDoc } from '../state/store';
 import { type ViewportProjection } from './canvas/screenAnchor';
 import { useDraggablePopover } from './canvas/useDraggablePopover';
 import {
+  FONT_SIZE_STEP,
   isLabelWeight,
   LABEL_WEIGHT_NAMES,
   TEXT_LABEL_FONT_SIZE_MAX,
@@ -58,6 +59,7 @@ export function TextLabelPopover({ label, world, view, onClose }: Props) {
     label.fontSize,
     setFontSize,
     () => useDoc.getState().textLabels[label.id]?.fontSize ?? label.fontSize,
+    FONT_SIZE_STEP,
   );
   const onDelete = () => {
     deleteTextLabel(label.id);
@@ -125,13 +127,16 @@ export function TextLabelPopover({ label, world, view, onClose }: Props) {
           />
         </div>
 
+        {/* Wheel is handled once at the row level so scrolling over the slider
+            (which ignores wheel natively) or the spinbutton both nudge the size
+            by one step — putting onWheel on the spinbutton too would double-count. */}
         <div className="row" onWheel={size.onNumberWheel}>
           <label>Size</label>
           <input
             type="range"
             min={TEXT_LABEL_FONT_SIZE_MIN}
             max={TEXT_LABEL_FONT_SIZE_MAX}
-            step={1}
+            step={FONT_SIZE_STEP}
             value={label.fontSize}
             disabled={locked}
             onChange={onSizeRange}
@@ -144,11 +149,10 @@ export function TextLabelPopover({ label, world, view, onClose }: Props) {
             // No `max` — the spinbutton (typing and step buttons) accepts sizes
             // beyond the slider's range; the transform clamps at MIN only.
             min={TEXT_LABEL_FONT_SIZE_MIN}
-            step={1}
+            step={FONT_SIZE_STEP}
             value={size.text}
             disabled={locked}
             onChange={size.onNumberChange}
-            onWheel={size.onNumberWheel}
             onFocus={size.onNumberFocus}
             onBlur={size.onNumberBlur}
           />
