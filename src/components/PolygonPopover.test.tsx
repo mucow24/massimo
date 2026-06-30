@@ -28,7 +28,10 @@ describe('<PolygonPopover />', () => {
     const slider = screen.getByRole('slider', { name: 'Stroke width' });
     expect(slider).toHaveAttribute('min', '0');
     expect(slider).toHaveAttribute('max', '10');
-    expect(screen.getByRole('spinbutton', { name: 'Stroke width' })).toBeInTheDocument();
+    expect(slider).toHaveAttribute('step', '0.5');
+    const spin = screen.getByRole('spinbutton', { name: 'Stroke width' });
+    expect(spin).toBeInTheDocument();
+    expect(spin).toHaveAttribute('step', '0.5');
     // Two color pickers (fill + stroke) reflecting the polygon's colors.
     const colorInputs = Array.from(
       container.querySelectorAll('input[type="color"]'),
@@ -87,6 +90,18 @@ describe('<PolygonPopover />', () => {
       target: { value: '7' },
     });
     expect(useDoc.getState().polygons['p0'].strokeWidth).toBe(7);
+  });
+
+  it('the stroke-width box shows one decimal and the wheel steps by 0.5', () => {
+    renderPopover(); // strokeWidth 2
+    const spin = screen.getByRole('spinbutton', { name: 'Stroke width' }) as HTMLInputElement;
+    expect(spin.value).toBe('2.0');
+    fireEvent.wheel(spin, { deltaY: -1 });
+    expect(useDoc.getState().polygons['p0'].strokeWidth).toBe(2.5);
+    fireEvent.change(screen.getByRole('slider', { name: 'Stroke width' }), {
+      target: { value: '3.5' },
+    });
+    expect(useDoc.getState().polygons['p0'].strokeWidth).toBe(3.5);
   });
 
   it('Delete removes the polygon and calls onClose', () => {
