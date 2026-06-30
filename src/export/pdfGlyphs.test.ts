@@ -1,6 +1,6 @@
 import { describe, it, expect } from 'vitest';
 import type * as opentype from 'opentype.js';
-import { needsGlyphOutlining, symbolFontFor } from './pdfGlyphs';
+import { glyphPathData, needsGlyphOutlining, symbolFontFor } from './pdfGlyphs';
 
 const SVG_NS = 'http://www.w3.org/2000/svg';
 
@@ -30,6 +30,44 @@ describe('needsGlyphOutlining', () => {
 
   it('is true for astral characters (their surrogate code units exceed 0xFF)', () => {
     expect(needsGlyphOutlining(svgWithTexts('\u{1F858}'))).toBe(true);
+  });
+});
+
+describe('glyphPathData', () => {
+  const build = (commands: unknown[]) => glyphPathData({ commands } as unknown as opentype.Path);
+
+  it('keeps the separator before a coordinate that rounds to "0" (opentype toPathData drops it)', () => {
+    // y = -0.003 rounds to "0"; the space before it must survive so the parser
+    // does not fuse "-1.55" and "0" into the malformed number "-1.550".
+    expect(
+      build([
+        { type: 'M', x: 1.55, y: 0.09 },
+        { type: 'L', x: -1.55, y: -0.003 },
+        { type: 'L', x: -1.47, y: -0.01 },
+        { type: 'Z' },
+      ]),
+    ).toBe('M1.55 0.09L-1.55 0L-1.47 -0.01Z');
+  });
+
+  it('formats C and Q commands with all coordinates separated', () => {
+    expect(
+      build([
+        { type: 'C', x1: 1, y1: -0.004, x2: 2, y2: 3, x: -4, y: 0 },
+        { type: 'Q', x1: 0, y1: 1, x: -2, y: -0.002 },
+      ]),
+    ).toBe('C1 0 2 3 -4 0Q0 1 -2 0');
+  });
+
+  it('produces parseable path data (round-trips through the SVG parser)', () => {
+    const d = build([
+      { type: 'M', x: -1.83, y: -0.07 },
+      { type: 'L', x: -1.55, y: -0.004 }, // the fusing case
+      { type: 'Z' },
+    ]);
+    const p = document.createElementNS('http://www.w3.org/2000/svg', 'path');
+    p.setAttribute('d', d);
+    // A valid 2-point closed path has a non-empty length; a malformed one is 0.
+    expect(d).not.toContain('-1.550');
   });
 });
 
