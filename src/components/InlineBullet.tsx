@@ -1,4 +1,5 @@
 import type { Line } from '../model/types';
+import { FONT_STACK } from '../export/fonts';
 import { badgeColors } from './badge';
 
 interface Props {
@@ -30,7 +31,7 @@ export function InlineBullet({ code, diameter, cx, cy, lineByService }: Props) {
         y={0}
         textAnchor="middle"
         dominantBaseline="central"
-        fontFamily="'Helvetica Neue', Helvetica, Arial, sans-serif"
+        fontFamily={FONT_STACK}
         fontSize={r * 1.1}
         fontWeight={700}
         fill={textColor}

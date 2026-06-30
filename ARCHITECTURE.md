@@ -142,11 +142,11 @@ src/
     canvas/                     # interaction layer: drag/placement/viewport hooks + overlay layers
     inspector/                  # sidebar inspectors + the StopGrid mini-canvas
 
-  export/                       # exportCanvas.ts (SVG/PNG) + fonts.ts (embed @font-face)
+  export/                       # exportCanvas.ts (SVG/PNG), exportCanvasPdf.ts + pdfHatch.ts (vector PDF), fonts.ts
   util/                         # color.ts (hex math)
   test/                         # fixtures, jsdom setup, integration tests
 e2e/                            # Playwright specs + seedAndOpen harness
-public/fonts/                   # 16 Helvetica Neue .otf/.ttf faces
+public/fonts/                   # 16 Helvetica Neue .ttf faces
 ```
 
 ---
@@ -833,7 +833,8 @@ churn the reference and re-run the per-stripe `t` search (a single click on a bu
 ## Export pipeline
 
 [exportCanvas.ts](src/export/exportCanvas.ts) + [fonts.ts](src/export/fonts.ts). Turns the **live
-in-DOM** `<svg>` into a standalone SVG or a 4× PNG.
+in-DOM** `<svg>` into a standalone SVG, a 4× PNG, or a vector PDF
+([exportCanvasPdf.ts](src/export/exportCanvasPdf.ts) + [pdfHatch.ts](src/export/pdfHatch.ts)).
 
 `buildExportSvg(source, {background, pixelScale})` (async — awaits font fetches):
 1. **Clone, don't rebuild** (`source.cloneNode(true)`) — label/tag geometry is measured against
@@ -853,10 +854,39 @@ in-DOM** `<svg>` into a standalone SVG or a 4× PNG.
    `FONT_TABLE` face, and `buildEmbeddedFontCss` fetches the files and inlines base64
    `@font-face`. A failed fetch is **skipped silently** (best-effort fidelity, never fatal).
 
-`FONT_TABLE` (16 faces = 8 weights × {normal, italic}; **all `.otf` except weight-400-italic which
-is `.ttf`**) **must stay 1:1 with the 16 `@font-face` blocks in [styles.css](src/styles.css)** —
+`FONT_TABLE` (16 faces = 8 weights × {normal, italic}; **all `.ttf`** — jsPDF, used by PDF export,
+can only embed TrueType outlines, not PostScript/CFF OpenType) **must stay 1:1 with the 16
+`@font-face` blocks in [styles.css](src/styles.css)** —
 two hand-maintained copies. `normalizeWeight` ties go **low** (600 → 500). PNG raster uses
 `img.decode()` (not `onload`) so embedded data-URI fonts are ready before the draw.
+
+**PDF** ([exportCanvasPdf.ts](src/export/exportCanvasPdf.ts)) reuses `buildExportSvg`, then renders
+that SVG to a true vector PDF with **svg2pdf.js + jsPDF** — selectable text, vector line work,
+embedded SVG graphics kept as vectors. Four gaps svg2pdf/jsPDF can't bridge are closed here:
+1. **Fonts** — jsPDF ignores the SVG's `@font-face` and can only embed TrueType, so the map's used
+   faces are fetched and registered in jsPDF's VFS (the reason the whole set ships `.ttf`).
+2. **Hatch** — svg2pdf can't tile a `<pattern>` along a stroke, so every hatch paint (band strokes
+   **and** the stop markers on them) is baked into clipped solid-stripe geometry; the stripe math
+   lives in the pure, unit-tested [pdfHatch.ts](src/export/pdfHatch.ts) (`ribbonFromCenterline`,
+   `hatchStripeRects`, phased off the world origin so a band and its marker read continuous).
+3. **Text baseline** — svg2pdf never reads `dominant-baseline` (only `alignment-baseline`), so every
+   run — bullets/labels use `central`, free labels `hanging` — lands on the alphabetic baseline, too
+   high. [pdfText.ts](src/export/pdfText.ts) `normalizeTextBaselines` measures each `<text>`'s box vs
+   its forced-alphabetic box (`getBBox`, browser truth) and shifts `y` by the delta — exact for any
+   baseline mode/font without metrics.
+4. **Uncovered glyphs** — characters Helvetica Neue lacks (✈, ↔, ★, …) are drawn on screen by the
+   shipped fallback font in [`FONT_STACK`](src/export/fonts.ts) (`'Helvetica Neue', 'DejaVu Sans', …`),
+   but svg2pdf only embeds HN and jsPDF can't even encode supplementary-plane chars. Because the app
+   already renders these in DejaVu, the PDF just traces the **same** font:
+   [pdfGlyphs.ts](src/export/pdfGlyphs.ts) `outlineUnsupportedText` (run after normalization, so
+   positions are alphabetic) keeps HN-covered characters as positioned selectable text (`partitionRuns`
+   in [pdfText.ts](src/export/pdfText.ts)) and replaces each uncovered one with a vector `<path>` from
+   DejaVu via `opentype.getPath` at the browser's own pen position — 1:1, no fitting, since screen and
+   PDF share the font. A character in neither HN nor DejaVu is dropped (renders nothing). `textMeasure`
+   measures inline-bullet labels with the same `FONT_STACK` so a symbol's measured advance matches its
+   drawn advance.
+Lazy-loaded on first PDF export (`import()` in the toolbar) so jsPDF + opentype.js stay out of the
+initial bundle.
 
 [color.ts](src/util/color.ts): pure hex math — `legibleTextOn` (W3C luminance → `#000`/`#fff`),
 `withAlpha`, `blendOver`, `desaturateColor`. `parseHex` returns `[0,0,0]` (black) for any
@@ -979,7 +1009,8 @@ Each is confirmed in source/tests; file pointers included.
   saves) and opens the app — **this is the only place the rehydrate/migrate path is exercised**.
   `migration.spec.ts` asserts **zero console errors** loading legacy docs; `export.spec.ts` checks
   the exported SVG is chrome-free with embedded `@font-face` and that PNG is genuinely 4× (reads
-  IHDR bytes).
+  IHDR bytes); `exportPdf.spec.ts` exports a hatch+text+image map and asserts the PDF embeds a
+  TrueType CID font (`/FontFile2` + `/Type0`) rather than falling back to standard Helvetica.
 - **Known gaps** (per the deep-dive): `Transfer`/`RouteBullet`/`LineTag` lack dedicated serialize
   round-trip tests; no pixel/visual golden for the merged-dot-border result; StopGrid camera
   (wheel-zoom/fit) isn't unit-tested; `MapCanvas`'s full pointer fan-out is only tested per-hook.

@@ -1,3 +1,4 @@
+import { FONT_STACK } from '../export/fonts';
 import { inlineBulletDiameter, parseLabelLine, type LabelSegment } from './labelTokens';
 
 /**
@@ -208,7 +209,10 @@ export function measureTextLabel(styled: StyledText): MeasuredBBox {
 
   const rawLines = styled.text.length === 0 ? [''] : styled.text.split('\n');
   const measureCtx = getCtx();
-  const fontDecl = `${styled.italic ? 'italic ' : ''}${styled.weight} ${styled.fontSize}px "Helvetica Neue", Helvetica, Arial, sans-serif`;
+  // Measure with the SAME stack the canvas renders (incl. the symbol fallback),
+  // so a symbol's measured advance matches its drawn advance — otherwise the
+  // inline-bullet cursor spaces it against the wrong (system-fallback) width.
+  const fontDecl = `${styled.italic ? 'italic ' : ''}${styled.weight} ${styled.fontSize}px ${FONT_STACK}`;
 
   const lineMetrics: LineMetrics[] = rawLines.map((raw) =>
     computeLineMetrics(raw, styled.fontSize, measureCtx, fontDecl, styled.literalBullets ?? false),

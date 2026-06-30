@@ -2,6 +2,7 @@ import type { ReactNode } from 'react';
 import { DEFAULT_DOT_STYLE, resolveDotRender, type DotRenderParams } from '../model/dotStyle';
 import { useViewportStore } from '../state/viewportStore';
 import type { DotStyle } from '../model/types';
+import { FONT_STACK } from '../export/fonts';
 
 interface Props {
   cx: number;
@@ -178,7 +179,7 @@ export function StopGlyph({
           y={cy}
           textAnchor="middle"
           dominantBaseline="central"
-          fontFamily="'Helvetica Neue', Helvetica, Arial, sans-serif"
+          fontFamily={FONT_STACK}
           fontSize={params.r * 1.2}
           fontWeight={700}
           fill={code.color}

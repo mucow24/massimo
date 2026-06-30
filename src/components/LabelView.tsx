@@ -7,6 +7,7 @@ import {
   type MeasuredBBox,
 } from '../geometry/textMeasure';
 import { TEXT_LABEL_HIT_PAD } from '../geometry/stationBoundary';
+import { FONT_STACK } from '../export/fonts';
 import { useDoc } from '../state/store';
 import { useThemeColors } from '../state/theme';
 import { useViewportStore } from '../state/viewportStore';
@@ -175,7 +176,7 @@ export function LabelView({
                 y={yTop}
                 textAnchor="start"
                 dominantBaseline="hanging"
-                fontFamily="'Helvetica Neue', Helvetica, Arial, sans-serif"
+                fontFamily={FONT_STACK}
                 fontSize={label.fontSize}
                 fontWeight={label.weight}
                 fontStyle={label.italic ? 'italic' : 'normal'}

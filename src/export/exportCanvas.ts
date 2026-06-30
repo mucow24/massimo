@@ -10,13 +10,9 @@
  * finished map.
  */
 
-import { buildEmbeddedFontCss, collectUsedFontFaces, FONT_FAMILY } from './fonts';
+import { buildEmbeddedFontCss, collectUsedFontFaces, FONT_STACK } from './fonts';
 
 const SVG_NS = 'http://www.w3.org/2000/svg';
-/** Font stack mirroring the app body. Set on the exported root <svg> so its
- * text — which on the live page inherits the family from page CSS, absent in a
- * standalone file — resolves to the embedded Helvetica Neue instead of serif. */
-const FONT_STACK = `'${FONT_FAMILY}', Helvetica, Arial, sans-serif`;
 /** World-unit margin added around the content bounds (also absorbs the stroke
  * overflow `getBBox` ignores). */
 const PADDING = 24;
