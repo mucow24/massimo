@@ -38,6 +38,35 @@ export interface GlyphFonts {
 const covers = (font: opentype.Font, cp: number): boolean =>
   font.charToGlyphIndex(String.fromCodePoint(cp)) !== 0;
 
+/**
+ * Serialize an opentype glyph `Path` to SVG path data with explicit separators.
+ *
+ * We can't use opentype's own `toPathData`: it decides whether to emit a space
+ * before a coordinate from the *raw* sign (`v >= 0`) but formats the *rounded*
+ * value, so a small negative that rounds to "0" (e.g. -0.003 → "0") loses its
+ * separator and fuses with the previous number — `-1.55` + `0` → `-1.550`. That
+ * malformed `d` is silently recovered by Blink/Chromium but rejected outright by
+ * stricter SVG parsers (e.g. some Edge builds), dropping the glyph from the PDF.
+ * Emitting one space between every coordinate is always valid and can't fuse.
+ */
+export function glyphPathData(path: opentype.Path, decimals = 2): string {
+  const factor = 10 ** decimals;
+  const n = (v: number): string => {
+    const r = Math.round(v * factor) / factor;
+    return Object.is(r, -0) ? '0' : String(r);
+  };
+  let d = '';
+  for (const c of path.commands) {
+    if (c.type === 'M') d += `M${n(c.x)} ${n(c.y)}`;
+    else if (c.type === 'L') d += `L${n(c.x)} ${n(c.y)}`;
+    else if (c.type === 'C')
+      d += `C${n(c.x1)} ${n(c.y1)} ${n(c.x2)} ${n(c.y2)} ${n(c.x)} ${n(c.y)}`;
+    else if (c.type === 'Q') d += `Q${n(c.x1)} ${n(c.y1)} ${n(c.x)} ${n(c.y)}`;
+    else if (c.type === 'Z') d += 'Z';
+  }
+  return d;
+}
+
 /** First symbol font that contains a glyph for `cp`, or null. */
 export function symbolFontFor(fonts: opentype.Font[], cp: number): opentype.Font | null {
   for (const f of fonts) if (covers(f, cp)) return f;
@@ -114,9 +143,9 @@ export function outlineUnsupportedText(svg: SVGSVGElement, fonts: GlyphFonts): v
         // fallback has it (then it's simply absent, matching nothing to embed).
         const sf = symbolFontFor(fonts.symbols, piece.cp);
         if (!sf) continue;
-        const d = sf
-          .getPath(String.fromCodePoint(piece.cp), piece.x, piece.y, fontSize)
-          .toPathData(2);
+        const d = glyphPathData(
+          sf.getPath(String.fromCodePoint(piece.cp), piece.x, piece.y, fontSize),
+        );
         if (!d) continue;
         const path = document.createElementNS(SVG_NS, 'path');
         path.setAttribute('d', d);
