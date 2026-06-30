@@ -48,6 +48,11 @@ export const LABEL_FONT_SIZE_MIN = 2;
 export const LABEL_FONT_SIZE_MAX = 24;
 export const LABEL_FONT_SIZE_DEFAULT = 12;
 
+// Every font-size control (station labels + text labels) steps in halves and
+// stores values snapped to this grid. Mirrors `LINE_STROKE_STEP`'s role for
+// the stroke-width field.
+export const FONT_SIZE_STEP = 0.5;
+
 export const TRANSFER_THICKNESS_MIN = 1;
 export const TRANSFER_THICKNESS_MAX = 14;
 export const TRANSFER_THICKNESS_DEFAULT = 2;
@@ -1334,9 +1339,10 @@ export function setCurveRadius(doc: MapDoc, r: number): MapDoc {
 }
 
 // Clamps at the bottom only; the spinbutton accepts sizes beyond the slider's
-// range (LABEL_FONT_SIZE_MAX constrains the slider, not the value).
+// range (LABEL_FONT_SIZE_MAX constrains the slider, not the value). Snaps to
+// the FONT_SIZE_STEP (0.5) grid so the half-step controls round-trip cleanly.
 export function setLabelFontSize(doc: MapDoc, n: number): MapDoc {
-  const clamped = Math.max(LABEL_FONT_SIZE_MIN, Math.round(n));
+  const clamped = Math.max(LABEL_FONT_SIZE_MIN, Math.round(n / FONT_SIZE_STEP) * FONT_SIZE_STEP);
   if (clamped === doc.labelFontSize) return doc;
   return { ...doc, labelFontSize: clamped };
 }
@@ -1625,10 +1631,14 @@ export function updateTextLabel(
   return updateRecord(doc, 'textLabels', id, (cur) => {
     // Clamp font size at the bottom only so callers (slider, spinbutton,
     // paste) can't push it to 0/negative; the spinbutton accepts sizes beyond
-    // the slider's range. Mirrors `setLabelFontSize`.
+    // the slider's range. Snaps to the FONT_SIZE_STEP (0.5) grid. Mirrors
+    // `setLabelFontSize`.
     let nextPatch = patch;
     if (typeof patch.fontSize === 'number') {
-      const clamped = Math.max(TEXT_LABEL_FONT_SIZE_MIN, Math.round(patch.fontSize));
+      const clamped = Math.max(
+        TEXT_LABEL_FONT_SIZE_MIN,
+        Math.round(patch.fontSize / FONT_SIZE_STEP) * FONT_SIZE_STEP,
+      );
       nextPatch = { ...patch, fontSize: clamped };
     }
     let next = { ...cur, ...nextPatch };
@@ -1685,6 +1695,9 @@ export function resolveTextLabelColor(
 export const POLYGON_STROKE_WIDTH_MIN = 0;
 export const POLYGON_STROKE_WIDTH_MAX = 10;
 export const POLYGON_STROKE_WIDTH_DEFAULT = 1;
+// Stroke width steps in halves, like the line stroke-width control
+// (LINE_STROKE_STEP). The slider/spinbutton/wheel all move by this.
+export const POLYGON_STROKE_STEP = 0.5;
 export const POLYGON_FILL_DEFAULT = '#cfe3f2';
 export const POLYGON_STROKE_DEFAULT = '#000000';
 // Fill opacity is a percentage; missing ⇒ fully opaque.
@@ -1700,14 +1713,16 @@ export const POLYGON_DEFAULT_HALF = 30;
 // A polygon never drops below a triangle, so deleting a vertex is a no-op here.
 export const POLYGON_MIN_VERTICES = 3;
 
-// Stroke width and curve radius clamp at the bottom only; their spinbuttons
-// accept values beyond the slider ranges (the _MAX constants constrain the
-// sliders, not the values). Fill opacity is a percentage, so it stays bounded
-// to [0, 100] on both ends.
-const clampPolygonStrokeWidth = (w: number): number => Math.max(POLYGON_STROKE_WIDTH_MIN, w);
+// Stroke width snaps to the POLYGON_STROKE_STEP (0.5) grid and clamps at the
+// bottom only; its spinbutton accepts values beyond the slider max
+// (POLYGON_STROKE_WIDTH_MAX constrains the slider, not the value). Mirrors the
+// line stroke-width control. Fill opacity is a percentage, bounded to [0, 100].
+const clampPolygonStrokeWidth = (w: number): number =>
+  Math.max(POLYGON_STROKE_WIDTH_MIN, Math.round(w / POLYGON_STROKE_STEP) * POLYGON_STROKE_STEP);
 const clampPolygonFillOpacity = (o: number): number =>
   Math.max(POLYGON_FILL_OPACITY_MIN, Math.min(POLYGON_FILL_OPACITY_MAX, Math.round(o)));
-// Clamp only (no rounding), matching the sibling world-unit size `strokeWidth`.
+// Curve radius clamps at the bottom only (no rounding) — a free-form world-unit
+// value whose spinbutton accepts values beyond the slider max.
 const clampPolygonCurveRadius = (r: number): number => Math.max(POLYGON_CURVE_RADIUS_MIN, r);
 
 // The default-square vertices centered on (x, y), clockwise from the top-left

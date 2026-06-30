@@ -2,6 +2,7 @@ import { Fragment, useId, useRef, useState } from 'react';
 import { ChevronDownIcon, ChevronRightIcon, MixerHorizontalIcon } from '@radix-ui/react-icons';
 import { useDoc } from '../state/store';
 import {
+  FONT_SIZE_STEP,
   LABEL_FONT_SIZE_MAX,
   LABEL_FONT_SIZE_MIN,
   LABEL_WEIGHT_NAMES,
@@ -112,7 +113,7 @@ export function OptionsPopover() {
             label="Font size"
             min={LABEL_FONT_SIZE_MIN}
             max={LABEL_FONT_SIZE_MAX}
-            step={1}
+            step={FONT_SIZE_STEP}
             value={labelFontSize}
             onChange={setLabelFontSize}
             getCurrent={() => useDoc.getState().labelFontSize}

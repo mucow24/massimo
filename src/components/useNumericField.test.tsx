@@ -70,4 +70,55 @@ describe('useNumericField — external-update focus guard', () => {
     // …and blur snaps the mirror to it (and un-guards future external updates).
     expect(result.current.text).toBe('7');
   });
+
+  it('defaults the wheel step to 1 and the mirror to a bare integer string', () => {
+    const onChange = vi.fn();
+    const { result } = renderHook(() => useNumericField(9, onChange, () => 9));
+    expect(result.current.text).toBe('9');
+    act(() =>
+      result.current.onNumberWheel({
+        deltaY: -1,
+        preventDefault() {},
+      } as unknown as React.WheelEvent<HTMLInputElement>),
+    );
+    expect(onChange).toHaveBeenLastCalledWith(10);
+  });
+});
+
+describe('useNumericField — fractional step (0.5)', () => {
+  const wheel = (deltaY: number) =>
+    ({ deltaY, preventDefault() {} }) as unknown as React.WheelEvent<HTMLInputElement>;
+
+  it('pads the mirror to one decimal place', () => {
+    const { result } = renderHook(() => useNumericField(9, vi.fn(), () => 9, 0.5));
+    expect(result.current.text).toBe('9.0');
+  });
+
+  it('resyncs an external value to one decimal while not focused', () => {
+    const { result, rerender } = renderHook(
+      ({ value }) => useNumericField(value, vi.fn(), () => value, 0.5),
+      { initialProps: { value: 9 } },
+    );
+    rerender({ value: 7.5 });
+    expect(result.current.text).toBe('7.5');
+  });
+
+  it('wheel increments by the step (0.5) from the live value', () => {
+    const onChange = vi.fn();
+    let live = 9;
+    const { result } = renderHook(() => useNumericField(live, onChange, () => live, 0.5));
+    act(() => result.current.onNumberWheel(wheel(-1)));
+    expect(onChange).toHaveBeenLastCalledWith(9.5);
+    act(() => result.current.onNumberWheel(wheel(1)));
+    expect(onChange).toHaveBeenLastCalledWith(8.5);
+  });
+
+  it('blur re-syncs the mirror formatted to one decimal', () => {
+    let live = 9;
+    const { result } = renderHook(() => useNumericField(9, vi.fn(), () => live, 0.5));
+    act(() => result.current.onNumberFocus());
+    live = 9.5;
+    act(() => result.current.onNumberBlur());
+    expect(result.current.text).toBe('9.5');
+  });
 });

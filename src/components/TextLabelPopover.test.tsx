@@ -212,6 +212,23 @@ describe('<TextLabelPopover /> — text / size / align / weight controls', () =>
     expect(useDoc.getState().textLabels['g1'].fontSize).toBe(24);
   });
 
+  it('the size slider and spinbutton step by 0.5 and the box shows one decimal', () => {
+    seedAndRender();
+    const slider = screen.getByRole('slider') as HTMLInputElement;
+    const spin = screen.getByRole('spinbutton') as HTMLInputElement;
+    expect(slider.getAttribute('step')).toBe('0.5');
+    expect(spin.getAttribute('step')).toBe('0.5');
+    expect(spin.value).toBe('16.0');
+  });
+
+  it('writes half-point sizes via the wheel and the slider', () => {
+    seedAndRender();
+    fireEvent.wheel(screen.getByRole('spinbutton'), { deltaY: -1 });
+    expect(useDoc.getState().textLabels['g1'].fontSize).toBe(16.5);
+    fireEvent.change(screen.getByRole('slider'), { target: { value: '20.5' } });
+    expect(useDoc.getState().textLabels['g1'].fontSize).toBe(20.5);
+  });
+
   it('changes alignment and toggles italic', () => {
     seedAndRender();
     fireEvent.click(screen.getByLabelText('Align center'));
