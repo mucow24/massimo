@@ -1,8 +1,9 @@
 /**
- * PDF export regression. Seeds a map that exercises the three things the PDF
- * pipeline has to get right — selectable text in embedded Helvetica Neue, a
- * hatched line segment (baked to stripe geometry), and an embedded SVG image —
- * then drives Canvas → Export → PDF and asserts on the downloaded bytes.
+ * PDF export regression. Seeds a map that exercises what the PDF pipeline has to
+ * get right — selectable text in embedded Helvetica Neue, a hatched line segment
+ * (baked to stripe geometry), an embedded SVG image, and a logo whose casing is a
+ * hard feDropShadow (baked to an offset silhouette) — then drives
+ * Canvas → Export → PDF and asserts on the downloaded bytes.
  *
  * The decisive guard is `/FontFile2` + `/Type0`: the original failure mode was
  * jsPDF silently falling back to the standard (non-embedded) Helvetica because
@@ -21,6 +22,13 @@ const embeddedSvg = `<svg xmlns="http://www.w3.org/2000/svg" width="120" height=
 </svg>`;
 const embeddedHref =
   'data:image/svg+xml;base64,' + Buffer.from(embeddedSvg, 'utf-8').toString('base64');
+
+// A logo whose casing is a hard feDropShadow (the shape we can't render through
+// svg2pdf's filter-less image path). It must be baked into an offset silhouette
+// during export — this exercises that path end-to-end without crashing.
+const shadowLogo = `<svg xmlns="http://www.w3.org/2000/svg" width="60" height="60" viewBox="0 0 60 60"><defs><filter id="fx-test" x="-50%" y="-50%" width="200%" height="200%"><feDropShadow in="SourceGraphic" dx="-3" dy="0" stdDeviation="0" flood-color="#ffffff" flood-opacity="1"/></filter></defs><g filter="url(#fx-test)"><path d="M20 10L30 10L25 50Z" fill="#d92626"/></g></svg>`;
+const shadowHref =
+  'data:image/svg+xml;base64,' + Buffer.from(shadowLogo, 'utf-8').toString('base64');
 
 const station = (id: string, x: number) => ({
   id,
@@ -66,8 +74,9 @@ const persisted = {
     polygonOrder: [],
     svgImages: {
       img1: { id: 'img1', x: 120, y: 180, width: 120, height: 80, rotation: 0, href: embeddedHref },
+      img2: { id: 'img2', x: 120, y: 320, width: 60, height: 60, rotation: 0, href: shadowHref },
     },
-    svgImageOrder: ['img1'],
+    svgImageOrder: ['img1', 'img2'],
   },
 };
 
@@ -107,8 +116,9 @@ test('exports a vector PDF with embedded fonts from a hatch + text + image map',
   page,
 }) => {
   await seed(page);
-  // Sanity: the hatched band and the image actually rendered before we export.
+  // Sanity: the hatched band and both images actually rendered before we export.
   await expect(page.locator('[data-svg-image-id="img1"]')).toHaveCount(1);
+  await expect(page.locator('[data-svg-image-id="img2"]')).toHaveCount(1); // drop-shadow logo
   await expect(page.locator('[data-band-stripe][data-line-id="L1"]')).not.toHaveCount(0);
 
   const download = await exportPdf(page);

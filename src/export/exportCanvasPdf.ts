@@ -16,6 +16,10 @@
  *   the stop markers on them are baked into clipped solid stripe geometry
  *   (`bakeHatchedPaints`; pure math in the unit-tested `pdfHatch`).
  *
+ *   Image shadows — svg2pdf re-parses an svg+xml `<image>` as vectors but ignores
+ *   `<filter>`, so a logo's hard `feDropShadow` casing would drop; it's baked into
+ *   a real offset silhouette (`bakeImageDropShadows`; pure core in `pdfDropShadow`).
+ *
  *   Text baseline — svg2pdf ignores `dominant-baseline`, so text lands too high;
  *   `normalizeTextBaselines` (pdfText) shifts each run onto the alphabetic baseline.
  *
@@ -38,6 +42,7 @@ import {
 import { hatchStripeRects, patternRotation, ribbonFromCenterline, type Bounds } from './pdfHatch';
 import { normalizeTextBaselines } from './pdfText';
 import { loadGlyphFonts, needsGlyphOutlining, outlineUnsupportedText } from './pdfGlyphs';
+import { bakeImageDropShadows } from './pdfDropShadow';
 
 const SVG_NS = 'http://www.w3.org/2000/svg';
 
@@ -214,6 +219,11 @@ export async function exportCanvasPdf(source: SVGSVGElement, background: string)
     // Bake hatch pattern paints into stripe geometry svg2pdf can convert (must
     // run while attached — it samples path/shape geometry).
     bakeHatchedPaints(el);
+
+    // Bake hard drop-shadow filters inside embedded svg+xml logos into real
+    // offset geometry — svg2pdf renders those images as vectors but ignores
+    // <filter>, so their casing/shadow would otherwise vanish.
+    bakeImageDropShadows(el);
 
     // svg2pdf ignores dominant-baseline and renders every run on the alphabetic
     // baseline; re-baseline text with a measured y-shift so it lands where the
