@@ -21,6 +21,7 @@ import type {
 } from '../model/types';
 import { useSelection } from './selection';
 import { effectiveLineOrder } from '../model/lineOrder';
+import { pickNextLineName } from '../model/lineNaming';
 import { defaultIdFactory, IdFactory } from '../model/ids';
 import { DEFAULT_DOC } from '../model/transforms';
 import * as T from '../model/transforms';
@@ -41,27 +42,6 @@ import { useViewportStore } from './viewportStore';
 
 // Re-export so callers (Sidebar, etc.) keep working with one source of truth.
 export { effectiveLineOrder };
-
-// Auto-name sequence: A, B, ..., Z, 0, 1, ..., 9, AA, AB, ..., AZ, A0, ..., A9, BA, ...
-const ALPHABET = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789';
-const nameForIndex = (n: number): string => {
-  const len = ALPHABET.length; // 36
-  if (n < len) return ALPHABET[n];
-  const m = n - len;
-  const first = Math.floor(m / len);
-  const second = m % len;
-  if (first < 26) return ALPHABET[first] + ALPHABET[second];
-  return '?'; // overflow; unlikely for v1
-};
-
-const pickNextLineName = (lines: Record<LineId, Line>): string => {
-  const taken = new Set(Object.values(lines).map((l) => l.service));
-  for (let i = 0; i < 26 * 36 + 36; i++) {
-    const candidate = nameForIndex(i);
-    if (!taken.has(candidate)) return candidate;
-  }
-  return '?';
-};
 
 const ids: IdFactory = defaultIdFactory();
 
