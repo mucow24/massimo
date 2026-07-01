@@ -208,14 +208,14 @@ describe('<TextLabelPopover /> — text / size / align / weight controls', () =>
 
   it('changes the font size via the range slider', () => {
     seedAndRender();
-    fireEvent.change(screen.getByRole('slider'), { target: { value: '24' } });
+    fireEvent.change(screen.getByRole('slider', { name: 'Size' }), { target: { value: '24' } });
     expect(useDoc.getState().textLabels['g1'].fontSize).toBe(24);
   });
 
   it('the size slider and spinbutton step by 0.5 and the box shows one decimal', () => {
     seedAndRender();
-    const slider = screen.getByRole('slider') as HTMLInputElement;
-    const spin = screen.getByRole('spinbutton') as HTMLInputElement;
+    const slider = screen.getByRole('slider', { name: 'Size' }) as HTMLInputElement;
+    const spin = screen.getByRole('spinbutton', { name: 'Size' }) as HTMLInputElement;
     expect(slider.getAttribute('step')).toBe('0.5');
     expect(spin.getAttribute('step')).toBe('0.5');
     expect(spin.value).toBe('16.0');
@@ -223,9 +223,9 @@ describe('<TextLabelPopover /> — text / size / align / weight controls', () =>
 
   it('writes half-point sizes via the wheel and the slider', () => {
     seedAndRender();
-    fireEvent.wheel(screen.getByRole('spinbutton'), { deltaY: -1 });
+    fireEvent.wheel(screen.getByRole('spinbutton', { name: 'Size' }), { deltaY: -1 });
     expect(useDoc.getState().textLabels['g1'].fontSize).toBe(16.5);
-    fireEvent.change(screen.getByRole('slider'), { target: { value: '20.5' } });
+    fireEvent.change(screen.getByRole('slider', { name: 'Size' }), { target: { value: '20.5' } });
     expect(useDoc.getState().textLabels['g1'].fontSize).toBe(20.5);
   });
 
@@ -276,8 +276,8 @@ describe('<TextLabelPopover /> — lock toggle', () => {
   it('when locked, editing controls are disabled but the lock toggle stays active', () => {
     seedAndRender(makeTextLabel({ id: 'g1', text: 'Hi', locked: true }));
     expect(screen.getByRole('textbox')).toBeDisabled();
-    expect(screen.getByRole('slider')).toBeDisabled();
-    expect(screen.getByRole('spinbutton')).toBeDisabled();
+    expect(screen.getByRole('slider', { name: 'Size' })).toBeDisabled();
+    expect(screen.getByRole('spinbutton', { name: 'Size' })).toBeDisabled();
     expect(screen.getByRole('combobox')).toBeDisabled();
     expect(screen.getByLabelText('Align center')).toBeDisabled();
     expect(screen.getByLabelText('Italic')).toBeDisabled();
@@ -289,6 +289,45 @@ describe('<TextLabelPopover /> — lock toggle', () => {
     expect(unlock).toBeEnabled();
     fireEvent.click(unlock);
     expect(useDoc.getState().textLabels['g1'].locked).toBe(false);
+  });
+});
+
+describe('<TextLabelPopover /> — column width + justify', () => {
+  const identityView = { vbX: 0, vbY: 0, vbW: 800, vbH: 600, size: { w: 800, h: 600 } };
+
+  function seed(label = makeTextLabel({ id: 'g1', text: 'Hi', align: 'left' })) {
+    useDoc.setState({ ...useDoc.getState(), textLabels: { g1: label } });
+    render(
+      <TextLabelPopover
+        label={useDoc.getState().textLabels['g1']}
+        world={{ x: 0, y: 0 }}
+        view={identityView}
+        onClose={() => {}}
+      />,
+    );
+  }
+
+  it('offers a justify alignment button', () => {
+    seed();
+    fireEvent.click(screen.getByLabelText('Justify'));
+    expect(useDoc.getState().textLabels['g1'].align).toBe('justify');
+  });
+
+  it('sets a column width via the width slider', () => {
+    seed();
+    fireEvent.change(screen.getByRole('slider', { name: 'Width' }), { target: { value: '220' } });
+    expect(useDoc.getState().textLabels['g1'].width).toBe(220);
+  });
+
+  it('shows width 0 (Auto) for a label with no width', () => {
+    seed();
+    expect(screen.getByRole('spinbutton', { name: 'Width' })).toHaveValue(0);
+  });
+
+  it('disables the width controls when locked', () => {
+    seed(makeTextLabel({ id: 'g1', text: 'Hi', locked: true }));
+    expect(screen.getByRole('slider', { name: 'Width' })).toBeDisabled();
+    expect(screen.getByRole('spinbutton', { name: 'Width' })).toBeDisabled();
   });
 });
 

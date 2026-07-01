@@ -2700,6 +2700,12 @@ describe('updateTextLabel', () => {
     expect(T.updateTextLabel(doc, 'g1', { fontSize: 23.7 }).textLabels.g1.fontSize).toBe(23.5);
     expect(T.updateTextLabel(doc, 'g1', { fontSize: 23.5 }).textLabels.g1.fontSize).toBe(23.5);
   });
+  it('clamps column width to a non-negative integer (0 = Auto)', () => {
+    const doc = makeDoc({ textLabels: [makeTextLabel({ id: 'g1' })] });
+    expect(T.updateTextLabel(doc, 'g1', { width: -5 }).textLabels.g1.width).toBe(0);
+    expect(T.updateTextLabel(doc, 'g1', { width: 0 }).textLabels.g1.width).toBe(0);
+    expect(T.updateTextLabel(doc, 'g1', { width: 200.6 }).textLabels.g1.width).toBe(201);
+  });
   it('is a no-op for missing ids', () => {
     const doc = makeDoc({});
     expect(T.updateTextLabel(doc, 'nope', { text: 'X' })).toBe(doc);
@@ -2730,6 +2736,21 @@ describe('updateTextLabel', () => {
     });
     const before = upperLeftOf(doc.textLabels.g1);
     const next = T.updateTextLabel(doc, 'g1', { text: 'A\nB\nC' });
+    const after = upperLeftOf(next.textLabels.g1);
+    expect(after.x).toBeCloseTo(before.x, 5);
+    expect(after.y).toBeCloseTo(before.y, 5);
+  });
+
+  it('preserves the upper-left corner when a column width is set (re-wraps + re-boxes)', () => {
+    const doc = makeDoc({
+      textLabels: [
+        makeTextLabel({ id: 'g1', x: 100, y: 100, text: 'aaaa bbbb cccc', align: 'left' }),
+      ],
+    });
+    const before = upperLeftOf(doc.textLabels.g1);
+    // A narrow column wraps the one line into three and shrinks the box width;
+    // the re-anchor must pin the top-left through both changes.
+    const next = T.updateTextLabel(doc, 'g1', { width: 40 });
     const after = upperLeftOf(next.textLabels.g1);
     expect(after.x).toBeCloseTo(before.x, 5);
     expect(after.y).toBeCloseTo(before.y, 5);

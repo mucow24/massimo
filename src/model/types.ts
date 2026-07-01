@@ -455,8 +455,10 @@ export interface MapDoc {
   transferStrokeColor: string;
 }
 
-// Multi-line horizontal text alignment inside a TextLabel.
-export type TextLabelAlign = 'left' | 'center' | 'right';
+// Multi-line horizontal text alignment inside a TextLabel. `justify` flushes
+// both edges: to the widest line when the label auto-sizes (width 0), or to the
+// column when a `width` is set. The other three anchor the text within the box.
+export type TextLabelAlign = 'left' | 'center' | 'right' | 'justify';
 
 // Helvetica Neue weights we ship in /public/fonts/.
 export type TextLabelWeight = 100 | 200 | 300 | 400 | 500 | 700 | 800 | 900;
@@ -478,6 +480,14 @@ export interface TextLabel {
   weight: TextLabelWeight;
   italic: boolean;
   align: TextLabelAlign;
+  // Column width in world units for wrapping + justification. 0 or absent =
+  // "Auto": the label sizes to its content and honors manual '\n' line breaks
+  // (the historical behavior). >0 = a fixed-width column: text word-wraps to
+  // this width and each '\n' becomes a hard paragraph break. Orthogonal to
+  // `align` — left/center/right/justify all position within whichever box this
+  // implies. Optional so saves predating the field load as Auto; clamped to a
+  // non-negative integer by `updateTextLabel`.
+  width?: number;
   // Day/night text colors. `color` paints in light mode, `darkColor` in dark
   // mode. Unlike a polygon (whose dark color is initialized equal to its light
   // color), a label's two defaults differ (#111111 / #ffffff) so the text stays
