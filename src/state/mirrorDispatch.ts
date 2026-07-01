@@ -1,4 +1,5 @@
 import { beginHistoryGroup, useDoc, useSelection } from './store';
+import { isHistoryGrouping } from './history';
 import { findMatchingStations, type LayoutOffset } from '../model/matching';
 import type { StationId } from '../model/types';
 
@@ -33,10 +34,10 @@ export function captureMirrorTargets(stationId: StationId): MirrorTarget[] {
 
 /**
  * Apply `act` to the station and — with mirror matching on — to every match.
- * NEVER opens a history group: zundo's pause/resume is a plain boolean, so
- * groups must not nest. Use this variant from call sites that already hold a
- * group open (keyboard nudge handlers, drag gestures, focused numeric
- * fields); use dispatchMirrored for standalone one-shot controls.
+ * NEVER opens a history group of its own. Use this variant from call sites
+ * that explicitly manage their group (a keyboard press writing several
+ * fields, a drag gesture's open group); use dispatchMirrored for one-shot
+ * controls.
  */
 export function fanOutMirrored(
   stationId: StationId,
@@ -46,11 +47,14 @@ export function fanOutMirrored(
 }
 
 /**
- * Standalone dispatch for one-shot controls (buttons, pickers): like
- * fanOutMirrored, but a genuine fan-out is wrapped in ONE history group so
- * undo reverts the whole broadcast at once. A single-station dispatch stays
- * ungrouped — one store set is one history entry already, and skipping the
- * group avoids nesting inside a focused field's useFieldHistory group.
+ * Standalone dispatch for one-shot controls (buttons, pickers, numeric
+ * fields): like fanOutMirrored, but a genuine fan-out is wrapped in ONE
+ * history group so undo reverts the whole broadcast at once. Two cases skip
+ * the group: a single-station dispatch (one store set is one entry already),
+ * and a dispatch fired while a group is ALREADY open (a focused field's
+ * useFieldHistory arc, e.g. the dot-size spinbutton) — groups don't nest,
+ * and the outer group already collapses the writes into its single entry
+ * (see isHistoryGrouping / #146).
  */
 export function dispatchMirrored(
   stationId: StationId,
@@ -61,7 +65,7 @@ export function dispatchMirrored(
     act(targets[0].id, targets[0].layoutOffset);
     return;
   }
-  const group = beginHistoryGroup();
+  const group = isHistoryGrouping() ? null : beginHistoryGroup();
   for (const t of targets) act(t.id, t.layoutOffset);
-  group.commit();
+  group?.commit();
 }

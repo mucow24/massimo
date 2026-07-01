@@ -592,6 +592,43 @@ describe('<StationInspector /> — stop dot size textbox', () => {
     expect(doc.stations.b.stops[0].dotSize).toBe(16);
     expect(historyDepth() - pastBefore).toBe(1);
   });
+
+  it('a focused edit with mirror on collapses to exactly one undo entry', () => {
+    // Regression (#146): focusing the field opens useFieldHistory's outer
+    // group, and the mirror broadcast (dispatchMirrored, reached through the
+    // per-stop row's size field) would nest a SECOND group inside it. The
+    // isHistoryGrouping gate must keep the whole focus arc one undo entry.
+    useDoc.setState({
+      ...DEFAULT_DOC,
+      ...makeDoc({
+        stations: [
+          makeStation({ id: 'a', stops: [makeStop('L1')] }),
+          makeStation({ id: 'b', stops: [makeStop('L1')] }),
+        ],
+        lines: [makeLine({ id: 'L1', stations: ['a', 'b'] })],
+      }),
+    });
+    useSelection.setState({
+      ...SELECTION_BLANK,
+      selectedStationIds: ['a'],
+      mirrorMatching: true,
+    });
+
+    render(<StationInspector id="a" />);
+
+    useDoc.temporal.getState().clear();
+    const before = historyDepth();
+
+    const box = sizeBox();
+    fireEvent.focus(box); // opens useFieldHistory's outer group
+    fireEvent.change(box, { target: { value: '9' } }); // mirror broadcast fires inside it
+    fireEvent.blur(box); // commits the outer group
+
+    const doc = useDoc.getState();
+    expect(doc.stations.a.stops[0].dotSize).toBe(9);
+    expect(doc.stations.b.stops[0].dotSize).toBe(9);
+    expect(historyDepth() - before).toBe(1);
+  });
 });
 
 describe('<StationInspector /> — edit paths that reach the document (E8)', () => {

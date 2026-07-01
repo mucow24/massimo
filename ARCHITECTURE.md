@@ -487,6 +487,12 @@ must be pruned.
    without drag) pushes nothing.
 4. `cancel()`: resume without pushing. Both are idempotent (`done` flag).
 
+Groups **don't nest**: a caller that may fire from inside an already-open group (e.g. the mirror
+broadcast dispatched from a focused numeric field's edit arc) gates on `isHistoryGrouping()`
+([history.ts](src/state/history.ts)) and skips opening its own group — the outer one already
+collapses its writes into the single entry. Opening a second group would `resumeHistory()`
+mid-gesture and push a stray snapshot.
+
 ### `useSelection` — ephemeral UI/mode state ([selection.ts](src/state/selection.ts))
 
 Not persisted, not undoable. Two key pieces:
@@ -855,8 +861,8 @@ churn the reference and re-run the per-stripe `t` search (a single click on a bu
      pressed screen direction (`nudgeTarget`, Shift = diagonal), Alt+arrows fine-nudge label
      offsets (Shift ×5), R rotates. All three surfaces share
      [state/mirrorDispatch.ts](src/state/mirrorDispatch.ts) — `dispatchMirrored` (one-shot
-     controls, groups only when fanning out) / `fanOutMirrored` (group-free, for call sites
-     already holding a history group; `beginHistoryGroup` is NOT reentrant) — and capture mirror
+     controls, groups only when fanning out and no group is open — see the isHistoryGrouping
+     gotcha) / `fanOutMirrored` (group-free, for explicit multi-write groups) — and capture mirror
      matches at gesture start (the first write to the source dissolves the match).
 - **Numeric fields**: `useFieldHistory` opens a history group on focus and commits on blur (and on
   unmount, as a safety net); `useNumericField` wraps it with a local text mirror, a focus guard,
@@ -1012,9 +1018,11 @@ Each is confirmed in source/tests; file pointers included.
   it; cross-gesture stranding is handled by the capture-phase self-heal instead.
 - **Line-tag drag uses window listeners + `getScreenCTM().inverse()`** — the only hook off the
   shared React-handler path.
-- **`beginHistoryGroup` is NOT reentrant** — zundo's pause/resume is a plain boolean, so a group
-  inside a group resumes recording mid-gesture. Call sites already holding a group must fan out
-  mirror edits via `fanOutMirrored`, never `dispatchMirrored`. ([mirrorDispatch.ts](src/state/mirrorDispatch.ts))
+- **History groups don't nest** — zundo's pause/resume is a plain boolean, so a group inside a
+  group resumes recording mid-gesture. `dispatchMirrored` gates on `isHistoryGrouping()` and
+  skips its own group when one is already open (a focused field's edit arc); call sites managing
+  an explicit multi-write group use `fanOutMirrored` (group-free) inside it.
+  ([mirrorDispatch.ts](src/state/mirrorDispatch.ts), [history.ts](src/state/history.ts))
 - **Mirror matches must be captured at gesture START for drags** — the first write to the source
   station changes its layout and dissolves the match, so a per-move `findMatchingStations` would
   find nothing after the first frame. One-shot controls (`dispatchMirrored`) compute at dispatch

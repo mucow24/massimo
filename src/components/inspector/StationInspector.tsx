@@ -41,7 +41,8 @@ export function StationInspector({ id }: { id: StationId }) {
   );
 
   // Mirror-aware dispatch: with mirror on, `act` fans out to every matching
-  // station in one history group (see state/mirrorDispatch.ts).
+  // station in one history group (see state/mirrorDispatch.ts — including
+  // the isHistoryGrouping gate from #146 for focused-field edit arcs).
   const dispatchAll = (act: (sid: StationId, layoutOffset: LayoutOffset) => void) =>
     dispatchMirrored(id, act);
 
