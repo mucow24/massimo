@@ -5,6 +5,7 @@ import { stopPosWorld } from '../geometry/interlining';
 import { pathBetweenStations } from '../model/pathSelect';
 import { rotateItemOnContextMenu } from './canvas/groupRotate';
 import { itemCursor } from './canvas/itemCursor';
+import { screenToWorld } from './canvas/viewportMath';
 
 // Map a click on a station to the closest dot's lineId. Used to pin a
 // transfer endpoint to the specific stop the user clicked on, rather than
@@ -13,10 +14,16 @@ function closestStopLineId(station: Station, e: React.MouseEvent): LineId | null
   if (station.stops.length === 0) return null;
   const svg = document.querySelector('.canvas-host svg') as SVGSVGElement | null;
   if (!svg) return station.stops[0].lineId;
-  const r = svg.getBoundingClientRect();
+  const rect = svg.getBoundingClientRect();
   const vb = svg.viewBox.baseVal;
-  const wx = vb.x + ((e.clientX - r.left) / r.width) * vb.width;
-  const wy = vb.y + ((e.clientY - r.top) / r.height) * vb.height;
+  // Reuse the canonical screen→world projection rather than re-deriving the
+  // formula inline — the viewBox/rect mapping is load-bearing and must not
+  // drift from useViewport's screenToWorld.
+  const { x: wx, y: wy } = screenToWorld(
+    { x: e.clientX, y: e.clientY },
+    { vbX: vb.x, vbY: vb.y, vbW: vb.width, vbH: vb.height },
+    rect,
+  );
   let bestId = station.stops[0].lineId;
   let bestDist = Infinity;
   for (const cell of station.stops) {

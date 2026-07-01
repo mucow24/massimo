@@ -2767,6 +2767,37 @@ describe('updateTextLabel', () => {
     expect(after.y).toBeCloseTo(before.y, 5);
   });
 
+  // The upper-left tests above only exercise the default 'left' alignment.
+  // The re-anchor pins a DIFFERENT horizontal edge per align (the `dx` branch
+  // in updateTextLabel): center holds the center, right pins the right edge —
+  // so that editing one line of a multi-line label doesn't drag its siblings
+  // sideways. A sign error in either branch would pass every 'left' test.
+  it('keeps the center x fixed when a center-aligned label grows', () => {
+    const doc = makeDoc({
+      textLabels: [makeTextLabel({ id: 'g1', x: 100, y: 100, fontSize: 16, align: 'center' })],
+    });
+    const next = T.updateTextLabel(doc, 'g1', { fontSize: 32 });
+    // dx === 0: the box grows symmetrically about its center, so x is untouched.
+    expect(next.textLabels.g1.x).toBe(100);
+  });
+
+  it('preserves the upper-right corner when a right-aligned label grows', () => {
+    const upperRightOf = (label: TextLabel) => {
+      const m = measureTextLabel(label);
+      return { x: label.x + m.width / 2, y: label.y - m.height / 2 };
+    };
+    const doc = makeDoc({
+      textLabels: [makeTextLabel({ id: 'g1', x: 100, y: 100, fontSize: 16, align: 'right' })],
+    });
+    const before = upperRightOf(doc.textLabels.g1);
+    const next = T.updateTextLabel(doc, 'g1', { fontSize: 32 });
+    const after = upperRightOf(next.textLabels.g1);
+    expect(after.x).toBeCloseTo(before.x, 5);
+    expect(after.y).toBeCloseTo(before.y, 5);
+    // Distinct from left/center: the right branch shifts x LEFT as the box grows.
+    expect(next.textLabels.g1.x).toBeLessThan(100);
+  });
+
   it('explicit x/y in the patch overrides upper-left preservation', () => {
     // Caller is moving the label (e.g. drag) — don't second-guess by re-
     // anchoring on the old top-left.

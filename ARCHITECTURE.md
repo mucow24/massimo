@@ -340,9 +340,13 @@ post-scale), `rotation: number` (**continuous degrees CW**, snaps to 22.5° unde
 (fixed at import, never edited), `locked?`. `SvgImageStylePatch` is the shared patch type.
 
 **`TextLabel`** — a free-floating, rotatable text annotation rendered **on top** of the map.
-`id, x, y` (center), `rotation: Rotation`, `text` (multiline `\n`), `fontSize` (int, floored at 1 —
-the slider caps at 96, but the spinbutton/stored value is unbounded above),
-`weight: TextLabelWeight`, `italic`, `align: TextLabelAlign` (`left|center|right`), `color/
+`id, x, y` (center), `rotation: Rotation`, `text` (multiline `\n`), `fontSize` (floored at
+`TEXT_LABEL_FONT_SIZE_MIN`, snapped to a 0.5 step — the slider caps at 96, but the
+spinbutton/stored value is unbounded above and may be a half-integer),
+`weight: TextLabelWeight`, `italic`, `align: TextLabelAlign` (`left|center|right|justify`;
+`justify` flushes both edges), `width?` (column width in world units; `0`/absent = Auto —
+sizes to content and honors manual `\n`; `>0` = a fixed-width column that word-wraps, with
+`\n` a hard break; clamped to a non-negative integer by `updateTextLabel`), `color/
 darkColor` (day/night; **defaults DIFFER**: `#111111` / `#ffffff` for legibility — unlike a
 polygon whose dark default equals its light; backfilled on load), `locked?`.
 

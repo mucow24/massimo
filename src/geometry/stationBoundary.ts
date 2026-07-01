@@ -1,6 +1,7 @@
 import type { Pt } from './polygonUnion';
 import type { Polygon, RouteBullet, Station, StationId, SvgImage, TextLabel } from '../model/types';
-import { STOP_SIZE, localToWorld, stopCenterAt } from './orientation';
+import { STOP_SIZE, localToWorld, rotRad, stopCenterAt } from './orientation';
+import { rotateAround } from './vec';
 import { svgImageCorners } from './svgImage';
 import {
   DEFAULT_LABEL_STYLE,
@@ -102,17 +103,9 @@ export function stationBoundaryRectsLocal(
   // width lookup, so label snapping agrees), then rotated about the anchor
   // so the polygon aligns with the painted text.
   const lay = labelLayoutLocal(station, style, undefined, stopHalf);
-  const labelAng = (label.rotation * Math.PI) / 4;
-  const cosL = Math.cos(labelAng);
-  const sinL = Math.sin(labelAng);
-  const rotateLabelCorner = (px: number, py: number): Pt => {
-    const dx = px - lay.anchorX;
-    const dy = py - lay.anchorY;
-    return {
-      x: lay.anchorX + dx * cosL - dy * sinL,
-      y: lay.anchorY + dx * sinL + dy * cosL,
-    };
-  };
+  const labelAnchor = { x: lay.anchorX, y: lay.anchorY };
+  const rotateLabelCorner = (px: number, py: number): Pt =>
+    rotateAround({ x: px, y: py }, labelAnchor, rotRad(label.rotation));
   const labelPoly: Pt[] = [
     rotateLabelCorner(lay.hitX, lay.hitY),
     rotateLabelCorner(lay.hitX + lay.hitW, lay.hitY),
