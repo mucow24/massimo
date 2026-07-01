@@ -94,6 +94,20 @@ const SIBLING_PRIMARY_CLEAR = {
   mirrorMatching: false,
 };
 
+// editing-station-layout is bound to ONE station: any station-selection
+// mutation whose result is not exactly [that station] exits the mode, so its
+// payload can never dangle behind a retargeted / multi / empty selection
+// (shift-click toggles and marquee/path extends reach these setters while
+// the mode's canvas chrome is up). Spread into every station-selection
+// mutation; selectStation applies the same rule inline.
+const layoutEditReconcile = (
+  cur: UiMode,
+  nextIds: readonly StationId[],
+): { uiMode: UiMode } | Record<string, never> =>
+  cur.kind === 'editing-station-layout' && !(nextIds.length === 1 && nextIds[0] === cur.stationId)
+    ? { uiMode: { kind: 'idle' } }
+    : {};
+
 interface SelectionState {
   // Multi-station selection. Order is meaningful: the last entry is the
   // "anchor" (most recently single-clicked station), used as the source for
@@ -386,17 +400,16 @@ export const useSelection = create<SelectionState>((set, get) => ({
   // selectStation does NOT touch uiMode — placing-station and
   // creating-route-bullet modes are sticky (canvas clicks place repeatedly;
   // see MapCanvas onCanvasClick comments). The pure mode-cancellation rule
-  // applies to every OTHER select* setter. One exception: selecting a
-  // DIFFERENT station (or deselecting) while editing-station-layout is
-  // active exits that mode — otherwise the mode's stationId would go stale
-  // under a retargeted selection.
+  // applies to every OTHER select* setter. One exception, shared with the
+  // multi-select mutators below: layoutEditReconcile exits
+  // editing-station-layout whenever the selection stops being exactly the
+  // edited station.
   selectStation: (id) => {
-    const cur = get().uiMode;
-    const exitLayoutEdit = cur.kind === 'editing-station-layout' && id !== cur.stationId;
+    const nextIds = id == null ? [] : [id];
     set({
       ...clearedSelections(),
-      ...(exitLayoutEdit ? { uiMode: { kind: 'idle' } as UiMode } : {}),
-      selectedStationIds: id == null ? [] : [id],
+      ...layoutEditReconcile(get().uiMode, nextIds),
+      selectedStationIds: nextIds,
       activeTab: id === null ? get().activeTab : 'stations',
       editingStationId: id === null ? null : get().editingStationId,
     });
@@ -409,6 +422,7 @@ export const useSelection = create<SelectionState>((set, get) => ({
         next.splice(idx, 1);
         return {
           selectedStationIds: next,
+          ...layoutEditReconcile(s.uiMode, next),
           // Multi-select implicitly clears the inspector-state pieces tied
           // to a single station's grid editor.
           selectedStopLineId: null,
@@ -418,8 +432,10 @@ export const useSelection = create<SelectionState>((set, get) => ({
           activeTab: 'stations',
         };
       }
+      const next = [...s.selectedStationIds, id];
       return {
-        selectedStationIds: [...s.selectedStationIds, id],
+        selectedStationIds: next,
+        ...layoutEditReconcile(s.uiMode, next),
         selectedLineId: null,
         selectedLineTagId: null,
         selectedTransferId: null,
@@ -431,28 +447,40 @@ export const useSelection = create<SelectionState>((set, get) => ({
       };
     }),
   setStationSelection: (ids) =>
-    set(() => ({
-      selectedStationIds: dedupeLastWins(ids),
-      selectedLineId: null,
-      selectedLineTagId: null,
-      selectedTransferId: null,
-      selectedStopLineId: null,
-      labelSelected: false,
-      editingStationId: null,
-      activeTab: 'stations',
-      mirrorMatching: false,
-    })),
+    set((s) => {
+      const next = dedupeLastWins(ids);
+      return {
+        selectedStationIds: next,
+        ...layoutEditReconcile(s.uiMode, next),
+        selectedLineId: null,
+        selectedLineTagId: null,
+        selectedTransferId: null,
+        selectedStopLineId: null,
+        labelSelected: false,
+        editingStationId: null,
+        activeTab: 'stations',
+        mirrorMatching: false,
+      };
+    }),
   addStationsToSelection: (ids) =>
     set((s) => {
       const next = unionAppendNovel(s.selectedStationIds, ids);
       if (next === s.selectedStationIds) return {};
-      return { selectedStationIds: next, ...SIBLING_PRIMARY_CLEAR };
+      return {
+        selectedStationIds: next,
+        ...layoutEditReconcile(s.uiMode, next),
+        ...SIBLING_PRIMARY_CLEAR,
+      };
     }),
   xorStationsToSelection: (ids) =>
     set((s) => {
       const next = xorAppend(s.selectedStationIds, ids);
       if (next === s.selectedStationIds) return {};
-      return { selectedStationIds: next, ...SIBLING_PRIMARY_CLEAR };
+      return {
+        selectedStationIds: next,
+        ...layoutEditReconcile(s.uiMode, next),
+        ...SIBLING_PRIMARY_CLEAR,
+      };
     }),
   selectLine: (id) => {
     if (id === null) {

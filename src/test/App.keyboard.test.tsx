@@ -732,3 +732,39 @@ describe('App keyboard: stop/label lattice nudge (station sub-selection)', () =>
     expect(historyDepth() - before).toBe(1);
   });
 });
+
+describe('App keyboard: dangling stop sub-selection falls back to station nudge', () => {
+  it('arrows nudge the STATION when selectedStopLineId no longer matches a stop', () => {
+    render(<App />);
+    useDoc.setState({
+      ...useDoc.getState(),
+      ...DEFAULT_DOC,
+      stations: {
+        a: {
+          id: 'a',
+          name: 'A',
+          x: 100,
+          y: 100,
+          rotation: 0,
+          stops: [{ lineId: 'L1', row: 0, col: 0, orientation: 'auto-vertical' }],
+          label: { row: 0, col: -1, rotation: 0, offset: 0, align: 'auto', valign: 'middle' },
+        },
+      },
+      lines: {
+        L1: { id: 'L1', service: '1', name: '1 line', color: '#111111', stations: ['a'] },
+      },
+      lineOrder: ['L1'],
+    });
+    useSelection.setState({
+      ...useSelection.getState(),
+      selectedStationIds: ['a'],
+      // A stale sub-selection: the line exists in the doc, but this station
+      // has no stop for it (e.g. after undoing an add-to-line).
+      selectedStopLineId: 'L9',
+      labelSelected: false,
+    });
+    fireEvent.keyDown(window, { key: 'ArrowRight' });
+    // Falls through to the whole-station nudge instead of dying silently.
+    expect(useDoc.getState().stations.a.x).toBe(101);
+  });
+});

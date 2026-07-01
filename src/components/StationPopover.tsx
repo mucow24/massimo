@@ -3,6 +3,7 @@ import { useSelection } from '../state/store';
 import type { Station } from '../model/types';
 import { type ViewportProjection } from './canvas/screenAnchor';
 import { useDraggablePopover } from './canvas/useDraggablePopover';
+import { isInFormField } from './usePopover';
 import { StationInspector } from './inspector';
 
 // Shell width (matches .station-popover in styles.css) — used to clamp the
@@ -36,30 +37,41 @@ export function StationPopover({
     view,
   );
 
-  // Escape closes — unless a form field should swallow it, or the layout-edit
-  // mode is active (App's Escape handler exits the MODE first; the popover
-  // stays for the still-selected station).
+  // Escape steps OUT one level instead of slamming the editor shut:
+  // 1. a focused form field swallows it;
+  // 2. an active stop/label sub-selection clears (this handler owns it — the
+  //    inspector's useDismiss deliberately skips Escape so two listeners
+  //    can't race over the same state) — the popover stays;
+  // 3. the layout-edit mode is exited by App's Escape handler — stays;
+  // 4. otherwise close (deselect the station).
   useEffect(() => {
     const onKey = (e: globalThis.KeyboardEvent) => {
       if (e.key !== 'Escape') return;
-      const t = e.target as HTMLElement | null;
-      const tag = t?.tagName;
-      const inField =
-        tag === 'INPUT' || tag === 'TEXTAREA' || tag === 'SELECT' || t?.isContentEditable;
-      if (inField) return;
-      if (useSelection.getState().uiMode.kind === 'editing-station-layout') return;
+      if (isInFormField(e.target)) return;
+      const sel = useSelection.getState();
+      if (sel.selectedStopLineId || sel.labelSelected) {
+        sel.setSelectedStopLineId(null);
+        sel.setLabelSelected(false);
+        return;
+      }
+      if (sel.uiMode.kind === 'editing-station-layout') return;
       onClose();
     };
     document.addEventListener('keydown', onKey);
     return () => document.removeEventListener('keydown', onKey);
   }, [onClose]);
 
-  const left = clamp(
-    anchor.x + 14,
-    EDGE_PAD,
-    Math.max(EDGE_PAD, view.size.w - POPOVER_W - EDGE_PAD),
-  );
-  const top = clamp(anchor.y + 14, EDGE_PAD, Math.max(EDGE_PAD, view.size.h - 120));
+  // While the layout editor is active the popover pins to the host's top-right
+  // corner: its default spot (station + 14px) would sit exactly over the
+  // handles the mode exists to expose (the framing effect centers the station
+  // under it). Otherwise it anchors to the station, clamped into the host.
+  const inLayoutEdit = useSelection((s) => s.uiMode.kind === 'editing-station-layout');
+  const left = inLayoutEdit
+    ? Math.max(EDGE_PAD, view.size.w - POPOVER_W - EDGE_PAD)
+    : clamp(anchor.x + 14, EDGE_PAD, Math.max(EDGE_PAD, view.size.w - POPOVER_W - EDGE_PAD));
+  const top = inLayoutEdit
+    ? EDGE_PAD
+    : clamp(anchor.y + 14, EDGE_PAD, Math.max(EDGE_PAD, view.size.h - 120));
 
   return (
     <div

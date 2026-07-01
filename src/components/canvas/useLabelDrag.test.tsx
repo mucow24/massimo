@@ -194,3 +194,42 @@ describe('useLabelDrag — mirror matching', () => {
     expect(historyDepth()).toBe(1);
   });
 });
+
+describe('useLabelDrag — projection freshness and mirror offset semantics', () => {
+  it('uses the CURRENT screenToWorld for the gesture start, not the mount-time one', () => {
+    seed({ a: hubStation() });
+    const { ref } = fakeSvgRef();
+    // Mount with a projection shifted 100 world units left, then re-render
+    // with the identity (a committed pan re-creates the closure every render).
+    const shifted = (x: number, y: number) => ({ x: x - 100, y });
+    const { result, rerender } = renderHook(({ s2w }) => useLabelDrag(ref, s2w), {
+      initialProps: { s2w: shifted },
+    });
+    rerender({ s2w: identity });
+
+    down(result, 'a', pointerEvent({ clientX: 86, clientY: 100 }));
+    move(result, pointerEvent({ clientX: 91, clientY: 100, altKey: true }));
+    // Fresh projection for BOTH start and move → clean +5 offset. A stale
+    // mount-time start would add the 100-unit camera delta.
+    expect(useDoc.getState().stations.a.label.offset).toBeCloseTo(5, 6);
+    up(result, pointerEvent({ clientX: 91, clientY: 100, altKey: true }));
+  });
+
+  it('Alt-drag applies the DELTA per mirror match, preserving their own offsets', () => {
+    const b = hubStation({ id: 'b', x: 400 });
+    b.label = { ...b.label, offset: 6 };
+    seed({ a: hubStation(), b }, { mirrorMatching: true });
+    const { ref } = fakeSvgRef();
+    const { result } = renderHook(() => useLabelDrag(ref, identity));
+
+    down(result, 'a', pointerEvent({ clientX: 86, clientY: 100 }));
+    move(result, pointerEvent({ clientX: 91, clientY: 100, altKey: true }));
+    up(result, pointerEvent({ clientX: 91, clientY: 100, altKey: true }));
+
+    const doc = useDoc.getState();
+    expect(doc.stations.a.label.offset).toBe(5); // 0 + 5
+    // b keeps its hand-tuned base and moves by the same delta — the absolute
+    // broadcast would have clobbered it to 5.
+    expect(doc.stations.b.label.offset).toBe(11); // 6 + 5
+  });
+});

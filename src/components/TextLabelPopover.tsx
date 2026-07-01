@@ -10,6 +10,7 @@ import {
   TEXT_LABEL_FONT_SIZE_MIN,
   TEXT_LABEL_WIDTH_MAX,
 } from '../model/transforms';
+import { isInFormField } from './usePopover';
 import { useFieldHistory } from './useFieldHistory';
 import { useNumericField } from './useNumericField';
 import { PopoverFooter } from './PopoverFooter';
@@ -89,11 +90,7 @@ export function TextLabelPopover({ label, world, view, onClose }: Props) {
   useEffect(() => {
     const onKey = (e: globalThis.KeyboardEvent) => {
       if (e.key === 'Escape') {
-        const t = e.target as HTMLElement | null;
-        const tag = t?.tagName;
-        const inField =
-          tag === 'INPUT' || tag === 'TEXTAREA' || tag === 'SELECT' || t?.isContentEditable;
-        if (inField) {
+        if (isInFormField(e.target)) {
           // Let the field swallow the Esc (textarea unfocus, etc.) — don't
           // close the popover out from under an in-progress edit.
           return;

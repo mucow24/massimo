@@ -93,6 +93,13 @@ export function StationHitArea({
         },
         onClick: (e: React.MouseEvent) => {
           if (dragState.suppressClick) return;
+          // Modified clicks keep station-selection semantics (shift = toggle
+          // membership, ctrl = redistribute, ctrl+shift = path extend) —
+          // only a PLAIN click claims the label sub-selection.
+          if (e.shiftKey || e.ctrlKey || e.metaKey) {
+            handlers.onClick?.(e);
+            return;
+          }
           e.stopPropagation();
           selection.setLabelSelected(true);
         },

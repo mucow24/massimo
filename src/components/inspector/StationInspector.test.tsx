@@ -513,10 +513,8 @@ describe('<StationInspector /> — stop dot size textbox', () => {
 
   const sizeBox = () => screen.getByRole('spinbutton', { name: 'Stop dot size' });
 
-  const selectStop = async (_user: ReturnType<typeof userEvent.setup>) => {
-    // Selection now comes from the canvas layout editor; set it directly.
-    act(() => useSelection.getState().setSelectedStopLineId('L1'));
-  };
+  // Selection comes from the canvas layout editor; set it directly.
+  const selectStop = () => act(() => useSelection.getState().setSelectedStopLineId('L1'));
 
   it('is always enabled (per-row control), showing the resolved default', () => {
     seed();
@@ -526,26 +524,23 @@ describe('<StationInspector /> — stop dot size textbox', () => {
   });
 
   it("shows the selected stop's resolved size: explicit override first, then the line default", async () => {
-    const user = userEvent.setup();
     seed({ stopDotSize: 16, lineDefaultDotSize: 10 });
     render(<StationInspector id="a" />);
-    await selectStop(user);
+    selectStop();
     expect(sizeBox()).toHaveValue(16);
   });
 
   it('falls back to the line default for a tracking stop', async () => {
-    const user = userEvent.setup();
     seed({ lineDefaultDotSize: 10 });
     render(<StationInspector id="a" />);
-    await selectStop(user);
+    selectStop();
     expect(sizeBox()).toHaveValue(10);
   });
 
   it('editing writes the override; typing the effective default clears it', async () => {
-    const user = userEvent.setup();
     seed();
     render(<StationInspector id="a" />);
-    await selectStop(user);
+    selectStop();
 
     fireEvent.change(sizeBox(), { target: { value: '12' } });
     expect(useDoc.getState().stations.a.stops[0].dotSize).toBe(12);
@@ -558,7 +553,7 @@ describe('<StationInspector /> — stop dot size textbox', () => {
     const user = userEvent.setup();
     seed();
     render(<StationInspector id="a" />);
-    await selectStop(user);
+    selectStop();
     expect(useSelection.getState().selectedStopLineId).toBe('L1');
 
     await user.click(sizeBox());
@@ -568,7 +563,6 @@ describe('<StationInspector /> — stop dot size textbox', () => {
   });
 
   it('mirror mode propagates the size to matching stations and collapses to one undo step', async () => {
-    const user = userEvent.setup();
     useDoc.setState({
       ...DEFAULT_DOC,
       ...makeDoc({
@@ -586,7 +580,7 @@ describe('<StationInspector /> — stop dot size textbox', () => {
     });
 
     render(<StationInspector id="a" />);
-    await selectStop(user);
+    selectStop();
 
     const pastBefore = historyDepth();
     // Bare change (no focus arc) — dispatchAll's history group is the only

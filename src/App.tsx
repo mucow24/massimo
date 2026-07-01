@@ -24,8 +24,14 @@ import { screenDeltaToLabelOffsets } from './geometry/labelLayout';
 import { STOP_SIZE, rotateGridDelta, type Rotation } from './geometry/orientation';
 import { lineWidthOf } from './model/lineWidth';
 import { resolveOffsetPerp } from './model/transforms';
-import { nudgeTarget } from './components/inspector/stopGridDrag';
-import { fanOutMirrored } from './state/mirrorDispatch';
+import {
+  nudgeTarget,
+  otherLayoutNodes,
+  sourceCellOf,
+  stationLayoutNodes,
+  type LayoutSource,
+} from './components/inspector/stopGridDrag';
+import { dispatchMirrored, fanOutMirrored } from './state/mirrorDispatch';
 import { useViewportStore } from './state/viewportStore';
 import { redo, undo } from './state/history';
 
@@ -242,13 +248,24 @@ export default function App() {
         // Alt+arrows fine-nudge the LABEL's offsets in screen pixels
         // (Shift ×5, matching the station-nudge step). The station stays
         // put. Allowed on locked stations — lock protects against canvas
-        // drags/deletes, not layout edits (inspector-parity).
+        // drags/deletes, not layout edits (inspector-parity). A DANGLING
+        // stop sub-selection (the station lost that line's stop, e.g. via
+        // undo) does NOT claim the keys — it falls through to the
+        // whole-station nudge instead of silently eating every press.
         const subStation =
           sel.selectedStationIds.length === 1 ? doc.stations[sel.selectedStationIds[0]] : null;
-        if (subStation && (sel.selectedStopLineId || sel.labelSelected)) {
+        const subSource: LayoutSource | null = !subStation
+          ? null
+          : sel.labelSelected
+            ? { kind: 'label' }
+            : sel.selectedStopLineId
+              ? { kind: 'stop', lineId: sel.selectedStopLineId }
+              : null;
+        const subCell = subStation && subSource ? sourceCellOf(subStation, subSource) : null;
+        if (subStation && subSource && subCell) {
           e.preventDefault();
           const rotation = (subStation.rotation % 8) as Rotation;
-          if (sel.labelSelected && e.altKey) {
+          if (subSource.kind === 'label' && e.altKey) {
             const { dOffset, dPerp } = screenDeltaToLabelOffsets(
               { x: dx, y: dy },
               rotation,
@@ -267,52 +284,24 @@ export default function App() {
             group.commit();
             return;
           }
-          const isLabel = sel.labelSelected;
-          const stopLineId = sel.selectedStopLineId;
-          const srcStop = isLabel
-            ? null
-            : (subStation.stops.find((s) => s.lineId === stopLineId) ?? null);
-          const source = isLabel
-            ? { row: subStation.label.row, col: subStation.label.col }
-            : srcStop && { row: srcStop.row, col: srcStop.col };
-          if (!source) return;
-          const nodes = [
-            ...subStation.stops.map((s) => ({
-              row: s.row,
-              col: s.col,
-              w: lineWidthOf(doc.lines[s.lineId]),
-              lineId: s.lineId as string | null,
-            })),
-            {
-              row: subStation.label.row,
-              col: subStation.label.col,
-              w: STOP_SIZE,
-              lineId: null as string | null,
-            },
-          ];
-          const otherNodes = nodes.filter((n) =>
-            isLabel ? n.lineId !== null : n.lineId !== stopLineId,
-          );
           const target = nudgeTarget({
-            source,
-            wSrc: isLabel ? STOP_SIZE : lineWidthOf(doc.lines[stopLineId!]),
-            otherNodes,
+            source: subCell,
+            wSrc: subSource.kind === 'label' ? STOP_SIZE : lineWidthOf(doc.lines[subSource.lineId]),
+            otherNodes: otherLayoutNodes(stationLayoutNodes(subStation, doc.lines), subSource),
             basis: e.shiftKey ? 'diagonal' : 'orthogonal',
             stationRotation: rotation,
             arrow: { row: Math.sign(dy), col: Math.sign(dx) },
           });
           if (!target) return;
-          const dRow = target.row - source.row;
-          const dCol = target.col - source.col;
-          const group = beginHistoryGroup();
-          fanOutMirrored(subStation.id, (sid, k) => {
+          const dRow = target.row - subCell.row;
+          const dCol = target.col - subCell.col;
+          dispatchMirrored(subStation.id, (sid, k) => {
             // Local-frame deltas rotate by the match's layoutOffset so the
             // world-frame edit mirrors the source (same as the inspector).
             const d = rotateGridDelta(dRow, dCol, k);
-            if (isLabel) doc.moveLabel(sid, d.dRow, d.dCol);
-            else doc.moveStop(sid, stopLineId!, d.dRow, d.dCol);
+            if (subSource.kind === 'label') doc.moveLabel(sid, d.dRow, d.dCol);
+            else doc.moveStop(sid, subSource.lineId, d.dRow, d.dCol);
           });
-          group.commit();
           return;
         }
         // Locked stations, bullets, labels, and polygons don't move.
@@ -465,14 +454,12 @@ export default function App() {
         if (subStation && (sel.selectedStopLineId || sel.labelSelected)) {
           e.preventDefault();
           const stopLineId = sel.selectedStopLineId;
-          const group = beginHistoryGroup();
-          fanOutMirrored(subStation.id, (sid) => {
+          dispatchMirrored(subStation.id, (sid) => {
             // Rotation cycles are relative, hence frame-invariant across
             // mirror matches — no per-match transform.
             if (sel.labelSelected) doc.rotateLabel(sid);
             else if (stopLineId) doc.rotateStop(sid, stopLineId);
           });
-          group.commit();
         }
         return;
       }

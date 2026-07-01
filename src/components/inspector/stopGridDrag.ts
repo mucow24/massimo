@@ -1,8 +1,8 @@
 // Pure helpers and constants for the stop/label lattice editing logic — kept
 // out of the components so they can be unit-tested without React Testing
 // Library, and consumed by Playwright e2e helpers without pulling in React.
-// Shared by the StopGrid mini-canvas, the keyboard nudge (App.tsx), and the
-// on-canvas station editing overlays.
+// Shared by the keyboard nudge (App.tsx) and the on-canvas station editing
+// surfaces (useLabelDrag / useStationLayoutDrag / StationLayoutEditor).
 import {
   latticeOffsets,
   projectScreenToLocal,
@@ -12,13 +12,9 @@ import {
   type RowCol,
 } from '../../geometry/lattice';
 import { rotateBy, tangentGap, STOP_SIZE, type Rotation } from '../../geometry/orientation';
+import { lineWidthOf } from '../../model/lineWidth';
+import type { Line, Station } from '../../model/types';
 export { sameCell, CELL_EPS } from '../../geometry/lattice';
-
-/** Inspector-local pixels per unit in row/col space. A default-width node's
- *  circle radius = PITCH/2, so two default-width nodes at unit distance are
- *  tangent in the editor; non-default-width nodes scale their radius (and
- *  their tangency distance) by width/STOP_SIZE. */
-export const PITCH = 22;
 
 const dist = (a: RowCol, b: RowCol): number => Math.hypot(a.row - b.row, a.col - b.col);
 
@@ -101,6 +97,51 @@ export const ORIENTATION_GLYPH: Record<
 /** A stop/label node with its effective width in world units (a stop's is
  *  its line's width; the label cell is unit-sized = STOP_SIZE). */
 export type WidthNode = RowCol & { w: number };
+
+/** A station lattice node: width-annotated cell + which line owns it
+ *  (null = the label cell). */
+export type LayoutNode = WidthNode & { lineId: string | null };
+
+export type LayoutSource = { kind: 'stop'; lineId: string } | { kind: 'label' };
+
+/**
+ * Every lattice node of a station with its effective width: one per stop
+ * (the line's width) plus the label cell (unit width). The single source of
+ * truth for "what can a stop/label be tangent to" — the drag hooks and the
+ * keyboard nudge must all build their node lists here so their reachable
+ * slots can never diverge.
+ */
+export function stationLayoutNodes(
+  station: Pick<Station, 'stops' | 'label'>,
+  lines: Record<string, Line>,
+): LayoutNode[] {
+  return [
+    ...station.stops.map((s) => ({
+      row: s.row,
+      col: s.col,
+      w: lineWidthOf(lines[s.lineId]),
+      lineId: s.lineId as string | null,
+    })),
+    { row: station.label.row, col: station.label.col, w: STOP_SIZE, lineId: null },
+  ];
+}
+
+/** The non-source nodes for a drag/nudge: anchor candidates + overlap filter. */
+export function otherLayoutNodes(nodes: readonly LayoutNode[], source: LayoutSource): LayoutNode[] {
+  return nodes.filter((n) =>
+    source.kind === 'label' ? n.lineId !== null : n.lineId !== source.lineId,
+  );
+}
+
+/** The dragged/nudged node's own cell, or null when it no longer exists. */
+export function sourceCellOf(
+  station: Pick<Station, 'stops' | 'label'>,
+  source: LayoutSource,
+): RowCol | null {
+  if (source.kind === 'label') return { row: station.label.row, col: station.label.col };
+  const cell = station.stops.find((s) => s.lineId === source.lineId);
+  return cell ? { row: cell.row, col: cell.col } : null;
+}
 
 export interface GhostSpec {
   /** The dragged/nudged node's own effective width. */

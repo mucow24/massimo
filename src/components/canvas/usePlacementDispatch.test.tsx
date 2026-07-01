@@ -188,3 +188,22 @@ describe('usePlacementDispatch', () => {
     expect(useSelection.getState().uiMode.kind).toBe('idle');
   });
 });
+
+describe('handleCanvasPlace — editing-station-layout', () => {
+  it('a background click exits the mode but KEEPS the station selected', () => {
+    resetSelection({ kind: 'idle' });
+    useSelection.getState().startEditingStationLayout('A');
+    expect(useSelection.getState().selectedStationIds).toEqual(['A']);
+
+    const { result } = renderHook(() => usePlacementDispatch(fakeView));
+    let handled = false;
+    act(() => {
+      handled = result.current.handleCanvasPlace(pointerEvent({ clientX: 500, clientY: 500 }));
+    });
+
+    expect(handled).toBe(true);
+    expect(useSelection.getState().uiMode.kind).toBe('idle');
+    // Unlike the other modes' cancel paths, the inspector stays open.
+    expect(useSelection.getState().selectedStationIds).toEqual(['A']);
+  });
+});

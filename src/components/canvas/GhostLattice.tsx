@@ -1,6 +1,6 @@
 import type { Station } from '../../model/types';
 import { localToWorld, stopCenterAt } from '../../geometry/orientation';
-import type { RowCol } from '../../geometry/lattice';
+import { sameCell, type RowCol } from '../../geometry/lattice';
 
 /**
  * Ghost-lattice overlay shared by the on-canvas label drag and the station
@@ -30,8 +30,7 @@ export function GhostLattice({
     <g pointerEvents="none">
       {ghosts.map((g) => {
         const p = toWorld(g);
-        const isOver =
-          over && Math.abs(over.row - g.row) < 1e-4 && Math.abs(over.col - g.col) < 1e-4;
+        const isOver = !!over && sameCell(over, g);
         if (isOver) {
           return (
             <circle

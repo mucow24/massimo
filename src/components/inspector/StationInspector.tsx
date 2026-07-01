@@ -48,16 +48,18 @@ export function StationInspector({ id }: { id: StationId }) {
   const hasSelection = !!(selection.selectedStopLineId || selection.labelSelected);
 
   // Standard deselect for the canvas sub-selection (the layout-editor ring +
-  // keyboard-nudge target): Escape, or mousedown outside the stop rows.
-  // Canvas handle clicks re-assert the selection on pointerup (the layout-
-  // editor and label-drag hooks select AFTER this document-level mousedown
-  // clear), so acting on a stop from the map survives; clicks on other
-  // inspector fields or the sidebar genuinely deselect.
+  // keyboard-nudge target): mousedown outside the stop rows. Canvas handle
+  // clicks re-assert the selection on pointerup (the layout-editor and
+  // label-drag hooks select AFTER this document-level mousedown clear), so
+  // acting on a stop from the map survives; clicks on other inspector fields
+  // or the sidebar genuinely deselect. Escape is handled by the hosting
+  // StationPopover's step-out ladder, NOT here — two Escape listeners over
+  // the same state would race on attachment order.
   const clearStopSelection = useCallback(() => {
     selection.setSelectedStopLineId(null);
     selection.setLabelSelected(false);
   }, [selection]);
-  useDismiss(hasSelection, clearStopSelection, [stopRowsRef]);
+  useDismiss(hasSelection, clearStopSelection, [stopRowsRef], { escape: false });
 
   if (!station) return null;
 

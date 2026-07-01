@@ -54,9 +54,12 @@ async function orientationGlyphFor(page: Page, stationId: string): Promise<strin
     '[data-cell-row="0"][data-cell-col="0"][data-cell-kind="stop"][data-line-id="L1"]',
   );
   await expect(cell).toBeVisible();
-  // The cell <g> contains both a glyph <text> and a <title> sibling, so
-  // scope to the <text> child to read just the glyph.
-  return (await cell.locator('text').textContent()) ?? '';
+  const glyph = (await cell.locator('text').textContent()) ?? '';
+  // Exit the layout-edit mode before the caller moves to the NEXT station —
+  // the mode pins the station popover to the top-right of the canvas, where
+  // it would swallow the click selecting a station that projects under it.
+  await page.keyboard.press('Escape');
+  return glyph;
 }
 
 test.describe('Legacy dotShape migration on load (v6 → v7)', () => {

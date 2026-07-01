@@ -125,3 +125,18 @@ describe('<StationLayoutEditor />', () => {
     expect(l2?.getAttribute('data-selected')).toBe('true');
   });
 });
+
+describe('<StationLayoutEditor /> — hand mode passes through', () => {
+  it('handles and shield drop pointer events so drag-to-pan works', () => {
+    seed();
+    useSelection.setState({ ...useSelection.getState(), toolMode: 'hand' });
+    const { container, onStartNodeDrag } = renderEditor();
+    const l1 = container.querySelector('[data-cell-kind="stop"][data-line-id="L1"]') as Element;
+    fireEvent.pointerDown(l1, { button: 0 });
+    expect(onStartNodeDrag).not.toHaveBeenCalled();
+    // The hit surfaces are pointer-transparent in hand mode.
+    expect(l1.querySelector('circle')?.getAttribute('pointer-events')).toBe('none');
+    const shield = container.querySelector('[data-layout-shield]') as Element;
+    expect(shield.getAttribute('pointer-events')).toBe('none');
+  });
+});

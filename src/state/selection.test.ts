@@ -757,3 +757,35 @@ describe('editing-station-layout mode', () => {
     expect(RIGHT_CLICK_PASSTHROUGH_MODES.has('editing-station-layout')).toBe(true);
   });
 });
+
+describe('editing-station-layout mode — selection reconciliation', () => {
+  it('shift-click toggle onto ANOTHER station exits the mode', () => {
+    useSelection.getState().startEditingStationLayout('A' as StationId);
+    useSelection.getState().toggleStationSelection('B' as StationId);
+    expect(useSelection.getState().uiMode.kind).toBe('idle');
+  });
+
+  it('toggling the edited station itself OFF exits the mode', () => {
+    useSelection.getState().startEditingStationLayout('A' as StationId);
+    useSelection.getState().toggleStationSelection('A' as StationId);
+    expect(useSelection.getState().uiMode.kind).toBe('idle');
+  });
+
+  it('setStationSelection away from the edited station exits; to it alone keeps it', () => {
+    useSelection.getState().startEditingStationLayout('A' as StationId);
+    useSelection.getState().setStationSelection(['A'] as StationId[]);
+    expect(useSelection.getState().uiMode.kind).toBe('editing-station-layout');
+    useSelection.getState().setStationSelection(['B', 'C'] as StationId[]);
+    expect(useSelection.getState().uiMode.kind).toBe('idle');
+  });
+
+  it('add / xor extensions exit the mode too', () => {
+    useSelection.getState().startEditingStationLayout('A' as StationId);
+    useSelection.getState().addStationsToSelection(['B'] as StationId[]);
+    expect(useSelection.getState().uiMode.kind).toBe('idle');
+
+    useSelection.getState().startEditingStationLayout('A' as StationId);
+    useSelection.getState().xorStationsToSelection(['B'] as StationId[]);
+    expect(useSelection.getState().uiMode.kind).toBe('idle');
+  });
+});

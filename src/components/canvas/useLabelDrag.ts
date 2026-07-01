@@ -1,4 +1,4 @@
-import { RefObject, useCallback, useRef, useState } from 'react';
+import { RefObject, useCallback, useEffect, useRef, useState } from 'react';
 import { beginHistoryGroup, useDoc, useSelection } from '../../state/store';
 import type { StationId } from '../../model/types';
 import type { Vec2 } from '../../geometry/vec';
@@ -12,7 +12,7 @@ import {
 import { screenDeltaToLabelOffsets } from '../../geometry/labelLayout';
 import { resolveOffsetPerp } from '../../model/transforms';
 import { lineWidthOf } from '../../model/lineWidth';
-import { findMatchingStations, type LayoutOffset } from '../../model/matching';
+import { captureMirrorTargets, type MirrorTarget } from '../../state/mirrorDispatch';
 import {
   computeGhosts,
   findDropTarget,
@@ -49,14 +49,19 @@ type StartOffsets = { offset: number; offsetPerp: number };
 /**
  * Drag the painted station name on the main canvas (armed by StationHitArea
  * when the station is the sole selection). Plain drag = coarse cell
- * placement over the same ghost lattice the StopGrid uses (Shift toggles
+ * placement over the same ghost lattice the StopGrid used (Shift toggles
  * the diagonal basis), committed via moveLabel on drop; Alt = fine mode,
  * live-writing setLabelOffset / setLabelOffsetPerp so the text tracks the
  * cursor 1:1 (leaving Alt restores the gesture-start offsets first, so the
- * two modes never compound). Mirror matching fans out to the matches
- * captured at gesture START — capturing late would fail, because the first
- * write to the source station changes its layout and dissolves the match.
- * One history entry per gesture (dragGesture lifecycle).
+ * two modes never compound). Modifier presses re-run the computation even
+ * with the cursor stationary (window key listeners), so the lattice basis /
+ * fine mode flips the moment Shift/Alt changes.
+ *
+ * Mirror matching fans out to the matches captured at gesture START —
+ * capturing late would fail, because the first write to the source station
+ * changes its layout and dissolves the match. Offsets apply as a DELTA per
+ * match (each keeps its own hand-tuned base), matching the keyboard
+ * Alt-nudge. One history entry per gesture (dragGesture lifecycle).
  */
 export function useLabelDrag(
   svgRef: RefObject<SVGSVGElement | null>,
@@ -71,16 +76,29 @@ export function useLabelDrag(
     overlayRef.current = v;
     setOverlayState(v);
   };
+  // screenToWorld is a FRESH closure every render (it closes over that
+  // render's committed viewport). onStartLabelDrag must stay referentially
+  // stable for the memoized StationViews, so it reads the projection through
+  // this ref — capturing the prop directly in a []-dep callback would freeze
+  // the mount-time camera and teleport the label after any pan/zoom.
+  const screenToWorldRef = useRef(screenToWorld);
+  useEffect(() => {
+    screenToWorldRef.current = screenToWorld;
+  }, [screenToWorld]);
   const dragRef = useRef<{
     id: StationId;
     startMX: number;
     startMY: number;
     moved: boolean;
     startWorld: Vec2;
+    // Latest pointer position — modifier-key presses recompute from it.
+    lastMX: number;
+    lastMY: number;
     // Source first, then mirror matches — the fan-out targets for the whole
     // gesture. layoutOffset rotates cell deltas into each match's frame.
-    targets: { id: StationId; layoutOffset: LayoutOffset }[];
-    // Per-target gesture-start offsets, for Alt-mode restore on mode exit.
+    targets: MirrorTarget[];
+    // Per-target gesture-start offsets: the base for delta application and
+    // the restore point when leaving Alt mode.
     startOffsets: Map<StationId, StartOffsets>;
     offsetsDirty: boolean;
     history: ReturnType<typeof beginHistoryGroup>;
@@ -90,13 +108,7 @@ export function useLabelDrag(
     const doc = useDoc.getState();
     const st = doc.stations[id];
     if (!st) return;
-    const matches = useSelection.getState().mirrorMatching
-      ? findMatchingStations({ stations: doc.stations, lines: doc.lines }, id)
-      : [];
-    const targets: { id: StationId; layoutOffset: LayoutOffset }[] = [
-      { id, layoutOffset: 0 },
-      ...matches.map((m) => ({ id: m.id, layoutOffset: m.layoutOffset })),
-    ];
+    const targets = captureMirrorTargets(id);
     const startOffsets = new Map<StationId, StartOffsets>();
     for (const t of targets) {
       const s = doc.stations[t.id];
@@ -112,13 +124,14 @@ export function useLabelDrag(
       startMX: e.clientX,
       startMY: e.clientY,
       moved: false,
-      startWorld: screenToWorld(e.clientX, e.clientY),
+      startWorld: screenToWorldRef.current(e.clientX, e.clientY),
+      lastMX: e.clientX,
+      lastMY: e.clientY,
       targets,
       startOffsets,
       offsetsDirty: false,
       history: beginHistoryGroup(),
     };
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   const restoreOffsets = (ds: NonNullable<typeof dragRef.current>) => {
@@ -132,34 +145,34 @@ export function useLabelDrag(
     ds.offsetsDirty = false;
   };
 
-  const onPointerMove = (e: React.PointerEvent) => {
+  // The whole per-frame computation, parameterized so both pointermove and a
+  // stationary modifier press can drive it. Reads only refs + live stores.
+  const update = (clientX: number, clientY: number, altKey: boolean, shiftKey: boolean) => {
     const ds = dragRef.current;
-    if (!ds) return;
-    const { moved } = trackDragMove(ds, e, svgRef);
-    if (!moved) return;
+    if (!ds || !ds.moved) return;
+    ds.lastMX = clientX;
+    ds.lastMY = clientY;
     const doc = useDoc.getState();
     const st = doc.stations[ds.id];
     if (!st) return;
     const rotation = (st.rotation % 8) as Rotation;
 
-    if (e.altKey) {
-      // Fine mode: absolute offsets from the gesture-start world delta,
-      // decomposed onto the label's reading axes — the text tracks the
-      // cursor exactly. Broadcast the source's absolute values (offsets are
-      // rotation-invariant, same convention as the inspector's sliders).
-      const world = screenToWorld(e.clientX, e.clientY);
+    if (altKey) {
+      // Fine mode: offsets from the gesture-start world delta, decomposed
+      // onto the label's reading axes — the text tracks the cursor exactly.
+      // Applied as a DELTA per target so each mirror match keeps its own
+      // hand-tuned base offsets.
+      const world = screenToWorldRef.current(clientX, clientY);
       const { dOffset, dPerp } = screenDeltaToLabelOffsets(
         { x: world.x - ds.startWorld.x, y: world.y - ds.startWorld.y },
         rotation,
         st.label.rotation,
       );
-      const start = ds.startOffsets.get(ds.id);
-      if (!start) return;
-      const offset = start.offset + dOffset;
-      const offsetPerp = start.offsetPerp + dPerp;
       for (const t of ds.targets) {
-        doc.setLabelOffset(t.id, offset);
-        doc.setLabelOffsetPerp(t.id, offsetPerp);
+        const start = ds.startOffsets.get(t.id);
+        if (!start) continue;
+        doc.setLabelOffset(t.id, start.offset + dOffset);
+        doc.setLabelOffsetPerp(t.id, start.offsetPerp + dPerp);
       }
       ds.offsetsDirty = true;
       setOverlay({ stationId: ds.id, mode: 'fine', ghosts: [], over: null });
@@ -169,7 +182,7 @@ export function useLabelDrag(
     // Ghost mode. If a previous Alt phase wrote offsets, undo it first so
     // the two modes never compound within one gesture.
     if (ds.offsetsDirty) restoreOffsets(ds);
-    const world = screenToWorld(e.clientX, e.clientY);
+    const world = screenToWorldRef.current(clientX, clientY);
     const local = worldDirToLocal({ x: world.x - st.x, y: world.y - st.y }, rotation);
     const cursor: RowCol = { row: local.y / STOP_SIZE, col: local.x / STOP_SIZE };
     const stopNodes: WidthNode[] = st.stops.map((s) => ({
@@ -183,7 +196,7 @@ export function useLabelDrag(
           wSrc: STOP_SIZE,
           anchor,
           otherNodes: stopNodes,
-          basis: e.shiftKey ? 'diagonal' : 'orthogonal',
+          basis: shiftKey ? 'diagonal' : 'orthogonal',
           stationRotation: rotation,
           gridRadius: GRID_RADIUS,
         })
@@ -199,6 +212,40 @@ export function useLabelDrag(
       over: over ? { row: over.row, col: over.col } : null,
     });
   };
+  // Latest `update` for the window key listeners (assigned in an effect —
+  // writing a ref during render trips react-hooks/refs).
+  const updateRef = useRef(update);
+  useEffect(() => {
+    updateRef.current = update;
+  });
+
+  // Stationary modifier tracking: Shift flips the lattice basis and Alt
+  // enters/leaves fine mode the moment the key changes, without waiting for
+  // the next pointermove (parity with the StopGrid's useShiftHeld).
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key !== 'Shift' && e.key !== 'Alt') return;
+      const ds = dragRef.current;
+      if (!ds || !ds.moved) return;
+      // Keep a mid-drag Alt press from focusing the browser menu bar.
+      if (e.key === 'Alt' && e.type === 'keydown') e.preventDefault();
+      updateRef.current(ds.lastMX, ds.lastMY, e.altKey, e.shiftKey);
+    };
+    window.addEventListener('keydown', onKey);
+    window.addEventListener('keyup', onKey);
+    return () => {
+      window.removeEventListener('keydown', onKey);
+      window.removeEventListener('keyup', onKey);
+    };
+  }, []);
+
+  const onPointerMove = (e: React.PointerEvent) => {
+    const ds = dragRef.current;
+    if (!ds) return;
+    const { moved } = trackDragMove(ds, e, svgRef);
+    if (!moved) return;
+    update(e.clientX, e.clientY, e.altKey, e.shiftKey);
+  };
 
   const onPointerUp = (e: React.PointerEvent) => {
     const ds = dragRef.current;
@@ -210,13 +257,13 @@ export function useLabelDrag(
       const doc = useDoc.getState();
       const st = doc.stations[ds.id];
       if (st && ds.offsetsDirty) {
-        // Fine mode ended the gesture: keep the live offsets, rounded to
-        // integers so the inspector's number fields stay tidy.
-        const offset = Math.round(st.label.offset);
-        const offsetPerp = Math.round(resolveOffsetPerp(st.label));
+        // Fine mode ended the gesture: keep each target's live offsets,
+        // rounded to integers so the inspector's number fields stay tidy.
         for (const t of ds.targets) {
-          doc.setLabelOffset(t.id, offset);
-          doc.setLabelOffsetPerp(t.id, offsetPerp);
+          const cur = doc.stations[t.id];
+          if (!cur) continue;
+          doc.setLabelOffset(t.id, Math.round(cur.label.offset));
+          doc.setLabelOffsetPerp(t.id, Math.round(resolveOffsetPerp(cur.label)));
         }
       } else if (st && finalOverlay?.mode === 'ghost' && finalOverlay.over) {
         const dRow = finalOverlay.over.row - st.label.row;

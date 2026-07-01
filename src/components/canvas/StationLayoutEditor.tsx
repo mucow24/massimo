@@ -5,17 +5,15 @@ import { STOP_SIZE, stopCenterAt } from '../../geometry/orientation';
 import { cellsAABBLocal } from '../../geometry/stationBoundary';
 import { labelLayoutLocal } from '../../geometry/labelLayout';
 import { stopHalfOf, lineWidthOf } from '../../model/lineWidth';
+import { resolveDotSize } from '../../model/dotSize';
 import { resolveStationLabelWeight } from '../../model/transforms';
-import { ORIENTATION_GLYPH } from '../inspector/stopGridDrag';
+import { ORIENTATION_GLYPH, sameCell } from '../inspector/stopGridDrag';
 import type { LayoutDragSource } from './useStationLayoutDrag';
 
 // Handles never shrink below this screen size, however far out the view is
 // zoomed — the mini-canvas's "grab targets scale away" failure mode is the
 // exact thing this editor exists to fix.
 const MIN_HANDLE_PX = 10;
-// Extra shield reach past the cells AABB so oversized dot glyphs (per-stop
-// dotSize overrides) can't poke out into station-drag territory.
-const SHIELD_PAD = STOP_SIZE;
 
 /**
  * The on-canvas station layout editor (editing-station-layout mode): a grab
@@ -56,6 +54,13 @@ export function StationLayoutEditor({
   const angle = station.rotation * 45;
   const stopHalf = stopHalfOf(lines);
   const cellsBox = cellsAABBLocal(station, stopHalf);
+  // Shield reach past the cells AABB: at least one cell, and at least the
+  // biggest dot's painted radius — an oversized per-stop dotSize override is
+  // a live station click target, and any exposed ring would re-enable the
+  // near-miss whole-station right-click the shield exists to swallow.
+  const maxDotR =
+    station.stops.reduce((m, s) => Math.max(m, resolveDotSize(lines[s.lineId], s)), 0) / 2;
+  const shieldPad = Math.max(STOP_SIZE, maxDotR);
   const {
     anchorX: labelAnchorX,
     anchorY: labelAnchorY,
@@ -123,10 +128,10 @@ export function StationLayoutEditor({
       {/* Shield: swallow station-level interactions under the editor. */}
       <rect
         data-layout-shield="1"
-        x={cellsBox.x - SHIELD_PAD}
-        y={cellsBox.y - SHIELD_PAD}
-        width={cellsBox.w + 2 * SHIELD_PAD}
-        height={cellsBox.h + 2 * SHIELD_PAD}
+        x={cellsBox.x - shieldPad}
+        y={cellsBox.y - shieldPad}
+        width={cellsBox.w + 2 * shieldPad}
+        height={cellsBox.h + 2 * shieldPad}
         fill="transparent"
         pointerEvents={inHandMode ? 'none' : 'all'}
         {...shieldHandlers}
@@ -149,10 +154,7 @@ export function StationLayoutEditor({
         const c = stopCenterAt(s.row, s.col);
         const r = Math.max(lineWidthOf(lines[s.lineId]) / 2, MIN_HANDLE_PX / zoom);
         const selected = selection.selectedStopLineId === s.lineId;
-        const isSwap =
-          !!swapTarget &&
-          Math.abs(swapTarget.row - s.row) < 1e-4 &&
-          Math.abs(swapTarget.col - s.col) < 1e-4;
+        const isSwap = !!swapTarget && sameCell(swapTarget, s);
         return (
           <g
             key={`h-${s.lineId}`}

@@ -124,3 +124,14 @@ describe('StationHitArea — label drag fork (sole-selected station)', () => {
     expect(onStartDrag).toHaveBeenCalledTimes(1);
   });
 });
+
+describe('StationHitArea — modifier clicks keep station-selection semantics', () => {
+  it('shift-click on the armed label rect toggles the station selection, not the label', () => {
+    seed();
+    const { container } = renderHitArea();
+    fireEvent.click(labelRect(container), { shiftKey: true });
+    // Shift-click = toggle membership: the sole-selected station deselects.
+    expect(useSelection.getState().selectedStationIds).toEqual([]);
+    expect(useSelection.getState().labelSelected).toBe(false);
+  });
+});

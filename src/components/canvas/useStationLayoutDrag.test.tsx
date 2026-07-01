@@ -183,3 +183,31 @@ describe('useStationLayoutDrag — mirror matching', () => {
     expect(historyDepth()).toBe(1);
   });
 });
+
+describe('useStationLayoutDrag — stationary Shift flips the lattice basis', () => {
+  it('window Shift keydown mid-drag recomputes ghosts without a pointermove', () => {
+    seed({ a: hubStation() });
+    const { ref } = fakeSvgRef();
+    const { result } = renderHook(() => useStationLayoutDrag(ref, identity));
+
+    down(result, 'a', { kind: 'stop', lineId: 'L1' }, pointerEvent({ clientX: 100, clientY: 100 }));
+    move(result, pointerEvent({ clientX: 100, clientY: 86 }));
+    // Orthogonal basis: the straight-up slot (-1, 0) is a ghost.
+    const hasCell = (row: number, col: number) =>
+      !!result.current.overlay?.ghosts.some(
+        (g) => Math.abs(g.row - row) < 1e-3 && Math.abs(g.col - col) < 1e-3,
+      );
+    expect(hasCell(-1, 0)).toBe(true);
+
+    // Press Shift with the cursor STATIONARY: the diagonal basis replaces the
+    // cardinals (tangent diagonals at ±√2/2).
+    act(() => {
+      window.dispatchEvent(
+        Object.assign(new KeyboardEvent('keydown', { key: 'Shift', shiftKey: true }), {}),
+      );
+    });
+    expect(hasCell(-1, 0)).toBe(false);
+    expect(hasCell(-Math.SQRT1_2, 1 - Math.SQRT1_2)).toBe(true);
+    up(result, pointerEvent({ clientX: 100, clientY: 86, shiftKey: true }));
+  });
+});

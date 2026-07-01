@@ -126,3 +126,63 @@ describe('ItemPopovers — station popover', () => {
     expect(top).toBeLessThanOrEqual(600);
   });
 });
+
+describe('ItemPopovers — station popover, layout-edit interplay', () => {
+  const seedStation = () => {
+    useDoc.setState({
+      ...useDoc.getState(),
+      ...DEFAULT_DOC,
+      stations: {
+        a: {
+          id: 'a',
+          name: 'Alpha',
+          x: 0,
+          y: 0,
+          rotation: 0,
+          stops: [{ lineId: 'L1', row: 0, col: 0, orientation: 'auto-vertical' }],
+          label: { row: 0, col: -1, rotation: 0, offset: 0, align: 'auto', valign: 'middle' },
+        },
+      },
+      lines: {
+        L1: { id: 'L1', service: '1', name: '1 line', color: '#111111', stations: ['a'] },
+      },
+      lineOrder: ['L1'],
+    });
+    useSelection.getState().selectStation('a');
+  };
+
+  afterEach(() => {
+    useSelection.getState().selectStation(null);
+    useSelection.getState().setUiMode({ kind: 'idle' });
+  });
+
+  it('pins to the top-right of the host during layout-edit so it cannot cover the handles', () => {
+    seedStation();
+    act(() => useSelection.getState().startEditingStationLayout('a'));
+    render(<ItemPopovers view={committedView} />);
+    const el = document.querySelector('.station-popover') as HTMLElement;
+    expect(el).not.toBeNull();
+    // Host is 800 wide; popover is 320 wide + 8px edge pad.
+    expect(el.style.left).toBe('472px');
+    expect(el.style.top).toBe('8px');
+  });
+
+  it('Escape with an active stop/label sub-selection clears IT, keeping the popover', () => {
+    seedStation();
+    render(<ItemPopovers view={committedView} />);
+    act(() => useSelection.getState().setLabelSelected(true));
+    act(() => {
+      document.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true }));
+    });
+    // Sub-selection cleared (via the inspector's useDismiss), station kept.
+    expect(useSelection.getState().labelSelected).toBe(false);
+    expect(useSelection.getState().selectedStationIds).toEqual(['a']);
+    expect(document.querySelector('.station-popover')).not.toBeNull();
+
+    // A second Escape (no sub-selection) closes the editor.
+    act(() => {
+      document.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true }));
+    });
+    expect(useSelection.getState().selectedStationIds).toEqual([]);
+  });
+});
