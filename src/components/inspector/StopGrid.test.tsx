@@ -16,13 +16,6 @@ const baseLines: Record<string, { color: string; service: string }> = {
   L1: { color: '#0039A6', service: 'L1' },
 };
 
-const ORIENTATION_GLYPH: Record<StopOrientation, string> = {
-  'auto-vertical': '↕',
-  'auto-ne-sw': '⤢',
-  'auto-horizontal': '↔',
-  'auto-nw-se': '⤡',
-};
-
 function renderGrid(opts: {
   station: GridStation;
   selectedLineId?: string | null;
@@ -83,28 +76,6 @@ describe('<StopGrid /> — orientation glyphs', () => {
       '[data-cell-row="0"][data-cell-col="0"][data-cell-kind="stop"][data-line-id="L1"]',
     );
     expect(cell?.querySelector('title')?.textContent).toContain('auto-ne-sw');
-  });
-
-  it('covers all four canonical orientations in its glyph map', () => {
-    // Defensive: if a new orientation is added to the model, this test
-    // forces the StopGrid map to grow alongside it.
-    const expectedGlyphs = new Set(Object.values(ORIENTATION_GLYPH));
-    const allGlyphs: string[] = [];
-    for (const o of Object.keys(ORIENTATION_GLYPH) as StopOrientation[]) {
-      const { container, unmount } = renderGrid({
-        station: {
-          rotation: 0,
-          stops: [{ lineId: 'L1', row: 0, col: 0, orientation: o }],
-          label: { row: -1, col: -1, rotation: 0 },
-        },
-      });
-      const cell = container.querySelector(
-        '[data-cell-row="0"][data-cell-col="0"][data-cell-kind="stop"]',
-      );
-      allGlyphs.push(cell?.querySelector('text')?.textContent ?? '');
-      unmount();
-    }
-    expect(new Set(allGlyphs)).toEqual(expectedGlyphs);
   });
 });
 

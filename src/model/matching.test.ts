@@ -339,16 +339,35 @@ describe('findMatchingStations', () => {
   });
 
   it('matching is symmetric: a in matches(b) iff b in matches(a)', () => {
-    // Property check across a few representative configurations.
+    // Heterogeneous config so the symmetry property is actually load-bearing:
+    // s1/s2/s4 are identical single-L1-stop layouts (they match each other),
+    // while s3 carries a second L2 stop so it matches NOBODY here. All four
+    // share L1, so every station is a candidate of every other — the misses
+    // are decided by layout identity, not candidacy. That means for the
+    // (s1,s3)-style pairs the expected answer is `false` on BOTH sides, so an
+    // asymmetric bug (a matches b but b doesn't match a) would flip exactly
+    // one side and fail. The old all-identical fixture made every pair `true`
+    // both ways, so the assertion reduced to `true === true` and could never
+    // catch asymmetry.
     const doc = makeDoc({
       stations: [
         makeStation({ id: 's1', stops: [makeStop('L1')] }),
         makeStation({ id: 's2', stops: [makeStop('L1')] }),
-        makeStation({ id: 's3', stops: [makeStop('L1')] }),
+        makeStation({ id: 's3', stops: [makeStop('L1'), makeStop('L2', { col: 1 })] }),
+        makeStation({ id: 's4', stops: [makeStop('L1')] }),
       ],
-      lines: [makeLine({ id: 'L1', stations: ['s1', 's2', 's3'] })],
+      lines: [
+        makeLine({ id: 'L1', stations: ['s1', 's2', 's3', 's4'] }),
+        makeLine({ id: 'L2', stations: ['s3'] }),
+      ],
     });
-    const ids = ['s1', 's2', 's3'];
+    const ids = ['s1', 's2', 's3', 's4'];
+    // Sanity-check the fixture is genuinely mixed (some matches, some misses),
+    // otherwise the symmetry loop below would be vacuous again.
+    expect(new Set(findMatchingStations(doc, 's1').map((m) => m.id))).toEqual(
+      new Set(['s2', 's4']),
+    );
+    expect(findMatchingStations(doc, 's3')).toEqual([]);
     for (const a of ids) {
       const ma = new Set(findMatchingStations(doc, a).map((m) => m.id));
       for (const b of ids) {
@@ -446,7 +465,14 @@ describe('findMatchingStations', () => {
       ],
       lines: [makeLine({ id: 'L1', stations: ['A', 'B'] })],
     });
-    expect(findMatchingStations(doc, 'A').map((m) => m.id)).toEqual(['B']);
+    const fromA = findMatchingStations(doc, 'A');
+    expect(fromA.map((m) => m.id)).toEqual(['B']);
+    // layoutOffset is "how many 90°-steps to rotate the CANDIDATE's layout to
+    // align it onto the source". B sits one +step ahead of A, so realigning B
+    // back onto A needs 3 steps; from B's side, A needs 1. Both are the ODD
+    // offsets that the existing 0/2 layoutOffset test never exercises.
+    expect(fromA[0].layoutOffset).toBe(3);
+    expect(findMatchingStations(doc, 'B')[0].layoutOffset).toBe(1);
   });
 
   it('returned matches carry the layoutOffset needed to align them', () => {

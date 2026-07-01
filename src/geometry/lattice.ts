@@ -1,4 +1,5 @@
 import { rotateBy, type Rotation } from './orientation';
+import { SQRT2_2 } from './vec';
 
 // A position in row/col space (the StopGrid's coordinate system, where one
 // unit equals one stop diameter).
@@ -18,8 +19,6 @@ export type RowCol = { row: number; col: number };
 //   origin.
 export type LatticeBasis = 'orthogonal' | 'diagonal';
 
-const HALF_SQRT2 = Math.SQRT1_2;
-
 /**
  * (2·radius + 1)² − 1 offsets centered on (0, 0), excluding the origin,
  * in the chosen basis. Output is in the same coordinate system as the
@@ -37,7 +36,7 @@ export function latticeOffsets(basis: LatticeBasis, radius: number): RowCol[] {
         // a·NE + b·SE with NE = (-√2/2, +√2/2), SE = (+√2/2, +√2/2):
         //   dRow = a·(-√2/2) + b·(+√2/2) = (b - a)·√2/2
         //   dCol = a·(+√2/2) + b·(+√2/2) = (a + b)·√2/2
-        out.push({ row: (b - a) * HALF_SQRT2, col: (a + b) * HALF_SQRT2 });
+        out.push({ row: (b - a) * SQRT2_2, col: (a + b) * SQRT2_2 });
       }
     }
   }

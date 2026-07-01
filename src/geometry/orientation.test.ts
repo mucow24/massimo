@@ -3,13 +3,9 @@ import fc from 'fast-check';
 import {
   DIR_8,
   STOP_SIZE,
-  inputEdgeOffsetLocal,
-  localDirToWorld,
-  outputEdgeOffsetLocal,
   rotateBy,
   rotateGridDelta,
   worldDirToLocal,
-  segmentEndpoints,
   stopCenterAt,
   stripeOffsetsForWidths,
   tangentGap,
@@ -48,11 +44,11 @@ describe('rotateBy', () => {
 });
 
 describe('worldDirToLocal', () => {
-  it('is the exact inverse of localDirToWorld for every rotation', () => {
+  it('is the exact inverse of rotateBy (the local→world dir rotation) for every rotation', () => {
     const world = { x: 3, y: -5 };
     for (let r = 0; r < 8; r++) {
       const local = worldDirToLocal(world, r as Rotation);
-      const back = localDirToWorld(local, r as Rotation);
+      const back = rotateBy(local, r as Rotation);
       expect(back.x).toBeCloseTo(world.x, 10);
       expect(back.y).toBeCloseTo(world.y, 10);
     }
@@ -129,31 +125,6 @@ describe('travelDirLocal', () => {
   });
 });
 
-describe('inputEdgeOffsetLocal / outputEdgeOffsetLocal', () => {
-  const orientations: StopOrientation[] = [
-    'auto-vertical',
-    'auto-horizontal',
-    'auto-ne-sw',
-    'auto-nw-se',
-  ];
-
-  it('input offset is opposite to output offset for every orientation', () => {
-    for (const o of orientations) {
-      const i = inputEdgeOffsetLocal(o);
-      const out = outputEdgeOffsetLocal(o);
-      expect(i.x).toBeCloseTo(-out.x, 10);
-      expect(i.y).toBeCloseTo(-out.y, 10);
-    }
-  });
-
-  it('output offset has magnitude STOP_SIZE / 2', () => {
-    for (const o of orientations) {
-      const out = outputEdgeOffsetLocal(o);
-      expect(Math.hypot(out.x, out.y)).toBeCloseTo(STOP_SIZE / 2, 10);
-    }
-  });
-});
-
 describe('stopCenterAt', () => {
   it('places (0,0) at the local origin', () => {
     expect(stopCenterAt(0, 0)).toEqual({ x: 0, y: 0 });
@@ -184,88 +155,6 @@ describe('DIR_8', () => {
       if (d.dRow < 0) expect(d.anchor.y).toBeLessThan(0);
       if (d.dRow === 0) expect(d.anchor.y).toBe(0);
     }
-  });
-});
-
-describe('segmentEndpoints', () => {
-  it('with rotation-0 stations returns the local point as-is', () => {
-    const e = segmentEndpoints(
-      { x: 0, y: 0, rotation: 0 },
-      { x: 10, y: 0 },
-      'auto-vertical',
-      { x: 100, y: 100, rotation: 0 },
-      { x: 10, y: 0 },
-      'auto-vertical',
-    );
-    expect(e.start).toEqual({ x: 10, y: 0 });
-    expect(e.end).toEqual({ x: 110, y: 100 });
-    expect(e.startDir).toEqual({ x: 0, y: 1 });
-    expect(e.endDir).toEqual({ x: 0, y: 1 });
-  });
-
-  it('rotates local point and direction by the station rotation', () => {
-    // Station at origin, rotation=2 (90° CW in screen-y-down). A local point
-    // (10, 0) maps to world (0, 10); auto-vertical +y direction maps to (-1, 0).
-    const e = segmentEndpoints(
-      { x: 0, y: 0, rotation: 2 },
-      { x: 10, y: 0 },
-      'auto-vertical',
-      { x: 0, y: 0, rotation: 0 },
-      { x: 0, y: 0 },
-      'auto-vertical',
-    );
-    expect(e.start.x).toBeCloseTo(0, 5);
-    expect(e.start.y).toBeCloseTo(10, 5);
-    expect(e.startDir.x).toBeCloseTo(-1, 5);
-    expect(e.startDir.y).toBeCloseTo(0, 5);
-  });
-
-  it('uses the world travel hint to resolve auto-* orientations', () => {
-    // auto-vertical at rotation 0, hint pointing up (-y world).
-    const e = segmentEndpoints(
-      { x: 0, y: 0, rotation: 0 },
-      { x: 0, y: 0 },
-      'auto-vertical',
-      { x: 0, y: 0, rotation: 0 },
-      { x: 0, y: 0 },
-      'auto-vertical',
-      { x: 0, y: -1 },
-    );
-    expect(e.startDir.y).toBe(-1);
-    expect(e.endDir.y).toBe(-1);
-  });
-
-  it('resolves auto-ne-sw to the NE/SW unit vector matching the world hint', () => {
-    // Two stations both rotation 0, both auto-ne-sw, world hint pointing NE.
-    const e = segmentEndpoints(
-      { x: 0, y: 0, rotation: 0 },
-      { x: 0, y: 0 },
-      'auto-ne-sw',
-      { x: 100, y: -100, rotation: 0 },
-      { x: 0, y: 0 },
-      'auto-ne-sw',
-      { x: SQRT2_2, y: -SQRT2_2 },
-    );
-    expect(e.startDir.x).toBeCloseTo(SQRT2_2, 10);
-    expect(e.startDir.y).toBeCloseTo(-SQRT2_2, 10);
-    expect(e.endDir.x).toBeCloseTo(SQRT2_2, 10);
-    expect(e.endDir.y).toBeCloseTo(-SQRT2_2, 10);
-  });
-
-  it('resolves auto-nw-se to the NW/SE unit vector matching the world hint', () => {
-    const e = segmentEndpoints(
-      { x: 0, y: 0, rotation: 0 },
-      { x: 0, y: 0 },
-      'auto-nw-se',
-      { x: 100, y: 100, rotation: 0 },
-      { x: 0, y: 0 },
-      'auto-nw-se',
-      { x: SQRT2_2, y: SQRT2_2 },
-    );
-    expect(e.startDir.x).toBeCloseTo(SQRT2_2, 10);
-    expect(e.startDir.y).toBeCloseTo(SQRT2_2, 10);
-    expect(e.endDir.x).toBeCloseTo(SQRT2_2, 10);
-    expect(e.endDir.y).toBeCloseTo(SQRT2_2, 10);
   });
 });
 

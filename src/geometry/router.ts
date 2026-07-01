@@ -453,6 +453,17 @@ export function emitOffsetSegments(verts: Vec2[], R: number, offset: number): Of
     const inDir = norm(sub(verts[i], verts[i - 1]));
     const outDir = norm(sub(verts[i + 1], verts[i]));
     const cz = inDir.x * outDir.y - inDir.y * outDir.x;
+    // Offset stripes are concentric arcs sharing the centerline's fillet
+    // center, so a stripe's radius is the centerline radius ± its offset
+    // distance — and the sign is what keeps the band parallel through the
+    // bend. A stripe on the INSIDE of the corner rides a tighter (smaller)
+    // arc; one on the OUTSIDE rides a wider one. `cz` is the turn direction
+    // (cz > 0 = left/CCW), `offset` is the signed perpendicular distance
+    // (negative = right of travel): the stripe sits on the inside exactly
+    // when the turn and the offset point the same way, i.e. a left turn with
+    // a right-side stripe, or a right turn with a left-side stripe. Get this
+    // backwards and every interlined curve inverts (inner and outer stripes
+    // swap), so it's pinned by the interlining golden snapshot.
     const onInside = (cz > 0 && offset < 0) || (cz < 0 && offset > 0);
     const r = rs[i] + (onInside ? -Math.abs(offset) : Math.abs(offset));
 
