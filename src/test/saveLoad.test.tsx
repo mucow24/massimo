@@ -59,6 +59,29 @@ describe('save/load round-trip', () => {
     }
   });
 
+  it('save path (pickDocSnapshot) round-trips the map name', () => {
+    // Mirror Toolbar.tsx onSave exactly: serialize(pickDocSnapshot(state)). If
+    // `name` isn't part of DOC_FIELDS, pickDocSnapshot drops it, the serialized
+    // doc has no name, and parse() fills the 'Untitled map' default instead of
+    // the custom name — so this guards the DOC_FIELDS wiring.
+    useDoc.setState({ ...useDoc.getState(), name: 'North Shore Line' });
+    const json = serialize(pickDocSnapshot(useDoc.getState()));
+    const result = parse(json);
+    expect(result.ok).toBe(true);
+    if (result.ok) {
+      expect(result.doc.name).toBe('North Shore Line');
+    }
+  });
+
+  it('legacy files (no name field) parse with the "Untitled map" default', () => {
+    const legacy = legacyEnvelope();
+    const result = parse(legacy);
+    expect(result.ok).toBe(true);
+    if (result.ok) {
+      expect(result.doc.name).toBe('Untitled map');
+    }
+  });
+
   it('rejects malformed JSON without throwing', () => {
     expect(() => parse('garbage{')).not.toThrow();
     const r = parse('garbage{');

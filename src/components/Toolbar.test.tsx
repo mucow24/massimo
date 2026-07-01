@@ -110,6 +110,15 @@ describe('Toolbar — tool + view toggles', () => {
   });
 });
 
+describe('Toolbar — map name field', () => {
+  it('renders the editable map name flanked by dividers', () => {
+    render(<Toolbar />);
+    const field = screen.getByRole('button', { name: 'Untitled map' });
+    expect(field.previousElementSibling).toHaveClass('tool-group-divider');
+    expect(field.nextElementSibling).toHaveClass('tool-group-divider');
+  });
+});
+
 describe('Toolbar — Add menu', () => {
   it('Add → Stations enters placing-station mode', async () => {
     const user = userEvent.setup();

@@ -28,9 +28,22 @@ export function getCanvasSvg(): SVGSVGElement | null {
   return document.querySelector<SVGSVGElement>('.canvas-host > svg');
 }
 
-/** Date-stamped base filename shared by save + export (e.g. map-2026-05-31). */
-export function mapFileBasename(): string {
-  return `map-${new Date().toISOString().slice(0, 10)}`;
+// Strip the characters Windows/macOS/Linux collectively reject in filenames
+// (< > : " / \ | ? *) and trim surrounding whitespace, so a map name can be
+// folded into a download basename safely.
+function sanitizeBasename(name: string): string {
+  return name.replace(/[<>:"/\\|?*]/g, '').trim();
+}
+
+/**
+ * Name-stamped base filename shared by save + export, e.g.
+ * "My Subway Map - 2026-05-31". The sanitized map name leads (falling back to
+ * "map" when it's empty or all-illegal) so successive saves stay grouped, and
+ * the date keeps them distinct and sortable.
+ */
+export function mapFileBasename(name: string): string {
+  const date = new Date().toISOString().slice(0, 10);
+  return `${sanitizeBasename(name) || 'map'} - ${date}`;
 }
 
 /** Trigger a browser download of `blob` as `filename`. */
@@ -134,19 +147,21 @@ export async function buildExportSvg(
   return { svg, width: pxW, height: pxH };
 }
 
-/** Export the current map as a downloaded SVG file. */
-export async function exportCanvasSvg(source: SVGSVGElement, background: string): Promise<void> {
+/** Export the current map as a downloaded SVG file named `${basename}.svg`. */
+export async function exportCanvasSvg(
+  source: SVGSVGElement,
+  background: string,
+  basename: string,
+): Promise<void> {
   const { svg } = await buildExportSvg(source, { background });
-  downloadBlob(
-    new Blob([svg], { type: 'image/svg+xml;charset=utf-8' }),
-    `${mapFileBasename()}.svg`,
-  );
+  downloadBlob(new Blob([svg], { type: 'image/svg+xml;charset=utf-8' }), `${basename}.svg`);
 }
 
 /** Export the current map as a downloaded PNG file rendered at `scale`× size. */
 export async function exportCanvasPng(
   source: SVGSVGElement,
   background: string,
+  basename: string,
   scale = PNG_SCALE,
 ): Promise<void> {
   // pixelScale bakes the 4× into the SVG's own width/height (viewBox unchanged),
@@ -172,7 +187,7 @@ export async function exportCanvasPng(
       canvas.toBlob(resolve, 'image/png'),
     );
     if (!pngBlob) throw new Error('PNG encoding failed.');
-    downloadBlob(pngBlob, `${mapFileBasename()}.png`);
+    downloadBlob(pngBlob, `${basename}.png`);
   } finally {
     URL.revokeObjectURL(url);
   }

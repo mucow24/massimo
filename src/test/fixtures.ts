@@ -153,6 +153,7 @@ export function makeSvgImage(overrides: Partial<SvgImage> & { id: string }): Svg
 }
 
 export function makeDoc(parts: {
+  name?: string;
   stations?: Station[];
   lines?: Line[];
   lineOrder?: LineId[];
@@ -188,6 +189,7 @@ export function makeDoc(parts: {
   const svgImages: Record<string, SvgImage> = {};
   for (const im of parts.svgImages ?? []) svgImages[im.id] = im;
   return {
+    name: parts.name ?? 'Untitled map',
     stations,
     lines,
     lineOrder: parts.lineOrder ?? Object.keys(lines),

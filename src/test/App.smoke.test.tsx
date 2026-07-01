@@ -1,5 +1,5 @@
 import { describe, it, expect, beforeEach } from 'vitest';
-import { render, screen } from '@testing-library/react';
+import { act, render, screen } from '@testing-library/react';
 import App from '../App';
 import { useDoc } from '../state/store';
 
@@ -22,5 +22,19 @@ describe('App smoke', () => {
   it('exposes an Options button in the toolbar', () => {
     render(<App />);
     expect(screen.getByRole('button', { name: 'Options' })).toBeInTheDocument();
+  });
+
+  it('sets the window title from the map name on mount', () => {
+    useDoc.setState({ ...useDoc.getState(), name: 'Regional Rail' });
+    render(<App />);
+    expect(document.title).toBe('Massimo - Regional Rail');
+  });
+
+  it('updates the window title when the map name changes', () => {
+    render(<App />);
+    act(() => {
+      useDoc.getState().setDocName('North Shore Line');
+    });
+    expect(document.title).toBe('Massimo - North Shore Line');
   });
 });

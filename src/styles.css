@@ -180,6 +180,17 @@ select {
   z-index: 1;
 }
 
+/* Keep every toolbar item at its natural width instead of letting them
+   compress into one another as the window narrows. Without this the map-name
+   button collapses first (its overflow:hidden drops its flex min-width to 0),
+   so the name appears to slide behind its neighbors. Pinning the widths means
+   the app's normal window scrollbar simply appears sooner — as soon as the
+   bar's natural width exceeds the viewport. (The .spacer keeps flex:1 via its
+   own more-specific rule, so the right-hand controls still push to the edge.) */
+.toolbar > * {
+  flex-shrink: 0;
+}
+
 .toolbar button {
   background: #fff;
   border: 1px solid #bbb;
@@ -686,6 +697,39 @@ select {
   vertical-align: middle;
 }
 
+/* Click-to-edit map name, sitting between two dividers after "Massimo".
+   The resting state reads like a label (transparent, underline-on-hover);
+   clicking swaps in the input below. */
+.toolbar button.map-name {
+  background: transparent;
+  border: 0;
+  border-radius: 0;
+  padding: 4px 2px;
+  font-family: inherit;
+  font-weight: 500;
+  font-size: 13px;
+  color: #111;
+  cursor: text;
+  max-width: 220px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.toolbar button.map-name:hover {
+  background: transparent;
+  text-decoration: underline;
+  text-underline-offset: 3px;
+}
+.toolbar input.map-name-input {
+  font-family: inherit;
+  font-weight: 500;
+  font-size: 13px;
+  padding: 3px 5px;
+  width: 180px;
+  border: 1px solid #bbb;
+  border-radius: 4px;
+}
+
 .shape-picker {
   position: relative;
   display: inline-flex;
@@ -1172,6 +1216,15 @@ input[type='range'].indeterminate {
 }
 .app[data-theme='dark'] .tool-group-divider {
   background: #444;
+}
+.app[data-theme='dark'] .toolbar button.map-name {
+  background: transparent;
+  color: #e4e4e4;
+}
+.app[data-theme='dark'] .toolbar input.map-name-input {
+  background: #2a2a2a;
+  border-color: #444;
+  color: #e4e4e4;
 }
 
 .app[data-theme='dark'] .toolbar button.menu-trigger {

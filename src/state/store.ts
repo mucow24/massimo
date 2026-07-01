@@ -55,6 +55,7 @@ const DROP_OFFSET = 15;
 // pickDocSnapshot, and the change-detection equality check in
 // beginHistoryGroup. Adding a new doc field is a one-line edit here.
 const DOC_FIELDS = [
+  'name',
   'stations',
   'lines',
   'lineOrder',
@@ -318,6 +319,7 @@ interface DocState extends MapDoc {
   moveSvgImageDown: (id: string) => void;
   deleteSvgImage: (id: string) => void;
 
+  setDocName: (name: string) => void;
   setCurveRadius: (r: number) => void;
   setLabelFontSize: (n: number) => void;
   setLabelWeight: (w: TextLabelWeight) => void;
@@ -590,6 +592,7 @@ export const useDoc = create<DocState>()(
         moveSvgImageDown: (id) => set((s) => T.moveSvgImageDown(s, id)),
         deleteSvgImage: (id) => set((s) => T.deleteSvgImage(s, id)),
 
+        setDocName: (name) => set((s) => T.setDocName(s, name)),
         setCurveRadius: (r) => set((s) => T.setCurveRadius(s, r)),
         setLabelFontSize: (n) => set((s) => T.setLabelFontSize(s, n)),
         setLabelWeight: (w) => set((s) => T.setLabelWeight(s, w)),

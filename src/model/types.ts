@@ -390,6 +390,11 @@ export type SvgImageStylePatch = Partial<
 >;
 
 export interface MapDoc {
+  // User-facing document name. Shown in the toolbar, the window title, and the
+  // export/save filename. Never empty at runtime: absent in a loaded file (or
+  // older save) fills from DEFAULT_DOC ('Untitled map') via the same merge that
+  // backfills every other scalar field, so no migration is needed.
+  name: string;
   stations: Record<StationId, Station>;
   lines: Record<LineId, Line>;
   // Z-order, top-of-list (index 0) renders LAST = on top, à la Photoshop layers.

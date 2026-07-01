@@ -90,7 +90,13 @@ export const LABEL_WEIGHT_NAMES: readonly { value: TextLabelWeight; name: string
 
 export const LABEL_WEIGHT_DEFAULT: TextLabelWeight = 400;
 
+// Default document name for a fresh (or nameless legacy) map. Also the value the
+// name field falls back to when the user clears it. Single source of truth for
+// the DEFAULT_DOC merge, the toolbar field, and the empty-name guard.
+export const MAP_NAME_DEFAULT = 'Untitled map';
+
 export const DEFAULT_DOC: MapDoc = {
+  name: MAP_NAME_DEFAULT,
   stations: {},
   lines: {},
   lineOrder: [],
@@ -1336,6 +1342,14 @@ export function moveLineInOrder(doc: MapDoc, id: LineId, dir: -1 | 1): MapDoc {
 
 export function setCurveRadius(doc: MapDoc, r: number): MapDoc {
   return { ...doc, curveRadius: r };
+}
+
+// Rename the document. No-op guard (returns the same reference) so an unchanged
+// name — e.g. the field committing on blur without an edit — records no history
+// entry, matching the other scalar setters.
+export function setDocName(doc: MapDoc, name: string): MapDoc {
+  if (name === doc.name) return doc;
+  return { ...doc, name };
 }
 
 // Clamps at the bottom only; the spinbutton accepts sizes beyond the slider's
