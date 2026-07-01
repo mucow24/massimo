@@ -6,6 +6,7 @@ import {
   normalizeWeight,
   collectUsedFontFaces,
   buildEmbeddedFontCss,
+  bytesToBase64,
   type FontFaceSpec,
 } from './fonts';
 
@@ -168,5 +169,22 @@ describe('buildEmbeddedFontCss', () => {
     };
     const css = await buildEmbeddedFontCss(faces, failing);
     expect(css).toBe('');
+  });
+});
+
+describe('bytesToBase64', () => {
+  it('encodes a short payload', () => {
+    // 'hi' — single chunk, sanity check against btoa.
+    expect(bytesToBase64(new Uint8Array([104, 105]))).toBe('aGk=');
+  });
+
+  it('encodes a payload spanning multiple 0x8000-byte chunks', () => {
+    // The whole reason the function exists: chunking so `String.fromCharCode`
+    // never gets an arg list past the call-stack cap on real (100s-of-KB) font
+    // files. A single 'A'*(0x8000+5) input would blow that cap if spread in one
+    // call; here it must cross >=2 chunks and still equal btoa of the same bytes.
+    const n = 0x8000 + 5;
+    const bytes = new Uint8Array(n).fill(65); // 'A'
+    expect(bytesToBase64(bytes)).toBe(btoa('A'.repeat(n)));
   });
 });
