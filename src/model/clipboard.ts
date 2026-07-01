@@ -30,7 +30,7 @@ const VERSION = 2;
 const VALID_SHAPES: ReadonlyArray<RouteBulletShape> = ['circle', 'square', 'diamond'];
 // Helvetica Neue weights we ship — note there is NO 600.
 const VALID_WEIGHTS: ReadonlyArray<TextLabelWeight> = [100, 200, 300, 400, 500, 700, 800, 900];
-const VALID_ALIGNS: ReadonlyArray<TextLabelAlign> = ['left', 'center', 'right'];
+const VALID_ALIGNS: ReadonlyArray<TextLabelAlign> = ['left', 'center', 'right', 'justify'];
 const HEX7 = /^#[0-9a-fA-F]{6}$/;
 
 export function writeClipboard(items: ClipPayload[]): string {
@@ -178,6 +178,12 @@ function parseTextLabelData(raw: unknown): Omit<TextLabel, 'id'> | null {
   if (typeof d.darkColor !== 'string' || !HEX7.test(d.darkColor)) return null;
   // Optional: reject a present-but-wrong type; leave an absent flag absent.
   if (d.locked !== undefined && typeof d.locked !== 'boolean') return null;
+  // Optional column width (0/absent = Auto). Reject a present-but-invalid value.
+  if (
+    d.width !== undefined &&
+    (typeof d.width !== 'number' || !Number.isFinite(d.width) || d.width < 0)
+  )
+    return null;
   const out: Omit<TextLabel, 'id'> = {
     x: d.x,
     y: d.y,
@@ -191,6 +197,7 @@ function parseTextLabelData(raw: unknown): Omit<TextLabel, 'id'> | null {
     darkColor: d.darkColor,
   };
   if (d.locked !== undefined) out.locked = d.locked as boolean;
+  if (d.width !== undefined) out.width = d.width as number;
   return out;
 }
 

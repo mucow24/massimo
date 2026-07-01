@@ -151,6 +151,10 @@ export function resolveStationLabelWeight(
 // preview, and tests share a single source of truth.
 export const TEXT_LABEL_FONT_SIZE_MIN = 1;
 export const TEXT_LABEL_FONT_SIZE_MAX = 96;
+// Column-width slider ceiling (world units). 0 = Auto (size to content, manual
+// line breaks). The spinbutton accepts larger values; updateTextLabel clamps
+// only at 0.
+export const TEXT_LABEL_WIDTH_MAX = 800;
 // Default day/night text colors for new labels. Kept as independent literals
 // (not imported from state/theme.ts — the pure model must not pull in the
 // zustand store) but chosen to match the historical theme label colors so
@@ -1653,19 +1657,26 @@ export function updateTextLabel(
         TEXT_LABEL_FONT_SIZE_MIN,
         Math.round(patch.fontSize / FONT_SIZE_STEP) * FONT_SIZE_STEP,
       );
-      nextPatch = { ...patch, fontSize: clamped };
+      nextPatch = { ...nextPatch, fontSize: clamped };
+    }
+    // Clamp the column width to a non-negative integer (0 = Auto). Callers
+    // (slider, spinbutton, paste) can't push it negative or fractional.
+    if (typeof patch.width === 'number') {
+      nextPatch = { ...nextPatch, width: Math.max(0, Math.round(patch.width)) };
     }
     let next = { ...cur, ...nextPatch };
     // Re-anchor whenever a resize-affecting property changes — text content,
-    // font size, weight, or italic. The label's (x, y) is the bbox CENTER, so
-    // without this the box would grow symmetrically out of the center and drift
-    // on every edit. Skipped when the caller explicitly sets x or y (e.g. a
-    // drag): then the move is intentional.
+    // font size, weight, italic, or the column width (which changes both the
+    // box width and, via re-wrapping, the height). The label's (x, y) is the
+    // bbox CENTER, so without this the box would grow symmetrically out of the
+    // center and drift on every edit. Skipped when the caller explicitly sets x
+    // or y (e.g. a drag): then the move is intentional.
     const resizes =
       nextPatch.text !== undefined ||
       nextPatch.fontSize !== undefined ||
       nextPatch.weight !== undefined ||
-      nextPatch.italic !== undefined;
+      nextPatch.italic !== undefined ||
+      nextPatch.width !== undefined;
     const movedExplicitly = nextPatch.x !== undefined || nextPatch.y !== undefined;
     if (resizes && !movedExplicitly) {
       const before = measureTextLabel(cur);

@@ -1,0 +1,103 @@
+import { describe, it, expect, beforeAll, afterAll, beforeEach } from 'vitest';
+import { render } from '@testing-library/react';
+import { LabelView } from './LabelView';
+import { useDoc } from '../state/store';
+import { useViewportStore } from '../state/viewportStore';
+import { DEFAULT_DOC } from '../model/transforms';
+import { measureTextLabel, _clearTextMeasureCache } from '../geometry/textMeasure';
+import { makeTextLabel } from '../test/fixtures';
+import type { TextLabel } from '../model/types';
+
+// Fixed 10px glyphs so every line's ink width === length * 10 and justify
+// offsets are exact.
+const CHAR = 10;
+function fakeMeasureText(s: string) {
+  const advance = s.length * CHAR;
+  const lead = (/^\s*/.exec(s)?.[0].length ?? 0) * CHAR;
+  const trail = (/\s*$/.exec(s)?.[0].length ?? 0) * CHAR;
+  const hasInk = s.trim().length > 0;
+  return {
+    width: advance,
+    actualBoundingBoxLeft: hasInk ? -lead : 0,
+    actualBoundingBoxRight: hasInk ? advance - trail : 0,
+  };
+}
+let originalGetContext: typeof HTMLCanvasElement.prototype.getContext;
+beforeAll(() => {
+  originalGetContext = HTMLCanvasElement.prototype.getContext;
+  HTMLCanvasElement.prototype.getContext = function () {
+    return { font: '', measureText: fakeMeasureText } as unknown as CanvasRenderingContext2D;
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  } as any;
+});
+afterAll(() => {
+  HTMLCanvasElement.prototype.getContext = originalGetContext;
+});
+beforeEach(() => {
+  _clearTextMeasureCache();
+  useDoc.setState({ ...useDoc.getState(), ...DEFAULT_DOC });
+  useViewportStore.setState({ darkMode: false });
+});
+
+function lineTexts(container: HTMLElement, i: number) {
+  return Array.from(container.querySelectorAll(`[data-label-line="${i}"] text`));
+}
+const renderLabel = (label: TextLabel) =>
+  render(
+    <svg>
+      <LabelView label={label} selected={false} />
+    </svg>,
+  ).container;
+
+describe('<LabelView /> — justify', () => {
+  it('splits an interior narrower line into words flush to both box edges', () => {
+    const label = makeTextLabel({
+      id: 'g1',
+      x: 0,
+      y: 0,
+      fontSize: 10,
+      align: 'justify',
+      text: 'aa bb\naaaa bbbb cccc',
+    });
+    const halfW = measureTextLabel(label).width / 2; // widest line = 14 * 10 = 140 → 70
+    const c = renderLabel(label);
+
+    const line0 = lineTexts(c, 0);
+    expect(line0.map((t) => t.textContent)).toEqual(['aa', 'bb']);
+    const x0 = parseFloat(line0[0].getAttribute('x')!);
+    const xLast = parseFloat(line0[1].getAttribute('x')!);
+    expect(x0).toBeCloseTo(-halfW, 5); // first ink flush left
+    expect(xLast + CHAR * 2).toBeCloseTo(halfW, 5); // last word right edge flush right
+
+    // The widest/last line is left as one run (never justified).
+    const line1 = lineTexts(c, 1);
+    expect(line1.map((t) => t.textContent)).toEqual(['aaaa bbbb cccc']);
+  });
+
+  it('does not justify a single-line label (it is its own last line)', () => {
+    const c = renderLabel(
+      makeTextLabel({ id: 'g1', fontSize: 10, align: 'justify', text: 'aa bb cc' }),
+    );
+    expect(lineTexts(c, 0).map((t) => t.textContent)).toEqual(['aa bb cc']);
+  });
+
+  it('wraps to a column and justifies interior wrapped lines', () => {
+    const label = makeTextLabel({
+      id: 'g1',
+      x: 0,
+      y: 0,
+      fontSize: 10,
+      align: 'justify',
+      width: 60,
+      text: 'aa bb ccccc',
+    });
+    const c = renderLabel(label);
+    // Wrapped into ['aa bb', 'ccccc'].
+    const line0 = lineTexts(c, 0);
+    expect(line0.map((t) => t.textContent)).toEqual(['aa', 'bb']);
+    expect(parseFloat(line0[0].getAttribute('x')!)).toBeCloseTo(-30, 5);
+    expect(parseFloat(line0[1].getAttribute('x')!) + CHAR * 2).toBeCloseTo(30, 5);
+    // Last wrapped line of the paragraph stays ragged (one run).
+    expect(lineTexts(c, 1).map((t) => t.textContent)).toEqual(['ccccc']);
+  });
+});
