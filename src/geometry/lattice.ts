@@ -1,9 +1,16 @@
 import { rotateBy, type Rotation } from './orientation';
 import { SQRT2_2 } from './vec';
 
-// A position in row/col space (the StopGrid's coordinate system, where one
-// unit equals one stop diameter).
+// A position in row/col space (the station-local cell coordinate system,
+// where one unit equals one stop diameter).
 export type RowCol = { row: number; col: number };
+
+/** Floating-point epsilon for cell-equality comparisons — row/col are not
+ *  integer (diagonal lattice steps are ±√2/2). */
+export const CELL_EPS = 1e-4;
+
+export const sameCell = (a: RowCol, b: RowCol): boolean =>
+  Math.abs(a.row - b.row) < CELL_EPS && Math.abs(a.col - b.col) < CELL_EPS;
 
 // Lattice basis around the origin in (row, col) space:
 //

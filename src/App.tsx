@@ -20,6 +20,12 @@ import {
   type ClipPayload,
 } from './model/clipboard';
 import { _clearTextMeasureCache } from './geometry/textMeasure';
+import { screenDeltaToLabelOffsets } from './geometry/labelLayout';
+import { STOP_SIZE, rotateGridDelta, type Rotation } from './geometry/orientation';
+import { lineWidthOf } from './model/lineWidth';
+import { resolveOffsetPerp } from './model/transforms';
+import { nudgeTarget } from './components/inspector/stopGridDrag';
+import { fanOutMirrored } from './state/mirrorDispatch';
 import { useViewportStore } from './state/viewportStore';
 import { redo, undo } from './state/history';
 
@@ -229,6 +235,86 @@ export default function App() {
           }
           return;
         }
+        // A selected stop or label cell (the station sub-selection driven by
+        // the layout editor) takes priority over whole-station nudging:
+        // arrows hop the stop/label one lattice slot in the pressed SCREEN
+        // direction (Shift = the diagonal lattice, matching Shift-drag);
+        // Alt+arrows fine-nudge the LABEL's offsets in screen pixels
+        // (Shift ×5, matching the station-nudge step). The station stays
+        // put. Allowed on locked stations — lock protects against canvas
+        // drags/deletes, not layout edits (inspector-parity).
+        const subStation =
+          sel.selectedStationIds.length === 1 ? doc.stations[sel.selectedStationIds[0]] : null;
+        if (subStation && (sel.selectedStopLineId || sel.labelSelected)) {
+          e.preventDefault();
+          const rotation = (subStation.rotation % 8) as Rotation;
+          if (sel.labelSelected && e.altKey) {
+            const { dOffset, dPerp } = screenDeltaToLabelOffsets(
+              { x: dx, y: dy },
+              rotation,
+              subStation.label.rotation,
+            );
+            // Offsets are rotation-invariant across mirror matches (same
+            // convention as the inspector's offset sliders). One group per
+            // press: a diagonal reading axis writes BOTH offset fields.
+            const group = beginHistoryGroup();
+            fanOutMirrored(subStation.id, (sid) => {
+              const st = useDoc.getState().stations[sid];
+              if (!st) return;
+              doc.setLabelOffset(sid, st.label.offset + dOffset);
+              doc.setLabelOffsetPerp(sid, resolveOffsetPerp(st.label) + dPerp);
+            });
+            group.commit();
+            return;
+          }
+          const isLabel = sel.labelSelected;
+          const stopLineId = sel.selectedStopLineId;
+          const srcStop = isLabel
+            ? null
+            : (subStation.stops.find((s) => s.lineId === stopLineId) ?? null);
+          const source = isLabel
+            ? { row: subStation.label.row, col: subStation.label.col }
+            : srcStop && { row: srcStop.row, col: srcStop.col };
+          if (!source) return;
+          const nodes = [
+            ...subStation.stops.map((s) => ({
+              row: s.row,
+              col: s.col,
+              w: lineWidthOf(doc.lines[s.lineId]),
+              lineId: s.lineId as string | null,
+            })),
+            {
+              row: subStation.label.row,
+              col: subStation.label.col,
+              w: STOP_SIZE,
+              lineId: null as string | null,
+            },
+          ];
+          const otherNodes = nodes.filter((n) =>
+            isLabel ? n.lineId !== null : n.lineId !== stopLineId,
+          );
+          const target = nudgeTarget({
+            source,
+            wSrc: isLabel ? STOP_SIZE : lineWidthOf(doc.lines[stopLineId!]),
+            otherNodes,
+            basis: e.shiftKey ? 'diagonal' : 'orthogonal',
+            stationRotation: rotation,
+            arrow: { row: Math.sign(dy), col: Math.sign(dx) },
+          });
+          if (!target) return;
+          const dRow = target.row - source.row;
+          const dCol = target.col - source.col;
+          const group = beginHistoryGroup();
+          fanOutMirrored(subStation.id, (sid, k) => {
+            // Local-frame deltas rotate by the match's layoutOffset so the
+            // world-frame edit mirrors the source (same as the inspector).
+            const d = rotateGridDelta(dRow, dCol, k);
+            if (isLabel) doc.moveLabel(sid, d.dRow, d.dCol);
+            else doc.moveStop(sid, stopLineId!, d.dRow, d.dCol);
+          });
+          group.commit();
+          return;
+        }
         // Locked stations, bullets, labels, and polygons don't move.
         const stationIds = unlockedSelectedStationIds();
         const bulletIds = unlockedSelectedRouteBulletIds();
@@ -365,6 +451,29 @@ export default function App() {
           .filter((id): id is string => id != null);
         group.commit();
         useSelection.getState().setMixedSelection({ bullets, labels, polygons, svgImages });
+        return;
+      }
+      // R rotates the selected stop's orientation (4-state axis cycle) or
+      // the selected label (8×45°) — the keyboard twin of the layout
+      // editor's right-click cycle. Only bound while a stop/label is the
+      // active sub-selection, so the key stays free otherwise.
+      if (!inFormControl && !mod && (e.key === 'r' || e.key === 'R')) {
+        const sel = useSelection.getState();
+        const doc = useDoc.getState();
+        const subStation =
+          sel.selectedStationIds.length === 1 ? doc.stations[sel.selectedStationIds[0]] : null;
+        if (subStation && (sel.selectedStopLineId || sel.labelSelected)) {
+          e.preventDefault();
+          const stopLineId = sel.selectedStopLineId;
+          const group = beginHistoryGroup();
+          fanOutMirrored(subStation.id, (sid) => {
+            // Rotation cycles are relative, hence frame-invariant across
+            // mirror matches — no per-match transform.
+            if (sel.labelSelected) doc.rotateLabel(sid);
+            else if (stopLineId) doc.rotateStop(sid, stopLineId);
+          });
+          group.commit();
+        }
         return;
       }
       if (!inFormControl && !mod && (e.key === 'a' || e.key === 'A')) {

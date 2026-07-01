@@ -1024,6 +1024,49 @@ select {
 .btn-mini:hover:not(:disabled) {
   background: #f0f0f0;
 }
+/* Toggle buttons that carry a persistent on/off state (B/I). The components
+   have always set .active — this rule finally makes it visible. Blue like
+   list selection, NOT mirror-red (red is reserved for warning-like states,
+   see the wp-on/lock-on comment below). */
+.btn-mini.active {
+  background: #d6e4ff;
+  border-color: #6a8ed6;
+}
+.btn-mini.active:hover:not(:disabled) {
+  background: #c8daff;
+}
+
+/* Segmented state pickers (label align/valign): one button per state, the
+   current state highlighted; a click sets that state directly. Same recipe
+   as the popover .align-btn but sidebar-scoped and fixed-size. */
+.seg-group {
+  display: inline-flex;
+  gap: 4px;
+}
+.seg-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 26px;
+  height: 26px;
+  background: #fff;
+  border: 1px solid #bbb;
+  border-radius: 3px;
+  padding: 0;
+  cursor: pointer;
+}
+.seg-btn:hover:not(:disabled) {
+  background: #f0f0f0;
+}
+.seg-btn.active {
+  background: #d6e4ff;
+  border-color: #6a8ed6;
+}
+.seg-btn:disabled {
+  opacity: 0.4;
+  cursor: not-allowed;
+}
+
 .btn-mini.mirror-on {
   background: #d22;
   border-color: #b81f1f;
@@ -1103,6 +1146,12 @@ input[type='range'].indeterminate {
   font-size: 11px;
   color: var(--ui-label-color);
   margin-top: 4px;
+}
+/* Tiny inline captions in the position row (X/Y letters, rotation readout). */
+.inspector .axis-label {
+  font-size: 11px;
+  color: var(--ui-label-color);
+  user-select: none;
 }
 /* The Line inspector embeds a NumericFieldRow (the popover slider idiom)
    between its .field rows — align its label styling and spacing with the
@@ -1351,6 +1400,23 @@ input[type='range'].indeterminate {
 .app[data-theme='dark'] .btn-mini:hover:not(:disabled) {
   background: #353535;
 }
+.app[data-theme='dark'] .btn-mini.active,
+.app[data-theme='dark'] .btn-mini.active:hover:not(:disabled) {
+  background: #27406b;
+  border-color: #6a8ed6;
+}
+.app[data-theme='dark'] .seg-btn {
+  background: #2a2a2a;
+  border-color: #444;
+  color: #e4e4e4;
+}
+.app[data-theme='dark'] .seg-btn:hover:not(:disabled) {
+  background: #353535;
+}
+.app[data-theme='dark'] .seg-btn.active {
+  background: #27406b;
+  border-color: #6a8ed6;
+}
 .app[data-theme='dark'] .btn-mini.icon {
   border-color: transparent;
   color: #777;
@@ -1411,6 +1477,15 @@ input[type='range'].indeterminate {
 .app[data-theme='dark'] .text-label-popover .align-btn:hover,
 .app[data-theme='dark'] .text-label-popover .italic-btn:hover {
   background: #353535;
+}
+/* Active state must out-specify the dark base rules above (which otherwise
+   win over the light-mode .active rules and make the selection invisible). */
+.app[data-theme='dark'] .bullet-popover .shape-btn.active,
+.app[data-theme='dark'] .text-label-popover .shape-btn.active,
+.app[data-theme='dark'] .text-label-popover .align-btn.active,
+.app[data-theme='dark'] .text-label-popover .italic-btn.active {
+  background: #27406b;
+  border-color: #6a8ed6;
 }
 
 .app[data-theme='dark'] .shape-grid {

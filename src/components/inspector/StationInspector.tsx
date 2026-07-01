@@ -1,11 +1,12 @@
 import { useCallback, useMemo, useRef } from 'react';
-import { beginHistoryGroup, useDoc, useSelection } from '../../state/store';
+import { useDoc, useSelection } from '../../state/store';
+import { dispatchMirrored } from '../../state/mirrorDispatch';
 import type { StationId } from '../../model/types';
 import { findMatchingStations, type LayoutOffset } from '../../model/matching';
 import { rotateGridDelta } from '../../geometry/orientation';
 import { StopGrid } from './StopGrid';
 import { LabelOffsetControl } from './LabelOffsetControl';
-import { LabelAlignButton, LabelValignButton } from './LabelAlignButtons';
+import { LabelAlignPicker, LabelValignPicker } from './LabelAlignButtons';
 import { useFieldHistory } from '../useFieldHistory';
 import { useNumericField } from '../useNumericField';
 import { useDismiss } from '../usePopover';
@@ -27,9 +28,7 @@ export function StationInspector({ id }: { id: StationId }) {
   const rotateLabelAction = useDoc((s) => s.rotateLabel);
   const setLabelOffset = useDoc((s) => s.setLabelOffset);
   const setLabelOffsetPerp = useDoc((s) => s.setLabelOffsetPerp);
-  const cycleLabelAlign = useDoc((s) => s.cycleLabelAlign);
   const setLabelAlign = useDoc((s) => s.setLabelAlign);
-  const cycleLabelValign = useDoc((s) => s.cycleLabelValign);
   const setLabelValign = useDoc((s) => s.setLabelValign);
   const setDotStyle = useDoc((s) => s.setDotStyle);
   const setDotSize = useDoc((s) => s.setDotSize);
@@ -53,20 +52,10 @@ export function StationInspector({ id }: { id: StationId }) {
     [stationsAll, linesAll, id],
   );
 
-  // When mirror is on, apply `act` to the selected station (offset 0) and
-  // every matching station (with its own offset). Wrapped in a single
-  // history group so undo collapses the batch into one entry. When off,
-  // behaves like a direct call.
-  const dispatchAll = (act: (sid: StationId, layoutOffset: LayoutOffset) => void) => {
-    if (!selection.mirrorMatching || matches.length === 0) {
-      act(id, 0);
-      return;
-    }
-    const group = beginHistoryGroup();
-    act(id, 0);
-    for (const m of matches) act(m.id, m.layoutOffset);
-    group.commit();
-  };
+  // Mirror-aware dispatch: with mirror on, `act` fans out to every matching
+  // station in one history group (see state/mirrorDispatch.ts).
+  const dispatchAll = (act: (sid: StationId, layoutOffset: LayoutOffset) => void) =>
+    dispatchMirrored(id, act);
 
   const selectedLineId = selection.selectedStopLineId;
   const labelSelected = selection.labelSelected;
@@ -130,16 +119,24 @@ export function StationInspector({ id }: { id: StationId }) {
       </div>
       <div className="field">
         <label>Position &amp; rotation</label>
-        <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
+        <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap', alignItems: 'center' }}>
+          <span className="axis-label" aria-hidden>
+            X
+          </span>
           <input
             type="number"
+            aria-label="X"
             value={Math.round(station.x)}
             onChange={(e) => moveStation(station.id, Number(e.target.value), station.y)}
             style={{ width: 44 }}
             {...xField}
           />
+          <span className="axis-label" aria-hidden>
+            Y
+          </span>
           <input
             type="number"
+            aria-label="Y"
             value={Math.round(station.y)}
             onChange={(e) => moveStation(station.id, station.x, Number(e.target.value))}
             style={{ width: 44 }}
@@ -163,6 +160,9 @@ export function StationInspector({ id }: { id: StationId }) {
           >
             ⟳
           </button>
+          <span className="axis-label" title="Station rotation">
+            {station.rotation * 45}°
+          </span>
           <button
             className={`btn-mini${mirrorOn ? ' mirror-on' : ''}`}
             onClick={() => selection.setMirrorMatching(!mirrorOn)}
@@ -174,7 +174,7 @@ export function StationInspector({ id }: { id: StationId }) {
             }
             aria-pressed={mirrorOn}
           >
-            all
+            {mirrorAvailable ? `Mirror ×${matches.length}` : 'Mirror'}
           </button>
           <div
             ref={shapePickerRef}
@@ -277,40 +277,12 @@ export function StationInspector({ id }: { id: StationId }) {
       </div>
       <div className="field">
         <label>Label</label>
-        <div style={{ display: 'flex', gap: 6 }}>
-          <LabelAlignButton
+        <div style={{ display: 'flex', gap: 6, alignItems: 'center' }}>
+          {/* Clicks are absolute (set, not cycle), so mirror mode is a plain
+              broadcast of the same value — matching stations can't diverge. */}
+          <LabelAlignPicker
             align={station.label.align}
-            onCycle={() => {
-              // Cycle the primary station; in mirror mode, force matching
-              // stations to the SAME resulting align so the group stays in
-              // sync (per-station cycle would diverge if their starts differ).
-              // Whole batch becomes one undo entry.
-              const useMirror = selection.mirrorMatching && matches.length > 0;
-              const group = useMirror ? beginHistoryGroup() : null;
-              cycleLabelAlign(station.id);
-              if (useMirror) {
-                const next = useDoc.getState().stations[station.id]?.label.align;
-                if (next) {
-                  for (const m of matches) setLabelAlign(m.id, next);
-                }
-              }
-              group?.commit();
-            }}
-          />
-          <LabelValignButton
-            valign={station.label.valign}
-            onCycle={() => {
-              const useMirror = selection.mirrorMatching && matches.length > 0;
-              const group = useMirror ? beginHistoryGroup() : null;
-              cycleLabelValign(station.id);
-              if (useMirror) {
-                const next = useDoc.getState().stations[station.id]?.label.valign;
-                if (next) {
-                  for (const m of matches) setLabelValign(m.id, next);
-                }
-              }
-              group?.commit();
-            }}
+            onSet={(v) => dispatchAll((sid) => setLabelAlign(sid, v))}
           />
           <button
             type="button"
@@ -340,6 +312,12 @@ export function StationInspector({ id }: { id: StationId }) {
           >
             <em>I</em>
           </button>
+        </div>
+        <div style={{ display: 'flex', gap: 6, marginTop: 4 }}>
+          <LabelValignPicker
+            valign={station.label.valign}
+            onSet={(v) => dispatchAll((sid) => setLabelValign(sid, v))}
+          />
         </div>
         <div className="field-hint">Offset (along reading direction)</div>
         <LabelOffsetControl

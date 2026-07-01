@@ -294,12 +294,12 @@ describe('<StationInspector /> — shape picker wiring', () => {
 
       render(<StationInspector id="a" />);
       const bold = screen.getByRole('button', { name: 'Bold' });
-      // Same parent (row) as the H/V alignment buttons.
-      const hAlign = screen.getByRole('button', { name: /Label horizontal alignment/i });
-      expect(bold.parentElement).toBe(hAlign.parentElement);
-      // DOM order: H-align → V-align → Bold.
+      // Same parent (row) as the horizontal-align segmented group.
+      const hAlignGroup = screen.getByRole('group', { name: 'Label horizontal alignment' });
+      expect(bold.parentElement).toBe(hAlignGroup.parentElement);
+      // DOM order: align group → Bold.
       const siblings = Array.from(bold.parentElement!.children);
-      expect(siblings.indexOf(bold)).toBeGreaterThan(siblings.indexOf(hAlign));
+      expect(siblings.indexOf(bold)).toBeGreaterThan(siblings.indexOf(hAlignGroup));
     });
 
     it('starts unpressed when the station has no labelBold flag', () => {
@@ -724,10 +724,11 @@ describe('<StationInspector /> — edit paths that reach the document (E8)', () 
     expect(useDoc.getState().stations.a.name).toBe('New Name');
   });
 
-  it('the X and Y inputs each move the station on their own axis', () => {
+  it('the X and Y inputs are labeled and each move the station on their own axis', () => {
     seedStation();
     render(<StationInspector id="a" />);
-    const [xIn, yIn] = screen.getAllByRole('spinbutton') as HTMLInputElement[];
+    const xIn = screen.getByRole('spinbutton', { name: 'X' }) as HTMLInputElement;
+    const yIn = screen.getByRole('spinbutton', { name: 'Y' }) as HTMLInputElement;
     // X input writes x, leaves y.
     fireEvent.change(xIn, { target: { value: '55' } });
     expect(useDoc.getState().stations.a.x).toBe(55);
@@ -738,25 +739,91 @@ describe('<StationInspector /> — edit paths that reach the document (E8)', () 
     expect(useDoc.getState().stations.a.x).toBe(55);
   });
 
-  it('the H-align button cycles label.align (auto → start)', async () => {
+  it('shows the rotation in degrees, tracking rotate clicks', async () => {
+    const user = userEvent.setup();
+    seedStation();
+    render(<StationInspector id="a" />);
+    expect(screen.getByTitle('Station rotation')).toHaveTextContent('0°');
+    await user.click(screen.getByRole('button', { name: 'Rotate +45°' }));
+    await user.click(screen.getByRole('button', { name: 'Rotate +45°' }));
+    expect(screen.getByTitle('Station rotation')).toHaveTextContent('90°');
+  });
+
+  it('the mirror toggle names its match count when neighbors match', () => {
+    useDoc.setState({
+      ...DEFAULT_DOC,
+      ...makeDoc({
+        stations: [
+          makeStation({ id: 'a', stops: [makeStop('L1')] }),
+          makeStation({ id: 'b', stops: [makeStop('L1')] }),
+        ],
+        lines: [makeLine({ id: 'L1', stations: ['a', 'b'] })],
+      }),
+    });
+    useSelection.setState({ ...SELECTION_BLANK, selectedStationIds: ['a'] });
+    render(<StationInspector id="a" />);
+    expect(screen.getByRole('button', { name: 'Mirror ×1' })).toBeEnabled();
+  });
+
+  it('the mirror toggle reads plain "Mirror" and is disabled with no matches', () => {
+    seedStation();
+    render(<StationInspector id="a" />);
+    expect(screen.getByRole('button', { name: 'Mirror' })).toBeDisabled();
+  });
+
+  it('clicking an align segment sets label.align directly (auto → end)', async () => {
     const user = userEvent.setup();
     seedStation();
     expect(useDoc.getState().stations.a.label.align).toBe('auto');
     render(<StationInspector id="a" />);
-    await user.click(screen.getByRole('button', { name: /Label horizontal alignment/i }));
-    expect(useDoc.getState().stations.a.label.align).toBe('start');
+    await user.click(screen.getByRole('button', { name: 'Align: right' }));
+    expect(useDoc.getState().stations.a.label.align).toBe('end');
   });
 
-  it('the V-align button cycles label.valign (auto-down → top)', async () => {
+  it('clicking a valign segment sets label.valign directly (auto-down → bottom)', async () => {
     const user = userEvent.setup();
     seedStation();
     expect(useDoc.getState().stations.a.label.valign).toBe('auto-down');
     render(<StationInspector id="a" />);
-    await user.click(screen.getByRole('button', { name: /Label vertical alignment/i }));
-    expect(useDoc.getState().stations.a.label.valign).toBe('top');
+    await user.click(screen.getByRole('button', { name: 'V-align: bottom' }));
+    expect(useDoc.getState().stations.a.label.valign).toBe('bottom');
   });
 
-  it('H-align with mirror on propagates the SAME align to matching stations in one undo group', async () => {
+  it('the current align/valign segments are marked active (aria-pressed)', () => {
+    seedStation();
+    render(<StationInspector id="a" />);
+    expect(
+      screen.getByRole('button', { name: 'Align: auto (snap against adjacent stop)' }),
+    ).toHaveAttribute('aria-pressed', 'true');
+    expect(screen.getByRole('button', { name: 'Align: right' })).toHaveAttribute(
+      'aria-pressed',
+      'false',
+    );
+    expect(
+      screen.getByRole('button', {
+        name: 'V-align: auto-down (first line on cell, extra lines below)',
+      }),
+    ).toHaveAttribute('aria-pressed', 'true');
+    expect(screen.getByRole('button', { name: 'V-align: top' })).toHaveAttribute(
+      'aria-pressed',
+      'false',
+    );
+  });
+
+  it('clicking the already-active align segment records no history entry', async () => {
+    const user = userEvent.setup();
+    seedStation();
+    useDoc.temporal.getState().clear();
+    const before = historyDepth();
+    render(<StationInspector id="a" />);
+    await user.click(
+      screen.getByRole('button', { name: 'Align: auto (snap against adjacent stop)' }),
+    );
+    expect(useDoc.getState().stations.a.label.align).toBe('auto');
+    expect(historyDepth() - before).toBe(0);
+  });
+
+  it('align segment with mirror on broadcasts the SAME align to matching stations in one undo group', async () => {
     const user = userEvent.setup();
     useDoc.setState({
       ...DEFAULT_DOC,
@@ -777,13 +844,13 @@ describe('<StationInspector /> — edit paths that reach the document (E8)', () 
     const before = historyDepth();
 
     render(<StationInspector id="a" />);
-    await user.click(screen.getByRole('button', { name: /Label horizontal alignment/i }));
+    await user.click(screen.getByRole('button', { name: 'Align: center' }));
 
     const doc = useDoc.getState();
-    expect(doc.stations.a.label.align).toBe('start');
-    // The matching neighbor is forced to the SAME resulting align (setLabelAlign),
-    // not its own cycle.
-    expect(doc.stations.b.label.align).toBe('start');
+    expect(doc.stations.a.label.align).toBe('middle');
+    // The matching neighbor gets the SAME absolute align — clicks are
+    // absolute, so the old cycle-divergence problem cannot occur.
+    expect(doc.stations.b.label.align).toBe('middle');
     // The whole batch collapses to a single undo entry.
     expect(historyDepth() - before).toBe(1);
   });

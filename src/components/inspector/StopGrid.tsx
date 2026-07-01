@@ -1,14 +1,16 @@
 import { useEffect, useRef, useState } from 'react';
 import type { StopOrientation } from '../../model/types';
-import { STOP_SIZE, tangentGap, type Rotation } from '../../geometry/orientation';
-import {
-  latticeOffsets,
-  projectScreenToLocal,
-  type RowCol,
-  type LatticeBasis,
-} from '../../geometry/lattice';
+import { STOP_SIZE, type Rotation } from '../../geometry/orientation';
+import type { RowCol, LatticeBasis } from '../../geometry/lattice';
 import { lineWidthOf } from '../../model/lineWidth';
-import { findDropTarget, nearestNode, PITCH } from './stopGridDrag';
+import {
+  computeGhosts,
+  findDropTarget,
+  nearestNode,
+  sameCell,
+  CELL_EPS as EPS,
+  PITCH,
+} from './stopGridDrag';
 export { PITCH } from './stopGridDrag';
 
 type GridStation = {
@@ -32,10 +34,6 @@ const DRAG_THRESHOLD_PX = 4;
 // How far the lattice extends from the anchor in each axis. 24 candidate
 // positions per mode at GRID_RADIUS = 2.
 const GRID_RADIUS = 2;
-
-// Floating-point epsilon for cell-equality comparisons (row/col are not
-// integer — diagonals use ±√2/2).
-const EPS = 1e-4;
 
 // Padding (in row/col units) so the viewBox always has room for any
 // reachable ghost regardless of drag mode. The diagonal lattice's farthest
@@ -80,9 +78,6 @@ type DragState = {
   // Cursor in (row, col) space — populated once the drag threshold is crossed.
   cursor: RowCol | null;
 };
-
-const sameCell = (a: RowCol, b: RowCol): boolean =>
-  Math.abs(a.row - b.row) < EPS && Math.abs(a.col - b.col) < EPS;
 
 const fmt = (n: number) => n.toFixed(6);
 
@@ -179,48 +174,23 @@ export function StopGrid({
   // size (line width) of the item that will actually land there.
   const dragR = (wSrc / STOP_SIZE) * RADIUS;
 
-  // Generate the ghost lattice in SCREEN frame and project into the SVG's
-  // local frame via the inverse of the station's rotation.
-  //
-  // Orthogonal basis paints as on-screen cardinals + integer diagonals
-  // (corner-touch with a √2 gap); diagonal basis paints as on-screen
-  // tangent-diagonals + √2-distance cardinals. The two lattices are
-  // disjoint in SCREEN frame — the user picks the complementary placement
-  // set they need by toggling Shift.
-  //
-  // Generating in screen frame (and projecting to local) keeps the user-
-  // facing behavior identical at any station rotation; the alternative —
-  // picking the basis based on rotation parity — was a hack that only
-  // worked for multiples of 45°.
+  // Ghost lattice generated in SCREEN frame and projected into the SVG's
+  // local frame (see computeGhosts): orthogonal basis paints as on-screen
+  // cardinals + integer diagonals; diagonal basis as on-screen tangent-
+  // diagonals. The two lattices are disjoint in SCREEN frame — the user
+  // picks the complementary placement set they need by toggling Shift.
   const stationRotation = (station.rotation % 8) as Rotation;
   const basis: LatticeBasis = shiftHeld ? 'diagonal' : 'orthogonal';
-  const ghosts: RowCol[] = [];
-  if (anchor) {
-    // Scale the unit lattice by the drag-pair tangency factor: ring-1 ghosts
-    // land where the dragged node's body exactly touches the anchor's —
-    // 1 for two default-width nodes, e.g. 1.5 for a width-28 stop against a
-    // default one. Farther rings scale uniformly (an approximation: a
-    // different-width node between them would shift true tangency).
-    const t = tangentGap(wSrc, nodeW(anchor)) / STOP_SIZE;
-    const localOffsets = projectScreenToLocal(latticeOffsets(basis, GRID_RADIUS), stationRotation);
-    for (const o of localOffsets) {
-      const g = { row: anchor.row + o.row * t, col: anchor.col + o.col * t };
-      let overlap = false;
-      for (const n of otherNodes) {
-        if (sameCell(n, anchor)) continue;
-        // A ghost closer to another node than their mutual tangency distance
-        // would overlap it visually once dropped. Tangent is allowed.
-        if (
-          Math.hypot(g.row - n.row, g.col - n.col) <
-          tangentGap(wSrc, nodeW(n)) / STOP_SIZE - EPS
-        ) {
-          overlap = true;
-          break;
-        }
-      }
-      if (!overlap) ghosts.push(g);
-    }
-  }
+  const ghosts: RowCol[] = anchor
+    ? computeGhosts({
+        wSrc,
+        anchor: { row: anchor.row, col: anchor.col, w: nodeW(anchor) },
+        otherNodes: otherNodes.map((n) => ({ row: n.row, col: n.col, w: nodeW(n) })),
+        basis,
+        stationRotation,
+        gridRadius: GRID_RADIUS,
+      })
+    : [];
 
   // Resolve cursor → snap/swap target via the shared rule (swap on a non-
   // source stop inside swapRadius wins; otherwise nearest ghost inside
