@@ -466,8 +466,9 @@ export type TextLabelWeight = 100 | 200 | 300 | 400 | 500 | 700 | 800 | 900;
 // A free-floating, rotatable text annotation rendered on top of the map. Used
 // for neighborhood names, river labels, legend headings, etc. Position is the
 // label's center in world coords; rotation is the existing 8-step 45° axis.
-// The popover controls text content, font size (1..96), weight, italic, and
-// multi-line horizontal alignment. Not tied to any station or line.
+// The popover controls text content, font size (0.5-stepped, min
+// TEXT_LABEL_FONT_SIZE_MIN), weight, italic, and multi-line horizontal
+// alignment. Not tied to any station or line.
 export interface TextLabel {
   id: string;
   x: number;
@@ -475,7 +476,9 @@ export interface TextLabel {
   rotation: Rotation;
   // Multiline; '\n'-separated.
   text: string;
-  // Integer in [1, 96].
+  // Floored at TEXT_LABEL_FONT_SIZE_MIN and snapped to a 0.5 step by
+  // `updateTextLabel`; the slider caps at 96 but the spinbutton is unbounded
+  // above, so this can be any half-integer >= the minimum.
   fontSize: number;
   weight: TextLabelWeight;
   italic: boolean;
