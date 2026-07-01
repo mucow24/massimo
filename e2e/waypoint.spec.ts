@@ -41,6 +41,7 @@ test.describe('Waypoint toggle', () => {
     await page.mouse.click(b.x, b.y);
 
     // Pick a non-default shape for B's L1 stop first.
+    await page.getByRole('button', { name: 'Edit layout' }).click();
     await page.locator('[data-cell-kind="stop"][data-line-id="L1"]').click();
     await page.getByRole('button', { name: 'Stop shape' }).click();
     await page.getByRole('menuitem', { name: 'Filled black diamond' }).click();

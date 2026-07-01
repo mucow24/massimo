@@ -1,4 +1,4 @@
-import { useCallback, useMemo, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 
 import { dragState, useDoc, useSelection } from '../state/store';
 import { useSnapPrefs } from '../state/snapPrefs';
@@ -22,6 +22,12 @@ import { StationView } from './StationView';
 import { useViewport } from './canvas/useViewport';
 import { overdrawnViewBox } from './canvas/viewportMath';
 import { useStationDrag } from './canvas/useStationDrag';
+import { useLabelDrag } from './canvas/useLabelDrag';
+import { useStationLayoutDrag } from './canvas/useStationLayoutDrag';
+import { StationLayoutEditor } from './canvas/StationLayoutEditor';
+import { GhostLattice } from './canvas/GhostLattice';
+import { STOP_SIZE } from '../geometry/orientation';
+import { lineWidthOf } from '../model/lineWidth';
 import { useRectSelect } from './canvas/useRectSelect';
 import { Grid } from './canvas/Grid';
 import { WarningToasts } from './canvas/WarningToasts';
@@ -243,6 +249,41 @@ export function MapCanvas() {
   const itemDrag = useItemDrag(svgRef, view.viewport.zoom, inHandMode);
   const polyDrag = usePolygonDrag(svgRef, view.viewport.zoom, inHandMode);
   const svgDrag = useSvgImageDrag(svgRef, view.viewport.zoom, inHandMode, view.screenToWorld);
+  const labelDrag = useLabelDrag(svgRef, view.screenToWorld);
+  const layoutDrag = useStationLayoutDrag(svgRef, view.screenToWorld);
+  // The station being layout-edited in place, if the mode is active. If the
+  // station vanishes under the mode (deleted from the sidebar), exit to idle
+  // rather than leaving a mode whose payload points at nothing.
+  const layoutEditStationId =
+    selection.uiMode.kind === 'editing-station-layout' ? selection.uiMode.stationId : null;
+  const layoutEditStation = layoutEditStationId ? stations[layoutEditStationId] : undefined;
+  const setUiModeAction = selection.setUiMode;
+  useEffect(() => {
+    if (layoutEditStationId && !stations[layoutEditStationId]) {
+      setUiModeAction({ kind: 'idle' });
+    }
+  }, [layoutEditStationId, stations, setUiModeAction]);
+  // Entering layout-edit for an off-screen or too-tiny station commits ONE
+  // camera write framing it — the sidebar list can start the mode on a
+  // station far outside the view, which would otherwise open with nothing
+  // to grab. Deliberately keyed on the station id only: mid-mode pans and
+  // zooms must not re-frame.
+  useEffect(() => {
+    if (!layoutEditStationId) return;
+    const st = useDoc.getState().stations[layoutEditStationId];
+    if (!st) return;
+    const margin = 40 / view.viewport.zoom; // ~40 screen px, in world units
+    const visible =
+      st.x > view.vbX + margin &&
+      st.x < view.vbX + view.vbW - margin &&
+      st.y > view.vbY + margin &&
+      st.y < view.vbY + view.vbH - margin;
+    if (visible && view.viewport.zoom >= 0.5) return;
+    useViewportStore
+      .getState()
+      .setViewport({ x: st.x, y: st.y, zoom: Math.max(view.viewport.zoom, 1) });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [layoutEditStationId]);
   // Cursor position in world coords — drives the in-progress transfer line
   // from the anchor dot to the cursor, and the station-placing-mode ghost
   // that follows the cursor before each click.
@@ -314,6 +355,8 @@ export function MapCanvas() {
     itemDrag.onPointerMove(e);
     polyDrag.onPointerMove(e);
     svgDrag.onPointerMove(e);
+    labelDrag.onPointerMove(e);
+    layoutDrag.onPointerMove(e);
   };
   const onPointerUp = (e: React.PointerEvent) => {
     view.onPointerUp(e);
@@ -322,6 +365,8 @@ export function MapCanvas() {
     itemDrag.onPointerUp(e);
     polyDrag.onPointerUp(e);
     svgDrag.onPointerUp(e);
+    labelDrag.onPointerUp(e);
+    layoutDrag.onPointerUp(e);
   };
 
   // A plain click / right-click that lands on a selected item's drag proxy must
@@ -723,6 +768,7 @@ export function MapCanvas() {
             lines={lines}
             zoom={view.viewport.zoom}
             onStartDrag={drag.onStartDrag}
+            onStartLabelDrag={labelDrag.onStartLabelDrag}
             layer="bg"
           />
         ))}
@@ -1022,6 +1068,7 @@ export function MapCanvas() {
                 lines={lines}
                 zoom={view.viewport.zoom}
                 onStartDrag={drag.onStartDrag}
+                onStartLabelDrag={labelDrag.onStartLabelDrag}
                 layer="hit"
               />
             ) : null,
@@ -1145,6 +1192,53 @@ export function MapCanvas() {
             zoom={view.viewport.zoom}
           />
         </g>
+
+        {/* Station layout editor (editing-station-layout mode): grab rings
+            over the real dots + label cell, above the drag proxies so the
+            handles win hit-testing. Pure interaction chrome. */}
+        {layoutEditStation && (
+          <g data-export-exclude="1">
+            <StationLayoutEditor
+              station={layoutEditStation}
+              lines={lines}
+              zoom={view.viewport.zoom}
+              onStartNodeDrag={layoutDrag.onStartNodeDrag}
+              swapTarget={
+                layoutDrag.overlay?.over?.kind === 'stop' ? layoutDrag.overlay.over : null
+              }
+            />
+          </g>
+        )}
+
+        {/* Ghost lattices: candidate slots at the real station while the
+            painted name (label drag) or a layout-editor handle is being
+            dragged. Pure chrome. */}
+        {labelDrag.overlay?.mode === 'ghost' && stations[labelDrag.overlay.stationId] && (
+          <g data-export-exclude="1">
+            <GhostLattice
+              ghosts={labelDrag.overlay.ghosts}
+              over={labelDrag.overlay.over}
+              station={stations[labelDrag.overlay.stationId]}
+              zoom={view.viewport.zoom}
+              dropR={STOP_SIZE / 2}
+            />
+          </g>
+        )}
+        {layoutDrag.overlay && stations[layoutDrag.overlay.stationId] && (
+          <g data-export-exclude="1">
+            <GhostLattice
+              ghosts={layoutDrag.overlay.ghosts}
+              over={layoutDrag.overlay.over?.kind === 'ghost' ? layoutDrag.overlay.over : null}
+              station={stations[layoutDrag.overlay.stationId]}
+              zoom={view.viewport.zoom}
+              dropR={
+                layoutDrag.overlay.source.kind === 'stop'
+                  ? lineWidthOf(lines[layoutDrag.overlay.source.lineId]) / 2
+                  : STOP_SIZE / 2
+              }
+            />
+          </g>
+        )}
 
         {/* Layering-mode top overlays: the hovered-stripe solid outline +
             small layer-number labels. Painted at the very end of the SVG

@@ -72,6 +72,16 @@ export function EditingBanner() {
           </div>
         </>
       );
+    case 'editing-station-layout':
+      return (
+        <>
+          <div className="append-frame" style={{ borderColor: '#1a4ea8' }} />
+          <div className="append-banner placing">
+            Editing station layout — drag dots to move (Shift: diagonal grid), right-click or R to
+            rotate, arrows to nudge. Esc to exit.
+          </div>
+        </>
+      );
     case 'placing-label':
     case 'idle':
       return null;

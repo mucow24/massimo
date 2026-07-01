@@ -1,6 +1,17 @@
 import { useCallback, useEffect, useRef, useState, type RefObject } from 'react';
 
 /**
+ * True when a keyboard event's target is a form field that should swallow
+ * the key (Escape closing a popover, etc.) — shared by the popovers' key
+ * handlers so the denylist can't drift between them.
+ */
+export function isInFormField(target: unknown): boolean {
+  const t = target as HTMLElement | null;
+  const tag = t?.tagName;
+  return tag === 'INPUT' || tag === 'TEXTAREA' || tag === 'SELECT' || Boolean(t?.isContentEditable);
+}
+
+/**
  * Shared dismissal effect for floating panels. While `active`, an outside
  * mousedown — registered on the next tick so the click that opened the panel
  * doesn't immediately fire it — or an Escape keypress calls `onDismiss`. Clicks
@@ -10,7 +21,14 @@ export function useDismiss(
   active: boolean,
   onDismiss: () => void,
   ignore: ReadonlyArray<RefObject<Node | null>>,
+  opts?: {
+    // Set false when another component owns Escape for this state (e.g. the
+    // station popover's step-out ladder) — two independent Escape listeners
+    // over the same state race on document-listener attachment order.
+    escape?: boolean;
+  },
 ): void {
+  const escape = opts?.escape ?? true;
   useEffect(() => {
     if (!active) return;
     const onDocClick = (e: globalThis.MouseEvent) => {
@@ -24,15 +42,15 @@ export function useDismiss(
       if (e.key === 'Escape') onDismiss();
     };
     const t = setTimeout(() => document.addEventListener('mousedown', onDocClick), 0);
-    document.addEventListener('keydown', onKey);
+    if (escape) document.addEventListener('keydown', onKey);
     return () => {
       clearTimeout(t);
       document.removeEventListener('mousedown', onDocClick);
-      document.removeEventListener('keydown', onKey);
+      if (escape) document.removeEventListener('keydown', onKey);
     };
     // `ignore` is a fresh array literal each render; depend on its members.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [active, onDismiss, ...ignore]);
+  }, [active, onDismiss, escape, ...ignore]);
 }
 
 /**

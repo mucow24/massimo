@@ -1,19 +1,14 @@
 import { useCallback, useMemo, useRef } from 'react';
-import { beginHistoryGroup, useDoc, useSelection } from '../../state/store';
-import { isHistoryGrouping } from '../../state/history';
+import { useDoc, useSelection } from '../../state/store';
+import { dispatchMirrored } from '../../state/mirrorDispatch';
 import type { StationId } from '../../model/types';
 import { findMatchingStations, type LayoutOffset } from '../../model/matching';
-import { rotateGridDelta } from '../../geometry/orientation';
-import { StopGrid } from './StopGrid';
 import { LabelOffsetControl } from './LabelOffsetControl';
-import { LabelAlignButton, LabelValignButton } from './LabelAlignButtons';
+import { LabelAlignPicker, LabelValignPicker } from './LabelAlignButtons';
+import { StopRows } from './StopRows';
 import { useFieldHistory } from '../useFieldHistory';
-import { useNumericField } from '../useNumericField';
 import { useDismiss } from '../usePopover';
-import { StationShapePicker } from '../StationShapePicker';
-import { resolveDotStyle, resolveOffsetPerp } from '../../model/transforms';
-import { DEFAULT_DOT_STYLE, DOT_SHAPE_PRESETS } from '../../model/dotStyle';
-import { DOT_SIZE_DEFAULT, DOT_SIZE_MIN, resolveDotSize } from '../../model/dotSize';
+import { resolveOffsetPerp } from '../../model/transforms';
 
 export function StationInspector({ id }: { id: StationId }) {
   const station = useDoc((s) => s.stations[id]);
@@ -22,18 +17,10 @@ export function StationInspector({ id }: { id: StationId }) {
   const renameStation = useDoc((s) => s.renameStation);
   const rotateStation = useDoc((s) => s.rotateStation);
   const moveStation = useDoc((s) => s.moveStation);
-  const moveStopAction = useDoc((s) => s.moveStop);
-  const rotateStopAction = useDoc((s) => s.rotateStop);
-  const moveLabelAction = useDoc((s) => s.moveLabel);
-  const rotateLabelAction = useDoc((s) => s.rotateLabel);
   const setLabelOffset = useDoc((s) => s.setLabelOffset);
   const setLabelOffsetPerp = useDoc((s) => s.setLabelOffsetPerp);
-  const cycleLabelAlign = useDoc((s) => s.cycleLabelAlign);
   const setLabelAlign = useDoc((s) => s.setLabelAlign);
-  const cycleLabelValign = useDoc((s) => s.cycleLabelValign);
   const setLabelValign = useDoc((s) => s.setLabelValign);
-  const setDotStyle = useDoc((s) => s.setDotStyle);
-  const setDotSize = useDoc((s) => s.setDotSize);
   const setStationWaypoint = useDoc((s) => s.setStationWaypoint);
   const setStationLocked = useDoc((s) => s.setStationLocked);
   const setStationLabelBold = useDoc((s) => s.setStationLabelBold);
@@ -42,8 +29,7 @@ export function StationInspector({ id }: { id: StationId }) {
   const nameField = useFieldHistory();
   const xField = useFieldHistory();
   const yField = useFieldHistory();
-  const stopAreaRef = useRef<HTMLDivElement | null>(null);
-  const shapePickerRef = useRef<HTMLDivElement | null>(null);
+  const stopRowsRef = useRef<HTMLDivElement | null>(null);
 
   // Stations that render identically to this one (across the model's 4-fold
   // mirror symmetry) AND share a line with it. Each carries a layoutOffset
@@ -54,73 +40,33 @@ export function StationInspector({ id }: { id: StationId }) {
     [stationsAll, linesAll, id],
   );
 
-  // When mirror is on, apply `act` to the selected station (offset 0) and
-  // every matching station (with its own offset). Wrapped in a single
-  // history group so undo collapses the batch into one entry. When off,
-  // behaves like a direct call.
-  //
-  // If a group is already open (e.g. this fired from a focused numeric field's
-  // edit arc, like the dot-size spinbutton), don't nest a second one — the
-  // outer group already collapses these writes into its single entry. Nesting
-  // would resume recording mid-gesture and push a stray snapshot.
-  const dispatchAll = (act: (sid: StationId, layoutOffset: LayoutOffset) => void) => {
-    if (!selection.mirrorMatching || matches.length === 0) {
-      act(id, 0);
-      return;
-    }
-    const group = isHistoryGrouping() ? null : beginHistoryGroup();
-    act(id, 0);
-    for (const m of matches) act(m.id, m.layoutOffset);
-    group?.commit();
-  };
+  // Mirror-aware dispatch: with mirror on, `act` fans out to every matching
+  // station in one history group (see state/mirrorDispatch.ts).
+  const dispatchAll = (act: (sid: StationId, layoutOffset: LayoutOffset) => void) =>
+    dispatchMirrored(id, act);
 
-  const selectedLineId = selection.selectedStopLineId;
-  const labelSelected = selection.labelSelected;
-  const hasSelection = !!(selectedLineId || labelSelected);
+  const hasSelection = !!(selection.selectedStopLineId || selection.labelSelected);
 
-  // Temporary per-stop size override control (a picker UI comes later).
-  // Shows the selected stop's RESOLVED size; writing the line's effective
-  // default back clears the override via `setDotSize`'s contract.
-  const dotSizeDisabled = selectedLineId === null || labelSelected;
-  const dotSizeField = useNumericField(
-    selectedLineId === null
-      ? DOT_SIZE_DEFAULT
-      : resolveDotSize(
-          linesAll[selectedLineId],
-          station?.stops.find((s) => s.lineId === selectedLineId),
-        ),
-    (n) => {
-      if (selectedLineId === null) return;
-      // dotSize is rotation-invariant — no per-match transform.
-      dispatchAll((sid) => setDotSize(sid, selectedLineId, n));
-    },
-    () => {
-      const lid = useSelection.getState().selectedStopLineId;
-      if (lid === null) return DOT_SIZE_DEFAULT;
-      const docNow = useDoc.getState();
-      return resolveDotSize(
-        docNow.lines[lid],
-        docNow.stations[id]?.stops.find((s) => s.lineId === lid),
-      );
-    },
-  );
-
-  // Standard deselect: Escape, or mousedown anywhere outside the stop area
-  // (the StopGrid). Clicks on canvas/sidebar already deselect via
-  // selectStation; this covers the remaining "click on something else
-  // within the inspector" case.
-  // Clicks inside the StopGrid (stopAreaRef) and the shape picker
-  // (shapePickerRef) act on the selected stop, so they must not deselect.
+  // Standard deselect for the canvas sub-selection (the layout-editor ring +
+  // keyboard-nudge target): mousedown outside the stop rows. Canvas handle
+  // clicks re-assert the selection on pointerup (the layout-editor and
+  // label-drag hooks select AFTER this document-level mousedown clear), so
+  // acting on a stop from the map survives; clicks on other inspector fields
+  // or the sidebar genuinely deselect. Escape is handled by the hosting
+  // StationPopover's step-out ladder, NOT here — two Escape listeners over
+  // the same state would race on attachment order.
   const clearStopSelection = useCallback(() => {
     selection.setSelectedStopLineId(null);
     selection.setLabelSelected(false);
   }, [selection]);
-  useDismiss(hasSelection, clearStopSelection, [stopAreaRef, shapePickerRef]);
+  useDismiss(hasSelection, clearStopSelection, [stopRowsRef], { escape: false });
 
   if (!station) return null;
 
   const mirrorOn = selection.mirrorMatching;
   const mirrorAvailable = matches.length > 0;
+  const inLayoutEdit =
+    selection.uiMode.kind === 'editing-station-layout' && selection.uiMode.stationId === station.id;
 
   return (
     <section className="inspector">
@@ -136,16 +82,24 @@ export function StationInspector({ id }: { id: StationId }) {
       </div>
       <div className="field">
         <label>Position &amp; rotation</label>
-        <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
+        <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap', alignItems: 'center' }}>
+          <span className="axis-label" aria-hidden>
+            X
+          </span>
           <input
             type="number"
+            aria-label="X"
             value={Math.round(station.x)}
             onChange={(e) => moveStation(station.id, Number(e.target.value), station.y)}
             style={{ width: 44 }}
             {...xField}
           />
+          <span className="axis-label" aria-hidden>
+            Y
+          </span>
           <input
             type="number"
+            aria-label="Y"
             value={Math.round(station.y)}
             onChange={(e) => moveStation(station.id, station.x, Number(e.target.value))}
             style={{ width: 44 }}
@@ -169,6 +123,9 @@ export function StationInspector({ id }: { id: StationId }) {
           >
             ⟳
           </button>
+          <span className="axis-label" title="Station rotation">
+            {station.rotation * 45}°
+          </span>
           <button
             className={`btn-mini${mirrorOn ? ' mirror-on' : ''}`}
             onClick={() => selection.setMirrorMatching(!mirrorOn)}
@@ -180,47 +137,8 @@ export function StationInspector({ id }: { id: StationId }) {
             }
             aria-pressed={mirrorOn}
           >
-            all
+            {mirrorAvailable ? `Mirror ×${matches.length}` : 'Mirror'}
           </button>
-          <div
-            ref={shapePickerRef}
-            style={{ display: 'inline-flex', gap: 4, alignItems: 'center' }}
-          >
-            <StationShapePicker
-              disabled={selectedLineId === null || labelSelected}
-              currentStyle={
-                selectedLineId === null
-                  ? DEFAULT_DOT_STYLE
-                  : resolveDotStyle(
-                      linesAll[selectedLineId],
-                      station.stops.find((s) => s.lineId === selectedLineId),
-                    )
-              }
-              lineColor={selectedLineId === null ? undefined : linesAll[selectedLineId]?.color}
-              serviceCode={selectedLineId === null ? undefined : linesAll[selectedLineId]?.service}
-              onPick={(shape) => {
-                if (selectedLineId === null) return;
-                dispatchAll((sid) => setDotStyle(sid, selectedLineId, DOT_SHAPE_PRESETS[shape]));
-                // dotStyle is rotation-invariant — no per-match transform.
-              }}
-            />
-            {/* Inside shapePickerRef so useDismiss treats clicks here as
-                acting on the selected stop rather than deselecting it. */}
-            <input
-              type="number"
-              aria-label="Stop dot size"
-              min={DOT_SIZE_MIN}
-              step={1}
-              style={{ width: 44 }}
-              disabled={dotSizeDisabled}
-              value={dotSizeField.text}
-              title={dotSizeDisabled ? 'Stop dot size — select a stop first' : 'Stop dot size (px)'}
-              onFocus={dotSizeField.onNumberFocus}
-              onChange={dotSizeField.onNumberChange}
-              onWheel={dotSizeField.onNumberWheel}
-              onBlur={dotSizeField.onNumberBlur}
-            />
-          </div>
           <button
             type="button"
             className={`btn-mini${station.isWaypoint ? ' wp-on' : ''}`}
@@ -252,71 +170,47 @@ export function StationInspector({ id }: { id: StationId }) {
         </div>
       </div>
       <div className="field">
-        <label>Stop layout</label>
-        <div ref={stopAreaRef} style={{ display: 'flex', justifyContent: 'center' }}>
-          <StopGrid
-            key={id}
-            station={station}
-            lines={linesAll}
-            selectedLineId={selectedLineId}
-            labelSelected={labelSelected}
-            onSelectStop={(lid) => selection.setSelectedStopLineId(lid)}
-            onSelectLabel={() => selection.setLabelSelected(true)}
-            onRotateStop={(lid) => dispatchAll((sid) => rotateStopAction(sid, lid))}
-            onRotateLabel={() => dispatchAll((sid) => rotateLabelAction(sid))}
-            onMoveStop={(lid, dRow, dCol) =>
-              dispatchAll((sid, k) => {
-                // Local-frame deltas must be rotated by the match's
-                // layoutOffset so the world-frame edit matches the source.
-                const d = rotateGridDelta(dRow, dCol, k);
-                moveStopAction(sid, lid, d.dRow, d.dCol);
-              })
+        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+          <label>Stop layout</label>
+          {/* Enter/exit editing-station-layout: the full stop/label editor
+              on the real station, on the main canvas. */}
+          <button
+            type="button"
+            className={`btn-mini${inLayoutEdit ? ' active' : ''}`}
+            aria-pressed={inLayoutEdit}
+            title={
+              inLayoutEdit
+                ? 'Exit the on-canvas layout editor (Esc)'
+                : 'Edit stops + label on the map: drag between slots, right-click or R rotates, arrows nudge'
             }
-            onMoveLabel={(dRow, dCol) =>
-              dispatchAll((sid, k) => {
-                const d = rotateGridDelta(dRow, dCol, k);
-                moveLabelAction(sid, d.dRow, d.dCol);
-              })
+            onClick={() =>
+              inLayoutEdit
+                ? selection.setUiMode({ kind: 'idle' })
+                : selection.startEditingStationLayout(station.id)
             }
-          />
+          >
+            {inLayoutEdit ? 'Done' : 'Edit layout'}
+          </button>
+        </div>
+        <div ref={stopRowsRef}>
+          <StopRows station={station} lines={linesAll} />
+        </div>
+        <div className="field-hint">
+          {station.stops.length === 0
+            ? 'No stops yet — add this station to a line.'
+            : inLayoutEdit
+              ? 'Drag dots/label on the map; right-click or R rotates, arrows nudge.'
+              : 'Positions are edited on the map — click Edit layout.'}
         </div>
       </div>
       <div className="field">
         <label>Label</label>
-        <div style={{ display: 'flex', gap: 6 }}>
-          <LabelAlignButton
+        <div style={{ display: 'flex', gap: 6, alignItems: 'center' }}>
+          {/* Clicks are absolute (set, not cycle), so mirror mode is a plain
+              broadcast of the same value — matching stations can't diverge. */}
+          <LabelAlignPicker
             align={station.label.align}
-            onCycle={() => {
-              // Cycle the primary station; in mirror mode, force matching
-              // stations to the SAME resulting align so the group stays in
-              // sync (per-station cycle would diverge if their starts differ).
-              // Whole batch becomes one undo entry.
-              const useMirror = selection.mirrorMatching && matches.length > 0;
-              const group = useMirror ? beginHistoryGroup() : null;
-              cycleLabelAlign(station.id);
-              if (useMirror) {
-                const next = useDoc.getState().stations[station.id]?.label.align;
-                if (next) {
-                  for (const m of matches) setLabelAlign(m.id, next);
-                }
-              }
-              group?.commit();
-            }}
-          />
-          <LabelValignButton
-            valign={station.label.valign}
-            onCycle={() => {
-              const useMirror = selection.mirrorMatching && matches.length > 0;
-              const group = useMirror ? beginHistoryGroup() : null;
-              cycleLabelValign(station.id);
-              if (useMirror) {
-                const next = useDoc.getState().stations[station.id]?.label.valign;
-                if (next) {
-                  for (const m of matches) setLabelValign(m.id, next);
-                }
-              }
-              group?.commit();
-            }}
+            onSet={(v) => dispatchAll((sid) => setLabelAlign(sid, v))}
           />
           <button
             type="button"
@@ -346,6 +240,12 @@ export function StationInspector({ id }: { id: StationId }) {
           >
             <em>I</em>
           </button>
+        </div>
+        <div style={{ display: 'flex', gap: 6, marginTop: 4 }}>
+          <LabelValignPicker
+            valign={station.label.valign}
+            onSet={(v) => dispatchAll((sid) => setLabelValign(sid, v))}
+          />
         </div>
         <div className="field-hint">Offset (along reading direction)</div>
         <LabelOffsetControl

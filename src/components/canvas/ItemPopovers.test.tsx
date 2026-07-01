@@ -55,3 +55,134 @@ describe('ItemPopovers — tracks the in-flight pan', () => {
     expect(leftTop()).toEqual({ left: '414px', top: '314px' });
   });
 });
+
+describe('ItemPopovers — station popover', () => {
+  const seedStation = (x = 0, y = 0) => {
+    useDoc.setState({
+      ...useDoc.getState(),
+      ...DEFAULT_DOC,
+      stations: {
+        a: {
+          id: 'a',
+          name: 'Alpha',
+          x,
+          y,
+          rotation: 0,
+          stops: [{ lineId: 'L1', row: 0, col: 0, orientation: 'auto-vertical' }],
+          label: { row: 0, col: -1, rotation: 0, offset: 0, align: 'auto', valign: 'middle' },
+        },
+      },
+      lines: {
+        L1: { id: 'L1', service: '1', name: '1 line', color: '#111111', stations: ['a'] },
+      },
+      lineOrder: ['L1'],
+    });
+    useSelection.getState().selectStation('a');
+  };
+
+  afterEach(() => {
+    useSelection.getState().selectStation(null);
+    useSelection.getState().setUiMode({ kind: 'idle' });
+  });
+
+  it('mounts for a sole-selected station in idle mode, hosting the inspector', () => {
+    seedStation();
+    render(<ItemPopovers view={committedView} />);
+    const pop = document.querySelector('.station-popover');
+    expect(pop).not.toBeNull();
+    // The inspector's Name field is inside.
+    expect(pop?.querySelector('textarea')).not.toBeNull();
+  });
+
+  it('does NOT mount during sticky placing-station mode', () => {
+    seedStation();
+    // placing-station wipes selection on entry; re-select to simulate the
+    // sticky-mode click-an-existing-station case.
+    act(() => {
+      useSelection.getState().setUiMode({ kind: 'placing-station' });
+      useSelection.setState({ ...useSelection.getState(), selectedStationIds: ['a'] });
+    });
+    render(<ItemPopovers view={committedView} />);
+    expect(document.querySelector('.station-popover')).toBeNull();
+  });
+
+  it("stays mounted while editing THIS station's layout", () => {
+    seedStation();
+    act(() => useSelection.getState().startEditingStationLayout('a'));
+    render(<ItemPopovers view={committedView} />);
+    expect(document.querySelector('.station-popover')).not.toBeNull();
+  });
+
+  it('clamps the anchor into the canvas host for off-screen stations', () => {
+    seedStation(100000, 100000); // far outside the 800×600 view
+    render(<ItemPopovers view={committedView} />);
+    const el = document.querySelector('.station-popover') as HTMLElement;
+    expect(el).not.toBeNull();
+    const left = parseFloat(el.style.left);
+    const top = parseFloat(el.style.top);
+    expect(left).toBeGreaterThanOrEqual(0);
+    expect(left).toBeLessThanOrEqual(800);
+    expect(top).toBeGreaterThanOrEqual(0);
+    expect(top).toBeLessThanOrEqual(600);
+  });
+});
+
+describe('ItemPopovers — station popover, layout-edit interplay', () => {
+  const seedStation = () => {
+    useDoc.setState({
+      ...useDoc.getState(),
+      ...DEFAULT_DOC,
+      stations: {
+        a: {
+          id: 'a',
+          name: 'Alpha',
+          x: 0,
+          y: 0,
+          rotation: 0,
+          stops: [{ lineId: 'L1', row: 0, col: 0, orientation: 'auto-vertical' }],
+          label: { row: 0, col: -1, rotation: 0, offset: 0, align: 'auto', valign: 'middle' },
+        },
+      },
+      lines: {
+        L1: { id: 'L1', service: '1', name: '1 line', color: '#111111', stations: ['a'] },
+      },
+      lineOrder: ['L1'],
+    });
+    useSelection.getState().selectStation('a');
+  };
+
+  afterEach(() => {
+    useSelection.getState().selectStation(null);
+    useSelection.getState().setUiMode({ kind: 'idle' });
+  });
+
+  it('pins to the top-right of the host during layout-edit so it cannot cover the handles', () => {
+    seedStation();
+    act(() => useSelection.getState().startEditingStationLayout('a'));
+    render(<ItemPopovers view={committedView} />);
+    const el = document.querySelector('.station-popover') as HTMLElement;
+    expect(el).not.toBeNull();
+    // Host is 800 wide; popover is 320 wide + 8px edge pad.
+    expect(el.style.left).toBe('472px');
+    expect(el.style.top).toBe('8px');
+  });
+
+  it('Escape with an active stop/label sub-selection clears IT, keeping the popover', () => {
+    seedStation();
+    render(<ItemPopovers view={committedView} />);
+    act(() => useSelection.getState().setLabelSelected(true));
+    act(() => {
+      document.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true }));
+    });
+    // Sub-selection cleared (via the inspector's useDismiss), station kept.
+    expect(useSelection.getState().labelSelected).toBe(false);
+    expect(useSelection.getState().selectedStationIds).toEqual(['a']);
+    expect(document.querySelector('.station-popover')).not.toBeNull();
+
+    // A second Escape (no sub-selection) closes the editor.
+    act(() => {
+      document.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true }));
+    });
+    expect(useSelection.getState().selectedStationIds).toEqual([]);
+  });
+});

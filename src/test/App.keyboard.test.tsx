@@ -587,3 +587,184 @@ describe('App keyboard: svg images', () => {
     expect(useDoc.getState().svgImages.a).toMatchObject({ x: 15, y: 10 });
   });
 });
+
+describe('App keyboard: stop/label lattice nudge (station sub-selection)', () => {
+  const seedHub = (over: { mirror?: boolean } = {}) => {
+    useDoc.setState({
+      ...useDoc.getState(),
+      ...DEFAULT_DOC,
+      stations: {
+        a: {
+          id: 'a',
+          name: 'A',
+          x: 100,
+          y: 100,
+          rotation: 0,
+          stops: [
+            { lineId: 'L1', row: 0, col: 0, orientation: 'auto-vertical' },
+            { lineId: 'L2', row: 0, col: 1, orientation: 'auto-vertical' },
+          ],
+          label: { row: 0, col: -1, rotation: 0, offset: 0, align: 'auto', valign: 'middle' },
+        },
+        b: {
+          id: 'b',
+          name: 'B',
+          x: 400,
+          y: 100,
+          rotation: 0,
+          stops: [
+            { lineId: 'L1', row: 0, col: 0, orientation: 'auto-vertical' },
+            { lineId: 'L2', row: 0, col: 1, orientation: 'auto-vertical' },
+          ],
+          label: { row: 0, col: -1, rotation: 0, offset: 0, align: 'auto', valign: 'middle' },
+        },
+      },
+      lines: {
+        L1: { id: 'L1', service: '1', name: '1 line', color: '#111111', stations: ['a', 'b'] },
+        L2: { id: 'L2', service: '2', name: '2 line', color: '#222222', stations: ['a', 'b'] },
+      },
+      lineOrder: ['L1', 'L2'],
+    });
+    useSelection.setState({
+      ...useSelection.getState(),
+      selectedStationIds: ['a'],
+      selectedStopLineId: null,
+      labelSelected: false,
+      mirrorMatching: over.mirror ?? false,
+    });
+    useDoc.temporal.getState().clear();
+  };
+
+  it('ArrowUp moves the selected stop one lattice slot and leaves the station put', () => {
+    render(<App />);
+    seedHub();
+    useSelection.setState({ ...useSelection.getState(), selectedStopLineId: 'L1' });
+    fireEvent.keyDown(window, { key: 'ArrowUp' });
+    const st = useDoc.getState().stations.a;
+    const stop = st.stops.find((s) => s.lineId === 'L1')!;
+    expect(stop.row).toBeCloseTo(-1, 3);
+    expect(stop.col).toBeCloseTo(0, 3);
+    // The station itself did NOT move (the old behavior nudged it 1px).
+    expect(st.x).toBe(100);
+    expect(st.y).toBe(100);
+  });
+
+  it('each arrow press is one undo entry', () => {
+    render(<App />);
+    seedHub();
+    useSelection.setState({ ...useSelection.getState(), selectedStopLineId: 'L1' });
+    const before = historyDepth();
+    fireEvent.keyDown(window, { key: 'ArrowUp' });
+    expect(historyDepth() - before).toBe(1);
+  });
+
+  it('label cell nudges too, hopping over stops per moveLabel', () => {
+    render(<App />);
+    seedHub();
+    useSelection.setState({ ...useSelection.getState(), labelSelected: true });
+    // Label at (0,-1); Right passes THROUGH the stops at (0,0) and (0,1) and
+    // lands at (0,2) via moveLabel's step-past-occupied rule.
+    fireEvent.keyDown(window, { key: 'ArrowRight' });
+    const st = useDoc.getState().stations.a;
+    expect(st.label.row).toBeCloseTo(0, 3);
+    expect(st.label.col).toBeCloseTo(2, 3);
+  });
+
+  it('Alt+Arrow fine-nudges the label offset in screen pixels (Shift ×5)', () => {
+    render(<App />);
+    seedHub();
+    useSelection.setState({ ...useSelection.getState(), labelSelected: true });
+    fireEvent.keyDown(window, { key: 'ArrowRight', altKey: true });
+    let st = useDoc.getState().stations.a;
+    expect(st.label.offset).toBeCloseTo(1, 6);
+    expect(st.label.col).toBe(-1); // cell untouched
+    fireEvent.keyDown(window, { key: 'ArrowDown', altKey: true, shiftKey: true });
+    st = useDoc.getState().stations.a;
+    expect(st.label.offset).toBeCloseTo(1, 6);
+    expect(st.label.offsetPerp ?? 0).toBeCloseTo(5, 6);
+  });
+
+  it('Alt offset nudge is one undo entry per press (two field writes collapse)', () => {
+    render(<App />);
+    seedHub();
+    useSelection.setState({ ...useSelection.getState(), labelSelected: true });
+    // A diagonal-reading label writes BOTH offset and offsetPerp in one press.
+    useDoc.setState((s) => ({
+      stations: {
+        ...s.stations,
+        a: { ...s.stations.a, label: { ...s.stations.a.label, rotation: 1 } },
+      },
+    }));
+    useDoc.temporal.getState().clear();
+    fireEvent.keyDown(window, { key: 'ArrowRight', altKey: true });
+    expect(historyDepth()).toBe(1);
+  });
+
+  it('R rotates the selected stop orientation (and the label with labelSelected)', () => {
+    render(<App />);
+    seedHub();
+    useSelection.setState({ ...useSelection.getState(), selectedStopLineId: 'L1' });
+    fireEvent.keyDown(window, { key: 'r' });
+    expect(useDoc.getState().stations.a.stops.find((s) => s.lineId === 'L1')!.orientation).toBe(
+      'auto-ne-sw',
+    );
+
+    useSelection.setState({
+      ...useSelection.getState(),
+      selectedStopLineId: null,
+      labelSelected: true,
+    });
+    fireEvent.keyDown(window, { key: 'r' });
+    expect(useDoc.getState().stations.a.label.rotation).toBe(1);
+  });
+
+  it('mirror matching broadcasts the nudge to the matching station in one entry', () => {
+    render(<App />);
+    seedHub({ mirror: true });
+    useSelection.setState({ ...useSelection.getState(), selectedStopLineId: 'L1' });
+    const before = historyDepth();
+    fireEvent.keyDown(window, { key: 'ArrowUp' });
+    const doc = useDoc.getState();
+    const aStop = doc.stations.a.stops.find((s) => s.lineId === 'L1')!;
+    const bStop = doc.stations.b.stops.find((s) => s.lineId === 'L1')!;
+    expect(aStop.row).toBeCloseTo(-1, 3);
+    expect(bStop.row).toBeCloseTo(-1, 3);
+    expect(historyDepth() - before).toBe(1);
+  });
+});
+
+describe('App keyboard: dangling stop sub-selection falls back to station nudge', () => {
+  it('arrows nudge the STATION when selectedStopLineId no longer matches a stop', () => {
+    render(<App />);
+    useDoc.setState({
+      ...useDoc.getState(),
+      ...DEFAULT_DOC,
+      stations: {
+        a: {
+          id: 'a',
+          name: 'A',
+          x: 100,
+          y: 100,
+          rotation: 0,
+          stops: [{ lineId: 'L1', row: 0, col: 0, orientation: 'auto-vertical' }],
+          label: { row: 0, col: -1, rotation: 0, offset: 0, align: 'auto', valign: 'middle' },
+        },
+      },
+      lines: {
+        L1: { id: 'L1', service: '1', name: '1 line', color: '#111111', stations: ['a'] },
+      },
+      lineOrder: ['L1'],
+    });
+    useSelection.setState({
+      ...useSelection.getState(),
+      selectedStationIds: ['a'],
+      // A stale sub-selection: the line exists in the doc, but this station
+      // has no stop for it (e.g. after undoing an add-to-line).
+      selectedStopLineId: 'L9',
+      labelSelected: false,
+    });
+    fireEvent.keyDown(window, { key: 'ArrowRight' });
+    // Falls through to the whole-station nudge instead of dying silently.
+    expect(useDoc.getState().stations.a.x).toBe(101);
+  });
+});

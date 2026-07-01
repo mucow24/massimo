@@ -87,6 +87,12 @@ export function usePlacementDispatch(view: ViewportApi): PlacementDispatch {
       setUiMode({ kind: 'idle' });
       return true;
     }
+    if (mode.kind === 'editing-station-layout') {
+      // Click on empty canvas = done editing. Keep the station selected so
+      // the inspector stays open (Esc behaves the same way).
+      setUiMode({ kind: 'idle' });
+      return true;
+    }
     if (mode.kind === 'appending-to-line') {
       cancelAppendMode();
       return true;
