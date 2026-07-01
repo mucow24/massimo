@@ -598,7 +598,6 @@ describe('<StationInspector /> — stop dot size textbox', () => {
     // dispatchAll (mirror on + a matching station) opens a SECOND group nested
     // inside it. The inner commit must not resume recording mid-gesture nor
     // push a stray snapshot — the whole focus arc is a single undo entry.
-    const user = userEvent.setup();
     useDoc.setState({
       ...DEFAULT_DOC,
       ...makeDoc({
@@ -616,7 +615,7 @@ describe('<StationInspector /> — stop dot size textbox', () => {
     });
 
     render(<StationInspector id="a" />);
-    await selectStop(user);
+    selectStop();
 
     useDoc.temporal.getState().clear();
     const before = historyDepth();
