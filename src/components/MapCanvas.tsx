@@ -1124,8 +1124,8 @@ export function MapCanvas() {
             y={Math.min(rectSelect.rect.y0, rectSelect.rect.y1)}
             width={Math.abs(rectSelect.rect.x1 - rectSelect.rect.x0)}
             height={Math.abs(rectSelect.rect.y1 - rectSelect.rect.y0)}
-            fill="rgba(26, 78, 168, 0.08)"
-            stroke="#1a4ea8"
+            fill={theme.accentWash}
+            stroke={theme.accent}
             strokeWidth={1.5 / view.viewport.zoom}
             strokeDasharray={`${4 / view.viewport.zoom} ${3 / view.viewport.zoom}`}
             pointerEvents="none"

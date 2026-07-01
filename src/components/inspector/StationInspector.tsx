@@ -1,4 +1,12 @@
 import { useCallback, useMemo, useRef } from 'react';
+import {
+  FontBoldIcon,
+  FontItalicIcon,
+  LockClosedIcon,
+  LockOpen1Icon,
+  ReloadIcon,
+  ResetIcon,
+} from '@radix-ui/react-icons';
 import { beginHistoryGroup, useDoc, useSelection } from '../../state/store';
 import type { StationId } from '../../model/types';
 import { findMatchingStations, type LayoutOffset } from '../../model/matching';
@@ -135,14 +143,14 @@ export function StationInspector({ id }: { id: StationId }) {
             type="number"
             value={Math.round(station.x)}
             onChange={(e) => moveStation(station.id, Number(e.target.value), station.y)}
-            style={{ width: 44 }}
+            style={{ width: 56 }}
             {...xField}
           />
           <input
             type="number"
             value={Math.round(station.y)}
             onChange={(e) => moveStation(station.id, station.x, Number(e.target.value))}
-            style={{ width: 44 }}
+            style={{ width: 56 }}
             {...yField}
           />
           <button
@@ -153,7 +161,7 @@ export function StationInspector({ id }: { id: StationId }) {
             title="Rotate −45°"
             aria-label="Rotate −45°"
           >
-            ⟲
+            <ResetIcon />
           </button>
           <button
             className="btn-mini"
@@ -161,7 +169,7 @@ export function StationInspector({ id }: { id: StationId }) {
             title="Rotate +45°"
             aria-label="Rotate +45°"
           >
-            ⟳
+            <ReloadIcon />
           </button>
           <button
             className={`btn-mini${mirrorOn ? ' mirror-on' : ''}`}
@@ -205,7 +213,7 @@ export function StationInspector({ id }: { id: StationId }) {
               aria-label="Stop dot size"
               min={DOT_SIZE_MIN}
               step={1}
-              style={{ width: 44 }}
+              style={{ width: 56 }}
               disabled={dotSizeDisabled}
               value={dotSizeField.text}
               title={dotSizeDisabled ? 'Stop dot size — select a stop first' : 'Stop dot size (px)'}
@@ -241,7 +249,7 @@ export function StationInspector({ id }: { id: StationId }) {
             }
             onClick={() => setStationLocked(station.id, !station.locked)}
           >
-            {station.locked ? '🔒' : '🔓'}
+            {station.locked ? <LockClosedIcon /> : <LockOpen1Icon />}
           </button>
         </div>
       </div>
@@ -324,7 +332,7 @@ export function StationInspector({ id }: { id: StationId }) {
             }
             onClick={() => setStationLabelBold(station.id, !station.labelBold)}
           >
-            <strong>B</strong>
+            <FontBoldIcon />
           </button>
           <button
             type="button"
@@ -338,7 +346,7 @@ export function StationInspector({ id }: { id: StationId }) {
             }
             onClick={() => setStationLabelItalic(station.id, !station.labelItalic)}
           >
-            <em>I</em>
+            <FontItalicIcon />
           </button>
         </div>
         <div className="field-hint">Offset (along reading direction)</div>

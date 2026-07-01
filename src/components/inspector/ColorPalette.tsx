@@ -3,15 +3,6 @@ import { useCustomPalettes } from '../../state/customPalettes';
 import { activePalettes as activePalettesOf } from '../../model/palettes';
 import { useFieldHistory } from '../useFieldHistory';
 
-const SWATCH_BASE: React.CSSProperties = {
-  width: 22,
-  height: 22,
-  borderRadius: 3,
-  cursor: 'pointer',
-  padding: 0,
-  boxSizing: 'border-box',
-};
-
 export function ColorPalette({
   value,
   onChange,
@@ -31,7 +22,7 @@ export function ColorPalette({
   const customField = useFieldHistory();
 
   return (
-    <div style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
+    <div className="color-palette">
       {palettes.map((palette, i) => (
         <div key={palette.id} className="color-palette-section">
           <div
@@ -40,45 +31,33 @@ export function ColorPalette({
           >
             {palette.name}
           </div>
-          <div style={{ display: 'flex', flexWrap: 'wrap', gap: 4 }}>
-            {palette.swatches.map((p, si) => {
-              const selected = v === p.color.toLowerCase();
-              return (
-                <button
-                  key={si}
-                  type="button"
-                  title={p.name}
-                  onClick={() => onChange(p.color)}
-                  style={{
-                    ...SWATCH_BASE,
-                    background: p.color,
-                    border: selected ? '2px solid #000' : '1px solid rgba(0,0,0,0.2)',
-                  }}
-                />
-              );
-            })}
+          <div className="color-palette-row">
+            {palette.swatches.map((p, si) => (
+              <button
+                key={si}
+                type="button"
+                className={'color-swatch' + (v === p.color.toLowerCase() ? ' selected' : '')}
+                title={p.name}
+                onClick={() => onChange(p.color)}
+                style={{ background: p.color }}
+              />
+            ))}
           </div>
         </div>
       ))}
       <label
         title={isCustom ? `Custom (${value})` : 'Custom'}
+        className={'color-swatch custom' + (isCustom ? ' selected' : '')}
         style={{
-          ...SWATCH_BASE,
           // Containing block for the absolutely-positioned native color input
-          // below. Without it the input is positioned against the page, and its
-          // static offset (deep inside a scrolled line inspector) stretches the
-          // document, adding a spurious window scrollbar on line selection.
+          // below. Kept inline (not in the .custom class) because the scroll-
+          // containment regression test asserts it via getComputedStyle, which
+          // doesn't see stylesheet rules in jsdom. Without it the input is
+          // positioned against the page, and its static offset (deep inside a
+          // scrolled line inspector) stretches the document, adding a spurious
+          // window scrollbar on line selection.
           position: 'relative',
-          display: 'inline-flex',
-          alignItems: 'center',
-          justifyContent: 'center',
-          alignSelf: 'flex-start',
-          background: isCustom ? value : '#fff',
-          border: isCustom ? '2px solid #000' : '1px dashed rgba(0,0,0,0.4)',
-          fontSize: 12,
-          color: isCustom ? '#fff' : '#666',
-          fontWeight: 700,
-          textShadow: isCustom ? '0 0 2px rgba(0,0,0,0.5)' : undefined,
+          background: isCustom ? value : undefined,
         }}
       >
         ?

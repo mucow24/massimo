@@ -14,7 +14,7 @@ export function EditingBanner() {
     case 'placing-station':
       return (
         <>
-          <div className="append-frame" style={{ borderColor: '#1a4ea8' }} />
+          <div className="append-frame" />
           <div className="append-banner placing">
             Click on the canvas to place a new station. Press Esc to cancel.
           </div>
@@ -23,7 +23,7 @@ export function EditingBanner() {
     case 'creating-line-tag':
       return (
         <>
-          <div className="append-frame" style={{ borderColor: '#1a4ea8' }} />
+          <div className="append-frame" />
           <div className="append-banner placing">
             Click a colored line to place a tag. Press Esc to cancel.
           </div>
@@ -32,7 +32,7 @@ export function EditingBanner() {
     case 'creating-route-bullet':
       return (
         <>
-          <div className="append-frame" style={{ borderColor: '#1a4ea8' }} />
+          <div className="append-frame" />
           <div className="append-banner placing">
             Click on the canvas to place a route bullet. Press Esc to cancel.
           </div>
@@ -41,7 +41,7 @@ export function EditingBanner() {
     case 'creating-transfer':
       return (
         <>
-          <div className="append-frame" style={{ borderColor: '#1a4ea8' }} />
+          <div className="append-frame" />
           <div className="append-banner placing">
             {uiMode.anchor
               ? 'Click the second station to complete the transfer. Press Esc to cancel.'

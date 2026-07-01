@@ -8,6 +8,8 @@ import {
   type LatticeBasis,
 } from '../../geometry/lattice';
 import { lineWidthOf } from '../../model/lineWidth';
+import { useThemeColors } from '../../state/theme';
+import { withAlpha } from '../../util/color';
 import { findDropTarget, nearestNode, PITCH } from './stopGridDrag';
 export { PITCH } from './stopGridDrag';
 
@@ -135,6 +137,9 @@ export function StopGrid({
 }) {
   const svgRef = useRef<SVGSVGElement | null>(null);
   const containerRef = useRef<HTMLDivElement | null>(null);
+  // Selection ring + drop-target accent flip with the theme so they stay
+  // visible on the dark sidebar (a black ring on #1d1d1d disappears).
+  const theme = useThemeColors();
   const [drag, setDrag] = useState<DragState | null>(null);
   const [shiftHeld, setShiftHeld] = useShiftHeld(!!drag?.isDragging);
   // Camera: panX/panY are screen pixels, zoom is a multiplier on the fixed
@@ -500,8 +505,8 @@ export function StopGrid({
                 cx={g.col * PITCH}
                 cy={g.row * PITCH}
                 r={dragR}
-                fill="rgba(26,78,168,0.18)"
-                stroke="#1a4ea8"
+                fill={withAlpha(theme.accent, 0.18)}
+                stroke={theme.accent}
                 strokeWidth={2}
                 pointerEvents="none"
               />
@@ -560,7 +565,9 @@ export function StopGrid({
                 cy={s.row * PITCH}
                 r={r}
                 fill={line?.color ?? '#888'}
-                stroke={selected ? '#000' : isSwapTarget ? '#1a4ea8' : 'rgba(0,0,0,0.2)'}
+                stroke={
+                  selected ? theme.selectionStroke : isSwapTarget ? theme.accent : 'rgba(0,0,0,0.2)'
+                }
                 strokeWidth={selected || isSwapTarget ? 2 : 1}
               />
               <text
@@ -658,6 +665,7 @@ export function StopGrid({
       </svg>
       <button
         type="button"
+        className="btn-mini"
         onClick={(e) => {
           e.stopPropagation();
           fitView();
@@ -665,19 +673,9 @@ export function StopGrid({
         onPointerDown={(e) => e.stopPropagation()}
         title="Fit to contents"
         aria-label="Fit to contents"
-        style={{
-          position: 'absolute',
-          top: 6,
-          right: 6,
-          padding: '2px 7px',
-          fontSize: 11,
-          lineHeight: 1.4,
-          color: 'inherit',
-          background: 'rgba(127, 127, 127, 0.18)',
-          border: '1px solid rgba(128, 128, 128, 0.35)',
-          borderRadius: 4,
-          cursor: 'pointer',
-        }}
+        // Solid control face (not btn-mini's transparent default) so the chip
+        // stays readable when grid content scrolls under the corner.
+        style={{ position: 'absolute', top: 6, right: 6, background: 'var(--control-bg)' }}
       >
         Fit
       </button>

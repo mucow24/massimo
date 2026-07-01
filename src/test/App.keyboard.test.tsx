@@ -6,7 +6,7 @@ import { useDoc, useSelection } from '../state/store';
 import { historyDepth, redoDepth } from '../state/history';
 import { DEFAULT_DOC } from '../model/transforms';
 import { readClipboard, writeClipboard, type ClipPayload } from '../model/clipboard';
-import { makeSvgImage, makeTextLabel } from '../test/fixtures';
+import { makePolygon, makeSvgImage, makeTextLabel } from '../test/fixtures';
 import type { RouteBullet } from '../model/types';
 
 beforeEach(() => {
@@ -17,6 +17,90 @@ beforeEach(() => {
     ...useSelection.getState(),
     spaceHeld: false,
     uiMode: { kind: 'idle' },
+  });
+});
+
+describe('App keyboard shortcuts: Escape', () => {
+  it('deselects a selected polygon, so its popover closes like the other item popovers', () => {
+    render(<App />);
+    useDoc.setState({
+      ...useDoc.getState(),
+      polygons: { p1: makePolygon({ id: 'p1' }) },
+      polygonOrder: ['p1'],
+    });
+    useSelection.getState().selectPolygon('p1');
+    fireEvent.keyDown(document.body, { key: 'Escape' });
+    expect(useSelection.getState().selectedPolygonIds).toEqual([]);
+  });
+
+  it('outside a field, deselects the selected label (popover closes)', () => {
+    render(<App />);
+    useDoc.setState({ ...useDoc.getState(), textLabels: { g1: makeTextLabel({ id: 'g1' }) } });
+    useSelection.getState().selectLabel('g1');
+    fireEvent.keyDown(document.body, { key: 'Escape' });
+    expect(useSelection.getState().selectedLabelIds).toEqual([]);
+  });
+
+  // Esc while typing belongs to the field (revert / unfocus per native
+  // behavior) — it must not close popovers or cancel modes out from under an
+  // in-progress edit. This guard used to live only inside TextLabelPopover,
+  // where the global handler silently defeated it. (Selection and mode are
+  // asserted separately: selecting an item exits any mode by design.)
+  it('while typing in a text field, blurs the field but keeps the selection (two-step escape)', () => {
+    render(<App />);
+    useDoc.setState({ ...useDoc.getState(), textLabels: { g1: makeTextLabel({ id: 'g1' }) } });
+    useSelection.getState().selectLabel('g1');
+    const input = document.createElement('input');
+    input.type = 'text';
+    document.body.appendChild(input);
+    input.focus();
+    try {
+      fireEvent.keyDown(input, { key: 'Escape' });
+      expect(useSelection.getState().selectedLabelIds).toEqual(['g1']);
+      // Plain inputs have no native Esc behavior, so a swallowed Esc would be
+      // a dead key. Instead the first Esc leaves the field; a second Esc then
+      // closes/cancels as usual.
+      expect(document.activeElement).not.toBe(input);
+      fireEvent.keyDown(document.body, { key: 'Escape' });
+      expect(useSelection.getState().selectedLabelIds).toEqual([]);
+    } finally {
+      document.body.removeChild(input);
+      useSelection.getState().selectLabel(null);
+    }
+  });
+
+  it('while typing in a text field, an active mode stays put', () => {
+    render(<App />);
+    useSelection.getState().setUiMode({ kind: 'placing-station' });
+    const input = document.createElement('input');
+    input.type = 'text';
+    document.body.appendChild(input);
+    input.focus();
+    try {
+      fireEvent.keyDown(input, { key: 'Escape' });
+      expect(useSelection.getState().uiMode.kind).toBe('placing-station');
+    } finally {
+      document.body.removeChild(input);
+      useSelection.getState().setUiMode({ kind: 'idle' });
+    }
+  });
+
+  // The guard deliberately excludes range/color inputs (like the Ctrl-combos):
+  // they have no in-progress edit to protect, so Esc mid-slider still works.
+  it('falls through on a focused range slider (Esc still deselects)', () => {
+    render(<App />);
+    useDoc.setState({ ...useDoc.getState(), textLabels: { g1: makeTextLabel({ id: 'g1' }) } });
+    useSelection.getState().selectLabel('g1');
+    const input = document.createElement('input');
+    input.type = 'range';
+    document.body.appendChild(input);
+    input.focus();
+    try {
+      fireEvent.keyDown(input, { key: 'Escape' });
+      expect(useSelection.getState().selectedLabelIds).toEqual([]);
+    } finally {
+      document.body.removeChild(input);
+    }
   });
 });
 

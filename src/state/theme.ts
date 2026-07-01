@@ -5,8 +5,9 @@ import { useViewportStore } from './viewportStore';
  * Theming has two halves, split by what can consume CSS:
  *
  *   - **Chrome** (toolbar, sidebar, menus, popovers, inputs) is themed purely
- *     in CSS via the `data-theme="dark"` attribute on the `.app` root (set in
- *     App.tsx) plus the `--ui-label-color` custom property. No JS needed.
+ *     in CSS: the design tokens declared on `.app` in styles.css are
+ *     reassigned once under the `data-theme="dark"` attribute (set in
+ *     App.tsx). No JS needed.
  *
  *   - **Canvas** (the SVG map) can't lean on CSS for most of its paint: stroke
  *     colors baked into `<defs>` patterns, attribute-level `fill`/`stroke`, and
@@ -42,6 +43,16 @@ export interface ThemeColors {
    * against the canvas (black on light, white on dark).
    */
   phantomDot: string;
+  /**
+   * The editor's interaction accent: rect-select marquee, StopGrid drop
+   * targets, placement-mode frames, the inline rename border. Brightened in
+   * dark mode — the light blue is near-invisible on the black canvas. The
+   * chrome side reads the same values via the `--accent` CSS variables
+   * declared on `.app` in styles.css.
+   */
+  accent: string;
+  /** Translucent fill companion to `accent` (marquee interior). */
+  accentWash: string;
 }
 
 const LIGHT: ThemeColors = {
@@ -53,6 +64,8 @@ const LIGHT: ThemeColors = {
   editorBg: '#ffffff',
   editorText: '#111111',
   phantomDot: '#000000',
+  accent: '#1a4ea8',
+  accentWash: 'rgba(26, 78, 168, 0.08)',
 };
 
 const DARK: ThemeColors = {
@@ -64,6 +77,8 @@ const DARK: ThemeColors = {
   editorBg: '#000000',
   editorText: '#ffffff',
   phantomDot: '#ffffff',
+  accent: '#6b9aff',
+  accentWash: 'rgba(107, 154, 255, 0.12)',
 };
 
 /** Pure mode → palette mapping. Exported for unit tests and non-React callers. */

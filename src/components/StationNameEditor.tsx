@@ -140,7 +140,7 @@ export function StationNameEditor({
           // every side — the same HIT_PAD the label hit rect adds around the
           // glyphs — so the editable text lands exactly where the label paints.
           padding: 1,
-          border: '1px solid #1a4ea8',
+          border: `1px solid ${theme.accent}`,
           borderRadius: 2,
           background: theme.editorBg,
           color: theme.editorText,

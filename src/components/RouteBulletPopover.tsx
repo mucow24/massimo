@@ -1,5 +1,6 @@
 import { useDoc } from '../state/store';
-import { projectToScreen, type ViewportProjection } from './canvas/screenAnchor';
+import { type ViewportProjection } from './canvas/screenAnchor';
+import { useDraggablePopover } from './canvas/useDraggablePopover';
 import { useNumericField } from './useNumericField';
 import { PopoverFooter } from './PopoverFooter';
 import { ROUTE_BULLET_SIZE_MAX, ROUTE_BULLET_SIZE_MIN } from '../model/transforms';
@@ -7,15 +8,18 @@ import type { RouteBullet, RouteBulletShape } from '../model/types';
 
 interface Props {
   bullet: RouteBullet;
-  // The bullet's world position. Projected through the live viewport every
-  // render so the popover tracks canvas pan/zoom.
+  // The bullet's world position at the moment of selection. Frozen at mount
+  // (useDraggablePopover) but projected through the live viewport, so the
+  // popover tracks canvas pan/zoom like the other item popovers.
   world: { x: number; y: number };
   view: ViewportProjection;
   onClose: () => void;
 }
 
 function ShapeIcon({ shape }: { shape: RouteBulletShape }) {
-  const fill = '#000';
+  // currentColor: inherits the button's themed text color, so the glyph stays
+  // visible on the dark control face too.
+  const fill = 'currentColor';
   if (shape === 'circle') {
     return (
       <svg width="14" height="14" viewBox="0 0 14 14" aria-hidden="true">
@@ -38,7 +42,8 @@ function ShapeIcon({ shape }: { shape: RouteBulletShape }) {
 }
 
 export function RouteBulletPopover({ bullet, world, view, onClose }: Props) {
-  const anchor = projectToScreen(world, view);
+  // Frozen-anchor + header-drag mechanism shared with the other item popovers.
+  const { anchor, headerHandlers } = useDraggablePopover(bullet.id, world, view);
   const lines = useDoc((s) => s.lines);
   const lineOrder = useDoc((s) => s.lineOrder);
   const updateRouteBullet = useDoc((s) => s.updateRouteBullet);
@@ -71,8 +76,8 @@ export function RouteBulletPopover({ bullet, world, view, onClose }: Props) {
       className="bullet-popover"
       style={{
         position: 'absolute',
-        left: anchor.x + 14,
-        top: anchor.y + 14,
+        left: anchor.x,
+        top: anchor.y,
         zIndex: 1100,
       }}
       // Stop pointerdowns from reaching the canvas (so the popover doesn't
@@ -80,7 +85,7 @@ export function RouteBulletPopover({ bullet, world, view, onClose }: Props) {
       onPointerDown={(e) => e.stopPropagation()}
       onClick={(e) => e.stopPropagation()}
     >
-      <div className="header" />
+      <div className="header" {...headerHandlers} />
       <div className="body">
         <div className="row">
           <label>Line</label>
