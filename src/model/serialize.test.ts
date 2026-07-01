@@ -227,6 +227,75 @@ describe('serialize / parse — segmentStyles', () => {
   });
 });
 
+describe('serialize / parse — segmentLayers', () => {
+  it('round-trips valid non-default segmentLayers', () => {
+    const doc = makeDoc({
+      stations: [
+        makeStation({ id: 's1', stops: [makeStop('L1')] }),
+        makeStation({ id: 's2', stops: [makeStop('L1')] }),
+        makeStation({ id: 's3', stops: [makeStop('L1')] }),
+      ],
+      lines: [
+        makeLine({
+          id: 'L1',
+          stations: ['s1', 's2', 's3'],
+          segmentLayers: { 's1|s2': 2, 's2|s3': -1 },
+        }),
+      ],
+    });
+    const r = parse(serialize(doc));
+    expect(r.ok).toBe(true);
+    if (r.ok) expect(r.doc.lines.L1.segmentLayers).toEqual({ 's1|s2': 2, 's2|s3': -1 });
+  });
+
+  it('drops the default layer (0) and non-adjacent pair-keys on parse', () => {
+    // The segmentLayers twin of the segmentStyles healing above. Previously
+    // only segmentStyles was healed, so these branches shipped a bug; this
+    // guards the fix. Non-finite junk (e.g. Infinity) can't survive JSON, so
+    // it's covered by the raw-JSON case below rather than a round-trip.
+    const doc = makeDoc({
+      stations: [
+        makeStation({ id: 's1', stops: [makeStop('L1')] }),
+        makeStation({ id: 's2', stops: [makeStop('L1')] }),
+        makeStation({ id: 's3', stops: [makeStop('L1')] }),
+      ],
+      lines: [
+        makeLine({
+          id: 'L1',
+          stations: ['s1', 's2', 's3'],
+          segmentLayers: {
+            's1|s2': 3, // valid, adjacent
+            's2|s3': 0, // the never-stored default layer
+            's1|s3': 1, // not adjacent on the line
+          },
+        }),
+      ],
+    });
+    const r = parse(serialize(doc));
+    expect(r.ok).toBe(true);
+    if (r.ok) expect(r.doc.lines.L1.segmentLayers).toEqual({ 's1|s2': 3 });
+  });
+
+  it('drops a non-finite layer value on parse (raw hand-edited JSON)', () => {
+    const doc = makeDoc({
+      stations: [
+        makeStation({ id: 's1', stops: [makeStop('L1')] }),
+        makeStation({ id: 's2', stops: [makeStop('L1')] }),
+      ],
+      lines: [makeLine({ id: 'L1', stations: ['s1', 's2'] })],
+    });
+    // Exercise the `!Number.isFinite` drop branch that a normal round-trip
+    // can't reach: JSON has no Infinity literal, so serialize writes it as
+    // null. Re-inject `1e999` (which parses back to Infinity) into the text.
+    const rawFile = JSON.parse(serialize(doc));
+    rawFile.doc.lines.L1.segmentLayers = { 's1|s2': Infinity };
+    const injected = JSON.stringify(rawFile).replace('"s1|s2":null', '"s1|s2":1e999');
+    const r = parse(injected);
+    expect(r.ok).toBe(true);
+    if (r.ok) expect(r.doc.lines.L1.segmentLayers).toEqual({});
+  });
+});
+
 describe('parse — legacy stop orientation migration', () => {
   // Older docs (and any hand-written ones) may carry the vestigial
   // explicit cardinals `up`/`down`/`left`/`right` or unknown garbage in

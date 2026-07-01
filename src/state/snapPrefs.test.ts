@@ -11,7 +11,11 @@ describe('useSnapPrefs', () => {
   });
 
   it('initializes with the default snap modes', () => {
-    expect(useSnapPrefs.getState().modes).toEqual(DEFAULT_SNAP_MODES);
+    // Assert the store's OWN initializer via getInitialState (the pristine
+    // snapshot captured at creation), not `getState()` — the latter only
+    // reflects what `beforeEach` just wrote, so it could never catch a broken
+    // default like `modes: {}` on line 45 of snapPrefs.ts.
+    expect(useSnapPrefs.getInitialState().modes).toEqual(DEFAULT_SNAP_MODES);
   });
 
   it('setMode flips a single key without touching the others', () => {

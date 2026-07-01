@@ -140,8 +140,13 @@ describe('parseHex robustness (malformed / alpha input)', () => {
     expect(legibleTextOn('not-a-color')).toBe('#fff');
   });
 
-  it('blendOver and desaturateColor stay valid hex for malformed input', () => {
-    expect(blendOver('bogus', 0.5)).toMatch(/^#[0-9a-f]{6}$/);
-    expect(desaturateColor('bogus', 0.5)).toMatch(/^#[0-9a-f]{6}$/);
+  it('blendOver and desaturateColor fall back to black for malformed input', () => {
+    // Pin the resulting color, not just "some 6-digit hex": a fallback that
+    // mis-parsed 'bogus' into another valid color (the exact bug the sibling
+    // withAlpha tests guard against) would still match /^#[0-9a-f]{6}$/ but
+    // fail here. parseHex('bogus') → black [0,0,0]; blendOver black over the
+    // white default bg at 0.5 → #808080; desaturateColor of black stays black.
+    expect(blendOver('bogus', 0.5)).toBe('#808080');
+    expect(desaturateColor('bogus', 0.5)).toBe('#000000');
   });
 });

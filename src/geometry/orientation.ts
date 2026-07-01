@@ -1,4 +1,4 @@
-import { Vec2, SQRT2_2 } from './vec';
+import { Vec2, SQRT2_2, rotate } from './vec';
 import type { StopOrientation } from '../model/types';
 
 export const STOP_SIZE = 14;
@@ -14,12 +14,9 @@ const HALF = STOP_SIZE / 2;
 
 export const rotRad = (r: Rotation) => (r * Math.PI) / 4;
 
-export const rotateBy = (p: Vec2, r: Rotation): Vec2 => {
-  const a = rotRad(r);
-  const c = Math.cos(a);
-  const s = Math.sin(a);
-  return { x: p.x * c - p.y * s, y: p.x * s + p.y * c };
-};
+// Rotate a point by a Rotation step (r × 45°). Thin wrapper over `vec.rotate`
+// so the rotation matrix lives in exactly one place.
+export const rotateBy = (p: Vec2, r: Rotation): Vec2 => rotate(p, rotRad(r));
 
 /**
  * Local-space center of a grid cell at (row, col). Cells touch (no gap), so

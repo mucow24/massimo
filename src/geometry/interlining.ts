@@ -1,6 +1,17 @@
 import { Line, LineId, LineStyle, Station, StationId, StopCell } from '../model/types';
 import { pairKeyOf } from '../model/pairKey';
-import { Vec2, sub, dot, len, norm, leftNormal, angleBetween, tanHalf, angleDeg } from './vec';
+import {
+  Vec2,
+  sub,
+  dot,
+  len,
+  norm,
+  leftNormal,
+  angleBetween,
+  tanHalf,
+  angleDeg,
+  centroid,
+} from './vec';
 import { dirIndex, offsetFilletPath, route } from './router';
 import {
   localToWorld,
@@ -550,15 +561,9 @@ function stationMarkerStyle(line: Line, stationId: StationId): LineStyle {
   return 'solid';
 }
 
-// Centroid (mean) of a set of points. Pure.
+// Centroid (mean) of a set of points. Pure. Thin alias over `vec.centroid`.
 export function bandCentroid(points: Vec2[]): Vec2 {
-  let x = 0;
-  let y = 0;
-  for (const p of points) {
-    x += p.x;
-    y += p.y;
-  }
-  return { x: x / points.length, y: y / points.length };
+  return centroid(points);
 }
 
 // Centerline radius bumped so the INNERMOST stripe of a band still has
