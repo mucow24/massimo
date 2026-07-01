@@ -1,6 +1,7 @@
 import { describe, it, expect, vi } from 'vitest';
 import { render, fireEvent } from '@testing-library/react';
 import { StopGrid } from './StopGrid';
+import { useViewportStore } from '../../state/viewportStore';
 import type { StopOrientation } from '../../model/types';
 
 // Minimal station shape that StopGrid consumes. The component imports the
@@ -76,6 +77,33 @@ describe('<StopGrid /> — orientation glyphs', () => {
       '[data-cell-row="0"][data-cell-col="0"][data-cell-kind="stop"][data-line-id="L1"]',
     );
     expect(cell?.querySelector('title')?.textContent).toContain('auto-ne-sw');
+  });
+});
+
+describe('<StopGrid /> — theme-aware selection ring', () => {
+  const station: GridStation = {
+    rotation: 0,
+    stops: [{ lineId: 'L1', row: 0, col: 0, orientation: 'auto-vertical' }],
+    label: { row: -1, col: -1, rotation: 0 },
+  };
+  const selectedStroke = (container: Element) =>
+    container
+      .querySelector('[data-cell-kind="stop"][data-line-id="L1"] circle')
+      ?.getAttribute('stroke');
+
+  // The ring comes from themeColors.selectionStroke — a black ring on the
+  // dark sidebar (#1d1d1d) is invisible, so it must flip white in dark mode.
+  it('selected-stop ring flips with the theme (black on light, white on dark)', () => {
+    const light = renderGrid({ station, selectedLineId: 'L1' });
+    expect(selectedStroke(light.container)).toBe('#000000');
+    light.unmount();
+    useViewportStore.getState().setDarkMode(true);
+    try {
+      const dark = renderGrid({ station, selectedLineId: 'L1' });
+      expect(selectedStroke(dark.container)).toBe('#ffffff');
+    } finally {
+      useViewportStore.getState().setDarkMode(false);
+    }
   });
 });
 

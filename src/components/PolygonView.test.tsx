@@ -204,6 +204,40 @@ describe('<PolygonView /> open polygons (closed: false)', () => {
     expect(c.querySelector('g[data-polygon-overlay] > polygon')).not.toBeNull();
     expect(c.querySelectorAll('[data-polygon-edge-add]')).toHaveLength(4);
   });
+
+  // Density gate: an edge too short on screen to comfortably host the 14px
+  // "+" disc skips it — a detailed traced shape (30-50 vertices) otherwise
+  // disappears under a chain of overlapping discs when zoomed out. The discs
+  // come back as you zoom in (vertex handles always stay).
+  it('skips edge "+" discs on edges too short on screen, and restores them with zoom', () => {
+    // A 100×20 rectangle: the two short edges (20px at zoom 1) are under the
+    // ~42px floor; the two long ones (100px) are not.
+    const thin = makePolygon({
+      id: 'p0',
+      vertices: [
+        { x: 0, y: 0 },
+        { x: 100, y: 0 },
+        { x: 100, y: 20 },
+        { x: 0, y: 20 },
+      ],
+    });
+    const atZoom1 = renderOverlay(thin);
+    expect(atZoom1.querySelectorAll('[data-polygon-edge-add]')).toHaveLength(2);
+    expect(atZoom1.querySelectorAll('[data-polygon-vertex]')).toHaveLength(4);
+    // 'crosshair', not the old 'copy' (the OS drag-duplicate cursor) — the
+    // disc inserts a vertex, it doesn't copy anything.
+    const disc = atZoom1.querySelector('[data-polygon-edge-add]') as SVGGElement;
+    expect(disc.style.cursor).toBe('crosshair');
+    atZoom1.remove();
+
+    useViewportStore.setState({ zoom: 4 }); // short edges now 80px on screen
+    try {
+      const zoomedIn = renderOverlay(thin);
+      expect(zoomedIn.querySelectorAll('[data-polygon-edge-add]')).toHaveLength(4);
+    } finally {
+      useViewportStore.setState({ zoom: 1 });
+    }
+  });
 });
 
 describe('<PolygonView /> locked polygons (E5c)', () => {

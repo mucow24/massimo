@@ -52,24 +52,31 @@ describe('<Sidebar /> — station sort-direction flip', () => {
     });
   });
 
-  it('defaults to name-ascending order with an ▲ arrow on the Station header', () => {
+  // The arrow is a Radix triangle icon carrying its own accessible name, so
+  // the assertion targets the rendered indicator (icon + label travel as a
+  // unit — a flipped direction ternary reads "ascending" over reversed rows
+  // and fails here).
+  const sortDir = () =>
+    stationHeader().querySelector('.sort-arrow [role="img"]')?.getAttribute('aria-label');
+
+  it('defaults to name-ascending order with an ascending arrow on the Station header', () => {
     render(<Sidebar />);
     expect(rowOrder()).toEqual(['alpha', 'beta', 'gamma']);
-    expect(stationHeader().textContent).toContain('▲');
+    expect(sortDir()).toBe('sorted ascending');
   });
 
-  it('clicking the active Station header once flips to descending (▼) and reverses the rows', async () => {
+  it('clicking the active Station header once flips to descending and reverses the rows', async () => {
     const user = userEvent.setup();
     render(<Sidebar />);
 
     await user.click(stationHeader());
     expect(rowOrder()).toEqual(['gamma', 'beta', 'alpha']);
-    expect(stationHeader().textContent).toContain('▼');
+    expect(sortDir()).toBe('sorted descending');
 
     // A second click flips back to ascending.
     await user.click(stationHeader());
     expect(rowOrder()).toEqual(['alpha', 'beta', 'gamma']);
-    expect(stationHeader().textContent).toContain('▲');
+    expect(sortDir()).toBe('sorted ascending');
   });
 });
 

@@ -1,5 +1,11 @@
 import { Fragment, useId, useRef, useState } from 'react';
-import { ChevronDownIcon, ChevronRightIcon, MixerHorizontalIcon } from '@radix-ui/react-icons';
+import {
+  ChevronDownIcon,
+  ChevronRightIcon,
+  Cross2Icon,
+  FontItalicIcon,
+  MixerHorizontalIcon,
+} from '@radix-ui/react-icons';
 import { useDoc } from '../state/store';
 import {
   FONT_SIZE_STEP,
@@ -156,7 +162,7 @@ export function OptionsPopover() {
               title="Italic station labels"
               onClick={() => setLabelItalic(!labelItalic)}
             >
-              <em>I</em>
+              <FontItalicIcon />
             </button>
           </div>
 
@@ -268,7 +274,7 @@ export function OptionsPopover() {
                             deleteCustomPalette(palette.id);
                           }}
                         >
-                          ×
+                          <Cross2Icon />
                         </button>
                       </div>
                       <div className="options-palette-strip" aria-hidden="true">

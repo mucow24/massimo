@@ -1,4 +1,11 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
+import {
+  ChevronDownIcon,
+  ChevronUpIcon,
+  Cross2Icon,
+  TriangleDownIcon,
+  TriangleUpIcon,
+} from '@radix-ui/react-icons';
 import { effectiveLineOrder, useDoc, useSelection } from '../state/store';
 import { LineInspector, StationInspector } from './inspector';
 import type { Line } from '../model/types';
@@ -109,7 +116,23 @@ export function Sidebar() {
               >
                 Station
                 {stationSortBy === 'name' && (
-                  <span className="sort-arrow">{stationSortDir === 'asc' ? '▲' : '▼'}</span>
+                  <span className="sort-arrow">
+                    {stationSortDir === 'asc' ? (
+                      <TriangleUpIcon
+                        role="img"
+                        aria-label="sorted ascending"
+                        width={12}
+                        height={12}
+                      />
+                    ) : (
+                      <TriangleDownIcon
+                        role="img"
+                        aria-label="sorted descending"
+                        width={12}
+                        height={12}
+                      />
+                    )}
+                  </span>
                 )}
               </button>
               <button
@@ -119,7 +142,23 @@ export function Sidebar() {
               >
                 Lines
                 {stationSortBy === 'stops' && (
-                  <span className="sort-arrow">{stationSortDir === 'asc' ? '▲' : '▼'}</span>
+                  <span className="sort-arrow">
+                    {stationSortDir === 'asc' ? (
+                      <TriangleUpIcon
+                        role="img"
+                        aria-label="sorted ascending"
+                        width={12}
+                        height={12}
+                      />
+                    ) : (
+                      <TriangleDownIcon
+                        role="img"
+                        aria-label="sorted descending"
+                        width={12}
+                        height={12}
+                      />
+                    )}
+                  </span>
                 )}
               </button>
               <span className="header-spacer" aria-hidden />
@@ -176,12 +215,14 @@ export function Sidebar() {
                     </span>
                     <button
                       className="btn-mini danger"
+                      aria-label="Delete station"
+                      title="Delete station"
                       onClick={(e) => {
                         e.stopPropagation();
                         deleteStation(st.id);
                       }}
                     >
-                      ×
+                      <Cross2Icon />
                     </button>
                   </div>
                   {expanded && (
@@ -241,7 +282,7 @@ export function Sidebar() {
                         moveLineInOrder(ln.id, -1);
                       }}
                     >
-                      ↑
+                      <ChevronUpIcon />
                     </button>
                     <button
                       className="btn-mini icon"
@@ -252,16 +293,18 @@ export function Sidebar() {
                         moveLineInOrder(ln.id, 1);
                       }}
                     >
-                      ↓
+                      <ChevronDownIcon />
                     </button>
                     <button
                       className="btn-mini danger"
+                      aria-label="Delete line"
+                      title="Delete line"
                       onClick={(e) => {
                         e.stopPropagation();
                         deleteLine(ln.id);
                       }}
                     >
-                      ×
+                      <Cross2Icon />
                     </button>
                   </div>
                   {expanded && (

@@ -16,6 +16,7 @@ import { useViewportStore } from '../state/viewportStore';
 import { resolveTextLabelColor } from '../model/transforms';
 import { InlineBullet } from './InlineBullet';
 import { itemCursor } from './canvas/itemCursor';
+import { SELECTION_STROKE_WIDTH, selectionDash } from './selectionStyle';
 
 export type LabelLayer = 'bg' | 'stroke' | 'hit';
 
@@ -35,9 +36,6 @@ interface Props {
   // Hand mode → grab cursor (pannable). Defaults false for non-canvas uses.
   inHandMode?: boolean;
 }
-
-const SELECTION_STROKE_WIDTH = 2;
-const SELECTION_DASH = '4 3';
 
 // Per-line cursor X. Each line is positioned by its own ink bearings so the
 // visible left/right ink edges align with the bbox edges — fonts at
@@ -67,6 +65,9 @@ export function LabelView({
   const docLines = useDoc((s) => s.lines);
   const themeColors = useThemeColors();
   const darkMode = useViewportStore((s) => s.darkMode);
+  // Committed zoom: the selection ring divides by it so its screen weight is
+  // constant (matches the polygon/bullet/silhouette selection chrome).
+  const zoom = useViewportStore((s) => s.zoom);
   // Per-label day/night color (defaults match the old theme-driven colors).
   // The selection ring below still uses the theme's selectionStroke.
   const labelColor = resolveTextLabelColor(label, darkMode);
@@ -97,8 +98,8 @@ export function LabelView({
           height={m.height + 2 * TEXT_LABEL_HIT_PAD}
           fill="none"
           stroke={themeColors.selectionStroke}
-          strokeWidth={SELECTION_STROKE_WIDTH}
-          strokeDasharray={SELECTION_DASH}
+          strokeWidth={SELECTION_STROKE_WIDTH / zoom}
+          strokeDasharray={selectionDash(zoom)}
         />
       </g>
     );

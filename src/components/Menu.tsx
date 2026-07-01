@@ -1,4 +1,5 @@
 import { ReactNode, useId, useState } from 'react';
+import { ChevronRightIcon } from '@radix-ui/react-icons';
 import { usePopover } from './usePopover';
 
 interface MenuProps {
@@ -92,7 +93,7 @@ export function SubMenu({ label, children }: SubMenuProps) {
       >
         {label}
         <span className="menu-sub-caret" aria-hidden="true">
-          ›
+          <ChevronRightIcon />
         </span>
       </button>
       {open && (
