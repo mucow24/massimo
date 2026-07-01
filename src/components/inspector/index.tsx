@@ -4,7 +4,6 @@ import { LineInspector } from './LineInspector';
 
 export { StationInspector } from './StationInspector';
 export { LineInspector } from './LineInspector';
-export { StopGrid } from './StopGrid';
 export { ColorPalette } from './ColorPalette';
 export { LabelOffsetControl } from './LabelOffsetControl';
 

@@ -3,8 +3,6 @@ import { useDoc, useSelection } from '../../state/store';
 import { dispatchMirrored } from '../../state/mirrorDispatch';
 import type { StationId } from '../../model/types';
 import { findMatchingStations, type LayoutOffset } from '../../model/matching';
-import { rotateGridDelta } from '../../geometry/orientation';
-import { StopGrid } from './StopGrid';
 import { LabelOffsetControl } from './LabelOffsetControl';
 import { LabelAlignPicker, LabelValignPicker } from './LabelAlignButtons';
 import { useFieldHistory } from '../useFieldHistory';
@@ -22,10 +20,6 @@ export function StationInspector({ id }: { id: StationId }) {
   const renameStation = useDoc((s) => s.renameStation);
   const rotateStation = useDoc((s) => s.rotateStation);
   const moveStation = useDoc((s) => s.moveStation);
-  const moveStopAction = useDoc((s) => s.moveStop);
-  const rotateStopAction = useDoc((s) => s.rotateStop);
-  const moveLabelAction = useDoc((s) => s.moveLabel);
-  const rotateLabelAction = useDoc((s) => s.rotateLabel);
   const setLabelOffset = useDoc((s) => s.setLabelOffset);
   const setLabelOffsetPerp = useDoc((s) => s.setLabelOffsetPerp);
   const setLabelAlign = useDoc((s) => s.setLabelAlign);
@@ -40,7 +34,6 @@ export function StationInspector({ id }: { id: StationId }) {
   const nameField = useFieldHistory();
   const xField = useFieldHistory();
   const yField = useFieldHistory();
-  const stopAreaRef = useRef<HTMLDivElement | null>(null);
   const shapePickerRef = useRef<HTMLDivElement | null>(null);
 
   // Stations that render identically to this one (across the model's 4-fold
@@ -88,17 +81,16 @@ export function StationInspector({ id }: { id: StationId }) {
     },
   );
 
-  // Standard deselect: Escape, or mousedown anywhere outside the stop area
-  // (the StopGrid). Clicks on canvas/sidebar already deselect via
-  // selectStation; this covers the remaining "click on something else
-  // within the inspector" case.
-  // Clicks inside the StopGrid (stopAreaRef) and the shape picker
-  // (shapePickerRef) act on the selected stop, so they must not deselect.
+  // Standard deselect: Escape, or mousedown anywhere outside the shape
+  // picker. Canvas handle clicks re-assert the selection on pointerup (the
+  // layout-editor and label-drag hooks select AFTER this document-level
+  // mousedown clear), so acting on a stop from the map survives; clicks on
+  // other inspector fields or the sidebar genuinely deselect.
   const clearStopSelection = useCallback(() => {
     selection.setSelectedStopLineId(null);
     selection.setLabelSelected(false);
   }, [selection]);
-  useDismiss(hasSelection, clearStopSelection, [stopAreaRef, shapePickerRef]);
+  useDismiss(hasSelection, clearStopSelection, [shapePickerRef]);
 
   if (!station) return null;
 
@@ -270,32 +262,12 @@ export function StationInspector({ id }: { id: StationId }) {
             {inLayoutEdit ? 'Done' : 'Edit layout'}
           </button>
         </div>
-        <div ref={stopAreaRef} style={{ display: 'flex', justifyContent: 'center' }}>
-          <StopGrid
-            key={id}
-            station={station}
-            lines={linesAll}
-            selectedLineId={selectedLineId}
-            labelSelected={labelSelected}
-            onSelectStop={(lid) => selection.setSelectedStopLineId(lid)}
-            onSelectLabel={() => selection.setLabelSelected(true)}
-            onRotateStop={(lid) => dispatchAll((sid) => rotateStopAction(sid, lid))}
-            onRotateLabel={() => dispatchAll((sid) => rotateLabelAction(sid))}
-            onMoveStop={(lid, dRow, dCol) =>
-              dispatchAll((sid, k) => {
-                // Local-frame deltas must be rotated by the match's
-                // layoutOffset so the world-frame edit matches the source.
-                const d = rotateGridDelta(dRow, dCol, k);
-                moveStopAction(sid, lid, d.dRow, d.dCol);
-              })
-            }
-            onMoveLabel={(dRow, dCol) =>
-              dispatchAll((sid, k) => {
-                const d = rotateGridDelta(dRow, dCol, k);
-                moveLabelAction(sid, d.dRow, d.dCol);
-              })
-            }
-          />
+        <div className="field-hint">
+          {station.stops.length === 0
+            ? 'No stops yet — add this station to a line.'
+            : inLayoutEdit
+              ? 'Click a dot or the label ring on the map to select it; drag to move.'
+              : 'Stops and the name are edited on the map — click Edit layout.'}
         </div>
       </div>
       <div className="field">

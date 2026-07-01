@@ -43,12 +43,13 @@ const baseStation = (
   label: { row: 0, col: -1, rotation: 0, offset: 0, align: 'auto', valign: 'middle' },
 });
 
-// Selecting a station opens its StopGrid in the inspector; the L1 stop cell
+// Selecting a station and opening its layout editor shows the L1 stop handle;
 // shows the orientation as a glyph (↕ / ⤢ / ↔ / ⤡). Reading the glyph is the
 // most reliable way to confirm migration without depending on store internals.
 async function orientationGlyphFor(page: Page, stationId: string): Promise<string> {
   const center = await stationCenter(page, stationId);
   await page.mouse.click(center.x, center.y);
+  await page.getByRole('button', { name: 'Edit layout' }).click();
   const cell = page.locator(
     '[data-cell-row="0"][data-cell-col="0"][data-cell-kind="stop"][data-line-id="L1"]',
   );

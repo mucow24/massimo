@@ -1,5 +1,5 @@
 import { describe, it, expect, beforeEach } from 'vitest';
-import { fireEvent, render, screen } from '@testing-library/react';
+import { act, fireEvent, render, screen } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { StationInspector } from './StationInspector';
 import { useDoc, useSelection } from '../../state/store';
@@ -77,8 +77,7 @@ describe('<StationInspector /> — shape picker wiring', () => {
     );
   });
 
-  it('picker becomes enabled once a stop is clicked in the StopGrid', async () => {
-    const user = userEvent.setup();
+  it('picker becomes enabled once a stop is selected (via the canvas layout editor)', () => {
     useDoc.setState({
       ...DEFAULT_DOC,
       ...makeDoc({
@@ -94,11 +93,8 @@ describe('<StationInspector /> — shape picker wiring', () => {
       'true',
     );
 
-    const stopCell = document.querySelector(
-      '[data-cell-kind="stop"][data-line-id="L1"]',
-    ) as HTMLElement;
-    expect(stopCell).not.toBeNull();
-    await user.click(stopCell);
+    // Clicking a dot handle on the map sets this (see useStationLayoutDrag).
+    act(() => useSelection.getState().setSelectedStopLineId('L1'));
 
     expect(screen.getByRole('button', { name: 'Stop shape' })).toHaveAttribute(
       'aria-disabled',
@@ -118,10 +114,7 @@ describe('<StationInspector /> — shape picker wiring', () => {
     useSelection.setState({ ...SELECTION_BLANK, selectedStationIds: ['a'] });
 
     render(<StationInspector id="a" />);
-    const stopCell = document.querySelector(
-      '[data-cell-kind="stop"][data-line-id="L1"]',
-    ) as HTMLElement;
-    await user.click(stopCell);
+    act(() => useSelection.getState().setSelectedStopLineId('L1'));
     expect(useSelection.getState().selectedStopLineId).toBe('L1');
 
     await user.click(screen.getByRole('button', { name: 'Stop shape' }));
@@ -135,7 +128,6 @@ describe('<StationInspector /> — shape picker wiring', () => {
   });
 
   it("trigger reflects the selected stop's explicit dotStyle", async () => {
-    const user = userEvent.setup();
     useDoc.setState({
       ...DEFAULT_DOC,
       ...makeDoc({
@@ -151,10 +143,7 @@ describe('<StationInspector /> — shape picker wiring', () => {
     useSelection.setState({ ...SELECTION_BLANK, selectedStationIds: ['a'] });
 
     render(<StationInspector id="a" />);
-    const stopCell = document.querySelector(
-      '[data-cell-kind="stop"][data-line-id="L1"]',
-    ) as HTMLElement;
-    await user.click(stopCell);
+    act(() => useSelection.getState().setSelectedStopLineId('L1'));
 
     const trigger = screen.getByRole('button', { name: 'Stop shape' });
     const circle = trigger.querySelector('circle');
@@ -163,7 +152,6 @@ describe('<StationInspector /> — shape picker wiring', () => {
   });
 
   it('trigger shows the filled-black default when the selected stop has no dotStyle set', async () => {
-    const user = userEvent.setup();
     useDoc.setState({
       ...DEFAULT_DOC,
       ...makeDoc({
@@ -174,10 +162,7 @@ describe('<StationInspector /> — shape picker wiring', () => {
     useSelection.setState({ ...SELECTION_BLANK, selectedStationIds: ['a'] });
 
     render(<StationInspector id="a" />);
-    const stopCell = document.querySelector(
-      '[data-cell-kind="stop"][data-line-id="L1"]',
-    ) as HTMLElement;
-    await user.click(stopCell);
+    act(() => useSelection.getState().setSelectedStopLineId('L1'));
 
     const trigger = screen.getByRole('button', { name: 'Stop shape' });
     const circle = trigger.querySelector('circle');
@@ -186,7 +171,6 @@ describe('<StationInspector /> — shape picker wiring', () => {
   });
 
   it('with mirror on and matching neighbors disagreeing, trigger still reflects the inspected station', async () => {
-    const user = userEvent.setup();
     useDoc.setState({
       ...DEFAULT_DOC,
       ...makeDoc({
@@ -210,10 +194,7 @@ describe('<StationInspector /> — shape picker wiring', () => {
     });
 
     render(<StationInspector id="a" />);
-    const stopCell = document.querySelector(
-      '[data-cell-kind="stop"][data-line-id="L1"]',
-    ) as HTMLElement;
-    await user.click(stopCell);
+    act(() => useSelection.getState().setSelectedStopLineId('L1'));
 
     const trigger = screen.getByRole('button', { name: 'Stop shape' });
     const circle = trigger.querySelector('circle');
@@ -530,10 +511,7 @@ describe('<StationInspector /> — shape picker wiring', () => {
     const pastBefore = historyDepth();
 
     render(<StationInspector id="a" />);
-    const stopCell = document.querySelector(
-      '[data-cell-kind="stop"][data-line-id="L1"]',
-    ) as HTMLElement;
-    await user.click(stopCell);
+    act(() => useSelection.getState().setSelectedStopLineId('L1'));
     await user.click(screen.getByRole('button', { name: 'Stop shape' }));
     await user.click(screen.getByRole('menuitem', { name: 'Open white' }));
 
@@ -582,11 +560,9 @@ describe('<StationInspector /> — stop dot size textbox', () => {
 
   const sizeBox = () => screen.getByRole('spinbutton', { name: 'Stop dot size' });
 
-  const selectStop = async (user: ReturnType<typeof userEvent.setup>) => {
-    const stopCell = document.querySelector(
-      '[data-cell-kind="stop"][data-line-id="L1"]',
-    ) as HTMLElement;
-    await user.click(stopCell);
+  const selectStop = async (_user: ReturnType<typeof userEvent.setup>) => {
+    // Selection now comes from the canvas layout editor; set it directly.
+    act(() => useSelection.getState().setSelectedStopLineId('L1'));
   };
 
   it('is disabled, showing the global default, when no stop is selected', () => {

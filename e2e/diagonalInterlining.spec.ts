@@ -133,9 +133,10 @@ test.describe('Diagonal interlining — right-click cycle in inspector', () => {
       lines: [{ id: 'L1', service: 'L', color: '#0039A6', stations: ['A'] }],
     });
 
-    // Select the station so the StopGrid renders.
+    // Select the station and open the on-canvas layout editor.
     const a = await stationCenter(page, 'A');
     await page.mouse.click(a.x, a.y);
+    await page.getByRole('button', { name: 'Edit layout' }).click();
 
     const cell = page.locator(
       '[data-cell-row="0"][data-cell-col="0"][data-cell-kind="stop"][data-line-id="L1"]',

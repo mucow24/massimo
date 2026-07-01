@@ -294,6 +294,17 @@ export async function labelCenter(page: Page, id: string): Promise<{ x: number; 
 }
 
 /**
+ * Select `stationId` (canvas click) and enter its on-canvas layout editor via
+ * the inspector's Edit layout button. The [data-cell-*] stop/label handles
+ * render on the map only while this mode is active.
+ */
+export async function openLayoutEditor(page: Page, stationId: string): Promise<void> {
+  const c = await stationCenter(page, stationId);
+  await page.mouse.click(c.x, c.y);
+  await page.getByRole('button', { name: 'Edit layout' }).click();
+}
+
+/**
  * Click at a page coordinate while holding a set of modifier keys. Wraps
  * `mouse.click` (which silently ignores any modifiers option) with explicit
  * keyboard.down/up so the synthesized mouse events carry shiftKey/ctrlKey.
