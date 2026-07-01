@@ -1,5 +1,5 @@
 import { describe, it, expect, afterEach } from 'vitest';
-import { buildExportSvg } from './exportCanvas';
+import { buildExportSvg, mapFileBasename } from './exportCanvas';
 
 const SVG_NS = 'http://www.w3.org/2000/svg';
 
@@ -30,6 +30,22 @@ let restore: (() => void) | null = null;
 afterEach(() => {
   restore?.();
   restore = null;
+});
+
+describe('mapFileBasename', () => {
+  it('folds the map name and a date stamp into the basename', () => {
+    expect(mapFileBasename('My Subway Map')).toMatch(/^My Subway Map - \d{4}-\d{2}-\d{2}$/);
+  });
+
+  it('strips characters that are illegal in filenames', () => {
+    // Windows/macOS/Linux collectively reject < > : " / \ | ? * in filenames.
+    expect(mapFileBasename('A/B:C*?"<>|\\')).toMatch(/^ABC - \d{4}-\d{2}-\d{2}$/);
+  });
+
+  it('falls back to "map" when the name is empty or all-illegal', () => {
+    expect(mapFileBasename('   ')).toMatch(/^map - \d{4}-\d{2}-\d{2}$/);
+    expect(mapFileBasename('/\\:')).toMatch(/^map - \d{4}-\d{2}-\d{2}$/);
+  });
 });
 
 describe('buildExportSvg', () => {

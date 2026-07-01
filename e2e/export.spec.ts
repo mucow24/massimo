@@ -53,7 +53,8 @@ test.describe('Canvas export', () => {
       .getAttribute('viewBox');
 
     const download = await exportVia(page, 'SVG');
-    expect(download.suggestedFilename()).toMatch(/^map-\d{4}-\d{2}-\d{2}\.svg$/);
+    // Default (unnamed) map → basename is the "Untitled map" default + date.
+    expect(download.suggestedFilename()).toMatch(/^Untitled map - \d{4}-\d{2}-\d{2}\.svg$/);
 
     const svg = (await readDownload(download)).toString('utf-8');
 

@@ -122,7 +122,8 @@ test('exports a vector PDF with embedded fonts from a hatch + text + image map',
   await expect(page.locator('[data-band-stripe][data-line-id="L1"]')).not.toHaveCount(0);
 
   const download = await exportPdf(page);
-  expect(download.suggestedFilename()).toMatch(/^map-\d{4}-\d{2}-\d{2}\.pdf$/);
+  // Default (unnamed) map → basename is the "Untitled map" default + date.
+  expect(download.suggestedFilename()).toMatch(/^Untitled map - \d{4}-\d{2}-\d{2}\.pdf$/);
 
   const path = await download.path();
   expect(path).toBeTruthy();

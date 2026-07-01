@@ -53,6 +53,12 @@ function unlockedSelectedStationIds() {
 
 export default function App() {
   const darkMode = useViewportStore((s) => s.darkMode);
+
+  // Keep the browser tab title in sync with the map name: "Massimo - <name>".
+  const docName = useDoc((s) => s.name);
+  useEffect(() => {
+    document.title = `Massimo - ${docName}`;
+  }, [docName]);
   // Force a re-measure + re-render once the web fonts finish loading. Label
   // geometry is measured against the canvas and cached by text+style; the very
   // first paint runs before Helvetica Neue is ready, so those measurements use
