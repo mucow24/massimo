@@ -22,6 +22,8 @@ import { StationView } from './StationView';
 import { useViewport } from './canvas/useViewport';
 import { overdrawnViewBox } from './canvas/viewportMath';
 import { useStationDrag } from './canvas/useStationDrag';
+import { useLabelDrag } from './canvas/useLabelDrag';
+import { LabelDragGhosts } from './canvas/LabelDragGhosts';
 import { useRectSelect } from './canvas/useRectSelect';
 import { Grid } from './canvas/Grid';
 import { WarningToasts } from './canvas/WarningToasts';
@@ -243,6 +245,7 @@ export function MapCanvas() {
   const itemDrag = useItemDrag(svgRef, view.viewport.zoom, inHandMode);
   const polyDrag = usePolygonDrag(svgRef, view.viewport.zoom, inHandMode);
   const svgDrag = useSvgImageDrag(svgRef, view.viewport.zoom, inHandMode, view.screenToWorld);
+  const labelDrag = useLabelDrag(svgRef, view.screenToWorld);
   // Cursor position in world coords — drives the in-progress transfer line
   // from the anchor dot to the cursor, and the station-placing-mode ghost
   // that follows the cursor before each click.
@@ -314,6 +317,7 @@ export function MapCanvas() {
     itemDrag.onPointerMove(e);
     polyDrag.onPointerMove(e);
     svgDrag.onPointerMove(e);
+    labelDrag.onPointerMove(e);
   };
   const onPointerUp = (e: React.PointerEvent) => {
     view.onPointerUp(e);
@@ -322,6 +326,7 @@ export function MapCanvas() {
     itemDrag.onPointerUp(e);
     polyDrag.onPointerUp(e);
     svgDrag.onPointerUp(e);
+    labelDrag.onPointerUp(e);
   };
 
   // A plain click / right-click that lands on a selected item's drag proxy must
@@ -723,6 +728,7 @@ export function MapCanvas() {
             lines={lines}
             zoom={view.viewport.zoom}
             onStartDrag={drag.onStartDrag}
+            onStartLabelDrag={labelDrag.onStartLabelDrag}
             layer="bg"
           />
         ))}
@@ -1022,6 +1028,7 @@ export function MapCanvas() {
                 lines={lines}
                 zoom={view.viewport.zoom}
                 onStartDrag={drag.onStartDrag}
+                onStartLabelDrag={labelDrag.onStartLabelDrag}
                 layer="hit"
               />
             ) : null,
@@ -1145,6 +1152,18 @@ export function MapCanvas() {
             zoom={view.viewport.zoom}
           />
         </g>
+
+        {/* Label-drag ghost lattice: candidate slots at the real station
+            while the painted name is being dragged. Pure chrome. */}
+        {labelDrag.overlay && stations[labelDrag.overlay.stationId] && (
+          <g data-export-exclude="1">
+            <LabelDragGhosts
+              overlay={labelDrag.overlay}
+              station={stations[labelDrag.overlay.stationId]}
+              zoom={view.viewport.zoom}
+            />
+          </g>
+        )}
 
         {/* Layering-mode top overlays: the hovered-stripe solid outline +
             small layer-number labels. Painted at the very end of the SVG
