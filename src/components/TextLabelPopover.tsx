@@ -8,6 +8,7 @@ import {
   LABEL_WEIGHT_NAMES,
   TEXT_LABEL_FONT_SIZE_MAX,
   TEXT_LABEL_FONT_SIZE_MIN,
+  TEXT_LABEL_WIDTH_MAX,
 } from '../model/transforms';
 import { useFieldHistory } from './useFieldHistory';
 import { useNumericField } from './useNumericField';
@@ -28,6 +29,7 @@ const ALIGNS: { value: TextLabelAlign; icon: string; title: string }[] = [
   { value: 'left', icon: '⇤', title: 'Align left' },
   { value: 'center', icon: '↔', title: 'Align center' },
   { value: 'right', icon: '⇥', title: 'Align right' },
+  { value: 'justify', icon: '☰', title: 'Justify' },
 ];
 
 export function TextLabelPopover({ label, world, view, onClose }: Props) {
@@ -53,6 +55,7 @@ export function TextLabelPopover({ label, world, view, onClose }: Props) {
   const setWeight = (weight: TextLabelWeight) => updateTextLabel(label.id, { weight });
   const setColor = (color: string) => updateTextLabel(label.id, { color });
   const setDarkColor = (darkColor: string) => updateTextLabel(label.id, { darkColor });
+  const setWidth = (n: number) => updateTextLabel(label.id, { width: n });
   const locked = label.locked ?? false;
   const onToggleLock = () => updateTextLabel(label.id, { locked: !locked });
   const size = useNumericField(
@@ -60,6 +63,11 @@ export function TextLabelPopover({ label, world, view, onClose }: Props) {
     setFontSize,
     () => useDoc.getState().textLabels[label.id]?.fontSize ?? label.fontSize,
     FONT_SIZE_STEP,
+  );
+  const width = useNumericField(
+    label.width ?? 0,
+    setWidth,
+    () => useDoc.getState().textLabels[label.id]?.width ?? 0,
   );
   const onDelete = () => {
     deleteTextLabel(label.id);
@@ -69,6 +77,11 @@ export function TextLabelPopover({ label, world, view, onClose }: Props) {
   const onSizeRange = (e: React.ChangeEvent<HTMLInputElement>) => {
     const n = Number(e.target.value);
     if (Number.isFinite(n)) setFontSize(n);
+  };
+
+  const onWidthRange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const n = Number(e.target.value);
+    if (Number.isFinite(n)) setWidth(n);
   };
 
   // Escape closes; outside click does NOT (the canvas's onCanvasClick handles
@@ -134,6 +147,7 @@ export function TextLabelPopover({ label, world, view, onClose }: Props) {
           <label>Size</label>
           <input
             type="range"
+            aria-label="Size"
             min={TEXT_LABEL_FONT_SIZE_MIN}
             max={TEXT_LABEL_FONT_SIZE_MAX}
             step={FONT_SIZE_STEP}
@@ -146,6 +160,7 @@ export function TextLabelPopover({ label, world, view, onClose }: Props) {
           <input
             type="number"
             className="size-spin"
+            aria-label="Size"
             // No `max` — the spinbutton (typing and step buttons) accepts sizes
             // beyond the slider's range; the transform clamps at MIN only.
             min={TEXT_LABEL_FONT_SIZE_MIN}
@@ -155,6 +170,37 @@ export function TextLabelPopover({ label, world, view, onClose }: Props) {
             onChange={size.onNumberChange}
             onFocus={size.onNumberFocus}
             onBlur={size.onNumberBlur}
+          />
+        </div>
+
+        {/* Column width. 0 = Auto (size to content, honor manual '\n' breaks);
+            >0 wraps text to a fixed-width column. The spinbutton accepts widths
+            beyond the slider's range; the transform clamps only at 0. */}
+        <div className="row" onWheel={width.onNumberWheel}>
+          <label>Width</label>
+          <input
+            type="range"
+            aria-label="Width"
+            min={0}
+            max={TEXT_LABEL_WIDTH_MAX}
+            step={1}
+            value={label.width ?? 0}
+            disabled={locked}
+            onChange={onWidthRange}
+            onMouseDown={width.history.onFocus}
+            onMouseUp={width.history.onBlur}
+          />
+          <input
+            type="number"
+            className="size-spin"
+            aria-label="Width"
+            min={0}
+            step={1}
+            value={width.text}
+            disabled={locked}
+            onChange={width.onNumberChange}
+            onFocus={width.onNumberFocus}
+            onBlur={width.onNumberBlur}
           />
         </div>
 

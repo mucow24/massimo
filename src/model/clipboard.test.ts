@@ -203,7 +203,25 @@ describe('readClipboard drops malformed items, keeps valid ones', () => {
   });
 
   it('drops a text-label with a bad align', () => {
-    const bad = { kind: 'text-label', data: { ...labelItem.data, align: 'justify' } };
+    const bad = { kind: 'text-label', data: { ...labelItem.data, align: 'block' } };
+    expect(readClipboard(envelope([bad]))).toBeNull();
+  });
+
+  it('round-trips a justified, fixed-width text-label', () => {
+    const item: ClipPayload = {
+      kind: 'text-label',
+      data: { ...labelItem.data, align: 'justify', width: 240 },
+    };
+    expect(readClipboard(writeClipboard([item]))).toEqual([item]);
+  });
+
+  it('leaves an absent width absent on a text-label (Auto mode)', () => {
+    const parsed = readClipboard(writeClipboard([labelItem]));
+    expect(parsed![0].data).not.toHaveProperty('width');
+  });
+
+  it('drops a text-label with a negative width', () => {
+    const bad = { kind: 'text-label', data: { ...labelItem.data, width: -10 } };
     expect(readClipboard(envelope([bad]))).toBeNull();
   });
 

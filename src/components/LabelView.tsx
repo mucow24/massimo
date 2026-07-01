@@ -3,9 +3,11 @@ import type { Line, TextLabel } from '../model/types';
 import {
   BASELINE_FRACTION,
   LINE_HEIGHT,
+  measureAdvance,
   measureTextLabel,
   type MeasuredBBox,
 } from '../geometry/textMeasure';
+import { justifyLine } from '../geometry/labelJustify';
 import { TEXT_LABEL_HIT_PAD } from '../geometry/stationBoundary';
 import { FONT_STACK } from '../export/fonts';
 import { useDoc } from '../state/store';
@@ -162,45 +164,72 @@ export function LabelView({
         const yTop = -halfH + i * lineSpacing;
         // Bullet bottom sits on the text baseline; see BASELINE_FRACTION.
         const baselineY = yTop + label.fontSize * BASELINE_FRACTION;
-        const lineStartX = lineCursorX(label.align, halfW, lm.bearingLeft, lm.bearingRight);
-        let cursor = lineStartX;
+
+        const textNode = (x: number, value: string, key: string) => (
+          <text
+            key={key}
+            x={x}
+            y={yTop}
+            textAnchor="start"
+            dominantBaseline="hanging"
+            fontFamily={FONT_STACK}
+            fontSize={label.fontSize}
+            fontWeight={label.weight}
+            fontStyle={label.italic ? 'italic' : 'normal'}
+            fill={labelColor}
+            pointerEvents="none"
+            style={{ userSelect: 'none', whiteSpace: 'pre' }}
+          >
+            {value}
+          </text>
+        );
+        const bulletNode = (x: number, code: string, diameter: number, key: string) => (
+          <InlineBullet
+            key={key}
+            code={code}
+            diameter={diameter}
+            cx={x + diameter / 2}
+            cy={baselineY - diameter / 2}
+            lineByService={lineByService}
+          />
+        );
+
+        // Full-justify interior lines of a justified label: spread the words to
+        // both box edges. The ragged last line of each paragraph
+        // (`endsParagraph`) and any line with no interior gap return null and
+        // fall through to the normal path, where lineCursorX left-flushes
+        // 'justify' via its default branch.
+        const atoms =
+          label.align === 'justify' && !lm.endsParagraph
+            ? justifyLine(lm.raw, label.fontSize, lm.inkWidth, m.width, (s) =>
+                measureAdvance(s, label.fontSize, label.weight, label.italic),
+              )
+            : null;
+
         const nodes: React.ReactNode[] = [];
-        lm.segments.forEach((seg, j) => {
-          const segCursor = cursor;
-          cursor += seg.advance;
-          if (seg.kind === 'text') {
+        if (atoms) {
+          const lineStartX = -halfW + lm.bearingLeft;
+          atoms.forEach((a, j) => {
+            const x = lineStartX + a.x;
             nodes.push(
-              <text
-                key={`${i}-${j}-t`}
-                x={segCursor}
-                y={yTop}
-                textAnchor="start"
-                dominantBaseline="hanging"
-                fontFamily={FONT_STACK}
-                fontSize={label.fontSize}
-                fontWeight={label.weight}
-                fontStyle={label.italic ? 'italic' : 'normal'}
-                fill={labelColor}
-                pointerEvents="none"
-                style={{ userSelect: 'none', whiteSpace: 'pre' }}
-              >
-                {seg.value}
-              </text>,
+              a.kind === 'text'
+                ? textNode(x, a.value ?? '', `${i}-${j}-t`)
+                : bulletNode(x, a.code ?? '', a.diameter ?? 0, `${i}-${j}-b`),
             );
-          } else {
-            const r = seg.diameter / 2;
+          });
+        } else {
+          let cursor = lineCursorX(label.align, halfW, lm.bearingLeft, lm.bearingRight);
+          lm.segments.forEach((seg, j) => {
+            const segCursor = cursor;
+            cursor += seg.advance;
             nodes.push(
-              <InlineBullet
-                key={`${i}-${j}-b`}
-                code={seg.code}
-                diameter={seg.diameter}
-                cx={segCursor + r}
-                cy={baselineY - r}
-                lineByService={lineByService}
-              />,
+              seg.kind === 'text'
+                ? textNode(segCursor, seg.value, `${i}-${j}-t`)
+                : bulletNode(segCursor, seg.code, seg.diameter, `${i}-${j}-b`),
             );
-          }
-        });
+          });
+        }
+
         return (
           <g key={i} data-label-line={i}>
             {nodes}

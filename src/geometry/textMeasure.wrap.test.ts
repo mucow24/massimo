@@ -1,0 +1,90 @@
+import { describe, it, expect, beforeAll, afterAll, beforeEach } from 'vitest';
+import { measureTextLabel, _clearTextMeasureCache } from './textMeasure';
+
+// Fixed-width glyph stub (every char = CHAR px, ignoring font size) so wrap
+// points are exactly predictable: a line's ink width === its length * CHAR.
+const CHAR = 10;
+function fakeMeasureText(s: string) {
+  const advance = s.length * CHAR;
+  const lead = (/^\s*/.exec(s)?.[0].length ?? 0) * CHAR;
+  const trail = (/\s*$/.exec(s)?.[0].length ?? 0) * CHAR;
+  const hasInk = s.trim().length > 0;
+  return {
+    width: advance,
+    actualBoundingBoxLeft: hasInk ? -lead : 0,
+    actualBoundingBoxRight: hasInk ? advance - trail : 0,
+  };
+}
+
+let originalGetContext: typeof HTMLCanvasElement.prototype.getContext;
+beforeAll(() => {
+  originalGetContext = HTMLCanvasElement.prototype.getContext;
+  HTMLCanvasElement.prototype.getContext = function () {
+    return { font: '', measureText: fakeMeasureText } as unknown as CanvasRenderingContext2D;
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  } as any;
+});
+afterAll(() => {
+  HTMLCanvasElement.prototype.getContext = originalGetContext;
+});
+beforeEach(() => {
+  _clearTextMeasureCache();
+});
+
+const styled = (text: string, width?: number) => ({
+  text,
+  fontSize: 10,
+  weight: 400 as const,
+  italic: false,
+  width,
+});
+
+describe('measureTextLabel — Auto mode (width 0) exposes raw + endsParagraph', () => {
+  it('splits on newlines; only the final line ends a paragraph', () => {
+    const m = measureTextLabel(styled('a\nbb\nccc'));
+    expect(m.lineCount).toBe(3);
+    expect(m.lines.map((l) => l.raw)).toEqual(['a', 'bb', 'ccc']);
+    expect(m.lines.map((l) => l.endsParagraph)).toEqual([false, false, true]);
+    // Box still hugs the widest line's ink (ccc = 3 * CHAR).
+    expect(m.width).toBe(30);
+  });
+});
+
+describe('measureTextLabel — column wrapping (width > 0)', () => {
+  it('greedily word-wraps a paragraph to the column width', () => {
+    const m = measureTextLabel(styled('aa bb cc dd', 50));
+    expect(m.lineCount).toBe(2);
+    expect(m.lines.map((l) => l.raw)).toEqual(['aa bb', 'cc dd']);
+    // Box width is pinned to the column, not the widest ink.
+    expect(m.width).toBe(50);
+    // Height follows the wrapped line count (2 lines * 10 * 1.2).
+    expect(m.height).toBeCloseTo(24, 5);
+  });
+
+  it('justify group is per-paragraph: each wrapped paragraph ends ragged only on its last line', () => {
+    const m = measureTextLabel(styled('aa bb cc dd', 50));
+    expect(m.lines.map((l) => l.endsParagraph)).toEqual([false, true]);
+  });
+
+  it("treats a manual '\\n' as a hard paragraph break", () => {
+    const m = measureTextLabel(styled('aa bb\ncc dd', 50));
+    expect(m.lines.map((l) => l.raw)).toEqual(['aa bb', 'cc dd']);
+    // Both are the last line of their own paragraph → both ragged.
+    expect(m.lines.map((l) => l.endsParagraph)).toEqual([true, true]);
+  });
+
+  it('puts a word wider than the column on its own line (no mid-word split)', () => {
+    const m = measureTextLabel(styled('aa bbbbbbbb cc', 30));
+    expect(m.lines.map((l) => l.raw)).toEqual(['aa', 'bbbbbbbb', 'cc']);
+    expect(m.lineCount).toBe(3);
+    // The box stays at the column width even though the long word overflows it.
+    expect(m.width).toBe(30);
+  });
+
+  it('preserves a blank line between paragraphs', () => {
+    const m = measureTextLabel(styled('aa\n\nbb', 50));
+    expect(m.lines.map((l) => l.raw)).toEqual(['aa', '', 'bb']);
+    expect(m.lineCount).toBe(3);
+    expect(m.lines.map((l) => l.endsParagraph)).toEqual([true, true, true]);
+  });
+});
