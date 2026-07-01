@@ -73,6 +73,56 @@ describe('cycleLabelValign', () => {
   });
 });
 
+describe('cycleLabelAlign', () => {
+  // ALIGN_CYCLE = ['auto', 'start', 'middle', 'end']; a fresh station's label
+  // aligns 'auto', so advancing forward walks the ring and wraps back to auto.
+  it('walks the auto → start → middle → end → auto cycle', () => {
+    let doc = makeDoc({ stations: [makeStation({ id: 's1' })] });
+    expect(doc.stations.s1.label.align).toBe('auto');
+    doc = T.cycleLabelAlign(doc, 's1');
+    expect(doc.stations.s1.label.align).toBe('start');
+    doc = T.cycleLabelAlign(doc, 's1');
+    expect(doc.stations.s1.label.align).toBe('middle');
+    doc = T.cycleLabelAlign(doc, 's1');
+    expect(doc.stations.s1.label.align).toBe('end');
+    doc = T.cycleLabelAlign(doc, 's1');
+    expect(doc.stations.s1.label.align).toBe('auto');
+  });
+
+  it('is a no-op for missing ids', () => {
+    const doc = makeDoc({ stations: [makeStation({ id: 's1' })] });
+    expect(T.cycleLabelAlign(doc, 'nope')).toBe(doc);
+  });
+});
+
+describe('setLabelAlign', () => {
+  it('sets the requested align value', () => {
+    const doc = makeDoc({ stations: [makeStation({ id: 's1' })] });
+    expect(T.setLabelAlign(doc, 's1', 'middle').stations.s1.label.align).toBe('middle');
+  });
+
+  it('returns the same doc reference when the align is unchanged (no-op)', () => {
+    // The referential no-op short-circuit is load-bearing for undo grouping.
+    const doc = makeDoc({ stations: [makeStation({ id: 's1' })] }); // label.align === 'auto'
+    expect(T.setLabelAlign(doc, 's1', 'auto')).toBe(doc);
+  });
+});
+
+describe('rotateRouteBullet', () => {
+  it('advances the rotation by one 45°-step', () => {
+    const doc = T.addRouteBullet(makeDoc({}), 'b', 0, 0, null);
+    expect(doc.routeBullets.b.rotation).toBe(0);
+    expect(T.rotateRouteBullet(doc, 'b').routeBullets.b.rotation).toBe(1);
+  });
+
+  it('wraps 7 → 0 (mod 8)', () => {
+    let doc = T.addRouteBullet(makeDoc({}), 'b', 0, 0, null);
+    for (let i = 0; i < 7; i++) doc = T.rotateRouteBullet(doc, 'b');
+    expect(doc.routeBullets.b.rotation).toBe(7);
+    expect(T.rotateRouteBullet(doc, 'b').routeBullets.b.rotation).toBe(0);
+  });
+});
+
 describe('setLabelOffsetPerp', () => {
   it('writes the value to the label', () => {
     let doc = makeDoc({ stations: [makeStation({ id: 's1' })] });
@@ -1149,18 +1199,22 @@ describe('toggleStationOnLine: transfers', () => {
 });
 
 describe('reorderLineStations', () => {
-  it('replaces line.stations and re-runs auto-orient', () => {
-    // Auto-orient: on a 2-station line of single-line stations, the rotation
-    // is recomputed from line tangent.
+  it('replaces line.stations and leaves station rotations untouched (no re-orient)', () => {
+    // Contract: reordering only rearranges already-served stations, so — unlike
+    // adding/removing a station — it deliberately does NOT re-run auto-orient.
+    // Give the stations a rotation auto-orient would "fix" (a vertical L1 line
+    // would orient both to rotation 2) and assert reorder leaves them alone.
     const doc = makeDoc({
       stations: [
-        stationWithStop('s1', 'L1', { x: 0, y: 0 }),
-        stationWithStop('s2', 'L1', { x: 0, y: 100 }),
+        stationWithStop('s1', 'L1', { x: 0, y: 0 }, { rotation: 5 }),
+        stationWithStop('s2', 'L1', { x: 0, y: 100 }, { rotation: 5 }),
       ],
       lines: [makeLine({ id: 'L1', stations: ['s1', 's2'] })],
     });
     const next = T.reorderLineStations(doc, 'L1', ['s2', 's1']);
     expect(next.lines.L1.stations).toEqual(['s2', 's1']);
+    expect(next.stations.s1.rotation).toBe(5);
+    expect(next.stations.s2.rotation).toBe(5);
   });
 });
 

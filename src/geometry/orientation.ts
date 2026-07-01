@@ -124,29 +124,6 @@ export const rotateGridDelta = (
 };
 
 /**
- * Half-edge offset from a stop center to its input edge midpoint, in local
- * coords. The input edge is the one OPPOSITE the resolved travel direction,
- * so it depends on the resolved direction (±axis) — `lineHintLocal` is
- * forwarded through to `travelDirLocal`.
- */
-export const inputEdgeOffsetLocal = (
-  o: StopOrientation,
-  lineHintLocal: Vec2 | null = null,
-): Vec2 => {
-  const d = travelDirLocal(o, lineHintLocal);
-  return { x: -d.x * HALF, y: -d.y * HALF };
-};
-
-/** Mirror of input: output edge midpoint offset. */
-export const outputEdgeOffsetLocal = (
-  o: StopOrientation,
-  lineHintLocal: Vec2 | null = null,
-): Vec2 => {
-  const d = travelDirLocal(o, lineHintLocal);
-  return { x: d.x * HALF, y: d.y * HALF };
-};
-
-/**
  * 8-way direction for label rotation. Index = rotation 0..7. Each entry has
  * the grid cell offset (dRow, dCol) you'd step into to reach the cell that
  * lies in that direction, and the corresponding cell-boundary anchor point
@@ -172,50 +149,7 @@ export const localToWorld = (
   return { x: r.x + station.x, y: r.y + station.y };
 };
 
-export const localDirToWorld = (local: Vec2, rotation: Rotation): Vec2 => rotateBy(local, rotation);
-
-// Inverse of localDirToWorld: rotate a world-frame direction back into a
-// station's unrotated local frame (rotation only, no translation).
+// Rotate a world-frame direction back into a station's unrotated local frame
+// (rotation only, no translation) — the inverse of `rotateBy`.
 export const worldDirToLocal = (world: Vec2, rotation: Rotation): Vec2 =>
   rotateBy(world, ((8 - rotation) % 8) as Rotation);
-
-export interface SegmentEndpoints {
-  start: Vec2;
-  startDir: Vec2;
-  end: Vec2;
-  endDir: Vec2;
-}
-
-/**
- * Compute the world endpoints + travel directions for a band segment.
- *
- * `fromLocalPoint` / `toLocalPoint` are local-space points on each station
- * (typically the centerline anchor of the band — the mean of its endpoint
- * cells). `fromOrientation` / `toOrientation` give the band's shared
- * orientation at each station — they should match for a valid interlined
- * band, though the function tolerates per-end values for flexibility.
- *
- * The endpoints are placed at the stop center (the local point as given);
- * the colored stop-marker square (rendered on top of the band) covers the
- * area around the stop center where the bands meet.
- */
-export const segmentEndpoints = (
-  from: { x: number; y: number; rotation: Rotation },
-  fromLocalPoint: Vec2,
-  fromOrientation: StopOrientation,
-  to: { x: number; y: number; rotation: Rotation },
-  toLocalPoint: Vec2,
-  toOrientation: StopOrientation,
-  // World-frame direction of travel from `from` toward `to`. Used to resolve
-  // `auto-*` orientations — pass null if you genuinely don't know (auto will
-  // fall back to its +axis default).
-  worldTravelDir: Vec2 | null = null,
-): SegmentEndpoints => {
-  const fromHintLocal = worldTravelDir ? worldDirToLocal(worldTravelDir, from.rotation) : null;
-  const toHintLocal = worldTravelDir ? worldDirToLocal(worldTravelDir, to.rotation) : null;
-  const start = localToWorld(fromLocalPoint, from);
-  const startDir = localDirToWorld(travelDirLocal(fromOrientation, fromHintLocal), from.rotation);
-  const end = localToWorld(toLocalPoint, to);
-  const endDir = localDirToWorld(travelDirLocal(toOrientation, toHintLocal), to.rotation);
-  return { start, startDir, end, endDir };
-};
