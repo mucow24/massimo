@@ -1493,3 +1493,42 @@ input[type='range'].indeterminate {
   border-color: #404040;
   box-shadow: 0 6px 16px rgba(0, 0, 0, 0.5);
 }
+
+/* Per-stop editor rows in the station inspector. */
+.stop-row {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 3px 4px;
+  border-radius: 4px;
+  cursor: pointer;
+}
+.stop-row:hover {
+  background: #f4f7fb;
+}
+.stop-row.selected {
+  background: #e6efff;
+}
+.stop-row .line-badge {
+  flex: none;
+}
+.app[data-theme='dark'] .stop-row:hover {
+  background: #2a2a2a;
+}
+.app[data-theme='dark'] .stop-row.selected {
+  background: #27406b;
+}
+
+/* Station popover: the station editor as an on-canvas popover (shares the
+   .text-label-popover shell). Wider than the standard 240px so the per-stop
+   rows + segmented pickers fit on one line. */
+.station-popover {
+  width: 320px;
+}
+.station-popover .inspector {
+  padding: 0;
+}
+.station-popover .body {
+  max-height: min(70vh, 560px);
+  overflow-y: auto;
+}

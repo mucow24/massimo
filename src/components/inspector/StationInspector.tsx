@@ -5,13 +5,10 @@ import type { StationId } from '../../model/types';
 import { findMatchingStations, type LayoutOffset } from '../../model/matching';
 import { LabelOffsetControl } from './LabelOffsetControl';
 import { LabelAlignPicker, LabelValignPicker } from './LabelAlignButtons';
+import { StopRows } from './StopRows';
 import { useFieldHistory } from '../useFieldHistory';
-import { useNumericField } from '../useNumericField';
 import { useDismiss } from '../usePopover';
-import { StationShapePicker } from '../StationShapePicker';
-import { resolveDotStyle, resolveOffsetPerp } from '../../model/transforms';
-import { DEFAULT_DOT_STYLE, DOT_SHAPE_PRESETS } from '../../model/dotStyle';
-import { DOT_SIZE_DEFAULT, DOT_SIZE_MIN, resolveDotSize } from '../../model/dotSize';
+import { resolveOffsetPerp } from '../../model/transforms';
 
 export function StationInspector({ id }: { id: StationId }) {
   const station = useDoc((s) => s.stations[id]);
@@ -24,8 +21,6 @@ export function StationInspector({ id }: { id: StationId }) {
   const setLabelOffsetPerp = useDoc((s) => s.setLabelOffsetPerp);
   const setLabelAlign = useDoc((s) => s.setLabelAlign);
   const setLabelValign = useDoc((s) => s.setLabelValign);
-  const setDotStyle = useDoc((s) => s.setDotStyle);
-  const setDotSize = useDoc((s) => s.setDotSize);
   const setStationWaypoint = useDoc((s) => s.setStationWaypoint);
   const setStationLocked = useDoc((s) => s.setStationLocked);
   const setStationLabelBold = useDoc((s) => s.setStationLabelBold);
@@ -34,7 +29,7 @@ export function StationInspector({ id }: { id: StationId }) {
   const nameField = useFieldHistory();
   const xField = useFieldHistory();
   const yField = useFieldHistory();
-  const shapePickerRef = useRef<HTMLDivElement | null>(null);
+  const stopRowsRef = useRef<HTMLDivElement | null>(null);
 
   // Stations that render identically to this one (across the model's 4-fold
   // mirror symmetry) AND share a line with it. Each carries a layoutOffset
@@ -50,47 +45,19 @@ export function StationInspector({ id }: { id: StationId }) {
   const dispatchAll = (act: (sid: StationId, layoutOffset: LayoutOffset) => void) =>
     dispatchMirrored(id, act);
 
-  const selectedLineId = selection.selectedStopLineId;
-  const labelSelected = selection.labelSelected;
-  const hasSelection = !!(selectedLineId || labelSelected);
+  const hasSelection = !!(selection.selectedStopLineId || selection.labelSelected);
 
-  // Temporary per-stop size override control (a picker UI comes later).
-  // Shows the selected stop's RESOLVED size; writing the line's effective
-  // default back clears the override via `setDotSize`'s contract.
-  const dotSizeDisabled = selectedLineId === null || labelSelected;
-  const dotSizeField = useNumericField(
-    selectedLineId === null
-      ? DOT_SIZE_DEFAULT
-      : resolveDotSize(
-          linesAll[selectedLineId],
-          station?.stops.find((s) => s.lineId === selectedLineId),
-        ),
-    (n) => {
-      if (selectedLineId === null) return;
-      // dotSize is rotation-invariant — no per-match transform.
-      dispatchAll((sid) => setDotSize(sid, selectedLineId, n));
-    },
-    () => {
-      const lid = useSelection.getState().selectedStopLineId;
-      if (lid === null) return DOT_SIZE_DEFAULT;
-      const docNow = useDoc.getState();
-      return resolveDotSize(
-        docNow.lines[lid],
-        docNow.stations[id]?.stops.find((s) => s.lineId === lid),
-      );
-    },
-  );
-
-  // Standard deselect: Escape, or mousedown anywhere outside the shape
-  // picker. Canvas handle clicks re-assert the selection on pointerup (the
-  // layout-editor and label-drag hooks select AFTER this document-level
-  // mousedown clear), so acting on a stop from the map survives; clicks on
-  // other inspector fields or the sidebar genuinely deselect.
+  // Standard deselect for the canvas sub-selection (the layout-editor ring +
+  // keyboard-nudge target): Escape, or mousedown outside the stop rows.
+  // Canvas handle clicks re-assert the selection on pointerup (the layout-
+  // editor and label-drag hooks select AFTER this document-level mousedown
+  // clear), so acting on a stop from the map survives; clicks on other
+  // inspector fields or the sidebar genuinely deselect.
   const clearStopSelection = useCallback(() => {
     selection.setSelectedStopLineId(null);
     selection.setLabelSelected(false);
   }, [selection]);
-  useDismiss(hasSelection, clearStopSelection, [shapePickerRef]);
+  useDismiss(hasSelection, clearStopSelection, [stopRowsRef]);
 
   if (!station) return null;
 
@@ -170,45 +137,6 @@ export function StationInspector({ id }: { id: StationId }) {
           >
             {mirrorAvailable ? `Mirror ×${matches.length}` : 'Mirror'}
           </button>
-          <div
-            ref={shapePickerRef}
-            style={{ display: 'inline-flex', gap: 4, alignItems: 'center' }}
-          >
-            <StationShapePicker
-              disabled={selectedLineId === null || labelSelected}
-              currentStyle={
-                selectedLineId === null
-                  ? DEFAULT_DOT_STYLE
-                  : resolveDotStyle(
-                      linesAll[selectedLineId],
-                      station.stops.find((s) => s.lineId === selectedLineId),
-                    )
-              }
-              lineColor={selectedLineId === null ? undefined : linesAll[selectedLineId]?.color}
-              serviceCode={selectedLineId === null ? undefined : linesAll[selectedLineId]?.service}
-              onPick={(shape) => {
-                if (selectedLineId === null) return;
-                dispatchAll((sid) => setDotStyle(sid, selectedLineId, DOT_SHAPE_PRESETS[shape]));
-                // dotStyle is rotation-invariant — no per-match transform.
-              }}
-            />
-            {/* Inside shapePickerRef so useDismiss treats clicks here as
-                acting on the selected stop rather than deselecting it. */}
-            <input
-              type="number"
-              aria-label="Stop dot size"
-              min={DOT_SIZE_MIN}
-              step={1}
-              style={{ width: 44 }}
-              disabled={dotSizeDisabled}
-              value={dotSizeField.text}
-              title={dotSizeDisabled ? 'Stop dot size — select a stop first' : 'Stop dot size (px)'}
-              onFocus={dotSizeField.onNumberFocus}
-              onChange={dotSizeField.onNumberChange}
-              onWheel={dotSizeField.onNumberWheel}
-              onBlur={dotSizeField.onNumberBlur}
-            />
-          </div>
           <button
             type="button"
             className={`btn-mini${station.isWaypoint ? ' wp-on' : ''}`}
@@ -262,12 +190,15 @@ export function StationInspector({ id }: { id: StationId }) {
             {inLayoutEdit ? 'Done' : 'Edit layout'}
           </button>
         </div>
+        <div ref={stopRowsRef}>
+          <StopRows station={station} lines={linesAll} />
+        </div>
         <div className="field-hint">
           {station.stops.length === 0
             ? 'No stops yet — add this station to a line.'
             : inLayoutEdit
-              ? 'Click a dot or the label ring on the map to select it; drag to move.'
-              : 'Stops and the name are edited on the map — click Edit layout.'}
+              ? 'Drag dots/label on the map; right-click or R rotates, arrows nudge.'
+              : 'Positions are edited on the map — click Edit layout.'}
         </div>
       </div>
       <div className="field">

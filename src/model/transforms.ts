@@ -917,7 +917,10 @@ export function moveStop(
   });
 }
 
-const AXIS_CYCLE: StopOrientation[] = [
+// Exported for the per-stop orientation picker: index k's LOCAL axis paints
+// as the WORLD axis at index (k + station.rotation) % 4 — consecutive
+// entries are 45° CW apart, matching the station rotation step.
+export const AXIS_CYCLE: StopOrientation[] = [
   'auto-vertical', // 0 — N/S
   'auto-ne-sw', // 1 — NE/SW
   'auto-horizontal', // 2 — E/W

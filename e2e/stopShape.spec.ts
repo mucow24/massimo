@@ -58,14 +58,16 @@ test.describe('Stop shape picker — coverage', () => {
     await expect(page.getByRole('button', { name: 'Stop shape' })).toHaveCount(0);
   });
 
-  test('picker is present but disabled when only a station is selected', async ({ page }) => {
+  test('picker is present and ENABLED as soon as a station is selected (per-stop row)', async ({
+    page,
+  }) => {
     await seedAndOpen(page, fourInLine);
 
     const a = await stationCenter(page, 'A');
     await page.mouse.click(a.x, a.y);
     await expect(page.getByRole('button', { name: 'Stop shape' })).toHaveAttribute(
       'aria-disabled',
-      'true',
+      'false',
     );
   });
 

@@ -73,20 +73,20 @@ test.describe('multi-station selection', () => {
     const c = await stationCenter(page, 'C');
 
     await page.mouse.click(a.x, a.y);
-    // Inspector renders inline inside [data-station-row="A"] when expanded.
-    await expect(page.locator('[data-station-row="A"] .inline-editor')).toBeVisible();
+    // The station editor is an on-canvas popover for the sole selection.
+    await expect(page.locator('.station-popover')).toBeVisible();
 
     await clickAtWithModifiers(page, c, ['Shift']);
-    // Multi-select: no inline editor anywhere in the sidebar.
-    await expect(page.locator('.inline-editor')).toHaveCount(0);
+    // Multi-select: no station popover.
+    await expect(page.locator('.station-popover')).toHaveCount(0);
 
     // Both rows still marked selected in the list.
     await expect(page.locator('[data-station-row="A"] .list-row.selected')).toBeVisible();
     await expect(page.locator('[data-station-row="C"] .list-row.selected')).toBeVisible();
 
-    // Shift-click C off → back to single selection, inspector returns.
+    // Shift-click C off → back to single selection, the editor returns.
     await clickAtWithModifiers(page, c, ['Shift']);
-    await expect(page.locator('[data-station-row="A"] .inline-editor')).toBeVisible();
+    await expect(page.locator('.station-popover')).toBeVisible();
   });
 
   test('ctrl+shift+click extends selection along a shared line', async ({ page }) => {
@@ -660,15 +660,15 @@ test.describe('multi-bullet selection', () => {
     const a = await stationCenter(page, 'A');
     const b1 = await bulletCenter(page, 'b1');
 
-    // Single-station selection → station inspector visible.
+    // Single-station selection → station popover visible.
     await page.mouse.click(a.x, a.y);
-    await expect(page.locator('[data-station-row="A"] .inline-editor')).toBeVisible();
+    await expect(page.locator('.station-popover')).toBeVisible();
 
-    // Add a bullet via shift-click → mixed selection. Inspector hides;
+    // Add a bullet via shift-click → mixed selection. Station popover hides;
     // bullet popover stays out (it only shows for single-bullet, no
     // station-selected case).
     await clickAtWithModifiers(page, b1, ['Shift']);
-    await expect(page.locator('.inline-editor')).toHaveCount(0);
+    await expect(page.locator('.station-popover')).toHaveCount(0);
     await expect(page.locator('.bullet-popover')).toHaveCount(0);
 
     // Reduce to a single bullet → popover returns.

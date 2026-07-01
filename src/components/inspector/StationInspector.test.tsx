@@ -34,7 +34,7 @@ describe('<StationInspector /> — shape picker wiring', () => {
     useSelection.setState(SELECTION_BLANK);
   });
 
-  it('picker is disabled when no stop is selected (only a station)', () => {
+  it('renders one ALWAYS-enabled picker per stop row — no selection ritual', () => {
     useDoc.setState({
       ...DEFAULT_DOC,
       ...makeDoc({
@@ -50,56 +50,9 @@ describe('<StationInspector /> — shape picker wiring', () => {
     useSelection.setState({ ...SELECTION_BLANK, selectedStationIds: ['a'] });
 
     render(<StationInspector id="a" />);
-    expect(screen.getByRole('button', { name: 'Stop shape' })).toHaveAttribute(
-      'aria-disabled',
-      'true',
-    );
-  });
-
-  it('picker is disabled when only the label is selected', () => {
-    useDoc.setState({
-      ...DEFAULT_DOC,
-      ...makeDoc({
-        stations: [makeStation({ id: 'a', stops: [makeStop('L1')] })],
-        lines: [makeLine({ id: 'L1', stations: ['a'] })],
-      }),
-    });
-    useSelection.setState({
-      ...SELECTION_BLANK,
-      selectedStationIds: ['a'],
-      labelSelected: true,
-    });
-
-    render(<StationInspector id="a" />);
-    expect(screen.getByRole('button', { name: 'Stop shape' })).toHaveAttribute(
-      'aria-disabled',
-      'true',
-    );
-  });
-
-  it('picker becomes enabled once a stop is selected (via the canvas layout editor)', () => {
-    useDoc.setState({
-      ...DEFAULT_DOC,
-      ...makeDoc({
-        stations: [makeStation({ id: 'a', stops: [makeStop('L1')] })],
-        lines: [makeLine({ id: 'L1', stations: ['a'] })],
-      }),
-    });
-    useSelection.setState({ ...SELECTION_BLANK, selectedStationIds: ['a'] });
-
-    render(<StationInspector id="a" />);
-    expect(screen.getByRole('button', { name: 'Stop shape' })).toHaveAttribute(
-      'aria-disabled',
-      'true',
-    );
-
-    // Clicking a dot handle on the map sets this (see useStationLayoutDrag).
-    act(() => useSelection.getState().setSelectedStopLineId('L1'));
-
-    expect(screen.getByRole('button', { name: 'Stop shape' })).toHaveAttribute(
-      'aria-disabled',
-      'false',
-    );
+    const pickers = screen.getAllByRole('button', { name: 'Stop shape' });
+    expect(pickers).toHaveLength(2);
+    for (const p of pickers) expect(p).toHaveAttribute('aria-disabled', 'false');
   });
 
   it('clicking the picker trigger does not deselect the stop (picker stays enabled)', async () => {
@@ -565,22 +518,11 @@ describe('<StationInspector /> — stop dot size textbox', () => {
     act(() => useSelection.getState().setSelectedStopLineId('L1'));
   };
 
-  it('is disabled, showing the global default, when no stop is selected', () => {
+  it('is always enabled (per-row control), showing the resolved default', () => {
     seed();
     render(<StationInspector id="a" />);
-    expect(sizeBox()).toBeDisabled();
+    expect(sizeBox()).toBeEnabled();
     expect(sizeBox()).toHaveValue(8);
-  });
-
-  it('is disabled when only the label is selected', () => {
-    seed();
-    useSelection.setState({
-      ...SELECTION_BLANK,
-      selectedStationIds: ['a'],
-      labelSelected: true,
-    });
-    render(<StationInspector id="a" />);
-    expect(sizeBox()).toBeDisabled();
   });
 
   it("shows the selected stop's resolved size: explicit override first, then the line default", async () => {

@@ -792,8 +792,8 @@ per-type handlers omitted other types).
 popover/handles). Cursor-following ghost previews (`*PlacingPreview`, all `opacity 0.5`,
 `pointerEvents none`) feed synthetic items to the real views.
 
-`ItemPopovers` mounts the single popover for the sole selection and reprojects through
-`useLiveView` so it tracks the canvas during pan/zoom. `useDraggablePopover` **freezes the item's
+`ItemPopovers` mounts the single popover for the sole selection — including the station editor
+(see UI chrome) — and reprojects through `useLiveView` so it tracks the canvas during pan/zoom. `useDraggablePopover` **freezes the item's
 world position at mount** (so a size slider editing the item can't feed its own position back),
 accumulates header-drag in **world units**, and re-freezes when the selection `id` changes (one
 popover instance reused across selections).
@@ -816,14 +816,22 @@ churn the reference and re-run the per-stripe `t` search (a single click on a bu
   embeds `SnapToggleBar` and `OptionsPopover`. Owns the **export desaturation flush**: before
   export it drops the selected-line desaturation via `flushSync(() => selectLine(null))` so it
   isn't baked into the clone, then restores it in `finally`.
-- **[Sidebar.tsx](src/components/Sidebar.tsx)** — Stations/Lines tabs, a sortable station list,
-  and the inline-expanded inspector.
-- **[inspector/index.tsx](src/components/inspector/index.tsx)** — chooses the inspector: sticky
-  `LineInspector` while appending; `StationInspector` iff a station is the **sole** selection;
-  else `LineInspector` for the selected line. Inspectors dispatch transforms directly and own
-  **mirror matching** (`findMatchingStations` returns neighbors sharing layout under the model's
-  4-fold mirror symmetry; an edit broadcasts to all of them inside one history group, rotating
-  local deltas through `rotateGridDelta`).
+- **[Sidebar.tsx](src/components/Sidebar.tsx)** — Stations/Lines tabs, a sortable station list
+  (rows select/deselect; the station editor itself is an on-canvas popover), and the
+  inline-expanded LINE inspector on the Lines tab.
+- **[StationPopover.tsx](src/components/StationPopover.tsx)** — the station editor's home:
+  mounted by `ItemPopovers` for a sole-selected station (idle mode, or that station's own
+  layout-edit mode), hosting the full `StationInspector` — name, labeled X/Y + rotation readout,
+  Mirror ×N / WP / lock toggles, the **Edit layout** button, per-stop rows
+  ([inspector/StopRows.tsx](src/components/inspector/StopRows.tsx): service badge + always-enabled
+  shape picker + dot size + world-true orientation segments per stop; hover cross-highlights the
+  dot via `hoveredLineStop`), and segmented label align/valign + offset controls. The anchor is
+  CLAMPED into the canvas host so sidebar-selecting an off-screen station still shows the editor.
+  Inspectors dispatch transforms directly and own **mirror matching** (`findMatchingStations`
+  returns neighbors sharing layout under the model's 4-fold mirror symmetry; an edit broadcasts
+  through [state/mirrorDispatch.ts](src/state/mirrorDispatch.ts), rotating local deltas through
+  `rotateGridDelta`; absolute orientation sets are applied as relative cycles so odd-offset
+  matches stay world-equivalent).
 - **Station layout editing happens ON the canvas** (the sidebar mini-canvas "StopGrid" was
   retired in favor of these three surfaces; its pure drag/ghost math lives on in
   [inspector/stopGridDrag.ts](src/components/inspector/stopGridDrag.ts) — `computeGhosts`,
