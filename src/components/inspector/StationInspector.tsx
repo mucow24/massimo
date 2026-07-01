@@ -1,5 +1,6 @@
 import { useCallback, useMemo, useRef } from 'react';
 import { beginHistoryGroup, useDoc, useSelection } from '../../state/store';
+import { isHistoryGrouping } from '../../state/history';
 import type { StationId } from '../../model/types';
 import { findMatchingStations, type LayoutOffset } from '../../model/matching';
 import { rotateGridDelta } from '../../geometry/orientation';
@@ -57,15 +58,20 @@ export function StationInspector({ id }: { id: StationId }) {
   // every matching station (with its own offset). Wrapped in a single
   // history group so undo collapses the batch into one entry. When off,
   // behaves like a direct call.
+  //
+  // If a group is already open (e.g. this fired from a focused numeric field's
+  // edit arc, like the dot-size spinbutton), don't nest a second one — the
+  // outer group already collapses these writes into its single entry. Nesting
+  // would resume recording mid-gesture and push a stray snapshot.
   const dispatchAll = (act: (sid: StationId, layoutOffset: LayoutOffset) => void) => {
     if (!selection.mirrorMatching || matches.length === 0) {
       act(id, 0);
       return;
     }
-    const group = beginHistoryGroup();
+    const group = isHistoryGrouping() ? null : beginHistoryGroup();
     act(id, 0);
     for (const m of matches) act(m.id, m.layoutOffset);
-    group.commit();
+    group?.commit();
   };
 
   const selectedLineId = selection.selectedStopLineId;
