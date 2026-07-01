@@ -487,6 +487,12 @@ must be pruned.
    without drag) pushes nothing.
 4. `cancel()`: resume without pushing. Both are idempotent (`done` flag).
 
+Groups **don't nest**: a caller that may fire from inside an already-open group (e.g. the mirror
+broadcast dispatched from a focused numeric field's edit arc) gates on `isHistoryGrouping()`
+([history.ts](src/state/history.ts)) and skips opening its own group — the outer one already
+collapses its writes into the single entry. Opening a second group would `resumeHistory()`
+mid-gesture and push a stray snapshot.
+
 ### `useSelection` — ephemeral UI/mode state ([selection.ts](src/state/selection.ts))
 
 Not persisted, not undoable. Two key pieces:

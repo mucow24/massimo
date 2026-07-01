@@ -666,6 +666,12 @@ export const useDoc = create<DocState>()(
  * drag), `commit()` is a no-op so we don't litter history with empty entries.
  * `cancel()` resumes without pushing anything; equivalent to commit() when
  * no changes occurred but explicit at the call site.
+ *
+ * Groups do NOT nest: callers that may run inside an already-open group (e.g.
+ * a mirror broadcast fired from a focused numeric field's edit arc) must gate
+ * on `isHistoryGrouping()` and skip opening their own group — the outer group
+ * already collapses their writes into its single entry. Opening a second group
+ * here would resume recording mid-gesture and push a stray snapshot.
  */
 export function beginHistoryGroup(): { commit: () => void; cancel: () => void } {
   const snapshot = pickDocSnapshot(useDoc.getState());

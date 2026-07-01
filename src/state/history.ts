@@ -23,6 +23,14 @@ export function resumeHistory(): void {
   useDoc.temporal.getState().resume();
 }
 
+// True while a history group is open (recording is paused). Grouping doesn't
+// nest, so a broadcast that can fire from inside an open group (e.g. a mirror
+// edit dispatched from a focused numeric field) checks this and skips opening
+// a second group — the outer one already collapses its writes into one entry.
+export function isHistoryGrouping(): boolean {
+  return !useDoc.temporal.getState().isTracking;
+}
+
 // After moving through history, prune the (separate) selection store of any
 // ids the restored doc no longer contains — otherwise undoing the deletion of a
 // still-selected item leaves a dangling selection id behind.
