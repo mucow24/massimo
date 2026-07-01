@@ -1,4 +1,5 @@
 import { Fragment, useEffect, useMemo, useRef, useState } from 'react';
+import { ChevronDownIcon, ChevronUpIcon, Cross2Icon } from '@radix-ui/react-icons';
 import { useDoc, useSelection } from '../../state/store';
 import { useThemeColors } from '../../state/theme';
 import type { DotShape, DotStyle, Line, LineId, LineStyle } from '../../model/types';
@@ -545,18 +546,20 @@ export function LineInspector({ id }: { id: LineId }) {
                               disabled={i === 0}
                               onClick={() => moveSt(i, -1)}
                               title="Move up"
+                              aria-label="Move up"
                               style={{ marginLeft: 6 }}
                             >
-                              ↑
+                              <ChevronUpIcon />
                             </button>
                             <button
                               className="btn-mini icon"
                               disabled={i === N - 1}
                               onClick={() => moveSt(i, 1)}
                               title="Move down"
+                              aria-label="Move down"
                               style={{ marginLeft: 6 }}
                             >
-                              ↓
+                              <ChevronDownIcon />
                             </button>
                             <button
                               className="btn-mini danger"
@@ -568,9 +571,10 @@ export function LineInspector({ id }: { id: LineId }) {
                                 removeStationFromLine(line.id, i);
                               }}
                               title="Remove from line"
+                              aria-label="Remove from line"
                               style={{ marginLeft: 6 }}
                             >
-                              ×
+                              <Cross2Icon />
                             </button>
                           </>
                         )}

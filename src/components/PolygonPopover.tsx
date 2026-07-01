@@ -1,3 +1,4 @@
+import { ArrowDownIcon, ArrowUpIcon, MoonIcon, SunIcon } from '@radix-ui/react-icons';
 import { useDoc } from '../state/store';
 import { type ViewportProjection } from './canvas/screenAnchor';
 import { useDraggablePopover } from './canvas/useDraggablePopover';
@@ -79,8 +80,8 @@ export function PolygonPopover({ polygon, view, onClose }: Props) {
       className="bullet-popover polygon-popover"
       style={{
         position: 'absolute',
-        left: anchor.x + 14,
-        top: anchor.y + 14,
+        left: anchor.x,
+        top: anchor.y,
         zIndex: 1100,
       }}
       // Keep pointer events from reaching the canvas (which would deselect the
@@ -96,7 +97,7 @@ export function PolygonPopover({ polygon, view, onClose }: Props) {
       <div className="body">
         <div className="row">
           <label htmlFor="polygon-fill">Color</label>
-          <span aria-hidden="true">☀️</span>
+          <SunIcon aria-hidden="true" />
           <input
             id="polygon-fill"
             type="color"
@@ -107,7 +108,7 @@ export function PolygonPopover({ polygon, view, onClose }: Props) {
             onChange={(e) => onFill(e.target.value)}
             {...fillField}
           />
-          <span aria-hidden="true">🌙</span>
+          <MoonIcon aria-hidden="true" />
           <input
             id="polygon-dark-fill"
             type="color"
@@ -174,7 +175,7 @@ export function PolygonPopover({ polygon, view, onClose }: Props) {
         </div>
         <div className="row">
           <label htmlFor="polygon-stroke">Stroke color</label>
-          <span aria-hidden="true">☀️</span>
+          <SunIcon aria-hidden="true" />
           <input
             id="polygon-stroke"
             type="color"
@@ -185,7 +186,7 @@ export function PolygonPopover({ polygon, view, onClose }: Props) {
             onChange={(e) => onStroke(e.target.value)}
             {...strokeField}
           />
-          <span aria-hidden="true">🌙</span>
+          <MoonIcon aria-hidden="true" />
           <input
             id="polygon-dark-stroke"
             type="color"
@@ -208,7 +209,7 @@ export function PolygonPopover({ polygon, view, onClose }: Props) {
               disabled={locked}
               onClick={() => movePolygonDown(polygon.id)}
             >
-              ↓
+              <ArrowDownIcon />
             </button>
             <button
               type="button"
@@ -218,7 +219,7 @@ export function PolygonPopover({ polygon, view, onClose }: Props) {
               disabled={locked}
               onClick={() => movePolygonUp(polygon.id)}
             >
-              ↑
+              <ArrowUpIcon />
             </button>
           </div>
         </div>

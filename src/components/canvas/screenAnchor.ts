@@ -42,3 +42,28 @@ export function screenDeltaToWorld(
     y: (delta.y / v.size.h) * v.vbH,
   };
 }
+
+// Item popovers are a fixed 240px wide plus a 3px border each side + the 1px
+// outline; height varies per popover, so both axes clamp against the same
+// nominal square footprint.
+const POPOVER_NOMINAL = 248;
+const CLAMP_MARGIN = 8;
+
+/**
+ * Clamp a popover's screen anchor (its top-left corner) so the nominal
+ * popover footprint stays inside the host box. The canvas host is
+ * overflow:hidden, so an unclamped spawn near an edge crops the panel or
+ * hides it entirely. An axis whose extent can't fit the popover at all
+ * (tiny window, or the zero-size first paint) passes through unchanged —
+ * no placement would help there.
+ */
+export function clampPopoverAnchor(
+  pt: { x: number; y: number },
+  size: { w: number; h: number },
+): { x: number; y: number } {
+  const clampAxis = (v: number, extent: number) =>
+    extent < POPOVER_NOMINAL + 2 * CLAMP_MARGIN
+      ? v
+      : Math.max(CLAMP_MARGIN, Math.min(v, extent - POPOVER_NOMINAL - CLAMP_MARGIN));
+  return { x: clampAxis(pt.x, size.w), y: clampAxis(pt.y, size.h) };
+}

@@ -697,9 +697,9 @@ describe('<StationView /> — selection silhouette geometry (E2)', () => {
     expect(d).toMatch(/[LCQ]/);
   });
 
-  it('paints the wash fill #f0ff00 at 0.2 opacity', () => {
+  it('paints the wash fill with the theme accent at 0.2 opacity', () => {
     const path = renderLayer('wash').querySelector('path')!;
-    expect(path.getAttribute('fill')).toBe('#f0ff00');
+    expect(path.getAttribute('fill')).toBe('#1a4ea8');
     expect(Number(path.getAttribute('fill-opacity'))).toBe(0.2);
   });
 
@@ -708,5 +708,21 @@ describe('<StationView /> — selection silhouette geometry (E2)', () => {
     expect(path.getAttribute('fill')).toBe('none');
     expect(path.getAttribute('stroke')).toBe('#888');
     expect(Number(path.getAttribute('stroke-width'))).toBe(1.5);
+  });
+
+  // Selection chrome holds a constant SCREEN weight: the stroke divides by
+  // the committed zoom (the 1/zoom idiom PolygonView established). At fit-map
+  // zooms a world-unit ring degraded to a sub-pixel ghost.
+  it('divides the selection stroke by zoom so its screen weight is constant', () => {
+    useViewportStore.setState({ zoom: 2 });
+    try {
+      const path = renderLayer('stroke').querySelector('path')!;
+      expect(Number(path.getAttribute('stroke-width'))).toBe(1);
+      // The mirror-match outline is the same class of chrome — compensated too.
+      const match = renderLayer('match-stroke').querySelector('path')!;
+      expect(Number(match.getAttribute('stroke-width'))).toBe(0.75);
+    } finally {
+      useViewportStore.setState({ zoom: 1 });
+    }
   });
 });

@@ -1,4 +1,13 @@
-import { useEffect } from 'react';
+import { type ReactNode } from 'react';
+import {
+  FontItalicIcon,
+  MoonIcon,
+  SunIcon,
+  TextAlignCenterIcon,
+  TextAlignJustifyIcon,
+  TextAlignLeftIcon,
+  TextAlignRightIcon,
+} from '@radix-ui/react-icons';
 import { useDoc } from '../state/store';
 import { type ViewportProjection } from './canvas/screenAnchor';
 import { useDraggablePopover } from './canvas/useDraggablePopover';
@@ -25,11 +34,11 @@ interface Props {
   onClose: () => void;
 }
 
-const ALIGNS: { value: TextLabelAlign; icon: string; title: string }[] = [
-  { value: 'left', icon: '⇤', title: 'Align left' },
-  { value: 'center', icon: '↔', title: 'Align center' },
-  { value: 'right', icon: '⇥', title: 'Align right' },
-  { value: 'justify', icon: '☰', title: 'Justify' },
+const ALIGNS: { value: TextLabelAlign; icon: ReactNode; title: string }[] = [
+  { value: 'left', icon: <TextAlignLeftIcon />, title: 'Align left' },
+  { value: 'center', icon: <TextAlignCenterIcon />, title: 'Align center' },
+  { value: 'right', icon: <TextAlignRightIcon />, title: 'Align right' },
+  { value: 'justify', icon: <TextAlignJustifyIcon />, title: 'Justify' },
 ];
 
 export function TextLabelPopover({ label, world, view, onClose }: Props) {
@@ -84,34 +93,16 @@ export function TextLabelPopover({ label, world, view, onClose }: Props) {
     if (Number.isFinite(n)) setWidth(n);
   };
 
-  // Escape closes; outside click does NOT (the canvas's onCanvasClick handles
-  // that by deselecting the label, which unmounts the popover).
-  useEffect(() => {
-    const onKey = (e: globalThis.KeyboardEvent) => {
-      if (e.key === 'Escape') {
-        const t = e.target as HTMLElement | null;
-        const tag = t?.tagName;
-        const inField =
-          tag === 'INPUT' || tag === 'TEXTAREA' || tag === 'SELECT' || t?.isContentEditable;
-        if (inField) {
-          // Let the field swallow the Esc (textarea unfocus, etc.) — don't
-          // close the popover out from under an in-progress edit.
-          return;
-        }
-        onClose();
-      }
-    };
-    document.addEventListener('keydown', onKey);
-    return () => document.removeEventListener('keydown', onKey);
-  }, [onClose]);
-
+  // Escape closes via App's global handler (it deselects the label, which
+  // unmounts the popover — guarded so Esc inside a field stays with the
+  // field). Outside click likewise closes through canvas deselection.
   return (
     <div
       className="text-label-popover"
       style={{
         position: 'absolute',
-        left: anchor.x + 14,
-        top: anchor.y + 14,
+        left: anchor.x,
+        top: anchor.y,
         zIndex: 1100,
       }}
       // Stop pointer events from reaching the canvas so clicks inside the
@@ -230,7 +221,7 @@ export function TextLabelPopover({ label, world, view, onClose }: Props) {
               aria-label="Italic"
               aria-pressed={label.italic}
             >
-              I
+              <FontItalicIcon />
             </button>
           </div>
         </div>
@@ -264,7 +255,7 @@ export function TextLabelPopover({ label, world, view, onClose }: Props) {
 
         <div className="row">
           <label htmlFor={`label-color-${label.id}`}>Color</label>
-          <span aria-hidden="true">☀️</span>
+          <SunIcon aria-hidden="true" />
           <input
             id={`label-color-${label.id}`}
             type="color"
@@ -275,7 +266,7 @@ export function TextLabelPopover({ label, world, view, onClose }: Props) {
             onChange={(e) => setColor(e.target.value)}
             {...colorField}
           />
-          <span aria-hidden="true">🌙</span>
+          <MoonIcon aria-hidden="true" />
           <input
             id={`label-dark-color-${label.id}`}
             type="color"

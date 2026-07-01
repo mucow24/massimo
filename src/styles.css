@@ -140,7 +140,7 @@ body,
   background: #f4f4f4;
 }
 
-.canvas-host svg text {
+.canvas-host > svg text {
   user-select: none;
   -webkit-user-select: none;
   /* Inherit the page font ('Helvetica Neue' loaded from /fonts/). */
@@ -162,10 +162,87 @@ select {
     'toolbar toolbar'
     'canvas sidebar';
   height: 100vh;
-  /* Single source of truth for muted "UI label" text — the small captions
-     beside controls in the station/line inspectors and the options panel.
-     Overridden once for dark mode (see .app[data-theme='dark']). */
-  --ui-label-color: #777;
+
+  /* ── Design tokens ─────────────────────────────────────────────
+     Single source of truth for the chrome's colors, radii, and type scale.
+     Dark mode reassigns these once on .app[data-theme='dark'] (end of file)
+     instead of restating every rule. The canvas-side (SVG) half of the
+     palette lives in src/state/theme.ts — keep --accent in sync with it. */
+
+  /* Text */
+  --text: #111;
+  --text-muted: #666; /* captions, field labels, section headings */
+  --text-faint: #b0b0b0; /* resting tint of the borderless icon buttons */
+
+  /* Surfaces */
+  --surface: #fff; /* toolbar, sidebar, popover bodies */
+  --surface-raised: #fff; /* dropdown/menu panels */
+  --control-bg: #fff; /* button faces */
+  --control-hover: #f0f0f0;
+  --raised-hover: #f0f0f0; /* hover on --surface-raised (menus); brighter in dark */
+  --inset-bg: #f2f5f9; /* list headers + inline-editor wash */
+  --inset-border: #e3e7ee;
+  --row-hover: #f4f7fb;
+  --row-selected: #e6efff;
+  --input-bg: #fff;
+  --input-text: #111;
+
+  /* Borders */
+  --border-soft: #e5e5e5;
+  --border: #ccc;
+  --border-strong: #bbb;
+  --swatch-border: rgba(0, 0, 0, 0.2);
+
+  /* Accent — the editor's interaction blue (keep in sync with theme.ts). */
+  --accent: #1a4ea8;
+  --accent-bg: #d6e4ff; /* toggled-on button fill */
+  --accent-border: #6a8ed6;
+  --selection-ring: #000; /* selected-swatch outline (flips white in dark) */
+
+  --danger: #c33;
+
+  /* Neutral backdrop for stop-glyph previews: mid-gray so both black and
+     white glyph variants stay visible. Same value in both themes. */
+  --glyph-backdrop: #808080;
+  --glyph-backdrop-border: #6b6b6b;
+
+  --radius: 3px;
+
+  --shadow-tint: rgba(0, 0, 0, 0.1); /* toolbar/sidebar edge shadows */
+  --shadow-pop: 0 6px 16px rgba(0, 0, 0, 0.12); /* menus + popovers */
+
+  /* Type scale — 13 base / 12 controls / 11 captions. Nothing below 11. */
+  --fs-ui: 13px;
+  --fs-small: 12px;
+  --fs-caption: 11px;
+}
+
+/* Keyboard focus + disabled state, app-wide. Individual controls don't need
+   their own focus styling; disabled buttons dim uniformly instead of
+   rendering pixel-identical to enabled ones. */
+:is(button, input, select, textarea):focus-visible {
+  outline: 2px solid var(--accent-border);
+  outline-offset: 1px;
+}
+button:disabled {
+  opacity: 0.45;
+  cursor: default;
+}
+
+/* Text-entry controls read the input tokens so dark mode flips them (black
+   fields, white text) without per-control overrides. Range/checkbox/color
+   inputs keep their native chrome (color-scheme handles those in dark). */
+input[type='text'],
+input[type='number'],
+input[type='search'],
+textarea,
+select {
+  background: var(--input-bg);
+  color: var(--input-text);
+}
+select option {
+  background: var(--input-bg);
+  color: var(--input-text);
 }
 
 .toolbar {
@@ -174,9 +251,9 @@ select {
   align-items: center;
   gap: 12px;
   padding: 0 12px;
-  background: #fff;
-  border-bottom: 1px solid #ddd;
-  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.08);
+  background: var(--surface);
+  border-bottom: 1px solid var(--border);
+  box-shadow: 0 4px 12px var(--shadow-tint);
   z-index: 1;
 }
 
@@ -192,14 +269,14 @@ select {
 }
 
 .toolbar button {
-  background: #fff;
-  border: 1px solid #bbb;
-  border-radius: 4px;
+  background: var(--control-bg);
+  border: 1px solid var(--border-strong);
+  border-radius: var(--radius);
   padding: 4px 10px;
   cursor: pointer;
 }
 .toolbar button:hover {
-  background: #f0f0f0;
+  background: var(--control-hover);
 }
 
 /* Menus: underlined Helvetica Neue triggers, weight lighter than "Massimo"
@@ -215,8 +292,8 @@ select {
   padding: 4px 2px;
   font-family: inherit;
   font-weight: 500;
-  font-size: 13px;
-  color: #111;
+  font-size: var(--fs-ui);
+  color: var(--text);
   text-decoration: underline;
   text-underline-offset: 3px;
   text-decoration-thickness: 1px;
@@ -225,7 +302,6 @@ select {
 .toolbar button.menu-trigger:hover,
 .toolbar button.menu-trigger.open {
   background: transparent;
-  color: #000;
   text-decoration-thickness: 2px;
 }
 .menu-panel {
@@ -233,10 +309,10 @@ select {
   top: calc(100% + 4px);
   left: 0;
   min-width: 160px;
-  background: #fff;
-  border: 1px solid #ccc;
+  background: var(--surface-raised);
+  border: 1px solid var(--border);
   border-radius: 4px;
-  box-shadow: 0 6px 16px rgba(0, 0, 0, 0.12);
+  box-shadow: var(--shadow-pop);
   padding: 4px 0;
   z-index: 10;
   display: flex;
@@ -250,14 +326,14 @@ select {
   padding: 6px 12px;
   font-weight: 400;
   cursor: pointer;
-  color: #111;
+  color: var(--text);
 }
 .toolbar button.menu-item:hover {
-  background: #f0f0f0;
+  background: var(--raised-hover);
 }
 .menu-separator {
   height: 1px;
-  background: #eee;
+  background: var(--border-soft);
   margin: 4px 0;
 }
 
@@ -274,11 +350,11 @@ select {
 }
 .toolbar button.menu-sub-trigger:hover,
 .toolbar button.menu-sub-trigger.open {
-  background: #f0f0f0;
+  background: var(--raised-hover);
 }
 .menu-sub-caret {
-  font-size: 13px;
-  line-height: 1;
+  display: inline-flex;
+  align-items: center;
   opacity: 0.6;
 }
 .menu-sub-panel {
@@ -298,14 +374,14 @@ select {
   right: 0;
   margin-top: 4px;
   z-index: 100;
-  background: #fff;
-  border: 1px solid #ccc;
+  background: var(--surface-raised);
+  border: 1px solid var(--border);
   border-radius: 4px;
-  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.12);
+  box-shadow: var(--shadow-pop);
   padding: 10px 12px;
   min-width: 240px;
-  font-size: 12px;
-  color: #111;
+  font-size: var(--fs-small);
+  color: var(--text);
 }
 .options-popover-row {
   display: flex;
@@ -319,7 +395,7 @@ select {
 .options-popover-label {
   width: 72px;
   flex-shrink: 0;
-  color: var(--ui-label-color);
+  color: var(--text-muted);
 }
 .options-popover-row input[type='range'] {
   flex: 1;
@@ -328,14 +404,17 @@ select {
 .options-popover-value {
   width: 24px;
   text-align: right;
-  color: var(--ui-label-color);
+  color: var(--text-muted);
 }
 .options-popover-spin {
-  width: 44px;
-  font-size: 12px;
+  /* Wide enough for a one-decimal value ("16.0") PLUS the native stepper
+     arrows, which Chromium overlays inside the input's right edge — at 44px
+     they clip the last digit. Matches LabelOffsetControl's 56px spinbox. */
+  width: 56px;
+  font-size: var(--fs-small);
   padding: 1px 4px;
-  border: 1px solid #ccc;
-  border-radius: 3px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
 }
 .options-popover-row-block {
   flex-direction: column;
@@ -349,12 +428,12 @@ select {
   background: transparent;
   border: 0;
   padding: 2px 0;
-  color: var(--ui-label-color);
+  color: var(--text-muted);
   cursor: pointer;
-  font-size: 12px;
+  font-size: var(--fs-small);
 }
 .options-palette-disclosure:hover {
-  color: #111;
+  color: var(--text);
 }
 .options-palettes {
   display: flex;
@@ -366,7 +445,7 @@ select {
 }
 .options-palette-separator {
   border: 0;
-  border-top: 1px solid #ccc;
+  border-top: 1px solid var(--border);
   margin: 4px 0;
 }
 .options-palette-card {
@@ -374,8 +453,8 @@ select {
   flex-direction: column;
   gap: 2px;
   padding: 3px 6px 4px;
-  border: 1px solid #e5e5e5;
-  border-radius: 3px;
+  border: 1px solid var(--border-soft);
+  border-radius: var(--radius);
   cursor: pointer;
 }
 .options-palette-card[aria-disabled='true'] {
@@ -395,13 +474,13 @@ select {
 .options-palette-load {
   align-self: flex-start;
 }
-/* Red "x" delete button on custom palette cards, pushed to the far right. */
+/* Red delete button on custom palette cards, pushed to the far right. */
 .options-palette-delete {
   margin-left: auto;
 }
 .options-palette-error {
-  color: #c33;
-  font-size: 11px;
+  color: var(--danger);
+  font-size: var(--fs-caption);
 }
 .options-palette-strip {
   display: flex;
@@ -412,15 +491,63 @@ select {
   width: 12px;
   height: 12px;
   border-radius: 2px;
-  border: 1px solid rgba(0, 0, 0, 0.15);
+  border: 1px solid var(--swatch-border);
   box-sizing: border-box;
 }
 .color-palette-section-label {
-  color: #888;
-  font-size: 10px;
+  color: var(--text-muted);
+  font-size: var(--fs-caption);
   text-transform: uppercase;
   letter-spacing: 0.04em;
   margin: 4px 0 2px;
+}
+
+/* Line/polygon color swatches (ColorPalette). The list rows have their own
+   smaller read-only variant (.list-row .swatch below). */
+.color-palette {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+.color-palette-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+}
+.color-swatch {
+  width: 22px;
+  height: 22px;
+  border-radius: var(--radius);
+  border: 1px solid var(--swatch-border);
+  padding: 0;
+  cursor: pointer;
+  box-sizing: border-box;
+}
+.color-swatch.selected {
+  /* Ring flips with the theme so it reads on the dark sidebar too. */
+  border: 2px solid var(--selection-ring);
+}
+/* The custom-color slot: a dashed "?" chip that proxies to a hidden native
+   color input. When a custom color is active it fills with that color. */
+.color-swatch.custom {
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  align-self: flex-start;
+  background: var(--control-bg);
+  border-style: dashed;
+  /* Stronger than --swatch-border: the dashed outline IS this chip's
+     affordance next to the solid swatches. */
+  border-color: var(--text-faint);
+  font-size: var(--fs-small);
+  color: var(--text-muted);
+  font-weight: 700;
+}
+.color-swatch.custom.selected {
+  border-style: solid;
+  color: #fff;
+  text-shadow: 0 0 2px rgba(0, 0, 0, 0.5);
 }
 
 .toolbar .spacer {
@@ -434,37 +561,40 @@ select {
   /* Same muted "UI label" token as the inspectors. This selector also wins
      over `.options-popover-label` (higher specificity), so routing it through
      the variable is what actually colors the options-panel labels too. */
-  color: var(--ui-label-color);
+  color: var(--text-muted);
 }
 
 .canvas-host {
   grid-area: canvas;
   position: relative;
-  background: #fafafa;
+  background: #fafafa; /* keep in sync with theme.ts canvasBg */
   overflow: hidden;
 }
 
+/* ── Item popovers (bullet / text label / polygon / svg image) ──
+   Signature shell: white body, 3px black border, black header strip. The
+   polygon + svg-image popovers stack `polygon-popover` on top of
+   `bullet-popover`; the text-label popover has its own root class. */
 .bullet-popover,
 .text-label-popover {
-  background: #fff;
+  background: var(--surface);
   border: 3px solid #000;
   /* 1px white ring around the black border so the popover's edge stays visible
      against a black canvas (dark mode / dark polygons), where the border alone
      would disappear. */
   outline: 1px solid #fff;
-  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.2);
+  box-shadow: var(--shadow-pop);
   width: 240px;
-  font-size: 12px;
+  font-size: var(--fs-small);
   display: flex;
   flex-direction: column;
 }
+/* Every popover header is the drag handle (wired via useDraggablePopover). */
 .bullet-popover .header,
 .text-label-popover .header {
   height: 10px;
   background: #000;
   flex-shrink: 0;
-}
-.text-label-popover .header {
   cursor: move;
   touch-action: none;
 }
@@ -485,7 +615,7 @@ select {
 .text-label-popover .row label {
   width: 48px;
   flex-shrink: 0;
-  color: #000;
+  color: var(--text);
   font-weight: 700;
 }
 .bullet-popover .row select,
@@ -501,97 +631,131 @@ select {
   gap: 4px;
   flex: 1;
 }
+
+/* ── Shared control recipe ──
+   One look for the small chip buttons (toolbar tools, popover shape/align/
+   italic/lock buttons): control surface, strong border, shared radius, one
+   hover fill, one accent pair when toggled on. Size and layout stay on each
+   family below; dark mode flows from the tokens. */
+.toolbar button.tool-btn,
 .bullet-popover .shape-btn,
-.text-label-popover .shape-btn {
+.text-label-popover .shape-btn,
+.text-label-popover .align-btn,
+.text-label-popover .italic-btn,
+.bullet-popover .lock-btn,
+.text-label-popover .lock-btn {
+  background: var(--control-bg);
+  border: 1px solid var(--border-strong);
+  border-radius: var(--radius);
+  cursor: pointer;
+}
+.toolbar button.tool-btn:hover,
+.bullet-popover .shape-btn:hover:not(:disabled),
+.text-label-popover .shape-btn:hover:not(:disabled),
+.text-label-popover .align-btn:hover:not(:disabled),
+.text-label-popover .italic-btn:hover:not(:disabled),
+.bullet-popover .lock-btn:hover,
+.text-label-popover .lock-btn:hover {
+  background: var(--control-hover);
+}
+.toolbar button.tool-btn.active,
+.bullet-popover .shape-btn.active,
+.text-label-popover .shape-btn.active,
+.text-label-popover .align-btn.active,
+.text-label-popover .italic-btn.active,
+.bullet-popover .lock-btn.active,
+.text-label-popover .lock-btn.active {
+  background: var(--accent-bg);
+  border-color: var(--accent-border);
+}
+/* Keep the accent fill while hovering a toggled-on button: the hover rule's
+   :not(:disabled) outranks .active on specificity (same fix as .btn-mini). */
+.bullet-popover .shape-btn.active:hover:not(:disabled),
+.text-label-popover .shape-btn.active:hover:not(:disabled),
+.text-label-popover .align-btn.active:hover:not(:disabled),
+.text-label-popover .italic-btn.active:hover:not(:disabled) {
+  background: var(--accent-bg);
+}
+
+.bullet-popover .shape-btn,
+.text-label-popover .shape-btn,
+.text-label-popover .align-btn,
+.text-label-popover .italic-btn {
   flex: 1;
   display: inline-flex;
   align-items: center;
   justify-content: center;
   height: 26px;
-  background: #fff;
-  border: 1px solid #bbb;
-  border-radius: 3px;
   padding: 0;
-  cursor: pointer;
-}
-.bullet-popover .shape-btn:hover,
-.text-label-popover .shape-btn:hover {
-  background: #f0f0f0;
-}
-.bullet-popover .shape-btn.active,
-.text-label-popover .shape-btn.active {
-  background: #d6e4ff;
-  border-color: #6a8ed6;
+  font: inherit;
+  font-size: var(--fs-small);
 }
 .bullet-popover .shape-btn svg,
 .text-label-popover .shape-btn svg {
   display: block;
 }
+.text-label-popover .italic-btn {
+  flex: 0 0 36px;
+}
+.bullet-popover .lock-btn,
+.text-label-popover .lock-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 3px 10px;
+  font-size: var(--fs-small);
+  font-weight: 600;
+  color: var(--text);
+}
+
+/* Footer holds the lock toggle (left) and Delete (right) in every popover. */
 .bullet-popover .footer,
 .text-label-popover .footer {
   display: flex;
-  justify-content: flex-end;
-}
-/* The polygon popover reuses the bullet-popover shell but embeds a
-   NumericFieldRow (which carries its own bottom margin) inside the body's
-   gap-based column — zero it out so spacing stays even, and let the color
-   row labels size to their text rather than the fixed bullet-row width. */
-.polygon-popover .options-popover-row {
-  margin-bottom: 0;
-}
-.polygon-popover .row label {
-  width: auto;
-}
-/* Draggable header (matches the text-label popover). */
-.polygon-popover .header {
-  cursor: move;
-  touch-action: none;
-}
-/* Footer holds the lock toggle (left) and Delete (right). */
-.polygon-popover .footer {
   justify-content: space-between;
-}
-.polygon-popover .lock-btn {
-  background: #fff;
-  border: 1px solid #bbb;
-  border-radius: 3px;
-  padding: 3px 10px;
-  font-size: 12px;
-  font-weight: 600;
-  cursor: pointer;
-  color: #111;
-}
-.polygon-popover .lock-btn:hover {
-  background: #f0f0f0;
-}
-.polygon-popover .lock-btn.active {
-  background: #d6e4ff;
-  border-color: #6a8ed6;
-}
-.app[data-theme='dark'] .polygon-popover .lock-btn {
-  background: #2a2a2a;
-  border-color: #444;
-  color: #e4e4e4;
-}
-.app[data-theme='dark'] .polygon-popover .lock-btn:hover {
-  background: #353535;
+  gap: 8px;
 }
 .bullet-popover .delete-btn,
 .text-label-popover .delete-btn {
-  background: #fff;
-  color: #c33;
-  border: 1px solid #c33;
-  border-radius: 3px;
+  background: var(--control-bg);
+  color: var(--danger);
+  border: 1px solid var(--danger);
+  border-radius: var(--radius);
   padding: 3px 10px;
-  font-size: 12px;
+  font-size: var(--fs-small);
   font-weight: 600;
   cursor: pointer;
 }
-.bullet-popover .delete-btn:hover,
-.text-label-popover .delete-btn:hover {
-  background: #c33;
+.bullet-popover .delete-btn:hover:not(:disabled),
+.text-label-popover .delete-btn:hover:not(:disabled) {
+  background: var(--danger);
   color: #fff;
 }
+/* Slider + spinbutton "Size"-style rows share one spinbox width. 56px fits a
+   one-decimal value plus the overlaid native stepper arrows (44px clipped). */
+.bullet-popover .size-spin,
+.text-label-popover .size-spin {
+  width: 56px;
+  text-align: right;
+}
+
+/* The polygon popover reuses the bullet-popover shell but embeds a
+   NumericFieldRow (the popover slider idiom) inside the body's gap-based
+   column — zero its margin so spacing stays even, and give BOTH row idioms
+   one label column (same width, same bold-black typography) so the panel
+   reads as a single form. */
+.polygon-popover .options-popover-row {
+  margin-bottom: 0;
+}
+.polygon-popover .row label,
+.polygon-popover .options-popover-label {
+  width: 84px;
+  flex-shrink: 0;
+  color: var(--text);
+  font-weight: 700;
+  font-size: inherit;
+}
+
 .text-label-popover .row-block {
   display: flex;
   flex-direction: column;
@@ -604,46 +768,13 @@ select {
   min-height: 44px;
   font: inherit;
   padding: 4px 6px;
-  border: 1px solid #bbb;
-  border-radius: 3px;
+  border: 1px solid var(--border-strong);
+  border-radius: var(--radius);
   /* Match the wrap="off" attribute: a long line scrolls horizontally
      instead of wrapping. */
   white-space: pre;
   overflow-x: auto;
   box-sizing: border-box;
-}
-.text-label-popover .size-spin {
-  width: 44px;
-  text-align: right;
-}
-.text-label-popover .align-btn,
-.text-label-popover .italic-btn {
-  flex: 1;
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  height: 26px;
-  background: #fff;
-  border: 1px solid #bbb;
-  border-radius: 3px;
-  padding: 0;
-  font: inherit;
-  font-size: 12px;
-  cursor: pointer;
-}
-.text-label-popover .align-btn:hover,
-.text-label-popover .italic-btn:hover {
-  background: #f0f0f0;
-}
-.text-label-popover .align-btn.active,
-.text-label-popover .italic-btn.active {
-  background: #d6e4ff;
-  border-color: #6a8ed6;
-}
-.text-label-popover .italic-btn {
-  flex: 0 0 36px;
-  font-style: italic;
-  font-weight: 600;
 }
 .text-label-popover .weight-select option {
   font-family: 'Helvetica Neue', Helvetica, Arial, sans-serif;
@@ -661,39 +792,28 @@ select {
   width: 26px;
   height: 26px;
   padding: 0;
-  background: #fff;
-  border: 1px solid #bbb;
-  border-radius: 3px;
-  cursor: pointer;
   box-sizing: border-box;
 }
 /* Numeric label variant (e.g. the grid-size toggle): the others hold icons. */
 .toolbar button.tool-btn.tool-btn-text {
-  font-size: 12px;
+  font-size: var(--fs-small);
   font-weight: 600;
   font-variant-numeric: tabular-nums;
   line-height: 1;
 }
-.toolbar button.tool-btn:hover {
-  background: #f0f0f0;
-}
-.toolbar button.tool-btn.active {
-  background: #d6e4ff;
-  border-color: #6a8ed6;
-}
 .toolbar button.tool-btn[aria-disabled='true'] {
-  opacity: 0.4;
+  opacity: 0.45;
   cursor: not-allowed;
 }
 .toolbar button.tool-btn[aria-disabled='true']:hover {
-  background: #fff;
+  background: var(--control-bg);
 }
 .tool-group-divider {
   display: inline-block;
   width: 1px;
   height: 18px;
   margin: 0 6px 0 8px;
-  background: #ccc;
+  background: var(--border);
   vertical-align: middle;
 }
 
@@ -707,8 +827,8 @@ select {
   padding: 4px 2px;
   font-family: inherit;
   font-weight: 500;
-  font-size: 13px;
-  color: #111;
+  font-size: var(--fs-ui);
+  color: var(--text);
   cursor: text;
   max-width: 220px;
   overflow: hidden;
@@ -723,10 +843,10 @@ select {
 .toolbar input.map-name-input {
   font-family: inherit;
   font-weight: 500;
-  font-size: 13px;
+  font-size: var(--fs-ui);
   padding: 3px 5px;
   width: 180px;
-  border: 1px solid #bbb;
+  border: 1px solid var(--border-strong);
   border-radius: 4px;
 }
 
@@ -741,14 +861,15 @@ select {
   justify-content: center;
   padding: 1px 4px;
   line-height: 1;
-  background: #808080;
-  border: 1px solid #6b6b6b;
+  background: var(--glyph-backdrop);
+  border: 1px solid var(--glyph-backdrop-border);
 }
 .btn-mini.shape-picker-trigger:hover:not(:disabled):not([aria-disabled='true']) {
-  background: #808080;
+  background: var(--glyph-backdrop);
+  border-color: var(--accent-border);
 }
 .btn-mini.shape-picker-trigger[aria-disabled='true'] {
-  opacity: 0.4;
+  opacity: 0.45;
   cursor: not-allowed;
 }
 .shape-grid {
@@ -760,18 +881,18 @@ select {
   grid-template-columns: repeat(3, 1fr);
   gap: 6px;
   padding: 8px;
-  background: #fff;
-  border: 1px solid #ccc;
+  background: var(--surface-raised);
+  border: 1px solid var(--border);
   border-radius: 4px;
-  box-shadow: 0 6px 16px rgba(0, 0, 0, 0.12);
+  box-shadow: var(--shadow-pop);
 }
 .shape-option {
   width: 26px;
   height: 26px;
   padding: 0;
-  background: #808080;
-  border: 1px solid #6b6b6b;
-  border-radius: 3px;
+  background: var(--glyph-backdrop);
+  border: 1px solid var(--glyph-backdrop-border);
+  border-radius: var(--radius);
   cursor: pointer;
   display: inline-flex;
   align-items: center;
@@ -779,19 +900,23 @@ select {
 }
 .shape-option:hover {
   background: #909090;
+  border-color: var(--accent-border);
 }
 .shape-option svg {
   display: block;
 }
 
-.canvas-host svg {
+/* Direct child only: this is the map canvas itself. The item popovers also
+   live inside .canvas-host, and a descendant selector would blow their little
+   icon svgs up to width:100% of the popover row. */
+.canvas-host > svg {
   width: 100%;
   height: 100%;
   display: block;
   cursor: default;
   shape-rendering: geometricPrecision;
 }
-.canvas-host svg.tool-hand {
+.canvas-host > svg.tool-hand {
   cursor: grab;
 }
 /* Any in-flight pan shows the closed "panning hand": the hand-tool left-drag
@@ -799,7 +924,7 @@ select {
    alone (not .tool-hand.panning) so a middle-drag, which leaves the svg in
    .tool-arrow, still gets grabbing. Sits after .tool-hand so it wins the
    equal-specificity tie while a hand-tool pan is in flight. */
-.canvas-host svg.panning {
+.canvas-host > svg.panning {
   cursor: grabbing;
 }
 
@@ -812,20 +937,20 @@ select {
 
 .sidebar {
   grid-area: sidebar;
-  background: #fff;
-  border-left: 1px solid #ddd;
+  background: var(--surface);
+  border-left: 1px solid var(--border);
   display: flex;
   flex-direction: column;
   overflow: hidden;
-  box-shadow: -4px 0 12px rgba(0, 0, 0, 0.08);
+  box-shadow: -4px 0 12px var(--shadow-tint);
   z-index: 1;
 }
 
 .sidebar h2 {
-  font-size: 11px;
+  font-size: var(--fs-caption);
   text-transform: uppercase;
   letter-spacing: 0.06em;
-  color: #888;
+  color: var(--text-muted);
   margin: 0;
   padding: 10px 12px 4px;
 }
@@ -849,7 +974,7 @@ select {
   border: 0;
   border-bottom: 4px solid transparent;
   padding: 10px 12px;
-  font-size: 13px;
+  font-size: var(--fs-ui);
   font-weight: 500;
   color: rgba(255, 255, 255, 0.55);
   cursor: pointer;
@@ -864,25 +989,10 @@ select {
   font-weight: 700;
 }
 
-.tab-actions {
-  padding: 8px 12px;
-  border-bottom: 1px solid #eee;
-}
-.tab-actions button {
-  background: #fff;
-  border: 1px solid #bbb;
-  border-radius: 4px;
-  padding: 4px 10px;
-  cursor: pointer;
-}
-.tab-actions button:hover {
-  background: #f0f0f0;
-}
-
 .inline-editor {
-  background: #fafbfd;
-  border-top: 1px solid #e7eaf0;
-  border-bottom: 1px solid #e7eaf0;
+  background: var(--inset-bg);
+  border-top: 1px solid var(--inset-border);
+  border-bottom: 1px solid var(--inset-border);
 }
 
 .wp-pill {
@@ -895,7 +1005,7 @@ select {
   border-radius: 9px;
   background: #6b7280;
   color: #fff;
-  font-size: 10px;
+  font-size: var(--fs-caption);
   font-weight: 600;
   flex-shrink: 0;
 }
@@ -948,11 +1058,11 @@ select {
   align-items: center;
   gap: 6px;
   padding: 4px 12px;
-  background: #f0f3f8;
-  border-bottom: 1px solid #e0e4eb;
-  font-size: 12px;
+  background: var(--inset-bg);
+  border-bottom: 1px solid var(--inset-border);
+  font-size: var(--fs-small);
   font-weight: 600;
-  color: #555;
+  color: var(--text-muted);
   position: sticky;
   top: 0;
   z-index: 1;
@@ -970,17 +1080,17 @@ select {
   gap: 4px;
 }
 .list-header .sort-header:hover {
-  color: #000;
+  color: var(--text);
 }
 .list-header .sort-header.active {
-  color: #000;
+  color: var(--text);
 }
 .list-header .sort-header.grow {
   flex: 1;
 }
 .list-header .sort-arrow {
-  font-size: 9px;
-  line-height: 1;
+  display: inline-flex;
+  align-items: center;
 }
 .list-header .header-spacer {
   width: 22px;
@@ -995,10 +1105,10 @@ select {
   cursor: pointer;
 }
 .list-row:hover {
-  background: #f4f7fb;
+  background: var(--row-hover);
 }
 .list-row.selected {
-  background: #e6efff;
+  background: var(--row-selected);
 }
 .list-row .grow {
   flex: 1;
@@ -1009,44 +1119,45 @@ select {
 .list-row .swatch {
   width: 14px;
   height: 14px;
-  border: 1px solid rgba(0, 0, 0, 0.2);
+  border: 1px solid var(--swatch-border);
   border-radius: 2px;
 }
 
 .btn-mini {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 3px;
   background: transparent;
-  border: 1px solid #ccc;
-  border-radius: 3px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
   padding: 1px 6px;
-  font-size: 11px;
+  min-height: 19px;
+  font-size: var(--fs-caption);
   cursor: pointer;
 }
+.btn-mini > svg {
+  display: block;
+}
 .btn-mini:hover:not(:disabled) {
-  background: #f0f0f0;
+  background: var(--control-hover);
 }
-.btn-mini.mirror-on {
-  background: #d22;
-  border-color: #b81f1f;
-  color: #fff;
-  font-weight: 600;
-}
-.btn-mini.mirror-on:hover:not(:disabled) {
-  background: #c91f1f;
-}
-
-/* Waypoint + lock toggles in the station inspector — neutral gray when active
-   (distinct from mirror-on's red) so they read as state flags, not a
-   warning. Matches the gray of the .wp-pill in the station list. */
+/* One "toggle is on" treatment for every mini toggle (B/I, mirror, waypoint,
+   lock): the shared accent pair. The mirror/wp/lock class names stay on the
+   JSX so tests and semantics are untouched; they just all paint the same. */
+.btn-mini.active,
+.btn-mini.mirror-on,
 .btn-mini.wp-on,
 .btn-mini.lock-on {
-  background: #6b7280;
-  border-color: #4b5563;
-  color: #fff;
+  background: var(--accent-bg);
+  border-color: var(--accent-border);
   font-weight: 600;
 }
+.btn-mini.active:hover:not(:disabled),
+.btn-mini.mirror-on:hover:not(:disabled),
 .btn-mini.wp-on:hover:not(:disabled),
 .btn-mini.lock-on:hover:not(:disabled) {
-  background: #5b6470;
+  background: var(--accent-bg);
 }
 
 /* Range input in "indeterminate" state — multiple matching stations have
@@ -1055,34 +1166,31 @@ select {
 input[type='range'].indeterminate {
   filter: grayscale(1) opacity(0.5);
 }
-.btn-mini.danger {
+
+/* Borderless icon buttons (row delete / reorder, palette delete). Faint at
+   rest; delete warms to the danger red on hover, the rest to full text color.
+   Sized as a fixed box so the Radix svg icons center optically. */
+.btn-mini.danger,
+.btn-mini.icon {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 20px;
+  height: 20px;
+  padding: 0 2px;
   border-color: transparent;
-  color: #b0b0b0;
-  font-size: 16px;
+  color: var(--text-faint);
   line-height: 1;
-  padding: 0 4px;
 }
-.btn-mini.danger:hover {
+.btn-mini.danger:hover:not(:disabled) {
   background: transparent;
   border-color: transparent;
-  color: #c33;
-}
-
-.btn-mini.icon {
-  border-color: transparent;
-  color: #b0b0b0;
-  font-size: 14px;
-  line-height: 1;
-  padding: 0 4px;
+  color: var(--danger);
 }
 .btn-mini.icon:hover:not(:disabled) {
   background: transparent;
   border-color: transparent;
-  color: #111;
-}
-.btn-mini.icon:disabled {
-  color: #e0e0e0;
-  cursor: default;
+  color: var(--text);
 }
 
 .inspector {
@@ -1096,12 +1204,12 @@ input[type='range'].indeterminate {
   margin-bottom: 8px;
 }
 .inspector .field > label {
-  font-size: 11px;
-  color: var(--ui-label-color);
+  font-size: var(--fs-caption);
+  color: var(--text-muted);
 }
 .inspector .field-hint {
-  font-size: 11px;
-  color: var(--ui-label-color);
+  font-size: var(--fs-caption);
+  color: var(--text-muted);
   margin-top: 4px;
 }
 /* The Line inspector embeds a NumericFieldRow (the popover slider idiom)
@@ -1111,15 +1219,18 @@ input[type='range'].indeterminate {
   margin-bottom: 8px;
 }
 .inspector .options-popover-label {
-  width: auto;
-  font-size: 11px;
+  /* Fixed column sized to the longest label ("Stroke color") so the sliders
+     and spinboxes down the panel start at one shared x. */
+  width: 76px;
+  font-size: var(--fs-caption);
 }
 
 .inspector input[type='text'],
+.inspector input[type='number'],
 .inspector input[type='color'],
 .inspector textarea {
-  border: 1px solid #ccc;
-  border-radius: 3px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
   padding: 3px 5px;
 }
 .inspector textarea {
@@ -1139,7 +1250,7 @@ input[type='range'].indeterminate {
   background: #fff7d6;
   border: 1px solid #d8c47a;
   color: #6b5217;
-  font-size: 12px;
+  font-size: var(--fs-small);
   padding: 6px 8px;
   border-radius: 4px;
   cursor: pointer;
@@ -1149,7 +1260,7 @@ input[type='range'].indeterminate {
 }
 
 .empty {
-  color: #999;
+  color: var(--text-muted);
   padding: 8px 12px;
   font-style: italic;
 }
@@ -1160,12 +1271,15 @@ input[type='range'].indeterminate {
   left: 0;
   right: 0;
   padding: 6px 12px;
-  font-size: 12px;
+  font-size: var(--fs-small);
   z-index: 5;
   pointer-events: none;
   font-weight: 600;
   letter-spacing: 0.02em;
 }
+/* The banner keeps the deep editing blue in both themes (white text needs the
+   contrast); the frame follows --accent so it brightens on the dark canvas
+   alongside the marquee (theme.ts accent). */
 .append-banner.placing {
   background: #1a4ea8;
   color: #fff;
@@ -1173,248 +1287,88 @@ input[type='range'].indeterminate {
 .append-frame {
   position: absolute;
   inset: 0;
-  border: 4px solid currentColor;
+  border: 4px solid var(--accent);
   pointer-events: none;
   z-index: 4;
   box-sizing: border-box;
 }
-
-.drag-handle {
-  cursor: grab;
-  color: #aaa;
-  user-select: none;
+/* Layering mode keeps its deliberately distinct orange — it's a persistent
+   editing MODE, not a placement gesture. Both halves live here so the color
+   exists in exactly one place. */
+.append-banner.layering {
+  background: #c46b00;
+  color: #fff;
+}
+.append-frame.layering {
+  border-color: #c46b00;
 }
 
 /* ───────────────────────── Dark mode ─────────────────────────
    Toggled from the toolbar; the `data-theme="dark"` attribute lands on the
-   .app grid root (see App.tsx). Dark-dominant chrome: surfaces go near-black,
-   borders mid-gray, text light. The canvas background + on-canvas label color
-   are handled in the SVG itself (MapCanvas / StationView / LabelView /
-   Grid read darkMode from the viewport store), not here. */
+   .app grid root (see App.tsx). Almost everything flows from the token
+   reassignment below; only genuinely structural rules follow. The canvas
+   background + on-canvas label colors are handled in the SVG itself
+   (MapCanvas / StationView / LabelView / Grid read darkMode from the
+   viewport store), not here. */
 .app[data-theme='dark'] {
   background: #141414;
   color: #e4e4e4;
-  --ui-label-color: #c4c4c4;
   /* Opt native UI into dark rendering: select dropdown popups, number-spinner
      arrows, date pickers, and scrollbars within the app pick up dark chrome
      for free, instead of staying light against the dark surfaces. */
   color-scheme: dark;
-}
 
-.app[data-theme='dark'] .toolbar {
-  background: #1d1d1d;
-  border-bottom-color: #383838;
-  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.5);
-}
-.app[data-theme='dark'] .toolbar button {
-  background: #2a2a2a;
-  border-color: #444;
-  color: #e4e4e4;
-}
-.app[data-theme='dark'] .toolbar button:hover {
-  background: #353535;
-}
-.app[data-theme='dark'] .tool-group-divider {
-  background: #444;
-}
-.app[data-theme='dark'] .toolbar button.map-name {
-  background: transparent;
-  color: #e4e4e4;
-}
-.app[data-theme='dark'] .toolbar input.map-name-input {
-  background: #2a2a2a;
-  border-color: #444;
-  color: #e4e4e4;
-}
+  --text: #e4e4e4;
+  --text-muted: #c4c4c4;
+  --text-faint: #777;
 
-.app[data-theme='dark'] .toolbar button.menu-trigger {
-  background: transparent;
-  color: #e4e4e4;
-}
-.app[data-theme='dark'] .toolbar button.menu-trigger:hover,
-.app[data-theme='dark'] .toolbar button.menu-trigger.open {
-  background: transparent;
-  color: #fff;
-}
-.app[data-theme='dark'] .menu-panel {
-  background: #262626;
-  border-color: #404040;
-  box-shadow: 0 6px 16px rgba(0, 0, 0, 0.5);
-}
-.app[data-theme='dark'] .toolbar button.menu-item {
-  background: transparent;
-  color: #e4e4e4;
-}
-.app[data-theme='dark'] .toolbar button.menu-item:hover {
-  background: #4a4a4a;
-}
-.app[data-theme='dark'] .toolbar button.menu-sub-trigger:hover,
-.app[data-theme='dark'] .toolbar button.menu-sub-trigger.open {
-  background: #4a4a4a;
-}
-.app[data-theme='dark'] .menu-separator {
-  background: #404040;
-}
+  --surface: #1d1d1d;
+  --surface-raised: #262626;
+  --control-bg: #2a2a2a;
+  --control-hover: #353535;
+  --raised-hover: #4a4a4a;
+  --inset-bg: #232323;
+  --inset-border: #383838;
+  --row-hover: #2a2a2a;
+  --row-selected: #27406b;
+  --input-bg: #000;
+  --input-text: #fff;
 
-.app[data-theme='dark'] .toolbar button.tool-btn {
-  background: #2a2a2a;
-  border-color: #444;
-  color: #e4e4e4;
-}
-.app[data-theme='dark'] .toolbar button.tool-btn:hover {
-  background: #353535;
-}
-.app[data-theme='dark'] .toolbar button.tool-btn.active {
-  background: #27406b;
-  border-color: #4f7bc4;
-}
-.app[data-theme='dark'] .toolbar button.tool-btn[aria-disabled='true']:hover {
-  background: #2a2a2a;
-}
+  --border-soft: #383838;
+  --border: #404040;
+  --border-strong: #444;
+  --swatch-border: rgba(255, 255, 255, 0.25);
 
-.app[data-theme='dark'] .options-popover {
-  background: #262626;
-  border-color: #404040;
-  color: #e4e4e4;
-  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.5);
-}
-.app[data-theme='dark'] .options-popover-spin {
-  background: #000;
-  border-color: #444;
-  color: #fff;
-}
-.app[data-theme='dark'] .options-palette-disclosure:hover {
-  color: #e4e4e4;
-}
-.app[data-theme='dark'] .options-palette-separator {
-  border-top-color: #404040;
-}
-.app[data-theme='dark'] .options-palette-card {
-  border-color: #383838;
-}
-.app[data-theme='dark'] .color-palette-section-label {
-  color: #7a7a7a;
+  /* Brightened accent — keep in sync with theme.ts DARK. */
+  --accent: #6b9aff;
+  --accent-bg: #27406b;
+  --accent-border: #4f7bc4;
+  --selection-ring: #fff;
+
+  --danger: #d66;
+
+  --shadow-tint: rgba(0, 0, 0, 0.5);
+  --shadow-pop: 0 6px 16px rgba(0, 0, 0, 0.5);
 }
 
 .app[data-theme='dark'] .canvas-host {
-  background: #000;
+  background: #000; /* keep in sync with theme.ts canvasBg */
 }
 
-.app[data-theme='dark'] .sidebar {
-  background: #1d1d1d;
-  border-left-color: #383838;
-  box-shadow: -4px 0 12px rgba(0, 0, 0, 0.5);
-}
-.app[data-theme='dark'] .sidebar h2 {
-  color: #7a7a7a;
-}
-.app[data-theme='dark'] .tab-actions {
-  border-bottom-color: #333;
-}
-.app[data-theme='dark'] .tab-actions button {
-  background: #2a2a2a;
-  border-color: #444;
+/* The page behind the .app grid — visible when the toolbar's pinned widths
+   overflow the viewport (horizontal scroll) or on overscroll rubber-banding.
+   body is outside .app, so the token reassignment can't reach it. */
+body:has(.app[data-theme='dark']) {
+  background: #141414;
   color: #e4e4e4;
 }
-.app[data-theme='dark'] .tab-actions button:hover {
-  background: #353535;
-}
-.app[data-theme='dark'] .inline-editor {
-  background: #232323;
-  border-top-color: #383838;
-  border-bottom-color: #383838;
-}
 
-.app[data-theme='dark'] .list-header {
-  background: #232323;
-  border-bottom-color: #383838;
-  color: #9a9a9a;
+/* The toasts' yellow warning palette has no token — restate it darker. */
+.app[data-theme='dark'] .warning-toasts .toast {
+  background: #3a3213;
+  border-color: #6b5c1e;
+  color: #e8d48a;
 }
-.app[data-theme='dark'] .list-header .sort-header:hover,
-.app[data-theme='dark'] .list-header .sort-header.active {
-  color: #fff;
-}
-.app[data-theme='dark'] .list-row:hover {
-  background: #2a2a2a;
-}
-.app[data-theme='dark'] .list-row.selected {
-  background: #27406b;
-}
-.app[data-theme='dark'] .list-row .swatch {
-  border-color: rgba(255, 255, 255, 0.25);
-}
-
-.app[data-theme='dark'] .btn-mini {
-  border-color: #444;
-  color: #e4e4e4;
-}
-.app[data-theme='dark'] .btn-mini:hover:not(:disabled) {
-  background: #353535;
-}
-.app[data-theme='dark'] .btn-mini.icon {
-  border-color: transparent;
-  color: #777;
-}
-.app[data-theme='dark'] .btn-mini.icon:hover:not(:disabled) {
-  background: transparent;
-  color: #e4e4e4;
-}
-.app[data-theme='dark'] .btn-mini.icon:disabled {
-  color: #3a3a3a;
-}
-.app[data-theme='dark'] .btn-mini.danger {
-  color: #777;
-}
-
-/* All text-entry controls: black background, white text. Covers the inspector
-   name/position fields, the options-popover spin boxes, popover textareas, and
-   <select> menus (which otherwise render white-on-white in dark mode). */
-.app[data-theme='dark'] input[type='text'],
-.app[data-theme='dark'] input[type='number'],
-.app[data-theme='dark'] input[type='search'],
-.app[data-theme='dark'] textarea,
-.app[data-theme='dark'] select {
-  background: #000;
-  color: #fff;
-  border-color: #444;
-}
-.app[data-theme='dark'] select option {
-  background: #000;
-  color: #fff;
-}
-
-.app[data-theme='dark'] .empty {
-  color: #777;
-}
-
-/* Styled popovers keep their signature black border + header bar; only the
-   white body needs darkening so the controls inside read on dark. */
-.app[data-theme='dark'] .bullet-popover,
-.app[data-theme='dark'] .text-label-popover {
-  background: #1d1d1d;
-  border-color: #000;
-}
-.app[data-theme='dark'] .bullet-popover .row label,
-.app[data-theme='dark'] .text-label-popover .row label {
-  color: #e4e4e4;
-}
-.app[data-theme='dark'] .bullet-popover .shape-btn,
-.app[data-theme='dark'] .text-label-popover .shape-btn,
-.app[data-theme='dark'] .text-label-popover .align-btn,
-.app[data-theme='dark'] .text-label-popover .italic-btn {
-  background: #2a2a2a;
-  border-color: #444;
-  color: #e4e4e4;
-}
-.app[data-theme='dark'] .bullet-popover .shape-btn:hover,
-.app[data-theme='dark'] .text-label-popover .shape-btn:hover,
-.app[data-theme='dark'] .text-label-popover .align-btn:hover,
-.app[data-theme='dark'] .text-label-popover .italic-btn:hover {
-  background: #353535;
-}
-
-.app[data-theme='dark'] .shape-grid {
-  background: #262626;
-  border-color: #404040;
-  box-shadow: 0 6px 16px rgba(0, 0, 0, 0.5);
+.app[data-theme='dark'] .warning-toasts .toast:hover {
+  background: #46401c;
 }
