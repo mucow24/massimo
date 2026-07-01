@@ -104,6 +104,8 @@ export function StationInspector({ id }: { id: StationId }) {
 
   const mirrorOn = selection.mirrorMatching;
   const mirrorAvailable = matches.length > 0;
+  const inLayoutEdit =
+    selection.uiMode.kind === 'editing-station-layout' && selection.uiMode.stationId === station.id;
 
   return (
     <section className="inspector">
@@ -246,7 +248,28 @@ export function StationInspector({ id }: { id: StationId }) {
         </div>
       </div>
       <div className="field">
-        <label>Stop layout</label>
+        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+          <label>Stop layout</label>
+          {/* Enter/exit editing-station-layout: the full stop/label editor
+              on the real station, on the main canvas. */}
+          <button
+            type="button"
+            className={`btn-mini${inLayoutEdit ? ' active' : ''}`}
+            aria-pressed={inLayoutEdit}
+            title={
+              inLayoutEdit
+                ? 'Exit the on-canvas layout editor (Esc)'
+                : 'Edit stops + label on the map: drag between slots, right-click or R rotates, arrows nudge'
+            }
+            onClick={() =>
+              inLayoutEdit
+                ? selection.setUiMode({ kind: 'idle' })
+                : selection.startEditingStationLayout(station.id)
+            }
+          >
+            {inLayoutEdit ? 'Done' : 'Edit layout'}
+          </button>
+        </div>
         <div ref={stopAreaRef} style={{ display: 'flex', justifyContent: 'center' }}>
           <StopGrid
             key={id}

@@ -9,6 +9,7 @@ import {
   nearestNode,
   sameCell,
   CELL_EPS as EPS,
+  ORIENTATION_GLYPH,
   PITCH,
 } from './stopGridDrag';
 export { PITCH } from './stopGridDrag';
@@ -20,13 +21,6 @@ type GridStation = {
 };
 
 type GridLines = Record<string, { color: string; service: string; width?: number }>;
-
-const ORIENTATION_GLYPH: Record<StopOrientation, string> = {
-  'auto-vertical': '↕',
-  'auto-ne-sw': '⤢',
-  'auto-horizontal': '↔',
-  'auto-nw-se': '⤡',
-};
 
 const RADIUS = PITCH / 2;
 const DRAG_THRESHOLD_PX = 4;

@@ -907,3 +907,50 @@ describe('<StationInspector /> — label offset wiring (along vs perpendicular)'
     expect(label.offset).toBe(0);
   });
 });
+
+describe('<StationInspector /> — Edit layout entry', () => {
+  beforeEach(() => {
+    localStorage.clear();
+    useDoc.setState({ ...DEFAULT_DOC });
+    useSelection.setState({ ...SELECTION_BLANK, uiMode: { kind: 'idle' } });
+  });
+
+  const seedStation = () => {
+    useDoc.setState({
+      ...DEFAULT_DOC,
+      ...makeDoc({
+        stations: [makeStation({ id: 'a', stops: [makeStop('L1')] })],
+        lines: [makeLine({ id: 'L1', stations: ['a'] })],
+      }),
+    });
+    useSelection.setState({
+      ...SELECTION_BLANK,
+      uiMode: { kind: 'idle' },
+      selectedStationIds: ['a'],
+    });
+  };
+
+  it('the Edit layout button enters editing-station-layout for this station', async () => {
+    const user = userEvent.setup();
+    seedStation();
+    render(<StationInspector id="a" />);
+    await user.click(screen.getByRole('button', { name: 'Edit layout' }));
+    expect(useSelection.getState().uiMode).toEqual({
+      kind: 'editing-station-layout',
+      stationId: 'a',
+    });
+    expect(useSelection.getState().selectedStationIds).toEqual(['a']);
+  });
+
+  it('while the mode is active the button reads Done and exits to idle', async () => {
+    const user = userEvent.setup();
+    seedStation();
+    useSelection.setState({
+      ...useSelection.getState(),
+      uiMode: { kind: 'editing-station-layout', stationId: 'a' },
+    });
+    render(<StationInspector id="a" />);
+    await user.click(screen.getByRole('button', { name: 'Done' }));
+    expect(useSelection.getState().uiMode.kind).toBe('idle');
+  });
+});
