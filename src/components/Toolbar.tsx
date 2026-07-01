@@ -25,6 +25,7 @@ import {
 } from '@radix-ui/react-icons';
 import { SnapToggleBar } from './SnapToggleBar';
 import { OptionsPopover } from './OptionsPopover';
+import { MapNameField } from './MapNameField';
 
 function ToolButtons() {
   const toolMode = useSelection((s) => s.toolMode);
@@ -114,12 +115,15 @@ export function Toolbar() {
     // from the model when a field is added.
     const json = serialize(pickDocSnapshot(useDoc.getState()));
     const blob = new Blob([json], { type: 'application/json' });
-    downloadBlob(blob, `${mapFileBasename()}.massimo.json`);
+    downloadBlob(blob, `${mapFileBasename(useDoc.getState().name)}.massimo.json`);
   };
 
-  // Export the rendered map as an image. Both share the live canvas SVG and the
-  // active theme's background; failures surface in the toolbar alert.
-  const runExport = async (fn: (svg: SVGSVGElement, bg: string) => Promise<void>) => {
+  // Export the rendered map as an image. Both share the live canvas SVG, the
+  // active theme's background, and the name-stamped basename; failures surface
+  // in the toolbar alert.
+  const runExport = async (
+    fn: (svg: SVGSVGElement, bg: string, basename: string) => Promise<void>,
+  ) => {
     const svg = getCanvasSvg();
     if (!svg) {
       setMenuError('Canvas not ready to export yet.');
@@ -135,7 +139,7 @@ export function Toolbar() {
     try {
       setMenuError(null);
       if (prevLineId) flushSync(() => useSelection.getState().selectLine(null));
-      await fn(svg, themeColors(darkMode).canvasBg);
+      await fn(svg, themeColors(darkMode).canvasBg, mapFileBasename(useDoc.getState().name));
     } catch (err) {
       setMenuError(err instanceof Error ? err.message : 'Export failed.');
     } finally {
@@ -147,9 +151,9 @@ export function Toolbar() {
   // Lazy-loaded: jsPDF + svg2pdf are heavy and only needed on PDF export, so
   // they stay out of the initial bundle (PNG/SVG don't pull them in).
   const onExportPdf = () =>
-    void runExport(async (svg, bg) => {
+    void runExport(async (svg, bg, basename) => {
       const { exportCanvasPdf } = await import('../export/exportCanvasPdf');
-      await exportCanvasPdf(svg, bg);
+      await exportCanvasPdf(svg, bg, basename);
     });
 
   const onLoadClick = () => fileInputRef.current?.click();
@@ -195,6 +199,9 @@ export function Toolbar() {
   return (
     <div className="toolbar">
       <strong>Massimo</strong>
+      <span className="tool-group-divider" aria-hidden="true" />
+      <MapNameField />
+      <span className="tool-group-divider" aria-hidden="true" />
       <Menu label="Canvas">
         <MenuItem onClick={onSave}>Save</MenuItem>
         <MenuItem onClick={onLoadClick}>Load…</MenuItem>

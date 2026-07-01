@@ -31,7 +31,7 @@ import { jsPDF } from 'jspdf';
 import { svg2pdf } from 'svg2pdf.js';
 import { HATCH_GAP_WIDTH, HATCH_STRIPE_WIDTH } from '../components/HatchPatterns';
 import type { Vec2 } from '../geometry/vec';
-import { buildExportSvg, downloadBlob, mapFileBasename } from './exportCanvas';
+import { buildExportSvg, downloadBlob } from './exportCanvas';
 import {
   bytesToBase64,
   collectUsedFontFaces,
@@ -203,7 +203,11 @@ function bakeHatchedPaints(svg: SVGSVGElement): void {
  * browser download. Same signature as `exportCanvasSvg`/`exportCanvasPng` so it
  * drops into the toolbar's `runExport` helper unchanged.
  */
-export async function exportCanvasPdf(source: SVGSVGElement, background: string): Promise<void> {
+export async function exportCanvasPdf(
+  source: SVGSVGElement,
+  background: string,
+  basename: string,
+): Promise<void> {
   const { svg, width, height } = await buildExportSvg(source, { background });
 
   // svg2pdf walks a live element, not a string — reparse and attach offscreen
@@ -247,7 +251,7 @@ export async function exportCanvasPdf(source: SVGSVGElement, background: string)
     });
     await registerFonts(doc, collectUsedFontFaces(el));
     await svg2pdf(el, doc, { x: 0, y: 0, width, height });
-    downloadBlob(doc.output('blob'), `${mapFileBasename()}.pdf`);
+    downloadBlob(doc.output('blob'), `${basename}.pdf`);
   } finally {
     document.body.removeChild(holder);
   }
