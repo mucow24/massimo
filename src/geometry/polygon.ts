@@ -1,4 +1,4 @@
-import { midpoint, type Vec2 } from './vec';
+import { centroid, midpoint, type Vec2 } from './vec';
 import { openPolylinePath, polygonsToPath } from './polygonUnion';
 
 /**
@@ -21,14 +21,7 @@ export function polygonSnapAnchor(vertices: Vec2[]): Vec2 {
  * Used as the rotation pivot for a single polygon and as the popover anchor.
  */
 export function polygonCentroid(vertices: Vec2[]): Vec2 {
-  let sx = 0;
-  let sy = 0;
-  for (const v of vertices) {
-    sx += v.x;
-    sy += v.y;
-  }
-  const n = vertices.length || 1;
-  return { x: sx / n, y: sy / n };
+  return centroid(vertices);
 }
 
 /**

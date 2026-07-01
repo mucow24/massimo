@@ -31,6 +31,25 @@ export const rotate = (a: Vec2, rad: number): Vec2 => {
   return { x: a.x * c - a.y * s, y: a.x * s + a.y * c };
 };
 
+// Rotate `a` about `pivot` by `rad` — the pivoted form of `rotate` (same
+// y-down / clockwise convention). The single home for "rotate a point around
+// another point", used by station-label and polygon geometry.
+export const rotateAround = (a: Vec2, pivot: Vec2, rad: number): Vec2 =>
+  add(rotate(sub(a, pivot), rad), pivot);
+
+// Arithmetic mean of the points (vertex centroid, NOT area-weighted). Empty
+// input returns the origin (the `|| 1` guard) rather than NaN.
+export const centroid = (points: readonly Vec2[]): Vec2 => {
+  let sx = 0;
+  let sy = 0;
+  for (const p of points) {
+    sx += p.x;
+    sy += p.y;
+  }
+  const n = points.length || 1;
+  return { x: sx / n, y: sy / n };
+};
+
 // Unsigned angle in radians ([0, π]) between two UNIT vectors, via their
 // clamped dot product (the clamp guards acos against FP drift past ±1). Callers
 // pass unit tangents/directions; this does NOT normalize its inputs.
