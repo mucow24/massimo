@@ -1292,6 +1292,16 @@ input[type='range'].indeterminate {
   z-index: 4;
   box-sizing: border-box;
 }
+/* Layering mode keeps its deliberately distinct orange — it's a persistent
+   editing MODE, not a placement gesture. Both halves live here so the color
+   exists in exactly one place. */
+.append-banner.layering {
+  background: #c46b00;
+  color: #fff;
+}
+.append-frame.layering {
+  border-color: #c46b00;
+}
 
 /* ───────────────────────── Dark mode ─────────────────────────
    Toggled from the toolbar; the `data-theme="dark"` attribute lands on the

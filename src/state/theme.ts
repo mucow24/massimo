@@ -45,14 +45,28 @@ export interface ThemeColors {
   phantomDot: string;
   /**
    * The editor's interaction accent: rect-select marquee, StopGrid drop
-   * targets, placement-mode frames, the inline rename border. Brightened in
-   * dark mode — the light blue is near-invisible on the black canvas. The
-   * chrome side reads the same values via the `--accent` CSS variables
-   * declared on `.app` in styles.css.
+   * targets, placement-mode frames, the inline rename border, selection
+   * washes, snap guides. Brightened in dark mode — the light blue is
+   * near-invisible on the black canvas. The chrome side reads the same
+   * values via the `--accent` CSS variables declared on `.app` in styles.css.
    */
   accent: string;
   /** Translucent fill companion to `accent` (marquee interior). */
   accentWash: string;
+  /**
+   * Full-canvas wash painted under a selected line's re-painted copy, muting
+   * everything else. Softer in light mode so the rest of the map stays
+   * readable as context; the black canvas keeps the stronger wash (colored
+   * lines need more muting against pure black).
+   */
+  dim: string;
+  dimOpacity: number;
+  /**
+   * Station names surfaced above the dim as "addable" hints in append mode —
+   * tuned to stay subordinate-but-legible against the dimmed backdrop each
+   * mode produces.
+   */
+  dimmedLabel: string;
 }
 
 const LIGHT: ThemeColors = {
@@ -66,6 +80,9 @@ const LIGHT: ThemeColors = {
   phantomDot: '#000000',
   accent: '#1a4ea8',
   accentWash: 'rgba(26, 78, 168, 0.08)',
+  dim: '#000000',
+  dimOpacity: 0.55,
+  dimmedLabel: '#eeeeee',
 };
 
 const DARK: ThemeColors = {
@@ -79,6 +96,9 @@ const DARK: ThemeColors = {
   phantomDot: '#ffffff',
   accent: '#6b9aff',
   accentWash: 'rgba(107, 154, 255, 0.12)',
+  dim: '#000000',
+  dimOpacity: 0.75,
+  dimmedLabel: '#bbbbbb',
 };
 
 /** Pure mode → palette mapping. Exported for unit tests and non-React callers. */

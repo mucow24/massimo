@@ -3,6 +3,7 @@ import { act, fireEvent, render } from '@testing-library/react';
 import App from '../App';
 import { useDoc } from '../state/store';
 import { useSelection } from '../state/store';
+import { useViewportStore } from '../state/viewportStore';
 import { DEFAULT_DOC } from '../model/transforms';
 import type { Line, Station, Transfer } from '../model/types';
 
@@ -238,10 +239,24 @@ describe('TransferLayer — DOM rendering', () => {
     });
   });
 
+  // The selected-transfer outline speaks the same language as every other
+  // item: a dashed themeColors.selectionStroke ring. The old legibleTextOn
+  // halo contrasted the TRANSFER's own color — a black transfer got a white
+  // halo that vanished on the light canvas, so selected and unselected looked
+  // identical. The dashes keep the ring legible even where the body color
+  // matches the stroke.
   describe('selection outline', () => {
-    it('picks white when the body color is dark (no user stroke)', () => {
+    const widestLine = (id: string) =>
+      transferLines(id).reduce((widest, el) =>
+        Number(el.getAttribute('stroke-width')) > Number(widest.getAttribute('stroke-width'))
+          ? el
+          : widest,
+      );
+
+    it('uses the dashed theme selection stroke regardless of body color', () => {
       seedTwoStationsWithTransfer();
-      // Default body color is black.
+      // Default body color is black — under the old legibleTextOn rule this
+      // ring would have been white (invisible on the light canvas).
       render(<App />);
       act(() => {
         useSelection.getState().selectTransfer('x1');
@@ -249,35 +264,40 @@ describe('TransferLayer — DOM rendering', () => {
       const lines = transferLines('x1');
       // 2 lines: selection ring (outer) + body. No user stroke.
       expect(lines.length).toBe(2);
-      const body = transferBody('x1');
-      const ring = lines.find((el) => el !== body)!;
-      expect(ring.getAttribute('stroke')).toBe('#fff');
-      // visibleExtent = 2 (thickness) + 2 * 0 (stroke) = 2. Ring = 2 + 2*1 = 4.
-      expect(Number(ring.getAttribute('stroke-width'))).toBe(4);
+      const ring = widestLine('x1');
+      expect(ring.getAttribute('stroke')).toBe('#000000');
+      expect(ring.getAttribute('stroke-dasharray')).toBe('6 4');
+      // Butt caps, NOT the round caps spread in from lineEnds: SVG caps every
+      // dash end, and round caps on a stroke this wide overlap the 4-unit
+      // gaps — the dashes would render as a solid band.
+      expect(ring.getAttribute('stroke-linecap')).toBe('butt');
+      // visibleExtent = 2 (thickness) + 2 * 0 (stroke) = 2. Ring = 2 + 2*2.5 = 7.
+      expect(Number(ring.getAttribute('stroke-width'))).toBe(7);
     });
 
-    it('picks black when the body color is light (no user stroke)', () => {
+    it('flips white in dark mode (contrast against the canvas, not the body)', () => {
       seedTwoStationsWithTransfer();
       act(() => {
-        useDoc.setState({ ...useDoc.getState(), transferColor: '#ffffff' });
+        useViewportStore.setState({ darkMode: true });
       });
-      render(<App />);
-      act(() => {
-        useSelection.getState().selectTransfer('x1');
-      });
-      const lines = transferLines('x1');
-      const body = transferBody('x1');
-      const ring = lines.find((el) => el !== body)!;
-      expect(ring.getAttribute('stroke')).toBe('#000');
+      try {
+        render(<App />);
+        act(() => {
+          useSelection.getState().selectTransfer('x1');
+        });
+        expect(widestLine('x1').getAttribute('stroke')).toBe('#ffffff');
+      } finally {
+        act(() => {
+          useViewportStore.setState({ darkMode: false });
+        });
+      }
     });
 
-    it('legibility is based on the user stroke color when stroke > 0, not the body', () => {
+    it('pads around the user stroke when present', () => {
       seedTwoStationsWithTransfer();
       act(() => {
         useDoc.setState({
           ...useDoc.getState(),
-          // Body is dark; user stroke is light. Ring should contrast with
-          // the stroke (legible against light → black).
           transferColor: '#000000',
           transferStrokeColor: '#ffffff',
           transferStrokeWidth: 3,
@@ -287,18 +307,41 @@ describe('TransferLayer — DOM rendering', () => {
       act(() => {
         useSelection.getState().selectTransfer('x1');
       });
-      const lines = transferLines('x1');
       // 3 lines: selection ring + user stroke + body.
-      expect(lines.length).toBe(3);
-      // Ring is the widest.
-      const ring = lines.reduce((widest, el) =>
-        Number(el.getAttribute('stroke-width')) > Number(widest.getAttribute('stroke-width'))
-          ? el
-          : widest,
-      );
-      expect(ring.getAttribute('stroke')).toBe('#000');
-      // Width = visibleExtent (8) + 2 * pad (2) = 10.
-      expect(Number(ring.getAttribute('stroke-width'))).toBe(10);
+      expect(transferLines('x1').length).toBe(3);
+      // Width = visibleExtent (2 + 2*3 = 8) + 2 * pad (2.5) = 13.
+      expect(Number(widestLine('x1').getAttribute('stroke-width'))).toBe(13);
+    });
+  });
+
+  // The creation rubber band must read as PROVISIONAL — dashed + translucent —
+  // not like an already-placed transfer at full color and weight.
+  describe('creating-transfer rubber band', () => {
+    it('renders the preview dashed and translucent', () => {
+      seedTwoStationsWithTransfer();
+      render(<App />);
+      act(() => {
+        useSelection.getState().setUiMode({
+          kind: 'creating-transfer',
+          anchor: { stationId: 's1', lineId: 'L1' },
+        });
+      });
+      // Cursor tracking populates cursorWorld; jsdom geometry is degenerate
+      // but the branch only needs a truthy cursor point to render.
+      fireEvent.pointerMove(document.querySelector('.canvas-host > svg')!, {
+        clientX: 120,
+        clientY: 80,
+      });
+      try {
+        const preview = document.querySelector('line[data-transfer-preview]');
+        expect(preview).not.toBeNull();
+        expect(preview!.getAttribute('stroke-dasharray')).toBe('6 4');
+        expect(Number(preview!.getAttribute('opacity'))).toBe(0.6);
+      } finally {
+        act(() => {
+          useSelection.getState().setUiMode({ kind: 'idle' });
+        });
+      }
     });
   });
 });

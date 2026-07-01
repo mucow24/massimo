@@ -1,6 +1,6 @@
 import type { LineId, Station, Transfer, TransferEnd } from '../model/types';
 import { stopPosWorld } from '../geometry/interlining';
-import { legibleTextOn } from '../util/color';
+import { useThemeColors } from '../state/theme';
 
 interface Props {
   transfers: Record<string, Transfer>;
@@ -17,7 +17,10 @@ interface Props {
 // (in addition to the user's stroke, if any). Constant-in-world means the
 // outline stays a consistent thickness relative to the stroke at any zoom
 // — replaces the legacy `6/zoom` halo that vanished when zoomed out.
-const SELECTION_OUTLINE_PAD = 1;
+const SELECTION_OUTLINE_PAD = 2.5;
+// Dash pattern for the selection outline — coarser than the item rings' 4/3
+// because it reads along the rim of a thick capsule, not a thin outline.
+const SELECTION_OUTLINE_DASH = '6 4';
 
 /**
  * World position of a station's specific dot. Falls back to the station's
@@ -47,9 +50,12 @@ function endpointWorld(
  * Renders all inter-station transfers in three flat passes across the whole
  * set (painted in document order so each subsequent pass lays on top):
  *
- *   1. Selection outlines — only for the selected transfer. Color is the
- *      legible black/white for the outermost visible color (the user stroke
- *      if present, otherwise the body).
+ *   1. Selection outlines — only for the selected transfer. The dashed
+ *      themeColors.selectionStroke ring every other item type uses: it
+ *      contrasts the CANVAS (black on light, white on dark), and the dashes
+ *      keep it legible even where the transfer body matches the stroke
+ *      color. (The old halo contrasted the transfer's own color instead — a
+ *      black transfer got a white halo that vanished on the light canvas.)
  *   2. User strokes — only when `strokeWidth > 0`. A halo around each body
  *      in the user's chosen color.
  *   3. Bodies — the colored stroke at the user's chosen thickness.
@@ -76,15 +82,12 @@ export function TransferLayer({
   selectedId,
   onSelect,
 }: Props) {
+  const themeColors = useThemeColors();
   const list = Object.values(transfers);
   if (list.length === 0) return null;
   const hasUserStroke = strokeWidth > 0;
   // Total visible width of a transfer ignoring the selection ring.
   const visibleExtent = thickness + 2 * strokeWidth;
-  // Color the selection ring sits against: the user stroke if it's drawn,
-  // otherwise the body color.
-  const outermostVisibleColor = hasUserStroke ? strokeColor : color;
-  const selectionRingColor = legibleTextOn(outermostVisibleColor);
 
   // Resolve endpoints once; each pass below iterates this same list in the
   // same order. Endpoints + linecap stay constant between the selection
@@ -123,8 +126,14 @@ export function TransferLayer({
               key={`sel-${t.id}`}
               data-transfer-id={t.id}
               {...lineEnds}
-              stroke={selectionRingColor}
+              stroke={themeColors.selectionStroke}
               strokeWidth={visibleExtent + 2 * SELECTION_OUTLINE_PAD}
+              strokeDasharray={SELECTION_OUTLINE_DASH}
+              // Butt caps, overriding lineEnds' round: SVG caps every DASH
+              // end, and a round cap on a stroke this wide (radius ≥ 3.5)
+              // overlaps the 4-unit gaps completely — the "dashed" ring
+              // would render as a solid band.
+              strokeLinecap="butt"
               pointerEvents="none"
             />
           ),

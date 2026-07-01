@@ -1,4 +1,5 @@
 import type { Line, LineId } from '../../model/types';
+import { useThemeColors } from '../../state/theme';
 import { stripeEndpointFate } from '../../model/layerPriority';
 import type { SegmentBandSpec } from '../../geometry/interlining';
 import { computeStripeOutline, type StripeOutlineAdjust } from '../../geometry/stripeOutline';
@@ -49,9 +50,11 @@ interface Props {
 }
 
 /**
- * The dashed-outline pass of layering mode: a 1.5px black border at 20%
- * opacity tracing every band stripe's perimeter except the hovered one
- * (which goes through {@link LayeringHoverOutline}). Rendered BELOW
+ * The dashed-outline pass of layering mode: a 1.5px theme-label border at
+ * 20% opacity tracing every band stripe's perimeter except the hovered one
+ * (which goes through {@link LayeringHoverOutline}). The stroke flips with
+ * the theme — a translucent black dash was invisible on the pure-black dark
+ * canvas, leaving the mode with no visible click targets. Rendered BELOW
  * transfers and station dots so those keep their visual primacy and the
  * dashed outline reads as a soft footprint on the band.
  *
@@ -59,6 +62,7 @@ interface Props {
  * occludes a line that's currently in front of the stripe being outlined.
  */
 export function LayeringDashedOutlines({ bands, lines, hovered }: Props) {
+  const themeColors = useThemeColors();
   return (
     <>
       {bands.flatMap((band) =>
@@ -80,7 +84,7 @@ export function LayeringDashedOutlines({ bands, lines, hovered }: Props) {
               data-band-key={band.bandKey}
               data-line-id={stripeLine.id}
               pointerEvents="none"
-              stroke="#000"
+              stroke={themeColors.label}
               strokeWidth={DASHED_STROKE_WIDTH}
               strokeOpacity={DASHED_OPACITY}
               strokeLinecap="butt"

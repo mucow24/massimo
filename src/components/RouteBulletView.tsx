@@ -1,7 +1,9 @@
 import type { Line, RouteBullet } from '../model/types';
 import { badgeColors } from './badge';
 import { useThemeColors } from '../state/theme';
+import { useViewportStore } from '../state/viewportStore';
 import { itemCursor } from './canvas/itemCursor';
+import { SELECTION_RING_PAD, SELECTION_STROKE_WIDTH, selectionDash } from './selectionStyle';
 
 interface Props {
   bullet: RouteBullet;
@@ -30,6 +32,9 @@ export function RouteBulletView({
   onContextMenu,
 }: Props) {
   const themeColors = useThemeColors();
+  // Committed zoom: the selection ring divides by it so its screen weight is
+  // constant (matches the polygon/label/silhouette selection chrome).
+  const zoom = useViewportStore((s) => s.zoom);
   const {
     fill,
     textColor,
@@ -84,13 +89,17 @@ export function RouteBulletView({
       {shape}
       {selected && (
         <circle
+          // Editor chrome, not content: without this the ring bakes into
+          // SVG/PNG exports (bullets render in a non-excluded pass) and, now
+          // that it's zoom-compensated, at a camera-dependent size.
+          data-export-exclude="1"
           cx={0}
           cy={0}
-          r={r + 3}
+          r={r + SELECTION_RING_PAD / zoom}
           fill="none"
           stroke={themeColors.selectionStroke}
-          strokeWidth={2}
-          strokeDasharray="4 3"
+          strokeWidth={SELECTION_STROKE_WIDTH / zoom}
+          strokeDasharray={selectionDash(zoom)}
           pointerEvents="none"
         />
       )}

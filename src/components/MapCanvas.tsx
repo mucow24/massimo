@@ -728,7 +728,7 @@ export function MapCanvas() {
         ))}
 
         {/* station labels: rendered after bg/wash so a selected station's
-            orange wash never paints over a neighbor's label. Faded in
+            accent wash never paints over a neighbor's label. Faded in
             layering mode so the focus stays on the band layers. */}
         <g opacity={inLayeringMode ? LAYERING_FADE_OPACITY : 1}>
           {Object.values(stations).map((st) => (
@@ -775,9 +775,9 @@ export function MapCanvas() {
         />
 
         {/* In-progress transfer preview line: from the anchor dot to the
-            cursor while waiting for the second click. Matches the committed
-            transfer's color and thickness, and renders below the dots for
-            the same reason. */}
+            cursor while waiting for the second click. Dashed + translucent so
+            it reads as provisional rather than an already-placed transfer;
+            renders below the dots for the same reason as the real ones. */}
         {selection.uiMode.kind === 'creating-transfer' &&
           selection.uiMode.anchor &&
           cursorWorld &&
@@ -789,6 +789,7 @@ export function MapCanvas() {
             return (
               <line
                 data-export-exclude="1"
+                data-transfer-preview="1"
                 x1={anchorWorld.x}
                 y1={anchorWorld.y}
                 x2={cursorWorld.x}
@@ -796,6 +797,8 @@ export function MapCanvas() {
                 stroke={transferColor}
                 strokeWidth={transferThickness}
                 strokeLinecap="round"
+                strokeDasharray="6 4"
+                opacity={0.6}
                 pointerEvents="none"
               />
             );
@@ -876,9 +879,9 @@ export function MapCanvas() {
           ))}
         </g>
 
-        {/* Debug highlight: dim overlay + re-painted selected line on top.
-            Painted after dots so other lines' stop dots can't punch through
-            the selected line's outline. */}
+        {/* Line-selection highlight: dim wash + re-painted selected line on
+            top. Painted after dots so other lines' stop dots can't punch
+            through the selected line's outline. */}
         {highlightLineId && (
           <g data-export-exclude="1">
             <HighlightedLineLayer
