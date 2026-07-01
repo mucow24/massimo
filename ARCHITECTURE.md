@@ -87,7 +87,7 @@ is only covered by Playwright.
 ## Repository layout
 
 ```
-index.html                      # Vite entry; preloads Inter, mounts /src/main.tsx
+index.html                      # Vite entry; loads Inter (Google Fonts), mounts /src/main.tsx
 src/
   main.tsx                      # ReactDOM root, imports styles.css
   App.tsx                       # 3-pane shell + ALL global keyboard/contextmenu/blur wiring
@@ -235,6 +235,7 @@ doubt, read that file; its doc-comments are extensive and authoritative.
 
 ```ts
 interface MapDoc {
+  name: string;                    // editable map title — drives toolbar/window title + save/export filename
   stations: Record<StationId, Station>;
   lines: Record<LineId, Line>;
   lineOrder: LineId[];              // index 0 = TOP
@@ -258,8 +259,8 @@ interface MapDoc {
 ```
 
 `DEFAULT_DOC` (in [transforms.ts](src/model/transforms.ts)) is the merge baseline: empty
-collections, `curveRadius: 24`, `lineCounter: 0`, `activePalettes: ['mta']`, `labelItalic:
-false`, transfer defaults from named constants.
+collections, `name: 'Untitled map'`, `curveRadius: 24`, `lineCounter: 0`, `activePalettes:
+['mta']`, `labelItalic: false`, transfer defaults from named constants.
 
 ### Entities (field-level)
 
@@ -432,7 +433,10 @@ custom ids.
   boot, running `migrateDoc`.
 - **Manual Load…**: `parse(text, customPalettes)` then `useDoc.setState({ ...DEFAULT_DOC,
   ...doc })` and `temporal.clear()` (wipe history).
-- File basename: `map-YYYY-MM-DD`.
+- File basename: `${sanitizedName} - YYYY-MM-DD` (e.g. `My Subway Map - 2026-07-01`), shared by
+  save + export via `mapFileBasename` ([exportCanvas.ts](src/export/exportCanvas.ts)). The map
+  name leads so successive saves group together; it falls back to the literal `map` only when the
+  name is empty or all-illegal after stripping filename-hostile characters.
 
 ### IDs
 
