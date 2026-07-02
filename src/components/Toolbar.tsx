@@ -3,7 +3,7 @@ import { flushSync } from 'react-dom';
 import { pickDocSnapshot, useDoc, useSelection, type UiMode } from '../state/store';
 import { useViewportStore, nextGridSize } from '../state/viewportStore';
 import { parse, serialize } from '../model/serialize';
-import { DEFAULT_DOC } from '../model/transforms';
+import { clearHistory } from '../state/history';
 import { parseSvgIntrinsicSize, svgTextToDataUri } from '../model/svgImport';
 import { useCustomPalettes } from '../state/customPalettes';
 import { themeColors } from '../state/theme';
@@ -180,9 +180,8 @@ export function Toolbar() {
     selection.selectTransfer(null);
     selection.setUiMode({ kind: 'idle' });
     selection.setEditingStationId(null);
-    // Replace doc state, preserving the mutator method references via merge.
-    useDoc.setState({ ...DEFAULT_DOC, ...result.doc });
-    useDoc.temporal.getState().clear();
+    useDoc.getState().loadDoc(result.doc);
+    clearHistory(); // undo must not cross a file load
   };
 
   // Add → SVG…: read the file, parse its intrinsic size, encode it as an opaque

@@ -317,6 +317,10 @@ interface DocState extends MapDoc {
   moveSvgImageDown: (id: string) => void;
   deleteSvgImage: (id: string) => void;
 
+  /** Replace the whole document (file load). Defaults fill any field the
+   *  loaded doc omits. Callers should clearHistory() after — undo must not
+   *  cross a file load. */
+  loadDoc: (doc: MapDoc) => void;
   setDocName: (name: string) => void;
   setCurveRadius: (r: number) => void;
   setLabelFontSize: (n: number) => void;
@@ -588,6 +592,8 @@ export const useDoc = create<DocState>()(
         moveSvgImageDown: (id) => set((s) => T.moveSvgImageDown(s, id)),
         deleteSvgImage: (id) => set((s) => T.deleteSvgImage(s, id)),
 
+        // A plain merge: doc fields are replaced, mutator methods survive.
+        loadDoc: (doc) => set({ ...DEFAULT_DOC, ...doc }),
         setDocName: (name) => set((s) => T.setDocName(s, name)),
         setCurveRadius: (r) => set((s) => T.setCurveRadius(s, r)),
         setLabelFontSize: (n) => set((s) => T.setLabelFontSize(s, n)),

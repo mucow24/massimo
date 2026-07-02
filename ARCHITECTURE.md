@@ -91,7 +91,9 @@ index.html                      # Vite entry; loads Inter (Google Fonts), mounts
 src/
   main.tsx                      # ReactDOM root, imports styles.css
   App.tsx                       # 3-pane shell + ALL global keyboard/contextmenu/blur wiring
-  styles.css                    # 16 @font-face (Helvetica Neue) + .app CSS grid + dark mode
+  styles.css                    # 16 @font-face (Helvetica Neue) + .app CSS grid + design tokens
+                                #   (~30 custom props on .app; dark mode = one reassignment block
+                                #   under .app[data-theme='dark'])
 
   model/                        # PURE domain logic — no React, no store
     types.ts                    # MapDoc + every entity type (the canonical data shape)
@@ -105,6 +107,7 @@ src/
     dotStyle.ts dotSize.ts      # procedural stop-dot style + size resolution
     lineWidth.ts lineStroke.ts  # stripe width (GEOMETRY) + casing rails (PRESENTATION)
     lineOrder.ts layerPriority.ts  # z-order reconcile + per-segment layer math
+    lineNaming.ts               # nameForIndex/pickNextLineName (next free letter name)
     matching.ts pathSelect.ts   # interlining-group matching + shortest-path selection
     autoOrient.ts               # rotate a just-added station to the line tangent
     clipboard.ts                # ClipPayload union + read/write + SVG-href security guard
@@ -119,7 +122,7 @@ src/
     stationBoundary.ts          # selection silhouette + marquee hit rects
     stripeOutline.ts            # per-stripe edge/cap geometry (stroke-before-fill dots)
     polygon.ts polygonSnap.ts polygonUnion.ts rectPolygon.ts  # polygon geom + union + hit test
-    labelTokens.ts textMeasure.ts labelLayout.ts  # name → tokens → measured → placed
+    labelTokens.ts textMeasure.ts labelLayout.ts labelJustify.ts  # name → tokens → measured → placed
     layerLabelPlacement.ts      # where to put a stripe's layer-number label
     lineTagGeometry.ts          # offset-path arc-length sampling for in-band tags
     svgImage.ts                 # svg-image corners/resize/rotate/snap geometry
@@ -128,6 +131,7 @@ src/
     store.ts                    # useDoc: temporal(persist(...)) + ~95 actions + migrateDoc
     history.ts                  # the ONLY module touching zundo internals
     selection.ts                # useSelection: UiMode union + multi-select + reconcileWithDoc
+    mirrorDispatch.ts           # mirror-matching fan-out shared by every layout-edit surface
     viewportStore.ts            # useViewportStore (committed) + useLiveViewportStore (in-flight)
     theme.ts                    # themeColors(darkMode) table (no store; reads viewportStore)
     customPalettes.ts           # useCustomPalettes: imported palettes (global localStorage)
@@ -137,12 +141,14 @@ src/
   components/                   # React + SVG rendering and UI chrome
     MapCanvas.tsx               # the canvas hub: paint order + all pointer wiring
     Station*/Stop*/Label*/...   # per-entity SVG views (see Rendering section)
+    selectionStyle.ts           # shared selection stroke/dash/wash constants (screen-px; ÷ zoom)
     Toolbar.tsx Sidebar.tsx Menu.tsx  # chrome
     *Popover.tsx                # on-canvas item editors
     canvas/                     # interaction layer: drag/placement/viewport hooks + overlay layers
     inspector/                  # sidebar inspectors + stopGridDrag.ts (pure lattice-edit math)
 
-  export/                       # exportCanvas.ts (SVG/PNG), exportCanvasPdf.ts + pdfHatch.ts (vector PDF), fonts.ts
+  export/                       # exportCanvas.ts (SVG/PNG), fonts.ts, exportCanvasPdf.ts
+                                #   + pure PDF-gap modules pdfHatch/pdfText/pdfGlyphs/pdfDropShadow
   util/                         # color.ts (hex math)
   test/                         # fixtures, jsdom setup, integration tests
 e2e/                            # Playwright specs + seedAndOpen harness
@@ -500,9 +506,16 @@ Not persisted, not undoable. Two key pieces:
 **`UiMode`** — a discriminated union, **exactly one editor mode active at a time**:
 `idle | placing-station | creating-line-tag | creating-route-bullet | creating-transfer(anchor)
 | placing-label | creating-polygon | placing-svg(image) | appending-to-line(lineId,
-insertAfterIndex) | layering`. Entering any non-idle mode wipes all selections. Adding a new mode
-is one variant + handlers; its right-click policy is declared in one place,
-`RIGHT_CLICK_PASSTHROUGH_MODES` (`{idle, layering}` — modes where right-click does **not** cancel).
+insertAfterIndex) | layering | editing-station-layout(stationId)`. Entering a non-idle mode wipes
+all selections — with one exception: `startEditingStationLayout` **preserves** the station
+selection and mirror state (the mode edits the selected station in place). Adding a new mode is
+one variant + handlers; its right-click policy is declared in one place,
+`RIGHT_CLICK_PASSTHROUGH_MODES` (`{idle, layering, editing-station-layout}` — modes where
+right-click does **not** cancel). Every non-idle mode announces itself on the canvas via
+[canvas/EditingBanner.tsx](src/components/canvas/EditingBanner.tsx) (banner + 4-side mode frame:
+accent for placement modes, the line's color for appending, orange for layering; an exhaustive
+`switch` over the union with a compile-time `never` guard, so a new mode that forgets its banner
+fails the build).
 
 **Selection** — **five parallel id-list fields** (multi-select; order meaningful; **last entry =
 anchor**): `selectedStationIds` + `selectedRouteBulletIds`/`selectedLabelIds`/`selectedPolygonIds`/
@@ -529,8 +542,14 @@ selection so the polygon stays selected while a vertex handle is active). Select
 ### Preferences
 
 - [theme.ts](src/state/theme.ts) — `themeColors(darkMode): ThemeColors` (pure table:
-  `canvasBg, label, selectionStroke, grid, underlay, editorBg, editorText, phantomDot`; light
-  `#fafafa`, dark `#000000`). **No store of its own** — `darkMode` lives in `useViewportStore`.
+  `canvasBg, label, selectionStroke, grid, underlay, editorBg, editorText, phantomDot`, plus the
+  interaction accent `accent`/`accentWash` — marquee, snap guides, selection washes, mode frames —
+  and the line-edit dim `dim`/`dimOpacity`/`dimmedLabel`; light `#fafafa`, dark `#000000`).
+  **No store of its own** — `darkMode` lives in `useViewportStore`. Theming is split by what can
+  consume CSS: **chrome** is themed by the design tokens on `.app` in styles.css (dark mode = one
+  token-reassignment block), **canvas SVG** paint comes from this table. `accent` therefore exists
+  as **two hand-maintained copies** — `ThemeColors.accent` and the `--accent` CSS token — pinned
+  in sync by a test in [theme.test.ts](src/state/theme.test.ts) that reads styles.css off disk.
 - [customPalettes.ts](src/state/customPalettes.ts) — `useCustomPalettes`: imported palette
   **definitions** in **global** localStorage (`'massimo-custom-palettes-v1'`), available to every
   map. `addPalette` upserts by exact name (reusing id + position so active state survives reload).
@@ -670,21 +689,33 @@ instantiated **once per pass**. Top→bottom paint order (later = on top):
 
 1. Polygon `body` → SvgImage `body` (under all map content).
 2. Station `wash` (selection silhouette fill, behind bands).
-3. Interleaved band stripes + `StopMarker` squares + `BandWarning` (ordered by per-stripe
-   z-priority via `buildOrderedRenderables`).
+3. Interleaved band stripes + `StopMarker` squares (ordered by per-stripe z-priority via
+   `buildOrderedRenderables`).
 4. Station `bg` (transparent hit areas).
 5. Station `label` (after bg, so a selected wash never covers a neighbor's name).
-6. Layering dashed outlines (layering mode only).
+6. `LayeringDashedOutlines` (layering mode only).
 7. `TransferLayer` (before dots).
-8. Station `dots` (**last** — dots paint over transfers and snap guides).
-9. **Selected-item drag-proxies** — transparent hit targets for each unlocked selected item,
-   emitted in body paint order (`MapCanvas`'s `proxyLayerRef`). They sit above all map content so a
-   selected item wins a *drag* over anything stacked above it; a click/right-click on a proxy is
-   re-routed to the real element beneath (`rerouteProxyEventBeneath`), so *selection* still follows
-   normal paint order. Placed **before** the handle overlays, so an item's own corner/vertex handles
-   still beat its proxy.
-10. Overlays: `match-stroke`/`stroke` silhouettes, label/polygon/image `overlay` handles, placement
-   previews.
+8. Station `dots` (over transfers, so a dot click routes to the station — everything below
+   this point still paints above the dots).
+9. Placement previews (`*PlacingPreview` ghosts), route bullets, free text labels
+   (`LabelView layer="bg"`).
+10. `HighlightedLineLayer` (line-edit dim wash + the selected line repainted above it) →
+    `LineTagsLayer`.
+11. Station `match-stroke` → station/label `stroke` selection silhouettes.
+12. **Selected-item drag-proxies** — transparent hit targets for each unlocked selected item,
+    emitted in body paint order (`MapCanvas`'s `proxyLayerRef`). They sit above all map content so a
+    selected item wins a *drag* over anything stacked above it; a click/right-click on a proxy is
+    re-routed to the real element beneath (`rerouteProxyEventBeneath`), so *selection* still follows
+    normal paint order. Placed **before** the handle overlays, so an item's own corner/vertex handles
+    still beat its proxy.
+13. Polygon/image `overlay` handles, then the marquee rect.
+14. `SnapGuides` (dotted guides + measurement labels — above dots and everything else painted
+    so far).
+15. `StationLayoutEditor` grab rings + `GhostLattice` (editing-station-layout mode);
+    `LayeringHoverOutline` + `LayerNumberLabels` (layering mode).
+16. `BandWarning` ⚠ markers — the very end of the SVG, so a warning is never occluded by any
+    stripe, dot, or label (deliberately NOT interleaved with the band pass; see the note in
+    `buildOrderedRenderables`).
 
 `StationView`'s props are referentially stable across a pan (immutable store refs, constant zoom,
 stable `useCallback` handlers), so an imperative pan that rewrites the viewBox does **not**
@@ -744,7 +775,9 @@ can't clobber the imperative pan). Both distinctions are explicitly tested
 [viewportMath.ts](src/components/canvas/viewportMath.ts) (`viewBoxFor`, `overdrawnViewBox` —
 draws bg/grid/dim at a 3×3 tile so an imperative pan can't reveal a bare strip — `computeWheelZoom`
 clamps zoom to `[0.1, 64]`). Wheel zoom commits after a settle timer (~90ms quiet); pan commits on
-pointer-up.
+pointer-up. The background `Grid` level-of-details its own spacing (`gridStep` in
+[canvas/Grid.tsx](src/components/canvas/Grid.tsx): the drawn interval doubles in powers of two so
+on-screen spacing stays ≥ 5px — snapping still reads the true `gridSize` from the store).
 
 ### Pointer flow
 
@@ -806,9 +839,12 @@ popover instance reused across selections).
 
 ### Memo contract (subtle but important)
 
-`bandsGeometry` (`buildBandGeometry`) excludes `segmentLayers`, color, and style from its
-signature — **width is geometry (in the hash); everything else is resolved live by stripe
-consumers**. So a color/layer edit repaints without a geometry rebuild, and the geometry-only
+`bandsGeometry` (`buildBandGeometry`) excludes `segmentLayers`, color, and style *values* from its
+signature — **width is geometry (in the hash), and so is the *set* of styled segments
+(`Object.keys(segmentStyles)`); style values, like color, are re-resolved live at paint time
+(`resolveSegmentStyle` is the single resolver shared by the geometry bake and the render-time
+refresh, so the two can never disagree)**. So a color/layer edit — or a dashed→dotted change on an
+already-styled segment — repaints without a geometry rebuild, and the geometry-only
 array (not the priority-assigned `bands`) is passed to layering overlays so a layer cycle doesn't
 churn the reference and re-run the per-stripe `t` search (a single click on a busy map once burned
 300–500ms). `assignLinePriorities` mutates in place, so `bands` clones each spec.
@@ -914,19 +950,23 @@ from `FONT_TABLE` — don't "sync" it in.) `normalizeWeight` ties go **low** (60
 
 **PDF** ([exportCanvasPdf.ts](src/export/exportCanvasPdf.ts)) reuses `buildExportSvg`, then renders
 that SVG to a true vector PDF with **svg2pdf.js + jsPDF** — selectable text, vector line work,
-embedded SVG graphics kept as vectors. Four gaps svg2pdf/jsPDF can't bridge are closed here:
+embedded SVG graphics kept as vectors. Five gaps svg2pdf/jsPDF can't bridge are closed here:
 1. **Fonts** — jsPDF ignores the SVG's `@font-face` and can only embed TrueType, so the map's used
    faces are fetched and registered in jsPDF's VFS (the reason the whole set ships `.ttf`).
 2. **Hatch** — svg2pdf can't tile a `<pattern>` along a stroke, so every hatch paint (band strokes
    **and** the stop markers on them) is baked into clipped solid-stripe geometry; the stripe math
    lives in the pure, unit-tested [pdfHatch.ts](src/export/pdfHatch.ts) (`ribbonFromCenterline`,
    `hatchStripeRects`, phased off the world origin so a band and its marker read continuous).
-3. **Text baseline** — svg2pdf never reads `dominant-baseline` (only `alignment-baseline`), so every
+3. **Image drop shadows** — svg2pdf re-parses an svg+xml `<image>` as vectors but ignores
+   `<filter>`, so a logo's hard `feDropShadow` casing would silently drop; `bakeImageDropShadows`
+   bakes it into a real offset silhouette (pure core in the unit-tested
+   [pdfDropShadow.ts](src/export/pdfDropShadow.ts)).
+4. **Text baseline** — svg2pdf never reads `dominant-baseline` (only `alignment-baseline`), so every
    run — bullets/labels use `central`, free labels `hanging` — lands on the alphabetic baseline, too
    high. [pdfText.ts](src/export/pdfText.ts) `normalizeTextBaselines` measures each `<text>`'s box vs
    its forced-alphabetic box (`getBBox`, browser truth) and shifts `y` by the delta — exact for any
    baseline mode/font without metrics.
-4. **Uncovered glyphs** — characters Helvetica Neue lacks (✈, ↔, ★, …) are drawn on screen by the
+5. **Uncovered glyphs** — characters Helvetica Neue lacks (✈, ↔, ★, …) are drawn on screen by the
    shipped fallback font in [`FONT_STACK`](src/export/fonts.ts) (`'Helvetica Neue', 'DejaVu Sans', …`),
    but svg2pdf only embeds HN and jsPDF can't even encode supplementary-plane chars. Because the app
    already renders these in DejaVu, the PDF just traces the **same** font:

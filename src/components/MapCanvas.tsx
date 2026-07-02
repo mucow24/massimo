@@ -12,7 +12,7 @@ import {
   buildStopMarkers,
   SegmentBandSpec,
 } from '../geometry/interlining';
-import { effectivePolygonOrder, effectiveSvgImageOrder } from '../model/transforms';
+import { effectivePolygonOrder, effectiveSvgImageOrder, type ItemRef } from '../model/transforms';
 import { rotateItemOnContextMenu } from './canvas/groupRotate';
 import { legibleTextOn } from '../util/color';
 import { BandWarning, SegmentBand } from './SegmentBand';
@@ -425,80 +425,76 @@ export function MapCanvas() {
     );
   };
 
-  const onBulletClick = (id: string, e: React.MouseEvent) => {
-    if (dragState.suppressClick) return;
-    if (inHandMode) return;
-    e.stopPropagation();
-    // Shift-click toggles bullet membership without disturbing other
-    // selected items (mirrors station shift-click). Plain click replaces
-    // the entire selection with this bullet.
-    if (e.shiftKey && !(e.ctrlKey || e.metaKey)) {
-      selection.toggleRouteBulletSelection(id);
-      return;
-    }
-    selection.selectRouteBullet(id);
-  };
-  const onBulletContextMenu = (id: string, e: React.MouseEvent) => {
-    e.preventDefault();
-    e.stopPropagation();
-    rotateItemOnContextMenu({ type: 'bullet', id }, () => rotateRouteBullet(id));
-  };
+  // The four free-item types (bullets, labels, polygons, svg images) share
+  // one click / right-click contract, mirroring station shift-click:
+  // Shift-click toggles multi-selection membership — but ONLY without
+  // Ctrl/Cmd, which is reserved (stations use Ctrl+Shift for path-extend).
+  // Plain click replaces the whole selection with this item, which also
+  // opens its popover (each popover gates on its `selected*Ids.length === 1`).
+  // Right-click rotates, group-aware via rotateItemOnContextMenu.
+  const makeItemClickHandlers = (
+    type: ItemRef['type'],
+    opts: {
+      select: (id: string) => void;
+      toggle: (id: string) => void;
+      rotate: (id: string) => void;
+      /** Runs before the toggle/select resolves (polygon vertex un-pick). */
+      beforeSelect?: () => void;
+    },
+  ) => ({
+    onClick: (id: string, e: React.MouseEvent) => {
+      if (dragState.suppressClick) return;
+      if (inHandMode) return;
+      e.stopPropagation();
+      opts.beforeSelect?.();
+      if (e.shiftKey && !(e.ctrlKey || e.metaKey)) {
+        opts.toggle(id);
+        return;
+      }
+      opts.select(id);
+    },
+    onContextMenu: (id: string, e: React.MouseEvent) => {
+      e.preventDefault();
+      e.stopPropagation();
+      rotateItemOnContextMenu({ type, id }, () => opts.rotate(id));
+    },
+  });
 
-  const onLabelClick = (id: string, e: React.MouseEvent) => {
-    if (dragState.suppressClick) return;
-    if (inHandMode) return;
-    e.stopPropagation();
-    // Shift-click toggles membership (matching stations / bullets). Plain
-    // click replaces the whole selection with just this label, which also
-    // opens the popover (popover gates on `selectedLabelIds.length === 1`).
-    if (e.shiftKey) {
-      selection.toggleLabelSelection(id);
-      return;
-    }
-    selection.selectLabel(id);
-  };
-  const onLabelContextMenu = (id: string, e: React.MouseEvent) => {
-    e.preventDefault();
-    e.stopPropagation();
-    rotateItemOnContextMenu({ type: 'label', id }, () => rotateTextLabel(id));
-  };
-  const onPolygonClick = (id: string, e: React.MouseEvent) => {
-    if (dragState.suppressClick) return;
-    if (inHandMode) return;
-    e.stopPropagation();
-    // Clicking the body clears any active vertex selection (so the handles
-    // un-highlight) and selects the polygon, opening its popover.
-    selection.selectVertex(null);
-    // Shift-click toggles polygon membership; plain click replaces selection.
-    if (e.shiftKey && !(e.ctrlKey || e.metaKey)) {
-      selection.togglePolygonSelection(id);
-      return;
-    }
-    selection.selectPolygon(id);
-  };
-  const onPolygonContextMenu = (id: string, e: React.MouseEvent) => {
-    e.preventDefault();
-    e.stopPropagation();
-    rotateItemOnContextMenu({ type: 'polygon', id }, () => rotatePolygon(id));
-  };
-  const onSvgImageClick = (id: string, e: React.MouseEvent) => {
-    if (dragState.suppressClick) return;
-    if (inHandMode) return;
-    e.stopPropagation();
-    // The whole <image> box is the hit target — clicks on transparent regions
-    // of the SVG still select it (an <image> has no per-pixel alpha hit test).
-    // Shift-click toggles membership; plain click replaces the selection.
-    if (e.shiftKey && !(e.ctrlKey || e.metaKey)) {
-      selection.toggleSvgImageSelection(id);
-      return;
-    }
-    selection.selectSvgImage(id);
-  };
-  const onSvgImageContextMenu = (id: string, e: React.MouseEvent) => {
-    e.preventDefault();
-    e.stopPropagation();
-    rotateItemOnContextMenu({ type: 'svgImage', id }, () => rotateSvgImage45(id));
-  };
+  const { onClick: onBulletClick, onContextMenu: onBulletContextMenu } = makeItemClickHandlers(
+    'bullet',
+    {
+      select: selection.selectRouteBullet,
+      toggle: selection.toggleRouteBulletSelection,
+      rotate: rotateRouteBullet,
+    },
+  );
+  const { onClick: onLabelClick, onContextMenu: onLabelContextMenu } = makeItemClickHandlers(
+    'label',
+    {
+      select: selection.selectLabel,
+      toggle: selection.toggleLabelSelection,
+      rotate: rotateTextLabel,
+    },
+  );
+  const { onClick: onPolygonClick, onContextMenu: onPolygonContextMenu } = makeItemClickHandlers(
+    'polygon',
+    {
+      select: selection.selectPolygon,
+      toggle: selection.togglePolygonSelection,
+      rotate: rotatePolygon,
+      // Clicking the body clears any active vertex selection so the handles
+      // un-highlight.
+      beforeSelect: () => selection.selectVertex(null),
+    },
+  );
+  const { onClick: onSvgImageClick, onContextMenu: onSvgImageContextMenu } = makeItemClickHandlers(
+    'svgImage',
+    {
+      select: selection.selectSvgImage,
+      toggle: selection.toggleSvgImageSelection,
+      rotate: rotateSvgImage45,
+    },
+  );
   const onVertexClick = (id: string, index: number, e: React.MouseEvent) => {
     if (dragState.suppressClick) return;
     if (inHandMode) return;
@@ -871,7 +867,9 @@ export function MapCanvas() {
             );
           })()}
 
-        {/* station dots: rendered last so the snap guide passes under them */}
+        {/* station dots: above the transfer layer so a dot click routes to
+            the station, not the transfer (overlays below — previews, labels,
+            snap guides — still paint over the dots) */}
         {Object.values(stations).map((st) => (
           <StationView
             key={st.id + ':dots'}
@@ -1304,7 +1302,7 @@ export function MapCanvas() {
 
       <ItemPopovers view={view} />
 
-      <WarningToasts />
+      <WarningToasts bands={bands} />
     </div>
   );
 }

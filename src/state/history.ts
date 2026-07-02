@@ -43,6 +43,12 @@ export function redo(): void {
   useSelection.getState().reconcileWithDoc(useDoc.getState());
 }
 
+// Wipe both stacks — a loaded file starts with a fresh history (undo must
+// never cross a file load back into the previous document).
+export function clearHistory(): void {
+  useDoc.temporal.getState().clear();
+}
+
 // Stack depths — for assertions and (future) UI enable/disable.
 export function historyDepth(): number {
   return useDoc.temporal.getState().pastStates.length;
