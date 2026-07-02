@@ -395,7 +395,9 @@ export function MapCanvas() {
   // leaving the drag stranded — armed for a later stray move to resume, or for
   // an unrelated pointerup to commit a move the user never made, with history
   // recording paused the whole time. Pan + rect-select are intentionally
-  // omitted: neither opens a history group or mutates the doc.
+  // omitted: neither opens a history group or mutates the doc. The line-tag
+  // drag is window-wired, so it hooks window 'pointercancel' itself instead
+  // of appearing here.
   const onPointerCancel = () => {
     drag.onPointerCancel();
     itemDrag.onPointerCancel();

@@ -97,4 +97,24 @@ describe('useLineTagDrag', () => {
     expect(historyDepth()).toBe(before + 1);
     expect(svg.hasPointerCapture(1)).toBe(false);
   });
+
+  it('rolls back and disarms on a browser pointercancel', () => {
+    // A pointercancel (pen palm rejection, window switch, capture loss) ends
+    // the gesture with NO pointerup. The drag must revert its live moveLineTag
+    // writes, resume history recording, and disarm — a stray later move must
+    // not keep dragging a button-less tag.
+    const before = historyDepth();
+    const { result } = render();
+    result.current.onStartDrag('T', pointerEvent({ clientX: 20, clientY: 0 }));
+    dispatchWindowPointer('pointermove', { clientX: 40, clientY: 0 });
+    expect(useDoc.getState().lineTags['T'].distance).toBeCloseTo(40, 0);
+
+    dispatchWindowPointer('pointercancel', { clientX: 40, clientY: 0 });
+    expect(useDoc.getState().lineTags['T'].distance).toBe(20); // reverted
+    expect(historyDepth()).toBe(before); // nothing committed
+    expect(useDoc.temporal.getState().isTracking).toBe(true); // recording resumed
+
+    dispatchWindowPointer('pointermove', { clientX: 90, clientY: 0 });
+    expect(useDoc.getState().lineTags['T'].distance).toBe(20); // disarmed
+  });
 });

@@ -164,7 +164,7 @@ export function fakeSvgRef(opts: FakeSvgOpts = {}): {
  * no PointerEvent ctor; the property name matches what the handlers read).
  */
 export function dispatchWindowPointer(
-  type: 'pointermove' | 'pointerup',
+  type: 'pointermove' | 'pointerup' | 'pointercancel',
   opts: PointerOpts = {},
 ): void {
   const ev = new MouseEvent(type, {
