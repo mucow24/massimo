@@ -206,11 +206,17 @@ test.describe('Per-line width', () => {
 
     // Re-space L2's stop at BOTH stations to row 1.5 (tangent again). The
     // ghost lattice scales to the pair tangency, so the drop lands exactly
-    // on (1.5, 0).
+    // on (1.5, 0). Layout-edit mode is entered once on A; clicking B while
+    // the mode is active RETARGETS the editor to it (layoutEditReconcile),
+    // so the popover already reads Done — no second Edit layout click.
     for (const sid of ['A', 'B'] as const) {
       const c = await stationCenter(page, sid);
       await page.mouse.click(c.x, c.y);
-      await page.getByRole('button', { name: 'Edit layout' }).click();
+      if (sid === 'A') {
+        await page.getByRole('button', { name: 'Edit layout' }).click();
+      } else {
+        await expect(page.getByRole('button', { name: 'Done' })).toBeVisible();
+      }
       await dragStopByLocalDelta(
         page,
         '[data-cell-row="1"][data-cell-col="0"][data-cell-kind="stop"][data-line-id="L2"]',

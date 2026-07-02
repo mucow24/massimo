@@ -13,12 +13,19 @@ concurrency:
 
 jobs:
   # Aggregate gate. Branch protection requires a check named `ci`; this job
-  # succeeds only once both checks and e2e pass, keeping that required-check
-  # name valid without coupling it to the individual job IDs.
+  # keeps that required-check name valid without coupling it to the
+  # individual job IDs. It must run `if: always()` and fail explicitly: a
+  # plain `needs:` job is SKIPPED when a dependency fails, and GitHub treats
+  # a skipped required check as SATISFIED — which let PR #159 auto-merge
+  # over a red e2e job.
   ci:
     needs: [checks, e2e]
+    if: always()
     runs-on: ubuntu-latest
     steps:
+      - name: Fail unless every required job succeeded
+        if: contains(needs.*.result, 'failure') || contains(needs.*.result, 'cancelled') || contains(needs.*.result, 'skipped')
+        run: exit 1
       - run: echo "all required jobs passed"
 
   # Fast checks: lint, format, unit tests, build. Runs in parallel with the
