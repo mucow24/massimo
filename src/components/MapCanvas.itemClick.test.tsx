@@ -92,7 +92,11 @@ describe('MapCanvas — clicking off-line to exit the line editor', () => {
         lines: { L1: makeLine({ id: 'L1', stations: ['s1', 's2'] }) },
         lineOrder: ['L1'],
         transfers: {
-          t1: { id: 't1', a: { stationId: 's1', lineId: null }, b: { stationId: 's2', lineId: null } },
+          t1: {
+            id: 't1',
+            a: { stationId: 's1', lineId: null },
+            b: { stationId: 's2', lineId: null },
+          },
         },
       });
       useSelection.getState().setUiMode({
