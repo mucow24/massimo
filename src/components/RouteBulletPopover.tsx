@@ -111,6 +111,9 @@ export function RouteBulletPopover({ bullet, world, view, onClose }: Props) {
           ))}
         </div>
       </div>
+      {/* Wheel is handled once at the row level so scrolling over the slider
+          (which ignores wheel natively) or the spinbutton both nudge the size
+          by one step — putting onWheel on the spinbutton too would double-count. */}
       <div className="row" onWheel={size.onNumberWheel}>
         <label>Size</label>
         <input
@@ -134,7 +137,6 @@ export function RouteBulletPopover({ bullet, world, view, onClose }: Props) {
           value={size.text}
           disabled={locked}
           onChange={size.onNumberChange}
-          onWheel={size.onNumberWheel}
           onFocus={size.onNumberFocus}
           onBlur={size.onNumberBlur}
         />

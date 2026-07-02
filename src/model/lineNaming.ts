@@ -5,8 +5,9 @@ import type { Line, LineId } from './types';
 // come first (indices 0–35), then two-character names (36 onward).
 const ALPHABET = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789';
 
-// Largest index that still maps to a real name. Two-char names require the
-// first character to be a LETTER (first < 26), so they run AA…Z9 — i.e.
+// Number of indices that map to a real name (used as an exclusive bound; the
+// largest valid index is NAME_SPACE - 1). Two-char names require the first
+// character to be a LETTER (first < 26), so they run AA…Z9 — i.e.
 // 26 × 36 of them — on top of the 36 single-char names.
 const NAME_SPACE = 26 * 36 + 36; // 972
 

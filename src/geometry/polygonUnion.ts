@@ -19,6 +19,10 @@ function cross(o: Pt, a: Pt, b: Pt): number {
   return (a.x - o.x) * (b.y - o.y) - (a.y - o.y) * (b.x - o.x);
 }
 
+// Normalize to interior-on-the-left winding: "CCW" in the math y-up sense,
+// which is visually CLOCKWISE in this codebase's y-down screen frame. The
+// inside tests below (cross >= EPS per directed edge) assume this orientation —
+// a reader comparing against rendered shapes will see the winding "backwards".
 function ensureCCW(poly: Pt[]): Pt[] {
   let sum = 0;
   for (let i = 0; i < poly.length; i++) {

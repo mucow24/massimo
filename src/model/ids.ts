@@ -14,9 +14,6 @@ export interface IdFactory {
 /**
  * Default factory: `crypto.randomUUID()`. Collision-free for an interactive
  * editor and fixed-width; not stable across runs. Used by the live store.
- * (The previous `Math.random().slice(2,8) + Date.now()` form could emit a
- * <6-char random part when the base-36 string had trailing zeros, and shared
- * the same millisecond suffix across every id kind — both weakened uniqueness.)
  */
 export function defaultIdFactory(): IdFactory {
   const uid = () => globalThis.crypto.randomUUID();

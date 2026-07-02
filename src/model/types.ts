@@ -242,7 +242,7 @@ export interface Line {
 // `fromStationId` and `toStationId`, the tag stays on it.
 //
 // `fromStationId < toStationId` always (canonical / alphabetic order, matching
-// `pairKeyOf` in interlining.ts).
+// `pairKeyOf` in pairKey.ts).
 //
 // Position is anchored to one of the two canonical endpoints, by world
 // arc-length along the line's stripe path. As the corridor lengthens or
@@ -516,8 +516,9 @@ export interface TransferEnd {
   lineId: LineId | null;
 }
 
-// A transfer is a 2px black line connecting one station dot to another. The
-// endpoints are anchored to specific stops so they follow the dot when
+// A transfer is a line connecting one station dot to another (thickness and
+// color come from doc.transferThickness / doc.transferColor; 2px black is only
+// the default). The endpoints are anchored to specific stops so they follow the dot when
 // stations move, lines are reordered, or stops shift on a station.
 // Cascade-deleted when either endpoint's stop is removed — by deleting the
 // station, deleting the line, or removing that line's stop from the station.

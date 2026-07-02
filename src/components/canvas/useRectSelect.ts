@@ -1,6 +1,6 @@
 import { RefObject, useRef, useState } from 'react';
-import { dragState, useDoc, useSelection } from '../../state/store';
-import { DRAG_MOVE_THRESHOLD } from './dragGesture';
+import { useDoc, useSelection } from '../../state/store';
+import { releaseDragCapture, trackDragMove } from './dragGesture';
 import {
   polygonsForRect,
   routeBulletsForRect,
@@ -71,17 +71,20 @@ function applyMode(
  *
  * Activation requirements (in `onPointerDown`):
  *   - Left button.
- *   - Pointer landed on the SVG itself or a `data-bg` element.
- *   - Arrow tool, no space held, no active special mode (placing,
- *     creating tag, creating bullet, creating transfer, appending to line).
+ *   - Pointer landed on the SVG itself, a `data-bg` element, or a
+ *     `data-locked` element (locked items can't be dragged, so a drag
+ *     starting on one rubber-bands instead).
+ *   - Arrow tool, no space held, uiMode idle — except `placing-label`,
+ *     which is a one-shot click and doesn't conflict with a drag.
  *
  * Modifier semantics on `onPointerUp`:
  *   - none           → replace selection with rect hits
  *   - shift          → add rect hits to selection
  *   - ctrl+shift     → toggle (xor) rect hits with selection
  *
- * Both stations and route bullets participate; the same mode applies
- * independently to each type.
+ * All five selectable item types (stations, route bullets, text labels,
+ * polygons, svg images) participate; the same mode applies independently
+ * to each type.
  */
 export function useRectSelect(
   svgRef: RefObject<SVGSVGElement | null>,
@@ -130,16 +133,11 @@ export function useRectSelect(
   const onPointerMove = (e: React.PointerEvent) => {
     const ds = dragRef.current;
     if (!ds) return;
-    const dxScreen = e.clientX - ds.startMX;
-    const dyScreen = e.clientY - ds.startMY;
-    if (!ds.moved && Math.hypot(dxScreen, dyScreen) > DRAG_MOVE_THRESHOLD) {
-      ds.moved = true;
-      // Suppress the synthesized click on pointerup so onCanvasClick
-      // doesn't immediately deselect what the rect just selected.
-      dragState.suppressClick = true;
-      svgRef.current?.setPointerCapture(e.pointerId);
-    }
-    if (!ds.moved) return;
+    // Shared threshold/capture/suppress-click bookkeeping (suppressing the
+    // synthesized click on pointerup so onCanvasClick doesn't immediately
+    // deselect what the rect just selected).
+    const { moved } = trackDragMove(ds, e, svgRef);
+    if (!moved) return;
     const cur = screenToWorld(e.clientX, e.clientY);
     const nextRect: RectSelectRect = {
       x0: ds.startWorld.x,
@@ -244,14 +242,7 @@ export function useRectSelect(
       sel.setSvgImageSelection(svgImageHits);
     }
 
-    try {
-      svgRef.current?.releasePointerCapture(e.pointerId);
-    } catch {
-      // pointer may not have been captured
-    }
-    setTimeout(() => {
-      dragState.suppressClick = false;
-    }, 0);
+    releaseDragCapture(e, svgRef);
   };
 
   return {

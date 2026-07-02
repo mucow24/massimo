@@ -99,9 +99,11 @@ export const LINE_HEIGHT = 1.2;
  */
 export const BASELINE_FRACTION = 0.8;
 
-// Internal cache: keyed by (text, fontSize, weight, italic). Marquee hit
-// testing re-measures every label on every move; without a cache the canvas
-// API churn would dominate. Bounded by a soft cap; oldest entries evicted.
+// Internal cache: keyed by the full content + style tuple (weight, italic,
+// literal-bullet mode, font size, column width, text — see cacheKey). Marquee
+// hit testing re-measures every label on every move; without a cache the
+// canvas API churn would dominate. Bounded by a soft cap; oldest entries
+// evicted.
 const CACHE_LIMIT = 256;
 const cache = new Map<string, MeasuredBBox>();
 
