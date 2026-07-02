@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 
-import { dragState, useDoc, useSelection } from '../state/store';
+import { dragState, exitAppendOnItemClick, useDoc, useSelection } from '../state/store';
 import { useSnapPrefs } from '../state/snapPrefs';
 import { useViewportStore } from '../state/viewportStore';
 import { useThemeColors } from '../state/theme';
@@ -464,6 +464,9 @@ export function MapCanvas() {
       if (dragState.suppressClick) return;
       if (inHandMode) return;
       e.stopPropagation();
+      // In the line editor, this click is "click off the line to exit" — just
+      // dismiss the editor, don't select the item under the cursor.
+      if (exitAppendOnItemClick()) return;
       opts.beforeSelect?.();
       if (e.shiftKey && !(e.ctrlKey || e.metaKey)) {
         opts.toggle(id);
@@ -853,7 +856,10 @@ export function MapCanvas() {
           strokeColor={transferStrokeColor}
           strokeWidth={transferStrokeWidth}
           selectedId={selection.selectedTransferId}
-          onSelect={(id) => selection.selectTransfer(id)}
+          onSelect={(id) => {
+            if (exitAppendOnItemClick()) return;
+            selection.selectTransfer(id);
+          }}
         />
 
         {/* In-progress transfer preview line: from the anchor dot to the
