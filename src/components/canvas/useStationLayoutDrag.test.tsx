@@ -3,7 +3,8 @@ import { act, renderHook } from '@testing-library/react';
 import { useStationLayoutDrag, type StationLayoutDragApi } from './useStationLayoutDrag';
 import { useDoc, useSelection, dragState } from '../../state/store';
 import { historyDepth } from '../../state/history';
-import { DEFAULT_DOC } from '../../model/transforms';
+import { DEFAULT_DOC, rotateStationLayoutBy90 } from '../../model/transforms';
+import { findMatchingStations } from '../../model/matching';
 import { fakeSvgRef, pointerEvent } from '../../test/interaction';
 import type { Station } from '../../model/types';
 import type { LayoutDragSource } from './useStationLayoutDrag';
@@ -181,6 +182,72 @@ describe('useStationLayoutDrag — mirror matching', () => {
     expect(doc.stations.a.stops.find((s) => s.lineId === 'L1')!.row).toBeCloseTo(-1, 3);
     expect(doc.stations.b.stops.find((s) => s.lineId === 'L1')!.row).toBeCloseTo(-1, 3);
     expect(historyDepth()).toBe(1);
+  });
+
+  it("rotates the drag delta into a 180°-offset match's grid frame", () => {
+    // b renders identically to a but stores its layout rotated two 90°-steps
+    // (with the station rotation compensating), so the match carries
+    // layoutOffset 2 and a broadcast delta must be rotated — copying
+    // (dRow, dCol) verbatim would move b's stop the wrong way in the world.
+    const b = rotateStationLayoutBy90(
+      rotateStationLayoutBy90(hubStation({ id: 'b', x: 400 }), 1),
+      1,
+    );
+    seed({ a: hubStation(), b }, { mirrorMatching: true });
+    expect(findMatchingStations(useDoc.getState(), 'a')).toEqual([{ id: 'b', layoutOffset: 2 }]);
+
+    const { ref } = fakeSvgRef();
+    const { result } = renderHook(() => useStationLayoutDrag(ref, identity));
+
+    // Drag a's L1 stop up one cell: (dRow, dCol) = (-1, 0) in a's frame.
+    down(result, 'a', { kind: 'stop', lineId: 'L1' }, pointerEvent({ clientX: 100, clientY: 100 }));
+    move(result, pointerEvent({ clientX: 100, clientY: 86 }));
+    up(result, pointerEvent({ clientX: 100, clientY: 86 }));
+
+    const doc = useDoc.getState();
+    const bStop = doc.stations.b.stops.find((s) => s.lineId === 'L1')!;
+    // In b's 180°-rotated grid the same world-up move is (dRow, dCol) = (1, 0).
+    expect(bStop.row).toBeCloseTo(1, 3);
+    expect(bStop.col).toBeCloseTo(0, 3);
+    expect(historyDepth()).toBe(1);
+  });
+});
+
+describe('useStationLayoutDrag — rotated station', () => {
+  it("projects the cursor through the station's rotation into the local grid", () => {
+    // rotation 2 = 90° cw: local +col points world-DOWN, so a world-LEFT
+    // drag must land in local cell (row +1, col 0). An unrotated projection
+    // would put it at (0, -1) — wrong cell, and visibly wrong on screen.
+    seed({ a: hubStation({ rotation: 2 }) });
+    const { ref } = fakeSvgRef();
+    const { result } = renderHook(() => useStationLayoutDrag(ref, identity));
+
+    down(result, 'a', { kind: 'stop', lineId: 'L1' }, pointerEvent({ clientX: 100, clientY: 100 }));
+    move(result, pointerEvent({ clientX: 86, clientY: 100 }));
+    up(result, pointerEvent({ clientX: 86, clientY: 100 }));
+
+    const stop = useDoc.getState().stations.a.stops.find((s) => s.lineId === 'L1')!;
+    expect(stop.row).toBeCloseTo(1, 3);
+    expect(stop.col).toBeCloseTo(0, 3);
+  });
+});
+
+describe('useStationLayoutDrag — whiffed drop', () => {
+  it('a moved drag released away from any slot changes nothing and records no history', () => {
+    seed({ a: hubStation() });
+    const { ref } = fakeSvgRef();
+    const { result } = renderHook(() => useStationLayoutDrag(ref, identity));
+
+    // Drag L1 far outside the ghost lattice's reach and release.
+    down(result, 'a', { kind: 'stop', lineId: 'L1' }, pointerEvent({ clientX: 100, clientY: 100 }));
+    move(result, pointerEvent({ clientX: 400, clientY: 400 }));
+    up(result, pointerEvent({ clientX: 400, clientY: 400 }));
+
+    const stop = useDoc.getState().stations.a.stops.find((s) => s.lineId === 'L1')!;
+    expect(stop.row).toBeCloseTo(0, 3);
+    expect(stop.col).toBeCloseTo(0, 3);
+    // The gesture's history group must commit as a no-op, not litter undo.
+    expect(historyDepth()).toBe(0);
   });
 });
 
