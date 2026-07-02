@@ -389,6 +389,21 @@ export function MapCanvas() {
     labelDrag.onPointerUp(e);
     layoutDrag.onPointerUp(e);
   };
+  // A browser pointercancel (pen palm rejection, window switch, capture loss)
+  // voids an in-flight gesture with no matching pointerup. Fan it out to every
+  // drag hook so each disarms its ref and rolls back its live writes instead of
+  // leaving the drag stranded — armed for a later stray move to resume, or for
+  // an unrelated pointerup to commit a move the user never made, with history
+  // recording paused the whole time. Pan + rect-select are intentionally
+  // omitted: neither opens a history group or mutates the doc.
+  const onPointerCancel = () => {
+    drag.onPointerCancel();
+    itemDrag.onPointerCancel();
+    polyDrag.onPointerCancel();
+    svgDrag.onPointerCancel();
+    labelDrag.onPointerCancel();
+    layoutDrag.onPointerCancel();
+  };
 
   // A plain click / right-click that lands on a selected item's drag proxy must
   // select by NORMAL layer order, not act on the proxy's item. Intercept in the
@@ -626,6 +641,7 @@ export function MapCanvas() {
         onPointerDown={onPointerDown}
         onPointerMove={onPointerMove}
         onPointerUp={onPointerUp}
+        onPointerCancel={onPointerCancel}
         onPointerLeave={() => {
           if (cursorWorld) setCursorWorld(null);
         }}

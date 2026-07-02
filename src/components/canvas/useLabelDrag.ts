@@ -42,6 +42,7 @@ export interface LabelDragApi {
   onStartLabelDrag: (id: StationId, e: React.PointerEvent) => void;
   onPointerMove: (e: React.PointerEvent) => void;
   onPointerUp: (e: React.PointerEvent) => void;
+  onPointerCancel: () => void;
 }
 
 type StartOffsets = { offset: number; offsetPerp: number };
@@ -280,5 +281,17 @@ export function useLabelDrag(
     finishDrag(ds, e, svgRef);
   };
 
-  return { overlay, onStartLabelDrag, onPointerMove, onPointerUp };
+  // Browser pointercancel: disarm the drag, clear the overlay, and roll the doc
+  // back to its pre-drag snapshot instead of committing a drop. The rollback
+  // reverts any Alt/fine-mode offset writes on its own, so restoreOffsets isn't
+  // needed here. See useStationDrag for the full rationale.
+  const onPointerCancel = () => {
+    const ds = dragRef.current;
+    if (!ds) return;
+    dragRef.current = null;
+    setOverlay(null);
+    ds.history.rollback();
+  };
+
+  return { overlay, onStartLabelDrag, onPointerMove, onPointerUp, onPointerCancel };
 }

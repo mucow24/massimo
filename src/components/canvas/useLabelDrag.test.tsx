@@ -177,6 +177,40 @@ describe('useLabelDrag — Alt fine offsets', () => {
   });
 });
 
+describe('useLabelDrag — pointercancel reverts the in-flight drag', () => {
+  it('rolls back Alt-mode live offsets, pushes no history entry, and disarms the drag', () => {
+    seed({
+      a: hubStation({
+        label: { row: 0, col: -1, rotation: 0, offset: 2, align: 'auto', valign: 'middle' },
+      }),
+    });
+    const { ref } = fakeSvgRef();
+    const { result } = renderHook(() => useLabelDrag(ref, identity));
+
+    down(result, 'a', pointerEvent({ clientX: 84, clientY: 100 }));
+    move(result, pointerEvent({ clientX: 91, clientY: 100, altKey: true }));
+    // Live: fine mode wrote the offset (2 + 7).
+    expect(useDoc.getState().stations.a.label.offset).toBeCloseTo(9, 6);
+    expect(result.current.overlay?.mode).toBe('fine');
+
+    // The browser fires pointercancel mid-drag (palm rejection, capture loss).
+    act(() => result.current.onPointerCancel());
+
+    const st = useDoc.getState().stations.a;
+    // Offset reverted to the gesture-start value — the drop was never committed.
+    expect(st.label.offset).toBe(2);
+    expect(st.label.offsetPerp ?? 0).toBe(0);
+    // Overlay cleared, no history entry pushed.
+    expect(result.current.overlay).toBeNull();
+    expect(historyDepth()).toBe(0);
+
+    // Drag disarmed: a stray move after cancel is inert.
+    move(result, pointerEvent({ clientX: 200, clientY: 200, altKey: true }));
+    expect(useDoc.getState().stations.a.label.offset).toBe(2);
+    expect(result.current.overlay).toBeNull();
+  });
+});
+
 describe('useLabelDrag — mirror matching', () => {
   it('a ghost drop broadcasts to matching stations in the same single entry', () => {
     seed({ a: hubStation(), b: hubStation({ id: 'b', x: 400 }) }, { mirrorMatching: true });

@@ -47,6 +47,7 @@ export interface StationLayoutDragApi {
   onStartNodeDrag: (id: StationId, source: LayoutDragSource, e: React.PointerEvent) => void;
   onPointerMove: (e: React.PointerEvent) => void;
   onPointerUp: (e: React.PointerEvent) => void;
+  onPointerCancel: () => void;
 }
 
 /**
@@ -220,5 +221,17 @@ export function useStationLayoutDrag(
     finishDrag(ds, e, svgRef);
   };
 
-  return { overlay, onStartNodeDrag, onPointerMove, onPointerUp };
+  // Browser pointercancel: disarm the drag and clear the overlay, dropping the
+  // resolved-but-uncommitted move (this hook writes the doc only on drop, so
+  // rollback finds nothing to revert — it just closes the paused history group
+  // so recording resumes). See useStationDrag for the full rationale.
+  const onPointerCancel = () => {
+    const ds = dragRef.current;
+    if (!ds) return;
+    dragRef.current = null;
+    setOverlay(null);
+    ds.history.rollback();
+  };
+
+  return { overlay, onStartNodeDrag, onPointerMove, onPointerUp, onPointerCancel };
 }
