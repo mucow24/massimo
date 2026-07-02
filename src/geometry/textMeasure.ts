@@ -1,4 +1,5 @@
 import { FONT_STACK } from '../export/fonts';
+import type { RouteBulletShape } from '../model/types';
 import { inlineBulletDiameter, parseLabelLine, type LabelSegment } from './labelTokens';
 
 /**
@@ -43,7 +44,9 @@ export type SegmentMetric =
   | {
       kind: 'bullet';
       code: string;
-      /** Both advance and visible width of the bullet circle. */
+      shape: RouteBulletShape;
+      filled: boolean;
+      /** Both advance and visible width of the bullet shape. */
       advance: number;
       diameter: number;
     };
@@ -202,7 +205,14 @@ function computeLineMetrics(
   const segMetrics: SegmentMetric[] = segments.map((seg) => {
     if (seg.kind === 'bullet') {
       const d = inlineBulletDiameter(fontSize);
-      return { kind: 'bullet', code: seg.code, advance: d, diameter: d };
+      return {
+        kind: 'bullet',
+        code: seg.code,
+        shape: seg.shape,
+        filled: seg.filled,
+        advance: d,
+        diameter: d,
+      };
     }
     const t = measureTextSegment(seg.value, fontSize, measureCtx, fontDecl);
     return { kind: 'text', value: seg.value, ...t };

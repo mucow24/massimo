@@ -30,6 +30,8 @@ describe('justifyLine', () => {
     expect(atoms!.map((a) => a.kind)).toEqual(['text', 'bullet', 'text']);
     const bullet = atoms!.find((a) => a.kind === 'bullet')!;
     expect(bullet.code).toBe('A1');
+    expect(bullet.shape).toBe('circle');
+    expect(bullet.filled).toBe(true);
     expect(bullet.diameter).toBe(d);
     // aa(0) + 20 + space10 + extra10 = 40
     expect(bullet.x).toBe(40);

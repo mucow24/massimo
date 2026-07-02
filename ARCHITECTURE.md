@@ -618,8 +618,10 @@ refinement (equidistant / tens) → build guides. Polygon vertices get their own
 
 ### Labels & text — `labelTokens.ts`, `textMeasure.ts`, `labelLayout.ts`
 
-- **`parseLabelLine`** tokenizes a label line into `text`/`bullet` segments via `<CODE>` syntax
-  (an inline route bullet); unclosed `<`, stray `>`, empty `<>` stay text.
+- **`parseLabelLine`** tokenizes a label line into `text`/`bullet` segments. The delimiter picks
+  the inline route bullet's shape — `<CODE>` circle, `[CODE]` square, `{CODE}` diamond — and
+  doubling it (`<<CODE>>`, …) makes the bullet unfilled (line-color outline on a white/black
+  interior by theme). Unclosed/mismatched delimiters and empty codes stay text.
 - **`measureTextLabel`** measures multi-line styled text **without a browser layout**: it lazily
   creates an offscreen 2D canvas and uses `ctx.measureText` (advance + ink bearings). **In jsdom
   there is no canvas backend**, so it falls back to a deliberate over-estimate

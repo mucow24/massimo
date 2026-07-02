@@ -1,4 +1,8 @@
-export type LabelSegment = { kind: 'text'; value: string } | { kind: 'bullet'; code: string };
+import type { RouteBulletShape } from '../model/types';
+
+export type LabelSegment =
+  | { kind: 'text'; value: string }
+  | { kind: 'bullet'; code: string; shape: RouteBulletShape; filled: boolean };
 
 /**
  * Inline bullet circle diameter, as a fraction of the host fontSize. Picked
@@ -12,11 +16,29 @@ export function inlineBulletDiameter(fontSize: number): number {
 }
 
 /**
- * Parse a single label line into segments of either literal text or a
- * bullet token of the form `<CODE>`. Unclosed `<`, stray `>`, and empty
- * `<>` stay as literal text.
+ * Parse a single label line into segments of either literal text or a bullet
+ * token. The delimiter picks the shape — `<CODE>` circle, `[CODE]` square,
+ * `{CODE}` diamond — and doubling it (`<<CODE>>`, `[[CODE]]`, `{{CODE}}`)
+ * makes the bullet unfilled (line-color outline instead of a filled shape).
+ * A code can't contain any delimiter character or a newline; unclosed or
+ * mismatched delimiters and empty codes stay as literal text.
  */
-const BULLET_TOKEN_RE = /<([^<>]+)>/g;
+const CODE = '[^<>[\\]{}\\n]+';
+// Doubled (unfilled) alternatives listed before their single (filled) forms so
+// they win at the same start position.
+const BULLET_TOKEN_RE = new RegExp(
+  `<<(${CODE})>>|<(${CODE})>|\\[\\[(${CODE})\\]\\]|\\[(${CODE})\\]|\\{\\{(${CODE})\\}\\}|\\{(${CODE})\\}`,
+  'g',
+);
+// Capture-group index (1-based) → the bullet variant that group encodes.
+const GROUP_VARIANTS: { shape: RouteBulletShape; filled: boolean }[] = [
+  { shape: 'circle', filled: false },
+  { shape: 'circle', filled: true },
+  { shape: 'square', filled: false },
+  { shape: 'square', filled: true },
+  { shape: 'diamond', filled: false },
+  { shape: 'diamond', filled: true },
+];
 
 export function parseLabelLine(line: string): LabelSegment[] {
   if (line.length === 0) return [];
@@ -28,11 +50,22 @@ export function parseLabelLine(line: string): LabelSegment[] {
     if (m.index > lastIndex) {
       segments.push({ kind: 'text', value: line.slice(lastIndex, m.index) });
     }
-    segments.push({ kind: 'bullet', code: m[1] });
+    const group = m.findIndex((g, i) => i > 0 && g !== undefined);
+    const { shape, filled } = GROUP_VARIANTS[group - 1];
+    segments.push({ kind: 'bullet', code: m[group], shape, filled });
     lastIndex = m.index + m[0].length;
   }
   if (lastIndex < line.length) {
     segments.push({ kind: 'text', value: line.slice(lastIndex) });
   }
   return segments;
+}
+
+/**
+ * Quick test: does this (possibly multi-line) text contain any bullet token?
+ * Renderers use it to pick the plain fast path over segment-aware layout.
+ */
+export function hasBulletToken(text: string): boolean {
+  BULLET_TOKEN_RE.lastIndex = 0;
+  return BULLET_TOKEN_RE.test(text);
 }

@@ -1,3 +1,4 @@
+import type { RouteBulletShape } from '../model/types';
 import { inlineBulletDiameter, parseLabelLine } from './labelTokens';
 
 /**
@@ -13,11 +14,16 @@ export interface JustifyAtom {
   value?: string;
   /** Present when kind === 'bullet'. */
   code?: string;
+  shape?: RouteBulletShape;
+  filled?: boolean;
   diameter?: number;
   x: number;
 }
 
-type Tok = { t: 'word'; s: string } | { t: 'space'; s: string } | { t: 'bullet'; code: string };
+type Tok =
+  | { t: 'word'; s: string }
+  | { t: 'space'; s: string }
+  | { t: 'bullet'; code: string; shape: RouteBulletShape; filled: boolean };
 
 // Split a rendered line into ordered word / whitespace-run / bullet tokens.
 // Whitespace runs stay whole (one token per run = one gap).
@@ -25,7 +31,7 @@ function tokenize(raw: string): Tok[] {
   const toks: Tok[] = [];
   for (const seg of parseLabelLine(raw)) {
     if (seg.kind === 'bullet') {
-      toks.push({ t: 'bullet', code: seg.code });
+      toks.push({ t: 'bullet', code: seg.code, shape: seg.shape, filled: seg.filled });
       continue;
     }
     for (const m of seg.value.match(/\S+|\s+/g) ?? []) {
@@ -78,7 +84,14 @@ export function justifyLine(
       cursor += measureAdvance(tk.s);
     } else if (tk.t === 'bullet') {
       const d = inlineBulletDiameter(fontSize);
-      atoms.push({ kind: 'bullet', code: tk.code, diameter: d, x: cursor });
+      atoms.push({
+        kind: 'bullet',
+        code: tk.code,
+        shape: tk.shape,
+        filled: tk.filled,
+        diameter: d,
+        x: cursor,
+      });
       cursor += d;
     } else {
       cursor += measureAdvance(tk.s);

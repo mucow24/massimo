@@ -11,10 +11,10 @@ interface Props {
 }
 
 /**
- * HTML counterpart to `<InlineBullet>`: render label text with `<CODE>`
- * bullet tokens as inline circular badges. Used in DOM contexts (sidebar
- * station list, line-editor station list) where station names sit in
- * regular HTML rather than SVG text.
+ * HTML counterpart to `<InlineBullet>`: render label text with bullet
+ * tokens (`<CODE>`, `[CODE]`, `{CODE}`, doubled for unfilled) as inline
+ * badges. Used in DOM contexts (sidebar station list, line-editor station
+ * list) where station names sit in regular HTML rather than SVG text.
  */
 export function InlineBulletText({ text, lineByService }: Props) {
   // List rows are single-line — collapse newlines so a multi-line label
@@ -26,13 +26,19 @@ export function InlineBulletText({ text, lineByService }: Props) {
       {segments.map((seg, i) => {
         if (seg.kind === 'text') return <Fragment key={i}>{seg.value}</Fragment>;
         const { fill, textColor, code: display } = badgeColors(lineByService.get(seg.code));
+        const className = [
+          'inline-bullet-badge',
+          `inline-bullet-badge--${seg.shape}`,
+          seg.filled ? '' : 'inline-bullet-badge--hollow',
+        ]
+          .filter(Boolean)
+          .join(' ');
+        // Hollow badges get their interior from CSS (white/black by theme);
+        // `color` carries the line color to both the outline (currentColor)
+        // and the code.
+        const style = seg.filled ? { background: fill, color: textColor } : { color: fill };
         return (
-          <span
-            key={i}
-            className="inline-bullet-badge"
-            style={{ background: fill, color: textColor }}
-            data-inline-bullet={seg.code}
-          >
+          <span key={i} className={className} style={style} data-inline-bullet={seg.code}>
             <span className="inline-bullet-badge__code">{display}</span>
           </span>
         );

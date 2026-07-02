@@ -1,5 +1,6 @@
 import type { ReactNode } from 'react';
 import { Line } from '../model/types';
+import { hasBulletToken } from '../geometry/labelTokens';
 import { BASELINE_FRACTION, LINE_HEIGHT, measureTextLabel } from '../geometry/textMeasure';
 import { InlineBullet } from './InlineBullet';
 
@@ -35,18 +36,16 @@ export interface RenderLabelTextArgs {
   lineByService: Map<string, Line>;
 }
 
-const BULLET_TOKEN_RE = /<[^<>]+>/;
-
 /**
- * Render a station label's text content. For plain text (no <CODE> bullet
+ * Render a station label's text content. For plain text (no bullet
  * tokens) this falls back to the historical single-`<text>` + `<tspan>`
  * pattern with its existing dominantBaseline/firstLineDy positioning, so
  * the wash silhouette / hit rect / unit tests stay byte-for-byte the same.
  * Labels that contain inline bullets switch to per-segment positioning:
  * each line is laid out explicitly via the segment-aware measurement, and
- * bullets render as a small circle with their service code (gray "?" when
- * the code doesn't resolve). Bullets always render in their own line
- * color and skip the contrast stroke — they're filled and self-legible.
+ * bullets render as a small badge shape with their service code (gray "?"
+ * when the code doesn't resolve). Bullets always render in their own line
+ * color and skip the contrast stroke — they're self-legible.
  */
 export function renderStationLabelText({
   text,
@@ -67,7 +66,7 @@ export function renderStationLabelText({
   rotationDeg,
   lineByService,
 }: RenderLabelTextArgs): ReactNode {
-  const hasBullet = BULLET_TOKEN_RE.test(text);
+  const hasBullet = hasBulletToken(text);
   const lines = text.split('\n');
   // Underline as explicit <line> geometry instead of the SVG `text-decoration`
   // attribute. Chromium leaves one-pixel residue on rotated <text> when
@@ -196,6 +195,8 @@ export function renderStationLabelText({
               <InlineBullet
                 key={`${i}-${j}-b`}
                 code={seg.code}
+                shape={seg.shape}
+                filled={seg.filled}
                 diameter={seg.diameter}
                 cx={segCursor + r}
                 // Bullet center at the text's optical midpoint (≈0.3em above
