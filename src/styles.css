@@ -731,21 +731,32 @@ select option {
   background: var(--danger);
   color: #fff;
 }
-/* Slider + spinbutton "Size"-style rows share one spinbox width. 56px fits a
-   one-decimal value plus the overlaid native stepper arrows (44px clipped). */
-.bullet-popover .size-spin,
-.text-label-popover .size-spin {
-  width: 56px;
+/* Slider + spinbutton rows are NumericFieldRow in every item popover. The
+   global .options-popover-spin already sets the 56px width that fits a
+   one-decimal value plus the overlaid native stepper arrows; keep the item
+   popovers' right-aligned digits. */
+.bullet-popover .options-popover-spin,
+.text-label-popover .options-popover-spin {
   text-align: right;
 }
 
-/* The polygon popover reuses the bullet-popover shell but embeds a
-   NumericFieldRow (the popover slider idiom) inside the body's gap-based
-   column — zero its margin so spacing stays even, and give BOTH row idioms
-   one label column (same width, same bold-black typography) so the panel
-   reads as a single form. */
+/* The item popovers reuse the bullet-popover shell but embed NumericFieldRow
+   (the popover slider idiom) inside the body's gap-based column — zero its
+   margin so spacing stays even, and give BOTH row idioms one label column
+   (same width, same bold-black typography) so each panel reads as a single
+   form. */
+.bullet-popover .options-popover-row,
+.text-label-popover .options-popover-row,
 .polygon-popover .options-popover-row {
   margin-bottom: 0;
+}
+.bullet-popover .options-popover-label,
+.text-label-popover .options-popover-label {
+  width: 48px;
+  flex-shrink: 0;
+  color: var(--text);
+  font-weight: 700;
+  font-size: inherit;
 }
 .polygon-popover .row label,
 .polygon-popover .options-popover-label {

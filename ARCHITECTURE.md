@@ -280,10 +280,11 @@ collections, `name: 'Untitled map'`, `curveRadius: 24`, `lineCounter: 0`, `activ
 - `labelBold?` — bump rendered weight **two steps** heavier along the weight table (clamped at
   900).
 - `labelItalic?` — OR'd with the doc-global `labelItalic`.
-- `locked?` — **canvas-protection only**: can't be dragged, marquee-selected, group-towed,
-  nudged, or deleted; **can** still be click-selected and is **fully editable in the inspector**
-  (the inspector is never disabled). This `locked` semantics is mirrored by Polygon, RouteBullet,
-  TextLabel, SvgImage.
+- `locked?` — **canvas protection**: can't be dragged, marquee-selected, group-towed, nudged,
+  rotated (right-click rotate is a no-op; group rotate skips locked members), or deleted; **can**
+  still be click-selected, and the **station inspector stays fully enabled** (only stations get
+  that). Polygon, RouteBullet, TextLabel and SvgImage share the same canvas protections, but
+  their popovers **disable every editing control except the lock toggle** while locked.
 
 **`StopCell`** — one line's stop on a station. `lineId, row, col` (station-local grid;
 **`row`/`col` are floats now**, since diagonal moves use ±√2/2 — equality uses `CELL_EPS=1e-4`),
@@ -844,7 +845,8 @@ a **bullet** drops its line-snap engine to a grid-only fallback (the `!inGroupDr
 [useItemDrag.ts](src/components/canvas/useItemDrag.ts)), since its targets would be unstable.
 **Group rotate** ([groupRotate.ts](src/components/canvas/groupRotate.ts)): right-click rotates the
 whole multi-selection rigidly about the pivot via `rotateItemsAround` (fixed the bug where
-per-type handlers omitted other types).
+per-type handlers omitted other types). Locked items are exempt: a locked pivot makes the
+right-click a no-op, and locked co-selected members stay put while the rest rotate.
 
 ### Placement & popovers
 
@@ -896,8 +898,9 @@ band routing or the marker sort. Pinned by `MapCanvas.stationsSig.test.tsx`.
   inline-expanded LINE inspector on the Lines tab.
 - **[StationPopover.tsx](src/components/StationPopover.tsx)** — the station editor's home:
   mounted by `ItemPopovers` for a sole-selected station (idle mode, or that station's own
-  layout-edit mode), hosting the full `StationInspector` — name, labeled X/Y + rotation readout,
-  Mirror ×N / WP / lock toggles, the **Edit layout** button, per-stop rows
+  layout-edit mode), hosting the full `StationInspector` — name, labeled X/Y + ±45° rotate
+  buttons with a rotation readout, Mirror ×N / WP / lock toggles, the **Edit layout** button,
+  per-stop rows
   ([inspector/StopRows.tsx](src/components/inspector/StopRows.tsx): service badge + always-enabled
   shape picker + dot size + world-true orientation segments per stop; hover cross-highlights the
   dot via `hoveredLineStop`), and segmented label align/valign + offset controls. The anchor is

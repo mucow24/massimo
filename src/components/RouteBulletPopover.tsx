@@ -2,7 +2,7 @@ import { useDoc } from '../state/store';
 import { type ViewportProjection } from './canvas/screenAnchor';
 import { DraggablePopoverShell } from './DraggablePopoverShell';
 import { useDraggablePopover } from './canvas/useDraggablePopover';
-import { useNumericField } from './useNumericField';
+import { NumericFieldRow } from './NumericFieldRow';
 import { PopoverFooter } from './PopoverFooter';
 import { ROUTE_BULLET_SIZE_MAX, ROUTE_BULLET_SIZE_MIN } from '../model/transforms';
 import type { RouteBullet, RouteBulletShape } from '../model/types';
@@ -58,13 +58,6 @@ export function RouteBulletPopover({ bullet, world, view, onClose }: Props) {
     updateRouteBullet(bullet.id, { lineId: lineId === '' ? null : lineId });
   const onSize = (size: number) => updateRouteBullet(bullet.id, { size });
   const onToggleLock = () => updateRouteBullet(bullet.id, { locked: !locked });
-  // Standard numeric-field-with-history idiom (matches the other popovers): one
-  // undo entry per slider drag / spinbutton edit instead of ~one per frame.
-  const size = useNumericField(
-    bullet.size,
-    onSize,
-    () => useDoc.getState().routeBullets[bullet.id]?.size ?? bullet.size,
-  );
   const onDelete = () => {
     deleteRouteBullet(bullet.id);
     onClose();
@@ -111,36 +104,20 @@ export function RouteBulletPopover({ bullet, world, view, onClose }: Props) {
           ))}
         </div>
       </div>
-      {/* Wheel is handled once at the row level so scrolling over the slider
-          (which ignores wheel natively) or the spinbutton both nudge the size
-          by one step — putting onWheel on the spinbutton too would double-count. */}
-      <div className="row" onWheel={size.onNumberWheel}>
-        <label>Size</label>
-        <input
-          type="range"
-          min={ROUTE_BULLET_SIZE_MIN}
-          max={ROUTE_BULLET_SIZE_MAX}
-          step={1}
-          value={bullet.size}
-          disabled={locked}
-          onChange={(e) => onSize(Number(e.target.value))}
-          onMouseDown={size.history.onFocus}
-          onMouseUp={size.history.onBlur}
-        />
-        <input
-          type="number"
-          className="size-spin"
-          // No `max` — the spinbutton (typing and step buttons) accepts sizes
-          // beyond the slider's range; the transform clamps at MIN only.
-          min={ROUTE_BULLET_SIZE_MIN}
-          step={1}
-          value={size.text}
-          disabled={locked}
-          onChange={size.onNumberChange}
-          onFocus={size.onNumberFocus}
-          onBlur={size.onNumberBlur}
-        />
-      </div>
+      {/* textboxAllowAboveMax: the spinbutton (typing and step buttons) accepts
+          sizes beyond the slider's range; the transform clamps at MIN only. */}
+      <NumericFieldRow
+        id="bullet-size"
+        label="Size"
+        min={ROUTE_BULLET_SIZE_MIN}
+        max={ROUTE_BULLET_SIZE_MAX}
+        step={1}
+        value={bullet.size}
+        onChange={onSize}
+        getCurrent={() => useDoc.getState().routeBullets[bullet.id]?.size ?? bullet.size}
+        textboxAllowAboveMax
+        disabled={locked}
+      />
       <PopoverFooter
         noun="route bullet"
         locked={locked}

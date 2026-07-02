@@ -21,7 +21,7 @@ import {
   TEXT_LABEL_WIDTH_MAX,
 } from '../model/transforms';
 import { useFieldHistory } from './useFieldHistory';
-import { useNumericField } from './useNumericField';
+import { NumericFieldRow } from './NumericFieldRow';
 import { PopoverFooter } from './PopoverFooter';
 import type { TextLabel, TextLabelAlign, TextLabelWeight } from '../model/types';
 
@@ -68,30 +68,9 @@ export function TextLabelPopover({ label, world, view, onClose }: Props) {
   const setWidth = (n: number) => updateTextLabel(label.id, { width: n });
   const locked = label.locked ?? false;
   const onToggleLock = () => updateTextLabel(label.id, { locked: !locked });
-  const size = useNumericField(
-    label.fontSize,
-    setFontSize,
-    () => useDoc.getState().textLabels[label.id]?.fontSize ?? label.fontSize,
-    FONT_SIZE_STEP,
-  );
-  const width = useNumericField(
-    label.width ?? 0,
-    setWidth,
-    () => useDoc.getState().textLabels[label.id]?.width ?? 0,
-  );
   const onDelete = () => {
     deleteTextLabel(label.id);
     onClose();
-  };
-
-  const onSizeRange = (e: React.ChangeEvent<HTMLInputElement>) => {
-    const n = Number(e.target.value);
-    if (Number.isFinite(n)) setFontSize(n);
-  };
-
-  const onWidthRange = (e: React.ChangeEvent<HTMLInputElement>) => {
-    const n = Number(e.target.value);
-    if (Number.isFinite(n)) setWidth(n);
   };
 
   // Escape closes via App's global handler (it deselects the label, which
@@ -119,69 +98,36 @@ export function TextLabelPopover({ label, world, view, onClose }: Props) {
         />
       </div>
 
-      {/* Wheel is handled once at the row level so scrolling over the slider
-            (which ignores wheel natively) or the spinbutton both nudge the size
-            by one step — putting onWheel on the spinbutton too would double-count. */}
-      <div className="row" onWheel={size.onNumberWheel}>
-        <label>Size</label>
-        <input
-          type="range"
-          aria-label="Size"
-          min={TEXT_LABEL_FONT_SIZE_MIN}
-          max={TEXT_LABEL_FONT_SIZE_MAX}
-          step={FONT_SIZE_STEP}
-          value={label.fontSize}
-          disabled={locked}
-          onChange={onSizeRange}
-          onMouseDown={size.history.onFocus}
-          onMouseUp={size.history.onBlur}
-        />
-        <input
-          type="number"
-          className="size-spin"
-          aria-label="Size"
-          // No `max` — the spinbutton (typing and step buttons) accepts sizes
-          // beyond the slider's range; the transform clamps at MIN only.
-          min={TEXT_LABEL_FONT_SIZE_MIN}
-          step={FONT_SIZE_STEP}
-          value={size.text}
-          disabled={locked}
-          onChange={size.onNumberChange}
-          onFocus={size.onNumberFocus}
-          onBlur={size.onNumberBlur}
-        />
-      </div>
+      {/* textboxAllowAboveMax: the spinbutton (typing and step buttons) accepts
+          sizes beyond the slider's range; the transform clamps at MIN only. */}
+      <NumericFieldRow
+        id={`label-size-${label.id}`}
+        label="Size"
+        min={TEXT_LABEL_FONT_SIZE_MIN}
+        max={TEXT_LABEL_FONT_SIZE_MAX}
+        step={FONT_SIZE_STEP}
+        value={label.fontSize}
+        onChange={setFontSize}
+        getCurrent={() => useDoc.getState().textLabels[label.id]?.fontSize ?? label.fontSize}
+        textboxAllowAboveMax
+        disabled={locked}
+      />
 
       {/* Column width. 0 = Auto (size to content, honor manual '\n' breaks);
-            >0 wraps text to a fixed-width column. The spinbutton accepts widths
-            beyond the slider's range; the transform clamps only at 0. */}
-      <div className="row" onWheel={width.onNumberWheel}>
-        <label>Width</label>
-        <input
-          type="range"
-          aria-label="Width"
-          min={0}
-          max={TEXT_LABEL_WIDTH_MAX}
-          step={1}
-          value={label.width ?? 0}
-          disabled={locked}
-          onChange={onWidthRange}
-          onMouseDown={width.history.onFocus}
-          onMouseUp={width.history.onBlur}
-        />
-        <input
-          type="number"
-          className="size-spin"
-          aria-label="Width"
-          min={0}
-          step={1}
-          value={width.text}
-          disabled={locked}
-          onChange={width.onNumberChange}
-          onFocus={width.onNumberFocus}
-          onBlur={width.onNumberBlur}
-        />
-      </div>
+          >0 wraps text to a fixed-width column. The spinbutton accepts widths
+          beyond the slider's range; the transform clamps only at 0. */}
+      <NumericFieldRow
+        id={`label-width-${label.id}`}
+        label="Width"
+        min={0}
+        max={TEXT_LABEL_WIDTH_MAX}
+        step={1}
+        value={label.width ?? 0}
+        onChange={setWidth}
+        getCurrent={() => useDoc.getState().textLabels[label.id]?.width ?? 0}
+        textboxAllowAboveMax
+        disabled={locked}
+      />
 
       <div className="row">
         <label>Align</label>

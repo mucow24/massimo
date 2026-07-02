@@ -80,6 +80,9 @@ describe('<EditingBanner /> — every non-idle mode gets chrome', () => {
     });
     render(<EditingBanner />);
     expect(banner()!.textContent).toMatch(/Appending to line A/);
-    expect(banner()!.style.background).toBeTruthy();
+    // The line's OWN color — a truthy-only check would also pass on a
+    // hardcoded accent, which is exactly the regression this guards against.
+    // (jsdom normalizes #ff0000 to rgb.)
+    expect(banner()!.style.background).toBe('rgb(255, 0, 0)');
   });
 });

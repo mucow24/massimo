@@ -387,6 +387,17 @@ describe('<TextLabelPopover /> — column width + justify', () => {
     expect(screen.getByRole('slider', { name: 'Width' })).toBeDisabled();
     expect(screen.getByRole('spinbutton', { name: 'Width' })).toBeDisabled();
   });
+
+  it('wheel over a locked label’s size/width rows leaves the label unchanged', () => {
+    // The row-level wheel handler must respect the lock — both inputs are
+    // disabled, so a wheel notch anywhere in the row must not edit the label.
+    seed(makeTextLabel({ id: 'g1', text: 'Hi', locked: true }));
+    const before = useDoc.getState().textLabels['g1'];
+    fireEvent.wheel(screen.getByRole('slider', { name: 'Size' }), { deltaY: -1 });
+    fireEvent.wheel(screen.getByRole('slider', { name: 'Width' }), { deltaY: -1 });
+    expect(useDoc.getState().textLabels['g1'].fontSize).toBe(before.fontSize);
+    expect(useDoc.getState().textLabels['g1'].width).toBe(before.width);
+  });
 });
 
 // Header drag (incl. across zoom) is covered by the world-position describe
