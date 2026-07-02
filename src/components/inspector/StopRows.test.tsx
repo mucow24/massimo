@@ -114,40 +114,39 @@ describe('<StopRows />', () => {
     expect(useDoc.getState().stations.a.stops.find((s) => s.lineId === 'L1')?.dotSize).toBe(12);
   });
 
-  it('orientation segments show WORLD-true glyphs on rotated stations', () => {
-    // Rotation 1 (45° CW): local auto-vertical paints as NE/SW (⤢).
+  it('the orientation button shows the WORLD-true axis on rotated stations', () => {
+    // Rotation 1 (45° CW): local auto-vertical paints as NE/SW.
     seed({ a: hub({ rotation: 1 }) });
     renderRows();
     const row = screen.getAllByTestId('stop-row')[0];
-    const active = within(row).getByRole('button', { name: 'Orientation: ⤢' });
-    expect(active).toHaveAttribute('aria-pressed', 'true');
+    within(row).getByRole('button', { name: 'Stop orientation (line 1): NE–SW' });
   });
 
-  it('clicking an orientation segment sets the axis absolutely in one undo entry', async () => {
+  it('clicking the orientation button cycles the axis one step in one undo entry', async () => {
     const user = userEvent.setup();
     seed({ a: hub() });
     renderRows();
     const row = screen.getAllByTestId('stop-row')[0];
-    await user.click(within(row).getByRole('button', { name: 'Orientation: ⤡' }));
+    await user.click(
+      within(row).getByRole('button', { name: 'Stop orientation (line 1): vertical' }),
+    );
     const st = useDoc.getState().stations.a;
-    expect(st.stops.find((s) => s.lineId === 'L1')?.orientation).toBe('auto-nw-se');
+    expect(st.stops.find((s) => s.lineId === 'L1')?.orientation).toBe('auto-ne-sw');
     expect(historyDepth()).toBe(1);
   });
 
-  it('mirror mode: an absolute orientation set cycles each match from its own state (stays frame-true)', async () => {
+  it('mirror mode: a cycle click advances each match from its own state in one undo entry', async () => {
     const user = userEvent.setup();
     seed({ a: hub(), b: hub({ id: 'b', x: 400 }) }, { mirrorMatching: true });
     useDoc.temporal.getState().clear();
     renderRows();
     const row = screen.getAllByTestId('stop-row')[0];
-    await user.click(within(row).getByRole('button', { name: 'Orientation: ↔' }));
+    await user.click(
+      within(row).getByRole('button', { name: 'Stop orientation (line 1): vertical' }),
+    );
     const doc = useDoc.getState();
-    expect(doc.stations.a.stops.find((s) => s.lineId === 'L1')?.orientation).toBe(
-      'auto-horizontal',
-    );
-    expect(doc.stations.b.stops.find((s) => s.lineId === 'L1')?.orientation).toBe(
-      'auto-horizontal',
-    );
+    expect(doc.stations.a.stops.find((s) => s.lineId === 'L1')?.orientation).toBe('auto-ne-sw');
+    expect(doc.stations.b.stops.find((s) => s.lineId === 'L1')?.orientation).toBe('auto-ne-sw');
     expect(historyDepth()).toBe(1);
   });
 

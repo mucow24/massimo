@@ -1,18 +1,18 @@
 import type { Line, LineId, Station, StopCell } from '../../model/types';
-import { beginHistoryGroup, useDoc, useSelection } from '../../state/store';
-import { dispatchMirrored, fanOutMirrored } from '../../state/mirrorDispatch';
+import { useDoc, useSelection } from '../../state/store';
+import { dispatchMirrored } from '../../state/mirrorDispatch';
 import { AXIS_CYCLE, resolveDotStyle } from '../../model/transforms';
 import { DOT_SHAPE_PRESETS } from '../../model/dotStyle';
 import { DOT_SIZE_MIN, resolveDotSize } from '../../model/dotSize';
 import { legibleTextOn } from '../../util/color';
 import { StationShapePicker } from '../StationShapePicker';
 import { useNumericField } from '../useNumericField';
-import { ORIENTATION_GLYPH } from './stopGridDrag';
+import { ORIENTATION_NAME } from './stopGridDrag';
 import type { Rotation } from '../../geometry/orientation';
 
 /**
  * One editor row per stop: [service badge | shape picker | dot size |
- * orientation segments]. Always enabled — no click-a-dot-first ritual; the
+ * orientation cycle button]. Always enabled — no click-a-dot-first ritual; the
  * row IS the per-stop control surface. Clicking a row also selects its stop
  * (lighting the canvas layout-editor ring + arming keyboard nudge), and
  * hovering highlights the corresponding dot on the map via the same
@@ -29,6 +29,32 @@ export function StopRows({ station, lines }: { station: Station; lines: Record<s
         <StopRow key={s.lineId} station={station} stop={s} line={lines[s.lineId]} />
       ))}
     </div>
+  );
+}
+
+// Screen angle (deg CW from vertical) of each local axis index; the world
+// axis of index i on a rotated station is i + rotation (AXIS_CYCLE entries
+// are 45° CW apart, matching the station rotation step).
+const AXIS_ANGLE = 45;
+
+/** Double-headed arrow along the given world axis — one glyph rotated to the
+ *  four angles, so the straight and diagonal states are pixel-identical. */
+function OrientationArrowIcon({ angleDeg }: { angleDeg: number }) {
+  return (
+    <svg width={15} height={15} viewBox="0 0 15 15" aria-hidden="true" style={{ display: 'block' }}>
+      <g
+        transform={`rotate(${angleDeg} 7.5 7.5)`}
+        stroke="currentColor"
+        strokeWidth={1.4}
+        strokeLinecap="round"
+        strokeLinejoin="round"
+        fill="none"
+      >
+        <line x1="7.5" y1="2.8" x2="7.5" y2="12.2" />
+        <polyline points="5.2,5.1 7.5,2.8 9.8,5.1" />
+        <polyline points="5.2,9.9 7.5,12.2 9.8,9.9" />
+      </g>
+    </svg>
   );
 }
 
@@ -56,21 +82,10 @@ function StopRow({ station, stop, line }: { station: Station; stop: StopCell; li
     },
   );
 
-  const setOrientation = (targetIdx: number) => {
-    const curIdx = AXIS_CYCLE.indexOf(stop.orientation);
-    const steps = (targetIdx - curIdx + 4) % 4;
-    if (steps === 0) return;
-    // Absolute set = N relative rotateStop cycles. Cycling is frame-invariant
-    // across mirror matches (each steps from its OWN current axis), so a
-    // rotated match keeps its world-equivalent orientation AND the match
-    // group survives — a raw absolute broadcast would rotate odd-offset
-    // matches 90° off and dissolve the group. One group for the whole batch.
-    const group = beginHistoryGroup();
-    fanOutMirrored(stationId, (sid) => {
-      for (let k = 0; k < steps; k++) rotateStop(sid, lineId);
-    });
-    group.commit();
-  };
+  // Orientation axes live in the station's LOCAL frame; show the WORLD-true
+  // axis so the control never contradicts the canvas.
+  const worldIdx = (AXIS_CYCLE.indexOf(stop.orientation) + rotation) % 4;
+  const worldName = ORIENTATION_NAME[AXIS_CYCLE[worldIdx]];
 
   return (
     <div
@@ -115,34 +130,20 @@ function StopRow({ station, stop, line }: { station: Station; stop: StopCell; li
         onWheel={sizeField.onNumberWheel}
         onBlur={sizeField.onNumberBlur}
       />
-      <div
-        className="seg-group"
-        role="group"
-        aria-label={`Stop orientation (line ${line?.service ?? '?'})`}
+      {/* One-step cycle, like right-click / R on the canvas handle. Cycling
+          is frame-invariant across mirror matches (each steps from its OWN
+          current axis), so a rotated match keeps its world-equivalent
+          orientation AND the match group survives. The row's own onClick
+          selects the stop as the click bubbles. */}
+      <button
+        type="button"
+        className="chip-btn orient-btn"
+        aria-label={`Stop orientation (line ${line?.service ?? '?'}): ${worldName}`}
+        title={`Stop axis ${worldName} — click to rotate 45°`}
+        onClick={() => dispatchMirrored(stationId, (sid) => rotateStop(sid, lineId))}
       >
-        {AXIS_CYCLE.map((o, i) => {
-          // Orientation axes live in the station's LOCAL frame; show the
-          // WORLD-true glyph so the control never contradicts the canvas.
-          const worldGlyph = ORIENTATION_GLYPH[AXIS_CYCLE[(i + rotation) % 4]];
-          const active = stop.orientation === o;
-          return (
-            <button
-              key={o}
-              type="button"
-              className={'seg-btn' + (active ? ' active' : '')}
-              aria-pressed={active}
-              aria-label={`Orientation: ${worldGlyph}`}
-              title={`Stop axis ${worldGlyph}`}
-              onClick={(e) => {
-                e.stopPropagation();
-                setOrientation(i);
-              }}
-            >
-              {worldGlyph}
-            </button>
-          );
-        })}
-      </div>
+        <OrientationArrowIcon angleDeg={worldIdx * AXIS_ANGLE} />
+      </button>
     </div>
   );
 }

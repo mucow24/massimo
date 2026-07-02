@@ -736,12 +736,18 @@ describe('editing-station-layout mode', () => {
     expect(s.mirrorMatching).toBe(true);
   });
 
-  it('selecting a DIFFERENT station exits the mode; re-selecting the same keeps it', () => {
+  it('selecting a DIFFERENT station retargets the editor to it; re-selecting the same keeps it', () => {
     useSelection.getState().startEditingStationLayout('A' as StationId);
     useSelection.getState().selectStation('A' as StationId);
-    expect(useSelection.getState().uiMode.kind).toBe('editing-station-layout');
+    expect(useSelection.getState().uiMode).toEqual({
+      kind: 'editing-station-layout',
+      stationId: 'A',
+    });
     useSelection.getState().selectStation('B' as StationId);
-    expect(useSelection.getState().uiMode.kind).toBe('idle');
+    expect(useSelection.getState().uiMode).toEqual({
+      kind: 'editing-station-layout',
+      stationId: 'B',
+    });
     expect(useSelection.getState().selectedStationIds).toEqual(['B']);
   });
 
@@ -771,10 +777,15 @@ describe('editing-station-layout mode — selection reconciliation', () => {
     expect(useSelection.getState().uiMode.kind).toBe('idle');
   });
 
-  it('setStationSelection away from the edited station exits; to it alone keeps it', () => {
+  it('setStationSelection to a sole different station retargets; to a multi-selection exits', () => {
     useSelection.getState().startEditingStationLayout('A' as StationId);
     useSelection.getState().setStationSelection(['A'] as StationId[]);
     expect(useSelection.getState().uiMode.kind).toBe('editing-station-layout');
+    useSelection.getState().setStationSelection(['B'] as StationId[]);
+    expect(useSelection.getState().uiMode).toEqual({
+      kind: 'editing-station-layout',
+      stationId: 'B',
+    });
     useSelection.getState().setStationSelection(['B', 'C'] as StationId[]);
     expect(useSelection.getState().uiMode.kind).toBe('idle');
   });

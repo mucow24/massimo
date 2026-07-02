@@ -94,19 +94,22 @@ const SIBLING_PRIMARY_CLEAR = {
   mirrorMatching: false,
 };
 
-// editing-station-layout is bound to ONE station: any station-selection
-// mutation whose result is not exactly [that station] exits the mode, so its
-// payload can never dangle behind a retargeted / multi / empty selection
-// (shift-click toggles and marquee/path extends reach these setters while
-// the mode's canvas chrome is up). Spread into every station-selection
-// mutation; selectStation applies the same rule inline.
+// editing-station-layout is bound to ONE station: the mode follows the sole
+// selected station. A station-selection mutation that lands on exactly one
+// OTHER station retargets the editor to it (clicking a neighbor keeps you in
+// layout editing); any multi/empty result exits, so the payload can never
+// dangle behind a marquee/shift-click selection made while the mode's canvas
+// chrome is up. Spread into every station-selection mutation; selectStation
+// applies the same rule inline.
 const layoutEditReconcile = (
   cur: UiMode,
   nextIds: readonly StationId[],
-): { uiMode: UiMode } | Record<string, never> =>
-  cur.kind === 'editing-station-layout' && !(nextIds.length === 1 && nextIds[0] === cur.stationId)
-    ? { uiMode: { kind: 'idle' } }
-    : {};
+): { uiMode: UiMode } | Record<string, never> => {
+  if (cur.kind !== 'editing-station-layout') return {};
+  if (nextIds.length !== 1) return { uiMode: { kind: 'idle' } };
+  if (nextIds[0] === cur.stationId) return {};
+  return { uiMode: { kind: 'editing-station-layout', stationId: nextIds[0] } };
+};
 
 interface SelectionState {
   // Multi-station selection. Order is meaningful: the last entry is the

@@ -898,18 +898,20 @@ band routing or the marker sort. Pinned by `MapCanvas.stationsSig.test.tsx`.
   inline-expanded LINE inspector on the Lines tab.
 - **[StationPopover.tsx](src/components/StationPopover.tsx)** — the station editor's home:
   mounted by `ItemPopovers` for a sole-selected station (idle mode, or that station's own
-  layout-edit mode), hosting the full `StationInspector` — name, labeled X/Y + ±45° rotate
-  buttons with a rotation readout, Mirror ×N / WP / lock toggles, the **Edit layout** button,
+  layout-edit mode), hosting the full `StationInspector` — a Name header row with WP / lock
+  toggles, labeled X/Y + a mirrored ±45° rotate icon pair, the **Edit layout** button,
   per-stop rows
   ([inspector/StopRows.tsx](src/components/inspector/StopRows.tsx): service badge + always-enabled
-  shape picker + dot size + world-true orientation segments per stop; hover cross-highlights the
-  dot via `hoveredLineStop`), and segmented label align/valign + offset controls. The anchor is
-  CLAMPED into the canvas host so sidebar-selecting an off-screen station still shows the editor.
-  Inspectors dispatch transforms directly and own **mirror matching** (`findMatchingStations`
-  returns neighbors sharing layout under the model's 4-fold mirror symmetry; an edit broadcasts
-  through [state/mirrorDispatch.ts](src/state/mirrorDispatch.ts), rotating local deltas through
-  `rotateGridDelta`; absolute orientation sets are applied as relative cycles so odd-offset
-  matches stay world-equivalent).
+  shape picker + dot size + a world-true orientation cycle button per stop; hover
+  cross-highlights the dot via `hoveredLineStop`), and label align/valign cycle buttons + offset
+  controls. The anchor is CLAMPED into the canvas host so sidebar-selecting an off-screen station
+  still shows the editor. Inspectors dispatch transforms directly through **mirror matching**
+  (`findMatchingStations` returns neighbors sharing layout under the model's 4-fold mirror
+  symmetry; an edit broadcasts through [state/mirrorDispatch.ts](src/state/mirrorDispatch.ts),
+  rotating local deltas through `rotateGridDelta`; orientation cycles are relative steps so
+  odd-offset matches stay world-equivalent). NOTE: the mirror-matching TOGGLE was removed from
+  the UI with the popover cleanup (`mirrorMatching` now rests false), so the fan-out machinery
+  currently always resolves to the source station alone.
 - **Station layout editing happens ON the canvas** (the sidebar mini-canvas "StopGrid" was
   retired in favor of these three surfaces; its pure drag/ghost math lives on in
   [inspector/stopGridDrag.ts](src/components/inspector/stopGridDrag.ts) — `computeGhosts`,
@@ -924,7 +926,9 @@ band routing or the marker sort. Pinned by `MapCanvas.stationsSig.test.tsx`.
   2. **`editing-station-layout` mode** ([canvas/StationLayoutEditor.tsx](src/components/canvas/StationLayoutEditor.tsx)
      + [useStationLayoutDrag.ts](src/components/canvas/useStationLayoutDrag.ts)): entered via the
      inspector's **Edit layout** button (`startEditingStationLayout` preserves selection + mirror
-     state; frames the camera if the station is off-screen). Zoom-floored grab rings over each
+     state; frames the camera if the station is off-screen). Clicking another station RETARGETS
+     the mode to it (`layoutEditReconcile`: the mode follows the sole-selected station; a
+     multi/empty selection exits to idle). Zoom-floored grab rings over each
      real dot (orientation glyph badges) + a label-cell ring; drag between ghost slots, drop on a
      stop swaps, right-click/R rotates, click selects the stop/label (arming the shape/size
      pickers). A transparent **shield rect** swallows near-miss presses so nothing falls through
