@@ -171,10 +171,27 @@ export function MapCanvas() {
     return parts.join('|');
   }, [lines]);
 
+  // Stations-side twin of linesGeometrySig: hashes exactly the station
+  // fields buildBandGeometry / buildStopMarkers read — anchor (x, y),
+  // rotation, and each stop's lineId/row/col/orientation. EXCLUDES the
+  // label block and per-stop dotStyle/dotSize (presentation, resolved live
+  // at render). Label edits are the high-frequency writers here: an Alt
+  // fine-drag streams setLabelOffset/setLabelOffsetPerp per pointermove,
+  // which must repaint the label WITHOUT re-running band routing.
+  const stationsGeometrySig = useMemo(() => {
+    const parts: string[] = [];
+    for (const id of Object.keys(stations)) {
+      const st = stations[id];
+      parts.push(id, String(st.x), String(st.y), String(st.rotation));
+      for (const c of st.stops) parts.push(c.lineId, String(c.row), String(c.col), c.orientation);
+    }
+    return parts.join('|');
+  }, [stations]);
+
   const bandsGeometry = useMemo(
     () => buildBandGeometry(stations, lines, curveRadius),
     // eslint-disable-next-line react-hooks/exhaustive-deps
-    [stations, linesGeometrySig, curveRadius],
+    [stationsGeometrySig, linesGeometrySig, curveRadius],
   );
 
   const bands = useMemo(() => {
@@ -242,7 +259,11 @@ export function MapCanvas() {
   const renderables = useMemo(() => {
     const markers = buildStopMarkers(stations, lines, lineOrder, bands);
     return buildOrderedRenderables(bands, markers);
-  }, [bands, stations, lines, lineOrder]);
+    // buildStopMarkers reads the same station fields the signature hashes,
+    // so keying on it (not the stations reference) lets label/dot edits
+    // skip the marker rebuild + priority sort along with band routing.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [bands, stationsGeometrySig, lines, lineOrder]);
 
   const inHandMode = selection.toolMode === 'hand' || selection.spaceHeld;
 

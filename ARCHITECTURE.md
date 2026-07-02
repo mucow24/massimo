@@ -813,6 +813,13 @@ array (not the priority-assigned `bands`) is passed to layering overlays so a la
 churn the reference and re-run the per-stripe `t` search (a single click on a busy map once burned
 300–500ms). `assignLinePriorities` mutates in place, so `bands` clones each spec.
 
+The stations side works the same way: `stationsGeometrySig` hashes only the station fields
+`buildBandGeometry` / `buildStopMarkers` read (x, y, rotation, per-stop lineId/row/col/orientation)
+and keys both the `bandsGeometry` and `renderables` memos — NOT the raw `stations` reference. Label
+edits (the whole `label` block) and per-stop `dotStyle`/`dotSize` are absent from the hash, so an
+Alt label fine-drag streaming `setLabelOffset` per pointermove repaints the label without re-running
+band routing or the marker sort. Pinned by `MapCanvas.stationsSig.test.tsx`.
+
 ---
 
 ## UI chrome
