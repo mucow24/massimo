@@ -54,6 +54,27 @@ export interface DragCommit {
 }
 
 /**
+ * Release pointer capture and clear the click-suppression flag. The clear is
+ * deferred a macrotask on purpose: the browser dispatches the synthesized
+ * `click` after `pointerup`, so a synchronous clear would let that trailing
+ * click through (e.g. deselecting what the gesture just selected). Shared by
+ * finishDrag and the history-less gestures (rect select) that end the same way.
+ */
+export function releaseDragCapture(
+  e: { pointerId: number },
+  svgRef: RefObject<SVGSVGElement | null>,
+): void {
+  try {
+    svgRef.current?.releasePointerCapture(e.pointerId);
+  } catch {
+    // pointer may not have been captured
+  }
+  setTimeout(() => {
+    dragState.suppressClick = false;
+  }, 0);
+}
+
+/**
  * End-of-gesture bookkeeping shared by every drag hook: commit the single
  * grouped history entry — and release capture + clear click-suppression on the
  * next tick — when the gesture moved (or was force-committed); otherwise cancel
@@ -67,14 +88,7 @@ export function finishDrag(
   const committed = state.moved || state.forceCommit === true;
   if (committed) {
     state.history.commit();
-    try {
-      svgRef.current?.releasePointerCapture(e.pointerId);
-    } catch {
-      // pointer may not have been captured
-    }
-    setTimeout(() => {
-      dragState.suppressClick = false;
-    }, 0);
+    releaseDragCapture(e, svgRef);
   } else {
     // no suppressClick reset here on purpose: a gesture reaching this branch
     // never moved, so trackDragMove never set the flag. cross-gesture stranding
