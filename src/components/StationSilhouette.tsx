@@ -1,14 +1,13 @@
 import { useDoc, useSelection } from '../state/store';
 import { useThemeColors } from '../state/theme';
+import { useViewportStore } from '../state/viewportStore';
 import type { Station } from '../model/types';
 import { resolveStationLabelWeight } from '../model/transforms';
 import { stationBoundaryRectsLocal } from '../geometry/stationBoundary';
 import { stopHalfOf } from '../model/lineWidth';
 import { polygonsToPath, unionConvex } from '../geometry/polygonUnion';
+import { SELECTION_STROKE_WIDTH, SELECTION_WASH_OPACITY } from './selectionStyle';
 
-const SELECTION_WASH_COLOR = '#f0ff00';
-const SELECTION_WASH_OPACITY = 0.2;
-const SELECTION_STROKE_WIDTH = 2;
 const SELECTION_CORNER_RADIUS = 5;
 const MATCH_STROKE_COLOR = '#888';
 const MATCH_STROKE_WIDTH = 1.5;
@@ -17,10 +16,11 @@ export type SilhouetteLayer = 'wash' | 'stroke' | 'match-stroke';
 
 /**
  * A station's selection silhouette: the smoothed union of its cells AABB and
- * its (rotated) label rect. `wash` is the yellow fill, `stroke` the selection
- * outline, `match-stroke` the gray mirror-match outline. Skipped while the
- * station is being renamed — the inline editor draws its own box, and the
- * collapsed-label silhouette would overdraw the wider editor.
+ * its (rotated) label rect. `wash` is the translucent accent fill, `stroke`
+ * the selection outline, `match-stroke` the gray mirror-match outline.
+ * Skipped while the station is being renamed — the inline editor draws its
+ * own box, and the collapsed-label silhouette would overdraw the wider
+ * editor.
  */
 export function StationSilhouette({
   station,
@@ -35,6 +35,9 @@ export function StationSilhouette({
   const lines = useDoc((s) => s.lines);
   const editingStationId = useSelection((s) => s.editingStationId);
   const themeColors = useThemeColors();
+  // Committed zoom: the outline strokes divide by it so the ring weight stays
+  // constant on screen (the 1/zoom idiom PolygonView established).
+  const zoom = useViewportStore((s) => s.zoom);
 
   if (editingStationId === station.id) return null;
 
@@ -60,7 +63,7 @@ export function StationSilhouette({
       <g data-station-wash={station.id} transform={transform} pointerEvents="none">
         <path
           d={pathStr}
-          fill={SELECTION_WASH_COLOR}
+          fill={themeColors.accent}
           fillOpacity={SELECTION_WASH_OPACITY}
           fillRule="nonzero"
         />
@@ -74,7 +77,7 @@ export function StationSilhouette({
           d={pathStr}
           fill="none"
           stroke={MATCH_STROKE_COLOR}
-          strokeWidth={MATCH_STROKE_WIDTH}
+          strokeWidth={MATCH_STROKE_WIDTH / zoom}
           strokeLinejoin="round"
         />
       </g>
@@ -86,7 +89,7 @@ export function StationSilhouette({
         d={pathStr}
         fill="none"
         stroke={themeColors.selectionStroke}
-        strokeWidth={SELECTION_STROKE_WIDTH}
+        strokeWidth={SELECTION_STROKE_WIDTH / zoom}
         strokeLinejoin="round"
       />
     </g>

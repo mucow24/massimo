@@ -593,11 +593,11 @@ describe('<StationInspector /> — stop dot size textbox', () => {
     expect(historyDepth() - pastBefore).toBe(1);
   });
 
-  it('a focused edit with mirror on collapses to exactly one undo entry', async () => {
-    // Regression: focusing the field opens useFieldHistory's outer group, and
-    // dispatchAll (mirror on + a matching station) opens a SECOND group nested
-    // inside it. The inner commit must not resume recording mid-gesture nor
-    // push a stray snapshot — the whole focus arc is a single undo entry.
+  it('a focused edit with mirror on collapses to exactly one undo entry', () => {
+    // Regression (#146): focusing the field opens useFieldHistory's outer
+    // group, and the mirror broadcast (dispatchMirrored, reached through the
+    // per-stop row's size field) would nest a SECOND group inside it. The
+    // isHistoryGrouping gate must keep the whole focus arc one undo entry.
     useDoc.setState({
       ...DEFAULT_DOC,
       ...makeDoc({
@@ -615,14 +615,13 @@ describe('<StationInspector /> — stop dot size textbox', () => {
     });
 
     render(<StationInspector id="a" />);
-    selectStop();
 
     useDoc.temporal.getState().clear();
     const before = historyDepth();
 
     const box = sizeBox();
     fireEvent.focus(box); // opens useFieldHistory's outer group
-    fireEvent.change(box, { target: { value: '9' } }); // dispatchAll nests a group
+    fireEvent.change(box, { target: { value: '9' } }); // mirror broadcast fires inside it
     fireEvent.blur(box); // commits the outer group
 
     const doc = useDoc.getState();

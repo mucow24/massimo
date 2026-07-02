@@ -166,23 +166,4 @@ describe('ItemPopovers — station popover, layout-edit interplay', () => {
     expect(el.style.left).toBe('472px');
     expect(el.style.top).toBe('8px');
   });
-
-  it('Escape with an active stop/label sub-selection clears IT, keeping the popover', () => {
-    seedStation();
-    render(<ItemPopovers view={committedView} />);
-    act(() => useSelection.getState().setLabelSelected(true));
-    act(() => {
-      document.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true }));
-    });
-    // Sub-selection cleared (via the inspector's useDismiss), station kept.
-    expect(useSelection.getState().labelSelected).toBe(false);
-    expect(useSelection.getState().selectedStationIds).toEqual(['a']);
-    expect(document.querySelector('.station-popover')).not.toBeNull();
-
-    // A second Escape (no sub-selection) closes the editor.
-    act(() => {
-      document.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true }));
-    });
-    expect(useSelection.getState().selectedStationIds).toEqual([]);
-  });
 });

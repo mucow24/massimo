@@ -135,10 +135,39 @@ export default function App() {
         tag === 'INPUT' || tag === 'TEXTAREA' || tag === 'SELECT' || !!target?.isContentEditable;
 
       if (e.key === 'Escape') {
+        // Esc while typing belongs to the field — don't close popovers or
+        // cancel modes out from under an in-progress edit. Plain fields have
+        // no native Esc behavior, so blur instead of swallowing outright:
+        // first Esc leaves the field (committing its useFieldHistory group),
+        // a second Esc then closes/cancels as usual. Range/color inputs fall
+        // through like the Ctrl-combos: no in-progress edit to protect.
+        if (inForm) {
+          if (target instanceof HTMLElement) target.blur();
+          return;
+        }
+        // Station-editor step-out ladder (App is the single Escape owner —
+        // a per-popover listener racing this handler on the same keypress
+        // would defeat the ladder): an armed stop/label sub-selection clears
+        // first; the layout-edit mode exits next; only then does Esc fall
+        // through to the global close-everything wipe below.
+        {
+          const sel = useSelection.getState();
+          if (sel.selectedStopLineId || sel.labelSelected) {
+            sel.setSelectedStopLineId(null);
+            sel.setLabelSelected(false);
+            return;
+          }
+          if (sel.uiMode.kind === 'editing-station-layout') {
+            setUiMode({ kind: 'idle' });
+            return;
+          }
+        }
         // cancelAppendMode runs first so a freshly-created empty line gets
         // garbage-collected before setUiMode flips the variant.
         cancelAppendMode();
         setUiMode({ kind: 'idle' });
+        // Any one null-select wipes every selection type (clearedSelections in
+        // the store), closing whichever item popover is open.
         selectLineTag(null);
         selectRouteBullet(null);
         selectTransfer(null);

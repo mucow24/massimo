@@ -52,12 +52,15 @@ describe('<ColorPalette /> sections', () => {
     expect(onChange).toHaveBeenCalledWith('#ED1C24');
   });
 
-  it('the currently-selected swatch carries a thick selected border', () => {
+  it('the currently-selected swatch carries the selected class (thick themed ring)', () => {
     useDoc.setState({ ...useDoc.getState(), activePalettes: ['mta'] });
     render(<ColorPalette value="#0039A6" onChange={vi.fn()} />);
     const selected = screen.getByTitle('Blue (A·C·E)');
-    // Border style is set inline; assert the 2px sentinel that the renderer uses.
-    expect(selected.getAttribute('style') ?? '').toContain('2px solid');
+    // The ring itself lives in styles.css (.color-swatch.selected) so it can
+    // flip with the theme; the class is the renderer's contract.
+    expect(selected.classList.contains('selected')).toBe(true);
+    // And exactly one swatch is marked selected.
+    expect(document.querySelectorAll('.color-swatch.selected').length).toBe(1);
   });
 
   it('isCustom is computed against ACTIVE palettes only — an MTA blue with only-BART active reads as custom', () => {

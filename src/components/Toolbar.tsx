@@ -17,6 +17,7 @@ import {
 import { Menu, MenuItem, MenuSeparator, SubMenu } from './Menu';
 import {
   CursorArrowIcon,
+  ExclamationTriangleIcon,
   FrameIcon,
   HandIcon,
   LayersIcon,
@@ -303,11 +304,17 @@ export function Toolbar() {
       {menuError && (
         <span
           role="alert"
-          style={{ color: '#a22', marginLeft: 8 }}
+          style={{
+            color: 'var(--danger)',
+            marginLeft: 8,
+            display: 'inline-flex',
+            alignItems: 'center',
+            gap: 4,
+          }}
           onClick={() => setMenuError(null)}
           title="Click to dismiss"
         >
-          ⚠ {menuError}
+          <ExclamationTriangleIcon aria-hidden="true" /> {menuError}
         </span>
       )}
     </div>

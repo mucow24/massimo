@@ -5,6 +5,8 @@ import { STOP_SIZE, stopCenterAt } from '../../geometry/orientation';
 import { cellsAABBLocal } from '../../geometry/stationBoundary';
 import { labelLayoutLocal } from '../../geometry/labelLayout';
 import { stopHalfOf, lineWidthOf } from '../../model/lineWidth';
+import { useThemeColors } from '../../state/theme';
+import { withAlpha } from '../../util/color';
 import { resolveDotSize } from '../../model/dotSize';
 import { resolveStationLabelWeight } from '../../model/transforms';
 import { ORIENTATION_GLYPH, sameCell } from '../inspector/stopGridDrag';
@@ -50,6 +52,9 @@ export function StationLayoutEditor({
   const labelWeight = useDoc((s) => s.labelWeight);
   const labelItalic = useDoc((s) => s.labelItalic);
 
+  // Ring accents flip with the theme (dark canvas needs the brightened
+  // accent), matching the rest of the canvas feedback language.
+  const theme = useThemeColors();
   const inHandMode = selection.toolMode === 'hand' || selection.spaceHeld;
   const angle = station.rotation * 45;
   const stopHalf = stopHalfOf(lines);
@@ -172,7 +177,13 @@ export function StationLayoutEditor({
               r={r}
               fill="transparent"
               pointerEvents={inHandMode ? 'none' : 'all'}
-              stroke={selected ? '#000' : isSwap ? '#1a4ea8' : 'rgba(26,78,168,0.8)'}
+              stroke={
+                selected
+                  ? theme.selectionStroke
+                  : isSwap
+                    ? theme.accent
+                    : withAlpha(theme.accent, 0.8)
+              }
               strokeWidth={selected || isSwap ? 2 / zoom : ringStroke}
               strokeDasharray={selected || isSwap ? undefined : `${3 / zoom} ${2 / zoom}`}
             />
@@ -213,7 +224,7 @@ export function StationLayoutEditor({
               r={r}
               fill="rgba(255,255,255,0.65)"
               pointerEvents={inHandMode ? 'none' : 'all'}
-              stroke={selected ? '#000' : 'rgba(0,0,0,0.45)'}
+              stroke={selected ? theme.selectionStroke : 'rgba(0,0,0,0.45)'}
               strokeWidth={selected ? 2 / zoom : ringStroke}
             />
             <text

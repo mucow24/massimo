@@ -1,4 +1,12 @@
 import { useCallback, useMemo, useRef } from 'react';
+import {
+  FontBoldIcon,
+  FontItalicIcon,
+  LockClosedIcon,
+  LockOpen1Icon,
+  ReloadIcon,
+  ResetIcon,
+} from '@radix-ui/react-icons';
 import { useDoc, useSelection } from '../../state/store';
 import { dispatchMirrored } from '../../state/mirrorDispatch';
 import type { StationId } from '../../model/types';
@@ -41,7 +49,8 @@ export function StationInspector({ id }: { id: StationId }) {
   );
 
   // Mirror-aware dispatch: with mirror on, `act` fans out to every matching
-  // station in one history group (see state/mirrorDispatch.ts).
+  // station in one history group (see state/mirrorDispatch.ts — including
+  // the isHistoryGrouping gate from #146 for focused-field edit arcs).
   const dispatchAll = (act: (sid: StationId, layoutOffset: LayoutOffset) => void) =>
     dispatchMirrored(id, act);
 
@@ -91,7 +100,7 @@ export function StationInspector({ id }: { id: StationId }) {
             aria-label="X"
             value={Math.round(station.x)}
             onChange={(e) => moveStation(station.id, Number(e.target.value), station.y)}
-            style={{ width: 44 }}
+            style={{ width: 56 }}
             {...xField}
           />
           <span className="axis-label" aria-hidden>
@@ -102,7 +111,7 @@ export function StationInspector({ id }: { id: StationId }) {
             aria-label="Y"
             value={Math.round(station.y)}
             onChange={(e) => moveStation(station.id, station.x, Number(e.target.value))}
-            style={{ width: 44 }}
+            style={{ width: 56 }}
             {...yField}
           />
           <button
@@ -113,7 +122,7 @@ export function StationInspector({ id }: { id: StationId }) {
             title="Rotate −45°"
             aria-label="Rotate −45°"
           >
-            ⟲
+            <ResetIcon />
           </button>
           <button
             className="btn-mini"
@@ -121,7 +130,7 @@ export function StationInspector({ id }: { id: StationId }) {
             title="Rotate +45°"
             aria-label="Rotate +45°"
           >
-            ⟳
+            <ReloadIcon />
           </button>
           <span className="axis-label" title="Station rotation">
             {station.rotation * 45}°
@@ -165,7 +174,7 @@ export function StationInspector({ id }: { id: StationId }) {
             }
             onClick={() => setStationLocked(station.id, !station.locked)}
           >
-            {station.locked ? '🔒' : '🔓'}
+            {station.locked ? <LockClosedIcon /> : <LockOpen1Icon />}
           </button>
         </div>
       </div>
@@ -224,7 +233,7 @@ export function StationInspector({ id }: { id: StationId }) {
             }
             onClick={() => setStationLabelBold(station.id, !station.labelBold)}
           >
-            <strong>B</strong>
+            <FontBoldIcon />
           </button>
           <button
             type="button"
@@ -238,7 +247,7 @@ export function StationInspector({ id }: { id: StationId }) {
             }
             onClick={() => setStationLabelItalic(station.id, !station.labelItalic)}
           >
-            <em>I</em>
+            <FontItalicIcon />
           </button>
         </div>
         <div style={{ display: 'flex', gap: 6, marginTop: 4 }}>

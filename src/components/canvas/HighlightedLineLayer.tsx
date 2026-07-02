@@ -24,6 +24,7 @@ import { StopMarker } from '../StopMarker';
 import { StopGlyph } from '../StopGlyph';
 import { StationView } from '../StationView';
 import { legibleTextOn } from '../../util/color';
+import { useThemeColors } from '../../state/theme';
 
 /**
  * SVG path for a small isoceles arrow pointing along the unit vector (dx, dy)
@@ -52,11 +53,6 @@ export function arrowTrianglePath(
   return `M ${apexX} ${apexY} L ${lX} ${lY} L ${rX} ${rY} Z`;
 }
 
-// Dim wash applied over the whole map when one line is "highlighted" (selected),
-// so the chosen line reads above everything else.
-const DIM_COLOR = '#000000';
-const DIM_ALPHA = 0.75;
-
 interface Props {
   highlightLineId: LineId;
   lines: Record<LineId, Line>;
@@ -77,10 +73,11 @@ interface Props {
   vbH: number;
 }
 
-// The selected-line highlight: a dim overlay plus the chosen line re-painted on
-// top (stripes, stop markers, direction triangles, names), with append-mode
-// affordances when adding stations. Extracted verbatim from MapCanvas; the only
-// change is that the closed-over locals are now explicit props.
+// The selected-line highlight: a dim wash over the whole map plus the chosen
+// line re-painted on top (stripes, stop markers, direction triangles, names),
+// with append-mode affordances when adding stations. Dim strength comes from
+// the theme — softer in light mode so the rest of the map stays readable as
+// context.
 export function HighlightedLineLayer({
   highlightLineId,
   lines,
@@ -96,17 +93,18 @@ export function HighlightedLineLayer({
   vbW,
   vbH,
 }: Props) {
+  const themeColors = useThemeColors();
   return (
     <>
-      {DIM_ALPHA > 0 && (
+      {themeColors.dimOpacity > 0 && (
         <rect
           data-dim="1"
           x={vbX}
           y={vbY}
           width={vbW}
           height={vbH}
-          fill={DIM_COLOR}
-          fillOpacity={DIM_ALPHA}
+          fill={themeColors.dim}
+          fillOpacity={themeColors.dimOpacity}
           pointerEvents="none"
         />
       )}
@@ -263,7 +261,10 @@ export function HighlightedLineLayer({
                   )}
                   <path
                     d={d}
-                    fill={isTerminus ? ln.color : '#000'}
+                    // legibleTextOn: the arrow sits on the re-painted stripe,
+                    // so contrast the LINE color — a fixed #000 vanished on
+                    // dark lines.
+                    fill={isTerminus ? ln.color : legibleTextOn(ln.color)}
                     stroke={isTerminus ? ln.color : undefined}
                     strokeWidth={isTerminus ? 10 : undefined}
                     strokeLinejoin={isTerminus ? 'miter' : undefined}
@@ -371,7 +372,7 @@ export function HighlightedLineLayer({
                   zoom={zoom}
                   onStartDrag={onStartDrag}
                   layer="highlight-label"
-                  highlightColor="#bbb"
+                  highlightColor={themeColors.dimmedLabel}
                 />
               ));
 

@@ -98,4 +98,29 @@ describe('MapCanvas — the line-highlight dim wash survives imperative-viewBox 
     expect(dim).toEqual(bg);
     expect(dim).toEqual({ x: cx - cw, y: cy - ch, w: cw * 3, h: ch * 3 });
   });
+
+  // The dim strength is theme-driven (ThemeColors.dim/dimOpacity): light mode
+  // is deliberately softer so the rest of the map stays readable as context;
+  // the black canvas keeps the stronger wash. This pins the WIRING — the
+  // token values alone are pinned in theme.test.ts.
+  it('dims softer in light mode than in dark (theme-driven, not hardcoded)', () => {
+    render(<App />);
+    seedLine();
+    act(() => {
+      useSelection.getState().selectLine('L1');
+    });
+    const dim = () => document.querySelector('[data-dim]')!;
+    expect(dim().getAttribute('fill')).toBe('#000000');
+    expect(Number(dim().getAttribute('fill-opacity'))).toBe(0.55);
+    act(() => {
+      useViewportStore.setState({ darkMode: true });
+    });
+    try {
+      expect(Number(dim().getAttribute('fill-opacity'))).toBe(0.75);
+    } finally {
+      act(() => {
+        useViewportStore.setState({ darkMode: false });
+      });
+    }
+  });
 });

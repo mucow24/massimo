@@ -11,6 +11,7 @@ import { useThemeColors } from '../../state/theme';
 import { legibleTextOn } from '../../util/color';
 import { angleDeg, scale, type Vec2 } from '../../geometry/vec';
 import { pairKeyOf } from '../../model/pairKey';
+import { SELECTION_STROKE_WIDTH, SELECTION_WASH_OPACITY } from '../selectionStyle';
 import { useLineTagDrag } from './useLineTagDrag';
 
 const ALONG_FONT_SIZE = 12;
@@ -49,10 +50,6 @@ function chevronPoints(armH: number): string {
     .map(([x, y]) => `${x},${y}`)
     .join(' ');
 }
-
-const SELECTION_WASH_COLOR = '#f0ff00';
-const SELECTION_WASH_OPACITY = 0.3;
-const SELECTION_STROKE_WIDTH = 1.5;
 
 interface Props {
   bands: SegmentBandSpec[];
@@ -320,10 +317,10 @@ function TagShape({
         height={h}
         rx={2}
         ry={2}
-        fill={layer === 'wash' ? SELECTION_WASH_COLOR : 'none'}
+        fill={layer === 'wash' ? themeColors.accent : 'none'}
         fillOpacity={layer === 'wash' ? SELECTION_WASH_OPACITY : undefined}
         stroke={layer === 'stroke' ? themeColors.selectionStroke : undefined}
-        strokeWidth={layer === 'stroke' ? SELECTION_STROKE_WIDTH : undefined}
+        strokeWidth={layer === 'stroke' ? SELECTION_STROKE_WIDTH / zoom : undefined}
       />
     </g>
   );

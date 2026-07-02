@@ -1,5 +1,6 @@
 import { describe, it, expect } from 'vitest';
 import { render } from '@testing-library/react';
+import { useViewportStore } from '../../state/viewportStore';
 import { LayeringDashedOutlines, LayeringHoverOutline } from './LayeringOutlines';
 import type { SegmentBandSpec } from '../../geometry/interlining';
 import type { Line, LineId } from '../../model/types';
@@ -54,13 +55,27 @@ describe('<LayeringDashedOutlines>', () => {
   it('dashed groups carry the expected stroke attributes', () => {
     const { container } = renderDashed([makeBand(['A'])]);
     const g = container.querySelector('[data-layering-outline]')!;
-    expect(g.getAttribute('stroke')).toBe('#000');
+    expect(g.getAttribute('stroke')).toBe('#111111');
     expect(g.getAttribute('stroke-width')).toBe('1.5');
     expect(g.getAttribute('stroke-opacity')).toBe('0.2');
     expect(g.getAttribute('stroke-dasharray')).toBe('4 2');
     // Two long edges + two cap lines per stripe.
     expect(g.querySelectorAll('path').length).toBe(2);
     expect(g.querySelectorAll('line').length).toBe(2);
+  });
+
+  // The dashed footprint must flip with the theme — a translucent black
+  // stroke on the pure-black dark canvas is invisible, which left layering
+  // mode with no visible click targets in dark mode.
+  it('strokes with the theme label color (white) in dark mode', () => {
+    useViewportStore.setState({ darkMode: true });
+    try {
+      const { container } = renderDashed([makeBand(['A'])]);
+      const g = container.querySelector('[data-layering-outline]')!;
+      expect(g.getAttribute('stroke')).toBe('#ffffff');
+    } finally {
+      useViewportStore.setState({ darkMode: false });
+    }
   });
 
   it('skips the hovered stripe (it paints via LayeringHoverOutline instead)', () => {

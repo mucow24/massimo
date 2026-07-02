@@ -1,7 +1,7 @@
-import { describe, it, expect, beforeEach } from 'vitest';
+import { describe, it, expect, afterEach, beforeEach } from 'vitest';
 import { render } from '@testing-library/react';
 import { LineTagsLayer, resolveTag } from './LineTagsLayer';
-import { useDoc } from '../../state/store';
+import { useDoc, useSelection } from '../../state/store';
 import { DEFAULT_DOC } from '../../model/transforms';
 import { makeBandSpec, makeLine } from '../../test/fixtures';
 import { fakeSvgRef } from '../../test/interaction';
@@ -42,6 +42,51 @@ describe('resolveTag — per-stripe geometry', () => {
     const r = resolveTag(reversed, { lines }, [mixedBand()]);
     expect(r).not.toBeNull();
     expect(Math.abs(r!.p.y)).toBeCloseTo(10.5, 6);
+  });
+});
+
+// Selection chrome speaks the shared vocabulary (selectionStyle.ts +
+// ThemeColors.accent): accent wash at 0.2 and a zoom-compensated ring —
+// previously drifted local copies (#f0ff00 at 0.3, 1.5px world-unit stroke).
+describe('<LineTagsLayer> — selection chrome', () => {
+  beforeEach(() => {
+    useDoc.setState({
+      ...useDoc.getState(),
+      ...DEFAULT_DOC,
+      lines: { L2: makeLine({ id: 'L2', stations: ['s1', 's2'], width: 28 }) },
+      lineOrder: ['L2'],
+      lineTags: { T: tagOnL2({ kind: 'chevron' }) },
+    });
+    useDoc.temporal.getState().clear();
+    useSelection.getState().selectLineTag('T');
+  });
+  afterEach(() => useSelection.getState().selectLineTag(null));
+
+  const renderAtZoom = (zoom: number) => {
+    const { ref } = fakeSvgRef();
+    return render(
+      <svg>
+        <LineTagsLayer
+          bands={[makeBandSpec(['L2'], { stripeWidths: [28] })]}
+          zoom={zoom}
+          svgRef={ref}
+        />
+      </svg>,
+    ).container;
+  };
+
+  it('washes the selected tag with the accent at the shared opacity', () => {
+    const c = renderAtZoom(1);
+    const wash = c.querySelector('rect[fill="#1a4ea8"]')!;
+    expect(wash).not.toBeNull();
+    expect(Number(wash.getAttribute('fill-opacity'))).toBe(0.2);
+  });
+
+  it('rings with the theme selection stroke, zoom-compensated', () => {
+    const ring1 = renderAtZoom(1).querySelector('rect[stroke="#000000"]')!;
+    expect(Number(ring1.getAttribute('stroke-width'))).toBe(2);
+    const ring2 = renderAtZoom(2).querySelector('rect[stroke="#000000"]')!;
+    expect(Number(ring2.getAttribute('stroke-width'))).toBe(1);
   });
 });
 

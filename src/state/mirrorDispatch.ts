@@ -34,10 +34,10 @@ export function captureMirrorTargets(stationId: StationId): MirrorTarget[] {
 
 /**
  * Apply `act` to the station and — with mirror matching on — to every match.
- * NEVER opens a history group: zundo's pause/resume is a plain boolean, so
- * groups must not nest. Use this variant from call sites that already hold a
- * group open (keyboard nudge handlers, drag gestures, focused numeric
- * fields); use dispatchMirrored for standalone one-shot controls.
+ * NEVER opens a history group of its own. Use this variant from call sites
+ * that explicitly manage their group (a keyboard press writing several
+ * fields, a drag gesture's open group); use dispatchMirrored for one-shot
+ * controls.
  */
 export function fanOutMirrored(
   stationId: StationId,
@@ -47,15 +47,14 @@ export function fanOutMirrored(
 }
 
 /**
- * Standalone dispatch for one-shot controls (buttons, pickers): like
- * fanOutMirrored, but a genuine fan-out is wrapped in ONE history group so
- * undo reverts the whole broadcast at once. A single-station dispatch stays
- * ungrouped — one store set is one history entry already.
- *
- * If a group is already open (e.g. this fired from a focused numeric field's
- * edit arc, like the dot-size spinbutton), don't nest a second one — the
- * outer group already collapses these writes into its single entry. Nesting
- * would resume recording mid-gesture and push a stray snapshot.
+ * Standalone dispatch for one-shot controls (buttons, pickers, numeric
+ * fields): like fanOutMirrored, but a genuine fan-out is wrapped in ONE
+ * history group so undo reverts the whole broadcast at once. Two cases skip
+ * the group: a single-station dispatch (one store set is one entry already),
+ * and a dispatch fired while a group is ALREADY open (a focused field's
+ * useFieldHistory arc, e.g. the dot-size spinbutton) — groups don't nest,
+ * and the outer group already collapses the writes into its single entry
+ * (see isHistoryGrouping / #146).
  */
 export function dispatchMirrored(
   stationId: StationId,

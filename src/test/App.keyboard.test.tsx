@@ -6,7 +6,7 @@ import { useDoc, useSelection } from '../state/store';
 import { historyDepth, redoDepth } from '../state/history';
 import { DEFAULT_DOC } from '../model/transforms';
 import { readClipboard, writeClipboard, type ClipPayload } from '../model/clipboard';
-import { makeSvgImage, makeTextLabel } from '../test/fixtures';
+import { makePolygon, makeSvgImage, makeTextLabel } from '../test/fixtures';
 import type { RouteBullet } from '../model/types';
 
 beforeEach(() => {
@@ -17,6 +17,90 @@ beforeEach(() => {
     ...useSelection.getState(),
     spaceHeld: false,
     uiMode: { kind: 'idle' },
+  });
+});
+
+describe('App keyboard shortcuts: Escape', () => {
+  it('deselects a selected polygon, so its popover closes like the other item popovers', () => {
+    render(<App />);
+    useDoc.setState({
+      ...useDoc.getState(),
+      polygons: { p1: makePolygon({ id: 'p1' }) },
+      polygonOrder: ['p1'],
+    });
+    useSelection.getState().selectPolygon('p1');
+    fireEvent.keyDown(document.body, { key: 'Escape' });
+    expect(useSelection.getState().selectedPolygonIds).toEqual([]);
+  });
+
+  it('outside a field, deselects the selected label (popover closes)', () => {
+    render(<App />);
+    useDoc.setState({ ...useDoc.getState(), textLabels: { g1: makeTextLabel({ id: 'g1' }) } });
+    useSelection.getState().selectLabel('g1');
+    fireEvent.keyDown(document.body, { key: 'Escape' });
+    expect(useSelection.getState().selectedLabelIds).toEqual([]);
+  });
+
+  // Esc while typing belongs to the field (revert / unfocus per native
+  // behavior) — it must not close popovers or cancel modes out from under an
+  // in-progress edit. This guard used to live only inside TextLabelPopover,
+  // where the global handler silently defeated it. (Selection and mode are
+  // asserted separately: selecting an item exits any mode by design.)
+  it('while typing in a text field, blurs the field but keeps the selection (two-step escape)', () => {
+    render(<App />);
+    useDoc.setState({ ...useDoc.getState(), textLabels: { g1: makeTextLabel({ id: 'g1' }) } });
+    useSelection.getState().selectLabel('g1');
+    const input = document.createElement('input');
+    input.type = 'text';
+    document.body.appendChild(input);
+    input.focus();
+    try {
+      fireEvent.keyDown(input, { key: 'Escape' });
+      expect(useSelection.getState().selectedLabelIds).toEqual(['g1']);
+      // Plain inputs have no native Esc behavior, so a swallowed Esc would be
+      // a dead key. Instead the first Esc leaves the field; a second Esc then
+      // closes/cancels as usual.
+      expect(document.activeElement).not.toBe(input);
+      fireEvent.keyDown(document.body, { key: 'Escape' });
+      expect(useSelection.getState().selectedLabelIds).toEqual([]);
+    } finally {
+      document.body.removeChild(input);
+      useSelection.getState().selectLabel(null);
+    }
+  });
+
+  it('while typing in a text field, an active mode stays put', () => {
+    render(<App />);
+    useSelection.getState().setUiMode({ kind: 'placing-station' });
+    const input = document.createElement('input');
+    input.type = 'text';
+    document.body.appendChild(input);
+    input.focus();
+    try {
+      fireEvent.keyDown(input, { key: 'Escape' });
+      expect(useSelection.getState().uiMode.kind).toBe('placing-station');
+    } finally {
+      document.body.removeChild(input);
+      useSelection.getState().setUiMode({ kind: 'idle' });
+    }
+  });
+
+  // The guard deliberately excludes range/color inputs (like the Ctrl-combos):
+  // they have no in-progress edit to protect, so Esc mid-slider still works.
+  it('falls through on a focused range slider (Esc still deselects)', () => {
+    render(<App />);
+    useDoc.setState({ ...useDoc.getState(), textLabels: { g1: makeTextLabel({ id: 'g1' }) } });
+    useSelection.getState().selectLabel('g1');
+    const input = document.createElement('input');
+    input.type = 'range';
+    document.body.appendChild(input);
+    input.focus();
+    try {
+      fireEvent.keyDown(input, { key: 'Escape' });
+      expect(useSelection.getState().selectedLabelIds).toEqual([]);
+    } finally {
+      document.body.removeChild(input);
+    }
   });
 });
 
@@ -766,5 +850,51 @@ describe('App keyboard: dangling stop sub-selection falls back to station nudge'
     fireEvent.keyDown(window, { key: 'ArrowRight' });
     // Falls through to the whole-station nudge instead of dying silently.
     expect(useDoc.getState().stations.a.x).toBe(101);
+  });
+});
+
+describe('App keyboard: station-editor Escape step-out ladder', () => {
+  const seedStation = () => {
+    useDoc.setState({
+      ...useDoc.getState(),
+      ...DEFAULT_DOC,
+      stations: {
+        a: {
+          id: 'a',
+          name: 'A',
+          x: 100,
+          y: 100,
+          rotation: 0,
+          stops: [{ lineId: 'L1', row: 0, col: 0, orientation: 'auto-vertical' }],
+          label: { row: 0, col: -1, rotation: 0, offset: 0, align: 'auto', valign: 'middle' },
+        },
+      },
+      lines: {
+        L1: { id: 'L1', service: '1', name: '1 line', color: '#111111', stations: ['a'] },
+      },
+      lineOrder: ['L1'],
+    });
+  };
+
+  it('Esc clears the sub-selection, then exits the mode, then deselects', () => {
+    render(<App />);
+    seedStation();
+    useSelection.getState().startEditingStationLayout('a');
+    useSelection.setState({ ...useSelection.getState(), labelSelected: true });
+
+    // Rung 1: the armed label sub-selection clears; mode + station survive.
+    fireEvent.keyDown(window, { key: 'Escape' });
+    expect(useSelection.getState().labelSelected).toBe(false);
+    expect(useSelection.getState().uiMode.kind).toBe('editing-station-layout');
+    expect(useSelection.getState().selectedStationIds).toEqual(['a']);
+
+    // Rung 2: the layout-edit mode exits; the station stays selected.
+    fireEvent.keyDown(window, { key: 'Escape' });
+    expect(useSelection.getState().uiMode.kind).toBe('idle');
+    expect(useSelection.getState().selectedStationIds).toEqual(['a']);
+
+    // Rung 3: the global wipe deselects (closing the popover).
+    fireEvent.keyDown(window, { key: 'Escape' });
+    expect(useSelection.getState().selectedStationIds).toEqual([]);
   });
 });

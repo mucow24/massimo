@@ -1,4 +1,4 @@
-import { describe, it, expect, beforeEach, vi } from 'vitest';
+import { describe, it, expect, afterEach, beforeEach, vi } from 'vitest';
 import { render, fireEvent } from '@testing-library/react';
 import { RouteBulletView } from './RouteBulletView';
 import { useDoc } from '../state/store';
@@ -89,5 +89,46 @@ describe('<RouteBulletView /> hit proxy (selected-on-top drag target)', () => {
 
   it('renders no proxy when locked (a locked bullet is not draggable)', () => {
     expect(hit(renderHit(makeBullet({ id: 'b1', locked: true })))).toBeNull();
+  });
+});
+
+describe('<RouteBulletView /> — selection ring', () => {
+  afterEach(() => useViewportStore.setState({ zoom: 1 }));
+
+  const renderSelected = () =>
+    render(
+      <svg>
+        <RouteBulletView
+          bullet={makeBullet({ id: 'b1' })}
+          lines={{}}
+          selected
+          onPointerDown={noop}
+          onClick={noop}
+          onContextMenu={noop}
+        />
+      </svg>,
+    ).container;
+  const ring = (c: HTMLElement) => c.querySelector('circle[stroke-dasharray]')!;
+
+  it('renders the documented weight at zoom 1', () => {
+    const r = ring(renderSelected());
+    expect(Number(r.getAttribute('stroke-width'))).toBe(2);
+    expect(r.getAttribute('stroke-dasharray')).toBe('4 3');
+    expect(Number(r.getAttribute('r'))).toBe(14 + 3);
+    // Editor chrome, not content: bullets render in a non-excluded pass, so
+    // the ring itself must opt out of SVG/PNG exports (it's also camera-
+    // dependent now, which would bake an arbitrary size into the file).
+    expect(r.getAttribute('data-export-exclude')).toBe('1');
+  });
+
+  // Constant SCREEN weight: stroke, dash, and pad divide by the committed
+  // zoom (1/zoom idiom) — a world-unit ring turns into a sub-pixel ghost at
+  // fit-map zooms and a fat slab zoomed in.
+  it('divides stroke, dash, and pad by zoom', () => {
+    useViewportStore.setState({ zoom: 2 });
+    const r = ring(renderSelected());
+    expect(Number(r.getAttribute('stroke-width'))).toBe(1);
+    expect(r.getAttribute('stroke-dasharray')).toBe('2 1.5');
+    expect(Number(r.getAttribute('r'))).toBe(14 + 1.5);
   });
 });

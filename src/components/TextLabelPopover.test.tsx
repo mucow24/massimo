@@ -106,7 +106,65 @@ describe('<TextLabelPopover /> — world position freezes, viewport tracks live'
         onClose={() => {}}
       />,
     );
-    expect(positionOf(popover)).toEqual({ left: 714, top: 514 }); // tracks the new label
+    // Tracks the new label, but clamped into the 800×600 host so the panel
+    // doesn't spawn cropped by the canvas edge: 700+14 → 544 (800−248−8),
+    // 500+14 → 344 (600−248−8).
+    expect(positionOf(popover)).toEqual({ left: 544, top: 344 });
+  });
+
+  // A label selected near the host's bottom-right corner would put the popover
+  // (240px wide, overflow:hidden host) entirely off-screen. Initial placement
+  // clamps into view; the clamp is baked into the frozen world point, so
+  // pan/zoom tracking and drags behave exactly as from any other spawn point.
+  it('clamps the spawn position into the host near the canvas edge', () => {
+    const label = makeTextLabel({ id: 'g1', text: 'X' });
+    const { container } = render(
+      <TextLabelPopover
+        label={label}
+        world={{ x: 790, y: 590 }}
+        view={identityView}
+        onClose={() => {}}
+      />,
+    );
+    const popover = container.querySelector('.text-label-popover') as HTMLElement;
+    expect(positionOf(popover)).toEqual({ left: 544, top: 344 });
+  });
+
+  // Regression guard: at zero host size (first paint before measurement) the
+  // clamp is skipped, and the freeze must not run the screen→world conversion
+  // on a 0-sized viewport — 0/0 is NaN, which would poison the frozen anchor
+  // permanently (it only recomputes on id change).
+  it('spawns at the plain offset when the host has no size yet (no NaN freeze)', () => {
+    const label = makeTextLabel({ id: 'g1', text: 'X' });
+    const { container } = render(
+      <TextLabelPopover
+        label={label}
+        world={{ x: 0, y: 0 }}
+        view={{ vbX: 0, vbY: 0, vbW: 800, vbH: 600, size: { w: 0, h: 0 } }}
+        onClose={() => {}}
+      />,
+    );
+    const popover = container.querySelector('.text-label-popover') as HTMLElement;
+    expect(positionOf(popover)).toEqual({ left: 14, top: 14 });
+  });
+
+  it('a header drag can still push the popover past the host edge (clamp is spawn-only)', () => {
+    const label = makeTextLabel({ id: 'g1', text: 'X' });
+    const { container } = render(
+      <TextLabelPopover
+        label={label}
+        world={{ x: 500, y: 300 }}
+        view={identityView}
+        onClose={() => {}}
+      />,
+    );
+    const popover = container.querySelector('.text-label-popover') as HTMLElement;
+    const header = container.querySelector('.text-label-popover .header') as HTMLElement;
+    expect(positionOf(popover)).toEqual({ left: 514, top: 314 });
+    fireEvent.pointerDown(header, { clientX: 0, clientY: 0, button: 0 });
+    fireEvent.pointerMove(header, { clientX: 200, clientY: 100 });
+    fireEvent.pointerUp(header, { clientX: 200, clientY: 100 });
+    expect(positionOf(popover)).toEqual({ left: 714, top: 414 }); // past the x-limit of 544
   });
 
   // Regression: the header-drag offset used to be stored in screen pixels and
@@ -331,35 +389,6 @@ describe('<TextLabelPopover /> — column width + justify', () => {
   });
 });
 
-// Header drag (incl. across zoom) is covered by the world-position describe above.
-describe('<TextLabelPopover /> — escape handling', () => {
-  const identityView = { vbX: 0, vbY: 0, vbW: 800, vbH: 600, size: { w: 800, h: 600 } };
-
-  function seedAndRender(onClose = () => {}) {
-    const label = makeTextLabel({ id: 'g1', text: 'Hi' });
-    useDoc.setState({ ...useDoc.getState(), textLabels: { g1: label } });
-    const { container } = render(
-      <TextLabelPopover
-        label={useDoc.getState().textLabels['g1']}
-        world={{ x: 0, y: 0 }}
-        view={identityView}
-        onClose={onClose}
-      />,
-    );
-    return { container };
-  }
-
-  it('closes on Escape pressed outside a form field', () => {
-    const onClose = vi.fn();
-    seedAndRender(onClose);
-    fireEvent.keyDown(document.body, { key: 'Escape' });
-    expect(onClose).toHaveBeenCalledTimes(1);
-  });
-
-  it('does NOT close on Escape while focused in a field', () => {
-    const onClose = vi.fn();
-    seedAndRender(onClose);
-    fireEvent.keyDown(screen.getByRole('textbox'), { key: 'Escape' });
-    expect(onClose).not.toHaveBeenCalled();
-  });
-});
+// Header drag (incl. across zoom) is covered by the world-position describe
+// above. Escape handling (close on Esc, but not while typing in a field)
+// lives in App's global keydown handler — covered in App.keyboard.test.tsx.
