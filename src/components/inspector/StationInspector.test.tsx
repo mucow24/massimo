@@ -688,6 +688,17 @@ describe('<StationInspector /> — edit paths that reach the document (E8)', () 
     expect(useDoc.getState().stations.a.x).toBe(55);
   });
 
+  it('ignores an emptied X/Y input mid-edit instead of teleporting the station to 0', () => {
+    seedStation();
+    render(<StationInspector id="a" />);
+    // Number('') === 0, so an unguarded handler would move the station to the
+    // axis the moment the user clears the field to type a new value.
+    fireEvent.change(screen.getByRole('spinbutton', { name: 'X' }), { target: { value: '' } });
+    expect(useDoc.getState().stations.a.x).toBe(10);
+    fireEvent.change(screen.getByRole('spinbutton', { name: 'Y' }), { target: { value: '' } });
+    expect(useDoc.getState().stations.a.y).toBe(20);
+  });
+
   it('shows the rotation in degrees, tracking rotate clicks', async () => {
     const user = userEvent.setup();
     seedStation();

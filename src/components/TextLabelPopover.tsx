@@ -10,6 +10,7 @@ import {
 } from '@radix-ui/react-icons';
 import { useDoc } from '../state/store';
 import { type ViewportProjection } from './canvas/screenAnchor';
+import { DraggablePopoverShell } from './DraggablePopoverShell';
 import { useDraggablePopover } from './canvas/useDraggablePopover';
 import {
   FONT_SIZE_STEP,
@@ -97,195 +98,176 @@ export function TextLabelPopover({ label, world, view, onClose }: Props) {
   // unmounts the popover — guarded so Esc inside a field stays with the
   // field). Outside click likewise closes through canvas deselection.
   return (
-    <div
+    <DraggablePopoverShell
       className="text-label-popover"
-      style={{
-        position: 'absolute',
-        left: anchor.x,
-        top: anchor.y,
-        zIndex: 1100,
-      }}
-      // Stop pointer events from reaching the canvas so clicks inside the
-      // popover don't deselect the label.
-      onPointerDown={(e) => e.stopPropagation()}
-      onClick={(e) => e.stopPropagation()}
-      onContextMenu={(e) => {
-        e.preventDefault();
-        e.stopPropagation();
-      }}
+      left={anchor.x}
+      top={anchor.y}
+      headerHandlers={headerHandlers}
     >
-      <div className="header" {...headerHandlers} />
-      <div className="body">
-        <div className="row-block">
-          <label htmlFor={`label-text-${label.id}`}>
-            <span style={{ fontWeight: 700 }}>Text</span>
-          </label>
-          <textarea
-            id={`label-text-${label.id}`}
-            value={label.text}
-            disabled={locked}
-            onChange={(e) => setText(e.target.value)}
-            rows={Math.max(2, label.text.split('\n').length)}
-            wrap="off"
-            {...textField}
-          />
-        </div>
-
-        {/* Wheel is handled once at the row level so scrolling over the slider
-            (which ignores wheel natively) or the spinbutton both nudge the size
-            by one step — putting onWheel on the spinbutton too would double-count. */}
-        <div className="row" onWheel={size.onNumberWheel}>
-          <label>Size</label>
-          <input
-            type="range"
-            aria-label="Size"
-            min={TEXT_LABEL_FONT_SIZE_MIN}
-            max={TEXT_LABEL_FONT_SIZE_MAX}
-            step={FONT_SIZE_STEP}
-            value={label.fontSize}
-            disabled={locked}
-            onChange={onSizeRange}
-            onMouseDown={size.history.onFocus}
-            onMouseUp={size.history.onBlur}
-          />
-          <input
-            type="number"
-            className="size-spin"
-            aria-label="Size"
-            // No `max` — the spinbutton (typing and step buttons) accepts sizes
-            // beyond the slider's range; the transform clamps at MIN only.
-            min={TEXT_LABEL_FONT_SIZE_MIN}
-            step={FONT_SIZE_STEP}
-            value={size.text}
-            disabled={locked}
-            onChange={size.onNumberChange}
-            onFocus={size.onNumberFocus}
-            onBlur={size.onNumberBlur}
-          />
-        </div>
-
-        {/* Column width. 0 = Auto (size to content, honor manual '\n' breaks);
-            >0 wraps text to a fixed-width column. The spinbutton accepts widths
-            beyond the slider's range; the transform clamps only at 0. */}
-        <div className="row" onWheel={width.onNumberWheel}>
-          <label>Width</label>
-          <input
-            type="range"
-            aria-label="Width"
-            min={0}
-            max={TEXT_LABEL_WIDTH_MAX}
-            step={1}
-            value={label.width ?? 0}
-            disabled={locked}
-            onChange={onWidthRange}
-            onMouseDown={width.history.onFocus}
-            onMouseUp={width.history.onBlur}
-          />
-          <input
-            type="number"
-            className="size-spin"
-            aria-label="Width"
-            min={0}
-            step={1}
-            value={width.text}
-            disabled={locked}
-            onChange={width.onNumberChange}
-            onFocus={width.onNumberFocus}
-            onBlur={width.onNumberBlur}
-          />
-        </div>
-
-        <div className="row">
-          <label>Align</label>
-          <div className="shape-group">
-            {ALIGNS.map((a) => (
-              <button
-                key={a.value}
-                type="button"
-                className={'align-btn' + (label.align === a.value ? ' active' : '')}
-                disabled={locked}
-                onClick={() => setAlign(a.value)}
-                title={a.title}
-                aria-label={a.title}
-                aria-pressed={label.align === a.value}
-              >
-                {a.icon}
-              </button>
-            ))}
-            <button
-              type="button"
-              className={'italic-btn' + (label.italic ? ' active' : '')}
-              disabled={locked}
-              onClick={() => setItalic(!label.italic)}
-              title="Italic"
-              aria-label="Italic"
-              aria-pressed={label.italic}
-            >
-              <FontItalicIcon />
-            </button>
-          </div>
-        </div>
-
-        <div className="row">
-          <label>Weight</label>
-          <select
-            className="weight-select"
-            value={label.weight}
-            disabled={locked}
-            onChange={(e) => {
-              const n = Number(e.target.value);
-              if (isLabelWeight(n)) setWeight(n);
-            }}
-          >
-            {LABEL_WEIGHT_NAMES.map((w) => (
-              <option
-                key={w.value}
-                value={w.value}
-                style={{
-                  fontFamily: "'Helvetica Neue', Helvetica, Arial, sans-serif",
-                  fontWeight: w.value,
-                  fontStyle: label.italic ? 'italic' : 'normal',
-                }}
-              >
-                {w.name}
-              </option>
-            ))}
-          </select>
-        </div>
-
-        <div className="row">
-          <label htmlFor={`label-color-${label.id}`}>Color</label>
-          <SunIcon aria-hidden="true" />
-          <input
-            id={`label-color-${label.id}`}
-            type="color"
-            aria-label="Label color"
-            title="Light mode color"
-            value={label.color}
-            disabled={locked}
-            onChange={(e) => setColor(e.target.value)}
-            {...colorField}
-          />
-          <MoonIcon aria-hidden="true" />
-          <input
-            id={`label-dark-color-${label.id}`}
-            type="color"
-            aria-label="Dark mode label color"
-            title="Dark mode color"
-            value={label.darkColor}
-            disabled={locked}
-            onChange={(e) => setDarkColor(e.target.value)}
-            {...darkColorField}
-          />
-        </div>
-
-        <PopoverFooter
-          noun="label"
-          locked={locked}
-          onToggleLock={onToggleLock}
-          onDelete={onDelete}
+      <div className="row-block">
+        <label htmlFor={`label-text-${label.id}`}>
+          <span style={{ fontWeight: 700 }}>Text</span>
+        </label>
+        <textarea
+          id={`label-text-${label.id}`}
+          value={label.text}
+          disabled={locked}
+          onChange={(e) => setText(e.target.value)}
+          rows={Math.max(2, label.text.split('\n').length)}
+          wrap="off"
+          {...textField}
         />
       </div>
-    </div>
+
+      {/* Wheel is handled once at the row level so scrolling over the slider
+            (which ignores wheel natively) or the spinbutton both nudge the size
+            by one step — putting onWheel on the spinbutton too would double-count. */}
+      <div className="row" onWheel={size.onNumberWheel}>
+        <label>Size</label>
+        <input
+          type="range"
+          aria-label="Size"
+          min={TEXT_LABEL_FONT_SIZE_MIN}
+          max={TEXT_LABEL_FONT_SIZE_MAX}
+          step={FONT_SIZE_STEP}
+          value={label.fontSize}
+          disabled={locked}
+          onChange={onSizeRange}
+          onMouseDown={size.history.onFocus}
+          onMouseUp={size.history.onBlur}
+        />
+        <input
+          type="number"
+          className="size-spin"
+          aria-label="Size"
+          // No `max` — the spinbutton (typing and step buttons) accepts sizes
+          // beyond the slider's range; the transform clamps at MIN only.
+          min={TEXT_LABEL_FONT_SIZE_MIN}
+          step={FONT_SIZE_STEP}
+          value={size.text}
+          disabled={locked}
+          onChange={size.onNumberChange}
+          onFocus={size.onNumberFocus}
+          onBlur={size.onNumberBlur}
+        />
+      </div>
+
+      {/* Column width. 0 = Auto (size to content, honor manual '\n' breaks);
+            >0 wraps text to a fixed-width column. The spinbutton accepts widths
+            beyond the slider's range; the transform clamps only at 0. */}
+      <div className="row" onWheel={width.onNumberWheel}>
+        <label>Width</label>
+        <input
+          type="range"
+          aria-label="Width"
+          min={0}
+          max={TEXT_LABEL_WIDTH_MAX}
+          step={1}
+          value={label.width ?? 0}
+          disabled={locked}
+          onChange={onWidthRange}
+          onMouseDown={width.history.onFocus}
+          onMouseUp={width.history.onBlur}
+        />
+        <input
+          type="number"
+          className="size-spin"
+          aria-label="Width"
+          min={0}
+          step={1}
+          value={width.text}
+          disabled={locked}
+          onChange={width.onNumberChange}
+          onFocus={width.onNumberFocus}
+          onBlur={width.onNumberBlur}
+        />
+      </div>
+
+      <div className="row">
+        <label>Align</label>
+        <div className="shape-group">
+          {ALIGNS.map((a) => (
+            <button
+              key={a.value}
+              type="button"
+              className={'align-btn' + (label.align === a.value ? ' active' : '')}
+              disabled={locked}
+              onClick={() => setAlign(a.value)}
+              title={a.title}
+              aria-label={a.title}
+              aria-pressed={label.align === a.value}
+            >
+              {a.icon}
+            </button>
+          ))}
+          <button
+            type="button"
+            className={'italic-btn' + (label.italic ? ' active' : '')}
+            disabled={locked}
+            onClick={() => setItalic(!label.italic)}
+            title="Italic"
+            aria-label="Italic"
+            aria-pressed={label.italic}
+          >
+            <FontItalicIcon />
+          </button>
+        </div>
+      </div>
+
+      <div className="row">
+        <label>Weight</label>
+        <select
+          className="weight-select"
+          value={label.weight}
+          disabled={locked}
+          onChange={(e) => {
+            const n = Number(e.target.value);
+            if (isLabelWeight(n)) setWeight(n);
+          }}
+        >
+          {LABEL_WEIGHT_NAMES.map((w) => (
+            <option
+              key={w.value}
+              value={w.value}
+              style={{
+                fontFamily: "'Helvetica Neue', Helvetica, Arial, sans-serif",
+                fontWeight: w.value,
+                fontStyle: label.italic ? 'italic' : 'normal',
+              }}
+            >
+              {w.name}
+            </option>
+          ))}
+        </select>
+      </div>
+
+      <div className="row">
+        <label htmlFor={`label-color-${label.id}`}>Color</label>
+        <SunIcon aria-hidden="true" />
+        <input
+          id={`label-color-${label.id}`}
+          type="color"
+          aria-label="Label color"
+          title="Light mode color"
+          value={label.color}
+          disabled={locked}
+          onChange={(e) => setColor(e.target.value)}
+          {...colorField}
+        />
+        <MoonIcon aria-hidden="true" />
+        <input
+          id={`label-dark-color-${label.id}`}
+          type="color"
+          aria-label="Dark mode label color"
+          title="Dark mode color"
+          value={label.darkColor}
+          disabled={locked}
+          onChange={(e) => setDarkColor(e.target.value)}
+          {...darkColorField}
+        />
+      </div>
+
+      <PopoverFooter noun="label" locked={locked} onToggleLock={onToggleLock} onDelete={onDelete} />
+    </DraggablePopoverShell>
   );
 }

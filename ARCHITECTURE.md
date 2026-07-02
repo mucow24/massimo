@@ -479,7 +479,9 @@ change, so `Object.assign` on undo preserves them.
 ### Undo/redo ([history.ts](src/state/history.ts))
 
 The **only** module that touches zundo's internals (`pastStates`/`futureStates`). Exposes
-`pushHistory`, `pauseHistory`, `resumeHistory`, `undo`, `redo`, `historyDepth`, `redoDepth`.
+`pushHistory`, `pauseHistory`, `resumeHistory`, `undo`, `redo`, `historyDepth`, `redoDepth`, and
+`clearHistory` (both stacks wiped — the file-load path, where undoing across a load would splice
+two documents together).
 **`undo`/`redo` also call `useSelection.getState().reconcileWithDoc(...)`** — the selection store
 is separate and untouched by zundo, so after an undo restores the doc, dangling selection ids
 must be pruned.
@@ -491,7 +493,10 @@ must be pruned.
 3. `commit()`: `resumeHistory()`, re-snapshot, and **only if changed** push the one captured
    pre-action snapshot — one entry for the whole gesture. A no-op group (focus→blur, click
    without drag) pushes nothing.
-4. `cancel()`: resume without pushing. Both are idempotent (`done` flag).
+4. `cancel()`: resume without pushing.
+5. `rollback()`: RESTORE the captured pre-group snapshot, then resume without pushing — aborts a
+   mid-flight gesture that already wrote to the doc (the drag hooks' `pointercancel` path), where
+   `cancel()` would strand the half-applied writes. All three are idempotent (`done` flag).
 
 Groups **don't nest**: a caller that may fire from inside an already-open group (e.g. the mirror
 broadcast dispatched from a focused numeric field's edit arc) gates on `isHistoryGrouping()`
@@ -753,7 +758,7 @@ routes to the station, not the transfer.
 ## Canvas interaction layer
 
 Files in [src/components/canvas/](src/components/canvas/). `MapCanvas` composes ~10 hooks onto
-**three** SVG pointer handlers.
+**four** SVG pointer handlers.
 
 ### The viewport perf spine
 
@@ -791,6 +796,10 @@ on-screen spacing stays ≥ 5px — snapping still reads the true `gridSize` fro
   are re-routed to the element beneath via `rerouteProxyEventBeneath`, so hit-testing for *selection*
   stays on normal paint order while *dragging* gets selected-item priority.
 - `onPointerMove`/`onPointerUp`: fan out to every hook; each early-returns if its drag ref is null.
+- `onPointerCancel` (browser-initiated: pen palm rejection, window switch, capture loss — a voided
+  gesture with no matching pointerup): fans out to every drag hook's cancel path; each disarms its
+  ref and `rollback()`s its history group so live writes revert instead of stranding. Pan and
+  rect-select are intentionally omitted — neither opens a group or mutates the doc.
 - `onPointerDownCapture`: self-heals `dragState.suppressClick = false` at the start of every fresh
   gesture (recovers from a drag killed without pointerup).
 - `onClick`: only on background; bails if `dragState.suppressClick`; else placement dispatch, else
@@ -807,7 +816,10 @@ if moved (else cancels — a pure click recorded nothing). `dragState` (module s
 
 `useStationDrag` (runs the snap engine; Shift bypasses snap; Ctrl-drag = redistribute),
 `useLabelDrag` (the sole-selected station's painted name; see UI chrome), `useStationLayoutDrag`
-(the editing-station-layout mode's stop/label handles; see UI chrome),
+(the editing-station-layout mode's stop/label handles; see UI chrome — these two ghost-lattice
+hooks share their lifecycle scaffolding via
+[useGhostDragEngine.ts](src/components/canvas/useGhostDragEngine.ts): overlay ref mirror,
+live-projection ref, stationary Shift/Alt recompute, pointercancel rollback),
 `useItemDrag` (bullets + labels), `usePolygonDrag` (whole-move / vertex / edge-add), `useSvgImageDrag`
 (move / resize / rotate — resize only snaps while axis-aligned; rotation only snaps to 22.5°),
 `useLineTagDrag` (**uses window-level listeners + `getScreenCTM().inverse()`** — the only hook that
@@ -837,7 +849,10 @@ popover/handles). Cursor-following ghost previews (`*PlacingPreview`, all `opaci
 (see UI chrome) — and reprojects through `useLiveView` so it tracks the canvas during pan/zoom. `useDraggablePopover` **freezes the item's
 world position at mount** (so a size slider editing the item can't feed its own position back),
 accumulates header-drag in **world units**, and re-freezes when the selection `id` changes (one
-popover instance reused across selections).
+popover instance reused across selections). Every item popover renders inside
+`DraggablePopoverShell`, which owns the floating frame (header drag strip + body) and the
+load-bearing event swallowing — pointerdown/click/contextmenu inside a popover must never reach
+the canvas, which would deselect the item (closing the popover) or right-click-rotate under it.
 
 ### Memo contract (subtle but important)
 

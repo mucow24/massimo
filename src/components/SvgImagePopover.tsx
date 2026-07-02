@@ -1,6 +1,7 @@
 import { ArrowDownIcon, ArrowUpIcon } from '@radix-ui/react-icons';
 import { useDoc } from '../state/store';
 import { type ViewportProjection } from './canvas/screenAnchor';
+import { DraggablePopoverShell } from './DraggablePopoverShell';
 import { useDraggablePopover } from './canvas/useDraggablePopover';
 import { PopoverFooter } from './PopoverFooter';
 import type { SvgImage } from '../model/types';
@@ -38,52 +39,38 @@ export function SvgImagePopover({ image, view, onClose }: Props) {
   };
 
   return (
-    <div
+    <DraggablePopoverShell
       className="bullet-popover polygon-popover svg-image-popover"
-      style={{ position: 'absolute', left: anchor.x, top: anchor.y, zIndex: 1100 }}
-      // Keep pointer events off the canvas (which would deselect the image and
-      // close the popover, or right-click-rotate underneath it).
-      onPointerDown={(e) => e.stopPropagation()}
-      onClick={(e) => e.stopPropagation()}
-      onContextMenu={(e) => {
-        e.preventDefault();
-        e.stopPropagation();
-      }}
+      left={anchor.x}
+      top={anchor.y}
+      headerHandlers={headerHandlers}
     >
-      <div className="header" {...headerHandlers} />
-      <div className="body">
-        <div className="row">
-          <label>Layer</label>
-          <div className="shape-group">
-            <button
-              type="button"
-              className="shape-btn"
-              aria-label="Move image down"
-              title="Send backward"
-              disabled={locked}
-              onClick={() => moveSvgImageDown(image.id)}
-            >
-              <ArrowDownIcon />
-            </button>
-            <button
-              type="button"
-              className="shape-btn"
-              aria-label="Move image up"
-              title="Bring forward"
-              disabled={locked}
-              onClick={() => moveSvgImageUp(image.id)}
-            >
-              <ArrowUpIcon />
-            </button>
-          </div>
+      <div className="row">
+        <label>Layer</label>
+        <div className="shape-group">
+          <button
+            type="button"
+            className="shape-btn"
+            aria-label="Move image down"
+            title="Send backward"
+            disabled={locked}
+            onClick={() => moveSvgImageDown(image.id)}
+          >
+            <ArrowDownIcon />
+          </button>
+          <button
+            type="button"
+            className="shape-btn"
+            aria-label="Move image up"
+            title="Bring forward"
+            disabled={locked}
+            onClick={() => moveSvgImageUp(image.id)}
+          >
+            <ArrowUpIcon />
+          </button>
         </div>
-        <PopoverFooter
-          noun="image"
-          locked={locked}
-          onToggleLock={onToggleLock}
-          onDelete={onDelete}
-        />
       </div>
-    </div>
+      <PopoverFooter noun="image" locked={locked} onToggleLock={onToggleLock} onDelete={onDelete} />
+    </DraggablePopoverShell>
   );
 }
