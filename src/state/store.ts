@@ -661,7 +661,12 @@ export const useDoc = create<DocState>()(
  * If nothing actually changed (focus → blur with no edits, click without
  * drag), `commit()` is a no-op so we don't litter history with empty entries.
  * `cancel()` resumes without pushing anything; equivalent to commit() when
- * no changes occurred but explicit at the call site.
+ * no changes occurred but explicit at the call site. `rollback()` goes
+ * further: it RESTORES the captured pre-action snapshot before resuming, so a
+ * gesture that already wrote to the doc (a live drag, a fine-mode offset edit)
+ * is fully reverted, leaving neither a history entry nor a lingering mutation.
+ * Use it to abort a mid-flight gesture (e.g. a browser pointercancel) — plain
+ * cancel() would resume recording but strand the half-applied writes.
  *
  * Groups do NOT nest: callers that may run inside an already-open group (e.g.
  * a mirror broadcast fired from a focused numeric field's edit arc) must gate
@@ -669,7 +674,11 @@ export const useDoc = create<DocState>()(
  * already collapses their writes into its single entry. Opening a second group
  * here would resume recording mid-gesture and push a stray snapshot.
  */
-export function beginHistoryGroup(): { commit: () => void; cancel: () => void } {
+export function beginHistoryGroup(): {
+  commit: () => void;
+  cancel: () => void;
+  rollback: () => void;
+} {
   const snapshot = pickDocSnapshot(useDoc.getState());
   pauseHistory();
   let done = false;
@@ -688,6 +697,17 @@ export function beginHistoryGroup(): { commit: () => void; cancel: () => void } 
     cancel: () => {
       if (done) return;
       done = true;
+      resumeHistory();
+    },
+    rollback: () => {
+      if (done) return;
+      done = true;
+      // Restore the pre-group doc, then resume WITHOUT pushing. Still paused
+      // here, so the restore itself records nothing (mirrors how zundo's own
+      // undo reapplies a partialized snapshot). Skip the write when nothing
+      // changed — a gesture that only drew overlays leaves the doc untouched.
+      const cur = pickDocSnapshot(useDoc.getState());
+      if (!docSnapshotsEqual(cur, snapshot)) useDoc.setState(snapshot);
       resumeHistory();
     },
   };

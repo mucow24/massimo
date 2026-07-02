@@ -53,6 +53,7 @@ export interface PolygonDragApi {
   onEdgeAddPointerDown: (polygonId: string, edgeIndex: number, e: React.PointerEvent) => void;
   onPointerMove: (e: React.PointerEvent) => void;
   onPointerUp: (e: React.PointerEvent) => void;
+  onPointerCancel: () => void;
 }
 
 // All polygon vertices except the single dragged vertex (vertex-drag) — so the
@@ -267,6 +268,22 @@ export function usePolygonDrag(
     }
   };
 
+  // Browser pointercancel: disarm whichever drag is armed (whole-shape or
+  // single-vertex) and roll the doc back to its pre-drag snapshot instead of
+  // committing. The snapshot restore also un-inserts an edge-add vertex, so its
+  // dangling sub-selection is cleared here. See useStationDrag for rationale.
+  const onPointerCancel = () => {
+    const wd = wholeDragRef.current;
+    const vd = vertexDragRef.current;
+    if (!wd && !vd) return;
+    wholeDragRef.current = null;
+    vertexDragRef.current = null;
+    setPolygonSnapGuides([]);
+    if (vd?.forceCommit) useSelection.getState().selectVertex(null);
+    wd?.history.rollback();
+    vd?.history.rollback();
+  };
+
   return {
     polygonSnapGuides,
     onPolygonPointerDown,
@@ -274,5 +291,6 @@ export function usePolygonDrag(
     onEdgeAddPointerDown,
     onPointerMove,
     onPointerUp,
+    onPointerCancel,
   };
 }
