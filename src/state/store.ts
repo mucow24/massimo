@@ -754,6 +754,20 @@ export function cancelAppendMode(): void {
   sel.setAppending(null);
 }
 
+/**
+ * A canvas click on some OTHER item while the line editor (appending-to-line
+ * mode) is open counts as "click off the line to exit": it dismisses the editor
+ * and reports that it consumed the click, so the caller skips selecting the item
+ * under the cursor. Returns false (caller proceeds as normal) when not in append
+ * mode. Stations are exempt and never call this — clicking a station in append
+ * mode toggles its line membership, which is the editor's core gesture.
+ */
+export function exitAppendOnItemClick(): boolean {
+  if (useSelection.getState().uiMode.kind !== 'appending-to-line') return false;
+  cancelAppendMode();
+  return true;
+}
+
 // ----- Drag-vs-click suppression (module-level, not persisted) -----
 export const dragState = { suppressClick: false };
 

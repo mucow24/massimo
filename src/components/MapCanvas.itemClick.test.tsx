@@ -4,7 +4,7 @@ import App from '../App';
 import { dragState, useDoc } from '../state/store';
 import { useSelection } from '../state/selection';
 import { DEFAULT_DOC } from '../model/transforms';
-import { makePolygon, makeTextLabel } from '../test/fixtures';
+import { makeLine, makePolygon, makeStation, makeTextLabel } from '../test/fixtures';
 
 // Modifier gating for the free-item click handlers (labels, bullets,
 // polygons, svg images). The contract, shared with stations: Shift-click
@@ -76,5 +76,49 @@ describe('MapCanvas — item click modifier gating', () => {
 
     clickEl('[data-polygon-id="p2"]', { shiftKey: true, metaKey: true });
     expect(useSelection.getState().selectedPolygonIds).toEqual(['p2']);
+  });
+});
+
+// While the line editor is open (appending-to-line mode), clicking off the
+// line to exit must ONLY dismiss the editor — the item under the cursor must
+// NOT get selected. Stations are exempt (a click there toggles line
+// membership, the editor's own gesture) and are covered elsewhere.
+describe('MapCanvas — clicking off-line to exit the line editor', () => {
+  const enterAppendMode = () => {
+    act(() => {
+      useDoc.setState({
+        ...useDoc.getState(),
+        stations: { s1: makeStation({ id: 's1' }) },
+        lines: { L1: makeLine({ id: 'L1', stations: ['s1'] }) },
+        lineOrder: ['L1'],
+      });
+      useSelection.getState().setUiMode({
+        kind: 'appending-to-line',
+        lineId: 'L1',
+        insertAfterIndex: null,
+      });
+    });
+  };
+
+  it('clicking a label exits append mode without selecting the label', () => {
+    render(<App />);
+    seed();
+    enterAppendMode();
+
+    clickEl('[data-text-label-id="g1"]', {});
+
+    expect(useSelection.getState().uiMode.kind).toBe('idle');
+    expect(useSelection.getState().selectedLabelIds).toEqual([]);
+  });
+
+  it('clicking a polygon exits append mode without selecting the polygon', () => {
+    render(<App />);
+    seed();
+    enterAppendMode();
+
+    clickEl('[data-polygon-id="p1"]', {});
+
+    expect(useSelection.getState().uiMode.kind).toBe('idle');
+    expect(useSelection.getState().selectedPolygonIds).toEqual([]);
   });
 });
