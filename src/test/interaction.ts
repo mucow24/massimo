@@ -38,16 +38,22 @@ export function pointerEvent(opts: PointerOpts = {}): React.PointerEvent {
   } as unknown as React.PointerEvent;
 }
 
-/** A `React.WheelEvent`-shaped stub for the viewport wheel-zoom handler. */
+/** A `React.WheelEvent`-shaped stub for the viewport wheel pan/zoom handler. */
 export function wheelEvent(opts: {
   clientX?: number;
   clientY?: number;
+  deltaX?: number;
   deltaY?: number;
+  ctrlKey?: boolean;
+  metaKey?: boolean;
 }): React.WheelEvent {
   return {
     clientX: opts.clientX ?? 0,
     clientY: opts.clientY ?? 0,
+    deltaX: opts.deltaX ?? 0,
     deltaY: opts.deltaY ?? 0,
+    ctrlKey: opts.ctrlKey ?? false,
+    metaKey: opts.metaKey ?? false,
     stopPropagation: () => {},
     preventDefault: () => {},
   } as unknown as React.WheelEvent;

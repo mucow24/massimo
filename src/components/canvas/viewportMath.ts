@@ -25,10 +25,14 @@ export interface HostRect {
   height: number;
 }
 
-// Zoom + wheel constants, kept identical to the previous inline useViewport math.
 const ZOOM_MIN = 0.1;
 const ZOOM_MAX = 64;
-const WHEEL_ZOOM_RATE = 0.0015;
+// Chromium synthesizes a trackpad pinch as ctrl+wheel with deltaY derived from
+// the pinch scale at ~1%/px, so 0.01 reproduces the gesture 1:1. A discrete
+// mouse-wheel notch is deltaY ±100 — e^1 ≈ 2.7× per notch at that rate — so
+// each event's delta is clamped to ±20 (≈22% per notch).
+const WHEEL_ZOOM_RATE = 0.01;
+const WHEEL_ZOOM_DELTA_CLAMP = 20;
 
 /** viewBox for a viewport: world coords, centered on (x, y), scaled by 1/zoom. */
 export function viewBoxFor(v: Viewport, size: Size): ViewBox {
@@ -83,10 +87,11 @@ export function screenToWorld(
 }
 
 /**
- * New viewport for one wheel tick: scales zoom by exp(-deltaY*rate), clamped,
- * and re-centers so the world point under the cursor stays fixed. Takes a single
- * host rect (the caller reads getBoundingClientRect once) — both the pre-zoom
- * anchor and the cursor fraction come from it.
+ * New viewport for one zoom wheel tick (ctrl+wheel / trackpad pinch): scales
+ * zoom by exp(-deltaY*rate), delta- and zoom-clamped, and re-centers so the
+ * world point under the cursor stays fixed. Takes a single host rect (the
+ * caller reads getBoundingClientRect once) — both the pre-zoom anchor and the
+ * cursor fraction come from it.
  */
 export function computeWheelZoom(
   v: Viewport,
@@ -97,7 +102,8 @@ export function computeWheelZoom(
   deltaY: number,
 ): Viewport {
   const before = screenToWorld({ x: clientX, y: clientY }, viewBoxFor(v, size), rect);
-  const factor = Math.exp(-deltaY * WHEEL_ZOOM_RATE);
+  const clamped = Math.max(-WHEEL_ZOOM_DELTA_CLAMP, Math.min(WHEEL_ZOOM_DELTA_CLAMP, deltaY));
+  const factor = Math.exp(-clamped * WHEEL_ZOOM_RATE);
   const zoom = Math.max(ZOOM_MIN, Math.min(ZOOM_MAX, v.zoom * factor));
   const relX = (clientX - rect.left) / rect.width;
   const relY = (clientY - rect.top) / rect.height;
@@ -106,6 +112,15 @@ export function computeWheelZoom(
   const newVbX = before.x - relX * newVbW;
   const newVbY = before.y - relY * newVbH;
   return { x: newVbX + newVbW / 2, y: newVbY + newVbH / 2, zoom };
+}
+
+/**
+ * New viewport for one pan wheel tick (trackpad two-finger scroll, or a plain
+ * mouse wheel): the center rides the scroll delta, screen px → world via /zoom.
+ * Positive deltaY reveals content below, matching page-scroll direction.
+ */
+export function panFromWheel(v: Viewport, deltaX: number, deltaY: number): Viewport {
+  return { x: v.x + deltaX / v.zoom, y: v.y + deltaY / v.zoom, zoom: v.zoom };
 }
 
 export interface PanStart {

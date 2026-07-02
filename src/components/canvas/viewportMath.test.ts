@@ -4,6 +4,7 @@ import {
   liveProjection,
   overdrawnViewBox,
   panFromDelta,
+  panFromWheel,
   screenToWorld,
   viewBoxFor,
 } from './viewportMath';
@@ -91,9 +92,16 @@ describe('screenToWorld', () => {
 });
 
 describe('computeWheelZoom', () => {
-  it('zooms in on a negative deltaY by exp(-deltaY*0.0015)', () => {
-    const next = computeWheelZoom({ x: 0, y: 0, zoom: 1 }, SIZE, RECT, 400, 300, -100);
-    expect(next.zoom).toBeCloseTo(Math.exp(0.15), 5);
+  it('zooms in on a negative deltaY by exp(-deltaY*0.01) — 1:1 with a trackpad pinch', () => {
+    const next = computeWheelZoom({ x: 0, y: 0, zoom: 1 }, SIZE, RECT, 400, 300, -10);
+    expect(next.zoom).toBeCloseTo(Math.exp(0.1), 5);
+  });
+
+  it('clamps one event to ±20 so a discrete mouse-wheel notch (±100) steps ~22%', () => {
+    const notchIn = computeWheelZoom({ x: 0, y: 0, zoom: 1 }, SIZE, RECT, 400, 300, -100);
+    expect(notchIn.zoom).toBeCloseTo(Math.exp(0.2), 5);
+    const notchOut = computeWheelZoom({ x: 0, y: 0, zoom: 1 }, SIZE, RECT, 400, 300, 100);
+    expect(notchOut.zoom).toBeCloseTo(Math.exp(-0.2), 5);
   });
 
   it('keeps the world point under the cursor fixed across the zoom', () => {
@@ -101,20 +109,30 @@ describe('computeWheelZoom', () => {
     const cx = 600;
     const cy = 200;
     const before = screenToWorld({ x: cx, y: cy }, viewBoxFor(v, SIZE), RECT);
-    const next = computeWheelZoom(v, SIZE, RECT, cx, cy, -120);
+    const next = computeWheelZoom(v, SIZE, RECT, cx, cy, -12);
     const after = screenToWorld({ x: cx, y: cy }, viewBoxFor(next, SIZE), RECT);
     expect(after.x).toBeCloseTo(before.x, 5);
     expect(after.y).toBeCloseTo(before.y, 5);
   });
 
   it('clamps zoom to a max of 64', () => {
-    const next = computeWheelZoom({ x: 0, y: 0, zoom: 1 }, SIZE, RECT, 400, 300, -100000);
+    const next = computeWheelZoom({ x: 0, y: 0, zoom: 60 }, SIZE, RECT, 400, 300, -100);
     expect(next.zoom).toBe(64);
   });
 
   it('clamps zoom to a min of 0.1', () => {
-    const next = computeWheelZoom({ x: 0, y: 0, zoom: 1 }, SIZE, RECT, 400, 300, 100000);
+    const next = computeWheelZoom({ x: 0, y: 0, zoom: 0.11 }, SIZE, RECT, 400, 300, 100);
     expect(next.zoom).toBe(0.1);
+  });
+});
+
+describe('panFromWheel', () => {
+  it('moves the viewport center along the scroll delta (positive deltaY reveals content below)', () => {
+    expect(panFromWheel({ x: 0, y: 0, zoom: 1 }, 50, 30)).toEqual({ x: 50, y: 30, zoom: 1 });
+  });
+
+  it('shrinks the world-space pan as zoom rises', () => {
+    expect(panFromWheel({ x: 10, y: 20, zoom: 2 }, 50, 30)).toEqual({ x: 35, y: 35, zoom: 2 });
   });
 });
 

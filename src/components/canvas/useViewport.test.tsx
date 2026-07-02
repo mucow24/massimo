@@ -64,25 +64,39 @@ describe('useViewport — null ref safety', () => {
   });
 });
 
-describe('useViewport — wheel zoom', () => {
+describe('useViewport — wheel zoom (ctrl+wheel / trackpad pinch)', () => {
   it('writes the zoomed viewBox imperatively and defers the store commit', () => {
     const { result, svg } = render();
     const vbBefore = svg.getAttribute('viewBox');
-    wheel(result, wheelEvent({ clientX: 400, clientY: 300, deltaY: -100 }));
+    wheel(result, wheelEvent({ clientX: 400, clientY: 300, deltaY: -100, ctrlKey: true }));
     // viewBox reflects the zoom immediately...
     expect(svg.getAttribute('viewBox')).not.toBe(vbBefore);
     // ...but the store waits for the gesture to settle (no per-tick re-render).
     expect(result.current.viewport.zoom).toBe(1);
   });
 
-  it('commits the zoom by exp(-deltaY*0.0015) once the wheel settles', () => {
+  it('commits the zoom by exp(-clamped deltaY * 0.01) once the wheel settles', () => {
     vi.useFakeTimers();
     try {
       const { result } = render();
-      wheel(result, wheelEvent({ clientX: 400, clientY: 300, deltaY: -100 }));
+      // A mouse notch: deltaY -100, clamped to -20.
+      wheel(result, wheelEvent({ clientX: 400, clientY: 300, deltaY: -100, ctrlKey: true }));
       expect(result.current.viewport.zoom).toBe(1); // not yet
       act(() => vi.runAllTimers());
-      expect(result.current.viewport.zoom).toBeCloseTo(Math.exp(0.15), 5);
+      expect(result.current.viewport.zoom).toBeCloseTo(Math.exp(0.2), 5);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it('zooms on cmd+wheel too (macOS convention)', () => {
+    vi.useFakeTimers();
+    try {
+      const { result } = render();
+      wheel(result, wheelEvent({ clientX: 400, clientY: 300, deltaY: -10, metaKey: true }));
+      act(() => vi.runAllTimers());
+      expect(result.current.viewport.zoom).toBeCloseTo(Math.exp(0.1), 5);
+      expect(result.current.viewport.x).toBe(0);
     } finally {
       vi.useRealTimers();
     }
@@ -92,11 +106,11 @@ describe('useViewport — wheel zoom', () => {
     vi.useFakeTimers();
     try {
       const { result } = render();
-      wheel(result, wheelEvent({ clientX: 400, clientY: 300, deltaY: -100 }));
-      wheel(result, wheelEvent({ clientX: 400, clientY: 300, deltaY: -100 }));
+      wheel(result, wheelEvent({ clientX: 400, clientY: 300, deltaY: -10, ctrlKey: true }));
+      wheel(result, wheelEvent({ clientX: 400, clientY: 300, deltaY: -10, ctrlKey: true }));
       act(() => vi.runAllTimers());
-      // Two ticks compound: exp(0.15)^2 = exp(0.30), not exp(0.15).
-      expect(result.current.viewport.zoom).toBeCloseTo(Math.exp(0.3), 5);
+      // Two ticks compound: exp(0.1)^2 = exp(0.2), not exp(0.1).
+      expect(result.current.viewport.zoom).toBeCloseTo(Math.exp(0.2), 5);
     } finally {
       vi.useRealTimers();
     }
@@ -109,7 +123,7 @@ describe('useViewport — wheel zoom', () => {
       const cx = 600;
       const cy = 200;
       const before = result.current.screenToWorld(cx, cy);
-      wheel(result, wheelEvent({ clientX: cx, clientY: cy, deltaY: -120 }));
+      wheel(result, wheelEvent({ clientX: cx, clientY: cy, deltaY: -120, ctrlKey: true }));
       act(() => vi.runAllTimers());
       const after = result.current.screenToWorld(cx, cy);
       expect(after.x).toBeCloseTo(before.x, 5);
@@ -132,7 +146,7 @@ describe('useViewport — wheel zoom', () => {
       const cx = 600;
       const cy = 200;
       const before = result.current.screenToWorld(cx, cy);
-      wheel(result, wheelEvent({ clientX: cx, clientY: cy, deltaY: -120 }));
+      wheel(result, wheelEvent({ clientX: cx, clientY: cy, deltaY: -120, ctrlKey: true }));
       act(() => vi.runAllTimers());
       const after = result.current.screenToWorld(cx, cy);
       expect(after.x).toBeCloseTo(before.x, 5);
@@ -146,7 +160,11 @@ describe('useViewport — wheel zoom', () => {
     vi.useFakeTimers();
     try {
       const { result } = render();
-      wheel(result, wheelEvent({ clientX: 400, clientY: 300, deltaY: -100000 }));
+      // Each event is delta-clamped (±20 → ×e^0.2), so pile up enough ticks to
+      // sail past the ceiling: e^(0.2·30) ≈ 403.
+      for (let i = 0; i < 30; i++) {
+        wheel(result, wheelEvent({ clientX: 400, clientY: 300, deltaY: -100000, ctrlKey: true }));
+      }
       act(() => vi.runAllTimers());
       expect(result.current.viewport.zoom).toBe(64);
     } finally {
@@ -158,7 +176,9 @@ describe('useViewport — wheel zoom', () => {
     vi.useFakeTimers();
     try {
       const { result } = render();
-      wheel(result, wheelEvent({ clientX: 400, clientY: 300, deltaY: 100000 }));
+      for (let i = 0; i < 30; i++) {
+        wheel(result, wheelEvent({ clientX: 400, clientY: 300, deltaY: 100000, ctrlKey: true }));
+      }
       act(() => vi.runAllTimers());
       expect(result.current.viewport.zoom).toBe(0.1);
     } finally {
@@ -175,10 +195,10 @@ describe('useViewport — wheel zoom', () => {
     expect(entry).toBeDefined();
     // Non-passive is the whole point — a passive listener cannot preventDefault.
     expect((entry!.options as { passive?: boolean }).passive).toBe(false);
-    // Invoking it cancels the page scroll and runs the imperative zoom.
+    // Invoking it cancels the page scroll and runs the imperative pan.
     const before = svg.getAttribute('viewBox');
     const preventDefault = vi.fn();
-    entry!.listener({ clientX: 400, clientY: 300, deltaY: -100, preventDefault });
+    entry!.listener({ clientX: 400, clientY: 300, deltaX: 0, deltaY: -100, preventDefault });
     expect(preventDefault).toHaveBeenCalled();
     expect(svg.getAttribute('viewBox')).not.toBe(before);
   });
@@ -189,6 +209,73 @@ describe('useViewport — wheel zoom', () => {
     expect(svg.eventListener('wheel')).toBeDefined();
     unmount();
     expect(svg.eventListener('wheel')).toBeUndefined();
+  });
+});
+
+describe('useViewport — wheel pan (two-finger scroll / plain mouse wheel)', () => {
+  it('pans instead of zooming on a ctrl-less wheel, deferring the store commit', () => {
+    vi.useFakeTimers();
+    try {
+      const { result, svg } = render();
+      const vbBefore = svg.getAttribute('viewBox');
+      wheel(result, wheelEvent({ clientX: 400, clientY: 300, deltaX: 50, deltaY: 30 }));
+      // viewBox moves immediately; the store waits for the settle.
+      expect(svg.getAttribute('viewBox')).not.toBe(vbBefore);
+      expect(result.current.viewport).toEqual({ x: 0, y: 0, zoom: 1 });
+      act(() => vi.runAllTimers());
+      // Scroll right/down reveals content right/down: the center rides the delta.
+      expect(result.current.viewport).toEqual({ x: 50, y: 30, zoom: 1 });
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it('scales the pan by 1/zoom', () => {
+    vi.useFakeTimers();
+    try {
+      useViewportStore.setState({ x: 0, y: 0, zoom: 2 });
+      const { result } = render();
+      wheel(result, wheelEvent({ clientX: 400, clientY: 300, deltaX: 50, deltaY: 30 }));
+      act(() => vi.runAllTimers());
+      expect(result.current.viewport).toEqual({ x: 25, y: 15, zoom: 2 });
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it('compounds rapid ticks against the live viewport before committing', () => {
+    vi.useFakeTimers();
+    try {
+      const { result } = render();
+      wheel(result, wheelEvent({ clientX: 400, clientY: 300, deltaX: 50, deltaY: 30 }));
+      wheel(result, wheelEvent({ clientX: 400, clientY: 300, deltaX: 50, deltaY: 30 }));
+      act(() => vi.runAllTimers());
+      expect(result.current.viewport).toEqual({ x: 100, y: 60, zoom: 1 });
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it('a pinch mid-scroll compounds against the live pan (one commit carries both)', () => {
+    vi.useFakeTimers();
+    try {
+      const { result } = render();
+      wheel(result, wheelEvent({ clientX: 400, clientY: 300, deltaX: 50, deltaY: 30 }));
+      // Pinch anchored at the screen center: the (panned) center holds still.
+      wheel(result, wheelEvent({ clientX: 400, clientY: 300, deltaY: -10, ctrlKey: true }));
+      act(() => vi.runAllTimers());
+      expect(result.current.viewport.x).toBeCloseTo(50, 5);
+      expect(result.current.viewport.y).toBeCloseTo(30, 5);
+      expect(result.current.viewport.zoom).toBeCloseTo(Math.exp(0.1), 5);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it('publishes the in-flight wheel pan to the live store for overlays', () => {
+    const { result } = render();
+    wheel(result, wheelEvent({ clientX: 400, clientY: 300, deltaX: 50, deltaY: 30 }));
+    expect(useLiveViewportStore.getState().pending).toEqual({ x: 50, y: 30, zoom: 1 });
   });
 });
 
@@ -258,16 +345,16 @@ describe('useViewport — panning', () => {
 
   it('adopts an un-committed wheel zoom as the pan base (zoom, then pan before settle)', () => {
     const { result } = render();
-    // Zoom in — pending, not yet committed to the store.
-    wheel(result, wheelEvent({ clientX: 400, clientY: 300, deltaY: -100 }));
+    // Zoom in — pending, not yet committed to the store (deltaY -100 clamps to -20).
+    wheel(result, wheelEvent({ clientX: 400, clientY: 300, deltaY: -100, ctrlKey: true }));
     expect(result.current.viewport.zoom).toBe(1);
     // Grab-pan before the settle fires.
     down(result, pointerEvent({ clientX: 100, clientY: 100, button: 0 }));
     move(result, pointerEvent({ clientX: 150, clientY: 100 }));
     up(result, pointerEvent({ clientX: 150, clientY: 100 }));
     // The commit carries BOTH the zoom (not lost) and a pan scaled by that zoom.
-    expect(result.current.viewport.zoom).toBeCloseTo(Math.exp(0.15), 5);
-    expect(result.current.viewport.x).toBeCloseTo(-50 / Math.exp(0.15), 5);
+    expect(result.current.viewport.zoom).toBeCloseTo(Math.exp(0.2), 5);
+    expect(result.current.viewport.x).toBeCloseTo(-50 / Math.exp(0.2), 5);
   });
 
   it('keeps the grabbed world point under the cursor mid-pan', () => {

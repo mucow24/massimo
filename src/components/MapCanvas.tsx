@@ -624,7 +624,7 @@ export function MapCanvas() {
         ref={svgRef}
         viewBox={`${view.vbX} ${view.vbY} ${view.vbW} ${view.vbH}`}
         className={(inHandMode ? 'tool-hand' : 'tool-arrow') + (view.panning ? ' panning' : '')}
-        // Wheel zoom is bound as a non-passive native listener inside useViewport
+        // Wheel pan/zoom is bound as a non-passive native listener inside useViewport
         // (React's onWheel is passive, so its preventDefault would warn + no-op).
         // Self-heal a stranded click-suppress flag at the start of every fresh
         // gesture. A drag cancelled without a pointerup (lost capture,

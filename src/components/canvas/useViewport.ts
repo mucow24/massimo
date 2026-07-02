@@ -8,6 +8,7 @@ import {
   computeWheelZoom,
   liveProjection,
   panFromDelta,
+  panFromWheel,
   screenToWorld as toWorld,
   viewBoxFor,
 } from './viewportMath';
@@ -27,14 +28,18 @@ export function useLiveView(view: ViewportProjection): ViewportProjection {
 const viewBoxStr = (vb: { vbX: number; vbY: number; vbW: number; vbH: number }) =>
   `${vb.vbX} ${vb.vbY} ${vb.vbW} ${vb.vbH}`;
 
-// Once a wheel gesture goes quiet for this long, commit the zoom to the store so
+// Once a wheel gesture goes quiet for this long, commit it to the store so
 // React re-renders and reprojects zoom-dependent details (stroke widths, which
-// transiently scale during the gesture, and the grid) crisply at the final zoom.
-const ZOOM_SETTLE_MS = 90;
+// transiently scale during a zoom gesture, and the grid) crisply at the final
+// viewport.
+const WHEEL_SETTLE_MS = 90;
 
-/** The wheel-event fields the zoom handler reads — satisfied by both a native
- *  WheelEvent and React's synthetic one. */
-type WheelInput = Pick<WheelEvent, 'clientX' | 'clientY' | 'deltaY' | 'preventDefault'>;
+/** The wheel-event fields the pan/zoom handler reads — satisfied by both a
+ *  native WheelEvent and React's synthetic one. */
+type WheelInput = Pick<
+  WheelEvent,
+  'clientX' | 'clientY' | 'deltaX' | 'deltaY' | 'ctrlKey' | 'metaKey' | 'preventDefault'
+>;
 
 export interface ViewportApi {
   size: { w: number; h: number };
@@ -52,8 +57,9 @@ export interface ViewportApi {
 }
 
 /**
- * Owns viewport state, pan tracking, and wheel zoom. Returns viewBox coords,
- * a screenToWorld helper, and pointer/wheel handlers to wire onto the SVG.
+ * Owns viewport state, grab-pan tracking, and wheel pan/zoom (plain wheel pans,
+ * ctrl+wheel / trackpad pinch zooms). Returns viewBox coords, a screenToWorld
+ * helper, and pointer/wheel handlers to wire onto the SVG.
  *
  * Pan and zoom both write the SVG viewBox imperatively on each event and commit
  * to the store once the gesture ends — pointer-up for a pan, a short settle
@@ -89,7 +95,7 @@ export function useViewport(svgRef: RefObject<SVGSVGElement | null>): ViewportAp
     moved: boolean;
     captured: boolean;
   } | null>(null);
-  const zoomSettleRef = useRef<number | null>(null);
+  const wheelSettleRef = useRef<number | null>(null);
 
   useEffect(() => {
     const el = svgRef.current?.parentElement;
@@ -106,7 +112,7 @@ export function useViewport(svgRef: RefObject<SVGSVGElement | null>): ViewportAp
   // viewport — dangling past unmount.
   useEffect(
     () => () => {
-      if (zoomSettleRef.current != null) clearTimeout(zoomSettleRef.current);
+      if (wheelSettleRef.current != null) clearTimeout(wheelSettleRef.current);
       setPending(null);
     },
     [setPending],
@@ -150,9 +156,9 @@ export function useViewport(svgRef: RefObject<SVGSVGElement | null>): ViewportAp
   // on the live viewport right up to the commit, so it lands where it already
   // sat — no jump.
   const commitPending = () => {
-    if (zoomSettleRef.current != null) {
-      clearTimeout(zoomSettleRef.current);
-      zoomSettleRef.current = null;
+    if (wheelSettleRef.current != null) {
+      clearTimeout(wheelSettleRef.current);
+      wheelSettleRef.current = null;
     }
     const pending = useLiveViewportStore.getState().pending;
     if (pending) {
@@ -163,12 +169,20 @@ export function useViewport(svgRef: RefObject<SVGSVGElement | null>): ViewportAp
 
   const onWheel = (e: WheelInput) => {
     e.preventDefault();
-    const rect = hostRect();
-    // Imperative viewBox zoom (like pan): smooth, no per-tick re-render. Based on
-    // the live viewport so rapid ticks compound; committed once the wheel settles.
-    applyViewBox(computeWheelZoom(liveViewport(), size, rect, e.clientX, e.clientY, e.deltaY));
-    if (zoomSettleRef.current != null) clearTimeout(zoomSettleRef.current);
-    zoomSettleRef.current = window.setTimeout(commitPending, ZOOM_SETTLE_MS);
+    // Figma-style split: ctrl+wheel — which is also how the browser delivers a
+    // trackpad pinch — zooms about the cursor (cmd+wheel on mac); a plain wheel
+    // (trackpad two-finger scroll, bare mouse wheel) pans along its deltas.
+    // Both write the viewBox imperatively: smooth, no per-tick re-render. Based
+    // on the live viewport so rapid ticks compound; committed once the wheel
+    // settles.
+    const live = liveViewport();
+    applyViewBox(
+      e.ctrlKey || e.metaKey
+        ? computeWheelZoom(live, size, hostRect(), e.clientX, e.clientY, e.deltaY)
+        : panFromWheel(live, e.deltaX, e.deltaY),
+    );
+    if (wheelSettleRef.current != null) clearTimeout(wheelSettleRef.current);
+    wheelSettleRef.current = window.setTimeout(commitPending, WHEEL_SETTLE_MS);
   };
 
   // Bind the wheel handler as a NON-passive native listener. React's onWheel
@@ -191,11 +205,11 @@ export function useViewport(svgRef: RefObject<SVGSVGElement | null>): ViewportAp
   // left-button, or middle-button anywhere).
   const startPan = (e: React.PointerEvent) => {
     if (e.button !== 0 && e.button !== 1) return;
-    // Adopt any in-flight wheel zoom as the pan's base and cancel its settle —
+    // Adopt any in-flight wheel gesture as the pan's base and cancel its settle —
     // the pan commits on pointer-up instead.
-    if (zoomSettleRef.current != null) {
-      clearTimeout(zoomSettleRef.current);
-      zoomSettleRef.current = null;
+    if (wheelSettleRef.current != null) {
+      clearTimeout(wheelSettleRef.current);
+      wheelSettleRef.current = null;
     }
     const base = liveViewport();
     panStartRef.current = {
