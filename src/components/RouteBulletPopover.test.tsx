@@ -175,7 +175,12 @@ describe('<RouteBulletPopover /> size control', () => {
     const locked = { ...BULLET, locked: true };
     useDoc.setState({ ...DEFAULT_DOC, routeBullets: { b1: locked } });
     render(
-      <RouteBulletPopover bullet={locked} world={{ x: 10, y: 10 }} view={VIEW} onClose={() => {}} />,
+      <RouteBulletPopover
+        bullet={locked}
+        world={{ x: 10, y: 10 }}
+        view={VIEW}
+        onClose={() => {}}
+      />,
     );
     fireEvent.wheel(screen.getByRole('slider'), { deltaY: -1 });
     fireEvent.wheel(screen.getByRole('spinbutton'), { deltaY: -1 });
