@@ -16,7 +16,9 @@ export interface LineTagDragApi {
   // svg pointer capture on first significant motion).
 }
 
-const SNAP_TOL = 10; // world px
+// World arc-length units along the centerline (deliberately NOT ÷ zoom,
+// unlike the other hooks' screen-px snap radii).
+const SNAP_TOL = 10;
 
 /**
  * Drag handler for line tags. Mirrors useStationDrag's lifecycle:

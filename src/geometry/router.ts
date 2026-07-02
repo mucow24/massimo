@@ -418,8 +418,11 @@ export type OffsetPathSegment =
 export function emitOffsetSegments(verts: Vec2[], R: number, offset: number): OffsetPathSegment[] {
   if (verts.length < 2) return [];
 
-  // Offset every vertex perpendicular to its incident edges. See offsetFilletPath
-  // history for the bisector-cap rationale.
+  // Offset each vertex along the bisector of its two edge normals, scaled by
+  // 1/cos(half-angle) so the offset edges stay parallel to the originals (a
+  // miter join). At sharp corners cos(half) → 0 and the miter point runs away,
+  // so MAX_BISECTOR_SCALE caps the extension at 3× the offset (a miter limit),
+  // trading exact parallelism for bounded geometry near U-turns.
   const offV: Vec2[] = verts.map((p, i) => {
     let n: Vec2;
     if (i === 0) n = leftNormal(norm(sub(verts[1], verts[0])));

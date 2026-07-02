@@ -138,7 +138,9 @@ export function migrateDoc(persisted: unknown, version: number): DocState {
   // Corrupt or missing version is treated as v0 so all migrations run —
   // preferable to silently rendering with stale data.
   const v = typeof version === 'number' ? version : 0;
-  // Blocks operate on disjoint fields, so order is immaterial.
+  // Some blocks write the same top-level field (v<1 and v<7 both touch lines;
+  // v<4 and v<7 both touch stations), but each re-reads `out` and they touch
+  // disjoint PROPERTIES within those records, so order is still immaterial.
   let out: typeof s = s;
   if (v < 1 && out.lines) {
     const { lines: cleaned, changed } = backfillLineNames(out.lines);

@@ -144,8 +144,8 @@ export function pickLayerLabelTUncached(
 }
 
 // Squared minimum distance from `point` to any other-band stripe's sampled
-// polyline. Squared so the inner loop is pure arithmetic — sqrt is applied
-// once, at the caller, only to the winning candidate's distance.
+// polyline. Squared so the inner sample loop is pure arithmetic; the caller
+// takes one sqrt per candidate (≤ 7) when scoring.
 function nearestOtherBandDistanceSq(
   point: { x: number; y: number },
   targetBand: SegmentBandSpec,

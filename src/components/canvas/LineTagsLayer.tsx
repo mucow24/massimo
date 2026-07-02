@@ -121,7 +121,6 @@ export function LineTagsLayer({ bands, zoom, svgRef }: Props) {
   const lines = useDoc((s) => s.lines);
   const lineTags = useDoc((s) => s.lineTags);
   const cycleLineTagOrientation = useDoc((s) => s.cycleLineTagOrientation);
-  const deleteLineTag = useDoc((s) => s.deleteLineTag);
   const selection = useSelection();
   const drag = useLineTagDrag(svgRef);
 
@@ -144,13 +143,13 @@ export function LineTagsLayer({ bands, zoom, svgRef }: Props) {
   }, [resolved, selection.lineTagHoverPreview]);
   const widths = useMeasureTextWidths(services);
 
-  // Suppress click after a drag, mirroring station drag.
   const onTagPointerDown = (e: React.PointerEvent, tagId: string) => {
     if (e.button !== 0) return;
     drag.onStartDrag(tagId, e);
   };
 
   const onTagClick = (e: React.MouseEvent, tagId: string) => {
+    // Suppress the post-drag click, mirroring station drag.
     if (dragState.suppressClick) return;
     e.stopPropagation();
     selection.selectLineTag(tagId);
@@ -165,9 +164,7 @@ export function LineTagsLayer({ bands, zoom, svgRef }: Props) {
   };
 
   // Hover/ghost preview is cleared by the mode-setters, not on unmount.
-
   // Delete is wired in App.tsx for keyboard.
-  void deleteLineTag;
 
   return (
     <g>

@@ -145,7 +145,9 @@ src/
     Toolbar.tsx Sidebar.tsx Menu.tsx  # chrome
     *Popover.tsx                # on-canvas item editors
     canvas/                     # interaction layer: drag/placement/viewport hooks + overlay layers
-    inspector/                  # sidebar inspectors + stopGridDrag.ts (pure lattice-edit math)
+    inspector/                  # LineInspector (sidebar) + StationInspector (hosted by the
+                                #   on-canvas StationPopover) + pure math: stopGridDrag.ts,
+                                #   stationBandGeometry.ts
 
   export/                       # exportCanvas.ts (SVG/PNG), fonts.ts, exportCanvasPdf.ts
                                 #   + pure PDF-gap modules pdfHatch/pdfText/pdfGlyphs/pdfDropShadow
@@ -724,6 +726,10 @@ instantiated **once per pass**. Top→bottom paint order (later = on top):
     stripe, dot, or label (deliberately NOT interleaved with the band pass; see the note in
     `buildOrderedRenderables`).
 
+Outside the `<svg>`, `WarningToasts` renders one clickable HTML toast per router-flagged band;
+clicking it jumps the viewport to the band's center. It takes MapCanvas's memoized `bands`
+as a prop specifically so it never rebuilds the router.
+
 `StationView`'s props are referentially stable across a pan (immutable store refs, constant zoom,
 stable `useCallback` handlers), so an imperative pan that rewrites the viewBox does **not**
 re-render every station subtree.
@@ -788,7 +794,9 @@ on-screen spacing stays ≥ 5px — snapping still reads the true `gridSize` fro
 
 ### Pointer flow
 
-`MapCanvas`'s `<svg>` has exactly:
+`MapCanvas`'s `<svg>`'s main handlers (plus small utility ones: `onPointerLeave` clears
+`cursorWorld`; `onClickCapture`/`onContextMenuCapture` do the proxy reroute described below;
+`onContextMenu`/`onDragStart` just `preventDefault`):
 - `onPointerDown`: middle-button or hand-mode → `view.startPan`; else `rectSelect.onPointerDown`
   (self-gates). **Item drags start from the item's own pointer-down** (fired by the child view),
   not the canvas handler. A **selected** item additionally carries a top-z transparent drag-proxy
@@ -799,7 +807,8 @@ on-screen spacing stays ≥ 5px — snapping still reads the true `gridSize` fro
 - `onPointerCancel` (browser-initiated: pen palm rejection, window switch, capture loss — a voided
   gesture with no matching pointerup): fans out to every drag hook's cancel path; each disarms its
   ref and `rollback()`s its history group so live writes revert instead of stranding. Pan and
-  rect-select are intentionally omitted — neither opens a group or mutates the doc.
+  rect-select are intentionally omitted — neither opens a group or mutates the doc. The line-tag
+  drag is window-wired, so it hooks window `pointercancel` itself instead of joining this fan-out.
 - `onPointerDownCapture`: self-heals `dragState.suppressClick = false` at the start of every fresh
   gesture (recovers from a drag killed without pointerup).
 - `onClick`: only on background; bails if `dragState.suppressClick`; else placement dispatch, else
@@ -1120,7 +1129,7 @@ Each is confirmed in source/tests; file pointers included.
   Shared helpers: `fixtures.ts` (`makeStation`/`makeLine`/…), `interaction.ts` (synthetic pointer/
   wheel events + a `fakeSvg` with an identity screen↔world CTM), `setup.ts` (jsdom polyfills:
   ResizeObserver, pointer-capture, scrollIntoView).
-- **E2E (Playwright, [e2e/](e2e/))** — single-worker, no retries, honors `PORT` for parallel
+- **E2E (Playwright, [e2e/](e2e/))** — single-worker, no retries locally (2 on CI), honors `PORT` for parallel
   worktrees. `seedAndOpen` seeds a localStorage doc (`Seed*` shapes omit fields to simulate legacy
   saves) and opens the app — **this is the only place the rehydrate/migrate path is exercised**.
   `migration.spec.ts` asserts **zero console errors** loading legacy docs; `export.spec.ts` checks

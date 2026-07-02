@@ -890,9 +890,6 @@ export function deleteStation(doc: MapDoc, id: StationId): MapDoc {
 
 // ---------- Stops ----------
 
-// Float-tolerant "same cell" — row/col are no longer constrained to integers
-// (diagonal moves use ±√2/2), so equality must allow small drift.
-
 export function moveStop(
   doc: MapDoc,
   stationId: StationId,

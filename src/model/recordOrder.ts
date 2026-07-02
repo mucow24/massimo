@@ -1,13 +1,15 @@
 // Shared z-order algebra for the keyed record collections that carry an
 // explicit paint order alongside the records themselves (lines, polygons, svg
 // images). Each used to hand-roll the identical reconcile/move logic; this is
-// the single source of truth they now delegate to.
+// the single source of truth they now delegate to. The array↔paint mapping is
+// the CALLER's convention: polygons/svg images paint later-in-array on top,
+// while lineOrder is inverted (index 0 renders last = on top; see types.ts).
 
 /**
  * Reconcile a stored paint order against the records that actually exist: drop
  * ids whose record is gone, then append any record ids missing from the order
  * (legacy saves without an order, or a race between add and order update) so
- * nothing ever silently drops out. Later in the array = painted on top.
+ * nothing ever silently drops out.
  */
 export function reconcileOrder(records: Record<string, unknown>, order: string[]): string[] {
   const existing = order.filter((id) => records[id]);
@@ -17,10 +19,11 @@ export function reconcileOrder(records: Record<string, unknown>, order: string[]
 }
 
 /**
- * Swap the element `id` one step toward the end (`dir: +1`, toward the top of
- * the paint order) or the start (`dir: -1`, toward the bottom) of `order`.
- * Returns the SAME array reference when the move is a no-op (id absent, or
- * already at the respective end) so callers can detect "nothing changed".
+ * Swap the element `id` one step toward the end (`dir: +1`) or the start
+ * (`dir: -1`) of `order`. What that means for the paint order is the caller's
+ * convention (see the module header). Returns the SAME array reference when
+ * the move is a no-op (id absent, or already at the respective end) so callers
+ * can detect "nothing changed".
  */
 export function moveInOrder(order: string[], id: string, dir: 1 | -1): string[] {
   const i = order.indexOf(id);
