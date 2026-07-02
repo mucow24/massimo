@@ -46,11 +46,12 @@ async function selectLine(page: Page, lineId: string): Promise<void> {
   await page.locator('.inspector').waitFor();
 }
 
-// Select station `stationId`, then click its `lineId` stop in the StopGrid so
-// the per-stop controls target it.
+// Select station `stationId`, enter its on-canvas layout editor, and click
+// its `lineId` stop handle so the per-stop controls target it.
 async function selectStop(page: Page, stationId: string, lineId: string): Promise<void> {
   const c = await stationCenter(page, stationId);
   await page.mouse.click(c.x, c.y);
+  await page.getByRole('button', { name: 'Edit layout' }).click();
   await page.locator(`[data-cell-kind="stop"][data-line-id="${lineId}"]`).click();
 }
 

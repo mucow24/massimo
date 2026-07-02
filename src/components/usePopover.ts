@@ -10,7 +10,14 @@ export function useDismiss(
   active: boolean,
   onDismiss: () => void,
   ignore: ReadonlyArray<RefObject<Node | null>>,
+  opts?: {
+    // Set false when another component owns Escape for this state (e.g. the
+    // station popover's step-out ladder) — two independent Escape listeners
+    // over the same state race on document-listener attachment order.
+    escape?: boolean;
+  },
 ): void {
+  const escape = opts?.escape ?? true;
   useEffect(() => {
     if (!active) return;
     const onDocClick = (e: globalThis.MouseEvent) => {
@@ -24,15 +31,15 @@ export function useDismiss(
       if (e.key === 'Escape') onDismiss();
     };
     const t = setTimeout(() => document.addEventListener('mousedown', onDocClick), 0);
-    document.addEventListener('keydown', onKey);
+    if (escape) document.addEventListener('keydown', onKey);
     return () => {
       clearTimeout(t);
       document.removeEventListener('mousedown', onDocClick);
-      document.removeEventListener('keydown', onKey);
+      if (escape) document.removeEventListener('keydown', onKey);
     };
     // `ignore` is a fresh array literal each render; depend on its members.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [active, onDismiss, ...ignore]);
+  }, [active, onDismiss, escape, ...ignore]);
 }
 
 /**

@@ -1,7 +1,7 @@
 import { test, expect, type Page, type Download } from '@playwright/test';
 import { readFileSync } from 'node:fs';
 import { seedAndOpen, stationCenter, type Seed } from './fixtures';
-import { PITCH } from '../src/components/inspector/stopGridDrag';
+import { STOP_SIZE } from '../src/geometry/orientation';
 
 // ACCEPTANCE SPEC for per-line width — written red-first (double-loop TDD)
 // with `test.fail()` annotations that were removed once the feature landed.
@@ -55,7 +55,7 @@ const twoStop: Seed = {
 
 // Legacy interlined pair: both default width, stops 1 row apart (tangent at
 // 14/14). Widening L2 to 28 must SPLIT the band; re-spacing L2's stop to row
-// 1.5 in the StopGrid must RE-MERGE it as a mixed-width band.
+// 1.5 in the layout editor must RE-MERGE it as a mixed-width band.
 const legacyInterlined: Seed = {
   stations: [
     {
@@ -100,7 +100,7 @@ async function setWidthTo(page: Page, value: string): Promise<void> {
   await spin.blur();
 }
 
-// Drag a StopGrid cell by (dRow, dCol) in the editor's local row/col frame,
+// Drag a layout-editor handle by (dRow, dCol) in the station-local frame,
 // CTM-projected to page coords (mirrors matching.spec's drag helper).
 async function dragStopByLocalDelta(
   page: Page,
@@ -116,16 +116,18 @@ async function dragStopByLocalDelta(
 
   const delta = await page.evaluate(
     ({ sel, dRow, dCol, PITCH }) => {
-      const g = document.querySelector(sel);
-      const svg = g?.closest('svg');
-      const ctm = svg?.getScreenCTM();
+      // The handle <g> lives inside the station's translate+rotate group
+      // on the MAIN canvas, so use the ELEMENT's CTM (the svg's alone
+      // would miss the station rotation). One cell = STOP_SIZE world units.
+      const g = document.querySelector(sel) as SVGGElement | null;
+      const ctm = g?.getScreenCTM();
       if (!ctm) return null;
       return {
         x: dCol * PITCH * ctm.a + dRow * PITCH * ctm.c,
         y: dCol * PITCH * ctm.b + dRow * PITCH * ctm.d,
       };
     },
-    { sel: fromSel, dRow, dCol, PITCH },
+    { sel: fromSel, dRow, dCol, PITCH: STOP_SIZE },
   );
   if (!delta) throw new Error('no editor svg CTM');
 
@@ -208,6 +210,7 @@ test.describe('Per-line width', () => {
     for (const sid of ['A', 'B'] as const) {
       const c = await stationCenter(page, sid);
       await page.mouse.click(c.x, c.y);
+      await page.getByRole('button', { name: 'Edit layout' }).click();
       await dragStopByLocalDelta(
         page,
         '[data-cell-row="1"][data-cell-col="0"][data-cell-kind="stop"][data-line-id="L2"]',

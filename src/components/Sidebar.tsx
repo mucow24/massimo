@@ -7,7 +7,7 @@ import {
   TriangleUpIcon,
 } from '@radix-ui/react-icons';
 import { effectiveLineOrder, useDoc, useSelection } from '../state/store';
-import { LineInspector, StationInspector } from './inspector';
+import { LineInspector } from './inspector';
 import type { Line } from '../model/types';
 import { legibleTextOn } from '../util/color';
 import { InlineBulletText } from './InlineBulletText';
@@ -167,9 +167,10 @@ export function Sidebar() {
             {stationList.map((st) => {
               const ids = selection.selectedStationIds;
               const inSelection = ids.includes(st.id);
-              // Inline editor only opens for true single-selection — no
-              // other stations and no bullets in the selection set.
-              const expanded =
+              // The editor lives in the on-canvas station popover now; a row
+              // click selects (opening the popover), clicking the sole-
+              // selected row again deselects (closing it).
+              const soleSelected =
                 ids.length === 1 &&
                 ids[0] === st.id &&
                 selection.selectedRouteBulletIds.length === 0;
@@ -177,7 +178,7 @@ export function Sidebar() {
                 <div key={st.id} data-station-row={st.id}>
                   <div
                     className={'list-row' + (inSelection ? ' selected' : '')}
-                    onClick={() => selection.selectStation(expanded ? null : st.id)}
+                    onClick={() => selection.selectStation(soleSelected ? null : st.id)}
                     onMouseEnter={() => selection.setHoveredStation(st.id)}
                     onMouseLeave={() => selection.setHoveredStation(null)}
                   >
@@ -225,11 +226,6 @@ export function Sidebar() {
                       <Cross2Icon />
                     </button>
                   </div>
-                  {expanded && (
-                    <div className="inline-editor">
-                      <StationInspector id={st.id} />
-                    </div>
-                  )}
                 </div>
               );
             })}

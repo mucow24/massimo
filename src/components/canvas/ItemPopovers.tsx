@@ -5,14 +5,15 @@ import { RouteBulletPopover } from '../RouteBulletPopover';
 import { TextLabelPopover } from '../TextLabelPopover';
 import { PolygonPopover } from '../PolygonPopover';
 import { SvgImagePopover } from '../SvgImagePopover';
+import { StationPopover } from '../StationPopover';
 
 /**
- * Mounts the single floating popover for the current sole selection — a route
- * bullet, text label, or polygon. Driven by `soleSelection`, so a popover only
- * shows when exactly one item across every type is selected (a co-selected item
- * of another type can't leak one open). Peeled out of MapCanvas so the canvas
- * no longer carries the three near-identical gating blocks + their popover
- * imports + the add/select wiring they implied.
+ * Mounts the single floating popover for the current sole selection — a
+ * station, route bullet, text label, polygon, or svg image. Driven by
+ * `soleSelection`, so a popover only shows when exactly one item across
+ * every type is selected (a co-selected item of another type can't leak one
+ * open). Peeled out of MapCanvas so the canvas no longer carries the
+ * near-identical gating blocks + their popover imports.
  */
 export function ItemPopovers({ view: committed }: { view: ViewportProjection }) {
   // Reproject through the in-flight viewport during a pan/zoom so the popover
@@ -20,6 +21,7 @@ export function ItemPopovers({ view: committed }: { view: ViewportProjection }) 
   // identical to `committed` between gestures.
   const view = useLiveView(committed);
   const selection = useSelection();
+  const stations = useDoc((s) => s.stations);
   const routeBullets = useDoc((s) => s.routeBullets);
   const textLabels = useDoc((s) => s.textLabels);
   const polygons = useDoc((s) => s.polygons);
@@ -30,6 +32,22 @@ export function ItemPopovers({ view: committed }: { view: ViewportProjection }) 
   if (!(view.vbW > 0 && view.vbH > 0)) return null;
   const sole = soleSelection(selection);
   if (!sole) return null;
+
+  if (sole.type === 'station') {
+    const st = stations[sole.id];
+    const mode = selection.uiMode;
+    // Idle only — except the station's own layout-edit mode, whose per-stop
+    // pickers live in this popover. Sticky placing-station must NOT pop an
+    // editor open under every placement click on an existing station.
+    const show =
+      st &&
+      (mode.kind === 'idle' ||
+        (mode.kind === 'editing-station-layout' && mode.stationId === sole.id));
+    if (!show) return null;
+    return (
+      <StationPopover station={st} view={view} onClose={() => selection.selectStation(null)} />
+    );
+  }
 
   if (sole.type === 'bullet') {
     const b = routeBullets[sole.id];

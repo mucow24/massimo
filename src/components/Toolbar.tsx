@@ -75,9 +75,10 @@ export function Toolbar() {
   const toggleMode = (
     kind: Exclude<
       UiMode['kind'],
-      // placing-svg carries a payload, so it can't be toggled into via a bare
-      // `{ kind }` — it's entered by the file-import handler instead.
-      'idle' | 'appending-to-line' | 'creating-transfer' | 'placing-svg'
+      // placing-svg and editing-station-layout carry payloads, so they can't
+      // be toggled into via a bare `{ kind }` — they're entered by the
+      // file-import handler / the inspector's Edit-layout button instead.
+      'idle' | 'appending-to-line' | 'creating-transfer' | 'placing-svg' | 'editing-station-layout'
     >,
   ) => {
     selection.setUiMode(selection.uiMode.kind === kind ? { kind: 'idle' } : { kind });

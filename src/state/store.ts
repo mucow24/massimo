@@ -219,9 +219,7 @@ interface DocState extends MapDoc {
   mirrorLabel: (stationId: StationId) => void;
   setLabelOffset: (stationId: StationId, offset: number) => void;
   setLabelOffsetPerp: (stationId: StationId, offsetPerp: number) => void;
-  cycleLabelAlign: (stationId: StationId) => void;
   setLabelAlign: (stationId: StationId, align: LabelAlign) => void;
-  cycleLabelValign: (stationId: StationId) => void;
   setLabelValign: (stationId: StationId, valign: LabelValign) => void;
 
   addLine: () => LineId;
@@ -391,9 +389,7 @@ export const useDoc = create<DocState>()(
         setLabelOffset: (stationId, offset) => set((s) => T.setLabelOffset(s, stationId, offset)),
         setLabelOffsetPerp: (stationId, offsetPerp) =>
           set((s) => T.setLabelOffsetPerp(s, stationId, offsetPerp)),
-        cycleLabelAlign: (stationId) => set((s) => T.cycleLabelAlign(s, stationId)),
         setLabelAlign: (stationId, align) => set((s) => T.setLabelAlign(s, stationId, align)),
-        cycleLabelValign: (stationId) => set((s) => T.cycleLabelValign(s, stationId)),
         setLabelValign: (stationId, valign) => set((s) => T.setLabelValign(s, stationId, valign)),
 
         addLine: () => {

@@ -1,5 +1,5 @@
 import { describe, it, expect, beforeEach } from 'vitest';
-import { fireEvent, render, screen } from '@testing-library/react';
+import { act, fireEvent, render, screen } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { StationInspector } from './StationInspector';
 import { useDoc, useSelection } from '../../state/store';
@@ -34,7 +34,7 @@ describe('<StationInspector /> — shape picker wiring', () => {
     useSelection.setState(SELECTION_BLANK);
   });
 
-  it('picker is disabled when no stop is selected (only a station)', () => {
+  it('renders one ALWAYS-enabled picker per stop row — no selection ritual', () => {
     useDoc.setState({
       ...DEFAULT_DOC,
       ...makeDoc({
@@ -50,60 +50,9 @@ describe('<StationInspector /> — shape picker wiring', () => {
     useSelection.setState({ ...SELECTION_BLANK, selectedStationIds: ['a'] });
 
     render(<StationInspector id="a" />);
-    expect(screen.getByRole('button', { name: 'Stop shape' })).toHaveAttribute(
-      'aria-disabled',
-      'true',
-    );
-  });
-
-  it('picker is disabled when only the label is selected', () => {
-    useDoc.setState({
-      ...DEFAULT_DOC,
-      ...makeDoc({
-        stations: [makeStation({ id: 'a', stops: [makeStop('L1')] })],
-        lines: [makeLine({ id: 'L1', stations: ['a'] })],
-      }),
-    });
-    useSelection.setState({
-      ...SELECTION_BLANK,
-      selectedStationIds: ['a'],
-      labelSelected: true,
-    });
-
-    render(<StationInspector id="a" />);
-    expect(screen.getByRole('button', { name: 'Stop shape' })).toHaveAttribute(
-      'aria-disabled',
-      'true',
-    );
-  });
-
-  it('picker becomes enabled once a stop is clicked in the StopGrid', async () => {
-    const user = userEvent.setup();
-    useDoc.setState({
-      ...DEFAULT_DOC,
-      ...makeDoc({
-        stations: [makeStation({ id: 'a', stops: [makeStop('L1')] })],
-        lines: [makeLine({ id: 'L1', stations: ['a'] })],
-      }),
-    });
-    useSelection.setState({ ...SELECTION_BLANK, selectedStationIds: ['a'] });
-
-    render(<StationInspector id="a" />);
-    expect(screen.getByRole('button', { name: 'Stop shape' })).toHaveAttribute(
-      'aria-disabled',
-      'true',
-    );
-
-    const stopCell = document.querySelector(
-      '[data-cell-kind="stop"][data-line-id="L1"]',
-    ) as HTMLElement;
-    expect(stopCell).not.toBeNull();
-    await user.click(stopCell);
-
-    expect(screen.getByRole('button', { name: 'Stop shape' })).toHaveAttribute(
-      'aria-disabled',
-      'false',
-    );
+    const pickers = screen.getAllByRole('button', { name: 'Stop shape' });
+    expect(pickers).toHaveLength(2);
+    for (const p of pickers) expect(p).toHaveAttribute('aria-disabled', 'false');
   });
 
   it('clicking the picker trigger does not deselect the stop (picker stays enabled)', async () => {
@@ -118,10 +67,7 @@ describe('<StationInspector /> — shape picker wiring', () => {
     useSelection.setState({ ...SELECTION_BLANK, selectedStationIds: ['a'] });
 
     render(<StationInspector id="a" />);
-    const stopCell = document.querySelector(
-      '[data-cell-kind="stop"][data-line-id="L1"]',
-    ) as HTMLElement;
-    await user.click(stopCell);
+    act(() => useSelection.getState().setSelectedStopLineId('L1'));
     expect(useSelection.getState().selectedStopLineId).toBe('L1');
 
     await user.click(screen.getByRole('button', { name: 'Stop shape' }));
@@ -135,7 +81,6 @@ describe('<StationInspector /> — shape picker wiring', () => {
   });
 
   it("trigger reflects the selected stop's explicit dotStyle", async () => {
-    const user = userEvent.setup();
     useDoc.setState({
       ...DEFAULT_DOC,
       ...makeDoc({
@@ -151,10 +96,7 @@ describe('<StationInspector /> — shape picker wiring', () => {
     useSelection.setState({ ...SELECTION_BLANK, selectedStationIds: ['a'] });
 
     render(<StationInspector id="a" />);
-    const stopCell = document.querySelector(
-      '[data-cell-kind="stop"][data-line-id="L1"]',
-    ) as HTMLElement;
-    await user.click(stopCell);
+    act(() => useSelection.getState().setSelectedStopLineId('L1'));
 
     const trigger = screen.getByRole('button', { name: 'Stop shape' });
     const circle = trigger.querySelector('circle');
@@ -163,7 +105,6 @@ describe('<StationInspector /> — shape picker wiring', () => {
   });
 
   it('trigger shows the filled-black default when the selected stop has no dotStyle set', async () => {
-    const user = userEvent.setup();
     useDoc.setState({
       ...DEFAULT_DOC,
       ...makeDoc({
@@ -174,10 +115,7 @@ describe('<StationInspector /> — shape picker wiring', () => {
     useSelection.setState({ ...SELECTION_BLANK, selectedStationIds: ['a'] });
 
     render(<StationInspector id="a" />);
-    const stopCell = document.querySelector(
-      '[data-cell-kind="stop"][data-line-id="L1"]',
-    ) as HTMLElement;
-    await user.click(stopCell);
+    act(() => useSelection.getState().setSelectedStopLineId('L1'));
 
     const trigger = screen.getByRole('button', { name: 'Stop shape' });
     const circle = trigger.querySelector('circle');
@@ -186,7 +124,6 @@ describe('<StationInspector /> — shape picker wiring', () => {
   });
 
   it('with mirror on and matching neighbors disagreeing, trigger still reflects the inspected station', async () => {
-    const user = userEvent.setup();
     useDoc.setState({
       ...DEFAULT_DOC,
       ...makeDoc({
@@ -210,10 +147,7 @@ describe('<StationInspector /> — shape picker wiring', () => {
     });
 
     render(<StationInspector id="a" />);
-    const stopCell = document.querySelector(
-      '[data-cell-kind="stop"][data-line-id="L1"]',
-    ) as HTMLElement;
-    await user.click(stopCell);
+    act(() => useSelection.getState().setSelectedStopLineId('L1'));
 
     const trigger = screen.getByRole('button', { name: 'Stop shape' });
     const circle = trigger.querySelector('circle');
@@ -294,12 +228,12 @@ describe('<StationInspector /> — shape picker wiring', () => {
 
       render(<StationInspector id="a" />);
       const bold = screen.getByRole('button', { name: 'Bold' });
-      // Same parent (row) as the H/V alignment buttons.
-      const hAlign = screen.getByRole('button', { name: /Label horizontal alignment/i });
-      expect(bold.parentElement).toBe(hAlign.parentElement);
-      // DOM order: H-align → V-align → Bold.
+      // Same parent (row) as the horizontal-align segmented group.
+      const hAlignGroup = screen.getByRole('group', { name: 'Label horizontal alignment' });
+      expect(bold.parentElement).toBe(hAlignGroup.parentElement);
+      // DOM order: align group → Bold.
       const siblings = Array.from(bold.parentElement!.children);
-      expect(siblings.indexOf(bold)).toBeGreaterThan(siblings.indexOf(hAlign));
+      expect(siblings.indexOf(bold)).toBeGreaterThan(siblings.indexOf(hAlignGroup));
     });
 
     it('starts unpressed when the station has no labelBold flag', () => {
@@ -530,10 +464,7 @@ describe('<StationInspector /> — shape picker wiring', () => {
     const pastBefore = historyDepth();
 
     render(<StationInspector id="a" />);
-    const stopCell = document.querySelector(
-      '[data-cell-kind="stop"][data-line-id="L1"]',
-    ) as HTMLElement;
-    await user.click(stopCell);
+    act(() => useSelection.getState().setSelectedStopLineId('L1'));
     await user.click(screen.getByRole('button', { name: 'Stop shape' }));
     await user.click(screen.getByRole('menuitem', { name: 'Open white' }));
 
@@ -582,52 +513,34 @@ describe('<StationInspector /> — stop dot size textbox', () => {
 
   const sizeBox = () => screen.getByRole('spinbutton', { name: 'Stop dot size' });
 
-  const selectStop = async (user: ReturnType<typeof userEvent.setup>) => {
-    const stopCell = document.querySelector(
-      '[data-cell-kind="stop"][data-line-id="L1"]',
-    ) as HTMLElement;
-    await user.click(stopCell);
-  };
+  // Selection comes from the canvas layout editor; set it directly.
+  const selectStop = () => act(() => useSelection.getState().setSelectedStopLineId('L1'));
 
-  it('is disabled, showing the global default, when no stop is selected', () => {
+  it('is always enabled (per-row control), showing the resolved default', () => {
     seed();
     render(<StationInspector id="a" />);
-    expect(sizeBox()).toBeDisabled();
+    expect(sizeBox()).toBeEnabled();
     expect(sizeBox()).toHaveValue(8);
   });
 
-  it('is disabled when only the label is selected', () => {
-    seed();
-    useSelection.setState({
-      ...SELECTION_BLANK,
-      selectedStationIds: ['a'],
-      labelSelected: true,
-    });
-    render(<StationInspector id="a" />);
-    expect(sizeBox()).toBeDisabled();
-  });
-
   it("shows the selected stop's resolved size: explicit override first, then the line default", async () => {
-    const user = userEvent.setup();
     seed({ stopDotSize: 16, lineDefaultDotSize: 10 });
     render(<StationInspector id="a" />);
-    await selectStop(user);
+    selectStop();
     expect(sizeBox()).toHaveValue(16);
   });
 
   it('falls back to the line default for a tracking stop', async () => {
-    const user = userEvent.setup();
     seed({ lineDefaultDotSize: 10 });
     render(<StationInspector id="a" />);
-    await selectStop(user);
+    selectStop();
     expect(sizeBox()).toHaveValue(10);
   });
 
   it('editing writes the override; typing the effective default clears it', async () => {
-    const user = userEvent.setup();
     seed();
     render(<StationInspector id="a" />);
-    await selectStop(user);
+    selectStop();
 
     fireEvent.change(sizeBox(), { target: { value: '12' } });
     expect(useDoc.getState().stations.a.stops[0].dotSize).toBe(12);
@@ -640,7 +553,7 @@ describe('<StationInspector /> — stop dot size textbox', () => {
     const user = userEvent.setup();
     seed();
     render(<StationInspector id="a" />);
-    await selectStop(user);
+    selectStop();
     expect(useSelection.getState().selectedStopLineId).toBe('L1');
 
     await user.click(sizeBox());
@@ -650,7 +563,6 @@ describe('<StationInspector /> — stop dot size textbox', () => {
   });
 
   it('mirror mode propagates the size to matching stations and collapses to one undo step', async () => {
-    const user = userEvent.setup();
     useDoc.setState({
       ...DEFAULT_DOC,
       ...makeDoc({
@@ -668,7 +580,7 @@ describe('<StationInspector /> — stop dot size textbox', () => {
     });
 
     render(<StationInspector id="a" />);
-    await selectStop(user);
+    selectStop();
 
     const pastBefore = historyDepth();
     // Bare change (no focus arc) — dispatchAll's history group is the only
@@ -681,12 +593,11 @@ describe('<StationInspector /> — stop dot size textbox', () => {
     expect(historyDepth() - pastBefore).toBe(1);
   });
 
-  it('a focused edit with mirror on collapses to exactly one undo entry', async () => {
-    // Regression: focusing the field opens useFieldHistory's outer group, and
-    // dispatchAll (mirror on + a matching station) opens a SECOND group nested
-    // inside it. The inner commit must not resume recording mid-gesture nor
-    // push a stray snapshot — the whole focus arc is a single undo entry.
-    const user = userEvent.setup();
+  it('a focused edit with mirror on collapses to exactly one undo entry', () => {
+    // Regression (#146): focusing the field opens useFieldHistory's outer
+    // group, and the mirror broadcast (dispatchMirrored, reached through the
+    // per-stop row's size field) would nest a SECOND group inside it. The
+    // isHistoryGrouping gate must keep the whole focus arc one undo entry.
     useDoc.setState({
       ...DEFAULT_DOC,
       ...makeDoc({
@@ -704,14 +615,13 @@ describe('<StationInspector /> — stop dot size textbox', () => {
     });
 
     render(<StationInspector id="a" />);
-    await selectStop(user);
 
     useDoc.temporal.getState().clear();
     const before = historyDepth();
 
     const box = sizeBox();
     fireEvent.focus(box); // opens useFieldHistory's outer group
-    fireEvent.change(box, { target: { value: '9' } }); // dispatchAll nests a group
+    fireEvent.change(box, { target: { value: '9' } }); // mirror broadcast fires inside it
     fireEvent.blur(box); // commits the outer group
 
     const doc = useDoc.getState();
@@ -763,10 +673,11 @@ describe('<StationInspector /> — edit paths that reach the document (E8)', () 
     expect(useDoc.getState().stations.a.name).toBe('New Name');
   });
 
-  it('the X and Y inputs each move the station on their own axis', () => {
+  it('the X and Y inputs are labeled and each move the station on their own axis', () => {
     seedStation();
     render(<StationInspector id="a" />);
-    const [xIn, yIn] = screen.getAllByRole('spinbutton') as HTMLInputElement[];
+    const xIn = screen.getByRole('spinbutton', { name: 'X' }) as HTMLInputElement;
+    const yIn = screen.getByRole('spinbutton', { name: 'Y' }) as HTMLInputElement;
     // X input writes x, leaves y.
     fireEvent.change(xIn, { target: { value: '55' } });
     expect(useDoc.getState().stations.a.x).toBe(55);
@@ -777,25 +688,91 @@ describe('<StationInspector /> — edit paths that reach the document (E8)', () 
     expect(useDoc.getState().stations.a.x).toBe(55);
   });
 
-  it('the H-align button cycles label.align (auto → start)', async () => {
+  it('shows the rotation in degrees, tracking rotate clicks', async () => {
+    const user = userEvent.setup();
+    seedStation();
+    render(<StationInspector id="a" />);
+    expect(screen.getByTitle('Station rotation')).toHaveTextContent('0°');
+    await user.click(screen.getByRole('button', { name: 'Rotate +45°' }));
+    await user.click(screen.getByRole('button', { name: 'Rotate +45°' }));
+    expect(screen.getByTitle('Station rotation')).toHaveTextContent('90°');
+  });
+
+  it('the mirror toggle names its match count when neighbors match', () => {
+    useDoc.setState({
+      ...DEFAULT_DOC,
+      ...makeDoc({
+        stations: [
+          makeStation({ id: 'a', stops: [makeStop('L1')] }),
+          makeStation({ id: 'b', stops: [makeStop('L1')] }),
+        ],
+        lines: [makeLine({ id: 'L1', stations: ['a', 'b'] })],
+      }),
+    });
+    useSelection.setState({ ...SELECTION_BLANK, selectedStationIds: ['a'] });
+    render(<StationInspector id="a" />);
+    expect(screen.getByRole('button', { name: 'Mirror ×1' })).toBeEnabled();
+  });
+
+  it('the mirror toggle reads plain "Mirror" and is disabled with no matches', () => {
+    seedStation();
+    render(<StationInspector id="a" />);
+    expect(screen.getByRole('button', { name: 'Mirror' })).toBeDisabled();
+  });
+
+  it('clicking an align segment sets label.align directly (auto → end)', async () => {
     const user = userEvent.setup();
     seedStation();
     expect(useDoc.getState().stations.a.label.align).toBe('auto');
     render(<StationInspector id="a" />);
-    await user.click(screen.getByRole('button', { name: /Label horizontal alignment/i }));
-    expect(useDoc.getState().stations.a.label.align).toBe('start');
+    await user.click(screen.getByRole('button', { name: 'Align: right' }));
+    expect(useDoc.getState().stations.a.label.align).toBe('end');
   });
 
-  it('the V-align button cycles label.valign (auto-down → top)', async () => {
+  it('clicking a valign segment sets label.valign directly (auto-down → bottom)', async () => {
     const user = userEvent.setup();
     seedStation();
     expect(useDoc.getState().stations.a.label.valign).toBe('auto-down');
     render(<StationInspector id="a" />);
-    await user.click(screen.getByRole('button', { name: /Label vertical alignment/i }));
-    expect(useDoc.getState().stations.a.label.valign).toBe('top');
+    await user.click(screen.getByRole('button', { name: 'V-align: bottom' }));
+    expect(useDoc.getState().stations.a.label.valign).toBe('bottom');
   });
 
-  it('H-align with mirror on propagates the SAME align to matching stations in one undo group', async () => {
+  it('the current align/valign segments are marked active (aria-pressed)', () => {
+    seedStation();
+    render(<StationInspector id="a" />);
+    expect(
+      screen.getByRole('button', { name: 'Align: auto (snap against adjacent stop)' }),
+    ).toHaveAttribute('aria-pressed', 'true');
+    expect(screen.getByRole('button', { name: 'Align: right' })).toHaveAttribute(
+      'aria-pressed',
+      'false',
+    );
+    expect(
+      screen.getByRole('button', {
+        name: 'V-align: auto-down (first line on cell, extra lines below)',
+      }),
+    ).toHaveAttribute('aria-pressed', 'true');
+    expect(screen.getByRole('button', { name: 'V-align: top' })).toHaveAttribute(
+      'aria-pressed',
+      'false',
+    );
+  });
+
+  it('clicking the already-active align segment records no history entry', async () => {
+    const user = userEvent.setup();
+    seedStation();
+    useDoc.temporal.getState().clear();
+    const before = historyDepth();
+    render(<StationInspector id="a" />);
+    await user.click(
+      screen.getByRole('button', { name: 'Align: auto (snap against adjacent stop)' }),
+    );
+    expect(useDoc.getState().stations.a.label.align).toBe('auto');
+    expect(historyDepth() - before).toBe(0);
+  });
+
+  it('align segment with mirror on broadcasts the SAME align to matching stations in one undo group', async () => {
     const user = userEvent.setup();
     useDoc.setState({
       ...DEFAULT_DOC,
@@ -816,13 +793,13 @@ describe('<StationInspector /> — edit paths that reach the document (E8)', () 
     const before = historyDepth();
 
     render(<StationInspector id="a" />);
-    await user.click(screen.getByRole('button', { name: /Label horizontal alignment/i }));
+    await user.click(screen.getByRole('button', { name: 'Align: center' }));
 
     const doc = useDoc.getState();
-    expect(doc.stations.a.label.align).toBe('start');
-    // The matching neighbor is forced to the SAME resulting align (setLabelAlign),
-    // not its own cycle.
-    expect(doc.stations.b.label.align).toBe('start');
+    expect(doc.stations.a.label.align).toBe('middle');
+    // The matching neighbor gets the SAME absolute align — clicks are
+    // absolute, so the old cycle-divergence problem cannot occur.
+    expect(doc.stations.b.label.align).toBe('middle');
     // The whole batch collapses to a single undo entry.
     expect(historyDepth() - before).toBe(1);
   });
@@ -877,5 +854,52 @@ describe('<StationInspector /> — label offset wiring (along vs perpendicular)'
     const label = useDoc.getState().stations.a.label;
     expect(resolveOffsetPerp(label)).toBe(9);
     expect(label.offset).toBe(0);
+  });
+});
+
+describe('<StationInspector /> — Edit layout entry', () => {
+  beforeEach(() => {
+    localStorage.clear();
+    useDoc.setState({ ...DEFAULT_DOC });
+    useSelection.setState({ ...SELECTION_BLANK, uiMode: { kind: 'idle' } });
+  });
+
+  const seedStation = () => {
+    useDoc.setState({
+      ...DEFAULT_DOC,
+      ...makeDoc({
+        stations: [makeStation({ id: 'a', stops: [makeStop('L1')] })],
+        lines: [makeLine({ id: 'L1', stations: ['a'] })],
+      }),
+    });
+    useSelection.setState({
+      ...SELECTION_BLANK,
+      uiMode: { kind: 'idle' },
+      selectedStationIds: ['a'],
+    });
+  };
+
+  it('the Edit layout button enters editing-station-layout for this station', async () => {
+    const user = userEvent.setup();
+    seedStation();
+    render(<StationInspector id="a" />);
+    await user.click(screen.getByRole('button', { name: 'Edit layout' }));
+    expect(useSelection.getState().uiMode).toEqual({
+      kind: 'editing-station-layout',
+      stationId: 'a',
+    });
+    expect(useSelection.getState().selectedStationIds).toEqual(['a']);
+  });
+
+  it('while the mode is active the button reads Done and exits to idle', async () => {
+    const user = userEvent.setup();
+    seedStation();
+    useSelection.setState({
+      ...useSelection.getState(),
+      uiMode: { kind: 'editing-station-layout', stationId: 'a' },
+    });
+    render(<StationInspector id="a" />);
+    await user.click(screen.getByRole('button', { name: 'Done' }));
+    expect(useSelection.getState().uiMode.kind).toBe('idle');
   });
 });
