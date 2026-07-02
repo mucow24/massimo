@@ -16,6 +16,7 @@ beforeEach(() => {
   useSelection.setState({
     ...useSelection.getState(),
     activeTab: 'stations',
+    sidebarOpen: true,
     selectedStationIds: [],
     selectedRouteBulletIds: [],
     selectedLineId: null,
@@ -77,6 +78,65 @@ describe('<Sidebar /> — station sort-direction flip', () => {
     await user.click(stationHeader());
     expect(rowOrder()).toEqual(['alpha', 'beta', 'gamma']);
     expect(sortDir()).toBe('sorted ascending');
+  });
+});
+
+// The tab bar buttons carry class `.tab` (distinct from the `.sort-header`
+// column buttons, which also start with "Station").
+const tabButton = (label: 'Stations' | 'Lines'): HTMLButtonElement => {
+  const el = Array.from(document.querySelectorAll('button.tab')).find((b) =>
+    b.textContent?.startsWith(label),
+  );
+  if (!el) throw new Error(`expected a ${label} tab`);
+  return el as HTMLButtonElement;
+};
+
+const lineRows = () =>
+  Array.from(document.querySelectorAll('[data-line-row]')).map((el) =>
+    el.getAttribute('data-line-row'),
+  );
+
+describe('<Sidebar /> — collapsible list', () => {
+  beforeEach(() => {
+    useDoc.setState({
+      ...useDoc.getState(),
+      ...makeDoc({
+        stations: [makeStation({ id: 's1', name: 'Alpha' })],
+        lines: [makeLine({ id: 'L1', service: 'A', stations: ['s1'] })],
+      }),
+    });
+  });
+
+  it('clicking the active Stations tab collapses the whole panel', async () => {
+    const user = userEvent.setup();
+    render(<Sidebar />);
+
+    expect(rowOrder()).toEqual(['s1']);
+    expect(document.querySelector('.sidebar')).not.toBeNull();
+
+    await user.click(tabButton('Stations'));
+
+    // The panel is gone entirely — no tabs, no list — so its grid column can
+    // collapse and the map reclaims the space.
+    expect(document.querySelector('.sidebar')).toBeNull();
+    expect(rowOrder()).toEqual([]);
+    expect(useSelection.getState().sidebarOpen).toBe(false);
+  });
+
+  it('clicking Lines while Stations is shown swaps the list (panel stays open)', async () => {
+    const user = userEvent.setup();
+    render(<Sidebar />);
+
+    expect(rowOrder()).toEqual(['s1']);
+    expect(lineRows()).toEqual([]);
+
+    await user.click(tabButton('Lines'));
+
+    expect(rowOrder()).toEqual([]); // stations gone
+    expect(lineRows()).toEqual(['L1']); // lines shown
+    expect(document.querySelector('.sidebar')).not.toBeNull(); // still open
+    expect(useSelection.getState().sidebarOpen).toBe(true);
+    expect(useSelection.getState().activeTab).toBe('lines');
   });
 });
 

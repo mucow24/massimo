@@ -578,6 +578,69 @@ describe('multi-item selection clears a stale selected line (regression)', () =>
   });
 });
 
+describe('toggleTab — collapsible sidebar list', () => {
+  const toggle = (tab: 'stations' | 'lines') => useSelection.getState().toggleTab(tab);
+  const view = () => {
+    const s = useSelection.getState();
+    return { activeTab: s.activeTab, sidebarOpen: s.sidebarOpen };
+  };
+
+  it('clicking a collapsed tab opens its list', () => {
+    useSelection.setState({ activeTab: 'stations', sidebarOpen: false });
+    toggle('stations');
+    expect(view()).toEqual({ activeTab: 'stations', sidebarOpen: true });
+  });
+
+  it('clicking the shown tab collapses the list, preserving activeTab', () => {
+    useSelection.setState({ activeTab: 'stations', sidebarOpen: true });
+    toggle('stations');
+    expect(view()).toEqual({ activeTab: 'stations', sidebarOpen: false });
+  });
+
+  it('clicking the other tab while open swaps the list (stays open)', () => {
+    useSelection.setState({ activeTab: 'stations', sidebarOpen: true });
+    toggle('lines');
+    expect(view()).toEqual({ activeTab: 'lines', sidebarOpen: true });
+  });
+
+  it('clicking the other tab while collapsed opens that tab', () => {
+    useSelection.setState({ activeTab: 'stations', sidebarOpen: false });
+    toggle('lines');
+    expect(view()).toEqual({ activeTab: 'lines', sidebarOpen: true });
+  });
+
+  // The full walkthrough from the feature request, step by step.
+  it('follows the specified click sequence', () => {
+    useSelection.setState({ activeTab: 'stations', sidebarOpen: false }); // (Closed)
+
+    toggle('stations'); // Stations list opens
+    expect(view()).toEqual({ activeTab: 'stations', sidebarOpen: true });
+
+    toggle('stations'); // Stations list closes
+    expect(view()).toEqual({ activeTab: 'stations', sidebarOpen: false });
+
+    toggle('lines'); // Lines list opens
+    expect(view()).toEqual({ activeTab: 'lines', sidebarOpen: true });
+
+    toggle('stations'); // Lines swaps with Stations
+    expect(view()).toEqual({ activeTab: 'stations', sidebarOpen: true });
+
+    toggle('lines'); // Stations swaps with Lines
+    expect(view()).toEqual({ activeTab: 'lines', sidebarOpen: true });
+
+    toggle('lines'); // Lines list closes
+    expect(view()).toEqual({ activeTab: 'lines', sidebarOpen: false });
+  });
+
+  it('toggleSidebar flips open/closed without changing the active tab', () => {
+    useSelection.setState({ activeTab: 'lines', sidebarOpen: true });
+    useSelection.getState().toggleSidebar();
+    expect(view()).toEqual({ activeTab: 'lines', sidebarOpen: false });
+    useSelection.getState().toggleSidebar();
+    expect(view()).toEqual({ activeTab: 'lines', sidebarOpen: true });
+  });
+});
+
 describe('soleSelection', () => {
   it('returns the single selected item across any one list', () => {
     useSelection.getState().selectStation('s1' as StationId);

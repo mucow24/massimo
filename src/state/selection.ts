@@ -143,6 +143,10 @@ interface SelectionState {
   editingStationId: StationId | null;
   // Which sidebar tab is currently visible.
   activeTab: SidebarTab;
+  // Whether the sidebar's Stations/Lines list is expanded. When false the tab
+  // bar still shows, but no list below it. Clicking the shown tab collapses it;
+  // clicking the other tab (or any tab while collapsed) opens that tab's list.
+  sidebarOpen: boolean;
   selectedLineTagId: string | null;
   lineTagHoverPreview: LineTagHoverPreview | null;
   // Route bullet selection. Multi-selection: parallel to `selectedStationIds`,
@@ -198,7 +202,12 @@ interface SelectionState {
   setSelectedStopLineId: (id: LineId | null) => void;
   setLabelSelected: (selected: boolean) => void;
   setEditingStationId: (id: StationId | null) => void;
-  setActiveTab: (tab: SidebarTab) => void;
+  // Tab click from the sidebar: collapse if it's the shown tab, otherwise open
+  // that tab's list (see `sidebarOpen`).
+  toggleTab: (tab: SidebarTab) => void;
+  // The single toolbar arrow: collapse/expand the whole panel without changing
+  // which tab is active, so reopening returns to the last-shown list.
+  toggleSidebar: () => void;
   selectLineTag: (id: string | null) => void;
   setLineTagHoverPreview: (preview: LineTagHoverPreview | null) => void;
   selectRouteBullet: (id: string | null) => void;
@@ -372,6 +381,7 @@ export const useSelection = create<SelectionState>((set, get) => ({
   labelSelected: false,
   editingStationId: null,
   activeTab: 'stations',
+  sidebarOpen: true,
   selectedLineTagId: null,
   lineTagHoverPreview: null,
   selectedRouteBulletIds: [],
@@ -555,7 +565,13 @@ export const useSelection = create<SelectionState>((set, get) => ({
       selectedStopLineId: selected ? null : get().selectedStopLineId,
     }),
   setEditingStationId: (id) => set({ editingStationId: id }),
-  setActiveTab: (tab) => set({ activeTab: tab }),
+  toggleTab: (tab) =>
+    set((s) =>
+      s.sidebarOpen && s.activeTab === tab
+        ? { sidebarOpen: false }
+        : { activeTab: tab, sidebarOpen: true },
+    ),
+  toggleSidebar: () => set((s) => ({ sidebarOpen: !s.sidebarOpen })),
   selectLineTag: (id) =>
     set({
       ...clearedSelections(),

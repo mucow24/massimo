@@ -156,11 +156,11 @@ select {
 
 .app {
   display: grid;
-  grid-template-columns: 1fr 320px;
+  grid-template-columns: 1fr;
   grid-template-rows: 44px 1fr;
   grid-template-areas:
-    'toolbar toolbar'
-    'canvas sidebar';
+    'toolbar'
+    'canvas';
   height: 100vh;
 
   /* ── Design tokens ─────────────────────────────────────────────
@@ -255,6 +255,13 @@ select option {
   border-bottom: 1px solid var(--border);
   box-shadow: 0 4px 12px var(--shadow-tint);
   z-index: 1;
+  /* The toolbar spans both grid columns and its items keep their natural width
+     (see the flex-shrink:0 rule below). When they exceed the viewport, force the
+     grid to grow to the toolbar's content width instead of letting the buttons
+     spill past the app's background: the window gets one clean horizontal
+     scrollbar, the toolbar background covers every button, and the sidebar stays
+     flush against the true right edge (no blank strip beside it). */
+  min-width: max-content;
 }
 
 /* Keep every toolbar item at its natural width instead of letting them
@@ -946,8 +953,14 @@ select option {
   cursor: grabbing;
 }
 
+/* The sidebar floats OVER the right edge of the canvas (it shares the canvas
+   grid cell, right-aligned) instead of taking a column of its own. So toggling
+   it never resizes the canvas and the map never reprojects/shifts. Collapsed =
+   the Sidebar component renders null, revealing the full map underneath. */
 .sidebar {
-  grid-area: sidebar;
+  grid-area: canvas;
+  justify-self: end;
+  width: 320px;
   background: var(--surface);
   border-left: 1px solid var(--border);
   display: flex;

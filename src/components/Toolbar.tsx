@@ -17,6 +17,8 @@ import {
 import { Menu, MenuItem, MenuSeparator, SubMenu } from './Menu';
 import {
   CursorArrowIcon,
+  DoubleArrowLeftIcon,
+  DoubleArrowRightIcon,
   ExclamationTriangleIcon,
   FrameIcon,
   HandIcon,
@@ -316,6 +318,17 @@ export function Toolbar() {
           <ExclamationTriangleIcon aria-hidden="true" /> {menuError}
         </span>
       )}
+      <span className="tool-group-divider" aria-hidden="true" />
+      <button
+        type="button"
+        className="tool-btn"
+        title={selection.sidebarOpen ? 'Hide sidebar' : 'Show sidebar'}
+        aria-label="Toggle sidebar"
+        aria-pressed={selection.sidebarOpen}
+        onClick={() => selection.toggleSidebar()}
+      >
+        {selection.sidebarOpen ? <DoubleArrowRightIcon /> : <DoubleArrowLeftIcon />}
+      </button>
     </div>
   );
 }

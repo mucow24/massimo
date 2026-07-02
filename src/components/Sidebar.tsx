@@ -88,18 +88,24 @@ export function Sidebar() {
     el?.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
   }, [selection.selectedLineId, selection.activeTab]);
 
+  // Collapsed = the whole panel is gone: render nothing so the grid column can
+  // shrink to zero and hand the space back to the map. The toolbar arrow (and
+  // clicking the active tab) toggle `sidebarOpen`; reopening returns to
+  // whichever tab was last active.
+  if (!selection.sidebarOpen) return null;
+
   return (
     <aside className="sidebar">
       <div className="tab-bar">
         <button
           className={'tab' + (selection.activeTab === 'stations' ? ' active' : '')}
-          onClick={() => selection.setActiveTab('stations')}
+          onClick={() => selection.toggleTab('stations')}
         >
           Stations ({stationList.length})
         </button>
         <button
           className={'tab' + (selection.activeTab === 'lines' ? ' active' : '')}
-          onClick={() => selection.setActiveTab('lines')}
+          onClick={() => selection.toggleTab('lines')}
         >
           Lines ({orderedLineIds.length})
         </button>
