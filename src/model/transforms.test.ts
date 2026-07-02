@@ -764,9 +764,7 @@ describe('updateLine', () => {
     it('rewrites square, diamond, and unfilled bullet forms too', () => {
       const doc = makeDoc({
         lines: [makeLine({ id: 'L1', service: 'L1' })],
-        textLabels: [
-          makeTextLabel({ id: 't1', text: '[L1] {L1} <<L1>> [[L1]] {{L1}}' }),
-        ],
+        textLabels: [makeTextLabel({ id: 't1', text: '[L1] {L1} <<L1>> [[L1]] {{L1}}' })],
       });
       const next = T.updateLine(doc, 'L1', { service: 'A' });
       expect(next.textLabels.t1.text).toBe('[A] {A} <<A>> [[A]] {{A}}');
