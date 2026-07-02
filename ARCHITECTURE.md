@@ -48,8 +48,8 @@ hand-rolled CSS; `@radix-ui/react-icons` is the only UI dependency.
   `migrateDoc()` (localStorage rehydration). There is **no `normalizeDoc()`** — absent fields
   fill from `DEFAULT_DOC`; legacy fixups are shared exported "backfill"/"sanitize" functions
   called by both paths.
-- **CI gate:** `npm run pre-pr` = `format → lint → format:check → test → build`. It does **not**
-  run Playwright, so migration/rehydration bugs only surface in e2e.
+- **CI gate:** `npm run pre-pr` = `format → lint → format:check → test → build → e2e`. The
+  Playwright suite runs last (it's the slow step) so unit-level failures surface first.
 
 ---
 
@@ -75,12 +75,13 @@ npm run dev          # vite dev server
 npm run build        # tsc -b && vite build
 npm test             # vitest run (unit, jsdom)
 npm run e2e          # playwright test (drives the dev server)
-npm run pre-pr       # format → lint → format:check → test → build  (the PR gate)
+npm run pre-pr       # format → lint → format:check → test → build → e2e  (the PR gate)
 ```
 
 `pre-pr` runs `format` (prettier --write, auto-fixes) **first** so formatting can't block, then
-`format:check` later is the actual gate. **`pre-pr` does NOT run e2e** — rehydration/migration
-is only covered by Playwright.
+`format:check` later is the actual gate. It ends with the full Playwright suite (added after an
+interaction-behavior change passed every unit gate but broke an e2e spec — PR #159/#160), so it
+needs the Chromium binary installed once via `npm run e2e:install`.
 
 ---
 
@@ -1109,8 +1110,9 @@ Each is confirmed in source/tests; file pointers included.
   time, which is BEFORE their single write — equivalent and correct.
 - **Export desaturation race** — `Toolbar.runExport` uses `flushSync` to drop/restore the selected-
   line desaturation synchronously so it isn't baked into the clone.
-- **`pre-pr` does NOT run e2e** — migration/rehydration is only covered by Playwright
-  (`e2e/migration.spec.ts`). A broken `migrateDoc` passes `pre-pr`.
+- **`pre-pr` ends with the full Playwright suite** — it's the slow step, but interaction-behavior
+  changes can invalidate e2e specs without failing any unit test (PR #159's layout-edit retarget
+  did exactly that), and migration/rehydration is only covered by e2e (`e2e/migration.spec.ts`).
 - **No 600 weight anywhere** — `TextLabelWeight`, the weight tables, and clipboard validation all
   omit 600 (no SemiBold face shipped).
 - **Underlines are explicit `<line>` geometry, not `text-decoration`** — Chromium leaves 1px
