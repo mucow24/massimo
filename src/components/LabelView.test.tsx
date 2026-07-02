@@ -1,4 +1,4 @@
-import { describe, it, expect, beforeEach, vi } from 'vitest';
+import { describe, it, expect, afterEach, beforeEach, vi } from 'vitest';
 import { render, fireEvent } from '@testing-library/react';
 import { LabelView } from './LabelView';
 import { useDoc } from '../state/store';
@@ -18,6 +18,32 @@ const seedLine = (overrides: Partial<Line> & Pick<Line, 'id' | 'service'>): Line
 beforeEach(() => {
   useDoc.setState({ ...useDoc.getState(), ...DEFAULT_DOC });
   useViewportStore.setState({ darkMode: false });
+});
+
+describe('<LabelView /> — selection ring', () => {
+  afterEach(() => useViewportStore.setState({ zoom: 1 }));
+
+  const ringRect = () =>
+    render(
+      <svg>
+        <LabelView label={makeTextLabel({ id: 'g1', text: 'Hi' })} selected layer="stroke" />
+      </svg>,
+    ).container.querySelector('[data-text-label-stroke] rect')!;
+
+  it('renders the documented weight at zoom 1', () => {
+    const r = ringRect();
+    expect(Number(r.getAttribute('stroke-width'))).toBe(2);
+    expect(r.getAttribute('stroke-dasharray')).toBe('4 3');
+  });
+
+  // Constant SCREEN weight across zoom (1/zoom idiom) — matches the polygon
+  // and svg-image selection chrome so mixed selections read as one language.
+  it('divides stroke and dash by zoom', () => {
+    useViewportStore.setState({ zoom: 2 });
+    const r = ringRect();
+    expect(Number(r.getAttribute('stroke-width'))).toBe(1);
+    expect(r.getAttribute('stroke-dasharray')).toBe('2 1.5');
+  });
 });
 
 describe('<LabelView /> — text color follows the theme', () => {

@@ -1,3 +1,4 @@
+import { ArrowDownIcon, ArrowUpIcon } from '@radix-ui/react-icons';
 import { useDoc } from '../state/store';
 import { type ViewportProjection } from './canvas/screenAnchor';
 import { useDraggablePopover } from './canvas/useDraggablePopover';
@@ -39,7 +40,7 @@ export function SvgImagePopover({ image, view, onClose }: Props) {
   return (
     <div
       className="bullet-popover polygon-popover svg-image-popover"
-      style={{ position: 'absolute', left: anchor.x + 14, top: anchor.y + 14, zIndex: 1100 }}
+      style={{ position: 'absolute', left: anchor.x, top: anchor.y, zIndex: 1100 }}
       // Keep pointer events off the canvas (which would deselect the image and
       // close the popover, or right-click-rotate underneath it).
       onPointerDown={(e) => e.stopPropagation()}
@@ -62,7 +63,7 @@ export function SvgImagePopover({ image, view, onClose }: Props) {
               disabled={locked}
               onClick={() => moveSvgImageDown(image.id)}
             >
-              ↓
+              <ArrowDownIcon />
             </button>
             <button
               type="button"
@@ -72,7 +73,7 @@ export function SvgImagePopover({ image, view, onClose }: Props) {
               disabled={locked}
               onClick={() => moveSvgImageUp(image.id)}
             >
-              ↑
+              <ArrowUpIcon />
             </button>
           </div>
         </div>

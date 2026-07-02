@@ -1,6 +1,6 @@
 import { describe, it, expect, beforeEach, vi } from 'vitest';
 import { render, fireEvent } from '@testing-library/react';
-import { SvgImageView } from './SvgImageView';
+import { resizeCursor, SvgImageView } from './SvgImageView';
 import { makeSvgImage } from '../test/fixtures';
 import { useViewportStore } from '../state/viewportStore';
 import type { SvgImage } from '../model/types';
@@ -81,11 +81,61 @@ describe('<SvgImageView /> body', () => {
   });
 });
 
+// The resize cursors must rotate WITH the image: the handle tables are in the
+// image's local frame, so on a quarter-turned image the local top edge sits on
+// the screen's left — a hardcoded ns-resize there points 90° wrong. Cursors
+// repeat with period 180°, so the octant index shifts by the rotation in
+// 45° steps.
+describe('resizeCursor', () => {
+  it('matches the compass at rotation 0', () => {
+    expect(resizeCursor(0, 0)).toBe('ns-resize'); // n edge
+    expect(resizeCursor(1, 0)).toBe('nesw-resize'); // ne corner
+    expect(resizeCursor(2, 0)).toBe('ew-resize'); // e edge
+    expect(resizeCursor(3, 0)).toBe('nwse-resize'); // se / nw corners
+  });
+
+  it('shifts by the image rotation: the local top edge of a quarter-turned image resizes horizontally', () => {
+    expect(resizeCursor(0, 90)).toBe('ew-resize');
+    expect(resizeCursor(2, 90)).toBe('ns-resize');
+    expect(resizeCursor(0, -90)).toBe('ew-resize');
+    expect(resizeCursor(0, 45)).toBe('nesw-resize');
+  });
+
+  it('rounds free-angle rotations to the nearest 45° step', () => {
+    expect(resizeCursor(0, 100)).toBe('ew-resize'); // ≈90°
+    expect(resizeCursor(0, 350)).toBe('ns-resize'); // ≈360°
+  });
+});
+
 describe('<SvgImageView /> overlay', () => {
   beforeEach(() => useViewportStore.setState({ darkMode: false, zoom: 1 }));
 
   const handles = (container: HTMLElement) =>
     Array.from(container.querySelectorAll('[data-svg-image-handle]'));
+
+  // Corners scale proportionally; edges stretch one axis (distorting the
+  // artwork). Identical squares gave no hint which was which — edges are
+  // circles now so the two behaviors read as different controls.
+  it('draws corner handles as squares and edge handles as circles', () => {
+    const { container } = renderView(makeSvgImage({ id: 'i0' }), {
+      layer: 'overlay',
+      selected: true,
+    });
+    expect(container.querySelector('[data-svg-image-handle="nw"]')!.tagName).toBe('rect');
+    expect(container.querySelector('[data-svg-image-handle="n"]')!.tagName).toBe('circle');
+  });
+
+  it('rotates the resize cursors with the image and keeps a non-pan cursor on the knob', () => {
+    const { container } = renderView(makeSvgImage({ id: 'i0', rotation: 90 }), {
+      layer: 'overlay',
+      selected: true,
+    });
+    const top = container.querySelector('[data-svg-image-handle="n"]') as HTMLElement;
+    expect(top.style.cursor).toBe('ew-resize');
+    const knob = container.querySelector('[data-svg-image-handle="rotate"]') as HTMLElement;
+    // 'grab' is the pan-hand cursor — the knob must not advertise panning.
+    expect(knob.style.cursor).toBe('crosshair');
+  });
 
   it('renders nothing when not selected', () => {
     const { container } = renderView(makeSvgImage({ id: 'i0' }), {

@@ -1,6 +1,8 @@
 import type { Station } from '../../model/types';
 import { localToWorld, stopCenterAt } from '../../geometry/orientation';
 import { sameCell, type RowCol } from '../../geometry/lattice';
+import { useThemeColors } from '../../state/theme';
+import { withAlpha } from '../../util/color';
 
 /**
  * Ghost-lattice overlay shared by the on-canvas label drag and the station
@@ -25,6 +27,9 @@ export function GhostLattice({
   /** World radius of the node that will land on the snapped slot. */
   dropR: number;
 }) {
+  // Accent flips with the theme so the drop targets stay visible on the
+  // dark canvas (matches the marquee / mode frames / snap guides).
+  const theme = useThemeColors();
   const toWorld = (cell: RowCol) => localToWorld(stopCenterAt(cell.row, cell.col), station);
   return (
     <g pointerEvents="none">
@@ -38,8 +43,8 @@ export function GhostLattice({
               cx={p.x}
               cy={p.y}
               r={dropR}
-              fill="rgba(26,78,168,0.18)"
-              stroke="#1a4ea8"
+              fill={withAlpha(theme.accent, 0.18)}
+              stroke={theme.accent}
               strokeWidth={2 / zoom}
             />
           );

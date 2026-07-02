@@ -1,3 +1,5 @@
+import { LockClosedIcon, LockOpen1Icon } from '@radix-ui/react-icons';
+
 interface PopoverFooterProps {
   /** Item kind, used in the lock button's aria-label (e.g. "polygon", "label"). */
   noun: string;
@@ -22,7 +24,8 @@ export function PopoverFooter({ noun, locked, onToggleLock, onDelete }: PopoverF
         title={locked ? 'Unlock' : 'Lock (prevents editing)'}
         onClick={onToggleLock}
       >
-        {locked ? '🔒 Locked' : '🔓 Lock'}
+        {locked ? <LockClosedIcon aria-hidden="true" /> : <LockOpen1Icon aria-hidden="true" />}
+        {locked ? 'Locked' : 'Lock'}
       </button>
       <button className="delete-btn" onClick={onDelete} disabled={locked}>
         Delete

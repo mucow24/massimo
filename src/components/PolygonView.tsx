@@ -5,6 +5,7 @@ import { resolvePolygonColors } from '../model/transforms';
 import { polygonPathData } from '../geometry/polygon';
 import { midpoint } from '../geometry/vec';
 import { itemCursor } from './canvas/itemCursor';
+import { selectionDash } from './selectionStyle';
 
 // Half-size of a square vertex handle, and the radius of an edge "+" button,
 // authored in world units at zoom 1. The overlay divides every adornment
@@ -12,6 +13,9 @@ import { itemCursor } from './canvas/itemCursor';
 // zoom — keeping handles out of the way during detail work when zoomed in.
 const VERTEX_HANDLE_HALF = 5;
 const EDGE_ADD_R = 7;
+// Minimum on-screen edge length (px) for the "+" insert disc — roughly 3 disc
+// diameters, so a disc never crowds its neighboring vertex handles.
+const EDGE_ADD_MIN_EDGE_PX = 42;
 // Minimum on-screen hit-corridor width (px) for an OPEN polygon's drag proxy, so
 // a thin or zero-width chain still has a grabbable stroke. Divided by zoom to
 // stay constant on screen, like the overlay adornments.
@@ -164,7 +168,7 @@ export function PolygonView({
         fill="none"
         stroke={accent}
         strokeWidth={1.5 * s}
-        strokeDasharray={`${4 * s} ${3 * s}`}
+        strokeDasharray={selectionDash(zoom)}
         pointerEvents="none"
       />
       {/* A locked polygon shows only the selection outline — no editing
@@ -175,13 +179,19 @@ export function PolygonView({
           {edgeIndices.map((i) => {
             const v = verts[i];
             const next = verts[(i + 1) % n];
+            // Density gate: skip the "+" disc on edges too short on screen to
+            // host it — a detailed traced shape (30-50 vertices) otherwise
+            // disappears under a chain of overlapping discs when zoomed out.
+            // The discs come back as you zoom in to where inserting a vertex
+            // is plausible; vertex handles (the primary manipulators) stay.
+            if (Math.hypot(next.x - v.x, next.y - v.y) * zoom < EDGE_ADD_MIN_EDGE_PX) return null;
             const { x: mx, y: my } = midpoint(v, next);
             return (
               <g
                 key={`edge-${i}`}
                 data-polygon-edge-add={i}
                 onPointerDown={(e) => onEdgeAddPointerDown(polygon.id, i, e)}
-                style={{ cursor: 'copy' }}
+                style={{ cursor: 'crosshair' }}
               >
                 <circle cx={mx} cy={my} r={r} fill={accent} stroke={contrast} strokeWidth={1 * s} />
                 <line

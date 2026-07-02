@@ -145,3 +145,62 @@ describe('<RouteBulletPopover /> size control', () => {
     expect(useDoc.getState().routeBullets.b1.size).toBe(ROUTE_BULLET_SIZE_MIN);
   });
 });
+
+describe('<RouteBulletPopover /> header drag', () => {
+  beforeEach(() => {
+    localStorage.clear();
+    useDoc.setState({ ...DEFAULT_DOC, routeBullets: { b1: bulletFixture() } });
+    useDoc.temporal.getState().clear();
+  });
+
+  // The bullet popover shares useDraggablePopover with the other three item
+  // popovers — its header strip must actually drag, not just look like the
+  // others' drag handles.
+  it('dragging the header moves the popover by the pointer delta', () => {
+    const { container } = render(
+      <RouteBulletPopover
+        bullet={useDoc.getState().routeBullets['b1']}
+        world={{ x: 0, y: 0 }}
+        view={identityView}
+        onClose={() => {}}
+      />,
+    );
+    const popover = container.querySelector('.bullet-popover') as HTMLElement;
+    const header = container.querySelector('.bullet-popover .header') as HTMLElement;
+    expect(popover.style.left).toBe('14px'); // 0 + 14 base offset
+    expect(popover.style.top).toBe('14px');
+    fireEvent.pointerDown(header, { clientX: 100, clientY: 100, button: 0 });
+    fireEvent.pointerMove(header, { clientX: 130, clientY: 120 });
+    fireEvent.pointerUp(header, { clientX: 130, clientY: 120 });
+    expect(popover.style.left).toBe('44px'); // 14 + 30
+    expect(popover.style.top).toBe('34px'); // 14 + 20
+  });
+
+  // Deliberate behavior change from adopting useDraggablePopover: the anchor
+  // freezes at selection time (like the other item popovers), so moving the
+  // bullet itself (canvas drag, arrow nudge, undo) no longer drags the popover
+  // around — only pan/zoom and the header drag move it.
+  it('freezes the anchor: a moved bullet does not re-anchor the popover', () => {
+    const bullet = useDoc.getState().routeBullets['b1'];
+    const { container, rerender } = render(
+      <RouteBulletPopover
+        bullet={bullet}
+        world={{ x: 0, y: 0 }}
+        view={identityView}
+        onClose={() => {}}
+      />,
+    );
+    const popover = container.querySelector('.bullet-popover') as HTMLElement;
+    expect(popover.style.left).toBe('14px');
+    rerender(
+      <RouteBulletPopover
+        bullet={bullet}
+        world={{ x: 100, y: 50 }}
+        view={identityView}
+        onClose={() => {}}
+      />,
+    );
+    expect(popover.style.left).toBe('14px');
+    expect(popover.style.top).toBe('14px');
+  });
+});

@@ -1,17 +1,6 @@
 import { useCallback, useEffect, useRef, useState, type RefObject } from 'react';
 
 /**
- * True when a keyboard event's target is a form field that should swallow
- * the key (Escape closing a popover, etc.) — shared by the popovers' key
- * handlers so the denylist can't drift between them.
- */
-export function isInFormField(target: unknown): boolean {
-  const t = target as HTMLElement | null;
-  const tag = t?.tagName;
-  return tag === 'INPUT' || tag === 'TEXTAREA' || tag === 'SELECT' || Boolean(t?.isContentEditable);
-}
-
-/**
  * Shared dismissal effect for floating panels. While `active`, an outside
  * mousedown — registered on the next tick so the click that opened the panel
  * doesn't immediately fire it — or an Escape keypress calls `onDismiss`. Clicks

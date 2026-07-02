@@ -1,6 +1,8 @@
 import { STOP_DOT_RADIUS } from '../../geometry/orientation';
 import type { SnapGuide } from '../../geometry/snap';
 import { midpoint, norm, perp, sub } from '../../geometry/vec';
+import { useThemeColors } from '../../state/theme';
+import { withAlpha } from '../../util/color';
 
 interface Props {
   guides: SnapGuide[];
@@ -8,12 +10,20 @@ interface Props {
 }
 
 /**
- * Snap-axis guide rendering: a soft halo behind + a dashed teal line on top
+ * Snap-axis guide rendering: a soft halo behind + a dashed accent line on top
  * for each active alignment axis, plus circles at the endpoints. Stroke
  * widths are inverse to zoom so the guide stays visually consistent.
+ *
+ * Colors derive from the theme accent — the same "the editor is helping you"
+ * blue as the marquee, mode frames, and selection washes. (The old palette
+ * was a one-off teal + MTA-subway-yellow measurement chip; that yellow is a
+ * real line color in the NYC palette, so the chip could be pixel-identical
+ * to map content.)
  */
 export function SnapGuides({ guides, zoom }: Props) {
+  const themeColors = useThemeColors();
   if (guides.length === 0) return null;
+  const halo = withAlpha(themeColors.accent, 0.3);
   return (
     <g pointerEvents="none">
       <defs>
@@ -29,7 +39,7 @@ export function SnapGuides({ guides, zoom }: Props) {
               y1={g.from.y}
               x2={g.to.x}
               y2={g.to.y}
-              stroke="rgb(185, 218, 255)"
+              stroke={halo}
               strokeWidth={5 / zoom}
               strokeLinecap="round"
             />
@@ -38,7 +48,7 @@ export function SnapGuides({ guides, zoom }: Props) {
               cy={g.from.y}
               r={STOP_DOT_RADIUS + 1 / zoom}
               fill="none"
-              stroke="rgb(185, 218, 255)"
+              stroke={halo}
               strokeWidth={5 / zoom}
             />
             <circle
@@ -46,7 +56,7 @@ export function SnapGuides({ guides, zoom }: Props) {
               cy={g.to.y}
               r={STOP_DOT_RADIUS + 1 / zoom}
               fill="none"
-              stroke="rgb(185, 218, 255)"
+              stroke={halo}
               strokeWidth={5 / zoom}
             />
           </g>
@@ -59,7 +69,7 @@ export function SnapGuides({ guides, zoom }: Props) {
           y1={g.from.y}
           x2={g.to.x}
           y2={g.to.y}
-          stroke="#1488a0"
+          stroke={themeColors.accent}
           strokeWidth={2 / zoom}
           strokeDasharray={`${4 / zoom} ${3 / zoom}`}
         />
@@ -87,8 +97,8 @@ export function SnapGuides({ guides, zoom }: Props) {
             y={ly}
             fontSize={14 / zoom}
             fontWeight={700}
-            fill="#000"
-            stroke="#FCCC0A"
+            fill="#fff"
+            stroke={themeColors.accent}
             strokeWidth={4 / zoom}
             paintOrder="stroke"
             textAnchor="middle"
