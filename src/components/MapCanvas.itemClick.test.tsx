@@ -88,9 +88,12 @@ describe('MapCanvas — clicking off-line to exit the line editor', () => {
     act(() => {
       useDoc.setState({
         ...useDoc.getState(),
-        stations: { s1: makeStation({ id: 's1' }) },
-        lines: { L1: makeLine({ id: 'L1', stations: ['s1'] }) },
+        stations: { s1: makeStation({ id: 's1' }), s2: makeStation({ id: 's2', x: 100 }) },
+        lines: { L1: makeLine({ id: 'L1', stations: ['s1', 's2'] }) },
         lineOrder: ['L1'],
+        transfers: {
+          t1: { id: 't1', a: { stationId: 's1', lineId: null }, b: { stationId: 's2', lineId: null } },
+        },
       });
       useSelection.getState().setUiMode({
         kind: 'appending-to-line',
@@ -120,5 +123,16 @@ describe('MapCanvas — clicking off-line to exit the line editor', () => {
 
     expect(useSelection.getState().uiMode.kind).toBe('idle');
     expect(useSelection.getState().selectedPolygonIds).toEqual([]);
+  });
+
+  it('clicking a transfer exits append mode without selecting the transfer', () => {
+    render(<App />);
+    seed();
+    enterAppendMode();
+
+    clickEl('line[data-transfer-id="t1"]', {});
+
+    expect(useSelection.getState().uiMode.kind).toBe('idle');
+    expect(useSelection.getState().selectedTransferId).toBeNull();
   });
 });
