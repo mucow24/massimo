@@ -1,5 +1,6 @@
 import type { Station } from '../model/types';
-import { DIR_8, STOP_SIZE, stopCenterAt } from './orientation';
+import { DIR_8, STOP_SIZE, stopCenterAt, worldDirToLocal, type Rotation } from './orientation';
+import type { Vec2 } from './vec';
 import { LINE_HEIGHT, measureTextLabel } from './textMeasure';
 
 const HIT_PAD = 2;
@@ -363,4 +364,28 @@ function snapInfoInHalfPlane(
   for (const s of stops) consider(s.row - label.row, s.col - label.col, stopHalf(s.lineId));
   if (phantomDot) consider(phantomDot.row - label.row, phantomDot.col - label.col, HALF);
   return { inHalfPlane, inWayStopProj, inWayStopHalf };
+}
+
+/**
+ * Decompose a SCREEN-frame pixel delta into the label's offset axes: the
+ * `offset` component runs along the reading direction `(readCos, readSin)`,
+ * the `offsetPerp` component along `(-readSin, readCos)` — the exact axes
+ * labelLayoutLocal applies above, so writing `offset + dOffset` /
+ * `offsetPerp + dPerp` moves the painted text by precisely `delta` on
+ * screen. The basis is orthonormal (rotations preserve it), so the
+ * decomposition is exact for all 8×8 station/label rotation combinations.
+ */
+export function screenDeltaToLabelOffsets(
+  delta: Vec2,
+  stationRotation: Rotation,
+  labelRotation: Rotation,
+): { dOffset: number; dPerp: number } {
+  const local = worldDirToLocal(delta, stationRotation);
+  const a = (labelRotation * Math.PI) / 4;
+  const c = Math.cos(a);
+  const s = Math.sin(a);
+  return {
+    dOffset: local.x * c + local.y * s,
+    dPerp: local.x * -s + local.y * c,
+  };
 }

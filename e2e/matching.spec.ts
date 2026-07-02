@@ -1,6 +1,6 @@
 import { test, expect, type Page } from '@playwright/test';
 import { seedAndOpen, stationCenter, type Seed } from './fixtures';
-import { PITCH } from '../src/components/inspector/stopGridDrag';
+import { STOP_SIZE } from '../src/geometry/orientation';
 
 // Three stations on one line. A and B are identical (rotation 0, label cell
 // at (-1, -1) reading rotation 0). C is the 180° layout-mirror of A: station
@@ -65,7 +65,7 @@ async function stopWorldOffset(
   );
 }
 
-// StopGrid uses pointer events (not native HTML5 drag), so Playwright's
+// The layout editor uses pointer events (not native HTML5 drag), so Playwright's
 // dragTo is a no-op. Drive the gesture manually: down on source, threshold-
 // crossing nudge, then move to the destination, up.
 //
@@ -87,9 +87,11 @@ async function dragStopByLocalDelta(
 
   const delta = await page.evaluate(
     ({ sel, dRow, dCol, PITCH }) => {
-      const g = document.querySelector(sel);
-      const svg = g?.closest('svg');
-      const ctm = svg?.getScreenCTM();
+      // The handle <g> lives inside the station's translate+rotate group
+      // on the MAIN canvas, so use the ELEMENT's CTM (the svg's alone
+      // would miss the station rotation). One cell = STOP_SIZE world units.
+      const g = document.querySelector(sel) as SVGGElement | null;
+      const ctm = g?.getScreenCTM();
       if (!ctm) return null;
       // Linear-part transform of the (dCol·PITCH, dRow·PITCH) SVG vector.
       return {
@@ -97,7 +99,7 @@ async function dragStopByLocalDelta(
         y: dCol * PITCH * ctm.b + dRow * PITCH * ctm.d,
       };
     },
-    { sel: fromSel, dRow, dCol, PITCH },
+    { sel: fromSel, dRow, dCol, PITCH: STOP_SIZE },
   );
   if (!delta) throw new Error('no editor svg CTM');
   const tx = fx + delta.x;
@@ -122,7 +124,7 @@ test.describe('matching — visually-identical mirror stations', () => {
     const a = await stationCenter(page, 'A');
     await page.mouse.click(a.x, a.y);
 
-    const allBtn = page.getByRole('button', { name: 'all', exact: true });
+    const allBtn = page.getByRole('button', { name: 'Mirror ×2', exact: true });
     await expect(allBtn).toBeEnabled();
     // Title text encodes the match count — exact "2 matching neighbors"
     // proves both B (trivially identical) and C (180° mirror) were matched.
@@ -134,7 +136,8 @@ test.describe('matching — visually-identical mirror stations', () => {
 
     const a = await stationCenter(page, 'A');
     await page.mouse.click(a.x, a.y);
-    await page.getByRole('button', { name: 'all', exact: true }).click();
+    await page.getByRole('button', { name: 'Mirror ×2', exact: true }).click();
+    await page.getByRole('button', { name: 'Edit layout' }).click();
 
     const before = {
       A: await stopWorldOffset(page, 'A', 'L1'),

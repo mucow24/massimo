@@ -12,6 +12,7 @@ import {
 import { DEFAULT_DOT_STYLE, dotStylesEqual } from './dotStyle';
 import { pairKeyOf } from './pairKey';
 import { DIR_8, rotateBy, stopCenterAt } from '../geometry/orientation';
+import { CELL_EPS, sameCell } from '../geometry/lattice';
 import { GRID_INTERVAL, snapPointToGrid, type GridSnap } from '../geometry/snap';
 import { polygonCentroid, edgeMidpoint } from '../geometry/polygon';
 import { SVG_IMAGE_MIN_SIZE, normalizeRotation } from '../geometry/svgImage';
@@ -889,9 +890,6 @@ export function deleteStation(doc: MapDoc, id: StationId): MapDoc {
 
 // Float-tolerant "same cell" — row/col are no longer constrained to integers
 // (diagonal moves use ±√2/2), so equality must allow small drift.
-const CELL_EPS = 1e-4;
-const sameCell = (a: { row: number; col: number }, b: { row: number; col: number }): boolean =>
-  Math.abs(a.row - b.row) < CELL_EPS && Math.abs(a.col - b.col) < CELL_EPS;
 
 export function moveStop(
   doc: MapDoc,
@@ -919,7 +917,10 @@ export function moveStop(
   });
 }
 
-const AXIS_CYCLE: StopOrientation[] = [
+// Exported for the per-stop orientation picker: index k's LOCAL axis paints
+// as the WORLD axis at index (k + station.rotation) % 4 — consecutive
+// entries are 45° CW apart, matching the station rotation step.
+export const AXIS_CYCLE: StopOrientation[] = [
   'auto-vertical', // 0 — N/S
   'auto-ne-sw', // 1 — NE/SW
   'auto-horizontal', // 2 — E/W
@@ -1033,14 +1034,8 @@ export function setLabelOffsetPerp(doc: MapDoc, stationId: StationId, offsetPerp
   );
 }
 
+// Canonical display order for the align/valign segmented pickers.
 export const ALIGN_CYCLE: LabelAlign[] = ['auto', 'start', 'middle', 'end'];
-
-export function cycleLabelAlign(doc: MapDoc, stationId: StationId): MapDoc {
-  return updateLabel(doc, stationId, (label) => {
-    const i = ALIGN_CYCLE.indexOf(label.align);
-    return { ...label, align: ALIGN_CYCLE[(i + 1) % ALIGN_CYCLE.length] };
-  });
-}
 
 export function setLabelAlign(doc: MapDoc, stationId: StationId, align: LabelAlign): MapDoc {
   return updateLabel(doc, stationId, (label) =>
@@ -1048,19 +1043,10 @@ export function setLabelAlign(doc: MapDoc, stationId: StationId, align: LabelAli
   );
 }
 
-// 'auto-down' leads the cycle so the (new) default sits at index 0 —
-// advancing forward from a freshly created station immediately moves through
-// the classic block-aligned options. The cycle order is geometrically
-// symmetric: auto-down (block top pinned, grows down) → top → middle → bottom
-// → auto-up (block bottom pinned, grows up) → back to auto-down.
+// Canonical display order, geometrically symmetric: auto-down (block top
+// pinned, grows down) → top → middle → bottom → auto-up (block bottom
+// pinned, grows up). The default 'auto-down' sits at index 0.
 export const VALIGN_CYCLE: LabelValign[] = ['auto-down', 'top', 'middle', 'bottom', 'auto-up'];
-
-export function cycleLabelValign(doc: MapDoc, stationId: StationId): MapDoc {
-  return updateLabel(doc, stationId, (label) => {
-    const i = VALIGN_CYCLE.indexOf(label.valign);
-    return { ...label, valign: VALIGN_CYCLE[(i + 1) % VALIGN_CYCLE.length] };
-  });
-}
 
 export function setLabelValign(doc: MapDoc, stationId: StationId, valign: LabelValign): MapDoc {
   return updateLabel(doc, stationId, (label) =>

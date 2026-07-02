@@ -86,6 +86,18 @@ export function EditingBanner() {
           </div>
         </>
       );
+    case 'editing-station-layout':
+      // Right-click is repurposed here too (rotate the stop/label under the
+      // cursor — see RIGHT_CLICK_PASSTHROUGH_MODES), so Esc is the exit.
+      return (
+        <>
+          <div className="append-frame" />
+          <div className="append-banner placing">
+            Editing station layout — drag dots to move (Shift: diagonal grid), right-click or R to
+            rotate, arrows to nudge. Press Esc to exit.
+          </div>
+        </>
+      );
     case 'idle':
       return null;
     default: {

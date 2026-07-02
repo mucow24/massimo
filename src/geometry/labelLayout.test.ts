@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { labelLayoutLocal, DEFAULT_LABEL_STYLE } from './labelLayout';
+import { labelLayoutLocal, screenDeltaToLabelOffsets, DEFAULT_LABEL_STYLE } from './labelLayout';
 import { stopCenterAt, STOP_SIZE } from './orientation';
 import { stopHalfOf } from '../model/lineWidth';
 import type { LabelValign, Rotation, Station } from '../model/types';
@@ -651,5 +651,40 @@ describe('labelLayoutLocal — anchor distance after fix', () => {
     expect(dist).toBeLessThan(12);
     // And NOT at cell-center distance (which would indicate "no snap").
     expect(dist).toBeGreaterThan(HALF); // at least past the stop's own edge
+  });
+});
+
+describe('screenDeltaToLabelOffsets', () => {
+  // Import here would shadow the top imports; pulled in at top of file.
+  it('identity rotations: x maps to offset, y to offsetPerp', () => {
+    expect(screenDeltaToLabelOffsets({ x: 5, y: 0 }, 0, 0)).toEqual({ dOffset: 5, dPerp: 0 });
+    const d = screenDeltaToLabelOffsets({ x: 0, y: 3 }, 0, 0);
+    expect(d.dOffset).toBeCloseTo(0, 10);
+    expect(d.dPerp).toBeCloseTo(3, 10);
+  });
+
+  it('label reading South (rotation 2): screen-down is +offset, screen-right is -offsetPerp', () => {
+    const down = screenDeltaToLabelOffsets({ x: 0, y: 5 }, 0, 2);
+    expect(down.dOffset).toBeCloseTo(5, 10);
+    expect(down.dPerp).toBeCloseTo(0, 10);
+    const right = screenDeltaToLabelOffsets({ x: 5, y: 0 }, 0, 2);
+    expect(right.dOffset).toBeCloseTo(0, 10);
+    expect(right.dPerp).toBeCloseTo(-5, 10);
+  });
+
+  it('station rotation folds in: screen-right on a 90°CW station is -offsetPerp', () => {
+    // Station rotated 2 steps: screen East = local North = (0,-1). Label
+    // reads East locally (rotation 0), so the delta is pure perpendicular.
+    const d = screenDeltaToLabelOffsets({ x: 5, y: 0 }, 2, 0);
+    expect(d.dOffset).toBeCloseTo(0, 10);
+    expect(d.dPerp).toBeCloseTo(-5, 10);
+  });
+
+  it('is exact along a diagonal reading axis (no cross-leak)', () => {
+    const k = 7;
+    const s = Math.SQRT1_2 * k;
+    const d = screenDeltaToLabelOffsets({ x: s, y: s }, 0, 1);
+    expect(d.dOffset).toBeCloseTo(k, 10);
+    expect(d.dPerp).toBeCloseTo(0, 10);
   });
 });

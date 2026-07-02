@@ -1,13 +1,6 @@
 import type { LabelAlign, LabelValign } from '../../model/types';
 import { ALIGN_CYCLE, VALIGN_CYCLE } from '../../model/transforms';
 
-// The tooltip "→ next" target is derived from the canonical cycles in
-// transforms.ts so it can never drift from the actual click behavior.
-function nextInCycle<T>(cycle: readonly T[], cur: T): T {
-  const i = cycle.indexOf(cur);
-  return cycle[(i + 1) % cycle.length];
-}
-
 const ALIGN_TITLE: Record<LabelAlign, string> = {
   auto: 'auto (snap against adjacent stop)',
   start: 'left',
@@ -28,49 +21,61 @@ const LINE_THICKNESS = 1.5;
 const LINE_GAP = 2;
 const LINE_LENGTHS = [11, 8, 11, 6];
 
-export function LabelAlignButton({
+export function LabelAlignPicker({
   align,
-  onCycle,
+  onSet,
   disabled,
 }: {
   align: LabelAlign;
-  onCycle: () => void;
+  onSet: (v: LabelAlign) => void;
   disabled?: boolean;
 }) {
   return (
-    <button
-      type="button"
-      className="btn-mini label-align-btn"
-      aria-label={`Label horizontal alignment: ${ALIGN_TITLE[align]}`}
-      title={`H-align: ${ALIGN_TITLE[align]} → ${ALIGN_TITLE[nextInCycle(ALIGN_CYCLE, align)]}`}
-      onClick={onCycle}
-      disabled={disabled}
-    >
-      <HAlignIcon mode={align} />
-    </button>
+    <div className="seg-group" role="group" aria-label="Label horizontal alignment">
+      {ALIGN_CYCLE.map((mode) => (
+        <button
+          key={mode}
+          type="button"
+          className={'seg-btn' + (align === mode ? ' active' : '')}
+          aria-label={`Align: ${ALIGN_TITLE[mode]}`}
+          title={`Align: ${ALIGN_TITLE[mode]}`}
+          aria-pressed={align === mode}
+          disabled={disabled}
+          onClick={() => onSet(mode)}
+        >
+          <HAlignIcon mode={mode} />
+        </button>
+      ))}
+    </div>
   );
 }
 
-export function LabelValignButton({
+export function LabelValignPicker({
   valign,
-  onCycle,
+  onSet,
   disabled,
 }: {
   valign: LabelValign;
-  onCycle: () => void;
+  onSet: (v: LabelValign) => void;
   disabled?: boolean;
 }) {
   return (
-    <button
-      type="button"
-      className="btn-mini label-align-btn"
-      aria-label={`Label vertical alignment: ${VALIGN_TITLE[valign]}`}
-      title={`V-align: ${VALIGN_TITLE[valign]} → ${VALIGN_TITLE[nextInCycle(VALIGN_CYCLE, valign)]}`}
-      onClick={onCycle}
-      disabled={disabled}
-    >
-      <VAlignIcon mode={valign} />
-    </button>
+    <div className="seg-group" role="group" aria-label="Label vertical alignment">
+      {VALIGN_CYCLE.map((mode) => (
+        <button
+          key={mode}
+          type="button"
+          className={'seg-btn' + (valign === mode ? ' active' : '')}
+          aria-label={`V-align: ${VALIGN_TITLE[mode]}`}
+          title={`V-align: ${VALIGN_TITLE[mode]}`}
+          aria-pressed={valign === mode}
+          disabled={disabled}
+          onClick={() => onSet(mode)}
+        >
+          <VAlignIcon mode={mode} />
+        </button>
+      ))}
+    </div>
   );
 }
 

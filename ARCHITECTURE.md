@@ -140,7 +140,7 @@ src/
     Toolbar.tsx Sidebar.tsx Menu.tsx  # chrome
     *Popover.tsx                # on-canvas item editors
     canvas/                     # interaction layer: drag/placement/viewport hooks + overlay layers
-    inspector/                  # sidebar inspectors + the StopGrid mini-canvas
+    inspector/                  # sidebar inspectors + stopGridDrag.ts (pure lattice-edit math)
 
   export/                       # exportCanvas.ts (SVG/PNG), exportCanvasPdf.ts + pdfHatch.ts (vector PDF), fonts.ts
   util/                         # color.ts (hex math)
@@ -771,6 +771,8 @@ if moved (else cancels — a pure click recorded nothing). `dragState` (module s
 ### Drag hooks
 
 `useStationDrag` (runs the snap engine; Shift bypasses snap; Ctrl-drag = redistribute),
+`useLabelDrag` (the sole-selected station's painted name; see UI chrome), `useStationLayoutDrag`
+(the editing-station-layout mode's stop/label handles; see UI chrome),
 `useItemDrag` (bullets + labels), `usePolygonDrag` (whole-move / vertex / edge-add), `useSvgImageDrag`
 (move / resize / rotate — resize only snaps while axis-aligned; rotation only snaps to 22.5°),
 `useLineTagDrag` (**uses window-level listeners + `getScreenCTM().inverse()`** — the only hook that
@@ -796,8 +798,8 @@ per-type handlers omitted other types).
 popover/handles). Cursor-following ghost previews (`*PlacingPreview`, all `opacity 0.5`,
 `pointerEvents none`) feed synthetic items to the real views.
 
-`ItemPopovers` mounts the single popover for the sole selection and reprojects through
-`useLiveView` so it tracks the canvas during pan/zoom. `useDraggablePopover` **freezes the item's
+`ItemPopovers` mounts the single popover for the sole selection — including the station editor
+(see UI chrome) — and reprojects through `useLiveView` so it tracks the canvas during pan/zoom. `useDraggablePopover` **freezes the item's
 world position at mount** (so a size slider editing the item can't feed its own position back),
 accumulates header-drag in **world units**, and re-freezes when the selection `id` changes (one
 popover instance reused across selections).
@@ -820,21 +822,48 @@ churn the reference and re-run the per-stripe `t` search (a single click on a bu
   embeds `SnapToggleBar` and `OptionsPopover`. Owns the **export desaturation flush**: before
   export it drops the selected-line desaturation via `flushSync(() => selectLine(null))` so it
   isn't baked into the clone, then restores it in `finally`.
-- **[Sidebar.tsx](src/components/Sidebar.tsx)** — Stations/Lines tabs, a sortable station list,
-  and the inline-expanded inspector.
-- **[inspector/index.tsx](src/components/inspector/index.tsx)** — chooses the inspector: sticky
-  `LineInspector` while appending; `StationInspector` iff a station is the **sole** selection;
-  else `LineInspector` for the selected line. Inspectors dispatch transforms directly and own
-  **mirror matching** (`findMatchingStations` returns neighbors sharing layout under the model's
-  4-fold mirror symmetry; an edit broadcasts to all of them inside one history group, rotating
-  local deltas through `rotateGridDelta`).
-- **`StopGrid`** ([inspector/StopGrid.tsx](src/components/inspector/StopGrid.tsx)) — the
-  **zoomable mini-canvas** stop/label editor (rebuilt from a static grid). Content at a fixed
-  `PITCH=22` px/unit; a camera `{panX, panY, zoom}` is one CSS transform on the `<svg>` so
-  `getScreenCTM()` folds pan/zoom/rotation and the drag/ghost/snap math is unchanged from a static
-  grid. Wheel-zoom uses a **native non-passive listener** (React's `onWheel` is passive at root,
-  so `preventDefault` is a no-op and the sidebar would scroll). Ghost lattice is generated in the
-  **screen frame and projected to local** (the old rotation-parity basis pick was a reverted hack).
+- **[Sidebar.tsx](src/components/Sidebar.tsx)** — Stations/Lines tabs, a sortable station list
+  (rows select/deselect; the station editor itself is an on-canvas popover), and the
+  inline-expanded LINE inspector on the Lines tab.
+- **[StationPopover.tsx](src/components/StationPopover.tsx)** — the station editor's home:
+  mounted by `ItemPopovers` for a sole-selected station (idle mode, or that station's own
+  layout-edit mode), hosting the full `StationInspector` — name, labeled X/Y + rotation readout,
+  Mirror ×N / WP / lock toggles, the **Edit layout** button, per-stop rows
+  ([inspector/StopRows.tsx](src/components/inspector/StopRows.tsx): service badge + always-enabled
+  shape picker + dot size + world-true orientation segments per stop; hover cross-highlights the
+  dot via `hoveredLineStop`), and segmented label align/valign + offset controls. The anchor is
+  CLAMPED into the canvas host so sidebar-selecting an off-screen station still shows the editor.
+  Inspectors dispatch transforms directly and own **mirror matching** (`findMatchingStations`
+  returns neighbors sharing layout under the model's 4-fold mirror symmetry; an edit broadcasts
+  through [state/mirrorDispatch.ts](src/state/mirrorDispatch.ts), rotating local deltas through
+  `rotateGridDelta`; absolute orientation sets are applied as relative cycles so odd-offset
+  matches stay world-equivalent).
+- **Station layout editing happens ON the canvas** (the sidebar mini-canvas "StopGrid" was
+  retired in favor of these three surfaces; its pure drag/ghost math lives on in
+  [inspector/stopGridDrag.ts](src/components/inspector/stopGridDrag.ts) — `computeGhosts`,
+  `findDropTarget`, `nudgeTarget`, all screen-frame-generated and projected to station-local):
+  1. **On-canvas label drag** ([canvas/useLabelDrag.ts](src/components/canvas/useLabelDrag.ts)):
+     while a station is the SOLE selection, its painted name's hit rect becomes the LABEL's own
+     handle (StationHitArea forks; dots/body still drag the station). Plain drag = ghost-lattice
+     cell placement (Shift = diagonal basis); **Alt = fine mode**, live-writing
+     `setLabelOffset`/`setLabelOffsetPerp` via `screenDeltaToLabelOffsets` (exact inverse of
+     labelLayout's offset axes; leaving Alt restores gesture-start offsets); right-click rotates
+     the label; double-click still renames. Disarmed in hand mode / non-idle modes / mid-rename.
+  2. **`editing-station-layout` mode** ([canvas/StationLayoutEditor.tsx](src/components/canvas/StationLayoutEditor.tsx)
+     + [useStationLayoutDrag.ts](src/components/canvas/useStationLayoutDrag.ts)): entered via the
+     inspector's **Edit layout** button (`startEditingStationLayout` preserves selection + mirror
+     state; frames the camera if the station is off-screen). Zoom-floored grab rings over each
+     real dot (orientation glyph badges) + a label-cell ring; drag between ghost slots, drop on a
+     stop swaps, right-click/R rotates, click selects the stop/label (arming the shape/size
+     pickers). A transparent **shield rect** swallows near-miss presses so nothing falls through
+     to the whole-station handlers (the mode is in `RIGHT_CLICK_PASSTHROUGH_MODES`).
+  3. **Keyboard nudge** (App.tsx): with a stop/label selected, arrows hop one lattice slot in the
+     pressed screen direction (`nudgeTarget`, Shift = diagonal), Alt+arrows fine-nudge label
+     offsets (Shift ×5), R rotates. All three surfaces share
+     [state/mirrorDispatch.ts](src/state/mirrorDispatch.ts) — `dispatchMirrored` (one-shot
+     controls, groups only when fanning out and no group is open — see the isHistoryGrouping
+     gotcha) / `fanOutMirrored` (group-free, for explicit multi-write groups) — and capture mirror
+     matches at gesture start (the first write to the source dissolves the match).
 - **Numeric fields**: `useFieldHistory` opens a history group on focus and commits on blur (and on
   unmount, as a safety net); `useNumericField` wraps it with a local text mirror, a focus guard,
   and wheel-to-increment off the live value. `NumericFieldRow` pairs a slider + spinbutton sharing
@@ -989,8 +1018,15 @@ Each is confirmed in source/tests; file pointers included.
   it; cross-gesture stranding is handled by the capture-phase self-heal instead.
 - **Line-tag drag uses window listeners + `getScreenCTM().inverse()`** — the only hook off the
   shared React-handler path.
-- **StopGrid wheel-zoom must use a native non-passive listener** — React's root `onWheel` is
-  passive, so `preventDefault` is a no-op and the sidebar scrolls.
+- **History groups don't nest** — zundo's pause/resume is a plain boolean, so a group inside a
+  group resumes recording mid-gesture. `dispatchMirrored` gates on `isHistoryGrouping()` and
+  skips its own group when one is already open (a focused field's edit arc); call sites managing
+  an explicit multi-write group use `fanOutMirrored` (group-free) inside it.
+  ([mirrorDispatch.ts](src/state/mirrorDispatch.ts), [history.ts](src/state/history.ts))
+- **Mirror matches must be captured at gesture START for drags** — the first write to the source
+  station changes its layout and dissolves the match, so a per-move `findMatchingStations` would
+  find nothing after the first frame. One-shot controls (`dispatchMirrored`) compute at dispatch
+  time, which is BEFORE their single write — equivalent and correct.
 - **Export desaturation race** — `Toolbar.runExport` uses `flushSync` to drop/restore the selected-
   line desaturation synchronously so it isn't baked into the clone.
 - **`pre-pr` does NOT run e2e** — migration/rehydration is only covered by Playwright
@@ -1028,8 +1064,8 @@ Each is confirmed in source/tests; file pointers included.
   IHDR bytes); `exportPdf.spec.ts` exports a hatch+text+image map and asserts the PDF embeds a
   TrueType CID font (`/FontFile2` + `/Type0`) rather than falling back to standard Helvetica.
 - **Known gaps** (per the deep-dive): `Transfer`/`RouteBullet`/`LineTag` lack dedicated serialize
-  round-trip tests; no pixel/visual golden for the merged-dot-border result; StopGrid camera
-  (wheel-zoom/fit) isn't unit-tested; `MapCanvas`'s full pointer fan-out is only tested per-hook.
+  round-trip tests; no pixel/visual golden for the merged-dot-border result; `MapCanvas`'s full
+  pointer fan-out is only tested per-hook.
 
 ---
 

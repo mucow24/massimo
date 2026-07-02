@@ -41,60 +41,6 @@ describe('addStation', () => {
   });
 });
 
-describe('cycleLabelValign', () => {
-  // Cycle order: auto-down → top → middle → bottom → auto-up → auto-down.
-  // 'auto-down' leads so a user advancing forward immediately reaches the
-  // (new) default; the symmetric 'auto-up' option lives at the tail so it
-  // sits next to 'bottom', which it geometrically resembles.
-  it('walks the auto-down → top → middle → bottom → auto-up → auto-down cycle', () => {
-    let doc = makeDoc({ stations: [makeStation({ id: 's1' })] });
-    doc = {
-      ...doc,
-      stations: {
-        ...doc.stations,
-        s1: { ...doc.stations.s1, label: { ...doc.stations.s1.label, valign: 'auto-down' } },
-      },
-    };
-    doc = T.cycleLabelValign(doc, 's1');
-    expect(doc.stations.s1.label.valign).toBe('top');
-    doc = T.cycleLabelValign(doc, 's1');
-    expect(doc.stations.s1.label.valign).toBe('middle');
-    doc = T.cycleLabelValign(doc, 's1');
-    expect(doc.stations.s1.label.valign).toBe('bottom');
-    doc = T.cycleLabelValign(doc, 's1');
-    expect(doc.stations.s1.label.valign).toBe('auto-up');
-    doc = T.cycleLabelValign(doc, 's1');
-    expect(doc.stations.s1.label.valign).toBe('auto-down');
-  });
-
-  it('is a no-op for missing ids', () => {
-    const doc = makeDoc({ stations: [makeStation({ id: 's1' })] });
-    expect(T.cycleLabelValign(doc, 'nope')).toEqual(doc);
-  });
-});
-
-describe('cycleLabelAlign', () => {
-  // ALIGN_CYCLE = ['auto', 'start', 'middle', 'end']; a fresh station's label
-  // aligns 'auto', so advancing forward walks the ring and wraps back to auto.
-  it('walks the auto → start → middle → end → auto cycle', () => {
-    let doc = makeDoc({ stations: [makeStation({ id: 's1' })] });
-    expect(doc.stations.s1.label.align).toBe('auto');
-    doc = T.cycleLabelAlign(doc, 's1');
-    expect(doc.stations.s1.label.align).toBe('start');
-    doc = T.cycleLabelAlign(doc, 's1');
-    expect(doc.stations.s1.label.align).toBe('middle');
-    doc = T.cycleLabelAlign(doc, 's1');
-    expect(doc.stations.s1.label.align).toBe('end');
-    doc = T.cycleLabelAlign(doc, 's1');
-    expect(doc.stations.s1.label.align).toBe('auto');
-  });
-
-  it('is a no-op for missing ids', () => {
-    const doc = makeDoc({ stations: [makeStation({ id: 's1' })] });
-    expect(T.cycleLabelAlign(doc, 'nope')).toBe(doc);
-  });
-});
-
 describe('setLabelAlign', () => {
   it('sets the requested align value', () => {
     const doc = makeDoc({ stations: [makeStation({ id: 's1' })] });

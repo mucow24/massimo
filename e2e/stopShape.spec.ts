@@ -8,8 +8,8 @@ test.beforeEach(async ({ page }) => {
 
 // The picker lives in the StationInspector, which only renders for a
 // single-station selection. Selecting a station is therefore a precondition
-// for the picker to be on the page at all. Picking a stop in the StopGrid
-// is now also required: the picker only writes to the click-selected stop.
+// for the picker to be on the page at all. Picking a stop in the on-canvas
+// layout editor is also required: the picker writes to the selected stop.
 
 test.describe('Stop shape picker — smoke', () => {
   test('selecting A, clicking its L1 stop, and picking "Filled black diamond" replaces only A\'s L1 dot', async ({
@@ -25,7 +25,8 @@ test.describe('Stop shape picker — smoke', () => {
     const a = await stationCenter(page, 'A');
     await page.mouse.click(a.x, a.y);
 
-    // Click A's L1 stop in the StopGrid.
+    // Enter the on-canvas layout editor and click A's L1 stop handle.
+    await page.getByRole('button', { name: 'Edit layout' }).click();
     await page.locator('[data-cell-kind="stop"][data-line-id="L1"]').click();
 
     // Open picker, pick diamond.
@@ -57,22 +58,25 @@ test.describe('Stop shape picker — coverage', () => {
     await expect(page.getByRole('button', { name: 'Stop shape' })).toHaveCount(0);
   });
 
-  test('picker is present but disabled when only a station is selected', async ({ page }) => {
+  test('picker is present and ENABLED as soon as a station is selected (per-stop row)', async ({
+    page,
+  }) => {
     await seedAndOpen(page, fourInLine);
 
     const a = await stationCenter(page, 'A');
     await page.mouse.click(a.x, a.y);
     await expect(page.getByRole('button', { name: 'Stop shape' })).toHaveAttribute(
       'aria-disabled',
-      'true',
+      'false',
     );
   });
 
-  test('picker becomes enabled after clicking a stop in the StopGrid', async ({ page }) => {
+  test('picker becomes enabled after clicking a stop in the layout editor', async ({ page }) => {
     await seedAndOpen(page, fourInLine);
 
     const a = await stationCenter(page, 'A');
     await page.mouse.click(a.x, a.y);
+    await page.getByRole('button', { name: 'Edit layout' }).click();
     await page.locator('[data-cell-kind="stop"][data-line-id="L1"]').click();
 
     await expect(page.getByRole('button', { name: 'Stop shape' })).toHaveAttribute(
@@ -88,6 +92,7 @@ test.describe('Stop shape picker — coverage', () => {
 
     const b = await stationCenter(page, 'B');
     await page.mouse.click(b.x, b.y);
+    await page.getByRole('button', { name: 'Edit layout' }).click();
     await page.locator('[data-cell-kind="stop"][data-line-id="L1"]').click();
     await page.getByRole('button', { name: 'Stop shape' }).click();
     await page.getByRole('menuitem', { name: 'None' }).click();
@@ -102,6 +107,7 @@ test.describe('Stop shape picker — coverage', () => {
 
     const a = await stationCenter(page, 'A');
     await page.mouse.click(a.x, a.y);
+    await page.getByRole('button', { name: 'Edit layout' }).click();
     await page.locator('[data-cell-kind="stop"][data-line-id="L1"]').click();
     await page.getByRole('button', { name: 'Stop shape' }).click();
     await page.getByRole('menuitem', { name: 'Filled black diamond' }).click();
@@ -120,6 +126,7 @@ test.describe('Stop shape picker — coverage', () => {
 
     const a = await stationCenter(page, 'A');
     await page.mouse.click(a.x, a.y);
+    await page.getByRole('button', { name: 'Edit layout' }).click();
     await page.locator('[data-cell-kind="stop"][data-line-id="L1"]').click();
     await page.getByRole('button', { name: 'Stop shape' }).click();
     await page.getByRole('menuitem', { name: 'Filled black diamond' }).click();

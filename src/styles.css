@@ -1142,6 +1142,34 @@ select option {
 .btn-mini:hover:not(:disabled) {
   background: var(--control-hover);
 }
+/* Segmented state pickers (label align/valign in the station editor, stop
+   orientation in the per-stop rows): one button per state, the current one
+   highlighted with the shared accent pair; a click sets that state directly. */
+.seg-group {
+  display: inline-flex;
+  gap: 4px;
+}
+.seg-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 26px;
+  height: 26px;
+  background: var(--control-bg);
+  border: 1px solid var(--border-strong);
+  border-radius: var(--radius);
+  padding: 0;
+  cursor: pointer;
+}
+.seg-btn:hover:not(:disabled) {
+  background: var(--control-hover);
+}
+.seg-btn.active,
+.seg-btn.active:hover:not(:disabled) {
+  background: var(--accent-bg);
+  border-color: var(--accent-border);
+}
+
 /* One "toggle is on" treatment for every mini toggle (B/I, mirror, waypoint,
    lock): the shared accent pair. The mirror/wp/lock class names stay on the
    JSX so tests and semantics are untouched; they just all paint the same. */
@@ -1211,6 +1239,12 @@ input[type='range'].indeterminate {
   font-size: var(--fs-caption);
   color: var(--text-muted);
   margin-top: 4px;
+}
+/* Tiny inline captions in the position row (X/Y letters, rotation readout). */
+.inspector .axis-label {
+  font-size: var(--fs-caption);
+  color: var(--text-muted);
+  user-select: none;
 }
 /* The Line inspector embeds a NumericFieldRow (the popover slider idiom)
    between its .field rows — align its label styling and spacing with the
@@ -1371,4 +1405,37 @@ body:has(.app[data-theme='dark']) {
 }
 .app[data-theme='dark'] .warning-toasts .toast:hover {
   background: #46401c;
+}
+
+/* Per-stop editor rows in the station inspector. */
+.stop-row {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 3px 4px;
+  border-radius: var(--radius);
+  cursor: pointer;
+}
+.stop-row:hover {
+  background: var(--row-hover);
+}
+.stop-row.selected {
+  background: var(--row-selected);
+}
+.stop-row .line-badge {
+  flex: none;
+}
+
+/* Station popover: the station editor as an on-canvas popover (shares the
+   .text-label-popover shell). Wider than the standard 240px so the per-stop
+   rows + segmented pickers fit on one line. */
+.station-popover {
+  width: 320px;
+}
+.station-popover .inspector {
+  padding: 0;
+}
+.station-popover .body {
+  max-height: min(70vh, 560px);
+  overflow-y: auto;
 }

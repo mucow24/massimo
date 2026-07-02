@@ -1,5 +1,13 @@
 import { describe, it, expect } from 'vitest';
-import { nearestNode, findDropTarget } from './stopGridDrag';
+import {
+  nearestNode,
+  findDropTarget,
+  computeGhosts,
+  nudgeTarget,
+  sameCell,
+  type WidthNode,
+} from './stopGridDrag';
+import { STOP_SIZE } from '../../geometry/orientation';
 
 describe('nearestNode', () => {
   it('returns null for an empty list', () => {
@@ -117,6 +125,143 @@ describe('findDropTarget', () => {
       ghosts,
       opts,
     );
+    expect(target).toBeNull();
+  });
+});
+
+const W = STOP_SIZE; // default node width
+
+describe('computeGhosts', () => {
+  const anchor: WidthNode = { row: 0, col: 0, w: W };
+
+  it('default widths: the full 24-slot unit lattice around the anchor', () => {
+    const ghosts = computeGhosts({
+      wSrc: W,
+      anchor,
+      otherNodes: [anchor],
+      basis: 'orthogonal',
+      stationRotation: 0,
+      gridRadius: 2,
+    });
+    expect(ghosts).toHaveLength(24);
+    expect(ghosts.some((g) => sameCell(g, { row: 0, col: 1 }))).toBe(true);
+    expect(ghosts.some((g) => sameCell(g, { row: -2, col: 2 }))).toBe(true);
+  });
+
+  it('mixed widths scale ring-1 to the pair tangency distance', () => {
+    // width-28 source against a default anchor: t = (28+14)/2/14 = 1.5.
+    const ghosts = computeGhosts({
+      wSrc: 28,
+      anchor,
+      otherNodes: [anchor],
+      basis: 'orthogonal',
+      stationRotation: 0,
+      gridRadius: 2,
+    });
+    expect(ghosts.some((g) => sameCell(g, { row: 0, col: 1.5 }))).toBe(true);
+    expect(ghosts.some((g) => sameCell(g, { row: 0, col: 1 }))).toBe(false);
+  });
+
+  it('drops slots that would overlap another node, keeps tangent ones', () => {
+    const other: WidthNode = { row: 0, col: 1, w: W };
+    const ghosts = computeGhosts({
+      wSrc: W,
+      anchor,
+      otherNodes: [anchor, other],
+      basis: 'orthogonal',
+      stationRotation: 0,
+      gridRadius: 2,
+    });
+    // (0,1) sits ON the other node — dropped. (0,2) is exactly tangent — kept.
+    expect(ghosts.some((g) => sameCell(g, { row: 0, col: 1 }))).toBe(false);
+    expect(ghosts.some((g) => sameCell(g, { row: 0, col: 2 }))).toBe(true);
+  });
+
+  it('projects the screen-frame lattice into rotated-station local frame', () => {
+    // Diagonal basis on a 45°-rotated station: the screen-frame tangent
+    // diagonals land on LOCAL integer cardinals.
+    const ghosts = computeGhosts({
+      wSrc: W,
+      anchor,
+      otherNodes: [anchor],
+      basis: 'diagonal',
+      stationRotation: 1,
+      gridRadius: 2,
+    });
+    expect(ghosts.some((g) => sameCell(g, { row: 0, col: 1 }))).toBe(true);
+  });
+});
+
+describe('nudgeTarget', () => {
+  const RIGHT = { row: 0, col: 1 };
+  const UP = { row: -1, col: 0 };
+
+  it('hops to the far tangent slot when the arrow points across the anchor', () => {
+    // Source at (0,0), anchor at (0,1): pressing Right can't overlap the
+    // anchor, so the slot on its far side wins.
+    const target = nudgeTarget({
+      source: { row: 0, col: 0 },
+      wSrc: W,
+      otherNodes: [{ row: 0, col: 1, w: W }],
+      basis: 'orthogonal',
+      stationRotation: 0,
+      arrow: RIGHT,
+    });
+    expect(target && sameCell(target, { row: 0, col: 2 })).toBe(true);
+  });
+
+  it('prefers the straight slot over nearer diagonals', () => {
+    // Pressing Up from (0,0) with anchor (0,1): (-1,0) [dot 1, d 1] must beat
+    // (-1,1) [dot .707, d 1.41] — alignment outranks distance.
+    const target = nudgeTarget({
+      source: { row: 0, col: 0 },
+      wSrc: W,
+      otherNodes: [{ row: 0, col: 1, w: W }],
+      basis: 'orthogonal',
+      stationRotation: 0,
+      arrow: UP,
+    });
+    expect(target && sameCell(target, { row: -1, col: 0 })).toBe(true);
+  });
+
+  it('scales the hop by mixed-width tangency', () => {
+    // width-28 source tangent-left of a default label at (0, 1.5): Right hops
+    // to (0, 3) — tangent on the far side, never overlapping.
+    const target = nudgeTarget({
+      source: { row: 0, col: 0 },
+      wSrc: 28,
+      otherNodes: [{ row: 0, col: 1.5, w: W }],
+      basis: 'orthogonal',
+      stationRotation: 0,
+      arrow: RIGHT,
+    });
+    expect(target && sameCell(target, { row: 0, col: 3 })).toBe(true);
+  });
+
+  it('is screen-true on rotated stations', () => {
+    // Station rotated 2 steps (90° CW): local "up" (-row) paints as screen
+    // East. The anchor sits screen-East of the source; pressing Right hops
+    // to the slot screen-East of the anchor = local (-2, 0).
+    const target = nudgeTarget({
+      source: { row: 0, col: 0 },
+      wSrc: W,
+      otherNodes: [{ row: -1, col: 0, w: W }],
+      basis: 'orthogonal',
+      stationRotation: 2,
+      arrow: RIGHT,
+    });
+    expect(target && sameCell(target, { row: -2, col: 0 })).toBe(true);
+  });
+
+  it('returns null when there is no anchor (lone node)', () => {
+    const target = nudgeTarget({
+      source: { row: 0, col: 0 },
+      wSrc: W,
+      otherNodes: [],
+      basis: 'orthogonal',
+      stationRotation: 0,
+      arrow: RIGHT,
+    });
     expect(target).toBeNull();
   });
 });

@@ -717,3 +717,75 @@ describe('getCopyableSelection', () => {
     });
   });
 });
+
+describe('editing-station-layout mode', () => {
+  it('startEditingStationLayout enters the mode with the station selected and mirror preserved', () => {
+    useSelection.setState({
+      mirrorMatching: true,
+      selectedRouteBulletIds: ['b1'],
+      selectedStopLineId: 'L9' as LineId,
+    });
+    useSelection.getState().startEditingStationLayout('A' as StationId);
+    const s = useSelection.getState();
+    expect(s.uiMode).toEqual({ kind: 'editing-station-layout', stationId: 'A' });
+    expect(s.selectedStationIds).toEqual(['A']);
+    expect(s.selectedRouteBulletIds).toEqual([]);
+    expect(s.selectedStopLineId).toBeNull();
+    // The whole point of the mode is layout editing — mirror survives entry
+    // (a vanilla setUiMode would wipe it via clearedSelections).
+    expect(s.mirrorMatching).toBe(true);
+  });
+
+  it('selecting a DIFFERENT station exits the mode; re-selecting the same keeps it', () => {
+    useSelection.getState().startEditingStationLayout('A' as StationId);
+    useSelection.getState().selectStation('A' as StationId);
+    expect(useSelection.getState().uiMode.kind).toBe('editing-station-layout');
+    useSelection.getState().selectStation('B' as StationId);
+    expect(useSelection.getState().uiMode.kind).toBe('idle');
+    expect(useSelection.getState().selectedStationIds).toEqual(['B']);
+  });
+
+  it('deselecting (selectStation null) exits the mode', () => {
+    useSelection.getState().startEditingStationLayout('A' as StationId);
+    useSelection.getState().selectStation(null);
+    expect(useSelection.getState().uiMode.kind).toBe('idle');
+    expect(useSelection.getState().selectedStationIds).toEqual([]);
+  });
+
+  it('right-click is a gesture in this mode (no mode cancel)', async () => {
+    const { RIGHT_CLICK_PASSTHROUGH_MODES } = await import('./selection');
+    expect(RIGHT_CLICK_PASSTHROUGH_MODES.has('editing-station-layout')).toBe(true);
+  });
+});
+
+describe('editing-station-layout mode — selection reconciliation', () => {
+  it('shift-click toggle onto ANOTHER station exits the mode', () => {
+    useSelection.getState().startEditingStationLayout('A' as StationId);
+    useSelection.getState().toggleStationSelection('B' as StationId);
+    expect(useSelection.getState().uiMode.kind).toBe('idle');
+  });
+
+  it('toggling the edited station itself OFF exits the mode', () => {
+    useSelection.getState().startEditingStationLayout('A' as StationId);
+    useSelection.getState().toggleStationSelection('A' as StationId);
+    expect(useSelection.getState().uiMode.kind).toBe('idle');
+  });
+
+  it('setStationSelection away from the edited station exits; to it alone keeps it', () => {
+    useSelection.getState().startEditingStationLayout('A' as StationId);
+    useSelection.getState().setStationSelection(['A'] as StationId[]);
+    expect(useSelection.getState().uiMode.kind).toBe('editing-station-layout');
+    useSelection.getState().setStationSelection(['B', 'C'] as StationId[]);
+    expect(useSelection.getState().uiMode.kind).toBe('idle');
+  });
+
+  it('add / xor extensions exit the mode too', () => {
+    useSelection.getState().startEditingStationLayout('A' as StationId);
+    useSelection.getState().addStationsToSelection(['B'] as StationId[]);
+    expect(useSelection.getState().uiMode.kind).toBe('idle');
+
+    useSelection.getState().startEditingStationLayout('A' as StationId);
+    useSelection.getState().xorStationsToSelection(['B'] as StationId[]);
+    expect(useSelection.getState().uiMode.kind).toBe('idle');
+  });
+});
