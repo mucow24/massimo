@@ -39,7 +39,9 @@ export function LabelOffsetControl({
         value={indeterminate ? '' : value}
         placeholder={indeterminate ? '—' : undefined}
         onChange={(e) => {
-          const n = Number(e.target.value);
+          const raw = e.target.value;
+          if (raw === '') return; // ignore empty mid-edit (Number('') === 0)
+          const n = Number(raw);
           if (Number.isFinite(n)) onChange(n);
         }}
         style={{ width: 56 }}

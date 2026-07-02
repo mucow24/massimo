@@ -1,18 +1,16 @@
-import { RefObject, useCallback, useEffect, useRef, useState } from 'react';
+import { RefObject, useCallback, useEffect } from 'react';
 import { beginHistoryGroup, useDoc, useSelection } from '../../state/store';
 import type { LineId, StationId } from '../../model/types';
 import type { Vec2 } from '../../geometry/vec';
 import type { RowCol } from '../../geometry/lattice';
-import {
-  STOP_SIZE,
-  rotateGridDelta,
-  worldDirToLocal,
-  type Rotation,
-} from '../../geometry/orientation';
+import { STOP_SIZE, rotateGridDelta, type Rotation } from '../../geometry/orientation';
 import { lineWidthOf } from '../../model/lineWidth';
 import { captureMirrorTargets, type MirrorTarget } from '../../state/mirrorDispatch';
 import {
+  GHOST_SNAP_RADIUS,
+  GRID_RADIUS,
   computeGhosts,
+  cursorCellAt,
   findDropTarget,
   nearestNode,
   otherLayoutNodes,
@@ -21,15 +19,14 @@ import {
   stationLayoutNodes,
   type DropTarget,
 } from '../inspector/stopGridDrag';
-import { finishDrag, trackDragMove } from './dragGesture';
+import { finishDrag } from './dragGesture';
+import { useGhostDragEngine, type DragModifiers, type GhostDragCore } from './useGhostDragEngine';
 
 type ScreenToWorld = (mx: number, my: number) => Vec2;
 
-// Same snap rules as the old StopGrid: cursor→ghost radius, and the base
-// swap radius a default-width stop reproduces via swapRadiusFor.
-const GHOST_SNAP_RADIUS = 1.0;
+// The base swap radius a default-width stop reproduces via swapRadiusFor —
+// same rule as the old StopGrid.
 const STOP_SWAP_RADIUS = 0.6;
-const GRID_RADIUS = 2;
 
 export type LayoutDragSource = { kind: 'stop'; lineId: LineId } | { kind: 'label' };
 
@@ -50,6 +47,12 @@ export interface StationLayoutDragApi {
   onPointerCancel: () => void;
 }
 
+interface LayoutDragState extends GhostDragCore {
+  id: StationId;
+  source: LayoutDragSource;
+  targets: MirrorTarget[];
+}
+
 /**
  * Drag engine for the on-canvas station layout editor: the StopGrid's
  * gestures at world scale. Drag a stop/label handle between ghost-lattice
@@ -59,37 +62,24 @@ export interface StationLayoutDragApi {
  * pickers and keyboard nudge). Mirror matching fans out to the matches
  * captured at gesture START (a late capture would fail — the first write to
  * the source dissolves the match). One history entry per gesture.
+ *
+ * Lifecycle scaffolding (overlay ref mirror, live projection ref, stationary
+ * modifier recompute, pointermove/pointercancel) lives in useGhostDragEngine.
  */
 export function useStationLayoutDrag(
   svgRef: RefObject<SVGSVGElement | null>,
   screenToWorld: ScreenToWorld,
 ): StationLayoutDragApi {
-  const [overlay, setOverlayState] = useState<LayoutDragOverlay | null>(null);
-  // The pointerup commit reads the overlay through this ref, not the state —
-  // React 18 batches the last set, so closure state can lag one move behind.
-  const overlayRef = useRef<LayoutDragOverlay | null>(null);
-  const setOverlay = (v: LayoutDragOverlay | null) => {
-    overlayRef.current = v;
-    setOverlayState(v);
-  };
-  // Fresh-projection ref: screenToWorld is a new closure every render (it
-  // closes over that render's committed viewport); the []-stable handlers
-  // and the window key listeners read it through here.
-  const screenToWorldRef = useRef(screenToWorld);
-  useEffect(() => {
-    screenToWorldRef.current = screenToWorld;
-  }, [screenToWorld]);
-  const dragRef = useRef<{
-    id: StationId;
-    source: LayoutDragSource;
-    startMX: number;
-    startMY: number;
-    moved: boolean;
-    lastMX: number;
-    lastMY: number;
-    targets: MirrorTarget[];
-    history: ReturnType<typeof beginHistoryGroup>;
-  } | null>(null);
+  const {
+    overlay,
+    overlayRef,
+    setOverlay,
+    dragRef,
+    screenToWorldRef,
+    updateRef,
+    onPointerMove,
+    onPointerCancel,
+  } = useGhostDragEngine<LayoutDragState, LayoutDragOverlay>(svgRef, screenToWorld);
 
   const onStartNodeDrag = useCallback(
     (id: StationId, source: LayoutDragSource, e: React.PointerEvent) => {
@@ -106,12 +96,12 @@ export function useStationLayoutDrag(
         history: beginHistoryGroup(),
       };
     },
-    [],
+    [dragRef],
   );
 
-  // The per-frame computation, parameterized so both pointermove and a
-  // stationary Shift press can drive it. Reads only refs + live stores.
-  const update = (clientX: number, clientY: number, shiftKey: boolean) => {
+  // The per-frame computation, driven by pointermove and stationary Shift
+  // presses (engine). Reads only refs + live stores.
+  const update = (clientX: number, clientY: number, { shiftKey }: DragModifiers) => {
     const ds = dragRef.current;
     if (!ds || !ds.moved) return;
     ds.lastMX = clientX;
@@ -121,9 +111,7 @@ export function useStationLayoutDrag(
     if (!st) return;
     const rotation = (st.rotation % 8) as Rotation;
 
-    const world = screenToWorldRef.current(clientX, clientY);
-    const local = worldDirToLocal({ x: world.x - st.x, y: world.y - st.y }, rotation);
-    const cursor: RowCol = { row: local.y / STOP_SIZE, col: local.x / STOP_SIZE };
+    const cursor = cursorCellAt(st, rotation, screenToWorldRef.current(clientX, clientY));
 
     const sourceCell = sourceCellOf(st, ds.source);
     if (!sourceCell) return;
@@ -154,37 +142,9 @@ export function useStationLayoutDrag(
     );
     setOverlay({ stationId: ds.id, source: ds.source, ghosts, over });
   };
-  // Latest `update` for the window key listeners (assigned in an effect —
-  // writing a ref during render trips react-hooks/refs).
-  const updateRef = useRef(update);
   useEffect(() => {
     updateRef.current = update;
   });
-
-  // Stationary Shift tracking: flip the lattice basis the moment the key
-  // changes, without waiting for the next pointermove (StopGrid parity).
-  useEffect(() => {
-    const onKey = (e: KeyboardEvent) => {
-      if (e.key !== 'Shift') return;
-      const ds = dragRef.current;
-      if (!ds || !ds.moved) return;
-      updateRef.current(ds.lastMX, ds.lastMY, e.shiftKey);
-    };
-    window.addEventListener('keydown', onKey);
-    window.addEventListener('keyup', onKey);
-    return () => {
-      window.removeEventListener('keydown', onKey);
-      window.removeEventListener('keyup', onKey);
-    };
-  }, []);
-
-  const onPointerMove = (e: React.PointerEvent) => {
-    const ds = dragRef.current;
-    if (!ds) return;
-    const { moved } = trackDragMove(ds, e, svgRef);
-    if (!moved) return;
-    update(e.clientX, e.clientY, e.shiftKey);
-  };
 
   const onPointerUp = (e: React.PointerEvent) => {
     const ds = dragRef.current;
@@ -219,18 +179,6 @@ export function useStationLayoutDrag(
       else sel.setLabelSelected(true);
     }
     finishDrag(ds, e, svgRef);
-  };
-
-  // Browser pointercancel: disarm the drag and clear the overlay, dropping the
-  // resolved-but-uncommitted move (this hook writes the doc only on drop, so
-  // rollback finds nothing to revert — it just closes the paused history group
-  // so recording resumes). See useStationDrag for the full rationale.
-  const onPointerCancel = () => {
-    const ds = dragRef.current;
-    if (!ds) return;
-    dragRef.current = null;
-    setOverlay(null);
-    ds.history.rollback();
   };
 
   return { overlay, onStartNodeDrag, onPointerMove, onPointerUp, onPointerCancel };

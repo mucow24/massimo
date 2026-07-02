@@ -1,5 +1,6 @@
 import { useDoc } from '../state/store';
 import { type ViewportProjection } from './canvas/screenAnchor';
+import { DraggablePopoverShell } from './DraggablePopoverShell';
 import { useDraggablePopover } from './canvas/useDraggablePopover';
 import { useNumericField } from './useNumericField';
 import { PopoverFooter } from './PopoverFooter';
@@ -72,88 +73,78 @@ export function RouteBulletPopover({ bullet, world, view, onClose }: Props) {
   const shapes: RouteBulletShape[] = ['circle', 'square', 'diamond'];
 
   return (
-    <div
+    <DraggablePopoverShell
       className="bullet-popover"
-      style={{
-        position: 'absolute',
-        left: anchor.x,
-        top: anchor.y,
-        zIndex: 1100,
-      }}
-      // Stop pointerdowns from reaching the canvas (so the popover doesn't
-      // close itself by deselecting the bullet).
-      onPointerDown={(e) => e.stopPropagation()}
-      onClick={(e) => e.stopPropagation()}
+      left={anchor.x}
+      top={anchor.y}
+      headerHandlers={headerHandlers}
     >
-      <div className="header" {...headerHandlers} />
-      <div className="body">
-        <div className="row">
-          <label>Line</label>
-          <select
-            value={bullet.lineId ?? ''}
-            disabled={locked}
-            onChange={(e) => onLine(e.target.value)}
-          >
-            <option value="">— none —</option>
-            {orderedLines.map((ln) => (
-              <option key={ln.id} value={ln.id}>
-                {ln.service}
-              </option>
-            ))}
-          </select>
+      <div className="row">
+        <label>Line</label>
+        <select
+          value={bullet.lineId ?? ''}
+          disabled={locked}
+          onChange={(e) => onLine(e.target.value)}
+        >
+          <option value="">— none —</option>
+          {orderedLines.map((ln) => (
+            <option key={ln.id} value={ln.id}>
+              {ln.service}
+            </option>
+          ))}
+        </select>
+      </div>
+      <div className="row">
+        <label>Shape</label>
+        <div className="shape-group">
+          {shapes.map((s) => (
+            <button
+              key={s}
+              className={'shape-btn' + (bullet.shape === s ? ' active' : '')}
+              disabled={locked}
+              onClick={() => onShape(s)}
+              title={s}
+              aria-label={s}
+            >
+              <ShapeIcon shape={s} />
+            </button>
+          ))}
         </div>
-        <div className="row">
-          <label>Shape</label>
-          <div className="shape-group">
-            {shapes.map((s) => (
-              <button
-                key={s}
-                className={'shape-btn' + (bullet.shape === s ? ' active' : '')}
-                disabled={locked}
-                onClick={() => onShape(s)}
-                title={s}
-                aria-label={s}
-              >
-                <ShapeIcon shape={s} />
-              </button>
-            ))}
-          </div>
-        </div>
-        <div className="row" onWheel={size.onNumberWheel}>
-          <label>Size</label>
-          <input
-            type="range"
-            min={ROUTE_BULLET_SIZE_MIN}
-            max={ROUTE_BULLET_SIZE_MAX}
-            step={1}
-            value={bullet.size}
-            disabled={locked}
-            onChange={(e) => onSize(Number(e.target.value))}
-            onMouseDown={size.history.onFocus}
-            onMouseUp={size.history.onBlur}
-          />
-          <input
-            type="number"
-            className="size-spin"
-            // No `max` — the spinbutton (typing and step buttons) accepts sizes
-            // beyond the slider's range; the transform clamps at MIN only.
-            min={ROUTE_BULLET_SIZE_MIN}
-            step={1}
-            value={size.text}
-            disabled={locked}
-            onChange={size.onNumberChange}
-            onWheel={size.onNumberWheel}
-            onFocus={size.onNumberFocus}
-            onBlur={size.onNumberBlur}
-          />
-        </div>
-        <PopoverFooter
-          noun="route bullet"
-          locked={locked}
-          onToggleLock={onToggleLock}
-          onDelete={onDelete}
+      </div>
+      <div className="row" onWheel={size.onNumberWheel}>
+        <label>Size</label>
+        <input
+          type="range"
+          min={ROUTE_BULLET_SIZE_MIN}
+          max={ROUTE_BULLET_SIZE_MAX}
+          step={1}
+          value={bullet.size}
+          disabled={locked}
+          onChange={(e) => onSize(Number(e.target.value))}
+          onMouseDown={size.history.onFocus}
+          onMouseUp={size.history.onBlur}
+        />
+        <input
+          type="number"
+          className="size-spin"
+          // No `max` — the spinbutton (typing and step buttons) accepts sizes
+          // beyond the slider's range; the transform clamps at MIN only.
+          min={ROUTE_BULLET_SIZE_MIN}
+          step={1}
+          value={size.text}
+          disabled={locked}
+          onChange={size.onNumberChange}
+          onWheel={size.onNumberWheel}
+          onFocus={size.onNumberFocus}
+          onBlur={size.onNumberBlur}
         />
       </div>
-    </div>
+      <PopoverFooter
+        noun="route bullet"
+        locked={locked}
+        onToggleLock={onToggleLock}
+        onDelete={onDelete}
+      />
+    </DraggablePopoverShell>
   );
 }

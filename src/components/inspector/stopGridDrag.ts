@@ -11,12 +11,36 @@ import {
   type LatticeBasis,
   type RowCol,
 } from '../../geometry/lattice';
-import { rotateBy, tangentGap, STOP_SIZE, type Rotation } from '../../geometry/orientation';
+import {
+  rotateBy,
+  tangentGap,
+  worldDirToLocal,
+  STOP_SIZE,
+  type Rotation,
+} from '../../geometry/orientation';
 import { lineWidthOf } from '../../model/lineWidth';
 import type { Line, Station } from '../../model/types';
+import type { Vec2 } from '../../geometry/vec';
 export { sameCell, CELL_EPS } from '../../geometry/lattice';
 
+// Snap rules shared by every ghost-lattice drag surface — same numbers as the
+// old StopGrid: the cursor→ghost snap radius and the candidate-lattice extent,
+// both in (row, col) units.
+export const GHOST_SNAP_RADIUS = 1.0;
+export const GRID_RADIUS = 2;
+
 const dist = (a: RowCol, b: RowCol): number => Math.hypot(a.row - b.row, a.col - b.col);
+
+/** The station-local (row, col) cell under a world-space point: the world
+ *  delta rotated into the station's frame, scaled by the stop pitch. */
+export function cursorCellAt(
+  station: Pick<Station, 'x' | 'y'>,
+  rotation: Rotation,
+  world: Vec2,
+): RowCol {
+  const local = worldDirToLocal({ x: world.x - station.x, y: world.y - station.y }, rotation);
+  return { row: local.y / STOP_SIZE, col: local.x / STOP_SIZE };
+}
 
 /** Closest node to the cursor by Euclidean distance in (row, col) space.
  *  Returns null for an empty input. */

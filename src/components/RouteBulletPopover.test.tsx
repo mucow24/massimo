@@ -146,6 +146,33 @@ describe('<RouteBulletPopover /> size control', () => {
   });
 });
 
+describe('<RouteBulletPopover /> canvas event swallowing', () => {
+  beforeEach(() => {
+    useDoc.setState({ ...useDoc.getState(), ...DEFAULT_DOC });
+  });
+
+  // The item popovers float over the canvas, so every canvas-bound pointer
+  // gesture fired inside them must be swallowed — a leaked right-click would
+  // context-menu (rotate) whatever sits under the popover.
+  it('does not let a right-click inside the popover reach the canvas', () => {
+    const bullet = bulletFixture();
+    seed(bullet);
+    const onContextMenu = vi.fn();
+    const { container } = render(
+      <div onContextMenu={onContextMenu}>
+        <RouteBulletPopover
+          bullet={bullet}
+          world={{ x: 0, y: 0 }}
+          view={identityView}
+          onClose={vi.fn()}
+        />
+      </div>,
+    );
+    fireEvent.contextMenu(container.querySelector('.bullet-popover .body')!);
+    expect(onContextMenu).not.toHaveBeenCalled();
+  });
+});
+
 describe('<RouteBulletPopover /> header drag', () => {
   beforeEach(() => {
     localStorage.clear();

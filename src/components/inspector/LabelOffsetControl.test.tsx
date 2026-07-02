@@ -65,4 +65,10 @@ describe('LabelOffsetControl — number input path (E10)', () => {
     // The slider would snap 1 → 0; the textbox commits 1 verbatim.
     expect(onChange).toHaveBeenLastCalledWith(1);
   });
+
+  it('ignores an emptied textbox instead of committing 0 (Number("") === 0)', () => {
+    const { onChange, number } = renderControl();
+    fireEvent.change(number, { target: { value: '' } });
+    expect(onChange).not.toHaveBeenCalled();
+  });
 });
