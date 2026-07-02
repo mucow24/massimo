@@ -653,10 +653,12 @@ export function redistributeBetween(
   return { ...doc, stations };
 }
 
-export function rotateStation(doc: MapDoc, id: StationId): MapDoc {
+// One 45° step of the station's rotation — clockwise by default, counter-
+// clockwise with dir: -1 (wraps 0 → 7).
+export function rotateStation(doc: MapDoc, id: StationId, dir: -1 | 1 = 1): MapDoc {
   const cur = doc.stations[id];
   if (!cur) return doc;
-  const next = ((cur.rotation + 1) % 8) as Rotation;
+  const next = ((cur.rotation + dir + 8) % 8) as Rotation;
   return { ...doc, stations: { ...doc.stations, [id]: { ...cur, rotation: next } } };
 }
 
