@@ -111,6 +111,22 @@ describe('<LabelView /> — inline bullets', () => {
     expect(circle?.getAttribute('fill')).toBe('#00ff00');
   });
 
+  it('renders an unfilled diamond bullet for a {{CODE}} token', () => {
+    useDoc.setState({
+      ...useDoc.getState(),
+      lines: { L1: seedLine({ id: 'L1', service: 'A1', color: '#00ff00' }) },
+      lineOrder: ['L1'],
+    });
+    const { container } = render(
+      <svg>
+        <LabelView label={makeTextLabel({ id: 'g1', text: '{{A1}}' })} selected={false} />
+      </svg>,
+    );
+    const poly = container.querySelector('[data-inline-bullet] polygon');
+    expect(poly?.getAttribute('stroke')).toBe('#00ff00');
+    expect(poly?.getAttribute('fill')).toBe('#ffffff');
+  });
+
   it('renders a gray "?" bullet when the code does not match any line', () => {
     const { container } = render(
       <svg>

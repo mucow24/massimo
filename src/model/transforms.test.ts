@@ -761,6 +761,17 @@ describe('updateLine', () => {
       expect(next.textLabels.t1.text).toBe('<A> and <A> meet at <A>');
     });
 
+    it('rewrites square, diamond, and unfilled bullet forms too', () => {
+      const doc = makeDoc({
+        lines: [makeLine({ id: 'L1', service: 'L1' })],
+        textLabels: [
+          makeTextLabel({ id: 't1', text: '[L1] {L1} <<L1>> [[L1]] {{L1}}' }),
+        ],
+      });
+      const next = T.updateLine(doc, 'L1', { service: 'A' });
+      expect(next.textLabels.t1.text).toBe('[A] {A} <<A>> [[A]] {{A}}');
+    });
+
     it('leaves bullets for other service codes untouched', () => {
       const doc = makeDoc({
         lines: [makeLine({ id: 'L1', service: 'L1' }), makeLine({ id: 'L2', service: 'L2' })],
