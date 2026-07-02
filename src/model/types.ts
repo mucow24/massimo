@@ -163,7 +163,7 @@ export interface Station {
   // "use the doc's labelItalic as-is".
   labelItalic?: boolean;
   // When locked, the station can't be dragged, marquee-selected, group-towed,
-  // arrow-nudged, or deleted from the canvas — it can still be click-selected
+  // arrow-nudged, rotated, or deleted from the canvas — it can still be click-selected
   // (so its inspector, including the lock toggle, stays reachable) and remains
   // fully editable there. Optional; missing ⇒ unlocked. Mirrors Polygon.locked
   // but is canvas-protection only (the station inspector is never disabled).
@@ -295,7 +295,7 @@ export interface RouteBullet {
   // Half-extent in world units (radius for circle, half-side for
   // square/diamond).
   size: number;
-  // When locked, the bullet can't be dragged, nudged, deleted, or
+  // When locked, the bullet can't be dragged, nudged, rotated, deleted, or
   // marquee-selected, and its popover controls (other than the lock toggle)
   // are disabled. It can still be click-selected so the user can unlock it.
   // Optional; missing ⇒ unlocked. Mirrors Polygon.locked.
@@ -325,8 +325,8 @@ export interface Polygon {
   // Fill opacity as a percentage, 0..100. Optional; missing ⇒ 100 (fully
   // opaque), so polygons saved before this field continue to render solid.
   fillOpacity?: number;
-  // When locked, the polygon can't be dragged, vertex-edited, deleted, or
-  // marquee-selected, and its popover controls (other than the lock toggle)
+  // When locked, the polygon can't be dragged, vertex-edited, rotated, deleted,
+  // or marquee-selected, and its popover controls (other than the lock toggle)
   // are disabled. It can still be click-selected so the user can unlock it.
   // Optional; missing ⇒ unlocked.
   locked?: boolean;
@@ -500,7 +500,7 @@ export interface TextLabel {
   // they are always present at runtime. 7-char hex (`#rrggbb`).
   color: string;
   darkColor: string;
-  // When locked, the label can't be dragged, nudged, deleted, or
+  // When locked, the label can't be dragged, nudged, rotated, deleted, or
   // marquee-selected, and its popover controls (other than the lock toggle)
   // are disabled. It can still be click-selected so the user can unlock it.
   // Optional; missing ⇒ unlocked. Mirrors Polygon.locked.
