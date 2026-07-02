@@ -150,7 +150,7 @@ function bakeOne(
  * to the shape itself). Operates in world units; geometry-agnostic. No-op when
  * the map has no hatching.
  */
-function bakeHatchedPaints(svg: SVGSVGElement): void {
+export function bakeHatchedPaints(svg: SVGSVGElement): void {
   const targets = Array.from(svg.querySelectorAll<SVGElement>('*')).filter(
     (el) =>
       (el.getAttribute('stroke') ?? '').startsWith('url(#hatch') ||

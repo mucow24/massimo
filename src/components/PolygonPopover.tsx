@@ -1,6 +1,7 @@
 import { ArrowDownIcon, ArrowUpIcon, MoonIcon, SunIcon } from '@radix-ui/react-icons';
 import { useDoc } from '../state/store';
 import { type ViewportProjection } from './canvas/screenAnchor';
+import { DraggablePopoverShell } from './DraggablePopoverShell';
 import { useDraggablePopover } from './canvas/useDraggablePopover';
 import { NumericFieldRow } from './NumericFieldRow';
 import { PopoverFooter } from './PopoverFooter';
@@ -76,160 +77,146 @@ export function PolygonPopover({ polygon, view, onClose }: Props) {
   };
 
   return (
-    <div
+    <DraggablePopoverShell
       className="bullet-popover polygon-popover"
-      style={{
-        position: 'absolute',
-        left: anchor.x,
-        top: anchor.y,
-        zIndex: 1100,
-      }}
-      // Keep pointer events from reaching the canvas (which would deselect the
-      // polygon and close the popover, or right-click-rotate underneath it).
-      onPointerDown={(e) => e.stopPropagation()}
-      onClick={(e) => e.stopPropagation()}
-      onContextMenu={(e) => {
-        e.preventDefault();
-        e.stopPropagation();
-      }}
+      left={anchor.x}
+      top={anchor.y}
+      headerHandlers={headerHandlers}
     >
-      <div className="header" {...headerHandlers} />
-      <div className="body">
-        <div className="row">
-          <label htmlFor="polygon-fill">Color</label>
-          <SunIcon aria-hidden="true" />
-          <input
-            id="polygon-fill"
-            type="color"
-            aria-label="Polygon color"
-            title="Light mode fill"
-            value={polygon.fill}
-            disabled={locked || !closed}
-            onChange={(e) => onFill(e.target.value)}
-            {...fillField}
-          />
-          <MoonIcon aria-hidden="true" />
-          <input
-            id="polygon-dark-fill"
-            type="color"
-            aria-label="Dark mode color"
-            title="Dark mode fill"
-            value={darkFill}
-            disabled={locked || !closed}
-            onChange={(e) => onDarkFill(e.target.value)}
-            {...darkFillField}
-          />
-        </div>
-        <NumericFieldRow
-          id="polygon-fill-opacity"
-          label="Fill opacity"
-          min={POLYGON_FILL_OPACITY_MIN}
-          max={POLYGON_FILL_OPACITY_MAX}
-          step={1}
-          value={fillOpacity}
-          onChange={onFillOpacity}
-          getCurrent={() =>
-            useDoc.getState().polygons[polygon.id]?.fillOpacity ?? POLYGON_FILL_OPACITY_DEFAULT
-          }
+      <div className="row">
+        <label htmlFor="polygon-fill">Color</label>
+        <SunIcon aria-hidden="true" />
+        <input
+          id="polygon-fill"
+          type="color"
+          aria-label="Polygon color"
+          title="Light mode fill"
+          value={polygon.fill}
           disabled={locked || !closed}
+          onChange={(e) => onFill(e.target.value)}
+          {...fillField}
         />
-        <NumericFieldRow
-          id="polygon-stroke-width"
-          label="Stroke width"
-          min={POLYGON_STROKE_WIDTH_MIN}
-          max={POLYGON_STROKE_WIDTH_MAX}
-          step={POLYGON_STROKE_STEP}
-          value={polygon.strokeWidth}
-          onChange={onStrokeWidth}
-          getCurrent={() => useDoc.getState().polygons[polygon.id]?.strokeWidth ?? 0}
-          textboxAllowAboveMax
-          disabled={locked}
-        />
-        <NumericFieldRow
-          id="polygon-curve-radius"
-          label="Curve radius"
-          min={POLYGON_CURVE_RADIUS_MIN}
-          max={POLYGON_CURVE_RADIUS_MAX}
-          step={1}
-          value={polygon.curveRadius ?? POLYGON_CURVE_RADIUS_DEFAULT}
-          onChange={onCurveRadius}
-          getCurrent={() =>
-            useDoc.getState().polygons[polygon.id]?.curveRadius ?? POLYGON_CURVE_RADIUS_DEFAULT
-          }
-          textboxAllowAboveMax
-          disabled={locked}
-        />
-        {/* Open polygons render stroke-only along the vertex chain — no fill,
-            no closing edge — so unchecking this also greys the fill controls. */}
-        <div className="row">
-          <label htmlFor="polygon-closed">Closed</label>
-          <input
-            id="polygon-closed"
-            type="checkbox"
-            aria-label="Closed"
-            title="Closed (uncheck for an open, stroke-only polygon)"
-            checked={closed}
-            disabled={locked}
-            onChange={(e) => onClosed(e.target.checked)}
-          />
-        </div>
-        <div className="row">
-          <label htmlFor="polygon-stroke">Stroke color</label>
-          <SunIcon aria-hidden="true" />
-          <input
-            id="polygon-stroke"
-            type="color"
-            aria-label="Stroke color"
-            title="Light mode stroke"
-            value={polygon.stroke}
-            disabled={locked}
-            onChange={(e) => onStroke(e.target.value)}
-            {...strokeField}
-          />
-          <MoonIcon aria-hidden="true" />
-          <input
-            id="polygon-dark-stroke"
-            type="color"
-            aria-label="Dark mode stroke color"
-            title="Dark mode stroke"
-            value={darkStroke}
-            disabled={locked}
-            onChange={(e) => onDarkStroke(e.target.value)}
-            {...darkStrokeField}
-          />
-        </div>
-        <div className="row">
-          <label>Layer</label>
-          <div className="shape-group">
-            <button
-              type="button"
-              className="shape-btn"
-              aria-label="Move polygon down"
-              title="Send backward"
-              disabled={locked}
-              onClick={() => movePolygonDown(polygon.id)}
-            >
-              <ArrowDownIcon />
-            </button>
-            <button
-              type="button"
-              className="shape-btn"
-              aria-label="Move polygon up"
-              title="Bring forward"
-              disabled={locked}
-              onClick={() => movePolygonUp(polygon.id)}
-            >
-              <ArrowUpIcon />
-            </button>
-          </div>
-        </div>
-        <PopoverFooter
-          noun="polygon"
-          locked={locked}
-          onToggleLock={onToggleLock}
-          onDelete={onDelete}
+        <MoonIcon aria-hidden="true" />
+        <input
+          id="polygon-dark-fill"
+          type="color"
+          aria-label="Dark mode color"
+          title="Dark mode fill"
+          value={darkFill}
+          disabled={locked || !closed}
+          onChange={(e) => onDarkFill(e.target.value)}
+          {...darkFillField}
         />
       </div>
-    </div>
+      <NumericFieldRow
+        id="polygon-fill-opacity"
+        label="Fill opacity"
+        min={POLYGON_FILL_OPACITY_MIN}
+        max={POLYGON_FILL_OPACITY_MAX}
+        step={1}
+        value={fillOpacity}
+        onChange={onFillOpacity}
+        getCurrent={() =>
+          useDoc.getState().polygons[polygon.id]?.fillOpacity ?? POLYGON_FILL_OPACITY_DEFAULT
+        }
+        disabled={locked || !closed}
+      />
+      <NumericFieldRow
+        id="polygon-stroke-width"
+        label="Stroke width"
+        min={POLYGON_STROKE_WIDTH_MIN}
+        max={POLYGON_STROKE_WIDTH_MAX}
+        step={POLYGON_STROKE_STEP}
+        value={polygon.strokeWidth}
+        onChange={onStrokeWidth}
+        getCurrent={() => useDoc.getState().polygons[polygon.id]?.strokeWidth ?? 0}
+        textboxAllowAboveMax
+        disabled={locked}
+      />
+      <NumericFieldRow
+        id="polygon-curve-radius"
+        label="Curve radius"
+        min={POLYGON_CURVE_RADIUS_MIN}
+        max={POLYGON_CURVE_RADIUS_MAX}
+        step={1}
+        value={polygon.curveRadius ?? POLYGON_CURVE_RADIUS_DEFAULT}
+        onChange={onCurveRadius}
+        getCurrent={() =>
+          useDoc.getState().polygons[polygon.id]?.curveRadius ?? POLYGON_CURVE_RADIUS_DEFAULT
+        }
+        textboxAllowAboveMax
+        disabled={locked}
+      />
+      {/* Open polygons render stroke-only along the vertex chain — no fill,
+            no closing edge — so unchecking this also greys the fill controls. */}
+      <div className="row">
+        <label htmlFor="polygon-closed">Closed</label>
+        <input
+          id="polygon-closed"
+          type="checkbox"
+          aria-label="Closed"
+          title="Closed (uncheck for an open, stroke-only polygon)"
+          checked={closed}
+          disabled={locked}
+          onChange={(e) => onClosed(e.target.checked)}
+        />
+      </div>
+      <div className="row">
+        <label htmlFor="polygon-stroke">Stroke color</label>
+        <SunIcon aria-hidden="true" />
+        <input
+          id="polygon-stroke"
+          type="color"
+          aria-label="Stroke color"
+          title="Light mode stroke"
+          value={polygon.stroke}
+          disabled={locked}
+          onChange={(e) => onStroke(e.target.value)}
+          {...strokeField}
+        />
+        <MoonIcon aria-hidden="true" />
+        <input
+          id="polygon-dark-stroke"
+          type="color"
+          aria-label="Dark mode stroke color"
+          title="Dark mode stroke"
+          value={darkStroke}
+          disabled={locked}
+          onChange={(e) => onDarkStroke(e.target.value)}
+          {...darkStrokeField}
+        />
+      </div>
+      <div className="row">
+        <label>Layer</label>
+        <div className="shape-group">
+          <button
+            type="button"
+            className="shape-btn"
+            aria-label="Move polygon down"
+            title="Send backward"
+            disabled={locked}
+            onClick={() => movePolygonDown(polygon.id)}
+          >
+            <ArrowDownIcon />
+          </button>
+          <button
+            type="button"
+            className="shape-btn"
+            aria-label="Move polygon up"
+            title="Bring forward"
+            disabled={locked}
+            onClick={() => movePolygonUp(polygon.id)}
+          >
+            <ArrowUpIcon />
+          </button>
+        </div>
+      </div>
+      <PopoverFooter
+        noun="polygon"
+        locked={locked}
+        onToggleLock={onToggleLock}
+        onDelete={onDelete}
+      />
+    </DraggablePopoverShell>
   );
 }

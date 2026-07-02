@@ -1,6 +1,7 @@
 import { useSelection } from '../state/store';
 import type { Station } from '../model/types';
 import { type ViewportProjection } from './canvas/screenAnchor';
+import { DraggablePopoverShell } from './DraggablePopoverShell';
 import { useDraggablePopover } from './canvas/useDraggablePopover';
 import { StationInspector } from './inspector';
 
@@ -44,22 +45,13 @@ export function StationPopover({
   const top = inLayoutEdit ? EDGE_PAD : anchor.y;
 
   return (
-    <div
+    <DraggablePopoverShell
       className="text-label-popover station-popover"
-      style={{ position: 'absolute', left, top, zIndex: 1100 }}
-      // Stop pointer events from reaching the canvas so clicks inside the
-      // popover don't deselect the station or place items.
-      onPointerDown={(e) => e.stopPropagation()}
-      onClick={(e) => e.stopPropagation()}
-      onContextMenu={(e) => {
-        e.preventDefault();
-        e.stopPropagation();
-      }}
+      left={left}
+      top={top}
+      headerHandlers={headerHandlers}
     >
-      <div className="header" {...headerHandlers} />
-      <div className="body">
-        <StationInspector id={station.id} />
-      </div>
-    </div>
+      <StationInspector id={station.id} />
+    </DraggablePopoverShell>
   );
 }

@@ -1,31 +1,26 @@
-import { RefObject, useCallback, useEffect, useRef, useState } from 'react';
+import { RefObject, useCallback, useEffect } from 'react';
 import { beginHistoryGroup, useDoc, useSelection } from '../../state/store';
 import type { StationId } from '../../model/types';
 import type { Vec2 } from '../../geometry/vec';
 import type { RowCol } from '../../geometry/lattice';
-import {
-  STOP_SIZE,
-  rotateGridDelta,
-  worldDirToLocal,
-  type Rotation,
-} from '../../geometry/orientation';
+import { STOP_SIZE, rotateGridDelta, type Rotation } from '../../geometry/orientation';
 import { screenDeltaToLabelOffsets } from '../../geometry/labelLayout';
 import { resolveOffsetPerp } from '../../model/transforms';
 import { lineWidthOf } from '../../model/lineWidth';
 import { captureMirrorTargets, type MirrorTarget } from '../../state/mirrorDispatch';
 import {
+  GHOST_SNAP_RADIUS,
+  GRID_RADIUS,
   computeGhosts,
+  cursorCellAt,
   findDropTarget,
   nearestNode,
   type WidthNode,
 } from '../inspector/stopGridDrag';
-import { finishDrag, trackDragMove } from './dragGesture';
+import { finishDrag } from './dragGesture';
+import { useGhostDragEngine, type DragModifiers, type GhostDragCore } from './useGhostDragEngine';
 
 type ScreenToWorld = (mx: number, my: number) => Vec2;
-
-// Cursor→ghost snap radius in row/col units — same rule as the StopGrid.
-const GHOST_SNAP_RADIUS = 1.0;
-const GRID_RADIUS = 2;
 
 // Overlay state MapCanvas renders while a station-name drag is in flight:
 // the candidate ghost lattice (station-local cells) and the snapped slot.
@@ -47,6 +42,18 @@ export interface LabelDragApi {
 
 type StartOffsets = { offset: number; offsetPerp: number };
 
+interface LabelDragState extends GhostDragCore {
+  id: StationId;
+  startWorld: Vec2;
+  // Source first, then mirror matches — the fan-out targets for the whole
+  // gesture. layoutOffset rotates cell deltas into each match's frame.
+  targets: MirrorTarget[];
+  // Per-target gesture-start offsets: the base for delta application and
+  // the restore point when leaving Alt mode.
+  startOffsets: Map<StationId, StartOffsets>;
+  offsetsDirty: boolean;
+}
+
 /**
  * Drag the painted station name on the main canvas (armed by StationHitArea
  * when the station is the sole selection). Plain drag = coarse cell
@@ -55,87 +62,68 @@ type StartOffsets = { offset: number; offsetPerp: number };
  * live-writing setLabelOffset / setLabelOffsetPerp so the text tracks the
  * cursor 1:1 (leaving Alt restores the gesture-start offsets first, so the
  * two modes never compound). Modifier presses re-run the computation even
- * with the cursor stationary (window key listeners), so the lattice basis /
- * fine mode flips the moment Shift/Alt changes.
+ * with the cursor stationary, the moment Shift/Alt changes (engine).
  *
  * Mirror matching fans out to the matches captured at gesture START —
  * capturing late would fail, because the first write to the source station
  * changes its layout and dissolves the match. Offsets apply as a DELTA per
  * match (each keeps its own hand-tuned base), matching the keyboard
  * Alt-nudge. One history entry per gesture (dragGesture lifecycle).
+ *
+ * Lifecycle scaffolding (overlay ref mirror, live projection ref, stationary
+ * modifier recompute, pointermove/pointercancel) lives in useGhostDragEngine.
  */
 export function useLabelDrag(
   svgRef: RefObject<SVGSVGElement | null>,
   screenToWorld: ScreenToWorld,
 ): LabelDragApi {
-  const [overlay, setOverlayState] = useState<LabelDragOverlay | null>(null);
-  // The pointerup commit reads the overlay through this ref, not the state:
-  // React 18 batches the last setOverlayState, so on a fast move→up the
-  // closure state can lag one move behind the true snapped slot.
-  const overlayRef = useRef<LabelDragOverlay | null>(null);
-  const setOverlay = (v: LabelDragOverlay | null) => {
-    overlayRef.current = v;
-    setOverlayState(v);
-  };
-  // screenToWorld is a FRESH closure every render (it closes over that
-  // render's committed viewport). onStartLabelDrag must stay referentially
-  // stable for the memoized StationViews, so it reads the projection through
-  // this ref — capturing the prop directly in a []-dep callback would freeze
-  // the mount-time camera and teleport the label after any pan/zoom.
-  const screenToWorldRef = useRef(screenToWorld);
-  useEffect(() => {
-    screenToWorldRef.current = screenToWorld;
-  }, [screenToWorld]);
-  const dragRef = useRef<{
-    id: StationId;
-    startMX: number;
-    startMY: number;
-    moved: boolean;
-    startWorld: Vec2;
-    // Latest pointer position — modifier-key presses recompute from it.
-    lastMX: number;
-    lastMY: number;
-    // Source first, then mirror matches — the fan-out targets for the whole
-    // gesture. layoutOffset rotates cell deltas into each match's frame.
-    targets: MirrorTarget[];
-    // Per-target gesture-start offsets: the base for delta application and
-    // the restore point when leaving Alt mode.
-    startOffsets: Map<StationId, StartOffsets>;
-    offsetsDirty: boolean;
-    history: ReturnType<typeof beginHistoryGroup>;
-  } | null>(null);
+  const {
+    overlay,
+    overlayRef,
+    setOverlay,
+    dragRef,
+    screenToWorldRef,
+    updateRef,
+    onPointerMove,
+    onPointerCancel,
+  } = useGhostDragEngine<LabelDragState, LabelDragOverlay>(svgRef, screenToWorld, {
+    altRecomputes: true,
+  });
 
-  const onStartLabelDrag = useCallback((id: StationId, e: React.PointerEvent) => {
-    const doc = useDoc.getState();
-    const st = doc.stations[id];
-    if (!st) return;
-    const targets = captureMirrorTargets(id);
-    const startOffsets = new Map<StationId, StartOffsets>();
-    for (const t of targets) {
-      const s = doc.stations[t.id];
-      if (s) {
-        startOffsets.set(t.id, {
-          offset: s.label.offset,
-          offsetPerp: resolveOffsetPerp(s.label),
-        });
+  const onStartLabelDrag = useCallback(
+    (id: StationId, e: React.PointerEvent) => {
+      const doc = useDoc.getState();
+      const st = doc.stations[id];
+      if (!st) return;
+      const targets = captureMirrorTargets(id);
+      const startOffsets = new Map<StationId, StartOffsets>();
+      for (const t of targets) {
+        const s = doc.stations[t.id];
+        if (s) {
+          startOffsets.set(t.id, {
+            offset: s.label.offset,
+            offsetPerp: resolveOffsetPerp(s.label),
+          });
+        }
       }
-    }
-    dragRef.current = {
-      id,
-      startMX: e.clientX,
-      startMY: e.clientY,
-      moved: false,
-      startWorld: screenToWorldRef.current(e.clientX, e.clientY),
-      lastMX: e.clientX,
-      lastMY: e.clientY,
-      targets,
-      startOffsets,
-      offsetsDirty: false,
-      history: beginHistoryGroup(),
-    };
-  }, []);
+      dragRef.current = {
+        id,
+        startMX: e.clientX,
+        startMY: e.clientY,
+        moved: false,
+        startWorld: screenToWorldRef.current(e.clientX, e.clientY),
+        lastMX: e.clientX,
+        lastMY: e.clientY,
+        targets,
+        startOffsets,
+        offsetsDirty: false,
+        history: beginHistoryGroup(),
+      };
+    },
+    [dragRef, screenToWorldRef],
+  );
 
-  const restoreOffsets = (ds: NonNullable<typeof dragRef.current>) => {
+  const restoreOffsets = (ds: LabelDragState) => {
     const doc = useDoc.getState();
     for (const t of ds.targets) {
       const start = ds.startOffsets.get(t.id);
@@ -146,9 +134,9 @@ export function useLabelDrag(
     ds.offsetsDirty = false;
   };
 
-  // The whole per-frame computation, parameterized so both pointermove and a
-  // stationary modifier press can drive it. Reads only refs + live stores.
-  const update = (clientX: number, clientY: number, altKey: boolean, shiftKey: boolean) => {
+  // The whole per-frame computation, driven by pointermove and stationary
+  // modifier presses (engine). Reads only refs + live stores.
+  const update = (clientX: number, clientY: number, { altKey, shiftKey }: DragModifiers) => {
     const ds = dragRef.current;
     if (!ds || !ds.moved) return;
     ds.lastMX = clientX;
@@ -183,9 +171,7 @@ export function useLabelDrag(
     // Ghost mode. If a previous Alt phase wrote offsets, undo it first so
     // the two modes never compound within one gesture.
     if (ds.offsetsDirty) restoreOffsets(ds);
-    const world = screenToWorldRef.current(clientX, clientY);
-    const local = worldDirToLocal({ x: world.x - st.x, y: world.y - st.y }, rotation);
-    const cursor: RowCol = { row: local.y / STOP_SIZE, col: local.x / STOP_SIZE };
+    const cursor = cursorCellAt(st, rotation, screenToWorldRef.current(clientX, clientY));
     const stopNodes: WidthNode[] = st.stops.map((s) => ({
       row: s.row,
       col: s.col,
@@ -213,40 +199,9 @@ export function useLabelDrag(
       over: over ? { row: over.row, col: over.col } : null,
     });
   };
-  // Latest `update` for the window key listeners (assigned in an effect —
-  // writing a ref during render trips react-hooks/refs).
-  const updateRef = useRef(update);
   useEffect(() => {
     updateRef.current = update;
   });
-
-  // Stationary modifier tracking: Shift flips the lattice basis and Alt
-  // enters/leaves fine mode the moment the key changes, without waiting for
-  // the next pointermove (parity with the StopGrid's useShiftHeld).
-  useEffect(() => {
-    const onKey = (e: KeyboardEvent) => {
-      if (e.key !== 'Shift' && e.key !== 'Alt') return;
-      const ds = dragRef.current;
-      if (!ds || !ds.moved) return;
-      // Keep a mid-drag Alt press from focusing the browser menu bar.
-      if (e.key === 'Alt' && e.type === 'keydown') e.preventDefault();
-      updateRef.current(ds.lastMX, ds.lastMY, e.altKey, e.shiftKey);
-    };
-    window.addEventListener('keydown', onKey);
-    window.addEventListener('keyup', onKey);
-    return () => {
-      window.removeEventListener('keydown', onKey);
-      window.removeEventListener('keyup', onKey);
-    };
-  }, []);
-
-  const onPointerMove = (e: React.PointerEvent) => {
-    const ds = dragRef.current;
-    if (!ds) return;
-    const { moved } = trackDragMove(ds, e, svgRef);
-    if (!moved) return;
-    update(e.clientX, e.clientY, e.altKey, e.shiftKey);
-  };
 
   const onPointerUp = (e: React.PointerEvent) => {
     const ds = dragRef.current;
@@ -279,18 +234,6 @@ export function useLabelDrag(
       useSelection.getState().setLabelSelected(true);
     }
     finishDrag(ds, e, svgRef);
-  };
-
-  // Browser pointercancel: disarm the drag, clear the overlay, and roll the doc
-  // back to its pre-drag snapshot instead of committing a drop. The rollback
-  // reverts any Alt/fine-mode offset writes on its own, so restoreOffsets isn't
-  // needed here. See useStationDrag for the full rationale.
-  const onPointerCancel = () => {
-    const ds = dragRef.current;
-    if (!ds) return;
-    dragRef.current = null;
-    setOverlay(null);
-    ds.history.rollback();
   };
 
   return { overlay, onStartLabelDrag, onPointerMove, onPointerUp, onPointerCancel };

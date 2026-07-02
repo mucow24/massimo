@@ -15,6 +15,7 @@ import { LabelOffsetControl } from './LabelOffsetControl';
 import { LabelAlignPicker, LabelValignPicker } from './LabelAlignButtons';
 import { StopRows } from './StopRows';
 import { useFieldHistory } from '../useFieldHistory';
+import { useNumericField } from '../useNumericField';
 import { useDismiss } from '../usePopover';
 import { resolveOffsetPerp } from '../../model/transforms';
 
@@ -35,8 +36,18 @@ export function StationInspector({ id }: { id: StationId }) {
   const setStationLabelItalic = useDoc((s) => s.setStationLabelItalic);
   const selection = useSelection();
   const nameField = useFieldHistory();
-  const xField = useFieldHistory();
-  const yField = useFieldHistory();
+  // useNumericField (not bare inputs): its text mirror ignores an emptied
+  // field mid-edit — Number('') === 0 would teleport the station to the axis.
+  const xField = useNumericField(
+    Math.round(station?.x ?? 0),
+    (n) => moveStation(id, n, useDoc.getState().stations[id].y),
+    () => Math.round(useDoc.getState().stations[id]?.x ?? 0),
+  );
+  const yField = useNumericField(
+    Math.round(station?.y ?? 0),
+    (n) => moveStation(id, useDoc.getState().stations[id].x, n),
+    () => Math.round(useDoc.getState().stations[id]?.y ?? 0),
+  );
   const stopRowsRef = useRef<HTMLDivElement | null>(null);
 
   // Stations that render identically to this one (across the model's 4-fold
@@ -98,10 +109,11 @@ export function StationInspector({ id }: { id: StationId }) {
           <input
             type="number"
             aria-label="X"
-            value={Math.round(station.x)}
-            onChange={(e) => moveStation(station.id, Number(e.target.value), station.y)}
+            value={xField.text}
+            onChange={xField.onNumberChange}
+            onFocus={xField.onNumberFocus}
+            onBlur={xField.onNumberBlur}
             style={{ width: 56 }}
-            {...xField}
           />
           <span className="axis-label" aria-hidden>
             Y
@@ -109,10 +121,11 @@ export function StationInspector({ id }: { id: StationId }) {
           <input
             type="number"
             aria-label="Y"
-            value={Math.round(station.y)}
-            onChange={(e) => moveStation(station.id, station.x, Number(e.target.value))}
+            value={yField.text}
+            onChange={yField.onNumberChange}
+            onFocus={yField.onNumberFocus}
+            onBlur={yField.onNumberBlur}
             style={{ width: 56 }}
-            {...yField}
           />
           <button
             className="btn-mini"
