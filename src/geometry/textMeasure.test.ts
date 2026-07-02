@@ -88,6 +88,15 @@ describe('measureTextLabel', () => {
     expect(m.lines[1].segments.map((s) => s.kind)).toEqual(['text']);
   });
 
+  it('threads bullet shape and fill through segment metrics', () => {
+    const m = measureTextLabel(makeTextLabel({ id: 'g', text: '[A1] <<B2>>' }));
+    const bullets = m.lines[0].segments.filter((s) => s.kind === 'bullet');
+    expect(bullets).toMatchObject([
+      { code: 'A1', shape: 'square', filled: true },
+      { code: 'B2', shape: 'circle', filled: false },
+    ]);
+  });
+
   it('bullet segment width scales with fontSize', () => {
     const small = measureTextLabel(makeTextLabel({ id: 'g', text: '<A1>', fontSize: 12 }));
     const big = measureTextLabel(makeTextLabel({ id: 'g', text: '<A1>', fontSize: 48 }));

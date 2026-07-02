@@ -410,6 +410,21 @@ describe('<StationView /> — inline bullets in station names', () => {
     expect(bullets[0].querySelector('circle')?.getAttribute('fill')).toBe('#abc123');
   });
 
+  it('emits a square bullet when the name uses the [CODE] form', () => {
+    const station = makeStation({ id: 's1', name: 'Hub [A1]', x: 0, y: 0 });
+    const lines = {
+      L1: makeLine({ id: 'L1', service: 'A1', color: '#abc123' }),
+    };
+    const { container } = render(
+      <svg>
+        <StationView station={station} lines={lines} zoom={1} onStartDrag={vi.fn()} layer="label" />
+      </svg>,
+    );
+    const bullets = container.querySelectorAll('[data-inline-bullet]');
+    expect(bullets).toHaveLength(1);
+    expect(bullets[0].querySelector('rect')?.getAttribute('fill')).toBe('#abc123');
+  });
+
   it('falls back to a gray "?" bullet for an unknown code', () => {
     const station = makeStation({ id: 's1', name: '<ZZ>', x: 0, y: 0 });
     const { container } = render(

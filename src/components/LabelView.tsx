@@ -1,5 +1,5 @@
 import { useMemo } from 'react';
-import type { Line, TextLabel } from '../model/types';
+import type { Line, RouteBulletShape, TextLabel } from '../model/types';
 import {
   BASELINE_FRACTION,
   LINE_HEIGHT,
@@ -184,13 +184,19 @@ export function LabelView({
             {value}
           </text>
         );
-        const bulletNode = (x: number, code: string, diameter: number, key: string) => (
+        const bulletNode = (
+          x: number,
+          b: { code: string; shape: RouteBulletShape; filled: boolean; diameter: number },
+          key: string,
+        ) => (
           <InlineBullet
             key={key}
-            code={code}
-            diameter={diameter}
-            cx={x + diameter / 2}
-            cy={baselineY - diameter / 2}
+            code={b.code}
+            shape={b.shape}
+            filled={b.filled}
+            diameter={b.diameter}
+            cx={x + b.diameter / 2}
+            cy={baselineY - b.diameter / 2}
             lineByService={lineByService}
           />
         );
@@ -215,7 +221,16 @@ export function LabelView({
             nodes.push(
               a.kind === 'text'
                 ? textNode(x, a.value ?? '', `${i}-${j}-t`)
-                : bulletNode(x, a.code ?? '', a.diameter ?? 0, `${i}-${j}-b`),
+                : bulletNode(
+                    x,
+                    {
+                      code: a.code ?? '',
+                      shape: a.shape ?? 'circle',
+                      filled: a.filled ?? true,
+                      diameter: a.diameter ?? 0,
+                    },
+                    `${i}-${j}-b`,
+                  ),
             );
           });
         } else {
@@ -226,7 +241,7 @@ export function LabelView({
             nodes.push(
               seg.kind === 'text'
                 ? textNode(segCursor, seg.value, `${i}-${j}-t`)
-                : bulletNode(segCursor, seg.code, seg.diameter, `${i}-${j}-b`),
+                : bulletNode(segCursor, seg, `${i}-${j}-b`),
             );
           });
         }
