@@ -110,6 +110,25 @@ describe('Toolbar — tool + view toggles', () => {
   });
 });
 
+describe('Toolbar — sidebar toggle', () => {
+  it('the single arrow collapses and reopens the sidebar', async () => {
+    const user = userEvent.setup();
+    useSelection.setState({ ...useSelection.getState(), sidebarOpen: true });
+    render(<Toolbar />);
+
+    const btn = () => screen.getByLabelText('Toggle sidebar');
+    expect(btn().getAttribute('title')).toBe('Hide sidebar');
+
+    await user.click(btn());
+    expect(useSelection.getState().sidebarOpen).toBe(false);
+    // The affordance flips to "reopen".
+    expect(btn().getAttribute('title')).toBe('Show sidebar');
+
+    await user.click(btn());
+    expect(useSelection.getState().sidebarOpen).toBe(true);
+  });
+});
+
 describe('Toolbar — map name field', () => {
   it('renders the editable map name flanked by dividers', () => {
     render(<Toolbar />);
