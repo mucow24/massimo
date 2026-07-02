@@ -1,5 +1,5 @@
 import { describe, it, expect, afterEach, beforeEach } from 'vitest';
-import { render } from '@testing-library/react';
+import { render, fireEvent } from '@testing-library/react';
 import { LineTagsLayer, resolveTag } from './LineTagsLayer';
 import { useDoc, useSelection } from '../../state/store';
 import { DEFAULT_DOC } from '../../model/transforms';
@@ -87,6 +87,44 @@ describe('<LineTagsLayer> — selection chrome', () => {
     expect(Number(ring1.getAttribute('stroke-width'))).toBe(2);
     const ring2 = renderAtZoom(2).querySelector('rect[stroke="#000000"]')!;
     expect(Number(ring2.getAttribute('stroke-width'))).toBe(1);
+  });
+});
+
+// While the line editor is open (appending-to-line mode), clicking a tag is
+// "click off the line to exit": dismiss the editor, don't select the tag.
+// Mirrors the label/polygon/transfer cases in MapCanvas.itemClick.test.tsx —
+// this one lives here because the guard is wired inside LineTagsLayer itself.
+describe('<LineTagsLayer> — clicking a tag while the line editor is open', () => {
+  beforeEach(() => {
+    useDoc.setState({
+      ...useDoc.getState(),
+      ...DEFAULT_DOC,
+      lines: { L2: makeLine({ id: 'L2', stations: ['s1', 's2'], width: 28 }) },
+      lineOrder: ['L2'],
+      lineTags: { T: tagOnL2() },
+    });
+    useDoc.temporal.getState().clear();
+    useSelection.getState().setUiMode({
+      kind: 'appending-to-line',
+      lineId: 'L2',
+      insertAfterIndex: null,
+    });
+  });
+  afterEach(() => {
+    useSelection.getState().setUiMode({ kind: 'idle' });
+    useSelection.getState().selectLineTag(null);
+  });
+
+  it('exits append mode without selecting the tag', () => {
+    const { ref } = fakeSvgRef();
+    const { container } = render(
+      <svg>
+        <LineTagsLayer bands={[mixedBand()]} zoom={1} svgRef={ref} />
+      </svg>,
+    );
+    fireEvent.click(container.querySelector('rect[fill="transparent"]')!);
+    expect(useSelection.getState().uiMode.kind).toBe('idle');
+    expect(useSelection.getState().selectedLineTagId).toBeNull();
   });
 });
 
