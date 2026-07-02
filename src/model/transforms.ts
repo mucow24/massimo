@@ -1080,15 +1080,24 @@ export function updateLine(
   if (patch.service === undefined || patch.service === cur.service) {
     return { ...doc, lines };
   }
-  // Service code changed — rewrite any `<oldService>` inline-bullet tokens in
-  // station names and text labels to `<newService>` so bullet glyphs keep
-  // referring to the same line. Match is exact-substring on the literal
-  // bullet form: per parseLabelLine the bullet code can't contain `<` or `>`,
-  // so a `<code>` substring is always parsed as a bullet — no false hits.
-  const oldToken = `<${cur.service}>`;
-  const newToken = `<${nextLine.service}>`;
+  // Service code changed — rewrite any inline-bullet tokens for the old code
+  // in station names and text labels so bullet glyphs keep referring to the
+  // same line. Match is exact-substring on the literal single-delimiter
+  // forms: per parseLabelLine a bullet code can't contain any delimiter
+  // character, so a `<code>` / `[code]` / `{code}` substring is always
+  // parsed as a bullet — no false hits — and the doubled (unfilled) forms
+  // contain their single form, so rewriting the singles covers them too. A
+  // service that itself contains a delimiter can never appear in a token;
+  // skip the rewrite rather than mangle literal text.
+  if (/[<>[\]{}\n]/.test(cur.service)) {
+    return { ...doc, lines };
+  }
+  const tokenPairs = ['<>', '[]', '{}'].map((d): [string, string] => [
+    `${d[0]}${cur.service}${d[1]}`,
+    `${d[0]}${nextLine.service}${d[1]}`,
+  ]);
   const rewrite = (s: string): string =>
-    s.includes(oldToken) ? s.split(oldToken).join(newToken) : s;
+    tokenPairs.reduce((acc, [o, n]) => (acc.includes(o) ? acc.split(o).join(n) : acc), s);
   const stations = mapRecord(doc.stations, (st) => {
     const name = rewrite(st.name);
     return name === st.name ? st : { ...st, name };

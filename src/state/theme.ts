@@ -30,8 +30,9 @@ export interface ThemeColors {
   grid: string;
   /**
    * Opaque "off"-position fill for dashed/hatched line styles (the dashed
-   * underlay stroke and the hatch-tile gap). Matches the canvas so the gaps
-   * read as empty map, not a stale white showing lines behind.
+   * underlay stroke and the hatch-tile gap), and the interior of unfilled
+   * inline route bullets. Matches the canvas so the gaps read as empty map,
+   * not a stale white showing lines behind.
    */
   underlay: string;
   /** On-canvas station rename editor (inline-styled `<textarea>`). */
