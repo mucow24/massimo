@@ -325,7 +325,8 @@ function makeIdListActions<
           {
             ...clearedSelections(),
             // Selecting a non-station primary exits any non-idle mode; a null
-            // clear leaves the current mode alone (matches the prior setters).
+            // clear leaves the current mode alone (callers that pass null —
+            // e.g. the canvas-background click — expect the mode preserved).
             uiMode: id == null ? get().uiMode : { kind: 'idle' },
             lineTagHoverPreview: null,
           },
@@ -484,9 +485,9 @@ export const useSelection = create<SelectionState>((set, get) => ({
     }),
   selectLine: (id) => {
     if (id === null) {
-      // Null clear is gentle: drops line + tag, preserves other primaries
-      // and uiMode (consistent with pre-refactor behavior at the call sites
-      // that pass null — e.g. canvas-background click).
+      // Null clear is gentle by design: drops line + tag, preserves other
+      // primaries and uiMode (callers that pass null — e.g. the canvas-
+      // background click — expect the rest of the selection untouched).
       set({
         selectedStationIds: [],
         selectedLineId: null,

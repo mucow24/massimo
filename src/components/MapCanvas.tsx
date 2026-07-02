@@ -395,7 +395,9 @@ export function MapCanvas() {
   // leaving the drag stranded — armed for a later stray move to resume, or for
   // an unrelated pointerup to commit a move the user never made, with history
   // recording paused the whole time. Pan + rect-select are intentionally
-  // omitted: neither opens a history group or mutates the doc.
+  // omitted: neither opens a history group or mutates the doc. The line-tag
+  // drag is window-wired, so it hooks window 'pointercancel' itself instead
+  // of appearing here.
   const onPointerCancel = () => {
     drag.onPointerCancel();
     itemDrag.onPointerCancel();
@@ -445,7 +447,8 @@ export function MapCanvas() {
   // Shift-click toggles multi-selection membership — but ONLY without
   // Ctrl/Cmd, which is reserved (stations use Ctrl+Shift for path-extend).
   // Plain click replaces the whole selection with this item, which also
-  // opens its popover (each popover gates on its `selected*Ids.length === 1`).
+  // opens its popover (ItemPopovers gates on `soleSelection` — exactly one
+  // item selected across every type).
   // Right-click rotates, group-aware via rotateItemOnContextMenu.
   const makeItemClickHandlers = (
     type: ItemRef['type'],
@@ -1055,7 +1058,8 @@ export function MapCanvas() {
             fire — hence the no-ops. Emitted in body paint order (polygon → svg
             image → station → bullet → label) so when two SELECTED items overlap,
             the one painted higher still wins its grab. The polygon/svg-image
-            MANIPULATION handle passes render BELOW this, so a selected item's own
+            MANIPULATION handle passes come AFTER this layer in the SVG (they
+            paint on top and win hit-testing), so a selected item's own
             corner/vertex handles still beat its body proxy. These iterate the
             same preview-aware id lists as the handle overlays, harmless
             mid-marquee since useRectSelect captures the pointer on first move.

@@ -702,7 +702,7 @@ function buildBandSpec(
     warning: result.warning,
     centerline: result.vertices,
     radius: centerlineR,
-    linePriorities: [], // overwritten in buildBands' final pass
+    linePriorities: [], // filled in by assignLinePriorities
     stripeOffsets: offsets,
     stripeWidths: widths,
   };

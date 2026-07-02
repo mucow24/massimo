@@ -117,6 +117,14 @@ describe('rotateStation', () => {
     doc = T.rotateStation(doc, 's1');
     expect(doc.stations.s1.rotation).toBe(0);
   });
+
+  it('steps counter-clockwise with dir -1 and wraps 0 → 7', () => {
+    let doc = makeDoc({ stations: [makeStation({ id: 's1', rotation: 0 })] });
+    doc = T.rotateStation(doc, 's1', -1);
+    expect(doc.stations.s1.rotation).toBe(7);
+    doc = T.rotateStation(doc, 's1', -1);
+    expect(doc.stations.s1.rotation).toBe(6);
+  });
 });
 
 describe('rotateItemsAround', () => {

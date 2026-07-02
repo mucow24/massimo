@@ -3,7 +3,7 @@ import { act, fireEvent, render, screen } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { StationInspector } from './StationInspector';
 import { useDoc, useSelection } from '../../state/store';
-import { historyDepth } from '../../state/history';
+import { historyDepth, undo } from '../../state/history';
 import { DEFAULT_DOC, resolveOffsetPerp } from '../../model/transforms';
 import { DOT_SHAPE_PRESETS } from '../../model/dotStyle';
 import { makeDoc, makeStation, makeStop, makeLine } from '../../test/fixtures';
@@ -656,13 +656,18 @@ describe('<StationInspector /> — edit paths that reach the document (E8)', () 
     expect(useDoc.getState().stations.a.rotation).toBe(1);
   });
 
-  it('the ⟲ button rotates −45° net (seven forward steps wrap to 7)', async () => {
+  it('the ⟲ button rotates −45° (0 wraps to 7) as ONE undo entry', async () => {
     const user = userEvent.setup();
     seedStation();
     render(<StationInspector id="a" />);
+    const before = historyDepth();
     await user.click(screen.getByRole('button', { name: 'Rotate −45°' }));
-    // rotateStation steps +1 mod 8; the button fires it 7×, so 0 → 7 (= −45°).
     expect(useDoc.getState().stations.a.rotation).toBe(7);
+    // One click = one entry: the old "seven +45° steps" implementation cost
+    // seven Ctrl+Z presses (through six states the user never saw) to undo.
+    expect(historyDepth() - before).toBe(1);
+    undo();
+    expect(useDoc.getState().stations.a.rotation).toBe(0);
   });
 
   it('the Name textarea writes through renameStation', () => {

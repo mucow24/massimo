@@ -34,8 +34,8 @@ export function pathBetweenStations(
     if (iTo > iFrom) {
       slice = line.stations.slice(iFrom + 1, iTo + 1);
     } else {
-      // Walk backward toward `toId`. Slice forward, then reverse, dropping
-      // `fromId` (the last entry of the forward slice).
+      // Walk backward toward `toId`: slice `[iTo, iFrom)` — the exclusive end
+      // bound leaves `fromId` out — then reverse so the path runs from → to.
       const forward = line.stations.slice(iTo, iFrom);
       slice = forward.reverse();
     }

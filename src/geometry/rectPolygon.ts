@@ -19,9 +19,11 @@ export interface AABB {
  * (case 2 is skipped) and no closing edge (the last→first segment is excluded
  * from case 3), so only contact with the stroke chain counts as overlap.
  *
- * For touch-only contact (shared edge or single point) callers should treat
- * that as "no overlap" — segIntersect uses an inclusive epsilon, so coincident
- * boundaries register as crossings; if needed, callers can shrink the rect.
+ * Touch-only contact (shared edge or single point) usually registers as
+ * overlap: the vertex-in-rect test and segmentsIntersect's t-range are both
+ * inclusive (no epsilon). The exception is a collinear shared edge with no
+ * vertex inside the rect — parallel segments never count as crossing. Callers
+ * that want touch to NOT count should shrink the rect.
  */
 export function rectIntersectsPolygon(rect: AABB, poly: Pt[], closed: boolean = true): boolean {
   if (poly.length < (closed ? 3 : 2)) return false;

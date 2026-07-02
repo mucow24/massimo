@@ -16,7 +16,9 @@ export interface LineTagDragApi {
   // svg pointer capture on first significant motion).
 }
 
-const SNAP_TOL = 10; // world px
+// World arc-length units along the centerline (deliberately NOT ÷ zoom,
+// unlike the other hooks' screen-px snap radii).
+const SNAP_TOL = 10;
 
 /**
  * Drag handler for line tags. Mirrors useStationDrag's lifecycle:
@@ -36,11 +38,13 @@ export function useLineTagDrag(svgRef: RefObject<SVGSVGElement | null>): LineTag
     history: ReturnType<typeof beginHistoryGroup>;
     onMove: (e: PointerEvent) => void;
     onUp: (e: PointerEvent) => void;
+    onCancel: () => void;
   } | null>(null);
 
   const onStartDrag = (id: string, e: React.PointerEvent) => {
     const onMove = (ev: PointerEvent) => onPointerMove(ev);
     const onUp = (ev: PointerEvent) => onPointerUp(ev);
+    const onCancel = () => onPointerCancel();
     dragRef.current = {
       tagId: id,
       startMX: e.clientX,
@@ -49,9 +53,11 @@ export function useLineTagDrag(svgRef: RefObject<SVGSVGElement | null>): LineTag
       history: beginHistoryGroup(),
       onMove,
       onUp,
+      onCancel,
     };
     window.addEventListener('pointermove', onMove);
     window.addEventListener('pointerup', onUp);
+    window.addEventListener('pointercancel', onCancel);
   };
 
   const onPointerMove = (e: PointerEvent) => {
@@ -165,10 +171,27 @@ export function useLineTagDrag(svgRef: RefObject<SVGSVGElement | null>): LineTag
     if (!ds) return;
     window.removeEventListener('pointermove', ds.onMove);
     window.removeEventListener('pointerup', ds.onUp);
+    window.removeEventListener('pointercancel', ds.onCancel);
     dragRef.current = null;
     // Shared commit/cancel: one history entry + capture release + click-suppress
     // clear when the gesture moved, else cancel (a pure click).
     finishDrag(ds, e, svgRef);
+  };
+
+  // A browser pointercancel (pen palm rejection, window switch, capture loss)
+  // ends the gesture with no pointerup. This hook is window-wired, so
+  // MapCanvas's pointercancel fan-out can't reach it — it disarms itself:
+  // unhook the window listeners (a stray later move must not keep dragging a
+  // button-less tag) and roll the live moveLineTag writes back to the pre-drag
+  // snapshot without committing.
+  const onPointerCancel = () => {
+    const ds = dragRef.current;
+    if (!ds) return;
+    window.removeEventListener('pointermove', ds.onMove);
+    window.removeEventListener('pointerup', ds.onUp);
+    window.removeEventListener('pointercancel', ds.onCancel);
+    dragRef.current = null;
+    ds.history.rollback();
   };
 
   return { onStartDrag };

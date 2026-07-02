@@ -11,8 +11,9 @@
  *
  * Every shipped face is a TrueType `.ttf` (jsPDF, used by PDF export, can only
  * embed TrueType outlines — not PostScript/CFF OpenType). `FONT_TABLE` mirrors
- * the `@font-face` blocks in styles.css 1:1 — keep the two in sync if the
- * shipped font set changes.
+ * the Helvetica Neue `@font-face` blocks in styles.css 1:1 — keep the two in
+ * sync if the shipped font set changes. (styles.css also declares a DejaVu
+ * Sans fallback face, deliberately absent here: pdfGlyphs handles it.)
  *
  * File paths are stored base-relative (no leading slash) and prefixed with
  * Vite's `BASE_URL` when fetched (see `fontUrl`). A hardcoded `/fonts/…` 404s

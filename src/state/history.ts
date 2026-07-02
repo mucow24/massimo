@@ -1,4 +1,4 @@
-import { useDoc, type DocSnapshot } from './store';
+import { HISTORY_LIMIT, useDoc, type DocSnapshot } from './store';
 import { useSelection } from './selection';
 
 // The ONE module that reaches into zundo's temporal-store internals — the
@@ -7,10 +7,12 @@ import { useSelection } from './selection';
 // tests) depend on these named operations instead of the array layout.
 
 // Push exactly one entry onto the undo stack and wipe the redo stack, mirroring
-// zundo's default handler when a fresh action happens.
+// zundo's default handler when a fresh action happens — including its
+// HISTORY_LIMIT cap (zundo only enforces `limit` in its own set-handler, so
+// this path must trim the oldest entries itself).
 export function pushHistory(snapshot: DocSnapshot): void {
   useDoc.temporal.setState((s) => ({
-    pastStates: [...s.pastStates, snapshot],
+    pastStates: [...s.pastStates, snapshot].slice(-HISTORY_LIMIT),
     futureStates: [],
   }));
 }

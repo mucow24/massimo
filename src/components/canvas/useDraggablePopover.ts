@@ -49,7 +49,7 @@ function clampedFreeze(
 
 /**
  * Frozen-anchor + header-drag mechanism shared by the canvas item popovers
- * (route bullet, text label, polygon, svg image). Freezes `world` at mount so
+ * (route bullet, text label, polygon, svg image, station). Freezes `world` at mount so
  * the popover doesn't slide when the underlying item resizes or moves — which
  * would also let a size slider feed its own position change back into itself.
  * Re-freezes (and drops any drag) when `id` changes, because MapCanvas reuses

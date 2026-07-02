@@ -103,7 +103,7 @@ export function offsetPathLength(verts: Vec2[], R: number, offset: number): numb
  * Project a world point onto the offset path: returns the parameter `t`
  * ∈ [0, 1] of the closest point and the residual distance.
  *
- * Coarse sample (50 points) then binary refine. Good enough for an
+ * Coarse sample (50 points) then ternary-search refine. Good enough for an
  * interactive drag handler.
  */
 export function closestParamOnOffsetPath(
@@ -124,7 +124,7 @@ export function closestParamOnOffsetPath(
       bestT = t;
     }
   }
-  // Binary refine around bestT.
+  // Ternary-search refine around bestT.
   let lo = Math.max(0, bestT - 1 / N);
   let hi = Math.min(1, bestT + 1 / N);
   for (let iter = 0; iter < 24; iter++) {
@@ -216,6 +216,3 @@ export function snapNeighborTag(args: {
   }
   return { canonT: args.candCanonT, snapped: false };
 }
-
-// Re-export Vec2 type used by callers.
-export type { Vec2 } from './vec';

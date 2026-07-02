@@ -113,6 +113,20 @@ describe('useRectSelect — drag threshold + capture', () => {
     expect(dragState.suppressClick).toBe(true);
   });
 
+  it('survives a non-capturable pointer (setPointerCapture throws)', () => {
+    // Some pointers can't be captured (the pointer is already gone, synthetic
+    // events). The shared trackDragMove guards this; the marquee must start
+    // anyway instead of crashing mid-gesture.
+    const { result, ref, svg } = render();
+    svg.setPointerCapture = () => {
+      throw new Error('InvalidPointerId');
+    };
+    down(result, pointerEvent({ clientX: 10, clientY: 10, target: ref.current }));
+    move(result, pointerEvent({ clientX: 50, clientY: 50 }));
+    expect(result.current.rect).toEqual({ x0: 10, y0: 10, x1: 50, y1: 50 });
+    expect(dragState.suppressClick).toBe(true);
+  });
+
   it('a click (down + up without crossing threshold) clears state and changes nothing', () => {
     useSelection.setState({ ...useSelection.getState(), selectedStationIds: ['A' as StationId] });
     const { result, ref } = render();

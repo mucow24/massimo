@@ -138,6 +138,35 @@ describe('<RouteBulletPopover /> size control', () => {
     expect(historyDepth() - before).toBe(1);
   });
 
+  it('one wheel notch over the spinbutton steps the size exactly once', () => {
+    // Regression: onWheel was wired on BOTH the row and the spinbutton, so a
+    // wheel event over the spinbutton ran the handler twice (once directly,
+    // once via bubbling to the row) — every notch stepped the size by two.
+    render(
+      <RouteBulletPopover
+        bullet={BULLET}
+        world={{ x: 10, y: 10 }}
+        view={VIEW}
+        onClose={() => {}}
+      />,
+    );
+    fireEvent.wheel(screen.getByRole('spinbutton'), { deltaY: -1 });
+    expect(useDoc.getState().routeBullets.b1.size).toBe(BULLET.size + 1);
+  });
+
+  it('a wheel notch over the slider steps the size once (row-level handler)', () => {
+    render(
+      <RouteBulletPopover
+        bullet={BULLET}
+        world={{ x: 10, y: 10 }}
+        view={VIEW}
+        onClose={() => {}}
+      />,
+    );
+    fireEvent.wheel(screen.getByRole('slider'), { deltaY: 1 });
+    expect(useDoc.getState().routeBullets.b1.size).toBe(BULLET.size - 1);
+  });
+
   it('clamps size at MIN only in the transform (above the slider max is allowed)', () => {
     useDoc.getState().updateRouteBullet('b1', { size: 999 });
     expect(useDoc.getState().routeBullets.b1.size).toBe(999);

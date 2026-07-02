@@ -43,9 +43,10 @@ export function screenDeltaToWorld(
   };
 }
 
-// Item popovers are a fixed 240px wide plus a 3px border each side + the 1px
-// outline; height varies per popover, so both axes clamp against the same
-// nominal square footprint.
+// Item popovers are 240px wide plus a 3px border each side + the 1px outline;
+// height varies per popover, so both axes clamp against the same nominal
+// square footprint. The station popover is wider (320px, styles.css) but
+// clamps against this same nominal — an accepted ~80px right-edge crop.
 const POPOVER_NOMINAL = 248;
 const CLAMP_MARGIN = 8;
 

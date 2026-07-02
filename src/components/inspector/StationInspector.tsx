@@ -129,9 +129,7 @@ export function StationInspector({ id }: { id: StationId }) {
           />
           <button
             className="btn-mini"
-            onClick={() => {
-              for (let i = 0; i < 7; i++) rotateStation(station.id);
-            }}
+            onClick={() => rotateStation(station.id, -1)}
             title="Rotate −45°"
             aria-label="Rotate −45°"
           >
