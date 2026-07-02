@@ -128,12 +128,14 @@ describe('<RouteBulletPopover /> size control', () => {
     );
     const slider = screen.getByRole('slider');
     const before = historyDepth();
-    // A drag: press, several value changes, release. useFieldHistory opens one
-    // group on mousedown and commits exactly one entry on mouseup.
-    fireEvent.mouseDown(slider);
+    // A drag: focus (mousedown focuses the slider in a browser), several value
+    // changes, then blur. useFieldHistory opens one group on focus and commits
+    // exactly one entry on blur — the NumericFieldRow wiring shared with the
+    // Options and polygon popovers.
+    fireEvent.focus(slider);
     fireEvent.change(slider, { target: { value: '20' } });
     fireEvent.change(slider, { target: { value: '30' } });
-    fireEvent.mouseUp(slider);
+    fireEvent.blur(slider);
     expect(useDoc.getState().routeBullets.b1.size).toBe(30);
     expect(historyDepth() - before).toBe(1);
   });
@@ -165,6 +167,19 @@ describe('<RouteBulletPopover /> size control', () => {
     );
     fireEvent.wheel(screen.getByRole('slider'), { deltaY: 1 });
     expect(useDoc.getState().routeBullets.b1.size).toBe(BULLET.size - 1);
+  });
+
+  it('wheel over a locked bullet’s size row leaves the size unchanged', () => {
+    // The row-level wheel handler must respect the lock — both inputs are
+    // disabled, so a wheel notch anywhere in the row must not edit the bullet.
+    const locked = { ...BULLET, locked: true };
+    useDoc.setState({ ...DEFAULT_DOC, routeBullets: { b1: locked } });
+    render(
+      <RouteBulletPopover bullet={locked} world={{ x: 10, y: 10 }} view={VIEW} onClose={() => {}} />,
+    );
+    fireEvent.wheel(screen.getByRole('slider'), { deltaY: -1 });
+    fireEvent.wheel(screen.getByRole('spinbutton'), { deltaY: -1 });
+    expect(useDoc.getState().routeBullets.b1.size).toBe(BULLET.size);
   });
 
   it('clamps size at MIN only in the transform (above the slider max is allowed)', () => {

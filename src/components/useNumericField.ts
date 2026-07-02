@@ -61,7 +61,7 @@ export function useNumericField(
       const n = Number(raw);
       if (Number.isFinite(n)) onChange(n);
     },
-    onNumberWheel: (e: WheelEvent<HTMLInputElement>) => {
+    onNumberWheel: (e: WheelEvent<HTMLElement>) => {
       e.preventDefault();
       onChange(getCurrent() + (e.deltaY < 0 ? step : -step));
     },
