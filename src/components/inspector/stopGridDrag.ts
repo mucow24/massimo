@@ -106,8 +106,8 @@ export function findDropTarget<S extends RowCol & { lineId: string }>(
 }
 
 /** Screen-true axis glyph for a stop's orientation, shown on the stop's
- *  editor handle (both the StopGrid and the on-canvas layout editor render
- *  it inside the station-rotated frame, so it always reads world-true). */
+ *  editor handle (the on-canvas layout editor renders it inside the
+ *  station-rotated frame, so it always reads world-true). */
 export const ORIENTATION_GLYPH: Record<
   'auto-vertical' | 'auto-ne-sw' | 'auto-horizontal' | 'auto-nw-se',
   string
@@ -116,6 +116,15 @@ export const ORIENTATION_GLYPH: Record<
   'auto-ne-sw': '⤢',
   'auto-horizontal': '↔',
   'auto-nw-se': '⤡',
+};
+
+/** Human-readable axis names for the same orientations (accessible labels +
+ *  tooltips on the inspector's orientation cycle button). */
+export const ORIENTATION_NAME: Record<keyof typeof ORIENTATION_GLYPH, string> = {
+  'auto-vertical': 'vertical',
+  'auto-ne-sw': 'NE–SW',
+  'auto-horizontal': 'horizontal',
+  'auto-nw-se': 'NW–SE',
 };
 
 /** A stop/label node with its effective width in world units (a stop's is

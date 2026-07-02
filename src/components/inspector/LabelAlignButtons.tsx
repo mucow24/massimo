@@ -21,7 +21,13 @@ const LINE_THICKNESS = 1.5;
 const LINE_GAP = 2;
 const LINE_LENGTHS = [11, 8, 11, 6];
 
-export function LabelAlignPicker({
+/**
+ * Single cycle button for the label's horizontal alignment: shows the CURRENT
+ * state, a click advances one step through ALIGN_CYCLE. The next value is
+ * computed here and dispatched as an absolute set, so a mirror broadcast
+ * writes the SAME value to every match — matches can't diverge.
+ */
+export function LabelAlignCycleButton({
   align,
   onSet,
   disabled,
@@ -30,27 +36,23 @@ export function LabelAlignPicker({
   onSet: (v: LabelAlign) => void;
   disabled?: boolean;
 }) {
+  const next = ALIGN_CYCLE[(ALIGN_CYCLE.indexOf(align) + 1) % ALIGN_CYCLE.length];
   return (
-    <div className="seg-group" role="group" aria-label="Label horizontal alignment">
-      {ALIGN_CYCLE.map((mode) => (
-        <button
-          key={mode}
-          type="button"
-          className={'seg-btn' + (align === mode ? ' active' : '')}
-          aria-label={`Align: ${ALIGN_TITLE[mode]}`}
-          title={`Align: ${ALIGN_TITLE[mode]}`}
-          aria-pressed={align === mode}
-          disabled={disabled}
-          onClick={() => onSet(mode)}
-        >
-          <HAlignIcon mode={mode} />
-        </button>
-      ))}
-    </div>
+    <button
+      type="button"
+      className="chip-btn"
+      aria-label={`Align: ${ALIGN_TITLE[align]}`}
+      title={`Align: ${ALIGN_TITLE[align]} — click for ${ALIGN_TITLE[next]}`}
+      disabled={disabled}
+      onClick={() => onSet(next)}
+    >
+      <HAlignIcon mode={align} />
+    </button>
   );
 }
 
-export function LabelValignPicker({
+/** Vertical-alignment twin of {@link LabelAlignCycleButton} over VALIGN_CYCLE. */
+export function LabelValignCycleButton({
   valign,
   onSet,
   disabled,
@@ -59,23 +61,18 @@ export function LabelValignPicker({
   onSet: (v: LabelValign) => void;
   disabled?: boolean;
 }) {
+  const next = VALIGN_CYCLE[(VALIGN_CYCLE.indexOf(valign) + 1) % VALIGN_CYCLE.length];
   return (
-    <div className="seg-group" role="group" aria-label="Label vertical alignment">
-      {VALIGN_CYCLE.map((mode) => (
-        <button
-          key={mode}
-          type="button"
-          className={'seg-btn' + (valign === mode ? ' active' : '')}
-          aria-label={`V-align: ${VALIGN_TITLE[mode]}`}
-          title={`V-align: ${VALIGN_TITLE[mode]}`}
-          aria-pressed={valign === mode}
-          disabled={disabled}
-          onClick={() => onSet(mode)}
-        >
-          <VAlignIcon mode={mode} />
-        </button>
-      ))}
-    </div>
+    <button
+      type="button"
+      className="chip-btn"
+      aria-label={`V-align: ${VALIGN_TITLE[valign]}`}
+      title={`V-align: ${VALIGN_TITLE[valign]} — click for ${VALIGN_TITLE[next]}`}
+      disabled={disabled}
+      onClick={() => onSet(next)}
+    >
+      <VAlignIcon mode={valign} />
+    </button>
   );
 }
 

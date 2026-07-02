@@ -4,15 +4,14 @@ import {
   FontItalicIcon,
   LockClosedIcon,
   LockOpen1Icon,
-  ReloadIcon,
-  ResetIcon,
+  RotateCounterClockwiseIcon,
 } from '@radix-ui/react-icons';
 import { useDoc, useSelection } from '../../state/store';
 import { dispatchMirrored } from '../../state/mirrorDispatch';
 import type { StationId } from '../../model/types';
 import { findMatchingStations, type LayoutOffset } from '../../model/matching';
 import { LabelOffsetControl } from './LabelOffsetControl';
-import { LabelAlignPicker, LabelValignPicker } from './LabelAlignButtons';
+import { LabelAlignCycleButton, LabelValignCycleButton } from './LabelAlignButtons';
 import { StopRows } from './StopRows';
 import { useFieldHistory } from '../useFieldHistory';
 import { useNumericField } from '../useNumericField';
@@ -84,14 +83,43 @@ export function StationInspector({ id }: { id: StationId }) {
   if (!station) return null;
 
   const mirrorOn = selection.mirrorMatching;
-  const mirrorAvailable = matches.length > 0;
   const inLayoutEdit =
     selection.uiMode.kind === 'editing-station-layout' && selection.uiMode.stationId === station.id;
 
   return (
     <section className="inspector">
       <div className="field">
-        <label>Name</label>
+        <div className="field-header">
+          <label>Name</label>
+          <button
+            type="button"
+            className={`chip-btn${station.isWaypoint ? ' wp-on' : ''}`}
+            aria-pressed={!!station.isWaypoint}
+            aria-label="Waypoint"
+            title={
+              station.isWaypoint
+                ? 'Waypoint on — name + bullets hidden'
+                : 'Mark as waypoint (hide name + bullets)'
+            }
+            onClick={() => setStationWaypoint(station.id, !station.isWaypoint)}
+          >
+            WP
+          </button>
+          <button
+            type="button"
+            className={`chip-btn${station.locked ? ' lock-on' : ''}`}
+            aria-pressed={!!station.locked}
+            aria-label={station.locked ? 'Unlock station' : 'Lock station'}
+            title={
+              station.locked
+                ? 'Unlock — allow dragging, marquee-select, and delete'
+                : 'Lock (prevents dragging, marquee-select, and delete)'
+            }
+            onClick={() => setStationLocked(station.id, !station.locked)}
+          >
+            {station.locked ? <LockClosedIcon /> : <LockOpen1Icon />}
+          </button>
+        </div>
         <textarea
           value={station.name}
           onChange={(e) => renameStation(station.id, e.target.value)}
@@ -102,7 +130,7 @@ export function StationInspector({ id }: { id: StationId }) {
       </div>
       <div className="field">
         <label>Position &amp; rotation</label>
-        <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap', alignItems: 'center' }}>
+        <div className="field-row">
           <span className="axis-label" aria-hidden>
             X
           </span>
@@ -127,70 +155,27 @@ export function StationInspector({ id }: { id: StationId }) {
             onBlur={yField.onNumberBlur}
             style={{ width: 56 }}
           />
+          {/* One icon, mirrored, so the ± pair is visually identical. */}
           <button
-            className="btn-mini"
+            className="chip-btn"
             onClick={() => rotateStation(station.id, -1)}
             title="Rotate −45°"
             aria-label="Rotate −45°"
           >
-            <ResetIcon />
+            <RotateCounterClockwiseIcon />
           </button>
           <button
-            className="btn-mini"
+            className="chip-btn"
             onClick={() => rotateStation(station.id)}
             title="Rotate +45°"
             aria-label="Rotate +45°"
           >
-            <ReloadIcon />
-          </button>
-          <span className="axis-label" title="Station rotation">
-            {station.rotation * 45}°
-          </span>
-          <button
-            className={`btn-mini${mirrorOn ? ' mirror-on' : ''}`}
-            onClick={() => selection.setMirrorMatching(!mirrorOn)}
-            disabled={!mirrorAvailable && !mirrorOn}
-            title={
-              mirrorAvailable
-                ? `Mirror layout edits to ${matches.length} matching neighbor${matches.length === 1 ? '' : 's'}`
-                : 'No directly-connected stations share this layout'
-            }
-            aria-pressed={mirrorOn}
-          >
-            {mirrorAvailable ? `Mirror ×${matches.length}` : 'Mirror'}
-          </button>
-          <button
-            type="button"
-            className={`btn-mini${station.isWaypoint ? ' wp-on' : ''}`}
-            aria-pressed={!!station.isWaypoint}
-            aria-label="Waypoint"
-            title={
-              station.isWaypoint
-                ? 'Waypoint on — name + bullets hidden'
-                : 'Mark as waypoint (hide name + bullets)'
-            }
-            onClick={() => setStationWaypoint(station.id, !station.isWaypoint)}
-          >
-            WP
-          </button>
-          <button
-            type="button"
-            className={`btn-mini${station.locked ? ' lock-on' : ''}`}
-            aria-pressed={!!station.locked}
-            aria-label={station.locked ? 'Unlock station' : 'Lock station'}
-            title={
-              station.locked
-                ? 'Unlock — allow dragging, marquee-select, and delete'
-                : 'Lock (prevents dragging, marquee-select, and delete)'
-            }
-            onClick={() => setStationLocked(station.id, !station.locked)}
-          >
-            {station.locked ? <LockClosedIcon /> : <LockOpen1Icon />}
+            <RotateCounterClockwiseIcon style={{ transform: 'scaleX(-1)' }} />
           </button>
         </div>
       </div>
       <div className="field">
-        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+        <div className="field-header">
           <label>Stop layout</label>
           {/* Enter/exit editing-station-layout: the full stop/label editor
               on the real station, on the main canvas. */}
@@ -225,16 +210,21 @@ export function StationInspector({ id }: { id: StationId }) {
       </div>
       <div className="field">
         <label>Label</label>
-        <div style={{ display: 'flex', gap: 6, alignItems: 'center' }}>
-          {/* Clicks are absolute (set, not cycle), so mirror mode is a plain
-              broadcast of the same value — matching stations can't diverge. */}
-          <LabelAlignPicker
+        <div className="field-row">
+          {/* Cycle buttons dispatch the computed next value as an absolute
+              set, so mirror mode is a plain broadcast of the same value —
+              matching stations can't diverge. */}
+          <LabelAlignCycleButton
             align={station.label.align}
             onSet={(v) => dispatchAll((sid) => setLabelAlign(sid, v))}
           />
+          <LabelValignCycleButton
+            valign={station.label.valign}
+            onSet={(v) => dispatchAll((sid) => setLabelValign(sid, v))}
+          />
           <button
             type="button"
-            className={`btn-mini${station.labelBold ? ' active' : ''}`}
+            className={`chip-btn${station.labelBold ? ' active' : ''}`}
             aria-pressed={!!station.labelBold}
             aria-label="Bold"
             title={
@@ -248,7 +238,7 @@ export function StationInspector({ id }: { id: StationId }) {
           </button>
           <button
             type="button"
-            className={`btn-mini${station.labelItalic ? ' active' : ''}`}
+            className={`chip-btn${station.labelItalic ? ' active' : ''}`}
             aria-pressed={!!station.labelItalic}
             aria-label="Italic"
             title={
@@ -260,12 +250,6 @@ export function StationInspector({ id }: { id: StationId }) {
           >
             <FontItalicIcon />
           </button>
-        </div>
-        <div style={{ display: 'flex', gap: 6, marginTop: 4 }}>
-          <LabelValignPicker
-            valign={station.label.valign}
-            onSet={(v) => dispatchAll((sid) => setLabelValign(sid, v))}
-          />
         </div>
         <div className="field-hint">Offset (along reading direction)</div>
         <LabelOffsetControl
