@@ -87,6 +87,18 @@ describe('<OptionsPopover />', () => {
     expect(useDoc.getState().curveRadius).toBe(42);
   });
 
+  it('a wheel notch over the font-size slider steps it once (row-level handler)', async () => {
+    // NumericFieldRow handles wheel at the row level: the slider ignores wheel
+    // natively, so a notch over it must nudge the value by one step — the same
+    // affordance as the route-bullet / text-label popover rows.
+    const user = userEvent.setup();
+    render(<Toolbar />);
+    await user.click(screen.getByRole('button', { name: 'Options' }));
+    const before = useDoc.getState().labelFontSize;
+    fireEvent.wheel(screen.getByRole('slider', { name: /font size/i }), { deltaY: -1 });
+    expect(useDoc.getState().labelFontSize).toBe(before + 0.5);
+  });
+
   it('contains a font-size slider with bounds [2, 24] that updates the store', async () => {
     const user = userEvent.setup();
     render(<Toolbar />);
