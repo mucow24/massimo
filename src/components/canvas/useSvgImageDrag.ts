@@ -69,6 +69,7 @@ export interface SvgImageDragApi {
   onSvgRotatePointerDown: (id: string, e: React.PointerEvent) => void;
   onPointerMove: (e: React.PointerEvent) => void;
   onPointerUp: (e: React.PointerEvent) => void;
+  onPointerCancel: () => void;
 }
 
 const geomOf = (im: {
@@ -294,6 +295,23 @@ export function useSvgImageDrag(
     }
   };
 
+  // Browser pointercancel: disarm whichever gesture is armed (move / resize /
+  // rotate) and roll the doc back to its pre-drag snapshot instead of
+  // committing. See useStationDrag for the full rationale.
+  const onPointerCancel = () => {
+    const mv = moveRef.current;
+    const rz = resizeRef.current;
+    const rot = rotateRef.current;
+    if (!mv && !rz && !rot) return;
+    moveRef.current = null;
+    resizeRef.current = null;
+    rotateRef.current = null;
+    setSvgImageSnapGuides([]);
+    mv?.history.rollback();
+    rz?.history.rollback();
+    rot?.history.rollback();
+  };
+
   return {
     svgImageSnapGuides,
     onSvgImagePointerDown,
@@ -302,5 +320,6 @@ export function useSvgImageDrag(
     onSvgRotatePointerDown,
     onPointerMove,
     onPointerUp,
+    onPointerCancel,
   };
 }

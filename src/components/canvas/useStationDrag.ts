@@ -19,6 +19,7 @@ export interface StationDragApi {
   onStartDrag: (id: StationId, e: React.PointerEvent, redistributeAnchor?: StationId) => void;
   onPointerMove: (e: React.PointerEvent) => void;
   onPointerUp: (e: React.PointerEvent) => void;
+  onPointerCancel: () => void;
 }
 
 /**
@@ -166,5 +167,18 @@ export function useStationDrag(
     finishDrag(ds, e, svgRef);
   };
 
-  return { snapGuides, onStartDrag, onPointerMove, onPointerUp };
+  // A browser pointercancel (pen palm rejection, window switch, capture loss)
+  // aborts the gesture: disarm the ref (so the next stray move can't resume a
+  // button-less drag), drop the guides, and roll the doc back to the pre-drag
+  // snapshot — reverting the live moveStation writes (and any towed siblings)
+  // without committing a drop.
+  const onPointerCancel = () => {
+    const ds = dragStationRef.current;
+    if (!ds) return;
+    dragStationRef.current = null;
+    setSnapGuides([]);
+    ds.history.rollback();
+  };
+
+  return { snapGuides, onStartDrag, onPointerMove, onPointerUp, onPointerCancel };
 }

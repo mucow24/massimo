@@ -8,6 +8,7 @@ import { DEFAULT_DOC } from '../../model/transforms';
 import { DEFAULT_SNAP_MODES, type SnapModes } from '../../geometry/snap';
 import { makeTextLabel, stationWithStop, makeLine } from '../../test/fixtures';
 import { fakeSvgRef } from '../../test/interaction';
+import { historyDepth, isHistoryGrouping } from '../../state/history';
 import type { StationId } from '../../model/types';
 
 const setModes = (partial: Partial<SnapModes>) =>
@@ -250,6 +251,50 @@ describe('useStationDrag — selection-only label group drag', () => {
     expect(doc.stations['A'].y).toBeCloseTo(15, 5);
     expect(doc.textLabels['g1'].x).toBeCloseTo(80, 5);
     expect(doc.textLabels['g1'].y).toBeCloseTo(-35, 5);
+  });
+});
+
+describe('useStationDrag — pointercancel reverts the in-flight drag', () => {
+  it('restores the station to its start, pushes no history entry, and disarms the drag', () => {
+    // Shift bypasses snap so the live moveStation delta is exact.
+    setModes({ line: false, all: 'off', grid: 'off' });
+    useDoc.setState({
+      ...useDoc.getState(),
+      lines: { L1: makeLine({ id: 'L1', stations: ['A'] }) },
+      lineOrder: ['L1'],
+      stations: { A: stationWithStop('A' as StationId, 'L1', { x: 0, y: 0 }) },
+    });
+    const depthBefore = historyDepth();
+
+    const svgRef = createRef<SVGSVGElement>() as RefObject<SVGSVGElement | null>;
+    const { result } = renderHook(() => useStationDrag(svgRef, 1));
+
+    result.current.onStartDrag(
+      'A' as StationId,
+      pointerEvent({ clientX: 200, clientY: 200, shiftKey: true }),
+    );
+    // Move past threshold: +60 x / +40 y in world (zoom 1). moveStation writes live.
+    result.current.onPointerMove(pointerEvent({ clientX: 260, clientY: 240, shiftKey: true }));
+    // Sanity: the live drag actually displaced the station before the cancel.
+    expect(useDoc.getState().stations['A'].x).toBeCloseTo(60, 5);
+    expect(useDoc.getState().stations['A'].y).toBeCloseTo(40, 5);
+
+    // The browser fires pointercancel mid-drag (palm rejection, capture loss).
+    result.current.onPointerCancel();
+
+    const doc = useDoc.getState();
+    // Reverted to the pre-drag position — the drop was never committed.
+    expect(doc.stations['A'].x).toBe(0);
+    expect(doc.stations['A'].y).toBe(0);
+    // No history entry pushed...
+    expect(historyDepth()).toBe(depthBefore);
+    // ...and recording resumed (the paused group is closed, not stranded).
+    expect(isHistoryGrouping()).toBe(false);
+
+    // The drag ref is cleared: a stray pointermove after cancel is inert (it
+    // must NOT resume the drag with no button held).
+    result.current.onPointerMove(pointerEvent({ clientX: 400, clientY: 400, shiftKey: true }));
+    expect(useDoc.getState().stations['A'].x).toBe(0);
   });
 });
 

@@ -40,6 +40,7 @@ export interface ItemDragApi {
   onLabelPointerDown: (id: string, e: React.PointerEvent) => void;
   onPointerMove: (e: React.PointerEvent) => void;
   onPointerUp: (e: React.PointerEvent) => void;
+  onPointerCancel: () => void;
 }
 
 /**
@@ -188,5 +189,23 @@ export function useItemDrag(
     finishDrag(ds, e, svgRef);
   };
 
-  return { bulletSnapGuides, onBulletPointerDown, onLabelPointerDown, onPointerMove, onPointerUp };
+  // Browser pointercancel: disarm the drag and roll the doc back to its
+  // pre-drag snapshot (reverting the live move + any towed siblings) instead of
+  // committing. See useStationDrag for the full rationale.
+  const onPointerCancel = () => {
+    const ds = dragRef.current;
+    if (!ds) return;
+    dragRef.current = null;
+    setBulletSnapGuides([]);
+    ds.history.rollback();
+  };
+
+  return {
+    bulletSnapGuides,
+    onBulletPointerDown,
+    onLabelPointerDown,
+    onPointerMove,
+    onPointerUp,
+    onPointerCancel,
+  };
 }
