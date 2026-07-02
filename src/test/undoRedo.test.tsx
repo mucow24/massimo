@@ -166,6 +166,24 @@ describe('beginHistoryGroup', () => {
     expect(historyDepth()).toBe(beforeUndoStack);
   });
 
+  it('grouped commits respect the history limit (oldest entries drop off)', () => {
+    // zundo enforces `limit: 200` in its own set-handler, but nearly every
+    // user gesture (drags, field-edit arcs) records through beginHistoryGroup
+    // → pushHistory instead. If that path doesn't apply the same cap, a long
+    // session grows the undo stack without bound.
+    const id = useDoc.getState().addStation(0, 0);
+    for (let i = 1; i <= 205; i++) {
+      const group = beginHistoryGroup();
+      useDoc.getState().moveStation(id, i, 0);
+      group.commit();
+    }
+    expect(historyDepth()).toBe(200);
+    // The kept entries are the NEWEST 200: undoing all of them lands on the
+    // oldest surviving snapshot (x = 5), not the original station add.
+    for (let i = 0; i < 200; i++) undo();
+    expect(useDoc.getState().stations[id].x).toBe(5);
+  });
+
   // Regression: the commit() equality check used to enumerate doc fields
   // by hand and missed labelFontSize / labelWeight / labelItalic /
   // activePalettes. Slider drags wrapped in useFieldHistory pause zundo
