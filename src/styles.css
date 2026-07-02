@@ -1175,50 +1175,51 @@ select option {
 .btn-mini:hover:not(:disabled) {
   background: var(--control-hover);
 }
-/* Segmented state pickers (label align/valign in the station editor, stop
-   orientation in the per-stop rows): one button per state, the current one
-   highlighted with the shared accent pair; a click sets that state directly. */
-.seg-group {
-  display: inline-flex;
-  gap: 4px;
-}
-.seg-btn {
+/* Chip buttons — the station editor's small square icon controls (label
+   align/valign cycles, stop orientation cycle, B/I, WP, lock, ±45° rotate).
+   One shared 26px face so a row of them reads as a single aligned strip;
+   toggles light up with the shared accent pair. Cycle buttons show the
+   CURRENT state and advance one step per click. */
+.chip-btn {
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  width: 26px;
+  min-width: 26px;
   height: 26px;
+  padding: 0 4px;
   background: var(--control-bg);
   border: 1px solid var(--border-strong);
   border-radius: var(--radius);
-  padding: 0;
+  font-size: var(--fs-caption);
   cursor: pointer;
 }
-.seg-btn:hover:not(:disabled) {
+.chip-btn > svg {
+  display: block;
+}
+.chip-btn:hover:not(:disabled) {
   background: var(--control-hover);
 }
-.seg-btn.active,
-.seg-btn.active:hover:not(:disabled) {
-  background: var(--accent-bg);
-  border-color: var(--accent-border);
-}
-
-/* One "toggle is on" treatment for every mini toggle (B/I, mirror, waypoint,
-   lock): the shared accent pair. The mirror/wp/lock class names stay on the
-   JSX so tests and semantics are untouched; they just all paint the same. */
-.btn-mini.active,
-.btn-mini.mirror-on,
-.btn-mini.wp-on,
-.btn-mini.lock-on {
+/* One "toggle is on" treatment (B/I, waypoint, lock): the shared accent
+   pair. The wp/lock class names stay on the JSX so tests and semantics are
+   untouched; they just all paint the same. */
+.chip-btn.active,
+.chip-btn.wp-on,
+.chip-btn.lock-on {
   background: var(--accent-bg);
   border-color: var(--accent-border);
   font-weight: 600;
 }
-.btn-mini.active:hover:not(:disabled),
-.btn-mini.mirror-on:hover:not(:disabled),
-.btn-mini.wp-on:hover:not(:disabled),
-.btn-mini.lock-on:hover:not(:disabled) {
+.chip-btn.active:hover:not(:disabled),
+.chip-btn.wp-on:hover:not(:disabled),
+.chip-btn.lock-on:hover:not(:disabled) {
   background: var(--accent-bg);
+}
+
+.btn-mini.active,
+.btn-mini.active:hover:not(:disabled) {
+  background: var(--accent-bg);
+  border-color: var(--accent-border);
+  font-weight: 600;
 }
 
 /* Range input in "indeterminate" state — multiple matching stations have
@@ -1261,12 +1262,33 @@ input[type='range'].indeterminate {
 .inspector .field {
   display: flex;
   flex-direction: column;
-  gap: 3px;
+  gap: 4px;
   margin-bottom: 8px;
 }
-.inspector .field > label {
-  font-size: var(--fs-caption);
-  color: var(--text-muted);
+/* Section headers: same bold-black label typography as the other item
+   popovers' rows (.bullet-popover / .text-label-popover), so every panel in
+   the app reads with one hierarchy — bold headers, muted caption hints. */
+.inspector .field > label,
+.inspector .field-header > label {
+  font-size: var(--fs-small);
+  font-weight: 700;
+  color: var(--text);
+}
+/* Header row variant: the section label plus right-aligned controls (WP +
+   lock in the top row, Edit layout on the stop list). */
+.inspector .field-header {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+}
+.inspector .field-header > label {
+  margin-right: auto;
+}
+/* Inline strip of controls under a section header. */
+.inspector .field-row {
+  display: flex;
+  align-items: center;
+  gap: 6px;
 }
 .inspector .field-hint {
   font-size: var(--fs-caption);
@@ -1440,7 +1462,9 @@ body:has(.app[data-theme='dark']) {
   background: #46401c;
 }
 
-/* Per-stop editor rows in the station inspector. */
+/* Per-stop editor rows in the station inspector: [badge | shape | size |
+   orientation]. Every control shares the 26px chip height so the row reads
+   as one aligned line. */
 .stop-row {
   display: flex;
   align-items: center;
@@ -1458,10 +1482,24 @@ body:has(.app[data-theme='dark']) {
 .stop-row .line-badge {
   flex: none;
 }
+.stop-row .btn-mini.shape-picker-trigger {
+  width: 26px;
+  height: 26px;
+  padding: 0;
+  flex: none;
+}
+.stop-row input[type='number'] {
+  height: 26px;
+}
+/* The orientation cycle button hugs the right edge; the size box stays with
+   the shape picker it describes. */
+.stop-row .orient-btn {
+  margin-left: auto;
+}
 
 /* Station popover: the station editor as an on-canvas popover (shares the
    .text-label-popover shell). Wider than the standard 240px so the per-stop
-   rows + segmented pickers fit on one line. */
+   rows fit on one line. */
 .station-popover {
   width: 320px;
 }
@@ -1471,4 +1509,18 @@ body:has(.app[data-theme='dark']) {
 .station-popover .body {
   max-height: min(70vh, 560px);
   overflow-y: auto;
+}
+/* Hairline dividers between the popover's sections (Name / Position / Stop
+   layout / Label) — the taller multi-section panel needs them where the
+   single-section item popovers don't. */
+.station-popover .field + .field {
+  border-top: 1px solid var(--border-soft);
+  padding-top: 8px;
+}
+.station-popover .field:last-child {
+  margin-bottom: 0;
+}
+/* Numeric inputs line up with the 26px chip buttons they sit beside. */
+.station-popover .inspector input[type='number'] {
+  height: 26px;
 }
