@@ -9,9 +9,7 @@ const lineMap = (lines: Line[]): Map<string, Line> => {
   return m;
 };
 
-const red = lineMap([
-  { id: 'l1', service: 'A1', name: 'A1', color: '#ff0000', stations: [] },
-]);
+const red = lineMap([{ id: 'l1', service: 'A1', name: 'A1', color: '#ff0000', stations: [] }]);
 
 const badge = (container: HTMLElement) =>
   container.querySelector('[data-inline-bullet]') as HTMLElement | null;
