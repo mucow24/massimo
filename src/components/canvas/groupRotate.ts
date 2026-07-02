@@ -1,5 +1,22 @@
 import { useDoc, useSelection } from '../../state/store';
 import { buildRotateMembers, type ItemRef } from '../../model/transforms';
+import type { MapDoc } from '../../model/types';
+
+/** True when the referenced item exists and is locked. */
+function isItemLocked(doc: MapDoc, ref: ItemRef): boolean {
+  switch (ref.type) {
+    case 'station':
+      return !!doc.stations[ref.id]?.locked;
+    case 'bullet':
+      return !!doc.routeBullets[ref.id]?.locked;
+    case 'label':
+      return !!doc.textLabels[ref.id]?.locked;
+    case 'polygon':
+      return !!doc.polygons[ref.id]?.locked;
+    case 'svgImage':
+      return !!doc.svgImages[ref.id]?.locked;
+  }
+}
 
 /**
  * Shared right-click "rotate" gesture for any selectable canvas item.
@@ -12,6 +29,11 @@ import { buildRotateMembers, type ItemRef } from '../../model/transforms';
  * just this one item via `rotateSingle`.
  */
 export function rotateItemOnContextMenu(pivot: ItemRef, rotateSingle: () => void): void {
+  const doc = useDoc.getState();
+  // A locked item can't be rotated. Right-clicking one does nothing at all —
+  // neither the group path nor the single rotate — mirroring how a locked item
+  // can't initiate a drag (usePolygonDrag et al. bail on pointer-down).
+  if (isItemLocked(doc, pivot)) return;
   const sel = useSelection.getState();
   const st = sel.selectedStationIds;
   const bl = sel.selectedRouteBulletIds;
@@ -30,7 +52,11 @@ export function rotateItemOnContextMenu(pivot: ItemRef, rotateSingle: () => void
             ? pg.includes(pivot.id)
             : sg.includes(pivot.id);
   if (total > 1 && pivotInSelection) {
-    useDoc.getState().rotateItemsAround(pivot, buildRotateMembers(st, bl, lb, pg, sg));
+    // Skip locked co-selected members so they aren't rotated (mirrors
+    // collectGroupSiblings towing only unlocked items during a group drag).
+    // The pivot is guaranteed unlocked by the guard above, so it survives.
+    const members = buildRotateMembers(st, bl, lb, pg, sg).filter((m) => !isItemLocked(doc, m));
+    useDoc.getState().rotateItemsAround(pivot, members);
     return;
   }
   rotateSingle();

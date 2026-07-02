@@ -2,7 +2,7 @@ import { describe, it, expect, beforeEach, vi } from 'vitest';
 import { rotateItemOnContextMenu } from './groupRotate';
 import { useDoc, useSelection } from '../../state/store';
 import { DEFAULT_DOC } from '../../model/transforms';
-import { makeDoc, makeStation, makeSvgImage } from '../../test/fixtures';
+import { makeDoc, makePolygon, makeStation, makeSvgImage } from '../../test/fixtures';
 
 // Reset both stores; clear every selection id list so each test sets exactly
 // what it needs.
@@ -130,5 +130,68 @@ describe('rotateItemOnContextMenu', () => {
     const doc = useDoc.getState();
     expect(doc.stations.b.rotation).toBe(0);
     expect(doc.stations.c.rotation).toBe(0);
+  });
+
+  it('does not rotate a locked item right-clicked on its own (rotateSingle suppressed)', () => {
+    useDoc.setState({
+      ...DEFAULT_DOC,
+      ...makeDoc({ polygons: [makePolygon({ id: 'p0', locked: true })] }),
+    });
+    blankSelection();
+
+    const rotateSingle = vi.fn();
+    rotateItemOnContextMenu({ type: 'polygon', id: 'p0' }, rotateSingle);
+
+    // A locked item can't be rotated: neither the group path nor rotateSingle fire.
+    expect(rotateSingle).not.toHaveBeenCalled();
+    const doc = useDoc.getState();
+    expect(doc.polygons.p0.vertices).toEqual(makePolygon({ id: 'p0' }).vertices);
+  });
+
+  it('does not rotate the group when the right-clicked pivot is locked', () => {
+    useDoc.setState({
+      ...DEFAULT_DOC,
+      ...makeDoc({
+        stations: [makeStation({ id: 'a', x: 100, y: 0, rotation: 0 })],
+        polygons: [makePolygon({ id: 'p0', locked: true })],
+      }),
+    });
+    useSelection.setState({ selectedStationIds: ['a'], selectedPolygonIds: ['p0'] });
+
+    const rotateSingle = vi.fn();
+    rotateItemOnContextMenu({ type: 'polygon', id: 'p0' }, rotateSingle);
+
+    expect(rotateSingle).not.toHaveBeenCalled();
+    // Neither the locked pivot nor the co-selected station moves.
+    const doc = useDoc.getState();
+    expect(doc.stations.a).toMatchObject({ x: 100, y: 0, rotation: 0 });
+  });
+
+  it('skips a locked co-selected member while rotating the rest of the group', () => {
+    useDoc.setState({
+      ...DEFAULT_DOC,
+      ...makeDoc({
+        stations: [
+          makeStation({ id: 'a', x: 0, y: 0, rotation: 0 }),
+          makeStation({ id: 'b', x: 100, y: 0, rotation: 0 }),
+        ],
+        polygons: [makePolygon({ id: 'p0', locked: true })],
+      }),
+    });
+    useSelection.setState({
+      selectedStationIds: ['a', 'b'],
+      selectedPolygonIds: ['p0'],
+    });
+
+    const rotateSingle = vi.fn();
+    rotateItemOnContextMenu({ type: 'station', id: 'a' }, rotateSingle);
+
+    expect(rotateSingle).not.toHaveBeenCalled();
+    const doc = useDoc.getState();
+    // Unlocked members rotate as usual...
+    expect(doc.stations.b.rotation).toBe(1);
+    expect(doc.stations.b.x).toBeCloseTo(100 * Math.cos(Math.PI / 4), 6);
+    // ...but the locked polygon is left untouched.
+    expect(doc.polygons.p0.vertices).toEqual(makePolygon({ id: 'p0' }).vertices);
   });
 });
