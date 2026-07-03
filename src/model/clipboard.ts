@@ -184,6 +184,12 @@ function parseTextLabelData(raw: unknown): Omit<TextLabel, 'id'> | null {
     (typeof d.width !== 'number' || !Number.isFinite(d.width) || d.width < 0)
   )
     return null;
+  // Optional leading/tracking (absent = the 1 / 0 defaults). Range clamping is
+  // updateTextLabel's job; here we only reject wrong types.
+  if (d.leading !== undefined && (typeof d.leading !== 'number' || !Number.isFinite(d.leading)))
+    return null;
+  if (d.tracking !== undefined && (typeof d.tracking !== 'number' || !Number.isFinite(d.tracking)))
+    return null;
   const out: Omit<TextLabel, 'id'> = {
     x: d.x,
     y: d.y,
@@ -198,6 +204,8 @@ function parseTextLabelData(raw: unknown): Omit<TextLabel, 'id'> | null {
   };
   if (d.locked !== undefined) out.locked = d.locked as boolean;
   if (d.width !== undefined) out.width = d.width as number;
+  if (d.leading !== undefined) out.leading = d.leading as number;
+  if (d.tracking !== undefined) out.tracking = d.tracking as number;
   return out;
 }
 

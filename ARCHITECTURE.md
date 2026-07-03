@@ -647,9 +647,18 @@ refinement (equidistant / tens) → build guides. Polygon vertices get their own
 ### Labels & text — `labelTokens.ts`, `textMeasure.ts`, `labelLayout.ts`
 
 - **`parseLabelLine`** tokenizes a label line into `text`/`bullet` segments. The delimiter picks
-  the inline route bullet's shape — `<CODE>` circle, `[CODE]` square, `{CODE}` diamond — and
-  doubling it (`<<CODE>>`, …) makes the bullet unfilled (line-color outline on a white/black
-  interior by theme). Unclosed/mismatched delimiters and empty codes stay text.
+  the inline route bullet's shape — `|CODE|` circle, `[CODE]` square, `{CODE}` diamond — and
+  doubling it (`||CODE||`, …) makes the bullet unfilled (line-color outline on a white/black
+  interior by theme). Unclosed/mismatched delimiters and empty codes stay text; a backslash
+  before a token escapes it to literal text (`\|a|` renders "|a|").
+- **`parseFormattedLine`** (text labels only) additionally parses HTML-like formatting tags —
+  `<b>` (two steps up the shipped weight ladder), `<i>`, `<u>`/`<s>` (drawn as explicit `<line>`s),
+  `<color=…>` (named / `#hex` / `0xhex`), and the glyph shortcuts `<air>` ✈ / `<xfer>` ↔ — threading
+  the open-tag state across `\n` lines and column wraps until closed. Unknown tags stay literal
+  text; station names never parse tags (`bulletsOnly` in `StyledText`). Labels also carry optional
+  `leading` (line-spacing multiplier) and `tracking` (em letter-spacing) applied by the measurer
+  and `LabelView`. Legacy docs (`<X>` circle bullets, unescaped literal pipes) are rewritten once
+  by `migrateLegacyInlineTokens`, gated by persist v8 / file `version` 2.
 - **`measureTextLabel`** measures multi-line styled text **without a browser layout**: it lazily
   creates an offscreen 2D canvas and uses `ctx.measureText` (advance + ink bearings). **In jsdom
   there is no canvas backend**, so it falls back to a deliberate over-estimate

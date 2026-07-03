@@ -74,6 +74,37 @@ export function shiftTextY(text: SVGTextElement, dy: number): void {
 }
 
 /**
+ * Re-express tracked text for the PDF export: svg2pdf has no notion of
+ * `letter-spacing`, but it does honor `textLength` (converted to PDF
+ * charSpace). For every `<text>` carrying a non-zero letter-spacing, measure
+ * its rendered advance (browser layout, spacing applied), then swap the
+ * attribute for `textLength` = advance MINUS the trailing spacing — browsers
+ * add letter-spacing after every glyph including the last, while textLength
+ * spreads its delta across the n-1 inter-glyph gaps, so subtracting one
+ * spacing makes the re-derived gap exactly the original spacing. Runs with
+ * fewer than two characters just drop the attribute (no gaps to widen; keeps
+ * svg2pdf's charSpace division away from zero). Must run while the SVG is in
+ * the document so getComputedTextLength resolves.
+ */
+export function bakeLetterSpacing(svg: SVGSVGElement): void {
+  for (const text of svg.querySelectorAll('text')) {
+    const spacing = parseFloat(text.getAttribute('letter-spacing') ?? '0') || 0;
+    if (spacing === 0) continue;
+    text.removeAttribute('letter-spacing');
+    if ((text.textContent ?? '').length < 2) continue;
+    let advance: number;
+    try {
+      advance = text.getComputedTextLength();
+    } catch {
+      continue;
+    }
+    if (!(advance > 0)) continue;
+    text.setAttribute('textLength', String(advance - spacing));
+    text.setAttribute('lengthAdjust', 'spacing');
+  }
+}
+
+/**
  * Re-baseline every `<text>` in the (offscreen, attached) export clone so
  * svg2pdf's alphabetic-only placement reproduces the browser's rendering.
  *

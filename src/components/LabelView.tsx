@@ -8,8 +8,9 @@ import {
   type MeasuredBBox,
 } from '../geometry/textMeasure';
 import { justifyLine } from '../geometry/labelJustify';
+import type { SegmentStyle } from '../geometry/labelTokens';
 import { TEXT_LABEL_HIT_PAD } from '../geometry/stationBoundary';
-import { FONT_STACK } from '../export/fonts';
+import { bolderWeight, FONT_STACK } from '../export/fonts';
 import { useDoc } from '../state/store';
 import { useThemeColors } from '../state/theme';
 import { useViewportStore } from '../state/viewportStore';
@@ -81,7 +82,8 @@ export function LabelView({
   const angle = label.rotation * 45;
   const halfW = m.width / 2;
   const halfH = m.height / 2;
-  const lineSpacing = label.fontSize * LINE_HEIGHT;
+  const lineSpacing = label.fontSize * LINE_HEIGHT * (label.leading ?? 1);
+  const letterSpacingPx = (label.tracking ?? 0) * label.fontSize;
 
   if (layer === 'stroke') {
     if (!selected) return null;
@@ -166,7 +168,17 @@ export function LabelView({
         // Bullet bottom sits on the text baseline; see BASELINE_FRACTION.
         const baselineY = yTop + label.fontSize * BASELINE_FRACTION;
 
-        const textNode = (x: number, value: string, key: string) => (
+        // Per-run style resolution for the formatting tags: <b> steps the
+        // weight up the shipped ladder, <i> ORs with the label's italic,
+        // <color=…> overrides the day/night label color for that run only.
+        const runWeight = (style?: SegmentStyle) =>
+          style?.bold ? bolderWeight(label.weight) : label.weight;
+        const runItalic = (style?: SegmentStyle) => label.italic || !!style?.italic;
+        const runFill = (style?: SegmentStyle) => style?.color ?? labelColor;
+        const runAdvance = (s: string, style?: SegmentStyle) =>
+          measureAdvance(s, label.fontSize, runWeight(style), runItalic(style), letterSpacingPx);
+
+        const textNode = (x: number, value: string, key: string, style?: SegmentStyle) => (
           <text
             key={key}
             x={x}
@@ -175,15 +187,44 @@ export function LabelView({
             dominantBaseline="hanging"
             fontFamily={FONT_STACK}
             fontSize={label.fontSize}
-            fontWeight={label.weight}
-            fontStyle={label.italic ? 'italic' : 'normal'}
-            fill={labelColor}
+            fontWeight={runWeight(style)}
+            fontStyle={runItalic(style) ? 'italic' : 'normal'}
+            letterSpacing={letterSpacingPx !== 0 ? letterSpacingPx : undefined}
+            fill={runFill(style)}
             pointerEvents="none"
             style={{ userSelect: 'none', whiteSpace: 'pre' }}
           >
             {value}
           </text>
         );
+        // <u>/<s> as explicit <line> geometry, matching the station-label
+        // pattern: Chromium mishandles toggling the text-decoration SVG
+        // attribute on rotated <text>, and svg2pdf ignores it outright.
+        const decorationNodes = (
+          x: number,
+          width: number,
+          key: string,
+          style?: SegmentStyle,
+        ): React.ReactNode[] => {
+          if (!style || (!style.underline && !style.strike) || width <= 0) return [];
+          const thickness = label.fontSize * 0.07;
+          const decoration = (kind: string, y: number) => (
+            <line
+              key={`${key}-${kind}`}
+              data-text-decoration={kind}
+              x1={x}
+              x2={x + width}
+              y1={y}
+              y2={y}
+              stroke={runFill(style)}
+              strokeWidth={thickness}
+            />
+          );
+          const out: React.ReactNode[] = [];
+          if (style.underline) out.push(decoration('underline', baselineY + label.fontSize * 0.1));
+          if (style.strike) out.push(decoration('strike', baselineY - label.fontSize * 0.28));
+          return out;
+        };
         const bulletNode = (
           x: number,
           b: { code: string; shape: RouteBulletShape; filled: boolean; diameter: number },
@@ -208,9 +249,7 @@ export function LabelView({
         // 'justify' via its default branch.
         const atoms =
           label.align === 'justify' && !lm.endsParagraph
-            ? justifyLine(lm.raw, label.fontSize, lm.inkWidth, m.width, (s) =>
-                measureAdvance(s, label.fontSize, label.weight, label.italic),
-              )
+            ? justifyLine(lm.raw, label.fontSize, lm.inkWidth, m.width, runAdvance, lm.entryStyle)
             : null;
 
         const nodes: React.ReactNode[] = [];
@@ -218,31 +257,37 @@ export function LabelView({
           const lineStartX = -halfW + lm.bearingLeft;
           atoms.forEach((a, j) => {
             const x = lineStartX + a.x;
-            nodes.push(
-              a.kind === 'text'
-                ? textNode(x, a.value ?? '', `${i}-${j}-t`)
-                : bulletNode(
-                    x,
-                    {
-                      code: a.code ?? '',
-                      shape: a.shape ?? 'circle',
-                      filled: a.filled ?? true,
-                      diameter: a.diameter ?? 0,
-                    },
-                    `${i}-${j}-b`,
-                  ),
-            );
+            if (a.kind === 'text') {
+              nodes.push(textNode(x, a.value ?? '', `${i}-${j}-t`, a.style));
+              nodes.push(
+                ...decorationNodes(x, runAdvance(a.value ?? '', a.style), `${i}-${j}`, a.style),
+              );
+            } else {
+              nodes.push(
+                bulletNode(
+                  x,
+                  {
+                    code: a.code ?? '',
+                    shape: a.shape ?? 'circle',
+                    filled: a.filled ?? true,
+                    diameter: a.diameter ?? 0,
+                  },
+                  `${i}-${j}-b`,
+                ),
+              );
+            }
           });
         } else {
           let cursor = lineCursorX(label.align, halfW, lm.bearingLeft, lm.bearingRight);
           lm.segments.forEach((seg, j) => {
             const segCursor = cursor;
             cursor += seg.advance;
-            nodes.push(
-              seg.kind === 'text'
-                ? textNode(segCursor, seg.value, `${i}-${j}-t`)
-                : bulletNode(segCursor, seg, `${i}-${j}-b`),
-            );
+            if (seg.kind === 'text') {
+              nodes.push(textNode(segCursor, seg.value, `${i}-${j}-t`, seg.style));
+              nodes.push(...decorationNodes(segCursor, seg.advance, `${i}-${j}`, seg.style));
+            } else {
+              nodes.push(bulletNode(segCursor, seg, `${i}-${j}-b`));
+            }
           });
         }
 

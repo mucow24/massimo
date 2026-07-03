@@ -16,7 +16,7 @@ const badge = (container: HTMLElement) =>
 
 describe('<InlineBulletText />', () => {
   it('renders a filled circle badge with the line color background', () => {
-    const { container } = render(<InlineBulletText text="Hub <A1>" lineByService={red} />);
+    const { container } = render(<InlineBulletText text="Hub |A1|" lineByService={red} />);
     const b = badge(container);
     expect(b?.className).toBe('inline-bullet-badge inline-bullet-badge--circle');
     expect(b?.style.backgroundColor).toBe('rgb(255, 0, 0)');
@@ -30,7 +30,7 @@ describe('<InlineBulletText />', () => {
   });
 
   it('renders unfilled tokens as hollow badges colored by the line', () => {
-    const { container } = render(<InlineBulletText text="<<A1>>" lineByService={red} />);
+    const { container } = render(<InlineBulletText text="||A1||" lineByService={red} />);
     const b = badge(container);
     expect(b?.className).toContain('inline-bullet-badge--hollow');
     // Line color rides on `color` (outline via currentColor + the code);

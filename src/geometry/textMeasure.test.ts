@@ -83,13 +83,13 @@ describe('measureTextLabel', () => {
   });
 
   it('exposes parsed segments per line', () => {
-    const m = measureTextLabel(makeTextLabel({ id: 'g', text: 'Take <A1> uptown\nstraight' }));
+    const m = measureTextLabel(makeTextLabel({ id: 'g', text: 'Take |A1| uptown\nstraight' }));
     expect(m.lines[0].segments.map((s) => s.kind)).toEqual(['text', 'bullet', 'text']);
     expect(m.lines[1].segments.map((s) => s.kind)).toEqual(['text']);
   });
 
   it('threads bullet shape and fill through segment metrics', () => {
-    const m = measureTextLabel(makeTextLabel({ id: 'g', text: '[A1] <<B2>>' }));
+    const m = measureTextLabel(makeTextLabel({ id: 'g', text: '[A1] ||B2||' }));
     const bullets = m.lines[0].segments.filter((s) => s.kind === 'bullet');
     expect(bullets).toMatchObject([
       { code: 'A1', shape: 'square', filled: true },
@@ -98,16 +98,117 @@ describe('measureTextLabel', () => {
   });
 
   it('bullet segment width scales with fontSize', () => {
-    const small = measureTextLabel(makeTextLabel({ id: 'g', text: '<A1>', fontSize: 12 }));
-    const big = measureTextLabel(makeTextLabel({ id: 'g', text: '<A1>', fontSize: 48 }));
+    const small = measureTextLabel(makeTextLabel({ id: 'g', text: '|A1|', fontSize: 12 }));
+    const big = measureTextLabel(makeTextLabel({ id: 'g', text: '|A1|', fontSize: 48 }));
     expect(big.lines[0].inkWidth).toBeGreaterThan(small.lines[0].inkWidth);
   });
 
   it('bullet diameter is less than fontSize (shorter than the font height)', () => {
     const fontSize = 16;
-    const m = measureTextLabel(makeTextLabel({ id: 'g', text: '<A1>', fontSize }));
+    const m = measureTextLabel(makeTextLabel({ id: 'g', text: '|A1|', fontSize }));
     expect(m.lines[0].inkWidth).toBeLessThan(fontSize);
     expect(m.lines[0].inkWidth).toBeGreaterThan(fontSize * 0.5);
+  });
+});
+
+describe('measureTextLabel — formatting tags', () => {
+  beforeEach(() => {
+    _clearTextMeasureCache();
+  });
+
+  it('parses tags and attaches styles to text segments', () => {
+    const m = measureTextLabel(makeTextLabel({ id: 'g', text: '<b>Bold</b> plain' }));
+    const segs = m.lines[0].segments;
+    expect(segs).toHaveLength(2);
+    expect(segs[0]).toMatchObject({ kind: 'text', value: 'Bold', style: { bold: true } });
+    expect(segs[1]).toMatchObject({ kind: 'text', value: ' plain' });
+    expect((segs[1] as { style?: unknown }).style).toBeUndefined();
+  });
+
+  it('excludes tag characters from the measured width', () => {
+    const tagged = measureTextLabel(makeTextLabel({ id: 'g', text: '<b>ab</b>' }));
+    const literal = measureTextLabel({
+      text: '<b>ab</b>',
+      fontSize: 16,
+      weight: 400,
+      italic: false,
+      bulletsOnly: true,
+    });
+    expect(tagged.width).toBeLessThan(literal.width);
+  });
+
+  it('bulletsOnly mode leaves tags as literal text (station names)', () => {
+    const m = measureTextLabel({
+      text: '<b>ab</b>',
+      fontSize: 16,
+      weight: 400,
+      italic: false,
+      bulletsOnly: true,
+    });
+    expect(m.lines[0].segments).toEqual([
+      expect.objectContaining({ kind: 'text', value: '<b>ab</b>' }),
+    ]);
+  });
+
+  it('substitutes <air>/<xfer> glyphs', () => {
+    const m = measureTextLabel(makeTextLabel({ id: 'g', text: '<air>' }));
+    expect(m.lines[0].segments).toEqual([expect.objectContaining({ kind: 'text', value: '✈' })]);
+  });
+
+  it('carries an open tag across newlines and exposes per-line entry state', () => {
+    const m = measureTextLabel(makeTextLabel({ id: 'g', text: '<b>a\nb</b>c' }));
+    expect(m.lines[0].segments[0]).toMatchObject({ value: 'a', style: { bold: true } });
+    expect(m.lines[1].segments[0]).toMatchObject({ value: 'b', style: { bold: true } });
+    expect(m.lines[1].segments[1]).toMatchObject({ value: 'c' });
+    expect(m.lines[0].entryStyle?.bold).toBe(0);
+    expect(m.lines[1].entryStyle?.bold).toBe(1);
+  });
+
+  it('carries an open tag across column-mode word wraps', () => {
+    // jsdom has no canvas: widths fall back to len * fontSize * 0.55.
+    // fontSize 10 → 5.5/char; 'aa bb' = 27.5 > 20 → wraps after 'aa'.
+    const m = measureTextLabel({
+      text: '<b>aa bb</b>',
+      fontSize: 10,
+      weight: 400,
+      italic: false,
+      width: 20,
+    });
+    expect(m.lineCount).toBe(2);
+    expect(m.lines[0].segments[0]).toMatchObject({ value: 'aa', style: { bold: true } });
+    expect(m.lines[1].segments[0]).toMatchObject({ value: 'bb', style: { bold: true } });
+  });
+});
+
+describe('measureTextLabel — leading and tracking', () => {
+  beforeEach(() => {
+    _clearTextMeasureCache();
+  });
+
+  it('leading scales the space between lines but not a single line', () => {
+    const three = measureTextLabel(
+      makeTextLabel({ id: 'g', text: 'a\nb\nc', fontSize: 20, leading: 0.5 }),
+    );
+    // One full line height plus two half-spacings.
+    expect(three.height).toBeCloseTo(20 * LINE_HEIGHT * (1 + 2 * 0.5), 5);
+    const one = measureTextLabel(makeTextLabel({ id: 'g', text: 'a', fontSize: 20, leading: 0.5 }));
+    expect(one.height).toBeCloseTo(20 * LINE_HEIGHT, 5);
+  });
+
+  it('tracking widens text lines', () => {
+    const plain = measureTextLabel(makeTextLabel({ id: 'g', text: 'Hello', fontSize: 10 }));
+    const tracked = measureTextLabel(
+      makeTextLabel({ id: 'g', text: 'Hello', fontSize: 10, tracking: 0.2 }),
+    );
+    expect(tracked.width).toBeGreaterThan(plain.width);
+  });
+
+  it('keeps different leading/tracking values in distinct cache entries', () => {
+    const a = measureTextLabel(makeTextLabel({ id: 'g', text: 'X' }));
+    const b = measureTextLabel(makeTextLabel({ id: 'g', text: 'X', tracking: 0.3 }));
+    const c = measureTextLabel(makeTextLabel({ id: 'g', text: 'X', leading: 1.5 }));
+    expect(a).not.toBe(b);
+    expect(a).not.toBe(c);
   });
 });
 
@@ -116,11 +217,11 @@ describe('measureTextLabel — literalBullets (edit-mode measurement)', () => {
     _clearTextMeasureCache();
   });
 
-  it('measures <CODE> tokens as their literal glyphs, not a collapsed bullet', () => {
-    const styled = { text: 'Hub <A1> <B2>', fontSize: 12, weight: 400, italic: false };
+  it('measures |CODE| tokens as their literal glyphs, not a collapsed bullet', () => {
+    const styled = { text: 'Hub |A1| |B2|', fontSize: 12, weight: 400, italic: false };
     const collapsed = measureTextLabel(styled);
     const literal = measureTextLabel({ ...styled, literalBullets: true });
-    // The raw "<A1>" string is wider than the bullet it collapses to, so the
+    // The raw "|A1|" string is wider than the bullet it collapses to, so the
     // literal measurement (what the textarea shows in edit mode) is wider.
     expect(literal.width).toBeGreaterThan(collapsed.width);
     // Literal path emits no bullet segments — the line is plain text.
@@ -129,7 +230,7 @@ describe('measureTextLabel — literalBullets (edit-mode measurement)', () => {
   });
 
   it('keeps literal vs collapsed measurements in distinct cache entries', () => {
-    const styled = { text: 'Hub <A1>', fontSize: 12, weight: 400, italic: false };
+    const styled = { text: 'Hub |A1|', fontSize: 12, weight: 400, italic: false };
     const collapsed = measureTextLabel(styled);
     const literal = measureTextLabel({ ...styled, literalBullets: true });
     expect(literal).not.toBe(collapsed);

@@ -25,6 +25,10 @@ interface Props {
    *  whose textbox/steppers accept down to 1). The transform's clamping
    *  decides the actual lower bound. */
   textboxMin?: number;
+  /** Marks a neutral value with a tick on the slider track (native
+   *  `<datalist>` hash mark) — e.g. leading 1 / tracking 0. Purely visual;
+   *  the value grid still comes from `step`. */
+  detent?: number;
   /** Greys out + disables both the slider and the spinbutton. */
   disabled?: boolean;
 }
@@ -53,6 +57,7 @@ export function NumericFieldRow({
   getCurrent,
   textboxAllowAboveMax,
   textboxMin,
+  detent,
   disabled,
 }: Props) {
   const { text, history, onNumberFocus, onNumberChange, onNumberWheel, onNumberBlur } =
@@ -70,10 +75,16 @@ export function NumericFieldRow({
         max={max}
         step={step}
         value={value}
+        list={detent !== undefined ? `${id}-detent` : undefined}
         disabled={disabled}
         onChange={(e) => onChange(Number(e.target.value))}
         {...history}
       />
+      {detent !== undefined && (
+        <datalist id={`${id}-detent`}>
+          <option value={detent} />
+        </datalist>
+      )}
       <input
         type="number"
         aria-label={label}

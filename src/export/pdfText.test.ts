@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { shiftTextY, partitionRuns, type CharPos } from './pdfText';
+import { bakeLetterSpacing, shiftTextY, partitionRuns, type CharPos } from './pdfText';
 
 const SVG_NS = 'http://www.w3.org/2000/svg';
 
@@ -49,6 +49,56 @@ describe('shiftTextY', () => {
     const t = makeText({ y: '10' });
     shiftTextY(t, -2.5);
     expect(t.getAttribute('y')).toBe('7.5');
+  });
+});
+
+describe('bakeLetterSpacing', () => {
+  // jsdom has no SVG layout: stub the computed length per element.
+  function svgWith(
+    texts: { content: string; spacing?: string; computedLength?: number }[],
+  ): SVGSVGElement {
+    const svg = document.createElementNS(SVG_NS, 'svg') as SVGSVGElement;
+    for (const t of texts) {
+      const el = document.createElementNS(SVG_NS, 'text') as SVGTextElement;
+      el.textContent = t.content;
+      if (t.spacing !== undefined) el.setAttribute('letter-spacing', t.spacing);
+      (el as unknown as { getComputedTextLength: () => number }).getComputedTextLength = () =>
+        t.computedLength ?? 0;
+      svg.appendChild(el);
+    }
+    return svg;
+  }
+
+  it('converts letter-spacing to textLength minus the trailing spacing', () => {
+    // 'abcd' at 2px spacing measures 50 with spacing applied (incl. the
+    // trailing 2px after the last glyph). textLength excludes that trailing
+    // spacing so browsers re-derive exactly 2px per inter-glyph gap.
+    const svg = svgWith([{ content: 'abcd', spacing: '2', computedLength: 50 }]);
+    bakeLetterSpacing(svg);
+    const t = svg.querySelector('text')!;
+    expect(t.getAttribute('textLength')).toBe('48');
+    expect(t.getAttribute('lengthAdjust')).toBe('spacing');
+    expect(t.getAttribute('letter-spacing')).toBeNull();
+  });
+
+  it('leaves untracked text alone', () => {
+    const svg = svgWith([{ content: 'abcd' }, { content: 'ef', spacing: '0', computedLength: 20 }]);
+    bakeLetterSpacing(svg);
+    for (const t of Array.from(svg.querySelectorAll('text'))) {
+      expect(t.getAttribute('textLength')).toBeNull();
+      expect(t.getAttribute('lengthAdjust')).toBeNull();
+    }
+  });
+
+  it('drops the attribute but skips textLength on runs with fewer than two characters', () => {
+    // A single glyph has no inter-glyph gap: textLength would divide by zero
+    // in svg2pdf's charSpace math. The spacing attribute still comes off so
+    // the run renders identically everywhere (trailing spacing is invisible).
+    const svg = svgWith([{ content: 'x', spacing: '3', computedLength: 10 }]);
+    bakeLetterSpacing(svg);
+    const t = svg.querySelector('text')!;
+    expect(t.getAttribute('textLength')).toBeNull();
+    expect(t.getAttribute('letter-spacing')).toBeNull();
   });
 });
 

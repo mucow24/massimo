@@ -162,6 +162,18 @@ export const TEXT_LABEL_WIDTH_MAX = 800;
 // existing labels are visually unchanged once backfilled.
 export const TEXT_LABEL_COLOR_DEFAULT = '#111111';
 export const TEXT_LABEL_DARK_COLOR_DEFAULT = '#ffffff';
+// Leading: multiplier on the default 1.2em line spacing. Slider range with a
+// detent at the neutral 1; the spinbutton accepts values above the max.
+export const TEXT_LABEL_LEADING_MIN = 0;
+export const TEXT_LABEL_LEADING_MAX = 2;
+export const TEXT_LABEL_LEADING_STEP = 0.05;
+export const TEXT_LABEL_LEADING_DEFAULT = 1;
+// Tracking: extra letter-spacing in em (0 = font-normal, negative = tighter).
+// The floor is a hard clamp — below about -0.1em glyphs pile up unreadably.
+export const TEXT_LABEL_TRACKING_MIN = -0.1;
+export const TEXT_LABEL_TRACKING_MAX = 0.5;
+export const TEXT_LABEL_TRACKING_STEP = 0.01;
+export const TEXT_LABEL_TRACKING_DEFAULT = 0;
 export const TEXT_LABEL_DEFAULTS: Omit<TextLabel, 'id' | 'x' | 'y'> = {
   rotation: 0,
   text: 'New Label',
@@ -171,6 +183,8 @@ export const TEXT_LABEL_DEFAULTS: Omit<TextLabel, 'id' | 'x' | 'y'> = {
   align: 'left',
   color: TEXT_LABEL_COLOR_DEFAULT,
   darkColor: TEXT_LABEL_DARK_COLOR_DEFAULT,
+  leading: TEXT_LABEL_LEADING_DEFAULT,
+  tracking: TEXT_LABEL_TRACKING_DEFAULT,
 };
 
 // ---------- Stations ----------
@@ -1081,22 +1095,25 @@ export function updateLine(
   }
   // Service code changed — rewrite any inline-bullet tokens for the old code
   // in station names and text labels so bullet glyphs keep referring to the
-  // same line. Match is exact-substring on the literal single-delimiter
-  // forms: per parseLabelLine a bullet code can't contain any delimiter
-  // character, so a `<code>` / `[code]` / `{code}` substring is always
-  // parsed as a bullet — no false hits — and the doubled (unfilled) forms
-  // contain their single form, so rewriting the singles covers them too. A
+  // same line. Match is on the literal single-delimiter forms: per
+  // parseLabelLine a bullet code can't contain any delimiter character, so a
+  // `|code|` / `[code]` / `{code}` substring is always parsed as a bullet —
+  // no false hits — and the doubled (unfilled) forms contain their single
+  // form, so rewriting the singles covers them too. A backslash-escaped
+  // token is literal TEXT, not a bullet, so the lookbehind skips it. A
   // service that itself contains a delimiter can never appear in a token;
   // skip the rewrite rather than mangle literal text.
-  if (/[<>[\]{}\n]/.test(cur.service)) {
+  if (/[|<>[\]{}\n]/.test(cur.service)) {
     return { ...doc, lines };
   }
-  const tokenPairs = ['<>', '[]', '{}'].map((d): [string, string] => [
-    `${d[0]}${cur.service}${d[1]}`,
+  const escapeRe = (s: string): string => s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+  const tokenRes = ['||', '[]', '{}'].map((d): [RegExp, string] => [
+    new RegExp(`(?<!\\\\)${escapeRe(`${d[0]}${cur.service}${d[1]}`)}`, 'g'),
     `${d[0]}${nextLine.service}${d[1]}`,
   ]);
+  // Function replacement so a '$' in the new service isn't a replace pattern.
   const rewrite = (s: string): string =>
-    tokenPairs.reduce((acc, [o, n]) => (acc.includes(o) ? acc.split(o).join(n) : acc), s);
+    tokenRes.reduce((acc, [re, n]) => acc.replace(re, () => n), s);
   const stations = mapRecord(doc.stations, (st) => {
     const name = rewrite(st.name);
     return name === st.name ? st : { ...st, name };
@@ -1658,6 +1675,23 @@ export function updateTextLabel(
     if (typeof patch.width === 'number') {
       nextPatch = { ...nextPatch, width: Math.max(0, Math.round(patch.width)) };
     }
+    // Leading/tracking snap to their slider steps (two-decimal rounding kills
+    // float artifacts like 1.1500000000000001) and clamp at the bottom only,
+    // mirroring fontSize.
+    const snap = (v: number, step: number, min: number): number =>
+      Math.max(min, Math.round(Math.round(v / step) * step * 100) / 100);
+    if (typeof patch.leading === 'number') {
+      nextPatch = {
+        ...nextPatch,
+        leading: snap(patch.leading, TEXT_LABEL_LEADING_STEP, TEXT_LABEL_LEADING_MIN),
+      };
+    }
+    if (typeof patch.tracking === 'number') {
+      nextPatch = {
+        ...nextPatch,
+        tracking: snap(patch.tracking, TEXT_LABEL_TRACKING_STEP, TEXT_LABEL_TRACKING_MIN),
+      };
+    }
     let next = { ...cur, ...nextPatch };
     // Re-anchor whenever a resize-affecting property changes — text content,
     // font size, weight, italic, or the column width (which changes both the
@@ -1670,7 +1704,9 @@ export function updateTextLabel(
       nextPatch.fontSize !== undefined ||
       nextPatch.weight !== undefined ||
       nextPatch.italic !== undefined ||
-      nextPatch.width !== undefined;
+      nextPatch.width !== undefined ||
+      nextPatch.leading !== undefined ||
+      nextPatch.tracking !== undefined;
     const movedExplicitly = nextPatch.x !== undefined || nextPatch.y !== undefined;
     if (resizes && !movedExplicitly) {
       const before = measureTextLabel(cur);

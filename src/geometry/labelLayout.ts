@@ -32,7 +32,7 @@ export interface LabelStyle {
   weight: number;
   italic: boolean;
   /**
-   * Size the box against the literal `<CODE>` text instead of the collapsed
+   * Size the box against the literal `|CODE|` text instead of the collapsed
    * bullets. Set by the inline rename editor so its box fits the raw tokens
    * the textarea shows. Only affects width (the hit rect / textXMin); the
    * anchor, baseline, and height are bullet-independent.
@@ -204,6 +204,9 @@ export function labelLayoutLocal(
     // Per-station italic ORs with the doc-wide default, matching the renderer.
     italic: style.italic || !!station.labelItalic,
     literalBullets: style.literalBullets,
+    // Station names parse bullets only — formatting tags are a text-label
+    // feature and must stay literal here (matches renderStationLabelText).
+    bulletsOnly: true,
   });
   const textW = Math.max(20, measured.width);
 
