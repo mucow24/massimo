@@ -284,6 +284,32 @@ describe('offsetFilletPath', () => {
     );
     expect(d).toBe('M 0.000000 10.000000 L 100.000000 10.000000');
   });
+
+  // The inside/outside arc-radius sign is the load-bearing bit: a stripe on the
+  // inside of a bend rides a TIGHTER arc (centerR − offset), one on the outside
+  // rides a WIDER arc (centerR + offset). Getting it backwards inverts every
+  // interlined curve, so pin it directly here rather than only via the golden.
+  // Corner: east then south — cz > 0 in the router's turn convention, edges long
+  // enough (100 » tangent) that the centerline radius stays the full R=24.
+  const bendVerts = [
+    { x: 0, y: 0 },
+    { x: 100, y: 0 },
+    { x: 100, y: 100 },
+  ];
+
+  it('rides the tighter (inside) arc for a stripe on the inside of the bend', () => {
+    // Negative offset sits on the inside of this turn → radius 24 − 10 = 14.
+    const d = offsetFilletPath(bendVerts, 24, -10);
+    expect(d).toContain('A 14.00 14.00');
+    expect(d).not.toContain('A 34.00 34.00');
+  });
+
+  it('rides the wider (outside) arc for a stripe on the outside of the bend', () => {
+    // Positive offset sits on the outside of this turn → radius 24 + 10 = 34.
+    const d = offsetFilletPath(bendVerts, 24, 10);
+    expect(d).toContain('A 34.00 34.00');
+    expect(d).not.toContain('A 14.00 14.00');
+  });
 });
 
 describe('DIRS_8', () => {
