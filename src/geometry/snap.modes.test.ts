@@ -450,24 +450,44 @@ describe('snapDraggedStation: tens mode', () => {
     expect(r.y).toBeCloseTo(0, 5);
   });
 
-  it('does not refine outside the along-axis tolerance window', () => {
+  it('refines to the nearest ten when the offset is within tolerance', () => {
+    // proposedX 34 is 4 from the multiple of 10 at x=30 (anchored at a=0).
+    // tolerance 5 admits that 4-unit pull, so tens snaps the stop to x=30.
     const a = makeStation({ id: 'a', x: 0, y: 0, stops: [horizontalStop('L1')] });
-    const b = makeStation({ id: 'b', x: 35, y: 0, stops: [horizontalStop('L1')] });
+    const b = makeStation({ id: 'b', x: 34, y: 0, stops: [horizontalStop('L1')] });
     const r = snapDraggedStation({
       draggedId: 'b',
-      proposedX: 35,
+      proposedX: 34,
       proposedY: 0,
       draggedRotation: 0,
       draggedStops: b.stops,
       stations: stations(a, b),
       lines: linesOf(lineOf('L1', ['a', 'b'])),
       modes: { ...LINE_ONLY, tens: true },
-      tolerance: 10,
+      tolerance: 5,
     });
-    // 35 is 5 from both 30 and 40 — both are within tolerance, but tens
-    // ties to 40 (Math.round). Use 35.5 vs 35 to disambiguate.
+    expect(r.x).toBeCloseTo(30, 5);
     expect(r.y).toBeCloseTo(0, 5);
-    // Position is on the line (snap-to-line projects onto y=0).
+  });
+
+  it('does not refine when the nearest ten is outside the tolerance window', () => {
+    // Same proposed x=34 (4 from the ten at 30), but tolerance 3 rejects that
+    // pull, so the stop keeps its projected-onto-line position at x=34.
+    const a = makeStation({ id: 'a', x: 0, y: 0, stops: [horizontalStop('L1')] });
+    const b = makeStation({ id: 'b', x: 34, y: 0, stops: [horizontalStop('L1')] });
+    const r = snapDraggedStation({
+      draggedId: 'b',
+      proposedX: 34,
+      proposedY: 0,
+      draggedRotation: 0,
+      draggedStops: b.stops,
+      stations: stations(a, b),
+      lines: linesOf(lineOf('L1', ['a', 'b'])),
+      modes: { ...LINE_ONLY, tens: true },
+      tolerance: 3,
+    });
+    expect(r.x).toBeCloseTo(34, 5);
+    expect(r.y).toBeCloseTo(0, 5);
   });
 
   it('uses prev-in-line-ordering when both neighbors are present', () => {

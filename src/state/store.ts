@@ -50,6 +50,20 @@ const ids: IdFactory = defaultIdFactory();
 // (dx, dy) keeps a multi-item paste's relative layout intact.
 const DROP_OFFSET = 15;
 
+// Shared body for the four `duplicateX` actions: look up the source record by
+// id, strip that id, and hand the rest to the matching paste action (which
+// applies DROP_OFFSET and drops `locked`). Returns null when the id is gone.
+function duplicateVia<T extends { id: string }>(
+  record: Record<string, T>,
+  id: string,
+  paste: (data: Omit<T, 'id'>) => string,
+): string | null {
+  const item = record[id];
+  if (!item) return null;
+  const { id: _id, ...data } = item;
+  return paste(data);
+}
+
 // Single source of truth for which MapDoc fields are part of the persisted /
 // undoable document. Drives partialize (persist + zundo), DocSnapshot,
 // pickDocSnapshot, and the change-detection equality check in
@@ -477,12 +491,7 @@ export const useDoc = create<DocState>()(
           });
         },
         // Duplicate an existing bullet at the drop offset; null if it's gone.
-        duplicateRouteBullet: (id) => {
-          const b = get().routeBullets[id];
-          if (!b) return null;
-          const { id: _id, ...data } = b;
-          return get().pasteRouteBullet(data);
-        },
+        duplicateRouteBullet: (id) => duplicateVia(get().routeBullets, id, get().pasteRouteBullet),
         moveRouteBullet: (id, x, y) => set((s) => T.moveRouteBullet(s, id, x, y)),
         rotateRouteBullet: (id) => set((s) => T.rotateRouteBullet(s, id)),
         updateRouteBullet: (id, patch) => set((s) => T.updateRouteBullet(s, id, patch)),
@@ -518,12 +527,7 @@ export const useDoc = create<DocState>()(
           });
         },
         // Duplicate an existing label at the drop offset; null if it's gone.
-        duplicateTextLabel: (id) => {
-          const l = get().textLabels[id];
-          if (!l) return null;
-          const { id: _id, ...data } = l;
-          return get().pasteTextLabel(data);
-        },
+        duplicateTextLabel: (id) => duplicateVia(get().textLabels, id, get().pasteTextLabel),
         moveTextLabel: (id, x, y) => set((s) => T.moveTextLabel(s, id, x, y)),
         rotateTextLabel: (id) => set((s) => T.rotateTextLabel(s, id)),
         updateTextLabel: (id, patch) => set((s) => T.updateTextLabel(s, id, patch)),
@@ -551,12 +555,7 @@ export const useDoc = create<DocState>()(
           });
         },
         // Duplicate an existing polygon at the drop offset; null if it's gone.
-        duplicatePolygon: (id) => {
-          const p = get().polygons[id];
-          if (!p) return null;
-          const { id: _id, ...data } = p;
-          return get().pastePolygon(data);
-        },
+        duplicatePolygon: (id) => duplicateVia(get().polygons, id, get().pastePolygon),
         setPolygonVertices: (id, vertices) => set((s) => T.setPolygonVertices(s, id, vertices)),
         movePolygon: (id, dx, dy) => set((s) => T.movePolygon(s, id, dx, dy)),
         moveVertex: (id, index, x, y) => set((s) => T.moveVertex(s, id, index, x, y)),
@@ -581,12 +580,7 @@ export const useDoc = create<DocState>()(
           return get().addSvgImage({ ...rest, x: data.x + DROP_OFFSET, y: data.y + DROP_OFFSET });
         },
         // Duplicate an existing svg image at the drop offset; null if it's gone.
-        duplicateSvgImage: (id) => {
-          const im = get().svgImages[id];
-          if (!im) return null;
-          const { id: _id, ...data } = im;
-          return get().pasteSvgImage(data);
-        },
+        duplicateSvgImage: (id) => duplicateVia(get().svgImages, id, get().pasteSvgImage),
         // Absolute center move — used by whole-image drag, group-tow, and nudge.
         moveSvgImage: (id, x, y) => set((s) => T.setSvgImageCenter(s, id, x, y)),
         updateSvgImage: (id, patch) => set((s) => T.updateSvgImage(s, id, patch)),

@@ -713,6 +713,7 @@ describe('reconcileWithDoc', () => {
     transfers?: string[];
     routeBullets?: string[];
     textLabels?: string[];
+    svgImages?: string[];
     polygons?: Record<string, { vertices: unknown[] }>;
   }): MapDoc => {
     const fill = (ids?: string[]) => Object.fromEntries((ids ?? []).map((id) => [id, {} as never]));
@@ -724,6 +725,7 @@ describe('reconcileWithDoc', () => {
       transfers: fill(present.transfers),
       routeBullets: fill(present.routeBullets),
       textLabels: fill(present.textLabels),
+      svgImages: fill(present.svgImages),
       polygons: (present.polygons ?? {}) as never,
     } as MapDoc;
   };
@@ -759,6 +761,67 @@ describe('reconcileWithDoc', () => {
     useSelection
       .getState()
       .reconcileWithDoc(docWith({ polygons: { p1: { vertices: [0, 0, 0] } } }));
+    expect(useSelection.getState().selectedVertex).toBeNull();
+  });
+
+  it('prunes bullets, polygons, and svg images missing from the doc', () => {
+    useSelection.setState({
+      selectedRouteBulletIds: ['b1', 'b2'],
+      selectedPolygonIds: ['p1', 'p2'],
+      selectedSvgImageIds: ['i1', 'i2'],
+    });
+    useSelection.getState().reconcileWithDoc(
+      docWith({
+        routeBullets: ['b1'],
+        polygons: { p2: { vertices: [] } },
+        svgImages: ['i2'],
+      }),
+    );
+    const s = useSelection.getState();
+    expect(s.selectedRouteBulletIds).toEqual(['b1']);
+    expect(s.selectedPolygonIds).toEqual(['p2']);
+    expect(s.selectedSvgImageIds).toEqual(['i2']);
+  });
+
+  it('clears dangling line-tag / hover / stop-editing state', () => {
+    useSelection.setState({
+      selectedLineTagId: 'lt1',
+      editingStationId: 'st1' as StationId,
+      selectedStopLineId: 'L1' as LineId,
+      hoveredStationId: 'st2' as StationId,
+    });
+    useSelection.getState().reconcileWithDoc(docWith({}));
+    const s = useSelection.getState();
+    expect(s.selectedLineTagId).toBeNull();
+    expect(s.editingStationId).toBeNull();
+    expect(s.selectedStopLineId).toBeNull();
+    expect(s.hoveredStationId).toBeNull();
+  });
+
+  it('keeps line-tag / hover / stop-editing state that still resolves', () => {
+    useSelection.setState({
+      selectedLineTagId: 'lt1',
+      editingStationId: 'st1' as StationId,
+      selectedStopLineId: 'L1' as LineId,
+      hoveredStationId: 'st2' as StationId,
+    });
+    useSelection.getState().reconcileWithDoc(
+      docWith({
+        lineTags: ['lt1'],
+        stations: ['st1', 'st2'],
+        lines: ['L1'],
+      }),
+    );
+    const s = useSelection.getState();
+    expect(s.selectedLineTagId).toBe('lt1');
+    expect(s.editingStationId).toBe('st1');
+    expect(s.selectedStopLineId).toBe('L1');
+    expect(s.hoveredStationId).toBe('st2');
+  });
+
+  it('drops a selected vertex whose polygon was deleted entirely', () => {
+    useSelection.setState({ selectedVertex: { polygonId: 'p1', index: 0 } });
+    useSelection.getState().reconcileWithDoc(docWith({}));
     expect(useSelection.getState().selectedVertex).toBeNull();
   });
 });

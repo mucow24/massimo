@@ -224,7 +224,9 @@ function solveTwoBend(
   const cross_se = sDir.x * eDir.y - eDir.x * sDir.y;
 
   if (Math.abs(cross_se) < EPS) {
-    // d_s parallel to d_e (same or opposite). Z-shape or U-shape.
+    // d_s parallel to d_e (same or opposite direction). Only the SAME-direction
+    // Z-shape is solved here; the anti-parallel U-shape bails below (see the
+    // `!sameDir` guard) and is handled by solveUTurn instead.
     const perpS = perp(sDir);
     const dmPerp = dot(mDir, perpS);
     if (Math.abs(dmPerp) < EPS) return null; // m parallel to s
@@ -252,7 +254,12 @@ function solveTwoBend(
     return { v1, v2 };
   }
 
-  // Non-parallel d_s, d_e. Search over t_m starting at minMid.
+  // Non-parallel d_s, d_e. With d_m fixed, both end-tangent lengths (tS, tE)
+  // are determined by the middle-leg length t_m via Cramer's rule on the 2×2
+  // (sDir, eDir) system. Linear scan: start t_m at the minimum that fits both
+  // fillets (minMid = tan1 + tan2) and grow it in R/2 steps until tS and tE are
+  // both long enough for their bends. Give up after 16 tries (~8R of slack) and
+  // return null; the caller falls back to the U-turn / straight-line path.
   for (let step = 0; step <= 16; step++) {
     const tM = minMid + step * R * 0.5;
     const Δp = sub(Δ, scale(mDir, tM));
