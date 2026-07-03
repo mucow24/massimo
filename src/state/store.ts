@@ -755,16 +755,21 @@ export function cancelAppendMode(): void {
 }
 
 /**
- * A canvas click on some OTHER item while the line editor (appending-to-line
- * mode) is open counts as "click off the line to exit": it dismisses the editor
- * and reports that it consumed the click, so the caller skips selecting the item
- * under the cursor. Returns false (caller proceeds as normal) when not in append
- * mode. Stations are exempt and never call this — clicking a station in append
- * mode toggles its line membership, which is the editor's core gesture.
+ * The line editor is "open" when a line is selected (the LineInspector plus the
+ * dim / direction-arrow highlight are showing) and no sub-mode is active. A
+ * canvas click on some OTHER item then counts as "click off the line to exit":
+ * it deselects the line and reports that it consumed the click, so the caller
+ * does NOT select the item under the cursor. Returns false (caller proceeds
+ * normally) otherwise.
+ *
+ * Stations and lines are exempt and never route through here: clicking a station
+ * exits the editor and selects it (stations belong to the line), and clicking
+ * another line stripe switches the editor to that line.
  */
-export function exitAppendOnItemClick(): boolean {
-  if (useSelection.getState().uiMode.kind !== 'appending-to-line') return false;
-  cancelAppendMode();
+export function exitLineEditorOnItemClick(): boolean {
+  const sel = useSelection.getState();
+  if (sel.selectedLineId == null || sel.uiMode.kind !== 'idle') return false;
+  sel.selectLine(null);
   return true;
 }
 

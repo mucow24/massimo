@@ -4,7 +4,7 @@ import App from '../App';
 import { dragState, useDoc } from '../state/store';
 import { useSelection } from '../state/selection';
 import { DEFAULT_DOC } from '../model/transforms';
-import { makeLine, makePolygon, makeStation, makeTextLabel } from '../test/fixtures';
+import { makeLine, makePolygon, makeStation, makeStop, makeTextLabel } from '../test/fixtures';
 
 // Modifier gating for the free-item click handlers (labels, bullets,
 // polygons, svg images). The contract, shared with stations: Shift-click
@@ -79,18 +79,30 @@ describe('MapCanvas — item click modifier gating', () => {
   });
 });
 
-// While the line editor is open (appending-to-line mode), clicking off the
-// line to exit must ONLY dismiss the editor — the item under the cursor must
-// NOT get selected. Stations are exempt (a click there toggles line
-// membership, the editor's own gesture) and are covered elsewhere.
-describe('MapCanvas — clicking off-line to exit the line editor', () => {
-  const enterAppendMode = () => {
+// The line editor is open when a line is selected (LineInspector + the dim /
+// arrow highlight). Clicking off the line to exit must ONLY deselect the line —
+// the item under the cursor must NOT get selected. Two exceptions the user
+// asked to keep: clicking a station exits AND selects it (stations belong to
+// the line), and clicking another line stripe switches the editor to that line.
+describe('MapCanvas — clicking off-line while the line editor is open', () => {
+  const openEditor = () => {
     act(() => {
       useDoc.setState({
         ...useDoc.getState(),
-        stations: { s1: makeStation({ id: 's1' }), s2: makeStation({ id: 's2', x: 100 }) },
-        lines: { L1: makeLine({ id: 'L1', stations: ['s1', 's2'] }) },
-        lineOrder: ['L1'],
+        stations: {
+          s1: makeStation({ id: 's1', x: 0, y: 0, stops: [makeStop('L1')] }),
+          s2: makeStation({ id: 's2', x: 100, y: 0, stops: [makeStop('L1')] }),
+          s3: makeStation({ id: 's3', x: 0, y: 80, stops: [makeStop('L2')] }),
+          s4: makeStation({ id: 's4', x: 100, y: 80, stops: [makeStop('L2')] }),
+        },
+        lines: {
+          L1: makeLine({ id: 'L1', stations: ['s1', 's2'] }),
+          L2: makeLine({ id: 'L2', stations: ['s3', 's4'] }),
+        },
+        lineOrder: ['L1', 'L2'],
+        textLabels: { g1: makeTextLabel({ id: 'g1', text: 'One', x: 200, y: 0 }) },
+        polygons: { p1: makePolygon({ id: 'p1' }) },
+        polygonOrder: ['p1'],
         transfers: {
           t1: {
             id: 't1',
@@ -99,44 +111,67 @@ describe('MapCanvas — clicking off-line to exit the line editor', () => {
           },
         },
       });
-      useSelection.getState().setUiMode({
-        kind: 'appending-to-line',
-        lineId: 'L1',
-        insertAfterIndex: null,
-      });
+      useSelection.getState().selectLine('L1');
     });
+    expect(useSelection.getState().selectedLineId).toBe('L1');
   };
 
-  it('clicking a label exits append mode without selecting the label', () => {
+  it('clicking a label deselects the line and does not select the label', () => {
     render(<App />);
-    seed();
-    enterAppendMode();
+    openEditor();
 
     clickEl('[data-text-label-id="g1"]', {});
 
-    expect(useSelection.getState().uiMode.kind).toBe('idle');
+    expect(useSelection.getState().selectedLineId).toBeNull();
     expect(useSelection.getState().selectedLabelIds).toEqual([]);
   });
 
-  it('clicking a polygon exits append mode without selecting the polygon', () => {
+  it('clicking a polygon deselects the line and does not select the polygon', () => {
     render(<App />);
-    seed();
-    enterAppendMode();
+    openEditor();
 
     clickEl('[data-polygon-id="p1"]', {});
 
-    expect(useSelection.getState().uiMode.kind).toBe('idle');
+    expect(useSelection.getState().selectedLineId).toBeNull();
     expect(useSelection.getState().selectedPolygonIds).toEqual([]);
   });
 
-  it('clicking a transfer exits append mode without selecting the transfer', () => {
+  it('clicking a transfer deselects the line and does not select the transfer', () => {
     render(<App />);
-    seed();
-    enterAppendMode();
+    openEditor();
 
     clickEl('line[data-transfer-id="t1"]', {});
 
-    expect(useSelection.getState().uiMode.kind).toBe('idle');
+    expect(useSelection.getState().selectedLineId).toBeNull();
     expect(useSelection.getState().selectedTransferId).toBeNull();
+  });
+
+  it('clicking a station exits the editor AND selects the station (stations belong to the line)', () => {
+    render(<App />);
+    openEditor();
+
+    clickEl('[data-station-id="s1"] rect', {});
+
+    expect(useSelection.getState().selectedLineId).toBeNull();
+    expect(useSelection.getState().selectedStationIds).toEqual(['s1']);
+  });
+
+  it('clicking another line stripe switches the editor to that line', () => {
+    render(<App />);
+    openEditor();
+
+    clickEl('[data-band-stripe][data-line-id="L2"]', {});
+
+    expect(useSelection.getState().selectedLineId).toBe('L2');
+  });
+
+  it('with no line selected, clicking a label selects it as normal', () => {
+    render(<App />);
+    openEditor();
+    act(() => useSelection.getState().selectLine(null));
+
+    clickEl('[data-text-label-id="g1"]', {});
+
+    expect(useSelection.getState().selectedLabelIds).toEqual(['g1']);
   });
 });
