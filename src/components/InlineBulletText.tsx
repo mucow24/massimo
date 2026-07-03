@@ -12,7 +12,7 @@ interface Props {
 
 /**
  * HTML counterpart to `<InlineBullet>`: render label text with bullet
- * tokens (`<CODE>`, `[CODE]`, `{CODE}`, doubled for unfilled) as inline
+ * tokens (`|CODE|`, `[CODE]`, `{CODE}`, doubled for unfilled) as inline
  * badges. Used in DOM contexts (sidebar station list, line-editor station
  * list) where station names sit in regular HTML rather than SVG text.
  */

@@ -742,76 +742,85 @@ describe('updateLine', () => {
   });
 
   describe('service-code rename rewrites inline bullets', () => {
-    it('rewrites <oldService> bullets in TextLabel.text', () => {
+    it('rewrites |oldService| bullets in TextLabel.text', () => {
       const doc = makeDoc({
         lines: [makeLine({ id: 'L1', service: 'L1' })],
-        textLabels: [makeTextLabel({ id: 't1', text: 'Take the <L1> uptown' })],
+        textLabels: [makeTextLabel({ id: 't1', text: 'Take the |L1| uptown' })],
       });
       const next = T.updateLine(doc, 'L1', { service: 'A' });
-      expect(next.textLabels.t1.text).toBe('Take the <A> uptown');
+      expect(next.textLabels.t1.text).toBe('Take the |A| uptown');
     });
 
-    it('rewrites <oldService> bullets in Station.name', () => {
+    it('rewrites |oldService| bullets in Station.name', () => {
       const doc = makeDoc({
-        stations: [makeStation({ id: 's1', name: '<L1> Station' })],
+        stations: [makeStation({ id: 's1', name: '|L1| Station' })],
         lines: [makeLine({ id: 'L1', service: 'L1' })],
       });
       const next = T.updateLine(doc, 'L1', { service: 'A' });
-      expect(next.stations.s1.name).toBe('<A> Station');
+      expect(next.stations.s1.name).toBe('|A| Station');
     });
 
     it('replaces every occurrence in a single text', () => {
       const doc = makeDoc({
         lines: [makeLine({ id: 'L1', service: 'L1' })],
-        textLabels: [makeTextLabel({ id: 't1', text: '<L1> and <L1> meet at <L1>' })],
+        textLabels: [makeTextLabel({ id: 't1', text: '|L1| and |L1| meet at |L1|' })],
       });
       const next = T.updateLine(doc, 'L1', { service: 'A' });
-      expect(next.textLabels.t1.text).toBe('<A> and <A> meet at <A>');
+      expect(next.textLabels.t1.text).toBe('|A| and |A| meet at |A|');
     });
 
     it('rewrites square, diamond, and unfilled bullet forms too', () => {
       const doc = makeDoc({
         lines: [makeLine({ id: 'L1', service: 'L1' })],
-        textLabels: [makeTextLabel({ id: 't1', text: '[L1] {L1} <<L1>> [[L1]] {{L1}}' })],
+        textLabels: [makeTextLabel({ id: 't1', text: '[L1] {L1} ||L1|| [[L1]] {{L1}}' })],
       });
       const next = T.updateLine(doc, 'L1', { service: 'A' });
-      expect(next.textLabels.t1.text).toBe('[A] {A} <<A>> [[A]] {{A}}');
+      expect(next.textLabels.t1.text).toBe('[A] {A} ||A|| [[A]] {{A}}');
     });
 
     it('leaves bullets for other service codes untouched', () => {
       const doc = makeDoc({
         lines: [makeLine({ id: 'L1', service: 'L1' }), makeLine({ id: 'L2', service: 'L2' })],
-        textLabels: [makeTextLabel({ id: 't1', text: '<L1> <L2> <L11>' })],
+        textLabels: [makeTextLabel({ id: 't1', text: '|L1| |L2| |L11|' })],
       });
       const next = T.updateLine(doc, 'L1', { service: 'A' });
-      // <L11> is a different bullet code (not L1) — must not be rewritten.
-      expect(next.textLabels.t1.text).toBe('<A> <L2> <L11>');
+      // |L11| is a different bullet code (not L1) — must not be rewritten.
+      expect(next.textLabels.t1.text).toBe('|A| |L2| |L11|');
+    });
+
+    it('leaves escaped (literal-text) tokens untouched', () => {
+      const doc = makeDoc({
+        lines: [makeLine({ id: 'L1', service: 'L1' })],
+        textLabels: [makeTextLabel({ id: 't1', text: 'bullet |L1|, literal \\|L1| and \\[L1]' })],
+      });
+      const next = T.updateLine(doc, 'L1', { service: 'A' });
+      expect(next.textLabels.t1.text).toBe('bullet |A|, literal \\|L1| and \\[L1]');
     });
 
     it('rewrites across multiple textLabels and stations', () => {
       const doc = makeDoc({
         stations: [
-          makeStation({ id: 's1', name: '<L1> North' }),
+          makeStation({ id: 's1', name: '|L1| North' }),
           makeStation({ id: 's2', name: 'No bullet here' }),
         ],
         lines: [makeLine({ id: 'L1', service: 'L1' })],
         textLabels: [
-          makeTextLabel({ id: 't1', text: 'Ride <L1>' }),
-          makeTextLabel({ id: 't2', text: 'Also <L1>' }),
+          makeTextLabel({ id: 't1', text: 'Ride |L1|' }),
+          makeTextLabel({ id: 't2', text: 'Also |L1|' }),
         ],
       });
       const next = T.updateLine(doc, 'L1', { service: 'A' });
-      expect(next.stations.s1.name).toBe('<A> North');
+      expect(next.stations.s1.name).toBe('|A| North');
       expect(next.stations.s2.name).toBe('No bullet here');
-      expect(next.textLabels.t1.text).toBe('Ride <A>');
-      expect(next.textLabels.t2.text).toBe('Also <A>');
+      expect(next.textLabels.t1.text).toBe('Ride |A|');
+      expect(next.textLabels.t2.text).toBe('Also |A|');
     });
 
     it('does nothing to texts when the patch does not change the service code', () => {
       const doc = makeDoc({
-        stations: [makeStation({ id: 's1', name: '<L1> North' })],
+        stations: [makeStation({ id: 's1', name: '|L1| North' })],
         lines: [makeLine({ id: 'L1', service: 'L1' })],
-        textLabels: [makeTextLabel({ id: 't1', text: '<L1>' })],
+        textLabels: [makeTextLabel({ id: 't1', text: '|L1|' })],
       });
       const next = T.updateLine(doc, 'L1', { name: 'Renamed' });
       expect(next.stations.s1).toBe(doc.stations.s1);
@@ -820,13 +829,23 @@ describe('updateLine', () => {
 
     it('does nothing when the new service equals the old', () => {
       const doc = makeDoc({
-        stations: [makeStation({ id: 's1', name: '<L1>' })],
+        stations: [makeStation({ id: 's1', name: '|L1|' })],
         lines: [makeLine({ id: 'L1', service: 'L1' })],
-        textLabels: [makeTextLabel({ id: 't1', text: '<L1>' })],
+        textLabels: [makeTextLabel({ id: 't1', text: '|L1|' })],
       });
       const next = T.updateLine(doc, 'L1', { service: 'L1' });
       expect(next.stations.s1).toBe(doc.stations.s1);
       expect(next.textLabels.t1).toBe(doc.textLabels.t1);
+    });
+
+    it('skips the rewrite when the old service contains a delimiter character', () => {
+      const doc = makeDoc({
+        lines: [makeLine({ id: 'L1', service: 'a|b' })],
+        textLabels: [makeTextLabel({ id: 't1', text: 'a|b stays' })],
+      });
+      const next = T.updateLine(doc, 'L1', { service: 'A' });
+      expect(next.lines.L1.service).toBe('A');
+      expect(next.textLabels.t1.text).toBe('a|b stays');
     });
   });
 });
@@ -2593,6 +2612,8 @@ describe('addTextLabel', () => {
       align: 'left',
       color: '#111111',
       darkColor: '#ffffff',
+      leading: 1,
+      tracking: 0,
     });
   });
 });
@@ -2669,6 +2690,20 @@ describe('updateTextLabel', () => {
     expect(T.updateTextLabel(doc, 'g1', { width: 0 }).textLabels.g1.width).toBe(0);
     expect(T.updateTextLabel(doc, 'g1', { width: 200.6 }).textLabels.g1.width).toBe(201);
   });
+  it('clamps leading at 0 and snaps to the 0.05 step', () => {
+    const doc = makeDoc({ textLabels: [makeTextLabel({ id: 'g1' })] });
+    expect(T.updateTextLabel(doc, 'g1', { leading: -0.5 }).textLabels.g1.leading).toBe(0);
+    expect(T.updateTextLabel(doc, 'g1', { leading: 1.234 }).textLabels.g1.leading).toBe(1.25);
+    expect(T.updateTextLabel(doc, 'g1', { leading: 1.05 }).textLabels.g1.leading).toBe(1.05);
+  });
+  it('clamps tracking at the slider floor and snaps to the 0.01 step', () => {
+    const doc = makeDoc({ textLabels: [makeTextLabel({ id: 'g1' })] });
+    expect(T.updateTextLabel(doc, 'g1', { tracking: -0.5 }).textLabels.g1.tracking).toBe(
+      T.TEXT_LABEL_TRACKING_MIN,
+    );
+    expect(T.updateTextLabel(doc, 'g1', { tracking: 0.123 }).textLabels.g1.tracking).toBe(0.12);
+    expect(T.updateTextLabel(doc, 'g1', { tracking: 0.05 }).textLabels.g1.tracking).toBe(0.05);
+  });
   it('is a no-op for missing ids', () => {
     const doc = makeDoc({});
     expect(T.updateTextLabel(doc, 'nope', { text: 'X' })).toBe(doc);
@@ -2726,6 +2761,30 @@ describe('updateTextLabel', () => {
     const before = upperLeftOf(doc.textLabels.g1);
     const next = T.updateTextLabel(doc, 'g1', { italic: true });
     const after = upperLeftOf(next.textLabels.g1);
+    expect(after.x).toBeCloseTo(before.x, 5);
+    expect(after.y).toBeCloseTo(before.y, 5);
+  });
+
+  it('preserves the upper-left corner when leading grows a multi-line label', () => {
+    const doc = makeDoc({
+      textLabels: [makeTextLabel({ id: 'g1', x: 40, y: 40, text: 'a\nb\nc' })],
+    });
+    const before = upperLeftOf(doc.textLabels.g1);
+    const next = T.updateTextLabel(doc, 'g1', { leading: 2 });
+    const after = upperLeftOf(next.textLabels.g1);
+    expect(next.textLabels.g1.y).toBeGreaterThan(40); // box grew downward
+    expect(after.x).toBeCloseTo(before.x, 5);
+    expect(after.y).toBeCloseTo(before.y, 5);
+  });
+
+  it('preserves the upper-left corner when tracking widens the text', () => {
+    const doc = makeDoc({
+      textLabels: [makeTextLabel({ id: 'g1', x: 40, y: 40, text: 'abcdef', align: 'left' })],
+    });
+    const before = upperLeftOf(doc.textLabels.g1);
+    const next = T.updateTextLabel(doc, 'g1', { tracking: 0.5 });
+    const after = upperLeftOf(next.textLabels.g1);
+    expect(next.textLabels.g1.x).toBeGreaterThan(40); // box grew rightward
     expect(after.x).toBeCloseTo(before.x, 5);
     expect(after.y).toBeCloseTo(before.y, 5);
   });

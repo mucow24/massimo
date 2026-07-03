@@ -93,7 +93,7 @@ describe('<LabelView /> — per-label day/night colors', () => {
 });
 
 describe('<LabelView /> — inline bullets', () => {
-  it('renders an inline bullet with the line color when text contains <CODE>', () => {
+  it('renders an inline bullet with the line color when text contains |CODE|', () => {
     useDoc.setState({
       ...useDoc.getState(),
       lines: { L1: seedLine({ id: 'L1', service: 'A1', color: '#00ff00' }) },
@@ -101,7 +101,7 @@ describe('<LabelView /> — inline bullets', () => {
     });
     const { container } = render(
       <svg>
-        <LabelView label={makeTextLabel({ id: 'g1', text: '<A1>' })} selected={false} />
+        <LabelView label={makeTextLabel({ id: 'g1', text: '|A1|' })} selected={false} />
       </svg>,
     );
     const bullets = container.querySelectorAll('[data-inline-bullet]');
@@ -130,7 +130,7 @@ describe('<LabelView /> — inline bullets', () => {
   it('renders a gray "?" bullet when the code does not match any line', () => {
     const { container } = render(
       <svg>
-        <LabelView label={makeTextLabel({ id: 'g1', text: '<NOPE>' })} selected={false} />
+        <LabelView label={makeTextLabel({ id: 'g1', text: '|NOPE|' })} selected={false} />
       </svg>,
     );
     const bullets = container.querySelectorAll('[data-inline-bullet]');
@@ -140,7 +140,7 @@ describe('<LabelView /> — inline bullets', () => {
     expect(bullets[0].querySelector('text')?.textContent).toBe('?');
   });
 
-  it('renders no bullet when text has no <...> tokens', () => {
+  it('renders no bullet when text has no bullet tokens', () => {
     const { container } = render(
       <svg>
         <LabelView label={makeTextLabel({ id: 'g1', text: 'plain text' })} selected={false} />
@@ -157,7 +157,7 @@ describe('<LabelView /> — inline bullets', () => {
     });
     const { container } = render(
       <svg>
-        <LabelView label={makeTextLabel({ id: 'g1', text: 'Take <A1> uptown' })} selected={false} />
+        <LabelView label={makeTextLabel({ id: 'g1', text: 'Take |A1| uptown' })} selected={false} />
       </svg>,
     );
     // The label group contains TWO text segments (before and after the bullet),
@@ -166,6 +166,72 @@ describe('<LabelView /> — inline bullets', () => {
     expect(texts).toContain('Take ');
     expect(texts).toContain(' uptown');
     expect(container.querySelectorAll('[data-inline-bullet]')).toHaveLength(1);
+  });
+});
+
+describe('<LabelView /> — formatting tags', () => {
+  const renderLabel = (label: TextLabel) =>
+    render(
+      <svg>
+        <LabelView label={label} selected={false} />
+      </svg>,
+    ).container;
+  const textByContent = (c: HTMLElement, content: string) =>
+    Array.from(c.querySelectorAll('text')).find((t) => t.textContent === content)!;
+
+  it('renders <b> two ladder steps up from the base weight', () => {
+    const c = renderLabel(makeTextLabel({ id: 'g1', text: '<b>Bold</b> plain', weight: 400 }));
+    expect(textByContent(c, 'Bold').getAttribute('font-weight')).toBe('700');
+    expect(textByContent(c, ' plain').getAttribute('font-weight')).toBe('400');
+  });
+
+  it('renders <i> as an italic run', () => {
+    const c = renderLabel(makeTextLabel({ id: 'g1', text: '<i>lean</i> up' }));
+    expect(textByContent(c, 'lean').getAttribute('font-style')).toBe('italic');
+    expect(textByContent(c, ' up').getAttribute('font-style')).toBe('normal');
+  });
+
+  it('renders <color=...> as the segment fill, leaving other runs on the label color', () => {
+    const c = renderLabel(makeTextLabel({ id: 'g1', text: '<color=red>R</color>N' }));
+    expect(textByContent(c, 'R').getAttribute('fill')).toBe('red');
+    expect(textByContent(c, 'N').getAttribute('fill')).toBe('#111111');
+  });
+
+  it('draws underline and strikethrough as explicit line elements', () => {
+    const c = renderLabel(makeTextLabel({ id: 'g1', text: '<u>under</u> <s>gone</s>' }));
+    expect(c.querySelectorAll('line[data-text-decoration="underline"]')).toHaveLength(1);
+    expect(c.querySelectorAll('line[data-text-decoration="strike"]')).toHaveLength(1);
+  });
+
+  it('substitutes <air> with the plane glyph', () => {
+    const c = renderLabel(makeTextLabel({ id: 'g1', text: '<air> JFK' }));
+    expect(textByContent(c, '✈ JFK')).toBeDefined();
+  });
+});
+
+describe('<LabelView /> — leading and tracking', () => {
+  const renderLabel = (label: TextLabel) =>
+    render(
+      <svg>
+        <LabelView label={label} selected={false} />
+      </svg>,
+    ).container;
+
+  it('spaces lines by fontSize * LINE_HEIGHT * leading', () => {
+    const c = renderLabel(makeTextLabel({ id: 'g1', text: 'aa\nbb', fontSize: 10, leading: 2 }));
+    const y = (i: number) =>
+      parseFloat(c.querySelector(`[data-label-line="${i}"] text`)!.getAttribute('y')!);
+    expect(y(1) - y(0)).toBeCloseTo(10 * 1.2 * 2, 5);
+  });
+
+  it('applies tracking as letter-spacing in px of the font size', () => {
+    const c = renderLabel(makeTextLabel({ id: 'g1', text: 'aa', fontSize: 10, tracking: 0.5 }));
+    expect(c.querySelector('[data-label-line] text')!.getAttribute('letter-spacing')).toBe('5');
+  });
+
+  it('omits letter-spacing at the default tracking', () => {
+    const c = renderLabel(makeTextLabel({ id: 'g1', text: 'aa', fontSize: 10 }));
+    expect(c.querySelector('[data-label-line] text')!.getAttribute('letter-spacing')).toBeNull();
   });
 });
 

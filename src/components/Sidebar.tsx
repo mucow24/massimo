@@ -29,7 +29,7 @@ export function Sidebar() {
 
   const orderedLineIds = effectiveLineOrder(lineOrder, lines);
 
-  // Service-code → line lookup for `<CODE>` bullet tokens that appear inline
+  // Service-code → line lookup for `|CODE|` bullet tokens that appear inline
   // in station names. Built once per render; cheap to rebuild.
   const lineByService = useMemo(() => {
     const map = new Map<string, Line>();

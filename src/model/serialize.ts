@@ -14,6 +14,7 @@ import {
 } from './lineStroke';
 import { DEFAULT_DOT_STYLE, DOT_SHAPE_PRESETS, dotStylesEqual } from './dotStyle';
 import { pairKeyOf } from './pairKey';
+import { migrateLegacyInlineTokens } from '../geometry/labelTokens';
 import { KNOWN_PALETTE_IDS, type Palette, type PaletteId } from './palettes';
 import type {
   DotBaseShape,
@@ -110,9 +111,19 @@ export function sanitizeStations(stations: Record<string, Station>): {
 }
 
 export const SCHEMA_FORMAT = 'massimo-map';
+// File schema version. Bump when a load-time rewrite must run exactly once
+// and can't be inferred from the data itself (unlike the idempotent
+// backfills below, which key off missing fields / legacy enum values).
+// Files without the field are version 1.
+//  - v1 → v2: legacy inline bullet syntax — `<X>` circle tokens become
+//    `|X|`, and literal pipe text that would newly parse as a bullet gets
+//    a backslash escape. Mirrors the persist-store v7 → v8 migration.
+export const SCHEMA_VERSION = 2;
 
 export interface SerializedFile {
   format: typeof SCHEMA_FORMAT;
+  /** Absent in files saved before versioning was introduced (= 1). */
+  version?: number;
   doc: MapDoc;
 }
 
@@ -133,8 +144,46 @@ export function validActivePalettes(
 }
 
 export function serialize(doc: MapDoc): string {
-  const file: SerializedFile = { format: SCHEMA_FORMAT, doc };
+  const file: SerializedFile = { format: SCHEMA_FORMAT, version: SCHEMA_VERSION, doc };
   return JSON.stringify(file, null, 2);
+}
+
+/**
+ * One-time rewrite of station names and text-label texts saved under the
+ * legacy inline bullet syntax (see `migrateLegacyInlineTokens`). Shared by
+ * `parse()` (file version < 2) and the zustand persist `migrate` hook
+ * (store version < 8). Version-gated at BOTH call sites — the rewrite is
+ * not idempotent: in a migrated doc, `<X>` is intentional literal text and
+ * `(X)` a real bullet, so re-running would corrupt them.
+ */
+export function migrateLegacyBulletSyntax(
+  stations: Record<string, Station>,
+  textLabels: Record<string, TextLabel>,
+): { stations: Record<string, Station>; textLabels: Record<string, TextLabel>; changed: boolean } {
+  let changed = false;
+  const nextStations: Record<string, Station> = {};
+  for (const id of Object.keys(stations)) {
+    const st = stations[id];
+    const name = migrateLegacyInlineTokens(st.name);
+    if (name !== st.name) {
+      nextStations[id] = { ...st, name };
+      changed = true;
+    } else {
+      nextStations[id] = st;
+    }
+  }
+  const nextLabels: Record<string, TextLabel> = {};
+  for (const id of Object.keys(textLabels)) {
+    const g = textLabels[id];
+    const text = migrateLegacyInlineTokens(g.text);
+    if (text !== g.text) {
+      nextLabels[id] = { ...g, text };
+      changed = true;
+    } else {
+      nextLabels[id] = g;
+    }
+  }
+  return { stations: nextStations, textLabels: nextLabels, changed };
 }
 
 export function parse(json: string, custom: readonly Palette[] = []): ParseResult {
@@ -203,6 +252,15 @@ export function parse(json: string, custom: readonly Palette[] = []): ParseResul
   if (cleanedPolygons.changed) merged.polygons = cleanedPolygons.polygons;
   const cleanedLabels = backfillTextLabelColors(merged.textLabels);
   if (cleanedLabels.changed) merged.textLabels = cleanedLabels.textLabels;
+  // Version-gated (non-idempotent) rewrite: files saved before the pipe
+  // bullet grammar carry `<X>` circle tokens and unescaped literal pipes.
+  if ((typeof file.version === 'number' ? file.version : 1) < 2) {
+    const migrated = migrateLegacyBulletSyntax(merged.stations, merged.textLabels);
+    if (migrated.changed) {
+      merged.stations = migrated.stations;
+      merged.textLabels = migrated.textLabels;
+    }
+  }
   return { ok: true, doc: merged };
 }
 

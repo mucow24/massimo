@@ -2,6 +2,7 @@ import { describe, it, expect } from 'vitest';
 import {
   FONT_TABLE,
   FONT_FAMILY,
+  bolderWeight,
   fontUrl,
   normalizeWeight,
   collectUsedFontFaces,
@@ -9,6 +10,22 @@ import {
   bytesToBase64,
   type FontFaceSpec,
 } from './fonts';
+
+describe('bolderWeight', () => {
+  it('steps two weights up the shipped ladder (which has no 600)', () => {
+    expect(bolderWeight(100)).toBe(300);
+    expect(bolderWeight(200)).toBe(400);
+    expect(bolderWeight(300)).toBe(500);
+    expect(bolderWeight(400)).toBe(700);
+    expect(bolderWeight(500)).toBe(800);
+    expect(bolderWeight(700)).toBe(900);
+  });
+
+  it('clamps at the heaviest shipped weight', () => {
+    expect(bolderWeight(800)).toBe(900);
+    expect(bolderWeight(900)).toBe(900);
+  });
+});
 
 const SVG_NS = 'http://www.w3.org/2000/svg';
 

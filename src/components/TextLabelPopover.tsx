@@ -18,6 +18,14 @@ import {
   LABEL_WEIGHT_NAMES,
   TEXT_LABEL_FONT_SIZE_MAX,
   TEXT_LABEL_FONT_SIZE_MIN,
+  TEXT_LABEL_LEADING_DEFAULT,
+  TEXT_LABEL_LEADING_MAX,
+  TEXT_LABEL_LEADING_MIN,
+  TEXT_LABEL_LEADING_STEP,
+  TEXT_LABEL_TRACKING_DEFAULT,
+  TEXT_LABEL_TRACKING_MAX,
+  TEXT_LABEL_TRACKING_MIN,
+  TEXT_LABEL_TRACKING_STEP,
   TEXT_LABEL_WIDTH_MAX,
 } from '../model/transforms';
 import { useFieldHistory } from './useFieldHistory';
@@ -66,6 +74,8 @@ export function TextLabelPopover({ label, world, view, onClose }: Props) {
   const setColor = (color: string) => updateTextLabel(label.id, { color });
   const setDarkColor = (darkColor: string) => updateTextLabel(label.id, { darkColor });
   const setWidth = (n: number) => updateTextLabel(label.id, { width: n });
+  const setLeading = (n: number) => updateTextLabel(label.id, { leading: n });
+  const setTracking = (n: number) => updateTextLabel(label.id, { tracking: n });
   const locked = label.locked ?? false;
   const onToggleLock = () => updateTextLabel(label.id, { locked: !locked });
   const onDelete = () => {
@@ -125,6 +135,40 @@ export function TextLabelPopover({ label, world, view, onClose }: Props) {
         value={label.width ?? 0}
         onChange={setWidth}
         getCurrent={() => useDoc.getState().textLabels[label.id]?.width ?? 0}
+        textboxAllowAboveMax
+        disabled={locked}
+      />
+
+      {/* Line-spacing multiplier (1 = normal); the tick marks the neutral 1. */}
+      <NumericFieldRow
+        id={`label-leading-${label.id}`}
+        label="Leading"
+        min={TEXT_LABEL_LEADING_MIN}
+        max={TEXT_LABEL_LEADING_MAX}
+        step={TEXT_LABEL_LEADING_STEP}
+        value={label.leading ?? TEXT_LABEL_LEADING_DEFAULT}
+        onChange={setLeading}
+        getCurrent={() =>
+          useDoc.getState().textLabels[label.id]?.leading ?? TEXT_LABEL_LEADING_DEFAULT
+        }
+        detent={TEXT_LABEL_LEADING_DEFAULT}
+        textboxAllowAboveMax
+        disabled={locked}
+      />
+
+      {/* Letter-spacing in em (0 = normal); the tick marks the neutral 0. */}
+      <NumericFieldRow
+        id={`label-tracking-${label.id}`}
+        label="Tracking"
+        min={TEXT_LABEL_TRACKING_MIN}
+        max={TEXT_LABEL_TRACKING_MAX}
+        step={TEXT_LABEL_TRACKING_STEP}
+        value={label.tracking ?? TEXT_LABEL_TRACKING_DEFAULT}
+        onChange={setTracking}
+        getCurrent={() =>
+          useDoc.getState().textLabels[label.id]?.tracking ?? TEXT_LABEL_TRACKING_DEFAULT
+        }
+        detent={TEXT_LABEL_TRACKING_DEFAULT}
         textboxAllowAboveMax
         disabled={locked}
       />

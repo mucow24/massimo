@@ -33,6 +33,7 @@ import {
   backfillPolygonDarkColors,
   backfillTextLabelColors,
   convertLegacyDotShapes,
+  migrateLegacyBulletSyntax,
   validActivePalettes,
 } from '../model/serialize';
 import type { Station } from '../model/types';
@@ -113,7 +114,7 @@ function docSnapshotsEqual(a: DocSnapshot, b: DocSnapshot): boolean {
 }
 
 /**
- * Persisted-document version migration (v0 → v7). Exported and pure so it can
+ * Persisted-document version migration (v0 → v8). Exported and pure so it can
  * be unit-tested in isolation; the persist config below just delegates here.
  * Never mutates `persisted` — returns a possibly-new doc snapshot.
  *
@@ -138,6 +139,11 @@ function docSnapshotsEqual(a: DocSnapshot, b: DocSnapshot): boolean {
  * - v6 → v7: convert legacy `dotShape`/`defaultDotShape` preset ids to
  *   procedural `DotStyle` objects via the pinned preset table. Mirrors
  *   `convertLegacyDotShapes` in `parse()`.
+ * - v7 → v8: rewrite the legacy inline bullet syntax in station names and
+ *   text-label texts — `<X>` circle tokens become `|X|`, literal pipe text
+ *   gets escaped. NOT idempotent (post-migration `<X>` is intentional
+ *   literal text), hence version-gated. Mirrors the file-version gate in
+ *   `parse()` (SCHEMA_VERSION 2).
  */
 export function migrateDoc(persisted: unknown, version: number): DocState {
   const s = persisted as {
@@ -181,6 +187,16 @@ export function migrateDoc(persisted: unknown, version: number): DocState {
         ...out,
         ...(out.stations ? { stations: converted.stations } : {}),
         ...(out.lines ? { lines: converted.lines } : {}),
+      };
+    }
+  }
+  if (v < 8 && (out.stations || out.textLabels)) {
+    const migrated = migrateLegacyBulletSyntax(out.stations ?? {}, out.textLabels ?? {});
+    if (migrated.changed) {
+      out = {
+        ...out,
+        ...(out.stations ? { stations: migrated.stations } : {}),
+        ...(out.textLabels ? { textLabels: migrated.textLabels } : {}),
       };
     }
   }
@@ -630,8 +646,8 @@ export const useDoc = create<DocState>()(
       {
         name: 'vignelli-map-doc-v1',
         storage: createJSONStorage(() => localStorage),
-        version: 7,
-        // Version migration chain v0 → v7 lives in `migrateDoc` (above), which
+        version: 8,
+        // Version migration chain v0 → v8 lives in `migrateDoc` (above), which
         // is exported and unit-tested. See its doc comment for each step.
         migrate: (persisted, version) => migrateDoc(persisted, version),
         partialize: (s) => pickDocSnapshot(s),

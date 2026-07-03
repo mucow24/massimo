@@ -68,6 +68,20 @@ export const FONT_TABLE: FontFaceSpec[] = [
 const AVAILABLE_WEIGHTS = [100, 200, 300, 400, 500, 700, 800, 900];
 
 /**
+ * The `<b>` formatting tag's weight: two steps up the SHIPPED weight ladder,
+ * clamped at 900. "Two steps" rather than +200 because the set has no 600
+ * face — numeric +200 from Regular would land between Medium and Bold and
+ * every consumer (screen CSS, canvas measurement, PDF face embedding) would
+ * snap it differently. Stepping the ladder keeps them all on one real face:
+ * 400 → 700, 300 → 500, 500 → 800.
+ */
+export function bolderWeight(weight: number): number {
+  const i = AVAILABLE_WEIGHTS.indexOf(weight);
+  const from = i >= 0 ? i : AVAILABLE_WEIGHTS.indexOf(normalizeWeight(String(weight)));
+  return AVAILABLE_WEIGHTS[Math.min(from + 2, AVAILABLE_WEIGHTS.length - 1)];
+}
+
+/**
  * Resolve a base-relative font path (e.g. `fonts/Foo.ttf`) to a fetchable URL by
  * prefixing Vite's `BASE_URL`. Every runtime font fetch — the `@font-face` embed
  * and the PDF export's face/glyph loads — goes through here so it resolves under

@@ -112,11 +112,11 @@ describe('labelLayoutLocal — injected measurement', () => {
 
 describe('labelLayoutLocal — literalBullets (edit-mode box)', () => {
   // A station whose name carries inline route bullets. In edit mode the
-  // textarea shows the raw "<A1>" tokens, so the box must be sized against
+  // textarea shows the raw "|A1|" tokens, so the box must be sized against
   // that literal text rather than the collapsed-bullet render.
   const bulletStation: Station = {
     id: 's',
-    name: 'Hub <A1> <B2>',
+    name: 'Hub |A1| |B2|',
     x: 0,
     y: 0,
     rotation: 0,
@@ -621,11 +621,11 @@ describe('labelLayoutLocal — hit-rect width hugs the rendered glyphs', () => {
     );
 
   it('inline bullet tokens are measured as compact circles, not literal characters', () => {
-    // "<C><S><T><X>" is 12 literal characters but renders as four small
+    // "|C||S||T||X|" is 12 literal characters but renders as four small
     // bullets. The old per-character heuristic (len * 7) ballooned the hit
     // rect; measuring treats each token as one bullet diameter, so a line of
     // four bullets is far narrower than 12 chars of text would be.
-    const bullets = base('<C><S><T><X>');
+    const bullets = base('|C||S||T||X|');
     const asChars = base('CSTXCSTXCSTX'); // same 12 characters, plain text
     expect(bullets.hitW).toBeLessThan(asChars.hitW);
   });
