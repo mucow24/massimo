@@ -225,6 +225,27 @@ describe('readClipboard drops malformed items, keeps valid ones', () => {
     expect(readClipboard(envelope([bad]))).toBeNull();
   });
 
+  it('round-trips leading and tracking on a text-label', () => {
+    const item: ClipPayload = {
+      kind: 'text-label',
+      data: { ...labelItem.data, leading: 1.5, tracking: 0.2 },
+    };
+    expect(readClipboard(writeClipboard([item]))).toEqual([item]);
+  });
+
+  it('leaves absent leading/tracking absent on a text-label', () => {
+    const parsed = readClipboard(writeClipboard([labelItem]));
+    expect(parsed![0].data).not.toHaveProperty('leading');
+    expect(parsed![0].data).not.toHaveProperty('tracking');
+  });
+
+  it('drops a text-label with non-numeric leading or tracking', () => {
+    const badLeading = { kind: 'text-label', data: { ...labelItem.data, leading: 'loose' } };
+    expect(readClipboard(envelope([badLeading]))).toBeNull();
+    const badTracking = { kind: 'text-label', data: { ...labelItem.data, tracking: 'wide' } };
+    expect(readClipboard(envelope([badTracking]))).toBeNull();
+  });
+
   it('drops a text-label with a non-finite fontSize', () => {
     const bad = { kind: 'text-label', data: { ...labelItem.data, fontSize: 'big' } };
     expect(readClipboard(envelope([bad]))).toBeNull();

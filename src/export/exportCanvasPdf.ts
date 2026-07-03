@@ -23,6 +23,10 @@
  *   Text baseline — svg2pdf ignores `dominant-baseline`, so text lands too high;
  *   `normalizeTextBaselines` (pdfText) shifts each run onto the alphabetic baseline.
  *
+ *   Tracking — svg2pdf ignores `letter-spacing`; `bakeLetterSpacing` (pdfText)
+ *   re-expresses tracked label runs as `textLength`, which svg2pdf converts to
+ *   PDF charSpace.
+ *
  *   Uncovered glyphs — characters Helvetica Neue lacks (✈, ↔, …) are outlined to a
  *   `<path>` from the shipped fallback font (`outlineUnsupportedText`; pdfGlyphs).
  */
@@ -40,7 +44,7 @@ import {
   type FontFaceSpec,
 } from './fonts';
 import { hatchStripeRects, patternRotation, ribbonFromCenterline, type Bounds } from './pdfHatch';
-import { normalizeTextBaselines } from './pdfText';
+import { bakeLetterSpacing, normalizeTextBaselines } from './pdfText';
 import { loadGlyphFonts, needsGlyphOutlining, outlineUnsupportedText } from './pdfGlyphs';
 import { bakeImageDropShadows } from './pdfDropShadow';
 
@@ -228,6 +232,12 @@ export async function exportCanvasPdf(
     // offset geometry — svg2pdf renders those images as vectors but ignores
     // <filter>, so their casing/shadow would otherwise vanish.
     bakeImageDropShadows(el);
+
+    // svg2pdf ignores letter-spacing; re-express tracked label text as
+    // textLength (→ PDF charSpace). Needs the attached clone for
+    // getComputedTextLength, and must run BEFORE glyph outlining so char
+    // positions are read from the final spacing.
+    bakeLetterSpacing(el);
 
     // svg2pdf ignores dominant-baseline and renders every run on the alphabetic
     // baseline; re-baseline text with a measured y-shift so it lands where the

@@ -80,7 +80,10 @@ test.describe('Legacy dotShape migration on load (v6 → v7)', () => {
       state: {
         stations: {
           // Per-stop override survives conversion.
-          A: { ...baseStation('A', -300, 0, 'L1', 'auto-vertical'), stops: [stop('L1', 'filled-black-diamond')] },
+          A: {
+            ...baseStation('A', -300, 0, 'L1', 'auto-vertical'),
+            stops: [stop('L1', 'filled-black-diamond')],
+          },
           // No override — tracks the line's converted default (open-white).
           B: { ...baseStation('B', -150, 0, 'L1', 'auto-vertical'), stops: [stop('L1')] },
           // 'none' converts to the invisible style: no glyph element at all.
@@ -136,6 +139,73 @@ test.describe('Legacy dotShape migration on load (v6 → v7)', () => {
   });
 });
 
+test.describe('Legacy inline bullet syntax migration on load (v7 → v8)', () => {
+  test('angle tokens become paren bullets; pre-existing paren text stays literal', async ({
+    page,
+  }) => {
+    // Simulate a doc saved at persist version 7, under the old grammar where
+    // `<A>` was the circle bullet and pipes were plain text. The migrate hook
+    // rewrites `<A>` → `|A|` and escapes the literal `|lit|` so neither the
+    // station name nor the label text changes its rendering.
+    const persisted = {
+      state: {
+        stations: {
+          A: { ...baseStation('A', -150, 0, 'L1', 'auto-vertical'), name: 'Hub <A> |lit|' },
+        },
+        lines: {
+          L1: { id: 'L1', service: 'A', name: 'A line', color: '#0039a6', stations: ['A'] },
+        },
+        lineOrder: ['L1'],
+        textLabels: {
+          g1: {
+            id: 'g1',
+            x: 150,
+            y: 100,
+            rotation: 0,
+            text: 'Ride <A>',
+            fontSize: 16,
+            weight: 400,
+            italic: false,
+            align: 'left',
+            color: '#111111',
+            darkColor: '#ffffff',
+          },
+        },
+        curveRadius: 24,
+        lineCounter: 1,
+        lineTags: {},
+        routeBullets: {},
+        transfers: {},
+      },
+      version: 7,
+    };
+
+    const errors: string[] = [];
+    page.on('console', (msg) => {
+      if (msg.type() === 'error') errors.push(msg.text());
+    });
+
+    await seedRaw(page, persisted);
+
+    // The free text label renders its migrated token as an inline bullet in
+    // the line color.
+    const labelBullet = page.locator('[data-text-label-id="g1"] [data-inline-bullet="A"]');
+    await expect(labelBullet).toBeVisible();
+    await expect(labelBullet.locator('circle')).toHaveAttribute('fill', '#0039a6');
+
+    // The station name renders one too, on both of its surfaces: the canvas
+    // label (SVG) and the sidebar station list (HTML badge) — three "A"
+    // bullets in total across the app.
+    await expect(page.locator('.canvas-host svg [data-inline-bullet="A"]')).toHaveCount(2);
+    await expect(page.locator('[data-inline-bullet="A"]')).toHaveCount(3);
+
+    // The literal "|lit|" was escaped, not turned into a bullet.
+    await expect(page.locator('[data-inline-bullet="lit"]')).toHaveCount(0);
+
+    expect(errors).toEqual([]);
+  });
+});
+
 test.describe('Legacy stop-orientation migration on load', () => {
   test('up/down/left/right + unknown values migrate to the canonical auto-* axes', async ({
     page,
@@ -182,9 +252,7 @@ test.describe('Legacy stop-orientation migration on load', () => {
 
     // Each station's stop should be visible (didn't crash on the legacy strings).
     for (const id of ['A', 'B', 'C', 'D', 'E']) {
-      await expect(
-        page.locator(`[data-stop-station="${id}"][data-stop-line="L1"]`),
-      ).toBeVisible();
+      await expect(page.locator(`[data-stop-station="${id}"][data-stop-line="L1"]`)).toBeVisible();
     }
 
     expect(errors).toEqual([]);

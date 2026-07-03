@@ -310,6 +310,74 @@ describe('<TextLabelPopover /> — text / size / align / weight controls', () =>
   });
 });
 
+describe('<TextLabelPopover /> — leading + tracking', () => {
+  const identityView = { vbX: 0, vbY: 0, vbW: 800, vbH: 600, size: { w: 800, h: 600 } };
+
+  function seedAndRender() {
+    const label = makeTextLabel({ id: 'g1', text: 'Hi\nThere' });
+    useDoc.setState({ ...useDoc.getState(), textLabels: { g1: label } });
+    render(
+      <TextLabelPopover
+        label={useDoc.getState().textLabels['g1']}
+        world={{ x: 0, y: 0 }}
+        view={identityView}
+        onClose={() => {}}
+      />,
+    );
+  }
+
+  it('sets leading via its slider ([0,2] range, 0.05 step)', () => {
+    seedAndRender();
+    const slider = screen.getByRole('slider', { name: 'Leading' }) as HTMLInputElement;
+    expect(slider.getAttribute('min')).toBe('0');
+    expect(slider.getAttribute('max')).toBe('2');
+    expect(slider.getAttribute('step')).toBe('0.05');
+    expect(slider.value).toBe('1'); // default
+    fireEvent.change(slider, { target: { value: '1.5' } });
+    expect(useDoc.getState().textLabels['g1'].leading).toBe(1.5);
+  });
+
+  it('sets tracking via its slider ([-0.1,0.5] range, 0.01 step)', () => {
+    seedAndRender();
+    const slider = screen.getByRole('slider', { name: 'Tracking' }) as HTMLInputElement;
+    expect(slider.getAttribute('min')).toBe('-0.1');
+    expect(slider.getAttribute('max')).toBe('0.5');
+    expect(slider.getAttribute('step')).toBe('0.01');
+    expect(slider.value).toBe('0'); // default
+    fireEvent.change(slider, { target: { value: '0.25' } });
+    expect(useDoc.getState().textLabels['g1'].tracking).toBe(0.25);
+  });
+
+  it('marks the neutral values with a detent tick', () => {
+    seedAndRender();
+    for (const [name, neutral] of [
+      ['Leading', '1'],
+      ['Tracking', '0'],
+    ] as const) {
+      const slider = screen.getByRole('slider', { name });
+      const listId = slider.getAttribute('list');
+      expect(listId).toBeTruthy();
+      const tick = document.getElementById(listId!)?.querySelector('option');
+      expect(tick?.getAttribute('value')).toBe(neutral);
+    }
+  });
+
+  it('disables both rows when locked', () => {
+    const label = makeTextLabel({ id: 'g1', text: 'Hi', locked: true });
+    useDoc.setState({ ...useDoc.getState(), textLabels: { g1: label } });
+    render(
+      <TextLabelPopover
+        label={label}
+        world={{ x: 0, y: 0 }}
+        view={identityView}
+        onClose={() => {}}
+      />,
+    );
+    expect(screen.getByRole('slider', { name: 'Leading' })).toBeDisabled();
+    expect(screen.getByRole('slider', { name: 'Tracking' })).toBeDisabled();
+  });
+});
+
 describe('<TextLabelPopover /> — lock toggle', () => {
   const identityView = { vbX: 0, vbY: 0, vbW: 800, vbH: 600, size: { w: 800, h: 600 } };
 

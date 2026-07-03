@@ -1,6 +1,6 @@
 import { describe, it, expect } from 'vitest';
 import { justifyLine } from './labelJustify';
-import { inlineBulletDiameter } from './labelTokens';
+import { emptyStyleState, inlineBulletDiameter } from './labelTokens';
 
 // Deterministic advance: every glyph is 10 wide. Space runs measure by length
 // too, matching how the real measurer treats whitespace advance.
@@ -25,7 +25,7 @@ describe('justifyLine', () => {
   it('places an inline bullet as its own atom and keeps the line flush', () => {
     const d = inlineBulletDiameter(10); // 9
     const ink = adv('aa') + adv(' ') + d + adv(' ') + adv('bb'); // 20+10+9+10+20 = 69
-    const atoms = justifyLine('aa <A1> bb', 10, ink, ink + 20, adv); // slack 20, 2 gaps
+    const atoms = justifyLine('aa |A1| bb', 10, ink, ink + 20, adv); // slack 20, 2 gaps
     expect(atoms).not.toBeNull();
     expect(atoms!.map((a) => a.kind)).toEqual(['text', 'bullet', 'text']);
     const bullet = atoms!.find((a) => a.kind === 'bullet')!;
@@ -44,6 +44,34 @@ describe('justifyLine', () => {
   it('returns null when the ink already meets or exceeds the target (no slack)', () => {
     expect(justifyLine('aa bb', 10, 50, 40, adv)).toBeNull();
     expect(justifyLine('aa bb', 10, 50, 50, adv)).toBeNull();
+  });
+
+  it('parses formatting tags and attaches styles when given an entry state', () => {
+    // '<b>aa</b> bb cc': ink = 8 glyphs + 2 spaces = 80. Target 100 → 10/gap.
+    const atoms = justifyLine('<b>aa</b> bb cc', 10, 80, 100, adv, emptyStyleState());
+    expect(atoms).not.toBeNull();
+    expect(atoms!.map((a) => ({ value: a.value, x: a.x }))).toEqual([
+      { value: 'aa', x: 0 },
+      { value: 'bb', x: 40 },
+      { value: 'cc', x: 80 },
+    ]);
+    expect(atoms![0].style).toMatchObject({ bold: true });
+    expect(atoms![1].style).toBeUndefined();
+  });
+
+  it('carries an open tag from the entry state across the whole line', () => {
+    const entry = { ...emptyStyleState(), italic: 1 };
+    const atoms = justifyLine('aa bb', 10, 50, 90, adv, entry);
+    expect(atoms).not.toBeNull();
+    expect(atoms![0].style).toMatchObject({ italic: true });
+    expect(atoms![1].style).toMatchObject({ italic: true });
+  });
+
+  it('leaves tags literal without an entry state (station grammar)', () => {
+    const atoms = justifyLine('<b>aa</b> bb cc', 10, 80, 100, adv);
+    expect(atoms).not.toBeNull();
+    expect(atoms![0]).toMatchObject({ value: '<b>aa</b>', x: 0 });
+    expect(atoms![0].style).toBeUndefined();
   });
 
   it('does not stretch leading/trailing whitespace (only interior gaps)', () => {

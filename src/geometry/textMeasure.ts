@@ -1,6 +1,14 @@
-import { FONT_STACK } from '../export/fonts';
+import { bolderWeight, FONT_STACK } from '../export/fonts';
 import type { RouteBulletShape } from '../model/types';
-import { inlineBulletDiameter, parseLabelLine, type LabelSegment } from './labelTokens';
+import {
+  emptyStyleState,
+  inlineBulletDiameter,
+  parseFormattedLine,
+  parseLabelLine,
+  type InlineStyleState,
+  type LabelSegment,
+  type SegmentStyle,
+} from './labelTokens';
 
 /**
  * Minimum surface needed to measure a styled multi-line text block. Both
@@ -14,11 +22,29 @@ export interface StyledText {
   weight: number;
   italic: boolean;
   /**
-   * When true, `<CODE>` tokens are measured as their literal glyphs rather
+   * When true, `|CODE|` tokens are measured as their literal glyphs rather
    * than collapsing to a bullet circle. The inline rename editor sets this:
    * its textarea shows the raw tokens, so the box must be sized to fit them.
    */
   literalBullets?: boolean;
+  /**
+   * Parse only bullet tokens + escapes; formatting tags (`<b>`, `<color=…>`,
+   * …) stay literal text. Station-name callers set this — formatting is a
+   * text-label-only feature. Absent/false = full tag parsing, which is what
+   * TextLabel callers get when they pass the label straight through.
+   */
+  bulletsOnly?: boolean;
+  /**
+   * Line-spacing multiplier between lines (default 1 = the 1.2em LINE_HEIGHT
+   * spacing). Affects height only; a single line is one line-height tall at
+   * any leading. Only `TextLabel` sets this.
+   */
+  leading?: number;
+  /**
+   * Extra letter-spacing in em inside text runs (default 0). Only `TextLabel`
+   * sets this.
+   */
+  tracking?: number;
   /**
    * Column width in world units. 0 or absent = "Auto": lines come straight from
    * splitting on '\n' and the box hugs the widest line's ink (the historical
@@ -34,6 +60,8 @@ export type SegmentMetric =
   | {
       kind: 'text';
       value: string;
+      /** Resolved formatting-tag style; absent on unstyled runs. */
+      style?: SegmentStyle;
       /** Distance the cursor moves rightward after rendering. */
       advance: number;
       /** Overhang LEFT of the segment cursor (positive = ink left of cursor). */
@@ -46,7 +74,7 @@ export type SegmentMetric =
       code: string;
       shape: RouteBulletShape;
       filled: boolean;
-      /** Both advance and visible width of the bullet shape. */
+      /** Advance of the bullet (diameter plus any tracking). */
       advance: number;
       diameter: number;
     };
@@ -65,6 +93,10 @@ export interface LineMetrics {
    *  line in Auto mode, or a single wrapped line in column mode. The justify
    *  renderer re-tokenizes it into words. */
   raw: string;
+  /** Open formatting-tag state at the START of this line, so the justify
+   *  renderer can re-tokenize `raw` with the same state the measurement used.
+   *  Only present in formatting mode (absent for station names / edit mode). */
+  entryStyle?: InlineStyleState;
   /** True when this is the last rendered line of its justification group: the
    *  last line of the block in Auto mode, or the last line of its paragraph in
    *  column mode. Justify never stretches these (standard typography). */
@@ -74,11 +106,16 @@ export interface LineMetrics {
 /** The ink-only fields of a line, before `raw`/`endsParagraph` are attached. */
 type LineInk = Pick<LineMetrics, 'inkWidth' | 'bearingLeft' | 'bearingRight' | 'segments'>;
 
+/** A measured line plus the tag state it leaves open for the next line. */
+type ParsedLine = LineInk & { exit: InlineStyleState | null };
+
 export interface MeasuredBBox {
   /** Box width in pixels: the widest line's ink in Auto mode, or the fixed
    *  column width when a column width is set. 0 when empty in Auto mode. */
   width: number;
-  /** Total block height = lineCount * fontSize * LINE_HEIGHT. */
+  /** Total block height: one line-height plus (lineCount - 1) leading-scaled
+   *  line spacings. With the default leading of 1 this is
+   *  lineCount * fontSize * LINE_HEIGHT. */
   height: number;
   /** Number of rendered lines — one per '\n' in Auto mode, or the total
    *  wrapped-line count across all paragraphs in column mode. Always >= 1. */
@@ -100,17 +137,19 @@ export const LINE_HEIGHT = 1.2;
 export const BASELINE_FRACTION = 0.8;
 
 // Internal cache: keyed by the full content + style tuple (weight, italic,
-// literal-bullet mode, font size, column width, text — see cacheKey). Marquee
-// hit testing re-measures every label on every move; without a cache the
-// canvas API churn would dominate. Bounded by a soft cap; oldest entries
-// evicted.
+// parse mode, font size, column width, leading, tracking, text — see
+// cacheKey). Marquee hit testing re-measures every label on every move;
+// without a cache the canvas API churn would dominate. Bounded by a soft cap;
+// oldest entries evicted.
 const CACHE_LIMIT = 256;
 const cache = new Map<string, MeasuredBBox>();
 
 function cacheKey(styled: StyledText): string {
-  const bulletMode = styled.literalBullets ? 'L' : 'b';
+  const parseMode = styled.literalBullets ? 'L' : styled.bulletsOnly ? 's' : 'f';
   const width = styled.width ?? 0;
-  return `${styled.weight}|${styled.italic ? 'i' : 'n'}|${bulletMode}|${styled.fontSize}|${width}|${styled.text}`;
+  const leading = styled.leading ?? 1;
+  const tracking = styled.tracking ?? 0;
+  return `${styled.weight}|${styled.italic ? 'i' : 'n'}|${parseMode}|${styled.fontSize}|${width}|${leading}|${tracking}|${styled.text}`;
 }
 
 // Lazily-initialised measurement context. Falls back to a heuristic when
@@ -128,9 +167,10 @@ function getCtx(): CanvasRenderingContext2D | null {
 }
 
 // Approximate width when no real canvas is available — overestimates by design
-// so marquee hit-testing covers the visible glyphs in tests.
-function approximateLineWidth(line: string, fontSize: number): number {
-  return line.length * fontSize * 0.55;
+// so marquee hit-testing covers the visible glyphs in tests. Letter-spacing is
+// modeled the way Chromium applies it: added after every character.
+function approximateLineWidth(line: string, fontSize: number, letterSpacingPx: number): number {
+  return line.length * (fontSize * 0.55 + letterSpacingPx);
 }
 
 function measureTextSegment(
@@ -138,10 +178,18 @@ function measureTextSegment(
   fontSize: number,
   measureCtx: CanvasRenderingContext2D | null,
   fontDecl: string,
+  letterSpacingPx: number,
 ): { advance: number; bearingLeft: number; bearingRight: number } {
   if (value.length === 0) return { advance: 0, bearingLeft: 0, bearingRight: 0 };
   if (measureCtx) {
     measureCtx.font = fontDecl;
+    // Chromium's canvas honors letterSpacing (added after each character,
+    // matching SVG letter-spacing); environments without the property just
+    // measure untracked.
+    if ('letterSpacing' in measureCtx) {
+      (measureCtx as CanvasRenderingContext2D & { letterSpacing: string }).letterSpacing =
+        `${letterSpacingPx}px`;
+    }
     const tm = measureCtx.measureText(value);
     const bL = tm.actualBoundingBoxLeft ?? 0;
     const bR = tm.actualBoundingBoxRight ?? 0;
@@ -167,42 +215,56 @@ function measureTextSegment(
       return { advance, bearingLeft: 0, bearingRight: advance };
     }
   }
-  const approx = approximateLineWidth(value, fontSize);
+  const approx = approximateLineWidth(value, fontSize, letterSpacingPx);
   return { advance: approx, bearingLeft: 0, bearingRight: approx };
 }
 
 /**
  * Pen advance (px) of a single styled text run, measured through the same
  * shared context and font stack as `measureTextLabel`. Whitespace counts toward
- * the advance. The justify renderer uses this to position wrapped words.
+ * the advance. The justify renderer uses this to position wrapped words; it
+ * resolves any per-segment style (bold/italic tags) into `weight`/`italic`
+ * before calling.
  */
 export function measureAdvance(
   text: string,
   fontSize: number,
   weight: number,
   italic: boolean,
+  letterSpacingPx = 0,
 ): number {
   if (text.length === 0) return 0;
   const fontDecl = `${italic ? 'italic ' : ''}${weight} ${fontSize}px ${FONT_STACK}`;
-  return measureTextSegment(text, fontSize, getCtx(), fontDecl).advance;
+  return measureTextSegment(text, fontSize, getCtx(), fontDecl, letterSpacingPx).advance;
 }
+
+type ParseMode = 'literal' | 'bullets' | 'formatted';
 
 function computeLineMetrics(
   raw: string,
   fontSize: number,
   measureCtx: CanvasRenderingContext2D | null,
-  fontDecl: string,
-  literalBullets: boolean,
-): LineInk {
-  // Edit mode measures the raw "<CODE>" text; the normal render path parses
-  // tokens into bullet segments.
-  const segments: LabelSegment[] = literalBullets
-    ? raw.length === 0
-      ? []
-      : [{ kind: 'text', value: raw }]
-    : parseLabelLine(raw);
+  declFor: (style?: SegmentStyle) => string,
+  letterSpacingPx: number,
+  mode: ParseMode,
+  entry: InlineStyleState | null,
+): ParsedLine {
+  // Edit mode measures the raw "|CODE|" text; station names parse bullets
+  // only; text labels additionally parse formatting tags, threading the
+  // open-tag state from line to line.
+  let segments: LabelSegment[];
+  let exit: InlineStyleState | null = null;
+  if (mode === 'literal') {
+    segments = raw.length === 0 ? [] : [{ kind: 'text', value: raw }];
+  } else if (mode === 'bullets') {
+    segments = parseLabelLine(raw);
+  } else {
+    const r = parseFormattedLine(raw, entry ?? emptyStyleState());
+    segments = r.segments;
+    exit = r.state;
+  }
   if (segments.length === 0) {
-    return { inkWidth: 0, bearingLeft: 0, bearingRight: 0, segments: [] };
+    return { inkWidth: 0, bearingLeft: 0, bearingRight: 0, segments: [], exit };
   }
   const segMetrics: SegmentMetric[] = segments.map((seg) => {
     if (seg.kind === 'bullet') {
@@ -212,12 +274,22 @@ function computeLineMetrics(
         code: seg.code,
         shape: seg.shape,
         filled: seg.filled,
-        advance: d,
+        // Tracking spaces bullets like characters: the advance carries the
+        // same trailing letter-spacing a glyph would.
+        advance: d + letterSpacingPx,
         diameter: d,
       };
     }
-    const t = measureTextSegment(seg.value, fontSize, measureCtx, fontDecl);
-    return { kind: 'text', value: seg.value, ...t };
+    const t = measureTextSegment(
+      seg.value,
+      fontSize,
+      measureCtx,
+      declFor(seg.style),
+      letterSpacingPx,
+    );
+    return seg.style
+      ? { kind: 'text', value: seg.value, style: seg.style, ...t }
+      : { kind: 'text', value: seg.value, ...t };
   });
 
   // Walk segments to compute the line's ink extent.
@@ -232,54 +304,61 @@ function computeLineMetrics(
     cursor += sm.advance;
   }
   if (!Number.isFinite(inkLeft) || !Number.isFinite(inkRight)) {
-    return { inkWidth: 0, bearingLeft: 0, bearingRight: 0, segments: segMetrics };
+    return { inkWidth: 0, bearingLeft: 0, bearingRight: 0, segments: segMetrics, exit };
   }
   return {
     inkWidth: inkRight - inkLeft,
     bearingLeft: -inkLeft,
     bearingRight: inkRight,
     segments: segMetrics,
+    exit,
   };
 }
 
 /**
- * Greedily word-wrap one paragraph to `width`, returning the wrapped lines.
- * Whitespace runs collapse to single-space gaps; a word wider than the column
- * lands on its own (overflowing) line — no mid-word hyphenation. An empty or
- * all-whitespace paragraph yields a single blank line so vertical spacing is
- * preserved.
+ * Greedily word-wrap one paragraph to `width`, returning each wrapped line
+ * with the open-tag state it starts under (so committed lines can be
+ * re-measured/rendered with the right entry style). Whitespace runs collapse
+ * to single-space gaps; a word wider than the column lands on its own
+ * (overflowing) line — no mid-word hyphenation. An empty or all-whitespace
+ * paragraph yields a single blank line so vertical spacing is preserved.
  */
 function wrapParagraph(
   paragraph: string,
   width: number,
-  measure: (s: string) => LineInk,
-): string[] {
+  measure: (s: string, entry: InlineStyleState | null) => ParsedLine,
+  entry: InlineStyleState | null,
+): { raw: string; entry: InlineStyleState | null }[] {
   const words = paragraph.split(/\s+/).filter((w) => w.length > 0);
-  if (words.length === 0) return [''];
-  const lines: string[] = [];
+  if (words.length === 0) return [{ raw: '', entry }];
+  const lines: { raw: string; entry: InlineStyleState | null }[] = [];
   let current = '';
+  let currentEntry = entry;
   for (const w of words) {
     const candidate = current === '' ? w : `${current} ${w}`;
     // Always keep the first word (even if it alone overflows); otherwise break
     // before a word that would push the line past the column.
-    if (current === '' || measure(candidate).inkWidth <= width) {
+    if (current === '' || measure(candidate, currentEntry).inkWidth <= width) {
       current = candidate;
     } else {
-      lines.push(current);
+      lines.push({ raw: current, entry: currentEntry });
+      currentEntry = measure(current, currentEntry).exit;
       current = w;
     }
   }
-  lines.push(current);
+  lines.push({ raw: current, entry: currentEntry });
   return lines;
 }
 
 /**
  * Measure the unrotated bounding box of a styled multi-line text block.
  *
- * Each line is parsed into text + bullet segments; widths combine the canvas
- * `measureText` (or a fontSize-based approximation when no real canvas is
- * available) with the inline-bullet diameter. Height = lineCount * fontSize
- * * LINE_HEIGHT. Returned values are cached by content+style.
+ * Each line is parsed into text + bullet segments (text labels additionally
+ * parse formatting tags, whose styles change per-segment font weight/style);
+ * widths combine the canvas `measureText` (or a fontSize-based approximation
+ * when no real canvas is available) with the inline-bullet diameter and any
+ * tracking. Height = one line-height + (lineCount - 1) leading-scaled
+ * spacings. Returned values are cached by content+style.
  *
  * Both `TextLabel` and station-name renderers can pass themselves here —
  * `StyledText` is the structural subset of fields the measurer uses.
@@ -290,26 +369,48 @@ export function measureTextLabel(styled: StyledText): MeasuredBBox {
   if (hit) return hit;
 
   const measureCtx = getCtx();
+  const mode: ParseMode = styled.literalBullets
+    ? 'literal'
+    : styled.bulletsOnly
+      ? 'bullets'
+      : 'formatted';
+  const letterSpacingPx = (styled.tracking ?? 0) * styled.fontSize;
   // Measure with the SAME stack the canvas renders (incl. the symbol fallback),
   // so a symbol's measured advance matches its drawn advance — otherwise the
   // inline-bullet cursor spaces it against the wrong (system-fallback) width.
-  const fontDecl = `${styled.italic ? 'italic ' : ''}${styled.weight} ${styled.fontSize}px ${FONT_STACK}`;
-  const measure = (raw: string): LineInk =>
-    computeLineMetrics(raw, styled.fontSize, measureCtx, fontDecl, styled.literalBullets ?? false);
+  // Per-segment: a <b>/<i> tag bumps the weight/style for that run only.
+  const declFor = (style?: SegmentStyle): string => {
+    const w = style?.bold ? bolderWeight(styled.weight) : styled.weight;
+    const it = styled.italic || style?.italic;
+    return `${it ? 'italic ' : ''}${w} ${styled.fontSize}px ${FONT_STACK}`;
+  };
+  const measure = (raw: string, entry: InlineStyleState | null): ParsedLine =>
+    computeLineMetrics(raw, styled.fontSize, measureCtx, declFor, letterSpacingPx, mode, entry);
 
   const colWidth = styled.width ?? 0;
-  let lineMetrics: LineMetrics[];
+  const lineMetrics: LineMetrics[] = [];
+  const pushLine = (
+    raw: string,
+    entry: InlineStyleState | null,
+    endsParagraph: boolean,
+  ): InlineStyleState | null => {
+    const { exit, ...ink } = measure(raw, entry);
+    lineMetrics.push({ ...ink, raw, endsParagraph, ...(entry ? { entryStyle: entry } : {}) });
+    return exit;
+  };
+  // Formatting tags stay open across '\n' AND column wraps until closed, so
+  // the state threads through every rendered line in order.
+  let state: InlineStyleState | null = mode === 'formatted' ? emptyStyleState() : null;
   let boxWidth: number;
   if (colWidth > 0) {
     // Column mode: wrap each '\n'-delimited paragraph independently. The box
     // width is pinned to the column; each paragraph's final wrapped line ends a
     // paragraph (justify leaves it ragged), interior wrapped lines don't.
     const paragraphs = styled.text.length === 0 ? [''] : styled.text.split('\n');
-    lineMetrics = [];
     for (const para of paragraphs) {
-      const wrapped = wrapParagraph(para, colWidth, measure);
-      wrapped.forEach((raw, i) => {
-        lineMetrics.push({ ...measure(raw), raw, endsParagraph: i === wrapped.length - 1 });
+      const wrapped = wrapParagraph(para, colWidth, measure, state);
+      wrapped.forEach((w, i) => {
+        state = pushLine(w.raw, w.entry, i === wrapped.length - 1);
       });
     }
     boxWidth = colWidth;
@@ -317,15 +418,16 @@ export function measureTextLabel(styled: StyledText): MeasuredBBox {
     // Auto mode: one rendered line per '\n', box hugs the widest ink. Only the
     // block's final line ends a paragraph (justify leaves it ragged).
     const rawLines = styled.text.length === 0 ? [''] : styled.text.split('\n');
-    lineMetrics = rawLines.map((raw, i) => ({
-      ...measure(raw),
-      raw,
-      endsParagraph: i === rawLines.length - 1,
-    }));
+    rawLines.forEach((raw, i) => {
+      state = pushLine(raw, state, i === rawLines.length - 1);
+    });
     boxWidth = lineMetrics.reduce((m, l) => (l.inkWidth > m ? l.inkWidth : m), 0);
   }
   const lineWidths = lineMetrics.map((m) => m.inkWidth);
-  const height = lineMetrics.length * styled.fontSize * LINE_HEIGHT;
+  // One full line-height plus a leading-scaled spacing per additional line;
+  // leading 1 reproduces the historical lineCount * fontSize * LINE_HEIGHT.
+  const height =
+    styled.fontSize * LINE_HEIGHT * (1 + (lineMetrics.length - 1) * (styled.leading ?? 1));
   const result: MeasuredBBox = {
     width: boxWidth,
     height,

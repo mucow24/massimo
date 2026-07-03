@@ -7,7 +7,14 @@ import {
   TEXT_LABEL_DARK_COLOR_DEFAULT,
 } from '../model/transforms';
 import { DOT_SHAPE_PRESETS } from '../model/dotStyle';
-import { makeLine, makeStation, makeStop, makeLabel, stationWithStop } from '../test/fixtures';
+import {
+  makeLine,
+  makeStation,
+  makeStop,
+  makeLabel,
+  makeTextLabel,
+  stationWithStop,
+} from '../test/fixtures';
 import type {
   DotStyle,
   LineId,
@@ -28,6 +35,7 @@ type AnyDoc = {
   stations?: Record<
     string,
     {
+      name?: string;
       stops: { orientation: string; dotShape?: string; dotStyle?: DotStyle }[];
       label: { valign: string };
     }
@@ -176,6 +184,25 @@ describe('migrateDoc', () => {
       const stop = out.stations!.S.stops[0];
       expect(stop.dotShape).toBe('filled-white');
       expect(stop.dotStyle).toBeUndefined();
+    });
+  });
+
+  describe('v7 → v8: legacy inline bullet syntax', () => {
+    const legacyDoc = () => ({
+      stations: { S: { ...makeStation({ id: 'S' as StationId }), name: '<A> North |lit|' } },
+      textLabels: { g1: makeTextLabel({ id: 'g1', text: 'Ride <B> or <<C>>' }) },
+    });
+
+    it('rewrites angle tokens and escapes literal pipes in names and label texts', () => {
+      const out = run(legacyDoc(), 7);
+      expect(out.stations!.S.name).toBe('|A| North \\|lit|');
+      expect(out.textLabels!.g1.text).toBe('Ride |B| or ||C||');
+    });
+
+    it('does not rewrite at version >= 8', () => {
+      const out = run(legacyDoc(), 8);
+      expect(out.stations!.S.name).toBe('<A> North |lit|');
+      expect(out.textLabels!.g1.text).toBe('Ride <B> or <<C>>');
     });
   });
 

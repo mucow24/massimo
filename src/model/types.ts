@@ -500,6 +500,17 @@ export interface TextLabel {
   // they are always present at runtime. 7-char hex (`#rrggbb`).
   color: string;
   darkColor: string;
+  // Line-spacing multiplier applied between lines: 1 = the default 1.2em
+  // spacing, 0 stacks lines on top of each other, 2 doubles the spacing.
+  // Single-line labels are unaffected (one line has no between-line space).
+  // Optional so saves predating the field load as 1; clamped to [0, ∞) and
+  // snapped to the slider's 0.05 step by `updateTextLabel`.
+  leading?: number;
+  // Extra letter-spacing in em added inside text runs (0 = font-normal
+  // spacing, negative = tighter). Optional so saves predating the field load
+  // as 0; clamped at the slider floor and snapped to its 0.01 step by
+  // `updateTextLabel`.
+  tracking?: number;
   // When locked, the label can't be dragged, nudged, rotated, deleted, or
   // marquee-selected, and its popover controls (other than the lock toggle)
   // are disabled. It can still be click-selected so the user can unlock it.

@@ -174,7 +174,7 @@ describe('<StationView /> — label styling', () => {
   });
 
   it('hovered labels with an inline bullet still render <line> underlines (bullet render path)', () => {
-    const station = makeStation({ id: 's1', name: 'Hub <A1>' });
+    const station = makeStation({ id: 's1', name: 'Hub |A1|' });
     useSelection.setState({ ...useSelection.getState(), hoveredStationId: station.id });
     const lines = {
       L1: makeLine({ id: 'L1', service: 'A1', color: '#abc123' }),
@@ -220,7 +220,7 @@ describe('<StationView /> — whitespace is not collapsed', () => {
   });
 
   it('renders bullet-path text segments with white-space: pre', () => {
-    const station = makeStation({ id: 's1', name: '  Hub <A1>  ', x: 0, y: 0 });
+    const station = makeStation({ id: 's1', name: '  Hub |A1|  ', x: 0, y: 0 });
     const lines = { L1: makeLine({ id: 'L1', service: 'A1', color: '#abc123' }) };
     const { container } = render(
       <svg>
@@ -331,11 +331,11 @@ describe('<StationView /> — inline label editor matches the painted label', ()
     expect(ta.style.textAlign).toBe('center');
   });
 
-  it('grows the editor box to fit expanded <CODE> tokens so they never clip', () => {
-    // The textarea shows the raw "<A1>" tokens, which are wider than the
+  it('grows the editor box to fit expanded |CODE| tokens so they never clip', () => {
+    // The textarea shows the raw "|A1|" tokens, which are wider than the
     // bullets they render as. The box must be sized to that literal text, not
     // the collapsed-bullet label hit rect, or the tokens overflow/clip.
-    const station = makeStation({ id: 's1', name: 'Hub <A1> <B2>', x: 100, y: 100 });
+    const station = makeStation({ id: 's1', name: 'Hub |A1| |B2|', x: 100, y: 100 });
     const collapsed = labelLayoutLocal(station, defaultStyle);
     const literal = labelLayoutLocal(station, { ...defaultStyle, literalBullets: true });
     const { fo } = renderEditor(station);
@@ -364,19 +364,19 @@ describe('<StationView /> — selection silhouette during inline edit', () => {
   }
 
   it('draws the silhouette for a selected, non-editing station (premise)', () => {
-    const station = makeStation({ id: 's1', name: 'Hub <A1>' });
+    const station = makeStation({ id: 's1', name: 'Hub |A1|' });
     expect(renderSilhouette(station, 'stroke', false).querySelector('path')).not.toBeNull();
   });
 
   it('suppresses the stroke silhouette while the station is being edited', () => {
     // The grown editor box already delineates the edit area; the collapsed
     // silhouette would otherwise overdraw the expanded textbox.
-    const station = makeStation({ id: 's1', name: 'Hub <A1>' });
+    const station = makeStation({ id: 's1', name: 'Hub |A1|' });
     expect(renderSilhouette(station, 'stroke', true).querySelector('path')).toBeNull();
   });
 
   it('suppresses the wash silhouette while the station is being edited', () => {
-    const station = makeStation({ id: 's1', name: 'Hub <A1>' });
+    const station = makeStation({ id: 's1', name: 'Hub |A1|' });
     expect(renderSilhouette(station, 'wash', true).querySelector('path')).toBeNull();
   });
 });
@@ -395,8 +395,8 @@ describe('<StationView /> — inline bullets in station names', () => {
     expect(container.querySelectorAll('text')).toHaveLength(1);
   });
 
-  it('emits a colored inline bullet when the name contains <CODE>', () => {
-    const station = makeStation({ id: 's1', name: 'Hub <A1>', x: 0, y: 0 });
+  it('emits a colored inline bullet when the name contains |CODE|', () => {
+    const station = makeStation({ id: 's1', name: 'Hub |A1|', x: 0, y: 0 });
     const lines = {
       L1: makeLine({ id: 'L1', service: 'A1', color: '#abc123' }),
     };
@@ -426,7 +426,7 @@ describe('<StationView /> — inline bullets in station names', () => {
   });
 
   it('falls back to a gray "?" bullet for an unknown code', () => {
-    const station = makeStation({ id: 's1', name: '<ZZ>', x: 0, y: 0 });
+    const station = makeStation({ id: 's1', name: '|ZZ|', x: 0, y: 0 });
     const { container } = render(
       <svg>
         <StationView station={station} lines={{}} zoom={1} onStartDrag={vi.fn()} layer="label" />

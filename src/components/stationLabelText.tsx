@@ -1,6 +1,6 @@
 import type { ReactNode } from 'react';
 import { Line } from '../model/types';
-import { hasBulletToken } from '../geometry/labelTokens';
+import { hasInlineToken } from '../geometry/labelTokens';
 import { BASELINE_FRACTION, LINE_HEIGHT, measureTextLabel } from '../geometry/textMeasure';
 import { InlineBullet } from './InlineBullet';
 
@@ -66,7 +66,7 @@ export function renderStationLabelText({
   rotationDeg,
   lineByService,
 }: RenderLabelTextArgs): ReactNode {
-  const hasBullet = hasBulletToken(text);
+  const hasBullet = hasInlineToken(text);
   const lines = text.split('\n');
   // Underline as explicit <line> geometry instead of the SVG `text-decoration`
   // attribute. Chromium leaves one-pixel residue on rotated <text> when
@@ -78,7 +78,13 @@ export function renderStationLabelText({
   // extent (the same width SVG's text-decoration would have drawn). The
   // measurement is cached, so calling it here for the plain path is cheap.
   const measured = showUnderline
-    ? measureTextLabel({ text, fontSize, weight: fontWeight, italic: fontStyle === 'italic' })
+    ? measureTextLabel({
+        text,
+        fontSize,
+        weight: fontWeight,
+        italic: fontStyle === 'italic',
+        bulletsOnly: true,
+      })
     : null;
   // Distance from the central-baseline anchor down to the text baseline.
   // Reuses the constant the bullet path already relies on.
@@ -154,6 +160,7 @@ export function renderStationLabelText({
       fontSize,
       weight: fontWeight,
       italic: fontStyle === 'italic',
+      bulletsOnly: true,
     });
   const lineSpacing = fontSize * LINE_HEIGHT;
 
