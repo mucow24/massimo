@@ -78,16 +78,9 @@ export function isLabelWeight(v: unknown): v is TextLabelWeight {
   return typeof v === 'number' && (LABEL_WEIGHT_VALUES as readonly number[]).includes(v);
 }
 
-export const LABEL_WEIGHT_NAMES: readonly { value: TextLabelWeight; name: string }[] = [
-  { value: 100, name: 'UltraLight' },
-  { value: 200, name: 'Thin' },
-  { value: 300, name: 'Light' },
-  { value: 400, name: 'Roman' },
-  { value: 500, name: 'Medium' },
-  { value: 700, name: 'Bold' },
-  { value: 800, name: 'Heavy' },
-  { value: 900, name: 'Black' },
-] as const;
+// Weight display names live with the shipped faces in export/fonts (they ARE
+// the faces); re-exported here so the popovers keep importing from transforms.
+export { LABEL_WEIGHT_NAMES } from '../export/fonts';
 
 export const LABEL_WEIGHT_DEFAULT: TextLabelWeight = 400;
 

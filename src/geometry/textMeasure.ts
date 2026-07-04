@@ -1,10 +1,11 @@
-import { bolderWeight, FONT_STACK } from '../export/fonts';
+import { FONT_STACK } from '../export/fonts';
 import type { RouteBulletShape } from '../model/types';
 import {
   emptyStyleState,
   inlineBulletDiameter,
   parseFormattedLine,
   parseLabelLine,
+  resolveRunWeight,
   type InlineStyleState,
   type LabelSegment,
   type SegmentStyle,
@@ -378,9 +379,9 @@ export function measureTextLabel(styled: StyledText): MeasuredBBox {
   // Measure with the SAME stack the canvas renders (incl. the symbol fallback),
   // so a symbol's measured advance matches its drawn advance — otherwise the
   // inline-bullet cursor spaces it against the wrong (system-fallback) width.
-  // Per-segment: a <b>/<i> tag bumps the weight/style for that run only.
+  // Per-segment: a <w=…>/<b>/<i> tag bumps the weight/style for that run only.
   const declFor = (style?: SegmentStyle): string => {
-    const w = style?.bold ? bolderWeight(styled.weight) : styled.weight;
+    const w = resolveRunWeight(styled.weight, style);
     const it = styled.italic || style?.italic;
     return `${it ? 'italic ' : ''}${w} ${styled.fontSize}px ${FONT_STACK}`;
   };
