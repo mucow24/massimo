@@ -655,7 +655,10 @@ refinement (equidistant / tens) → build guides. Polygon vertices get their own
   before a token escapes it to literal text (`\|a|` renders "|a|").
 - **`parseFormattedLine`** additionally parses HTML-like formatting tags —
   `<b>` (two steps up the shipped weight ladder), `<i>`, `<u>`/`<s>` (drawn as explicit `<line>`s),
-  `<color=…>` (named / `#hex` / `0xhex`), and the glyph shortcuts `<air>` ✈ / `<xfer>` ↔ — threading
+  `<color=…>` (named / `#hex` / `0xhex`), `<w=…>` font weight (a shipped weight name like
+  `<w=Light>` = absolute, or `<w=+2>`/`<w=-1>` = signed ladder steps from the label's base weight;
+  innermost `<w>` wins, invalid values stay literal — see `resolveRunWeight`/`parseWeightToken`),
+  and the glyph shortcuts `<air>` ✈ / `<xfer>` ↔ — threading
   the open-tag state across `\n` lines and column wraps until closed. Unknown tags stay literal
   text. Both free-floating text labels (`LabelView`) and station labels (`renderStationLabelText`)
   render these tags; the inline rename editor shows the raw tokens (`literalBullets`). Free-floating

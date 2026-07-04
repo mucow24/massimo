@@ -154,6 +154,15 @@ describe('measureTextLabel — formatting tags', () => {
     expect(m.lines[1].entryStyle?.bold).toBe(1);
   });
 
+  it('carries an open <w=…> weight across newlines and exposes it as entry state', () => {
+    const m = measureTextLabel(makeTextLabel({ id: 'g', text: '<w=Light>a\nb</w>c' }));
+    expect(m.lines[0].segments[0]).toMatchObject({ value: 'a', style: { weight: 300 } });
+    expect(m.lines[1].segments[0]).toMatchObject({ value: 'b', style: { weight: 300 } });
+    expect(m.lines[1].segments[1]).toMatchObject({ value: 'c' });
+    expect(m.lines[0].entryStyle?.weights).toEqual([]);
+    expect(m.lines[1].entryStyle?.weights).toEqual([{ abs: 300 }]);
+  });
+
   it('carries an open tag across column-mode word wraps', () => {
     // jsdom has no canvas: widths fall back to len * fontSize * 0.55.
     // fontSize 10 → 5.5/char; 'aa bb' = 27.5 > 20 → wraps after 'aa'.

@@ -8,9 +8,9 @@ import {
   type MeasuredBBox,
 } from '../geometry/textMeasure';
 import { justifyLine } from '../geometry/labelJustify';
-import type { SegmentStyle } from '../geometry/labelTokens';
+import { resolveRunWeight, type SegmentStyle } from '../geometry/labelTokens';
 import { TEXT_LABEL_HIT_PAD } from '../geometry/stationBoundary';
-import { bolderWeight, FONT_STACK } from '../export/fonts';
+import { FONT_STACK } from '../export/fonts';
 import { useDoc } from '../state/store';
 import { useThemeColors } from '../state/theme';
 import { useViewportStore } from '../state/viewportStore';
@@ -168,11 +168,10 @@ export function LabelView({
         // Bullet bottom sits on the text baseline; see BASELINE_FRACTION.
         const baselineY = yTop + label.fontSize * BASELINE_FRACTION;
 
-        // Per-run style resolution for the formatting tags: <b> steps the
-        // weight up the shipped ladder, <i> ORs with the label's italic,
+        // Per-run style resolution for the formatting tags: <w=…>/<b> resolve
+        // the weight against the label's base, <i> ORs with the label's italic,
         // <color=…> overrides the day/night label color for that run only.
-        const runWeight = (style?: SegmentStyle) =>
-          style?.bold ? bolderWeight(label.weight) : label.weight;
+        const runWeight = (style?: SegmentStyle) => resolveRunWeight(label.weight, style);
         const runItalic = (style?: SegmentStyle) => label.italic || !!style?.italic;
         const runFill = (style?: SegmentStyle) => style?.color ?? labelColor;
         const runAdvance = (s: string, style?: SegmentStyle) =>

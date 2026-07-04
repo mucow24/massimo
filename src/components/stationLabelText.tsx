@@ -1,8 +1,7 @@
 import type { ReactNode } from 'react';
 import { Line } from '../model/types';
-import { hasFormattedToken, type SegmentStyle } from '../geometry/labelTokens';
+import { hasFormattedToken, resolveRunWeight, type SegmentStyle } from '../geometry/labelTokens';
 import { BASELINE_FRACTION, LINE_HEIGHT, measureTextLabel } from '../geometry/textMeasure';
-import { bolderWeight } from '../export/fonts';
 import { InlineBullet } from './InlineBullet';
 
 export interface RenderLabelTextArgs {
@@ -191,9 +190,9 @@ export function renderStationLabelText({
   const lineSpacing = fontSize * LINE_HEIGHT * lead;
 
   // Per-run style resolution for the inline formatting tags, mirroring
-  // LabelView: <b> steps the rendered weight up the shipped ladder, <i> ORs with
-  // the label's base italic, <color=…> overrides the fill for that run only.
-  const runWeight = (style?: SegmentStyle) => (style?.bold ? bolderWeight(fontWeight) : fontWeight);
+  // LabelView: <w=…>/<b> resolve the weight against the label's base, <i> ORs
+  // with the label's base italic, <color=…> overrides the fill for that run only.
+  const runWeight = (style?: SegmentStyle) => resolveRunWeight(fontWeight, style);
   const runItalic = (style?: SegmentStyle) => fontStyle === 'italic' || !!style?.italic;
   const runFill = (style?: SegmentStyle) => style?.color ?? fill;
 

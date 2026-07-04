@@ -1,4 +1,5 @@
 import type { RouteBulletShape } from '../model/types';
+import { bolderWeight, parseWeightToken, stepWeight } from '../export/fonts';
 
 /**
  * Resolved inline style of a text segment, produced by `parseFormattedLine`
@@ -13,7 +14,25 @@ export interface SegmentStyle {
   strike: boolean;
   /** Resolved CSS color (named or #hex); absent = inherit the label color. */
   color?: string;
+  /**
+   * Absolute weight from an open `<w=Name>` — a shipped CSS weight that
+   * overrides the label's base weight for this run. Mutually exclusive with
+   * `weightStep`; both absent = inherit the base weight.
+   */
+  weight?: number;
+  /**
+   * Relative weight from an open `<w=±N>`: a signed number of steps along the
+   * shipped weight ladder, applied to the label's BASE weight (not compounding
+   * with enclosing weight tags). Innermost `<w>` wins.
+   */
+  weightStep?: number;
 }
+
+/**
+ * One entry in the `<w=…>` open-tag stack: an absolute shipped weight
+ * (`<w=Name>`) or a signed ladder step (`<w=±N>`). Innermost (top) wins.
+ */
+type WeightFrame = { abs: number } | { rel: number };
 
 export type LabelSegment =
   | { kind: 'text'; value: string; style?: SegmentStyle }
@@ -31,10 +50,11 @@ export interface InlineStyleState {
   underline: number;
   strike: number;
   colors: string[];
+  weights: WeightFrame[];
 }
 
 export function emptyStyleState(): InlineStyleState {
-  return { bold: 0, italic: 0, underline: 0, strike: 0, colors: [] };
+  return { bold: 0, italic: 0, underline: 0, strike: 0, colors: [], weights: [] };
 }
 
 /**
@@ -79,14 +99,16 @@ const BULLET_GROUP_KEYS = Object.keys(BULLET_VARIANTS);
 
 /**
  * Formatting tag grammar (labels only): `<b>`/`<i>`/`<u>`/`<s>` with `</...>`
- * closers, `<color=VALUE>`/`</color>`, and the self-closing glyph shortcuts
- * `<air>` (✈) and `<xfer>` (↔). Tag names are lowercase; anything else
- * (`<q>`, `<3`, `a < b`) stays literal text. Color values can't contain
- * spaces, angle brackets, or newlines.
+ * closers, `<color=VALUE>`/`</color>`, `<w=VALUE>`/`</w>` (font weight), and
+ * the self-closing glyph shortcuts `<air>` (✈) and `<xfer>` (↔). Tag names are
+ * lowercase; anything else (`<q>`, `<3`, `a < b`) stays literal text. Color and
+ * weight values can't contain spaces, angle brackets, or newlines; an invalid
+ * weight value (see `parseWeightToken`) keeps the tag as literal text.
  */
 const TAG_ALTS =
   `<(?<open>[bius])>|<\\/(?<close>[bius])>|` +
-  `<color=(?<color>[^<> \\n]+)>|(?<colorClose><\\/color>)|(?<air><air>)|(?<xfer><xfer>)`;
+  `<color=(?<color>[^<> \\n]+)>|(?<colorClose><\\/color>)|` +
+  `<w=(?<weight>[^<> \\n]+)>|(?<weightClose><\\/w>)|(?<air><air>)|(?<xfer><xfer>)`;
 
 const BULLET_TOKEN_RE = new RegExp(`(?<esc>\\\\)?(?:${BULLET_ALTS})`, 'g');
 const FORMATTED_TOKEN_RE = new RegExp(`(?<esc>\\\\)?(?:${BULLET_ALTS}|${TAG_ALTS})`, 'g');
@@ -117,7 +139,16 @@ function normalizeColor(value: string): string | null {
 
 function styleOf(st: InlineStyleState): SegmentStyle | undefined {
   const color = st.colors.length > 0 ? st.colors[st.colors.length - 1] : undefined;
-  if (!st.bold && !st.italic && !st.underline && !st.strike && color === undefined) {
+  // Innermost open <w> wins; relative steps do NOT compound with enclosing ones.
+  const wTop = st.weights.length > 0 ? st.weights[st.weights.length - 1] : undefined;
+  if (
+    !st.bold &&
+    !st.italic &&
+    !st.underline &&
+    !st.strike &&
+    color === undefined &&
+    wTop === undefined
+  ) {
     return undefined;
   }
   const style: SegmentStyle = {
@@ -127,6 +158,10 @@ function styleOf(st: InlineStyleState): SegmentStyle | undefined {
     strike: st.strike > 0,
   };
   if (color !== undefined) style.color = color;
+  if (wTop !== undefined) {
+    if ('abs' in wTop) style.weight = wTop.abs;
+    else style.weightStep = wTop.rel;
+  }
   return style;
 }
 
@@ -143,7 +178,7 @@ function scanLine(
   state: InlineStyleState | null,
 ): { segments: LabelSegment[]; state: InlineStyleState | null } {
   const st = state
-    ? { ...state, colors: [...state.colors] } // never mutate the caller's state
+    ? { ...state, colors: [...state.colors], weights: [...state.weights] } // never mutate the caller's state
     : null;
   const segments: LabelSegment[] = [];
   let buffer = '';
@@ -196,6 +231,19 @@ function scanLine(
         flush();
         st!.colors.pop();
       }
+    } else if (g.weight !== undefined) {
+      const parsed = parseWeightToken(g.weight);
+      if (parsed === null) {
+        buffer += m[0]; // invalid value: keep the tag visible as literal text
+      } else {
+        flush();
+        st!.weights.push(parsed);
+      }
+    } else if (g.weightClose) {
+      if (st!.weights.length > 0) {
+        flush();
+        st!.weights.pop();
+      }
     } else if (g.air) {
       buffer += AIR_GLYPH;
     } else if (g.xfer) {
@@ -233,11 +281,27 @@ export function parseFormattedLine(
 }
 
 /**
+ * Resolve the rendered font weight of a styled run against the label's base
+ * weight. `<w=Name>` sets an absolute weight; `<w=±N>` steps the base along the
+ * shipped ladder; `<b>` adds two steps on top of either. Shared by the renderer
+ * (`LabelView`), the station-label renderer (`stationLabelText`), and the
+ * measurer (`textMeasure`) so the box always matches the glyphs. No style → the
+ * base weight unchanged.
+ */
+export function resolveRunWeight(baseWeight: number, style?: SegmentStyle): number {
+  if (!style) return baseWeight;
+  const anchored =
+    style.weight ??
+    (style.weightStep !== undefined ? stepWeight(baseWeight, style.weightStep) : baseWeight);
+  return style.bold ? bolderWeight(anchored) : anchored;
+}
+
+/**
  * Quick test: does this (possibly multi-line) text contain any inline token —
  * a bullet, an escape sequence, or a formatting tag / glyph shortcut? Renderers
  * use it to pick the plain fast path over segment-aware layout: anything the
  * segment scanner would rewrite (a bullet circle, a dropped backslash, a
- * `<b>`/`<color=…>` style change, an `<air>`/`<xfer>` glyph) forces the
+ * `<b>`/`<color=…>`/`<w=…>` style change, an `<air>`/`<xfer>` glyph) forces the
  * per-segment path. Unknown tags (`<q>`, `<A>`) and stray brackets stay literal
  * and don't trip it, matching what `parseFormattedLine` actually rewrites.
  */

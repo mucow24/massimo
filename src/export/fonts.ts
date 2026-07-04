@@ -22,6 +22,8 @@
  * string is left untouched, so each runtime font fetch must apply the base.
  */
 
+import type { TextLabelWeight } from '../model/types';
+
 export const FONT_FAMILY = 'Helvetica Neue';
 
 // Font stack for all on-screen + exported map text. Helvetica Neue first (the
@@ -67,18 +69,58 @@ export const FONT_TABLE: FontFaceSpec[] = [
 
 const AVAILABLE_WEIGHTS = [100, 200, 300, 400, 500, 700, 800, 900];
 
+// Display name ↔ shipped Helvetica Neue weight. Single source of truth for the
+// weight dropdowns (re-exported as `transforms.LABEL_WEIGHT_NAMES`) and the
+// `<w=Name>` inline label tag. Lives with the font faces because the names ARE
+// the shipped faces; no 600 entry — no SemiBold face.
+export const LABEL_WEIGHT_NAMES: readonly { value: TextLabelWeight; name: string }[] = [
+  { value: 100, name: 'UltraLight' },
+  { value: 200, name: 'Thin' },
+  { value: 300, name: 'Light' },
+  { value: 400, name: 'Roman' },
+  { value: 500, name: 'Medium' },
+  { value: 700, name: 'Bold' },
+  { value: 800, name: 'Heavy' },
+  { value: 900, name: 'Black' },
+] as const;
+
+const WEIGHT_NAME_TO_VALUE = new Map(
+  LABEL_WEIGHT_NAMES.map((w) => [w.name.toLowerCase(), w.value]),
+);
+
 /**
- * The `<b>` formatting tag's weight: two steps up the SHIPPED weight ladder,
- * clamped at 900. "Two steps" rather than +200 because the set has no 600
- * face — numeric +200 from Regular would land between Medium and Bold and
- * every consumer (screen CSS, canvas measurement, PDF face embedding) would
- * snap it differently. Stepping the ladder keeps them all on one real face:
- * 400 → 700, 300 → 500, 500 → 800.
+ * Shift a weight `steps` positions along the SHIPPED weight ladder, clamped at
+ * both ends. Stepping the ladder (rather than adding ±100) is what keeps every
+ * consumer — screen CSS, canvas measurement, PDF face embedding — on one real
+ * face: the set has no 600, so a numeric ±200 from Regular would land between
+ * Medium and Bold and each consumer would snap it differently. Off-ladder input
+ * is first normalized to the nearest shipped weight.
  */
-export function bolderWeight(weight: number): number {
+export function stepWeight(weight: number, steps: number): number {
   const i = AVAILABLE_WEIGHTS.indexOf(weight);
   const from = i >= 0 ? i : AVAILABLE_WEIGHTS.indexOf(normalizeWeight(String(weight)));
-  return AVAILABLE_WEIGHTS[Math.min(from + 2, AVAILABLE_WEIGHTS.length - 1)];
+  return AVAILABLE_WEIGHTS[Math.max(0, Math.min(from + steps, AVAILABLE_WEIGHTS.length - 1))];
+}
+
+/**
+ * The `<b>` formatting tag's weight: two steps up the shipped ladder (400 → 700,
+ * 300 → 500, 500 → 800), clamped at Black.
+ */
+export function bolderWeight(weight: number): number {
+  return stepWeight(weight, 2);
+}
+
+/**
+ * Parse the value of a `<w=…>` inline label tag into either an absolute shipped
+ * weight (a name from `LABEL_WEIGHT_NAMES`, case-insensitive) or a relative
+ * ladder step (`+N` / `-N`, sign required). Anything else — an unknown name, a
+ * bare/unsigned number like `700` or `2`, empty — returns null so the parser
+ * keeps the tag as literal text, matching an invalid `<color=…>`.
+ */
+export function parseWeightToken(value: string): { abs: number } | { rel: number } | null {
+  if (/^[+-]\d+$/.test(value)) return { rel: Number(value) };
+  const abs = WEIGHT_NAME_TO_VALUE.get(value.toLowerCase());
+  return abs !== undefined ? { abs } : null;
 }
 
 /**

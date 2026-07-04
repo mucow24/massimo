@@ -521,6 +521,19 @@ describe('<StationView /> — inline formatting tags in station names', () => {
     expect(runByContent(c, ' plain')?.getAttribute('font-weight')).toBe('400');
   });
 
+  it('renders an absolute <w=Name> at that weight, overriding the base', () => {
+    const c = renderName('<w=Light>L</w> plain');
+    expect(runByContent(c, 'L')?.getAttribute('font-weight')).toBe('300');
+    expect(runByContent(c, ' plain')?.getAttribute('font-weight')).toBe('400');
+  });
+
+  it('renders a relative <w=+N>/<w=-N> as a step from the base weight', () => {
+    const up = renderName('<w=+2>up</w>');
+    expect(runByContent(up, 'up')?.getAttribute('font-weight')).toBe('700'); // 400 → 700
+    const down = renderName('<w=-1>dn</w>');
+    expect(runByContent(down, 'dn')?.getAttribute('font-weight')).toBe('300'); // 400 → 300
+  });
+
   it('renders <i> as an italic run, leaving the rest upright', () => {
     const c = renderName('<i>lean</i> up');
     expect(runByContent(c, 'lean')?.getAttribute('font-style')).toBe('italic');

@@ -3,6 +3,8 @@ import {
   FONT_TABLE,
   FONT_FAMILY,
   bolderWeight,
+  stepWeight,
+  parseWeightToken,
   fontUrl,
   normalizeWeight,
   collectUsedFontFaces,
@@ -24,6 +26,51 @@ describe('bolderWeight', () => {
   it('clamps at the heaviest shipped weight', () => {
     expect(bolderWeight(800)).toBe(900);
     expect(bolderWeight(900)).toBe(900);
+  });
+});
+
+describe('stepWeight', () => {
+  it('returns the weight unchanged at zero steps', () => {
+    expect(stepWeight(400, 0)).toBe(400);
+    expect(stepWeight(300, 0)).toBe(300);
+  });
+
+  it('steps up and down the shipped ladder (skipping the absent 600)', () => {
+    expect(stepWeight(400, 2)).toBe(700);
+    expect(stepWeight(400, -1)).toBe(300);
+    expect(stepWeight(500, 1)).toBe(700);
+    expect(stepWeight(700, -1)).toBe(500);
+  });
+
+  it('clamps at both ends of the ladder', () => {
+    expect(stepWeight(900, 3)).toBe(900);
+    expect(stepWeight(100, -3)).toBe(100);
+  });
+
+  it('normalizes an off-ladder weight before stepping', () => {
+    // 600 has no face → nearest shipped is 500, then +1 → 700.
+    expect(stepWeight(600, 1)).toBe(700);
+  });
+});
+
+describe('parseWeightToken', () => {
+  it('resolves a shipped weight name (case-insensitive) to an absolute weight', () => {
+    expect(parseWeightToken('Light')).toEqual({ abs: 300 });
+    expect(parseWeightToken('light')).toEqual({ abs: 300 });
+    expect(parseWeightToken('BLACK')).toEqual({ abs: 900 });
+    expect(parseWeightToken('Roman')).toEqual({ abs: 400 });
+  });
+
+  it('reads a signed number as a relative ladder step', () => {
+    expect(parseWeightToken('+2')).toEqual({ rel: 2 });
+    expect(parseWeightToken('-1')).toEqual({ rel: -1 });
+  });
+
+  it('rejects unknown names and bare/unsigned numbers', () => {
+    expect(parseWeightToken('Chunky')).toBeNull();
+    expect(parseWeightToken('700')).toBeNull();
+    expect(parseWeightToken('2')).toBeNull();
+    expect(parseWeightToken('')).toBeNull();
   });
 });
 
