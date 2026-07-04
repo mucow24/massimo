@@ -233,14 +233,17 @@ export function parseFormattedLine(
 }
 
 /**
- * Quick test: does this (possibly multi-line) text contain any bullet token
- * or escape sequence? Renderers use it to pick the plain fast path over
- * segment-aware layout — escaped tokens count because the segment path is
- * what drops their backslash.
+ * Quick test: does this (possibly multi-line) text contain any inline token —
+ * a bullet, an escape sequence, or a formatting tag / glyph shortcut? Renderers
+ * use it to pick the plain fast path over segment-aware layout: anything the
+ * segment scanner would rewrite (a bullet circle, a dropped backslash, a
+ * `<b>`/`<color=…>` style change, an `<air>`/`<xfer>` glyph) forces the
+ * per-segment path. Unknown tags (`<q>`, `<A>`) and stray brackets stay literal
+ * and don't trip it, matching what `parseFormattedLine` actually rewrites.
  */
-export function hasInlineToken(text: string): boolean {
-  BULLET_TOKEN_RE.lastIndex = 0;
-  return BULLET_TOKEN_RE.test(text);
+export function hasFormattedToken(text: string): boolean {
+  FORMATTED_TOKEN_RE.lastIndex = 0;
+  return FORMATTED_TOKEN_RE.test(text);
 }
 
 // ---------- Legacy-syntax migration ----------

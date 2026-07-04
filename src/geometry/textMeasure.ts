@@ -4,7 +4,6 @@ import {
   emptyStyleState,
   inlineBulletDiameter,
   parseFormattedLine,
-  parseLabelLine,
   type InlineStyleState,
   type LabelSegment,
   type SegmentStyle,
@@ -27,13 +26,6 @@ export interface StyledText {
    * its textarea shows the raw tokens, so the box must be sized to fit them.
    */
   literalBullets?: boolean;
-  /**
-   * Parse only bullet tokens + escapes; formatting tags (`<b>`, `<color=…>`,
-   * …) stay literal text. Station-name callers set this — formatting is a
-   * text-label-only feature. Absent/false = full tag parsing, which is what
-   * TextLabel callers get when they pass the label straight through.
-   */
-  bulletsOnly?: boolean;
   /**
    * Line-spacing multiplier between lines (default 1 = the 1.2em LINE_HEIGHT
    * spacing). Affects height only; a single line is one line-height tall at
@@ -145,7 +137,7 @@ const CACHE_LIMIT = 256;
 const cache = new Map<string, MeasuredBBox>();
 
 function cacheKey(styled: StyledText): string {
-  const parseMode = styled.literalBullets ? 'L' : styled.bulletsOnly ? 's' : 'f';
+  const parseMode = styled.literalBullets ? 'L' : 'f';
   const width = styled.width ?? 0;
   const leading = styled.leading ?? 1;
   const tracking = styled.tracking ?? 0;
@@ -238,7 +230,7 @@ export function measureAdvance(
   return measureTextSegment(text, fontSize, getCtx(), fontDecl, letterSpacingPx).advance;
 }
 
-type ParseMode = 'literal' | 'bullets' | 'formatted';
+type ParseMode = 'literal' | 'formatted';
 
 function computeLineMetrics(
   raw: string,
@@ -249,15 +241,13 @@ function computeLineMetrics(
   mode: ParseMode,
   entry: InlineStyleState | null,
 ): ParsedLine {
-  // Edit mode measures the raw "|CODE|" text; station names parse bullets
-  // only; text labels additionally parse formatting tags, threading the
-  // open-tag state from line to line.
+  // Edit mode measures the raw "|CODE|" text as-is; every other caller parses
+  // the full inline grammar (bullets + formatting tags), threading the open-tag
+  // state from line to line.
   let segments: LabelSegment[];
   let exit: InlineStyleState | null = null;
   if (mode === 'literal') {
     segments = raw.length === 0 ? [] : [{ kind: 'text', value: raw }];
-  } else if (mode === 'bullets') {
-    segments = parseLabelLine(raw);
   } else {
     const r = parseFormattedLine(raw, entry ?? emptyStyleState());
     segments = r.segments;
@@ -369,11 +359,7 @@ export function measureTextLabel(styled: StyledText): MeasuredBBox {
   if (hit) return hit;
 
   const measureCtx = getCtx();
-  const mode: ParseMode = styled.literalBullets
-    ? 'literal'
-    : styled.bulletsOnly
-      ? 'bullets'
-      : 'formatted';
+  const mode: ParseMode = styled.literalBullets ? 'literal' : 'formatted';
   const letterSpacingPx = (styled.tracking ?? 0) * styled.fontSize;
   // Measure with the SAME stack the canvas renders (incl. the symbol fallback),
   // so a symbol's measured advance matches its drawn advance — otherwise the
