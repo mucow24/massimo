@@ -491,6 +491,88 @@ describe('<StationView /> — inline bullets in station names', () => {
   });
 });
 
+describe('<StationView /> — inline formatting tags in station names', () => {
+  // Find the rendered <text> run whose content matches, skipping the inline
+  // bullet badges (which nest their own <text>).
+  const runByContent = (c: HTMLElement, content: string) =>
+    Array.from(c.querySelectorAll('text'))
+      .filter((t) => !t.closest('[data-inline-bullet]'))
+      .find((t) => t.textContent === content);
+
+  function renderName(
+    name: string,
+    lines: Record<string, ReturnType<typeof makeLine>> = {},
+  ): HTMLElement {
+    const station = makeStation({ id: 's1', name, x: 100, y: 100 });
+    const { container } = render(
+      <svg>
+        <StationView station={station} lines={lines} zoom={1} onStartDrag={vi.fn()} layer="label" />
+      </svg>,
+    );
+    return container;
+  }
+
+  it('renders <b> two ladder steps up, leaving the rest at the base weight (off the tspan path)', () => {
+    const c = renderName('<b>Bold</b> plain');
+    // A tagged name routes through the per-segment path — never the single
+    // <text> + <tspan>s plain path.
+    expect(c.querySelectorAll('tspan')).toHaveLength(0);
+    expect(runByContent(c, 'Bold')?.getAttribute('font-weight')).toBe('700'); // 400 → 700
+    expect(runByContent(c, ' plain')?.getAttribute('font-weight')).toBe('400');
+  });
+
+  it('renders an absolute <w=Name> at that weight, overriding the base', () => {
+    const c = renderName('<w=Light>L</w> plain');
+    expect(runByContent(c, 'L')?.getAttribute('font-weight')).toBe('300');
+    expect(runByContent(c, ' plain')?.getAttribute('font-weight')).toBe('400');
+  });
+
+  it('renders a relative <w=+N>/<w=-N> as a step from the base weight', () => {
+    const up = renderName('<w=+2>up</w>');
+    expect(runByContent(up, 'up')?.getAttribute('font-weight')).toBe('700'); // 400 → 700
+    const down = renderName('<w=-1>dn</w>');
+    expect(runByContent(down, 'dn')?.getAttribute('font-weight')).toBe('300'); // 400 → 300
+  });
+
+  it('renders <i> as an italic run, leaving the rest upright', () => {
+    const c = renderName('<i>lean</i> up');
+    expect(runByContent(c, 'lean')?.getAttribute('font-style')).toBe('italic');
+    // Upright runs omit font-style entirely (matches the plain-label default).
+    expect(runByContent(c, ' up')?.getAttribute('font-style')).toBeNull();
+  });
+
+  it('renders <color=...> as the run fill, leaving other runs on the label color', () => {
+    const c = renderName('<color=red>R</color>N');
+    expect(runByContent(c, 'R')?.getAttribute('fill')).toBe('red');
+    expect(runByContent(c, 'N')?.getAttribute('fill')).toBe('#111111'); // light-mode label
+  });
+
+  it('draws <u>/<s> as explicit decoration lines, tagged apart from the hover underline', () => {
+    const c = renderName('<u>under</u> <s>gone</s>');
+    expect(c.querySelectorAll('line[data-text-decoration="underline"]')).toHaveLength(1);
+    expect(c.querySelectorAll('line[data-text-decoration="strike"]')).toHaveLength(1);
+  });
+
+  it('stacks <b> on top of the rendered weight (hovered 700 → 900)', () => {
+    const station = makeStation({ id: 's1', name: '<b>Zoo</b>', x: 0, y: 0 });
+    useSelection.setState({ ...useSelection.getState(), hoveredStationId: station.id });
+    const { container } = render(
+      <svg>
+        <StationView station={station} lines={{}} zoom={1} onStartDrag={vi.fn()} layer="label" />
+      </svg>,
+    );
+    expect(runByContent(container, 'Zoo')?.getAttribute('font-weight')).toBe('900');
+  });
+
+  it('substitutes <air> with the plane glyph', () => {
+    const c = renderName('Fly <air>');
+    const hasGlyph = Array.from(c.querySelectorAll('text')).some((t) =>
+      (t.textContent ?? '').includes('✈'),
+    );
+    expect(hasGlyph).toBe(true);
+  });
+});
+
 describe('<StationView /> — dot layer renders at cell-grid positions', () => {
   it('every dot sits at stopPosWorld(cell, station) — no neighbor-aware nudging', () => {
     // Mix of cardinal and diagonal orientations. Each dot's cx/cy is the

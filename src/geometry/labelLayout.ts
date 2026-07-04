@@ -215,9 +215,11 @@ export function labelLayoutLocal(
     // Per-station italic ORs with the doc-wide default, matching the renderer.
     italic: style.italic || !!station.labelItalic,
     literalBullets: style.literalBullets,
-    // Station names parse bullets only — formatting tags are a text-label
-    // feature and must stay literal here (matches renderStationLabelText).
-    bulletsOnly: true,
+    // Station names parse the full inline grammar (bullets + formatting tags),
+    // so a "<b>Foo</b>" name measures at its rendered bold-"Foo" width, not the
+    // literal tag characters — the hit rect / wash silhouette then hugs the
+    // painted glyphs (matches renderStationLabelText). The edit box still forces
+    // the raw-token width via `literalBullets` above.
     // Global leading/tracking: tracking widens the measured ink; leading feeds
     // the height math below (measureTextLabel returns a leaded height too, but
     // the vertical metrics here are derived independently).

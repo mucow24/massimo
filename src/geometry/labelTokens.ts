@@ -1,5 +1,5 @@
 import type { RouteBulletShape } from '../model/types';
-import { parseWeightToken, stepWeight } from '../export/fonts';
+import { bolderWeight, parseWeightToken, stepWeight } from '../export/fonts';
 
 /**
  * Resolved inline style of a text segment, produced by `parseFormattedLine`
@@ -284,26 +284,30 @@ export function parseFormattedLine(
  * Resolve the rendered font weight of a styled run against the label's base
  * weight. `<w=Name>` sets an absolute weight; `<w=±N>` steps the base along the
  * shipped ladder; `<b>` adds two steps on top of either. Shared by the renderer
- * (`LabelView`) and the measurer (`textMeasure`) so the box always matches the
- * glyphs. No style → the base weight unchanged.
+ * (`LabelView`), the station-label renderer (`stationLabelText`), and the
+ * measurer (`textMeasure`) so the box always matches the glyphs. No style → the
+ * base weight unchanged.
  */
 export function resolveRunWeight(baseWeight: number, style?: SegmentStyle): number {
   if (!style) return baseWeight;
   const anchored =
     style.weight ??
     (style.weightStep !== undefined ? stepWeight(baseWeight, style.weightStep) : baseWeight);
-  return style.bold ? stepWeight(anchored, 2) : anchored;
+  return style.bold ? bolderWeight(anchored) : anchored;
 }
 
 /**
- * Quick test: does this (possibly multi-line) text contain any bullet token
- * or escape sequence? Renderers use it to pick the plain fast path over
- * segment-aware layout — escaped tokens count because the segment path is
- * what drops their backslash.
+ * Quick test: does this (possibly multi-line) text contain any inline token —
+ * a bullet, an escape sequence, or a formatting tag / glyph shortcut? Renderers
+ * use it to pick the plain fast path over segment-aware layout: anything the
+ * segment scanner would rewrite (a bullet circle, a dropped backslash, a
+ * `<b>`/`<color=…>`/`<w=…>` style change, an `<air>`/`<xfer>` glyph) forces the
+ * per-segment path. Unknown tags (`<q>`, `<A>`) and stray brackets stay literal
+ * and don't trip it, matching what `parseFormattedLine` actually rewrites.
  */
-export function hasInlineToken(text: string): boolean {
-  BULLET_TOKEN_RE.lastIndex = 0;
-  return BULLET_TOKEN_RE.test(text);
+export function hasFormattedToken(text: string): boolean {
+  FORMATTED_TOKEN_RE.lastIndex = 0;
+  return FORMATTED_TOKEN_RE.test(text);
 }
 
 // ---------- Legacy-syntax migration ----------
