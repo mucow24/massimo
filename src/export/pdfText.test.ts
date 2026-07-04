@@ -81,6 +81,26 @@ describe('bakeLetterSpacing', () => {
     expect(t.getAttribute('letter-spacing')).toBeNull();
   });
 
+  it('measures the tracked advance while letter-spacing is still applied', () => {
+    // Real browsers fold letter-spacing into getComputedTextLength, so the
+    // tracked advance is only readable WHILE the attribute is present. Model
+    // that: the stub returns the tracked width with the attribute set and the
+    // untracked width once it's removed. The bake must read the tracked width
+    // (50) — reading after removal (42) would bake a compressed textLength and
+    // the run would drop its tracking in the PDF.
+    const TRACKED = 50; // 'abcd' + 2px after each of 4 glyphs over a 42px base
+    const UNTRACKED = 42;
+    const svg = document.createElementNS(SVG_NS, 'svg') as SVGSVGElement;
+    const el = document.createElementNS(SVG_NS, 'text') as SVGTextElement;
+    el.textContent = 'abcd';
+    el.setAttribute('letter-spacing', '2');
+    (el as unknown as { getComputedTextLength: () => number }).getComputedTextLength = () =>
+      el.getAttribute('letter-spacing') !== null ? TRACKED : UNTRACKED;
+    svg.appendChild(el);
+    bakeLetterSpacing(svg);
+    expect(el.getAttribute('textLength')).toBe('48'); // 50 − 2, not 42 − 2
+  });
+
   it('leaves untracked text alone', () => {
     const svg = svgWith([{ content: 'abcd' }, { content: 'ef', spacing: '0', computedLength: 20 }]);
     bakeLetterSpacing(svg);
