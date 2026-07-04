@@ -168,6 +168,8 @@ export function makeDoc(parts: {
   labelFontSize?: number;
   labelWeight?: TextLabelWeight;
   labelItalic?: boolean;
+  labelLeading?: number;
+  labelTracking?: number;
   activePalettes?: import('../model/palettes').PaletteId[];
   transferThickness?: number;
   transferColor?: string;
@@ -206,6 +208,8 @@ export function makeDoc(parts: {
     labelFontSize: parts.labelFontSize ?? 12,
     labelWeight: parts.labelWeight ?? 400,
     labelItalic: parts.labelItalic ?? false,
+    labelLeading: parts.labelLeading ?? 1,
+    labelTracking: parts.labelTracking ?? 0,
     activePalettes: parts.activePalettes ?? ['mta'],
     transferThickness: parts.transferThickness ?? 2,
     transferColor: parts.transferColor ?? '#000000',

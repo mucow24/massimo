@@ -21,6 +21,8 @@ function useStationLabelLayout(station: Station, lines: Record<string, Line>) {
   const labelFontSize = useDoc((s) => s.labelFontSize);
   const labelWeight = useDoc((s) => s.labelWeight);
   const labelItalic = useDoc((s) => s.labelItalic);
+  const labelLeading = useDoc((s) => s.labelLeading);
+  const labelTracking = useDoc((s) => s.labelTracking);
   const hovered = useSelection((s) => s.hoveredStationId === station.id);
   // Resolve the rendered weight: doc default → +2 indices if the station's
   // own bold flag is on → +2 more indices when the station is hovered. Each
@@ -45,6 +47,8 @@ function useStationLabelLayout(station: Station, lines: Record<string, Line>) {
       fontSize: labelFontSize,
       weight: stationWeight,
       italic: labelItalic,
+      leading: labelLeading,
+      tracking: labelTracking,
     },
     undefined,
     stopHalfOf(lines),
@@ -55,6 +59,8 @@ function useStationLabelLayout(station: Station, lines: Record<string, Line>) {
     hovered,
     labelFontSize,
     labelItalic,
+    labelLeading,
+    labelTracking,
     stationWeight,
     renderedWeight,
     stationItalic,
@@ -77,7 +83,8 @@ export function StationStarterLabel({
   lines: Record<string, Line>;
   highlightColor: string;
 }) {
-  const { angle, rotationDeg, hovered, lineByService, lay } = useStationLabelLayout(station, lines);
+  const { angle, rotationDeg, hovered, labelLeading, labelTracking, lineByService, lay } =
+    useStationLabelLayout(station, lines);
   if (station.isWaypoint) return null;
   const strokeColor = legibleTextOn(highlightColor);
   return (
@@ -86,6 +93,8 @@ export function StationStarterLabel({
         text: station.name,
         fontSize: 12,
         fontWeight: 700,
+        leading: labelLeading,
+        tracking: labelTracking,
         fill: highlightColor,
         stroke: strokeColor,
         strokeWidth: 2,
@@ -123,6 +132,8 @@ export function StationHighlightLabel({
     rotationDeg,
     hovered,
     labelFontSize,
+    labelLeading,
+    labelTracking,
     renderedWeight,
     stationItalic,
     lineByService,
@@ -136,6 +147,8 @@ export function StationHighlightLabel({
         fontSize: labelFontSize,
         fontWeight: renderedWeight,
         fontStyle: stationItalic ? 'italic' : undefined,
+        leading: labelLeading,
+        tracking: labelTracking,
         textDecoration: hovered ? 'underline' : 'none',
         fill: highlightColor,
         anchorX: lay.anchorX,
@@ -178,6 +191,8 @@ export function StationLabel({
     hovered,
     labelFontSize,
     labelItalic,
+    labelLeading,
+    labelTracking,
     stationWeight,
     renderedWeight,
     stationItalic,
@@ -212,6 +227,8 @@ export function StationLabel({
           weight: stationWeight,
           italic: labelItalic,
           literalBullets: true,
+          leading: labelLeading,
+          tracking: labelTracking,
         },
         undefined,
         stopHalfOf(lines),
@@ -241,6 +258,8 @@ export function StationLabel({
           fontSize: labelFontSize,
           fontWeight: renderedWeight,
           fontStyle: stationItalic ? 'italic' : undefined,
+          leading: labelLeading,
+          tracking: labelTracking,
           textDecoration: hovered ? 'underline' : 'none',
           fill: themeColors.label,
           anchorX: lay.anchorX,

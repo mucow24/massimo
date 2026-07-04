@@ -45,6 +45,8 @@ export function StationHitArea({
   const labelFontSize = useDoc((s) => s.labelFontSize);
   const labelWeight = useDoc((s) => s.labelWeight);
   const labelItalic = useDoc((s) => s.labelItalic);
+  const labelLeading = useDoc((s) => s.labelLeading);
+  const labelTracking = useDoc((s) => s.labelTracking);
   const rotateLabel = useDoc((s) => s.rotateLabel);
   const { handlers, cursor, inHitlessMode } = useStationInteraction(station, onStartDrag, lines);
   const selection = useSelection();
@@ -67,6 +69,8 @@ export function StationHitArea({
       fontSize: labelFontSize,
       weight: resolveStationLabelWeight(labelWeight, station.labelBold),
       italic: labelItalic,
+      leading: labelLeading,
+      tracking: labelTracking,
     },
     undefined,
     stopHalf,

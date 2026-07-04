@@ -51,6 +51,8 @@ export function StationLayoutEditor({
   const labelFontSize = useDoc((s) => s.labelFontSize);
   const labelWeight = useDoc((s) => s.labelWeight);
   const labelItalic = useDoc((s) => s.labelItalic);
+  const labelLeading = useDoc((s) => s.labelLeading);
+  const labelTracking = useDoc((s) => s.labelTracking);
 
   // Ring accents flip with the theme (dark canvas needs the brightened
   // accent), matching the rest of the canvas feedback language.
@@ -79,6 +81,8 @@ export function StationLayoutEditor({
       fontSize: labelFontSize,
       weight: resolveStationLabelWeight(labelWeight, station.labelBold),
       italic: labelItalic,
+      leading: labelLeading,
+      tracking: labelTracking,
     },
     undefined,
     stopHalf,

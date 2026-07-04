@@ -87,6 +87,8 @@ const DOC_FIELDS = [
   'labelFontSize',
   'labelWeight',
   'labelItalic',
+  'labelLeading',
+  'labelTracking',
   'activePalettes',
   'transferThickness',
   'transferColor',
@@ -361,6 +363,8 @@ interface DocState extends MapDoc {
   setCurveRadius: (r: number) => void;
   setLabelFontSize: (n: number) => void;
   setLabelWeight: (w: TextLabelWeight) => void;
+  setLabelLeading: (n: number) => void;
+  setLabelTracking: (n: number) => void;
   setStationLabelBold: (stationId: StationId, bold: boolean) => void;
   setStationLabelItalic: (stationId: StationId, italic: boolean) => void;
   setLabelItalic: (i: boolean) => void;
@@ -614,6 +618,8 @@ export const useDoc = create<DocState>()(
         setCurveRadius: (r) => set((s) => T.setCurveRadius(s, r)),
         setLabelFontSize: (n) => set((s) => T.setLabelFontSize(s, n)),
         setLabelWeight: (w) => set((s) => T.setLabelWeight(s, w)),
+        setLabelLeading: (n) => set((s) => T.setLabelLeading(s, n)),
+        setLabelTracking: (n) => set((s) => T.setLabelTracking(s, n)),
         setStationLabelBold: (stationId, bold) =>
           set((s) => T.setStationLabelBold(s, stationId, bold)),
         setStationLabelItalic: (stationId, italic) =>

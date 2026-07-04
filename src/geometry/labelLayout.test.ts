@@ -654,6 +654,64 @@ describe('labelLayoutLocal — anchor distance after fix', () => {
   });
 });
 
+describe('labelLayoutLocal — leading & tracking', () => {
+  const HIT_PAD = 2;
+  const LINE_HEIGHT = 14.4; // 12px * 1.2
+
+  it('leading scales the between-line stacking, not a single line', () => {
+    // A one-line block is one line-height tall at any leading; each extra line
+    // adds one leading-scaled line-height. At leading 2 the two-line block's
+    // extra line contributes 2× the spacing.
+    const single = labelLayoutLocal(vStation({ name: 'Foo', valign: 'middle' }), {
+      ...DEFAULT_LABEL_STYLE,
+      leading: 2,
+    });
+    const singleDefault = labelLayoutLocal(vStation({ name: 'Foo', valign: 'middle' }), {
+      ...DEFAULT_LABEL_STYLE,
+      leading: 1,
+    });
+    // Single line: leading has no effect on height.
+    expect(single.hitH).toBeCloseTo(singleDefault.hitH, 5);
+
+    const twoLead1 = labelLayoutLocal(vStation({ name: 'Foo\nBar', valign: 'middle' }), {
+      ...DEFAULT_LABEL_STYLE,
+      leading: 1,
+    });
+    const twoLead2 = labelLayoutLocal(vStation({ name: 'Foo\nBar', valign: 'middle' }), {
+      ...DEFAULT_LABEL_STYLE,
+      leading: 2,
+    });
+    // The extra line's spacing doubles: hitH grows by exactly one LINE_HEIGHT.
+    expect(twoLead2.hitH - twoLead1.hitH).toBeCloseTo(LINE_HEIGHT, 5);
+    // And the leading-1 two-line block is the historical lineCount*LINE_HEIGHT.
+    expect(twoLead1.hitH).toBeCloseTo(2 * LINE_HEIGHT + 2 * HIT_PAD, 5);
+  });
+
+  it('leading 0 collapses a multi-line block to a single line-height', () => {
+    const collapsed = labelLayoutLocal(vStation({ name: 'Foo\nBar\nBaz', valign: 'middle' }), {
+      ...DEFAULT_LABEL_STYLE,
+      leading: 0,
+    });
+    expect(collapsed.hitH).toBeCloseTo(LINE_HEIGHT + 2 * HIT_PAD, 5);
+  });
+
+  it('tracking is threaded into the measurer, widening the hit box', () => {
+    // Style tracking must reach the width measurement. Under jsdom the measurer
+    // falls back to a heuristic that models letter-spacing, so a tracked label
+    // measures wider than an untracked one — a robust comparison that needs no
+    // canvas and no coupling to the heuristic constant.
+    const untracked = labelLayoutLocal(vStation({ name: 'Foo', valign: 'middle' }), {
+      ...DEFAULT_LABEL_STYLE,
+      tracking: 0,
+    });
+    const tracked = labelLayoutLocal(vStation({ name: 'Foo', valign: 'middle' }), {
+      ...DEFAULT_LABEL_STYLE,
+      tracking: 0.5,
+    });
+    expect(tracked.hitW).toBeGreaterThan(untracked.hitW);
+  });
+});
+
 describe('screenDeltaToLabelOffsets', () => {
   // Import here would shadow the top imports; pulled in at top of file.
   it('identity rotations: x maps to offset, y to offsetPerp', () => {
