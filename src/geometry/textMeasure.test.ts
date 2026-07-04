@@ -137,7 +137,7 @@ describe('measureTextLabel — formatting tags', () => {
     expect(tagged.width).toBeLessThan(literal.width);
   });
 
-  it('bulletsOnly mode leaves tags as literal text (station names)', () => {
+  it('bulletsOnly mode leaves tags as literal text', () => {
     const m = measureTextLabel({
       text: '<b>ab</b>',
       fontSize: 16,

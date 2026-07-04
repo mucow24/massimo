@@ -28,10 +28,10 @@ export interface StyledText {
    */
   literalBullets?: boolean;
   /**
-   * Parse only bullet tokens + escapes; formatting tags (`<b>`, `<color=…>`,
-   * …) stay literal text. Station-name callers set this — formatting is a
-   * text-label-only feature. Absent/false = full tag parsing, which is what
-   * TextLabel callers get when they pass the label straight through.
+   * Parse only bullet tokens + escapes; formatting tags (`<b>`, `<color=…>`, …)
+   * stay literal text. Absent/false = full tag parsing — what every in-tree
+   * label caller now gets (both free-floating text labels and station names).
+   * Kept as an opt-out for a bullets-without-tags grammar.
    */
   bulletsOnly?: boolean;
   /**

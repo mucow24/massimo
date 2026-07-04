@@ -1,7 +1,7 @@
 import { describe, it, expect } from 'vitest';
 import {
   emptyStyleState,
-  hasInlineToken,
+  hasFormattedToken,
   migrateLegacyInlineTokens,
   parseFormattedLine,
   parseLabelLine,
@@ -280,25 +280,37 @@ describe('parseFormattedLine (bullets + escapes + tags)', () => {
   });
 });
 
-describe('hasInlineToken', () => {
+describe('hasFormattedToken', () => {
   it('detects each bullet form anywhere in a multi-line text', () => {
-    expect(hasInlineToken('take the |A|')).toBe(true);
-    expect(hasInlineToken('take the [A]')).toBe(true);
-    expect(hasInlineToken('take the {A}')).toBe(true);
-    expect(hasInlineToken('first\nthen ||A|| home')).toBe(true);
+    expect(hasFormattedToken('take the |A|')).toBe(true);
+    expect(hasFormattedToken('take the [A]')).toBe(true);
+    expect(hasFormattedToken('take the {A}')).toBe(true);
+    expect(hasFormattedToken('first\nthen ||A|| home')).toBe(true);
   });
 
   it('detects escaped tokens (they need the segment path to drop the backslash)', () => {
-    expect(hasInlineToken('go \\|west| now')).toBe(true);
+    expect(hasFormattedToken('go \\|west| now')).toBe(true);
   });
 
-  it('is false for plain text, angle/paren brackets, and non-token pipes', () => {
-    expect(hasInlineToken('no bullets here')).toBe(false);
-    expect(hasInlineToken('take the <A>')).toBe(false);
-    expect(hasInlineToken('take the (A)')).toBe(false);
-    expect(hasInlineToken('empty || [] {}')).toBe(false);
-    expect(hasInlineToken('unclosed |A and [B')).toBe(false);
-    expect(hasInlineToken('a code cannot span |a\nb| lines')).toBe(false);
+  it('detects formatting tags and glyph shortcuts (station labels parse them now)', () => {
+    expect(hasFormattedToken('<b>bold</b>')).toBe(true);
+    expect(hasFormattedToken('a <i>lean</i> word')).toBe(true);
+    expect(hasFormattedToken('<u>u</u>')).toBe(true);
+    expect(hasFormattedToken('<s>gone</s>')).toBe(true);
+    expect(hasFormattedToken('<color=red>R</color>')).toBe(true);
+    expect(hasFormattedToken('fly <air> here')).toBe(true);
+    expect(hasFormattedToken('go <xfer> across')).toBe(true);
+  });
+
+  it('is false for plain text, unknown tags, and non-token brackets/pipes', () => {
+    expect(hasFormattedToken('no tokens here')).toBe(false);
+    expect(hasFormattedToken('take the <A>')).toBe(false); // uppercase: not a tag name
+    expect(hasFormattedToken('a < b')).toBe(false); // stray angle bracket
+    expect(hasFormattedToken('<q>hi</q>')).toBe(false); // unknown tag name
+    expect(hasFormattedToken('take the (A)')).toBe(false);
+    expect(hasFormattedToken('empty || [] {}')).toBe(false);
+    expect(hasFormattedToken('unclosed |A and [B')).toBe(false);
+    expect(hasFormattedToken('a code cannot span |a\nb| lines')).toBe(false);
   });
 });
 

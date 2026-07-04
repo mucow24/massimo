@@ -635,6 +635,16 @@ describe('labelLayoutLocal — hit-rect width hugs the rendered glyphs', () => {
     const large = base('Floptropolis', 20);
     expect(large.hitW).toBeGreaterThan(small.hitW);
   });
+
+  it('formatting tags are stripped to their styled run, not measured as literal characters', () => {
+    // "<b>Bold</b>" is 11 literal characters but renders as a 4-char bold run.
+    // Station labels now parse the same inline formatting tags as text labels,
+    // so the hit rect / wash silhouette hugs the rendered "Bold" — matching the
+    // painted glyphs — instead of ballooning to the literal tag text.
+    const tagged = base('<b>Bold</b>');
+    const plain = base('Bold');
+    expect(tagged.hitW).toBeCloseTo(plain.hitW, 5);
+  });
 });
 
 // Sanity-check the numeric anchor for the new bug-fix case so the gap is in

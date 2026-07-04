@@ -1,7 +1,8 @@
 import type { ReactNode } from 'react';
 import { Line } from '../model/types';
-import { hasInlineToken } from '../geometry/labelTokens';
+import { hasFormattedToken, type SegmentStyle } from '../geometry/labelTokens';
 import { BASELINE_FRACTION, LINE_HEIGHT, measureTextLabel } from '../geometry/textMeasure';
+import { bolderWeight } from '../export/fonts';
 import { InlineBullet } from './InlineBullet';
 
 export interface RenderLabelTextArgs {
@@ -76,12 +77,14 @@ export function renderStationLabelText({
   // Letter-spacing in user units, added after every glyph (SVG letter-spacing,
   // matching how the measurement models it).
   const letterSpacingPx = (tracking ?? 0) * fontSize;
-  // Tracking routes through the per-segment path even without bullets: that
-  // path emits one <text> per line, so the PDF export's letter-spacing bake
-  // (getComputedTextLength, per single-run <text>) stays correct. The plain
-  // single-<text>+<tspan>s path is kept byte-for-byte for the untracked common
-  // case (its multi-line getComputedTextLength would sum every line).
-  const perSegment = hasInlineToken(text) || letterSpacingPx !== 0;
+  // Inline tokens (bullets OR formatting tags) and tracking both route through
+  // the per-segment path: it emits one <text> per styled run, so per-run
+  // weight/italic/color/decorations paint correctly AND the PDF export's
+  // letter-spacing bake (getComputedTextLength, per single-run <text>) stays
+  // correct. The plain single-<text>+<tspan>s path is kept byte-for-byte for the
+  // untagged, untracked common case (its multi-line getComputedTextLength would
+  // sum every line).
+  const perSegment = hasFormattedToken(text) || letterSpacingPx !== 0;
   const lines = text.split('\n');
   // Underline as explicit <line> geometry instead of the SVG `text-decoration`
   // attribute. Chromium leaves one-pixel residue on rotated <text> when
@@ -92,13 +95,17 @@ export function renderStationLabelText({
   // Measure ink widths so the explicit underline matches the visible text
   // extent (the same width SVG's text-decoration would have drawn). The
   // measurement is cached, so calling it here for the plain path is cheap.
+  // Full-grammar measurement (no bulletsOnly): a "<b>Foo</b>" name parses into
+  // styled runs, so its segments carry the <b>/<i>/<color> styles the
+  // per-segment path paints. When the hover underline is showing this result is
+  // reused as `m` below, so it MUST be measured the same way the per-segment
+  // path is — otherwise a hovered tagged label would render un-styled.
   const measured = showUnderline
     ? measureTextLabel({
         text,
         fontSize,
         weight: fontWeight,
         italic: fontStyle === 'italic',
-        bulletsOnly: true,
         leading: lead,
         tracking,
       })
@@ -178,11 +185,17 @@ export function renderStationLabelText({
       fontSize,
       weight: fontWeight,
       italic: fontStyle === 'italic',
-      bulletsOnly: true,
       leading: lead,
       tracking,
     });
   const lineSpacing = fontSize * LINE_HEIGHT * lead;
+
+  // Per-run style resolution for the inline formatting tags, mirroring
+  // LabelView: <b> steps the rendered weight up the shipped ladder, <i> ORs with
+  // the label's base italic, <color=…> overrides the fill for that run only.
+  const runWeight = (style?: SegmentStyle) => (style?.bold ? bolderWeight(fontWeight) : fontWeight);
+  const runItalic = (style?: SegmentStyle) => fontStyle === 'italic' || !!style?.italic;
+  const runFill = (style?: SegmentStyle) => style?.color ?? fill;
 
   return (
     <g transform={`rotate(${rotationDeg} ${anchorX} ${anchorY})`} pointerEvents="none">
@@ -197,6 +210,7 @@ export function renderStationLabelText({
           const segCursor = cursor;
           cursor += seg.advance;
           if (seg.kind === 'text') {
+            const st = seg.style;
             nodes.push(
               <text
                 key={`${i}-${j}-t`}
@@ -205,10 +219,10 @@ export function renderStationLabelText({
                 textAnchor="start"
                 dominantBaseline="central"
                 fontSize={fontSize}
-                fontWeight={fontWeight}
-                fontStyle={fontStyle}
+                fontWeight={runWeight(st)}
+                fontStyle={runItalic(st) ? 'italic' : undefined}
                 letterSpacing={letterSpacingPx !== 0 ? letterSpacingPx : undefined}
-                fill={fill}
+                fill={runFill(st)}
                 stroke={stroke}
                 strokeWidth={strokeWidth}
                 paintOrder={paintOrder}
@@ -217,6 +231,42 @@ export function renderStationLabelText({
                 {seg.value}
               </text>,
             );
+            // <u>/<s> tag decorations for this run, as explicit <line> geometry
+            // (same reason as the hover underline: svg2pdf ignores
+            // text-decoration and Chromium leaks paint on rotated <text>). Tagged
+            // with data-text-decoration so they read apart from the hover
+            // underline. Offsets match LabelView for cross-label visual parity.
+            if (st && (st.underline || st.strike) && seg.advance > 0) {
+              const thickness = fontSize * 0.07;
+              if (st.underline) {
+                nodes.push(
+                  <line
+                    key={`${i}-${j}-tu`}
+                    data-text-decoration="underline"
+                    x1={segCursor}
+                    x2={segCursor + seg.advance}
+                    y1={baselineY + fontSize * 0.1}
+                    y2={baselineY + fontSize * 0.1}
+                    stroke={runFill(st)}
+                    strokeWidth={thickness}
+                  />,
+                );
+              }
+              if (st.strike) {
+                nodes.push(
+                  <line
+                    key={`${i}-${j}-ts`}
+                    data-text-decoration="strike"
+                    x1={segCursor}
+                    x2={segCursor + seg.advance}
+                    y1={baselineY - fontSize * 0.28}
+                    y2={baselineY - fontSize * 0.28}
+                    stroke={runFill(st)}
+                    strokeWidth={thickness}
+                  />,
+                );
+              }
+            }
           } else {
             const r = seg.diameter / 2;
             nodes.push(
