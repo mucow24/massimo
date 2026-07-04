@@ -90,15 +90,21 @@ export function bakeLetterSpacing(svg: SVGSVGElement): void {
   for (const text of svg.querySelectorAll('text')) {
     const spacing = parseFloat(text.getAttribute('letter-spacing') ?? '0') || 0;
     if (spacing === 0) continue;
-    text.removeAttribute('letter-spacing');
-    if ((text.textContent ?? '').length < 2) continue;
-    let advance: number;
-    try {
-      advance = text.getComputedTextLength();
-    } catch {
-      continue;
+    // getComputedTextLength folds in letter-spacing, so measure the tracked
+    // advance while the attribute is STILL applied — then drop it. Reading
+    // after removal would return the untracked advance and bake a compressed
+    // textLength (the run would lose its tracking in the PDF).
+    const multiChar = (text.textContent ?? '').length >= 2;
+    let advance = 0;
+    if (multiChar) {
+      try {
+        advance = text.getComputedTextLength();
+      } catch {
+        advance = 0;
+      }
     }
-    if (!(advance > 0)) continue;
+    text.removeAttribute('letter-spacing');
+    if (!multiChar || !(advance > 0)) continue;
     text.setAttribute('textLength', String(advance - spacing));
     text.setAttribute('lengthAdjust', 'spacing');
   }
