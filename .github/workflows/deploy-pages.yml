@@ -55,8 +55,34 @@ jobs:
     runs-on: ubuntu-latest
     environment:
       name: github-pages
-      url: ${{ steps.deployment.outputs.page_url }}
+      # Whichever attempt published wins; a skipped or failed attempt leaves its
+      # output empty, so `||` falls through to the attempt that set the URL.
+      url: ${{ steps.deploy1.outputs.page_url || steps.deploy2.outputs.page_url }}
     steps:
+      # actions/deploy-pages intermittently fails on a transient Pages-backend
+      # flake: "Deployment failed, try again later." on the first status poll, or
+      # a deployment stuck in `deployment_queued` until the 10-minute timeout.
+      # The build + artifact are fine; a manual re-run always clears it. So retry
+      # the deploy once automatically. `continue-on-error` lets the first attempt
+      # fail without failing the job; the retry re-creates and re-polls a fresh
+      # deployment (what a manual re-run does), and only it can fail the job.
       - name: Deploy to GitHub Pages
-        id: deployment
+        id: deploy1
+        continue-on-error: true
+        uses: actions/deploy-pages@v4
+        with:
+          # Half the default 10-minute timeout: a healthy deploy resolves in
+          # seconds, so a stuck `deployment_queued` should fail over to the
+          # retry after 5 minutes rather than burning the full 10.
+          timeout: 300000
+
+      - name: Pause before retrying the deploy
+        if: steps.deploy1.outcome == 'failure'
+        run: sleep 30
+
+      # The last attempt keeps the default 10-minute timeout — give the deploy
+      # maximum patience before declaring the whole job failed.
+      - name: Deploy to GitHub Pages (retry)
+        id: deploy2
+        if: steps.deploy1.outcome == 'failure'
         uses: actions/deploy-pages@v4
