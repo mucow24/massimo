@@ -32,6 +32,8 @@ export function StationSilhouette({
   const labelFontSize = useDoc((s) => s.labelFontSize);
   const labelWeight = useDoc((s) => s.labelWeight);
   const labelItalic = useDoc((s) => s.labelItalic);
+  const labelLeading = useDoc((s) => s.labelLeading);
+  const labelTracking = useDoc((s) => s.labelTracking);
   const lines = useDoc((s) => s.lines);
   const editingStationId = useSelection((s) => s.editingStationId);
   const themeColors = useThemeColors();
@@ -50,6 +52,8 @@ export function StationSilhouette({
       fontSize: labelFontSize,
       weight: resolveStationLabelWeight(labelWeight, station.labelBold),
       italic: labelItalic,
+      leading: labelLeading,
+      tracking: labelTracking,
     },
     stopHalfOf(lines),
   );

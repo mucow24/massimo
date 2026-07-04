@@ -162,6 +162,8 @@ export function useRectSelect(
         fontSize: doc.labelFontSize,
         weight: doc.labelWeight,
         italic: doc.labelItalic,
+        leading: doc.labelLeading,
+        tracking: doc.labelTracking,
       },
       stopHalfOf(doc.lines),
     );
@@ -212,6 +214,8 @@ export function useRectSelect(
         fontSize: doc.labelFontSize,
         weight: doc.labelWeight,
         italic: doc.labelItalic,
+        leading: doc.labelLeading,
+        tracking: doc.labelTracking,
       },
       stopHalfOf(doc.lines),
     );

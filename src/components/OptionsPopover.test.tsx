@@ -234,6 +234,74 @@ describe('<OptionsPopover />', () => {
     expect(useDoc.getState().labelItalic).toBe(false);
   });
 
+  describe('leading & tracking', () => {
+    it('contains a Leading slider with bounds [0, 2] step 0.05 that updates the store', async () => {
+      const user = userEvent.setup();
+      render(<Toolbar />);
+      await user.click(screen.getByRole('button', { name: 'Options' }));
+      const slider = screen.getByRole('slider', { name: /leading/i });
+      expect(slider).toHaveAttribute('min', '0');
+      expect(slider).toHaveAttribute('max', '2');
+      expect(slider).toHaveAttribute('step', '0.05');
+      expect(slider).toHaveValue('1'); // neutral default
+      fireEvent.change(slider, { target: { value: '1.5' } });
+      expect(useDoc.getState().labelLeading).toBe(1.5);
+    });
+
+    it('the Leading spinbutton accepts values above the slider max (no max attr)', async () => {
+      const user = userEvent.setup();
+      render(<Toolbar />);
+      await user.click(screen.getByRole('button', { name: 'Options' }));
+      const spin = screen.getByRole('spinbutton', { name: /leading/i });
+      expect(spin).toHaveAttribute('min', '0');
+      expect(spin).not.toHaveAttribute('max');
+      fireEvent.change(spin, { target: { value: '3' } });
+      expect(useDoc.getState().labelLeading).toBe(3);
+    });
+
+    it('marks the neutral leading (1) with a datalist detent tick', async () => {
+      const user = userEvent.setup();
+      render(<Toolbar />);
+      await user.click(screen.getByRole('button', { name: 'Options' }));
+      const slider = screen.getByRole('slider', { name: /leading/i });
+      const listId = slider.getAttribute('list');
+      expect(listId).toBeTruthy();
+      // useId() ids contain colons, so getElementById (not a CSS selector).
+      const option = document.getElementById(listId!)?.querySelector('option');
+      expect(option).toHaveAttribute('value', '1');
+    });
+
+    it('contains a Tracking slider with bounds [-0.1, 0.5] step 0.01 that updates the store', async () => {
+      const user = userEvent.setup();
+      render(<Toolbar />);
+      await user.click(screen.getByRole('button', { name: 'Options' }));
+      const slider = screen.getByRole('slider', { name: /tracking/i });
+      expect(slider).toHaveAttribute('min', '-0.1');
+      expect(slider).toHaveAttribute('max', '0.5');
+      expect(slider).toHaveAttribute('step', '0.01');
+      expect(slider).toHaveValue('0'); // neutral default
+      fireEvent.change(slider, { target: { value: '0.1' } });
+      expect(useDoc.getState().labelTracking).toBe(0.1);
+    });
+
+    it('the Tracking spinbutton clamps at the -0.1 floor', async () => {
+      const user = userEvent.setup();
+      render(<Toolbar />);
+      await user.click(screen.getByRole('button', { name: 'Options' }));
+      const spin = screen.getByRole('spinbutton', { name: /tracking/i });
+      fireEvent.change(spin, { target: { value: '-1' } });
+      expect(useDoc.getState().labelTracking).toBe(-0.1);
+    });
+
+    it('both sliders reflect externally-changed store values', () => {
+      useDoc.setState({ ...useDoc.getState(), labelLeading: 0.5, labelTracking: 0.3 });
+      render(<Toolbar />);
+      fireEvent.click(screen.getByRole('button', { name: 'Options' }));
+      expect(screen.getByRole('slider', { name: /leading/i })).toHaveValue('0.5');
+      expect(screen.getByRole('slider', { name: /tracking/i })).toHaveValue('0.3');
+    });
+  });
+
   describe('transfer styling', () => {
     it('contains a Transfer thickness slider with bounds [1, 14] that updates the store', async () => {
       const user = userEvent.setup();

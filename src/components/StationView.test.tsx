@@ -237,6 +237,59 @@ describe('<StationView /> — whitespace is not collapsed', () => {
   });
 });
 
+describe('<StationView /> — global label leading & tracking', () => {
+  function renderMultiline() {
+    const station = makeStation({ id: 's1', name: 'Foo\nBar', x: 0, y: 0 });
+    const { container } = render(
+      <svg>
+        <StationView station={station} lines={{}} zoom={1} onStartDrag={vi.fn()} layer="label" />
+      </svg>,
+    );
+    return container;
+  }
+
+  it('leading scales the plain-path line spacing (second tspan dy)', () => {
+    // fontSize 12 * LINE_HEIGHT 1.2 * leading = between-line dy.
+    useDoc.setState({ ...useDoc.getState(), labelLeading: 1 });
+    const single = renderMultiline();
+    const tspans1 = single.querySelectorAll('tspan');
+    expect(parseFloat(tspans1[1].getAttribute('dy')!)).toBeCloseTo(14.4, 5);
+
+    useDoc.setState({ ...useDoc.getState(), labelLeading: 2 });
+    const doubled = renderMultiline();
+    const tspans2 = doubled.querySelectorAll('tspan');
+    expect(parseFloat(tspans2[1].getAttribute('dy')!)).toBeCloseTo(28.8, 5);
+  });
+
+  it('untracked plain names keep the single <text> + <tspan>s structure', () => {
+    // Tracking 0 (the default) stays on the byte-for-byte plain path.
+    const container = renderMultiline();
+    expect(container.querySelectorAll('text')).toHaveLength(1);
+    expect(container.querySelectorAll('tspan')).toHaveLength(2);
+  });
+
+  it('tracking routes a plain name through the per-line path and sets letter-spacing', () => {
+    // A tracked label emits one <text> per line (so the PDF letter-spacing bake
+    // stays a single-run measurement) carrying the em→px letter-spacing.
+    useDoc.setState({ ...useDoc.getState(), labelTracking: 0.1 });
+    const container = renderMultiline();
+    const texts = Array.from(container.querySelectorAll('text'));
+    // Two lines → two <text> elements, no multi-tspan single <text>.
+    expect(texts).toHaveLength(2);
+    expect(container.querySelectorAll('tspan')).toHaveLength(0);
+    for (const t of texts) {
+      // 0.1 em * 12px = 1.2px.
+      expect(parseFloat(t.getAttribute('letter-spacing')!)).toBeCloseTo(1.2, 5);
+    }
+  });
+
+  it('does not set letter-spacing when tracking is 0', () => {
+    const container = renderMultiline();
+    const text = container.querySelector('text');
+    expect(text?.getAttribute('letter-spacing')).toBeNull();
+  });
+});
+
 describe('<StationView /> — inline label editor matches the painted label', () => {
   // Open the inline rename editor for `station` and hand back its DOM nodes.
   // The textarea lives directly inside the <foreignObject>, so its parent IS

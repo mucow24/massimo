@@ -9,6 +9,10 @@ export interface RenderLabelTextArgs {
   fontSize: number;
   fontWeight: number;
   fontStyle?: 'italic';
+  // Global station-label line-spacing multiplier (default 1) and letter-spacing
+  // in em (default 0). Mirror the per-label leading/tracking on TextLabel.
+  leading?: number;
+  tracking?: number;
   fill: string;
   stroke?: string;
   strokeWidth?: number;
@@ -52,6 +56,8 @@ export function renderStationLabelText({
   fontSize,
   fontWeight,
   fontStyle,
+  leading,
+  tracking,
   fill,
   stroke,
   strokeWidth,
@@ -66,7 +72,16 @@ export function renderStationLabelText({
   rotationDeg,
   lineByService,
 }: RenderLabelTextArgs): ReactNode {
-  const hasBullet = hasInlineToken(text);
+  const lead = leading ?? 1;
+  // Letter-spacing in user units, added after every glyph (SVG letter-spacing,
+  // matching how the measurement models it).
+  const letterSpacingPx = (tracking ?? 0) * fontSize;
+  // Tracking routes through the per-segment path even without bullets: that
+  // path emits one <text> per line, so the PDF export's letter-spacing bake
+  // (getComputedTextLength, per single-run <text>) stays correct. The plain
+  // single-<text>+<tspan>s path is kept byte-for-byte for the untracked common
+  // case (its multi-line getComputedTextLength would sum every line).
+  const perSegment = hasInlineToken(text) || letterSpacingPx !== 0;
   const lines = text.split('\n');
   // Underline as explicit <line> geometry instead of the SVG `text-decoration`
   // attribute. Chromium leaves one-pixel residue on rotated <text> when
@@ -84,6 +99,8 @@ export function renderStationLabelText({
         weight: fontWeight,
         italic: fontStyle === 'italic',
         bulletsOnly: true,
+        leading: lead,
+        tracking,
       })
     : null;
   // Distance from the central-baseline anchor down to the text baseline.
@@ -100,8 +117,8 @@ export function renderStationLabelText({
       : baseline === 'text-before-edge'
         ? anchorY + fontSize * BASELINE_FRACTION + firstLineDyPx
         : anchorY - fontSize * (1 - BASELINE_FRACTION) + firstLineDyPx;
-  const lineSpacingPx = fontSize * LINE_HEIGHT;
-  if (!hasBullet) {
+  const lineSpacingPx = fontSize * LINE_HEIGHT * lead;
+  if (!perSegment) {
     return (
       <g transform={`rotate(${rotationDeg} ${anchorX} ${anchorY})`} pointerEvents="none">
         <text
@@ -147,12 +164,12 @@ export function renderStationLabelText({
     );
   }
 
-  // Bullet path: measure segment-aware and emit explicit per-segment
-  // elements. Each line is anchored at its visual center with
-  // dominantBaseline='central' so it lines up with the non-bullet path
-  // (also central-anchored). firstLineCenterY comes from the layout and
-  // already encodes the valign semantics; line i sits lineSpacing below
-  // the previous one.
+  // Per-segment path: measure segment-aware and emit explicit per-segment
+  // elements. Taken for inline-bullet labels AND any tracked label. Each line
+  // is anchored at its visual center with dominantBaseline='central' so it
+  // lines up with the non-bullet path (also central-anchored). firstLineCenterY
+  // comes from the layout and already encodes the valign semantics; line i sits
+  // lineSpacing below the previous one.
   const m =
     measured ??
     measureTextLabel({
@@ -161,8 +178,10 @@ export function renderStationLabelText({
       weight: fontWeight,
       italic: fontStyle === 'italic',
       bulletsOnly: true,
+      leading: lead,
+      tracking,
     });
-  const lineSpacing = fontSize * LINE_HEIGHT;
+  const lineSpacing = fontSize * LINE_HEIGHT * lead;
 
   return (
     <g transform={`rotate(${rotationDeg} ${anchorX} ${anchorY})`} pointerEvents="none">
@@ -187,6 +206,7 @@ export function renderStationLabelText({
                 fontSize={fontSize}
                 fontWeight={fontWeight}
                 fontStyle={fontStyle}
+                letterSpacing={letterSpacingPx !== 0 ? letterSpacingPx : undefined}
                 fill={fill}
                 stroke={stroke}
                 strokeWidth={strokeWidth}

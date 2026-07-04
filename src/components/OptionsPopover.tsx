@@ -11,6 +11,14 @@ import {
   FONT_SIZE_STEP,
   LABEL_FONT_SIZE_MAX,
   LABEL_FONT_SIZE_MIN,
+  LABEL_LEADING_DEFAULT,
+  LABEL_LEADING_MAX,
+  LABEL_LEADING_MIN,
+  LABEL_LEADING_STEP,
+  LABEL_TRACKING_DEFAULT,
+  LABEL_TRACKING_MAX,
+  LABEL_TRACKING_MIN,
+  LABEL_TRACKING_STEP,
   LABEL_WEIGHT_NAMES,
   TRANSFER_STROKE_WIDTH_MAX,
   TRANSFER_STROKE_WIDTH_MIN,
@@ -42,6 +50,10 @@ export function OptionsPopover() {
   const setLabelWeight = useDoc((s) => s.setLabelWeight);
   const labelItalic = useDoc((s) => s.labelItalic);
   const setLabelItalic = useDoc((s) => s.setLabelItalic);
+  const labelLeading = useDoc((s) => s.labelLeading);
+  const setLabelLeading = useDoc((s) => s.setLabelLeading);
+  const labelTracking = useDoc((s) => s.labelTracking);
+  const setLabelTracking = useDoc((s) => s.setLabelTracking);
   const activePalettes = useDoc((s) => s.activePalettes);
   const togglePalette = useDoc((s) => s.togglePalette);
   const transferThickness = useDoc((s) => s.transferThickness);
@@ -165,6 +177,36 @@ export function OptionsPopover() {
               <FontItalicIcon />
             </button>
           </div>
+
+          {/* Line-spacing multiplier for every station label (1 = normal); the
+              tick marks the neutral 1. */}
+          <NumericFieldRow
+            id={`${panelId}-leading`}
+            label="Leading"
+            min={LABEL_LEADING_MIN}
+            max={LABEL_LEADING_MAX}
+            step={LABEL_LEADING_STEP}
+            value={labelLeading}
+            onChange={setLabelLeading}
+            getCurrent={() => useDoc.getState().labelLeading}
+            detent={LABEL_LEADING_DEFAULT}
+            textboxAllowAboveMax
+          />
+
+          {/* Letter-spacing in em for every station label (0 = normal); the
+              tick marks the neutral 0. */}
+          <NumericFieldRow
+            id={`${panelId}-tracking`}
+            label="Tracking"
+            min={LABEL_TRACKING_MIN}
+            max={LABEL_TRACKING_MAX}
+            step={LABEL_TRACKING_STEP}
+            value={labelTracking}
+            onChange={setLabelTracking}
+            getCurrent={() => useDoc.getState().labelTracking}
+            detent={LABEL_TRACKING_DEFAULT}
+            textboxAllowAboveMax
+          />
 
           <NumericFieldRow
             id={`${panelId}-transferThickness`}

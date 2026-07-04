@@ -1326,6 +1326,48 @@ describe('label font/style settings', () => {
     expect(T.setLabelItalic(doc, true).labelItalic).toBe(true);
     expect(T.setLabelItalic(T.setLabelItalic(doc, true), false).labelItalic).toBe(false);
   });
+
+  it('exposes leading/tracking bounds, defaults, and steps as constants', () => {
+    expect(T.LABEL_LEADING_MIN).toBe(0);
+    expect(T.LABEL_LEADING_MAX).toBe(2);
+    expect(T.LABEL_LEADING_STEP).toBe(0.05);
+    expect(T.LABEL_LEADING_DEFAULT).toBe(1);
+    expect(T.LABEL_TRACKING_MIN).toBe(-0.1);
+    expect(T.LABEL_TRACKING_MAX).toBe(0.5);
+    expect(T.LABEL_TRACKING_STEP).toBe(0.01);
+    expect(T.LABEL_TRACKING_DEFAULT).toBe(0);
+  });
+
+  it('DEFAULT_DOC leading/tracking default to the neutral 1 / 0', () => {
+    expect(T.DEFAULT_DOC.labelLeading).toBe(1);
+    expect(T.DEFAULT_DOC.labelTracking).toBe(0);
+  });
+
+  it('setLabelLeading snaps to the 0.05 step and clamps at 0 (no upper clamp)', () => {
+    const doc = makeDoc({});
+    expect(T.setLabelLeading(doc, 1.2).labelLeading).toBe(1.2);
+    // Snaps to the nearest 0.05 with no float dust (1.17 → 1.15).
+    expect(T.setLabelLeading(doc, 1.17).labelLeading).toBe(1.15);
+    // Clamps at the bottom only; the spinbutton accepts values above the max.
+    expect(T.setLabelLeading(doc, -3).labelLeading).toBe(0);
+    expect(T.setLabelLeading(doc, 5).labelLeading).toBe(5);
+  });
+
+  it('setLabelTracking snaps to the 0.01 step and clamps at the -0.1 floor', () => {
+    const doc = makeDoc({});
+    expect(T.setLabelTracking(doc, 0.2).labelTracking).toBe(0.2);
+    expect(T.setLabelTracking(doc, 0.123).labelTracking).toBe(0.12);
+    // Below the -0.1 floor is a hard clamp.
+    expect(T.setLabelTracking(doc, -1).labelTracking).toBe(-0.1);
+    // The spinbutton accepts values above the slider max.
+    expect(T.setLabelTracking(doc, 1).labelTracking).toBe(1);
+  });
+
+  it('setLabelLeading / setLabelTracking are no-ops when unchanged (reference equality)', () => {
+    const doc = makeDoc({ labelLeading: 1.5, labelTracking: 0.05 });
+    expect(T.setLabelLeading(doc, 1.5)).toBe(doc);
+    expect(T.setLabelTracking(doc, 0.05)).toBe(doc);
+  });
 });
 
 describe('transfer styling settings', () => {
