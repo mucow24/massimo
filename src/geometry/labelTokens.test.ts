@@ -280,6 +280,90 @@ describe('parseFormattedLine (bullets + escapes + tags)', () => {
   });
 });
 
+describe('parseFormattedLine — <w=...> weight tags', () => {
+  const parse = (line: string) => parseFormattedLine(line, emptyStyleState()).segments;
+
+  it('applies an absolute <w=Name> as a weight override on the run', () => {
+    expect(parse('<w=Light>x</w>')).toEqual([
+      { kind: 'text', value: 'x', style: { ...style(), weight: 300 } },
+    ]);
+    expect(parse('<w=Black>x</w>')).toEqual([
+      { kind: 'text', value: 'x', style: { ...style(), weight: 900 } },
+    ]);
+  });
+
+  it('matches weight names case-insensitively', () => {
+    expect(parse('<w=light>x</w>')).toEqual([
+      { kind: 'text', value: 'x', style: { ...style(), weight: 300 } },
+    ]);
+    expect(parse('<w=MEDIUM>x</w>')).toEqual([
+      { kind: 'text', value: 'x', style: { ...style(), weight: 500 } },
+    ]);
+  });
+
+  it('applies a relative <w=+N>/<w=-N> as a step from the base weight', () => {
+    expect(parse('<w=+2>x</w>')).toEqual([
+      { kind: 'text', value: 'x', style: { ...style(), weightStep: 2 } },
+    ]);
+    expect(parse('<w=-1>x</w>')).toEqual([
+      { kind: 'text', value: 'x', style: { ...style(), weightStep: -1 } },
+    ]);
+  });
+
+  it('restores the outer weight when a nested <w> closes (innermost wins)', () => {
+    expect(parse('<w=Light>a<w=+2>b</w>c</w>d')).toEqual([
+      { kind: 'text', value: 'a', style: { ...style(), weight: 300 } },
+      { kind: 'text', value: 'b', style: { ...style(), weightStep: 2 } },
+      { kind: 'text', value: 'c', style: { ...style(), weight: 300 } },
+      { kind: 'text', value: 'd' },
+    ]);
+  });
+
+  it('combines a weight tag with <b>/<i> on the same run', () => {
+    expect(parse('<b><w=+1>x</w></b>')).toEqual([
+      { kind: 'text', value: 'x', style: { ...style('bold'), weightStep: 1 } },
+    ]);
+    expect(parse('<i><w=Medium>x</w></i>')).toEqual([
+      { kind: 'text', value: 'x', style: { ...style('italic'), weight: 500 } },
+    ]);
+  });
+
+  it('leaves an unknown weight name or a bare/unsigned number as literal text', () => {
+    expect(parse('<w=Chunky>x')).toEqual([{ kind: 'text', value: '<w=Chunky>x' }]);
+    expect(parse('<w=700>x')).toEqual([{ kind: 'text', value: '<w=700>x' }]);
+    expect(parse('<w=2>x')).toEqual([{ kind: 'text', value: '<w=2>x' }]);
+    expect(parse('<w=>x')).toEqual([{ kind: 'text', value: '<w=>x' }]);
+  });
+
+  it('ignores a </w> with no matching opener', () => {
+    expect(parse('a</w>b')).toEqual([{ kind: 'text', value: 'ab' }]);
+  });
+
+  it('does not attach a weight to a bullet', () => {
+    expect(parse('<w=Light>|A1|</w>')).toEqual([bullet('A1')]);
+  });
+
+  it('escapes a weight tag with a backslash', () => {
+    expect(parse('\\<w=Light>x')).toEqual([{ kind: 'text', value: '<w=Light>x' }]);
+  });
+
+  it('carries an open weight across lines and closes on the next', () => {
+    const r = parseFormattedLine('<w=Light>a', emptyStyleState());
+    expect(r.segments).toEqual([{ kind: 'text', value: 'a', style: { ...style(), weight: 300 } }]);
+    const next = parseFormattedLine('b</w>c', r.state);
+    expect(next.segments).toEqual([
+      { kind: 'text', value: 'b', style: { ...style(), weight: 300 } },
+      { kind: 'text', value: 'c' },
+    ]);
+  });
+
+  it('does not mutate the incoming state', () => {
+    const entry = emptyStyleState();
+    parseFormattedLine('<w=Light><w=+1>x', entry);
+    expect(entry).toEqual(emptyStyleState());
+  });
+});
+
 describe('hasFormattedToken', () => {
   it('detects each bullet form anywhere in a multi-line text', () => {
     expect(hasFormattedToken('take the |A|')).toBe(true);
@@ -298,6 +382,8 @@ describe('hasFormattedToken', () => {
     expect(hasFormattedToken('<u>u</u>')).toBe(true);
     expect(hasFormattedToken('<s>gone</s>')).toBe(true);
     expect(hasFormattedToken('<color=red>R</color>')).toBe(true);
+    expect(hasFormattedToken('<w=Light>light</w>')).toBe(true);
+    expect(hasFormattedToken('<w=+2>heavier</w>')).toBe(true);
     expect(hasFormattedToken('fly <air> here')).toBe(true);
     expect(hasFormattedToken('go <xfer> across')).toBe(true);
   });

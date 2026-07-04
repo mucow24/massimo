@@ -185,6 +185,27 @@ describe('<LabelView /> — formatting tags', () => {
     expect(textByContent(c, ' plain').getAttribute('font-weight')).toBe('400');
   });
 
+  it('renders an absolute <w=Name> at that weight, overriding the base', () => {
+    const c = renderLabel(makeTextLabel({ id: 'g1', text: '<w=Light>L</w> plain', weight: 700 }));
+    expect(textByContent(c, 'L').getAttribute('font-weight')).toBe('300');
+    expect(textByContent(c, ' plain').getAttribute('font-weight')).toBe('700');
+  });
+
+  it('renders a relative <w=+N>/<w=-N> as a step from the base weight', () => {
+    const up = renderLabel(makeTextLabel({ id: 'g1', text: '<w=+2>up</w>', weight: 400 }));
+    expect(textByContent(up, 'up').getAttribute('font-weight')).toBe('700');
+    const down = renderLabel(makeTextLabel({ id: 'g2', text: '<w=-1>dn</w>', weight: 400 }));
+    expect(textByContent(down, 'dn').getAttribute('font-weight')).toBe('300');
+    // Relative to THIS label's base: +1 from Light lands on Roman.
+    const rel = renderLabel(makeTextLabel({ id: 'g3', text: '<w=+1>r</w>', weight: 300 }));
+    expect(textByContent(rel, 'r').getAttribute('font-weight')).toBe('400');
+  });
+
+  it('adds <b> on top of a <w=Name> run', () => {
+    const c = renderLabel(makeTextLabel({ id: 'g1', text: '<b><w=Light>x</w></b>', weight: 400 }));
+    expect(textByContent(c, 'x').getAttribute('font-weight')).toBe('500');
+  });
+
   it('renders <i> as an italic run', () => {
     const c = renderLabel(makeTextLabel({ id: 'g1', text: '<i>lean</i> up' }));
     expect(textByContent(c, 'lean').getAttribute('font-style')).toBe('italic');
