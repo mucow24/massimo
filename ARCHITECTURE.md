@@ -415,7 +415,7 @@ Path A does **more** than Path B because hand-edited files can be non-canonical 
 sanitizers `sanitizeLineWidth/Stroke/DotSize/Segments/StopDotSizes` exist for this).
 
 **Path B — localStorage rehydration: `migrateDoc(persisted, version)`** ([store.ts](src/state/store.ts)).
-The zustand `persist` config: `name: 'vignelli-map-doc-v1'`, `version: 7`, `migrate:
+The zustand `persist` config: `name: 'vignelli-map-doc-v1'`, `version: 8`, `migrate:
 migrateDoc`, `partialize: pickDocSnapshot`. Because the persist-merge already fills absent fields
 from the initial state, `migrateDoc` only does **value-level legacy fixups, version-gated**, on
 disjoint fields (order immaterial), never mutating the input:
@@ -428,6 +428,7 @@ disjoint fields (order immaterial), never mutating the input:
 | `v<5` | `backfillPolygonDarkColors` |
 | `v<6` | `backfillTextLabelColors` |
 | `v<7` | `convertLegacyDotShapes` (preset ids → procedural `DotStyle`) |
+| `v<8` | `migrateLegacyBulletSyntax` (legacy `<X>` circle bullets / unescaped pipes → `|X|` inline-token syntax, on station names + text labels) |
 | (not gated) | `validActivePalettes` whenever `activePalettes !== undefined` |
 
 A **corrupt/missing version is treated as v0** (all migrations run). The `validActivePalettes`
@@ -663,12 +664,13 @@ refinement (equidistant / tens) → build guides. Polygon vertices get their own
 - **`measureTextLabel`** measures multi-line styled text **without a browser layout**: it lazily
   creates an offscreen 2D canvas and uses `ctx.measureText` (advance + ink bearings). **In jsdom
   there is no canvas backend**, so it falls back to a deliberate over-estimate
-  `line.length * fontSize * 0.55`. There are **no font-metrics tables**. Exact-geometry tests
+  `line.length * (fontSize * 0.55 + letterSpacingPx)` (the `0.55` core plus the per-character
+  tracking term). There are **no font-metrics tables**. Exact-geometry tests
   inject a `measure` stub instead of trusting the default. Leading/trailing whitespace is a real
   historical bug source: canvas advance includes typed spaces but the ink box excludes them, so
   the measurer force-corrects bearings at segment ends. Results are cached (module-level LRU,
-  limit 256) keyed by weight/style/size/text — and that cache is cleared on web-font load (see
-  `App.tsx`).
+  limit 256) keyed by weight/style/parse-mode/size/width/leading/tracking/text — and that cache is
+  cleared on web-font load (see `App.tsx`).
 - **`labelLayoutLocal`** is the single source of truth for a station name's `<text>`
   anchor/baseline/hit-rect, all in **unrotated station-local** coords (the `label.rotation` is
   applied around the anchor at render). `'auto'` align snaps the text against an adjacent stop;
@@ -1086,7 +1088,8 @@ Each is confirmed in source/tests; file pointers included.
 - **`perp` vs `leftNormal` are intentionally negations** (different y conventions); using the
   wrong one flips stripe order. ([vec.ts](src/geometry/vec.ts))
 - **Text measurement silently differs app vs test** — real canvas `measureText` vs a
-  `length × 0.55` over-estimate under jsdom. Exact tests inject a `measure` stub.
+  `length × (0.55·fontSize + letterSpacing)` over-estimate under jsdom. Exact tests inject a
+  `measure` stub.
   ([textMeasure.ts](src/geometry/textMeasure.ts))
 - **Web-font load invalidates the measure cache** — `App.tsx` clears `_clearTextMeasureCache()`
   and bumps a font epoch on `document.fonts.ready` + `loadingdone`; without it, first-paint labels

@@ -2,8 +2,10 @@ import type {
   LabelCell,
   Line,
   LineId,
+  LineTag,
   MapDoc,
   Rotation,
+  RouteBullet,
   Station,
   StationId,
   StopCell,
@@ -12,6 +14,7 @@ import type {
   SvgImage,
   TextLabel,
   TextLabelWeight,
+  Transfer,
 } from '../model/types';
 import type { SegmentBandSpec } from '../geometry/interlining';
 import { STOP_SIZE, stripeOffsetsForWidths } from '../geometry/orientation';
@@ -152,6 +155,43 @@ export function makeSvgImage(overrides: Partial<SvgImage> & { id: string }): Svg
   };
 }
 
+// A line tag anchored to the s1↔s2 corridor. Callers must keep the
+// `fromStationId < toStationId` invariant (canonical/alphabetic) themselves.
+export function makeLineTag(overrides: Partial<LineTag> & { id: string }): LineTag {
+  return {
+    lineId: 'l1',
+    fromStationId: 's1',
+    toStationId: 's2',
+    anchorEnd: 'from',
+    distance: 10,
+    orientation: 0,
+    ...overrides,
+  };
+}
+
+// A route bullet showing one line's badge. `lineId` may be null (unset).
+export function makeRouteBullet(overrides: Partial<RouteBullet> & { id: string }): RouteBullet {
+  return {
+    x: 0,
+    y: 0,
+    rotation: 0,
+    lineId: 'l1',
+    shape: 'circle',
+    size: 12,
+    ...overrides,
+  };
+}
+
+// A transfer joining two station dots. Each end's `lineId` picks which dot at
+// an interlined station (null = the station anchor).
+export function makeTransfer(overrides: Partial<Transfer> & { id: string }): Transfer {
+  return {
+    a: { stationId: 's1', lineId: null },
+    b: { stationId: 's2', lineId: null },
+    ...overrides,
+  };
+}
+
 export function makeDoc(parts: {
   name?: string;
   stations?: Station[];
@@ -159,6 +199,7 @@ export function makeDoc(parts: {
   lineOrder?: LineId[];
   curveRadius?: number;
   lineTags?: import('../model/types').LineTag[];
+  routeBullets?: RouteBullet[];
   transfers?: import('../model/types').Transfer[];
   textLabels?: TextLabel[];
   polygons?: Polygon[];
@@ -182,6 +223,8 @@ export function makeDoc(parts: {
   for (const l of parts.lines ?? []) lines[l.id] = l;
   const lineTags: Record<string, import('../model/types').LineTag> = {};
   for (const t of parts.lineTags ?? []) lineTags[t.id] = t;
+  const routeBullets: Record<string, RouteBullet> = {};
+  for (const rb of parts.routeBullets ?? []) routeBullets[rb.id] = rb;
   const transfers: Record<string, import('../model/types').Transfer> = {};
   for (const x of parts.transfers ?? []) transfers[x.id] = x;
   const textLabels: Record<string, TextLabel> = {};
@@ -198,7 +241,7 @@ export function makeDoc(parts: {
     curveRadius: parts.curveRadius ?? 24,
     lineCounter: 0,
     lineTags,
-    routeBullets: {},
+    routeBullets,
     transfers,
     textLabels,
     polygons,

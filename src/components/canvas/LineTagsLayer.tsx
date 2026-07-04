@@ -2,6 +2,7 @@ import { useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import type { LineTag, MapDoc } from '../../model/types';
 import type { SegmentBandSpec } from '../../geometry/interlining';
 import {
+  arcLenFromAnchor,
   lineTraversesForwardCanon,
   offsetPathLength,
   sampleOffsetPathByArcLength,
@@ -92,10 +93,9 @@ export function resolveTag(
   // bumped above doc.curveRadius for interlined bands so the inner stripes
   // respect the min radius. Sample against the same radius or geometry desyncs.
   const stripeTotal = offsetPathLength(band.centerline, band.radius, offset);
-  // Walk from anchor endpoint by `distance` along the stripe. Clamps inside
-  // sampleOffsetPathByArcLength when the corridor has shrunk below distance.
-  const arcLenOnStripe =
-    tag.anchorEnd === 'from' ? tag.distance : Math.max(0, stripeTotal - tag.distance);
+  // Walk from anchor endpoint by `distance` along the stripe (clamped to the
+  // corridor when it has shrunk below distance).
+  const arcLenOnStripe = arcLenFromAnchor(tag.anchorEnd, tag.distance, stripeTotal);
   const sample = sampleOffsetPathByArcLength(band.centerline, band.radius, offset, arcLenOnStripe);
   const forward = lineTraversesForwardCanon(line, tag.fromStationId, tag.toStationId);
   const tangent = forward ? sample.tangent : scale(sample.tangent, -1);

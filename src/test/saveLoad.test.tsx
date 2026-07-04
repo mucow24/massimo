@@ -162,6 +162,11 @@ describe('save/load round-trip', () => {
       labelFontSize: 20,
       labelWeight: 700,
       labelItalic: false,
+      // Non-default leading/tracking (defaults are 1 / 0) so a DOC_FIELDS
+      // regression that dropped either field surfaces as a lost value here
+      // rather than passing silently at the neutral default.
+      labelLeading: 1.4,
+      labelTracking: 0.08,
     });
     const json = serialize(pickDocSnapshot(useDoc.getState()));
     const result = parse(json);
@@ -170,6 +175,8 @@ describe('save/load round-trip', () => {
       expect(result.doc.labelFontSize).toBe(20);
       expect(result.doc.labelWeight).toBe(700);
       expect(result.doc.labelItalic).toBe(false);
+      expect(result.doc.labelLeading).toBe(1.4);
+      expect(result.doc.labelTracking).toBe(0.08);
     }
   });
 

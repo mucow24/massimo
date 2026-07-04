@@ -6,6 +6,8 @@ import {
   closestParamOnOffsetPath,
   lineTraversesForwardCanon,
   snapNeighborTag,
+  anchorFromArcLen,
+  arcLenFromAnchor,
 } from './lineTagGeometry';
 import { Vec2 } from './vec';
 import { makeLine } from '../test/fixtures';
@@ -448,5 +450,47 @@ describe('offsetFilletPath cross-check (no drift between rendered and sampled)',
     const sample = sampleOffsetPath(verts, R, offset, 1);
     // leftOf(south) = (1, 0), so offV[2] = (100+10, 100) = (110, 100).
     expect(approxVec(sample.p, { x: 110, y: 100 }, 1e-3)).toBe(true);
+  });
+});
+
+describe('anchor <-> arc-length conversion', () => {
+  describe('anchorFromArcLen', () => {
+    it('anchors to the near end (from) in the first half of the stripe', () => {
+      expect(anchorFromArcLen(20, 100)).toEqual({ anchorEnd: 'from', distance: 20 });
+    });
+
+    it('anchors to the far end (to) in the second half, storing distance from that end', () => {
+      expect(anchorFromArcLen(80, 100)).toEqual({ anchorEnd: 'to', distance: 20 });
+    });
+
+    it('treats the exact midpoint as the from end', () => {
+      expect(anchorFromArcLen(50, 100)).toEqual({ anchorEnd: 'from', distance: 50 });
+    });
+  });
+
+  describe('arcLenFromAnchor', () => {
+    it('returns the stored distance for a from-anchored tag', () => {
+      expect(arcLenFromAnchor('from', 20, 100)).toBe(20);
+    });
+
+    it('walks back from the far end for a to-anchored tag', () => {
+      expect(arcLenFromAnchor('to', 20, 100)).toBe(80);
+    });
+
+    it('clamps a from-distance that overruns the (shrunken) stripe', () => {
+      expect(arcLenFromAnchor('from', 150, 100)).toBe(100);
+    });
+
+    it('clamps a to-distance that overruns the (shrunken) stripe to 0', () => {
+      expect(arcLenFromAnchor('to', 150, 100)).toBe(0);
+    });
+  });
+
+  it('round-trips arc length -> anchor -> arc length for points on the stripe', () => {
+    const total = 100;
+    for (const arcLen of [0, 12.5, 49.9, 50, 50.1, 73, 100]) {
+      const { anchorEnd, distance } = anchorFromArcLen(arcLen, total);
+      expect(arcLenFromAnchor(anchorEnd, distance, total)).toBeCloseTo(arcLen, 9);
+    }
   });
 });

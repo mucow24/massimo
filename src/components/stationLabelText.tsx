@@ -110,7 +110,8 @@ export function renderStationLabelText({
   const UNDERLINE_OFFSET = 4;
   const UNDERLINE_STROKE = 2;
   // Compute the y position of the FIRST line's baseline given the active
-  // dominant-baseline mode. Subsequent lines stack 1.2em below.
+  // dominant-baseline mode. Subsequent lines stack by `lineSpacingPx` below
+  // (leading-scaled; see below).
   const firstLineBaselineY =
     baseline === 'central'
       ? anchorY + centralToBaseline + firstLineDyPx
