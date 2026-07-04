@@ -437,6 +437,13 @@ export interface MapDoc {
   labelFontSize: number;
   labelWeight: TextLabelWeight;
   labelItalic: boolean;
+  // Global station-label line-spacing multiplier (1 = the default 1.2em
+  // spacing) and letter-spacing in em (0 = font-normal). Apply to every
+  // station name, mirroring the per-label `leading`/`tracking` on TextLabel.
+  // Absent in saves predating the fields — backfilled to the neutral 1 / 0 via
+  // DEFAULT_DOC.
+  labelLeading: number;
+  labelTracking: number;
   // Which color palettes are available in the line editor. Invariant:
   // never empty (enforced by transforms / parse sanitiser).
   activePalettes: PaletteId[];

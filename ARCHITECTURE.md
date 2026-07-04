@@ -261,6 +261,7 @@ interface MapDoc {
   labelFontSize: number;           // global station-name styling
   labelWeight: TextLabelWeight;
   labelItalic: boolean;
+  labelLeading: number; labelTracking: number;  // line-spacing mult / em letter-spacing (1 / 0 = neutral)
   activePalettes: PaletteId[];     // INVARIANT: never empty
   transferThickness: number; transferColor: string;       // global transfer styling
   transferStrokeWidth: number; transferStrokeColor: string;  // optional halo (0 = none)

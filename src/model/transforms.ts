@@ -91,6 +91,22 @@ export const LABEL_WEIGHT_NAMES: readonly { value: TextLabelWeight; name: string
 
 export const LABEL_WEIGHT_DEFAULT: TextLabelWeight = 400;
 
+// Global station-label leading (line-spacing multiplier, detent at the neutral
+// 1) and tracking (letter-spacing in em, detent at the neutral 0). Same slider
+// ranges the per-label popover uses (TEXT_LABEL_LEADING_* / _TRACKING_*), kept
+// as their own LABEL_* family to match the station/text font-size split and so
+// they can sit above DEFAULT_DOC. Leading clamps at 0 (the spinbutton accepts
+// values above the slider max); tracking's floor is a hard clamp — below about
+// -0.1em glyphs pile up unreadably.
+export const LABEL_LEADING_MIN = 0;
+export const LABEL_LEADING_MAX = 2;
+export const LABEL_LEADING_STEP = 0.05;
+export const LABEL_LEADING_DEFAULT = 1;
+export const LABEL_TRACKING_MIN = -0.1;
+export const LABEL_TRACKING_MAX = 0.5;
+export const LABEL_TRACKING_STEP = 0.01;
+export const LABEL_TRACKING_DEFAULT = 0;
+
 // Default document name for a fresh (or nameless legacy) map. Also the value the
 // name field falls back to when the user clears it. Single source of truth for
 // the DEFAULT_DOC merge, the toolbar field, and the empty-name guard.
@@ -114,6 +130,8 @@ export const DEFAULT_DOC: MapDoc = {
   labelFontSize: LABEL_FONT_SIZE_DEFAULT,
   labelWeight: LABEL_WEIGHT_DEFAULT,
   labelItalic: false,
+  labelLeading: LABEL_LEADING_DEFAULT,
+  labelTracking: LABEL_TRACKING_DEFAULT,
   activePalettes: ['mta'],
   transferThickness: TRANSFER_THICKNESS_DEFAULT,
   transferColor: TRANSFER_COLOR_DEFAULT,
@@ -1447,6 +1465,30 @@ export function setLabelItalic(doc: MapDoc, i: boolean): MapDoc {
   return { ...doc, labelItalic: i };
 }
 
+// Snap a value to its slider's step and clamp at the bottom only (the
+// spinbutton accepts values above the slider max). The two-decimal rounding
+// kills float artifacts like 1.1500000000000001 for the 0.05 / 0.01 steps.
+// Shared by the global leading/tracking setters and per-label updateTextLabel.
+export function snapToStep(v: number, step: number, min: number): number {
+  if (!Number.isFinite(v)) return min;
+  return Math.max(min, Math.round(Math.round(v / step) * step * 100) / 100);
+}
+
+// Global station-label line spacing. Clamps/snaps like the per-label leading;
+// mirrors setLabelFontSize's bottom-only clamp so the spinbutton can exceed the
+// slider's max.
+export function setLabelLeading(doc: MapDoc, n: number): MapDoc {
+  const snapped = snapToStep(n, LABEL_LEADING_STEP, LABEL_LEADING_MIN);
+  if (snapped === doc.labelLeading) return doc;
+  return { ...doc, labelLeading: snapped };
+}
+
+export function setLabelTracking(doc: MapDoc, n: number): MapDoc {
+  const snapped = snapToStep(n, LABEL_TRACKING_STEP, LABEL_TRACKING_MIN);
+  if (snapped === doc.labelTracking) return doc;
+  return { ...doc, labelTracking: snapped };
+}
+
 function arraysEqual<T>(a: readonly T[], b: readonly T[]): boolean {
   if (a.length !== b.length) return false;
   for (let i = 0; i < a.length; i++) if (a[i] !== b[i]) return false;
@@ -1675,21 +1717,18 @@ export function updateTextLabel(
     if (typeof patch.width === 'number') {
       nextPatch = { ...nextPatch, width: Math.max(0, Math.round(patch.width)) };
     }
-    // Leading/tracking snap to their slider steps (two-decimal rounding kills
-    // float artifacts like 1.1500000000000001) and clamp at the bottom only,
-    // mirroring fontSize.
-    const snap = (v: number, step: number, min: number): number =>
-      Math.max(min, Math.round(Math.round(v / step) * step * 100) / 100);
+    // Leading/tracking snap to their slider steps and clamp at the bottom only,
+    // mirroring fontSize. Shared with the global station-label setters.
     if (typeof patch.leading === 'number') {
       nextPatch = {
         ...nextPatch,
-        leading: snap(patch.leading, TEXT_LABEL_LEADING_STEP, TEXT_LABEL_LEADING_MIN),
+        leading: snapToStep(patch.leading, TEXT_LABEL_LEADING_STEP, TEXT_LABEL_LEADING_MIN),
       };
     }
     if (typeof patch.tracking === 'number') {
       nextPatch = {
         ...nextPatch,
-        tracking: snap(patch.tracking, TEXT_LABEL_TRACKING_STEP, TEXT_LABEL_TRACKING_MIN),
+        tracking: snapToStep(patch.tracking, TEXT_LABEL_TRACKING_STEP, TEXT_LABEL_TRACKING_MIN),
       };
     }
     let next = { ...cur, ...nextPatch };

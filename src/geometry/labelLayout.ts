@@ -38,6 +38,17 @@ export interface LabelStyle {
    * anchor, baseline, and height are bullet-independent.
    */
   literalBullets?: boolean;
+  /**
+   * Global station-label line-spacing multiplier (default 1). Scales the
+   * between-line stacking so the hit rect / wash silhouette height matches the
+   * leaded renderer; a single line's height is unaffected.
+   */
+  leading?: number;
+  /**
+   * Global station-label letter-spacing in em (default 0). Threaded into the
+   * measurement so the box width hugs the tracked glyphs.
+   */
+  tracking?: number;
 }
 
 export const DEFAULT_LABEL_STYLE: LabelStyle = { fontSize: 12, weight: 400, italic: false };
@@ -207,6 +218,11 @@ export function labelLayoutLocal(
     // Station names parse bullets only — formatting tags are a text-label
     // feature and must stay literal here (matches renderStationLabelText).
     bulletsOnly: true,
+    // Global leading/tracking: tracking widens the measured ink; leading feeds
+    // the height math below (measureTextLabel returns a leaded height too, but
+    // the vertical metrics here are derived independently).
+    leading: style.leading,
+    tracking: style.tracking,
   });
   const textW = Math.max(20, measured.width);
 
@@ -216,8 +232,14 @@ export function labelLayoutLocal(
   // This keeps the hit rect / wash silhouette height equal to
   // measureTextLabel's height at any font size, instead of the old constants
   // (7 / 14) that were tuned for a fixed ~12px font.
-  const labelLineHeight = style.fontSize * LINE_HEIGHT;
-  const textHalfH = labelLineHeight / 2;
+  //
+  // Leading scales only the BETWEEN-line stacking (`lineStackPx`), not the
+  // single line's own half-extent (`textHalfH`): a one-line block is one
+  // line-height tall at any leading, exactly like measureTextLabel's height
+  // (fontSize*LINE_HEIGHT*(1 + extraLines*leading)).
+  const lineHeight = style.fontSize * LINE_HEIGHT;
+  const textHalfH = lineHeight / 2;
+  const lineStackPx = lineHeight * (style.leading ?? 1);
 
   let textXMin: number;
   if (textAnchor === 'start') textXMin = anchorX;
@@ -234,25 +256,25 @@ export function labelLayoutLocal(
   // it as before. The anchor itself stays on the L cell so rotation still
   // pivots there.
   //
-  // Lines stack down by `labelLineHeight` (fontSize * LINE_HEIGHT, ~1.2em).
-  // The block's height is `2*textHalfH + extraLines*labelLineHeight`. The
+  // Lines stack down by `lineStackPx` (fontSize * LINE_HEIGHT * leading).
+  // The block's height is `2*textHalfH + extraLines*lineStackPx`. The
   // first line's natural y given the dominant baseline is:
   //   - 'text-before-edge': first line top   = anchorY
   //   - 'central'         : first line center= anchorY  (top = anchorY - textHalfH)
-  //   - 'text-after-edge' : first line bottom= anchorY  (top = anchorY - labelLineHeight)
+  //   - 'text-after-edge' : first line bottom= anchorY  (top = anchorY - lineHeight)
   // To put the BLOCK at the desired position relative to anchorY, shift the
   // first line up by:
   //   - top      : 0
   //   - auto-down: 0  (first line center already at anchorY via central baseline)
-  //   - middle   : extraLines * labelLineHeight / 2
-  //   - bottom   : extraLines * labelLineHeight
-  //   - auto-up  : extraLines * labelLineHeight  (lifts the first line so the LAST
+  //   - middle   : extraLines * lineStackPx / 2
+  //   - bottom   : extraLines * lineStackPx
+  //   - auto-up  : extraLines * lineStackPx  (lifts the first line so the LAST
   //                line lands at anchorY; matches 'bottom' but offset by half
   //                a text body, which the blockTopY math below accounts for)
   let firstLineShiftPx = 0;
-  if (label.valign === 'middle') firstLineShiftPx = (extraLines * labelLineHeight) / 2;
+  if (label.valign === 'middle') firstLineShiftPx = (extraLines * lineStackPx) / 2;
   else if (label.valign === 'bottom' || label.valign === 'auto-up')
-    firstLineShiftPx = extraLines * labelLineHeight;
+    firstLineShiftPx = extraLines * lineStackPx;
   // First-line baseline shift in px (negative = up). The renderer applies the
   // per-line stacking in px too, so no em round-trip is needed.
   const firstLineDyPx = firstLineShiftPx === 0 ? 0 : -firstLineShiftPx;
@@ -267,13 +289,12 @@ export function labelLayoutLocal(
   //   - auto-up  : last line bottom at anchorY + TEXT_HALF_H, block grows up
   //                (block bottom stays put as lines are added) — i.e. block
   //                top at anchorY - TEXT_HALF_H - extraLines*LINE_HEIGHT
-  const blockH = 2 * textHalfH + extraLines * labelLineHeight;
+  const blockH = 2 * textHalfH + extraLines * lineStackPx;
   let textYMin: number;
   if (label.valign === 'top') textYMin = anchorY;
   else if (label.valign === 'bottom') textYMin = anchorY - blockH;
   else if (label.valign === 'auto-down') textYMin = anchorY - textHalfH;
-  else if (label.valign === 'auto-up')
-    textYMin = anchorY - textHalfH - extraLines * labelLineHeight;
+  else if (label.valign === 'auto-up') textYMin = anchorY - textHalfH - extraLines * lineStackPx;
   else textYMin = anchorY - blockH / 2;
 
   // First-line visual center, derived from the block-top + half a text body.
