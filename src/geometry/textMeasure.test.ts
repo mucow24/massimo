@@ -126,28 +126,18 @@ describe('measureTextLabel — formatting tags', () => {
   });
 
   it('excludes tag characters from the measured width', () => {
+    // Formatted parsing drops the tag delimiters, so the bold "ab" is far
+    // narrower than the raw "<b>ab</b>" text the edit-mode (literalBullets)
+    // measurement keeps.
     const tagged = measureTextLabel(makeTextLabel({ id: 'g', text: '<b>ab</b>' }));
     const literal = measureTextLabel({
       text: '<b>ab</b>',
       fontSize: 16,
       weight: 400,
       italic: false,
-      bulletsOnly: true,
+      literalBullets: true,
     });
     expect(tagged.width).toBeLessThan(literal.width);
-  });
-
-  it('bulletsOnly mode leaves tags as literal text', () => {
-    const m = measureTextLabel({
-      text: '<b>ab</b>',
-      fontSize: 16,
-      weight: 400,
-      italic: false,
-      bulletsOnly: true,
-    });
-    expect(m.lines[0].segments).toEqual([
-      expect.objectContaining({ kind: 'text', value: '<b>ab</b>' }),
-    ]);
   });
 
   it('substitutes <air>/<xfer> glyphs', () => {

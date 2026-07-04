@@ -95,8 +95,8 @@ export function renderStationLabelText({
   // Measure ink widths so the explicit underline matches the visible text
   // extent (the same width SVG's text-decoration would have drawn). The
   // measurement is cached, so calling it here for the plain path is cheap.
-  // Full-grammar measurement (no bulletsOnly): a "<b>Foo</b>" name parses into
-  // styled runs, so its segments carry the <b>/<i>/<color> styles the
+  // Full-grammar measurement: a "<b>Foo</b>" name parses into styled
+  // runs, so its segments carry the <b>/<i>/<color> styles the
   // per-segment path paints. When the hover underline is showing this result is
   // reused as `m` below, so it MUST be measured the same way the per-segment
   // path is — otherwise a hovered tagged label would render un-styled.
