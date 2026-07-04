@@ -3,6 +3,7 @@ import { beginHistoryGroup, useDoc } from '../../state/store';
 import type { LineId, StationId } from '../../model/types';
 import { pairKeyOf } from '../../model/pairKey';
 import {
+  anchorFromArcLen,
   closestParamOnOffsetPath,
   offsetPathLength,
   snapNeighborTag,
@@ -160,9 +161,7 @@ export function useLineTagDrag(svgRef: RefObject<SVGSVGElement | null>): LineTag
     // Convert resolved canonical-t to (anchorEnd, distance) on the dragged
     // tag's stripe. Anchor follows the nearer endpoint at the new position.
     const stripeTotal = offsetPathLength(best.band.centerline, best.band.radius, best.offset);
-    const arcLen = snap.canonT * stripeTotal;
-    const anchorEnd: 'from' | 'to' = arcLen <= stripeTotal / 2 ? 'from' : 'to';
-    const distance = anchorEnd === 'from' ? arcLen : stripeTotal - arcLen;
+    const { anchorEnd, distance } = anchorFromArcLen(snap.canonT * stripeTotal, stripeTotal);
     moveLineTag(ds.tagId, best.fromStationId, best.toStationId, anchorEnd, distance);
   };
 

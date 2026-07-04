@@ -52,6 +52,7 @@ import { ItemPopovers } from './canvas/ItemPopovers';
 import { usePlacementDispatch } from './canvas/usePlacementDispatch';
 import { TransferLayer, transferEndWorld } from './TransferLayer';
 import {
+  anchorFromArcLen,
   closestParamOnOffsetPath,
   lineTraversesForwardCanon,
   offsetPathLength,
@@ -584,10 +585,8 @@ export function MapCanvas() {
       const closest = closestParamOnOffsetPath(spec.centerline, spec.radius, offset, world);
       const [fromCanon, toCanon] = spec.pairKey.split('|');
       const stripeTotal = offsetPathLength(spec.centerline, spec.radius, offset);
-      const arcLen = closest.t * stripeTotal;
       // Anchor to whichever endpoint is nearer at insertion time.
-      const anchorEnd: 'from' | 'to' = arcLen <= stripeTotal / 2 ? 'from' : 'to';
-      const distance = anchorEnd === 'from' ? arcLen : stripeTotal - arcLen;
+      const { anchorEnd, distance } = anchorFromArcLen(closest.t * stripeTotal, stripeTotal);
       addLineTag(lineId, fromCanon, toCanon, anchorEnd, distance, 0);
       // Stay in mode (matches + Station behavior).
     },
