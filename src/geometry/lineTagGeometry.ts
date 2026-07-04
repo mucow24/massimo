@@ -170,6 +170,38 @@ export function lineTraversesForwardCanon(line: Line, from: StationId, to: Stati
 }
 
 /**
+ * Convert an arc length along a tag's stripe into the stored `(anchorEnd,
+ * distance)` pair. The tag anchors to whichever endpoint is NEARER at the
+ * chosen position, storing its distance from that end, so it stays put as the
+ * corridor grows or shrinks from the far side. The exact midpoint anchors to
+ * `from`. Inverse of `arcLenFromAnchor`.
+ */
+export function anchorFromArcLen(
+  arcLen: number,
+  stripeTotal: number,
+): { anchorEnd: 'from' | 'to'; distance: number } {
+  const anchorEnd: 'from' | 'to' = arcLen <= stripeTotal / 2 ? 'from' : 'to';
+  const distance = anchorEnd === 'from' ? arcLen : stripeTotal - arcLen;
+  return { anchorEnd, distance };
+}
+
+/**
+ * Convert a stored `(anchorEnd, distance)` pair back into an arc length along
+ * the stripe, walking `distance` from the anchor endpoint. Clamped to
+ * `[0, stripeTotal]` so a distance that overruns a shrunken corridor lands on
+ * the near end rather than past it. Inverse of `anchorFromArcLen`.
+ */
+export function arcLenFromAnchor(
+  anchorEnd: 'from' | 'to',
+  distance: number,
+  stripeTotal: number,
+): number {
+  return anchorEnd === 'from'
+    ? Math.min(distance, stripeTotal)
+    : Math.max(0, stripeTotal - distance);
+}
+
+/**
  * Snap-to-neighbor for line-tag drag.
  *
  * Given a candidate canonical-t for the dragged tag on a band, scans every
@@ -204,10 +236,7 @@ export function snapNeighborTag(args: {
     if (otherOffset === null) continue;
     const otherStripeTotal = offsetPathLength(args.bandCenterline, args.curveRadius, otherOffset);
     if (otherStripeTotal <= 0) continue;
-    const otherArcLenOnStripe =
-      other.anchorEnd === 'from'
-        ? Math.min(other.distance, otherStripeTotal)
-        : Math.max(0, otherStripeTotal - other.distance);
+    const otherArcLenOnStripe = arcLenFromAnchor(other.anchorEnd, other.distance, otherStripeTotal);
     const otherCanonT = otherArcLenOnStripe / otherStripeTotal;
     const otherArcLenOnCenterline = otherCanonT * centerlineTotal;
     if (Math.abs(otherArcLenOnCenterline - candArcLenOnCenterline) < args.tol) {

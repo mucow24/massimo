@@ -64,7 +64,7 @@ export interface LabelLayout {
   baseline: LabelBaseline;
   // First-line baseline shift in px (negative = up), shifting a multi-line
   // block so `valign` refers to the BLOCK, not just the first line. Subsequent
-  // lines stack one line-height below. 0 = no shift.
+  // lines stack by the leading-scaled line height (`lineStackPx`). 0 = no shift.
   firstLineDyPx: number;
   // Tight box around the rendered text in unrotated station-local coords,
   // padded by HIT_PAD on each side. Used by:
@@ -252,8 +252,8 @@ export function labelLayoutLocal(
   // the anchor, 'auto-down' keeps the first line's center on the anchor with
   // the rest of the block extending below it, 'auto-up' keeps the last line's
   // center on the anchor with earlier lines stacking above it. We achieve this
-  // by shifting only the first line up; subsequent tspans stack 1.2em below
-  // it as before. The anchor itself stays on the L cell so rotation still
+  // by shifting only the first line up; subsequent tspans stack by `lineStackPx`
+  // below it. The anchor itself stays on the L cell so rotation still
   // pivots there.
   //
   // Lines stack down by `lineStackPx` (fontSize * LINE_HEIGHT * leading).
@@ -288,7 +288,7 @@ export function labelLayoutLocal(
   //   - bottom   : a full block-height above anchorY
   //   - auto-up  : last line bottom at anchorY + TEXT_HALF_H, block grows up
   //                (block bottom stays put as lines are added) — i.e. block
-  //                top at anchorY - TEXT_HALF_H - extraLines*LINE_HEIGHT
+  //                top at anchorY - textHalfH - extraLines*lineStackPx
   const blockH = 2 * textHalfH + extraLines * lineStackPx;
   let textYMin: number;
   if (label.valign === 'top') textYMin = anchorY;
