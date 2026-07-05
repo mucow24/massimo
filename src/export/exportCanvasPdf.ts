@@ -4,7 +4,8 @@
  * Reuses the SVG pipeline (`buildExportSvg`) — same content framing, background,
  * and chrome-stripping as the SVG/PNG paths — then renders that SVG into a true
  * vector PDF with svg2pdf.js + jsPDF: selectable text in the real Helvetica Neue
- * weights, vector line work, embedded SVG graphics kept as vectors.
+ * weights, vector line work, embedded SVG graphics kept as vectors (except the
+ * mask users, which must rasterize — see below).
  *
  * Gaps svg2pdf/jsPDF can't bridge are closed by dedicated steps in the pipeline:
  *
@@ -19,6 +20,11 @@
  *   Image shadows — svg2pdf re-parses an svg+xml `<image>` as vectors but ignores
  *   `<filter>`, so a logo's hard `feDropShadow` casing would drop; it's baked into
  *   a real offset silhouette (`bakeImageDropShadows`; pure core in `pdfDropShadow`).
+ *
+ *   Image masks — that same re-vectorizing has no `<mask>` support, so a graphic
+ *   using a mask exports unmasked. A mask has no vector equivalent, so those
+ *   graphics (only) are rasterized to a PNG the browser masks correctly
+ *   (`rasterizeMaskedImages` in `pdfMask`).
  *
  *   Text baseline — svg2pdf ignores `dominant-baseline`, so text lands too high;
  *   `normalizeTextBaselines` (pdfText) shifts each run onto the alphabetic baseline.
@@ -47,6 +53,7 @@ import { hatchStripeRects, patternRotation, ribbonFromCenterline, type Bounds } 
 import { bakeLetterSpacing, normalizeTextBaselines } from './pdfText';
 import { loadGlyphFonts, needsGlyphOutlining, outlineUnsupportedText } from './pdfGlyphs';
 import { bakeImageDropShadows } from './pdfDropShadow';
+import { rasterizeMaskedImages } from './pdfMask';
 
 const SVG_NS = 'http://www.w3.org/2000/svg';
 
@@ -227,6 +234,12 @@ export async function exportCanvasPdf(
     // Bake hatch pattern paints into stripe geometry svg2pdf can convert (must
     // run while attached — it samples path/shape geometry).
     bakeHatchedPaints(el);
+
+    // svg2pdf re-vectorizes svg+xml images and has no <mask> support, so an
+    // imported graphic that uses a mask would export unmasked. Rasterize just
+    // those to a PNG (the browser applies the mask) svg2pdf embeds verbatim.
+    // Must run BEFORE the drop-shadow bake, which then skips them (now PNG).
+    await rasterizeMaskedImages(el);
 
     // Bake hard drop-shadow filters inside embedded svg+xml logos into real
     // offset geometry — svg2pdf renders those images as vectors but ignores
