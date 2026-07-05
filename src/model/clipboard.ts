@@ -31,7 +31,8 @@ const VALID_SHAPES: ReadonlyArray<RouteBulletShape> = ['circle', 'square', 'diam
 // Helvetica Neue weights we ship — note there is NO 600.
 const VALID_WEIGHTS: ReadonlyArray<TextLabelWeight> = [100, 200, 300, 400, 500, 700, 800, 900];
 const VALID_ALIGNS: ReadonlyArray<TextLabelAlign> = ['left', 'center', 'right', 'justify'];
-const HEX7 = /^#[0-9a-fA-F]{6}$/;
+// Accepts `#rrggbb` and (since colors carry alpha) `#rrggbbaa`.
+const HEX_COLOR = /^#[0-9a-fA-F]{6}([0-9a-fA-F]{2})?$/;
 
 export function writeClipboard(items: ClipPayload[]): string {
   return JSON.stringify({ format: FORMAT, version: VERSION, items });
@@ -174,8 +175,8 @@ function parseTextLabelData(raw: unknown): Omit<TextLabel, 'id'> | null {
     return null;
   if (typeof d.italic !== 'boolean') return null;
   if (typeof d.align !== 'string' || !VALID_ALIGNS.includes(d.align as TextLabelAlign)) return null;
-  if (typeof d.color !== 'string' || !HEX7.test(d.color)) return null;
-  if (typeof d.darkColor !== 'string' || !HEX7.test(d.darkColor)) return null;
+  if (typeof d.color !== 'string' || !HEX_COLOR.test(d.color)) return null;
+  if (typeof d.darkColor !== 'string' || !HEX_COLOR.test(d.darkColor)) return null;
   // Optional: reject a present-but-wrong type; leave an absent flag absent.
   if (d.locked !== undefined && typeof d.locked !== 'boolean') return null;
   // Optional column width (0/absent = Auto). Reject a present-but-invalid value.
@@ -221,17 +222,12 @@ function parsePolygonData(raw: unknown): Omit<Polygon, 'id'> | null {
     if (typeof pt.y !== 'number' || !Number.isFinite(pt.y)) return null;
     vertices.push({ x: pt.x, y: pt.y });
   }
-  if (typeof d.fill !== 'string' || !HEX7.test(d.fill)) return null;
-  if (typeof d.stroke !== 'string' || !HEX7.test(d.stroke)) return null;
-  if (typeof d.darkFill !== 'string' || !HEX7.test(d.darkFill)) return null;
-  if (typeof d.darkStroke !== 'string' || !HEX7.test(d.darkStroke)) return null;
+  if (typeof d.fill !== 'string' || !HEX_COLOR.test(d.fill)) return null;
+  if (typeof d.stroke !== 'string' || !HEX_COLOR.test(d.stroke)) return null;
+  if (typeof d.darkFill !== 'string' || !HEX_COLOR.test(d.darkFill)) return null;
+  if (typeof d.darkStroke !== 'string' || !HEX_COLOR.test(d.darkStroke)) return null;
   if (typeof d.strokeWidth !== 'number' || !Number.isFinite(d.strokeWidth)) return null;
   // Optional fields: reject a present-but-wrong type; leave absent ones absent.
-  if (
-    d.fillOpacity !== undefined &&
-    (typeof d.fillOpacity !== 'number' || !Number.isFinite(d.fillOpacity))
-  )
-    return null;
   if (d.locked !== undefined && typeof d.locked !== 'boolean') return null;
   if (
     d.curveRadius !== undefined &&
@@ -247,7 +243,6 @@ function parsePolygonData(raw: unknown): Omit<Polygon, 'id'> | null {
     darkStroke: d.darkStroke,
     strokeWidth: d.strokeWidth,
   };
-  if (d.fillOpacity !== undefined) out.fillOpacity = d.fillOpacity as number;
   if (d.locked !== undefined) out.locked = d.locked as boolean;
   // curveRadius and closed ride along like the other optional fields. Both are
   // already validated finite/boolean above; `updatePolygon` re-clamps a later

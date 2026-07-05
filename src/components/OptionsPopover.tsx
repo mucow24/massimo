@@ -31,6 +31,7 @@ import { parseCustomPalette } from '../model/customPalette';
 import { useCustomPalettes } from '../state/customPalettes';
 import { NumericFieldRow } from './NumericFieldRow';
 import { useFieldHistory } from './useFieldHistory';
+import { ColorField } from './ColorField';
 import { usePopover } from './usePopover';
 
 /**
@@ -90,8 +91,6 @@ export function OptionsPopover() {
   // own useFieldHistory. The slider+spinbutton fields all go through
   // <NumericFieldRow />, which manages its own field history internally.
   const curveField = useFieldHistory();
-  const transferColorField = useFieldHistory();
-  const transferStrokeColorField = useFieldHistory();
 
   return (
     <div className="options-popover-wrap" ref={wrapRef}>
@@ -224,13 +223,11 @@ export function OptionsPopover() {
             <label htmlFor={`${panelId}-transferColor`} className="options-popover-label">
               Transfer color
             </label>
-            <input
+            <ColorField
               id={`${panelId}-transferColor`}
-              type="color"
-              aria-label="Transfer color"
+              ariaLabel="Transfer color"
               value={transferColor}
-              onChange={(e) => setTransferColor(e.target.value)}
-              {...transferColorField}
+              onChange={setTransferColor}
             />
           </div>
 
@@ -250,13 +247,11 @@ export function OptionsPopover() {
             <label htmlFor={`${panelId}-transferStrokeColor`} className="options-popover-label">
               Transfer stroke color
             </label>
-            <input
+            <ColorField
               id={`${panelId}-transferStrokeColor`}
-              type="color"
-              aria-label="Transfer stroke color"
+              ariaLabel="Transfer stroke color"
               value={transferStrokeColor}
-              onChange={(e) => setTransferStrokeColor(e.target.value)}
-              {...transferStrokeColorField}
+              onChange={setTransferStrokeColor}
             />
           </div>
 

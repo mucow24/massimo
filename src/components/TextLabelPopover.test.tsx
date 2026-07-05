@@ -1,9 +1,11 @@
 import { describe, it, expect, beforeEach, vi } from 'vitest';
 import { render, screen, fireEvent } from '@testing-library/react';
+import userEvent from '@testing-library/user-event';
 import { TextLabelPopover } from './TextLabelPopover';
 import { useDoc } from '../state/store';
 import { DEFAULT_DOC } from '../model/transforms';
 import { makeTextLabel } from '../test/fixtures';
+import { openColorField, setColorField } from '../test/colorField';
 
 beforeEach(() => {
   useDoc.setState({ ...useDoc.getState(), ...DEFAULT_DOC });
@@ -219,24 +221,26 @@ describe('<TextLabelPopover /> — day/night color pickers', () => {
     );
   }
 
-  it('renders day + night pickers initialized to the label colors', () => {
+  it('renders day + night pickers initialized to the label colors', async () => {
+    const user = userEvent.setup();
     seedAndRender();
-    expect(screen.getByLabelText('Label color')).toHaveValue('#112233');
-    expect(screen.getByLabelText('Dark mode label color')).toHaveValue('#445566');
+    expect(await openColorField(user, 'Label color')).toHaveValue('#112233');
+    await user.keyboard('{Escape}');
+    expect(await openColorField(user, 'Dark mode label color')).toHaveValue('#445566');
   });
 
-  it('editing the day color writes color, leaving darkColor alone', () => {
+  it('editing the day color writes color, leaving darkColor alone', async () => {
+    const user = userEvent.setup();
     seedAndRender();
-    fireEvent.change(screen.getByLabelText('Label color'), { target: { value: '#0a0a0a' } });
+    await setColorField(user, 'Label color', '#0a0a0a');
     expect(useDoc.getState().textLabels['g1'].color).toBe('#0a0a0a');
     expect(useDoc.getState().textLabels['g1'].darkColor).toBe('#445566');
   });
 
-  it('editing the night color writes darkColor, leaving color alone', () => {
+  it('editing the night color writes darkColor, leaving color alone', async () => {
+    const user = userEvent.setup();
     seedAndRender();
-    fireEvent.change(screen.getByLabelText('Dark mode label color'), {
-      target: { value: '#fafafa' },
-    });
+    await setColorField(user, 'Dark mode label color', '#fafafa');
     expect(useDoc.getState().textLabels['g1'].darkColor).toBe('#fafafa');
     expect(useDoc.getState().textLabels['g1'].color).toBe('#112233');
   });

@@ -557,6 +557,83 @@ select option {
   text-shadow: 0 0 2px rgba(0, 0, 0, 0.5);
 }
 
+/* ColorField: a swatch button that opens a react-colorful RGBA picker in a
+   portalled popover. Replaces the native <input type=color> everywhere — it
+   carries an alpha channel and, unlike the native picker on Windows, never
+   invokes the OS eyedropper that freezes the browser. react-colorful injects
+   its own picker styles at runtime; only the wrapper is styled here. */
+.color-field-swatch {
+  width: 30px;
+  height: 22px;
+  flex: 0 0 auto;
+  padding: 2px;
+  border: 1px solid var(--swatch-border);
+  border-radius: var(--radius);
+  background: var(--control-bg);
+  cursor: pointer;
+  box-sizing: border-box;
+}
+.color-field-swatch.open {
+  border-color: var(--selection-ring);
+}
+.color-field-swatch.selected {
+  border: 2px solid var(--selection-ring);
+}
+.color-field-swatch:disabled {
+  opacity: 0.5;
+  cursor: default;
+}
+/* In the palette grid the custom slot sits among 22px preset swatches. */
+.color-field-swatch.palette-custom {
+  width: 22px;
+  align-self: flex-start;
+}
+.color-field-chip {
+  display: block;
+  width: 100%;
+  height: 100%;
+  border-radius: 2px;
+  /* The color over a checkerboard so a translucent value reads as translucent. */
+  background-image:
+    linear-gradient(var(--chip), var(--chip)),
+    conic-gradient(#bbb 25%, #fff 0 50%, #bbb 0 75%, #fff 0);
+  background-size:
+    100% 100%,
+    8px 8px;
+}
+.color-field-popover {
+  position: fixed;
+  /* Above the DraggablePopoverShell canvas popovers (zIndex 1100) that host the
+     color swatches — the portalled picker shares the root stacking context, so
+     it must out-rank them or it opens behind the popover that owns it. */
+  z-index: 1200;
+  width: 224px;
+  padding: 12px;
+  box-sizing: border-box;
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  background: var(--control-bg);
+  box-shadow: 0 6px 24px rgba(0, 0, 0, 0.28);
+}
+.color-field-popover .react-colorful {
+  width: 200px;
+  height: 200px;
+}
+.color-field-hexrow {
+  margin-top: 10px;
+}
+.color-field-hexrow input {
+  width: 100%;
+  box-sizing: border-box;
+  padding: 3px 6px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  background: var(--control-bg);
+  color: var(--text);
+  font: inherit;
+  text-transform: lowercase;
+}
+
 .toolbar .spacer {
   flex: 1;
 }

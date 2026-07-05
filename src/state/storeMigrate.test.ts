@@ -206,6 +206,54 @@ describe('migrateDoc', () => {
     });
   });
 
+  describe('v8 → v9: fold polygon fillOpacity into the fill alpha', () => {
+    const legacyPoly = (extra: Partial<Polygon> & { fillOpacity?: number }) =>
+      ({
+        id: 'P',
+        vertices: [
+          { x: 0, y: 0 },
+          { x: 1, y: 0 },
+          { x: 1, y: 1 },
+        ],
+        fill: '#112233',
+        stroke: '#000000',
+        darkFill: '#445566',
+        darkStroke: '#000000',
+        strokeWidth: 1,
+        ...extra,
+      }) as unknown as Polygon;
+
+    it('folds fillOpacity 50 into an 80 alpha on BOTH fill and darkFill, dropping the field', () => {
+      const out = run({ polygons: { P: legacyPoly({ fillOpacity: 50 }) } }, 8);
+      const p = out.polygons!.P;
+      expect(p.fill).toBe('#11223380');
+      expect(p.darkFill).toBe('#44556680');
+      expect('fillOpacity' in p).toBe(false);
+    });
+
+    it('drops an opaque fillOpacity 100 without adding an alpha suffix', () => {
+      const out = run({ polygons: { P: legacyPoly({ fillOpacity: 100 }) } }, 8);
+      const p = out.polygons!.P;
+      expect(p.fill).toBe('#112233');
+      expect(p.darkFill).toBe('#445566');
+      expect('fillOpacity' in p).toBe(false);
+    });
+
+    it('leaves a polygon without fillOpacity untouched (same reference)', () => {
+      const input = { polygons: { P: legacyPoly({}) } };
+      const out = run(input, 8);
+      expect(out).toBe(input);
+    });
+
+    it('does not fold at version >= 9', () => {
+      const out = run({ polygons: { P: legacyPoly({ fillOpacity: 50 }) } }, 9);
+      const p = out.polygons!.P;
+      // Field survives untouched — a v9 doc predates no fold.
+      expect((p as unknown as { fillOpacity?: number }).fillOpacity).toBe(50);
+      expect(p.fill).toBe('#112233');
+    });
+  });
+
   describe('version handling', () => {
     it('treats a missing/corrupt version as v0 so every migration runs', () => {
       const out = run(

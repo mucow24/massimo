@@ -30,9 +30,8 @@ describe('<ColorPalette /> sections', () => {
     expect(screen.getByTitle('Blue (A·C·E)')).toBeInTheDocument();
     // 11 MTA swatches.
     expect(document.querySelectorAll('.color-palette-section button').length).toBe(11);
-    // The custom-color label uses '?' as its visible glyph.
-    const customLabel = document.querySelector('label[title^="Custom"]');
-    expect(customLabel).not.toBeNull();
+    // The custom slot is the react-colorful ColorField swatch.
+    expect(screen.getByLabelText('Custom color')).toBeInTheDocument();
   });
 
   it('with only BART active, MTA section is absent and BART swatches appear', () => {
@@ -66,39 +65,31 @@ describe('<ColorPalette /> sections', () => {
   it('isCustom is computed against ACTIVE palettes only — an MTA blue with only-BART active reads as custom', () => {
     useDoc.setState({ ...useDoc.getState(), activePalettes: ['bart'] });
     render(<ColorPalette value="#0039A6" onChange={vi.fn()} />);
-    const customLabel = document.querySelector('label[title^="Custom"]');
-    expect(customLabel).not.toBeNull();
+    const custom = screen.getByLabelText('Custom color');
     // When custom is engaged, the title includes the value in parentheses.
-    expect(customLabel?.getAttribute('title')).toBe('Custom (#0039A6)');
+    expect(custom.getAttribute('title')).toBe('Custom (#0039A6)');
   });
 
   it('toggling MTA on flips the same color back to a swatch hit (no longer custom)', () => {
     useDoc.setState({ ...useDoc.getState(), activePalettes: ['mta', 'bart'] });
     render(<ColorPalette value="#0039A6" onChange={vi.fn()} />);
-    const customLabel = document.querySelector('label[title^="Custom"]');
-    expect(customLabel?.getAttribute('title')).toBe('Custom');
+    expect(screen.getByLabelText('Custom color').getAttribute('title')).toBe('Custom');
   });
 
-  // Regression: the hidden native color input is taken out of flow so it stays
-  // invisible while the wrapping label remains the click target. If nothing
-  // establishes a containing block for it, the input is positioned against the
-  // page and its static offset — deep inside a scrolled line inspector — pushes
-  // the document taller than the viewport, adding a spurious window scrollbar
-  // whenever a line is selected. Its containing block MUST be a positioned
-  // ancestor (the label) so it can't escape the inspector's scroll container.
-  it('the hidden color input is positioned and has a positioned ancestor as its containing block', () => {
+  // The custom slot no longer hosts a hidden native <input type=color> (which
+  // needed a positioned containing block to avoid stretching the scrolled
+  // inspector). It's a ColorField button whose picker portals to <body>, so it
+  // can't push the document taller. Guard that the native input is gone and the
+  // swatch opens the RGBA picker instead.
+  it('the custom slot is a ColorField button with no in-flow native color input', async () => {
+    const user = userEvent.setup();
     useDoc.setState({ ...useDoc.getState(), activePalettes: ['mta'] });
     render(<ColorPalette value="#0039A6" onChange={vi.fn()} />);
-    const input = document.querySelector('input[type="color"]') as HTMLElement | null;
-    expect(input).not.toBeNull();
-    // It's removed from flow to hide it (absolute), so it needs a containing block.
-    expect(window.getComputedStyle(input!).position).toBe('absolute');
-    const isPositioned = (el: HTMLElement) =>
-      ['relative', 'absolute', 'fixed', 'sticky'].includes(window.getComputedStyle(el).position);
-    let cb: HTMLElement | null = input!.parentElement;
-    while (cb && !isPositioned(cb)) cb = cb.parentElement;
-    expect(cb).not.toBeNull();
-    expect(cb!.tagName).toBe('LABEL');
+    expect(document.querySelector('input[type="color"]')).toBeNull();
+    const swatch = screen.getByLabelText('Custom color');
+    expect(swatch.tagName).toBe('BUTTON');
+    await user.click(swatch);
+    expect(screen.getByRole('dialog')).toBeInTheDocument();
   });
 });
 
@@ -134,8 +125,7 @@ describe('<ColorPalette /> custom palettes', () => {
     seedFrrf();
     useDoc.setState({ ...useDoc.getState(), activePalettes: ['custom:frrf'] });
     render(<ColorPalette value="#c1272d" onChange={vi.fn()} />);
-    const customLabel = document.querySelector('label[title^="Custom"]');
     // Recognized swatch hit → plain "Custom", not "Custom (#c1272d)".
-    expect(customLabel?.getAttribute('title')).toBe('Custom');
+    expect(screen.getByLabelText('Custom color').getAttribute('title')).toBe('Custom');
   });
 });
