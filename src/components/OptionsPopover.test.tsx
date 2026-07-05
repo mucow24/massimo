@@ -96,7 +96,7 @@ describe('<OptionsPopover />', () => {
     await user.click(screen.getByRole('button', { name: 'Options' }));
     const before = useDoc.getState().labelFontSize;
     fireEvent.wheel(screen.getByRole('slider', { name: /font size/i }), { deltaY: -1 });
-    expect(useDoc.getState().labelFontSize).toBe(before + 0.5);
+    expect(useDoc.getState().labelFontSize).toBe(before + 0.25);
   });
 
   it('contains a font-size slider with bounds [2, 24] that updates the store', async () => {
@@ -106,7 +106,7 @@ describe('<OptionsPopover />', () => {
     const slider = screen.getByRole('slider', { name: /font size/i });
     expect(slider).toHaveAttribute('min', '2');
     expect(slider).toHaveAttribute('max', '24');
-    expect(slider).toHaveAttribute('step', '0.5');
+    expect(slider).toHaveAttribute('step', '0.25');
     fireEvent.change(slider, { target: { value: '18' } });
     expect(useDoc.getState().labelFontSize).toBe(18);
   });
@@ -120,7 +120,7 @@ describe('<OptionsPopover />', () => {
     // No `max` attribute — the textbox lets users enter sizes beyond the
     // slider's range.
     expect(spin).not.toHaveAttribute('max');
-    expect(spin).toHaveAttribute('step', '0.5');
+    expect(spin).toHaveAttribute('step', '0.25');
     fireEvent.change(spin, { target: { value: '7' } });
     expect(useDoc.getState().labelFontSize).toBe(7);
     // Above the slider max is allowed via the textbox.
@@ -128,35 +128,35 @@ describe('<OptionsPopover />', () => {
     expect(useDoc.getState().labelFontSize).toBe(40);
   });
 
-  it('the font-size spinbutton displays one decimal place', async () => {
+  it('the font-size spinbutton displays two decimal places', async () => {
     const user = userEvent.setup();
     render(<Toolbar />);
     await user.click(screen.getByRole('button', { name: 'Options' }));
     const spin = screen.getByRole('spinbutton', { name: /font size/i }) as HTMLInputElement;
-    expect(spin.value).toBe('12.0');
+    expect(spin.value).toBe('12.00');
     act(() => {
       useDoc.setState({ ...useDoc.getState(), labelFontSize: 7.5 });
     });
-    expect(spin.value).toBe('7.5');
+    expect(spin.value).toBe('7.50');
   });
 
-  it('mousewheel on the spinbutton steps by 0.5, increments freely above the slider max, clamps at MIN', async () => {
+  it('mousewheel on the spinbutton steps by 0.25, increments freely above the slider max, clamps at MIN', async () => {
     const user = userEvent.setup();
     render(<Toolbar />);
     await user.click(screen.getByRole('button', { name: 'Options' }));
     const spin = screen.getByRole('spinbutton', { name: /font size/i });
 
-    // Start at default 12; each wheel tick moves by half a point.
+    // Start at default 12; each wheel tick moves by a quarter point.
     fireEvent.wheel(spin, { deltaY: -1 });
-    expect(useDoc.getState().labelFontSize).toBe(12.5);
+    expect(useDoc.getState().labelFontSize).toBe(12.25);
     fireEvent.wheel(spin, { deltaY: 1 });
     fireEvent.wheel(spin, { deltaY: 1 });
-    expect(useDoc.getState().labelFontSize).toBe(11.5);
+    expect(useDoc.getState().labelFontSize).toBe(11.75);
 
     // No upper clamp — wheeling up from the slider max keeps incrementing.
     useDoc.setState({ ...useDoc.getState(), labelFontSize: 24 });
     fireEvent.wheel(spin, { deltaY: -1 });
-    expect(useDoc.getState().labelFontSize).toBe(24.5);
+    expect(useDoc.getState().labelFontSize).toBe(24.25);
 
     // Clamp to MIN.
     useDoc.setState({ ...useDoc.getState(), labelFontSize: 2 });
@@ -172,7 +172,7 @@ describe('<OptionsPopover />', () => {
     fireEvent.change(spin, { target: { value: '' } });
     expect(useDoc.getState().labelFontSize).toBe(12); // unchanged
     fireEvent.blur(spin);
-    expect(spin.value).toBe('12.0'); // re-synced to the store, one decimal
+    expect(spin.value).toBe('12.00'); // re-synced to the store, two decimals
   });
 
   it('Weight dropdown lists every shipped Helvetica Neue weight in ascending order', async () => {
@@ -271,14 +271,14 @@ describe('<OptionsPopover />', () => {
       expect(option).toHaveAttribute('value', '1');
     });
 
-    it('contains a Tracking slider with bounds [-0.1, 0.5] step 0.01 that updates the store', async () => {
+    it('contains a Tracking slider with bounds [-0.1, 0.5] step 0.001 that updates the store', async () => {
       const user = userEvent.setup();
       render(<Toolbar />);
       await user.click(screen.getByRole('button', { name: 'Options' }));
       const slider = screen.getByRole('slider', { name: /tracking/i });
       expect(slider).toHaveAttribute('min', '-0.1');
       expect(slider).toHaveAttribute('max', '0.5');
-      expect(slider).toHaveAttribute('step', '0.01');
+      expect(slider).toHaveAttribute('step', '0.001');
       expect(slider).toHaveValue('0'); // neutral default
       fireEvent.change(slider, { target: { value: '0.1' } });
       expect(useDoc.getState().labelTracking).toBe(0.1);

@@ -1276,7 +1276,7 @@ describe('label font/style settings', () => {
     expect(T.LABEL_FONT_SIZE_MIN).toBe(2);
     expect(T.LABEL_FONT_SIZE_MAX).toBe(24);
     expect(T.LABEL_FONT_SIZE_DEFAULT).toBe(12);
-    expect(T.FONT_SIZE_STEP).toBe(0.5);
+    expect(T.FONT_SIZE_STEP).toBe(0.25);
   });
 
   it('DEFAULT_DOC has sensible defaults', () => {
@@ -1301,11 +1301,11 @@ describe('label font/style settings', () => {
     expect(T.setLabelFontSize(doc, 99).labelFontSize).toBe(99);
   });
 
-  it('setLabelFontSize snaps fractional values to the nearest 0.5', () => {
+  it('setLabelFontSize snaps fractional values to the nearest 0.25', () => {
     const doc = makeDoc({});
-    expect(T.setLabelFontSize(doc, 12.7).labelFontSize).toBe(12.5);
-    expect(T.setLabelFontSize(doc, 12.2).labelFontSize).toBe(12);
-    expect(T.setLabelFontSize(doc, 12.8).labelFontSize).toBe(13);
+    expect(T.setLabelFontSize(doc, 12.13).labelFontSize).toBe(12.25);
+    expect(T.setLabelFontSize(doc, 12.1).labelFontSize).toBe(12);
+    expect(T.setLabelFontSize(doc, 12.7).labelFontSize).toBe(12.75);
     expect(T.setLabelFontSize(doc, 12.5).labelFontSize).toBe(12.5);
   });
 
@@ -1334,7 +1334,7 @@ describe('label font/style settings', () => {
     expect(T.LABEL_LEADING_DEFAULT).toBe(1);
     expect(T.LABEL_TRACKING_MIN).toBe(-0.1);
     expect(T.LABEL_TRACKING_MAX).toBe(0.5);
-    expect(T.LABEL_TRACKING_STEP).toBe(0.01);
+    expect(T.LABEL_TRACKING_STEP).toBe(0.001);
     expect(T.LABEL_TRACKING_DEFAULT).toBe(0);
   });
 
@@ -1353,10 +1353,10 @@ describe('label font/style settings', () => {
     expect(T.setLabelLeading(doc, 5).labelLeading).toBe(5);
   });
 
-  it('setLabelTracking snaps to the 0.01 step and clamps at the -0.1 floor', () => {
+  it('setLabelTracking snaps to the 0.001 step and clamps at the -0.1 floor', () => {
     const doc = makeDoc({});
     expect(T.setLabelTracking(doc, 0.2).labelTracking).toBe(0.2);
-    expect(T.setLabelTracking(doc, 0.123).labelTracking).toBe(0.12);
+    expect(T.setLabelTracking(doc, 0.123).labelTracking).toBe(0.123);
     // Below the -0.1 floor is a hard clamp.
     expect(T.setLabelTracking(doc, -1).labelTracking).toBe(-0.1);
     // The spinbutton accepts values above the slider max.
@@ -2719,11 +2719,11 @@ describe('updateTextLabel', () => {
     const next = T.updateTextLabel(doc, 'g1', { text: 'B', italic: true });
     expect(next.textLabels.g1).toMatchObject({ text: 'B', italic: true, fontSize: 16 });
   });
-  it('clamps fontSize at MIN only (textbox accepts arbitrary above) and snaps to the nearest 0.5', () => {
+  it('clamps fontSize at MIN only (textbox accepts arbitrary above) and snaps to the nearest 0.25', () => {
     const doc = makeDoc({ textLabels: [makeTextLabel({ id: 'g1', fontSize: 16 })] });
     expect(T.updateTextLabel(doc, 'g1', { fontSize: 0 }).textLabels.g1.fontSize).toBe(1);
     expect(T.updateTextLabel(doc, 'g1', { fontSize: 999 }).textLabels.g1.fontSize).toBe(999);
-    expect(T.updateTextLabel(doc, 'g1', { fontSize: 23.7 }).textLabels.g1.fontSize).toBe(23.5);
+    expect(T.updateTextLabel(doc, 'g1', { fontSize: 23.7 }).textLabels.g1.fontSize).toBe(23.75);
     expect(T.updateTextLabel(doc, 'g1', { fontSize: 23.5 }).textLabels.g1.fontSize).toBe(23.5);
   });
   it('clamps column width to a non-negative integer (0 = Auto)', () => {
@@ -2738,12 +2738,12 @@ describe('updateTextLabel', () => {
     expect(T.updateTextLabel(doc, 'g1', { leading: 1.234 }).textLabels.g1.leading).toBe(1.25);
     expect(T.updateTextLabel(doc, 'g1', { leading: 1.05 }).textLabels.g1.leading).toBe(1.05);
   });
-  it('clamps tracking at the slider floor and snaps to the 0.01 step', () => {
+  it('clamps tracking at the slider floor and snaps to the 0.001 step', () => {
     const doc = makeDoc({ textLabels: [makeTextLabel({ id: 'g1' })] });
     expect(T.updateTextLabel(doc, 'g1', { tracking: -0.5 }).textLabels.g1.tracking).toBe(
       T.TEXT_LABEL_TRACKING_MIN,
     );
-    expect(T.updateTextLabel(doc, 'g1', { tracking: 0.123 }).textLabels.g1.tracking).toBe(0.12);
+    expect(T.updateTextLabel(doc, 'g1', { tracking: 0.123 }).textLabels.g1.tracking).toBe(0.123);
     expect(T.updateTextLabel(doc, 'g1', { tracking: 0.05 }).textLabels.g1.tracking).toBe(0.05);
   });
   it('is a no-op for missing ids', () => {
