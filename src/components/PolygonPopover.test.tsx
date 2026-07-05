@@ -23,6 +23,28 @@ function renderPopover(onClose = () => {}) {
 }
 
 describe('<PolygonPopover />', () => {
+  it('lays out the controls top-to-bottom with two section dividers and a "Fill color" label', () => {
+    const { container } = renderPopover();
+    const body = container.querySelector('.polygon-popover .body') as HTMLElement;
+    // Map each body row to a token: dividers to 'divider', control rows to their
+    // label text, the footer (no label) to 'footer'. Locks order + divider spots.
+    const sequence = Array.from(body.children).map((child) =>
+      child.tagName === 'HR' ? 'divider' : (child.querySelector('label')?.textContent ?? 'footer'),
+    );
+    expect(sequence).toEqual([
+      'Fill color',
+      'Fill opacity',
+      'divider',
+      'Stroke color',
+      'Stroke width',
+      'divider',
+      'Curve radius',
+      'Closed',
+      'Layer',
+      'footer',
+    ]);
+  });
+
   it('renders fill + stroke color pickers, a 0–10 stroke-width control, and Delete', () => {
     const { container } = renderPopover();
     const slider = screen.getByRole('slider', { name: 'Stroke width' });

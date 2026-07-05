@@ -49,10 +49,10 @@ export const LABEL_FONT_SIZE_MIN = 2;
 export const LABEL_FONT_SIZE_MAX = 24;
 export const LABEL_FONT_SIZE_DEFAULT = 12;
 
-// Every font-size control (station labels + text labels) steps in halves and
+// Every font-size control (station labels + text labels) steps in quarters and
 // stores values snapped to this grid. Mirrors `LINE_STROKE_STEP`'s role for
 // the stroke-width field.
-export const FONT_SIZE_STEP = 0.5;
+export const FONT_SIZE_STEP = 0.25;
 
 export const TRANSFER_THICKNESS_MIN = 1;
 export const TRANSFER_THICKNESS_MAX = 14;
@@ -97,7 +97,7 @@ export const LABEL_LEADING_STEP = 0.05;
 export const LABEL_LEADING_DEFAULT = 1;
 export const LABEL_TRACKING_MIN = -0.1;
 export const LABEL_TRACKING_MAX = 0.5;
-export const LABEL_TRACKING_STEP = 0.01;
+export const LABEL_TRACKING_STEP = 0.001;
 export const LABEL_TRACKING_DEFAULT = 0;
 
 // Default document name for a fresh (or nameless legacy) map. Also the value the
@@ -183,7 +183,7 @@ export const TEXT_LABEL_LEADING_DEFAULT = 1;
 // The floor is a hard clamp — below about -0.1em glyphs pile up unreadably.
 export const TEXT_LABEL_TRACKING_MIN = -0.1;
 export const TEXT_LABEL_TRACKING_MAX = 0.5;
-export const TEXT_LABEL_TRACKING_STEP = 0.01;
+export const TEXT_LABEL_TRACKING_STEP = 0.001;
 export const TEXT_LABEL_TRACKING_DEFAULT = 0;
 export const TEXT_LABEL_DEFAULTS: Omit<TextLabel, 'id' | 'x' | 'y'> = {
   rotation: 0,
@@ -1380,7 +1380,7 @@ export function setDocName(doc: MapDoc, name: string): MapDoc {
 
 // Clamps at the bottom only; the spinbutton accepts sizes beyond the slider's
 // range (LABEL_FONT_SIZE_MAX constrains the slider, not the value). Snaps to
-// the FONT_SIZE_STEP (0.5) grid so the half-step controls round-trip cleanly.
+// the FONT_SIZE_STEP (0.25) grid so the quarter-step controls round-trip cleanly.
 export function setLabelFontSize(doc: MapDoc, n: number): MapDoc {
   const clamped = Math.max(LABEL_FONT_SIZE_MIN, Math.round(n / FONT_SIZE_STEP) * FONT_SIZE_STEP);
   if (clamped === doc.labelFontSize) return doc;
@@ -1459,12 +1459,14 @@ export function setLabelItalic(doc: MapDoc, i: boolean): MapDoc {
 }
 
 // Snap a value to its slider's step and clamp at the bottom only (the
-// spinbutton accepts values above the slider max). The two-decimal rounding
-// kills float artifacts like 1.1500000000000001 for the 0.05 / 0.01 steps.
-// Shared by the global leading/tracking setters and per-label updateTextLabel.
+// spinbutton accepts values above the slider max). The three-decimal rounding
+// kills float artifacts like 1.1500000000000001 while preserving the finest
+// step in use (tracking's 0.001); the coarser 0.05 / 0.25 steps never carry a
+// legitimate third decimal, so they're unaffected. Shared by the global
+// leading/tracking setters and per-label updateTextLabel.
 export function snapToStep(v: number, step: number, min: number): number {
   if (!Number.isFinite(v)) return min;
-  return Math.max(min, Math.round(Math.round(v / step) * step * 100) / 100);
+  return Math.max(min, Math.round(Math.round(v / step) * step * 1000) / 1000);
 }
 
 // Global station-label line spacing. Clamps/snaps like the per-label leading;
@@ -1695,7 +1697,7 @@ export function updateTextLabel(
   return updateRecord(doc, 'textLabels', id, (cur) => {
     // Clamp font size at the bottom only so callers (slider, spinbutton,
     // paste) can't push it to 0/negative; the spinbutton accepts sizes beyond
-    // the slider's range. Snaps to the FONT_SIZE_STEP (0.5) grid. Mirrors
+    // the slider's range. Snaps to the FONT_SIZE_STEP (0.25) grid. Mirrors
     // `setLabelFontSize`.
     let nextPatch = patch;
     if (typeof patch.fontSize === 'number') {

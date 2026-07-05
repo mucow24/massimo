@@ -27,8 +27,9 @@ interface Props {
 }
 
 /**
- * Editing popover for a selected polygon: fill color, stroke width, stroke
- * color, and delete. The anchor (centroid) is frozen at mount and projected
+ * Editing popover for a selected polygon: fill color + opacity, stroke color +
+ * width, curve radius, closed toggle, layer order, and delete. The anchor
+ * (centroid) is frozen at mount and projected
  * through the live viewport so it tracks pan/zoom without sliding when vertices
  * move; the header drag (world-space, via useDraggablePopover) stays pinned to
  * the canvas through zoom. Mirrors {@link TextLabelPopover}.
@@ -84,7 +85,7 @@ export function PolygonPopover({ polygon, view, onClose }: Props) {
       headerHandlers={headerHandlers}
     >
       <div className="row">
-        <label htmlFor="polygon-fill">Color</label>
+        <label htmlFor="polygon-fill">Fill color</label>
         <SunIcon aria-hidden="true" />
         <input
           id="polygon-fill"
@@ -121,6 +122,32 @@ export function PolygonPopover({ polygon, view, onClose }: Props) {
         }
         disabled={locked || !closed}
       />
+      <hr className="popover-divider" aria-hidden="true" />
+      <div className="row">
+        <label htmlFor="polygon-stroke">Stroke color</label>
+        <SunIcon aria-hidden="true" />
+        <input
+          id="polygon-stroke"
+          type="color"
+          aria-label="Stroke color"
+          title="Light mode stroke"
+          value={polygon.stroke}
+          disabled={locked}
+          onChange={(e) => onStroke(e.target.value)}
+          {...strokeField}
+        />
+        <MoonIcon aria-hidden="true" />
+        <input
+          id="polygon-dark-stroke"
+          type="color"
+          aria-label="Dark mode stroke color"
+          title="Dark mode stroke"
+          value={darkStroke}
+          disabled={locked}
+          onChange={(e) => onDarkStroke(e.target.value)}
+          {...darkStrokeField}
+        />
+      </div>
       <NumericFieldRow
         id="polygon-stroke-width"
         label="Stroke width"
@@ -133,6 +160,7 @@ export function PolygonPopover({ polygon, view, onClose }: Props) {
         textboxAllowAboveMax
         disabled={locked}
       />
+      <hr className="popover-divider" aria-hidden="true" />
       <NumericFieldRow
         id="polygon-curve-radius"
         label="Curve radius"
@@ -159,31 +187,6 @@ export function PolygonPopover({ polygon, view, onClose }: Props) {
           checked={closed}
           disabled={locked}
           onChange={(e) => onClosed(e.target.checked)}
-        />
-      </div>
-      <div className="row">
-        <label htmlFor="polygon-stroke">Stroke color</label>
-        <SunIcon aria-hidden="true" />
-        <input
-          id="polygon-stroke"
-          type="color"
-          aria-label="Stroke color"
-          title="Light mode stroke"
-          value={polygon.stroke}
-          disabled={locked}
-          onChange={(e) => onStroke(e.target.value)}
-          {...strokeField}
-        />
-        <MoonIcon aria-hidden="true" />
-        <input
-          id="polygon-dark-stroke"
-          type="color"
-          aria-label="Dark mode stroke color"
-          title="Dark mode stroke"
-          value={darkStroke}
-          disabled={locked}
-          onChange={(e) => onDarkStroke(e.target.value)}
-          {...darkStrokeField}
         />
       </div>
       <div className="row">

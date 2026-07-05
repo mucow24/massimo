@@ -264,25 +264,57 @@ describe('<TextLabelPopover /> — text / size / align / weight controls', () =>
     expect(useDoc.getState().textLabels['g1'].text).toBe('Hello');
   });
 
+  it('lays out the controls top-to-bottom with two section dividers (Text stays pinned at top)', () => {
+    const label = makeTextLabel({ id: 'g1', text: 'Hi', fontSize: 16, weight: 400, align: 'left' });
+    useDoc.setState({ ...useDoc.getState(), textLabels: { g1: label } });
+    const { container } = render(
+      <TextLabelPopover
+        label={useDoc.getState().textLabels['g1']}
+        world={{ x: 0, y: 0 }}
+        view={identityView}
+        onClose={() => {}}
+      />,
+    );
+    const body = container.querySelector('.text-label-popover .body') as HTMLElement;
+    // Map each body row to a token: dividers to 'divider', control rows to their
+    // label text, the footer (no label) to 'footer'. Locks order + divider spots.
+    const sequence = Array.from(body.children).map((child) =>
+      child.tagName === 'HR' ? 'divider' : (child.querySelector('label')?.textContent ?? 'footer'),
+    );
+    expect(sequence).toEqual([
+      'Text',
+      'Color',
+      'Size',
+      'Weight',
+      'divider',
+      'Align',
+      'Width',
+      'divider',
+      'Leading',
+      'Tracking',
+      'footer',
+    ]);
+  });
+
   it('changes the font size via the range slider', () => {
     seedAndRender();
     fireEvent.change(screen.getByRole('slider', { name: 'Size' }), { target: { value: '24' } });
     expect(useDoc.getState().textLabels['g1'].fontSize).toBe(24);
   });
 
-  it('the size slider and spinbutton step by 0.5 and the box shows one decimal', () => {
+  it('the size slider and spinbutton step by 0.25 and the box shows two decimals', () => {
     seedAndRender();
     const slider = screen.getByRole('slider', { name: 'Size' }) as HTMLInputElement;
     const spin = screen.getByRole('spinbutton', { name: 'Size' }) as HTMLInputElement;
-    expect(slider.getAttribute('step')).toBe('0.5');
-    expect(spin.getAttribute('step')).toBe('0.5');
-    expect(spin.value).toBe('16.0');
+    expect(slider.getAttribute('step')).toBe('0.25');
+    expect(spin.getAttribute('step')).toBe('0.25');
+    expect(spin.value).toBe('16.00');
   });
 
-  it('writes half-point sizes via the wheel and the slider', () => {
+  it('writes quarter-point sizes via the wheel and the slider', () => {
     seedAndRender();
     fireEvent.wheel(screen.getByRole('spinbutton', { name: 'Size' }), { deltaY: -1 });
-    expect(useDoc.getState().textLabels['g1'].fontSize).toBe(16.5);
+    expect(useDoc.getState().textLabels['g1'].fontSize).toBe(16.25);
     fireEvent.change(screen.getByRole('slider', { name: 'Size' }), { target: { value: '20.5' } });
     expect(useDoc.getState().textLabels['g1'].fontSize).toBe(20.5);
   });
@@ -337,12 +369,12 @@ describe('<TextLabelPopover /> — leading + tracking', () => {
     expect(useDoc.getState().textLabels['g1'].leading).toBe(1.5);
   });
 
-  it('sets tracking via its slider ([-0.1,0.5] range, 0.01 step)', () => {
+  it('sets tracking via its slider ([-0.1,0.5] range, 0.001 step)', () => {
     seedAndRender();
     const slider = screen.getByRole('slider', { name: 'Tracking' }) as HTMLInputElement;
     expect(slider.getAttribute('min')).toBe('-0.1');
     expect(slider.getAttribute('max')).toBe('0.5');
-    expect(slider.getAttribute('step')).toBe('0.01');
+    expect(slider.getAttribute('step')).toBe('0.001');
     expect(slider.value).toBe('0'); // default
     fireEvent.change(slider, { target: { value: '0.25' } });
     expect(useDoc.getState().textLabels['g1'].tracking).toBe(0.25);

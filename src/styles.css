@@ -638,6 +638,15 @@ select option {
   gap: 4px;
   flex: 1;
 }
+/* Hairline section divider between control groups in the item popovers. Sits in
+   the body's flex gap (no own margin); aria-hidden as it's purely visual. */
+.bullet-popover .popover-divider,
+.text-label-popover .popover-divider {
+  border: 0;
+  border-top: 1px solid var(--border);
+  margin: 0;
+  width: 100%;
+}
 
 /* ── Shared control recipe ──
    One look for the small chip buttons (toolbar tools, popover shape/align/
