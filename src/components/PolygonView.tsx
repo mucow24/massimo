@@ -94,7 +94,6 @@ export function PolygonView({
         data-polygon-open={!closed || undefined}
         d={polygonPathData(verts, polygon.curveRadius ?? 0, closed)}
         fill={closed ? fill : 'none'}
-        fillOpacity={closed ? (polygon.fillOpacity ?? 100) / 100 : undefined}
         stroke={stroke}
         strokeWidth={polygon.strokeWidth}
         // strokeWidth 0 already hides the stroke; linejoin keeps thin corners clean.

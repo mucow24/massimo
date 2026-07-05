@@ -27,12 +27,49 @@ function parseHex(hex: string): [number, number, number] {
   return [0, 0, 0];
 }
 
-function toHex(r: number, g: number, b: number): string {
+// Parse a hex color to [r, g, b, a], each 0-255. Alpha defaults to 255 (opaque)
+// for the alpha-less #rgb / #rrggbb forms. Companion to parseHex for the paths
+// that must PRESERVE transparency (desaturating a translucent line color)
+// rather than flatten it. Malformed input falls back to opaque black, matching
+// parseHex.
+export function parseHexA(hex: string): [number, number, number, number] {
+  const [r, g, b] = parseHex(hex);
+  const m = hex.replace('#', '').trim();
+  if (/^[0-9a-fA-F]{4}$/.test(m)) return [r, g, b, parseInt(m[3] + m[3], 16)];
+  if (/^[0-9a-fA-F]{8}$/.test(m)) return [r, g, b, parseInt(m.slice(6, 8), 16)];
+  return [r, g, b, 255];
+}
+
+// Emit a hex string. With alpha 255 (the default) this is the historical
+// 6-digit `#rrggbb`; a sub-255 alpha appends the two-nibble suffix (`#rrggbbaa`)
+// so translucent colors round-trip. Keeping opaque colors 6-digit means stored
+// colors, palette-swatch matching, and existing saves don't churn.
+function toHex(r: number, g: number, b: number, a = 255): string {
   const h = (n: number) =>
     Math.max(0, Math.min(255, Math.round(n)))
       .toString(16)
       .padStart(2, '0');
-  return `#${h(r)}${h(g)}${h(b)}`;
+  const rgb = `#${h(r)}${h(g)}${h(b)}`;
+  return a >= 255 ? rgb : `${rgb}${h(a)}`;
+}
+
+// Canonical stored form of any hex color: lowercase, shorthand expanded, and
+// an opaque (`ff`) alpha suffix stripped back to 6 digits. Translucent colors
+// keep their `#rrggbbaa` form. Malformed input collapses to `#000000`. Used to
+// normalize picker output and to compare a value against palette swatches
+// without a spurious `ff` making an opaque color miss its 6-digit swatch.
+export function normalizeHex(hex: string): string {
+  const [r, g, b, a] = parseHexA(hex);
+  return toHex(r, g, b, a);
+}
+
+// Return `hex` with its alpha channel set to the byte `a` (0-255), normalized so
+// an opaque result (a ≥ 255) drops back to 6 digits. The RGB is taken from
+// `hex`; any alpha it already carries is replaced. Used to fold the legacy
+// polygon fill-opacity percentage into the fill color's alpha.
+export function withHexAlpha(hex: string, a: number): string {
+  const [r, g, b] = parseHexA(hex);
+  return toHex(r, g, b, Math.max(0, Math.min(255, Math.round(a))));
 }
 
 // Returns a CSS rgba() string with the given alpha applied to a hex color.
@@ -57,8 +94,10 @@ export function blendOver(fg: string, alpha: number, bg = '#ffffff'): string {
 // amount=0 returns the per-pixel luma (full greyscale).
 export function desaturateColor(hex: string, amount: number): string {
   if (amount >= 1) return hex;
-  const [r, g, b] = parseHex(hex);
+  const [r, g, b, a] = parseHexA(hex);
   const y = 0.2126 * r + 0.7152 * g + 0.0722 * b;
   const t = Math.max(0, Math.min(1, amount));
-  return toHex(y + (r - y) * t, y + (g - y) * t, y + (b - y) * t);
+  // Desaturate only the RGB; the source alpha rides through so a dimmed
+  // non-selected line keeps its transparency.
+  return toHex(y + (r - y) * t, y + (g - y) * t, y + (b - y) * t, a);
 }

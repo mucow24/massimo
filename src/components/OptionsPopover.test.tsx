@@ -5,6 +5,7 @@ import { Toolbar } from './Toolbar';
 import { useDoc } from '../state/store';
 import { useCustomPalettes } from '../state/customPalettes';
 import { DEFAULT_DOC } from '../model/transforms';
+import { openColorField } from '../test/colorField';
 
 beforeEach(() => {
   localStorage.clear();
@@ -368,17 +369,17 @@ describe('<OptionsPopover />', () => {
       expect(spin.value).toBe('2');
     });
 
-    it('contains a Transfer color input (type=color) defaulting to #000000', async () => {
+    it('contains a Transfer color picker defaulting to #000000 that writes through', async () => {
       const user = userEvent.setup();
       render(<Toolbar />);
       await user.click(screen.getByRole('button', { name: 'Options' }));
-      // Native color input — role-based selectors don't surface type=color on
-      // all backends, so query by aria-label directly.
-      const color = screen.getByLabelText('Transfer color') as HTMLInputElement;
-      expect(color.type).toBe('color');
-      expect(color.value).toBe('#000000');
-      fireEvent.change(color, { target: { value: '#ff0080' } });
+      const hex = await openColorField(user, 'Transfer color');
+      expect(hex).toHaveValue('#000000');
+      fireEvent.change(hex, { target: { value: '#ff0080' } });
       expect(useDoc.getState().transferColor).toBe('#ff0080');
+      // The portalled picker sits outside the Options panel; interacting with it
+      // must NOT dismiss the panel (useDismiss ignores .color-field-popover).
+      expect(screen.getByLabelText('Transfer color')).toBeInTheDocument();
     });
 
     it('contains a Transfer stroke slider with bounds [0, 5] that updates the store', async () => {
@@ -410,14 +411,13 @@ describe('<OptionsPopover />', () => {
       expect(useDoc.getState().transferStrokeWidth).toBe(99);
     });
 
-    it('contains a Transfer stroke color input (type=color) defaulting to #ffffff', async () => {
+    it('contains a Transfer stroke color picker defaulting to #ffffff that writes through', async () => {
       const user = userEvent.setup();
       render(<Toolbar />);
       await user.click(screen.getByRole('button', { name: 'Options' }));
-      const color = screen.getByLabelText('Transfer stroke color') as HTMLInputElement;
-      expect(color.type).toBe('color');
-      expect(color.value).toBe('#ffffff');
-      fireEvent.change(color, { target: { value: '#123456' } });
+      const hex = await openColorField(user, 'Transfer stroke color');
+      expect(hex).toHaveValue('#ffffff');
+      fireEvent.change(hex, { target: { value: '#123456' } });
       expect(useDoc.getState().transferStrokeColor).toBe('#123456');
     });
   });

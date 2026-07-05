@@ -29,6 +29,7 @@ import {
   TEXT_LABEL_WIDTH_MAX,
 } from '../model/transforms';
 import { useFieldHistory } from './useFieldHistory';
+import { ColorField } from './ColorField';
 import { NumericFieldRow } from './NumericFieldRow';
 import { PopoverFooter } from './PopoverFooter';
 import type { TextLabel, TextLabelAlign, TextLabelWeight } from '../model/types';
@@ -61,10 +62,6 @@ export function TextLabelPopover({ label, world, view, onClose }: Props) {
   const { anchor, headerHandlers } = useDraggablePopover(label.id, world, view);
 
   const textField = useFieldHistory();
-  // Group each color picker's continuous edits into one undo entry, mirroring
-  // the polygon popover's day/night fill controls.
-  const colorField = useFieldHistory();
-  const darkColorField = useFieldHistory();
 
   const setText = (text: string) => updateTextLabel(label.id, { text });
   const setFontSize = (n: number) => updateTextLabel(label.id, { fontSize: n });
@@ -111,26 +108,22 @@ export function TextLabelPopover({ label, world, view, onClose }: Props) {
       <div className="row">
         <label htmlFor={`label-color-${label.id}`}>Color</label>
         <SunIcon aria-hidden="true" />
-        <input
+        <ColorField
           id={`label-color-${label.id}`}
-          type="color"
-          aria-label="Label color"
+          ariaLabel="Label color"
           title="Light mode color"
           value={label.color}
           disabled={locked}
-          onChange={(e) => setColor(e.target.value)}
-          {...colorField}
+          onChange={setColor}
         />
         <MoonIcon aria-hidden="true" />
-        <input
+        <ColorField
           id={`label-dark-color-${label.id}`}
-          type="color"
-          aria-label="Dark mode label color"
+          ariaLabel="Dark mode label color"
           title="Dark mode color"
           value={label.darkColor}
           disabled={locked}
-          onChange={(e) => setDarkColor(e.target.value)}
-          {...darkColorField}
+          onChange={setDarkColor}
         />
       </div>
 

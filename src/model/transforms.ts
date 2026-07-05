@@ -1805,10 +1805,6 @@ export const POLYGON_STROKE_WIDTH_DEFAULT = 1;
 export const POLYGON_STROKE_STEP = 0.5;
 export const POLYGON_FILL_DEFAULT = '#cfe3f2';
 export const POLYGON_STROKE_DEFAULT = '#000000';
-// Fill opacity is a percentage; missing ⇒ fully opaque.
-export const POLYGON_FILL_OPACITY_MIN = 0;
-export const POLYGON_FILL_OPACITY_MAX = 100;
-export const POLYGON_FILL_OPACITY_DEFAULT = 100;
 // Corner-rounding radius in world units; missing ⇒ 0 (sharp corners).
 export const POLYGON_CURVE_RADIUS_MIN = 0;
 export const POLYGON_CURVE_RADIUS_MAX = 50;
@@ -1821,11 +1817,9 @@ export const POLYGON_MIN_VERTICES = 3;
 // Stroke width snaps to the POLYGON_STROKE_STEP (0.5) grid and clamps at the
 // bottom only; its spinbutton accepts values beyond the slider max
 // (POLYGON_STROKE_WIDTH_MAX constrains the slider, not the value). Mirrors the
-// line stroke-width control. Fill opacity is a percentage, bounded to [0, 100].
+// line stroke-width control.
 const clampPolygonStrokeWidth = (w: number): number =>
   Math.max(POLYGON_STROKE_WIDTH_MIN, Math.round(w / POLYGON_STROKE_STEP) * POLYGON_STROKE_STEP);
-const clampPolygonFillOpacity = (o: number): number =>
-  Math.max(POLYGON_FILL_OPACITY_MIN, Math.min(POLYGON_FILL_OPACITY_MAX, Math.round(o)));
 // Curve radius clamps at the bottom only (no rounding) — a free-form world-unit
 // value whose spinbutton accepts values beyond the slider max.
 const clampPolygonCurveRadius = (r: number): number => Math.max(POLYGON_CURVE_RADIUS_MIN, r);
@@ -1928,9 +1922,6 @@ export function updatePolygon(doc: MapDoc, id: string, patch: PolygonStylePatch)
     let nextPatch = patch;
     if (typeof nextPatch.strokeWidth === 'number') {
       nextPatch = { ...nextPatch, strokeWidth: clampPolygonStrokeWidth(nextPatch.strokeWidth) };
-    }
-    if (typeof nextPatch.fillOpacity === 'number') {
-      nextPatch = { ...nextPatch, fillOpacity: clampPolygonFillOpacity(nextPatch.fillOpacity) };
     }
     if (typeof nextPatch.curveRadius === 'number') {
       nextPatch = { ...nextPatch, curveRadius: clampPolygonCurveRadius(nextPatch.curveRadius) };

@@ -280,16 +280,19 @@ describe('<PolygonView /> locked polygons (E5c)', () => {
     expect(c.querySelectorAll('[data-polygon-edge-add]')).toHaveLength(4);
   });
 
-  it('fillOpacity reaches the body fill: 60 → 0.6', () => {
-    const { container } = renderBody(makePolygon({ id: 'p0', fill: '#112233', fillOpacity: 60 }));
+  it('a translucent fill hex renders directly as the fill attr (no separate fill-opacity)', () => {
+    // Transparency now lives in the color's alpha channel, not a fill-opacity attr.
+    const { container } = renderBody(makePolygon({ id: 'p0', fill: '#11223380' }));
     const el = body(container);
-    expect(el.getAttribute('fill')).toBe('#112233');
-    expect(Number(el.getAttribute('fill-opacity'))).toBeCloseTo(0.6, 6);
+    expect(el.getAttribute('fill')).toBe('#11223380');
+    expect(el.getAttribute('fill-opacity')).toBeNull();
   });
 
-  it('fillOpacity defaults to fully opaque (100 → 1) when unset', () => {
+  it('an opaque fill renders as 6-digit hex with no fill-opacity attr', () => {
     const { container } = renderBody(makePolygon({ id: 'p0', fill: '#112233' }));
-    expect(Number(body(container).getAttribute('fill-opacity'))).toBeCloseTo(1, 6);
+    const el = body(container);
+    expect(el.getAttribute('fill')).toBe('#112233');
+    expect(el.getAttribute('fill-opacity')).toBeNull();
   });
 });
 

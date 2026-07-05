@@ -35,15 +35,12 @@ test.describe('line presentation repaints live (no reload)', () => {
 
     await selectLine(page);
 
-    // Drive the palette's hidden <input type=color> the way React expects
-    // (native value setter + input event), so onChange fires. Targeted by
-    // accessible name — the inspector also has a "Stroke color" input.
-    await page.getByLabel('Custom color').evaluate((el, value) => {
-      const proto = window.HTMLInputElement.prototype;
-      const setter = Object.getOwnPropertyDescriptor(proto, 'value')!.set!;
-      setter.call(el, value);
-      el.dispatchEvent(new Event('input', { bubbles: true }));
-    }, '#cc1177');
+    // Set the line color through the palette's ColorField picker (open the
+    // swatch, type into its hex field). Targeted by accessible name — the
+    // inspector also has a "Stroke color" picker.
+    await page.getByLabel('Custom color').click();
+    await page.getByLabel('Custom color hex value').fill('#cc1177');
+    await page.keyboard.press('Escape');
 
     await expect(stripe(page)).toHaveAttribute('stroke', '#cc1177');
   });

@@ -7,7 +7,6 @@ interface PolygonState {
   fill: string;
   stroke: string;
   strokeWidth: number;
-  fillOpacity?: number;
   locked?: boolean;
   curveRadius?: number;
   closed?: boolean;
@@ -191,14 +190,18 @@ async function domPolygonIds(page: Page): Promise<string[]> {
 }
 
 test.describe('Polygon opacity, layering, placement, lock', () => {
-  test('the fill-opacity slider drives the body fill-opacity', async ({ page }) => {
+  test('a translucent fill color renders the body fill as 8-digit hex', async ({ page }) => {
     await seedAndOpen(page, { stations: [], lines: [] });
     await addPolygonAt(page, CENTER.x, CENTER.y);
-    await page.getByRole('slider', { name: 'Fill opacity' }).fill('40');
-    const opacity = await page.evaluate(() =>
-      document.querySelector('path[data-polygon-id]')?.getAttribute('fill-opacity'),
+    // Transparency now lives in the fill color's alpha (the fill-opacity slider
+    // was removed): set a translucent fill via the picker's hex field.
+    await page.getByLabel('Polygon color').click();
+    await page.getByLabel('Polygon color hex value').fill('#11223380');
+    await page.keyboard.press('Escape');
+    const fill = await page.evaluate(() =>
+      document.querySelector('path[data-polygon-id]')?.getAttribute('fill'),
     );
-    expect(Number(opacity)).toBeCloseTo(0.4, 5);
+    expect(fill).toBe('#11223380');
   });
 
   test('Move down reorders the polygon paint order (DOM matches polygonOrder)', async ({

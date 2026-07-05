@@ -7,6 +7,7 @@ import { historyDepth } from '../../state/history';
 import { DEFAULT_DOC } from '../../model/transforms';
 import { makeDoc, makeLine, makeStation, makeStop } from '../../test/fixtures';
 import { DOT_SHAPE_PRESETS } from '../../model/dotStyle';
+import { openColorField } from '../../test/colorField';
 
 const SELECTION_BLANK = {
   selectedStationIds: [] as string[],
@@ -426,11 +427,12 @@ describe('<LineInspector /> — stroke controls', () => {
     expect(useDoc.getState().lines.L1.strokeWidth).toBe(30);
   });
 
-  it('the color input reflects the effective stroke color and writes edits', () => {
+  it('the color picker reflects the effective stroke color and writes edits', async () => {
+    const user = userEvent.setup();
     seed({ strokeColor: '#ff0000' });
     render(<LineInspector id="L1" />);
-    const input = screen.getByLabelText('Stroke color') as HTMLInputElement;
-    expect(input.value).toBe('#ff0000');
+    const input = await openColorField(user, 'Stroke color');
+    expect(input).toHaveValue('#ff0000');
     fireEvent.change(input, { target: { value: '#00aa55' } });
     expect(useDoc.getState().lines.L1.strokeColor).toBe('#00aa55');
     // Picking the default drops the key (never stored).
@@ -438,10 +440,11 @@ describe('<LineInspector /> — stroke controls', () => {
     expect('strokeColor' in useDoc.getState().lines.L1).toBe(false);
   });
 
-  it('defaults the color input to white for a stroke-less line', () => {
+  it('defaults the color picker to white for a stroke-less line', async () => {
+    const user = userEvent.setup();
     seed();
     render(<LineInspector id="L1" />);
-    expect((screen.getByLabelText('Stroke color') as HTMLInputElement).value).toBe('#ffffff');
+    expect(await openColorField(user, 'Stroke color')).toHaveValue('#ffffff');
   });
 
   it('one slider focus-arc collapses to a single undo entry', () => {

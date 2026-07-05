@@ -335,11 +335,11 @@ Right-click cycles all six states: text up→right→down→left → chevron-for
 
 **`Polygon`** — a free-floating background shape (river, park…), rendered **under all other map
 content**. `id, vertices: Vec2[]` (**world coords, ≥3, ordered; there is no center/rotation
-field — rotation rewrites the vertices** around the centroid), `fill, stroke` (`#rrggbb`),
-`strokeWidth` (world units, floored at 0 — the slider caps at 10, but the spinbutton/stored
-value is unbounded above), `darkFill, darkStroke` (independent dark-mode colors,
-**backfilled to equal the light colors** on load for legacy saves). Optional: `fillOpacity?`
-(genuinely clamped 0–100, missing ⇒ 100), `locked?`, `curveRadius?` (floored at 0, slider caps at
+field — rotation rewrites the vertices** around the centroid), `fill, stroke` (`#rrggbb`, or
+`#rrggbbaa` when translucent — colors carry their own alpha now), `strokeWidth` (world units,
+floored at 0 — the slider caps at 10, but the spinbutton/stored value is unbounded above),
+`darkFill, darkStroke` (independent dark-mode colors, **backfilled to equal the light colors**
+on load for legacy saves). Optional: `locked?`, `curveRadius?` (floored at 0, slider caps at
 50, stored value unbounded above; missing ⇒ 0 = sharp), `closed?` (missing
 ⇒ true; false = **open** chain: stroke-only, no fill, hit-test follows the stroke).
 `PolygonStylePatch` is the shared `Partial<Pick<…>>` used by both the transform and the store
@@ -1116,8 +1116,10 @@ Each is confirmed in source/tests; file pointers included.
   *after* the per-line clean (a stop compares against the *sanitized* line default).
 - **Polygon dark colors backfill to EQUAL light; text-label dark colors backfill to DIFFERENT
   defaults** (`#111111`/`#ffffff`) — for legibility. Don't assume symmetry.
-- **`Polygon.closed`/`fillOpacity`/`curveRadius` have no backfill** — absent is meaningful
-  (closed/opaque/sharp), so legacy polygons render unchanged.
+- **`Polygon.closed`/`curveRadius` have no backfill** — absent is meaningful (closed/sharp), so
+  legacy polygons render unchanged. The legacy `fillOpacity` percentage was folded into the
+  `fill`/`darkFill` alpha and removed in the **v9** migration (`foldPolygonFillOpacity`, shared by
+  `parse()` + `migrateDoc`).
 - **`cancelAppendMode` rolls back `lineCounter` by 1** — "Add → Line" eagerly commits a placeholder
   line and bumps the counter to pick its color; cancelling before placing a station must undo
   both, else repeated Add→Esc walks the color cycle forward. **Real line deletion does not touch

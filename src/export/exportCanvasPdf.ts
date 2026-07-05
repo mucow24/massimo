@@ -54,6 +54,7 @@ import { bakeLetterSpacing, normalizeTextBaselines } from './pdfText';
 import { loadGlyphFonts, needsGlyphOutlining, outlineUnsupportedText } from './pdfGlyphs';
 import { bakeImageDropShadows } from './pdfDropShadow';
 import { rasterizeMaskedImages } from './pdfMask';
+import { splitAlphaColors } from './pdfAlpha';
 
 const SVG_NS = 'http://www.w3.org/2000/svg';
 
@@ -264,6 +265,11 @@ export async function exportCanvasPdf(
     if (needsGlyphOutlining(el)) {
       outlineUnsupportedText(el, await loadGlyphFonts());
     }
+
+    // svg2pdf drops the alpha of an 8-digit hex color, so split every #rrggbbaa
+    // fill/stroke into a 6-digit color + fill-opacity/stroke-opacity (which it
+    // honors). Runs LAST so colors the bakes above copied forward are covered.
+    splitAlphaColors(el);
 
     // Page sized to the content. Orientation tracks the aspect so jsPDF doesn't
     // swap the custom [width,height] format on us.

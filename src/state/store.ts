@@ -33,6 +33,7 @@ import {
   backfillPolygonDarkColors,
   backfillTextLabelColors,
   convertLegacyDotShapes,
+  foldPolygonFillOpacity,
   migrateLegacyBulletSyntax,
   validActivePalettes,
 } from '../model/serialize';
@@ -116,7 +117,7 @@ function docSnapshotsEqual(a: DocSnapshot, b: DocSnapshot): boolean {
 }
 
 /**
- * Persisted-document version migration (v0 → v8). Exported and pure so it can
+ * Persisted-document version migration (v0 → v9). Exported and pure so it can
  * be unit-tested in isolation; the persist config below just delegates here.
  * Never mutates `persisted` — returns a possibly-new doc snapshot.
  *
@@ -146,6 +147,10 @@ function docSnapshotsEqual(a: DocSnapshot, b: DocSnapshot): boolean {
  *   gets escaped. NOT idempotent (post-migration `<X>` is intentional
  *   literal text), hence version-gated. Mirrors the file-version gate in
  *   `parse()` (SCHEMA_VERSION 2).
+ * - v8 → v9: fold the legacy per-polygon `fillOpacity` (0-100 percent) into the
+ *   alpha channel of `fill` AND `darkFill`, then drop the field. Idempotent, so
+ *   `parse()` runs the shared `foldPolygonFillOpacity` unconditionally (no file
+ *   SCHEMA_VERSION bump) while this rehydrate path gates it on v<9.
  */
 export function migrateDoc(persisted: unknown, version: number): DocState {
   const s = persisted as {
@@ -201,6 +206,13 @@ export function migrateDoc(persisted: unknown, version: number): DocState {
         ...(out.textLabels ? { textLabels: migrated.textLabels } : {}),
       };
     }
+  }
+  if (v < 9 && out.polygons) {
+    // Fold the legacy per-polygon fillOpacity percentage into the fill/darkFill
+    // alpha and drop the field (the color now carries transparency directly).
+    // Runs after the v<5 dark-color backfill above, so darkFill is present.
+    const folded = foldPolygonFillOpacity(out.polygons);
+    if (folded.changed) out = { ...out, polygons: folded.polygons };
   }
   if (v < 3 && 'labelBold' in out) {
     const { labelBold, ...rest } = out;
@@ -652,7 +664,7 @@ export const useDoc = create<DocState>()(
       {
         name: 'vignelli-map-doc-v1',
         storage: createJSONStorage(() => localStorage),
-        version: 8,
+        version: 9,
         // Version migration chain v0 → v8 lives in `migrateDoc` (above), which
         // is exported and unit-tested. See its doc comment for each step.
         migrate: (persisted, version) => migrateDoc(persisted, version),
