@@ -124,6 +124,23 @@ describe('<StationLayoutEditor />', () => {
     const l2 = container.querySelector('[data-cell-kind="stop"][data-line-id="L2"]');
     expect(l2?.getAttribute('data-selected')).toBe('true');
   });
+
+  it('rotates the "L" glyph to match the label rotation', () => {
+    seed();
+    // Turn the label a quarter turn (rotation step 2 = 90°); the actual label
+    // text rotates about its cell, so the "L" preview must too.
+    useDoc.setState((s) => ({
+      stations: {
+        ...s.stations,
+        a: { ...s.stations.a, label: { ...s.stations.a.label, rotation: 2 } },
+      },
+    }));
+    const { container } = renderEditor();
+    const labelText = container.querySelector('[data-cell-kind="label"] text') as Element;
+    expect(labelText).not.toBeNull();
+    // Cell center for row=0,col=-1 is (-14, 0); the glyph pivots there.
+    expect(labelText.getAttribute('transform')).toBe('rotate(90 -14 0)');
+  });
 });
 
 describe('<StationLayoutEditor /> — hand mode passes through', () => {

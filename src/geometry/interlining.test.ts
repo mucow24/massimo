@@ -11,11 +11,12 @@ import {
   idealBandRadius,
   resolveSegmentStyle,
   stopPosWorld,
+  travelDirWorld,
 } from './interlining';
 import { LAYER_WEIGHT } from '../model/layerPriority';
 import { STOP_SIZE, stripeOffsetsForWidths, tangentGap } from './orientation';
 import { makeDoc, makeLine, makeStation, makeStop, stationWithStop } from '../test/fixtures';
-import type { LineStyle } from '../model/types';
+import type { LineStyle, StopCell } from '../model/types';
 
 describe('band geometry helpers', () => {
   it('bandCentroid averages the points', () => {
@@ -73,6 +74,46 @@ describe('resolveSegmentStyle', () => {
     expect(resolveSegmentStyle(line, 's1|s2')).toBe('hatched');
     // A different segment on the same line stays solid.
     expect(resolveSegmentStyle(line, 's2|s3')).toBe('solid');
+  });
+});
+
+describe('travelDirWorld', () => {
+  const SQRT2_2 = Math.SQRT1_2;
+  const cell = (orientation: StopCell['orientation']): StopCell => makeStop('L1', { orientation });
+
+  it('resolves the auto-horizontal axis sign from the world hint (station upright)', () => {
+    const st = makeStation({ id: 'A', rotation: 0 });
+    // Hint pointing right → travel +x; pointing left → −x; null → default +x.
+    expect(travelDirWorld(cell('auto-horizontal'), st, { x: 5, y: 0 })).toEqual({ x: 1, y: 0 });
+    expect(travelDirWorld(cell('auto-horizontal'), st, { x: -5, y: 0 })).toEqual({ x: -1, y: 0 });
+    expect(travelDirWorld(cell('auto-horizontal'), st, null)).toEqual({ x: 1, y: 0 });
+  });
+
+  it('resolves the auto-vertical axis sign from the world hint (station upright)', () => {
+    const st = makeStation({ id: 'A', rotation: 0 });
+    expect(travelDirWorld(cell('auto-vertical'), st, { x: 0, y: 7 })).toEqual({ x: 0, y: 1 });
+    expect(travelDirWorld(cell('auto-vertical'), st, { x: 0, y: -7 })).toEqual({ x: 0, y: -1 });
+  });
+
+  it('resolves the auto-nw-se diagonal (default SE) via the hint', () => {
+    const st = makeStation({ id: 'A', rotation: 0 });
+    const se = travelDirWorld(cell('auto-nw-se'), st, null);
+    expect(se.x).toBeCloseTo(SQRT2_2, 6);
+    expect(se.y).toBeCloseTo(SQRT2_2, 6);
+    const nw = travelDirWorld(cell('auto-nw-se'), st, { x: -1, y: -1 });
+    expect(nw.x).toBeCloseTo(-SQRT2_2, 6);
+    expect(nw.y).toBeCloseTo(-SQRT2_2, 6);
+  });
+
+  it('rotates the resolved local axis into world by the station rotation', () => {
+    // rotation index 2 = 90° CW: the stop's local horizontal axis is vertical
+    // in world. A world hint pointing DOWN maps to the +local-x direction, so
+    // the world travel dir is +y — proving the hint→local→world composition,
+    // not just the bare axis pick.
+    const st = makeStation({ id: 'A', rotation: 2 });
+    const out = travelDirWorld(cell('auto-horizontal'), st, { x: 0, y: 1 });
+    expect(out.x).toBeCloseTo(0, 6);
+    expect(out.y).toBeCloseTo(1, 6);
   });
 });
 

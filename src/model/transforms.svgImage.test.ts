@@ -57,8 +57,9 @@ describe('svg-image transforms', () => {
     });
     expect(moveSvgImageUp(doc, 'a').svgImageOrder).toEqual(['b', 'a']);
     expect(moveSvgImageDown(doc, 'b').svgImageOrder).toEqual(['b', 'a']);
-    // 'b' is already on top; up is a no-op.
-    expect(moveSvgImageUp(doc, 'b').svgImageOrder).toEqual(['a', 'b']);
+    // 'b' is already on top; up is a no-op that returns the SAME doc reference
+    // (not just an equal order) so history grouping skips a spurious entry.
+    expect(moveSvgImageUp(doc, 'b')).toBe(doc);
   });
 
   it('effectiveSvgImageOrder appends ids missing from the stored order', () => {
