@@ -1,5 +1,11 @@
 import { describe, it, expect, vi } from 'vitest';
-import { svgUsesMask, rasterizeMaskedImages, rasterPixelSize, sizeSvgRoot } from './pdfMask';
+import {
+  svgUsesMask,
+  rasterizeMaskedImages,
+  rasterPixelSize,
+  sizeSvgRoot,
+  type RasterizeSvg,
+} from './pdfMask';
 
 const SVG_NS = 'http://www.w3.org/2000/svg';
 const XLINK_NS = 'http://www.w3.org/1999/xlink';
@@ -54,7 +60,8 @@ describe('rasterizeMaskedImages', () => {
 
   it('replaces a masked svg+xml image href with the rasterized PNG', async () => {
     const { svg, image } = makeSvgWithImage(dataUri(MASKED_SVG));
-    const rasterize = vi.fn(async () => 'data:image/png;base64,STUBPNG');
+    // Typed with the real signature so mock.calls is a [markup, pxW, pxH] tuple.
+    const rasterize = vi.fn<RasterizeSvg>(async () => 'data:image/png;base64,STUBPNG');
 
     await rasterizeMaskedImages(svg, rasterize);
 
