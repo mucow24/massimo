@@ -1,6 +1,6 @@
 import { CSSProperties, useEffect, useLayoutEffect, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
-import { HexAlphaColorPicker, HexColorInput } from 'react-colorful';
+import { HexAlphaColorPicker } from 'react-colorful';
 import { beginHistoryGroup } from '../state/store';
 import { normalizeHex } from '../util/color';
 
@@ -21,6 +21,68 @@ interface Props {
 const POPOVER_W = 212;
 const POPOVER_H = 240;
 const GAP = 6;
+
+// Valid hex digit counts (sans '#'): 3/4-digit short forms + 6/8-digit full.
+const HEX_LENGTHS = new Set([3, 4, 6, 8]);
+
+/**
+ * A buffered hex text field. react-colorful's own `HexColorInput` re-derives its
+ * text from the `color` prop on every change with no focus guard, so a
+ * normalizing, live-bound parent (which feeds the edited value straight back)
+ * resets the field mid-type — and a 3-digit short form like `505` expands to
+ * `#550055` and hijacks it. This owns its text while focused, applies only a
+ * COMPLETE 6/8-digit hex live, and accepts short forms on blur / Enter.
+ */
+function HexField({
+  value,
+  onChange,
+  ariaLabel,
+}: {
+  value: string;
+  onChange: (c: string) => void;
+  ariaLabel: string;
+}) {
+  // Buffer holds the hex digits WITHOUT the '#'; the field always renders one.
+  const [digits, setDigits] = useState(() => value.replace(/^#/, ''));
+  const focused = useRef(false);
+  // Sync from the square-driven / external color — but never while typing, so
+  // the round-trip of a live-applied value can't reset the field under the user.
+  useEffect(() => {
+    if (!focused.current) setDigits(value.replace(/^#/, ''));
+  }, [value]);
+  const apply = (d: string): string => {
+    const norm = normalizeHex('#' + d);
+    onChange(norm);
+    return norm.replace(/^#/, '');
+  };
+  return (
+    <input
+      aria-label={ariaLabel}
+      value={'#' + digits}
+      spellCheck={false}
+      autoComplete="off"
+      onFocus={() => {
+        focused.current = true;
+      }}
+      onChange={(e) => {
+        // Strip the '#' and any junk; the buffer is bare hex digits.
+        const d = e.target.value.replace(/[^0-9a-fA-F]/g, '');
+        setDigits(d);
+        // Apply only a full 6/8-digit hex live; a 3/4-digit short form would
+        // expand (505 → #550055) and, fed back, hijack the in-progress entry.
+        if (d.length >= 6 && HEX_LENGTHS.has(d.length)) setDigits(apply(d));
+      }}
+      onBlur={() => {
+        focused.current = false;
+        // Accept short forms on blur; revert an invalid/partial buffer.
+        setDigits(HEX_LENGTHS.has(digits.length) ? apply(digits) : value.replace(/^#/, ''));
+      }}
+      onKeyDown={(e) => {
+        if (e.key === 'Enter') (e.target as HTMLInputElement).blur();
+      }}
+    />
+  );
+}
 
 /**
  * A color swatch that opens a react-colorful RGBA picker in a portalled
@@ -136,12 +198,10 @@ export function ColorField({ value, onChange, disabled, ariaLabel, title, id, cl
           >
             <HexAlphaColorPicker color={value} onChange={emit} />
             <div className="color-field-hexrow">
-              <HexColorInput
-                color={value}
-                onChange={emit}
-                alpha
-                prefixed
-                aria-label={ariaLabel ? `${ariaLabel} hex value` : 'Hex value'}
+              <HexField
+                value={value}
+                onChange={onChange}
+                ariaLabel={ariaLabel ? `${ariaLabel} hex value` : 'Hex value'}
               />
             </div>
           </div>,

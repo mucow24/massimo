@@ -1,4 +1,5 @@
 import { describe, it, expect, beforeEach, vi } from 'vitest';
+import { useState } from 'react';
 import { render, screen } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { ColorField } from './ColorField';
@@ -49,6 +50,40 @@ describe('<ColorField />', () => {
     await user.clear(hex);
     await user.type(hex, '11223380');
     expect(onChange).toHaveBeenLastCalledWith('#11223380');
+  });
+
+  it('applies exactly the typed hex when typed char-by-char into a live-bound field', async () => {
+    // Regression: react-colorful's HexColorInput re-derives its text from the
+    // `color` prop on every change with no focus guard, so a normalizing,
+    // live-bound parent reset the field mid-type and a 3-digit short form ('505')
+    // expanded to '#550055' and hijacked it. Typing '505050' must land on
+    // exactly '#505050'.
+    const user = userEvent.setup();
+    function Harness() {
+      const [c, setC] = useState('#000000');
+      return <ColorField value={c} onChange={setC} ariaLabel="Test color" />;
+    }
+    render(<Harness />);
+    await user.click(screen.getByLabelText('Test color'));
+    const hex = screen.getByLabelText('Test color hex value');
+    await user.clear(hex);
+    await user.type(hex, '505050');
+    expect(hex).toHaveValue('#505050');
+  });
+
+  it('accepts a 3-digit short form on blur (expands to 6-digit)', async () => {
+    const user = userEvent.setup();
+    const onChange = vi.fn();
+    render(<ColorField value="#000000" onChange={onChange} ariaLabel="Test color" />);
+    await user.click(screen.getByLabelText('Test color'));
+    const hex = screen.getByLabelText('Test color hex value');
+    await user.clear(hex);
+    await user.type(hex, 'abc');
+    // Short form does NOT apply live (would hijack a longer entry)...
+    expect(onChange).not.toHaveBeenCalledWith('#aabbcc');
+    // ...but commits on blur.
+    await user.tab();
+    expect(onChange).toHaveBeenLastCalledWith('#aabbcc');
   });
 
   it('collapses the whole edit session into one undo group', async () => {
