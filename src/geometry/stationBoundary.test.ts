@@ -17,6 +17,7 @@ import {
   stationWithStop,
 } from '../test/fixtures';
 import { STOP_SIZE } from './orientation';
+import { rectIntersectsPolygon } from './rectPolygon';
 import { stopHalfOf } from '../model/lineWidth';
 import type { RouteBullet } from '../model/types';
 
@@ -185,14 +186,24 @@ describe('stationsForRect', () => {
     expect(stationsForRect(stations, rect)).toEqual(['A']);
   });
 
-  it('detects a station via its label rect when the rect only covers the label', () => {
-    // Default label sits at col=-1 (left of the stop cell). A rect placed
-    // a little left of the station origin should hit the label rect even if
-    // it misses the cells rect.
-    const st = stationWithStop('A', 'L1', { x: 0, y: 0 });
+  it('detects a station via its label rect when the marquee misses the cells rect', () => {
+    // A long name so the painted label polygon (anchored left of the stop)
+    // reaches well past the cells AABB — otherwise a rect over "the label" also
+    // overlaps the cells rect, the cells branch fires first, and the label
+    // branch in stationsForRect never runs. (Station at origin, rotation 0, so
+    // local coords == world coords.)
+    const st = { ...stationWithStop('A', 'L1', { x: 0, y: 0 }), name: 'Kongens Nytorv Station' };
     const stations = { A: st };
-    // Rect over the label only: x in [-30, -10], y in [-7, 7].
-    const rect = { x0: -30, y0: -7, x1: -10, y1: 7 };
+    const rects = stationBoundaryRectsLocal(st);
+    const cellsMinX = Math.min(...rects.cells.map((p) => p.x));
+    const labelMinX = Math.min(...rects.label!.map((p) => p.x));
+    // Precondition: the label really does extend left of the cells rect.
+    expect(labelMinX).toBeLessThan(cellsMinX);
+    // A marquee entirely left of the cells rect but over the label's far end.
+    const rect = { x0: labelMinX + 5, y0: -8, x1: cellsMinX - 5, y1: 8 };
+    // It genuinely misses the cells rect — so a hit can ONLY come from the
+    // label branch.
+    expect(rectIntersectsPolygon(rect, rects.cells)).toBe(false);
     expect(stationsForRect(stations, rect)).toEqual(['A']);
   });
 
@@ -212,9 +223,9 @@ describe('stationsForRect', () => {
   });
 
   it('a waypoint station does NOT match a rect that only overlaps where the label would be', () => {
-    // Same setup as the label-rect coverage test above, but with isWaypoint
-    // — the rect over the label area should miss because the waypoint has
-    // no label polygon and its cells AABB is tight to the stop only.
+    // A rect just left of the origin — where a regular station's label cell
+    // sits — should miss a waypoint, because a waypoint has no label polygon
+    // and its cells AABB is tight to the stop only.
     const st = makeStation({
       id: 'A',
       isWaypoint: true,
