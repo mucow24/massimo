@@ -1,8 +1,9 @@
 /**
  * PDF export regression. Seeds a map that exercises what the PDF pipeline has to
  * get right — selectable text in embedded Helvetica Neue, a hatched line segment
- * (baked to stripe geometry), an embedded SVG image, and a logo whose casing is a
- * hard feDropShadow (baked to an offset silhouette) — then drives
+ * (baked to stripe geometry), an embedded SVG image, a logo whose casing is a
+ * hard feDropShadow (baked to an offset silhouette), and a graphic with an alpha
+ * `<mask>` (rasterized to a PNG, since svg2pdf has no mask support) — then drives
  * Canvas → Export → PDF and asserts on the downloaded bytes.
  *
  * The decisive guard is `/FontFile2` + `/Type0`: the original failure mode was
@@ -29,6 +30,16 @@ const embeddedHref =
 const shadowLogo = `<svg xmlns="http://www.w3.org/2000/svg" width="60" height="60" viewBox="0 0 60 60"><defs><filter id="fx-test" x="-50%" y="-50%" width="200%" height="200%"><feDropShadow in="SourceGraphic" dx="-3" dy="0" stdDeviation="0" flood-color="#ffffff" flood-opacity="1"/></filter></defs><g filter="url(#fx-test)"><path d="M20 10L30 10L25 50Z" fill="#d92626"/></g></svg>`;
 const shadowHref =
   'data:image/svg+xml;base64,' + Buffer.from(shadowLogo, 'utf-8').toString('base64');
+
+// A graphic with a circular hole punched by an alpha <mask> — the shape svg2pdf
+// re-vectorizes with no mask support, so it would export as a solid square. The
+// pipeline must rasterize it to a PNG (browser applies the mask), embedded in the
+// PDF as an image XObject whose transparent hole becomes a soft mask (/SMask).
+// Deliberately has width/height but NO viewBox (a common export shape): exercises
+// the sizeSvgRoot viewBox-injection path, without which it would rasterize tiny.
+const maskedLogo = `<svg xmlns="http://www.w3.org/2000/svg" width="80" height="80"><defs><mask id="mk-test"><rect x="0" y="0" width="80" height="80" fill="#fff"/><circle cx="40" cy="40" r="20" fill="#000"/></mask></defs><rect x="0" y="0" width="80" height="80" fill="#c020a0" mask="url(#mk-test)"/></svg>`;
+const maskedHref =
+  'data:image/svg+xml;base64,' + Buffer.from(maskedLogo, 'utf-8').toString('base64');
 
 const station = (id: string, x: number) => ({
   id,
@@ -75,8 +86,9 @@ const persisted = {
     svgImages: {
       img1: { id: 'img1', x: 120, y: 180, width: 120, height: 80, rotation: 0, href: embeddedHref },
       img2: { id: 'img2', x: 120, y: 320, width: 60, height: 60, rotation: 0, href: shadowHref },
+      img3: { id: 'img3', x: 120, y: 440, width: 80, height: 80, rotation: 0, href: maskedHref },
     },
-    svgImageOrder: ['img1', 'img2'],
+    svgImageOrder: ['img1', 'img2', 'img3'],
   },
 };
 
@@ -119,6 +131,7 @@ test('exports a vector PDF with embedded fonts from a hatch + text + image map',
   // Sanity: the hatched band and both images actually rendered before we export.
   await expect(page.locator('[data-svg-image-id="img1"]')).toHaveCount(1);
   await expect(page.locator('[data-svg-image-id="img2"]')).toHaveCount(1); // drop-shadow logo
+  await expect(page.locator('[data-svg-image-id="img3"]')).toHaveCount(1); // masked graphic
   await expect(page.locator('[data-band-stripe][data-line-id="L1"]')).not.toHaveCount(0);
 
   const download = await exportPdf(page);
@@ -139,4 +152,17 @@ test('exports a vector PDF with embedded fonts from a hatch + text + image map',
   expect(raw).toContain('/FontFile2'); // an embedded TrueType outline
   expect(raw).toContain('/Type0'); // composite (CID) font — how jsPDF embeds TTF
   expect(raw).toContain('Helvetica Neue'); // registered family, not bare /Helvetica
+
+  // Mask guard: the masked graphic (img3) can't survive svg2pdf's mask-less
+  // re-vectorizing, so the pipeline rasterizes it — landing in the PDF as an
+  // embedded image XObject. The rest of the map is pure vector, so this marker
+  // only appears once the masked image is rasterized.
+  expect(raw).toMatch(/\/Subtype\s*\/Image/);
+
+  // Decisive: the mask actually survived. Its transparent circular hole makes the
+  // rasterized PNG carry an alpha channel, so jsPDF emits a soft mask (/SMask). A
+  // regression that dropped the mask would produce a solid, opaque square — no
+  // alpha, no /SMask — so this fails loudly instead of silently shipping an
+  // unmasked graphic.
+  expect(raw).toContain('/SMask');
 });

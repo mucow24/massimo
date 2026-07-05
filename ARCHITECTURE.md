@@ -1001,7 +1001,8 @@ from `FONT_TABLE` — don't "sync" it in.) `normalizeWeight` ties go **low** (60
 
 **PDF** ([exportCanvasPdf.ts](src/export/exportCanvasPdf.ts)) reuses `buildExportSvg`, then renders
 that SVG to a true vector PDF with **svg2pdf.js + jsPDF** — selectable text, vector line work,
-embedded SVG graphics kept as vectors. Five gaps svg2pdf/jsPDF can't bridge are closed here:
+embedded SVG graphics kept as vectors (bar mask users, gap 6). Six gaps svg2pdf/jsPDF can't bridge
+are closed here:
 1. **Fonts** — jsPDF ignores the SVG's `@font-face` and can only embed TrueType, so the map's used
    faces are fetched and registered in jsPDF's VFS (the reason the whole set ships `.ttf`).
 2. **Hatch** — svg2pdf can't tile a `<pattern>` along a stroke, so every hatch paint (band strokes
@@ -1028,6 +1029,16 @@ embedded SVG graphics kept as vectors. Five gaps svg2pdf/jsPDF can't bridge are 
    PDF share the font. A character in neither HN nor DejaVu is dropped (renders nothing). `textMeasure`
    measures inline-bullet labels with the same `FONT_STACK` so a symbol's measured advance matches its
    drawn advance.
+6. **Image masks** — that same svg+xml-image re-vectorizing has **no `<mask>` support** (`<mask>`/
+   `<defs>` parse to no-op void nodes and the `mask="url(#…)"` attribute is never read), so a graphic
+   using a mask exports at full opacity — the mask silently drops (it renders fine on screen via the
+   browser's native `<image>`). A mask has no vector equivalent, so `rasterizeMaskedImages`
+   ([pdfMask.ts](src/export/pdfMask.ts)) rasterizes **only** the mask-using graphics to a PNG (the
+   browser applies the mask) that svg2pdf embeds verbatim; everything else stays vector. Runs before
+   the drop-shadow bake, which then skips them (href is now a PNG). `svgUsesMask`, `rasterPixelSize`,
+   and `sizeSvgRoot` (which injects a `viewBox` so a no-viewBox graphic scales to fill) are pure and
+   unit-tested; the canvas rasterizer is browser-only (e2e-covered, incl. an `/SMask` guard that the
+   mask survived).
 Lazy-loaded on first PDF export (`import()` in the toolbar) so jsPDF + opentype.js stay out of the
 initial bundle.
 
