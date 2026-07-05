@@ -322,9 +322,6 @@ export interface Polygon {
   // (see serialize.ts), so they are always present at runtime. Same 7-char hex.
   darkFill: string;
   darkStroke: string;
-  // Fill opacity as a percentage, 0..100. Optional; missing ⇒ 100 (fully
-  // opaque), so polygons saved before this field continue to render solid.
-  fillOpacity?: number;
   // When locked, the polygon can't be dragged, vertex-edited, rotated, deleted,
   // or marquee-selected, and its popover controls (other than the lock toggle)
   // are disabled. It can still be click-selected so the user can unlock it.
@@ -351,7 +348,6 @@ export type PolygonStylePatch = Partial<
     | 'darkFill'
     | 'darkStroke'
     | 'strokeWidth'
-    | 'fillOpacity'
     | 'locked'
     | 'curveRadius'
     | 'closed'

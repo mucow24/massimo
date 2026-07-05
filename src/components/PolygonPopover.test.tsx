@@ -1,9 +1,11 @@
 import { describe, it, expect, beforeEach, vi } from 'vitest';
 import { render, screen, fireEvent } from '@testing-library/react';
+import userEvent from '@testing-library/user-event';
 import { PolygonPopover } from './PolygonPopover';
 import { useDoc } from '../state/store';
 import { DEFAULT_DOC } from '../model/transforms';
 import { makePolygon } from '../test/fixtures';
+import { openColorField, setColorField } from '../test/colorField';
 
 const view = { vbX: 0, vbY: 0, vbW: 100, vbH: 100, size: { w: 100, h: 100 } };
 
@@ -33,7 +35,6 @@ describe('<PolygonPopover />', () => {
     );
     expect(sequence).toEqual([
       'Fill color',
-      'Fill opacity',
       'divider',
       'Stroke color',
       'Stroke width',
@@ -45,8 +46,9 @@ describe('<PolygonPopover />', () => {
     ]);
   });
 
-  it('renders fill + stroke color pickers, a 0–10 stroke-width control, and Delete', () => {
-    const { container } = renderPopover();
+  it('renders fill + stroke color pickers, a 0–10 stroke-width control, and Delete', async () => {
+    const user = userEvent.setup();
+    renderPopover();
     const slider = screen.getByRole('slider', { name: 'Stroke width' });
     expect(slider).toHaveAttribute('min', '0');
     expect(slider).toHaveAttribute('max', '10');
@@ -54,24 +56,25 @@ describe('<PolygonPopover />', () => {
     const spin = screen.getByRole('spinbutton', { name: 'Stroke width' });
     expect(spin).toBeInTheDocument();
     expect(spin).toHaveAttribute('step', '0.5');
-    // Two color pickers (fill + stroke) reflecting the polygon's colors.
-    const colorInputs = Array.from(
-      container.querySelectorAll('input[type="color"]'),
-    ) as HTMLInputElement[];
-    const values = colorInputs.map((i) => i.value);
-    expect(values).toContain('#112233');
-    expect(values).toContain('#445566');
+    // Fill + stroke pickers reflect the polygon's colors.
+    expect(await openColorField(user, 'Polygon color')).toHaveValue('#112233');
+    await user.keyboard('{Escape}');
+    expect(await openColorField(user, 'Stroke color')).toHaveValue('#445566');
+    await user.keyboard('{Escape}');
     expect(screen.getByRole('button', { name: 'Delete' })).toBeInTheDocument();
   });
 
-  it('renders dark-mode pickers initialized to the light colors', () => {
+  it('renders dark-mode pickers initialized to the light colors', async () => {
+    const user = userEvent.setup();
     renderPopover();
     // Uncustomized fixture → the dark colors equal the light colors.
-    expect(screen.getByLabelText('Dark mode color')).toHaveValue('#112233');
-    expect(screen.getByLabelText('Dark mode stroke color')).toHaveValue('#445566');
+    expect(await openColorField(user, 'Dark mode color')).toHaveValue('#112233');
+    await user.keyboard('{Escape}');
+    expect(await openColorField(user, 'Dark mode stroke color')).toHaveValue('#445566');
   });
 
-  it('the dark-mode pickers reflect explicit dark colors when set', () => {
+  it('the dark-mode pickers reflect explicit dark colors when set', async () => {
+    const user = userEvent.setup();
     useDoc.setState({
       ...useDoc.getState(),
       polygons: {
@@ -86,22 +89,23 @@ describe('<PolygonPopover />', () => {
       polygonOrder: ['p0'],
     });
     renderPopover();
-    expect(screen.getByLabelText('Dark mode color')).toHaveValue('#778899');
-    expect(screen.getByLabelText('Dark mode stroke color')).toHaveValue('#99aabb');
+    expect(await openColorField(user, 'Dark mode color')).toHaveValue('#778899');
+    await user.keyboard('{Escape}');
+    expect(await openColorField(user, 'Dark mode stroke color')).toHaveValue('#99aabb');
   });
 
-  it('editing the dark-mode fill writes darkFill, leaving the light fill alone', () => {
+  it('editing the dark-mode fill writes darkFill, leaving the light fill alone', async () => {
+    const user = userEvent.setup();
     renderPopover();
-    fireEvent.change(screen.getByLabelText('Dark mode color'), { target: { value: '#0a0a0a' } });
+    await setColorField(user, 'Dark mode color', '#0a0a0a');
     expect(useDoc.getState().polygons['p0'].darkFill).toBe('#0a0a0a');
     expect(useDoc.getState().polygons['p0'].fill).toBe('#112233');
   });
 
-  it('editing the dark-mode stroke writes darkStroke, leaving the light stroke alone', () => {
+  it('editing the dark-mode stroke writes darkStroke, leaving the light stroke alone', async () => {
+    const user = userEvent.setup();
     renderPopover();
-    fireEvent.change(screen.getByLabelText('Dark mode stroke color'), {
-      target: { value: '#0b0b0b' },
-    });
+    await setColorField(user, 'Dark mode stroke color', '#0b0b0b');
     expect(useDoc.getState().polygons['p0'].darkStroke).toBe('#0b0b0b');
     expect(useDoc.getState().polygons['p0'].stroke).toBe('#445566');
   });
@@ -204,15 +208,6 @@ describe('<PolygonPopover />', () => {
     expect(popover.style.top).toBe('64px'); // 50 + 14
   });
 
-  it('the fill-opacity slider (0–100) writes through to the store', () => {
-    renderPopover();
-    const slider = screen.getByRole('slider', { name: 'Fill opacity' });
-    expect(slider).toHaveAttribute('min', '0');
-    expect(slider).toHaveAttribute('max', '100');
-    fireEvent.change(slider, { target: { value: '40' } });
-    expect(useDoc.getState().polygons['p0'].fillOpacity).toBe(40);
-  });
-
   it('the curve-radius slider (0–50) writes through to the store', () => {
     renderPopover();
     const slider = screen.getByRole('slider', { name: 'Curve radius' });
@@ -267,7 +262,6 @@ describe('<PolygonPopover />', () => {
     // Fill has no effect on a stroke-only shape.
     expect(screen.getByLabelText('Polygon color')).toBeDisabled();
     expect(screen.getByLabelText('Dark mode color')).toBeDisabled();
-    expect(screen.getByRole('slider', { name: 'Fill opacity' })).toBeDisabled();
     // Everything stroke-related (and the checkbox itself) remains editable.
     expect(screen.getByLabelText('Stroke color')).toBeEnabled();
     expect(screen.getByLabelText('Dark mode stroke color')).toBeEnabled();
@@ -299,7 +293,6 @@ describe('<PolygonPopover />', () => {
       polygonOrder: ['p0'],
     });
     renderPopover();
-    expect(screen.getByRole('slider', { name: 'Fill opacity' })).toBeDisabled();
     expect(screen.getByRole('slider', { name: 'Stroke width' })).toBeDisabled();
     expect(screen.getByRole('slider', { name: 'Curve radius' })).toBeDisabled();
     expect(screen.getByRole('button', { name: 'Move polygon up' })).toBeDisabled();

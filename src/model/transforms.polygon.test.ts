@@ -17,8 +17,6 @@ import {
   resolvePolygonColors,
   POLYGON_STROKE_WIDTH_MIN,
   POLYGON_STROKE_WIDTH_MAX,
-  POLYGON_FILL_OPACITY_MIN,
-  POLYGON_FILL_OPACITY_MAX,
   POLYGON_CURVE_RADIUS_MIN,
 } from './transforms';
 import { makeDoc, makePolygon } from '../test/fixtures';
@@ -135,15 +133,8 @@ describe('polygon transforms', () => {
     expect(next.polygonOrder).toEqual(['p1']);
   });
 
-  it('updatePolygon sets + clamps fillOpacity and toggles locked', () => {
+  it('updatePolygon toggles locked', () => {
     const doc = makeDoc({ polygons: [makePolygon({ id: 'p0' })] });
-    expect(updatePolygon(doc, 'p0', { fillOpacity: 40 }).polygons['p0'].fillOpacity).toBe(40);
-    expect(updatePolygon(doc, 'p0', { fillOpacity: 999 }).polygons['p0'].fillOpacity).toBe(
-      POLYGON_FILL_OPACITY_MAX,
-    );
-    expect(updatePolygon(doc, 'p0', { fillOpacity: -5 }).polygons['p0'].fillOpacity).toBe(
-      POLYGON_FILL_OPACITY_MIN,
-    );
     expect(updatePolygon(doc, 'p0', { locked: true }).polygons['p0'].locked).toBe(true);
   });
 

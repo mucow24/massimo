@@ -149,17 +149,14 @@ async function setStrokeTo(page: Page, value: string): Promise<void> {
   await spin.blur();
 }
 
-// Set the stroke color through the native color input. Playwright can't
-// drive the OS color dialog, so set the value via the native setter and
-// fire `input` — exactly what the picker dispatches as the user drags.
+// Set the stroke color through the ColorField picker: open the swatch, set the
+// value in the picker's hex field (one input event, like a paste), close it.
 async function setStrokeColorTo(page: Page, value: string): Promise<void> {
-  const input = page.getByLabel('Stroke color');
-  await expect(input).toBeVisible({ timeout: 2000 });
-  await input.evaluate((el, v) => {
-    const setter = Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value')!.set!;
-    setter.call(el, v);
-    el.dispatchEvent(new Event('input', { bubbles: true }));
-  }, value);
+  await page.getByLabel('Stroke color').click();
+  const hex = page.getByLabel('Stroke color hex value');
+  await expect(hex).toBeVisible({ timeout: 2000 });
+  await hex.fill(value);
+  await page.keyboard.press('Escape');
 }
 
 // Document-order kinds of L1's casing-rail + body-stripe elements. Body

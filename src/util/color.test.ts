@@ -1,5 +1,12 @@
 import { describe, it, expect } from 'vitest';
-import { legibleTextOn, withAlpha, blendOver, desaturateColor } from './color';
+import {
+  legibleTextOn,
+  withAlpha,
+  blendOver,
+  desaturateColor,
+  normalizeHex,
+  parseHexA,
+} from './color';
 import { PALETTES } from '../model/palettes';
 
 describe('legibleTextOn', () => {
@@ -109,6 +116,60 @@ describe('desaturateColor', () => {
     const r = parseInt(out.slice(1, 3), 16);
     expect(r).toBeGreaterThan(54);
     expect(r).toBeLessThan(255);
+  });
+
+  it('leaves an opaque color 6-digit (no spurious ff alpha appended)', () => {
+    expect(desaturateColor('#ff0000', 0.5)).toBe('#9b1b1b');
+  });
+
+  it('preserves the alpha channel of a translucent color', () => {
+    // A dimmed non-selected line (MapCanvas colorMap) must stay translucent.
+    // #ff0000 at 0.5 → #9b1b1b; the 80 alpha rides through unchanged.
+    expect(desaturateColor('#ff000080', 0.5)).toBe('#9b1b1b80');
+  });
+
+  it('keeps a translucent color unchanged (with its alpha) at amount >= 1', () => {
+    expect(desaturateColor('#3a7bd580', 1)).toBe('#3a7bd580');
+  });
+});
+
+describe('parseHexA', () => {
+  it('returns opaque (255) alpha for alpha-less forms', () => {
+    expect(parseHexA('#112233')).toEqual([17, 34, 51, 255]);
+    expect(parseHexA('#abc')).toEqual([170, 187, 204, 255]);
+  });
+
+  it('reads the alpha byte from 8-digit hex', () => {
+    expect(parseHexA('#11223380')).toEqual([17, 34, 51, 128]);
+    expect(parseHexA('#00000000')).toEqual([0, 0, 0, 0]);
+  });
+
+  it('doubles the alpha nibble in 4-digit shorthand', () => {
+    expect(parseHexA('#1238')).toEqual([17, 34, 51, 136]);
+  });
+
+  it('falls back to opaque black for malformed input', () => {
+    expect(parseHexA('nope')).toEqual([0, 0, 0, 255]);
+  });
+});
+
+describe('normalizeHex', () => {
+  it('lowercases and expands shorthand', () => {
+    expect(normalizeHex('#ABC')).toBe('#aabbcc');
+    expect(normalizeHex('#11AA33')).toBe('#11aa33');
+  });
+
+  it('strips a fully-opaque ff alpha back to 6 digits', () => {
+    expect(normalizeHex('#112233ff')).toBe('#112233');
+  });
+
+  it('keeps a translucent alpha as 8-digit', () => {
+    expect(normalizeHex('#11223380')).toBe('#11223380');
+    expect(normalizeHex('#1238')).toBe('#11223388');
+  });
+
+  it('collapses malformed input to black', () => {
+    expect(normalizeHex('rgb(1,2,3)')).toBe('#000000');
   });
 });
 

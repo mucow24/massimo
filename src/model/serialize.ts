@@ -14,6 +14,7 @@ import {
 } from './lineStroke';
 import { DEFAULT_DOT_STYLE, DOT_SHAPE_PRESETS, dotStylesEqual } from './dotStyle';
 import { pairKeyOf } from './pairKey';
+import { parseHexA, withHexAlpha } from '../util/color';
 import { migrateLegacyInlineTokens } from '../geometry/labelTokens';
 import { KNOWN_PALETTE_IDS, type Palette, type PaletteId } from './palettes';
 import type {
@@ -250,6 +251,10 @@ export function parse(json: string, custom: readonly Palette[] = []): ParseResul
   if (sizes.changed) merged.stations = sizes.stations;
   const cleanedPolygons = backfillPolygonDarkColors(merged.polygons);
   if (cleanedPolygons.changed) merged.polygons = cleanedPolygons.polygons;
+  // Fold any legacy fillOpacity into the fill/darkFill alpha (idempotent) —
+  // after the dark-color backfill so darkFill is present to fold.
+  const foldedPolygons = foldPolygonFillOpacity(merged.polygons);
+  if (foldedPolygons.changed) merged.polygons = foldedPolygons.polygons;
   const cleanedLabels = backfillTextLabelColors(merged.textLabels);
   if (cleanedLabels.changed) merged.textLabels = cleanedLabels.textLabels;
   // Version-gated (non-idempotent) rewrite: files saved before the pipe
@@ -328,6 +333,35 @@ export function backfillPolygonDarkColors(polygons: Record<string, Polygon>): {
     } else {
       next[id] = p;
     }
+  }
+  return { polygons: next, changed };
+}
+
+// Fold a polygon's legacy `fillOpacity` (0-100 percent) into the alpha channel
+// of its `fill` AND `darkFill`, then drop the field. The old opacity slider
+// applied one value to whichever theme fill was showing, so both fold to the
+// same alpha. Idempotent — a polygon without `fillOpacity` passes straight
+// through — so parse() (file import) can run it unconditionally, and migrateDoc
+// gates it on v<9. Multiplies any alpha the fill already carries by the opacity
+// fraction, so a translucent fill only gets more transparent. Must run AFTER
+// backfillPolygonDarkColors so `darkFill` exists to fold.
+export function foldPolygonFillOpacity(polygons: Record<string, Polygon>): {
+  polygons: Record<string, Polygon>;
+  changed: boolean;
+} {
+  let changed = false;
+  const next: Record<string, Polygon> = {};
+  for (const id of Object.keys(polygons)) {
+    const p = polygons[id] as Polygon & { fillOpacity?: number };
+    if (p.fillOpacity === undefined) {
+      next[id] = p;
+      continue;
+    }
+    const pct = Math.max(0, Math.min(100, p.fillOpacity));
+    const fold = (hex: string) => withHexAlpha(hex, (parseHexA(hex)[3] * pct) / 100);
+    const { fillOpacity: _drop, ...rest } = p;
+    next[id] = { ...rest, fill: fold(p.fill), darkFill: fold(p.darkFill) };
+    changed = true;
   }
   return { polygons: next, changed };
 }

@@ -8,6 +8,7 @@ import { resolveDotStyle } from '../../model/transforms';
 import { DEFAULT_DOT_STYLE, DOT_SHAPE_PRESETS } from '../../model/dotStyle';
 import { resolveSegmentStyle } from '../../geometry/interlining';
 import { ColorPalette } from './ColorPalette';
+import { ColorField } from '../ColorField';
 import { useFieldHistory } from '../useFieldHistory';
 import { useDismiss } from '../usePopover';
 import { HatchPatterns, lineStyleStrokeAttrs, lineStyleUnderlayAttrs } from '../HatchPatterns';
@@ -178,7 +179,6 @@ export function LineInspector({ id }: { id: LineId }) {
   const underlayColor = useThemeColors().underlay;
   const nameField = useFieldHistory();
   const serviceField = useFieldHistory();
-  const strokeColorField = useFieldHistory();
   const [openPickerSid, setOpenPickerSid] = useState<string | null>(null);
   // Service-code → line lookup for inline `<CODE>` bullets in station names.
   const lineByService = useMemo(() => {
@@ -289,13 +289,11 @@ export function LineInspector({ id }: { id: LineId }) {
         <label htmlFor={`line-stroke-color-${line.id}`} className="options-popover-label">
           Stroke color
         </label>
-        <input
+        <ColorField
           id={`line-stroke-color-${line.id}`}
-          type="color"
-          aria-label="Stroke color"
+          ariaLabel="Stroke color"
           value={lineStrokeColorOf(line)}
-          onChange={(e) => setLineStrokeColor(line.id, e.target.value)}
-          {...strokeColorField}
+          onChange={(c) => setLineStrokeColor(line.id, c)}
         />
       </div>
       <div className="field">

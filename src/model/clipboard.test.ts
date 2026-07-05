@@ -39,12 +39,12 @@ const polygonItem: ClipPayload = {
       { x: 10, y: 0 },
       { x: 10, y: 10 },
     ],
-    fill: '#aabbcc',
+    // Translucent (#rrggbbaa) fill exercises the widened HEX_COLOR gate + round-trip.
+    fill: '#aabbcc80',
     stroke: '#112233',
     darkFill: '#445566',
     darkStroke: '#778899',
     strokeWidth: 2,
-    fillOpacity: 50,
     locked: true,
     curveRadius: 12,
     closed: false,
@@ -120,7 +120,6 @@ describe('writeClipboard / readClipboard roundtrip', () => {
     };
     const parsed = readClipboard(writeClipboard([item]));
     expect(parsed).toEqual([item]);
-    expect(parsed![0].data).not.toHaveProperty('fillOpacity');
     expect(parsed![0].data).not.toHaveProperty('locked');
     expect(parsed![0].data).not.toHaveProperty('curveRadius');
     expect(parsed![0].data).not.toHaveProperty('closed');

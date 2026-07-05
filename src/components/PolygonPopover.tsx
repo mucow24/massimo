@@ -5,15 +5,12 @@ import { DraggablePopoverShell } from './DraggablePopoverShell';
 import { useDraggablePopover } from './canvas/useDraggablePopover';
 import { NumericFieldRow } from './NumericFieldRow';
 import { PopoverFooter } from './PopoverFooter';
-import { useFieldHistory } from './useFieldHistory';
+import { ColorField } from './ColorField';
 import { polygonCentroid } from '../geometry/polygon';
 import {
   POLYGON_CURVE_RADIUS_DEFAULT,
   POLYGON_CURVE_RADIUS_MAX,
   POLYGON_CURVE_RADIUS_MIN,
-  POLYGON_FILL_OPACITY_DEFAULT,
-  POLYGON_FILL_OPACITY_MAX,
-  POLYGON_FILL_OPACITY_MIN,
   POLYGON_STROKE_STEP,
   POLYGON_STROKE_WIDTH_MAX,
   POLYGON_STROKE_WIDTH_MIN,
@@ -48,16 +45,9 @@ export function PolygonPopover({ polygon, view, onClose }: Props) {
   const deletePolygon = useDoc((s) => s.deletePolygon);
   const movePolygonUp = useDoc((s) => s.movePolygonUp);
   const movePolygonDown = useDoc((s) => s.movePolygonDown);
-  // Group each color picker's continuous edits into one undo entry, matching
-  // the Transfer color control in the Options popover.
-  const fillField = useFieldHistory();
-  const strokeField = useFieldHistory();
-  const darkFillField = useFieldHistory();
-  const darkStrokeField = useFieldHistory();
 
   const locked = polygon.locked ?? false;
   const closed = polygon.closed !== false;
-  const fillOpacity = polygon.fillOpacity ?? POLYGON_FILL_OPACITY_DEFAULT;
   // Dark-mode colors are concrete (initialized to the light colors at creation,
   // independent thereafter).
   const darkFill = polygon.darkFill;
@@ -68,7 +58,6 @@ export function PolygonPopover({ polygon, view, onClose }: Props) {
   const onDarkFill = (darkFill: string) => updatePolygon(polygon.id, { darkFill });
   const onDarkStroke = (darkStroke: string) => updatePolygon(polygon.id, { darkStroke });
   const onStrokeWidth = (strokeWidth: number) => updatePolygon(polygon.id, { strokeWidth });
-  const onFillOpacity = (o: number) => updatePolygon(polygon.id, { fillOpacity: o });
   const onCurveRadius = (r: number) => updatePolygon(polygon.id, { curveRadius: r });
   const onClosed = (c: boolean) => updatePolygon(polygon.id, { closed: c });
   const onToggleLock = () => updatePolygon(polygon.id, { locked: !locked });
@@ -87,65 +76,44 @@ export function PolygonPopover({ polygon, view, onClose }: Props) {
       <div className="row">
         <label htmlFor="polygon-fill">Fill color</label>
         <SunIcon aria-hidden="true" />
-        <input
+        <ColorField
           id="polygon-fill"
-          type="color"
-          aria-label="Polygon color"
+          ariaLabel="Polygon color"
           title="Light mode fill"
           value={polygon.fill}
           disabled={locked || !closed}
-          onChange={(e) => onFill(e.target.value)}
-          {...fillField}
+          onChange={onFill}
         />
         <MoonIcon aria-hidden="true" />
-        <input
+        <ColorField
           id="polygon-dark-fill"
-          type="color"
-          aria-label="Dark mode color"
+          ariaLabel="Dark mode color"
           title="Dark mode fill"
           value={darkFill}
           disabled={locked || !closed}
-          onChange={(e) => onDarkFill(e.target.value)}
-          {...darkFillField}
+          onChange={onDarkFill}
         />
       </div>
-      <NumericFieldRow
-        id="polygon-fill-opacity"
-        label="Fill opacity"
-        min={POLYGON_FILL_OPACITY_MIN}
-        max={POLYGON_FILL_OPACITY_MAX}
-        step={1}
-        value={fillOpacity}
-        onChange={onFillOpacity}
-        getCurrent={() =>
-          useDoc.getState().polygons[polygon.id]?.fillOpacity ?? POLYGON_FILL_OPACITY_DEFAULT
-        }
-        disabled={locked || !closed}
-      />
       <hr className="popover-divider" aria-hidden="true" />
       <div className="row">
         <label htmlFor="polygon-stroke">Stroke color</label>
         <SunIcon aria-hidden="true" />
-        <input
+        <ColorField
           id="polygon-stroke"
-          type="color"
-          aria-label="Stroke color"
+          ariaLabel="Stroke color"
           title="Light mode stroke"
           value={polygon.stroke}
           disabled={locked}
-          onChange={(e) => onStroke(e.target.value)}
-          {...strokeField}
+          onChange={onStroke}
         />
         <MoonIcon aria-hidden="true" />
-        <input
+        <ColorField
           id="polygon-dark-stroke"
-          type="color"
-          aria-label="Dark mode stroke color"
+          ariaLabel="Dark mode stroke color"
           title="Dark mode stroke"
           value={darkStroke}
           disabled={locked}
-          onChange={(e) => onDarkStroke(e.target.value)}
-          {...darkStrokeField}
+          onChange={onDarkStroke}
         />
       </div>
       <NumericFieldRow
