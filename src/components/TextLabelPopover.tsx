@@ -108,6 +108,32 @@ export function TextLabelPopover({ label, world, view, onClose }: Props) {
         />
       </div>
 
+      <div className="row">
+        <label htmlFor={`label-color-${label.id}`}>Color</label>
+        <SunIcon aria-hidden="true" />
+        <input
+          id={`label-color-${label.id}`}
+          type="color"
+          aria-label="Label color"
+          title="Light mode color"
+          value={label.color}
+          disabled={locked}
+          onChange={(e) => setColor(e.target.value)}
+          {...colorField}
+        />
+        <MoonIcon aria-hidden="true" />
+        <input
+          id={`label-dark-color-${label.id}`}
+          type="color"
+          aria-label="Dark mode label color"
+          title="Dark mode color"
+          value={label.darkColor}
+          disabled={locked}
+          onChange={(e) => setDarkColor(e.target.value)}
+          {...darkColorField}
+        />
+      </div>
+
       {/* textboxAllowAboveMax: the spinbutton (typing and step buttons) accepts
           sizes beyond the slider's range; the transform clamps at MIN only. */}
       <NumericFieldRow
@@ -122,6 +148,66 @@ export function TextLabelPopover({ label, world, view, onClose }: Props) {
         textboxAllowAboveMax
         disabled={locked}
       />
+
+      <div className="row">
+        <label>Weight</label>
+        <select
+          className="weight-select"
+          value={label.weight}
+          disabled={locked}
+          onChange={(e) => {
+            const n = Number(e.target.value);
+            if (isLabelWeight(n)) setWeight(n);
+          }}
+        >
+          {LABEL_WEIGHT_NAMES.map((w) => (
+            <option
+              key={w.value}
+              value={w.value}
+              style={{
+                fontFamily: "'Helvetica Neue', Helvetica, Arial, sans-serif",
+                fontWeight: w.value,
+                fontStyle: label.italic ? 'italic' : 'normal',
+              }}
+            >
+              {w.name}
+            </option>
+          ))}
+        </select>
+      </div>
+
+      <hr className="popover-divider" aria-hidden="true" />
+
+      <div className="row">
+        <label>Align</label>
+        <div className="shape-group">
+          {ALIGNS.map((a) => (
+            <button
+              key={a.value}
+              type="button"
+              className={'align-btn' + (label.align === a.value ? ' active' : '')}
+              disabled={locked}
+              onClick={() => setAlign(a.value)}
+              title={a.title}
+              aria-label={a.title}
+              aria-pressed={label.align === a.value}
+            >
+              {a.icon}
+            </button>
+          ))}
+          <button
+            type="button"
+            className={'italic-btn' + (label.italic ? ' active' : '')}
+            disabled={locked}
+            onClick={() => setItalic(!label.italic)}
+            title="Italic"
+            aria-label="Italic"
+            aria-pressed={label.italic}
+          >
+            <FontItalicIcon />
+          </button>
+        </div>
+      </div>
 
       {/* Column width. 0 = Auto (size to content, honor manual '\n' breaks);
           >0 wraps text to a fixed-width column. The spinbutton accepts widths
@@ -138,6 +224,8 @@ export function TextLabelPopover({ label, world, view, onClose }: Props) {
         textboxAllowAboveMax
         disabled={locked}
       />
+
+      <hr className="popover-divider" aria-hidden="true" />
 
       {/* Line-spacing multiplier (1 = normal); the tick marks the neutral 1. */}
       <NumericFieldRow
@@ -172,90 +260,6 @@ export function TextLabelPopover({ label, world, view, onClose }: Props) {
         textboxAllowAboveMax
         disabled={locked}
       />
-
-      <div className="row">
-        <label>Align</label>
-        <div className="shape-group">
-          {ALIGNS.map((a) => (
-            <button
-              key={a.value}
-              type="button"
-              className={'align-btn' + (label.align === a.value ? ' active' : '')}
-              disabled={locked}
-              onClick={() => setAlign(a.value)}
-              title={a.title}
-              aria-label={a.title}
-              aria-pressed={label.align === a.value}
-            >
-              {a.icon}
-            </button>
-          ))}
-          <button
-            type="button"
-            className={'italic-btn' + (label.italic ? ' active' : '')}
-            disabled={locked}
-            onClick={() => setItalic(!label.italic)}
-            title="Italic"
-            aria-label="Italic"
-            aria-pressed={label.italic}
-          >
-            <FontItalicIcon />
-          </button>
-        </div>
-      </div>
-
-      <div className="row">
-        <label>Weight</label>
-        <select
-          className="weight-select"
-          value={label.weight}
-          disabled={locked}
-          onChange={(e) => {
-            const n = Number(e.target.value);
-            if (isLabelWeight(n)) setWeight(n);
-          }}
-        >
-          {LABEL_WEIGHT_NAMES.map((w) => (
-            <option
-              key={w.value}
-              value={w.value}
-              style={{
-                fontFamily: "'Helvetica Neue', Helvetica, Arial, sans-serif",
-                fontWeight: w.value,
-                fontStyle: label.italic ? 'italic' : 'normal',
-              }}
-            >
-              {w.name}
-            </option>
-          ))}
-        </select>
-      </div>
-
-      <div className="row">
-        <label htmlFor={`label-color-${label.id}`}>Color</label>
-        <SunIcon aria-hidden="true" />
-        <input
-          id={`label-color-${label.id}`}
-          type="color"
-          aria-label="Label color"
-          title="Light mode color"
-          value={label.color}
-          disabled={locked}
-          onChange={(e) => setColor(e.target.value)}
-          {...colorField}
-        />
-        <MoonIcon aria-hidden="true" />
-        <input
-          id={`label-dark-color-${label.id}`}
-          type="color"
-          aria-label="Dark mode label color"
-          title="Dark mode color"
-          value={label.darkColor}
-          disabled={locked}
-          onChange={(e) => setDarkColor(e.target.value)}
-          {...darkColorField}
-        />
-      </div>
 
       <PopoverFooter noun="label" locked={locked} onToggleLock={onToggleLock} onDelete={onDelete} />
     </DraggablePopoverShell>
