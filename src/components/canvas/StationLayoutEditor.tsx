@@ -234,6 +234,7 @@ export function StationLayoutEditor({
             <text
               x={c.x}
               y={c.y}
+              transform={`rotate(${station.label.rotation * 45} ${c.x} ${c.y})`}
               textAnchor="middle"
               dominantBaseline="central"
               fontSize={Math.max(9, 12 / zoom)}
