@@ -1247,9 +1247,12 @@ describe('moveLineInOrder', () => {
       lines: [makeLine({ id: 'A' }), makeLine({ id: 'B' }), makeLine({ id: 'C' })],
       lineOrder: ['A', 'B', 'C'],
     });
-    expect(T.moveLineInOrder(doc, 'A', -1).lineOrder).toEqual(['A', 'B', 'C']); // already at front
+    // A boundary no-op returns the SAME doc reference (not just an equal order)
+    // so history grouping doesn't push a spurious undo entry — see the guard in
+    // moveLineInOrder / moveInOrder.
+    expect(T.moveLineInOrder(doc, 'A', -1)).toBe(doc); // already at front
     expect(T.moveLineInOrder(doc, 'A', 1).lineOrder).toEqual(['B', 'A', 'C']);
-    expect(T.moveLineInOrder(doc, 'C', 1).lineOrder).toEqual(['A', 'B', 'C']); // already at back
+    expect(T.moveLineInOrder(doc, 'C', 1)).toBe(doc); // already at back
   });
 });
 

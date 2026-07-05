@@ -325,6 +325,36 @@ export function setDotStyle(
   });
 }
 
+/**
+ * Drop every per-stop override of `field` on `lineId` that has become
+ * redundant — `isRedundant(stop)` decides when a stop now equals the line's
+ * new effective default. Shared by the two "set line default" setters
+ * (`setLineDefaultDotStyle` / `setLineDefaultDotSize`) so the override-pruning
+ * rule — which keeps persisted docs clean and makes those stops track the
+ * default going forward — can never drift between dot-style and dot-size.
+ * Returns the same `stations` reference when nothing was pruned.
+ */
+function dropRedundantStopOverrides(
+  stations: Record<StationId, Station>,
+  lineId: LineId,
+  field: 'dotStyle' | 'dotSize',
+  isRedundant: (stop: StopCell) => boolean,
+): Record<StationId, Station> {
+  let out = stations;
+  for (const sid of Object.keys(out)) {
+    const st = out[sid];
+    let stopsChanged = false;
+    const stops = st.stops.map((s) => {
+      if (s.lineId !== lineId || !isRedundant(s)) return s;
+      stopsChanged = true;
+      const { [field]: _gone, ...rest } = s;
+      return rest;
+    });
+    if (stopsChanged) out = { ...out, [sid]: { ...st, stops } };
+  }
+  return out;
+}
+
 export function setLineDefaultDotStyle(doc: MapDoc, id: LineId, style: DotStyle): MapDoc {
   const cur = doc.lines[id];
   if (!cur) return doc;
@@ -343,20 +373,12 @@ export function setLineDefaultDotStyle(doc: MapDoc, id: LineId, style: DotStyle)
   }
   // Any per-stop override on this line that matches the NEW default is now
   // redundant — drop it so the stop tracks the default going forward.
-  let stations = doc.stations;
-  for (const sid of Object.keys(stations)) {
-    const st = stations[sid];
-    let stopsChanged = false;
-    const stops = st.stops.map((s) => {
-      if (s.lineId !== id || s.dotStyle === undefined || !dotStylesEqual(s.dotStyle, style)) {
-        return s;
-      }
-      stopsChanged = true;
-      const { dotStyle: _gone, ...rest } = s;
-      return rest;
-    });
-    if (stopsChanged) stations = { ...stations, [sid]: { ...st, stops } };
-  }
+  const stations = dropRedundantStopOverrides(
+    doc.stations,
+    id,
+    'dotStyle',
+    (s) => s.dotStyle !== undefined && dotStylesEqual(s.dotStyle, style),
+  );
   return { ...doc, lines: { ...doc.lines, [id]: nextLine }, stations };
 }
 
@@ -411,18 +433,12 @@ export function setLineDefaultDotSize(doc: MapDoc, id: LineId, size: number): Ma
   // The cascade compares against `norm` (the new EFFECTIVE default), not
   // `stored` — resetting to the global default must also absorb overrides
   // that equal DOT_SIZE_DEFAULT.
-  let stations = doc.stations;
-  for (const sid of Object.keys(stations)) {
-    const st = stations[sid];
-    let stopsChanged = false;
-    const stops = st.stops.map((s) => {
-      if (s.lineId !== id || s.dotSize !== norm) return s;
-      stopsChanged = true;
-      const { dotSize: _gone, ...rest } = s;
-      return rest;
-    });
-    if (stopsChanged) stations = { ...stations, [sid]: { ...st, stops } };
-  }
+  const stations = dropRedundantStopOverrides(
+    doc.stations,
+    id,
+    'dotSize',
+    (s) => s.dotSize === norm,
+  );
   return { ...doc, lines: { ...doc.lines, [id]: nextLine }, stations };
 }
 

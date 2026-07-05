@@ -15,7 +15,11 @@ beforeEach(() => {
 
 describe('viewportStore — gridSize', () => {
   it('defaults to a 10px grid', () => {
-    expect(useViewportStore.getState().gridSize).toBe(10);
+    // Assert the store's OWN initializer via getInitialState (the pristine
+    // snapshot captured at creation), not getState() — the latter only reflects
+    // what beforeEach just wrote, so it could never catch a broken default at
+    // viewportStore.ts. Mirrors snapPrefs.test.ts.
+    expect(useViewportStore.getInitialState().gridSize).toBe(10);
   });
 
   it('setGridSize updates the value', () => {

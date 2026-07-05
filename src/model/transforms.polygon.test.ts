@@ -16,7 +16,9 @@ import {
   effectivePolygonOrder,
   resolvePolygonColors,
   POLYGON_STROKE_WIDTH_MIN,
-  POLYGON_STROKE_WIDTH_MAX,
+  POLYGON_STROKE_WIDTH_DEFAULT,
+  POLYGON_FILL_DEFAULT,
+  POLYGON_STROKE_DEFAULT,
   POLYGON_FILL_OPACITY_MIN,
   POLYGON_FILL_OPACITY_MAX,
   POLYGON_CURVE_RADIUS_MIN,
@@ -36,10 +38,11 @@ describe('polygon transforms', () => {
     // Axis-aligned square: two distinct x's and two distinct y's.
     expect(new Set(poly.vertices.map((v) => v.x)).size).toBe(2);
     expect(new Set(poly.vertices.map((v) => v.y)).size).toBe(2);
-    expect(poly.strokeWidth).toBeGreaterThanOrEqual(POLYGON_STROKE_WIDTH_MIN);
-    expect(poly.strokeWidth).toBeLessThanOrEqual(POLYGON_STROKE_WIDTH_MAX);
-    expect(poly.fill).toMatch(/^#/);
-    expect(poly.stroke).toMatch(/^#/);
+    // Pin the actual defaults, not just their in-range-ness / leading '#': a
+    // min/max range and /^#/ would still pass if any default value drifted.
+    expect(poly.strokeWidth).toBe(POLYGON_STROKE_WIDTH_DEFAULT);
+    expect(poly.fill).toBe(POLYGON_FILL_DEFAULT);
+    expect(poly.stroke).toBe(POLYGON_STROKE_DEFAULT);
   });
 
   it('setPolygonVertices replaces the vertex list', () => {
@@ -55,7 +58,9 @@ describe('polygon transforms', () => {
 
   it('movePolygon translates every vertex by (dx, dy)', () => {
     const doc = makeDoc({ polygons: [makePolygon({ id: 'p0' })] });
-    const before = doc.polygons['p0'].vertices;
+    // Deep-copy the original vertices; a live alias would mutate alongside the
+    // doc and make the purity assertion below a tautology (x === x).
+    const before = doc.polygons['p0'].vertices.map((v) => ({ ...v }));
     const next = movePolygon(doc, 'p0', 7, -3);
     expect(next.polygons['p0'].vertices).toEqual(before.map((v) => ({ x: v.x + 7, y: v.y - 3 })));
     // Pure: the input doc and its vertices are never mutated in place.
@@ -220,9 +225,11 @@ describe('polygon transforms', () => {
     doc = movePolygonDown(doc, 'c'); // c moves toward bottom
     expect(doc.polygonOrder).toEqual(['b', 'c', 'a']);
 
-    // No-ops at the ends.
-    expect(movePolygonUp(doc, 'a').polygonOrder).toEqual(['b', 'c', 'a']); // 'a' already top
-    expect(movePolygonDown(doc, 'b').polygonOrder).toEqual(['b', 'c', 'a']); // 'b' already bottom
+    // No-ops at the ends return the SAME doc reference (not just an equal
+    // order) — history grouping relies on reference identity to avoid pushing a
+    // spurious undo entry for a boundary click that changed nothing.
+    expect(movePolygonUp(doc, 'a')).toBe(doc); // 'a' already top
+    expect(movePolygonDown(doc, 'b')).toBe(doc); // 'b' already bottom
   });
 
   it('effectivePolygonOrder backfills ids missing from a legacy/partial order', () => {
