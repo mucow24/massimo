@@ -55,19 +55,21 @@ function tokenize(raw: string, entryStyle?: InlineStyleState): Tok[] {
 
 /**
  * Lay out one rendered line as fully-justified atoms flushing both edges of a
- * `targetWidth` box. `inkWidth` is the line's measured ink extent; the slack
- * `targetWidth - inkWidth` is spread evenly across the interior word gaps
- * (whitespace runs with ink on both sides). Leading/trailing whitespace still
- * advances the pen but is never stretched. `measureAdvance` receives each
- * run's style so bold/italic tags measure on the right face. Returns null
- * when the line can't be justified — no interior gap (single word), or no
- * slack (ink already fills or overflows the box) — so the caller renders it
- * left-flush instead.
+ * `targetWidth` box. `advanceWidth` is the line's natural pen advance; the slack
+ * `targetWidth - advanceWidth` is spread evenly across the interior word gaps
+ * (whitespace runs with ink on both sides). The first word's pen sits at the
+ * left edge and the last word's advance reaches the right edge, matching the
+ * pen-origin alignment the non-justified path uses. Leading/trailing whitespace
+ * still advances the pen but is never stretched. `measureAdvance` receives each
+ * run's style so bold/italic tags measure on the right face. Returns null when
+ * the line can't be justified — no interior gap (single word), or no slack (the
+ * text already fills or overflows the box) — so the caller renders it left-flush
+ * instead.
  */
 export function justifyLine(
   raw: string,
   fontSize: number,
-  inkWidth: number,
+  advanceWidth: number,
   targetWidth: number,
   measureAdvance: (s: string, style?: SegmentStyle) => number,
   entryStyle?: InlineStyleState,
@@ -87,7 +89,7 @@ export function justifyLine(
   for (let i = firstInk + 1; i < lastInk; i++) if (toks[i].t === 'space') gaps++;
   if (gaps === 0) return null;
 
-  const slack = targetWidth - inkWidth;
+  const slack = targetWidth - advanceWidth;
   if (slack <= 0) return null;
   const extraPerGap = slack / gaps;
 

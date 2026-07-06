@@ -38,20 +38,18 @@ interface Props {
   inHandMode?: boolean;
 }
 
-// Per-line cursor X. Each line is positioned by its own ink bearings so the
-// visible left/right ink edges align with the bbox edges — fonts at
-// different weights have different side bearings, and we don't want that
-// leakage to push the visible glyph row past the label's bbox.
-function lineCursorX(
-  align: TextLabel['align'],
-  halfWidth: number,
-  bearingLeft: number,
-  bearingRight: number,
-): number {
-  if (align === 'right') return halfWidth - bearingRight;
-  if (align === 'center') return (bearingLeft - bearingRight) / 2;
-  // left
-  return -halfWidth + bearingLeft;
+// Per-line start cursor (pen origin) X. Lines align by their PEN advance, not by
+// raw ink, so they flush on the font's designed side bearings and read even.
+// Aligning by ink instead pins each line's leftmost/rightmost ink *pixel* to the
+// bbox edge, which shoves round/hooked initials (o, c, w, f, v, s…) visibly
+// inward — the ragged, letter-shape-dependent edge this replaced. The tiny ink
+// overhang past the pen box is a side bearing (< a couple px) and sits inside
+// the selection padding (TEXT_LABEL_HIT_PAD).
+function lineCursorX(align: TextLabel['align'], halfWidth: number, advanceWidth: number): number {
+  if (align === 'right') return halfWidth - advanceWidth;
+  if (align === 'center') return -advanceWidth / 2;
+  // left (and justify's ragged last line)
+  return -halfWidth;
 }
 
 export function LabelView({
@@ -248,12 +246,19 @@ export function LabelView({
         // 'justify' via its default branch.
         const atoms =
           label.align === 'justify' && !lm.endsParagraph
-            ? justifyLine(lm.raw, label.fontSize, lm.inkWidth, m.width, runAdvance, lm.entryStyle)
+            ? justifyLine(
+                lm.raw,
+                label.fontSize,
+                lm.advanceWidth,
+                m.width,
+                runAdvance,
+                lm.entryStyle,
+              )
             : null;
 
         const nodes: React.ReactNode[] = [];
         if (atoms) {
-          const lineStartX = -halfW + lm.bearingLeft;
+          const lineStartX = -halfW;
           atoms.forEach((a, j) => {
             const x = lineStartX + a.x;
             if (a.kind === 'text') {
@@ -277,7 +282,7 @@ export function LabelView({
             }
           });
         } else {
-          let cursor = lineCursorX(label.align, halfW, lm.bearingLeft, lm.bearingRight);
+          let cursor = lineCursorX(label.align, halfW, lm.advanceWidth);
           lm.segments.forEach((seg, j) => {
             const segCursor = cursor;
             cursor += seg.advance;
