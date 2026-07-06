@@ -7,7 +7,7 @@ import {
   measureTextLabel,
   type MeasuredBBox,
 } from '../geometry/textMeasure';
-import { justifyLine } from '../geometry/labelJustify';
+import { justifyLine, type JustifyAtom } from '../geometry/labelJustify';
 import { resolveRunWeight, type SegmentStyle } from '../geometry/labelTokens';
 import { TEXT_LABEL_HIT_PAD } from '../geometry/stationBoundary';
 import { FONT_STACK } from '../export/fonts';
@@ -197,6 +197,28 @@ export function LabelView({
         // <u>/<s> as explicit <line> geometry, matching the station-label
         // pattern: Chromium mishandles toggling the text-decoration SVG
         // attribute on rotated <text>, and svg2pdf ignores it outright.
+        const decorationY = (kind: 'underline' | 'strike') =>
+          kind === 'underline'
+            ? baselineY + label.fontSize * 0.1
+            : baselineY - label.fontSize * 0.28;
+        const decorationLine = (
+          kind: 'underline' | 'strike',
+          x: number,
+          width: number,
+          key: string,
+          style: SegmentStyle,
+        ) => (
+          <line
+            key={`${key}-${kind}`}
+            data-text-decoration={kind}
+            x1={x}
+            x2={x + width}
+            y1={decorationY(kind)}
+            y2={decorationY(kind)}
+            stroke={runFill(style)}
+            strokeWidth={label.fontSize * 0.07}
+          />
+        );
         const decorationNodes = (
           x: number,
           width: number,
@@ -204,22 +226,50 @@ export function LabelView({
           style?: SegmentStyle,
         ): React.ReactNode[] => {
           if (!style || (!style.underline && !style.strike) || width <= 0) return [];
-          const thickness = label.fontSize * 0.07;
-          const decoration = (kind: string, y: number) => (
-            <line
-              key={`${key}-${kind}`}
-              data-text-decoration={kind}
-              x1={x}
-              x2={x + width}
-              y1={y}
-              y2={y}
-              stroke={runFill(style)}
-              strokeWidth={thickness}
-            />
-          );
           const out: React.ReactNode[] = [];
-          if (style.underline) out.push(decoration('underline', baselineY + label.fontSize * 0.1));
-          if (style.strike) out.push(decoration('strike', baselineY - label.fontSize * 0.28));
+          if (style.underline) out.push(decorationLine('underline', x, width, key, style));
+          if (style.strike) out.push(decorationLine('strike', x, width, key, style));
+          return out;
+        };
+        // Justify splits each line into per-word atoms, so a single '<u>foo and
+        // bar</u>' arrives as several word atoms — decorating each on its own
+        // would draw a broken underline per word. Coalesce consecutive atoms
+        // that come from the SAME formatting run (same style object) into one
+        // line spanning the whole run, gaps included: every token a segment
+        // emits shares one style reference, so '<u>a b</u>' bridges the space
+        // while '<u>a</u> <u>b</u>' (two references) stays two underlines with
+        // the bare gap between them.
+        const justifyDecorationNodes = (
+          atoms: JustifyAtom[],
+          lineStartX: number,
+        ): React.ReactNode[] => {
+          const out: React.ReactNode[] = [];
+          (['underline', 'strike'] as const).forEach((kind) => {
+            let run: { x: number; end: number; style: SegmentStyle; key: number } | null = null;
+            const flush = () => {
+              if (run && run.end > run.x) {
+                out.push(
+                  decorationLine(kind, run.x, run.end - run.x, `${i}-${run.key}`, run.style),
+                );
+              }
+              run = null;
+            };
+            atoms.forEach((a, j) => {
+              if (a.kind !== 'text' || !a.style?.[kind]) {
+                flush();
+                return;
+              }
+              const x = lineStartX + a.x;
+              const end = x + runAdvance(a.value ?? '', a.style);
+              if (run && run.style === a.style) {
+                run.end = end;
+              } else {
+                flush();
+                run = { x, end, style: a.style, key: j };
+              }
+            });
+            flush();
+          });
           return out;
         };
         const bulletNode = (
@@ -260,13 +310,11 @@ export function LabelView({
         const nodes: React.ReactNode[] = [];
         if (atoms) {
           const lineStartX = -halfW;
+          nodes.push(...justifyDecorationNodes(atoms, lineStartX));
           atoms.forEach((a, j) => {
             const x = lineStartX + a.x;
             if (a.kind === 'text') {
               nodes.push(textNode(x, a.value ?? '', `${i}-${j}-t`, a.style));
-              nodes.push(
-                ...decorationNodes(x, runAdvance(a.value ?? '', a.style), `${i}-${j}`, a.style),
-              );
             } else {
               nodes.push(
                 bulletNode(
