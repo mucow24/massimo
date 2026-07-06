@@ -81,6 +81,44 @@ describe('<LabelView /> — justify', () => {
     expect(lineTexts(c, 0).map((t) => t.textContent)).toEqual(['aa bb cc']);
   });
 
+  it('draws one continuous underline across an underlined run on a justified line', () => {
+    // '<u>aa bb</u>' on the narrower interior line: the words spread to both
+    // edges, but the underline spans the whole run (spaces included), not one
+    // segment per word.
+    const label = makeTextLabel({
+      id: 'g1',
+      x: 0,
+      y: 0,
+      fontSize: 10,
+      align: 'justify',
+      text: '<u>aa bb</u>\naaaa bbbb cccc',
+    });
+    const halfW = measureTextLabel(label).width / 2; // widest line 140 → 70
+    const c = renderLabel(label);
+    const unders = c.querySelectorAll(
+      '[data-label-line="0"] line[data-text-decoration="underline"]',
+    );
+    expect(unders).toHaveLength(1);
+    expect(parseFloat(unders[0].getAttribute('x1')!)).toBeCloseTo(-halfW, 5);
+    expect(parseFloat(unders[0].getAttribute('x2')!)).toBeCloseTo(halfW, 5);
+  });
+
+  it('keeps two separately-underlined words as two underlines on a justified line', () => {
+    // '<u>aa</u> <u>bb</u>' — the space between them is NOT underlined, so the
+    // two runs stay distinct (bridging them would underline the bare gap).
+    const c = renderLabel(
+      makeTextLabel({
+        id: 'g1',
+        fontSize: 10,
+        align: 'justify',
+        text: '<u>aa</u> <u>bb</u>\naaaa bbbb cccc',
+      }),
+    );
+    expect(
+      c.querySelectorAll('[data-label-line="0"] line[data-text-decoration="underline"]'),
+    ).toHaveLength(2);
+  });
+
   it('wraps to a column and justifies interior wrapped lines', () => {
     const label = makeTextLabel({
       id: 'g1',
