@@ -1,5 +1,5 @@
 import type { RouteBulletShape } from '../model/types';
-import { bolderWeight, parseWeightToken, stepWeight } from '../export/fonts';
+import { bolderWeight, parseWeightToken, stepWeight } from '../util/fonts';
 
 /**
  * Resolved inline style of a text segment, produced by `parseFormattedLine`

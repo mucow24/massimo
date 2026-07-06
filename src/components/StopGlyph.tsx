@@ -2,7 +2,7 @@ import type { ReactNode } from 'react';
 import { DEFAULT_DOT_STYLE, resolveDotRender, type DotRenderParams } from '../model/dotStyle';
 import { useViewportStore } from '../state/viewportStore';
 import type { DotStyle } from '../model/types';
-import { FONT_STACK } from '../export/fonts';
+import { FONT_STACK } from '../util/fonts';
 
 interface Props {
   cx: number;
