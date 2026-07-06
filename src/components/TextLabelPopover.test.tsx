@@ -3,6 +3,7 @@ import { render, screen, fireEvent } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { TextLabelPopover } from './TextLabelPopover';
 import { useDoc } from '../state/store';
+import { useLabelEditorPrefs } from '../state/labelEditorPrefs';
 import { DEFAULT_DOC } from '../model/transforms';
 import { makeTextLabel } from '../test/fixtures';
 import { openColorField, setColorField } from '../test/colorField';
@@ -287,6 +288,7 @@ describe('<TextLabelPopover /> — text / size / align / weight controls', () =>
     );
     expect(sequence).toEqual([
       'Text',
+      'Wrap',
       'Color',
       'Size',
       'Weight',
@@ -501,6 +503,71 @@ describe('<TextLabelPopover /> — column width + justify', () => {
     fireEvent.wheel(screen.getByRole('slider', { name: 'Width' }), { deltaY: -1 });
     expect(useDoc.getState().textLabels['g1'].fontSize).toBe(before.fontSize);
     expect(useDoc.getState().textLabels['g1'].width).toBe(before.width);
+  });
+});
+
+describe('<TextLabelPopover /> — wrap-lines toggle (persisted editor preference)', () => {
+  const identityView = { vbX: 0, vbY: 0, vbW: 800, vbH: 600, size: { w: 800, h: 600 } };
+
+  beforeEach(() => {
+    // The wrap flag is a global persisted preference, not doc state — reset both
+    // the store and its localStorage backing so tests don't leak into each other
+    // or into the other describes in this file.
+    localStorage.clear();
+    useLabelEditorPrefs.setState({ wrapText: false });
+  });
+
+  function seedAndRender() {
+    const label = makeTextLabel({ id: 'g1', text: 'Hi' });
+    useDoc.setState({ ...useDoc.getState(), textLabels: { g1: label } });
+    render(
+      <TextLabelPopover
+        label={useDoc.getState().textLabels['g1']}
+        world={{ x: 0, y: 0 }}
+        view={identityView}
+        onClose={() => {}}
+      />,
+    );
+  }
+
+  // The wrap toggle drives a CSS class, not the textarea's `wrap` attribute:
+  // Chromium ignores post-creation changes to `wrap`, and the base stylesheet
+  // pins `white-space: pre`, so the `.wrap` class is what actually flips it.
+  it('defaults to unchecked with no wrap class (unchanged legacy behavior)', () => {
+    seedAndRender();
+    expect(screen.getByRole('checkbox', { name: 'Wrap' })).not.toBeChecked();
+    expect(screen.getByRole('textbox')).not.toHaveClass('wrap');
+  });
+
+  it('checking it adds the wrap class and writes the persisted preference', () => {
+    seedAndRender();
+    fireEvent.click(screen.getByRole('checkbox', { name: 'Wrap' }));
+    expect(screen.getByRole('textbox')).toHaveClass('wrap');
+    expect(useLabelEditorPrefs.getState().wrapText).toBe(true);
+  });
+
+  it('reflects an already-remembered preference when the popover opens', () => {
+    useLabelEditorPrefs.setState({ wrapText: true });
+    seedAndRender();
+    expect(screen.getByRole('checkbox', { name: 'Wrap' })).toBeChecked();
+    expect(screen.getByRole('textbox')).toHaveClass('wrap');
+  });
+
+  it('stays usable on a locked label (view-only preference, never mutates the label)', () => {
+    const label = makeTextLabel({ id: 'g1', text: 'Hi', locked: true });
+    useDoc.setState({ ...useDoc.getState(), textLabels: { g1: label } });
+    render(
+      <TextLabelPopover
+        label={label}
+        world={{ x: 0, y: 0 }}
+        view={identityView}
+        onClose={() => {}}
+      />,
+    );
+    const box = screen.getByRole('checkbox', { name: 'Wrap' });
+    expect(box).toBeEnabled();
+    fireEvent.click(box);
+    expect(useLabelEditorPrefs.getState().wrapText).toBe(true);
   });
 });
 
