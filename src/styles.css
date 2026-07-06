@@ -414,10 +414,10 @@ select option {
   color: var(--text-muted);
 }
 .options-popover-spin {
-  /* Wide enough for a one-decimal value ("16.0") PLUS the native stepper
-     arrows, which Chromium overlays inside the input's right edge — at 44px
-     they clip the last digit. Matches LabelOffsetControl's 56px spinbox. */
-  width: 56px;
+  /* Wide enough for a three-decimal signed value ("-0.025", tracking) PLUS the
+     native stepper arrows, which Chromium overlays inside the input's right
+     edge — at 56px they clip the last digit. */
+  width: 64px;
   font-size: var(--fs-small);
   padding: 1px 4px;
   border: 1px solid var(--border);
