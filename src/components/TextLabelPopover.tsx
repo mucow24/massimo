@@ -9,6 +9,7 @@ import {
   TextAlignRightIcon,
 } from '@radix-ui/react-icons';
 import { useDoc } from '../state/store';
+import { useLabelEditorPrefs } from '../state/labelEditorPrefs';
 import { type ViewportProjection } from './canvas/screenAnchor';
 import { DraggablePopoverShell } from './DraggablePopoverShell';
 import { useDraggablePopover } from './canvas/useDraggablePopover';
@@ -63,6 +64,12 @@ export function TextLabelPopover({ label, world, view, onClose }: Props) {
 
   const textField = useFieldHistory();
 
+  // Soft-wrap toggle for the textarea — a remembered editor preference (not
+  // label data), so long justified paragraphs stay visible instead of scrolling
+  // off the right edge, and the choice sticks across popover opens and reloads.
+  const wrapText = useLabelEditorPrefs((s) => s.wrapText);
+  const setWrapText = useLabelEditorPrefs((s) => s.setWrapText);
+
   const setText = (text: string) => updateTextLabel(label.id, { text });
   const setFontSize = (n: number) => updateTextLabel(label.id, { fontSize: n });
   const setAlign = (align: TextLabelAlign) => updateTextLabel(label.id, { align });
@@ -96,12 +103,26 @@ export function TextLabelPopover({ label, world, view, onClose }: Props) {
         </label>
         <textarea
           id={`label-text-${label.id}`}
+          className={wrapText ? 'wrap' : undefined}
           value={label.text}
           disabled={locked}
           onChange={(e) => setText(e.target.value)}
           rows={Math.max(2, label.text.split('\n').length)}
-          wrap="off"
           {...textField}
+        />
+      </div>
+
+      {/* View-only soft-wrap for the editor above — never touches the label, so
+          it stays usable even when the label is locked. */}
+      <div className="row">
+        <label htmlFor={`label-wrap-${label.id}`}>Wrap</label>
+        <input
+          id={`label-wrap-${label.id}`}
+          type="checkbox"
+          aria-label="Wrap"
+          title="Wrap long lines in this editor (view only — doesn't change the label)"
+          checked={wrapText}
+          onChange={(e) => setWrapText(e.target.checked)}
         />
       </div>
 
