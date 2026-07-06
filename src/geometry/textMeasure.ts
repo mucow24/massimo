@@ -79,6 +79,15 @@ export interface LineMetrics {
   bearingLeft: number;
   /** Distance from the line-start cursor going RIGHT to the rightmost ink pixel. */
   bearingRight: number;
+  /**
+   * Pen advance of the whole line — the sum of every segment's advance. Text
+   * aligns by this (pen origin), NOT by the raw ink extent, so lines flush on
+   * the font's designed side bearings and the edges read even. Aligning by ink
+   * instead pins each line's leftmost ink *pixel* to the margin, which shoves
+   * round/hooked initials (o, c, w, f, v, s…) visibly inward — a ragged,
+   * letter-shape-dependent edge.
+   */
+  advanceWidth: number;
   /** Parsed segments along this line, with their measurements. Empty for an
    *  empty line. */
   segments: SegmentMetric[];
@@ -97,7 +106,10 @@ export interface LineMetrics {
 }
 
 /** The ink-only fields of a line, before `raw`/`endsParagraph` are attached. */
-type LineInk = Pick<LineMetrics, 'inkWidth' | 'bearingLeft' | 'bearingRight' | 'segments'>;
+type LineInk = Pick<
+  LineMetrics,
+  'inkWidth' | 'bearingLeft' | 'bearingRight' | 'advanceWidth' | 'segments'
+>;
 
 /** A measured line plus the tag state it leaves open for the next line. */
 type ParsedLine = LineInk & { exit: InlineStyleState | null };
@@ -255,7 +267,7 @@ function computeLineMetrics(
     exit = r.state;
   }
   if (segments.length === 0) {
-    return { inkWidth: 0, bearingLeft: 0, bearingRight: 0, segments: [], exit };
+    return { inkWidth: 0, bearingLeft: 0, bearingRight: 0, advanceWidth: 0, segments: [], exit };
   }
   const segMetrics: SegmentMetric[] = segments.map((seg) => {
     if (seg.kind === 'bullet') {
@@ -295,12 +307,20 @@ function computeLineMetrics(
     cursor += sm.advance;
   }
   if (!Number.isFinite(inkLeft) || !Number.isFinite(inkRight)) {
-    return { inkWidth: 0, bearingLeft: 0, bearingRight: 0, segments: segMetrics, exit };
+    return {
+      inkWidth: 0,
+      bearingLeft: 0,
+      bearingRight: 0,
+      advanceWidth: cursor,
+      segments: segMetrics,
+      exit,
+    };
   }
   return {
     inkWidth: inkRight - inkLeft,
     bearingLeft: -inkLeft,
     bearingRight: inkRight,
+    advanceWidth: cursor,
     segments: segMetrics,
     exit,
   };

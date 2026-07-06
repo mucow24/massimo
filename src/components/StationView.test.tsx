@@ -758,10 +758,12 @@ describe('<StationView /> — hover underline geometry (E1)', () => {
   // The hover underline is drawn as an explicit <line> (renderStationLabelText
   // draws it instead of the SVG text-decoration attribute). Earlier tests only
   // count the <line>s; this pins the actual geometry: x1/x2 hug the ink extent
-  // off lineStartX, y sits UNDERLINE_OFFSET below the first baseline, stroke =
-  // the label fill. The expected values are derived from the SAME measurement +
-  // layout the renderer uses, so the test is an exact oracle (not a tautology:
-  // it re-derives the formula independently).
+  // off the line's pen origin, y sits UNDERLINE_OFFSET below the first baseline,
+  // stroke = the label fill. NOTE: this test runs under jsdom's width heuristic
+  // (no fake canvas), where bearingLeft=0 and advanceWidth=bearingRight=inkWidth,
+  // so it validates the underline's y/stroke and overall x placement but CANNOT
+  // distinguish the ink-hug term (penStart − bearingLeft) from zero. The
+  // non-zero-bearing ink-hug is pinned in stationLabelText.alignment.test.tsx.
   const UNDERLINE_OFFSET = 4;
   const UNDERLINE_STROKE = 2;
   const defaultStyle = { fontSize: 12, weight: 400, italic: false };
@@ -786,9 +788,11 @@ describe('<StationView /> — hover underline geometry (E1)', () => {
     const lm = m.lines[0];
     expect(lm.inkWidth).toBeGreaterThan(0); // premise: there's an underline to draw
 
-    // lineStartX for an end-anchored label: anchorX − bearingRight.
+    // Underline hugs ink at penStart − bearingLeft; penStart for an end-anchored
+    // line = anchorX − advanceWidth. (Under jsdom bearingLeft=0 and
+    // advanceWidth=bearingRight, so this equals the old anchorX − bearingRight.)
     expect(lay.textAnchor).toBe('end'); // premise for this station's layout
-    const expX1 = lay.anchorX - lm.bearingRight;
+    const expX1 = lay.anchorX - lm.advanceWidth - lm.bearingLeft;
     const expX2 = expX1 + lm.inkWidth;
 
     // First baseline for the central-baseline path (the default label uses

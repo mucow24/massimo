@@ -3,14 +3,16 @@ import { justifyLine } from './labelJustify';
 import { emptyStyleState, inlineBulletDiameter } from './labelTokens';
 
 // Deterministic advance: every glyph is 10 wide. Space runs measure by length
-// too, matching how the real measurer treats whitespace advance.
+// too, matching how the real measurer treats whitespace advance. Tracking is
+// modeled ONLY via the letterSpacingPx argument (this stub never adds it), so
+// each test's width arithmetic stays exact.
 const CHAR = 10;
 const adv = (s: string) => s.length * CHAR;
 
 describe('justifyLine', () => {
   it('distributes slack evenly across interior gaps and flushes both edges', () => {
-    // 'aa bb cc' ink = 8 glyphs = 80. Target 100 → slack 20 over 2 gaps = 10 each.
-    const atoms = justifyLine('aa bb cc', 10, 80, 100, adv);
+    // 'aa bb cc' advance = 8 glyphs = 80. Target 100 → slack 20 over 2 gaps = 10 each.
+    const atoms = justifyLine('aa bb cc', 10, 0, 80, 100, adv);
     expect(atoms).not.toBeNull();
     expect(atoms!.map((a) => ({ kind: a.kind, value: a.value, x: a.x }))).toEqual([
       { kind: 'text', value: 'aa', x: 0 },
@@ -24,8 +26,8 @@ describe('justifyLine', () => {
 
   it('places an inline bullet as its own atom and keeps the line flush', () => {
     const d = inlineBulletDiameter(10); // 9
-    const ink = adv('aa') + adv(' ') + d + adv(' ') + adv('bb'); // 20+10+9+10+20 = 69
-    const atoms = justifyLine('aa |A1| bb', 10, ink, ink + 20, adv); // slack 20, 2 gaps
+    const advance = adv('aa') + adv(' ') + d + adv(' ') + adv('bb'); // 20+10+9+10+20 = 69
+    const atoms = justifyLine('aa |A1| bb', 10, 0, advance, advance + 20, adv); // slack 20, 2 gaps
     expect(atoms).not.toBeNull();
     expect(atoms!.map((a) => a.kind)).toEqual(['text', 'bullet', 'text']);
     const bullet = atoms!.find((a) => a.kind === 'bullet')!;
@@ -37,18 +39,39 @@ describe('justifyLine', () => {
     expect(bullet.x).toBe(40);
   });
 
-  it('returns null when the line has no interior gap (single word)', () => {
-    expect(justifyLine('aaaa', 10, 40, 100, adv)).toBeNull();
+  it('advances an inline bullet by diameter + letterSpacingPx (tracked bullet stays flush)', () => {
+    // Regression: with advance-based slack, the internal bullet advance MUST
+    // match the measurer (diameter + letterSpacingPx). Advancing only `d` left
+    // the last word short of the right edge by nBullets*letterSpacingPx.
+    const d = inlineBulletDiameter(10);
+    const ls = 4;
+    // '|A1| xx yy' → bullet, ' ', 'xx', ' ', 'yy' (2 interior gaps).
+    // advance = (d + ls) + adv(' ') + adv('xx') + adv(' ') + adv('yy') = d + ls + 60
+    const advance = d + ls + 60;
+    const target = advance + 40; // slack 40 over 2 gaps
+    const atoms = justifyLine('|A1| xx yy', 10, ls, advance, target, adv);
+    expect(atoms).not.toBeNull();
+    const yy = atoms!.find((a) => a.value === 'yy')!;
+    expect(yy.x + adv('yy')).toBeCloseTo(target, 5); // last word advance-right = target
+    // With only `d` (no ls) the bullet would advance 4px short and yy would land
+    // at target - ls; assert we are NOT in that broken state.
+    expect(yy.x + adv('yy')).not.toBeCloseTo(target - ls, 5);
   });
 
-  it('returns null when the ink already meets or exceeds the target (no slack)', () => {
-    expect(justifyLine('aa bb', 10, 50, 40, adv)).toBeNull();
-    expect(justifyLine('aa bb', 10, 50, 50, adv)).toBeNull();
+  it('returns null when the line has no interior gap (single word)', () => {
+    expect(justifyLine('aaaa', 10, 0, 40, 100, adv)).toBeNull();
+  });
+
+  it('returns null when the advance already meets or exceeds the target (no slack)', () => {
+    // Advance-based fallback: a line already filling the box is left-flushed,
+    // not stretched. Pins the deliberate pen-alignment threshold.
+    expect(justifyLine('aa bb', 10, 0, 50, 40, adv)).toBeNull();
+    expect(justifyLine('aa bb', 10, 0, 50, 50, adv)).toBeNull();
   });
 
   it('parses formatting tags and attaches styles when given an entry state', () => {
-    // '<b>aa</b> bb cc': ink = 8 glyphs + 2 spaces = 80. Target 100 → 10/gap.
-    const atoms = justifyLine('<b>aa</b> bb cc', 10, 80, 100, adv, emptyStyleState());
+    // '<b>aa</b> bb cc': advance = 8 glyphs + 2 spaces = 80. Target 100 → 10/gap.
+    const atoms = justifyLine('<b>aa</b> bb cc', 10, 0, 80, 100, adv, emptyStyleState());
     expect(atoms).not.toBeNull();
     expect(atoms!.map((a) => ({ value: a.value, x: a.x }))).toEqual([
       { value: 'aa', x: 0 },
@@ -61,14 +84,14 @@ describe('justifyLine', () => {
 
   it('carries an open tag from the entry state across the whole line', () => {
     const entry = { ...emptyStyleState(), italic: 1 };
-    const atoms = justifyLine('aa bb', 10, 50, 90, adv, entry);
+    const atoms = justifyLine('aa bb', 10, 0, 50, 90, adv, entry);
     expect(atoms).not.toBeNull();
     expect(atoms![0].style).toMatchObject({ italic: true });
     expect(atoms![1].style).toMatchObject({ italic: true });
   });
 
   it('leaves tags literal without an entry state (station grammar)', () => {
-    const atoms = justifyLine('<b>aa</b> bb cc', 10, 80, 100, adv);
+    const atoms = justifyLine('<b>aa</b> bb cc', 10, 0, 80, 100, adv);
     expect(atoms).not.toBeNull();
     expect(atoms![0]).toMatchObject({ value: '<b>aa</b>', x: 0 });
     expect(atoms![0].style).toBeUndefined();
@@ -77,7 +100,7 @@ describe('justifyLine', () => {
   it('does not stretch leading/trailing whitespace (only interior gaps)', () => {
     // '  aa bb  ' — one interior gap. Leading/trailing spaces advance the cursor
     // but receive no extra slack.
-    const atoms = justifyLine('  aa bb  ', 10, 50, 90, adv); // slack 40 over 1 gap
+    const atoms = justifyLine('  aa bb  ', 10, 0, 50, 90, adv); // slack 40 over 1 gap
     expect(atoms).not.toBeNull();
     const [a0, a1] = atoms!;
     expect(a0).toMatchObject({ value: 'aa', x: 20 }); // 2 leading spaces * 10
