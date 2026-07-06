@@ -55,19 +55,27 @@ function tokenize(raw: string, entryStyle?: InlineStyleState): Tok[] {
 
 /**
  * Lay out one rendered line as fully-justified atoms flushing both edges of a
- * `targetWidth` box. `inkWidth` is the line's measured ink extent; the slack
- * `targetWidth - inkWidth` is spread evenly across the interior word gaps
- * (whitespace runs with ink on both sides). Leading/trailing whitespace still
- * advances the pen but is never stretched. `measureAdvance` receives each
- * run's style so bold/italic tags measure on the right face. Returns null
- * when the line can't be justified — no interior gap (single word), or no
- * slack (ink already fills or overflows the box) — so the caller renders it
- * left-flush instead.
+ * `targetWidth` box. `advanceWidth` is the line's natural pen advance; the slack
+ * `targetWidth - advanceWidth` is spread evenly across the interior word gaps
+ * (whitespace runs with ink on both sides). The first word's pen sits at the
+ * left edge and the last word's advance reaches the right edge, matching the
+ * pen-origin alignment the non-justified path uses. Leading/trailing whitespace
+ * still advances the pen but is never stretched. `measureAdvance` receives each
+ * run's style so bold/italic tags measure on the right face; `letterSpacingPx`
+ * is the tracking each glyph AND each inline bullet carries, so the internal
+ * bullet advance matches the measurer's `advanceWidth` (a bullet advances
+ * `diameter + letterSpacingPx`, exactly as `computeLineMetrics` counts it).
+ * Returns null when the line can't be justified — no interior gap (single word),
+ * or no slack: with advance-based slack, a line whose advance already reaches
+ * (or exceeds) the box left-flushes instead, which keeps both edges consistent
+ * with the pen-origin alignment (the ink sits one side bearing inside each
+ * margin) rather than stretching a line that already fills the box.
  */
 export function justifyLine(
   raw: string,
   fontSize: number,
-  inkWidth: number,
+  letterSpacingPx: number,
+  advanceWidth: number,
   targetWidth: number,
   measureAdvance: (s: string, style?: SegmentStyle) => number,
   entryStyle?: InlineStyleState,
@@ -87,7 +95,7 @@ export function justifyLine(
   for (let i = firstInk + 1; i < lastInk; i++) if (toks[i].t === 'space') gaps++;
   if (gaps === 0) return null;
 
-  const slack = targetWidth - inkWidth;
+  const slack = targetWidth - advanceWidth;
   if (slack <= 0) return null;
   const extraPerGap = slack / gaps;
 
@@ -111,7 +119,11 @@ export function justifyLine(
         diameter: d,
         x: cursor,
       });
-      cursor += d;
+      // Match the measurer: a bullet advances its diameter PLUS one tracking
+      // step (textMeasure counts `d + letterSpacingPx`). Advancing only `d`
+      // here would leave the last word short of the right edge by
+      // nBullets*letterSpacingPx once slack is measured against advanceWidth.
+      cursor += d + letterSpacingPx;
     } else {
       cursor += measureAdvance(tk.s, tk.style);
       // Widen only interior gaps (ink on both sides).

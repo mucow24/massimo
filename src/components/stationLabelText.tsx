@@ -152,7 +152,9 @@ export function renderStationLabelText({
           measured &&
           measured.lines.map((lm, i) => {
             if (lm.inkWidth <= 0) return null;
-            const x1 = lineStartX(textAnchor, anchorX, lm.bearingLeft, lm.bearingRight);
+            // Underline hugs the visible ink: start at the pen origin walked left
+            // by the line's leading bearing (ink-left = penStart − bearingLeft).
+            const x1 = lineStartPenX(textAnchor, anchorX, lm.advanceWidth) - lm.bearingLeft;
             const x2 = x1 + lm.inkWidth;
             const y = firstLineBaselineY + i * lineSpacingPx + UNDERLINE_OFFSET;
             return (
@@ -202,8 +204,8 @@ export function renderStationLabelText({
         if (lm.segments.length === 0) return null;
         const yCenter = firstLineCenterY + i * lineSpacing;
         const baselineY = yCenter + centralToBaseline;
-        const lineLeftX = lineStartX(textAnchor, anchorX, lm.bearingLeft, lm.bearingRight);
-        let cursor = lineLeftX;
+        const linePenX = lineStartPenX(textAnchor, anchorX, lm.advanceWidth);
+        let cursor = linePenX;
         const nodes: ReactNode[] = [];
         lm.segments.forEach((seg, j) => {
           const segCursor = cursor;
@@ -290,11 +292,13 @@ export function renderStationLabelText({
         // Spans the full line including any inline bullets so the visual
         // result matches the plain-text path.
         if (showUnderline && lm.inkWidth > 0) {
+          // Hug the ink: start at the pen origin walked left by the leading bearing.
+          const inkX1 = linePenX - lm.bearingLeft;
           nodes.push(
             <line
               key={`${i}-u`}
-              x1={lineLeftX}
-              x2={lineLeftX + lm.inkWidth}
+              x1={inkX1}
+              x2={inkX1 + lm.inkWidth}
               y1={baselineY + UNDERLINE_OFFSET}
               y2={baselineY + UNDERLINE_OFFSET}
               stroke={fill}
@@ -302,22 +306,27 @@ export function renderStationLabelText({
             />,
           );
         }
-        return <g key={i}>{nodes}</g>;
+        return (
+          <g key={i} data-label-line={i}>
+            {nodes}
+          </g>
+        );
       })}
     </g>
   );
 }
 
-// Where the line's leftmost ink lives, in unrotated label-local coords. The
-// underline geometry pivots off this same point so the painted underline
-// hugs the visible text on both ends regardless of text-anchor.
-function lineStartX(
+// Pen-origin start of the line, in unrotated label-local coords. Lines align by
+// PEN advance (matching the plain single-<text>/<tspan> path's text-anchor
+// behavior and LabelView), so they flush on the font's designed side bearings
+// and read even — not by raw ink, which would pin each line's leftmost ink
+// pixel to the anchor and shove hooked/round initials inward.
+function lineStartPenX(
   textAnchor: 'start' | 'middle' | 'end',
   anchorX: number,
-  bearingLeft: number,
-  bearingRight: number,
+  advanceWidth: number,
 ): number {
-  if (textAnchor === 'start') return anchorX + bearingLeft;
-  if (textAnchor === 'end') return anchorX - bearingRight;
-  return anchorX + (bearingLeft - bearingRight) / 2;
+  if (textAnchor === 'start') return anchorX;
+  if (textAnchor === 'end') return anchorX - advanceWidth;
+  return anchorX - advanceWidth / 2;
 }
