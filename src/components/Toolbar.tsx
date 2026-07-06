@@ -140,14 +140,27 @@ export function Toolbar() {
     // synchronously, so the clone we read is guaranteed clean — no frame-timing
     // race.
     const prevLineId = useSelection.getState().selectedLineId;
+    // Dropping the line selection for the capture would trip the sidebar's
+    // auto-reveal collapse (it keys off selectedLineId clearing). Clear the flag
+    // first so an auto-revealed sidebar doesn't blink shut mid-export (visible
+    // during the async PDF path), then restore it with the reselection.
+    const prevAutoReveal = useSelection.getState().sidebarAutoRevealed;
     try {
       setMenuError(null);
-      if (prevLineId) flushSync(() => useSelection.getState().selectLine(null));
+      if (prevLineId)
+        flushSync(() => {
+          useSelection.setState({ sidebarAutoRevealed: false });
+          useSelection.getState().selectLine(null);
+        });
       await fn(svg, themeColors(darkMode).canvasBg, mapFileBasename(useDoc.getState().name));
     } catch (err) {
       setMenuError(err instanceof Error ? err.message : 'Export failed.');
     } finally {
-      if (prevLineId) flushSync(() => useSelection.getState().selectLine(prevLineId));
+      if (prevLineId)
+        flushSync(() => {
+          useSelection.getState().selectLine(prevLineId);
+          useSelection.setState({ sidebarAutoRevealed: prevAutoReveal });
+        });
     }
   };
   const onExportPng = () => void runExport(exportCanvasPng);

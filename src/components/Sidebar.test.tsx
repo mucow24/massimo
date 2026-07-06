@@ -1,5 +1,5 @@
-import { describe, it, expect, beforeEach } from 'vitest';
-import { render, screen } from '@testing-library/react';
+import { describe, it, expect, beforeEach, vi } from 'vitest';
+import { act, render, screen } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { Sidebar } from './Sidebar';
 import { useDoc, useSelection } from '../state/store';
@@ -17,6 +17,7 @@ beforeEach(() => {
     ...useSelection.getState(),
     activeTab: 'stations',
     sidebarOpen: true,
+    sidebarAutoRevealed: false,
     selectedStationIds: [],
     selectedRouteBulletIds: [],
     selectedLineId: null,
@@ -163,5 +164,91 @@ describe('<Sidebar /> — line badge selects the line', () => {
     expect(sel.selectedStationIds).toEqual([]);
     // selectLine also switches the active tab to lines.
     expect(sel.activeTab).toBe('lines');
+  });
+});
+
+describe('<Sidebar /> — auto-reveal follows the line selection', () => {
+  beforeEach(() => {
+    useDoc.setState({
+      ...useDoc.getState(),
+      ...makeDoc({
+        stations: [makeStation({ id: 's1', name: 'Hub', stops: [makeStop('L1')] })],
+        lines: [
+          makeLine({ id: 'L1', service: 'A', stations: ['s1'] }),
+          makeLine({ id: 'L2', service: 'B', stations: ['s1'] }),
+        ],
+      }),
+    });
+  });
+
+  const autoRevealed = () =>
+    useSelection.setState({
+      ...useSelection.getState(),
+      sidebarOpen: true,
+      activeTab: 'lines',
+      selectedLineId: 'L1',
+      sidebarAutoRevealed: true,
+    });
+
+  it('collapses the sidebar when an auto-revealed line selection is cleared', () => {
+    autoRevealed();
+    render(<Sidebar />);
+    expect(document.querySelector('.sidebar')).not.toBeNull();
+
+    act(() => useSelection.getState().selectLine(null));
+
+    expect(useSelection.getState().sidebarOpen).toBe(false);
+    expect(document.querySelector('.sidebar')).toBeNull();
+  });
+
+  it('collapses on exit through a non-line action (selecting a station)', () => {
+    autoRevealed();
+    render(<Sidebar />);
+
+    act(() => useSelection.getState().selectStation('s1'));
+
+    // selectStation clears selectedLineId — the exit effect fires regardless of
+    // which action cleared it.
+    expect(useSelection.getState().sidebarOpen).toBe(false);
+  });
+
+  it('leaves a user-opened sidebar alone when the line selection clears', () => {
+    useSelection.setState({
+      ...useSelection.getState(),
+      sidebarOpen: true,
+      activeTab: 'lines',
+      selectedLineId: 'L1',
+      sidebarAutoRevealed: false, // the user opened it themselves
+    });
+    render(<Sidebar />);
+
+    act(() => useSelection.getState().selectLine(null));
+
+    expect(useSelection.getState().sidebarOpen).toBe(true);
+  });
+
+  it('scrolls the selected line editor into view when the sidebar reappears', () => {
+    const scrollSpy = vi.spyOn(Element.prototype, 'scrollIntoView');
+    useSelection.setState({
+      ...useSelection.getState(),
+      sidebarOpen: false,
+      activeTab: 'stations',
+      selectedLineId: null,
+      sidebarAutoRevealed: false,
+    });
+    render(<Sidebar />);
+    expect(document.querySelector('.sidebar')).toBeNull(); // hidden to start
+
+    act(() => useSelection.getState().selectLine('L1'));
+
+    // The store revealed the panel on the Lines tab...
+    expect(useSelection.getState().sidebarOpen).toBe(true);
+    expect(useSelection.getState().activeTab).toBe('lines');
+    // ...and the newly-visible editor scrolled into view.
+    expect(scrollSpy).toHaveBeenCalled();
+    const contexts = scrollSpy.mock.contexts as Element[];
+    const scrolledTo = contexts[contexts.length - 1];
+    expect(scrolledTo?.getAttribute('data-line-row')).toBe('L1');
+    scrollSpy.mockRestore();
   });
 });
