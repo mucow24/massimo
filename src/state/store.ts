@@ -665,7 +665,7 @@ export const useDoc = create<DocState>()(
         name: 'vignelli-map-doc-v1',
         storage: createJSONStorage(() => localStorage),
         version: 9,
-        // Version migration chain v0 → v8 lives in `migrateDoc` (above), which
+        // Version migration chain v0 → v9 lives in `migrateDoc` (above), which
         // is exported and unit-tested. See its doc comment for each step.
         migrate: (persisted, version) => migrateDoc(persisted, version),
         partialize: (s) => pickDocSnapshot(s),

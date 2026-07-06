@@ -10,7 +10,8 @@
  * finished map.
  */
 
-import { buildEmbeddedFontCss, collectUsedFontFaces, FONT_STACK } from './fonts';
+import { buildEmbeddedFontCss, collectUsedFontFaces } from './fonts';
+import { FONT_STACK } from '../util/fonts';
 
 const SVG_NS = 'http://www.w3.org/2000/svg';
 /** World-unit margin added around the content bounds (also absorbs the stroke

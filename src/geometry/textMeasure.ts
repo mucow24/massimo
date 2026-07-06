@@ -1,4 +1,4 @@
-import { FONT_STACK } from '../export/fonts';
+import { FONT_STACK } from '../util/fonts';
 import type { RouteBulletShape } from '../model/types';
 import {
   emptyStyleState,

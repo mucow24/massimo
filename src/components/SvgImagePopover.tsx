@@ -1,8 +1,8 @@
-import { ArrowDownIcon, ArrowUpIcon } from '@radix-ui/react-icons';
 import { useDoc } from '../state/store';
 import { type ViewportProjection } from './canvas/screenAnchor';
 import { DraggablePopoverShell } from './DraggablePopoverShell';
 import { useDraggablePopover } from './canvas/useDraggablePopover';
+import { LayerOrderRow } from './LayerOrderRow';
 import { PopoverFooter } from './PopoverFooter';
 import type { SvgImage } from '../model/types';
 
@@ -45,31 +45,12 @@ export function SvgImagePopover({ image, view, onClose }: Props) {
       top={anchor.y}
       headerHandlers={headerHandlers}
     >
-      <div className="row">
-        <label>Layer</label>
-        <div className="shape-group">
-          <button
-            type="button"
-            className="shape-btn"
-            aria-label="Move image down"
-            title="Send backward"
-            disabled={locked}
-            onClick={() => moveSvgImageDown(image.id)}
-          >
-            <ArrowDownIcon />
-          </button>
-          <button
-            type="button"
-            className="shape-btn"
-            aria-label="Move image up"
-            title="Bring forward"
-            disabled={locked}
-            onClick={() => moveSvgImageUp(image.id)}
-          >
-            <ArrowUpIcon />
-          </button>
-        </div>
-      </div>
+      <LayerOrderRow
+        noun="image"
+        onMoveDown={() => moveSvgImageDown(image.id)}
+        onMoveUp={() => moveSvgImageUp(image.id)}
+        disabled={locked}
+      />
       <PopoverFooter noun="image" locked={locked} onToggleLock={onToggleLock} onDelete={onDelete} />
     </DraggablePopoverShell>
   );

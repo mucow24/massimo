@@ -42,13 +42,8 @@ import { svg2pdf } from 'svg2pdf.js';
 import { HATCH_GAP_WIDTH, HATCH_STRIPE_WIDTH } from '../components/HatchPatterns';
 import type { Vec2 } from '../geometry/vec';
 import { buildExportSvg, downloadBlob } from './exportCanvas';
-import {
-  bytesToBase64,
-  collectUsedFontFaces,
-  FONT_FAMILY,
-  fontUrl,
-  type FontFaceSpec,
-} from './fonts';
+import { bytesToBase64, collectUsedFontFaces, fontUrl, type FontFaceSpec } from './fonts';
+import { FONT_FAMILY } from '../util/fonts';
 import { hatchStripeRects, patternRotation, ribbonFromCenterline, type Bounds } from './pdfHatch';
 import { bakeLetterSpacing, normalizeTextBaselines } from './pdfText';
 import { loadGlyphFonts, needsGlyphOutlining, outlineUnsupportedText } from './pdfGlyphs';

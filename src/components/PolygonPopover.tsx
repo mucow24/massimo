@@ -1,8 +1,9 @@
-import { ArrowDownIcon, ArrowUpIcon, MoonIcon, SunIcon } from '@radix-ui/react-icons';
+import { MoonIcon, SunIcon } from '@radix-ui/react-icons';
 import { useDoc } from '../state/store';
 import { type ViewportProjection } from './canvas/screenAnchor';
 import { DraggablePopoverShell } from './DraggablePopoverShell';
 import { useDraggablePopover } from './canvas/useDraggablePopover';
+import { LayerOrderRow } from './LayerOrderRow';
 import { NumericFieldRow } from './NumericFieldRow';
 import { PopoverFooter } from './PopoverFooter';
 import { ColorField } from './ColorField';
@@ -157,31 +158,12 @@ export function PolygonPopover({ polygon, view, onClose }: Props) {
           onChange={(e) => onClosed(e.target.checked)}
         />
       </div>
-      <div className="row">
-        <label>Layer</label>
-        <div className="shape-group">
-          <button
-            type="button"
-            className="shape-btn"
-            aria-label="Move polygon down"
-            title="Send backward"
-            disabled={locked}
-            onClick={() => movePolygonDown(polygon.id)}
-          >
-            <ArrowDownIcon />
-          </button>
-          <button
-            type="button"
-            className="shape-btn"
-            aria-label="Move polygon up"
-            title="Bring forward"
-            disabled={locked}
-            onClick={() => movePolygonUp(polygon.id)}
-          >
-            <ArrowUpIcon />
-          </button>
-        </div>
-      </div>
+      <LayerOrderRow
+        noun="polygon"
+        onMoveDown={() => movePolygonDown(polygon.id)}
+        onMoveUp={() => movePolygonUp(polygon.id)}
+        disabled={locked}
+      />
       <PopoverFooter
         noun="polygon"
         locked={locked}

@@ -17,7 +17,8 @@ essentially one user (the developer).
 
 Stack: **React 18 + TypeScript + Vite**, **Zustand** for state, **zundo** for undo/redo,
 **Vitest** (jsdom) for unit tests, **Playwright** for e2e. No UI framework beyond React +
-hand-rolled CSS; `@radix-ui/react-icons` is the only UI dependency.
+hand-rolled CSS; `@radix-ui/react-icons` (icons) and `react-colorful` (the RGBA color picker)
+are the only UI dependencies.
 
 ---
 
@@ -409,13 +410,17 @@ by the **Load…** menu. Pure, returns `{ok, doc}` or `{ok:false, error}`:
 7. `convertLegacyDotShapes` (preset ids → `DotStyle`) — **runs after** the line/station passes.
 8. `sanitizeStopDotSizes` — **must run after** the per-line pass (a stop compares against the
    *sanitized* line default).
-9. `backfillPolygonDarkColors`, `backfillTextLabelColors`.
+9. `backfillPolygonDarkColors`, then `foldPolygonFillOpacity` (legacy polygon `fillOpacity` → the
+   alpha of `fill`/`darkFill`; **after** the dark-color backfill so `darkFill` exists to fold),
+   then `backfillTextLabelColors`.
+10. `migrateLegacyBulletSyntax` — gated on the **file's own** `version < 2` (the one version-gated,
+    non-idempotent step in Path A).
 
 Path A does **more** than Path B because hand-edited files can be non-canonical (the file-only
 sanitizers `sanitizeLineWidth/Stroke/DotSize/Segments/StopDotSizes` exist for this).
 
 **Path B — localStorage rehydration: `migrateDoc(persisted, version)`** ([store.ts](src/state/store.ts)).
-The zustand `persist` config: `name: 'vignelli-map-doc-v1'`, `version: 8`, `migrate:
+The zustand `persist` config: `name: 'vignelli-map-doc-v1'`, `version: 9`, `migrate:
 migrateDoc`, `partialize: pickDocSnapshot`. Because the persist-merge already fills absent fields
 from the initial state, `migrateDoc` only does **value-level legacy fixups, version-gated**, on
 disjoint fields (order immaterial), never mutating the input:
@@ -429,6 +434,7 @@ disjoint fields (order immaterial), never mutating the input:
 | `v<6` | `backfillTextLabelColors` |
 | `v<7` | `convertLegacyDotShapes` (preset ids → procedural `DotStyle`) |
 | `v<8` | `migrateLegacyBulletSyntax` (legacy `<X>` circle bullets / unescaped pipes → `|X|` inline-token syntax, on station names + text labels) |
+| `v<9` | `foldPolygonFillOpacity` (legacy polygon `fillOpacity` percent → the alpha of `fill`/`darkFill`; runs after the `v<5` dark-color backfill) |
 | (not gated) | `validActivePalettes` whenever `activePalettes !== undefined` |
 
 A **corrupt/missing version is treated as v0** (all migrations run). The `validActivePalettes`
@@ -1043,8 +1049,13 @@ Lazy-loaded on first PDF export (`import()` in the toolbar) so jsPDF + opentype.
 initial bundle.
 
 [color.ts](src/util/color.ts): pure hex math — `legibleTextOn` (W3C luminance → `#000`/`#fff`),
-`withAlpha`, `blendOver`, `desaturateColor`. `parseHex` returns `[0,0,0]` (black) for any
-malformed input (the discriminating case is a 7-hex-digit string, reachable via hand-edited files).
+`withAlpha`, `blendOver`, `desaturateColor`, plus the RGBA surface added with the react-colorful
+picker: `parseHexA` (→ `[r,g,b,a]`, preserving alpha from `#rgba`/`#rrggbbaa`), `withHexAlpha`
+(replace a color's alpha byte), and `normalizeHex` (canonical stored form — lowercase, shorthand
+expanded, an opaque `ff` suffix stripped back to 6 digits so opaque colors still match palette
+swatches). The internal `parseHex`/`parseHexA` fall back to opaque black `[0,0,0(,255)]` for any
+malformed input (e.g. a 7-hex-digit string from a hand-edited file), so NaN never reaches the
+downstream luminance / `rgba()` math.
 
 ---
 
