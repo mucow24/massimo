@@ -61,14 +61,20 @@ function tokenize(raw: string, entryStyle?: InlineStyleState): Tok[] {
  * left edge and the last word's advance reaches the right edge, matching the
  * pen-origin alignment the non-justified path uses. Leading/trailing whitespace
  * still advances the pen but is never stretched. `measureAdvance` receives each
- * run's style so bold/italic tags measure on the right face. Returns null when
- * the line can't be justified — no interior gap (single word), or no slack (the
- * text already fills or overflows the box) — so the caller renders it left-flush
- * instead.
+ * run's style so bold/italic tags measure on the right face; `letterSpacingPx`
+ * is the tracking each glyph AND each inline bullet carries, so the internal
+ * bullet advance matches the measurer's `advanceWidth` (a bullet advances
+ * `diameter + letterSpacingPx`, exactly as `computeLineMetrics` counts it).
+ * Returns null when the line can't be justified — no interior gap (single word),
+ * or no slack: with advance-based slack, a line whose advance already reaches
+ * (or exceeds) the box left-flushes instead, which keeps both edges consistent
+ * with the pen-origin alignment (the ink sits one side bearing inside each
+ * margin) rather than stretching a line that already fills the box.
  */
 export function justifyLine(
   raw: string,
   fontSize: number,
+  letterSpacingPx: number,
   advanceWidth: number,
   targetWidth: number,
   measureAdvance: (s: string, style?: SegmentStyle) => number,
@@ -113,7 +119,11 @@ export function justifyLine(
         diameter: d,
         x: cursor,
       });
-      cursor += d;
+      // Match the measurer: a bullet advances its diameter PLUS one tracking
+      // step (textMeasure counts `d + letterSpacingPx`). Advancing only `d`
+      // here would leave the last word short of the right edge by
+      // nBullets*letterSpacingPx once slack is measured against advanceWidth.
+      cursor += d + letterSpacingPx;
     } else {
       cursor += measureAdvance(tk.s, tk.style);
       // Widen only interior gaps (ink on both sides).

@@ -249,6 +249,7 @@ export function LabelView({
             ? justifyLine(
                 lm.raw,
                 label.fontSize,
+                letterSpacingPx,
                 lm.advanceWidth,
                 m.width,
                 runAdvance,

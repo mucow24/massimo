@@ -306,7 +306,11 @@ export function renderStationLabelText({
             />,
           );
         }
-        return <g key={i}>{nodes}</g>;
+        return (
+          <g key={i} data-label-line={i}>
+            {nodes}
+          </g>
+        );
       })}
     </g>
   );

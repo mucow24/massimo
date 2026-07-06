@@ -106,4 +106,26 @@ describe('<LabelView /> — even edges regardless of per-line ink overhang', () 
     expect(lineX(c, 0)).toBeCloseTo(lineX(c, 1), 5);
     expect(lineX(c, 0)).toBeCloseTo(-CHAR, 5); // −advance/2 = −(2*CHAR)/2
   });
+
+  it('justifies an interior f-hook line from the box left edge (pen, not ink)', () => {
+    // Line 0 'fx yy' is interior (justified); line 1 is the wider, ragged last
+    // line. The justified line's first word must start at the box left edge,
+    // NOT -halfW + bearingLeft — that was the ragged-edge bug for justify.
+    const label = makeTextLabel({
+      id: 'g1',
+      x: 0,
+      y: 0,
+      fontSize: CHAR,
+      align: 'justify',
+      text: 'fx yy\nzzzzzzzz',
+    });
+    const halfW = measureTextLabel(label).width / 2;
+    const c = renderLabel(label);
+    const line0 = Array.from(c.querySelectorAll('[data-label-line="0"] text'));
+    expect(line0.map((t) => t.textContent)).toEqual(['fx', 'yy']);
+    const x0 = parseFloat(line0[0].getAttribute('x')!);
+    const xLast = parseFloat(line0[1].getAttribute('x')!);
+    expect(x0).toBeCloseTo(-halfW, 5); // first word pen at the left edge (not -halfW+3)
+    expect(xLast + 2 * CHAR).toBeCloseTo(halfW, 5); // last word advance-right flush right
+  });
 });
