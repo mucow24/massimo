@@ -76,17 +76,33 @@ export function Sidebar() {
     el?.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
   }, [stationAnchorId, selection.activeTab]);
 
-  // Only scroll when the tab just transitioned to 'lines' (e.g. clicking a
-  // line bullet from the stations tab). In-tab clicks shouldn't reflow.
+  // Scroll the selected line's editor into view when it becomes newly visible:
+  // switching into the 'lines' tab (e.g. clicking a line bullet from the
+  // stations tab), or the sidebar reappearing (selectLine auto-reveals it when
+  // a line is picked while hidden). Plain in-tab clicks shouldn't reflow.
   const prevLinesTabRef = useRef(selection.activeTab);
+  const prevSidebarOpenRef = useRef(selection.sidebarOpen);
   useEffect(() => {
     const wasOnLines = prevLinesTabRef.current === 'lines';
+    const wasOpen = prevSidebarOpenRef.current;
     prevLinesTabRef.current = selection.activeTab;
-    if (selection.activeTab !== 'lines' || !selection.selectedLineId) return;
-    if (wasOnLines) return;
+    prevSidebarOpenRef.current = selection.sidebarOpen;
+    if (!selection.sidebarOpen || selection.activeTab !== 'lines' || !selection.selectedLineId)
+      return;
+    if (wasOnLines && wasOpen) return; // already showing this list — in-tab click
     const el = document.querySelector(`[data-line-row="${selection.selectedLineId}"]`);
     el?.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
-  }, [selection.selectedLineId, selection.activeTab]);
+  }, [selection.selectedLineId, selection.activeTab, selection.sidebarOpen]);
+
+  // The counterpart to selectLine's auto-reveal: once the line selection is
+  // cleared, collapse the sidebar again — but only if WE revealed it (a sidebar
+  // the user opened stays put; manual tab/panel toggles clear the flag). Lives
+  // here, not in the store, because the selection clears through many actions
+  // (selectStation, Escape, delete, …) with no single choke point to hook.
+  useEffect(() => {
+    if (selection.selectedLineId || !selection.sidebarAutoRevealed) return;
+    useSelection.setState({ sidebarOpen: false, sidebarAutoRevealed: false });
+  }, [selection.selectedLineId, selection.sidebarAutoRevealed]);
 
   // Collapsed = the whole panel is gone: render nothing so the grid column can
   // shrink to zero and hand the space back to the map. The toolbar arrow (and
