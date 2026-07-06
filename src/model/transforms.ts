@@ -78,9 +78,10 @@ export function isLabelWeight(v: unknown): v is TextLabelWeight {
   return typeof v === 'number' && (LABEL_WEIGHT_VALUES as readonly number[]).includes(v);
 }
 
-// Weight display names live with the shipped faces in export/fonts (they ARE
-// the faces); re-exported here so the popovers keep importing from transforms.
-export { LABEL_WEIGHT_NAMES } from '../export/fonts';
+// Weight display names live with the other font primitives in util/fonts (the
+// names ARE the shipped faces); re-exported here so the popovers keep importing
+// weight-related constants from transforms alongside the label style defaults.
+export { LABEL_WEIGHT_NAMES } from '../util/fonts';
 
 export const LABEL_WEIGHT_DEFAULT: TextLabelWeight = 400;
 

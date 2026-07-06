@@ -1,5 +1,5 @@
 import type { Line, RouteBulletShape } from '../model/types';
-import { FONT_STACK } from '../export/fonts';
+import { FONT_STACK } from '../util/fonts';
 import { useThemeColors } from '../state/theme';
 import { badgeColors } from './badge';
 import { BulletShape } from './bulletShape';

@@ -10,7 +10,7 @@ import {
 import { justifyLine } from '../geometry/labelJustify';
 import { resolveRunWeight, type SegmentStyle } from '../geometry/labelTokens';
 import { TEXT_LABEL_HIT_PAD } from '../geometry/stationBoundary';
-import { FONT_STACK } from '../export/fonts';
+import { FONT_STACK } from '../util/fonts';
 import { useDoc } from '../state/store';
 import { useThemeColors } from '../state/theme';
 import { useViewportStore } from '../state/viewportStore';
