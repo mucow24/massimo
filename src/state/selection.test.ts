@@ -641,6 +641,64 @@ describe('toggleTab — collapsible sidebar list', () => {
   });
 });
 
+describe('selectLine — reveals a hidden sidebar', () => {
+  const view = () => {
+    const s = useSelection.getState();
+    return {
+      sidebarOpen: s.sidebarOpen,
+      activeTab: s.activeTab,
+      autoRevealed: s.sidebarAutoRevealed,
+    };
+  };
+
+  it('selecting a line while hidden reveals it on the Lines tab and marks it auto-revealed', () => {
+    useSelection.setState({
+      sidebarOpen: false,
+      activeTab: 'stations',
+      sidebarAutoRevealed: false,
+    });
+    useSelection.getState().selectLine('L1' as LineId);
+    expect(view()).toEqual({ sidebarOpen: true, activeTab: 'lines', autoRevealed: true });
+  });
+
+  it('selecting a line while the sidebar is already open does NOT mark it auto-revealed', () => {
+    useSelection.setState({ sidebarOpen: true, activeTab: 'stations', sidebarAutoRevealed: false });
+    useSelection.getState().selectLine('L1' as LineId);
+    expect(view()).toEqual({ sidebarOpen: true, activeTab: 'lines', autoRevealed: false });
+  });
+
+  it('switching lines within an auto-revealed session keeps the flag set', () => {
+    useSelection.setState({
+      sidebarOpen: false,
+      activeTab: 'stations',
+      sidebarAutoRevealed: false,
+    });
+    useSelection.getState().selectLine('L1' as LineId); // reveals; flag → true
+    useSelection.getState().selectLine('L2' as LineId); // sidebar already open now
+    expect(view()).toEqual({ sidebarOpen: true, activeTab: 'lines', autoRevealed: true });
+  });
+
+  it('a manual tab toggle cedes control: clears the auto-reveal flag', () => {
+    useSelection.setState({ sidebarOpen: true, activeTab: 'lines', sidebarAutoRevealed: true });
+    useSelection.getState().toggleTab('stations');
+    expect(useSelection.getState().sidebarAutoRevealed).toBe(false);
+  });
+
+  it('a manual sidebar toggle cedes control: clears the auto-reveal flag', () => {
+    useSelection.setState({ sidebarOpen: true, activeTab: 'lines', sidebarAutoRevealed: true });
+    useSelection.getState().toggleSidebar();
+    expect(useSelection.getState().sidebarAutoRevealed).toBe(false);
+  });
+
+  // The gentle null-clear leaves sidebar state alone; the Sidebar component's
+  // effect is what collapses an auto-revealed panel on exit (covered there).
+  it('clearing the line selection does not itself touch sidebar state', () => {
+    useSelection.setState({ sidebarOpen: true, activeTab: 'lines', sidebarAutoRevealed: true });
+    useSelection.getState().selectLine(null);
+    expect(view()).toEqual({ sidebarOpen: true, activeTab: 'lines', autoRevealed: true });
+  });
+});
+
 describe('soleSelection', () => {
   it('returns the single selected item across any one list', () => {
     useSelection.getState().selectStation('s1' as StationId);

@@ -150,6 +150,12 @@ interface SelectionState {
   // bar still shows, but no list below it. Clicking the shown tab collapses it;
   // clicking the other tab (or any tab while collapsed) opens that tab's list.
   sidebarOpen: boolean;
+  // True while the sidebar is showing ONLY because a line was selected from a
+  // hidden state (selectLine auto-reveals it). Lets the Sidebar collapse itself
+  // again when the line selection clears, without disturbing a sidebar the user
+  // opened themselves. Any manual tab/panel toggle clears it (see toggleTab /
+  // toggleSidebar), ceding visibility control back to the user.
+  sidebarAutoRevealed: boolean;
   selectedLineTagId: string | null;
   lineTagHoverPreview: LineTagHoverPreview | null;
   // Route bullet selection. Multi-selection: parallel to `selectedStationIds`,
@@ -385,6 +391,7 @@ export const useSelection = create<SelectionState>((set, get) => ({
   editingStationId: null,
   activeTab: 'stations',
   sidebarOpen: true,
+  sidebarAutoRevealed: false,
   selectedLineTagId: null,
   lineTagHoverPreview: null,
   selectedRouteBulletIds: [],
@@ -509,11 +516,18 @@ export const useSelection = create<SelectionState>((set, get) => ({
       });
       return;
     }
+    const s = get();
     set({
       ...clearedSelections(),
       uiMode: { kind: 'idle' },
       selectedLineId: id,
       activeTab: 'lines',
+      // Selecting a line surfaces its editor: reveal a hidden sidebar so the
+      // editor is actually visible, and remember we did so exiting the
+      // selection can re-hide it. Sticky across line→line switches (by then the
+      // sidebar is already open, but the session is still "auto-revealed").
+      sidebarOpen: true,
+      sidebarAutoRevealed: !s.sidebarOpen || s.sidebarAutoRevealed,
       lineTagHoverPreview: null,
     });
   },
@@ -571,10 +585,10 @@ export const useSelection = create<SelectionState>((set, get) => ({
   toggleTab: (tab) =>
     set((s) =>
       s.sidebarOpen && s.activeTab === tab
-        ? { sidebarOpen: false }
-        : { activeTab: tab, sidebarOpen: true },
+        ? { sidebarOpen: false, sidebarAutoRevealed: false }
+        : { activeTab: tab, sidebarOpen: true, sidebarAutoRevealed: false },
     ),
-  toggleSidebar: () => set((s) => ({ sidebarOpen: !s.sidebarOpen })),
+  toggleSidebar: () => set((s) => ({ sidebarOpen: !s.sidebarOpen, sidebarAutoRevealed: false })),
   selectLineTag: (id) =>
     set({
       ...clearedSelections(),
