@@ -18,7 +18,7 @@ import { polygonCentroid, edgeMidpoint } from '../geometry/polygon';
 import { SVG_IMAGE_MIN_SIZE, normalizeRotation } from '../geometry/svgImage';
 import { measureTextLabel } from '../geometry/textMeasure';
 import type { LabelStyle } from '../geometry/labelLayout';
-import type { Vec2 } from '../geometry/vec';
+import { SQRT2_2, type Vec2 } from '../geometry/vec';
 import { normalizePaletteIds, type Palette, type PaletteId } from './palettes';
 import type {
   DotStyle,
@@ -891,7 +891,8 @@ export function buildRotateMembers(
  * dir = -1: layout rotates CCW; station rotates CW (rotation += 2).
  *
  * Exported so that `matching.ts` can use the same transform to canonicalize
- * a station's structural identity across the 4-fold mirror symmetry.
+ * a station's structural identity (together with `rotateStationLayoutBy45`,
+ * which generates the odd half of the 8-fold symmetry).
  */
 export function rotateStationLayoutBy90(station: Station, dir: -1 | 1): Station {
   const stationStep = dir === 1 ? 6 : 2; // CCW for R+, CW for R-
@@ -915,6 +916,53 @@ export function rotateStationLayoutBy90(station: Station, dir: -1 | 1): Station 
   // Label rotation is in the unrotated local frame; to keep its world
   // orientation, advance it the inverse of the station's step.
   const labelStep = dir === 1 ? 2 : 6;
+  const labelRot = ((station.label.rotation + labelStep) % 8) as Rotation;
+  const label = { ...station.label, col: lr.col, row: lr.row, rotation: labelRot };
+  return { ...station, rotation: nextRot, stops, label };
+}
+
+// The four 45°-spaced orientation axes in +45°-CW cycle order. One
+// rotateStationLayoutBy45 step advances a stop one slot (dir = +1) or one
+// back (dir = −1); two slots reproduce rotateStationLayoutBy90's pair swap.
+const AXIS_CYCLE_45: readonly StopOrientation[] = [
+  'auto-vertical',
+  'auto-ne-sw',
+  'auto-horizontal',
+  'auto-nw-se',
+];
+
+/**
+ * The 45° half-step sibling of `rotateStationLayoutBy90`: rotate the layout
+ * 45° while rotating the station the opposite way, preserving world
+ * appearance. A 45° rotation maps the orthogonal cell lattice exactly onto
+ * the diagonal (±√2/2) lattice and back, so this is the transform that
+ * relates a station to its "pressed R once and re-arranged onto diagonal
+ * cells" twin. Applied twice it equals `rotateStationLayoutBy90` — which
+ * stays a separate integer-exact implementation on purpose (composing two
+ * irrational half-steps would smear float drift over the historically
+ * exact 90° results).
+ *
+ * Exported for `matching.ts`, which canonicalizes structural identity over
+ * the full 8-fold symmetry the two transforms generate.
+ */
+export function rotateStationLayoutBy45(station: Station, dir: -1 | 1): Station {
+  const stationStep = dir === 1 ? 7 : 1; // −45° for dir=+1, +45° for dir=−1
+  const nextRot = ((station.rotation + stationStep) % 8) as Rotation;
+  const h = SQRT2_2;
+  const rotateGrid = (col: number, row: number) =>
+    dir === 1
+      ? { col: (col - row) * h, row: (row + col) * h }
+      : { col: (col + row) * h, row: (row - col) * h };
+  const rotOrient = (o: StopOrientation): StopOrientation =>
+    AXIS_CYCLE_45[(AXIS_CYCLE_45.indexOf(o) + (dir === 1 ? 1 : 3)) % 4];
+  const stops = station.stops.map((c) => {
+    const r = rotateGrid(c.col, c.row);
+    return { ...c, col: r.col, row: r.row, orientation: rotOrient(c.orientation) };
+  });
+  const lr = rotateGrid(station.label.col, station.label.row);
+  // Label rotation is in the unrotated local frame; advance it the inverse
+  // of the station's step to keep its world reading angle.
+  const labelStep = dir === 1 ? 1 : 7;
   const labelRot = ((station.label.rotation + labelStep) % 8) as Rotation;
   const label = { ...station.label, col: lr.col, row: lr.row, rotation: labelRot };
   return { ...station, rotation: nextRot, stops, label };

@@ -2,6 +2,7 @@ import { describe, it, expect } from 'vitest';
 import * as T from './transforms';
 import { DEFAULT_DOT_STYLE, DOT_SHAPE_PRESETS } from './dotStyle';
 import { DOT_SIZE_DEFAULT } from './dotSize';
+import { stopPosWorld } from '../geometry/interlining';
 import { measureTextLabel } from '../geometry/textMeasure';
 import {
   makeDoc,
@@ -327,6 +328,71 @@ describe('rotateStationAndLayout', () => {
       expect(T.rotateStationAndLayout(docNwSe, 's1', dir).stations.s1.stops[0].orientation).toBe(
         'auto-ne-sw',
       );
+    }
+  });
+});
+
+describe('rotateStationLayoutBy45', () => {
+  const station = () =>
+    makeStation({
+      id: 's1',
+      x: 100,
+      y: 50,
+      rotation: 3,
+      stops: [makeStop('L1', { row: 1, col: 2, orientation: 'auto-vertical' })],
+      label: { row: 0, col: -1, rotation: 1, offset: 0, align: 'auto', valign: 'middle' },
+    });
+
+  it('preserves the stop and label world positions and the label world angle', () => {
+    const before = station();
+    const after = T.rotateStationLayoutBy45(before, 1);
+    const wBefore = stopPosWorld(before.stops[0], before);
+    const wAfter = stopPosWorld(after.stops[0], after);
+    expect(wAfter.x).toBeCloseTo(wBefore.x, 9);
+    expect(wAfter.y).toBeCloseTo(wBefore.y, 9);
+    // Label cell world position via the same cell→world projection.
+    const labelCell = (s: typeof before) => ({ ...s.stops[0], row: s.label.row, col: s.label.col });
+    const lBefore = stopPosWorld(labelCell(before), before);
+    const lAfter = stopPosWorld(labelCell(after), after);
+    expect(lAfter.x).toBeCloseTo(lBefore.x, 9);
+    expect(lAfter.y).toBeCloseTo(lBefore.y, 9);
+    // World reading angle = (station.rotation + label.rotation)·45 mod 360.
+    expect((after.rotation + after.label.rotation) % 8).toBe(
+      (before.rotation + before.label.rotation) % 8,
+    );
+  });
+
+  it('one step forward then one back is identity', () => {
+    const before = station();
+    const round = T.rotateStationLayoutBy45(T.rotateStationLayoutBy45(before, 1), -1);
+    expect(round.rotation).toBe(before.rotation);
+    expect(round.stops[0].orientation).toBe(before.stops[0].orientation);
+    expect(round.stops[0].row).toBeCloseTo(before.stops[0].row, 9);
+    expect(round.stops[0].col).toBeCloseTo(before.stops[0].col, 9);
+    expect(round.label.rotation).toBe(before.label.rotation);
+    expect(round.label.row).toBeCloseTo(before.label.row, 9);
+    expect(round.label.col).toBeCloseTo(before.label.col, 9);
+  });
+
+  it('two half-steps equal one rotateStationLayoutBy90 step', () => {
+    const before = station();
+    const twice = T.rotateStationLayoutBy45(T.rotateStationLayoutBy45(before, 1), 1);
+    const ninety = T.rotateStationLayoutBy90(before, 1);
+    expect(twice.rotation).toBe(ninety.rotation);
+    expect(twice.stops[0].orientation).toBe(ninety.stops[0].orientation);
+    expect(twice.label.rotation).toBe(ninety.label.rotation);
+    expect(twice.stops[0].row).toBeCloseTo(ninety.stops[0].row, 9);
+    expect(twice.stops[0].col).toBeCloseTo(ninety.stops[0].col, 9);
+    expect(twice.label.row).toBeCloseTo(ninety.label.row, 9);
+    expect(twice.label.col).toBeCloseTo(ninety.label.col, 9);
+  });
+
+  it('cycles orientations one axis step: vertical→ne-sw→horizontal→nw-se', () => {
+    const cycle = ['auto-vertical', 'auto-ne-sw', 'auto-horizontal', 'auto-nw-se'] as const;
+    for (let i = 0; i < 4; i++) {
+      const st = makeStation({ id: 's1', stops: [makeStop('L1', { orientation: cycle[i] })] });
+      expect(T.rotateStationLayoutBy45(st, 1).stops[0].orientation).toBe(cycle[(i + 1) % 4]);
+      expect(T.rotateStationLayoutBy45(st, -1).stops[0].orientation).toBe(cycle[(i + 3) % 4]);
     }
   });
 });
