@@ -85,6 +85,7 @@ export function StationInspector({ id }: { id: StationId }) {
   if (!station) return null;
 
   const mirrorOn = selection.mirrorMatching;
+  const mirrorAvailable = matches.length > 0;
   const inLayoutEdit =
     selection.uiMode.kind === 'editing-station-layout' && selection.uiMode.stationId === station.id;
 
@@ -93,6 +94,28 @@ export function StationInspector({ id }: { id: StationId }) {
       <div className="field">
         <div className="field-header">
           <label>Name</label>
+          {/* Mirror-matching toggle. While on, layout edits (stops, label,
+              rotation — not name/position, and not the per-station styling
+              flags WP/lock/bold/italic) broadcast to every station on a
+              shared line that renders identically (model/matching.ts).
+              Stays clickable while on even at zero matches so the mode can
+              always be exited. */}
+          <button
+            type="button"
+            className={`chip-btn${mirrorOn ? ' active' : ''}`}
+            aria-pressed={mirrorOn}
+            disabled={!mirrorAvailable && !mirrorOn}
+            title={
+              mirrorOn
+                ? 'Similar stations selected — edits here apply to all of them; click to edit only this station'
+                : mirrorAvailable
+                  ? `Select the ${matches.length} station${matches.length === 1 ? '' : 's'} on this line with this exact layout — edits here will apply to all of them`
+                  : 'No other station on this line has an identical layout'
+            }
+            onClick={() => selection.setMirrorMatching(!mirrorOn)}
+          >
+            Select Similar
+          </button>
           <button
             type="button"
             className={`chip-btn${station.isWaypoint ? ' wp-on' : ''}`}
