@@ -34,21 +34,30 @@ type WholeDragState = {
   history: ReturnType<typeof beginHistoryGroup>;
 };
 
-// Single-vertex drag: snap the dragged vertex itself. `forceCommit` is set for
-// a drag that began by inserting a vertex (the edge "+"): the insert is a real
-// change, so the gesture commits one history entry even if the pointer never
-// moved past the threshold.
+// Vertex drag: move one or more of a polygon's vertices together. The GRABBED
+// vertex is snapped; the whole moving set tows by that snapped delta. Each move
+// re-derives from `startVerts` (the full pointer-down snapshot) so the shape
+// never accumulates drift, exactly like the whole-polygon drag. `forceCommit`
+// is set for a drag that began by inserting a vertex (the edge "+"): the insert
+// is a real change, so the gesture commits one history entry even if the
+// pointer never moved past the threshold.
 type VertexDragState = {
   polygonId: string;
-  index: number;
-  startVert: Vec2;
+  // Indices being moved together (>=1). Equal to the current selectedVertices
+  // set when the grabbed vertex is a member; otherwise just the grabbed vertex
+  // (a non-member grab moves solo — mirrors collectGroupSiblings for items).
+  indices: number[];
+  // The grabbed vertex; its snapped position sets the delta for the whole set.
+  grabIndex: number;
+  startVerts: Vec2[];
   startMX: number;
   startMY: number;
   moved: boolean;
   forceCommit: boolean;
-  // Snap targets, snapshotted at pointer-down: "Snap to line" aligns to the
-  // polygon's own other vertices; "Snap to all" to the shared pool plus those
-  // same siblings (own-shape alignment stays available through either toggle).
+  // Snap targets, snapshotted at pointer-down (excluding every moving vertex so
+  // the set never snaps to itself): "Snap to line" aligns to the polygon's own
+  // non-moving vertices; "Snap to all" to the shared pool plus those same
+  // vertices (own-shape alignment stays available through either toggle).
   lineTargets: Vec2[];
   allTargets: Vec2[];
   history: ReturnType<typeof beginHistoryGroup>;
@@ -81,7 +90,6 @@ export function usePolygonDrag(
   inHandMode: boolean,
 ): PolygonDragApi {
   const setPolygonVertices = useDoc((s) => s.setPolygonVertices);
-  const moveVertex = useDoc((s) => s.moveVertex);
   const snapModes = useSnapPrefs((s) => s.modes);
   const gridSize = useViewportStore((s) => s.gridSize);
 
@@ -120,13 +128,13 @@ export function usePolygonDrag(
     };
   };
 
-  // Vertex-drag snap targets: the polygon's own other vertices serve "Snap to
-  // line", and the shared pool (which excludes the whole polygon) plus those
-  // same siblings serves "Snap to all" — so own-shape alignment works through
-  // either toggle, and the dragged vertex never targets itself.
-  const vertexDragTargets = (polygonId: string, index: number) => {
+  // Vertex-drag snap targets: the polygon's own non-moving vertices serve "Snap
+  // to line", and the shared pool (which excludes the whole polygon) plus those
+  // same vertices serves "Snap to all" — so own-shape alignment works through
+  // either toggle, and no moving vertex ever targets itself or a co-mover.
+  const vertexDragTargets = (polygonId: string, moving: Set<number>) => {
     const doc = useDoc.getState();
-    const others = doc.polygons[polygonId]?.vertices.filter((_, i) => i !== index) ?? [];
+    const others = doc.polygons[polygonId]?.vertices.filter((_, i) => !moving.has(i)) ?? [];
     return {
       lineTargets: others,
       allTargets: [...alignTargets(doc, { polygonIds: new Set([polygonId]) }), ...others],
@@ -140,15 +148,22 @@ export function usePolygonDrag(
     const v = poly?.vertices[index];
     if (!v || poly?.locked) return;
     e.stopPropagation();
+    // Grabbing a vertex that's part of the current selection tows the whole
+    // set; grabbing any other vertex moves just it. Same rule as group-drag
+    // (collectGroupSiblings): dragging an unselected member never tows.
+    const sel = useSelection.getState().selectedVertices;
+    const indices =
+      sel && sel.polygonId === polygonId && sel.indices.includes(index) ? sel.indices : [index];
     vertexDragRef.current = {
       polygonId,
-      index,
-      startVert: { ...v },
+      indices,
+      grabIndex: index,
+      startVerts: poly.vertices.map((p) => ({ ...p })),
       startMX: e.clientX,
       startMY: e.clientY,
       moved: false,
       forceCommit: false,
-      ...vertexDragTargets(polygonId, index),
+      ...vertexDragTargets(polygonId, new Set(indices)),
       history: beginHistoryGroup(),
     };
   };
@@ -170,22 +185,23 @@ export function usePolygonDrag(
     const history = beginHistoryGroup();
     doc.insertVertex(polygonId, edgeIndex);
     const newIndex = edgeIndex + 1;
-    const v = useDoc.getState().polygons[polygonId]?.vertices[newIndex];
-    if (!v) {
+    const polyAfter = useDoc.getState().polygons[polygonId];
+    if (!polyAfter?.vertices[newIndex]) {
       history.cancel();
       return;
     }
-    useSelection.getState().selectVertex({ polygonId, index: newIndex });
+    useSelection.getState().selectVertices({ polygonId, indices: [newIndex] });
     vertexDragRef.current = {
       polygonId,
-      index: newIndex,
-      startVert: { ...v },
+      indices: [newIndex],
+      grabIndex: newIndex,
+      startVerts: polyAfter.vertices.map((p) => ({ ...p })),
       startMX: e.clientX,
       startMY: e.clientY,
       moved: false,
       forceCommit: true,
       // Computed after the insert so the new vertex is the excluded one.
-      ...vertexDragTargets(polygonId, newIndex),
+      ...vertexDragTargets(polygonId, new Set([newIndex])),
       history,
     };
   };
@@ -230,9 +246,10 @@ export function usePolygonDrag(
     if (vd) {
       const { moved, dxScreen, dyScreen } = trackDragMove(vd, e, svgRef);
       if (moved) {
+        const start = vd.startVerts[vd.grabIndex];
         let p: Vec2 = {
-          x: vd.startVert.x + dxScreen / zoom,
-          y: vd.startVert.y + dyScreen / zoom,
+          x: start.x + dxScreen / zoom,
+          y: start.y + dyScreen / zoom,
         };
         let guides: SnapGuide[] = [];
         if (!e.shiftKey) {
@@ -248,7 +265,15 @@ export function usePolygonDrag(
           p = { x: snap.x, y: snap.y };
           guides = snap.guides;
         }
-        moveVertex(vd.polygonId, vd.index, p.x, p.y);
+        // Tow every moving vertex by the grabbed vertex's (snapped) delta,
+        // re-derived from the pointer-down snapshot to stay drift-free.
+        const dx = p.x - start.x;
+        const dy = p.y - start.y;
+        const moving = new Set(vd.indices);
+        setPolygonVertices(
+          vd.polygonId,
+          vd.startVerts.map((sv, i) => (moving.has(i) ? { x: sv.x + dx, y: sv.y + dy } : sv)),
+        );
         setPolygonSnapGuides(guides);
       }
     }
@@ -280,7 +305,7 @@ export function usePolygonDrag(
     wholeDragRef.current = null;
     vertexDragRef.current = null;
     setPolygonSnapGuides([]);
-    if (vd?.forceCommit) useSelection.getState().selectVertex(null);
+    if (vd?.forceCommit) useSelection.getState().selectVertices(null);
     wd?.history.rollback();
     vd?.history.rollback();
   };

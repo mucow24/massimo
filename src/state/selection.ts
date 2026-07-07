@@ -71,7 +71,7 @@ export const clearedSelections = () => ({
   selectedLabelIds: [] as string[],
   selectedPolygonIds: [] as string[],
   selectedSvgImageIds: [] as string[],
-  selectedVertex: null as { polygonId: string; index: number } | null,
+  selectedVertices: null as { polygonId: string; indices: number[] } | null,
   selectedLineId: null as LineId | null,
   selectedLineTagId: null as string | null,
   selectedTransferId: null as string | null,
@@ -170,10 +170,12 @@ export interface SelectionState {
   // Polygon selection. Multi-selection: parallel to the other id lists. The
   // last entry is the anchor used by the popover when length === 1.
   selectedPolygonIds: string[];
-  // A single selected polygon vertex (for handle highlight + Delete). Set by
-  // clicking a vertex handle; independent of `selectedPolygonIds` so the
-  // polygon stays selected (and its popover open) while a vertex is active.
-  selectedVertex: { polygonId: string; index: number } | null;
+  // Selected polygon vertices (for handle highlight + Delete/nudge/drag). Set
+  // by clicking a vertex handle (shift-click toggles more in/out). All indices
+  // belong to ONE polygon — vertex editing is single-polygon. Independent of
+  // `selectedPolygonIds` so the polygon stays selected (and its popover open)
+  // while vertices are active. Never empty: an empty set collapses to null.
+  selectedVertices: { polygonId: string; indices: number[] } | null;
   // Svg-image selection. Multi-selection: parallel to the other id lists. The
   // last entry is the anchor used by the popover when length === 1.
   selectedSvgImageIds: string[];
@@ -244,9 +246,13 @@ export interface SelectionState {
   setSvgImageSelection: (ids: string[]) => void;
   addSvgImagesToSelection: (ids: string[]) => void;
   xorSvgImagesToSelection: (ids: string[]) => void;
-  // Select a single vertex of a polygon (or clear with null). Does NOT touch
+  // Replace the vertex selection (or clear with null). Does NOT touch
   // selectedPolygonIds — the polygon remains the primary selection.
-  selectVertex: (sel: { polygonId: string; index: number } | null) => void;
+  selectVertices: (sel: { polygonId: string; indices: number[] } | null) => void;
+  // Shift-click a vertex handle: add/remove one index within its polygon. A
+  // vertex on a DIFFERENT polygon resets the set to just that vertex (vertex
+  // editing is single-polygon); emptying the set collapses to null.
+  toggleVertexSelection: (sel: { polygonId: string; index: number }) => void;
   // Replace the whole selection with a mixed set of bullets/labels/polygons in
   // one atomic update (used after a multi-item paste/duplicate). Clears every
   // other selection and exits to idle, like the single-type select* setters.
@@ -399,7 +405,7 @@ export const useSelection = create<SelectionState>((set, get) => ({
   selectedLabelIds: [],
   selectedPolygonIds: [],
   selectedSvgImageIds: [],
-  selectedVertex: null,
+  selectedVertices: null,
   mirrorMatching: false,
   toolMode: 'arrow',
   spaceHeld: false,
@@ -632,9 +638,9 @@ export const useSelection = create<SelectionState>((set, get) => ({
       add: 'addPolygonsToSelection',
       xor: 'xorPolygonsToSelection',
     },
-    // A polygon selection change drops any active vertex handle (the vertex is
+    // A polygon selection change drops any active vertex handles (they're
     // bound to a single polygon's edit session).
-    { selectedVertex: null },
+    { selectedVertices: null },
   ),
   ...makeIdListActions(set, get, 'selectedSvgImageIds', {
     select: 'selectSvgImage',
@@ -643,7 +649,19 @@ export const useSelection = create<SelectionState>((set, get) => ({
     add: 'addSvgImagesToSelection',
     xor: 'xorSvgImagesToSelection',
   }),
-  selectVertex: (sel) => set({ selectedVertex: sel }),
+  selectVertices: (sel) => set({ selectedVertices: sel }),
+  toggleVertexSelection: ({ polygonId, index }) =>
+    set((s) => {
+      const cur = s.selectedVertices;
+      // No set, or a set on another polygon → start fresh (single-polygon).
+      if (!cur || cur.polygonId !== polygonId) {
+        return { selectedVertices: { polygonId, indices: [index] } };
+      }
+      const has = cur.indices.includes(index);
+      const indices = has ? cur.indices.filter((i) => i !== index) : [...cur.indices, index];
+      // An emptied set collapses to null (never a { indices: [] }).
+      return { selectedVertices: indices.length ? { polygonId, indices } : null };
+    }),
   setMixedSelection: (ids) =>
     set({
       ...clearedSelections(),
@@ -681,10 +699,19 @@ export const useSelection = create<SelectionState>((set, get) => ({
     if (s.editingStationId && !doc.stations[s.editingStationId]) next.editingStationId = null;
     if (s.selectedStopLineId && !doc.lines[s.selectedStopLineId]) next.selectedStopLineId = null;
     if (s.hoveredStationId && !doc.stations[s.hoveredStationId]) next.hoveredStationId = null;
-    // A vertex handle dangles if its polygon is gone OR shrank past its index.
-    if (s.selectedVertex) {
-      const poly = doc.polygons[s.selectedVertex.polygonId];
-      if (!poly || s.selectedVertex.index >= poly.vertices.length) next.selectedVertex = null;
+    // Vertex handles dangle if the polygon is gone OR shrank past their index.
+    // Prune just the out-of-range indices; drop to null only if none survive.
+    if (s.selectedVertices) {
+      const poly = doc.polygons[s.selectedVertices.polygonId];
+      if (!poly) next.selectedVertices = null;
+      else {
+        const kept = s.selectedVertices.indices.filter((i) => i < poly.vertices.length);
+        if (kept.length !== s.selectedVertices.indices.length) {
+          next.selectedVertices = kept.length
+            ? { polygonId: s.selectedVertices.polygonId, indices: kept }
+            : null;
+        }
+      }
     }
     // Skip the set() entirely when nothing dangled — zustand notifies
     // subscribers on every set (even an empty patch), so this keeps the common

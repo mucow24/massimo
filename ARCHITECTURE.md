@@ -559,8 +559,9 @@ anchor**): `selectedStationIds` + `selectedRouteBulletIds`/`selectedLabelIds`/`s
 `selectedSvgImageIds`. The four generic lists' `select/toggle/set/add/xor` actions are generated
 by one `makeIdListActions` factory (hand-copying them is exactly how a cross-clear matrix drifted
 and caused a stale-line-highlight bug). Single primaries: `selectedLineId`, `selectedLineTagId`,
-`selectedTransferId`, `selectedStopLineId`, plus `selectedVertex` (independent of the polygon
-selection so the polygon stays selected while a vertex handle is active). Selectors:
+`selectedTransferId`, `selectedStopLineId`, plus `selectedVertices` (a single polygon's id + a
+set of vertex indices — shift-click toggles more in/out; independent of the polygon selection so
+the polygon stays selected while its vertex handles are active). Selectors:
 `soleSelection(s)` (non-null only when total across all five lists === 1) and
 `getCopyableSelection(s)` (everything **except stations** — the clipboard has no station payload).
 

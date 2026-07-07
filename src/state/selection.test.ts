@@ -7,7 +7,7 @@ import type { LineId, MapDoc, StationId } from '../model/types';
 beforeEach(() => {
   // Reset through the production full-wipe helper so this can't drift from the
   // real set of selection fields (it already missed selectedPolygonIds /
-  // selectedVertex before being routed through clearedSelections).
+  // selectedVertices before being routed through clearedSelections).
   useSelection.setState({
     ...clearedSelections(),
     uiMode: { kind: 'idle' },
@@ -847,12 +847,21 @@ describe('reconcileWithDoc', () => {
     expect(useSelection.getState().selectedStationIds).toBe(stationIds);
   });
 
-  it('drops a selected vertex whose polygon shrank past its index', () => {
-    useSelection.setState({ selectedVertex: { polygonId: 'p1', index: 4 } });
+  it('prunes only the out-of-range vertices, keeping the rest', () => {
+    useSelection.setState({ selectedVertices: { polygonId: 'p1', indices: [1, 4] } });
     useSelection
       .getState()
       .reconcileWithDoc(docWith({ polygons: { p1: { vertices: [0, 0, 0] } } }));
-    expect(useSelection.getState().selectedVertex).toBeNull();
+    // Index 4 is gone (only 3 vertices remain); index 1 survives.
+    expect(useSelection.getState().selectedVertices).toEqual({ polygonId: 'p1', indices: [1] });
+  });
+
+  it('drops the vertex selection when every index shrank away', () => {
+    useSelection.setState({ selectedVertices: { polygonId: 'p1', indices: [4, 5] } });
+    useSelection
+      .getState()
+      .reconcileWithDoc(docWith({ polygons: { p1: { vertices: [0, 0, 0] } } }));
+    expect(useSelection.getState().selectedVertices).toBeNull();
   });
 
   it('prunes bullets, polygons, and svg images missing from the doc', () => {
@@ -911,9 +920,9 @@ describe('reconcileWithDoc', () => {
   });
 
   it('drops a selected vertex whose polygon was deleted entirely', () => {
-    useSelection.setState({ selectedVertex: { polygonId: 'p1', index: 0 } });
+    useSelection.setState({ selectedVertices: { polygonId: 'p1', indices: [0] } });
     useSelection.getState().reconcileWithDoc(docWith({}));
-    expect(useSelection.getState().selectedVertex).toBeNull();
+    expect(useSelection.getState().selectedVertices).toBeNull();
   });
 });
 

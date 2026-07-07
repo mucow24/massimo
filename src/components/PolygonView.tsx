@@ -29,8 +29,9 @@ interface Props {
   // proxy — painted above all map content so the polygon wins pointer hits.
   layer: 'body' | 'overlay' | 'hit';
   selected: boolean;
-  // Index of the currently-selected vertex (for highlight), or null.
-  selectedVertexIndex: number | null;
+  // Indices of the currently-selected vertices (for handle highlight). Empty
+  // when no vertex is selected.
+  selectedVertexIndices: ReadonlySet<number>;
   // When false, the body ignores pointer events so a canvas click "falls
   // through" to placement (used while a click-to-place tool is active).
   interactive: boolean;
@@ -53,7 +54,7 @@ export function PolygonView({
   polygon,
   layer,
   selected,
-  selectedVertexIndex,
+  selectedVertexIndices,
   interactive,
   inHandMode = false,
   onPointerDown,
@@ -232,7 +233,7 @@ export function PolygonView({
               y={v.y - half}
               width={half * 2}
               height={half * 2}
-              fill={i === selectedVertexIndex ? accent : contrast}
+              fill={selectedVertexIndices.has(i) ? accent : contrast}
               stroke={accent}
               strokeWidth={1.5 * s}
               onPointerDown={(e) => onVertexPointerDown(polygon.id, i, e)}
