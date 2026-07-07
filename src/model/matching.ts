@@ -1,4 +1,7 @@
 import { rotateStationLayoutBy45, rotateStationLayoutBy90 } from './transforms';
+import { DEFAULT_LABEL_STYLE, labelLayoutLocal, type StopHalfFn } from '../geometry/labelLayout';
+import { stopCenterAt } from '../geometry/orientation';
+import { stopHalfOf } from './lineWidth';
 import type { MapDoc, Station, StationId, StopCell } from './types';
 
 type MatchingScope = Pick<MapDoc, 'stations' | 'lines'>;
@@ -48,7 +51,7 @@ export interface StationMatch {
 export function findMatchingStations(doc: MatchingScope, selectedId: StationId): StationMatch[] {
   const sel = doc.stations[selectedId];
   if (!sel) return [];
-  // Compute the source's structural keys at all 4 rotations once.
+  // Compute the source's structural keys at all 8 rotations once.
   const selKeys = rotatedKeys(sel, doc.lines);
   const selCanonical = canonicalOf(selKeys);
 
@@ -60,6 +63,9 @@ export function findMatchingStations(doc: MatchingScope, selectedId: StationId):
   }
   candidates.delete(selectedId);
 
+  const stopHalf = stopHalfOf(doc.lines);
+  let selProbes: LabelProbe[] | null = null;
+
   const out: StationMatch[] = [];
   for (const sid of candidates) {
     const st = doc.stations[sid];
@@ -69,9 +75,88 @@ export function findMatchingStations(doc: MatchingScope, selectedId: StationId):
     // The source→candidate delta rotation: how much (dRow, dCol) edits must
     // be rotated when broadcast to this match.
     const k = layoutOffsetOf(selKeys[0], candKeys);
+    // Odd offsets flip the lattice parity, and the LABEL pipeline is
+    // deliberately not 45°-equivariant — verify the resolved label placement
+    // corresponds before claiming visual identity (see labelProbes).
+    // Waypoints render no label, so they skip the guard.
+    if (k % 2 === 1 && !sel.isWaypoint) {
+      selProbes ??= labelProbes(sel, stopHalf);
+      if (!probesEqual(selProbes, labelProbes(st, stopHalf))) continue;
+    }
     out.push({ id: sid, layoutOffset: k });
   }
   return out;
+}
+
+// ---------- Odd-offset label-resolution guard ----------
+
+// The label renderer is deliberately NOT 45°-equivariant: the 'auto' snap's
+// adjacency gate is a Chebyshev-metric test (invariant under 90° rotations,
+// NOT under 45° — a diagonally-adjacent stop at distance 1 rotates to √2),
+// and DIR_8 snap anchors sit on cell-edge midpoints for cardinal readings
+// but cell CORNERS for diagonal ones (both documented typography choices in
+// geometry/labelLayout.ts). So a candidate whose structure corresponds
+// across an odd half-step can still paint its label with different
+// alignment or a ~3px different stop gap. Rather than mirror those rules
+// here (and drift when they change), probe the resolver itself: normalize
+// everything text- and user-divergeable (name, offsets, explicit align /
+// valign, bold/italic) and compare the resolved placement decisions in the
+// READING frame — rotation-covariant, so equal components mean equal world
+// placement. Both auto modes are probed ('auto' align and autoAlign), since
+// a mirror broadcast can toggle autoAlign at any time and must not desync.
+// Explicitly-aligned modes anchor at the cell center and are trivially
+// equivariant, so the two probes cover every reachable configuration.
+interface LabelProbe {
+  textAnchor: 'start' | 'middle' | 'end';
+  baseline: string;
+  read: number;
+  perp: number;
+  dy0: number;
+}
+
+const PROBE_EPS = 1e-3;
+
+function labelProbes(st: Station, stopHalf: StopHalfFn): LabelProbe[] {
+  const resolve = (autoAlign: boolean): LabelProbe => {
+    const probed: Station = {
+      ...st,
+      name: 'X',
+      labelBold: false,
+      labelItalic: false,
+      label: {
+        ...st.label,
+        offset: 0,
+        offsetPerp: 0,
+        align: 'auto',
+        valign: 'middle',
+        autoAlign,
+      },
+    };
+    const lay = labelLayoutLocal(probed, DEFAULT_LABEL_STYLE, undefined, stopHalf);
+    const c = stopCenterAt(st.label.row, st.label.col);
+    const a = (st.label.rotation * Math.PI) / 4;
+    const dx = lay.anchorX - c.x;
+    const dy = lay.anchorY - c.y;
+    return {
+      textAnchor: lay.textAnchor,
+      baseline: lay.baseline,
+      read: dx * Math.cos(a) + dy * Math.sin(a),
+      perp: -dx * Math.sin(a) + dy * Math.cos(a),
+      dy0: lay.firstLineDyPx,
+    };
+  };
+  return [resolve(false), resolve(true)];
+}
+
+function probesEqual(a: LabelProbe[], b: LabelProbe[]): boolean {
+  return a.every(
+    (p, i) =>
+      p.textAnchor === b[i].textAnchor &&
+      p.baseline === b[i].baseline &&
+      Math.abs(p.read - b[i].read) < PROBE_EPS &&
+      Math.abs(p.perp - b[i].perp) < PROBE_EPS &&
+      Math.abs(p.dy0 - b[i].dy0) < PROBE_EPS,
+  );
 }
 
 /**

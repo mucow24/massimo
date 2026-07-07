@@ -696,6 +696,81 @@ describe('findMatchingStations', () => {
     expect(bWorld.y).toBeCloseTo(aWorld.y, 6);
   });
 
+  it('rejects a 45° twin whose label loses the snap (Chebyshev gate is not 45°-invariant)', () => {
+    // A's stop sits diagonally adjacent to its label cell (Chebyshev 1) so
+    // the 'auto' label snap fires; in the 45°-rotated twin the same stop
+    // lands at Chebyshev √2 and the snap does NOT fire — the labels paint
+    // with different alignment. Structurally they correspond, visually they
+    // don't; the match must be rejected.
+    const A = makeStation({
+      id: 'a',
+      rotation: 0,
+      stops: [makeStop('L1', { row: 1, col: 1 })],
+      label: { row: 0, col: 0, rotation: 0, offset: 0, align: 'auto', valign: 'middle' },
+    });
+    const B = { ...T.rotateStationLayoutBy45(A, 1), id: 'b', x: 300 };
+    const doc = makeDoc({
+      stations: [A, B],
+      lines: [makeLine({ id: 'L1', stations: ['a', 'b'] })],
+    });
+    expect(findMatchingStations(doc, 'a')).toEqual([]);
+    expect(findMatchingStations(doc, 'b')).toEqual([]);
+  });
+
+  it("rejects a 45° twin whose snapped label anchors differ (DIR_8's edge-vs-corner asymmetry)", () => {
+    // Both labels snap, but the anchor is an edge midpoint for a cardinal
+    // reading and a cell CORNER for a diagonal reading — the painted
+    // stop-to-label gap differs by ~2.9px between the twins.
+    const h = Math.SQRT1_2;
+    const A = makeStation({
+      id: 'a',
+      rotation: 0,
+      stops: [makeStop('L1', { row: h, col: h })],
+      label: { row: 0, col: 0, rotation: 0, offset: 0, align: 'auto', valign: 'middle' },
+    });
+    const B = { ...T.rotateStationLayoutBy45(A, 1), id: 'b', x: 300 };
+    const doc = makeDoc({
+      stations: [A, B],
+      lines: [makeLine({ id: 'L1', stations: ['a', 'b'] })],
+    });
+    expect(findMatchingStations(doc, 'a')).toEqual([]);
+    expect(findMatchingStations(doc, 'b')).toEqual([]);
+  });
+
+  it('waypoint 45° twins skip the label-resolution guard and still match', () => {
+    // Waypoints render no label, so divergent stale label cells must not
+    // block the cross-parity match (stops still correspond).
+    const A = {
+      ...makeStation({
+        id: 'a',
+        rotation: 0,
+        stops: [makeStop('L1', { row: 1, col: 1 })],
+        label: { row: 0, col: 0, rotation: 0, offset: 0, align: 'auto', valign: 'middle' },
+      }),
+      isWaypoint: true,
+    };
+    const B = {
+      ...T.rotateStationLayoutBy45(A, 1),
+      id: 'b',
+      x: 300,
+      // Stale junk label — invisible on a waypoint, must not matter.
+      label: {
+        row: 5,
+        col: 9,
+        rotation: 2 as const,
+        offset: 3,
+        align: 'auto' as const,
+        valign: 'middle' as const,
+      },
+    };
+    const doc = makeDoc({
+      stations: [A, B],
+      lines: [makeLine({ id: 'L1', stations: ['a', 'b'] })],
+    });
+    expect(findMatchingStations(doc, 'a').map((m) => m.id)).toEqual(['b']);
+    expect(findMatchingStations(doc, 'b').map((m) => m.id)).toEqual(['a']);
+  });
+
   it('a plain 45° station rotation (no layout compensation) still does NOT match', () => {
     // Pressing R rotates the station but leaves the layout alone — that pair
     // genuinely renders differently. 8-fold canonicalization must only match

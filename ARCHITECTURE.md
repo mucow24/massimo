@@ -1027,7 +1027,10 @@ band routing or the marker sort. Pinned by `MapCanvas.stationsSig.test.tsx`.
   (`findMatchingStations` returns stations sharing a line + a layout under the model's full
   8-fold mirror symmetry — 45° half-steps map the orthogonal cell lattice onto the diagonal
   ±√2/2 lattice, so a station and its "pressed R once, re-arranged on diagonal cells" twin
-  match; whole line, not adjacency; an edit broadcasts through
+  match; odd-offset candidates additionally pass a label-resolution probe, because the label
+  pipeline is deliberately NOT 45°-equivariant (Chebyshev snap gate, DIR_8 edge-vs-corner
+  anchors) and structure alone can't guarantee "renders identically" across a parity flip;
+  whole line, not adjacency; an edit broadcasts through
   [state/mirrorDispatch.ts](src/state/mirrorDispatch.ts), rotating local deltas through
   `rotateGridDelta` in 45° steps; orientation cycles and station rotation are relative steps so
   offset matches stay world-equivalent). The **Select Similar** chip (Name header, left of WP) drives
