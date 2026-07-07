@@ -7,13 +7,13 @@ import type { Polygon } from '../model/types';
 
 const noop = () => {};
 
-function renderBody(polygon: Polygon) {
+function renderBody(polygon: Polygon, opts: { selected?: boolean } = {}) {
   return render(
     <svg>
       <PolygonView
         polygon={polygon}
         layer="body"
-        selected={false}
+        selected={opts.selected ?? false}
         selectedVertexIndex={null}
         interactive
         onPointerDown={noop}
@@ -240,6 +240,35 @@ describe('<PolygonView /> open polygons (closed: false)', () => {
   });
 });
 
+describe('<PolygonView /> locked body is click-through unless selected', () => {
+  beforeEach(() => {
+    useViewportStore.setState({ darkMode: false, zoom: 1 });
+  });
+
+  it('a locked, unselected body ignores pointer events (clicks land on what is beneath)', () => {
+    const { container } = renderBody(makePolygon({ id: 'p0', locked: true }));
+    expect(body(container).getAttribute('pointer-events')).toBe('none');
+  });
+
+  it('a locked body stays clickable while selected (popover unlock stays reachable)', () => {
+    const { container } = renderBody(makePolygon({ id: 'p0', locked: true }), { selected: true });
+    // Closed-body default: whole-shape hit-testing (no pointer-events override).
+    expect(body(container).getAttribute('pointer-events')).toBeNull();
+  });
+
+  it('a locked OPEN body keeps stroke hit-testing while selected', () => {
+    const { container } = renderBody(makePolygon({ id: 'p0', closed: false, locked: true }), {
+      selected: true,
+    });
+    expect(body(container).getAttribute('pointer-events')).toBe('stroke');
+  });
+
+  it('an unlocked, unselected body keeps whole-body hit-testing', () => {
+    const { container } = renderBody(makePolygon({ id: 'p0' }));
+    expect(body(container).getAttribute('pointer-events')).toBeNull();
+  });
+});
+
 describe('<PolygonView /> locked polygons (E5c)', () => {
   beforeEach(() => {
     useViewportStore.setState({ darkMode: false, zoom: 1 });
@@ -265,17 +294,27 @@ describe('<PolygonView /> locked polygons (E5c)', () => {
     ).container;
   }
 
-  it('a locked, selected polygon keeps the selection outline but drops all editing adornments', () => {
+  it('a locked, selected polygon keeps the outline and renders its adornments GHOSTED (inactive)', () => {
     const c = renderOverlay(makePolygon({ id: 'p0', locked: true }));
     // Outline stays so the selection (and the popover's unlock toggle) is visible.
     expect(c.querySelector('g[data-polygon-overlay] > polygon')).not.toBeNull();
-    // No vertex handles, no edge "+" buttons while locked.
-    expect(c.querySelectorAll('[data-polygon-vertex]')).toHaveLength(0);
-    expect(c.querySelectorAll('[data-polygon-edge-add]')).toHaveLength(0);
+    // Handles + edge "+" render — a re-selected locked polygon would otherwise
+    // only show a thin dashed line, far too easy to miss — but inert: no
+    // pointer events, reduced opacity.
+    const wrap = c.querySelector('[data-polygon-adornments]')!;
+    expect(wrap.getAttribute('data-polygon-adornments')).toBe('inactive');
+    expect(wrap.getAttribute('pointer-events')).toBe('none');
+    expect(Number(wrap.getAttribute('opacity'))).toBeLessThan(1);
+    expect(c.querySelectorAll('[data-polygon-vertex]')).toHaveLength(4);
+    expect(c.querySelectorAll('[data-polygon-edge-add]')).toHaveLength(4);
   });
 
-  it('an UNlocked, selected polygon shows the handles (contrast — same fixture, lock off)', () => {
+  it('an UNlocked, selected polygon shows the handles fully active (contrast — same fixture, lock off)', () => {
     const c = renderOverlay(makePolygon({ id: 'p0' }));
+    const wrap = c.querySelector('[data-polygon-adornments]')!;
+    expect(wrap.getAttribute('data-polygon-adornments')).toBe('active');
+    expect(wrap.getAttribute('pointer-events')).toBeNull();
+    expect(wrap.getAttribute('opacity')).toBeNull();
     expect(c.querySelectorAll('[data-polygon-vertex]')).toHaveLength(4);
     expect(c.querySelectorAll('[data-polygon-edge-add]')).toHaveLength(4);
   });

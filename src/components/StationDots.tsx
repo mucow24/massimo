@@ -37,13 +37,13 @@ export function StationDots({
   onStartDrag: (id: string, ev: React.PointerEvent, redistributeAnchor?: string) => void;
 }) {
   const hoveredStop = useSelection((s) => s.hoveredLineStop);
-  const { handlers, cursor, inHitlessMode } = useStationInteraction(station, onStartDrag, lines);
+  const { handlers, cursor, hitless } = useStationInteraction(station, onStartDrag, lines);
   const themeColors = useThemeColors();
   if (station.isWaypoint) return null;
   const angle = station.rotation * 45;
   const phantomDot = phantomDotCell(station);
   return (
-    <g pointerEvents={inHitlessMode ? 'none' : undefined} style={{ cursor }} {...handlers}>
+    <g pointerEvents={hitless ? 'none' : undefined} style={{ cursor }} {...handlers}>
       {/* Phantom dot is a drag preview — render at cell position, in the
           station's local frame. */}
       {phantomDot && (

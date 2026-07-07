@@ -29,6 +29,16 @@ import { GhostLattice } from './canvas/GhostLattice';
 import { STOP_SIZE } from '../geometry/orientation';
 import { lineWidthOf } from '../model/lineWidth';
 import { useRectSelect } from './canvas/useRectSelect';
+import {
+  currentHitEntity,
+  LOCKED_HIT_PAD_PX,
+  lockedDispatchTarget,
+  lockedHitsAt,
+  mergeLockedIntoStack,
+  nextInStack,
+  resolveHitStack,
+  type HitEntry,
+} from './canvas/hitStack';
 import { Grid } from './canvas/Grid';
 import { WarningToasts } from './canvas/WarningToasts';
 import { EditingBanner } from './canvas/EditingBanner';
@@ -443,6 +453,69 @@ export function MapCanvas() {
     );
   };
 
+  // Alt+click deep-pick: cycle the selection through the stack of selectable
+  // elements under the cursor, topmost first — the way to reach an element
+  // buried under other hit surfaces (a line under a station's hit rect, a
+  // polygon under a label, ...). The current sole selection is the cursor
+  // into the stack: alt+click selects the entry AFTER it (wrapping past the
+  // bottom), or the topmost when nothing — or a multi-selection — is
+  // current. The chosen element receives a synthetic plain click, so its own
+  // handler runs and every existing selection semantic (exclusivity,
+  // popovers, shift-toggle) applies unchanged. Alt is stripped from the
+  // re-dispatch (no recursion); shift is preserved (multi-select toggle);
+  // ctrl/meta are dropped (station redistribute must not fire from a
+  // deep-pick). The proxy layer is hidden during the elementsFromPoint
+  // snapshot, mirroring rerouteProxyEventBeneath. Returns true when the
+  // click was handled (callers skip the normal capture path).
+  const deepPickAltClick = (e: React.MouseEvent): boolean => {
+    if (!e.altKey) return false;
+    if (inHandMode || selection.uiMode.kind !== 'idle') return false;
+    // The inline rename editor is a foreignObject INSIDE the svg while uiMode
+    // stays idle — an alt+click landing on (or near) it must not re-select
+    // things beneath the open editor.
+    if (selection.editingStationId) return false;
+    if (dragState.suppressClick) return false; // post-drag click: the normal path consumes it
+    const layer = proxyLayerRef.current;
+    const prevDisplay = layer ? layer.style.display : '';
+    if (layer) layer.style.display = 'none';
+    const els = document.elementsFromPoint(e.clientX, e.clientY);
+    if (layer) layer.style.display = prevDisplay;
+    // Locked, unselected items are click-through (pointer-events: none), so
+    // elementsFromPoint never reports them. Point-test them geometrically and
+    // append below the live stack — locked reads as background, so cycling
+    // reaches them last. Their body handlers stay wired, so the synthetic
+    // dispatch selects them like anything else.
+    const world = view.screenToWorld(e.clientX, e.clientY);
+    const lockedEntries: HitEntry[] = [];
+    for (const ref of lockedHitsAt(
+      world,
+      useDoc.getState(),
+      LOCKED_HIT_PAD_PX / view.viewport.zoom,
+    )) {
+      const element = lockedDispatchTarget(ref);
+      if (element) lockedEntries.push({ ...ref, element });
+    }
+    const stack = mergeLockedIntoStack(resolveHitStack(els), lockedEntries);
+    const next = nextInStack(stack, currentHitEntity(useSelection.getState()));
+    if (!next) return false; // nothing selectable here — behave as a plain background click
+    e.stopPropagation();
+    // "Click off the line exits the editor without selecting" must not eat a
+    // deep-pick — the user explicitly asked for the next item — so exit the
+    // line editor BEFORE dispatching (exitLineEditorOnItemClick then no-ops).
+    if (useSelection.getState().selectedLineId) selectLine(null);
+    next.element.dispatchEvent(
+      new MouseEvent('click', {
+        bubbles: true,
+        cancelable: true,
+        clientX: e.clientX,
+        clientY: e.clientY,
+        shiftKey: e.shiftKey,
+        button: 0,
+      }),
+    );
+    return true;
+  };
+
   // The four free-item types (bullets, labels, polygons, svg images) share
   // one click / right-click contract, mirroring station shift-click:
   // Shift-click toggles multi-selection membership — but ONLY without
@@ -646,11 +719,22 @@ export function MapCanvas() {
         onPointerLeave={() => {
           if (cursorWorld) setCursorWorld(null);
         }}
-        // Re-route a click/right-click on a selected item's drag proxy to the
+        // Alt+click deep-picks through the under-cursor stack; otherwise
+        // re-route a click/right-click on a selected item's drag proxy to the
         // real element beneath, so selection always follows normal layer order
-        // (only DRAG gets selected-item priority). Capture phase so it runs
-        // before the proxy's own handler and the canvas click handler.
-        onClickCapture={(e) => rerouteProxyEventBeneath('click', e)}
+        // (only DRAG gets selected-item priority). Capture phase so both run
+        // before the target's own handler and the canvas click handler.
+        onClickCapture={(e) => {
+          if (deepPickAltClick(e)) return;
+          rerouteProxyEventBeneath('click', e);
+        }}
+        // Two rapid alt+clicks (deep-pick cycling) also synthesize a native
+        // dblclick on the topmost element — which would open the station
+        // rename editor and clobber the deep-picked selection. Swallow
+        // alt-dblclicks; plain double-click rename is untouched.
+        onDoubleClickCapture={(e) => {
+          if (e.altKey) e.stopPropagation();
+        }}
         onContextMenuCapture={(e) => rerouteProxyEventBeneath('contextmenu', e)}
         onClick={onCanvasClick}
         onContextMenu={(e) => e.preventDefault()}

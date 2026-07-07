@@ -69,6 +69,12 @@ export function SvgImageView({
   const transform = `translate(${image.x} ${image.y}) rotate(${image.rotation})`;
 
   if (layer === 'body') {
+    // Click-through cases: while a placement tool is active, clicks must reach
+    // the canvas to place the new item over the image; while locked AND not
+    // selected, lock means "this is background — stop catching my clicks".
+    // Selection keeps a locked image clickable so the popover's unlock toggle
+    // stays reachable.
+    const clickThrough = !interactive || (image.locked && !selected);
     return (
       <g
         data-svg-image-id={image.id}
@@ -89,9 +95,7 @@ export function SvgImageView({
           // gate keys off [data-locked] so a drag starting on a locked image
           // begins a marquee instead of doing nothing.
           data-locked={image.locked || undefined}
-          // Ignore pointer events while a placement tool is active so the click
-          // reaches the canvas and places the new item over the image.
-          pointerEvents={interactive ? undefined : 'none'}
+          pointerEvents={clickThrough ? 'none' : undefined}
           onPointerDown={(e) => onPointerDown(image.id, e)}
           onClick={(e) => onClick(image.id, e)}
           onContextMenu={(e) => onContextMenu(image.id, e)}
@@ -162,9 +166,15 @@ export function SvgImageView({
         strokeDasharray={selectionDash(zoom)}
         pointerEvents="none"
       />
-      {/* A locked image shows only the selection box — no transform handles —
-          but stays selected so the popover's unlock toggle is reachable. */}
-      {!image.locked && (
+      {/* Transform handles + rotate knob. On a LOCKED image they render
+          GHOSTED — still visible, so a re-selected locked image reads as
+          selected (the thin dashed box alone is easy to miss) — but inert:
+          reduced opacity, no pointer events, no cursors. */}
+      <g
+        data-svg-image-adornments={image.locked ? 'inactive' : 'active'}
+        opacity={image.locked ? 0.4 : undefined}
+        pointerEvents={image.locked ? 'none' : undefined}
+      >
         <>
           <line
             x1={0}
@@ -223,7 +233,7 @@ export function SvgImageView({
             />
           ))}
         </>
-      )}
+      </g>
     </g>
   );
 }

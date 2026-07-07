@@ -54,8 +54,10 @@ function closestStopLineId(station: Station, e: React.MouseEvent): LineId | null
  * dot as the already-committed anchor (a no-op self-transfer that the click
  * handler would reject).
  *
- * Returns `inHitlessMode` so callers can also drop their hit rect's
- * pointer-events, and a cursor that reflects hand/pan mode.
+ * Returns `hitless` — true when this station must not capture pointer events
+ * (tag/layering mode pass-through, or locked-and-unselected click-through) —
+ * so callers can also drop their hit rect's pointer-events, and a cursor
+ * that reflects hand/pan mode.
  */
 export function useStationInteraction(
   station: Station,
@@ -191,7 +193,29 @@ export function useStationInteraction(
   // — clicks/drags pass straight through hit areas to the underlying band
   // stripes so any pixel of a line segment is reachable, even where it sits
   // beneath a station's hitbox.
-  const inHitlessMode = inTagMode || inLayerMode;
+  //
+  // A LOCKED station is likewise hitless while it isn't part of the current
+  // selection: lock means "this is background — stop catching my clicks", so
+  // clicks land on whatever is beneath its (generous) hit rects. While
+  // selected it stays interactive, so the popover's unlock toggle and
+  // label-layout editing remain reachable right after locking.
+  //
+  // IDLE MODE ONLY: non-idle modes wipe the selection on entry, so without
+  // this gate a locked station would be unreachable in every mode — and the
+  // pass-through click would land on a stripe or the background, silently
+  // killing the mode. Lock protects geometry, not mode participation: a
+  // locked station is still a transfer endpoint and can still be toggled
+  // onto a line in append mode.
+  const lockedClickThrough =
+    !!station.locked &&
+    selection.uiMode.kind === 'idle' &&
+    !selection.selectedStationIds.includes(station.id);
+  // Mode pass-through strips the handlers outright; locked click-through
+  // keeps them WIRED — pointer-events already blocks every real click, while
+  // the alt+click deep-pick reaches locked stations by dispatching synthetic
+  // clicks to these very handlers (dispatch ignores pointer-events).
+  const modeInert = inTagMode || inLayerMode;
+  const hitless = modeInert || lockedClickThrough;
   const onTransferPointerMove = (e: React.PointerEvent) => {
     const lineId = closestStopLineId(station, e);
     if (!lineId) return;
@@ -210,17 +234,19 @@ export function useStationInteraction(
     if (cur && cur.stationId === station.id) selection.setHoveredLineStop(null);
   };
   const handlers = {
-    onPointerDown: inHitlessMode ? undefined : onPointerDown,
-    onClick: inHitlessMode || inHandMode ? undefined : onClick,
-    onDoubleClick: inHitlessMode || inHandMode ? undefined : onDoubleClick,
-    onContextMenu: inHitlessMode ? undefined : onContextMenu,
+    onPointerDown: modeInert ? undefined : onPointerDown,
+    onClick: modeInert || inHandMode ? undefined : onClick,
+    onDoubleClick: modeInert || inHandMode ? undefined : onDoubleClick,
+    onContextMenu: modeInert ? undefined : onContextMenu,
     onPointerMove: inTransferPick ? onTransferPointerMove : undefined,
     onPointerLeave: inTransferPick ? onTransferPointerLeave : undefined,
   };
   // Hand mode → open hand (pannable). Otherwise a movable station shows the
-  // four-arrow move cursor; a locked station shows the pointing hand (it can
-  // still be clicked to select/edit, just not dragged).
+  // four-arrow move cursor; a locked station shows the pointing hand. The
+  // pointer only ever shows while the locked station is SELECTED (unselected
+  // locked stations are click-through, so nothing hovers them) — where it
+  // reads as "clickable to keep the popover/unlock reachable, not draggable".
   const cursor = itemCursor(inHandMode, station.locked);
 
-  return { handlers, cursor, inHitlessMode };
+  return { handlers, cursor, hitless };
 }

@@ -19,6 +19,13 @@ describe('svgImagesForRect', () => {
     expect(svgImagesForRect(images, { x0: -100, y0: -100, x1: 100, y1: 100 })).toEqual([]);
   });
 
+  it('includes locked images when includeLocked is set (alt-marquee recovery)', () => {
+    const images = { i0: makeSvgImage({ id: 'i0', locked: true }) };
+    expect(svgImagesForRect(images, { x0: -100, y0: -100, x1: 100, y1: 100 }, true)).toEqual([
+      'i0',
+    ]);
+  });
+
   it('uses the rotated footprint: a rect over a rotated corner hits', () => {
     // Rotated 45°, the bottom-left corner swings out to (~ -56.6, -14.1) —
     // beyond the unrotated box's left edge (x = -50), so a rect there only

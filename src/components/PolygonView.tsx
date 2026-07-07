@@ -83,6 +83,13 @@ export function PolygonView({
     // the rounded shape carries into PNG/SVG for free. An OPEN polygon renders
     // stroke-only along the vertex chain (no fill, no closing edge), with hit
     // testing on the stroke (pointerEvents="stroke", matching TransferLayer).
+    //
+    // Click-through cases: while a placement tool is active, clicks must reach
+    // the canvas to place the item over the polygon; while locked AND not
+    // selected, lock means "this is background — stop catching my clicks", so
+    // clicks land on whatever is beneath. Selection keeps a locked body
+    // clickable so the popover's unlock toggle stays reachable.
+    const clickThrough = !interactive || (polygon.locked && !selected);
     return (
       <path
         data-polygon-id={polygon.id}
@@ -100,9 +107,7 @@ export function PolygonView({
         strokeLinejoin="round"
         // Round caps so an open chain's loose ends match its rounded joins.
         strokeLinecap={closed ? undefined : 'round'}
-        // Ignore pointer events while a placement tool is active so the click
-        // reaches the canvas and places the item over the polygon.
-        pointerEvents={interactive ? (closed ? undefined : 'stroke') : 'none'}
+        pointerEvents={clickThrough ? 'none' : closed ? undefined : 'stroke'}
         onPointerDown={(e) => onPointerDown(polygon.id, e)}
         onClick={(e) => onClick(polygon.id, e)}
         onContextMenu={(e) => onContextMenu(polygon.id, e)}
@@ -170,10 +175,15 @@ export function PolygonView({
         strokeDasharray={selectionDash(zoom)}
         pointerEvents="none"
       />
-      {/* A locked polygon shows only the selection outline — no editing
-          adornments (vertex handles, edge "+") — but stays selected so the
-          popover's unlock toggle is reachable. */}
-      {!polygon.locked && (
+      {/* Editing adornments (vertex handles, edge "+"). On a LOCKED polygon
+          they render GHOSTED — still visible, so a re-selected locked polygon
+          reads as selected (the thin dashed outline alone is easy to miss) —
+          but inert: reduced opacity, no pointer events, no cursors. */}
+      <g
+        data-polygon-adornments={polygon.locked ? 'inactive' : 'active'}
+        opacity={polygon.locked ? 0.4 : undefined}
+        pointerEvents={polygon.locked ? 'none' : undefined}
+      >
         <>
           {edgeIndices.map((i) => {
             const v = verts[i];
@@ -231,7 +241,7 @@ export function PolygonView({
             />
           ))}
         </>
-      )}
+      </g>
     </g>
   );
 }

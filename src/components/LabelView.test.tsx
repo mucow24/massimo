@@ -347,12 +347,12 @@ describe('<LabelView /> hit proxy (selected-on-top drag target)', () => {
 });
 
 describe('<LabelView /> — locked label hit group', () => {
-  const renderInteractive = (label: TextLabel, inHandMode = false) =>
+  const renderInteractive = (label: TextLabel, inHandMode = false, selected = false) =>
     render(
       <svg>
         <LabelView
           label={label}
-          selected={false}
+          selected={selected}
           onPointerDown={() => {}}
           inHandMode={inHandMode}
         />
@@ -364,6 +364,24 @@ describe('<LabelView /> — locked label hit group', () => {
     const g = container.querySelector('[data-text-label-id="g1"]') as HTMLElement;
     expect(g.getAttribute('data-locked')).toBe('true');
     expect(g.style.cursor).toBe('pointer');
+  });
+
+  it('a locked, unselected label ignores pointer events (clicks land on what is beneath)', () => {
+    const { container } = renderInteractive(makeTextLabel({ id: 'g1', locked: true }));
+    const g = container.querySelector('[data-text-label-id="g1"]') as HTMLElement;
+    expect(g.getAttribute('pointer-events')).toBe('none');
+  });
+
+  it('a locked label stays clickable while selected (popover unlock stays reachable)', () => {
+    const { container } = renderInteractive(makeTextLabel({ id: 'g1', locked: true }), false, true);
+    const g = container.querySelector('[data-text-label-id="g1"]') as HTMLElement;
+    expect(g.getAttribute('pointer-events')).toBeNull();
+  });
+
+  it('an unlocked, unselected label keeps its hit rect live', () => {
+    const { container } = renderInteractive(makeTextLabel({ id: 'g1' }));
+    const g = container.querySelector('[data-text-label-id="g1"]') as HTMLElement;
+    expect(g.getAttribute('pointer-events')).toBeNull();
   });
 
   it('uses the four-arrow move cursor and omits data-locked when unlocked', () => {
