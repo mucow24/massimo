@@ -403,11 +403,14 @@ function snapInfoInHalfPlane(
     // Perpendicular (CCW 90° from reading): (-readSin, readCos).
     const perp = dCol * -readSin + dRow * readCos;
     if (Math.abs(perp) > PERP_GATE) return;
-    // For adjMinus (sign=-1): proj is negative; track the LARGEST (closest
-    // to 0) — that's the stop nearest along reading, the one the anchor
-    // most needs to clear. For adjPlus, track the smallest (also closest
-    // to 0). In both cases: -sign * proj is positive and we minimize it.
-    if (inWayStopProj === null || -sign * proj < -sign * inWayStopProj) {
+    // Track the in-way stop NEAREST the label cell along reading. The text is
+    // end/start-anchored and extends back toward the cell, so the nearest stop
+    // imposes the tighter anchor bound — clamping behind it clears every stop
+    // farther along, whereas clamping behind a farther stop would leave the
+    // nearer one sitting under the text. The line-376 gate guarantees
+    // `sign * proj > 0` (the positive distance along reading), so "nearest" is
+    // simply the smallest `sign * proj`.
+    if (inWayStopProj === null || sign * proj < sign * inWayStopProj) {
       inWayStopProj = proj;
       inWayStopHalf = half;
     }

@@ -457,14 +457,14 @@ export const useSelection = create<SelectionState>((set, get) => ({
       return {
         selectedStationIds: next,
         ...layoutEditReconcile(s.uiMode, next),
-        selectedLineId: null,
-        selectedLineTagId: null,
-        selectedTransferId: null,
+        // Adding a station to the set makes it foreign to any selected line /
+        // tag / transfer / mirror — clear them from the one shared home so the
+        // matrix can't drift (see SIBLING_PRIMARY_CLEAR).
+        ...SIBLING_PRIMARY_CLEAR,
         selectedStopLineId: null,
         labelSelected: false,
         editingStationId: null,
         activeTab: 'stations',
-        mirrorMatching: false,
       };
     }),
   setStationSelection: (ids) =>
@@ -473,14 +473,11 @@ export const useSelection = create<SelectionState>((set, get) => ({
       return {
         selectedStationIds: next,
         ...layoutEditReconcile(s.uiMode, next),
-        selectedLineId: null,
-        selectedLineTagId: null,
-        selectedTransferId: null,
+        ...SIBLING_PRIMARY_CLEAR,
         selectedStopLineId: null,
         labelSelected: false,
         editingStationId: null,
         activeTab: 'stations',
-        mirrorMatching: false,
       };
     }),
   addStationsToSelection: (ids) =>

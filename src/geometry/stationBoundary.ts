@@ -12,6 +12,7 @@ import {
 } from './labelLayout';
 import { rectIntersectsPolygon, type AABB } from './rectPolygon';
 import { measureTextLabel } from './textMeasure';
+import { effectiveStationLabelStyle } from '../model/transforms';
 
 const HALF = STOP_SIZE / 2;
 const HIT_PAD = 2;
@@ -125,6 +126,12 @@ export function stationLocalToWorld(station: Station, p: Pt): Pt {
  * Ids of every station whose selection boundary overlaps `rect` (world coords).
  * A station is a hit if either its cells rect or its (rotated) label rect
  * intersects the rect.
+ *
+ * `style.weight` is the *doc-default* label weight; each station's own bold
+ * flag is folded in per-station via `effectiveStationLabelStyle`, so a bold
+ * station's label rect is measured at the same (heavier, wider) weight it is
+ * actually painted at — otherwise its marquee hit rect would be narrower than
+ * the visible label.
  */
 export function stationsForRect(
   stations: Record<StationId, Station>,
@@ -137,7 +144,7 @@ export function stationsForRect(
     const st = stations[id];
     // Locked stations are excluded from marquee selection (mirrors polygons).
     if (st.locked) continue;
-    const b = stationBoundaryRectsLocal(st, style, stopHalf);
+    const b = stationBoundaryRectsLocal(st, effectiveStationLabelStyle(st, style), stopHalf);
     const cellsWorld = b.cells.map((p) => stationLocalToWorld(st, p));
     if (rectIntersectsPolygon(rect, cellsWorld)) {
       hits.push(id);
