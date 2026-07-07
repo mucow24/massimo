@@ -53,8 +53,8 @@ export function StationInspector({ id }: { id: StationId }) {
 
   // Stations that render identically to this one (across the model's 4-fold
   // mirror symmetry) AND share a line with it. Each carries a layoutOffset
-  // (0–3) describing how its unrotated grid maps to the source's, so callers
-  // that propagate (dRow, dCol) edits can rotate them to match.
+  // (0–3): the source→candidate rotation callers apply to (dRow, dCol)
+  // edits (rotateGridDelta) when broadcasting them to that match.
   const matches = useMemo(
     () => findMatchingStations({ stations: stationsAll, lines: linesAll }, id),
     [stationsAll, linesAll, id],
