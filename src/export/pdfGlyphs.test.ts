@@ -85,11 +85,7 @@ describe('outlineUnsupportedText — whitespace around outlined glyphs', () => {
     ({
       charToGlyphIndex: (ch: string) => (covered(ch.codePointAt(0) ?? -1) ? 7 : 0),
       getPath: (_t: string, x: number, y: number) => ({
-        commands: [
-          { type: 'M', x, y },
-          { type: 'L', x: x + 1, y: y - 1 },
-          { type: 'Z' },
-        ],
+        commands: [{ type: 'M', x, y }, { type: 'L', x: x + 1, y: y - 1 }, { type: 'Z' }],
       }),
     }) as unknown as opentype.Font;
 
