@@ -234,9 +234,23 @@ describe('parseFormattedLine (bullets + escapes + tags)', () => {
     expect(parse('<b><air></b>')).toEqual([{ kind: 'text', value: '✈', style: style('bold') }]);
   });
 
+  it('substitutes <c> and <tm> inline, merged into the text run', () => {
+    expect(parse('Acme<c> 2026')).toEqual([{ kind: 'text', value: 'Acme© 2026' }]);
+    expect(parse('<tm>')).toEqual([{ kind: 'text', value: '™' }]);
+    expect(parse('<b><c></b>')).toEqual([{ kind: 'text', value: '©', style: style('bold') }]);
+  });
+
+  it('does not let <c> cannibalize the <color=…> tag', () => {
+    expect(parse('<color=red>x</color>')).toEqual([
+      { kind: 'text', value: 'x', style: { ...style(), color: 'red' } },
+    ]);
+  });
+
   it('escapes tags with a backslash', () => {
     expect(parse('\\<b>x')).toEqual([{ kind: 'text', value: '<b>x' }]);
     expect(parse('\\<air>')).toEqual([{ kind: 'text', value: '<air>' }]);
+    expect(parse('\\<c>')).toEqual([{ kind: 'text', value: '<c>' }]);
+    expect(parse('\\<tm>')).toEqual([{ kind: 'text', value: '<tm>' }]);
   });
 
   it('styles do not attach to bullets', () => {
@@ -386,6 +400,8 @@ describe('hasFormattedToken', () => {
     expect(hasFormattedToken('<w=+2>heavier</w>')).toBe(true);
     expect(hasFormattedToken('fly <air> here')).toBe(true);
     expect(hasFormattedToken('go <xfer> across')).toBe(true);
+    expect(hasFormattedToken('Acme <c> Inc')).toBe(true);
+    expect(hasFormattedToken('brand <tm> here')).toBe(true);
   });
 
   it('is false for plain text, unknown tags, and non-token brackets/pipes', () => {
