@@ -1,6 +1,8 @@
 import { describe, it, expect } from 'vitest';
 import { findMatchingStations } from './matching';
 import * as T from './transforms';
+import { stopPosWorld } from '../geometry/interlining';
+import { rotateGridDelta } from '../geometry/orientation';
 import { makeDoc, makeLine, makeStation, makeStop } from '../test/fixtures';
 
 describe('findMatchingStations', () => {
@@ -467,12 +469,13 @@ describe('findMatchingStations', () => {
     });
     const fromA = findMatchingStations(doc, 'A');
     expect(fromA.map((m) => m.id)).toEqual(['B']);
-    // layoutOffset is "how many 90°-steps to rotate the CANDIDATE's layout to
-    // align it onto the source". B sits one +step ahead of A, so realigning B
-    // back onto A needs 3 steps; from B's side, A needs 1. Both are the ODD
-    // offsets that the existing 0/2 layoutOffset test never exercises.
-    expect(fromA[0].layoutOffset).toBe(3);
-    expect(findMatchingStations(doc, 'B')[0].layoutOffset).toBe(1);
+    // layoutOffset is the SOURCE → CANDIDATE delta rotation: B sits one
+    // +step ahead of A, so a source-frame edit on A rotates 1 step into B's
+    // frame; from B's side, 3. Both are the ODD offsets that the 0/2
+    // layoutOffset test never exercises (R² = −I makes those self-inverse,
+    // so they can't pin the direction — the world-truth test below does).
+    expect(fromA[0].layoutOffset).toBe(1);
+    expect(findMatchingStations(doc, 'B')[0].layoutOffset).toBe(3);
   });
 
   it('returned matches carry the layoutOffset needed to align them', () => {
@@ -506,6 +509,113 @@ describe('findMatchingStations', () => {
     const byId = new Map(matches.map((m) => [m.id, m.layoutOffset]));
     expect(byId.get('B')).toBe(0);
     expect(byId.get('C')).toBe(2);
+  });
+
+  it('a waypoint never matches a fully-rendered station (isWaypoint is visual identity)', () => {
+    // A waypoint hides its name and dots; the same stops+label on a normal
+    // station render fully. They are not visually interchangeable, so a
+    // mass-edit selection must not pair them.
+    const doc = makeDoc({
+      stations: [
+        { ...makeStation({ id: 's1', stops: [makeStop('L1')] }), isWaypoint: true },
+        makeStation({ id: 's2', stops: [makeStop('L1')] }),
+      ],
+      lines: [makeLine({ id: 'L1', stations: ['s1', 's2'] })],
+    });
+    expect(findMatchingStations(doc, 's1')).toEqual([]);
+    expect(findMatchingStations(doc, 's2')).toEqual([]);
+  });
+
+  it('two waypoints match on stops alone — invisible label geometry is ignored', () => {
+    // Waypoints render no label, so stale label cells left behind by
+    // pre-waypoint editing must not break the match. Stops stay in the key:
+    // they still shape how lines route through the station.
+    const doc = makeDoc({
+      stations: [
+        {
+          ...makeStation({
+            id: 's1',
+            stops: [makeStop('L1')],
+            label: { row: -1, col: -1, rotation: 0, offset: 0, align: 'auto', valign: 'middle' },
+          }),
+          isWaypoint: true,
+        },
+        {
+          ...makeStation({
+            id: 's2',
+            stops: [makeStop('L1')],
+            label: { row: 2, col: 3, rotation: 5, offset: 0, align: 'auto', valign: 'middle' },
+          }),
+          isWaypoint: true,
+        },
+      ],
+      lines: [makeLine({ id: 'L1', stations: ['s1', 's2'] })],
+    });
+    expect(findMatchingStations(doc, 's1').map((m) => m.id)).toEqual(['s2']);
+    expect(findMatchingStations(doc, 's2').map((m) => m.id)).toEqual(['s1']);
+  });
+
+  it('negative-zero float drift does not fragment the key', () => {
+    // toFixed(4) renders -1e-16 as "-0.0000" but exact zero as "0.0000" —
+    // the quantizer must normalize the sign so drift from diagonal (±√2/2)
+    // arithmetic can't split visually identical layouts.
+    const doc = makeDoc({
+      stations: [
+        makeStation({ id: 's1', stops: [makeStop('L1', { row: -1e-16 })] }),
+        makeStation({ id: 's2', stops: [makeStop('L1', { row: 0 })] }),
+      ],
+      lines: [makeLine({ id: 'L1', stations: ['s1', 's2'] })],
+    });
+    expect(findMatchingStations(doc, 's1').map((m) => m.id)).toEqual(['s2']);
+  });
+
+  it('an out-of-range persisted rotation (8 ≡ 0) still matches its normalized twin', () => {
+    // All in-app mutators wrap mod 8, but hand-edited/legacy docs can carry
+    // rotation 8 or −1; they render identically to 0 and 7 (SVG rotate is
+    // periodic), so the key must normalize.
+    const doc = makeDoc({
+      stations: [
+        makeStation({ id: 's1', stops: [makeStop('L1')], rotation: 8 as never }),
+        makeStation({ id: 's2', stops: [makeStop('L1')], rotation: 0 }),
+      ],
+      lines: [makeLine({ id: 'L1', stations: ['s1', 's2'] })],
+    });
+    expect(findMatchingStations(doc, 's1').map((m) => m.id)).toEqual(['s2']);
+  });
+
+  it('rotating a broadcast delta by layoutOffset preserves world appearance at ODD offsets', () => {
+    // World-truth pin for the delta-transform direction. B is A rotated one
+    // 90°-step via rotateStationLayoutBy90 — they render identically, one
+    // step apart. R² = −I, so the even offsets (0, 2) are self-inverse and
+    // CANNOT distinguish "rotate by k" from "rotate by the inverse of k";
+    // only an odd-offset pair catches a flipped direction (which broadcast
+    // the world-OPPOSITE edit — the match then dissolves on its own edit).
+    const A = makeStation({
+      id: 'A',
+      x: 0,
+      y: 0,
+      rotation: 0,
+      stops: [makeStop('L1', { orientation: 'auto-vertical' })],
+      label: { row: 0, col: -1, rotation: 0, offset: 0, align: 'auto', valign: 'middle' },
+    });
+    const B = { ...T.rotateStationLayoutBy90(A, 1), id: 'B', x: 0, y: 0 };
+    const doc = makeDoc({
+      stations: [A, B],
+      lines: [makeLine({ id: 'L1', stations: ['A', 'B'] })],
+    });
+    const match = findMatchingStations(doc, 'A').find((m) => m.id === 'B');
+    expect(match).toBeDefined();
+
+    // Move A's stop one cell east in A's local frame, and broadcast the
+    // layoutOffset-rotated delta to B — the world positions must agree.
+    const d = { dRow: 0, dCol: 1 };
+    const bd = rotateGridDelta(d.dRow, d.dCol, match!.layoutOffset);
+    const aStop = { ...A.stops[0], row: A.stops[0].row + d.dRow, col: A.stops[0].col + d.dCol };
+    const bStop = { ...B.stops[0], row: B.stops[0].row + bd.dRow, col: B.stops[0].col + bd.dCol };
+    const aWorld = stopPosWorld(aStop, A);
+    const bWorld = stopPosWorld(bStop, { ...B, stops: [bStop] });
+    expect(bWorld.x).toBeCloseTo(aWorld.x, 6);
+    expect(bWorld.y).toBeCloseTo(aWorld.y, 6);
   });
 
   it('matching survives a line being deleted then re-added', () => {

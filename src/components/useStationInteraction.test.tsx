@@ -146,6 +146,67 @@ describe('useStationInteraction — context menu rotation', () => {
   });
 });
 
+describe('useStationInteraction — context menu rotation under mirror matching', () => {
+  // S and M: identical layouts on one line, so M is S's mirror match.
+  const seedMirrorPair = () => {
+    useDoc.setState({
+      ...useDoc.getState(),
+      stations: {
+        S: stationWithStop('S' as StationId, 'L1' as LineId, { x: 0, y: 0 }),
+        M: stationWithStop('M' as StationId, 'L1' as LineId, { x: 200, y: 0 }),
+      },
+      lines: { L1: makeLine({ id: 'L1' as LineId, stations: ['S', 'M'] as StationId[] }) },
+    });
+  };
+
+  it('with mirror on and this station sole-selected, right-click rotates every match', () => {
+    seedMirrorPair();
+    useSelection.setState({
+      ...useSelection.getState(),
+      selectedStationIds: ['S' as StationId],
+      mirrorMatching: true,
+    });
+    const { result } = setup(useDoc.getState().stations.S, useDoc.getState().lines);
+    act(() =>
+      result.current.handlers.onContextMenu?.(pointerEvent({}) as unknown as React.MouseEvent),
+    );
+    expect(rotateStation).toHaveBeenCalledWith('S');
+    expect(rotateStation).toHaveBeenCalledWith('M');
+  });
+
+  it('right-click on a NON-selected station stays single-station even with mirror on', () => {
+    // Mirror is scoped to the selected station: with M selected + mirror on,
+    // right-clicking S must not fan out from S's perspective.
+    seedMirrorPair();
+    useSelection.setState({
+      ...useSelection.getState(),
+      selectedStationIds: ['M' as StationId],
+      mirrorMatching: true,
+    });
+    const { result } = setup(useDoc.getState().stations.S, useDoc.getState().lines);
+    act(() =>
+      result.current.handlers.onContextMenu?.(pointerEvent({}) as unknown as React.MouseEvent),
+    );
+    expect(rotateStation).toHaveBeenCalledWith('S');
+    expect(rotateStation).toHaveBeenCalledTimes(1);
+  });
+
+  it('with mirror off, right-click on the sole-selected station rotates just it', () => {
+    seedMirrorPair();
+    useSelection.setState({
+      ...useSelection.getState(),
+      selectedStationIds: ['S' as StationId],
+      mirrorMatching: false,
+    });
+    const { result } = setup(useDoc.getState().stations.S, useDoc.getState().lines);
+    act(() =>
+      result.current.handlers.onContextMenu?.(pointerEvent({}) as unknown as React.MouseEvent),
+    );
+    expect(rotateStation).toHaveBeenCalledWith('S');
+    expect(rotateStation).toHaveBeenCalledTimes(1);
+  });
+});
+
 describe('useStationInteraction — double click', () => {
   it('enters station-name edit mode', () => {
     const { result } = setup();

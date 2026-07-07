@@ -60,8 +60,8 @@ export function StationInspector({ id }: { id: StationId }) {
 
   // Stations that render identically to this one (across the model's 4-fold
   // mirror symmetry) AND share a line with it. Each carries a layoutOffset
-  // (0–3) describing how its unrotated grid maps to the source's, so callers
-  // that propagate (dRow, dCol) edits can rotate them to match.
+  // (0–3): the source→candidate rotation callers apply to (dRow, dCol)
+  // edits (rotateGridDelta) when broadcasting them to that match.
   const matches = useMemo(
     () => findMatchingStations({ stations: stationsAll, lines: linesAll }, id),
     [stationsAll, linesAll, id],
@@ -92,6 +92,7 @@ export function StationInspector({ id }: { id: StationId }) {
   if (!station) return null;
 
   const mirrorOn = selection.mirrorMatching;
+  const mirrorAvailable = matches.length > 0;
   const inLayoutEdit =
     selection.uiMode.kind === 'editing-station-layout' && selection.uiMode.stationId === station.id;
 
@@ -100,6 +101,28 @@ export function StationInspector({ id }: { id: StationId }) {
       <div className="field">
         <div className="field-header">
           <label>Name</label>
+          {/* Mirror-matching toggle. While on, layout edits (stops, label,
+              rotation — not name/position, and not the per-station styling
+              flags WP/lock/bold/italic) broadcast to every station on a
+              shared line that renders identically (model/matching.ts).
+              Stays clickable while on even at zero matches so the mode can
+              always be exited. */}
+          <button
+            type="button"
+            className={`chip-btn${mirrorOn ? ' active' : ''}`}
+            aria-pressed={mirrorOn}
+            disabled={!mirrorAvailable && !mirrorOn}
+            title={
+              mirrorOn
+                ? 'Similar stations selected — edits here apply to all of them; click to edit only this station'
+                : mirrorAvailable
+                  ? `Select the ${matches.length} station${matches.length === 1 ? '' : 's'} on this line with this exact layout — edits here will apply to all of them`
+                  : 'No other station on this line has an identical layout'
+            }
+            onClick={() => selection.setMirrorMatching(!mirrorOn)}
+          >
+            Select Similar
+          </button>
           <button
             type="button"
             className={`chip-btn${station.isWaypoint ? ' wp-on' : ''}`}
@@ -164,10 +187,12 @@ export function StationInspector({ id }: { id: StationId }) {
             onBlur={yField.onNumberBlur}
             style={{ width: 56 }}
           />
-          {/* One icon, mirrored, so the ± pair is visually identical. */}
+          {/* One icon, mirrored, so the ± pair is visually identical.
+              Rotation broadcasts under mirror matching (a relative step is
+              frame-invariant, so matches stay in sync); position does not. */}
           <button
             className="chip-btn"
-            onClick={() => rotateStation(station.id, -1)}
+            onClick={() => dispatchAll((sid) => rotateStation(sid, -1))}
             title="Rotate −45°"
             aria-label="Rotate −45°"
           >
@@ -175,7 +200,7 @@ export function StationInspector({ id }: { id: StationId }) {
           </button>
           <button
             className="chip-btn"
-            onClick={() => rotateStation(station.id)}
+            onClick={() => dispatchAll((sid) => rotateStation(sid))}
             title="Rotate +45°"
             aria-label="Rotate +45°"
           >
