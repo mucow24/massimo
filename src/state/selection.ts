@@ -428,8 +428,16 @@ export const useSelection = create<SelectionState>((set, get) => ({
   // edited station.
   selectStation: (id) => {
     const nextIds = id == null ? [] : [id];
+    // Re-selecting the already-sole-selected station is NOT a primary-
+    // selection change: mirror matching survives it (a plain canvas click
+    // on the inspected station must not silently drop Select Similar). Any
+    // other transition — different id, multi→single collapse — resets it
+    // with the rest of clearedSelections.
+    const cur = get().selectedStationIds;
+    const sameSole = id != null && cur.length === 1 && cur[0] === id;
     set({
       ...clearedSelections(),
+      ...(sameSole ? { mirrorMatching: get().mirrorMatching } : {}),
       ...layoutEditReconcile(get().uiMode, nextIds),
       selectedStationIds: nextIds,
       activeTab: id === null ? get().activeTab : 'stations',
