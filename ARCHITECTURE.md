@@ -693,11 +693,14 @@ refinement (equidistant / tens) → build guides. Polygon vertices get their own
   pass the same `stopHalf` width lookup** or the wash drifts off the painted text.
   `label.autoAlign` overrides both: the octant of the label cell relative to the **nearest**
   adjacent stop (in the reading frame) picks the alignment per the transitmap.net tutorials —
-  baseline sits `LABEL_GAP` above the marker, cap line hangs below it, Core Type Area
-  (`CAP_FRACTION` in `textMeasure.ts`) centers beside it, corner octants pin the facing CTA
-  corner — and maps onto the existing valign machinery (`auto-up`/`auto-down`/`middle`), so the
-  renderer is untouched. The pin clears the marker's support-function extent along the approach
-  (a `half`-extent square rotated to the stop's travel axis), stop-relative on both axes.
+  baseline sits `LABEL_GAP` above the marker, cap line hangs below it, the first line's Core
+  Type Area (`CAP_FRACTION` in `textMeasure.ts`) centers beside it, corner octants pin the
+  facing CTA corner — and maps onto the existing valign machinery, so the renderer is
+  untouched. Multi-line blocks anchor by the **line nearest the marker** and stack away from
+  it: bottom line above (`auto-up`), top line below (`auto-down`), first line beside/fallback
+  (`auto-down` align-down, so added lines never move the line that sits level with the dot).
+  The pin clears the marker's support-function extent along the approach (a `half`-extent
+  square rotated to the stop's travel axis), stop-relative on both axes.
 
 ### Polygons — `polygon.ts`, `polygonUnion.ts`, `rectPolygon.ts`, `polygonSnap.ts`
 

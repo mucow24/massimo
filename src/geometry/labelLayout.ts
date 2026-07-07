@@ -427,11 +427,14 @@ interface AutoAlignInfo {
   // these back into unrotated station-local coords.
   anchorRead: number;
   anchorPerp: number;
-  // Which block behavior realizes the vertical mode: sit-on-baseline above
-  // the marker = 'auto-up' (last line pinned, grows up), hang-from-cap
-  // below = 'auto-down' (first line pinned, grows down), Core-Type-Area
-  // center beside = 'middle'.
-  valign: 'auto-up' | 'auto-down' | 'middle';
+  // Which block behavior realizes the vertical mode. The line NEAREST the
+  // marker gets the typography and extra lines stack away from it:
+  // sit-on-baseline above = 'auto-up' (last line pinned, grows up);
+  // hang-from-cap below = 'auto-down' (first line pinned, grows down);
+  // beside/fallback = 'auto-down' with the FIRST line's Core Type Area
+  // centered on the pin ("away" is ambiguous beside the line — align-down
+  // keeps the first line level with the dot as lines are added).
+  valign: 'auto-up' | 'auto-down';
 }
 
 // textAnchor per octant of the label relative to the reference stop
@@ -454,9 +457,11 @@ const AUTO_TEXT_ANCHOR: AutoAlignInfo['textAnchor'][] = [
  * reading frame, so rotated labels follow the same rules rotated — fully
  * determines the typography: text on the upper side sits its BASELINE at
  * LABEL_GAP above the marker, text on the lower side hangs its CAP LINE at
- * LABEL_GAP below it, text beside centers its Core Type Area (baseline →
- * cap height) on the stop's row, and corner octants pin the facing CTA
- * corner along the 45° approach. The pin clears the marker's actual extent
+ * LABEL_GAP below it, text beside centers its first line's Core Type Area
+ * (baseline → cap height) on the stop's row, and corner octants pin the
+ * facing CTA corner along the 45° approach. Multi-line blocks anchor by the
+ * line nearest the marker (bottom line above, top line below, first line
+ * beside) with the other lines stacking away. The pin clears the marker's actual extent
  * along the approach (the stop is a `half`-extent square rotated to its
  * travel axis; extent = its support function), so cardinal and diagonal
  * markers both get exactly LABEL_GAP of clearance.
@@ -513,10 +518,21 @@ function autoAlignInfo(
       refD2 = Math.min(refD2, d2);
     }
   }
+  // Center-of-line-box → baseline distance; the typographic fold-ins below
+  // are expressed relative to it (see the anchor comment further down).
+  const cb = (BASELINE_FRACTION - 0.5) * fontSize;
+
   if (ref === null) {
-    // Nothing adjacent to align against: a floating label centers its block
-    // on its own cell (deliberate — NOT the stored valign).
-    return { textAnchor: 'middle', anchorRead: 0, anchorPerp: 0, valign: 'middle' };
+    // Nothing adjacent to align against: the FIRST line's Core Type Area
+    // centers on the label's own cell and extra lines grow down — same
+    // first-line anchoring as the beside octants, so a dragged-away label
+    // doesn't re-center its block as lines are added.
+    return {
+      textAnchor: 'middle',
+      anchorRead: 0,
+      anchorPerp: (CAP_FRACTION / 2) * fontSize - cb,
+      valign: 'auto-down',
+    };
   }
 
   const o = dirIndex({ x: -ref.proj, y: -ref.perp });
@@ -537,22 +553,27 @@ function autoAlignInfo(
   const pinRead = ref.proj * STOP_SIZE + u.x * (extent + LABEL_GAP);
   const pinPerp = ref.perp * STOP_SIZE + u.y * (extent + LABEL_GAP);
 
-  // Fold the typographic target into the anchor. The anchor is the first
+  // Fold the typographic target into the anchor. The anchor is the pinned
   // line's central-baseline center: the baseline sits `cb` below it, the
   // cap line CAP_FRACTION·fontSize above the baseline, and the Core Type
   // Area center halfway up the cap height.
-  const cb = (BASELINE_FRACTION - 0.5) * fontSize;
   let anchorPerp: number;
   let valign: AutoAlignInfo['valign'];
   if (o === 5 || o === 6 || o === 7) {
+    // Above: the LAST (bottom) line's baseline sits on the pin; earlier
+    // lines stack upward, away from the marker.
     anchorPerp = pinPerp - cb;
     valign = 'auto-up';
   } else if (o === 1 || o === 2 || o === 3) {
+    // Below: the FIRST (top) line's cap hangs from the pin; later lines
+    // stack downward, away from the marker.
     anchorPerp = pinPerp + (CAP_FRACTION * fontSize - cb);
     valign = 'auto-down';
   } else {
+    // Beside: the FIRST line's Core Type Area centers on the stop's row and
+    // extra lines grow down, keeping the first line level with the dot.
     anchorPerp = pinPerp + ((CAP_FRACTION / 2) * fontSize - cb);
-    valign = 'middle';
+    valign = 'auto-down';
   }
   return { textAnchor: AUTO_TEXT_ANCHOR[o], anchorRead: pinRead, anchorPerp, valign };
 }
