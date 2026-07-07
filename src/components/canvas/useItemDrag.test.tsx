@@ -128,6 +128,47 @@ describe('useItemDrag — unbound bullet grid-snap fallback', () => {
   });
 });
 
+describe('useItemDrag — unbound bullet alignment via the point snapper', () => {
+  beforeEach(() => {
+    useDoc.setState({
+      ...useDoc.getState(),
+      lines: { L1: makeLine({ id: 'L1', stations: ['S'] }) },
+      lineOrder: ['L1'],
+      stations: { S: stationWithStop('S' as StationId, 'L1', { x: 100, y: 0 }) },
+      routeBullets: {
+        b1: { id: 'b1', x: 0, y: 0, rotation: 0, lineId: null, shape: 'circle', size: 8 },
+      },
+    });
+  });
+
+  it("'Snap to all' aligns an unbound bullet's center to a station stop, with a guide", () => {
+    setModes({ line: false, all: 'all', grid: 'off' });
+    const { ref } = fakeSvgRef();
+    const { result } = renderHook(() => useItemDrag(ref, 1, false));
+    // Propose (103, 50): 3 from the stop's vertical axis x=100 → snaps.
+    bulletDown(result, 'b1', pointerEvent({ clientX: 0, clientY: 0 }));
+    move(result, pointerEvent({ clientX: 103, clientY: 50 }));
+
+    expect(useDoc.getState().routeBullets['b1'].x).toBeCloseTo(100, 5);
+    expect(useDoc.getState().routeBullets['b1'].y).toBeCloseTo(50, 5);
+    expect(result.current.itemSnapGuides).toHaveLength(1);
+    expect(result.current.itemSnapGuides[0].label).toBe('50');
+  });
+
+  it('an unbound bullet master never aligns to a CO-SELECTED station', () => {
+    setModes({ line: false, all: 'all', grid: 'off' });
+    resetSelection({ selectedRouteBulletIds: ['b1'], selectedStationIds: ['S'] });
+    const { ref } = fakeSvgRef();
+    const { result } = renderHook(() => useItemDrag(ref, 1, false));
+    bulletDown(result, 'b1', pointerEvent({ clientX: 0, clientY: 0 }));
+    move(result, pointerEvent({ clientX: 103, clientY: 50 }));
+
+    // S moves with the group → excluded → the bullet stays at the raw 103.
+    expect(useDoc.getState().routeBullets['b1'].x).toBeCloseTo(103, 5);
+    expect(result.current.itemSnapGuides).toHaveLength(0);
+  });
+});
+
 describe('useItemDrag — early exits', () => {
   beforeEach(() => {
     useDoc.setState({
