@@ -177,9 +177,10 @@ export interface SelectionState {
   // Svg-image selection. Multi-selection: parallel to the other id lists. The
   // last entry is the anchor used by the popover when length === 1.
   selectedSvgImageIds: string[];
-  // When true, edits made via the StationInspector (stop layout + label)
-  // mirror to all directly-connected stations whose unrotated stop layouts
-  // are identical. Resets to false whenever a different station is selected.
+  // When true (the inspector's Select Similar toggle), layout edits (stop
+  // layout + label + station rotation) mirror to every station sharing a
+  // line whose layout renders identically (model/matching.ts — whole line,
+  // not adjacency). Resets to false whenever a different station is selected.
   mirrorMatching: boolean;
   // Canvas tool mode: 'arrow' for select/move, 'hand' for pan.
   toolMode: 'arrow' | 'hand';

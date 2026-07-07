@@ -1016,20 +1016,23 @@ band routing or the marker sort. Pinned by `MapCanvas.stationsSig.test.tsx`.
   inline-expanded LINE inspector on the Lines tab.
 - **[StationPopover.tsx](src/components/StationPopover.tsx)** — the station editor's home:
   mounted by `ItemPopovers` for a sole-selected station (idle mode, or that station's own
-  layout-edit mode), hosting the full `StationInspector` — a Name header row with WP / lock
-  toggles, labeled X/Y + a mirrored ±45° rotate icon pair, the **Edit layout** button,
-  per-stop rows
+  layout-edit mode), hosting the full `StationInspector` — a Name header row with the
+  **Select Similar** mirror-matching toggle + WP / lock toggles, labeled X/Y + a mirrored ±45°
+  rotate icon pair, the **Edit layout** button, per-stop rows
   ([inspector/StopRows.tsx](src/components/inspector/StopRows.tsx): service badge + always-enabled
   shape picker + dot size + a world-true orientation cycle button per stop; hover
   cross-highlights the dot via `hoveredLineStop`), and label align/valign cycle buttons + offset
   controls. The anchor is CLAMPED into the canvas host so sidebar-selecting an off-screen station
   still shows the editor. Inspectors dispatch transforms directly through **mirror matching**
-  (`findMatchingStations` returns neighbors sharing layout under the model's 4-fold mirror
-  symmetry; an edit broadcasts through [state/mirrorDispatch.ts](src/state/mirrorDispatch.ts),
-  rotating local deltas through `rotateGridDelta`; orientation cycles are relative steps so
-  odd-offset matches stay world-equivalent). NOTE: the mirror-matching TOGGLE was removed from
-  the UI with the popover cleanup (`mirrorMatching` now rests false), so the fan-out machinery
-  currently always resolves to the source station alone.
+  (`findMatchingStations` returns stations sharing a line + a layout under the model's 4-fold
+  mirror symmetry — whole line, not adjacency; an edit broadcasts through
+  [state/mirrorDispatch.ts](src/state/mirrorDispatch.ts), rotating local deltas through
+  `rotateGridDelta`; orientation cycles and station rotation are relative steps so odd-offset
+  matches stay world-equivalent). The **Select Similar** chip (Name header, left of WP) drives
+  `mirrorMatching`: off = every dispatch resolves to the source station alone; on = stop/label
+  edits + station rotation broadcast, while name, X/Y, and the per-station WP / lock /
+  bold / italic flags stay local. Disabled at zero matches unless already on (so the mode can
+  always be exited); MapCanvas highlights the current match set while on.
 - **Station layout editing happens ON the canvas** (the sidebar mini-canvas "StopGrid" was
   retired in favor of these three surfaces; its pure drag/ghost math lives on in
   [inspector/stopGridDrag.ts](src/components/inspector/stopGridDrag.ts) — `computeGhosts`,
