@@ -603,9 +603,12 @@ select option {
 }
 .color-field-popover {
   position: fixed;
-  /* Above the DraggablePopoverShell canvas popovers (zIndex 1100) that host the
-     color swatches — the portalled picker shares the root stacking context, so
-     it must out-rank them or it opens behind the popover that owns it. */
+  /* The picker portals up to `.app` (ColorField), so it lives in the ROOT
+     stacking context alongside the toolbar (z-index:1) and sidebar (z-index:1)
+     — above the isolated canvas layer that traps the item popovers (see
+     .canvas-host). This z-index keeps it above BOTH: a picker opened from a
+     canvas-popover swatch clears the canvas layer, and one opened from a
+     sidebar swatch clears the sidebar. */
   z-index: 1200;
   width: 224px;
   padding: 12px;
@@ -653,6 +656,12 @@ select option {
   position: relative;
   background: #fafafa; /* keep in sync with theme.ts canvasBg */
   overflow: hidden;
+  /* Contain the canvas as one stacking layer. Without this, `position:relative`
+     alone is NOT a stacking context, so the item popovers' zIndex:1100 (see
+     DraggablePopoverShell) escapes into the ROOT context and out-ranks the
+     sidebar (z-index:1), painting on top of it. Isolating keeps every
+     popover trapped in the canvas layer, which sits below the sidebar. */
+  isolation: isolate;
 }
 
 /* ── Item popovers (bullet / text label / polygon / svg image) ──

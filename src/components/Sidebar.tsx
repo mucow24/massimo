@@ -108,7 +108,15 @@ export function Sidebar() {
   // shrink to zero and hand the space back to the map. The toolbar arrow (and
   // clicking the active tab) toggle `sidebarOpen`; reopening returns to
   // whichever tab was last active.
-  if (!selection.sidebarOpen) return null;
+  //
+  // Also hidden while the on-canvas station layout editor is active: that
+  // popover pins to the host's top-right corner, directly over the sidebar, and
+  // the canvas layer stacks BELOW the sidebar (see .canvas-host isolation in
+  // styles.css) — so its controls would sit unreachable behind the panel.
+  // Collapsing hands the corner to the editor. Derived purely from uiMode, so
+  // `sidebarOpen` is untouched and the panel reappears as it was on exit.
+  const inLayoutEdit = selection.uiMode.kind === 'editing-station-layout';
+  if (!selection.sidebarOpen || inLayoutEdit) return null;
 
   return (
     <aside className="sidebar">

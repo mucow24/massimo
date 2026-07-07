@@ -250,6 +250,13 @@ test.describe('Legacy stop-orientation migration on load', () => {
 
     await seedRaw(page, persisted);
 
+    // The sidebar is irrelevant to migration; close it so the per-station editor
+    // popovers (which now stack BELOW the sidebar) aren't tucked behind it for
+    // stations near the right edge — orientationGlyphFor clicks each one's
+    // "Edit layout" button, which would otherwise be intercepted by the panel.
+    await page.getByRole('button', { name: 'Toggle sidebar' }).click();
+    await expect(page.locator('.sidebar')).toHaveCount(0);
+
     // Each station's stop should be visible (didn't crash on the legacy strings).
     for (const id of ['A', 'B', 'C', 'D', 'E']) {
       await expect(page.locator(`[data-stop-station="${id}"][data-stop-line="L1"]`)).toBeVisible();
