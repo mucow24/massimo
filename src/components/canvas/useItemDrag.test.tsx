@@ -5,9 +5,8 @@ import { useDoc, useSelection, dragState } from '../../state/store';
 import { historyDepth } from '../../state/history';
 import { useSnapPrefs } from '../../state/snapPrefs';
 import { DEFAULT_DOC } from '../../model/transforms';
-import { DEFAULT_SNAP_MODES, snapLabelToGrid, type SnapModes } from '../../geometry/snap';
+import { DEFAULT_SNAP_MODES, snapPointToGrid, type SnapModes } from '../../geometry/snap';
 import { measureTextLabel } from '../../geometry/textMeasure';
-import { TEXT_LABEL_HIT_PAD } from '../../geometry/stationBoundary';
 import { stationWithStop, makeLine, makeTextLabel, makePolygon } from '../../test/fixtures';
 import { fakeSvgRef, pointerEvent } from '../../test/interaction';
 import type { StationId } from '../../model/types';
@@ -206,23 +205,65 @@ describe('useItemDrag — label drag', () => {
     expect(useDoc.getState().textLabels['g1'].y).toBe(0);
   });
 
-  it('grid-snaps the dragged label by its visible upper-left', () => {
+  it('grid-snaps the dragged label by its VISIBLE upper-left corner (no hit pad)', () => {
     setModes({ line: false, all: 'off', grid: 'both' });
     const label = useDoc.getState().textLabels['g1'];
     const m = measureTextLabel(label);
-    const expected = snapLabelToGrid(
-      { x: 37, y: 23 },
-      m.width + 2 * TEXT_LABEL_HIT_PAD,
-      m.height + 2 * TEXT_LABEL_HIT_PAD,
-      'both',
-    );
+    // The text bbox's own corner lands on the grid — not the padded hit rect.
+    const ul = snapPointToGrid(37 - m.width / 2, 23 - m.height / 2, 'both');
     const { ref } = fakeSvgRef();
     const { result } = renderHook(() => useItemDrag(ref, 1, false));
     labelDown(result, 'g1', pointerEvent({ clientX: 0, clientY: 0 }));
     move(result, pointerEvent({ clientX: 37, clientY: 23 }));
     const g = useDoc.getState().textLabels['g1'];
-    expect(g.x).toBeCloseTo(expected.x, 5);
-    expect(g.y).toBeCloseTo(expected.y, 5);
+    expect(g.x).toBeCloseTo(ul.x + m.width / 2, 5);
+    expect(g.y).toBeCloseTo(ul.y + m.height / 2, 5);
+  });
+
+  it('a ROTATED label grid-snaps by its topmost-then-leftmost rotated corner', () => {
+    setModes({ line: false, all: 'off', grid: 'both' });
+    useDoc.setState({
+      ...useDoc.getState(),
+      textLabels: { g1: makeTextLabel({ id: 'g1', x: 0, y: 0, rotation: 2 }) },
+    });
+    const m = measureTextLabel(useDoc.getState().textLabels['g1']);
+    const hw = m.width / 2;
+    const hh = m.height / 2;
+    // At 90° CW the topmost-then-leftmost visible corner sits at
+    // center + (-hh, -hw) (the rotated bottom-left of the unrotated bbox).
+    const anchor = snapPointToGrid(37 - hh, 23 - hw, 'both');
+    const { ref } = fakeSvgRef();
+    const { result } = renderHook(() => useItemDrag(ref, 1, false));
+    labelDown(result, 'g1', pointerEvent({ clientX: 0, clientY: 0 }));
+    move(result, pointerEvent({ clientX: 37, clientY: 23 }));
+    const g = useDoc.getState().textLabels['g1'];
+    expect(g.x).toBeCloseTo(anchor.x + hh, 5);
+    expect(g.y).toBeCloseTo(anchor.y + hw, 5);
+  });
+
+  it("'Snap to all' aligns a label's corner to a station stop, with a labeled guide", () => {
+    setModes({ line: false, all: 'all', grid: 'off' });
+    useDoc.setState({
+      ...useDoc.getState(),
+      lines: { L1: makeLine({ id: 'L1', stations: ['S'] }) },
+      lineOrder: ['L1'],
+      stations: { S: stationWithStop('S' as StationId, 'L1', { x: 100, y: 0 }) },
+    });
+    const m = measureTextLabel(useDoc.getState().textLabels['g1']);
+    const hw = m.width / 2;
+    const hh = m.height / 2;
+    const { ref } = fakeSvgRef();
+    const { result } = renderHook(() => useItemDrag(ref, 1, false));
+    // Propose the label's UL corner at (103, 50): 3 from the stop's vertical
+    // axis x=100 → the corner snaps onto it, y stays free.
+    labelDown(result, 'g1', pointerEvent({ clientX: 0, clientY: 0 }));
+    move(result, pointerEvent({ clientX: 103 + hw, clientY: 50 + hh }));
+
+    const g = useDoc.getState().textLabels['g1'];
+    expect(g.x).toBeCloseTo(100 + hw, 5);
+    expect(g.y).toBeCloseTo(50 + hh, 5);
+    expect(result.current.itemSnapGuides).toHaveLength(1);
+    expect(result.current.itemSnapGuides[0].label).toBe('50');
   });
 
   it('commits one history entry for a real label drag', () => {

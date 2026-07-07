@@ -3,7 +3,6 @@ import {
   axesForAllSnap,
   maybeSnapToGrid,
   snapDraggedStation,
-  snapLabelToGrid,
   snapPointToGrid,
   type SnapModes,
 } from './snap';
@@ -1014,12 +1013,6 @@ describe('grid interval: 5px grid', () => {
     expect(snapPointToGrid(33, 33, 'both', 20)).toEqual({ x: 40, y: 40 });
   });
 
-  it('snapLabelToGrid snaps the upper-left to a 5px lattice', () => {
-    // Width 40, height 20 → halfW 20, halfH 10. Center (53, 47) → UL (33, 37)
-    // → snap to (35, 35) on the 5px grid → center back to (55, 45).
-    expect(snapLabelToGrid({ x: 53, y: 47 }, 40, 20, 'both', 5)).toEqual({ x: 55, y: 45 });
-  });
-
   it('maybeSnapToGrid threads the interval', () => {
     const modes: SnapModes = {
       line: false,
@@ -1067,38 +1060,6 @@ describe('grid interval: 5px grid', () => {
     });
     expect(r.y).toBeCloseTo(0, 5);
     expect(r.x).toBeCloseTo(25, 5);
-  });
-});
-
-describe('snapLabelToGrid', () => {
-  // A label's (x, y) is its bbox center. snapLabelToGrid snaps the upper-left
-  // corner of the bbox to a grid intersection and returns the corresponding
-  // center.
-  it('snaps the upper-left to grid; center adjusts accordingly', () => {
-    // Width 40, height 20 → halfW 20, halfH 10. Center (50, 50) → UL (30, 40)
-    // which is already grid-aligned → center stays at (50, 50).
-    expect(snapLabelToGrid({ x: 50, y: 50 }, 40, 20)).toEqual({ x: 50, y: 50 });
-  });
-  it('moves the center when the upper-left is off-grid', () => {
-    // Width 40, height 20. Center (53, 47) → UL (33, 37) → snap to (30, 40)
-    // → center back at (50, 50).
-    expect(snapLabelToGrid({ x: 53, y: 47 }, 40, 20)).toEqual({ x: 50, y: 50 });
-  });
-  it('handles odd bbox sizes — UL on grid, center off-grid by half-bbox', () => {
-    // Width 25, height 15 → halfW 12.5, halfH 7.5. Center (12.5, 7.5) →
-    // UL (0, 0) → already on grid → center stays at (12.5, 7.5).
-    expect(snapLabelToGrid({ x: 12.5, y: 7.5 }, 25, 15)).toEqual({ x: 12.5, y: 7.5 });
-  });
-
-  it("'horizontal' snaps only the UL's Y; X (center) is untouched", () => {
-    // Width 40, height 20 → halfW 20, halfH 10. Center (53, 47) → UL (33, 37).
-    // Only Y snaps: UL.y 37 → 40, UL.x stays 33 → center back to (53, 50).
-    expect(snapLabelToGrid({ x: 53, y: 47 }, 40, 20, 'horizontal')).toEqual({ x: 53, y: 50 });
-  });
-
-  it("'vertical' snaps only the UL's X; Y (center) is untouched", () => {
-    // UL (33, 37) → only X snaps to 30 → center back to (50, 47).
-    expect(snapLabelToGrid({ x: 53, y: 47 }, 40, 20, 'vertical')).toEqual({ x: 50, y: 47 });
   });
 });
 

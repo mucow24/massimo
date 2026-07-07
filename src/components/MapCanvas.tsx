@@ -1232,7 +1232,7 @@ export function MapCanvas() {
           <SnapGuides
             guides={[
               ...drag.snapGuides,
-              ...itemDrag.bulletSnapGuides,
+              ...itemDrag.itemSnapGuides,
               ...polyDrag.polygonSnapGuides,
               ...svgDrag.svgImageSnapGuides,
             ]}

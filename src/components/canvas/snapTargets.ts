@@ -23,14 +23,13 @@ export type AlignDoc = Pick<
 >;
 
 /**
- * The three alignment points a text label contributes as a snap target: the
- * visible bbox's upper-left corner, its center, and its lower-right corner
- * (no hit padding), rotated about the center like the render transform
- * (`rotate(label.rotation * 45)`; positive `vec.rotate` is clockwise in the
- * y-down frame). UL + LR cover left/top and right/bottom edge alignment of
- * label stacks; the center covers centering.
+ * The four world-space corners of a label's visible bbox (no hit padding),
+ * clockwise from the unrotated top-left, rotated about the center like the
+ * render transform (`rotate(label.rotation * 45)`; positive `vec.rotate` is
+ * clockwise in the y-down frame). Parallels {@link svgImageCorners}; the
+ * label drag anchors on the topmost-then-leftmost of these.
  */
-export function textLabelAlignPoints(label: TextLabel): Vec2[] {
+export function textLabelCorners(label: TextLabel): Vec2[] {
   const m = measureTextLabel(label);
   const hw = m.width / 2;
   const hh = m.height / 2;
@@ -39,7 +38,23 @@ export function textLabelAlignPoints(label: TextLabel): Vec2[] {
     const w = rotate(local, rad);
     return { x: label.x + w.x, y: label.y + w.y };
   };
-  return [at({ x: -hw, y: -hh }), { x: label.x, y: label.y }, at({ x: hw, y: hh })];
+  return [
+    at({ x: -hw, y: -hh }),
+    at({ x: hw, y: -hh }),
+    at({ x: hw, y: hh }),
+    at({ x: -hw, y: hh }),
+  ];
+}
+
+/**
+ * The three alignment points a text label contributes as a snap target: the
+ * visible bbox's upper-left corner, its center, and its lower-right corner.
+ * UL + LR cover left/top and right/bottom edge alignment of label stacks;
+ * the center covers centering.
+ */
+export function textLabelAlignPoints(label: TextLabel): Vec2[] {
+  const corners = textLabelCorners(label);
+  return [corners[0], { x: label.x, y: label.y }, corners[2]];
 }
 
 /**
