@@ -65,6 +65,24 @@ describe('selection — array model', () => {
       toggleStationSelection('A' as StationId);
       expect(useSelection.getState().selectedStationIds).toEqual(['A']);
     });
+
+    it('appending a station clears a stale line / tag / transfer / mirror selection', () => {
+      // The bug SIBLING_PRIMARY_CLEAR guards: a station added to the set is
+      // foreign to any previously-selected line, so those primaries must drop
+      // or the line stays highlighted behind the new station selection.
+      useSelection.setState({
+        selectedLineId: 'L1' as LineId,
+        selectedLineTagId: 'tag1',
+        selectedTransferId: 't1',
+        mirrorMatching: true,
+      });
+      useSelection.getState().toggleStationSelection('A' as StationId);
+      const s = useSelection.getState();
+      expect(s.selectedLineId).toBeNull();
+      expect(s.selectedLineTagId).toBeNull();
+      expect(s.selectedTransferId).toBeNull();
+      expect(s.mirrorMatching).toBe(false);
+    });
   });
 
   describe('setStationSelection', () => {
@@ -84,6 +102,21 @@ describe('selection — array model', () => {
       useSelection.getState().setStationSelection(['A', 'B', 'A'] as StationId[]);
       const ids = useSelection.getState().selectedStationIds;
       expect(ids).toEqual(['B', 'A']);
+    });
+
+    it('clears a stale line / tag / transfer / mirror selection', () => {
+      useSelection.setState({
+        selectedLineId: 'L1' as LineId,
+        selectedLineTagId: 'tag1',
+        selectedTransferId: 't1',
+        mirrorMatching: true,
+      });
+      useSelection.getState().setStationSelection(['A'] as StationId[]);
+      const s = useSelection.getState();
+      expect(s.selectedLineId).toBeNull();
+      expect(s.selectedLineTagId).toBeNull();
+      expect(s.selectedTransferId).toBeNull();
+      expect(s.mirrorMatching).toBe(false);
     });
   });
 

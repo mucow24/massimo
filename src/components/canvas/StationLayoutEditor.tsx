@@ -8,7 +8,7 @@ import { stopHalfOf, lineWidthOf } from '../../model/lineWidth';
 import { useThemeColors } from '../../state/theme';
 import { withAlpha } from '../../util/color';
 import { resolveDotSize } from '../../model/dotSize';
-import { resolveStationLabelWeight } from '../../model/transforms';
+import { effectiveStationLabelStyle } from '../../model/transforms';
 import { ORIENTATION_GLYPH, sameCell } from '../inspector/stopGridDrag';
 import type { LayoutDragSource } from './useStationLayoutDrag';
 
@@ -77,13 +77,13 @@ export function StationLayoutEditor({
     hitH,
   } = labelLayoutLocal(
     station,
-    {
+    effectiveStationLabelStyle(station, {
       fontSize: labelFontSize,
-      weight: resolveStationLabelWeight(labelWeight, station.labelBold),
+      weight: labelWeight,
       italic: labelItalic,
       leading: labelLeading,
       tracking: labelTracking,
-    },
+    }),
     undefined,
     stopHalf,
   );

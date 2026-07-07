@@ -4,7 +4,7 @@ import { dispatchMirrored } from '../state/mirrorDispatch';
 import { labelLayoutLocal } from '../geometry/labelLayout';
 import { cellsAABBLocal } from '../geometry/stationBoundary';
 import { stopHalfOf } from '../model/lineWidth';
-import { resolveStationLabelWeight } from '../model/transforms';
+import { effectiveStationLabelStyle } from '../model/transforms';
 import { useStationInteraction } from './useStationInteraction';
 
 /**
@@ -65,13 +65,13 @@ export function StationHitArea({
     hitH,
   } = labelLayoutLocal(
     station,
-    {
+    effectiveStationLabelStyle(station, {
       fontSize: labelFontSize,
-      weight: resolveStationLabelWeight(labelWeight, station.labelBold),
+      weight: labelWeight,
       italic: labelItalic,
       leading: labelLeading,
       tracking: labelTracking,
-    },
+    }),
     undefined,
     stopHalf,
   );

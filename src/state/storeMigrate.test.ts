@@ -348,6 +348,67 @@ describe('beginHistoryGroup', () => {
     grp.commit();
     expect(historyDepth()).toBe(before + 1);
   });
+
+  it('rollback restores the pre-group doc and pushes no history entry', () => {
+    const before = historyDepth();
+    const stationsBefore = useDoc.getState().stations;
+    const grp = beginHistoryGroup();
+    useDoc.getState().addStation(10, 20);
+    useDoc.getState().addStation(30, 40);
+    expect(Object.keys(useDoc.getState().stations).length).toBe(2);
+    grp.rollback();
+    // Mutations reverted...
+    expect(useDoc.getState().stations).toEqual(stationsBefore);
+    // ...and no undo entry left behind for the aborted gesture.
+    expect(historyDepth()).toBe(before);
+  });
+
+  it('rollback resumes recording so the NEXT edit is undoable', () => {
+    const grp = beginHistoryGroup();
+    useDoc.getState().addStation(10, 20);
+    grp.rollback();
+    const after = historyDepth();
+    // A normal edit after the aborted gesture records normally.
+    useDoc.getState().addStation(50, 60);
+    expect(historyDepth()).toBe(after + 1);
+  });
+
+  it('rollback skips the restore write when the group made no change', () => {
+    const before = historyDepth();
+    let writes = 0;
+    const unsub = useDoc.subscribe(() => {
+      writes += 1;
+    });
+    const grp = beginHistoryGroup();
+    grp.rollback();
+    unsub();
+    // No doc write at all (not even a redundant setState back to the snapshot),
+    // and recording still resumed cleanly.
+    expect(writes).toBe(0);
+    expect(historyDepth()).toBe(before);
+  });
+
+  it('a rollback after commit is a no-op (done flag)', () => {
+    const grp = beginHistoryGroup();
+    useDoc.getState().addStation(10, 20);
+    grp.commit();
+    const depthAfterCommit = historyDepth();
+    grp.rollback();
+    // The committed station and its history entry both survive.
+    expect(Object.keys(useDoc.getState().stations).length).toBe(1);
+    expect(historyDepth()).toBe(depthAfterCommit);
+  });
+
+  it('a second rollback is a no-op (done flag)', () => {
+    const grp = beginHistoryGroup();
+    useDoc.getState().addStation(10, 20);
+    grp.rollback();
+    const stationsAfter = useDoc.getState().stations;
+    const depthAfter = historyDepth();
+    grp.rollback();
+    expect(useDoc.getState().stations).toEqual(stationsAfter);
+    expect(historyDepth()).toBe(depthAfter);
+  });
 });
 
 describe('cancelAppendMode', () => {
