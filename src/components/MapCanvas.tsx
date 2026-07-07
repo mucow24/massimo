@@ -582,52 +582,52 @@ export function MapCanvas() {
       }).canonT;
     };
     return {
-    onLineHover: (lineId: LineId, e: React.PointerEvent) => {
-      const line = lines[lineId];
-      if (!line) return;
-      // Find this stripe's baked offset within the band.
-      const k = spec.lines.findIndex((l) => l.id === lineId);
-      const offset = spec.stripeOffsets[k];
-      const world = view.screenToWorld(e.clientX, e.clientY);
-      const closest = closestParamOnOffsetPath(spec.centerline, spec.radius, offset, world);
-      const t = snapTagT(closest.t, e.shiftKey);
-      const sample = sampleOffsetPath(spec.centerline, spec.radius, offset, t);
-      // Determine canon vs line-traversal: the band's pairKey is canonical.
-      // For this band's stations, fromCanon < toCanon. The line traverses
-      // forward-canon iff line.stations contains (fromCanon, toCanon) as a
-      // consecutive pair.
-      const [fromCanon, toCanon] = spec.pairKey.split('|');
-      const forward = lineTraversesForwardCanon(line, fromCanon, toCanon);
-      selection.setLineTagHoverPreview({
-        lineId,
-        service: line.service,
-        fromStationId: fromCanon,
-        toStationId: toCanon,
-        t,
-        p: sample.p,
-        tangent: sample.tangent,
-        lineForwardMatchesCanon: forward,
-      });
-    },
-    onLineLeave: () => {
-      selection.setLineTagHoverPreview(null);
-    },
-    onLineClick: (lineId: LineId, e: React.MouseEvent) => {
-      e.stopPropagation();
-      const line = lines[lineId];
-      if (!line) return;
-      const k = spec.lines.findIndex((l) => l.id === lineId);
-      const offset = spec.stripeOffsets[k];
-      const world = view.screenToWorld(e.clientX, e.clientY);
-      const closest = closestParamOnOffsetPath(spec.centerline, spec.radius, offset, world);
-      const t = snapTagT(closest.t, e.shiftKey);
-      const [fromCanon, toCanon] = spec.pairKey.split('|');
-      const stripeTotal = offsetPathLength(spec.centerline, spec.radius, offset);
-      // Anchor to whichever endpoint is nearer at insertion time.
-      const { anchorEnd, distance } = anchorFromArcLen(t * stripeTotal, stripeTotal);
-      addLineTag(lineId, fromCanon, toCanon, anchorEnd, distance, 0);
-      // Stay in mode (matches + Station behavior).
-    },
+      onLineHover: (lineId: LineId, e: React.PointerEvent) => {
+        const line = lines[lineId];
+        if (!line) return;
+        // Find this stripe's baked offset within the band.
+        const k = spec.lines.findIndex((l) => l.id === lineId);
+        const offset = spec.stripeOffsets[k];
+        const world = view.screenToWorld(e.clientX, e.clientY);
+        const closest = closestParamOnOffsetPath(spec.centerline, spec.radius, offset, world);
+        const t = snapTagT(closest.t, e.shiftKey);
+        const sample = sampleOffsetPath(spec.centerline, spec.radius, offset, t);
+        // Determine canon vs line-traversal: the band's pairKey is canonical.
+        // For this band's stations, fromCanon < toCanon. The line traverses
+        // forward-canon iff line.stations contains (fromCanon, toCanon) as a
+        // consecutive pair.
+        const [fromCanon, toCanon] = spec.pairKey.split('|');
+        const forward = lineTraversesForwardCanon(line, fromCanon, toCanon);
+        selection.setLineTagHoverPreview({
+          lineId,
+          service: line.service,
+          fromStationId: fromCanon,
+          toStationId: toCanon,
+          t,
+          p: sample.p,
+          tangent: sample.tangent,
+          lineForwardMatchesCanon: forward,
+        });
+      },
+      onLineLeave: () => {
+        selection.setLineTagHoverPreview(null);
+      },
+      onLineClick: (lineId: LineId, e: React.MouseEvent) => {
+        e.stopPropagation();
+        const line = lines[lineId];
+        if (!line) return;
+        const k = spec.lines.findIndex((l) => l.id === lineId);
+        const offset = spec.stripeOffsets[k];
+        const world = view.screenToWorld(e.clientX, e.clientY);
+        const closest = closestParamOnOffsetPath(spec.centerline, spec.radius, offset, world);
+        const t = snapTagT(closest.t, e.shiftKey);
+        const [fromCanon, toCanon] = spec.pairKey.split('|');
+        const stripeTotal = offsetPathLength(spec.centerline, spec.radius, offset);
+        // Anchor to whichever endpoint is nearer at insertion time.
+        const { anchorEnd, distance } = anchorFromArcLen(t * stripeTotal, stripeTotal);
+        addLineTag(lineId, fromCanon, toCanon, anchorEnd, distance, 0);
+        // Stay in mode (matches + Station behavior).
+      },
     };
   };
 

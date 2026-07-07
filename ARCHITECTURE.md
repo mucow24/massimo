@@ -200,7 +200,7 @@ is not a micro-optimization — it is the foundation of undo grouping:
 | `LabelCell.offset/offsetPerp` | **Pixels in unrotated-station-local space** |
 | Snap guides, viewBox, redistribute, curveRadius, line width/stroke, transfer thickness | **World** |
 | Drag thresholds (`DRAG_MOVE_THRESHOLD=4`), pointer start coords | **Screen pixels** |
-| Snap engage radius (`SNAP_PERP_TOLERANCE=10`, **world units at zoom 1**) | Call sites pass `/zoom`, so the *effective* radius is constant in screen px (the world tolerance shrinks as you zoom in) |
+| Snap engage radius (`SNAP_PERP_TOLERANCE=10`; `LINE_TAG_SNAP_TOLERANCE=10` in centerline arc length — both **world units at zoom 1**) | Call sites pass `/zoom`, so the *effective* radius is constant in screen px (the world tolerance shrinks as you zoom in) |
 | Grid snap | **Hard world constraint** — unaffected by zoom |
 
 Screen y is **down** everywhere. `vec.leftNormal((x,y)) = (y,-x)` is "left of travel" in the
@@ -213,8 +213,8 @@ y-up convention and is **intentionally the negation** — using the wrong one fl
 - **8-step octant** `Rotation = 0..7` (×45° clockwise) for **stations, labels, route bullets,
   text labels**. `r+1` = 45° CW.
 - **Continuous degrees** for **`SvgImage.rotation` only** — a deliberate exception, because svg
-  images snap to **22.5°** (half an octant) under Shift. A round-trip test pins that `247.5°`
-  survives serialization verbatim; do not "normalize" it to an octant.
+  images rotate on a **22.5°** (half-octant) snap by default, freed by Shift. A round-trip test
+  pins that `247.5°` survives serialization verbatim; do not "normalize" it to an octant.
 
 ### 5. Two opposite z-order conventions (don't conflate them either)
 
@@ -642,19 +642,62 @@ identity. The band specs are pinned by a **byte-exact golden snapshot**
 (`interlining.golden.test.ts`) guarding the zero-visual-change-for-legacy-docs invariant; never
 update it without understanding why every painted path on every map would move.
 
-### Snapping — `snap.ts`
+### Snapping — `snap.ts`, `polygonSnap.ts`, `snapTargets.ts`
 
-`snapDraggedStation(input)` (pure) supports modes `{line, equidistant, tens, all, grid}`
-(`equidistant`/`tens` are gated on `line`). Flow: pick a target pool → generate candidate
-alignment pairs per target (line-mode requires a shared line + parallel travel dirs + adjacency;
-all-mode ignores topology) keeping those whose perpendicular distance is within tolerance
-(`SNAP_PERP_TOLERANCE` = 10 world units at zoom 1, passed as `/zoom` so the engage radius is
-constant in screen px) → **consolidate interlined candidates by MEDIAN** offset (not mean — keeps the guide on a real
-stripe) → pick a primary + a non-parallel secondary axis → solve (2×2 intersection or projection)
-→ apply grid as a **hard constraint** (when on, the result is always on-grid; an alignment fires
-only if reconcilable, else falls back to plain grid with no guide) → optional along-axis
-refinement (equidistant / tens) → build guides. Polygon vertices get their own decomposed snapper
-`snapPolygonPoint` (no 2×2 solver) in `polygonSnap.ts`.
+**The contract.** Two snappers exist, on purpose, and everything positional routes through one
+of them:
+
+- The **station engine** `snapDraggedStation(input)` (pure) is topology-aware: stations and
+  line-bound route bullets. Modes `{line, equidistant, tens, all, grid}` (`equidistant`/`tens`
+  are gated on `line` and exist **only** here). Flow: pick a target pool → generate candidate
+  alignment pairs per target (line-mode requires a shared line + parallel travel dirs +
+  adjacency; all-mode ignores topology; a stopless station participates via its anchor on
+  either side) keeping those whose perpendicular distance is within tolerance → **consolidate
+  interlined candidates by MEDIAN** offset (not mean — keeps the guide on a real stripe) → pick
+  a primary + a non-parallel secondary axis → solve (2×2 intersection or projection) → apply
+  grid as a **hard constraint** (when on, the result is always on-grid; an alignment fires only
+  if reconcilable, else falls back to plain grid with no guide) → optional along-axis refinement
+  (equidistant / tens; `excludedIds` also guards the cadence anchors) → build guides.
+- The **point snapper** `snapPolygonPoint` (`polygonSnap.ts`, decomposed — no 2×2 solver) snaps
+  one reference point against a target pool: polygon whole-drags + vertex drags, svg-image
+  moves + axis-aligned resizes, text-label drags, unbound route bullets, and **all placement**.
+  `constrain: 'x' | 'y'` restricts it for single-DOF consumers (edge resizes) so guides never
+  show a snap the caller discards.
+
+Shared conventions, all paths: alignment tolerances are `/zoom` (constant screen px); grid is a
+hard world constraint; **Shift bypasses all snapping** during any pointer gesture (svg rotation
+included — it snaps 22.5° by default, Shift frees); every alignment snap draws a
+distance-labeled guide through `SnapGuides`; grid snapping is silent.
+
+The **target pool** (`alignTargets(doc, exclude)` in
+[snapTargets.ts](src/components/canvas/snapTargets.ts)) is what "Snap to all" means for point-
+snapper consumers: every station stop-center (anchor when stopless), every polygon vertex,
+every svg image's rotated corners, three points per text label (visible-bbox UL corner, center,
+LR corner — no hit pad), and every route bullet center. Per-kind exclusion sets remove the
+dragged item and, in a group drag, its co-selected siblings — stationary items always remain
+valid targets. Pools are snapshotted at pointer-down. One deliberate asymmetry: **stations are
+skeleton** — they snap only among themselves, never to decoration; and a bound bullet's
+all-mode pool is station stops (engine-internal), not the decoration pool.
+
+**Reference points** (grid + alignment use the same one per type, drag AND placement): station
+anchor; bullet center; text label topmost-then-leftmost visible rotated corner; polygon
+topmost-then-leftmost vertex; svg image topmost-then-leftmost rotated corner.
+
+**Placement parity**: `snapPlacement` in
+[usePlacementDispatch.ts](src/components/canvas/usePlacementDispatch.ts) is shared by every
+placement mode's ghost preview and drop, so preview == commit by construction; Shift-click
+places raw.
+
+**Line tags** keep their own arc-length snapper (`snapNeighborTag` in `lineTagGeometry.ts`):
+nearest in-tolerance neighbor tag in the corridor, gated on "Snap to all", Shift bypasses,
+`LINE_TAG_SNAP_TOLERANCE/zoom`, guide to the matched neighbor; the add-tag hover ghost and
+click apply the same snap.
+
+**Deliberately unsnapped** (documented, not bugs): arrow-key nudges (raw 1 / Shift 5 world
+units — free fine-positioning); 45° group rotate (re-snapping would distort shapes); snapping
+against a hidden grid (visibility is render-only); rotated (non-90°) svg-image resizes; the
+exact midpoint of a polygon edge-add; the ghost-lattice drags (station-name label + layout
+editor), which are a separate slot-based system where Shift flips the lattice basis.
 
 ### Labels & text — `labelTokens.ts`, `textMeasure.ts`, `labelLayout.ts`
 
@@ -865,19 +908,23 @@ if moved (else cancels — a pure click recorded nothing). `dragState` (module s
 hooks share their lifecycle scaffolding via
 [useGhostDragEngine.ts](src/components/canvas/useGhostDragEngine.ts): overlay ref mirror,
 live-projection ref, stationary Shift/Alt recompute, pointercancel rollback),
-`useItemDrag` (bullets + labels), `usePolygonDrag` (whole-move / vertex / edge-add), `useSvgImageDrag`
-(move / resize / rotate — resize only snaps while axis-aligned; rotation only snaps to 22.5°),
-`useLineTagDrag` (**uses window-level listeners + `getScreenCTM().inverse()`** — the only hook that
-does, because the drag wanders off the small tag rect), `useRectSelect` (marquee with per-frame
-preview of the resulting selection per type, through set/add/xor modifiers).
+`useItemDrag` (bullets + labels — bound bullets via the engine's bullet mode, labels + unbound
+bullets via the point snapper), `usePolygonDrag` (whole-move / vertex / edge-add),
+`useSvgImageDrag` (move / resize / rotate — resize snaps only while axis-aligned, edge resizes
+axis-`constrain`ed; rotation snaps 22.5° by default, Shift frees), `useLineTagDrag` (**uses
+window-level listeners + `getScreenCTM().inverse()`** — the only hook that does, because the
+drag wanders off the small tag rect; neighbor-tag snap per the contract above), `useRectSelect`
+(marquee with per-frame preview of the resulting selection per type, through set/add/xor
+modifiers).
 
 **Group drag** ([groupDrag.ts](src/components/canvas/groupDrag.ts)): at pointerdown,
 `collectGroupSiblings` snapshots every *other* selected item — but only if the grabbed item is
 itself selected (dragging an unselected item never tows; locked items never tow). Snap during a
-group drag **splits by type**: a **station** keeps the full snap engine, merely excluding the
-moving siblings as targets (`excludedIds` in [useStationDrag.ts](src/components/canvas/useStationDrag.ts));
-a **bullet** drops its line-snap engine to a grid-only fallback (the `!inGroupDrag` gate in
-[useItemDrag.ts](src/components/canvas/useItemDrag.ts)), since its targets would be unstable.
+group drag is **one rule for every master type**: the grabbed item snaps with its usual engine
+against everything stationary, excluding only itself + the co-selected siblings
+(`excludedIds` for the station engine, `groupAlignExclude` → `alignTargets` for the point
+snapper); siblings then translate rigidly by the post-snap delta. Grid acts on the master's
+reference point only — towed siblings keep their offsets verbatim.
 **Group rotate** ([groupRotate.ts](src/components/canvas/groupRotate.ts)): right-click rotates the
 whole multi-selection rigidly about the pivot via `rotateItemsAround` (fixed the bug where
 per-type handlers omitted other types). Locked items are exempt: a locked pivot makes the
@@ -889,7 +936,9 @@ right-click a no-op, and locked co-selected members stay put while the rest rota
 `creating-route-bullet` are **sticky** (click-click-click drops repeatedly); `placing-label` /
 `creating-polygon` / `placing-svg` are single-shot (drop, exit, auto-select to open the
 popover/handles). Cursor-following ghost previews (`*PlacingPreview`, all `opacity 0.5`,
-`pointerEvents none`) feed synthetic items to the real views.
+`pointerEvents none`) feed synthetic items to the real views. Every placement mode snaps ghost
++ drop through the shared `snapPlacement` (see Snapping) — same reference point and prefs as
+the item's first drag, Shift-click bypasses, preview guides render through `SnapGuides`.
 
 `ItemPopovers` mounts the single popover for the sole selection — including the station editor
 (see UI chrome) — and reprojects through `useLiveView` so it tracks the canvas during pan/zoom. `useDraggablePopover` **freezes the item's

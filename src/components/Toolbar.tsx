@@ -258,7 +258,7 @@ export function Toolbar() {
         <button
           type="button"
           className="tool-btn tool-btn-text"
-          title={`Grid: ${gridSize}px — click for ${nextGridSize(gridSize)}px`}
+          title={`Grid: ${gridSize} world units — click for ${nextGridSize(gridSize)}`}
           aria-label="Cycle grid size"
           data-grid-size={gridSize}
           onClick={() => setGridSize(nextGridSize(gridSize))}

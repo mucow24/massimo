@@ -156,9 +156,7 @@ describe('useLineTagDrag', () => {
     setModes({ all: 'all' });
     const { result } = render();
     result.current.onStartDrag('T', pointerEvent({ clientX: 20, clientY: 0 }));
-    act(() =>
-      dispatchWindowPointer('pointermove', { clientX: 44, clientY: 0, shiftKey: true }),
-    );
+    act(() => dispatchWindowPointer('pointermove', { clientX: 44, clientY: 0, shiftKey: true }));
 
     expect(useDoc.getState().lineTags['T'].distance).toBeCloseTo(44, 5);
     dispatchWindowPointer('pointerup', { clientX: 44, clientY: 0 });

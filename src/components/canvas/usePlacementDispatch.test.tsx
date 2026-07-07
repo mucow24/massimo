@@ -3,11 +3,7 @@ import { act, renderHook } from '@testing-library/react';
 import { usePlacementDispatch } from './usePlacementDispatch';
 import { useDoc, useSelection } from '../../state/store';
 import { useSnapPrefs } from '../../state/snapPrefs';
-import {
-  DEFAULT_DOC,
-  starterPolygonVertices,
-  TEXT_LABEL_DEFAULTS,
-} from '../../model/transforms';
+import { DEFAULT_DOC, starterPolygonVertices, TEXT_LABEL_DEFAULTS } from '../../model/transforms';
 import { DEFAULT_SNAP_MODES, snapPointToGrid } from '../../geometry/snap';
 import { polygonSnapAnchor } from '../../geometry/polygon';
 import { measureTextLabel } from '../../geometry/textMeasure';
@@ -201,17 +197,14 @@ describe('usePlacementDispatch', () => {
 });
 
 describe('handleCanvasPlace — placement snaps exactly like the first drag would', () => {
-  const gridBoth = () =>
-    useSnapPrefs.setState({ modes: { ...DEFAULT_SNAP_MODES, grid: 'both' } });
+  const gridBoth = () => useSnapPrefs.setState({ modes: { ...DEFAULT_SNAP_MODES, grid: 'both' } });
 
   it('placing-station: Shift-click bypasses the grid', () => {
     gridBoth();
     resetSelection({ kind: 'placing-station' });
     const { result } = renderHook(() => usePlacementDispatch(fakeView));
     act(() => {
-      result.current.handleCanvasPlace(
-        pointerEvent({ clientX: 33, clientY: 47, shiftKey: true }),
-      );
+      result.current.handleCanvasPlace(pointerEvent({ clientX: 33, clientY: 47, shiftKey: true }));
     });
     const st = Object.values(useDoc.getState().stations)[0];
     expect(st.x).toBe(33);

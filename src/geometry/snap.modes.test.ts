@@ -440,7 +440,7 @@ describe('snapDraggedStation: excludedIds reach the along-axis refinement', () =
     expect(r.x).toBeCloseTo(48, 5);
   });
 
-  it("bullet tens never anchors on an excluded line-start station", () => {
+  it('bullet tens never anchors on an excluded line-start station', () => {
     // Bullet bound to L1 (stations A—B). Tens anchors at line.stations[0] = A;
     // with A excluded the cadence must not fire, though alignment to B's axis
     // still holds the perpendicular.

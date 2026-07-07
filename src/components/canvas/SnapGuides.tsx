@@ -65,6 +65,7 @@ export function SnapGuides({ guides, zoom }: Props) {
       {guides.map((g, i) => (
         <line
           key={'dash' + i}
+          data-snap-guide=""
           x1={g.from.x}
           y1={g.from.y}
           x2={g.to.x}
