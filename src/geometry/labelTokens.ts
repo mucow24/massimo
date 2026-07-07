@@ -100,15 +100,17 @@ const BULLET_GROUP_KEYS = Object.keys(BULLET_VARIANTS);
 /**
  * Formatting tag grammar (labels only): `<b>`/`<i>`/`<u>`/`<s>` with `</...>`
  * closers, `<color=VALUE>`/`</color>`, `<w=VALUE>`/`</w>` (font weight), and
- * the self-closing glyph shortcuts `<air>` (✈) and `<xfer>` (↔). Tag names are
- * lowercase; anything else (`<q>`, `<3`, `a < b`) stays literal text. Color and
- * weight values can't contain spaces, angle brackets, or newlines; an invalid
- * weight value (see `parseWeightToken`) keeps the tag as literal text.
+ * the self-closing glyph shortcuts `<air>` (✈), `<xfer>` (↔), `<c>` (©), and
+ * `<tm>` (™). Tag names are lowercase; anything else (`<q>`, `<3`, `a < b`) stays
+ * literal text. Color and weight values can't contain spaces, angle brackets, or
+ * newlines; an invalid weight value (see `parseWeightToken`) keeps the tag as
+ * literal text.
  */
 const TAG_ALTS =
   `<(?<open>[bius])>|<\\/(?<close>[bius])>|` +
   `<color=(?<color>[^<> \\n]+)>|(?<colorClose><\\/color>)|` +
-  `<w=(?<weight>[^<> \\n]+)>|(?<weightClose><\\/w>)|(?<air><air>)|(?<xfer><xfer>)`;
+  `<w=(?<weight>[^<> \\n]+)>|(?<weightClose><\\/w>)|(?<air><air>)|(?<xfer><xfer>)|` +
+  `(?<copy><c>)|(?<tm><tm>)`;
 
 const BULLET_TOKEN_RE = new RegExp(`(?<esc>\\\\)?(?:${BULLET_ALTS})`, 'g');
 const FORMATTED_TOKEN_RE = new RegExp(`(?<esc>\\\\)?(?:${BULLET_ALTS}|${TAG_ALTS})`, 'g');
@@ -117,6 +119,11 @@ const AIR_GLYPH = '✈';
 // U+2194 rather than 🡘 (U+1F858): the shipped DejaVu Sans fallback covers
 // U+2194, so screen, PDF (glyph tracer), and PNG all draw the same arrow.
 const XFER_GLYPH = '↔';
+// ©/™ (U+00A9 / U+2122) are covered by the embedded Helvetica Neue itself, so
+// the PDF export keeps them as selectable HN text (no glyph tracing needed);
+// DejaVu Sans covers both too, as the outline fallback for any HN-lacking face.
+const COPY_GLYPH = '©';
+const TM_GLYPH = '™';
 
 const TAG_FLAG: Record<string, 'bold' | 'italic' | 'underline' | 'strike'> = {
   b: 'bold',
@@ -167,7 +174,7 @@ function styleOf(st: InlineStyleState): SegmentStyle | undefined {
 
 /**
  * Shared scanner for both grammars. Literal text (including escaped tokens,
- * unknown tags, and the air/xfer glyphs) accumulates in a buffer that's
+ * unknown tags, and the glyph shortcuts) accumulates in a buffer that's
  * flushed as ONE segment whenever the style changes or a bullet lands — so
  * `go \(west) now` measures and kerns as a single run, not three. `state` is
  * null in bullets-only mode (the regex then contains no tag groups).
@@ -248,6 +255,10 @@ function scanLine(
       buffer += AIR_GLYPH;
     } else if (g.xfer) {
       buffer += XFER_GLYPH;
+    } else if (g.copy) {
+      buffer += COPY_GLYPH;
+    } else if (g.tm) {
+      buffer += TM_GLYPH;
     }
   }
   if (lastIndex < line.length) buffer += line.slice(lastIndex);
@@ -301,7 +312,7 @@ export function resolveRunWeight(baseWeight: number, style?: SegmentStyle): numb
  * a bullet, an escape sequence, or a formatting tag / glyph shortcut? Renderers
  * use it to pick the plain fast path over segment-aware layout: anything the
  * segment scanner would rewrite (a bullet circle, a dropped backslash, a
- * `<b>`/`<color=…>`/`<w=…>` style change, an `<air>`/`<xfer>` glyph) forces the
+ * `<b>`/`<color=…>`/`<w=…>` style change, an `<air>`/`<xfer>`/`<c>`/`<tm>` glyph) forces the
  * per-segment path. Unknown tags (`<q>`, `<A>`) and stray brackets stay literal
  * and don't trip it, matching what `parseFormattedLine` actually rewrites.
  */

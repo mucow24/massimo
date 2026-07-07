@@ -1,5 +1,6 @@
 import { describe, it, expect } from 'vitest';
-import type * as opentype from 'opentype.js';
+import { readFileSync } from 'node:fs';
+import * as opentype from 'opentype.js';
 import {
   glyphPathData,
   needsGlyphOutlining,
@@ -128,6 +129,44 @@ describe('outlineUnsupportedText — whitespace around outlined glyphs', () => {
       expect(run.getAttribute('x')).toBe('10');
     } finally {
       document.body.removeChild(svg);
+    }
+  });
+});
+
+// Guards the glyph-shortcut choices (labelTokens.ts) against a font swap that
+// silently drops a symbol from the PDF. `<c>` (©) and `<tm>` (™) are covered by
+// the embedded Helvetica Neue itself, so the export keeps them as selectable HN
+// text; `<xfer>` (↔) is NOT in HN and relies on the DejaVu Sans outline tracer.
+describe('shipped fonts cover the glyph-shortcut codepoints', () => {
+  const parseFont = (file: string): opentype.Font => {
+    const buf = readFileSync(`public/fonts/${file}`);
+    return opentype.parse(buf.buffer.slice(buf.byteOffset, buf.byteOffset + buf.byteLength));
+  };
+  const hn = parseFont('HelveticaNeueRoman.ttf');
+  const dejavu = parseFont('DejaVuSans.ttf');
+  const covers = (font: opentype.Font, cp: number) =>
+    font.charToGlyphIndex(String.fromCodePoint(cp)) !== 0;
+
+  const COPY = 0x00a9; // ©  <c>
+  const TM = 0x2122; // ™  <tm>
+  const XFER = 0x2194; // ↔  <xfer>
+
+  it('Helvetica Neue covers © and ™ (they stay selectable text in the PDF)', () => {
+    expect(covers(hn, COPY)).toBe(true);
+    expect(covers(hn, TM)).toBe(true);
+  });
+
+  it('DejaVu Sans covers ©, ™, and the HN-lacking ↔ (outline fallback)', () => {
+    expect(covers(dejavu, COPY)).toBe(true);
+    expect(covers(dejavu, TM)).toBe(true);
+    expect(covers(dejavu, XFER)).toBe(true);
+    expect(covers(hn, XFER)).toBe(false); // ↔ is why the tracer exists
+  });
+
+  it('traces © and ™ to non-empty outline path data (tracer fallback works)', () => {
+    for (const cp of [COPY, TM]) {
+      const d = glyphPathData(dejavu.getPath(String.fromCodePoint(cp), 0, 0, 16));
+      expect(d.length).toBeGreaterThan(0);
     }
   });
 });
