@@ -90,6 +90,10 @@ const LAYERING_FADE_OPACITY = 0.25;
 // don't re-render on pan.
 const proxyClickNoop = () => {};
 
+// Shared empty set for polygons with no selected vertices, so unselected
+// polygons don't each allocate one every render.
+const NO_VERTEX_INDICES: ReadonlySet<number> = new Set();
+
 export function MapCanvas() {
   const stations = useDoc((s) => s.stations);
   const lines = useDoc((s) => s.lines);
@@ -595,7 +599,7 @@ export function MapCanvas() {
       rotate: rotatePolygon,
       // Clicking the body clears any active vertex selection so the handles
       // un-highlight.
-      beforeSelect: () => selection.selectVertex(null),
+      beforeSelect: () => selection.selectVertices(null),
     },
   );
   const { onClick: onSvgImageClick, onContextMenu: onSvgImageContextMenu } = makeItemClickHandlers(
@@ -610,10 +614,19 @@ export function MapCanvas() {
     if (dragState.suppressClick) return;
     if (inHandMode) return;
     e.stopPropagation();
-    // Keep the polygon selected (popover stays open) and mark the vertex so
-    // Delete removes it.
-    selection.selectVertex({ polygonId: id, index });
+    // Keep the polygon selected (popover stays open) and mark the vertex/vertices
+    // so Delete/nudge/drag act on them. Shift toggles this vertex in/out of the
+    // set (matching the item shift-click); a plain click selects just it.
+    if (e.shiftKey) selection.toggleVertexSelection({ polygonId: id, index });
+    else selection.selectVertices({ polygonId: id, indices: [index] });
   };
+  // Which of a polygon's vertex handles to highlight: the selected set when the
+  // active vertex selection is on THIS polygon, else none. Vertex editing is
+  // single-polygon, so at most one polygon ever gets a non-empty set.
+  const vertexIndicesFor = (pid: string): ReadonlySet<number> =>
+    selection.selectedVertices?.polygonId === pid
+      ? new Set(selection.selectedVertices.indices)
+      : NO_VERTEX_INDICES;
   const onCanvasClick = (e: React.MouseEvent) => {
     if (inHandMode) return;
     const onBackground =
@@ -629,7 +642,7 @@ export function MapCanvas() {
     selection.selectTransfer(null);
     selection.selectLabel(null);
     selection.selectPolygon(null);
-    selection.selectVertex(null);
+    selection.selectVertices(null);
   };
 
   // Hover/click handlers passed to SegmentBand when in add-line-tag mode.
@@ -825,9 +838,7 @@ export function MapCanvas() {
               polygon={poly}
               layer="body"
               selected={polygonSelectedIds.includes(pid)}
-              selectedVertexIndex={
-                selection.selectedVertex?.polygonId === pid ? selection.selectedVertex.index : null
-              }
+              selectedVertexIndices={vertexIndicesFor(pid)}
               interactive={polygonsInteractive}
               inHandMode={inHandMode}
               onPointerDown={polyDrag.onPolygonPointerDown}
@@ -1207,7 +1218,7 @@ export function MapCanvas() {
                 polygon={polygons[pid]}
                 layer="hit"
                 selected
-                selectedVertexIndex={null}
+                selectedVertexIndices={NO_VERTEX_INDICES}
                 interactive={polygonsInteractive}
                 inHandMode={inHandMode}
                 onPointerDown={polyDrag.onPolygonPointerDown}
@@ -1295,11 +1306,7 @@ export function MapCanvas() {
                   polygon={polygons[pid]}
                   layer="overlay"
                   selected
-                  selectedVertexIndex={
-                    selection.selectedVertex?.polygonId === pid
-                      ? selection.selectedVertex.index
-                      : null
-                  }
+                  selectedVertexIndices={vertexIndicesFor(pid)}
                   interactive={polygonsInteractive}
                   onPointerDown={polyDrag.onPolygonPointerDown}
                   onClick={onPolygonClick}

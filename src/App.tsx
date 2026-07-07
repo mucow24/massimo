@@ -204,16 +204,16 @@ export default function App() {
       }
       if ((e.key === 'Delete' || e.key === 'Backspace') && !inFormControl) {
         const sel = useSelection.getState();
-        // A selected polygon vertex takes top priority: remove just that vertex
-        // (the transform no-ops at the 3-vertex floor) and keep the polygon
-        // selected so the user can keep editing.
-        if (sel.selectedVertex) {
-          const { polygonId, index } = sel.selectedVertex;
+        // Selected polygon vertices take top priority: remove them (the
+        // transform no-ops if the removal would breach the 3-vertex floor) and
+        // keep the polygon selected so the user can keep editing.
+        if (sel.selectedVertices) {
+          const { polygonId, indices } = sel.selectedVertices;
           // Locked polygons can't be edited; ignore the vertex delete.
           if (!useDoc.getState().polygons[polygonId]?.locked) {
             e.preventDefault();
-            sel.selectVertex(null);
-            useDoc.getState().deleteVertex(polygonId, index);
+            sel.selectVertices(null);
+            useDoc.getState().deleteVertices(polygonId, indices);
             return;
           }
         }
@@ -283,16 +283,15 @@ export default function App() {
         const dy = e.key === 'ArrowUp' ? -step : e.key === 'ArrowDown' ? step : 0;
         const sel = useSelection.getState();
         const doc = useDoc.getState();
-        // A selected polygon vertex takes top priority (mirrors Delete): nudge
-        // just that handle, leaving the rest of the polygon put.
-        if (sel.selectedVertex) {
-          const { polygonId, index } = sel.selectedVertex;
+        // Selected polygon vertices take top priority (mirrors Delete): nudge
+        // just those handles together, leaving the rest of the polygon put.
+        if (sel.selectedVertices) {
+          const { polygonId, indices } = sel.selectedVertices;
           const poly = doc.polygons[polygonId];
           if (poly && !poly.locked) {
             e.preventDefault();
-            const v = poly.vertices[index];
             const group = beginHistoryGroup();
-            doc.moveVertex(polygonId, index, v.x + dx, v.y + dy);
+            doc.moveVertices(polygonId, indices, dx, dy);
             group.commit();
           }
           return;

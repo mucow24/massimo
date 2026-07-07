@@ -17,6 +17,9 @@ beforeEach(() => {
     ...useSelection.getState(),
     spaceHeld: false,
     uiMode: { kind: 'idle' },
+    // A stray vertex selection would take Delete/nudge priority in the next
+    // test (which spreads the live selection), so reset it between tests.
+    selectedVertices: null,
   });
 });
 
@@ -664,7 +667,7 @@ describe('App keyboard: locked bullets and labels resist Delete and arrow-nudge'
       ...useSelection.getState(),
       selectedStationIds: [],
       selectedPolygonIds: [],
-      selectedVertex: null,
+      selectedVertices: null,
       selectedRouteBulletIds: ['lockB', 'freeB'],
       selectedLabelIds: ['lockL', 'freeL'],
     });
@@ -704,7 +707,7 @@ describe('App keyboard: locked stations resist Delete and arrow-nudge', () => {
       selectedRouteBulletIds: [],
       selectedLabelIds: [],
       selectedPolygonIds: [],
-      selectedVertex: null,
+      selectedVertices: null,
       selectedStationIds: [locked, free],
     });
     return { locked, free };
@@ -728,6 +731,73 @@ describe('App keyboard: locked stations resist Delete and arrow-nudge', () => {
     const doc = useDoc.getState();
     expect(doc.stations[free].x).toBe(freeX + 1);
     expect(doc.stations[locked].x).toBe(lockedX);
+  });
+});
+
+describe('App keyboard: polygon vertices (multi-select)', () => {
+  // A pentagon so two vertices can be deleted while staying above the 3-floor.
+  const seedPentagon = (indices: number[], locked = false) => {
+    useDoc.setState({
+      ...useDoc.getState(),
+      polygons: {
+        p0: makePolygon({
+          id: 'p0',
+          locked,
+          vertices: [
+            { x: 0, y: 0 },
+            { x: 10, y: 0 },
+            { x: 10, y: 10 },
+            { x: 5, y: 15 },
+            { x: 0, y: 10 },
+          ],
+        }),
+      },
+      polygonOrder: ['p0'],
+    });
+    useSelection.setState({
+      ...useSelection.getState(),
+      selectedStationIds: [],
+      selectedRouteBulletIds: [],
+      selectedLabelIds: [],
+      selectedSvgImageIds: [],
+      selectedPolygonIds: ['p0'],
+      selectedVertices: { polygonId: 'p0', indices },
+    });
+  };
+
+  it('Delete removes every selected vertex and keeps the polygon selected', () => {
+    render(<App />);
+    seedPentagon([1, 3]);
+    fireEvent.keyDown(window, { key: 'Delete' });
+    expect(useDoc.getState().polygons['p0'].vertices).toEqual([
+      { x: 0, y: 0 },
+      { x: 10, y: 10 },
+      { x: 0, y: 10 },
+    ]);
+    // Polygon stays selected (popover open); the vertex handles clear.
+    expect(useSelection.getState().selectedPolygonIds).toEqual(['p0']);
+    expect(useSelection.getState().selectedVertices).toBeNull();
+  });
+
+  it('Arrow nudges every selected vertex together, leaving the rest put', () => {
+    render(<App />);
+    seedPentagon([0, 2]);
+    fireEvent.keyDown(window, { key: 'ArrowRight' });
+    const verts = useDoc.getState().polygons['p0'].vertices;
+    expect(verts[0]).toEqual({ x: 1, y: 0 }); // moved +1 x
+    expect(verts[2]).toEqual({ x: 11, y: 10 }); // moved +1 x
+    expect(verts[1]).toEqual({ x: 10, y: 0 }); // untouched
+    expect(verts[3]).toEqual({ x: 5, y: 15 });
+    expect(verts[4]).toEqual({ x: 0, y: 10 });
+  });
+
+  it('a locked polygon ignores vertex Delete and nudge', () => {
+    render(<App />);
+    seedPentagon([1, 3], true);
+    const before = useDoc.getState().polygons['p0'].vertices;
+    fireEvent.keyDown(window, { key: 'Delete' });
+    fireEvent.keyDown(window, { key: 'ArrowRight' });
+    expect(useDoc.getState().polygons['p0'].vertices).toEqual(before);
   });
 });
 
