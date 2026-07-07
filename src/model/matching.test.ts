@@ -511,6 +511,78 @@ describe('findMatchingStations', () => {
     expect(byId.get('C')).toBe(2);
   });
 
+  it('a waypoint never matches a fully-rendered station (isWaypoint is visual identity)', () => {
+    // A waypoint hides its name and dots; the same stops+label on a normal
+    // station render fully. They are not visually interchangeable, so a
+    // mass-edit selection must not pair them.
+    const doc = makeDoc({
+      stations: [
+        { ...makeStation({ id: 's1', stops: [makeStop('L1')] }), isWaypoint: true },
+        makeStation({ id: 's2', stops: [makeStop('L1')] }),
+      ],
+      lines: [makeLine({ id: 'L1', stations: ['s1', 's2'] })],
+    });
+    expect(findMatchingStations(doc, 's1')).toEqual([]);
+    expect(findMatchingStations(doc, 's2')).toEqual([]);
+  });
+
+  it('two waypoints match on stops alone — invisible label geometry is ignored', () => {
+    // Waypoints render no label, so stale label cells left behind by
+    // pre-waypoint editing must not break the match. Stops stay in the key:
+    // they still shape how lines route through the station.
+    const doc = makeDoc({
+      stations: [
+        {
+          ...makeStation({
+            id: 's1',
+            stops: [makeStop('L1')],
+            label: { row: -1, col: -1, rotation: 0, offset: 0, align: 'auto', valign: 'middle' },
+          }),
+          isWaypoint: true,
+        },
+        {
+          ...makeStation({
+            id: 's2',
+            stops: [makeStop('L1')],
+            label: { row: 2, col: 3, rotation: 5, offset: 0, align: 'auto', valign: 'middle' },
+          }),
+          isWaypoint: true,
+        },
+      ],
+      lines: [makeLine({ id: 'L1', stations: ['s1', 's2'] })],
+    });
+    expect(findMatchingStations(doc, 's1').map((m) => m.id)).toEqual(['s2']);
+    expect(findMatchingStations(doc, 's2').map((m) => m.id)).toEqual(['s1']);
+  });
+
+  it('negative-zero float drift does not fragment the key', () => {
+    // toFixed(4) renders -1e-16 as "-0.0000" but exact zero as "0.0000" —
+    // the quantizer must normalize the sign so drift from diagonal (±√2/2)
+    // arithmetic can't split visually identical layouts.
+    const doc = makeDoc({
+      stations: [
+        makeStation({ id: 's1', stops: [makeStop('L1', { row: -1e-16 })] }),
+        makeStation({ id: 's2', stops: [makeStop('L1', { row: 0 })] }),
+      ],
+      lines: [makeLine({ id: 'L1', stations: ['s1', 's2'] })],
+    });
+    expect(findMatchingStations(doc, 's1').map((m) => m.id)).toEqual(['s2']);
+  });
+
+  it('an out-of-range persisted rotation (8 ≡ 0) still matches its normalized twin', () => {
+    // All in-app mutators wrap mod 8, but hand-edited/legacy docs can carry
+    // rotation 8 or −1; they render identically to 0 and 7 (SVG rotate is
+    // periodic), so the key must normalize.
+    const doc = makeDoc({
+      stations: [
+        makeStation({ id: 's1', stops: [makeStop('L1')], rotation: 8 as never }),
+        makeStation({ id: 's2', stops: [makeStop('L1')], rotation: 0 }),
+      ],
+      lines: [makeLine({ id: 'L1', stations: ['s1', 's2'] })],
+    });
+    expect(findMatchingStations(doc, 's1').map((m) => m.id)).toEqual(['s2']);
+  });
+
   it('rotating a broadcast delta by layoutOffset preserves world appearance at ODD offsets', () => {
     // World-truth pin for the delta-transform direction. B is A rotated one
     // 90°-step via rotateStationLayoutBy90 — they render identically, one
