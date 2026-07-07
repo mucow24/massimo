@@ -141,6 +141,14 @@ export const LINE_HEIGHT = 1.2;
  */
 export const BASELINE_FRACTION = 0.8;
 
+/**
+ * Cap height as a fraction of fontSize (Helvetica Neue: 714/1000 em).
+ * Together with BASELINE_FRACTION this is the whole vertical font model the
+ * autoAlign label placement aligns by (baseline / cap line / Core Type Area
+ * center). Hardcoded like BASELINE_FRACTION — no font tables exist.
+ */
+export const CAP_FRACTION = 0.714;
+
 // Internal cache: keyed by the full content + style tuple (weight, italic,
 // parse mode, font size, column width, leading, tracking, text — see
 // cacheKey). Marquee hit testing re-measures every label on every move;

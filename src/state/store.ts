@@ -271,6 +271,7 @@ interface DocState extends MapDoc {
   setLabelOffsetPerp: (stationId: StationId, offsetPerp: number) => void;
   setLabelAlign: (stationId: StationId, align: LabelAlign) => void;
   setLabelValign: (stationId: StationId, valign: LabelValign) => void;
+  setLabelAutoAlign: (stationId: StationId, on: boolean) => void;
 
   addLine: () => LineId;
   updateLine: (id: LineId, patch: Partial<Pick<Line, 'service' | 'name' | 'color'>>) => void;
@@ -447,6 +448,7 @@ export const useDoc = create<DocState>()(
           set((s) => T.setLabelOffsetPerp(s, stationId, offsetPerp)),
         setLabelAlign: (stationId, align) => set((s) => T.setLabelAlign(s, stationId, align)),
         setLabelValign: (stationId, valign) => set((s) => T.setLabelValign(s, stationId, valign)),
+        setLabelAutoAlign: (stationId, on) => set((s) => T.setLabelAutoAlign(s, stationId, on)),
 
         addLine: () => {
           const id = ids.lineId();

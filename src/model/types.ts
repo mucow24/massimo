@@ -135,6 +135,14 @@ export interface LabelCell {
   offsetPerp?: number;
   align: LabelAlign;
   valign: LabelValign;
+  // Smart placement: when true, `align`/`valign` are overridden and the
+  // alignment is derived from the label cell's octant relative to the
+  // nearest stop (transitmap.net typography — baseline sits above the
+  // marker, cap line hangs below it, Core Type Area centers beside it,
+  // corner octants pin the facing CTA corner). `offset`/`offsetPerp` still
+  // apply on top. Optional and omitted when off, so older saves load
+  // unchanged.
+  autoAlign?: boolean;
 }
 
 export interface Station {

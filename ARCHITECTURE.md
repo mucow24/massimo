@@ -298,7 +298,9 @@ collections, `name: 'Untitled map'`, `curveRadius: 24`, `lineCounter: 0`, `activ
 `offset` (px forward along reading direction), `offsetPerp?` (cross-axis, default 0 — back-compat
 absent), `align: LabelAlign` (`auto|start|middle|end`), `valign: LabelValign`
 (`auto-down|top|middle|bottom|auto-up`). `auto-down`/`auto-up` pin the block's top/bottom as a
-multi-line label grows; identical to `middle` for single-line.
+multi-line label grows; identical to `middle` for single-line. `autoAlign?: boolean` (omitted
+when off) overrides align **and** valign with transitmap.net typography derived from the label's
+octant relative to the nearest stop (see `labelLayoutLocal`); `offset`/`offsetPerp` still apply.
 
 **`Line`** — `id, service` (the route code shown in bullets), `name, color`, `stations:
 StationId[]` (ordered path), `waypoints?`. All other fields optional and **never stored at
@@ -687,6 +689,13 @@ refinement (equidistant / tens) → build guides. Polygon vertices get their own
   applied around the anchor at render). `'auto'` align snaps the text against an adjacent stop;
   `valign` drives the multi-line block math. **The renderer and the hit/silhouette geometry must
   pass the same `stopHalf` width lookup** or the wash drifts off the painted text.
+  `label.autoAlign` overrides both: the octant of the label cell relative to the **nearest**
+  adjacent stop (in the reading frame) picks the alignment per the transitmap.net tutorials —
+  baseline sits `LABEL_GAP` above the marker, cap line hangs below it, Core Type Area
+  (`CAP_FRACTION` in `textMeasure.ts`) centers beside it, corner octants pin the facing CTA
+  corner — and maps onto the existing valign machinery (`auto-up`/`auto-down`/`middle`), so the
+  renderer is untouched. The pin clears the marker's support-function extent along the approach
+  (a `half`-extent square rotated to the stop's travel axis), stop-relative on both axes.
 
 ### Polygons — `polygon.ts`, `polygonUnion.ts`, `rectPolygon.ts`, `polygonSnap.ts`
 

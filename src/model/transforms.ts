@@ -296,6 +296,14 @@ export function resolveOffsetPerp(label: LabelCell | undefined): number {
   return label?.offsetPerp ?? 0;
 }
 
+/**
+ * Effective autoAlign flag. Optional and omitted when off (like the other
+ * boolean flags), so read-sites use this instead of re-spelling `?? false`.
+ */
+export function resolveAutoAlign(label: LabelCell | undefined): boolean {
+  return !!label?.autoAlign;
+}
+
 export function setDotStyle(
   doc: MapDoc,
   stationId: StationId,
@@ -1084,6 +1092,17 @@ export function setLabelAlign(doc: MapDoc, stationId: StationId, align: LabelAli
   );
 }
 
+export function setLabelAutoAlign(doc: MapDoc, stationId: StationId, on: boolean): MapDoc {
+  return updateLabel(doc, stationId, (label) => {
+    if (resolveAutoAlign(label) === on) return label;
+    if (on) return { ...label, autoAlign: true };
+    // Off = remove the key, keeping saves clean (omitted-when-false, same
+    // contract as the station-level boolean flags).
+    const { autoAlign: _gone, ...rest } = label;
+    return rest;
+  });
+}
+
 // Canonical display order, geometrically symmetric: auto-down (block top
 // pinned, grows down) → top → middle → bottom → auto-up (block bottom
 // pinned, grows up). The default 'auto-down' sits at index 0.
@@ -1276,9 +1295,12 @@ export function toggleStationOnLine(
     newStops = [...st.stops, newCell];
     // If the auto-placed label sits exactly where the new stop is landing,
     // step it past the stop block so the new line doesn't paint over it.
-    // We only nudge auto labels — manual alignments are user-pinned and
-    // shouldn't move out from under the user.
-    if (st.label.align === 'auto' && sameCell(st.label, { row: newRow, col: newCol })) {
+    // We only nudge auto labels (legacy 'auto' align or autoAlign) — manual
+    // alignments are user-pinned and shouldn't move out from under the user.
+    if (
+      (st.label.align === 'auto' || resolveAutoAlign(st.label)) &&
+      sameCell(st.label, { row: newRow, col: newCol })
+    ) {
       let lc = newCol;
       while (newStops.some((c) => sameCell(c, { row: newRow, col: lc }))) lc += 1;
       newLabel = { ...st.label, row: newRow, col: lc };
