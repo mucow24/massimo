@@ -698,7 +698,11 @@ export function redistributeBetween(
         // alignments via floating-point error. Straight-line is exact by
         // construction — and in drag mode tiny per-frame shifts must apply
         // or stations near the anchor lag behind and wobble off the line.
-        if (mode !== 'straight' && Math.hypot(px - cur.x, py - cur.y) < REDISTRIBUTE_EPS) continue;
+        // With grid on, the snapped proposal is itself exact, so only a true
+        // no-op is skipped — a station sitting slightly off-grid (< eps from
+        // its target) still gets pulled onto the grid.
+        const skipEps = gridMode === 'off' ? REDISTRIBUTE_EPS : 1e-9;
+        if (mode !== 'straight' && Math.hypot(px - cur.x, py - cur.y) < skipEps) continue;
         const stationId = ids[idx];
         const existing = proposals.get(stationId);
         if (existing) {

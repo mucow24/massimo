@@ -171,6 +171,7 @@ export function dispatchWindowPointer(
     clientX: opts.clientX ?? 0,
     clientY: opts.clientY ?? 0,
     button: opts.button ?? 0,
+    shiftKey: opts.shiftKey ?? false,
   });
   Object.assign(ev, { pointerId: opts.pointerId ?? 1 });
   window.dispatchEvent(ev);

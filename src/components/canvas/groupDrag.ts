@@ -1,5 +1,6 @@
 import { useDoc, useSelection } from '../../state/store';
 import type { Vec2 } from '../../geometry/vec';
+import type { AlignExclude } from './snapTargets';
 
 export type GrabbedKind = 'station' | 'bullet' | 'label' | 'polygon' | 'svgImage';
 
@@ -67,6 +68,32 @@ export function collectGroupSiblings(grabbedKind: GrabbedKind, grabbedId: string
     if (im && !im.locked) out.svgImages.push({ id, startX: im.x, startY: im.y });
   }
   return out;
+}
+
+/**
+ * The alignment-pool exclusion set for a drag: the grabbed item itself plus
+ * every towed sibling. Everything else — including stationary, non-selected
+ * items — stays a valid snap target, so a group drag keeps the same alignment
+ * quality as a solo drag.
+ */
+export function groupAlignExclude(
+  grabbedKind: GrabbedKind,
+  grabbedId: string,
+  siblings: GroupSiblings,
+): AlignExclude {
+  const ex = {
+    stationIds: new Set(siblings.stations.map((s) => s.id)),
+    bulletIds: new Set(siblings.bullets.map((b) => b.id)),
+    labelIds: new Set(siblings.labels.map((l) => l.id)),
+    polygonIds: new Set(siblings.polygons.map((p) => p.id)),
+    svgImageIds: new Set(siblings.svgImages.map((i) => i.id)),
+  };
+  if (grabbedKind === 'station') ex.stationIds.add(grabbedId);
+  else if (grabbedKind === 'bullet') ex.bulletIds.add(grabbedId);
+  else if (grabbedKind === 'label') ex.labelIds.add(grabbedId);
+  else if (grabbedKind === 'polygon') ex.polygonIds.add(grabbedId);
+  else ex.svgImageIds.add(grabbedId);
+  return ex;
 }
 
 export function hasGroupSiblings(s: GroupSiblings): boolean {

@@ -3,7 +3,6 @@ import {
   axesForAllSnap,
   maybeSnapToGrid,
   snapDraggedStation,
-  snapLabelToGrid,
   snapPointToGrid,
   type SnapModes,
 } from './snap';
@@ -415,6 +414,53 @@ describe('snapDraggedStation: equidistant mode', () => {
   });
 });
 
+describe('snapDraggedStation: excludedIds reach the along-axis refinement', () => {
+  it('equidistant never anchors on an excluded (co-moving) neighbor', () => {
+    // A—B—C on a horizontal corridor; A is excluded (co-selected in a group
+    // drag, so it moves with the grab). The alignment pool already skips A;
+    // the equidistant refinement must too — otherwise the snap chases a
+    // moving cadence anchor.
+    const a = makeStation({ id: 'a', x: 0, y: 0, stops: [horizontalStop('L1')] });
+    const b = makeStation({ id: 'b', x: 40, y: 0, stops: [horizontalStop('L1')] });
+    const c = makeStation({ id: 'c', x: 100, y: 0, stops: [horizontalStop('L1')] });
+    const r = snapDraggedStation({
+      draggedId: 'b',
+      proposedX: 48,
+      proposedY: 3,
+      draggedRotation: 0,
+      draggedStops: b.stops,
+      stations: stations(a, b, c),
+      lines: linesOf(lineOf('L1', ['a', 'b', 'c'])),
+      excludedIds: new Set(['a']),
+      modes: { line: true, equidistant: true, tens: false, all: 'off', grid: 'off' },
+    });
+    // Line snap holds y = 0; equidistant would pull x to the A↔C midpoint 50,
+    // but A is excluded → x stays at the proposed 48.
+    expect(r.y).toBeCloseTo(0, 5);
+    expect(r.x).toBeCloseTo(48, 5);
+  });
+
+  it('bullet tens never anchors on an excluded line-start station', () => {
+    // Bullet bound to L1 (stations A—B). Tens anchors at line.stations[0] = A;
+    // with A excluded the cadence must not fire, though alignment to B's axis
+    // still holds the perpendicular.
+    const a = makeStation({ id: 'a', x: 0, y: 0, stops: [horizontalStop('L1')] });
+    const b = makeStation({ id: 'b', x: 95, y: 0, stops: [horizontalStop('L1')] });
+    const r = snapDraggedStation({
+      proposedX: 47,
+      proposedY: 3,
+      stations: stations(a, b),
+      lines: linesOf(lineOf('L1', ['a', 'b'])),
+      bulletLineId: 'L1',
+      excludedIds: new Set(['a']),
+      modes: { line: true, equidistant: false, tens: true, all: 'off', grid: 'off' },
+    });
+    expect(r.y).toBeCloseTo(0, 5);
+    // Without the exclusion guard, tens would round 47 → 50 from A's anchor.
+    expect(r.x).toBeCloseTo(47, 5);
+  });
+});
+
 describe('snapDraggedStation: tens mode', () => {
   it('snaps the along-axis distance from prev to a multiple of 10', () => {
     const a = makeStation({ id: 'a', x: 0, y: 0, stops: [horizontalStop('L1')] });
@@ -691,6 +737,28 @@ describe('snapDraggedStation: snap-to-all mode', () => {
     expect(r.y).toBeCloseTo(-50.5, 3);
   });
 
+  it("aligns a normal station to a STOPLESS station's anchor", () => {
+    // Target t has no stops → its anchor (100, 0) is the alignment point.
+    // Dragged b (one stop at cell 0,0 → zero stop offset) proposed at (104, 50)
+    // is 4 from t's vertical axis → snaps to x=100. Mirrors the existing
+    // dragged-side anchor fallback so stopless stations work on both sides.
+    const t = makeStation({ id: 't', x: 100, y: 0 });
+    const b = makeStation({ id: 'b', x: 0, y: 0, stops: [makeStop('L1')] });
+    const r = snapDraggedStation({
+      draggedId: 'b',
+      proposedX: 104,
+      proposedY: 50,
+      draggedRotation: 0,
+      draggedStops: b.stops,
+      stations: stations(t, b),
+      lines: linesOf(lineOf('L1', ['b'])),
+      modes: { line: false, equidistant: false, tens: false, all: 'all', grid: 'off' },
+    });
+    expect(r.x).toBeCloseTo(100, 5);
+    expect(r.y).toBeCloseTo(50, 5);
+    expect(r.guides).toHaveLength(1);
+  });
+
   it('composes with line mode into a 2-axis snap at the intersection', () => {
     // A on L1, line-adjacent to dragged B → axis +y through (100, 0).
     // C is unrelated; all-mode picks horizontal alignment through C's stop
@@ -945,12 +1013,6 @@ describe('grid interval: 5px grid', () => {
     expect(snapPointToGrid(33, 33, 'both', 20)).toEqual({ x: 40, y: 40 });
   });
 
-  it('snapLabelToGrid snaps the upper-left to a 5px lattice', () => {
-    // Width 40, height 20 → halfW 20, halfH 10. Center (53, 47) → UL (33, 37)
-    // → snap to (35, 35) on the 5px grid → center back to (55, 45).
-    expect(snapLabelToGrid({ x: 53, y: 47 }, 40, 20, 'both', 5)).toEqual({ x: 55, y: 45 });
-  });
-
   it('maybeSnapToGrid threads the interval', () => {
     const modes: SnapModes = {
       line: false,
@@ -998,38 +1060,6 @@ describe('grid interval: 5px grid', () => {
     });
     expect(r.y).toBeCloseTo(0, 5);
     expect(r.x).toBeCloseTo(25, 5);
-  });
-});
-
-describe('snapLabelToGrid', () => {
-  // A label's (x, y) is its bbox center. snapLabelToGrid snaps the upper-left
-  // corner of the bbox to a grid intersection and returns the corresponding
-  // center.
-  it('snaps the upper-left to grid; center adjusts accordingly', () => {
-    // Width 40, height 20 → halfW 20, halfH 10. Center (50, 50) → UL (30, 40)
-    // which is already grid-aligned → center stays at (50, 50).
-    expect(snapLabelToGrid({ x: 50, y: 50 }, 40, 20)).toEqual({ x: 50, y: 50 });
-  });
-  it('moves the center when the upper-left is off-grid', () => {
-    // Width 40, height 20. Center (53, 47) → UL (33, 37) → snap to (30, 40)
-    // → center back at (50, 50).
-    expect(snapLabelToGrid({ x: 53, y: 47 }, 40, 20)).toEqual({ x: 50, y: 50 });
-  });
-  it('handles odd bbox sizes — UL on grid, center off-grid by half-bbox', () => {
-    // Width 25, height 15 → halfW 12.5, halfH 7.5. Center (12.5, 7.5) →
-    // UL (0, 0) → already on grid → center stays at (12.5, 7.5).
-    expect(snapLabelToGrid({ x: 12.5, y: 7.5 }, 25, 15)).toEqual({ x: 12.5, y: 7.5 });
-  });
-
-  it("'horizontal' snaps only the UL's Y; X (center) is untouched", () => {
-    // Width 40, height 20 → halfW 20, halfH 10. Center (53, 47) → UL (33, 37).
-    // Only Y snaps: UL.y 37 → 40, UL.x stays 33 → center back to (53, 50).
-    expect(snapLabelToGrid({ x: 53, y: 47 }, 40, 20, 'horizontal')).toEqual({ x: 53, y: 50 });
-  });
-
-  it("'vertical' snaps only the UL's X; Y (center) is untouched", () => {
-    // UL (33, 37) → only X snaps to 30 → center back to (50, 47).
-    expect(snapLabelToGrid({ x: 53, y: 47 }, 40, 20, 'vertical')).toEqual({ x: 50, y: 47 });
   });
 });
 
