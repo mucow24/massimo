@@ -92,6 +92,38 @@ describe('<RouteBulletView /> hit proxy (selected-on-top drag target)', () => {
   });
 });
 
+describe('<RouteBulletView /> — locked bullets are click-through unless selected', () => {
+  const renderBody = (bullet: RouteBullet, selected = false) =>
+    render(
+      <svg>
+        <RouteBulletView
+          bullet={bullet}
+          lines={{}}
+          selected={selected}
+          onPointerDown={noop}
+          onClick={noop}
+          onContextMenu={noop}
+        />
+      </svg>,
+    ).container;
+  const group = (c: HTMLElement) => c.querySelector('[data-bullet-id="b1"]') as HTMLElement;
+
+  it('a locked, unselected bullet ignores pointer events (clicks land on what is beneath)', () => {
+    const c = renderBody(makeBullet({ id: 'b1', locked: true }));
+    expect(group(c).getAttribute('pointer-events')).toBe('none');
+  });
+
+  it('a locked bullet stays clickable while selected (popover unlock stays reachable)', () => {
+    const c = renderBody(makeBullet({ id: 'b1', locked: true }), true);
+    expect(group(c).getAttribute('pointer-events')).toBeNull();
+  });
+
+  it('an unlocked, unselected bullet keeps normal hit-testing', () => {
+    const c = renderBody(makeBullet({ id: 'b1' }));
+    expect(group(c).getAttribute('pointer-events')).toBeNull();
+  });
+});
+
 describe('<RouteBulletView /> — selection ring', () => {
   afterEach(() => useViewportStore.setState({ zoom: 1 }));
 

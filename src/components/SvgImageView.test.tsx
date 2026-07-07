@@ -71,6 +71,18 @@ describe('<SvgImageView /> body', () => {
     expect(img.getAttribute('data-locked')).toBe('true');
   });
 
+  it('a locked, unselected image ignores pointer events (clicks land on what is beneath)', () => {
+    const { container } = renderView(makeSvgImage({ id: 'i0', locked: true }));
+    const img = container.querySelector('g[data-svg-image-id="i0"] image') as Element;
+    expect(img.getAttribute('pointer-events')).toBe('none');
+  });
+
+  it('a locked image stays clickable while selected (popover unlock stays reachable)', () => {
+    const { container } = renderView(makeSvgImage({ id: 'i0', locked: true }), { selected: true });
+    const img = container.querySelector('g[data-svg-image-id="i0"] image') as Element;
+    expect(img.getAttribute('pointer-events')).toBeNull();
+  });
+
   it('fills the box non-uniformly (preserveAspectRatio="none") so edge resizes stretch the SVG', () => {
     // Without this, an <image> defaults to "xMidYMid meet" and re-fits the SVG
     // with its aspect ratio preserved — so a single-axis edge resize would only

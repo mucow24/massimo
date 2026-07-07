@@ -222,6 +222,13 @@ describe('stationsForRect', () => {
     expect(stationsForRect(stations, rect)).toEqual(['B']);
   });
 
+  it('includes locked stations when includeLocked is set (alt-marquee recovery)', () => {
+    const a = { ...stationWithStop('A', 'L1', { x: 0, y: 0 }), locked: true };
+    const stations = { A: a };
+    const rect = { x0: -100, y0: -100, x1: 100, y1: 100 };
+    expect(stationsForRect(stations, rect, undefined, undefined, true)).toEqual(['A']);
+  });
+
   it('a waypoint station does NOT match a rect that only overlaps where the label would be', () => {
     // A rect just left of the origin — where a regular station's label cell
     // sits — should miss a waypoint, because a waypoint has no label polygon
@@ -274,6 +281,12 @@ describe('routeBulletsForRect', () => {
     };
     const rect = { x0: -50, y0: -50, x1: 50, y1: 50 };
     expect(routeBulletsForRect(bullets, rect)).toEqual(['b']);
+  });
+
+  it('includes locked bullets when includeLocked is set (alt-marquee recovery)', () => {
+    const bullets = { a: { ...makeBullet('a', 0, 0, 12), locked: true } };
+    const rect = { x0: -50, y0: -50, x1: 50, y1: 50 };
+    expect(routeBulletsForRect(bullets, rect, true)).toEqual(['a']);
   });
 });
 
@@ -364,6 +377,12 @@ describe('textLabelsForRect', () => {
     const rect = { x0: -50, y0: -50, x1: 50, y1: 50 };
     expect(textLabelsForRect(labels, rect)).toEqual(['b']);
   });
+
+  it('includes locked labels when includeLocked is set (alt-marquee recovery)', () => {
+    const labels = { a: makeTextLabel({ id: 'a', x: 0, y: 0, text: 'Hello', locked: true }) };
+    const rect = { x0: -50, y0: -50, x1: 50, y1: 50 };
+    expect(textLabelsForRect(labels, rect, true)).toEqual(['a']);
+  });
 });
 
 describe('polygonsForRect', () => {
@@ -392,6 +411,12 @@ describe('polygonsForRect', () => {
     };
     const rect = { x0: -50, y0: -50, x1: 50, y1: 50 };
     expect(polygonsForRect(polygons, rect)).toEqual(['b']);
+  });
+
+  it('includes locked polygons when includeLocked is set (alt-marquee recovery)', () => {
+    const polygons = { a: makePolygon({ id: 'a', locked: true }) };
+    const rect = { x0: -50, y0: -50, x1: 50, y1: 50 };
+    expect(polygonsForRect(polygons, rect, true)).toEqual(['a']);
   });
 
   it('selects an open polygon via its stroke chain only, never its empty interior', () => {

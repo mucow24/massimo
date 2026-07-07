@@ -81,6 +81,10 @@ function applyMode(
  *   - none           → replace selection with rect hits
  *   - shift          → add rect hits to selection
  *   - ctrl+shift     → toggle (xor) rect hits with selection
+ *   - alt            → rect hits also include LOCKED items (composes with the
+ *                      above). Locked items are click-through on the canvas,
+ *                      so the alt-marquee is how one gets re-selected to
+ *                      reach its popover's unlock toggle.
  *
  * All five selectable item types (stations, route bullets, text labels,
  * polygons, svg images) participate; the same mode applies independently
@@ -150,11 +154,13 @@ export function useRectSelect(
     // Per-frame preview of the resulting selection. Reads stations,
     // bullets, labels, and the current selection straight from the stores
     // so we don't carry stale copies through the closure. Modifiers come
-    // from this pointer event, so changing shift/ctrl mid-drag updates the
-    // preview on the next move.
+    // from this pointer event, so changing shift/ctrl/alt mid-drag updates
+    // the preview on the next move. Alt = include locked items (they're
+    // click-through on the canvas, so this marquee is their recovery path).
     const doc = useDoc.getState();
     const sel = useSelection.getState();
     const mode = modeFromEvent(e);
+    const includeLocked = e.altKey;
     const stationHits = stationsForRect(
       doc.stations,
       nextRect,
@@ -166,11 +172,12 @@ export function useRectSelect(
         tracking: doc.labelTracking,
       },
       stopHalfOf(doc.lines),
+      includeLocked,
     );
-    const bulletHits = routeBulletsForRect(doc.routeBullets, nextRect);
-    const labelHits = textLabelsForRect(doc.textLabels, nextRect);
-    const polygonHits = polygonsForRect(doc.polygons, nextRect);
-    const svgImageHits = svgImagesForRect(doc.svgImages, nextRect);
+    const bulletHits = routeBulletsForRect(doc.routeBullets, nextRect, includeLocked);
+    const labelHits = textLabelsForRect(doc.textLabels, nextRect, includeLocked);
+    const polygonHits = polygonsForRect(doc.polygons, nextRect, includeLocked);
+    const svgImageHits = svgImagesForRect(doc.svgImages, nextRect, includeLocked);
     setPreviewStationIds(applyMode(sel.selectedStationIds, stationHits, mode));
     setPreviewBulletIds(applyMode(sel.selectedRouteBulletIds, bulletHits, mode));
     setPreviewLabelIds(applyMode(sel.selectedLabelIds, labelHits, mode));
@@ -207,6 +214,7 @@ export function useRectSelect(
     setPreviewSvgImageIds(null);
 
     const doc = useDoc.getState();
+    const includeLocked = e.altKey;
     const stationHits = stationsForRect(
       doc.stations,
       finalRect,
@@ -218,11 +226,12 @@ export function useRectSelect(
         tracking: doc.labelTracking,
       },
       stopHalfOf(doc.lines),
+      includeLocked,
     );
-    const bulletHits = routeBulletsForRect(doc.routeBullets, finalRect);
-    const labelHits = textLabelsForRect(doc.textLabels, finalRect);
-    const polygonHits = polygonsForRect(doc.polygons, finalRect);
-    const svgImageHits = svgImagesForRect(doc.svgImages, finalRect);
+    const bulletHits = routeBulletsForRect(doc.routeBullets, finalRect, includeLocked);
+    const labelHits = textLabelsForRect(doc.textLabels, finalRect, includeLocked);
+    const polygonHits = polygonsForRect(doc.polygons, finalRect, includeLocked);
+    const svgImageHits = svgImagesForRect(doc.svgImages, finalRect, includeLocked);
 
     const sel = useSelection.getState();
     const mode = modeFromEvent(e);

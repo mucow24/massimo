@@ -280,9 +280,19 @@ test.describe('Polygon opacity, layering, placement, lock', () => {
     await page.mouse.up();
     expect(JSON.stringify((await onlyPolygon(page)).vertices)).toBe(before);
 
-    // Re-select the locked polygon (a plain click still selects it), then
-    // unlock → handles return.
+    // A locked, deselected polygon is click-through: a plain click passes
+    // straight through to the background and selects nothing.
     await page.mouse.click(CENTER.x, CENTER.y);
+    await expect(page.locator('.polygon-popover')).toHaveCount(0);
+
+    // Alt+marquee is the recovery path — it includes locked items. Re-select
+    // the polygon with it, then unlock → handles return.
+    await page.keyboard.down('Alt');
+    await page.mouse.move(CENTER.x - 20, CENTER.y - 20);
+    await page.mouse.down();
+    await page.mouse.move(CENTER.x + 20, CENTER.y + 20, { steps: 4 });
+    await page.mouse.up();
+    await page.keyboard.up('Alt');
     await page.getByRole('button', { name: 'Unlock polygon' }).click();
     await expect(page.locator('[data-polygon-vertex]')).toHaveCount(4);
   });

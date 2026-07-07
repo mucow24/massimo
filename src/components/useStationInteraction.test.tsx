@@ -258,7 +258,7 @@ describe('useStationInteraction — mode gates', () => {
   it('passes through (hitless) in line-tag mode', () => {
     useSelection.getState().setUiMode({ kind: 'creating-line-tag' });
     const { result } = setup();
-    expect(result.current.inHitlessMode).toBe(true);
+    expect(result.current.hitless).toBe(true);
     expect(result.current.handlers.onClick).toBeUndefined();
     expect(result.current.handlers.onPointerDown).toBeUndefined();
     expect(result.current.handlers.onContextMenu).toBeUndefined();
@@ -267,7 +267,7 @@ describe('useStationInteraction — mode gates', () => {
   it('passes through (hitless) in layering mode', () => {
     useSelection.getState().setUiMode({ kind: 'layering' });
     const { result } = setup();
-    expect(result.current.inHitlessMode).toBe(true);
+    expect(result.current.hitless).toBe(true);
   });
 
   it('disables click/dblclick in hand mode and never starts a drag', () => {
@@ -279,6 +279,63 @@ describe('useStationInteraction — mode gates', () => {
     act(() => result.current.handlers.onPointerDown?.(pointerEvent({})));
     expect(onStartDrag).not.toHaveBeenCalled();
     expect(result.current.cursor).toBe('grab');
+  });
+});
+
+describe('useStationInteraction — locked stations are click-through unless selected', () => {
+  it('a locked, unselected station is hitless: clicks pass through to what is beneath', () => {
+    const { result } = setup({ ...stationS(), locked: true });
+    expect(result.current.hitless).toBe(true);
+    expect(result.current.handlers.onClick).toBeUndefined();
+    expect(result.current.handlers.onPointerDown).toBeUndefined();
+    expect(result.current.handlers.onContextMenu).toBeUndefined();
+  });
+
+  it('a locked station stays clickable while selected (popover unlock stays reachable)', () => {
+    useSelection.setState({ ...useSelection.getState(), selectedStationIds: ['S' as StationId] });
+    const { result } = setup({ ...stationS(), locked: true });
+    expect(result.current.hitless).toBe(false);
+    expect(result.current.handlers.onClick).toBeDefined();
+  });
+
+  it('a locked station inside a multi-selection stays clickable too', () => {
+    useSelection.setState({
+      ...useSelection.getState(),
+      selectedStationIds: ['X' as StationId, 'S' as StationId],
+    });
+    const { result } = setup({ ...stationS(), locked: true });
+    expect(result.current.hitless).toBe(false);
+  });
+
+  it('an unlocked, unselected station is unaffected', () => {
+    const { result } = setup();
+    expect(result.current.hitless).toBe(false);
+    expect(result.current.handlers.onClick).toBeDefined();
+  });
+
+  // Click-through is an IDLE-mode affordance. Non-idle modes wipe the
+  // selection on entry, so without an idle gate a locked station would be
+  // unreachable in every mode — silently killing gestures that legitimately
+  // target locked stations (lock protects geometry, not mode participation).
+  it('a locked station is still a transfer endpoint in creating-transfer mode', () => {
+    useSelection.getState().setUiMode({ kind: 'creating-transfer', anchor: null });
+    const { result } = setup({ ...stationS(), locked: true });
+    expect(result.current.hitless).toBe(false);
+    click(result.current.handlers, pointerEvent({}) as unknown as React.MouseEvent);
+    const uiMode = useSelection.getState().uiMode;
+    expect(uiMode.kind).toBe('creating-transfer');
+    if (uiMode.kind === 'creating-transfer') {
+      expect(uiMode.anchor).toEqual({ stationId: 'S', lineId: 'L1' });
+    }
+  });
+
+  it('a locked station can still be toggled onto a line in appending-to-line mode', () => {
+    useSelection.getState().startAppendAt('L1' as LineId, -1);
+    const lines = { L1: makeLine({ id: 'L1' as LineId, stations: [] as StationId[] }) };
+    const { result } = setup({ ...stationS(), locked: true }, lines);
+    expect(result.current.hitless).toBe(false);
+    click(result.current.handlers, pointerEvent({}) as unknown as React.MouseEvent);
+    expect(toggleStationOnLine).toHaveBeenCalledWith('L1', 'S', -1);
   });
 });
 

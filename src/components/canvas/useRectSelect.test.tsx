@@ -190,6 +190,51 @@ describe('useRectSelect — preview + commit across all object types', () => {
   });
 });
 
+describe('useRectSelect — alt-marquee includes locked items (recovery path)', () => {
+  // Locked items are click-through on the canvas, so an Alt-marquee is the
+  // way to re-select one (to reach its popover's unlock toggle).
+  beforeEach(() => {
+    useDoc.setState({
+      ...useDoc.getState(),
+      polygons: { p1: makePolygon({ id: 'p1', locked: true }) },
+      polygonOrder: ['p1'],
+      textLabels: { g1: makeTextLabel({ id: 'g1', x: 0, y: 0, locked: true }) },
+    });
+  });
+
+  it('a plain marquee still excludes locked items', () => {
+    const { result, ref } = render();
+    down(result, pointerEvent({ clientX: -50, clientY: -50, target: ref.current }));
+    move(result, pointerEvent({ clientX: 50, clientY: 50 }));
+    up(result, pointerEvent({ clientX: 50, clientY: 50 }));
+    expect(useSelection.getState().selectedPolygonIds).toEqual([]);
+    expect(useSelection.getState().selectedLabelIds).toEqual([]);
+  });
+
+  it('an alt-marquee previews and selects locked items', () => {
+    const { result, ref } = render();
+    down(result, pointerEvent({ clientX: -50, clientY: -50, target: ref.current }));
+    move(result, pointerEvent({ clientX: 50, clientY: 50, altKey: true }));
+    expect(result.current.previewPolygonIds).toContain('p1');
+    expect(result.current.previewLabelIds).toContain('g1');
+    up(result, pointerEvent({ clientX: 50, clientY: 50, altKey: true }));
+    expect(useSelection.getState().selectedPolygonIds).toEqual(['p1']);
+    expect(useSelection.getState().selectedLabelIds).toEqual(['g1']);
+  });
+
+  it('releasing alt before pointerup commits WITHOUT locked items (release modifiers win)', () => {
+    // Same contract as shift/ctrl: the commit reads the pointerup event's
+    // modifiers, so mid-drag changes update the outcome.
+    const { result, ref } = render();
+    down(result, pointerEvent({ clientX: -50, clientY: -50, target: ref.current }));
+    move(result, pointerEvent({ clientX: 50, clientY: 50, altKey: true }));
+    expect(result.current.previewPolygonIds).toContain('p1');
+    up(result, pointerEvent({ clientX: 50, clientY: 50 }));
+    expect(useSelection.getState().selectedPolygonIds).toEqual([]);
+    expect(useSelection.getState().selectedLabelIds).toEqual([]);
+  });
+});
+
 describe('useRectSelect — modifier semantics', () => {
   beforeEach(() => {
     useDoc.setState({

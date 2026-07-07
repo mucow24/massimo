@@ -132,18 +132,24 @@ export function stationLocalToWorld(station: Station, p: Pt): Pt {
  * station's label rect is measured at the same (heavier, wider) weight it is
  * actually painted at — otherwise its marquee hit rect would be narrower than
  * the visible label.
+ *
+ * `includeLocked` (here and in the other *ForRect fns) is the alt-marquee
+ * recovery path: locked items are click-through on the canvas, so an
+ * alt-marquee is how a locked item gets re-selected (to reach its unlock
+ * toggle). A plain marquee keeps excluding them.
  */
 export function stationsForRect(
   stations: Record<StationId, Station>,
   rect: AABB,
   style: LabelStyle = DEFAULT_LABEL_STYLE,
   stopHalf: StopHalfFn = DEFAULT_STOP_HALF,
+  includeLocked = false,
 ): StationId[] {
   const hits: StationId[] = [];
   for (const id of Object.keys(stations)) {
     const st = stations[id];
     // Locked stations are excluded from marquee selection (mirrors polygons).
-    if (st.locked) continue;
+    if (st.locked && !includeLocked) continue;
     const b = stationBoundaryRectsLocal(st, effectiveStationLabelStyle(st, style), stopHalf);
     const cellsWorld = b.cells.map((p) => stationLocalToWorld(st, p));
     if (rectIntersectsPolygon(rect, cellsWorld)) {
@@ -186,12 +192,16 @@ export function textLabelHitPolygon(label: TextLabel): Pt[] {
  * coords). Empty-text labels still have a small hit polygon from the padding,
  * so a freshly-placed "New Label" can still be selected.
  */
-export function textLabelsForRect(labels: Record<string, TextLabel>, rect: AABB): string[] {
+export function textLabelsForRect(
+  labels: Record<string, TextLabel>,
+  rect: AABB,
+  includeLocked = false,
+): string[] {
   const hits: string[] = [];
   for (const id of Object.keys(labels)) {
     const label = labels[id];
     // Locked labels are excluded from marquee selection.
-    if (label.locked) continue;
+    if (label.locked && !includeLocked) continue;
     const poly = textLabelHitPolygon(label);
     if (rectIntersectsPolygon(rect, poly)) hits.push(id);
   }
@@ -205,12 +215,16 @@ export function textLabelsForRect(labels: Record<string, TextLabel>, rect: AABB)
  * it. Open polygons have no filled body, so only the stroke chain counts —
  * a marquee fully inside an open polygon's vertex loop selects nothing.
  */
-export function polygonsForRect(polygons: Record<string, Polygon>, rect: AABB): string[] {
+export function polygonsForRect(
+  polygons: Record<string, Polygon>,
+  rect: AABB,
+  includeLocked = false,
+): string[] {
   const hits: string[] = [];
   for (const id of Object.keys(polygons)) {
     const poly = polygons[id];
     // Locked polygons are excluded from marquee selection.
-    if (poly.locked) continue;
+    if (poly.locked && !includeLocked) continue;
     if (rectIntersectsPolygon(rect, poly.vertices, poly.closed !== false)) hits.push(id);
   }
   return hits;
@@ -221,11 +235,15 @@ export function polygonsForRect(polygons: Record<string, Polygon>, rect: AABB): 
  * coords). The four world corners form a closed quad, so the rect/quad overlap
  * test is direct. Locked images are excluded from marquee selection.
  */
-export function svgImagesForRect(svgImages: Record<string, SvgImage>, rect: AABB): string[] {
+export function svgImagesForRect(
+  svgImages: Record<string, SvgImage>,
+  rect: AABB,
+  includeLocked = false,
+): string[] {
   const hits: string[] = [];
   for (const id of Object.keys(svgImages)) {
     const im = svgImages[id];
-    if (im.locked) continue;
+    if (im.locked && !includeLocked) continue;
     if (rectIntersectsPolygon(rect, svgImageCorners(im))) hits.push(id);
   }
   return hits;
@@ -238,7 +256,11 @@ export function svgImagesForRect(svgImages: Record<string, SvgImage>, rect: AABB
  * with the dashed selection ring's bounding box, which is what the user
  * sees as "the selectable footprint".
  */
-export function routeBulletsForRect(bullets: Record<string, RouteBullet>, rect: AABB): string[] {
+export function routeBulletsForRect(
+  bullets: Record<string, RouteBullet>,
+  rect: AABB,
+  includeLocked = false,
+): string[] {
   const xLo = Math.min(rect.x0, rect.x1);
   const xHi = Math.max(rect.x0, rect.x1);
   const yLo = Math.min(rect.y0, rect.y1);
@@ -247,7 +269,7 @@ export function routeBulletsForRect(bullets: Record<string, RouteBullet>, rect: 
   for (const id of Object.keys(bullets)) {
     const b = bullets[id];
     // Locked bullets are excluded from marquee selection.
-    if (b.locked) continue;
+    if (b.locked && !includeLocked) continue;
     if (b.x + b.size < xLo || b.x - b.size > xHi) continue;
     if (b.y + b.size < yLo || b.y - b.size > yHi) continue;
     hits.push(id);

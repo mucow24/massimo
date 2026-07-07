@@ -7,13 +7,13 @@ import type { Polygon } from '../model/types';
 
 const noop = () => {};
 
-function renderBody(polygon: Polygon) {
+function renderBody(polygon: Polygon, opts: { selected?: boolean } = {}) {
   return render(
     <svg>
       <PolygonView
         polygon={polygon}
         layer="body"
-        selected={false}
+        selected={opts.selected ?? false}
         selectedVertexIndex={null}
         interactive
         onPointerDown={noop}
@@ -237,6 +237,35 @@ describe('<PolygonView /> open polygons (closed: false)', () => {
     } finally {
       useViewportStore.setState({ zoom: 1 });
     }
+  });
+});
+
+describe('<PolygonView /> locked body is click-through unless selected', () => {
+  beforeEach(() => {
+    useViewportStore.setState({ darkMode: false, zoom: 1 });
+  });
+
+  it('a locked, unselected body ignores pointer events (clicks land on what is beneath)', () => {
+    const { container } = renderBody(makePolygon({ id: 'p0', locked: true }));
+    expect(body(container).getAttribute('pointer-events')).toBe('none');
+  });
+
+  it('a locked body stays clickable while selected (popover unlock stays reachable)', () => {
+    const { container } = renderBody(makePolygon({ id: 'p0', locked: true }), { selected: true });
+    // Closed-body default: whole-shape hit-testing (no pointer-events override).
+    expect(body(container).getAttribute('pointer-events')).toBeNull();
+  });
+
+  it('a locked OPEN body keeps stroke hit-testing while selected', () => {
+    const { container } = renderBody(makePolygon({ id: 'p0', closed: false, locked: true }), {
+      selected: true,
+    });
+    expect(body(container).getAttribute('pointer-events')).toBe('stroke');
+  });
+
+  it('an unlocked, unselected body keeps whole-body hit-testing', () => {
+    const { container } = renderBody(makePolygon({ id: 'p0' }));
+    expect(body(container).getAttribute('pointer-events')).toBeNull();
   });
 });
 

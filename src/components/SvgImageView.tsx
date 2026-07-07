@@ -69,6 +69,12 @@ export function SvgImageView({
   const transform = `translate(${image.x} ${image.y}) rotate(${image.rotation})`;
 
   if (layer === 'body') {
+    // Click-through cases: while a placement tool is active, clicks must reach
+    // the canvas to place the new item over the image; while locked AND not
+    // selected, lock means "this is background — stop catching my clicks".
+    // Selection keeps a locked image clickable so the popover's unlock toggle
+    // stays reachable.
+    const clickThrough = !interactive || (image.locked && !selected);
     return (
       <g
         data-svg-image-id={image.id}
@@ -89,9 +95,7 @@ export function SvgImageView({
           // gate keys off [data-locked] so a drag starting on a locked image
           // begins a marquee instead of doing nothing.
           data-locked={image.locked || undefined}
-          // Ignore pointer events while a placement tool is active so the click
-          // reaches the canvas and places the new item over the image.
-          pointerEvents={interactive ? undefined : 'none'}
+          pointerEvents={clickThrough ? 'none' : undefined}
           onPointerDown={(e) => onPointerDown(image.id, e)}
           onClick={(e) => onClick(image.id, e)}
           onContextMenu={(e) => onContextMenu(image.id, e)}

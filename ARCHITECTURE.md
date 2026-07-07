@@ -285,10 +285,21 @@ collections, `name: 'Untitled map'`, `curveRadius: 24`, `lineCounter: 0`, `activ
   900).
 - `labelItalic?` — OR'd with the doc-global `labelItalic`.
 - `locked?` — **canvas protection**: can't be dragged, marquee-selected, group-towed, nudged,
-  rotated (right-click rotate is a no-op; group rotate skips locked members), or deleted; **can**
-  still be click-selected, and the **station inspector stays fully enabled** (only stations get
-  that). Polygon, RouteBullet, TextLabel and SvgImage share the same canvas protections, but
-  their popovers **disable every editing control except the lock toggle** while locked.
+  rotated (right-click rotate is a no-op; group rotate skips locked members), or deleted. A
+  locked item is also **click-through while unselected** (its hit surfaces drop pointer-events,
+  so clicks land on whatever is beneath — lock reads as "this is background"); while it IS
+  selected it stays clickable, so the popover's unlock toggle remains reachable right after
+  locking. For stations the click-through applies in **idle mode only** — lock protects
+  geometry, not mode participation, so a locked station is still a transfer endpoint and can
+  still be toggled onto a line in append mode (non-idle modes wipe the selection on entry, so
+  without the idle gate locked stations would be unreachable in every mode). Accepted
+  side-effect: idle-mode modifier clicks that *target* a station (ctrl-click redistribute,
+  ctrl+shift path-extend) can't target a locked, unselected station — unlock it first.
+  Re-selecting a locked, deselected item: **Alt+marquee** includes locked items (stations also
+  stay selectable from the sidebar, and the **station inspector stays fully enabled** — only
+  stations get that). Polygon, RouteBullet, TextLabel and SvgImage share the same canvas
+  protections, but their popovers **disable every editing control except the lock toggle**
+  while locked.
 
 **`StopCell`** — one line's stop on a station. `lineId, row, col` (station-local grid;
 **`row`/`col` are floats now**, since diagonal moves use ±√2/2 — equality uses `CELL_EPS=1e-4`),
@@ -712,7 +723,8 @@ renderers** (one pass rounds convex corners and fillets concave junctions).
 ### Other geometry
 
 - `stationBoundary.ts` — builds a station's cells-AABB ∪ rotated label rect (the wash silhouette)
-  and the `*ForRect` marquee functions (all skip `locked` items).
+  and the `*ForRect` marquee functions (all skip `locked` items unless `includeLocked` is set —
+  the Alt-marquee recovery path for click-through locked items).
 - `stripeOutline.ts` — per-stripe edge/cap geometry for the stroke-before-fill dots; reads the
   **baked** `stripeWidths`/`stripeOffsets`.
 - `lineTagGeometry.ts` — arc-length sampling along an offset path; `snapNeighborTag` snaps a
@@ -831,8 +843,8 @@ on-screen spacing stays ≥ 5px — snapping still reads the true `gridSize` fro
 ### Pointer flow
 
 `MapCanvas`'s `<svg>`'s main handlers (plus small utility ones: `onPointerLeave` clears
-`cursorWorld`; `onClickCapture`/`onContextMenuCapture` do the proxy reroute described below;
-`onContextMenu`/`onDragStart` just `preventDefault`):
+`cursorWorld`; `onClickCapture`/`onContextMenuCapture` do the alt+click deep-pick and the proxy
+reroute described below; `onContextMenu`/`onDragStart` just `preventDefault`):
 - `onPointerDown`: middle-button or hand-mode → `view.startPan`; else `rectSelect.onPointerDown`
   (self-gates). **Item drags start from the item's own pointer-down** (fired by the child view),
   not the canvas handler. A **selected** item additionally carries a top-z transparent drag-proxy
@@ -849,6 +861,18 @@ on-screen spacing stays ≥ 5px — snapping still reads the true `gridSize` fro
   gesture (recovers from a drag killed without pointerup).
 - `onClick`: only on background; bails if `dragState.suppressClick`; else placement dispatch, else
   deselect-all.
+- **Alt+click deep-pick** (`deepPickAltClick` in `onClickCapture`, idle arrow mode only): cycles
+  the selection through the stack of selectable entities under the cursor, topmost first — the
+  way to reach an element buried under other hit surfaces (a stripe under a station's hit rect, a
+  polygon under a label). `document.elementsFromPoint` (proxy layer hidden, like the reroute) is
+  resolved to entities by the pure [hitStack.ts](src/components/canvas/hitStack.ts)
+  (`resolveHitStack` maps the existing `data-*` identity attrs, deduping multi-surface entities;
+  `nextInStack` picks the entry after the current sole selection, wrapping — the selection itself
+  is the cycle cursor, no positional state; `currentHitEntity` extends `soleSelection` with the
+  line/transfer/line-tag primaries). The chosen element gets a synthetic plain click so its own
+  handler runs (alt stripped — no recursion; shift preserved; ctrl/meta dropped). A selected line
+  is pre-cleared before the dispatch so `exitLineEditorOnItemClick` can't eat the pick. Locked
+  click-through items never appear in the stack (no pointer-events → not in `elementsFromPoint`).
 
 **Shared drag lifecycle** ([dragGesture.ts](src/components/canvas/dragGesture.ts)): pointerdown
 captures pre-drag state + `beginHistoryGroup()`; **pointer capture is deferred to first move** (so

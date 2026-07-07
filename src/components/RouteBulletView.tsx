@@ -77,6 +77,11 @@ export function RouteBulletView({
       // gate keys off [data-locked] so a drag over a locked bullet begins a
       // marquee instead of doing nothing.
       data-locked={bullet.locked || undefined}
+      // Locked + unselected → click-through: lock means "this is background —
+      // stop catching my clicks", so clicks land on whatever is beneath.
+      // Selection keeps a locked bullet clickable so the popover's unlock
+      // toggle stays reachable.
+      pointerEvents={bullet.locked && !selected ? 'none' : undefined}
       transform={`translate(${bullet.x} ${bullet.y}) rotate(${angle})`}
       onPointerDown={(e) => onPointerDown(bullet.id, e)}
       onClick={(e) => onClick(bullet.id, e)}

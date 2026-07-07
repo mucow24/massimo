@@ -155,12 +155,15 @@ export function StopGlyph({
 
   // Stroke pass: the silhouette only, painted UNDER every fill. Carries
   // data-stop-stroke (a separate seam) — the canonical data-stop-* attrs stay
-  // on the fill pass so they remain one element per dot.
+  // on the fill pass so they remain one element per dot. data-stop-stroke's
+  // VALUE is the station id: the alt+click deep-pick resolver (hitStack.ts)
+  // must map a hit on the border ring back to its station, and a second
+  // data-stop-station element per dot would break the one-per-dot locators.
   if (pass === 'stroke') {
     if (!splitBorder || !strokeAttrs) return null;
     return shapeElement({ ...params, r: params.r + off }, cx, cy, {
       fill: strokeAttrs.stroke,
-      'data-stop-stroke': '',
+      'data-stop-stroke': stationId ?? '',
       ...(lineId ? { 'data-stop-line': lineId } : {}),
     });
   }
