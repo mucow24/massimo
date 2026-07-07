@@ -10,6 +10,7 @@ import { finishDrag, trackDragMove } from './dragGesture';
 import { alignTargets } from './snapTargets';
 import {
   collectGroupSiblings,
+  groupAlignExclude,
   hasGroupSiblings,
   translateSiblings,
   type GroupSiblings,
@@ -111,12 +112,10 @@ export function usePolygonDrag(
       startMY: e.clientY,
       moved: false,
       siblings,
-      // During a group drag the other selected items are moving, so they make
-      // unstable snap targets — drop alignment (empty pool) and let only grid
-      // act on the anchor, mirroring useItemDrag / useSvgImageDrag.
-      allTargets: hasGroupSiblings(siblings)
-        ? []
-        : alignTargets(doc, { polygonIds: new Set([id]) }),
+      // The pool excludes the dragged polygon and every co-selected sibling
+      // (they move with the grab); stationary items stay valid targets even
+      // during a group drag.
+      allTargets: alignTargets(doc, groupAlignExclude('polygon', id, siblings)),
       history: beginHistoryGroup(),
     };
   };

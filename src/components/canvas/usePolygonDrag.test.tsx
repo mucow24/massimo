@@ -102,6 +102,36 @@ describe('usePolygonDrag — whole-polygon drag', () => {
     expect(verts[2].y).toBeCloseTo(40, 6);
   });
 
+  it('a group-drag master aligns to STATIONARY targets but never to co-selected siblings', () => {
+    setModes({ line: false, all: 'all', grid: 'off' });
+    useDoc.setState({
+      ...useDoc.getState(),
+      polygons: {
+        p0: makePolygon({ id: 'p0' }),
+        // Co-selected sibling with a vertex CLOSER to the drop than the bullet:
+        // if the exclusion is missing, x snaps to 95 instead of 100.
+        p1: makePolygon({ id: 'p1', vertices: [{ x: 95, y: -200 }] }),
+      },
+      polygonOrder: ['p0', 'p1'],
+      routeBullets: { b0: makeRouteBullet({ id: 'b0', x: 100, y: 55 }) },
+    });
+    useSelection.setState({ ...useSelection.getState(), selectedPolygonIds: ['p0', 'p1'] });
+    const r = render();
+    // Δscreen (127,10) proposes the anchor at (97,-20): 3 from the stationary
+    // bullet's vertical axis x=100, 2 from co-selected p1's vertex axis x=95.
+    r.current.onPolygonPointerDown('p0', pointerEvent({ clientX: 200, clientY: 200 }));
+    r.current.onPointerMove(pointerEvent({ clientX: 210, clientY: 200 }));
+    r.current.onPointerMove(pointerEvent({ clientX: 327, clientY: 210 }));
+    r.current.onPointerUp(pointerEvent({ clientX: 327, clientY: 210 }));
+
+    const doc = useDoc.getState();
+    expect(doc.polygons['p0'].vertices[0].x).toBeCloseTo(100, 6);
+    expect(doc.polygons['p0'].vertices[0].y).toBeCloseTo(-20, 6);
+    // The towed sibling translates by the post-snap delta (130, 10).
+    expect(doc.polygons['p1'].vertices[0].x).toBeCloseTo(225, 6);
+    expect(doc.polygons['p1'].vertices[0].y).toBeCloseTo(-190, 6);
+  });
+
   it('a click (no movement past threshold) cancels the history group, leaving vertices put', () => {
     useDoc.setState({ ...useDoc.getState(), polygons: { p0: makePolygon({ id: 'p0' }) } });
     const r = render();

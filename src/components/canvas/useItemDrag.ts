@@ -31,6 +31,10 @@ type ItemDragState = {
   startMY: number;
   moved: boolean;
   siblings: GroupSiblings;
+  // Co-selected stations, excluded from the bullet snap engine's candidate
+  // pool — they move with the group, so they're unstable targets. Mirrors
+  // useStationDrag's siblingIdSet.
+  siblingStationIds: ReadonlySet<string>;
   history: ReturnType<typeof beginHistoryGroup>;
 };
 
@@ -85,6 +89,8 @@ export function useItemDrag(
     const item = kind === 'bullet' ? routeBullets[id] : textLabels[id];
     if (item?.locked) return;
     e.stopPropagation();
+    // Tow the rest of the multi-selection (every type) by the same delta.
+    const siblings = collectGroupSiblings(kind, id);
     dragRef.current = {
       kind,
       id,
@@ -93,8 +99,8 @@ export function useItemDrag(
       startMX: e.clientX,
       startMY: e.clientY,
       moved: false,
-      // Tow the rest of the multi-selection (every type) by the same delta.
-      siblings: collectGroupSiblings(kind, id),
+      siblings,
+      siblingStationIds: new Set(siblings.stations.map((s) => s.id)),
       history: beginHistoryGroup(),
     };
   };
@@ -123,13 +129,12 @@ export function useItemDrag(
     if (ds.kind === 'bullet') {
       const cur = routeBullets[ds.id];
       const lineId = cur?.lineId ?? null;
-      // Group-drag suppresses the bullet-line snap: siblings are moving, so the
-      // snap targets become unstable and a half-snapped grab drags the whole
-      // group off-axis.
-      if (lineId && !e.shiftKey && !inGroupDrag) {
+      if (lineId && !e.shiftKey) {
         // Reuse the station snap engine in bullet mode — it already handles
         // per-stop axis alignment, two-axis corner snap, and the "third in-line
-        // station" opposite-direction guide.
+        // station" opposite-direction guide. In a group drag, co-selected
+        // stations are excluded (they move with the grab); stationary stations
+        // stay valid targets.
         const snap = snapDraggedStation({
           proposedX: nx,
           proposedY: ny,
@@ -137,6 +142,7 @@ export function useItemDrag(
           lines,
           tolerance: BULLET_SNAP_TOLERANCE / zoom,
           bulletLineId: lineId,
+          excludedIds: ds.siblingStationIds.size > 0 ? ds.siblingStationIds : undefined,
           modes: snapModes,
           gridInterval: gridSize,
         });
@@ -145,8 +151,8 @@ export function useItemDrag(
         setBulletSnapGuides(snap.guides);
       } else {
         if (bulletSnapGuides.length > 0) setBulletSnapGuides([]);
-        // Grid-snap fallback when the snap engine wasn't called (unbound bullet
-        // or group drag). Shift still bypasses.
+        // Grid-snap fallback when the snap engine wasn't called (unbound
+        // bullet). Shift still bypasses.
         if (snapModes.grid !== 'off' && !e.shiftKey) {
           const g = snapPointToGrid(nx, ny, snapModes.grid, gridSize);
           nx = g.x;

@@ -6,7 +6,7 @@ import { useSnapPrefs } from '../../state/snapPrefs';
 import { useViewportStore } from '../../state/viewportStore';
 import { DEFAULT_DOC } from '../../model/transforms';
 import { DEFAULT_SNAP_MODES, type SnapModes } from '../../geometry/snap';
-import { makeSvgImage, makeTextLabel } from '../../test/fixtures';
+import { makePolygon, makeSvgImage, makeTextLabel } from '../../test/fixtures';
 import { measureTextLabel } from '../../geometry/textMeasure';
 import { fakeSvgRef, pointerEvent } from '../../test/interaction';
 
@@ -69,6 +69,35 @@ describe('useSvgImageDrag — move', () => {
     // Center = snapped anchor + (30,30).
     expect(useDoc.getState().svgImages.i0.x).toBeCloseTo(ulx + 30, 5);
     expect(useDoc.getState().svgImages.i0.y).toBeCloseTo(130, 5);
+  });
+
+  it('a group-drag master still aligns to stationary targets, towing by the snapped delta', () => {
+    setModes({ line: false, all: 'all', grid: 'off' });
+    seed({ width: 60, height: 60 }); // anchor TL (-30,-30)
+    useDoc.setState({
+      ...useDoc.getState(),
+      polygons: { p0: makePolygon({ id: 'p0', vertices: [{ x: 100, y: 55 }] }) },
+      polygonOrder: ['p0'],
+      textLabels: { t0: makeTextLabel({ id: 't0', x: 300, y: 300 }) },
+    });
+    useSelection.setState({
+      ...useSelection.getState(),
+      selectedSvgImageIds: ['i0'],
+      selectedLabelIds: ['t0'],
+    });
+    const r = render();
+    // Δscreen (127,10) proposes the anchor at (97,-20): 3 from the stationary
+    // polygon vertex's vertical axis x=100 → snaps → center (130, 10).
+    act(() => r.current.onSvgImagePointerDown('i0', pointerEvent({ clientX: 100, clientY: 100 })));
+    move(r, pointerEvent({ clientX: 227, clientY: 110 }));
+    up(r, pointerEvent({ clientX: 227, clientY: 110 }));
+
+    const doc = useDoc.getState();
+    expect(doc.svgImages.i0.x).toBeCloseTo(130, 5);
+    expect(doc.svgImages.i0.y).toBeCloseTo(10, 5);
+    // The co-selected label tows by the post-snap delta (130, 10).
+    expect(doc.textLabels['t0'].x).toBeCloseTo(430, 5);
+    expect(doc.textLabels['t0'].y).toBeCloseTo(310, 5);
   });
 });
 

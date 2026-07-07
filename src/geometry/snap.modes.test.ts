@@ -415,6 +415,53 @@ describe('snapDraggedStation: equidistant mode', () => {
   });
 });
 
+describe('snapDraggedStation: excludedIds reach the along-axis refinement', () => {
+  it('equidistant never anchors on an excluded (co-moving) neighbor', () => {
+    // A—B—C on a horizontal corridor; A is excluded (co-selected in a group
+    // drag, so it moves with the grab). The alignment pool already skips A;
+    // the equidistant refinement must too — otherwise the snap chases a
+    // moving cadence anchor.
+    const a = makeStation({ id: 'a', x: 0, y: 0, stops: [horizontalStop('L1')] });
+    const b = makeStation({ id: 'b', x: 40, y: 0, stops: [horizontalStop('L1')] });
+    const c = makeStation({ id: 'c', x: 100, y: 0, stops: [horizontalStop('L1')] });
+    const r = snapDraggedStation({
+      draggedId: 'b',
+      proposedX: 48,
+      proposedY: 3,
+      draggedRotation: 0,
+      draggedStops: b.stops,
+      stations: stations(a, b, c),
+      lines: linesOf(lineOf('L1', ['a', 'b', 'c'])),
+      excludedIds: new Set(['a']),
+      modes: { line: true, equidistant: true, tens: false, all: 'off', grid: 'off' },
+    });
+    // Line snap holds y = 0; equidistant would pull x to the A↔C midpoint 50,
+    // but A is excluded → x stays at the proposed 48.
+    expect(r.y).toBeCloseTo(0, 5);
+    expect(r.x).toBeCloseTo(48, 5);
+  });
+
+  it("bullet tens never anchors on an excluded line-start station", () => {
+    // Bullet bound to L1 (stations A—B). Tens anchors at line.stations[0] = A;
+    // with A excluded the cadence must not fire, though alignment to B's axis
+    // still holds the perpendicular.
+    const a = makeStation({ id: 'a', x: 0, y: 0, stops: [horizontalStop('L1')] });
+    const b = makeStation({ id: 'b', x: 95, y: 0, stops: [horizontalStop('L1')] });
+    const r = snapDraggedStation({
+      proposedX: 47,
+      proposedY: 3,
+      stations: stations(a, b),
+      lines: linesOf(lineOf('L1', ['a', 'b'])),
+      bulletLineId: 'L1',
+      excludedIds: new Set(['a']),
+      modes: { line: true, equidistant: false, tens: true, all: 'off', grid: 'off' },
+    });
+    expect(r.y).toBeCloseTo(0, 5);
+    // Without the exclusion guard, tens would round 47 → 50 from A's anchor.
+    expect(r.x).toBeCloseTo(47, 5);
+  });
+});
+
 describe('snapDraggedStation: tens mode', () => {
   it('snaps the along-axis distance from prev to a multiple of 10', () => {
     const a = makeStation({ id: 'a', x: 0, y: 0, stops: [horizontalStop('L1')] });

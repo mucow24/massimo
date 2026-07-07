@@ -513,6 +513,7 @@ export function snapDraggedStation(input: SnapInput): SnapResult {
       tolerance,
       bulletLineId,
       redistributeAnchor,
+      excludedIds: excluded,
     });
     if (refined) {
       sx = refined.sx;
@@ -952,6 +953,10 @@ function refineAlongAxis(args: {
    *  the user's intent by pulling the terminus onto the local A↔B cadence
    *  instead of toward the chosen anchor. */
   redistributeAnchor?: StationId;
+  /** Group-drag: stations moving with the grab. Already filtered out of the
+   *  alignment-candidate pool by the caller; the refinement must skip them
+   *  as cadence anchors too, or the snap chases moving targets. */
+  excludedIds?: ReadonlySet<StationId>;
 }): { sx: number; sy: number; sourceGuide?: { from: Vec2; to: Vec2 } } | null {
   const {
     sx,
@@ -967,8 +972,13 @@ function refineAlongAxis(args: {
     tolerance,
     bulletLineId,
     redistributeAnchor,
+    excludedIds,
   } = args;
   if (!modes.equidistant && !modes.tens) return null;
+
+  // A station moving with the group can't anchor a cadence.
+  const anchorStationFor = (id: StationId | null | undefined): Station | null =>
+    id && !excludedIds?.has(id) ? (stationsRec[id] ?? null) : null;
 
   const dStopX = sx + dOff.x;
   const dStopY = sy + dOff.y;
@@ -1000,7 +1010,7 @@ function refineAlongAxis(args: {
     if (!modes.tens) return null;
     const line = lines[bulletLineId];
     if (!line || line.stations.length === 0) return null;
-    const anchorStation = stationsRec[line.stations[0]];
+    const anchorStation = anchorStationFor(line.stations[0]);
     if (!anchorStation) return null;
     const anchor = stopWorldFor(anchorStation, bulletLineId);
     if (!anchor?.axisOk) return null;
@@ -1023,8 +1033,8 @@ function refineAlongAxis(args: {
 
     const prevId = dIdx > 0 ? line.stations[dIdx - 1] : null;
     const nextId = dIdx < line.stations.length - 1 ? line.stations[dIdx + 1] : null;
-    const prev = prevId ? stationsRec[prevId] : null;
-    const next = nextId ? stationsRec[nextId] : null;
+    const prev = anchorStationFor(prevId);
+    const next = anchorStationFor(nextId);
     const prevStop = prev ? stopWorldFor(prev, line.id) : null;
     const nextStop = next ? stopWorldFor(next, line.id) : null;
 
@@ -1053,7 +1063,7 @@ function refineAlongAxis(args: {
         // along-axis length so terminus↔prev matches prev↔prev-prev.
         // Disabled during Ctrl-drag so we don't override the redistribute
         // anchor with the local A↔B cadence.
-        const prevPrev = stationsRec[line.stations[dIdx - 2]];
+        const prevPrev = anchorStationFor(line.stations[dIdx - 2]);
         const prevPrevStop = prevPrev ? stopWorldFor(prevPrev, line.id) : null;
         if (prevPrevStop?.axisOk) {
           const ref =
@@ -1070,7 +1080,7 @@ function refineAlongAxis(args: {
         dIdx + 2 < line.stations.length
       ) {
         // Start terminus: mirror of the end case. Same Ctrl-drag gate.
-        const nextNext = stationsRec[line.stations[dIdx + 2]];
+        const nextNext = anchorStationFor(line.stations[dIdx + 2]);
         const nextNextStop = nextNext ? stopWorldFor(nextNext, line.id) : null;
         if (nextNextStop?.axisOk) {
           const ref =

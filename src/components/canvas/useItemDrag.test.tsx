@@ -297,7 +297,7 @@ describe('useItemDrag — group drag tows every selected item type', () => {
     expect(doc.polygons['p1'].vertices[1].x).toBe(50);
   });
 
-  it('grabbing a selected bullet carries the group (and suppresses line snap)', () => {
+  it('grabbing a selected bullet carries the group (unbound bullet: no snap engages)', () => {
     const { ref } = fakeSvgRef();
     const { result } = renderHook(() => useItemDrag(ref, 1, false));
     bulletDown(result, 'b1', pointerEvent({ clientX: 0, clientY: 0 }));
@@ -308,6 +308,53 @@ describe('useItemDrag — group drag tows every selected item type', () => {
     expect(doc.stations['S' as StationId].x).toBe(140);
     expect(doc.textLabels['g1'].x).toBe(40);
     expect(doc.polygons['p1'].vertices[0].x).toBe(40);
+  });
+
+  it('a bound bullet master keeps line snap against stationary stations, towing by the snapped delta', () => {
+    // Bind b1 to L1 and select only the bullet + one label — station S stays
+    // unselected, so it is a stable target the group-dragged bullet may snap to.
+    useDoc.setState({
+      ...useDoc.getState(),
+      routeBullets: {
+        b1: { ...useDoc.getState().routeBullets['b1'], x: 200, y: 50, lineId: 'L1' },
+      },
+    });
+    setModes({ line: true, all: 'off', grid: 'off' });
+    resetSelection({ selectedRouteBulletIds: ['b1'], selectedLabelIds: ['g1'] });
+
+    const { ref } = fakeSvgRef();
+    const { result } = renderHook(() => useItemDrag(ref, 1, false));
+    // S's auto-vertical stop sits at (100, 0) → vertical axis x=100. Δ(−96,0)
+    // proposes b1 at (104, 50): 4 inside the radius → snaps to x=100.
+    bulletDown(result, 'b1', pointerEvent({ clientX: 0, clientY: 0 }));
+    move(result, pointerEvent({ clientX: -96, clientY: 0 }));
+
+    const doc = useDoc.getState();
+    expect(doc.routeBullets['b1'].x).toBeCloseTo(100, 5);
+    expect(doc.routeBullets['b1'].y).toBeCloseTo(50, 5);
+    // The towed label moves by the POST-SNAP delta (−100, 0), not the raw −96.
+    expect(doc.textLabels['g1'].x).toBeCloseTo(-100, 5);
+  });
+
+  it('a bound bullet master never snaps to a CO-SELECTED station (unstable target)', () => {
+    useDoc.setState({
+      ...useDoc.getState(),
+      routeBullets: {
+        b1: { ...useDoc.getState().routeBullets['b1'], x: 200, y: 50, lineId: 'L1' },
+      },
+    });
+    setModes({ line: true, all: 'off', grid: 'off' });
+    resetSelection({ selectedRouteBulletIds: ['b1'], selectedStationIds: ['S'] });
+
+    const { ref } = fakeSvgRef();
+    const { result } = renderHook(() => useItemDrag(ref, 1, false));
+    bulletDown(result, 'b1', pointerEvent({ clientX: 0, clientY: 0 }));
+    move(result, pointerEvent({ clientX: -96, clientY: 0 }));
+
+    const doc = useDoc.getState();
+    // S moves with the group, so its axis must not capture the drag: raw 104.
+    expect(doc.routeBullets['b1'].x).toBeCloseTo(104, 5);
+    expect(doc.stations['S' as StationId].x).toBeCloseTo(100 - 96, 5);
   });
 
   it('a locked selected sibling stays put while the rest of the group tows', () => {

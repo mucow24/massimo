@@ -16,6 +16,7 @@ import type { Vec2 } from '../../geometry/vec';
 import { finishDrag, trackDragMove } from './dragGesture';
 import {
   collectGroupSiblings,
+  groupAlignExclude,
   hasGroupSiblings,
   translateSiblings,
   type GroupSiblings,
@@ -131,11 +132,10 @@ export function useSvgImageDrag(
       startMY: e.clientY,
       moved: false,
       siblings,
-      // During a group drag the other selected items move too, so they're
-      // unstable targets — drop alignment and let only grid act on the anchor.
-      allTargets: hasGroupSiblings(siblings)
-        ? []
-        : alignTargets(useDoc.getState(), { svgImageIds: new Set([id]) }),
+      // The pool excludes the dragged image and every co-selected sibling
+      // (they move with the grab); stationary items stay valid targets even
+      // during a group drag.
+      allTargets: alignTargets(useDoc.getState(), groupAlignExclude('svgImage', id, siblings)),
       history: beginHistoryGroup(),
     };
   };
