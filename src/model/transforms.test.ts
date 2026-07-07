@@ -54,6 +54,26 @@ describe('setLabelAlign', () => {
   });
 });
 
+describe('setLabelAutoAlign', () => {
+  it('turns the flag on', () => {
+    const doc = makeDoc({ stations: [makeStation({ id: 's1' })] });
+    expect(T.setLabelAutoAlign(doc, 's1', true).stations.s1.label.autoAlign).toBe(true);
+  });
+
+  it('turning it off removes the key (optional flags are omitted when off)', () => {
+    const on = T.setLabelAutoAlign(makeDoc({ stations: [makeStation({ id: 's1' })] }), 's1', true);
+    const off = T.setLabelAutoAlign(on, 's1', false);
+    expect('autoAlign' in off.stations.s1.label).toBe(false);
+  });
+
+  it('returns the same doc reference when unchanged (no-op)', () => {
+    const doc = makeDoc({ stations: [makeStation({ id: 's1' })] }); // flag absent = off
+    expect(T.setLabelAutoAlign(doc, 's1', false)).toBe(doc);
+    const on = T.setLabelAutoAlign(doc, 's1', true);
+    expect(T.setLabelAutoAlign(on, 's1', true)).toBe(on);
+  });
+});
+
 describe('rotateRouteBullet', () => {
   it('advances the rotation by one 45°-step', () => {
     const doc = T.addRouteBullet(makeDoc({}), 'b', 0, 0, null);
@@ -1050,6 +1070,31 @@ describe('toggleStationOnLine', () => {
     });
     const next = T.toggleStationOnLine(doc, 'L2', 's1');
     expect(next.stations.s1.label).toMatchObject({ row: 0, col: 1, align: 'end' });
+  });
+
+  it('nudges an autoAlign label off a landing stop even with an explicit align', () => {
+    // autoAlign re-derives placement from the stops, so it counts as
+    // auto-placed for the collision nudge regardless of the align field.
+    const doc = makeDoc({
+      stations: [
+        makeStation({
+          id: 's1',
+          stops: [makeStop('L1', { row: 0, col: 0 })],
+          label: {
+            row: 0,
+            col: 1,
+            rotation: 0,
+            offset: 0,
+            align: 'middle',
+            valign: 'middle',
+            autoAlign: true,
+          },
+        }),
+      ],
+      lines: [makeLine({ id: 'L1', stations: ['s1'] }), makeLine({ id: 'L2', stations: [] })],
+    });
+    const next = T.toggleStationOnLine(doc, 'L2', 's1');
+    expect(next.stations.s1.label).toMatchObject({ row: 0, col: 2 });
   });
 
   it('leaves the label alone when the new stop lands elsewhere', () => {

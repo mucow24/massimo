@@ -4,6 +4,7 @@ import {
   FontItalicIcon,
   LockClosedIcon,
   LockOpen1Icon,
+  MagicWandIcon,
   RotateCounterClockwiseIcon,
 } from '@radix-ui/react-icons';
 import { useDoc, useSelection } from '../../state/store';
@@ -16,7 +17,7 @@ import { StopRows } from './StopRows';
 import { useFieldHistory } from '../useFieldHistory';
 import { useNumericField } from '../useNumericField';
 import { useDismiss } from '../usePopover';
-import { resolveOffsetPerp } from '../../model/transforms';
+import { resolveAutoAlign, resolveOffsetPerp } from '../../model/transforms';
 
 export function StationInspector({ id }: { id: StationId }) {
   const station = useDoc((s) => s.stations[id]);
@@ -29,6 +30,7 @@ export function StationInspector({ id }: { id: StationId }) {
   const setLabelOffsetPerp = useDoc((s) => s.setLabelOffsetPerp);
   const setLabelAlign = useDoc((s) => s.setLabelAlign);
   const setLabelValign = useDoc((s) => s.setLabelValign);
+  const setLabelAutoAlign = useDoc((s) => s.setLabelAutoAlign);
   const setStationWaypoint = useDoc((s) => s.setStationWaypoint);
   const setStationLocked = useDoc((s) => s.setStationLocked);
   const setStationLabelBold = useDoc((s) => s.setStationLabelBold);
@@ -213,13 +215,34 @@ export function StationInspector({ id }: { id: StationId }) {
         <div className="field-row">
           {/* Cycle buttons dispatch the computed next value as an absolute
               set, so mirror mode is a plain broadcast of the same value —
-              matching stations can't diverge. */}
+              matching stations can't diverge. The Auto-placement toggle
+              follows the same absolute-value dispatch; while it's on the
+              align/valign cycles are overridden, so they disable. */}
+          <button
+            type="button"
+            className={`chip-btn${resolveAutoAlign(station.label) ? ' active' : ''}`}
+            aria-pressed={resolveAutoAlign(station.label)}
+            aria-label="Auto placement"
+            title={
+              resolveAutoAlign(station.label)
+                ? 'Auto placement on — alignment follows the nearest stop (transit-map typography), overriding align/v-align'
+                : 'Auto placement: align to the nearest stop with transit-map typography (overrides align/v-align)'
+            }
+            onClick={() => {
+              const next = !resolveAutoAlign(station.label);
+              dispatchAll((sid) => setLabelAutoAlign(sid, next));
+            }}
+          >
+            <MagicWandIcon />
+          </button>
           <LabelAlignCycleButton
             align={station.label.align}
+            disabled={resolveAutoAlign(station.label)}
             onSet={(v) => dispatchAll((sid) => setLabelAlign(sid, v))}
           />
           <LabelValignCycleButton
             valign={station.label.valign}
+            disabled={resolveAutoAlign(station.label)}
             onSet={(v) => dispatchAll((sid) => setLabelValign(sid, v))}
           />
           <button
