@@ -47,7 +47,7 @@ describe('text-label color serialization', () => {
 });
 
 describe('station label autoAlign serialization', () => {
-  it('round-trips the flag when on (sanitizeStations must not strip it)', () => {
+  it('round-trips the flag and H/V overrides (sanitizeStations must not strip them)', () => {
     const doc = makeDoc({
       stations: [
         makeStation({
@@ -60,6 +60,8 @@ describe('station label autoAlign serialization', () => {
             align: 'auto',
             valign: 'middle',
             autoAlign: true,
+            autoHAlign: 'end',
+            autoVAlign: 'down',
           },
         }),
       ],
@@ -68,6 +70,8 @@ describe('station label autoAlign serialization', () => {
     expect(result.ok).toBe(true);
     if (!result.ok) return;
     expect(result.doc.stations['s1'].label.autoAlign).toBe(true);
+    expect(result.doc.stations['s1'].label.autoHAlign).toBe('end');
+    expect(result.doc.stations['s1'].label.autoVAlign).toBe('down');
   });
 
   it('legacy saves without the field load with it absent (off)', () => {
