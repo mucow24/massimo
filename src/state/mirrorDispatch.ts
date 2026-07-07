@@ -7,9 +7,10 @@ import type { StationId } from '../model/types';
 // (inspector controls, keyboard nudges, canvas drags). When mirror matching
 // is on, an edit to one station broadcasts to every station that renders
 // identically AND shares a line with it (model/matching.ts); each match
-// carries a layoutOffset (0-3) so callers can rotate local-frame (dRow,dCol)
-// deltas into the match's frame via rotateGridDelta. Rotation-invariant edits
-// (dot style/size, offsets, absolute align values) ignore the offset.
+// carries a layoutOffset (0-7, in 45° steps) so callers can rotate
+// local-frame (dRow,dCol) deltas into the match's frame via rotateGridDelta.
+// Rotation-invariant edits (dot style/size, offsets, absolute align values)
+// ignore the offset.
 
 export interface MirrorTarget {
   id: StationId;

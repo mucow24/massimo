@@ -159,11 +159,14 @@ describe('DIR_8', () => {
 });
 
 describe('rotateGridDelta', () => {
-  // Mirrors the per-step transform in `rotateStationLayoutBy90(_, +1)`:
-  //   (col, row) → (-row, col)
-  // i.e. (dRow, dCol) → (dCol, -dRow). Applied k times. Used by mirror-
-  // matching mass-edits to keep moveStop/moveLabel deltas visually consistent
-  // across stations whose layouts differ by a 90°·k rotation.
+  // k counts 45°-steps: even k mirrors the per-step transform in
+  // `rotateStationLayoutBy90(_, +1)` — (col, row) → (-row, col), i.e.
+  // (dRow, dCol) → (dCol, -dRow) per two steps, integer-exact — and odd k
+  // adds the `rotateStationLayoutBy45(_, +1)` half-step onto the diagonal
+  // (±√2/2) lattice. Used by mirror-matching mass-edits to keep
+  // moveStop/moveLabel deltas visually consistent across stations whose
+  // layouts differ by a 45°·k rotation.
+  const h = Math.SQRT1_2;
 
   it('k = 0 is identity', () => {
     expect(rotateGridDelta(1, 0, 0)).toEqual({ dRow: 1, dCol: 0 });
@@ -171,30 +174,53 @@ describe('rotateGridDelta', () => {
     expect(rotateGridDelta(-1, 2, 0)).toEqual({ dRow: -1, dCol: 2 });
   });
 
-  it('k = 1 rotates one 90°-step CW in screen coords', () => {
+  it('k = 2 rotates one 90°-step CW in screen coords, integer-exact', () => {
     // Matches the layout step in rotateStationLayoutBy90: (1, 0) → (0, -1).
-    expect(rotateGridDelta(1, 0, 1)).toEqual({ dRow: 0, dCol: -1 });
-    expect(rotateGridDelta(0, 1, 1)).toEqual({ dRow: 1, dCol: 0 });
-    expect(rotateGridDelta(-1, 0, 1)).toEqual({ dRow: 0, dCol: 1 });
+    expect(rotateGridDelta(1, 0, 2)).toEqual({ dRow: 0, dCol: -1 });
+    expect(rotateGridDelta(0, 1, 2)).toEqual({ dRow: 1, dCol: 0 });
+    expect(rotateGridDelta(-1, 0, 2)).toEqual({ dRow: 0, dCol: 1 });
   });
 
-  it('k = 2 negates both components (180°)', () => {
-    expect(rotateGridDelta(1, 0, 2)).toEqual({ dRow: -1, dCol: 0 });
-    expect(rotateGridDelta(0, 1, 2)).toEqual({ dRow: 0, dCol: -1 });
-    expect(rotateGridDelta(2, -3, 2)).toEqual({ dRow: -2, dCol: 3 });
+  it('k = 4 negates both components (180°)', () => {
+    expect(rotateGridDelta(1, 0, 4)).toEqual({ dRow: -1, dCol: 0 });
+    expect(rotateGridDelta(0, 1, 4)).toEqual({ dRow: 0, dCol: -1 });
+    expect(rotateGridDelta(2, -3, 4)).toEqual({ dRow: -2, dCol: 3 });
   });
 
-  it('k = 3 is the inverse of k = 1', () => {
+  it('k = 6 is the inverse of k = 2', () => {
     // (1, 0) → (0, 1).
-    expect(rotateGridDelta(1, 0, 3)).toEqual({ dRow: 0, dCol: 1 });
-    expect(rotateGridDelta(0, 1, 3)).toEqual({ dRow: -1, dCol: 0 });
+    expect(rotateGridDelta(1, 0, 6)).toEqual({ dRow: 0, dCol: 1 });
+    expect(rotateGridDelta(0, 1, 6)).toEqual({ dRow: -1, dCol: 0 });
   });
 
-  it('applying k=1 four times returns to the identity', () => {
+  it('k = 1 maps an orthogonal delta onto the diagonal lattice (45° CW)', () => {
+    // South (1, 0) → SW (h, -h); east (0, 1) → SE (h, h).
+    const sw = rotateGridDelta(1, 0, 1);
+    expect(sw.dRow).toBeCloseTo(h, 12);
+    expect(sw.dCol).toBeCloseTo(-h, 12);
+    const se = rotateGridDelta(0, 1, 1);
+    expect(se.dRow).toBeCloseTo(h, 12);
+    expect(se.dCol).toBeCloseTo(h, 12);
+  });
+
+  it('k = 7 is the inverse of k = 1', () => {
+    const d = rotateGridDelta(1, 0, 7);
+    expect(d.dRow).toBeCloseTo(h, 12);
+    expect(d.dCol).toBeCloseTo(h, 12);
+  });
+
+  it('odd k maps a diagonal delta back onto the orthogonal lattice', () => {
+    // SE (h, h) rotated one 45° step CW → south (1, 0), up to one ulp.
+    const d = rotateGridDelta(h, h, 1);
+    expect(d.dRow).toBeCloseTo(1, 12);
+    expect(d.dCol).toBeCloseTo(0, 12);
+  });
+
+  it('applying k=2 four times returns to the identity', () => {
     let r = 3;
     let c = -2;
     for (let i = 0; i < 4; i++) {
-      const out = rotateGridDelta(r, c, 1);
+      const out = rotateGridDelta(r, c, 2);
       r = out.dRow;
       c = out.dCol;
     }

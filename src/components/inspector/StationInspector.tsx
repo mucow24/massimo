@@ -51,10 +51,11 @@ export function StationInspector({ id }: { id: StationId }) {
   );
   const stopRowsRef = useRef<HTMLDivElement | null>(null);
 
-  // Stations that render identically to this one (across the model's 4-fold
+  // Stations that render identically to this one (across the model's 8-fold
   // mirror symmetry) AND share a line with it. Each carries a layoutOffset
-  // (0–3): the source→candidate rotation callers apply to (dRow, dCol)
-  // edits (rotateGridDelta) when broadcasting them to that match.
+  // (0–7, in 45° steps): the source→candidate rotation callers apply to
+  // (dRow, dCol) edits (rotateGridDelta) when broadcasting them to that
+  // match.
   const matches = useMemo(
     () => findMatchingStations({ stations: stationsAll, lines: linesAll }, id),
     [stationsAll, linesAll, id],

@@ -1,21 +1,22 @@
-import { rotateStationLayoutBy90 } from './transforms';
+import { rotateStationLayoutBy45, rotateStationLayoutBy90 } from './transforms';
 import type { MapDoc, Station, StationId, StopCell } from './types';
 
 type MatchingScope = Pick<MapDoc, 'stations' | 'lines'>;
 
 /**
- * Layout-rotation difference between a source and a matching station, in 90°
- * steps that match `rotateStationLayoutBy90(_, +1)` (one step rotates the
- * unrotated grid CW while compensating station rotation CCW). 0 = identical
- * layout; 2 = 180° mirror. Directed SOURCE → CANDIDATE: callers that
+ * Layout-rotation difference between a source and a matching station, in 45°
+ * steps: two steps match `rotateStationLayoutBy90(_, +1)` (rotate the
+ * unrotated grid CW while compensating station rotation CCW), one step is
+ * the `rotateStationLayoutBy45` half-step that maps between the orthogonal
+ * and diagonal (±√2/2) lattices. 0 = identical layout; 4 = 180° mirror; odd
+ * = opposite lattice parity. Directed SOURCE → CANDIDATE: callers that
  * propagate local-frame edits across the match (moveStop / moveLabel) rotate
- * the source's (dRow, dCol) by this many 90° steps (`rotateGridDelta`) to
+ * the source's (dRow, dCol) by this many 45° steps (`rotateGridDelta`) to
  * get the candidate-frame delta that preserves world appearance. (The
- * direction matters: R² = −I, so the even offsets are self-inverse and mask
- * a flipped convention, but at odd offsets the inverse would broadcast the
- * world-OPPOSITE edit.)
+ * direction matters: a 180° rotation is self-inverse and masks a flipped
+ * convention, but elsewhere the inverse would broadcast a world-WRONG edit.)
  */
-export type LayoutOffset = 0 | 1 | 2 | 3;
+export type LayoutOffset = 0 | 1 | 2 | 3 | 4 | 5 | 6 | 7;
 
 export interface StationMatch {
   id: StationId;
@@ -31,11 +32,12 @@ export interface StationMatch {
  * station, every other station on that line is a candidate; intervening
  * non-matching stations don't break the chain.
  *
- * Visual identity is invariant under the 4-fold mirror symmetry: rotating
- * the layout by k·90° while compensating `station.rotation` by −2k preserves
- * world appearance. Each candidate's `layoutOffset` reports the k value that
- * aligns its layout to the selected station's, so callers can rotate
- * grid-frame edits accordingly.
+ * Visual identity is invariant under the full 8-fold symmetry: rotating the
+ * layout by k·45° while compensating `station.rotation` by −k preserves
+ * world appearance (odd k maps the orthogonal cell lattice onto the diagonal
+ * ±√2/2 lattice — the "pressed R once and re-arranged onto diagonal cells"
+ * twin). Each candidate's `layoutOffset` reports the source→candidate delta
+ * rotation, so callers can rotate grid-frame edits accordingly.
  *
  * Stops whose lineId no longer exists in `doc.lines` are ignored — they
  * don't render, so they shouldn't make two visually-identical stations
@@ -73,19 +75,28 @@ export function findMatchingStations(doc: MatchingScope, selectedId: StationId):
 }
 
 /**
- * Structural keys for a station at all 4 layout rotations (k = 0..3).
- * Index k is the key after rotating the layout k 90°-steps via
- * `rotateStationLayoutBy90(_, +1)` while compensating `station.rotation`.
+ * Structural keys for a station at all 8 layout rotations (k = 0..7).
+ * Index k is the key after rotating the layout k 45°-steps while
+ * compensating `station.rotation`. Even indices come from the integer-exact
+ * 90° chain; each odd index is a single 45° half-step off the preceding
+ * even station, so no key accumulates more than one irrational multiply
+ * (the 4dp quantizer in `q` absorbs the ulp).
  */
-function rotatedKeys(st: Station, lines: MatchingScope['lines']): [string, string, string, string] {
-  const k0 = stopsKey(st, lines);
-  const s1 = rotateStationLayoutBy90(st, 1);
-  const k1 = stopsKey(s1, lines);
-  const s2 = rotateStationLayoutBy90(s1, 1);
-  const k2 = stopsKey(s2, lines);
-  const s3 = rotateStationLayoutBy90(s2, 1);
-  const k3 = stopsKey(s3, lines);
-  return [k0, k1, k2, k3];
+function rotatedKeys(st: Station, lines: MatchingScope['lines']): string[] {
+  const e0 = st;
+  const e2 = rotateStationLayoutBy90(e0, 1);
+  const e4 = rotateStationLayoutBy90(e2, 1);
+  const e6 = rotateStationLayoutBy90(e4, 1);
+  return [
+    e0,
+    rotateStationLayoutBy45(e0, 1),
+    e2,
+    rotateStationLayoutBy45(e2, 1),
+    e4,
+    rotateStationLayoutBy45(e4, 1),
+    e6,
+    rotateStationLayoutBy45(e6, 1),
+  ].map((s) => stopsKey(s, lines));
 }
 
 /** Lex-min over the 4 rotation keys — the canonical form of the layout. */
@@ -99,17 +110,18 @@ function canonicalOf(keys: readonly string[]): string {
 
 /**
  * The SOURCE → CANDIDATE delta rotation. rotatedKeys aligns the CANDIDATE
- * onto the source: the k with candKeys[k] === srcKey satisfies R^k(cand) =
- * src. A source-frame edit d therefore lands in the candidate's frame as
- * R^(4−k)(d) — the inverse — so return (4 − k) % 4, matching LayoutOffset's
- * directed contract (callers apply `rotateGridDelta(d, layoutOffset)`
- * as-is). Caller has already verified the canonical keys match, so a k
- * always exists. If multiple k's match (a rotationally symmetric layout),
- * any is fine — all produce equivalent edits.
+ * onto the source: the k with candKeys[k] === srcKey satisfies S^k(cand) =
+ * src (S = one 45° layout step). A source-frame edit d therefore lands in
+ * the candidate's frame as S^(8−k)(d) — the inverse — so return (8 − k) % 8,
+ * matching LayoutOffset's directed contract (callers apply
+ * `rotateGridDelta(d, layoutOffset)` as-is). Caller has already verified the
+ * canonical keys match, so a k always exists. If multiple k's match (a
+ * rotationally symmetric layout), any is fine — all produce equivalent
+ * edits.
  */
 function layoutOffsetOf(srcKey: string, candKeys: readonly string[]): LayoutOffset {
-  for (let k = 0; k < 4; k++) {
-    if (candKeys[k] === srcKey) return ((4 - k) % 4) as LayoutOffset;
+  for (let k = 0; k < 8; k++) {
+    if (candKeys[k] === srcKey) return ((8 - k) % 8) as LayoutOffset;
   }
   return 0;
 }

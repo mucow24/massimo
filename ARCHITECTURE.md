@@ -1024,11 +1024,13 @@ band routing or the marker sort. Pinned by `MapCanvas.stationsSig.test.tsx`.
   cross-highlights the dot via `hoveredLineStop`), and label align/valign cycle buttons + offset
   controls. The anchor is CLAMPED into the canvas host so sidebar-selecting an off-screen station
   still shows the editor. Inspectors dispatch transforms directly through **mirror matching**
-  (`findMatchingStations` returns stations sharing a line + a layout under the model's 4-fold
-  mirror symmetry — whole line, not adjacency; an edit broadcasts through
+  (`findMatchingStations` returns stations sharing a line + a layout under the model's full
+  8-fold mirror symmetry — 45° half-steps map the orthogonal cell lattice onto the diagonal
+  ±√2/2 lattice, so a station and its "pressed R once, re-arranged on diagonal cells" twin
+  match; whole line, not adjacency; an edit broadcasts through
   [state/mirrorDispatch.ts](src/state/mirrorDispatch.ts), rotating local deltas through
-  `rotateGridDelta`; orientation cycles and station rotation are relative steps so odd-offset
-  matches stay world-equivalent). The **Select Similar** chip (Name header, left of WP) drives
+  `rotateGridDelta` in 45° steps; orientation cycles and station rotation are relative steps so
+  offset matches stay world-equivalent). The **Select Similar** chip (Name header, left of WP) drives
   `mirrorMatching`: off = every dispatch resolves to the source station alone; on = stop/label
   edits + station rotation broadcast, while name, X/Y, and the per-station WP / lock /
   bold / italic flags stay local. Disabled at zero matches unless already on (so the mode can

@@ -187,14 +187,15 @@ describe('useStationLayoutDrag — mirror matching', () => {
   it("rotates the drag delta into a 180°-offset match's grid frame", () => {
     // b renders identically to a but stores its layout rotated two 90°-steps
     // (with the station rotation compensating), so the match carries
-    // layoutOffset 2 and a broadcast delta must be rotated — copying
-    // (dRow, dCol) verbatim would move b's stop the wrong way in the world.
+    // layoutOffset 4 (in 45° half-steps) and a broadcast delta must be
+    // rotated — copying (dRow, dCol) verbatim would move b's stop the wrong
+    // way in the world.
     const b = rotateStationLayoutBy90(
       rotateStationLayoutBy90(hubStation({ id: 'b', x: 400 }), 1),
       1,
     );
     seed({ a: hubStation(), b }, { mirrorMatching: true });
-    expect(findMatchingStations(useDoc.getState(), 'a')).toEqual([{ id: 'b', layoutOffset: 2 }]);
+    expect(findMatchingStations(useDoc.getState(), 'a')).toEqual([{ id: 'b', layoutOffset: 4 }]);
 
     const { ref } = fakeSvgRef();
     const { result } = renderHook(() => useStationLayoutDrag(ref, identity));

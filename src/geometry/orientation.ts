@@ -94,25 +94,35 @@ export const travelDirLocal = (o: StopOrientation, lineHintLocal: Vec2 | null = 
 };
 
 /**
- * Rotate a grid-frame displacement (dRow, dCol) by k 90°-steps. One step
- * matches the layout transform in `rotateStationLayoutBy90(_, +1)`:
- *   (col, row) → (-row, col), i.e. (dRow, dCol) → (dCol, -dRow).
+ * Rotate a grid-frame displacement (dRow, dCol) by k 45°-steps. Two steps
+ * match the layout transform in `rotateStationLayoutBy90(_, +1)`:
+ *   (col, row) → (-row, col), i.e. (dRow, dCol) → (dCol, -dRow);
+ * an odd k adds the half-step of `rotateStationLayoutBy45(_, +1)`, which
+ * maps orthogonal deltas onto the diagonal (±√2/2) lattice and back.
  *
  * Used by mirror-matching mass-edits: when the inspector broadcasts a
  * moveStop / moveLabel to a matching station whose layout differs from the
  * source by a layoutOffset of k, the (dRow, dCol) delta must be rotated by k
- * steps so the world-frame edit stays consistent across the group.
+ * steps so the world-frame edit stays consistent across the group. Even k
+ * runs integer-exact (bit-identical to the historical 4-fold behavior, in
+ * 90° strides); odd k costs a single irrational multiply at the end.
  */
 export const rotateGridDelta = (
   dRow: number,
   dCol: number,
-  k: 0 | 1 | 2 | 3,
+  k: Rotation,
 ): { dRow: number; dCol: number } => {
   let r = dRow;
   let c = dCol;
-  for (let i = 0; i < k; i++) {
+  for (let i = 0; i < k >> 1; i++) {
     const nr = c;
     const nc = -r;
+    r = nr;
+    c = nc;
+  }
+  if (k % 2 === 1) {
+    const nr = (r + c) * SQRT2_2;
+    const nc = (c - r) * SQRT2_2;
     r = nr;
     c = nc;
   }

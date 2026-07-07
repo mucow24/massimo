@@ -469,19 +469,20 @@ describe('findMatchingStations', () => {
     });
     const fromA = findMatchingStations(doc, 'A');
     expect(fromA.map((m) => m.id)).toEqual(['B']);
-    // layoutOffset is the SOURCE → CANDIDATE delta rotation: B sits one
-    // +step ahead of A, so a source-frame edit on A rotates 1 step into B's
-    // frame; from B's side, 3. Both are the ODD offsets that the 0/2
-    // layoutOffset test never exercises (R² = −I makes those self-inverse,
-    // so they can't pin the direction — the world-truth test below does).
-    expect(fromA[0].layoutOffset).toBe(1);
-    expect(findMatchingStations(doc, 'B')[0].layoutOffset).toBe(3);
+    // layoutOffset is the SOURCE → CANDIDATE delta rotation in 45° steps: B
+    // sits one 90°-step (= 2 half-steps) ahead of A, so a source-frame edit
+    // on A rotates 2 steps into B's frame; from B's side, 6. Both are the
+    // ±90° offsets that the 0/180° layoutOffset test never exercises (180°
+    // is self-inverse, so it can't pin the direction — the world-truth test
+    // below does).
+    expect(fromA[0].layoutOffset).toBe(2);
+    expect(findMatchingStations(doc, 'B')[0].layoutOffset).toBe(6);
   });
 
   it('returned matches carry the layoutOffset needed to align them', () => {
     // Same setup as the 180°-mirror test plus a trivial-identical neighbor.
-    // From A's perspective: B has offset 0 (same layout), C has offset 2
-    // (180° layout-mirror).
+    // From A's perspective: B has offset 0 (same layout), C has offset 4
+    // half-steps (180° layout-mirror).
     const doc = makeDoc({
       stations: [
         makeStation({
@@ -508,7 +509,7 @@ describe('findMatchingStations', () => {
     const matches = findMatchingStations(doc, 'A');
     const byId = new Map(matches.map((m) => [m.id, m.layoutOffset]));
     expect(byId.get('B')).toBe(0);
-    expect(byId.get('C')).toBe(2);
+    expect(byId.get('C')).toBe(4);
   });
 
   it('a waypoint never matches a fully-rendered station (isWaypoint is visual identity)', () => {
@@ -616,6 +617,97 @@ describe('findMatchingStations', () => {
     const bWorld = stopPosWorld(bStop, { ...B, stops: [bStop] });
     expect(bWorld.x).toBeCloseTo(aWorld.x, 6);
     expect(bWorld.y).toBeCloseTo(aWorld.y, 6);
+  });
+
+  it('matches a station and its 45°-rotated visual twin across the lattice parity', () => {
+    // B is A re-parameterized one 45° half-step: station rotation +1, layout
+    // rotated −45° (the orthogonal lattice maps exactly onto the diagonal
+    // ±√2/2 lattice), orientation axis one step back along
+    // vertical→ne-sw→horizontal→nw-se, label rotation −1. Same stop world
+    // position, same NE/SW travel axis, same label anchor and world reading
+    // angle ((rotation + label.rotation)·45 = 180 for both) — yet a 4-fold
+    // canonicalization can never see across the rotation-parity flip.
+    const h = Math.SQRT1_2;
+    const doc = makeDoc({
+      stations: [
+        makeStation({
+          id: 'A',
+          rotation: 0,
+          stops: [makeStop('L1', { orientation: 'auto-ne-sw' })],
+          label: { row: 0, col: -1, rotation: 4, offset: 0, align: 'auto', valign: 'middle' },
+        }),
+        makeStation({
+          id: 'B',
+          rotation: 1,
+          stops: [makeStop('L1', { orientation: 'auto-vertical' })],
+          label: { row: h, col: -h, rotation: 3, offset: 0, align: 'auto', valign: 'middle' },
+        }),
+      ],
+      lines: [makeLine({ id: 'L1', stations: ['A', 'B'] })],
+    });
+    const fromA = findMatchingStations(doc, 'A');
+    expect(fromA.map((m) => m.id)).toEqual(['B']);
+    // Directed source→candidate, now in 45° half-steps: A-frame deltas
+    // rotate −45° (7 steps) into B's frame; B-frame deltas rotate +45°
+    // (1 step) into A's.
+    expect(fromA[0].layoutOffset).toBe(7);
+    const fromB = findMatchingStations(doc, 'B');
+    expect(fromB.map((m) => m.id)).toEqual(['A']);
+    expect(fromB[0].layoutOffset).toBe(1);
+  });
+
+  it('rotating a broadcast delta by a HALF-step layoutOffset preserves world appearance', () => {
+    // World-truth pin for the odd half-steps, mirroring the ODD-offsets test
+    // below: an orthogonal delta on the source must land as the
+    // corresponding DIAGONAL delta on the 45°-rotated twin.
+    const h = Math.SQRT1_2;
+    const A = makeStation({
+      id: 'A',
+      x: 0,
+      y: 0,
+      rotation: 0,
+      stops: [makeStop('L1', { orientation: 'auto-ne-sw' })],
+      label: { row: 0, col: -1, rotation: 4, offset: 0, align: 'auto', valign: 'middle' },
+    });
+    const B = makeStation({
+      id: 'B',
+      x: 0,
+      y: 0,
+      rotation: 1,
+      stops: [makeStop('L1', { orientation: 'auto-vertical' })],
+      label: { row: h, col: -h, rotation: 3, offset: 0, align: 'auto', valign: 'middle' },
+    });
+    const doc = makeDoc({
+      stations: [A, B],
+      lines: [makeLine({ id: 'L1', stations: ['A', 'B'] })],
+    });
+    const match = findMatchingStations(doc, 'A').find((m) => m.id === 'B');
+    expect(match).toBeDefined();
+
+    // Move A's stop one cell east in A's local frame; broadcast the rotated
+    // delta to B — the world positions must agree.
+    const d = { dRow: 0, dCol: 1 };
+    const bd = rotateGridDelta(d.dRow, d.dCol, match!.layoutOffset);
+    const aStop = { ...A.stops[0], row: A.stops[0].row + d.dRow, col: A.stops[0].col + d.dCol };
+    const bStop = { ...B.stops[0], row: B.stops[0].row + bd.dRow, col: B.stops[0].col + bd.dCol };
+    const aWorld = stopPosWorld(aStop, A);
+    const bWorld = stopPosWorld(bStop, B);
+    expect(bWorld.x).toBeCloseTo(aWorld.x, 6);
+    expect(bWorld.y).toBeCloseTo(aWorld.y, 6);
+  });
+
+  it('a plain 45° station rotation (no layout compensation) still does NOT match', () => {
+    // Pressing R rotates the station but leaves the layout alone — that pair
+    // genuinely renders differently. 8-fold canonicalization must only match
+    // COMPENSATED re-parameterizations, not any rotation-1 neighbor.
+    const doc = makeDoc({
+      stations: [
+        makeStation({ id: 's1', stops: [makeStop('L1')], rotation: 0 }),
+        makeStation({ id: 's2', stops: [makeStop('L1')], rotation: 1 }),
+      ],
+      lines: [makeLine({ id: 'L1', stations: ['s1', 's2'] })],
+    });
+    expect(findMatchingStations(doc, 's1')).toEqual([]);
   });
 
   it('matching survives a line being deleted then re-added', () => {
