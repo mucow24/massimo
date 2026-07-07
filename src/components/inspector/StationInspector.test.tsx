@@ -1055,4 +1055,33 @@ describe('<StationInspector /> — Select Similar (mirror matching) toggle', () 
     await user.click(btn);
     expect(useSelection.getState().mirrorMatching).toBe(false);
   });
+
+  it('with mirror on, the rotate buttons rotate every matching station as ONE undo entry', async () => {
+    const user = userEvent.setup();
+    seedPair({ mirrorMatching: true });
+    render(<StationInspector id="a" />);
+    useDoc.temporal.getState().clear();
+    const before = historyDepth();
+
+    await user.click(screen.getByRole('button', { name: 'Rotate +45°' }));
+    let doc = useDoc.getState();
+    expect(doc.stations.a.rotation).toBe(1);
+    expect(doc.stations.b.rotation).toBe(1);
+    expect(historyDepth() - before).toBe(1);
+
+    undo();
+    doc = useDoc.getState();
+    expect(doc.stations.a.rotation).toBe(0);
+    expect(doc.stations.b.rotation).toBe(0);
+  });
+
+  it('with mirror off, the rotate buttons touch only the inspected station', async () => {
+    const user = userEvent.setup();
+    seedPair();
+    render(<StationInspector id="a" />);
+    await user.click(screen.getByRole('button', { name: 'Rotate −45°' }));
+    const doc = useDoc.getState();
+    expect(doc.stations.a.rotation).toBe(7);
+    expect(doc.stations.b.rotation).toBe(0);
+  });
 });

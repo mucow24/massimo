@@ -180,10 +180,12 @@ export function StationInspector({ id }: { id: StationId }) {
             onBlur={yField.onNumberBlur}
             style={{ width: 56 }}
           />
-          {/* One icon, mirrored, so the ± pair is visually identical. */}
+          {/* One icon, mirrored, so the ± pair is visually identical.
+              Rotation broadcasts under mirror matching (a relative step is
+              frame-invariant, so matches stay in sync); position does not. */}
           <button
             className="chip-btn"
-            onClick={() => rotateStation(station.id, -1)}
+            onClick={() => dispatchAll((sid) => rotateStation(sid, -1))}
             title="Rotate −45°"
             aria-label="Rotate −45°"
           >
@@ -191,7 +193,7 @@ export function StationInspector({ id }: { id: StationId }) {
           </button>
           <button
             className="chip-btn"
-            onClick={() => rotateStation(station.id)}
+            onClick={() => dispatchAll((sid) => rotateStation(sid))}
             title="Rotate +45°"
             aria-label="Rotate +45°"
           >
