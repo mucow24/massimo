@@ -6,7 +6,7 @@ import { useDoc, useSelection } from '../state/store';
 import { historyDepth, redoDepth } from '../state/history';
 import { DEFAULT_DOC } from '../model/transforms';
 import { readClipboard, writeClipboard, type ClipPayload } from '../model/clipboard';
-import { makePolygon, makeSvgImage, makeTextLabel } from '../test/fixtures';
+import { makePolygon, makeRouteBullet, makeSvgImage, makeTextLabel } from '../test/fixtures';
 import type { RouteBullet } from '../model/types';
 
 beforeEach(() => {
@@ -333,7 +333,7 @@ describe('App keyboard shortcuts: blur-then-undo', () => {
   });
 });
 
-describe('App keyboard shortcuts: copy / paste / duplicate', () => {
+describe('App keyboard shortcuts: copy / cut / paste / duplicate', () => {
   let writeText: ReturnType<typeof vi.fn>;
   let readText: ReturnType<typeof vi.fn>;
 
@@ -543,6 +543,93 @@ describe('App keyboard shortcuts: copy / paste / duplicate', () => {
     try {
       fireEvent.keyDown(input, { key: 'd', ctrlKey: true });
       expect(Object.keys(useDoc.getState().routeBullets).length).toBe(before);
+    } finally {
+      document.body.removeChild(input);
+    }
+  });
+
+  it('Ctrl+X copies the selection to the clipboard AND deletes it as ONE undo step, clearing selection', () => {
+    render(<App />);
+    const b = useDoc.getState().addRouteBullet(30, 30, null);
+    const l = useDoc.getState().addTextLabel(30, 30);
+    const p = useDoc.getState().addPolygon(30, 30);
+    useSelection.getState().setMixedSelection({ bullets: [b], labels: [l], polygons: [p] });
+    const pastBefore = historyDepth();
+
+    fireEvent.keyDown(window, { key: 'x', ctrlKey: true });
+
+    // Copied: the clipboard carries all three kinds (payload built pre-delete).
+    expect(writeText).toHaveBeenCalledTimes(1);
+    const items = readClipboard(writeText.mock.calls[0][0] as string);
+    expect(items?.map((i) => i.kind).sort()).toEqual(['polygon', 'route-bullet', 'text-label']);
+    // Deleted: the originals are gone from the doc.
+    expect(useDoc.getState().routeBullets[b]).toBeUndefined();
+    expect(useDoc.getState().textLabels[l]).toBeUndefined();
+    expect(useDoc.getState().polygons[p]).toBeUndefined();
+    // One grouped history entry for the whole cut, and selection cleared so no
+    // dangling id points at a now-deleted item.
+    expect(historyDepth()).toBe(pastBefore + 1);
+    const sel = useSelection.getState();
+    expect(sel.selectedRouteBulletIds).toEqual([]);
+    expect(sel.selectedLabelIds).toEqual([]);
+    expect(sel.selectedPolygonIds).toEqual([]);
+  });
+
+  it('Ctrl+X cuts only the unlocked items — locked ones are neither copied nor deleted', () => {
+    render(<App />);
+    useDoc.setState({
+      ...useDoc.getState(),
+      routeBullets: {
+        lockB: makeRouteBullet({ id: 'lockB', x: 0, y: 0, lineId: null, locked: true }),
+        freeB: makeRouteBullet({ id: 'freeB', x: 100, y: 0, lineId: null }),
+      },
+    });
+    useSelection.setState({
+      ...useSelection.getState(),
+      selectedStationIds: [],
+      selectedLabelIds: [],
+      selectedPolygonIds: [],
+      selectedSvgImageIds: [],
+      selectedRouteBulletIds: ['lockB', 'freeB'],
+    });
+
+    fireEvent.keyDown(window, { key: 'x', ctrlKey: true });
+
+    // Only the unlocked bullet reaches the clipboard.
+    const items = readClipboard(writeText.mock.calls[0][0] as string);
+    expect(items).toHaveLength(1);
+    expect(items?.[0]).toMatchObject({ kind: 'route-bullet', data: { x: 100 } });
+    // Unlocked deleted, locked kept in place.
+    expect(useDoc.getState().routeBullets['freeB']).toBeUndefined();
+    expect(useDoc.getState().routeBullets['lockB']).toBeDefined();
+  });
+
+  it('Ctrl+X is a no-op when only a station is selected (native cut survives, station stays)', () => {
+    render(<App />);
+    const s = useDoc.getState().addStation(10, 10);
+    useSelection.getState().selectStation(s);
+    const pastBefore = historyDepth();
+
+    fireEvent.keyDown(window, { key: 'x', ctrlKey: true });
+
+    expect(writeText).not.toHaveBeenCalled();
+    expect(useDoc.getState().stations[s]).toBeDefined();
+    expect(historyDepth()).toBe(pastBefore);
+  });
+
+  it('Ctrl+X on a focused text input is suppressed (inForm guard, native cut preserved)', () => {
+    render(<App />);
+    const b = useDoc.getState().addRouteBullet(0, 0, null);
+    useSelection.getState().selectRouteBullet(b);
+
+    const input = document.createElement('input');
+    input.type = 'text';
+    document.body.appendChild(input);
+    input.focus();
+    try {
+      fireEvent.keyDown(input, { key: 'x', ctrlKey: true });
+      expect(useDoc.getState().routeBullets[b]).toBeDefined();
+      expect(writeText).not.toHaveBeenCalled();
     } finally {
       document.body.removeChild(input);
     }

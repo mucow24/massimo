@@ -63,6 +63,33 @@ function unlockedSelectedStationIds() {
   return useSelection.getState().selectedStationIds.filter((id) => !doc.stations[id]?.locked);
 }
 
+// Build the ordered clipboard payloads (bullet → label → polygon → image) for a
+// set of copyable selection ids, skipping any that no longer resolve in the doc.
+// Shared by Ctrl+C (the whole selection) and Ctrl+X (the unlocked subset).
+function collectClipItems(
+  doc: ReturnType<typeof useDoc.getState>,
+  ids: { bullets: string[]; labels: string[]; polygons: string[]; svgImages: string[] },
+): ClipPayload[] {
+  const items: ClipPayload[] = [];
+  for (const id of ids.bullets) {
+    const b = doc.routeBullets[id];
+    if (b) items.push(routeBulletPayload(b));
+  }
+  for (const id of ids.labels) {
+    const l = doc.textLabels[id];
+    if (l) items.push(textLabelPayload(l));
+  }
+  for (const id of ids.polygons) {
+    const p = doc.polygons[id];
+    if (p) items.push(polygonPayload(p));
+  }
+  for (const id of ids.svgImages) {
+    const im = doc.svgImages[id];
+    if (im) items.push(svgImagePayload(im));
+  }
+  return items;
+}
+
 export default function App() {
   const darkMode = useViewportStore((s) => s.darkMode);
 
@@ -113,7 +140,7 @@ export default function App() {
       // Two-tier form-field guard.
       //
       // `inForm` excludes range sliders and color pickers so the Ctrl-combos
-      // (undo/redo/copy/paste/duplicate) still fire while one is focused —
+      // (undo/redo/copy/cut/paste/duplicate) still fire while one is focused —
       // otherwise Ctrl+Z is swallowed mid-slider-drag (sliders/pickers have no
       // native text-editing shortcuts worth preserving).
       //
@@ -392,27 +419,10 @@ export default function App() {
       // working; when nothing copyable is selected we fall through WITHOUT
       // preventDefault so native copy/paste still works.
       if (mod && !inForm && (e.key === 'c' || e.key === 'C')) {
-        const { bullets, labels, polygons, svgImages } = getCopyableSelection(
-          useSelection.getState(),
+        const items = collectClipItems(
+          useDoc.getState(),
+          getCopyableSelection(useSelection.getState()),
         );
-        const doc = useDoc.getState();
-        const items: ClipPayload[] = [];
-        for (const id of bullets) {
-          const b = doc.routeBullets[id];
-          if (b) items.push(routeBulletPayload(b));
-        }
-        for (const id of labels) {
-          const l = doc.textLabels[id];
-          if (l) items.push(textLabelPayload(l));
-        }
-        for (const id of polygons) {
-          const p = doc.polygons[id];
-          if (p) items.push(polygonPayload(p));
-        }
-        for (const id of svgImages) {
-          const im = doc.svgImages[id];
-          if (im) items.push(svgImagePayload(im));
-        }
         if (items.length === 0) return;
         navigator.clipboard?.writeText(writeClipboard(items)).catch(() => {});
         e.preventDefault();
@@ -469,6 +479,43 @@ export default function App() {
           .filter((id): id is string => id != null);
         group.commit();
         useSelection.getState().setMixedSelection({ bullets, labels, polygons, svgImages });
+        return;
+      }
+      // Cut = copy + delete, both scoped to the UNLOCKED copyable selection.
+      // Locked items resist deletion, so cut leaves them entirely alone rather
+      // than copying something it can't remove; stations aren't copyable, so
+      // (like copy/duplicate) cut ignores them. When nothing is cuttable we fall
+      // through WITHOUT preventDefault so a native cut still works.
+      if (mod && !inForm && (e.key === 'x' || e.key === 'X')) {
+        const bulletIds = unlockedSelectedRouteBulletIds();
+        const labelIds = unlockedSelectedLabelIds();
+        const polygonIds = unlockedSelectedPolygonIds();
+        const svgImageIds = unlockedSelectedSvgImageIds();
+        const doc = useDoc.getState();
+        const items = collectClipItems(doc, {
+          bullets: bulletIds,
+          labels: labelIds,
+          polygons: polygonIds,
+          svgImages: svgImageIds,
+        });
+        if (items.length === 0) return;
+        // Serialize before deleting so the payload captures the pre-delete state;
+        // the async write just flushes that already-built string later.
+        navigator.clipboard?.writeText(writeClipboard(items)).catch(() => {});
+        e.preventDefault();
+        // Clear the copyable selections first so no id dangles at a deleted item
+        // (mirrors the Delete handler); then remove them in one history group.
+        const sel = useSelection.getState();
+        sel.selectRouteBullet(null);
+        sel.selectLabel(null);
+        sel.selectPolygon(null);
+        sel.selectSvgImage(null);
+        const group = beginHistoryGroup();
+        for (const id of bulletIds) doc.deleteRouteBullet(id);
+        for (const id of labelIds) doc.deleteTextLabel(id);
+        for (const id of polygonIds) doc.deletePolygon(id);
+        for (const id of svgImageIds) doc.deleteSvgImage(id);
+        group.commit();
         return;
       }
       // R rotates the selected stop's orientation (4-state axis cycle) or
