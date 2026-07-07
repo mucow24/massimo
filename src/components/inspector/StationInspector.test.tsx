@@ -1027,3 +1027,132 @@ describe('<StationInspector /> — Edit layout entry', () => {
     expect(useSelection.getState().uiMode.kind).toBe('idle');
   });
 });
+
+describe('<StationInspector /> — Select Similar (mirror matching) toggle', () => {
+  beforeEach(() => {
+    localStorage.clear();
+    useDoc.setState({ ...DEFAULT_DOC });
+    useSelection.setState(SELECTION_BLANK);
+    useDoc.temporal.getState().clear();
+  });
+
+  // a and b: identical single-L1-stop layouts on one line — exactly one match.
+  const seedPair = (over: Partial<typeof SELECTION_BLANK> = {}) => {
+    useDoc.setState({
+      ...DEFAULT_DOC,
+      ...makeDoc({
+        stations: [
+          makeStation({ id: 'a', stops: [makeStop('L1')] }),
+          makeStation({ id: 'b', x: 200, stops: [makeStop('L1')] }),
+        ],
+        lines: [makeLine({ id: 'L1', stations: ['a', 'b'] })],
+      }),
+    });
+    useSelection.setState({ ...SELECTION_BLANK, selectedStationIds: ['a'], ...over });
+  };
+
+  it('sits in the Name header row, to the left of the WP button', () => {
+    seedPair();
+    render(<StationInspector id="a" />);
+    const similar = screen.getByRole('button', { name: 'Select Similar' });
+    const wp = screen.getByRole('button', { name: 'Waypoint' });
+    expect(similar.parentElement).toBe(wp.parentElement);
+    const siblings = Array.from(wp.parentElement!.children);
+    expect(siblings.indexOf(similar)).toBeLessThan(siblings.indexOf(wp));
+  });
+
+  it('toggles mirrorMatching on and off, reflected via aria-pressed + active class', async () => {
+    const user = userEvent.setup();
+    seedPair();
+    render(<StationInspector id="a" />);
+    const btn = () => screen.getByRole('button', { name: 'Select Similar' });
+    expect(btn()).toHaveAttribute('aria-pressed', 'false');
+    expect(btn()).not.toHaveClass('active');
+
+    await user.click(btn());
+    expect(useSelection.getState().mirrorMatching).toBe(true);
+    expect(btn()).toHaveAttribute('aria-pressed', 'true');
+    expect(btn()).toHaveClass('active');
+
+    await user.click(btn());
+    expect(useSelection.getState().mirrorMatching).toBe(false);
+    expect(btn()).toHaveAttribute('aria-pressed', 'false');
+  });
+
+  it('advertises the match count in its title while off', () => {
+    seedPair();
+    render(<StationInspector id="a" />);
+    expect(screen.getByRole('button', { name: 'Select Similar' })).toHaveAttribute(
+      'title',
+      expect.stringMatching(/\b1 station\b/),
+    );
+  });
+
+  it('is disabled with an explanatory title when no station on the line matches', () => {
+    // b shares the line but its stop sits one cell over — different layout.
+    useDoc.setState({
+      ...DEFAULT_DOC,
+      ...makeDoc({
+        stations: [
+          makeStation({ id: 'a', stops: [makeStop('L1')] }),
+          makeStation({ id: 'b', x: 200, stops: [makeStop('L1', { col: 1 })] }),
+        ],
+        lines: [makeLine({ id: 'L1', stations: ['a', 'b'] })],
+      }),
+    });
+    useSelection.setState({ ...SELECTION_BLANK, selectedStationIds: ['a'] });
+    render(<StationInspector id="a" />);
+    const btn = screen.getByRole('button', { name: 'Select Similar' });
+    expect(btn).toBeDisabled();
+    expect(btn).toHaveAttribute('title', expect.stringMatching(/No other station/i));
+  });
+
+  it('stays clickable while ON with zero matches, so the mode can still be turned off', async () => {
+    // Defensive corner: mirror somehow on with nothing matching (e.g. the
+    // match dissolved via an unmirrored edit elsewhere). The button must not
+    // trap the user in the mode.
+    const user = userEvent.setup();
+    useDoc.setState({
+      ...DEFAULT_DOC,
+      ...makeDoc({
+        stations: [makeStation({ id: 'a', stops: [makeStop('L1')] })],
+        lines: [makeLine({ id: 'L1', stations: ['a'] })],
+      }),
+    });
+    useSelection.setState({ ...SELECTION_BLANK, selectedStationIds: ['a'], mirrorMatching: true });
+    render(<StationInspector id="a" />);
+    const btn = screen.getByRole('button', { name: 'Select Similar' });
+    expect(btn).toBeEnabled();
+    await user.click(btn);
+    expect(useSelection.getState().mirrorMatching).toBe(false);
+  });
+
+  it('with mirror on, the rotate buttons rotate every matching station as ONE undo entry', async () => {
+    const user = userEvent.setup();
+    seedPair({ mirrorMatching: true });
+    render(<StationInspector id="a" />);
+    useDoc.temporal.getState().clear();
+    const before = historyDepth();
+
+    await user.click(screen.getByRole('button', { name: 'Rotate +45°' }));
+    let doc = useDoc.getState();
+    expect(doc.stations.a.rotation).toBe(1);
+    expect(doc.stations.b.rotation).toBe(1);
+    expect(historyDepth() - before).toBe(1);
+
+    undo();
+    doc = useDoc.getState();
+    expect(doc.stations.a.rotation).toBe(0);
+    expect(doc.stations.b.rotation).toBe(0);
+  });
+
+  it('with mirror off, the rotate buttons touch only the inspected station', async () => {
+    const user = userEvent.setup();
+    seedPair();
+    render(<StationInspector id="a" />);
+    await user.click(screen.getByRole('button', { name: 'Rotate −45°' }));
+    const doc = useDoc.getState();
+    expect(doc.stations.a.rotation).toBe(7);
+    expect(doc.stations.b.rotation).toBe(0);
+  });
+});

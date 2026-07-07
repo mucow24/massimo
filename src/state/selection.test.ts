@@ -39,6 +39,39 @@ describe('selection — array model', () => {
       useSelection.getState().selectStation('D' as StationId);
       expect(useSelection.getState().selectedStationIds).toEqual(['D']);
     });
+
+    it('re-selecting the already-sole-selected station preserves mirrorMatching', () => {
+      // The primary selection does not change, so the within-station mirror
+      // mode must survive — a plain canvas click on the inspected station
+      // must not silently drop Select Similar.
+      useSelection.setState({
+        selectedStationIds: ['A'] as StationId[],
+        mirrorMatching: true,
+      });
+      useSelection.getState().selectStation('A' as StationId);
+      expect(useSelection.getState().selectedStationIds).toEqual(['A']);
+      expect(useSelection.getState().mirrorMatching).toBe(true);
+    });
+
+    it('selecting a DIFFERENT station still resets mirrorMatching', () => {
+      useSelection.setState({
+        selectedStationIds: ['A'] as StationId[],
+        mirrorMatching: true,
+      });
+      useSelection.getState().selectStation('B' as StationId);
+      expect(useSelection.getState().mirrorMatching).toBe(false);
+    });
+
+    it('collapsing a multi-selection onto a member still resets mirrorMatching', () => {
+      // Mirror can only be on for a sole selection; a multi→single collapse
+      // IS a primary-selection change even when the id was a member.
+      useSelection.setState({
+        selectedStationIds: ['A', 'B'] as StationId[],
+        mirrorMatching: true,
+      });
+      useSelection.getState().selectStation('A' as StationId);
+      expect(useSelection.getState().mirrorMatching).toBe(false);
+    });
   });
 
   describe('toggleStationSelection', () => {

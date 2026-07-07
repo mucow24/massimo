@@ -7,9 +7,13 @@ type MatchingScope = Pick<MapDoc, 'stations' | 'lines'>;
  * Layout-rotation difference between a source and a matching station, in 90°
  * steps that match `rotateStationLayoutBy90(_, +1)` (one step rotates the
  * unrotated grid CW while compensating station rotation CCW). 0 = identical
- * layout; 2 = 180° mirror. Callers that propagate local-frame edits across
- * the match (moveStop / moveLabel) must rotate (dRow, dCol) by this many
- * 90° steps to preserve world appearance.
+ * layout; 2 = 180° mirror. Directed SOURCE → CANDIDATE: callers that
+ * propagate local-frame edits across the match (moveStop / moveLabel) rotate
+ * the source's (dRow, dCol) by this many 90° steps (`rotateGridDelta`) to
+ * get the candidate-frame delta that preserves world appearance. (The
+ * direction matters: R² = −I, so the even offsets are self-inverse and mask
+ * a flipped convention, but at odd offsets the inverse would broadcast the
+ * world-OPPOSITE edit.)
  */
 export type LayoutOffset = 0 | 1 | 2 | 3;
 
@@ -60,9 +64,8 @@ export function findMatchingStations(doc: MatchingScope, selectedId: StationId):
     if (!st) continue;
     const candKeys = rotatedKeys(st, doc.lines);
     if (canonicalOf(candKeys) !== selCanonical) continue;
-    // Find k such that rotating the candidate's layout k 90°-steps yields
-    // the same structural key as the source — that's how much (dRow, dCol)
-    // edits must be rotated when broadcast to this match.
+    // The source→candidate delta rotation: how much (dRow, dCol) edits must
+    // be rotated when broadcast to this match.
     const k = layoutOffsetOf(selKeys[0], candKeys);
     out.push({ id: sid, layoutOffset: k });
   }
@@ -95,14 +98,18 @@ function canonicalOf(keys: readonly string[]): string {
 }
 
 /**
- * Smallest k ∈ {0,1,2,3} such that the candidate's k-rotated structural key
- * matches the source's k=0 key. Caller has already verified the canonical
- * keys match, so a k always exists. If multiple k's match (a rotationally
- * symmetric layout), the smallest is fine — all produce equivalent edits.
+ * The SOURCE → CANDIDATE delta rotation. rotatedKeys aligns the CANDIDATE
+ * onto the source: the k with candKeys[k] === srcKey satisfies R^k(cand) =
+ * src. A source-frame edit d therefore lands in the candidate's frame as
+ * R^(4−k)(d) — the inverse — so return (4 − k) % 4, matching LayoutOffset's
+ * directed contract (callers apply `rotateGridDelta(d, layoutOffset)`
+ * as-is). Caller has already verified the canonical keys match, so a k
+ * always exists. If multiple k's match (a rotationally symmetric layout),
+ * any is fine — all produce equivalent edits.
  */
 function layoutOffsetOf(srcKey: string, candKeys: readonly string[]): LayoutOffset {
   for (let k = 0; k < 4; k++) {
-    if (candKeys[k] === srcKey) return k as LayoutOffset;
+    if (candKeys[k] === srcKey) return ((4 - k) % 4) as LayoutOffset;
   }
   return 0;
 }
@@ -117,8 +124,16 @@ function layoutOffsetOf(srcKey: string, candKeys: readonly string[]): LayoutOffs
 // Round row/col to a stable string at 4 dp so float drift from diagonal
 // (±√2/2) arithmetic doesn't fragment otherwise-identical layouts. 4 dp is
 // well below the 1-unit cell pitch and well above any plausible cumulative
-// rounding error.
-const q = (n: number): string => n.toFixed(4);
+// rounding error. Normalize the "-0.0000" that toFixed produces for
+// negative-ulp drift — it must key identically to exact zero.
+const q = (n: number): string => {
+  const s = n.toFixed(4);
+  return s === '-0.0000' ? '0.0000' : s;
+};
+
+// Rotations render mod 8 (SVG rotate is periodic); in-app mutators wrap, but
+// hand-edited/persisted docs can carry 8 or −1, which must key like 0 and 7.
+const rot8 = (n: number): number => ((n % 8) + 8) % 8;
 
 function stopsKey(st: Station, lines: MatchingScope['lines']): string {
   const parts: string[] = [];
@@ -127,8 +142,13 @@ function stopsKey(st: Station, lines: MatchingScope['lines']): string {
     parts.push(stopKey(c));
   }
   parts.sort();
+  // A waypoint renders no name and no dots — visually it is only the line
+  // routing through its stop cells. Its (invisible) label geometry is not
+  // part of its identity, and it can never look like a fully-rendered
+  // station, so the label slot doubles as the waypoint marker.
   const lab = st.label;
-  return `r${st.rotation}|L${q(lab.row)},${q(lab.col)},${lab.rotation}|${parts.join('|')}`;
+  const labelPart = st.isWaypoint ? 'wp' : `L${q(lab.row)},${q(lab.col)},${rot8(lab.rotation)}`;
+  return `r${rot8(st.rotation)}|${labelPart}|${parts.join('|')}`;
 }
 
 function stopKey(c: StopCell): string {

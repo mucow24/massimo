@@ -33,7 +33,7 @@ import {
 } from './components/inspector/stopGridDrag';
 import { dispatchMirrored, fanOutMirrored } from './state/mirrorDispatch';
 import { useViewportStore } from './state/viewportStore';
-import { redo, undo } from './state/history';
+import { isHistoryGrouping, redo, undo } from './state/history';
 
 // Selected items minus locked ones — locked items resist both Delete and
 // arrow-nudge, so both keyboard paths filter the same way.
@@ -303,14 +303,17 @@ export default function App() {
             // Offsets are rotation-invariant across mirror matches (same
             // convention as the inspector's offset sliders). One group per
             // press: a diagonal reading axis writes BOTH offset fields.
-            const group = beginHistoryGroup();
+            // Gated on isHistoryGrouping like dispatchMirrored — groups
+            // don't nest, and this global listener can fire while a drag
+            // gesture's group is open.
+            const group = isHistoryGrouping() ? null : beginHistoryGroup();
             fanOutMirrored(subStation.id, (sid) => {
               const st = useDoc.getState().stations[sid];
               if (!st) return;
               doc.setLabelOffset(sid, st.label.offset + dOffset);
               doc.setLabelOffsetPerp(sid, resolveOffsetPerp(st.label) + dPerp);
             });
-            group.commit();
+            group?.commit();
             return;
           }
           const target = nudgeTarget({

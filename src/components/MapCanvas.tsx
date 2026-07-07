@@ -225,8 +225,8 @@ export function MapCanvas() {
   }, [bandsGeometry, lines, lineOrder]);
 
   // When mirror-matching mode is on for the selected station, highlight the
-  // adjacent stations whose unrotated stop layouts are identical. Mirror
-  // mode only applies to single-selection.
+  // stations sharing a line whose layouts render identically (whole line,
+  // not adjacency). Mirror mode only applies to single-selection.
   const soloSelectedId =
     selection.selectedStationIds.length === 1 ? selection.selectedStationIds[0] : null;
   const matchingIds = useMemo(() => {
