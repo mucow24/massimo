@@ -1,4 +1,4 @@
-import { HISTORY_LIMIT, useDoc, type DocSnapshot } from './store';
+import { HISTORY_LIMIT, cancelOpenHistoryGroup, useDoc, type DocSnapshot } from './store';
 import { useSelection } from './selection';
 
 // The ONE module that reaches into zundo's temporal-store internals — the
@@ -46,8 +46,12 @@ export function redo(): void {
 }
 
 // Wipe both stacks — a loaded file starts with a fresh history (undo must
-// never cross a file load back into the previous document).
+// never cross a file load back into the previous document). Any group still
+// open (a focused field whose blur lands after the load, a drag that died
+// mid-gesture) holds a pre-load snapshot, so it is cancelled too: neither its
+// own late end nor the next begin's steal may push the dead document.
 export function clearHistory(): void {
+  cancelOpenHistoryGroup();
   useDoc.temporal.getState().clear();
 }
 
