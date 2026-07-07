@@ -12,7 +12,12 @@ import { dispatchMirrored } from '../../state/mirrorDispatch';
 import type { StationId } from '../../model/types';
 import { findMatchingStations, type LayoutOffset } from '../../model/matching';
 import { LabelOffsetControl } from './LabelOffsetControl';
-import { LabelAlignCycleButton, LabelValignCycleButton } from './LabelAlignButtons';
+import {
+  AutoHAlignCycleButton,
+  AutoVAlignCycleButton,
+  LabelAlignCycleButton,
+  LabelValignCycleButton,
+} from './LabelAlignButtons';
 import { StopRows } from './StopRows';
 import { useFieldHistory } from '../useFieldHistory';
 import { useNumericField } from '../useNumericField';
@@ -31,6 +36,8 @@ export function StationInspector({ id }: { id: StationId }) {
   const setLabelAlign = useDoc((s) => s.setLabelAlign);
   const setLabelValign = useDoc((s) => s.setLabelValign);
   const setLabelAutoAlign = useDoc((s) => s.setLabelAutoAlign);
+  const setLabelAutoHAlign = useDoc((s) => s.setLabelAutoHAlign);
+  const setLabelAutoVAlign = useDoc((s) => s.setLabelAutoVAlign);
   const setStationWaypoint = useDoc((s) => s.setStationWaypoint);
   const setStationLocked = useDoc((s) => s.setStationLocked);
   const setStationLabelBold = useDoc((s) => s.setStationLabelBold);
@@ -235,6 +242,19 @@ export function StationInspector({ id }: { id: StationId }) {
           >
             <MagicWandIcon />
           </button>
+          {/* Multi-line tuning for Auto placement: within-block alignment
+              and which line anchors. Only meaningful while the wand is on;
+              inverse-disabled from the legacy align/valign cycles. */}
+          <AutoHAlignCycleButton
+            value={station.label.autoHAlign ?? null}
+            disabled={!resolveAutoAlign(station.label)}
+            onSet={(v) => dispatchAll((sid) => setLabelAutoHAlign(sid, v))}
+          />
+          <AutoVAlignCycleButton
+            value={station.label.autoVAlign ?? null}
+            disabled={!resolveAutoAlign(station.label)}
+            onSet={(v) => dispatchAll((sid) => setLabelAutoVAlign(sid, v))}
+          />
           <LabelAlignCycleButton
             align={station.label.align}
             disabled={resolveAutoAlign(station.label)}

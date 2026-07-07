@@ -128,6 +128,33 @@ export function labelLayoutLocal(
   const readCos = Math.cos(readAngle);
   const readSin = Math.sin(readAngle);
 
+  // Measured before the alignment branch because autoAlign needs per-line
+  // advances (its H/V overrides slide the anchor by the anchor line's
+  // width); the width also sizes the hit rect below. Measurement is
+  // bullet-aware (a `<CODE>` token measures as one small circle, not as its
+  // literal characters) and font-size-aware, so the hit rect / wash
+  // silhouette hugs the painted glyphs instead of a per-character guess.
+  const nameLines = station.name.split('\n');
+  const extraLines = nameLines.length - 1;
+  const measured = measure({
+    text: station.name,
+    fontSize: style.fontSize,
+    weight: style.weight,
+    // Per-station italic ORs with the doc-wide default, matching the renderer.
+    italic: style.italic || !!station.labelItalic,
+    literalBullets: style.literalBullets,
+    // Station names parse the full inline grammar (bullets + formatting tags),
+    // so a "<b>Foo</b>" name measures at its rendered bold-"Foo" width, not the
+    // literal tag characters — the hit rect / wash silhouette then hugs the
+    // painted glyphs (matches renderStationLabelText). The edit box still forces
+    // the raw-token width via `literalBullets` above.
+    // Global leading/tracking: tracking widens the measured ink; leading feeds
+    // the height math below (measureTextLabel returns a leaded height too, but
+    // the vertical metrics here are derived independently).
+    leading: style.leading,
+    tracking: style.tracking,
+  });
+
   let textAnchor: 'start' | 'middle' | 'end' = 'middle';
   let anchorX = labelCenter.x;
   let anchorY = labelCenter.y;
@@ -137,6 +164,11 @@ export function labelLayoutLocal(
 
   if (label.autoAlign) {
     // Smart placement (transitmap.net rules) — overrides align AND valign.
+    // Lines align by pen advance (see textMeasure), with the jsdom/stub
+    // fallbacks the rest of the file uses.
+    const lineAdvances = nameLines.map(
+      (_, i) => measured.lines[i]?.advanceWidth ?? measured.lineWidths[i] ?? measured.width,
+    );
     const info = autoAlignInfo(
       stops,
       phantomDot,
@@ -145,6 +177,7 @@ export function labelLayoutLocal(
       readSin,
       style.fontSize,
       stopHalf,
+      lineAdvances,
     );
     textAnchor = info.textAnchor;
     valign = info.valign;
@@ -227,31 +260,6 @@ export function labelLayoutLocal(
 
   // Hit rect in unrotated local coords, *before* the label.rotation rotation
   // is applied to it.
-  const nameLines = station.name.split('\n');
-  const extraLines = nameLines.length - 1;
-  // Measure the widest line's true ink width at the rendered font metrics.
-  // This is bullet-aware (a `<CODE>` token measures as one small circle, not
-  // as its literal characters) and font-size-aware, so the hit rect / wash
-  // silhouette hugs the painted glyphs instead of a per-character guess that
-  // ballooned for small fonts and labels containing inline route bullets.
-  const measured = measure({
-    text: station.name,
-    fontSize: style.fontSize,
-    weight: style.weight,
-    // Per-station italic ORs with the doc-wide default, matching the renderer.
-    italic: style.italic || !!station.labelItalic,
-    literalBullets: style.literalBullets,
-    // Station names parse the full inline grammar (bullets + formatting tags),
-    // so a "<b>Foo</b>" name measures at its rendered bold-"Foo" width, not the
-    // literal tag characters — the hit rect / wash silhouette then hugs the
-    // painted glyphs (matches renderStationLabelText). The edit box still forces
-    // the raw-token width via `literalBullets` above.
-    // Global leading/tracking: tracking widens the measured ink; leading feeds
-    // the height math below (measureTextLabel returns a leaded height too, but
-    // the vertical metrics here are derived independently).
-    leading: style.leading,
-    tracking: style.tracking,
-  });
   const textW = Math.max(20, measured.width);
 
   // Vertical metrics derived from the rendered font size, using the same
@@ -427,14 +435,54 @@ interface AutoAlignInfo {
   // these back into unrotated station-local coords.
   anchorRead: number;
   anchorPerp: number;
-  // Which block behavior realizes the vertical mode. The line NEAREST the
-  // marker gets the typography and extra lines stack away from it:
-  // sit-on-baseline above = 'auto-up' (last line pinned, grows up);
+  // Which block behavior realizes the vertical mode. By default the line
+  // NEAREST the marker gets the typography and extra lines stack away from
+  // it: sit-on-baseline above = 'auto-up' (last line pinned, grows up);
   // hang-from-cap below = 'auto-down' (first line pinned, grows down);
   // beside/fallback = 'auto-down' with the FIRST line's Core Type Area
   // centered on the pin ("away" is ambiguous beside the line — align-down
   // keeps the first line level with the dot as lines are added).
+  // `label.autoVAlign` overrides the choice of anchor line.
   valign: 'auto-up' | 'auto-down';
+}
+
+// Fraction of a line's advance that sits LEFT of the anchor point for each
+// text-anchor value. Used to slide anchorX when `autoHAlign` re-aligns the
+// block, so the ANCHOR LINE's pinned edge stays exactly where the octant
+// put it.
+const ANCHOR_FRACTION = { start: 0, middle: 0.5, end: 1 } as const;
+
+/**
+ * Apply the user's optional H/V overrides to the octant-derived defaults.
+ * `autoVAlign` picks which line is the anchor line ('down' = top line,
+ * block grows down; 'up' = bottom line, grows up) — the octant's
+ * typographic fold in `anchorPerp` applies to whichever line sits at the
+ * anchor, so no perpendicular change is needed. `autoHAlign` re-aligns the
+ * lines WITHIN the block: anchorRead slides by the anchor line's advance so
+ * that line's pinned edge doesn't move (single-line labels render
+ * identically under any H value).
+ */
+function applyAutoOverrides(
+  label: Station['label'],
+  textAnchorDefault: AutoAlignInfo['textAnchor'],
+  valignDefault: AutoAlignInfo['valign'],
+  anchorRead: number,
+  anchorPerp: number,
+  lineAdvances: number[],
+): AutoAlignInfo {
+  const valign =
+    label.autoVAlign === 'up'
+      ? 'auto-up'
+      : label.autoVAlign === 'down'
+        ? 'auto-down'
+        : valignDefault;
+  const textAnchor = label.autoHAlign ?? textAnchorDefault;
+  if (textAnchor !== textAnchorDefault) {
+    const anchorLineIdx = valign === 'auto-up' ? lineAdvances.length - 1 : 0;
+    const w = lineAdvances[anchorLineIdx] ?? 0;
+    anchorRead += (ANCHOR_FRACTION[textAnchor] - ANCHOR_FRACTION[textAnchorDefault]) * w;
+  }
+  return { textAnchor, anchorRead, anchorPerp, valign };
 }
 
 // textAnchor per octant of the label relative to the reference stop
@@ -474,6 +522,8 @@ function autoAlignInfo(
   readSin: number,
   fontSize: number,
   stopHalf: StopHalfFn,
+  // Per-line pen advances of the rendered name, for the H/V overrides.
+  lineAdvances: number[],
 ): AutoAlignInfo {
   interface Candidate {
     dRow: number;
@@ -527,12 +577,14 @@ function autoAlignInfo(
     // centers on the label's own cell and extra lines grow down — same
     // first-line anchoring as the beside octants, so a dragged-away label
     // doesn't re-center its block as lines are added.
-    return {
-      textAnchor: 'middle',
-      anchorRead: 0,
-      anchorPerp: (CAP_FRACTION / 2) * fontSize - cb,
-      valign: 'auto-down',
-    };
+    return applyAutoOverrides(
+      label,
+      'middle',
+      'auto-down',
+      0,
+      (CAP_FRACTION / 2) * fontSize - cb,
+      lineAdvances,
+    );
   }
 
   const o = dirIndex({ x: -ref.proj, y: -ref.perp });
@@ -575,7 +627,7 @@ function autoAlignInfo(
     anchorPerp = pinPerp + ((CAP_FRACTION / 2) * fontSize - cb);
     valign = 'auto-down';
   }
-  return { textAnchor: AUTO_TEXT_ANCHOR[o], anchorRead: pinRead, anchorPerp, valign };
+  return applyAutoOverrides(label, AUTO_TEXT_ANCHOR[o], valign, pinRead, anchorPerp, lineAdvances);
 }
 
 /**
