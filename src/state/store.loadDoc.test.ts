@@ -1,5 +1,5 @@
 import { describe, it, expect, beforeEach } from 'vitest';
-import { useDoc } from './store';
+import { beginHistoryGroup, useDoc } from './store';
 import { clearHistory, historyDepth, redoDepth, undo } from './history';
 import { DEFAULT_DOC } from '../model/transforms';
 import type { Station } from '../model/types';
@@ -59,5 +59,32 @@ describe('clearHistory', () => {
     clearHistory();
     expect(historyDepth()).toBe(0);
     expect(redoDepth()).toBe(0);
+  });
+
+  // A group open ACROSS the load (pointer order makes a focused field's blur
+  // land after anything; a drag can die mid-gesture) holds a snapshot of the
+  // REPLACED document. clearHistory must cancel it — otherwise its late end,
+  // or the next begin's steal, pushes that pre-load snapshot and undo crosses
+  // the file load.
+  it("cancels an open group: a gesture's late end can't push a cross-load entry", () => {
+    const group = beginHistoryGroup(); // e.g. a focused field's edit arc
+    useDoc.getState().addStation(1, 1, 'Old');
+    useDoc.getState().loadDoc({ ...DEFAULT_DOC, name: 'Loaded map' });
+    clearHistory();
+    group.commit(); // blur arrives after the load
+    expect(historyDepth()).toBe(0);
+    // …and recording is live again for post-load edits.
+    useDoc.getState().addStation(5, 5, 'After');
+    expect(historyDepth()).toBe(1);
+  });
+
+  it("forgets the open group: the next begin can't resurrect its pre-load snapshot", () => {
+    beginHistoryGroup(); // leaked mid-gesture across the load
+    useDoc.getState().addStation(1, 1, 'Old');
+    useDoc.getState().loadDoc({ ...DEFAULT_DOC, name: 'Loaded map' });
+    clearHistory();
+    const next = beginHistoryGroup(); // steal must find nothing to seal
+    expect(historyDepth()).toBe(0);
+    next.cancel();
   });
 });

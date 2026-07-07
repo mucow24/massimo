@@ -2,7 +2,7 @@ import { describe, it, expect, beforeEach } from 'vitest';
 import { act, renderHook } from '@testing-library/react';
 import { useItemDrag, type ItemDragApi } from './useItemDrag';
 import { useDoc, useSelection, dragState } from '../../state/store';
-import { historyDepth } from '../../state/history';
+import { clearHistory, historyDepth } from '../../state/history';
 import { useSnapPrefs } from '../../state/snapPrefs';
 import { DEFAULT_DOC } from '../../model/transforms';
 import { DEFAULT_SNAP_MODES, snapPointToGrid, type SnapModes } from '../../geometry/snap';
@@ -35,7 +35,10 @@ function resetSelection(over: Record<string, unknown> = {}) {
 
 beforeEach(() => {
   useDoc.setState({ ...useDoc.getState(), ...DEFAULT_DOC });
-  useDoc.temporal.getState().clear();
+  // The named reset, not raw temporal.clear(): several tests here end
+  // mid-gesture on purpose (no pointerup), and clearHistory also cancels that
+  // still-open group so its stale snapshot can't leak into the next test.
+  clearHistory();
   resetSelection();
   setModes({ line: true, all: 'off', grid: 'off' });
   dragState.suppressClick = false;

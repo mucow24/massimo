@@ -692,6 +692,20 @@ export const useDoc = create<DocState>()(
   ),
 );
 
+// The one currently-open history group, if any — the ownership reference
+// behind the steal-on-begin overlap contract documented on beginHistoryGroup.
+let openHistoryGroup: { commit: () => void; cancel: () => void } | null = null;
+
+/**
+ * Cancel the currently-open history group, if any. Called by clearHistory():
+ * a group open across a file load holds a snapshot of the REPLACED document,
+ * so neither its own late end (a blur landing after the load) nor the next
+ * begin's steal may push it — undo must never cross a file load.
+ */
+export function cancelOpenHistoryGroup(): void {
+  openHistoryGroup?.cancel();
+}
+
 /**
  * Open a history "group" around a multi-step user action — a station drag
  * (many moveStation calls between pointerdown and pointerup), a text-input
@@ -713,21 +727,45 @@ export const useDoc = create<DocState>()(
  * Groups do NOT nest: callers that may run inside an already-open group (e.g.
  * a mirror broadcast fired from a focused numeric field's edit arc) must gate
  * on `isHistoryGrouping()` and skip opening their own group — the outer group
- * already collapses their writes into its single entry. Opening a second group
- * here would resume recording mid-gesture and push a stray snapshot.
+ * already collapses their writes into its single entry.
+ *
+ * Groups CAN overlap without nesting, though: two independent gestures own
+ * their own begin/end pairs, and pointer order is pointerdown → blur, so
+ * pressing a canvas drag handle opens the drag's group BEFORE a focused
+ * field's blur-commit lands. The newer gesture steals: begin seals any
+ * still-open group (committing it exactly as its own end would), and the
+ * elder's late commit/cancel/rollback is a no-op via its `done` flag. Without
+ * the steal, the elder's late commit would resume recording inside the newer
+ * group — every write then records its own entry plus a stray snapshot on
+ * top, leaving undo non-monotonic.
  */
 export function beginHistoryGroup(): {
   commit: () => void;
   cancel: () => void;
   rollback: () => void;
 } {
+  // Seal any still-open group (see the overlap contract above). Also the
+  // self-heal for LEAKED groups — a gesture that died without ending leaves
+  // recording paused only until the next begin, which recovers its edits as a
+  // real entry. openHistoryGroup is a last-writer-wins reference, never a
+  // depth counter, so a leak can strand at most one group and never corrupts
+  // later pairings.
+  openHistoryGroup?.commit();
+
   const snapshot = pickDocSnapshot(useDoc.getState());
   pauseHistory();
   let done = false;
-  return {
+  // Shared first step of every ender: run once, and release ownership only if
+  // this group still holds it (a stolen group must not null out its stealer).
+  const finish = (): boolean => {
+    if (done) return false;
+    done = true;
+    if (openHistoryGroup === group) openHistoryGroup = null;
+    return true;
+  };
+  const group = {
     commit: () => {
-      if (done) return;
-      done = true;
+      if (!finish()) return;
       resumeHistory();
       const cur = pickDocSnapshot(useDoc.getState());
       // Reference-equality check across every tracked doc field. Transforms
@@ -737,13 +775,11 @@ export function beginHistoryGroup(): {
       pushHistory(snapshot);
     },
     cancel: () => {
-      if (done) return;
-      done = true;
+      if (!finish()) return;
       resumeHistory();
     },
     rollback: () => {
-      if (done) return;
-      done = true;
+      if (!finish()) return;
       // Restore the pre-group doc, then resume WITHOUT pushing. Still paused
       // here, so the restore itself records nothing (mirrors how zundo's own
       // undo reapplies a partialized snapshot). Skip the write when nothing
@@ -753,6 +789,8 @@ export function beginHistoryGroup(): {
       resumeHistory();
     },
   };
+  openHistoryGroup = group;
+  return group;
 }
 
 /**
