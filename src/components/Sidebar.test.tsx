@@ -22,6 +22,7 @@ beforeEach(() => {
     selectedRouteBulletIds: [],
     selectedLineId: null,
     hoveredStationId: null,
+    uiMode: { kind: 'idle' },
   });
 });
 
@@ -138,6 +139,45 @@ describe('<Sidebar /> — collapsible list', () => {
     expect(document.querySelector('.sidebar')).not.toBeNull(); // still open
     expect(useSelection.getState().sidebarOpen).toBe(true);
     expect(useSelection.getState().activeTab).toBe('lines');
+  });
+});
+
+describe('<Sidebar /> — hidden while the station layout editor is open', () => {
+  beforeEach(() => {
+    useDoc.setState({
+      ...useDoc.getState(),
+      ...makeDoc({ stations: [makeStation({ id: 's1', name: 'Alpha' })] }),
+    });
+  });
+
+  it('renders nothing while editing-station-layout is active, even with sidebarOpen', () => {
+    useSelection.setState({
+      ...useSelection.getState(),
+      sidebarOpen: true,
+      uiMode: { kind: 'editing-station-layout', stationId: 's1' },
+    });
+    render(<Sidebar />);
+    // The layout-edit popover pins to the top-right, directly over the sidebar;
+    // the sidebar collapses for the duration so the editor's controls aren't
+    // trapped behind it (the canvas layer stacks below the sidebar).
+    expect(document.querySelector('.sidebar')).toBeNull();
+  });
+
+  it('reappears when the layout editor exits (sidebarOpen untouched)', () => {
+    useSelection.setState({
+      ...useSelection.getState(),
+      sidebarOpen: true,
+      uiMode: { kind: 'editing-station-layout', stationId: 's1' },
+    });
+    render(<Sidebar />);
+    expect(document.querySelector('.sidebar')).toBeNull();
+
+    // Leaving layout-edit brings the panel straight back — no saved flag, it's
+    // derived purely from uiMode plus the untouched sidebarOpen.
+    act(() => useSelection.setState({ uiMode: { kind: 'idle' } }));
+
+    expect(document.querySelector('.sidebar')).not.toBeNull();
+    expect(useSelection.getState().sidebarOpen).toBe(true);
   });
 });
 
