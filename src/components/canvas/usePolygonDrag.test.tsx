@@ -6,7 +6,7 @@ import { useDoc, useSelection, dragState } from '../../state/store';
 import { useSnapPrefs } from '../../state/snapPrefs';
 import { DEFAULT_DOC } from '../../model/transforms';
 import { DEFAULT_SNAP_MODES, type SnapModes } from '../../geometry/snap';
-import { makePolygon } from '../../test/fixtures';
+import { makePolygon, makeRouteBullet, makeSvgImage } from '../../test/fixtures';
 
 function pointerEvent(opts: {
   clientX: number;
@@ -80,6 +80,28 @@ describe('usePolygonDrag — whole-polygon drag', () => {
     expect(verts[2]).toEqual({ x: 40, y: 40 });
   });
 
+  it("'Snap to all' aligns the anchor vertex to a route bullet's center", () => {
+    setModes({ line: false, all: 'all', grid: 'off' });
+    useDoc.setState({
+      ...useDoc.getState(),
+      polygons: { p0: makePolygon({ id: 'p0' }) },
+      routeBullets: { b0: makeRouteBullet({ id: 'b0', x: 100, y: 55 }) },
+    });
+    const r = render();
+    // Anchor of the default square is (-30,-30). Δscreen (127,10) proposes
+    // (97,-20): 3 from the bullet's vertical axis x=100 → snaps to (100,-20).
+    r.current.onPolygonPointerDown('p0', pointerEvent({ clientX: 200, clientY: 200 }));
+    r.current.onPointerMove(pointerEvent({ clientX: 210, clientY: 200 }));
+    r.current.onPointerMove(pointerEvent({ clientX: 327, clientY: 210 }));
+    r.current.onPointerUp(pointerEvent({ clientX: 327, clientY: 210 }));
+
+    const verts = useDoc.getState().polygons['p0'].vertices;
+    expect(verts[0].x).toBeCloseTo(100, 6);
+    expect(verts[0].y).toBeCloseTo(-20, 6);
+    expect(verts[2].x).toBeCloseTo(160, 6);
+    expect(verts[2].y).toBeCloseTo(40, 6);
+  });
+
   it('a click (no movement past threshold) cancels the history group, leaving vertices put', () => {
     useDoc.setState({ ...useDoc.getState(), polygons: { p0: makePolygon({ id: 'p0' }) } });
     const r = render();
@@ -91,6 +113,36 @@ describe('usePolygonDrag — whole-polygon drag', () => {
 });
 
 describe('usePolygonDrag — vertex drag', () => {
+  it("'Snap to all' aligns the dragged vertex to an svg image corner", () => {
+    setModes({ line: false, all: 'all', grid: 'off' });
+    useDoc.setState({
+      ...useDoc.getState(),
+      polygons: {
+        p0: makePolygon({
+          id: 'p0',
+          vertices: [
+            { x: 0, y: 0 },
+            { x: 100, y: 0 },
+            { x: 50, y: 80 },
+          ],
+        }),
+      },
+      svgImages: { i0: makeSvgImage({ id: 'i0', x: 200, y: 100 }) },
+      svgImageOrder: ['i0'],
+    });
+    const r = render();
+    // Image corners at (150,70)/(250,70)/(250,130)/(150,130). Δscreen (103,35)
+    // proposes the apex at (153,115): 3 from the corners' vertical axis x=150.
+    r.current.onVertexPointerDown('p0', 2, pointerEvent({ clientX: 200, clientY: 200 }));
+    r.current.onPointerMove(pointerEvent({ clientX: 210, clientY: 200 }));
+    r.current.onPointerMove(pointerEvent({ clientX: 303, clientY: 235 }));
+    r.current.onPointerUp(pointerEvent({ clientX: 303, clientY: 235 }));
+
+    const verts = useDoc.getState().polygons['p0'].vertices;
+    expect(verts[2].x).toBeCloseTo(150, 6);
+    expect(verts[2].y).toBeCloseTo(115, 6);
+  });
+
   it('moves only the grabbed vertex and "Snap to line" aligns it to a sibling vertex', () => {
     setModes({ line: true, all: 'off', grid: 'off' });
     // Triangle: apex at (50,80); base corners at (0,0) and (100,0).

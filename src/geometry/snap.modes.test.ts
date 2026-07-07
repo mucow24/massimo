@@ -691,6 +691,28 @@ describe('snapDraggedStation: snap-to-all mode', () => {
     expect(r.y).toBeCloseTo(-50.5, 3);
   });
 
+  it("aligns a normal station to a STOPLESS station's anchor", () => {
+    // Target t has no stops → its anchor (100, 0) is the alignment point.
+    // Dragged b (one stop at cell 0,0 → zero stop offset) proposed at (104, 50)
+    // is 4 from t's vertical axis → snaps to x=100. Mirrors the existing
+    // dragged-side anchor fallback so stopless stations work on both sides.
+    const t = makeStation({ id: 't', x: 100, y: 0 });
+    const b = makeStation({ id: 'b', x: 0, y: 0, stops: [makeStop('L1')] });
+    const r = snapDraggedStation({
+      draggedId: 'b',
+      proposedX: 104,
+      proposedY: 50,
+      draggedRotation: 0,
+      draggedStops: b.stops,
+      stations: stations(t, b),
+      lines: linesOf(lineOf('L1', ['b'])),
+      modes: { line: false, equidistant: false, tens: false, all: 'all', grid: 'off' },
+    });
+    expect(r.x).toBeCloseTo(100, 5);
+    expect(r.y).toBeCloseTo(50, 5);
+    expect(r.guides).toHaveLength(1);
+  });
+
   it('composes with line mode into a 2-axis snap at the intersection', () => {
     // A on L1, line-adjacent to dragged B → axis +y through (100, 0).
     // C is unrelated; all-mode picks horizontal alignment through C's stop

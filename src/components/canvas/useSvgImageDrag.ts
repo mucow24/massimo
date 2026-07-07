@@ -9,12 +9,10 @@ import {
   resizeSvgImageCorner,
   resizeSvgImageEdge,
   rotateSvgImageTo,
-  svgImageCorners,
   svgImageSnapAnchor,
   type SvgImageGeom,
 } from '../../geometry/svgImage';
 import type { Vec2 } from '../../geometry/vec';
-import type { MapDoc } from '../../model/types';
 import { finishDrag, trackDragMove } from './dragGesture';
 import {
   collectGroupSiblings,
@@ -22,7 +20,7 @@ import {
   translateSiblings,
   type GroupSiblings,
 } from './groupDrag';
-import { allPolygonVertices, stationStopCenters } from './snapTargets';
+import { alignTargets } from './snapTargets';
 
 type ScreenToWorld = (mx: number, my: number) => Vec2;
 
@@ -35,6 +33,9 @@ type MoveState = {
   startMY: number;
   moved: boolean;
   siblings: GroupSiblings;
+  // "Snap to all" pool, snapshotted at pointer-down. Empty during a group
+  // drag — co-moving siblings would be unstable targets.
+  allTargets: Vec2[];
   history: ReturnType<typeof beginHistoryGroup>;
 };
 
@@ -48,6 +49,8 @@ type ResizeState = {
   startMX: number;
   startMY: number;
   moved: boolean;
+  // "Snap to all" pool for the moving handle, snapshotted at pointer-down.
+  allTargets: Vec2[];
   history: ReturnType<typeof beginHistoryGroup>;
 };
 
@@ -86,24 +89,14 @@ const geomOf = (im: {
   rotation: im.rotation,
 });
 
-// Every other image's rotated corners — "Snap to all" targets representing the
-// other images (excluding the one being dragged).
-function otherSvgImageCorners(svgImages: MapDoc['svgImages'], excludeId: string): Vec2[] {
-  const out: Vec2[] = [];
-  for (const id of Object.keys(svgImages)) {
-    if (id === excludeId) continue;
-    for (const c of svgImageCorners(svgImages[id])) out.push(c);
-  }
-  return out;
-}
-
 /**
  * Owns drag state for svg images: whole-image moves, corner (proportional) and
  * edge (single-axis) resizes, and rotation. The gesture lifecycle and the
  * whole-image group-drag towing are shared with the other drag hooks via
  * dragGesture + groupDrag. Move + axis-aligned resize snap through
- * {@link snapPolygonPoint} (same targets as polygons); rotation snaps only to
- * 22.5° multiples under Shift, never to the grid.
+ * {@link snapPolygonPoint} against the shared {@link alignTargets} pool (same
+ * targets as polygons); rotation snaps only to 22.5° multiples under Shift,
+ * never to the grid.
  */
 export function useSvgImageDrag(
   svgRef: RefObject<SVGSVGElement | null>,
@@ -130,13 +123,19 @@ export function useSvgImageDrag(
     // elements as background). A plain click still selects it (popover unlock).
     if (im.locked) return;
     e.stopPropagation();
+    const siblings = collectGroupSiblings('svgImage', id);
     moveRef.current = {
       id,
       start: geomOf(im),
       startMX: e.clientX,
       startMY: e.clientY,
       moved: false,
-      siblings: collectGroupSiblings('svgImage', id),
+      siblings,
+      // During a group drag the other selected items move too, so they're
+      // unstable targets — drop alignment and let only grid act on the anchor.
+      allTargets: hasGroupSiblings(siblings)
+        ? []
+        : alignTargets(useDoc.getState(), { svgImageIds: new Set([id]) }),
       history: beginHistoryGroup(),
     };
   };
@@ -159,6 +158,7 @@ export function useSvgImageDrag(
       startMX: e.clientX,
       startMY: e.clientY,
       moved: false,
+      allTargets: alignTargets(useDoc.getState(), { svgImageIds: new Set([id]) }),
       history: beginHistoryGroup(),
     };
   };
@@ -196,20 +196,10 @@ export function useSvgImageDrag(
         let guides: SnapGuide[] = [];
         const inGroupDrag = hasGroupSiblings(mv.siblings);
         if (!e.shiftKey) {
-          const doc = useDoc.getState();
-          // During a group drag the other images move too, so they're unstable
-          // targets — drop alignment and let only grid act on the anchor.
-          const allTargets = inGroupDrag
-            ? []
-            : [
-                ...stationStopCenters(doc.stations),
-                ...allPolygonVertices(doc.polygons),
-                ...otherSvgImageCorners(doc.svgImages, mv.id),
-              ];
           const snap = snapPolygonPoint({
             proposed: anchor,
             lineTargets: [],
-            allTargets,
+            allTargets: mv.allTargets,
             modes: snapModes,
             tolerance: SNAP_PERP_TOLERANCE / zoom,
             gridInterval: gridSize,
@@ -235,16 +225,10 @@ export function useSvgImageDrag(
         // rotated off-axis, snapping a corner to a grid point would distort it.
         const axisAligned = normalizeRotation(rz.start.rotation) % 90 === 0;
         if (axisAligned && !e.shiftKey) {
-          const doc = useDoc.getState();
-          const allTargets = [
-            ...stationStopCenters(doc.stations),
-            ...allPolygonVertices(doc.polygons),
-            ...otherSvgImageCorners(doc.svgImages, rz.id),
-          ];
           const snap = snapPolygonPoint({
             proposed: pointer,
             lineTargets: [],
-            allTargets,
+            allTargets: rz.allTargets,
             modes: snapModes,
             tolerance: SNAP_PERP_TOLERANCE / zoom,
             gridInterval: gridSize,

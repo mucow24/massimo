@@ -104,7 +104,13 @@ export function snapPolygonPoint(input: PolygonSnapInput): PolygonSnapResult {
     const g = snapPointToGrid(proposed.x, proposed.y, modes.grid, gridInterval);
     return { x: g.x, y: g.y, guides: [] };
   };
-  const guideTo = (target: Vec2, p: Vec2): SnapGuide => ({ from: { ...target }, to: { ...p } });
+  // Same rounded-distance readout as the station engine's guides, so every
+  // alignment guide in the app carries a measurement label.
+  const guideTo = (target: Vec2, p: Vec2): SnapGuide => ({
+    from: { ...target },
+    to: { ...p },
+    label: Math.round(Math.hypot(p.x - target.x, p.y - target.y)).toString(),
+  });
 
   // A corner — both X and Y lock onto a target — is the strongest snap: take it
   // outright (snapping to the V×H intersection), even over a diagonal that

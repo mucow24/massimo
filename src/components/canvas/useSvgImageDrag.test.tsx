@@ -6,7 +6,8 @@ import { useSnapPrefs } from '../../state/snapPrefs';
 import { useViewportStore } from '../../state/viewportStore';
 import { DEFAULT_DOC } from '../../model/transforms';
 import { DEFAULT_SNAP_MODES, type SnapModes } from '../../geometry/snap';
-import { makeSvgImage } from '../../test/fixtures';
+import { makeSvgImage, makeTextLabel } from '../../test/fixtures';
+import { measureTextLabel } from '../../geometry/textMeasure';
 import { fakeSvgRef, pointerEvent } from '../../test/interaction';
 
 type Result = { current: SvgImageDragApi };
@@ -47,6 +48,27 @@ describe('useSvgImageDrag — move', () => {
     up(r, pointerEvent({ clientX: 143, clientY: 143 }));
     expect(useDoc.getState().svgImages.i0.x).toBeCloseTo(40, 5);
     expect(useDoc.getState().svgImages.i0.y).toBeCloseTo(40, 5);
+  });
+
+  it("'Snap to all' aligns the anchor corner to a text label's upper-left corner", () => {
+    setModes({ line: false, all: 'all', grid: 'off' });
+    seed({ width: 60, height: 60 }); // anchor TL (-30,-30)
+    const label = makeTextLabel({ id: 't0', x: 300, y: 300, fontSize: 40 });
+    useDoc.setState({ ...useDoc.getState(), textLabels: { t0: label } });
+    const m = measureTextLabel(label);
+    const ulx = 300 - m.width / 2;
+
+    const r = render();
+    act(() => r.current.onSvgImagePointerDown('i0', pointerEvent({ clientX: 100, clientY: 100 })));
+    // Propose the anchor 3 right of the label's UL-corner vertical axis, far
+    // below the label so only that axis engages → snaps x to the corner's.
+    const dx = ulx + 3 - -30;
+    move(r, pointerEvent({ clientX: 100 + dx, clientY: 230 }));
+    up(r, pointerEvent({ clientX: 100 + dx, clientY: 230 }));
+
+    // Center = snapped anchor + (30,30).
+    expect(useDoc.getState().svgImages.i0.x).toBeCloseTo(ulx + 30, 5);
+    expect(useDoc.getState().svgImages.i0.y).toBeCloseTo(130, 5);
   });
 });
 

@@ -831,7 +831,8 @@ export function bulletAlignmentPairs(target: Station, lineId: LineId): Alignment
 
 /**
  * Snap-to-all alignment pairs. For every target stop × every dragged stop
- * (or anchor, if dragged has no stops) × the four world axes (horizontal,
+ * (either side falls back to its anchor when it has no stops) × the four
+ * world axes (horizontal,
  * vertical, and the two 45° diagonals), emit a candidate. Line membership,
  * adjacency, and stop orientation are all ignored — the user just wants to
  * snap when their stop visually lines up with anyone else's stop on a 4-axis
@@ -875,16 +876,20 @@ export function allAxesPairs(
   target: Station,
   mode: AllSnap = 'all',
 ): AlignmentPair[] {
-  if (target.stops.length === 0) return [];
   const axes = axesForAllSnap(mode);
   if (axes.length === 0) return [];
+  // Either side without stops falls back to its anchor, so stopless stations
+  // participate both as the dragged station and as a target.
   const dOffs: Vec2[] =
     draggedStops.length === 0
       ? [{ x: 0, y: 0 }]
       : draggedStops.map((c) => rotateBy(stopCenterAt(c.row, c.col), draggedRotation));
+  const tOffs: Vec2[] =
+    target.stops.length === 0
+      ? [{ x: 0, y: 0 }]
+      : target.stops.map((c) => rotateBy(stopCenterAt(c.row, c.col), target.rotation));
   const out: AlignmentPair[] = [];
-  for (const tCell of target.stops) {
-    const tOff = rotateBy(stopCenterAt(tCell.row, tCell.col), target.rotation);
+  for (const tOff of tOffs) {
     for (const dOff of dOffs) {
       for (const axis of axes) out.push({ dOff, tOff, axis });
     }
