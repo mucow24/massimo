@@ -116,6 +116,12 @@ export type LabelAlign = 'auto' | 'start' | 'middle' | 'end';
 // once a second line shows up.
 export type LabelValign = 'auto-down' | 'top' | 'middle' | 'bottom' | 'auto-up';
 
+// Multi-line tuning for autoAlign labels (see LabelCell.autoHAlign /
+// autoVAlign). Same value space as LabelAlign's explicit members; kept as
+// separate types so the two mechanisms can't be cross-assigned by accident.
+export type AutoHAlign = 'start' | 'middle' | 'end';
+export type AutoVAlign = 'up' | 'down';
+
 // The station's name lives in a single grid cell with its own 8-way rotation
 // (in the unrotated station-local frame). `align` controls how the rendered
 // text positions relative to that cell along the reading direction; `valign`
@@ -143,6 +149,16 @@ export interface LabelCell {
   // apply on top. Optional and omitted when off, so older saves load
   // unchanged.
   autoAlign?: boolean;
+  // Multi-line tuning while `autoAlign` is on (ignored otherwise; absent =
+  // derived from the octant, and omitted when set back to auto).
+  // `autoHAlign` re-aligns the lines WITHIN the block — the anchor line
+  // keeps its octant-pinned position, so single-line labels render
+  // identically. `autoVAlign` picks WHICH line anchors: 'down' = the top
+  // line with extra lines stacking down, 'up' = the bottom line stacking
+  // up; the octant still supplies the pinned typographic edge (baseline /
+  // cap line / CTA-center).
+  autoHAlign?: AutoHAlign;
+  autoVAlign?: AutoVAlign;
 }
 
 export interface Station {

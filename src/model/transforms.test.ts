@@ -74,6 +74,32 @@ describe('setLabelAutoAlign', () => {
   });
 });
 
+describe('setLabelAutoHAlign / setLabelAutoVAlign', () => {
+  it('sets the H override and clears it back to auto (key removed)', () => {
+    const doc = makeDoc({ stations: [makeStation({ id: 's1' })] });
+    const on = T.setLabelAutoHAlign(doc, 's1', 'end');
+    expect(on.stations.s1.label.autoHAlign).toBe('end');
+    const off = T.setLabelAutoHAlign(on, 's1', null);
+    expect('autoHAlign' in off.stations.s1.label).toBe(false);
+  });
+
+  it('sets the V override and clears it back to auto (key removed)', () => {
+    const doc = makeDoc({ stations: [makeStation({ id: 's1' })] });
+    const on = T.setLabelAutoVAlign(doc, 's1', 'down');
+    expect(on.stations.s1.label.autoVAlign).toBe('down');
+    const off = T.setLabelAutoVAlign(on, 's1', null);
+    expect('autoVAlign' in off.stations.s1.label).toBe(false);
+  });
+
+  it('returns the same doc reference when unchanged (no-op)', () => {
+    const doc = makeDoc({ stations: [makeStation({ id: 's1' })] }); // both absent = auto
+    expect(T.setLabelAutoHAlign(doc, 's1', null)).toBe(doc);
+    expect(T.setLabelAutoVAlign(doc, 's1', null)).toBe(doc);
+    const on = T.setLabelAutoVAlign(doc, 's1', 'up');
+    expect(T.setLabelAutoVAlign(on, 's1', 'up')).toBe(on);
+  });
+});
+
 describe('rotateRouteBullet', () => {
   it('advances the rotation by one 45°-step', () => {
     const doc = T.addRouteBullet(makeDoc({}), 'b', 0, 0, null);
