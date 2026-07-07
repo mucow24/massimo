@@ -1,6 +1,11 @@
 import { describe, it, expect } from 'vitest';
 import type * as opentype from 'opentype.js';
-import { glyphPathData, needsGlyphOutlining, symbolFontFor } from './pdfGlyphs';
+import {
+  glyphPathData,
+  needsGlyphOutlining,
+  outlineUnsupportedText,
+  symbolFontFor,
+} from './pdfGlyphs';
 
 const SVG_NS = 'http://www.w3.org/2000/svg';
 
@@ -68,6 +73,66 @@ describe('glyphPathData', () => {
     p.setAttribute('d', d);
     // A valid 2-point closed path has a non-empty length; a malformed one is 0.
     expect(d).not.toContain('-1.550');
+  });
+});
+
+describe('outlineUnsupportedText — whitespace around outlined glyphs', () => {
+  const ARROW = 0x2194; // ↔ — the <xfer> glyph; uncovered by HN, outlined to a path.
+
+  // Minimal opentype.Font stand-in: covers the codepoints for which `covered`
+  // returns true, and traces any glyph to a trivial 1×1 triangle.
+  const fakeFont = (covered: (cp: number) => boolean): opentype.Font =>
+    ({
+      charToGlyphIndex: (ch: string) => (covered(ch.codePointAt(0) ?? -1) ? 7 : 0),
+      getPath: (_t: string, x: number, y: number) => ({
+        commands: [
+          { type: 'M', x, y },
+          { type: 'L', x: x + 1, y: y - 1 },
+          { type: 'Z' },
+        ],
+      }),
+    }) as unknown as opentype.Font;
+
+  const fonts = {
+    hn: fakeFont((cp) => cp !== ARROW), // HN covers everything but the arrow
+    symbols: [fakeFont((cp) => cp === ARROW)], // DejaVu stand-in traces the arrow
+  };
+
+  // Build a one-line <text> with monotonic pen positions (each UTF-16 unit
+  // advances 10px on y=0), the way the browser's getStartPositionOfChar reports
+  // them after baseline normalization.
+  function seed(content: string): SVGSVGElement {
+    const svg = document.createElementNS(SVG_NS, 'svg') as SVGSVGElement;
+    const text = document.createElementNS(SVG_NS, 'text') as SVGTextElement;
+    text.setAttribute('fill', '#111');
+    text.textContent = content;
+    (
+      text as unknown as { getStartPositionOfChar: (i: number) => { x: number; y: number } }
+    ).getStartPositionOfChar = (i: number) => ({ x: 10 * i, y: 0 });
+    svg.appendChild(text);
+    document.body.appendChild(svg);
+    return svg;
+  }
+
+  it('marks the covered run after a glyph with white-space: pre so its leading spaces survive', () => {
+    // "↔  Out": the <xfer> arrow, two typed spaces, then a word. The arrow is
+    // outlined to a <path>; "  Out" becomes a positioned covered run whose two
+    // leading spaces svg2pdf would trim (collapsing the gap) unless the run
+    // preserves whitespace — the same mechanism the app's label text uses.
+    const svg = seed('↔  Out');
+    try {
+      outlineUnsupportedText(svg, fonts);
+      const runs = svg.querySelectorAll('text');
+      expect(runs.length).toBe(1); // the single split covered run
+      const run = runs[0] as SVGTextElement;
+      expect(run.textContent).toBe('  Out'); // spaces retained in the content…
+      expect(run.style.whiteSpace).toBe('pre'); // …and kept from svg2pdf's trim
+      // Anchored at the first space; with the spaces preserved, "O" still lands
+      // at its measured position (x=30), so the gap the user typed is intact.
+      expect(run.getAttribute('x')).toBe('10');
+    } finally {
+      document.body.removeChild(svg);
+    }
   });
 });
 
