@@ -353,9 +353,9 @@ interface DocState extends MapDoc {
   duplicatePolygon: (id: string) => string | null;
   setPolygonVertices: (id: string, vertices: Polygon['vertices']) => void;
   movePolygon: (id: string, dx: number, dy: number) => void;
-  moveVertex: (id: string, index: number, x: number, y: number) => void;
+  moveVertices: (id: string, indices: number[], dx: number, dy: number) => void;
   insertVertex: (id: string, edgeIndex: number) => void;
-  deleteVertex: (id: string, index: number) => void;
+  deleteVertices: (id: string, indices: number[]) => void;
   updatePolygon: (id: string, patch: PolygonStylePatch) => void;
   rotatePolygon: (id: string) => void;
   movePolygonUp: (id: string) => void;
@@ -598,9 +598,9 @@ export const useDoc = create<DocState>()(
         duplicatePolygon: (id) => duplicateVia(get().polygons, id, get().pastePolygon),
         setPolygonVertices: (id, vertices) => set((s) => T.setPolygonVertices(s, id, vertices)),
         movePolygon: (id, dx, dy) => set((s) => T.movePolygon(s, id, dx, dy)),
-        moveVertex: (id, index, x, y) => set((s) => T.moveVertex(s, id, index, x, y)),
+        moveVertices: (id, indices, dx, dy) => set((s) => T.moveVertices(s, id, indices, dx, dy)),
         insertVertex: (id, edgeIndex) => set((s) => T.insertVertex(s, id, edgeIndex)),
-        deleteVertex: (id, index) => set((s) => T.deleteVertex(s, id, index)),
+        deleteVertices: (id, indices) => set((s) => T.deleteVertices(s, id, indices)),
         updatePolygon: (id, patch) => set((s) => T.updatePolygon(s, id, patch)),
         rotatePolygon: (id) => set((s) => T.rotatePolygon(s, id)),
         movePolygonUp: (id) => set((s) => T.movePolygonUp(s, id)),

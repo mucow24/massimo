@@ -3,9 +3,9 @@ import {
   addPolygon,
   setPolygonVertices,
   movePolygon,
-  moveVertex,
+  moveVertices,
   insertVertex,
-  deleteVertex,
+  deleteVertices,
   updatePolygon,
   rotatePolygon,
   deletePolygon,
@@ -71,12 +71,23 @@ describe('polygon transforms', () => {
     expect(movePolygon(doc, 'missing', 5, 5)).toBe(doc);
   });
 
-  it('moveVertex moves a single vertex by index', () => {
+  it('moveVertices translates only the given indices by (dx, dy)', () => {
     const doc = makeDoc({ polygons: [makePolygon({ id: 'p0' })] });
-    const next = moveVertex(doc, 'p0', 2, 99, -7);
-    expect(next.polygons['p0'].vertices[2]).toEqual({ x: 99, y: -7 });
-    // Others untouched.
-    expect(next.polygons['p0'].vertices[0]).toEqual(doc.polygons['p0'].vertices[0]);
+    const before = doc.polygons['p0'].vertices.map((v) => ({ ...v }));
+    const next = moveVertices(doc, 'p0', [0, 2], 5, -4);
+    expect(next.polygons['p0'].vertices[0]).toEqual({ x: before[0].x + 5, y: before[0].y - 4 });
+    expect(next.polygons['p0'].vertices[2]).toEqual({ x: before[2].x + 5, y: before[2].y - 4 });
+    // Unselected vertices untouched.
+    expect(next.polygons['p0'].vertices[1]).toEqual(before[1]);
+    expect(next.polygons['p0'].vertices[3]).toEqual(before[3]);
+    // Pure: input doc never mutated.
+    expect(doc.polygons['p0'].vertices).toEqual(before);
+    expect(next).not.toBe(doc);
+  });
+
+  it('moveVertices returns the input doc unchanged for an unknown id', () => {
+    const doc = makeDoc({ polygons: [makePolygon({ id: 'p0' })] });
+    expect(moveVertices(doc, 'missing', [0], 5, 5)).toBe(doc);
   });
 
   it('insertVertex adds the edge midpoint after edgeIndex (and wraps last->first)', () => {
@@ -91,14 +102,53 @@ describe('polygon transforms', () => {
     expect(b.polygons['p0'].vertices[4]).toEqual({ x: -30, y: 0 });
   });
 
-  it('deleteVertex removes a vertex but is a no-op at the 3-vertex floor', () => {
+  it('deleteVertices removes the given indices (single index == old deleteVertex)', () => {
     const square = makeDoc({ polygons: [makePolygon({ id: 'p0' })] });
-    const tri = deleteVertex(square, 'p0', 1);
+    const tri = deleteVertices(square, 'p0', [1]);
     expect(tri.polygons['p0'].vertices).toHaveLength(3);
-    // Deleting again would degenerate the polygon -> no-op.
-    const stillTri = deleteVertex(tri, 'p0', 0);
+    // Deleting again would degenerate the polygon -> no-op (same reference).
+    const stillTri = deleteVertices(tri, 'p0', [0]);
     expect(stillTri.polygons['p0'].vertices).toHaveLength(3);
-    expect(stillTri).toBe(tri); // unchanged reference
+    expect(stillTri).toBe(tri);
+  });
+
+  it('deleteVertices removes several indices at once', () => {
+    // Pentagon so we can drop two and stay above the floor.
+    const penta = makeDoc({
+      polygons: [
+        makePolygon({
+          id: 'p0',
+          vertices: [
+            { x: 0, y: 0 },
+            { x: 10, y: 0 },
+            { x: 10, y: 10 },
+            { x: 5, y: 15 },
+            { x: 0, y: 10 },
+          ],
+        }),
+      ],
+    });
+    const next = deleteVertices(penta, 'p0', [1, 3]);
+    expect(next.polygons['p0'].vertices).toEqual([
+      { x: 0, y: 0 },
+      { x: 10, y: 10 },
+      { x: 0, y: 10 },
+    ]);
+  });
+
+  it('deleteVertices no-ops (same ref) when the removal would breach the 3-vertex floor', () => {
+    const square = makeDoc({ polygons: [makePolygon({ id: 'p0' })] });
+    // 4 - 2 = 2 < 3 -> refuse entirely.
+    expect(deleteVertices(square, 'p0', [0, 1])).toBe(square);
+  });
+
+  it('deleteVertices ignores out-of-range / duplicate indices and no-ops on an empty set', () => {
+    const square = makeDoc({ polygons: [makePolygon({ id: 'p0' })] });
+    expect(deleteVertices(square, 'p0', [])).toBe(square);
+    expect(deleteVertices(square, 'p0', [9, -1])).toBe(square);
+    // Duplicates collapse; mixed valid+invalid deletes only the one valid vertex.
+    const tri = deleteVertices(square, 'p0', [1, 1, 99]);
+    expect(tri.polygons['p0'].vertices).toHaveLength(3);
   });
 
   it('updatePolygon patches style and snaps strokeWidth to the nearest 0.5, clamping at MIN only', () => {

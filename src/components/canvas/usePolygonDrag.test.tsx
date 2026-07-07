@@ -36,7 +36,7 @@ beforeEach(() => {
     selectedStationIds: [],
     selectedRouteBulletIds: [],
     selectedLabelIds: [],
-    selectedVertex: null,
+    selectedVertices: null,
   });
   setModes({ line: false, all: 'off', grid: 'off' });
   dragState.suppressClick = false;
@@ -267,6 +267,64 @@ describe('usePolygonDrag — vertex drag', () => {
   });
 });
 
+describe('usePolygonDrag — multi-vertex drag', () => {
+  // Default square vertices: 0:(-30,-30) 1:(30,-30) 2:(30,30) 3:(-30,30).
+  const seedSquare = (indices: number[]) => {
+    useDoc.setState({ ...useDoc.getState(), polygons: { p0: makePolygon({ id: 'p0' }) } });
+    useSelection.setState({
+      ...useSelection.getState(),
+      selectedPolygonIds: ['p0'],
+      selectedVertices: { polygonId: 'p0', indices },
+    });
+  };
+
+  it('dragging a vertex IN the selected set tows the whole set by the delta', () => {
+    seedSquare([0, 1]);
+    const r = render();
+    // Grab vertex 0 (a member) and drag +40 x (shift bypasses snap).
+    r.current.onVertexPointerDown('p0', 0, pointerEvent({ clientX: 200, clientY: 200 }));
+    r.current.onPointerMove(pointerEvent({ clientX: 210, clientY: 200, shiftKey: true }));
+    r.current.onPointerMove(pointerEvent({ clientX: 240, clientY: 200, shiftKey: true }));
+    r.current.onPointerUp(pointerEvent({ clientX: 240, clientY: 200 }));
+    const verts = useDoc.getState().polygons['p0'].vertices;
+    expect(verts[0]).toEqual({ x: 10, y: -30 }); // grabbed member moved
+    expect(verts[1]).toEqual({ x: 70, y: -30 }); // other member towed by same delta
+    expect(verts[2]).toEqual({ x: 30, y: 30 }); // non-members untouched
+    expect(verts[3]).toEqual({ x: -30, y: 30 });
+  });
+
+  it('dragging a vertex OUTSIDE the selected set moves only that vertex', () => {
+    seedSquare([0, 1]);
+    const r = render();
+    // Grab vertex 2 (NOT in {0,1}) → solo move, the set stays put (groupDrag rule).
+    r.current.onVertexPointerDown('p0', 2, pointerEvent({ clientX: 200, clientY: 200 }));
+    r.current.onPointerMove(pointerEvent({ clientX: 210, clientY: 200, shiftKey: true }));
+    r.current.onPointerMove(pointerEvent({ clientX: 240, clientY: 200, shiftKey: true }));
+    r.current.onPointerUp(pointerEvent({ clientX: 240, clientY: 200 }));
+    const verts = useDoc.getState().polygons['p0'].vertices;
+    expect(verts[2]).toEqual({ x: 70, y: 30 }); // only the grabbed vertex moved
+    expect(verts[0]).toEqual({ x: -30, y: -30 });
+    expect(verts[1]).toEqual({ x: 30, y: -30 });
+    expect(verts[3]).toEqual({ x: -30, y: 30 });
+  });
+
+  it('snaps the GRABBED vertex and tows the set by the snapped delta', () => {
+    setModes({ grid: 'both' });
+    seedSquare([0, 2]);
+    const r = render();
+    // Grab vertex 0 (-30,-30). Δscreen (12,13) proposes (-18,-17) → grid (-20,-20)
+    // → delta (+10,+10). Sibling vertex 2 (30,30) tows to (40,40).
+    r.current.onVertexPointerDown('p0', 0, pointerEvent({ clientX: 200, clientY: 200 }));
+    r.current.onPointerMove(pointerEvent({ clientX: 210, clientY: 200 }));
+    r.current.onPointerMove(pointerEvent({ clientX: 212, clientY: 213 }));
+    r.current.onPointerUp(pointerEvent({ clientX: 212, clientY: 213 }));
+    const verts = useDoc.getState().polygons['p0'].vertices;
+    expect(verts[0]).toEqual({ x: -20, y: -20 }); // grabbed vertex snapped to grid
+    expect(verts[2]).toEqual({ x: 40, y: 40 }); // sibling towed by the snapped delta
+    expect(verts[1]).toEqual({ x: 30, y: -30 }); // non-member untouched
+  });
+});
+
 describe('usePolygonDrag — edge "+" insert-and-drag', () => {
   it('"+" pointerdown inserts the midpoint vertex and dragging moves the new one', () => {
     useDoc.setState({ ...useDoc.getState(), polygons: { p0: makePolygon({ id: 'p0' }) } });
@@ -277,7 +335,7 @@ describe('usePolygonDrag — edge "+" insert-and-drag', () => {
     expect(useDoc.getState().polygons['p0'].vertices).toHaveLength(5);
     expect(useDoc.getState().polygons['p0'].vertices[1]).toEqual({ x: 0, y: -30 });
     // The new vertex is selected, so Delete would target it.
-    expect(useSelection.getState().selectedVertex).toEqual({ polygonId: 'p0', index: 1 });
+    expect(useSelection.getState().selectedVertices).toEqual({ polygonId: 'p0', indices: [1] });
     // Drag it by (+20, +40) world (shift bypasses snap).
     r.current.onPointerMove(pointerEvent({ clientX: 210, clientY: 200, shiftKey: true }));
     r.current.onPointerMove(pointerEvent({ clientX: 220, clientY: 240, shiftKey: true }));

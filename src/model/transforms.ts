@@ -1970,13 +1970,23 @@ export function movePolygon(doc: MapDoc, id: string, dx: number, dy: number): Ma
   }));
 }
 
-export function moveVertex(doc: MapDoc, id: string, index: number, x: number, y: number): MapDoc {
-  return updateRecord(doc, 'polygons', id, (cur) => {
-    if (index < 0 || index >= cur.vertices.length) return cur;
-    const vertices = cur.vertices.slice();
-    vertices[index] = { x, y };
-    return { ...cur, vertices };
-  });
+// Relative translation of a SUBSET of vertices — the multi-vertex analogue of
+// movePolygon (which shifts all of them). Used by the arrow-key nudge of a
+// vertex selection; the drag path re-derives the full list via
+// setPolygonVertices each frame to stay drift-free (see usePolygonDrag). A
+// single-element `indices` is the old moveVertex, expressed relatively.
+export function moveVertices(
+  doc: MapDoc,
+  id: string,
+  indices: number[],
+  dx: number,
+  dy: number,
+): MapDoc {
+  const set = new Set(indices);
+  return updateRecord(doc, 'polygons', id, (cur) => ({
+    ...cur,
+    vertices: cur.vertices.map((v, i) => (set.has(i) ? { x: v.x + dx, y: v.y + dy } : v)),
+  }));
 }
 
 // Split the edge `edgeIndex -> (edgeIndex + 1) % n` by inserting its midpoint
@@ -1992,14 +2002,17 @@ export function insertVertex(doc: MapDoc, id: string, edgeIndex: number): MapDoc
   });
 }
 
-// Remove a vertex; a no-op at the 3-vertex floor so a polygon never degenerates.
-export function deleteVertex(doc: MapDoc, id: string, index: number): MapDoc {
+// Remove a set of vertices at once; refuses entirely (returns the same doc) if
+// the removal would drop the polygon below the 3-vertex floor, so it never
+// degenerates. Out-of-range and duplicate indices are ignored; an empty (or
+// all-invalid) set is a no-op. A single-element `indices` is the old
+// deleteVertex.
+export function deleteVertices(doc: MapDoc, id: string, indices: number[]): MapDoc {
   return updateRecord(doc, 'polygons', id, (cur) => {
-    if (cur.vertices.length <= POLYGON_MIN_VERTICES) return cur;
-    if (index < 0 || index >= cur.vertices.length) return cur;
-    const vertices = cur.vertices.slice();
-    vertices.splice(index, 1);
-    return { ...cur, vertices };
+    const set = new Set(indices.filter((i) => i >= 0 && i < cur.vertices.length));
+    if (set.size === 0) return cur;
+    if (cur.vertices.length - set.size < POLYGON_MIN_VERTICES) return cur;
+    return { ...cur, vertices: cur.vertices.filter((_, i) => !set.has(i)) };
   });
 }
 

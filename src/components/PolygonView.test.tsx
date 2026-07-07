@@ -14,7 +14,7 @@ function renderBody(polygon: Polygon, opts: { selected?: boolean } = {}) {
         polygon={polygon}
         layer="body"
         selected={opts.selected ?? false}
-        selectedVertexIndex={null}
+        selectedVertexIndices={new Set()}
         interactive
         onPointerDown={noop}
         onClick={noop}
@@ -85,7 +85,7 @@ describe('<PolygonView /> overlay handles are a constant screen size', () => {
           polygon={makePolygon({ id: 'p0' })}
           layer="overlay"
           selected
-          selectedVertexIndex={null}
+          selectedVertexIndices={new Set()}
           interactive
           onPointerDown={noop}
           onClick={noop}
@@ -136,6 +136,42 @@ describe('<PolygonView /> overlay handles are a constant screen size', () => {
   });
 });
 
+describe('<PolygonView /> selected-vertex highlight', () => {
+  beforeEach(() => {
+    useViewportStore.setState({ darkMode: false, zoom: 1 });
+  });
+
+  // The selected handles are filled with the accent color (the same color the
+  // dashed outline is stroked with); unselected handles use the contrast color.
+  // Asserting against the outline's own stroke avoids hard-coding theme hex.
+  it('fills every handle in the selected set with the accent, others with contrast', () => {
+    const c = render(
+      <svg>
+        <PolygonView
+          polygon={makePolygon({ id: 'p0' })}
+          layer="overlay"
+          selected
+          selectedVertexIndices={new Set([0, 2])}
+          interactive
+          onPointerDown={noop}
+          onClick={noop}
+          onContextMenu={noop}
+          onVertexPointerDown={noop}
+          onVertexClick={noop}
+          onEdgeAddPointerDown={noop}
+        />
+      </svg>,
+    ).container;
+    const accent = c.querySelector('g[data-polygon-overlay] > polygon')!.getAttribute('stroke');
+    const fillOf = (i: number) =>
+      c.querySelector(`rect[data-polygon-vertex="${i}"]`)!.getAttribute('fill');
+    expect(fillOf(0)).toBe(accent);
+    expect(fillOf(2)).toBe(accent);
+    expect(fillOf(1)).not.toBe(accent);
+    expect(fillOf(3)).not.toBe(accent);
+  });
+});
+
 describe('<PolygonView /> open polygons (closed: false)', () => {
   beforeEach(() => {
     useViewportStore.setState({ darkMode: false, zoom: 1 });
@@ -148,7 +184,7 @@ describe('<PolygonView /> open polygons (closed: false)', () => {
           polygon={polygon}
           layer="overlay"
           selected
-          selectedVertexIndex={null}
+          selectedVertexIndices={new Set()}
           interactive
           onPointerDown={noop}
           onClick={noop}
@@ -281,7 +317,7 @@ describe('<PolygonView /> locked polygons (E5c)', () => {
           polygon={polygon}
           layer="overlay"
           selected
-          selectedVertexIndex={null}
+          selectedVertexIndices={new Set()}
           interactive
           onPointerDown={noop}
           onClick={noop}
@@ -348,7 +384,7 @@ describe('<PolygonView /> hit proxy (selected-on-top drag target)', () => {
           polygon={polygon}
           layer="hit"
           selected={opts.selected ?? true}
-          selectedVertexIndex={null}
+          selectedVertexIndices={new Set()}
           interactive={opts.interactive ?? true}
           onPointerDown={opts.onPointerDown ?? noop}
           onClick={noop}

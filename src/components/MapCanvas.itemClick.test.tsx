@@ -19,6 +19,7 @@ beforeEach(() => {
     ...useSelection.getState(),
     selectedLabelIds: [],
     selectedPolygonIds: [],
+    selectedVertices: null,
     uiMode: { kind: 'idle' },
   });
   dragState.suppressClick = false;
@@ -76,6 +77,41 @@ describe('MapCanvas — item click modifier gating', () => {
 
     clickEl('[data-polygon-id="p2"]', { shiftKey: true, metaKey: true });
     expect(useSelection.getState().selectedPolygonIds).toEqual(['p2']);
+  });
+});
+
+describe('MapCanvas — polygon vertex click multi-select', () => {
+  // Vertex handles only render for a SELECTED polygon (the overlay pass), so
+  // select p1 first; the default square exposes handles at indices 0..3.
+  const seedSelectedPolygon = () => {
+    act(() => {
+      useDoc.setState({
+        ...useDoc.getState(),
+        polygons: { p1: makePolygon({ id: 'p1' }) },
+        polygonOrder: ['p1'],
+      });
+      useSelection.getState().selectPolygon('p1');
+    });
+  };
+
+  it('plain-click selects one vertex; shift-click toggles more in and out', () => {
+    render(<App />);
+    seedSelectedPolygon();
+
+    clickEl('[data-polygon-vertex="0"]', {});
+    expect(useSelection.getState().selectedVertices).toEqual({ polygonId: 'p1', indices: [0] });
+
+    clickEl('[data-polygon-vertex="2"]', { shiftKey: true });
+    expect(useSelection.getState().selectedVertices).toEqual({ polygonId: 'p1', indices: [0, 2] });
+
+    // Shift-click an already-selected vertex removes just it.
+    clickEl('[data-polygon-vertex="0"]', { shiftKey: true });
+    expect(useSelection.getState().selectedVertices).toEqual({ polygonId: 'p1', indices: [2] });
+
+    // A plain click collapses back to a single vertex; the polygon stays selected.
+    clickEl('[data-polygon-vertex="1"]', {});
+    expect(useSelection.getState().selectedVertices).toEqual({ polygonId: 'p1', indices: [1] });
+    expect(useSelection.getState().selectedPolygonIds).toEqual(['p1']);
   });
 });
 
