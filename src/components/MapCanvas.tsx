@@ -4,7 +4,7 @@ import { dragState, exitLineEditorOnItemClick, useDoc, useSelection } from '../s
 import { useSnapPrefs } from '../state/snapPrefs';
 import { useViewportStore } from '../state/viewportStore';
 import { useThemeColors } from '../state/theme';
-import { maybeSnapToGrid } from '../geometry/snap';
+import type { SnapGuide } from '../geometry/snap';
 import {
   assignLinePriorities,
   buildBandGeometry,
@@ -42,6 +42,7 @@ import { LayerNumberLabels } from './canvas/LayerNumberLabels';
 import { StationPlacingPreview } from './canvas/StationPlacingPreview';
 import { PolygonPlacingPreview } from './canvas/PolygonPlacingPreview';
 import { SvgImagePlacingPreview } from './canvas/SvgImagePlacingPreview';
+import { RouteBulletPlacingPreview } from './canvas/RouteBulletPlacingPreview';
 import { HighlightedLineLayer } from './canvas/HighlightedLineLayer';
 import { LabelPlacingPreview } from './canvas/LabelPlacingPreview';
 import { RouteBulletView } from './RouteBulletView';
@@ -49,7 +50,7 @@ import { LabelView } from './LabelView';
 import { PolygonView } from './PolygonView';
 import { SvgImageView } from './SvgImageView';
 import { ItemPopovers } from './canvas/ItemPopovers';
-import { usePlacementDispatch } from './canvas/usePlacementDispatch';
+import { snapPlacement, usePlacementDispatch } from './canvas/usePlacementDispatch';
 import { TransferLayer, transferEndWorld } from './TransferLayer';
 import {
   anchorFromArcLen,
@@ -310,6 +311,9 @@ export function MapCanvas() {
   // from the anchor dot to the cursor, and the station-placing-mode ghost
   // that follows the cursor before each click.
   const [cursorWorld, setCursorWorld] = useState<{ x: number; y: number } | null>(null);
+  // Guides emitted by the placement-preview snap (same snapPlacement call the
+  // drop makes), rendered through the shared SnapGuides overlay.
+  const [placementGuides, setPlacementGuides] = useState<SnapGuide[]>([]);
 
   // Hovered stripe in layering mode: (bandKey, lineId) of the band stripe the
   // pointer is currently over. Drives the lightened-color preview + the small
@@ -361,18 +365,28 @@ export function MapCanvas() {
     const wantsCursorTrack =
       (mode.kind === 'creating-transfer' && mode.anchor !== null) ||
       mode.kind === 'placing-station' ||
+      mode.kind === 'creating-route-bullet' ||
       mode.kind === 'placing-label' ||
       mode.kind === 'creating-polygon' ||
       mode.kind === 'placing-svg';
     if (wantsCursorTrack) {
       const raw = view.screenToWorld(e.clientX, e.clientY);
-      // Grid-snap the placement preview for new stations so the user sees
-      // exactly where it'll land. Other placement modes keep the raw
-      // cursor — grid snap is scoped to stations for now.
-      const w = mode.kind === 'placing-station' ? maybeSnapToGrid(raw, snapModes, gridSize) : raw;
-      setCursorWorld(w);
-    } else if (cursorWorld) {
-      setCursorWorld(null);
+      if (mode.kind === 'creating-transfer') {
+        // Transfer rubber-band tracks the raw cursor; endpoints are picked by
+        // clicking dots, not by position snapping.
+        setCursorWorld(raw);
+        if (placementGuides.length > 0) setPlacementGuides([]);
+      } else {
+        // Snap the placement preview exactly like the drop will (same
+        // snapPlacement call), so the ghost always shows where — and why —
+        // the item will land. Shift bypasses.
+        const snap = snapPlacement(mode, raw, e.shiftKey, snapModes, gridSize, view.viewport.zoom);
+        setCursorWorld({ x: snap.x, y: snap.y });
+        setPlacementGuides(snap.guides);
+      }
+    } else {
+      if (cursorWorld) setCursorWorld(null);
+      if (placementGuides.length > 0) setPlacementGuides([]);
     }
     itemDrag.onPointerMove(e);
     polyDrag.onPointerMove(e);
@@ -931,6 +945,13 @@ export function MapCanvas() {
             world={selection.uiMode.kind === 'placing-svg' ? cursorWorld : null}
             image={selection.uiMode.kind === 'placing-svg' ? selection.uiMode.image : null}
           />
+          {/* Route-bullet-placing ghost: the default bullet following the
+              cursor, matching the badge the click will drop. */}
+          <RouteBulletPlacingPreview
+            world={selection.uiMode.kind === 'creating-route-bullet' ? cursorWorld : null}
+            lines={lines}
+            lineOrder={lineOrder}
+          />
         </g>
 
         {/* Route bullets: rendered before the dim so they fade with the
@@ -1235,6 +1256,7 @@ export function MapCanvas() {
               ...itemDrag.itemSnapGuides,
               ...polyDrag.polygonSnapGuides,
               ...svgDrag.svgImageSnapGuides,
+              ...placementGuides,
             ]}
             zoom={view.viewport.zoom}
           />

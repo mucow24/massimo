@@ -3,10 +3,17 @@ import { act, renderHook } from '@testing-library/react';
 import { usePlacementDispatch } from './usePlacementDispatch';
 import { useDoc, useSelection } from '../../state/store';
 import { useSnapPrefs } from '../../state/snapPrefs';
-import { DEFAULT_DOC } from '../../model/transforms';
-import { DEFAULT_SNAP_MODES } from '../../geometry/snap';
-import { makeLine } from '../../test/fixtures';
+import {
+  DEFAULT_DOC,
+  starterPolygonVertices,
+  TEXT_LABEL_DEFAULTS,
+} from '../../model/transforms';
+import { DEFAULT_SNAP_MODES, snapPointToGrid } from '../../geometry/snap';
+import { polygonSnapAnchor } from '../../geometry/polygon';
+import { measureTextLabel } from '../../geometry/textMeasure';
+import { makeLine, stationWithStop } from '../../test/fixtures';
 import { pointerEvent } from '../../test/interaction';
+import type { StationId } from '../../model/types';
 import type { ViewportApi } from './useViewport';
 import type { UiMode } from '../../state/store';
 
@@ -19,7 +26,11 @@ vi.mock('../../state/stationNames', () => {
 });
 
 // Identity screen→world so a click at (cx, cy) lands at world (cx, cy).
-const fakeView = { screenToWorld: (x: number, y: number) => ({ x, y }) } as ViewportApi;
+// snapPlacement reads the zoom for its screen-px tolerance scaling.
+const fakeView = {
+  screenToWorld: (x: number, y: number) => ({ x, y }),
+  viewport: { x: 0, y: 0, zoom: 1 },
+} as ViewportApi;
 
 const resetSelection = (uiMode: UiMode) =>
   useSelection.setState({
@@ -186,6 +197,118 @@ describe('usePlacementDispatch', () => {
     });
     expect(consumed).toBe(true);
     expect(useSelection.getState().uiMode.kind).toBe('idle');
+  });
+});
+
+describe('handleCanvasPlace — placement snaps exactly like the first drag would', () => {
+  const gridBoth = () =>
+    useSnapPrefs.setState({ modes: { ...DEFAULT_SNAP_MODES, grid: 'both' } });
+
+  it('placing-station: Shift-click bypasses the grid', () => {
+    gridBoth();
+    resetSelection({ kind: 'placing-station' });
+    const { result } = renderHook(() => usePlacementDispatch(fakeView));
+    act(() => {
+      result.current.handleCanvasPlace(
+        pointerEvent({ clientX: 33, clientY: 47, shiftKey: true }),
+      );
+    });
+    const st = Object.values(useDoc.getState().stations)[0];
+    expect(st.x).toBe(33);
+    expect(st.y).toBe(47);
+  });
+
+  it("placing-station: 'Snap to all' aligns the drop to an existing stop", () => {
+    useSnapPrefs.setState({ modes: { ...DEFAULT_SNAP_MODES, all: 'all', grid: 'off' } });
+    useDoc.setState({
+      ...useDoc.getState(),
+      lines: { L1: makeLine({ id: 'L1', stations: ['S'] }) },
+      lineOrder: ['L1'],
+      stations: { S: stationWithStop('S' as StationId, 'L1', { x: 100, y: 0 }) },
+    });
+    resetSelection({ kind: 'placing-station' });
+    const { result } = renderHook(() => usePlacementDispatch(fakeView));
+    // (103, 50) is 3 from the stop's vertical axis x=100 → aligns.
+    act(() => {
+      result.current.handleCanvasPlace(pointerEvent({ clientX: 103, clientY: 50 }));
+    });
+    const placed = Object.values(useDoc.getState().stations).find((s) => s.id !== 'S');
+    expect(placed?.x).toBeCloseTo(100, 5);
+    expect(placed?.y).toBeCloseTo(50, 5);
+  });
+
+  it('creating-route-bullet (no lines → unbound): grid-snaps the drop', () => {
+    gridBoth();
+    resetSelection({ kind: 'creating-route-bullet' });
+    const { result } = renderHook(() => usePlacementDispatch(fakeView));
+    act(() => {
+      result.current.handleCanvasPlace(pointerEvent({ clientX: 12, clientY: 34 }));
+    });
+    const b = Object.values(useDoc.getState().routeBullets)[0];
+    expect(b.x).toBe(10);
+    expect(b.y).toBe(30);
+  });
+
+  it('creating-route-bullet (bound to the default line): aligns to a stop on it', () => {
+    useSnapPrefs.setState({ modes: { ...DEFAULT_SNAP_MODES, line: true, grid: 'off' } });
+    useDoc.setState({
+      ...useDoc.getState(),
+      lines: { L1: makeLine({ id: 'L1', stations: ['S'] }) },
+      lineOrder: ['L1'],
+      stations: { S: stationWithStop('S' as StationId, 'L1', { x: 100, y: 0 }) },
+    });
+    resetSelection({ kind: 'creating-route-bullet' });
+    const { result } = renderHook(() => usePlacementDispatch(fakeView));
+    act(() => {
+      result.current.handleCanvasPlace(pointerEvent({ clientX: 103, clientY: 50 }));
+    });
+    const b = Object.values(useDoc.getState().routeBullets)[0];
+    expect(b.x).toBeCloseTo(100, 5);
+    expect(b.y).toBeCloseTo(50, 5);
+  });
+
+  it('placing-label: grid-snaps the visible upper-left corner of the default label', () => {
+    gridBoth();
+    resetSelection({ kind: 'placing-label' });
+    const m = measureTextLabel(TEXT_LABEL_DEFAULTS);
+    const ul = snapPointToGrid(37 - m.width / 2, 23 - m.height / 2, 'both');
+    const { result } = renderHook(() => usePlacementDispatch(fakeView));
+    act(() => {
+      result.current.handleCanvasPlace(pointerEvent({ clientX: 37, clientY: 23 }));
+    });
+    const label = Object.values(useDoc.getState().textLabels)[0];
+    expect(label.x).toBeCloseTo(ul.x + m.width / 2, 5);
+    expect(label.y).toBeCloseTo(ul.y + m.height / 2, 5);
+  });
+
+  it('creating-polygon: grid-snaps the starter square by its top-left vertex', () => {
+    gridBoth();
+    resetSelection({ kind: 'creating-polygon' });
+    const anchorOff = polygonSnapAnchor(starterPolygonVertices(0, 0));
+    const snapped = snapPointToGrid(37 + anchorOff.x, 23 + anchorOff.y, 'both');
+    const { result } = renderHook(() => usePlacementDispatch(fakeView));
+    act(() => {
+      result.current.handleCanvasPlace(pointerEvent({ clientX: 37, clientY: 23 }));
+    });
+    const poly = Object.values(useDoc.getState().polygons)[0];
+    expect(polygonSnapAnchor(poly.vertices).x).toBeCloseTo(snapped.x, 5);
+    expect(polygonSnapAnchor(poly.vertices).y).toBeCloseTo(snapped.y, 5);
+  });
+
+  it('placing-svg: grid-snaps the image by its top-left corner', () => {
+    gridBoth();
+    resetSelection({
+      kind: 'placing-svg',
+      image: { href: 'data:image/svg+xml;base64,AAA', width: 80, height: 40 },
+    });
+    const { result } = renderHook(() => usePlacementDispatch(fakeView));
+    // Click (12, 34): TL corner proposes (-28, 14) → grid (-30, 10) → center (10, 30).
+    act(() => {
+      result.current.handleCanvasPlace(pointerEvent({ clientX: 12, clientY: 34 }));
+    });
+    const img = Object.values(useDoc.getState().svgImages)[0];
+    expect(img.x).toBeCloseTo(10, 5);
+    expect(img.y).toBeCloseTo(30, 5);
   });
 });
 
