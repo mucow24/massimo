@@ -271,20 +271,23 @@ describe('labelLayoutLocal — autoAlign tie-breaking and fallbacks', () => {
     expect(lay.anchorY).toBeCloseTo(STOP_SIZE - (HALF + LABEL_GAP) - CB, 6); // sit, not hang
   });
 
-  it('no stop within the adjacency gate: centered block on the cell', () => {
+  it('no stop within the adjacency gate: first line CTA-centered on the cell, grows down', () => {
+    // A dragged-away label keeps first-line anchoring — the top line stays
+    // where the user put the cell as more lines are added (align-down),
+    // instead of the whole block re-centering around it.
     const lay = labelLayoutLocal(autoStation({ name: 'A\nB\nC', stops: [{ dRow: 0, dCol: 3 }] }));
     expect(lay.textAnchor).toBe('middle');
     expect(lay.anchorX).toBeCloseTo(0, 6);
-    expect(lay.anchorY).toBeCloseTo(0, 6);
-    // 'middle' block behavior (not auto-down): first line shifts up half the stack.
-    expect(lay.firstLineDyPx).toBeCloseTo(-14.4, 6);
+    expect(lay.anchorY).toBeCloseTo(CTR, 6);
+    expect(lay.firstLineDyPx).toBeCloseTo(0, 6);
+    expect(lay.blockTopY).toBeCloseTo(CTR - 7.2, 6);
   });
 
-  it('a stop exactly on the label cell gives no direction: same centered fallback', () => {
+  it('a stop exactly on the label cell gives no direction: same first-line fallback', () => {
     const lay = labelLayoutLocal(autoStation({ stops: [{ dRow: 0, dCol: 0 }] }));
     expect(lay.textAnchor).toBe('middle');
     expect(lay.anchorX).toBeCloseTo(0, 6);
-    expect(lay.anchorY).toBeCloseTo(0, 6);
+    expect(lay.anchorY).toBeCloseTo(CTR, 6);
   });
 
   it('stopless station: phantom east dot ⇒ end-aligned at the legacy anchor, CTA centered', () => {
@@ -324,7 +327,28 @@ describe('labelLayoutLocal — autoAlign multi-line blocks', () => {
     expect(lay.blockTopY).toBeCloseTo(anchorY - 7.2, 6);
   });
 
-  it('center mode centers the block', () => {
+  it('SW corner (below-left): the TOP line hangs from the pinned corner, later lines below', () => {
+    // Multi-line below the marker anchors by its top line — the line nearest
+    // the station — never the bottom one.
+    const lay = labelLayoutLocal(
+      autoStation({
+        name: 'A\nB\nC',
+        stops: [{ dRow: -S2, dCol: S2, orientation: 'auto-nw-se' }],
+      }),
+    );
+    const dPin = STOP_SIZE * S2 - (HALF + LABEL_GAP) * S2;
+    const anchorY = -dPin + HANG;
+    expect(lay.textAnchor).toBe('end');
+    expect(lay.anchorY).toBeCloseTo(anchorY, 6);
+    // First (top) line pinned: no first-line shift, block grows down.
+    expect(lay.firstLineDyPx).toBeCloseTo(0, 6);
+    expect(lay.blockTopY).toBeCloseTo(anchorY - 7.2, 6);
+  });
+
+  it('beside mode pins the FIRST line CTA on the stop row; extra lines grow down', () => {
+    // NOT block-centered: the first line reads level with the dot and the
+    // rest stack below it (align-down), so adding lines never moves the
+    // line that sits level with the station.
     const lay = labelLayoutLocal(
       autoStation({
         name: 'A\nB\nC',
@@ -332,9 +356,8 @@ describe('labelLayoutLocal — autoAlign multi-line blocks', () => {
       }),
     );
     expect(lay.anchorY).toBeCloseTo(CTR, 6);
-    expect(lay.firstLineDyPx).toBeCloseTo(-14.4, 6);
-    const blockH = 2 * 7.2 + 2 * 14.4;
-    expect(lay.blockTopY).toBeCloseTo(CTR - blockH / 2, 6);
+    expect(lay.firstLineDyPx).toBeCloseTo(0, 6);
+    expect(lay.blockTopY).toBeCloseTo(CTR - 7.2, 6);
   });
 });
 
