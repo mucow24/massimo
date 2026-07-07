@@ -103,7 +103,7 @@ export type DocSnapshot = Pick<MapDoc, DocFieldName>;
 
 // Undo-stack cap. zundo applies it to ungrouped writes via its `limit` option;
 // pushHistory (the grouped-gesture path) must apply the same cap itself.
-export const HISTORY_LIMIT = 200;
+export const HISTORY_LIMIT = 1000;
 
 export function pickDocSnapshot(s: DocSnapshot): DocSnapshot {
   const out = {} as Record<DocFieldName, unknown>;
