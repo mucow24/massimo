@@ -1,5 +1,6 @@
 import { Line, LineId, Station } from '../model/types';
 import { dragState, useDoc, useSelection } from '../state/store';
+import { dispatchMirrored } from '../state/mirrorDispatch';
 import { useSnapPrefs } from '../state/snapPrefs';
 import { stopPosWorld } from '../geometry/interlining';
 import { pathBetweenStations } from '../model/pathSelect';
@@ -174,8 +175,16 @@ export function useStationInteraction(
     // whole group rigidly around this station (each member rotates in place AND
     // non-pivot members — bullets, labels, AND polygons — orbit 45° around the
     // pivot); otherwise it rotates just this station. Shared with the bullet/
-    // label/polygon handlers so every type participates.
-    rotateItemOnContextMenu({ type: 'station', id: station.id }, () => rotateStation(station.id));
+    // label/polygon handlers so every type participates. The single rotate
+    // goes through the mirror dispatch ONLY when this station is the sole
+    // selection — right-click reaches ANY station, but Select Similar is
+    // scoped to the selected one.
+    rotateItemOnContextMenu({ type: 'station', id: station.id }, () => {
+      const solo =
+        selection.selectedStationIds.length === 1 && selection.selectedStationIds[0] === station.id;
+      if (solo) dispatchMirrored(station.id, (sid) => rotateStation(sid));
+      else rotateStation(station.id);
+    });
   };
 
   const onDoubleClick = (e: React.MouseEvent) => {
