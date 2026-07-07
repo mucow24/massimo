@@ -18,7 +18,7 @@ export interface SvgImageBox {
 
 // An image never shrinks below this (world units), on either axis.
 export const SVG_IMAGE_MIN_SIZE = 4;
-// Rotation snaps to multiples of this (degrees) while Shift is held.
+// Rotation snaps to multiples of this (degrees) by default; Shift frees it.
 export const SNAP_ANGLE_STEP = 22.5;
 
 // Corner local-frame signs, clockwise from top-left in the y-down screen frame.
@@ -124,7 +124,8 @@ export function resizeSvgImageEdge(
 
 // The rotation (degrees, clockwise) that points the image's "up" toward the
 // pointer. Zero = pointer straight above the center; +90 = pointer to the right.
-// Shift snaps to the nearest 22.5° multiple.
+// `shift` rounds to the nearest 22.5° multiple (the drag hook passes
+// !e.shiftKey: snapped by default, Shift frees).
 export function rotateSvgImageTo(img: SvgImageGeom, pointerWorld: Vec2, shift: boolean): number {
   const dx = pointerWorld.x - img.x;
   const dy = pointerWorld.y - img.y;

@@ -9,6 +9,7 @@ import {
   resizeSvgImageCorner,
   resizeSvgImageEdge,
   rotateSvgImageTo,
+  svgImageCorners,
   svgImageSnapAnchor,
   type SvgImageGeom,
 } from '../../geometry/svgImage';
@@ -55,7 +56,8 @@ type ResizeState = {
   history: ReturnType<typeof beginHistoryGroup>;
 };
 
-// Rotate: angle from the START center to the live pointer; Shift snaps to 22.5°.
+// Rotate: angle from the START center to the live pointer; snaps to 22.5°
+// steps by default, Shift frees.
 type RotateState = {
   id: string;
   start: SvgImageGeom;
@@ -96,8 +98,8 @@ const geomOf = (im: {
  * whole-image group-drag towing are shared with the other drag hooks via
  * dragGesture + groupDrag. Move + axis-aligned resize snap through
  * {@link snapPolygonPoint} against the shared {@link alignTargets} pool (same
- * targets as polygons); rotation snaps only to 22.5° multiples under Shift,
- * never to the grid.
+ * targets as polygons); rotation snaps to 22.5° multiples by default (Shift
+ * frees it), never to the grid.
  */
 export function useSvgImageDrag(
   svgRef: RefObject<SVGSVGElement | null>,
@@ -232,6 +234,17 @@ export function useSvgImageDrag(
             modes: snapModes,
             tolerance: SNAP_PERP_TOLERANCE / zoom,
             gridInterval: gridSize,
+            // An edge resize has one degree of freedom — only snaps along
+            // that world axis are considered, so a guide can never show a
+            // perpendicular alignment the resize would discard. At 0/180 the
+            // odd (right/left) edges move along world X; at 90/270 they move
+            // along world Y.
+            constrain:
+              rz.kind === 'edge'
+                ? (rz.index % 2 === 1) === (normalizeRotation(rz.start.rotation) % 180 === 0)
+                  ? 'x'
+                  : 'y'
+                : undefined,
           });
           pointer = { x: snap.x, y: snap.y };
           guides = snap.guides;
@@ -240,6 +253,13 @@ export function useSvgImageDrag(
           rz.kind === 'corner'
             ? resizeSvgImageCorner(rz.start, rz.index, pointer)
             : resizeSvgImageEdge(rz.start, rz.index, pointer);
+        // Corner honesty: the aspect lock (or min-size clamp) can override the
+        // snapped point. If the dragged corner didn't actually land there, the
+        // guides would point at empty space — drop them.
+        if (rz.kind === 'corner' && guides.length > 0) {
+          const corner = svgImageCorners({ ...box, rotation: rz.start.rotation })[rz.index];
+          if (Math.hypot(corner.x - pointer.x, corner.y - pointer.y) > 1e-6) guides = [];
+        }
         updateSvgImage(rz.id, box);
         setSvgImageSnapGuides(guides);
       }
@@ -250,7 +270,9 @@ export function useSvgImageDrag(
       const { moved } = trackDragMove(rot, e, svgRef);
       if (moved) {
         const pointer = screenToWorld(e.clientX, e.clientY);
-        const deg = rotateSvgImageTo(rot.start, pointer, e.shiftKey);
+        // Rotation snaps to 22.5° steps by default; Shift frees it — the same
+        // "Shift bypasses snapping" rule as every other gesture.
+        const deg = rotateSvgImageTo(rot.start, pointer, !e.shiftKey);
         updateSvgImage(rot.id, { rotation: deg });
         // Rotation never produces alignment guides.
         setSvgImageSnapGuides([]);

@@ -7,6 +7,7 @@ import {
   reconcileLockWithGrid,
   snapPointToGrid,
   SNAP_PERP_TOLERANCE,
+  type GridSnap,
   type SnapGuide,
   type SnapModes,
 } from './snap';
@@ -26,6 +27,11 @@ export interface PolygonSnapInput {
   /** Grid cell size in world units. Defaults to {@link GRID_INTERVAL} (10); the
    *  toolbar threads the active size (5, 10, or 20). */
   gridInterval?: number;
+  /** Single-DOF consumers (edge resizes): only snaps that move this world
+   *  axis are considered — vertical alignments + X grid for 'x', horizontal
+   *  alignments + Y grid for 'y'; diagonals are excluded. Prevents guides
+   *  for snaps the caller would discard. */
+  constrain?: 'x' | 'y';
 }
 
 export interface PolygonSnapResult {
@@ -62,16 +68,33 @@ function projectOntoAxis(p: Vec2, t: Vec2, a: Vec2): { foot: Vec2; perpDist: num
  * no DOM.
  */
 export function snapPolygonPoint(input: PolygonSnapInput): PolygonSnapResult {
-  const { proposed, lineTargets, allTargets, modes } = input;
+  const { proposed, lineTargets, allTargets, modes, constrain } = input;
   const tol = input.tolerance ?? SNAP_PERP_TOLERANCE;
   const gridInterval = input.gridInterval ?? GRID_INTERVAL;
 
+  // Single-DOF constraint: a vertical alignment axis locks X, a horizontal
+  // one locks Y; diagonals move both, so a constrained caller gets neither.
+  const axisAllowed = (a: Vec2): boolean =>
+    !constrain || (constrain === 'x' ? a.x === 0 : a.y === 0);
+  // Grid narrows to the constrained axis the same way ('x' keeps vertical
+  // grid lines, which lock X).
+  const gridMode: GridSnap = !constrain
+    ? modes.grid
+    : constrain === 'x'
+      ? modes.grid === 'both' || modes.grid === 'vertical'
+        ? 'vertical'
+        : 'off'
+      : modes.grid === 'both' || modes.grid === 'horizontal'
+        ? 'horizontal'
+        : 'off';
+
   const candidates: Candidate[] = [];
   if (modes.line) {
-    for (const t of lineTargets) for (const axis of ALL_AXES) candidates.push({ target: t, axis });
+    for (const t of lineTargets)
+      for (const axis of ALL_AXES) if (axisAllowed(axis)) candidates.push({ target: t, axis });
   }
   if (modes.all !== 'off') {
-    const axes = axesForAllSnap(modes.all);
+    const axes = axesForAllSnap(modes.all).filter(axisAllowed);
     for (const t of allTargets) for (const axis of axes) candidates.push({ target: t, axis });
   }
 
@@ -96,12 +119,12 @@ export function snapPolygonPoint(input: PolygonSnapInput): PolygonSnapResult {
     }
   }
 
-  const gridOn = modes.grid !== 'off';
+  const gridOn = gridMode !== 'off';
   // Grid is a hard constraint: when an alignment can't be reconciled with the
   // grid it yields entirely and we snap purely to grid (no guide).
   const plainGrid = (): PolygonSnapResult => {
     if (!gridOn) return { x: proposed.x, y: proposed.y, guides: [] };
-    const g = snapPointToGrid(proposed.x, proposed.y, modes.grid, gridInterval);
+    const g = snapPointToGrid(proposed.x, proposed.y, gridMode, gridInterval);
     return { x: g.x, y: g.y, guides: [] };
   };
   // Same rounded-distance readout as the station engine's guides, so every
@@ -133,7 +156,7 @@ export function snapPolygonPoint(input: PolygonSnapInput): PolygonSnapResult {
       vIsPrimary ? vLock : hLock,
       vIsPrimary ? hLock : vLock,
       proposed,
-      modes.grid,
+      gridMode,
       gridInterval,
     );
     if (r.kept === 'none') return plainGrid();
@@ -160,7 +183,7 @@ export function snapPolygonPoint(input: PolygonSnapInput): PolygonSnapResult {
       const lock = bestV
         ? { q: { x: bestV.value, y: proposed.y }, axis: { x: 0, y: 1 } }
         : { q: { x: proposed.x, y: bestH!.value }, axis: { x: 1, y: 0 } };
-      const r = reconcileLockWithGrid(lock.q, lock.axis, proposed, modes.grid, gridInterval);
+      const r = reconcileLockWithGrid(lock.q, lock.axis, proposed, gridMode, gridInterval);
       if (!r.engaged) return plainGrid();
       const p: Vec2 = { x: r.x, y: r.y };
       return { x: p.x, y: p.y, guides: [guideTo(singleAxis.target, p)] };
@@ -170,7 +193,7 @@ export function snapPolygonPoint(input: PolygonSnapInput): PolygonSnapResult {
     if (!gridOn) {
       return { x: bestD.foot.x, y: bestD.foot.y, guides: [guideTo(bestD.target, bestD.foot)] };
     }
-    const r = reconcileLockWithGrid(bestD.target, bestD.axis, proposed, modes.grid, gridInterval);
+    const r = reconcileLockWithGrid(bestD.target, bestD.axis, proposed, gridMode, gridInterval);
     if (!r.engaged) return plainGrid();
     const p: Vec2 = { x: r.x, y: r.y };
     return { x: p.x, y: p.y, guides: [guideTo(bestD.target, p)] };

@@ -6,7 +6,7 @@ import { useSnapPrefs } from '../../state/snapPrefs';
 import { useViewportStore } from '../../state/viewportStore';
 import { DEFAULT_DOC } from '../../model/transforms';
 import { DEFAULT_SNAP_MODES, type SnapModes } from '../../geometry/snap';
-import { makePolygon, makeSvgImage, makeTextLabel } from '../../test/fixtures';
+import { makePolygon, makeStation, makeSvgImage, makeTextLabel } from '../../test/fixtures';
 import { measureTextLabel } from '../../geometry/textMeasure';
 import { fakeSvgRef, pointerEvent } from '../../test/interaction';
 
@@ -37,6 +37,9 @@ const render = () => {
   const { ref } = fakeSvgRef();
   return renderHook(() => useSvgImageDrag(ref, 1, false, identity)).result as Result;
 };
+
+// A stopless station — its anchor is a bare alignment point in the pool.
+const stationAt = (id: string, x: number, y: number) => makeStation({ id, x, y });
 
 describe('useSvgImageDrag — move', () => {
   it('snaps the highest-leftmost (rotated) anchor corner to the grid', () => {
@@ -131,24 +134,79 @@ describe('useSvgImageDrag — resize snap gate', () => {
     // Free resize in the rotated local frame → ~101.62, not the grid-snapped 120.
     expect(useDoc.getState().svgImages.i0.width).toBeCloseTo(101.62, 1);
   });
+
+  it('an edge resize never engages (or shows) a perpendicular-only alignment', () => {
+    setModes({ line: false, all: 'all', grid: 'off' });
+    seed({ rotation: 0 });
+    // A stopless station at (999, 5): horizontal alignment only — an edge
+    // resize along X cannot consume it, so it must not snap or draw a guide.
+    useDoc.setState({
+      ...useDoc.getState(),
+      stations: { S: stationAt('S', 999, 5) },
+    });
+    const r = render();
+    act(() => r.current.onSvgEdgePointerDown('i0', 1, pointerEvent({ clientX: 0, clientY: 0 })));
+    move(r, pointerEvent({ clientX: 73, clientY: 3 }));
+
+    expect(useDoc.getState().svgImages.i0.width).toBeCloseTo(123, 5);
+    expect(r.current.svgImageSnapGuides).toHaveLength(0);
+    up(r, pointerEvent({ clientX: 73, clientY: 3 }));
+  });
+
+  it('an edge resize still aligns along its own axis, with a guide', () => {
+    setModes({ line: false, all: 'all', grid: 'off' });
+    seed({ rotation: 0 });
+    // A stopless station at (70, 999): vertical alignment — locks X, which the
+    // right-edge drag consumes directly.
+    useDoc.setState({
+      ...useDoc.getState(),
+      stations: { S: stationAt('S', 70, 999) },
+    });
+    const r = render();
+    act(() => r.current.onSvgEdgePointerDown('i0', 1, pointerEvent({ clientX: 0, clientY: 0 })));
+    move(r, pointerEvent({ clientX: 73, clientY: 3 }));
+
+    expect(useDoc.getState().svgImages.i0.width).toBeCloseTo(120, 5); // |70 - (-50)|
+    expect(r.current.svgImageSnapGuides).toHaveLength(1);
+    up(r, pointerEvent({ clientX: 73, clientY: 3 }));
+  });
+
+  it('corner-resize guides drop when the aspect lock overrides the snapped point', () => {
+    setModes({ line: false, all: 'all', grid: 'off' });
+    seed(); // 100×60 → BR corner at (50, 30), aspect locked to 5:3
+    // Corner-snap bait at (120, 40): X drives (width 170), but the derived
+    // height puts the corner at y=72 — the guide would point at a position
+    // the corner never reaches, so no guides may render.
+    useDoc.setState({
+      ...useDoc.getState(),
+      stations: { V: stationAt('V', 120, 999), H: stationAt('H', 999, 40) },
+    });
+    const r = render();
+    act(() => r.current.onSvgCornerPointerDown('i0', 2, pointerEvent({ clientX: 0, clientY: 0 })));
+    move(r, pointerEvent({ clientX: 118, clientY: 42 }));
+
+    expect(useDoc.getState().svgImages.i0.width).toBeCloseTo(170, 5);
+    expect(r.current.svgImageSnapGuides).toHaveLength(0);
+    up(r, pointerEvent({ clientX: 118, clientY: 42 }));
+  });
 });
 
 describe('useSvgImageDrag — rotate', () => {
-  it('snaps rotation to 22.5° only when Shift is held', () => {
+  it('snaps rotation to 22.5° by default (Shift NOT held)', () => {
     seed();
     const r = render();
     // Pointer 30° clockwise from up, at radius 100: (sin30, -cos30)*100 = (50, -86.6).
     act(() => r.current.onSvgRotatePointerDown('i0', pointerEvent({ clientX: 0, clientY: 0 })));
-    move(r, pointerEvent({ clientX: 50, clientY: -86.6, shiftKey: true }));
-    up(r, pointerEvent({ clientX: 50, clientY: -86.6, shiftKey: true }));
+    move(r, pointerEvent({ clientX: 50, clientY: -86.6 }));
+    up(r, pointerEvent({ clientX: 50, clientY: -86.6 }));
     expect(useDoc.getState().svgImages.i0.rotation).toBe(22.5);
   });
 
-  it('rotates freely without Shift', () => {
+  it('Shift frees the rotation (matches Shift = bypass everywhere else)', () => {
     seed();
     const r = render();
     act(() => r.current.onSvgRotatePointerDown('i0', pointerEvent({ clientX: 0, clientY: 0 })));
-    move(r, pointerEvent({ clientX: 50, clientY: -86.6 }));
+    move(r, pointerEvent({ clientX: 50, clientY: -86.6, shiftKey: true }));
     up(r, pointerEvent({ clientX: 50, clientY: -86.6 }));
     expect(useDoc.getState().svgImages.i0.rotation).toBeCloseTo(30, 1);
   });

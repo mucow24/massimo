@@ -205,6 +205,57 @@ describe('snapPolygonPoint', () => {
     expect(r.guides).toHaveLength(0);
   });
 
+  describe("constrain: 'x' | 'y' (single-DOF consumers like edge resizes)", () => {
+    it("constrain 'x' ignores a horizontal-only alignment (no snap, no guide)", () => {
+      const r = snapPolygonPoint({
+        proposed: { x: 73, y: 3 },
+        lineTargets: [],
+        allTargets: [{ x: 999, y: 5 }], // horizontal axis only — perpendicular to X
+        modes: modes({ all: 'all', grid: 'off' }),
+        constrain: 'x',
+      });
+      expect(r).toMatchObject({ x: 73, y: 3 });
+      expect(r.guides).toHaveLength(0);
+    });
+
+    it("constrain 'x' still locks X to a vertical alignment, with a guide", () => {
+      const r = snapPolygonPoint({
+        proposed: { x: 73, y: 3 },
+        lineTargets: [],
+        allTargets: [{ x: 70, y: 999 }],
+        modes: modes({ all: 'all', grid: 'off' }),
+        constrain: 'x',
+      });
+      expect(r.x).toBeCloseTo(70, 6);
+      expect(r.y).toBeCloseTo(3, 6);
+      expect(r.guides).toHaveLength(1);
+    });
+
+    it("constrain 'x' narrows grid 'both' to the X axis only", () => {
+      const r = snapPolygonPoint({
+        proposed: { x: 73, y: 3 },
+        lineTargets: [],
+        allTargets: [],
+        modes: modes({ grid: 'both' }),
+        constrain: 'x',
+      });
+      expect(r).toMatchObject({ x: 70, y: 3 });
+    });
+
+    it("constrain 'y' mirrors: horizontal alignments and Y grid only", () => {
+      const r = snapPolygonPoint({
+        proposed: { x: 73, y: 3 },
+        lineTargets: [],
+        allTargets: [{ x: 999, y: 5 }],
+        modes: modes({ all: 'all', grid: 'off' }),
+        constrain: 'y',
+      });
+      expect(r.x).toBeCloseTo(73, 6);
+      expect(r.y).toBeCloseTo(5, 6);
+      expect(r.guides).toHaveLength(1);
+    });
+  });
+
   describe('grid as a hard constraint', () => {
     it('grid vertical drops a vertical lock to an off-grid sibling → plain grid', () => {
       // Vertical line at x=5 (off grid). Grid 'vertical' constrains X (the
