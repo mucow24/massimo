@@ -21,6 +21,8 @@ import type { LabelStyle } from '../geometry/labelLayout';
 import type { Vec2 } from '../geometry/vec';
 import { normalizePaletteIds, type Palette, type PaletteId } from './palettes';
 import type {
+  AutoHAlign,
+  AutoVAlign,
   DotStyle,
   LabelAlign,
   LabelCell,
@@ -1127,6 +1129,42 @@ export function setLabelAutoAlign(doc: MapDoc, stationId: StationId, on: boolean
     return rest;
   });
 }
+
+/**
+ * Multi-line tuning for autoAlign labels (see LabelCell.autoHAlign /
+ * autoVAlign). `null` = back to auto (octant-derived); the key is removed so
+ * saves stay clean, matching the other omitted-when-default label fields.
+ */
+export function setLabelAutoHAlign(
+  doc: MapDoc,
+  stationId: StationId,
+  v: AutoHAlign | null,
+): MapDoc {
+  return updateLabel(doc, stationId, (label) => {
+    if ((label.autoHAlign ?? null) === v) return label;
+    if (v) return { ...label, autoHAlign: v };
+    const { autoHAlign: _gone, ...rest } = label;
+    return rest;
+  });
+}
+
+export function setLabelAutoVAlign(
+  doc: MapDoc,
+  stationId: StationId,
+  v: AutoVAlign | null,
+): MapDoc {
+  return updateLabel(doc, stationId, (label) => {
+    if ((label.autoVAlign ?? null) === v) return label;
+    if (v) return { ...label, autoVAlign: v };
+    const { autoVAlign: _gone, ...rest } = label;
+    return rest;
+  });
+}
+
+// Cycle orders for the inspector's auto-tuning chips; null = auto (derived
+// from the label's octant).
+export const AUTO_HALIGN_CYCLE: (AutoHAlign | null)[] = [null, 'start', 'middle', 'end'];
+export const AUTO_VALIGN_CYCLE: (AutoVAlign | null)[] = [null, 'up', 'down'];
 
 // Canonical display order, geometrically symmetric: auto-down (block top
 // pinned, grows down) → top → middle → bottom → auto-up (block bottom

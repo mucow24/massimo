@@ -316,6 +316,8 @@ absent), `align: LabelAlign` (`auto|start|middle|end`), `valign: LabelValign`
 multi-line label grows; identical to `middle` for single-line. `autoAlign?: boolean` (omitted
 when off) overrides align **and** valign with transitmap.net typography derived from the label's
 octant relative to the nearest stop (see `labelLayoutLocal`); `offset`/`offsetPerp` still apply.
+`autoHAlign?: 'start'|'middle'|'end'` / `autoVAlign?: 'up'|'down'` (omitted = derived) tune
+autoAlign's multi-line handling: within-block line alignment, and which line anchors.
 
 **`Line`** — `id, service` (the route code shown in bullets), `name, color`, `stations:
 StationId[]` (ordered path), `waypoints?`. All other fields optional and **never stored at
@@ -767,6 +769,10 @@ editor), which are a separate slot-based system where Shift flips the lattice ba
   untouched. Multi-line blocks anchor by the **line nearest the marker** and stack away from
   it: bottom line above (`auto-up`), top line below (`auto-down`), first line beside/fallback
   (`auto-down` align-down, so added lines never move the line that sits level with the dot).
+  `label.autoVAlign` overrides WHICH line anchors ('down' = top line, 'up' = bottom line; the
+  octant still supplies the pinned typographic edge), and `label.autoHAlign` re-aligns the
+  lines WITHIN the block — anchorX slides by the anchor line's pen advance so its pinned edge
+  stays put, which makes both overrides no-ops for single-line labels.
   The pin clears the marker's support-function extent along the approach (a `half`-extent
   square rotated to the stop's travel axis), stop-relative on both axes.
 

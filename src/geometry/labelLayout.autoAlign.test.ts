@@ -36,6 +36,8 @@ function autoStation({
   align = 'auto',
   valign = 'middle',
   autoAlign = true,
+  autoHAlign,
+  autoVAlign,
   offset = 0,
   offsetPerp = 0,
 }: {
@@ -45,6 +47,8 @@ function autoStation({
   align?: 'auto' | 'start' | 'middle' | 'end';
   valign?: 'auto-down' | 'top' | 'middle' | 'bottom' | 'auto-up';
   autoAlign?: boolean;
+  autoHAlign?: 'start' | 'middle' | 'end';
+  autoVAlign?: 'up' | 'down';
   offset?: number;
   offsetPerp?: number;
 }): Station {
@@ -60,9 +64,31 @@ function autoStation({
       col: s.dCol,
       orientation: s.orientation ?? 'auto-vertical',
     })),
-    label: { row: 0, col: 0, rotation, offset, offsetPerp, align, valign, autoAlign },
+    label: {
+      row: 0,
+      col: 0,
+      rotation,
+      offset,
+      offsetPerp,
+      align,
+      valign,
+      autoAlign,
+      ...(autoHAlign ? { autoHAlign } : {}),
+      ...(autoVAlign ? { autoVAlign } : {}),
+    },
   };
 }
+
+// Per-line width stub: exercises the within-block alignment shift, which
+// needs the ANCHOR line's advance. `lines: []` makes the implementation fall
+// back to lineWidths per line.
+const measureLines = (widths: number[]) => () => ({
+  width: Math.max(...widths),
+  height: FS * 1.2 * widths.length,
+  lineCount: widths.length,
+  lineWidths: widths,
+  lines: [],
+});
 
 describe('labelLayoutLocal — autoAlign octant table', () => {
   // Cardinal octants against a straight line through the stop. The pinned
@@ -385,5 +411,184 @@ describe('labelLayoutLocal — autoAlign overrides and offsets', () => {
     );
     expect(lay.anchorX).toBeCloseTo(5, 6);
     expect(lay.anchorY).toBeCloseTo(STOP_SIZE - (HALF + LABEL_GAP) - CB - 2, 6);
+  });
+});
+
+describe('labelLayoutLocal — autoAlign H/V overrides', () => {
+  // autoVAlign picks WHICH line is the anchor line ('down' = top line,
+  // 'up' = bottom line); the octant still supplies the pin and the
+  // typographic edge (baseline / cap / CTA-center). autoHAlign re-aligns the
+  // lines WITHIN the block while the anchor line stays pinned — so both are
+  // inert for single-line labels. Absent = octant-derived (existing rules).
+
+  const dPin = STOP_SIZE * S2 - (HALF + LABEL_GAP) * S2; // 2.828…
+
+  it("V 'down' on a sit octant anchors the TOP line's baseline instead of the bottom's", () => {
+    const lay = labelLayoutLocal(
+      autoStation({
+        name: 'A\nB\nC',
+        stops: [{ dRow: 1, dCol: 0, orientation: 'auto-horizontal' }],
+        autoVAlign: 'down',
+      }),
+    );
+    const anchorY = STOP_SIZE - (HALF + LABEL_GAP) - CB; // fold unchanged
+    expect(lay.anchorY).toBeCloseTo(anchorY, 6);
+    // First line pinned, block grows down (default sit shifts up 2 stacks).
+    expect(lay.firstLineDyPx).toBeCloseTo(0, 6);
+    expect(lay.blockTopY).toBeCloseTo(anchorY - 7.2, 6);
+  });
+
+  it("V 'up' on a hang octant anchors the BOTTOM line's cap, block grows up", () => {
+    const lay = labelLayoutLocal(
+      autoStation({
+        name: 'A\nB\nC',
+        stops: [{ dRow: -1, dCol: 0, orientation: 'auto-horizontal' }],
+        autoVAlign: 'up',
+      }),
+    );
+    const anchorY = -STOP_SIZE + HALF + LABEL_GAP + HANG; // fold unchanged
+    expect(lay.anchorY).toBeCloseTo(anchorY, 6);
+    expect(lay.firstLineDyPx).toBeCloseTo(-2 * 14.4, 6);
+    expect(lay.blockTopY).toBeCloseTo(anchorY - 7.2 - 2 * 14.4, 6);
+  });
+
+  it("V 'up' beside a stop centers the LAST line's CTA on the stop row", () => {
+    const lay = labelLayoutLocal(
+      autoStation({
+        name: 'A\nB\nC',
+        stops: [{ dRow: 0, dCol: -1, orientation: 'auto-vertical' }],
+        autoVAlign: 'up',
+      }),
+    );
+    expect(lay.anchorY).toBeCloseTo(CTR, 6);
+    expect(lay.firstLineDyPx).toBeCloseTo(-2 * 14.4, 6);
+  });
+
+  it("H 'end' re-aligns lines within the block; the anchor line's pinned edge stays put", () => {
+    // NE octant defaults to 'start' + sit ('up': anchor line = LAST, w=40).
+    // Forcing 'end' right-aligns the block, and anchorX slides by the
+    // anchor line's width so its left edge stays at the pin.
+    const lay = labelLayoutLocal(
+      autoStation({
+        name: 'Longest Name\nBB',
+        stops: [{ dRow: S2, dCol: -S2, orientation: 'auto-nw-se' }],
+        autoHAlign: 'end',
+      }),
+      DEFAULT_LABEL_STYLE,
+      measureLines([100, 40]),
+    );
+    expect(lay.textAnchor).toBe('end');
+    expect(lay.anchorX).toBeCloseTo(-dPin + 40, 6);
+  });
+
+  it("the screenshot case: NE octant + V 'down' + H 'end' pins the NAME, bullets tuck under its right end", () => {
+    // First line (the name, w=100) anchors at the NE pin by its baseline;
+    // the second line right-aligns under the name's right edge and hangs
+    // below, toward the free side.
+    const lay = labelLayoutLocal(
+      autoStation({
+        name: 'Snuggle Point\n|E| |S|',
+        stops: [{ dRow: S2, dCol: -S2, orientation: 'auto-nw-se' }],
+        autoVAlign: 'down',
+        autoHAlign: 'end',
+      }),
+      DEFAULT_LABEL_STYLE,
+      measureLines([100, 40]),
+    );
+    expect(lay.textAnchor).toBe('end');
+    expect(lay.anchorX).toBeCloseTo(-dPin + 100, 6); // name's left edge at the pin
+    expect(lay.anchorY).toBeCloseTo(dPin - CB, 6); // name's baseline on the pin
+    expect(lay.firstLineDyPx).toBeCloseTo(0, 6); // grows down
+  });
+
+  it("H 'start' on a centered octant keeps the anchor line centered on the dot", () => {
+    // N octant defaults to 'middle'; forcing 'start' left-aligns the block
+    // and anchorX slides half the anchor line's width left so that line
+    // stays centered over the stop.
+    const lay = labelLayoutLocal(
+      autoStation({
+        name: 'Wide Line\nBB',
+        stops: [{ dRow: 1, dCol: 0, orientation: 'auto-horizontal' }],
+        autoHAlign: 'start',
+      }),
+      DEFAULT_LABEL_STYLE,
+      measureLines([100, 40]),
+    );
+    expect(lay.textAnchor).toBe('start');
+    // Default V for sit = 'up' → anchor line is the LAST line (w=40).
+    expect(lay.anchorX).toBeCloseTo(-40 / 2, 6);
+  });
+
+  it('H matching the derived value is a no-op', () => {
+    const base = labelLayoutLocal(
+      autoStation({
+        name: 'Longest Name\nBB',
+        stops: [{ dRow: S2, dCol: -S2, orientation: 'auto-nw-se' }],
+      }),
+      DEFAULT_LABEL_STYLE,
+      measureLines([100, 40]),
+    );
+    const forced = labelLayoutLocal(
+      autoStation({
+        name: 'Longest Name\nBB',
+        stops: [{ dRow: S2, dCol: -S2, orientation: 'auto-nw-se' }],
+        autoHAlign: 'start',
+      }),
+      DEFAULT_LABEL_STYLE,
+      measureLines([100, 40]),
+    );
+    expect(forced).toEqual(base);
+  });
+
+  it('a single-line label keeps its exact span under an H override', () => {
+    // E octant: text begins at the stop edge + gap (−4). Forcing 'end'
+    // shifts anchorX by the full line width, so the glyphs occupy the same
+    // pixels — the control only matters once a second line exists.
+    const lay = labelLayoutLocal(
+      autoStation({
+        stops: [{ dRow: 0, dCol: -1, orientation: 'auto-vertical' }],
+        autoHAlign: 'end',
+      }),
+      DEFAULT_LABEL_STYLE,
+      measureLines([80]),
+    );
+    expect(lay.textAnchor).toBe('end');
+    expect(lay.anchorX).toBeCloseTo(-STOP_SIZE + HALF + LABEL_GAP + 80, 6);
+  });
+
+  it('overrides also steer the no-adjacent-stop fallback', () => {
+    // Fallback defaults: middle + first-line ('down'). Forcing 'end' keeps
+    // the anchor line (first, w=100) centered on the cell while the block
+    // right-aligns to its right edge.
+    const lay = labelLayoutLocal(
+      autoStation({ name: 'Wide Line\nBB', stops: [{ dRow: 0, dCol: 3 }], autoHAlign: 'end' }),
+      DEFAULT_LABEL_STYLE,
+      measureLines([100, 40]),
+    );
+    expect(lay.textAnchor).toBe('end');
+    expect(lay.anchorX).toBeCloseTo(100 / 2, 6);
+    expect(lay.anchorY).toBeCloseTo(CTR, 6);
+  });
+
+  it('overrides are ignored while autoAlign is off', () => {
+    const plain = labelLayoutLocal(
+      autoStation({
+        stops: [{ dRow: 0, dCol: 1, orientation: 'auto-vertical' }],
+        autoAlign: false,
+      }),
+      DEFAULT_LABEL_STYLE,
+      measureLines([100, 40]),
+    );
+    const withOverrides = labelLayoutLocal(
+      autoStation({
+        stops: [{ dRow: 0, dCol: 1, orientation: 'auto-vertical' }],
+        autoAlign: false,
+        autoHAlign: 'end',
+        autoVAlign: 'down',
+      }),
+      DEFAULT_LABEL_STYLE,
+      measureLines([100, 40]),
+    );
+    expect(withOverrides).toEqual(plain);
   });
 });

@@ -1,5 +1,10 @@
-import type { LabelAlign, LabelValign } from '../../model/types';
-import { ALIGN_CYCLE, VALIGN_CYCLE } from '../../model/transforms';
+import type { AutoHAlign, AutoVAlign, LabelAlign, LabelValign } from '../../model/types';
+import {
+  ALIGN_CYCLE,
+  AUTO_HALIGN_CYCLE,
+  AUTO_VALIGN_CYCLE,
+  VALIGN_CYCLE,
+} from '../../model/transforms';
 
 const ALIGN_TITLE: Record<LabelAlign, string> = {
   auto: 'auto (snap against adjacent stop)',
@@ -72,6 +77,82 @@ export function LabelValignCycleButton({
       onClick={() => onSet(next)}
     >
       <VAlignIcon mode={valign} />
+    </button>
+  );
+}
+
+const AUTO_HALIGN_TITLE: Record<'auto' | AutoHAlign, string> = {
+  auto: 'auto (from position)',
+  start: 'left',
+  middle: 'center',
+  end: 'right',
+};
+
+const AUTO_VALIGN_TITLE: Record<'auto' | AutoVAlign, string> = {
+  auto: 'auto (line nearest the station)',
+  up: 'up (bottom line anchors, lines stack up)',
+  down: 'down (top line anchors, lines stack down)',
+};
+
+/**
+ * Multi-line tuning for autoAlign labels: how the lines align WITHIN the
+ * block (the anchor line keeps its auto-derived pinned position). Cycles
+ * auto → left → center → right; only meaningful while Auto placement is on,
+ * so callers disable it otherwise. Absolute-set dispatch, mirror-safe.
+ */
+export function AutoHAlignCycleButton({
+  value,
+  onSet,
+  disabled,
+}: {
+  value: AutoHAlign | null;
+  onSet: (v: AutoHAlign | null) => void;
+  disabled?: boolean;
+}) {
+  const next = AUTO_HALIGN_CYCLE[(AUTO_HALIGN_CYCLE.indexOf(value) + 1) % AUTO_HALIGN_CYCLE.length];
+  const title = AUTO_HALIGN_TITLE[value ?? 'auto'];
+  return (
+    <button
+      type="button"
+      className="chip-btn"
+      aria-label={`Auto align H: ${title}`}
+      title={`Auto align H: ${title} — click for ${AUTO_HALIGN_TITLE[next ?? 'auto']}`}
+      disabled={disabled}
+      onClick={() => onSet(next)}
+    >
+      <HAlignIcon mode={value ?? 'auto'} />
+    </button>
+  );
+}
+
+/**
+ * Multi-line tuning for autoAlign labels: WHICH line anchors — 'down' works
+ * from the top line (extra lines stack down), 'up' from the bottom line.
+ * Cycles auto → up → down; disabled unless Auto placement is on.
+ */
+export function AutoVAlignCycleButton({
+  value,
+  onSet,
+  disabled,
+}: {
+  value: AutoVAlign | null;
+  onSet: (v: AutoVAlign | null) => void;
+  disabled?: boolean;
+}) {
+  const next = AUTO_VALIGN_CYCLE[(AUTO_VALIGN_CYCLE.indexOf(value) + 1) % AUTO_VALIGN_CYCLE.length];
+  const title = AUTO_VALIGN_TITLE[value ?? 'auto'];
+  const iconMode: LabelValign =
+    value === 'up' ? 'auto-up' : value === 'down' ? 'auto-down' : 'middle';
+  return (
+    <button
+      type="button"
+      className="chip-btn"
+      aria-label={`Auto align V: ${title}`}
+      title={`Auto align V: ${title} — click for ${AUTO_VALIGN_TITLE[next ?? 'auto']}`}
+      disabled={disabled}
+      onClick={() => onSet(next)}
+    >
+      <VAlignIcon mode={iconMode} />
     </button>
   );
 }

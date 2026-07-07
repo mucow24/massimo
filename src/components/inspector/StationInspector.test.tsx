@@ -856,6 +856,77 @@ describe('<StationInspector /> — edit paths that reach the document (E8)', () 
     expect(doc.stations.b.label.autoAlign).toBe(true);
     expect(historyDepth() - before).toBe(1);
   });
+
+  it('the H/V tuning cycles are enabled only with Auto placement on and write the overrides', async () => {
+    const user = userEvent.setup();
+    seedStation();
+    render(<StationInspector id="a" />);
+
+    const h = screen.getByRole('button', { name: 'Auto align H: auto (from position)' });
+    const v = screen.getByRole('button', { name: 'Auto align V: auto (line nearest the station)' });
+    expect(h).toBeDisabled();
+    expect(v).toBeDisabled();
+
+    await user.click(screen.getByRole('button', { name: 'Auto placement' }));
+    expect(h).toBeEnabled();
+    expect(v).toBeEnabled();
+
+    useDoc.temporal.getState().clear();
+    const before = historyDepth();
+    await user.click(h);
+    expect(useDoc.getState().stations.a.label.autoHAlign).toBe('start');
+    expect(historyDepth() - before).toBe(1);
+    // Re-labels to the new state and keeps cycling from there.
+    await user.click(screen.getByRole('button', { name: 'Auto align H: left' }));
+    expect(useDoc.getState().stations.a.label.autoHAlign).toBe('middle');
+
+    await user.click(v);
+    expect(useDoc.getState().stations.a.label.autoVAlign).toBe('up');
+    await user.click(
+      screen.getByRole('button', {
+        name: 'Auto align V: up (bottom line anchors, lines stack up)',
+      }),
+    );
+    expect(useDoc.getState().stations.a.label.autoVAlign).toBe('down');
+    // Wrapping back around to auto removes the key entirely.
+    await user.click(
+      screen.getByRole('button', {
+        name: 'Auto align V: down (top line anchors, lines stack down)',
+      }),
+    );
+    expect('autoVAlign' in useDoc.getState().stations.a.label).toBe(false);
+  });
+
+  it('the H tuning cycle broadcasts the same absolute value with mirror on', async () => {
+    const user = userEvent.setup();
+    useDoc.setState({
+      ...DEFAULT_DOC,
+      ...makeDoc({
+        stations: [
+          makeStation({ id: 'a', stops: [makeStop('L1')] }),
+          makeStation({ id: 'b', stops: [makeStop('L1')] }),
+        ],
+        lines: [makeLine({ id: 'L1', stations: ['a', 'b'] })],
+      }),
+    });
+    useDoc.getState().setLabelAutoAlign('a', true);
+    useDoc.getState().setLabelAutoAlign('b', true);
+    useSelection.setState({
+      ...SELECTION_BLANK,
+      selectedStationIds: ['a'],
+      mirrorMatching: true,
+    });
+    useDoc.temporal.getState().clear();
+    const before = historyDepth();
+
+    render(<StationInspector id="a" />);
+    await user.click(screen.getByRole('button', { name: 'Auto align H: auto (from position)' }));
+
+    const doc = useDoc.getState();
+    expect(doc.stations.a.label.autoHAlign).toBe('start');
+    expect(doc.stations.b.label.autoHAlign).toBe('start');
+    expect(historyDepth() - before).toBe(1);
+  });
 });
 
 describe('<StationInspector /> — label offset wiring (along vs perpendicular)', () => {

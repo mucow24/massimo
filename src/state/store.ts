@@ -3,6 +3,8 @@ import { persist, createJSONStorage } from 'zustand/middleware';
 import { temporal } from 'zundo';
 import type { GridSnap } from '../geometry/snap';
 import type {
+  AutoHAlign,
+  AutoVAlign,
   DotStyle,
   LabelAlign,
   LabelValign,
@@ -272,6 +274,8 @@ interface DocState extends MapDoc {
   setLabelAlign: (stationId: StationId, align: LabelAlign) => void;
   setLabelValign: (stationId: StationId, valign: LabelValign) => void;
   setLabelAutoAlign: (stationId: StationId, on: boolean) => void;
+  setLabelAutoHAlign: (stationId: StationId, v: AutoHAlign | null) => void;
+  setLabelAutoVAlign: (stationId: StationId, v: AutoVAlign | null) => void;
 
   addLine: () => LineId;
   updateLine: (id: LineId, patch: Partial<Pick<Line, 'service' | 'name' | 'color'>>) => void;
@@ -449,6 +453,8 @@ export const useDoc = create<DocState>()(
         setLabelAlign: (stationId, align) => set((s) => T.setLabelAlign(s, stationId, align)),
         setLabelValign: (stationId, valign) => set((s) => T.setLabelValign(s, stationId, valign)),
         setLabelAutoAlign: (stationId, on) => set((s) => T.setLabelAutoAlign(s, stationId, on)),
+        setLabelAutoHAlign: (stationId, v) => set((s) => T.setLabelAutoHAlign(s, stationId, v)),
+        setLabelAutoVAlign: (stationId, v) => set((s) => T.setLabelAutoVAlign(s, stationId, v)),
 
         addLine: () => {
           const id = ids.lineId();
