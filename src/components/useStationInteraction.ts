@@ -210,7 +210,12 @@ export function useStationInteraction(
     !!station.locked &&
     selection.uiMode.kind === 'idle' &&
     !selection.selectedStationIds.includes(station.id);
-  const hitless = inTagMode || inLayerMode || lockedClickThrough;
+  // Mode pass-through strips the handlers outright; locked click-through
+  // keeps them WIRED — pointer-events already blocks every real click, while
+  // the alt+click deep-pick reaches locked stations by dispatching synthetic
+  // clicks to these very handlers (dispatch ignores pointer-events).
+  const modeInert = inTagMode || inLayerMode;
+  const hitless = modeInert || lockedClickThrough;
   const onTransferPointerMove = (e: React.PointerEvent) => {
     const lineId = closestStopLineId(station, e);
     if (!lineId) return;
@@ -229,10 +234,10 @@ export function useStationInteraction(
     if (cur && cur.stationId === station.id) selection.setHoveredLineStop(null);
   };
   const handlers = {
-    onPointerDown: hitless ? undefined : onPointerDown,
-    onClick: hitless || inHandMode ? undefined : onClick,
-    onDoubleClick: hitless || inHandMode ? undefined : onDoubleClick,
-    onContextMenu: hitless ? undefined : onContextMenu,
+    onPointerDown: modeInert ? undefined : onPointerDown,
+    onClick: modeInert || inHandMode ? undefined : onClick,
+    onDoubleClick: modeInert || inHandMode ? undefined : onDoubleClick,
+    onContextMenu: modeInert ? undefined : onContextMenu,
     onPointerMove: inTransferPick ? onTransferPointerMove : undefined,
     onPointerLeave: inTransferPick ? onTransferPointerLeave : undefined,
   };

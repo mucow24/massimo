@@ -286,9 +286,12 @@ describe('useStationInteraction — locked stations are click-through unless sel
   it('a locked, unselected station is hitless: clicks pass through to what is beneath', () => {
     const { result } = setup({ ...stationS(), locked: true });
     expect(result.current.hitless).toBe(true);
-    expect(result.current.handlers.onClick).toBeUndefined();
-    expect(result.current.handlers.onPointerDown).toBeUndefined();
-    expect(result.current.handlers.onContextMenu).toBeUndefined();
+    // Handlers stay WIRED: pointer-events alone does the click-through (real
+    // clicks can't arrive), while the alt+click deep-pick still drives the
+    // locked station via synthetic click dispatch.
+    expect(result.current.handlers.onClick).toBeDefined();
+    expect(result.current.handlers.onPointerDown).toBeDefined();
+    expect(result.current.handlers.onContextMenu).toBeDefined();
   });
 
   it('a locked station stays clickable while selected (popover unlock stays reachable)', () => {

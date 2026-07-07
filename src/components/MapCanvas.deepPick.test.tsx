@@ -236,6 +236,72 @@ describe('MapCanvas — Alt+click deep-picks through the under-cursor stack', ()
     expect(useSelection.getState().selectedStationIds).toEqual(['s2', 's1']);
   });
 
+  // Locked items are click-through (pointer-events: none), so elementsFromPoint
+  // never reports them — the deep-pick point-tests them geometrically and
+  // appends them below the live stack. jsdom's zero-size getBoundingClientRect
+  // breaks screenToWorld, so give the svg a real rect and click its center
+  // (client 400,300 → world 0,0 at zoom 1 — inside the default polygon).
+  const stubSvgRect = () => {
+    const svg = document.querySelector('.canvas-host svg') as SVGSVGElement;
+    svg.getBoundingClientRect = () =>
+      ({
+        x: 0,
+        y: 0,
+        top: 0,
+        left: 0,
+        right: 800,
+        bottom: 600,
+        width: 800,
+        height: 600,
+        toJSON: () => ({}),
+      }) as ReturnType<SVGSVGElement['getBoundingClientRect']>;
+  };
+  const altClickCenter = (el: Element) =>
+    act(() => {
+      fireEvent.click(el, { button: 0, altKey: true, clientX: 400, clientY: 300 });
+    });
+
+  it('cycles into a locked polygon that elementsFromPoint cannot see, then wraps', () => {
+    render(<App />);
+    seed();
+    act(() => {
+      useDoc.setState({
+        ...useDoc.getState(),
+        polygons: { p0: makePolygon({ id: 'p0', locked: true }) },
+      });
+    });
+    stubSvgRect();
+    // The under-cursor DOM stack holds only the live surfaces — the locked
+    // polygon is pointer-events:none and absent.
+    (document as unknown as { elementsFromPoint: () => Element[] }).elementsFromPoint = () => [
+      document.querySelector('[data-station-id="s1"] rect')!,
+      document.querySelector('[data-band-stripe][data-line-id="L1"]')!,
+    ];
+    act(() => useSelection.getState().selectLine('L1'));
+    altClickCenter(document.querySelector('[data-station-id="s1"] rect')!);
+    expect(useSelection.getState().selectedPolygonIds).toEqual(['p0']);
+    // Wrap: from the locked bottom entry back to the top of the stack.
+    altClickCenter(document.querySelector('[data-station-id="s1"] rect')!);
+    expect(useSelection.getState().selectedStationIds).toEqual(['s1']);
+    expect(useSelection.getState().selectedPolygonIds).toEqual([]);
+  });
+
+  it('alt+click over nothing but locked art selects it directly', () => {
+    render(<App />);
+    seed();
+    act(() => {
+      useDoc.setState({
+        ...useDoc.getState(),
+        polygons: { p0: makePolygon({ id: 'p0', locked: true }) },
+      });
+    });
+    stubSvgRect();
+    const bg = document.querySelector('[data-bg]')!;
+    (document as unknown as { elementsFromPoint: () => Element[] }).elementsFromPoint = () => [bg];
+    altClickCenter(bg);
+    expect(useSelection.getState().selectedPolygonIds).toEqual(['p0']);
+  });
+
   it('drops ctrl on the re-dispatch (a deep-pick must never trigger redistribute)', () => {
     render(<App />);
     seed();

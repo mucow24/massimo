@@ -295,11 +295,14 @@ collections, `name: 'Untitled map'`, `curveRadius: 24`, `lineCounter: 0`, `activ
   without the idle gate locked stations would be unreachable in every mode). Accepted
   side-effect: idle-mode modifier clicks that *target* a station (ctrl-click redistribute,
   ctrl+shift path-extend) can't target a locked, unselected station — unlock it first.
-  Re-selecting a locked, deselected item: **Alt+marquee** includes locked items (stations also
-  stay selectable from the sidebar, and the **station inspector stays fully enabled** — only
-  stations get that). Polygon, RouteBullet, TextLabel and SvgImage share the same canvas
-  protections, but their popovers **disable every editing control except the lock toggle**
-  while locked.
+  Re-selecting a locked, deselected item: **Alt+click** (the deep-pick's geometric fallback
+  reaches locked items) or **Alt+marquee** (includes locked items); stations also stay
+  selectable from the sidebar, and the **station inspector stays fully enabled** — only
+  stations get that. A locked, selected polygon/image renders its editing adornments
+  **ghosted** (`data-*-adornments="inactive"`: 0.4 opacity, pointer-events none) so the
+  selection is visible without inviting edits. Polygon, RouteBullet, TextLabel and SvgImage
+  share the same canvas protections, but their popovers **disable every editing control
+  except the lock toggle** while locked.
 
 **`StopCell`** — one line's stop on a station. `lineId, row, col` (station-local grid;
 **`row`/`col` are floats now**, since diagonal moves use ±√2/2 — equality uses `CELL_EPS=1e-4`),
@@ -872,7 +875,11 @@ reroute described below; `onContextMenu`/`onDragStart` just `preventDefault`):
   line/transfer/line-tag primaries). The chosen element gets a synthetic plain click so its own
   handler runs (alt stripped — no recursion; shift preserved; ctrl/meta dropped). A selected line
   is pre-cleared before the dispatch so `exitLineEditorOnItemClick` can't eat the pick. Locked
-  click-through items never appear in the stack (no pointer-events → not in `elementsFromPoint`).
+  click-through items are invisible to `elementsFromPoint` (no pointer-events), so
+  `lockedHitsAt` point-tests them geometrically (the marquee's `*ForRect` helpers with a
+  4px/zoom pad) and `mergeLockedIntoStack` appends them BELOW the live stack — locked reads as
+  background, so cycling reaches them last; their body handlers stay wired (dispatch ignores
+  pointer-events), so `lockedDispatchTarget`'s synthetic click selects them normally.
 
 **Shared drag lifecycle** ([dragGesture.ts](src/components/canvas/dragGesture.ts)): pointerdown
 captures pre-drag state + `beginHistoryGroup()`; **pointer capture is deferred to first move** (so

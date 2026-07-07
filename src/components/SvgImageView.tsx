@@ -166,9 +166,15 @@ export function SvgImageView({
         strokeDasharray={selectionDash(zoom)}
         pointerEvents="none"
       />
-      {/* A locked image shows only the selection box — no transform handles —
-          but stays selected so the popover's unlock toggle is reachable. */}
-      {!image.locked && (
+      {/* Transform handles + rotate knob. On a LOCKED image they render
+          GHOSTED — still visible, so a re-selected locked image reads as
+          selected (the thin dashed box alone is easy to miss) — but inert:
+          reduced opacity, no pointer events, no cursors. */}
+      <g
+        data-svg-image-adornments={image.locked ? 'inactive' : 'active'}
+        opacity={image.locked ? 0.4 : undefined}
+        pointerEvents={image.locked ? 'none' : undefined}
+      >
         <>
           <line
             x1={0}
@@ -227,7 +233,7 @@ export function SvgImageView({
             />
           ))}
         </>
-      )}
+      </g>
     </g>
   );
 }

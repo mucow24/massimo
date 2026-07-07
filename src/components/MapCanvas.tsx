@@ -29,7 +29,16 @@ import { GhostLattice } from './canvas/GhostLattice';
 import { STOP_SIZE } from '../geometry/orientation';
 import { lineWidthOf } from '../model/lineWidth';
 import { useRectSelect } from './canvas/useRectSelect';
-import { currentHitEntity, nextInStack, resolveHitStack } from './canvas/hitStack';
+import {
+  currentHitEntity,
+  LOCKED_HIT_PAD_PX,
+  lockedDispatchTarget,
+  lockedHitsAt,
+  mergeLockedIntoStack,
+  nextInStack,
+  resolveHitStack,
+  type HitEntry,
+} from './canvas/hitStack';
 import { Grid } from './canvas/Grid';
 import { WarningToasts } from './canvas/WarningToasts';
 import { EditingBanner } from './canvas/EditingBanner';
@@ -471,7 +480,22 @@ export function MapCanvas() {
     if (layer) layer.style.display = 'none';
     const els = document.elementsFromPoint(e.clientX, e.clientY);
     if (layer) layer.style.display = prevDisplay;
-    const stack = resolveHitStack(els);
+    // Locked, unselected items are click-through (pointer-events: none), so
+    // elementsFromPoint never reports them. Point-test them geometrically and
+    // append below the live stack — locked reads as background, so cycling
+    // reaches them last. Their body handlers stay wired, so the synthetic
+    // dispatch selects them like anything else.
+    const world = view.screenToWorld(e.clientX, e.clientY);
+    const lockedEntries: HitEntry[] = [];
+    for (const ref of lockedHitsAt(
+      world,
+      useDoc.getState(),
+      LOCKED_HIT_PAD_PX / view.viewport.zoom,
+    )) {
+      const element = lockedDispatchTarget(ref);
+      if (element) lockedEntries.push({ ...ref, element });
+    }
+    const stack = mergeLockedIntoStack(resolveHitStack(els), lockedEntries);
     const next = nextInStack(stack, currentHitEntity(useSelection.getState()));
     if (!next) return false; // nothing selectable here — behave as a plain background click
     e.stopPropagation();

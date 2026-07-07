@@ -175,10 +175,15 @@ export function PolygonView({
         strokeDasharray={selectionDash(zoom)}
         pointerEvents="none"
       />
-      {/* A locked polygon shows only the selection outline — no editing
-          adornments (vertex handles, edge "+") — but stays selected so the
-          popover's unlock toggle is reachable. */}
-      {!polygon.locked && (
+      {/* Editing adornments (vertex handles, edge "+"). On a LOCKED polygon
+          they render GHOSTED — still visible, so a re-selected locked polygon
+          reads as selected (the thin dashed outline alone is easy to miss) —
+          but inert: reduced opacity, no pointer events, no cursors. */}
+      <g
+        data-polygon-adornments={polygon.locked ? 'inactive' : 'active'}
+        opacity={polygon.locked ? 0.4 : undefined}
+        pointerEvents={polygon.locked ? 'none' : undefined}
+      >
         <>
           {edgeIndices.map((i) => {
             const v = verts[i];
@@ -236,7 +241,7 @@ export function PolygonView({
             />
           ))}
         </>
-      )}
+      </g>
     </g>
   );
 }

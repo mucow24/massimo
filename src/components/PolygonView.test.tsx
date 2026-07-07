@@ -294,17 +294,27 @@ describe('<PolygonView /> locked polygons (E5c)', () => {
     ).container;
   }
 
-  it('a locked, selected polygon keeps the selection outline but drops all editing adornments', () => {
+  it('a locked, selected polygon keeps the outline and renders its adornments GHOSTED (inactive)', () => {
     const c = renderOverlay(makePolygon({ id: 'p0', locked: true }));
     // Outline stays so the selection (and the popover's unlock toggle) is visible.
     expect(c.querySelector('g[data-polygon-overlay] > polygon')).not.toBeNull();
-    // No vertex handles, no edge "+" buttons while locked.
-    expect(c.querySelectorAll('[data-polygon-vertex]')).toHaveLength(0);
-    expect(c.querySelectorAll('[data-polygon-edge-add]')).toHaveLength(0);
+    // Handles + edge "+" render — a re-selected locked polygon would otherwise
+    // only show a thin dashed line, far too easy to miss — but inert: no
+    // pointer events, reduced opacity.
+    const wrap = c.querySelector('[data-polygon-adornments]')!;
+    expect(wrap.getAttribute('data-polygon-adornments')).toBe('inactive');
+    expect(wrap.getAttribute('pointer-events')).toBe('none');
+    expect(Number(wrap.getAttribute('opacity'))).toBeLessThan(1);
+    expect(c.querySelectorAll('[data-polygon-vertex]')).toHaveLength(4);
+    expect(c.querySelectorAll('[data-polygon-edge-add]')).toHaveLength(4);
   });
 
-  it('an UNlocked, selected polygon shows the handles (contrast — same fixture, lock off)', () => {
+  it('an UNlocked, selected polygon shows the handles fully active (contrast — same fixture, lock off)', () => {
     const c = renderOverlay(makePolygon({ id: 'p0' }));
+    const wrap = c.querySelector('[data-polygon-adornments]')!;
+    expect(wrap.getAttribute('data-polygon-adornments')).toBe('active');
+    expect(wrap.getAttribute('pointer-events')).toBeNull();
+    expect(wrap.getAttribute('opacity')).toBeNull();
     expect(c.querySelectorAll('[data-polygon-vertex]')).toHaveLength(4);
     expect(c.querySelectorAll('[data-polygon-edge-add]')).toHaveLength(4);
   });

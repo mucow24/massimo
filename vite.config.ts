@@ -16,4 +16,8 @@ import react from '@vitejs/plugin-react';
 export default defineConfig(({ mode }) => ({
   base: mode === 'production' ? './' : '/',
   plugins: [react()],
+  // Honor a harness-assigned port (Claude Code preview servers run several
+  // worktrees side by side, each with its own PORT). Without PORT set —
+  // plain `npm run dev`, Playwright's webServer — Vite keeps its default.
+  server: process.env.PORT ? { port: Number(process.env.PORT), strictPort: true } : undefined,
 }));

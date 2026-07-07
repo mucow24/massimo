@@ -1,6 +1,16 @@
 import { describe, expect, it } from 'vitest';
-import { currentHitEntity, nextInStack, resolveHitStack, type HitRef } from './hitStack';
+import {
+  currentHitEntity,
+  lockedHitsAt,
+  mergeLockedIntoStack,
+  nextInStack,
+  resolveHitStack,
+  type HitEntry,
+  type HitRef,
+} from './hitStack';
 import type { SelectionState } from '../../state/selection';
+import { makePolygon, makeSvgImage, makeTextLabel, stationWithStop } from '../../test/fixtures';
+import type { LineId, RouteBullet, StationId } from '../../model/types';
 
 // A miniature canvas DOM carrying one of every identity attribute the
 // resolver knows, in a representative paint order (topmost-first when read
@@ -113,6 +123,119 @@ describe('nextInStack', () => {
 
   it('restarts at the top when the current entity is not in the stack', () => {
     expect(nextInStack(stack, { kind: 'bullet', id: 'nope' })).toBe(stack[0]);
+  });
+});
+
+describe('lockedHitsAt', () => {
+  // Locked items are click-through (pointer-events: none), so they never
+  // appear in an elementsFromPoint snapshot — the deep-pick reaches them via
+  // this geometric point-test instead.
+  const bullet = (id: string, locked = true): RouteBullet => ({
+    id,
+    x: 0,
+    y: 0,
+    rotation: 0,
+    lineId: null,
+    shape: 'circle',
+    size: 14,
+    locked,
+  });
+  const doc = (over: Partial<Parameters<typeof lockedHitsAt>[1]> = {}) => ({
+    stations: {},
+    lines: {},
+    polygons: {},
+    polygonOrder: [] as string[],
+    svgImages: {},
+    svgImageOrder: [] as string[],
+    textLabels: {},
+    routeBullets: {},
+    labelFontSize: 16,
+    labelWeight: 400 as const,
+    labelItalic: false,
+    labelLeading: 1,
+    labelTracking: 0,
+    ...over,
+  });
+
+  it('reports a locked polygon under the point, and ignores unlocked ones', () => {
+    // makePolygon's default square spans (-30,-30)..(30,30).
+    const d = doc({
+      polygons: { a: makePolygon({ id: 'a', locked: true }), b: makePolygon({ id: 'b' }) },
+      polygonOrder: ['a', 'b'],
+    });
+    expect(lockedHitsAt({ x: 0, y: 0 }, d, 0)).toEqual([{ kind: 'polygon', id: 'a' }]);
+    expect(lockedHitsAt({ x: 500, y: 500 }, d, 0)).toEqual([]);
+  });
+
+  it('reports every locked kind, topmost-first by paint band (labels > bullets > stations > images > polygons)', () => {
+    const d = doc({
+      stations: {
+        S: { ...stationWithStop('S' as StationId, 'L1' as LineId, { x: 0, y: 0 }), locked: true },
+      },
+      polygons: { p: makePolygon({ id: 'p', locked: true }) },
+      polygonOrder: ['p'],
+      svgImages: { i: makeSvgImage({ id: 'i', locked: true }) },
+      svgImageOrder: ['i'],
+      textLabels: { g: makeTextLabel({ id: 'g', x: 0, y: 0, text: 'Hi', locked: true }) },
+      routeBullets: { b: bullet('b') },
+    });
+    expect(lockedHitsAt({ x: 0, y: 0 }, d, 0).map((r) => `${r.kind}:${r.id}`)).toEqual([
+      'label:g',
+      'bullet:b',
+      'station:S',
+      'svgImage:i',
+      'polygon:p',
+    ]);
+  });
+
+  it('orders overlapping locked polygons by render order, topmost first', () => {
+    const d = doc({
+      polygons: {
+        low: makePolygon({ id: 'low', locked: true }),
+        high: makePolygon({ id: 'high', locked: true }),
+      },
+      polygonOrder: ['low', 'high'], // later = painted on top
+    });
+    expect(lockedHitsAt({ x: 0, y: 0 }, d, 0).map((r) => r.id)).toEqual(['high', 'low']);
+  });
+
+  it('the pad makes an OPEN locked polygon reachable near its stroke', () => {
+    const chain = makePolygon({
+      id: 'open',
+      locked: true,
+      closed: false,
+      vertices: [
+        { x: 0, y: 0 },
+        { x: 100, y: 0 },
+      ],
+    });
+    const d = doc({ polygons: { open: chain }, polygonOrder: ['open'] });
+    expect(lockedHitsAt({ x: 50, y: 1 }, d, 2)).toEqual([{ kind: 'polygon', id: 'open' }]);
+    expect(lockedHitsAt({ x: 50, y: 5 }, d, 2)).toEqual([]);
+  });
+});
+
+describe('mergeLockedIntoStack', () => {
+  const entry = (kind: HitRef['kind'], id: string): HitEntry => ({
+    kind,
+    id,
+    element: null as unknown as Element,
+  });
+
+  it('appends locked entries below the live stack', () => {
+    const merged = mergeLockedIntoStack(
+      [entry('station', 's1'), entry('line', 'L1')],
+      [entry('polygon', 'p0')],
+    );
+    expect(merged.map((e) => `${e.kind}:${e.id}`)).toEqual(['station:s1', 'line:L1', 'polygon:p0']);
+  });
+
+  it('drops locked entries already present in the live stack (locked-but-selected items)', () => {
+    const merged = mergeLockedIntoStack(
+      [entry('polygon', 'p0'), entry('line', 'L1')],
+      [entry('polygon', 'p0')],
+    );
+    expect(merged.map((e) => `${e.kind}:${e.id}`)).toEqual(['polygon:p0', 'line:L1']);
   });
 });
 

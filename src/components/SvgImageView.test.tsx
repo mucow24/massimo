@@ -169,13 +169,31 @@ describe('<SvgImageView /> overlay', () => {
     for (const n of ['nw', 'n', 'ne', 'e', 'se', 's', 'sw', 'w']) expect(names).toContain(n);
   });
 
-  it('hides handles but keeps the box for a locked image', () => {
+  it('renders the handles GHOSTED (inactive) for a locked image, keeping the box', () => {
     const { container } = renderView(makeSvgImage({ id: 'i0', locked: true }), {
       layer: 'overlay',
       selected: true,
     });
     expect(container.querySelector('[data-svg-image-overlay]')).not.toBeNull();
-    expect(handles(container)).toHaveLength(0);
+    // Handles render — a re-selected locked image would otherwise only show a
+    // thin dashed box, far too easy to miss — but inert: no pointer events,
+    // reduced opacity.
+    const wrap = container.querySelector('[data-svg-image-adornments]')!;
+    expect(wrap.getAttribute('data-svg-image-adornments')).toBe('inactive');
+    expect(wrap.getAttribute('pointer-events')).toBe('none');
+    expect(Number(wrap.getAttribute('opacity'))).toBeLessThan(1);
+    expect(handles(container)).toHaveLength(9);
+  });
+
+  it('renders the handles fully active for an unlocked image (contrast)', () => {
+    const { container } = renderView(makeSvgImage({ id: 'i0' }), {
+      layer: 'overlay',
+      selected: true,
+    });
+    const wrap = container.querySelector('[data-svg-image-adornments]')!;
+    expect(wrap.getAttribute('data-svg-image-adornments')).toBe('active');
+    expect(wrap.getAttribute('pointer-events')).toBeNull();
+    expect(wrap.getAttribute('opacity')).toBeNull();
   });
 
   it('keeps handle size constant on screen across zoom (handles scale 1/zoom, box does not)', () => {

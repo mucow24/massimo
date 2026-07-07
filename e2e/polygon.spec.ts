@@ -259,16 +259,20 @@ test.describe('Polygon opacity, layering, placement, lock', () => {
     await expect(page.locator('.polygon-popover')).toHaveCount(0);
   });
 
-  test('locking hides edit handles and prevents dragging; unlocking restores them', async ({
+  test('locking ghosts the edit handles and prevents dragging; unlocking restores them', async ({
     page,
   }) => {
     await seedAndOpen(page, { stations: [], lines: [] });
     await addPolygonAt(page, CENTER.x, CENTER.y);
-    // Lock it.
+    // Lock it. The adornments stay visible (a selected locked polygon must
+    // still read as selected) but render ghosted and inert.
     await page.getByRole('button', { name: 'Lock polygon' }).click();
     expect((await onlyPolygon(page)).locked).toBe(true);
-    await expect(page.locator('[data-polygon-vertex]')).toHaveCount(0);
-    await expect(page.locator('[data-polygon-edge-add]')).toHaveCount(0);
+    await expect(page.locator('[data-polygon-adornments]')).toHaveAttribute(
+      'data-polygon-adornments',
+      'inactive',
+    );
+    await expect(page.locator('[data-polygon-vertex]')).toHaveCount(4);
 
     // Dragging the locked body never moves it. A locked element reads as
     // background for rubber-band selection, so the drag begins a marquee
@@ -285,8 +289,17 @@ test.describe('Polygon opacity, layering, placement, lock', () => {
     await page.mouse.click(CENTER.x, CENTER.y);
     await expect(page.locator('.polygon-popover')).toHaveCount(0);
 
-    // Alt+marquee is the recovery path — it includes locked items. Re-select
-    // the polygon with it, then unlock → handles return.
+    // Alt+click reaches locked items (geometric fallback — they're invisible
+    // to elementsFromPoint): it re-selects the polygon and opens its popover.
+    await page.keyboard.down('Alt');
+    await page.mouse.click(CENTER.x, CENTER.y);
+    await page.keyboard.up('Alt');
+    await expect(page.locator('.polygon-popover')).toHaveCount(1);
+
+    // Deselect (Escape), then Alt+marquee — the area recovery path —
+    // re-selects it too; unlock → handles return active.
+    await page.keyboard.press('Escape');
+    await expect(page.locator('.polygon-popover')).toHaveCount(0);
     await page.keyboard.down('Alt');
     await page.mouse.move(CENTER.x - 20, CENTER.y - 20);
     await page.mouse.down();
@@ -294,6 +307,10 @@ test.describe('Polygon opacity, layering, placement, lock', () => {
     await page.mouse.up();
     await page.keyboard.up('Alt');
     await page.getByRole('button', { name: 'Unlock polygon' }).click();
+    await expect(page.locator('[data-polygon-adornments]')).toHaveAttribute(
+      'data-polygon-adornments',
+      'active',
+    );
     await expect(page.locator('[data-polygon-vertex]')).toHaveCount(4);
   });
 });

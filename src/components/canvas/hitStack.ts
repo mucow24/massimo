@@ -1,4 +1,25 @@
 import { soleSelection, type SelectionState } from '../../state/selection';
+import {
+  polygonsForRect,
+  routeBulletsForRect,
+  stationsForRect,
+  svgImagesForRect,
+  textLabelsForRect,
+} from '../../geometry/stationBoundary';
+import type { LabelStyle } from '../../geometry/labelLayout';
+import { stopHalfOf } from '../../model/lineWidth';
+import { effectivePolygonOrder, effectiveSvgImageOrder } from '../../model/transforms';
+import type { Pt } from '../../geometry/polygonUnion';
+import type {
+  Line,
+  LineId,
+  Polygon,
+  RouteBullet,
+  Station,
+  StationId,
+  SvgImage,
+  TextLabel,
+} from '../../model/types';
 
 /**
  * Pure logic for Alt+click deep-picking: resolving the stack of selectable
@@ -100,6 +121,116 @@ export function nextInStack<T extends HitRef>(
   const i = stack.findIndex((e) => e.kind === current.kind && e.id === current.id);
   if (i === -1) return stack[0];
   return stack[(i + 1) % stack.length];
+}
+
+// Screen-pixel pad for the locked-item point test (divided by zoom by the
+// caller): gives an open locked polygon's stroke a graspable corridor and
+// forgives near-misses, mirroring the 10px/zoom floor on open-polygon proxies.
+export const LOCKED_HIT_PAD_PX = 4;
+
+/** The slice of the doc lockedHitsAt reads — matches useDoc's state shape. */
+export interface LockedHitDocSlice {
+  stations: Record<StationId, Station>;
+  lines: Record<LineId, Line>;
+  polygons: Record<string, Polygon>;
+  polygonOrder: string[];
+  svgImages: Record<string, SvgImage>;
+  svgImageOrder: string[];
+  textLabels: Record<string, TextLabel>;
+  routeBullets: Record<string, RouteBullet>;
+  labelFontSize: LabelStyle['fontSize'];
+  labelWeight: LabelStyle['weight'];
+  labelItalic: LabelStyle['italic'];
+  labelLeading: LabelStyle['leading'];
+  labelTracking: LabelStyle['tracking'];
+}
+
+/**
+ * Locked items under a world point, topmost-first. Locked, unselected items
+ * are click-through (pointer-events: none), so document.elementsFromPoint
+ * never reports them — this geometric point-test (a pad×pad rect through the
+ * same *ForRect helpers the marquee uses) is how the alt+click deep-pick
+ * reaches them. Order mirrors the canvas paint bands (labels over bullets
+ * over stations over images over polygons); within the polygon/image bands
+ * the explicit render order applies (later = on top → first here).
+ */
+export function lockedHitsAt(pt: Pt, doc: LockedHitDocSlice, pad: number): HitRef[] {
+  const rect = { x0: pt.x - pad, y0: pt.y - pad, x1: pt.x + pad, y1: pt.y + pad };
+  const style = {
+    fontSize: doc.labelFontSize,
+    weight: doc.labelWeight,
+    italic: doc.labelItalic,
+    leading: doc.labelLeading,
+    tracking: doc.labelTracking,
+  };
+  const out: HitRef[] = [];
+  const push = (kind: HitKind, ids: string[]) => {
+    for (const id of ids) out.push({ kind, id });
+  };
+  push(
+    'label',
+    textLabelsForRect(doc.textLabels, rect, true).filter((id) => doc.textLabels[id].locked),
+  );
+  push(
+    'bullet',
+    routeBulletsForRect(doc.routeBullets, rect, true).filter((id) => doc.routeBullets[id].locked),
+  );
+  push(
+    'station',
+    stationsForRect(doc.stations, rect, style, stopHalfOf(doc.lines), true).filter(
+      (id) => doc.stations[id].locked,
+    ),
+  );
+  push(
+    'svgImage',
+    [...effectiveSvgImageOrder(doc.svgImages, doc.svgImageOrder)]
+      .reverse()
+      .filter(
+        (id) =>
+          doc.svgImages[id].locked &&
+          svgImagesForRect({ [id]: doc.svgImages[id] }, rect, true).length > 0,
+      ),
+  );
+  push(
+    'polygon',
+    [...effectivePolygonOrder(doc.polygons, doc.polygonOrder)]
+      .reverse()
+      .filter(
+        (id) =>
+          doc.polygons[id].locked &&
+          polygonsForRect({ [id]: doc.polygons[id] }, rect, true).length > 0,
+      ),
+  );
+  return out;
+}
+
+// Where to send the synthetic click for a locked entity: pointer-events only
+// blocks HIT-TESTING, not dispatched events, so the entity's regular body
+// element (whose React handlers stay wired) still runs its normal selection
+// logic. Lines/transfers/line tags have no locked flag → never looked up.
+const LOCKED_TARGET_SELECTORS: Partial<Record<HitKind, (id: string) => string>> = {
+  station: (id) => `[data-station-id="${id}"] rect`,
+  polygon: (id) => `path[data-polygon-id="${id}"]`,
+  svgImage: (id) => `g[data-svg-image-id="${id}"] image`,
+  label: (id) => `g[data-text-label-id="${id}"]`,
+  bullet: (id) => `g[data-bullet-id="${id}"]`,
+};
+
+/** The DOM element a locked entity's synthetic click should be dispatched to. */
+export function lockedDispatchTarget(ref: HitRef): Element | null {
+  const selector = LOCKED_TARGET_SELECTORS[ref.kind];
+  return selector ? document.querySelector(selector(ref.id)) : null;
+}
+
+/**
+ * Append locked entries BELOW the live stack — locked reads as background, so
+ * cycling reaches live items first. A locked-but-selected item has live
+ * pointer events and already sits in the DOM stack at its true paint
+ * position; the dedupe keeps that entry.
+ */
+export function mergeLockedIntoStack(stack: HitEntry[], locked: HitEntry[]): HitEntry[] {
+  const seen = new Set(stack.map((e) => e.kind + ':' + e.id));
+  return [...stack, ...locked.filter((e) => !seen.has(e.kind + ':' + e.id))];
 }
 
 /**
