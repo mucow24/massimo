@@ -65,6 +65,26 @@ async function stopWorldOffset(
   );
 }
 
+// Absolute screen center of a stop's rendered dot. Unlike stopWorldOffset's
+// station-bbox-relative frame, this survives 45°-rotated stations, whose
+// group bbox (dominated by the rotated hit rect) re-centers as the layout
+// changes. Valid for before/after deltas only while the camera is still.
+async function stopScreenCenter(
+  page: Page,
+  stationId: string,
+  lineId: string,
+): Promise<{ x: number; y: number }> {
+  return await page.evaluate(
+    ({ sid, lid }) => {
+      const el = document.querySelector(`[data-stop-station="${sid}"][data-stop-line="${lid}"]`);
+      if (!el) throw new Error(`missing stop ${sid}/${lid}`);
+      const b = (el as Element).getBoundingClientRect();
+      return { x: b.x + b.width / 2, y: b.y + b.height / 2 };
+    },
+    { sid: stationId, lid: lineId },
+  );
+}
+
 // Station rotation read straight from the persisted doc.
 async function stationRotation(page: Page, id: string): Promise<number> {
   return await page.evaluate((sid) => {
@@ -120,6 +140,35 @@ async function dragStopByLocalDelta(
   await page.mouse.move(tx, ty, { steps: 5 });
   await page.mouse.up();
 }
+
+// A and its 45° lattice-parity twin: B is A re-parameterized one 45° step
+// (rotation +1, layout rotated −45° onto the diagonal ±√2/2 lattice,
+// orientation axis stepped back, label rotation −1). Pixel-identical, but
+// only the 8-fold canonicalization can see across the rotation-parity flip.
+const SQRT2_2 = Math.SQRT1_2;
+const parityTwins: Seed = {
+  stations: [
+    {
+      id: 'A',
+      name: 'A',
+      x: -150,
+      y: 0,
+      rotation: 0,
+      stops: [{ lineId: 'L1', row: 0, col: 0, orientation: 'auto-ne-sw' }],
+      label: { row: 0, col: -1, rotation: 4, offset: 0 },
+    },
+    {
+      id: 'B',
+      name: 'B',
+      x: 150,
+      y: 0,
+      rotation: 1,
+      stops: [{ lineId: 'L1', row: 0, col: 0, orientation: 'auto-vertical' }],
+      label: { row: SQRT2_2, col: -SQRT2_2, rotation: 3, offset: 0 },
+    },
+  ],
+  lines: [{ id: 'L1', service: 'L', color: '#0039A6', stations: ['A', 'B'] }],
+};
 
 test.beforeEach(async ({ page }) => {
   await page.goto('/');
@@ -181,6 +230,47 @@ test.describe('Select Similar — visually-identical mirror stations', () => {
     // The whole point: B and C move by the same world vector as A.
     expect(dB).toEqual(dA);
     expect(dC).toEqual(dA);
+  });
+
+  test('moveStop broadcasts across the 45° lattice-parity twin', async ({ page }) => {
+    await seedAndOpen(page, parityTwins);
+
+    const a = await stationCenter(page, 'A');
+    await page.mouse.click(a.x, a.y);
+
+    // The 8-fold matcher must count B at all — the 4-fold one never could.
+    const btn = page.getByRole('button', { name: 'Select Similar' });
+    await expect(btn).toHaveAttribute('title', /Select the 1 station on this line/);
+    await btn.click();
+    await page.getByRole('button', { name: 'Edit layout' }).click();
+
+    const before = {
+      A: await stopScreenCenter(page, 'A', 'L1'),
+      B: await stopScreenCenter(page, 'B', 'L1'),
+    };
+
+    // Drag A's stop one cell south in A's orthogonal frame. The broadcast
+    // delta into B's frame is the DIAGONAL half-step (√2/2, √2/2); with
+    // B's 45° station rotation it must come out world-south too.
+    await dragStopByLocalDelta(
+      page,
+      '[data-cell-row="0"][data-cell-col="0"][data-cell-kind="stop"][data-line-id="L1"]',
+      1,
+      0,
+    );
+
+    const after = {
+      A: await stopScreenCenter(page, 'A', 'L1'),
+      B: await stopScreenCenter(page, 'B', 'L1'),
+    };
+    const dA = { x: after.A.x - before.A.x, y: after.A.y - before.A.y };
+    const dB = { x: after.B.x - before.B.x, y: after.B.y - before.B.y };
+
+    expect(dA.y).toBeGreaterThan(0);
+    // World sync across the parity flip, to sub-pixel tolerance (the
+    // broadcast path multiplies by √2/2 twice).
+    expect(dB.x).toBeCloseTo(dA.x, 1);
+    expect(dB.y).toBeCloseTo(dA.y, 1);
   });
 
   test('rotate under Select Similar rotates the 180° mirror in lockstep', async ({ page }) => {
