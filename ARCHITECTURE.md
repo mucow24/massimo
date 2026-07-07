@@ -536,6 +536,17 @@ broadcast dispatched from a focused numeric field's edit arc) gates on `isHistor
 collapses its writes into the single entry. Opening a second group would `resumeHistory()`
 mid-gesture and push a stray snapshot.
 
+Groups **can overlap without nesting**, though — two independent gestures own their own
+begin/end pairs, and pointer order is pointerdown → blur, so pressing a canvas drag handle opens
+the drag's group *before* a focused field's blur-commit lands. The contract is **the newer
+gesture steals**: `beginHistoryGroup()` tracks the one open group in a module-level reference
+(never a depth counter) and seals it on the next begin, exactly as its own commit would; the
+elder's late `commit`/`cancel`/`rollback` is then a no-op via its `done` flag. This is also the
+self-heal for leaked groups (a gesture that died without ending): the next begin recovers their
+edits as a real entry, so recording can never stay paused forever. `clearHistory()` (file load)
+cancels the open group too — its snapshot belongs to the replaced document, and undo must never
+cross a file load.
+
 ### `useSelection` — ephemeral UI/mode state ([selection.ts](src/state/selection.ts))
 
 Not persisted, not undoable. Two key pieces:
@@ -1241,11 +1252,13 @@ Each is confirmed in source/tests; file pointers included.
   it; cross-gesture stranding is handled by the capture-phase self-heal instead.
 - **Line-tag drag uses window listeners + `getScreenCTM().inverse()`** — the only hook off the
   shared React-handler path.
-- **History groups don't nest** — zundo's pause/resume is a plain boolean, so a group inside a
-  group resumes recording mid-gesture. `dispatchMirrored` gates on `isHistoryGrouping()` and
-  skips its own group when one is already open (a focused field's edit arc); call sites managing
-  an explicit multi-write group use `fanOutMirrored` (group-free) inside it.
-  ([mirrorDispatch.ts](src/state/mirrorDispatch.ts), [history.ts](src/state/history.ts))
+- **History groups don't nest, but they do overlap** — zundo's pause/resume is a plain boolean.
+  Nested one-shot callers gate on `isHistoryGrouping()` and skip their own group
+  (`dispatchMirrored`; explicit multi-write groups use the group-free `fanOutMirrored` inside).
+  Overlapping independent gestures (pointerdown fires before a focused field's blur) are resolved
+  by `beginHistoryGroup` itself: the newer begin seals the still-open group and the elder's late
+  end becomes a no-op — never gate a *gesture* group, only nested one-shots.
+  ([mirrorDispatch.ts](src/state/mirrorDispatch.ts), [store.ts](src/state/store.ts))
 - **Mirror matches must be captured at gesture START for drags** — the first write to the source
   station changes its layout and dissolves the match, so a per-move `findMatchingStations` would
   find nothing after the first frame. One-shot controls (`dispatchMirrored`) compute at dispatch

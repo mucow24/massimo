@@ -1,6 +1,6 @@
 import { describe, it, expect, beforeEach } from 'vitest';
 import { beginHistoryGroup, useDoc } from '../state/store';
-import { undo, redo, historyDepth } from '../state/history';
+import { undo, redo, historyDepth, isHistoryGrouping } from '../state/history';
 import { useViewportStore } from '../state/viewportStore';
 import { useSelection } from '../state/store';
 import { DEFAULT_DOC } from '../model/transforms';
@@ -189,6 +189,102 @@ describe('beginHistoryGroup', () => {
   // activePalettes. Slider drags wrapped in useFieldHistory pause zundo
   // and then the manual push thinks nothing changed, so the entire edit
   // is silently lost from the undo stack.
+  // Overlapping (NOT nested) group lifetimes: two independent gestures can
+  // interleave because pointer order is pointerdown → blur. Pressing a canvas
+  // handle opens the drag's group BEFORE the focused field's blur-commit
+  // lands, and that late commit used to resume recording inside the still-open
+  // drag — every fan-out write then recorded its own entry plus the drag's
+  // snapshot on top (non-monotonic undo). The contract: the NEWER gesture
+  // steals — begin seals any still-open group as one entry, and the elder's
+  // late commit/cancel/rollback is a no-op.
+  describe('overlapping groups (newest gesture steals)', () => {
+    beforeEach(() => {
+      // A failing case above may strand recording paused; start each clean.
+      useDoc.temporal.getState().resume();
+    });
+
+    it('a drag group opened before a field group ends stays one entry (pointerdown-before-blur)', () => {
+      // The reported repro: dot-size spinbutton focused (field group open),
+      // press a layout-editor stop handle (drag group opens), blur lands late,
+      // then the mirror fan-out writes one station per captured target.
+      const a = useDoc.getState().addStation(0, 0);
+      const b = useDoc.getState().addStation(100, 0);
+      const c = useDoc.getState().addStation(200, 0);
+      const base = historyDepth();
+
+      const field = beginHistoryGroup(); // spinbutton focus
+      useDoc.getState().setCurveRadius(42); // field edit
+      const drag = beginHistoryGroup(); // handle pointerdown — blur not yet fired
+      field.commit(); // blur arrives late
+      useDoc.getState().moveStation(a, 0, 50); // fan-out: one write per target
+      useDoc.getState().moveStation(b, 100, 50);
+      useDoc.getState().moveStation(c, 200, 50);
+      drag.commit(); // pointerup
+
+      // Two gestures → exactly two entries, not N+2.
+      expect(historyDepth() - base).toBe(2);
+      // Undo #1 unwinds the whole drag, leaving the committed field edit…
+      undo();
+      expect(useDoc.getState().stations[a].y).toBe(0);
+      expect(useDoc.getState().stations[b].y).toBe(0);
+      expect(useDoc.getState().stations[c].y).toBe(0);
+      expect(useDoc.getState().curveRadius).toBe(42);
+      // …and undo #2 the field edit. Monotonic — never forward.
+      undo();
+      expect(useDoc.getState().curveRadius).toBe(DEFAULT_DOC.curveRadius);
+    });
+
+    it('begin while a group is open seals the elder immediately; its late end is a no-op', () => {
+      const base = historyDepth();
+      const elder = beginHistoryGroup();
+      useDoc.getState().setCurveRadius(42);
+      const newer = beginHistoryGroup();
+      // The steal itself sealed the elder's edit as one entry…
+      expect(historyDepth() - base).toBe(1);
+      expect(isHistoryGrouping()).toBe(true);
+      // …so the elder's own commit must neither push nor resume recording
+      // inside the newer group.
+      elder.commit();
+      expect(historyDepth() - base).toBe(1);
+      expect(isHistoryGrouping()).toBe(true);
+      newer.cancel();
+    });
+
+    it("a stolen group's rollback is a no-op (cannot clobber the newer gesture)", () => {
+      const id = useDoc.getState().addStation(0, 0);
+      const elder = beginHistoryGroup();
+      useDoc.getState().moveStation(id, 10, 10);
+      const newer = beginHistoryGroup();
+      useDoc.getState().moveStation(id, 99, 99);
+      // A late abort (browser pointercancel racing a new gesture) of the
+      // already-sealed elder must not restore ITS snapshot over the newer
+      // gesture's writes, nor resume recording under it.
+      elder.rollback();
+      expect(useDoc.getState().stations[id].x).toBe(99);
+      expect(isHistoryGrouping()).toBe(true);
+      // The newer gesture's own rollback unwinds to its OWN start.
+      newer.rollback();
+      expect(useDoc.getState().stations[id].x).toBe(10);
+      expect(isHistoryGrouping()).toBe(false);
+    });
+
+    it('a leaked-open group is healed by the next begin, its edits recovered as an entry', () => {
+      const base = historyDepth();
+      beginHistoryGroup(); // gesture died without commit/cancel/rollback
+      useDoc.getState().setCurveRadius(42);
+      const next = beginHistoryGroup(); // heals: seals the stranded edit
+      useDoc.getState().setCurveRadius(77);
+      next.commit();
+      // Both edits are separately undoable — the leaked one isn't baked in.
+      expect(historyDepth() - base).toBe(2);
+      undo();
+      expect(useDoc.getState().curveRadius).toBe(42);
+      undo();
+      expect(useDoc.getState().curveRadius).toBe(DEFAULT_DOC.curveRadius);
+      expect(isHistoryGrouping()).toBe(false);
+    });
+  });
+
   describe('commits a history entry for every tracked doc field', () => {
     it('labelFontSize', () => {
       const before = historyDepth();
