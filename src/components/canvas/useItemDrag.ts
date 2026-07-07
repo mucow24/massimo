@@ -2,23 +2,19 @@ import { RefObject, useRef, useState } from 'react';
 import { beginHistoryGroup, useDoc } from '../../state/store';
 import { useSnapPrefs } from '../../state/snapPrefs';
 import { useViewportStore } from '../../state/viewportStore';
-import {
-  snapDraggedStation,
-  snapLabelToGrid,
-  snapPointToGrid,
-  type SnapGuide,
-} from '../../geometry/snap';
-import { measureTextLabel } from '../../geometry/textMeasure';
-import { TEXT_LABEL_HIT_PAD } from '../../geometry/stationBoundary';
+import { SNAP_PERP_TOLERANCE, snapDraggedStation, type SnapGuide } from '../../geometry/snap';
+import { snapPolygonPoint } from '../../geometry/polygonSnap';
+import { polygonSnapAnchor } from '../../geometry/polygon';
+import type { Vec2 } from '../../geometry/vec';
 import { finishDrag, trackDragMove } from './dragGesture';
 import {
   collectGroupSiblings,
+  groupAlignExclude,
   hasGroupSiblings,
   translateSiblings,
   type GroupSiblings,
 } from './groupDrag';
-
-const BULLET_SNAP_TOLERANCE = 10;
+import { alignTargets, textLabelCorners } from './snapTargets';
 
 // Drag state for a free-floating x/y item. `kind` selects the per-frame snap;
 // everything else (lifecycle, group towing) is shared.
@@ -31,11 +27,20 @@ type ItemDragState = {
   startMY: number;
   moved: boolean;
   siblings: GroupSiblings;
+  // Co-selected stations, excluded from the bullet snap engine's candidate
+  // pool — they move with the group, so they're unstable targets. Mirrors
+  // useStationDrag's siblingIdSet.
+  siblingStationIds: ReadonlySet<string>;
+  // Label drags only: offset from the label center to its snap anchor (the
+  // topmost-then-leftmost visible rotated corner) and the "Snap to all" pool,
+  // both snapshotted at pointer-down. Zero/empty for bullets.
+  anchorOff: Vec2;
+  allTargets: Vec2[];
   history: ReturnType<typeof beginHistoryGroup>;
 };
 
 export interface ItemDragApi {
-  bulletSnapGuides: SnapGuide[];
+  itemSnapGuides: SnapGuide[];
   onBulletPointerDown: (id: string, e: React.PointerEvent) => void;
   onLabelPointerDown: (id: string, e: React.PointerEvent) => void;
   onPointerMove: (e: React.PointerEvent) => void;
@@ -46,10 +51,12 @@ export interface ItemDragApi {
 /**
  * Owns drag state for the free-floating items — route bullets and text labels —
  * with a single gesture state machine for both. They differ only in their
- * per-frame snap: a bullet reuses the station snap engine in bullet mode (with
- * a grid fallback); a label grid-snaps its visible upper-left corner. The drag
- * lifecycle (threshold, capture, click suppression, one history entry) and the
- * multi-selection sibling towing are shared via dragGesture + groupDrag.
+ * per-frame snap: a bound bullet reuses the station snap engine in bullet mode
+ * (grid fallback when unbound); a label snaps its topmost-then-leftmost visible
+ * corner through the point snapper against the shared {@link alignTargets}
+ * pool. The drag lifecycle (threshold, capture, click suppression, one history
+ * entry) and the multi-selection sibling towing are shared via dragGesture +
+ * groupDrag.
  */
 export function useItemDrag(
   svgRef: RefObject<SVGSVGElement | null>,
@@ -66,7 +73,7 @@ export function useItemDrag(
   const gridSize = useViewportStore((s) => s.gridSize);
 
   const dragRef = useRef<ItemDragState | null>(null);
-  const [bulletSnapGuides, setBulletSnapGuides] = useState<SnapGuide[]>([]);
+  const [itemSnapGuides, setItemSnapGuides] = useState<SnapGuide[]>([]);
 
   const begin = (
     kind: 'bullet' | 'label',
@@ -85,6 +92,18 @@ export function useItemDrag(
     const item = kind === 'bullet' ? routeBullets[id] : textLabels[id];
     if (item?.locked) return;
     e.stopPropagation();
+    // Tow the rest of the multi-selection (every type) by the same delta.
+    const siblings = collectGroupSiblings(kind, id);
+    // Point-snapper geometry, fixed for the whole gesture: the snap anchor's
+    // offset from the item position (a label's topmost-then-leftmost visible
+    // corner; a bullet is its own anchor) and the target pool (everything in
+    // it is stationary; the item and co-selected siblings are excluded).
+    let anchorOff: Vec2 = { x: 0, y: 0 };
+    if (kind === 'label') {
+      const anchor = polygonSnapAnchor(textLabelCorners(textLabels[id]));
+      anchorOff = { x: anchor.x - wx, y: anchor.y - wy };
+    }
+    const allTargets = alignTargets(useDoc.getState(), groupAlignExclude(kind, id, siblings));
     dragRef.current = {
       kind,
       id,
@@ -93,8 +112,10 @@ export function useItemDrag(
       startMX: e.clientX,
       startMY: e.clientY,
       moved: false,
-      // Tow the rest of the multi-selection (every type) by the same delta.
-      siblings: collectGroupSiblings(kind, id),
+      siblings,
+      siblingStationIds: new Set(siblings.stations.map((s) => s.id)),
+      anchorOff,
+      allTargets,
       history: beginHistoryGroup(),
     };
   };
@@ -123,56 +144,64 @@ export function useItemDrag(
     if (ds.kind === 'bullet') {
       const cur = routeBullets[ds.id];
       const lineId = cur?.lineId ?? null;
-      // Group-drag suppresses the bullet-line snap: siblings are moving, so the
-      // snap targets become unstable and a half-snapped grab drags the whole
-      // group off-axis.
-      if (lineId && !e.shiftKey && !inGroupDrag) {
-        // Reuse the station snap engine in bullet mode — it already handles
-        // per-stop axis alignment, two-axis corner snap, and the "third in-line
-        // station" opposite-direction guide.
+      if (e.shiftKey) {
+        if (itemSnapGuides.length > 0) setItemSnapGuides([]);
+      } else if (lineId) {
+        // Bound bullet: reuse the station snap engine in bullet mode — it
+        // already handles per-stop axis alignment, two-axis corner snap, and
+        // the "third in-line station" opposite-direction guide. In a group
+        // drag, co-selected stations are excluded (they move with the grab);
+        // stationary stations stay valid targets.
         const snap = snapDraggedStation({
           proposedX: nx,
           proposedY: ny,
           stations,
           lines,
-          tolerance: BULLET_SNAP_TOLERANCE / zoom,
+          tolerance: SNAP_PERP_TOLERANCE / zoom,
           bulletLineId: lineId,
+          excludedIds: ds.siblingStationIds.size > 0 ? ds.siblingStationIds : undefined,
           modes: snapModes,
           gridInterval: gridSize,
         });
         nx = snap.x;
         ny = snap.y;
-        setBulletSnapGuides(snap.guides);
+        setItemSnapGuides(snap.guides);
       } else {
-        if (bulletSnapGuides.length > 0) setBulletSnapGuides([]);
-        // Grid-snap fallback when the snap engine wasn't called (unbound bullet
-        // or group drag). Shift still bypasses.
-        if (snapModes.grid !== 'off' && !e.shiftKey) {
-          const g = snapPointToGrid(nx, ny, snapModes.grid, gridSize);
-          nx = g.x;
-          ny = g.y;
-        }
+        // Unbound bullet: no line to align along, but the center still snaps
+        // through the point snapper — "Snap to all" + grid — like every other
+        // decoration item.
+        const snap = snapPolygonPoint({
+          proposed: { x: nx, y: ny },
+          lineTargets: [],
+          allTargets: ds.allTargets,
+          modes: snapModes,
+          tolerance: SNAP_PERP_TOLERANCE / zoom,
+          gridInterval: gridSize,
+        });
+        nx = snap.x;
+        ny = snap.y;
+        setItemSnapGuides(snap.guides);
       }
       moveRouteBullet(ds.id, nx, ny);
     } else {
-      // Labels don't go through the snap engine (no axis/orientation), but grid
-      // snap still applies. Register the label by its visible upper-left bbox
-      // corner (incl. hit padding) so the edge the user sees lands on a grid line.
-      if (snapModes.grid !== 'off' && !e.shiftKey) {
-        const cur = textLabels[ds.id];
-        if (cur) {
-          const m = measureTextLabel(cur);
-          const snapped = snapLabelToGrid(
-            { x: nx, y: ny },
-            m.width + 2 * TEXT_LABEL_HIT_PAD,
-            m.height + 2 * TEXT_LABEL_HIT_PAD,
-            snapModes.grid,
-            gridSize,
-          );
-          nx = snapped.x;
-          ny = snapped.y;
-        }
+      // Labels snap like polygons/images: the topmost-then-leftmost visible
+      // (rotated, unpadded) corner aligns against the shared pool, with grid
+      // as the hard constraint. Shift bypasses.
+      let guides: SnapGuide[] = [];
+      if (!e.shiftKey) {
+        const snap = snapPolygonPoint({
+          proposed: { x: nx + ds.anchorOff.x, y: ny + ds.anchorOff.y },
+          lineTargets: [],
+          allTargets: ds.allTargets,
+          modes: snapModes,
+          tolerance: SNAP_PERP_TOLERANCE / zoom,
+          gridInterval: gridSize,
+        });
+        nx = snap.x - ds.anchorOff.x;
+        ny = snap.y - ds.anchorOff.y;
+        guides = snap.guides;
       }
+      setItemSnapGuides(guides);
       moveTextLabel(ds.id, nx, ny);
     }
 
@@ -185,7 +214,7 @@ export function useItemDrag(
     const ds = dragRef.current;
     if (!ds) return;
     dragRef.current = null;
-    setBulletSnapGuides([]);
+    setItemSnapGuides([]);
     finishDrag(ds, e, svgRef);
   };
 
@@ -196,12 +225,12 @@ export function useItemDrag(
     const ds = dragRef.current;
     if (!ds) return;
     dragRef.current = null;
-    setBulletSnapGuides([]);
+    setItemSnapGuides([]);
     ds.history.rollback();
   };
 
   return {
-    bulletSnapGuides,
+    itemSnapGuides,
     onBulletPointerDown,
     onLabelPointerDown,
     onPointerMove,

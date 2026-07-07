@@ -4,7 +4,7 @@ import { dragState, exitLineEditorOnItemClick, useDoc, useSelection } from '../s
 import { useSnapPrefs } from '../state/snapPrefs';
 import { useViewportStore } from '../state/viewportStore';
 import { useThemeColors } from '../state/theme';
-import { maybeSnapToGrid } from '../geometry/snap';
+import type { SnapGuide } from '../geometry/snap';
 import {
   assignLinePriorities,
   buildBandGeometry,
@@ -52,6 +52,7 @@ import { LayerNumberLabels } from './canvas/LayerNumberLabels';
 import { StationPlacingPreview } from './canvas/StationPlacingPreview';
 import { PolygonPlacingPreview } from './canvas/PolygonPlacingPreview';
 import { SvgImagePlacingPreview } from './canvas/SvgImagePlacingPreview';
+import { RouteBulletPlacingPreview } from './canvas/RouteBulletPlacingPreview';
 import { HighlightedLineLayer } from './canvas/HighlightedLineLayer';
 import { LabelPlacingPreview } from './canvas/LabelPlacingPreview';
 import { RouteBulletView } from './RouteBulletView';
@@ -59,14 +60,16 @@ import { LabelView } from './LabelView';
 import { PolygonView } from './PolygonView';
 import { SvgImageView } from './SvgImageView';
 import { ItemPopovers } from './canvas/ItemPopovers';
-import { usePlacementDispatch } from './canvas/usePlacementDispatch';
+import { snapPlacement, usePlacementDispatch } from './canvas/usePlacementDispatch';
 import { TransferLayer, transferEndWorld } from './TransferLayer';
 import {
   anchorFromArcLen,
   closestParamOnOffsetPath,
+  LINE_TAG_SNAP_TOLERANCE,
   lineTraversesForwardCanon,
   offsetPathLength,
   sampleOffsetPath,
+  snapNeighborTag,
 } from '../geometry/lineTagGeometry';
 import type { LineId } from '../model/types';
 import { findMatchingStations } from '../model/matching';
@@ -320,6 +323,9 @@ export function MapCanvas() {
   // from the anchor dot to the cursor, and the station-placing-mode ghost
   // that follows the cursor before each click.
   const [cursorWorld, setCursorWorld] = useState<{ x: number; y: number } | null>(null);
+  // Guides emitted by the placement-preview snap (same snapPlacement call the
+  // drop makes), rendered through the shared SnapGuides overlay.
+  const [placementGuides, setPlacementGuides] = useState<SnapGuide[]>([]);
 
   // Hovered stripe in layering mode: (bandKey, lineId) of the band stripe the
   // pointer is currently over. Drives the lightened-color preview + the small
@@ -371,18 +377,28 @@ export function MapCanvas() {
     const wantsCursorTrack =
       (mode.kind === 'creating-transfer' && mode.anchor !== null) ||
       mode.kind === 'placing-station' ||
+      mode.kind === 'creating-route-bullet' ||
       mode.kind === 'placing-label' ||
       mode.kind === 'creating-polygon' ||
       mode.kind === 'placing-svg';
     if (wantsCursorTrack) {
       const raw = view.screenToWorld(e.clientX, e.clientY);
-      // Grid-snap the placement preview for new stations so the user sees
-      // exactly where it'll land. Other placement modes keep the raw
-      // cursor — grid snap is scoped to stations for now.
-      const w = mode.kind === 'placing-station' ? maybeSnapToGrid(raw, snapModes, gridSize) : raw;
-      setCursorWorld(w);
-    } else if (cursorWorld) {
-      setCursorWorld(null);
+      if (mode.kind === 'creating-transfer') {
+        // Transfer rubber-band tracks the raw cursor; endpoints are picked by
+        // clicking dots, not by position snapping.
+        setCursorWorld(raw);
+        if (placementGuides.length > 0) setPlacementGuides([]);
+      } else {
+        // Snap the placement preview exactly like the drop will (same
+        // snapPlacement call), so the ghost always shows where — and why —
+        // the item will land. Shift bypasses.
+        const snap = snapPlacement(mode, raw, e.shiftKey, snapModes, gridSize, view.viewport.zoom);
+        setCursorWorld({ x: snap.x, y: snap.y });
+        setPlacementGuides(snap.guides);
+      }
+    } else {
+      if (cursorWorld) setCursorWorld(null);
+      if (placementGuides.length > 0) setPlacementGuides([]);
     }
     itemDrag.onPointerMove(e);
     polyDrag.onPointerMove(e);
@@ -618,52 +634,75 @@ export function MapCanvas() {
 
   // Hover/click handlers passed to SegmentBand when in add-line-tag mode.
   // Each band's renderer captures its own spec via closure.
-  const makeBandHandlers = (spec: SegmentBandSpec) => ({
-    onLineHover: (lineId: LineId, e: React.PointerEvent) => {
-      const line = lines[lineId];
-      if (!line) return;
-      // Find this stripe's baked offset within the band.
-      const k = spec.lines.findIndex((l) => l.id === lineId);
-      const offset = spec.stripeOffsets[k];
-      const world = view.screenToWorld(e.clientX, e.clientY);
-      const closest = closestParamOnOffsetPath(spec.centerline, spec.radius, offset, world);
-      const sample = sampleOffsetPath(spec.centerline, spec.radius, offset, closest.t);
-      // Determine canon vs line-traversal: the band's pairKey is canonical.
-      // For this band's stations, fromCanon < toCanon. The line traverses
-      // forward-canon iff line.stations contains (fromCanon, toCanon) as a
-      // consecutive pair.
-      const [fromCanon, toCanon] = spec.pairKey.split('|');
-      const forward = lineTraversesForwardCanon(line, fromCanon, toCanon);
-      selection.setLineTagHoverPreview({
-        lineId,
-        service: line.service,
-        fromStationId: fromCanon,
-        toStationId: toCanon,
-        t: closest.t,
-        p: sample.p,
-        tangent: sample.tangent,
-        lineForwardMatchesCanon: forward,
-      });
-    },
-    onLineLeave: () => {
-      selection.setLineTagHoverPreview(null);
-    },
-    onLineClick: (lineId: LineId, e: React.MouseEvent) => {
-      e.stopPropagation();
-      const line = lines[lineId];
-      if (!line) return;
-      const k = spec.lines.findIndex((l) => l.id === lineId);
-      const offset = spec.stripeOffsets[k];
-      const world = view.screenToWorld(e.clientX, e.clientY);
-      const closest = closestParamOnOffsetPath(spec.centerline, spec.radius, offset, world);
-      const [fromCanon, toCanon] = spec.pairKey.split('|');
-      const stripeTotal = offsetPathLength(spec.centerline, spec.radius, offset);
-      // Anchor to whichever endpoint is nearer at insertion time.
-      const { anchorEnd, distance } = anchorFromArcLen(closest.t * stripeTotal, stripeTotal);
-      addLineTag(lineId, fromCanon, toCanon, anchorEnd, distance, 0);
-      // Stay in mode (matches + Station behavior).
-    },
-  });
+  const makeBandHandlers = (spec: SegmentBandSpec) => {
+    // Placement parity with the tag drag: the hover ghost and the click both
+    // apply the same gated neighbor snap, so the preview always matches the
+    // dropped tag. Gated on "Snap to all"; Shift bypasses.
+    const snapTagT = (t: number, shiftKey: boolean): number => {
+      if (snapModes.all === 'off' || shiftKey) return t;
+      return snapNeighborTag({
+        candCanonT: t,
+        candPairKey: spec.pairKey,
+        selfTagId: '', // a tag being placed has no id yet
+        bandCenterline: spec.centerline,
+        curveRadius: spec.radius,
+        lineStripeOffset: (lid) => {
+          const idx = spec.lines.findIndex((l) => l.id === lid);
+          return idx < 0 ? null : spec.stripeOffsets[idx];
+        },
+        lineTags: useDoc.getState().lineTags,
+        tol: LINE_TAG_SNAP_TOLERANCE / view.viewport.zoom,
+      }).canonT;
+    };
+    return {
+      onLineHover: (lineId: LineId, e: React.PointerEvent) => {
+        const line = lines[lineId];
+        if (!line) return;
+        // Find this stripe's baked offset within the band.
+        const k = spec.lines.findIndex((l) => l.id === lineId);
+        const offset = spec.stripeOffsets[k];
+        const world = view.screenToWorld(e.clientX, e.clientY);
+        const closest = closestParamOnOffsetPath(spec.centerline, spec.radius, offset, world);
+        const t = snapTagT(closest.t, e.shiftKey);
+        const sample = sampleOffsetPath(spec.centerline, spec.radius, offset, t);
+        // Determine canon vs line-traversal: the band's pairKey is canonical.
+        // For this band's stations, fromCanon < toCanon. The line traverses
+        // forward-canon iff line.stations contains (fromCanon, toCanon) as a
+        // consecutive pair.
+        const [fromCanon, toCanon] = spec.pairKey.split('|');
+        const forward = lineTraversesForwardCanon(line, fromCanon, toCanon);
+        selection.setLineTagHoverPreview({
+          lineId,
+          service: line.service,
+          fromStationId: fromCanon,
+          toStationId: toCanon,
+          t,
+          p: sample.p,
+          tangent: sample.tangent,
+          lineForwardMatchesCanon: forward,
+        });
+      },
+      onLineLeave: () => {
+        selection.setLineTagHoverPreview(null);
+      },
+      onLineClick: (lineId: LineId, e: React.MouseEvent) => {
+        e.stopPropagation();
+        const line = lines[lineId];
+        if (!line) return;
+        const k = spec.lines.findIndex((l) => l.id === lineId);
+        const offset = spec.stripeOffsets[k];
+        const world = view.screenToWorld(e.clientX, e.clientY);
+        const closest = closestParamOnOffsetPath(spec.centerline, spec.radius, offset, world);
+        const t = snapTagT(closest.t, e.shiftKey);
+        const [fromCanon, toCanon] = spec.pairKey.split('|');
+        const stripeTotal = offsetPathLength(spec.centerline, spec.radius, offset);
+        // Anchor to whichever endpoint is nearer at insertion time.
+        const { anchorEnd, distance } = anchorFromArcLen(t * stripeTotal, stripeTotal);
+        addLineTag(lineId, fromCanon, toCanon, anchorEnd, distance, 0);
+        // Stay in mode (matches + Station behavior).
+      },
+    };
+  };
 
   // Hover/click handlers for layering mode. Hovering a stripe records the
   // (band, line) pair so the renderer can draw the layer-number overlay +
@@ -1015,6 +1054,13 @@ export function MapCanvas() {
             world={selection.uiMode.kind === 'placing-svg' ? cursorWorld : null}
             image={selection.uiMode.kind === 'placing-svg' ? selection.uiMode.image : null}
           />
+          {/* Route-bullet-placing ghost: the default bullet following the
+              cursor, matching the badge the click will drop. */}
+          <RouteBulletPlacingPreview
+            world={selection.uiMode.kind === 'creating-route-bullet' ? cursorWorld : null}
+            lines={lines}
+            lineOrder={lineOrder}
+          />
         </g>
 
         {/* Route bullets: rendered before the dim so they fade with the
@@ -1316,9 +1362,10 @@ export function MapCanvas() {
           <SnapGuides
             guides={[
               ...drag.snapGuides,
-              ...itemDrag.bulletSnapGuides,
+              ...itemDrag.itemSnapGuides,
               ...polyDrag.polygonSnapGuides,
               ...svgDrag.svgImageSnapGuides,
+              ...placementGuides,
             ]}
             zoom={view.viewport.zoom}
           />

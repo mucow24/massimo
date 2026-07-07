@@ -11,7 +11,6 @@ import {
   ViewVerticalIcon,
 } from '@radix-ui/react-icons';
 import { useSnapPrefs } from '../state/snapPrefs';
-import { useSelection } from '../state/store';
 import type { SnapModes } from '../geometry/snap';
 
 /** One state in a toggle's cycle. Index 0 is always the "off" state. */
@@ -31,9 +30,6 @@ interface ToggleSpec {
   states: SnapState[];
   /** When true, this toggle is disabled unless `modes.line` is also on. */
   requiresLine?: boolean;
-  /** When true, this toggle applies to text labels too — so it stays
-   *  enabled while a label is selected. Defaults to false. */
-  appliesToLabels?: boolean;
 }
 
 /** A plain on/off toggle modeled as a two-state cycle with one icon. */
@@ -54,14 +50,14 @@ const TOGGLES: ToggleSpec[] = [
   {
     key: 'equidistant',
     label: 'Snap to equidistant',
-    hint: 'Snap to the midpoint between same-line neighbors',
+    hint: 'Snap to the midpoint between same-line neighbors (stations only)',
     states: boolStates(SpaceEvenlyHorizontallyIcon),
     requiresLine: true,
   },
   {
     key: 'tens',
     label: "Snap to 10's",
-    hint: 'Snap to multiples of 10 from the previous neighbor',
+    hint: 'Snap to multiples of 10 from the previous neighbor (stations only)',
     states: boolStates(RulerHorizontalIcon),
     requiresLine: true,
   },
@@ -87,21 +83,16 @@ const TOGGLES: ToggleSpec[] = [
       { value: 'vertical', Icon: ViewVerticalIcon, name: 'Vertical lines' },
       { value: 'both', Icon: GridIcon, name: 'Both' },
     ],
-    appliesToLabels: true,
   },
 ];
 
 export function SnapToggleBar() {
   const modes = useSnapPrefs((s) => s.modes);
   const setMode = useSnapPrefs((s) => s.setMode);
-  // Text labels are free-floating annotations that don't snap, so the snap
-  // toggles are meaningless while any label is selected.
-  const labelSelected = useSelection((s) => s.selectedLabelIds.length > 0);
   return (
     <div className="tool-group" role="group" aria-label="Snap modes">
-      {TOGGLES.map(({ key, label, hint, states, requiresLine, appliesToLabels }) => {
-        const labelGated = labelSelected && !appliesToLabels;
-        const disabled = labelGated || (!!requiresLine && !modes.line);
+      {TOGGLES.map(({ key, label, hint, states, requiresLine }) => {
+        const disabled = !!requiresLine && !modes.line;
         const value = modes[key];
         const idx = Math.max(
           0,
@@ -112,13 +103,11 @@ export function SnapToggleBar() {
         // aria-pressed; the exact sub-mode lives in title/data-snap-state.
         const active = idx > 0;
         const { Icon } = state;
-        const title = labelGated
-          ? `${label} — not applicable to labels`
-          : disabled
-            ? `${label} — enable Snap to line first`
-            : active
-              ? `${label}: ${state.name} — ${hint} · click to cycle`
-              : `${label} — ${hint} · click to cycle`;
+        const title = disabled
+          ? `${label} — enable Snap to line first`
+          : active
+            ? `${label}: ${state.name} — ${hint} · click to cycle`
+            : `${label} — ${hint} · click to cycle`;
         return (
           <button
             key={key}

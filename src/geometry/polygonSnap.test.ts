@@ -167,6 +167,32 @@ describe('snapPolygonPoint', () => {
     expect(r.guides.length).toBe(2);
   });
 
+  describe('guide distance labels', () => {
+    it('a single-axis alignment guide carries the rounded distance label', () => {
+      const r = snapPolygonPoint({
+        proposed: { x: 102, y: 50 },
+        lineTargets: [{ x: 100, y: 0 }],
+        allTargets: [],
+        modes: modes({ line: true, all: 'off', grid: 'off' }),
+      });
+      // Snapped point (100, 50) is 50 from the target (100, 0).
+      expect(r.guides[0].label).toBe('50');
+    });
+
+    it('corner-snap guides each carry their own distance label', () => {
+      const r = snapPolygonPoint({
+        proposed: { x: 101, y: 199 },
+        lineTargets: [
+          { x: 100, y: 0 }, // shares X → guide of length 200
+          { x: 0, y: 200 }, // shares Y → guide of length 100
+        ],
+        allTargets: [],
+        modes: modes({ line: true, all: 'off', grid: 'off' }),
+      });
+      expect(r.guides.map((g) => g.label).sort()).toEqual(['100', '200']);
+    });
+  });
+
   it('out of tolerance leaves the point unchanged with no guides', () => {
     // (500, 123) is far from any axis through the two targets (incl. diagonals).
     const r = snapPolygonPoint({
@@ -177,6 +203,57 @@ describe('snapPolygonPoint', () => {
     });
     expect(r).toMatchObject({ x: 500, y: 123 });
     expect(r.guides).toHaveLength(0);
+  });
+
+  describe("constrain: 'x' | 'y' (single-DOF consumers like edge resizes)", () => {
+    it("constrain 'x' ignores a horizontal-only alignment (no snap, no guide)", () => {
+      const r = snapPolygonPoint({
+        proposed: { x: 73, y: 3 },
+        lineTargets: [],
+        allTargets: [{ x: 999, y: 5 }], // horizontal axis only — perpendicular to X
+        modes: modes({ all: 'all', grid: 'off' }),
+        constrain: 'x',
+      });
+      expect(r).toMatchObject({ x: 73, y: 3 });
+      expect(r.guides).toHaveLength(0);
+    });
+
+    it("constrain 'x' still locks X to a vertical alignment, with a guide", () => {
+      const r = snapPolygonPoint({
+        proposed: { x: 73, y: 3 },
+        lineTargets: [],
+        allTargets: [{ x: 70, y: 999 }],
+        modes: modes({ all: 'all', grid: 'off' }),
+        constrain: 'x',
+      });
+      expect(r.x).toBeCloseTo(70, 6);
+      expect(r.y).toBeCloseTo(3, 6);
+      expect(r.guides).toHaveLength(1);
+    });
+
+    it("constrain 'x' narrows grid 'both' to the X axis only", () => {
+      const r = snapPolygonPoint({
+        proposed: { x: 73, y: 3 },
+        lineTargets: [],
+        allTargets: [],
+        modes: modes({ grid: 'both' }),
+        constrain: 'x',
+      });
+      expect(r).toMatchObject({ x: 70, y: 3 });
+    });
+
+    it("constrain 'y' mirrors: horizontal alignments and Y grid only", () => {
+      const r = snapPolygonPoint({
+        proposed: { x: 73, y: 3 },
+        lineTargets: [],
+        allTargets: [{ x: 999, y: 5 }],
+        modes: modes({ all: 'all', grid: 'off' }),
+        constrain: 'y',
+      });
+      expect(r.x).toBeCloseTo(73, 6);
+      expect(r.y).toBeCloseTo(5, 6);
+      expect(r.guides).toHaveLength(1);
+    });
   });
 
   describe('grid as a hard constraint', () => {

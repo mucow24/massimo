@@ -81,29 +81,6 @@ export function maybeSnapToGrid<T extends { x: number; y: number } | null>(
 }
 
 /**
- * Grid-snap a text label registered by its upper-left bbox corner.
- *
- * Labels are positioned by their bbox center (label.x, label.y) — but for
- * grid snapping the natural reference point is the visual upper-left, so
- * each label's top edge lands on a grid row and its left edge on a grid
- * column. Returns the new center such that center − (width/2, height/2)
- * is grid-aligned. Rotation is ignored (the upper-left is taken in the
- * label's unrotated local frame).
- */
-export function snapLabelToGrid(
-  center: { x: number; y: number },
-  width: number,
-  height: number,
-  mode: GridSnap = 'both',
-  gridInterval: number = GRID_INTERVAL,
-): { x: number; y: number } {
-  const halfW = width / 2;
-  const halfH = height / 2;
-  const ul = snapPointToGrid(center.x - halfW, center.y - halfH, mode, gridInterval);
-  return { x: ul.x + halfW, y: ul.y + halfH };
-}
-
-/**
  * Directional state for "Snap to all". The button cycles through these:
  * off → horizontal-only → vertical-only → diagonal-only → all. Each value
  * selects which world axes the alignment may engage (see {@link axesForAllSnap}).
@@ -513,6 +490,7 @@ export function snapDraggedStation(input: SnapInput): SnapResult {
       tolerance,
       bulletLineId,
       redistributeAnchor,
+      excludedIds: excluded,
     });
     if (refined) {
       sx = refined.sx;
@@ -831,7 +809,8 @@ export function bulletAlignmentPairs(target: Station, lineId: LineId): Alignment
 
 /**
  * Snap-to-all alignment pairs. For every target stop × every dragged stop
- * (or anchor, if dragged has no stops) × the four world axes (horizontal,
+ * (either side falls back to its anchor when it has no stops) × the four
+ * world axes (horizontal,
  * vertical, and the two 45° diagonals), emit a candidate. Line membership,
  * adjacency, and stop orientation are all ignored — the user just wants to
  * snap when their stop visually lines up with anyone else's stop on a 4-axis
@@ -875,16 +854,20 @@ export function allAxesPairs(
   target: Station,
   mode: AllSnap = 'all',
 ): AlignmentPair[] {
-  if (target.stops.length === 0) return [];
   const axes = axesForAllSnap(mode);
   if (axes.length === 0) return [];
+  // Either side without stops falls back to its anchor, so stopless stations
+  // participate both as the dragged station and as a target.
   const dOffs: Vec2[] =
     draggedStops.length === 0
       ? [{ x: 0, y: 0 }]
       : draggedStops.map((c) => rotateBy(stopCenterAt(c.row, c.col), draggedRotation));
+  const tOffs: Vec2[] =
+    target.stops.length === 0
+      ? [{ x: 0, y: 0 }]
+      : target.stops.map((c) => rotateBy(stopCenterAt(c.row, c.col), target.rotation));
   const out: AlignmentPair[] = [];
-  for (const tCell of target.stops) {
-    const tOff = rotateBy(stopCenterAt(tCell.row, tCell.col), target.rotation);
+  for (const tOff of tOffs) {
     for (const dOff of dOffs) {
       for (const axis of axes) out.push({ dOff, tOff, axis });
     }
@@ -947,6 +930,10 @@ function refineAlongAxis(args: {
    *  the user's intent by pulling the terminus onto the local A↔B cadence
    *  instead of toward the chosen anchor. */
   redistributeAnchor?: StationId;
+  /** Group-drag: stations moving with the grab. Already filtered out of the
+   *  alignment-candidate pool by the caller; the refinement must skip them
+   *  as cadence anchors too, or the snap chases moving targets. */
+  excludedIds?: ReadonlySet<StationId>;
 }): { sx: number; sy: number; sourceGuide?: { from: Vec2; to: Vec2 } } | null {
   const {
     sx,
@@ -962,8 +949,13 @@ function refineAlongAxis(args: {
     tolerance,
     bulletLineId,
     redistributeAnchor,
+    excludedIds,
   } = args;
   if (!modes.equidistant && !modes.tens) return null;
+
+  // A station moving with the group can't anchor a cadence.
+  const anchorStationFor = (id: StationId | null | undefined): Station | null =>
+    id && !excludedIds?.has(id) ? (stationsRec[id] ?? null) : null;
 
   const dStopX = sx + dOff.x;
   const dStopY = sy + dOff.y;
@@ -995,7 +987,7 @@ function refineAlongAxis(args: {
     if (!modes.tens) return null;
     const line = lines[bulletLineId];
     if (!line || line.stations.length === 0) return null;
-    const anchorStation = stationsRec[line.stations[0]];
+    const anchorStation = anchorStationFor(line.stations[0]);
     if (!anchorStation) return null;
     const anchor = stopWorldFor(anchorStation, bulletLineId);
     if (!anchor?.axisOk) return null;
@@ -1018,8 +1010,8 @@ function refineAlongAxis(args: {
 
     const prevId = dIdx > 0 ? line.stations[dIdx - 1] : null;
     const nextId = dIdx < line.stations.length - 1 ? line.stations[dIdx + 1] : null;
-    const prev = prevId ? stationsRec[prevId] : null;
-    const next = nextId ? stationsRec[nextId] : null;
+    const prev = anchorStationFor(prevId);
+    const next = anchorStationFor(nextId);
     const prevStop = prev ? stopWorldFor(prev, line.id) : null;
     const nextStop = next ? stopWorldFor(next, line.id) : null;
 
@@ -1048,7 +1040,7 @@ function refineAlongAxis(args: {
         // along-axis length so terminus↔prev matches prev↔prev-prev.
         // Disabled during Ctrl-drag so we don't override the redistribute
         // anchor with the local A↔B cadence.
-        const prevPrev = stationsRec[line.stations[dIdx - 2]];
+        const prevPrev = anchorStationFor(line.stations[dIdx - 2]);
         const prevPrevStop = prevPrev ? stopWorldFor(prevPrev, line.id) : null;
         if (prevPrevStop?.axisOk) {
           const ref =
@@ -1065,7 +1057,7 @@ function refineAlongAxis(args: {
         dIdx + 2 < line.stations.length
       ) {
         // Start terminus: mirror of the end case. Same Ctrl-drag gate.
-        const nextNext = stationsRec[line.stations[dIdx + 2]];
+        const nextNext = anchorStationFor(line.stations[dIdx + 2]);
         const nextNextStop = nextNext ? stopWorldFor(nextNext, line.id) : null;
         if (nextNextStop?.axisOk) {
           const ref =

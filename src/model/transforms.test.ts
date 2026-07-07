@@ -3091,6 +3091,20 @@ describe('redistributeBetween', () => {
     expect(next.stations.m3).toMatchObject({ x: 30, y: 0 });
   });
 
+  it('grid-on arc-bends pulls a slightly-off-grid station ONTO the grid (no eps skip)', () => {
+    // m sits 0.5 off its grid-snapped redistribute target (50, 0). The
+    // sub-pixel drift-skip must not apply when grid is on — the snapped
+    // proposal is exact, so the station lands on the grid.
+    const doc = doc5([
+      ['a', 0, 0],
+      ['m', 49.5, 0],
+      ['b', 100, 0],
+    ]);
+    const next = T.redistributeBetween(doc, 'a', 'b', 'arc-bends', 'both');
+    expect(next.stations.m.x).toBe(50);
+    expect(next.stations.m.y).toBe(0);
+  });
+
   it('anchors a station at a real (>5°) bend in arc-bends mode — identity return', () => {
     const doc = doc5([
       ['a', 0, 0],

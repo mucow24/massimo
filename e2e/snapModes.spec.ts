@@ -33,7 +33,7 @@ test.beforeEach(async ({ page }) => {
 });
 
 test.describe('Snap mode toolbar', () => {
-  test('renders four toggles, with Line active by default', async ({ page }) => {
+  test('renders the snap toggles, with Line active by default', async ({ page }) => {
     await seedAndOpen(page, verticalLine);
     await expect(page.getByRole('button', { name: 'Snap to line' })).toHaveAttribute(
       'aria-pressed',

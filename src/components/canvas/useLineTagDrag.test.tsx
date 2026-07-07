@@ -1,12 +1,17 @@
 import { describe, it, expect, beforeEach, afterEach } from 'vitest';
-import { renderHook } from '@testing-library/react';
+import { act, renderHook } from '@testing-library/react';
 import { useLineTagDrag } from './useLineTagDrag';
 import { useDoc, dragState } from '../../state/store';
 import { historyDepth } from '../../state/history';
+import { useSnapPrefs } from '../../state/snapPrefs';
 import { DEFAULT_DOC } from '../../model/transforms';
+import { DEFAULT_SNAP_MODES, type SnapModes } from '../../geometry/snap';
 import { makeLine, stationWithStop } from '../../test/fixtures';
 import { fakeSvgRef, pointerEvent, dispatchWindowPointer } from '../../test/interaction';
 import type { LineId, StationId } from '../../model/types';
+
+const setModes = (partial: Partial<SnapModes>) =>
+  useSnapPrefs.setState({ modes: { ...DEFAULT_SNAP_MODES, ...partial } });
 
 // A horizontal A—B segment on line L1, with one text tag anchored 20 units from
 // the 'from' (A) end. The fake svg uses an identity CTM, so a pointer at screen
@@ -35,6 +40,7 @@ beforeEach(() => {
   });
   useDoc.temporal.getState().clear();
   dragState.suppressClick = false;
+  setModes({});
 });
 
 // The hook wires move/up onto window and only unregisters on pointerup. End any
@@ -44,11 +50,30 @@ afterEach(() => {
   dispatchWindowPointer('pointerup', { clientX: 0, clientY: 0 });
 });
 
-function render() {
+function render(zoom = 1) {
   const { ref, svg } = fakeSvgRef();
-  const { result } = renderHook(() => useLineTagDrag(ref));
+  const { result } = renderHook(() => useLineTagDrag(ref, zoom));
   return { result, svg };
 }
+
+// A second tag on the same corridor, `distance` units from the A end — the
+// neighbor the dragged tag may snap to.
+const addNeighborAt = (distance: number) =>
+  useDoc.setState({
+    ...useDoc.getState(),
+    lineTags: {
+      ...useDoc.getState().lineTags,
+      N: {
+        id: 'N',
+        lineId: 'L1' as LineId,
+        fromStationId: 'A' as StationId,
+        toStationId: 'B' as StationId,
+        anchorEnd: 'from',
+        distance,
+        orientation: 0,
+      },
+    },
+  });
 
 describe('useLineTagDrag', () => {
   it('projects the cursor onto the segment and re-anchors the tag', () => {
@@ -96,6 +121,57 @@ describe('useLineTagDrag', () => {
     dispatchWindowPointer('pointerup', { clientX: 60, clientY: 0 });
     expect(historyDepth()).toBe(before + 1);
     expect(svg.hasPointerCapture(1)).toBe(false);
+  });
+
+  it("neighbor snap engages only with 'Snap to all' on, drawing a labeled guide", () => {
+    addNeighborAt(50);
+    setModes({ all: 'all' });
+    const { result } = render();
+    result.current.onStartDrag('T', pointerEvent({ clientX: 20, clientY: 0 }));
+    act(() => dispatchWindowPointer('pointermove', { clientX: 44, clientY: 0 }));
+
+    // 6 inside the 10-unit tolerance → adopts the neighbor's position.
+    expect(useDoc.getState().lineTags['T'].distance).toBeCloseTo(50, 5);
+    expect(result.current.lineTagSnapGuides).toHaveLength(1);
+    // Same-stripe neighbor: the guide collapses onto the shared point (50, 0).
+    expect(result.current.lineTagSnapGuides[0].from.x).toBeCloseTo(50, 3);
+    expect(result.current.lineTagSnapGuides[0].to.x).toBeCloseTo(50, 3);
+    expect(result.current.lineTagSnapGuides[0].label).toBe('0');
+    dispatchWindowPointer('pointerup', { clientX: 44, clientY: 0 });
+  });
+
+  it("does NOT neighbor-snap with 'Snap to all' off (the default)", () => {
+    addNeighborAt(50);
+    const { result } = render();
+    result.current.onStartDrag('T', pointerEvent({ clientX: 20, clientY: 0 }));
+    act(() => dispatchWindowPointer('pointermove', { clientX: 44, clientY: 0 }));
+
+    expect(useDoc.getState().lineTags['T'].distance).toBeCloseTo(44, 5);
+    expect(result.current.lineTagSnapGuides).toHaveLength(0);
+    dispatchWindowPointer('pointerup', { clientX: 44, clientY: 0 });
+  });
+
+  it('Shift bypasses the neighbor snap mid-drag', () => {
+    addNeighborAt(50);
+    setModes({ all: 'all' });
+    const { result } = render();
+    result.current.onStartDrag('T', pointerEvent({ clientX: 20, clientY: 0 }));
+    act(() => dispatchWindowPointer('pointermove', { clientX: 44, clientY: 0, shiftKey: true }));
+
+    expect(useDoc.getState().lineTags['T'].distance).toBeCloseTo(44, 5);
+    dispatchWindowPointer('pointerup', { clientX: 44, clientY: 0 });
+  });
+
+  it('the engage radius is constant in screen px (tolerance ÷ zoom)', () => {
+    addNeighborAt(50);
+    setModes({ all: 'all' });
+    // Zoom 4 → world tolerance 10/4 = 2.5; a 6-unit gap must NOT snap.
+    const { result } = render(4);
+    result.current.onStartDrag('T', pointerEvent({ clientX: 20, clientY: 0 }));
+    act(() => dispatchWindowPointer('pointermove', { clientX: 44, clientY: 0 }));
+
+    expect(useDoc.getState().lineTags['T'].distance).toBeCloseTo(44, 5);
+    dispatchWindowPointer('pointerup', { clientX: 44, clientY: 0 });
   });
 
   it('rolls back and disarms on a browser pointercancel', () => {

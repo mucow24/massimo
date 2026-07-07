@@ -5,9 +5,8 @@ import { useDoc, useSelection, dragState } from '../../state/store';
 import { historyDepth } from '../../state/history';
 import { useSnapPrefs } from '../../state/snapPrefs';
 import { DEFAULT_DOC } from '../../model/transforms';
-import { DEFAULT_SNAP_MODES, snapLabelToGrid, type SnapModes } from '../../geometry/snap';
+import { DEFAULT_SNAP_MODES, snapPointToGrid, type SnapModes } from '../../geometry/snap';
 import { measureTextLabel } from '../../geometry/textMeasure';
-import { TEXT_LABEL_HIT_PAD } from '../../geometry/stationBoundary';
 import { stationWithStop, makeLine, makeTextLabel, makePolygon } from '../../test/fixtures';
 import { fakeSvgRef, pointerEvent } from '../../test/interaction';
 import type { StationId } from '../../model/types';
@@ -129,6 +128,47 @@ describe('useItemDrag — unbound bullet grid-snap fallback', () => {
   });
 });
 
+describe('useItemDrag — unbound bullet alignment via the point snapper', () => {
+  beforeEach(() => {
+    useDoc.setState({
+      ...useDoc.getState(),
+      lines: { L1: makeLine({ id: 'L1', stations: ['S'] }) },
+      lineOrder: ['L1'],
+      stations: { S: stationWithStop('S' as StationId, 'L1', { x: 100, y: 0 }) },
+      routeBullets: {
+        b1: { id: 'b1', x: 0, y: 0, rotation: 0, lineId: null, shape: 'circle', size: 8 },
+      },
+    });
+  });
+
+  it("'Snap to all' aligns an unbound bullet's center to a station stop, with a guide", () => {
+    setModes({ line: false, all: 'all', grid: 'off' });
+    const { ref } = fakeSvgRef();
+    const { result } = renderHook(() => useItemDrag(ref, 1, false));
+    // Propose (103, 50): 3 from the stop's vertical axis x=100 → snaps.
+    bulletDown(result, 'b1', pointerEvent({ clientX: 0, clientY: 0 }));
+    move(result, pointerEvent({ clientX: 103, clientY: 50 }));
+
+    expect(useDoc.getState().routeBullets['b1'].x).toBeCloseTo(100, 5);
+    expect(useDoc.getState().routeBullets['b1'].y).toBeCloseTo(50, 5);
+    expect(result.current.itemSnapGuides).toHaveLength(1);
+    expect(result.current.itemSnapGuides[0].label).toBe('50');
+  });
+
+  it('an unbound bullet master never aligns to a CO-SELECTED station', () => {
+    setModes({ line: false, all: 'all', grid: 'off' });
+    resetSelection({ selectedRouteBulletIds: ['b1'], selectedStationIds: ['S'] });
+    const { ref } = fakeSvgRef();
+    const { result } = renderHook(() => useItemDrag(ref, 1, false));
+    bulletDown(result, 'b1', pointerEvent({ clientX: 0, clientY: 0 }));
+    move(result, pointerEvent({ clientX: 103, clientY: 50 }));
+
+    // S moves with the group → excluded → the bullet stays at the raw 103.
+    expect(useDoc.getState().routeBullets['b1'].x).toBeCloseTo(103, 5);
+    expect(result.current.itemSnapGuides).toHaveLength(0);
+  });
+});
+
 describe('useItemDrag — early exits', () => {
   beforeEach(() => {
     useDoc.setState({
@@ -206,23 +246,65 @@ describe('useItemDrag — label drag', () => {
     expect(useDoc.getState().textLabels['g1'].y).toBe(0);
   });
 
-  it('grid-snaps the dragged label by its visible upper-left', () => {
+  it('grid-snaps the dragged label by its VISIBLE upper-left corner (no hit pad)', () => {
     setModes({ line: false, all: 'off', grid: 'both' });
     const label = useDoc.getState().textLabels['g1'];
     const m = measureTextLabel(label);
-    const expected = snapLabelToGrid(
-      { x: 37, y: 23 },
-      m.width + 2 * TEXT_LABEL_HIT_PAD,
-      m.height + 2 * TEXT_LABEL_HIT_PAD,
-      'both',
-    );
+    // The text bbox's own corner lands on the grid — not the padded hit rect.
+    const ul = snapPointToGrid(37 - m.width / 2, 23 - m.height / 2, 'both');
     const { ref } = fakeSvgRef();
     const { result } = renderHook(() => useItemDrag(ref, 1, false));
     labelDown(result, 'g1', pointerEvent({ clientX: 0, clientY: 0 }));
     move(result, pointerEvent({ clientX: 37, clientY: 23 }));
     const g = useDoc.getState().textLabels['g1'];
-    expect(g.x).toBeCloseTo(expected.x, 5);
-    expect(g.y).toBeCloseTo(expected.y, 5);
+    expect(g.x).toBeCloseTo(ul.x + m.width / 2, 5);
+    expect(g.y).toBeCloseTo(ul.y + m.height / 2, 5);
+  });
+
+  it('a ROTATED label grid-snaps by its topmost-then-leftmost rotated corner', () => {
+    setModes({ line: false, all: 'off', grid: 'both' });
+    useDoc.setState({
+      ...useDoc.getState(),
+      textLabels: { g1: makeTextLabel({ id: 'g1', x: 0, y: 0, rotation: 2 }) },
+    });
+    const m = measureTextLabel(useDoc.getState().textLabels['g1']);
+    const hw = m.width / 2;
+    const hh = m.height / 2;
+    // At 90° CW the topmost-then-leftmost visible corner sits at
+    // center + (-hh, -hw) (the rotated bottom-left of the unrotated bbox).
+    const anchor = snapPointToGrid(37 - hh, 23 - hw, 'both');
+    const { ref } = fakeSvgRef();
+    const { result } = renderHook(() => useItemDrag(ref, 1, false));
+    labelDown(result, 'g1', pointerEvent({ clientX: 0, clientY: 0 }));
+    move(result, pointerEvent({ clientX: 37, clientY: 23 }));
+    const g = useDoc.getState().textLabels['g1'];
+    expect(g.x).toBeCloseTo(anchor.x + hh, 5);
+    expect(g.y).toBeCloseTo(anchor.y + hw, 5);
+  });
+
+  it("'Snap to all' aligns a label's corner to a station stop, with a labeled guide", () => {
+    setModes({ line: false, all: 'all', grid: 'off' });
+    useDoc.setState({
+      ...useDoc.getState(),
+      lines: { L1: makeLine({ id: 'L1', stations: ['S'] }) },
+      lineOrder: ['L1'],
+      stations: { S: stationWithStop('S' as StationId, 'L1', { x: 100, y: 0 }) },
+    });
+    const m = measureTextLabel(useDoc.getState().textLabels['g1']);
+    const hw = m.width / 2;
+    const hh = m.height / 2;
+    const { ref } = fakeSvgRef();
+    const { result } = renderHook(() => useItemDrag(ref, 1, false));
+    // Propose the label's UL corner at (103, 50): 3 from the stop's vertical
+    // axis x=100 → the corner snaps onto it, y stays free.
+    labelDown(result, 'g1', pointerEvent({ clientX: 0, clientY: 0 }));
+    move(result, pointerEvent({ clientX: 103 + hw, clientY: 50 + hh }));
+
+    const g = useDoc.getState().textLabels['g1'];
+    expect(g.x).toBeCloseTo(100 + hw, 5);
+    expect(g.y).toBeCloseTo(50 + hh, 5);
+    expect(result.current.itemSnapGuides).toHaveLength(1);
+    expect(result.current.itemSnapGuides[0].label).toBe('50');
   });
 
   it('commits one history entry for a real label drag', () => {
@@ -297,7 +379,7 @@ describe('useItemDrag — group drag tows every selected item type', () => {
     expect(doc.polygons['p1'].vertices[1].x).toBe(50);
   });
 
-  it('grabbing a selected bullet carries the group (and suppresses line snap)', () => {
+  it('grabbing a selected bullet carries the group (unbound bullet: no snap engages)', () => {
     const { ref } = fakeSvgRef();
     const { result } = renderHook(() => useItemDrag(ref, 1, false));
     bulletDown(result, 'b1', pointerEvent({ clientX: 0, clientY: 0 }));
@@ -308,6 +390,53 @@ describe('useItemDrag — group drag tows every selected item type', () => {
     expect(doc.stations['S' as StationId].x).toBe(140);
     expect(doc.textLabels['g1'].x).toBe(40);
     expect(doc.polygons['p1'].vertices[0].x).toBe(40);
+  });
+
+  it('a bound bullet master keeps line snap against stationary stations, towing by the snapped delta', () => {
+    // Bind b1 to L1 and select only the bullet + one label — station S stays
+    // unselected, so it is a stable target the group-dragged bullet may snap to.
+    useDoc.setState({
+      ...useDoc.getState(),
+      routeBullets: {
+        b1: { ...useDoc.getState().routeBullets['b1'], x: 200, y: 50, lineId: 'L1' },
+      },
+    });
+    setModes({ line: true, all: 'off', grid: 'off' });
+    resetSelection({ selectedRouteBulletIds: ['b1'], selectedLabelIds: ['g1'] });
+
+    const { ref } = fakeSvgRef();
+    const { result } = renderHook(() => useItemDrag(ref, 1, false));
+    // S's auto-vertical stop sits at (100, 0) → vertical axis x=100. Δ(−96,0)
+    // proposes b1 at (104, 50): 4 inside the radius → snaps to x=100.
+    bulletDown(result, 'b1', pointerEvent({ clientX: 0, clientY: 0 }));
+    move(result, pointerEvent({ clientX: -96, clientY: 0 }));
+
+    const doc = useDoc.getState();
+    expect(doc.routeBullets['b1'].x).toBeCloseTo(100, 5);
+    expect(doc.routeBullets['b1'].y).toBeCloseTo(50, 5);
+    // The towed label moves by the POST-SNAP delta (−100, 0), not the raw −96.
+    expect(doc.textLabels['g1'].x).toBeCloseTo(-100, 5);
+  });
+
+  it('a bound bullet master never snaps to a CO-SELECTED station (unstable target)', () => {
+    useDoc.setState({
+      ...useDoc.getState(),
+      routeBullets: {
+        b1: { ...useDoc.getState().routeBullets['b1'], x: 200, y: 50, lineId: 'L1' },
+      },
+    });
+    setModes({ line: true, all: 'off', grid: 'off' });
+    resetSelection({ selectedRouteBulletIds: ['b1'], selectedStationIds: ['S'] });
+
+    const { ref } = fakeSvgRef();
+    const { result } = renderHook(() => useItemDrag(ref, 1, false));
+    bulletDown(result, 'b1', pointerEvent({ clientX: 0, clientY: 0 }));
+    move(result, pointerEvent({ clientX: -96, clientY: 0 }));
+
+    const doc = useDoc.getState();
+    // S moves with the group, so its axis must not capture the drag: raw 104.
+    expect(doc.routeBullets['b1'].x).toBeCloseTo(104, 5);
+    expect(doc.stations['S' as StationId].x).toBeCloseTo(100 - 96, 5);
   });
 
   it('a locked selected sibling stays put while the rest of the group tows', () => {

@@ -6,11 +6,11 @@ import { snapPolygonPoint } from '../../geometry/polygonSnap';
 import { polygonSnapAnchor } from '../../geometry/polygon';
 import { SNAP_PERP_TOLERANCE, type SnapGuide } from '../../geometry/snap';
 import type { Vec2 } from '../../geometry/vec';
-import type { MapDoc } from '../../model/types';
 import { finishDrag, trackDragMove } from './dragGesture';
-import { allPolygonVertices, stationStopCenters } from './snapTargets';
+import { alignTargets } from './snapTargets';
 import {
   collectGroupSiblings,
+  groupAlignExclude,
   hasGroupSiblings,
   translateSiblings,
   type GroupSiblings,
@@ -26,6 +26,11 @@ type WholeDragState = {
   startMY: number;
   moved: boolean;
   siblings: GroupSiblings;
+  // "Snap to all" pool, snapshotted at pointer-down (everything in it is
+  // stationary for the duration of the drag). Empty during a group drag —
+  // co-moving siblings would be unstable targets (phase-2 work narrows this
+  // to an exclusion set).
+  allTargets: Vec2[];
   history: ReturnType<typeof beginHistoryGroup>;
 };
 
@@ -41,6 +46,11 @@ type VertexDragState = {
   startMY: number;
   moved: boolean;
   forceCommit: boolean;
+  // Snap targets, snapshotted at pointer-down: "Snap to line" aligns to the
+  // polygon's own other vertices; "Snap to all" to the shared pool plus those
+  // same siblings (own-shape alignment stays available through either toggle).
+  lineTargets: Vec2[];
+  allTargets: Vec2[];
   history: ReturnType<typeof beginHistoryGroup>;
 };
 
@@ -56,30 +66,14 @@ export interface PolygonDragApi {
   onPointerCancel: () => void;
 }
 
-// All polygon vertices except the single dragged vertex (vertex-drag) — so the
-// dragged vertex can still snap to its own polygon's other vertices.
-function polygonVerticesExceptVertex(
-  polygons: MapDoc['polygons'],
-  polyId: string,
-  index: number,
-): Vec2[] {
-  const out: Vec2[] = [];
-  for (const id of Object.keys(polygons)) {
-    polygons[id].vertices.forEach((v, i) => {
-      if (id === polyId && i === index) return;
-      out.push(v);
-    });
-  }
-  return out;
-}
-
 /**
  * Owns drag state for polygons: whole-shape moves and single-vertex edits. The
  * gesture lifecycle (4px threshold, one history entry, pointer capture, click
  * suppression) and the whole-shape group-drag towing are shared with the other
  * drag hooks via dragGesture + groupDrag; snapping routes through
  * {@link snapPolygonPoint} so "Snap to line" aligns to the polygon's own
- * vertices and "Snap to all" aligns to stations + every polygon vertex.
+ * vertices and "Snap to all" aligns to the shared {@link alignTargets} pool
+ * (stations, polygon vertices, image corners, label points, bullet centers).
  */
 export function usePolygonDrag(
   svgRef: RefObject<SVGSVGElement | null>,
@@ -108,16 +102,34 @@ export function usePolygonDrag(
     // unlock toggle — stays reachable.
     if (poly.locked) return;
     e.stopPropagation();
+    // Group-drag: tow every other selected item by the same delta. Locked
+    // polygons are skipped (handled in collectGroupSiblings).
+    const siblings = collectGroupSiblings('polygon', id);
     wholeDragRef.current = {
       id,
       startVerts: poly.vertices.map((v) => ({ ...v })),
       startMX: e.clientX,
       startMY: e.clientY,
       moved: false,
-      // Group-drag: tow every other selected item by the same delta. Locked
-      // polygons are skipped (handled in collectGroupSiblings).
-      siblings: collectGroupSiblings('polygon', id),
+      siblings,
+      // The pool excludes the dragged polygon and every co-selected sibling
+      // (they move with the grab); stationary items stay valid targets even
+      // during a group drag.
+      allTargets: alignTargets(doc, groupAlignExclude('polygon', id, siblings)),
       history: beginHistoryGroup(),
+    };
+  };
+
+  // Vertex-drag snap targets: the polygon's own other vertices serve "Snap to
+  // line", and the shared pool (which excludes the whole polygon) plus those
+  // same siblings serves "Snap to all" — so own-shape alignment works through
+  // either toggle, and the dragged vertex never targets itself.
+  const vertexDragTargets = (polygonId: string, index: number) => {
+    const doc = useDoc.getState();
+    const others = doc.polygons[polygonId]?.vertices.filter((_, i) => i !== index) ?? [];
+    return {
+      lineTargets: others,
+      allTargets: [...alignTargets(doc, { polygonIds: new Set([polygonId]) }), ...others],
     };
   };
 
@@ -136,6 +148,7 @@ export function usePolygonDrag(
       startMY: e.clientY,
       moved: false,
       forceCommit: false,
+      ...vertexDragTargets(polygonId, index),
       history: beginHistoryGroup(),
     };
   };
@@ -171,6 +184,8 @@ export function usePolygonDrag(
       startMY: e.clientY,
       moved: false,
       forceCommit: true,
+      // Computed after the insert so the new vertex is the excluded one.
+      ...vertexDragTargets(polygonId, newIndex),
       history,
     };
   };
@@ -188,17 +203,10 @@ export function usePolygonDrag(
         let guides: SnapGuide[] = [];
         const inGroupDrag = hasGroupSiblings(wd.siblings);
         if (!e.shiftKey) {
-          const doc = useDoc.getState();
-          // During a group drag the other selected polygons are moving, so they
-          // make unstable snap targets — drop alignment (empty targets) and let
-          // only grid act on the anchor, mirroring useItemDrag.
-          const allTargets = inGroupDrag
-            ? []
-            : [...stationStopCenters(doc.stations), ...allPolygonVertices(doc.polygons, wd.id)];
           const snap = snapPolygonPoint({
             proposed: anchor,
             lineTargets: [],
-            allTargets,
+            allTargets: wd.allTargets,
             modes: snapModes,
             // Constant screen-pixel engage radius (see useStationDrag).
             tolerance: SNAP_PERP_TOLERANCE / zoom,
@@ -228,17 +236,10 @@ export function usePolygonDrag(
         };
         let guides: SnapGuide[] = [];
         if (!e.shiftKey) {
-          const doc = useDoc.getState();
-          const poly = doc.polygons[vd.polygonId];
-          const lineTargets = poly ? poly.vertices.filter((_, i) => i !== vd.index) : [];
-          const allTargets = [
-            ...stationStopCenters(doc.stations),
-            ...polygonVerticesExceptVertex(doc.polygons, vd.polygonId, vd.index),
-          ];
           const snap = snapPolygonPoint({
             proposed: p,
-            lineTargets,
-            allTargets,
+            lineTargets: vd.lineTargets,
+            allTargets: vd.allTargets,
             modes: snapModes,
             // Constant screen-pixel engage radius (see useStationDrag).
             tolerance: SNAP_PERP_TOLERANCE / zoom,

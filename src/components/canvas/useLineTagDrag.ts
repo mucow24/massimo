@@ -1,35 +1,42 @@
-import { RefObject, useRef } from 'react';
+import { RefObject, useRef, useState } from 'react';
 import { beginHistoryGroup, useDoc } from '../../state/store';
+import { useSnapPrefs } from '../../state/snapPrefs';
 import type { LineId, StationId } from '../../model/types';
 import { pairKeyOf } from '../../model/pairKey';
+import type { SnapGuide } from '../../geometry/snap';
 import {
   anchorFromArcLen,
   closestParamOnOffsetPath,
+  LINE_TAG_SNAP_TOLERANCE,
   offsetPathLength,
+  sampleOffsetPath,
   snapNeighborTag,
 } from '../../geometry/lineTagGeometry';
 import { buildBands, SegmentBandSpec } from '../../geometry/interlining';
 import { finishDrag, trackDragMove } from './dragGesture';
 
 export interface LineTagDragApi {
+  lineTagSnapGuides: SnapGuide[];
   onStartDrag: (id: string, e: React.PointerEvent) => void;
   // pointermove/up are wired via global captures in this hook (it grabs the
   // svg pointer capture on first significant motion).
 }
 
-// World arc-length units along the centerline (deliberately NOT ÷ zoom,
-// unlike the other hooks' screen-px snap radii).
-const SNAP_TOL = 10;
-
 /**
  * Drag handler for line tags. Mirrors useStationDrag's lifecycle:
  * pointerdown captures pre-drag state, threshold of 4 screen px before
  * registering a drag, pointermove projects cursor onto the line's path
- * across all segments + snaps to neighbouring tags in the same band,
- * pointerup commits one history entry.
+ * across all segments + snaps to the nearest neighbouring tag in the same
+ * corridor — gated on "Snap to all" and bypassed by Shift, with a labeled
+ * guide to the matched neighbor and an engage radius held constant in
+ * screen px (tolerance ÷ zoom), matching the other drag hooks.
  */
-export function useLineTagDrag(svgRef: RefObject<SVGSVGElement | null>): LineTagDragApi {
+export function useLineTagDrag(
+  svgRef: RefObject<SVGSVGElement | null>,
+  zoom: number,
+): LineTagDragApi {
   const moveLineTag = useDoc((s) => s.moveLineTag);
+  const [lineTagSnapGuides, setLineTagSnapGuides] = useState<SnapGuide[]>([]);
 
   const dragRef = useRef<{
     tagId: string;
@@ -140,23 +147,56 @@ export function useLineTagDrag(svgRef: RefObject<SVGSVGElement | null>): LineTag
     }
     if (!best) return;
 
-    // Snap to a neighbor tag in the same corridor (any line, any stripe).
-    // Pure helper converts each neighbor's (anchorEnd, distance) to a
-    // canonical-t using THAT neighbor's own stripe length.
-    const snap = snapNeighborTag({
-      candCanonT: best.tCanon,
-      candPairKey: best.pairKey,
-      selfTagId: ds.tagId,
-      bandCenterline: best.band.centerline,
-      curveRadius: best.band.radius,
-      lineStripeOffset: (lineId) => {
-        const idx = best.band.lines.findIndex((l: { id: LineId }) => l.id === lineId);
-        if (idx < 0) return null;
-        return best.band.stripeOffsets[idx];
-      },
-      lineTags: docState.lineTags,
-      tol: SNAP_TOL,
-    });
+    // Snap to the nearest neighbor tag in the same corridor (any line, any
+    // stripe). Pure helper converts each neighbor's (anchorEnd, distance) to
+    // a canonical-t using THAT neighbor's own stripe length. Gated on "Snap
+    // to all" (the item-to-item alignment pref); Shift bypasses.
+    const modes = useSnapPrefs.getState().modes;
+    const snapOn = modes.all !== 'off' && !e.shiftKey;
+    const snap = snapOn
+      ? snapNeighborTag({
+          candCanonT: best.tCanon,
+          candPairKey: best.pairKey,
+          selfTagId: ds.tagId,
+          bandCenterline: best.band.centerline,
+          curveRadius: best.band.radius,
+          lineStripeOffset: (lineId) => {
+            const idx = best.band.lines.findIndex((l: { id: LineId }) => l.id === lineId);
+            if (idx < 0) return null;
+            return best.band.stripeOffsets[idx];
+          },
+          lineTags: docState.lineTags,
+          // Constant screen-pixel engage radius (see useStationDrag).
+          tol: LINE_TAG_SNAP_TOLERANCE / zoom,
+        })
+      : { canonT: best.tCanon, snapped: false as const, match: undefined };
+
+    // Guide to the matched neighbor, with the same rounded-distance label as
+    // every other alignment guide (here the cross-stripe gap between the two
+    // aligned tags).
+    if (snap.snapped && snap.match) {
+      const dragged = sampleOffsetPath(
+        best.band.centerline,
+        best.band.radius,
+        best.offset,
+        snap.canonT,
+      ).p;
+      const neighbor = sampleOffsetPath(
+        best.band.centerline,
+        best.band.radius,
+        snap.match.stripeOffset,
+        snap.match.canonT,
+      ).p;
+      setLineTagSnapGuides([
+        {
+          from: neighbor,
+          to: dragged,
+          label: Math.round(Math.hypot(dragged.x - neighbor.x, dragged.y - neighbor.y)).toString(),
+        },
+      ]);
+    } else {
+      setLineTagSnapGuides([]);
+    }
 
     // Convert resolved canonical-t to (anchorEnd, distance) on the dragged
     // tag's stripe. Anchor follows the nearer endpoint at the new position.
@@ -172,6 +212,7 @@ export function useLineTagDrag(svgRef: RefObject<SVGSVGElement | null>): LineTag
     window.removeEventListener('pointerup', ds.onUp);
     window.removeEventListener('pointercancel', ds.onCancel);
     dragRef.current = null;
+    setLineTagSnapGuides([]);
     // Shared commit/cancel: one history entry + capture release + click-suppress
     // clear when the gesture moved, else cancel (a pure click).
     finishDrag(ds, e, svgRef);
@@ -190,8 +231,9 @@ export function useLineTagDrag(svgRef: RefObject<SVGSVGElement | null>): LineTag
     window.removeEventListener('pointerup', ds.onUp);
     window.removeEventListener('pointercancel', ds.onCancel);
     dragRef.current = null;
+    setLineTagSnapGuides([]);
     ds.history.rollback();
   };
 
-  return { onStartDrag };
+  return { lineTagSnapGuides, onStartDrag };
 }

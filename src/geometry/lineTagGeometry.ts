@@ -201,14 +201,28 @@ export function arcLenFromAnchor(
     : Math.max(0, stripeTotal - distance);
 }
 
+/** Neighbor-tag snap tolerance, in world arc-length units at zoom 1. Callers
+ *  divide by zoom so the engage radius stays constant in screen pixels —
+ *  the same convention as SNAP_PERP_TOLERANCE. */
+export const LINE_TAG_SNAP_TOLERANCE = 10;
+
+/** The matched neighbor of a successful {@link snapNeighborTag}: enough to
+ *  sample its world position (stripe offset + canon-t) for a snap guide. */
+export interface NeighborTagMatch {
+  lineId: LineId;
+  canonT: number;
+  stripeOffset: number;
+}
+
 /**
- * Snap-to-neighbor for line-tag drag.
+ * Snap-to-neighbor for line-tag drag and placement.
  *
- * Given a candidate canonical-t for the dragged tag on a band, scans every
- * OTHER tag in the same corridor, converts each neighbor's `(anchorEnd,
- * distance)` to canonical-t (using THAT neighbor's own stripe length), and
- * returns the matching neighbor's canon-t if within `tol` (world arc-length
- * units on the centerline). Otherwise returns the candidate unchanged.
+ * Given a candidate canonical-t for the tag on a band, scans every OTHER tag
+ * in the same corridor, converts each neighbor's `(anchorEnd, distance)` to
+ * canonical-t (using THAT neighbor's own stripe length), and returns the
+ * NEAREST neighbor's canon-t within `tol` (world arc-length units on the
+ * centerline) — plus that neighbor's identity in `match` so the caller can
+ * draw a guide to it. Otherwise returns the candidate unchanged.
  *
  * `lineStripeOffset(lineId)` lets the caller report the perpendicular offset
  * of any line's stripe within the band — used to compute that line's stripe
@@ -223,10 +237,11 @@ export function snapNeighborTag(args: {
   lineStripeOffset: (lineId: LineId) => number | null;
   lineTags: Record<string, LineTag>;
   tol: number;
-}): { canonT: number; snapped: boolean } {
+}): { canonT: number; snapped: boolean; match?: NeighborTagMatch } {
   const centerlineTotal = offsetPathLength(args.bandCenterline, args.curveRadius, 0);
   if (centerlineTotal <= 0) return { canonT: args.candCanonT, snapped: false };
   const candArcLenOnCenterline = args.candCanonT * centerlineTotal;
+  let best: (NeighborTagMatch & { delta: number }) | null = null;
   for (const otherId of Object.keys(args.lineTags)) {
     if (otherId === args.selfTagId) continue;
     const other = args.lineTags[otherId];
@@ -239,9 +254,14 @@ export function snapNeighborTag(args: {
     const otherArcLenOnStripe = arcLenFromAnchor(other.anchorEnd, other.distance, otherStripeTotal);
     const otherCanonT = otherArcLenOnStripe / otherStripeTotal;
     const otherArcLenOnCenterline = otherCanonT * centerlineTotal;
-    if (Math.abs(otherArcLenOnCenterline - candArcLenOnCenterline) < args.tol) {
-      return { canonT: otherCanonT, snapped: true };
+    const delta = Math.abs(otherArcLenOnCenterline - candArcLenOnCenterline);
+    if (delta < args.tol && (!best || delta < best.delta)) {
+      best = { lineId: other.lineId, canonT: otherCanonT, stripeOffset: otherOffset, delta };
     }
+  }
+  if (best) {
+    const { delta: _delta, ...match } = best;
+    return { canonT: best.canonT, snapped: true, match };
   }
   return { canonT: args.candCanonT, snapped: false };
 }
