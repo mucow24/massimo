@@ -87,6 +87,50 @@ describe('labelLayoutLocal — per-stop widths', () => {
     expect(lay.textAnchor).toBe('start');
     expect(lay.anchorX).toBeCloseTo(-1.5 * STOP_SIZE + (14 + LABEL_GAP), 6);
   });
+
+  // Two colinear in-way stops on one reading side. The end-anchored text
+  // extends BACKWARD from the anchor, so to clear both stops the anchor must
+  // clamp behind the NEAREST one (its bound is the tighter of the two);
+  // clamping to the farther stop leaves the nearer stop sitting under the text.
+  it('clamps behind the NEAREST of two colinear in-way stops (ahead side)', () => {
+    const st: Station = {
+      id: 's',
+      name: 'Foo',
+      x: 0,
+      y: 0,
+      rotation: 0,
+      stops: [
+        { lineId: 'L1', row: 0, col: 1, orientation: 'auto-vertical' }, // nearer
+        { lineId: 'L1', row: 0, col: 1.5, orientation: 'auto-vertical' }, // farther
+      ],
+      label: { row: 0, col: 0, rotation: 0, offset: 0, align: 'auto', valign: 'middle' },
+    };
+    const lay = labelLayoutLocal(st, DEFAULT_LABEL_STYLE, undefined, half28);
+    expect(lay.textAnchor).toBe('end');
+    // Nearest stop at col 1: 1·14 − (14 + LABEL_GAP) = −3. (The farther stop at
+    // col 1.5 would give +4 — that would leave the nearer stop under the text.)
+    expect(lay.anchorX).toBeCloseTo(1 * STOP_SIZE - (14 + LABEL_GAP), 6);
+    expect(lay.anchorY).toBeCloseTo(0, 6);
+  });
+
+  it('clamps behind the NEAREST of two colinear in-way stops (behind side)', () => {
+    const st: Station = {
+      id: 's',
+      name: 'Foo',
+      x: 0,
+      y: 0,
+      rotation: 0,
+      stops: [
+        { lineId: 'L1', row: 0, col: -1, orientation: 'auto-vertical' }, // nearer
+        { lineId: 'L1', row: 0, col: -1.5, orientation: 'auto-vertical' }, // farther
+      ],
+      label: { row: 0, col: 0, rotation: 0, offset: 0, align: 'auto', valign: 'middle' },
+    };
+    const lay = labelLayoutLocal(st, DEFAULT_LABEL_STYLE, undefined, half28);
+    expect(lay.textAnchor).toBe('start');
+    // Nearest stop at col −1: −1·14 + (14 + LABEL_GAP) = +3.
+    expect(lay.anchorX).toBeCloseTo(-1 * STOP_SIZE + (14 + LABEL_GAP), 6);
+  });
 });
 
 describe('labelLayoutLocal — injected measurement', () => {

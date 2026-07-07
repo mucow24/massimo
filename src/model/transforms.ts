@@ -17,6 +17,7 @@ import { GRID_INTERVAL, snapPointToGrid, type GridSnap } from '../geometry/snap'
 import { polygonCentroid, edgeMidpoint } from '../geometry/polygon';
 import { SVG_IMAGE_MIN_SIZE, normalizeRotation } from '../geometry/svgImage';
 import { measureTextLabel } from '../geometry/textMeasure';
+import type { LabelStyle } from '../geometry/labelLayout';
 import type { Vec2 } from '../geometry/vec';
 import { normalizePaletteIds, type Palette, type PaletteId } from './palettes';
 import type {
@@ -158,6 +159,26 @@ export function resolveStationLabelWeight(
   stationBold: boolean | undefined,
 ): TextLabelWeight {
   return stationBold ? bumpWeightByIndex(defaultWeight, 2) : defaultWeight;
+}
+
+/**
+ * The effective `LabelStyle` for a single station: the doc-level label defaults
+ * with the station's per-station bold flag folded into the weight. The measured
+ * consumers — the silhouette, the hit area, the layout editor, and marquee
+ * hit-testing — go through here so they agree with the painted label (which
+ * resolves the same weight via `resolveStationLabelWeight`) on how a given
+ * station's label is measured. `docStyle.weight` must be the *default* weight
+ * (before any per-station bold); the bold bump is applied here.
+ */
+export function effectiveStationLabelStyle(
+  station: Pick<Station, 'labelBold'>,
+  docStyle: LabelStyle,
+): LabelStyle {
+  // `LabelStyle.weight` is loosely `number` (geometry measures at any weight),
+  // but a station's doc-default weight is always one of the shipped ladder
+  // values, so resolving it against the ladder is sound.
+  const weight = resolveStationLabelWeight(docStyle.weight as TextLabelWeight, station.labelBold);
+  return { ...docStyle, weight };
 }
 
 // TextLabel constants and defaults — exported so the popover, placement

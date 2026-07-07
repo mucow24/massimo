@@ -1549,6 +1549,37 @@ describe('resolveStationLabelWeight', () => {
   });
 });
 
+describe('effectiveStationLabelStyle', () => {
+  const docStyle = {
+    fontSize: 12,
+    weight: 400 as const,
+    italic: true,
+    leading: 1.1,
+    tracking: 0.02,
+  };
+
+  it('folds the per-station bold flag into the weight, passing every other field through', () => {
+    expect(T.effectiveStationLabelStyle({ labelBold: true }, docStyle)).toEqual({
+      fontSize: 12,
+      weight: 700, // 400 (Regular) bumped two indices → Bold
+      italic: true,
+      leading: 1.1,
+      tracking: 0.02,
+    });
+  });
+
+  it('leaves the doc weight untouched when the station is not bold', () => {
+    expect(T.effectiveStationLabelStyle({ labelBold: false }, docStyle).weight).toBe(400);
+    expect(T.effectiveStationLabelStyle({ labelBold: undefined }, docStyle).weight).toBe(400);
+  });
+
+  it('does not mutate the passed-in doc style', () => {
+    const style = { ...docStyle };
+    T.effectiveStationLabelStyle({ labelBold: true }, style);
+    expect(style.weight).toBe(400);
+  });
+});
+
 describe('setStationLabelBold', () => {
   it('writes labelBold:true on the station when called with true', () => {
     const doc = makeDoc({ stations: [makeStation({ id: 'a' })] });

@@ -2,7 +2,7 @@ import { useDoc, useSelection } from '../state/store';
 import { useThemeColors } from '../state/theme';
 import { useViewportStore } from '../state/viewportStore';
 import type { Station } from '../model/types';
-import { resolveStationLabelWeight } from '../model/transforms';
+import { effectiveStationLabelStyle } from '../model/transforms';
 import { stationBoundaryRectsLocal } from '../geometry/stationBoundary';
 import { stopHalfOf } from '../model/lineWidth';
 import { polygonsToPath, unionConvex } from '../geometry/polygonUnion';
@@ -48,13 +48,13 @@ export function StationSilhouette({
   // applies to the outer-boundary corners only, so the rects meet cleanly.
   const { cells, label: labelPoly } = stationBoundaryRectsLocal(
     station,
-    {
+    effectiveStationLabelStyle(station, {
       fontSize: labelFontSize,
-      weight: resolveStationLabelWeight(labelWeight, station.labelBold),
+      weight: labelWeight,
       italic: labelItalic,
       leading: labelLeading,
       tracking: labelTracking,
-    },
+    }),
     stopHalfOf(lines),
   );
   // Waypoint: no label polygon to merge, render the cells rect alone.

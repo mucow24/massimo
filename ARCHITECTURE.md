@@ -129,7 +129,7 @@ src/
     lineTagGeometry.ts          # offset-path arc-length sampling for in-band tags
     svgImage.ts                 # svg-image corners/resize/rotate/snap geometry
 
-  state/                        # Zustand stores (6 of them) + history
+  state/                        # Zustand stores (7 of them) + history
     store.ts                    # useDoc: temporal(persist(...)) + ~95 actions + migrateDoc
     history.ts                  # the ONLY module touching zundo internals
     selection.ts                # useSelection: UiMode union + multi-select + reconcileWithDoc
@@ -138,6 +138,7 @@ src/
     theme.ts                    # themeColors(darkMode) table (no store; reads viewportStore)
     customPalettes.ts           # useCustomPalettes: imported palettes (global localStorage)
     snapPrefs.ts                # useSnapPrefs: snap toggles (+ v0→v1 migration)
+    labelEditorPrefs.ts         # useLabelEditorPrefs: text-label editor UI prefs (wrapText)
     stationNames.ts             # random station-name word lists
 
   components/                   # React + SVG rendering and UI chrome
@@ -153,7 +154,7 @@ src/
 
   export/                       # exportCanvas.ts (SVG/PNG), fonts.ts, exportCanvasPdf.ts
                                 #   + pure PDF-gap modules pdfHatch/pdfText/pdfGlyphs/pdfDropShadow
-  util/                         # color.ts (hex math)
+  util/                         # color.ts (hex math), fonts.ts (font stack + weight math)
   test/                         # fixtures, jsdom setup, integration tests
 e2e/                            # Playwright specs + seedAndOpen harness
 public/fonts/                   # 16 Helvetica Neue .ttf faces
@@ -471,8 +472,9 @@ parts and shared one millisecond suffix across kinds.)
 
 ## State management
 
-Six Zustand stores, split deliberately by lifecycle (`useDoc`, `useSelection`, `useViewportStore`
-+ `useLiveViewportStore`, `useSnapPrefs`, `useCustomPalettes`). Files in [src/state/](src/state/).
+Seven Zustand stores, split deliberately by lifecycle (`useDoc`, `useSelection`, `useViewportStore`
++ `useLiveViewportStore`, `useSnapPrefs`, `useCustomPalettes`, `useLabelEditorPrefs`). Files in
+[src/state/](src/state/).
 
 ### `useDoc` — the document store ([store.ts](src/state/store.ts))
 
@@ -1025,7 +1027,7 @@ are closed here:
    its forced-alphabetic box (`getBBox`, browser truth) and shifts `y` by the delta — exact for any
    baseline mode/font without metrics.
 5. **Uncovered glyphs** — characters Helvetica Neue lacks (✈, ↔, ★, …) are drawn on screen by the
-   shipped fallback font in [`FONT_STACK`](src/export/fonts.ts) (`'Helvetica Neue', 'DejaVu Sans', …`),
+   shipped fallback font in [`FONT_STACK`](src/util/fonts.ts) (`'Helvetica Neue', 'DejaVu Sans', …`),
    but svg2pdf only embeds HN and jsPDF can't even encode supplementary-plane chars. Because the app
    already renders these in DejaVu, the PDF just traces the **same** font:
    [pdfGlyphs.ts](src/export/pdfGlyphs.ts) `outlineUnsupportedText` (run after normalization, so
