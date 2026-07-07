@@ -14,6 +14,7 @@ import { angleDeg, scale, type Vec2 } from '../../geometry/vec';
 import { pairKeyOf } from '../../model/pairKey';
 import { SELECTION_STROKE_WIDTH, SELECTION_WASH_OPACITY } from '../selectionStyle';
 import { useLineTagDrag } from './useLineTagDrag';
+import { SnapGuides } from './SnapGuides';
 
 const ALONG_FONT_SIZE = 12;
 const TEXT_PAD = 1;
@@ -122,7 +123,7 @@ export function LineTagsLayer({ bands, zoom, svgRef }: Props) {
   const lineTags = useDoc((s) => s.lineTags);
   const cycleLineTagOrientation = useDoc((s) => s.cycleLineTagOrientation);
   const selection = useSelection();
-  const drag = useLineTagDrag(svgRef);
+  const drag = useLineTagDrag(svgRef, zoom);
 
   const resolved = useMemo(() => {
     const list: ResolvedTag[] = [];
@@ -223,6 +224,12 @@ export function LineTagsLayer({ bands, zoom, svgRef }: Props) {
             />
           );
         })()}
+
+      {/* Neighbor-snap guide for an in-flight tag drag: same dashed +
+          labeled treatment as every other alignment guide. */}
+      <g data-export-exclude="1">
+        <SnapGuides guides={drag.lineTagSnapGuides} zoom={zoom} />
+      </g>
 
       {/* Ghost preview while in add-line-tag mode and hovering a stripe. */}
       {selection.uiMode.kind === 'creating-line-tag' && selection.lineTagHoverPreview && (

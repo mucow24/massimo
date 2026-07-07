@@ -340,6 +340,37 @@ describe('snapNeighborTag', () => {
     expect(r2.canonT).toBeCloseTo(0.4, 6);
   });
 
+  it('the NEAREST in-tolerance neighbor wins, not the first by insertion order', () => {
+    // Two neighbors inside tolerance: n1 at canon-t 0.5 (Δ=5) inserted first,
+    // n2 at canon-t 0.44 (Δ=1). Proximity must decide, not creation order.
+    const n1: LineTag = {
+      id: 'n1',
+      lineId: 'L1',
+      fromStationId: 's1',
+      toStationId: 's2',
+      anchorEnd: 'from',
+      distance: 50,
+      orientation: 0,
+    };
+    const n2: LineTag = {
+      id: 'n2',
+      lineId: 'L1',
+      fromStationId: 's1',
+      toStationId: 's2',
+      anchorEnd: 'from',
+      distance: 44,
+      orientation: 0,
+    };
+    const result = snapNeighborTag(makeArgs({ candCanonT: 0.45, lineTags: { n1, n2 } }));
+    expect(result.snapped).toBe(true);
+    expect(result.canonT).toBeCloseTo(0.44, 6);
+    // The matched neighbor's identity + stripe are reported so the caller can
+    // draw a guide to it.
+    expect(result.match?.lineId).toBe('L1');
+    expect(result.match?.canonT).toBeCloseTo(0.44, 6);
+    expect(result.match?.stripeOffset).toBe(0);
+  });
+
   it('does not snap when neighbor is on a different corridor', () => {
     const tag: LineTag = {
       id: 't1',
