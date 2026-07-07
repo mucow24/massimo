@@ -1,5 +1,5 @@
 import { describe, it, expect, beforeEach } from 'vitest';
-import { beginHistoryGroup, useDoc } from '../state/store';
+import { beginHistoryGroup, useDoc, HISTORY_LIMIT } from '../state/store';
 import { undo, redo, historyDepth, isHistoryGrouping } from '../state/history';
 import { useViewportStore } from '../state/viewportStore';
 import { useSelection } from '../state/store';
@@ -167,21 +167,24 @@ describe('beginHistoryGroup', () => {
   });
 
   it('grouped commits respect the history limit (oldest entries drop off)', () => {
-    // zundo enforces `limit: 200` in its own set-handler, but nearly every
+    // zundo enforces the same `limit` in its own set-handler, but nearly every
     // user gesture (drags, field-edit arcs) records through beginHistoryGroup
     // → pushHistory instead. If that path doesn't apply the same cap, a long
     // session grows the undo stack without bound.
+    const OVERFLOW = 5;
     const id = useDoc.getState().addStation(0, 0);
-    for (let i = 1; i <= 205; i++) {
+    for (let i = 1; i <= HISTORY_LIMIT + OVERFLOW; i++) {
       const group = beginHistoryGroup();
       useDoc.getState().moveStation(id, i, 0);
       group.commit();
     }
-    expect(historyDepth()).toBe(200);
-    // The kept entries are the NEWEST 200: undoing all of them lands on the
-    // oldest surviving snapshot (x = 5), not the original station add.
-    for (let i = 0; i < 200; i++) undo();
-    expect(useDoc.getState().stations[id].x).toBe(5);
+    expect(historyDepth()).toBe(HISTORY_LIMIT);
+    // The kept entries are the NEWEST HISTORY_LIMIT snapshots. addStation pushed
+    // one snapshot before the loop, so the stack overflowed by OVERFLOW + 1 and
+    // the oldest survivor is the move to x = OVERFLOW. Undoing the whole stack
+    // lands there, not on the original station add.
+    for (let i = 0; i < HISTORY_LIMIT; i++) undo();
+    expect(useDoc.getState().stations[id].x).toBe(OVERFLOW);
   });
 
   // Regression: the commit() equality check used to enumerate doc fields
