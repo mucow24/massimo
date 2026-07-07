@@ -1,7 +1,15 @@
-import type { Station } from '../model/types';
-import { DIR_8, STOP_SIZE, stopCenterAt, worldDirToLocal, type Rotation } from './orientation';
+import type { Station, StopOrientation } from '../model/types';
+import {
+  DIR_8,
+  STOP_SIZE,
+  stopCenterAt,
+  travelDirLocal,
+  worldDirToLocal,
+  type Rotation,
+} from './orientation';
+import { DIRS_8, dirIndex } from './router';
 import type { Vec2 } from './vec';
-import { LINE_HEIGHT, measureTextLabel } from './textMeasure';
+import { BASELINE_FRACTION, CAP_FRACTION, LINE_HEIGHT, measureTextLabel } from './textMeasure';
 
 const HIT_PAD = 2;
 const LABEL_GAP = 3;
@@ -123,8 +131,26 @@ export function labelLayoutLocal(
   let textAnchor: 'start' | 'middle' | 'end' = 'middle';
   let anchorX = labelCenter.x;
   let anchorY = labelCenter.y;
+  // autoAlign derives the block behavior too; the other modes keep the
+  // stored valign. All downstream vertical math reads this local.
+  let valign = label.valign;
 
-  if (label.align === 'start' || label.align === 'middle' || label.align === 'end') {
+  if (label.autoAlign) {
+    // Smart placement (transitmap.net rules) — overrides align AND valign.
+    const info = autoAlignInfo(
+      stops,
+      phantomDot,
+      label,
+      readCos,
+      readSin,
+      style.fontSize,
+      stopHalf,
+    );
+    textAnchor = info.textAnchor;
+    valign = info.valign;
+    anchorX = labelCenter.x + info.anchorRead * readCos - info.anchorPerp * readSin;
+    anchorY = labelCenter.y + info.anchorRead * readSin + info.anchorPerp * readCos;
+  } else if (label.align === 'start' || label.align === 'middle' || label.align === 'end') {
     // Explicit alignment: anchor stays at cell center, only text-anchor
     // changes.
     textAnchor = label.align;
@@ -182,8 +208,8 @@ export function labelLayoutLocal(
   // in how multi-line blocks are shifted relative to the anchor (see
   // firstLineDy / blockTopY below).
   let baseline: LabelBaseline = 'central';
-  if (label.valign === 'top') baseline = 'text-before-edge';
-  else if (label.valign === 'bottom') baseline = 'text-after-edge';
+  if (valign === 'top') baseline = 'text-before-edge';
+  else if (valign === 'bottom') baseline = 'text-after-edge';
 
   if (label.offset) {
     anchorX += label.offset * readCos;
@@ -274,9 +300,8 @@ export function labelLayoutLocal(
   //                line lands at anchorY; matches 'bottom' but offset by half
   //                a text body, which the blockTopY math below accounts for)
   let firstLineShiftPx = 0;
-  if (label.valign === 'middle') firstLineShiftPx = (extraLines * lineStackPx) / 2;
-  else if (label.valign === 'bottom' || label.valign === 'auto-up')
-    firstLineShiftPx = extraLines * lineStackPx;
+  if (valign === 'middle') firstLineShiftPx = (extraLines * lineStackPx) / 2;
+  else if (valign === 'bottom' || valign === 'auto-up') firstLineShiftPx = extraLines * lineStackPx;
   // First-line baseline shift in px (negative = up). The renderer applies the
   // per-line stacking in px too, so no em round-trip is needed.
   const firstLineDyPx = firstLineShiftPx === 0 ? 0 : -firstLineShiftPx;
@@ -293,10 +318,10 @@ export function labelLayoutLocal(
   //                top at anchorY - textHalfH - extraLines*lineStackPx
   const blockH = 2 * textHalfH + extraLines * lineStackPx;
   let textYMin: number;
-  if (label.valign === 'top') textYMin = anchorY;
-  else if (label.valign === 'bottom') textYMin = anchorY - blockH;
-  else if (label.valign === 'auto-down') textYMin = anchorY - textHalfH;
-  else if (label.valign === 'auto-up') textYMin = anchorY - textHalfH - extraLines * lineStackPx;
+  if (valign === 'top') textYMin = anchorY;
+  else if (valign === 'bottom') textYMin = anchorY - blockH;
+  else if (valign === 'auto-down') textYMin = anchorY - textHalfH;
+  else if (valign === 'auto-up') textYMin = anchorY - textHalfH - extraLines * lineStackPx;
   else textYMin = anchorY - blockH / 2;
 
   // First-line visual center, derived from the block-top + half a text body.
@@ -390,6 +415,143 @@ function snapInfoInHalfPlane(
   for (const s of stops) consider(s.row - label.row, s.col - label.col, stopHalf(s.lineId));
   if (phantomDot) consider(phantomDot.row - label.row, phantomDot.col - label.col, HALF);
   return { inHalfPlane, inWayStopProj, inWayStopHalf };
+}
+
+interface AutoAlignInfo {
+  textAnchor: 'start' | 'middle' | 'end';
+  // Anchor point in the READING frame, relative to the label cell center:
+  // along the reading direction and its perpendicular. The caller rotates
+  // these back into unrotated station-local coords.
+  anchorRead: number;
+  anchorPerp: number;
+  // Which block behavior realizes the vertical mode: sit-on-baseline above
+  // the marker = 'auto-up' (last line pinned, grows up), hang-from-cap
+  // below = 'auto-down' (first line pinned, grows down), Core-Type-Area
+  // center beside = 'middle'.
+  valign: 'auto-up' | 'auto-down' | 'middle';
+}
+
+// textAnchor per octant of the label relative to the reference stop
+// (0=E … 7=NE, reading frame, y-down): the end of the text facing the stop
+// aligns to it; N/S center on it.
+const AUTO_TEXT_ANCHOR: AutoAlignInfo['textAnchor'][] = [
+  'start', // 0 E
+  'start', // 1 SE
+  'middle', // 2 S
+  'end', // 3 SW
+  'end', // 4 W
+  'end', // 5 NW
+  'middle', // 6 N
+  'start', // 7 NE
+];
+
+/**
+ * transitmap.net-style placement for `autoAlign` labels. The octant of the
+ * label cell relative to the nearest adjacent stop — measured in the
+ * reading frame, so rotated labels follow the same rules rotated — fully
+ * determines the typography: text on the upper side sits its BASELINE at
+ * LABEL_GAP above the marker, text on the lower side hangs its CAP LINE at
+ * LABEL_GAP below it, text beside centers its Core Type Area (baseline →
+ * cap height) on the stop's row, and corner octants pin the facing CTA
+ * corner along the 45° approach. The pin clears the marker's actual extent
+ * along the approach (the stop is a `half`-extent square rotated to its
+ * travel axis; extent = its support function), so cardinal and diagonal
+ * markers both get exactly LABEL_GAP of clearance.
+ */
+function autoAlignInfo(
+  stops: Station['stops'],
+  phantomDot: { row: number; col: number } | null,
+  label: Station['label'],
+  readCos: number,
+  readSin: number,
+  fontSize: number,
+  stopHalf: StopHalfFn,
+): AutoAlignInfo {
+  interface Candidate {
+    dRow: number;
+    dCol: number;
+    half: number;
+    orientation: StopOrientation | null;
+  }
+  const candidates: Candidate[] = stops.map((s) => ({
+    dRow: s.row - label.row,
+    dCol: s.col - label.col,
+    half: stopHalf(s.lineId),
+    orientation: s.orientation,
+  }));
+  if (phantomDot) {
+    candidates.push({
+      dRow: phantomDot.row - label.row,
+      dCol: phantomDot.col - label.col,
+      half: HALF,
+      orientation: null,
+    });
+  }
+
+  // Reference stop: the nearest candidate within the tangency gate. Ties
+  // prefer the stop below the text (larger perp), so the label sits on its
+  // baseline above the line — the typographic default side.
+  let ref: {
+    proj: number;
+    perp: number;
+    half: number;
+    orientation: StopOrientation | null;
+  } | null = null;
+  let refD2 = Infinity;
+  for (const c of candidates) {
+    const cheb = Math.max(Math.abs(c.dRow), Math.abs(c.dCol));
+    if (cheb < 1e-6) continue; // a stop on the label cell has no direction
+    if (cheb > (c.half + HALF) / STOP_SIZE + 1e-4) continue; // same gate as the legacy snap
+    const proj = c.dCol * readCos + c.dRow * readSin;
+    const perp = c.dCol * -readSin + c.dRow * readCos;
+    const d2 = c.dRow * c.dRow + c.dCol * c.dCol;
+    if (ref === null || d2 < refD2 - 1e-9 || (d2 < refD2 + 1e-9 && perp > ref.perp)) {
+      ref = { proj, perp, half: c.half, orientation: c.orientation };
+      refD2 = Math.min(refD2, d2);
+    }
+  }
+  if (ref === null) {
+    // Nothing adjacent to align against: a floating label centers its block
+    // on its own cell (deliberate — NOT the stored valign).
+    return { textAnchor: 'middle', anchorRead: 0, anchorPerp: 0, valign: 'middle' };
+  }
+
+  const o = dirIndex({ x: -ref.proj, y: -ref.perp });
+  const u = DIRS_8[o]; // approach unit vector, stop → label, reading frame
+
+  // Marker extent along the approach, via the rotated square's support
+  // function in the LOCAL frame. The phantom dot has no orientation; treat
+  // it as axis-aligned (extent = half for its cardinal approach).
+  const uLocX = u.x * readCos - u.y * readSin;
+  const uLocY = u.x * readSin + u.y * readCos;
+  const axis = ref.orientation ? travelDirLocal(ref.orientation) : { x: 1, y: 0 };
+  const extent =
+    ref.half *
+    (Math.abs(uLocX * axis.x + uLocY * axis.y) + Math.abs(uLocX * -axis.y + uLocY * axis.x));
+
+  // Pin point: marker edge + LABEL_GAP along the approach, stop-relative on
+  // BOTH axes (the cell picks the octant; offset/offsetPerp fine-tune).
+  const pinRead = ref.proj * STOP_SIZE + u.x * (extent + LABEL_GAP);
+  const pinPerp = ref.perp * STOP_SIZE + u.y * (extent + LABEL_GAP);
+
+  // Fold the typographic target into the anchor. The anchor is the first
+  // line's central-baseline center: the baseline sits `cb` below it, the
+  // cap line CAP_FRACTION·fontSize above the baseline, and the Core Type
+  // Area center halfway up the cap height.
+  const cb = (BASELINE_FRACTION - 0.5) * fontSize;
+  let anchorPerp: number;
+  let valign: AutoAlignInfo['valign'];
+  if (o === 5 || o === 6 || o === 7) {
+    anchorPerp = pinPerp - cb;
+    valign = 'auto-up';
+  } else if (o === 1 || o === 2 || o === 3) {
+    anchorPerp = pinPerp + (CAP_FRACTION * fontSize - cb);
+    valign = 'auto-down';
+  } else {
+    anchorPerp = pinPerp + ((CAP_FRACTION / 2) * fontSize - cb);
+    valign = 'middle';
+  }
+  return { textAnchor: AUTO_TEXT_ANCHOR[o], anchorRead: pinRead, anchorPerp, valign };
 }
 
 /**

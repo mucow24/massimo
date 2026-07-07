@@ -1,6 +1,6 @@
 import { describe, it, expect } from 'vitest';
 import { serialize, parse, SCHEMA_FORMAT } from './serialize';
-import { makeDoc, makeTextLabel } from '../test/fixtures';
+import { makeDoc, makeStation, makeTextLabel } from '../test/fixtures';
 
 describe('text-label color serialization', () => {
   it('round-trips day/night colors distinct from each other', () => {
@@ -43,5 +43,55 @@ describe('text-label color serialization', () => {
     if (!result.ok) return;
     expect(result.doc.textLabels['g1'].color).toBe('#111111');
     expect(result.doc.textLabels['g1'].darkColor).toBe('#ffffff');
+  });
+});
+
+describe('station label autoAlign serialization', () => {
+  it('round-trips the flag when on (sanitizeStations must not strip it)', () => {
+    const doc = makeDoc({
+      stations: [
+        makeStation({
+          id: 's1',
+          label: {
+            row: 0,
+            col: -1,
+            rotation: 0,
+            offset: 0,
+            align: 'auto',
+            valign: 'middle',
+            autoAlign: true,
+          },
+        }),
+      ],
+    });
+    const result = parse(serialize(doc));
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    expect(result.doc.stations['s1'].label.autoAlign).toBe(true);
+  });
+
+  it('legacy saves without the field load with it absent (off)', () => {
+    const legacy = JSON.stringify({
+      format: SCHEMA_FORMAT,
+      doc: {
+        stations: {
+          s1: {
+            id: 's1',
+            name: 'Foo',
+            x: 0,
+            y: 0,
+            rotation: 0,
+            stops: [],
+            label: { row: 0, col: -1, rotation: 0, offset: 0, align: 'auto', valign: 'middle' },
+          },
+        },
+        lines: {},
+        lineOrder: [],
+      },
+    });
+    const result = parse(legacy);
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    expect(result.doc.stations['s1'].label.autoAlign).toBeUndefined();
   });
 });

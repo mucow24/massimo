@@ -793,6 +793,69 @@ describe('<StationInspector /> — edit paths that reach the document (E8)', () 
     // The whole batch collapses to a single undo entry.
     expect(historyDepth() - before).toBe(1);
   });
+
+  it('the Auto placement toggle writes label.autoAlign as one undo entry and disables the cycles', async () => {
+    const user = userEvent.setup();
+    seedStation();
+    useDoc.temporal.getState().clear();
+    const before = historyDepth();
+    render(<StationInspector id="a" />);
+
+    const alignBtn = screen.getByRole('button', {
+      name: 'Align: auto (snap against adjacent stop)',
+    });
+    const valignBtn = screen.getByRole('button', {
+      name: 'V-align: auto-down (first line on cell, extra lines below)',
+    });
+    const toggle = screen.getByRole('button', { name: 'Auto placement' });
+    expect(toggle).toHaveAttribute('aria-pressed', 'false');
+    expect(alignBtn).toBeEnabled();
+
+    await user.click(toggle);
+    expect(useDoc.getState().stations.a.label.autoAlign).toBe(true);
+    expect(historyDepth() - before).toBe(1);
+    expect(screen.getByRole('button', { name: 'Auto placement' })).toHaveAttribute(
+      'aria-pressed',
+      'true',
+    );
+    // The overridden align/valign cycles disable while the toggle is on.
+    expect(alignBtn).toBeDisabled();
+    expect(valignBtn).toBeDisabled();
+
+    // Toggling off removes the key entirely (omitted-when-false).
+    await user.click(screen.getByRole('button', { name: 'Auto placement' }));
+    expect('autoAlign' in useDoc.getState().stations.a.label).toBe(false);
+    expect(alignBtn).toBeEnabled();
+  });
+
+  it('Auto placement with mirror on broadcasts the same value in one undo group', async () => {
+    const user = userEvent.setup();
+    useDoc.setState({
+      ...DEFAULT_DOC,
+      ...makeDoc({
+        stations: [
+          makeStation({ id: 'a', stops: [makeStop('L1')] }),
+          makeStation({ id: 'b', stops: [makeStop('L1')] }),
+        ],
+        lines: [makeLine({ id: 'L1', stations: ['a', 'b'] })],
+      }),
+    });
+    useSelection.setState({
+      ...SELECTION_BLANK,
+      selectedStationIds: ['a'],
+      mirrorMatching: true,
+    });
+    useDoc.temporal.getState().clear();
+    const before = historyDepth();
+
+    render(<StationInspector id="a" />);
+    await user.click(screen.getByRole('button', { name: 'Auto placement' }));
+
+    const doc = useDoc.getState();
+    expect(doc.stations.a.label.autoAlign).toBe(true);
+    expect(doc.stations.b.label.autoAlign).toBe(true);
+    expect(historyDepth() - before).toBe(1);
+  });
 });
 
 describe('<StationInspector /> — label offset wiring (along vs perpendicular)', () => {
