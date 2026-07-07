@@ -2,8 +2,8 @@ import { describe, it, expect, beforeEach, vi } from 'vitest';
 import { render, screen, fireEvent, waitFor } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import App from '../App';
-import { useDoc, useSelection } from '../state/store';
-import { historyDepth, redoDepth } from '../state/history';
+import { beginHistoryGroup, useDoc, useSelection } from '../state/store';
+import { historyDepth, isHistoryGrouping, redoDepth } from '../state/history';
 import { DEFAULT_DOC } from '../model/transforms';
 import { readClipboard, writeClipboard, type ClipPayload } from '../model/clipboard';
 import { makePolygon, makeSvgImage, makeTextLabel } from '../test/fixtures';
@@ -781,6 +781,30 @@ describe('App keyboard: stop/label lattice nudge (station sub-selection)', () =>
     }));
     useDoc.temporal.getState().clear();
     fireEvent.keyDown(window, { key: 'ArrowRight', altKey: true });
+    expect(historyDepth()).toBe(1);
+  });
+
+  it('Alt offset nudge inside an already-open history group neither commits nor resumes it', () => {
+    // Groups don't nest (store.ts): a drag gesture's group can be open when
+    // the keyboard fires (global listener, no drag-in-flight guard). The
+    // Alt+arrow fan-out must gate on isHistoryGrouping() like
+    // dispatchMirrored does, or its inner commit() resumes tracking
+    // mid-gesture and the drag lands as one undo entry per write.
+    render(<App />);
+    seedHub({ mirror: true });
+    useSelection.setState({ ...useSelection.getState(), labelSelected: true });
+    useDoc.temporal.getState().clear();
+
+    const outer = beginHistoryGroup();
+    fireEvent.keyDown(window, { key: 'ArrowRight', altKey: true });
+    // The broadcast landed on both mirror targets...
+    expect(useDoc.getState().stations.a.label.offset).toBeCloseTo(1, 6);
+    expect(useDoc.getState().stations.b.label.offset).toBeCloseTo(1, 6);
+    // ...but the outer group is still the one open arc: nothing recorded,
+    // grouping still active.
+    expect(isHistoryGrouping()).toBe(true);
+    expect(historyDepth()).toBe(0);
+    outer.commit();
     expect(historyDepth()).toBe(1);
   });
 
