@@ -153,7 +153,11 @@ export function outlineUnsupportedText(svg: SVGSVGElement, fonts: GlyphFonts): v
         node = path;
       } else {
         // Covered run: positioned selectable HN text on the alphabetic baseline
-        // (font-family inherits from the root).
+        // (font-family inherits from the root). `white-space: pre` mirrors the
+        // app's label text (LabelView / stationLabelText) so svg2pdf keeps the
+        // run's leading/trailing spaces instead of trimming them — otherwise the
+        // gap a user typed between an <xfer>/<air> glyph and the next word (the
+        // run's leading spaces here) collapses in the PDF.
         const t = document.createElementNS(SVG_NS, 'text');
         t.setAttribute('x', String(piece.x));
         t.setAttribute('y', String(piece.y));
@@ -162,6 +166,7 @@ export function outlineUnsupportedText(svg: SVGSVGElement, fonts: GlyphFonts): v
         t.setAttribute('font-weight', fontWeight);
         t.setAttribute('font-style', fontStyle);
         t.setAttribute('fill', fill);
+        t.style.whiteSpace = 'pre';
         t.textContent = piece.text;
         node = t;
       }
