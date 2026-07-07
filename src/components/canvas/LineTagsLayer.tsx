@@ -269,8 +269,11 @@ function TagShape({
   if (layer === 'text') {
     return (
       <g transform={`translate(${r.p.x} ${r.p.y}) rotate(${rotateDeg})`} style={{ cursor: 'move' }}>
-        {/* Invisible hit rect that picks up pointer events even where the glyphs/chevron are sparse. */}
+        {/* Invisible hit rect that picks up pointer events even where the
+            glyphs/chevron are sparse. Carries the tag id so the alt+click
+            deep-pick resolver (hitStack.ts) can map a hit back to the tag. */}
         <rect
+          data-line-tag-id={r.tag.id}
           x={-halfW}
           y={-halfH}
           width={2 * halfW}

@@ -357,6 +357,11 @@ describe('<StopGlyph /> stroke/fill split (pass prop)', () => {
     // Outset by strokeWidth/2 = 1, so with the body inset by 1 a 2px band shows.
     expect(parseFloat(c.getAttribute('r')!)).toBeCloseTo(STOP_DOT_RADIUS + 1, 5);
     expect(c.hasAttribute('data-stop-stroke')).toBe(true);
+    // data-stop-stroke carries the station id as its VALUE (the canonical
+    // data-stop-station attr must stay one-element-per-dot on the fill pass,
+    // but the alt+click deep-pick resolver still needs to map border pixels
+    // back to their station).
+    expect(c.getAttribute('data-stop-stroke')).toBe('A');
     // The canonical seam stays on the fill pass — never on the stroke element.
     expect(c.getAttribute('data-stop-shape')).toBeNull();
     expect(svg.querySelector('text')).toBeNull();

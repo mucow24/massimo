@@ -48,7 +48,7 @@ export function StationHitArea({
   const labelLeading = useDoc((s) => s.labelLeading);
   const labelTracking = useDoc((s) => s.labelTracking);
   const rotateLabel = useDoc((s) => s.rotateLabel);
-  const { handlers, cursor, inHitlessMode } = useStationInteraction(station, onStartDrag, lines);
+  const { handlers, cursor, hitless } = useStationInteraction(station, onStartDrag, lines);
   const selection = useSelection();
 
   const angle = station.rotation * 45;
@@ -119,7 +119,7 @@ export function StationHitArea({
 
   const hitProps = {
     fill: 'transparent',
-    pointerEvents: inHitlessMode ? ('none' as const) : ('all' as const),
+    pointerEvents: hitless ? ('none' as const) : ('all' as const),
   };
   return (
     <g

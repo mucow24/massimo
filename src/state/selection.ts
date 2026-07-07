@@ -111,7 +111,7 @@ const layoutEditReconcile = (
   return { uiMode: { kind: 'editing-station-layout', stationId: nextIds[0] } };
 };
 
-interface SelectionState {
+export interface SelectionState {
   // Multi-station selection. Order is meaningful: the last entry is the
   // "anchor" (most recently single-clicked station), used as the source for
   // ctrl+shift+click path-extend and as the station shown in the inspector

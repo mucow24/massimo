@@ -143,6 +143,11 @@ export function LabelView({
       // gate keys off [data-locked] so a drag over a locked label begins a
       // marquee instead of doing nothing.
       data-locked={label.locked || undefined}
+      // Locked + unselected → click-through: lock means "this is background —
+      // stop catching my clicks", so clicks land on whatever is beneath the
+      // padded hit rect. Selection keeps a locked label clickable so the
+      // popover's unlock toggle stays reachable.
+      pointerEvents={label.locked && !selected ? 'none' : undefined}
       onPointerDown={onPointerDown ? (e) => onPointerDown(label.id, e) : undefined}
       onClick={onClick ? (e) => onClick(label.id, e) : undefined}
       onContextMenu={onContextMenu ? (e) => onContextMenu(label.id, e) : undefined}
