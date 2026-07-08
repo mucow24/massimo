@@ -155,7 +155,7 @@ export function serialize(doc: MapDoc): string {
  * `parse()` (file version < 2) and the zustand persist `migrate` hook
  * (store version < 8). Version-gated at BOTH call sites — the rewrite is
  * not idempotent: in a migrated doc, `<X>` is intentional literal text and
- * `(X)` a real bullet, so re-running would corrupt them.
+ * `|X|` a real bullet, so re-running would corrupt them.
  */
 export function migrateLegacyBulletSyntax(
   stations: Record<string, Station>,

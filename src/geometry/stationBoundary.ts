@@ -71,6 +71,8 @@ export function cellsAABBLocal(
   let minY = Infinity;
   let maxY = -Infinity;
   for (const c of allCells) {
+    // The two grid axes are independent: stopCenterAt's x depends only on col,
+    // its y only on row. So the dummy `0` for the unused axis is safe on each.
     const cx = stopCenterAt(0, c.col).x;
     const cy = stopCenterAt(c.row, 0).y;
     minX = Math.min(minX, cx - c.half);

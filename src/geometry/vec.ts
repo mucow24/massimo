@@ -37,6 +37,23 @@ export const rotate = (a: Vec2, rad: number): Vec2 => {
 export const rotateAround = (a: Vec2, pivot: Vec2, rad: number): Vec2 =>
   add(rotate(sub(a, pivot), rad), pivot);
 
+// The four corners of an axis-aligned rectangle of half-extents (halfW, halfH)
+// centered at `center`, then rotated by `rad` about that center. Returned
+// clockwise from the (unrotated) top-left: [TL, TR, BR, BL], matching the SVG
+// render transform (`translate(center) rotate`; positive `rotate` is clockwise
+// in the y-down frame). The one home for "corners of a rotated rectangle",
+// shared by svg-image, text-label, and stop-marker geometry.
+export const rotatedRectCorners = (
+  center: Vec2,
+  halfW: number,
+  halfH: number,
+  rad: number,
+): [Vec2, Vec2, Vec2, Vec2] => {
+  const at = (sx: number, sy: number): Vec2 =>
+    add(center, rotate({ x: sx * halfW, y: sy * halfH }, rad));
+  return [at(-1, -1), at(1, -1), at(1, 1), at(-1, 1)];
+};
+
 // Arithmetic mean of the points (vertex centroid, NOT area-weighted). Empty
 // input returns the origin (the `|| 1` guard) rather than NaN.
 export const centroid = (points: readonly Vec2[]): Vec2 => {

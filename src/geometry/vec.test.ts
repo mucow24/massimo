@@ -1,5 +1,32 @@
 import { describe, it, expect } from 'vitest';
-import { angleDeg, centroid, midpoint, rotateAround, v } from './vec';
+import { angleDeg, centroid, midpoint, rotateAround, rotatedRectCorners, v } from './vec';
+
+const nearPt = (a: { x: number; y: number }, b: { x: number; y: number }) => {
+  expect(a.x).toBeCloseTo(b.x, 6);
+  expect(a.y).toBeCloseTo(b.y, 6);
+};
+
+describe('rotatedRectCorners', () => {
+  it('returns the 4 corners CW from top-left, unrotated', () => {
+    const c = rotatedRectCorners(v(0, 0), 50, 30, 0);
+    nearPt(c[0], v(-50, -30)); // TL
+    nearPt(c[1], v(50, -30)); // TR
+    nearPt(c[2], v(50, 30)); // BR
+    nearPt(c[3], v(-50, 30)); // BL
+  });
+
+  it('rotates the corners about the given center (y-down / CW)', () => {
+    // 90° clockwise: the top-left (-50,-30) swings to (30,-50).
+    const c = rotatedRectCorners(v(0, 0), 50, 30, Math.PI / 2);
+    nearPt(c[0], v(30, -50));
+  });
+
+  it('offsets by a non-origin center', () => {
+    const c = rotatedRectCorners(v(100, 200), 10, 10, 0);
+    nearPt(c[0], v(90, 190));
+    nearPt(c[2], v(110, 210));
+  });
+});
 
 describe('midpoint', () => {
   it('returns the component-wise average of two points', () => {

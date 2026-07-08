@@ -503,7 +503,8 @@ pure transforms (`import * as T from '../model/transforms'`): `moveStation: (id,
 => T.moveStation(s, id, x, y))`. Adders mint an id from the module-level `ids` factory, call the
 transform, and return the id.
 
-`temporalCfg`: `equality: docSnapshotsEqual`, `partialize: pickDocSnapshot`, `limit: 200`.
+`temporalCfg`: `equality: docSnapshotsEqual`, `partialize: pickDocSnapshot`, `limit: HISTORY_LIMIT`
+(1000, [store.ts](src/state/store.ts)).
 
 The mutator method references live on the full state but are **not** in the snapshot; they never
 change, so `Object.assign` on undo preserves them.
