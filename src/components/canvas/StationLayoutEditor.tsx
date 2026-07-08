@@ -6,9 +6,11 @@ import { cellsAABBLocal } from '../../geometry/stationBoundary';
 import { labelLayoutLocal } from '../../geometry/labelLayout';
 import { stopHalfOf, lineWidthOf } from '../../model/lineWidth';
 import { useThemeColors } from '../../state/theme';
-import { withAlpha } from '../../util/color';
-import { resolveDotSize } from '../../model/dotSize';
-import { effectiveStationLabelStyle } from '../../model/transforms';
+import { useViewportStore } from '../../state/viewportStore';
+import { legibleTextOn } from '../../util/color';
+import { dotSizeOverride, resolveDotSize } from '../../model/dotSize';
+import { resolveDotRender } from '../../model/dotStyle';
+import { effectiveStationLabelStyle, resolveDotStyle } from '../../model/transforms';
 import { ORIENTATION_GLYPH, sameCell } from '../inspector/stopGridDrag';
 import type { LayoutDragSource } from './useStationLayoutDrag';
 
@@ -16,6 +18,14 @@ import type { LayoutDragSource } from './useStationLayoutDrag';
 // zoomed — the mini-canvas's "grab targets scale away" failure mode is the
 // exact thing this editor exists to fix.
 const MIN_HANDLE_PX = 10;
+
+// The editor dims the whole map behind it (see MapCanvas), so its rings read
+// against a DARK backdrop in BOTH themes: a light dashed ring for idle stops,
+// a bright accent for the active/swap stop. High contrast on the dim is the
+// whole point — the old thin, theme-accent (dark-blue in light mode) ring is
+// exactly what the redesign replaces.
+const LAYOUT_RING = 'rgba(255, 255, 255, 0.92)';
+const LAYOUT_RING_ACTIVE = '#5b9dff';
 
 /**
  * The on-canvas station layout editor (editing-station-layout mode): a grab
@@ -54,9 +64,10 @@ export function StationLayoutEditor({
   const labelLeading = useDoc((s) => s.labelLeading);
   const labelTracking = useDoc((s) => s.labelTracking);
 
-  // Ring accents flip with the theme (dark canvas needs the brightened
-  // accent), matching the rest of the canvas feedback language.
+  // Theme still drives the label-handle stroke; darkMode resolves each dot's
+  // fill so the orientation arrow can contrast it.
   const theme = useThemeColors();
+  const darkMode = useViewportStore((s) => s.darkMode);
   const inHandMode = selection.toolMode === 'hand' || selection.spaceHeld;
   const angle = station.rotation * 45;
   const stopHalf = stopHalfOf(lines);
@@ -129,7 +140,7 @@ export function StationLayoutEditor({
     },
   });
 
-  const ringStroke = 1.5 / zoom;
+  const ringStroke = 2.5 / zoom;
   const glyphShadow = '0 0 2px rgba(0,0,0,0.6)';
 
   return (
@@ -164,6 +175,20 @@ export function StationLayoutEditor({
         const r = Math.max(lineWidthOf(lines[s.lineId]) / 2, MIN_HANDLE_PX / zoom);
         const selected = selection.selectedStopLineId === s.lineId;
         const isSwap = !!swapTarget && sameCell(swapTarget, s);
+        // Resolve the dot exactly as it's painted, then flip the arrow to
+        // whichever of black/white reads on its fill. An unfilled dot (open
+        // ring / none / no line) leaves the arrow on the dim, where white wins.
+        const line = lines[s.lineId];
+        const dot = line
+          ? resolveDotRender(
+              resolveDotStyle(line, s),
+              line.color,
+              line.service,
+              darkMode,
+              dotSizeOverride(line, s),
+            )
+          : null;
+        const glyphColor = dot && dot.fill !== 'none' ? legibleTextOn(dot.fill) : '#fff';
         return (
           <g
             key={`h-${s.lineId}`}
@@ -181,15 +206,9 @@ export function StationLayoutEditor({
               r={r}
               fill="transparent"
               pointerEvents={inHandMode ? 'none' : 'all'}
-              stroke={
-                selected
-                  ? theme.selectionStroke
-                  : isSwap
-                    ? theme.accent
-                    : withAlpha(theme.accent, 0.8)
-              }
-              strokeWidth={selected || isSwap ? 2 / zoom : ringStroke}
-              strokeDasharray={selected || isSwap ? undefined : `${3 / zoom} ${2 / zoom}`}
+              stroke={selected || isSwap ? LAYOUT_RING_ACTIVE : LAYOUT_RING}
+              strokeWidth={selected || isSwap ? 3 / zoom : ringStroke}
+              strokeDasharray={selected || isSwap ? undefined : `${5 / zoom} ${3 / zoom}`}
             />
             <text
               x={c.x}
@@ -198,7 +217,7 @@ export function StationLayoutEditor({
               dominantBaseline="central"
               fontSize={Math.max(r * 0.9, 9 / zoom)}
               fontWeight={700}
-              fill="#fff"
+              fill={glyphColor}
               style={{ pointerEvents: 'none', userSelect: 'none', textShadow: glyphShadow }}
             >
               {ORIENTATION_GLYPH[s.orientation]}

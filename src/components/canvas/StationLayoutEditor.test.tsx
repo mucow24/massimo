@@ -3,6 +3,7 @@ import { fireEvent, render } from '@testing-library/react';
 import { StationLayoutEditor } from './StationLayoutEditor';
 import { useDoc, useSelection, dragState } from '../../state/store';
 import { DEFAULT_DOC } from '../../model/transforms';
+import { DOT_SHAPE_PRESETS } from '../../model/dotStyle';
 import type { Station } from '../../model/types';
 
 const hubStation = (): Station => ({
@@ -123,6 +124,43 @@ describe('<StationLayoutEditor />', () => {
     const { container } = renderEditor();
     const l2 = container.querySelector('[data-cell-kind="stop"][data-line-id="L2"]');
     expect(l2?.getAttribute('data-selected')).toBe('true');
+  });
+
+  it('paints each orientation arrow in whichever of black/white reads on the dot fill', () => {
+    // The arrow sits on top of the stop dot, so its color must contrast the
+    // dot's resolved fill — a fixed white arrow vanishes on white/light dots.
+    useDoc.setState({
+      ...DEFAULT_DOC,
+      stations: { a: hubStation() },
+      lines: {
+        // White-filled dot ⇒ the arrow must flip to black.
+        L1: {
+          id: 'L1',
+          service: '1',
+          name: '1 line',
+          color: '#ffffff',
+          stations: ['a'],
+          defaultDotStyle: DOT_SHAPE_PRESETS['filled-white'],
+        },
+        // Black-filled dot ⇒ white arrow.
+        L2: { id: 'L2', service: '2', name: '2 line', color: '#111111', stations: ['a'] },
+      },
+      lineOrder: ['L1', 'L2'],
+    });
+    useSelection.setState({
+      ...useSelection.getState(),
+      selectedStationIds: ['a'],
+      uiMode: { kind: 'editing-station-layout', stationId: 'a' },
+      selectedStopLineId: null,
+      labelSelected: false,
+      toolMode: 'arrow',
+      spaceHeld: false,
+    });
+    const { container } = renderEditor();
+    const l1 = container.querySelector('[data-cell-kind="stop"][data-line-id="L1"] text');
+    const l2 = container.querySelector('[data-cell-kind="stop"][data-line-id="L2"] text');
+    expect(l1?.getAttribute('fill')).toBe('#000');
+    expect(l2?.getAttribute('fill')).toBe('#fff');
   });
 
   it('rotates the "L" glyph to match the label rotation', () => {
