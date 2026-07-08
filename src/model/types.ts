@@ -192,6 +192,13 @@ export interface Station {
   // fully editable there. Optional; missing ⇒ unlocked. Mirrors Polygon.locked
   // but is canvas-protection only (the station inspector is never disabled).
   locked?: boolean;
+  // Remembered height (in CSS px) of the Name text box in this station's
+  // inspector, so a manually stretched box stays stretched instead of resetting
+  // to its rows-derived default each time the inspector reopens. Purely an
+  // editing-UI dimension — it never affects the rendered name. Optional;
+  // missing ⇒ the box auto-sizes to its content. Clamped to a positive integer
+  // by `setStationEditorHeight`. Mirrors `TextLabel.editorHeight`.
+  editorHeight?: number;
 }
 
 // Visual style for a single segment of a line. `solid` is the historical
@@ -543,6 +550,13 @@ export interface TextLabel {
   // are disabled. It can still be click-selected so the user can unlock it.
   // Optional; missing ⇒ unlocked. Mirrors Polygon.locked.
   locked?: boolean;
+  // Remembered height (in CSS px) of the text-entry box in this label's editor
+  // popover, so a manually stretched box stays stretched instead of resetting
+  // to its rows-derived default each time the popover reopens. Purely an
+  // editing-UI dimension — it never affects the rendered label. Optional;
+  // missing ⇒ the box auto-sizes to its content. Clamped to a positive integer
+  // by `updateTextLabel`. Mirrors `Station.editorHeight`.
+  editorHeight?: number;
 }
 
 // One endpoint of a transfer: a specific dot on a station. `lineId` picks
