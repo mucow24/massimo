@@ -117,6 +117,41 @@ export interface PanStart {
   vy: number;
 }
 
+export interface FitOptions {
+  /** Empty margin left on EACH side, as a fraction of the viewport dimension. */
+  marginFrac?: number;
+  /** Never zoom IN past this on a fit (default 1 = natural scale). */
+  maxZoom?: number;
+}
+
+/**
+ * Camera that centers a world-space `bounds` box in a `size`-px viewport and
+ * zooms so the whole box fits inside, minus a margin on every side. Zoom never
+ * exceeds `maxZoom` (default 1: a small map shows at its natural scale rather
+ * than ballooning to fill the screen — big maps still zoom OUT to fit) and is
+ * clamped to the same pan/zoom limits as the wheel. A degenerate zero-size box
+ * (single point / empty content) yields `maxZoom` centered on it. Pure — the
+ * caller feeds it `computeContentBounds` output plus the live SVG's pixel size.
+ */
+export function fitViewport(
+  bounds: { x: number; y: number; w: number; h: number },
+  size: Size,
+  opts?: FitOptions,
+): Viewport {
+  const marginFrac = opts?.marginFrac ?? 0.08;
+  const maxZoom = opts?.maxZoom ?? 1;
+  const cx = bounds.x + bounds.w / 2;
+  const cy = bounds.y + bounds.h / 2;
+  const usableW = size.w * (1 - 2 * marginFrac);
+  const usableH = size.h * (1 - 2 * marginFrac);
+  const zByW = bounds.w > 0 && usableW > 0 ? usableW / bounds.w : Infinity;
+  const zByH = bounds.h > 0 && usableH > 0 ? usableH / bounds.h : Infinity;
+  let zoom = Math.min(zByW, zByH, maxZoom);
+  if (!Number.isFinite(zoom)) zoom = maxZoom; // zero-size box: nothing to fit
+  zoom = Math.max(ZOOM_MIN, Math.min(ZOOM_MAX, zoom));
+  return { x: cx, y: cy, zoom };
+}
+
 /** New viewport for an in-flight pan: center moves opposite the drag, /zoom. */
 export function panFromDelta(
   start: PanStart,
