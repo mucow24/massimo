@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState, type ChangeEvent, type WheelEvent } from 'react';
+import { useCallback, useEffect, useRef, useState, type ChangeEvent } from 'react';
 import { useFieldHistory } from './useFieldHistory';
 
 /** Decimal places implied by a step: 1 → 0, 0.5 → 1, 0.25 → 2. Drives how many
@@ -47,9 +47,36 @@ export function useNumericField(
     if (!focusedRef.current) setText(formatValue(value, decimals));
   }, [value, decimals]);
 
+  // Wheel-to-increment must be a NON-passive native listener: React's onWheel
+  // prop registers a passive root listener, so preventDefault() there warns
+  // ("Unable to preventDefault inside passive event listener invocation") and
+  // no-ops — the value ticks but the popover/page scrolls too. A ref keeps the
+  // native listener calling the latest closure (fresh step/getCurrent) without
+  // rebinding. Same pattern as the canvas wheel-zoom in useViewport.
+  const onWheel = (e: WheelEvent) => {
+    e.preventDefault();
+    onChange(getCurrent() + (e.deltaY < 0 ? step : -step));
+  };
+  const onWheelRef = useRef(onWheel);
+  useEffect(() => {
+    onWheelRef.current = onWheel;
+  });
+  // A stable callback ref: binds { passive: false } on attach, detaches when
+  // React calls it with null (unmount / element swap / a row toggling disabled).
+  const detachRef = useRef<(() => void) | null>(null);
+  const attachWheel = useCallback((el: HTMLElement | null) => {
+    detachRef.current?.();
+    detachRef.current = null;
+    if (!el) return;
+    const listener = (e: WheelEvent) => onWheelRef.current(e);
+    el.addEventListener('wheel', listener, { passive: false });
+    detachRef.current = () => el.removeEventListener('wheel', listener);
+  }, []);
+
   return {
     text,
     history,
+    attachWheel,
     onNumberFocus: () => {
       focusedRef.current = true;
       history.onFocus();
@@ -60,10 +87,6 @@ export function useNumericField(
       if (raw === '') return; // ignore empty mid-edit
       const n = Number(raw);
       if (Number.isFinite(n)) onChange(n);
-    },
-    onNumberWheel: (e: WheelEvent<HTMLElement>) => {
-      e.preventDefault();
-      onChange(getCurrent() + (e.deltaY < 0 ? step : -step));
     },
     onNumberBlur: () => {
       focusedRef.current = false;

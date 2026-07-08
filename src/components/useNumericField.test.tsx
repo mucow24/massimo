@@ -2,6 +2,28 @@ import { describe, it, expect, vi } from 'vitest';
 import { act, renderHook } from '@testing-library/react';
 import { useNumericField } from './useNumericField';
 
+// A stand-in for the element the wheel ref attaches to. Records the bound
+// native listener + its options so tests can assert the non-passive binding
+// (React's onWheel prop is passive — preventDefault there warns and no-ops)
+// and invoke a wheel tick directly. Mirrors the fakeSvg pattern in useViewport.
+function fakeWheelTarget() {
+  const state: { entry?: { listener: (e: unknown) => void; options?: unknown } } = {};
+  const el = {
+    addEventListener: (_type: string, listener: (e: unknown) => void, options?: unknown) => {
+      state.entry = { listener, options };
+    },
+    removeEventListener: () => {
+      state.entry = undefined;
+    },
+  } as unknown as HTMLElement;
+  return {
+    el,
+    get entry() {
+      return state.entry;
+    },
+  };
+}
+
 // useNumericField mirrors a store value into a local `text` state and guards
 // that mirror while the field is focused: an external value change (e.g. an
 // undo, a sibling edit, a wheel tick that lands a new value) must not clobber
@@ -75,20 +97,44 @@ describe('useNumericField — external-update focus guard', () => {
     const onChange = vi.fn();
     const { result } = renderHook(() => useNumericField(9, onChange, () => 9));
     expect(result.current.text).toBe('9');
-    act(() =>
-      result.current.onNumberWheel({
-        deltaY: -1,
-        preventDefault() {},
-      } as unknown as React.WheelEvent<HTMLInputElement>),
-    );
+    const target = fakeWheelTarget();
+    act(() => result.current.attachWheel(target.el));
+    target.entry!.listener({ deltaY: -1, preventDefault() {} });
     expect(onChange).toHaveBeenLastCalledWith(10);
   });
 });
 
-describe('useNumericField — fractional step (0.5)', () => {
-  const wheel = (deltaY: number) =>
-    ({ deltaY, preventDefault() {} }) as unknown as React.WheelEvent<HTMLInputElement>;
+describe('useNumericField — wheel binding', () => {
+  it('binds a NON-passive native wheel listener that preventDefaults', () => {
+    // React registers its onWheel prop as a PASSIVE root listener, so
+    // preventDefault() inside it warns ("Unable to preventDefault inside
+    // passive event listener invocation") and the popover/page scrolls anyway.
+    // The hook must bind its own non-passive wheel listener instead.
+    const onChange = vi.fn();
+    const { result } = renderHook(() => useNumericField(9, onChange, () => 9));
+    const target = fakeWheelTarget();
+    act(() => result.current.attachWheel(target.el));
+    expect(target.entry).toBeDefined();
+    expect((target.entry!.options as { passive?: boolean }).passive).toBe(false);
+    // Non-passive is the whole point — only then can preventDefault cancel the
+    // scroll — and the tick still increments.
+    const preventDefault = vi.fn();
+    target.entry!.listener({ deltaY: -1, preventDefault });
+    expect(preventDefault).toHaveBeenCalled();
+    expect(onChange).toHaveBeenLastCalledWith(10);
+  });
 
+  it('removes the wheel listener when the ref detaches', () => {
+    const { result } = renderHook(() => useNumericField(9, vi.fn(), () => 9));
+    const target = fakeWheelTarget();
+    act(() => result.current.attachWheel(target.el));
+    expect(target.entry).toBeDefined();
+    act(() => result.current.attachWheel(null));
+    expect(target.entry).toBeUndefined();
+  });
+});
+
+describe('useNumericField — fractional step (0.5)', () => {
   it('pads the mirror to one decimal place', () => {
     const { result } = renderHook(() => useNumericField(9, vi.fn(), () => 9, 0.5));
     expect(result.current.text).toBe('9.0');
@@ -107,9 +153,11 @@ describe('useNumericField — fractional step (0.5)', () => {
     const onChange = vi.fn();
     let live = 9;
     const { result } = renderHook(() => useNumericField(live, onChange, () => live, 0.5));
-    act(() => result.current.onNumberWheel(wheel(-1)));
+    const target = fakeWheelTarget();
+    act(() => result.current.attachWheel(target.el));
+    target.entry!.listener({ deltaY: -1, preventDefault() {} });
     expect(onChange).toHaveBeenLastCalledWith(9.5);
-    act(() => result.current.onNumberWheel(wheel(1)));
+    target.entry!.listener({ deltaY: 1, preventDefault() {} });
     expect(onChange).toHaveBeenLastCalledWith(8.5);
   });
 
