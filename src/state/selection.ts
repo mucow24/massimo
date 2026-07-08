@@ -1,8 +1,9 @@
 import { create } from 'zustand';
+import { persist, createJSONStorage } from 'zustand/middleware';
 import type { LineId, MapDoc, StationId } from '../model/types';
 import type { Vec2 } from '../geometry/vec';
 
-// ----- Selection (ephemeral, not persisted) -----
+// ----- Selection (ephemeral, except the persisted sidebarOpen flag) -----
 
 export type SidebarTab = 'stations' | 'lines';
 
@@ -386,348 +387,363 @@ function makeIdListActions<
   } as Pick<SelectionState, Sel | Tog | Rep | Add | Xor>;
 }
 
-export const useSelection = create<SelectionState>((set, get) => ({
-  selectedStationIds: [],
-  selectedLineId: null,
-  uiMode: { kind: 'idle' },
-  hoveredStationId: null,
-  hoveredLineStop: null,
-  hoveredInspectorSegment: null,
-  selectedStopLineId: null,
-  labelSelected: false,
-  editingStationId: null,
-  activeTab: 'stations',
-  sidebarOpen: true,
-  sidebarAutoRevealed: false,
-  selectedLineTagId: null,
-  lineTagHoverPreview: null,
-  selectedRouteBulletIds: [],
-  selectedTransferId: null,
-  selectedLabelIds: [],
-  selectedPolygonIds: [],
-  selectedSvgImageIds: [],
-  selectedVertices: null,
-  mirrorMatching: false,
-  toolMode: 'arrow',
-  spaceHeld: false,
-  setToolMode: (m) => set({ toolMode: m }),
-  setSpaceHeld: (v) => set({ spaceHeld: v }),
-
-  // The single source of truth for mode transitions. Entering any non-idle
-  // mode wipes all primary selections; exiting just clears the line-tag
-  // hover preview (which is only meaningful inside creating-line-tag).
-  // Variant payloads (transferAnchor, insertAfterIndex) are updated in place
-  // via setTransferAnchor / setInsertAfterIndex.
-  setUiMode: (mode) =>
-    set(
-      mode.kind === 'idle'
-        ? { uiMode: mode, lineTagHoverPreview: null }
-        : { uiMode: mode, lineTagHoverPreview: null, ...clearedSelections() },
-    ),
-
-  // selectStation does NOT touch uiMode — placing-station and
-  // creating-route-bullet modes are sticky (canvas clicks place repeatedly;
-  // see MapCanvas onCanvasClick comments). The pure mode-cancellation rule
-  // applies to every OTHER select* setter. One exception, shared with the
-  // multi-select mutators below: layoutEditReconcile exits
-  // editing-station-layout whenever the selection stops being exactly the
-  // edited station.
-  selectStation: (id) => {
-    const nextIds = id == null ? [] : [id];
-    // Re-selecting the already-sole-selected station is NOT a primary-
-    // selection change: mirror matching survives it (a plain canvas click
-    // on the inspected station must not silently drop Select Similar). Any
-    // other transition — different id, multi→single collapse — resets it
-    // with the rest of clearedSelections.
-    const cur = get().selectedStationIds;
-    const sameSole = id != null && cur.length === 1 && cur[0] === id;
-    set({
-      ...clearedSelections(),
-      ...(sameSole ? { mirrorMatching: get().mirrorMatching } : {}),
-      ...layoutEditReconcile(get().uiMode, nextIds),
-      selectedStationIds: nextIds,
-      activeTab: id === null ? get().activeTab : 'stations',
-      editingStationId: id === null ? null : get().editingStationId,
-    });
-  },
-  toggleStationSelection: (id) =>
-    set((s) => {
-      const idx = s.selectedStationIds.indexOf(id);
-      if (idx >= 0) {
-        const next = s.selectedStationIds.slice();
-        next.splice(idx, 1);
-        return {
-          selectedStationIds: next,
-          ...layoutEditReconcile(s.uiMode, next),
-          // Multi-select implicitly clears the inspector-state pieces tied
-          // to a single station's grid editor.
-          selectedStopLineId: null,
-          labelSelected: false,
-          mirrorMatching: false,
-          editingStationId: null,
-          activeTab: 'stations',
-        };
-      }
-      const next = [...s.selectedStationIds, id];
-      return {
-        selectedStationIds: next,
-        ...layoutEditReconcile(s.uiMode, next),
-        // Adding a station to the set makes it foreign to any selected line /
-        // tag / transfer / mirror — clear them from the one shared home so the
-        // matrix can't drift (see SIBLING_PRIMARY_CLEAR).
-        ...SIBLING_PRIMARY_CLEAR,
-        selectedStopLineId: null,
-        labelSelected: false,
-        editingStationId: null,
-        activeTab: 'stations',
-      };
-    }),
-  setStationSelection: (ids) =>
-    set((s) => {
-      const next = dedupeLastWins(ids);
-      return {
-        selectedStationIds: next,
-        ...layoutEditReconcile(s.uiMode, next),
-        ...SIBLING_PRIMARY_CLEAR,
-        selectedStopLineId: null,
-        labelSelected: false,
-        editingStationId: null,
-        activeTab: 'stations',
-      };
-    }),
-  addStationsToSelection: (ids) =>
-    set((s) => {
-      const next = unionAppendNovel(s.selectedStationIds, ids);
-      if (next === s.selectedStationIds) return {};
-      return {
-        selectedStationIds: next,
-        ...layoutEditReconcile(s.uiMode, next),
-        ...SIBLING_PRIMARY_CLEAR,
-      };
-    }),
-  xorStationsToSelection: (ids) =>
-    set((s) => {
-      const next = xorAppend(s.selectedStationIds, ids);
-      if (next === s.selectedStationIds) return {};
-      return {
-        selectedStationIds: next,
-        ...layoutEditReconcile(s.uiMode, next),
-        ...SIBLING_PRIMARY_CLEAR,
-      };
-    }),
-  selectLine: (id) => {
-    if (id === null) {
-      // Null clear is gentle by design: drops line + tag, preserves other
-      // primaries and uiMode (callers that pass null — e.g. the canvas-
-      // background click — expect the rest of the selection untouched).
-      set({
-        selectedStationIds: [],
-        selectedLineId: null,
-        selectedLineTagId: null,
-        lineTagHoverPreview: null,
-      });
-      return;
-    }
-    const s = get();
-    set({
-      ...clearedSelections(),
+export const useSelection = create<SelectionState>()(
+  persist(
+    (set, get) => ({
+      selectedStationIds: [],
+      selectedLineId: null,
       uiMode: { kind: 'idle' },
-      selectedLineId: id,
-      activeTab: 'lines',
-      // Selecting a line surfaces its editor: reveal a hidden sidebar so the
-      // editor is actually visible, and remember we did so exiting the
-      // selection can re-hide it. Sticky across line→line switches (by then the
-      // sidebar is already open, but the session is still "auto-revealed").
-      sidebarOpen: true,
-      sidebarAutoRevealed: !s.sidebarOpen || s.sidebarAutoRevealed,
-      lineTagHoverPreview: null,
-    });
-  },
-  startEditingStationLayout: (stationId) =>
-    set({
-      ...clearedSelections(),
-      uiMode: { kind: 'editing-station-layout', stationId },
-      selectedStationIds: [stationId],
-      mirrorMatching: get().mirrorMatching,
+      hoveredStationId: null,
+      hoveredLineStop: null,
+      hoveredInspectorSegment: null,
+      selectedStopLineId: null,
+      labelSelected: false,
+      editingStationId: null,
       activeTab: 'stations',
+      sidebarOpen: true,
+      sidebarAutoRevealed: false,
+      selectedLineTagId: null,
       lineTagHoverPreview: null,
-    }),
-  startAppendAt: (lineId, insertAfterIndex) =>
-    set({
-      ...clearedSelections(),
-      uiMode: { kind: 'appending-to-line', lineId, insertAfterIndex },
-      selectedLineId: lineId,
-      activeTab: 'lines',
-      lineTagHoverPreview: null,
-    }),
-  setAppending: (lineId) => {
-    const cur = get().uiMode;
-    if (lineId === null) {
-      if (cur.kind === 'appending-to-line') {
-        set({ uiMode: { kind: 'idle' }, lineTagHoverPreview: null });
-      }
-      return;
-    }
-    // Preserve any in-progress insertion cursor only when re-entering the
-    // SAME line; switching lines resets it.
-    const insertAfterIndex =
-      cur.kind === 'appending-to-line' && cur.lineId === lineId ? cur.insertAfterIndex : null;
-    set({
-      uiMode: { kind: 'appending-to-line', lineId, insertAfterIndex },
-      selectedLineId: lineId,
-      lineTagHoverPreview: null,
-    });
-  },
-  setInsertAfterIndex: (idx) => {
-    const cur = get().uiMode;
-    if (cur.kind !== 'appending-to-line') return;
-    set({ uiMode: { ...cur, insertAfterIndex: idx } });
-  },
-  setHoveredStation: (id) => set({ hoveredStationId: id }),
-  setHoveredLineStop: (v) => set({ hoveredLineStop: v }),
-  setHoveredInspectorSegment: (v) => set({ hoveredInspectorSegment: v }),
-  setSelectedStopLineId: (id) =>
-    set({ selectedStopLineId: id, labelSelected: id === null ? get().labelSelected : false }),
-  setLabelSelected: (selected) =>
-    set({
-      labelSelected: selected,
-      selectedStopLineId: selected ? null : get().selectedStopLineId,
-    }),
-  setEditingStationId: (id) => set({ editingStationId: id }),
-  toggleTab: (tab) =>
-    set((s) =>
-      s.sidebarOpen && s.activeTab === tab
-        ? { sidebarOpen: false, sidebarAutoRevealed: false }
-        : { activeTab: tab, sidebarOpen: true, sidebarAutoRevealed: false },
-    ),
-  toggleSidebar: () => set((s) => ({ sidebarOpen: !s.sidebarOpen, sidebarAutoRevealed: false })),
-  selectLineTag: (id) =>
-    set({
-      ...clearedSelections(),
-      uiMode: id === null ? get().uiMode : { kind: 'idle' },
-      selectedLineTagId: id,
-      lineTagHoverPreview: null,
-    }),
-  setLineTagHoverPreview: (preview) => set({ lineTagHoverPreview: preview }),
-  ...makeIdListActions(set, get, 'selectedRouteBulletIds', {
-    select: 'selectRouteBullet',
-    toggle: 'toggleRouteBulletSelection',
-    replace: 'setRouteBulletSelection',
-    add: 'addRouteBulletsToSelection',
-    xor: 'xorRouteBulletsToSelection',
-  }),
-  selectTransfer: (id) =>
-    set({
-      ...clearedSelections(),
-      uiMode: id === null ? get().uiMode : { kind: 'idle' },
-      selectedTransferId: id,
-      lineTagHoverPreview: null,
-    }),
-  setTransferAnchor: (anchor) => {
-    const cur = get().uiMode;
-    if (cur.kind !== 'creating-transfer') return;
-    set({ uiMode: { ...cur, anchor } });
-  },
-  setMirrorMatching: (on) => set({ mirrorMatching: on }),
-  ...makeIdListActions(set, get, 'selectedLabelIds', {
-    select: 'selectLabel',
-    toggle: 'toggleLabelSelection',
-    replace: 'setLabelSelection',
-    add: 'addLabelsToSelection',
-    xor: 'xorLabelsToSelection',
-  }),
-  ...makeIdListActions(
-    set,
-    get,
-    'selectedPolygonIds',
-    {
-      select: 'selectPolygon',
-      toggle: 'togglePolygonSelection',
-      replace: 'setPolygonSelection',
-      add: 'addPolygonsToSelection',
-      xor: 'xorPolygonsToSelection',
-    },
-    // A polygon selection change drops any active vertex handles (they're
-    // bound to a single polygon's edit session).
-    { selectedVertices: null },
-  ),
-  ...makeIdListActions(set, get, 'selectedSvgImageIds', {
-    select: 'selectSvgImage',
-    toggle: 'toggleSvgImageSelection',
-    replace: 'setSvgImageSelection',
-    add: 'addSvgImagesToSelection',
-    xor: 'xorSvgImagesToSelection',
-  }),
-  selectVertices: (sel) => set({ selectedVertices: sel }),
-  toggleVertexSelection: ({ polygonId, index }) =>
-    set((s) => {
-      const cur = s.selectedVertices;
-      // No set, or a set on another polygon → start fresh (single-polygon).
-      if (!cur || cur.polygonId !== polygonId) {
-        return { selectedVertices: { polygonId, indices: [index] } };
-      }
-      const has = cur.indices.includes(index);
-      const indices = has ? cur.indices.filter((i) => i !== index) : [...cur.indices, index];
-      // An emptied set collapses to null (never a { indices: [] }).
-      return { selectedVertices: indices.length ? { polygonId, indices } : null };
-    }),
-  setMixedSelection: (ids) =>
-    set({
-      ...clearedSelections(),
-      uiMode: { kind: 'idle' },
-      selectedRouteBulletIds: dedupeLastWins(ids.bullets ?? []),
-      selectedLabelIds: dedupeLastWins(ids.labels ?? []),
-      selectedPolygonIds: dedupeLastWins(ids.polygons ?? []),
-      selectedSvgImageIds: dedupeLastWins(ids.svgImages ?? []),
-    }),
-  reconcileWithDoc: (doc) => {
-    const s = get();
-    const next: Partial<SelectionState> = {};
-    // Filter an id list against the doc; return the kept list only when it
-    // actually shrank, so an all-resolving list keeps its reference.
-    const prune = <T extends string>(ids: T[], exists: (id: T) => boolean): T[] | undefined => {
-      const kept = ids.filter(exists);
-      return kept.length === ids.length ? undefined : kept;
-    };
-    const stations = prune(s.selectedStationIds, (id) => !!doc.stations[id]);
-    if (stations) next.selectedStationIds = stations;
-    const bullets = prune(s.selectedRouteBulletIds, (id) => !!doc.routeBullets[id]);
-    if (bullets) next.selectedRouteBulletIds = bullets;
-    const labels = prune(s.selectedLabelIds, (id) => !!doc.textLabels[id]);
-    if (labels) next.selectedLabelIds = labels;
-    const polygons = prune(s.selectedPolygonIds, (id) => !!doc.polygons[id]);
-    if (polygons) next.selectedPolygonIds = polygons;
-    const svgImages = prune(s.selectedSvgImageIds, (id) => !!doc.svgImages[id]);
-    if (svgImages) next.selectedSvgImageIds = svgImages;
-    // Single primaries.
-    if (s.selectedLineId && !doc.lines[s.selectedLineId]) next.selectedLineId = null;
-    if (s.selectedLineTagId && !doc.lineTags[s.selectedLineTagId]) next.selectedLineTagId = null;
-    if (s.selectedTransferId && !doc.transfers[s.selectedTransferId])
-      next.selectedTransferId = null;
-    // Within-station inspector + hover state bound to a specific entity.
-    if (s.editingStationId && !doc.stations[s.editingStationId]) next.editingStationId = null;
-    if (s.selectedStopLineId && !doc.lines[s.selectedStopLineId]) next.selectedStopLineId = null;
-    if (s.hoveredStationId && !doc.stations[s.hoveredStationId]) next.hoveredStationId = null;
-    // Vertex handles dangle if the polygon is gone OR shrank past their index.
-    // Prune just the out-of-range indices; drop to null only if none survive.
-    if (s.selectedVertices) {
-      const poly = doc.polygons[s.selectedVertices.polygonId];
-      if (!poly) next.selectedVertices = null;
-      else {
-        const kept = s.selectedVertices.indices.filter((i) => i < poly.vertices.length);
-        if (kept.length !== s.selectedVertices.indices.length) {
-          next.selectedVertices = kept.length
-            ? { polygonId: s.selectedVertices.polygonId, indices: kept }
-            : null;
+      selectedRouteBulletIds: [],
+      selectedTransferId: null,
+      selectedLabelIds: [],
+      selectedPolygonIds: [],
+      selectedSvgImageIds: [],
+      selectedVertices: null,
+      mirrorMatching: false,
+      toolMode: 'arrow',
+      spaceHeld: false,
+      setToolMode: (m) => set({ toolMode: m }),
+      setSpaceHeld: (v) => set({ spaceHeld: v }),
+
+      // The single source of truth for mode transitions. Entering any non-idle
+      // mode wipes all primary selections; exiting just clears the line-tag
+      // hover preview (which is only meaningful inside creating-line-tag).
+      // Variant payloads (transferAnchor, insertAfterIndex) are updated in place
+      // via setTransferAnchor / setInsertAfterIndex.
+      setUiMode: (mode) =>
+        set(
+          mode.kind === 'idle'
+            ? { uiMode: mode, lineTagHoverPreview: null }
+            : { uiMode: mode, lineTagHoverPreview: null, ...clearedSelections() },
+        ),
+
+      // selectStation does NOT touch uiMode — placing-station and
+      // creating-route-bullet modes are sticky (canvas clicks place repeatedly;
+      // see MapCanvas onCanvasClick comments). The pure mode-cancellation rule
+      // applies to every OTHER select* setter. One exception, shared with the
+      // multi-select mutators below: layoutEditReconcile exits
+      // editing-station-layout whenever the selection stops being exactly the
+      // edited station.
+      selectStation: (id) => {
+        const nextIds = id == null ? [] : [id];
+        // Re-selecting the already-sole-selected station is NOT a primary-
+        // selection change: mirror matching survives it (a plain canvas click
+        // on the inspected station must not silently drop Select Similar). Any
+        // other transition — different id, multi→single collapse — resets it
+        // with the rest of clearedSelections.
+        const cur = get().selectedStationIds;
+        const sameSole = id != null && cur.length === 1 && cur[0] === id;
+        set({
+          ...clearedSelections(),
+          ...(sameSole ? { mirrorMatching: get().mirrorMatching } : {}),
+          ...layoutEditReconcile(get().uiMode, nextIds),
+          selectedStationIds: nextIds,
+          activeTab: id === null ? get().activeTab : 'stations',
+          editingStationId: id === null ? null : get().editingStationId,
+        });
+      },
+      toggleStationSelection: (id) =>
+        set((s) => {
+          const idx = s.selectedStationIds.indexOf(id);
+          if (idx >= 0) {
+            const next = s.selectedStationIds.slice();
+            next.splice(idx, 1);
+            return {
+              selectedStationIds: next,
+              ...layoutEditReconcile(s.uiMode, next),
+              // Multi-select implicitly clears the inspector-state pieces tied
+              // to a single station's grid editor.
+              selectedStopLineId: null,
+              labelSelected: false,
+              mirrorMatching: false,
+              editingStationId: null,
+              activeTab: 'stations',
+            };
+          }
+          const next = [...s.selectedStationIds, id];
+          return {
+            selectedStationIds: next,
+            ...layoutEditReconcile(s.uiMode, next),
+            // Adding a station to the set makes it foreign to any selected line /
+            // tag / transfer / mirror — clear them from the one shared home so the
+            // matrix can't drift (see SIBLING_PRIMARY_CLEAR).
+            ...SIBLING_PRIMARY_CLEAR,
+            selectedStopLineId: null,
+            labelSelected: false,
+            editingStationId: null,
+            activeTab: 'stations',
+          };
+        }),
+      setStationSelection: (ids) =>
+        set((s) => {
+          const next = dedupeLastWins(ids);
+          return {
+            selectedStationIds: next,
+            ...layoutEditReconcile(s.uiMode, next),
+            ...SIBLING_PRIMARY_CLEAR,
+            selectedStopLineId: null,
+            labelSelected: false,
+            editingStationId: null,
+            activeTab: 'stations',
+          };
+        }),
+      addStationsToSelection: (ids) =>
+        set((s) => {
+          const next = unionAppendNovel(s.selectedStationIds, ids);
+          if (next === s.selectedStationIds) return {};
+          return {
+            selectedStationIds: next,
+            ...layoutEditReconcile(s.uiMode, next),
+            ...SIBLING_PRIMARY_CLEAR,
+          };
+        }),
+      xorStationsToSelection: (ids) =>
+        set((s) => {
+          const next = xorAppend(s.selectedStationIds, ids);
+          if (next === s.selectedStationIds) return {};
+          return {
+            selectedStationIds: next,
+            ...layoutEditReconcile(s.uiMode, next),
+            ...SIBLING_PRIMARY_CLEAR,
+          };
+        }),
+      selectLine: (id) => {
+        if (id === null) {
+          // Null clear is gentle by design: drops line + tag, preserves other
+          // primaries and uiMode (callers that pass null — e.g. the canvas-
+          // background click — expect the rest of the selection untouched).
+          set({
+            selectedStationIds: [],
+            selectedLineId: null,
+            selectedLineTagId: null,
+            lineTagHoverPreview: null,
+          });
+          return;
         }
-      }
-    }
-    // Skip the set() entirely when nothing dangled — zustand notifies
-    // subscribers on every set (even an empty patch), so this keeps the common
-    // undo/redo path a true no-op rather than re-running every selector.
-    if (Object.keys(next).length > 0) set(next);
-  },
-}));
+        const s = get();
+        set({
+          ...clearedSelections(),
+          uiMode: { kind: 'idle' },
+          selectedLineId: id,
+          activeTab: 'lines',
+          // Selecting a line surfaces its editor: reveal a hidden sidebar so the
+          // editor is actually visible, and remember we did so exiting the
+          // selection can re-hide it. Sticky across line→line switches (by then the
+          // sidebar is already open, but the session is still "auto-revealed").
+          sidebarOpen: true,
+          sidebarAutoRevealed: !s.sidebarOpen || s.sidebarAutoRevealed,
+          lineTagHoverPreview: null,
+        });
+      },
+      startEditingStationLayout: (stationId) =>
+        set({
+          ...clearedSelections(),
+          uiMode: { kind: 'editing-station-layout', stationId },
+          selectedStationIds: [stationId],
+          mirrorMatching: get().mirrorMatching,
+          activeTab: 'stations',
+          lineTagHoverPreview: null,
+        }),
+      startAppendAt: (lineId, insertAfterIndex) =>
+        set({
+          ...clearedSelections(),
+          uiMode: { kind: 'appending-to-line', lineId, insertAfterIndex },
+          selectedLineId: lineId,
+          activeTab: 'lines',
+          lineTagHoverPreview: null,
+        }),
+      setAppending: (lineId) => {
+        const cur = get().uiMode;
+        if (lineId === null) {
+          if (cur.kind === 'appending-to-line') {
+            set({ uiMode: { kind: 'idle' }, lineTagHoverPreview: null });
+          }
+          return;
+        }
+        // Preserve any in-progress insertion cursor only when re-entering the
+        // SAME line; switching lines resets it.
+        const insertAfterIndex =
+          cur.kind === 'appending-to-line' && cur.lineId === lineId ? cur.insertAfterIndex : null;
+        set({
+          uiMode: { kind: 'appending-to-line', lineId, insertAfterIndex },
+          selectedLineId: lineId,
+          lineTagHoverPreview: null,
+        });
+      },
+      setInsertAfterIndex: (idx) => {
+        const cur = get().uiMode;
+        if (cur.kind !== 'appending-to-line') return;
+        set({ uiMode: { ...cur, insertAfterIndex: idx } });
+      },
+      setHoveredStation: (id) => set({ hoveredStationId: id }),
+      setHoveredLineStop: (v) => set({ hoveredLineStop: v }),
+      setHoveredInspectorSegment: (v) => set({ hoveredInspectorSegment: v }),
+      setSelectedStopLineId: (id) =>
+        set({ selectedStopLineId: id, labelSelected: id === null ? get().labelSelected : false }),
+      setLabelSelected: (selected) =>
+        set({
+          labelSelected: selected,
+          selectedStopLineId: selected ? null : get().selectedStopLineId,
+        }),
+      setEditingStationId: (id) => set({ editingStationId: id }),
+      toggleTab: (tab) =>
+        set((s) =>
+          s.sidebarOpen && s.activeTab === tab
+            ? { sidebarOpen: false, sidebarAutoRevealed: false }
+            : { activeTab: tab, sidebarOpen: true, sidebarAutoRevealed: false },
+        ),
+      toggleSidebar: () =>
+        set((s) => ({ sidebarOpen: !s.sidebarOpen, sidebarAutoRevealed: false })),
+      selectLineTag: (id) =>
+        set({
+          ...clearedSelections(),
+          uiMode: id === null ? get().uiMode : { kind: 'idle' },
+          selectedLineTagId: id,
+          lineTagHoverPreview: null,
+        }),
+      setLineTagHoverPreview: (preview) => set({ lineTagHoverPreview: preview }),
+      ...makeIdListActions(set, get, 'selectedRouteBulletIds', {
+        select: 'selectRouteBullet',
+        toggle: 'toggleRouteBulletSelection',
+        replace: 'setRouteBulletSelection',
+        add: 'addRouteBulletsToSelection',
+        xor: 'xorRouteBulletsToSelection',
+      }),
+      selectTransfer: (id) =>
+        set({
+          ...clearedSelections(),
+          uiMode: id === null ? get().uiMode : { kind: 'idle' },
+          selectedTransferId: id,
+          lineTagHoverPreview: null,
+        }),
+      setTransferAnchor: (anchor) => {
+        const cur = get().uiMode;
+        if (cur.kind !== 'creating-transfer') return;
+        set({ uiMode: { ...cur, anchor } });
+      },
+      setMirrorMatching: (on) => set({ mirrorMatching: on }),
+      ...makeIdListActions(set, get, 'selectedLabelIds', {
+        select: 'selectLabel',
+        toggle: 'toggleLabelSelection',
+        replace: 'setLabelSelection',
+        add: 'addLabelsToSelection',
+        xor: 'xorLabelsToSelection',
+      }),
+      ...makeIdListActions(
+        set,
+        get,
+        'selectedPolygonIds',
+        {
+          select: 'selectPolygon',
+          toggle: 'togglePolygonSelection',
+          replace: 'setPolygonSelection',
+          add: 'addPolygonsToSelection',
+          xor: 'xorPolygonsToSelection',
+        },
+        // A polygon selection change drops any active vertex handles (they're
+        // bound to a single polygon's edit session).
+        { selectedVertices: null },
+      ),
+      ...makeIdListActions(set, get, 'selectedSvgImageIds', {
+        select: 'selectSvgImage',
+        toggle: 'toggleSvgImageSelection',
+        replace: 'setSvgImageSelection',
+        add: 'addSvgImagesToSelection',
+        xor: 'xorSvgImagesToSelection',
+      }),
+      selectVertices: (sel) => set({ selectedVertices: sel }),
+      toggleVertexSelection: ({ polygonId, index }) =>
+        set((s) => {
+          const cur = s.selectedVertices;
+          // No set, or a set on another polygon → start fresh (single-polygon).
+          if (!cur || cur.polygonId !== polygonId) {
+            return { selectedVertices: { polygonId, indices: [index] } };
+          }
+          const has = cur.indices.includes(index);
+          const indices = has ? cur.indices.filter((i) => i !== index) : [...cur.indices, index];
+          // An emptied set collapses to null (never a { indices: [] }).
+          return { selectedVertices: indices.length ? { polygonId, indices } : null };
+        }),
+      setMixedSelection: (ids) =>
+        set({
+          ...clearedSelections(),
+          uiMode: { kind: 'idle' },
+          selectedRouteBulletIds: dedupeLastWins(ids.bullets ?? []),
+          selectedLabelIds: dedupeLastWins(ids.labels ?? []),
+          selectedPolygonIds: dedupeLastWins(ids.polygons ?? []),
+          selectedSvgImageIds: dedupeLastWins(ids.svgImages ?? []),
+        }),
+      reconcileWithDoc: (doc) => {
+        const s = get();
+        const next: Partial<SelectionState> = {};
+        // Filter an id list against the doc; return the kept list only when it
+        // actually shrank, so an all-resolving list keeps its reference.
+        const prune = <T extends string>(ids: T[], exists: (id: T) => boolean): T[] | undefined => {
+          const kept = ids.filter(exists);
+          return kept.length === ids.length ? undefined : kept;
+        };
+        const stations = prune(s.selectedStationIds, (id) => !!doc.stations[id]);
+        if (stations) next.selectedStationIds = stations;
+        const bullets = prune(s.selectedRouteBulletIds, (id) => !!doc.routeBullets[id]);
+        if (bullets) next.selectedRouteBulletIds = bullets;
+        const labels = prune(s.selectedLabelIds, (id) => !!doc.textLabels[id]);
+        if (labels) next.selectedLabelIds = labels;
+        const polygons = prune(s.selectedPolygonIds, (id) => !!doc.polygons[id]);
+        if (polygons) next.selectedPolygonIds = polygons;
+        const svgImages = prune(s.selectedSvgImageIds, (id) => !!doc.svgImages[id]);
+        if (svgImages) next.selectedSvgImageIds = svgImages;
+        // Single primaries.
+        if (s.selectedLineId && !doc.lines[s.selectedLineId]) next.selectedLineId = null;
+        if (s.selectedLineTagId && !doc.lineTags[s.selectedLineTagId])
+          next.selectedLineTagId = null;
+        if (s.selectedTransferId && !doc.transfers[s.selectedTransferId])
+          next.selectedTransferId = null;
+        // Within-station inspector + hover state bound to a specific entity.
+        if (s.editingStationId && !doc.stations[s.editingStationId]) next.editingStationId = null;
+        if (s.selectedStopLineId && !doc.lines[s.selectedStopLineId])
+          next.selectedStopLineId = null;
+        if (s.hoveredStationId && !doc.stations[s.hoveredStationId]) next.hoveredStationId = null;
+        // Vertex handles dangle if the polygon is gone OR shrank past their index.
+        // Prune just the out-of-range indices; drop to null only if none survive.
+        if (s.selectedVertices) {
+          const poly = doc.polygons[s.selectedVertices.polygonId];
+          if (!poly) next.selectedVertices = null;
+          else {
+            const kept = s.selectedVertices.indices.filter((i) => i < poly.vertices.length);
+            if (kept.length !== s.selectedVertices.indices.length) {
+              next.selectedVertices = kept.length
+                ? { polygonId: s.selectedVertices.polygonId, indices: kept }
+                : null;
+            }
+          }
+        }
+        // Skip the set() entirely when nothing dangled — zustand notifies
+        // subscribers on every set (even an empty patch), so this keeps the common
+        // undo/redo path a true no-op rather than re-running every selector.
+        if (Object.keys(next).length > 0) set(next);
+      },
+    }),
+    {
+      // Only the sidebar's visibility (open/closed + which tab) is persisted —
+      // the rest of this store is ephemeral selection state that must NOT
+      // survive a reload.
+      name: 'massimo-sidebar-v1',
+      storage: createJSONStorage(() => localStorage),
+      partialize: (s) => ({ sidebarOpen: s.sidebarOpen, activeTab: s.activeTab }),
+    },
+  ),
+);
 
 // ---- derived-selection selectors: one named home for "what is selected" ----
 

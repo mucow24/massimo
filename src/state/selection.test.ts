@@ -707,6 +707,40 @@ describe('toggleTab — collapsible sidebar list', () => {
   });
 });
 
+describe('sidebarOpen — persisted to localStorage', () => {
+  const STORAGE_KEY = 'massimo-sidebar-v1';
+
+  beforeEach(() => {
+    localStorage.clear();
+  });
+
+  it('writes the current sidebarOpen to localStorage when it changes', () => {
+    useSelection.setState({ sidebarOpen: true });
+    useSelection.getState().toggleSidebar(); // → false
+    const raw = localStorage.getItem(STORAGE_KEY);
+    expect(raw).toBeTruthy();
+    expect(JSON.parse(raw as string).state.sidebarOpen).toBe(false);
+  });
+
+  it('persists the active tab too, so the last-shown list survives a reload', () => {
+    useSelection.setState({ activeTab: 'stations' });
+    useSelection.getState().toggleTab('lines'); // → activeTab 'lines', triggers a write
+    const persisted = JSON.parse(localStorage.getItem(STORAGE_KEY) as string).state;
+    expect(persisted.activeTab).toBe('lines');
+  });
+
+  it('persists ONLY the sidebar visibility fields, not the ephemeral selection', () => {
+    useSelection.setState({
+      selectedStationIds: ['A'] as StationId[],
+      sidebarOpen: false,
+      activeTab: 'lines',
+    });
+    useSelection.getState().toggleSidebar(); // → sidebarOpen true, triggers a write
+    const persisted = JSON.parse(localStorage.getItem(STORAGE_KEY) as string).state;
+    expect(persisted).toEqual({ sidebarOpen: true, activeTab: 'lines' });
+  });
+});
+
 describe('selectLine — reveals a hidden sidebar', () => {
   const view = () => {
     const s = useSelection.getState();
