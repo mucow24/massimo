@@ -143,21 +143,21 @@ describe('<PolygonPopover />', () => {
     const popover = container.querySelector('.polygon-popover') as HTMLElement;
     const header = container.querySelector('.polygon-popover .header') as HTMLElement;
     // Centroid (0,0) projects to (0,0); base offset is +14/+14.
-    expect(popover.style.left).toBe('14px');
-    expect(popover.style.top).toBe('14px');
+    expect(parseFloat(popover.style.left)).toBeCloseTo(14, 9);
+    expect(parseFloat(popover.style.top)).toBeCloseTo(14, 9);
     fireEvent.pointerDown(header, { clientX: 100, clientY: 100, button: 0 });
     fireEvent.pointerMove(header, { clientX: 130, clientY: 120 });
     fireEvent.pointerUp(header, { clientX: 130, clientY: 120 });
-    expect(popover.style.left).toBe('44px'); // 14 + 30
-    expect(popover.style.top).toBe('34px'); // 14 + 20
+    expect(parseFloat(popover.style.left)).toBeCloseTo(44, 9); // 14 + 30
+    expect(parseFloat(popover.style.top)).toBeCloseTo(34, 9); // 14 + 20
   });
 
   it('keeps a dragged popover pinned to the canvas when zooming', () => {
-    // Regression: the drag offset used to be stored in screen pixels and added
-    // on top of the live-projected anchor, so zooming after a move left the
-    // dragged offset a fixed pixel size while the anchor scaled — the popover
-    // slid relative to the canvas. Storing the drag in world space makes the
-    // moved offset track zoom exactly like the anchor.
+    // Regression: any offset held in screen pixels and added on top of the
+    // live-projected anchor detaches the popover from the canvas under zoom —
+    // this bit the header drag first, then the 14px spawn gap itself (the
+    // wandering-popovers bug). Everything now lives in the frozen WORLD point,
+    // so the whole popover position — spawn gap included — scales with the map.
     const polygon = useDoc.getState().polygons['p0']; // centroid (0,0)
     const zoom1 = { vbX: 0, vbY: 0, vbW: 100, vbH: 100, size: { w: 100, h: 100 } };
     const { container, rerender } = render(
@@ -170,15 +170,16 @@ describe('<PolygonPopover />', () => {
     fireEvent.pointerDown(header, { clientX: 0, clientY: 0, button: 0 });
     fireEvent.pointerMove(header, { clientX: 30, clientY: 20 });
     fireEvent.pointerUp(header, { clientX: 30, clientY: 20 });
-    expect(popover.style.left).toBe('44px'); // 14 + 30
-    expect(popover.style.top).toBe('34px'); // 14 + 20
+    expect(parseFloat(popover.style.left)).toBeCloseTo(44, 9); // 14 + 30
+    expect(parseFloat(popover.style.top)).toBeCloseTo(34, 9); // 14 + 20
 
-    // Zoom 2× centered on the anchor (world origin stays at screen 0,0). The
-    // dragged offset must double with the canvas — not stay a fixed 30/20 px.
+    // Zoom 2× about the world origin. The corner sits on world point
+    // (14,14)+drag(30,20) = (44,34), which now projects to (88,68) — the whole
+    // offset doubles with the canvas; nothing stays a fixed pixel size.
     const zoom2 = { vbX: 0, vbY: 0, vbW: 50, vbH: 50, size: { w: 100, h: 100 } };
     rerender(<PolygonPopover polygon={polygon} view={zoom2} onClose={() => {}} />);
-    expect(popover.style.left).toBe('74px'); // 14 + 60 (30 world × 2)
-    expect(popover.style.top).toBe('54px'); // 14 + 40 (20 world × 2)
+    expect(parseFloat(popover.style.left)).toBeCloseTo(88, 9);
+    expect(parseFloat(popover.style.top)).toBeCloseTo(68, 9);
   });
 
   it('re-freezes the centroid when a different polygon is selected', () => {
@@ -191,8 +192,8 @@ describe('<PolygonPopover />', () => {
       <PolygonPopover polygon={left} view={view} onClose={() => {}} />,
     );
     const popover = container.querySelector('.polygon-popover') as HTMLElement;
-    expect(popover.style.left).toBe('14px'); // 0 + 14 base offset
-    expect(popover.style.top).toBe('14px');
+    expect(parseFloat(popover.style.left)).toBeCloseTo(14, 9); // 0 + 14 base offset
+    expect(parseFloat(popover.style.top)).toBeCloseTo(14, 9);
 
     const right = makePolygon({
       id: 'p1',
@@ -204,8 +205,8 @@ describe('<PolygonPopover />', () => {
       ],
     }); // centroid (70,50)
     rerender(<PolygonPopover polygon={right} view={view} onClose={() => {}} />);
-    expect(popover.style.left).toBe('84px'); // 70 + 14
-    expect(popover.style.top).toBe('64px'); // 50 + 14
+    expect(parseFloat(popover.style.left)).toBeCloseTo(84, 9); // 70 + 14
+    expect(parseFloat(popover.style.top)).toBeCloseTo(64, 9); // 50 + 14
   });
 
   it('the curve-radius slider (0–50) writes through to the store', () => {

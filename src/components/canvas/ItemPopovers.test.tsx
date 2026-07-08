@@ -20,10 +20,10 @@ const bullet: RouteBullet = {
   size: 10,
 };
 
-function leftTop(): { left: string; top: string } {
+function leftTop(): { left: number; top: number } {
   const el = document.querySelector('.bullet-popover') as HTMLElement | null;
   if (!el) throw new Error('popover not rendered');
-  return { left: el.style.left, top: el.style.top };
+  return { left: parseFloat(el.style.left), top: parseFloat(el.style.top) };
 }
 
 beforeEach(() => {
@@ -41,18 +41,21 @@ describe('ItemPopovers — tracks the in-flight pan', () => {
   it('reprojects the popover through the live (pending) viewport mid-pan', () => {
     render(<ItemPopovers view={committedView} />);
     // Committed: world (0,0) → screen (400,300), + the popover's 14px gap.
-    expect(leftTop()).toEqual({ left: '414px', top: '314px' });
+    expect(leftTop().left).toBeCloseTo(414, 9);
+    expect(leftTop().top).toBeCloseTo(314, 9);
 
     // Mid middle-drag pan: the viewBox is written imperatively (no store commit),
     // so useViewport publishes the live viewport here. Center moved by (-50,-30)
     // → vb origin (-450,-330) → world (0,0) now projects to screen (450,330).
     act(() => useLiveViewportStore.setState({ pending: { x: -50, y: -30, zoom: 1 } }));
-    expect(leftTop()).toEqual({ left: '464px', top: '344px' });
+    expect(leftTop().left).toBeCloseTo(464, 9);
+    expect(leftTop().top).toBeCloseTo(344, 9);
 
     // Pan commit clears the pending viewport; the popover falls back to the
     // (now-updated) committed view passed as a prop — no jump.
     act(() => useLiveViewportStore.setState({ pending: null }));
-    expect(leftTop()).toEqual({ left: '414px', top: '314px' });
+    expect(leftTop().left).toBeCloseTo(414, 9);
+    expect(leftTop().top).toBeCloseTo(314, 9);
   });
 });
 
@@ -94,16 +97,20 @@ describe('ItemPopovers — station popover', () => {
     expect(pop?.querySelector('textarea')).not.toBeNull();
   });
 
-  it('does NOT mount during sticky placing-station mode', () => {
+  it('is hidden (mounted, display:none) during sticky placing-station mode', () => {
     seedStation();
     // placing-station wipes selection on entry; re-select to simulate the
-    // sticky-mode click-an-existing-station case.
+    // sticky-mode click-an-existing-station case. The editor must not show
+    // under every placement click — but it stays MOUNTED so its frozen anchor
+    // survives the excursion (see popoverCanvasLock.test.tsx).
     act(() => {
       useSelection.getState().setUiMode({ kind: 'placing-station' });
       useSelection.setState({ ...useSelection.getState(), selectedStationIds: ['a'] });
     });
     render(<ItemPopovers view={committedView} />);
-    expect(document.querySelector('.station-popover')).toBeNull();
+    const pop = document.querySelector('.station-popover');
+    expect(pop).not.toBeNull();
+    expect(pop).not.toBeVisible();
   });
 
   it("stays mounted while editing THIS station's layout", () => {
