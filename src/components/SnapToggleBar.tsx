@@ -58,7 +58,7 @@ const TOGGLES: ToggleSpec[] = [
   {
     key: 'tens',
     label: 'Snap to grid length',
-    hint: 'Notch to whole grid-length steps from the thing you snap to (the previous neighbor for stations on a line)',
+    hint: 'Notch to whole grid steps from what you snap to',
     states: boolStates(RulerHorizontalIcon),
   },
   {
