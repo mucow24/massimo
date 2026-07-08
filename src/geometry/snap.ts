@@ -20,11 +20,10 @@ export const SNAP_PERP_TOLERANCE = 10;
  */
 export const TIGHT_PERP_TOLERANCE = 0.5;
 
-/** "Snap to 10's" interval, in world units. */
-export const TENS_INTERVAL = 10;
-
 /** Default "snap to grid" cell size, in world units. The toolbar cycles the
- *  active size through 5, 10, and 20 and threads it into the snap calls. */
+ *  active size through 5, 10, and 20 and threads it into the snap calls. Also
+ *  the default cadence for "Snap to grid length" (the `tens` mode), which
+ *  notches to whole multiples of the *active* grid size. */
 export const GRID_INTERVAL = 10;
 
 // Both gate on |cross(unitAxisA, unitAxisB)| = |sin(angle between the axes)|,
@@ -107,8 +106,12 @@ export interface SnapModes {
    *  same-line prev and next neighbors when their axes through the dragged
    *  are parallel. Gated on `line`. */
   equidistant: boolean;
-  /** Along the line axis, snap the dragged stop to a multiple of TENS_INTERVAL
-   *  measured from the prev-in-line-ordering neighbor. Gated on `line`. */
+  /** "Snap to grid length": along the line axis, snap the dragged stop to a
+   *  multiple of the active grid size (`gridInterval`) measured from the
+   *  prev-in-line-ordering neighbor. For stations/bullets this is gated on
+   *  `line` (the engine only refines a line-mode primary). The point snapper
+   *  (`snapPolygonPoint`) reuses the same flag to notch other objects a whole
+   *  grid length from whatever they snap to. */
   tens: boolean;
   /** Snap when the dragged stop is aligned with any other stop along the
    *  selected axis family (vertical, horizontal, and/or diagonal; line
@@ -488,6 +491,7 @@ export function snapDraggedStation(input: SnapInput): SnapResult {
       stationsRec: stations,
       modes,
       tolerance,
+      gridInterval,
       bulletLineId,
       redistributeAnchor,
       excludedIds: excluded,
@@ -878,8 +882,8 @@ export function allAxesPairs(
 /**
  * Phase-3 along-axis refinement: equidistant + tens. Adjusts (sx, sy) along
  * `axis` to either an equidistant target (`equidistant`), or the nearest
- * multiple of `TENS_INTERVAL` measured from a stable along-axis anchor
- * (`tens`).
+ * multiple of the active grid size (`gridInterval`) measured from a stable
+ * along-axis anchor (`tens`).
  *
  * Anchor selection for equidistant:
  *   - Interior: midpoint between same-line prev and next neighbors, when
@@ -897,8 +901,8 @@ export function allAxesPairs(
  *     the line. For termini at index 0, falls back to next so both ends of
  *     a line behave symmetrically.
  *   - Bullet drag: the line's first station's stop. Bullets aren't part of
- *     `line.stations`, so a stable line-anchored grid (every 10 from the
- *     start of the line) is the natural extension.
+ *     `line.stations`, so a stable line-anchored grid (every `gridInterval`
+ *     from the start of the line) is the natural extension.
  *
  * When both modes apply, the candidate closest to the proposed position
  * wins; equidistant wins exact ties.
@@ -922,6 +926,8 @@ function refineAlongAxis(args: {
   stationsRec: Record<StationId, Station>;
   modes: SnapModes;
   tolerance: number;
+  /** Active grid size — the cadence "Snap to grid length" notches to. */
+  gridInterval: number;
   /** Set in bullet mode. Selects the bullet-specific anchor logic and
    *  disables equidistant. */
   bulletLineId?: LineId;
@@ -947,6 +953,7 @@ function refineAlongAxis(args: {
     stationsRec,
     modes,
     tolerance,
+    gridInterval,
     bulletLineId,
     redistributeAnchor,
     excludedIds,
@@ -992,7 +999,7 @@ function refineAlongAxis(args: {
     const anchor = stopWorldFor(anchorStation, bulletLineId);
     if (!anchor?.axisOk) return null;
     const dAlong = (dStopX - anchor.x) * axis.x + (dStopY - anchor.y) * axis.y;
-    const tensAlong = Math.round(dAlong / TENS_INTERVAL) * TENS_INTERVAL;
+    const tensAlong = Math.round(dAlong / gridInterval) * gridInterval;
     const delta = tensAlong - dAlong;
     if (Math.abs(delta) > tolerance) return null;
     return { sx: sx + delta * axis.x, sy: sy + delta * axis.y };
@@ -1077,7 +1084,7 @@ function refineAlongAxis(args: {
       const tensAnchor = prevStop?.axisOk ? prevStop : nextStop?.axisOk ? nextStop : null;
       if (tensAnchor) {
         const dAlong = (dStopX - tensAnchor.x) * axis.x + (dStopY - tensAnchor.y) * axis.y;
-        const tensAlong = Math.round(dAlong / TENS_INTERVAL) * TENS_INTERVAL;
+        const tensAlong = Math.round(dAlong / gridInterval) * gridInterval;
         const delta = tensAlong - dAlong;
         if (Math.abs(delta) <= tolerance) {
           candidates.push({ delta, kind: 'tens' });

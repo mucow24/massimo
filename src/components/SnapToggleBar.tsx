@@ -11,6 +11,7 @@ import {
   ViewVerticalIcon,
 } from '@radix-ui/react-icons';
 import { useSnapPrefs } from '../state/snapPrefs';
+import { useViewportStore } from '../state/viewportStore';
 import type { SnapModes } from '../geometry/snap';
 
 /** One state in a toggle's cycle. Index 0 is always the "off" state. */
@@ -56,10 +57,9 @@ const TOGGLES: ToggleSpec[] = [
   },
   {
     key: 'tens',
-    label: "Snap to 10's",
-    hint: 'Snap to multiples of 10 from the previous neighbor (stations only)',
+    label: 'Snap to grid length',
+    hint: 'Notch to whole grid-length steps from the thing you snap to (the previous neighbor for stations on a line)',
     states: boolStates(RulerHorizontalIcon),
-    requiresLine: true,
   },
   {
     key: 'all',
@@ -89,6 +89,7 @@ const TOGGLES: ToggleSpec[] = [
 export function SnapToggleBar() {
   const modes = useSnapPrefs((s) => s.modes);
   const setMode = useSnapPrefs((s) => s.setMode);
+  const gridSize = useViewportStore((s) => s.gridSize);
   return (
     <div className="tool-group" role="group" aria-label="Snap modes">
       {TOGGLES.map(({ key, label, hint, states, requiresLine }) => {
@@ -103,11 +104,15 @@ export function SnapToggleBar() {
         // aria-pressed; the exact sub-mode lives in title/data-snap-state.
         const active = idx > 0;
         const { Icon } = state;
+        // "Snap to grid length" shows the live grid size in its tooltip (5/10/20)
+        // so the user sees what "one step" currently means. aria-label stays the
+        // bare label for stable a11y/testing.
+        const displayLabel = key === 'tens' ? `${label} (${gridSize}'s)` : label;
         const title = disabled
-          ? `${label} — enable Snap to line first`
+          ? `${displayLabel} — enable Snap to line first`
           : active
-            ? `${label}: ${state.name} — ${hint} · click to cycle`
-            : `${label} — ${hint} · click to cycle`;
+            ? `${displayLabel}: ${state.name} — ${hint} · click to cycle`
+            : `${displayLabel} — ${hint} · click to cycle`;
         return (
           <button
             key={key}
