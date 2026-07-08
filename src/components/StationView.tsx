@@ -26,6 +26,9 @@ interface Props {
     | 'match-stroke';
   // Override fill for the highlight-* layers (default white).
   highlightColor?: string;
+  // Override the `stroke` layer's outline color (default: theme selection
+  // stroke). Used by the layout-edit focus to paint a white outline.
+  strokeColor?: string;
 }
 
 /**
@@ -47,12 +50,13 @@ export const StationView = memo(function StationView({
   onStartLabelDrag,
   layer,
   highlightColor = '#fff',
+  strokeColor,
 }: Props) {
   switch (layer) {
     case 'wash':
     case 'stroke':
     case 'match-stroke':
-      return <StationSilhouette station={station} layer={layer} />;
+      return <StationSilhouette station={station} layer={layer} strokeColor={strokeColor} />;
     case 'bg':
       return (
         <StationHitArea

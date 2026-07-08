@@ -25,9 +25,13 @@ export type SilhouetteLayer = 'wash' | 'stroke' | 'match-stroke';
 export function StationSilhouette({
   station,
   layer,
+  strokeColor,
 }: {
   station: Station;
   layer: SilhouetteLayer;
+  /** Overrides the `stroke` layer's outline color (default: theme selection
+   *  stroke). The layout-edit focus paints a white outline above its dim. */
+  strokeColor?: string;
 }) {
   const labelFontSize = useDoc((s) => s.labelFontSize);
   const labelWeight = useDoc((s) => s.labelWeight);
@@ -88,11 +92,11 @@ export function StationSilhouette({
     );
   }
   return (
-    <g transform={transform} pointerEvents="none">
+    <g data-station-stroke={station.id} transform={transform} pointerEvents="none">
       <path
         d={pathStr}
         fill="none"
-        stroke={themeColors.selectionStroke}
+        stroke={strokeColor ?? themeColors.selectionStroke}
         strokeWidth={SELECTION_STROKE_WIDTH / zoom}
         strokeLinejoin="round"
       />

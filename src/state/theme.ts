@@ -55,10 +55,10 @@ export interface ThemeColors {
   /** Translucent fill companion to `accent` (marquee interior). */
   accentWash: string;
   /**
-   * Full-canvas wash painted under a selected line's re-painted copy, muting
-   * everything else. Softer in light mode so the rest of the map stays
-   * readable as context; the black canvas keeps the stronger wash (colored
-   * lines need more muting against pure black).
+   * Full-canvas focus wash: painted under a selected line's — or a
+   * layout-edited station's — re-painted copy, muting everything else. One
+   * standardized strength across both themes (a softer light-mode wash was
+   * tried and disliked); tune it here and every focus mode follows.
    */
   dim: string;
   dimOpacity: number;
@@ -82,7 +82,7 @@ const LIGHT: ThemeColors = {
   accent: '#1a4ea8',
   accentWash: 'rgba(26, 78, 168, 0.08)',
   dim: '#000000',
-  dimOpacity: 0.55,
+  dimOpacity: 0.7,
   dimmedLabel: '#eeeeee',
 };
 
@@ -98,7 +98,7 @@ const DARK: ThemeColors = {
   accent: '#6b9aff',
   accentWash: 'rgba(107, 154, 255, 0.12)',
   dim: '#000000',
-  dimOpacity: 0.75,
+  dimOpacity: 0.7,
   dimmedLabel: '#bbbbbb',
 };
 
