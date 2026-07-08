@@ -60,11 +60,14 @@ export function NumericFieldRow({
   detent,
   disabled,
 }: Props) {
-  const { text, history, onNumberFocus, onNumberChange, onNumberWheel, onNumberBlur } =
+  const { text, history, onNumberFocus, onNumberChange, attachWheel, onNumberBlur } =
     useNumericField(value, onChange, getCurrent, step);
 
+  // attachWheel binds a non-passive native wheel listener (React's onWheel is
+  // passive, so its preventDefault would warn + no-op). Omit it while disabled
+  // so a disabled row ignores the wheel.
   return (
-    <div className="options-popover-row" onWheel={disabled ? undefined : onNumberWheel}>
+    <div className="options-popover-row" ref={disabled ? undefined : attachWheel}>
       <label htmlFor={id} className="options-popover-label">
         {label}
       </label>
