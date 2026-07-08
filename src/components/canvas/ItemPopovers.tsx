@@ -35,17 +35,24 @@ export function ItemPopovers({ view: committed }: { view: ViewportProjection }) 
 
   if (sole.type === 'station') {
     const st = stations[sole.id];
+    if (!st) return null;
     const mode = selection.uiMode;
-    // Idle only — except the station's own layout-edit mode, whose per-stop
-    // pickers live in this popover. Sticky placing-station must NOT pop an
-    // editor open under every placement click on an existing station.
+    // Shown in idle only — except the station's own layout-edit mode, whose
+    // per-stop pickers live in this popover. Sticky placing-station must NOT
+    // pop an editor open under every placement click on an existing station.
+    // Hidden rather than unmounted for other modes: unmounting would drop the
+    // frozen anchor and re-spawn the panel against wherever the camera is on
+    // the way back to idle — a canvas-lock-breaking jump.
     const show =
-      st &&
-      (mode.kind === 'idle' ||
-        (mode.kind === 'editing-station-layout' && mode.stationId === sole.id));
-    if (!show) return null;
+      mode.kind === 'idle' ||
+      (mode.kind === 'editing-station-layout' && mode.stationId === sole.id);
     return (
-      <StationPopover station={st} view={view} onClose={() => selection.selectStation(null)} />
+      <StationPopover
+        station={st}
+        view={view}
+        hidden={!show}
+        onClose={() => selection.selectStation(null)}
+      />
     );
   }
 

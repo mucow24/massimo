@@ -78,8 +78,8 @@ describe('<TextLabelPopover /> — world position freezes, viewport tracks live'
       />,
     );
     const after = positionOf(popover);
-    expect(after.left).toBe(before.left - 50);
-    expect(after.top).toBe(before.top - 30);
+    expect(after.left).toBeCloseTo(before.left - 50, 9);
+    expect(after.top).toBeCloseTo(before.top - 30, 9);
   });
 
   // Regression: selecting a *different* label reuses the same popover instance
@@ -98,7 +98,8 @@ describe('<TextLabelPopover /> — world position freezes, viewport tracks live'
       />,
     );
     const popover = container.querySelector('.text-label-popover') as HTMLElement;
-    expect(positionOf(popover)).toEqual({ left: 114, top: 114 }); // 100 + 14 base offset
+    expect(positionOf(popover).left).toBeCloseTo(114, 9); // 100 + 14 base offset
+    expect(positionOf(popover).top).toBeCloseTo(114, 9);
 
     const right = makeTextLabel({ id: 'g2', text: 'R' });
     rerender(
@@ -112,7 +113,8 @@ describe('<TextLabelPopover /> — world position freezes, viewport tracks live'
     // Tracks the new label, but clamped into the 800×600 host so the panel
     // doesn't spawn cropped by the canvas edge: 700+14 → 544 (800−248−8),
     // 500+14 → 344 (600−248−8).
-    expect(positionOf(popover)).toEqual({ left: 544, top: 344 });
+    expect(positionOf(popover).left).toBeCloseTo(544, 9);
+    expect(positionOf(popover).top).toBeCloseTo(344, 9);
   });
 
   // A label selected near the host's bottom-right corner would put the popover
@@ -130,25 +132,41 @@ describe('<TextLabelPopover /> — world position freezes, viewport tracks live'
       />,
     );
     const popover = container.querySelector('.text-label-popover') as HTMLElement;
-    expect(positionOf(popover)).toEqual({ left: 544, top: 344 });
+    expect(positionOf(popover).left).toBeCloseTo(544, 9);
+    expect(positionOf(popover).top).toBeCloseTo(344, 9);
   });
 
-  // Regression guard: at zero host size (first paint before measurement) the
-  // clamp is skipped, and the freeze must not run the screen→world conversion
-  // on a 0-sized viewport — 0/0 is NaN, which would poison the frozen anchor
-  // permanently (it only recomputes on id change).
-  it('spawns at the plain offset when the host has no size yet (no NaN freeze)', () => {
+  // Regression guard: at zero host size (first paint before measurement) there
+  // is no screen↔world mapping, so the spawn must not freeze — inverting a
+  // 0-sized viewport is a division by zero that would poison the frozen anchor
+  // permanently. The spawn defers to the first measured render and places
+  // (gap + clamp) against that real view.
+  it('defers the spawn while the host has no size, then places against the real view', () => {
     const label = makeTextLabel({ id: 'g1', text: 'X' });
-    const { container } = render(
+    const { container, rerender } = render(
       <TextLabelPopover
         label={label}
-        world={{ x: 0, y: 0 }}
+        world={{ x: 790, y: 590 }}
         view={{ vbX: 0, vbY: 0, vbW: 800, vbH: 600, size: { w: 0, h: 0 } }}
         onClose={() => {}}
       />,
     );
     const popover = container.querySelector('.text-label-popover') as HTMLElement;
+    // Unfrozen fallback (nothing is visible in a 0-px host anyway): plain
+    // projection + gap, and crucially no NaN.
     expect(positionOf(popover)).toEqual({ left: 14, top: 14 });
+    // Host measured: the deferred spawn runs now, clamped into the real box —
+    // 790+14 → 544 (800−248−8), 590+14 → 344 (600−248−8).
+    rerender(
+      <TextLabelPopover
+        label={label}
+        world={{ x: 790, y: 590 }}
+        view={identityView}
+        onClose={() => {}}
+      />,
+    );
+    expect(positionOf(popover).left).toBeCloseTo(544, 9);
+    expect(positionOf(popover).top).toBeCloseTo(344, 9);
   });
 
   it('a header drag can still push the popover past the host edge (clamp is spawn-only)', () => {
@@ -163,18 +181,20 @@ describe('<TextLabelPopover /> — world position freezes, viewport tracks live'
     );
     const popover = container.querySelector('.text-label-popover') as HTMLElement;
     const header = container.querySelector('.text-label-popover .header') as HTMLElement;
-    expect(positionOf(popover)).toEqual({ left: 514, top: 314 });
+    expect(positionOf(popover).left).toBeCloseTo(514, 9);
+    expect(positionOf(popover).top).toBeCloseTo(314, 9);
     fireEvent.pointerDown(header, { clientX: 0, clientY: 0, button: 0 });
     fireEvent.pointerMove(header, { clientX: 200, clientY: 100 });
     fireEvent.pointerUp(header, { clientX: 200, clientY: 100 });
-    expect(positionOf(popover)).toEqual({ left: 714, top: 414 }); // past the x-limit of 544
+    expect(positionOf(popover).left).toBeCloseTo(714, 9); // past the x-limit of 544
+    expect(positionOf(popover).top).toBeCloseTo(414, 9);
   });
 
-  // Regression: the header-drag offset used to be stored in screen pixels and
-  // added on top of the live-projected anchor, so zooming after a move left the
-  // dragged offset a fixed pixel size while the anchor scaled — the popover slid
-  // relative to the canvas. Storing the drag in world space makes the moved
-  // offset track zoom exactly like the anchor.
+  // Regression: any offset held in screen pixels and added on top of the
+  // live-projected anchor detaches the popover from the canvas under zoom —
+  // this bit the header drag first, then the 14px spawn gap itself (the
+  // wandering-popovers bug). Everything now lives in the frozen WORLD point,
+  // so the whole popover position — spawn gap included — scales with the map.
   it('keeps a dragged popover pinned to the canvas when zooming', () => {
     const label = makeTextLabel({ id: 'g1', text: 'X' });
     const { container, rerender } = render(
@@ -192,15 +212,18 @@ describe('<TextLabelPopover /> — world position freezes, viewport tracks live'
     fireEvent.pointerDown(header, { clientX: 0, clientY: 0, button: 0 });
     fireEvent.pointerMove(header, { clientX: 30, clientY: 20 });
     fireEvent.pointerUp(header, { clientX: 30, clientY: 20 });
-    expect(positionOf(popover)).toEqual({ left: 44, top: 34 }); // 14 + 30 / 14 + 20
+    expect(positionOf(popover).left).toBeCloseTo(44, 9); // 14 + 30
+    expect(positionOf(popover).top).toBeCloseTo(34, 9); // 14 + 20
 
-    // Zoom 2× centered on the anchor (world origin stays at screen 0,0). The
-    // dragged offset must double with the canvas — not stay a fixed 30/20 px.
+    // Zoom 2× about the world origin. The corner sits on world point
+    // (14,14)+drag(30,20) = (44,34), which now projects to (88,68) — the whole
+    // offset doubles with the canvas; nothing stays a fixed pixel size.
     const zoom2 = { vbX: 0, vbY: 0, vbW: 400, vbH: 300, size: { w: 800, h: 600 } };
     rerender(
       <TextLabelPopover label={label} world={{ x: 0, y: 0 }} view={zoom2} onClose={() => {}} />,
     );
-    expect(positionOf(popover)).toEqual({ left: 74, top: 54 }); // 14 + 60 / 14 + 40
+    expect(positionOf(popover).left).toBeCloseTo(88, 9);
+    expect(positionOf(popover).top).toBeCloseTo(68, 9);
   });
 });
 

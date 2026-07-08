@@ -7,6 +7,10 @@ interface Props {
   // anchor, but a caller may pin it elsewhere (StationPopover in layout edit).
   left: number;
   top: number;
+  // display:none instead of unmounting — keeps the frozen anchor (and any
+  // header drag) alive across a temporary hide, so the panel returns to the
+  // same canvas point instead of re-spawning wherever the camera is then.
+  hidden?: boolean;
   headerHandlers: DraggablePopover['headerHandlers'];
   children: ReactNode;
 }
@@ -19,11 +23,24 @@ interface Props {
  * inside the popover must never reach the canvas, which would deselect the
  * item (closing the popover) or right-click-rotate whatever sits under it.
  */
-export function DraggablePopoverShell({ className, left, top, headerHandlers, children }: Props) {
+export function DraggablePopoverShell({
+  className,
+  left,
+  top,
+  hidden,
+  headerHandlers,
+  children,
+}: Props) {
   return (
     <div
       className={className}
-      style={{ position: 'absolute', left, top, zIndex: 1100 }}
+      style={{
+        position: 'absolute',
+        left,
+        top,
+        zIndex: 1100,
+        display: hidden ? 'none' : undefined,
+      }}
       onPointerDown={(e) => e.stopPropagation()}
       onClick={(e) => e.stopPropagation()}
       onContextMenu={(e) => {
