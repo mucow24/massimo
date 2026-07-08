@@ -4,6 +4,7 @@ import {
   emptyStyleState,
   inlineBulletDiameter,
   parseFormattedLine,
+  resolveRunFontSize,
   resolveRunWeight,
   type InlineStyleState,
   type LabelSegment,
@@ -55,6 +56,10 @@ export type SegmentMetric =
       value: string;
       /** Resolved formatting-tag style; absent on unstyled runs. */
       style?: SegmentStyle;
+      /** Resolved font size (world units) this run renders and was measured at —
+       *  the label's base size unless an inline `<size=…>` overrides it. The
+       *  renderers draw the run at exactly this size. */
+      fontSize: number;
       /** Distance the cursor moves rightward after rendering. */
       advance: number;
       /** Overhang LEFT of the segment cursor (positive = ink left of cursor). */
@@ -88,6 +93,22 @@ export interface LineMetrics {
    * letter-shape-dependent edge.
    */
   advanceWidth: number;
+  /**
+   * Largest resolved run size (world units) on this line — the label's base size
+   * when nothing is tagged bigger; inline bullets count as the base size. The
+   * line occupies one LINE_HEIGHT of this, so a bigger inline `<size>` grows the
+   * line and a smaller one shrinks it ("line height follows its content").
+   */
+  maxFontSize: number;
+  /**
+   * Distance from the block's top edge down to this line's shared text baseline.
+   * Runs of different sizes on a line all sit on this baseline; the renderers
+   * place line i here. Cumulative across lines (each line advances by its own
+   * `maxFontSize * LINE_HEIGHT * leading`), so it reduces to
+   * `BASELINE_FRACTION*fontSize + i*fontSize*LINE_HEIGHT*leading` when every line
+   * is the base size.
+   */
+  baselineFromTop: number;
   /** Parsed segments along this line, with their measurements. Empty for an
    *  empty line. */
   segments: SegmentMetric[];
@@ -105,10 +126,12 @@ export interface LineMetrics {
   endsParagraph: boolean;
 }
 
-/** The ink-only fields of a line, before `raw`/`endsParagraph` are attached. */
+/** The ink-only fields of a line, before `raw`/`endsParagraph`/`baselineFromTop`
+ *  are attached (`baselineFromTop` needs the whole block, so it's filled in a
+ *  second pass by `measureTextLabel`). */
 type LineInk = Pick<
   LineMetrics,
-  'inkWidth' | 'bearingLeft' | 'bearingRight' | 'advanceWidth' | 'segments'
+  'inkWidth' | 'bearingLeft' | 'bearingRight' | 'advanceWidth' | 'maxFontSize' | 'segments'
 >;
 
 /** A measured line plus the tag state it leaves open for the next line. */
@@ -257,7 +280,7 @@ function computeLineMetrics(
   raw: string,
   fontSize: number,
   measureCtx: CanvasRenderingContext2D | null,
-  declFor: (style?: SegmentStyle) => string,
+  declFor: (style: SegmentStyle | undefined, size: number) => string,
   letterSpacingPx: number,
   mode: ParseMode,
   entry: InlineStyleState | null,
@@ -275,11 +298,25 @@ function computeLineMetrics(
     exit = r.state;
   }
   if (segments.length === 0) {
-    return { inkWidth: 0, bearingLeft: 0, bearingRight: 0, advanceWidth: 0, segments: [], exit };
+    // Blank line: no ink, but it still occupies a base-size line box so vertical
+    // rhythm is preserved.
+    return {
+      inkWidth: 0,
+      bearingLeft: 0,
+      bearingRight: 0,
+      advanceWidth: 0,
+      maxFontSize: fontSize,
+      segments: [],
+      exit,
+    };
   }
+  // Largest resolved run size on the line drives its height. Bullets are the base
+  // size (styles, incl. <size>, never attach to a bullet).
+  let maxFontSize = 0;
   const segMetrics: SegmentMetric[] = segments.map((seg) => {
     if (seg.kind === 'bullet') {
       const d = inlineBulletDiameter(fontSize);
+      if (fontSize > maxFontSize) maxFontSize = fontSize;
       return {
         kind: 'bullet',
         code: seg.code,
@@ -291,16 +328,18 @@ function computeLineMetrics(
         diameter: d,
       };
     }
+    const segFontSize = resolveRunFontSize(fontSize, seg.style);
+    if (segFontSize > maxFontSize) maxFontSize = segFontSize;
     const t = measureTextSegment(
       seg.value,
-      fontSize,
+      segFontSize,
       measureCtx,
-      declFor(seg.style),
+      declFor(seg.style, segFontSize),
       letterSpacingPx,
     );
     return seg.style
-      ? { kind: 'text', value: seg.value, style: seg.style, ...t }
-      : { kind: 'text', value: seg.value, ...t };
+      ? { kind: 'text', value: seg.value, style: seg.style, fontSize: segFontSize, ...t }
+      : { kind: 'text', value: seg.value, fontSize: segFontSize, ...t };
   });
 
   // Walk segments to compute the line's ink extent.
@@ -320,6 +359,7 @@ function computeLineMetrics(
       bearingLeft: 0,
       bearingRight: 0,
       advanceWidth: cursor,
+      maxFontSize,
       segments: segMetrics,
       exit,
     };
@@ -329,6 +369,7 @@ function computeLineMetrics(
     bearingLeft: -inkLeft,
     bearingRight: inkRight,
     advanceWidth: cursor,
+    maxFontSize,
     segments: segMetrics,
     exit,
   };
@@ -373,11 +414,13 @@ function wrapParagraph(
  * Measure the unrotated bounding box of a styled multi-line text block.
  *
  * Each line is parsed into text + bullet segments (text labels additionally
- * parse formatting tags, whose styles change per-segment font weight/style);
+ * parse formatting tags, whose styles change per-segment font weight/style/size);
  * widths combine the canvas `measureText` (or a fontSize-based approximation
  * when no real canvas is available) with the inline-bullet diameter and any
- * tracking. Height = one line-height + (lineCount - 1) leading-scaled
- * spacings. Returned values are cached by content+style.
+ * tracking. Each line is as tall as its largest run (an inline `<size=…>` grows
+ * or shrinks that line and the box), and the total height sums the per-line
+ * heights with leading-scaled spacing. Returned values are cached by
+ * content+style.
  *
  * Both `TextLabel` and station-name renderers can pass themselves here —
  * `StyledText` is the structural subset of fields the measurer uses.
@@ -393,11 +436,12 @@ export function measureTextLabel(styled: StyledText): MeasuredBBox {
   // Measure with the SAME stack the canvas renders (incl. the symbol fallback),
   // so a symbol's measured advance matches its drawn advance — otherwise the
   // inline-bullet cursor spaces it against the wrong (system-fallback) width.
-  // Per-segment: a <w=…>/<b>/<i> tag bumps the weight/style for that run only.
-  const declFor = (style?: SegmentStyle): string => {
+  // Per-segment: a <w=…>/<b>/<i> tag bumps the weight/style and a <size=…> tag the
+  // size for that run only (the caller resolves the run size and passes it in).
+  const declFor = (style: SegmentStyle | undefined, size: number): string => {
     const w = resolveRunWeight(styled.weight, style);
     const it = styled.italic || style?.italic;
-    return `${it ? 'italic ' : ''}${w} ${styled.fontSize}px ${FONT_STACK}`;
+    return `${it ? 'italic ' : ''}${w} ${size}px ${FONT_STACK}`;
   };
   const measure = (raw: string, entry: InlineStyleState | null): ParsedLine =>
     computeLineMetrics(raw, styled.fontSize, measureCtx, declFor, letterSpacingPx, mode, entry);
@@ -410,7 +454,15 @@ export function measureTextLabel(styled: StyledText): MeasuredBBox {
     endsParagraph: boolean,
   ): InlineStyleState | null => {
     const { exit, ...ink } = measure(raw, entry);
-    lineMetrics.push({ ...ink, raw, endsParagraph, ...(entry ? { entryStyle: entry } : {}) });
+    // baselineFromTop needs every line's maxFontSize, so it's a placeholder here
+    // and filled by the cumulative pass below.
+    lineMetrics.push({
+      ...ink,
+      raw,
+      endsParagraph,
+      baselineFromTop: 0,
+      ...(entry ? { entryStyle: entry } : {}),
+    });
     return exit;
   };
   // Formatting tags stay open across '\n' AND column wraps until closed, so
@@ -439,10 +491,23 @@ export function measureTextLabel(styled: StyledText): MeasuredBBox {
     boxWidth = lineMetrics.reduce((m, l) => (l.inkWidth > m ? l.inkWidth : m), 0);
   }
   const lineWidths = lineMetrics.map((m) => m.inkWidth);
-  // One full line-height plus a leading-scaled spacing per additional line;
-  // leading 1 reproduces the historical lineCount * fontSize * LINE_HEIGHT.
-  const height =
-    styled.fontSize * LINE_HEIGHT * (1 + (lineMetrics.length - 1) * (styled.leading ?? 1));
+  // Variable line height: each line is one LINE_HEIGHT of its own largest run's
+  // size, so a bigger inline <size> grows the box and pushes neighbours apart and
+  // a smaller line pulls in. Lay baselines out cumulatively (line 0 sits
+  // BASELINE_FRACTION of its size below the top; each next line advances by its
+  // own maxFontSize * LINE_HEIGHT, leading-scaled); the box bottom clears the
+  // last line's descent. Reduces exactly to the historical
+  // fontSize * LINE_HEIGHT * (1 + (lineCount - 1) * leading) when every line is
+  // the base size.
+  const lead = styled.leading ?? 1;
+  let baseline = 0;
+  lineMetrics.forEach((lm, i) => {
+    baseline =
+      i === 0 ? BASELINE_FRACTION * lm.maxFontSize : baseline + lm.maxFontSize * LINE_HEIGHT * lead;
+    lm.baselineFromTop = baseline;
+  });
+  const last = lineMetrics[lineMetrics.length - 1];
+  const height = last.baselineFromTop + (LINE_HEIGHT - BASELINE_FRACTION) * last.maxFontSize;
   const result: MeasuredBBox = {
     width: boxWidth,
     height,

@@ -189,11 +189,17 @@ export function renderStationLabelText({
       leading: lead,
       tracking,
     });
-  const lineSpacing = fontSize * LINE_HEIGHT * lead;
+  // Line 0's baseline under the central anchor — unchanged from the historical
+  // single-size placement. Later lines stack by the measurer's cumulative
+  // baseline deltas (which already grow with any inline <size>), rather than a
+  // fixed per-line spacing, so a bigger run spreads the lines apart.
+  const firstLineBaseline0 = firstLineCenterY + centralToBaseline;
+  const baseline0FromTop = m.lines[0].baselineFromTop;
 
   // Per-run style resolution for the inline formatting tags, mirroring
   // LabelView: <w=…>/<b> resolve the weight against the label's base, <i> ORs
-  // with the label's base italic, <color=…> overrides the fill for that run only.
+  // with the label's base italic, <size=…> resolves the run size against the
+  // base, <color=…> overrides the fill for that run only.
   const runWeight = (style?: SegmentStyle) => resolveRunWeight(fontWeight, style);
   const runItalic = (style?: SegmentStyle) => fontStyle === 'italic' || !!style?.italic;
   const runFill = (style?: SegmentStyle) => style?.color ?? fill;
@@ -202,8 +208,9 @@ export function renderStationLabelText({
     <g transform={`rotate(${rotationDeg} ${anchorX} ${anchorY})`} pointerEvents="none">
       {m.lines.map((lm, i) => {
         if (lm.segments.length === 0) return null;
-        const yCenter = firstLineCenterY + i * lineSpacing;
-        const baselineY = yCenter + centralToBaseline;
+        // Shared baseline for every run on this line; the measurer placed the
+        // cumulative offset, so a bigger inline <size> already spread the lines.
+        const baselineY = firstLineBaseline0 + (lm.baselineFromTop - baseline0FromTop);
         const linePenX = lineStartPenX(textAnchor, anchorX, lm.advanceWidth);
         let cursor = linePenX;
         const nodes: ReactNode[] = [];
@@ -212,14 +219,19 @@ export function renderStationLabelText({
           cursor += seg.advance;
           if (seg.kind === 'text') {
             const st = seg.style;
+            const segFontSize = seg.fontSize;
             nodes.push(
               <text
                 key={`${i}-${j}-t`}
                 x={segCursor}
-                y={yCenter}
+                // Central-anchor each run off the shared baseline: a run of size
+                // s centred at baseline − (BASELINE_FRACTION − 0.5)·s puts its
+                // baseline on `baselineY`, so mixed sizes align. Reduces to the
+                // historical y = yCenter when every run is the base size.
+                y={baselineY - segFontSize * (BASELINE_FRACTION - 0.5)}
                 textAnchor="start"
                 dominantBaseline="central"
-                fontSize={fontSize}
+                fontSize={segFontSize}
                 fontWeight={runWeight(st)}
                 fontStyle={runItalic(st) ? 'italic' : undefined}
                 letterSpacing={letterSpacingPx !== 0 ? letterSpacingPx : undefined}
@@ -236,9 +248,10 @@ export function renderStationLabelText({
             // (same reason as the hover underline: svg2pdf ignores
             // text-decoration and Chromium leaks paint on rotated <text>). Tagged
             // with data-text-decoration so they read apart from the hover
-            // underline. Offsets match LabelView for cross-label visual parity.
+            // underline. Offsets/thickness scale with the RUN's size and hang off
+            // the shared baseline, matching LabelView for cross-label parity.
             if (st && (st.underline || st.strike) && seg.advance > 0) {
-              const thickness = fontSize * 0.07;
+              const thickness = segFontSize * 0.07;
               if (st.underline) {
                 nodes.push(
                   <line
@@ -246,8 +259,8 @@ export function renderStationLabelText({
                     data-text-decoration="underline"
                     x1={segCursor}
                     x2={segCursor + seg.advance}
-                    y1={baselineY + fontSize * 0.1}
-                    y2={baselineY + fontSize * 0.1}
+                    y1={baselineY + segFontSize * 0.1}
+                    y2={baselineY + segFontSize * 0.1}
                     stroke={runFill(st)}
                     strokeWidth={thickness}
                   />,
@@ -260,8 +273,8 @@ export function renderStationLabelText({
                     data-text-decoration="strike"
                     x1={segCursor}
                     x2={segCursor + seg.advance}
-                    y1={baselineY - fontSize * 0.28}
-                    y2={baselineY - fontSize * 0.28}
+                    y1={baselineY - segFontSize * 0.28}
+                    y2={baselineY - segFontSize * 0.28}
                     stroke={runFill(st)}
                     strokeWidth={thickness}
                   />,

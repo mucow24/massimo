@@ -2,7 +2,7 @@ import { describe, it, expect, beforeAll, afterAll, beforeEach } from 'vitest';
 import { render } from '@testing-library/react';
 import type { Line } from '../model/types';
 import { renderStationLabelText } from './stationLabelText';
-import { _clearTextMeasureCache } from '../geometry/textMeasure';
+import { BASELINE_FRACTION, _clearTextMeasureCache } from '../geometry/textMeasure';
 
 // Same fake-canvas trick as LabelView.alignment: report ink that overhangs the
 // pen box for hooked/tailed glyphs, so we can prove multi-line station labels
@@ -93,5 +93,45 @@ describe('renderStationLabelText — per-segment path aligns by pen advance', ()
     expect(line).not.toBeNull();
     expect(parseFloat(line.getAttribute('x1')!)).toBeCloseTo(-3, 5);
     expect(parseFloat(line.getAttribute('x2')!)).toBeCloseTo(20, 5);
+  });
+});
+
+describe('renderStationLabelText — inline <size> tags', () => {
+  // Tracking 0 here: <size=…> must route through the per-segment path on its
+  // own (it's a formatting token), not only when tracking forces it.
+  const renderSize = (text: string) => {
+    const node = renderStationLabelText({
+      text,
+      fontSize: 10,
+      fontWeight: 400,
+      fill: '#000',
+      textDecoration: 'none',
+      anchorX: 0,
+      anchorY: 0,
+      textAnchor: 'middle',
+      baseline: 'central',
+      firstLineDyPx: 0,
+      firstLineCenterY: 0,
+      rotationDeg: 0,
+      lineByService: new Map<string, Line>(),
+    });
+    return render(<svg>{node}</svg>).container;
+  };
+  const textByContent = (c: HTMLElement, content: string) =>
+    Array.from(c.querySelectorAll('text')).find((t) => t.textContent === content)!;
+
+  it('renders a <size=N> run at that size and the rest at the base size', () => {
+    const c = renderSize('<size=40>big</size> base');
+    expect(textByContent(c, 'big').getAttribute('font-size')).toBe('40');
+    expect(textByContent(c, ' base').getAttribute('font-size')).toBe('10');
+  });
+
+  it('sits differently-sized runs on one shared baseline', () => {
+    const c = renderSize('<size=6>a</size><size=40>b</size>');
+    // central-anchored runs: the text baseline is y + (BASELINE_FRACTION − 0.5)·size.
+    const F = BASELINE_FRACTION - 0.5;
+    const baseline = (content: string, size: number) =>
+      parseFloat(textByContent(c, content).getAttribute('y')!) + F * size;
+    expect(baseline('a', 6)).toBeCloseTo(baseline('b', 40), 5);
   });
 });
