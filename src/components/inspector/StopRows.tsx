@@ -68,7 +68,13 @@ function StopRow({ station, stop, line }: { station: Station; stop: StopCell; li
   const selected = selection.selectedStopLineId === lineId;
   const rotation = (station.rotation % 4) as Rotation;
 
-  const sizeField = useNumericField(
+  const {
+    text: sizeText,
+    attachWheel: attachSizeWheel,
+    onNumberFocus: onSizeFocus,
+    onNumberChange: onSizeChange,
+    onNumberBlur: onSizeBlur,
+  } = useNumericField(
     resolveDotSize(line, stop),
     // dotSize is rotation-invariant — no per-match transform. Writing the
     // line's effective default back clears the override (setDotSize contract).
@@ -124,11 +130,13 @@ function StopRow({ station, stop, line }: { station: Station; stop: StopCell; li
         min={DOT_SIZE_MIN}
         step={1}
         style={{ width: 44 }}
-        value={sizeField.text}
-        onFocus={sizeField.onNumberFocus}
-        onChange={sizeField.onNumberChange}
-        onWheel={sizeField.onNumberWheel}
-        onBlur={sizeField.onNumberBlur}
+        value={sizeText}
+        // attachWheel binds a non-passive native wheel listener (React's
+        // onWheel is passive, so its preventDefault would warn + no-op).
+        ref={attachSizeWheel}
+        onFocus={onSizeFocus}
+        onChange={onSizeChange}
+        onBlur={onSizeBlur}
       />
       {/* One-step cycle, like right-click / R on the canvas handle. Cycling
           is frame-invariant across mirror matches (each steps from its OWN
