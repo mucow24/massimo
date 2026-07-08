@@ -30,15 +30,20 @@ const EDGE_PAD = 8;
 export function StationPopover({
   station,
   view,
+  hidden,
 }: {
   station: Station;
   view: ViewportProjection;
+  // Kept mounted but display:none during non-idle uiMode excursions, so the
+  // frozen anchor survives and the panel returns to the same canvas point.
+  hidden?: boolean;
   onClose: () => void;
 }) {
   const { anchor, headerHandlers } = useDraggablePopover(
     station.id,
     { x: station.x, y: station.y },
     view,
+    hidden,
   );
   const inLayoutEdit = useSelection((s) => s.uiMode.kind === 'editing-station-layout');
   const left = inLayoutEdit ? Math.max(EDGE_PAD, view.size.w - POPOVER_W - EDGE_PAD) : anchor.x;
@@ -49,6 +54,7 @@ export function StationPopover({
       className="text-label-popover station-popover"
       left={left}
       top={top}
+      hidden={hidden}
       headerHandlers={headerHandlers}
     >
       <StationInspector id={station.id} />

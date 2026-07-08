@@ -1006,10 +1006,17 @@ popover/handles). Cursor-following ghost previews (`*PlacingPreview`, all `opaci
 the item's first drag, Shift-click bypasses, preview guides render through `SnapGuides`.
 
 `ItemPopovers` mounts the single popover for the sole selection — including the station editor
-(see UI chrome) — and reprojects through `useLiveView` so it tracks the canvas during pan/zoom. `useDraggablePopover` **freezes the item's
-world position at mount** (so a size slider editing the item can't feed its own position back),
-accumulates header-drag in **world units**, and re-freezes when the selection `id` changes (one
-popover instance reused across selections). Every item popover renders inside
+(see UI chrome) — and reprojects through `useLiveView` so it tracks the canvas during pan/zoom.
+`useDraggablePopover` **freezes the popover's spawn position as one world point** (item
+projection + 14px gap, clamped into the host, then inverted through `screenToWorldPoint`) and
+renders `projectToScreen(that point + drag)` with **nothing added after projection** — the
+top-left corner is glued to the canvas point where the panel appeared (any per-render
+screen-px term reintroduces the wandering-popovers bug; invariant pinned by
+`popoverCanvasLock.test.tsx`). Freezing at spawn also means a size slider editing the item
+can't feed its own position back. Header-drag accumulates in **world units**; the freeze
+re-runs when the selection `id` changes (one popover instance reused across selections) and
+defers while hidden or unmeasured (the station popover hides — `display:none`, not unmount —
+during non-idle uiMode excursions so its anchor survives). Every item popover renders inside
 `DraggablePopoverShell`, which owns the floating frame (header drag strip + body) and the
 load-bearing event swallowing — pointerdown/click/contextmenu inside a popover must never reach
 the canvas, which would deselect the item (closing the popover) or right-click-rotate under it.

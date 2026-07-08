@@ -26,6 +26,22 @@ export function projectToScreen(
 }
 
 /**
+ * Full inverse of {@link projectToScreen}: the world point sitting under a
+ * canvas-host-relative screen pixel. Used once at popover spawn to dissolve
+ * the screen-space placement (visual gap + edge clamp) into a plain world
+ * point — from then on the popover is a pure canvas object.
+ */
+export function screenToWorldPoint(
+  pt: { x: number; y: number },
+  v: ViewportProjection,
+): { x: number; y: number } {
+  return {
+    x: v.vbX + (pt.x / v.size.w) * v.vbW,
+    y: v.vbY + (pt.y / v.size.h) * v.vbH,
+  };
+}
+
+/**
  * Convert a screen-pixel delta to a world-space delta through the given
  * viewport — the scaling inverse of {@link projectToScreen} (translation drops
  * out of a delta). Popovers store their header-drag offset in world space via

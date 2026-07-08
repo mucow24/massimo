@@ -243,13 +243,13 @@ describe('<RouteBulletPopover /> header drag', () => {
     );
     const popover = container.querySelector('.bullet-popover') as HTMLElement;
     const header = container.querySelector('.bullet-popover .header') as HTMLElement;
-    expect(popover.style.left).toBe('14px'); // 0 + 14 base offset
-    expect(popover.style.top).toBe('14px');
+    expect(parseFloat(popover.style.left)).toBeCloseTo(14, 9); // 0 + 14 base offset
+    expect(parseFloat(popover.style.top)).toBeCloseTo(14, 9);
     fireEvent.pointerDown(header, { clientX: 100, clientY: 100, button: 0 });
     fireEvent.pointerMove(header, { clientX: 130, clientY: 120 });
     fireEvent.pointerUp(header, { clientX: 130, clientY: 120 });
-    expect(popover.style.left).toBe('44px'); // 14 + 30
-    expect(popover.style.top).toBe('34px'); // 14 + 20
+    expect(parseFloat(popover.style.left)).toBeCloseTo(44, 9); // 14 + 30
+    expect(parseFloat(popover.style.top)).toBeCloseTo(34, 9); // 14 + 20
   });
 
   // Deliberate behavior change from adopting useDraggablePopover: the anchor
@@ -267,7 +267,7 @@ describe('<RouteBulletPopover /> header drag', () => {
       />,
     );
     const popover = container.querySelector('.bullet-popover') as HTMLElement;
-    expect(popover.style.left).toBe('14px');
+    expect(parseFloat(popover.style.left)).toBeCloseTo(14, 9);
     rerender(
       <RouteBulletPopover
         bullet={bullet}
@@ -276,7 +276,7 @@ describe('<RouteBulletPopover /> header drag', () => {
         onClose={() => {}}
       />,
     );
-    expect(popover.style.left).toBe('14px');
-    expect(popover.style.top).toBe('14px');
+    expect(parseFloat(popover.style.left)).toBeCloseTo(14, 9);
+    expect(parseFloat(popover.style.top)).toBeCloseTo(14, 9);
   });
 });
