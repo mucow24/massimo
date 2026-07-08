@@ -1,5 +1,11 @@
 import { describe, it, expect } from 'vitest';
-import { bolderWeight, stepWeight, parseWeightToken, normalizeWeight } from './fonts';
+import {
+  bolderWeight,
+  stepWeight,
+  parseWeightToken,
+  parseSizeToken,
+  normalizeWeight,
+} from './fonts';
 
 describe('bolderWeight', () => {
   it('steps two weights up the shipped ladder (which has no 600)', () => {
@@ -59,6 +65,29 @@ describe('parseWeightToken', () => {
     expect(parseWeightToken('700')).toBeNull();
     expect(parseWeightToken('2')).toBeNull();
     expect(parseWeightToken('')).toBeNull();
+  });
+});
+
+describe('parseSizeToken', () => {
+  it('reads an unsigned positive number as an absolute size', () => {
+    expect(parseSizeToken('6')).toEqual({ abs: 6 });
+    expect(parseSizeToken('24')).toEqual({ abs: 24 });
+    expect(parseSizeToken('6.5')).toEqual({ abs: 6.5 });
+  });
+
+  it('reads a signed number as a relative delta from the base size', () => {
+    expect(parseSizeToken('+1')).toEqual({ rel: 1 });
+    expect(parseSizeToken('-2')).toEqual({ rel: -2 });
+    expect(parseSizeToken('+0.5')).toEqual({ rel: 0.5 });
+  });
+
+  it('rejects zero, non-numeric, unit-suffixed, and empty values', () => {
+    expect(parseSizeToken('0')).toBeNull();
+    expect(parseSizeToken('0.0')).toBeNull();
+    expect(parseSizeToken('abc')).toBeNull();
+    expect(parseSizeToken('6px')).toBeNull();
+    expect(parseSizeToken('+')).toBeNull();
+    expect(parseSizeToken('')).toBeNull();
   });
 });
 

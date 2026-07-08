@@ -740,6 +740,9 @@ editor), which are a separate slot-based system where Shift flips the lattice ba
   `<color=…>` (named / `#hex` / `0xhex`), `<w=…>` font weight (a shipped weight name like
   `<w=Light>` = absolute, or `<w=+2>`/`<w=-1>` = signed ladder steps from the label's base weight;
   innermost `<w>` wins, invalid values stay literal — see `resolveRunWeight`/`parseWeightToken`),
+  `<size=…>` font size (an absolute world-unit size like `<size=6>`, or `<size=+1>`/`<size=-2>` = a
+  signed delta from the label's base size; innermost `<size>` wins, floored at the min font size,
+  invalid values stay literal — see `resolveRunFontSize`/`parseSizeToken`),
   and the glyph shortcuts `<air>` ✈ / `<xfer>` ↔ / `<c>` © / `<tm>` ™ — threading
   the open-tag state across `\n` lines and column wraps until closed. Unknown tags stay literal
   text. Both free-floating text labels (`LabelView`) and station labels (`renderStationLabelText`)
@@ -755,7 +758,11 @@ editor), which are a separate slot-based system where Shift flips the lattice ba
   tracking term). There are **no font-metrics tables**. Exact-geometry tests
   inject a `measure` stub instead of trusting the default. Leading/trailing whitespace is a real
   historical bug source: canvas advance includes typed spaces but the ink box excludes them, so
-  the measurer force-corrects bearings at segment ends. Results are cached (module-level LRU,
+  the measurer force-corrects bearings at segment ends. Line height **follows content**: each line
+  is one `LINE_HEIGHT` of its largest run's size (`maxFontSize`), so an inline `<size>` grows or
+  shrinks that line and the box; baselines are laid out cumulatively (`baselineFromTop` per line,
+  shared by same-line runs) and reduce exactly to the uniform `fontSize*LINE_HEIGHT*(1+(n-1)*leading)`
+  when nothing is resized. Results are cached (module-level LRU,
   limit 256) keyed by weight/style/parse-mode/size/width/leading/tracking/text — and that cache is
   cleared on web-font load (see `App.tsx`).
 - **`labelLayoutLocal`** is the single source of truth for a station name's `<text>`

@@ -119,6 +119,25 @@ describe('<LabelView /> — justify', () => {
     ).toHaveLength(2);
   });
 
+  it('renders a <size> word on a justified interior line at its resolved size', () => {
+    // Interior (narrower) line carries a resized word; it still justifies to both
+    // edges, and the justify atom path must render that word at font-size 20 while
+    // its neighbour stays at the base 10. (The fake canvas ignores size for
+    // advance, so this pins the rendered size attribute, not the spread geometry.)
+    const label = makeTextLabel({
+      id: 'g1',
+      x: 0,
+      y: 0,
+      fontSize: 10,
+      align: 'justify',
+      text: '<size=20>aa</size> bb\naaaa bbbb cccc',
+    });
+    const c = renderLabel(label);
+    const line0 = lineTexts(c, 0);
+    expect(line0.find((t) => t.textContent === 'aa')!.getAttribute('font-size')).toBe('20');
+    expect(line0.find((t) => t.textContent === 'bb')!.getAttribute('font-size')).toBe('10');
+  });
+
   it('wraps to a column and justifies interior wrapped lines', () => {
     const label = makeTextLabel({
       id: 'g1',

@@ -1,5 +1,11 @@
 import type { RouteBulletShape } from '../model/types';
-import { bolderWeight, parseWeightToken, stepWeight } from '../util/fonts';
+import {
+  bolderWeight,
+  MIN_FONT_SIZE,
+  parseSizeToken,
+  parseWeightToken,
+  stepWeight,
+} from '../util/fonts';
 
 /**
  * Resolved inline style of a text segment, produced by `parseFormattedLine`
@@ -26,6 +32,18 @@ export interface SegmentStyle {
    * with enclosing weight tags). Innermost `<w>` wins.
    */
   weightStep?: number;
+  /**
+   * Absolute font size (world units) from an open `<size=N>` — overrides the
+   * label's base size for this run. Mutually exclusive with `sizeStep`; both
+   * absent = inherit the base size.
+   */
+  size?: number;
+  /**
+   * Relative font size from an open `<size=±N>`: a signed delta added to the
+   * label's BASE size (not compounding with enclosing size tags). Innermost
+   * `<size>` wins.
+   */
+  sizeStep?: number;
 }
 
 /**
@@ -34,15 +52,22 @@ export interface SegmentStyle {
  */
 type WeightFrame = { abs: number } | { rel: number };
 
+/**
+ * One entry in the `<size=…>` open-tag stack: an absolute font size
+ * (`<size=N>`) or a signed delta (`<size=±N>`). Innermost (top) wins.
+ */
+type SizeFrame = { abs: number } | { rel: number };
+
 export type LabelSegment =
   | { kind: 'text'; value: string; style?: SegmentStyle }
   | { kind: 'bullet'; code: string; shape: RouteBulletShape; filled: boolean };
 
 /**
  * Open-tag state threaded between lines so a tag can span '\n' breaks and
- * column-mode word wraps: counts of open b/i/u/s tags plus the open color
- * stack. `parseFormattedLine` takes the entry state and returns the exit
- * state; a fresh line of a fresh label starts from `emptyStyleState()`.
+ * column-mode word wraps: counts of open b/i/u/s tags plus the open color,
+ * weight, and size stacks. `parseFormattedLine` takes the entry state and
+ * returns the exit state; a fresh line of a fresh label starts from
+ * `emptyStyleState()`.
  */
 export interface InlineStyleState {
   bold: number;
@@ -51,10 +76,11 @@ export interface InlineStyleState {
   strike: number;
   colors: string[];
   weights: WeightFrame[];
+  sizes: SizeFrame[];
 }
 
 export function emptyStyleState(): InlineStyleState {
-  return { bold: 0, italic: 0, underline: 0, strike: 0, colors: [], weights: [] };
+  return { bold: 0, italic: 0, underline: 0, strike: 0, colors: [], weights: [], sizes: [] };
 }
 
 /**
@@ -99,18 +125,21 @@ const BULLET_GROUP_KEYS = Object.keys(BULLET_VARIANTS);
 
 /**
  * Formatting tag grammar (labels only): `<b>`/`<i>`/`<u>`/`<s>` with `</...>`
- * closers, `<color=VALUE>`/`</color>`, `<w=VALUE>`/`</w>` (font weight), and
- * the self-closing glyph shortcuts `<air>` (✈), `<xfer>` (↔), `<c>` (©), and
- * `<tm>` (™). Tag names are lowercase; anything else (`<q>`, `<3`, `a < b`) stays
- * literal text. Color and weight values can't contain spaces, angle brackets, or
- * newlines; an invalid weight value (see `parseWeightToken`) keeps the tag as
- * literal text.
+ * closers, `<color=VALUE>`/`</color>`, `<w=VALUE>`/`</w>` (font weight),
+ * `<size=VALUE>`/`</size>` (font size), and the self-closing glyph shortcuts
+ * `<air>` (✈), `<xfer>` (↔), `<c>` (©), and `<tm>` (™). Tag names are lowercase;
+ * anything else (`<q>`, `<3`, `a < b`) stays literal text. Color, weight, and
+ * size values can't contain spaces, angle brackets, or newlines; an invalid
+ * weight/size value (see `parseWeightToken`/`parseSizeToken`) keeps the tag as
+ * literal text. `<size…>`/`</size>` can't be confused with `<s>`/`</s>` (strike):
+ * `<s>` and `</s>` require the char after `s` to be `>`, which `size` never has.
  */
 const TAG_ALTS =
   `<(?<open>[bius])>|<\\/(?<close>[bius])>|` +
   `<color=(?<color>[^<> \\n]+)>|(?<colorClose><\\/color>)|` +
-  `<w=(?<weight>[^<> \\n]+)>|(?<weightClose><\\/w>)|(?<air><air>)|(?<xfer><xfer>)|` +
-  `(?<copy><c>)|(?<tm><tm>)`;
+  `<w=(?<weight>[^<> \\n]+)>|(?<weightClose><\\/w>)|` +
+  `<size=(?<size>[^<> \\n]+)>|(?<sizeClose><\\/size>)|` +
+  `(?<air><air>)|(?<xfer><xfer>)|(?<copy><c>)|(?<tm><tm>)`;
 
 const BULLET_TOKEN_RE = new RegExp(`(?<esc>\\\\)?(?:${BULLET_ALTS})`, 'g');
 const FORMATTED_TOKEN_RE = new RegExp(`(?<esc>\\\\)?(?:${BULLET_ALTS}|${TAG_ALTS})`, 'g');
@@ -146,15 +175,18 @@ function normalizeColor(value: string): string | null {
 
 function styleOf(st: InlineStyleState): SegmentStyle | undefined {
   const color = st.colors.length > 0 ? st.colors[st.colors.length - 1] : undefined;
-  // Innermost open <w> wins; relative steps do NOT compound with enclosing ones.
+  // Innermost open <w>/<size> wins; relative steps/deltas do NOT compound with
+  // enclosing ones.
   const wTop = st.weights.length > 0 ? st.weights[st.weights.length - 1] : undefined;
+  const sTop = st.sizes.length > 0 ? st.sizes[st.sizes.length - 1] : undefined;
   if (
     !st.bold &&
     !st.italic &&
     !st.underline &&
     !st.strike &&
     color === undefined &&
-    wTop === undefined
+    wTop === undefined &&
+    sTop === undefined
   ) {
     return undefined;
   }
@@ -169,15 +201,20 @@ function styleOf(st: InlineStyleState): SegmentStyle | undefined {
     if ('abs' in wTop) style.weight = wTop.abs;
     else style.weightStep = wTop.rel;
   }
+  if (sTop !== undefined) {
+    if ('abs' in sTop) style.size = sTop.abs;
+    else style.sizeStep = sTop.rel;
+  }
   return style;
 }
 
 /**
  * Shared scanner for both grammars. Literal text (including escaped tokens,
  * unknown tags, and the glyph shortcuts) accumulates in a buffer that's
- * flushed as ONE segment whenever the style changes or a bullet lands — so
- * `go \(west) now` measures and kerns as a single run, not three. `state` is
- * null in bullets-only mode (the regex then contains no tag groups).
+ * flushed as ONE segment whenever the style changes (a `<b>`/`<color=…>`/`<w=…>`/
+ * `<size=…>` boundary) or a bullet lands — so `go \(west) now` measures and kerns
+ * as a single run, not three. `state` is null in bullets-only mode (the regex
+ * then contains no tag groups).
  */
 function scanLine(
   line: string,
@@ -185,7 +222,8 @@ function scanLine(
   state: InlineStyleState | null,
 ): { segments: LabelSegment[]; state: InlineStyleState | null } {
   const st = state
-    ? { ...state, colors: [...state.colors], weights: [...state.weights] } // never mutate the caller's state
+    ? // never mutate the caller's state
+      { ...state, colors: [...state.colors], weights: [...state.weights], sizes: [...state.sizes] }
     : null;
   const segments: LabelSegment[] = [];
   let buffer = '';
@@ -251,6 +289,19 @@ function scanLine(
         flush();
         st!.weights.pop();
       }
+    } else if (g.size !== undefined) {
+      const parsed = parseSizeToken(g.size);
+      if (parsed === null) {
+        buffer += m[0]; // invalid value: keep the tag visible as literal text
+      } else {
+        flush();
+        st!.sizes.push(parsed);
+      }
+    } else if (g.sizeClose) {
+      if (st!.sizes.length > 0) {
+        flush();
+        st!.sizes.pop();
+      }
     } else if (g.air) {
       buffer += AIR_GLYPH;
     } else if (g.xfer) {
@@ -308,13 +359,28 @@ export function resolveRunWeight(baseWeight: number, style?: SegmentStyle): numb
 }
 
 /**
+ * Resolve the rendered font size of a styled run against the label's base size.
+ * `<size=N>` sets an absolute size; `<size=±N>` adds a signed delta to the base;
+ * the result is floored at MIN_FONT_SIZE so a run can never collapse to zero.
+ * Shared by the renderers (`LabelView`, `stationLabelText`) and the measurer
+ * (`textMeasure`) so every layer sizes the run identically. No style (or a style
+ * with no size tag) → the base size unchanged.
+ */
+export function resolveRunFontSize(baseSize: number, style?: SegmentStyle): number {
+  if (!style) return baseSize;
+  const raw = style.size ?? (style.sizeStep !== undefined ? baseSize + style.sizeStep : baseSize);
+  return Math.max(MIN_FONT_SIZE, raw);
+}
+
+/**
  * Quick test: does this (possibly multi-line) text contain any inline token —
  * a bullet, an escape sequence, or a formatting tag / glyph shortcut? Renderers
  * use it to pick the plain fast path over segment-aware layout: anything the
  * segment scanner would rewrite (a bullet circle, a dropped backslash, a
- * `<b>`/`<color=…>`/`<w=…>` style change, an `<air>`/`<xfer>`/`<c>`/`<tm>` glyph) forces the
- * per-segment path. Unknown tags (`<q>`, `<A>`) and stray brackets stay literal
- * and don't trip it, matching what `parseFormattedLine` actually rewrites.
+ * `<b>`/`<color=…>`/`<w=…>`/`<size=…>` style change, an `<air>`/`<xfer>`/`<c>`/`<tm>`
+ * glyph) forces the per-segment path. Unknown tags (`<q>`, `<A>`) and stray
+ * brackets stay literal and don't trip it, matching what `parseFormattedLine`
+ * actually rewrites.
  */
 export function hasFormattedToken(text: string): boolean {
   FORMATTED_TOKEN_RE.lastIndex = 0;

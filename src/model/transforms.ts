@@ -85,6 +85,7 @@ export function isLabelWeight(v: unknown): v is TextLabelWeight {
 // names ARE the shipped faces); re-exported here so the popovers keep importing
 // weight-related constants from transforms alongside the label style defaults.
 export { LABEL_WEIGHT_NAMES } from '../util/fonts';
+import { MIN_FONT_SIZE } from '../util/fonts';
 
 export const LABEL_WEIGHT_DEFAULT: TextLabelWeight = 400;
 
@@ -185,7 +186,10 @@ export function effectiveStationLabelStyle(
 
 // TextLabel constants and defaults — exported so the popover, placement
 // preview, and tests share a single source of truth.
-export const TEXT_LABEL_FONT_SIZE_MIN = 1;
+// Shares the low-level MIN_FONT_SIZE primitive: the label Size field floor and
+// the inline `<size=…>` resolution floor (resolveRunFontSize) are the same
+// concept, so they read from one constant.
+export const TEXT_LABEL_FONT_SIZE_MIN = MIN_FONT_SIZE;
 export const TEXT_LABEL_FONT_SIZE_MAX = 96;
 // Column-width slider ceiling (world units). 0 = Auto (size to content, manual
 // line breaks). The spinbutton accepts larger values; updateTextLabel clamps
