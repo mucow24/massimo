@@ -36,20 +36,14 @@ const seed = (over: Record<string, unknown> = {}) => {
 
 const renderHitArea = () => {
   const onStartDrag = vi.fn();
-  const onStartLabelDrag = vi.fn();
   const station = useDoc.getState().stations.a;
   const lines = useDoc.getState().lines;
   const { container } = render(
     <svg>
-      <StationHitArea
-        station={station}
-        lines={lines}
-        onStartDrag={onStartDrag}
-        onStartLabelDrag={onStartLabelDrag}
-      />
+      <StationHitArea station={station} lines={lines} onStartDrag={onStartDrag} />
     </svg>,
   );
-  return { container, onStartDrag, onStartLabelDrag };
+  return { container, onStartDrag };
 };
 
 beforeEach(() => {
@@ -59,79 +53,54 @@ beforeEach(() => {
   dragState.suppressClick = false;
 });
 
-describe('StationHitArea — label drag fork (sole-selected station)', () => {
-  it('pointerdown on the label rect starts a LABEL drag, not a station drag', () => {
+// The label rect is NOT a special "label handle" — grabbing a selected
+// station anywhere on its footprint, name included, drags the whole STATION.
+// Label layout is edited in the station-layout editor, not on the main canvas.
+describe('StationHitArea — the name rect drags the station', () => {
+  it('pointerdown on the label rect starts a STATION drag', () => {
     seed();
-    const { container, onStartDrag, onStartLabelDrag } = renderHitArea();
+    const { container, onStartDrag } = renderHitArea();
     fireEvent.pointerDown(labelRect(container), { button: 0 });
-    expect(onStartLabelDrag).toHaveBeenCalledTimes(1);
-    expect(onStartLabelDrag.mock.calls[0][0]).toBe('a');
-    expect(onStartDrag).not.toHaveBeenCalled();
+    expect(onStartDrag).toHaveBeenCalledTimes(1);
+    expect(onStartDrag.mock.calls[0][0]).toBe('a');
   });
 
-  it('pointerdown on the cells rect still drags the station', () => {
+  it('pointerdown on the cells rect also drags the station', () => {
     seed();
-    const { container, onStartDrag, onStartLabelDrag } = renderHitArea();
+    const { container, onStartDrag } = renderHitArea();
     fireEvent.pointerDown(cellsRect(container), { button: 0 });
     expect(onStartDrag).toHaveBeenCalledTimes(1);
-    expect(onStartLabelDrag).not.toHaveBeenCalled();
+    expect(onStartDrag.mock.calls[0][0]).toBe('a');
   });
 
-  it('an UNselected (or co-selected) station keeps the station drag on its name', () => {
-    seed({ selectedStationIds: ['a', 'other'] });
-    const { container, onStartDrag, onStartLabelDrag } = renderHitArea();
-    fireEvent.pointerDown(labelRect(container), { button: 0 });
-    expect(onStartDrag).toHaveBeenCalledTimes(1);
-    expect(onStartLabelDrag).not.toHaveBeenCalled();
-  });
-
-  it('right-click on the armed label rect rotates the LABEL, not the station', () => {
+  it('right-click on the label rect rotates the STATION, not the label', () => {
     seed();
     const { container } = renderHitArea();
     fireEvent.contextMenu(labelRect(container));
     const st = useDoc.getState().stations.a;
-    expect(st.label.rotation).toBe(1);
-    expect(st.rotation).toBe(0);
+    expect(st.rotation).toBe(1);
+    expect(st.label.rotation).toBe(0);
   });
 
-  it('click on the armed label rect selects the label sub-selection', () => {
-    seed();
+  it('a plain click on the label rect selects the station (no label sub-selection)', () => {
+    seed({ selectedStationIds: [] });
     const { container } = renderHitArea();
-    fireEvent.click(labelRect(container));
-    expect(useSelection.getState().labelSelected).toBe(true);
+    fireEvent.click(labelRect(container), { button: 0 });
+    expect(useSelection.getState().selectedStationIds).toEqual(['a']);
+    expect(useSelection.getState().labelSelected).toBe(false);
   });
 
-  it('double-click on the armed label rect still opens the rename editor', () => {
+  it('double-click on the label rect opens the rename editor', () => {
     seed();
     const { container } = renderHitArea();
     fireEvent.doubleClick(labelRect(container));
     expect(useSelection.getState().editingStationId).toBe('a');
   });
 
-  it('the fork is disabled in hand mode (press falls through to pan)', () => {
+  it('the name rect falls through to pan in hand mode', () => {
     seed({ toolMode: 'hand' });
-    const { container, onStartDrag, onStartLabelDrag } = renderHitArea();
+    const { container, onStartDrag } = renderHitArea();
     fireEvent.pointerDown(labelRect(container), { button: 0 });
     expect(onStartDrag).not.toHaveBeenCalled();
-    expect(onStartLabelDrag).not.toHaveBeenCalled();
-  });
-
-  it('the fork is disabled while renaming this station', () => {
-    seed({ editingStationId: 'a' });
-    const { container, onStartDrag, onStartLabelDrag } = renderHitArea();
-    fireEvent.pointerDown(labelRect(container), { button: 0 });
-    expect(onStartLabelDrag).not.toHaveBeenCalled();
-    expect(onStartDrag).toHaveBeenCalledTimes(1);
-  });
-});
-
-describe('StationHitArea — modifier clicks keep station-selection semantics', () => {
-  it('shift-click on the armed label rect toggles the station selection, not the label', () => {
-    seed();
-    const { container } = renderHitArea();
-    fireEvent.click(labelRect(container), { shiftKey: true });
-    // Shift-click = toggle membership: the sole-selected station deselects.
-    expect(useSelection.getState().selectedStationIds).toEqual([]);
-    expect(useSelection.getState().labelSelected).toBe(false);
   });
 });

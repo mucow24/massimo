@@ -731,8 +731,8 @@ click apply the same snap.
 **Deliberately unsnapped** (documented, not bugs): arrow-key nudges (raw 1 / Shift 5 world
 units — free fine-positioning); 45° group rotate (re-snapping would distort shapes); snapping
 against a hidden grid (visibility is render-only); rotated (non-90°) svg-image resizes; the
-exact midpoint of a polygon edge-add; the ghost-lattice drags (station-name label + layout
-editor), which are a separate slot-based system where Shift flips the lattice basis.
+exact midpoint of a polygon edge-add; the ghost-lattice drags (the station-layout editor),
+which are a separate slot-based system where Shift flips the lattice basis.
 
 ### Labels & text — `labelTokens.ts`, `textMeasure.ts`, `labelLayout.ts`
 
@@ -969,9 +969,8 @@ if moved (else cancels — a pure click recorded nothing). `dragState` (module s
 ### Drag hooks
 
 `useStationDrag` (runs the snap engine; Shift bypasses snap; Ctrl-drag = redistribute),
-`useLabelDrag` (the sole-selected station's painted name; see UI chrome), `useStationLayoutDrag`
-(the editing-station-layout mode's stop/label handles; see UI chrome — these two ghost-lattice
-hooks share their lifecycle scaffolding via
+`useStationLayoutDrag` (the editing-station-layout mode's stop/label handles; see UI chrome — its
+ghost-lattice lifecycle scaffolding lives in
 [useGhostDragEngine.ts](src/components/canvas/useGhostDragEngine.ts): overlay ref mirror,
 live-projection ref, stationary Shift/Alt recompute, pointercancel rollback),
 `useItemDrag` (bullets + labels — bound bullets via the engine's bullet mode, labels + unbound
@@ -1065,18 +1064,15 @@ band routing or the marker sort. Pinned by `MapCanvas.stationsSig.test.tsx`.
   edits + station rotation broadcast, while name, X/Y, and the per-station WP / lock /
   bold / italic flags stay local. Disabled at zero matches unless already on (so the mode can
   always be exited); MapCanvas highlights the current match set while on.
+- **The painted name on the main canvas is NOT a label handle** — grabbing a selected station
+  anywhere on its footprint, name included, drags the whole STATION (StationHitArea gives the name
+  rect the same station handlers as the cells rect). The name's own layout (cell / rotation /
+  offsets) is edited only via the two surfaces below, never by a plain drag on the main canvas.
 - **Station layout editing happens ON the canvas** (the sidebar mini-canvas "StopGrid" was
-  retired in favor of these three surfaces; its pure drag/ghost math lives on in
+  retired in favor of these two surfaces; its pure drag/ghost math lives on in
   [inspector/stopGridDrag.ts](src/components/inspector/stopGridDrag.ts) — `computeGhosts`,
   `findDropTarget`, `nudgeTarget`, all screen-frame-generated and projected to station-local):
-  1. **On-canvas label drag** ([canvas/useLabelDrag.ts](src/components/canvas/useLabelDrag.ts)):
-     while a station is the SOLE selection, its painted name's hit rect becomes the LABEL's own
-     handle (StationHitArea forks; dots/body still drag the station). Plain drag = ghost-lattice
-     cell placement (Shift = diagonal basis); **Alt = fine mode**, live-writing
-     `setLabelOffset`/`setLabelOffsetPerp` via `screenDeltaToLabelOffsets` (exact inverse of
-     labelLayout's offset axes; leaving Alt restores gesture-start offsets); right-click rotates
-     the label; double-click still renames. Disarmed in hand mode / non-idle modes / mid-rename.
-  2. **`editing-station-layout` mode** ([canvas/StationLayoutEditor.tsx](src/components/canvas/StationLayoutEditor.tsx)
+  1. **`editing-station-layout` mode** ([canvas/StationLayoutEditor.tsx](src/components/canvas/StationLayoutEditor.tsx)
      + [useStationLayoutDrag.ts](src/components/canvas/useStationLayoutDrag.ts)): entered via the
      inspector's **Edit layout** button (`startEditingStationLayout` preserves selection + mirror
      state; frames the camera if the station is off-screen). Clicking another station RETARGETS
@@ -1086,9 +1082,11 @@ band routing or the marker sort. Pinned by `MapCanvas.stationsSig.test.tsx`.
      stop swaps, right-click/R rotates, click selects the stop/label (arming the shape/size
      pickers). A transparent **shield rect** swallows near-miss presses so nothing falls through
      to the whole-station handlers (the mode is in `RIGHT_CLICK_PASSTHROUGH_MODES`).
-  3. **Keyboard nudge** (App.tsx): with a stop/label selected, arrows hop one lattice slot in the
+  2. **Keyboard nudge** (App.tsx): with a stop/label selected, arrows hop one lattice slot in the
      pressed screen direction (`nudgeTarget`, Shift = diagonal), Alt+arrows fine-nudge label
-     offsets (Shift ×5), R rotates. All three surfaces share
+     offsets (Shift ×5, live-writing `setLabelOffset`/`setLabelOffsetPerp` via
+     `screenDeltaToLabelOffsets` — the inverse of labelLayout's offset axes), R rotates.
+     Both surfaces share
      [state/mirrorDispatch.ts](src/state/mirrorDispatch.ts) — `dispatchMirrored` (one-shot
      controls, groups only when fanning out and no group is open — see the isHistoryGrouping
      gotcha) / `fanOutMirrored` (group-free, for explicit multi-write groups) — and capture mirror
