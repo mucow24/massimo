@@ -1741,6 +1741,25 @@ describe('setStationLocked', () => {
   });
 });
 
+describe('setStationEditorHeight', () => {
+  it('writes a clamped positive-integer editorHeight on the station', () => {
+    const doc = makeDoc({ stations: [makeStation({ id: 'a' })] });
+    expect(T.setStationEditorHeight(doc, 'a', 120.6).stations.a.editorHeight).toBe(121);
+    expect(T.setStationEditorHeight(doc, 'a', 0).stations.a.editorHeight).toBe(1);
+    expect(T.setStationEditorHeight(doc, 'a', -40).stations.a.editorHeight).toBe(1);
+  });
+
+  it('is a no-op (reference equality) when the height is unchanged', () => {
+    const doc = makeDoc({ stations: [{ ...makeStation({ id: 'a' }), editorHeight: 150 }] });
+    expect(T.setStationEditorHeight(doc, 'a', 150)).toBe(doc);
+  });
+
+  it('is a no-op for missing ids', () => {
+    const doc = makeDoc({ stations: [makeStation({ id: 'a' })] });
+    expect(T.setStationEditorHeight(doc, 'nope', 150)).toBe(doc);
+  });
+});
+
 describe('activePalettes', () => {
   it('DEFAULT_DOC.activePalettes is exactly [mta]', () => {
     expect(T.DEFAULT_DOC.activePalettes).toEqual(['mta']);
@@ -2850,6 +2869,24 @@ describe('updateTextLabel', () => {
     );
     expect(T.updateTextLabel(doc, 'g1', { tracking: 0.123 }).textLabels.g1.tracking).toBe(0.123);
     expect(T.updateTextLabel(doc, 'g1', { tracking: 0.05 }).textLabels.g1.tracking).toBe(0.05);
+  });
+  it('clamps editorHeight to a positive integer', () => {
+    const doc = makeDoc({ textLabels: [makeTextLabel({ id: 'g1' })] });
+    expect(T.updateTextLabel(doc, 'g1', { editorHeight: 120.6 }).textLabels.g1.editorHeight).toBe(
+      121,
+    );
+    expect(T.updateTextLabel(doc, 'g1', { editorHeight: 0 }).textLabels.g1.editorHeight).toBe(1);
+    expect(T.updateTextLabel(doc, 'g1', { editorHeight: -40 }).textLabels.g1.editorHeight).toBe(1);
+  });
+  it('does not re-anchor (move x/y) when only editorHeight changes', () => {
+    const doc = makeDoc({
+      textLabels: [makeTextLabel({ id: 'g1', x: 100, y: 200, text: 'A\nB' })],
+    });
+    const next = T.updateTextLabel(doc, 'g1', { editorHeight: 180 });
+    // editorHeight is an editor-UI dimension only — it must never nudge the
+    // label's on-canvas position the way a text/size/width change does.
+    expect(next.textLabels.g1.x).toBe(100);
+    expect(next.textLabels.g1.y).toBe(200);
   });
   it('is a no-op for missing ids', () => {
     const doc = makeDoc({});

@@ -1559,6 +1559,23 @@ export function setStationLocked(doc: MapDoc, stationId: StationId, locked: bool
   return setStationBoolFlag(doc, stationId, 'locked', locked);
 }
 
+/**
+ * Remember the manually stretched height (CSS px) of the station Name box in
+ * the inspector. Clamped to a positive integer; a no-op when unchanged (so a
+ * plain click that reads back the same height doesn't churn history). Mirrors
+ * `updateTextLabel`'s `editorHeight` clamp for text labels.
+ */
+export function setStationEditorHeight(
+  doc: MapDoc,
+  stationId: StationId,
+  height: number,
+): MapDoc {
+  const next = Math.max(1, Math.round(height));
+  return updateStation(doc, stationId, (st) =>
+    st.editorHeight === next ? st : { ...st, editorHeight: next },
+  );
+}
+
 export function setLabelItalic(doc: MapDoc, i: boolean): MapDoc {
   if (i === doc.labelItalic) return doc;
   return { ...doc, labelItalic: i };
@@ -1817,6 +1834,11 @@ export function updateTextLabel(
     // (slider, spinbutton, paste) can't push it negative or fractional.
     if (typeof patch.width === 'number') {
       nextPatch = { ...nextPatch, width: Math.max(0, Math.round(patch.width)) };
+    }
+    // Clamp the editor-box height to a positive integer. It's a stored px
+    // dimension for the popover textarea, never below one pixel.
+    if (typeof patch.editorHeight === 'number') {
+      nextPatch = { ...nextPatch, editorHeight: Math.max(1, Math.round(patch.editorHeight)) };
     }
     // Leading/tracking snap to their slider steps and clamp at the bottom only,
     // mirroring fontSize. Shared with the global station-label setters.
