@@ -55,9 +55,9 @@ describe('MapCanvas — station edits and the geometry memos', () => {
   // lineId/row/col/orientation; buildStopMarkers reads the same set. Label
   // and dot presentation edits write the stations record without touching
   // any of those fields, so the geometry memos must HOLD across them —
-  // otherwise every Alt fine-drag pointermove (useLabelDrag writes
-  // setLabelOffset/setLabelOffsetPerp per move) runs full band routing on a
-  // busy map. This is the stations-side twin of the linesGeometrySig tests
+  // otherwise every Alt keyboard fine-nudge (App.tsx writes
+  // setLabelOffset/setLabelOffsetPerp) runs full band routing on a busy map.
+  // This is the stations-side twin of the linesGeometrySig tests
   // in MapCanvas.width.test.tsx.
   it('a label-offset edit does NOT rebuild bands or stop markers', () => {
     const bandSpy = vi.spyOn(interlining, 'buildBandGeometry');

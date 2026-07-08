@@ -24,9 +24,10 @@ export interface GhostDragCore {
 }
 
 /**
- * Shared lifecycle scaffolding for the ghost-lattice drag hooks (useLabelDrag
- * / useStationLayoutDrag). Owns the mechanics both need and neither should
- * re-implement:
+ * Lifecycle scaffolding for the ghost-lattice drag hook (useStationLayoutDrag;
+ * once shared with the retired on-canvas label drag, kept factored out as
+ * reusable ghost-drag plumbing). Owns the mechanics it should not
+ * re-implement inline:
  *
  *  - Overlay state plus a ref mirror: the pointerup commit must read the
  *    overlay through `overlayRef`, not the state — React 18 batches the last
@@ -37,11 +38,11 @@ export interface GhostDragCore {
  *    handlers and the window key listeners read the projection through this
  *    ref — capturing the prop directly would freeze the mount-time camera and
  *    teleport the dragged node after any pan/zoom.
- *  - Stationary modifier tracking: Shift (and Alt when `altRecomputes`)
- *    re-runs the hook's per-frame computation the moment the key changes,
- *    without waiting for the next pointermove (parity with the old StopGrid's
- *    useShiftHeld). The hook assigns that computation to `updateRef` in an
- *    effect — writing a ref during render trips react-hooks/refs.
+ *  - Stationary modifier tracking: Shift re-runs the hook's per-frame
+ *    computation the moment the key changes, without waiting for the next
+ *    pointermove (parity with the old StopGrid's useShiftHeld). The hook
+ *    assigns that computation to `updateRef` in an effect — writing a ref
+ *    during render trips react-hooks/refs.
  *  - onPointerMove: dragGesture threshold tracking, then the update.
  *  - onPointerCancel (browser-initiated: pen palm rejection, window switch,
  *    capture loss): disarm the drag, clear the overlay, and roll the doc back
@@ -55,7 +56,6 @@ export interface GhostDragCore {
 export function useGhostDragEngine<TDrag extends GhostDragCore, TOverlay>(
   svgRef: RefObject<SVGSVGElement | null>,
   screenToWorld: ScreenToWorld,
-  { altRecomputes = false }: { altRecomputes?: boolean } = {},
 ) {
   const [overlay, setOverlayState] = useState<TOverlay | null>(null);
   const overlayRef = useRef<TOverlay | null>(null);
@@ -74,11 +74,9 @@ export function useGhostDragEngine<TDrag extends GhostDragCore, TOverlay>(
 
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
-      if (e.key !== 'Shift' && !(altRecomputes && e.key === 'Alt')) return;
+      if (e.key !== 'Shift') return;
       const ds = dragRef.current;
       if (!ds || !ds.moved) return;
-      // Keep a mid-drag Alt press from focusing the browser menu bar.
-      if (e.key === 'Alt' && e.type === 'keydown') e.preventDefault();
       updateRef.current(ds.lastMX, ds.lastMY, { altKey: e.altKey, shiftKey: e.shiftKey });
     };
     window.addEventListener('keydown', onKey);
@@ -87,7 +85,7 @@ export function useGhostDragEngine<TDrag extends GhostDragCore, TOverlay>(
       window.removeEventListener('keydown', onKey);
       window.removeEventListener('keyup', onKey);
     };
-  }, [altRecomputes]);
+  }, []);
 
   const onPointerMove = (e: React.PointerEvent) => {
     const ds = dragRef.current;
