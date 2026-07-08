@@ -238,7 +238,7 @@ test.describe('Placement parity', () => {
     });
     // Isolate the grid: line off, grid 'both'.
     await page.getByRole('button', { name: 'Snap to line' }).click();
-    const gridBtn = page.getByRole('button', { name: 'Snap to grid' });
+    const gridBtn = page.getByRole('button', { name: 'Snap to grid', exact: true });
     await gridBtn.click();
     await gridBtn.click();
     await gridBtn.click();

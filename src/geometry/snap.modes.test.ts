@@ -619,6 +619,66 @@ describe('snapDraggedStation: tens mode', () => {
   });
 });
 
+describe('snapDraggedStation: tens tracks the active grid interval', () => {
+  it('notches the along-axis cadence to multiples of the grid size (5)', () => {
+    // A=(0,0), dragging B along the horizontal line. Proposed x=13: the
+    // nearest multiple of 5 is 15, but the nearest multiple of 10 is 10 — so
+    // the interval must come from gridInterval, not a hardcoded 10.
+    const a = makeStation({ id: 'a', x: 0, y: 0, stops: [horizontalStop('L1')] });
+    const b = makeStation({ id: 'b', x: 50, y: 0, stops: [horizontalStop('L1')] });
+    const input = {
+      draggedId: 'b' as StationId,
+      proposedX: 13,
+      proposedY: 0.5,
+      draggedRotation: 0 as const,
+      draggedStops: b.stops,
+      stations: stations(a, b),
+      lines: linesOf(lineOf('L1', ['a', 'b'])),
+      modes: { ...LINE_ONLY, tens: true },
+    };
+    expect(snapDraggedStation({ ...input, gridInterval: 5 }).x).toBeCloseTo(15, 5);
+    // Default interval (10) lands on the nearest ten instead.
+    expect(snapDraggedStation(input).x).toBeCloseTo(10, 5);
+  });
+
+  it('notches the along-axis cadence to multiples of the grid size (20)', () => {
+    // Proposed x=26: nearest multiple of 20 is 20; nearest multiple of 10 is 30.
+    const a = makeStation({ id: 'a', x: 0, y: 0, stops: [horizontalStop('L1')] });
+    const b = makeStation({ id: 'b', x: 50, y: 0, stops: [horizontalStop('L1')] });
+    const r = snapDraggedStation({
+      draggedId: 'b',
+      proposedX: 26,
+      proposedY: 0.5,
+      draggedRotation: 0,
+      draggedStops: b.stops,
+      stations: stations(a, b),
+      lines: linesOf(lineOf('L1', ['a', 'b'])),
+      modes: { ...LINE_ONLY, tens: true },
+      gridInterval: 20,
+    });
+    expect(r.x).toBeCloseTo(20, 5);
+    expect(r.y).toBeCloseTo(0, 5);
+  });
+
+  it("notches a bullet's cadence to multiples of the grid size (5)", () => {
+    // Vertical line [A, B]; A=(0,0) is the bullet tens anchor. Proposed y=13:
+    // nearest multiple of 5 is 15 (nearest ten would be 10).
+    const a = makeStation({ id: 'a', x: 0, y: 0, stops: [makeStop('L1')] });
+    const b = makeStation({ id: 'b', x: 0, y: 100, stops: [makeStop('L1')] });
+    const r = snapDraggedStation({
+      proposedX: 1,
+      proposedY: 13,
+      stations: stations(a, b),
+      lines: linesOf(lineOf('L1', ['a', 'b'])),
+      bulletLineId: 'L1',
+      modes: { line: true, equidistant: false, tens: true, all: 'off', grid: 'off' },
+      gridInterval: 5,
+    });
+    expect(r.x).toBeCloseTo(0, 5);
+    expect(r.y).toBeCloseTo(15, 5);
+  });
+});
+
 describe('snapDraggedStation: equidistant + tens together', () => {
   it('picks whichever along-axis target is closer to the proposed position', () => {
     // A=(0,0), C=(94,0). Equidistant midpoint = 47. Tens nearest = 50.
