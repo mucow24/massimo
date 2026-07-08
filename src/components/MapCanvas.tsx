@@ -941,7 +941,11 @@ export function MapCanvas() {
 
         {/* station labels: rendered after bg/wash so a selected station's
             accent wash never paints over a neighbor's label. Faded in
-            layering mode so the focus stays on the band layers. */}
+            layering mode so the focus stays on the band layers. The
+            layout-edited station's label is NOT special-cased here — it (name
+            and any inline route bullets) fades under the focus dim with every
+            other label; only its dots + editor chrome are lifted above the
+            dim. */}
         <g opacity={inLayeringMode ? LAYERING_FADE_OPACITY : 1}>
           {Object.values(stations).map((st) => (
             <StationView
@@ -1022,16 +1026,20 @@ export function MapCanvas() {
         {/* station dots: above the transfer layer so a dot click routes to
             the station, not the transfer (overlays below — previews, labels,
             snap guides — still paint over the dots) */}
-        {Object.values(stations).map((st) => (
-          <StationView
-            key={st.id + ':dots'}
-            station={st}
-            lines={lines}
-            zoom={view.viewport.zoom}
-            onStartDrag={drag.onStartDrag}
-            layer="dots"
-          />
-        ))}
+        {Object.values(stations).map((st) =>
+          // The layout-edited station is painted above the focus dim instead,
+          // so it stays bright and its dots keep their true colors; skip it here.
+          st.id === layoutEditStationId ? null : (
+            <StationView
+              key={st.id + ':dots'}
+              station={st}
+              lines={lines}
+              zoom={view.viewport.zoom}
+              onStartDrag={drag.onStartDrag}
+              layer="dots"
+            />
+          ),
+        )}
 
         {/* Station-placing-mode ghost: a faint dot + name following the
             cursor before each click, so the user can see where (and what
@@ -1156,11 +1164,13 @@ export function MapCanvas() {
         {/* selection stroke: 2px black ring around the merged silhouette,
             painted on top of everything so the outline is never occluded.
             One per selected station (or per previewed station during a
-            rect-select drag). */}
+            rect-select drag). The layout-edited station is skipped — it gets a
+            white border painted above the focus dim, in the block below. */}
         <g data-export-exclude="1">
           {washIds.map(
             (sid) =>
-              stations[sid] && (
+              stations[sid] &&
+              sid !== layoutEditStationId && (
                 <StationView
                   key={sid + ':stroke'}
                   station={stations[sid]}
@@ -1371,39 +1381,25 @@ export function MapCanvas() {
           />
         </g>
 
-        {/* Station layout editor (editing-station-layout mode): grab rings
-            over the real dots + label cell, above the drag proxies so the
-            handles win hit-testing. Pure interaction chrome. */}
-        {layoutEditStation && (
-          <g data-export-exclude="1">
-            <StationLayoutEditor
-              station={layoutEditStation}
-              lines={lines}
-              zoom={view.viewport.zoom}
-              onStartNodeDrag={layoutDrag.onStartNodeDrag}
-              swapTarget={
-                layoutDrag.overlay?.over?.kind === 'stop' ? layoutDrag.overlay.over : null
-              }
-            />
-          </g>
-        )}
-
-        {/* Ghost lattice: candidate slots at the real station while a
-            layout-editor handle is being dragged. Pure chrome. */}
-        {layoutDrag.overlay && stations[layoutDrag.overlay.stationId] && (
-          <g data-export-exclude="1">
-            <GhostLattice
-              ghosts={layoutDrag.overlay.ghosts}
-              over={layoutDrag.overlay.over?.kind === 'ghost' ? layoutDrag.overlay.over : null}
-              station={stations[layoutDrag.overlay.stationId]}
-              zoom={view.viewport.zoom}
-              dropR={
-                layoutDrag.overlay.source.kind === 'stop'
-                  ? lineWidthOf(lines[layoutDrag.overlay.source.lineId]) / 2
-                  : STOP_SIZE / 2
-              }
-            />
-          </g>
+        {/* Station-layout-editor focus dim (editing-station-layout mode):
+            mutes the whole map so the mode is unmistakable and the overlays
+            read. The edited station's own content (white border, dots, label,
+            grab rings + direction arrows) is painted at the very END of the
+            SVG, AFTER the routing-warning markers, so those markers can never
+            cover its click targets. Same focus language as the line-selection
+            highlight; chrome, excluded from export. */}
+        {layoutEditStation && theme.dimOpacity > 0 && (
+          <rect
+            data-export-exclude="1"
+            data-dim="1"
+            x={overdrawn.vbX}
+            y={overdrawn.vbY}
+            width={overdrawn.vbW}
+            height={overdrawn.vbH}
+            fill={theme.dim}
+            fillOpacity={theme.dimOpacity}
+            pointerEvents="none"
+          />
         )}
 
         {/* Layering-mode top overlays: the hovered-stripe solid outline +
@@ -1429,7 +1425,7 @@ export function MapCanvas() {
             very end of the SVG so the marker draws on top of every stripe,
             dot, and label and is never occluded. The ⚠ takes whichever of
             black/white is legible against the stripe under its center. */}
-        <g data-export-exclude="1">
+        <g data-export-exclude="1" data-band-warnings="1">
           {bands.map((b) => {
             if (!b.warning) return null;
             // Color under the glyph = the band's center stripe, resolved the
@@ -1442,6 +1438,73 @@ export function MapCanvas() {
             return <BandWarning key={'w:' + b.bandKey} spec={b} iconColor={iconColor} />;
           })}
         </g>
+
+        {/* Layout-editor focus content, painted at the very END of the SVG so
+            it sits ABOVE the routing-warning markers, which would otherwise
+            cover the edited station's dots + direction arrows (the click
+            targets you reach for exactly when a routing warning appears). The
+            dim is painted much earlier, below the warnings, so the warnings
+            stay visible beneath this content. */}
+        {layoutEditStation && (
+          <>
+            {/* White selection border, above the dim. The base stroke pass
+                skips this station's themed (black) border; white reads on the
+                darkened backdrop in both themes. */}
+            <g data-export-exclude="1">
+              <StationView
+                station={layoutEditStation}
+                lines={lines}
+                zoom={view.viewport.zoom}
+                onStartDrag={drag.onStartDrag}
+                layer="stroke"
+                strokeColor="#ffffff"
+              />
+            </g>
+            {/* Stop dots at full strength — the thing you're editing. Skipped
+                in the base dots pass, so this is a move, not a duplicate: one
+                hit-seam per dot. Real map content, so NOT export-excluded. The
+                label is intentionally NOT re-painted here; it fades under the
+                dim in the base pass. */}
+            <g pointerEvents="none">
+              <StationView
+                station={layoutEditStation}
+                lines={lines}
+                zoom={view.viewport.zoom}
+                onStartDrag={drag.onStartDrag}
+                layer="dots"
+              />
+            </g>
+            {/* Grab rings + direction arrows on top (interactive chrome). */}
+            <g data-export-exclude="1">
+              <StationLayoutEditor
+                station={layoutEditStation}
+                lines={lines}
+                zoom={view.viewport.zoom}
+                onStartNodeDrag={layoutDrag.onStartNodeDrag}
+                swapTarget={
+                  layoutDrag.overlay?.over?.kind === 'stop' ? layoutDrag.overlay.over : null
+                }
+              />
+            </g>
+            {/* Ghost lattice during a layout drag, above the dots so drop
+                targets stay readable. */}
+            {layoutDrag.overlay && stations[layoutDrag.overlay.stationId] && (
+              <g data-export-exclude="1">
+                <GhostLattice
+                  ghosts={layoutDrag.overlay.ghosts}
+                  over={layoutDrag.overlay.over?.kind === 'ghost' ? layoutDrag.overlay.over : null}
+                  station={stations[layoutDrag.overlay.stationId]}
+                  zoom={view.viewport.zoom}
+                  dropR={
+                    layoutDrag.overlay.source.kind === 'stop'
+                      ? lineWidthOf(lines[layoutDrag.overlay.source.lineId]) / 2
+                      : STOP_SIZE / 2
+                  }
+                />
+              </g>
+            )}
+          </>
+        )}
       </svg>
 
       <ItemPopovers view={view} />
