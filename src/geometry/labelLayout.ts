@@ -415,9 +415,9 @@ function snapInfoInHalfPlane(
     // end/start-anchored and extends back toward the cell, so the nearest stop
     // imposes the tighter anchor bound — clamping behind it clears every stop
     // farther along, whereas clamping behind a farther stop would leave the
-    // nearer one sitting under the text. The line-376 gate guarantees
-    // `sign * proj > 0` (the positive distance along reading), so "nearest" is
-    // simply the smallest `sign * proj`.
+    // nearer one sitting under the text. The `sign * proj <= 1e-6` gate above
+    // guarantees `sign * proj > 0` (the positive distance along reading), so
+    // "nearest" is simply the smallest `sign * proj`.
     if (inWayStopProj === null || sign * proj < sign * inWayStopProj) {
       inWayStopProj = proj;
       inWayStopHalf = half;

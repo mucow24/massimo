@@ -27,9 +27,9 @@ type WholeDragState = {
   moved: boolean;
   siblings: GroupSiblings;
   // "Snap to all" pool, snapshotted at pointer-down (everything in it is
-  // stationary for the duration of the drag). Empty during a group drag —
-  // co-moving siblings would be unstable targets (phase-2 work narrows this
-  // to an exclusion set).
+  // stationary for the duration of the drag). In a group drag it excludes the
+  // dragged polygon AND every co-moving sibling (they'd be unstable targets);
+  // stationary items stay valid targets. See the alignTargets call below.
   allTargets: Vec2[];
   history: ReturnType<typeof beginHistoryGroup>;
 };
