@@ -1,4 +1,4 @@
-import { add, sub, rotate, type Vec2 } from './vec';
+import { add, sub, rotate, rotatedRectCorners, type Vec2 } from './vec';
 import { polygonSnapAnchor } from './polygon';
 import type { SvgImage } from '../model/types';
 
@@ -53,9 +53,7 @@ export function snapAngle(deg: number, snap: boolean): number {
 
 // The four world-space corners, clockwise from top-left.
 export function svgImageCorners(img: SvgImageGeom): Vec2[] {
-  const hw = img.width / 2;
-  const hh = img.height / 2;
-  return CORNER_SIGNS.map((s) => localToWorld(img, { x: s.sx * hw, y: s.sy * hh }));
+  return rotatedRectCorners(center(img), img.width / 2, img.height / 2, toRad(img.rotation));
 }
 
 // Resize by dragging a corner, with the opposite corner pinned in world space.

@@ -35,8 +35,10 @@ type MoveState = {
   startMY: number;
   moved: boolean;
   siblings: GroupSiblings;
-  // "Snap to all" pool, snapshotted at pointer-down. Empty during a group
-  // drag — co-moving siblings would be unstable targets.
+  // "Snap to all" pool, snapshotted at pointer-down. In a group drag it
+  // excludes the dragged image AND every co-moving sibling (they'd be unstable
+  // targets); stationary items stay valid targets. See the alignTargets call
+  // below.
   allTargets: Vec2[];
   history: ReturnType<typeof beginHistoryGroup>;
 };

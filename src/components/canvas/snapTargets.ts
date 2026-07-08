@@ -1,7 +1,7 @@
 import { stopPosWorld } from '../../geometry/interlining';
 import { svgImageCorners } from '../../geometry/svgImage';
 import { measureTextLabel } from '../../geometry/textMeasure';
-import { rotate, type Vec2 } from '../../geometry/vec';
+import { rotatedRectCorners, type Vec2 } from '../../geometry/vec';
 import type { MapDoc, TextLabel } from '../../model/types';
 
 /** Per-kind id sets excluded from the pool — the dragged item itself plus, in a
@@ -31,19 +31,8 @@ export type AlignDoc = Pick<
  */
 export function textLabelCorners(label: TextLabel): Vec2[] {
   const m = measureTextLabel(label);
-  const hw = m.width / 2;
-  const hh = m.height / 2;
   const rad = (label.rotation * 45 * Math.PI) / 180;
-  const at = (local: Vec2): Vec2 => {
-    const w = rotate(local, rad);
-    return { x: label.x + w.x, y: label.y + w.y };
-  };
-  return [
-    at({ x: -hw, y: -hh }),
-    at({ x: hw, y: -hh }),
-    at({ x: hw, y: hh }),
-    at({ x: -hw, y: hh }),
-  ];
+  return rotatedRectCorners({ x: label.x, y: label.y }, m.width / 2, m.height / 2, rad);
 }
 
 /**
