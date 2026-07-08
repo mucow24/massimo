@@ -2,13 +2,12 @@ import { useMemo } from 'react';
 import type { Line, RouteBulletShape, TextLabel } from '../model/types';
 import {
   BASELINE_FRACTION,
-  LINE_HEIGHT,
   measureAdvance,
   measureTextLabel,
   type MeasuredBBox,
 } from '../geometry/textMeasure';
 import { justifyLine, type JustifyAtom } from '../geometry/labelJustify';
-import { resolveRunWeight, type SegmentStyle } from '../geometry/labelTokens';
+import { resolveRunFontSize, resolveRunWeight, type SegmentStyle } from '../geometry/labelTokens';
 import { TEXT_LABEL_HIT_PAD } from '../geometry/stationBoundary';
 import { FONT_STACK } from '../util/fonts';
 import { useDoc } from '../state/store';
@@ -80,7 +79,6 @@ export function LabelView({
   const angle = label.rotation * 45;
   const halfW = m.width / 2;
   const halfH = m.height / 2;
-  const lineSpacing = label.fontSize * LINE_HEIGHT * (label.leading ?? 1);
   const letterSpacingPx = (label.tracking ?? 0) * label.fontSize;
 
   if (layer === 'stroke') {
@@ -167,28 +165,46 @@ export function LabelView({
       )}
       {m.lines.map((lm, i) => {
         if (lm.segments.length === 0) return null;
-        const yTop = -halfH + i * lineSpacing;
-        // Bullet bottom sits on the text baseline; see BASELINE_FRACTION.
-        const baselineY = yTop + label.fontSize * BASELINE_FRACTION;
+        // Every run on the line shares this baseline; the measurer placed it
+        // cumulatively, so a bigger inline <size> already pushed the lines apart.
+        const baselineY = -halfH + lm.baselineFromTop;
 
-        // Per-run style resolution for the formatting tags: <w=…>/<b> resolve
-        // the weight against the label's base, <i> ORs with the label's italic,
-        // <color=…> overrides the day/night label color for that run only.
+        // Per-run style resolution for the formatting tags: <w=…>/<b> resolve the
+        // weight against the label's base, <i> ORs with the label's italic,
+        // <size=…> resolves the run size against the base, <color=…> overrides the
+        // day/night label color for that run only.
         const runWeight = (style?: SegmentStyle) => resolveRunWeight(label.weight, style);
         const runItalic = (style?: SegmentStyle) => label.italic || !!style?.italic;
+        const runFontSize = (style?: SegmentStyle) => resolveRunFontSize(label.fontSize, style);
         const runFill = (style?: SegmentStyle) => style?.color ?? labelColor;
         const runAdvance = (s: string, style?: SegmentStyle) =>
-          measureAdvance(s, label.fontSize, runWeight(style), runItalic(style), letterSpacingPx);
+          measureAdvance(
+            s,
+            runFontSize(style),
+            runWeight(style),
+            runItalic(style),
+            letterSpacingPx,
+          );
 
-        const textNode = (x: number, value: string, key: string, style?: SegmentStyle) => (
+        const textNode = (
+          x: number,
+          value: string,
+          key: string,
+          fontSize: number,
+          style?: SegmentStyle,
+        ) => (
           <text
             key={key}
             x={x}
-            y={yTop}
+            // Anchor each run by its OWN top (dominantBaseline="hanging") so
+            // differently-sized runs share the baseline: baseline −
+            // BASELINE_FRACTION·size is the hanging top. Reduces to the historical
+            // per-line top when every run is the base size.
+            y={baselineY - fontSize * BASELINE_FRACTION}
             textAnchor="start"
             dominantBaseline="hanging"
             fontFamily={FONT_STACK}
-            fontSize={label.fontSize}
+            fontSize={fontSize}
             fontWeight={runWeight(style)}
             fontStyle={runItalic(style) ? 'italic' : 'normal'}
             letterSpacing={letterSpacingPx !== 0 ? letterSpacingPx : undefined}
@@ -202,15 +218,16 @@ export function LabelView({
         // <u>/<s> as explicit <line> geometry, matching the station-label
         // pattern: Chromium mishandles toggling the text-decoration SVG
         // attribute on rotated <text>, and svg2pdf ignores it outright.
-        const decorationY = (kind: 'underline' | 'strike') =>
-          kind === 'underline'
-            ? baselineY + label.fontSize * 0.1
-            : baselineY - label.fontSize * 0.28;
+        // Decoration geometry scales with the RUN's size (offsets + thickness),
+        // so a bigger <size> run gets a proportionally placed, heavier rule.
+        const decorationY = (kind: 'underline' | 'strike', fontSize: number) =>
+          kind === 'underline' ? baselineY + fontSize * 0.1 : baselineY - fontSize * 0.28;
         const decorationLine = (
           kind: 'underline' | 'strike',
           x: number,
           width: number,
           key: string,
+          fontSize: number,
           style: SegmentStyle,
         ) => (
           <line
@@ -218,22 +235,24 @@ export function LabelView({
             data-text-decoration={kind}
             x1={x}
             x2={x + width}
-            y1={decorationY(kind)}
-            y2={decorationY(kind)}
+            y1={decorationY(kind, fontSize)}
+            y2={decorationY(kind, fontSize)}
             stroke={runFill(style)}
-            strokeWidth={label.fontSize * 0.07}
+            strokeWidth={fontSize * 0.07}
           />
         );
         const decorationNodes = (
           x: number,
           width: number,
           key: string,
+          fontSize: number,
           style?: SegmentStyle,
         ): React.ReactNode[] => {
           if (!style || (!style.underline && !style.strike) || width <= 0) return [];
           const out: React.ReactNode[] = [];
-          if (style.underline) out.push(decorationLine('underline', x, width, key, style));
-          if (style.strike) out.push(decorationLine('strike', x, width, key, style));
+          if (style.underline)
+            out.push(decorationLine('underline', x, width, key, fontSize, style));
+          if (style.strike) out.push(decorationLine('strike', x, width, key, fontSize, style));
           return out;
         };
         // Justify splits each line into per-word atoms, so a single '<u>foo and
@@ -254,7 +273,14 @@ export function LabelView({
             const flush = () => {
               if (run && run.end > run.x) {
                 out.push(
-                  decorationLine(kind, run.x, run.end - run.x, `${i}-${run.key}`, run.style),
+                  decorationLine(
+                    kind,
+                    run.x,
+                    run.end - run.x,
+                    `${i}-${run.key}`,
+                    runFontSize(run.style),
+                    run.style,
+                  ),
                 );
               }
               run = null;
@@ -319,7 +345,7 @@ export function LabelView({
           atoms.forEach((a, j) => {
             const x = lineStartX + a.x;
             if (a.kind === 'text') {
-              nodes.push(textNode(x, a.value ?? '', `${i}-${j}-t`, a.style));
+              nodes.push(textNode(x, a.value ?? '', `${i}-${j}-t`, runFontSize(a.style), a.style));
             } else {
               nodes.push(
                 bulletNode(
@@ -341,8 +367,10 @@ export function LabelView({
             const segCursor = cursor;
             cursor += seg.advance;
             if (seg.kind === 'text') {
-              nodes.push(textNode(segCursor, seg.value, `${i}-${j}-t`, seg.style));
-              nodes.push(...decorationNodes(segCursor, seg.advance, `${i}-${j}`, seg.style));
+              nodes.push(textNode(segCursor, seg.value, `${i}-${j}-t`, seg.fontSize, seg.style));
+              nodes.push(
+                ...decorationNodes(segCursor, seg.advance, `${i}-${j}`, seg.fontSize, seg.style),
+              );
             } else {
               nodes.push(bulletNode(segCursor, seg, `${i}-${j}-b`));
             }

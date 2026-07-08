@@ -5,6 +5,7 @@ import { useDoc } from '../state/store';
 import { useViewportStore } from '../state/viewportStore';
 import { DEFAULT_DOC, updateTextLabel } from '../model/transforms';
 import { makeTextLabel } from '../test/fixtures';
+import { BASELINE_FRACTION } from '../geometry/textMeasure';
 import type { Line, TextLabel, TextLabelAlign } from '../model/types';
 
 const seedLine = (overrides: Partial<Line> & Pick<Line, 'id' | 'service'>): Line => ({
@@ -227,6 +228,55 @@ describe('<LabelView /> — formatting tags', () => {
   it('substitutes <air> with the plane glyph', () => {
     const c = renderLabel(makeTextLabel({ id: 'g1', text: '<air> JFK' }));
     expect(textByContent(c, '✈ JFK')).toBeDefined();
+  });
+});
+
+describe('<LabelView /> — inline <size> tags', () => {
+  const renderLabel = (label: TextLabel) =>
+    render(
+      <svg>
+        <LabelView label={label} selected={false} />
+      </svg>,
+    ).container;
+  const textByContent = (c: HTMLElement, content: string) =>
+    Array.from(c.querySelectorAll('text')).find((t) => t.textContent === content)!;
+
+  it('renders an absolute <size=N> run at that font size, others at the base', () => {
+    const c = renderLabel(
+      makeTextLabel({ id: 'g1', text: '<size=24>big</size> base', fontSize: 10 }),
+    );
+    expect(textByContent(c, 'big').getAttribute('font-size')).toBe('24');
+    expect(textByContent(c, ' base').getAttribute('font-size')).toBe('10');
+  });
+
+  it('renders a relative <size=+N> run at base + delta', () => {
+    const c = renderLabel(makeTextLabel({ id: 'g1', text: '<size=+5>x</size>', fontSize: 10 }));
+    expect(textByContent(c, 'x').getAttribute('font-size')).toBe('15');
+  });
+
+  it('sits differently-sized runs on one shared baseline', () => {
+    const c = renderLabel(
+      makeTextLabel({ id: 'g1', text: '<size=6>a</size><size=24>b</size>', fontSize: 10 }),
+    );
+    // Each run is anchored (dominantBaseline="hanging") at baseline −
+    // BASELINE_FRACTION·size, so adding BASELINE_FRACTION·size back must recover
+    // the same baseline for both runs.
+    const baseline = (el: Element, size: number) =>
+      parseFloat(el.getAttribute('y')!) + BASELINE_FRACTION * size;
+    expect(baseline(textByContent(c, 'a'), 6)).toBeCloseTo(baseline(textByContent(c, 'b'), 24), 5);
+  });
+
+  it('scales an underline decoration with the run size', () => {
+    const small = renderLabel(makeTextLabel({ id: 'g1', text: '<u>u</u>', fontSize: 10 }));
+    const big = renderLabel(
+      makeTextLabel({ id: 'g2', text: '<u><size=40>u</size></u>', fontSize: 10 }),
+    );
+    const strokeOf = (c: HTMLElement) =>
+      parseFloat(
+        c.querySelector('line[data-text-decoration="underline"]')!.getAttribute('stroke-width')!,
+      );
+    // Underline thickness is size * 0.07, so the 40px run's rule is far heavier.
+    expect(strokeOf(big)).toBeGreaterThan(strokeOf(small));
   });
 });
 

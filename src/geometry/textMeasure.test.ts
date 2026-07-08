@@ -1,5 +1,10 @@
 import { describe, it, expect, beforeEach } from 'vitest';
-import { LINE_HEIGHT, _clearTextMeasureCache, measureTextLabel } from './textMeasure';
+import {
+  BASELINE_FRACTION,
+  LINE_HEIGHT,
+  _clearTextMeasureCache,
+  measureTextLabel,
+} from './textMeasure';
 import { makeTextLabel } from '../test/fixtures';
 
 describe('measureTextLabel', () => {
@@ -176,6 +181,72 @@ describe('measureTextLabel — formatting tags', () => {
     expect(m.lineCount).toBe(2);
     expect(m.lines[0].segments[0]).toMatchObject({ value: 'aa', style: { bold: true } });
     expect(m.lines[1].segments[0]).toMatchObject({ value: 'bb', style: { bold: true } });
+  });
+});
+
+describe('measureTextLabel — inline <size> tags', () => {
+  beforeEach(() => {
+    _clearTextMeasureCache();
+  });
+
+  // jsdom has no canvas: a text run's advance falls back to
+  // len * fontSize * 0.55, so a per-segment size shows up exactly here.
+  const CHAR = 0.55;
+
+  it('measures an absolute <size=N> run at that size, growing advance and box', () => {
+    const m = measureTextLabel(makeTextLabel({ id: 'g', text: '<size=40>X</size>', fontSize: 10 }));
+    const seg = m.lines[0].segments[0];
+    expect(seg).toMatchObject({ kind: 'text', value: 'X', fontSize: 40 });
+    expect(seg.advance).toBeCloseTo(1 * 40 * CHAR, 5);
+    // Single line: box height is one line-height of the (only, biggest) size.
+    expect(m.height).toBeCloseTo(40 * LINE_HEIGHT, 5);
+    expect(m.width).toBeCloseTo(1 * 40 * CHAR, 5);
+  });
+
+  it('measures a relative <size=+N> run at base + delta', () => {
+    const m = measureTextLabel(makeTextLabel({ id: 'g', text: '<size=+5>X</size>', fontSize: 10 }));
+    const seg = m.lines[0].segments[0];
+    expect(seg).toMatchObject({ kind: 'text', value: 'X', fontSize: 15 });
+    expect(seg.advance).toBeCloseTo(1 * 15 * CHAR, 5);
+  });
+
+  it('floors a run whose relative delta would drive it below the minimum size', () => {
+    const m = measureTextLabel(
+      makeTextLabel({ id: 'g', text: '<size=-100>X</size>', fontSize: 10 }),
+    );
+    expect(m.lines[0].segments[0]).toMatchObject({ kind: 'text', value: 'X', fontSize: 1 });
+  });
+
+  it('grows total height and pushes baselines apart for a bigger middle line', () => {
+    const m = measureTextLabel(
+      makeTextLabel({ id: 'g', text: 'a\n<size=40>B</size>\nc', fontSize: 10 }),
+    );
+    expect(m.lines.map((l) => l.maxFontSize)).toEqual([10, 40, 10]);
+    // baselineFromTop: F*m0, then +m_i*LINE_HEIGHT each line (leading 1).
+    expect(m.lines[0].baselineFromTop).toBeCloseTo(BASELINE_FRACTION * 10, 5); // 8
+    expect(m.lines[1].baselineFromTop).toBeCloseTo(8 + 40 * LINE_HEIGHT, 5); // 56
+    expect(m.lines[2].baselineFromTop).toBeCloseTo(56 + 10 * LINE_HEIGHT, 5); // 68
+    // height = lastBaseline + descent (LINE_HEIGHT - F)*m_last.
+    expect(m.height).toBeCloseTo(68 + (LINE_HEIGHT - BASELINE_FRACTION) * 10, 5); // 72
+  });
+
+  it('reduces exactly to the uniform model when no size tags are present', () => {
+    const m = measureTextLabel(makeTextLabel({ id: 'g', text: 'a\nb', fontSize: 20 }));
+    expect(m.lines.map((l) => l.maxFontSize)).toEqual([20, 20]);
+    // Untagged runs still carry the resolved (base) size for the renderers.
+    expect(m.lines[0].segments[0]).toMatchObject({ fontSize: 20 });
+    expect(m.lines[0].baselineFromTop).toBeCloseTo(BASELINE_FRACTION * 20, 5); // 16
+    expect(m.lines[1].baselineFromTop).toBeCloseTo(16 + 20 * LINE_HEIGHT, 5); // 40
+    expect(m.height).toBeCloseTo(2 * 20 * LINE_HEIGHT, 5); // 48
+  });
+
+  it('uses the largest run on a mixed line for its height; smaller runs keep their size', () => {
+    const m = measureTextLabel(makeTextLabel({ id: 'g', text: '<size=6>a</size>B', fontSize: 20 }));
+    expect(m.lines[0].segments.map((s) => (s.kind === 'text' ? s.fontSize : undefined))).toEqual([
+      6, 20,
+    ]);
+    expect(m.lines[0].maxFontSize).toBe(20);
+    expect(m.height).toBeCloseTo(20 * LINE_HEIGHT, 5); // 24
   });
 });
 

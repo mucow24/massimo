@@ -19,6 +19,15 @@ export const FONT_FAMILY = 'Helvetica Neue';
 // (✈, ↔, ★, ■, …) so they render identically on screen and in the PDF.
 export const FONT_STACK = "'Helvetica Neue', 'DejaVu Sans', Helvetica, Arial, sans-serif";
 
+/**
+ * Minimum rendered font size, in world units. The label Size field floors here
+ * (re-exported as `transforms.TEXT_LABEL_FONT_SIZE_MIN`), and inline `<size=…>`
+ * resolution clamps to it too (see `labelTokens.resolveRunFontSize`), so a tiny
+ * relative `<size=-N>` or absolute `<size=0.5>` can never drive a run's size to
+ * zero or below.
+ */
+export const MIN_FONT_SIZE = 1;
+
 const AVAILABLE_WEIGHTS = [100, 200, 300, 400, 500, 700, 800, 900];
 
 // Display name ↔ shipped Helvetica Neue weight. Single source of truth for the
@@ -73,6 +82,26 @@ export function parseWeightToken(value: string): { abs: number } | { rel: number
   if (/^[+-]\d+$/.test(value)) return { rel: Number(value) };
   const abs = WEIGHT_NAME_TO_VALUE.get(value.toLowerCase());
   return abs !== undefined ? { abs } : null;
+}
+
+/**
+ * Parse the value of a `<size=…>` inline label tag into either an absolute font
+ * size (an unsigned positive number) or a relative delta (`+N` / `-N`, sign
+ * required — added to the label's base size). Decimals are allowed in either
+ * form. Anything else — zero, a negative absolute, a unit suffix like `6px`, a
+ * bare sign, empty — returns null so the parser keeps the tag as literal text,
+ * matching an invalid `<w=…>`/`<color=…>`. Unlike weight there is no ladder: font
+ * size is continuous, so a signed value is a plain additive delta (mirroring
+ * `<w=±N>`'s innermost-wins-no-compounding stacking, resolved in
+ * `resolveRunFontSize`).
+ */
+export function parseSizeToken(value: string): { abs: number } | { rel: number } | null {
+  if (/^[+-]\d+(\.\d+)?$/.test(value)) return { rel: Number(value) };
+  if (/^\d+(\.\d+)?$/.test(value)) {
+    const n = Number(value);
+    return n > 0 ? { abs: n } : null;
+  }
+  return null;
 }
 
 /**

@@ -5,6 +5,7 @@ import {
   migrateLegacyInlineTokens,
   parseFormattedLine,
   parseLabelLine,
+  resolveRunFontSize,
   type SegmentStyle,
 } from './labelTokens';
 
@@ -378,6 +379,109 @@ describe('parseFormattedLine — <w=...> weight tags', () => {
   });
 });
 
+describe('parseFormattedLine — <size=...> size tags', () => {
+  const parse = (line: string) => parseFormattedLine(line, emptyStyleState()).segments;
+
+  it('applies an absolute <size=N> as a size override on the run', () => {
+    expect(parse('<size=6>x</size>')).toEqual([
+      { kind: 'text', value: 'x', style: { ...style(), size: 6 } },
+    ]);
+    expect(parse('<size=6.5>x</size>')).toEqual([
+      { kind: 'text', value: 'x', style: { ...style(), size: 6.5 } },
+    ]);
+  });
+
+  it('applies a relative <size=+N>/<size=-N> as a delta from the base size', () => {
+    expect(parse('<size=+1>x</size>')).toEqual([
+      { kind: 'text', value: 'x', style: { ...style(), sizeStep: 1 } },
+    ]);
+    expect(parse('<size=-2>x</size>')).toEqual([
+      { kind: 'text', value: 'x', style: { ...style(), sizeStep: -2 } },
+    ]);
+  });
+
+  it('restores the outer size when a nested <size> closes (innermost wins)', () => {
+    expect(parse('<size=6>a<size=+1>b</size>c</size>d')).toEqual([
+      { kind: 'text', value: 'a', style: { ...style(), size: 6 } },
+      { kind: 'text', value: 'b', style: { ...style(), sizeStep: 1 } },
+      { kind: 'text', value: 'c', style: { ...style(), size: 6 } },
+      { kind: 'text', value: 'd' },
+    ]);
+  });
+
+  it('combines a size tag with <b>/<i> and a weight tag on the same run', () => {
+    expect(parse('<b><size=+1>x</size></b>')).toEqual([
+      { kind: 'text', value: 'x', style: { ...style('bold'), sizeStep: 1 } },
+    ]);
+    expect(parse('<w=Medium><size=24>x</size></w>')).toEqual([
+      { kind: 'text', value: 'x', style: { ...style(), weight: 500, size: 24 } },
+    ]);
+  });
+
+  it('coexists with <s> strike and its </size> is not eaten by </s>', () => {
+    expect(parse('<s><size=6>x</size></s>')).toEqual([
+      { kind: 'text', value: 'x', style: { ...style('strike'), size: 6 } },
+    ]);
+  });
+
+  it('leaves a zero, negative-absolute, non-numeric, or empty value as literal text', () => {
+    expect(parse('<size=0>x')).toEqual([{ kind: 'text', value: '<size=0>x' }]);
+    expect(parse('<size=abc>x')).toEqual([{ kind: 'text', value: '<size=abc>x' }]);
+    expect(parse('<size=6px>x')).toEqual([{ kind: 'text', value: '<size=6px>x' }]);
+    expect(parse('<size=>x')).toEqual([{ kind: 'text', value: '<size=>x' }]);
+  });
+
+  it('ignores a </size> with no matching opener', () => {
+    expect(parse('a</size>b')).toEqual([{ kind: 'text', value: 'ab' }]);
+  });
+
+  it('does not attach a size to a bullet', () => {
+    expect(parse('<size=6>|A1|</size>')).toEqual([bullet('A1')]);
+  });
+
+  it('escapes a size tag with a backslash', () => {
+    expect(parse('\\<size=6>x')).toEqual([{ kind: 'text', value: '<size=6>x' }]);
+  });
+
+  it('carries an open size across lines and closes on the next', () => {
+    const r = parseFormattedLine('<size=6>a', emptyStyleState());
+    expect(r.segments).toEqual([{ kind: 'text', value: 'a', style: { ...style(), size: 6 } }]);
+    const next = parseFormattedLine('b</size>c', r.state);
+    expect(next.segments).toEqual([
+      { kind: 'text', value: 'b', style: { ...style(), size: 6 } },
+      { kind: 'text', value: 'c' },
+    ]);
+  });
+
+  it('does not mutate the incoming state', () => {
+    const entry = emptyStyleState();
+    parseFormattedLine('<size=6><size=+1>x', entry);
+    expect(entry).toEqual(emptyStyleState());
+  });
+});
+
+describe('resolveRunFontSize', () => {
+  it('returns the base size unchanged with no style', () => {
+    expect(resolveRunFontSize(16)).toBe(16);
+    expect(resolveRunFontSize(16, undefined)).toBe(16);
+  });
+
+  it('uses an absolute size verbatim', () => {
+    expect(resolveRunFontSize(16, { ...style(), size: 6 })).toBe(6);
+    expect(resolveRunFontSize(16, { ...style(), size: 40 })).toBe(40);
+  });
+
+  it('applies a relative step to the base size', () => {
+    expect(resolveRunFontSize(16, { ...style(), sizeStep: 2 })).toBe(18);
+    expect(resolveRunFontSize(16, { ...style(), sizeStep: -4 })).toBe(12);
+  });
+
+  it('floors the resolved size at the minimum label font size (1)', () => {
+    expect(resolveRunFontSize(3, { ...style(), sizeStep: -10 })).toBe(1);
+    expect(resolveRunFontSize(16, { ...style(), size: 0.5 })).toBe(1);
+  });
+});
+
 describe('hasFormattedToken', () => {
   it('detects each bullet form anywhere in a multi-line text', () => {
     expect(hasFormattedToken('take the |A|')).toBe(true);
@@ -398,6 +502,8 @@ describe('hasFormattedToken', () => {
     expect(hasFormattedToken('<color=red>R</color>')).toBe(true);
     expect(hasFormattedToken('<w=Light>light</w>')).toBe(true);
     expect(hasFormattedToken('<w=+2>heavier</w>')).toBe(true);
+    expect(hasFormattedToken('<size=6>small</size>')).toBe(true);
+    expect(hasFormattedToken('<size=+2>bigger</size>')).toBe(true);
     expect(hasFormattedToken('fly <air> here')).toBe(true);
     expect(hasFormattedToken('go <xfer> across')).toBe(true);
     expect(hasFormattedToken('Acme <c> Inc')).toBe(true);
