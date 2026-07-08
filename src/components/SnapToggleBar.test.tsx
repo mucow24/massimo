@@ -4,21 +4,38 @@ import userEvent from '@testing-library/user-event';
 import { SnapToggleBar } from './SnapToggleBar';
 import { useSnapPrefs } from '../state/snapPrefs';
 import { useSelection } from '../state/store';
+import { useViewportStore } from '../state/viewportStore';
 import { DEFAULT_SNAP_MODES } from '../geometry/snap';
 
 describe('<SnapToggleBar />', () => {
   beforeEach(() => {
     localStorage.clear();
     useSnapPrefs.setState({ modes: { ...DEFAULT_SNAP_MODES } });
+    useViewportStore.setState({ gridSize: 10 });
   });
 
-  it('renders five toggles labeled Line, Equidistant, Tens, All, Grid', () => {
+  it('renders five toggles labeled Line, Equidistant, Grid length, All, Grid', () => {
     render(<SnapToggleBar />);
     expect(screen.getByRole('button', { name: 'Snap to line' })).toBeInTheDocument();
     expect(screen.getByRole('button', { name: 'Snap to equidistant' })).toBeInTheDocument();
-    expect(screen.getByRole('button', { name: "Snap to 10's" })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Snap to grid length' })).toBeInTheDocument();
     expect(screen.getByRole('button', { name: 'Snap to all' })).toBeInTheDocument();
     expect(screen.getByRole('button', { name: 'Snap to grid' })).toBeInTheDocument();
+  });
+
+  it('shows the active grid size in the grid-length tooltip (10)', () => {
+    render(<SnapToggleBar />);
+    expect(
+      screen.getByRole('button', { name: 'Snap to grid length' }).getAttribute('title'),
+    ).toContain("(10's)");
+  });
+
+  it('reflects a 5px grid in the grid-length tooltip', () => {
+    useViewportStore.setState({ gridSize: 5 });
+    render(<SnapToggleBar />);
+    expect(
+      screen.getByRole('button', { name: 'Snap to grid length' }).getAttribute('title'),
+    ).toContain("(5's)");
   });
 
   it('Grid toggle works independently of Line', async () => {
@@ -51,14 +68,16 @@ describe('<SnapToggleBar />', () => {
     expect(useSnapPrefs.getState().modes.line).toBe(false);
   });
 
-  it('disables Equidistant and Tens when Line is off', async () => {
+  it('disables Equidistant when Line is off; Grid length and All stay enabled', async () => {
     useSnapPrefs.setState({ modes: { ...DEFAULT_SNAP_MODES, line: false } });
     render(<SnapToggleBar />);
     const equi = screen.getByRole('button', { name: 'Snap to equidistant' });
-    const tens = screen.getByRole('button', { name: "Snap to 10's" });
+    const tens = screen.getByRole('button', { name: 'Snap to grid length' });
     const all = screen.getByRole('button', { name: 'Snap to all' });
     expect(equi).toHaveAttribute('aria-disabled', 'true');
-    expect(tens).toHaveAttribute('aria-disabled', 'true');
+    // Grid-length snapping now applies to any snapped object (not just stations
+    // on a line), so it no longer gates on Line.
+    expect(tens).toHaveAttribute('aria-disabled', 'false');
     // All is independent of Line — must remain interactable.
     expect(all).toHaveAttribute('aria-disabled', 'false');
   });

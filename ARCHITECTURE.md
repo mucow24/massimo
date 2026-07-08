@@ -677,8 +677,10 @@ update it without understanding why every painted path on every map would move.
 of them:
 
 - The **station engine** `snapDraggedStation(input)` (pure) is topology-aware: stations and
-  line-bound route bullets. Modes `{line, equidistant, tens, all, grid}` (`equidistant`/`tens`
-  are gated on `line` and exist **only** here). Flow: pick a target pool → generate candidate
+  line-bound route bullets. Modes `{line, equidistant, tens, all, grid}`. `equidistant` is
+  engine-only and gated on `line`; `tens` ("Snap to grid length") notches the along-line cadence
+  to a whole multiple of the **active grid size** from the prev-in-line neighbor (gated on `line`
+  here too — but the flag is now shared with the point snapper, below). Flow: pick a target pool → generate candidate
   alignment pairs per target (line-mode requires a shared line + parallel travel dirs +
   adjacency; all-mode ignores topology; a stopless station participates via its anchor on
   either side) keeping those whose perpendicular distance is within tolerance → **consolidate
@@ -691,7 +693,11 @@ of them:
   one reference point against a target pool: polygon whole-drags + vertex drags, svg-image
   moves + axis-aligned resizes, text-label drags, unbound route bullets, and **all placement**.
   `constrain: 'x' | 'y'` restricts it for single-DOF consumers (edge resizes) so guides never
-  show a snap the caller discards.
+  show a snap the caller discards. When `tens` is on **and grid is off**, an engaged alignment's
+  free axis (the slide along the guide) is notched to a whole grid length from the target — the
+  same "Snap to grid length" idea extended past the skeleton, so any snapped object lands a clean
+  step from what it caught. Corners have no free DOF; grid (when on) owns quantization; edge
+  resizes opt out via `constrain`.
 
 Shared conventions, all paths: alignment tolerances are `/zoom` (constant screen px); grid is a
 hard world constraint; **Shift bypasses all snapping** during any pointer gesture (svg rotation

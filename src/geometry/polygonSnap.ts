@@ -72,6 +72,21 @@ export function snapPolygonPoint(input: PolygonSnapInput): PolygonSnapResult {
   const tol = input.tolerance ?? SNAP_PERP_TOLERANCE;
   const gridInterval = input.gridInterval ?? GRID_INTERVAL;
 
+  // "Snap to grid length" (`tens`): once an alignment engages, the point keeps
+  // one free degree of freedom — sliding along the alignment line. Notch that
+  // slide to a whole multiple of the grid length, measured from the target, so
+  // the item lands a clean grid-step from the thing it snapped to. Corners have
+  // no free DOF; the grid path owns its own quantization (skipped when grid is
+  // on); single-DOF edge resizes opt out (a notched perpendicular guide would
+  // mislead). `notchAlong` projects the aligned point back onto `axis` through
+  // the target, quantizes that distance, and rebuilds the point.
+  const applyTens = modes.tens && !constrain;
+  const notchAlong = (target: Vec2, point: Vec2, axis: Vec2): Vec2 => {
+    const along = dot(sub(point, target), axis);
+    const q = Math.round(along / gridInterval) * gridInterval;
+    return add(target, scale(axis, q));
+  };
+
   // Single-DOF constraint: a vertical alignment axis locks X, a horizontal
   // one locks Y; diagonals move both, so a constrained caller gets neither.
   const axisAllowed = (a: Vec2): boolean =>
@@ -134,6 +149,10 @@ export function snapPolygonPoint(input: PolygonSnapInput): PolygonSnapResult {
     to: { ...p },
     label: Math.round(Math.hypot(p.x - target.x, p.y - target.y)).toString(),
   });
+  // Like guideTo, but drops a zero-length guide — a grid-length notch can land
+  // the point exactly on its target, and a from==to guide has nothing to show.
+  const tensGuide = (target: Vec2, p: Vec2): SnapGuide[] =>
+    p.x === target.x && p.y === target.y ? [] : [guideTo(target, p)];
 
   // A corner — both X and Y lock onto a target — is the strongest snap: take it
   // outright (snapping to the V×H intersection), even over a diagonal that
@@ -178,6 +197,13 @@ export function snapPolygonPoint(input: PolygonSnapInput): PolygonSnapResult {
     const comboDisp = Math.hypot(combo.x - proposed.x, combo.y - proposed.y);
     if (!bestD || comboDisp <= bestD.perp) {
       if (!gridOn) {
+        if (applyTens) {
+          // Free DOF runs along the alignment line: Y for a vertical lock,
+          // X for a horizontal one. Notch it to a whole grid step from target.
+          const axis: Vec2 = bestV ? { x: 0, y: 1 } : { x: 1, y: 0 };
+          const p = notchAlong(singleAxis.target, combo, axis);
+          return { x: p.x, y: p.y, guides: tensGuide(singleAxis.target, p) };
+        }
         return { x: combo.x, y: combo.y, guides: [guideTo(singleAxis.target, combo)] };
       }
       const lock = bestV
@@ -191,6 +217,11 @@ export function snapPolygonPoint(input: PolygonSnapInput): PolygonSnapResult {
   }
   if (bestD) {
     if (!gridOn) {
+      if (applyTens) {
+        // Free DOF runs along the diagonal; notch the distance from the target.
+        const p = notchAlong(bestD.target, bestD.foot, bestD.axis);
+        return { x: p.x, y: p.y, guides: tensGuide(bestD.target, p) };
+      }
       return { x: bestD.foot.x, y: bestD.foot.y, guides: [guideTo(bestD.target, bestD.foot)] };
     }
     const r = reconcileLockWithGrid(bestD.target, bestD.axis, proposed, gridMode, gridInterval);

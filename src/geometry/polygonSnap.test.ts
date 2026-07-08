@@ -357,4 +357,138 @@ describe('snapPolygonPoint', () => {
       expect(r.guides).toHaveLength(0);
     });
   });
+
+  describe('snap to grid length (tens) — notch the free axis a whole grid step from the target', () => {
+    it('notches the free Y of a vertical alignment to a multiple of the grid length', () => {
+      // Vertical lock (x→100); Y slides free. With tens on, Y notches to the
+      // nearest multiple of 10 from the target's Y (0) → 50 (not the raw 53).
+      const r = snapPolygonPoint({
+        proposed: { x: 102, y: 53 },
+        lineTargets: [{ x: 100, y: 0 }],
+        allTargets: [],
+        modes: modes({ line: true, tens: true }),
+      });
+      expect(r.x).toBeCloseTo(100, 6);
+      expect(r.y).toBeCloseTo(50, 6);
+      expect(r.guides[0].label).toBe('50');
+    });
+
+    it('leaves the free axis free when tens is off (baseline)', () => {
+      const r = snapPolygonPoint({
+        proposed: { x: 102, y: 53 },
+        lineTargets: [{ x: 100, y: 0 }],
+        allTargets: [],
+        modes: modes({ line: true, tens: false }),
+      });
+      expect(r.y).toBeCloseTo(53, 6);
+    });
+
+    it('notches the free X of a horizontal alignment', () => {
+      const r = snapPolygonPoint({
+        proposed: { x: 53, y: 102 },
+        lineTargets: [{ x: 0, y: 100 }],
+        allTargets: [],
+        modes: modes({ line: true, tens: true }),
+      });
+      expect(r.x).toBeCloseTo(50, 6);
+      expect(r.y).toBeCloseTo(100, 6);
+    });
+
+    it('notches an all-mode alignment (works without line mode)', () => {
+      // The new behavior must engage on a "Snap to all" alignment too — line
+      // mode is off here, so this proves tens is not gated on line.
+      const r = snapPolygonPoint({
+        proposed: { x: 203, y: 47 },
+        lineTargets: [],
+        allTargets: [{ x: 200, y: 0 }],
+        modes: modes({ line: false, all: 'vertical', tens: true }),
+      });
+      expect(r.x).toBeCloseTo(200, 6);
+      expect(r.y).toBeCloseTo(50, 6);
+    });
+
+    it('tracks the active grid interval (20)', () => {
+      // Y=26 notches to 20 on a 20px grid (would be 30 on the default 10px).
+      const r = snapPolygonPoint({
+        proposed: { x: 101, y: 26 },
+        lineTargets: [{ x: 100, y: 0 }],
+        allTargets: [],
+        modes: modes({ line: true, tens: true }),
+        gridInterval: 20,
+      });
+      expect(r.y).toBeCloseTo(20, 6);
+    });
+
+    it('notches along a diagonal alignment (clean distance from the target)', () => {
+      // Proposed sits near the +45° line through the origin; tens pins the
+      // slide to a clean 50 units (a multiple of 10) from the target.
+      const r = snapPolygonPoint({
+        proposed: { x: 34, y: 37 },
+        lineTargets: [{ x: 0, y: 0 }],
+        allTargets: [],
+        modes: modes({ line: true, tens: true }),
+      });
+      expect(Math.hypot(r.x, r.y)).toBeCloseTo(50, 4);
+      expect(r.x).toBeCloseTo(r.y, 4); // still on the diagonal
+      expect(r.guides[0].label).toBe('50');
+    });
+
+    it('leaves a corner untouched (no free DOF to notch)', () => {
+      const r = snapPolygonPoint({
+        proposed: { x: 101, y: 199 },
+        lineTargets: [
+          { x: 100, y: 0 },
+          { x: 0, y: 200 },
+        ],
+        allTargets: [],
+        modes: modes({ line: true, tens: true }),
+      });
+      expect(r.x).toBeCloseTo(100, 6);
+      expect(r.y).toBeCloseTo(200, 6);
+      expect(r.guides).toHaveLength(2);
+    });
+
+    it('yields to grid: when grid snapping is on, grid owns quantization (no tens notch)', () => {
+      // Grid 'vertical' locks X to the on-grid target (10) and leaves Y free;
+      // tens must NOT then notch Y — grid is the hard constraint that wins.
+      const r = snapPolygonPoint({
+        proposed: { x: 12, y: 53 },
+        lineTargets: [{ x: 10, y: 0 }],
+        allTargets: [],
+        modes: modes({ line: true, tens: true, grid: 'vertical' }),
+      });
+      expect(r.x).toBeCloseTo(10, 6);
+      expect(r.y).toBeCloseTo(53, 6);
+    });
+
+    it('drops the guide when the notch lands the point exactly on the target', () => {
+      // Tight tolerance so the vertical lock engages while the horizontal one
+      // doesn't; Y=4 notches to 0 → the point coincides with the target, so
+      // there is no meaningful guide to draw.
+      const r = snapPolygonPoint({
+        proposed: { x: 101, y: 4 },
+        lineTargets: [{ x: 100, y: 0 }],
+        allTargets: [],
+        modes: modes({ line: true, tens: true }),
+        tolerance: 3,
+      });
+      expect(r.x).toBeCloseTo(100, 6);
+      expect(r.y).toBeCloseTo(0, 6);
+      expect(r.guides).toHaveLength(0);
+    });
+
+    it('does not apply to single-DOF edge resizes (constrain set)', () => {
+      // Edge resizes opt out: the caller only uses one axis, so a notched
+      // perpendicular guide would be misleading. Y stays the raw slide value.
+      const r = snapPolygonPoint({
+        proposed: { x: 73, y: 53 },
+        lineTargets: [],
+        allTargets: [{ x: 70, y: 0 }],
+        modes: modes({ all: 'vertical', tens: true }),
+        constrain: 'x',
+      });
+      expect(r.x).toBeCloseTo(70, 6);
+      expect(r.y).toBeCloseTo(53, 6); // not notched to 50
+    });
+  });
 });

@@ -43,7 +43,7 @@ test.describe('Snap mode toolbar', () => {
       'aria-pressed',
       'false',
     );
-    await expect(page.getByRole('button', { name: "Snap to 10's" })).toHaveAttribute(
+    await expect(page.getByRole('button', { name: 'Snap to grid length' })).toHaveAttribute(
       'aria-pressed',
       'false',
     );
@@ -53,16 +53,19 @@ test.describe('Snap mode toolbar', () => {
     );
   });
 
-  test('Equidistant and Tens are disabled when Line is off', async ({ page }) => {
+  test('Equidistant is disabled when Line is off; Grid length and All stay enabled', async ({
+    page,
+  }) => {
     await seedAndOpen(page, verticalLine);
     await page.getByRole('button', { name: 'Snap to line' }).click();
     await expect(page.getByRole('button', { name: 'Snap to equidistant' })).toHaveAttribute(
       'aria-disabled',
       'true',
     );
-    await expect(page.getByRole('button', { name: "Snap to 10's" })).toHaveAttribute(
+    // Grid length applies to any snapped object now, so it no longer gates on Line.
+    await expect(page.getByRole('button', { name: 'Snap to grid length' })).toHaveAttribute(
       'aria-disabled',
-      'true',
+      'false',
     );
     // All is independent.
     await expect(page.getByRole('button', { name: 'Snap to all' })).toHaveAttribute(
