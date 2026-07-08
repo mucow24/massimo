@@ -67,8 +67,9 @@ export function TextLabelPopover({ label, world, view, onClose }: Props) {
 
   // Remember the manually stretched height of the text box, per label, so it
   // reopens at the size the user left it (see usePersistedTextareaHeight).
-  const editorHeight = usePersistedTextareaHeight(label.editorHeight, (h) =>
-    updateTextLabel(label.id, { editorHeight: h }),
+  const { attach: attachTextBox, onPointerUp: onTextBoxPointerUp } = usePersistedTextareaHeight(
+    label.editorHeight,
+    (h) => updateTextLabel(label.id, { editorHeight: h }),
   );
 
   // Soft-wrap toggle for the textarea — a remembered editor preference (not
@@ -110,12 +111,12 @@ export function TextLabelPopover({ label, world, view, onClose }: Props) {
         </label>
         <textarea
           id={`label-text-${label.id}`}
-          ref={editorHeight.ref}
+          ref={attachTextBox}
           className={wrapText ? 'wrap' : undefined}
           value={label.text}
           disabled={locked}
           onChange={(e) => setText(e.target.value)}
-          onPointerUp={editorHeight.onPointerUp}
+          onPointerUp={onTextBoxPointerUp}
           rows={Math.max(2, label.text.split('\n').length)}
           {...textField}
         />

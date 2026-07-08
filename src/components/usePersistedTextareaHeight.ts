@@ -2,11 +2,11 @@ import { useCallback, useLayoutEffect, useRef } from 'react';
 
 /**
  * Persist the height of a user-resizable `<textarea>` (one with CSS
- * `resize: vertical`). Spread the returned `ref` and `onPointerUp` onto the
- * textarea:
+ * `resize: vertical`). Put the returned callback ref `attach` and `onPointerUp`
+ * onto the textarea:
  *
- *   const { ref, onPointerUp } = usePersistedTextareaHeight(height, onCommit);
- *   <textarea ref={ref} onPointerUp={onPointerUp} … />
+ *   const { attach, onPointerUp } = usePersistedTextareaHeight(height, onCommit);
+ *   <textarea ref={attach} onPointerUp={onPointerUp} … />
  *
  * `height` is the stored height in CSS px (or `undefined` to leave the box
  * auto-sized to its content — the historical default before the user stretches
@@ -26,7 +26,7 @@ export function usePersistedTextareaHeight(
   onCommit: (height: number) => void,
 ) {
   const elRef = useRef<HTMLTextAreaElement | null>(null);
-  const ref = useCallback((el: HTMLTextAreaElement | null) => {
+  const attach = useCallback((el: HTMLTextAreaElement | null) => {
     elRef.current = el;
   }, []);
 
@@ -45,5 +45,5 @@ export function usePersistedTextareaHeight(
     if (Number.isFinite(dragged) && dragged > 0 && dragged !== height) onCommit(dragged);
   }, [height, onCommit]);
 
-  return { ref, onPointerUp };
+  return { attach, onPointerUp };
 }

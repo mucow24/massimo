@@ -3,8 +3,8 @@ import { render, screen, fireEvent } from '@testing-library/react';
 import { usePersistedTextareaHeight } from './usePersistedTextareaHeight';
 
 function Harness({ height, onCommit }: { height?: number; onCommit: (h: number) => void }) {
-  const { ref, onPointerUp } = usePersistedTextareaHeight(height, onCommit);
-  return <textarea data-testid="ta" ref={ref} onPointerUp={onPointerUp} />;
+  const { attach, onPointerUp } = usePersistedTextareaHeight(height, onCommit);
+  return <textarea data-testid="ta" ref={attach} onPointerUp={onPointerUp} />;
 }
 
 const ta = () => screen.getByTestId('ta') as HTMLTextAreaElement;

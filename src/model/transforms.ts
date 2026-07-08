@@ -1565,11 +1565,7 @@ export function setStationLocked(doc: MapDoc, stationId: StationId, locked: bool
  * plain click that reads back the same height doesn't churn history). Mirrors
  * `updateTextLabel`'s `editorHeight` clamp for text labels.
  */
-export function setStationEditorHeight(
-  doc: MapDoc,
-  stationId: StationId,
-  height: number,
-): MapDoc {
+export function setStationEditorHeight(doc: MapDoc, stationId: StationId, height: number): MapDoc {
   const next = Math.max(1, Math.round(height));
   return updateStation(doc, stationId, (st) =>
     st.editorHeight === next ? st : { ...st, editorHeight: next },

@@ -48,8 +48,9 @@ export function StationInspector({ id }: { id: StationId }) {
   const nameField = useFieldHistory();
   // Remember the manually stretched height of the Name box, per station, so it
   // reopens at the size the user left it (see usePersistedTextareaHeight).
-  const nameHeight = usePersistedTextareaHeight(station?.editorHeight, (h) =>
-    setStationEditorHeight(id, h),
+  const { attach: attachNameBox, onPointerUp: onNameBoxPointerUp } = usePersistedTextareaHeight(
+    station?.editorHeight,
+    (h) => setStationEditorHeight(id, h),
   );
   // useNumericField (not bare inputs): its text mirror ignores an emptied
   // field mid-edit — Number('') === 0 would teleport the station to the axis.
@@ -160,10 +161,10 @@ export function StationInspector({ id }: { id: StationId }) {
           </button>
         </div>
         <textarea
-          ref={nameHeight.ref}
+          ref={attachNameBox}
           value={station.name}
           onChange={(e) => renameStation(station.id, e.target.value)}
-          onPointerUp={nameHeight.onPointerUp}
+          onPointerUp={onNameBoxPointerUp}
           rows={Math.max(1, station.name.split('\n').length)}
           style={{ resize: 'vertical', whiteSpace: 'pre', overflow: 'auto' }}
           {...nameField}
