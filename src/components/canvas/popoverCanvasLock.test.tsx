@@ -23,7 +23,7 @@ import {
   viewBoxFor,
 } from './viewportMath';
 import { projectToScreen, type ViewportProjection } from './screenAnchor';
-import type { RouteBullet } from '../../model/types';
+import type { RouteBullet, Station } from '../../model/types';
 
 const SIZE = { w: 800, h: 600 };
 // Float slack for a corner that is exactly canvas-locked: repeated projections
@@ -160,7 +160,7 @@ function seedBullet(x: number, y: number) {
   useSelection.getState().selectRouteBullet('b1');
 }
 
-const stationRecord = (id: string, x: number, y: number) => ({
+const stationRecord = (id: string, x: number, y: number): Station => ({
   id,
   name: id,
   x,
