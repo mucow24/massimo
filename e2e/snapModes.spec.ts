@@ -245,7 +245,7 @@ test.describe('Snap modes wired through to the engine', () => {
     await seedAndOpen(page, loneSeed);
     await page.getByRole('button', { name: 'Snap to line' }).click();
     // One click: off → horizontal (locks Y).
-    const gridBtn = page.getByRole('button', { name: 'Snap to grid' });
+    const gridBtn = page.getByRole('button', { name: 'Snap to grid', exact: true });
     await gridBtn.click();
     await expect(gridBtn).toHaveAttribute('data-snap-state', 'horizontal');
 
@@ -269,7 +269,7 @@ test.describe('Snap modes wired through to the engine', () => {
     // glued to the line (x→0) while the free along-axis coordinate (y) snaps
     // to the grid — proving the two modes work together, not one-or-the-other.
     await seedAndOpen(page, verticalLine);
-    const gridBtn = page.getByRole('button', { name: 'Snap to grid' });
+    const gridBtn = page.getByRole('button', { name: 'Snap to grid', exact: true });
     await gridBtn.click(); // off → horizontal (locks Y)
     await expect(gridBtn).toHaveAttribute('data-snap-state', 'horizontal');
 
@@ -313,7 +313,7 @@ test.describe('Snap modes wired through to the engine', () => {
       lines: [{ id: 'L1', service: 'L', color: '#0039A6', stations: ['A', 'B'] }],
     };
     await seedAndOpen(page, offGridLine);
-    const gridBtn = page.getByRole('button', { name: 'Snap to grid' });
+    const gridBtn = page.getByRole('button', { name: 'Snap to grid', exact: true });
     await gridBtn.click(); // off → horizontal
     await gridBtn.click(); // horizontal → vertical
     await gridBtn.click(); // vertical → both

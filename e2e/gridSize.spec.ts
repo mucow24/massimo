@@ -84,7 +84,7 @@ test.describe('grid size toggle', () => {
     await seedAndOpen(page, loneStation);
     // Isolate the grid: turn line off, cycle grid to 'both'.
     await page.getByRole('button', { name: 'Snap to line' }).click();
-    const gridBtn = page.getByRole('button', { name: 'Snap to grid' });
+    const gridBtn = page.getByRole('button', { name: 'Snap to grid', exact: true });
     await gridBtn.click(); // off → horizontal
     await gridBtn.click(); // horizontal → vertical
     await gridBtn.click(); // vertical → both
@@ -135,7 +135,7 @@ test.describe('grid size toggle', () => {
 
     // Isolate the grid: line off, grid 'both', size 5.
     await page.getByRole('button', { name: 'Snap to line' }).click();
-    const gridBtn = page.getByRole('button', { name: 'Snap to grid' });
+    const gridBtn = page.getByRole('button', { name: 'Snap to grid', exact: true });
     await gridBtn.click();
     await gridBtn.click();
     await gridBtn.click();
