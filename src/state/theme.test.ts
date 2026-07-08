@@ -37,15 +37,15 @@ describe('themeColors', () => {
     expect(dark.accentWash).toBe('rgba(107, 154, 255, 0.12)');
   });
 
-  // The line-highlight dim: softened in light mode so the rest of the map
-  // stays readable as context; the black canvas keeps the stronger wash (it
-  // needs it to mute colored lines). dimmedLabel is the "addable station"
-  // name color painted above the dim in append mode — tuned per dim strength.
-  it('defines the line-highlight dim per mode, softer in light', () => {
+  // The focus dim (line-highlight + station-layout edit): one standardized
+  // strength across both themes — a softer light-mode wash was tried and
+  // disliked. dimmedLabel is the "addable station" name color painted above
+  // the dim in append mode, still tuned per theme against that dim.
+  it('defines a single standardized dim strength for both modes', () => {
     expect(themeColors(false).dim).toBe('#000000');
-    expect(themeColors(false).dimOpacity).toBe(0.55);
+    expect(themeColors(false).dimOpacity).toBe(0.7);
     expect(themeColors(true).dim).toBe('#000000');
-    expect(themeColors(true).dimOpacity).toBe(0.75);
+    expect(themeColors(true).dimOpacity).toBe(0.7);
     expect(themeColors(false).dimmedLabel).toBe('#eeeeee');
     expect(themeColors(true).dimmedLabel).toBe('#bbbbbb');
   });
