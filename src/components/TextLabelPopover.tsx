@@ -13,6 +13,7 @@ import { useLabelEditorPrefs } from '../state/labelEditorPrefs';
 import { type ViewportProjection } from './canvas/screenAnchor';
 import { DraggablePopoverShell } from './DraggablePopoverShell';
 import { useDraggablePopover } from './canvas/useDraggablePopover';
+import { usePersistedTextareaHeight } from './usePersistedTextareaHeight';
 import {
   FONT_SIZE_STEP,
   isLabelWeight,
@@ -64,6 +65,13 @@ export function TextLabelPopover({ label, world, view, onClose }: Props) {
 
   const textField = useFieldHistory();
 
+  // Remember the manually stretched height of the text box, per label, so it
+  // reopens at the size the user left it (see usePersistedTextareaHeight).
+  const { attach: attachTextBox, onPointerUp: onTextBoxPointerUp } = usePersistedTextareaHeight(
+    label.editorHeight,
+    (h) => updateTextLabel(label.id, { editorHeight: h }),
+  );
+
   // Soft-wrap toggle for the textarea — a remembered editor preference (not
   // label data), so long justified paragraphs stay visible instead of scrolling
   // off the right edge, and the choice sticks across popover opens and reloads.
@@ -103,10 +111,12 @@ export function TextLabelPopover({ label, world, view, onClose }: Props) {
         </label>
         <textarea
           id={`label-text-${label.id}`}
+          ref={attachTextBox}
           className={wrapText ? 'wrap' : undefined}
           value={label.text}
           disabled={locked}
           onChange={(e) => setText(e.target.value)}
+          onPointerUp={onTextBoxPointerUp}
           rows={Math.max(2, label.text.split('\n').length)}
           {...textField}
         />

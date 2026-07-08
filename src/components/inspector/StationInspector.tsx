@@ -20,6 +20,7 @@ import {
 } from './LabelAlignButtons';
 import { StopRows } from './StopRows';
 import { useFieldHistory } from '../useFieldHistory';
+import { usePersistedTextareaHeight } from '../usePersistedTextareaHeight';
 import { useNumericField } from '../useNumericField';
 import { useDismiss } from '../usePopover';
 import { resolveAutoAlign, resolveOffsetPerp } from '../../model/transforms';
@@ -40,10 +41,17 @@ export function StationInspector({ id }: { id: StationId }) {
   const setLabelAutoVAlign = useDoc((s) => s.setLabelAutoVAlign);
   const setStationWaypoint = useDoc((s) => s.setStationWaypoint);
   const setStationLocked = useDoc((s) => s.setStationLocked);
+  const setStationEditorHeight = useDoc((s) => s.setStationEditorHeight);
   const setStationLabelBold = useDoc((s) => s.setStationLabelBold);
   const setStationLabelItalic = useDoc((s) => s.setStationLabelItalic);
   const selection = useSelection();
   const nameField = useFieldHistory();
+  // Remember the manually stretched height of the Name box, per station, so it
+  // reopens at the size the user left it (see usePersistedTextareaHeight).
+  const { attach: attachNameBox, onPointerUp: onNameBoxPointerUp } = usePersistedTextareaHeight(
+    station?.editorHeight,
+    (h) => setStationEditorHeight(id, h),
+  );
   // useNumericField (not bare inputs): its text mirror ignores an emptied
   // field mid-edit — Number('') === 0 would teleport the station to the axis.
   const xField = useNumericField(
@@ -153,8 +161,10 @@ export function StationInspector({ id }: { id: StationId }) {
           </button>
         </div>
         <textarea
+          ref={attachNameBox}
           value={station.name}
           onChange={(e) => renameStation(station.id, e.target.value)}
+          onPointerUp={onNameBoxPointerUp}
           rows={Math.max(1, station.name.split('\n').length)}
           style={{ resize: 'vertical', whiteSpace: 'pre', overflow: 'auto' }}
           {...nameField}
