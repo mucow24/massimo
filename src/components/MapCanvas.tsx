@@ -22,7 +22,6 @@ import { StationView } from './StationView';
 import { useViewport } from './canvas/useViewport';
 import { overdrawnViewBox } from './canvas/viewportMath';
 import { useStationDrag } from './canvas/useStationDrag';
-import { useLabelDrag } from './canvas/useLabelDrag';
 import { useStationLayoutDrag } from './canvas/useStationLayoutDrag';
 import { StationLayoutEditor } from './canvas/StationLayoutEditor';
 import { GhostLattice } from './canvas/GhostLattice';
@@ -288,7 +287,6 @@ export function MapCanvas() {
   const itemDrag = useItemDrag(svgRef, view.viewport.zoom, inHandMode);
   const polyDrag = usePolygonDrag(svgRef, view.viewport.zoom, inHandMode);
   const svgDrag = useSvgImageDrag(svgRef, view.viewport.zoom, inHandMode, view.screenToWorld);
-  const labelDrag = useLabelDrag(svgRef, view.screenToWorld);
   const layoutDrag = useStationLayoutDrag(svgRef, view.screenToWorld);
   // The station being layout-edited in place, if the mode is active. If the
   // station vanishes under the mode (deleted from the sidebar), exit to idle
@@ -407,7 +405,6 @@ export function MapCanvas() {
     itemDrag.onPointerMove(e);
     polyDrag.onPointerMove(e);
     svgDrag.onPointerMove(e);
-    labelDrag.onPointerMove(e);
     layoutDrag.onPointerMove(e);
   };
   const onPointerUp = (e: React.PointerEvent) => {
@@ -417,7 +414,6 @@ export function MapCanvas() {
     itemDrag.onPointerUp(e);
     polyDrag.onPointerUp(e);
     svgDrag.onPointerUp(e);
-    labelDrag.onPointerUp(e);
     layoutDrag.onPointerUp(e);
   };
   // A browser pointercancel (pen palm rejection, window switch, capture loss)
@@ -434,7 +430,6 @@ export function MapCanvas() {
     itemDrag.onPointerCancel();
     polyDrag.onPointerCancel();
     svgDrag.onPointerCancel();
-    labelDrag.onPointerCancel();
     layoutDrag.onPointerCancel();
   };
 
@@ -940,7 +935,6 @@ export function MapCanvas() {
             lines={lines}
             zoom={view.viewport.zoom}
             onStartDrag={drag.onStartDrag}
-            onStartLabelDrag={labelDrag.onStartLabelDrag}
             layer="bg"
           />
         ))}
@@ -1256,7 +1250,6 @@ export function MapCanvas() {
                 lines={lines}
                 zoom={view.viewport.zoom}
                 onStartDrag={drag.onStartDrag}
-                onStartLabelDrag={labelDrag.onStartLabelDrag}
                 layer="hit"
               />
             ) : null,
@@ -1395,20 +1388,8 @@ export function MapCanvas() {
           </g>
         )}
 
-        {/* Ghost lattices: candidate slots at the real station while the
-            painted name (label drag) or a layout-editor handle is being
-            dragged. Pure chrome. */}
-        {labelDrag.overlay?.mode === 'ghost' && stations[labelDrag.overlay.stationId] && (
-          <g data-export-exclude="1">
-            <GhostLattice
-              ghosts={labelDrag.overlay.ghosts}
-              over={labelDrag.overlay.over}
-              station={stations[labelDrag.overlay.stationId]}
-              zoom={view.viewport.zoom}
-              dropR={STOP_SIZE / 2}
-            />
-          </g>
-        )}
+        {/* Ghost lattice: candidate slots at the real station while a
+            layout-editor handle is being dragged. Pure chrome. */}
         {layoutDrag.overlay && stations[layoutDrag.overlay.stationId] && (
           <g data-export-exclude="1">
             <GhostLattice

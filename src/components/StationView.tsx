@@ -10,9 +10,6 @@ interface Props {
   lines: Record<string, Line>;
   zoom: number;
   onStartDrag: (id: string, ev: React.PointerEvent, redistributeAnchor?: string) => void;
-  // Label-drag fork (bg/hit layers only): present ⇒ the sole-selected
-  // station's name rect becomes the label's own drag handle.
-  onStartLabelDrag?: (id: string, ev: React.PointerEvent) => void;
   layer:
     | 'wash'
     | 'bg'
@@ -44,7 +41,6 @@ export const StationView = memo(function StationView({
   station,
   lines,
   onStartDrag,
-  onStartLabelDrag,
   layer,
   highlightColor = '#fff',
 }: Props) {
@@ -54,14 +50,7 @@ export const StationView = memo(function StationView({
     case 'match-stroke':
       return <StationSilhouette station={station} layer={layer} />;
     case 'bg':
-      return (
-        <StationHitArea
-          station={station}
-          lines={lines}
-          onStartDrag={onStartDrag}
-          onStartLabelDrag={onStartLabelDrag}
-        />
-      );
+      return <StationHitArea station={station} lines={lines} onStartDrag={onStartDrag} />;
     case 'hit':
       // Selected-on-top drag proxy: the same transparent hit footprint as 'bg',
       // re-asserted at top z (rendered by MapCanvas only for selected stations)
@@ -71,13 +60,7 @@ export const StationView = memo(function StationView({
       // no data-locked would make the rect-select gate misread a pointerdown on
       // it as marquee background.
       return station.locked ? null : (
-        <StationHitArea
-          station={station}
-          lines={lines}
-          onStartDrag={onStartDrag}
-          onStartLabelDrag={onStartLabelDrag}
-          proxy
-        />
+        <StationHitArea station={station} lines={lines} onStartDrag={onStartDrag} proxy />
       );
     case 'starter-label':
       return (

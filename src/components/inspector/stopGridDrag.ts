@@ -2,7 +2,7 @@
 // out of the components so they can be unit-tested without React Testing
 // Library, and consumed by Playwright e2e helpers without pulling in React.
 // Shared by the keyboard nudge (App.tsx) and the on-canvas station editing
-// surfaces (useLabelDrag / useStationLayoutDrag / StationLayoutEditor).
+// surfaces (useStationLayoutDrag / StationLayoutEditor).
 import {
   latticeOffsets,
   projectScreenToLocal,
