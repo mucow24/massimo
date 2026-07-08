@@ -1,6 +1,7 @@
 import { describe, it, expect } from 'vitest';
 import {
   computeWheelZoom,
+  fitViewport,
   liveProjection,
   overdrawnViewBox,
   panFromDelta,
@@ -127,5 +128,68 @@ describe('panFromDelta', () => {
   it('shrinks the world-space pan as zoom rises', () => {
     const start = { mx: 100, my: 100, vx: 0, vy: 0 };
     expect(panFromDelta(start, 150, 130, 2)).toEqual({ x: -25, y: -15, zoom: 2 });
+  });
+});
+
+describe('fitViewport', () => {
+  it('centers on the bounds and holds natural scale when the map already fits', () => {
+    expect(fitViewport({ x: 0, y: 0, w: 100, h: 100 }, { w: 1000, h: 1000 })).toEqual({
+      x: 50,
+      y: 50,
+      zoom: 1,
+    });
+  });
+
+  it('zooms out to fit a map larger than the viewport, limited by the tighter axis', () => {
+    // No margin: width needs 1000/2000 = 0.5, height needs 800/1000 = 0.8 → 0.5.
+    const vp = fitViewport(
+      { x: 0, y: 0, w: 2000, h: 1000 },
+      { w: 1000, h: 800 },
+      { marginFrac: 0 },
+    );
+    expect(vp.x).toBe(1000);
+    expect(vp.y).toBe(500);
+    expect(vp.zoom).toBeCloseTo(0.5, 6);
+  });
+
+  it('applies the margin so content does not touch the viewport edge', () => {
+    // 10% each side → 800px usable for a 1000-unit box → zoom 0.8.
+    const vp = fitViewport(
+      { x: 0, y: 0, w: 1000, h: 1000 },
+      { w: 1000, h: 1000 },
+      { marginFrac: 0.1, maxZoom: 100 },
+    );
+    expect(vp.zoom).toBeCloseTo(0.8, 6);
+  });
+
+  it('never zooms in past maxZoom (default 1) for a tiny map', () => {
+    expect(fitViewport({ x: 5, y: 5, w: 10, h: 10 }, { w: 1000, h: 1000 })).toEqual({
+      x: 10,
+      y: 10,
+      zoom: 1,
+    });
+  });
+
+  it('honors an explicit maxZoom cap', () => {
+    expect(
+      fitViewport(
+        { x: 0, y: 0, w: 10, h: 10 },
+        { w: 1000, h: 1000 },
+        { marginFrac: 0, maxZoom: 4 },
+      ),
+    ).toEqual({ x: 5, y: 5, zoom: 4 });
+  });
+
+  it('centers on a degenerate zero-size box at maxZoom', () => {
+    expect(fitViewport({ x: 50, y: 50, w: 0, h: 0 }, { w: 1000, h: 1000 })).toEqual({
+      x: 50,
+      y: 50,
+      zoom: 1,
+    });
+  });
+
+  it('clamps out to the minimum zoom for an enormous map', () => {
+    const vp = fitViewport({ x: 0, y: 0, w: 1e9, h: 1e9 }, { w: 1000, h: 1000 }, { marginFrac: 0 });
+    expect(vp.zoom).toBeCloseTo(0.1, 6); // ZOOM_MIN
   });
 });
