@@ -56,6 +56,11 @@ export function useNumericField(
   const onWheel = (e: WheelEvent) => {
     e.preventDefault();
     onChange(getCurrent() + (e.deltaY < 0 ? step : -step));
+    // A wheel tick is a deliberate adjustment of THIS field, so mirror the new
+    // (clamped) value straight into the text — bypassing the focus guard, which
+    // only exists to protect in-progress TYPING from foreign updates. Without
+    // this the value ticks but the textbox stays frozen until blur while focused.
+    setText(formatValue(getCurrent(), decimals));
   };
   const onWheelRef = useRef(onWheel);
   useEffect(() => {
