@@ -317,11 +317,11 @@ export function labelLayoutLocal(
   // Top of the painted text block (already accounting for the first-line
   // shift above):
   //   - top      : block top at anchorY
-  //   - auto-down: first line top at anchorY - TEXT_HALF_H, block grows down
+  //   - auto-down: first line top at anchorY - textHalfH, block grows down
   //                (block top stays put as lines are added)
   //   - middle   : half a block-height above anchorY
   //   - bottom   : a full block-height above anchorY
-  //   - auto-up  : last line bottom at anchorY + TEXT_HALF_H, block grows up
+  //   - auto-up  : last line bottom at anchorY + textHalfH, block grows up
   //                (block bottom stays put as lines are added) — i.e. block
   //                top at anchorY - textHalfH - extraLines*lineStackPx
   const blockH = 2 * textHalfH + extraLines * lineStackPx;

@@ -1,7 +1,7 @@
 import type { Pt } from './polygonUnion';
 import type { Polygon, RouteBullet, Station, StationId, SvgImage, TextLabel } from '../model/types';
 import { STOP_SIZE, localToWorld, rotRad, stopCenterAt } from './orientation';
-import { rotateAround } from './vec';
+import { rotateAround, rotatedRectCorners } from './vec';
 import { svgImageCorners } from './svgImage';
 import {
   DEFAULT_LABEL_STYLE,
@@ -10,7 +10,7 @@ import {
   type LabelStyle,
   type StopHalfFn,
 } from './labelLayout';
-import { rectIntersectsPolygon, type AABB } from './rectPolygon';
+import { normalizeAABB, rectIntersectsPolygon, type AABB } from './rectPolygon';
 import { measureTextLabel } from './textMeasure';
 import { effectiveStationLabelStyle } from '../model/transforms';
 
@@ -171,22 +171,31 @@ export function stationsForRect(
 export const TEXT_LABEL_HIT_PAD = 4;
 
 /**
- * The 4 corners of a TextLabel's hit polygon in world coords. The label is
- * a rectangle centered on (x, y) with size (measuredWidth + 2*PAD,
- * measuredHeight + 2*PAD) in its own unrotated frame, rotated by
- * `rotation * 45°` clockwise (matching the existing `Rotation` semantics).
+ * The 4 world-space corners of a TextLabel's rotated bbox, clockwise from the
+ * unrotated top-left ([TL, TR, BR, BL]). The label is a rectangle centered on
+ * (x, y) with size (measuredWidth + 2*pad, measuredHeight + 2*pad) in its own
+ * unrotated frame, rotated by `rotation * 45°` clockwise (the `Rotation`
+ * semantics). `pad` grows the box outward on every side; it defaults to 0 (the
+ * tight visible bbox) — hit-testing passes TEXT_LABEL_HIT_PAD. Routes through
+ * `rotatedRectCorners`, the single home for rotated-rectangle corners.
+ */
+export function textLabelCorners(label: TextLabel, pad = 0): Pt[] {
+  const m = measureTextLabel(label);
+  return rotatedRectCorners(
+    { x: label.x, y: label.y },
+    m.width / 2 + pad,
+    m.height / 2 + pad,
+    rotRad(label.rotation),
+  );
+}
+
+/**
+ * The 4 corners of a TextLabel's hit polygon in world coords — the visible
+ * bbox grown by TEXT_LABEL_HIT_PAD so marquee hits match the dashed ring the
+ * user sees.
  */
 export function textLabelHitPolygon(label: TextLabel): Pt[] {
-  const m = measureTextLabel(label);
-  const halfW = m.width / 2 + TEXT_LABEL_HIT_PAD;
-  const halfH = m.height / 2 + TEXT_LABEL_HIT_PAD;
-  const corners: Pt[] = [
-    { x: -halfW, y: -halfH },
-    { x: halfW, y: -halfH },
-    { x: halfW, y: halfH },
-    { x: -halfW, y: halfH },
-  ];
-  return corners.map((p) => localToWorld(p, label));
+  return textLabelCorners(label, TEXT_LABEL_HIT_PAD);
 }
 
 /**
@@ -263,10 +272,7 @@ export function routeBulletsForRect(
   rect: AABB,
   includeLocked = false,
 ): string[] {
-  const xLo = Math.min(rect.x0, rect.x1);
-  const xHi = Math.max(rect.x0, rect.x1);
-  const yLo = Math.min(rect.y0, rect.y1);
-  const yHi = Math.max(rect.y0, rect.y1);
+  const { xLo, xHi, yLo, yHi } = normalizeAABB(rect);
   const hits: string[] = [];
   for (const id of Object.keys(bullets)) {
     const b = bullets[id];

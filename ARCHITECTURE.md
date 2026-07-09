@@ -32,7 +32,7 @@ are the only UI dependencies.
   1. **`src/model/`** — pure domain logic. Types + immutable transforms `(doc, …args) → doc`.
      Never imports React or the store.
   2. **`src/geometry/`** — pure math. Routing, interlining, snapping, label layout, text
-     measurement. Never imports React, the store, or the model's *store* (it does share some
+     measurement. Never imports React, the store, or the model's _store_ (it does share some
      model types). Works entirely in **world coordinates**.
   3. **`src/state/`** + **`src/components/`** — Zustand stores wrap the transforms as actions;
      React components render the doc to SVG and dispatch actions.
@@ -56,18 +56,18 @@ are the only UI dependencies.
 
 ## Tech stack & commands
 
-| Concern | Choice |
-|---|---|
-| Build/dev | Vite 5 ([vite.config.ts](vite.config.ts)) |
-| Language | TypeScript 5.6, `strict` ([tsconfig.json](tsconfig.json)) |
-| UI | React 18 (StrictMode) |
-| State | Zustand 4 |
-| Undo/redo | zundo 2 (`temporal` middleware) |
-| Unit tests | Vitest 4 + jsdom ([vitest.config.ts](vitest.config.ts)) |
-| Property tests | fast-check 4 (model/geometry only) |
-| E2E | Playwright ([playwright.config.ts](playwright.config.ts)) |
-| Lint/format | ESLint 9 flat config ([eslint.config.js](eslint.config.js)) + Prettier |
-| Icons | `@radix-ui/react-icons` |
+| Concern        | Choice                                                                 |
+| -------------- | ---------------------------------------------------------------------- |
+| Build/dev      | Vite 5 ([vite.config.ts](vite.config.ts))                              |
+| Language       | TypeScript 5.6, `strict` ([tsconfig.json](tsconfig.json))              |
+| UI             | React 18 (StrictMode)                                                  |
+| State          | Zustand 4                                                              |
+| Undo/redo      | zundo 2 (`temporal` middleware)                                        |
+| Unit tests     | Vitest 4 + jsdom ([vitest.config.ts](vitest.config.ts))                |
+| Property tests | fast-check 4 (model/geometry only)                                     |
+| E2E            | Playwright ([playwright.config.ts](playwright.config.ts))              |
+| Lint/format    | ESLint 9 flat config ([eslint.config.js](eslint.config.js)) + Prettier |
+| Icons          | `@radix-ui/react-icons`                                                |
 
 Scripts ([package.json](package.json)):
 
@@ -153,7 +153,8 @@ src/
                                 #   stationBandGeometry.ts
 
   export/                       # exportCanvas.ts (SVG/PNG), fonts.ts, exportCanvasPdf.ts
-                                #   + pure PDF-gap modules pdfHatch/pdfText/pdfGlyphs/pdfDropShadow
+                                #   + pure PDF-gap modules pdfHatch/pdfText/pdfGlyphs/
+                                #   pdfDropShadow/pdfMask/pdfAlpha
   util/                         # color.ts (hex math), fonts.ts (font stack + weight math)
   test/                         # fixtures, jsdom setup, integration tests
 e2e/                            # Playwright specs + seedAndOpen harness
@@ -188,20 +189,20 @@ is not a micro-optimization — it is the foundation of undo grouping:
   on every action. Without a guard, a no-op action would push a redundant history entry, making
   one Ctrl+Z appear to do nothing.
 - The guard is `equality: docSnapshotsEqual`, a **reference-equality** comparison over each
-  `DOC_FIELDS` key. It is sound *only because* transforms allocate new objects exclusively when
+  `DOC_FIELDS` key. It is sound _only because_ transforms allocate new objects exclusively when
   something actually changed. A transform that mutates in place would silently break undo.
 
 ### 3. Coordinate systems (memorize this table)
 
-| Quantity | Frame |
-|---|---|
-| `Station.x/y`, `Polygon.vertices`, `SvgImage.x/y`, `TextLabel.x/y`, `RouteBullet.x/y` | **World** (SVG user units) |
-| `StopCell.row/col`, `LabelCell.row/col` | **Station-local grid cells** (unrotated; pitch = `STOP_SIZE` = 14) |
-| `LabelCell.offset/offsetPerp` | **Pixels in unrotated-station-local space** |
-| Snap guides, viewBox, redistribute, curveRadius, line width/stroke, transfer thickness | **World** |
-| Drag thresholds (`DRAG_MOVE_THRESHOLD=4`), pointer start coords | **Screen pixels** |
-| Snap engage radius (`SNAP_PERP_TOLERANCE=10`; `LINE_TAG_SNAP_TOLERANCE=10` in centerline arc length — both **world units at zoom 1**) | Call sites pass `/zoom`, so the *effective* radius is constant in screen px (the world tolerance shrinks as you zoom in) |
-| Grid snap | **Hard world constraint** — unaffected by zoom |
+| Quantity                                                                                                                              | Frame                                                                                                                    |
+| ------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------ |
+| `Station.x/y`, `Polygon.vertices`, `SvgImage.x/y`, `TextLabel.x/y`, `RouteBullet.x/y`                                                 | **World** (SVG user units)                                                                                               |
+| `StopCell.row/col`, `LabelCell.row/col`                                                                                               | **Station-local grid cells** (unrotated; pitch = `STOP_SIZE` = 14)                                                       |
+| `LabelCell.offset/offsetPerp`                                                                                                         | **Pixels in unrotated-station-local space**                                                                              |
+| Snap guides, viewBox, redistribute, curveRadius, line width/stroke, transfer thickness                                                | **World**                                                                                                                |
+| Drag thresholds (`DRAG_MOVE_THRESHOLD=4`), pointer start coords                                                                       | **Screen pixels**                                                                                                        |
+| Snap engage radius (`SNAP_PERP_TOLERANCE=10`; `LINE_TAG_SNAP_TOLERANCE=10` in centerline arc length — both **world units at zoom 1**) | Call sites pass `/zoom`, so the _effective_ radius is constant in screen px (the world tolerance shrinks as you zoom in) |
+| Grid snap                                                                                                                             | **Hard world constraint** — unaffected by zoom                                                                           |
 
 Screen y is **down** everywhere. `vec.leftNormal((x,y)) = (y,-x)` is "left of travel" in the
 y-down frame and is what the router/interlining use; `vec.perp((x,y)) = (-y,x)` is the math
@@ -246,27 +247,30 @@ doubt, read that file; its doc-comments are extensive and authoritative.
 
 ```ts
 interface MapDoc {
-  name: string;                    // editable map title — drives toolbar/window title + save/export filename
+  name: string; // editable map title — drives toolbar/window title + save/export filename
   stations: Record<StationId, Station>;
   lines: Record<LineId, Line>;
-  lineOrder: LineId[];              // index 0 = TOP
-  curveRadius: number;             // global corner radius, world units (default 24)
-  lineCounter: number;             // monotonic; advanced per addLine; drives palette color cycle
+  lineOrder: LineId[]; // index 0 = TOP
+  curveRadius: number; // global corner radius, world units (default 24)
+  lineCounter: number; // monotonic; advanced per addLine; drives palette color cycle
   lineTags: Record<string, LineTag>;
   routeBullets: Record<string, RouteBullet>;
   transfers: Record<string, Transfer>;
   textLabels: Record<string, TextLabel>;
   polygons: Record<string, Polygon>;
-  polygonOrder: string[];          // LATER = top (opposite of lineOrder)
+  polygonOrder: string[]; // LATER = top (opposite of lineOrder)
   svgImages: Record<string, SvgImage>;
-  svgImageOrder: string[];         // LATER = top
-  labelFontSize: number;           // global station-name styling
+  svgImageOrder: string[]; // LATER = top
+  labelFontSize: number; // global station-name styling
   labelWeight: TextLabelWeight;
   labelItalic: boolean;
-  labelLeading: number; labelTracking: number;  // line-spacing mult / em letter-spacing (1 / 0 = neutral)
-  activePalettes: PaletteId[];     // INVARIANT: never empty
-  transferThickness: number; transferColor: string;       // global transfer styling
-  transferStrokeWidth: number; transferStrokeColor: string;  // optional halo (0 = none)
+  labelLeading: number;
+  labelTracking: number; // line-spacing mult / em letter-spacing (1 / 0 = neutral)
+  activePalettes: PaletteId[]; // INVARIANT: never empty
+  transferThickness: number;
+  transferColor: string; // global transfer styling
+  transferStrokeWidth: number;
+  transferStrokeColor: string; // optional halo (0 = none)
 }
 ```
 
@@ -278,6 +282,7 @@ collections, `name: 'Untitled map'`, `curveRadius: 24`, `lineCounter: 0`, `activ
 
 **`Station`** — `id, name, x, y` (world center), `rotation: Rotation`, `stops: StopCell[]`,
 `label: LabelCell`. Optional flags, **omitted when false/default** to keep saves clean:
+
 - `isWaypoint?` — a "routing point": hide name + all bullet glyphs + drop the label hit rect;
   the station stays selectable/draggable via its stop-cell hit rect. Per-stop styles are **not**
   mutated when this toggles.
@@ -293,7 +298,7 @@ collections, `name: 'Untitled map'`, `curveRadius: 24`, `lineCounter: 0`, `activ
   geometry, not mode participation, so a locked station is still a transfer endpoint and can
   still be toggled onto a line in append mode (non-idle modes wipe the selection on entry, so
   without the idle gate locked stations would be unreachable in every mode). Accepted
-  side-effect: idle-mode modifier clicks that *target* a station (ctrl-click redistribute,
+  side-effect: idle-mode modifier clicks that _target_ a station (ctrl-click redistribute,
   ctrl+shift path-extend) can't target a locked, unselected station — unlock it first.
   Re-selecting a locked, deselected item: **Alt+click** (the deep-pick's geometric fallback
   reaches locked items) or **Alt+marquee** (includes locked items); stations also stay
@@ -322,6 +327,7 @@ autoAlign's multi-line handling: within-block line alignment, and which line anc
 **`Line`** — `id, service` (the route code shown in bullets), `name, color`, `stations:
 StationId[]` (ordered path), `waypoints?`. All other fields optional and **never stored at
 default**:
+
 - `segmentStyles?: Record<pairKey, LineStyle>` — per-segment style; missing ⇒ `'solid'`.
 - `segmentLayers?: Record<pairKey, number>` — per-segment z-layer; missing ⇒ 0; **uncapped** ±.
 - `defaultDotStyle?: DotStyle` — missing ⇒ `DEFAULT_DOT_STYLE` (filled-black).
@@ -344,7 +350,7 @@ DotStrokeColor` (`DayNightColor | 'line'`; **no `'none'`** — strokeWidth 0 exp
 stroke"), `showServiceCode`. **Size is deliberately NOT part of style** — it is the orthogonal
 `dotSize`/`defaultDotSize` pair, so picking a shape preset never clobbers a size. `DayNightColor
 = {day, night}` resolves per theme. The clean-persisted convention lives one level up: in the
-*presence/absence* of `StopCell.dotStyle` and `Line.defaultDotStyle`.
+_presence/absence_ of `StopCell.dotStyle` and `Line.defaultDotStyle`.
 
 **`LineTag`** — a movable label printed inside a line's color band. Anchored to a **station-pair
 corridor**, not a segment index, so it survives line reordering. `id, lineId, fromStationId,
@@ -387,7 +393,7 @@ RouteBulletShape` (`circle|square|diamond`), `size` (half-extent), `locked?`.
 
 **`Transfer`** + **`TransferEnd`** — a thin black line connecting one station dot to another.
 `Transfer = {id, a: TransferEnd, b: TransferEnd}`; `TransferEnd = {stationId, lineId: LineId |
-null}` (lineId picks *which* dot at an interlined station; null ⇒ station anchor). **Cascade-
+null}` (lineId picks _which_ dot at an interlined station; null ⇒ station anchor). **Cascade-
 deleted** when either endpoint's stop is removed (by deleting the station/line or removing that
 line's stop). Global styling (thickness, color, optional halo) lives on `MapDoc`.
 
@@ -411,7 +417,7 @@ value-level fixups are **shared exported functions** — `sanitizeStations`, `ba
 `sanitizeStopDotSizes`, `validActivePalettes` — each returning `{...cleaned, changed}`, where the
 **`changed` flag is the signal** callers use (`migrateDoc` re-spreads a field only when `changed` is
 true). The dict-level backfills allocate a fresh container even on a no-op, so don't rely on their
-reference identity (the per-line / per-dot sanitizers *do* return the same element ref when
+reference identity (the per-line / per-dot sanitizers _do_ return the same element ref when
 unchanged — distinct from the transform "same-reference-on-no-op" invariant). They are called by
 **both** load paths.
 
@@ -419,6 +425,7 @@ unchanged — distinct from the transform "same-reference-on-no-op" invariant). 
 
 **Path A — file import: `parse(json, custom)`** ([serialize.ts](src/model/serialize.ts)). Used
 by the **Load…** menu. Pure, returns `{ok, doc}` or `{ok:false, error}`:
+
 1. `JSON.parse`; reject non-object / `format !== 'massimo-map'` / missing `doc`.
 2. `migrateLegacyLabelBold` **before** the merge (so `labelBold` never leaks into the typed shape).
 3. `merged = { ...DEFAULT_DOC, ...doc }` — the entire defaulting mechanism.
@@ -428,7 +435,7 @@ by the **Load…** menu. Pure, returns `{ok, doc}` or `{ok:false, error}`:
 6. `sanitizeStations` (legacy orientations + `valign:'auto'`→`'auto-down'`).
 7. `convertLegacyDotShapes` (preset ids → `DotStyle`) — **runs after** the line/station passes.
 8. `sanitizeStopDotSizes` — **must run after** the per-line pass (a stop compares against the
-   *sanitized* line default).
+   _sanitized_ line default).
 9. `backfillPolygonDarkColors`, then `foldPolygonFillOpacity` (legacy polygon `fillOpacity` → the
    alpha of `fill`/`darkFill`; **after** the dark-color backfill so `darkFill` exists to fold),
    then `backfillTextLabelColors`.
@@ -444,17 +451,17 @@ migrateDoc`, `partialize: pickDocSnapshot`. Because the persist-merge already fi
 from the initial state, `migrateDoc` only does **value-level legacy fixups, version-gated**, on
 disjoint fields (order immaterial), never mutating the input:
 
-| Gate | Fixup |
-|---|---|
-| `v<1` | `backfillLineNames` (`"${service} line"`) |
-| `v<3` | `labelBold:boolean` → `labelWeight` (700/400; explicit weight wins) |
-| `v<4` | `sanitizeStations` (legacy stop orientations; `valign:'auto'`→`'auto-down'` — both fold into one runtime gate) |
-| `v<5` | `backfillPolygonDarkColors` |
-| `v<6` | `backfillTextLabelColors` |
-| `v<7` | `convertLegacyDotShapes` (preset ids → procedural `DotStyle`) |
-| `v<8` | `migrateLegacyBulletSyntax` (legacy `<X>` circle bullets / unescaped pipes → `|X|` inline-token syntax, on station names + text labels) |
-| `v<9` | `foldPolygonFillOpacity` (legacy polygon `fillOpacity` percent → the alpha of `fill`/`darkFill`; runs after the `v<5` dark-color backfill) |
-| (not gated) | `validActivePalettes` whenever `activePalettes !== undefined` |
+| Gate        | Fixup                                                                                                                                      |
+| ----------- | ------------------------------------------------------------------------------------------------------------------------------------------ | --- | ------------------------------------------------------ |
+| `v<1`       | `backfillLineNames` (`"${service} line"`)                                                                                                  |
+| `v<3`       | `labelBold:boolean` → `labelWeight` (700/400; explicit weight wins)                                                                        |
+| `v<4`       | `sanitizeStations` (legacy stop orientations; `valign:'auto'`→`'auto-down'` — both fold into one runtime gate)                             |
+| `v<5`       | `backfillPolygonDarkColors`                                                                                                                |
+| `v<6`       | `backfillTextLabelColors`                                                                                                                  |
+| `v<7`       | `convertLegacyDotShapes` (preset ids → procedural `DotStyle`)                                                                              |
+| `v<8`       | `migrateLegacyBulletSyntax` (legacy `<X>` circle bullets / unescaped pipes → `                                                             | X   | ` inline-token syntax, on station names + text labels) |
+| `v<9`       | `foldPolygonFillOpacity` (legacy polygon `fillOpacity` percent → the alpha of `fill`/`darkFill`; runs after the `v<5` dark-color backfill) |
+| (not gated) | `validActivePalettes` whenever `activePalettes !== undefined`                                                                              |
 
 A **corrupt/missing version is treated as v0** (all migrations run). The `validActivePalettes`
 repair is **not** tied to a schema bump — it runs any time the field is present (an absent field
@@ -463,7 +470,7 @@ custom ids.
 
 > **Do not "simplify" the two paths into one.** `storeMigrate.test.ts` pins reference-equality
 > pass-through for already-canonical docs (`expect(out).toBe(input)`); adding a file-only width
-> sanitizer to `migrateDoc` would break that. They share helper *functions*, not call sequences.
+> sanitizer to `migrateDoc` would break that. They share helper _functions_, not call sequences.
 
 ### Save / startup
 
@@ -473,7 +480,7 @@ custom ids.
 - **Startup**: no explicit load in `App.tsx` — zustand `persist` rehydrates from localStorage on
   boot, running `migrateDoc`.
 - **Manual Load…**: `parse(text, customPalettes)` then `useDoc.setState({ ...DEFAULT_DOC,
-  ...doc })` and `temporal.clear()` (wipe history).
+...doc })` and `temporal.clear()` (wipe history).
 - File basename: `${sanitizedName} - YYYY-MM-DD` (e.g. `My Subway Map - 2026-07-01`), shared by
   save + export via `mapFileBasename` ([exportCanvas.ts](src/export/exportCanvas.ts)). The map
   name leads so successive saves group together; it falls back to the literal `map` only when the
@@ -491,8 +498,9 @@ parts and shared one millisecond suffix across kinds.)
 ## State management
 
 Seven Zustand stores, split deliberately by lifecycle (`useDoc`, `useSelection`, `useViewportStore`
-+ `useLiveViewportStore`, `useSnapPrefs`, `useCustomPalettes`, `useLabelEditorPrefs`). Files in
-[src/state/](src/state/).
+
+- `useLiveViewportStore`, `useSnapPrefs`, `useCustomPalettes`, `useLabelEditorPrefs`). Files in
+  [src/state/](src/state/).
 
 ### `useDoc` — the document store ([store.ts](src/state/store.ts))
 
@@ -521,6 +529,7 @@ must be pruned.
 
 **Grouped edits — `beginHistoryGroup()`** ([store.ts](src/state/store.ts)). A drag is many
 `moveStation` calls; a text edit is many `onChange`s; a slider drag is many ticks. The pattern:
+
 1. Capture `snapshot = pickDocSnapshot(state)`, `pauseHistory()`.
 2. Mutators run freely, no history recorded.
 3. `commit()`: `resumeHistory()`, re-snapshot, and **only if changed** push the one captured
@@ -539,7 +548,7 @@ mid-gesture and push a stray snapshot.
 
 Groups **can overlap without nesting**, though — two independent gestures own their own
 begin/end pairs, and pointer order is pointerdown → blur, so pressing a canvas drag handle opens
-the drag's group *before* a focused field's blur-commit lands. The contract is **the newer
+the drag's group _before_ a focused field's blur-commit lands. The contract is **the newer
 gesture steals**: `beginHistoryGroup()` tracks the one open group in a module-level reference
 (never a depth counter) and seals it on the next begin, exactly as its own commit would; the
 elder's late `commit`/`cancel`/`rollback` is then a no-op via its `done` flag. This is also the
@@ -580,6 +589,7 @@ the polygon stays selected while its vertex handles are active). Selectors:
 ### Viewport: committed vs live ([viewportStore.ts](src/state/viewportStore.ts))
 
 **Two stores, intentionally:**
+
 - `useViewportStore` — the **committed** camera (`x, y, zoom`) + `gridVisible`, `gridSize`
   (`GRID_SIZES = [5,10,20]`, default 10), `darkMode` (default false). **Persisted** as
   `'massimo-viewport'` (per-browser, **not** per-file). The giant SVG tree subscribes here and is
@@ -654,12 +664,12 @@ This produces the Vignelli parallel-stripe look. `buildBandGeometry` (the heart)
 6. **`buildBandSpec`**: centerline endpoints = centroid of the group's stop positions;
    `stripeOffsets = stripeOffsetsForWidths(widths)` (mean-centered tangency positions —
    bit-exactly `(k−(n−1)/2)·STOP_SIZE` for uniform width 14); **radius bump** (`idealR = R +
-   maxAbsOffset` so the innermost stripe still curves at ≥ R); **marker-fit cap** (cap R so the
-   post-fillet straight run ≥ the widest marker half-width — single-stripe bands may cap *below*
-   R, multi-stripe bands floor *at* R); then `offsetFilletPath` per stripe.
+maxAbsOffset` so the innermost stripe still curves at ≥ R); **marker-fit cap** (cap R so the
+   post-fillet straight run ≥ the widest marker half-width — single-stripe bands may cap _below_
+   R, multi-stripe bands floor _at_ R); then `offsetFilletPath` per stripe.
 7. `assignLinePriorities` fills per-stripe z-priority from `lineOrder` + segment-layer overrides;
    `buildOrderedRenderables` flattens to per-stripe + marker renderables sorted back-to-front, so
-   a perpendicular middle-layer line can interleave *between* another band's stripes.
+   a perpendicular middle-layer line can interleave _between_ another band's stripes.
 
 A `SegmentBandSpec` carries **parallel arrays** (`lines`, `paths`, `stripeOffsets`,
 `stripeWidths`, `linePriorities` — index k = same stripe). `stripeOffsets`/`stripeWidths`/`radius`
@@ -842,8 +852,8 @@ instantiated **once per pass**. Top→bottom paint order (later = on top):
 11. Station `match-stroke` → station/label `stroke` selection silhouettes.
 12. **Selected-item drag-proxies** — transparent hit targets for each unlocked selected item,
     emitted in body paint order (`MapCanvas`'s `proxyLayerRef`). They sit above all map content so a
-    selected item wins a *drag* over anything stacked above it; a click/right-click on a proxy is
-    re-routed to the real element beneath (`rerouteProxyEventBeneath`), so *selection* still follows
+    selected item wins a _drag_ over anything stacked above it; a click/right-click on a proxy is
+    re-routed to the real element beneath (`rerouteProxyEventBeneath`), so _selection_ still follows
     normal paint order. Placed **before** the handle overlays, so an item's own corner/vertex handles
     still beat its proxy.
 13. Polygon/image `overlay` handles, then the marquee rect.
@@ -876,7 +886,7 @@ centered stroke.
 > **line casings** to merge interlined separators was tried and **reverted** (it erased the
 > separators). Do not conflate the two.
 
-**`StopMarker`** is the colored **square** that sits *in* the band at each stop (distinct from the
+**`StopMarker`** is the colored **square** that sits _in_ the band at each stop (distinct from the
 circular dot), sized to the line `width`, with casing rails centered on the travel-parallel edges
 (so tangent neighbors' rails coincide into one separator) and a terminus end-cap. Hatched markers
 **pre-rotate their corners into world space** (can't reuse the rotated `<rect>` — `userSpaceOnUse`
@@ -926,12 +936,13 @@ on-screen spacing stays ≥ 5px — snapping still reads the true `gridSize` fro
 `MapCanvas`'s `<svg>`'s main handlers (plus small utility ones: `onPointerLeave` clears
 `cursorWorld`; `onClickCapture`/`onContextMenuCapture` do the alt+click deep-pick and the proxy
 reroute described below; `onContextMenu`/`onDragStart` just `preventDefault`):
+
 - `onPointerDown`: middle-button or hand-mode → `view.startPan`; else `rectSelect.onPointerDown`
   (self-gates). **Item drags start from the item's own pointer-down** (fired by the child view),
   not the canvas handler. A **selected** item additionally carries a top-z transparent drag-proxy
   (see the paint-order list) so its drag wins over higher-painted items; proxy clicks/right-clicks
-  are re-routed to the element beneath via `rerouteProxyEventBeneath`, so hit-testing for *selection*
-  stays on normal paint order while *dragging* gets selected-item priority.
+  are re-routed to the element beneath via `rerouteProxyEventBeneath`, so hit-testing for _selection_
+  stays on normal paint order while _dragging_ gets selected-item priority.
 - `onPointerMove`/`onPointerUp`: fan out to every hook; each early-returns if its drag ref is null.
 - `onPointerCancel` (browser-initiated: pen palm rejection, window switch, capture loss — a voided
   gesture with no matching pointerup): fans out to every drag hook's cancel path; each disarms its
@@ -983,7 +994,7 @@ drag wanders off the small tag rect; neighbor-tag snap per the contract above), 
 modifiers).
 
 **Group drag** ([groupDrag.ts](src/components/canvas/groupDrag.ts)): at pointerdown,
-`collectGroupSiblings` snapshots every *other* selected item — but only if the grabbed item is
+`collectGroupSiblings` snapshots every _other_ selected item — but only if the grabbed item is
 itself selected (dragging an unselected item never tows; locked items never tow). Snap during a
 group drag is **one rule for every master type**: the grabbed item snaps with its usual engine
 against everything stationary, excluding only itself + the co-selected siblings
@@ -1002,8 +1013,9 @@ right-click a no-op, and locked co-selected members stay put while the rest rota
 `creating-polygon` / `placing-svg` are single-shot (drop, exit, auto-select to open the
 popover/handles). Cursor-following ghost previews (`*PlacingPreview`, all `opacity 0.5`,
 `pointerEvents none`) feed synthetic items to the real views. Every placement mode snaps ghost
-+ drop through the shared `snapPlacement` (see Snapping) — same reference point and prefs as
-the item's first drag, Shift-click bypasses, preview guides render through `SnapGuides`.
+
+- drop through the shared `snapPlacement` (see Snapping) — same reference point and prefs as
+  the item's first drag, Shift-click bypasses, preview guides render through `SnapGuides`.
 
 `ItemPopovers` mounts the single popover for the sole selection — including the station editor
 (see UI chrome) — and reprojects through `useLiveView` so it tracks the canvas during pan/zoom.
@@ -1023,8 +1035,8 @@ the canvas, which would deselect the item (closing the popover) or right-click-r
 
 ### Memo contract (subtle but important)
 
-`bandsGeometry` (`buildBandGeometry`) excludes `segmentLayers`, color, and style *values* from its
-signature — **width is geometry (in the hash), and so is the *set* of styled segments
+`bandsGeometry` (`buildBandGeometry`) excludes `segmentLayers`, color, and style _values_ from its
+signature — **width is geometry (in the hash), and so is the _set_ of styled segments
 (`Object.keys(segmentStyles)`); style values, like color, are re-resolved live at paint time
 (`resolveSegmentStyle` is the single resolver shared by the geometry bake and the render-time
 refresh, so the two can never disagree)**. So a color/layer edit — or a dashed→dotted change on an
@@ -1080,15 +1092,15 @@ band routing or the marker sort. Pinned by `MapCanvas.stationsSig.test.tsx`.
   [inspector/stopGridDrag.ts](src/components/inspector/stopGridDrag.ts) — `computeGhosts`,
   `findDropTarget`, `nudgeTarget`, all screen-frame-generated and projected to station-local):
   1. **`editing-station-layout` mode** ([canvas/StationLayoutEditor.tsx](src/components/canvas/StationLayoutEditor.tsx)
-     + [useStationLayoutDrag.ts](src/components/canvas/useStationLayoutDrag.ts)): entered via the
-     inspector's **Edit layout** button (`startEditingStationLayout` preserves selection + mirror
-     state; frames the camera if the station is off-screen). Clicking another station RETARGETS
-     the mode to it (`layoutEditReconcile`: the mode follows the sole-selected station; a
-     multi/empty selection exits to idle). Zoom-floored grab rings over each
-     real dot (orientation glyph badges) + a label-cell ring; drag between ghost slots, drop on a
-     stop swaps, right-click/R rotates, click selects the stop/label (arming the shape/size
-     pickers). A transparent **shield rect** swallows near-miss presses so nothing falls through
-     to the whole-station handlers (the mode is in `RIGHT_CLICK_PASSTHROUGH_MODES`).
+     - [useStationLayoutDrag.ts](src/components/canvas/useStationLayoutDrag.ts)): entered via the
+       inspector's **Edit layout** button (`startEditingStationLayout` preserves selection + mirror
+       state; frames the camera if the station is off-screen). Clicking another station RETARGETS
+       the mode to it (`layoutEditReconcile`: the mode follows the sole-selected station; a
+       multi/empty selection exits to idle). Zoom-floored grab rings over each
+       real dot (orientation glyph badges) + a label-cell ring; drag between ghost slots, drop on a
+       stop swaps, right-click/R rotates, click selects the stop/label (arming the shape/size
+       pickers). A transparent **shield rect** swallows near-miss presses so nothing falls through
+       to the whole-station handlers (the mode is in `RIGHT_CLICK_PASSTHROUGH_MODES`).
   2. **Keyboard nudge** (App.tsx): with a stop/label selected, arrows hop one lattice slot in the
      pressed screen direction (`nudgeTarget`, Shift = diagonal), Alt+arrows fine-nudge label
      offsets (Shift ×5, live-writing `setLabelOffset`/`setLabelOffsetPerp` via
@@ -1114,13 +1126,14 @@ in-DOM** `<svg>` into a standalone SVG, a 4× PNG, or a vector PDF
 ([exportCanvasPdf.ts](src/export/exportCanvasPdf.ts) + [pdfHatch.ts](src/export/pdfHatch.ts)).
 
 `buildExportSvg(source, {background, pixelScale})` (async — awaits font fetches):
+
 1. **Clone, don't rebuild** (`source.cloneNode(true)`) — label/tag geometry is measured against
-   the *live* DOM, so cloning is the only faithful capture.
+   the _live_ DOM, so cloning is the only faithful capture.
 2. **Strip editing chrome**: remove `[data-bg]`, `[data-export-exclude]` (grid, highlights,
    ghosts, guides, handles — tagged in `MapCanvas`), and `foreignObject` (inline editors).
 3. **Measure bounds offscreen** via `getBBox` (needs the element rendered → appended to an
    off-screen div, removed in `finally`).
-4. **Empty guard is an AND** — throws only when *neither* bbox dim is positive (`!(w>0) && !(h>0)`),
+4. **Empty guard is an AND** — throws only when _neither_ bbox dim is positive (`!(w>0) && !(h>0)`),
    so a zero-height positive-width strip (a single horizontal line) is still exportable.
 5. **Frame** to content + `PADDING=24`; set `viewBox` to the frame and `width`/`height` to
    `frame × pixelScale` (**pixels**). For PNG, baking 4× into the SVG's own size rasterizes the
@@ -1141,8 +1154,9 @@ from `FONT_TABLE` — don't "sync" it in.) `normalizeWeight` ties go **low** (60
 
 **PDF** ([exportCanvasPdf.ts](src/export/exportCanvasPdf.ts)) reuses `buildExportSvg`, then renders
 that SVG to a true vector PDF with **svg2pdf.js + jsPDF** — selectable text, vector line work,
-embedded SVG graphics kept as vectors (bar mask users, gap 6). Six gaps svg2pdf/jsPDF can't bridge
+embedded SVG graphics kept as vectors (bar mask users, gap 6). Seven gaps svg2pdf/jsPDF can't bridge
 are closed here:
+
 1. **Fonts** — jsPDF ignores the SVG's `@font-face` and can only embed TrueType, so the map's used
    faces are fetched and registered in jsPDF's VFS (the reason the whole set ships `.ttf`).
 2. **Hatch** — svg2pdf can't tile a `<pattern>` along a stroke, so every hatch paint (band strokes
@@ -1179,8 +1193,17 @@ are closed here:
    and `sizeSvgRoot` (which injects a `viewBox` so a no-viewBox graphic scales to fill) are pure and
    unit-tested; the canvas rasterizer is browser-only (e2e-covered, incl. an `/SMask` guard that the
    mask survived).
-Lazy-loaded on first PDF export (`import()` in the toolbar) so jsPDF + opentype.js stay out of the
-initial bundle.
+7. **Translucent (hex8) colors** — svg2pdf.js truncates an 8-digit `#rrggbbaa` paint to its first 6
+   digits and drops the alpha, so a translucent fill/stroke would print fully opaque; it _does_ honor
+   a separate `fill-opacity`/`stroke-opacity` (jsPDF writes it as a real PDF `ExtGState /ca /CA`). So
+   `splitAlphaColors` ([pdfAlpha.ts](src/export/pdfAlpha.ts)) rewrites every hex8 paint on the export
+   clone into a 6-digit color plus the matching opacity attribute, composing (multiplying) with any
+   opacity the element already carries. Runs **last**, after the other bakes, so hex8 colors those
+   steps copy forward (a translucent line color baked into a hatch stripe, an outlined glyph
+   inheriting a translucent label color, a drop-shadow flood) are caught too. Pure and unit-tested;
+   the SVG/PNG paths need none of it (browser/canvas composite hex8 natively).
+   Lazy-loaded on first PDF export (`import()` in the toolbar) so jsPDF + opentype.js stay out of the
+   initial bundle.
 
 [color.ts](src/util/color.ts): pure hex math — `legibleTextOn` (W3C luminance → `#000`/`#fff`),
 `withAlpha`, `blendOver`, `desaturateColor`, plus the RGBA surface added with the react-colorful
@@ -1204,7 +1227,7 @@ downstream luminance / `rgba()` math.
   clamp/round/lowercase and drop at default. `DotStyle` objects are written in fixed field order
   so `JSON.stringify` equality is exact for app-written docs.
 - **Referential integrity after every action**: `line.stations[i] ∈ stations`; `stop.lineId ∈
-  lines`; every `segmentStyles`/`segmentLayers` key is a real, non-default adjacency; every
+lines`; every `segmentStyles`/`segmentLayers` key is a real, non-default adjacency; every
   tag/transfer endpoint and `routeBullet.lineId` resolves live-or-null. Maintained by cascade
   prunes after structural edits (`deleteStation`/`deleteLine`/`removeStationFromLine`/…).
 - **`LineTag.fromStationId < toStationId`** always (canonical/alphabetic, = `pairKeyOf`).
@@ -1243,8 +1266,8 @@ Each is confirmed in source/tests; file pointers included.
   painted path on every existing map while staying green elsewhere. (`interlining.golden.test.ts`)
 - **`toFixed(6)` in the router is load-bearing** — lower precision caused band/marker hash-bleed.
   ([router.ts](src/geometry/router.ts))
-- **Single- vs multi-stripe radius cap diverge** — single-stripe bands may cap *below* the user's
-  R (a tighter curve reads as intentional); multi-stripe bands floor *at* R (dropping below
+- **Single- vs multi-stripe radius cap diverge** — single-stripe bands may cap _below_ the user's
+  R (a tighter curve reads as intentional); multi-stripe bands floor _at_ R (dropping below
   collapses inner stripes). ([interlining.ts](src/geometry/interlining.ts))
 - **`perp` vs `leftNormal` are intentionally negations** (different y conventions); using the
   wrong one flips stripe order. ([vec.ts](src/geometry/vec.ts))
@@ -1258,7 +1281,7 @@ Each is confirmed in source/tests; file pointers included.
 - **The two load paths must not be merged** — `storeMigrate.test.ts` pins reference-equality
   pass-through for canonical docs; file-only sanitizers must not leak into `migrateDoc`.
 - **Sanitizer ordering is load-bearing** — `convertLegacyDotShapes` and `sanitizeStopDotSizes` run
-  *after* the per-line clean (a stop compares against the *sanitized* line default).
+  _after_ the per-line clean (a stop compares against the _sanitized_ line default).
 - **Polygon dark colors backfill to EQUAL light; text-label dark colors backfill to DIFFERENT
   defaults** (`#111111`/`#ffffff`) — for legibility. Don't assume symmetry.
 - **`Polygon.closed`/`curveRadius` have no backfill** — absent is meaningful (closed/sharp), so
@@ -1280,7 +1303,7 @@ Each is confirmed in source/tests; file pointers included.
   (`dispatchMirrored`; explicit multi-write groups use the group-free `fanOutMirrored` inside).
   Overlapping independent gestures (pointerdown fires before a focused field's blur) are resolved
   by `beginHistoryGroup` itself: the newer begin seals the still-open group and the elder's late
-  end becomes a no-op — never gate a *gesture* group, only nested one-shots.
+  end becomes a no-op — never gate a _gesture_ group, only nested one-shots.
   ([mirrorDispatch.ts](src/state/mirrorDispatch.ts), [store.ts](src/state/store.ts))
 - **Mirror matches must be captured at gesture START for drags** — the first write to the source
   station changes its layout and dissolves the match, so a per-move `findMatchingStations` would
@@ -1371,4 +1394,7 @@ Each is confirmed in source/tests; file pointers included.
 - **Route bullet** — a free-floating badge showing a line's service code.
 - **Service code** — the short route identifier on a line (e.g. `"A"`, `"7"`).
 - **Day/night color** — a `{day, night}` pair resolved per the dark-mode theme.
+
+```
+
 ```
