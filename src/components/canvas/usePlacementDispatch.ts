@@ -13,8 +13,9 @@ import { snapPolygonPoint } from '../../geometry/polygonSnap';
 import { polygonSnapAnchor } from '../../geometry/polygon';
 import type { Vec2 } from '../../geometry/vec';
 import type { LineId } from '../../model/types';
+import { textLabelCorners } from '../../geometry/stationBoundary';
 import { starterPolygonVertices, TEXT_LABEL_DEFAULTS } from '../../model/transforms';
-import { alignTargets, textLabelCorners } from './snapTargets';
+import { alignTargets } from './snapTargets';
 import type { ViewportApi } from './useViewport';
 
 export interface PlacementSnap {

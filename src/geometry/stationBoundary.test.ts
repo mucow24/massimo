@@ -6,6 +6,7 @@ import {
   stationBoundaryRectsLocal,
   stationLocalToWorld,
   stationsForRect,
+  textLabelCorners,
   textLabelHitPolygon,
   textLabelsForRect,
 } from './stationBoundary';
@@ -321,6 +322,33 @@ describe('textLabelHitPolygon', () => {
       expect(at100[i].x - at0[i].x).toBeCloseTo(100, 5);
       expect(at100[i].y - at0[i].y).toBeCloseTo(50, 5);
     }
+  });
+
+  it('is exactly the padless corners grown by the hit pad', () => {
+    // textLabelHitPolygon is textLabelCorners with the visual hit padding; the
+    // padded corners sit TEXT_LABEL_HIT_PAD (=4) further out on each axis.
+    const label = makeTextLabel({ id: 'g', text: 'Hi', fontSize: 16, rotation: 0 });
+    const tight = textLabelCorners(label);
+    const padded = textLabelHitPolygon(label);
+    // Unrotated: TL grows up-left by pad, BR grows down-right by pad.
+    expect(padded[0].x).toBeCloseTo(tight[0].x - 4, 5);
+    expect(padded[0].y).toBeCloseTo(tight[0].y - 4, 5);
+    expect(padded[2].x).toBeCloseTo(tight[2].x + 4, 5);
+    expect(padded[2].y).toBeCloseTo(tight[2].y + 4, 5);
+  });
+});
+
+describe('textLabelCorners', () => {
+  it('returns the measured bbox corners (TL, TR, BR, BL) for an unrotated label', () => {
+    const label = makeTextLabel({ id: 'g', text: 'Hi', fontSize: 16, rotation: 0, x: 0, y: 0 });
+    const [tl, tr, br, bl] = textLabelCorners(label);
+    // Axis-aligned rectangle centered on the origin.
+    expect(tl.y).toBeCloseTo(tr.y, 5);
+    expect(bl.y).toBeCloseTo(br.y, 5);
+    expect(tl.x).toBeCloseTo(bl.x, 5);
+    expect(tr.x).toBeCloseTo(br.x, 5);
+    expect(tl.x).toBeLessThan(tr.x);
+    expect(tl.y).toBeLessThan(bl.y);
   });
 });
 

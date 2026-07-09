@@ -5,6 +5,7 @@ import { useViewportStore } from '../../state/viewportStore';
 import { SNAP_PERP_TOLERANCE, snapDraggedStation, type SnapGuide } from '../../geometry/snap';
 import { snapPolygonPoint } from '../../geometry/polygonSnap';
 import { polygonSnapAnchor } from '../../geometry/polygon';
+import { textLabelCorners } from '../../geometry/stationBoundary';
 import type { Vec2 } from '../../geometry/vec';
 import { finishDrag, trackDragMove } from './dragGesture';
 import {
@@ -14,7 +15,7 @@ import {
   translateSiblings,
   type GroupSiblings,
 } from './groupDrag';
-import { alignTargets, textLabelCorners } from './snapTargets';
+import { alignTargets } from './snapTargets';
 
 // Drag state for a free-floating x/y item. `kind` selects the per-frame snap;
 // everything else (lifecycle, group towing) is shared.

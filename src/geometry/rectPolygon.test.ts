@@ -1,5 +1,26 @@
 import { describe, it, expect } from 'vitest';
-import { rectIntersectsPolygon } from './rectPolygon';
+import { normalizeAABB, rectIntersectsPolygon } from './rectPolygon';
+
+describe('normalizeAABB', () => {
+  it('passes through an already-normalized rect', () => {
+    expect(normalizeAABB({ x0: -3, y0: -4, x1: 5, y1: 6 })).toEqual({
+      xLo: -3,
+      xHi: 5,
+      yLo: -4,
+      yHi: 6,
+    });
+  });
+
+  it('sorts each axis so Lo <= Hi regardless of corner order', () => {
+    // x0>x1 and y0>y1: the rect is given "bottom-right to top-left".
+    expect(normalizeAABB({ x0: 5, y0: 6, x1: -3, y1: -4 })).toEqual({
+      xLo: -3,
+      xHi: 5,
+      yLo: -4,
+      yHi: 6,
+    });
+  });
+});
 
 const square = (cx: number, cy: number, half: number) => [
   { x: cx - half, y: cy - half },

@@ -18,7 +18,7 @@ import { polygonCentroid, edgeMidpoint } from '../geometry/polygon';
 import { SVG_IMAGE_MIN_SIZE, normalizeRotation } from '../geometry/svgImage';
 import { measureTextLabel } from '../geometry/textMeasure';
 import type { LabelStyle } from '../geometry/labelLayout';
-import type { Vec2 } from '../geometry/vec';
+import { rotateAround, type Vec2 } from '../geometry/vec';
 import { normalizePaletteIds, type Palette, type PaletteId } from './palettes';
 import type {
   AutoHAlign,
@@ -746,20 +746,10 @@ export function rotateStation(doc: MapDoc, id: StationId, dir: -1 | 1 = 1): MapD
 // One 45°-clockwise step of an entity's own rotation field (wraps 7 → 0).
 const stepRotation = (r: Rotation): Rotation => ((r + 1) % 8) as Rotation;
 
-// Orbit a point 45° clockwise around a pivot, using precomputed cos/sin of the
-// step angle. Shared by every branch of `rotateItemsAround`.
-const orbitPoint = (
-  x: number,
-  y: number,
-  px: number,
-  py: number,
-  cs: number,
-  sn: number,
-): { x: number; y: number } => {
-  const dx = x - px;
-  const dy = y - py;
-  return { x: px + dx * cs - dy * sn, y: py + dx * sn + dy * cs };
-};
+// The 45°-clockwise orbit step used by group/polygon rotation — the same angle
+// `stepRotation` advances an entity's own rotation field by. Points orbit the
+// pivot via `vec.rotateAround` (the single home for pivoted rotation).
+const ORBIT_STEP_RAD = Math.PI / 4;
 
 /**
  * Reference to a member of a station+bullet+label multi-selection. Used by
@@ -805,9 +795,7 @@ export function rotateItemsAround(doc: MapDoc, pivot: ItemRef, members: ItemRef[
     px = pivotItem.x;
     py = pivotItem.y;
   }
-  const ang = Math.PI / 4;
-  const cs = Math.cos(ang);
-  const sn = Math.sin(ang);
+  const pivotPt = { x: px, y: py };
 
   let stations = doc.stations;
   let routeBullets = doc.routeBullets;
@@ -820,7 +808,7 @@ export function rotateItemsAround(doc: MapDoc, pivot: ItemRef, members: ItemRef[
     if (m.type === 'station') {
       const cur = stations[m.id];
       if (!cur) continue;
-      const p = isPivot ? cur : orbitPoint(cur.x, cur.y, px, py, cs, sn);
+      const p = isPivot ? cur : rotateAround({ x: cur.x, y: cur.y }, pivotPt, ORBIT_STEP_RAD);
       stations = {
         ...stations,
         [m.id]: { ...cur, rotation: stepRotation(cur.rotation), x: p.x, y: p.y },
@@ -828,7 +816,7 @@ export function rotateItemsAround(doc: MapDoc, pivot: ItemRef, members: ItemRef[
     } else if (m.type === 'bullet') {
       const cur = routeBullets[m.id];
       if (!cur) continue;
-      const p = isPivot ? cur : orbitPoint(cur.x, cur.y, px, py, cs, sn);
+      const p = isPivot ? cur : rotateAround({ x: cur.x, y: cur.y }, pivotPt, ORBIT_STEP_RAD);
       routeBullets = {
         ...routeBullets,
         [m.id]: { ...cur, rotation: stepRotation(cur.rotation), x: p.x, y: p.y },
@@ -836,7 +824,7 @@ export function rotateItemsAround(doc: MapDoc, pivot: ItemRef, members: ItemRef[
     } else if (m.type === 'label') {
       const cur = textLabels[m.id];
       if (!cur) continue;
-      const p = isPivot ? cur : orbitPoint(cur.x, cur.y, px, py, cs, sn);
+      const p = isPivot ? cur : rotateAround({ x: cur.x, y: cur.y }, pivotPt, ORBIT_STEP_RAD);
       textLabels = {
         ...textLabels,
         [m.id]: { ...cur, rotation: stepRotation(cur.rotation), x: p.x, y: p.y },
@@ -847,7 +835,7 @@ export function rotateItemsAround(doc: MapDoc, pivot: ItemRef, members: ItemRef[
       // rotation — no separate rotation field to step.
       const cur = polygons[m.id];
       if (!cur) continue;
-      const vertices = cur.vertices.map((vert) => orbitPoint(vert.x, vert.y, px, py, cs, sn));
+      const vertices = cur.vertices.map((vert) => rotateAround(vert, pivotPt, ORBIT_STEP_RAD));
       polygons = { ...polygons, [m.id]: { ...cur, vertices } };
     } else {
       // Svg image: orbit the center (held fixed when it IS the pivot) and step
@@ -855,7 +843,9 @@ export function rotateItemsAround(doc: MapDoc, pivot: ItemRef, members: ItemRef[
       // grid, so a group rotate never desyncs an image from that grid.
       const cur = svgImages[m.id];
       if (!cur) continue;
-      const p = isPivot ? { x: cur.x, y: cur.y } : orbitPoint(cur.x, cur.y, px, py, cs, sn);
+      const p = isPivot
+        ? { x: cur.x, y: cur.y }
+        : rotateAround({ x: cur.x, y: cur.y }, pivotPt, ORBIT_STEP_RAD);
       svgImages = {
         ...svgImages,
         [m.id]: { ...cur, x: p.x, y: p.y, rotation: normalizeRotation(cur.rotation + 45) },
@@ -2067,10 +2057,7 @@ export function resolvePolygonColors(
 export function rotatePolygon(doc: MapDoc, id: string): MapDoc {
   return updateRecord(doc, 'polygons', id, (cur) => {
     const c = polygonCentroid(cur.vertices);
-    const ang = Math.PI / 4;
-    const cs = Math.cos(ang);
-    const sn = Math.sin(ang);
-    const vertices = cur.vertices.map((vert) => orbitPoint(vert.x, vert.y, c.x, c.y, cs, sn));
+    const vertices = cur.vertices.map((vert) => rotateAround(vert, c, ORBIT_STEP_RAD));
     return { ...cur, vertices };
   });
 }
