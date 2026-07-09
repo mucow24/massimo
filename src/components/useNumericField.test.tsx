@@ -25,11 +25,13 @@ function fakeWheelTarget() {
 }
 
 // useNumericField mirrors a store value into a local `text` state and guards
-// that mirror while the field is focused: an external value change (e.g. an
-// undo, a sibling edit, a wheel tick that lands a new value) must not clobber
-// text the user is mid-way through typing. focusedRef (useNumericField.ts:24-27)
-// is the guard. These tests drive the hook directly via renderHook, mutating
-// the `value` prop to simulate the external store update.
+// that mirror while the field is focused: an EXTERNAL value change (e.g. an
+// undo, a sibling edit) must not clobber text the user is mid-way through
+// typing. focusedRef (useNumericField.ts:24-27) is the guard. A wheel tick is
+// NOT external — it's a deliberate adjustment of THIS field — so it updates the
+// mirror immediately even while focused (see the wheel-while-focused test).
+// These tests drive the hook directly via renderHook, mutating the `value` prop
+// to simulate the external store update.
 
 describe('useNumericField — external-update focus guard', () => {
   it('does NOT clobber in-progress text while the field is focused', () => {
@@ -55,6 +57,29 @@ describe('useNumericField — external-update focus guard', () => {
     // The focus guard must keep the in-progress text intact.
     rerender({ value: 99 });
     expect(result.current.text).toBe('12');
+  });
+
+  it('DOES update the mirror on a wheel tick while the field is focused', () => {
+    // Regression: while the spinbutton is focused, a wheel tick used to bump the
+    // store value but leave the text mirror frozen until blur. A wheel tick is a
+    // deliberate adjustment of THIS field, not a foreign update, so the mirror
+    // must track every increment — even focused.
+    let live = 9;
+    const onChange = vi.fn((n: number) => {
+      live = n;
+    });
+    const { result } = renderHook(() => useNumericField(live, onChange, () => live));
+    const target = fakeWheelTarget();
+    act(() => result.current.attachWheel(target.el));
+
+    act(() => result.current.onNumberFocus());
+    expect(result.current.text).toBe('9');
+
+    act(() => target.entry!.listener({ deltaY: -1, preventDefault() {} }));
+
+    expect(onChange).toHaveBeenLastCalledWith(10);
+    // Immediately, not on blur.
+    expect(result.current.text).toBe('10');
   });
 
   it('DOES resync the mirror to an external value while NOT focused', () => {
