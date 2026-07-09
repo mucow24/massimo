@@ -336,7 +336,7 @@ export interface RouteBullet {
 // A free-floating background shape (river, lake, park, …). Rendered UNDER all
 // other map content. Vertices are stored in WORLD coordinates (length >= 3, in
 // order); there is no separate center/rotation — rotation rewrites the vertices
-// around the centroid via the shared `orbitPoint` primitive. `fill`/`stroke`
+// around the centroid via the shared `rotateAround` primitive. `fill`/`stroke`
 // are 7-char hex (`#rrggbb`); `strokeWidth` is in world units, floored at 0
 // (unbounded above — the popover slider caps at 10, but the stored value does
 // not).

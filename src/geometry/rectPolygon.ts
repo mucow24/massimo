@@ -8,6 +8,25 @@ export interface AABB {
 }
 
 /**
+ * Sort an AABB's endpoints onto Lo/Hi bounds so callers don't have to assume a
+ * corner order. `{x0,y0}`/`{x1,y1}` may be given in any diagonal (a drag rect
+ * runs from wherever the pointer started to wherever it is now).
+ */
+export function normalizeAABB(rect: AABB): {
+  xLo: number;
+  xHi: number;
+  yLo: number;
+  yHi: number;
+} {
+  return {
+    xLo: Math.min(rect.x0, rect.x1),
+    xHi: Math.max(rect.x0, rect.x1),
+    yLo: Math.min(rect.y0, rect.y1),
+    yHi: Math.max(rect.y0, rect.y1),
+  };
+}
+
+/**
  * True iff the AABB rect overlaps the (convex or non-convex) polygon.
  *
  * Three cases cover all overlaps:
@@ -28,10 +47,7 @@ export interface AABB {
 export function rectIntersectsPolygon(rect: AABB, poly: Pt[], closed: boolean = true): boolean {
   if (poly.length < (closed ? 3 : 2)) return false;
 
-  const xLo = Math.min(rect.x0, rect.x1);
-  const xHi = Math.max(rect.x0, rect.x1);
-  const yLo = Math.min(rect.y0, rect.y1);
-  const yHi = Math.max(rect.y0, rect.y1);
+  const { xLo, xHi, yLo, yHi } = normalizeAABB(rect);
 
   for (const p of poly) {
     if (p.x >= xLo && p.x <= xHi && p.y >= yLo && p.y <= yHi) return true;

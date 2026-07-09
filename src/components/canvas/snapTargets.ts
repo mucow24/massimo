@@ -1,7 +1,7 @@
 import { stopPosWorld } from '../../geometry/interlining';
+import { textLabelCorners } from '../../geometry/stationBoundary';
 import { svgImageCorners } from '../../geometry/svgImage';
-import { measureTextLabel } from '../../geometry/textMeasure';
-import { rotatedRectCorners, type Vec2 } from '../../geometry/vec';
+import { type Vec2 } from '../../geometry/vec';
 import type { MapDoc, TextLabel } from '../../model/types';
 
 /** Per-kind id sets excluded from the pool — the dragged item itself plus, in a
@@ -21,19 +21,6 @@ export type AlignDoc = Pick<
   MapDoc,
   'stations' | 'polygons' | 'svgImages' | 'textLabels' | 'routeBullets'
 >;
-
-/**
- * The four world-space corners of a label's visible bbox (no hit padding),
- * clockwise from the unrotated top-left, rotated about the center like the
- * render transform (`rotate(label.rotation * 45)`; positive `vec.rotate` is
- * clockwise in the y-down frame). Parallels {@link svgImageCorners}; the
- * label drag anchors on the topmost-then-leftmost of these.
- */
-export function textLabelCorners(label: TextLabel): Vec2[] {
-  const m = measureTextLabel(label);
-  const rad = (label.rotation * 45 * Math.PI) / 180;
-  return rotatedRectCorners({ x: label.x, y: label.y }, m.width / 2, m.height / 2, rad);
-}
 
 /**
  * The three alignment points a text label contributes as a snap target: the
