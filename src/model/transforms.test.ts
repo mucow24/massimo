@@ -3,6 +3,7 @@ import * as T from './transforms';
 import { DEFAULT_DOT_STYLE, DOT_SHAPE_PRESETS } from './dotStyle';
 import { DOT_SIZE_DEFAULT } from './dotSize';
 import { measureTextLabel } from '../geometry/textMeasure';
+import { localToWorld, stopCenterAt } from '../geometry/orientation';
 import {
   makeDoc,
   makeLine,
@@ -327,6 +328,55 @@ describe('rotateStationAndLayout', () => {
       const next = T.rotateStationAndLayout(doc, 's1', dir);
       expect(next.stations.s1.stops[0].orientation).toBe('auto-horizontal');
     }
+  });
+
+  it('keeps every cell on its world position under a SINGLE ±90° reorient', () => {
+    // The whole point of the transform: rotate the layout one way and the
+    // station the opposite way so world appearance is unchanged. The R+/R-
+    // round-trip above can't catch a sign error that survives its own inverse,
+    // and the orientation tests use cell (0,0) where rotateGrid is a no-op.
+    // Here a stop and the label sit at NON-zero cells, so a wrong sign in
+    // rotateGrid OR in the station/label rotation step moves them in world.
+    const worldOf = (row: number, col: number, st: Station) =>
+      localToWorld(stopCenterAt(row, col), st);
+    for (const dir of [1, -1] as const) {
+      const st = makeStation({
+        id: 's1',
+        rotation: 3,
+        stops: [makeStop('L1', { row: 1, col: 2, orientation: 'auto-vertical' })],
+        label: { row: 0, col: -1, rotation: 1, offset: 0, align: 'auto', valign: 'middle' },
+      });
+      const next = T.rotateStationAndLayout(makeDoc({ stations: [st] }), 's1', dir).stations.s1;
+
+      const stopBefore = worldOf(st.stops[0].row, st.stops[0].col, st);
+      const stopAfter = worldOf(next.stops[0].row, next.stops[0].col, next);
+      expect(stopAfter.x).toBeCloseTo(stopBefore.x, 9);
+      expect(stopAfter.y).toBeCloseTo(stopBefore.y, 9);
+
+      const labelBefore = worldOf(st.label.row, st.label.col, st);
+      const labelAfter = worldOf(next.label.row, next.label.col, next);
+      expect(labelAfter.x).toBeCloseTo(labelBefore.x, 9);
+      expect(labelAfter.y).toBeCloseTo(labelBefore.y, 9);
+
+      // The label's WORLD orientation (its own rotation composed with the
+      // station's) must also be preserved across the reorient.
+      expect((next.label.rotation + next.rotation) % 8).toBe((st.label.rotation + st.rotation) % 8);
+    }
+  });
+
+  it('applies the exact grid/rotation values for R+ (dir = +1)', () => {
+    // Pins the transform's direction so an inverse-preserving sign flip is
+    // caught here even though the world-invariance test tolerates it.
+    const st = makeStation({
+      id: 's1',
+      rotation: 3,
+      stops: [makeStop('L1', { row: 1, col: 2, orientation: 'auto-vertical' })],
+      label: { row: 0, col: -1, rotation: 1, offset: 0, align: 'auto', valign: 'middle' },
+    });
+    const next = T.rotateStationAndLayout(makeDoc({ stations: [st] }), 's1', 1).stations.s1;
+    expect(next.rotation).toBe(1); // 3 + 6 (mod 8): station steps CCW
+    expect(next.stops[0]).toMatchObject({ col: -1, row: 2, orientation: 'auto-horizontal' });
+    expect(next.label).toMatchObject({ col: 0, row: -1, rotation: 3 }); // label steps +2
   });
 
   it('swaps auto-ne-sw ↔ auto-nw-se under ±90°', () => {
@@ -725,6 +775,28 @@ describe('mirrorLabel', () => {
     });
     const next = T.mirrorLabel(doc, 's1').stations.s1.label;
     expect(next).toMatchObject({ row: 0, col: 3, rotation: 4 });
+  });
+
+  it('with a vertical footprint: mirrors a label above the stops to below them', () => {
+    // Stops stacked vertically at (0,0),(1,0),(2,0) (centroid row 1); label
+    // ABOVE at (-1,0). The vertical offset dominates (|drRaw|=2 > |dcRaw|=0),
+    // so this drives the dRow branch that the horizontal/centered tests skip.
+    // The label steps south past the furthest stop, landing at (3,0).
+    const doc = makeDoc({
+      stations: [
+        makeStation({
+          id: 's1',
+          stops: [
+            makeStop('L1', { row: 0, col: 0 }),
+            makeStop('L1', { row: 1, col: 0 }),
+            makeStop('L1', { row: 2, col: 0 }),
+          ],
+          label: { row: -1, col: 0, rotation: 6, offset: 0, align: 'auto', valign: 'middle' },
+        }),
+      ],
+    });
+    const next = T.mirrorLabel(doc, 's1').stations.s1.label;
+    expect(next).toMatchObject({ row: 3, col: 0, rotation: 2 });
   });
 
   it('label centered on a symmetric pair mirrors along its reading axis, not east', () => {

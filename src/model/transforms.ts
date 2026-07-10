@@ -752,9 +752,9 @@ const stepRotation = (r: Rotation): Rotation => ((r + 1) % 8) as Rotation;
 const ORBIT_STEP_RAD = Math.PI / 4;
 
 /**
- * Reference to a member of a station+bullet+label multi-selection. Used by
- * `rotateItemsAround` to identify which doc collection each member lives
- * in without requiring callers to pre-split by type.
+ * Reference to a member of a mixed multi-selection. Used by `rotateItemsAround`
+ * to identify which doc collection each member lives in without requiring
+ * callers to pre-split by type.
  */
 export interface ItemRef {
   type: 'station' | 'bullet' | 'label' | 'polygon' | 'svgImage';
@@ -762,11 +762,14 @@ export interface ItemRef {
 }
 
 /**
- * Generalized version of `rotateStationsAround` that handles a mixed
- * station+bullet+label selection. Pivot can be any of the three types. Each
- * member's own rotation steps by one; non-pivot members orbit 45° clockwise
- * around the pivot's world position. Members whose ids are missing from the
- * doc are silently skipped — selection state can outlive a doc edit (undo).
+ * Rotate a mixed station/bullet/label/polygon/svgImage selection 45° clockwise
+ * about the pivot. Non-pivot members orbit the pivot's world position; each
+ * type also advances its own orientation: stations/bullets/labels step their
+ * rotation field by one 45° index, svg images add 45° to their continuous
+ * rotation, and polygons carry no rotation field (orbiting every vertex about
+ * the pivot IS their rotation). The pivot may be any of the five types.
+ * Members whose ids are missing from the doc are silently skipped — selection
+ * state can outlive a doc edit (undo).
  */
 export function rotateItemsAround(doc: MapDoc, pivot: ItemRef, members: ItemRef[]): MapDoc {
   // Pivot world point. Stations/bullets/labels carry an (x, y); a polygon
@@ -857,8 +860,9 @@ export function rotateItemsAround(doc: MapDoc, pivot: ItemRef, members: ItemRef[
 
 /**
  * Flatten the selection id lists into the ItemRef[] that `rotateItemsAround`
- * consumes. Order is irrelevant to the rotation result. `polygonIds` is
- * optional so existing call sites (station+bullet+label) need no change.
+ * consumes. Order is irrelevant to the rotation result. `polygonIds` and
+ * `svgImageIds` are optional so call sites that never select those types can
+ * omit them.
  */
 export function buildRotateMembers(
   stationIds: string[],
@@ -892,8 +896,12 @@ export function buildRotateMembers(
 export function rotateStationLayoutBy90(station: Station, dir: -1 | 1): Station {
   const stationStep = dir === 1 ? 6 : 2; // CCW for R+, CW for R-
   const nextRot = ((station.rotation + stationStep) % 8) as Rotation;
-  const rotateGrid = (col: number, row: number) =>
-    dir === 1 ? { col: -row, row: col } : { col: row, row: -col };
+  const rotateGrid = (col: number, row: number) => {
+    const g = dir === 1 ? { col: -row, row: col } : { col: row, row: -col };
+    // Normalize -0 → 0 (as rotateGridDelta does) so the canonicalized layout
+    // matching.ts derives compares cleanly under strict / deep equality.
+    return { col: g.col === 0 ? 0 : g.col, row: g.row === 0 ? 0 : g.row };
+  };
   // Orientation maps so that the WORLD tangent direction is preserved across
   // the change in station rotation. A ±90° rotation swaps each axis with its
   // perpendicular partner: N/S ↔ E/W, NE/SW ↔ NW/SE.
