@@ -15,8 +15,7 @@
  */
 
 import { parseSvgIntrinsicSize, svgTextToDataUri } from '../model/svgImport';
-
-const XLINK_NS = 'http://www.w3.org/1999/xlink';
+import { decodeEmbeddedSvgImage, setEmbeddedImageHref } from './embeddedSvg';
 
 // world unit = 1 PDF point = 1/72 in, so 288 ≈ 4× supersample → crisp in print
 // without unbounded canvases; MAX_RASTER_DIM clamps a large graphic's memory.
@@ -25,12 +24,6 @@ const MAX_RASTER_DIM = 4096;
 
 /** Rasterize inner SVG markup to a PNG data URI at the given pixel size. */
 export type RasterizeSvg = (markup: string, pxWidth: number, pxHeight: number) => Promise<string>;
-
-/** Decode a base64 payload to a UTF-8 string (svg markup may carry non-ASCII). */
-function fromBase64(b64: string): string {
-  const bin = atob(b64.replace(/\s/g, ''));
-  return new TextDecoder().decode(Uint8Array.from(bin, (c) => c.charCodeAt(0)));
-}
 
 /** True when an element applies a mask via `style="mask:…"` / `mask-image:…`. */
 function styleUsesMask(el: Element): boolean {
@@ -132,15 +125,8 @@ export async function rasterizeMaskedImages(
   rasterize: RasterizeSvg = rasterizeSvgToPng,
 ): Promise<void> {
   for (const image of svg.querySelectorAll('image')) {
-    const hasHref = image.hasAttribute('href');
-    const href = image.getAttribute('href') ?? image.getAttributeNS(XLINK_NS, 'href') ?? '';
-    if (!href.startsWith('data:image/svg+xml')) continue;
-
-    const comma = href.indexOf(',');
-    if (comma < 0) continue;
-    const isBase64 = href.slice(0, comma).includes(';base64');
-    const payload = href.slice(comma + 1);
-    const markup = isBase64 ? fromBase64(payload) : decodeURIComponent(payload);
+    const markup = decodeEmbeddedSvgImage(image);
+    if (markup === null) continue;
     if (!svgUsesMask(markup)) continue;
 
     const width = parseFloat(image.getAttribute('width') ?? '0');
@@ -159,7 +145,6 @@ export async function rasterizeMaskedImages(
       continue;
     }
 
-    if (hasHref) image.setAttribute('href', png);
-    if (image.hasAttributeNS(XLINK_NS, 'href')) image.setAttributeNS(XLINK_NS, 'href', png);
+    setEmbeddedImageHref(image, png);
   }
 }

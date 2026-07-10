@@ -14,7 +14,7 @@
  * (`stdDeviation>0`) can't be baked to exact geometry and are left as-is (warned).
  */
 
-const XLINK_NS = 'http://www.w3.org/1999/xlink';
+import { decodeEmbeddedSvgImage, setEmbeddedImageHref } from './embeddedSvg';
 
 interface HardShadow {
   dx: number;
@@ -128,12 +128,6 @@ export function bakeHardDropShadow(markup: string): string {
   return new XMLSerializer().serializeToString(root);
 }
 
-/** Decode a base64 payload to a UTF-8 string (svg markup may carry non-ASCII). */
-function fromBase64(b64: string): string {
-  const bin = atob(b64.replace(/\s/g, ''));
-  return new TextDecoder().decode(Uint8Array.from(bin, (c) => c.charCodeAt(0)));
-}
-
 /**
  * Walk the export SVG and bake hard drop-shadows inside every embedded
  * `data:image/svg+xml` image, rewriting the href in place. Raster images and
@@ -142,21 +136,12 @@ function fromBase64(b64: string): string {
  */
 export function bakeImageDropShadows(svg: SVGSVGElement): void {
   for (const image of svg.querySelectorAll('image')) {
-    const hasHref = image.hasAttribute('href');
-    const href = image.getAttribute('href') ?? image.getAttributeNS(XLINK_NS, 'href') ?? '';
-    if (!href.startsWith('data:image/svg+xml')) continue;
+    const markup = decodeEmbeddedSvgImage(image);
+    if (markup === null) continue;
 
-    const comma = href.indexOf(',');
-    if (comma < 0) continue;
-    const isBase64 = href.slice(0, comma).includes(';base64');
-    const payload = href.slice(comma + 1);
-    const decoded = isBase64 ? fromBase64(payload) : decodeURIComponent(payload);
+    const baked = bakeHardDropShadow(markup);
+    if (baked === markup) continue;
 
-    const baked = bakeHardDropShadow(decoded);
-    if (baked === decoded) continue;
-
-    const next = `data:image/svg+xml,${encodeURIComponent(baked)}`;
-    if (hasHref) image.setAttribute('href', next);
-    if (image.hasAttributeNS(XLINK_NS, 'href')) image.setAttributeNS(XLINK_NS, 'href', next);
+    setEmbeddedImageHref(image, `data:image/svg+xml,${encodeURIComponent(baked)}`);
   }
 }

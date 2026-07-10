@@ -38,7 +38,7 @@ are the only UI dependencies.
      React components render the doc to SVG and dispatch actions.
 - **Editing = pure transforms.** Store actions are thin wrappers: `set((s) => T.moveStation(s, …))`.
   Transforms return the **same object reference on no-op** — this is load-bearing for undo
-  grouping. ([src/model/transforms.ts](src/model/transforms.ts) is the ~2000-line heart.)
+  grouping. ([src/model/transforms.ts](src/model/transforms.ts) is the ~2300-line heart.)
 - **The Vignelli look comes from "interlining"** ([src/geometry/interlining.ts](src/geometry/interlining.ts)):
   multiple lines sharing a station-pair corridor are merged into mean-centered parallel stripes.
   This is the single most intricate algorithm in the repo and is pinned by a **byte-exact golden
@@ -99,7 +99,7 @@ src/
 
   model/                        # PURE domain logic — no React, no store
     types.ts                    # MapDoc + every entity type (the canonical data shape)
-    transforms.ts               # ~2000 lines: all (doc,…)→doc editing ops + DEFAULT_DOC + constants
+    transforms.ts               # ~2300 lines: all (doc,…)→doc editing ops + DEFAULT_DOC + constants
     serialize.ts                # serialize()/parse() + shared backfill/sanitize helpers
     ids.ts                      # IdFactory: crypto UUIDs (prod) / counter ids (tests)
     pairKey.ts                  # pairKeyOf(a,b): canonical station-pair key
@@ -681,7 +681,7 @@ identity. The band specs are pinned by a **byte-exact golden snapshot**
 (`interlining.golden.test.ts`) guarding the zero-visual-change-for-legacy-docs invariant; never
 update it without understanding why every painted path on every map would move.
 
-### Snapping — `snap.ts`, `polygonSnap.ts`, `snapTargets.ts`
+### Snapping — `snap.ts`, `polygonSnap.ts`
 
 **The contract.** Two snappers exist, on purpose, and everything positional routes through one
 of them:
