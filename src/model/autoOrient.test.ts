@@ -36,6 +36,31 @@ describe('autoOrientNewStation', () => {
     expect(out.b.rotation).toBe(6); // horizontal tangent
   });
 
+  it('orients a MID-line station to the bisector of its two neighbours', () => {
+    // Station inserted between a NEAR prev to the west and a FAR next to the
+    // south: incoming travel is east, outgoing is south. Because the legs have
+    // very different lengths, the bisector is only SE (→ rotation 7) if each
+    // leg is normalized to a UNIT vector first; summing the raw vectors would
+    // let the long south leg dominate and settle it to south (rotation 0).
+    // Exercises the prev&&next branch that end-of-line insertion never reaches.
+    const a = makeStation({ id: 'a', x: -10, y: 0, stops: [makeStop('L1')] });
+    const m = makeStation({ id: 'm', x: 0, y: 0, rotation: 0, stops: [makeStop('L1')] });
+    const b = makeStation({ id: 'b', x: 0, y: 1000, stops: [makeStop('L1')] });
+    const out = autoOrientNewStation(dictOf(a, m, b), ['a', 'm', 'b'], 'm');
+    expect(out.m.rotation).toBe(7);
+  });
+
+  it('is a no-op when the two neighbours cancel to a zero bisector', () => {
+    // A line that doubles back on itself: prev and next sit on the SAME side,
+    // so the incoming (1,0) and outgoing (-1,0) unit vectors sum to (0,0).
+    // With no defined tangent the station keeps its rotation (dict unchanged).
+    const a = makeStation({ id: 'a', x: -100, y: 0, stops: [makeStop('L1')] });
+    const m = makeStation({ id: 'm', x: 0, y: 0, rotation: 5, stops: [makeStop('L1')] });
+    const b = makeStation({ id: 'b', x: -100, y: 0, stops: [makeStop('L1')] });
+    const dict = dictOf(a, m, b);
+    expect(autoOrientNewStation(dict, ['a', 'm', 'b'], 'm')).toBe(dict);
+  });
+
   it('settles rotation = 7 for a line travelling SE (45° diagonal)', () => {
     // (0,0) → (100,100): rotateBy({0,1}, 7) = SE in screen-y-down coords.
     const a = makeStation({

@@ -272,7 +272,8 @@ export interface SelectionState {
   reconcileWithDoc: (doc: MapDoc) => void;
 }
 
-// ---- selection id-list algebra: pure helpers shared by all three kinds ----
+// ---- selection id-list algebra: pure helpers shared by every id-list kind
+//      (the four free-item lists — bullets/labels/polygons/svgImages — and stations) ----
 
 // Dedupe preserving each id's LAST occurrence (later position wins).
 function dedupeLastWins<Id extends string>(ids: Id[]): Id[] {
