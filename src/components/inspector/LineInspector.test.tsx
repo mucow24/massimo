@@ -174,7 +174,7 @@ describe('<LineInspector /> — name / service / default-shape / station-list (E
     const user = userEvent.setup();
     seedThree();
     render(<LineInspector id="L1" />);
-    // The "Default stop dot" picker trigger is the only "Stop shape" button.
+    // The default-dot picker trigger is the only "Stop shape" button.
     await user.click(screen.getByRole('button', { name: 'Stop shape' }));
     await user.click(screen.getByRole('menuitem', { name: 'Open white' }));
     expect(useDoc.getState().lines.L1.defaultDotStyle).toEqual(DOT_SHAPE_PRESETS['open-white']);
@@ -242,7 +242,7 @@ describe('<LineInspector /> — width control', () => {
   it('renders a 2–28 step-1 slider at the line’s effective width', () => {
     seed();
     render(<LineInspector id="L1" />);
-    const slider = screen.getByRole('slider', { name: 'Width' }) as HTMLInputElement;
+    const slider = screen.getByRole('slider', { name: 'Line width' }) as HTMLInputElement;
     expect(slider.getAttribute('min')).toBe('2');
     expect(slider.getAttribute('max')).toBe('28');
     expect(slider.getAttribute('step')).toBe('1');
@@ -252,7 +252,7 @@ describe('<LineInspector /> — width control', () => {
   it('slider edits write the width; the default drops the key', () => {
     seed();
     render(<LineInspector id="L1" />);
-    const slider = screen.getByRole('slider', { name: 'Width' });
+    const slider = screen.getByRole('slider', { name: 'Line width' });
     fireEvent.change(slider, { target: { value: '20' } });
     expect(useDoc.getState().lines.L1.width).toBe(20);
     fireEvent.change(slider, { target: { value: '14' } });
@@ -262,7 +262,7 @@ describe('<LineInspector /> — width control', () => {
   it('the spinbutton floors at 1 and is uncapped above the slider max', () => {
     seed();
     render(<LineInspector id="L1" />);
-    const spin = screen.getByRole('spinbutton', { name: 'Width' });
+    const spin = screen.getByRole('spinbutton', { name: 'Line width' });
     expect(spin.getAttribute('min')).toBe('1');
     expect(spin.getAttribute('max')).toBeNull();
     fireEvent.change(spin, { target: { value: '40' } });
@@ -273,7 +273,7 @@ describe('<LineInspector /> — width control', () => {
     seed();
     useDoc.temporal.getState().clear();
     render(<LineInspector id="L1" />);
-    const slider = screen.getByRole('slider', { name: 'Width' });
+    const slider = screen.getByRole('slider', { name: 'Line width' });
     const before = historyDepth();
     fireEvent.focus(slider);
     fireEvent.change(slider, { target: { value: '16' } });
@@ -342,15 +342,20 @@ describe('<LineInspector /> — dot size control', () => {
     expect(slider.value).toBe('8');
   });
 
-  it('sits below the "Default stop dot" control and above Color', () => {
+  it('shares one row with the dot-shape picker, under a caption below Color', () => {
     seed();
     render(<LineInspector id="L1" />);
-    const picker = screen.getByText('Default stop dot');
-    const sizeLabel = screen.getByText('Dot size');
     const color = screen.getByText('Color');
+    const caption = screen.getByText('Default stop dot type and size');
+    const picker = screen.getByRole('button', { name: 'Stop shape' });
+    const slider = screen.getByRole('slider', { name: 'Dot size' });
     // DOCUMENT_POSITION_FOLLOWING = 4: the argument follows the receiver.
-    expect(picker.compareDocumentPosition(sizeLabel) & 4).toBe(4);
-    expect(sizeLabel.compareDocumentPosition(color) & 4).toBe(4);
+    // Color precedes the caption, which precedes the combined dot row.
+    expect(color.compareDocumentPosition(caption) & 4).toBe(4);
+    expect(caption.compareDocumentPosition(picker) & 4).toBe(4);
+    expect(color.compareDocumentPosition(slider) & 4).toBe(4);
+    // The picker and the size slider live in the same row.
+    expect(picker.closest('.options-popover-row')).toBe(slider.closest('.options-popover-row'));
   });
 
   it('slider edits write defaultDotSize; the default drops the key', () => {
@@ -416,7 +421,7 @@ describe('<LineInspector /> — stroke controls', () => {
   it('renders a 0–10 half-step slider at the line’s effective stroke width', () => {
     seed();
     render(<LineInspector id="L1" />);
-    const slider = screen.getByRole('slider', { name: 'Stroke' }) as HTMLInputElement;
+    const slider = screen.getByRole('slider', { name: 'Stroke width' }) as HTMLInputElement;
     expect(slider.getAttribute('min')).toBe('0');
     expect(slider.getAttribute('max')).toBe('10');
     expect(slider.getAttribute('step')).toBe('0.5');
@@ -426,7 +431,7 @@ describe('<LineInspector /> — stroke controls', () => {
   it('slider edits write the stroke width (half steps included); zero drops the key', () => {
     seed();
     render(<LineInspector id="L1" />);
-    const slider = screen.getByRole('slider', { name: 'Stroke' });
+    const slider = screen.getByRole('slider', { name: 'Stroke width' });
     fireEvent.change(slider, { target: { value: '1.5' } });
     expect(useDoc.getState().lines.L1.strokeWidth).toBe(1.5);
     fireEvent.change(slider, { target: { value: '0' } });
@@ -436,7 +441,7 @@ describe('<LineInspector /> — stroke controls', () => {
   it('the spinbutton steps by 0.5 and is uncapped above the slider max', () => {
     seed();
     render(<LineInspector id="L1" />);
-    const spin = screen.getByRole('spinbutton', { name: 'Stroke' });
+    const spin = screen.getByRole('spinbutton', { name: 'Stroke width' });
     expect(spin.getAttribute('min')).toBe('0');
     expect(spin.getAttribute('max')).toBeNull();
     expect(spin.getAttribute('step')).toBe('0.5');
@@ -468,7 +473,7 @@ describe('<LineInspector /> — stroke controls', () => {
     seed();
     useDoc.temporal.getState().clear();
     render(<LineInspector id="L1" />);
-    const slider = screen.getByRole('slider', { name: 'Stroke' });
+    const slider = screen.getByRole('slider', { name: 'Stroke width' });
     const before = historyDepth();
     fireEvent.focus(slider);
     fireEvent.change(slider, { target: { value: '2' } });
