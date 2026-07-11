@@ -231,12 +231,12 @@ export function Sidebar() {
                     onMouseEnter={() => selection.setHoveredStation(st.id)}
                     onMouseLeave={() => selection.setHoveredStation(null)}
                   >
-                    <span className="grow">{stationNameListText(st.name)}</span>
                     {st.isWaypoint && (
                       <span className="wp-pill" title="Waypoint">
                         WP
                       </span>
                     )}
+                    <span className="grow">{stationNameListText(st.name)}</span>
                     <span className="line-badges">
                       {linesAtStation(st.id)
                         .slice()
