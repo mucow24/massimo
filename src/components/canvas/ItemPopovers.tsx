@@ -1,6 +1,17 @@
 import { soleSelection, useDoc, useSelection } from '../../state/store';
 import type { ViewportProjection } from './screenAnchor';
 import { useLiveView } from './useViewport';
+import { useDocLabelStyle } from '../useDocLabelStyle';
+import {
+  polygonAABB,
+  routeBulletAABB,
+  stationWorldAABB,
+  svgImageAABB,
+  textLabelAABB,
+} from '../../geometry/itemBounds';
+import { stopHalfOf } from '../../model/lineWidth';
+import { effectiveStationLabelStyle } from '../../model/transforms';
+import { SIDEBAR_WIDTH, sidebarVisible } from '../Sidebar';
 import { RouteBulletPopover } from '../RouteBulletPopover';
 import { TextLabelPopover } from '../TextLabelPopover';
 import { PolygonPopover } from '../PolygonPopover';
@@ -14,6 +25,11 @@ import { StationPopover } from '../StationPopover';
  * every type is selected (a co-selected item of another type can't leak one
  * open). Peeled out of MapCanvas so the canvas no longer carries the
  * near-identical gating blocks + their popover imports.
+ *
+ * Each branch hands its popover the item's world AABB (geometry/itemBounds):
+ * the spawn placement opens the panel beside the item instead of on top of
+ * it. The rect is a spawn hint only — useDraggablePopover freezes the placed
+ * position and ignores the rect afterwards.
  */
 export function ItemPopovers({ view: committed }: { view: ViewportProjection }) {
   // Reproject through the in-flight viewport during a pan/zoom so the popover
@@ -26,12 +42,21 @@ export function ItemPopovers({ view: committed }: { view: ViewportProjection }) 
   const textLabels = useDoc((s) => s.textLabels);
   const polygons = useDoc((s) => s.polygons);
   const svgImages = useDoc((s) => s.svgImages);
+  const lines = useDoc((s) => s.lines);
+  const baseStyle = useDocLabelStyle();
 
   // The popover anchors against the live viewport; a zero-size viewport (first
   // paint) has no screen mapping yet, so wait for a real box.
   if (!(view.vbW > 0 && view.vbH > 0)) return null;
   const sole = soleSelection(selection);
   if (!sole) return null;
+
+  // The open sidebar overlays (and paints above) the host's right strip; a
+  // spawn placed "fully on-screen" under it would be invisible. Spawn
+  // placement gets the box left of the panel; projection keeps the real view.
+  const spawnBox = sidebarVisible(selection)
+    ? { w: view.size.w - SIDEBAR_WIDTH, h: view.size.h }
+    : view.size;
 
   if (sole.type === 'station') {
     const st = stations[sole.id];
@@ -46,10 +71,18 @@ export function ItemPopovers({ view: committed }: { view: ViewportProjection }) 
     const show =
       mode.kind === 'idle' ||
       (mode.kind === 'editing-station-layout' && mode.stationId === sole.id);
+    // Same style/stopHalf the renderer uses, so the silhouette rect the spawn
+    // dodges matches the painted station (cells + name label).
     return (
       <StationPopover
         station={st}
+        worldRect={stationWorldAABB(
+          st,
+          effectiveStationLabelStyle(st, baseStyle),
+          stopHalfOf(lines),
+        )}
         view={view}
+        spawnBox={spawnBox}
         hidden={!show}
         onClose={() => selection.selectStation(null)}
       />
@@ -62,8 +95,9 @@ export function ItemPopovers({ view: committed }: { view: ViewportProjection }) 
     return (
       <RouteBulletPopover
         bullet={b}
-        world={{ x: b.x, y: b.y }}
+        worldRect={routeBulletAABB(b)}
         view={view}
+        spawnBox={spawnBox}
         onClose={() => selection.selectRouteBullet(null)}
       />
     );
@@ -74,8 +108,9 @@ export function ItemPopovers({ view: committed }: { view: ViewportProjection }) 
     return (
       <TextLabelPopover
         label={g}
-        world={{ x: g.x, y: g.y }}
+        worldRect={textLabelAABB(g)}
         view={view}
+        spawnBox={spawnBox}
         onClose={() => selection.selectLabel(null)}
       />
     );
@@ -83,13 +118,27 @@ export function ItemPopovers({ view: committed }: { view: ViewportProjection }) 
   if (sole.type === 'polygon') {
     const p = polygons[sole.id];
     if (!p) return null;
-    return <PolygonPopover polygon={p} view={view} onClose={() => selection.selectPolygon(null)} />;
+    return (
+      <PolygonPopover
+        polygon={p}
+        worldRect={polygonAABB(p.vertices)}
+        view={view}
+        spawnBox={spawnBox}
+        onClose={() => selection.selectPolygon(null)}
+      />
+    );
   }
   if (sole.type === 'svgImage') {
     const im = svgImages[sole.id];
     if (!im) return null;
     return (
-      <SvgImagePopover image={im} view={view} onClose={() => selection.selectSvgImage(null)} />
+      <SvgImagePopover
+        image={im}
+        worldRect={svgImageAABB(im)}
+        view={view}
+        spawnBox={spawnBox}
+        onClose={() => selection.selectSvgImage(null)}
+      />
     );
   }
   return null;

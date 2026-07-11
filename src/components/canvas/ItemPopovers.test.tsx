@@ -30,6 +30,10 @@ beforeEach(() => {
   useDoc.setState({ ...useDoc.getState(), ...DEFAULT_DOC, routeBullets: { b1: bullet } });
   useSelection.getState().selectRouteBullet('b1');
   useLiveViewportStore.setState({ pending: null });
+  // Keep spawn arithmetic in the plain 800×600 box: the open sidebar
+  // (default) would subtract its 320px strip from the placement box. The
+  // sidebar-aware case has its own test below.
+  useSelection.setState({ ...useSelection.getState(), sidebarOpen: false });
 });
 
 afterEach(() => {
@@ -40,22 +44,143 @@ afterEach(() => {
 describe('ItemPopovers — tracks the in-flight pan', () => {
   it('reprojects the popover through the live (pending) viewport mid-pan', () => {
     render(<ItemPopovers view={committedView} />);
-    // Committed: world (0,0) → screen (400,300), + the popover's 14px gap.
-    expect(leftTop().left).toBeCloseTo(414, 9);
-    expect(leftTop().top).toBeCloseTo(314, 9);
+    // Committed: the bullet's ±10 rect spans screen (390,290)–(410,310); the
+    // spawn opens gap-diagonal below-right of it: (410+14, 310+14).
+    expect(leftTop().left).toBeCloseTo(424, 9);
+    expect(leftTop().top).toBeCloseTo(324, 9);
 
     // Mid middle-drag pan: the viewBox is written imperatively (no store commit),
     // so useViewport publishes the live viewport here. Center moved by (-50,-30)
-    // → vb origin (-450,-330) → world (0,0) now projects to screen (450,330).
+    // → vb origin (-450,-330) → the frozen corner shifts by (+50,+30).
     act(() => useLiveViewportStore.setState({ pending: { x: -50, y: -30, zoom: 1 } }));
-    expect(leftTop().left).toBeCloseTo(464, 9);
-    expect(leftTop().top).toBeCloseTo(344, 9);
+    expect(leftTop().left).toBeCloseTo(474, 9);
+    expect(leftTop().top).toBeCloseTo(354, 9);
 
     // Pan commit clears the pending viewport; the popover falls back to the
     // (now-updated) committed view passed as a prop — no jump.
     act(() => useLiveViewportStore.setState({ pending: null }));
-    expect(leftTop().left).toBeCloseTo(414, 9);
-    expect(leftTop().top).toBeCloseTo(314, 9);
+    expect(leftTop().left).toBeCloseTo(424, 9);
+    expect(leftTop().top).toBeCloseTo(324, 9);
+  });
+});
+
+describe('ItemPopovers — spawn placement wiring', () => {
+  it('subtracts the open sidebar strip from the placement box', () => {
+    // Sidebar open (320px overlay on the host's right, painting ABOVE the
+    // popovers): the bullet's diagonal spawn (424,324) exceeds the reduced
+    // x-limit 480−248−8 = 224, so x clamps to 224 — left of the panel strip.
+    useSelection.setState({ ...useSelection.getState(), sidebarOpen: true });
+    render(<ItemPopovers view={committedView} />);
+    expect(leftTop().left).toBeCloseTo(224, 9);
+    expect(leftTop().top).toBeCloseTo(324, 9);
+  });
+
+  it('the station branch feeds the per-line stop width into the spawn rect', () => {
+    // Waypoint station (no name label → no text measurement) with one stop on
+    // a width-28 line: stop half 14 + HIT_PAD 2 → world box ±16 → screen rect
+    // (384,284)–(416,316) → diagonal spawn (416+14, 316+14) = (430,330).
+    // Under the default stop width the box is ±9 and the spawn (423,323) —
+    // this pins that ItemPopovers threads stopHalfOf(doc.lines), not the
+    // default, into stationWorldAABB.
+    useDoc.setState({
+      ...useDoc.getState(),
+      ...DEFAULT_DOC,
+      stations: {
+        a: {
+          id: 'a',
+          name: 'A',
+          x: 0,
+          y: 0,
+          rotation: 0,
+          isWaypoint: true,
+          stops: [{ lineId: 'L1', row: 0, col: 0, orientation: 'auto-vertical' }],
+          label: { row: 0, col: -1, rotation: 0, offset: 0, align: 'auto', valign: 'middle' },
+        },
+      },
+      lines: {
+        L1: {
+          id: 'L1',
+          service: '1',
+          name: '1 line',
+          color: '#111111',
+          stations: ['a'],
+          width: 28,
+        },
+      },
+      lineOrder: ['L1'],
+    });
+    useSelection.getState().selectRouteBullet(null);
+    useSelection.getState().selectStation('a');
+    render(<ItemPopovers view={committedView} />);
+    const el = document.querySelector('.station-popover') as HTMLElement;
+    expect(el).not.toBeNull();
+    expect(parseFloat(el.style.left)).toBeCloseTo(430, 9);
+    expect(parseFloat(el.style.top)).toBeCloseTo(330, 9);
+    useSelection.getState().selectStation(null);
+  });
+});
+
+describe('ItemPopovers — spawn avoids covering the item', () => {
+  it('opens beside a large svg image, fully inside the host', () => {
+    // A 300×200 image centered at the origin: screen rect (250,200)–(550,400).
+    // Every candidate clamps into the image at this size/host — diagonal
+    // (564,414)→(544,344), right (564,200)→(544,200), below (250,414)→
+    // (250,344), left (−12,200)→(8,200) pokes 6px into the image's left edge,
+    // above (250,−62)→(250,8) — so the fallback is the clamped diagonal
+    // (544,344): fully visible, overlap accepted.
+    useDoc.setState({
+      ...useDoc.getState(),
+      ...DEFAULT_DOC,
+      svgImages: {
+        i1: {
+          id: 'i1',
+          x: 0,
+          y: 0,
+          width: 300,
+          height: 200,
+          rotation: 0,
+          href: 'data:image/svg+xml;base64,PHN2Zy8+',
+        },
+      },
+      svgImageOrder: ['i1'],
+    });
+    useSelection.getState().selectRouteBullet(null); // sole selection = the image
+    useSelection.getState().selectSvgImage('i1');
+    render(<ItemPopovers view={committedView} />);
+    const el = document.querySelector('.svg-image-popover') as HTMLElement;
+    expect(el).not.toBeNull();
+    expect(parseFloat(el.style.left)).toBeCloseTo(544, 9);
+    expect(parseFloat(el.style.top)).toBeCloseTo(344, 9);
+    useSelection.getState().selectSvgImage(null);
+  });
+
+  it('opens gap-diagonal off a small svg image when there is room', () => {
+    // 100×60 at the origin → screen rect (350,270)–(450,330); the diagonal
+    // fits and clears: (450+14, 330+14).
+    useDoc.setState({
+      ...useDoc.getState(),
+      ...DEFAULT_DOC,
+      svgImages: {
+        i1: {
+          id: 'i1',
+          x: 0,
+          y: 0,
+          width: 100,
+          height: 60,
+          rotation: 0,
+          href: 'data:image/svg+xml;base64,PHN2Zy8+',
+        },
+      },
+      svgImageOrder: ['i1'],
+    });
+    useSelection.getState().selectRouteBullet(null); // sole selection = the image
+    useSelection.getState().selectSvgImage('i1');
+    render(<ItemPopovers view={committedView} />);
+    const el = document.querySelector('.svg-image-popover') as HTMLElement;
+    expect(el).not.toBeNull();
+    expect(parseFloat(el.style.left)).toBeCloseTo(464, 9);
+    expect(parseFloat(el.style.top)).toBeCloseTo(344, 9);
+    useSelection.getState().selectSvgImage(null);
   });
 });
 

@@ -1,5 +1,6 @@
 import { useDoc } from '../state/store';
 import { type ViewportProjection } from './canvas/screenAnchor';
+import type { AABB } from '../geometry/rectPolygon';
 import { DraggablePopoverShell } from './DraggablePopoverShell';
 import { useDraggablePopover } from './canvas/useDraggablePopover';
 import { NumericFieldRow } from './NumericFieldRow';
@@ -9,11 +10,14 @@ import type { RouteBullet, RouteBulletShape } from '../model/types';
 
 interface Props {
   bullet: RouteBullet;
-  // The bullet's world position at the moment of selection. Frozen at mount
-  // (useDraggablePopover) but projected through the live viewport, so the
-  // popover tracks canvas pan/zoom like the other item popovers.
-  world: { x: number; y: number };
+  // The bullet's world AABB at the moment of selection — the spawn opens the
+  // popover beside it. Placement is frozen at spawn (useDraggablePopover) but
+  // projected through the live viewport, so the popover tracks canvas
+  // pan/zoom like the other item popovers.
+  worldRect: AABB;
   view: ViewportProjection;
+  // Spawn-placement box (host minus the open sidebar strip); see ItemPopovers.
+  spawnBox?: { w: number; h: number };
   onClose: () => void;
 }
 
@@ -42,9 +46,15 @@ function ShapeIcon({ shape }: { shape: RouteBulletShape }) {
   );
 }
 
-export function RouteBulletPopover({ bullet, world, view, onClose }: Props) {
+export function RouteBulletPopover({ bullet, worldRect, view, spawnBox, onClose }: Props) {
   // Frozen-anchor + header-drag mechanism shared with the other item popovers.
-  const { anchor, headerHandlers } = useDraggablePopover(bullet.id, world, view);
+  const { anchor, measuring, shellRef, headerHandlers } = useDraggablePopover(
+    bullet.id,
+    worldRect,
+    view,
+    false,
+    spawnBox,
+  );
   const lines = useDoc((s) => s.lines);
   const lineOrder = useDoc((s) => s.lineOrder);
   const updateRouteBullet = useDoc((s) => s.updateRouteBullet);
@@ -70,6 +80,8 @@ export function RouteBulletPopover({ bullet, world, view, onClose }: Props) {
       className="bullet-popover"
       left={anchor.x}
       top={anchor.y}
+      measuring={measuring}
+      shellRef={shellRef}
       headerHandlers={headerHandlers}
     >
       <div className="row">

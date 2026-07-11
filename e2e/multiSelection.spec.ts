@@ -134,10 +134,13 @@ test.describe('multi-station selection', () => {
     const b = await stationCenter(page, 'B');
     const c = await stationCenter(page, 'C');
 
-    // Build a 3-station selection [A, B, C]; D stays unselected.
+    // Build a 3-station selection [A, B, C]; D stays unselected. Shift-click
+    // C before B: while ONLY A is selected its editor popover floats fully
+    // on-screen right of A and covers B; once two stations are selected the
+    // popover unmounts (sole-selection rule) and B is clickable again.
     await page.mouse.click(a.x, a.y);
-    await clickAtWithModifiers(page, b, ['Shift']);
     await clickAtWithModifiers(page, c, ['Shift']);
+    await clickAtWithModifiers(page, b, ['Shift']);
     await expect(page.locator('[data-station-wash]')).toHaveCount(3);
 
     const before = {
