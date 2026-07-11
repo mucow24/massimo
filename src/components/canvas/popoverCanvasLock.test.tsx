@@ -9,6 +9,7 @@
 // (per-tick setPending like applyViewBox, then useViewport.commitPending's
 // setViewport + setPending(null)) so a regression anywhere in the chain fails.
 import { describe, it, expect, beforeEach, afterEach } from 'vitest';
+import { StrictMode } from 'react';
 import { act, render, fireEvent } from '@testing-library/react';
 import { ItemPopovers } from './ItemPopovers';
 import { useDoc } from '../../state/store';
@@ -22,7 +23,16 @@ import {
   panFromDelta,
   viewBoxFor,
 } from './viewportMath';
-import { projectToScreen, type ViewportProjection } from './screenAnchor';
+import {
+  choosePopoverSpawn,
+  POPOVER_NOMINAL,
+  projectToScreen,
+  screenToWorldPoint,
+  type ViewportProjection,
+} from './screenAnchor';
+import { stationWorldAABB } from '../../geometry/itemBounds';
+import { stopHalfOf } from '../../model/lineWidth';
+import { effectiveStationLabelStyle } from '../../model/transforms';
 import type { RouteBullet, Station } from '../../model/types';
 
 const SIZE = { w: 800, h: 600 };
@@ -202,9 +212,36 @@ function seedStation(x: number, y: number) {
 
 const SEL = '.bullet-popover';
 
+// The spawn ItemPopovers computes for a station against view `v` (jsdom shell
+// measurement is 0, so the placement falls back to the POPOVER_NOMINAL
+// square). Used by the deferral tests to derive the exact expected corner
+// without hand-computing the measured-text label rect.
+function stationSpawnAt(id: string, v: ViewportProjection): { x: number; y: number } {
+  const doc = useDoc.getState();
+  const st = doc.stations[id];
+  const style = effectiveStationLabelStyle(st, {
+    fontSize: doc.labelFontSize,
+    weight: doc.labelWeight,
+    italic: doc.labelItalic,
+    leading: doc.labelLeading,
+    tracking: doc.labelTracking,
+  });
+  const r = stationWorldAABB(st, style, stopHalfOf(doc.lines));
+  const p0 = projectToScreen({ x: r.x0, y: r.y0 }, v);
+  const p1 = projectToScreen({ x: r.x1, y: r.y1 }, v);
+  return choosePopoverSpawn(
+    { x0: p0.x, y0: p0.y, x1: p1.x, y1: p1.y },
+    { w: POPOVER_NOMINAL, h: POPOVER_NOMINAL },
+    v.size,
+  );
+}
+
 beforeEach(() => {
   useViewportStore.setState({ x: 0, y: 0, zoom: 1 });
   useLiveViewportStore.setState({ pending: null });
+  // Keep spawn arithmetic in the plain 800×600 box: the open sidebar
+  // (default) would subtract its 320px strip from the placement box.
+  useSelection.setState({ ...useSelection.getState(), sidebarOpen: false });
 });
 
 afterEach(() => {
@@ -216,19 +253,79 @@ afterEach(() => {
 
 describe('popover canvas lock — the corner stays glued to its spawn world point', () => {
   it('plain on-screen spawn, wheel-zoom-out to ZOOM_MIN with settle commits', () => {
-    seedBullet(0, 0); // screen (400,300); spawn corner (414,314), unclamped
+    // Bullet rect (±10 world) spans screen (390,290)–(410,310); spawn opens
+    // gap-diagonal below-right of it: (410+14, 310+14), unclamped.
+    seedBullet(0, 0);
     render(<Harness />);
-    expect(cornerPx(SEL).x).toBeCloseTo(414, 9);
-    expect(cornerPx(SEL).y).toBeCloseTo(314, 9);
+    expect(cornerPx(SEL).x).toBeCloseTo(424, 9);
+    expect(cornerPx(SEL).y).toBeCloseTo(324, 9);
     const t = new Tracker(SEL);
     zoomCycles(t, { x: 250, y: 200 }, 120, 3, 5); // ends clamped at ZOOM_MIN=0.1
     expect(t.maxDrift).toBeLessThanOrEqual(EPS);
   });
 
+  it('StrictMode double-invoked layout effects: same spawn, still locked', () => {
+    // The app runs under StrictMode in dev; the measure-then-freeze layout
+    // effect is double-invoked on mount. Both invocations recompute the same
+    // spawn from the same render-captured inputs, so the corner must land on
+    // the plain (424,324) spawn and stay canvas-locked.
+    seedBullet(0, 0);
+    render(
+      <StrictMode>
+        <Harness />
+      </StrictMode>,
+    );
+    expect(cornerPx(SEL).x).toBeCloseTo(424, 9);
+    expect(cornerPx(SEL).y).toBeCloseTo(324, 9);
+    const t = new Tracker(SEL);
+    zoomCycles(t, { x: 250, y: 200 }, 120, 1, 5);
+    expect(t.maxDrift).toBeLessThanOrEqual(EPS);
+  });
+
+  it('measured shell footprint drives the placement (not the nominal square)', () => {
+    // jsdom's zero offsetWidth/Height normally routes every test through the
+    // POPOVER_NOMINAL fallback — stub layout-aware getters (zero under
+    // display:none, like a real browser) so this test exercises the measured
+    // path end-to-end: a 320×560 shell beside the (390,290)–(410,310) bullet
+    // rect keeps the diagonal x 424 but clamps y to 600−560−8 = 32. A dropped
+    // shellRef, transposed w/h, or a display:none measuring frame would all
+    // land elsewhere ((424,324) / different side / (424,324)).
+    const origW = Object.getOwnPropertyDescriptor(HTMLElement.prototype, 'offsetWidth')!;
+    const origH = Object.getOwnPropertyDescriptor(HTMLElement.prototype, 'offsetHeight')!;
+    Object.defineProperty(HTMLElement.prototype, 'offsetWidth', {
+      configurable: true,
+      get(this: HTMLElement) {
+        return this.style.display === 'none' ? 0 : 320;
+      },
+    });
+    Object.defineProperty(HTMLElement.prototype, 'offsetHeight', {
+      configurable: true,
+      get(this: HTMLElement) {
+        return this.style.display === 'none' ? 0 : 560;
+      },
+    });
+    try {
+      seedBullet(0, 0);
+      render(<Harness />);
+      expect(cornerPx(SEL).x).toBeCloseTo(424, 9);
+      expect(cornerPx(SEL).y).toBeCloseTo(32, 9);
+      // The measured spawn dissolves into a frozen world point like any other.
+      const t = new Tracker(SEL);
+      zoomCycles(t, { x: 250, y: 200 }, 120, 1, 5);
+      expect(t.maxDrift).toBeLessThanOrEqual(EPS);
+    } finally {
+      Object.defineProperty(HTMLElement.prototype, 'offsetWidth', origW);
+      Object.defineProperty(HTMLElement.prototype, 'offsetHeight', origH);
+    }
+  });
+
   it('clamped spawn (item near bottom-right), same zoom-out', () => {
-    seedBullet(380, 280); // screen (780,580); spawn (794,594) clamps to (544,344)
+    // Bullet rect spans screen (770,570)–(790,590): the clamped diagonal/
+    // right/below spots (544,344) would cover it, so the spawn flips left of
+    // the rect — x 770−14−248 = 508, y clamps to 600−248−8 = 344.
+    seedBullet(380, 280);
     render(<Harness />);
-    expect(cornerPx(SEL).x).toBeCloseTo(544, 9);
+    expect(cornerPx(SEL).x).toBeCloseTo(508, 9);
     expect(cornerPx(SEL).y).toBeCloseTo(344, 9);
     const t = new Tracker(SEL);
     zoomCycles(t, { x: 250, y: 200 }, 120, 3, 5);
@@ -312,8 +409,8 @@ describe('popover canvas lock — the corner stays glued to its spawn world poin
     fireEvent.pointerDown(header, { clientX: 100, clientY: 100, button: 0 });
     fireEvent.pointerMove(header, { clientX: 160, clientY: 140 });
     fireEvent.pointerUp(header, { clientX: 160, clientY: 140 });
-    expect(cornerPx(SEL).x).toBeCloseTo(414 + 60, 9);
-    expect(cornerPx(SEL).y).toBeCloseTo(314 + 40, 9);
+    expect(cornerPx(SEL).x).toBeCloseTo(424 + 60, 9);
+    expect(cornerPx(SEL).y).toBeCloseTo(324 + 40, 9);
     const t = new Tracker(SEL); // baseline = post-drag canvas point
     zoomCycles(t, { x: 250, y: 200 }, 120, 3, 5);
     expect(t.maxDrift).toBeLessThanOrEqual(EPS);
@@ -384,8 +481,8 @@ describe('popover canvas lock — the corner stays glued to its spawn world poin
 
   it('transient vanish + return re-spawns fresh at the item (intended, documented)', () => {
     // A record that leaves the doc unmounts its popover; when it returns, the
-    // popover legitimately re-spawns — placed like any new selection: item
-    // projection + gap, clamped into the CURRENT view. (Only the station
+    // popover legitimately re-spawns — placed like any new selection: beside
+    // the item's projected rect, inside the CURRENT view. (Only the station
     // uiMode excursion below must NOT behave like this.)
     seedBullet(380, 280);
     render(<Harness />);
@@ -399,11 +496,12 @@ describe('popover canvas lock — the corner stays glued to its spawn world poin
       useDoc.setState({ ...useDoc.getState(), routeBullets: { b1: b } });
     });
     const v = currentView();
-    const p = projectToScreen({ x: 380, y: 280 }, v);
+    const p1 = projectToScreen({ x: 390, y: 290 }, v); // bullet rect max corner
     const c = cornerPx(SEL);
-    // Fresh spawn = projection + 14 gap (unclamped here: item projects mid-host).
-    expect(c.x).toBeCloseTo(p.x + 14, 6);
-    expect(c.y).toBeCloseTo(p.y + 14, 6);
+    // Fresh spawn = gap-diagonal below-right of the rect (unclamped here: the
+    // item projects mid-host at this zoom).
+    expect(c.x).toBeCloseTo(p1.x + 14, 6);
+    expect(c.y).toBeCloseTo(p1.y + 14, 6);
     const t = new Tracker(SEL);
     zoomCycles(t, { x: 250, y: 200 }, 120, 1, 5);
     expect(t.maxDrift).toBeLessThanOrEqual(EPS);
@@ -457,14 +555,20 @@ describe('popover canvas lock — station uiMode excursions', () => {
     });
     const el = document.querySelector(STATION_SEL) as HTMLElement;
     expect(el).toBeVisible();
-    // Spawned against the CURRENT view, exactly: station (380,280) at camera
-    // (-200,-150) projects to (980,730), +14 gap → (994,744), clamped to
-    // (800−248−8, 600−248−8) = (544,344). An eager freeze at the hidden mount
-    // (camera 0,0) would render at (744,494) instead — the exact values are
-    // what pin the deferral.
+    // Spawned against the CURRENT (reveal) view, exactly. An eager freeze at
+    // the hidden mount (camera 0,0) would put the corner somewhere else after
+    // the pan — the reveal-vs-eager discrimination is what pins the deferral.
+    const revealView = currentView();
+    const mountView = { ...viewBoxFor({ x: 0, y: 0, zoom: 1 }, SIZE), size: SIZE };
+    const want = stationSpawnAt('a', revealView);
+    const eagerCorner = projectToScreen(
+      screenToWorldPoint(stationSpawnAt('a', mountView), mountView),
+      revealView,
+    );
+    expect(Math.hypot(want.x - eagerCorner.x, want.y - eagerCorner.y)).toBeGreaterThan(10);
     const c = cornerPx(STATION_SEL);
-    expect(c.x).toBeCloseTo(544, 6);
-    expect(c.y).toBeCloseTo(344, 6);
+    expect(c.x).toBeCloseTo(want.x, 6);
+    expect(c.y).toBeCloseTo(want.y, 6);
     // And locked from there on.
     const t = new Tracker(STATION_SEL);
     zoomCycles(t, { x: 250, y: 200 }, 120, 1, 5);
@@ -503,11 +607,18 @@ describe('popover canvas lock — station uiMode excursions', () => {
     });
     expect(document.querySelector(STATION_SEL)).toBeVisible();
     // Same arithmetic as above: deferred spawn for 'b' against the reveal
-    // camera clamps to (544,344); an eager id-change freeze at camera (0,0)
-    // would render at (744,494).
+    // camera; an eager id-change freeze at camera (0,0) would land elsewhere.
+    const revealView = currentView();
+    const mountView = { ...viewBoxFor({ x: 0, y: 0, zoom: 1 }, SIZE), size: SIZE };
+    const want = stationSpawnAt('b', revealView);
+    const eagerCorner = projectToScreen(
+      screenToWorldPoint(stationSpawnAt('b', mountView), mountView),
+      revealView,
+    );
+    expect(Math.hypot(want.x - eagerCorner.x, want.y - eagerCorner.y)).toBeGreaterThan(10);
     const c = cornerPx(STATION_SEL);
-    expect(c.x).toBeCloseTo(544, 6);
-    expect(c.y).toBeCloseTo(344, 6);
+    expect(c.x).toBeCloseTo(want.x, 6);
+    expect(c.y).toBeCloseTo(want.y, 6);
     const t = new Tracker(STATION_SEL);
     zoomCycles(t, { x: 250, y: 200 }, 120, 1, 5);
     expect(t.maxDrift).toBeLessThanOrEqual(EPS);

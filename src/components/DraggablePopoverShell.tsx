@@ -11,6 +11,12 @@ interface Props {
   // header drag) alive across a temporary hide, so the panel returns to the
   // same canvas point instead of re-spawning wherever the camera is then.
   hidden?: boolean;
+  // The measuring commit (useDraggablePopover reading the shell's footprint
+  // before choosing the spawn spot): laid out but invisible — visibility
+  // keeps offsetWidth/Height real where display:none would zero them.
+  measuring?: boolean;
+  // useDraggablePopover's ref; how the measuring commit reaches the DOM node.
+  shellRef?: DraggablePopover['shellRef'];
   headerHandlers: DraggablePopover['headerHandlers'];
   children: ReactNode;
 }
@@ -28,11 +34,14 @@ export function DraggablePopoverShell({
   left,
   top,
   hidden,
+  measuring,
+  shellRef,
   headerHandlers,
   children,
 }: Props) {
   return (
     <div
+      ref={shellRef}
       className={className}
       style={{
         position: 'absolute',
@@ -40,6 +49,7 @@ export function DraggablePopoverShell({
         top,
         zIndex: 1100,
         display: hidden ? 'none' : undefined,
+        visibility: measuring ? 'hidden' : undefined,
       }}
       onPointerDown={(e) => e.stopPropagation()}
       onClick={(e) => e.stopPropagation()}

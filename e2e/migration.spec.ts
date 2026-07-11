@@ -55,10 +55,14 @@ async function orientationGlyphFor(page: Page, stationId: string): Promise<strin
   );
   await expect(cell).toBeVisible();
   const glyph = (await cell.locator('text').textContent()) ?? '';
-  // Exit the layout-edit mode before the caller moves to the NEXT station —
-  // the mode pins the station popover to the top-right of the canvas, where
-  // it would swallow the click selecting a station that projects under it.
+  // Step all the way back out before the caller moves to the NEXT station:
+  // the first Escape exits layout-edit (whose popover pins to the top-right
+  // of the canvas), the second deselects the station entirely — its editor
+  // popover now sits fully on-screen beside the station and would otherwise
+  // swallow the click selecting a neighbor that projects under it.
   await page.keyboard.press('Escape');
+  await page.keyboard.press('Escape');
+  await expect(page.locator('.station-popover')).toHaveCount(0);
   return glyph;
 }
 

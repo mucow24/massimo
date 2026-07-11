@@ -59,28 +59,57 @@ export function screenDeltaToWorld(
   };
 }
 
-// Item popovers are 240px wide plus a 3px border each side + the 1px outline;
-// height varies per popover, so both axes clamp against the same nominal
-// square footprint. The station popover is wider (320px, styles.css) but
-// clamps against this same nominal — an accepted ~80px right-edge crop.
-const POPOVER_NOMINAL = 248;
+// Fallback popover footprint for hosts where the shell can't be measured
+// (jsdom tests; a pathological zero-size layout). Real spawns measure the
+// rendered shell, so this only has to be a plausible stand-in.
+export const POPOVER_NOMINAL = 248;
+// Visual gap between the anchored item's screen rect and the popover.
+export const POPOVER_GAP = 14;
 const CLAMP_MARGIN = 8;
 
+const clampAxis = (v: number, extent: number, popExtent: number) =>
+  Math.max(CLAMP_MARGIN, Math.min(v, extent - popExtent - CLAMP_MARGIN));
+
 /**
- * Clamp a popover's screen anchor (its top-left corner) so the nominal
- * popover footprint stays inside the host box. The canvas host is
- * overflow:hidden, so an unclamped spawn near an edge crops the panel or
- * hides it entirely. An axis whose extent can't fit the popover at all
- * (tiny window, or the zero-size first paint) passes through unchanged —
- * no placement would help there.
+ * Choose a popover's spawn position (top-left, host-relative screen px) next
+ * to the item's screen rect. Fully-on-screen wins over not-overlapping: the
+ * anchor is always clamped so the popover fits inside the host (pinning to
+ * the top-left margin when the host is too small to fit it at all — the
+ * header/close corner is the part worth showing), and among the fitting
+ * spots the first side that clears the item rect is picked. When no side
+ * clears it (item fills the view), the popover overlaps — that's the
+ * documented "can't always avoid the item" concession.
+ *
+ * Spawn-time heuristic only: the caller dissolves the result into a world
+ * point (see useDraggablePopover) and no screen-space term survives.
  */
-export function clampPopoverAnchor(
-  pt: { x: number; y: number },
-  size: { w: number; h: number },
+export function choosePopoverSpawn(
+  item: { x0: number; y0: number; x1: number; y1: number },
+  pop: { w: number; h: number },
+  host: { w: number; h: number },
 ): { x: number; y: number } {
-  const clampAxis = (v: number, extent: number) =>
-    extent < POPOVER_NOMINAL + 2 * CLAMP_MARGIN
-      ? v
-      : Math.max(CLAMP_MARGIN, Math.min(v, extent - POPOVER_NOMINAL - CLAMP_MARGIN));
-  return { x: clampAxis(pt.x, size.w), y: clampAxis(pt.y, size.h) };
+  // Diagonally below-right of the item first — the legacy spawn's shape, and
+  // deliberately so: a panel top-aligned beside a station would sit exactly
+  // over the neighboring stations on its (usually horizontal) line, swallowing
+  // the next click. Then right (top-aligned), below (left-aligned), left,
+  // above. Clamping can slide a candidate along its free axis (or, when the
+  // host is too small, off its side entirely) — the overlap check judges the
+  // candidate where it actually lands. A degenerate point rect makes the
+  // diagonal exactly the historical point+gap spawn.
+  const candidates = [
+    { x: item.x1 + POPOVER_GAP, y: item.y1 + POPOVER_GAP },
+    { x: item.x1 + POPOVER_GAP, y: item.y0 },
+    { x: item.x0, y: item.y1 + POPOVER_GAP },
+    { x: item.x0 - POPOVER_GAP - pop.w, y: item.y0 },
+    { x: item.x0, y: item.y0 - POPOVER_GAP - pop.h },
+  ];
+  let fallback: { x: number; y: number } | null = null;
+  for (const c of candidates) {
+    const p = { x: clampAxis(c.x, host.w, pop.w), y: clampAxis(c.y, host.h, pop.h) };
+    const overlaps =
+      p.x < item.x1 && p.x + pop.w > item.x0 && p.y < item.y1 && p.y + pop.h > item.y0;
+    if (!overlaps) return p;
+    fallback ??= p;
+  }
+  return fallback as { x: number; y: number };
 }

@@ -9,6 +9,10 @@ import type { RouteBullet } from '../model/types';
 
 const identityView = { vbX: 0, vbY: 0, vbW: 800, vbH: 600, size: { w: 800, h: 600 } };
 
+// Degenerate point rect for the spawn hint — placement details live in
+// screenAnchor.test.ts; here the point keeps positions easy to reason about.
+const rectAt = (x: number, y: number) => ({ x0: x, y0: y, x1: x, y1: y });
+
 function seed(bullet: RouteBullet) {
   useDoc.setState({
     ...useDoc.getState(),
@@ -42,7 +46,7 @@ describe('RouteBulletPopover — line / shape / delete', () => {
     render(
       <RouteBulletPopover
         bullet={bullet}
-        world={{ x: 0, y: 0 }}
+        worldRect={rectAt(0, 0)}
         view={identityView}
         onClose={onClose}
       />,
@@ -121,7 +125,7 @@ describe('<RouteBulletPopover /> size control', () => {
     render(
       <RouteBulletPopover
         bullet={BULLET}
-        world={{ x: 10, y: 10 }}
+        worldRect={rectAt(10, 10)}
         view={VIEW}
         onClose={() => {}}
       />,
@@ -147,7 +151,7 @@ describe('<RouteBulletPopover /> size control', () => {
     render(
       <RouteBulletPopover
         bullet={BULLET}
-        world={{ x: 10, y: 10 }}
+        worldRect={rectAt(10, 10)}
         view={VIEW}
         onClose={() => {}}
       />,
@@ -160,7 +164,7 @@ describe('<RouteBulletPopover /> size control', () => {
     render(
       <RouteBulletPopover
         bullet={BULLET}
-        world={{ x: 10, y: 10 }}
+        worldRect={rectAt(10, 10)}
         view={VIEW}
         onClose={() => {}}
       />,
@@ -177,7 +181,7 @@ describe('<RouteBulletPopover /> size control', () => {
     render(
       <RouteBulletPopover
         bullet={locked}
-        world={{ x: 10, y: 10 }}
+        worldRect={rectAt(10, 10)}
         view={VIEW}
         onClose={() => {}}
       />,
@@ -211,7 +215,7 @@ describe('<RouteBulletPopover /> canvas event swallowing', () => {
       <div onContextMenu={onContextMenu}>
         <RouteBulletPopover
           bullet={bullet}
-          world={{ x: 0, y: 0 }}
+          worldRect={rectAt(0, 0)}
           view={identityView}
           onClose={vi.fn()}
         />
@@ -236,14 +240,14 @@ describe('<RouteBulletPopover /> header drag', () => {
     const { container } = render(
       <RouteBulletPopover
         bullet={useDoc.getState().routeBullets['b1']}
-        world={{ x: 0, y: 0 }}
+        worldRect={rectAt(0, 0)}
         view={identityView}
         onClose={() => {}}
       />,
     );
     const popover = container.querySelector('.bullet-popover') as HTMLElement;
     const header = container.querySelector('.bullet-popover .header') as HTMLElement;
-    expect(parseFloat(popover.style.left)).toBeCloseTo(14, 9); // 0 + 14 base offset
+    expect(parseFloat(popover.style.left)).toBeCloseTo(14, 9); // point + 14 gap diagonal
     expect(parseFloat(popover.style.top)).toBeCloseTo(14, 9);
     fireEvent.pointerDown(header, { clientX: 100, clientY: 100, button: 0 });
     fireEvent.pointerMove(header, { clientX: 130, clientY: 120 });
@@ -261,7 +265,7 @@ describe('<RouteBulletPopover /> header drag', () => {
     const { container, rerender } = render(
       <RouteBulletPopover
         bullet={bullet}
-        world={{ x: 0, y: 0 }}
+        worldRect={rectAt(0, 0)}
         view={identityView}
         onClose={() => {}}
       />,
@@ -271,7 +275,7 @@ describe('<RouteBulletPopover /> header drag', () => {
     rerender(
       <RouteBulletPopover
         bullet={bullet}
-        world={{ x: 100, y: 50 }}
+        worldRect={rectAt(100, 50)}
         view={identityView}
         onClose={() => {}}
       />,
