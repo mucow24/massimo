@@ -1,6 +1,7 @@
 import { useSelection } from '../state/store';
 import type { Station } from '../model/types';
 import { type ViewportProjection } from './canvas/screenAnchor';
+import type { AABB } from '../geometry/rectPolygon';
 import { DraggablePopoverShell } from './DraggablePopoverShell';
 import { useDraggablePopover } from './canvas/useDraggablePopover';
 import { StationInspector } from './inspector';
@@ -29,21 +30,29 @@ const EDGE_PAD = 8;
  */
 export function StationPopover({
   station,
+  worldRect,
   view,
+  spawnBox,
   hidden,
 }: {
   station: Station;
+  // The station silhouette's world AABB (cells + name label) at the moment of
+  // selection — the spawn opens the editor beside it.
+  worldRect: AABB;
   view: ViewportProjection;
+  // Spawn-placement box (host minus the open sidebar strip); see ItemPopovers.
+  spawnBox?: { w: number; h: number };
   // Kept mounted but display:none during non-idle uiMode excursions, so the
   // frozen anchor survives and the panel returns to the same canvas point.
   hidden?: boolean;
   onClose: () => void;
 }) {
-  const { anchor, headerHandlers } = useDraggablePopover(
+  const { anchor, measuring, shellRef, headerHandlers } = useDraggablePopover(
     station.id,
-    { x: station.x, y: station.y },
+    worldRect,
     view,
     hidden,
+    spawnBox,
   );
   const inLayoutEdit = useSelection((s) => s.uiMode.kind === 'editing-station-layout');
   const left = inLayoutEdit ? Math.max(EDGE_PAD, view.size.w - POPOVER_W - EDGE_PAD) : anchor.x;
@@ -55,6 +64,8 @@ export function StationPopover({
       left={left}
       top={top}
       hidden={hidden}
+      measuring={measuring}
+      shellRef={shellRef}
       headerHandlers={headerHandlers}
     >
       <StationInspector id={station.id} />

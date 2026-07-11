@@ -2,13 +2,15 @@ import type { MapDoc } from '../model/types';
 import { docLabelStyle } from './labelLayout';
 import { stopHalfOf } from '../model/lineWidth';
 import { effectiveStationLabelStyle } from '../model/transforms';
+import { TEXT_LABEL_HIT_PAD, type AABBRect } from './stationBoundary';
 import {
-  stationBoundaryRectsLocal,
-  stationLocalToWorld,
-  textLabelHitPolygon,
-  type AABBRect,
-} from './stationBoundary';
-import { svgImageCorners } from './svgImage';
+  polygonAABB,
+  routeBulletAABB,
+  stationWorldAABB,
+  svgImageAABB,
+  textLabelAABB,
+} from './itemBounds';
+import type { AABB } from './rectPolygon';
 
 /**
  * World-space axis-aligned bounding box of every visible thing on the map —
@@ -28,11 +30,11 @@ export function computeContentBounds(doc: MapDoc): AABBRect | null {
   let minY = Infinity;
   let maxX = -Infinity;
   let maxY = -Infinity;
-  const acc = (p: { x: number; y: number }): void => {
-    if (p.x < minX) minX = p.x;
-    if (p.x > maxX) maxX = p.x;
-    if (p.y < minY) minY = p.y;
-    if (p.y > maxY) maxY = p.y;
+  const acc = (r: AABB): void => {
+    if (r.x0 < minX) minX = r.x0;
+    if (r.x1 > maxX) maxX = r.x1;
+    if (r.y0 < minY) minY = r.y0;
+    if (r.y1 > maxY) maxY = r.y1;
   };
 
   const baseStyle = docLabelStyle(doc);
@@ -40,23 +42,19 @@ export function computeContentBounds(doc: MapDoc): AABBRect | null {
 
   for (const id in doc.stations) {
     const st = doc.stations[id];
-    const b = stationBoundaryRectsLocal(st, effectiveStationLabelStyle(st, baseStyle), stopHalf);
-    for (const p of b.cells) acc(stationLocalToWorld(st, p));
-    if (b.label) for (const p of b.label) acc(stationLocalToWorld(st, p));
+    acc(stationWorldAABB(st, effectiveStationLabelStyle(st, baseStyle), stopHalf));
   }
   for (const id in doc.textLabels) {
-    for (const p of textLabelHitPolygon(doc.textLabels[id])) acc(p);
+    acc(textLabelAABB(doc.textLabels[id], TEXT_LABEL_HIT_PAD));
   }
   for (const id in doc.polygons) {
-    for (const p of doc.polygons[id].vertices) acc(p);
+    acc(polygonAABB(doc.polygons[id].vertices));
   }
   for (const id in doc.svgImages) {
-    for (const p of svgImageCorners(doc.svgImages[id])) acc(p);
+    acc(svgImageAABB(doc.svgImages[id]));
   }
   for (const id in doc.routeBullets) {
-    const b = doc.routeBullets[id];
-    acc({ x: b.x - b.size, y: b.y - b.size });
-    acc({ x: b.x + b.size, y: b.y + b.size });
+    acc(routeBulletAABB(doc.routeBullets[id]));
   }
 
   if (!Number.isFinite(minX)) return null;

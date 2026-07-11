@@ -16,6 +16,16 @@ import { stationNameListText } from '../geometry/labelTokens';
 type StationSortColumn = 'name' | 'stops';
 type SortDirection = 'asc' | 'desc';
 
+// Panel width — matches `.sidebar` in styles.css. The sidebar floats OVER the
+// canvas host's right edge and stacks ABOVE the item popovers (.canvas-host
+// isolation), so spawn placement subtracts this strip while the panel shows.
+export const SIDEBAR_WIDTH = 320;
+
+/** Whether the sidebar panel is actually showing (mirrors Sidebar's render
+ * gate): open, and not ceded to the station layout editor's pinned popover. */
+export const sidebarVisible = (s: { sidebarOpen: boolean; uiMode: { kind: string } }): boolean =>
+  s.sidebarOpen && s.uiMode.kind !== 'editing-station-layout';
+
 export function Sidebar() {
   const stations = useDoc((s) => s.stations);
   const lines = useDoc((s) => s.lines);
@@ -120,8 +130,7 @@ export function Sidebar() {
   // styles.css) — so its controls would sit unreachable behind the panel.
   // Collapsing hands the corner to the editor. Derived purely from uiMode, so
   // `sidebarOpen` is untouched and the panel reappears as it was on exit.
-  const inLayoutEdit = selection.uiMode.kind === 'editing-station-layout';
-  if (!selection.sidebarOpen || inLayoutEdit) return null;
+  if (!sidebarVisible(selection)) return null;
 
   return (
     <aside className="sidebar">

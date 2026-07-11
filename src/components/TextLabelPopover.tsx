@@ -11,6 +11,7 @@ import {
 import { useDoc } from '../state/store';
 import { useLabelEditorPrefs } from '../state/labelEditorPrefs';
 import { type ViewportProjection } from './canvas/screenAnchor';
+import type { AABB } from '../geometry/rectPolygon';
 import { DraggablePopoverShell } from './DraggablePopoverShell';
 import { useDraggablePopover } from './canvas/useDraggablePopover';
 import { usePersistedTextareaHeight } from './usePersistedTextareaHeight';
@@ -38,11 +39,14 @@ import type { TextLabel, TextLabelAlign, TextLabelWeight } from '../model/types'
 
 interface Props {
   label: TextLabel;
-  // The label's world position at the moment of selection. Frozen at mount
-  // (see frozenWorld below) but projected through the *live* viewport, so the
-  // popover tracks canvas pan/zoom while ignoring the label's own moves.
-  world: { x: number; y: number };
+  // The label's world AABB at the moment of selection — the spawn opens the
+  // popover beside it. Placement is frozen at spawn but projected through the
+  // *live* viewport, so the popover tracks canvas pan/zoom while ignoring the
+  // label's own moves.
+  worldRect: AABB;
   view: ViewportProjection;
+  // Spawn-placement box (host minus the open sidebar strip); see ItemPopovers.
+  spawnBox?: { w: number; h: number };
   onClose: () => void;
 }
 
@@ -53,24 +57,35 @@ const ALIGNS: { value: TextLabelAlign; icon: ReactNode; title: string }[] = [
   { value: 'justify', icon: <TextAlignJustifyIcon />, title: 'Justify' },
 ];
 
-export function TextLabelPopover({ label, world, view, onClose }: Props) {
+export function TextLabelPopover({ label, worldRect, view, spawnBox, onClose }: Props) {
   const updateTextLabel = useDoc((s) => s.updateTextLabel);
   const deleteTextLabel = useDoc((s) => s.deleteTextLabel);
 
-  // Frozen-anchor + header-drag mechanism (freeze world at mount so the size
-  // slider can't move the popover and feed back into itself; re-freeze when the
-  // selected label changes; project live for pan/zoom). Shared with the polygon
-  // popover.
-  const { anchor, headerHandlers } = useDraggablePopover(label.id, world, view);
-
-  const textField = useFieldHistory();
-
   // Remember the manually stretched height of the text box, per label, so it
   // reopens at the size the user left it (see usePersistedTextareaHeight).
+  // MUST be called before useDraggablePopover: both apply layout effects, and
+  // same-fiber layout effects run in hook-call order — the persisted height
+  // has to be on the textarea before the spawn placement measures the shell,
+  // or a stretched text box gets placed (and clamped) for its default height
+  // and paints past the host bottom.
   const { attach: attachTextBox, onPointerUp: onTextBoxPointerUp } = usePersistedTextareaHeight(
     label.editorHeight,
     (h) => updateTextLabel(label.id, { editorHeight: h }),
   );
+
+  // Frozen-anchor + header-drag mechanism (freeze the spawn at first display
+  // so the size slider can't move the popover and feed back into itself;
+  // re-freeze when the selected label changes; project live for pan/zoom).
+  // Shared with the polygon popover.
+  const { anchor, measuring, shellRef, headerHandlers } = useDraggablePopover(
+    label.id,
+    worldRect,
+    view,
+    false,
+    spawnBox,
+  );
+
+  const textField = useFieldHistory();
 
   // Soft-wrap toggle for the textarea — a remembered editor preference (not
   // label data), so long justified paragraphs stay visible instead of scrolling
@@ -103,6 +118,8 @@ export function TextLabelPopover({ label, world, view, onClose }: Props) {
       className="text-label-popover"
       left={anchor.x}
       top={anchor.y}
+      measuring={measuring}
+      shellRef={shellRef}
       headerHandlers={headerHandlers}
     >
       <div className="row-block">

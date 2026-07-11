@@ -21,6 +21,11 @@ const positionOf = (el: HTMLElement) => ({
 // screenX = ((worldX - 0) / 800) * 800 = worldX.
 const identityView = { vbX: 0, vbY: 0, vbW: 800, vbH: 600, size: { w: 800, h: 600 } };
 
+// Degenerate point rect: keeps the spawn arithmetic one-point simple (the
+// popover opens gap-right of the point, top-aligned). Real callers pass the
+// label's world AABB (ItemPopovers → textLabelAABB).
+const rectAt = (x: number, y: number) => ({ x0: x, y0: y, x1: x, y1: y });
+
 describe('<TextLabelPopover /> — world position freezes, viewport tracks live', () => {
   // Regression: an earlier version recomputed the popover position from the
   // label's live screen position every render. Combined with upper-left-
@@ -33,7 +38,7 @@ describe('<TextLabelPopover /> — world position freezes, viewport tracks live'
     const { container, rerender } = render(
       <TextLabelPopover
         label={label}
-        world={{ x: 100, y: 200 }}
+        worldRect={rectAt(100, 200)}
         view={identityView}
         onClose={() => {}}
       />,
@@ -43,7 +48,7 @@ describe('<TextLabelPopover /> — world position freezes, viewport tracks live'
     rerender(
       <TextLabelPopover
         label={label}
-        world={{ x: 500, y: 600 }}
+        worldRect={rectAt(500, 600)}
         view={identityView}
         onClose={() => {}}
       />,
@@ -60,7 +65,7 @@ describe('<TextLabelPopover /> — world position freezes, viewport tracks live'
     const { container, rerender } = render(
       <TextLabelPopover
         label={label}
-        world={{ x: 100, y: 200 }}
+        worldRect={rectAt(100, 200)}
         view={identityView}
         onClose={() => {}}
       />,
@@ -72,7 +77,7 @@ describe('<TextLabelPopover /> — world position freezes, viewport tracks live'
     rerender(
       <TextLabelPopover
         label={label}
-        world={{ x: 100, y: 200 }}
+        worldRect={rectAt(100, 200)}
         view={{ ...identityView, vbX: 50, vbY: 30 }}
         onClose={() => {}}
       />,
@@ -92,28 +97,28 @@ describe('<TextLabelPopover /> — world position freezes, viewport tracks live'
     const { container, rerender } = render(
       <TextLabelPopover
         label={left}
-        world={{ x: 100, y: 100 }}
+        worldRect={rectAt(100, 100)}
         view={identityView}
         onClose={() => {}}
       />,
     );
     const popover = container.querySelector('.text-label-popover') as HTMLElement;
-    expect(positionOf(popover).left).toBeCloseTo(114, 9); // 100 + 14 base offset
+    expect(positionOf(popover).left).toBeCloseTo(114, 9); // point + 14 gap diagonal
     expect(positionOf(popover).top).toBeCloseTo(114, 9);
 
     const right = makeTextLabel({ id: 'g2', text: 'R' });
     rerender(
       <TextLabelPopover
         label={right}
-        world={{ x: 700, y: 500 }}
+        worldRect={rectAt(700, 500)}
         view={identityView}
         onClose={() => {}}
       />,
     );
-    // Tracks the new label, but clamped into the 800×600 host so the panel
-    // doesn't spawn cropped by the canvas edge: 700+14 → 544 (800−248−8),
-    // 500+14 → 344 (600−248−8).
-    expect(positionOf(popover).left).toBeCloseTo(544, 9);
+    // Tracks the new label, placed fully inside the 800×600 host AND off the
+    // point: the clamped right/below spots (544,344) would cover (700,500),
+    // so the spawn flips left — 700−14−248 = 438; y clamps to 600−248−8 = 344.
+    expect(positionOf(popover).left).toBeCloseTo(438, 9);
     expect(positionOf(popover).top).toBeCloseTo(344, 9);
   });
 
@@ -126,13 +131,15 @@ describe('<TextLabelPopover /> — world position freezes, viewport tracks live'
     const { container } = render(
       <TextLabelPopover
         label={label}
-        world={{ x: 790, y: 590 }}
+        worldRect={rectAt(790, 590)}
         view={identityView}
         onClose={() => {}}
       />,
     );
     const popover = container.querySelector('.text-label-popover') as HTMLElement;
-    expect(positionOf(popover).left).toBeCloseTo(544, 9);
+    // Clamped right/below spots cover the corner point; left of it clears:
+    // 790−14−248 = 528, y clamps to 344.
+    expect(positionOf(popover).left).toBeCloseTo(528, 9);
     expect(positionOf(popover).top).toBeCloseTo(344, 9);
   });
 
@@ -146,27 +153,112 @@ describe('<TextLabelPopover /> — world position freezes, viewport tracks live'
     const { container, rerender } = render(
       <TextLabelPopover
         label={label}
-        world={{ x: 790, y: 590 }}
+        worldRect={rectAt(790, 590)}
         view={{ vbX: 0, vbY: 0, vbW: 800, vbH: 600, size: { w: 0, h: 0 } }}
         onClose={() => {}}
       />,
     );
     const popover = container.querySelector('.text-label-popover') as HTMLElement;
     // Unfrozen fallback (nothing is visible in a 0-px host anyway): plain
-    // projection + gap, and crucially no NaN.
+    // projection + gap, and crucially no NaN. The deferred (measuring) shell
+    // must not paint this placeholder position — visibility hides it.
     expect(positionOf(popover)).toEqual({ left: 14, top: 14 });
-    // Host measured: the deferred spawn runs now, clamped into the real box —
-    // 790+14 → 544 (800−248−8), 590+14 → 344 (600−248−8).
+    expect(popover).not.toBeVisible();
+    // Host measured: the deferred spawn runs now, placed into the real box —
+    // same flip-left arithmetic as the edge-spawn test: (528, 344).
     rerender(
       <TextLabelPopover
         label={label}
-        world={{ x: 790, y: 590 }}
+        worldRect={rectAt(790, 590)}
         view={identityView}
         onClose={() => {}}
       />,
     );
-    expect(positionOf(popover).left).toBeCloseTo(544, 9);
+    expect(positionOf(popover).left).toBeCloseTo(528, 9);
     expect(positionOf(popover).top).toBeCloseTo(344, 9);
+    expect(popover).toBeVisible();
+  });
+
+  it('an id switch mid-drag abandons the captured drag (no stale offset on the new spawn)', () => {
+    // The pointer can still be captured on the header when the selection
+    // switches to another label (same reused component instance). The old
+    // drag's accumulated offset must not re-apply to the new item's fresh
+    // spawn on the next pointermove.
+    const a = makeTextLabel({ id: 'g1', text: 'A' });
+    const { container, rerender } = render(
+      <TextLabelPopover
+        label={a}
+        worldRect={rectAt(100, 100)}
+        view={identityView}
+        onClose={() => {}}
+      />,
+    );
+    const popover = container.querySelector('.text-label-popover') as HTMLElement;
+    const header = container.querySelector('.text-label-popover .header') as HTMLElement;
+    fireEvent.pointerDown(header, { clientX: 0, clientY: 0, button: 0 });
+    fireEvent.pointerMove(header, { clientX: 30, clientY: 20 });
+    expect(positionOf(popover).left).toBeCloseTo(144, 9); // dragging normally
+
+    const b = makeTextLabel({ id: 'g2', text: 'B' });
+    rerender(
+      <TextLabelPopover
+        label={b}
+        worldRect={rectAt(400, 300)}
+        view={identityView}
+        onClose={() => {}}
+      />,
+    );
+    expect(positionOf(popover).left).toBeCloseTo(414, 9); // fresh spawn for g2
+    expect(positionOf(popover).top).toBeCloseTo(314, 9);
+    // The still-captured pointer keeps moving: must be a no-op now.
+    fireEvent.pointerMove(header, { clientX: 90, clientY: 90 });
+    expect(positionOf(popover).left).toBeCloseTo(414, 9);
+    expect(positionOf(popover).top).toBeCloseTo(314, 9);
+  });
+
+  it('measures the shell AFTER the persisted textarea height is applied', () => {
+    // usePersistedTextareaHeight applies label.editorHeight in a layout
+    // effect; the spawn-measuring effect must run after it (hook-call order)
+    // or a stretched text box is placed for its default height and paints
+    // past the host bottom. Stub layout-aware measurement: the shell reports
+    // 100px of chrome plus the textarea's applied inline height.
+    const origW = Object.getOwnPropertyDescriptor(HTMLElement.prototype, 'offsetWidth')!;
+    const origH = Object.getOwnPropertyDescriptor(HTMLElement.prototype, 'offsetHeight')!;
+    Object.defineProperty(HTMLElement.prototype, 'offsetWidth', {
+      configurable: true,
+      get(this: HTMLElement) {
+        return this.classList.contains('text-label-popover') ? 240 : 0;
+      },
+    });
+    Object.defineProperty(HTMLElement.prototype, 'offsetHeight', {
+      configurable: true,
+      get(this: HTMLElement) {
+        if (!this.classList.contains('text-label-popover')) return 0;
+        const ta = this.querySelector('textarea');
+        const h = ta && ta.style.height ? parseFloat(ta.style.height) : 44;
+        return 100 + h;
+      },
+    });
+    try {
+      const label = makeTextLabel({ id: 'g1', text: 'X', editorHeight: 400 });
+      const { container } = render(
+        <TextLabelPopover
+          label={label}
+          worldRect={rectAt(400, 300)}
+          view={identityView}
+          onClose={() => {}}
+        />,
+      );
+      const popover = container.querySelector('.text-label-popover') as HTMLElement;
+      // Measured 240×500 (100 chrome + 400 restored height): diagonal spawn
+      // (414,314) clamps y to 600−500−8 = 92. Measuring before the height
+      // restore would see 240×144 and leave y at 314.
+      expect(positionOf(popover).left).toBeCloseTo(414, 9);
+      expect(positionOf(popover).top).toBeCloseTo(92, 9);
+    } finally {
+      Object.defineProperty(HTMLElement.prototype, 'offsetWidth', origW);
+      Object.defineProperty(HTMLElement.prototype, 'offsetHeight', origH);
+    }
   });
 
   it('a header drag can still push the popover past the host edge (clamp is spawn-only)', () => {
@@ -174,14 +266,14 @@ describe('<TextLabelPopover /> — world position freezes, viewport tracks live'
     const { container } = render(
       <TextLabelPopover
         label={label}
-        world={{ x: 500, y: 300 }}
+        worldRect={rectAt(500, 300)}
         view={identityView}
         onClose={() => {}}
       />,
     );
     const popover = container.querySelector('.text-label-popover') as HTMLElement;
     const header = container.querySelector('.text-label-popover .header') as HTMLElement;
-    expect(positionOf(popover).left).toBeCloseTo(514, 9);
+    expect(positionOf(popover).left).toBeCloseTo(514, 9); // point + 14 gap diagonal
     expect(positionOf(popover).top).toBeCloseTo(314, 9);
     fireEvent.pointerDown(header, { clientX: 0, clientY: 0, button: 0 });
     fireEvent.pointerMove(header, { clientX: 200, clientY: 100 });
@@ -200,7 +292,7 @@ describe('<TextLabelPopover /> — world position freezes, viewport tracks live'
     const { container, rerender } = render(
       <TextLabelPopover
         label={label}
-        world={{ x: 0, y: 0 }} // anchor at the origin → screen (0,0)
+        worldRect={rectAt(0, 0)} // anchor at the origin → screen (0,0)
         view={identityView}
         onClose={() => {}}
       />,
@@ -208,7 +300,8 @@ describe('<TextLabelPopover /> — world position freezes, viewport tracks live'
     const popover = container.querySelector('.text-label-popover') as HTMLElement;
     const header = container.querySelector('.text-label-popover .header') as HTMLElement;
 
-    // Move the popover +30/+20 screen px at zoom 1 (→ world drag of 30/20).
+    // Spawn: point + 14 gap diagonal. Move it +30/+20 screen px at zoom 1
+    // (→ world drag of 30/20).
     fireEvent.pointerDown(header, { clientX: 0, clientY: 0, button: 0 });
     fireEvent.pointerMove(header, { clientX: 30, clientY: 20 });
     fireEvent.pointerUp(header, { clientX: 30, clientY: 20 });
@@ -220,7 +313,7 @@ describe('<TextLabelPopover /> — world position freezes, viewport tracks live'
     // offset doubles with the canvas; nothing stays a fixed pixel size.
     const zoom2 = { vbX: 0, vbY: 0, vbW: 400, vbH: 300, size: { w: 800, h: 600 } };
     rerender(
-      <TextLabelPopover label={label} world={{ x: 0, y: 0 }} view={zoom2} onClose={() => {}} />,
+      <TextLabelPopover label={label} worldRect={rectAt(0, 0)} view={zoom2} onClose={() => {}} />,
     );
     expect(positionOf(popover).left).toBeCloseTo(88, 9);
     expect(positionOf(popover).top).toBeCloseTo(68, 9);
@@ -238,7 +331,7 @@ describe('<TextLabelPopover /> — day/night color pickers', () => {
     return render(
       <TextLabelPopover
         label={useDoc.getState().textLabels['g1']}
-        world={{ x: 0, y: 0 }}
+        worldRect={rectAt(0, 0)}
         view={identityView}
         onClose={() => {}}
       />,
@@ -279,7 +372,7 @@ describe('<TextLabelPopover /> — text / size / align / weight controls', () =>
     render(
       <TextLabelPopover
         label={useDoc.getState().textLabels['g1']}
-        world={{ x: 0, y: 0 }}
+        worldRect={rectAt(0, 0)}
         view={identityView}
         onClose={onClose}
       />,
@@ -298,7 +391,7 @@ describe('<TextLabelPopover /> — text / size / align / weight controls', () =>
     const { container } = render(
       <TextLabelPopover
         label={useDoc.getState().textLabels['g1']}
-        world={{ x: 0, y: 0 }}
+        worldRect={rectAt(0, 0)}
         view={identityView}
         onClose={() => {}}
       />,
@@ -380,7 +473,7 @@ describe('<TextLabelPopover /> — leading + tracking', () => {
     render(
       <TextLabelPopover
         label={useDoc.getState().textLabels['g1']}
-        world={{ x: 0, y: 0 }}
+        worldRect={rectAt(0, 0)}
         view={identityView}
         onClose={() => {}}
       />,
@@ -429,7 +522,7 @@ describe('<TextLabelPopover /> — leading + tracking', () => {
     render(
       <TextLabelPopover
         label={label}
-        world={{ x: 0, y: 0 }}
+        worldRect={rectAt(0, 0)}
         view={identityView}
         onClose={() => {}}
       />,
@@ -447,7 +540,7 @@ describe('<TextLabelPopover /> — lock toggle', () => {
     render(
       <TextLabelPopover
         label={useDoc.getState().textLabels['g1']}
-        world={{ x: 0, y: 0 }}
+        worldRect={rectAt(0, 0)}
         view={identityView}
         onClose={() => {}}
       />,
@@ -487,7 +580,7 @@ describe('<TextLabelPopover /> — column width + justify', () => {
     render(
       <TextLabelPopover
         label={useDoc.getState().textLabels['g1']}
-        world={{ x: 0, y: 0 }}
+        worldRect={rectAt(0, 0)}
         view={identityView}
         onClose={() => {}}
       />,
@@ -546,7 +639,7 @@ describe('<TextLabelPopover /> — wrap-lines toggle (persisted editor preferenc
     render(
       <TextLabelPopover
         label={useDoc.getState().textLabels['g1']}
-        world={{ x: 0, y: 0 }}
+        worldRect={rectAt(0, 0)}
         view={identityView}
         onClose={() => {}}
       />,
@@ -582,7 +675,7 @@ describe('<TextLabelPopover /> — wrap-lines toggle (persisted editor preferenc
     render(
       <TextLabelPopover
         label={label}
-        world={{ x: 0, y: 0 }}
+        worldRect={rectAt(0, 0)}
         view={identityView}
         onClose={() => {}}
       />,
