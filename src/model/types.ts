@@ -474,16 +474,17 @@ export interface MapDoc {
   // Which color palettes are available in the line editor. Invariant:
   // never empty (enforced by transforms / parse sanitiser).
   activePalettes: PaletteId[];
-  // Global styling for inter-station transfers. Thickness is the visible
-  // colored body's stroke width in world units, clamped at MIN in
-  // transforms.ts (the slider tops out at MAX but the textbox accepts
-  // arbitrary larger values). Color is a 7-char hex string (`#rrggbb`),
-  // the format emitted by `<input type="color">`.
+  // Default styling for inter-station transfers (each transfer can override
+  // any field — see Transfer). Thickness is the visible colored body's stroke
+  // width in world units, clamped at MIN in transferStyle.ts (the slider tops
+  // out at MAX but the textbox accepts arbitrary larger values). Color is a
+  // 7-char hex string (`#rrggbb`), the format emitted by
+  // `<input type="color">`.
   transferThickness: number;
   transferColor: string;
   // Optional always-on outline around the body (a "halo"). Width is the
   // per-side padding added past the body in world units, clamped at
-  // TRANSFER_STROKE_WIDTH_MIN in transforms.ts (the slider tops out at MAX
+  // TRANSFER_STROKE_WIDTH_MIN in transferStyle.ts (the slider tops out at MAX
   // but the textbox accepts arbitrary larger values). 0 = no outline.
   transferStrokeWidth: number;
   transferStrokeColor: string;
@@ -578,4 +579,23 @@ export interface Transfer {
   id: string;
   a: TransferEnd;
   b: TransferEnd;
+  // Per-transfer style overrides. Each absent field defers to the matching
+  // doc-level setting (transferThickness / transferColor / transferStrokeWidth
+  // / transferStrokeColor); `updateTransferStyle` drops a field when the
+  // chosen value equals the doc's current setting, so the transfer tracks the
+  // setting going forward, and the doc-level setters prune overrides their new
+  // value makes redundant (same contract as StopCell.dotStyle / dotSize).
+  // Units and clamps match the doc settings — see model/transferStyle.ts.
+  thickness?: number;
+  color?: string;
+  strokeWidth?: number;
+  strokeColor?: string;
 }
+
+// The style overrides of a Transfer accepted by `updateTransferStyle`. Shared
+// by the transform and the store action so the two never drift (mirrors
+// PolygonStylePatch). A provided field is canonicalized against the doc-level
+// setting — passing the setting's own value CLEARS that override.
+export type TransferStylePatch = Partial<
+  Pick<Transfer, 'thickness' | 'color' | 'strokeWidth' | 'strokeColor'>
+>;

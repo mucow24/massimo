@@ -184,6 +184,71 @@ describe('ItemPopovers — spawn avoids covering the item', () => {
   });
 });
 
+describe('ItemPopovers — transfer popover', () => {
+  const seedTransfer = () => {
+    useDoc.setState({
+      ...useDoc.getState(),
+      ...DEFAULT_DOC,
+      stations: {
+        a: {
+          id: 'a',
+          name: 'Alpha',
+          x: 0,
+          y: 0,
+          rotation: 0,
+          stops: [],
+          label: { row: 0, col: -1, rotation: 0, offset: 0, align: 'auto', valign: 'middle' },
+        },
+        b: {
+          id: 'b',
+          name: 'Beta',
+          x: 100,
+          y: 0,
+          rotation: 0,
+          stops: [],
+          label: { row: 0, col: -1, rotation: 0, offset: 0, align: 'auto', valign: 'middle' },
+        },
+      },
+      transfers: {
+        x1: { id: 'x1', a: { stationId: 'a', lineId: null }, b: { stationId: 'b', lineId: null } },
+      },
+    });
+    useSelection.getState().selectTransfer('x1');
+  };
+
+  afterEach(() => {
+    useSelection.getState().selectTransfer(null);
+  });
+
+  it('mounts for the selected transfer (a single-id primary outside soleSelection)', () => {
+    seedTransfer();
+    render(<ItemPopovers view={committedView} />);
+    expect(document.querySelector('.transfer-popover')).not.toBeNull();
+  });
+
+  it('unmounts on deselect, and never co-shows with a list-selection popover', () => {
+    seedTransfer();
+    const { rerender } = render(<ItemPopovers view={committedView} />);
+    expect(document.querySelector('.transfer-popover')).not.toBeNull();
+
+    // Selecting a bullet clears the transfer primary (SIBLING_PRIMARY_CLEAR):
+    // its popover replaces the transfer's.
+    act(() => {
+      useDoc.setState({ ...useDoc.getState(), routeBullets: { b1: bullet } });
+      useSelection.getState().selectRouteBullet('b1');
+    });
+    rerender(<ItemPopovers view={committedView} />);
+    expect(document.querySelector('.transfer-popover')).toBeNull();
+    expect(document.querySelector('.bullet-popover:not(.transfer-popover)')).not.toBeNull();
+
+    act(() => {
+      useSelection.getState().selectRouteBullet(null);
+    });
+    rerender(<ItemPopovers view={committedView} />);
+    expect(document.querySelector('.transfer-popover')).toBeNull();
+  });
+});
+
 describe('ItemPopovers — station popover', () => {
   const seedStation = (x = 0, y = 0) => {
     useDoc.setState({

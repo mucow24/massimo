@@ -4,6 +4,17 @@ import { reconcileOrder, moveInOrder } from './recordOrder';
 import { canonicalLineWidth } from './lineWidth';
 import { DOT_SIZE_DEFAULT, canonicalDotSize } from './dotSize';
 import { canonicalStrokeColor, canonicalStrokeWidth } from './lineStroke';
+import {
+  TRANSFER_COLOR_DEFAULT,
+  TRANSFER_STROKE_COLOR_DEFAULT,
+  TRANSFER_STROKE_WIDTH_DEFAULT,
+  TRANSFER_STROKE_WIDTH_MIN,
+  TRANSFER_THICKNESS_DEFAULT,
+  TRANSFER_THICKNESS_MIN,
+  canonicalTransferColor,
+  canonicalTransferStrokeWidth,
+  canonicalTransferThickness,
+} from './transferStyle';
 import { DEFAULT_DOT_STYLE, dotStylesEqual } from './dotStyle';
 import { pairKeyOf } from './pairKey';
 import { DIR_8, rotateBy, stopCenterAt } from '../geometry/orientation';
@@ -41,6 +52,7 @@ import type {
   TextLabelWeight,
   Transfer,
   TransferEnd,
+  TransferStylePatch,
 } from './types';
 
 export const LABEL_FONT_SIZE_MIN = 2;
@@ -51,16 +63,6 @@ export const LABEL_FONT_SIZE_DEFAULT = 12;
 // stores values snapped to this grid. Mirrors `LINE_STROKE_STEP`'s role for
 // the stroke-width field.
 export const FONT_SIZE_STEP = 0.25;
-
-export const TRANSFER_THICKNESS_MIN = 1;
-export const TRANSFER_THICKNESS_MAX = 14;
-export const TRANSFER_THICKNESS_DEFAULT = 2;
-export const TRANSFER_COLOR_DEFAULT = '#000000';
-
-export const TRANSFER_STROKE_WIDTH_MIN = 0;
-export const TRANSFER_STROKE_WIDTH_MAX = 5;
-export const TRANSFER_STROKE_WIDTH_DEFAULT = 0;
-export const TRANSFER_STROKE_COLOR_DEFAULT = '#ffffff';
 
 // Helvetica Neue weights we ship in /public/fonts/. No 600 — we don't have a
 // SemiBold face. Single source of truth for both the text-label popover and
@@ -1483,6 +1485,26 @@ export function setLabelFontSize(doc: MapDoc, n: number): MapDoc {
   return { ...doc, labelFontSize: clamped };
 }
 
+// Drop every per-transfer override of `field` that the doc setting's NEW
+// `value` has made redundant, so those transfers track the setting going
+// forward (mirrors dropRedundantStopOverrides — this is what keeps
+// "override present ⇔ transfer differs from the setting" true doc-wide).
+// Returns the same `transfers` reference when nothing was pruned.
+function dropRedundantTransferOverrides(
+  transfers: Record<string, Transfer>,
+  field: 'thickness' | 'color' | 'strokeWidth' | 'strokeColor',
+  value: number | string,
+): Record<string, Transfer> {
+  let out = transfers;
+  for (const id of Object.keys(out)) {
+    const t = out[id];
+    if (t[field] !== value) continue;
+    const { [field]: _gone, ...rest } = t;
+    out = { ...out, [id]: rest };
+  }
+  return out;
+}
+
 // Clamps at the bottom (MIN) so 0/negative are never persisted, but does NOT
 // clamp at the top — the textbox lets users enter arbitrary thicknesses
 // outside the slider's range. TRANSFER_THICKNESS_MAX constrains the slider
@@ -1491,12 +1513,20 @@ export function setTransferThickness(doc: MapDoc, n: number): MapDoc {
   if (!Number.isFinite(n)) return doc;
   const clamped = Math.max(TRANSFER_THICKNESS_MIN, Math.round(n));
   if (clamped === doc.transferThickness) return doc;
-  return { ...doc, transferThickness: clamped };
+  return {
+    ...doc,
+    transferThickness: clamped,
+    transfers: dropRedundantTransferOverrides(doc.transfers, 'thickness', clamped),
+  };
 }
 
 export function setTransferColor(doc: MapDoc, c: string): MapDoc {
   if (c === doc.transferColor) return doc;
-  return { ...doc, transferColor: c };
+  return {
+    ...doc,
+    transferColor: c,
+    transfers: dropRedundantTransferOverrides(doc.transfers, 'color', c),
+  };
 }
 
 // Always-on outline around the colored body. Like thickness, clamps at the
@@ -1506,12 +1536,20 @@ export function setTransferStrokeWidth(doc: MapDoc, n: number): MapDoc {
   if (!Number.isFinite(n)) return doc;
   const clamped = Math.max(TRANSFER_STROKE_WIDTH_MIN, Math.round(n));
   if (clamped === doc.transferStrokeWidth) return doc;
-  return { ...doc, transferStrokeWidth: clamped };
+  return {
+    ...doc,
+    transferStrokeWidth: clamped,
+    transfers: dropRedundantTransferOverrides(doc.transfers, 'strokeWidth', clamped),
+  };
 }
 
 export function setTransferStrokeColor(doc: MapDoc, c: string): MapDoc {
   if (c === doc.transferStrokeColor) return doc;
-  return { ...doc, transferStrokeColor: c };
+  return {
+    ...doc,
+    transferStrokeColor: c,
+    transfers: dropRedundantTransferOverrides(doc.transfers, 'strokeColor', c),
+  };
 }
 
 export function setLabelWeight(doc: MapDoc, w: TextLabelWeight): MapDoc {
@@ -2197,6 +2235,61 @@ export function deleteTransfer(doc: MapDoc, id: string): MapDoc {
   if (!doc.transfers[id]) return doc;
   const { [id]: _gone, ...rest } = doc.transfers;
   return { ...doc, transfers: rest };
+}
+
+// Write one canonicalized style override onto a transfer: `undefined` (the
+// "track the doc setting" sentinel) deletes the field, a concrete value sets
+// it. Returns the same reference when nothing changes. Exported for
+// serialize's `sanitizeTransferStyles`, which normalizes hand-edited files
+// to the same stored form.
+export function withTransferOverride<
+  K extends 'thickness' | 'color' | 'strokeWidth' | 'strokeColor',
+>(t: Transfer, field: K, stored: Transfer[K]): Transfer {
+  if (t[field] === stored) return t;
+  if (stored === undefined) {
+    // Spread + delete rather than a destructuring omit: TS can't prove
+    // `Omit<Transfer, K>` keeps the required fields for a generic K.
+    const rest = { ...t };
+    delete rest[field];
+    return rest;
+  }
+  return { ...t, [field]: stored };
+}
+
+/**
+ * Patch a transfer's per-transfer style overrides. Each provided field is
+ * canonicalized against the matching doc-level setting: numeric values are
+ * rounded and floor-clamped exactly like the doc setters, and a value equal
+ * to the doc's CURRENT setting drops the field, so the transfer tracks the
+ * setting going forward (same contract as `setDotStyle` / `setDotSize`).
+ * Non-finite numeric fields are ignored. Reference-equal no-ops keep textbox
+ * keystrokes out of the undo history.
+ */
+export function updateTransferStyle(doc: MapDoc, id: string, patch: TransferStylePatch): MapDoc {
+  const cur = doc.transfers[id];
+  if (!cur) return doc;
+  let next = cur;
+  if (patch.thickness !== undefined && Number.isFinite(patch.thickness)) {
+    const stored = canonicalTransferThickness(patch.thickness, doc.transferThickness);
+    next = withTransferOverride(next, 'thickness', stored);
+  }
+  if (patch.color !== undefined) {
+    next = withTransferOverride(
+      next,
+      'color',
+      canonicalTransferColor(patch.color, doc.transferColor),
+    );
+  }
+  if (patch.strokeWidth !== undefined && Number.isFinite(patch.strokeWidth)) {
+    const stored = canonicalTransferStrokeWidth(patch.strokeWidth, doc.transferStrokeWidth);
+    next = withTransferOverride(next, 'strokeWidth', stored);
+  }
+  if (patch.strokeColor !== undefined) {
+    const stored = canonicalTransferColor(patch.strokeColor, doc.transferStrokeColor);
+    next = withTransferOverride(next, 'strokeColor', stored);
+  }
+  if (next === cur) return doc;
+  return { ...doc, transfers: { ...doc.transfers, [id]: next } };
 }
 
 /**

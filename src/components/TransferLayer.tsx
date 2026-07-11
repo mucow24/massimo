@@ -1,14 +1,14 @@
 import type { LineId, Station, Transfer, TransferEnd } from '../model/types';
+import { resolveTransferStyle, type TransferStyle } from '../model/transferStyle';
 import { stopPosWorld } from '../geometry/interlining';
 import { useThemeColors } from '../state/theme';
 
 interface Props {
   transfers: Record<string, Transfer>;
   stations: Record<string, Station>;
-  color: string;
-  thickness: number;
-  strokeColor: string;
-  strokeWidth: number;
+  // The doc-level transfer settings; each transfer may override any field
+  // (resolved per transfer via resolveTransferStyle).
+  defaults: TransferStyle;
   selectedId: string | null;
   onSelect: (id: string) => void;
 }
@@ -56,9 +56,12 @@ function endpointWorld(
  *      keep it legible even where the transfer body matches the stroke
  *      color. (The old halo contrasted the transfer's own color instead — a
  *      black transfer got a white halo that vanished on the light canvas.)
- *   2. User strokes — only when `strokeWidth > 0`. A halo around each body
- *      in the user's chosen color.
- *   3. Bodies — the colored stroke at the user's chosen thickness.
+ *   2. User strokes — only for transfers whose effective strokeWidth > 0. A
+ *      halo around each body in that transfer's stroke color.
+ *   3. Bodies — the colored stroke at each transfer's effective thickness.
+ *
+ * Styling resolves per transfer: overrides on the Transfer win over the
+ * doc-level `defaults` (see resolveTransferStyle).
  *
  * Flat passes (rather than per-transfer groups) mean every body paints above
  * every halo, so where thick transfers overlap the halo traces only the
@@ -72,26 +75,14 @@ function endpointWorld(
  * layer above: dot pixels absorb clicks and route to the station instead of
  * passing through to the transfer underneath.
  */
-export function TransferLayer({
-  transfers,
-  stations,
-  color,
-  thickness,
-  strokeColor,
-  strokeWidth,
-  selectedId,
-  onSelect,
-}: Props) {
+export function TransferLayer({ transfers, stations, defaults, selectedId, onSelect }: Props) {
   const themeColors = useThemeColors();
   const list = Object.values(transfers);
   if (list.length === 0) return null;
-  const hasUserStroke = strokeWidth > 0;
-  // Total visible width of a transfer ignoring the selection ring.
-  const visibleExtent = thickness + 2 * strokeWidth;
 
-  // Resolve endpoints once; each pass below iterates this same list in the
-  // same order. Endpoints + linecap stay constant between the selection
-  // ring, the user stroke, and the body.
+  // Resolve endpoints + effective style once; each pass below iterates this
+  // same list in the same order. Endpoints + linecap stay constant between
+  // the selection ring, the user stroke, and the body.
   const drawable = list.flatMap((t) => {
     const a = endpointWorld(t.a, stations);
     const b = endpointWorld(t.b, stations);
@@ -103,7 +94,10 @@ export function TransferLayer({
       y2: b.y,
       strokeLinecap: 'round' as const,
     };
-    return [{ t, lineEnds }];
+    const style = resolveTransferStyle(t, defaults);
+    // Total visible width of the transfer ignoring the selection ring.
+    const visibleExtent = style.thickness + 2 * style.strokeWidth;
+    return [{ t, lineEnds, style, visibleExtent }];
   });
 
   // Shared between each body and user stroke: both are click targets that
@@ -120,10 +114,14 @@ export function TransferLayer({
   return (
     <g>
       {drawable.map(
-        ({ t, lineEnds }) =>
+        ({ t, lineEnds, visibleExtent }) =>
           t.id === selectedId && (
             <line
               key={`sel-${t.id}`}
+              // Editor chrome, not content: without this the ring bakes into
+              // SVG/PNG/PDF exports (transfers render in a non-excluded pass)
+              // — same contract as the route-bullet selection ring.
+              data-export-exclude="1"
               data-transfer-id={t.id}
               {...lineEnds}
               stroke={themeColors.selectionStroke}
@@ -138,24 +136,26 @@ export function TransferLayer({
             />
           ),
       )}
-      {hasUserStroke &&
-        drawable.map(({ t, lineEnds }) => (
-          <line
-            key={`halo-${t.id}`}
-            data-transfer-id={t.id}
-            {...lineEnds}
-            stroke={strokeColor}
-            strokeWidth={visibleExtent}
-            {...clickProps(t.id)}
-          />
-        ))}
-      {drawable.map(({ t, lineEnds }) => (
+      {drawable.map(
+        ({ t, lineEnds, style, visibleExtent }) =>
+          style.strokeWidth > 0 && (
+            <line
+              key={`halo-${t.id}`}
+              data-transfer-id={t.id}
+              {...lineEnds}
+              stroke={style.strokeColor}
+              strokeWidth={visibleExtent}
+              {...clickProps(t.id)}
+            />
+          ),
+      )}
+      {drawable.map(({ t, lineEnds, style }) => (
         <line
           key={t.id}
           data-transfer-id={t.id}
           {...lineEnds}
-          stroke={color}
-          strokeWidth={thickness}
+          stroke={style.color}
+          strokeWidth={style.thickness}
           {...clickProps(t.id)}
         />
       ))}
