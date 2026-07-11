@@ -14,6 +14,13 @@ interface Props {
   id?: string;
   /** Extra classes appended to the swatch button (e.g. a `selected` ring). */
   className?: string;
+  /**
+   * Render the swatch as an "add a new color" affordance — a rainbow chip with a
+   * `+` — instead of mirroring `value`. The picker still opens seeded at
+   * `value`. Used by the color palette's always-present "Custom" slot so the
+   * add-a-color button never looks like a line-color swatch.
+   */
+  addNew?: boolean;
 }
 
 // Width/height of the floating picker popover (kept in sync with the CSS so the
@@ -96,7 +103,16 @@ function HexField({
  * (opaque `#rrggbbff` → `#rrggbb`) so stored values and palette-swatch matching
  * stay 6-digit unless a real alpha is chosen.
  */
-export function ColorField({ value, onChange, disabled, ariaLabel, title, id, className }: Props) {
+export function ColorField({
+  value,
+  onChange,
+  disabled,
+  ariaLabel,
+  title,
+  id,
+  className,
+  addNew,
+}: Props) {
   const [open, setOpen] = useState(false);
   const [pos, setPos] = useState<{ left: number; top: number } | null>(null);
   // The portalled popover mounts here — the swatch's `.app` ancestor, which owns
@@ -174,7 +190,10 @@ export function ColorField({ value, onChange, disabled, ariaLabel, title, id, cl
         type="button"
         id={id}
         className={
-          'color-field-swatch' + (open ? ' open' : '') + (className ? ' ' + className : '')
+          'color-field-swatch' +
+          (open ? ' open' : '') +
+          (addNew ? ' add-new' : '') +
+          (className ? ' ' + className : '')
         }
         aria-label={ariaLabel}
         aria-haspopup="dialog"
@@ -183,8 +202,16 @@ export function ColorField({ value, onChange, disabled, ariaLabel, title, id, cl
         disabled={disabled}
         onClick={() => (open ? closePicker() : openPicker())}
       >
-        {/* Checkerboard shows through a translucent color so alpha is visible. */}
-        <span className="color-field-chip" style={{ '--chip': value } as CSSProperties} />
+        {addNew ? (
+          // A rainbow "+" chip: an unmistakable "pick a new custom color"
+          // affordance that never mirrors the current line color.
+          <span className="color-field-add" aria-hidden="true">
+            +
+          </span>
+        ) : (
+          // Checkerboard shows through a translucent color so alpha is visible.
+          <span className="color-field-chip" style={{ '--chip': value } as CSSProperties} />
+        )}
       </button>
       {open &&
         pos &&

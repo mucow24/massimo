@@ -601,6 +601,34 @@ select option {
     100% 100%,
     8px 8px;
 }
+/* The "new custom color" slot: a rainbow chip with a `+`, so the add-a-color
+   affordance reads as "pick any color" and never looks like a line-color
+   swatch. Overrides the plain --control-bg swatch background. */
+.color-field-swatch.add-new {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  background: conic-gradient(
+    from 90deg,
+    #ff0000,
+    #ffff00,
+    #00ff00,
+    #00ffff,
+    #0000ff,
+    #ff00ff,
+    #ff0000
+  );
+}
+.color-field-add {
+  font-size: 14px;
+  font-weight: 800;
+  line-height: 1;
+  color: #fff;
+  /* A tight dark outline keeps the white `+` legible over any hue. */
+  text-shadow:
+    0 0 1px rgba(0, 0, 0, 0.9),
+    0 0 2px rgba(0, 0, 0, 0.6);
+}
 .color-field-popover {
   position: fixed;
   /* The picker portals up to `.app` (ColorField), so it lives in the ROOT

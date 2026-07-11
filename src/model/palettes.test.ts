@@ -3,6 +3,7 @@ import {
   PALETTES,
   activePalettes,
   cyclingColors,
+  customLineColors,
   normalizePaletteIds,
   type Palette,
 } from './palettes';
@@ -158,5 +159,51 @@ describe('custom palettes', () => {
 
   it('normalizePaletteIds with no custom arg drops custom ids (built-in-only behavior)', () => {
     expect(normalizePaletteIds(['mta', 'custom:frrf'])).toEqual(['mta']);
+  });
+});
+
+describe('customLineColors', () => {
+  // Only MTA active (11 swatches, incl. Blue #0039A6).
+  const active = activePalettes(['mta'], []);
+
+  it('returns [] when there are no line colors', () => {
+    expect(customLineColors([], active)).toEqual([]);
+  });
+
+  it('excludes colors that are a swatch in an active palette', () => {
+    expect(customLineColors(['#0039A6'], active)).toEqual([]); // MTA Blue is active
+  });
+
+  it('matches active-palette colors case-insensitively', () => {
+    expect(customLineColors(['#0039a6'], active)).toEqual([]); // lowercase MTA Blue still excluded
+  });
+
+  it('keeps colors not present in any active palette', () => {
+    expect(customLineColors(['#123456'], active)).toEqual(['#123456']);
+  });
+
+  it('dedupes, keeping first-seen order and the original spelling', () => {
+    expect(customLineColors(['#123456', '#ABCDEF', '#123456', '#abcdef'], active)).toEqual([
+      '#123456',
+      '#ABCDEF',
+    ]);
+  });
+
+  it('is scoped to ACTIVE palettes — a known color from an inactive palette counts as custom', () => {
+    // #FFE800 is BART's Yellow Line, but with only MTA active it is not a
+    // visible swatch, so it reads as custom.
+    expect(customLineColors(['#FFE800'], active)).toEqual(['#FFE800']);
+  });
+
+  it('excludes colors from an active imported (custom) palette', () => {
+    const CUSTOM: Palette = {
+      id: 'custom:frrf',
+      name: 'frrf',
+      swatches: [{ name: '1', color: '#c1272d' }],
+    };
+    const withCustom = activePalettes(['mta', 'custom:frrf'], [CUSTOM]);
+    expect(customLineColors(['#c1272d'], withCustom)).toEqual([]);
+    // …but with frrf inactive, that same color is custom again.
+    expect(customLineColors(['#c1272d'], active)).toEqual(['#c1272d']);
   });
 });
