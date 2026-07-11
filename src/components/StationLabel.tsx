@@ -4,32 +4,38 @@ import { useDoc, useSelection } from '../state/store';
 import { useThemeColors } from '../state/theme';
 import { labelLayoutLocal } from '../geometry/labelLayout';
 import { stopHalfOf } from '../model/lineWidth';
-import { bumpWeightByIndex, resolveStationLabelWeight } from '../model/transforms';
+import {
+  bumpWeightByIndex,
+  effectiveStationLabelStyle,
+  resolveStationLabelWeight,
+} from '../model/transforms';
 import { legibleTextOn } from '../util/color';
 import { renderStationLabelText } from './stationLabelText';
 import { StationNameEditor } from './StationNameEditor';
+import { useDocLabelStyle } from './useDocLabelStyle';
 
 /**
  * The common text-positioning bundle shared by all three station-label passes
  * (starter / highlight / normal). Mirrors the derivation StationView used to
  * do inline so the rendered <text>/<tspan> geometry is byte-for-byte the same:
  * the label layout (anchor, text-anchor, baseline, hit rect) is measured at
- * the doc-level weight/italic, while the painted text uses the per-station
- * rendered weight (with hover bump) and per-station italic.
+ * the effective style (doc defaults + station bold, doc italic), while the
+ * painted text uses the per-station rendered weight (with hover bump) and
+ * per-station italic.
  */
 function useStationLabelLayout(station: Station, lines: Record<string, Line>) {
-  const labelFontSize = useDoc((s) => s.labelFontSize);
+  const docStyle = useDocLabelStyle();
+  // The doc weight re-read at its ladder type: the paint path's bold/hover
+  // bumps resolve against the shipped weight ladder, which LabelStyle's
+  // loose `number` can't express.
   const labelWeight = useDoc((s) => s.labelWeight);
-  const labelItalic = useDoc((s) => s.labelItalic);
-  const labelLeading = useDoc((s) => s.labelLeading);
-  const labelTracking = useDoc((s) => s.labelTracking);
   const hovered = useSelection((s) => s.hoveredStationId === station.id);
   // Resolve the rendered weight: doc default → +2 indices if the station's
   // own bold flag is on → +2 more indices when the station is hovered. Each
   // bump saturates at Black (900).
   const stationWeight = resolveStationLabelWeight(labelWeight, station.labelBold);
   // Per-station italic ORs with the doc-wide default.
-  const stationItalic = labelItalic || !!station.labelItalic;
+  const stationItalic = docStyle.italic || !!station.labelItalic;
   const renderedWeight = hovered ? bumpWeightByIndex(stationWeight, 2) : stationWeight;
   // Service-code lookup for inline bullets. Only walked when a label's text
   // contains a <CODE> token; building once per render keeps it cheap.
@@ -38,29 +44,17 @@ function useStationLabelLayout(station: Station, lines: Record<string, Line>) {
     for (const ln of Object.values(lines)) map.set(ln.service, ln);
     return map;
   }, [lines]);
-  // Label layout uses the doc-level italic (matching the hit rect /
+  // Label layout goes through effectiveStationLabelStyle (like the hit rect /
   // silhouette) and the same per-stop width lookup, so the painted anchor
   // agrees with the boundary geometry next to wide stops.
-  const lay = labelLayoutLocal(
-    station,
-    {
-      fontSize: labelFontSize,
-      weight: stationWeight,
-      italic: labelItalic,
-      leading: labelLeading,
-      tracking: labelTracking,
-    },
-    undefined,
-    stopHalfOf(lines),
-  );
+  const effStyle = effectiveStationLabelStyle(station, docStyle);
+  const lay = labelLayoutLocal(station, effStyle, undefined, stopHalfOf(lines));
   return {
     angle: station.rotation * 45,
     rotationDeg: station.label.rotation * 45,
     hovered,
-    labelFontSize,
-    labelItalic,
-    labelLeading,
-    labelTracking,
+    docStyle,
+    effStyle,
     stationWeight,
     renderedWeight,
     stationItalic,
@@ -83,8 +77,10 @@ export function StationStarterLabel({
   lines: Record<string, Line>;
   highlightColor: string;
 }) {
-  const { angle, rotationDeg, hovered, labelLeading, labelTracking, lineByService, lay } =
-    useStationLabelLayout(station, lines);
+  const { angle, rotationDeg, hovered, docStyle, lineByService, lay } = useStationLabelLayout(
+    station,
+    lines,
+  );
   if (station.isWaypoint) return null;
   const strokeColor = legibleTextOn(highlightColor);
   return (
@@ -93,8 +89,8 @@ export function StationStarterLabel({
         text: station.name,
         fontSize: 12,
         fontWeight: 700,
-        leading: labelLeading,
-        tracking: labelTracking,
+        leading: docStyle.leading,
+        tracking: docStyle.tracking,
         fill: highlightColor,
         stroke: strokeColor,
         strokeWidth: 2,
@@ -131,9 +127,7 @@ export function StationHighlightLabel({
     angle,
     rotationDeg,
     hovered,
-    labelFontSize,
-    labelLeading,
-    labelTracking,
+    docStyle,
     renderedWeight,
     stationItalic,
     lineByService,
@@ -144,11 +138,11 @@ export function StationHighlightLabel({
     <g transform={`translate(${station.x} ${station.y}) rotate(${angle})`}>
       {renderStationLabelText({
         text: station.name,
-        fontSize: labelFontSize,
+        fontSize: docStyle.fontSize,
         fontWeight: renderedWeight,
         fontStyle: stationItalic ? 'italic' : undefined,
-        leading: labelLeading,
-        tracking: labelTracking,
+        leading: docStyle.leading,
+        tracking: docStyle.tracking,
         textDecoration: hovered ? 'underline' : 'none',
         fill: highlightColor,
         anchorX: lay.anchorX,
@@ -189,10 +183,8 @@ export function StationLabel({
     angle,
     rotationDeg,
     hovered,
-    labelFontSize,
-    labelItalic,
-    labelLeading,
-    labelTracking,
+    docStyle,
+    effStyle,
     stationWeight,
     renderedWeight,
     stationItalic,
@@ -220,19 +212,7 @@ export function StationLabel({
   // than the bullets they render as. Re-measure the box against that literal
   // text so a bullet-heavy name doesn't overflow its collapsed hit rect.
   const editorHit = isEditing
-    ? labelLayoutLocal(
-        station,
-        {
-          fontSize: labelFontSize,
-          weight: stationWeight,
-          italic: labelItalic,
-          literalBullets: true,
-          leading: labelLeading,
-          tracking: labelTracking,
-        },
-        undefined,
-        stopHalfOf(lines),
-      )
+    ? labelLayoutLocal(station, { ...effStyle, literalBullets: true }, undefined, stopHalfOf(lines))
     : null;
 
   return (
@@ -244,7 +224,7 @@ export function StationLabel({
           width={editorHit ? editorHit.hitW : lay.hitW}
           minHeight={editorHit ? editorHit.hitH : lay.hitH}
           transform={labelHitTransform}
-          fontSize={labelFontSize}
+          fontSize={docStyle.fontSize}
           fontWeight={stationWeight}
           italic={stationItalic}
           textAlign={editorTextAlign}
@@ -255,11 +235,11 @@ export function StationLabel({
       ) : (
         renderStationLabelText({
           text: station.name,
-          fontSize: labelFontSize,
+          fontSize: docStyle.fontSize,
           fontWeight: renderedWeight,
           fontStyle: stationItalic ? 'italic' : undefined,
-          leading: labelLeading,
-          tracking: labelTracking,
+          leading: docStyle.leading,
+          tracking: docStyle.tracking,
           textDecoration: hovered ? 'underline' : 'none',
           fill: themeColors.label,
           anchorX: lay.anchorX,

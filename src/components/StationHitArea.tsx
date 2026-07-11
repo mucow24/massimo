@@ -1,9 +1,9 @@
 import { Line, Station } from '../model/types';
-import { useDoc } from '../state/store';
 import { labelLayoutLocal } from '../geometry/labelLayout';
 import { cellsAABBLocal } from '../geometry/stationBoundary';
 import { stopHalfOf } from '../model/lineWidth';
 import { effectiveStationLabelStyle } from '../model/transforms';
+import { useDocLabelStyle } from './useDocLabelStyle';
 import { useStationInteraction } from './useStationInteraction';
 
 /**
@@ -35,11 +35,7 @@ export function StationHitArea({
   // background and swallow the drag.
   proxy?: boolean;
 }) {
-  const labelFontSize = useDoc((s) => s.labelFontSize);
-  const labelWeight = useDoc((s) => s.labelWeight);
-  const labelItalic = useDoc((s) => s.labelItalic);
-  const labelLeading = useDoc((s) => s.labelLeading);
-  const labelTracking = useDoc((s) => s.labelTracking);
+  const docStyle = useDocLabelStyle();
   const { handlers, cursor, hitless } = useStationInteraction(station, onStartDrag, lines);
 
   const angle = station.rotation * 45;
@@ -53,18 +49,7 @@ export function StationHitArea({
     hitY,
     hitW,
     hitH,
-  } = labelLayoutLocal(
-    station,
-    effectiveStationLabelStyle(station, {
-      fontSize: labelFontSize,
-      weight: labelWeight,
-      italic: labelItalic,
-      leading: labelLeading,
-      tracking: labelTracking,
-    }),
-    undefined,
-    stopHalf,
-  );
+  } = labelLayoutLocal(station, effectiveStationLabelStyle(station, docStyle), undefined, stopHalf);
   const labelHitTransform = `rotate(${station.label.rotation * 45} ${labelAnchorX} ${labelAnchorY})`;
 
   const hitProps = {

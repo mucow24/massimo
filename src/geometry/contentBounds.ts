@@ -1,5 +1,5 @@
 import type { MapDoc } from '../model/types';
-import type { LabelStyle } from './labelLayout';
+import { docLabelStyle } from './labelLayout';
 import { stopHalfOf } from '../model/lineWidth';
 import { effectiveStationLabelStyle } from '../model/transforms';
 import {
@@ -35,13 +35,7 @@ export function computeContentBounds(doc: MapDoc): AABBRect | null {
     if (p.y > maxY) maxY = p.y;
   };
 
-  const baseStyle: LabelStyle = {
-    fontSize: doc.labelFontSize,
-    weight: doc.labelWeight,
-    italic: doc.labelItalic,
-    leading: doc.labelLeading,
-    tracking: doc.labelTracking,
-  };
+  const baseStyle = docLabelStyle(doc);
   const stopHalf = stopHalfOf(doc.lines);
 
   for (const id in doc.stations) {
