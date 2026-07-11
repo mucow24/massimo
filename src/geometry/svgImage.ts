@@ -32,7 +32,10 @@ const CORNER_SIGNS: ReadonlyArray<{ sx: number; sy: number }> = [
 
 const toRad = (deg: number): number => (deg * Math.PI) / 180;
 const center = (img: SvgImageGeom): Vec2 => ({ x: img.x, y: img.y });
-const clampSize = (n: number): number => Math.max(SVG_IMAGE_MIN_SIZE, n);
+// Floor an svg-image dimension at the minimum. Shared with the model's
+// `updateSvgImage` transform so the resize geometry and the stored value clamp
+// identically.
+export const clampSize = (n: number): number => Math.max(SVG_IMAGE_MIN_SIZE, n);
 
 // Local (image-frame) point → world: rotate by +rad about the center. Inverse
 // uses -rad. This forward/inverse pair matches the render transform

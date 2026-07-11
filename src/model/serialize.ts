@@ -4,14 +4,9 @@ import {
   TEXT_LABEL_COLOR_DEFAULT,
   TEXT_LABEL_DARK_COLOR_DEFAULT,
 } from './transforms';
-import { LINE_WIDTH_DEFAULT, LINE_WIDTH_MIN } from './lineWidth';
-import { DOT_SIZE_DEFAULT, DOT_SIZE_MIN } from './dotSize';
-import {
-  LINE_STROKE_COLOR_DEFAULT,
-  LINE_STROKE_STEP,
-  LINE_STROKE_WIDTH_DEFAULT,
-  LINE_STROKE_WIDTH_MIN,
-} from './lineStroke';
+import { canonicalLineWidth } from './lineWidth';
+import { DOT_SIZE_DEFAULT, canonicalDotSize } from './dotSize';
+import { canonicalStrokeColor, canonicalStrokeWidth } from './lineStroke';
 import { DEFAULT_DOT_STYLE, DOT_SHAPE_PRESETS, dotStylesEqual } from './dotStyle';
 import { pairKeyOf } from './pairKey';
 import { parseHexA, withHexAlpha } from '../util/color';
@@ -533,9 +528,9 @@ function sanitizeLineWidth(line: Line): Line {
   if (!('width' in line)) return line;
   const raw = line.width as unknown;
   if (typeof raw === 'number' && Number.isFinite(raw)) {
-    const norm = Math.max(LINE_WIDTH_MIN, Math.round(raw));
-    if (norm !== LINE_WIDTH_DEFAULT) {
-      return norm === line.width ? line : { ...line, width: norm };
+    const stored = canonicalLineWidth(raw);
+    if (stored !== undefined) {
+      return stored === line.width ? line : { ...line, width: stored };
     }
   }
   const { width: _gone, ...rest } = line;
@@ -552,9 +547,9 @@ function sanitizeLineDotSize(line: Line): Line {
   if (!('defaultDotSize' in line)) return line;
   const raw = line.defaultDotSize as unknown;
   if (typeof raw === 'number' && Number.isFinite(raw)) {
-    const norm = Math.max(DOT_SIZE_MIN, Math.round(raw));
-    if (norm !== DOT_SIZE_DEFAULT) {
-      return norm === line.defaultDotSize ? line : { ...line, defaultDotSize: norm };
+    const stored = canonicalDotSize(raw);
+    if (stored !== undefined) {
+      return stored === line.defaultDotSize ? line : { ...line, defaultDotSize: stored };
     }
   }
   const { defaultDotSize: _gone, ...rest } = line;
@@ -579,12 +574,12 @@ export function sanitizeStopDotSizes(
       if (!('dotSize' in s)) return s;
       const raw = s.dotSize as unknown;
       if (typeof raw === 'number' && Number.isFinite(raw)) {
-        const norm = Math.max(DOT_SIZE_MIN, Math.round(raw));
         const effDefault = lines[s.lineId]?.defaultDotSize ?? DOT_SIZE_DEFAULT;
-        if (norm !== effDefault) {
-          if (norm === s.dotSize) return s;
+        const stored = canonicalDotSize(raw, effDefault);
+        if (stored !== undefined) {
+          if (stored === s.dotSize) return s;
           stopsChanged = true;
-          return { ...s, dotSize: norm };
+          return { ...s, dotSize: stored };
         }
       }
       stopsChanged = true;
@@ -613,14 +608,8 @@ function sanitizeLineStroke(line: Line): Line {
   let next = line;
   if ('strokeWidth' in line) {
     const raw = line.strokeWidth as unknown;
-    let stored: number | undefined;
-    if (typeof raw === 'number' && Number.isFinite(raw)) {
-      const norm = Math.max(
-        LINE_STROKE_WIDTH_MIN,
-        Math.round(raw / LINE_STROKE_STEP) * LINE_STROKE_STEP,
-      );
-      stored = norm === LINE_STROKE_WIDTH_DEFAULT ? undefined : norm;
-    }
+    const stored =
+      typeof raw === 'number' && Number.isFinite(raw) ? canonicalStrokeWidth(raw) : undefined;
     if (stored === undefined) {
       const { strokeWidth: _gone, ...rest } = next;
       next = rest;
@@ -630,8 +619,7 @@ function sanitizeLineStroke(line: Line): Line {
   }
   if ('strokeColor' in line) {
     const raw = line.strokeColor as unknown;
-    const norm = typeof raw === 'string' ? raw.toLowerCase() : undefined;
-    const stored = norm === LINE_STROKE_COLOR_DEFAULT ? undefined : norm;
+    const stored = typeof raw === 'string' ? canonicalStrokeColor(raw) : undefined;
     if (stored === undefined) {
       const { strokeColor: _gone, ...rest } = next;
       next = rest;
