@@ -530,24 +530,12 @@ describe('<LineInspector /> — waypoint pill', () => {
     });
   };
 
-  it('renders a WP pill only on the waypoint stop, before its name', () => {
+  it('renders no WP pill in the line stop list, even for a waypoint stop', () => {
     seed();
     const { container } = render(<LineInspector id="L1" />);
 
-    // Exactly one pill — for the waypoint stop only.
-    const pills = container.querySelectorAll('.wp-pill');
-    expect(pills.length).toBe(1);
-
-    // The pill lives in Beta's row, not Alpha's.
-    const betaRow = screen.getByText('Beta').closest('.list-row');
-    const alphaRow = screen.getByText('Alpha').closest('.list-row');
-    const pill = betaRow?.querySelector('.wp-pill');
-    expect(pill).not.toBeNull();
-    expect(alphaRow?.querySelector('.wp-pill')).toBeNull();
-
-    // The pill precedes the name within the row.
-    // DOCUMENT_POSITION_FOLLOWING = 4: the argument follows the receiver.
-    expect(pill!.compareDocumentPosition(screen.getByText('Beta')) & 4).toBe(4);
+    // The waypoint pill lives in the station list, not the line's stop list.
+    expect(container.querySelectorAll('.wp-pill').length).toBe(0);
   });
 });
 

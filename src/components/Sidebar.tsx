@@ -27,6 +27,14 @@ export const SIDEBAR_WIDTH = 320;
 export const sidebarVisible = (s: { sidebarOpen: boolean; uiMode: { kind: string } }): boolean =>
   s.sidebarOpen && s.uiMode.kind !== 'editing-station-layout';
 
+// Name-sort bucket: 0 for a "traditional" name (cleaned text begins with a
+// letter or digit), 1 for anything else — an empty name, or one starting with a
+// symbol/glyph like ✈. Bucket 1 always sorts after bucket 0, so these rows sink
+// to the bottom of the name-sorted list regardless of sort direction.
+function nameSortRank(cleaned: string): 0 | 1 {
+  return /^[\p{L}\p{N}]/u.test(cleaned) ? 0 : 1;
+}
+
 export function Sidebar() {
   const stations = useDoc((s) => s.stations);
   const lines = useDoc((s) => s.lines);
@@ -64,12 +72,21 @@ export function Sidebar() {
       .join(' ');
 
   const stationList = Object.values(stations).sort((a, b) => {
-    const cmp =
-      stationSortBy === 'name'
-        ? // Sort by the same cleaned text the list shows, so a leading tag or
-          // bullet (`<b>…`, `|A| …`) can't order a row away from its visible name.
-          stationNameListText(a.name).localeCompare(stationNameListText(b.name))
-        : stopsKey(a.id).localeCompare(stopsKey(b.id));
+    if (stationSortBy === 'name') {
+      // Sort by the same cleaned text the list shows, so a leading tag or
+      // bullet (`<b>…`, `|A| …`) can't order a row away from its visible name.
+      const na = stationNameListText(a.name);
+      const nb = stationNameListText(b.name);
+      // Empty names and names starting with a nontraditional character (a
+      // symbol/glyph like ✈, not a letter or digit) sink to the bottom in BOTH
+      // directions — the direction toggle only reorders the ordinary names.
+      const ra = nameSortRank(na);
+      const rb = nameSortRank(nb);
+      if (ra !== rb) return ra - rb;
+      const cmp = na.localeCompare(nb);
+      return stationSortDir === 'asc' ? cmp : -cmp;
+    }
+    const cmp = stopsKey(a.id).localeCompare(stopsKey(b.id));
     return stationSortDir === 'asc' ? cmp : -cmp;
   });
 
@@ -239,12 +256,19 @@ export function Sidebar() {
                     onMouseEnter={() => selection.setHoveredStation(st.id)}
                     onMouseLeave={() => selection.setHoveredStation(null)}
                   >
-                    <span className="grow">{stationNameListText(st.name)}</span>
                     {st.isWaypoint && (
                       <span className="wp-pill" title="Waypoint">
                         WP
                       </span>
                     )}
+                    {(() => {
+                      const label = stationNameListText(st.name);
+                      return label.length > 0 ? (
+                        <span className="grow">{label}</span>
+                      ) : (
+                        <span className="grow no-name">(No name)</span>
+                      );
+                    })()}
                     <span className="line-badges">
                       {linesAtStation(st.id)
                         .slice()

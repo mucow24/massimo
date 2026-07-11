@@ -519,11 +519,6 @@ export function LineInspector({ id }: { id: LineId }) {
                         }}
                       >
                         <div style={{ width: MARKER_W, flexShrink: 0 }} />
-                        {st.isWaypoint && (
-                          <span className="wp-pill" title="Waypoint">
-                            WP
-                          </span>
-                        )}
                         <span
                           className="grow"
                           style={{
