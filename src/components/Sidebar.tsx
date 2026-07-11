@@ -7,8 +7,9 @@ import {
   TriangleUpIcon,
 } from '@radix-ui/react-icons';
 import { effectiveLineOrder, useDoc, useSelection } from '../state/store';
+import { useViewportStore } from '../state/viewportStore';
 import { LineInspector } from './inspector';
-import type { Line } from '../model/types';
+import type { Line, Station } from '../model/types';
 import { legibleTextOn } from '../util/color';
 import { stationNameListText } from '../geometry/labelTokens';
 
@@ -28,6 +29,16 @@ export function Sidebar() {
   const [stationSortDir, setStationSortDir] = useState<SortDirection>('asc');
 
   const orderedLineIds = effectiveLineOrder(lineOrder, lines);
+
+  // Clicking a station row pans the camera to it (zoom unchanged — this
+  // centers, it doesn't reframe). Uses the station origin, the same anchor
+  // the on-canvas station popover attaches to, so the popover spawns next to
+  // the now-centered station. Read live via getState so the sidebar doesn't
+  // re-render on every pan/zoom.
+  const centerOnStation = (st: Station): void => {
+    const { zoom, setViewport } = useViewportStore.getState();
+    setViewport({ x: st.x, y: st.y, zoom });
+  };
 
   // Per-station: lines that stop here, alphabetical by service code.
   const linesAtStation = (stationId: string): Line[] =>
@@ -202,7 +213,12 @@ export function Sidebar() {
                 <div key={st.id} data-station-row={st.id}>
                   <div
                     className={'list-row' + (inSelection ? ' selected' : '')}
-                    onClick={() => selection.selectStation(soleSelected ? null : st.id)}
+                    onClick={() => {
+                      selection.selectStation(soleSelected ? null : st.id);
+                      // Center on the station when selecting it (not when the
+                      // click is a deselect of the sole-selected row).
+                      if (!soleSelected) centerOnStation(st);
+                    }}
                     onMouseEnter={() => selection.setHoveredStation(st.id)}
                     onMouseLeave={() => selection.setHoveredStation(null)}
                   >
