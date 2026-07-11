@@ -329,6 +329,31 @@ describe('<Sidebar /> — station name rendering', () => {
     expect(document.querySelector('[data-inline-bullet]')).toBeNull();
   });
 
+  it('renders the WP waypoint pill before the station name, only for a waypoint', () => {
+    useDoc.setState({
+      ...useDoc.getState(),
+      ...makeDoc({
+        stations: [
+          makeStation({ id: 's1', name: 'Hub', isWaypoint: true }),
+          makeStation({ id: 's2', name: 'Stop' }),
+        ],
+      }),
+    });
+    render(<Sidebar />);
+
+    // Only the waypoint row carries a pill.
+    const wpRow = document.querySelector('[data-station-row="s1"]');
+    const plainRow = document.querySelector('[data-station-row="s2"]');
+    const pill = wpRow?.querySelector('.wp-pill');
+    expect(pill).not.toBeNull();
+    expect(plainRow?.querySelector('.wp-pill')).toBeNull();
+
+    // The pill precedes the name within the row.
+    // DOCUMENT_POSITION_FOLLOWING = 4: the argument follows the receiver.
+    const name = wpRow!.querySelector('.grow')!;
+    expect(pill!.compareDocumentPosition(name) & 4).toBe(4);
+  });
+
   it('shows a "(No name)" placeholder for a station with an empty name', () => {
     useDoc.setState({
       ...useDoc.getState(),

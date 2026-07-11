@@ -248,6 +248,11 @@ export function Sidebar() {
                     onMouseEnter={() => selection.setHoveredStation(st.id)}
                     onMouseLeave={() => selection.setHoveredStation(null)}
                   >
+                    {st.isWaypoint && (
+                      <span className="wp-pill" title="Waypoint">
+                        WP
+                      </span>
+                    )}
                     {(() => {
                       const label = stationNameListText(st.name);
                       return label.length > 0 ? (
@@ -256,11 +261,6 @@ export function Sidebar() {
                         <span className="grow no-name">(No name)</span>
                       );
                     })()}
-                    {st.isWaypoint && (
-                      <span className="wp-pill" title="Waypoint">
-                        WP
-                      </span>
-                    )}
                     <span className="line-badges">
                       {linesAtStation(st.id)
                         .slice()
