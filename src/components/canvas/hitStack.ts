@@ -6,7 +6,7 @@ import {
   svgImagesForRect,
   textLabelsForRect,
 } from '../../geometry/stationBoundary';
-import type { LabelStyle } from '../../geometry/labelLayout';
+import { docLabelStyle, type DocLabelFields } from '../../geometry/labelLayout';
 import { stopHalfOf } from '../../model/lineWidth';
 import { effectivePolygonOrder, effectiveSvgImageOrder } from '../../model/transforms';
 import type { Pt } from '../../geometry/polygonUnion';
@@ -129,7 +129,7 @@ export function nextInStack<T extends HitRef>(
 export const LOCKED_HIT_PAD_PX = 4;
 
 /** The slice of the doc lockedHitsAt reads — matches useDoc's state shape. */
-export interface LockedHitDocSlice {
+export interface LockedHitDocSlice extends DocLabelFields {
   stations: Record<StationId, Station>;
   lines: Record<LineId, Line>;
   polygons: Record<string, Polygon>;
@@ -138,11 +138,6 @@ export interface LockedHitDocSlice {
   svgImageOrder: string[];
   textLabels: Record<string, TextLabel>;
   routeBullets: Record<string, RouteBullet>;
-  labelFontSize: LabelStyle['fontSize'];
-  labelWeight: LabelStyle['weight'];
-  labelItalic: LabelStyle['italic'];
-  labelLeading: LabelStyle['leading'];
-  labelTracking: LabelStyle['tracking'];
 }
 
 /**
@@ -156,13 +151,7 @@ export interface LockedHitDocSlice {
  */
 export function lockedHitsAt(pt: Pt, doc: LockedHitDocSlice, pad: number): HitRef[] {
   const rect = { x0: pt.x - pad, y0: pt.y - pad, x1: pt.x + pad, y1: pt.y + pad };
-  const style = {
-    fontSize: doc.labelFontSize,
-    weight: doc.labelWeight,
-    italic: doc.labelItalic,
-    leading: doc.labelLeading,
-    tracking: doc.labelTracking,
-  };
+  const style = docLabelStyle(doc);
   const out: HitRef[] = [];
   const push = (kind: HitKind, ids: string[]) => {
     for (const id of ids) out.push({ kind, id });

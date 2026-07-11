@@ -161,12 +161,12 @@ export function resolveStationLabelWeight(
 
 /**
  * The effective `LabelStyle` for a single station: the doc-level label defaults
- * with the station's per-station bold flag folded into the weight. The measured
- * consumers — the silhouette, the hit area, the layout editor, and marquee
- * hit-testing — go through here so they agree with the painted label (which
- * resolves the same weight via `resolveStationLabelWeight`) on how a given
- * station's label is measured. `docStyle.weight` must be the *default* weight
- * (before any per-station bold); the bold bump is applied here.
+ * (see `docLabelStyle`) with the station's per-station bold flag folded into
+ * the weight. Every measured consumer — the painted label's layout, the
+ * silhouette, the hit area, the layout editor, and marquee hit-testing — goes
+ * through here so they all agree on how a given station's label is measured.
+ * `docStyle.weight` must be the *default* weight (before any per-station
+ * bold); the bold bump is applied here.
  */
 export function effectiveStationLabelStyle(
   station: Pick<Station, 'labelBold'>,

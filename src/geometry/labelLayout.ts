@@ -1,4 +1,4 @@
-import type { Station, StopOrientation } from '../model/types';
+import type { MapDoc, Station, StopOrientation } from '../model/types';
 import {
   DIR_8,
   STOP_SIZE,
@@ -60,6 +60,28 @@ export interface LabelStyle {
 }
 
 export const DEFAULT_LABEL_STYLE: LabelStyle = { fontSize: 12, weight: 400, italic: false };
+
+/** The doc-level station-label fields `docLabelStyle` reads. */
+export type DocLabelFields = Pick<
+  MapDoc,
+  'labelFontSize' | 'labelWeight' | 'labelItalic' | 'labelLeading' | 'labelTracking'
+>;
+
+/**
+ * The doc's global station-label defaults as a `LabelStyle` — the one mapping
+ * from the model's `label*` field names to the geometry style shape. Station
+ * consumers fold the per-station bold in afterwards via
+ * `effectiveStationLabelStyle`.
+ */
+export function docLabelStyle(doc: DocLabelFields): LabelStyle {
+  return {
+    fontSize: doc.labelFontSize,
+    weight: doc.labelWeight,
+    italic: doc.labelItalic,
+    leading: doc.labelLeading,
+    tracking: doc.labelTracking,
+  };
+}
 
 export interface LabelLayout {
   // Anchor point of the rendered <text> element in unrotated station-local

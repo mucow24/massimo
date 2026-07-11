@@ -7,6 +7,7 @@ import { stationBoundaryRectsLocal } from '../geometry/stationBoundary';
 import { stopHalfOf } from '../model/lineWidth';
 import { polygonsToPath, unionConvex } from '../geometry/polygonUnion';
 import { SELECTION_STROKE_WIDTH, SELECTION_WASH_OPACITY } from './selectionStyle';
+import { useDocLabelStyle } from './useDocLabelStyle';
 
 const SELECTION_CORNER_RADIUS = 5;
 const MATCH_STROKE_COLOR = '#888';
@@ -33,11 +34,7 @@ export function StationSilhouette({
    *  stroke). The layout-edit focus paints a white outline above its dim. */
   strokeColor?: string;
 }) {
-  const labelFontSize = useDoc((s) => s.labelFontSize);
-  const labelWeight = useDoc((s) => s.labelWeight);
-  const labelItalic = useDoc((s) => s.labelItalic);
-  const labelLeading = useDoc((s) => s.labelLeading);
-  const labelTracking = useDoc((s) => s.labelTracking);
+  const docStyle = useDocLabelStyle();
   const lines = useDoc((s) => s.lines);
   const editingStationId = useSelection((s) => s.editingStationId);
   const themeColors = useThemeColors();
@@ -52,13 +49,7 @@ export function StationSilhouette({
   // applies to the outer-boundary corners only, so the rects meet cleanly.
   const { cells, label: labelPoly } = stationBoundaryRectsLocal(
     station,
-    effectiveStationLabelStyle(station, {
-      fontSize: labelFontSize,
-      weight: labelWeight,
-      italic: labelItalic,
-      leading: labelLeading,
-      tracking: labelTracking,
-    }),
+    effectiveStationLabelStyle(station, docStyle),
     stopHalfOf(lines),
   );
   // Waypoint: no label polygon to merge, render the cells rect alone.
