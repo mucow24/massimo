@@ -6,6 +6,8 @@
 // display name within each continent. The popover renders a horizontal
 // separator between continent groups.
 
+import { normalizeHex } from '../util/color';
+
 // A palette id. Built-in palettes use the stable slugs declared in PALETTES
 // below; user-imported custom palettes use arbitrary `custom:<slug>` ids, so the
 // type is an open string rather than a closed union. KNOWN_PALETTE_IDS is the
@@ -356,6 +358,34 @@ export function activePalettes(
  */
 export function cyclingColors(active: readonly PaletteId[], custom: readonly Palette[]): string[] {
   return activePalettes(active, custom).flatMap((p) => p.swatches.map((s) => s.color));
+}
+
+/**
+ * The distinct "custom" colors used by lines in the map: line colors that are
+ * NOT a swatch in any of the given (active) palettes. These populate the
+ * always-present "Custom" section of the line color picker.
+ *
+ * Scoped to the ACTIVE palettes — mirroring the picker's "is this color a
+ * visible swatch?" rule — so toggling a palette off moves its colors into
+ * Custom and toggling it back on removes them. Colors are compared via
+ * `normalizeHex` (case-insensitive, alpha-normalized); the first spelling of
+ * each distinct color is kept, in first-seen order.
+ */
+export function customLineColors(
+  lineColors: readonly string[],
+  palettes: readonly Palette[],
+): string[] {
+  const known = new Set<string>();
+  for (const p of palettes) for (const s of p.swatches) known.add(normalizeHex(s.color));
+  const seen = new Set<string>();
+  const out: string[] = [];
+  for (const c of lineColors) {
+    const n = normalizeHex(c);
+    if (known.has(n) || seen.has(n)) continue;
+    seen.add(n);
+    out.push(c);
+  }
+  return out;
 }
 
 // Fallback line color when the active palettes yield no colors at all (e.g. every
