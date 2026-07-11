@@ -3,6 +3,7 @@ import { act, render, screen } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { Sidebar } from './Sidebar';
 import { useDoc, useSelection } from '../state/store';
+import { useViewportStore } from '../state/viewportStore';
 import { DEFAULT_DOC } from '../model/transforms';
 import { makeDoc, makeLine, makeStation, makeStop } from '../test/fixtures';
 
@@ -198,6 +199,56 @@ describe('<Sidebar /> — hidden while the station layout editor is open', () =>
 
     expect(document.querySelector('.sidebar')).not.toBeNull();
     expect(useSelection.getState().sidebarOpen).toBe(true);
+  });
+});
+
+describe('<Sidebar /> — clicking a station row centers the viewport on it', () => {
+  const stationRow = (id: string): HTMLElement => {
+    const el = document
+      .querySelector(`[data-station-row="${id}"]`)
+      ?.querySelector<HTMLElement>('.list-row');
+    if (!el) throw new Error(`expected a row for station ${id}`);
+    return el;
+  };
+
+  beforeEach(() => {
+    useDoc.setState({
+      ...useDoc.getState(),
+      ...makeDoc({ stations: [makeStation({ id: 's1', name: 'Hub', x: 300, y: -150 })] }),
+    });
+    // A camera parked somewhere else, zoomed in, so both the pan and the
+    // zoom-preservation are observable.
+    useViewportStore.setState({ x: 0, y: 0, zoom: 2 });
+  });
+
+  it('pans to the station origin, keeping the current zoom', async () => {
+    const user = userEvent.setup();
+    render(<Sidebar />);
+
+    await user.click(stationRow('s1'));
+
+    const cam = useViewportStore.getState();
+    expect({ x: cam.x, y: cam.y }).toEqual({ x: 300, y: -150 });
+    expect(cam.zoom).toBe(2); // centers (pans) — does not reframe/zoom
+    expect(useSelection.getState().selectedStationIds).toEqual(['s1']);
+  });
+
+  it('does not re-center when the click deselects the sole-selected station', async () => {
+    const user = userEvent.setup();
+    render(<Sidebar />);
+
+    // First click selects + centers on the station.
+    await user.click(stationRow('s1'));
+    // Simulate the user panning away afterward.
+    useViewportStore.setState({ x: 999, y: 999, zoom: 2 });
+
+    // Second click on the sole-selected row deselects; it must not yank the
+    // camera back to the station.
+    await user.click(stationRow('s1'));
+
+    const cam = useViewportStore.getState();
+    expect({ x: cam.x, y: cam.y }).toEqual({ x: 999, y: 999 });
+    expect(useSelection.getState().selectedStationIds).toEqual([]);
   });
 });
 
