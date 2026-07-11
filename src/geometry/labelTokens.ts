@@ -220,6 +220,9 @@ function scanLine(
   line: string,
   re: RegExp,
   state: InlineStyleState | null,
+  // Drop the `<xfer>` glyph instead of emitting its arrow. Used by the compact
+  // list renderer (`stationNameListText`); the canvas renderers keep it.
+  suppressXfer = false,
 ): { segments: LabelSegment[]; state: InlineStyleState | null } {
   const st = state
     ? // never mutate the caller's state
@@ -305,7 +308,7 @@ function scanLine(
     } else if (g.air) {
       buffer += AIR_GLYPH;
     } else if (g.xfer) {
-      buffer += XFER_GLYPH;
+      if (!suppressXfer) buffer += XFER_GLYPH;
     } else if (g.copy) {
       buffer += COPY_GLYPH;
     } else if (g.tm) {
@@ -340,6 +343,37 @@ export function parseFormattedLine(
 ): { segments: LabelSegment[]; state: InlineStyleState } {
   const r = scanLine(line, FORMATTED_TOKEN_RE, state);
   return { segments: r.segments, state: r.state! };
+}
+
+/**
+ * Render a station name as compact one-line plain text for list contexts
+ * (the sidebar station list and the line editor's per-line station list):
+ *  - formatting tags (`<b>`/`<i>`/`<u>`/`<s>`/`<color>`/`<w>`/`<size>`) are
+ *    stripped, keeping only their inner text;
+ *  - inline route bullets (`|A|`, `[A]`, `{A}`, doubled forms) are removed
+ *    entirely — the list shows the routes in its own column, so a bullet in
+ *    the name is just noise;
+ *  - the glyph shortcuts resolve to their characters (`<tm>`→™, `<air>`→✈,
+ *    `<c>`→©) EXCEPT `<xfer>`, which is omitted (list rows don't show the
+ *    transfer arrow).
+ * Newlines collapse to spaces and whitespace left behind by removed tokens is
+ * squeezed, so `"Foo |A|  Bar"` reads `"Foo Bar"`.
+ */
+export function stationNameListText(text: string): string {
+  // Full-grammar scan (per line, xfer suppressed) so tags/glyphs/bullets
+  // tokenize exactly as they do on the canvas. We then keep only text segments
+  // — which discards bullets and, since we read `value` and ignore each run's
+  // resolved style, strips the formatting tags too. Glyph shortcuts have
+  // already been folded into the text (`<xfer>` alone is dropped in the scan).
+  const { segments } = scanLine(
+    text.replace(/\n/g, ' '),
+    FORMATTED_TOKEN_RE,
+    emptyStyleState(),
+    true,
+  );
+  let out = '';
+  for (const seg of segments) if (seg.kind === 'text') out += seg.value;
+  return out.replace(/\s+/g, ' ').trim();
 }
 
 /**

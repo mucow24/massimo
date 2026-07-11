@@ -83,6 +83,26 @@ describe('<Sidebar /> — station sort-direction flip', () => {
   });
 });
 
+describe('<Sidebar /> — sorts by cleaned station name', () => {
+  it('orders by the display text, ignoring leading tags and bullets', () => {
+    useDoc.setState({
+      ...useDoc.getState(),
+      ...makeDoc({
+        stations: [
+          makeStation({ id: 'zeb', name: '<b>Zebra</b>' }),
+          makeStation({ id: 'app', name: 'Apple' }),
+          makeStation({ id: 'mango', name: '|1| Mango' }),
+        ],
+      }),
+    });
+    render(<Sidebar />);
+    // Cleaned keys are Apple < Mango < Zebra. Sorting the raw markup would put
+    // "<b>Zebra…" first (punctuation sorts before letters) — the leading <b>/|1|
+    // must not influence the order.
+    expect(rowOrder()).toEqual(['app', 'mango', 'zeb']);
+  });
+});
+
 // The tab bar buttons carry class `.tab` (distinct from the `.sort-header`
 // column buttons, which also start with "Station").
 const tabButton = (label: 'Stations' | 'Lines'): HTMLButtonElement => {
@@ -204,6 +224,41 @@ describe('<Sidebar /> — line badge selects the line', () => {
     expect(sel.selectedStationIds).toEqual([]);
     // selectLine also switches the active tab to lines.
     expect(sel.activeTab).toBe('lines');
+  });
+});
+
+describe('<Sidebar /> — station name rendering', () => {
+  it('renders names as cleaned plain text: tags stripped, bullets dropped, symbols except <xfer>', () => {
+    useDoc.setState({
+      ...useDoc.getState(),
+      ...makeDoc({
+        stations: [
+          makeStation({ id: 's1', name: '<b>Foo</b> |A| Bar<tm><xfer>', stops: [makeStop('L1')] }),
+        ],
+        lines: [makeLine({ id: 'L1', service: 'A', stations: ['s1'] })],
+      }),
+    });
+    render(<Sidebar />);
+
+    // The name cell shows the cleaned text — no <b>, no |A| bullet, ™ kept, ↔ gone.
+    const nameCell = document.querySelector('[data-station-row="s1"] .grow');
+    expect(nameCell?.textContent).toBe('Foo Bar™');
+    // No inline bullet badge renders in the list anymore.
+    expect(document.querySelector('[data-inline-bullet]')).toBeNull();
+  });
+
+  it('wraps each Lines-column badge code in a .line-badge__code span (inline-bullet sizing)', () => {
+    useDoc.setState({
+      ...useDoc.getState(),
+      ...makeDoc({
+        stations: [makeStation({ id: 's1', name: 'Hub', stops: [makeStop('L1')] })],
+        lines: [makeLine({ id: 'L1', service: 'A', stations: ['s1'] })],
+      }),
+    });
+    render(<Sidebar />);
+
+    const code = document.querySelector('.line-badges .line-badge .line-badge__code');
+    expect(code?.textContent).toBe('A');
   });
 });
 
