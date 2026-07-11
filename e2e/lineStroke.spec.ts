@@ -143,7 +143,7 @@ async function selectLine(page: Page, lineId: string): Promise<void> {
 // Set the line's stroke width through the inspector spinbutton. Short
 // visibility timeout keeps the pre-implementation red fast.
 async function setStrokeTo(page: Page, value: string): Promise<void> {
-  const spin = page.getByRole('spinbutton', { name: 'Stroke' });
+  const spin = page.getByRole('spinbutton', { name: 'Stroke width' });
   await expect(spin).toBeVisible({ timeout: 2000 });
   await spin.fill(value);
   await spin.blur();

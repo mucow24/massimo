@@ -1422,6 +1422,13 @@ input[type='range'].indeterminate {
 .inspector .options-popover-row {
   margin-bottom: 8px;
 }
+/* The default-dot row pairs the shape picker with the size slider under one
+   "Dot type and size" caption. It's wrapped in a .field for that caption, so
+   zero the embedded row's own bottom margin — the .field already supplies the
+   inter-field 8px, and both together would double the gap below it. */
+.inspector .dot-field > .options-popover-row {
+  margin-bottom: 0;
+}
 .inspector .options-popover-label {
   /* Fixed column sized to the longest label ("Stroke color") so the sliders
      and spinboxes down the panel start at one shared x. */
