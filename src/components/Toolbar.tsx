@@ -1,6 +1,7 @@
 import { useRef, useState } from 'react';
 import { flushSync } from 'react-dom';
 import { pickDocSnapshot, useDoc, useSelection, type UiMode } from '../state/store';
+import type { MapDoc } from '../model/types';
 import { useViewportStore, nextGridSize } from '../state/viewportStore';
 import { parse, serialize } from '../model/serialize';
 import { computeContentBounds } from '../geometry/contentBounds';
@@ -103,7 +104,24 @@ export function Toolbar() {
     const id = addLine();
     selection.startAppendAt(id, -1);
   };
-  const onResetView = () => setViewport({ x: 0, y: 0, zoom: 1 });
+  // Point the camera at a doc's content: center it and zoom to fit, using the
+  // live SVG's pixel size (content-independent, so no wait for a render).
+  // Returns false — camera untouched — when the map is empty or the canvas
+  // isn't mounted. Shared by file-load and Reset view.
+  const fitCameraToDoc = (doc: MapDoc): boolean => {
+    const bounds = computeContentBounds(doc);
+    const svg = getCanvasSvg();
+    if (!bounds || !svg) return false;
+    const rect = svg.getBoundingClientRect();
+    if (rect.width <= 0 || rect.height <= 0) return false;
+    setViewport(fitViewport(bounds, { w: rect.width, h: rect.height }));
+    return true;
+  };
+  // Reset view = the same center+fit a fresh load gives; an empty map (or a
+  // canvas that isn't mounted yet) falls back to the origin at 100%.
+  const onResetView = () => {
+    if (!fitCameraToDoc(useDoc.getState())) setViewport({ x: 0, y: 0, zoom: 1 });
+  };
   const onClear = () => {
     selection.selectStation(null);
     selection.selectLine(null);
@@ -201,17 +219,8 @@ export function Toolbar() {
     clearHistory(); // undo must not cross a file load
     // The camera lives outside the doc (saved files are camera-agnostic), so a
     // load would otherwise keep the old pan/zoom and could land on a blank area.
-    // Point it at the freshly loaded content: center + fit the whole map. Bounds
-    // come from the doc (pure), and the live SVG's size is content-independent,
-    // so this needs no wait for the new content to render.
-    const bounds = computeContentBounds(result.doc);
-    const svg = getCanvasSvg();
-    if (bounds && svg) {
-      const rect = svg.getBoundingClientRect();
-      if (rect.width > 0 && rect.height > 0) {
-        setViewport(fitViewport(bounds, { w: rect.width, h: rect.height }));
-      }
-    }
+    // Point it at the freshly loaded content: center + fit the whole map.
+    fitCameraToDoc(result.doc);
   };
 
   // Add → SVG…: read the file, parse its intrinsic size, encode it as an opaque

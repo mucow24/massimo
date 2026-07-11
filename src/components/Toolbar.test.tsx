@@ -28,6 +28,8 @@ import { useDoc, useSelection } from '../state/store';
 import { useViewportStore } from '../state/viewportStore';
 import { DEFAULT_DOC } from '../model/transforms';
 import { serialize } from '../model/serialize';
+import { computeContentBounds } from '../geometry/contentBounds';
+import { fitViewport } from './canvas/viewportMath';
 import { makeDoc, makeLine, makeStation, makeStop, stationWithStop } from '../test/fixtures';
 import type { LineId, StationId } from '../model/types';
 
@@ -101,7 +103,42 @@ describe('Toolbar — tool + view toggles', () => {
     expect(useViewportStore.getState().darkMode).toBe(true);
   });
 
-  it('resets the viewport', async () => {
+  it('Reset view fits the camera to the map content', async () => {
+    // A single far-flung station: Reset view must move the camera onto it,
+    // exactly the center+fit the file-load path performs.
+    useDoc.setState({
+      ...useDoc.getState(),
+      lines: { L1: makeLine({ id: 'L1' as LineId, stations: ['S'] as StationId[] }) },
+      lineOrder: ['L1' as LineId],
+      stations: { S: stationWithStop('S' as StationId, 'L1' as LineId, { x: 1000, y: 500 }) },
+    });
+    const fakeSvg = document.createElementNS('http://www.w3.org/2000/svg', 'svg') as SVGSVGElement;
+    fakeSvg.getBoundingClientRect = () =>
+      ({
+        x: 0,
+        y: 0,
+        top: 0,
+        left: 0,
+        right: 800,
+        bottom: 600,
+        width: 800,
+        height: 600,
+        toJSON: () => ({}),
+      }) as ReturnType<SVGSVGElement['getBoundingClientRect']>;
+    vi.mocked(getCanvasSvg).mockReturnValue(fakeSvg);
+
+    const user = userEvent.setup();
+    useViewportStore.setState({ x: 0, y: 0, zoom: 1 });
+    render(<Toolbar />);
+    await user.click(screen.getByRole('button', { name: 'Reset view' }));
+
+    const bounds = computeContentBounds(useDoc.getState())!;
+    expect(useViewportStore.getState()).toMatchObject(fitViewport(bounds, { w: 800, h: 600 }));
+    // Sanity: the camera actually left the origin and landed on the content.
+    expect(useViewportStore.getState().x).toBeGreaterThan(500);
+  });
+
+  it('Reset view falls back to the origin when the map is empty', async () => {
     const user = userEvent.setup();
     useViewportStore.setState({ x: 100, y: 50, zoom: 3 });
     render(<Toolbar />);
