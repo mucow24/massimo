@@ -242,7 +242,7 @@ export function LineInspector({ id }: { id: LineId }) {
         <ColorPalette value={line.color} onChange={(c) => updateLine(line.id, { color: c })} />
       </div>
       <div className="field dot-field">
-        <label>Dot type and size</label>
+        <label>Default stop dot type and size</label>
         <NumericFieldRow
           id={`line-dot-size-${line.id}`}
           label="Dot size"

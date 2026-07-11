@@ -329,7 +329,7 @@ describe('<LineInspector /> — dot size control', () => {
     seed();
     render(<LineInspector id="L1" />);
     const color = screen.getByText('Color');
-    const caption = screen.getByText('Dot type and size');
+    const caption = screen.getByText('Default stop dot type and size');
     const picker = screen.getByRole('button', { name: 'Stop shape' });
     const slider = screen.getByRole('slider', { name: 'Dot size' });
     // DOCUMENT_POSITION_FOLLOWING = 4: the argument follows the receiver.
