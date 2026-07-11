@@ -5,6 +5,7 @@ import {
   LINE_WIDTH_MIN,
   LINE_WIDTH_SLIDER_MIN,
   LINE_WIDTH_MAX,
+  canonicalLineWidth,
   lineWidthOf,
   stopHalfOf,
 } from './lineWidth';
@@ -19,6 +20,29 @@ describe('line width constants', () => {
     expect(LINE_WIDTH_MIN).toBe(1);
     expect(LINE_WIDTH_SLIDER_MIN).toBe(2);
     expect(LINE_WIDTH_MAX).toBe(28);
+  });
+});
+
+describe('canonicalLineWidth', () => {
+  it('rounds to an integer', () => {
+    expect(canonicalLineWidth(20.4)).toBe(20);
+    expect(canonicalLineWidth(20.6)).toBe(21);
+  });
+
+  it('clamps below the floor up to LINE_WIDTH_MIN', () => {
+    expect(canonicalLineWidth(0)).toBe(LINE_WIDTH_MIN);
+    expect(canonicalLineWidth(-5)).toBe(LINE_WIDTH_MIN);
+    expect(canonicalLineWidth(0.4)).toBe(LINE_WIDTH_MIN);
+  });
+
+  it('collapses the default to undefined so it is never stored', () => {
+    expect(canonicalLineWidth(LINE_WIDTH_DEFAULT)).toBeUndefined();
+    expect(canonicalLineWidth(LINE_WIDTH_DEFAULT + 0.3)).toBeUndefined();
+  });
+
+  it('keeps non-default widths as the rounded integer', () => {
+    expect(canonicalLineWidth(21)).toBe(21);
+    expect(canonicalLineWidth(2)).toBe(2);
   });
 });
 

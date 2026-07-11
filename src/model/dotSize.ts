@@ -12,6 +12,25 @@ export const DOT_SIZE_MIN = 0;
 export const DOT_SIZE_MAX = 20;
 
 /**
+ * The canonical STORED form of a dot size (diameter px): round to an integer,
+ * clamp to ≥ DOT_SIZE_MIN, and collapse to `undefined` when it equals `dropAt`
+ * — the effective default the value would otherwise redundantly duplicate.
+ * `dropAt` is DOT_SIZE_DEFAULT for a line default, or the line's effective
+ * default for a per-stop override. The one home for that arithmetic, shared by
+ * the `setDotSize`/`setLineDefaultDotSize` transforms and the
+ * `sanitizeStopDotSizes`/`sanitizeLineDotSize` file cleaners so the clamp rule
+ * can never drift. Callers own the finiteness guard (they diverge on
+ * non-finite input).
+ */
+export const canonicalDotSize = (
+  size: number,
+  dropAt: number = DOT_SIZE_DEFAULT,
+): number | undefined => {
+  const norm = Math.max(DOT_SIZE_MIN, Math.round(size));
+  return norm === dropAt ? undefined : norm;
+};
+
+/**
  * The OVERRIDE-ONLY size: stop override, else line default, else undefined.
  * `undefined` means "fully tracking defaults" — rendering then keeps the
  * per-style fixed radii (SERVICE_CODE_DOT_RADIUS for code discs,

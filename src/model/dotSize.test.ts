@@ -4,6 +4,7 @@ import {
   DOT_SIZE_DEFAULT,
   DOT_SIZE_MIN,
   DOT_SIZE_MAX,
+  canonicalDotSize,
   dotSizeOverride,
   resolveDotSize,
   lineDefaultDotSizeOf,
@@ -21,6 +22,29 @@ describe('dot size constants', () => {
   it('clamp floor is 0 (invisible is legal); slider max is 20', () => {
     expect(DOT_SIZE_MIN).toBe(0);
     expect(DOT_SIZE_MAX).toBe(20);
+  });
+});
+
+describe('canonicalDotSize', () => {
+  it('rounds and clamps to the floor DOT_SIZE_MIN (0 is a legal, visible-free dot)', () => {
+    expect(canonicalDotSize(10.4)).toBe(10);
+    expect(canonicalDotSize(10.6)).toBe(11);
+    expect(canonicalDotSize(-3)).toBe(DOT_SIZE_MIN);
+    expect(DOT_SIZE_MIN).toBe(0);
+  });
+
+  it('collapses to undefined at the global default when no dropAt is given', () => {
+    expect(canonicalDotSize(DOT_SIZE_DEFAULT)).toBeUndefined();
+    expect(canonicalDotSize(12)).toBe(12);
+  });
+
+  it('collapses at the supplied effective default (per-stop override case)', () => {
+    // A stop whose size equals the line's effective default is redundant.
+    expect(canonicalDotSize(12, 12)).toBeUndefined();
+    // ...but the SAME value is kept when it differs from that default.
+    expect(canonicalDotSize(12, DOT_SIZE_DEFAULT)).toBe(12);
+    // The global default is a real stored value when the line's default differs.
+    expect(canonicalDotSize(DOT_SIZE_DEFAULT, 12)).toBe(DOT_SIZE_DEFAULT);
   });
 });
 

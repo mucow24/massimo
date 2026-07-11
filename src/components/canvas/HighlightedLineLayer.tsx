@@ -11,8 +11,8 @@ import { pairKeyOf } from '../../model/pairKey';
 import { resolveDotStyle } from '../../model/transforms';
 import { STOP_SIZE, STOP_DOT_RADIUS } from '../../geometry/orientation';
 import { lineStyleStrokeAttrs, lineStyleUnderlayAttrs } from '../HatchPatterns';
-import { offsetFilletPath } from '../../geometry/router';
 import { lineStrokeColorOf, lineStrokeRailWidth, lineStrokeWidthOf } from '../../model/lineStroke';
+import { CasingRails } from '../CasingRails';
 import { lineWidthOf } from '../../model/lineWidth';
 import { dotSizeOverride } from '../../model/dotSize';
 import { StopMarker } from '../StopMarker';
@@ -160,24 +160,15 @@ export function HighlightedLineLayer({
                   strokeLinejoin="round"
                   strokeDasharray={strokeDasharray}
                 />
-                {/* Casing rails centered on the body edges, mirroring
-                    SegmentBand. */}
-                {railW > 0 &&
-                  [-1, 1].map((side) => (
-                    <path
-                      key={side}
-                      d={offsetFilletPath(
-                        r.band.centerline,
-                        r.band.radius,
-                        r.band.stripeOffsets[r.stripeIndex] + (side * stripeW) / 2,
-                      )}
-                      fill="none"
-                      stroke={lineStrokeColorOf(ln)}
-                      strokeWidth={railW}
-                      strokeLinecap="butt"
-                      strokeLinejoin="round"
-                    />
-                  ))}
+                {/* Casing rails centered on the body edges — see CasingRails. */}
+                <CasingRails
+                  centerline={r.band.centerline}
+                  radius={r.band.radius}
+                  offset={r.band.stripeOffsets[r.stripeIndex]}
+                  bodyWidth={stripeW}
+                  railW={railW}
+                  color={lineStrokeColorOf(ln)}
+                />
               </Fragment>,
             );
           });

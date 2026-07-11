@@ -31,6 +31,29 @@ export const LINE_STROKE_STEP = 0.5;
 export const LINE_STROKE_COLOR_DEFAULT = '#ffffff';
 
 /**
+ * The canonical STORED form of a casing width: round to the LINE_STROKE_STEP
+ * (half-pixel) grid, clamp to ≥ LINE_STROKE_WIDTH_MIN, and collapse to
+ * `undefined` at LINE_STROKE_WIDTH_DEFAULT (0 = no casing, never stored).
+ * Shared by the `setLineStrokeWidth` transform and the `sanitizeLineStroke`
+ * file cleaner so the grid/floor can never drift. Callers own the finiteness
+ * guard.
+ */
+export const canonicalStrokeWidth = (w: number): number | undefined => {
+  const norm = Math.max(LINE_STROKE_WIDTH_MIN, Math.round(w / LINE_STROKE_STEP) * LINE_STROKE_STEP);
+  return norm === LINE_STROKE_WIDTH_DEFAULT ? undefined : norm;
+};
+
+/**
+ * The canonical STORED form of a casing color: lowercased, and collapsed to
+ * `undefined` at the white default (never stored). Shared by
+ * `setLineStrokeColor` and `sanitizeLineStroke`.
+ */
+export const canonicalStrokeColor = (c: string): string | undefined => {
+  const norm = c.toLowerCase();
+  return norm === LINE_STROKE_COLOR_DEFAULT ? undefined : norm;
+};
+
+/**
  * Effective casing width of a line, per side, in world units. Missing field
  * ⇒ no casing — saves from before the field existed need no migration (same
  * idiom as `lineWidthOf`). Structural parameter so narrowed line shapes pass

@@ -1,21 +1,16 @@
 import { autoOrientNewStation } from './autoOrient';
 import { effectiveLineOrder } from './lineOrder';
 import { reconcileOrder, moveInOrder } from './recordOrder';
-import { LINE_WIDTH_DEFAULT, LINE_WIDTH_MIN } from './lineWidth';
-import { DOT_SIZE_DEFAULT, DOT_SIZE_MIN } from './dotSize';
-import {
-  LINE_STROKE_COLOR_DEFAULT,
-  LINE_STROKE_STEP,
-  LINE_STROKE_WIDTH_DEFAULT,
-  LINE_STROKE_WIDTH_MIN,
-} from './lineStroke';
+import { canonicalLineWidth } from './lineWidth';
+import { DOT_SIZE_DEFAULT, canonicalDotSize } from './dotSize';
+import { canonicalStrokeColor, canonicalStrokeWidth } from './lineStroke';
 import { DEFAULT_DOT_STYLE, dotStylesEqual } from './dotStyle';
 import { pairKeyOf } from './pairKey';
 import { DIR_8, rotateBy, stopCenterAt } from '../geometry/orientation';
 import { CELL_EPS, sameCell } from '../geometry/lattice';
 import { GRID_INTERVAL, snapPointToGrid, type GridSnap } from '../geometry/snap';
 import { polygonCentroid, edgeMidpoint } from '../geometry/polygon';
-import { SVG_IMAGE_MIN_SIZE, normalizeRotation } from '../geometry/svgImage';
+import { clampSize as clampSvgImageSize, normalizeRotation } from '../geometry/svgImage';
 import { measureTextLabel } from '../geometry/textMeasure';
 import type { LabelStyle } from '../geometry/labelLayout';
 import { rotateAround, type Vec2 } from '../geometry/vec';
@@ -430,9 +425,8 @@ export function setDotSize(
   size: number,
 ): MapDoc {
   if (!Number.isFinite(size)) return doc;
-  const norm = Math.max(DOT_SIZE_MIN, Math.round(size));
   const effDefault = doc.lines[lineId]?.defaultDotSize ?? DOT_SIZE_DEFAULT;
-  const stored = norm === effDefault ? undefined : norm;
+  const stored = canonicalDotSize(size, effDefault);
   return updateStation(doc, stationId, (cur) => {
     let changed = false;
     const stops = cur.stops.map((s) => {
@@ -456,8 +450,7 @@ export function setDotSize(
 export function setLineDefaultDotSize(doc: MapDoc, id: LineId, size: number): MapDoc {
   const cur = doc.lines[id];
   if (!cur || !Number.isFinite(size)) return doc;
-  const norm = Math.max(DOT_SIZE_MIN, Math.round(size));
-  const stored = norm === DOT_SIZE_DEFAULT ? undefined : norm;
+  const stored = canonicalDotSize(size);
   if (cur.defaultDotSize === stored) return doc;
   let nextLine: Line;
   if (stored === undefined) {
@@ -466,14 +459,16 @@ export function setLineDefaultDotSize(doc: MapDoc, id: LineId, size: number): Ma
   } else {
     nextLine = { ...cur, defaultDotSize: stored };
   }
-  // The cascade compares against `norm` (the new EFFECTIVE default), not
-  // `stored` — resetting to the global default must also absorb overrides
-  // that equal DOT_SIZE_DEFAULT.
+  // The cascade compares against the new EFFECTIVE default — `stored`, or the
+  // global DOT_SIZE_DEFAULT when `stored` collapsed to undefined (`stored` is
+  // undefined ONLY at that default). Resetting to the global default must also
+  // absorb overrides that equal DOT_SIZE_DEFAULT.
+  const effDefault = stored ?? DOT_SIZE_DEFAULT;
   const stations = dropRedundantStopOverrides(
     doc.stations,
     id,
     'dotSize',
-    (s) => s.dotSize === norm,
+    (s) => s.dotSize === effDefault,
   );
   return { ...doc, lines: { ...doc.lines, [id]: nextLine }, stations };
 }
@@ -488,8 +483,7 @@ export function setLineDefaultDotSize(doc: MapDoc, id: LineId, size: number): Ma
 export function setLineWidth(doc: MapDoc, id: LineId, w: number): MapDoc {
   const cur = doc.lines[id];
   if (!cur || !Number.isFinite(w)) return doc;
-  const norm = Math.max(LINE_WIDTH_MIN, Math.round(w));
-  const stored = norm === LINE_WIDTH_DEFAULT ? undefined : norm;
+  const stored = canonicalLineWidth(w);
   if (cur.width === stored) return doc;
   let nextLine: Line;
   if (stored === undefined) {
@@ -510,8 +504,7 @@ export function setLineWidth(doc: MapDoc, id: LineId, w: number): MapDoc {
 export function setLineStrokeWidth(doc: MapDoc, id: LineId, w: number): MapDoc {
   const cur = doc.lines[id];
   if (!cur || !Number.isFinite(w)) return doc;
-  const norm = Math.max(LINE_STROKE_WIDTH_MIN, Math.round(w / LINE_STROKE_STEP) * LINE_STROKE_STEP);
-  const stored = norm === LINE_STROKE_WIDTH_DEFAULT ? undefined : norm;
+  const stored = canonicalStrokeWidth(w);
   if (cur.strokeWidth === stored) return doc;
   let nextLine: Line;
   if (stored === undefined) {
@@ -530,8 +523,7 @@ export function setLineStrokeWidth(doc: MapDoc, id: LineId, w: number): MapDoc {
 export function setLineStrokeColor(doc: MapDoc, id: LineId, c: string): MapDoc {
   const cur = doc.lines[id];
   if (!cur) return doc;
-  const norm = c.toLowerCase();
-  const stored = norm === LINE_STROKE_COLOR_DEFAULT ? undefined : norm;
+  const stored = canonicalStrokeColor(c);
   if (cur.strokeColor === stored) return doc;
   let nextLine: Line;
   if (stored === undefined) {
@@ -2121,8 +2113,6 @@ export function addSvgImage(doc: MapDoc, id: string, fields: Omit<SvgImage, 'id'
     svgImageOrder: [...doc.svgImageOrder, id],
   };
 }
-
-const clampSvgImageSize = (n: number): number => Math.max(SVG_IMAGE_MIN_SIZE, n);
 
 export function updateSvgImage(doc: MapDoc, id: string, patch: SvgImageStylePatch): MapDoc {
   return updateRecord(doc, 'svgImages', id, (cur) => {

@@ -16,6 +16,21 @@ export const LINE_WIDTH_SLIDER_MIN = 2;
 export const LINE_WIDTH_MAX = 28;
 
 /**
+ * The canonical STORED form of a stripe width: round to an integer, clamp to
+ * ≥ LINE_WIDTH_MIN, and collapse to `undefined` (store nothing) when it lands
+ * on LINE_WIDTH_DEFAULT — the app never stores the default. This is the one
+ * home for that arithmetic, shared by the `setLineWidth` transform and the
+ * `sanitizeLineWidth` file-import cleaner so the two can never drift. Callers
+ * own the finiteness guard, because they diverge on non-finite input (a
+ * transform ignores it and keeps the current value; a sanitizer drops the
+ * field).
+ */
+export const canonicalLineWidth = (w: number): number | undefined => {
+  const norm = Math.max(LINE_WIDTH_MIN, Math.round(w));
+  return norm === LINE_WIDTH_DEFAULT ? undefined : norm;
+};
+
+/**
  * Effective render width of a line. Missing field ⇒ LINE_WIDTH_DEFAULT, so
  * saves from before the field existed need no migration (same idiom as
  * `Line.defaultDotStyle`). Structural parameter so narrowed line shapes
