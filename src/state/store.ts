@@ -20,6 +20,7 @@ import type {
   SvgImageStylePatch,
   TextLabel,
   TextLabelWeight,
+  TransferStylePatch,
 } from '../model/types';
 import { useSelection } from './selection';
 import { effectiveLineOrder } from '../model/lineOrder';
@@ -337,6 +338,7 @@ interface DocState extends MapDoc {
     a: { stationId: StationId; lineId: LineId | null },
     b: { stationId: StationId; lineId: LineId | null },
   ) => string;
+  updateTransferStyle: (id: string, patch: TransferStylePatch) => void;
   deleteTransfer: (id: string) => void;
 
   addTextLabel: (x: number, y: number) => string;
@@ -545,6 +547,8 @@ export const useDoc = create<DocState>()(
           set((s) => T.addTransfer(s, id, a, b));
           return id;
         },
+
+        updateTransferStyle: (id, patch) => set((s) => T.updateTransferStyle(s, id, patch)),
 
         deleteTransfer: (id) => set((s) => T.deleteTransfer(s, id)),
 

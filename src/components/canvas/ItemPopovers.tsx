@@ -8,23 +8,29 @@ import {
   stationWorldAABB,
   svgImageAABB,
   textLabelAABB,
+  transferAABB,
 } from '../../geometry/itemBounds';
 import { stopHalfOf } from '../../model/lineWidth';
 import { effectiveStationLabelStyle } from '../../model/transforms';
+import { resolveTransferStyle } from '../../model/transferStyle';
 import { SIDEBAR_WIDTH, sidebarVisible } from '../Sidebar';
 import { RouteBulletPopover } from '../RouteBulletPopover';
 import { TextLabelPopover } from '../TextLabelPopover';
 import { PolygonPopover } from '../PolygonPopover';
 import { SvgImagePopover } from '../SvgImagePopover';
 import { StationPopover } from '../StationPopover';
+import { TransferPopover } from '../TransferPopover';
+import { transferEndWorld } from '../TransferLayer';
 
 /**
  * Mounts the single floating popover for the current sole selection — a
- * station, route bullet, text label, polygon, or svg image. Driven by
- * `soleSelection`, so a popover only shows when exactly one item across
- * every type is selected (a co-selected item of another type can't leak one
- * open). Peeled out of MapCanvas so the canvas no longer carries the
- * near-identical gating blocks + their popover imports.
+ * station, route bullet, text label, polygon, svg image, or transfer. Driven
+ * by `soleSelection` for the five multi-select types, so a popover only shows
+ * when exactly one item across every type is selected (a co-selected item of
+ * another type can't leak one open); transfers are a single-id primary
+ * outside `soleSelection`, mutually exclusive with the list selections via
+ * SIBLING_PRIMARY_CLEAR. Peeled out of MapCanvas so the canvas no longer
+ * carries the near-identical gating blocks + their popover imports.
  *
  * Each branch hands its popover the item's world AABB (geometry/itemBounds):
  * the spawn placement opens the panel beside the item instead of on top of
@@ -44,12 +50,15 @@ export function ItemPopovers({ view: committed }: { view: ViewportProjection }) 
   const svgImages = useDoc((s) => s.svgImages);
   const lines = useDoc((s) => s.lines);
   const baseStyle = useDocLabelStyle();
+  const transfers = useDoc((s) => s.transfers);
+  const transferThickness = useDoc((s) => s.transferThickness);
+  const transferColor = useDoc((s) => s.transferColor);
+  const transferStrokeWidth = useDoc((s) => s.transferStrokeWidth);
+  const transferStrokeColor = useDoc((s) => s.transferStrokeColor);
 
   // The popover anchors against the live viewport; a zero-size viewport (first
   // paint) has no screen mapping yet, so wait for a real box.
   if (!(view.vbW > 0 && view.vbH > 0)) return null;
-  const sole = soleSelection(selection);
-  if (!sole) return null;
 
   // The open sidebar overlays (and paints above) the host's right strip; a
   // spawn placed "fully on-screen" under it would be invisible. Spawn
@@ -57,6 +66,36 @@ export function ItemPopovers({ view: committed }: { view: ViewportProjection }) 
   const spawnBox = sidebarVisible(selection)
     ? { w: view.size.w - SIDEBAR_WIDTH, h: view.size.h }
     : view.size;
+
+  const sole = soleSelection(selection);
+  if (!sole) {
+    const t = selection.selectedTransferId ? transfers[selection.selectedTransferId] : undefined;
+    if (!t) return null;
+    // A live transfer's stations always exist (either end's removal
+    // cascade-deletes it); the guard covers a transient render mid-delete.
+    const sa = stations[t.a.stationId];
+    const sb = stations[t.b.stationId];
+    if (!sa || !sb) return null;
+    const style = resolveTransferStyle(t, {
+      thickness: transferThickness,
+      color: transferColor,
+      strokeWidth: transferStrokeWidth,
+      strokeColor: transferStrokeColor,
+    });
+    return (
+      <TransferPopover
+        transfer={t}
+        worldRect={transferAABB(
+          transferEndWorld(sa, t.a.lineId),
+          transferEndWorld(sb, t.b.lineId),
+          style.thickness / 2 + style.strokeWidth,
+        )}
+        view={view}
+        spawnBox={spawnBox}
+        onClose={() => selection.selectTransfer(null)}
+      />
+    );
+  }
 
   if (sole.type === 'station') {
     const st = stations[sole.id];

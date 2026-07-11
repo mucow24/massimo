@@ -692,9 +692,9 @@ select option {
   isolation: isolate;
 }
 
-/* ── Item popovers (bullet / text label / polygon / svg image) ──
+/* ── Item popovers (bullet / text label / polygon / svg image / transfer) ──
    Signature shell: white body, 3px black border, black header strip. The
-   polygon + svg-image popovers stack `polygon-popover` on top of
+   polygon + svg-image + transfer popovers stack their own class on top of
    `bullet-popover`; the text-label popover has its own root class. */
 .bullet-popover,
 .text-label-popover {
@@ -838,7 +838,8 @@ select option {
   color: var(--text);
 }
 
-/* Footer holds the lock toggle (left) and Delete (right) in every popover. */
+/* Footer holds the lock toggle (left, when the item supports locking) and
+   Delete (right). The transfer popover is lock-less — Delete alone. */
 .bullet-popover .footer,
 .text-label-popover .footer {
   display: flex;
@@ -855,6 +856,9 @@ select option {
   font-size: var(--fs-small);
   font-weight: 600;
   cursor: pointer;
+  /* Keeps Delete on the right even in a lock-less footer (transfer popover),
+     where space-between has only one child to place. */
+  margin-left: auto;
 }
 .bullet-popover .delete-btn:hover:not(:disabled),
 .text-label-popover .delete-btn:hover:not(:disabled) {

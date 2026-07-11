@@ -20,11 +20,13 @@ import {
   LABEL_TRACKING_MIN,
   LABEL_TRACKING_STEP,
   LABEL_WEIGHT_NAMES,
+} from '../model/transforms';
+import {
   TRANSFER_STROKE_WIDTH_MAX,
   TRANSFER_STROKE_WIDTH_MIN,
   TRANSFER_THICKNESS_MAX,
   TRANSFER_THICKNESS_MIN,
-} from '../model/transforms';
+} from '../model/transferStyle';
 import type { TextLabelWeight } from '../model/types';
 import { PALETTES } from '../model/palettes';
 import { parseCustomPalette } from '../model/customPalette';
