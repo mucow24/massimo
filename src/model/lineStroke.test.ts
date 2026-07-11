@@ -5,6 +5,8 @@ import {
   LINE_STROKE_WIDTH_MAX,
   LINE_STROKE_STEP,
   LINE_STROKE_COLOR_DEFAULT,
+  canonicalStrokeWidth,
+  canonicalStrokeColor,
   lineStrokeWidthOf,
   lineStrokeColorOf,
   lineStrokeRailWidth,
@@ -17,6 +19,36 @@ describe('line stroke constants', () => {
     expect(LINE_STROKE_WIDTH_MAX).toBe(10);
     expect(LINE_STROKE_STEP).toBe(0.5);
     expect(LINE_STROKE_COLOR_DEFAULT).toBe('#ffffff');
+  });
+});
+
+describe('canonicalStrokeWidth', () => {
+  it('rounds to the half-pixel grid', () => {
+    expect(canonicalStrokeWidth(2.24)).toBe(2);
+    expect(canonicalStrokeWidth(2.25)).toBe(2.5);
+    expect(canonicalStrokeWidth(2.74)).toBe(2.5);
+  });
+
+  it('collapses the default (0 = no casing) to undefined, including clamped negatives', () => {
+    // The floor and the default coincide at 0, so anything at/below the floor
+    // becomes the default and drops.
+    expect(LINE_STROKE_WIDTH_MIN).toBe(LINE_STROKE_WIDTH_DEFAULT);
+    expect(canonicalStrokeWidth(-1)).toBeUndefined();
+    expect(canonicalStrokeWidth(0)).toBeUndefined();
+    expect(canonicalStrokeWidth(0.2)).toBeUndefined();
+    expect(canonicalStrokeWidth(1.5)).toBe(1.5);
+  });
+});
+
+describe('canonicalStrokeColor', () => {
+  it('lowercases the color', () => {
+    expect(canonicalStrokeColor('#AABBCC')).toBe('#aabbcc');
+  });
+
+  it('collapses the white default to undefined so it is never stored', () => {
+    expect(canonicalStrokeColor('#FFFFFF')).toBeUndefined();
+    expect(canonicalStrokeColor('#ffffff')).toBeUndefined();
+    expect(canonicalStrokeColor('#000000')).toBe('#000000');
   });
 });
 

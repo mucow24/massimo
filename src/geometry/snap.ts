@@ -1079,8 +1079,9 @@ function refineAlongAxis(args: {
 
     if (modes.tens) {
       // Prefer the prev neighbor; fall back to next so termini at index 0
-      // still get a tens anchor. Either side defines the same multiple-of-
-      // 10 grid along the axis (just shifted by the segment length).
+      // still get a tens anchor. Either side defines the same grid-length
+      // cadence along the axis (a whole multiple of the active grid size —
+      // gridInterval, 5/10/20 — just shifted by the segment length).
       const tensAnchor = prevStop?.axisOk ? prevStop : nextStop?.axisOk ? nextStop : null;
       if (tensAnchor) {
         const dAlong = (dStopX - tensAnchor.x) * axis.x + (dStopY - tensAnchor.y) * axis.y;
