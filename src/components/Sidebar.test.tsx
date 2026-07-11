@@ -104,6 +104,37 @@ describe('<Sidebar /> — sorts by cleaned station name', () => {
   });
 });
 
+describe('<Sidebar /> — empty / nontraditional names sink to the bottom', () => {
+  beforeEach(() => {
+    useDoc.setState({
+      ...useDoc.getState(),
+      ...makeDoc({
+        stations: [
+          makeStation({ id: 'air', name: '✈ Airport' }),
+          makeStation({ id: 'ban', name: 'Banana' }),
+          makeStation({ id: 'empty', name: '' }),
+          makeStation({ id: 'app', name: 'Apple' }),
+        ],
+      }),
+    });
+  });
+
+  it('ascending: letter-leading names first, then empty / nontraditional names', () => {
+    render(<Sidebar />);
+    // Apple, Banana lead (letters, sorted A→Z); empty then ✈ sink below them.
+    expect(rowOrder()).toEqual(['app', 'ban', 'empty', 'air']);
+  });
+
+  it('descending: the sunk group stays at the bottom, above-flip only reorders the rest', async () => {
+    const user = userEvent.setup();
+    render(<Sidebar />);
+
+    await user.click(stationHeader());
+    // Letter names flip to Z→A (Banana, Apple); empty / ✈ remain pinned below.
+    expect(rowOrder()).toEqual(['ban', 'app', 'air', 'empty']);
+  });
+});
+
 // The tab bar buttons carry class `.tab` (distinct from the `.sort-header`
 // column buttons, which also start with "Station").
 const tabButton = (label: 'Stations' | 'Lines'): HTMLButtonElement => {
@@ -321,6 +352,44 @@ describe('<Sidebar /> — station name rendering', () => {
     // DOCUMENT_POSITION_FOLLOWING = 4: the argument follows the receiver.
     const name = wpRow!.querySelector('.grow')!;
     expect(pill!.compareDocumentPosition(name) & 4).toBe(4);
+  });
+
+  it('shows a "(No name)" placeholder for a station with an empty name', () => {
+    useDoc.setState({
+      ...useDoc.getState(),
+      ...makeDoc({ stations: [makeStation({ id: 's1', name: '' })] }),
+    });
+    render(<Sidebar />);
+
+    const nameCell = document.querySelector('[data-station-row="s1"] .grow');
+    expect(nameCell?.textContent).toBe('(No name)');
+    // The placeholder is styled (grey italics) via a dedicated class, so a real
+    // station literally named "(No name)" wouldn't be dimmed.
+    expect(nameCell?.classList.contains('no-name')).toBe(true);
+  });
+
+  it('treats a name that cleans to empty (only tags/bullets) as no name', () => {
+    useDoc.setState({
+      ...useDoc.getState(),
+      ...makeDoc({ stations: [makeStation({ id: 's1', name: '<b></b> |A|' })] }),
+    });
+    render(<Sidebar />);
+
+    const nameCell = document.querySelector('[data-station-row="s1"] .grow');
+    expect(nameCell?.textContent).toBe('(No name)');
+    expect(nameCell?.classList.contains('no-name')).toBe(true);
+  });
+
+  it('does not dim a real station whose name is the placeholder text', () => {
+    useDoc.setState({
+      ...useDoc.getState(),
+      ...makeDoc({ stations: [makeStation({ id: 's1', name: '(No name)' })] }),
+    });
+    render(<Sidebar />);
+
+    const nameCell = document.querySelector('[data-station-row="s1"] .grow');
+    expect(nameCell?.textContent).toBe('(No name)');
+    expect(nameCell?.classList.contains('no-name')).toBe(false);
   });
 
   it('wraps each Lines-column badge code in a .line-badge__code span (inline-bullet sizing)', () => {
