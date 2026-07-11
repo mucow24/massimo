@@ -1390,6 +1390,21 @@ input[type='range'].indeterminate {
 .inspector .options-popover-row {
   margin-bottom: 8px;
 }
+/* The default-dot row pairs the shape picker with the size slider under one
+   "Default stop dot type and size" caption. It's wrapped in a .field for that
+   caption, so zero the embedded row's own bottom margin — the .field already
+   supplies the inter-field 8px, and both together would double the gap below. */
+.inspector .dot-field > .options-popover-row {
+  margin-bottom: 0;
+}
+/* The caption reads as a row label (muted caption weight), matching "Line
+   width" / "Stroke width" — not the bold section-header the .field label
+   default would give it. Class-doubled selector to outrank `.field > label`. */
+.inspector .field.dot-field > label {
+  font-size: var(--fs-caption);
+  font-weight: 400;
+  color: var(--text-muted);
+}
 .inspector .options-popover-label {
   /* Fixed column sized to the longest label ("Stroke color") so the sliders
      and spinboxes down the panel start at one shared x. */

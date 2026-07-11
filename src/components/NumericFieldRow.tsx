@@ -1,3 +1,4 @@
+import type { ReactNode } from 'react';
 import { useNumericField } from './useNumericField';
 
 interface Props {
@@ -6,6 +7,12 @@ interface Props {
    *  works in tests. */
   id: string;
   label: string;
+  /** Optional control rendered in the label column in place of the text label
+   *  — e.g. the dot-shape picker on the Line inspector's combined dot row. The
+   *  `label` prop still names the slider + spinbutton for a11y/tests (the
+   *  slider falls back to it as its `aria-label` when the visible label is
+   *  gone). */
+  leading?: ReactNode;
   min: number;
   max: number;
   step: number;
@@ -59,6 +66,7 @@ export function NumericFieldRow({
   textboxMin,
   detent,
   disabled,
+  leading,
 }: Props) {
   const { text, history, onNumberFocus, onNumberChange, attachWheel, onNumberBlur } =
     useNumericField(value, onChange, getCurrent, step);
@@ -68,12 +76,17 @@ export function NumericFieldRow({
   // so a disabled row ignores the wheel.
   return (
     <div className="options-popover-row" ref={disabled ? undefined : attachWheel}>
-      <label htmlFor={id} className="options-popover-label">
-        {label}
-      </label>
+      {leading !== undefined ? (
+        <div className="options-popover-label">{leading}</div>
+      ) : (
+        <label htmlFor={id} className="options-popover-label">
+          {label}
+        </label>
+      )}
       <input
         id={id}
         type="range"
+        aria-label={leading !== undefined ? label : undefined}
         min={min}
         max={max}
         step={step}

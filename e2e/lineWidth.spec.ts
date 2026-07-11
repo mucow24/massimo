@@ -94,7 +94,7 @@ async function selectLine(page: Page, lineId: string): Promise<void> {
 // timeout keeps the pre-implementation red fast instead of a full default
 // timeout while the control doesn't exist.
 async function setWidthTo(page: Page, value: string): Promise<void> {
-  const spin = page.getByRole('spinbutton', { name: 'Width' });
+  const spin = page.getByRole('spinbutton', { name: 'Line width' });
   await expect(spin).toBeVisible({ timeout: 2000 });
   await spin.fill(value);
   await spin.blur();

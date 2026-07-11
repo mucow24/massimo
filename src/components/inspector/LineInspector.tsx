@@ -231,33 +231,35 @@ export function LineInspector({ id }: { id: LineId }) {
         />
       </div>
       <div className="field">
-        <label>Default stop dot</label>
-        <StationShapePicker
-          disabled={false}
-          currentStyle={line.defaultDotStyle ?? DEFAULT_DOT_STYLE}
-          lineColor={line.color}
-          serviceCode={line.service}
-          onPick={(shape) => setLineDefaultDotStyle(line.id, DOT_SHAPE_PRESETS[shape])}
-        />
-      </div>
-      <NumericFieldRow
-        id={`line-dot-size-${line.id}`}
-        label="Dot size"
-        min={DOT_SIZE_MIN}
-        max={DOT_SIZE_MAX}
-        step={1}
-        value={lineDefaultDotSizeOf(line)}
-        onChange={(n) => setLineDefaultDotSize(line.id, n)}
-        getCurrent={() => lineDefaultDotSizeOf(useDoc.getState().lines[id])}
-        textboxAllowAboveMax
-      />
-      <div className="field">
         <label>Color</label>
         <ColorPalette value={line.color} onChange={(c) => updateLine(line.id, { color: c })} />
       </div>
+      <div className="field dot-field">
+        <label>Default stop dot type and size</label>
+        <NumericFieldRow
+          id={`line-dot-size-${line.id}`}
+          label="Dot size"
+          leading={
+            <StationShapePicker
+              disabled={false}
+              currentStyle={line.defaultDotStyle ?? DEFAULT_DOT_STYLE}
+              lineColor={line.color}
+              serviceCode={line.service}
+              onPick={(shape) => setLineDefaultDotStyle(line.id, DOT_SHAPE_PRESETS[shape])}
+            />
+          }
+          min={DOT_SIZE_MIN}
+          max={DOT_SIZE_MAX}
+          step={1}
+          value={lineDefaultDotSizeOf(line)}
+          onChange={(n) => setLineDefaultDotSize(line.id, n)}
+          getCurrent={() => lineDefaultDotSizeOf(useDoc.getState().lines[id])}
+          textboxAllowAboveMax
+        />
+      </div>
       <NumericFieldRow
         id={`line-width-${line.id}`}
-        label="Width"
+        label="Line width"
         min={LINE_WIDTH_SLIDER_MIN}
         max={LINE_WIDTH_MAX}
         step={1}
@@ -269,7 +271,7 @@ export function LineInspector({ id }: { id: LineId }) {
       />
       <NumericFieldRow
         id={`line-stroke-${line.id}`}
-        label="Stroke"
+        label="Stroke width"
         min={LINE_STROKE_WIDTH_MIN}
         max={LINE_STROKE_WIDTH_MAX}
         step={LINE_STROKE_STEP}
