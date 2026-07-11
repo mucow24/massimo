@@ -41,18 +41,22 @@ export function StationSilhouette({
   // Committed zoom: the outline strokes divide by it so the ring weight stays
   // constant on screen (the 1/zoom idiom PolygonView established).
   const zoom = useViewportStore((s) => s.zoom);
+  const showWaypoints = useViewportStore((s) => s.showWaypoints);
 
   if (editingStationId === station.id) return null;
 
   const angle = station.rotation * 45;
   // Smooth the union of the cells rect + (rotated) label rect; smoothing
-  // applies to the outer-boundary corners only, so the rects meet cleanly.
+  // applies to the outer-boundary corners only, so the rects meet cleanly. A
+  // revealed waypoint gets its label rect (its name is painted, so the ring
+  // must wrap it).
   const { cells, label: labelPoly } = stationBoundaryRectsLocal(
     station,
     effectiveStationLabelStyle(station, docStyle),
     stopHalfOf(lines),
+    showWaypoints,
   );
-  // Waypoint: no label polygon to merge, render the cells rect alone.
+  // Hidden waypoint: no label polygon to merge, render the cells rect alone.
   const polygons = labelPoly ? unionConvex(cells, labelPoly) : [cells];
   const pathStr = polygonsToPath(polygons, SELECTION_CORNER_RADIUS);
   const transform = `translate(${station.x} ${station.y}) rotate(${angle})`;

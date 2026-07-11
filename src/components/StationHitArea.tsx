@@ -3,6 +3,7 @@ import { labelLayoutLocal } from '../geometry/labelLayout';
 import { cellsAABBLocal } from '../geometry/stationBoundary';
 import { stopHalfOf } from '../model/lineWidth';
 import { effectiveStationLabelStyle } from '../model/transforms';
+import { useViewportStore } from '../state/viewportStore';
 import { useDocLabelStyle } from './useDocLabelStyle';
 import { useStationInteraction } from './useStationInteraction';
 
@@ -12,7 +13,8 @@ import { useStationInteraction } from './useStationInteraction';
  * rect over the label, both forwarding pointer events to the shared station
  * interaction handlers so any pixel of the station's footprint — dots, body,
  * or painted name — is a grab handle for the whole STATION.
- * Waypoints omit the label rect (no painted name to click).
+ * A hidden waypoint omits the label rect (no painted name to click); a revealed
+ * one (Show-waypoints overlay) gets it back so its name is clickable.
  *
  * The name's OWN layout (its cell/rotation/offsets) is edited in the
  * station-layout editor, not on the main canvas — so here the label rect is a
@@ -37,11 +39,14 @@ export function StationHitArea({
 }) {
   const docStyle = useDocLabelStyle();
   const { handlers, cursor, hitless } = useStationInteraction(station, onStartDrag, lines);
+  const showWaypoints = useViewportStore((s) => s.showWaypoints);
 
   const angle = station.rotation * 45;
-  const isWp = !!station.isWaypoint;
+  // A revealed waypoint (overlay on) gets its name's hit rect back, so the
+  // painted name is clickable like a regular station's.
+  const hideLabelRect = !!station.isWaypoint && !showWaypoints;
   const stopHalf = stopHalfOf(lines);
-  const cellsBox = cellsAABBLocal(station, stopHalf);
+  const cellsBox = cellsAABBLocal(station, stopHalf, showWaypoints);
   const {
     anchorX: labelAnchorX,
     anchorY: labelAnchorY,
@@ -75,7 +80,7 @@ export function StationHitArea({
         {...handlers}
         {...hitProps}
       />
-      {!isWp && (
+      {!hideLabelRect && (
         <rect
           x={hitX}
           y={hitY}

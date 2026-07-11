@@ -50,6 +50,7 @@ beforeEach(() => {
     gridVisible: true,
     gridSize: 10,
     darkMode: false,
+    showWaypoints: false,
   });
   vi.mocked(downloadBlob).mockClear();
   vi.mocked(getCanvasSvg).mockReset();
@@ -101,6 +102,19 @@ describe('Toolbar — tool + view toggles', () => {
     render(<Toolbar />);
     await user.click(screen.getByLabelText('Toggle dark mode'));
     expect(useViewportStore.getState().darkMode).toBe(true);
+  });
+
+  it('toggles waypoint visibility via the WP button', async () => {
+    const user = userEvent.setup();
+    render(<Toolbar />);
+    const btn = () => screen.getByLabelText('Toggle waypoints');
+    expect(btn()).toHaveTextContent('WP');
+    expect(btn()).toHaveAttribute('aria-pressed', 'false');
+    await user.click(btn());
+    expect(useViewportStore.getState().showWaypoints).toBe(true);
+    expect(btn()).toHaveAttribute('aria-pressed', 'true');
+    await user.click(btn());
+    expect(useViewportStore.getState().showWaypoints).toBe(false);
   });
 
   it('Reset view fits the camera to the map content', async () => {
