@@ -8,6 +8,7 @@ import {
   svgImagesForRect,
   textLabelsForRect,
 } from '../../geometry/stationBoundary';
+import { docLabelStyle } from '../../geometry/labelLayout';
 import { stopHalfOf } from '../../model/lineWidth';
 import type { Pt } from '../../geometry/polygonUnion';
 import type { StationId } from '../../model/types';
@@ -164,13 +165,7 @@ export function useRectSelect(
     const stationHits = stationsForRect(
       doc.stations,
       nextRect,
-      {
-        fontSize: doc.labelFontSize,
-        weight: doc.labelWeight,
-        italic: doc.labelItalic,
-        leading: doc.labelLeading,
-        tracking: doc.labelTracking,
-      },
+      docLabelStyle(doc),
       stopHalfOf(doc.lines),
       includeLocked,
     );
@@ -218,13 +213,7 @@ export function useRectSelect(
     const stationHits = stationsForRect(
       doc.stations,
       finalRect,
-      {
-        fontSize: doc.labelFontSize,
-        weight: doc.labelWeight,
-        italic: doc.labelItalic,
-        leading: doc.labelLeading,
-        tracking: doc.labelTracking,
-      },
+      docLabelStyle(doc),
       stopHalfOf(doc.lines),
       includeLocked,
     );
