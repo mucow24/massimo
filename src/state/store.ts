@@ -16,12 +16,14 @@ import type {
   PolygonStylePatch,
   RouteBullet,
   StationId,
+  StyleKind,
   SvgImage,
   SvgImageStylePatch,
   TextLabel,
   TextLabelWeight,
   TransferStylePatch,
 } from '../model/types';
+import * as S from '../model/styles';
 import { useSelection } from './selection';
 import { effectiveLineOrder } from '../model/lineOrder';
 import { pickNextLineName } from '../model/lineNaming';
@@ -88,6 +90,10 @@ const DOC_FIELDS = [
   'polygonOrder',
   'svgImages',
   'svgImageOrder',
+  // Named style presets. New collection, no persist version bump: zustand's
+  // shallow merge (and parse()'s DEFAULT_DOC merge) backfills {} for older
+  // saves, same as labelLeading/labelTracking shipped.
+  'styles',
   'labelFontSize',
   'labelWeight',
   'labelItalic',
@@ -375,6 +381,21 @@ interface DocState extends MapDoc {
   moveSvgImageDown: (id: string) => void;
   deleteSvgImage: (id: string) => void;
 
+  /** Define-by-example: capture `itemId`'s current EFFECTIVE formatting as
+   *  the style named `name` — upsert-by-name per kind (à la addPalette), so
+   *  saving under an existing name redefines that style and re-stamps its
+   *  users in the same single undo entry. Returns the style id the name
+   *  resolves to (nothing is written when the transform refuses — empty name
+   *  or missing item). */
+  saveStyle: (kind: StyleKind, name: string, itemId: string) => string;
+  /** Stamp a style's props onto an item and tag it (one undo entry). */
+  applyStyle: (styleId: string, itemId: string) => void;
+  /** Detach an item to "Custom": drop the tag, keep the values. */
+  clearStyleTag: (kind: StyleKind, itemId: string) => void;
+  renameStyle: (styleId: string, name: string) => void;
+  /** Delete a style def; its users keep their values but lose the tag. */
+  deleteStyle: (styleId: string) => void;
+
   /** Replace the whole document (file load). Defaults fill any field the
    *  loaded doc omits. Callers should clearHistory() after — undo must not
    *  cross a file load. */
@@ -526,14 +547,25 @@ export const useDoc = create<DocState>()(
         },
         // Add a bullet from a clipboard payload, nudged by the drop offset. The
         // fresh copy comes out UNLOCKED even if the source was locked, so it's
-        // immediately movable (mirrors pastePolygon / pasteTextLabel).
+        // immediately movable (mirrors pastePolygon / pasteTextLabel). The
+        // restamp pass repairs a stale tagged payload — the clipboard froze
+        // the values, the style may have been redefined since the copy — in
+        // the SAME set(), so a paste stays one undo entry.
         pasteRouteBullet: (data) => {
           const { locked: _locked, ...rest } = data;
-          return get().addRouteBulletWith({
-            ...rest,
-            x: data.x + DROP_OFFSET,
-            y: data.y + DROP_OFFSET,
-          });
+          const id = ids.routeBulletId();
+          set((s) =>
+            S.restampStyleTag(
+              T.addRouteBulletWith(s, id, {
+                ...rest,
+                x: data.x + DROP_OFFSET,
+                y: data.y + DROP_OFFSET,
+              }),
+              'routeBullet',
+              id,
+            ),
+          );
+          return id;
         },
         // Duplicate an existing bullet at the drop offset; null if it's gone.
         duplicateRouteBullet: (id) => duplicateVia(get().routeBullets, id, get().pasteRouteBullet),
@@ -564,14 +596,24 @@ export const useDoc = create<DocState>()(
         },
         // Add a label from a clipboard payload, nudged by the drop offset. The
         // fresh copy comes out UNLOCKED even if the source was locked, so it's
-        // immediately movable (mirrors pastePolygon / pasteRouteBullet).
+        // immediately movable (mirrors pastePolygon / pasteRouteBullet). The
+        // restamp pass repairs a stale tagged payload in the same set() —
+        // see pasteRouteBullet.
         pasteTextLabel: (data) => {
           const { locked: _locked, ...rest } = data;
-          return get().addTextLabelWith({
-            ...rest,
-            x: data.x + DROP_OFFSET,
-            y: data.y + DROP_OFFSET,
-          });
+          const id = ids.textLabelId();
+          set((s) =>
+            S.restampStyleTag(
+              T.addTextLabelWith(s, id, {
+                ...rest,
+                x: data.x + DROP_OFFSET,
+                y: data.y + DROP_OFFSET,
+              }),
+              'textLabel',
+              id,
+            ),
+          );
+          return id;
         },
         // Duplicate an existing label at the drop offset; null if it's gone.
         duplicateTextLabel: (id) => duplicateVia(get().textLabels, id, get().pasteTextLabel),
@@ -593,13 +635,26 @@ export const useDoc = create<DocState>()(
         // Add a polygon from a clipboard payload, translating every vertex by
         // the drop offset (polygons have no center — geometry lives in
         // `vertices`, in world coords). The fresh copy comes out UNLOCKED even
-        // if the source was locked, so it's immediately movable/editable.
+        // if the source was locked, so it's immediately movable/editable. The
+        // restamp pass repairs a stale tagged payload in the same set() —
+        // see pasteRouteBullet.
         pastePolygon: (data) => {
           const { locked: _locked, ...rest } = data;
-          return get().addPolygonWith({
-            ...rest,
-            vertices: data.vertices.map((v) => ({ x: v.x + DROP_OFFSET, y: v.y + DROP_OFFSET })),
-          });
+          const id = ids.polygonId();
+          set((s) =>
+            S.restampStyleTag(
+              T.addPolygonWith(s, id, {
+                ...rest,
+                vertices: data.vertices.map((v) => ({
+                  x: v.x + DROP_OFFSET,
+                  y: v.y + DROP_OFFSET,
+                })),
+              }),
+              'polygon',
+              id,
+            ),
+          );
+          return id;
         },
         // Duplicate an existing polygon at the drop offset; null if it's gone.
         duplicatePolygon: (id) => duplicateVia(get().polygons, id, get().pastePolygon),
@@ -638,6 +693,23 @@ export const useDoc = create<DocState>()(
         moveSvgImageUp: (id) => set((s) => T.moveSvgImageUp(s, id)),
         moveSvgImageDown: (id) => set((s) => T.moveSvgImageDown(s, id)),
         deleteSvgImage: (id) => set((s) => T.deleteSvgImage(s, id)),
+
+        // Each style action is one atomic set() over one pure transform, so a
+        // multi-item fan-out (save re-stamping every user, delete untagging
+        // them) is exactly one undo entry — no history group needed.
+        saveStyle: (kind, name, itemId) => {
+          const trimmed = name.trim();
+          const existing = Object.values(get().styles).find(
+            (d) => d.kind === kind && d.name === trimmed,
+          );
+          const id = existing?.id ?? ids.styleId();
+          set((s) => S.saveStyleFromItem(s, id, kind, trimmed, itemId));
+          return id;
+        },
+        applyStyle: (styleId, itemId) => set((s) => S.applyStyleToItem(s, styleId, itemId)),
+        clearStyleTag: (kind, itemId) => set((s) => S.clearStyleTag(s, kind, itemId)),
+        renameStyle: (styleId, name) => set((s) => S.renameStyle(s, styleId, name)),
+        deleteStyle: (styleId) => set((s) => S.deleteStyle(s, styleId)),
 
         // A plain merge: doc fields are replaced, mutator methods survive.
         loadDoc: (doc) => set({ ...DEFAULT_DOC, ...doc }),

@@ -5,6 +5,7 @@ import { useDraggablePopover } from './canvas/useDraggablePopover';
 import { NumericFieldRow } from './NumericFieldRow';
 import { PopoverFooter } from './PopoverFooter';
 import { ColorField } from './ColorField';
+import { StyleRow } from './StyleRow';
 import type { AABB } from '../geometry/rectPolygon';
 import {
   resolveTransferStyle,
@@ -81,6 +82,8 @@ export function TransferPopover({ transfer, worldRect, view, spawnBox, onClose }
       shellRef={shellRef}
       headerHandlers={headerHandlers}
     >
+      <StyleRow key={transfer.id} kind="transfer" itemId={transfer.id} styleId={transfer.styleId} />
+      <hr className="popover-divider" aria-hidden="true" />
       <NumericFieldRow
         id="transfer-thickness"
         label="Thickness"

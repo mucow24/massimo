@@ -48,6 +48,7 @@ import type {
   StationId,
   StopCell,
   StopOrientation,
+  StyleKind,
   TextLabel,
   TextLabelWeight,
   Transfer,
@@ -122,6 +123,7 @@ export const DEFAULT_DOC: MapDoc = {
   polygonOrder: [],
   svgImages: {},
   svgImageOrder: [],
+  styles: {},
   labelFontSize: LABEL_FONT_SIZE_DEFAULT,
   labelWeight: LABEL_WEIGHT_DEFAULT,
   labelItalic: false,
@@ -256,6 +258,30 @@ function updateRecord<K extends RecordCollectionKey>(
   const next = fn(cur);
   if (next === cur) return doc;
   return { ...doc, [key]: { ...coll, [id]: next } } as MapDoc;
+}
+
+// Detach an item from its style preset. Editing a covered style field breaks
+// the styleId tag's "tagged ⇒ matches" invariant (see types.ts), so the
+// transforms below clear the tag whenever a covered value ACTUALLY changes —
+// value-identical re-writes (a slider tick, re-clicking the active align
+// button) must keep it. Same reference when untagged.
+function stripStyleId<T extends { styleId?: string }>(item: T): T {
+  if (item.styleId === undefined) return item;
+  const { styleId: _gone, ...rest } = item;
+  return rest as T;
+}
+
+// Paste/duplicate hygiene for the add*With constructors: an incoming styleId
+// is kept only when it resolves to a style of the matching kind in THIS doc —
+// cross-document paste can carry a foreign or wrong-kind id. Values are kept
+// either way (same outcome as deleting a style).
+function sanitizeIncomingStyleId<T extends { styleId?: string }>(
+  doc: MapDoc,
+  kind: StyleKind,
+  item: T,
+): T {
+  if (item.styleId === undefined || doc.styles[item.styleId]?.kind === kind) return item;
+  return stripStyleId(item);
 }
 
 function updateStation(doc: MapDoc, id: StationId, fn: (st: Station) => Station): MapDoc {
@@ -412,7 +438,9 @@ export function setLineDefaultDotStyle(doc: MapDoc, id: LineId, style: DotStyle)
     'dotStyle',
     (s) => s.dotStyle !== undefined && dotStylesEqual(s.dotStyle, style),
   );
-  return { ...doc, lines: { ...doc.lines, [id]: nextLine }, stations };
+  // Every fall-through past the early-returns above is a real covered-field
+  // change → detach from the line's style preset.
+  return { ...doc, lines: { ...doc.lines, [id]: stripStyleId(nextLine) }, stations };
 }
 
 // Per-stop dot size override — the dot's DIAMETER in px. Non-finite input is
@@ -472,7 +500,9 @@ export function setLineDefaultDotSize(doc: MapDoc, id: LineId, size: number): Ma
     'dotSize',
     (s) => s.dotSize === effDefault,
   );
-  return { ...doc, lines: { ...doc.lines, [id]: nextLine }, stations };
+  // Fall-through = the stored default-dot-size changed → detach from the
+  // line's style preset.
+  return { ...doc, lines: { ...doc.lines, [id]: stripStyleId(nextLine) }, stations };
 }
 
 // Per-line stripe width. Non-finite input is ignored; otherwise the value is
@@ -494,7 +524,8 @@ export function setLineWidth(doc: MapDoc, id: LineId, w: number): MapDoc {
   } else {
     nextLine = { ...cur, width: stored };
   }
-  return { ...doc, lines: { ...doc.lines, [id]: nextLine } };
+  // Fall-through = the stored width changed → detach from the style preset.
+  return { ...doc, lines: { ...doc.lines, [id]: stripStyleId(nextLine) } };
 }
 
 // Per-line casing width. Same contract as setLineWidth except the grid:
@@ -515,7 +546,8 @@ export function setLineStrokeWidth(doc: MapDoc, id: LineId, w: number): MapDoc {
   } else {
     nextLine = { ...cur, strokeWidth: stored };
   }
-  return { ...doc, lines: { ...doc.lines, [id]: nextLine } };
+  // Fall-through = the stored casing width changed → detach from the preset.
+  return { ...doc, lines: { ...doc.lines, [id]: stripStyleId(nextLine) } };
 }
 
 // Per-line casing color. Normalized to lowercase before compare/store (the
@@ -534,7 +566,8 @@ export function setLineStrokeColor(doc: MapDoc, id: LineId, c: string): MapDoc {
   } else {
     nextLine = { ...cur, strokeColor: stored };
   }
-  return { ...doc, lines: { ...doc.lines, [id]: nextLine } };
+  // Fall-through = the stored casing color changed → detach from the preset.
+  return { ...doc, lines: { ...doc.lines, [id]: stripStyleId(nextLine) } };
 }
 
 export function setStationWaypoint(doc: MapDoc, stationId: StationId, isWaypoint: boolean): MapDoc {
@@ -1485,22 +1518,36 @@ export function setLabelFontSize(doc: MapDoc, n: number): MapDoc {
   return { ...doc, labelFontSize: clamped };
 }
 
-// Drop every per-transfer override of `field` that the doc setting's NEW
-// `value` has made redundant, so those transfers track the setting going
-// forward (mirrors dropRedundantStopOverrides — this is what keeps
-// "override present ⇔ transfer differs from the setting" true doc-wide).
-// Returns the same `transfers` reference when nothing was pruned.
-function dropRedundantTransferOverrides(
-  transfers: Record<string, Transfer>,
+// Reconcile every per-transfer override of `field` with the doc setting's NEW
+// `value`. Two regimes:
+//   - UNTAGGED transfers keep the historical prune: an override the new value
+//     makes redundant is dropped, so the transfer tracks the setting (mirrors
+//     dropRedundantStopOverrides — this is what keeps "override present ⇔
+//     transfer differs from the setting" true doc-wide).
+//   - STYLE-TAGGED transfers are instead re-canonicalized against their
+//     STYLE's value: the override materializes when it stopped being
+//     redundant and drops when it became so, pinning the transfer's EFFECTIVE
+//     value to its style (the styleId tag's "tagged ⇒ matches" invariant)
+//     while preserving the same override-presence contract.
+// Returns the same `transfers` reference when nothing changed.
+function reconcileTransferOverrides(
+  doc: MapDoc,
   field: 'thickness' | 'color' | 'strokeWidth' | 'strokeColor',
   value: number | string,
 ): Record<string, Transfer> {
-  let out = transfers;
+  let out = doc.transfers;
   for (const id of Object.keys(out)) {
     const t = out[id];
-    if (t[field] !== value) continue;
-    const { [field]: _gone, ...rest } = t;
-    out = { ...out, [id]: rest };
+    const def = t.styleId !== undefined ? doc.styles[t.styleId] : undefined;
+    let next = t;
+    if (def?.kind === 'transfer') {
+      const styleValue = def.props[field];
+      next = withTransferOverride(t, field, styleValue === value ? undefined : styleValue);
+    } else if (t[field] === value) {
+      const { [field]: _gone, ...rest } = t;
+      next = rest;
+    }
+    if (next !== t) out = { ...out, [id]: next };
   }
   return out;
 }
@@ -1516,7 +1563,7 @@ export function setTransferThickness(doc: MapDoc, n: number): MapDoc {
   return {
     ...doc,
     transferThickness: clamped,
-    transfers: dropRedundantTransferOverrides(doc.transfers, 'thickness', clamped),
+    transfers: reconcileTransferOverrides(doc, 'thickness', clamped),
   };
 }
 
@@ -1525,7 +1572,7 @@ export function setTransferColor(doc: MapDoc, c: string): MapDoc {
   return {
     ...doc,
     transferColor: c,
-    transfers: dropRedundantTransferOverrides(doc.transfers, 'color', c),
+    transfers: reconcileTransferOverrides(doc, 'color', c),
   };
 }
 
@@ -1539,7 +1586,7 @@ export function setTransferStrokeWidth(doc: MapDoc, n: number): MapDoc {
   return {
     ...doc,
     transferStrokeWidth: clamped,
-    transfers: dropRedundantTransferOverrides(doc.transfers, 'strokeWidth', clamped),
+    transfers: reconcileTransferOverrides(doc, 'strokeWidth', clamped),
   };
 }
 
@@ -1548,7 +1595,7 @@ export function setTransferStrokeColor(doc: MapDoc, c: string): MapDoc {
   return {
     ...doc,
     transferStrokeColor: c,
-    transfers: dropRedundantTransferOverrides(doc.transfers, 'strokeColor', c),
+    transfers: reconcileTransferOverrides(doc, 'strokeColor', c),
   };
 }
 
@@ -1777,7 +1824,7 @@ export function addRouteBulletWith(
   id: string,
   fields: Omit<RouteBullet, 'id'>,
 ): MapDoc {
-  const bullet: RouteBullet = { id, ...fields };
+  const bullet = sanitizeIncomingStyleId(doc, 'routeBullet', { id, ...fields });
   return { ...doc, routeBullets: { ...doc.routeBullets, [id]: bullet } };
 }
 
@@ -1802,7 +1849,10 @@ export function updateRouteBullet(
     // it out of band. Mirrors updatePolygon's clamps.
     const nextPatch =
       typeof patch.size === 'number' ? { ...patch, size: clampRouteBulletSize(patch.size) } : patch;
-    return { ...cur, ...nextPatch };
+    const next = { ...cur, ...nextPatch };
+    // Covered style fields are shape + size (NOT lineId/locked); a real change
+    // to either detaches the bullet from its style preset.
+    return next.shape !== cur.shape || next.size !== cur.size ? stripStyleId(next) : next;
   });
 }
 
@@ -1821,7 +1871,7 @@ export function addTextLabel(doc: MapDoc, id: string, x: number, y: number): Map
 
 // Insert a fully-specified label (used by duplicate + paste).
 export function addTextLabelWith(doc: MapDoc, id: string, fields: Omit<TextLabel, 'id'>): MapDoc {
-  const label: TextLabel = { id, ...fields };
+  const label = sanitizeIncomingStyleId(doc, 'textLabel', { id, ...fields });
   return { ...doc, textLabels: { ...doc.textLabels, [id]: label } };
 }
 
@@ -1911,7 +1961,24 @@ export function updateTextLabel(
         y: cur.y + (after.height - before.height) / 2,
       };
     }
-    return next;
+    // Detach from the style preset when a covered style field ACTUALLY
+    // changes. Width/leading/tracking compare as EFFECTIVE values (absent ⇒
+    // 0/1/0): materializing an explicit default (e.g. a style stamp writing
+    // width 0 over an absent field) is not a divergence. Content, position,
+    // lock and editorHeight are not style.
+    const coveredChanged =
+      next.color !== cur.color ||
+      next.darkColor !== cur.darkColor ||
+      next.fontSize !== cur.fontSize ||
+      next.weight !== cur.weight ||
+      next.italic !== cur.italic ||
+      next.align !== cur.align ||
+      (next.width ?? 0) !== (cur.width ?? 0) ||
+      (next.leading ?? TEXT_LABEL_LEADING_DEFAULT) !==
+        (cur.leading ?? TEXT_LABEL_LEADING_DEFAULT) ||
+      (next.tracking ?? TEXT_LABEL_TRACKING_DEFAULT) !==
+        (cur.tracking ?? TEXT_LABEL_TRACKING_DEFAULT);
+    return coveredChanged ? stripStyleId(next) : next;
   });
 }
 
@@ -1994,7 +2061,7 @@ export function addPolygon(doc: MapDoc, id: string, x: number, y: number): MapDo
 
 // Insert a fully-specified polygon (used by duplicate + paste).
 export function addPolygonWith(doc: MapDoc, id: string, fields: Omit<Polygon, 'id'>): MapDoc {
-  const polygon: Polygon = { id, ...fields };
+  const polygon = sanitizeIncomingStyleId(doc, 'polygon', { id, ...fields });
   return {
     ...doc,
     polygons: { ...doc.polygons, [id]: polygon },
@@ -2075,7 +2142,19 @@ export function updatePolygon(doc: MapDoc, id: string, patch: PolygonStylePatch)
     if (typeof nextPatch.curveRadius === 'number') {
       nextPatch = { ...nextPatch, curveRadius: clampPolygonCurveRadius(nextPatch.curveRadius) };
     }
-    return { ...cur, ...nextPatch };
+    const next = { ...cur, ...nextPatch };
+    // Detach from the style preset when a covered style field ACTUALLY
+    // changes (vertices/locked are not style). curveRadius/closed compare as
+    // EFFECTIVE values (absent ⇒ 0 / true).
+    const coveredChanged =
+      next.fill !== cur.fill ||
+      next.stroke !== cur.stroke ||
+      next.darkFill !== cur.darkFill ||
+      next.darkStroke !== cur.darkStroke ||
+      next.strokeWidth !== cur.strokeWidth ||
+      (next.curveRadius ?? 0) !== (cur.curveRadius ?? 0) ||
+      (next.closed !== false) !== (cur.closed !== false);
+    return coveredChanged ? stripStyleId(next) : next;
   });
 }
 
@@ -2289,7 +2368,9 @@ export function updateTransferStyle(doc: MapDoc, id: string, patch: TransferStyl
     next = withTransferOverride(next, 'strokeColor', stored);
   }
   if (next === cur) return doc;
-  return { ...doc, transfers: { ...doc.transfers, [id]: next } };
+  // Any override actually changed → detach from the style preset (all four
+  // fields are covered).
+  return { ...doc, transfers: { ...doc.transfers, [id]: stripStyleId(next) } };
 }
 
 /**

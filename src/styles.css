@@ -746,6 +746,31 @@ select option {
   flex: 1;
   min-width: 0;
 }
+/* Style-preset row (StyleRow): the popover .row rules above already lay out
+   its select; the save-name text input needs the same stretch, and the
+   sidebar line inspector (which has no .row idiom of its own) gets one copy
+   of the same recipe so the row reads identically in all five surfaces. */
+.bullet-popover .style-row input,
+.text-label-popover .style-row input {
+  flex: 1;
+  min-width: 0;
+}
+.inspector .style-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+.inspector .style-row label {
+  width: 48px;
+  flex-shrink: 0;
+  color: var(--text);
+  font-weight: 700;
+}
+.inspector .style-row select,
+.inspector .style-row input {
+  flex: 1;
+  min-width: 0;
+}
 .bullet-popover .shape-group,
 .text-label-popover .shape-group {
   display: inline-flex;
@@ -1482,6 +1507,29 @@ input[type='range'].indeterminate {
   color: var(--text-muted);
   padding: 8px 12px;
   font-style: italic;
+}
+
+/* Styles panel (sidebar): the click-to-rename name field. Button shows the
+   name in row typography; the input takes its place while editing (MapNameField
+   pattern). `.grow` supplies the flex from the .list-row recipe. */
+.list-row .style-name {
+  background: transparent;
+  border: 0;
+  padding: 0;
+  font: inherit;
+  color: inherit;
+  text-align: left;
+  cursor: text;
+}
+.list-row .style-name:hover {
+  text-decoration: underline dotted;
+}
+.list-row .style-name-input {
+  font: inherit;
+  min-width: 0;
+  padding: 1px 4px;
+  border: 1px solid var(--border-strong);
+  border-radius: var(--radius);
 }
 
 .append-banner {

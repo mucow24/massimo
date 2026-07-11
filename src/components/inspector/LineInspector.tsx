@@ -17,6 +17,7 @@ import { StationShapePicker, SHAPES } from '../StationShapePicker';
 import { blendOver, legibleTextOn, withAlpha } from '../../util/color';
 import { stationNameListText } from '../../geometry/labelTokens';
 import { NumericFieldRow } from '../NumericFieldRow';
+import { StyleRow } from '../StyleRow';
 import {
   LINE_WIDTH_DEFAULT,
   LINE_WIDTH_MAX,
@@ -234,6 +235,9 @@ export function LineInspector({ id }: { id: LineId }) {
         <label>Color</label>
         <ColorPalette value={line.color} onChange={(c) => updateLine(line.id, { color: c })} />
       </div>
+      {/* Name/service/color above are identity, not style — the style row
+          heads the covered formatting controls (dot, width, stroke). */}
+      <StyleRow key={line.id} kind="line" itemId={line.id} styleId={line.styleId} />
       <div className="field dot-field">
         <label>Default stop dot type and size</label>
         <NumericFieldRow

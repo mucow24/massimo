@@ -1,19 +1,38 @@
 import {
   DEFAULT_DOC,
-  isLabelWeight,
+  FONT_SIZE_STEP,
+  POLYGON_CURVE_RADIUS_MIN,
+  POLYGON_STROKE_STEP,
+  POLYGON_STROKE_WIDTH_MIN,
   TEXT_LABEL_COLOR_DEFAULT,
   TEXT_LABEL_DARK_COLOR_DEFAULT,
+  TEXT_LABEL_FONT_SIZE_MIN,
+  TEXT_LABEL_LEADING_MIN,
+  TEXT_LABEL_LEADING_STEP,
+  TEXT_LABEL_TRACKING_MIN,
+  TEXT_LABEL_TRACKING_STEP,
+  clampRouteBulletSize,
+  isLabelWeight,
+  snapToStep,
   withTransferOverride,
 } from './transforms';
 import {
+  TRANSFER_STROKE_WIDTH_MIN,
+  TRANSFER_THICKNESS_MIN,
   canonicalTransferColor,
   canonicalTransferStrokeWidth,
   canonicalTransferThickness,
 } from './transferStyle';
-import { canonicalLineWidth } from './lineWidth';
-import { DOT_SIZE_DEFAULT, canonicalDotSize } from './dotSize';
-import { canonicalStrokeColor, canonicalStrokeWidth } from './lineStroke';
+import { LINE_WIDTH_MIN, canonicalLineWidth } from './lineWidth';
+import { DOT_SIZE_DEFAULT, DOT_SIZE_MIN, canonicalDotSize } from './dotSize';
+import {
+  LINE_STROKE_STEP,
+  LINE_STROKE_WIDTH_MIN,
+  canonicalStrokeColor,
+  canonicalStrokeWidth,
+} from './lineStroke';
 import { DEFAULT_DOT_STYLE, DOT_SHAPE_PRESETS, dotStylesEqual } from './dotStyle';
+import { captureStyleProps, isReservedStyleName, stylePropsEqual } from './styles';
 import { pairKeyOf } from './pairKey';
 import { parseHexA, withHexAlpha } from '../util/color';
 import { migrateLegacyInlineTokens } from '../geometry/labelTokens';
@@ -29,10 +48,14 @@ import type {
   LineStyle,
   MapDoc,
   Polygon,
+  RouteBulletShape,
   Station,
   StopCell,
   StopOrientation,
+  StyleDef,
+  StyleKind,
   TextLabel,
+  TextLabelAlign,
   TextLabelWeight,
   Transfer,
 } from './types';
@@ -263,6 +286,9 @@ export function parse(json: string, custom: readonly Palette[] = []): ParseResul
   // doc-level transfer settings.
   const cleanedTransfers = sanitizeTransferStyles(merged.transfers, merged);
   if (cleanedTransfers.changed) merged.transfers = cleanedTransfers.transfers;
+  // Validate style defs, then prune styleId tags they no longer back.
+  const cleanedStyles = sanitizeStyles(merged.styles);
+  if (cleanedStyles.changed) merged.styles = cleanedStyles.styles;
   // Version-gated (non-idempotent) rewrite: files saved before the pipe
   // bullet grammar carry `<X>` circle tokens and unescaped literal pipes.
   if ((typeof file.version === 'number' ? file.version : 1) < 2) {
@@ -272,7 +298,7 @@ export function parse(json: string, custom: readonly Palette[] = []): ParseResul
       merged.textLabels = migrated.textLabels;
     }
   }
-  return { ok: true, doc: merged };
+  return { ok: true, doc: pruneDanglingStyleRefs(merged) };
 }
 
 // Backfill `line.name` for legacy files saved before the field existed, using
@@ -695,6 +721,232 @@ export function sanitizeTransferStyles(
     next[id] = cleaned;
   }
   return { transfers: next, changed };
+}
+
+const KNOWN_STYLE_KINDS = new Set<StyleKind>([
+  'line',
+  'textLabel',
+  'polygon',
+  'routeBullet',
+  'transfer',
+]);
+const KNOWN_TEXT_ALIGNS = new Set<TextLabelAlign>(['left', 'center', 'right', 'justify']);
+const KNOWN_BULLET_SHAPES = new Set<RouteBulletShape>(['circle', 'square', 'diamond']);
+
+const finiteNum = (v: unknown): number | undefined =>
+  typeof v === 'number' && Number.isFinite(v) ? v : undefined;
+const asString = (v: unknown): string | undefined => (typeof v === 'string' ? v : undefined);
+const asBool = (v: unknown): boolean | undefined => (typeof v === 'boolean' ? v : undefined);
+
+// Validate + normalize one raw style-props value for `kind`. Wrong-typed or
+// missing fields invalidate the whole def (all-or-nothing, mirroring
+// sanitizeDotStyle); out-of-band numerics are clamped onto the SAME canonical
+// grids the transforms use, so a stamped item compares exactly equal to its
+// style and the detach logic never misfires. Returns undefined when the value
+// doesn't conform.
+function sanitizeStyleProps(kind: StyleKind, raw: unknown): StyleDef['props'] | undefined {
+  if (!raw || typeof raw !== 'object') return undefined;
+  const o = raw as Record<string, unknown>;
+  switch (kind) {
+    case 'line': {
+      const dot = sanitizeDotStyle(o.defaultDotStyle);
+      const dotSize = finiteNum(o.defaultDotSize);
+      const width = finiteNum(o.width);
+      const strokeWidth = finiteNum(o.strokeWidth);
+      const strokeColor = asString(o.strokeColor);
+      if (!dot || dotSize === undefined || width === undefined) return undefined;
+      if (strokeWidth === undefined || strokeColor === undefined) return undefined;
+      return {
+        defaultDotStyle: dot,
+        defaultDotSize: Math.max(DOT_SIZE_MIN, Math.round(dotSize)),
+        width: Math.max(LINE_WIDTH_MIN, Math.round(width)),
+        strokeWidth: Math.max(
+          LINE_STROKE_WIDTH_MIN,
+          Math.round(strokeWidth / LINE_STROKE_STEP) * LINE_STROKE_STEP,
+        ),
+        strokeColor: strokeColor.toLowerCase(),
+      };
+    }
+    case 'textLabel': {
+      const color = asString(o.color);
+      const darkColor = asString(o.darkColor);
+      const fontSize = finiteNum(o.fontSize);
+      const italic = asBool(o.italic);
+      const width = finiteNum(o.width);
+      const leading = finiteNum(o.leading);
+      const tracking = finiteNum(o.tracking);
+      if (color === undefined || darkColor === undefined || fontSize === undefined)
+        return undefined;
+      if (!isLabelWeight(o.weight) || italic === undefined) return undefined;
+      if (typeof o.align !== 'string' || !KNOWN_TEXT_ALIGNS.has(o.align as TextLabelAlign))
+        return undefined;
+      if (width === undefined || leading === undefined || tracking === undefined) return undefined;
+      return {
+        color,
+        darkColor,
+        fontSize: Math.max(
+          TEXT_LABEL_FONT_SIZE_MIN,
+          Math.round(fontSize / FONT_SIZE_STEP) * FONT_SIZE_STEP,
+        ),
+        weight: o.weight,
+        italic,
+        align: o.align as TextLabelAlign,
+        width: Math.max(0, Math.round(width)),
+        leading: snapToStep(leading, TEXT_LABEL_LEADING_STEP, TEXT_LABEL_LEADING_MIN),
+        tracking: snapToStep(tracking, TEXT_LABEL_TRACKING_STEP, TEXT_LABEL_TRACKING_MIN),
+      };
+    }
+    case 'polygon': {
+      const fill = asString(o.fill);
+      const stroke = asString(o.stroke);
+      const darkFill = asString(o.darkFill);
+      const darkStroke = asString(o.darkStroke);
+      const strokeWidth = finiteNum(o.strokeWidth);
+      const curveRadius = finiteNum(o.curveRadius);
+      const closed = asBool(o.closed);
+      if (fill === undefined || stroke === undefined) return undefined;
+      if (darkFill === undefined || darkStroke === undefined) return undefined;
+      if (strokeWidth === undefined || curveRadius === undefined || closed === undefined)
+        return undefined;
+      return {
+        fill,
+        stroke,
+        darkFill,
+        darkStroke,
+        strokeWidth: Math.max(
+          POLYGON_STROKE_WIDTH_MIN,
+          Math.round(strokeWidth / POLYGON_STROKE_STEP) * POLYGON_STROKE_STEP,
+        ),
+        curveRadius: Math.max(POLYGON_CURVE_RADIUS_MIN, curveRadius),
+        closed,
+      };
+    }
+    case 'routeBullet': {
+      const size = finiteNum(o.size);
+      if (typeof o.shape !== 'string' || !KNOWN_BULLET_SHAPES.has(o.shape as RouteBulletShape))
+        return undefined;
+      if (size === undefined) return undefined;
+      return { shape: o.shape as RouteBulletShape, size: clampRouteBulletSize(size) };
+    }
+    case 'transfer': {
+      const thickness = finiteNum(o.thickness);
+      const color = asString(o.color);
+      const strokeWidth = finiteNum(o.strokeWidth);
+      const strokeColor = asString(o.strokeColor);
+      if (thickness === undefined || color === undefined) return undefined;
+      if (strokeWidth === undefined || strokeColor === undefined) return undefined;
+      return {
+        thickness: Math.max(TRANSFER_THICKNESS_MIN, Math.round(thickness)),
+        color,
+        strokeWidth: Math.max(TRANSFER_STROKE_WIDTH_MIN, Math.round(strokeWidth)),
+        strokeColor,
+      };
+    }
+  }
+}
+
+// Validate + normalize hand-edited / legacy style defs: drop defs with an
+// unknown kind, an empty trimmed name, malformed props, or a same-kind name
+// duplicate (first wins — upsert-by-name assumes per-kind uniqueness), and
+// rewrite each def's id to its record key. File-import hygiene only —
+// app-written styles are canonical by construction (saveStyleFromItem captures
+// through the same clamps).
+export function sanitizeStyles(styles: Record<string, StyleDef>): {
+  styles: Record<string, StyleDef>;
+  changed: boolean;
+} {
+  if (!styles || typeof styles !== 'object' || Array.isArray(styles)) {
+    return { styles: {}, changed: true };
+  }
+  let changed = false;
+  const next: Record<string, StyleDef> = {};
+  const seenNames = new Set<string>();
+  for (const key of Object.keys(styles)) {
+    const raw = styles[key] as unknown;
+    if (!raw || typeof raw !== 'object') {
+      changed = true;
+      continue;
+    }
+    const o = raw as Record<string, unknown>;
+    const kind =
+      typeof o.kind === 'string' && KNOWN_STYLE_KINDS.has(o.kind as StyleKind)
+        ? (o.kind as StyleKind)
+        : undefined;
+    const name = typeof o.name === 'string' ? o.name.trim() : '';
+    if (kind === undefined || !name || isReservedStyleName(name)) {
+      changed = true;
+      continue;
+    }
+    const nameKey = `${kind}\n${name}`;
+    if (seenNames.has(nameKey)) {
+      changed = true;
+      continue;
+    }
+    const props = sanitizeStyleProps(kind, o.props);
+    if (props === undefined) {
+      changed = true;
+      continue;
+    }
+    seenNames.add(nameKey);
+    const cleaned = { id: key, name, kind, props } as StyleDef;
+    // Keep the original reference when already canonical (stringify compare,
+    // mirrors isCanonicalDotStyle — field order is fixed everywhere the app
+    // writes defs).
+    if (JSON.stringify(o) === JSON.stringify(cleaned)) {
+      next[key] = styles[key];
+    } else {
+      next[key] = cleaned;
+      changed = true;
+    }
+  }
+  return { styles: next, changed };
+}
+
+// Strip every `styleId` tag that doesn't uphold the tagged ⇒ matches
+// invariant: dangling ids (the def was dropped or never shipped with the
+// file), wrong-kind ids, AND tags whose item values no longer equal the
+// style's props — only a hand-edited file can carry the last kind, and
+// loading it verbatim would show a style name over diverged values. Values
+// are kept in every case, same outcome as deleting a style. Runs LAST in
+// parse() so it compares the fully-sanitized items against the fully-
+// sanitized defs. Returns the same doc reference when nothing changed.
+export function pruneDanglingStyleRefs(doc: MapDoc): MapDoc {
+  function pruneColl<T extends { styleId?: string }>(
+    coll: Record<string, T>,
+    kind: StyleKind,
+  ): Record<string, T> {
+    let changed = false;
+    const next: Record<string, T> = {};
+    for (const id of Object.keys(coll)) {
+      const item = coll[id];
+      const def = typeof item.styleId === 'string' ? doc.styles[item.styleId] : undefined;
+      const props = def?.kind === kind ? captureStyleProps(doc, kind, id) : null;
+      const keep = def !== undefined && props !== null && stylePropsEqual(kind, props, def.props);
+      if (item.styleId !== undefined && !keep) {
+        const { styleId: _gone, ...rest } = item;
+        next[id] = rest as T;
+        changed = true;
+      } else {
+        next[id] = item;
+      }
+    }
+    return changed ? next : coll;
+  }
+  const lines = pruneColl(doc.lines, 'line');
+  const textLabels = pruneColl(doc.textLabels, 'textLabel');
+  const polygons = pruneColl(doc.polygons, 'polygon');
+  const routeBullets = pruneColl(doc.routeBullets, 'routeBullet');
+  const transfers = pruneColl(doc.transfers, 'transfer');
+  if (
+    lines === doc.lines &&
+    textLabels === doc.textLabels &&
+    polygons === doc.polygons &&
+    routeBullets === doc.routeBullets &&
+    transfers === doc.transfers
+  ) {
+    return doc;
+  }
+  return { ...doc, lines, textLabels, polygons, routeBullets, transfers };
 }
 
 function sanitizeSegments(line: Line): Line {

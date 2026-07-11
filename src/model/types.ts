@@ -264,6 +264,14 @@ export interface Line {
   // Casing color, 7-char lowercase hex. Missing ⇒ '#ffffff'. The setter
   // normalizes to lowercase and drops the field at the default.
   strokeColor?: string;
+  // Live link to a StyleDef of kind 'line' (see MapDoc.styles). INVARIANT:
+  // when present, this line's covered style fields (defaultDotStyle,
+  // defaultDotSize, width, strokeWidth, strokeColor — NOT color) equal the
+  // style's props. Transforms maintain it: editing any covered field clears
+  // the tag ("detach to Custom"), editing the style re-stamps its users,
+  // deleting the style untags. Absent ⇒ no style ("Custom" in the UI).
+  // Dangling ids are pruned on file load.
+  styleId?: string;
 }
 
 // A movable label printed inside a line's color band (Vignelli-style).
@@ -331,6 +339,9 @@ export interface RouteBullet {
   // are disabled. It can still be click-selected so the user can unlock it.
   // Optional; missing ⇒ unlocked. Mirrors Polygon.locked.
   locked?: boolean;
+  // Live link to a StyleDef of kind 'routeBullet' — covered fields are
+  // `shape` and `size` (NOT `lineId`). Same contract as `Line.styleId`.
+  styleId?: string;
 }
 
 // A free-floating background shape (river, lake, park, …). Rendered UNDER all
@@ -366,6 +377,10 @@ export interface Polygon {
   // instead of the filled body. Optional; missing ⇒ true (closed), so polygons
   // saved before this field render unchanged.
   closed?: boolean;
+  // Live link to a StyleDef of kind 'polygon' — covered fields are the
+  // colors, strokeWidth, curveRadius and closed (NOT vertices/locked). Same
+  // contract as `Line.styleId`.
+  styleId?: string;
 }
 
 // The mutable style/geometry fields of a Polygon accepted by `updatePolygon`
@@ -456,6 +471,11 @@ export interface MapDoc {
   // polygon band). Later in the array = painted later = on top. Ids missing
   // from this list fall back to insertion order — see `effectiveSvgImageOrder`.
   svgImageOrder: string[];
+  // Named, reusable formatting presets, keyed by style id (see StyleDef at the
+  // bottom of this file and model/styles.ts). Doc-scoped on purpose: styles
+  // travel inside the saved file and every edit to them is undoable. Absent in
+  // saves predating the feature — backfilled to {} via the DEFAULT_DOC merge.
+  styles: Record<string, StyleDef>;
   // Global station-label styling. Applies to every station name; line tags
   // and route bullets keep their always-bold pill styling. `labelWeight` is
   // one of the Helvetica Neue weights we ship in /public/fonts/ (no 600).
@@ -558,6 +578,11 @@ export interface TextLabel {
   // missing ⇒ the box auto-sizes to its content. Clamped to a positive integer
   // by `updateTextLabel`. Mirrors `Station.editorHeight`.
   editorHeight?: number;
+  // Live link to a StyleDef of kind 'textLabel' — covered fields are the
+  // colors, fontSize, weight, italic, align, width, leading and tracking
+  // (NOT text/position/rotation/locked/editorHeight). Same contract as
+  // `Line.styleId`.
+  styleId?: string;
 }
 
 // One endpoint of a transfer: a specific dot on a station. `lineId` picks
@@ -590,6 +615,13 @@ export interface Transfer {
   color?: string;
   strokeWidth?: number;
   strokeColor?: string;
+  // Live link to a StyleDef of kind 'transfer' — covered fields are all four
+  // style overrides above. The tag pins the transfer's EFFECTIVE values to
+  // the style's props: the doc-level transfer setters re-canonicalize tagged
+  // transfers' overrides against their style (instead of the plain redundant-
+  // override prune) so a tagged transfer never drifts when a doc setting
+  // changes. Same contract as `Line.styleId` otherwise.
+  styleId?: string;
 }
 
 // The style overrides of a Transfer accepted by `updateTransferStyle`. Shared
@@ -599,3 +631,77 @@ export interface Transfer {
 export type TransferStylePatch = Partial<
   Pick<Transfer, 'thickness' | 'color' | 'strokeWidth' | 'strokeColor'>
 >;
+
+// ---------- Styles (named, reusable per-kind formatting presets) ----------
+
+// Which item collection a style preset applies to.
+export type StyleKind = 'line' | 'textLabel' | 'polygon' | 'routeBullet' | 'transfer';
+
+// Style props hold FULLY-RESOLVED effective values (captured by example from
+// an item — see model/styles.ts), so a style is self-contained: applying one
+// never consults the item or the doc defaults it was captured from. Identity
+// fields are deliberately NOT style: a line's `color`/`service`/`name`, a
+// bullet's `lineId`.
+export interface LineStyleProps {
+  defaultDotStyle: DotStyle;
+  // Dot DIAMETER in px (the line-default size).
+  defaultDotSize: number;
+  // Stripe width, world units.
+  width: number;
+  // Casing width per side, world units (0 = no casing).
+  strokeWidth: number;
+  // Casing color, lowercase hex.
+  strokeColor: string;
+}
+
+export interface TextLabelStyleProps {
+  color: string;
+  darkColor: string;
+  fontSize: number;
+  weight: TextLabelWeight;
+  italic: boolean;
+  align: TextLabelAlign;
+  // Column width in world units; 0 = Auto.
+  width: number;
+  leading: number;
+  tracking: number;
+}
+
+export interface PolygonStyleProps {
+  fill: string;
+  stroke: string;
+  darkFill: string;
+  darkStroke: string;
+  strokeWidth: number;
+  curveRadius: number;
+  closed: boolean;
+}
+
+export interface RouteBulletStyleProps {
+  shape: RouteBulletShape;
+  size: number;
+}
+
+// Mirrors TransferStyle in model/transferStyle.ts — kept as its own interface
+// so types.ts stays dependency-free.
+export interface TransferStyleProps {
+  thickness: number;
+  color: string;
+  strokeWidth: number;
+  strokeColor: string;
+}
+
+// Per-kind props lookup, for code generic over StyleKind.
+export interface StylePropsByKind {
+  line: LineStyleProps;
+  textLabel: TextLabelStyleProps;
+  polygon: PolygonStyleProps;
+  routeBullet: RouteBulletStyleProps;
+  transfer: TransferStyleProps;
+}
+
+// A named, reusable formatting preset stored in the doc (MapDoc.styles).
+// Items reference a style via their `styleId` tag; see that field's contract.
+export type StyleDef = {
+  [K in StyleKind]: { id: string; name: string; kind: K; props: StylePropsByKind[K] };
+}[StyleKind];

@@ -5,6 +5,7 @@ import { DraggablePopoverShell } from './DraggablePopoverShell';
 import { useDraggablePopover } from './canvas/useDraggablePopover';
 import { NumericFieldRow } from './NumericFieldRow';
 import { PopoverFooter } from './PopoverFooter';
+import { StyleRow } from './StyleRow';
 import { ROUTE_BULLET_SIZE_MAX, ROUTE_BULLET_SIZE_MIN } from '../model/transforms';
 import type { RouteBullet, RouteBulletShape } from '../model/types';
 
@@ -87,6 +88,7 @@ export function RouteBulletPopover({ bullet, worldRect, view, spawnBox, onClose 
       <div className="row">
         <label>Line</label>
         <select
+          aria-label="Line"
           value={bullet.lineId ?? ''}
           disabled={locked}
           onChange={(e) => onLine(e.target.value)}
@@ -99,6 +101,16 @@ export function RouteBulletPopover({ bullet, worldRect, view, spawnBox, onClose 
           ))}
         </select>
       </div>
+      {/* The Line select above is identity, not style — the style row covers
+          shape + size only, so it sits between them. */}
+      <StyleRow
+        key={bullet.id}
+        kind="routeBullet"
+        itemId={bullet.id}
+        styleId={bullet.styleId}
+        disabled={locked}
+      />
+      <hr className="popover-divider" aria-hidden="true" />
       <div className="row">
         <label>Shape</label>
         <div className="shape-group">

@@ -5,7 +5,7 @@ import { TransferPopover } from './TransferPopover';
 import { useDoc } from '../state/store';
 import { historyDepth } from '../state/history';
 import { DEFAULT_DOC } from '../model/transforms';
-import { makeStation, makeTransfer } from '../test/fixtures';
+import { makeStation, makeStyle, makeTransfer } from '../test/fixtures';
 import { openColorField, setColorField } from '../test/colorField';
 
 const view = { vbX: 0, vbY: 0, vbW: 800, vbH: 600, size: { w: 800, h: 600 } };
@@ -48,6 +48,8 @@ describe('<TransferPopover />', () => {
       child.tagName === 'HR' ? 'divider' : (child.querySelector('label')?.textContent ?? 'footer'),
     );
     expect(sequence).toEqual([
+      'Style',
+      'divider',
       'Thickness',
       'Color',
       'divider',
@@ -194,5 +196,38 @@ describe('<TransferPopover />', () => {
     );
     expect(parseFloat(el.style.left)).toBeCloseTo(left, 6);
     expect(parseFloat(el.style.top)).toBeCloseTo(top, 6);
+  });
+});
+
+describe('<TransferPopover /> — style presets', () => {
+  // The real mount (ItemPopovers) passes the live store transfer; mirror that
+  // so the Style row re-derives when an action writes the tag.
+  function LivePopover() {
+    const transfer = useDoc((s) => s.transfers['x1']);
+    return transfer ? (
+      <TransferPopover
+        transfer={transfer}
+        worldRect={rectAt(100, 0)}
+        view={view}
+        onClose={() => {}}
+      />
+    ) : null;
+  }
+
+  it('applies a preset from the Style row, then flips to Custom on a covered edit', () => {
+    useDoc.setState({
+      ...useDoc.getState(),
+      styles: { y1: makeStyle('transfer', 'y1', { name: 'Bold link', props: { thickness: 6 } }) },
+    });
+    render(<LivePopover />);
+    const select = screen.getByRole('combobox', { name: 'Style' });
+    fireEvent.change(select, { target: { value: 'y1' } });
+    expect(useDoc.getState().transfers['x1'].styleId).toBe('y1');
+    expect(screen.getByRole('slider', { name: 'Thickness' })).toHaveValue('6');
+    expect(select).toHaveValue('y1');
+    // A covered edit detaches back to Custom.
+    fireEvent.change(screen.getByRole('slider', { name: 'Thickness' }), { target: { value: '9' } });
+    expect(useDoc.getState().transfers['x1'].styleId).toBeUndefined();
+    expect(select).toHaveValue('__custom__');
   });
 });

@@ -1,0 +1,161 @@
+// Store-level Styles actions: upsert-by-name resolution, single-undo-entry
+// semantics, and styleId behavior through duplicate/paste. The pure transform
+// logic lives in model/styles.test.ts.
+import { describe, it, expect, beforeEach } from 'vitest';
+import { useDoc } from './store';
+import { undo } from './history';
+import { DEFAULT_DOC } from '../model/transforms';
+import type { TextLabelStyleProps } from '../model/types';
+import { makeRouteBullet, makeStyle, makeTextLabel } from '../test/fixtures';
+
+beforeEach(() => {
+  localStorage.clear();
+  useDoc.setState({ ...useDoc.getState(), ...DEFAULT_DOC });
+  useDoc.temporal.getState().clear();
+});
+
+describe('saveStyle', () => {
+  it('mints an id, creates the def, and tags the source item', () => {
+    useDoc.setState({ textLabels: { g1: makeTextLabel({ id: 'g1', fontSize: 24 }) } });
+    const id = useDoc.getState().saveStyle('textLabel', 'Heading', 'g1');
+    const s = useDoc.getState();
+    expect(s.styles[id]).toMatchObject({ id, name: 'Heading', kind: 'textLabel' });
+    expect((s.styles[id].props as TextLabelStyleProps).fontSize).toBe(24);
+    expect(s.textLabels.g1.styleId).toBe(id);
+  });
+
+  it('re-saving the same name+kind reuses the id (upsert) and re-stamps users', () => {
+    useDoc.setState({
+      textLabels: {
+        g1: makeTextLabel({ id: 'g1', fontSize: 24 }),
+        g2: makeTextLabel({ id: 'g2', fontSize: 30 }),
+      },
+    });
+    const first = useDoc.getState().saveStyle('textLabel', 'Heading', 'g1');
+    useDoc.getState().applyStyle(first, 'g2');
+    expect(useDoc.getState().textLabels.g2.fontSize).toBe(24);
+    // Redefine "Heading" from g2 after tweaking it.
+    useDoc.getState().updateTextLabel('g2', { fontSize: 36 }); // detaches g2
+    const second = useDoc.getState().saveStyle('textLabel', 'Heading', 'g2');
+    expect(second).toBe(first);
+    const s = useDoc.getState();
+    expect((s.styles[first].props as TextLabelStyleProps).fontSize).toBe(36);
+    expect(s.textLabels.g1.fontSize).toBe(36); // re-stamped user
+    expect(s.textLabels.g1.styleId).toBe(first);
+  });
+
+  it('a save (def + tag + re-stamp) is exactly one undo step', () => {
+    useDoc.setState({
+      textLabels: {
+        g1: makeTextLabel({ id: 'g1', fontSize: 24 }),
+        g2: makeTextLabel({ id: 'g2', fontSize: 30, styleId: 'y1' }),
+      },
+      styles: { y1: makeStyle('textLabel', 'y1', { name: 'Heading', props: { fontSize: 30 } }) },
+    });
+    useDoc.temporal.getState().clear();
+    useDoc.getState().saveStyle('textLabel', 'Heading', 'g1'); // overwrites y1, re-stamps g2
+    expect((useDoc.getState().styles.y1.props as TextLabelStyleProps).fontSize).toBe(24);
+    expect(useDoc.getState().textLabels.g2.fontSize).toBe(24);
+    undo();
+    const s = useDoc.getState();
+    expect((s.styles.y1.props as TextLabelStyleProps).fontSize).toBe(30);
+    expect(s.textLabels.g2.fontSize).toBe(30);
+    expect(s.textLabels.g1.styleId).toBeUndefined();
+  });
+});
+
+describe('applyStyle / clearStyleTag / renameStyle / deleteStyle', () => {
+  beforeEach(() => {
+    useDoc.setState({
+      textLabels: { g1: makeTextLabel({ id: 'g1', fontSize: 12 }) },
+      styles: {
+        y1: makeStyle('textLabel', 'y1', {
+          name: 'Heading',
+          props: { fontSize: 24, weight: 700, italic: true },
+        }),
+      },
+    });
+    useDoc.temporal.getState().clear();
+  });
+
+  it('applyStyle stamps all covered fields and is one undo step', () => {
+    useDoc.getState().applyStyle('y1', 'g1');
+    const label = useDoc.getState().textLabels.g1;
+    expect(label.fontSize).toBe(24);
+    expect(label.weight).toBe(700);
+    expect(label.italic).toBe(true);
+    expect(label.styleId).toBe('y1');
+    undo();
+    const back = useDoc.getState().textLabels.g1;
+    expect(back.fontSize).toBe(12);
+    expect(back.weight).toBe(400);
+    expect(back.styleId).toBeUndefined();
+  });
+
+  it('clearStyleTag detaches without touching values', () => {
+    useDoc.getState().applyStyle('y1', 'g1');
+    useDoc.getState().clearStyleTag('textLabel', 'g1');
+    const label = useDoc.getState().textLabels.g1;
+    expect(label.styleId).toBeUndefined();
+    expect(label.fontSize).toBe(24);
+  });
+
+  it('renameStyle renames; deleteStyle untags users and is one undo step', () => {
+    useDoc.getState().applyStyle('y1', 'g1');
+    useDoc.getState().renameStyle('y1', 'Header');
+    expect(useDoc.getState().styles.y1.name).toBe('Header');
+    useDoc.temporal.getState().clear();
+    useDoc.getState().deleteStyle('y1');
+    expect(useDoc.getState().styles.y1).toBeUndefined();
+    expect(useDoc.getState().textLabels.g1.styleId).toBeUndefined();
+    expect(useDoc.getState().textLabels.g1.fontSize).toBe(24); // values kept
+    undo();
+    expect(useDoc.getState().styles.y1).toBeDefined();
+    expect(useDoc.getState().textLabels.g1.styleId).toBe('y1');
+  });
+});
+
+describe('styleId through duplicate and paste', () => {
+  it('duplicating a tagged item carries the tag (same doc, style resolves)', () => {
+    useDoc.setState({
+      textLabels: { g1: makeTextLabel({ id: 'g1', fontSize: 24, styleId: 'y1' }) },
+      routeBullets: { b1: makeRouteBullet({ id: 'b1', styleId: 'y2' }) },
+      styles: {
+        y1: makeStyle('textLabel', 'y1', { props: { fontSize: 24 } }),
+        y2: makeStyle('routeBullet', 'y2', { props: { size: 12 } }),
+      },
+    });
+    const labelCopy = useDoc.getState().duplicateTextLabel('g1');
+    const bulletCopy = useDoc.getState().duplicateRouteBullet('b1');
+    expect(labelCopy && useDoc.getState().textLabels[labelCopy].styleId).toBe('y1');
+    expect(bulletCopy && useDoc.getState().routeBullets[bulletCopy].styleId).toBe('y2');
+  });
+
+  it('pasting into a doc that lacks the style drops the tag, keeps the values', () => {
+    const { id: _gone, ...data } = makeTextLabel({ id: 'tmp', fontSize: 24, styleId: 'foreign' });
+    const pasted = useDoc.getState().pasteTextLabel(data);
+    expect(useDoc.getState().textLabels[pasted].styleId).toBeUndefined();
+    expect(useDoc.getState().textLabels[pasted].fontSize).toBe(24);
+  });
+
+  it('pasting a stale tagged payload re-stamps it to the CURRENT style values', () => {
+    // The clipboard froze the values before the style was redefined; the
+    // pasted item must come in matching its tag (tagged ⇒ matches), i.e.
+    // wearing the style's current props, not the stale snapshot.
+    useDoc.setState({
+      styles: {
+        y1: makeStyle('textLabel', 'y1', { name: 'Heading', props: { fontSize: 36 } }),
+        y2: makeStyle('routeBullet', 'y2', { name: 'Big', props: { size: 20 } }),
+      },
+    });
+    const { id: _g, ...label } = makeTextLabel({ id: 'tmp', fontSize: 24, styleId: 'y1' });
+    const pastedLabel = useDoc.getState().pasteTextLabel(label);
+    expect(useDoc.getState().textLabels[pastedLabel].fontSize).toBe(36);
+    expect(useDoc.getState().textLabels[pastedLabel].styleId).toBe('y1');
+
+    const { id: _b, ...bullet } = makeRouteBullet({ id: 'tmp', size: 12, styleId: 'y2' });
+    const pastedBullet = useDoc.getState().pasteRouteBullet(bullet);
+    expect(useDoc.getState().routeBullets[pastedBullet].size).toBe(20);
+    expect(useDoc.getState().routeBullets[pastedBullet].styleId).toBe('y2');
+  });
+});

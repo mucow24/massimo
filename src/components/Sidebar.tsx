@@ -9,6 +9,7 @@ import {
 import { effectiveLineOrder, useDoc, useSelection } from '../state/store';
 import { useViewportStore } from '../state/viewportStore';
 import { LineInspector } from './inspector';
+import { StylesPanel } from './StylesPanel';
 import type { Line, Station } from '../model/types';
 import { legibleTextOn } from '../util/color';
 import { stationNameListText } from '../geometry/labelTokens';
@@ -30,6 +31,7 @@ export function Sidebar() {
   const stations = useDoc((s) => s.stations);
   const lines = useDoc((s) => s.lines);
   const lineOrder = useDoc((s) => s.lineOrder);
+  const styleCount = useDoc((s) => Object.keys(s.styles).length);
   const selection = useSelection();
   const deleteStation = useDoc((s) => s.deleteStation);
   const deleteLine = useDoc((s) => s.deleteLine);
@@ -146,6 +148,12 @@ export function Sidebar() {
           onClick={() => selection.toggleTab('lines')}
         >
           Lines ({orderedLineIds.length})
+        </button>
+        <button
+          className={'tab' + (selection.activeTab === 'styles' ? ' active' : '')}
+          onClick={() => selection.toggleTab('styles')}
+        >
+          Styles ({styleCount})
         </button>
       </div>
 
@@ -360,6 +368,8 @@ export function Sidebar() {
             })}
           </section>
         )}
+
+        {selection.activeTab === 'styles' && <StylesPanel />}
       </div>
     </aside>
   );
