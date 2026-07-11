@@ -22,8 +22,8 @@ const HIT_PAD = 2;
  * **station-local** coords: the cells AABB and the (rotated) label rect.
  * Both are 4-vertex polygons. Their union is what the yellow wash and black
  * stroke render; for hit-testing it's cheaper (and equivalent) to test against
- * each rect separately. For a waypoint station the label rect is omitted
- * entirely (no painted name → nothing to silhouette).
+ * each rect separately. A hidden waypoint omits the label rect (no painted
+ * name → nothing to silhouette); a revealed one (`revealWaypoint`) gets it back.
  */
 export interface StationBoundaryRects {
   cells: Pt[];
@@ -51,19 +51,24 @@ export interface AABBRect {
 export function cellsAABBLocal(
   station: Station,
   stopHalf: StopHalfFn = DEFAULT_STOP_HALF,
+  // A revealed waypoint (Show-waypoints overlay on) is treated like a regular
+  // station: its label cell + empty-station phantom count toward the box, so
+  // its hit/selection footprint matches a normal station's. Off by default so
+  // marquee-select and camera-fit bounds never shift with the view toggle.
+  revealWaypoint = false,
 ): AABBRect {
   const stops = station.stops;
   const label = station.label;
-  const isWp = !!station.isWaypoint;
-  const phantomDot = !isWp && stops.length === 0 ? { row: label.row, col: label.col + 1 } : null;
-  // Waypoints exclude the label cell so the silhouette hugs only the visible
-  // stop positions.
+  const labeled = !station.isWaypoint || revealWaypoint;
+  const phantomDot = labeled && stops.length === 0 ? { row: label.row, col: label.col + 1 } : null;
+  // A hidden waypoint excludes the label cell so the silhouette hugs only the
+  // visible stop positions.
   const allCells: { row: number; col: number; half: number }[] = stops.map((s) => ({
     row: s.row,
     col: s.col,
     half: stopHalf(s.lineId),
   }));
-  if (!isWp) allCells.push({ row: label.row, col: label.col, half: HALF });
+  if (labeled) allCells.push({ row: label.row, col: label.col, half: HALF });
   if (phantomDot) allCells.push({ ...phantomDot, half: HALF });
   if (allCells.length === 0) allCells.push({ row: label.row, col: label.col, half: HALF }); // empty-waypoint fallback
   let minX = Infinity;
@@ -89,10 +94,13 @@ export function stationBoundaryRectsLocal(
   station: Station,
   style: LabelStyle = DEFAULT_LABEL_STYLE,
   stopHalf: StopHalfFn = DEFAULT_STOP_HALF,
+  // See cellsAABBLocal: a revealed waypoint gets its label rect back, so its
+  // selection silhouette wraps the (now painted) name. Defaulted off.
+  revealWaypoint = false,
 ): StationBoundaryRects {
   const label = station.label;
-  const isWp = !!station.isWaypoint;
-  const { x, y, w, h } = cellsAABBLocal(station, stopHalf);
+  const labeled = !station.isWaypoint || revealWaypoint;
+  const { x, y, w, h } = cellsAABBLocal(station, stopHalf, revealWaypoint);
   const cells: Pt[] = [
     { x, y },
     { x: x + w, y },
@@ -100,7 +108,7 @@ export function stationBoundaryRectsLocal(
     { x, y: y + h },
   ];
 
-  if (isWp) return { cells };
+  if (!labeled) return { cells };
 
   // Label rect — same layout the renderer uses (including the same per-stop
   // width lookup, so label snapping agrees), then rotated about the anchor

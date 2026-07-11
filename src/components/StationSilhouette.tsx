@@ -1,5 +1,6 @@
 import { useDoc, useSelection } from '../state/store';
 import { useThemeColors } from '../state/theme';
+import { useViewportStore } from '../state/viewportStore';
 import type { Station } from '../model/types';
 import { effectiveStationLabelStyle } from '../model/transforms';
 import { stationBoundaryRectsLocal } from '../geometry/stationBoundary';
@@ -41,18 +42,25 @@ export function StationSilhouette({
   const lines = useDoc((s) => s.lines);
   const editingStationId = useSelection((s) => s.editingStationId);
   const themeColors = useThemeColors();
+  // Paint toggle: reveal waypoint stations (widens the silhouette to wrap the
+  // revealed name). The outline no longer reads zoom — its weight is held by
+  // vector-effect, so nothing here snaps on gesture commit.
+  const showWaypoints = useViewportStore((s) => s.showWaypoints);
 
   if (editingStationId === station.id) return null;
 
   const angle = station.rotation * 45;
   // Smooth the union of the cells rect + (rotated) label rect; smoothing
-  // applies to the outer-boundary corners only, so the rects meet cleanly.
+  // applies to the outer-boundary corners only, so the rects meet cleanly. A
+  // revealed waypoint gets its label rect (its name is painted, so the ring
+  // must wrap it).
   const { cells, label: labelPoly } = stationBoundaryRectsLocal(
     station,
     effectiveStationLabelStyle(station, docStyle),
     stopHalfOf(lines),
+    showWaypoints,
   );
-  // Waypoint: no label polygon to merge, render the cells rect alone.
+  // Hidden waypoint: no label polygon to merge, render the cells rect alone.
   const polygons = labelPoly ? unionConvex(cells, labelPoly) : [cells];
   const pathStr = polygonsToPath(polygons, SELECTION_CORNER_RADIUS);
   const transform = `translate(${station.x} ${station.y}) rotate(${angle})`;

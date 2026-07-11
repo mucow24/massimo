@@ -67,6 +67,8 @@ export function Toolbar() {
   const setGridSize = useViewportStore((s) => s.setGridSize);
   const darkMode = useViewportStore((s) => s.darkMode);
   const setDarkMode = useViewportStore((s) => s.setDarkMode);
+  const showWaypoints = useViewportStore((s) => s.showWaypoints);
+  const setShowWaypoints = useViewportStore((s) => s.setShowWaypoints);
   const clearAll = useDoc((s) => s.clearAll);
   const addLine = useDoc((s) => s.addLine);
   const selection = useSelection();
@@ -316,6 +318,16 @@ export function Toolbar() {
           onClick={() => setDarkMode(!darkMode)}
         >
           {darkMode ? <SunIcon /> : <MoonIcon />}
+        </button>
+        <button
+          type="button"
+          className={'tool-btn tool-btn-text' + (showWaypoints ? ' active' : '')}
+          title={showWaypoints ? 'Hide waypoints' : 'Show waypoints'}
+          aria-label="Toggle waypoints"
+          aria-pressed={showWaypoints}
+          onClick={() => setShowWaypoints(!showWaypoints)}
+        >
+          WP
         </button>
       </div>
       <input

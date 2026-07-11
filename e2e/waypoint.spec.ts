@@ -21,7 +21,7 @@ test.describe('Waypoint toggle', () => {
     await expect(page.locator('.wp-pill')).toHaveCount(0);
 
     // Toggle on.
-    await page.getByRole('button', { name: 'Waypoint' }).click();
+    await page.getByRole('button', { name: 'Waypoint', exact: true }).click();
 
     // Glyph gone for B.
     await expect(page.locator('[data-stop-station="B"][data-stop-shape]')).toHaveCount(0);
@@ -50,9 +50,9 @@ test.describe('Waypoint toggle', () => {
     ).toBeVisible();
 
     // Toggle waypoint on, then off.
-    await page.getByRole('button', { name: 'Waypoint' }).click();
+    await page.getByRole('button', { name: 'Waypoint', exact: true }).click();
     await expect(page.locator('[data-stop-station="B"][data-stop-shape]')).toHaveCount(0);
-    await page.getByRole('button', { name: 'Waypoint' }).click();
+    await page.getByRole('button', { name: 'Waypoint', exact: true }).click();
 
     // Diamond shape restored.
     await expect(
@@ -65,7 +65,7 @@ test.describe('Waypoint toggle', () => {
     const b = await stationCenter(page, 'B');
     await page.mouse.click(b.x, b.y);
 
-    await page.getByRole('button', { name: 'Waypoint' }).click();
+    await page.getByRole('button', { name: 'Waypoint', exact: true }).click();
     await expect(page.locator('.wp-pill')).toBeVisible();
 
     await page.keyboard.press('Control+z');
@@ -73,5 +73,30 @@ test.describe('Waypoint toggle', () => {
     await expect(
       page.locator('[data-stop-station="B"][data-stop-shape="circle"]'),
     ).toBeVisible();
+  });
+
+  test('Show-waypoints toolbar toggle reveals a hidden waypoint and its WP lozenge', async ({
+    page,
+  }) => {
+    await seedAndOpen(page, fourInLine);
+    const b = await stationCenter(page, 'B');
+    await page.mouse.click(b.x, b.y);
+
+    // Mark B as a waypoint — its glyph disappears while the overlay is off.
+    await page.getByRole('button', { name: 'Waypoint', exact: true }).click();
+    await expect(page.locator('[data-stop-station="B"][data-stop-shape]')).toHaveCount(0);
+
+    // Turn on Show-waypoints from the toolbar: B's stop returns as a
+    // black-stroke/white-fill dot, and a "WP" lozenge is painted before its name.
+    await page.getByRole('button', { name: 'Toggle waypoints' }).click();
+    await expect(
+      page.locator('[data-stop-station="B"][data-stop-shape="circle"]'),
+    ).toBeVisible();
+    await expect(page.locator('[data-waypoint-lozenge]')).toHaveCount(1);
+
+    // Turn it back off: B is hidden again (the overlay is non-destructive).
+    await page.getByRole('button', { name: 'Toggle waypoints' }).click();
+    await expect(page.locator('[data-stop-station="B"][data-stop-shape]')).toHaveCount(0);
+    await expect(page.locator('[data-waypoint-lozenge]')).toHaveCount(0);
   });
 });
