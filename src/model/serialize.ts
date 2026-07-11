@@ -20,6 +20,7 @@ import { DOT_SIZE_DEFAULT, canonicalDotSize } from './dotSize';
 import { canonicalStrokeColor, canonicalStrokeWidth } from './lineStroke';
 import { DEFAULT_DOT_STYLE, DOT_SHAPE_PRESETS, dotStylesEqual } from './dotStyle';
 import {
+  adoptDefaultStyles,
   canonicalStyleProps,
   captureStyleProps,
   isReservedStyleName,
@@ -229,6 +230,15 @@ export function parse(json: string, custom: readonly Palette[] = []): ParseResul
   // typed shape is clean and `labelBold` doesn't leak through.
   const rawDoc = file.doc as unknown as Record<string, unknown>;
   const docWithMigratedWeight = migrateLegacyLabelBold(rawDoc);
+  // Pre-styles saves get the factory Defaults via the merge below AND a
+  // default-adoption pass at the end; a file that carries a styles record
+  // keeps its explicit tag/Custom state (round-trip stability).
+  const hadStyles = 'styles' in (docWithMigratedWeight as Record<string, unknown>);
+  // Same presence gate for the default designations: the merge fabricates
+  // factory-id styleDefaults for a pre-designation file, and a fabricated id
+  // that happens to resolve would win over the repair-by-name path the
+  // rehydrate uses — the two load paths must designate identically.
+  const hadStyleDefaults = 'styleDefaults' in (docWithMigratedWeight as Record<string, unknown>);
   let merged: MapDoc = { ...DEFAULT_DOC, ...(docWithMigratedWeight as Partial<MapDoc>) };
   // Enforce the "at least one valid palette" invariant on load. A malformed
   // file with explicit `activePalettes: []` or only unknown ids would
@@ -274,15 +284,26 @@ export function parse(json: string, custom: readonly Palette[] = []): ParseResul
   if (foldedPolygons.changed) merged.polygons = foldedPolygons.polygons;
   const cleanedLabels = backfillTextLabelColors(merged.textLabels);
   if (cleanedLabels.changed) merged.textLabels = cleanedLabels.textLabels;
+  // Validate style defs, then enforce the structural style invariants (≥ 1
+  // style per kind, styleDefaults resolving per kind) BEFORE the transfer
+  // bake below — the bake seeds the DESIGNATED default transfer style, so
+  // the designation must be repaired first.
+  const cleanedStyles = sanitizeStyles(merged.styles);
+  if (cleanedStyles.changed) merged.styles = cleanedStyles.styles;
+  const inv = ensureStyleInvariants(
+    merged.styles,
+    hadStyleDefaults ? merged.styleDefaults : undefined,
+  );
+  if (inv.changed) {
+    merged.styles = inv.styles;
+    merged.styleDefaults = inv.styleDefaults;
+  }
   // Fold the retired doc-level transfer settings (pre-retirement saves) into
   // per-transfer overrides, then normalize the overrides against the
   // constant defaults.
   merged = bakeLegacyTransferSettings(merged);
   const cleanedTransfers = sanitizeTransferStyles(merged.transfers);
   if (cleanedTransfers.changed) merged.transfers = cleanedTransfers.transfers;
-  // Validate style defs, then prune styleId tags they no longer back.
-  const cleanedStyles = sanitizeStyles(merged.styles);
-  if (cleanedStyles.changed) merged.styles = cleanedStyles.styles;
   // Version-gated (non-idempotent) rewrite: files saved before the pipe
   // bullet grammar carry `<X>` circle tokens and unescaped literal pipes.
   if ((typeof file.version === 'number' ? file.version : 1) < 2) {
@@ -292,7 +313,12 @@ export function parse(json: string, custom: readonly Palette[] = []): ParseResul
       merged.textLabels = migrated.textLabels;
     }
   }
-  return { ok: true, doc: pruneDanglingStyleRefs(merged) };
+  let final = pruneDanglingStyleRefs(merged);
+  // Pre-styles saves: adopt untagged, default-looking items into the
+  // just-backfilled Default styles, so the Styles panel's Default editors
+  // act on the whole loaded map rather than nothing.
+  if (!hadStyles) final = adoptDefaultStyles(final);
+  return { ok: true, doc: final };
 }
 
 // Backfill `line.name` for legacy files saved before the field existed, using
@@ -726,14 +752,19 @@ export function sanitizeTransferStyles(transfers: Record<string, Transfer>): {
  * post-retirement saves lack the fields); the localStorage rehydrate gates
  * it at v<10. Garbage legacy values read as the constant default.
  *
- * The settings' MAP-WIDE role moves to the "Default" transfer style: when the
- * doc carries an untouched factory Default (backfilled for pre-styles saves),
- * its props are seeded from the legacy settings too, so newly drawn transfers
- * keep dropping with the old map-wide look. A customized Default is left
- * alone.
+ * The settings' MAP-WIDE role moves to the DESIGNATED default transfer style
+ * (`styleDefaults.transfer` — repaired before the bake runs on both load
+ * paths): when it still wears untouched factory props (backfilled for
+ * pre-styles saves), it is seeded from the legacy settings too, so newly
+ * drawn transfers keep dropping with the old map-wide look. A customized
+ * default is left alone.
  */
 export function bakeLegacyTransferSettings<
-  T extends { transfers?: Record<string, Transfer>; styles?: Record<string, StyleDef> },
+  T extends {
+    transfers?: Record<string, Transfer>;
+    styles?: Record<string, StyleDef>;
+    styleDefaults?: Record<StyleKind, string>;
+  },
 >(doc: T): T {
   const raw = doc as Record<string, unknown>;
   const hasLegacy =
@@ -786,22 +817,19 @@ export function bakeLegacyTransferSettings<
     );
     transfers[id] = next;
   }
-  // Seed an untouched factory Default transfer style from the legacy
-  // settings (concrete clamped values, no collapse — style props are always
-  // concrete).
+  // Seed the designated default transfer style from the legacy settings when
+  // it still wears untouched factory props (concrete clamped values, no
+  // collapse — style props are always concrete).
   let styles = doc.styles;
-  if (styles) {
+  const targetId = doc.styleDefaults?.transfer;
+  const target = styles && targetId !== undefined ? styles[targetId] : undefined;
+  if (styles && targetId !== undefined && target?.kind === 'transfer') {
     const factory = Object.values(DEFAULT_STYLES).find((d) => d.kind === 'transfer');
-    for (const key of Object.keys(styles)) {
-      const def = styles[key];
-      if (def.kind !== 'transfer' || def.name !== 'Default') continue;
-      if (factory && stylePropsEqual('transfer', def.props, factory.props)) {
-        const seeded = canonicalStyleProps('transfer', legacy);
-        if (!stylePropsEqual('transfer', seeded, def.props)) {
-          styles = { ...styles, [key]: { ...def, props: seeded } };
-        }
+    if (factory && stylePropsEqual('transfer', target.props, factory.props)) {
+      const seeded = canonicalStyleProps('transfer', legacy);
+      if (!stylePropsEqual('transfer', seeded, target.props)) {
+        styles = { ...styles, [targetId]: { ...target, props: seeded } };
       }
-      break;
     }
   }
   const {
@@ -820,16 +848,11 @@ export function bakeLegacyTransferSettings<
 
 /**
  * v9 → v10 style-def hygiene for the localStorage rehydrate: docs persisted
- * by the round-1 Styles build carry (a) textLabel defs with the since-dropped
- * width/leading/tracking keys and (b) an explicit styles record WITHOUT the
- * factory Defaults (DEFAULT_STYLES shipped in round 2, and the persist merge
- * only backfills a MISSING key). Rebuild every def through the canonical
- * grids — stripping stale keys, so the stylePropsEqual no-op guards work —
- * and inject any factory Default whose kind doesn't already have a style
- * named "Default". localStorage-only: parse() must NOT inject Defaults into
- * files (a file whose Defaults were deliberately deleted would get them
- * resurrected on every load); its sanitizeStyleProps rebuild already strips
- * the stale keys.
+ * by the round-1 Styles build carry textLabel defs with the since-dropped
+ * width/leading/tracking keys. Rebuild every def through the canonical
+ * grids — stripping stale keys, so the stylePropsEqual no-op guards work.
+ * Kind coverage and the default designations are NOT this migration's job:
+ * `ensureStyleInvariants` runs non-version-gated right after it.
  */
 export function migrateV9Styles(styles: Record<string, StyleDef>): Record<string, StyleDef> {
   let changed = false;
@@ -851,14 +874,66 @@ export function migrateV9Styles(styles: Record<string, StyleDef>): Record<string
       changed = true;
     }
   }
-  for (const def of Object.values(DEFAULT_STYLES)) {
-    const taken = Object.values(next).some((d) => d.kind === def.kind && d.name === 'Default');
-    if (!taken && !next[def.id]) {
-      next[def.id] = def;
+  return changed ? next : styles;
+}
+
+/**
+ * Enforce the two structural style invariants every loaded doc must satisfy
+ * (see MapDoc): every kind has ≥ 1 style — kinds with none get their factory
+ * Default injected — and `styleDefaults` maps every kind to one of its
+ * styles. A valid incoming designation is kept verbatim; a missing, dangling
+ * or wrong-kind one is repaired to the kind's style named "Default" when one
+ * exists (what pre-designation builds treated as the default), else its
+ * first style in name order. Non-version-gated, like the active-palettes
+ * invariant: shared by parse() and the localStorage rehydrate, and expected
+ * to be a no-op on every doc this build has written. Assumes `styles` is
+ * already sanitized (canonical defs, id === key).
+ */
+export function ensureStyleInvariants(
+  styles: Record<string, StyleDef>,
+  styleDefaults: unknown,
+): {
+  styles: Record<string, StyleDef>;
+  styleDefaults: Record<StyleKind, string>;
+  changed: boolean;
+} {
+  let changed = false;
+  let nextStyles = styles;
+  const raw =
+    styleDefaults && typeof styleDefaults === 'object' && !Array.isArray(styleDefaults)
+      ? (styleDefaults as Record<string, unknown>)
+      : undefined;
+  const nextDefaults = {} as Record<StyleKind, string>;
+  for (const kind of KNOWN_STYLE_KINDS) {
+    let ofKind = Object.values(nextStyles).filter((d) => d.kind === kind);
+    if (ofKind.length === 0) {
+      const factory = Object.values(DEFAULT_STYLES).find((d) => d.kind === kind)!;
+      // The factory id is normally free (nothing of this kind exists), but a
+      // hand-edited file could hold it for another kind — id === record key,
+      // so probe for a free key rather than clobber.
+      let key = factory.id;
+      for (let n = 2; key in nextStyles; n++) key = `${factory.id}-${n}`;
+      nextStyles = { ...nextStyles, [key]: { ...factory, id: key } as StyleDef };
+      ofKind = [nextStyles[key]];
+      changed = true;
+    }
+    const incoming = raw?.[kind];
+    if (typeof incoming === 'string' && nextStyles[incoming]?.kind === kind) {
+      nextDefaults[kind] = incoming;
+    } else {
+      const sorted = ofKind.slice().sort((a, b) => a.name.localeCompare(b.name));
+      nextDefaults[kind] = (sorted.find((d) => d.name === 'Default') ?? sorted[0]).id;
       changed = true;
     }
   }
-  return changed ? next : styles;
+  // Unknown extra keys in a hand-edited record are dropped by the rebuild —
+  // flag the change even when all five real entries were valid.
+  if (!changed && raw && Object.keys(raw).length !== KNOWN_STYLE_KINDS.size) changed = true;
+  return {
+    styles: nextStyles,
+    styleDefaults: changed ? nextDefaults : (styleDefaults as Record<StyleKind, string>),
+    changed,
+  };
 }
 
 const KNOWN_STYLE_KINDS = new Set<StyleKind>([

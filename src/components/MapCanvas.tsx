@@ -106,6 +106,7 @@ export function MapCanvas() {
   const rotateRouteBullet = useDoc((s) => s.rotateRouteBullet);
   const transfers = useDoc((s) => s.transfers);
   const styles = useDoc((s) => s.styles);
+  const styleDefaults = useDoc((s) => s.styleDefaults);
   const textLabels = useDoc((s) => s.textLabels);
   const rotateTextLabel = useDoc((s) => s.rotateTextLabel);
   const polygons = useDoc((s) => s.polygons);
@@ -1000,9 +1001,11 @@ export function MapCanvas() {
             const anchor = selection.uiMode.anchor;
             if (!anchor) return null;
             const anchorWorld = transferEndWorld(stations[anchor.stationId], anchor.lineId);
-            // The dropped transfer will wear the "Default" transfer style, so
-            // the preview reads it too (constants when Default is gone).
-            const preview = defaultStyleProps(styles, 'transfer') ?? TRANSFER_STYLE_DEFAULTS;
+            // The dropped transfer will wear the designated default transfer
+            // style, so the preview reads it too (a loaded doc always has
+            // one; constants are a type-level fallback).
+            const preview =
+              defaultStyleProps({ styles, styleDefaults }, 'transfer') ?? TRANSFER_STYLE_DEFAULTS;
             return (
               <line
                 data-export-exclude="1"
@@ -1063,13 +1066,13 @@ export function MapCanvas() {
               as the user clicks (the click handler exits placing-label). */}
           <LabelPlacingPreview
             world={selection.uiMode.kind === 'placing-label' ? cursorWorld : null}
-            style={defaultStyleProps(styles, 'textLabel')}
+            style={defaultStyleProps({ styles, styleDefaults }, 'textLabel')}
           />
           {/* Polygon-placing-mode ghost: a faint starter square following the
               cursor before the click, matching the shape that will drop. */}
           <PolygonPlacingPreview
             world={selection.uiMode.kind === 'creating-polygon' ? cursorWorld : null}
-            style={defaultStyleProps(styles, 'polygon')}
+            style={defaultStyleProps({ styles, styleDefaults }, 'polygon')}
           />
           {/* Svg-image-placing ghost: the imported graphic at 50% opacity
               following the cursor, centered, until the click drops it. */}
@@ -1083,7 +1086,7 @@ export function MapCanvas() {
             world={selection.uiMode.kind === 'creating-route-bullet' ? cursorWorld : null}
             lines={lines}
             lineOrder={lineOrder}
-            style={defaultStyleProps(styles, 'routeBullet')}
+            style={defaultStyleProps({ styles, styleDefaults }, 'routeBullet')}
           />
         </g>
 

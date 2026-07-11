@@ -73,7 +73,10 @@ describe('applyStyle / clearStyleTag / renameStyle / deleteStyle', () => {
           name: 'Heading',
           props: { fontSize: 24, weight: 700, italic: true },
         }),
+        // A second textLabel style so deleting y1 isn't a last-of-kind refusal.
+        y0: makeStyle('textLabel', 'y0', { name: 'Body' }),
       },
+      styleDefaults: { ...DEFAULT_DOC.styleDefaults, textLabel: 'y0' },
     });
     useDoc.temporal.getState().clear();
   });
@@ -150,7 +153,7 @@ describe('createStyle / updateStyleProps (the panel editor)', () => {
 });
 
 describe('new items wear the Default style on creation', () => {
-  it('addTextLabel stamps the CURRENT (redefined) Default in one undo entry', () => {
+  it('addTextLabel stamps the CURRENT (redefined) default in one undo entry', () => {
     useDoc.setState({
       styles: {
         y1: makeStyle('textLabel', 'y1', {
@@ -158,6 +161,7 @@ describe('new items wear the Default style on creation', () => {
           props: { fontSize: 24, weight: 700 },
         }),
       },
+      styleDefaults: { ...DEFAULT_DOC.styleDefaults, textLabel: 'y1' },
     });
     useDoc.temporal.getState().clear();
     const id = useDoc.getState().addTextLabel(0, 0);
@@ -177,6 +181,12 @@ describe('new items wear the Default style on creation', () => {
         y2: makeStyle('polygon', 'y2', { name: 'Default', props: { fill: '#00ff00' } }),
         y3: makeStyle('transfer', 'y3', { name: 'Default', props: { thickness: 6 } }),
       },
+      styleDefaults: {
+        ...DEFAULT_DOC.styleDefaults,
+        routeBullet: 'y1',
+        polygon: 'y2',
+        transfer: 'y3',
+      },
     });
     const b = useDoc.getState().addRouteBullet(0, 0, null);
     expect(useDoc.getState().routeBullets[b]).toMatchObject({ size: 20, styleId: 'y1' });
@@ -188,9 +198,10 @@ describe('new items wear the Default style on creation', () => {
     expect(useDoc.getState().transfers[x]).toMatchObject({ thickness: 6, styleId: 'y3' });
   });
 
-  it('addLine keeps its cycled color but wears the Default line style', () => {
+  it('addLine keeps its cycled color but wears the default line style', () => {
     useDoc.setState({
       styles: { y1: makeStyle('line', 'y1', { name: 'Default', props: { width: 12 } }) },
+      styleDefaults: { ...DEFAULT_DOC.styleDefaults, line: 'y1' },
     });
     const id = useDoc.getState().addLine();
     expect(useDoc.getState().lines[id].width).toBe(12);
@@ -204,6 +215,24 @@ describe('new items wear the Default style on creation', () => {
     expect(names).toEqual(['Default', 'Default', 'Default', 'Default', 'Default']);
     const id = useDoc.getState().addTextLabel(0, 0);
     expect(useDoc.getState().textLabels[id].styleId).toBe('default-textLabel');
+  });
+
+  it('setDefaultStyle re-routes creation, and the designation is undoable', () => {
+    useDoc.setState({
+      styles: {
+        y1: makeStyle('textLabel', 'y1', { name: 'Base' }),
+        y2: makeStyle('textLabel', 'y2', { name: 'Heading', props: { fontSize: 24 } }),
+      },
+      styleDefaults: { ...DEFAULT_DOC.styleDefaults, textLabel: 'y1' },
+    });
+    useDoc.temporal.getState().clear();
+    useDoc.getState().setDefaultStyle('y2');
+    expect(useDoc.getState().styleDefaults.textLabel).toBe('y2');
+    const id = useDoc.getState().addTextLabel(0, 0);
+    expect(useDoc.getState().textLabels[id]).toMatchObject({ fontSize: 24, styleId: 'y2' });
+    undo(); // drop the label
+    undo(); // revert the designation — styleDefaults is a tracked DOC_FIELD
+    expect(useDoc.getState().styleDefaults.textLabel).toBe('y1');
   });
 });
 

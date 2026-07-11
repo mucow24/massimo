@@ -31,6 +31,9 @@ describe('serialize / parse round-trip', () => {
       ],
       lineOrder: ['L2', 'L1'],
       curveRadius: 30,
+      // Round-trip pins compare parse(serialize(doc)) with toEqual, so the
+      // fixture must satisfy the load-time style invariants (>= 1 per kind).
+      styles: Object.values(T.DEFAULT_STYLES),
     });
     const json = serialize(doc);
     const result = parse(json);
@@ -506,6 +509,7 @@ describe('serialize / parse — dot styles', () => {
           defaultDotStyle: DOT_SHAPE_PRESETS['filled-line-color'],
         }),
       ],
+      styles: Object.values(T.DEFAULT_STYLES),
     });
     const result = parse(serialize(doc));
     expect(result.ok).toBe(true);
@@ -665,7 +669,10 @@ describe('parse — line width sanitizing', () => {
     });
 
   it('round-trips a non-default width losslessly (pin — relies only on the optional field)', () => {
-    const doc = makeDoc({ lines: [makeLine({ id: 'L1', width: 21 })] });
+    const doc = makeDoc({
+      lines: [makeLine({ id: 'L1', width: 21 })],
+      styles: Object.values(T.DEFAULT_STYLES),
+    });
     const result = parse(serialize(doc));
     expect(result.ok).toBe(true);
     if (result.ok) expect(result.doc).toEqual(doc);
@@ -738,6 +745,7 @@ describe('parse — dot size sanitizing', () => {
     const doc = makeDoc({
       stations: [makeStation({ id: 's1', stops: [makeStop('L1', { dotSize: 16 })] })],
       lines: [makeLine({ id: 'L1', stations: ['s1'], defaultDotSize: 12 })],
+      styles: Object.values(T.DEFAULT_STYLES),
     });
     const result = parse(serialize(doc));
     expect(result.ok).toBe(true);
@@ -817,6 +825,7 @@ describe('parse — line stroke sanitizing', () => {
   it('round-trips a non-default stroke losslessly', () => {
     const doc = makeDoc({
       lines: [makeLine({ id: 'L1', strokeWidth: 4, strokeColor: '#ff0000' })],
+      styles: Object.values(T.DEFAULT_STYLES),
     });
     const result = parse(serialize(doc));
     expect(result.ok).toBe(true);

@@ -1,5 +1,6 @@
 import { describe, it, expect } from 'vitest';
 import {
+  adoptDefaultStyles,
   applyDefaultStyle,
   applyStyleToItem,
   captureStyleProps,
@@ -9,10 +10,11 @@ import {
   deleteStyle,
   renameStyle,
   saveStyleFromItem,
+  setDefaultStyle,
   stylesOfKind,
   updateStyleProps,
 } from './styles';
-import { DEFAULT_DOC, DEFAULT_STYLES } from './transforms';
+import { DEFAULT_DOC, DEFAULT_STYLES, FACTORY_STYLE_DEFAULTS } from './transforms';
 import { DEFAULT_DOT_STYLE, DOT_SHAPE_PRESETS } from './dotStyle';
 import { DOT_SIZE_DEFAULT } from './dotSize';
 import { LINE_WIDTH_DEFAULT } from './lineWidth';
@@ -404,7 +406,8 @@ describe('deleteStyle', () => {
         makeRouteBullet({ id: 'b1', shape: 'square', size: 20, styleId: 'y1' }),
         makeRouteBullet({ id: 'b2' }),
       ],
-      styles: [style],
+      styles: [style, makeStyle('routeBullet', 'y2', { name: 'Other' })],
+      styleDefaults: { routeBullet: 'y2' },
     });
     const next = deleteStyle(doc, 'y1');
     expect(next.styles.y1).toBeUndefined();
@@ -412,11 +415,78 @@ describe('deleteStyle', () => {
     expect(next.routeBullets.b1.shape).toBe('square');
     expect(next.routeBullets.b1.size).toBe(20);
     expect(next.routeBullets.b2).toBe(doc.routeBullets.b2);
+    expect(next.styleDefaults).toBe(doc.styleDefaults); // default untouched
+  });
+
+  it('refuses (same reference) to delete the last style of a kind', () => {
+    const doc = makeDoc({
+      styles: [makeStyle('routeBullet', 'y1', { name: 'Only' })],
+    });
+    expect(deleteStyle(doc, 'y1')).toBe(doc);
+  });
+
+  it("re-points the kind's default at the first remaining style (name order) when deleting the default", () => {
+    // Name order and record-insertion order deliberately DISAGREE (y3 'Alpha'
+    // is inserted last), so this fails if the re-point ever reads unsorted.
+    const doc = makeDoc({
+      styles: [
+        makeStyle('routeBullet', 'y1', { name: 'Zebra' }),
+        makeStyle('routeBullet', 'y2', { name: 'Mid' }),
+        makeStyle('routeBullet', 'y3', { name: 'Alpha' }),
+      ],
+      styleDefaults: { routeBullet: 'y1' },
+    });
+    const next = deleteStyle(doc, 'y1');
+    expect(next.styleDefaults.routeBullet).toBe('y3'); // 'Alpha' sorts first
+    // Other kinds' designations are untouched.
+    expect(next.styleDefaults.line).toBe(doc.styleDefaults.line);
+  });
+
+  it('deleting the default with TAGGED USERS re-points AND untags in the same call', () => {
+    // The common real case — the default is exactly the style most items
+    // wear — must exercise the untagged=true return branch together with the
+    // re-point (each alone passing is not enough).
+    const doc = makeDoc({
+      routeBullets: [makeRouteBullet({ id: 'b1', size: 20, styleId: 'y1' })],
+      styles: [
+        makeStyle('routeBullet', 'y1', { name: 'Big', props: { size: 20 } }),
+        makeStyle('routeBullet', 'y2', { name: 'Other' }),
+      ],
+      styleDefaults: { routeBullet: 'y1' },
+    });
+    const next = deleteStyle(doc, 'y1');
+    expect(next.routeBullets.b1.styleId).toBeUndefined();
+    expect(next.routeBullets.b1.size).toBe(20); // values kept
+    expect(next.styleDefaults.routeBullet).toBe('y2'); // re-pointed
   });
 
   it('no-ops on an unknown id', () => {
     const doc = makeDoc({});
     expect(deleteStyle(doc, 'nope')).toBe(doc);
+  });
+});
+
+describe('setDefaultStyle', () => {
+  it("designates the style as its kind's default", () => {
+    const doc = makeDoc({
+      styles: [
+        makeStyle('textLabel', 'y1', { name: 'Default' }),
+        makeStyle('textLabel', 'y2', { name: 'Heading' }),
+      ],
+    });
+    expect(doc.styleDefaults.textLabel).toBe('y1');
+    const next = setDefaultStyle(doc, 'y2');
+    expect(next.styleDefaults.textLabel).toBe('y2');
+    expect(next.styleDefaults.line).toBe(doc.styleDefaults.line);
+    expect(next.styles).toBe(doc.styles); // defs untouched
+  });
+
+  it('no-ops (same reference) on an unknown id or the current default', () => {
+    const doc = makeDoc({
+      styles: [makeStyle('textLabel', 'y1', { name: 'Default' })],
+    });
+    expect(setDefaultStyle(doc, 'nope')).toBe(doc);
+    expect(setDefaultStyle(doc, 'y1')).toBe(doc);
   });
 });
 
@@ -502,23 +572,27 @@ describe('updateStyleProps', () => {
 });
 
 describe('DEFAULT_STYLES / applyDefaultStyle', () => {
-  it('ships one factory "Default" per kind, and DEFAULT_DOC starts with exactly those', () => {
+  it('ships one factory "Default" per kind, and DEFAULT_DOC starts with exactly those designated', () => {
     const kinds = Object.values(DEFAULT_STYLES)
       .map((d) => d.kind)
       .sort();
     expect(kinds).toEqual(['line', 'polygon', 'routeBullet', 'textLabel', 'transfer']);
     for (const d of Object.values(DEFAULT_STYLES)) expect(d.name).toBe('Default');
     expect(DEFAULT_DOC.styles).toBe(DEFAULT_STYLES);
+    expect(DEFAULT_DOC.styleDefaults).toBe(FACTORY_STYLE_DEFAULTS);
+    for (const [kind, id] of Object.entries(FACTORY_STYLE_DEFAULTS)) {
+      expect(DEFAULT_STYLES[id]?.kind).toBe(kind);
+    }
     // Factory props are the effective defaults a fresh item captures to —
     // spot-check one scalar per kind.
-    expect(defaultStyleProps(DEFAULT_STYLES, 'line')).toMatchObject({ width: LINE_WIDTH_DEFAULT });
-    expect(defaultStyleProps(DEFAULT_STYLES, 'textLabel')).toMatchObject({ fontSize: 16 });
-    expect(defaultStyleProps(DEFAULT_STYLES, 'polygon')).toMatchObject({ fill: '#cfe3f2' });
-    expect(defaultStyleProps(DEFAULT_STYLES, 'routeBullet')).toMatchObject({ size: 14 });
-    expect(defaultStyleProps(DEFAULT_STYLES, 'transfer')).toMatchObject({ thickness: 2 });
+    expect(defaultStyleProps(DEFAULT_DOC, 'line')).toMatchObject({ width: LINE_WIDTH_DEFAULT });
+    expect(defaultStyleProps(DEFAULT_DOC, 'textLabel')).toMatchObject({ fontSize: 16 });
+    expect(defaultStyleProps(DEFAULT_DOC, 'polygon')).toMatchObject({ fill: '#cfe3f2' });
+    expect(defaultStyleProps(DEFAULT_DOC, 'routeBullet')).toMatchObject({ size: 14 });
+    expect(defaultStyleProps(DEFAULT_DOC, 'transfer')).toMatchObject({ thickness: 2 });
   });
 
-  it('stamps and tags the kind\'s style NAMED "Default", with its CURRENT props', () => {
+  it("stamps and tags the kind's DESIGNATED default, with its CURRENT props", () => {
     const doc = makeDoc({
       textLabels: [makeTextLabel({ id: 'g1' })],
       styles: [makeStyle('textLabel', 'y1', { name: 'Default', props: { fontSize: 24 } })],
@@ -528,14 +602,68 @@ describe('DEFAULT_STYLES / applyDefaultStyle', () => {
     expect(next.textLabels.g1.styleId).toBe('y1');
   });
 
-  it('no-ops (same reference) when no style of the kind is named Default', () => {
+  it('defaultness is id-keyed, not name-keyed: a renamed default still applies', () => {
+    const doc = makeDoc({
+      textLabels: [makeTextLabel({ id: 'g1' })],
+      styles: [makeStyle('textLabel', 'y1', { name: 'Base', props: { fontSize: 24 } })],
+      styleDefaults: { textLabel: 'y1' },
+    });
+    const next = applyDefaultStyle(doc, 'textLabel', 'g1');
+    expect(next.textLabels.g1.fontSize).toBe(24);
+    expect(next.textLabels.g1.styleId).toBe('y1');
+  });
+
+  it("no-ops (same reference) when the kind's designation doesn't resolve", () => {
+    // No styles of the kind at all — the fixture's designation dangles.
     const doc = makeDoc({ textLabels: [makeTextLabel({ id: 'g1' })] });
     expect(applyDefaultStyle(doc, 'textLabel', 'g1')).toBe(doc);
-    const renamed = makeDoc({
+    // A wrong-kind designation is guarded, not applied.
+    const wrongKind = makeDoc({
       textLabels: [makeTextLabel({ id: 'g1' })],
-      styles: [makeStyle('textLabel', 'y1', { name: 'Base' })],
+      styles: [makeStyle('polygon', 'y1', { name: 'Zone' })],
+      styleDefaults: { textLabel: 'y1' },
     });
-    expect(applyDefaultStyle(renamed, 'textLabel', 'g1')).toBe(renamed);
+    expect(applyDefaultStyle(wrongKind, 'textLabel', 'g1')).toBe(wrongKind);
+  });
+});
+
+describe('adoptDefaultStyles', () => {
+  it("tags untagged items whose values match their kind's Default, leaves the rest", () => {
+    const doc = makeDoc({
+      stations: [makeStation({ id: 's1' }), makeStation({ id: 's2' })],
+      lines: [makeLine({ id: 'l1' }), makeLine({ id: 'l2', width: 10 })],
+      textLabels: [makeTextLabel({ id: 'g1' }), makeTextLabel({ id: 'g2', fontSize: 24 })],
+      routeBullets: [makeRouteBullet({ id: 'b1', size: 14 })],
+      transfers: [makeTransfer({ id: 'x1' })],
+      polygons: [makePolygon({ id: 'p1', fill: '#123456' })],
+      styles: Object.values(DEFAULT_STYLES),
+    });
+    const next = adoptDefaultStyles(doc);
+    expect(next.lines.l1.styleId).toBe('default-line'); // factory look → adopted
+    expect(next.lines.l2.styleId).toBeUndefined(); // width 10 ≠ Default
+    expect(next.textLabels.g1.styleId).toBe('default-textLabel');
+    expect(next.textLabels.g2.styleId).toBeUndefined();
+    expect(next.routeBullets.b1.styleId).toBe('default-routeBullet');
+    expect(next.transfers.x1.styleId).toBe('default-transfer');
+    expect(next.polygons.p1.styleId).toBeUndefined();
+  });
+
+  it('never re-tags an already-tagged item and adopts values, not stored forms', () => {
+    const doc = makeDoc({
+      textLabels: [makeTextLabel({ id: 'g1', styleId: 'y1' })], // tagged elsewhere, values = factory
+      styles: [...Object.values(DEFAULT_STYLES), makeStyle('textLabel', 'y1', { name: 'Mine' })],
+    });
+    expect(adoptDefaultStyles(doc).textLabels.g1.styleId).toBe('y1');
+  });
+
+  it('no-ops (same reference) when nothing adopts or no Default exists', () => {
+    const noDefaults = makeDoc({ textLabels: [makeTextLabel({ id: 'g1' })] });
+    expect(adoptDefaultStyles(noDefaults)).toBe(noDefaults);
+    const nothingMatches = makeDoc({
+      textLabels: [makeTextLabel({ id: 'g1', fontSize: 24 })],
+      styles: Object.values(DEFAULT_STYLES),
+    });
+    expect(adoptDefaultStyles(nothingMatches)).toBe(nothingMatches);
   });
 });
 

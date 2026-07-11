@@ -433,11 +433,19 @@ export function renameStyle(doc: MapDoc, styleId: string, name: string): MapDoc 
   return { ...doc, styles: { ...doc.styles, [styleId]: { ...def, name: trimmed } } };
 }
 
-/** Delete a style def and untag its users (their values are kept). */
+/**
+ * Delete a style def and untag its users (their values are kept). REFUSED
+ * for the last style of its kind — every kind keeps at least one, so the
+ * default designation always has somewhere to point. Deleting the current
+ * default re-points the designation at the kind's first remaining style
+ * (name order).
+ */
 export function deleteStyle(doc: MapDoc, styleId: string): MapDoc {
   const def = doc.styles[styleId];
   if (!def) return doc;
   const { [styleId]: _gone, ...styles } = doc.styles;
+  const remaining = stylesOfKind(styles, def.kind);
+  if (remaining.length === 0) return doc;
   const key = STYLE_COLLECTION_OF[def.kind];
   const coll = itemsOf(doc, def.kind);
   const out: Record<string, Tagged> = {};
@@ -452,7 +460,13 @@ export function deleteStyle(doc: MapDoc, styleId: string): MapDoc {
       out[id] = item;
     }
   }
-  return untagged ? ({ ...doc, styles, [key]: out } as MapDoc) : { ...doc, styles };
+  const styleDefaults =
+    doc.styleDefaults[def.kind] === styleId
+      ? { ...doc.styleDefaults, [def.kind]: remaining[0].id }
+      : doc.styleDefaults;
+  return untagged
+    ? ({ ...doc, styles, styleDefaults, [key]: out } as MapDoc)
+    : { ...doc, styles, styleDefaults };
 }
 
 /** Drop an item's style tag only (the dropdown's "Custom" choice). */
@@ -473,25 +487,88 @@ export function stylesOfKind(styles: Record<string, StyleDef>, kind: StyleKind):
 }
 
 /**
- * The props of the kind's style NAMED "Default", if one exists. New items are
- * stamped with these on creation, and placement previews read them so the
- * ghost matches what will actually drop. By NAME on purpose: rename or delete
- * Default and new items simply come in plain.
+ * The kind's DESIGNATED default style — the doc's styleDefaults entry,
+ * guarded against a dangling or wrong-kind id (repaired on load, but partial
+ * migrate-time docs pass through here too). Defaultness is explicit and
+ * id-keyed (`setDefaultStyle`), never derived from a name.
  */
-export function defaultStyleProps<K extends StyleKind>(
-  styles: Record<string, StyleDef>,
-  kind: K,
-): StylePropsByKind[K] | undefined {
-  const def = Object.values(styles).find((d) => d.kind === kind && d.name === 'Default');
-  return def?.props as StylePropsByKind[K] | undefined;
+export function defaultStyleOf(
+  doc: Pick<MapDoc, 'styles' | 'styleDefaults'>,
+  kind: StyleKind,
+): StyleDef | undefined {
+  if (!doc.styles || !doc.styleDefaults) return undefined;
+  const def = doc.styles[doc.styleDefaults[kind]];
+  return def?.kind === kind ? def : undefined;
 }
 
 /**
- * Stamp + tag a freshly created item with its kind's "Default" style (current
- * props — a redefined Default changes what new items look like). Same
- * reference when no style of the kind wears the name.
+ * The designated default's props. New items are stamped with these on
+ * creation, and placement previews read them so the ghost matches what will
+ * actually drop.
+ */
+export function defaultStyleProps<K extends StyleKind>(
+  doc: Pick<MapDoc, 'styles' | 'styleDefaults'>,
+  kind: K,
+): StylePropsByKind[K] | undefined {
+  return defaultStyleOf(doc, kind)?.props as StylePropsByKind[K] | undefined;
+}
+
+/**
+ * Stamp + tag a freshly created item with its kind's designated default
+ * style (current props — redefining the default changes what new items look
+ * like). Same reference when the designation doesn't resolve (partial docs;
+ * a loaded doc always has one).
  */
 export function applyDefaultStyle(doc: MapDoc, kind: StyleKind, itemId: string): MapDoc {
-  const def = Object.values(doc.styles).find((d) => d.kind === kind && d.name === 'Default');
+  const def = defaultStyleOf(doc, kind);
   return def === undefined ? doc : applyStyleToItem(doc, def.id, itemId);
+}
+
+/**
+ * Designate `styleId` as its kind's default — the panel's "make default".
+ * No-op on an unknown id or when it already is the default.
+ */
+export function setDefaultStyle(doc: MapDoc, styleId: string): MapDoc {
+  const def = doc.styles[styleId];
+  if (!def || doc.styleDefaults[def.kind] === styleId) return doc;
+  return { ...doc, styleDefaults: { ...doc.styleDefaults, [def.kind]: styleId } };
+}
+
+/**
+ * One-time adoption pass for legacy saves: tag every UNTAGGED item whose
+ * covered effective values exactly match its kind's style named "Default",
+ * so the Styles panel's Default editors act on the whole loaded map (old
+ * maps are full of default-looking items that predate tags). Load-path only
+ * — parse() gates it to files that never had a styles record, and the
+ * persist migrate to v<11 docs — so a doc saved WITH styles keeps its
+ * explicit tag/Custom choices and round-trips unchanged. Values are already
+ * canonical on these paths, so adoption never rewrites them; it only adds
+ * tags. Reference-preserving, and tolerant of partial (persisted) docs.
+ */
+export function adoptDefaultStyles(doc: MapDoc): MapDoc {
+  if (!doc.styles) return doc;
+  let next = doc;
+  for (const kind of Object.keys(STYLE_COLLECTION_OF) as StyleKind[]) {
+    const def = defaultStyleOf(next, kind);
+    if (!def) continue;
+    const key = STYLE_COLLECTION_OF[kind];
+    const coll = next[key] as Record<string, Tagged> | undefined;
+    if (!coll) continue;
+    let changed = false;
+    const out: Record<string, Tagged> = {};
+    for (const id of Object.keys(coll)) {
+      const item = coll[id];
+      if (item.styleId === undefined) {
+        const props = captureStyleProps(next, kind, id);
+        if (props && stylePropsEqual(kind, props, def.props)) {
+          out[id] = { ...item, styleId: def.id };
+          changed = true;
+          continue;
+        }
+      }
+      out[id] = item;
+    }
+    if (changed) next = { ...next, [key]: out } as MapDoc;
+  }
+  return next;
 }

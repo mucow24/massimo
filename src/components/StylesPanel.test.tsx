@@ -19,7 +19,11 @@ beforeEach(() => {
     styles: {
       y1: makeStyle('textLabel', 'y1', { name: 'Heading', props: { fontSize: 24 } }),
       y2: makeStyle('routeBullet', 'y2', { name: 'Big', props: { size: 20 } }),
+      // Second textLabel style so deleting "Heading" isn't a last-of-kind
+      // refusal; it is also the kind's designated default.
+      y0: makeStyle('textLabel', 'y0', { name: 'Body' }),
     },
+    styleDefaults: { ...DEFAULT_DOC.styleDefaults, textLabel: 'y0', routeBullet: 'y2' },
   });
   useDoc.temporal.getState().clear();
   useSelection.setState({ sidebarOpen: true, activeTab: 'stations' });
@@ -28,7 +32,7 @@ beforeEach(() => {
 describe('Sidebar Styles tab', () => {
   it('offers a third tab with the style count and switches to the panel', () => {
     render(<Sidebar />);
-    const tab = screen.getByRole('button', { name: 'Styles (2)' });
+    const tab = screen.getByRole('button', { name: 'Styles (3)' });
     fireEvent.click(tab);
     expect(useSelection.getState().activeTab).toBe('styles');
     expect(screen.getByText('Heading')).toBeInTheDocument();
@@ -89,6 +93,42 @@ describe('<StylesPanel />', () => {
     expect(useDoc.getState().textLabels.g1.styleId).toBeUndefined();
     expect(useDoc.getState().textLabels.g1.fontSize).toBe(24);
     expect(screen.queryByText('Heading')).toBeNull();
+  });
+
+  it('marks the default with a star and re-assigns it via "make default"', () => {
+    render(<StylesPanel />);
+    // y0 ("Body") is the designated textLabel default.
+    expect(screen.getByRole('button', { name: 'Body is the default' })).toHaveAttribute(
+      'aria-pressed',
+      'true',
+    );
+    const makeDefault = screen.getByRole('button', { name: 'Make Heading the default' });
+    makeDefault.focus();
+    fireEvent.click(makeDefault);
+    expect(useDoc.getState().styleDefaults.textLabel).toBe('y1');
+    expect(screen.getByRole('button', { name: 'Heading is the default' })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Make Body the default' })).toBeInTheDocument();
+    // One persistent button, not a button→indicator swap: keyboard focus
+    // survives the activation instead of dropping to <body>.
+    expect(screen.getByRole('button', { name: 'Heading is the default' })).toHaveFocus();
+    // Clicking the already-default star is a no-op (transform guard).
+    fireEvent.click(screen.getByRole('button', { name: 'Heading is the default' }));
+    expect(useDoc.getState().styleDefaults.textLabel).toBe('y1');
+  });
+
+  it('the last style of a kind cannot be deleted', () => {
+    render(<StylesPanel />);
+    const btn = screen.getByRole('button', { name: 'Delete Big' }); // the only routeBullet style
+    expect(btn).toBeDisabled();
+    fireEvent.click(btn);
+    expect(useDoc.getState().styles.y2).toBeDefined();
+  });
+
+  it('deleting the default re-points the star at the first remaining style', () => {
+    render(<StylesPanel />);
+    fireEvent.click(screen.getByRole('button', { name: 'Delete Body' }));
+    expect(useDoc.getState().styleDefaults.textLabel).toBe('y1');
+    expect(screen.getByRole('button', { name: 'Heading is the default' })).toBeInTheDocument();
   });
 
   it('"+ New style" creates a factory-props style of the kind and expands its editor', () => {

@@ -260,6 +260,7 @@ export function makeDoc(parts: {
   svgImages?: SvgImage[];
   svgImageOrder?: string[];
   styles?: StyleDef[];
+  styleDefaults?: Partial<Record<StyleKind, string>>;
   labelFontSize?: number;
   labelWeight?: TextLabelWeight;
   labelItalic?: boolean;
@@ -285,6 +286,20 @@ export function makeDoc(parts: {
   for (const im of parts.svgImages ?? []) svgImages[im.id] = im;
   const styles: Record<string, StyleDef> = {};
   for (const st of parts.styles ?? []) styles[st.id] = st;
+  // Per-kind default designation: explicit part wins, else the kind's style
+  // named "Default", else its first style (name-sorted), else the factory id
+  // (dangling in a style-less fixture doc — lookups guard resolution).
+  const styleDefaults = {} as Record<StyleKind, string>;
+  const kinds: StyleKind[] = ['line', 'textLabel', 'polygon', 'routeBullet', 'transfer'];
+  for (const kind of kinds) {
+    const ofKind = Object.values(styles)
+      .filter((d) => d.kind === kind)
+      .sort((a, b) => a.name.localeCompare(b.name));
+    styleDefaults[kind] =
+      parts.styleDefaults?.[kind] ??
+      (ofKind.find((d) => d.name === 'Default') ?? ofKind[0])?.id ??
+      `default-${kind}`;
+  }
   return {
     name: parts.name ?? 'Untitled map',
     stations,
@@ -301,6 +316,7 @@ export function makeDoc(parts: {
     svgImages,
     svgImageOrder: parts.svgImageOrder ?? Object.keys(svgImages),
     styles,
+    styleDefaults,
     labelFontSize: parts.labelFontSize ?? 12,
     labelWeight: parts.labelWeight ?? 400,
     labelItalic: parts.labelItalic ?? false,

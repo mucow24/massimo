@@ -40,6 +40,7 @@ import {
   backfillTextLabelColors,
   bakeLegacyTransferSettings,
   convertLegacyDotShapes,
+  ensureStyleInvariants,
   foldPolygonFillOpacity,
   migrateLegacyBulletSyntax,
   migrateV9Styles,
@@ -93,11 +94,12 @@ const DOC_FIELDS = [
   'polygonOrder',
   'svgImages',
   'svgImageOrder',
-  // Named style presets. Pre-styles saves lack the key, so zustand's shallow
-  // merge (and parse()'s DEFAULT_DOC merge) backfills DEFAULT_STYLES; docs
-  // persisted by the round-1 build carry an explicit record instead and get
-  // the Defaults injected by migrateV9Styles (v<10).
+  // Named style presets + the per-kind default designations. Pre-styles saves
+  // lack the keys, so zustand's shallow merge (and parse()'s DEFAULT_DOC
+  // merge) backfills the factory set; docs persisted by earlier builds get
+  // theirs repaired by the style-invariant pass in migrateDoc.
   'styles',
+  'styleDefaults',
   'labelFontSize',
   'labelWeight',
   'labelItalic',
@@ -162,14 +164,26 @@ function docSnapshotsEqual(a: DocSnapshot, b: DocSnapshot): boolean {
  *   SCHEMA_VERSION bump) while this rehydrate path gates it on v<9.
  * - v9 → v10: style hygiene (`migrateV9Styles`) — rebuild persisted style
  *   defs through the canonical grids (stripping the since-dropped textLabel
- *   width/leading/tracking keys) and inject the factory "Default" presets
- *   that round-1 docs' explicit `styles` record never got from the persist
- *   merge — then bake the retired doc-level transfer settings
+ *   width/leading/tracking keys) — then bake the retired doc-level transfer
+ *   settings
  *   (transferThickness/transferColor/transferStrokeWidth/transferStrokeColor)
- *   into per-transfer overrides, drop the fields, and seed an untouched
- *   factory Default transfer style from them (the settings' map-wide role
- *   moved there). The bake is idempotent (keyed off field presence), so
- *   `parse()` runs the shared `bakeLegacyTransferSettings` unconditionally.
+ *   into per-transfer overrides, drop the fields, and seed the designated
+ *   default transfer style from them when it still wears untouched factory
+ *   props (the settings' map-wide role moved there). The bake is idempotent
+ *   (keyed off field presence), so `parse()` runs the shared
+ *   `bakeLegacyTransferSettings` unconditionally.
+ * - v10 → v11: adopt untagged items whose values match their kind's default
+ *   style (`adoptDefaultStyles`) — legacy maps are full of default-looking
+ *   items that predate tags, and without them the Styles panel's Default
+ *   editors act on nothing. `parse()` runs the same pass for files that
+ *   never had a styles record.
+ * - v11 → v12: `styleDefaults` (the explicit per-kind default designations)
+ *   replaced defaultness-by-name. No gated step of its own — the
+ *   non-version-gated `ensureStyleInvariants` pass below repairs coverage
+ *   and designations for every doc that carries styles; the bump just forces
+ *   pre-designation storage through migrate at all (the persist merge alone
+ *   would leave `styleDefaults` pointing at factory ids that round-1/2 docs'
+ *   styles records don't contain).
  */
 export function migrateDoc(persisted: unknown, version: number): DocState {
   const s = persisted as {
@@ -179,6 +193,7 @@ export function migrateDoc(persisted: unknown, version: number): DocState {
     textLabels?: Record<string, TextLabel>;
     transfers?: Record<string, Transfer>;
     styles?: Record<string, StyleDef>;
+    styleDefaults?: Record<StyleKind, string>;
     labelBold?: boolean;
     labelWeight?: TextLabelWeight;
     activePalettes?: PaletteId[];
@@ -236,25 +251,33 @@ export function migrateDoc(persisted: unknown, version: number): DocState {
     if (folded.changed) out = { ...out, polygons: folded.polygons };
   }
   if (v < 10) {
-    // Style-def hygiene FIRST — strip round-1 defs' since-dropped keys and
-    // materialize the factory Defaults (round-1 docs persisted an explicit
-    // styles record the merge won't backfill; pre-styles docs with legacy
-    // transfer settings get theirs here instead so the bake below can seed
-    // the Default transfer style from the settings it is folding away).
-    // Docs with neither pass through by reference (merge backfills styles).
-    const outRaw = out as Record<string, unknown>;
-    const hasLegacyTransferSettings =
-      'transferThickness' in outRaw ||
-      'transferColor' in outRaw ||
-      'transferStrokeWidth' in outRaw ||
-      'transferStrokeColor' in outRaw;
-    if (out.styles !== undefined || hasLegacyTransferSettings) {
-      const styles = migrateV9Styles(out.styles ?? {});
-      if (styles !== out.styles) out = { ...out, styles };
-    }
+    // Style-def hygiene FIRST — strip round-1 defs' since-dropped keys, and
+    // materialize an explicit (possibly empty) styles record so the invariant
+    // pass below injects the factory Defaults that pre-styles docs never
+    // persisted and the merge won't backfill.
+    const styles = migrateV9Styles(out.styles ?? {});
+    if (styles !== out.styles) out = { ...out, styles };
+  }
+  // Non-version-gated invariant, like the palette check below: every kind has
+  // ≥ 1 style and a valid default designation. Must precede the v<10 bake
+  // (which seeds the DESIGNATED default transfer style) and the v<11 adoption
+  // (which stamps kinds' designated defaults). An ABSENT styles record is
+  // left untouched — only pre-styles docs at v ≥ 10 lack one, which can't
+  // exist (v10 materialized it).
+  if (out.styles !== undefined) {
+    const inv = ensureStyleInvariants(out.styles, out.styleDefaults);
+    if (inv.changed) out = { ...out, styles: inv.styles, styleDefaults: inv.styleDefaults };
+  }
+  if (v < 10) {
     // Retired doc-level transfer settings → baked into per-transfer overrides
     // (no-op when the fields were never persisted, e.g. pre-PR-#220 docs).
     out = bakeLegacyTransferSettings(out);
+  }
+  if (v < 11) {
+    // Adopt untagged, default-looking items into the default styles: legacy
+    // maps are full of them, and without tags the Styles panel's Default
+    // editors would act on nothing.
+    out = S.adoptDefaultStyles(out as unknown as MapDoc) as typeof out;
   }
   if (v < 3 && 'labelBold' in out) {
     const { labelBold, ...rest } = out;
@@ -434,6 +457,9 @@ interface DocState extends MapDoc {
   /** The Styles panel editor's write path: patch a def's props and re-stamp
    *  its tagged users live, all one undo entry. */
   updateStyleProps: (styleId: string, patch: S.StylePropsPatch) => void;
+  /** The Styles panel's "make default": designate a style as its kind's
+   *  default (new items of the kind are created wearing it). */
+  setDefaultStyle: (styleId: string) => void;
 
   /** Replace the whole document (file load). Defaults fill any field the
    *  loaded doc omits. Callers should clearHistory() after — undo must not
@@ -768,6 +794,7 @@ export const useDoc = create<DocState>()(
           return id;
         },
         updateStyleProps: (styleId, patch) => set((s) => S.updateStyleProps(s, styleId, patch)),
+        setDefaultStyle: (styleId) => set((s) => S.setDefaultStyle(s, styleId)),
 
         // A plain merge: doc fields are replaced, mutator methods survive.
         loadDoc: (doc) => set({ ...DEFAULT_DOC, ...doc }),
@@ -805,8 +832,8 @@ export const useDoc = create<DocState>()(
       {
         name: 'vignelli-map-doc-v1',
         storage: createJSONStorage(() => localStorage),
-        version: 10,
-        // Version migration chain v0 → v10 lives in `migrateDoc` (above), which
+        version: 12,
+        // Version migration chain v0 → v11 lives in `migrateDoc` (above), which
         // is exported and unit-tested. See its doc comment for each step.
         migrate: (persisted, version) => migrateDoc(persisted, version),
         partialize: (s) => pickDocSnapshot(s),

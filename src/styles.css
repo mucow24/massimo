@@ -1605,6 +1605,12 @@ input[type='range'].indeterminate {
   border: 1px solid var(--border-strong);
   border-radius: var(--radius);
 }
+/* The star button's "is the default" state: the filled icon reads in the
+   accent color (the base .btn-mini.icon supplies size + hover). */
+.list-row .btn-mini.style-default-star,
+.list-row .btn-mini.style-default-star:hover:not(:disabled) {
+  color: var(--accent);
+}
 
 .append-banner {
   position: absolute;

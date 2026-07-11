@@ -268,26 +268,33 @@ interface MapDoc {
   labelTracking: number; // line-spacing mult / em letter-spacing (1 / 0 = neutral)
   activePalettes: PaletteId[]; // INVARIANT: never empty
   styles: Record<string, StyleDef>; // named per-kind formatting presets ("Styles")
+  styleDefaults: Record<StyleKind, string>; // per-kind DEFAULT designation (style id)
 }
 ```
 
 There are **no doc-level transfer settings** — transfers fall back to the constant
 `TRANSFER_STYLE_DEFAULTS` (transferStyle.ts) with per-transfer overrides on top; the map-wide
-knob is the "Default" transfer style preset (edit it in the Styles panel and every transfer
+knob is the designated default transfer style (edit it in the Styles panel and every transfer
 wearing it follows). Pre-retirement saves carried `transferThickness/transferColor/
 transferStrokeWidth/transferStrokeColor`; both load paths bake them into per-transfer overrides
 (`bakeLegacyTransferSettings`, persist v10).
 
 `DEFAULT_DOC` (in [transforms.ts](src/model/transforms.ts)) is the merge baseline: empty
 collections, `name: 'Untitled map'`, `curveRadius: 24`, `lineCounter: 0`, `activePalettes:
-['mta']`, `labelItalic: false`, and `styles: DEFAULT_STYLES` — the five factory "Default"
-presets (one per styleable kind: line, textLabel, polygon, routeBullet, transfer). Styles are
-doc-scoped: applying one stamps its props onto the item through the canonical setters and tags
-it (`styleId`, invariant: tagged => the item's covered values equal the style's props); editing
-a covered field detaches the item back to "Custom"; redefining a style (Styles-panel editor or
-"Save style..." over the same name) re-stamps its tagged users in the same undo entry; new
-items are stamped with their kind's style named "Default" on creation. See
-[styles.ts](src/model/styles.ts).
+['mta']`, `labelItalic: false`, `styles: DEFAULT_STYLES` — the five factory "Default"
+presets (one per styleable kind: line, textLabel, polygon, routeBullet, transfer) — and
+`styleDefaults: FACTORY_STYLE_DEFAULTS` designating them. Styles are doc-scoped: applying one
+stamps its props onto the item through the canonical setters and tags it (`styleId`, invariant:
+tagged => the item's covered values equal the style's props); editing a covered field detaches
+the item back to "Custom"; redefining a style (Styles-panel editor or "Save style..." over the
+same name) re-stamps its tagged users in the same undo entry; new items are stamped with their
+kind's DESIGNATED default style on creation. Defaultness is explicit and id-keyed, never
+name-derived: `styleDefaults` maps each kind to one of its styles (`setDefaultStyle` re-assigns
+it — the panel's star), with two structural invariants enforced on both load paths by
+`ensureStyleInvariants` (serialize.ts): every kind has >= 1 style (empty kinds get their
+factory Default injected; `deleteStyle` refuses last-of-kind and re-points the designation when
+the default itself is deleted), and every `styleDefaults` entry resolves to a style of its
+kind. See [styles.ts](src/model/styles.ts).
 
 ### Entities (field-level)
 
@@ -454,17 +461,28 @@ by the **Load…** menu. Pure, returns `{ok, doc}` or `{ok:false, error}`:
 9. `backfillPolygonDarkColors`, then `foldPolygonFillOpacity` (legacy polygon `fillOpacity` → the
    alpha of `fill`/`darkFill`; **after** the dark-color backfill so `darkFill` exists to fold),
    then `backfillTextLabelColors`.
-10. `migrateLegacyBulletSyntax` — gated on the **file's own** `version < 2` (the one version-gated,
+10. `sanitizeStyles` (validate/clamp style defs, per-kind name dedupe, id ← record key) then
+    `ensureStyleInvariants` (≥ 1 style per kind — factory Defaults injected into empty kinds —
+    and a `styleDefaults` entry resolving per kind). **Before** the transfer bake, which seeds
+    the _designated_ default transfer style.
+11. `bakeLegacyTransferSettings` (retired doc-level transfer settings → per-transfer overrides;
+    idempotent, keyed off field presence) then `sanitizeTransferStyles`.
+12. `migrateLegacyBulletSyntax` — gated on the **file's own** `version < 2` (the one version-gated,
     non-idempotent step in Path A).
+13. `pruneDanglingStyleRefs` — **last**, so dangling / wrong-kind / value-mismatched `styleId`
+    tags compare fully-sanitized items against fully-sanitized defs.
+14. `adoptDefaultStyles` — **only for files with no `styles` record at all** (pre-styles saves):
+    untagged items whose values match their kind's designated default get tagged, so the Styles
+    panel's Default editors act on the whole loaded map.
 
 Path A does **more** than Path B because hand-edited files can be non-canonical (the file-only
 sanitizers `sanitizeLineWidth/Stroke/DotSize/Segments/StopDotSizes` exist for this).
 
 **Path B — localStorage rehydration: `migrateDoc(persisted, version)`** ([store.ts](src/state/store.ts)).
-The zustand `persist` config: `name: 'vignelli-map-doc-v1'`, `version: 9`, `migrate:
+The zustand `persist` config: `name: 'vignelli-map-doc-v1'`, `version: 12`, `migrate:
 migrateDoc`, `partialize: pickDocSnapshot`. Because the persist-merge already fills absent fields
 from the initial state, `migrateDoc` only does **value-level legacy fixups, version-gated**, on
-disjoint fields (order immaterial), never mutating the input:
+disjoint fields (order immaterial except where noted), never mutating the input:
 
 | Gate        | Fixup                                                                                                                                      |
 | ----------- | ------------------------------------------------------------------------------------------------------------------------------------------ | --- | ------------------------------------------------------ |
@@ -476,12 +494,16 @@ disjoint fields (order immaterial), never mutating the input:
 | `v<7`       | `convertLegacyDotShapes` (preset ids → procedural `DotStyle`)                                                                              |
 | `v<8`       | `migrateLegacyBulletSyntax` (legacy `<X>` circle bullets / unescaped pipes → `                                                             | X   | ` inline-token syntax, on station names + text labels) |
 | `v<9`       | `foldPolygonFillOpacity` (legacy polygon `fillOpacity` percent → the alpha of `fill`/`darkFill`; runs after the `v<5` dark-color backfill) |
+| `v<10`      | `migrateV9Styles` (rebuild round-1 style defs on the canonical grids, materialize an explicit `styles` record), then — **after** the style-invariant pass below — `bakeLegacyTransferSettings` |
+| `v<11`      | `adoptDefaultStyles` (tag untagged, default-looking items — mirrors Path A's step 14)                                                      |
+| `v<12`      | nothing of its own — the bump just forces pre-designation storage through migrate so the style-invariant pass backfills `styleDefaults`    |
+| (not gated) | `ensureStyleInvariants` whenever `styles !== undefined` — ordered between the `v<10` hygiene and the bake (the bake seeds the _designated_ default transfer style; adoption stamps designated defaults) |
 | (not gated) | `validActivePalettes` whenever `activePalettes !== undefined`                                                                              |
 
-A **corrupt/missing version is treated as v0** (all migrations run). The `validActivePalettes`
-repair is **not** tied to a schema bump — it runs any time the field is present (an absent field
-is left for the persist-merge). It reads `useCustomPalettes.getState().palettes` to validate
-custom ids.
+A **corrupt/missing version is treated as v0** (all migrations run). The two invariant
+repairs are **not** tied to a schema bump — they run any time their field is present (an absent
+field is left for the persist-merge). `validActivePalettes` reads
+`useCustomPalettes.getState().palettes` to validate custom ids.
 
 > **Do not "simplify" the two paths into one.** `storeMigrate.test.ts` pins reference-equality
 > pass-through for already-canonical docs (`expect(out).toBe(input)`); adding a file-only width

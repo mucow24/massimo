@@ -2408,6 +2408,17 @@ export const DEFAULT_STYLES: Record<string, StyleDef> = {
   },
 };
 
+// The factory per-kind default designations — each kind's shipped style is
+// its default until the user re-assigns one (setDefaultStyle). Frozen shape:
+// exactly one entry per StyleKind, always.
+export const FACTORY_STYLE_DEFAULTS: Record<StyleKind, string> = {
+  line: 'default-line',
+  textLabel: 'default-textLabel',
+  polygon: 'default-polygon',
+  routeBullet: 'default-routeBullet',
+  transfer: 'default-transfer',
+};
+
 export const DEFAULT_DOC: MapDoc = {
   name: MAP_NAME_DEFAULT,
   stations: {},
@@ -2424,6 +2435,7 @@ export const DEFAULT_DOC: MapDoc = {
   svgImages: {},
   svgImageOrder: [],
   styles: DEFAULT_STYLES,
+  styleDefaults: FACTORY_STYLE_DEFAULTS,
   labelFontSize: LABEL_FONT_SIZE_DEFAULT,
   labelWeight: LABEL_WEIGHT_DEFAULT,
   labelItalic: false,

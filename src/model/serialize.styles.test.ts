@@ -4,7 +4,7 @@
 import { describe, it, expect } from 'vitest';
 import { parse, serialize } from './serialize';
 import { applyStyleToItem } from './styles';
-import { DEFAULT_STYLES } from './transforms';
+import { DEFAULT_STYLES, FACTORY_STYLE_DEFAULTS } from './transforms';
 import type { MapDoc, TextLabelStyleProps } from './types';
 import {
   makeDoc,
@@ -58,6 +58,55 @@ describe('styles round-trip', () => {
     expect(parsed(docWithout).styles).toEqual(DEFAULT_STYLES);
   });
 
+  it('a pre-styles file adopts default-looking items into the backfilled Defaults', () => {
+    // Old maps are full of untagged, default-valued items; adopting them at
+    // load is what lets the Styles panel's Default editors act on the whole
+    // map. Non-matching items stay Custom.
+    const { styles: _gone, ...docWithout } = makeDoc({
+      textLabels: [makeTextLabel({ id: 'g1' }), makeTextLabel({ id: 'g2', fontSize: 24 })],
+    }) as MapDoc;
+    const out = parsed(docWithout);
+    expect(out.textLabels.g1.styleId).toBe('default-textLabel');
+    expect(out.textLabels.g2.styleId).toBeUndefined();
+  });
+
+  it('a file WITH a styles record does NOT adopt — explicit Custom choices survive', () => {
+    // An untagged item that happens to match a style stays untagged: the
+    // user may have detached it deliberately, and parse(serialize(doc)) must
+    // return the doc unchanged.
+    const doc = makeDoc({
+      textLabels: [makeTextLabel({ id: 'g1' })], // matches the factory Default
+      styles: Object.values(DEFAULT_STYLES),
+    });
+    const result = parse(serialize(doc));
+    expect(result.ok).toBe(true);
+    if (result.ok) {
+      expect(result.doc.textLabels.g1.styleId).toBeUndefined();
+      expect(result.doc).toEqual(doc);
+    }
+  });
+
+  it('the legacy-settings bake seeds the DESIGNATED default transfer style — not by id, not by name', () => {
+    // The designated default sits under a non-factory id and a non-'Default'
+    // name; a same-kind decoy NAMED 'Default' (also factory-looking) must be
+    // left alone. Catches both regressions: hardcoding the factory id and
+    // reverting to the old name scan.
+    const doc = {
+      ...makeDoc({
+        styles: [
+          makeStyle('transfer', 'my-transfer', { name: 'Chunky' }), // factory props
+          makeStyle('transfer', 'y9', { name: 'Default' }), // decoy, factory props
+        ],
+        styleDefaults: { transfer: 'my-transfer' },
+      }),
+      transferThickness: 7,
+    };
+    const out = parsed(doc);
+    expect(out.styles['my-transfer'].props).toMatchObject({ thickness: 7 });
+    expect(out.styles.y9.props).toMatchObject({ thickness: 2 });
+    expect(out.styleDefaults.transfer).toBe('my-transfer');
+  });
+
   it('a pre-styles file with legacy transfer settings seeds the Default transfer style', () => {
     // The retired settings' map-wide role moves to the Default transfer
     // style, so a new transfer drawn into the loaded map keeps the old look.
@@ -95,13 +144,22 @@ describe('sanitizeStyles via parse', () => {
       },
     };
     const out = parsed(doc);
-    expect(Object.keys(out.styles)).toEqual(['y1']);
     expect(out.styles.y1).toEqual(good);
+    // The dropped defs' kinds end up empty, so the ≥1-per-kind invariant
+    // injects their factory Defaults (routeBullet is covered by y1).
+    expect(Object.keys(out.styles).sort()).toEqual([
+      'default-line',
+      'default-polygon',
+      'default-textLabel',
+      'default-transfer',
+      'y1',
+    ]);
   });
 
-  it('replaces a non-record styles value with an empty record', () => {
+  it('replaces a non-record styles value with the factory set (≥ 1 per kind)', () => {
     const out = parsed({ ...makeDoc({}), styles: [1, 2, 3] });
-    expect(out.styles).toEqual({});
+    expect(out.styles).toEqual(DEFAULT_STYLES);
+    expect(out.styleDefaults).toEqual(FACTORY_STYLE_DEFAULTS);
   });
 
   it('clamps numerics onto the canonical grids and lowercases the line casing color', () => {
@@ -148,7 +206,87 @@ describe('sanitizeStyles via parse', () => {
       },
     };
     const out = parsed(doc);
-    expect(Object.keys(out.styles).sort()).toEqual(['y1', 'y3']);
+    expect(Object.keys(out.styles).sort()).toEqual([
+      'default-line',
+      'default-textLabel',
+      'default-transfer',
+      'y1',
+      'y3',
+    ]);
+  });
+});
+
+describe('ensureStyleInvariants via parse', () => {
+  it('keeps a valid designation verbatim (never "repaired" to another style)', () => {
+    const doc = {
+      ...makeDoc({
+        styles: [
+          makeStyle('textLabel', 'y1', { name: 'Zebra' }),
+          makeStyle('textLabel', 'y2', { name: 'Alpha' }),
+        ],
+      }),
+      styleDefaults: { textLabel: 'y1' },
+    };
+    expect(parsed(doc).styleDefaults.textLabel).toBe('y1');
+  });
+
+  it("repairs a dangling designation to the kind's style named 'Default', else its first by name", () => {
+    const base = makeDoc({
+      styles: [
+        makeStyle('textLabel', 'y1', { name: 'Zebra' }),
+        makeStyle('textLabel', 'y2', { name: 'Alpha' }),
+      ],
+    });
+    expect(parsed({ ...base, styleDefaults: { textLabel: 'ghost' } }).styleDefaults.textLabel).toBe(
+      'y2', // 'Alpha' sorts first
+    );
+    const withDefault = makeDoc({
+      styles: [
+        makeStyle('textLabel', 'y1', { name: 'Alpha' }),
+        makeStyle('textLabel', 'y2', { name: 'Default' }),
+      ],
+    });
+    expect(
+      parsed({ ...withDefault, styleDefaults: { textLabel: 'ghost' } }).styleDefaults.textLabel,
+    ).toBe('y2'); // name 'Default' beats sort order
+  });
+
+  it("a file with NO styleDefaults key designates by name 'Default', matching the rehydrate path", () => {
+    // Files saved by the pre-designation build carry styles but no
+    // styleDefaults. The DEFAULT_DOC merge must not fabricate a factory-id
+    // designation for them — that build treated the style NAMED 'Default' as
+    // the default (even under a non-factory id), and migrateDoc repairs by
+    // name, so parse() has to agree or the two load paths diverge.
+    // The factory-id def is still present but RENAMED — the old build's
+    // default is the freshly saved 'Default' under y1. A fabricated factory-id
+    // designation would resolve and stick to the wrong style.
+    const { styleDefaults: _gone, ...docWithout } = makeDoc({
+      styles: [
+        makeStyle('textLabel', 'default-textLabel', { name: 'Base' }),
+        makeStyle('textLabel', 'y1', { name: 'Default', props: { fontSize: 30 } }),
+      ],
+    }) as MapDoc;
+    expect(parsed(docWithout).styleDefaults.textLabel).toBe('y1');
+  });
+
+  it('repairs a wrong-kind designation and fills kinds the record omits', () => {
+    const doc = {
+      ...makeDoc({
+        styles: [
+          makeStyle('polygon', 'y1', { name: 'Zone' }),
+          makeStyle('textLabel', 'y2', { name: 'Heading' }),
+        ],
+      }),
+      styleDefaults: { textLabel: 'y1' }, // polygon def on the textLabel slot
+    };
+    const out = parsed(doc);
+    expect(out.styleDefaults.textLabel).toBe('y2');
+    expect(out.styleDefaults.polygon).toBe('y1');
+    // Kinds with no styles get their factory Default injected AND designated.
+    expect(out.styles['default-line']).toEqual(DEFAULT_STYLES['default-line']);
+    expect(out.styleDefaults.line).toBe('default-line');
+    expect(out.styleDefaults.routeBullet).toBe('default-routeBullet');
+    expect(out.styleDefaults.transfer).toBe('default-transfer');
   });
 });
 
@@ -182,7 +320,7 @@ describe('pruneDanglingStyleRefs via parse', () => {
       styles: { y1: { id: 'y1', name: '', kind: 'textLabel', props: {} } },
     };
     const out = parsed(doc);
-    expect(out.styles).toEqual({});
+    expect(out.styles).toEqual(DEFAULT_STYLES); // invariant refills the kinds
     expect(out.textLabels.g1.styleId).toBeUndefined();
   });
 
@@ -204,6 +342,6 @@ describe('pruneDanglingStyleRefs via parse', () => {
       ...makeDoc({}),
       styles: { y1: makeStyle('routeBullet', 'y1', { name: 'Custom' }) },
     };
-    expect(parsed(doc).styles).toEqual({});
+    expect(parsed(doc).styles).toEqual(DEFAULT_STYLES); // dropped, then refilled
   });
 });

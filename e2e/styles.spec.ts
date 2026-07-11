@@ -38,10 +38,11 @@ test('save a label style, survive reload, apply to another label, detach on edit
   await page.mouse.click(g1.x, g1.y);
   await expect(currentStyleName(page)).toHaveText('Heading');
 
-  // Apply to g2: its Size jumps to the style's 24.
+  // Apply to g2: its Size jumps to the style's 24. (g2 was seeded with the
+  // factory look, so the legacy-load adoption pass tagged it "Default".)
   const g2 = await labelCenter(page, 'g2');
   await page.mouse.click(g2.x, g2.y);
-  await expect(currentStyleName(page)).toHaveText('Custom');
+  await expect(currentStyleName(page)).toHaveText('Default');
   await styleSelect(page).selectOption({ label: 'Heading' });
   await expect(page.getByRole('spinbutton', { name: 'Size' })).toHaveValue(/^24(\.00)?$/);
 

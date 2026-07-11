@@ -3,6 +3,8 @@ import { migrateDoc, beginHistoryGroup, cancelAppendMode, useDoc, useSelection }
 import { historyDepth } from './history';
 import {
   DEFAULT_DOC,
+  DEFAULT_STYLES,
+  FACTORY_STYLE_DEFAULTS,
   TEXT_LABEL_COLOR_DEFAULT,
   TEXT_LABEL_DARK_COLOR_DEFAULT,
 } from '../model/transforms';
@@ -174,12 +176,18 @@ describe('migrateDoc', () => {
       expect(out.stations!.S.stops[0].dotStyle).toEqual(DOT_SHAPE_PRESETS['none']);
     });
 
-    it('passes a doc without legacy dot fields through by reference', () => {
+    it('leaves stations and dot fields alone when no legacy dot fields exist', () => {
+      // (The v<11 default-adoption pass may tag the line, so the whole-doc
+      // reference pin moved to the current-version test; this one pins that
+      // the dot CONVERSION itself is a no-op.)
       const input = {
         stations: { S: stationWithDotShape() },
         lines: { L1: { service: 'A', name: 'A line', stations: [] } },
       };
-      expect(run(input, 6)).toBe(input);
+      const out = run(input, 6);
+      expect(out.stations).toBe(input.stations);
+      expect(out.lines!.L1.defaultDotStyle).toBeUndefined();
+      expect('defaultDotShape' in out.lines!.L1).toBe(false);
     });
 
     it('does not convert at version >= 7', () => {
@@ -242,10 +250,12 @@ describe('migrateDoc', () => {
       expect('fillOpacity' in p).toBe(false);
     });
 
-    it('leaves a polygon without fillOpacity untouched (same reference)', () => {
+    it('leaves a polygon without fillOpacity untouched (same collection reference)', () => {
+      // Non-default colors, so the v<11 adoption skips it too — the polygons
+      // record must pass through by reference.
       const input = { polygons: { P: legacyPoly({}) } };
       const out = run(input, 8);
-      expect(out).toBe(input);
+      expect(out.polygons).toBe(input.polygons);
     });
 
     it('does not fold at version >= 9', () => {
@@ -305,10 +315,14 @@ describe('migrateDoc', () => {
       expect('thickness' in transfers.x2).toBe(false); // 2 == constant → collapsed
     });
 
-    it('is a no-op for docs that never persisted the settings (same reference)', () => {
+    it('materializes no overrides for docs that never persisted the settings', () => {
       const input = { transfers: { x1: transfer() } };
       const out = run(input, 9);
-      expect(out).toBe(input);
+      const t = (out.transfers as Record<string, Record<string, unknown>>).x1;
+      // The bake itself skipped (no legacy fields) — no override appears…
+      expect('thickness' in t).toBe(false);
+      // …and the only change is the v<11 adoption tag (factory-look transfer).
+      expect(t.styleId).toBe('default-transfer');
     });
 
     it('does not bake at version >= 10', () => {
@@ -333,6 +347,18 @@ describe('migrateDoc', () => {
         (d) => d.kind === 'transfer' && d.name === 'Default',
       );
       expect(def?.props).toMatchObject({ thickness: 7, color: '#000000' });
+    });
+
+    it('seeds the designated default even under a non-factory id', () => {
+      // A v9 doc whose only transfer style is the user's own 'Default' (id
+      // 'mine', factory props): the invariant pass designates it by name, and
+      // the bake must seed THAT def — not a hardcoded factory key.
+      const styles = { mine: makeStyle('transfer', 'mine', { name: 'Default' }) };
+      const out = run(
+        { styles, transferThickness: 7 } as Record<string, unknown>,
+        9,
+      ) as unknown as { styles: Record<string, StyleDef> };
+      expect((out.styles.mine.props as { thickness: number }).thickness).toBe(7);
     });
 
     it('leaves a user-customized Default transfer style alone', () => {
@@ -401,10 +427,123 @@ describe('migrateDoc', () => {
       expect((labelDefaults[0].props as { fontSize: number }).fontSize).toBe(30);
     });
 
-    it('does not touch styles at version >= 10', () => {
-      const input = { styles: {} };
-      const out = run(input, 10);
+    it('does not touch canonical styles at version >= 10', () => {
+      const input = { styles: DEFAULT_STYLES, styleDefaults: FACTORY_STYLE_DEFAULTS };
+      const out = run(input as Record<string, unknown>, 12);
       expect(out).toBe(input);
+    });
+
+    it('refills an emptied styles record at ANY version (invariant, not migration)', () => {
+      // ≥ 1 style per kind is a structural invariant like the palette check,
+      // not a schema step — a tampered doc gets the factory set back even at
+      // the current version.
+      const out = run({ styles: {} } as Record<string, unknown>, 12) as unknown as {
+        styles: Record<string, StyleDef>;
+        styleDefaults: Record<string, string>;
+      };
+      expect(Object.values(out.styles).map((d) => d.name)).toEqual([
+        'Default',
+        'Default',
+        'Default',
+        'Default',
+        'Default',
+      ]);
+      expect(out.styleDefaults).toEqual(FACTORY_STYLE_DEFAULTS);
+    });
+  });
+
+  describe('v10 → v11: adopt default-looking items into the Default styles', () => {
+    it('tags untagged matching items so the Default editors act on the whole legacy map', () => {
+      const out = run(
+        {
+          textLabels: {
+            g1: makeTextLabel({ id: 'g1' }), // factory look → adopted
+            g2: makeTextLabel({ id: 'g2', fontSize: 24 }), // diverged → stays Custom
+          },
+        } as Record<string, unknown>,
+        9,
+      ) as unknown as { textLabels: Record<string, { styleId?: string }> };
+      expect(out.textLabels.g1.styleId).toBe('default-textLabel');
+      expect(out.textLabels.g2.styleId).toBeUndefined();
+    });
+
+    it('a legacy transfer baked from the doc settings adopts the SEEDED Default', () => {
+      // transferThickness 7 → Default transfer style seeded to 7 AND the
+      // tracking transfer baked to override 7 → they match → adopted. Editing
+      // the Default's thickness afterwards moves every such transfer.
+      const out = run(
+        {
+          transfers: {
+            x1: {
+              id: 'x1',
+              a: { stationId: 's1', lineId: null },
+              b: { stationId: 's2', lineId: null },
+            },
+          },
+          transferThickness: 7,
+        } as Record<string, unknown>,
+        9,
+      ) as unknown as { transfers: Record<string, Record<string, unknown>> };
+      expect(out.transfers.x1.thickness).toBe(7);
+      expect(out.transfers.x1.styleId).toBe('default-transfer');
+    });
+
+    it('adopts for v10 docs too (migrated before adoption shipped)', () => {
+      const out = run(
+        {
+          styles: DEFAULT_STYLES,
+          textLabels: { g1: makeTextLabel({ id: 'g1' }) },
+        } as Record<string, unknown>,
+        10,
+      ) as unknown as { textLabels: Record<string, { styleId?: string }> };
+      expect(out.textLabels.g1.styleId).toBe('default-textLabel');
+    });
+
+    it('does not adopt at version >= 11', () => {
+      const input = {
+        styles: DEFAULT_STYLES,
+        styleDefaults: FACTORY_STYLE_DEFAULTS,
+        textLabels: { g1: makeTextLabel({ id: 'g1' }) },
+      };
+      const out = run(input as Record<string, unknown>, 11);
+      expect(out).toBe(input);
+    });
+  });
+
+  describe('v11 → v12: explicit default designations (styleDefaults)', () => {
+    it("backfills styleDefaults for pre-designation storage, preferring the kind's style named 'Default'", () => {
+      // A v11 doc where the user redefined + upserted their own textLabel
+      // "Default" (id y1) — the designation must land on IT, not on the
+      // factory id the persist merge would have guessed.
+      const { 'default-textLabel': _factory, ...rest } = DEFAULT_STYLES;
+      const styles = {
+        ...rest,
+        y1: makeStyle('textLabel', 'y1', { name: 'Default', props: { fontSize: 30 } }),
+        y2: makeStyle('textLabel', 'y2', { name: 'Alpha' }),
+      };
+      const out = run({ styles } as Record<string, unknown>, 11) as unknown as {
+        styleDefaults: Record<string, string>;
+      };
+      expect(out.styleDefaults.textLabel).toBe('y1');
+      expect(out.styleDefaults.line).toBe('default-line');
+    });
+
+    it('repairs a dangling designation without disturbing valid ones', () => {
+      const styles = {
+        ...DEFAULT_STYLES,
+        y1: makeStyle('textLabel', 'y1', { name: 'Alpha' }),
+      };
+      const out = run(
+        {
+          styles,
+          styleDefaults: { ...FACTORY_STYLE_DEFAULTS, textLabel: 'ghost', polygon: 'y1' },
+        } as Record<string, unknown>,
+        12,
+      ) as unknown as { styleDefaults: Record<string, string> };
+      // Dangling → the kind's 'Default'; wrong kind (y1 is a textLabel) → same.
+      expect(out.styleDefaults.textLabel).toBe('default-textLabel');
+      expect(out.styleDefaults.polygon).toBe('default-polygon');
+      expect(out.styleDefaults.line).toBe('default-line');
     });
   });
 
@@ -433,8 +572,10 @@ describe('migrateDoc', () => {
           L1: { service: 'A', name: 'A line', stations: ['S'], width: 21, defaultDotSize: 12 },
         },
       };
-      const out = run(input, 7);
-      // No migration applies → same reference passes straight through.
+      const out = run(input, 12);
+      // No migration applies at the current version → same reference passes
+      // straight through. (No `styles` key either, so the style-invariant
+      // pass leaves it alone.)
       expect(out).toBe(input);
     });
   });
