@@ -9,6 +9,7 @@ export interface IdFactory {
   textLabelId(): string;
   polygonId(): string;
   svgImageId(): string;
+  styleId(): string;
 }
 
 /**
@@ -26,6 +27,7 @@ export function defaultIdFactory(): IdFactory {
     textLabelId: uid,
     polygonId: uid,
     svgImageId: uid,
+    styleId: uid,
   };
 }
 
@@ -42,6 +44,7 @@ export function counterIdFactory(seed = 0): IdFactory {
   let g = seed;
   let p = seed;
   let i = seed;
+  let y = seed;
   return {
     stationId: () => `s${s++}`,
     lineId: () => `l${l++}`,
@@ -51,5 +54,6 @@ export function counterIdFactory(seed = 0): IdFactory {
     textLabelId: () => `g${g++}`,
     polygonId: () => `p${p++}`,
     svgImageId: () => `i${i++}`,
+    styleId: () => `y${y++}`,
   };
 }

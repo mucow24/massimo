@@ -57,6 +57,26 @@ function envelope(items: unknown[], version = 2): string {
   return JSON.stringify({ format: FORMAT, version, items });
 }
 
+describe('styleId rides the clipboard', () => {
+  it('round-trips an optional styleId on bullets, labels and polygons', () => {
+    const tagged: ClipPayload[] = [
+      { kind: 'route-bullet', data: { ...bulletItem.data, styleId: 'y1' } },
+      { kind: 'text-label', data: { ...labelItem.data, styleId: 'y2' } },
+      { kind: 'polygon', data: { ...polygonItem.data, styleId: 'y3' } },
+    ];
+    const out = readClipboard(writeClipboard(tagged));
+    expect(out?.map((p) => (p.data as { styleId?: string }).styleId)).toEqual(['y1', 'y2', 'y3']);
+  });
+
+  it('rejects an item whose styleId is present but not a string', () => {
+    const out = readClipboard(
+      envelope([{ kind: 'route-bullet', data: { ...bulletItem.data, styleId: 42 } }, labelItem]),
+    );
+    expect(out).toHaveLength(1);
+    expect(out?.[0].kind).toBe('text-label');
+  });
+});
+
 describe('writeClipboard / readClipboard roundtrip', () => {
   it('preserves a route-bullet item', () => {
     expect(readClipboard(writeClipboard([bulletItem]))).toEqual([bulletItem]);

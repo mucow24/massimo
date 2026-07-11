@@ -51,10 +51,6 @@ export function ItemPopovers({ view: committed }: { view: ViewportProjection }) 
   const lines = useDoc((s) => s.lines);
   const baseStyle = useDocLabelStyle();
   const transfers = useDoc((s) => s.transfers);
-  const transferThickness = useDoc((s) => s.transferThickness);
-  const transferColor = useDoc((s) => s.transferColor);
-  const transferStrokeWidth = useDoc((s) => s.transferStrokeWidth);
-  const transferStrokeColor = useDoc((s) => s.transferStrokeColor);
 
   // The popover anchors against the live viewport; a zero-size viewport (first
   // paint) has no screen mapping yet, so wait for a real box.
@@ -76,12 +72,7 @@ export function ItemPopovers({ view: committed }: { view: ViewportProjection }) 
     const sa = stations[t.a.stationId];
     const sb = stations[t.b.stationId];
     if (!sa || !sb) return null;
-    const style = resolveTransferStyle(t, {
-      thickness: transferThickness,
-      color: transferColor,
-      strokeWidth: transferStrokeWidth,
-      strokeColor: transferStrokeColor,
-    });
+    const style = resolveTransferStyle(t);
     return (
       <TransferPopover
         transfer={t}

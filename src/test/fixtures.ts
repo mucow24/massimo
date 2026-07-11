@@ -10,6 +10,9 @@ import type {
   StationId,
   StopCell,
   StopOrientation,
+  StyleDef,
+  StyleKind,
+  StylePropsByKind,
   Polygon,
   SvgImage,
   TextLabel,
@@ -18,6 +21,9 @@ import type {
 } from '../model/types';
 import type { SegmentBandSpec } from '../geometry/interlining';
 import { STOP_SIZE, stripeOffsetsForWidths } from '../geometry/orientation';
+import { DEFAULT_DOT_STYLE } from '../model/dotStyle';
+import { DOT_SIZE_DEFAULT } from '../model/dotSize';
+import { LINE_WIDTH_DEFAULT } from '../model/lineWidth';
 
 export function makeStation(overrides: Partial<Station> & { id: StationId }): Station {
   return {
@@ -192,6 +198,53 @@ export function makeTransfer(overrides: Partial<Transfer> & { id: string }): Tra
   };
 }
 
+// Baseline props per style kind — the app's effective defaults for a fresh
+// item, so a fixture style is always well-formed and tests override only the
+// fields they exercise. Kept in one place so new props get a default here once.
+const STYLE_PROPS_DEFAULTS: StylePropsByKind = {
+  line: {
+    defaultDotStyle: DEFAULT_DOT_STYLE,
+    defaultDotSize: DOT_SIZE_DEFAULT,
+    width: LINE_WIDTH_DEFAULT,
+    strokeWidth: 0,
+    strokeColor: '#ffffff',
+  },
+  textLabel: {
+    color: '#111111',
+    darkColor: '#ffffff',
+    fontSize: 16,
+    weight: 400,
+    italic: false,
+    align: 'left',
+  },
+  polygon: {
+    fill: '#cfe3f2',
+    stroke: '#000000',
+    darkFill: '#cfe3f2',
+    darkStroke: '#000000',
+    strokeWidth: 1,
+    curveRadius: 0,
+    closed: true,
+  },
+  routeBullet: { shape: 'circle', size: 14 },
+  transfer: { thickness: 2, color: '#000000', strokeWidth: 0, strokeColor: '#ffffff' },
+};
+
+// A named style preset of the given kind. Props default to the app's
+// effective defaults (STYLE_PROPS_DEFAULTS) with per-field overrides.
+export function makeStyle<K extends StyleKind>(
+  kind: K,
+  id: string,
+  overrides: { name?: string; props?: Partial<StylePropsByKind[K]> } = {},
+): StyleDef {
+  return {
+    id,
+    name: overrides.name ?? id,
+    kind,
+    props: { ...STYLE_PROPS_DEFAULTS[kind], ...overrides.props },
+  } as StyleDef;
+}
+
 export function makeDoc(parts: {
   name?: string;
   stations?: Station[];
@@ -206,16 +259,14 @@ export function makeDoc(parts: {
   polygonOrder?: string[];
   svgImages?: SvgImage[];
   svgImageOrder?: string[];
+  styles?: StyleDef[];
+  styleDefaults?: Partial<Record<StyleKind, string>>;
   labelFontSize?: number;
   labelWeight?: TextLabelWeight;
   labelItalic?: boolean;
   labelLeading?: number;
   labelTracking?: number;
   activePalettes?: import('../model/palettes').PaletteId[];
-  transferThickness?: number;
-  transferColor?: string;
-  transferStrokeWidth?: number;
-  transferStrokeColor?: string;
 }): MapDoc {
   const stations: Record<StationId, Station> = {};
   for (const s of parts.stations ?? []) stations[s.id] = s;
@@ -233,6 +284,22 @@ export function makeDoc(parts: {
   for (const pg of parts.polygons ?? []) polygons[pg.id] = pg;
   const svgImages: Record<string, SvgImage> = {};
   for (const im of parts.svgImages ?? []) svgImages[im.id] = im;
+  const styles: Record<string, StyleDef> = {};
+  for (const st of parts.styles ?? []) styles[st.id] = st;
+  // Per-kind default designation: explicit part wins, else the kind's style
+  // named "Default", else its first style (name-sorted), else the factory id
+  // (dangling in a style-less fixture doc — lookups guard resolution).
+  const styleDefaults = {} as Record<StyleKind, string>;
+  const kinds: StyleKind[] = ['line', 'textLabel', 'polygon', 'routeBullet', 'transfer'];
+  for (const kind of kinds) {
+    const ofKind = Object.values(styles)
+      .filter((d) => d.kind === kind)
+      .sort((a, b) => a.name.localeCompare(b.name));
+    styleDefaults[kind] =
+      parts.styleDefaults?.[kind] ??
+      (ofKind.find((d) => d.name === 'Default') ?? ofKind[0])?.id ??
+      `default-${kind}`;
+  }
   return {
     name: parts.name ?? 'Untitled map',
     stations,
@@ -248,16 +315,14 @@ export function makeDoc(parts: {
     polygonOrder: parts.polygonOrder ?? Object.keys(polygons),
     svgImages,
     svgImageOrder: parts.svgImageOrder ?? Object.keys(svgImages),
+    styles,
+    styleDefaults,
     labelFontSize: parts.labelFontSize ?? 12,
     labelWeight: parts.labelWeight ?? 400,
     labelItalic: parts.labelItalic ?? false,
     labelLeading: parts.labelLeading ?? 1,
     labelTracking: parts.labelTracking ?? 0,
     activePalettes: parts.activePalettes ?? ['mta'],
-    transferThickness: parts.transferThickness ?? 2,
-    transferColor: parts.transferColor ?? '#000000',
-    transferStrokeWidth: parts.transferStrokeWidth ?? 0,
-    transferStrokeColor: parts.transferStrokeColor ?? '#ffffff',
   };
 }
 

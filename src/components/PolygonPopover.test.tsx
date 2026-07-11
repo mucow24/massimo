@@ -4,7 +4,7 @@ import userEvent from '@testing-library/user-event';
 import { PolygonPopover } from './PolygonPopover';
 import { useDoc } from '../state/store';
 import { DEFAULT_DOC } from '../model/transforms';
-import { makePolygon } from '../test/fixtures';
+import { makePolygon, makeStyle } from '../test/fixtures';
 import { openColorField, setColorField } from '../test/colorField';
 
 const view = { vbX: 0, vbY: 0, vbW: 100, vbH: 100, size: { w: 100, h: 100 } };
@@ -48,6 +48,8 @@ describe('<PolygonPopover />', () => {
       child.tagName === 'HR' ? 'divider' : (child.querySelector('label')?.textContent ?? 'footer'),
     );
     expect(sequence).toEqual([
+      'Style',
+      'divider',
       'Fill color',
       'divider',
       'Stroke color',
@@ -339,5 +341,41 @@ describe('<PolygonPopover />', () => {
     expect(unlock).toBeEnabled();
     fireEvent.click(unlock);
     expect(useDoc.getState().polygons['p0'].locked).toBe(false);
+  });
+});
+
+describe('<PolygonPopover /> — style presets', () => {
+  // The real mount (ItemPopovers) passes the live store polygon; mirror that
+  // so the Style row re-derives when an action writes the tag.
+  function LivePopover() {
+    const polygon = useDoc((s) => s.polygons['p0']);
+    return polygon ? (
+      <PolygonPopover polygon={polygon} worldRect={rectAt(0, 0)} view={view} onClose={() => {}} />
+    ) : null;
+  }
+
+  it('applies a preset from the Style row, then flips to Custom on a covered edit', () => {
+    useDoc.setState({
+      ...useDoc.getState(),
+      styles: {
+        y1: makeStyle('polygon', 'y1', {
+          name: 'Lake',
+          props: { fill: '#00aaff', curveRadius: 8 },
+        }),
+      },
+    });
+    render(<LivePopover />);
+    const select = screen.getByRole('combobox', { name: 'Style' });
+    fireEvent.change(select, { target: { value: 'y1' } });
+    expect(useDoc.getState().polygons['p0']).toMatchObject({
+      fill: '#00aaff',
+      curveRadius: 8,
+      styleId: 'y1',
+    });
+    expect(select).toHaveValue('y1');
+    // A covered edit (closed) detaches back to Custom.
+    fireEvent.click(screen.getByLabelText('Closed'));
+    expect(useDoc.getState().polygons['p0'].styleId).toBeUndefined();
+    expect(select).toHaveValue('__custom__');
   });
 });

@@ -264,6 +264,14 @@ export interface Line {
   // Casing color, 7-char lowercase hex. Missing ⇒ '#ffffff'. The setter
   // normalizes to lowercase and drops the field at the default.
   strokeColor?: string;
+  // Live link to a StyleDef of kind 'line' (see MapDoc.styles). INVARIANT:
+  // when present, this line's covered style fields (defaultDotStyle,
+  // defaultDotSize, width, strokeWidth, strokeColor — NOT color) equal the
+  // style's props. Transforms maintain it: editing any covered field clears
+  // the tag ("detach to Custom"), editing the style re-stamps its users,
+  // deleting the style untags. Absent ⇒ no style ("Custom" in the UI).
+  // Dangling ids are pruned on file load.
+  styleId?: string;
 }
 
 // A movable label printed inside a line's color band (Vignelli-style).
@@ -331,6 +339,9 @@ export interface RouteBullet {
   // are disabled. It can still be click-selected so the user can unlock it.
   // Optional; missing ⇒ unlocked. Mirrors Polygon.locked.
   locked?: boolean;
+  // Live link to a StyleDef of kind 'routeBullet' — covered fields are
+  // `shape` and `size` (NOT `lineId`). Same contract as `Line.styleId`.
+  styleId?: string;
 }
 
 // A free-floating background shape (river, lake, park, …). Rendered UNDER all
@@ -366,6 +377,10 @@ export interface Polygon {
   // instead of the filled body. Optional; missing ⇒ true (closed), so polygons
   // saved before this field render unchanged.
   closed?: boolean;
+  // Live link to a StyleDef of kind 'polygon' — covered fields are the
+  // colors, strokeWidth, curveRadius and closed (NOT vertices/locked). Same
+  // contract as `Line.styleId`.
+  styleId?: string;
 }
 
 // The mutable style/geometry fields of a Polygon accepted by `updatePolygon`
@@ -456,6 +471,21 @@ export interface MapDoc {
   // polygon band). Later in the array = painted later = on top. Ids missing
   // from this list fall back to insertion order — see `effectiveSvgImageOrder`.
   svgImageOrder: string[];
+  // Named, reusable formatting presets, keyed by style id (see StyleDef at the
+  // bottom of this file and model/styles.ts). Doc-scoped on purpose: styles
+  // travel inside the saved file and every edit to them is undoable. Absent in
+  // saves predating the feature — backfilled to the per-kind factory styles
+  // (DEFAULT_STYLES) via the DEFAULT_DOC merge. INVARIANT: every kind has at
+  // least one style (deleteStyle refuses the last; the load paths inject the
+  // factory one for an empty kind).
+  styles: Record<string, StyleDef>;
+  // Which style is THE default of each kind — new items are stamped with it
+  // on creation, and legacy loads adopt matching items into it. Explicit and
+  // id-keyed (not name-keyed), so any style can be made the default
+  // (`setDefaultStyle`) and names stay free. Structurally exactly one per
+  // kind; INVARIANT: each entry resolves to a style of that kind (repaired on
+  // load, re-pointed when the default style is deleted).
+  styleDefaults: Record<StyleKind, string>;
   // Global station-label styling. Applies to every station name; line tags
   // and route bullets keep their always-bold pill styling. `labelWeight` is
   // one of the Helvetica Neue weights we ship in /public/fonts/ (no 600).
@@ -474,20 +504,12 @@ export interface MapDoc {
   // Which color palettes are available in the line editor. Invariant:
   // never empty (enforced by transforms / parse sanitiser).
   activePalettes: PaletteId[];
-  // Default styling for inter-station transfers (each transfer can override
-  // any field — see Transfer). Thickness is the visible colored body's stroke
-  // width in world units, clamped at MIN in transferStyle.ts (the slider tops
-  // out at MAX but the textbox accepts arbitrary larger values). Color is a
-  // 7-char hex string (`#rrggbb`), the format emitted by
-  // `<input type="color">`.
-  transferThickness: number;
-  transferColor: string;
-  // Optional always-on outline around the body (a "halo"). Width is the
-  // per-side padding added past the body in world units, clamped at
-  // TRANSFER_STROKE_WIDTH_MIN in transferStyle.ts (the slider tops out at MAX
-  // but the textbox accepts arbitrary larger values). 0 = no outline.
-  transferStrokeWidth: number;
-  transferStrokeColor: string;
+  // NOTE: there are no doc-level transfer settings anymore. Transfers fall
+  // back to the constant TRANSFER_STYLE_DEFAULTS (transferStyle.ts); map-wide
+  // restyling goes through the "Default" transfer style preset. Saves that
+  // predate the retirement carry transferThickness/transferColor/
+  // transferStrokeWidth/transferStrokeColor — baked into per-transfer
+  // overrides on load (bakeLegacyTransferSettings / persist v10).
 }
 
 // Multi-line horizontal text alignment inside a TextLabel. `justify` flushes
@@ -558,6 +580,11 @@ export interface TextLabel {
   // missing ⇒ the box auto-sizes to its content. Clamped to a positive integer
   // by `updateTextLabel`. Mirrors `Station.editorHeight`.
   editorHeight?: number;
+  // Live link to a StyleDef of kind 'textLabel' — covered fields are the
+  // colors, fontSize, weight, italic and align (NOT width/leading/tracking/
+  // text/position/rotation/locked/editorHeight). Same contract as
+  // `Line.styleId`.
+  styleId?: string;
 }
 
 // One endpoint of a transfer: a specific dot on a station. `lineId` picks
@@ -570,8 +597,9 @@ export interface TransferEnd {
 }
 
 // A transfer is a line connecting one station dot to another (thickness and
-// color come from doc.transferThickness / doc.transferColor; 2px black is only
-// the default). The endpoints are anchored to specific stops so they follow the dot when
+// color come from the per-transfer overrides below, falling back to the
+// constant TRANSFER_STYLE_DEFAULTS — the classic 2px black). The endpoints
+// are anchored to specific stops so they follow the dot when
 // stations move, lines are reordered, or stops shift on a station.
 // Cascade-deleted when either endpoint's stop is removed — by deleting the
 // station, deleting the line, or removing that line's stop from the station.
@@ -579,23 +607,96 @@ export interface Transfer {
   id: string;
   a: TransferEnd;
   b: TransferEnd;
-  // Per-transfer style overrides. Each absent field defers to the matching
-  // doc-level setting (transferThickness / transferColor / transferStrokeWidth
-  // / transferStrokeColor); `updateTransferStyle` drops a field when the
-  // chosen value equals the doc's current setting, so the transfer tracks the
-  // setting going forward, and the doc-level setters prune overrides their new
-  // value makes redundant (same contract as StopCell.dotStyle / dotSize).
-  // Units and clamps match the doc settings — see model/transferStyle.ts.
+  // Per-transfer style overrides. Each absent field defers to the constant
+  // default (TRANSFER_STYLE_DEFAULTS); `updateTransferStyle` drops a field
+  // when the chosen value equals that default, so persisted state stays
+  // clean (same contract as StopCell.dotStyle / dotSize and Line.width).
+  // Units and clamps — see model/transferStyle.ts.
   thickness?: number;
   color?: string;
   strokeWidth?: number;
   strokeColor?: string;
+  // Live link to a StyleDef of kind 'transfer' — covered fields are all four
+  // style overrides above. Same contract as `Line.styleId`.
+  styleId?: string;
 }
 
 // The style overrides of a Transfer accepted by `updateTransferStyle`. Shared
 // by the transform and the store action so the two never drift (mirrors
-// PolygonStylePatch). A provided field is canonicalized against the doc-level
-// setting — passing the setting's own value CLEARS that override.
+// PolygonStylePatch). A provided field is canonicalized against the constant
+// default — passing the default's own value CLEARS that override.
 export type TransferStylePatch = Partial<
   Pick<Transfer, 'thickness' | 'color' | 'strokeWidth' | 'strokeColor'>
 >;
+
+// ---------- Styles (named, reusable per-kind formatting presets) ----------
+
+// Which item collection a style preset applies to.
+export type StyleKind = 'line' | 'textLabel' | 'polygon' | 'routeBullet' | 'transfer';
+
+// Style props hold FULLY-RESOLVED effective values (captured by example from
+// an item — see model/styles.ts), so a style is self-contained: applying one
+// never consults the item or the doc defaults it was captured from. Identity
+// fields are deliberately NOT style: a line's `color`/`service`/`name`, a
+// bullet's `lineId`.
+export interface LineStyleProps {
+  defaultDotStyle: DotStyle;
+  // Dot DIAMETER in px (the line-default size).
+  defaultDotSize: number;
+  // Stripe width, world units.
+  width: number;
+  // Casing width per side, world units (0 = no casing).
+  strokeWidth: number;
+  // Casing color, lowercase hex.
+  strokeColor: string;
+}
+
+export interface TextLabelStyleProps {
+  color: string;
+  darkColor: string;
+  fontSize: number;
+  weight: TextLabelWeight;
+  italic: boolean;
+  align: TextLabelAlign;
+  // Deliberately NOT covered: width, leading, tracking — per-label layout
+  // tuning, not reusable typography.
+}
+
+export interface PolygonStyleProps {
+  fill: string;
+  stroke: string;
+  darkFill: string;
+  darkStroke: string;
+  strokeWidth: number;
+  curveRadius: number;
+  closed: boolean;
+}
+
+export interface RouteBulletStyleProps {
+  shape: RouteBulletShape;
+  size: number;
+}
+
+// Mirrors TransferStyle in model/transferStyle.ts — kept as its own interface
+// so types.ts stays dependency-free.
+export interface TransferStyleProps {
+  thickness: number;
+  color: string;
+  strokeWidth: number;
+  strokeColor: string;
+}
+
+// Per-kind props lookup, for code generic over StyleKind.
+export interface StylePropsByKind {
+  line: LineStyleProps;
+  textLabel: TextLabelStyleProps;
+  polygon: PolygonStyleProps;
+  routeBullet: RouteBulletStyleProps;
+  transfer: TransferStyleProps;
+}
+
+// A named, reusable formatting preset stored in the doc (MapDoc.styles).
+// Items reference a style via their `styleId` tag; see that field's contract.
+export type StyleDef = {
+  [K in StyleKind]: { id: string; name: string; kind: K; props: StylePropsByKind[K] };
+}[StyleKind];

@@ -16,12 +16,15 @@ import type {
   PolygonStylePatch,
   RouteBullet,
   StationId,
+  StyleDef,
+  StyleKind,
   SvgImage,
   SvgImageStylePatch,
   TextLabel,
   TextLabelWeight,
   TransferStylePatch,
 } from '../model/types';
+import * as S from '../model/styles';
 import { useSelection } from './selection';
 import { effectiveLineOrder } from '../model/lineOrder';
 import { pickNextLineName } from '../model/lineNaming';
@@ -35,12 +38,15 @@ import {
   backfillLineNames,
   backfillPolygonDarkColors,
   backfillTextLabelColors,
+  bakeLegacyTransferSettings,
   convertLegacyDotShapes,
+  ensureStyleInvariants,
   foldPolygonFillOpacity,
   migrateLegacyBulletSyntax,
+  migrateV9Styles,
   validActivePalettes,
 } from '../model/serialize';
-import type { Station } from '../model/types';
+import type { Station, Transfer } from '../model/types';
 import { randomStationName } from './stationNames';
 import { pauseHistory, pushHistory, resumeHistory } from './history';
 import { useViewportStore } from './viewportStore';
@@ -88,16 +94,18 @@ const DOC_FIELDS = [
   'polygonOrder',
   'svgImages',
   'svgImageOrder',
+  // Named style presets + the per-kind default designations. Pre-styles saves
+  // lack the keys, so zustand's shallow merge (and parse()'s DEFAULT_DOC
+  // merge) backfills the factory set; docs persisted by earlier builds get
+  // theirs repaired by the style-invariant pass in migrateDoc.
+  'styles',
+  'styleDefaults',
   'labelFontSize',
   'labelWeight',
   'labelItalic',
   'labelLeading',
   'labelTracking',
   'activePalettes',
-  'transferThickness',
-  'transferColor',
-  'transferStrokeWidth',
-  'transferStrokeColor',
 ] as const;
 type DocFieldName = (typeof DOC_FIELDS)[number];
 export type DocSnapshot = Pick<MapDoc, DocFieldName>;
@@ -154,6 +162,28 @@ function docSnapshotsEqual(a: DocSnapshot, b: DocSnapshot): boolean {
  *   alpha channel of `fill` AND `darkFill`, then drop the field. Idempotent, so
  *   `parse()` runs the shared `foldPolygonFillOpacity` unconditionally (no file
  *   SCHEMA_VERSION bump) while this rehydrate path gates it on v<9.
+ * - v9 → v10: style hygiene (`migrateV9Styles`) — rebuild persisted style
+ *   defs through the canonical grids (stripping the since-dropped textLabel
+ *   width/leading/tracking keys) — then bake the retired doc-level transfer
+ *   settings
+ *   (transferThickness/transferColor/transferStrokeWidth/transferStrokeColor)
+ *   into per-transfer overrides, drop the fields, and seed the designated
+ *   default transfer style from them when it still wears untouched factory
+ *   props (the settings' map-wide role moved there). The bake is idempotent
+ *   (keyed off field presence), so `parse()` runs the shared
+ *   `bakeLegacyTransferSettings` unconditionally.
+ * - v10 → v11: adopt untagged items whose values match their kind's default
+ *   style (`adoptDefaultStyles`) — legacy maps are full of default-looking
+ *   items that predate tags, and without them the Styles panel's Default
+ *   editors act on nothing. `parse()` runs the same pass for files that
+ *   never had a styles record.
+ * - v11 → v12: `styleDefaults` (the explicit per-kind default designations)
+ *   replaced defaultness-by-name. No gated step of its own — the
+ *   non-version-gated `ensureStyleInvariants` pass below repairs coverage
+ *   and designations for every doc that carries styles; the bump just forces
+ *   pre-designation storage through migrate at all (the persist merge alone
+ *   would leave `styleDefaults` pointing at factory ids that round-1/2 docs'
+ *   styles records don't contain).
  */
 export function migrateDoc(persisted: unknown, version: number): DocState {
   const s = persisted as {
@@ -161,6 +191,9 @@ export function migrateDoc(persisted: unknown, version: number): DocState {
     stations?: Record<string, Station>;
     polygons?: Record<string, Polygon>;
     textLabels?: Record<string, TextLabel>;
+    transfers?: Record<string, Transfer>;
+    styles?: Record<string, StyleDef>;
+    styleDefaults?: Record<StyleKind, string>;
     labelBold?: boolean;
     labelWeight?: TextLabelWeight;
     activePalettes?: PaletteId[];
@@ -216,6 +249,35 @@ export function migrateDoc(persisted: unknown, version: number): DocState {
     // Runs after the v<5 dark-color backfill above, so darkFill is present.
     const folded = foldPolygonFillOpacity(out.polygons);
     if (folded.changed) out = { ...out, polygons: folded.polygons };
+  }
+  if (v < 10) {
+    // Style-def hygiene FIRST — strip round-1 defs' since-dropped keys, and
+    // materialize an explicit (possibly empty) styles record so the invariant
+    // pass below injects the factory Defaults that pre-styles docs never
+    // persisted and the merge won't backfill.
+    const styles = migrateV9Styles(out.styles ?? {});
+    if (styles !== out.styles) out = { ...out, styles };
+  }
+  // Non-version-gated invariant, like the palette check below: every kind has
+  // ≥ 1 style and a valid default designation. Must precede the v<10 bake
+  // (which seeds the DESIGNATED default transfer style) and the v<11 adoption
+  // (which stamps kinds' designated defaults). An ABSENT styles record is
+  // left untouched — only pre-styles docs at v ≥ 10 lack one, which can't
+  // exist (v10 materialized it).
+  if (out.styles !== undefined) {
+    const inv = ensureStyleInvariants(out.styles, out.styleDefaults);
+    if (inv.changed) out = { ...out, styles: inv.styles, styleDefaults: inv.styleDefaults };
+  }
+  if (v < 10) {
+    // Retired doc-level transfer settings → baked into per-transfer overrides
+    // (no-op when the fields were never persisted, e.g. pre-PR-#220 docs).
+    out = bakeLegacyTransferSettings(out);
+  }
+  if (v < 11) {
+    // Adopt untagged, default-looking items into the default styles: legacy
+    // maps are full of them, and without tags the Styles panel's Default
+    // editors would act on nothing.
+    out = S.adoptDefaultStyles(out as unknown as MapDoc) as typeof out;
   }
   if (v < 3 && 'labelBold' in out) {
     const { labelBold, ...rest } = out;
@@ -375,6 +437,30 @@ interface DocState extends MapDoc {
   moveSvgImageDown: (id: string) => void;
   deleteSvgImage: (id: string) => void;
 
+  /** Define-by-example: capture `itemId`'s current EFFECTIVE formatting as
+   *  the style named `name` — upsert-by-name per kind (à la addPalette), so
+   *  saving under an existing name redefines that style and re-stamps its
+   *  users in the same single undo entry. Returns the style id the name
+   *  resolves to (nothing is written when the transform refuses — empty name
+   *  or missing item). */
+  saveStyle: (kind: StyleKind, name: string, itemId: string) => string;
+  /** Stamp a style's props onto an item and tag it (one undo entry). */
+  applyStyle: (styleId: string, itemId: string) => void;
+  /** Detach an item to "Custom": drop the tag, keep the values. */
+  clearStyleTag: (kind: StyleKind, itemId: string) => void;
+  renameStyle: (styleId: string, name: string) => void;
+  /** Delete a style def; its users keep their values but lose the tag. */
+  deleteStyle: (styleId: string) => void;
+  /** The Styles panel's "+ New style": a fresh def of `kind` with factory
+   *  props under the first unused "New style N" name. Returns its id. */
+  createStyle: (kind: StyleKind) => string;
+  /** The Styles panel editor's write path: patch a def's props and re-stamp
+   *  its tagged users live, all one undo entry. */
+  updateStyleProps: (styleId: string, patch: S.StylePropsPatch) => void;
+  /** The Styles panel's "make default": designate a style as its kind's
+   *  default (new items of the kind are created wearing it). */
+  setDefaultStyle: (styleId: string) => void;
+
   /** Replace the whole document (file load). Defaults fill any field the
    *  loaded doc omits. Callers should clearHistory() after — undo must not
    *  cross a file load. */
@@ -394,10 +480,6 @@ interface DocState extends MapDoc {
    *  prune it from this doc's active set, falling back to the default set if it
    *  was the only active palette. */
   deleteCustomPalette: (id: PaletteId) => void;
-  setTransferThickness: (n: number) => void;
-  setTransferColor: (c: string) => void;
-  setTransferStrokeWidth: (n: number) => void;
-  setTransferStrokeColor: (c: string) => void;
   clearAll: () => void;
 }
 
@@ -469,7 +551,10 @@ export const useDoc = create<DocState>()(
             // reference): `n % 0` is NaN, which would index `undefined`.
             const color = cycle.length ? cycle[s.lineCounter % cycle.length] : FALLBACK_LINE_COLOR;
             const service = pickNextLineName(s.lines);
-            return T.addLine(s, id, service, color);
+            // New items wear the kind's "Default" style (composed into the
+            // same set() so creation stays one undo entry). Color is identity,
+            // not style — the cycled pick above survives the stamp.
+            return S.applyDefaultStyle(T.addLine(s, id, service, color), 'line', id);
           });
           return id;
         },
@@ -516,7 +601,8 @@ export const useDoc = create<DocState>()(
 
         addRouteBullet: (x, y, lineId) => {
           const id = ids.routeBulletId();
-          set((s) => T.addRouteBullet(s, id, x, y, lineId));
+          // New items wear the kind's "Default" style — same set(), one undo.
+          set((s) => S.applyDefaultStyle(T.addRouteBullet(s, id, x, y, lineId), 'routeBullet', id));
           return id;
         },
         addRouteBulletWith: (fields) => {
@@ -526,14 +612,25 @@ export const useDoc = create<DocState>()(
         },
         // Add a bullet from a clipboard payload, nudged by the drop offset. The
         // fresh copy comes out UNLOCKED even if the source was locked, so it's
-        // immediately movable (mirrors pastePolygon / pasteTextLabel).
+        // immediately movable (mirrors pastePolygon / pasteTextLabel). The
+        // restamp pass repairs a stale tagged payload — the clipboard froze
+        // the values, the style may have been redefined since the copy — in
+        // the SAME set(), so a paste stays one undo entry.
         pasteRouteBullet: (data) => {
           const { locked: _locked, ...rest } = data;
-          return get().addRouteBulletWith({
-            ...rest,
-            x: data.x + DROP_OFFSET,
-            y: data.y + DROP_OFFSET,
-          });
+          const id = ids.routeBulletId();
+          set((s) =>
+            S.restampStyleTag(
+              T.addRouteBulletWith(s, id, {
+                ...rest,
+                x: data.x + DROP_OFFSET,
+                y: data.y + DROP_OFFSET,
+              }),
+              'routeBullet',
+              id,
+            ),
+          );
+          return id;
         },
         // Duplicate an existing bullet at the drop offset; null if it's gone.
         duplicateRouteBullet: (id) => duplicateVia(get().routeBullets, id, get().pasteRouteBullet),
@@ -544,7 +641,9 @@ export const useDoc = create<DocState>()(
 
         addTransfer: (a, b) => {
           const id = ids.transferId();
-          set((s) => T.addTransfer(s, id, a, b));
+          // New items wear the kind's "Default" style — same set(), one undo.
+          // addTransfer can refuse (self-transfer); the stamp no-ops then.
+          set((s) => S.applyDefaultStyle(T.addTransfer(s, id, a, b), 'transfer', id));
           return id;
         },
 
@@ -554,7 +653,8 @@ export const useDoc = create<DocState>()(
 
         addTextLabel: (x, y) => {
           const id = ids.textLabelId();
-          set((s) => T.addTextLabel(s, id, x, y));
+          // New items wear the kind's "Default" style — same set(), one undo.
+          set((s) => S.applyDefaultStyle(T.addTextLabel(s, id, x, y), 'textLabel', id));
           return id;
         },
         addTextLabelWith: (fields) => {
@@ -564,14 +664,24 @@ export const useDoc = create<DocState>()(
         },
         // Add a label from a clipboard payload, nudged by the drop offset. The
         // fresh copy comes out UNLOCKED even if the source was locked, so it's
-        // immediately movable (mirrors pastePolygon / pasteRouteBullet).
+        // immediately movable (mirrors pastePolygon / pasteRouteBullet). The
+        // restamp pass repairs a stale tagged payload in the same set() —
+        // see pasteRouteBullet.
         pasteTextLabel: (data) => {
           const { locked: _locked, ...rest } = data;
-          return get().addTextLabelWith({
-            ...rest,
-            x: data.x + DROP_OFFSET,
-            y: data.y + DROP_OFFSET,
-          });
+          const id = ids.textLabelId();
+          set((s) =>
+            S.restampStyleTag(
+              T.addTextLabelWith(s, id, {
+                ...rest,
+                x: data.x + DROP_OFFSET,
+                y: data.y + DROP_OFFSET,
+              }),
+              'textLabel',
+              id,
+            ),
+          );
+          return id;
         },
         // Duplicate an existing label at the drop offset; null if it's gone.
         duplicateTextLabel: (id) => duplicateVia(get().textLabels, id, get().pasteTextLabel),
@@ -582,7 +692,8 @@ export const useDoc = create<DocState>()(
 
         addPolygon: (x, y) => {
           const id = ids.polygonId();
-          set((s) => T.addPolygon(s, id, x, y));
+          // New items wear the kind's "Default" style — same set(), one undo.
+          set((s) => S.applyDefaultStyle(T.addPolygon(s, id, x, y), 'polygon', id));
           return id;
         },
         addPolygonWith: (fields) => {
@@ -593,13 +704,26 @@ export const useDoc = create<DocState>()(
         // Add a polygon from a clipboard payload, translating every vertex by
         // the drop offset (polygons have no center — geometry lives in
         // `vertices`, in world coords). The fresh copy comes out UNLOCKED even
-        // if the source was locked, so it's immediately movable/editable.
+        // if the source was locked, so it's immediately movable/editable. The
+        // restamp pass repairs a stale tagged payload in the same set() —
+        // see pasteRouteBullet.
         pastePolygon: (data) => {
           const { locked: _locked, ...rest } = data;
-          return get().addPolygonWith({
-            ...rest,
-            vertices: data.vertices.map((v) => ({ x: v.x + DROP_OFFSET, y: v.y + DROP_OFFSET })),
-          });
+          const id = ids.polygonId();
+          set((s) =>
+            S.restampStyleTag(
+              T.addPolygonWith(s, id, {
+                ...rest,
+                vertices: data.vertices.map((v) => ({
+                  x: v.x + DROP_OFFSET,
+                  y: v.y + DROP_OFFSET,
+                })),
+              }),
+              'polygon',
+              id,
+            ),
+          );
+          return id;
         },
         // Duplicate an existing polygon at the drop offset; null if it's gone.
         duplicatePolygon: (id) => duplicateVia(get().polygons, id, get().pastePolygon),
@@ -639,6 +763,39 @@ export const useDoc = create<DocState>()(
         moveSvgImageDown: (id) => set((s) => T.moveSvgImageDown(s, id)),
         deleteSvgImage: (id) => set((s) => T.deleteSvgImage(s, id)),
 
+        // Each style action is one atomic set() over one pure transform, so a
+        // multi-item fan-out (save re-stamping every user, delete untagging
+        // them) is exactly one undo entry — no history group needed.
+        saveStyle: (kind, name, itemId) => {
+          const trimmed = name.trim();
+          const existing = Object.values(get().styles).find(
+            (d) => d.kind === kind && d.name === trimmed,
+          );
+          const id = existing?.id ?? ids.styleId();
+          set((s) => S.saveStyleFromItem(s, id, kind, trimmed, itemId));
+          return id;
+        },
+        applyStyle: (styleId, itemId) => set((s) => S.applyStyleToItem(s, styleId, itemId)),
+        clearStyleTag: (kind, itemId) => set((s) => S.clearStyleTag(s, kind, itemId)),
+        renameStyle: (styleId, name) => set((s) => S.renameStyle(s, styleId, name)),
+        deleteStyle: (styleId) => set((s) => S.deleteStyle(s, styleId)),
+        createStyle: (kind) => {
+          const id = ids.styleId();
+          // First unused "New style N" within the kind, so create never
+          // collides (the transform refuses duplicates).
+          const taken = new Set(
+            Object.values(get().styles)
+              .filter((d) => d.kind === kind)
+              .map((d) => d.name),
+          );
+          let name = 'New style';
+          for (let n = 2; taken.has(name); n++) name = `New style ${n}`;
+          set((s) => S.createStyle(s, id, kind, name));
+          return id;
+        },
+        updateStyleProps: (styleId, patch) => set((s) => S.updateStyleProps(s, styleId, patch)),
+        setDefaultStyle: (styleId) => set((s) => S.setDefaultStyle(s, styleId)),
+
         // A plain merge: doc fields are replaced, mutator methods survive.
         loadDoc: (doc) => set({ ...DEFAULT_DOC, ...doc }),
         setDocName: (name) => set((s) => T.setDocName(s, name)),
@@ -670,17 +827,13 @@ export const useDoc = create<DocState>()(
             );
           });
         },
-        setTransferThickness: (n) => set((s) => T.setTransferThickness(s, n)),
-        setTransferColor: (c) => set((s) => T.setTransferColor(s, c)),
-        setTransferStrokeWidth: (n) => set((s) => T.setTransferStrokeWidth(s, n)),
-        setTransferStrokeColor: (c) => set((s) => T.setTransferStrokeColor(s, c)),
         clearAll: () => set((s) => T.clearAll(s)),
       }),
       {
         name: 'vignelli-map-doc-v1',
         storage: createJSONStorage(() => localStorage),
-        version: 9,
-        // Version migration chain v0 → v9 lives in `migrateDoc` (above), which
+        version: 12,
+        // Version migration chain v0 → v11 lives in `migrateDoc` (above), which
         // is exported and unit-tested. See its doc comment for each step.
         migrate: (persisted, version) => migrateDoc(persisted, version),
         partialize: (s) => pickDocSnapshot(s),
