@@ -111,4 +111,17 @@ describe('<ColorField />', () => {
     // Closing commits ONE grouped entry for the whole session.
     expect(useDoc.temporal.getState().pastStates.length).toBe(startDepth + 1);
   });
+
+  it('addNew renders a "+" add affordance instead of a color chip, and still opens the picker', async () => {
+    const user = userEvent.setup();
+    render(<ColorField value="#112233" onChange={vi.fn()} ariaLabel="New color" addNew />);
+    const btn = screen.getByLabelText('New color');
+    expect(btn.classList.contains('add-new')).toBe(true);
+    // The "+" glyph, not the value-mirroring chip.
+    expect(btn.querySelector('.color-field-add')).not.toBeNull();
+    expect(btn.querySelector('.color-field-chip')).toBeNull();
+    // The picker still opens (seeded at value).
+    await user.click(btn);
+    expect(screen.getByRole('dialog')).toBeInTheDocument();
+  });
 });
