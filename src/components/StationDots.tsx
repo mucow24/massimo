@@ -1,19 +1,28 @@
 import { Line, Station } from '../model/types';
 import { useSelection } from '../state/store';
 import { useThemeColors } from '../state/theme';
+import { useViewportStore } from '../state/viewportStore';
 import { STOP_DOT_RADIUS, stopCenterAt } from '../geometry/orientation';
 import { stopPosWorld } from '../geometry/interlining';
 import { resolveDotStyle } from '../model/transforms';
+import { DOT_SHAPE_PRESETS } from '../model/dotStyle';
 import { dotSizeOverride } from '../model/dotSize';
 import { StopGlyph } from './StopGlyph';
 import { useStationInteraction } from './useStationInteraction';
 
+// The dot a waypoint shows under the Show-waypoints overlay: a black-stroke /
+// white-fill circle. Applied as a render-time OVERRIDE (never written to the
+// stop) so the per-stop dotStyle survives untouched when the overlay is off —
+// mirroring the non-destructive spirit of the `isWaypoint` flag itself.
+const WAYPOINT_OVERLAY_STYLE = DOT_SHAPE_PRESETS['filled-white-black-stroke'];
+
 // Empty stations get a single phantom dot one cell to the right of the label,
-// so there's something visible and the name has an anchor. Waypoints never
-// show a phantom (the whole point is "no visible station").
-function phantomDotCell(station: Station) {
-  const isWp = !!station.isWaypoint;
-  return !isWp && station.stops.length === 0
+// so there's something visible and the name has an anchor. A hidden waypoint
+// never shows one (the whole point is "no visible station"); a revealed one
+// behaves like a regular empty station.
+function phantomDotCell(station: Station, showWaypoints: boolean) {
+  const hidden = !!station.isWaypoint && !showWaypoints;
+  return !hidden && station.stops.length === 0
     ? { row: station.label.row, col: station.label.col + 1 }
     : null;
 }
@@ -39,9 +48,13 @@ export function StationDots({
   const hoveredStop = useSelection((s) => s.hoveredLineStop);
   const { handlers, cursor, hitless } = useStationInteraction(station, onStartDrag, lines);
   const themeColors = useThemeColors();
-  if (station.isWaypoint) return null;
+  const showWaypoints = useViewportStore((s) => s.showWaypoints);
+  // A waypoint stays invisible unless the overlay is on; when it is, its stops
+  // paint in the fixed black/white overlay style rather than their own.
+  if (station.isWaypoint && !showWaypoints) return null;
+  const wpOverride = station.isWaypoint ? WAYPOINT_OVERLAY_STYLE : null;
   const angle = station.rotation * 45;
-  const phantomDot = phantomDotCell(station);
+  const phantomDot = phantomDotCell(station, showWaypoints);
   return (
     <g pointerEvents={hitless ? 'none' : undefined} style={{ cursor }} {...handlers}>
       {/* Phantom dot is a drag preview — render at cell position, in the
@@ -70,7 +83,7 @@ export function StationDots({
               pass={pass}
               cx={w.x}
               cy={w.y}
-              style={resolveDotStyle(lines[cell.lineId], cell)}
+              style={wpOverride ?? resolveDotStyle(lines[cell.lineId], cell)}
               lineColor={lines[cell.lineId]?.color}
               serviceCode={lines[cell.lineId]?.service}
               sizeOverride={dotSizeOverride(lines[cell.lineId], cell)}
@@ -81,43 +94,6 @@ export function StationDots({
           );
         }),
       )}
-    </g>
-  );
-}
-
-/**
- * A station's dots in the highlight pass — plain filled circles in
- * `highlightColor`, no hit-testing, used for not-yet-on-line stations during
- * append mode so they stay visible above the dim overlay.
- */
-export function StationHighlightDots({
-  station,
-  highlightColor,
-}: {
-  station: Station;
-  highlightColor: string;
-}) {
-  if (station.isWaypoint) return null;
-  const angle = station.rotation * 45;
-  const phantomDot = phantomDotCell(station);
-  return (
-    <g pointerEvents="none">
-      {/* Phantom dot is a drag preview — render at cell position, in the
-          station's local frame. */}
-      {phantomDot && (
-        <g transform={`translate(${station.x} ${station.y}) rotate(${angle})`}>
-          {(() => {
-            const c = stopCenterAt(phantomDot.row, phantomDot.col);
-            return <circle cx={c.x} cy={c.y} r={STOP_DOT_RADIUS} fill={highlightColor} />;
-          })()}
-        </g>
-      )}
-      {station.stops.map((cell) => {
-        const w = stopPosWorld(cell, station);
-        return (
-          <circle key={cell.lineId} cx={w.x} cy={w.y} r={STOP_DOT_RADIUS} fill={highlightColor} />
-        );
-      })}
     </g>
   );
 }
