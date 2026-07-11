@@ -5,7 +5,7 @@ import { TransferPopover } from './TransferPopover';
 import { useDoc } from '../state/store';
 import { historyDepth } from '../state/history';
 import { DEFAULT_DOC } from '../model/transforms';
-import { makeStation, makeTransfer } from '../test/fixtures';
+import { makeStation, makeStyle, makeTransfer } from '../test/fixtures';
 import { openColorField, setColorField } from '../test/colorField';
 
 const view = { vbX: 0, vbY: 0, vbW: 800, vbH: 600, size: { w: 800, h: 600 } };
@@ -48,6 +48,8 @@ describe('<TransferPopover />', () => {
       child.tagName === 'HR' ? 'divider' : (child.querySelector('label')?.textContent ?? 'footer'),
     );
     expect(sequence).toEqual([
+      'Style',
+      'divider',
       'Thickness',
       'Color',
       'divider',
@@ -57,7 +59,7 @@ describe('<TransferPopover />', () => {
     ]);
   });
 
-  it('shows the EFFECTIVE values — the doc settings for a tracking transfer', async () => {
+  it('shows the EFFECTIVE values — the constant defaults for an override-free transfer', async () => {
     const user = userEvent.setup();
     renderPopover();
     expect(screen.getByRole('slider', { name: 'Thickness' })).toHaveValue('2');
@@ -79,16 +81,15 @@ describe('<TransferPopover />', () => {
     expect(await openColorField(user, 'Transfer color')).toHaveValue('#ff8800');
   });
 
-  it('editing the thickness writes a per-transfer override, not the doc setting', () => {
+  it('editing the thickness writes a per-transfer override', () => {
     renderPopover();
     fireEvent.change(screen.getByRole('slider', { name: 'Thickness' }), {
       target: { value: '7' },
     });
     expect(useDoc.getState().transfers.x1.thickness).toBe(7);
-    expect(useDoc.getState().transferThickness).toBe(2);
   });
 
-  it('choosing the doc value CLEARS the override so the transfer tracks again', () => {
+  it('choosing the constant default CLEARS the override (never stored)', () => {
     useDoc.setState({
       ...useDoc.getState(),
       transfers: { x1: makeTransfer({ id: 'x1', thickness: 7 }) },
@@ -105,8 +106,7 @@ describe('<TransferPopover />', () => {
     renderPopover();
     await setColorField(user, 'Transfer color', '#ff0080');
     expect(useDoc.getState().transfers.x1.color).toBe('#ff0080');
-    expect(useDoc.getState().transferColor).toBe('#000000');
-    // Back to the doc color → the override is dropped.
+    // Back to the default color → the override is dropped.
     fireEvent.change(screen.getByLabelText('Transfer color hex value'), {
       target: { value: '#000000' },
     });
@@ -122,7 +122,6 @@ describe('<TransferPopover />', () => {
       target: { value: '3' },
     });
     expect(useDoc.getState().transfers.x1.strokeWidth).toBe(3);
-    expect(useDoc.getState().transferStrokeWidth).toBe(0);
   });
 
   it('one wheel notch over a spinbutton steps the EFFECTIVE value exactly once', () => {
@@ -132,16 +131,15 @@ describe('<TransferPopover />', () => {
     expect(useDoc.getState().transfers.x1.thickness).toBe(3);
   });
 
-  it('a wheel notch steps from the OVERRIDE when one is present, not the doc setting', () => {
+  it('a wheel notch steps from the OVERRIDE when one is present, not the default', () => {
     useDoc.setState({
       ...useDoc.getState(),
       transfers: { x1: makeTransfer({ id: 'x1', thickness: 6 }) },
     });
     renderPopover();
     fireEvent.wheel(screen.getByRole('spinbutton', { name: 'Thickness' }), { deltaY: -1 });
-    // 6 + 1, NOT doc 2 + 1 (which would silently clobber the override).
+    // 6 + 1, NOT default 2 + 1 (which would silently clobber the override).
     expect(useDoc.getState().transfers.x1.thickness).toBe(7);
-    expect(useDoc.getState().transferThickness).toBe(2);
   });
 
   it('a wheel notch over the Stroke width spinbutton steps the stroke width, not thickness', () => {
@@ -194,5 +192,38 @@ describe('<TransferPopover />', () => {
     );
     expect(parseFloat(el.style.left)).toBeCloseTo(left, 6);
     expect(parseFloat(el.style.top)).toBeCloseTo(top, 6);
+  });
+});
+
+describe('<TransferPopover /> — style presets', () => {
+  // The real mount (ItemPopovers) passes the live store transfer; mirror that
+  // so the Style row re-derives when an action writes the tag.
+  function LivePopover() {
+    const transfer = useDoc((s) => s.transfers['x1']);
+    return transfer ? (
+      <TransferPopover
+        transfer={transfer}
+        worldRect={rectAt(100, 0)}
+        view={view}
+        onClose={() => {}}
+      />
+    ) : null;
+  }
+
+  it('applies a preset from the Style row, then flips to Custom on a covered edit', () => {
+    useDoc.setState({
+      ...useDoc.getState(),
+      styles: { y1: makeStyle('transfer', 'y1', { name: 'Bold link', props: { thickness: 6 } }) },
+    });
+    render(<LivePopover />);
+    const select = screen.getByRole('combobox', { name: 'Style' });
+    fireEvent.change(select, { target: { value: 'y1' } });
+    expect(useDoc.getState().transfers['x1'].styleId).toBe('y1');
+    expect(screen.getByRole('slider', { name: 'Thickness' })).toHaveValue('6');
+    expect(select).toHaveValue('y1');
+    // A covered edit detaches back to Custom.
+    fireEvent.change(screen.getByRole('slider', { name: 'Thickness' }), { target: { value: '9' } });
+    expect(useDoc.getState().transfers['x1'].styleId).toBeUndefined();
+    expect(select).toHaveValue('__custom__');
   });
 });

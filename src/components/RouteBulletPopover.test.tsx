@@ -4,7 +4,7 @@ import { RouteBulletPopover } from './RouteBulletPopover';
 import { useDoc } from '../state/store';
 import { historyDepth } from '../state/history';
 import { DEFAULT_DOC, ROUTE_BULLET_SIZE_MIN } from '../model/transforms';
-import { makeLine } from '../test/fixtures';
+import { makeLine, makeStyle } from '../test/fixtures';
 import type { RouteBullet } from '../model/types';
 
 const identityView = { vbX: 0, vbY: 0, vbW: 800, vbH: 600, size: { w: 800, h: 600 } };
@@ -56,13 +56,13 @@ describe('RouteBulletPopover — line / shape / delete', () => {
 
   it('changes the bound line via the dropdown', () => {
     renderPopover(bulletFixture());
-    fireEvent.change(screen.getByRole('combobox'), { target: { value: 'L2' } });
+    fireEvent.change(screen.getByRole('combobox', { name: 'Line' }), { target: { value: 'L2' } });
     expect(useDoc.getState().routeBullets['b1'].lineId).toBe('L2');
   });
 
   it('unbinds the line when "none" is chosen', () => {
     renderPopover(bulletFixture());
-    fireEvent.change(screen.getByRole('combobox'), { target: { value: '' } });
+    fireEvent.change(screen.getByRole('combobox', { name: 'Line' }), { target: { value: '' } });
     expect(useDoc.getState().routeBullets['b1'].lineId).toBeNull();
   });
 
@@ -87,7 +87,8 @@ describe('RouteBulletPopover — line / shape / delete', () => {
 
   it('when locked, editing controls are disabled but the lock toggle stays active', () => {
     renderPopover(bulletFixture({ locked: true }));
-    expect(screen.getByRole('combobox')).toBeDisabled();
+    expect(screen.getByRole('combobox', { name: 'Line' })).toBeDisabled();
+    expect(screen.getByRole('combobox', { name: 'Style' })).toBeDisabled();
     expect(screen.getByLabelText('square')).toBeDisabled();
     expect(screen.getByRole('slider')).toBeDisabled();
     expect(screen.getByRole('spinbutton')).toBeDisabled();
@@ -282,5 +283,48 @@ describe('<RouteBulletPopover /> header drag', () => {
     );
     expect(parseFloat(popover.style.left)).toBeCloseTo(14, 9);
     expect(parseFloat(popover.style.top)).toBeCloseTo(14, 9);
+  });
+});
+
+describe('RouteBulletPopover — style presets', () => {
+  beforeEach(() => {
+    useDoc.setState({ ...useDoc.getState(), ...DEFAULT_DOC });
+  });
+
+  // The real mount (ItemPopovers) passes the live store bullet; mirror that
+  // so the Style row re-derives when an action writes the tag.
+  function LivePopover() {
+    const bullet = useDoc((s) => s.routeBullets['b1']);
+    return bullet ? (
+      <RouteBulletPopover
+        bullet={bullet}
+        worldRect={rectAt(0, 0)}
+        view={identityView}
+        onClose={() => {}}
+      />
+    ) : null;
+  }
+
+  it('applies a preset from the Style row, then flips to Custom on a covered edit', () => {
+    seed(bulletFixture());
+    useDoc.setState({
+      ...useDoc.getState(),
+      styles: {
+        y1: makeStyle('routeBullet', 'y1', { name: 'Big', props: { shape: 'diamond', size: 20 } }),
+      },
+    });
+    render(<LivePopover />);
+    const select = screen.getByRole('combobox', { name: 'Style' });
+    fireEvent.change(select, { target: { value: 'y1' } });
+    expect(useDoc.getState().routeBullets['b1']).toMatchObject({
+      shape: 'diamond',
+      size: 20,
+      styleId: 'y1',
+    });
+    expect(select).toHaveValue('y1');
+    // A covered edit (shape) detaches; the Line select stays identity-only.
+    fireEvent.click(screen.getByLabelText('square'));
+    expect(useDoc.getState().routeBullets['b1'].styleId).toBeUndefined();
+    expect(select).toHaveValue('__custom__');
   });
 });

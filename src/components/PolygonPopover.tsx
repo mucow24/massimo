@@ -7,6 +7,7 @@ import { LayerOrderRow } from './LayerOrderRow';
 import { NumericFieldRow } from './NumericFieldRow';
 import { PopoverFooter } from './PopoverFooter';
 import { ColorField } from './ColorField';
+import { StyleRow } from './StyleRow';
 import type { AABB } from '../geometry/rectPolygon';
 import {
   POLYGON_CURVE_RADIUS_DEFAULT,
@@ -83,6 +84,14 @@ export function PolygonPopover({ polygon, worldRect, view, spawnBox, onClose }: 
       shellRef={shellRef}
       headerHandlers={headerHandlers}
     >
+      <StyleRow
+        key={polygon.id}
+        kind="polygon"
+        itemId={polygon.id}
+        styleId={polygon.styleId}
+        disabled={locked}
+      />
+      <hr className="popover-divider" aria-hidden="true" />
       <div className="row">
         <label htmlFor="polygon-fill">Fill color</label>
         <SunIcon aria-hidden="true" />

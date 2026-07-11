@@ -15,6 +15,7 @@ import type { AABB } from '../geometry/rectPolygon';
 import { DraggablePopoverShell } from './DraggablePopoverShell';
 import { useDraggablePopover } from './canvas/useDraggablePopover';
 import { usePersistedTextareaHeight } from './usePersistedTextareaHeight';
+import { StyleRow } from './StyleRow';
 import {
   FONT_SIZE_STEP,
   isLabelWeight,
@@ -153,6 +154,16 @@ export function TextLabelPopover({ label, worldRect, view, spawnBox, onClose }: 
         />
       </div>
 
+      {/* Text + Wrap above are content/editor controls; the style row heads
+          the FORMATTING block it applies to. */}
+      <StyleRow
+        key={label.id}
+        kind="textLabel"
+        itemId={label.id}
+        styleId={label.styleId}
+        disabled={locked}
+      />
+      <hr className="popover-divider" aria-hidden="true" />
       <div className="row">
         <label htmlFor={`label-color-${label.id}`}>Color</label>
         <SunIcon aria-hidden="true" />
@@ -194,6 +205,7 @@ export function TextLabelPopover({ label, worldRect, view, spawnBox, onClose }: 
         <label>Weight</label>
         <select
           className="weight-select"
+          aria-label="Weight"
           value={label.weight}
           disabled={locked}
           onChange={(e) => {

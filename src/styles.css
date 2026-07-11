@@ -746,6 +746,35 @@ select option {
   flex: 1;
   min-width: 0;
 }
+/* Style-preset row (StyleRow): the popover .row rules above already lay out
+   its select; the save-name text input needs the same stretch, and the
+   sidebar line inspector (which has no .row idiom of its own) gets one copy
+   of the same recipe so the row reads identically in all five surfaces. */
+.bullet-popover .style-row input,
+.text-label-popover .style-row input {
+  flex: 1;
+  min-width: 0;
+}
+.inspector .style-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  /* The inspector's .field blocks carry their own bottom margins; this row
+     needs the same breathing room above AND below or it crowds its
+     neighbors. */
+  margin: 8px 0 12px;
+}
+.inspector .style-row label {
+  width: 48px;
+  flex-shrink: 0;
+  color: var(--text);
+  font-weight: 700;
+}
+.inspector .style-row select,
+.inspector .style-row input {
+  flex: 1;
+  min-width: 0;
+}
 .bullet-popover .shape-group,
 .text-label-popover .shape-group {
   display: inline-flex;
@@ -770,8 +799,11 @@ select option {
 .toolbar button.tool-btn,
 .bullet-popover .shape-btn,
 .text-label-popover .shape-btn,
+.style-editor .shape-btn,
 .text-label-popover .align-btn,
+.style-editor .align-btn,
 .text-label-popover .italic-btn,
+.style-editor .italic-btn,
 .bullet-popover .lock-btn,
 .text-label-popover .lock-btn {
   background: var(--control-bg);
@@ -782,8 +814,11 @@ select option {
 .toolbar button.tool-btn:hover,
 .bullet-popover .shape-btn:hover:not(:disabled),
 .text-label-popover .shape-btn:hover:not(:disabled),
+.style-editor .shape-btn:hover:not(:disabled),
 .text-label-popover .align-btn:hover:not(:disabled),
+.style-editor .align-btn:hover:not(:disabled),
 .text-label-popover .italic-btn:hover:not(:disabled),
+.style-editor .italic-btn:hover:not(:disabled),
 .bullet-popover .lock-btn:hover,
 .text-label-popover .lock-btn:hover {
   background: var(--control-hover);
@@ -791,8 +826,11 @@ select option {
 .toolbar button.tool-btn.active,
 .bullet-popover .shape-btn.active,
 .text-label-popover .shape-btn.active,
+.style-editor .shape-btn.active,
 .text-label-popover .align-btn.active,
+.style-editor .align-btn.active,
 .text-label-popover .italic-btn.active,
+.style-editor .italic-btn.active,
 .bullet-popover .lock-btn.active,
 .text-label-popover .lock-btn.active {
   background: var(--accent-bg);
@@ -802,15 +840,21 @@ select option {
    :not(:disabled) outranks .active on specificity (same fix as .btn-mini). */
 .bullet-popover .shape-btn.active:hover:not(:disabled),
 .text-label-popover .shape-btn.active:hover:not(:disabled),
+.style-editor .shape-btn.active:hover:not(:disabled),
 .text-label-popover .align-btn.active:hover:not(:disabled),
-.text-label-popover .italic-btn.active:hover:not(:disabled) {
+.style-editor .align-btn.active:hover:not(:disabled),
+.text-label-popover .italic-btn.active:hover:not(:disabled),
+.style-editor .italic-btn.active:hover:not(:disabled) {
   background: var(--accent-bg);
 }
 
 .bullet-popover .shape-btn,
 .text-label-popover .shape-btn,
+.style-editor .shape-btn,
 .text-label-popover .align-btn,
-.text-label-popover .italic-btn {
+.style-editor .align-btn,
+.text-label-popover .italic-btn,
+.style-editor .italic-btn {
   flex: 1;
   display: inline-flex;
   align-items: center;
@@ -821,10 +865,12 @@ select option {
   font-size: var(--fs-small);
 }
 .bullet-popover .shape-btn svg,
-.text-label-popover .shape-btn svg {
+.text-label-popover .shape-btn svg,
+.style-editor .shape-btn svg {
   display: block;
 }
-.text-label-popover .italic-btn {
+.text-label-popover .italic-btn,
+.style-editor .italic-btn {
   flex: 0 0 36px;
 }
 .bullet-popover .lock-btn,
@@ -928,7 +974,8 @@ select option {
 .text-label-popover .row-block textarea.wrap {
   white-space: pre-wrap;
 }
-.text-label-popover .weight-select option {
+.text-label-popover .weight-select option,
+.style-editor .weight-select option {
   font-family: 'Helvetica Neue', Helvetica, Arial, sans-serif;
 }
 
@@ -1491,6 +1538,78 @@ input[type='range'].indeterminate {
   color: var(--text-muted);
   padding: 8px 12px;
   font-style: italic;
+}
+
+/* Styles panel (sidebar): an expanded style row's editor body — the style's
+   parameters as direct controls, reusing the popovers' row idioms. Indented
+   under its row and closed off with a hairline so consecutive rows read
+   grouped. */
+.style-editor {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 4px 12px 12px 34px;
+  border-bottom: 1px solid var(--inset-border);
+}
+.style-editor .row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+.style-editor .row label {
+  width: 84px;
+  flex-shrink: 0;
+  color: var(--text);
+  font-weight: 700;
+  font-size: var(--fs-small);
+}
+.style-editor .row select {
+  flex: 1;
+  min-width: 0;
+}
+.style-editor .options-popover-row {
+  margin-bottom: 0;
+}
+.style-editor .options-popover-label {
+  width: 84px;
+  flex-shrink: 0;
+  color: var(--text);
+  font-weight: 700;
+  font-size: var(--fs-small);
+}
+.style-editor .shape-group {
+  display: inline-flex;
+  gap: 4px;
+  flex: 1;
+}
+
+/* Styles panel (sidebar): the click-to-rename name field. Button shows the
+   name in row typography; the input takes its place while editing (MapNameField
+   pattern). `.grow` supplies the flex from the .list-row recipe. */
+.list-row .style-name {
+  background: transparent;
+  border: 0;
+  padding: 0;
+  font: inherit;
+  color: inherit;
+  text-align: left;
+  cursor: text;
+}
+.list-row .style-name:hover {
+  text-decoration: underline dotted;
+}
+.list-row .style-name-input {
+  font: inherit;
+  min-width: 0;
+  padding: 1px 4px;
+  border: 1px solid var(--border-strong);
+  border-radius: var(--radius);
+}
+/* The star button's "is the default" state: the filled icon reads in the
+   accent color (the base .btn-mini.icon supplies size + hover). */
+.list-row .btn-mini.style-default-star,
+.list-row .btn-mini.style-default-star:hover:not(:disabled) {
+  color: var(--accent);
 }
 
 .append-banner {

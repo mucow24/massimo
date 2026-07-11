@@ -16,8 +16,8 @@ const SELECTION_OUTLINE_PAD = 2.5;
 interface Props {
   transfers: Record<string, Transfer>;
   stations: Record<string, Station>;
-  // The doc-level transfer settings; each transfer may override any field
-  // (resolved per transfer via resolveTransferStyle).
+  // The constant transfer defaults (TRANSFER_STYLE_DEFAULTS); each transfer
+  // may override any field (resolved per transfer via resolveTransferStyle).
   defaults: TransferStyle;
   selectedId: string | null;
   onSelect: (id: string) => void;

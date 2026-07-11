@@ -150,6 +150,9 @@ function parseRouteBulletData(raw: unknown): Omit<RouteBullet, 'id'> | null {
   if (!VALID_SHAPES.includes(d.shape as RouteBulletShape)) return null;
   // Optional: reject a present-but-wrong type; leave an absent flag absent.
   if (d.locked !== undefined && typeof d.locked !== 'boolean') return null;
+  // Optional style tag. Only the type is checked here — whether the id
+  // resolves in the RECEIVING doc is the paste transform's job (addRouteBulletWith).
+  if (d.styleId !== undefined && typeof d.styleId !== 'string') return null;
   const out: Omit<RouteBullet, 'id'> = {
     x: d.x,
     y: d.y,
@@ -159,6 +162,7 @@ function parseRouteBulletData(raw: unknown): Omit<RouteBullet, 'id'> | null {
     size: d.size,
   };
   if (d.locked !== undefined) out.locked = d.locked as boolean;
+  if (d.styleId !== undefined) out.styleId = d.styleId as string;
   return out;
 }
 
@@ -191,6 +195,9 @@ function parseTextLabelData(raw: unknown): Omit<TextLabel, 'id'> | null {
     return null;
   if (d.tracking !== undefined && (typeof d.tracking !== 'number' || !Number.isFinite(d.tracking)))
     return null;
+  // Optional style tag. Only the type is checked here — whether the id
+  // resolves in the RECEIVING doc is the paste transform's job (addTextLabelWith).
+  if (d.styleId !== undefined && typeof d.styleId !== 'string') return null;
   const out: Omit<TextLabel, 'id'> = {
     x: d.x,
     y: d.y,
@@ -207,6 +214,7 @@ function parseTextLabelData(raw: unknown): Omit<TextLabel, 'id'> | null {
   if (d.width !== undefined) out.width = d.width as number;
   if (d.leading !== undefined) out.leading = d.leading as number;
   if (d.tracking !== undefined) out.tracking = d.tracking as number;
+  if (d.styleId !== undefined) out.styleId = d.styleId as string;
   return out;
 }
 
@@ -235,6 +243,9 @@ function parsePolygonData(raw: unknown): Omit<Polygon, 'id'> | null {
   )
     return null;
   if (d.closed !== undefined && typeof d.closed !== 'boolean') return null;
+  // Optional style tag. Only the type is checked here — whether the id
+  // resolves in the RECEIVING doc is the paste transform's job (addPolygonWith).
+  if (d.styleId !== undefined && typeof d.styleId !== 'string') return null;
   const out: Omit<Polygon, 'id'> = {
     vertices,
     fill: d.fill,
@@ -243,6 +254,7 @@ function parsePolygonData(raw: unknown): Omit<Polygon, 'id'> | null {
     darkStroke: d.darkStroke,
     strokeWidth: d.strokeWidth,
   };
+  if (d.styleId !== undefined) out.styleId = d.styleId as string;
   if (d.locked !== undefined) out.locked = d.locked as boolean;
   // curveRadius and closed ride along like the other optional fields. Both are
   // already validated finite/boolean above; `updatePolygon` re-clamps a later

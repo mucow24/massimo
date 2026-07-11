@@ -5,7 +5,7 @@ import { TextLabelPopover } from './TextLabelPopover';
 import { useDoc } from '../state/store';
 import { useLabelEditorPrefs } from '../state/labelEditorPrefs';
 import { DEFAULT_DOC } from '../model/transforms';
-import { makeTextLabel } from '../test/fixtures';
+import { makeStyle, makeTextLabel } from '../test/fixtures';
 import { openColorField, setColorField } from '../test/colorField';
 
 beforeEach(() => {
@@ -405,6 +405,8 @@ describe('<TextLabelPopover /> — text / size / align / weight controls', () =>
     expect(sequence).toEqual([
       'Text',
       'Wrap',
+      'Style',
+      'divider',
       'Color',
       'Size',
       'Weight',
@@ -451,7 +453,9 @@ describe('<TextLabelPopover /> — text / size / align / weight controls', () =>
 
   it('changes the weight via the dropdown', () => {
     seedAndRender();
-    fireEvent.change(screen.getByRole('combobox'), { target: { value: '700' } });
+    fireEvent.change(screen.getByRole('combobox', { name: 'Weight' }), {
+      target: { value: '700' },
+    });
     expect(useDoc.getState().textLabels['g1'].weight).toBe(700);
   });
 
@@ -558,7 +562,8 @@ describe('<TextLabelPopover /> — lock toggle', () => {
     expect(screen.getByRole('textbox')).toBeDisabled();
     expect(screen.getByRole('slider', { name: 'Size' })).toBeDisabled();
     expect(screen.getByRole('spinbutton', { name: 'Size' })).toBeDisabled();
-    expect(screen.getByRole('combobox')).toBeDisabled();
+    expect(screen.getByRole('combobox', { name: 'Weight' })).toBeDisabled();
+    expect(screen.getByRole('combobox', { name: 'Style' })).toBeDisabled();
     expect(screen.getByLabelText('Align center')).toBeDisabled();
     expect(screen.getByLabelText('Italic')).toBeDisabled();
     expect(screen.getByLabelText('Label color')).toBeDisabled();
@@ -690,3 +695,46 @@ describe('<TextLabelPopover /> — wrap-lines toggle (persisted editor preferenc
 // Header drag (incl. across zoom) is covered by the world-position describe
 // above. Escape handling (close on Esc, but not while typing in a field)
 // lives in App's global keydown handler — covered in App.keyboard.test.tsx.
+
+describe('<TextLabelPopover /> — style presets', () => {
+  const presetView = { vbX: 0, vbY: 0, vbW: 800, vbH: 600, size: { w: 800, h: 600 } };
+  const presetRect = { x0: 0, y0: 0, x1: 0, y1: 0 };
+
+  // The real mount (ItemPopovers) passes the live store label; mirror that
+  // so the Style row re-derives when an action writes the tag.
+  function LivePopover() {
+    const label = useDoc((s) => s.textLabels['g1']);
+    return label ? (
+      <TextLabelPopover label={label} worldRect={presetRect} view={presetView} onClose={() => {}} />
+    ) : null;
+  }
+
+  it('applies a preset from the Style row, then flips to Custom on a covered edit', () => {
+    useDoc.setState({
+      ...useDoc.getState(),
+      textLabels: { g1: makeTextLabel({ id: 'g1', text: 'Hi' }) },
+      styles: {
+        y1: makeStyle('textLabel', 'y1', {
+          name: 'Heading',
+          props: { fontSize: 24, weight: 700 },
+        }),
+      },
+    });
+    render(<LivePopover />);
+    const select = screen.getByRole('combobox', { name: 'Style' });
+    fireEvent.change(select, { target: { value: 'y1' } });
+    expect(useDoc.getState().textLabels['g1']).toMatchObject({
+      fontSize: 24,
+      weight: 700,
+      styleId: 'y1',
+    });
+    expect(select).toHaveValue('y1');
+    expect(screen.getByRole('spinbutton', { name: 'Size' })).toHaveValue(24);
+    // A covered edit (weight) detaches; the text content is not covered.
+    fireEvent.change(screen.getByRole('combobox', { name: 'Weight' }), {
+      target: { value: '400' },
+    });
+    expect(useDoc.getState().textLabels['g1'].styleId).toBeUndefined();
+    expect(select).toHaveValue('__custom__');
+  });
+});

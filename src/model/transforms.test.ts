@@ -1517,102 +1517,6 @@ describe('label font/style settings', () => {
   });
 });
 
-describe('transfer styling settings', () => {
-  it('DEFAULT_DOC has the legacy hard-coded look as defaults', () => {
-    expect(T.DEFAULT_DOC.transferThickness).toBe(2);
-    expect(T.DEFAULT_DOC.transferColor).toBe('#000000');
-    // Stroke defaults to off; classic white when opted in.
-    expect(T.DEFAULT_DOC.transferStrokeWidth).toBe(0);
-    expect(T.DEFAULT_DOC.transferStrokeColor).toBe('#ffffff');
-  });
-
-  it('setTransferThickness sets a valid value', () => {
-    const doc = makeDoc({});
-    expect(T.setTransferThickness(doc, 5).transferThickness).toBe(5);
-  });
-
-  it('setTransferThickness clamps below the minimum', () => {
-    const doc = makeDoc({});
-    expect(T.setTransferThickness(doc, 0).transferThickness).toBe(1);
-    expect(T.setTransferThickness(doc, -3).transferThickness).toBe(1);
-  });
-
-  it('setTransferThickness does NOT clamp above the slider max (textbox accepts arbitrary)', () => {
-    const doc = makeDoc({});
-    expect(T.setTransferThickness(doc, 25).transferThickness).toBe(25);
-    expect(T.setTransferThickness(doc, 100).transferThickness).toBe(100);
-  });
-
-  it('setTransferThickness rounds fractional values', () => {
-    const doc = makeDoc({});
-    expect(T.setTransferThickness(doc, 4.7).transferThickness).toBe(5);
-    expect(T.setTransferThickness(doc, 4.4).transferThickness).toBe(4);
-  });
-
-  it('setTransferThickness ignores non-finite values', () => {
-    const doc = makeDoc({ transferThickness: 5 });
-    expect(T.setTransferThickness(doc, Number.NaN)).toBe(doc);
-    expect(T.setTransferThickness(doc, Number.POSITIVE_INFINITY)).toBe(doc);
-  });
-
-  it('setTransferThickness is a no-op when the value is unchanged (reference equality)', () => {
-    const doc = makeDoc({ transferThickness: 6 });
-    expect(T.setTransferThickness(doc, 6)).toBe(doc);
-  });
-
-  it('setTransferColor sets the value', () => {
-    const doc = makeDoc({});
-    expect(T.setTransferColor(doc, '#ff0080').transferColor).toBe('#ff0080');
-  });
-
-  it('setTransferColor is a no-op when unchanged (reference equality)', () => {
-    const doc = makeDoc({ transferColor: '#123456' });
-    expect(T.setTransferColor(doc, '#123456')).toBe(doc);
-  });
-
-  it('setTransferStrokeWidth sets a valid value', () => {
-    const doc = makeDoc({});
-    expect(T.setTransferStrokeWidth(doc, 3).transferStrokeWidth).toBe(3);
-  });
-
-  it('setTransferStrokeWidth clamps below MIN (0)', () => {
-    const doc = makeDoc({});
-    expect(T.setTransferStrokeWidth(doc, -2).transferStrokeWidth).toBe(0);
-  });
-
-  it('setTransferStrokeWidth does NOT clamp above the slider max (textbox accepts arbitrary)', () => {
-    // Like transferThickness, only the bottom bound is enforced —
-    // TRANSFER_STROKE_WIDTH_MAX constrains the slider, not the value.
-    const doc = makeDoc({});
-    expect(T.setTransferStrokeWidth(doc, 12).transferStrokeWidth).toBe(12);
-  });
-
-  it('setTransferStrokeWidth rounds fractional values', () => {
-    const doc = makeDoc({});
-    expect(T.setTransferStrokeWidth(doc, 2.7).transferStrokeWidth).toBe(3);
-  });
-
-  it('setTransferStrokeWidth ignores non-finite values', () => {
-    const doc = makeDoc({ transferStrokeWidth: 2 });
-    expect(T.setTransferStrokeWidth(doc, Number.NaN)).toBe(doc);
-  });
-
-  it('setTransferStrokeWidth is a no-op when unchanged (reference equality)', () => {
-    const doc = makeDoc({ transferStrokeWidth: 2 });
-    expect(T.setTransferStrokeWidth(doc, 2)).toBe(doc);
-  });
-
-  it('setTransferStrokeColor sets the value', () => {
-    const doc = makeDoc({});
-    expect(T.setTransferStrokeColor(doc, '#abcdef').transferStrokeColor).toBe('#abcdef');
-  });
-
-  it('setTransferStrokeColor is a no-op when unchanged (reference equality)', () => {
-    const doc = makeDoc({ transferStrokeColor: '#abcdef' });
-    expect(T.setTransferStrokeColor(doc, '#abcdef')).toBe(doc);
-  });
-});
-
 describe('per-transfer style overrides', () => {
   // Two transfers so every assertion can also check the sibling is untouched.
   const baseDoc = () =>
@@ -1621,7 +1525,7 @@ describe('per-transfer style overrides', () => {
     });
 
   describe('updateTransferStyle', () => {
-    it('stores an override that differs from the doc setting', () => {
+    it('stores an override that differs from the constant default', () => {
       const doc = T.updateTransferStyle(baseDoc(), 'x1', { thickness: 5 });
       expect(doc.transfers['x1'].thickness).toBe(5);
       expect('thickness' in doc.transfers['x2']).toBe(false);
@@ -1641,29 +1545,27 @@ describe('per-transfer style overrides', () => {
       expect('thickness' in doc.transfers['x1']).toBe(false);
     });
 
-    it('rounds and floor-clamps the numeric fields like the doc setters', () => {
+    it('rounds and floor-clamps the numeric fields', () => {
       const doc = T.updateTransferStyle(baseDoc(), 'x1', { thickness: 4.6, strokeWidth: -2 });
       expect(doc.transfers['x1'].thickness).toBe(5);
-      // -2 clamps to 0 — the doc's strokeWidth default — so it collapses to
-      // "tracking" rather than storing a redundant 0.
+      // -2 clamps to 0 — the constant strokeWidth default — so it collapses
+      // rather than storing a redundant 0.
       expect('strokeWidth' in doc.transfers['x1']).toBe(false);
     });
 
-    it('CLEARS an override when the chosen value equals the doc setting', () => {
+    it('CLEARS an override when the chosen value equals the constant default', () => {
       const withOverride = T.updateTransferStyle(baseDoc(), 'x1', { thickness: 5 });
       const cleared = T.updateTransferStyle(withOverride, 'x1', { thickness: 2 });
       expect('thickness' in cleared.transfers['x1']).toBe(false);
-      // ...and the cleared transfer tracks later doc-setting changes again.
-      expect(T.setTransferThickness(cleared, 9).transfers['x1'].thickness).toBeUndefined();
     });
 
-    it('clears color overrides at the doc color the same way', () => {
+    it('clears color overrides at the default color the same way', () => {
       const withOverride = T.updateTransferStyle(baseDoc(), 'x1', { color: '#ff0080' });
       const cleared = T.updateTransferStyle(withOverride, 'x1', { color: '#000000' });
       expect('color' in cleared.transfers['x1']).toBe(false);
     });
 
-    it('clears strokeColor overrides at the doc STROKE color (not the body color)', () => {
+    it('clears strokeColor overrides at the default STROKE color (not the body color)', () => {
       const withOverride = T.updateTransferStyle(baseDoc(), 'x1', { strokeColor: '#123456' });
       const cleared = T.updateTransferStyle(withOverride, 'x1', { strokeColor: '#ffffff' });
       expect('strokeColor' in cleared.transfers['x1']).toBe(false);
@@ -1683,47 +1585,6 @@ describe('per-transfer style overrides', () => {
       expect(T.updateTransferStyle(doc, 'x1', { thickness: 2 })).toBe(doc);
       const withOverride = T.updateTransferStyle(doc, 'x1', { thickness: 5 });
       expect(T.updateTransferStyle(withOverride, 'x1', { thickness: 5 })).toBe(withOverride);
-    });
-  });
-
-  describe('doc-setter cascade pruning', () => {
-    it('setTransferThickness absorbs overrides equal to the NEW setting, keeps the rest', () => {
-      let doc = baseDoc();
-      doc = T.updateTransferStyle(doc, 'x1', { thickness: 5 });
-      doc = T.updateTransferStyle(doc, 'x2', { thickness: 7 });
-      const next = T.setTransferThickness(doc, 5);
-      expect(next.transferThickness).toBe(5);
-      // x1's override is now redundant — dropped, so it tracks the setting…
-      expect('thickness' in next.transfers['x1']).toBe(false);
-      // …while x2 keeps its distinct override.
-      expect(next.transfers['x2'].thickness).toBe(7);
-    });
-
-    it('setTransferColor absorbs matching color overrides', () => {
-      const doc = T.updateTransferStyle(baseDoc(), 'x1', { color: '#ff0080' });
-      const next = T.setTransferColor(doc, '#ff0080');
-      expect(next.transferColor).toBe('#ff0080');
-      expect('color' in next.transfers['x1']).toBe(false);
-    });
-
-    it('setTransferStrokeWidth absorbs matching width overrides', () => {
-      const doc = T.updateTransferStyle(baseDoc(), 'x1', { strokeWidth: 3 });
-      const next = T.setTransferStrokeWidth(doc, 3);
-      expect(next.transferStrokeWidth).toBe(3);
-      expect('strokeWidth' in next.transfers['x1']).toBe(false);
-    });
-
-    it('setTransferStrokeColor absorbs matching color overrides', () => {
-      const doc = T.updateTransferStyle(baseDoc(), 'x1', { strokeColor: '#123456' });
-      const next = T.setTransferStrokeColor(doc, '#123456');
-      expect(next.transferStrokeColor).toBe('#123456');
-      expect('strokeColor' in next.transfers['x1']).toBe(false);
-    });
-
-    it('leaves non-matching overrides referentially untouched', () => {
-      const doc = T.updateTransferStyle(baseDoc(), 'x1', { thickness: 7 });
-      const next = T.setTransferThickness(doc, 5);
-      expect(next.transfers['x1']).toBe(doc.transfers['x1']);
     });
   });
 });

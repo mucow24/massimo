@@ -1,10 +1,10 @@
-// Per-transfer style overrides of the doc-level transfer settings
-// (doc.transferThickness / transferColor / transferStrokeWidth /
-// transferStrokeColor). The sentinel for "follow the doc setting" is an
-// ABSENT optional field on the Transfer: the setters collapse a value equal
-// to the doc's current setting to `undefined` (same contract as
-// StopCell.dotStyle / dotSize), so persisted state stays clean and such a
-// transfer tracks later changes to the setting.
+// Per-transfer style overrides of the CONSTANT transfer defaults below. The
+// sentinel for "the default" is an ABSENT optional field on the Transfer:
+// the setters collapse a value equal to the default to `undefined` (same
+// contract as StopCell.dotStyle / dotSize and Line.width), so persisted
+// state stays clean. There are no doc-level transfer settings — map-wide
+// restyling goes through the "Default" transfer style preset instead (its
+// editor re-stamps every transfer wearing it).
 
 // Transform clamp floor; the slider min too.
 export const TRANSFER_THICKNESS_MIN = 1;
@@ -25,7 +25,7 @@ export const TRANSFER_STROKE_WIDTH_DEFAULT = 0;
 export const TRANSFER_STROKE_COLOR_DEFAULT = '#ffffff';
 
 // The four style knobs a transfer can override — also the shape of the
-// doc-level settings they fall back to.
+// constant defaults they fall back to.
 export interface TransferStyle {
   thickness: number;
   color: string;
@@ -33,14 +33,22 @@ export interface TransferStyle {
   strokeColor: string;
 }
 
+// The constant fallback for every unset override — the legacy hard-coded
+// look. One frozen object so render paths can pass it by reference.
+export const TRANSFER_STYLE_DEFAULTS: TransferStyle = {
+  thickness: TRANSFER_THICKNESS_DEFAULT,
+  color: TRANSFER_COLOR_DEFAULT,
+  strokeWidth: TRANSFER_STROKE_WIDTH_DEFAULT,
+  strokeColor: TRANSFER_STROKE_COLOR_DEFAULT,
+};
+
 /**
  * The canonical STORED form of a per-transfer thickness override: round to
  * an integer, clamp to ≥ TRANSFER_THICKNESS_MIN, and collapse to `undefined`
- * when it equals `dropAt` — the doc's current transferThickness the value
- * would otherwise redundantly duplicate. Shared by the `updateTransferStyle`
- * transform and the `sanitizeTransferStyles` file cleaner so the clamp rule
- * can never drift (same idiom as canonicalDotSize). Callers own the
- * finiteness guard.
+ * when it equals `dropAt` — the constant default the value would otherwise
+ * redundantly duplicate. Shared by the `updateTransferStyle` transform and
+ * the `sanitizeTransferStyles` file cleaner so the clamp rule can never
+ * drift (same idiom as canonicalDotSize). Callers own the finiteness guard.
  */
 export const canonicalTransferThickness = (n: number, dropAt: number): number | undefined => {
   const norm = Math.max(TRANSFER_THICKNESS_MIN, Math.round(n));
@@ -55,21 +63,22 @@ export const canonicalTransferStrokeWidth = (n: number, dropAt: number): number 
 
 /**
  * The canonical STORED form of a per-transfer color override: collapsed to
- * `undefined` at the doc's current color. Exact string comparison — the doc
- * color setters don't normalize case either, and every in-app write comes
- * from ColorField's normalized hex.
+ * `undefined` at the constant default. Exact string comparison — every
+ * in-app write comes from ColorField's normalized hex.
  */
 export const canonicalTransferColor = (c: string, dropAt: string): string | undefined =>
   c === dropAt ? undefined : c;
 
 /**
  * Fully-resolved style of one transfer: each override when present, else the
- * doc-level setting. Structural transfer parameter so narrowed shapes pass
- * through (same convention as dotSizeOverride).
+ * constant default. Structural transfer parameter so narrowed shapes pass
+ * through (same convention as dotSizeOverride). `defaults` stays a parameter
+ * for callers that already thread the constant explicitly (TransferLayer's
+ * prop) and for tests; every production fallback is TRANSFER_STYLE_DEFAULTS.
  */
 export const resolveTransferStyle = (
   t: { thickness?: number; color?: string; strokeWidth?: number; strokeColor?: string },
-  defaults: TransferStyle,
+  defaults: TransferStyle = TRANSFER_STYLE_DEFAULTS,
 ): TransferStyle => ({
   thickness: t.thickness ?? defaults.thickness,
   color: t.color ?? defaults.color,

@@ -5,7 +5,7 @@ import { LineInspector } from './LineInspector';
 import { useDoc, useSelection } from '../../state/store';
 import { historyDepth } from '../../state/history';
 import { DEFAULT_DOC } from '../../model/transforms';
-import { makeDoc, makeLine, makeStation, makeStop } from '../../test/fixtures';
+import { makeDoc, makeLine, makeStation, makeStop, makeStyle } from '../../test/fixtures';
 import { DOT_SHAPE_PRESETS } from '../../model/dotStyle';
 import { openColorField } from '../../test/colorField';
 
@@ -707,5 +707,34 @@ describe('<LineInspector /> — removing a station clears its dangling hover hig
     expect(useSelection.getState().hoveredLineStop).toBeNull();
     expect(useSelection.getState().hoveredStationId).toBeNull();
     expect(useSelection.getState().hoveredInspectorSegment).toBeNull();
+  });
+});
+
+describe('<LineInspector /> — style presets', () => {
+  beforeEach(() => {
+    localStorage.clear();
+    useDoc.setState({ ...DEFAULT_DOC });
+    useSelection.setState(SELECTION_BLANK);
+  });
+
+  it('applies a preset from the Style row, then flips to Custom on a covered edit', () => {
+    useDoc.setState({
+      ...DEFAULT_DOC,
+      ...makeDoc({
+        lines: [makeLine({ id: 'L1' })],
+        styles: [makeStyle('line', 'y1', { name: 'Thick', props: { width: 12 } })],
+      }),
+    });
+    render(<LineInspector id="L1" />);
+    const select = screen.getByRole('combobox', { name: 'Style' });
+    fireEvent.change(select, { target: { value: 'y1' } });
+    expect(useDoc.getState().lines['L1']).toMatchObject({ width: 12, styleId: 'y1' });
+    expect(select).toHaveValue('y1');
+    // A covered edit (line width) detaches; name/service/color stay identity.
+    fireEvent.change(screen.getByRole('slider', { name: 'Line width' }), {
+      target: { value: '14' },
+    });
+    expect(useDoc.getState().lines['L1'].styleId).toBeUndefined();
+    expect(select).toHaveValue('__custom__');
   });
 });

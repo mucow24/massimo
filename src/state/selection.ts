@@ -5,7 +5,7 @@ import type { Vec2 } from '../geometry/vec';
 
 // ----- Selection (ephemeral, except the persisted sidebarOpen flag) -----
 
-export type SidebarTab = 'stations' | 'lines';
+export type SidebarTab = 'stations' | 'lines' | 'styles';
 
 // Hover preview shown while in add-line-tag mode: tracks the candidate
 // insertion point under the cursor on a line stripe, so the canvas can
