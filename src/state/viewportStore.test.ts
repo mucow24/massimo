@@ -10,6 +10,7 @@ beforeEach(() => {
     gridVisible: true,
     darkMode: false,
     gridSize: 10,
+    showWaypoints: false,
   });
 });
 
@@ -63,5 +64,39 @@ describe('viewportStore — gridSize', () => {
     expect(s.gridSize).toBe(10);
     expect(Number.isNaN(s.gridSize)).toBe(false);
     expect(s.darkMode).toBe(true);
+  });
+});
+
+describe('viewportStore — showWaypoints', () => {
+  it('defaults to off', () => {
+    expect(useViewportStore.getInitialState().showWaypoints).toBe(false);
+  });
+
+  it('setShowWaypoints updates the value', () => {
+    useViewportStore.getState().setShowWaypoints(true);
+    expect(useViewportStore.getState().showWaypoints).toBe(true);
+    useViewportStore.getState().setShowWaypoints(false);
+    expect(useViewportStore.getState().showWaypoints).toBe(false);
+  });
+
+  it('persists showWaypoints to localStorage (partialize)', () => {
+    useViewportStore.getState().setShowWaypoints(true);
+    const raw = localStorage.getItem('massimo-viewport');
+    expect(raw).toBeTruthy();
+    expect(JSON.parse(raw!).state.showWaypoints).toBe(true);
+  });
+
+  it('rehydrates a persisted blob without showWaypoints back to the default off', async () => {
+    // A viewport saved before showWaypoints existed: the missing key must fall
+    // back to the initializer (off), not undefined.
+    localStorage.setItem(
+      'massimo-viewport',
+      JSON.stringify({
+        state: { x: 1, y: 2, zoom: 3, gridVisible: false, gridSize: 10, darkMode: false },
+        version: 0,
+      }),
+    );
+    await useViewportStore.persist.rehydrate();
+    expect(useViewportStore.getState().showWaypoints).toBe(false);
   });
 });

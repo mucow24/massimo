@@ -2,6 +2,7 @@ import { useMemo } from 'react';
 import { Line, Station } from '../model/types';
 import { useDoc, useSelection } from '../state/store';
 import { useThemeColors } from '../state/theme';
+import { useViewportStore } from '../state/viewportStore';
 import { labelLayoutLocal } from '../geometry/labelLayout';
 import { stopHalfOf } from '../model/lineWidth';
 import {
@@ -12,7 +13,43 @@ import {
 import { legibleTextOn } from '../util/color';
 import { renderStationLabelText } from './stationLabelText';
 import { StationNameEditor } from './StationNameEditor';
+import { WaypointLozenge } from './WaypointLozenge';
 import { useDocLabelStyle } from './useDocLabelStyle';
+
+// Gap between the "WP" lozenge and the name it prefixes, as a fraction of the
+// label font size.
+const WP_LOZENGE_GAP_RATIO = 0.3;
+
+/**
+ * The "WP" lozenge drawn before a revealed waypoint's name. Shared by all three
+ * label passes so every pass that paints a waypoint name also prefixes it. Sits
+ * just left of the label box (`lay.hitX`) and shares the label's rotation, so it
+ * tracks the name through rotations/offsets. Every call site sits past that
+ * pass's `isWaypoint && !showWaypoints` guard, so a waypoint reaching here
+ * already implies the overlay is on — the guard is just "is this a waypoint?".
+ */
+function WaypointLabelBadge({
+  station,
+  lay,
+  rotationDeg,
+  fontSize,
+}: {
+  station: Station;
+  lay: { hitX: number; hitY: number; hitH: number; anchorX: number; anchorY: number };
+  rotationDeg: number;
+  fontSize: number;
+}) {
+  if (!station.isWaypoint) return null;
+  return (
+    <g transform={`rotate(${rotationDeg} ${lay.anchorX} ${lay.anchorY})`}>
+      <WaypointLozenge
+        rightX={lay.hitX - fontSize * WP_LOZENGE_GAP_RATIO}
+        centerY={lay.hitY + lay.hitH / 2}
+        fontSize={fontSize}
+      />
+    </g>
+  );
+}
 
 /**
  * The common text-positioning bundle shared by all three station-label passes
@@ -77,14 +114,16 @@ export function StationStarterLabel({
   lines: Record<string, Line>;
   highlightColor: string;
 }) {
+  const showWaypoints = useViewportStore((s) => s.showWaypoints);
   const { angle, rotationDeg, hovered, docStyle, lineByService, lay } = useStationLabelLayout(
     station,
     lines,
   );
-  if (station.isWaypoint) return null;
+  if (station.isWaypoint && !showWaypoints) return null;
   const strokeColor = legibleTextOn(highlightColor);
   return (
     <g transform={`translate(${station.x} ${station.y}) rotate(${angle})`}>
+      <WaypointLabelBadge station={station} lay={lay} rotationDeg={rotationDeg} fontSize={12} />
       {renderStationLabelText({
         text: station.name,
         fontSize: 12,
@@ -123,6 +162,7 @@ export function StationHighlightLabel({
   lines: Record<string, Line>;
   highlightColor: string;
 }) {
+  const showWaypoints = useViewportStore((s) => s.showWaypoints);
   const {
     angle,
     rotationDeg,
@@ -133,9 +173,15 @@ export function StationHighlightLabel({
     lineByService,
     lay,
   } = useStationLabelLayout(station, lines);
-  if (station.isWaypoint) return null;
+  if (station.isWaypoint && !showWaypoints) return null;
   return (
     <g transform={`translate(${station.x} ${station.y}) rotate(${angle})`}>
+      <WaypointLabelBadge
+        station={station}
+        lay={lay}
+        rotationDeg={rotationDeg}
+        fontSize={docStyle.fontSize}
+      />
       {renderStationLabelText({
         text: station.name,
         fontSize: docStyle.fontSize,
@@ -179,6 +225,7 @@ export function StationLabel({
   const uiMode = useSelection((s) => s.uiMode);
   const editingStationId = useSelection((s) => s.editingStationId);
   const setEditingStationId = useSelection((s) => s.setEditingStationId);
+  const showWaypoints = useViewportStore((s) => s.showWaypoints);
   const {
     angle,
     rotationDeg,
@@ -192,7 +239,11 @@ export function StationLabel({
     lay,
   } = useStationLabelLayout(station, lines);
 
-  if (station.isWaypoint) return null;
+  // A hidden waypoint paints nothing; a revealed one flows through the normal
+  // path below (selection-skip, inline rename, theme color) exactly like a
+  // regular station — its only differences are the black/white dots (StationDots)
+  // and the "WP" lozenge added to the return below.
+  if (station.isWaypoint && !showWaypoints) return null;
 
   if (selectedLineId) {
     const isAppending = uiMode.kind === 'appending-to-line' && uiMode.lineId === selectedLineId;
@@ -217,6 +268,12 @@ export function StationLabel({
 
   return (
     <g transform={`translate(${station.x} ${station.y}) rotate(${angle})`}>
+      <WaypointLabelBadge
+        station={station}
+        lay={lay}
+        rotationDeg={rotationDeg}
+        fontSize={docStyle.fontSize}
+      />
       {isEditing ? (
         <StationNameEditor
           x={editorHit ? editorHit.hitX : lay.hitX}

@@ -25,6 +25,12 @@ interface ViewportState extends Viewport {
   setGridSize: (size: number) => void;
   darkMode: boolean;
   setDarkMode: (dark: boolean) => void;
+  /** Render overlay: reveal waypoint stations (normally hidden) — their stops
+   *  in a black-stroke/white-fill dot and their names with a "WP" lozenge. A
+   *  pure paint toggle; it never mutates the doc (per-stop styles stay intact,
+   *  same as the `isWaypoint` flag itself). */
+  showWaypoints: boolean;
+  setShowWaypoints: (show: boolean) => void;
 }
 
 /**
@@ -65,6 +71,8 @@ export const useViewportStore = create<ViewportState>()(
       setGridSize: (gridSize) => set({ gridSize }),
       darkMode: false,
       setDarkMode: (darkMode) => set({ darkMode }),
+      showWaypoints: false,
+      setShowWaypoints: (showWaypoints) => set({ showWaypoints }),
     }),
     {
       name: 'massimo-viewport',
@@ -76,6 +84,7 @@ export const useViewportStore = create<ViewportState>()(
         gridVisible: s.gridVisible,
         gridSize: s.gridSize,
         darkMode: s.darkMode,
+        showWaypoints: s.showWaypoints,
       }),
     },
   ),
