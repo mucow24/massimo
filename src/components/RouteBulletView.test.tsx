@@ -124,6 +124,13 @@ describe('<RouteBulletView /> — locked bullets are click-through unless select
   });
 });
 
+// The selection ring is a two-tone circle: a 2px ink CORE over a 4px UNDERLAY
+// (1px of underlay on each edge), both at radius r + SELECTION_RING_PAD (a
+// WORLD pad, so it scales with the map). It flips with the theme — black core /
+// white halo (white-black-white) on the light canvas, white core / black halo
+// (black-white-black) on the dark one — so it stays legible around a bullet of
+// any color. Screen weight held by vector-effect="non-scaling-stroke", so the
+// ring tracks in-flight pan/zoom natively instead of snapping on commit.
 describe('<RouteBulletView /> — selection ring', () => {
   afterEach(() => useViewportStore.setState({ zoom: 1 }));
 
@@ -140,27 +147,44 @@ describe('<RouteBulletView /> — selection ring', () => {
         />
       </svg>,
     ).container;
-  const ring = (c: HTMLElement) => c.querySelector('circle[stroke-dasharray]')!;
+  const rings = (c: HTMLElement) =>
+    Array.from(c.querySelectorAll('[data-bullet-id="b1"] > circle[fill="none"]'));
 
-  it('renders the documented weight at zoom 1', () => {
-    const r = ring(renderSelected());
-    expect(Number(r.getAttribute('stroke-width'))).toBe(2);
-    expect(r.getAttribute('stroke-dasharray')).toBe('4 3');
-    expect(Number(r.getAttribute('r'))).toBe(14 + 3);
-    // Editor chrome, not content: bullets render in a non-excluded pass, so
-    // the ring itself must opt out of SVG/PNG exports (it's also camera-
-    // dependent now, which would bake an arbitrary size into the file).
-    expect(r.getAttribute('data-export-exclude')).toBe('1');
+  it('renders a black core over a white underlay on the light canvas (WBW)', () => {
+    // beforeEach sets darkMode: false.
+    const els = rings(renderSelected());
+    expect(els.length).toBe(2);
+    const [edge, core] = els;
+    expect(edge.getAttribute('stroke')).toBe('#ffffff');
+    expect(Number(edge.getAttribute('stroke-width'))).toBe(4);
+    expect(core.getAttribute('stroke')).toBe('#000000');
+    expect(Number(core.getAttribute('stroke-width'))).toBe(2);
+    for (const el of els) {
+      // World pad, NOT divided by zoom (bullet size 14 + pad 3).
+      expect(Number(el.getAttribute('r'))).toBe(14 + 3);
+      expect(el.getAttribute('vector-effect')).toBe('non-scaling-stroke');
+      expect(el.getAttribute('stroke-dasharray')).toBe('4 3');
+      // Editor chrome: bullets render in a non-excluded pass, so the ring must
+      // opt out of SVG/PNG exports.
+      expect(el.getAttribute('data-export-exclude')).toBe('1');
+    }
   });
 
-  // Constant SCREEN weight: stroke, dash, and pad divide by the committed
-  // zoom (1/zoom idiom) — a world-unit ring turns into a sub-pixel ghost at
-  // fit-map zooms and a fat slab zoomed in.
-  it('divides stroke, dash, and pad by zoom', () => {
+  it('flips to a white core over a black underlay in dark mode (BWB)', () => {
+    useViewportStore.setState({ darkMode: true });
+    const [edge, core] = rings(renderSelected());
+    expect(edge.getAttribute('stroke')).toBe('#000000');
+    expect(core.getAttribute('stroke')).toBe('#ffffff');
+  });
+
+  // No zoom subscription at all: identical markup at any committed zoom, so a
+  // gesture commit never re-renders the ring (nothing to snap).
+  it('is zoom-independent: identical markup at committed zoom 2', () => {
     useViewportStore.setState({ zoom: 2 });
-    const r = ring(renderSelected());
-    expect(Number(r.getAttribute('stroke-width'))).toBe(1);
-    expect(r.getAttribute('stroke-dasharray')).toBe('2 1.5');
-    expect(Number(r.getAttribute('r'))).toBe(14 + 1.5);
+    const els = rings(renderSelected());
+    const [edge, core] = els;
+    expect(Number(edge.getAttribute('stroke-width'))).toBe(4);
+    expect(Number(core.getAttribute('stroke-width'))).toBe(2);
+    for (const el of els) expect(Number(el.getAttribute('r'))).toBe(14 + 3);
   });
 });

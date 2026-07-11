@@ -1,8 +1,8 @@
 import type { SvgImage } from '../model/types';
 import { useThemeColors } from '../state/theme';
-import { useViewportStore } from '../state/viewportStore';
+import { useLiveZoom } from '../state/viewportStore';
 import { itemCursor } from './canvas/itemCursor';
-import { selectionDash } from './selectionStyle';
+import { SELECTION_DASH, selectionOutlineTones } from './selectionStyle';
 
 // Handle half-size and rotation-knob geometry, authored in world units at zoom
 // 1. The overlay divides every adornment dimension (and stroke) by zoom so they
@@ -62,8 +62,6 @@ export function SvgImageView({
   onEdgePointerDown,
   onRotatePointerDown,
 }: Props) {
-  const themeColors = useThemeColors();
-  const zoom = useViewportStore((s) => s.zoom);
   const hw = image.width / 2;
   const hh = image.height / 2;
   const transform = `translate(${image.x} ${image.y}) rotate(${image.rotation})`;
@@ -132,8 +130,40 @@ export function SvgImageView({
   }
 
   if (!selected) return null;
-  // Inverse-zoom scale so adornments render at a constant screen size; the box
-  // extents (±hw/±hh) track the real image size and do NOT scale.
+  // The selection overlay lives in its own component so it — and only the
+  // selected image — subscribes to the live gesture zoom (see below).
+  return (
+    <SvgImageSelectionOverlay
+      image={image}
+      onCornerPointerDown={onCornerPointerDown}
+      onEdgePointerDown={onEdgePointerDown}
+      onRotatePointerDown={onRotatePointerDown}
+    />
+  );
+}
+
+/**
+ * The selected image's transform overlay: the two-tone selection box plus 8
+ * resize handles and a rotate knob.
+ *
+ * Sizes every handle off the LIVE gesture zoom (useLiveZoom), not the committed
+ * zoom, so the handles stay a constant screen size AND track a pan/zoom in
+ * flight instead of snapping when it commits — the box gets the same
+ * screen-constancy for free from vector-effect. Only the selected image mounts
+ * this, so the per-frame re-render during a gesture is one item, not the whole
+ * canvas. The box extents (±hw/±hh) track the real image size and never scale.
+ */
+function SvgImageSelectionOverlay({
+  image,
+  onCornerPointerDown,
+  onEdgePointerDown,
+  onRotatePointerDown,
+}: Pick<Props, 'image' | 'onCornerPointerDown' | 'onEdgePointerDown' | 'onRotatePointerDown'>) {
+  const themeColors = useThemeColors();
+  const zoom = useLiveZoom();
+  const hw = image.width / 2;
+  const hh = image.height / 2;
+  const transform = `translate(${image.x} ${image.y}) rotate(${image.rotation})`;
   const s = 1 / zoom;
   const half = HANDLE_HALF * s;
   const knobDist = ROTATE_KNOB_DIST * s;
@@ -154,21 +184,28 @@ export function SvgImageView({
   ];
   return (
     <g data-svg-image-overlay={image.id} transform={transform}>
-      <rect
-        data-svg-image-box=""
-        x={-hw}
-        y={-hh}
-        width={image.width}
-        height={image.height}
-        fill="none"
-        stroke={accent}
-        strokeWidth={1.5 * s}
-        strokeDasharray={selectionDash(zoom)}
-        pointerEvents="none"
-      />
+      {/* Two-tone selection box: black core over white underlay, screen-constant
+          via vector-effect (no zoom subscription of its own → no snap). Dashed
+          (both tones share geometry, so the dashes align). */}
+      {selectionOutlineTones(themeColors).map(({ tone, stroke, strokeWidth }) => (
+        <rect
+          key={tone}
+          data-svg-image-box=""
+          x={-hw}
+          y={-hh}
+          width={image.width}
+          height={image.height}
+          fill="none"
+          stroke={stroke}
+          strokeWidth={strokeWidth}
+          strokeDasharray={SELECTION_DASH}
+          vectorEffect="non-scaling-stroke"
+          pointerEvents="none"
+        />
+      ))}
       {/* Transform handles + rotate knob. On a LOCKED image they render
           GHOSTED — still visible, so a re-selected locked image reads as
-          selected (the thin dashed box alone is easy to miss) — but inert:
+          selected (the thin box alone is easy to miss) — but inert:
           reduced opacity, no pointer events, no cursors. */}
       <g
         data-svg-image-adornments={image.locked ? 'inactive' : 'active'}

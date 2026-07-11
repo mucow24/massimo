@@ -2,7 +2,7 @@ import { describe, it, expect, beforeEach, vi } from 'vitest';
 import { render, fireEvent } from '@testing-library/react';
 import { resizeCursor, SvgImageView } from './SvgImageView';
 import { makeSvgImage } from '../test/fixtures';
-import { useViewportStore } from '../state/viewportStore';
+import { useLiveViewportStore, useViewportStore } from '../state/viewportStore';
 import type { SvgImage } from '../model/types';
 
 const noop = () => {};
@@ -157,7 +157,7 @@ describe('<SvgImageView /> overlay', () => {
     expect(container.querySelector('[data-svg-image-overlay]')).toBeNull();
   });
 
-  it('renders a dashed box plus 8 resize handles and a rotation knob when selected', () => {
+  it('renders the selection box plus 8 resize handles and a rotation knob when selected', () => {
     const { container } = renderView(makeSvgImage({ id: 'i0' }), {
       layer: 'overlay',
       selected: true,
@@ -167,6 +167,29 @@ describe('<SvgImageView /> overlay', () => {
     expect(names).toHaveLength(9);
     expect(names).toContain('rotate');
     for (const n of ['nw', 'n', 'ne', 'e', 'se', 's', 'sw', 'w']) expect(names).toContain(n);
+  });
+
+  // The box is the shared two-tone no-snap ring: a 2px ink core over a 4px
+  // underlay, screen-constant via vector-effect (no zoom subscription of its own
+  // → no snap on commit), dashed. Flips with the theme (WBW light, BWB dark).
+  it('draws the selection box as a two-tone dashed vector-effect ring (black core on light)', () => {
+    // beforeEach sets darkMode: false → WBW.
+    const { container } = renderView(makeSvgImage({ id: 'i0' }), {
+      layer: 'overlay',
+      selected: true,
+    });
+    const boxes = Array.from(container.querySelectorAll('[data-svg-image-box]'));
+    expect(boxes).toHaveLength(2);
+    const [edge, core] = boxes;
+    expect(edge.getAttribute('stroke')).toBe('#ffffff');
+    expect(Number(edge.getAttribute('stroke-width'))).toBe(4);
+    expect(core.getAttribute('stroke')).toBe('#000000');
+    expect(Number(core.getAttribute('stroke-width'))).toBe(2);
+    for (const b of boxes) {
+      expect(b.getAttribute('fill')).toBe('none');
+      expect(b.getAttribute('vector-effect')).toBe('non-scaling-stroke');
+      expect(b.getAttribute('stroke-dasharray')).toBe('4 3');
+    }
   });
 
   it('renders the handles GHOSTED (inactive) for a locked image, keeping the box', () => {
@@ -217,6 +240,25 @@ describe('<SvgImageView /> overlay', () => {
     // The box tracks the real image size regardless of zoom.
     expect(z1.boxW).toBe(100);
     expect(z2.boxW).toBe(100);
+  });
+
+  // An in-flight wheel gesture publishes the live viewport as `pending` without
+  // committing zoom. The handles size off that live zoom, so they stay
+  // screen-constant through the gesture instead of snapping when it commits.
+  it('sizes handles off the pending (live) zoom, not the committed zoom', () => {
+    useViewportStore.setState({ zoom: 1 });
+    useLiveViewportStore.setState({ pending: { x: 0, y: 0, zoom: 2 } });
+    try {
+      const { container } = renderView(makeSvgImage({ id: 'i0' }), {
+        layer: 'overlay',
+        selected: true,
+      });
+      const corner = container.querySelector('[data-svg-image-handle="nw"]') as Element;
+      // HANDLE_HALF=5 → 10px box / live zoom 2 = 5 world units (committed 1 → 10).
+      expect(parseFloat(corner.getAttribute('width') ?? '0')).toBeCloseTo(5);
+    } finally {
+      useLiveViewportStore.setState({ pending: null });
+    }
   });
 });
 

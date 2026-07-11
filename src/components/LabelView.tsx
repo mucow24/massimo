@@ -16,7 +16,7 @@ import { useViewportStore } from '../state/viewportStore';
 import { resolveTextLabelColor } from '../model/transforms';
 import { InlineBullet } from './InlineBullet';
 import { itemCursor } from './canvas/itemCursor';
-import { SELECTION_STROKE_WIDTH, selectionDash } from './selectionStyle';
+import { SELECTION_DASH, selectionOutlineTones } from './selectionStyle';
 
 export type LabelLayer = 'bg' | 'stroke' | 'hit';
 
@@ -61,13 +61,10 @@ export function LabelView({
   inHandMode = false,
 }: Props) {
   const docLines = useDoc((s) => s.lines);
-  const themeColors = useThemeColors();
   const darkMode = useViewportStore((s) => s.darkMode);
-  // Committed zoom: the selection ring divides by it so its screen weight is
-  // constant (matches the polygon/bullet/silhouette selection chrome).
-  const zoom = useViewportStore((s) => s.zoom);
+  // Two-tone selection ring flips with the theme (WBW on light, BWB on dark).
+  const themeColors = useThemeColors();
   // Per-label day/night color (defaults match the old theme-driven colors).
-  // The selection ring below still uses the theme's selectionStroke.
   const labelColor = resolveTextLabelColor(label, darkMode);
   const lineByService = useMemo(() => {
     const map = new Map<string, Line>();
@@ -89,16 +86,23 @@ export function LabelView({
         pointerEvents="none"
         data-text-label-stroke={label.id}
       >
-        <rect
-          x={-halfW - TEXT_LABEL_HIT_PAD}
-          y={-halfH - TEXT_LABEL_HIT_PAD}
-          width={m.width + 2 * TEXT_LABEL_HIT_PAD}
-          height={m.height + 2 * TEXT_LABEL_HIT_PAD}
-          fill="none"
-          stroke={themeColors.selectionStroke}
-          strokeWidth={SELECTION_STROKE_WIDTH / zoom}
-          strokeDasharray={selectionDash(zoom)}
-        />
+        {/* Two-tone ring: black core over white underlay, screen-constant via
+            vector-effect (no zoom subscription → no snap on commit). The pad
+            (TEXT_LABEL_HIT_PAD) is world units, so the gap scales with the map. */}
+        {selectionOutlineTones(themeColors).map(({ tone, stroke, strokeWidth }) => (
+          <rect
+            key={tone}
+            x={-halfW - TEXT_LABEL_HIT_PAD}
+            y={-halfH - TEXT_LABEL_HIT_PAD}
+            width={m.width + 2 * TEXT_LABEL_HIT_PAD}
+            height={m.height + 2 * TEXT_LABEL_HIT_PAD}
+            fill="none"
+            stroke={stroke}
+            strokeWidth={strokeWidth}
+            strokeDasharray={SELECTION_DASH}
+            vectorEffect="non-scaling-stroke"
+          />
+        ))}
       </g>
     );
   }

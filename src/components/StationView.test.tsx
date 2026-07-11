@@ -864,17 +864,23 @@ describe('<StationView /> — selection silhouette geometry (E2)', () => {
     expect(Number(path.getAttribute('stroke-width'))).toBe(1.5);
   });
 
-  // Selection chrome holds a constant SCREEN weight: the stroke divides by
-  // the committed zoom (the 1/zoom idiom PolygonView established). At fit-map
-  // zooms a world-unit ring degraded to a sub-pixel ghost.
-  it('divides the selection stroke by zoom so its screen weight is constant', () => {
+  // Selection chrome holds a constant SCREEN weight with NO zoom subscription:
+  // the two-tone selection stroke and the gray match-stroke hold their weight
+  // via vector-effect="non-scaling-stroke", so committed zoom never rescales
+  // them — nothing snaps when a pan/zoom gesture commits.
+  it('holds the selection + match stroke widths constant across committed zoom', () => {
     useViewportStore.setState({ zoom: 2 });
     try {
-      const path = renderLayer('stroke').querySelector('path')!;
-      expect(Number(path.getAttribute('stroke-width'))).toBe(1);
-      // The mirror-match outline is the same class of chrome — compensated too.
+      // Two-tone selection stroke (light → WBW): white underlay (4) + black core (2).
+      const strokes = Array.from(renderLayer('stroke').querySelectorAll('path'));
+      expect(strokes).toHaveLength(2);
+      expect(Number(strokes[0].getAttribute('stroke-width'))).toBe(4);
+      expect(Number(strokes[1].getAttribute('stroke-width'))).toBe(2);
+      for (const p of strokes) expect(p.getAttribute('vector-effect')).toBe('non-scaling-stroke');
+      // The mirror-match outline is the same class of chrome — constant too.
       const match = renderLayer('match-stroke').querySelector('path')!;
-      expect(Number(match.getAttribute('stroke-width'))).toBe(0.75);
+      expect(Number(match.getAttribute('stroke-width'))).toBe(1.5);
+      expect(match.getAttribute('vector-effect')).toBe('non-scaling-stroke');
     } finally {
       useViewportStore.setState({ zoom: 1 });
     }
