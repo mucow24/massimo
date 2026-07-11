@@ -12,7 +12,7 @@ import { useThemeColors } from '../../state/theme';
 import { legibleTextOn } from '../../util/color';
 import { angleDeg, scale, type Vec2 } from '../../geometry/vec';
 import { pairKeyOf } from '../../model/pairKey';
-import { SELECTION_STROKE_WIDTH, SELECTION_WASH_OPACITY } from '../selectionStyle';
+import { SELECTION_WASH_OPACITY, selectionOutlineTones } from '../selectionStyle';
 import { useLineTagDrag } from './useLineTagDrag';
 import { SnapGuides } from './SnapGuides';
 
@@ -315,23 +315,46 @@ function TagShape({
     );
   }
 
-  // Wash + stroke share the same rounded-rect outline.
+  // Wash + stroke share the same rounded-rect footprint.
   const w = 2 * halfW;
   const h = 2 * halfH;
+  const transform = `translate(${r.p.x} ${r.p.y}) rotate(${rotateDeg})`;
+  if (layer === 'wash') {
+    return (
+      <g transform={transform} pointerEvents="none">
+        <rect
+          x={-w / 2}
+          y={-h / 2}
+          width={w}
+          height={h}
+          rx={2}
+          ry={2}
+          fill={themeColors.accent}
+          fillOpacity={SELECTION_WASH_OPACITY}
+        />
+      </g>
+    );
+  }
+  // Stroke: the shared two-tone ring (black core over white underlay), held
+  // screen-constant by vector-effect with no zoom subscription — so it never
+  // snaps when a pan/zoom commits — and no dashes.
   return (
-    <g transform={`translate(${r.p.x} ${r.p.y}) rotate(${rotateDeg})`} pointerEvents="none">
-      <rect
-        x={-w / 2}
-        y={-h / 2}
-        width={w}
-        height={h}
-        rx={2}
-        ry={2}
-        fill={layer === 'wash' ? themeColors.accent : 'none'}
-        fillOpacity={layer === 'wash' ? SELECTION_WASH_OPACITY : undefined}
-        stroke={layer === 'stroke' ? themeColors.selectionStroke : undefined}
-        strokeWidth={layer === 'stroke' ? SELECTION_STROKE_WIDTH / zoom : undefined}
-      />
+    <g transform={transform} pointerEvents="none">
+      {selectionOutlineTones(themeColors).map(({ tone, stroke, strokeWidth }) => (
+        <rect
+          key={tone}
+          x={-w / 2}
+          y={-h / 2}
+          width={w}
+          height={h}
+          rx={2}
+          ry={2}
+          fill="none"
+          stroke={stroke}
+          strokeWidth={strokeWidth}
+          vectorEffect="non-scaling-stroke"
+        />
+      ))}
     </g>
   );
 }

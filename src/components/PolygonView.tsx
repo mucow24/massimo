@@ -1,11 +1,11 @@
 import type { Polygon } from '../model/types';
 import { useThemeColors } from '../state/theme';
-import { useViewportStore } from '../state/viewportStore';
+import { useLiveZoom, useViewportStore } from '../state/viewportStore';
 import { resolvePolygonColors } from '../model/transforms';
 import { polygonPathData } from '../geometry/polygon';
 import { midpoint } from '../geometry/vec';
 import { itemCursor } from './canvas/itemCursor';
-import { selectionDash } from './selectionStyle';
+import { SELECTION_DASH, selectionOutlineTones } from './selectionStyle';
 
 // Half-size of a square vertex handle, and the radius of an edge "+" button,
 // authored in world units at zoom 1. The overlay divides every adornment
@@ -64,18 +64,14 @@ export function PolygonView({
   onVertexClick,
   onEdgeAddPointerDown,
 }: Props) {
-  const themeColors = useThemeColors();
   const darkMode = useViewportStore((s) => s.darkMode);
+  // Committed zoom: only the 'hit' proxy's corridor floor reads it. The
+  // selection overlay's handles size off the LIVE gesture zoom instead (see
+  // PolygonSelectionOverlay) so they never snap on commit.
   const zoom = useViewportStore((s) => s.zoom);
   // The body paints the dark colors in dark mode, the light colors otherwise.
   const { fill, stroke } = resolvePolygonColors(polygon, darkMode);
-  // Adornment colors flip with the theme: marks drawn ON the selection-colored
-  // disc/handle use the canvas background so they stay legible in both modes
-  // (selectionStroke is black on light, white on dark).
-  const accent = themeColors.selectionStroke;
-  const contrast = themeColors.canvasBg;
   const verts = polygon.vertices;
-  const n = verts.length;
   const closed = polygon.closed !== false;
 
   if (layer === 'body') {
@@ -152,34 +148,87 @@ export function PolygonView({
     );
   }
 
-  // Overlay: dashed outline + an edge "+" at each midpoint + a handle at each
-  // vertex. Rendered only when selected.
+  // Overlay: two-tone selection outline + an edge "+" at each midpoint + a
+  // handle at each vertex. Rendered only when selected, in its own component so
+  // it — and only it — subscribes to the live gesture zoom.
   if (!selected) return null;
+  return (
+    <PolygonSelectionOverlay
+      polygon={polygon}
+      selectedVertexIndices={selectedVertexIndices}
+      onVertexPointerDown={onVertexPointerDown}
+      onVertexClick={onVertexClick}
+      onEdgeAddPointerDown={onEdgeAddPointerDown}
+    />
+  );
+}
+
+/**
+ * The selected polygon's editing overlay: the two-tone selection outline plus a
+ * vertex handle at each corner and an edge "+" at each midpoint.
+ *
+ * Sizes every handle off the LIVE gesture zoom (useLiveZoom), not the committed
+ * zoom, so the handles stay a constant screen size AND track a pan/zoom in
+ * flight instead of snapping when it commits — the outline gets the same
+ * screen-constancy for free from vector-effect. Only the selected polygon
+ * mounts this, so the per-frame re-render during a gesture is a single item,
+ * not the whole canvas.
+ */
+function PolygonSelectionOverlay({
+  polygon,
+  selectedVertexIndices,
+  onVertexPointerDown,
+  onVertexClick,
+  onEdgeAddPointerDown,
+}: Pick<
+  Props,
+  | 'polygon'
+  | 'selectedVertexIndices'
+  | 'onVertexPointerDown'
+  | 'onVertexClick'
+  | 'onEdgeAddPointerDown'
+>) {
+  const themeColors = useThemeColors();
+  const zoom = useLiveZoom();
+  // Adornment colors flip with the theme: marks drawn ON the selection-colored
+  // disc/handle use the canvas background so they stay legible in both modes
+  // (selectionStroke is black on light, white on dark).
+  const accent = themeColors.selectionStroke;
+  const contrast = themeColors.canvasBg;
+  const verts = polygon.vertices;
+  const n = verts.length;
+  const closed = polygon.closed !== false;
   // Inverse-zoom scale: every adornment dimension and stroke is multiplied by
-  // `s` so it renders at a constant screen size regardless of zoom (matches the
-  // `1 / zoom` idiom in Grid.tsx). Hit-testing IS the rendered element, so the
-  // clickable area stays constant on screen too.
+  // `s` so it renders at a constant screen size regardless of zoom. Hit-testing
+  // IS the rendered element, so the clickable area stays constant on screen too.
   const s = 1 / zoom;
   const half = VERTEX_HANDLE_HALF * s;
   const r = EDGE_ADD_R * s;
-  // An open polygon's dashed outline and edge "+" buttons skip the closing
-  // edge — there is nothing to select or split between the two loose ends.
+  // An open polygon's outline and edge "+" buttons skip the closing edge —
+  // there is nothing to select or split between the two loose ends.
   const Outline = closed ? 'polygon' : 'polyline';
   const edgeIndices = Array.from({ length: closed ? n : n - 1 }, (_, i) => i);
   return (
     <g data-polygon-overlay={polygon.id}>
-      <Outline
-        points={pointsAttr(verts)}
-        fill="none"
-        stroke={accent}
-        strokeWidth={1.5 * s}
-        strokeDasharray={selectionDash(zoom)}
-        pointerEvents="none"
-      />
+      {/* Two-tone outline: black core over white underlay, screen-constant via
+          vector-effect (no zoom subscription of its own → no snap). Dashed
+          (both tones share geometry, so the dashes align). */}
+      {selectionOutlineTones(themeColors).map(({ tone, stroke, strokeWidth }) => (
+        <Outline
+          key={tone}
+          points={pointsAttr(verts)}
+          fill="none"
+          stroke={stroke}
+          strokeWidth={strokeWidth}
+          strokeDasharray={SELECTION_DASH}
+          vectorEffect="non-scaling-stroke"
+          pointerEvents="none"
+        />
+      ))}
       {/* Editing adornments (vertex handles, edge "+"). On a LOCKED polygon
           they render GHOSTED — still visible, so a re-selected locked polygon
-          reads as selected (the thin dashed outline alone is easy to miss) —
-          but inert: reduced opacity, no pointer events, no cursors. */}
+          reads as selected (the thin outline alone is easy to miss) — but
+          inert: reduced opacity, no pointer events, no cursors. */}
       <g
         data-polygon-adornments={polygon.locked ? 'inactive' : 'active'}
         opacity={polygon.locked ? 0.4 : undefined}

@@ -2,9 +2,8 @@ import type { Line, RouteBullet } from '../model/types';
 import { badgeColors } from './badge';
 import { BulletShape } from './bulletShape';
 import { useThemeColors } from '../state/theme';
-import { useViewportStore } from '../state/viewportStore';
 import { itemCursor } from './canvas/itemCursor';
-import { SELECTION_RING_PAD, SELECTION_STROKE_WIDTH, selectionDash } from './selectionStyle';
+import { SELECTION_DASH, SELECTION_RING_PAD, selectionOutlineTones } from './selectionStyle';
 
 interface Props {
   bullet: RouteBullet;
@@ -32,10 +31,8 @@ export function RouteBulletView({
   onClick,
   onContextMenu,
 }: Props) {
+  // Two-tone selection ring flips with the theme (WBW on light, BWB on dark).
   const themeColors = useThemeColors();
-  // Committed zoom: the selection ring divides by it so its screen weight is
-  // constant (matches the polygon/label/silhouette selection chrome).
-  const zoom = useViewportStore((s) => s.zoom);
   const {
     fill,
     textColor,
@@ -89,22 +86,27 @@ export function RouteBulletView({
       style={{ cursor: itemCursor(inHandMode, bullet.locked) }}
     >
       {shape}
-      {selected && (
-        <circle
-          // Editor chrome, not content: without this the ring bakes into
-          // SVG/PNG exports (bullets render in a non-excluded pass) and, now
-          // that it's zoom-compensated, at a camera-dependent size.
-          data-export-exclude="1"
-          cx={0}
-          cy={0}
-          r={r + SELECTION_RING_PAD / zoom}
-          fill="none"
-          stroke={themeColors.selectionStroke}
-          strokeWidth={SELECTION_STROKE_WIDTH / zoom}
-          strokeDasharray={selectionDash(zoom)}
-          pointerEvents="none"
-        />
-      )}
+      {selected &&
+        selectionOutlineTones(themeColors).map(({ tone, stroke, strokeWidth }) => (
+          <circle
+            key={tone}
+            // Editor chrome, not content: without this the ring bakes into
+            // SVG/PNG exports (bullets render in a non-excluded pass).
+            data-export-exclude="1"
+            cx={0}
+            cy={0}
+            // World-unit pad (scales with the map — reads as attached to the
+            // bullet); the two-tone stroke holds its screen weight via
+            // vector-effect, so nothing divides by zoom and nothing snaps.
+            r={r + SELECTION_RING_PAD}
+            fill="none"
+            stroke={stroke}
+            strokeWidth={strokeWidth}
+            strokeDasharray={SELECTION_DASH}
+            vectorEffect="non-scaling-stroke"
+            pointerEvents="none"
+          />
+        ))}
       <text
         x={0}
         y={0}

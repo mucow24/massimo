@@ -1,20 +1,17 @@
 import type { LineId, Station, Transfer, TransferEnd } from '../model/types';
 import { resolveTransferStyle, type TransferStyle } from '../model/transferStyle';
 import { stopPosWorld } from '../geometry/interlining';
+import { useThemeColors } from '../state/theme';
+import { selectionOutlineTones } from './selectionStyle';
 
 // World-unit gap between a selected transfer's visible edge and its outline,
 // so a sliver of canvas separates the ring from the body. World, not screen:
 // zoom-scaled geometry would need the committed zoom, and chrome sized off
 // the committed zoom snaps when a gesture commits. The gap growing/shrinking
 // with the map reads as "attached to the item"; the strokes themselves stay
-// screen-constant via vector-effect="non-scaling-stroke".
+// screen-constant via vector-effect="non-scaling-stroke". The two-tone
+// white-core-over-black-underlay ring is the shared SELECTION_OUTLINE_TONES.
 const SELECTION_OUTLINE_PAD = 2.5;
-// The outline is two-tone: a white core over a black underlay, leaving
-// SELECTION_EDGE_WIDTH of black visible on each side of the core. Fixed
-// white-on-black (no theme flip): the pair is legible against any body
-// color and any canvas in both themes. Screen px, held by vector-effect.
-const SELECTION_CORE_WIDTH = 2;
-const SELECTION_EDGE_WIDTH = 1;
 
 interface Props {
   transfers: Record<string, Transfer>;
@@ -182,11 +179,11 @@ export function TransferLayer({
  * it ABOVE the station dots (TransferLayer paints below them — a dot rendered
  * over the ring made selection look buried). Two stacked <path>s tracing the
  * capsule perimeter offset SELECTION_OUTLINE_PAD world units out from the
- * visible edge: a black underlay and a white core, leaving
- * SELECTION_EDGE_WIDTH of black on each side. The two-tone pair contrasts
- * every body color and both canvases without theme flips (a single
- * stroke-colored ring vanished against black/white bodies — exactly the
- * colors transfers commonly are). Decorative only (`pointerEvents="none"`).
+ * visible edge: an underlay and an ink core (selectionOutlineTones), flipping
+ * with the theme — white-black-white on light, black-white-black on dark. The
+ * two-tone pair contrasts every body color and both canvases (a single
+ * stroke-colored ring vanished against black/white bodies — exactly the colors
+ * transfers commonly are). Decorative only (`pointerEvents="none"`).
  */
 export function TransferSelectionOutline({
   transfers,
@@ -194,6 +191,8 @@ export function TransferSelectionOutline({
   defaults,
   selectedId,
 }: Omit<Props, 'onSelect'>) {
+  // Two-tone ring flips with the theme (WBW on light, BWB on dark).
+  const themeColors = useThemeColors();
   const t = selectedId ? transfers[selectedId] : undefined;
   if (!t) return null;
   const a = endpointWorld(t.a, stations);
@@ -202,20 +201,13 @@ export function TransferSelectionOutline({
   const style = resolveTransferStyle(t, defaults);
   const visibleExtent = style.thickness + 2 * style.strokeWidth;
   const d = capsuleOutlinePath(a, b, visibleExtent / 2 + SELECTION_OUTLINE_PAD);
-  // Black underlay, then the white core on top of it.
-  const layers = [
-    {
-      key: `sel-edge-${t.id}`,
-      stroke: '#000000',
-      width: SELECTION_CORE_WIDTH + 2 * SELECTION_EDGE_WIDTH,
-    },
-    { key: `sel-core-${t.id}`, stroke: '#ffffff', width: SELECTION_CORE_WIDTH },
-  ];
+  // Shared two-tone ring: underlay first, then the ink core on top (flips with
+  // the theme — white-black-white on light, black-white-black on dark).
   return (
     <g>
-      {layers.map(({ key, stroke, width }) => (
+      {selectionOutlineTones(themeColors).map(({ tone, stroke, strokeWidth }) => (
         <path
-          key={key}
+          key={`sel-${tone}-${t.id}`}
           // Editor chrome, not content: without this the ring bakes into
           // SVG/PNG/PDF exports (transfers render in a non-excluded pass)
           // — same contract as the route-bullet selection ring.
@@ -224,7 +216,7 @@ export function TransferSelectionOutline({
           d={d}
           fill="none"
           stroke={stroke}
-          strokeWidth={width}
+          strokeWidth={strokeWidth}
           // Screen-constant weight without any zoom math: the browser
           // recomputes the stroke against the live viewBox, so the ring
           // tracks in-flight gestures instead of snapping on commit.

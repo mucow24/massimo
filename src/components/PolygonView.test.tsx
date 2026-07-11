@@ -1,8 +1,8 @@
-import { describe, it, expect, beforeEach, vi } from 'vitest';
+import { describe, it, expect, afterEach, beforeEach, vi } from 'vitest';
 import { render, fireEvent } from '@testing-library/react';
 import { PolygonView } from './PolygonView';
 import { makePolygon } from '../test/fixtures';
-import { useViewportStore } from '../state/viewportStore';
+import { useLiveViewportStore, useViewportStore } from '../state/viewportStore';
 import type { Polygon } from '../model/types';
 
 const noop = () => {};
@@ -126,13 +126,69 @@ describe('<PolygonView /> overlay handles are a constant screen size', () => {
     }
   });
 
-  it('dashed selection outline keeps a constant stroke width + dash spacing', () => {
+  it('selection outline is a two-tone dashed ring: black ink core over white underlay (light), no snap', () => {
+    // beforeEach sets darkMode: false → WBW.
     for (const zoom of [1, 2]) {
       const c = renderOverlay(zoom);
-      const outline = c.querySelector('g[data-polygon-overlay] > polygon')!;
-      expect(Number(outline.getAttribute('stroke-width')) * zoom).toBeCloseTo(1.5);
-      expect(outline.getAttribute('stroke-dasharray')).toBe(`${4 / zoom} ${3 / zoom}`);
+      const outlines = Array.from(c.querySelectorAll('g[data-polygon-overlay] > polygon'));
+      expect(outlines).toHaveLength(2);
+      const [edge, core] = outlines;
+      expect(edge.getAttribute('stroke')).toBe('#ffffff');
+      // Screen-constant via vector-effect: width does NOT scale with zoom.
+      expect(Number(edge.getAttribute('stroke-width'))).toBe(4);
+      expect(core.getAttribute('stroke')).toBe('#000000');
+      expect(Number(core.getAttribute('stroke-width'))).toBe(2);
+      for (const o of outlines) {
+        expect(o.getAttribute('vector-effect')).toBe('non-scaling-stroke');
+        expect(o.getAttribute('stroke-dasharray')).toBe('4 3');
+      }
     }
+  });
+});
+
+describe('<PolygonView /> overlay handles track the LIVE gesture zoom (no snap)', () => {
+  beforeEach(() => {
+    useViewportStore.setState({ darkMode: false, zoom: 1 });
+    useLiveViewportStore.setState({ pending: null });
+  });
+  afterEach(() => useLiveViewportStore.setState({ pending: null }));
+
+  const renderOverlay = () =>
+    render(
+      <svg>
+        <PolygonView
+          polygon={makePolygon({ id: 'p0' })}
+          layer="overlay"
+          selected
+          selectedVertexIndices={new Set()}
+          interactive
+          onPointerDown={noop}
+          onClick={noop}
+          onContextMenu={noop}
+          onVertexPointerDown={noop}
+          onVertexClick={noop}
+          onEdgeAddPointerDown={noop}
+        />
+      </svg>,
+    ).container;
+
+  // An in-flight wheel gesture writes the viewBox imperatively and publishes
+  // the live viewport as `pending` WITHOUT committing zoom to the store. The
+  // handles must size off that live zoom, not the stale committed one, so they
+  // stay screen-constant through the gesture instead of snapping on commit.
+  it('sizes a vertex handle off the pending viewport zoom, not the committed zoom', () => {
+    useViewportStore.setState({ zoom: 1 });
+    useLiveViewportStore.setState({ pending: { x: 0, y: 0, zoom: 2 } });
+    const rect = renderOverlay().querySelector('rect[data-polygon-vertex="0"]')!;
+    // 10px handle / live zoom 2 = 5 world units (committed-zoom 1 would give 10).
+    expect(Number(rect.getAttribute('width'))).toBeCloseTo(5);
+  });
+
+  it('falls back to committed zoom between gestures (pending null)', () => {
+    useViewportStore.setState({ zoom: 2 });
+    useLiveViewportStore.setState({ pending: null });
+    const rect = renderOverlay().querySelector('rect[data-polygon-vertex="0"]')!;
+    expect(Number(rect.getAttribute('width'))).toBeCloseTo(5);
   });
 });
 
@@ -141,9 +197,10 @@ describe('<PolygonView /> selected-vertex highlight', () => {
     useViewportStore.setState({ darkMode: false, zoom: 1 });
   });
 
-  // The selected handles are filled with the accent color (the same color the
-  // dashed outline is stroked with); unselected handles use the contrast color.
-  // Asserting against the outline's own stroke avoids hard-coding theme hex.
+  // The selected handles are filled with the accent color (every handle is
+  // STROKED with the accent); unselected handles use the contrast color for
+  // their fill. Reading accent off an unselected handle's own stroke avoids
+  // hard-coding theme hex — the two-tone outline is no longer the accent color.
   it('fills every handle in the selected set with the accent, others with contrast', () => {
     const c = render(
       <svg>
@@ -162,7 +219,7 @@ describe('<PolygonView /> selected-vertex highlight', () => {
         />
       </svg>,
     ).container;
-    const accent = c.querySelector('g[data-polygon-overlay] > polygon')!.getAttribute('stroke');
+    const accent = c.querySelector('rect[data-polygon-vertex="1"]')!.getAttribute('stroke');
     const fillOf = (i: number) =>
       c.querySelector(`rect[data-polygon-vertex="${i}"]`)!.getAttribute('fill');
     expect(fillOf(0)).toBe(accent);

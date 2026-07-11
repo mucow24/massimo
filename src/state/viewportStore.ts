@@ -54,6 +54,24 @@ export const useLiveViewportStore = create<LiveViewportState>((set) => ({
 }));
 
 /**
+ * The zoom a SELECTED item's chrome should size its handles by: the in-flight
+ * (pending) gesture zoom while a pan/zoom is live, else the committed zoom.
+ * Subscribing to `pending` re-renders the caller on every gesture frame, so use
+ * it ONLY inside selected-only overlays (one item at a time) — never in a
+ * per-item body pass, which would re-render the whole ~2.7k-node canvas per
+ * frame, the exact cost the imperative viewBox avoids. Handles stay
+ * screen-constant AND track the gesture, so nothing snaps when it commits.
+ * (Stroke widths don't need this — vector-effect="non-scaling-stroke" holds
+ * them with no subscription at all; only handle body geometry, which
+ * vector-effect can't touch, does.)
+ */
+export function useLiveZoom(): number {
+  const committed = useViewportStore((s) => s.zoom);
+  const pending = useLiveViewportStore((s) => s.pending);
+  return pending?.zoom ?? committed;
+}
+
+/**
  * Camera state (pan + zoom) lives outside MapDoc. It's UI/session state,
  * not document data — saved files are camera-agnostic, but local camera
  * memory across reloads still works via its own localStorage key.

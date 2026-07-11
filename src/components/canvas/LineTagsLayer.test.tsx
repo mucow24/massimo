@@ -2,6 +2,7 @@ import { describe, it, expect, afterEach, beforeEach } from 'vitest';
 import { render, fireEvent } from '@testing-library/react';
 import { LineTagsLayer, resolveTag } from './LineTagsLayer';
 import { useDoc, useSelection } from '../../state/store';
+import { useViewportStore } from '../../state/viewportStore';
 import { DEFAULT_DOC } from '../../model/transforms';
 import { makeBandSpec, makeLine } from '../../test/fixtures';
 import { fakeSvgRef } from '../../test/interaction';
@@ -46,8 +47,9 @@ describe('resolveTag — per-stripe geometry', () => {
 });
 
 // Selection chrome speaks the shared vocabulary (selectionStyle.ts +
-// ThemeColors.accent): accent wash at 0.2 and a zoom-compensated ring —
-// previously drifted local copies (#f0ff00 at 0.3, 1.5px world-unit stroke).
+// ThemeColors.accent): accent wash at 0.2 and the two-tone no-snap ring (an ink
+// core over an underlay, held screen-constant by vector-effect, flipping with
+// the theme — WBW on light).
 describe('<LineTagsLayer> — selection chrome', () => {
   beforeEach(() => {
     useDoc.setState({
@@ -58,6 +60,7 @@ describe('<LineTagsLayer> — selection chrome', () => {
       lineTags: { T: tagOnL2({ kind: 'chevron' }) },
     });
     useDoc.temporal.getState().clear();
+    useViewportStore.setState({ darkMode: false });
     useSelection.getState().selectLineTag('T');
   });
   afterEach(() => useSelection.getState().selectLineTag(null));
@@ -82,11 +85,23 @@ describe('<LineTagsLayer> — selection chrome', () => {
     expect(Number(wash.getAttribute('fill-opacity'))).toBe(0.2);
   });
 
-  it('rings with the theme selection stroke, zoom-compensated', () => {
-    const ring1 = renderAtZoom(1).querySelector('rect[stroke="#000000"]')!;
-    expect(Number(ring1.getAttribute('stroke-width'))).toBe(2);
-    const ring2 = renderAtZoom(2).querySelector('rect[stroke="#000000"]')!;
-    expect(Number(ring2.getAttribute('stroke-width'))).toBe(1);
+  it('rings with the two-tone no-snap outline (black ink core over white underlay on light)', () => {
+    // beforeEach sets darkMode: false → WBW: white underlay (4px), black core (2px).
+    const c = renderAtZoom(1);
+    const edge = c.querySelector('rect[stroke="#ffffff"]')!;
+    const core = c.querySelector('rect[stroke="#000000"]')!;
+    expect(Number(edge.getAttribute('stroke-width'))).toBe(4);
+    expect(Number(core.getAttribute('stroke-width'))).toBe(2);
+    for (const el of [edge, core]) {
+      expect(el.getAttribute('fill')).toBe('none');
+      expect(el.getAttribute('vector-effect')).toBe('non-scaling-stroke');
+      expect(el.getAttribute('stroke-dasharray')).toBeNull();
+    }
+  });
+
+  it('is zoom-independent: the ring widths do not change with committed zoom', () => {
+    const edge2 = renderAtZoom(2).querySelector('rect[stroke="#ffffff"]')!;
+    expect(Number(edge2.getAttribute('stroke-width'))).toBe(4);
   });
 });
 
