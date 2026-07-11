@@ -1158,9 +1158,12 @@ select option {
   align-items: center;
   justify-content: center;
   height: 18px;
-  padding: 0 6px;
-  margin-left: 6px;
-  border-radius: 9px;
+  padding: 0 5px;
+  /* Pull the leading pill flush-left with the names below and tighten the
+     gap to the name (the row's own 6px gap is too wide for a two-char pill). */
+  margin-left: -3px;
+  margin-right: -3px;
+  border-radius: 8px;
   background: #6b7280;
   color: #fff;
   font-size: var(--fs-caption);
