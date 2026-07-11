@@ -12,6 +12,7 @@ import {
 } from './labelLayout';
 import { normalizeAABB, rectIntersectsPolygon, type AABB } from './rectPolygon';
 import { measureTextLabel } from './textMeasure';
+import { waypointLabelRectLocal } from './waypointLozenge';
 import { effectiveStationLabelStyle } from '../model/transforms';
 
 const HALF = STOP_SIZE / 2;
@@ -112,16 +113,22 @@ export function stationBoundaryRectsLocal(
 
   // Label rect — same layout the renderer uses (including the same per-stop
   // width lookup, so label snapping agrees), then rotated about the anchor
-  // so the polygon aligns with the painted text.
+  // so the polygon aligns with the painted label.
   const lay = labelLayoutLocal(station, style, undefined, stopHalf);
   const labelAnchor = { x: lay.anchorX, y: lay.anchorY };
   const rotateLabelCorner = (px: number, py: number): Pt =>
     rotateAround({ x: px, y: py }, labelAnchor, rotRad(label.rotation));
+  // A revealed waypoint's label IS the WP lozenge, so silhouette the pill's box;
+  // a regular station silhouettes its name's box. (Only revealed waypoints reach
+  // here — a hidden one returned above via `!labeled`.)
+  const box = station.isWaypoint
+    ? waypointLabelRectLocal(lay, style.fontSize)
+    : { x: lay.hitX, y: lay.hitY, w: lay.hitW, h: lay.hitH };
   const labelPoly: Pt[] = [
-    rotateLabelCorner(lay.hitX, lay.hitY),
-    rotateLabelCorner(lay.hitX + lay.hitW, lay.hitY),
-    rotateLabelCorner(lay.hitX + lay.hitW, lay.hitY + lay.hitH),
-    rotateLabelCorner(lay.hitX, lay.hitY + lay.hitH),
+    rotateLabelCorner(box.x, box.y),
+    rotateLabelCorner(box.x + box.w, box.y),
+    rotateLabelCorner(box.x + box.w, box.y + box.h),
+    rotateLabelCorner(box.x, box.y + box.h),
   ];
 
   return { cells, label: labelPoly };
