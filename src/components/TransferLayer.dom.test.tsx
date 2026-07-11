@@ -293,6 +293,18 @@ describe('TransferLayer — DOM rendering', () => {
       }
     });
 
+    it('is editor chrome: tagged data-export-exclude so it never bakes into exports', () => {
+      // Same contract as the route-bullet ring — exports clone the live SVG
+      // and strip [data-export-exclude], so an untagged ring would serialize
+      // into SVG/PNG/PDF over the transfer.
+      seedTwoStationsWithTransfer();
+      render(<App />);
+      act(() => {
+        useSelection.getState().selectTransfer('x1');
+      });
+      expect(widestLine('x1').getAttribute('data-export-exclude')).toBe('1');
+    });
+
     it('pads around the user stroke when present', () => {
       seedTwoStationsWithTransfer();
       act(() => {
@@ -311,6 +323,103 @@ describe('TransferLayer — DOM rendering', () => {
       expect(transferLines('x1').length).toBe(3);
       // Width = visibleExtent (2 + 2*3 = 8) + 2 * pad (2.5) = 13.
       expect(Number(widestLine('x1').getAttribute('stroke-width'))).toBe(13);
+    });
+  });
+
+  // Per-transfer overrides: an absent field tracks the doc setting, a present
+  // field wins over it (see Transfer in model/types.ts).
+  describe('per-transfer style overrides', () => {
+    const seedSecondTransfer = (overrides: Partial<Transfer>) => {
+      act(() => {
+        useDoc.setState({
+          ...useDoc.getState(),
+          transfers: {
+            ...useDoc.getState().transfers,
+            x2: {
+              id: 'x2',
+              a: { stationId: 's1', lineId: 'L1' },
+              b: { stationId: 's2', lineId: 'L2' },
+              ...overrides,
+            },
+          },
+        });
+      });
+    };
+
+    it('an overridden transfer renders its own body style; a sibling keeps tracking', () => {
+      seedTwoStationsWithTransfer();
+      seedSecondTransfer({ thickness: 6, color: '#ff8800' });
+      render(<App />);
+
+      const overridden = transferBody('x2');
+      expect(overridden.getAttribute('stroke')).toBe('#ff8800');
+      expect(overridden.getAttribute('stroke-width')).toBe('6');
+      const tracking = transferBody('x1');
+      expect(tracking.getAttribute('stroke')).toBe('#000000');
+      expect(tracking.getAttribute('stroke-width')).toBe('2');
+
+      // Later doc-setting changes reach ONLY the tracking transfer.
+      act(() => {
+        useDoc.setState({
+          ...useDoc.getState(),
+          transferColor: '#00aa66',
+          transferThickness: 4,
+        });
+      });
+      expect(transferBody('x1').getAttribute('stroke')).toBe('#00aa66');
+      expect(transferBody('x1').getAttribute('stroke-width')).toBe('4');
+      expect(transferBody('x2').getAttribute('stroke')).toBe('#ff8800');
+      expect(transferBody('x2').getAttribute('stroke-width')).toBe('6');
+    });
+
+    it('a strokeWidth override renders a halo for that transfer only', () => {
+      seedTwoStationsWithTransfer();
+      seedSecondTransfer({ strokeWidth: 3, strokeColor: '#abcdef' });
+      render(<App />);
+
+      // x1 tracks the doc's strokeWidth 0 → body only.
+      expect(transferLines('x1').length).toBe(1);
+      const lines = transferLines('x2');
+      expect(lines.length).toBe(2);
+      const body = transferBody('x2');
+      const halo = lines.find((el) => el !== body)!;
+      expect(halo.getAttribute('stroke')).toBe('#abcdef');
+      // visibleExtent = default thickness 2 + 2 * override 3 = 8.
+      expect(Number(halo.getAttribute('stroke-width'))).toBe(8);
+    });
+
+    it('a strokeWidth 0 override turns the halo OFF while the doc default has one', () => {
+      seedTwoStationsWithTransfer();
+      act(() => {
+        useDoc.setState({
+          ...useDoc.getState(),
+          transferStrokeWidth: 3,
+          transferStrokeColor: '#abcdef',
+        });
+      });
+      seedSecondTransfer({ strokeWidth: 0 });
+      render(<App />);
+
+      // x1 tracks the doc's strokeWidth 3 → halo + body; x2's 0 override
+      // suppresses its halo entirely (0 is a real override, not "unset").
+      expect(transferLines('x1').length).toBe(2);
+      expect(transferLines('x2').length).toBe(1);
+    });
+
+    it("the selection ring sizes to the transfer's own effective extent", () => {
+      seedTwoStationsWithTransfer();
+      seedSecondTransfer({ thickness: 6, strokeWidth: 3 });
+      render(<App />);
+      act(() => {
+        useSelection.getState().selectTransfer('x2');
+      });
+      const ring = transferLines('x2').reduce((widest, el) =>
+        Number(el.getAttribute('stroke-width')) > Number(widest.getAttribute('stroke-width'))
+          ? el
+          : widest,
+      );
+      // visibleExtent = 6 + 2*3 = 12; ring = 12 + 2 * 2.5 pad = 17.
+      expect(Number(ring.getAttribute('stroke-width'))).toBe(17);
     });
   });
 

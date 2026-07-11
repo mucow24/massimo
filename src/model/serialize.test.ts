@@ -883,6 +883,133 @@ describe('parse — line stroke sanitizing', () => {
   });
 });
 
+describe('parse — transfer style sanitizing', () => {
+  // Builds a file whose single transfer carries arbitrary raw override
+  // fields, as a hand-edited or legacy file might. `docExtra` overrides the
+  // doc-level transfer settings the canonical form compares against.
+  const buildWithTransfer = (
+    fields: Record<string, unknown>,
+    docExtra: Record<string, unknown> = {},
+  ) =>
+    JSON.stringify({
+      format: 'massimo-map',
+      doc: {
+        ...makeDoc({}),
+        transfers: {
+          x1: {
+            id: 'x1',
+            a: { stationId: 's1', lineId: null },
+            b: { stationId: 's2', lineId: null },
+            ...fields,
+          },
+        },
+        ...docExtra,
+      },
+    });
+
+  it('drops explicit overrides equal to the doc settings (never stored)', () => {
+    const result = parse(
+      buildWithTransfer({
+        thickness: 2,
+        color: '#000000',
+        strokeWidth: 0,
+        strokeColor: '#ffffff',
+      }),
+    );
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    for (const field of ['thickness', 'color', 'strokeWidth', 'strokeColor']) {
+      expect(field in result.doc.transfers.x1).toBe(false);
+    }
+  });
+
+  it("compares against the FILE's own settings, not the app defaults", () => {
+    const redundant = parse(buildWithTransfer({ thickness: 5 }, { transferThickness: 5 }));
+    expect(redundant.ok).toBe(true);
+    if (redundant.ok) expect('thickness' in redundant.doc.transfers.x1).toBe(false);
+    // The app-default 2 is a REAL override when the file's setting is 5.
+    const distinct = parse(buildWithTransfer({ thickness: 2 }, { transferThickness: 5 }));
+    expect(distinct.ok).toBe(true);
+    if (distinct.ok) expect(distinct.doc.transfers.x1.thickness).toBe(2);
+  });
+
+  it('clamps and rounds numeric overrides to the canonical stored form', () => {
+    const frac = parse(buildWithTransfer({ thickness: 4.6, strokeWidth: 2.7 }));
+    expect(frac.ok).toBe(true);
+    if (frac.ok) {
+      expect(frac.doc.transfers.x1.thickness).toBe(5);
+      expect(frac.doc.transfers.x1.strokeWidth).toBe(3);
+    }
+    // Rounds-to-setting is dropped like an exact match.
+    const nearDefault = parse(buildWithTransfer({ thickness: 2.4 }));
+    expect(nearDefault.ok).toBe(true);
+    if (nearDefault.ok) expect('thickness' in nearDefault.doc.transfers.x1).toBe(false);
+    // Negative thickness clamps to the floor 1 — distinct from the setting 2, kept.
+    const low = parse(buildWithTransfer({ thickness: -3 }));
+    expect(low.ok).toBe(true);
+    if (low.ok) expect(low.doc.transfers.x1.thickness).toBe(1);
+    // Negative stroke width clamps to 0 = the setting, so it is dropped.
+    const lowStroke = parse(buildWithTransfer({ strokeWidth: -3 }));
+    expect(lowStroke.ok).toBe(true);
+    if (lowStroke.ok) expect('strokeWidth' in lowStroke.doc.transfers.x1).toBe(false);
+  });
+
+  it('drops non-numeric junk on the numeric fields', () => {
+    for (const junk of ['thick', null, true, {}]) {
+      const result = parse(buildWithTransfer({ thickness: junk, strokeWidth: junk }));
+      expect(result.ok).toBe(true);
+      if (!result.ok) return;
+      expect('thickness' in result.doc.transfers.x1).toBe(false);
+      expect('strokeWidth' in result.doc.transfers.x1).toBe(false);
+    }
+  });
+
+  it('drops non-string junk on the color fields', () => {
+    for (const junk of [5, null, true, {}]) {
+      const result = parse(buildWithTransfer({ color: junk, strokeColor: junk }));
+      expect(result.ok).toBe(true);
+      if (!result.ok) return;
+      expect('color' in result.doc.transfers.x1).toBe(false);
+      expect('strokeColor' in result.doc.transfers.x1).toBe(false);
+    }
+  });
+
+  it('drops non-finite numeric overrides', () => {
+    const json = buildWithTransfer({ thickness: 0 }).replace('"thickness":0', '"thickness":1e999');
+    const result = parse(json);
+    expect(result.ok).toBe(true);
+    if (result.ok) expect('thickness' in result.doc.transfers.x1).toBe(false);
+  });
+
+  it('judges redundancy against the MERGED settings when the file omits the settings keys', () => {
+    // A legacy/hand-edited file with no transfer settings at all: an override
+    // equal to the app default must be dropped against the DEFAULT_DOC-merged
+    // value, not the raw file doc (where the setting is undefined and nothing
+    // would ever collapse) — catches a sanitize-before-merge refactor, like
+    // the dot-size ordering test above.
+    const doc: Record<string, unknown> = {
+      ...makeDoc({}),
+      transfers: {
+        x1: {
+          id: 'x1',
+          a: { stationId: 's1', lineId: null },
+          b: { stationId: 's2', lineId: null },
+          thickness: 2,
+        },
+      },
+    };
+    delete doc.transferThickness;
+    delete doc.transferColor;
+    delete doc.transferStrokeWidth;
+    delete doc.transferStrokeColor;
+    const result = parse(JSON.stringify({ format: 'massimo-map', doc }));
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    expect('thickness' in result.doc.transfers.x1).toBe(false);
+    expect(result.doc.transferThickness).toBe(2);
+  });
+});
+
 describe('serialize / parse — round-trip property', () => {
   // A "canonical" doc is anything the pure transforms can build from the empty
   // default doc: ids minted in order, lineOrder maintained, stops + auto

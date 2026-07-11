@@ -982,10 +982,12 @@ export function MapCanvas() {
         <TransferLayer
           transfers={transfers}
           stations={stations}
-          color={transferColor}
-          thickness={transferThickness}
-          strokeColor={transferStrokeColor}
-          strokeWidth={transferStrokeWidth}
+          defaults={{
+            color: transferColor,
+            thickness: transferThickness,
+            strokeColor: transferStrokeColor,
+            strokeWidth: transferStrokeWidth,
+          }}
           selectedId={selection.selectedTransferId}
           onSelect={(id) => {
             if (exitLineEditorOnItemClick()) return;

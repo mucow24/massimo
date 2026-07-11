@@ -5,6 +5,7 @@ import {
   stationWorldAABB,
   svgImageAABB,
   textLabelAABB,
+  transferAABB,
 } from './itemBounds';
 import { measureTextLabel } from './textMeasure';
 import {
@@ -32,6 +33,17 @@ describe('routeBulletAABB', () => {
       y0: -17,
       x1: 22,
       y1: 7,
+    });
+  });
+});
+
+describe('transferAABB', () => {
+  it('spans the endpoints grown by the half extent on every side', () => {
+    expect(transferAABB({ x: 200, y: 0 }, { x: 0, y: 50 }, 4)).toEqual({
+      x0: -4,
+      y0: -4,
+      x1: 204,
+      y1: 54,
     });
   });
 });

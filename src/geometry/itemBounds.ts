@@ -84,3 +84,20 @@ export function svgImageAABB(img: SvgImageGeom): AABB {
 export function routeBulletAABB(b: Pick<RouteBullet, 'x' | 'y' | 'size'>): AABB {
   return { x0: b.x - b.size, y0: b.y - b.size, x1: b.x + b.size, y1: b.y + b.size };
 }
+
+/**
+ * World AABB of a transfer's drawn capsule: the box spanned by its two
+ * endpoint dots, grown by `halfExtent` (effective thickness/2 + stroke) on
+ * every side. Exact for the round-capped stroke — each cap is a circle of
+ * that radius centered on an endpoint. Endpoints are resolved by the caller
+ * (transferEndWorld needs the stations record).
+ */
+export function transferAABB(a: Pt, b: Pt, halfExtent: number): AABB {
+  const box = aabbOfPoints([a, b]);
+  return {
+    x0: box.x0 - halfExtent,
+    y0: box.y0 - halfExtent,
+    x1: box.x1 + halfExtent,
+    y1: box.y1 + halfExtent,
+  };
+}

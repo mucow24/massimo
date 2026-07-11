@@ -268,7 +268,7 @@ interface MapDoc {
   labelTracking: number; // line-spacing mult / em letter-spacing (1 / 0 = neutral)
   activePalettes: PaletteId[]; // INVARIANT: never empty
   transferThickness: number;
-  transferColor: string; // global transfer styling
+  transferColor: string; // default transfer styling (per-transfer overridable)
   transferStrokeWidth: number;
   transferStrokeColor: string; // optional halo (0 = none)
 }
@@ -391,11 +391,15 @@ polygon whose dark default equals its light; backfilled on load), `locked?`.
 `id, x, y, rotation: Rotation, lineId: LineId | null` (null = unset placeholder), `shape:
 RouteBulletShape` (`circle|square|diamond`), `size` (half-extent), `locked?`.
 
-**`Transfer`** + **`TransferEnd`** — a thin black line connecting one station dot to another.
-`Transfer = {id, a: TransferEnd, b: TransferEnd}`; `TransferEnd = {stationId, lineId: LineId |
-null}` (lineId picks _which_ dot at an interlined station; null ⇒ station anchor). **Cascade-
-deleted** when either endpoint's stop is removed (by deleting the station/line or removing that
-line's stop). Global styling (thickness, color, optional halo) lives on `MapDoc`.
+**`Transfer`** + **`TransferEnd`** — a styled line connecting one station dot to another.
+`Transfer = {id, a: TransferEnd, b: TransferEnd, thickness?, color?, strokeWidth?, strokeColor?}`;
+`TransferEnd = {stationId, lineId: LineId | null}` (lineId picks _which_ dot at an interlined
+station; null ⇒ station anchor). **Cascade-deleted** when either endpoint's stop is removed (by
+deleting the station/line or removing that line's stop). Default styling (thickness, color,
+optional halo) lives on `MapDoc`; the four optional fields are per-transfer overrides with the
+dot-style contract — absent ⇒ track the doc setting, setters drop a value equal to the setting,
+and the doc-level setters prune overrides their new value makes redundant
+([transferStyle.ts](src/model/transferStyle.ts), `updateTransferStyle`).
 
 **Small unions:** `StopOrientation` (`auto-vertical|auto-ne-sw|auto-horizontal|auto-nw-se` —
 pins only the **axis**; the sign falls out of the world tangent from neighbors), `LineStyle`
@@ -1018,7 +1022,9 @@ popover/handles). Cursor-following ghost previews (`*PlacingPreview`, all `opaci
   the item's first drag, Shift-click bypasses, preview guides render through `SnapGuides`.
 
 `ItemPopovers` mounts the single popover for the sole selection — including the station editor
-(see UI chrome) — and reprojects through `useLiveView` so it tracks the canvas during pan/zoom.
+(see UI chrome) and the transfer popover (whose selection is the single-id
+`selectedTransferId` primary outside `soleSelection`) — and reprojects through `useLiveView` so
+it tracks the canvas during pan/zoom.
 `useDraggablePopover` **freezes the popover's spawn position as one world point** (item
 projection + 14px gap, clamped into the host, then inverted through `screenToWorldPoint`) and
 renders `projectToScreen(that point + drag)` with **nothing added after projection** — the
@@ -1346,9 +1352,9 @@ Each is confirmed in source/tests; file pointers included.
   the exported SVG is chrome-free with embedded `@font-face` and that PNG is genuinely 4× (reads
   IHDR bytes); `exportPdf.spec.ts` exports a hatch+text+image map and asserts the PDF embeds a
   TrueType CID font (`/FontFile2` + `/Type0`) rather than falling back to standard Helvetica.
-- **Known gaps** (per the deep-dive): `Transfer`/`RouteBullet`/`LineTag` lack dedicated serialize
-  round-trip tests; no pixel/visual golden for the merged-dot-border result; `MapCanvas`'s full
-  pointer fan-out is only tested per-hook.
+- **Known gaps** (per the deep-dive): no pixel/visual golden for the merged-dot-border result;
+  `MapCanvas`'s full pointer fan-out is only tested per-hook. (`Transfer`/`RouteBullet`/`LineTag`
+  round-trips now live in `serialize.entities.test.ts`.)
 
 ---
 

@@ -78,4 +78,24 @@ describe('Transfer serialization', () => {
     const doc = roundTrip(makeDoc({ transfers: [xfer] }));
     expect(doc.transfers['x1']).toEqual(xfer);
   });
+
+  it('round-trips per-transfer style overrides losslessly', () => {
+    // Every value differs from the doc settings, so none may be dropped.
+    const xfer = makeTransfer({
+      id: 'x1',
+      thickness: 5,
+      color: '#ff0080',
+      strokeWidth: 3,
+      strokeColor: '#123456',
+    });
+    const doc = roundTrip(makeDoc({ transfers: [xfer] }));
+    expect(doc.transfers['x1']).toEqual(xfer);
+  });
+
+  it('preserves absence of the style overrides (a tracking transfer stays tracking)', () => {
+    const doc = roundTrip(makeDoc({ transfers: [makeTransfer({ id: 'x1' })] }));
+    for (const field of ['thickness', 'color', 'strokeWidth', 'strokeColor']) {
+      expect(field in doc.transfers['x1']).toBe(false);
+    }
+  });
 });

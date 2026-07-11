@@ -3,7 +3,13 @@ import {
   isLabelWeight,
   TEXT_LABEL_COLOR_DEFAULT,
   TEXT_LABEL_DARK_COLOR_DEFAULT,
+  withTransferOverride,
 } from './transforms';
+import {
+  canonicalTransferColor,
+  canonicalTransferStrokeWidth,
+  canonicalTransferThickness,
+} from './transferStyle';
 import { canonicalLineWidth } from './lineWidth';
 import { DOT_SIZE_DEFAULT, canonicalDotSize } from './dotSize';
 import { canonicalStrokeColor, canonicalStrokeWidth } from './lineStroke';
@@ -28,6 +34,7 @@ import type {
   StopOrientation,
   TextLabel,
   TextLabelWeight,
+  Transfer,
 } from './types';
 
 const KNOWN_LINE_STYLES = new Set<LineStyle>([
@@ -252,6 +259,10 @@ export function parse(json: string, custom: readonly Palette[] = []): ParseResul
   if (foldedPolygons.changed) merged.polygons = foldedPolygons.polygons;
   const cleanedLabels = backfillTextLabelColors(merged.textLabels);
   if (cleanedLabels.changed) merged.textLabels = cleanedLabels.textLabels;
+  // Normalize per-transfer style overrides against the (already-merged)
+  // doc-level transfer settings.
+  const cleanedTransfers = sanitizeTransferStyles(merged.transfers, merged);
+  if (cleanedTransfers.changed) merged.transfers = cleanedTransfers.transfers;
   // Version-gated (non-idempotent) rewrite: files saved before the pipe
   // bullet grammar carry `<X>` circle tokens and unescaped literal pipes.
   if ((typeof file.version === 'number' ? file.version : 1) < 2) {
@@ -628,6 +639,62 @@ function sanitizeLineStroke(line: Line): Line {
     }
   }
   return next;
+}
+
+// Normalize hand-edited / legacy per-transfer style overrides to the
+// canonical stored form `updateTransferStyle` maintains: numeric fields
+// rounded and floor-clamped, and every field absent when it equals the doc's
+// matching setting (the app never stores a redundant override). Compares
+// against the MERGED doc settings, so it runs after the DEFAULT_DOC merge.
+// Non-numbers / non-finite numerics and non-string colors are dropped.
+// File-import hygiene only — localStorage rehydration never sees uncanonical
+// overrides because every write goes through `updateTransferStyle`.
+export function sanitizeTransferStyles(
+  transfers: Record<string, Transfer>,
+  settings: Pick<
+    MapDoc,
+    'transferThickness' | 'transferColor' | 'transferStrokeWidth' | 'transferStrokeColor'
+  >,
+): { transfers: Record<string, Transfer>; changed: boolean } {
+  let changed = false;
+  const next: Record<string, Transfer> = {};
+  for (const id of Object.keys(transfers)) {
+    const t = transfers[id];
+    let cleaned = t;
+    if ('thickness' in cleaned) {
+      const raw = cleaned.thickness as unknown;
+      const stored =
+        typeof raw === 'number' && Number.isFinite(raw)
+          ? canonicalTransferThickness(raw, settings.transferThickness)
+          : undefined;
+      cleaned = withTransferOverride(cleaned, 'thickness', stored);
+    }
+    if ('color' in cleaned) {
+      const raw = cleaned.color as unknown;
+      const stored =
+        typeof raw === 'string' ? canonicalTransferColor(raw, settings.transferColor) : undefined;
+      cleaned = withTransferOverride(cleaned, 'color', stored);
+    }
+    if ('strokeWidth' in cleaned) {
+      const raw = cleaned.strokeWidth as unknown;
+      const stored =
+        typeof raw === 'number' && Number.isFinite(raw)
+          ? canonicalTransferStrokeWidth(raw, settings.transferStrokeWidth)
+          : undefined;
+      cleaned = withTransferOverride(cleaned, 'strokeWidth', stored);
+    }
+    if ('strokeColor' in cleaned) {
+      const raw = cleaned.strokeColor as unknown;
+      const stored =
+        typeof raw === 'string'
+          ? canonicalTransferColor(raw, settings.transferStrokeColor)
+          : undefined;
+      cleaned = withTransferOverride(cleaned, 'strokeColor', stored);
+    }
+    if (cleaned !== t) changed = true;
+    next[id] = cleaned;
+  }
+  return { transfers: next, changed };
 }
 
 function sanitizeSegments(line: Line): Line {
