@@ -24,23 +24,22 @@ const WP_LOZENGE_GAP_RATIO = 0.3;
  * The "WP" lozenge drawn before a revealed waypoint's name. Shared by all three
  * label passes so every pass that paints a waypoint name also prefixes it. Sits
  * just left of the label box (`lay.hitX`) and shares the label's rotation, so it
- * tracks the name through rotations/offsets. Renders nothing unless the station
- * is a waypoint AND the overlay is on.
+ * tracks the name through rotations/offsets. Every call site sits past that
+ * pass's `isWaypoint && !showWaypoints` guard, so a waypoint reaching here
+ * already implies the overlay is on — the guard is just "is this a waypoint?".
  */
 function WaypointLabelBadge({
   station,
-  showWaypoints,
   lay,
   rotationDeg,
   fontSize,
 }: {
   station: Station;
-  showWaypoints: boolean;
   lay: { hitX: number; hitY: number; hitH: number; anchorX: number; anchorY: number };
   rotationDeg: number;
   fontSize: number;
 }) {
-  if (!station.isWaypoint || !showWaypoints) return null;
+  if (!station.isWaypoint) return null;
   return (
     <g transform={`rotate(${rotationDeg} ${lay.anchorX} ${lay.anchorY})`}>
       <WaypointLozenge
@@ -124,13 +123,7 @@ export function StationStarterLabel({
   const strokeColor = legibleTextOn(highlightColor);
   return (
     <g transform={`translate(${station.x} ${station.y}) rotate(${angle})`}>
-      <WaypointLabelBadge
-        station={station}
-        showWaypoints={showWaypoints}
-        lay={lay}
-        rotationDeg={rotationDeg}
-        fontSize={12}
-      />
+      <WaypointLabelBadge station={station} lay={lay} rotationDeg={rotationDeg} fontSize={12} />
       {renderStationLabelText({
         text: station.name,
         fontSize: 12,
@@ -185,7 +178,6 @@ export function StationHighlightLabel({
     <g transform={`translate(${station.x} ${station.y}) rotate(${angle})`}>
       <WaypointLabelBadge
         station={station}
-        showWaypoints={showWaypoints}
         lay={lay}
         rotationDeg={rotationDeg}
         fontSize={docStyle.fontSize}
@@ -278,7 +270,6 @@ export function StationLabel({
     <g transform={`translate(${station.x} ${station.y}) rotate(${angle})`}>
       <WaypointLabelBadge
         station={station}
-        showWaypoints={showWaypoints}
         lay={lay}
         rotationDeg={rotationDeg}
         fontSize={docStyle.fontSize}

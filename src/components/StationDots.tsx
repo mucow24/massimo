@@ -20,7 +20,7 @@ const WAYPOINT_OVERLAY_STYLE = DOT_SHAPE_PRESETS['filled-white-black-stroke'];
 // so there's something visible and the name has an anchor. A hidden waypoint
 // never shows one (the whole point is "no visible station"); a revealed one
 // behaves like a regular empty station.
-function phantomDotCell(station: Station, showWaypoints = false) {
+function phantomDotCell(station: Station, showWaypoints: boolean) {
   const hidden = !!station.isWaypoint && !showWaypoints;
   return !hidden && station.stops.length === 0
     ? { row: station.label.row, col: station.label.col + 1 }
@@ -94,43 +94,6 @@ export function StationDots({
           );
         }),
       )}
-    </g>
-  );
-}
-
-/**
- * A station's dots in the highlight pass — plain filled circles in
- * `highlightColor`, no hit-testing, used for not-yet-on-line stations during
- * append mode so they stay visible above the dim overlay.
- */
-export function StationHighlightDots({
-  station,
-  highlightColor,
-}: {
-  station: Station;
-  highlightColor: string;
-}) {
-  if (station.isWaypoint) return null;
-  const angle = station.rotation * 45;
-  const phantomDot = phantomDotCell(station);
-  return (
-    <g pointerEvents="none">
-      {/* Phantom dot is a drag preview — render at cell position, in the
-          station's local frame. */}
-      {phantomDot && (
-        <g transform={`translate(${station.x} ${station.y}) rotate(${angle})`}>
-          {(() => {
-            const c = stopCenterAt(phantomDot.row, phantomDot.col);
-            return <circle cx={c.x} cy={c.y} r={STOP_DOT_RADIUS} fill={highlightColor} />;
-          })()}
-        </g>
-      )}
-      {station.stops.map((cell) => {
-        const w = stopPosWorld(cell, station);
-        return (
-          <circle key={cell.lineId} cx={w.x} cy={w.y} r={STOP_DOT_RADIUS} fill={highlightColor} />
-        );
-      })}
     </g>
   );
 }

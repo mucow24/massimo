@@ -2,7 +2,7 @@ import { memo } from 'react';
 import { Line, Station } from '../model/types';
 import { StationSilhouette } from './StationSilhouette';
 import { StationHitArea } from './StationHitArea';
-import { StationDots, StationHighlightDots } from './StationDots';
+import { StationDots } from './StationDots';
 import { StationLabel, StationHighlightLabel, StationStarterLabel } from './StationLabel';
 
 interface Props {
@@ -18,7 +18,6 @@ interface Props {
     | 'highlight-label'
     | 'starter-label'
     | 'dots'
-    | 'highlight-dots'
     | 'stroke'
     | 'match-stroke';
   // Override fill for the highlight-* layers (default white).
@@ -76,8 +75,6 @@ export const StationView = memo(function StationView({
       );
     case 'label':
       return <StationLabel station={station} lines={lines} />;
-    case 'highlight-dots':
-      return <StationHighlightDots station={station} highlightColor={highlightColor} />;
     case 'dots':
       return <StationDots station={station} lines={lines} onStartDrag={onStartDrag} />;
   }
