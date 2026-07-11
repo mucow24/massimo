@@ -60,7 +60,7 @@ import { PolygonView } from './PolygonView';
 import { SvgImageView } from './SvgImageView';
 import { ItemPopovers } from './canvas/ItemPopovers';
 import { snapPlacement, usePlacementDispatch } from './canvas/usePlacementDispatch';
-import { TransferLayer, transferEndWorld } from './TransferLayer';
+import { TransferLayer, TransferSelectionOutline, transferEndWorld } from './TransferLayer';
 import {
   anchorFromArcLen,
   closestParamOnOffsetPath,
@@ -988,7 +988,6 @@ export function MapCanvas() {
             strokeColor: transferStrokeColor,
             strokeWidth: transferStrokeWidth,
           }}
-          selectedId={selection.selectedTransferId}
           onSelect={(id) => {
             if (exitLineEditorOnItemClick()) return;
             selection.selectTransfer(id);
@@ -1042,6 +1041,21 @@ export function MapCanvas() {
             />
           ),
         )}
+
+        {/* Selected-transfer outline: above the dots (unlike TransferLayer)
+            so the connected dots — and any crossing transfer — can't cover
+            the selection chrome. */}
+        <TransferSelectionOutline
+          transfers={transfers}
+          stations={stations}
+          defaults={{
+            color: transferColor,
+            thickness: transferThickness,
+            strokeColor: transferStrokeColor,
+            strokeWidth: transferStrokeWidth,
+          }}
+          selectedId={selection.selectedTransferId}
+        />
 
         {/* Station-placing-mode ghost: a faint dot + name following the
             cursor before each click, so the user can see where (and what
