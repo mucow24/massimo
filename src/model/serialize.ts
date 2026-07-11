@@ -1,38 +1,30 @@
 import {
   DEFAULT_DOC,
-  FONT_SIZE_STEP,
-  POLYGON_CURVE_RADIUS_MIN,
-  POLYGON_STROKE_STEP,
-  POLYGON_STROKE_WIDTH_MIN,
+  DEFAULT_STYLES,
   TEXT_LABEL_COLOR_DEFAULT,
   TEXT_LABEL_DARK_COLOR_DEFAULT,
-  TEXT_LABEL_FONT_SIZE_MIN,
-  TEXT_LABEL_LEADING_MIN,
-  TEXT_LABEL_LEADING_STEP,
-  TEXT_LABEL_TRACKING_MIN,
-  TEXT_LABEL_TRACKING_STEP,
-  clampRouteBulletSize,
   isLabelWeight,
-  snapToStep,
   withTransferOverride,
 } from './transforms';
 import {
-  TRANSFER_STROKE_WIDTH_MIN,
-  TRANSFER_THICKNESS_MIN,
+  TRANSFER_COLOR_DEFAULT,
+  TRANSFER_STROKE_COLOR_DEFAULT,
+  TRANSFER_STROKE_WIDTH_DEFAULT,
+  TRANSFER_THICKNESS_DEFAULT,
   canonicalTransferColor,
   canonicalTransferStrokeWidth,
   canonicalTransferThickness,
 } from './transferStyle';
-import { LINE_WIDTH_MIN, canonicalLineWidth } from './lineWidth';
-import { DOT_SIZE_DEFAULT, DOT_SIZE_MIN, canonicalDotSize } from './dotSize';
-import {
-  LINE_STROKE_STEP,
-  LINE_STROKE_WIDTH_MIN,
-  canonicalStrokeColor,
-  canonicalStrokeWidth,
-} from './lineStroke';
+import { canonicalLineWidth } from './lineWidth';
+import { DOT_SIZE_DEFAULT, canonicalDotSize } from './dotSize';
+import { canonicalStrokeColor, canonicalStrokeWidth } from './lineStroke';
 import { DEFAULT_DOT_STYLE, DOT_SHAPE_PRESETS, dotStylesEqual } from './dotStyle';
-import { captureStyleProps, isReservedStyleName, stylePropsEqual } from './styles';
+import {
+  canonicalStyleProps,
+  captureStyleProps,
+  isReservedStyleName,
+  stylePropsEqual,
+} from './styles';
 import { pairKeyOf } from './pairKey';
 import { parseHexA, withHexAlpha } from '../util/color';
 import { migrateLegacyInlineTokens } from '../geometry/labelTokens';
@@ -237,7 +229,7 @@ export function parse(json: string, custom: readonly Palette[] = []): ParseResul
   // typed shape is clean and `labelBold` doesn't leak through.
   const rawDoc = file.doc as unknown as Record<string, unknown>;
   const docWithMigratedWeight = migrateLegacyLabelBold(rawDoc);
-  const merged: MapDoc = { ...DEFAULT_DOC, ...(docWithMigratedWeight as Partial<MapDoc>) };
+  let merged: MapDoc = { ...DEFAULT_DOC, ...(docWithMigratedWeight as Partial<MapDoc>) };
   // Enforce the "at least one valid palette" invariant on load. A malformed
   // file with explicit `activePalettes: []` or only unknown ids would
   // otherwise leave the doc in an unreachable-from-UI state. Shared with the
@@ -282,9 +274,11 @@ export function parse(json: string, custom: readonly Palette[] = []): ParseResul
   if (foldedPolygons.changed) merged.polygons = foldedPolygons.polygons;
   const cleanedLabels = backfillTextLabelColors(merged.textLabels);
   if (cleanedLabels.changed) merged.textLabels = cleanedLabels.textLabels;
-  // Normalize per-transfer style overrides against the (already-merged)
-  // doc-level transfer settings.
-  const cleanedTransfers = sanitizeTransferStyles(merged.transfers, merged);
+  // Fold the retired doc-level transfer settings (pre-retirement saves) into
+  // per-transfer overrides, then normalize the overrides against the
+  // constant defaults.
+  merged = bakeLegacyTransferSettings(merged);
+  const cleanedTransfers = sanitizeTransferStyles(merged.transfers);
   if (cleanedTransfers.changed) merged.transfers = cleanedTransfers.transfers;
   // Validate style defs, then prune styleId tags they no longer back.
   const cleanedStyles = sanitizeStyles(merged.styles);
@@ -669,19 +663,15 @@ function sanitizeLineStroke(line: Line): Line {
 
 // Normalize hand-edited / legacy per-transfer style overrides to the
 // canonical stored form `updateTransferStyle` maintains: numeric fields
-// rounded and floor-clamped, and every field absent when it equals the doc's
-// matching setting (the app never stores a redundant override). Compares
-// against the MERGED doc settings, so it runs after the DEFAULT_DOC merge.
+// rounded and floor-clamped, and every field absent when it equals the
+// constant transfer default (the app never stores a redundant override).
 // Non-numbers / non-finite numerics and non-string colors are dropped.
 // File-import hygiene only — localStorage rehydration never sees uncanonical
 // overrides because every write goes through `updateTransferStyle`.
-export function sanitizeTransferStyles(
-  transfers: Record<string, Transfer>,
-  settings: Pick<
-    MapDoc,
-    'transferThickness' | 'transferColor' | 'transferStrokeWidth' | 'transferStrokeColor'
-  >,
-): { transfers: Record<string, Transfer>; changed: boolean } {
+export function sanitizeTransferStyles(transfers: Record<string, Transfer>): {
+  transfers: Record<string, Transfer>;
+  changed: boolean;
+} {
   let changed = false;
   const next: Record<string, Transfer> = {};
   for (const id of Object.keys(transfers)) {
@@ -691,21 +681,21 @@ export function sanitizeTransferStyles(
       const raw = cleaned.thickness as unknown;
       const stored =
         typeof raw === 'number' && Number.isFinite(raw)
-          ? canonicalTransferThickness(raw, settings.transferThickness)
+          ? canonicalTransferThickness(raw, TRANSFER_THICKNESS_DEFAULT)
           : undefined;
       cleaned = withTransferOverride(cleaned, 'thickness', stored);
     }
     if ('color' in cleaned) {
       const raw = cleaned.color as unknown;
       const stored =
-        typeof raw === 'string' ? canonicalTransferColor(raw, settings.transferColor) : undefined;
+        typeof raw === 'string' ? canonicalTransferColor(raw, TRANSFER_COLOR_DEFAULT) : undefined;
       cleaned = withTransferOverride(cleaned, 'color', stored);
     }
     if ('strokeWidth' in cleaned) {
       const raw = cleaned.strokeWidth as unknown;
       const stored =
         typeof raw === 'number' && Number.isFinite(raw)
-          ? canonicalTransferStrokeWidth(raw, settings.transferStrokeWidth)
+          ? canonicalTransferStrokeWidth(raw, TRANSFER_STROKE_WIDTH_DEFAULT)
           : undefined;
       cleaned = withTransferOverride(cleaned, 'strokeWidth', stored);
     }
@@ -713,7 +703,7 @@ export function sanitizeTransferStyles(
       const raw = cleaned.strokeColor as unknown;
       const stored =
         typeof raw === 'string'
-          ? canonicalTransferColor(raw, settings.transferStrokeColor)
+          ? canonicalTransferColor(raw, TRANSFER_STROKE_COLOR_DEFAULT)
           : undefined;
       cleaned = withTransferOverride(cleaned, 'strokeColor', stored);
     }
@@ -721,6 +711,154 @@ export function sanitizeTransferStyles(
     next[id] = cleaned;
   }
   return { transfers: next, changed };
+}
+
+/**
+ * One-time fold of the RETIRED doc-level transfer settings
+ * (transferThickness/transferColor/transferStrokeWidth/transferStrokeColor)
+ * into per-transfer overrides, so a pre-retirement save keeps every
+ * transfer's exact look. For each transfer and field, the EFFECTIVE value
+ * under the old model (valid override, else the legacy setting) is re-stored
+ * canonically against the constant default — a transfer that tracked a
+ * legacy setting gets it materialized as an override; a value equal to the
+ * constant collapses away. The legacy fields are then dropped. Keyed off the
+ * legacy fields' presence, so parse() runs it unconditionally (idempotent —
+ * post-retirement saves lack the fields); the localStorage rehydrate gates
+ * it at v<10. Garbage legacy values read as the constant default.
+ *
+ * The settings' MAP-WIDE role moves to the "Default" transfer style: when the
+ * doc carries an untouched factory Default (backfilled for pre-styles saves),
+ * its props are seeded from the legacy settings too, so newly drawn transfers
+ * keep dropping with the old map-wide look. A customized Default is left
+ * alone.
+ */
+export function bakeLegacyTransferSettings<
+  T extends { transfers?: Record<string, Transfer>; styles?: Record<string, StyleDef> },
+>(doc: T): T {
+  const raw = doc as Record<string, unknown>;
+  const hasLegacy =
+    'transferThickness' in raw ||
+    'transferColor' in raw ||
+    'transferStrokeWidth' in raw ||
+    'transferStrokeColor' in raw;
+  if (!hasLegacy) return doc;
+  const num = (v: unknown, fallback: number): number =>
+    typeof v === 'number' && Number.isFinite(v) ? v : fallback;
+  const str = (v: unknown, fallback: string): string => (typeof v === 'string' ? v : fallback);
+  const legacy = {
+    thickness: num(raw.transferThickness, TRANSFER_THICKNESS_DEFAULT),
+    color: str(raw.transferColor, TRANSFER_COLOR_DEFAULT),
+    strokeWidth: num(raw.transferStrokeWidth, TRANSFER_STROKE_WIDTH_DEFAULT),
+    strokeColor: str(raw.transferStrokeColor, TRANSFER_STROKE_COLOR_DEFAULT),
+  };
+  const transfers: Record<string, Transfer> = {};
+  for (const id of Object.keys(doc.transfers ?? {})) {
+    const t = (doc.transfers as Record<string, Transfer>)[id];
+    // Effective under the old model — a valid override wins, else the legacy
+    // setting. Garbage override values fall back to the setting too (the same
+    // outcome sanitizeTransferStyles would produce).
+    const eff = {
+      thickness: num(t.thickness, legacy.thickness),
+      color: str(t.color, legacy.color),
+      strokeWidth: num(t.strokeWidth, legacy.strokeWidth),
+      strokeColor: str(t.strokeColor, legacy.strokeColor),
+    };
+    let next = t;
+    next = withTransferOverride(
+      next,
+      'thickness',
+      canonicalTransferThickness(eff.thickness, TRANSFER_THICKNESS_DEFAULT),
+    );
+    next = withTransferOverride(
+      next,
+      'color',
+      canonicalTransferColor(eff.color, TRANSFER_COLOR_DEFAULT),
+    );
+    next = withTransferOverride(
+      next,
+      'strokeWidth',
+      canonicalTransferStrokeWidth(eff.strokeWidth, TRANSFER_STROKE_WIDTH_DEFAULT),
+    );
+    next = withTransferOverride(
+      next,
+      'strokeColor',
+      canonicalTransferColor(eff.strokeColor, TRANSFER_STROKE_COLOR_DEFAULT),
+    );
+    transfers[id] = next;
+  }
+  // Seed an untouched factory Default transfer style from the legacy
+  // settings (concrete clamped values, no collapse — style props are always
+  // concrete).
+  let styles = doc.styles;
+  if (styles) {
+    const factory = Object.values(DEFAULT_STYLES).find((d) => d.kind === 'transfer');
+    for (const key of Object.keys(styles)) {
+      const def = styles[key];
+      if (def.kind !== 'transfer' || def.name !== 'Default') continue;
+      if (factory && stylePropsEqual('transfer', def.props, factory.props)) {
+        const seeded = canonicalStyleProps('transfer', legacy);
+        if (!stylePropsEqual('transfer', seeded, def.props)) {
+          styles = { ...styles, [key]: { ...def, props: seeded } };
+        }
+      }
+      break;
+    }
+  }
+  const {
+    transferThickness: _t,
+    transferColor: _c,
+    transferStrokeWidth: _w,
+    transferStrokeColor: _s,
+    ...rest
+  } = raw;
+  return {
+    ...rest,
+    ...(doc.transfers ? { transfers } : {}),
+    ...(styles !== doc.styles ? { styles } : {}),
+  } as T;
+}
+
+/**
+ * v9 → v10 style-def hygiene for the localStorage rehydrate: docs persisted
+ * by the round-1 Styles build carry (a) textLabel defs with the since-dropped
+ * width/leading/tracking keys and (b) an explicit styles record WITHOUT the
+ * factory Defaults (DEFAULT_STYLES shipped in round 2, and the persist merge
+ * only backfills a MISSING key). Rebuild every def through the canonical
+ * grids — stripping stale keys, so the stylePropsEqual no-op guards work —
+ * and inject any factory Default whose kind doesn't already have a style
+ * named "Default". localStorage-only: parse() must NOT inject Defaults into
+ * files (a file whose Defaults were deliberately deleted would get them
+ * resurrected on every load); its sanitizeStyleProps rebuild already strips
+ * the stale keys.
+ */
+export function migrateV9Styles(styles: Record<string, StyleDef>): Record<string, StyleDef> {
+  let changed = false;
+  const next: Record<string, StyleDef> = {};
+  for (const key of Object.keys(styles)) {
+    const def = styles[key];
+    const cleaned = {
+      id: def.id,
+      name: def.name,
+      kind: def.kind,
+      props: canonicalStyleProps(def.kind, def.props),
+    } as StyleDef;
+    // Same stringify-canonical check as sanitizeStyles: app-written defs have
+    // fixed field order, so an already-clean def keeps its reference.
+    if (JSON.stringify(def) === JSON.stringify(cleaned)) {
+      next[key] = def;
+    } else {
+      next[key] = cleaned;
+      changed = true;
+    }
+  }
+  for (const def of Object.values(DEFAULT_STYLES)) {
+    const taken = Object.values(next).some((d) => d.kind === def.kind && d.name === 'Default');
+    if (!taken && !next[def.id]) {
+      next[def.id] = def;
+      changed = true;
+    }
+  }
+  return changed ? next : styles;
 }
 
 const KNOWN_STYLE_KINDS = new Set<StyleKind>([
@@ -738,10 +876,10 @@ const finiteNum = (v: unknown): number | undefined =>
 const asString = (v: unknown): string | undefined => (typeof v === 'string' ? v : undefined);
 const asBool = (v: unknown): boolean | undefined => (typeof v === 'boolean' ? v : undefined);
 
-// Validate + normalize one raw style-props value for `kind`. Wrong-typed or
-// missing fields invalidate the whole def (all-or-nothing, mirroring
-// sanitizeDotStyle); out-of-band numerics are clamped onto the SAME canonical
-// grids the transforms use, so a stamped item compares exactly equal to its
+// Validate one raw style-props value for `kind`. Wrong-typed or missing
+// fields invalidate the whole def (all-or-nothing, mirroring
+// sanitizeDotStyle); valid values then land on the canonical grids via the
+// shared canonicalStyleProps, so a stamped item compares exactly equal to its
 // style and the detach logic never misfires. Returns undefined when the value
 // doesn't conform.
 function sanitizeStyleProps(kind: StyleKind, raw: unknown): StyleDef['props'] | undefined {
@@ -756,45 +894,34 @@ function sanitizeStyleProps(kind: StyleKind, raw: unknown): StyleDef['props'] | 
       const strokeColor = asString(o.strokeColor);
       if (!dot || dotSize === undefined || width === undefined) return undefined;
       if (strokeWidth === undefined || strokeColor === undefined) return undefined;
-      return {
+      return canonicalStyleProps('line', {
         defaultDotStyle: dot,
-        defaultDotSize: Math.max(DOT_SIZE_MIN, Math.round(dotSize)),
-        width: Math.max(LINE_WIDTH_MIN, Math.round(width)),
-        strokeWidth: Math.max(
-          LINE_STROKE_WIDTH_MIN,
-          Math.round(strokeWidth / LINE_STROKE_STEP) * LINE_STROKE_STEP,
-        ),
-        strokeColor: strokeColor.toLowerCase(),
-      };
+        defaultDotSize: dotSize,
+        width,
+        strokeWidth,
+        strokeColor,
+      });
     }
     case 'textLabel': {
       const color = asString(o.color);
       const darkColor = asString(o.darkColor);
       const fontSize = finiteNum(o.fontSize);
       const italic = asBool(o.italic);
-      const width = finiteNum(o.width);
-      const leading = finiteNum(o.leading);
-      const tracking = finiteNum(o.tracking);
       if (color === undefined || darkColor === undefined || fontSize === undefined)
         return undefined;
       if (!isLabelWeight(o.weight) || italic === undefined) return undefined;
       if (typeof o.align !== 'string' || !KNOWN_TEXT_ALIGNS.has(o.align as TextLabelAlign))
         return undefined;
-      if (width === undefined || leading === undefined || tracking === undefined) return undefined;
-      return {
+      // Since-dropped keys from older saves (width/leading/tracking) are
+      // silently discarded by this rebuild.
+      return canonicalStyleProps('textLabel', {
         color,
         darkColor,
-        fontSize: Math.max(
-          TEXT_LABEL_FONT_SIZE_MIN,
-          Math.round(fontSize / FONT_SIZE_STEP) * FONT_SIZE_STEP,
-        ),
+        fontSize,
         weight: o.weight,
         italic,
         align: o.align as TextLabelAlign,
-        width: Math.max(0, Math.round(width)),
-        leading: snapToStep(leading, TEXT_LABEL_LEADING_STEP, TEXT_LABEL_LEADING_MIN),
-        tracking: snapToStep(tracking, TEXT_LABEL_TRACKING_STEP, TEXT_LABEL_TRACKING_MIN),
-      };
+      });
     }
     case 'polygon': {
       const fill = asString(o.fill);
@@ -808,25 +935,22 @@ function sanitizeStyleProps(kind: StyleKind, raw: unknown): StyleDef['props'] | 
       if (darkFill === undefined || darkStroke === undefined) return undefined;
       if (strokeWidth === undefined || curveRadius === undefined || closed === undefined)
         return undefined;
-      return {
+      return canonicalStyleProps('polygon', {
         fill,
         stroke,
         darkFill,
         darkStroke,
-        strokeWidth: Math.max(
-          POLYGON_STROKE_WIDTH_MIN,
-          Math.round(strokeWidth / POLYGON_STROKE_STEP) * POLYGON_STROKE_STEP,
-        ),
-        curveRadius: Math.max(POLYGON_CURVE_RADIUS_MIN, curveRadius),
+        strokeWidth,
+        curveRadius,
         closed,
-      };
+      });
     }
     case 'routeBullet': {
       const size = finiteNum(o.size);
       if (typeof o.shape !== 'string' || !KNOWN_BULLET_SHAPES.has(o.shape as RouteBulletShape))
         return undefined;
       if (size === undefined) return undefined;
-      return { shape: o.shape as RouteBulletShape, size: clampRouteBulletSize(size) };
+      return canonicalStyleProps('routeBullet', { shape: o.shape as RouteBulletShape, size });
     }
     case 'transfer': {
       const thickness = finiteNum(o.thickness);
@@ -835,12 +959,7 @@ function sanitizeStyleProps(kind: StyleKind, raw: unknown): StyleDef['props'] | 
       const strokeColor = asString(o.strokeColor);
       if (thickness === undefined || color === undefined) return undefined;
       if (strokeWidth === undefined || strokeColor === undefined) return undefined;
-      return {
-        thickness: Math.max(TRANSFER_THICKNESS_MIN, Math.round(thickness)),
-        color,
-        strokeWidth: Math.max(TRANSFER_STROKE_WIDTH_MIN, Math.round(strokeWidth)),
-        strokeColor,
-      };
+      return canonicalStyleProps('transfer', { thickness, color, strokeWidth, strokeColor });
     }
   }
 }

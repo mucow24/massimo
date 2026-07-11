@@ -6,7 +6,7 @@ import { useDoc } from './store';
 import { undo } from './history';
 import { DEFAULT_DOC } from '../model/transforms';
 import type { TextLabelStyleProps } from '../model/types';
-import { makeRouteBullet, makeStyle, makeTextLabel } from '../test/fixtures';
+import { makeRouteBullet, makeStation, makeStyle, makeTextLabel } from '../test/fixtures';
 
 beforeEach(() => {
   localStorage.clear();
@@ -112,6 +112,98 @@ describe('applyStyle / clearStyleTag / renameStyle / deleteStyle', () => {
     undo();
     expect(useDoc.getState().styles.y1).toBeDefined();
     expect(useDoc.getState().textLabels.g1.styleId).toBe('y1');
+  });
+});
+
+describe('createStyle / updateStyleProps (the panel editor)', () => {
+  it('createStyle mints unique "New style N" names within the kind', () => {
+    useDoc.setState({ styles: {} });
+    const a = useDoc.getState().createStyle('routeBullet');
+    const b = useDoc.getState().createStyle('routeBullet');
+    const c = useDoc.getState().createStyle('polygon');
+    expect(useDoc.getState().styles[a].name).toBe('New style');
+    expect(useDoc.getState().styles[b].name).toBe('New style 2');
+    // Names are per-kind, so the polygon one starts over.
+    expect(useDoc.getState().styles[c].name).toBe('New style');
+    expect(useDoc.getState().styles[a].props).toEqual({ shape: 'circle', size: 14 });
+  });
+
+  it('updateStyleProps edits the def and re-stamps tagged users in ONE undo entry', () => {
+    useDoc.setState({
+      textLabels: {
+        g1: makeTextLabel({ id: 'g1', fontSize: 24, styleId: 'y1' }),
+        g2: makeTextLabel({ id: 'g2', fontSize: 11 }),
+      },
+      styles: { y1: makeStyle('textLabel', 'y1', { name: 'Heading', props: { fontSize: 24 } }) },
+    });
+    useDoc.temporal.getState().clear();
+    useDoc.getState().updateStyleProps('y1', { fontSize: 30 });
+    const s = useDoc.getState();
+    expect((s.styles.y1.props as TextLabelStyleProps).fontSize).toBe(30);
+    expect(s.textLabels.g1.fontSize).toBe(30); // live re-stamp
+    expect(s.textLabels.g1.styleId).toBe('y1');
+    expect(s.textLabels.g2.fontSize).toBe(11); // bystander untouched
+    undo();
+    expect((useDoc.getState().styles.y1.props as TextLabelStyleProps).fontSize).toBe(24);
+    expect(useDoc.getState().textLabels.g1.fontSize).toBe(24);
+  });
+});
+
+describe('new items wear the Default style on creation', () => {
+  it('addTextLabel stamps the CURRENT (redefined) Default in one undo entry', () => {
+    useDoc.setState({
+      styles: {
+        y1: makeStyle('textLabel', 'y1', {
+          name: 'Default',
+          props: { fontSize: 24, weight: 700 },
+        }),
+      },
+    });
+    useDoc.temporal.getState().clear();
+    const id = useDoc.getState().addTextLabel(0, 0);
+    const label = useDoc.getState().textLabels[id];
+    expect(label.fontSize).toBe(24);
+    expect(label.weight).toBe(700);
+    expect(label.styleId).toBe('y1');
+    undo();
+    expect(useDoc.getState().textLabels[id]).toBeUndefined();
+  });
+
+  it('addRouteBullet / addPolygon / addTransfer tag their Defaults too', () => {
+    useDoc.setState({
+      stations: { s1: makeStation({ id: 's1' }), s2: makeStation({ id: 's2', x: 200 }) },
+      styles: {
+        y1: makeStyle('routeBullet', 'y1', { name: 'Default', props: { size: 20 } }),
+        y2: makeStyle('polygon', 'y2', { name: 'Default', props: { fill: '#00ff00' } }),
+        y3: makeStyle('transfer', 'y3', { name: 'Default', props: { thickness: 6 } }),
+      },
+    });
+    const b = useDoc.getState().addRouteBullet(0, 0, null);
+    expect(useDoc.getState().routeBullets[b]).toMatchObject({ size: 20, styleId: 'y1' });
+    const p = useDoc.getState().addPolygon(0, 0);
+    expect(useDoc.getState().polygons[p]).toMatchObject({ fill: '#00ff00', styleId: 'y2' });
+    const x = useDoc
+      .getState()
+      .addTransfer({ stationId: 's1', lineId: null }, { stationId: 's2', lineId: null });
+    expect(useDoc.getState().transfers[x]).toMatchObject({ thickness: 6, styleId: 'y3' });
+  });
+
+  it('addLine keeps its cycled color but wears the Default line style', () => {
+    useDoc.setState({
+      styles: { y1: makeStyle('line', 'y1', { name: 'Default', props: { width: 12 } }) },
+    });
+    const id = useDoc.getState().addLine();
+    expect(useDoc.getState().lines[id].width).toBe(12);
+    expect(useDoc.getState().lines[id].styleId).toBe('y1');
+    expect(useDoc.getState().lines[id].color).toBeTruthy(); // identity untouched
+  });
+
+  it('a fresh doc starts with the five factory Defaults and tags new items with them', () => {
+    // beforeEach seeds DEFAULT_DOC, whose styles are the factory Defaults.
+    const names = Object.values(useDoc.getState().styles).map((d) => d.name);
+    expect(names).toEqual(['Default', 'Default', 'Default', 'Default', 'Default']);
+    const id = useDoc.getState().addTextLabel(0, 0);
+    expect(useDoc.getState().textLabels[id].styleId).toBe('default-textLabel');
   });
 });
 

@@ -216,9 +216,6 @@ const STYLE_PROPS_DEFAULTS: StylePropsByKind = {
     weight: 400,
     italic: false,
     align: 'left',
-    width: 0,
-    leading: 1,
-    tracking: 0,
   },
   polygon: {
     fill: '#cfe3f2',
@@ -269,10 +266,6 @@ export function makeDoc(parts: {
   labelLeading?: number;
   labelTracking?: number;
   activePalettes?: import('../model/palettes').PaletteId[];
-  transferThickness?: number;
-  transferColor?: string;
-  transferStrokeWidth?: number;
-  transferStrokeColor?: string;
 }): MapDoc {
   const stations: Record<StationId, Station> = {};
   for (const s of parts.stations ?? []) stations[s.id] = s;
@@ -314,10 +307,6 @@ export function makeDoc(parts: {
     labelLeading: parts.labelLeading ?? 1,
     labelTracking: parts.labelTracking ?? 0,
     activePalettes: parts.activePalettes ?? ['mta'],
-    transferThickness: parts.transferThickness ?? 2,
-    transferColor: parts.transferColor ?? '#000000',
-    transferStrokeWidth: parts.transferStrokeWidth ?? 0,
-    transferStrokeColor: parts.transferStrokeColor ?? '#ffffff',
   };
 }
 

@@ -16,6 +16,7 @@ import type {
   PolygonStylePatch,
   RouteBullet,
   StationId,
+  StyleDef,
   StyleKind,
   SvgImage,
   SvgImageStylePatch,
@@ -37,12 +38,14 @@ import {
   backfillLineNames,
   backfillPolygonDarkColors,
   backfillTextLabelColors,
+  bakeLegacyTransferSettings,
   convertLegacyDotShapes,
   foldPolygonFillOpacity,
   migrateLegacyBulletSyntax,
+  migrateV9Styles,
   validActivePalettes,
 } from '../model/serialize';
-import type { Station } from '../model/types';
+import type { Station, Transfer } from '../model/types';
 import { randomStationName } from './stationNames';
 import { pauseHistory, pushHistory, resumeHistory } from './history';
 import { useViewportStore } from './viewportStore';
@@ -90,9 +93,10 @@ const DOC_FIELDS = [
   'polygonOrder',
   'svgImages',
   'svgImageOrder',
-  // Named style presets. New collection, no persist version bump: zustand's
-  // shallow merge (and parse()'s DEFAULT_DOC merge) backfills {} for older
-  // saves, same as labelLeading/labelTracking shipped.
+  // Named style presets. Pre-styles saves lack the key, so zustand's shallow
+  // merge (and parse()'s DEFAULT_DOC merge) backfills DEFAULT_STYLES; docs
+  // persisted by the round-1 build carry an explicit record instead and get
+  // the Defaults injected by migrateV9Styles (v<10).
   'styles',
   'labelFontSize',
   'labelWeight',
@@ -100,10 +104,6 @@ const DOC_FIELDS = [
   'labelLeading',
   'labelTracking',
   'activePalettes',
-  'transferThickness',
-  'transferColor',
-  'transferStrokeWidth',
-  'transferStrokeColor',
 ] as const;
 type DocFieldName = (typeof DOC_FIELDS)[number];
 export type DocSnapshot = Pick<MapDoc, DocFieldName>;
@@ -160,6 +160,16 @@ function docSnapshotsEqual(a: DocSnapshot, b: DocSnapshot): boolean {
  *   alpha channel of `fill` AND `darkFill`, then drop the field. Idempotent, so
  *   `parse()` runs the shared `foldPolygonFillOpacity` unconditionally (no file
  *   SCHEMA_VERSION bump) while this rehydrate path gates it on v<9.
+ * - v9 → v10: style hygiene (`migrateV9Styles`) — rebuild persisted style
+ *   defs through the canonical grids (stripping the since-dropped textLabel
+ *   width/leading/tracking keys) and inject the factory "Default" presets
+ *   that round-1 docs' explicit `styles` record never got from the persist
+ *   merge — then bake the retired doc-level transfer settings
+ *   (transferThickness/transferColor/transferStrokeWidth/transferStrokeColor)
+ *   into per-transfer overrides, drop the fields, and seed an untouched
+ *   factory Default transfer style from them (the settings' map-wide role
+ *   moved there). The bake is idempotent (keyed off field presence), so
+ *   `parse()` runs the shared `bakeLegacyTransferSettings` unconditionally.
  */
 export function migrateDoc(persisted: unknown, version: number): DocState {
   const s = persisted as {
@@ -167,6 +177,8 @@ export function migrateDoc(persisted: unknown, version: number): DocState {
     stations?: Record<string, Station>;
     polygons?: Record<string, Polygon>;
     textLabels?: Record<string, TextLabel>;
+    transfers?: Record<string, Transfer>;
+    styles?: Record<string, StyleDef>;
     labelBold?: boolean;
     labelWeight?: TextLabelWeight;
     activePalettes?: PaletteId[];
@@ -222,6 +234,27 @@ export function migrateDoc(persisted: unknown, version: number): DocState {
     // Runs after the v<5 dark-color backfill above, so darkFill is present.
     const folded = foldPolygonFillOpacity(out.polygons);
     if (folded.changed) out = { ...out, polygons: folded.polygons };
+  }
+  if (v < 10) {
+    // Style-def hygiene FIRST — strip round-1 defs' since-dropped keys and
+    // materialize the factory Defaults (round-1 docs persisted an explicit
+    // styles record the merge won't backfill; pre-styles docs with legacy
+    // transfer settings get theirs here instead so the bake below can seed
+    // the Default transfer style from the settings it is folding away).
+    // Docs with neither pass through by reference (merge backfills styles).
+    const outRaw = out as Record<string, unknown>;
+    const hasLegacyTransferSettings =
+      'transferThickness' in outRaw ||
+      'transferColor' in outRaw ||
+      'transferStrokeWidth' in outRaw ||
+      'transferStrokeColor' in outRaw;
+    if (out.styles !== undefined || hasLegacyTransferSettings) {
+      const styles = migrateV9Styles(out.styles ?? {});
+      if (styles !== out.styles) out = { ...out, styles };
+    }
+    // Retired doc-level transfer settings → baked into per-transfer overrides
+    // (no-op when the fields were never persisted, e.g. pre-PR-#220 docs).
+    out = bakeLegacyTransferSettings(out);
   }
   if (v < 3 && 'labelBold' in out) {
     const { labelBold, ...rest } = out;
@@ -395,6 +428,12 @@ interface DocState extends MapDoc {
   renameStyle: (styleId: string, name: string) => void;
   /** Delete a style def; its users keep their values but lose the tag. */
   deleteStyle: (styleId: string) => void;
+  /** The Styles panel's "+ New style": a fresh def of `kind` with factory
+   *  props under the first unused "New style N" name. Returns its id. */
+  createStyle: (kind: StyleKind) => string;
+  /** The Styles panel editor's write path: patch a def's props and re-stamp
+   *  its tagged users live, all one undo entry. */
+  updateStyleProps: (styleId: string, patch: S.StylePropsPatch) => void;
 
   /** Replace the whole document (file load). Defaults fill any field the
    *  loaded doc omits. Callers should clearHistory() after — undo must not
@@ -415,10 +454,6 @@ interface DocState extends MapDoc {
    *  prune it from this doc's active set, falling back to the default set if it
    *  was the only active palette. */
   deleteCustomPalette: (id: PaletteId) => void;
-  setTransferThickness: (n: number) => void;
-  setTransferColor: (c: string) => void;
-  setTransferStrokeWidth: (n: number) => void;
-  setTransferStrokeColor: (c: string) => void;
   clearAll: () => void;
 }
 
@@ -490,7 +525,10 @@ export const useDoc = create<DocState>()(
             // reference): `n % 0` is NaN, which would index `undefined`.
             const color = cycle.length ? cycle[s.lineCounter % cycle.length] : FALLBACK_LINE_COLOR;
             const service = pickNextLineName(s.lines);
-            return T.addLine(s, id, service, color);
+            // New items wear the kind's "Default" style (composed into the
+            // same set() so creation stays one undo entry). Color is identity,
+            // not style — the cycled pick above survives the stamp.
+            return S.applyDefaultStyle(T.addLine(s, id, service, color), 'line', id);
           });
           return id;
         },
@@ -537,7 +575,8 @@ export const useDoc = create<DocState>()(
 
         addRouteBullet: (x, y, lineId) => {
           const id = ids.routeBulletId();
-          set((s) => T.addRouteBullet(s, id, x, y, lineId));
+          // New items wear the kind's "Default" style — same set(), one undo.
+          set((s) => S.applyDefaultStyle(T.addRouteBullet(s, id, x, y, lineId), 'routeBullet', id));
           return id;
         },
         addRouteBulletWith: (fields) => {
@@ -576,7 +615,9 @@ export const useDoc = create<DocState>()(
 
         addTransfer: (a, b) => {
           const id = ids.transferId();
-          set((s) => T.addTransfer(s, id, a, b));
+          // New items wear the kind's "Default" style — same set(), one undo.
+          // addTransfer can refuse (self-transfer); the stamp no-ops then.
+          set((s) => S.applyDefaultStyle(T.addTransfer(s, id, a, b), 'transfer', id));
           return id;
         },
 
@@ -586,7 +627,8 @@ export const useDoc = create<DocState>()(
 
         addTextLabel: (x, y) => {
           const id = ids.textLabelId();
-          set((s) => T.addTextLabel(s, id, x, y));
+          // New items wear the kind's "Default" style — same set(), one undo.
+          set((s) => S.applyDefaultStyle(T.addTextLabel(s, id, x, y), 'textLabel', id));
           return id;
         },
         addTextLabelWith: (fields) => {
@@ -624,7 +666,8 @@ export const useDoc = create<DocState>()(
 
         addPolygon: (x, y) => {
           const id = ids.polygonId();
-          set((s) => T.addPolygon(s, id, x, y));
+          // New items wear the kind's "Default" style — same set(), one undo.
+          set((s) => S.applyDefaultStyle(T.addPolygon(s, id, x, y), 'polygon', id));
           return id;
         },
         addPolygonWith: (fields) => {
@@ -710,6 +753,21 @@ export const useDoc = create<DocState>()(
         clearStyleTag: (kind, itemId) => set((s) => S.clearStyleTag(s, kind, itemId)),
         renameStyle: (styleId, name) => set((s) => S.renameStyle(s, styleId, name)),
         deleteStyle: (styleId) => set((s) => S.deleteStyle(s, styleId)),
+        createStyle: (kind) => {
+          const id = ids.styleId();
+          // First unused "New style N" within the kind, so create never
+          // collides (the transform refuses duplicates).
+          const taken = new Set(
+            Object.values(get().styles)
+              .filter((d) => d.kind === kind)
+              .map((d) => d.name),
+          );
+          let name = 'New style';
+          for (let n = 2; taken.has(name); n++) name = `New style ${n}`;
+          set((s) => S.createStyle(s, id, kind, name));
+          return id;
+        },
+        updateStyleProps: (styleId, patch) => set((s) => S.updateStyleProps(s, styleId, patch)),
 
         // A plain merge: doc fields are replaced, mutator methods survive.
         loadDoc: (doc) => set({ ...DEFAULT_DOC, ...doc }),
@@ -742,17 +800,13 @@ export const useDoc = create<DocState>()(
             );
           });
         },
-        setTransferThickness: (n) => set((s) => T.setTransferThickness(s, n)),
-        setTransferColor: (c) => set((s) => T.setTransferColor(s, c)),
-        setTransferStrokeWidth: (n) => set((s) => T.setTransferStrokeWidth(s, n)),
-        setTransferStrokeColor: (c) => set((s) => T.setTransferStrokeColor(s, c)),
         clearAll: () => set((s) => T.clearAll(s)),
       }),
       {
         name: 'vignelli-map-doc-v1',
         storage: createJSONStorage(() => localStorage),
-        version: 9,
-        // Version migration chain v0 → v9 lives in `migrateDoc` (above), which
+        version: 10,
+        // Version migration chain v0 → v10 lives in `migrateDoc` (above), which
         // is exported and unit-tested. See its doc comment for each step.
         migrate: (persisted, version) => migrateDoc(persisted, version),
         partialize: (s) => pickDocSnapshot(s),

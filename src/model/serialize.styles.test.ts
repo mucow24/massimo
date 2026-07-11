@@ -4,6 +4,7 @@
 import { describe, it, expect } from 'vitest';
 import { parse, serialize } from './serialize';
 import { applyStyleToItem } from './styles';
+import { DEFAULT_STYLES } from './transforms';
 import type { MapDoc, TextLabelStyleProps } from './types';
 import {
   makeDoc,
@@ -52,9 +53,26 @@ describe('styles round-trip', () => {
     if (result.ok) expect(result.doc).toEqual(doc);
   });
 
-  it('an older file without a styles field parses with an empty record', () => {
+  it('an older file without a styles field parses with the factory Defaults', () => {
     const { styles: _gone, ...docWithout } = makeDoc({}) as MapDoc;
-    expect(parsed(docWithout).styles).toEqual({});
+    expect(parsed(docWithout).styles).toEqual(DEFAULT_STYLES);
+  });
+
+  it('a pre-styles file with legacy transfer settings seeds the Default transfer style', () => {
+    // The retired settings' map-wide role moves to the Default transfer
+    // style, so a new transfer drawn into the loaded map keeps the old look.
+    const { styles: _gone, ...docWithout } = makeDoc({
+      stations: [makeStation({ id: 's1' }), makeStation({ id: 's2' })],
+      transfers: [makeTransfer({ id: 'x1' })],
+    }) as MapDoc;
+    const out = parsed({ ...docWithout, transferThickness: 7 });
+    const def = Object.values(out.styles).find(
+      (d) => d.kind === 'transfer' && d.name === 'Default',
+    );
+    expect(def?.props).toMatchObject({ thickness: 7 });
+    // …and the existing transfer got its look baked as an override.
+    expect(out.transfers.x1.thickness).toBe(7);
+    expect('transferThickness' in out).toBe(false);
   });
 });
 
@@ -94,10 +112,7 @@ describe('sanitizeStyles via parse', () => {
           name: 'L',
           props: { width: 9.6, strokeWidth: 1.3, strokeColor: '#ABCDEF' },
         }),
-        y2: makeStyle('textLabel', 'y2', {
-          name: 'T',
-          props: { fontSize: 12.1, width: 33.4, leading: 1.03, tracking: 0.0149 },
-        }),
+        y2: makeStyle('textLabel', 'y2', { name: 'T', props: { fontSize: 12.1 } }),
         y3: makeStyle('polygon', 'y3', { name: 'P', props: { strokeWidth: 2.3, curveRadius: -4 } }),
         y4: makeStyle('routeBullet', 'y4', { name: 'B', props: { size: 3 } }),
         y5: makeStyle('transfer', 'y5', { name: 'X', props: { thickness: 5.4, strokeWidth: -1 } }),
@@ -109,12 +124,7 @@ describe('sanitizeStyles via parse', () => {
       strokeWidth: 1.5,
       strokeColor: '#abcdef',
     });
-    expect(out.styles.y2.props).toMatchObject({
-      fontSize: 12,
-      width: 33,
-      leading: 1.05,
-      tracking: 0.015,
-    });
+    expect(out.styles.y2.props).toMatchObject({ fontSize: 12 });
     expect(out.styles.y3.props).toMatchObject({ strokeWidth: 2.5, curveRadius: 0 });
     expect(out.styles.y4.props).toMatchObject({ size: 6 });
     expect(out.styles.y5.props).toMatchObject({ thickness: 5, strokeWidth: 0 });

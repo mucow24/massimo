@@ -494,20 +494,12 @@ export interface MapDoc {
   // Which color palettes are available in the line editor. Invariant:
   // never empty (enforced by transforms / parse sanitiser).
   activePalettes: PaletteId[];
-  // Default styling for inter-station transfers (each transfer can override
-  // any field — see Transfer). Thickness is the visible colored body's stroke
-  // width in world units, clamped at MIN in transferStyle.ts (the slider tops
-  // out at MAX but the textbox accepts arbitrary larger values). Color is a
-  // 7-char hex string (`#rrggbb`), the format emitted by
-  // `<input type="color">`.
-  transferThickness: number;
-  transferColor: string;
-  // Optional always-on outline around the body (a "halo"). Width is the
-  // per-side padding added past the body in world units, clamped at
-  // TRANSFER_STROKE_WIDTH_MIN in transferStyle.ts (the slider tops out at MAX
-  // but the textbox accepts arbitrary larger values). 0 = no outline.
-  transferStrokeWidth: number;
-  transferStrokeColor: string;
+  // NOTE: there are no doc-level transfer settings anymore. Transfers fall
+  // back to the constant TRANSFER_STYLE_DEFAULTS (transferStyle.ts); map-wide
+  // restyling goes through the "Default" transfer style preset. Saves that
+  // predate the retirement carry transferThickness/transferColor/
+  // transferStrokeWidth/transferStrokeColor — baked into per-transfer
+  // overrides on load (bakeLegacyTransferSettings / persist v10).
 }
 
 // Multi-line horizontal text alignment inside a TextLabel. `justify` flushes
@@ -579,8 +571,8 @@ export interface TextLabel {
   // by `updateTextLabel`. Mirrors `Station.editorHeight`.
   editorHeight?: number;
   // Live link to a StyleDef of kind 'textLabel' — covered fields are the
-  // colors, fontSize, weight, italic, align, width, leading and tracking
-  // (NOT text/position/rotation/locked/editorHeight). Same contract as
+  // colors, fontSize, weight, italic and align (NOT width/leading/tracking/
+  // text/position/rotation/locked/editorHeight). Same contract as
   // `Line.styleId`.
   styleId?: string;
 }
@@ -595,8 +587,9 @@ export interface TransferEnd {
 }
 
 // A transfer is a line connecting one station dot to another (thickness and
-// color come from doc.transferThickness / doc.transferColor; 2px black is only
-// the default). The endpoints are anchored to specific stops so they follow the dot when
+// color come from the per-transfer overrides below, falling back to the
+// constant TRANSFER_STYLE_DEFAULTS — the classic 2px black). The endpoints
+// are anchored to specific stops so they follow the dot when
 // stations move, lines are reordered, or stops shift on a station.
 // Cascade-deleted when either endpoint's stop is removed — by deleting the
 // station, deleting the line, or removing that line's stop from the station.
@@ -604,30 +597,24 @@ export interface Transfer {
   id: string;
   a: TransferEnd;
   b: TransferEnd;
-  // Per-transfer style overrides. Each absent field defers to the matching
-  // doc-level setting (transferThickness / transferColor / transferStrokeWidth
-  // / transferStrokeColor); `updateTransferStyle` drops a field when the
-  // chosen value equals the doc's current setting, so the transfer tracks the
-  // setting going forward, and the doc-level setters prune overrides their new
-  // value makes redundant (same contract as StopCell.dotStyle / dotSize).
-  // Units and clamps match the doc settings — see model/transferStyle.ts.
+  // Per-transfer style overrides. Each absent field defers to the constant
+  // default (TRANSFER_STYLE_DEFAULTS); `updateTransferStyle` drops a field
+  // when the chosen value equals that default, so persisted state stays
+  // clean (same contract as StopCell.dotStyle / dotSize and Line.width).
+  // Units and clamps — see model/transferStyle.ts.
   thickness?: number;
   color?: string;
   strokeWidth?: number;
   strokeColor?: string;
   // Live link to a StyleDef of kind 'transfer' — covered fields are all four
-  // style overrides above. The tag pins the transfer's EFFECTIVE values to
-  // the style's props: the doc-level transfer setters re-canonicalize tagged
-  // transfers' overrides against their style (instead of the plain redundant-
-  // override prune) so a tagged transfer never drifts when a doc setting
-  // changes. Same contract as `Line.styleId` otherwise.
+  // style overrides above. Same contract as `Line.styleId`.
   styleId?: string;
 }
 
 // The style overrides of a Transfer accepted by `updateTransferStyle`. Shared
 // by the transform and the store action so the two never drift (mirrors
-// PolygonStylePatch). A provided field is canonicalized against the doc-level
-// setting — passing the setting's own value CLEARS that override.
+// PolygonStylePatch). A provided field is canonicalized against the constant
+// default — passing the default's own value CLEARS that override.
 export type TransferStylePatch = Partial<
   Pick<Transfer, 'thickness' | 'color' | 'strokeWidth' | 'strokeColor'>
 >;
@@ -661,10 +648,8 @@ export interface TextLabelStyleProps {
   weight: TextLabelWeight;
   italic: boolean;
   align: TextLabelAlign;
-  // Column width in world units; 0 = Auto.
-  width: number;
-  leading: number;
-  tracking: number;
+  // Deliberately NOT covered: width, leading, tracking — per-label layout
+  // tuning, not reusable typography.
 }
 
 export interface PolygonStyleProps {

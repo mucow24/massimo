@@ -267,16 +267,27 @@ interface MapDoc {
   labelLeading: number;
   labelTracking: number; // line-spacing mult / em letter-spacing (1 / 0 = neutral)
   activePalettes: PaletteId[]; // INVARIANT: never empty
-  transferThickness: number;
-  transferColor: string; // default transfer styling (per-transfer overridable)
-  transferStrokeWidth: number;
-  transferStrokeColor: string; // optional halo (0 = none)
+  styles: Record<string, StyleDef>; // named per-kind formatting presets ("Styles")
 }
 ```
 
+There are **no doc-level transfer settings** — transfers fall back to the constant
+`TRANSFER_STYLE_DEFAULTS` (transferStyle.ts) with per-transfer overrides on top; the map-wide
+knob is the "Default" transfer style preset (edit it in the Styles panel and every transfer
+wearing it follows). Pre-retirement saves carried `transferThickness/transferColor/
+transferStrokeWidth/transferStrokeColor`; both load paths bake them into per-transfer overrides
+(`bakeLegacyTransferSettings`, persist v10).
+
 `DEFAULT_DOC` (in [transforms.ts](src/model/transforms.ts)) is the merge baseline: empty
 collections, `name: 'Untitled map'`, `curveRadius: 24`, `lineCounter: 0`, `activePalettes:
-['mta']`, `labelItalic: false`, transfer defaults from named constants.
+['mta']`, `labelItalic: false`, and `styles: DEFAULT_STYLES` — the five factory "Default"
+presets (one per styleable kind: line, textLabel, polygon, routeBullet, transfer). Styles are
+doc-scoped: applying one stamps its props onto the item through the canonical setters and tags
+it (`styleId`, invariant: tagged => the item's covered values equal the style's props); editing
+a covered field detaches the item back to "Custom"; redefining a style (Styles-panel editor or
+"Save style..." over the same name) re-stamps its tagged users in the same undo entry; new
+items are stamped with their kind's style named "Default" on creation. See
+[styles.ts](src/model/styles.ts).
 
 ### Entities (field-level)
 

@@ -1,5 +1,4 @@
-// Detach-on-edit ("tagged ⇒ matches" upkeep), transfer doc-setter
-// reconciliation for style-tagged transfers, and paste hygiene for incoming
+// Detach-on-edit ("tagged ⇒ matches" upkeep) and paste hygiene for incoming
 // styleIds. The styles transforms themselves are covered in styles.test.ts.
 import { describe, it, expect } from 'vitest';
 import {
@@ -11,8 +10,6 @@ import {
   setLineStrokeColor,
   setLineStrokeWidth,
   setLineWidth,
-  setTransferColor,
-  setTransferThickness,
   updatePolygon,
   updateRouteBullet,
   updateTextLabel,
@@ -86,14 +83,15 @@ describe('detach on covered-field edits — text labels', () => {
     expect(updateTextLabel(tagged(), 'g1', { x: 50, y: 50 }).textLabels.g1.styleId).toBe('y1');
   });
 
-  it('keeps the tag on value-identical covered writes, comparing EFFECTIVE values', () => {
+  it('width/leading/tracking are per-label layout, not style — real changes keep the tag', () => {
+    expect(updateTextLabel(tagged(), 'g1', { width: 200 }).textLabels.g1.styleId).toBe('y1');
+    expect(updateTextLabel(tagged(), 'g1', { leading: 1.5 }).textLabels.g1.styleId).toBe('y1');
+    expect(updateTextLabel(tagged(), 'g1', { tracking: 0.05 }).textLabels.g1.styleId).toBe('y1');
+  });
+
+  it('keeps the tag on value-identical covered writes', () => {
     // fontSize re-fired with the current value.
     expect(updateTextLabel(tagged(), 'g1', { fontSize: 24 }).textLabels.g1.styleId).toBe('y1');
-    // width absent (effective 0) written as explicit 0 — stored form changes,
-    // effective value doesn't, so the tag must survive.
-    expect(updateTextLabel(tagged(), 'g1', { width: 0 }).textLabels.g1.styleId).toBe('y1');
-    expect(updateTextLabel(tagged(), 'g1', { leading: 1 }).textLabels.g1.styleId).toBe('y1');
-    expect(updateTextLabel(tagged(), 'g1', { tracking: 0 }).textLabels.g1.styleId).toBe('y1');
   });
 });
 
@@ -158,54 +156,6 @@ describe('detach on covered-field edits — transfers', () => {
     expect(
       updateTransferStyle(doc, 'x1', { color: '#ff0000' }).transfers.x1.styleId,
     ).toBeUndefined();
-  });
-});
-
-describe('transfer doc setters pin style-tagged transfers to their style', () => {
-  it('drops the override when the new setting reaches the style value (still effective)', () => {
-    // Style says 6; transfer overrides 6 over the doc's 2. Raising the doc
-    // setting to 6 makes the override redundant — dropped, effective stays 6.
-    const doc = makeDoc({
-      stations: [makeStation({ id: 's1' }), makeStation({ id: 's2' })],
-      transfers: [makeTransfer({ id: 'x1', thickness: 6, styleId: 'y1' })],
-      styles: [makeStyle('transfer', 'y1', { props: { thickness: 6 } })],
-    });
-    const next = setTransferThickness(doc, 6);
-    expect(next.transfers.x1.thickness).toBeUndefined();
-    expect(next.transfers.x1.styleId).toBe('y1');
-  });
-
-  it('materializes an override when the setting moves away from the style value', () => {
-    // Style says 2 (= doc setting, so no override stored). Changing the doc
-    // setting to 4 must NOT drag the tagged transfer along: the override
-    // materializes at the style's 2. An untagged sibling follows the setting.
-    const doc = makeDoc({
-      stations: [makeStation({ id: 's1' }), makeStation({ id: 's2' })],
-      transfers: [makeTransfer({ id: 'x1', styleId: 'y1' }), makeTransfer({ id: 'x2' })],
-      styles: [makeStyle('transfer', 'y1', { props: { thickness: 2 } })],
-    });
-    const next = setTransferThickness(doc, 4);
-    expect(next.transfers.x1.thickness).toBe(2); // pinned to the style
-    expect(next.transfers.x1.styleId).toBe('y1');
-    expect(next.transfers.x2.thickness).toBeUndefined(); // tracks the setting
-  });
-
-  it('keeps the plain redundant-override prune for untagged transfers', () => {
-    const doc = makeDoc({
-      stations: [makeStation({ id: 's1' }), makeStation({ id: 's2' })],
-      transfers: [makeTransfer({ id: 'x1', color: '#ff0000' })],
-    });
-    const next = setTransferColor(doc, '#ff0000');
-    expect(next.transfers.x1.color).toBeUndefined();
-  });
-
-  it('no-ops (same reference) when the setting does not change', () => {
-    const doc = makeDoc({
-      stations: [makeStation({ id: 's1' }), makeStation({ id: 's2' })],
-      transfers: [makeTransfer({ id: 'x1', styleId: 'y1' })],
-      styles: [makeStyle('transfer', 'y1')],
-    });
-    expect(setTransferThickness(doc, doc.transferThickness)).toBe(doc);
   });
 });
 

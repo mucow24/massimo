@@ -22,7 +22,8 @@ interface Props {
   onClose: () => void;
 }
 
-function ShapeIcon({ shape }: { shape: RouteBulletShape }) {
+// Exported for the Styles panel editor, which renders the same shape chips.
+export function ShapeIcon({ shape }: { shape: RouteBulletShape }) {
   // currentColor: inherits the button's themed text color, so the glyph stays
   // visible on the dark control face too.
   const fill = 'currentColor';

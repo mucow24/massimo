@@ -13,6 +13,8 @@ import {
   SegmentBandSpec,
 } from '../geometry/interlining';
 import { effectivePolygonOrder, effectiveSvgImageOrder, type ItemRef } from '../model/transforms';
+import { TRANSFER_STYLE_DEFAULTS } from '../model/transferStyle';
+import { defaultStyleProps } from '../model/styles';
 import { rotateItemOnContextMenu } from './canvas/groupRotate';
 import { legibleTextOn } from '../util/color';
 import { BandWarning, SegmentBand } from './SegmentBand';
@@ -103,10 +105,7 @@ export function MapCanvas() {
   const routeBullets = useDoc((s) => s.routeBullets);
   const rotateRouteBullet = useDoc((s) => s.rotateRouteBullet);
   const transfers = useDoc((s) => s.transfers);
-  const transferColor = useDoc((s) => s.transferColor);
-  const transferThickness = useDoc((s) => s.transferThickness);
-  const transferStrokeColor = useDoc((s) => s.transferStrokeColor);
-  const transferStrokeWidth = useDoc((s) => s.transferStrokeWidth);
+  const styles = useDoc((s) => s.styles);
   const textLabels = useDoc((s) => s.textLabels);
   const rotateTextLabel = useDoc((s) => s.rotateTextLabel);
   const polygons = useDoc((s) => s.polygons);
@@ -982,12 +981,7 @@ export function MapCanvas() {
         <TransferLayer
           transfers={transfers}
           stations={stations}
-          defaults={{
-            color: transferColor,
-            thickness: transferThickness,
-            strokeColor: transferStrokeColor,
-            strokeWidth: transferStrokeWidth,
-          }}
+          defaults={TRANSFER_STYLE_DEFAULTS}
           selectedId={selection.selectedTransferId}
           onSelect={(id) => {
             if (exitLineEditorOnItemClick()) return;
@@ -1007,6 +1001,9 @@ export function MapCanvas() {
             const anchor = selection.uiMode.anchor;
             if (!anchor) return null;
             const anchorWorld = transferEndWorld(stations[anchor.stationId], anchor.lineId);
+            // The dropped transfer will wear the "Default" transfer style, so
+            // the preview reads it too (constants when Default is gone).
+            const preview = defaultStyleProps(styles, 'transfer') ?? TRANSFER_STYLE_DEFAULTS;
             return (
               <line
                 data-export-exclude="1"
@@ -1015,8 +1012,8 @@ export function MapCanvas() {
                 y1={anchorWorld.y}
                 x2={cursorWorld.x}
                 y2={cursorWorld.y}
-                stroke={transferColor}
-                strokeWidth={transferThickness}
+                stroke={preview.color}
+                strokeWidth={preview.thickness}
                 strokeLinecap="round"
                 strokeDasharray="6 4"
                 opacity={0.6}
@@ -1057,11 +1054,13 @@ export function MapCanvas() {
               as the user clicks (the click handler exits placing-label). */}
           <LabelPlacingPreview
             world={selection.uiMode.kind === 'placing-label' ? cursorWorld : null}
+            style={defaultStyleProps(styles, 'textLabel')}
           />
           {/* Polygon-placing-mode ghost: a faint starter square following the
               cursor before the click, matching the shape that will drop. */}
           <PolygonPlacingPreview
             world={selection.uiMode.kind === 'creating-polygon' ? cursorWorld : null}
+            style={defaultStyleProps(styles, 'polygon')}
           />
           {/* Svg-image-placing ghost: the imported graphic at 50% opacity
               following the cursor, centered, until the click drops it. */}
@@ -1075,6 +1074,7 @@ export function MapCanvas() {
             world={selection.uiMode.kind === 'creating-route-bullet' ? cursorWorld : null}
             lines={lines}
             lineOrder={lineOrder}
+            style={defaultStyleProps(styles, 'routeBullet')}
           />
         </g>
 

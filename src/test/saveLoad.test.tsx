@@ -2,7 +2,7 @@ import { describe, it, expect, beforeEach } from 'vitest';
 import { pickDocSnapshot, useDoc } from '../state/store';
 import { DEFAULT_DOC } from '../model/transforms';
 import { parse, serialize, SCHEMA_FORMAT } from '../model/serialize';
-import { makeDoc, makeLine, makeStation, makeStop } from './fixtures';
+import { makeDoc, makeLine, makeStation, makeStop, makeTransfer } from './fixtures';
 
 beforeEach(() => {
   useDoc.setState({ ...useDoc.getState(), ...DEFAULT_DOC });
@@ -190,35 +190,29 @@ describe('save/load round-trip', () => {
     }
   });
 
-  it('round-trips all transfer styling fields', () => {
+  it('round-trips per-transfer style overrides', () => {
     const fixture = makeDoc({
-      transferThickness: 7,
-      transferColor: '#abcdef',
-      transferStrokeWidth: 3,
-      transferStrokeColor: '#123456',
+      stations: [makeStation({ id: 's1' }), makeStation({ id: 's2' })],
+      transfers: [
+        makeTransfer({
+          id: 'x1',
+          thickness: 7,
+          color: '#abcdef',
+          strokeWidth: 3,
+          strokeColor: '#123456',
+        }),
+      ],
     });
     const json = serialize(fixture);
     const result = parse(json);
     expect(result.ok).toBe(true);
     if (result.ok) {
-      expect(result.doc.transferThickness).toBe(7);
-      expect(result.doc.transferColor).toBe('#abcdef');
-      expect(result.doc.transferStrokeWidth).toBe(3);
-      expect(result.doc.transferStrokeColor).toBe('#123456');
-    }
-  });
-
-  it('legacy files (no transfer styling fields) parse with DEFAULT_DOC values', () => {
-    // Older saves predate the transfer styling options. parse() merges over
-    // DEFAULT_DOC, so the new fields get the defaults rather than `undefined`.
-    const legacy = legacyEnvelope();
-    const result = parse(legacy);
-    expect(result.ok).toBe(true);
-    if (result.ok) {
-      expect(result.doc.transferThickness).toBe(2);
-      expect(result.doc.transferColor).toBe('#000000');
-      expect(result.doc.transferStrokeWidth).toBe(0);
-      expect(result.doc.transferStrokeColor).toBe('#ffffff');
+      expect(result.doc.transfers.x1).toMatchObject({
+        thickness: 7,
+        color: '#abcdef',
+        strokeWidth: 3,
+        strokeColor: '#123456',
+      });
     }
   });
 

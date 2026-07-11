@@ -11,8 +11,13 @@
 // so the setters' own detach-on-edit can't erase it.
 
 import {
-  TEXT_LABEL_LEADING_DEFAULT,
-  TEXT_LABEL_TRACKING_DEFAULT,
+  DEFAULT_STYLES,
+  FONT_SIZE_STEP,
+  POLYGON_CURVE_RADIUS_MIN,
+  POLYGON_STROKE_STEP,
+  POLYGON_STROKE_WIDTH_MIN,
+  TEXT_LABEL_FONT_SIZE_MIN,
+  clampRouteBulletSize,
   setLineDefaultDotSize,
   setLineDefaultDotStyle,
   setLineStrokeColor,
@@ -24,11 +29,30 @@ import {
   updateTransferStyle,
 } from './transforms';
 import { DEFAULT_DOT_STYLE, dotStylesEqual } from './dotStyle';
-import { lineDefaultDotSizeOf } from './dotSize';
-import { lineWidthOf } from './lineWidth';
-import { lineStrokeColorOf, lineStrokeWidthOf } from './lineStroke';
-import { resolveTransferStyle } from './transferStyle';
-import type { LineStyleProps, MapDoc, StyleDef, StyleKind, StylePropsByKind } from './types';
+import { DOT_SIZE_MIN, lineDefaultDotSizeOf } from './dotSize';
+import { LINE_WIDTH_MIN, lineWidthOf } from './lineWidth';
+import {
+  LINE_STROKE_STEP,
+  LINE_STROKE_WIDTH_MIN,
+  lineStrokeColorOf,
+  lineStrokeWidthOf,
+} from './lineStroke';
+import {
+  TRANSFER_STROKE_WIDTH_MIN,
+  TRANSFER_THICKNESS_MIN,
+  resolveTransferStyle,
+} from './transferStyle';
+import type {
+  LineStyleProps,
+  MapDoc,
+  PolygonStyleProps,
+  RouteBulletStyleProps,
+  StyleDef,
+  StyleKind,
+  StylePropsByKind,
+  TextLabelStyleProps,
+  TransferStyleProps,
+} from './types';
 
 // Which MapDoc collection each style kind's items live in.
 export const STYLE_COLLECTION_OF = {
@@ -79,9 +103,6 @@ export function captureStyleProps<K extends StyleKind>(
         weight: t.weight,
         italic: t.italic,
         align: t.align,
-        width: t.width ?? 0,
-        leading: t.leading ?? TEXT_LABEL_LEADING_DEFAULT,
-        tracking: t.tracking ?? TEXT_LABEL_TRACKING_DEFAULT,
       } as StylePropsByKind[K];
     }
     case 'polygon': {
@@ -105,12 +126,7 @@ export function captureStyleProps<K extends StyleKind>(
     case 'transfer': {
       const t = doc.transfers[itemId];
       if (!t) return null;
-      return resolveTransferStyle(t, {
-        thickness: doc.transferThickness,
-        color: doc.transferColor,
-        strokeWidth: doc.transferStrokeWidth,
-        strokeColor: doc.transferStrokeColor,
-      }) as StylePropsByKind[K];
+      return resolveTransferStyle(t) as StylePropsByKind[K];
     }
   }
   return null;
@@ -148,6 +164,78 @@ export function stylePropsEqual(
   return true;
 }
 
+/**
+ * Clamp/normalize a full per-kind props object onto the SAME canonical grids
+ * the item transforms use, so a def edited in the panel compares exactly
+ * equal to what stamping it stores back. Total over typed input — validation
+ * of untyped file data lives in serialize's sanitizeStyleProps, which applies
+ * these rules after type-checking. Rebuilds explicitly, so foreign keys (a
+ * patch meant for another kind, since-dropped fields) never survive.
+ */
+export function canonicalStyleProps<K extends StyleKind>(
+  kind: K,
+  props: StylePropsByKind[K],
+): StylePropsByKind[K] {
+  switch (kind as StyleKind) {
+    case 'line': {
+      const p = props as LineStyleProps;
+      return {
+        defaultDotStyle: p.defaultDotStyle,
+        defaultDotSize: Math.max(DOT_SIZE_MIN, Math.round(p.defaultDotSize)),
+        width: Math.max(LINE_WIDTH_MIN, Math.round(p.width)),
+        strokeWidth: Math.max(
+          LINE_STROKE_WIDTH_MIN,
+          Math.round(p.strokeWidth / LINE_STROKE_STEP) * LINE_STROKE_STEP,
+        ),
+        strokeColor: p.strokeColor.toLowerCase(),
+      } as StylePropsByKind[K];
+    }
+    case 'textLabel': {
+      const p = props as TextLabelStyleProps;
+      return {
+        color: p.color,
+        darkColor: p.darkColor,
+        fontSize: Math.max(
+          TEXT_LABEL_FONT_SIZE_MIN,
+          Math.round(p.fontSize / FONT_SIZE_STEP) * FONT_SIZE_STEP,
+        ),
+        weight: p.weight,
+        italic: p.italic,
+        align: p.align,
+      } as StylePropsByKind[K];
+    }
+    case 'polygon': {
+      const p = props as PolygonStyleProps;
+      return {
+        fill: p.fill,
+        stroke: p.stroke,
+        darkFill: p.darkFill,
+        darkStroke: p.darkStroke,
+        strokeWidth: Math.max(
+          POLYGON_STROKE_WIDTH_MIN,
+          Math.round(p.strokeWidth / POLYGON_STROKE_STEP) * POLYGON_STROKE_STEP,
+        ),
+        curveRadius: Math.max(POLYGON_CURVE_RADIUS_MIN, p.curveRadius),
+        closed: p.closed,
+      } as StylePropsByKind[K];
+    }
+    case 'routeBullet': {
+      const p = props as RouteBulletStyleProps;
+      return { shape: p.shape, size: clampRouteBulletSize(p.size) } as StylePropsByKind[K];
+    }
+    case 'transfer': {
+      const p = props as TransferStyleProps;
+      return {
+        thickness: Math.max(TRANSFER_THICKNESS_MIN, Math.round(p.thickness)),
+        color: p.color,
+        strokeWidth: Math.max(TRANSFER_STROKE_WIDTH_MIN, Math.round(p.strokeWidth)),
+        strokeColor: p.strokeColor,
+      } as StylePropsByKind[K];
+    }
+  }
+  return props;
+}
+
 // Set the tag on one item; same reference when already tagged with this id.
 function withStyleTag(doc: MapDoc, kind: StyleKind, itemId: string, styleId: string): MapDoc {
   const key = STYLE_COLLECTION_OF[kind];
@@ -172,9 +260,21 @@ function stampStyle(doc: MapDoc, def: StyleDef, itemId: string): MapDoc {
       next = setLineStrokeColor(next, itemId, p.strokeColor);
       break;
     }
-    case 'textLabel':
-      next = updateTextLabel(next, itemId, { ...def.props });
+    case 'textLabel': {
+      // Explicit pick, not a props spread — a def from an older save could
+      // carry since-dropped keys (width/leading/tracking) that must not be
+      // stamped onto the label.
+      const p = def.props;
+      next = updateTextLabel(next, itemId, {
+        color: p.color,
+        darkColor: p.darkColor,
+        fontSize: p.fontSize,
+        weight: p.weight,
+        italic: p.italic,
+        align: p.align,
+      });
       break;
+    }
     case 'polygon':
       next = updatePolygon(next, itemId, { ...def.props });
       break;
@@ -265,6 +365,61 @@ export function saveStyleFromItem(
   return next;
 }
 
+/**
+ * Add a brand-new style of `kind` with the kind's FACTORY props (the same
+ * values the built-in Default ships with) — the Styles panel's "+ New style".
+ * Refuses empty/reserved names, same-kind collisions, and taken ids.
+ */
+export function createStyle(doc: MapDoc, id: string, kind: StyleKind, name: string): MapDoc {
+  const trimmed = name.trim();
+  if (!trimmed || isReservedStyleName(trimmed) || doc.styles[id]) return doc;
+  for (const other of Object.values(doc.styles)) {
+    if (other.kind === kind && other.name === trimmed) return doc;
+  }
+  const factory = Object.values(DEFAULT_STYLES).find((d) => d.kind === kind);
+  if (!factory) return doc;
+  const def = { id, name: trimmed, kind, props: factory.props } as StyleDef;
+  return { ...doc, styles: { ...doc.styles, [id]: def } };
+}
+
+// Every per-kind props key, all optional — same-named keys share a type
+// across kinds, so the intersection is well-formed. The store/panel patch
+// shape for updateStyleProps; canonicalStyleProps' explicit rebuild discards
+// keys foreign to the def's kind.
+export type StylePropsPatch = Partial<
+  LineStyleProps &
+    TextLabelStyleProps &
+    PolygonStyleProps &
+    RouteBulletStyleProps &
+    TransferStyleProps
+>;
+
+/**
+ * Patch a style def's props (the panel editor's write path) and re-stamp
+ * every item tagged with it in the same returned doc — the live preview.
+ * Values land on the canonical grids; users already matching are skipped
+ * (reference-stable). Name and id are untouched (renameStyle owns the name).
+ */
+export function updateStyleProps(doc: MapDoc, styleId: string, patch: StylePropsPatch): MapDoc {
+  const def = doc.styles[styleId];
+  if (!def) return doc;
+  const merged = canonicalStyleProps(def.kind, {
+    ...def.props,
+    ...patch,
+  } as StylePropsByKind[typeof def.kind]);
+  if (stylePropsEqual(def.kind, merged, def.props)) return doc;
+  const nextDef = { id: def.id, name: def.name, kind: def.kind, props: merged } as StyleDef;
+  let next: MapDoc = { ...doc, styles: { ...doc.styles, [styleId]: nextDef } };
+  const coll = itemsOf(next, def.kind);
+  for (const id of Object.keys(coll)) {
+    if (coll[id].styleId !== styleId) continue;
+    const cur = captureStyleProps(next, def.kind, id);
+    if (cur && stylePropsEqual(def.kind, cur, merged)) continue;
+    next = stampStyle(next, nextDef, id);
+  }
+  return next;
+}
+
 /** Rename a style (id kept, no re-stamp). Refuses same-kind name collisions
  *  and the reserved sentinel name "Custom". */
 export function renameStyle(doc: MapDoc, styleId: string, name: string): MapDoc {
@@ -315,4 +470,28 @@ export function stylesOfKind(styles: Record<string, StyleDef>, kind: StyleKind):
   return Object.values(styles)
     .filter((d) => d.kind === kind)
     .sort((a, b) => a.name.localeCompare(b.name));
+}
+
+/**
+ * The props of the kind's style NAMED "Default", if one exists. New items are
+ * stamped with these on creation, and placement previews read them so the
+ * ghost matches what will actually drop. By NAME on purpose: rename or delete
+ * Default and new items simply come in plain.
+ */
+export function defaultStyleProps<K extends StyleKind>(
+  styles: Record<string, StyleDef>,
+  kind: K,
+): StylePropsByKind[K] | undefined {
+  const def = Object.values(styles).find((d) => d.kind === kind && d.name === 'Default');
+  return def?.props as StylePropsByKind[K] | undefined;
+}
+
+/**
+ * Stamp + tag a freshly created item with its kind's "Default" style (current
+ * props — a redefined Default changes what new items look like). Same
+ * reference when no style of the kind wears the name.
+ */
+export function applyDefaultStyle(doc: MapDoc, kind: StyleKind, itemId: string): MapDoc {
+  const def = Object.values(doc.styles).find((d) => d.kind === kind && d.name === 'Default');
+  return def === undefined ? doc : applyStyleToItem(doc, def.id, itemId);
 }

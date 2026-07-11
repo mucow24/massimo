@@ -52,19 +52,56 @@ test('save a label style, survive reload, apply to another label, detach on edit
   await expect(currentStyleName(page)).toHaveText('Custom');
 });
 
-test('the sidebar Styles tab lists, renames, and deletes styles', async ({ page }) => {
+test('the sidebar Styles tab lists, renames, edits live, and deletes styles', async ({ page }) => {
   await seedAndOpen(page, twoLabels);
   await saveHeadingFromG1(page);
 
-  // The sidebar is open by default; the tab counts the one saved style.
-  await page.getByRole('button', { name: 'Styles (1)' }).click();
+  // The sidebar is open by default; the tab counts the five factory Defaults
+  // plus the one saved style.
+  await page.getByRole('button', { name: 'Styles (6)' }).click();
   await page.getByRole('button', { name: 'Rename Heading' }).click();
   await page.getByLabel('Style name').fill('Header');
   await page.getByLabel('Style name').press('Enter');
   await expect(page.getByRole('button', { name: 'Rename Header' })).toBeVisible();
 
+  // Expand the style's editor and change its Size: the tagged label follows
+  // live — its popover (still open for g1) keeps showing the style and its
+  // own Size control reads the new value.
+  await page.getByRole('button', { name: 'Edit Header' }).click();
+  const editor = page.locator('.style-editor');
+  const popover = page.locator('.text-label-popover');
+  await expect(editor.getByRole('slider', { name: 'Size' })).toHaveValue('24');
+  await editor.getByRole('slider', { name: 'Size' }).fill('30');
+  await expect(currentStyleName(page)).toHaveText('Header');
+  await expect(popover.getByRole('spinbutton', { name: 'Size' })).toHaveValue(/^30/);
+
   // Delete: the def goes, the tagged label keeps its look but reads Custom.
   await page.getByRole('button', { name: 'Delete Header' }).click();
-  await expect(page.getByText(/No styles yet/)).toBeVisible();
+  await expect(page.getByRole('button', { name: 'Rename Header' })).not.toBeVisible();
   await expect(currentStyleName(page)).toHaveText('Custom');
+});
+
+test('a new label is created wearing the (redefined) Default style', async ({ page }) => {
+  await seedAndOpen(page, twoLabels);
+
+  // Redefine the Default LABEL style to 32px via the panel editor. The kind
+  // sections render in a fixed order (Lines, Labels, …), so the Labels
+  // section's Default is the second "Edit Default" chevron.
+  await page.getByRole('button', { name: 'Styles (5)' }).click();
+  await page.getByRole('button', { name: 'Edit Default' }).nth(1).click();
+  const editor = page.locator('.style-editor');
+  await editor.getByRole('slider', { name: 'Size' }).fill('32');
+  // Collapse the editor so its controls can't shadow the popover's below.
+  await page.getByRole('button', { name: 'Edit Default' }).nth(1).click();
+
+  // Drop a new label on empty canvas (clear of the two seeded labels): it
+  // comes in at 32 and reads Default.
+  await page.getByRole('button', { name: 'Add' }).click();
+  await page.getByRole('menuitem', { name: 'Label' }).click();
+  await page.mouse.click(500, 550);
+  await expect(page.locator('[data-text-label-id]')).toHaveCount(3);
+  const popover = page.locator('.text-label-popover');
+  await expect(popover).toBeVisible();
+  await expect(currentStyleName(page)).toHaveText('Default');
+  await expect(popover.getByRole('spinbutton', { name: 'Size' })).toHaveValue(/^32/);
 });

@@ -21,19 +21,12 @@ import {
   LABEL_TRACKING_STEP,
   LABEL_WEIGHT_NAMES,
 } from '../model/transforms';
-import {
-  TRANSFER_STROKE_WIDTH_MAX,
-  TRANSFER_STROKE_WIDTH_MIN,
-  TRANSFER_THICKNESS_MAX,
-  TRANSFER_THICKNESS_MIN,
-} from '../model/transferStyle';
 import type { TextLabelWeight } from '../model/types';
 import { PALETTES } from '../model/palettes';
 import { parseCustomPalette } from '../model/customPalette';
 import { useCustomPalettes } from '../state/customPalettes';
 import { NumericFieldRow } from './NumericFieldRow';
 import { useFieldHistory } from './useFieldHistory';
-import { ColorField } from './ColorField';
 import { usePopover } from './usePopover';
 
 /**
@@ -59,14 +52,6 @@ export function OptionsPopover() {
   const setLabelTracking = useDoc((s) => s.setLabelTracking);
   const activePalettes = useDoc((s) => s.activePalettes);
   const togglePalette = useDoc((s) => s.togglePalette);
-  const transferThickness = useDoc((s) => s.transferThickness);
-  const setTransferThickness = useDoc((s) => s.setTransferThickness);
-  const transferColor = useDoc((s) => s.transferColor);
-  const setTransferColor = useDoc((s) => s.setTransferColor);
-  const transferStrokeWidth = useDoc((s) => s.transferStrokeWidth);
-  const setTransferStrokeWidth = useDoc((s) => s.setTransferStrokeWidth);
-  const transferStrokeColor = useDoc((s) => s.transferStrokeColor);
-  const setTransferStrokeColor = useDoc((s) => s.setTransferStrokeColor);
 
   const [palettesExpanded, setPalettesExpanded] = useState(false);
 
@@ -209,54 +194,9 @@ export function OptionsPopover() {
             textboxAllowAboveMax
           />
 
-          <NumericFieldRow
-            id={`${panelId}-transferThickness`}
-            label="Transfer thickness"
-            min={TRANSFER_THICKNESS_MIN}
-            max={TRANSFER_THICKNESS_MAX}
-            step={1}
-            value={transferThickness}
-            onChange={setTransferThickness}
-            getCurrent={() => useDoc.getState().transferThickness}
-            textboxAllowAboveMax
-          />
-
-          <div className="options-popover-row">
-            <label htmlFor={`${panelId}-transferColor`} className="options-popover-label">
-              Transfer color
-            </label>
-            <ColorField
-              id={`${panelId}-transferColor`}
-              ariaLabel="Transfer color"
-              value={transferColor}
-              onChange={setTransferColor}
-            />
-          </div>
-
-          <NumericFieldRow
-            id={`${panelId}-transferStrokeWidth`}
-            label="Transfer stroke"
-            min={TRANSFER_STROKE_WIDTH_MIN}
-            max={TRANSFER_STROKE_WIDTH_MAX}
-            step={1}
-            value={transferStrokeWidth}
-            onChange={setTransferStrokeWidth}
-            getCurrent={() => useDoc.getState().transferStrokeWidth}
-            textboxAllowAboveMax
-          />
-
-          <div className="options-popover-row">
-            <label htmlFor={`${panelId}-transferStrokeColor`} className="options-popover-label">
-              Transfer stroke color
-            </label>
-            <ColorField
-              id={`${panelId}-transferStrokeColor`}
-              ariaLabel="Transfer stroke color"
-              value={transferStrokeColor}
-              onChange={setTransferStrokeColor}
-            />
-          </div>
-
+          {/* Transfer styling lives in the Styles sidebar tab now — editing
+              the "Default" transfer style is the map-wide knob the four
+              retired doc-level settings used to be. */}
           <div className="options-popover-row options-popover-row-block">
             <button
               type="button"

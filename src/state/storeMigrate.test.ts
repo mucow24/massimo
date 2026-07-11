@@ -12,6 +12,7 @@ import {
   makeStation,
   makeStop,
   makeLabel,
+  makeStyle,
   makeTextLabel,
   stationWithStop,
 } from '../test/fixtures';
@@ -20,6 +21,7 @@ import type {
   LineId,
   StationId,
   StopOrientation,
+  StyleDef,
   LabelValign,
   Polygon,
   TextLabel,
@@ -42,6 +44,7 @@ type AnyDoc = {
   >;
   polygons?: Record<string, Polygon>;
   textLabels?: Record<string, TextLabel>;
+  transfers?: Record<string, Record<string, unknown>>;
   labelWeight?: number;
   labelBold?: boolean;
 };
@@ -251,6 +254,157 @@ describe('migrateDoc', () => {
       // Field survives untouched — a v9 doc predates no fold.
       expect((p as unknown as { fillOpacity?: number }).fillOpacity).toBe(50);
       expect(p.fill).toBe('#112233');
+    });
+  });
+
+  describe('v9 → v10: bake retired doc-level transfer settings into overrides', () => {
+    const transfer = (extra: Record<string, unknown> = {}) => ({
+      id: 'x1',
+      a: { stationId: 's1', lineId: null },
+      b: { stationId: 's2', lineId: null },
+      ...extra,
+    });
+
+    it('materializes a legacy setting onto tracking transfers and drops the fields', () => {
+      const out = run(
+        {
+          transfers: { x1: transfer() },
+          transferThickness: 7,
+          transferColor: '#abcdef',
+          transferStrokeWidth: 0,
+          transferStrokeColor: '#ffffff',
+        } as Record<string, unknown>,
+        9,
+      );
+      const t = (out.transfers as Record<string, Record<string, unknown>>).x1;
+      expect(t.thickness).toBe(7);
+      expect(t.color).toBe('#abcdef');
+      // Settings equal to the constants leave no override behind.
+      expect('strokeWidth' in t).toBe(false);
+      expect('strokeColor' in t).toBe(false);
+      for (const key of [
+        'transferThickness',
+        'transferColor',
+        'transferStrokeWidth',
+        'transferStrokeColor',
+      ]) {
+        expect(key in out).toBe(false);
+      }
+    });
+
+    it('keeps explicit overrides over the legacy setting; collapses ones equal to the constants', () => {
+      const out = run(
+        {
+          transfers: { x1: transfer({ thickness: 5 }), x2: transfer({ id: 'x2', thickness: 2 }) },
+          transferThickness: 7,
+        } as Record<string, unknown>,
+        9,
+      );
+      const transfers = out.transfers as Record<string, Record<string, unknown>>;
+      expect(transfers.x1.thickness).toBe(5); // explicit override wins
+      expect('thickness' in transfers.x2).toBe(false); // 2 == constant → collapsed
+    });
+
+    it('is a no-op for docs that never persisted the settings (same reference)', () => {
+      const input = { transfers: { x1: transfer() } };
+      const out = run(input, 9);
+      expect(out).toBe(input);
+    });
+
+    it('does not bake at version >= 10', () => {
+      const out = run(
+        { transfers: { x1: transfer() }, transferThickness: 7 } as Record<string, unknown>,
+        10,
+      );
+      const t = (out.transfers as Record<string, Record<string, unknown>>).x1;
+      expect('thickness' in t).toBe(false);
+    });
+
+    it('seeds the factory Default transfer style from the legacy settings', () => {
+      // Pre-styles docs get the factory Defaults materialized in the same
+      // v<10 pass; the bake then retargets the transfer one so newly drawn
+      // transfers keep the old map-wide look (existing transfers got theirs
+      // as overrides).
+      const out = run(
+        { transfers: { x1: transfer() }, transferThickness: 7 } as Record<string, unknown>,
+        9,
+      ) as unknown as { styles: Record<string, StyleDef> };
+      const def = Object.values(out.styles).find(
+        (d) => d.kind === 'transfer' && d.name === 'Default',
+      );
+      expect(def?.props).toMatchObject({ thickness: 7, color: '#000000' });
+    });
+
+    it('leaves a user-customized Default transfer style alone', () => {
+      const custom = makeStyle('transfer', 'default-transfer', {
+        name: 'Default',
+        props: { thickness: 9 },
+      });
+      const out = run(
+        { styles: { 'default-transfer': custom }, transferThickness: 7 } as Record<string, unknown>,
+        9,
+      ) as unknown as { styles: Record<string, StyleDef> };
+      expect((out.styles['default-transfer'].props as { thickness: number }).thickness).toBe(9);
+    });
+  });
+
+  describe('v9 → v10: style-def hygiene (round-1 docs)', () => {
+    it('injects the factory Defaults into a round-1 doc with an explicit styles record', () => {
+      const out = run({ styles: {} } as Record<string, unknown>, 9) as unknown as {
+        styles: Record<string, StyleDef>;
+      };
+      const names = Object.values(out.styles).map((d) => d.name);
+      expect(names).toEqual(['Default', 'Default', 'Default', 'Default', 'Default']);
+    });
+
+    it('strips since-dropped width/leading/tracking keys from round-1 textLabel defs', () => {
+      const staleDef = {
+        id: 'y1',
+        name: 'Heading',
+        kind: 'textLabel',
+        props: {
+          color: '#111111',
+          darkColor: '#ffffff',
+          fontSize: 24,
+          weight: 700,
+          italic: false,
+          align: 'left',
+          // Round-1 covered keys, dropped in round 2 — must not survive the
+          // rehydrate or the stylePropsEqual no-op guards misfire forever.
+          width: 0,
+          leading: 1,
+          tracking: 0,
+        },
+      };
+      const out = run({ styles: { y1: staleDef } } as Record<string, unknown>, 9) as unknown as {
+        styles: Record<string, StyleDef>;
+      };
+      expect(out.styles.y1.props).toEqual({
+        color: '#111111',
+        darkColor: '#ffffff',
+        fontSize: 24,
+        weight: 700,
+        italic: false,
+        align: 'left',
+      });
+    });
+
+    it('does not inject a Default for a kind that already has one (kept by id or name)', () => {
+      const mine = makeStyle('textLabel', 'y1', { name: 'Default', props: { fontSize: 30 } });
+      const out = run({ styles: { y1: mine } } as Record<string, unknown>, 9) as unknown as {
+        styles: Record<string, StyleDef>;
+      };
+      const labelDefaults = Object.values(out.styles).filter(
+        (d) => d.kind === 'textLabel' && d.name === 'Default',
+      );
+      expect(labelDefaults).toHaveLength(1);
+      expect((labelDefaults[0].props as { fontSize: number }).fontSize).toBe(30);
+    });
+
+    it('does not touch styles at version >= 10', () => {
+      const input = { styles: {} };
+      const out = run(input, 10);
+      expect(out).toBe(input);
     });
   });
 

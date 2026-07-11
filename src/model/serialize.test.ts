@@ -885,8 +885,8 @@ describe('parse — line stroke sanitizing', () => {
 
 describe('parse — transfer style sanitizing', () => {
   // Builds a file whose single transfer carries arbitrary raw override
-  // fields, as a hand-edited or legacy file might. `docExtra` overrides the
-  // doc-level transfer settings the canonical form compares against.
+  // fields, as a hand-edited or legacy file might. `docExtra` injects the
+  // RETIRED doc-level transfer settings a pre-retirement save would carry.
   const buildWithTransfer = (
     fields: Record<string, unknown>,
     docExtra: Record<string, unknown> = {},
@@ -907,7 +907,7 @@ describe('parse — transfer style sanitizing', () => {
       },
     });
 
-  it('drops explicit overrides equal to the doc settings (never stored)', () => {
+  it('drops explicit overrides equal to the constant defaults (never stored)', () => {
     const result = parse(
       buildWithTransfer({
         thickness: 2,
@@ -923,14 +923,27 @@ describe('parse — transfer style sanitizing', () => {
     }
   });
 
-  it("compares against the FILE's own settings, not the app defaults", () => {
+  it('bakes RETIRED doc-level settings into overrides, preserving each transfer LOOK', () => {
+    // Pre-retirement file, tracking transfer: the legacy setting 7 becomes a
+    // per-transfer override so the transfer still renders at 7 — and the
+    // legacy field itself is dropped from the parsed doc.
+    const tracking = parse(buildWithTransfer({}, { transferThickness: 7 }));
+    expect(tracking.ok).toBe(true);
+    if (tracking.ok) {
+      expect(tracking.doc.transfers.x1.thickness).toBe(7);
+      expect('transferThickness' in tracking.doc).toBe(false);
+    }
+    // Explicit override 5 over legacy setting 5: still effective 5 ≠ the
+    // constant 2, so the override survives.
     const redundant = parse(buildWithTransfer({ thickness: 5 }, { transferThickness: 5 }));
     expect(redundant.ok).toBe(true);
-    if (redundant.ok) expect('thickness' in redundant.doc.transfers.x1).toBe(false);
-    // The app-default 2 is a REAL override when the file's setting is 5.
+    if (redundant.ok) expect(redundant.doc.transfers.x1.thickness).toBe(5);
+    // Override 2 over legacy setting 5: effective 2 == the constant default,
+    // so the override collapses — the transfer falls back to the constant
+    // with the same rendered look.
     const distinct = parse(buildWithTransfer({ thickness: 2 }, { transferThickness: 5 }));
     expect(distinct.ok).toBe(true);
-    if (distinct.ok) expect(distinct.doc.transfers.x1.thickness).toBe(2);
+    if (distinct.ok) expect('thickness' in distinct.doc.transfers.x1).toBe(false);
   });
 
   it('clamps and rounds numeric overrides to the canonical stored form', () => {
@@ -981,32 +994,14 @@ describe('parse — transfer style sanitizing', () => {
     if (result.ok) expect('thickness' in result.doc.transfers.x1).toBe(false);
   });
 
-  it('judges redundancy against the MERGED settings when the file omits the settings keys', () => {
-    // A legacy/hand-edited file with no transfer settings at all: an override
-    // equal to the app default must be dropped against the DEFAULT_DOC-merged
-    // value, not the raw file doc (where the setting is undefined and nothing
-    // would ever collapse) — catches a sanitize-before-merge refactor, like
-    // the dot-size ordering test above.
-    const doc: Record<string, unknown> = {
-      ...makeDoc({}),
-      transfers: {
-        x1: {
-          id: 'x1',
-          a: { stationId: 's1', lineId: null },
-          b: { stationId: 's2', lineId: null },
-          thickness: 2,
-        },
-      },
-    };
-    delete doc.transferThickness;
-    delete doc.transferColor;
-    delete doc.transferStrokeWidth;
-    delete doc.transferStrokeColor;
-    const result = parse(JSON.stringify({ format: 'massimo-map', doc }));
+  it('leaves a settings-free (post-retirement) file alone apart from the constant collapse', () => {
+    // No legacy settings keys → the bake is skipped entirely; overrides are
+    // judged against the constant defaults only.
+    const result = parse(buildWithTransfer({ thickness: 2, strokeColor: '#123456' }));
     expect(result.ok).toBe(true);
     if (!result.ok) return;
     expect('thickness' in result.doc.transfers.x1).toBe(false);
-    expect(result.doc.transferThickness).toBe(2);
+    expect(result.doc.transfers.x1.strokeColor).toBe('#123456');
   });
 });
 

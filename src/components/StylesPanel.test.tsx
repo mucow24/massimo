@@ -6,6 +6,7 @@ import { useDoc } from '../state/store';
 import { useSelection } from '../state/selection';
 import { historyDepth } from '../state/history';
 import { DEFAULT_DOC } from '../model/transforms';
+import type { RouteBulletStyleProps, TextLabelStyleProps } from '../model/types';
 import { makeRouteBullet, makeStyle, makeTextLabel } from '../test/fixtures';
 
 beforeEach(() => {
@@ -35,14 +36,14 @@ describe('Sidebar Styles tab', () => {
 });
 
 describe('<StylesPanel />', () => {
-  it('groups styles under per-kind headings', () => {
+  it('always shows every kind heading (with a create button), styles under theirs', () => {
     render(<StylesPanel />);
-    expect(screen.getByText('Labels')).toBeInTheDocument();
-    expect(screen.getByText('Route bullets')).toBeInTheDocument();
+    for (const heading of ['Lines', 'Labels', 'Polygons', 'Route bullets', 'Transfers']) {
+      expect(screen.getByText(heading)).toBeInTheDocument();
+    }
     expect(screen.getByText('Heading')).toBeInTheDocument();
     expect(screen.getByText('Big')).toBeInTheDocument();
-    // Kinds with no styles get no heading.
-    expect(screen.queryByText('Polygons')).toBeNull();
+    expect(screen.getByRole('button', { name: 'New polygon style' })).toBeInTheDocument();
   });
 
   it('click-to-rename commits once on Enter and reverts on Escape', () => {
@@ -88,12 +89,47 @@ describe('<StylesPanel />', () => {
     expect(useDoc.getState().textLabels.g1.styleId).toBeUndefined();
     expect(useDoc.getState().textLabels.g1.fontSize).toBe(24);
     expect(screen.queryByText('Heading')).toBeNull();
-    expect(screen.queryByText('Labels')).toBeNull(); // heading gone with its last style
   });
 
-  it('shows an empty-state hint when there are no styles', () => {
-    useDoc.setState({ ...useDoc.getState(), styles: {} });
+  it('"+ New style" creates a factory-props style of the kind and expands its editor', () => {
     render(<StylesPanel />);
-    expect(screen.getByText(/No styles yet/)).toBeInTheDocument();
+    fireEvent.click(screen.getByRole('button', { name: 'New route bullet style' }));
+    const def = Object.values(useDoc.getState().styles).find((d) => d.name === 'New style');
+    expect(def).toMatchObject({ kind: 'routeBullet' });
+    expect((def?.props as RouteBulletStyleProps).size).toBe(14);
+    // Auto-expanded: its editor's Size control is on screen.
+    expect(screen.getByRole('slider', { name: 'Size' })).toHaveValue('14');
+  });
+
+  it('expanding a style and editing a control updates the def AND its tagged items live', () => {
+    render(<StylesPanel />);
+    fireEvent.click(screen.getByRole('button', { name: 'Edit Big' }));
+    const slider = screen.getByRole('slider', { name: 'Size' });
+    expect(slider).toHaveValue('20');
+    fireEvent.change(slider, { target: { value: '30' } });
+    expect((useDoc.getState().styles.y2.props as RouteBulletStyleProps).size).toBe(30);
+    // Live preview: the tagged bullet followed; the tag survived.
+    expect(useDoc.getState().routeBullets.b1.size).toBe(30);
+    expect(useDoc.getState().routeBullets.b1.styleId).toBe('y2');
+  });
+
+  it('the label editor edits typography (weight select + italic + align)', () => {
+    render(<StylesPanel />);
+    fireEvent.click(screen.getByRole('button', { name: 'Edit Heading' }));
+    fireEvent.change(screen.getByRole('combobox', { name: 'Weight' }), {
+      target: { value: '700' },
+    });
+    fireEvent.click(screen.getByRole('button', { name: 'Italic' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Align center' }));
+    const props = useDoc.getState().styles.y1.props as TextLabelStyleProps;
+    expect(props.weight).toBe(700);
+    expect(props.italic).toBe(true);
+    expect(props.align).toBe('center');
+    // The tagged label followed each edit.
+    expect(useDoc.getState().textLabels.g1).toMatchObject({
+      weight: 700,
+      italic: true,
+      align: 'center',
+    });
   });
 });

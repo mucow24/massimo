@@ -1,17 +1,22 @@
 import { describe, it, expect } from 'vitest';
 import {
+  applyDefaultStyle,
   applyStyleToItem,
   captureStyleProps,
   clearStyleTag,
+  createStyle,
+  defaultStyleProps,
   deleteStyle,
   renameStyle,
   saveStyleFromItem,
   stylesOfKind,
+  updateStyleProps,
 } from './styles';
+import { DEFAULT_DOC, DEFAULT_STYLES } from './transforms';
 import { DEFAULT_DOT_STYLE, DOT_SHAPE_PRESETS } from './dotStyle';
 import { DOT_SIZE_DEFAULT } from './dotSize';
 import { LINE_WIDTH_DEFAULT } from './lineWidth';
-import type { TextLabelStyleProps, TransferStyleProps } from './types';
+import type { RouteBulletStyleProps, TextLabelStyleProps, TransferStyleProps } from './types';
 import {
   makeDoc,
   makeLine,
@@ -58,8 +63,10 @@ describe('captureStyleProps', () => {
     });
   });
 
-  it('resolves absent label width/leading/tracking to their effective 0/1/0', () => {
-    const doc = makeDoc({ textLabels: [makeTextLabel({ id: 'g1', fontSize: 20, weight: 700 })] });
+  it('captures only the covered label typography — width/leading/tracking stay per-label', () => {
+    const doc = makeDoc({
+      textLabels: [makeTextLabel({ id: 'g1', fontSize: 20, weight: 700, width: 200, leading: 2 })],
+    });
     expect(captureStyleProps(doc, 'textLabel', 'g1')).toEqual({
       color: '#111111',
       darkColor: '#ffffff',
@@ -67,9 +74,6 @@ describe('captureStyleProps', () => {
       weight: 700,
       italic: false,
       align: 'left',
-      width: 0,
-      leading: 1,
-      tracking: 0,
     });
   });
 
@@ -93,22 +97,20 @@ describe('captureStyleProps', () => {
     expect(captureStyleProps(doc, 'routeBullet', 'b1')).toEqual({ shape: 'diamond', size: 20 });
   });
 
-  it('resolves a transfer with no overrides to the doc settings', () => {
+  it('resolves a transfer with no overrides to the constant defaults', () => {
     const doc = makeDoc({
       stations: [makeStation({ id: 's1' }), makeStation({ id: 's2' })],
       transfers: [makeTransfer({ id: 'x1' })],
-      transferThickness: 5,
-      transferColor: '#222222',
     });
     expect(captureStyleProps(doc, 'transfer', 'x1')).toEqual({
-      thickness: 5,
-      color: '#222222',
+      thickness: 2,
+      color: '#000000',
       strokeWidth: 0,
       strokeColor: '#ffffff',
     });
   });
 
-  it('prefers per-transfer overrides over the doc settings', () => {
+  it('prefers per-transfer overrides over the constant defaults', () => {
     const doc = makeDoc({
       stations: [makeStation({ id: 's1' }), makeStation({ id: 's2' })],
       transfers: [makeTransfer({ id: 'x1', thickness: 7, color: '#ff0000' })],
@@ -181,11 +183,14 @@ describe('applyStyleToItem', () => {
     expect(next.stations.s1.stops[0].dotSize).toBeUndefined();
   });
 
-  it('stamps a text-label style and tags the label', () => {
+  it('stamps a text-label style and tags the label, leaving layout fields alone', () => {
     const style = makeStyle('textLabel', 'y1', {
-      props: { fontSize: 24, weight: 700, italic: true, align: 'center', width: 200 },
+      props: { fontSize: 24, weight: 700, italic: true, align: 'center' },
     });
-    const doc = makeDoc({ textLabels: [makeTextLabel({ id: 'g1' })], styles: [style] });
+    const doc = makeDoc({
+      textLabels: [makeTextLabel({ id: 'g1', width: 200, leading: 1.5 })],
+      styles: [style],
+    });
     const next = applyStyleToItem(doc, 'y1', 'g1');
     const label = next.textLabels.g1;
     expect(label.styleId).toBe('y1');
@@ -193,7 +198,8 @@ describe('applyStyleToItem', () => {
     expect(label.weight).toBe(700);
     expect(label.italic).toBe(true);
     expect(label.align).toBe('center');
-    expect(label.width).toBe(200);
+    expect(label.width).toBe(200); // per-label layout untouched
+    expect(label.leading).toBe(1.5);
     expect(label.text).toBe('Label'); // content untouched
   });
 
@@ -223,7 +229,7 @@ describe('applyStyleToItem', () => {
     expect(bullet.lineId).toBe('l1');
   });
 
-  it('stamps a transfer style as canonical overrides (collapsed at the doc settings)', () => {
+  it('stamps a transfer style as canonical overrides (collapsed at the constant defaults)', () => {
     const style = makeStyle('transfer', 'y1', {
       props: { thickness: 6, color: '#000000', strokeWidth: 2, strokeColor: '#ff00ff' },
     });
@@ -278,7 +284,6 @@ describe('saveStyleFromItem', () => {
     expect(def.name).toBe('Heading'); // trimmed
     expect(def.kind).toBe('textLabel');
     expect((def.props as TextLabelStyleProps).fontSize).toBe(24);
-    expect((def.props as TextLabelStyleProps).width).toBe(0); // effective, not stored-absent
     expect(next.textLabels.g1.styleId).toBe('y1');
   });
 
@@ -312,8 +317,8 @@ describe('saveStyleFromItem', () => {
     const style = makeStyle('textLabel', 'y1', { name: 'Heading', props: { fontSize: 24 } });
     const doc = makeDoc({
       textLabels: [
-        makeTextLabel({ id: 'g1', fontSize: 24, width: 0, leading: 1, tracking: 0, styleId: 'y1' }),
-        makeTextLabel({ id: 'g2', fontSize: 24, width: 0, leading: 1, tracking: 0, styleId: 'y1' }),
+        makeTextLabel({ id: 'g1', fontSize: 24, styleId: 'y1' }),
+        makeTextLabel({ id: 'g2', fontSize: 24, styleId: 'y1' }),
       ],
       styles: [style],
     });
@@ -329,15 +334,10 @@ describe('saveStyleFromItem', () => {
       weight: 400,
       italic: false,
       align: 'left',
-      width: 0,
-      leading: 1,
-      tracking: 0,
     } as const;
     const style = makeStyle('textLabel', 'y1', { name: 'Heading', props });
     const doc = makeDoc({
-      textLabels: [
-        makeTextLabel({ id: 'g1', fontSize: 24, width: 0, leading: 1, tracking: 0, styleId: 'y1' }),
-      ],
+      textLabels: [makeTextLabel({ id: 'g1', fontSize: 24, styleId: 'y1' })],
       styles: [style],
     });
     expect(saveStyleFromItem(doc, 'y1', 'textLabel', 'Heading', 'g1')).toBe(doc);
@@ -436,6 +436,106 @@ describe('clearStyleTag', () => {
     const doc = makeDoc({ textLabels: [makeTextLabel({ id: 'g1' })] });
     expect(clearStyleTag(doc, 'textLabel', 'g1')).toBe(doc);
     expect(clearStyleTag(doc, 'textLabel', 'nope')).toBe(doc);
+  });
+});
+
+describe('createStyle', () => {
+  it("adds a def with the kind's factory props under the given name", () => {
+    const doc = makeDoc({});
+    const next = createStyle(doc, 'y1', 'routeBullet', ' Big ');
+    expect(next.styles.y1).toMatchObject({ id: 'y1', name: 'Big', kind: 'routeBullet' });
+    expect(next.styles.y1.props).toEqual({ shape: 'circle', size: 14 });
+  });
+
+  it('refuses empty/reserved names, same-kind collisions, and taken ids', () => {
+    const doc = makeDoc({ styles: [makeStyle('routeBullet', 'y1', { name: 'Big' })] });
+    expect(createStyle(doc, 'y2', 'routeBullet', '  ')).toBe(doc);
+    expect(createStyle(doc, 'y2', 'routeBullet', 'custom')).toBe(doc);
+    expect(createStyle(doc, 'y2', 'routeBullet', 'Big')).toBe(doc);
+    expect(createStyle(doc, 'y1', 'routeBullet', 'Other')).toBe(doc);
+    // Cross-kind homonym is fine.
+    expect(createStyle(doc, 'y2', 'polygon', 'Big').styles.y2.kind).toBe('polygon');
+  });
+});
+
+describe('updateStyleProps', () => {
+  it('patches the def on the canonical grids and re-stamps its tagged users', () => {
+    const doc = makeDoc({
+      routeBullets: [
+        makeRouteBullet({ id: 'b1', shape: 'square', size: 20, styleId: 'y1' }),
+        makeRouteBullet({ id: 'b2', size: 9 }), // untagged bystander
+      ],
+      styles: [makeStyle('routeBullet', 'y1', { props: { shape: 'square', size: 20 } })],
+    });
+    const next = updateStyleProps(doc, 'y1', { size: 24.4 });
+    expect((next.styles.y1.props as RouteBulletStyleProps).size).toBe(24); // rounded
+    expect(next.routeBullets.b1.size).toBe(24); // live re-stamp
+    expect(next.routeBullets.b1.styleId).toBe('y1');
+    expect(next.routeBullets.b2).toBe(doc.routeBullets.b2);
+  });
+
+  it('keeps id, name and unpatched props', () => {
+    const doc = makeDoc({
+      styles: [makeStyle('textLabel', 'y1', { name: 'Heading', props: { fontSize: 24 } })],
+    });
+    const next = updateStyleProps(doc, 'y1', { italic: true });
+    expect(next.styles.y1).toMatchObject({ id: 'y1', name: 'Heading' });
+    expect(next.styles.y1.props).toMatchObject({ fontSize: 24, italic: true });
+  });
+
+  it('no-ops (same reference) on unknown id or a value-identical patch', () => {
+    const doc = makeDoc({
+      styles: [makeStyle('routeBullet', 'y1', { props: { size: 20 } })],
+    });
+    expect(updateStyleProps(doc, 'nope', { size: 24 })).toBe(doc);
+    expect(updateStyleProps(doc, 'y1', { size: 20 })).toBe(doc);
+  });
+
+  it('a detached (untagged) lookalike does NOT follow a style edit', () => {
+    const doc = makeDoc({
+      routeBullets: [makeRouteBullet({ id: 'b1', shape: 'square', size: 20 })], // matches y1 but untagged
+      styles: [makeStyle('routeBullet', 'y1', { props: { shape: 'square', size: 20 } })],
+    });
+    const next = updateStyleProps(doc, 'y1', { size: 24 });
+    expect(next.routeBullets.b1).toBe(doc.routeBullets.b1);
+  });
+});
+
+describe('DEFAULT_STYLES / applyDefaultStyle', () => {
+  it('ships one factory "Default" per kind, and DEFAULT_DOC starts with exactly those', () => {
+    const kinds = Object.values(DEFAULT_STYLES)
+      .map((d) => d.kind)
+      .sort();
+    expect(kinds).toEqual(['line', 'polygon', 'routeBullet', 'textLabel', 'transfer']);
+    for (const d of Object.values(DEFAULT_STYLES)) expect(d.name).toBe('Default');
+    expect(DEFAULT_DOC.styles).toBe(DEFAULT_STYLES);
+    // Factory props are the effective defaults a fresh item captures to —
+    // spot-check one scalar per kind.
+    expect(defaultStyleProps(DEFAULT_STYLES, 'line')).toMatchObject({ width: LINE_WIDTH_DEFAULT });
+    expect(defaultStyleProps(DEFAULT_STYLES, 'textLabel')).toMatchObject({ fontSize: 16 });
+    expect(defaultStyleProps(DEFAULT_STYLES, 'polygon')).toMatchObject({ fill: '#cfe3f2' });
+    expect(defaultStyleProps(DEFAULT_STYLES, 'routeBullet')).toMatchObject({ size: 14 });
+    expect(defaultStyleProps(DEFAULT_STYLES, 'transfer')).toMatchObject({ thickness: 2 });
+  });
+
+  it('stamps and tags the kind\'s style NAMED "Default", with its CURRENT props', () => {
+    const doc = makeDoc({
+      textLabels: [makeTextLabel({ id: 'g1' })],
+      styles: [makeStyle('textLabel', 'y1', { name: 'Default', props: { fontSize: 24 } })],
+    });
+    const next = applyDefaultStyle(doc, 'textLabel', 'g1');
+    expect(next.textLabels.g1.fontSize).toBe(24);
+    expect(next.textLabels.g1.styleId).toBe('y1');
+  });
+
+  it('no-ops (same reference) when no style of the kind is named Default', () => {
+    const doc = makeDoc({ textLabels: [makeTextLabel({ id: 'g1' })] });
+    expect(applyDefaultStyle(doc, 'textLabel', 'g1')).toBe(doc);
+    const renamed = makeDoc({
+      textLabels: [makeTextLabel({ id: 'g1' })],
+      styles: [makeStyle('textLabel', 'y1', { name: 'Base' })],
+    });
+    expect(applyDefaultStyle(renamed, 'textLabel', 'g1')).toBe(renamed);
   });
 });
 

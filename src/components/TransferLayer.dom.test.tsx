@@ -92,7 +92,7 @@ function transferBody(id: string): Element {
 }
 
 describe('TransferLayer — DOM rendering', () => {
-  it('visible body <line> reflects transferColor and transferThickness from the store', () => {
+  it('visible body <line> reflects the constant defaults and per-transfer overrides', () => {
     seedTwoStationsWithTransfer();
     render(<App />);
 
@@ -101,11 +101,7 @@ describe('TransferLayer — DOM rendering', () => {
     expect(body.getAttribute('stroke-width')).toBe('2');
 
     act(() => {
-      useDoc.setState({
-        ...useDoc.getState(),
-        transferColor: '#ff8800',
-        transferThickness: 6,
-      });
+      useDoc.getState().updateTransferStyle('x1', { color: '#ff8800', thickness: 6 });
     });
 
     body = transferBody('x1');
@@ -168,20 +164,19 @@ describe('TransferLayer — DOM rendering', () => {
   });
 
   describe('user stroke', () => {
-    it('does not render a stroke line when transferStrokeWidth = 0 (default)', () => {
+    it('does not render a stroke line when the stroke width is 0 (default)', () => {
       seedTwoStationsWithTransfer();
       render(<App />);
       // Unselected with no stroke → exactly one line (the body).
       expect(transferLines('x1').length).toBe(1);
     });
 
-    it('renders a stroke line wider than the body when transferStrokeWidth > 0', () => {
+    it('renders a stroke line wider than the body when the stroke width override > 0', () => {
       seedTwoStationsWithTransfer();
       act(() => {
-        useDoc.setState({
-          ...useDoc.getState(),
-          transferStrokeWidth: 3,
-          transferStrokeColor: '#abcdef',
+        useDoc.getState().updateTransferStyle('x1', {
+          strokeWidth: 3,
+          strokeColor: '#abcdef',
         });
       });
       render(<App />);
@@ -203,7 +198,6 @@ describe('TransferLayer — DOM rendering', () => {
       act(() => {
         useDoc.setState({
           ...useDoc.getState(),
-          transferStrokeWidth: 3,
           transfers: {
             ...useDoc.getState().transfers,
             x2: {
@@ -213,6 +207,8 @@ describe('TransferLayer — DOM rendering', () => {
             },
           },
         });
+        useDoc.getState().updateTransferStyle('x1', { strokeWidth: 3 });
+        useDoc.getState().updateTransferStyle('x2', { strokeWidth: 3 });
       });
       render(<App />);
 
@@ -308,12 +304,7 @@ describe('TransferLayer — DOM rendering', () => {
     it('pads around the user stroke when present', () => {
       seedTwoStationsWithTransfer();
       act(() => {
-        useDoc.setState({
-          ...useDoc.getState(),
-          transferColor: '#000000',
-          transferStrokeColor: '#ffffff',
-          transferStrokeWidth: 3,
-        });
+        useDoc.getState().updateTransferStyle('x1', { strokeWidth: 3 });
       });
       render(<App />);
       act(() => {
@@ -326,8 +317,8 @@ describe('TransferLayer — DOM rendering', () => {
     });
   });
 
-  // Per-transfer overrides: an absent field tracks the doc setting, a present
-  // field wins over it (see Transfer in model/types.ts).
+  // Per-transfer overrides: an absent field falls back to the constant
+  // default, a present field wins over it (see Transfer in model/types.ts).
   describe('per-transfer style overrides', () => {
     const seedSecondTransfer = (overrides: Partial<Transfer>) => {
       act(() => {
@@ -346,7 +337,7 @@ describe('TransferLayer — DOM rendering', () => {
       });
     };
 
-    it('an overridden transfer renders its own body style; a sibling keeps tracking', () => {
+    it('an overridden transfer renders its own body style; a sibling keeps the defaults', () => {
       seedTwoStationsWithTransfer();
       seedSecondTransfer({ thickness: 6, color: '#ff8800' });
       render(<App />);
@@ -354,22 +345,16 @@ describe('TransferLayer — DOM rendering', () => {
       const overridden = transferBody('x2');
       expect(overridden.getAttribute('stroke')).toBe('#ff8800');
       expect(overridden.getAttribute('stroke-width')).toBe('6');
-      const tracking = transferBody('x1');
-      expect(tracking.getAttribute('stroke')).toBe('#000000');
-      expect(tracking.getAttribute('stroke-width')).toBe('2');
+      const plain = transferBody('x1');
+      expect(plain.getAttribute('stroke')).toBe('#000000');
+      expect(plain.getAttribute('stroke-width')).toBe('2');
 
-      // Later doc-setting changes reach ONLY the tracking transfer.
+      // Choosing the defaults again clears the overrides — back to constants.
       act(() => {
-        useDoc.setState({
-          ...useDoc.getState(),
-          transferColor: '#00aa66',
-          transferThickness: 4,
-        });
+        useDoc.getState().updateTransferStyle('x2', { thickness: 2, color: '#000000' });
       });
-      expect(transferBody('x1').getAttribute('stroke')).toBe('#00aa66');
-      expect(transferBody('x1').getAttribute('stroke-width')).toBe('4');
-      expect(transferBody('x2').getAttribute('stroke')).toBe('#ff8800');
-      expect(transferBody('x2').getAttribute('stroke-width')).toBe('6');
+      expect(transferBody('x2').getAttribute('stroke')).toBe('#000000');
+      expect(transferBody('x2').getAttribute('stroke-width')).toBe('2');
     });
 
     it('a strokeWidth override renders a halo for that transfer only', () => {
@@ -377,7 +362,7 @@ describe('TransferLayer — DOM rendering', () => {
       seedSecondTransfer({ strokeWidth: 3, strokeColor: '#abcdef' });
       render(<App />);
 
-      // x1 tracks the doc's strokeWidth 0 → body only.
+      // x1 keeps the constant strokeWidth 0 → body only.
       expect(transferLines('x1').length).toBe(1);
       const lines = transferLines('x2');
       expect(lines.length).toBe(2);
@@ -386,24 +371,6 @@ describe('TransferLayer — DOM rendering', () => {
       expect(halo.getAttribute('stroke')).toBe('#abcdef');
       // visibleExtent = default thickness 2 + 2 * override 3 = 8.
       expect(Number(halo.getAttribute('stroke-width'))).toBe(8);
-    });
-
-    it('a strokeWidth 0 override turns the halo OFF while the doc default has one', () => {
-      seedTwoStationsWithTransfer();
-      act(() => {
-        useDoc.setState({
-          ...useDoc.getState(),
-          transferStrokeWidth: 3,
-          transferStrokeColor: '#abcdef',
-        });
-      });
-      seedSecondTransfer({ strokeWidth: 0 });
-      render(<App />);
-
-      // x1 tracks the doc's strokeWidth 3 → halo + body; x2's 0 override
-      // suppresses its halo entirely (0 is a real override, not "unset").
-      expect(transferLines('x1').length).toBe(2);
-      expect(transferLines('x2').length).toBe(1);
     });
 
     it("the selection ring sizes to the transfer's own effective extent", () => {

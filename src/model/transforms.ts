@@ -1,16 +1,19 @@
 import { autoOrientNewStation } from './autoOrient';
 import { effectiveLineOrder } from './lineOrder';
 import { reconcileOrder, moveInOrder } from './recordOrder';
-import { canonicalLineWidth } from './lineWidth';
+import { LINE_WIDTH_DEFAULT, canonicalLineWidth } from './lineWidth';
 import { DOT_SIZE_DEFAULT, canonicalDotSize } from './dotSize';
-import { canonicalStrokeColor, canonicalStrokeWidth } from './lineStroke';
+import {
+  LINE_STROKE_COLOR_DEFAULT,
+  LINE_STROKE_WIDTH_DEFAULT,
+  canonicalStrokeColor,
+  canonicalStrokeWidth,
+} from './lineStroke';
 import {
   TRANSFER_COLOR_DEFAULT,
   TRANSFER_STROKE_COLOR_DEFAULT,
   TRANSFER_STROKE_WIDTH_DEFAULT,
-  TRANSFER_STROKE_WIDTH_MIN,
   TRANSFER_THICKNESS_DEFAULT,
-  TRANSFER_THICKNESS_MIN,
   canonicalTransferColor,
   canonicalTransferStrokeWidth,
   canonicalTransferThickness,
@@ -48,6 +51,7 @@ import type {
   StationId,
   StopCell,
   StopOrientation,
+  StyleDef,
   StyleKind,
   TextLabel,
   TextLabelWeight,
@@ -108,33 +112,9 @@ export const LABEL_TRACKING_DEFAULT = 0;
 // the DEFAULT_DOC merge, the toolbar field, and the empty-name guard.
 export const MAP_NAME_DEFAULT = 'Untitled map';
 
-export const DEFAULT_DOC: MapDoc = {
-  name: MAP_NAME_DEFAULT,
-  stations: {},
-  lines: {},
-  lineOrder: [],
-  curveRadius: 24,
-  lineCounter: 0,
-  lineTags: {},
-  routeBullets: {},
-  transfers: {},
-  textLabels: {},
-  polygons: {},
-  polygonOrder: [],
-  svgImages: {},
-  svgImageOrder: [],
-  styles: {},
-  labelFontSize: LABEL_FONT_SIZE_DEFAULT,
-  labelWeight: LABEL_WEIGHT_DEFAULT,
-  labelItalic: false,
-  labelLeading: LABEL_LEADING_DEFAULT,
-  labelTracking: LABEL_TRACKING_DEFAULT,
-  activePalettes: ['mta'],
-  transferThickness: TRANSFER_THICKNESS_DEFAULT,
-  transferColor: TRANSFER_COLOR_DEFAULT,
-  transferStrokeWidth: TRANSFER_STROKE_WIDTH_DEFAULT,
-  transferStrokeColor: TRANSFER_STROKE_COLOR_DEFAULT,
-};
+// NOTE: DEFAULT_STYLES + DEFAULT_DOC live at the BOTTOM of this file — their
+// initializers reference per-kind default constants (polygon, route bullet)
+// that are declared further down, and module-level consts aren't hoisted.
 
 /**
  * Shift a weight `delta` positions along LABEL_WEIGHT_VALUES (clamped at the
@@ -1518,87 +1498,6 @@ export function setLabelFontSize(doc: MapDoc, n: number): MapDoc {
   return { ...doc, labelFontSize: clamped };
 }
 
-// Reconcile every per-transfer override of `field` with the doc setting's NEW
-// `value`. Two regimes:
-//   - UNTAGGED transfers keep the historical prune: an override the new value
-//     makes redundant is dropped, so the transfer tracks the setting (mirrors
-//     dropRedundantStopOverrides — this is what keeps "override present ⇔
-//     transfer differs from the setting" true doc-wide).
-//   - STYLE-TAGGED transfers are instead re-canonicalized against their
-//     STYLE's value: the override materializes when it stopped being
-//     redundant and drops when it became so, pinning the transfer's EFFECTIVE
-//     value to its style (the styleId tag's "tagged ⇒ matches" invariant)
-//     while preserving the same override-presence contract.
-// Returns the same `transfers` reference when nothing changed.
-function reconcileTransferOverrides(
-  doc: MapDoc,
-  field: 'thickness' | 'color' | 'strokeWidth' | 'strokeColor',
-  value: number | string,
-): Record<string, Transfer> {
-  let out = doc.transfers;
-  for (const id of Object.keys(out)) {
-    const t = out[id];
-    const def = t.styleId !== undefined ? doc.styles[t.styleId] : undefined;
-    let next = t;
-    if (def?.kind === 'transfer') {
-      const styleValue = def.props[field];
-      next = withTransferOverride(t, field, styleValue === value ? undefined : styleValue);
-    } else if (t[field] === value) {
-      const { [field]: _gone, ...rest } = t;
-      next = rest;
-    }
-    if (next !== t) out = { ...out, [id]: next };
-  }
-  return out;
-}
-
-// Clamps at the bottom (MIN) so 0/negative are never persisted, but does NOT
-// clamp at the top — the textbox lets users enter arbitrary thicknesses
-// outside the slider's range. TRANSFER_THICKNESS_MAX constrains the slider
-// only.
-export function setTransferThickness(doc: MapDoc, n: number): MapDoc {
-  if (!Number.isFinite(n)) return doc;
-  const clamped = Math.max(TRANSFER_THICKNESS_MIN, Math.round(n));
-  if (clamped === doc.transferThickness) return doc;
-  return {
-    ...doc,
-    transferThickness: clamped,
-    transfers: reconcileTransferOverrides(doc, 'thickness', clamped),
-  };
-}
-
-export function setTransferColor(doc: MapDoc, c: string): MapDoc {
-  if (c === doc.transferColor) return doc;
-  return {
-    ...doc,
-    transferColor: c,
-    transfers: reconcileTransferOverrides(doc, 'color', c),
-  };
-}
-
-// Always-on outline around the colored body. Like thickness, clamps at the
-// bottom only — the spinbutton accepts widths beyond the slider's range
-// (TRANSFER_STROKE_WIDTH_MAX constrains the slider, not the value).
-export function setTransferStrokeWidth(doc: MapDoc, n: number): MapDoc {
-  if (!Number.isFinite(n)) return doc;
-  const clamped = Math.max(TRANSFER_STROKE_WIDTH_MIN, Math.round(n));
-  if (clamped === doc.transferStrokeWidth) return doc;
-  return {
-    ...doc,
-    transferStrokeWidth: clamped,
-    transfers: reconcileTransferOverrides(doc, 'strokeWidth', clamped),
-  };
-}
-
-export function setTransferStrokeColor(doc: MapDoc, c: string): MapDoc {
-  if (c === doc.transferStrokeColor) return doc;
-  return {
-    ...doc,
-    transferStrokeColor: c,
-    transfers: reconcileTransferOverrides(doc, 'strokeColor', c),
-  };
-}
-
 export function setLabelWeight(doc: MapDoc, w: TextLabelWeight): MapDoc {
   if (w === doc.labelWeight) return doc;
   return { ...doc, labelWeight: w };
@@ -1962,22 +1861,15 @@ export function updateTextLabel(
       };
     }
     // Detach from the style preset when a covered style field ACTUALLY
-    // changes. Width/leading/tracking compare as EFFECTIVE values (absent ⇒
-    // 0/1/0): materializing an explicit default (e.g. a style stamp writing
-    // width 0 over an absent field) is not a divergence. Content, position,
-    // lock and editorHeight are not style.
+    // changes. Width/leading/tracking are per-label layout tuning, not style
+    // — like content, position, lock and editorHeight they never detach.
     const coveredChanged =
       next.color !== cur.color ||
       next.darkColor !== cur.darkColor ||
       next.fontSize !== cur.fontSize ||
       next.weight !== cur.weight ||
       next.italic !== cur.italic ||
-      next.align !== cur.align ||
-      (next.width ?? 0) !== (cur.width ?? 0) ||
-      (next.leading ?? TEXT_LABEL_LEADING_DEFAULT) !==
-        (cur.leading ?? TEXT_LABEL_LEADING_DEFAULT) ||
-      (next.tracking ?? TEXT_LABEL_TRACKING_DEFAULT) !==
-        (cur.tracking ?? TEXT_LABEL_TRACKING_DEFAULT);
+      next.align !== cur.align;
     return coveredChanged ? stripStyleId(next) : next;
   });
 }
@@ -2337,34 +2229,33 @@ export function withTransferOverride<
 
 /**
  * Patch a transfer's per-transfer style overrides. Each provided field is
- * canonicalized against the matching doc-level setting: numeric values are
- * rounded and floor-clamped exactly like the doc setters, and a value equal
- * to the doc's CURRENT setting drops the field, so the transfer tracks the
- * setting going forward (same contract as `setDotStyle` / `setDotSize`).
- * Non-finite numeric fields are ignored. Reference-equal no-ops keep textbox
- * keystrokes out of the undo history.
+ * canonicalized against the constant transfer default: numeric values are
+ * rounded and floor-clamped, and a value equal to the default drops the
+ * field so it is never stored (same contract as `setDotStyle` /
+ * `setDotSize`). Non-finite numeric fields are ignored. Reference-equal
+ * no-ops keep textbox keystrokes out of the undo history.
  */
 export function updateTransferStyle(doc: MapDoc, id: string, patch: TransferStylePatch): MapDoc {
   const cur = doc.transfers[id];
   if (!cur) return doc;
   let next = cur;
   if (patch.thickness !== undefined && Number.isFinite(patch.thickness)) {
-    const stored = canonicalTransferThickness(patch.thickness, doc.transferThickness);
+    const stored = canonicalTransferThickness(patch.thickness, TRANSFER_THICKNESS_DEFAULT);
     next = withTransferOverride(next, 'thickness', stored);
   }
   if (patch.color !== undefined) {
     next = withTransferOverride(
       next,
       'color',
-      canonicalTransferColor(patch.color, doc.transferColor),
+      canonicalTransferColor(patch.color, TRANSFER_COLOR_DEFAULT),
     );
   }
   if (patch.strokeWidth !== undefined && Number.isFinite(patch.strokeWidth)) {
-    const stored = canonicalTransferStrokeWidth(patch.strokeWidth, doc.transferStrokeWidth);
+    const stored = canonicalTransferStrokeWidth(patch.strokeWidth, TRANSFER_STROKE_WIDTH_DEFAULT);
     next = withTransferOverride(next, 'strokeWidth', stored);
   }
   if (patch.strokeColor !== undefined) {
-    const stored = canonicalTransferColor(patch.strokeColor, doc.transferStrokeColor);
+    const stored = canonicalTransferColor(patch.strokeColor, TRANSFER_STROKE_COLOR_DEFAULT);
     next = withTransferOverride(next, 'strokeColor', stored);
   }
   if (next === cur) return doc;
@@ -2443,3 +2334,100 @@ function isLineEdge(line: Line, a: StationId, b: StationId): boolean {
   }
   return false;
 }
+
+// ---------- Default styles + the default document ----------
+// Both live at the bottom of the file so their initializers can reference the
+// per-kind default constants declared in the sections above (module consts
+// aren't hoisted).
+
+// The five built-in "Default" style presets — one per styleable kind, each
+// initialized to that kind's factory look (field order matches serialize's
+// sanitizeStyleProps rebuild so file round-trips are stringify-stable). Fresh
+// docs, and pre-styles saves via the DEFAULT_DOC merge, start with exactly
+// these; they are ordinary styles thereafter: editable in the Styles panel,
+// renamable, deletable. New items are stamped with their kind's style NAMED
+// "Default" on creation (applyDefaultStyle in model/styles.ts, composed into
+// the store's add actions), so redefining Default changes what new items
+// look like.
+export const DEFAULT_STYLES: Record<string, StyleDef> = {
+  'default-line': {
+    id: 'default-line',
+    name: 'Default',
+    kind: 'line',
+    props: {
+      defaultDotStyle: DEFAULT_DOT_STYLE,
+      defaultDotSize: DOT_SIZE_DEFAULT,
+      width: LINE_WIDTH_DEFAULT,
+      strokeWidth: LINE_STROKE_WIDTH_DEFAULT,
+      strokeColor: LINE_STROKE_COLOR_DEFAULT,
+    },
+  },
+  'default-textLabel': {
+    id: 'default-textLabel',
+    name: 'Default',
+    kind: 'textLabel',
+    props: {
+      color: TEXT_LABEL_DEFAULTS.color,
+      darkColor: TEXT_LABEL_DEFAULTS.darkColor,
+      fontSize: TEXT_LABEL_DEFAULTS.fontSize,
+      weight: TEXT_LABEL_DEFAULTS.weight,
+      italic: TEXT_LABEL_DEFAULTS.italic,
+      align: TEXT_LABEL_DEFAULTS.align,
+    },
+  },
+  'default-polygon': {
+    id: 'default-polygon',
+    name: 'Default',
+    kind: 'polygon',
+    props: {
+      fill: POLYGON_FILL_DEFAULT,
+      stroke: POLYGON_STROKE_DEFAULT,
+      darkFill: POLYGON_FILL_DEFAULT,
+      darkStroke: POLYGON_STROKE_DEFAULT,
+      strokeWidth: POLYGON_STROKE_WIDTH_DEFAULT,
+      curveRadius: POLYGON_CURVE_RADIUS_DEFAULT,
+      closed: true,
+    },
+  },
+  'default-routeBullet': {
+    id: 'default-routeBullet',
+    name: 'Default',
+    kind: 'routeBullet',
+    props: { shape: 'circle', size: ROUTE_BULLET_SIZE_DEFAULT },
+  },
+  'default-transfer': {
+    id: 'default-transfer',
+    name: 'Default',
+    kind: 'transfer',
+    props: {
+      thickness: TRANSFER_THICKNESS_DEFAULT,
+      color: TRANSFER_COLOR_DEFAULT,
+      strokeWidth: TRANSFER_STROKE_WIDTH_DEFAULT,
+      strokeColor: TRANSFER_STROKE_COLOR_DEFAULT,
+    },
+  },
+};
+
+export const DEFAULT_DOC: MapDoc = {
+  name: MAP_NAME_DEFAULT,
+  stations: {},
+  lines: {},
+  lineOrder: [],
+  curveRadius: 24,
+  lineCounter: 0,
+  lineTags: {},
+  routeBullets: {},
+  transfers: {},
+  textLabels: {},
+  polygons: {},
+  polygonOrder: [],
+  svgImages: {},
+  svgImageOrder: [],
+  styles: DEFAULT_STYLES,
+  labelFontSize: LABEL_FONT_SIZE_DEFAULT,
+  labelWeight: LABEL_WEIGHT_DEFAULT,
+  labelItalic: false,
+  labelLeading: LABEL_LEADING_DEFAULT,
+  labelTracking: LABEL_TRACKING_DEFAULT,
+  activePalettes: ['mta'],
+};

@@ -9,8 +9,10 @@ import { StyleRow } from './StyleRow';
 import type { AABB } from '../geometry/rectPolygon';
 import {
   resolveTransferStyle,
+  TRANSFER_STROKE_WIDTH_DEFAULT,
   TRANSFER_STROKE_WIDTH_MAX,
   TRANSFER_STROKE_WIDTH_MIN,
+  TRANSFER_THICKNESS_DEFAULT,
   TRANSFER_THICKNESS_MAX,
   TRANSFER_THICKNESS_MIN,
 } from '../model/transferStyle';
@@ -28,26 +30,20 @@ interface Props {
 }
 
 /**
- * Editing popover for a selected transfer: per-transfer overrides of the four
- * doc-level transfer settings (thickness, color, stroke width, stroke color),
+ * Editing popover for a selected transfer: per-transfer overrides of the
+ * constant transfer defaults (thickness, color, stroke width, stroke color),
  * plus delete. Every control shows the EFFECTIVE value (override when
- * present, else the doc setting); choosing the doc setting's own value clears
- * that override so the transfer tracks the setting again — the same
- * default-vs-override contract as per-stop dot styles (see
- * `updateTransferStyle`). The spawn placement is frozen at first display and
- * projected through the live viewport (useDraggablePopover), so it tracks
- * pan/zoom without sliding when endpoints move. Mirrors
- * {@link PolygonPopover}.
+ * present, else the constant default); choosing the default's own value
+ * clears that override — the same default-vs-override contract as per-stop
+ * dot styles (see `updateTransferStyle`). The spawn placement is frozen at
+ * first display and projected through the live viewport
+ * (useDraggablePopover), so it tracks pan/zoom without sliding when
+ * endpoints move. Mirrors {@link PolygonPopover}.
  */
 export function TransferPopover({ transfer, worldRect, view, spawnBox, onClose }: Props) {
   const updateTransferStyle = useDoc((s) => s.updateTransferStyle);
   const deleteTransfer = useDoc((s) => s.deleteTransfer);
-  const style = resolveTransferStyle(transfer, {
-    thickness: useDoc((s) => s.transferThickness),
-    color: useDoc((s) => s.transferColor),
-    strokeWidth: useDoc((s) => s.transferStrokeWidth),
-    strokeColor: useDoc((s) => s.transferStrokeColor),
-  });
+  const style = resolveTransferStyle(transfer);
 
   const { anchor, measuring, shellRef, headerHandlers } = useDraggablePopover(
     transfer.id,
@@ -59,14 +55,10 @@ export function TransferPopover({ transfer, worldRect, view, spawnBox, onClose }
 
   // Wheel ticks must step from the authoritative EFFECTIVE value, resolved
   // live from the store (not the render-stale prop).
-  const currentThickness = () => {
-    const s = useDoc.getState();
-    return s.transfers[transfer.id]?.thickness ?? s.transferThickness;
-  };
-  const currentStrokeWidth = () => {
-    const s = useDoc.getState();
-    return s.transfers[transfer.id]?.strokeWidth ?? s.transferStrokeWidth;
-  };
+  const currentThickness = () =>
+    useDoc.getState().transfers[transfer.id]?.thickness ?? TRANSFER_THICKNESS_DEFAULT;
+  const currentStrokeWidth = () =>
+    useDoc.getState().transfers[transfer.id]?.strokeWidth ?? TRANSFER_STROKE_WIDTH_DEFAULT;
 
   const onDelete = () => {
     deleteTransfer(transfer.id);
