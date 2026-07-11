@@ -6,7 +6,11 @@ import { effectiveStationLabelStyle } from '../model/transforms';
 import { stationBoundaryRectsLocal } from '../geometry/stationBoundary';
 import { stopHalfOf } from '../model/lineWidth';
 import { polygonsToPath, unionConvex } from '../geometry/polygonUnion';
-import { SELECTION_STROKE_WIDTH, SELECTION_WASH_OPACITY } from './selectionStyle';
+import {
+  SELECTION_STROKE_WIDTH,
+  SELECTION_WASH_OPACITY,
+  selectionOutlineTones,
+} from './selectionStyle';
 import { useDocLabelStyle } from './useDocLabelStyle';
 
 const SELECTION_CORNER_RADIUS = 5;
@@ -38,9 +42,9 @@ export function StationSilhouette({
   const lines = useDoc((s) => s.lines);
   const editingStationId = useSelection((s) => s.editingStationId);
   const themeColors = useThemeColors();
-  // Committed zoom: the outline strokes divide by it so the ring weight stays
-  // constant on screen (the 1/zoom idiom PolygonView established).
-  const zoom = useViewportStore((s) => s.zoom);
+  // Paint toggle: reveal waypoint stations (widens the silhouette to wrap the
+  // revealed name). The outline no longer reads zoom — its weight is held by
+  // vector-effect, so nothing here snaps on gesture commit.
   const showWaypoints = useViewportStore((s) => s.showWaypoints);
 
   if (editingStationId === station.id) return null;
@@ -80,7 +84,29 @@ export function StationSilhouette({
           d={pathStr}
           fill="none"
           stroke={MATCH_STROKE_COLOR}
-          strokeWidth={MATCH_STROKE_WIDTH / zoom}
+          strokeWidth={MATCH_STROKE_WIDTH}
+          // Screen-constant weight with no zoom subscription (nothing to snap
+          // when a gesture commits).
+          vectorEffect="non-scaling-stroke"
+          strokeLinejoin="round"
+        />
+      </g>
+    );
+  }
+  // The layout-edit focus passes an explicit white outline over the dim — a
+  // single stroke, not the two-tone ring, which reads as one clean focus border
+  // on the darkened backdrop. Everything else gets the shared two-tone selection
+  // outline: a black core over a white underlay, legible around a station of
+  // any color on any canvas without a theme flip.
+  if (strokeColor) {
+    return (
+      <g data-station-stroke={station.id} transform={transform} pointerEvents="none">
+        <path
+          d={pathStr}
+          fill="none"
+          stroke={strokeColor}
+          strokeWidth={SELECTION_STROKE_WIDTH}
+          vectorEffect="non-scaling-stroke"
           strokeLinejoin="round"
         />
       </g>
@@ -88,13 +114,17 @@ export function StationSilhouette({
   }
   return (
     <g data-station-stroke={station.id} transform={transform} pointerEvents="none">
-      <path
-        d={pathStr}
-        fill="none"
-        stroke={strokeColor ?? themeColors.selectionStroke}
-        strokeWidth={SELECTION_STROKE_WIDTH / zoom}
-        strokeLinejoin="round"
-      />
+      {selectionOutlineTones(themeColors).map(({ tone, stroke, strokeWidth }) => (
+        <path
+          key={tone}
+          d={pathStr}
+          fill="none"
+          stroke={stroke}
+          strokeWidth={strokeWidth}
+          vectorEffect="non-scaling-stroke"
+          strokeLinejoin="round"
+        />
+      ))}
     </g>
   );
 }

@@ -238,21 +238,21 @@ describe('TransferLayer — DOM rendering', () => {
     });
   });
 
-  // The selected-transfer outline is a two-tone capsule ring: a 2px white
-  // core over a 4px black underlay (1px of black showing on each edge),
-  // both <path>s tracing the capsule perimeter offset a fixed world pad out
-  // from the visible edge (the bodies and halos stay <line>s). Two-tone,
-  // not a theme color: white-edged-in-black is legible against any body
-  // color and any canvas in both themes, so nothing flips with the theme.
-  // The geometry is pure world units — no zoom in the math — and both
-  // strokes hold their screen weight via vector-effect="non-scaling-stroke",
-  // so the ring tracks in-flight pan/zoom gestures natively instead of
-  // snapping on commit.
+  // The selected-transfer outline is a two-tone capsule ring: a 2px ink core
+  // over a 4px underlay (1px of underlay showing on each edge), both <path>s
+  // tracing the capsule perimeter offset a fixed world pad out from the visible
+  // edge (the bodies and halos stay <line>s). It flips with the theme —
+  // white-black-white on the light canvas, black-white-black on the dark one —
+  // so it stays legible against any body color (including the black/white
+  // transfers commonly are). The geometry is pure world units — no zoom in the
+  // math — and both strokes hold their screen weight via
+  // vector-effect="non-scaling-stroke", so the ring tracks in-flight pan/zoom
+  // gestures natively instead of snapping on commit.
   describe('selection outline', () => {
     const rings = (id: string) =>
       Array.from(document.querySelectorAll(`path[data-transfer-id="${id}"]`));
 
-    it('renders a white core over a black underlay tracing the capsule perimeter', () => {
+    it('renders a black ink core over a white underlay tracing the capsule perimeter (light)', () => {
       seedTwoStationsWithTransfer();
       render(<App />);
       act(() => {
@@ -261,11 +261,11 @@ describe('TransferLayer — DOM rendering', () => {
       const els = rings('x1');
       expect(els.length).toBe(2);
       const [edge, core] = els;
-      // Black underlay first (4px), white core on top (2px) → 1px black rim
-      // on each side of the white.
-      expect(edge.getAttribute('stroke')).toBe('#000000');
+      // Light canvas → WBW: white underlay first (4px), black core on top (2px)
+      // → 1px white rim on each side of the black.
+      expect(edge.getAttribute('stroke')).toBe('#ffffff');
       expect(edge.getAttribute('stroke-width')).toBe('4');
-      expect(core.getAttribute('stroke')).toBe('#ffffff');
+      expect(core.getAttribute('stroke')).toBe('#000000');
       expect(core.getAttribute('stroke-width')).toBe('2');
       for (const el of els) {
         expect(el.getAttribute('fill')).toBe('none');
@@ -331,7 +331,7 @@ describe('TransferLayer — DOM rendering', () => {
       }
     });
 
-    it('keeps the same two-tone colors in dark mode (legible without theme flips)', () => {
+    it('flips to a black underlay under a white ink core in dark mode (BWB)', () => {
       seedTwoStationsWithTransfer();
       act(() => {
         useViewportStore.setState({ darkMode: true });
@@ -341,6 +341,7 @@ describe('TransferLayer — DOM rendering', () => {
         act(() => {
           useSelection.getState().selectTransfer('x1');
         });
+        // Dark canvas → BWB: black underlay (4px), white ink core (2px).
         const [edge, core] = rings('x1');
         expect(edge.getAttribute('stroke')).toBe('#000000');
         expect(core.getAttribute('stroke')).toBe('#ffffff');

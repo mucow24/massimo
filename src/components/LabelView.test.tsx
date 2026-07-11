@@ -21,29 +21,43 @@ beforeEach(() => {
   useViewportStore.setState({ darkMode: false });
 });
 
+// The selection ring is a two-tone rect: a 2px ink core over a 4px underlay,
+// screen-constant via vector-effect (no zoom subscription → no snap on gesture
+// commit), dashed like the other free-item rings (bullets, polygons, svg
+// images). It flips with the theme (WBW on light, BWB on dark). Stations and
+// line tags stay solid.
 describe('<LabelView /> — selection ring', () => {
   afterEach(() => useViewportStore.setState({ zoom: 1 }));
 
-  const ringRect = () =>
-    render(
-      <svg>
-        <LabelView label={makeTextLabel({ id: 'g1', text: 'Hi' })} selected layer="stroke" />
-      </svg>,
-    ).container.querySelector('[data-text-label-stroke] rect')!;
+  const ringRects = () =>
+    Array.from(
+      render(
+        <svg>
+          <LabelView label={makeTextLabel({ id: 'g1', text: 'Hi' })} selected layer="stroke" />
+        </svg>,
+      ).container.querySelectorAll('[data-text-label-stroke] rect'),
+    );
 
-  it('renders the documented weight at zoom 1', () => {
-    const r = ringRect();
-    expect(Number(r.getAttribute('stroke-width'))).toBe(2);
-    expect(r.getAttribute('stroke-dasharray')).toBe('4 3');
+  it('renders a black core over a white underlay on the light canvas, vector-effect, dashed', () => {
+    // beforeEach sets darkMode: false.
+    const [edge, core] = ringRects();
+    expect(edge.getAttribute('stroke')).toBe('#ffffff');
+    expect(Number(edge.getAttribute('stroke-width'))).toBe(4);
+    expect(core.getAttribute('stroke')).toBe('#000000');
+    expect(Number(core.getAttribute('stroke-width'))).toBe(2);
+    for (const r of [edge, core]) {
+      expect(r.getAttribute('vector-effect')).toBe('non-scaling-stroke');
+      expect(r.getAttribute('stroke-dasharray')).toBe('4 3');
+    }
   });
 
-  // Constant SCREEN weight across zoom (1/zoom idiom) — matches the polygon
-  // and svg-image selection chrome so mixed selections read as one language.
-  it('divides stroke and dash by zoom', () => {
+  // No zoom subscription: identical markup at any committed zoom (nothing to
+  // snap when a gesture commits).
+  it('is zoom-independent: identical widths at committed zoom 2', () => {
     useViewportStore.setState({ zoom: 2 });
-    const r = ringRect();
-    expect(Number(r.getAttribute('stroke-width'))).toBe(1);
-    expect(r.getAttribute('stroke-dasharray')).toBe('2 1.5');
+    const [edge, core] = ringRects();
+    expect(Number(edge.getAttribute('stroke-width'))).toBe(4);
+    expect(Number(core.getAttribute('stroke-width'))).toBe(2);
   });
 });
 
