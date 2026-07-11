@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import {
   ChevronDownIcon,
   ChevronUpIcon,
@@ -10,7 +10,7 @@ import { effectiveLineOrder, useDoc, useSelection } from '../state/store';
 import { LineInspector } from './inspector';
 import type { Line } from '../model/types';
 import { legibleTextOn } from '../util/color';
-import { InlineBulletText } from './InlineBulletText';
+import { stationNameListText } from '../geometry/labelTokens';
 
 type StationSortColumn = 'name' | 'stops';
 type SortDirection = 'asc' | 'desc';
@@ -29,14 +29,6 @@ export function Sidebar() {
 
   const orderedLineIds = effectiveLineOrder(lineOrder, lines);
 
-  // Service-code → line lookup for `|CODE|` bullet tokens that appear inline
-  // in station names. Built once per render; cheap to rebuild.
-  const lineByService = useMemo(() => {
-    const map = new Map<string, Line>();
-    for (const ln of Object.values(lines)) map.set(ln.service, ln);
-    return map;
-  }, [lines]);
-
   // Per-station: lines that stop here, alphabetical by service code.
   const linesAtStation = (stationId: string): Line[] =>
     Object.values(lines)
@@ -51,7 +43,9 @@ export function Sidebar() {
   const stationList = Object.values(stations).sort((a, b) => {
     const cmp =
       stationSortBy === 'name'
-        ? a.name.localeCompare(b.name)
+        ? // Sort by the same cleaned text the list shows, so a leading tag or
+          // bullet (`<b>…`, `|A| …`) can't order a row away from its visible name.
+          stationNameListText(a.name).localeCompare(stationNameListText(b.name))
         : stopsKey(a.id).localeCompare(stopsKey(b.id));
     return stationSortDir === 'asc' ? cmp : -cmp;
   });
@@ -212,9 +206,7 @@ export function Sidebar() {
                     onMouseEnter={() => selection.setHoveredStation(st.id)}
                     onMouseLeave={() => selection.setHoveredStation(null)}
                   >
-                    <span className="grow">
-                      <InlineBulletText text={st.name} lineByService={lineByService} />
-                    </span>
+                    <span className="grow">{stationNameListText(st.name)}</span>
                     {st.isWaypoint && (
                       <span className="wp-pill" title="Waypoint">
                         WP
@@ -240,7 +232,7 @@ export function Sidebar() {
                               selection.selectLine(ln.id);
                             }}
                           >
-                            {ln.service}
+                            <span className="line-badge__code">{ln.service}</span>
                           </span>
                         ))}
                     </span>

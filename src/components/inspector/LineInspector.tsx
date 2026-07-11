@@ -1,8 +1,8 @@
-import { Fragment, useEffect, useMemo, useRef, useState } from 'react';
+import { Fragment, useEffect, useRef, useState } from 'react';
 import { ChevronDownIcon, ChevronUpIcon, Cross2Icon } from '@radix-ui/react-icons';
 import { useDoc, useSelection } from '../../state/store';
 import { useThemeColors } from '../../state/theme';
-import type { DotShape, DotStyle, Line, LineId, LineStyle } from '../../model/types';
+import type { DotShape, DotStyle, LineId, LineStyle } from '../../model/types';
 import { pairKeyOf } from '../../model/pairKey';
 import { resolveDotStyle } from '../../model/transforms';
 import { DEFAULT_DOT_STYLE, DOT_SHAPE_PRESETS } from '../../model/dotStyle';
@@ -15,7 +15,7 @@ import { HatchPatterns, lineStyleStrokeAttrs, lineStyleUnderlayAttrs } from '../
 import { StopGlyph } from '../StopGlyph';
 import { StationShapePicker, SHAPES } from '../StationShapePicker';
 import { blendOver, legibleTextOn, withAlpha } from '../../util/color';
-import { InlineBulletText } from '../InlineBulletText';
+import { stationNameListText } from '../../geometry/labelTokens';
 import { NumericFieldRow } from '../NumericFieldRow';
 import {
   LINE_WIDTH_DEFAULT,
@@ -163,7 +163,6 @@ function InsertZone({
 export function LineInspector({ id }: { id: LineId }) {
   const line = useDoc((s) => s.lines[id]);
   const stations = useDoc((s) => s.stations);
-  const allLines = useDoc((s) => s.lines);
   const updateLine = useDoc((s) => s.updateLine);
   const setLineSegmentStyle = useDoc((s) => s.setLineSegmentStyle);
   const reorderLineStations = useDoc((s) => s.reorderLineStations);
@@ -180,12 +179,6 @@ export function LineInspector({ id }: { id: LineId }) {
   const nameField = useFieldHistory();
   const serviceField = useFieldHistory();
   const [openPickerSid, setOpenPickerSid] = useState<string | null>(null);
-  // Service-code → line lookup for inline `<CODE>` bullets in station names.
-  const lineByService = useMemo(() => {
-    const map = new Map<string, Line>();
-    for (const ln of Object.values(allLines)) map.set(ln.service, ln);
-    return map;
-  }, [allLines]);
 
   // When this inspector unmounts (line deleted, a station selected, the panel
   // collapsed, or a different line opened), any row/divider hovered at that
@@ -535,7 +528,7 @@ export function LineInspector({ id }: { id: LineId }) {
                           title="Open station editor"
                           onClick={() => selection.selectStation(sid)}
                         >
-                          <InlineBulletText text={st.name} lineByService={lineByService} />
+                          {stationNameListText(st.name)}
                         </span>
                         {isAppending && (
                           <>

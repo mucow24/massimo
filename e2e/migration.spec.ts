@@ -193,11 +193,13 @@ test.describe('Legacy inline bullet syntax migration on load (v7 → v8)', () =>
     await expect(labelBullet).toBeVisible();
     await expect(labelBullet.locator('circle')).toHaveAttribute('fill', '#0039a6');
 
-    // The station name renders one too, on both of its surfaces: the canvas
-    // label (SVG) and the sidebar station list (HTML badge) — three "A"
-    // bullets in total across the app.
+    // The station name renders its bullet on the canvas only: the SVG station
+    // label plus the free text label above = two "A" bullets across the app.
+    // The sidebar station list shows the name as plain text — the |A| bullet is
+    // dropped and the escaped "|lit|" kept — so it adds no HTML bullet badge.
     await expect(page.locator('.canvas-host svg [data-inline-bullet="A"]')).toHaveCount(2);
-    await expect(page.locator('[data-inline-bullet="A"]')).toHaveCount(3);
+    await expect(page.locator('[data-inline-bullet="A"]')).toHaveCount(2);
+    await expect(page.locator('[data-station-row="A"] .grow')).toHaveText('Hub |lit|');
 
     // The literal "|lit|" was escaped, not turned into a bullet.
     await expect(page.locator('[data-inline-bullet="lit"]')).toHaveCount(0);

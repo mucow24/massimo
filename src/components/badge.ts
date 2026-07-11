@@ -5,8 +5,8 @@ import { legibleTextOn } from '../util/color';
  * Resolve a route badge's colors + code from its line (or null/unresolved): the
  * line color (gray `#888` placeholder when absent), a legible text color for
  * the code, and the service code (`?` when unresolved). Shared by the SVG
- * bullet renderers (InlineBullet, RouteBulletView) and the HTML twin
- * (InlineBulletText) so the placeholder + legibility rules live in one place.
+ * bullet renderers (InlineBullet, RouteBulletView) so the placeholder +
+ * legibility rules live in one place.
  */
 export function badgeColors(line: Line | null | undefined): {
   fill: string;

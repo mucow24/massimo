@@ -138,6 +138,23 @@ describe('<LineInspector /> — name / service / default-shape / station-list (E
     return input;
   };
 
+  it('renders station-list names as cleaned plain text (tags stripped, bullets dropped, symbols except <xfer>)', () => {
+    useDoc.setState({
+      ...DEFAULT_DOC,
+      ...makeDoc({
+        stations: [
+          makeStation({ id: 's1', name: '<b>Foo</b> |A| Bar<tm><xfer>', stops: [makeStop('L1')] }),
+        ],
+        lines: [makeLine({ id: 'L1', service: 'A', stations: ['s1'] })],
+      }),
+    });
+    const { container } = render(<LineInspector id="L1" />);
+
+    const nameCell = container.querySelector('.list-row .grow');
+    expect(nameCell?.textContent).toBe('Foo Bar™');
+    expect(container.querySelector('[data-inline-bullet]')).toBeNull();
+  });
+
   it('the Line name input writes through updateLine({name})', () => {
     seedThree();
     render(<LineInspector id="L1" />);
