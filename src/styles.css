@@ -1264,6 +1264,12 @@ select option {
   text-overflow: ellipsis;
   white-space: nowrap;
 }
+/* Placeholder shown for a station with an empty name — dimmed italics so it
+   reads as absence, not as a literal name. */
+.list-row .grow.no-name {
+  color: var(--text-muted);
+  font-style: italic;
+}
 .list-row .swatch {
   width: 14px;
   height: 14px;
