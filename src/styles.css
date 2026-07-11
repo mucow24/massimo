@@ -1153,49 +1153,17 @@ select option {
   flex-shrink: 0;
 }
 
-/* Inline bullet rendered inside flowing text — mirrors the in-label SVG
-   <InlineBullet> for DOM contexts (sidebar list, line-editor list). Sized
-   in em so it scales with the surrounding text. Shape modifiers pick the
-   silhouette (circle default, square, diamond); the hollow modifier swaps
-   the line-color background for a line-color outline (via currentColor)
-   around a theme-matched interior. */
-.inline-bullet-badge {
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
+/* Station-list "Lines" column badges: sized to inline route-bullet
+   proportions — a 1.05em disc with a 0.65em code, both relative to the row
+   font — so they read at the size an inline route bullet would in the name.
+   The base .line-badge above (18px/10px) still governs its other uses (the
+   Lines tab badge and the stop-row badges), which aren't inside .line-badges. */
+.line-badges .line-badge {
   width: 1.05em;
   height: 1.05em;
-  border-radius: 50%;
-  margin: 0 0.1em;
-  /* Lift the badge so its center lands at the text's optical midpoint
-     (matches the SVG <InlineBullet> placement in station labels). The
-     default inline-flex baseline puts the badge bottom on the text
-     baseline, which renders too low against the cap-line. */
-  vertical-align: 0.22em;
-  line-height: 1;
-  box-sizing: border-box;
-  flex-shrink: 0;
+  font-size: inherit; /* size the em box off the row font, not the 10px base */
 }
-.inline-bullet-badge--square {
-  border-radius: 0;
-}
-.inline-bullet-badge--diamond {
-  border-radius: 0;
-  /* A rotated square; scaled down so its corners roughly stay within the
-     unrotated badge footprint, matching the SVG diamond's inscribed size. */
-  transform: rotate(45deg) scale(0.78);
-}
-.inline-bullet-badge--diamond .inline-bullet-badge__code {
-  transform: rotate(-45deg);
-}
-.inline-bullet-badge--hollow {
-  background: #ffffff;
-  border: 0.12em solid currentColor;
-}
-.app[data-theme='dark'] .inline-bullet-badge--hollow {
-  background: #000000;
-}
-.inline-bullet-badge__code {
+.line-badges .line-badge__code {
   font-size: 0.65em;
   font-weight: 700;
   letter-spacing: -0.02em;

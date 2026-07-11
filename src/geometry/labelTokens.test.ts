@@ -6,6 +6,7 @@ import {
   parseFormattedLine,
   parseLabelLine,
   resolveRunFontSize,
+  stationNameListText,
   type SegmentStyle,
 } from './labelTokens';
 
@@ -566,5 +567,43 @@ describe('migrateLegacyInlineTokens', () => {
 
   it('works across newlines', () => {
     expect(migrateLegacyInlineTokens('|a|\n<b>')).toBe('\\|a|\n|b|');
+  });
+});
+
+describe('stationNameListText (compact list display)', () => {
+  it('strips formatting tags but keeps their inner text', () => {
+    expect(stationNameListText('<b>Foo</b> <i>Bar</i>')).toBe('Foo Bar');
+    expect(stationNameListText('<u>a</u><s>b</s>')).toBe('ab');
+    expect(stationNameListText('<color=red>Red</color> <w=Bold>W</w> <size=20>S</size>')).toBe(
+      'Red W S',
+    );
+  });
+
+  it('removes inline route bullets entirely (all shapes and both fills)', () => {
+    expect(stationNameListText('Airport |A|')).toBe('Airport');
+    expect(stationNameListText('Grand |4||5||6| Central')).toBe('Grand Central');
+    // A name made only of bullets collapses to nothing.
+    expect(stationNameListText('[SQ] {DI} ||HOL||')).toBe('');
+  });
+
+  it('renders the glyph shortcuts except <xfer>, which is omitted', () => {
+    expect(stationNameListText('Store<tm>')).toBe('Store™');
+    expect(stationNameListText('Airport<air>')).toBe('Airport✈');
+    expect(stationNameListText('Acme<c>')).toBe('Acme©');
+    expect(stationNameListText('Union<xfer>')).toBe('Union');
+    expect(stationNameListText('A<xfer>B')).toBe('AB');
+  });
+
+  it('collapses newlines and whitespace left by removed tokens, and trims', () => {
+    expect(stationNameListText('Foo |A|  Bar')).toBe('Foo Bar');
+    expect(stationNameListText('Foo\nBar')).toBe('Foo Bar');
+    expect(stationNameListText('  Hello  ')).toBe('Hello');
+  });
+
+  it('keeps unknown tags and escaped tokens as literal text', () => {
+    // `<q>` is not a real tag, so it stays literal (matches the canvas grammar).
+    expect(stationNameListText('<q>x')).toBe('<q>x');
+    // A backslash-escaped bullet is literal text, not a bullet, so it survives.
+    expect(stationNameListText('\\|A|')).toBe('|A|');
   });
 });
