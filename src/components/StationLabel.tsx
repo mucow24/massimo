@@ -11,42 +11,40 @@ import {
   resolveStationLabelWeight,
 } from '../model/transforms';
 import { legibleTextOn } from '../util/color';
+import { waypointLabelRectLocal } from '../geometry/waypointLozenge';
 import { renderStationLabelText } from './stationLabelText';
 import { StationNameEditor } from './StationNameEditor';
 import { WaypointLozenge } from './WaypointLozenge';
 import { useDocLabelStyle } from './useDocLabelStyle';
 
-// Gap between the "WP" lozenge and the name it prefixes, as a fraction of the
-// label font size.
-const WP_LOZENGE_GAP_RATIO = 0.3;
-
 /**
- * The "WP" lozenge drawn before a revealed waypoint's name. Shared by all three
- * label passes so every pass that paints a waypoint name also prefixes it. Sits
- * just left of the label box (`lay.hitX`) and shares the label's rotation, so it
- * tracks the name through rotations/offsets. Every call site sits past that
- * pass's `isWaypoint && !showWaypoints` guard, so a waypoint reaching here
- * already implies the overlay is on — the guard is just "is this a waypoint?".
+ * A revealed waypoint's label: the "WP" lozenge painted IN PLACE OF the station
+ * name. It occupies the same box the name would (anchored per `textAnchor` at
+ * the label anchor, vertically centered on the block) and shares the label's
+ * rotation, so it tracks the label through rotations/offsets — and the hit rect
+ * / selection ring (which use the same `waypointLabelRectLocal`) wrap it. Every
+ * call site is a revealed waypoint (each pass returns first for a hidden one),
+ * so there's no overlay guard here.
  */
-function WaypointLabelBadge({
-  station,
+function WaypointLozengeLabel({
   lay,
   rotationDeg,
   fontSize,
 }: {
-  station: Station;
-  lay: { hitX: number; hitY: number; hitH: number; anchorX: number; anchorY: number };
+  lay: {
+    textAnchor: 'start' | 'middle' | 'end';
+    anchorX: number;
+    anchorY: number;
+    hitY: number;
+    hitH: number;
+  };
   rotationDeg: number;
   fontSize: number;
 }) {
-  if (!station.isWaypoint) return null;
+  const box = waypointLabelRectLocal(lay, fontSize);
   return (
     <g transform={`rotate(${rotationDeg} ${lay.anchorX} ${lay.anchorY})`}>
-      <WaypointLozenge
-        rightX={lay.hitX - fontSize * WP_LOZENGE_GAP_RATIO}
-        centerY={lay.hitY + lay.hitH / 2}
-        fontSize={fontSize}
-      />
+      <WaypointLozenge rightX={box.x + box.w} centerY={box.y + box.h / 2} fontSize={fontSize} />
     </g>
   );
 }
@@ -123,27 +121,30 @@ export function StationStarterLabel({
   const strokeColor = legibleTextOn(highlightColor);
   return (
     <g transform={`translate(${station.x} ${station.y}) rotate(${angle})`}>
-      <WaypointLabelBadge station={station} lay={lay} rotationDeg={rotationDeg} fontSize={12} />
-      {renderStationLabelText({
-        text: station.name,
-        fontSize: 12,
-        fontWeight: 700,
-        leading: docStyle.leading,
-        tracking: docStyle.tracking,
-        fill: highlightColor,
-        stroke: strokeColor,
-        strokeWidth: 2,
-        paintOrder: 'stroke',
-        textDecoration: hovered ? 'underline' : 'none',
-        anchorX: lay.anchorX,
-        anchorY: lay.anchorY,
-        textAnchor: lay.textAnchor,
-        baseline: lay.baseline,
-        firstLineDyPx: lay.firstLineDyPx,
-        firstLineCenterY: lay.firstLineCenterY,
-        rotationDeg,
-        lineByService,
-      })}
+      {station.isWaypoint ? (
+        <WaypointLozengeLabel lay={lay} rotationDeg={rotationDeg} fontSize={docStyle.fontSize} />
+      ) : (
+        renderStationLabelText({
+          text: station.name,
+          fontSize: 12,
+          fontWeight: 700,
+          leading: docStyle.leading,
+          tracking: docStyle.tracking,
+          fill: highlightColor,
+          stroke: strokeColor,
+          strokeWidth: 2,
+          paintOrder: 'stroke',
+          textDecoration: hovered ? 'underline' : 'none',
+          anchorX: lay.anchorX,
+          anchorY: lay.anchorY,
+          textAnchor: lay.textAnchor,
+          baseline: lay.baseline,
+          firstLineDyPx: lay.firstLineDyPx,
+          firstLineCenterY: lay.firstLineCenterY,
+          rotationDeg,
+          lineByService,
+        })
+      )}
     </g>
   );
 }
@@ -176,30 +177,28 @@ export function StationHighlightLabel({
   if (station.isWaypoint && !showWaypoints) return null;
   return (
     <g transform={`translate(${station.x} ${station.y}) rotate(${angle})`}>
-      <WaypointLabelBadge
-        station={station}
-        lay={lay}
-        rotationDeg={rotationDeg}
-        fontSize={docStyle.fontSize}
-      />
-      {renderStationLabelText({
-        text: station.name,
-        fontSize: docStyle.fontSize,
-        fontWeight: renderedWeight,
-        fontStyle: stationItalic ? 'italic' : undefined,
-        leading: docStyle.leading,
-        tracking: docStyle.tracking,
-        textDecoration: hovered ? 'underline' : 'none',
-        fill: highlightColor,
-        anchorX: lay.anchorX,
-        anchorY: lay.anchorY,
-        textAnchor: lay.textAnchor,
-        baseline: lay.baseline,
-        firstLineDyPx: lay.firstLineDyPx,
-        firstLineCenterY: lay.firstLineCenterY,
-        rotationDeg,
-        lineByService,
-      })}
+      {station.isWaypoint ? (
+        <WaypointLozengeLabel lay={lay} rotationDeg={rotationDeg} fontSize={docStyle.fontSize} />
+      ) : (
+        renderStationLabelText({
+          text: station.name,
+          fontSize: docStyle.fontSize,
+          fontWeight: renderedWeight,
+          fontStyle: stationItalic ? 'italic' : undefined,
+          leading: docStyle.leading,
+          tracking: docStyle.tracking,
+          textDecoration: hovered ? 'underline' : 'none',
+          fill: highlightColor,
+          anchorX: lay.anchorX,
+          anchorY: lay.anchorY,
+          textAnchor: lay.textAnchor,
+          baseline: lay.baseline,
+          firstLineDyPx: lay.firstLineDyPx,
+          firstLineCenterY: lay.firstLineCenterY,
+          rotationDeg,
+          lineByService,
+        })
+      )}
     </g>
   );
 }
@@ -268,12 +267,6 @@ export function StationLabel({
 
   return (
     <g transform={`translate(${station.x} ${station.y}) rotate(${angle})`}>
-      <WaypointLabelBadge
-        station={station}
-        lay={lay}
-        rotationDeg={rotationDeg}
-        fontSize={docStyle.fontSize}
-      />
       {isEditing ? (
         <StationNameEditor
           x={editorHit ? editorHit.hitX : lay.hitX}
@@ -289,6 +282,8 @@ export function StationLabel({
           onChange={(v) => renameStation(station.id, v)}
           onCommit={() => setEditingStationId(null)}
         />
+      ) : station.isWaypoint ? (
+        <WaypointLozengeLabel lay={lay} rotationDeg={rotationDeg} fontSize={docStyle.fontSize} />
       ) : (
         renderStationLabelText({
           text: station.name,

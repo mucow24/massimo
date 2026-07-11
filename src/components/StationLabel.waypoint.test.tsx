@@ -40,7 +40,7 @@ const waypoint = () =>
   });
 const lines = () => ({ L1: makeLine({ id: 'L1', stations: ['wp'] }) });
 
-describe('StationLabel — waypoints under the Show-waypoints overlay', () => {
+describe('StationLabel — waypoints show the WP lozenge in place of the name', () => {
   it('paints nothing for a waypoint while the overlay is off', () => {
     useViewportStore.setState({ showWaypoints: false });
     const svg = renderLabel(waypoint(), lines());
@@ -48,45 +48,28 @@ describe('StationLabel — waypoints under the Show-waypoints overlay', () => {
     expect(svg.textContent).not.toContain('Junction');
   });
 
-  it('paints the name with a leading "WP" lozenge while the overlay is on', () => {
+  it('paints ONLY the WP lozenge — not the station name — while the overlay is on', () => {
     useViewportStore.setState({ showWaypoints: true });
     const svg = renderLabel(waypoint(), lines());
     const lozenge = svg.querySelector('[data-waypoint-lozenge]')!;
     expect(lozenge).toBeTruthy();
     expect(lozenge.textContent).toContain('WP');
-    // The station name is re-enabled alongside the lozenge.
-    expect(svg.textContent).toContain('Junction');
+    // The name is replaced by the lozenge, not shown alongside it.
+    expect(svg.textContent).not.toContain('Junction');
   });
 
-  it('places the lozenge to the left of the name (before it in reading order)', () => {
-    useViewportStore.setState({ showWaypoints: true });
-    const svg = renderLabel(waypoint(), lines());
-    const lozengeRect = svg.querySelector('[data-waypoint-lozenge] rect')!;
-    // The lozenge's right edge is the pill's x + width; the name's <text> anchors
-    // at anchorX which is at/after the label's left edge. The pill sits left of it.
-    const lozengeRight =
-      Number(lozengeRect.getAttribute('x')) + Number(lozengeRect.getAttribute('width'));
-    const nameText = Array.from(svg.querySelectorAll('text')).find((t) =>
-      (t.textContent ?? '').includes('Junction'),
-    )!;
-    expect(nameText).toBeTruthy();
-    expect(lozengeRight).toBeLessThanOrEqual(Number(nameText.getAttribute('x')));
-  });
-
-  // Ask #2: a revealed waypoint behaves like a normal station in every label
-  // pass, so its name survives the dim (line selected) and append-mode reveals.
-  it('paints the name + lozenge in the highlight pass (line selected → above dim)', () => {
+  it('shows the lozenge (no name) in the highlight pass (line selected → above dim)', () => {
     useViewportStore.setState({ showWaypoints: true });
     const svg = renderLabel(waypoint(), lines(), 'highlight-label');
     expect(svg.querySelector('[data-waypoint-lozenge]')).toBeTruthy();
-    expect(svg.textContent).toContain('Junction');
+    expect(svg.textContent).not.toContain('Junction');
   });
 
-  it('paints the name + lozenge in the starter pass (append mode)', () => {
+  it('shows the lozenge (no name) in the starter pass (append mode)', () => {
     useViewportStore.setState({ showWaypoints: true });
     const svg = renderLabel(waypoint(), lines(), 'starter-label');
     expect(svg.querySelector('[data-waypoint-lozenge]')).toBeTruthy();
-    expect(svg.textContent).toContain('Junction');
+    expect(svg.textContent).not.toContain('Junction');
   });
 
   it('stays hidden in the highlight + starter passes while the overlay is off', () => {
@@ -98,8 +81,16 @@ describe('StationLabel — waypoints under the Show-waypoints overlay', () => {
     }
   });
 
-  // Ask #1: the revealed name is a first-class label — it enters inline rename
-  // like any station (the paint-only version deliberately couldn't).
+  it('a normal (non-waypoint) station still paints its name, no lozenge', () => {
+    useViewportStore.setState({ showWaypoints: true });
+    const station = makeStation({ id: 's1', name: 'Central', stops: [makeStop('L1')] });
+    const svg = renderLabel(station, { L1: makeLine({ id: 'L1', stations: ['s1'] }) });
+    expect(svg.textContent).toContain('Central');
+    expect(svg.querySelector('[data-waypoint-lozenge]')).toBeNull();
+  });
+
+  // The station still has a name; double-click still opens the inline rename
+  // editor (the lozenge stands in for the name, and behaves like one).
   it('mounts the inline rename editor for a revealed waypoint being edited', () => {
     useViewportStore.setState({ showWaypoints: true });
     useSelection.setState({ ...useSelection.getState(), editingStationId: 'wp' });

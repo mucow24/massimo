@@ -1,6 +1,7 @@
 import { Line, Station } from '../model/types';
 import { labelLayoutLocal } from '../geometry/labelLayout';
 import { cellsAABBLocal } from '../geometry/stationBoundary';
+import { waypointLabelRectLocal } from '../geometry/waypointLozenge';
 import { stopHalfOf } from '../model/lineWidth';
 import { effectiveStationLabelStyle } from '../model/transforms';
 import { useViewportStore } from '../state/viewportStore';
@@ -42,20 +43,24 @@ export function StationHitArea({
   const showWaypoints = useViewportStore((s) => s.showWaypoints);
 
   const angle = station.rotation * 45;
-  // A revealed waypoint (overlay on) gets its name's hit rect back, so the
-  // painted name is clickable like a regular station's.
+  const revealedWaypoint = !!station.isWaypoint && showWaypoints;
+  // A revealed waypoint (overlay on) gets a label hit rect so its lozenge is
+  // clickable like a regular station's name.
   const hideLabelRect = !!station.isWaypoint && !showWaypoints;
   const stopHalf = stopHalfOf(lines);
   const cellsBox = cellsAABBLocal(station, stopHalf, showWaypoints);
-  const {
-    anchorX: labelAnchorX,
-    anchorY: labelAnchorY,
-    hitX,
-    hitY,
-    hitW,
-    hitH,
-  } = labelLayoutLocal(station, effectiveStationLabelStyle(station, docStyle), undefined, stopHalf);
-  const labelHitTransform = `rotate(${station.label.rotation * 45} ${labelAnchorX} ${labelAnchorY})`;
+  const lay = labelLayoutLocal(
+    station,
+    effectiveStationLabelStyle(station, docStyle),
+    undefined,
+    stopHalf,
+  );
+  const labelHitTransform = `rotate(${station.label.rotation * 45} ${lay.anchorX} ${lay.anchorY})`;
+  // A revealed waypoint's label is the WP lozenge, so its clickable rect is the
+  // pill's box (matching the paint), not the invisible name's.
+  const labelRect = revealedWaypoint
+    ? waypointLabelRectLocal(lay, docStyle.fontSize)
+    : { x: lay.hitX, y: lay.hitY, w: lay.hitW, h: lay.hitH };
 
   const hitProps = {
     fill: 'transparent',
@@ -82,10 +87,10 @@ export function StationHitArea({
       />
       {!hideLabelRect && (
         <rect
-          x={hitX}
-          y={hitY}
-          width={hitW}
-          height={hitH}
+          x={labelRect.x}
+          y={labelRect.y}
+          width={labelRect.w}
+          height={labelRect.h}
           transform={labelHitTransform}
           {...handlers}
           {...hitProps}
