@@ -31,6 +31,7 @@ import {
   type ViewportProjection,
 } from './screenAnchor';
 import { stationWorldAABB } from '../../geometry/itemBounds';
+import { docLabelStyle } from '../../geometry/labelLayout';
 import { stopHalfOf } from '../../model/lineWidth';
 import { effectiveStationLabelStyle } from '../../model/transforms';
 import type { RouteBullet, Station } from '../../model/types';
@@ -219,13 +220,7 @@ const SEL = '.bullet-popover';
 function stationSpawnAt(id: string, v: ViewportProjection): { x: number; y: number } {
   const doc = useDoc.getState();
   const st = doc.stations[id];
-  const style = effectiveStationLabelStyle(st, {
-    fontSize: doc.labelFontSize,
-    weight: doc.labelWeight,
-    italic: doc.labelItalic,
-    leading: doc.labelLeading,
-    tracking: doc.labelTracking,
-  });
+  const style = effectiveStationLabelStyle(st, docLabelStyle(doc));
   const r = stationWorldAABB(st, style, stopHalfOf(doc.lines));
   const p0 = projectToScreen({ x: r.x0, y: r.y0 }, v);
   const p1 = projectToScreen({ x: r.x1, y: r.y1 }, v);

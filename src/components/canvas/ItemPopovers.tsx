@@ -1,7 +1,7 @@
 import { soleSelection, useDoc, useSelection } from '../../state/store';
 import type { ViewportProjection } from './screenAnchor';
 import { useLiveView } from './useViewport';
-import type { LabelStyle } from '../../geometry/labelLayout';
+import { useDocLabelStyle } from '../useDocLabelStyle';
 import {
   polygonAABB,
   routeBulletAABB,
@@ -43,11 +43,7 @@ export function ItemPopovers({ view: committed }: { view: ViewportProjection }) 
   const polygons = useDoc((s) => s.polygons);
   const svgImages = useDoc((s) => s.svgImages);
   const lines = useDoc((s) => s.lines);
-  const labelFontSize = useDoc((s) => s.labelFontSize);
-  const labelWeight = useDoc((s) => s.labelWeight);
-  const labelItalic = useDoc((s) => s.labelItalic);
-  const labelLeading = useDoc((s) => s.labelLeading);
-  const labelTracking = useDoc((s) => s.labelTracking);
+  const baseStyle = useDocLabelStyle();
 
   // The popover anchors against the live viewport; a zero-size viewport (first
   // paint) has no screen mapping yet, so wait for a real box.
@@ -77,13 +73,6 @@ export function ItemPopovers({ view: committed }: { view: ViewportProjection }) 
       (mode.kind === 'editing-station-layout' && mode.stationId === sole.id);
     // Same style/stopHalf the renderer uses, so the silhouette rect the spawn
     // dodges matches the painted station (cells + name label).
-    const baseStyle: LabelStyle = {
-      fontSize: labelFontSize,
-      weight: labelWeight,
-      italic: labelItalic,
-      leading: labelLeading,
-      tracking: labelTracking,
-    };
     return (
       <StationPopover
         station={st}
