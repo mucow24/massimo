@@ -23,6 +23,16 @@ interface Props {
   onSelect: (id: string) => void;
 }
 
+// Canvas mouseover → preview a transfer's selection outline at 50% (see
+// MapCanvas). Only the bodies pass (TransferLayer) needs these; the outline
+// pass (TransferSelectionOutline) shares Props but never hovers, so they live
+// here rather than on Props. Enter/leave carry the id so leave can no-op when
+// the hover already moved on to another transfer.
+interface HoverProps {
+  onHoverEnter: (id: string) => void;
+  onHoverLeave: (id: string) => void;
+}
+
 /**
  * Perimeter of the capsule a round-capped line of radius `r` sweeps from `a`
  * to `b`: two edge-parallel segments joined by semicircle end caps (sweep 0
@@ -110,7 +120,9 @@ export function TransferLayer({
   stations,
   defaults,
   onSelect,
-}: Omit<Props, 'selectedId'>) {
+  onHoverEnter,
+  onHoverLeave,
+}: Omit<Props, 'selectedId'> & HoverProps) {
   const list = Object.values(transfers);
   if (list.length === 0) return null;
 
@@ -143,6 +155,8 @@ export function TransferLayer({
       e.stopPropagation();
       onSelect(id);
     },
+    onPointerEnter: () => onHoverEnter(id),
+    onPointerLeave: () => onHoverLeave(id),
   });
 
   return (

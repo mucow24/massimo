@@ -242,13 +242,29 @@ export function useStationInteraction(
     const cur = selection.hoveredLineStop;
     if (cur && cur.stationId === station.id) selection.setHoveredLineStop(null);
   };
+  // Canvas mouseover → preview this station's selection chrome at 50%. Only in
+  // idle mode (any non-idle mode owns the pointer for its own gesture; the
+  // transfer-pick path below reuses onPointerLeave for its dot highlight). Wired
+  // through the SAME handlers as the bg hit-rect AND the dots, so the pointer is
+  // over one of the two hover targets everywhere on the footprint — crossing
+  // between them fires leave-then-enter, which React batches (both continuous
+  // events) into the final id, so the preview never blinks. The leave clears
+  // only when THIS station is still the hovered one (fresh read, not the render-
+  // time snapshot), so a fast cross to a neighbor can't wipe the neighbor.
+  const inIdle = selection.uiMode.kind === 'idle';
+  const onHoverEnter = () => selection.setHoveredCanvasItem({ kind: 'station', id: station.id });
+  const onHoverLeave = () => {
+    const h = useSelection.getState().hoveredCanvasItem;
+    if (h && h.kind === 'station' && h.id === station.id) selection.setHoveredCanvasItem(null);
+  };
   const handlers = {
     onPointerDown: modeInert ? undefined : onPointerDown,
     onClick: modeInert || inHandMode ? undefined : onClick,
     onDoubleClick: modeInert || inHandMode ? undefined : onDoubleClick,
     onContextMenu: modeInert ? undefined : onContextMenu,
+    onPointerEnter: inIdle ? onHoverEnter : undefined,
     onPointerMove: inTransferPick ? onTransferPointerMove : undefined,
-    onPointerLeave: inTransferPick ? onTransferPointerLeave : undefined,
+    onPointerLeave: inTransferPick ? onTransferPointerLeave : inIdle ? onHoverLeave : undefined,
   };
   // Hand mode → open hand (pannable). Otherwise a movable station shows the
   // four-arrow move cursor; a locked station shows the pointing hand. The

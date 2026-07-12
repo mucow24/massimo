@@ -33,6 +33,15 @@ interface Props {
   onPointerDown?: (id: string, e: React.PointerEvent) => void;
   onClick?: (id: string, e: React.MouseEvent) => void;
   onContextMenu?: (id: string, e: React.MouseEvent) => void;
+  // Canvas mouseover → preview this label's selection ring at 50% (see
+  // MapCanvas). Only the bg layer wires them; the id lets leave no-op when the
+  // hover already moved on. Optional so the stroke/hit/preview uses skip them.
+  onHoverEnter?: (id: string) => void;
+  onHoverLeave?: (id: string) => void;
+  // Marks a `stroke` layer as a 50%-opacity mouseover preview: swaps to
+  // `data-text-label-stroke-preview` so `data-text-label-stroke` stays a pure
+  // "this label is selected" marker.
+  preview?: boolean;
   // Hand mode → grab cursor (pannable). Defaults false for non-canvas uses.
   inHandMode?: boolean;
 }
@@ -58,6 +67,9 @@ export function LabelView({
   onPointerDown,
   onClick,
   onContextMenu,
+  onHoverEnter,
+  onHoverLeave,
+  preview = false,
   inHandMode = false,
 }: Props) {
   const docLines = useDoc((s) => s.lines);
@@ -84,7 +96,8 @@ export function LabelView({
       <g
         transform={`translate(${label.x} ${label.y}) rotate(${angle})`}
         pointerEvents="none"
-        data-text-label-stroke={label.id}
+        data-text-label-stroke={preview ? undefined : label.id}
+        data-text-label-stroke-preview={preview ? label.id : undefined}
       >
         {/* Two-tone ring: black core over white underlay, screen-constant via
             vector-effect (no zoom subscription → no snap on commit). The pad
@@ -153,6 +166,8 @@ export function LabelView({
       onPointerDown={onPointerDown ? (e) => onPointerDown(label.id, e) : undefined}
       onClick={onClick ? (e) => onClick(label.id, e) : undefined}
       onContextMenu={onContextMenu ? (e) => onContextMenu(label.id, e) : undefined}
+      onPointerEnter={onHoverEnter ? () => onHoverEnter(label.id) : undefined}
+      onPointerLeave={onHoverLeave ? () => onHoverLeave(label.id) : undefined}
       style={interactive ? { cursor: itemCursor(inHandMode, label.locked) } : undefined}
     >
       {/* Invisible hit rect covering the measured bbox + padding. Catches
