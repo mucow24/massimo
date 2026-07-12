@@ -209,9 +209,9 @@ describe('save/load round-trip', () => {
         makeTransfer({
           id: 'x1',
           thickness: 7,
-          color: '#abcdef',
+          color: { day: '#abcdef', night: '#334455' },
           strokeWidth: 3,
-          strokeColor: '#123456',
+          strokeColor: { day: '#123456', night: '#654321' },
         }),
       ],
     });
@@ -221,9 +221,9 @@ describe('save/load round-trip', () => {
     if (result.ok) {
       expect(result.doc.transfers.x1).toMatchObject({
         thickness: 7,
-        color: '#abcdef',
+        color: { day: '#abcdef', night: '#334455' },
         strokeWidth: 3,
-        strokeColor: '#123456',
+        strokeColor: { day: '#123456', night: '#654321' },
       });
     }
   });

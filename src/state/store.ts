@@ -38,6 +38,7 @@ import {
   backfillLineNames,
   backfillPolygonDarkColors,
   backfillTextLabelColors,
+  backfillTransferDayNightColors,
   bakeLegacyLabelSettings,
   bakeLegacyTransferSettings,
   convertLegacyDotShapes,
@@ -124,7 +125,7 @@ function docSnapshotsEqual(a: DocSnapshot, b: DocSnapshot): boolean {
 }
 
 /**
- * Persisted-document version migration (v0 → v12). Exported and pure so it can
+ * Persisted-document version migration (v0 → v14). Exported and pure so it can
  * be unit-tested in isolation; the persist config below just delegates here.
  * Never mutates `persisted` — returns a possibly-new doc snapshot.
  *
@@ -180,7 +181,13 @@ function docSnapshotsEqual(a: DocSnapshot, b: DocSnapshot): boolean {
  *   pre-designation storage through migrate at all (the persist merge alone
  *   would leave `styleDefaults` pointing at factory ids that round-1/2 docs'
  *   styles records don't contain).
- * - v12 → v13: retire the five doc-level station-label font settings
+ * - v12 → v13: transfer `color`/`strokeColor` (per-transfer overrides AND
+ *   transfer StyleDef props) gained day/night halves — convert the legacy
+ *   single-color strings to `{day, night}` pairs (old colors are day colors)
+ *   via `backfillTransferDayNightColors`. Ordered after the v<10 bake and
+ *   before the v<11 adoption (which compares transfer props by `.day`/`.night`
+ *   now). Idempotent; `parse()` does the same conversion in its sanitizers.
+ * - v13 → v14: retire the five doc-level station-label font settings
  *   (labelFontSize/labelWeight/labelItalic/labelLeading/labelTracking). Bake
  *   each into per-station typography and the per-station labelBold (+2 weight)
  *   / labelItalic (OR) flags with them, moving the map-wide role to the seeded
@@ -276,6 +283,23 @@ export function migrateDoc(persisted: unknown, version: number): DocState {
     // (no-op when the fields were never persisted, e.g. pre-PR-#220 docs).
     out = bakeLegacyTransferSettings(out);
   }
+  if (v < 13) {
+    // Transfer colors gained day/night halves. Convert legacy single-color
+    // string overrides AND transfer StyleDef props to `{day, night}` pairs
+    // (old colors are day colors, night matches). MUST run after the v<10 bake
+    // (so a pre-#220 doc's freshly-baked overrides are already pairs) and
+    // BEFORE the v<11 adoption below — adoption compares transfer props via
+    // stylePropsEqual, which now reads `.day`/`.night`, so the colors have to
+    // be pairs first. No-op (reference-stable) on already-converted docs.
+    const converted = backfillTransferDayNightColors(out.transfers ?? {}, out.styles ?? {});
+    if (converted.changed) {
+      out = {
+        ...out,
+        ...(out.transfers ? { transfers: converted.transfers } : {}),
+        ...(out.styles ? { styles: converted.styles } : {}),
+      };
+    }
+  }
   if (v < 11) {
     // Adopt untagged, default-looking items into the default styles: legacy
     // maps are full of them, and without tags the Styles panel's Default
@@ -291,7 +315,7 @@ export function migrateDoc(persisted: unknown, version: number): DocState {
       out = rest;
     }
   }
-  if (v < 13) {
+  if (v < 14) {
     // Retired doc-level station-label font settings (labelFontSize/labelWeight/
     // labelItalic/labelLeading/labelTracking) → baked into per-station
     // typography, with the map-wide role moved to the seeded default station
@@ -836,8 +860,8 @@ export const useDoc = create<DocState>()(
       {
         name: 'vignelli-map-doc-v1',
         storage: createJSONStorage(() => localStorage),
-        version: 13,
-        // Version migration chain v0 → v13 lives in `migrateDoc` (above), which
+        version: 14,
+        // Version migration chain v0 → v14 lives in `migrateDoc` (above), which
         // is exported and unit-tested. See its doc comment for each step.
         migrate: (persisted, version) => migrateDoc(persisted, version),
         partialize: (s) => pickDocSnapshot(s),

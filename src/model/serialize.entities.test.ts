@@ -80,16 +80,43 @@ describe('Transfer serialization', () => {
   });
 
   it('round-trips per-transfer style overrides losslessly', () => {
-    // Every value differs from the doc settings, so none may be dropped.
+    // Every value differs from the constant defaults, so none may be dropped.
+    // Colors are day/night pairs (the app-written form), with both halves
+    // diverging so neither collapses.
     const xfer = makeTransfer({
       id: 'x1',
       thickness: 5,
-      color: '#ff0080',
+      color: { day: '#ff0080', night: '#333333' },
       strokeWidth: 3,
-      strokeColor: '#123456',
+      strokeColor: { day: '#123456', night: '#654321' },
     });
     const doc = roundTrip(makeDoc({ transfers: [xfer] }));
     expect(doc.transfers['x1']).toEqual(xfer);
+  });
+
+  it('migrates a legacy single-color override to a day/night pair on load', () => {
+    // A hand-edited / legacy file with string colors: parse wraps each into a
+    // day/night pair (old colors are day colors, night matches).
+    const json = JSON.stringify({
+      format: 'massimo-map',
+      doc: {
+        ...makeDoc({}),
+        transfers: {
+          x1: {
+            id: 'x1',
+            a: { stationId: 's1', lineId: null },
+            b: { stationId: 's2', lineId: null },
+            color: '#ff0080',
+            strokeColor: '#abcdef',
+          },
+        },
+      },
+    });
+    const result = parse(json);
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    expect(result.doc.transfers.x1.color).toEqual({ day: '#ff0080', night: '#ff0080' });
+    expect(result.doc.transfers.x1.strokeColor).toEqual({ day: '#abcdef', night: '#abcdef' });
   });
 
   it('preserves absence of the style overrides (a tracking transfer stays tracking)', () => {

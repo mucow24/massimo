@@ -21,6 +21,7 @@ import {
   canonicalTransferColor,
   canonicalTransferStrokeWidth,
   canonicalTransferThickness,
+  legacyColorToDayNight,
 } from './transferStyle';
 import { canonicalLineWidth } from './lineWidth';
 import { DOT_SIZE_DEFAULT, canonicalDotSize } from './dotSize';
@@ -38,6 +39,7 @@ import { parseHexA, withHexAlpha } from '../util/color';
 import { migrateLegacyInlineTokens } from '../geometry/labelTokens';
 import { KNOWN_PALETTE_IDS, type Palette, type PaletteId } from './palettes';
 import type {
+  DayNightColor,
   DotBaseShape,
   DotFill,
   DotShape,
@@ -444,6 +446,20 @@ function sanitizeDotColor(raw: unknown, allowNone: boolean): DotFill | undefined
   return { day: o.day.toLowerCase(), night: o.night.toLowerCase() };
 }
 
+// Validate + normalize one raw transfer color: a legacy single-color string
+// (wrapped so both halves take it — old colors are day colors) or a {day,
+// night} string pair. Returns undefined when the value doesn't conform.
+// Unlike sanitizeDotColor this has no 'line'/'none' sentinels and does NOT
+// lowercase — transfer colors are compared exactly and legacy strings are
+// preserved verbatim (see legacyColorToDayNight / canonicalTransferColor).
+function sanitizeDayNightColor(raw: unknown): DayNightColor | undefined {
+  if (typeof raw === 'string') return legacyColorToDayNight(raw);
+  if (!raw || typeof raw !== 'object') return undefined;
+  const o = raw as Record<string, unknown>;
+  if (typeof o.day !== 'string' || typeof o.night !== 'string') return undefined;
+  return { day: o.day, night: o.night };
+}
+
 // Validate + normalize one raw `dotStyle` value. Returns the canonical style,
 // or undefined when the value doesn't conform — callers drop the field so the
 // default chain takes over. File-import hygiene only; app-written styles are
@@ -724,9 +740,9 @@ export function sanitizeTransferStyles(transfers: Record<string, Transfer>): {
       cleaned = withTransferOverride(cleaned, 'thickness', stored);
     }
     if ('color' in cleaned) {
-      const raw = cleaned.color as unknown;
+      const dn = sanitizeDayNightColor(cleaned.color);
       const stored =
-        typeof raw === 'string' ? canonicalTransferColor(raw, TRANSFER_COLOR_DEFAULT) : undefined;
+        dn === undefined ? undefined : canonicalTransferColor(dn, TRANSFER_COLOR_DEFAULT);
       cleaned = withTransferOverride(cleaned, 'color', stored);
     }
     if ('strokeWidth' in cleaned) {
@@ -738,11 +754,9 @@ export function sanitizeTransferStyles(transfers: Record<string, Transfer>): {
       cleaned = withTransferOverride(cleaned, 'strokeWidth', stored);
     }
     if ('strokeColor' in cleaned) {
-      const raw = cleaned.strokeColor as unknown;
+      const dn = sanitizeDayNightColor(cleaned.strokeColor);
       const stored =
-        typeof raw === 'string'
-          ? canonicalTransferColor(raw, TRANSFER_STROKE_COLOR_DEFAULT)
-          : undefined;
+        dn === undefined ? undefined : canonicalTransferColor(dn, TRANSFER_STROKE_COLOR_DEFAULT);
       cleaned = withTransferOverride(cleaned, 'strokeColor', stored);
     }
     if (cleaned !== t) changed = true;
@@ -787,45 +801,53 @@ export function bakeLegacyTransferSettings<
   if (!hasLegacy) return doc;
   const num = (v: unknown, fallback: number): number =>
     typeof v === 'number' && Number.isFinite(v) ? v : fallback;
-  const str = (v: unknown, fallback: string): string => (typeof v === 'string' ? v : fallback);
+  // The retired settings were single colors; wrap each as a day/night color
+  // (old colors are day colors, night matches). Fall back to the default's day
+  // half when the field is absent/garbage.
   const legacy = {
     thickness: num(raw.transferThickness, TRANSFER_THICKNESS_DEFAULT),
-    color: str(raw.transferColor, TRANSFER_COLOR_DEFAULT),
+    color: legacyColorToDayNight(
+      typeof raw.transferColor === 'string' ? raw.transferColor : TRANSFER_COLOR_DEFAULT.day,
+    ),
     strokeWidth: num(raw.transferStrokeWidth, TRANSFER_STROKE_WIDTH_DEFAULT),
-    strokeColor: str(raw.transferStrokeColor, TRANSFER_STROKE_COLOR_DEFAULT),
+    strokeColor: legacyColorToDayNight(
+      typeof raw.transferStrokeColor === 'string'
+        ? raw.transferStrokeColor
+        : TRANSFER_STROKE_COLOR_DEFAULT.day,
+    ),
   };
   const transfers: Record<string, Transfer> = {};
   for (const id of Object.keys(doc.transfers ?? {})) {
     const t = (doc.transfers as Record<string, Transfer>)[id];
     // Effective under the old model — a valid override wins, else the legacy
     // setting. Garbage override values fall back to the setting too (the same
-    // outcome sanitizeTransferStyles would produce).
-    const eff = {
-      thickness: num(t.thickness, legacy.thickness),
-      color: str(t.color, legacy.color),
-      strokeWidth: num(t.strokeWidth, legacy.strokeWidth),
-      strokeColor: str(t.strokeColor, legacy.strokeColor),
-    };
+    // outcome sanitizeTransferStyles would produce). A legacy string override
+    // is wrapped to day/night; anything unparseable falls back via `??`.
+    const effColor = sanitizeDayNightColor(t.color) ?? legacy.color;
+    const effStrokeColor = sanitizeDayNightColor(t.strokeColor) ?? legacy.strokeColor;
     let next = t;
     next = withTransferOverride(
       next,
       'thickness',
-      canonicalTransferThickness(eff.thickness, TRANSFER_THICKNESS_DEFAULT),
+      canonicalTransferThickness(num(t.thickness, legacy.thickness), TRANSFER_THICKNESS_DEFAULT),
     );
     next = withTransferOverride(
       next,
       'color',
-      canonicalTransferColor(eff.color, TRANSFER_COLOR_DEFAULT),
+      canonicalTransferColor(effColor, TRANSFER_COLOR_DEFAULT),
     );
     next = withTransferOverride(
       next,
       'strokeWidth',
-      canonicalTransferStrokeWidth(eff.strokeWidth, TRANSFER_STROKE_WIDTH_DEFAULT),
+      canonicalTransferStrokeWidth(
+        num(t.strokeWidth, legacy.strokeWidth),
+        TRANSFER_STROKE_WIDTH_DEFAULT,
+      ),
     );
     next = withTransferOverride(
       next,
       'strokeColor',
-      canonicalTransferColor(eff.strokeColor, TRANSFER_STROKE_COLOR_DEFAULT),
+      canonicalTransferColor(effStrokeColor, TRANSFER_STROKE_COLOR_DEFAULT),
     );
     transfers[id] = next;
   }
@@ -856,6 +878,79 @@ export function bakeLegacyTransferSettings<
     ...(doc.transfers ? { transfers } : {}),
     ...(styles !== doc.styles ? { styles } : {}),
   } as T;
+}
+
+// Convert one transfer color from the legacy single-color STRING form to the
+// day/night pair (old colors are day colors — night matches). Returns the same
+// reference for an already-resolved day/night object, so callers stay
+// reference-preserving and the conversion is idempotent. Absent stays absent.
+function transferColorToDayNight(c: unknown): DayNightColor | undefined {
+  if (typeof c === 'string') return legacyColorToDayNight(c);
+  return c as DayNightColor | undefined;
+}
+
+/**
+ * v12 → v13 for the localStorage rehydrate: convert transfer colors from the
+ * legacy single-color STRING form to the day/night pair form, for BOTH
+ * per-transfer overrides and transfer StyleDef props. Old app builds stored one
+ * color that applied in both themes; each becomes `{day, night}` with both
+ * halves set to it. Idempotent and reference-preserving — a value that is
+ * already a day/night object (or an absent override) passes straight through,
+ * so a converted doc is a no-op. The file-import path does the same conversion
+ * inside its sanitizers (sanitizeTransferStyles / sanitizeStyleProps), so this
+ * is the rehydrate-only counterpart (the rehydrate otherwise trusts app-written
+ * data whose stored shape changed). Non-transfer styles are untouched.
+ */
+export function backfillTransferDayNightColors(
+  transfers: Record<string, Transfer>,
+  styles: Record<string, StyleDef>,
+): { transfers: Record<string, Transfer>; styles: Record<string, StyleDef>; changed: boolean } {
+  let changed = false;
+
+  let nextTransfers = transfers;
+  const outT: Record<string, Transfer> = {};
+  let tChanged = false;
+  for (const id of Object.keys(transfers)) {
+    const t = transfers[id];
+    // withTransferOverride keeps the same reference when unchanged and never
+    // materializes an absent field, so a tracking transfer stays clean.
+    let next = withTransferOverride(t, 'color', transferColorToDayNight(t.color));
+    next = withTransferOverride(next, 'strokeColor', transferColorToDayNight(t.strokeColor));
+    outT[id] = next;
+    if (next !== t) tChanged = true;
+  }
+  if (tChanged) {
+    nextTransfers = outT;
+    changed = true;
+  }
+
+  let nextStyles = styles;
+  const outS: Record<string, StyleDef> = {};
+  let sChanged = false;
+  for (const key of Object.keys(styles)) {
+    const def = styles[key];
+    if (def.kind === 'transfer') {
+      const p = def.props;
+      const color = transferColorToDayNight(p.color);
+      const strokeColor = transferColorToDayNight(p.strokeColor);
+      if (color !== p.color || strokeColor !== p.strokeColor) {
+        // Style props are always concrete, so the conversions are defined.
+        outS[key] = {
+          ...def,
+          props: { ...p, color: color as DayNightColor, strokeColor: strokeColor as DayNightColor },
+        };
+        sChanged = true;
+        continue;
+      }
+    }
+    outS[key] = def;
+  }
+  if (sChanged) {
+    nextStyles = outS;
+    changed = true;
+  }
+
+  return { transfers: nextTransfers, styles: nextStyles, changed };
 }
 
 /**
@@ -1157,9 +1252,9 @@ function sanitizeStyleProps(kind: StyleKind, raw: unknown): StyleDef['props'] | 
     }
     case 'transfer': {
       const thickness = finiteNum(o.thickness);
-      const color = asString(o.color);
+      const color = sanitizeDayNightColor(o.color);
       const strokeWidth = finiteNum(o.strokeWidth);
-      const strokeColor = asString(o.strokeColor);
+      const strokeColor = sanitizeDayNightColor(o.strokeColor);
       if (thickness === undefined || color === undefined) return undefined;
       if (strokeWidth === undefined || strokeColor === undefined) return undefined;
       return canonicalStyleProps('transfer', { thickness, color, strokeWidth, strokeColor });

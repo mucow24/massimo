@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 
 import { dragState, exitLineEditorOnItemClick, useDoc, useSelection } from '../state/store';
+import { hoveredChrome, type HoverKind } from '../state/selection';
 import { useSnapPrefs } from '../state/snapPrefs';
 import { useViewportStore } from '../state/viewportStore';
 import { useThemeColors } from '../state/theme';
@@ -13,7 +14,7 @@ import {
   SegmentBandSpec,
 } from '../geometry/interlining';
 import { effectivePolygonOrder, effectiveSvgImageOrder, type ItemRef } from '../model/transforms';
-import { TRANSFER_STYLE_DEFAULTS } from '../model/transferStyle';
+import { resolveDayNight, TRANSFER_STYLE_DEFAULTS } from '../model/transferStyle';
 import { defaultStyleProps } from '../model/styles';
 import { rotateItemOnContextMenu } from './canvas/groupRotate';
 import { legibleTextOn } from '../util/color';
@@ -56,10 +57,10 @@ import { SvgImagePlacingPreview } from './canvas/SvgImagePlacingPreview';
 import { RouteBulletPlacingPreview } from './canvas/RouteBulletPlacingPreview';
 import { HighlightedLineLayer } from './canvas/HighlightedLineLayer';
 import { LabelPlacingPreview } from './canvas/LabelPlacingPreview';
-import { RouteBulletView } from './RouteBulletView';
+import { RouteBulletView, RouteBulletSelectionRing } from './RouteBulletView';
 import { LabelView } from './LabelView';
-import { PolygonView } from './PolygonView';
-import { SvgImageView } from './SvgImageView';
+import { PolygonView, PolygonSelectionOutline } from './PolygonView';
+import { SvgImageView, SvgImageSelectionBox } from './SvgImageView';
 import { ItemPopovers } from './canvas/ItemPopovers';
 import { snapPlacement, usePlacementDispatch } from './canvas/usePlacementDispatch';
 import { TransferLayer, TransferSelectionOutline, transferEndWorld } from './TransferLayer';
@@ -119,6 +120,8 @@ export function MapCanvas() {
   const snapModes = useSnapPrefs((s) => s.modes);
   const gridVisible = useViewportStore((s) => s.gridVisible);
   const gridSize = useViewportStore((s) => s.gridSize);
+  // For resolving theme-aware (day/night) transfer colors on the creation preview.
+  const darkMode = useViewportStore((s) => s.darkMode);
   const theme = useThemeColors();
   // Gap/underlay color for dashed + hatched styles: matches the canvas
   // background so the "off" stripes read as empty canvas, not stale white.
@@ -146,6 +149,26 @@ export function MapCanvas() {
   // instead of the live selection so the user sees exactly what'll be
   // selected on release.
   const washIds = rectSelect.previewStationIds ?? selection.selectedStationIds;
+  // Canvas mouseover preview: the item under the pointer paints its selection
+  // chrome at 50% opacity (a "clickable" affordance). The selector already
+  // gates on idle-mode / not-panning / not-already-selected; each render block
+  // below picks off the kind it draws. Line tags handle their own hover inside
+  // LineTagsLayer (their chrome isn't reachable from here).
+  const hover = hoveredChrome(selection);
+  const hoverStationId = hover?.kind === 'station' ? hover.id : null;
+  const hoverTransferId = hover?.kind === 'transfer' ? hover.id : null;
+  const hoverBulletId = hover?.kind === 'bullet' ? hover.id : null;
+  const hoverLabelId = hover?.kind === 'label' ? hover.id : null;
+  const hoverPolygonId = hover?.kind === 'polygon' ? hover.id : null;
+  const hoverSvgImageId = hover?.kind === 'svgImage' ? hover.id : null;
+  // Small helper for the enter/leave handlers each item's body wires up: set on
+  // enter, clear on leave only if THIS item is still the hovered one (fresh
+  // read, so a fast cross to a neighbor can't wipe the neighbor).
+  const setHover = selection.setHoveredCanvasItem;
+  const clearHoverIf = (kind: HoverKind, id: string) => {
+    const h = useSelection.getState().hoveredCanvasItem;
+    if (h && h.kind === kind && h.id === id) setHover(null);
+  };
   const bulletSelectedIds = rectSelect.previewBulletIds ?? selection.selectedRouteBulletIds;
   const labelSelectedIds = rectSelect.previewLabelIds ?? selection.selectedLabelIds;
   const polygonSelectedIds = rectSelect.previewPolygonIds ?? selection.selectedPolygonIds;
@@ -842,6 +865,8 @@ export function MapCanvas() {
               onVertexPointerDown={polyDrag.onVertexPointerDown}
               onVertexClick={onVertexClick}
               onEdgeAddPointerDown={polyDrag.onEdgeAddPointerDown}
+              onHoverEnter={(id) => setHover({ kind: 'polygon', id })}
+              onHoverLeave={(id) => clearHoverIf('polygon', id)}
             />
           );
         })}
@@ -866,6 +891,8 @@ export function MapCanvas() {
               onCornerPointerDown={svgDrag.onSvgCornerPointerDown}
               onEdgePointerDown={svgDrag.onSvgEdgePointerDown}
               onRotatePointerDown={svgDrag.onSvgRotatePointerDown}
+              onHoverEnter={(id) => setHover({ kind: 'svgImage', id })}
+              onHoverLeave={(id) => clearHoverIf('svgImage', id)}
             />
           );
         })}
@@ -889,6 +916,23 @@ export function MapCanvas() {
               ),
           )}
         </g>
+
+        {/* Mouseover preview — wash half: the hovered (unselected) station's
+            accent fill at 50% of the selected strength, in the same back-of-
+            stack band as the real wash so it reads identically, just fainter. */}
+        {hoverStationId && stations[hoverStationId] && (
+          <g data-export-exclude="1" opacity={0.5}>
+            <StationView
+              key={hoverStationId + ':hover-wash'}
+              station={stations[hoverStationId]}
+              lines={lines}
+              zoom={view.viewport.zoom}
+              onStartDrag={drag.onStartDrag}
+              layer="wash"
+              preview
+            />
+          </g>
+        )}
 
         {/* band stripes, warnings, and stop squares interleaved by per-stripe z-priority */}
         {renderables.map((r) => {
@@ -987,6 +1031,8 @@ export function MapCanvas() {
             if (exitLineEditorOnItemClick()) return;
             selection.selectTransfer(id);
           }}
+          onHoverEnter={(id) => setHover({ kind: 'transfer', id })}
+          onHoverLeave={(id) => clearHoverIf('transfer', id)}
         />
 
         {/* In-progress transfer preview line: from the anchor dot to the
@@ -1014,7 +1060,7 @@ export function MapCanvas() {
                 y1={anchorWorld.y}
                 x2={cursorWorld.x}
                 y2={cursorWorld.y}
-                stroke={preview.color}
+                stroke={resolveDayNight(preview.color, darkMode)}
                 strokeWidth={preview.thickness}
                 strokeLinecap="round"
                 strokeDasharray="6 4"
@@ -1051,6 +1097,19 @@ export function MapCanvas() {
           defaults={TRANSFER_STYLE_DEFAULTS}
           selectedId={selection.selectedTransferId}
         />
+
+        {/* Mouseover preview: the hovered (unselected) transfer's selection
+            outline at 50% opacity — the same ring, reused, just fainter. */}
+        {hoverTransferId && (
+          <g data-export-exclude="1" opacity={0.5}>
+            <TransferSelectionOutline
+              transfers={transfers}
+              stations={stations}
+              defaults={TRANSFER_STYLE_DEFAULTS}
+              selectedId={hoverTransferId}
+            />
+          </g>
+        )}
 
         {/* Station-placing-mode ghost: a faint dot + name following the
             cursor before each click, so the user can see where (and what
@@ -1103,9 +1162,20 @@ export function MapCanvas() {
               onPointerDown={itemDrag.onBulletPointerDown}
               onClick={onBulletClick}
               onContextMenu={onBulletContextMenu}
+              onHoverEnter={(id) => setHover({ kind: 'bullet', id })}
+              onHoverLeave={(id) => clearHoverIf('bullet', id)}
             />
           ))}
         </g>
+
+        {/* Mouseover preview: the hovered (unselected) bullet's selection ring
+            at 50% opacity — the same ring, reused, just fainter. At the bullet
+            z-band, matching where the real ring paints. */}
+        {hoverBulletId && routeBullets[hoverBulletId] && (
+          <g data-export-exclude="1" opacity={0.5}>
+            <RouteBulletSelectionRing bullet={routeBullets[hoverBulletId]} />
+          </g>
+        )}
 
         {/* Text labels: free-floating annotations on top of stations + bullets
             but beneath the selection stroke ring. Dimmed alongside the rest
@@ -1121,6 +1191,8 @@ export function MapCanvas() {
               onPointerDown={itemDrag.onLabelPointerDown}
               onClick={onLabelClick}
               onContextMenu={onLabelContextMenu}
+              onHoverEnter={(id) => setHover({ kind: 'label', id })}
+              onHoverLeave={(id) => clearHoverIf('label', id)}
             />
           ))}
         </g>
@@ -1197,6 +1269,24 @@ export function MapCanvas() {
           )}
         </g>
 
+        {/* Mouseover preview — stroke half: the hovered (unselected) station's
+            two-tone selection ring at 50% opacity, painted in the same top-of-
+            stack pass as the real ring so it can't be occluded. Pairs with the
+            hover-wash block above to make one faint copy of full selection. */}
+        {hoverStationId && stations[hoverStationId] && (
+          <g data-export-exclude="1" opacity={0.5}>
+            <StationView
+              key={hoverStationId + ':hover-stroke'}
+              station={stations[hoverStationId]}
+              lines={lines}
+              zoom={view.viewport.zoom}
+              onStartDrag={drag.onStartDrag}
+              layer="stroke"
+              preview
+            />
+          </g>
+        )}
+
         {/* Selection stroke for text labels: dashed black ring around each
             selected label's rotated bbox. Painted in this pass so it sits
             above the dim overlay and on top of the network — matching how
@@ -1209,6 +1299,14 @@ export function MapCanvas() {
               ),
           )}
         </g>
+
+        {/* Mouseover preview: the hovered (unselected) label's selection ring at
+            50% opacity — reusing the exact stroke layer, just fainter. */}
+        {hoverLabelId && textLabels[hoverLabelId] && (
+          <g data-export-exclude="1" opacity={0.5}>
+            <LabelView label={textLabels[hoverLabelId]} selected layer="stroke" preview />
+          </g>
+        )}
 
         {/* Selected-item drag proxies: a transparent hit target per selected,
             unlocked item, painted ABOVE all map content so a selected item wins
@@ -1336,6 +1434,15 @@ export function MapCanvas() {
           )}
         </g>
 
+        {/* Mouseover preview: the hovered (unselected) polygon's selection
+            outline at 50% opacity — ONLY the outline, never the vertex / edge-add
+            manipulators (those belong to an actually-selected polygon). */}
+        {hoverPolygonId && polygons[hoverPolygonId] && (
+          <g data-export-exclude="1" opacity={0.5}>
+            <PolygonSelectionOutline polygon={polygons[hoverPolygonId]} />
+          </g>
+        )}
+
         {/* Svg-image transform handles (corners, edges, rotation knob). Top
             pass so they stay clickable above all content; only selected images
             render here. Excluded from image export — selection chrome, not map
@@ -1361,6 +1468,15 @@ export function MapCanvas() {
               ),
           )}
         </g>
+
+        {/* Mouseover preview: the hovered (unselected) image's selection box at
+            50% opacity — ONLY the box, never the resize/rotate handles (those
+            belong to an actually-selected image). */}
+        {hoverSvgImageId && svgImages[hoverSvgImageId] && (
+          <g data-export-exclude="1" opacity={0.5}>
+            <SvgImageSelectionBox image={svgImages[hoverSvgImageId]} />
+          </g>
+        )}
 
         {/* Rubber-band rect for the rect-select gesture. World coords; the
             stroke width compensates for zoom so the dashed line stays a

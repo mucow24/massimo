@@ -43,6 +43,7 @@ import {
 import {
   TRANSFER_STROKE_WIDTH_MIN,
   TRANSFER_THICKNESS_MIN,
+  dayNightColorsEqual,
   resolveTransferStyle,
 } from './transferStyle';
 import type {
@@ -151,9 +152,11 @@ export function isReservedStyleName(trimmed: string): boolean {
   return trimmed.toLowerCase() === 'custom';
 }
 
-// Deep equality over style props. Everything is flat scalars except a line
-// style's DotStyle, which compares structurally (dotStylesEqual). Exported
-// for serialize's mismatched-tag pruning.
+// Deep equality over style props. Most props are flat scalars, but two kinds
+// carry objects that must compare STRUCTURALLY, not by reference: a line
+// style's DotStyle (dotStylesEqual), and a transfer style's day/night
+// color/strokeColor (dayNightColorsEqual). Exported for serialize's
+// mismatched-tag pruning.
 export function stylePropsEqual(
   kind: StyleKind,
   a: StyleDef['props'],
@@ -168,6 +171,16 @@ export function stylePropsEqual(
       la.width === lb.width &&
       la.strokeWidth === lb.strokeWidth &&
       la.strokeColor === lb.strokeColor
+    );
+  }
+  if (kind === 'transfer') {
+    const ta = a as TransferStyleProps;
+    const tb = b as TransferStyleProps;
+    return (
+      ta.thickness === tb.thickness &&
+      ta.strokeWidth === tb.strokeWidth &&
+      dayNightColorsEqual(ta.color, tb.color) &&
+      dayNightColorsEqual(ta.strokeColor, tb.strokeColor)
     );
   }
   const ra = a as unknown as Record<string, unknown>;
@@ -414,19 +427,20 @@ export function createStyle(doc: MapDoc, id: string, kind: StyleKind, name: stri
   return { ...doc, styles: { ...doc.styles, [id]: def } };
 }
 
-// Every per-kind props key, all optional — same-named keys share a type
-// across kinds (station's fontSize/weight/italic match textLabel's; its
-// leading/tracking are unique), so the intersection is well-formed. The
-// store/panel patch shape for updateStyleProps; canonicalStyleProps' explicit
-// rebuild discards keys foreign to the def's kind.
-export type StylePropsPatch = Partial<
-  LineStyleProps &
-    TextLabelStyleProps &
-    PolygonStyleProps &
-    RouteBulletStyleProps &
-    TransferStyleProps &
-    StationStyleProps
->;
+// A partial patch of ONE kind's props — the store/panel write shape for
+// updateStyleProps (each editor patches a single kind). A UNION, not a
+// Partial of the intersection: the same-named `color`/`strokeColor` keys no
+// longer share a type across kinds (transfer's are day/night objects,
+// textLabel's/line's are hex strings), so an intersection would collapse them
+// to `never`. canonicalStyleProps' explicit rebuild still discards keys
+// foreign to the def's kind after the spread.
+export type StylePropsPatch =
+  | Partial<LineStyleProps>
+  | Partial<TextLabelStyleProps>
+  | Partial<PolygonStyleProps>
+  | Partial<RouteBulletStyleProps>
+  | Partial<TransferStyleProps>
+  | Partial<StationStyleProps>;
 
 /**
  * Patch a style def's props (the panel editor's write path) and re-stamp

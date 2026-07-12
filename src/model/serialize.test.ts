@@ -1007,12 +1007,32 @@ describe('parse — transfer style sanitizing', () => {
 
   it('leaves a settings-free (post-retirement) file alone apart from the constant collapse', () => {
     // No legacy settings keys → the bake is skipped entirely; overrides are
-    // judged against the constant defaults only.
+    // judged against the constant defaults only. A legacy single-color
+    // strokeColor is wrapped to a day/night pair on the way in.
     const result = parse(buildWithTransfer({ thickness: 2, strokeColor: '#123456' }));
     expect(result.ok).toBe(true);
     if (!result.ok) return;
     expect('thickness' in result.doc.transfers.x1).toBe(false);
-    expect(result.doc.transfers.x1.strokeColor).toBe('#123456');
+    expect(result.doc.transfers.x1.strokeColor).toEqual({ day: '#123456', night: '#123456' });
+  });
+
+  it('migrates a legacy single-color override to a day/night pair (old color = day = night)', () => {
+    const result = parse(buildWithTransfer({ color: '#ff0080' }));
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    expect(result.doc.transfers.x1.color).toEqual({ day: '#ff0080', night: '#ff0080' });
+  });
+
+  it('accepts an already-day/night override and collapses one equal to the default', () => {
+    const kept = parse(buildWithTransfer({ color: { day: '#ff0080', night: '#003300' } }));
+    expect(kept.ok).toBe(true);
+    if (kept.ok) {
+      expect(kept.doc.transfers.x1.color).toEqual({ day: '#ff0080', night: '#003300' });
+    }
+    // Both halves == the black default → the override collapses away.
+    const collapsed = parse(buildWithTransfer({ color: { day: '#000000', night: '#000000' } }));
+    expect(collapsed.ok).toBe(true);
+    if (collapsed.ok) expect('color' in collapsed.doc.transfers.x1).toBe(false);
   });
 });
 

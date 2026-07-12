@@ -19,6 +19,59 @@ interface Props {
   onPointerDown: (id: string, e: React.PointerEvent) => void;
   onClick: (id: string, e: React.MouseEvent) => void;
   onContextMenu: (id: string, e: React.MouseEvent) => void;
+  // Canvas mouseover → preview this bullet's selection ring at 50% (see
+  // MapCanvas). Only the full layer wires them; the id lets leave no-op when the
+  // hover already moved on. Optional so the hit proxy / non-canvas uses skip them.
+  onHoverEnter?: (id: string) => void;
+  onHoverLeave?: (id: string) => void;
+}
+
+/**
+ * A route bullet's two-tone dashed selection ring (a circle at r + pad),
+ * centered on the bullet's local origin — no transform of its own. Shared by
+ * the selected badge and the hovered-bullet preview so both draw the identical
+ * ring. Carries data-export-exclude: editor chrome, not content.
+ */
+function BulletRingCircles({ bullet }: { bullet: RouteBullet }) {
+  const themeColors = useThemeColors();
+  return (
+    <>
+      {selectionOutlineTones(themeColors).map(({ tone, stroke, strokeWidth }) => (
+        <circle
+          key={tone}
+          data-export-exclude="1"
+          cx={0}
+          cy={0}
+          // World-unit pad (scales with the map — reads as attached to the
+          // bullet); the two-tone stroke holds its screen weight via
+          // vector-effect, so nothing divides by zoom and nothing snaps.
+          r={bullet.size + SELECTION_RING_PAD}
+          fill="none"
+          stroke={stroke}
+          strokeWidth={strokeWidth}
+          strokeDasharray={SELECTION_DASH}
+          vectorEffect="non-scaling-stroke"
+          pointerEvents="none"
+        />
+      ))}
+    </>
+  );
+}
+
+/**
+ * The bullet's selection ring, self-positioned in world coords. A hovered
+ * (unselected) bullet renders JUST this at 50% opacity for the mouseover
+ * preview.
+ */
+export function RouteBulletSelectionRing({ bullet }: { bullet: RouteBullet }) {
+  return (
+    <g
+      transform={`translate(${bullet.x} ${bullet.y}) rotate(${bullet.rotation * 45})`}
+      pointerEvents="none"
+    >
+      <BulletRingCircles bullet={bullet} />
+    </g>
+  );
 }
 
 export function RouteBulletView({
@@ -30,9 +83,9 @@ export function RouteBulletView({
   onPointerDown,
   onClick,
   onContextMenu,
+  onHoverEnter,
+  onHoverLeave,
 }: Props) {
-  // Two-tone selection ring flips with the theme (WBW on light, BWB on dark).
-  const themeColors = useThemeColors();
   const {
     fill,
     textColor,
@@ -83,30 +136,12 @@ export function RouteBulletView({
       onPointerDown={(e) => onPointerDown(bullet.id, e)}
       onClick={(e) => onClick(bullet.id, e)}
       onContextMenu={(e) => onContextMenu(bullet.id, e)}
+      onPointerEnter={onHoverEnter ? () => onHoverEnter(bullet.id) : undefined}
+      onPointerLeave={onHoverLeave ? () => onHoverLeave(bullet.id) : undefined}
       style={{ cursor: itemCursor(inHandMode, bullet.locked) }}
     >
       {shape}
-      {selected &&
-        selectionOutlineTones(themeColors).map(({ tone, stroke, strokeWidth }) => (
-          <circle
-            key={tone}
-            // Editor chrome, not content: without this the ring bakes into
-            // SVG/PNG exports (bullets render in a non-excluded pass).
-            data-export-exclude="1"
-            cx={0}
-            cy={0}
-            // World-unit pad (scales with the map — reads as attached to the
-            // bullet); the two-tone stroke holds its screen weight via
-            // vector-effect, so nothing divides by zoom and nothing snaps.
-            r={r + SELECTION_RING_PAD}
-            fill="none"
-            stroke={stroke}
-            strokeWidth={strokeWidth}
-            strokeDasharray={SELECTION_DASH}
-            vectorEffect="non-scaling-stroke"
-            pointerEvents="none"
-          />
-        ))}
+      {selected && <BulletRingCircles bullet={bullet} />}
       <text
         x={0}
         y={0}

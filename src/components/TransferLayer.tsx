@@ -1,7 +1,8 @@
 import type { LineId, Station, Transfer, TransferEnd } from '../model/types';
-import { resolveTransferStyle, type TransferStyle } from '../model/transferStyle';
+import { resolveDayNight, resolveTransferStyle, type TransferStyle } from '../model/transferStyle';
 import { stopPosWorld } from '../geometry/interlining';
 import { useThemeColors } from '../state/theme';
+import { useViewportStore } from '../state/viewportStore';
 import { selectionOutlineTones } from './selectionStyle';
 
 // World-unit gap between a selected transfer's visible edge and its outline,
@@ -21,6 +22,16 @@ interface Props {
   defaults: TransferStyle;
   selectedId: string | null;
   onSelect: (id: string) => void;
+}
+
+// Canvas mouseover → preview a transfer's selection outline at 50% (see
+// MapCanvas). Only the bodies pass (TransferLayer) needs these; the outline
+// pass (TransferSelectionOutline) shares Props but never hovers, so they live
+// here rather than on Props. Enter/leave carry the id so leave can no-op when
+// the hover already moved on to another transfer.
+interface HoverProps {
+  onHoverEnter: (id: string) => void;
+  onHoverLeave: (id: string) => void;
 }
 
 /**
@@ -110,13 +121,19 @@ export function TransferLayer({
   stations,
   defaults,
   onSelect,
-}: Omit<Props, 'selectedId'>) {
+  onHoverEnter,
+  onHoverLeave,
+}: Omit<Props, 'selectedId'> & HoverProps) {
+  // Transfer colors are theme-aware (day/night); resolve to the concrete hex
+  // for the active canvas theme, same source as the dots + polygons.
+  const darkMode = useViewportStore((s) => s.darkMode);
   const list = Object.values(transfers);
   if (list.length === 0) return null;
 
   // Resolve endpoints + effective style once; each pass below iterates this
   // same list in the same order. Endpoints + linecap stay constant between
-  // the user stroke and the body.
+  // the user stroke and the body. Colors are resolved to hex here so both
+  // passes just emit strings.
   const drawable = list.flatMap((t) => {
     const a = endpointWorld(t.a, stations);
     const b = endpointWorld(t.b, stations);
@@ -129,9 +146,11 @@ export function TransferLayer({
       strokeLinecap: 'round' as const,
     };
     const style = resolveTransferStyle(t, defaults);
+    const color = resolveDayNight(style.color, darkMode);
+    const strokeColor = resolveDayNight(style.strokeColor, darkMode);
     // Total visible width of the transfer ignoring the selection ring.
     const visibleExtent = style.thickness + 2 * style.strokeWidth;
-    return [{ t, lineEnds, style, visibleExtent }];
+    return [{ t, lineEnds, style, color, strokeColor, visibleExtent }];
   });
 
   // Shared between each body and user stroke: both are click targets that
@@ -143,29 +162,31 @@ export function TransferLayer({
       e.stopPropagation();
       onSelect(id);
     },
+    onPointerEnter: () => onHoverEnter(id),
+    onPointerLeave: () => onHoverLeave(id),
   });
 
   return (
     <g>
       {drawable.map(
-        ({ t, lineEnds, style, visibleExtent }) =>
+        ({ t, lineEnds, style, strokeColor, visibleExtent }) =>
           style.strokeWidth > 0 && (
             <line
               key={`halo-${t.id}`}
               data-transfer-id={t.id}
               {...lineEnds}
-              stroke={style.strokeColor}
+              stroke={strokeColor}
               strokeWidth={visibleExtent}
               {...clickProps(t.id)}
             />
           ),
       )}
-      {drawable.map(({ t, lineEnds, style }) => (
+      {drawable.map(({ t, lineEnds, style, color }) => (
         <line
           key={t.id}
           data-transfer-id={t.id}
           {...lineEnds}
-          stroke={style.color}
+          stroke={color}
           strokeWidth={style.thickness}
           {...clickProps(t.id)}
         />

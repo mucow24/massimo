@@ -30,12 +30,17 @@ export function StationSilhouette({
   station,
   layer,
   strokeColor,
+  preview = false,
 }: {
   station: Station;
   layer: SilhouetteLayer;
   /** Overrides the `stroke` layer's outline color (default: theme selection
    *  stroke). The layout-edit focus paints a white outline above its dim. */
   strokeColor?: string;
+  /** Rendered as a 50%-opacity mouseover PREVIEW, not a real selection. Swaps
+   *  the identity attributes to `data-station-*-preview` so `data-station-wash`
+   *  / `data-station-stroke` stay pure "this station is selected" markers. */
+  preview?: boolean;
 }) {
   const lines = useDoc((s) => s.lines);
   const editingStationId = useSelection((s) => s.editingStationId);
@@ -65,7 +70,12 @@ export function StationSilhouette({
 
   if (layer === 'wash') {
     return (
-      <g data-station-wash={station.id} transform={transform} pointerEvents="none">
+      <g
+        data-station-wash={preview ? undefined : station.id}
+        data-station-wash-preview={preview ? station.id : undefined}
+        transform={transform}
+        pointerEvents="none"
+      >
         <path
           d={pathStr}
           fill={themeColors.accent}
@@ -111,7 +121,12 @@ export function StationSilhouette({
     );
   }
   return (
-    <g data-station-stroke={station.id} transform={transform} pointerEvents="none">
+    <g
+      data-station-stroke={preview ? undefined : station.id}
+      data-station-stroke-preview={preview ? station.id : undefined}
+      transform={transform}
+      pointerEvents="none"
+    >
       {selectionOutlineTones(themeColors).map(({ tone, stroke, strokeWidth }) => (
         <path
           key={tone}

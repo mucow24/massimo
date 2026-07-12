@@ -47,6 +47,23 @@ export type UiMode =
   // real dots/label between ghost-lattice slots, right-click to rotate.
   | { kind: 'editing-station-layout'; stationId: StationId };
 
+// Every canvas item type that shows a selection highlight, and thus a
+// 50%-opacity mouseover PREVIEW of it. Lines are excluded on purpose — line
+// "selection" is a whole-map dim/repaint mode, not a per-item ring.
+export type HoverKind =
+  | 'station'
+  | 'transfer'
+  | 'bullet'
+  | 'label'
+  | 'polygon'
+  | 'svgImage'
+  | 'lineTag';
+
+export interface HoveredCanvasItem {
+  kind: HoverKind;
+  id: string;
+}
+
 /**
  * UiMode kinds where a right-click does NOT cancel the mode. Lives next to
  * the {@link UiMode} union so adding a new mode that wants right-click for
@@ -125,6 +142,14 @@ export interface SelectionState {
   // calls it after each placement).
   uiMode: UiMode;
   hoveredStationId: StationId | null;
+  // The canvas item (station, transfer, bullet, label, polygon, svg image, or
+  // line tag) the pointer is currently over. Drives a 50%-opacity preview of
+  // that item's selection chrome (a "you can click this" affordance). Kept
+  // separate from hoveredStationId, which is the sidebar/inspector-driven
+  // label-emphasis hover — canvas mouseover must not bold every name the cursor
+  // sweeps past. Ephemeral (never persisted); the hoveredChrome selector gates
+  // whether it actually paints (idle mode, not panning, not already selected).
+  hoveredCanvasItem: HoveredCanvasItem | null;
   // The (lineId, stationId) currently hovered in the line editor's station
   // list. Used to highlight the corresponding stop dot on the canvas.
   hoveredLineStop: { lineId: LineId; stationId: StationId } | null;
@@ -208,6 +233,7 @@ export interface SelectionState {
   setInsertAfterIndex: (idx: number | null) => void;
   setUiMode: (mode: UiMode) => void;
   setHoveredStation: (id: StationId | null) => void;
+  setHoveredCanvasItem: (item: HoveredCanvasItem | null) => void;
   setHoveredLineStop: (v: { lineId: LineId; stationId: StationId } | null) => void;
   setHoveredInspectorSegment: (
     v: { lineId: LineId; fromStationId: StationId; toStationId: StationId } | null,
@@ -395,6 +421,7 @@ export const useSelection = create<SelectionState>()(
       selectedLineId: null,
       uiMode: { kind: 'idle' },
       hoveredStationId: null,
+      hoveredCanvasItem: null,
       hoveredLineStop: null,
       hoveredInspectorSegment: null,
       selectedStopLineId: null,
@@ -424,9 +451,17 @@ export const useSelection = create<SelectionState>()(
       // via setTransferAnchor / setInsertAfterIndex.
       setUiMode: (mode) =>
         set(
+          // A deliberate mode switch drops the canvas hover-preview outright
+          // (re-syncs on the next pointer move) so it can't linger, unrendered,
+          // behind a mode and then reappear when idle returns.
           mode.kind === 'idle'
-            ? { uiMode: mode, lineTagHoverPreview: null }
-            : { uiMode: mode, lineTagHoverPreview: null, ...clearedSelections() },
+            ? { uiMode: mode, lineTagHoverPreview: null, hoveredCanvasItem: null }
+            : {
+                uiMode: mode,
+                lineTagHoverPreview: null,
+                hoveredCanvasItem: null,
+                ...clearedSelections(),
+              },
         ),
 
       // selectStation does NOT touch uiMode — placing-station and
@@ -588,6 +623,7 @@ export const useSelection = create<SelectionState>()(
         set({ uiMode: { ...cur, insertAfterIndex: idx } });
       },
       setHoveredStation: (id) => set({ hoveredStationId: id }),
+      setHoveredCanvasItem: (item) => set({ hoveredCanvasItem: item }),
       setHoveredLineStop: (v) => set({ hoveredLineStop: v }),
       setHoveredInspectorSegment: (v) => set({ hoveredInspectorSegment: v }),
       setSelectedStopLineId: (id) =>
@@ -745,6 +781,40 @@ export const useSelection = create<SelectionState>()(
     },
   ),
 );
+
+// ---- canvas hover-preview selector -----------------------------------------
+
+// Is this hovered item already part of the current selection? Its full chrome
+// is then already up, so a 50% hover copy on top would only double the ink.
+function isHoverSelected(s: SelectionState, h: HoveredCanvasItem): boolean {
+  switch (h.kind) {
+    case 'station':
+      return s.selectedStationIds.includes(h.id as StationId);
+    case 'transfer':
+      return s.selectedTransferId === h.id;
+    case 'bullet':
+      return s.selectedRouteBulletIds.includes(h.id);
+    case 'label':
+      return s.selectedLabelIds.includes(h.id);
+    case 'polygon':
+      return s.selectedPolygonIds.includes(h.id);
+    case 'svgImage':
+      return s.selectedSvgImageIds.includes(h.id);
+    case 'lineTag':
+      return s.selectedLineTagId === h.id;
+  }
+}
+
+// The canvas item whose selection chrome the mouseover should preview at 50%
+// opacity (wired in MapCanvas + LineTagsLayer), or null. Suppressed outside
+// idle mode, while panning (hand tool / space held), and for an already-
+// selected item. One home for the gate so every item type stays consistent.
+export function hoveredChrome(s: SelectionState): HoveredCanvasItem | null {
+  if (s.uiMode.kind !== 'idle' || s.toolMode === 'hand' || s.spaceHeld) return null;
+  const h = s.hoveredCanvasItem;
+  if (!h) return null;
+  return isHoverSelected(s, h) ? null : h;
+}
 
 // ---- derived-selection selectors: one named home for "what is selected" ----
 
