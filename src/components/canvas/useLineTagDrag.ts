@@ -2,7 +2,7 @@ import { RefObject, useRef, useState } from 'react';
 import { beginHistoryGroup, useDoc } from '../../state/store';
 import { useSnapPrefs } from '../../state/snapPrefs';
 import type { LineId, StationId } from '../../model/types';
-import { pairKeyOf } from '../../model/pairKey';
+import { edgeEndpoints } from '../../model/lineTopology';
 import type { SnapGuide } from '../../geometry/snap';
 import {
   anchorFromArcLen,
@@ -105,26 +105,22 @@ export function useLineTagDrag(
       docState.lineOrder,
     );
 
-    // Build candidate set: every consecutive station-pair on the line.
+    // Build candidate set: every EDGE (segment) of the line — its actual
+    // topology, so loop wrap-edges and branch legs (which are not consecutive
+    // pairs in the display order) are draggable targets too.
     type Cand = {
       band: SegmentBandSpec;
       offset: number;
       pairKey: string;
       fromStationId: StationId;
       toStationId: StationId;
-      forward: boolean;
       // tCanon ∈ [0,1] along canonical centerline.
       tCanon: number;
       dist: number;
     };
     let best: Cand | null = null;
-    for (let i = 0; i < line.stations.length - 1; i++) {
-      const a = line.stations[i];
-      const b = line.stations[i + 1];
-      const forward = a < b;
-      const fromCanon = forward ? a : b;
-      const toCanon = forward ? b : a;
-      const pairKey = pairKeyOf(a, b);
+    for (const pairKey of line.edges) {
+      const [fromCanon, toCanon] = edgeEndpoints(pairKey); // canonical: from < to
       const band = bands.find(
         (bb) => bb.pairKey === pairKey && bb.lines.some((l: { id: LineId }) => l.id === tag.lineId),
       );
@@ -139,7 +135,6 @@ export function useLineTagDrag(
           pairKey,
           fromStationId: fromCanon,
           toStationId: toCanon,
-          forward,
           tCanon: r.t,
           dist: r.dist,
         };

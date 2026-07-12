@@ -193,4 +193,51 @@ describe('useLineTagDrag', () => {
     dispatchWindowPointer('pointermove', { clientX: 90, clientY: 0 });
     expect(useDoc.getState().lineTags['T'].distance).toBe(20); // disarmed
   });
+
+  it('can drag a tag onto a loop-filling segment, not just consecutive display pairs', () => {
+    // Triangle loop A-B-C-A. The wrap edge A|C is a real segment but NOT a
+    // consecutive pair in the display order [A, B, C], so the old candidate set
+    // (built from consecutive stations) skipped it and the tag could never land
+    // there. A|C is the vertical corridor from A(0,0) down to C(0,100).
+    useDoc.setState({
+      ...useDoc.getState(),
+      ...DEFAULT_DOC,
+      lines: {
+        L1: makeLine({
+          id: 'L1' as LineId,
+          stations: ['A', 'B', 'C'] as StationId[],
+          edges: ['A|B', 'B|C', 'A|C'],
+        }),
+      },
+      lineOrder: ['L1' as LineId],
+      stations: {
+        A: stationWithStop('A' as StationId, 'L1' as LineId, { x: 0, y: 0 }),
+        B: stationWithStop('B' as StationId, 'L1' as LineId, { x: 100, y: 0 }),
+        C: stationWithStop('C' as StationId, 'L1' as LineId, { x: 0, y: 100 }),
+      },
+      lineTags: {
+        T: {
+          id: 'T',
+          lineId: 'L1' as LineId,
+          fromStationId: 'A' as StationId,
+          toStationId: 'B' as StationId,
+          anchorEnd: 'from',
+          distance: 20,
+          orientation: 0,
+        },
+      },
+    });
+    useDoc.temporal.getState().clear();
+    const { result } = render();
+    result.current.onStartDrag('T', pointerEvent({ clientX: 20, clientY: 0 }));
+    // Drag to the middle of the A|C corridor (world (0, 50)).
+    dispatchWindowPointer('pointermove', { clientX: 0, clientY: 50 });
+
+    const tag = useDoc.getState().lineTags['T'];
+    expect(tag.fromStationId).toBe('A');
+    expect(tag.toStationId).toBe('C');
+    // Landed on the A|C corridor, near its middle.
+    expect(tag.distance).toBeGreaterThan(30);
+    dispatchWindowPointer('pointerup', { clientX: 0, clientY: 50 });
+  });
 });

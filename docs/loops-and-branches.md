@@ -172,9 +172,14 @@ separators historically). NOT yet fixed.
 - **On-canvas pen repositioning:** the Branch button relocates the pen from the inspector; an
   on-canvas "lift/relocate pen" gesture (or draw-to-empty to create+connect) would make
   free-hand multi-branch drawing smoother.
-- **`redistributeBetween`** (ctrl+click even-spacing) and **line-tag traversal frame** and
-  **`snap.refineAlongAxis`** terminus extrapolation still read display order — correct for
-  linear lines, approximate on branchy/looped ones.
+- **`redistributeBetween`** (ctrl+click even-spacing) and **`snap.refineAlongAxis`** terminus
+  extrapolation still read display order — correct for linear lines, approximate on
+  branchy/looped ones.
+- **Line-tag drag** now builds its candidate set from `line.edges` (fixed), so tags drag onto
+  loop wrap-edges / branch legs. Remaining display-order bit: `lineTraversesForwardCanon` only
+  sets the tag's tangent (text) direction and falls back to canonical-forward on a loop
+  wrap-edge (no single traversal direction there) — a cosmetic orientation default, not a
+  placement bug.
 - **Visual confirmation** of a junction (three stripes converging) is architecturally sound
   and unit-reasoned but not yet eyeballed — the interlining golden snapshot only covers
   linear fixtures. Worth a preview eval.
