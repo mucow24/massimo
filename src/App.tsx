@@ -345,6 +345,7 @@ export default function App() {
           const target = nudgeTarget({
             source: subCell,
             wSrc: subSource.kind === 'label' ? STOP_SIZE : lineWidthOf(doc.lines[subSource.lineId]),
+            srcIsLabel: subSource.kind === 'label',
             otherNodes: otherLayoutNodes(stationLayoutNodes(subStation, doc.lines), subSource),
             basis: e.shiftKey ? 'diagonal' : 'orthogonal',
             stationRotation: rotation,

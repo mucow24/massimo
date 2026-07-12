@@ -8,11 +8,9 @@ import { lineWidthOf } from '../../model/lineWidth';
 import { captureMirrorTargets, type MirrorTarget } from '../../state/mirrorDispatch';
 import {
   GHOST_SNAP_RADIUS,
-  GRID_RADIUS,
-  computeGhosts,
   cursorCellAt,
+  dragLattice,
   findDropTarget,
-  nearestNode,
   otherLayoutNodes,
   sameCell,
   sourceCellOf,
@@ -117,17 +115,14 @@ export function useStationLayoutDrag(
     if (!sourceCell) return;
     const wSrc = ds.source.kind === 'label' ? STOP_SIZE : lineWidthOf(doc.lines[ds.source.lineId]);
     const otherNodes = otherLayoutNodes(stationLayoutNodes(st, doc.lines), ds.source);
-    const anchor = nearestNode(cursor, otherNodes);
-    const ghosts = anchor
-      ? computeGhosts({
-          wSrc,
-          anchor,
-          otherNodes,
-          basis: shiftKey ? 'diagonal' : 'orthogonal',
-          stationRotation: rotation,
-          gridRadius: GRID_RADIUS,
-        })
-      : [];
+    const { ghosts } = dragLattice({
+      cursor,
+      wSrc,
+      srcIsLabel: ds.source.kind === 'label',
+      otherNodes,
+      basis: shiftKey ? 'diagonal' : 'orthogonal',
+      stationRotation: rotation,
+    });
     const over = findDropTarget(
       cursor,
       ds.source.kind === 'label' ? { kind: 'label' } : { kind: 'stop', lineId: ds.source.lineId },
