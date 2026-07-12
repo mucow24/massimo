@@ -56,7 +56,15 @@ export function StationDots({
   const angle = station.rotation * 45;
   const phantomDot = phantomDotCell(station, showWaypoints);
   return (
-    <g pointerEvents={hitless ? 'none' : undefined} style={{ cursor }} {...handlers}>
+    <g
+      pointerEvents={hitless ? 'none' : undefined}
+      style={{ cursor }}
+      // Show-waypoints is a view aid, never a formal map edit: a revealed
+      // waypoint's overlay dots (and any phantom drag preview) must be stripped
+      // from every export, so tag the whole group for the export strip.
+      data-export-exclude={station.isWaypoint ? '1' : undefined}
+      {...handlers}
+    >
       {/* Phantom dot is a drag preview — render at cell position, in the
           station's local frame. */}
       {phantomDot && (

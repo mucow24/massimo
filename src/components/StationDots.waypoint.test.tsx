@@ -84,4 +84,24 @@ describe('StationDots — waypoints under the Show-waypoints overlay', () => {
     expect(dot.getAttribute('fill')).toBe('#000000');
     expect(svg.querySelectorAll('[data-stop-stroke="s1"]').length).toBe(0);
   });
+
+  // Show-waypoints is a view aid, never a formal map edit — a revealed
+  // waypoint's dots must be stripped from every export. buildExportSvg removes
+  // any [data-export-exclude] subtree, so the dots have to sit inside one.
+  it('tags a revealed waypoint dot for export exclusion (never bakes into PNG/SVG/PDF)', () => {
+    useViewportStore.setState({ showWaypoints: true });
+    const svg = renderDots(waypoint(), lines());
+    const dot = svg.querySelector('[data-stop-station="wp"]')!;
+    expect(dot).toBeTruthy();
+    expect(dot.closest('[data-export-exclude]')).not.toBeNull();
+  });
+
+  it('does NOT export-exclude an ordinary station dot', () => {
+    useViewportStore.setState({ showWaypoints: true });
+    const station = makeStation({ id: 's1', stops: [makeStop('L1', { row: 0, col: 0 })] });
+    const svg = renderDots(station, { L1: makeLine({ id: 'L1', stations: ['s1'] }) });
+    expect(
+      svg.querySelector('[data-stop-station="s1"]')!.closest('[data-export-exclude]'),
+    ).toBeNull();
+  });
 });

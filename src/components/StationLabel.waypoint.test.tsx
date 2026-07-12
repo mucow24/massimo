@@ -89,6 +89,26 @@ describe('StationLabel — waypoints show the WP lozenge in place of the name', 
     expect(svg.querySelector('[data-waypoint-lozenge]')).toBeNull();
   });
 
+  // The lozenge is a reveal-overlay artifact, not map content: it must never
+  // bake into an export. buildExportSvg strips any [data-export-exclude]
+  // subtree, so the lozenge has to live inside one — in every label pass.
+  it('tags the WP lozenge for export exclusion in every label pass (never bakes into an export)', () => {
+    useViewportStore.setState({ showWaypoints: true });
+    for (const layer of ['label', 'highlight-label', 'starter-label'] as const) {
+      const svg = renderLabel(waypoint(), lines(), layer);
+      const lozenge = svg.querySelector('[data-waypoint-lozenge]')!;
+      expect(lozenge).toBeTruthy();
+      expect(lozenge.closest('[data-export-exclude]')).not.toBeNull();
+    }
+  });
+
+  it('does NOT export-exclude an ordinary station name', () => {
+    useViewportStore.setState({ showWaypoints: true });
+    const station = makeStation({ id: 's1', name: 'Central', stops: [makeStop('L1')] });
+    const svg = renderLabel(station, { L1: makeLine({ id: 'L1', stations: ['s1'] }) });
+    expect(svg.querySelector('[data-export-exclude]')).toBeNull();
+  });
+
   // The station still has a name; double-click still opens the inline rename
   // editor (the lozenge stands in for the name, and behaves like one).
   it('mounts the inline rename editor for a revealed waypoint being edited', () => {

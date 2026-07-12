@@ -55,4 +55,32 @@ describe('StationHitArea — waypoints under the Show-waypoints overlay', () => 
     useViewportStore.setState({ showWaypoints: true });
     expect(renderHitArea(station, ln).querySelectorAll('rect').length).toBe(2);
   });
+
+  // A revealed waypoint's hit footprint widens to wrap its lozenge. The rects
+  // are transparent but getBBox-visible, so if they survived into an export the
+  // frame would grow around a waypoint that must not appear at all — exclude
+  // the whole hit area from exports.
+  it('export-excludes the whole hit area for a revealed waypoint', () => {
+    useViewportStore.setState({ showWaypoints: true });
+    const svg = renderHitArea(waypoint(), lines());
+    const g = svg.querySelector('[data-station-id="wp"]')!;
+    expect(g).toBeTruthy();
+    expect(g.closest('[data-export-exclude]')).not.toBeNull();
+  });
+
+  it('does NOT export-exclude a hidden waypoint or a normal station hit area', () => {
+    useViewportStore.setState({ showWaypoints: false });
+    expect(
+      renderHitArea(waypoint(), lines())
+        .querySelector('[data-station-id="wp"]')!
+        .closest('[data-export-exclude]'),
+    ).toBeNull();
+    useViewportStore.setState({ showWaypoints: true });
+    const normal = makeStation({ id: 's1', stops: [makeStop('L1')] });
+    expect(
+      renderHitArea(normal, { L1: makeLine({ id: 'L1', stations: ['s1'] }) })
+        .querySelector('[data-station-id="s1"]')!
+        .closest('[data-export-exclude]'),
+    ).toBeNull();
+  });
 });

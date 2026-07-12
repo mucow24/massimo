@@ -68,6 +68,11 @@ export function StationHitArea({
       // off [data-locked] so a drag starting on a locked station begins a
       // marquee instead of doing nothing. Never set in proxy mode (see prop doc).
       data-locked={proxy ? undefined : station.locked || undefined}
+      // A revealed waypoint's footprint widens to wrap its lozenge. These rects
+      // are transparent but getBBox-visible, so exclude them from exports —
+      // otherwise the frame would grow around a waypoint that (per Show-waypoints
+      // being a view aid) must not appear in the export at all.
+      data-export-exclude={revealedWaypoint ? '1' : undefined}
       transform={`translate(${station.x} ${station.y}) rotate(${angle})`}
       style={{ cursor }}
     >
