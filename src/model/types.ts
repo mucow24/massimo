@@ -452,7 +452,8 @@ export interface MapDoc {
   lineTags: Record<string, LineTag>;
   // Free-floating route badges. Keyed by bullet id.
   routeBullets: Record<string, RouteBullet>;
-  // Inter-station transfer indicators (a black line between two stations).
+  // Inter-station transfer indicators (a theme-aware line between two stations,
+  // black-on-white by default in both themes).
   transfers: Record<string, Transfer>;
   // Free-floating text annotations ("Labels" in the UI). Keyed by label id.
   textLabels: Record<string, TextLabel>;
@@ -597,12 +598,13 @@ export interface TransferEnd {
 }
 
 // A transfer is a line connecting one station dot to another (thickness and
-// color come from the per-transfer overrides below, falling back to the
-// constant TRANSFER_STYLE_DEFAULTS — the classic 2px black). The endpoints
-// are anchored to specific stops so they follow the dot when
-// stations move, lines are reordered, or stops shift on a station.
-// Cascade-deleted when either endpoint's stop is removed — by deleting the
-// station, deleting the line, or removing that line's stop from the station.
+// theme-aware color come from the per-transfer overrides below, falling back
+// to the constant TRANSFER_STYLE_DEFAULTS — the classic 2px black body, white
+// outline, black/white in both themes). The endpoints are anchored to specific
+// stops so they follow the dot when stations move, lines are reordered, or
+// stops shift on a station. Cascade-deleted when either endpoint's stop is
+// removed — by deleting the station, deleting the line, or removing that line's
+// stop from the station.
 export interface Transfer {
   id: string;
   a: TransferEnd;
@@ -611,11 +613,13 @@ export interface Transfer {
   // default (TRANSFER_STYLE_DEFAULTS); `updateTransferStyle` drops a field
   // when the chosen value equals that default, so persisted state stays
   // clean (same contract as StopCell.dotStyle / dotSize and Line.width).
-  // Units and clamps — see model/transferStyle.ts.
+  // `color`/`strokeColor` are theme-aware DayNightColors — day in light mode,
+  // night in dark; a whole color drops only when BOTH halves match the
+  // default. Units and clamps — see model/transferStyle.ts.
   thickness?: number;
-  color?: string;
+  color?: DayNightColor;
   strokeWidth?: number;
-  strokeColor?: string;
+  strokeColor?: DayNightColor;
   // Live link to a StyleDef of kind 'transfer' — covered fields are all four
   // style overrides above. Same contract as `Line.styleId`.
   styleId?: string;
@@ -624,7 +628,9 @@ export interface Transfer {
 // The style overrides of a Transfer accepted by `updateTransferStyle`. Shared
 // by the transform and the store action so the two never drift (mirrors
 // PolygonStylePatch). A provided field is canonicalized against the constant
-// default — passing the default's own value CLEARS that override.
+// default — passing the default's own value CLEARS that override. A color
+// patch carries the WHOLE DayNightColor (both halves), even when the popover
+// edits only one theme.
 export type TransferStylePatch = Partial<
   Pick<Transfer, 'thickness' | 'color' | 'strokeWidth' | 'strokeColor'>
 >;
@@ -678,12 +684,13 @@ export interface RouteBulletStyleProps {
 }
 
 // Mirrors TransferStyle in model/transferStyle.ts — kept as its own interface
-// so types.ts stays dependency-free.
+// so types.ts stays dependency-free. `color`/`strokeColor` are theme-aware
+// (day/night), captured fully-resolved by example like every other style prop.
 export interface TransferStyleProps {
   thickness: number;
-  color: string;
+  color: DayNightColor;
   strokeWidth: number;
-  strokeColor: string;
+  strokeColor: DayNightColor;
 }
 
 // Per-kind props lookup, for code generic over StyleKind.
