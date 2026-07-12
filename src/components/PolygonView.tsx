@@ -45,10 +45,46 @@ interface Props {
   // Pointer-down on an edge "+" inserts the midpoint vertex and immediately
   // begins dragging it (a plain click leaves it at the midpoint).
   onEdgeAddPointerDown: (id: string, edgeIndex: number, e: React.PointerEvent) => void;
+  // Canvas mouseover → preview this polygon's selection outline at 50% (see
+  // MapCanvas). Only the body layer wires them; the id lets leave no-op when
+  // the hover already moved on. Optional so non-canvas/proxy uses skip them.
+  onHoverEnter?: (id: string) => void;
+  onHoverLeave?: (id: string) => void;
 }
 
 const pointsAttr = (vertices: Polygon['vertices']) =>
   vertices.map((v) => `${v.x},${v.y}`).join(' ');
+
+/**
+ * A polygon's two-tone selection outline — black core over white underlay,
+ * dashed, screen-constant via vector-effect (no zoom subscription → no snap).
+ * The chrome-only half of the selection overlay, with none of the vertex /
+ * edge-add manipulators: the selected polygon renders it inside its overlay,
+ * and a hovered (unselected) polygon renders JUST this at 50% opacity, so the
+ * mouseover preview shows the ring alone — never the handles.
+ */
+export function PolygonSelectionOutline({ polygon }: { polygon: Polygon }) {
+  const themeColors = useThemeColors();
+  const closed = polygon.closed !== false;
+  // An open polygon outlines the vertex chain only (no closing edge).
+  const Outline = closed ? 'polygon' : 'polyline';
+  return (
+    <>
+      {selectionOutlineTones(themeColors).map(({ tone, stroke, strokeWidth }) => (
+        <Outline
+          key={tone}
+          points={pointsAttr(polygon.vertices)}
+          fill="none"
+          stroke={stroke}
+          strokeWidth={strokeWidth}
+          strokeDasharray={SELECTION_DASH}
+          vectorEffect="non-scaling-stroke"
+          pointerEvents="none"
+        />
+      ))}
+    </>
+  );
+}
 
 export function PolygonView({
   polygon,
@@ -63,6 +99,8 @@ export function PolygonView({
   onVertexPointerDown,
   onVertexClick,
   onEdgeAddPointerDown,
+  onHoverEnter,
+  onHoverLeave,
 }: Props) {
   const darkMode = useViewportStore((s) => s.darkMode);
   // Committed zoom: only the 'hit' proxy's corridor floor reads it. The
@@ -108,6 +146,8 @@ export function PolygonView({
         onPointerDown={(e) => onPointerDown(polygon.id, e)}
         onClick={(e) => onClick(polygon.id, e)}
         onContextMenu={(e) => onContextMenu(polygon.id, e)}
+        onPointerEnter={onHoverEnter ? () => onHoverEnter(polygon.id) : undefined}
+        onPointerLeave={onHoverLeave ? () => onHoverLeave(polygon.id) : undefined}
         style={{ cursor: itemCursor(inHandMode, polygon.locked) }}
       />
     );
@@ -197,34 +237,21 @@ function PolygonSelectionOverlay({
   const contrast = themeColors.canvasBg;
   const verts = polygon.vertices;
   const n = verts.length;
-  const closed = polygon.closed !== false;
   // Inverse-zoom scale: every adornment dimension and stroke is multiplied by
   // `s` so it renders at a constant screen size regardless of zoom. Hit-testing
   // IS the rendered element, so the clickable area stays constant on screen too.
   const s = 1 / zoom;
   const half = VERTEX_HANDLE_HALF * s;
   const r = EDGE_ADD_R * s;
-  // An open polygon's outline and edge "+" buttons skip the closing edge —
-  // there is nothing to select or split between the two loose ends.
-  const Outline = closed ? 'polygon' : 'polyline';
+  // An open polygon's edge "+" buttons skip the closing edge — there is nothing
+  // to split between the two loose ends.
+  const closed = polygon.closed !== false;
   const edgeIndices = Array.from({ length: closed ? n : n - 1 }, (_, i) => i);
   return (
     <g data-polygon-overlay={polygon.id}>
-      {/* Two-tone outline: black core over white underlay, screen-constant via
-          vector-effect (no zoom subscription of its own → no snap). Dashed
-          (both tones share geometry, so the dashes align). */}
-      {selectionOutlineTones(themeColors).map(({ tone, stroke, strokeWidth }) => (
-        <Outline
-          key={tone}
-          points={pointsAttr(verts)}
-          fill="none"
-          stroke={stroke}
-          strokeWidth={strokeWidth}
-          strokeDasharray={SELECTION_DASH}
-          vectorEffect="non-scaling-stroke"
-          pointerEvents="none"
-        />
-      ))}
+      {/* The selection outline (chrome only — no manipulators). Shared with the
+          hovered-polygon preview, which renders JUST this at 50% opacity. */}
+      <PolygonSelectionOutline polygon={polygon} />
       {/* Editing adornments (vertex handles, edge "+"). On a LOCKED polygon
           they render GHOSTED — still visible, so a re-selected locked polygon
           reads as selected (the thin outline alone is easy to miss) — but

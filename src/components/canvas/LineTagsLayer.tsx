@@ -8,6 +8,7 @@ import {
   sampleOffsetPathByArcLength,
 } from '../../geometry/lineTagGeometry';
 import { dragState, exitLineEditorOnItemClick, useDoc, useSelection } from '../../state/store';
+import { hoveredChrome } from '../../state/selection';
 import { useThemeColors } from '../../state/theme';
 import { legibleTextOn } from '../../util/color';
 import { angleDeg, scale, type Vec2 } from '../../geometry/vec';
@@ -167,6 +168,19 @@ export function LineTagsLayer({ bands, zoom, svgRef }: Props) {
     cycleLineTagOrientation(tagId);
   };
 
+  // Canvas mouseover → preview this tag's selection wash + ring at 50%. Set on
+  // enter, clear on leave only if THIS tag is still hovered (fresh read).
+  const onTagPointerEnter = (tagId: string) =>
+    selection.setHoveredCanvasItem({ kind: 'lineTag', id: tagId });
+  const onTagPointerLeave = (tagId: string) => {
+    const h = useSelection.getState().hoveredCanvasItem;
+    if (h && h.kind === 'lineTag' && h.id === tagId) selection.setHoveredCanvasItem(null);
+  };
+  // The selector gates on idle / not-panning / not-already-selected.
+  const hover = hoveredChrome(selection);
+  const hoverTagId = hover?.kind === 'lineTag' ? hover.id : null;
+  const hoverTag = hoverTagId ? resolved.find((x) => x.tag.id === hoverTagId) : undefined;
+
   // Hover/ghost preview is cleared by the mode-setters, not on unmount.
   // Delete is wired in App.tsx for keyboard.
 
@@ -204,8 +218,35 @@ export function LineTagsLayer({ bands, zoom, svgRef }: Props) {
           onPointerDown={(e) => onTagPointerDown(e, r.tag.id)}
           onClick={(e) => onTagClick(e, r.tag.id)}
           onContextMenu={(e) => onTagContextMenu(e, r.tag.id)}
+          onPointerEnter={() => onTagPointerEnter(r.tag.id)}
+          onPointerLeave={() => onTagPointerLeave(r.tag.id)}
         />
       ))}
+
+      {/* Mouseover preview: the hovered (unselected) tag's wash + ring at 50%
+          opacity — the same two chrome layers the selected tag uses, fainter. */}
+      {hoverTag && (
+        <g data-export-exclude="1" opacity={0.5}>
+          <TagShape
+            r={hoverTag}
+            widths={widths}
+            layer="wash"
+            zoom={zoom}
+            onPointerDown={(e) => onTagPointerDown(e, hoverTag.tag.id)}
+            onClick={(e) => onTagClick(e, hoverTag.tag.id)}
+            onContextMenu={(e) => onTagContextMenu(e, hoverTag.tag.id)}
+          />
+          <TagShape
+            r={hoverTag}
+            widths={widths}
+            layer="stroke"
+            zoom={zoom}
+            onPointerDown={(e) => onTagPointerDown(e, hoverTag.tag.id)}
+            onClick={(e) => onTagClick(e, hoverTag.tag.id)}
+            onContextMenu={(e) => onTagContextMenu(e, hoverTag.tag.id)}
+          />
+        </g>
+      )}
 
       {/* Selection stroke for the selected tag (on top of text). */}
       {selection.selectedLineTagId &&
@@ -251,6 +292,10 @@ interface TagShapeProps {
   onPointerDown: (e: React.PointerEvent) => void;
   onClick: (e: React.MouseEvent) => void;
   onContextMenu: (e: React.MouseEvent) => void;
+  // Mouseover preview wiring. Only the interactive text layer's hit rect uses
+  // them; the wash/stroke chrome layers are pointer-transparent, so they omit.
+  onPointerEnter?: (e: React.PointerEvent) => void;
+  onPointerLeave?: (e: React.PointerEvent) => void;
 }
 
 function TagShape({
@@ -261,6 +306,8 @@ function TagShape({
   onPointerDown,
   onClick,
   onContextMenu,
+  onPointerEnter,
+  onPointerLeave,
 }: TagShapeProps) {
   const themeColors = useThemeColors();
   const orientation = r.tag.orientation;
@@ -290,6 +337,8 @@ function TagShape({
           onPointerDown={onPointerDown}
           onClick={onClick}
           onContextMenu={onContextMenu}
+          onPointerEnter={onPointerEnter}
+          onPointerLeave={onPointerLeave}
         />
         {isChevron ? (
           <polygon
