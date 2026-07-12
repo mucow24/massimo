@@ -57,9 +57,9 @@ test('the sidebar Styles tab lists, renames, edits live, and deletes styles', as
   await seedAndOpen(page, twoLabels);
   await saveHeadingFromG1(page);
 
-  // The sidebar is open by default; the tab counts the five factory Defaults
+  // The sidebar is open by default; the tab counts the six factory Defaults
   // plus the one saved style.
-  await page.getByRole('button', { name: 'Styles (6)' }).click();
+  await page.getByRole('button', { name: 'Styles (7)' }).click();
   await page.getByRole('button', { name: 'Rename Heading' }).click();
   await page.getByLabel('Style name').fill('Header');
   await page.getByLabel('Style name').press('Enter');
@@ -86,14 +86,14 @@ test('a new label is created wearing the (redefined) Default style', async ({ pa
   await seedAndOpen(page, twoLabels);
 
   // Redefine the Default LABEL style to 32px via the panel editor. The kind
-  // sections render in a fixed order (Lines, Labels, …), so the Labels
-  // section's Default is the second "Edit Default" chevron.
-  await page.getByRole('button', { name: 'Styles (5)' }).click();
-  await page.getByRole('button', { name: 'Edit Default' }).nth(1).click();
+  // sections render in a fixed order (Lines, Stations, Labels, …), so the
+  // Labels section's Default is the third "Edit Default" chevron.
+  await page.getByRole('button', { name: 'Styles (6)' }).click();
+  await page.getByRole('button', { name: 'Edit Default' }).nth(2).click();
   const editor = page.locator('.style-editor');
   await editor.getByRole('slider', { name: 'Size' }).fill('32');
   // Collapse the editor so its controls can't shadow the popover's below.
-  await page.getByRole('button', { name: 'Edit Default' }).nth(1).click();
+  await page.getByRole('button', { name: 'Edit Default' }).nth(2).click();
 
   // Drop a new label on empty canvas (clear of the two seeded labels): it
   // comes in at 32 and reads Default.
