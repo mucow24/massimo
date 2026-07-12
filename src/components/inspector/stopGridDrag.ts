@@ -128,8 +128,11 @@ export const ORIENTATION_NAME: Record<keyof typeof ORIENTATION_GLYPH, string> = 
 };
 
 /** A stop/label node with its effective width in world units (a stop's is
- *  its line's width; the label cell is unit-sized = STOP_SIZE). */
-export type WidthNode = RowCol & { w: number };
+ *  its line's width; the label cell is unit-sized = STOP_SIZE). `isLabel`
+ *  marks the label node: it anchors text but has no body on the rendered
+ *  map, so the overlap filter treats it as a point (width 0) — only its
+ *  nominal `w` still sets the lattice pitch when it serves as anchor. */
+export type WidthNode = RowCol & { w: number; isLabel?: boolean };
 
 /** A station lattice node: width-annotated cell + which line owns it
  *  (null = the label cell). */
@@ -155,7 +158,7 @@ export function stationLayoutNodes(
       w: lineWidthOf(lines[s.lineId]),
       lineId: s.lineId as string | null,
     })),
-    { row: station.label.row, col: station.label.col, w: STOP_SIZE, lineId: null },
+    { row: station.label.row, col: station.label.col, w: STOP_SIZE, isLabel: true, lineId: null },
   ];
 }
 
@@ -179,6 +182,10 @@ export function sourceCellOf(
 export interface GhostSpec {
   /** The dragged/nudged node's own effective width. */
   wSrc: number;
+  /** The dragged/nudged node is the label — a point for overlap purposes
+   *  (its handle is editor chrome, not map ink), so slots are only dropped
+   *  where a dot's body would cover the label's anchor point. */
+  srcIsLabel?: boolean;
   /** Anchor node the candidate lattice hangs off (typically the nearest
    *  non-source node). */
   anchor: WidthNode;
@@ -199,10 +206,14 @@ export interface GhostSpec {
  * Generated in the SCREEN frame and projected into the station's unrotated
  * local frame, so the user-facing slot directions are identical at any
  * station rotation. Slots closer to another node than their mutual tangency
- * distance are dropped (tangent is allowed).
+ * distance are dropped (tangent is allowed) — with the label counting as a
+ * width-0 point on either side of that check, since it has no body on the
+ * rendered map: a slot is only "occupied" for a label where a dot would
+ * cover its anchor point, and a dot may approach a label cell until its own
+ * edge reaches that point.
  */
 export function computeGhosts(spec: GhostSpec): RowCol[] {
-  const { wSrc, anchor, otherNodes, basis, stationRotation, gridRadius } = spec;
+  const { wSrc, srcIsLabel, anchor, otherNodes, basis, stationRotation, gridRadius } = spec;
   const t = tangentGap(wSrc, anchor.w) / STOP_SIZE;
   const localOffsets = projectScreenToLocal(latticeOffsets(basis, gridRadius), stationRotation);
   const ghosts: RowCol[] = [];
@@ -211,7 +222,8 @@ export function computeGhosts(spec: GhostSpec): RowCol[] {
     let overlap = false;
     for (const n of otherNodes) {
       if (sameCell(n, anchor)) continue;
-      if (Math.hypot(g.row - n.row, g.col - n.col) < tangentGap(wSrc, n.w) / STOP_SIZE - CELL_EPS) {
+      const clearance = tangentGap(srcIsLabel ? 0 : wSrc, n.isLabel ? 0 : n.w) / STOP_SIZE;
+      if (Math.hypot(g.row - n.row, g.col - n.col) < clearance - CELL_EPS) {
         overlap = true;
         break;
       }
@@ -236,16 +248,26 @@ export function computeGhosts(spec: GhostSpec): RowCol[] {
 export function nudgeTarget(spec: {
   source: RowCol;
   wSrc: number;
+  /** See GhostSpec.srcIsLabel. */
+  srcIsLabel?: boolean;
   otherNodes: readonly WidthNode[];
   basis: LatticeBasis;
   stationRotation: Rotation;
   /** Screen-frame arrow direction: one of (±1, 0) / (0, ±1). */
   arrow: RowCol;
 }): RowCol | null {
-  const { source, wSrc, otherNodes, basis, stationRotation, arrow } = spec;
+  const { source, wSrc, srcIsLabel, otherNodes, basis, stationRotation, arrow } = spec;
   const anchor = nearestNode(source, otherNodes);
   if (!anchor) return null;
-  const ghosts = computeGhosts({ wSrc, anchor, otherNodes, basis, stationRotation, gridRadius: 2 });
+  const ghosts = computeGhosts({
+    wSrc,
+    srcIsLabel,
+    anchor,
+    otherNodes,
+    basis,
+    stationRotation,
+    gridRadius: 2,
+  });
 
   // Accept candidates within ±67.5° of the arrow: strictly wider than the
   // 45° lattice diagonals (kept as fallbacks) but rejecting perpendicular

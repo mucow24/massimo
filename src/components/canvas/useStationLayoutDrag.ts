@@ -121,6 +121,7 @@ export function useStationLayoutDrag(
     const ghosts = anchor
       ? computeGhosts({
           wSrc,
+          srcIsLabel: ds.source.kind === 'label',
           anchor,
           otherNodes,
           basis: shiftKey ? 'diagonal' : 'orthogonal',
