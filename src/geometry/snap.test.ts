@@ -425,8 +425,11 @@ describe('snapDraggedStation', () => {
   });
 
   it('bulletLineId: ignores stations with no stop on the chosen line', () => {
-    // L1 covers `a`; L2 covers `b`. A bullet bound to L1 must NOT snap to
-    // `b` even though they share an axis — `b` has no stop on L1.
+    // L1 covers `a` (x=0); L2 covers `b` (x=5, sitting right under the
+    // dragged bullet). A bullet bound to L1 must NOT consider `b`. The
+    // fixture is discriminating: if `b` were wrongly included, its x=5 axis
+    // is a perfect (0px) match and would pin the bullet at x=5; correct
+    // exclusion leaves only `a`, whose x=0 axis pulls the bullet from 5→0.
     const a = makeStation({
       id: 'a',
       x: 0,
@@ -435,7 +438,7 @@ describe('snapDraggedStation', () => {
     });
     const b = makeStation({
       id: 'b',
-      x: 0,
+      x: 5,
       y: 200,
       stops: [makeStop('L2')],
     });
@@ -446,8 +449,7 @@ describe('snapDraggedStation', () => {
       lines: linesOf(lineOf('L1', ['a']), lineOf('L2', ['b'])),
       bulletLineId: 'L1',
     });
-    // Snap should engage only via `a` — for a bullet near `b`'s y, x snaps
-    // onto a's vertical axis line.
+    // Snap engages only via `a`: x snaps onto a's vertical axis (0), not b's.
     expect(r.x).toBeCloseTo(0, 5);
     expect(r.y).toBeCloseTo(200, 5);
   });

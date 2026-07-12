@@ -1,5 +1,6 @@
 import { Line, LineId, LineStyle, Station, StationId, StopCell } from '../model/types';
 import { pairKeyOf } from '../model/pairKey';
+import { reconcileOrder } from '../model/recordOrder';
 import {
   Vec2,
   sub,
@@ -429,15 +430,13 @@ export function buildOrderedRenderables(
 }
 
 // Reconcile persisted lineOrder against the lines dict (filter dead IDs,
-// append any missing). Returns a {lineId: index} map. Index 0 = front-most.
+// append any missing) via the shared `reconcileOrder` algebra, then index it.
+// Returns a {lineId: index} map. Index 0 = front-most.
 export function buildLineIndex(
   lineOrder: LineId[],
   lines: Record<LineId, Line>,
 ): Record<LineId, number> {
-  const present = lineOrder.filter((id) => lines[id]);
-  const seen = new Set(present);
-  const reconciled = present.slice();
-  for (const id of Object.keys(lines)) if (!seen.has(id)) reconciled.push(id);
+  const reconciled = reconcileOrder(lines, lineOrder) as LineId[];
   const idx: Record<LineId, number> = {};
   reconciled.forEach((id, i) => (idx[id] = i));
   return idx;

@@ -279,8 +279,14 @@ function updateLabel(doc: MapDoc, id: StationId, fn: (label: LabelCell) => Label
   });
 }
 
-export function addStation(doc: MapDoc, x: number, y: number, id: StationId, name: string): MapDoc {
-  const station: Station = {
+/**
+ * Build a fresh, default-shaped station. The canonical source of the
+ * new-station skeleton (rotation, empty stops, and the auto-placed label
+ * cell) — used by `addStation` and by the on-canvas placement ghost so the
+ * preview can never drift from the station that actually drops.
+ */
+export function makeStation(id: StationId, x: number, y: number, name: string): Station {
+  return {
     id,
     name,
     x,
@@ -297,6 +303,10 @@ export function addStation(doc: MapDoc, x: number, y: number, id: StationId, nam
       valign: 'auto-down',
     },
   };
+}
+
+export function addStation(doc: MapDoc, x: number, y: number, id: StationId, name: string): MapDoc {
+  const station = makeStation(id, x, y, name);
   return { ...doc, stations: { ...doc.stations, [id]: station } };
 }
 
