@@ -74,27 +74,31 @@ describe('lineGraphLayout', () => {
       makeLine({ id: 'L2', stations: ['s1', 's2', 's3'], edges: ['s1|s2', 's2|s3', 's1|s3'] }),
     );
     // A ring's root has only ONE tree child (the wrap is a back-edge), so it is
-    // not a branch point — but the loop DOES reserve a blank row below each of
-    // its two endpoints (where its horizontals sit, below the stops).
+    // not a branch point — but the loop still reserves two blank rows: one ABOVE
+    // its top endpoint (the arc comes over the top) and one BELOW the other.
     expect(ring.rowCount).toBe(ring.nodes.length + 2);
   });
 
-  it('routes a loop through the blank rows below its endpoints', () => {
-    // Ring s1-s2-s3-s1.
+  it('routes a loop-to-the-top over the top of the first stop', () => {
+    // Ring s1-s2-s3-s1. The closing edge returns to s1, which is the TOP stop
+    // (a root, nothing above it), so it re-enters from ABOVE — a blank row is
+    // reserved above s1 and the arc loops over it. A loop-to-the-top should read
+    // as a loop, not a trumpet teeing off below the first stop.
     const layout = lineGraphLayout(
       makeLine({ id: 'L1', stations: ['s1', 's2', 's3'], edges: ['s1|s2', 's2|s3', 's1|s3'] }),
     );
     const pos = posByStation(layout.nodes);
-    // The three stops stack in one lane, with a blank row below s1 and below s3.
-    expect(pos.s1).toEqual({ row: 0, lane: 0 });
+    // The three stops stack in one lane; s1 is pushed to row 1 by the blank above.
+    expect(pos.s1).toEqual({ row: 1, lane: 0 });
     expect(pos.s2).toEqual({ row: 2, lane: 0 });
     expect(pos.s3).toEqual({ row: 3, lane: 0 });
-    // The closing edge tees off below s1 and rejoins below s3, out in a side lane.
     const loop = layout.edges.find((e) => e.kind === 'loop')!;
     expect(loop.pairKey).toBe('s1|s3');
-    expect(loop.fromRow).toBe(0); // s1 (upper)
+    expect(loop.fromRow).toBe(1); // s1 (upper)
     expect(loop.toRow).toBe(3); // s3 (lower)
-    expect(loop.upperBlank).toBe(1); // blank row below s1
+    // The upper blank is ABOVE s1 (arc comes over the top); the lower tees below s3.
+    expect(loop.upperBlank).toBe(0);
+    expect(loop.upperBlank!).toBeLessThan(loop.fromRow);
     expect(loop.lowerBlank).toBe(4); // blank row below s3
     expect(loop.sideLane).toBeGreaterThanOrEqual(1);
     expect(layout.laneCount).toBeGreaterThanOrEqual(2);
@@ -107,5 +111,88 @@ describe('lineGraphLayout', () => {
     // s3 has no edge; it still gets its own row.
     expect(layout.nodes).toHaveLength(3);
     expect(posByStation(layout.nodes).s3.lane).toBe(0);
+  });
+
+  it('threads the trunk through a loop to save a column (longest-path walk)', () => {
+    // Trunk T–A; a 4-cycle A–X–Y–C with a short chord A–C; two dead-end branches
+    // C–E, C–F. Display order lists the junction C BEFORE the loop internals
+    // X, Y (as when the junction is drawn first) — so the old first-child walk
+    // took the short chord and spilled the loop into its own column. The longest
+    // path T–A–X–Y–C–E threads the loop's long arc into the trunk: X and Y sit
+    // in lane 0, the cycle closes with the short A–C arc, and only ONE branch
+    // column (for F) is left instead of two.
+    const layout = lineGraphLayout(
+      makeLine({
+        id: 'L1',
+        stations: ['T', 'A', 'C', 'X', 'Y', 'E', 'F'],
+        edges: ['A|T', 'A|C', 'A|X', 'X|Y', 'C|Y', 'C|E', 'C|F'],
+      }),
+    );
+    const pos = posByStation(layout.nodes);
+    // Loop internals threaded into the trunk lane.
+    expect(pos.X.lane).toBe(0);
+    expect(pos.Y.lane).toBe(0);
+    // The trunk continues into one branch (E); only F needs a second column.
+    expect(pos.E.lane).toBe(0);
+    expect(Math.max(...layout.nodes.map((n) => n.lane))).toBe(1);
+    // The cycle closes with the SHORT chord A–C, not one of the long-arc edges.
+    expect(layout.edges.find((e) => e.kind === 'loop')!.pairKey).toBe('A|C');
+  });
+
+  it('lays the real branch+loop line out in two columns, not three', () => {
+    // The actual "B" line: a trunk up→…→fr, a 4-cycle fr–cv–pe–tk (Finchley,
+    // Castro, Prince Edward, Tiu Keng Leng), and two dead-end branches off cv
+    // (Hanger→…→Kennedy and Alperton→…→West Harrow). Display order lists cv
+    // before the loop internals, so the old walk used three stop-columns; the
+    // longest chain (up→…→fr→tk→pe→cv→hl→…→kt) threads the loop into the trunk,
+    // leaving only the Alperton branch in a second column.
+    const layout = lineGraphLayout(
+      makeLine({
+        id: 'L1',
+        stations: [
+          'up',
+          'sl',
+          'bp',
+          'eb',
+          'pb',
+          'fr',
+          'cv',
+          'hl',
+          'ep',
+          'kb',
+          'kt',
+          'pe',
+          'tk',
+          'al',
+          'oa',
+          'wh', // prettier-ignore
+        ],
+        edges: [
+          'sl|up',
+          'bp|sl',
+          'bp|eb',
+          'eb|pb',
+          'fr|pb',
+          'cv|fr',
+          'cv|hl',
+          'ep|hl',
+          'ep|kb',
+          'kb|kt', // prettier-ignore
+          'cv|pe',
+          'pe|tk',
+          'fr|tk',
+          'al|cv',
+          'al|oa',
+          'oa|wh', // prettier-ignore
+        ],
+      }),
+    );
+    const pos = posByStation(layout.nodes);
+    // Loop internals (Tiu, Prince) threaded into the trunk lane.
+    expect(pos.tk.lane).toBe(0);
+    expect(pos.pe.lane).toBe(0);
+    // Only the Alperton chain needs a second column.
+    expect(Math.max(...layout.nodes.map((n) => n.lane))).toBe(1);
+    expect(pos.al.lane).toBe(1);
   });
 });
