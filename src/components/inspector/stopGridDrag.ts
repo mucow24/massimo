@@ -234,9 +234,56 @@ export function computeGhosts(spec: GhostSpec): RowCol[] {
 }
 
 /**
+ * Nodes a drag/nudge may hang its candidate lattice off: the stops. The
+ * label is an annotation point, not part of the stop packing — its tangency
+ * pitch against a stop (unit body vs stop width, e.g. 13/14 for width-12
+ * lines) is incommensurate with the stop-to-stop lattice (12/14), so slots
+ * hung off the label sit ~a world unit off the line axes; dropping a stop
+ * there kinks the line and splits its band. The label still blocks overlaps
+ * (computeGhosts) — it just can't be the lattice origin. A station whose
+ * only other node IS the label keeps it as last-resort anchor so a lone
+ * stop stays movable.
+ */
+export function anchorPool<T extends WidthNode>(nodes: readonly T[]): readonly T[] {
+  const stops = nodes.filter((n) => !n.isLabel);
+  return stops.length > 0 ? stops : nodes;
+}
+
+/**
+ * The in-flight drag's candidate lattice: anchor = nearest anchorable node
+ * to the CURSOR, ghosts = computeGhosts around it. Pure twin of the drag
+ * hook's per-frame step (useStationLayoutDrag), kept here so the
+ * reachable-slot rule stays unit-testable alongside nudgeTarget (its
+ * keyboard twin) and can never diverge from it.
+ */
+export function dragLattice(spec: {
+  cursor: RowCol;
+  wSrc: number;
+  /** See GhostSpec.srcIsLabel. */
+  srcIsLabel?: boolean;
+  otherNodes: readonly WidthNode[];
+  basis: LatticeBasis;
+  stationRotation: Rotation;
+}): { anchor: WidthNode | null; ghosts: RowCol[] } {
+  const { cursor, wSrc, srcIsLabel, otherNodes, basis, stationRotation } = spec;
+  const anchor = nearestNode(cursor, anchorPool(otherNodes));
+  if (!anchor) return { anchor: null, ghosts: [] };
+  const ghosts = computeGhosts({
+    wSrc,
+    srcIsLabel,
+    anchor,
+    otherNodes,
+    basis,
+    stationRotation,
+    gridRadius: GRID_RADIUS,
+  });
+  return { anchor, ghosts };
+}
+
+/**
  * Keyboard-nudge slot resolution: the ghost slot the `source` node should
  * hop to for a SCREEN-direction arrow press (row +1 = down, col +1 = right).
- * Anchor = nearest non-source node (deterministic, cursor-free twin of the
+ * Anchor = nearest anchorPool node (deterministic, cursor-free twin of the
  * drag flow), candidates = the same computeGhosts lattice — so keyboard
  * positions are exactly the positions a drag could reach.
  *
@@ -257,7 +304,7 @@ export function nudgeTarget(spec: {
   arrow: RowCol;
 }): RowCol | null {
   const { source, wSrc, srcIsLabel, otherNodes, basis, stationRotation, arrow } = spec;
-  const anchor = nearestNode(source, otherNodes);
+  const anchor = nearestNode(source, anchorPool(otherNodes));
   if (!anchor) return null;
   const ghosts = computeGhosts({
     wSrc,
