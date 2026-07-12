@@ -13,7 +13,7 @@ import {
   SegmentBandSpec,
 } from '../geometry/interlining';
 import { effectivePolygonOrder, effectiveSvgImageOrder, type ItemRef } from '../model/transforms';
-import { TRANSFER_STYLE_DEFAULTS } from '../model/transferStyle';
+import { resolveDayNight, TRANSFER_STYLE_DEFAULTS } from '../model/transferStyle';
 import { defaultStyleProps } from '../model/styles';
 import { rotateItemOnContextMenu } from './canvas/groupRotate';
 import { legibleTextOn } from '../util/color';
@@ -119,6 +119,8 @@ export function MapCanvas() {
   const snapModes = useSnapPrefs((s) => s.modes);
   const gridVisible = useViewportStore((s) => s.gridVisible);
   const gridSize = useViewportStore((s) => s.gridSize);
+  // For resolving theme-aware (day/night) transfer colors on the creation preview.
+  const darkMode = useViewportStore((s) => s.darkMode);
   const theme = useThemeColors();
   // Gap/underlay color for dashed + hatched styles: matches the canvas
   // background so the "off" stripes read as empty canvas, not stale white.
@@ -1014,7 +1016,7 @@ export function MapCanvas() {
                 y1={anchorWorld.y}
                 x2={cursorWorld.x}
                 y2={cursorWorld.y}
-                stroke={preview.color}
+                stroke={resolveDayNight(preview.color, darkMode)}
                 strokeWidth={preview.thickness}
                 strokeLinecap="round"
                 strokeDasharray="6 4"
