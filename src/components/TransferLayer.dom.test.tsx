@@ -6,6 +6,7 @@ import { useSelection } from '../state/store';
 import { useViewportStore } from '../state/viewportStore';
 import { DEFAULT_DOC } from '../model/transforms';
 import type { Line, Station, Transfer } from '../model/types';
+import { makeLine } from '../test/fixtures';
 
 beforeEach(() => {
   localStorage.clear();
@@ -42,20 +43,20 @@ function seedTwoStationsWithTransfer() {
     stops: [{ lineId: 'L2', row: 0, col: 0, orientation: 'auto-vertical' }],
     label: { row: 0, col: -1, rotation: 0, offset: 0, align: 'auto', valign: 'middle' },
   };
-  const l1: Line = {
+  const l1: Line = makeLine({
     id: 'L1',
     service: 'L1',
     name: 'L1 line',
     color: '#0039A6',
     stations: ['s1'],
-  };
-  const l2: Line = {
+  });
+  const l2: Line = makeLine({
     id: 'L2',
     service: 'L2',
     name: 'L2 line',
     color: '#EE352E',
     stations: ['s2'],
-  };
+  });
   const transfer: Transfer = {
     id: 'x1',
     a: { stationId: 's1', lineId: 'L1' },

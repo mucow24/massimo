@@ -1,5 +1,5 @@
 import type { Line, StationId } from './types';
-import { pairKeyOf } from './pairKey';
+import { incidentEdges } from './lineTopology';
 
 /**
  * Priority weight per layer step. Must exceed the largest plausible
@@ -92,23 +92,17 @@ function pickNonZeroMax(values: Iterable<number>): number | null {
   return max;
 }
 
-/** Walk every incident pair-key for `line` at `stationId` and yield its layer. */
+/** Walk every incident edge for `line` at `stationId` and yield its layer. */
 function* incidentLayers(
   line: Line,
   stationId: StationId,
   layers: Record<string, number>,
 ): Iterable<number> {
-  for (let i = 0; i < line.stations.length; i++) {
-    if (line.stations[i] !== stationId) continue;
-    if (i > 0) yield layers[pairKeyOf(line.stations[i - 1], stationId)] ?? 0;
-    if (i < line.stations.length - 1) {
-      yield layers[pairKeyOf(stationId, line.stations[i + 1])] ?? 0;
-    }
-  }
+  for (const edge of incidentEdges(line, stationId)) yield layers[edge] ?? 0;
 }
 
 /**
- * Layer values at every incident pair-key OTHER than `excludePairKey`.
+ * Layer values at every incident edge OTHER than `excludePairKey`.
  * Returns null when no other adjacency exists (i.e. terminus station).
  */
 function otherIncidentLayers(
@@ -118,23 +112,8 @@ function otherIncidentLayers(
   excludePairKey: string,
 ): number[] | null {
   const out: number[] = [];
-  let sawAny = false;
-  for (let i = 0; i < line.stations.length; i++) {
-    if (line.stations[i] !== stationId) continue;
-    if (i > 0) {
-      const k = pairKeyOf(line.stations[i - 1], stationId);
-      if (k !== excludePairKey) {
-        sawAny = true;
-        out.push(layers[k] ?? 0);
-      }
-    }
-    if (i < line.stations.length - 1) {
-      const k = pairKeyOf(stationId, line.stations[i + 1]);
-      if (k !== excludePairKey) {
-        sawAny = true;
-        out.push(layers[k] ?? 0);
-      }
-    }
+  for (const edge of incidentEdges(line, stationId)) {
+    if (edge !== excludePairKey) out.push(layers[edge] ?? 0);
   }
-  return sawAny ? out : null;
+  return out.length > 0 ? out : null;
 }

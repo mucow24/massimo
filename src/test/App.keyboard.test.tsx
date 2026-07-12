@@ -6,7 +6,13 @@ import { beginHistoryGroup, useDoc, useSelection } from '../state/store';
 import { historyDepth, isHistoryGrouping, redoDepth } from '../state/history';
 import { DEFAULT_DOC } from '../model/transforms';
 import { readClipboard, writeClipboard, type ClipPayload } from '../model/clipboard';
-import { makePolygon, makeRouteBullet, makeSvgImage, makeTextLabel } from '../test/fixtures';
+import {
+  makeLine,
+  makePolygon,
+  makeRouteBullet,
+  makeSvgImage,
+  makeTextLabel,
+} from '../test/fixtures';
 import type { RouteBullet } from '../model/types';
 
 beforeEach(() => {
@@ -861,8 +867,20 @@ describe('App keyboard: stop/label lattice nudge (station sub-selection)', () =>
         },
       },
       lines: {
-        L1: { id: 'L1', service: '1', name: '1 line', color: '#111111', stations: ['a', 'b'] },
-        L2: { id: 'L2', service: '2', name: '2 line', color: '#222222', stations: ['a', 'b'] },
+        L1: makeLine({
+          id: 'L1',
+          service: '1',
+          name: '1 line',
+          color: '#111111',
+          stations: ['a', 'b'],
+        }),
+        L2: makeLine({
+          id: 'L2',
+          service: '2',
+          name: '2 line',
+          color: '#222222',
+          stations: ['a', 'b'],
+        }),
       },
       lineOrder: ['L1', 'L2'],
     });
@@ -1016,7 +1034,7 @@ describe('App keyboard: dangling stop sub-selection falls back to station nudge'
         },
       },
       lines: {
-        L1: { id: 'L1', service: '1', name: '1 line', color: '#111111', stations: ['a'] },
+        L1: makeLine({ id: 'L1', service: '1', name: '1 line', color: '#111111', stations: ['a'] }),
       },
       lineOrder: ['L1'],
     });
@@ -1051,7 +1069,7 @@ describe('App keyboard: station-editor Escape step-out ladder', () => {
         },
       },
       lines: {
-        L1: { id: 'L1', service: '1', name: '1 line', color: '#111111', stations: ['a'] },
+        L1: makeLine({ id: 'L1', service: '1', name: '1 line', color: '#111111', stations: ['a'] }),
       },
       lineOrder: ['L1'],
     });

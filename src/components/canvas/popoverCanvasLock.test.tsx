@@ -16,6 +16,7 @@ import { useDoc } from '../../state/store';
 import { useSelection } from '../../state/selection';
 import { useLiveViewportStore, useViewportStore } from '../../state/viewportStore';
 import { DEFAULT_DOC } from '../../model/transforms';
+import { makeLine } from '../../test/fixtures';
 import {
   computeWheelZoom,
   fitViewport,
@@ -193,13 +194,13 @@ function seedStations(defs: Array<{ id: string; x: number; y: number }>, select:
     ...DEFAULT_DOC,
     stations: Object.fromEntries(defs.map((d) => [d.id, stationRecord(d.id, d.x, d.y)])),
     lines: {
-      L1: {
+      L1: makeLine({
         id: 'L1',
         service: '1',
         name: '1 line',
         color: '#111111',
         stations: defs.map((d) => d.id),
-      },
+      }),
     },
     lineOrder: ['L1'],
   });

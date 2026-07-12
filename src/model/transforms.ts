@@ -20,6 +20,7 @@ import {
 } from './transferStyle';
 import { DEFAULT_DOT_STYLE, dotStylesEqual } from './dotStyle';
 import { pairKeyOf } from './pairKey';
+import { addEdge, edgeNeighbors, edgesWithout, lineHasEdge, removeEdge } from './lineTopology';
 import { DIR_8, rotateBy, stopCenterAt } from '../geometry/orientation';
 import { CELL_EPS, sameCell } from '../geometry/lattice';
 import { GRID_INTERVAL, snapPointToGrid, type GridSnap } from '../geometry/snap';
@@ -1007,12 +1008,13 @@ export function deleteStation(doc: MapDoc, id: StationId): MapDoc {
   const lines: Record<LineId, Line> = {};
   for (const lid of Object.keys(doc.lines)) {
     const ln = doc.lines[lid];
-    // Drop the station from the line, then prune any segment style/layer
-    // override whose pair-key is no longer an adjacency — same contract as
-    // removeStationFromLine / toggleStationOnLine / deleteLine.
+    // Drop the station from the line (healing a degree-2 gap so the line stays
+    // connected), then prune any segment style/layer override whose pair-key is
+    // no longer an edge — same contract as removeStationFromLine / deleteLine.
     lines[lid] = pruneOrphanSegmentStyles({
       ...ln,
       stations: ln.stations.filter((x) => x !== id),
+      edges: edgesAfterRemoveStation(ln.edges, id),
     });
   }
   // Cascade-delete transfers that referenced the removed station.
@@ -1235,7 +1237,7 @@ export function setLabelValign(doc: MapDoc, stationId: StationId, valign: LabelV
 // ---------- Lines ----------
 
 export function addLine(doc: MapDoc, id: LineId, service: string, color: string): MapDoc {
-  const line: Line = { id, service, name: `${service} line`, color, stations: [] };
+  const line: Line = { id, service, name: `${service} line`, color, stations: [], edges: [] };
   // New line goes on top of the layer stack (front-most).
   const order = effectiveLineOrder(doc.lineOrder, doc.lines);
   return {
@@ -1352,6 +1354,72 @@ export function cycleSegmentLayer(
   return { ...doc, lines: { ...doc.lines, [id]: { ...cur, segmentLayers: next } } };
 }
 
+// Edge-set maintenance for the linear append tool: splice `stationId` into the
+// display chain between its new neighbours `prev`/`next` (either absent at an
+// end). The prev–next edge the insertion breaks is removed and the two new
+// incident edges added; any loop/branch edges elsewhere on the line are left
+// untouched (this only rewires around the insertion point).
+function edgesAfterInsert(
+  edges: string[],
+  prev: StationId | null,
+  next: StationId | null,
+  stationId: StationId,
+): string[] {
+  // Splice INTO an existing segment (prev–new–next) only when prev and next
+  // were actually an edge. On a branchy/looped line `next` is merely the
+  // display-next stop (DFS order), NOT necessarily a neighbour — so otherwise
+  // just extend from `prev` and never fabricate an edge to a stop it was never
+  // joined to.
+  if (prev !== null && next !== null && edges.includes(pairKeyOf(prev, next))) {
+    let e = removeEdge(edges, prev, next);
+    e = addEdge(e, prev, stationId);
+    return addEdge(e, stationId, next);
+  }
+  if (prev !== null) return addEdge(edges, prev, stationId);
+  if (next !== null) return addEdge(edges, stationId, next);
+  return edges;
+}
+
+// Edge-set maintenance when `stationId` leaves the line: drop its incident
+// edges, and heal a degree-2 gap with a direct edge between its two neighbours
+// (so removing an intermediate stop keeps the line running — the historical
+// linear behaviour). Termini and junctions just lose their incident edges.
+function edgesAfterRemoveStation(edges: string[], stationId: StationId): string[] {
+  const nbrs = edgeNeighbors(edges, stationId);
+  const e = edgesWithout(edges, stationId);
+  return nbrs.length === 2 ? addEdge(e, nbrs[0], nbrs[1]) : e;
+}
+
+// Spawn a stop cell for `lineId` on station `st` when it doesn't have one,
+// placed one column east of the rightmost existing stop (or (0,0) when empty),
+// and nudge an auto-placed label out from under it. Anchoring on a real stop —
+// not the bounding box — keeps the new cell 8-adjacent so the layout never gains
+// an orphan. Returns the originals unchanged when a stop already exists. Shared
+// by the linear-append and lone-member add paths so the two never drift.
+function spawnStopCell(st: Station, lineId: LineId): { stops: StopCell[]; label: LabelCell } {
+  if (st.stops.some((c) => c.lineId === lineId)) return { stops: st.stops, label: st.label };
+  const anchor =
+    st.stops.length === 0
+      ? null
+      : st.stops.reduce((best, c) => (c.col > best.col ? c : best), st.stops[0]);
+  const newRow = anchor ? anchor.row : 0;
+  const newCol = anchor ? anchor.col + 1 : 0;
+  const newCell: StopCell = { lineId, row: newRow, col: newCol, orientation: 'auto-vertical' };
+  const stops = [...st.stops, newCell];
+  let label = st.label;
+  // Only nudge auto labels (legacy 'auto' align or autoAlign) — manual
+  // alignments are user-pinned and shouldn't move out from under the user.
+  if (
+    (st.label.align === 'auto' || resolveAutoAlign(st.label)) &&
+    sameCell(st.label, { row: newRow, col: newCol })
+  ) {
+    let lc = newCol;
+    while (stops.some((c) => sameCell(c, { row: newRow, col: lc }))) lc += 1;
+    label = { ...st.label, row: newRow, col: lc };
+  }
+  return { stops, label };
+}
+
 export function toggleStationOnLine(
   doc: MapDoc,
   lineId: LineId,
@@ -1363,18 +1431,22 @@ export function toggleStationOnLine(
   if (!ln || !st) return doc;
   const inLine = ln.stations.includes(stationId);
   if (inLine) {
-    // remove (all occurrences)
+    // Remove this member (members are unique). The stop cell goes with it.
     const newStations = ln.stations.filter((x) => x !== stationId);
-    const stillStops = newStations.includes(stationId);
-    const newStops = stillStops ? st.stops : st.stops.filter((c) => c.lineId !== lineId);
+    const newStops = st.stops.filter((c) => c.lineId !== lineId);
     const stationsAfter = { ...doc.stations, [stationId]: { ...st, stops: newStops } };
-    // When the (station, line) stop is dropped, delete transfers anchored at it.
-    const transfersAfter = stillStops
-      ? doc.transfers
-      : pruneTransfers(doc.transfers, (e) => e.stationId === stationId && e.lineId === lineId);
-    // Removal changes adjacencies, so prune overrides / tags keyed to edges
-    // that no longer exist (same contract as removeStationFromLine).
-    const updatedLine = pruneOrphanSegmentStyles({ ...ln, stations: newStations });
+    // The (station, line) stop is gone — delete transfers anchored at it.
+    const transfersAfter = pruneTransfers(
+      doc.transfers,
+      (e) => e.stationId === stationId && e.lineId === lineId,
+    );
+    // Drop the station's incident edges (healing a degree-2 gap), then prune
+    // overrides / tags keyed to edges that no longer exist.
+    const updatedLine = pruneOrphanSegmentStyles({
+      ...ln,
+      stations: newStations,
+      edges: edgesAfterRemoveStation(ln.edges, stationId),
+    });
     return pruneOrphanLineTags({
       ...doc,
       lines: { ...doc.lines, [lineId]: updatedLine },
@@ -1388,42 +1460,38 @@ export function toggleStationOnLine(
     insertAfterIndex === undefined
       ? ln.stations.length
       : Math.min(ln.stations.length, Math.max(0, insertAfterIndex + 1));
+  const prev = idx > 0 ? ln.stations[idx - 1] : null;
+  const next = idx < ln.stations.length ? ln.stations[idx] : null;
   const newStations = [...ln.stations.slice(0, idx), stationId, ...ln.stations.slice(idx)];
-  // Add a stop cell if this line doesn't yet have one at the station.
-  // Spawn one column east of the rightmost existing stop (or at (0, 0) when
-  // empty). Anchoring on a real stop — not the bounding-box corner — keeps
-  // the new cell 8-adjacent to that stop, so the layout never gains an
-  // orphan even when existing stops sit at non-zero rows.
-  const hasCell = st.stops.some((c) => c.lineId === lineId);
-  let newStops = st.stops;
-  let newLabel = st.label;
-  if (!hasCell) {
-    const anchor =
+  const newEdges = edgesAfterInsert(ln.edges, prev, next, stationId);
+  const { stops: newStops, label: newLabel } = spawnStopCell(st, lineId);
+  const stationsAfter = {
+    ...doc.stations,
+    [stationId]: { ...st, stops: newStops, label: newLabel },
+  };
+  return {
+    ...doc,
+    lines: { ...doc.lines, [lineId]: { ...ln, stations: newStations, edges: newEdges } },
+    // Auto-orient only a brand-new station (one with no prior line) to the line
+    // tangent. A station already served by a line keeps the rotation the user
+    // gave it — adding it to another line must not disturb it.
+    stations:
       st.stops.length === 0
-        ? null
-        : st.stops.reduce((best, c) => (c.col > best.col ? c : best), st.stops[0]);
-    const newRow = anchor ? anchor.row : 0;
-    const newCol = anchor ? anchor.col + 1 : 0;
-    const newCell: StopCell = {
-      lineId,
-      row: newRow,
-      col: newCol,
-      orientation: 'auto-vertical',
-    };
-    newStops = [...st.stops, newCell];
-    // If the auto-placed label sits exactly where the new stop is landing,
-    // step it past the stop block so the new line doesn't paint over it.
-    // We only nudge auto labels (legacy 'auto' align or autoAlign) — manual
-    // alignments are user-pinned and shouldn't move out from under the user.
-    if (
-      (st.label.align === 'auto' || resolveAutoAlign(st.label)) &&
-      sameCell(st.label, { row: newRow, col: newCol })
-    ) {
-      let lc = newCol;
-      while (newStops.some((c) => sameCell(c, { row: newRow, col: lc }))) lc += 1;
-      newLabel = { ...st.label, row: newRow, col: lc };
-    }
-  }
+        ? autoOrientNewStation(stationsAfter, newStations, stationId)
+        : stationsAfter,
+  };
+}
+
+// Add `stationId` to the line as a MEMBER (with a stop cell) WITHOUT drawing an
+// edge or splicing the display chain — it's appended to the end of the member
+// list as a degree-0 station. Used by the draw tool before connecting it (and
+// for a lone seed stop). No-op (same doc reference) when it's already a member.
+export function addStationToLine(doc: MapDoc, lineId: LineId, stationId: StationId): MapDoc {
+  const ln = doc.lines[lineId];
+  const st = doc.stations[stationId];
+  if (!ln || !st || ln.stations.includes(stationId)) return doc;
+  const { stops: newStops, label: newLabel } = spawnStopCell(st, lineId);
+  const newStations = [...ln.stations, stationId];
   const stationsAfter = {
     ...doc.stations,
     [stationId]: { ...st, stops: newStops, label: newLabel },
@@ -1431,9 +1499,6 @@ export function toggleStationOnLine(
   return {
     ...doc,
     lines: { ...doc.lines, [lineId]: { ...ln, stations: newStations } },
-    // Auto-orient only a brand-new station (one with no prior line) to the line
-    // tangent. A station already served by a line keeps the rotation the user
-    // gave it — adding it to another line must not disturb it.
     stations:
       st.stops.length === 0
         ? autoOrientNewStation(stationsAfter, newStations, stationId)
@@ -1462,7 +1527,11 @@ export function removeStationFromLine(doc: MapDoc, lineId: LineId, idx: number):
       (e) => e.stationId === removedStationId && e.lineId === lineId,
     );
   }
-  const updatedLine = pruneOrphanSegmentStyles({ ...ln, stations: newStations });
+  const updatedLine = pruneOrphanSegmentStyles({
+    ...ln,
+    stations: newStations,
+    edges: edgesAfterRemoveStation(ln.edges, removedStationId),
+  });
   return pruneOrphanLineTags({
     ...doc,
     lines: { ...doc.lines, [lineId]: updatedLine },
@@ -1472,20 +1541,30 @@ export function removeStationFromLine(doc: MapDoc, lineId: LineId, idx: number):
   });
 }
 
+// Reorder the line's MEMBER list. This is display order only (the inspector
+// list, "reverse", stable iteration) — the track topology lives in `edges` and
+// is untouched, so no segment/tag pruning is needed (unlike the pre-edges model
+// where adjacency followed this array).
 export function reorderLineStations(doc: MapDoc, lineId: LineId, stations: StationId[]): MapDoc {
   const ln = doc.lines[lineId];
   if (!ln) return doc;
-  // A reorder changes which station-pairs are adjacent, so per-segment style /
-  // layer overrides and line tags keyed to the OLD adjacencies must be pruned
-  // (same contract as removeStationFromLine) — otherwise a cleared override
-  // resurrects if the corridor is reordered away and back.
-  const updatedLine = pruneOrphanSegmentStyles({ ...ln, stations });
-  return pruneOrphanLineTags({
-    ...doc,
-    lines: { ...doc.lines, [lineId]: updatedLine },
-    // Reordering only rearranges already-served stations, so none re-rotate.
-    stations: doc.stations,
-  });
+  return { ...doc, lines: { ...doc.lines, [lineId]: { ...ln, stations } } };
+}
+
+// Add or remove a single track segment between two members (both must already
+// be on the line). This is how loops close (an edge back to an existing member)
+// and branches form (an edge from an interior member). Toggles: adds the
+// canonical edge when absent, removes it (pruning its overrides/tag) when
+// present. No-op (same doc reference) when either station isn't a member or the
+// two are the same.
+export function toggleEdgeOnLine(doc: MapDoc, lineId: LineId, a: StationId, b: StationId): MapDoc {
+  const ln = doc.lines[lineId];
+  if (!ln || a === b) return doc;
+  if (!ln.stations.includes(a) || !ln.stations.includes(b)) return doc;
+  const nextEdges = lineHasEdge(ln, a, b) ? removeEdge(ln.edges, a, b) : addEdge(ln.edges, a, b);
+  if (nextEdges === ln.edges) return doc;
+  const updatedLine = pruneOrphanSegmentStyles({ ...ln, edges: nextEdges });
+  return pruneOrphanLineTags({ ...doc, lines: { ...doc.lines, [lineId]: updatedLine } });
 }
 
 export function deleteLine(doc: MapDoc, id: LineId): MapDoc {
@@ -2346,10 +2425,8 @@ function pruneOrphanSegmentStyles(line: Line): Line {
   const styles = line.segmentStyles;
   const layers = line.segmentLayers;
   if (!styles && !layers) return line;
-  const validKeys = new Set<string>();
-  for (let i = 0; i < line.stations.length - 1; i++) {
-    validKeys.add(pairKeyOf(line.stations[i], line.stations[i + 1]));
-  }
+  // Valid keys are exactly this line's edges — the topology source of truth.
+  const validKeys = new Set<string>(line.edges);
   let changed = false;
   let nextStyles = styles;
   if (styles) {
@@ -2381,12 +2458,7 @@ function pruneOrphanSegmentStyles(line: Line): Line {
 }
 
 function isLineEdge(line: Line, a: StationId, b: StationId): boolean {
-  for (let i = 0; i < line.stations.length - 1; i++) {
-    const x = line.stations[i];
-    const y = line.stations[i + 1];
-    if ((x === a && y === b) || (x === b && y === a)) return true;
-  }
-  return false;
+  return lineHasEdge(line, a, b);
 }
 
 // ---------- Default styles + the default document ----------

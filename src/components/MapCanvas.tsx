@@ -188,22 +188,24 @@ export function MapCanvas() {
   // of selecting the polygon.
   const polygonsInteractive = selection.uiMode.kind === 'idle';
 
-  // Geometry hash for buildBandGeometry's inputs (stations + line topology +
-  // segmentStyles + per-line width). EXCLUDES segmentLayers so layer cycles
-  // don't churn the geometry — `bandsGeometry`'s reference stays stable
-  // across them, which is what the layering-mode memos rely on. Color is
-  // also intentionally absent: a color edit must repaint WITHOUT a geometry
-  // rebuild (stripes resolve color live). Width, by contrast, IS geometry —
-  // it moves the baked paths and changes band merging — so it must be in
-  // the hash or width edits never repaint. The hash itself runs once per
-  // render but is cheap (a string of stable shapes).
+  // Geometry hash for buildBandGeometry's inputs (line topology + segmentStyles
+  // + per-line width). Topology is the `edges` SET, not the `stations` member
+  // list — buildBandGeometry iterates edges, and a display-only reorder of
+  // `stations` must NOT churn geometry (so `edges`, not `stations`, is hashed;
+  // adding/removing an edge — e.g. closing a loop or branching — changes it and
+  // triggers the rebuild). EXCLUDES segmentLayers so layer cycles don't churn
+  // geometry — `bandsGeometry`'s reference stays stable across them, which the
+  // layering-mode memos rely on. Color is also intentionally absent: a color
+  // edit must repaint WITHOUT a geometry rebuild (stripes resolve color live).
+  // Width, by contrast, IS geometry — it moves the baked paths and changes band
+  // merging — so it must be in the hash or width edits never repaint.
   const linesGeometrySig = useMemo(() => {
     const parts: string[] = [];
     for (const id of Object.keys(lines)) {
       const ln = lines[id];
       parts.push(
         id,
-        ln.stations.join('.'),
+        ln.edges.join('.'),
         Object.keys(ln.segmentStyles ?? {}).join('.'),
         String(ln.width ?? ''),
       );

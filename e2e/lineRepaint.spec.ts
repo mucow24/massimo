@@ -2,7 +2,7 @@ import { test, expect, type Page } from '@playwright/test';
 import { seedAndOpen, type Seed } from './fixtures';
 
 // Two stops on one horizontal line → exactly one band with one stripe and one
-// segment-style divider, so the assertions don't have to disambiguate.
+// segment connector in the inspector graph, so the assertions don't disambiguate.
 const twoStop: Seed = {
   stations: [
     { id: 'A', name: 'A', x: -120, y: 0, stops: [{ lineId: 'L1', row: 0, col: 0 }] },
@@ -19,7 +19,7 @@ const stripe = (page: Page) => page.locator('[data-band-stripe][data-line-id="L1
 // and the React select handler runs (mirrors e2e/layering.spec's clickStripe).
 async function selectLine(page: Page): Promise<void> {
   await stripe(page).click({ force: true });
-  // The line inspector (with the color palette + segment dividers) appears.
+  // The line inspector (with the color palette + the stop graph) appears.
   await page.locator('.inspector').waitFor();
 }
 
@@ -51,16 +51,19 @@ test.describe('line presentation repaints live (no reload)', () => {
     await seedAndOpen(page, twoStop);
     await selectLine(page);
 
-    const divider = page.locator('[data-segment-style-divider]').first();
+    // Segment style is cycled by clicking the segment's connector in the
+    // inspector's line graph (a transparent-stroke hit-target, so `force` skips
+    // the visibility heuristic — same as the stripe click above).
+    const connector = page.locator('.inspector [data-segment-connector]').first();
 
     // solid → dashed (adds a segmentStyles key; worked even pre-fix).
-    await divider.click();
+    await connector.click({ force: true });
     await expect(stripe(page)).toHaveAttribute('stroke-dasharray', /\d/);
 
     // dashed → hatched: a value-only change at an existing key. This is the
     // case the stale-geometry memo missed — the stripe must switch to the
     // hatch pattern url without a reload.
-    await divider.click();
+    await connector.click({ force: true });
     await expect(stripe(page)).toHaveAttribute('stroke', /^url\(#hatch/);
   });
 });
