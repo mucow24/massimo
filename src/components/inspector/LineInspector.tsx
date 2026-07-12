@@ -1,9 +1,10 @@
-import { Fragment, useEffect, useRef, useState } from 'react';
+import { Fragment, useEffect, useRef, useState, type ReactNode } from 'react';
 import { ChevronDownIcon, ChevronUpIcon, Cross2Icon } from '@radix-ui/react-icons';
 import { useDoc, useSelection } from '../../state/store';
 import { useThemeColors } from '../../state/theme';
 import type { DotShape, DotStyle, LineId, LineStyle } from '../../model/types';
 import { pairKeyOf } from '../../model/pairKey';
+import { edgeEndpoints, lineHasEdge } from '../../model/lineTopology';
 import { resolveDotStyle } from '../../model/transforms';
 import { DEFAULT_DOT_STYLE, DOT_SHAPE_PRESETS } from '../../model/dotStyle';
 import { resolveSegmentStyle } from '../../geometry/interlining';
@@ -108,18 +109,42 @@ const NEXT_STYLE: Record<LineStyle, LineStyle> = {
   'dashed-open': 'solid',
 };
 
-function InsertZone({
-  isActive,
+// A downward junction glyph: a track heading down that also branches off to the
+// right, both ending in an arrowhead — the "start a branch here" affordance.
+function BranchGlyph() {
+  return (
+    <svg
+      width="14"
+      height="14"
+      viewBox="0 0 15 15"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth={1.3}
+      strokeLinecap="round"
+      strokeLinejoin="round"
+      aria-hidden
+    >
+      <path d="M4 1.5 V13" />
+      <path d="M1.8 10.5 L4 13 L6.2 10.5" />
+      <path d="M4 5 C 9 5, 11 6.5, 11.2 12" />
+      <path d="M9 9.7 L11.2 12.2 L13.2 9.4" />
+    </svg>
+  );
+}
+
+// One small insert-zone button (the active state fills with the line color).
+function ZoneButton({
+  active,
   color,
-  height,
+  title,
   onClick,
-  onHoverChange,
+  children,
 }: {
-  isActive: boolean;
+  active: boolean;
   color: string;
-  height: number;
+  title: string;
   onClick: () => void;
-  onHoverChange?: (hovered: boolean) => void;
+  children: ReactNode;
 }) {
   const [hovered, setHovered] = useState(false);
   const tintAlpha = hovered ? 0.6 : 0.4;
@@ -127,37 +152,84 @@ function InsertZone({
     <button
       type="button"
       onClick={onClick}
-      onMouseEnter={() => {
-        setHovered(true);
-        onHoverChange?.(true);
-      }}
-      onMouseLeave={() => {
-        setHovered(false);
-        onHoverChange?.(false);
-      }}
-      title={
-        isActive
-          ? 'Stops will be inserted here. Click to stop adding.'
-          : 'Click to insert stops here'
-      }
+      onMouseEnter={() => setHovered(true)}
+      onMouseLeave={() => setHovered(false)}
+      title={title}
+      aria-label={title}
       style={{
-        flex: 1,
-        height,
-        padding: '0 8px',
+        display: 'flex',
+        alignItems: 'center',
+        gap: 1,
+        height: '100%',
+        padding: '0 7px',
         margin: 0,
-        background: isActive ? color : withAlpha(color, tintAlpha),
+        background: active ? color : withAlpha(color, tintAlpha),
         border: 'none',
-        borderRadius: height / 2,
-        textAlign: 'center',
+        borderRadius: 6,
         cursor: 'pointer',
         font: 'inherit',
-        fontSize: 11,
-        color: isActive ? legibleTextOn(color) : legibleTextOn(blendOver(color, tintAlpha)),
+        fontSize: 12,
+        lineHeight: 1,
+        color: active ? legibleTextOn(color) : legibleTextOn(blendOver(color, tintAlpha)),
         boxSizing: 'border-box',
       }}
     >
-      +
+      {children}
     </button>
+  );
+}
+
+// The insert-zone affordances shown while appending: a left-justified pair of
+// small buttons. "Insert after" (+↓) arms the linear insert cursor at this
+// position; "Branch" (+ junction) starts a NEW branch drawn from the predecessor
+// stop. `canBranch` is false at the very start of the line (no stop to branch
+// from).
+function InsertZoneButtons({
+  color,
+  height,
+  insertActive,
+  branchActive,
+  canBranch,
+  onInsert,
+  onBranch,
+  onHoverChange,
+}: {
+  color: string;
+  height: number;
+  insertActive: boolean;
+  branchActive: boolean;
+  canBranch: boolean;
+  onInsert: () => void;
+  onBranch: () => void;
+  onHoverChange?: (hovered: boolean) => void;
+}) {
+  return (
+    <div
+      style={{ flex: 1, display: 'flex', alignItems: 'center', gap: 4, height }}
+      onMouseEnter={() => onHoverChange?.(true)}
+      onMouseLeave={() => onHoverChange?.(false)}
+    >
+      <ZoneButton
+        active={insertActive}
+        color={color}
+        title="Insert stops after this stop (in-line)"
+        onClick={onInsert}
+      >
+        <span>+</span>
+        <ChevronDownIcon />
+      </ZoneButton>
+      {canBranch && (
+        <ZoneButton
+          active={branchActive}
+          color={color}
+          title="Start a new branch from this stop"
+          onClick={onBranch}
+        >
+          <span>+</span>
+          <BranchGlyph />
+        </ZoneButton>
+      )}
+    </div>
   );
 }
 
@@ -209,6 +281,8 @@ export function LineInspector({ id }: { id: LineId }) {
     selection.uiMode.kind === 'appending-to-line' && selection.uiMode.lineId === line.id;
   const appendInsertAfterIndex =
     selection.uiMode.kind === 'appending-to-line' ? selection.uiMode.insertAfterIndex : null;
+  const appendDraw =
+    selection.uiMode.kind === 'appending-to-line' ? !!selection.uiMode.draw : false;
 
   return (
     <section className="inspector">
@@ -345,7 +419,12 @@ export function LineInspector({ id }: { id: LineId }) {
             );
             const hovered = selection.hoveredInspectorSegment;
             const isActiveAt = (idx: number) => isAppending && appendInsertAfterIndex === idx;
-            const moveCursor = (idx: number) => selection.setInsertAfterIndex(idx);
+            const insertActiveAt = (idx: number) => isActiveAt(idx) && !appendDraw;
+            const branchActiveAt = (idx: number) => isActiveAt(idx) && appendDraw;
+            // Insert button arms the linear cursor (draw off); branch button arms
+            // draw mode with the pen on the predecessor stop.
+            const moveCursor = (idx: number) => selection.setInsertAfterIndex(idx, false);
+            const branchAt = (idx: number) => selection.setInsertAfterIndex(idx, true);
             const hoverPredecessor = (predSid: string | null) => (h: boolean) => {
               if (h && predSid) {
                 selection.setHoveredLineStop({ lineId: line.id, stationId: predSid });
@@ -487,11 +566,14 @@ export function LineInspector({ id }: { id: LineId }) {
                 <div style={{ display: 'flex', height: INSERT_ROW_H }}>
                   <div style={{ width: MARKER_W, flexShrink: 0 }} />
                   {isAppending && (
-                    <InsertZone
-                      isActive={isActiveAt(-1)}
+                    <InsertZoneButtons
                       color={line.color}
                       height={INSERT_ROW_H}
-                      onClick={() => moveCursor(-1)}
+                      insertActive={insertActiveAt(-1)}
+                      branchActive={false}
+                      canBranch={false}
+                      onInsert={() => moveCursor(-1)}
+                      onBranch={() => {}}
                     />
                   )}
                 </div>
@@ -584,35 +666,49 @@ export function LineInspector({ id }: { id: LineId }) {
                               toStationId: nextSid,
                             });
                           const clearHover = () => selection.setHoveredInspectorSegment(null);
+                          // The divider is a transparent hit-target over the
+                          // preview band's segment, so it's only meaningful when
+                          // this consecutive-display pair is a REAL edge. After a
+                          // reorder or on a branch, adjacent rows may not be an
+                          // edge — off-chain edges (branch legs, loop wraps) are
+                          // styled via the "Branch / loop segments" list below.
+                          const isEdge = lineHasEdge(line, sid, nextSid);
                           return (
                             <div style={{ display: 'flex', height: GAP_ROW_H }}>
-                              <button
-                                type="button"
-                                onClick={() => cycleSegmentStyle(sid, nextSid)}
-                                onMouseEnter={setHover}
-                                onMouseLeave={clearHover}
-                                onFocus={setHover}
-                                onBlur={clearHover}
-                                data-segment-style-divider
-                                data-style={segStyle}
-                                title={`Segment style: ${segStyle} (click to cycle)`}
-                                aria-label={`Segment style: ${segStyle} (click to cycle)`}
-                                style={{
-                                  width: MARKER_W,
-                                  height: GAP_ROW_H,
-                                  flexShrink: 0,
-                                  padding: 0,
-                                  background: 'transparent',
-                                  border: 'none',
-                                  cursor: 'pointer',
-                                }}
-                              />
+                              {isEdge ? (
+                                <button
+                                  type="button"
+                                  onClick={() => cycleSegmentStyle(sid, nextSid)}
+                                  onMouseEnter={setHover}
+                                  onMouseLeave={clearHover}
+                                  onFocus={setHover}
+                                  onBlur={clearHover}
+                                  data-segment-style-divider
+                                  data-style={segStyle}
+                                  title={`Segment style: ${segStyle} (click to cycle)`}
+                                  aria-label={`Segment style: ${segStyle} (click to cycle)`}
+                                  style={{
+                                    width: MARKER_W,
+                                    height: GAP_ROW_H,
+                                    flexShrink: 0,
+                                    padding: 0,
+                                    background: 'transparent',
+                                    border: 'none',
+                                    cursor: 'pointer',
+                                  }}
+                                />
+                              ) : (
+                                <div style={{ width: MARKER_W, flexShrink: 0 }} />
+                              )}
                               {isAppending && (
-                                <InsertZone
-                                  isActive={isActiveAt(i)}
+                                <InsertZoneButtons
                                   color={line.color}
                                   height={GAP_ROW_H}
-                                  onClick={() => moveCursor(i)}
+                                  insertActive={insertActiveAt(i)}
+                                  branchActive={branchActiveAt(i)}
+                                  canBranch
+                                  onInsert={() => moveCursor(i)}
+                                  onBranch={() => branchAt(i)}
                                   onHoverChange={hoverPredecessor(sid)}
                                 />
                               )}
@@ -625,11 +721,14 @@ export function LineInspector({ id }: { id: LineId }) {
                 <div style={{ display: 'flex', height: INSERT_ROW_H }}>
                   <div style={{ width: MARKER_W, flexShrink: 0 }} />
                   {isAppending && (
-                    <InsertZone
-                      isActive={isActiveAt(N - 1)}
+                    <InsertZoneButtons
                       color={line.color}
                       height={INSERT_ROW_H}
-                      onClick={() => moveCursor(N - 1)}
+                      insertActive={insertActiveAt(N - 1)}
+                      branchActive={branchActiveAt(N - 1)}
+                      canBranch
+                      onInsert={() => moveCursor(N - 1)}
+                      onBranch={() => branchAt(N - 1)}
                       onHoverChange={hoverPredecessor(line.stations[N - 1])}
                     />
                   )}
@@ -637,6 +736,61 @@ export function LineInspector({ id }: { id: LineId }) {
               </div>
             );
           })()}
+        {/* Edges the linear preview band can't show — loop-closing wraps and
+            branch legs (any edge not between two display-consecutive stops).
+            Listed here so EVERY segment's style is reachable on a loop/branch. */}
+        {(() => {
+          const consecutive = new Set<string>();
+          for (let i = 0; i < line.stations.length - 1; i++) {
+            consecutive.add(pairKeyOf(line.stations[i], line.stations[i + 1]));
+          }
+          const extras = line.edges.filter((e) => !consecutive.has(e));
+          if (extras.length === 0) return null;
+          return (
+            <div className="field">
+              <label>Branch / loop segments</label>
+              {extras.map((e) => {
+                const [a, b] = edgeEndpoints(e);
+                const sa = stations[a];
+                const sb = stations[b];
+                if (!sa || !sb) return null;
+                const segStyle = resolveSegmentStyle(line, e);
+                const setHover = () =>
+                  selection.setHoveredInspectorSegment({
+                    lineId: line.id,
+                    fromStationId: a,
+                    toStationId: b,
+                  });
+                const clearHover = () => selection.setHoveredInspectorSegment(null);
+                return (
+                  <div
+                    key={e}
+                    className="list-row"
+                    style={{ gap: 8, alignItems: 'center', padding: '2px 0' }}
+                    onMouseEnter={setHover}
+                    onMouseLeave={clearHover}
+                  >
+                    <span className="grow" style={{ paddingLeft: 4 }}>
+                      {stationNameListText(sa.name)} → {stationNameListText(sb.name)}
+                    </span>
+                    <button
+                      type="button"
+                      className="btn-mini"
+                      onClick={() => cycleSegmentStyle(a, b)}
+                      onFocus={setHover}
+                      onBlur={clearHover}
+                      title={`Segment style: ${segStyle} (click to cycle)`}
+                      aria-label={`Segment style ${sa.name} to ${sb.name}: ${segStyle} (click to cycle)`}
+                      style={{ minWidth: 72, textTransform: 'capitalize' }}
+                    >
+                      {segStyle}
+                    </button>
+                  </div>
+                );
+              })}
+            </div>
+          );
+        })()}
         {/* An empty line has no station band, so surface the same
             "before the first stop" insert lozenge on its own. Clicking it
             arms the cursor (-1) so map clicks add the first stop — identical
@@ -644,11 +798,14 @@ export function LineInspector({ id }: { id: LineId }) {
         {isAppending && line.stations.length === 0 && (
           <div style={{ display: 'flex', height: INSERT_ROW_H }}>
             <div style={{ width: MARKER_W, flexShrink: 0 }} />
-            <InsertZone
-              isActive={appendInsertAfterIndex === -1}
+            <InsertZoneButtons
               color={line.color}
               height={INSERT_ROW_H}
-              onClick={() => selection.setInsertAfterIndex(-1)}
+              insertActive={appendInsertAfterIndex === -1 && !appendDraw}
+              branchActive={false}
+              canBranch={false}
+              onInsert={() => selection.setInsertAfterIndex(-1, false)}
+              onBranch={() => {}}
             />
           </div>
         )}

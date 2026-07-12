@@ -333,6 +333,19 @@ describe('useStationInteraction — append-to-line', () => {
     expect(toggleStationOnLine).not.toHaveBeenCalled();
   });
 
+  it('draw mode wires an edge from the pen on a PLAIN click (no Alt needed)', () => {
+    // Branch button arms draw mode with the pen at index 2 (stop U).
+    useSelection.getState().startAppendAt('L1' as LineId, 2);
+    useSelection.getState().setInsertAfterIndex(2, true);
+    const lines = {
+      L1: makeLine({ id: 'L1' as LineId, stations: ['S', 'T', 'U'] as StationId[] }),
+    };
+    const { result } = setup(stationS(), lines);
+    click(result.current.handlers, pointerEvent({}) as unknown as React.MouseEvent);
+    expect(toggleEdgeOnLine).toHaveBeenCalledWith('L1', 'U', 'S');
+    expect(toggleStationOnLine).not.toHaveBeenCalled();
+  });
+
   it('alt+click on a non-member adds it then wires the edge (branch to a new stop)', () => {
     // Pen on T (index 0); alt-click the fresh station S branches T→S.
     useSelection.getState().startAppendAt('L1' as LineId, 0);

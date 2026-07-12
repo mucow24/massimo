@@ -554,25 +554,107 @@ describe('<LineInspector /> — empty line stop-adding', () => {
     });
   };
 
-  it('shows no insert "+" for an empty line when not editing', () => {
+  const INSERT_LABEL = 'Insert stops after this stop (in-line)';
+
+  it('shows no insert button for an empty line when not editing', () => {
     seedEmptyLine();
     render(<LineInspector id="L1" />);
-    expect(screen.queryByRole('button', { name: '+' })).toBeNull();
+    expect(screen.queryByRole('button', { name: INSERT_LABEL })).toBeNull();
   });
 
-  it('reveals a single insert "+" while editing an empty line, and clicking it arms the cursor before the first stop', async () => {
+  it('reveals a single insert button while editing an empty line, and clicking it arms the cursor before the first stop', async () => {
     seedEmptyLine();
     useSelection.getState().setAppending('L1');
     useSelection.getState().setInsertAfterIndex(null);
     const user = userEvent.setup();
     render(<LineInspector id="L1" />);
 
-    const plus = screen.getByRole('button', { name: '+' });
+    // An empty line has no stop to branch from, so only the insert button shows.
+    expect(screen.queryByRole('button', { name: 'Start a new branch from this stop' })).toBeNull();
+    const plus = screen.getByRole('button', { name: INSERT_LABEL });
     await user.click(plus);
 
     const ui = useSelection.getState().uiMode;
     expect(ui.kind).toBe('appending-to-line');
     if (ui.kind === 'appending-to-line') expect(ui.insertAfterIndex).toBe(-1);
+  });
+});
+
+describe('<LineInspector /> — branch button (draw mode)', () => {
+  beforeEach(() => {
+    localStorage.clear();
+    useDoc.setState({ ...DEFAULT_DOC });
+    useSelection.setState(SELECTION_BLANK);
+    useSelection.getState().setUiMode({ kind: 'idle' });
+  });
+
+  it('arms draw mode with the pen on the chosen stop', async () => {
+    useDoc.setState({
+      ...DEFAULT_DOC,
+      ...makeDoc({
+        stations: [
+          makeStation({ id: 's1', stops: [makeStop('L1')] }),
+          makeStation({ id: 's2', stops: [makeStop('L1')] }),
+        ],
+        lines: [makeLine({ id: 'L1', stations: ['s1', 's2'] })],
+      }),
+    });
+    useSelection.getState().setAppending('L1');
+    const user = userEvent.setup();
+    render(<LineInspector id="L1" />);
+
+    // First branch button = branch from stop 0 (the zone just after s1).
+    const branchButtons = screen.getAllByRole('button', {
+      name: 'Start a new branch from this stop',
+    });
+    await user.click(branchButtons[0]);
+
+    const ui = useSelection.getState().uiMode;
+    expect(ui.kind).toBe('appending-to-line');
+    if (ui.kind === 'appending-to-line') {
+      expect(ui.draw).toBe(true);
+      expect(ui.insertAfterIndex).toBe(0);
+    }
+  });
+});
+
+describe('<LineInspector /> — branch/loop segment styles', () => {
+  beforeEach(() => {
+    localStorage.clear();
+    useDoc.setState({ ...DEFAULT_DOC });
+    useSelection.setState(SELECTION_BLANK);
+    useSelection.getState().setUiMode({ kind: 'idle' });
+  });
+
+  it('exposes off-chain (branch) segments so their dashedness is settable', async () => {
+    useDoc.setState({
+      ...DEFAULT_DOC,
+      ...makeDoc({
+        stations: [
+          makeStation({ id: 's1', stops: [makeStop('L1')] }),
+          makeStation({ id: 's2', stops: [makeStop('L1')] }),
+          makeStation({ id: 's3', stops: [makeStop('L1')] }),
+          makeStation({ id: 's4', stops: [makeStop('L1')] }),
+        ],
+        // Trunk s1-s2-s3 + branch leg s2-s4. s2|s4 is NOT display-consecutive,
+        // so the inline dividers can't reach it.
+        lines: [
+          makeLine({
+            id: 'L1',
+            stations: ['s1', 's2', 's3', 's4'],
+            edges: ['s1|s2', 's2|s3', 's2|s4'],
+          }),
+        ],
+      }),
+    });
+    const user = userEvent.setup();
+    render(<LineInspector id="L1" />);
+
+    const btn = screen.getByRole('button', { name: /Segment style s2 to s4/i });
+    expect(btn).toHaveTextContent(/solid/i);
+    await user.click(btn);
+    // Cycling stored a non-solid style for the branch leg (solid is never stored).
+    expect(useDoc.getState().lines.L1.segmentStyles?.['s2|s4']).toBeDefined();
   });
 });
 

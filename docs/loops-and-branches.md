@@ -104,27 +104,48 @@ Topology enumerators to switch from consecutive-pairs → `edges`:
   `useStationInteraction.test.tsx` + transform tests.
 - **Stage 5 (partial).** `pathBetweenStations` (ctrl+shift line-select) is now BFS over the
   edge graph — shorter loop arc, unique branch path; identical for linear lines (+ tests).
-- **Full suite green (195 files / 3393 tests), `tsc`/lint/format/build all clean.**
+- **Highlight overlay + branch UI + reactivity (iterations 2–3).**
+  - `HighlightedLineLayer` arrowhead: it marks the APPEND direction, so it caps only the
+    display-tail stop, and only when that stop is a genuine degree-1 end. A loop, or a
+    junction at the tail, draws no false arrowhead (the earlier "both ends" attempt was
+    reverted — the front stop must stay a plain forward chevron). Tests updated.
+  - **Loop/branch now renders immediately (bug fix):** `linesGeometrySig` (MapCanvas band
+    memo) keyed on `stations`, but `toggleEdgeOnLine` changes only `edges` — so the new band
+    didn't appear until another edit. Now keyed on `edges`. Regression test in
+    `MapCanvas.stationsSig.test.tsx`.
+  - `LineInspector`: the big `+` insert lozenges are now two small left-justified buttons per
+    zone — **Insert after** (`+↓`, arms the linear cursor) and **Branch** (`+` railway
+    junction, arms *draw mode* with the pen on that stop). New `draw` flag on the
+    `appending-to-line` UiMode; in draw mode a plain click wires an edge (Alt+click still
+    works everywhere). Off-chain edges (branch legs, loop wraps) are listed under a
+    **"Branch / loop segments"** section so every segment's style is settable. Unit-tested.
+- **Full suite green (195 files / 3398 tests), `tsc`/lint/format/build all clean.**
+
+### Known open: a line overdraws its own casing at junctions
+
+Casing (the white stroke) is drawn per-band inline, so at a same-line junction/loop one
+segment's casing paints over another segment's body, splitting the color. The clean fix is
+to stroke the UNION of a line's bands (outer boundary only) or a carefully-verified per-line
+casing reorder — deferred pending an approach decision (a naive reorder erased the inter-line
+separators historically). NOT yet fixed.
 
 ## How to draw them (current UX)
 
 1. Place the stations (place-station mode), then **Edit Stops** on the line.
 2. Plain-click stations in order to build the path (unchanged).
 3. **Close a loop:** with the pen on the last stop, **Alt+click the first stop** → wrap edge.
-4. **Branch:** put the pen on the junction (the inspector's insert-cursor lozenge after it),
-   then **Alt+click** the branch's next stop → a new leg without splicing the trunk.
+4. **Branch:** click the **Branch** button (`+` junction) next to the stop you want to branch
+   from, then click the branch's stops on the canvas — each click adds a leg. (Alt+click from
+   any pen position also works.)
 
 ## Iterate-later (known gaps; correct for linear today, cosmetic/edge-case on non-linear)
 
-- **Selected-line highlight overlay** (`HighlightedLineLayer`) still assumes a single chain
-  (first/last = ends, direction triangles by display order) → draws a misleading terminus
-  arrow on a loop/junction. The map bands themselves render correctly.
-- **LineInspector** shows a single vertical chain; per-segment style dividers are keyed by
-  consecutive *display* pairs, so a loop's wrap edge / a branch leg isn't individually
-  editable there yet. No crash. Needs an edge-list form.
-- **On-canvas pen repositioning:** you currently move the pen to an interior junction via
-  the inspector insert-cursor; an on-canvas "lift/relocate pen" gesture (or draw-to-empty
-  to create+connect) would make multi-branch drawing smoother.
+- **LineInspector** still shows the linear preview band as a single vertical chain (off-chain
+  edges are style-editable via the separate "Branch / loop segments" list, but they don't
+  appear in the pretty band preview). A full edge-list/graph form is the eventual step.
+- **On-canvas pen repositioning:** the Branch button relocates the pen from the inspector; an
+  on-canvas "lift/relocate pen" gesture (or draw-to-empty to create+connect) would make
+  free-hand multi-branch drawing smoother.
 - **`redistributeBetween`** (ctrl+click even-spacing) and **line-tag traversal frame** and
   **`snap.refineAlongAxis`** terminus extrapolation still read display order — correct for
   linear lines, approximate on branchy/looped ones.

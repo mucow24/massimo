@@ -136,15 +136,16 @@ export function useStationInteraction(
       return;
     }
     if (selection.uiMode.kind === 'appending-to-line') {
-      const { lineId, insertAfterIndex } = selection.uiMode;
+      const { lineId, insertAfterIndex, draw } = selection.uiMode;
       const ln = lines[lineId];
       if (!ln) return;
       const wasInLine = ln.stations.includes(station.id);
-      // Alt/Option+click DRAWS a track edge from the pen (the station the
-      // cursor currently sits on) to this station — this is how loops close and
-      // branches form. Toggles: alt-clicking the same pair again erases that
-      // edge. A brand-new station joins as a member first, then wires to the pen.
-      if (e.altKey) {
+      // Draw mode (the inspector's "branch" button) OR Alt/Option+click WIRES a
+      // track edge from the pen (the stop at the cursor) to this stop — this is
+      // how loops close and branches grow. Toggles: connecting the same pair
+      // again erases that edge. A brand-new stop joins as a member first, then
+      // wires to the pen.
+      if (draw || e.altKey) {
         const penStation =
           insertAfterIndex != null ? (ln.stations[insertAfterIndex] ?? null) : null;
         const clickedIdx = wasInLine ? ln.stations.indexOf(station.id) : ln.stations.length;

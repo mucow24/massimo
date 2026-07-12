@@ -157,7 +157,8 @@ describe('MapCanvas — stroke edits repaint without a geometry rebuild', () => 
     });
     expect(railPathCount()).toBe(4);
     // Highlight copies: s1 repaints rails + cap (3), but s2 — the arrow
-    // tip — suppresses its cap (2): the cased arrowhead is the line's end.
+    // tip (the display-tail terminus) — suppresses its cap (2): the cased
+    // arrowhead is the line's end.
     expect(markerCasingEls('L1')).toHaveLength(11);
 
     // The terminus arrowhead is cased too: an underlay copy fattened by
