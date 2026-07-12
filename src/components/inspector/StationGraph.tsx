@@ -217,6 +217,7 @@ export function StationGraph(props: StationGraphProps) {
               />
               {/* Wide transparent hit-target to cycle this segment's style. */}
               <path
+                data-segment-connector
                 d={d}
                 fill="none"
                 stroke="transparent"
