@@ -221,8 +221,20 @@ export interface Line {
   service: string;
   name: string;
   color: string;
+  // The stations this line SERVES — its members, one StopCell each. Order is
+  // DISPLAY ONLY (the inspector list, "reverse", stable iteration); it does NOT
+  // define the route. The actual track topology is `edges`. A member may be
+  // degree-0 transiently while the line is being drawn (or a lone-stop line);
+  // otherwise INVARIANT: every station appears at most once, and every `edges`
+  // endpoint is a member.
   stations: StationId[];
-  waypoints?: Record<string, Vec2[]>;
+  // The line's connectivity as an EDGE SET: canonical `pairKeyOf(a, b)` strings,
+  // each unique. This — not the order of `stations` — is what the renderer,
+  // interlining, tags, and per-segment overrides key off. A path is a chain of
+  // edges, a loop is a cycle, a branch is a station of degree ≥ 3. Saves that
+  // predate the field backfill it from consecutive `stations` pairs on load
+  // (edgesFromStations; serialize.ts / migrateDoc). Helpers: model/lineTopology.ts.
+  edges: string[];
   // Per-segment style overrides keyed by canonical pair-key (pairKeyOf(a, b)).
   // Missing key ⇒ 'solid'. Setters delete the key when called with 'solid'
   // so the default is never stored.

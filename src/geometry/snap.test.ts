@@ -9,18 +9,19 @@ import {
   reconcileLockWithGrid,
   snapDraggedStation,
 } from './snap';
-import { makeStation, makeStop } from '../test/fixtures';
+import { makeLine, makeStation, makeStop } from '../test/fixtures';
 import type { Line, LineId, Station, StationId, StopCell } from '../model/types';
 
 // Helper: build a line whose stations array forms a chain. Adjacency in
 // `line.stations` is what alignmentPairs filters by.
-const lineOf = (id: LineId, stationIds: StationId[]): Line => ({
-  id,
-  service: id,
-  name: `${id} line`,
-  color: '#000',
-  stations: stationIds,
-});
+const lineOf = (id: LineId, stationIds: StationId[]): Line =>
+  makeLine({
+    id,
+    service: id,
+    name: `${id} line`,
+    color: '#000',
+    stations: stationIds,
+  });
 const linesOf = (...ls: Line[]): Record<LineId, Line> => {
   const m: Record<LineId, Line> = {};
   for (const l of ls) m[l.id] = l;

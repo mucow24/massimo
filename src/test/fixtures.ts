@@ -24,6 +24,7 @@ import { STOP_SIZE, stripeOffsetsForWidths } from '../geometry/orientation';
 import { DEFAULT_DOT_STYLE } from '../model/dotStyle';
 import { DOT_SIZE_DEFAULT } from '../model/dotSize';
 import { LINE_WIDTH_DEFAULT } from '../model/lineWidth';
+import { edgesFromStations } from '../model/lineTopology';
 
 export function makeStation(overrides: Partial<Station> & { id: StationId }): Station {
   return {
@@ -64,13 +65,17 @@ export function makeLabel(overrides: Partial<LabelCell> = {}): LabelCell {
 
 export function makeLine(overrides: Partial<Line> & { id: LineId }): Line {
   const service = overrides.service ?? overrides.id.toUpperCase();
-  return {
+  const base: Line = {
     service,
     name: `${service} line`,
     color: '#0039A6',
     stations: [],
+    edges: [],
     ...overrides,
   };
+  // Topology defaults to the linear path implied by `stations` (the historical
+  // shape) unless a fixture supplies an explicit edge set for a loop/branch.
+  return { ...base, edges: overrides.edges ?? edgesFromStations(base.stations) };
 }
 
 /**

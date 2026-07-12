@@ -6,6 +6,7 @@ import { useSelection } from '../state/selection';
 import { useViewportStore } from '../state/viewportStore';
 import { DEFAULT_DOC } from '../model/transforms';
 import type { Line, Station } from '../model/types';
+import { makeLine } from '../test/fixtures';
 
 // jsdom reports clientWidth/clientHeight as 0, which would collapse the canvas
 // viewBox to 0×0 and make every geometry assertion vacuous. Give the canvas
@@ -55,13 +56,13 @@ const seedLine = () => {
   ];
   const s1: Station = { id: 's1', name: 'S1', x: 0, y: 0, rotation: 0, stops, label };
   const s2: Station = { id: 's2', name: 'S2', x: 200, y: 0, rotation: 0, stops, label };
-  const L1: Line = {
+  const L1: Line = makeLine({
     id: 'L1',
     service: 'L1',
     name: 'L1 line',
     color: '#0039A6',
     stations: ['s1', 's2'],
-  };
+  });
   act(() => {
     useDoc.setState({
       ...useDoc.getState(),

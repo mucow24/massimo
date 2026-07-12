@@ -5,6 +5,7 @@ import { useDoc } from '../state/store';
 import { DEFAULT_DOC } from '../model/transforms';
 import * as interlining from '../geometry/interlining';
 import type { Line, Station } from '../model/types';
+import { makeLine } from '../test/fixtures';
 
 beforeEach(() => {
   useDoc.setState({ ...useDoc.getState(), ...DEFAULT_DOC });
@@ -33,13 +34,14 @@ const seedInterlinedPair = () => {
   ];
   const s1: Station = { id: 's1', name: 'S1', x: 0, y: 0, rotation: 0, stops, label };
   const s2: Station = { id: 's2', name: 'S2', x: 200, y: 0, rotation: 0, stops, label };
-  const mkLine = (id: string, color: string): Line => ({
-    id,
-    service: id,
-    name: `${id} line`,
-    color,
-    stations: ['s1', 's2'],
-  });
+  const mkLine = (id: string, color: string): Line =>
+    makeLine({
+      id,
+      service: id,
+      name: `${id} line`,
+      color,
+      stations: ['s1', 's2'],
+    });
   act(() => {
     useDoc.setState({
       ...useDoc.getState(),

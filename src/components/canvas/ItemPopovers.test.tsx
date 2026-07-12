@@ -6,6 +6,7 @@ import { useSelection } from '../../state/selection';
 import { useLiveViewportStore } from '../../state/viewportStore';
 import { DEFAULT_DOC } from '../../model/transforms';
 import type { RouteBullet } from '../../model/types';
+import { makeLine } from '../../test/fixtures';
 
 // zoom 1, centered on the world origin: world (0,0) projects to screen (400,300).
 const committedView = { vbX: -400, vbY: -300, vbW: 800, vbH: 600, size: { w: 800, h: 600 } };
@@ -98,14 +99,14 @@ describe('ItemPopovers — spawn placement wiring', () => {
         },
       },
       lines: {
-        L1: {
+        L1: makeLine({
           id: 'L1',
           service: '1',
           name: '1 line',
           color: '#111111',
           stations: ['a'],
           width: 28,
-        },
+        }),
       },
       lineOrder: ['L1'],
     });
@@ -266,7 +267,7 @@ describe('ItemPopovers — station popover', () => {
         },
       },
       lines: {
-        L1: { id: 'L1', service: '1', name: '1 line', color: '#111111', stations: ['a'] },
+        L1: makeLine({ id: 'L1', service: '1', name: '1 line', color: '#111111', stations: ['a'] }),
       },
       lineOrder: ['L1'],
     });
@@ -341,7 +342,7 @@ describe('ItemPopovers — station popover, layout-edit interplay', () => {
         },
       },
       lines: {
-        L1: { id: 'L1', service: '1', name: '1 line', color: '#111111', stations: ['a'] },
+        L1: makeLine({ id: 'L1', service: '1', name: '1 line', color: '#111111', stations: ['a'] }),
       },
       lineOrder: ['L1'],
     });

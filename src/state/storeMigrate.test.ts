@@ -631,14 +631,32 @@ describe('migrateDoc', () => {
           },
         },
         lines: {
-          L1: { service: 'A', name: 'A line', stations: ['S'], width: 21, defaultDotSize: 12 },
+          L1: {
+            service: 'A',
+            name: 'A line',
+            stations: ['S'],
+            edges: [],
+            width: 21,
+            defaultDotSize: 12,
+          },
         },
       };
-      const out = run(input, 12);
+      const out = run(input, 14);
       // No migration applies at the current version → same reference passes
       // straight through. (No `styles` key either, so the style-invariant
       // pass leaves it alone.)
       expect(out).toBe(input);
+    });
+
+    it('backfills line edges from the legacy consecutive-pairs order (v<14)', () => {
+      const out = run(
+        { lines: { L1: { service: 'A', name: 'A line', stations: ['s1', 's2', 's3'] } } },
+        13,
+      );
+      const line = out.lines!.L1 as { edges?: string[]; stations?: string[] };
+      expect(line.edges).toEqual(['s1|s2', 's2|s3']);
+      // Membership order (display) is untouched by the backfill.
+      expect(line.stations).toEqual(['s1', 's2', 's3']);
     });
   });
 

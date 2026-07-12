@@ -4,17 +4,18 @@ import { LabelView } from './LabelView';
 import { useDoc } from '../state/store';
 import { useViewportStore } from '../state/viewportStore';
 import { DEFAULT_DOC, updateTextLabel } from '../model/transforms';
-import { makeTextLabel } from '../test/fixtures';
+import { makeLine, makeTextLabel } from '../test/fixtures';
 import { BASELINE_FRACTION } from '../geometry/textMeasure';
 import type { Line, TextLabel, TextLabelAlign } from '../model/types';
 
-const seedLine = (overrides: Partial<Line> & Pick<Line, 'id' | 'service'>): Line => ({
-  id: overrides.id,
-  service: overrides.service,
-  name: overrides.name ?? overrides.service,
-  color: overrides.color ?? '#ff0000',
-  stations: overrides.stations ?? [],
-});
+const seedLine = (overrides: Partial<Line> & Pick<Line, 'id' | 'service'>): Line =>
+  makeLine({
+    id: overrides.id,
+    service: overrides.service,
+    name: overrides.name ?? overrides.service,
+    color: overrides.color ?? '#ff0000',
+    stations: overrides.stations ?? [],
+  });
 
 beforeEach(() => {
   useDoc.setState({ ...useDoc.getState(), ...DEFAULT_DOC });

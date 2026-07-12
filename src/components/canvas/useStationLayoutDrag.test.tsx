@@ -8,6 +8,7 @@ import { findMatchingStations } from '../../model/matching';
 import { fakeSvgRef, pointerEvent } from '../../test/interaction';
 import type { Station } from '../../model/types';
 import type { LayoutDragSource } from './useStationLayoutDrag';
+import { makeLine } from '../../test/fixtures';
 
 type Result = { current: StationLayoutDragApi };
 const down = (r: Result, id: string, source: LayoutDragSource, e: React.PointerEvent) =>
@@ -39,20 +40,20 @@ const seed = (stations: Record<string, Station>, over: Record<string, unknown> =
     ...DEFAULT_DOC,
     stations,
     lines: {
-      L1: {
+      L1: makeLine({
         id: 'L1',
         service: '1',
         name: '1 line',
         color: '#111111',
         stations: Object.keys(stations),
-      },
-      L2: {
+      }),
+      L2: makeLine({
         id: 'L2',
         service: '2',
         name: '2 line',
         color: '#222222',
         stations: Object.keys(stations),
-      },
+      }),
     },
     lineOrder: ['L1', 'L2'],
   });

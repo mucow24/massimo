@@ -1,5 +1,6 @@
 import { Line, LineId, LineStyle, Station, StationId, StopCell } from '../model/types';
 import { pairKeyOf } from '../model/pairKey';
+import { edgeEndpoints, incidentEdges, neighborsOf } from '../model/lineTopology';
 import { reconcileOrder } from '../model/recordOrder';
 import {
   Vec2,
@@ -208,24 +209,25 @@ export function buildBandGeometry(
 
   for (const lineId of Object.keys(lines)) {
     const line = lines[lineId];
-    for (let i = 0; i < line.stations.length - 1; i++) {
-      const a = line.stations[i];
-      const b = line.stations[i + 1];
+    for (const edge of line.edges) {
+      // Each edge is already a canonical pair-key (fromId < toId), so the seg
+      // is stored canon-first with no ternary shuffling.
+      const [a, b] = edgeEndpoints(edge);
       const sa = stations[a];
       const sb = stations[b];
       if (!sa || !sb) continue;
       const fromCell = sa.stops.find((c) => c.lineId === lineId);
       const toCell = sb.stops.find((c) => c.lineId === lineId);
       if (!fromCell || !toCell) continue;
-      const key = pairKeyOf(a, b);
-      const forward = a < b;
-      (groups[key] ||= []).push({
-        fromId: forward ? a : b,
-        toId: forward ? b : a,
-        fromCell: forward ? fromCell : toCell,
-        toCell: forward ? toCell : fromCell,
+      (groups[edge] ||= []).push({
+        fromId: a,
+        toId: b,
+        fromCell,
+        toCell,
         lineId,
-        // Unit line direction at this segment, regardless of canonical ordering.
+        // Canonical from→to direction. An edge carries no traversal order, so
+        // the hint's sign is immaterial: axis bucketing folds mod 4 and the
+        // band is sign-flipped to flow canonFrom→canonTo before routing.
         worldHint: norm(sub(sb, sa)),
       });
     }
@@ -507,17 +509,11 @@ function terminusOutwardFromBand(
   stationId: StationId,
   bandByPair: Record<string, SegmentBandSpec>,
 ): Vec2 | null {
-  const indices: number[] = [];
-  for (let i = 0; i < line.stations.length; i++) {
-    if (line.stations[i] === stationId) indices.push(i);
-  }
-  if (indices.length !== 1) return null;
-  const i = indices[0];
-  let neighbourId: StationId | null = null;
-  if (i === 0 && line.stations.length > 1) neighbourId = line.stations[1];
-  else if (i === line.stations.length - 1 && line.stations.length > 1)
-    neighbourId = line.stations[i - 1];
-  if (!neighbourId) return null;
+  // A terminus is a degree-1 station: exactly one incident edge. Loops
+  // (degree 2) and junctions (degree ≥ 3) correctly get no cap stub.
+  const nbrs = neighborsOf(line, stationId);
+  if (nbrs.length !== 1) return null;
+  const neighbourId = nbrs[0];
   const band = bandByPair[pairKeyOf(stationId, neighbourId)];
   if (!band || band.centerline.length < 2) return null;
   // Centerline goes canonFrom → canonTo. Pick the endpoint matching our
@@ -544,16 +540,8 @@ function terminusOutwardFromBand(
 function stationMarkerStyle(line: Line, stationId: StationId): LineStyle {
   const styles = line.segmentStyles;
   if (!styles) return 'solid';
-  const adjacencies: LineStyle[] = [];
-  for (let i = 0; i < line.stations.length; i++) {
-    if (line.stations[i] !== stationId) continue;
-    if (i > 0) {
-      adjacencies.push(styles[pairKeyOf(line.stations[i - 1], stationId)] ?? 'solid');
-    }
-    if (i < line.stations.length - 1) {
-      adjacencies.push(styles[pairKeyOf(stationId, line.stations[i + 1])] ?? 'solid');
-    }
-  }
+  // Every edge incident to this station on this line (its key IS the style key).
+  const adjacencies: LineStyle[] = incidentEdges(line, stationId).map((e) => styles[e] ?? 'solid');
   if (adjacencies.length === 0) return 'solid';
   const first = adjacencies[0];
   if (first !== 'solid' && adjacencies.every((s) => s === first)) return first;

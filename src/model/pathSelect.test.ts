@@ -56,4 +56,24 @@ describe('pathBetweenStations', () => {
     const lines = linesIndex(makeLine({ id: 'L1', stations: ['A', 'B'] }));
     expect(pathBetweenStations({ lines }, 'A', 'B')).toEqual(['B']);
   });
+
+  it('takes the shorter arc around a loop', () => {
+    // Ring A-B-C-D-A. A→D is one hop across the wrap edge, not three around.
+    const lines = linesIndex(
+      makeLine({ id: 'L1', stations: ['A', 'B', 'C', 'D'], edges: ['A|B', 'B|C', 'C|D', 'A|D'] }),
+    );
+    expect(pathBetweenStations({ lines }, 'A', 'D')).toEqual(['D']);
+  });
+
+  it('walks the unique tree path across a branch junction', () => {
+    // Trunk A-B-J with branches J-C and J-D. C→D routes through the junction J.
+    const lines = linesIndex(
+      makeLine({
+        id: 'L1',
+        stations: ['A', 'B', 'J', 'C', 'D'],
+        edges: ['A|B', 'B|J', 'J|C', 'J|D'],
+      }),
+    );
+    expect(pathBetweenStations({ lines }, 'C', 'D')).toEqual(['J', 'D']);
+  });
 });

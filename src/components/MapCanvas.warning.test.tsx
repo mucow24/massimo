@@ -6,6 +6,7 @@ import { buildBands } from '../geometry/interlining';
 import { DEFAULT_DOC } from '../model/transforms';
 import { legibleTextOn } from '../util/color';
 import type { Line, Station } from '../model/types';
+import { makeLine } from '../test/fixtures';
 
 beforeEach(() => {
   useDoc.setState({ ...useDoc.getState(), ...DEFAULT_DOC });
@@ -81,20 +82,20 @@ describe('MapCanvas — warning glyph reconciliation', () => {
       ],
       label: { row: 0, col: -1, rotation: 0, offset: 0, align: 'auto', valign: 'middle' },
     };
-    const l1: Line = {
+    const l1: Line = makeLine({
       id: 'L1',
       service: 'L1',
       name: 'L1 line',
       color: '#0039A6',
       stations: ['s1', 's2'],
-    };
-    const l2: Line = {
+    });
+    const l2: Line = makeLine({
       id: 'L2',
       service: 'L2',
       name: 'L2 line',
       color: '#EE352E',
       stations: ['s1', 's2'],
-    };
+    });
 
     act(() => {
       useDoc.setState({
@@ -192,20 +193,20 @@ describe('MapCanvas — warning glyph reconciliation', () => {
     const s1: Station = { id: 's1', name: 'S1', x: 0, y: 0, rotation: 0, stops, label };
     const s2: Station = { id: 's2', name: 'S2', x: 0, y: 20, rotation: 2, stops, label };
     // L1 dark → white glyph; L2 light → black glyph.
-    const l1: Line = {
+    const l1: Line = makeLine({
       id: 'L1',
       service: 'L1',
       name: 'L1',
       color: '#0039A6',
       stations: ['s1', 's2'],
-    };
-    const l2: Line = {
+    });
+    const l2: Line = makeLine({
       id: 'L2',
       service: 'L2',
       name: 'L2',
       color: '#FFD700',
       stations: ['s1', 's2'],
-    };
+    });
 
     act(() => {
       useDoc.setState({

@@ -7,6 +7,7 @@ import { historyDepth } from '../../state/history';
 import { DEFAULT_DOC } from '../../model/transforms';
 import { DOT_SIZE_DEFAULT } from '../../model/dotSize';
 import type { Station } from '../../model/types';
+import { makeLine } from '../../test/fixtures';
 
 const hub = (over: Partial<Station> = {}): Station => ({
   id: 'a',
@@ -27,20 +28,20 @@ const seed = (stations: Record<string, Station>, over: Record<string, unknown> =
     ...DEFAULT_DOC,
     stations,
     lines: {
-      L1: {
+      L1: makeLine({
         id: 'L1',
         service: '1',
         name: '1 line',
         color: '#c60c30',
         stations: Object.keys(stations),
-      },
-      L2: {
+      }),
+      L2: makeLine({
         id: 'L2',
         service: '2',
         name: '2 line',
         color: '#0039a6',
         stations: Object.keys(stations),
-      },
+      }),
     },
     lineOrder: ['L1', 'L2'],
   });

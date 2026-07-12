@@ -36,6 +36,7 @@ import { useCustomPalettes } from './customPalettes';
 import {
   sanitizeStations,
   backfillLineNames,
+  backfillLinesEdges,
   backfillPolygonDarkColors,
   backfillTextLabelColors,
   backfillTransferDayNightColors,
@@ -303,6 +304,13 @@ export function migrateDoc(persisted: unknown, version: number): DocState {
     // editors would act on nothing.
     out = S.adoptDefaultStyles(out as unknown as MapDoc) as typeof out;
   }
+  if (v < 14 && out.lines) {
+    // Line topology moved from the ordered `stations` list to an explicit
+    // `edges` set. Backfill the edge set from the legacy consecutive-pairs order
+    // so pre-edges saves rehydrate with identical connectivity.
+    const { lines: cleaned, changed } = backfillLinesEdges(out.lines);
+    if (changed) out = { ...out, lines: cleaned };
+  }
   if (v < 3 && 'labelBold' in out) {
     const { labelBold, ...rest } = out;
     // Existing `labelWeight` wins if both fields are present.
@@ -368,6 +376,8 @@ interface DocState extends MapDoc {
   addLine: () => LineId;
   updateLine: (id: LineId, patch: Partial<Pick<Line, 'service' | 'name' | 'color'>>) => void;
   toggleStationOnLine: (lineId: LineId, stationId: StationId, insertAfterIndex?: number) => void;
+  addStationToLine: (lineId: LineId, stationId: StationId) => void;
+  toggleEdgeOnLine: (lineId: LineId, a: StationId, b: StationId) => void;
   removeStationFromLine: (lineId: LineId, idx: number) => void;
   reorderLineStations: (lineId: LineId, stations: StationId[]) => void;
   setLineSegmentStyle: (
@@ -585,6 +595,9 @@ export const useDoc = create<DocState>()(
         updateLine: (id, patch) => set((s) => T.updateLine(s, id, patch)),
         toggleStationOnLine: (lineId, stationId, insertAfterIndex) =>
           set((s) => T.toggleStationOnLine(s, lineId, stationId, insertAfterIndex)),
+        addStationToLine: (lineId, stationId) =>
+          set((s) => T.addStationToLine(s, lineId, stationId)),
+        toggleEdgeOnLine: (lineId, a, b) => set((s) => T.toggleEdgeOnLine(s, lineId, a, b)),
         removeStationFromLine: (lineId, idx) => set((s) => T.removeStationFromLine(s, lineId, idx)),
         reorderLineStations: (lineId, stations) =>
           set((s) => T.reorderLineStations(s, lineId, stations)),
@@ -856,8 +869,8 @@ export const useDoc = create<DocState>()(
       {
         name: 'vignelli-map-doc-v1',
         storage: createJSONStorage(() => localStorage),
-        version: 13,
-        // Version migration chain v0 → v13 lives in `migrateDoc` (above), which
+        version: 14,
+        // Version migration chain v0 → v14 lives in `migrateDoc` (above), which
         // is exported and unit-tested. See its doc comment for each step.
         migrate: (persisted, version) => migrateDoc(persisted, version),
         partialize: (s) => pickDocSnapshot(s),

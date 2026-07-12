@@ -27,7 +27,7 @@ import {
   isReservedStyleName,
   stylePropsEqual,
 } from './styles';
-import { pairKeyOf } from './pairKey';
+import { edgesFromStations } from './lineTopology';
 import { parseHexA, withHexAlpha } from '../util/color';
 import { migrateLegacyInlineTokens } from '../geometry/labelTokens';
 import { KNOWN_PALETTE_IDS, type Palette, type PaletteId } from './palettes';
@@ -256,7 +256,7 @@ export function parse(json: string, custom: readonly Palette[] = []): ParseResul
   for (const id of Object.keys(merged.lines)) {
     const line = merged.lines[id];
     const cleaned = sanitizeLineDotSize(
-      sanitizeLineStroke(sanitizeLineWidth(sanitizeSegments(line))),
+      sanitizeLineStroke(sanitizeLineWidth(sanitizeSegments(backfillLineEdges(line)))),
     );
     if (cleaned !== line) linesChanged = true;
     cleanedLines[id] = cleaned;
@@ -1238,14 +1238,40 @@ export function pruneDanglingStyleRefs(doc: MapDoc): MapDoc {
   return { ...doc, lines, textLabels, polygons, routeBullets, transfers };
 }
 
+// Backfill `edges` for a line saved before the field existed: derive the edge
+// set from the legacy linear `stations` order. Same reference when `edges` is
+// already present (canonical new saves), matching the file-only per-line
+// sanitizer convention (callers detect a change by identity).
+export function backfillLineEdges(line: Line): Line {
+  if (Array.isArray(line.edges)) return line;
+  return { ...line, edges: edgesFromStations(line.stations) };
+}
+
+// Dict-level backfill shared with the localStorage rehydration path
+// (migrateDoc). `changed` is the signal migrate uses to decide whether to
+// re-spread the field. Parse uses the per-line `backfillLineEdges` in its own
+// cleaning loop instead.
+export function backfillLinesEdges(lines: Record<string, Line>): {
+  lines: Record<string, Line>;
+  changed: boolean;
+} {
+  let changed = false;
+  const out: Record<string, Line> = {};
+  for (const id of Object.keys(lines)) {
+    const next = backfillLineEdges(lines[id]);
+    if (next !== lines[id]) changed = true;
+    out[id] = next;
+  }
+  return { lines: changed ? out : lines, changed };
+}
+
 function sanitizeSegments(line: Line): Line {
   const styles = line.segmentStyles;
   const layers = line.segmentLayers;
   if (!styles && !layers) return line;
-  const valid = new Set<string>();
-  for (let i = 0; i < line.stations.length - 1; i++) {
-    valid.add(pairKeyOf(line.stations[i], line.stations[i + 1]));
-  }
+  // Valid keys are exactly this line's edges — the single source of truth for
+  // which station-pair corridors it occupies (see model/lineTopology.ts).
+  const valid = new Set<string>(line.edges);
   let changed = false;
 
   let nextStyles = styles;

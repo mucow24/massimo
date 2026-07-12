@@ -68,6 +68,8 @@ export function useStationInteraction(
   const selection = useSelection();
   const rotateStation = useDoc((s) => s.rotateStation);
   const toggleStationOnLine = useDoc((s) => s.toggleStationOnLine);
+  const addStationToLine = useDoc((s) => s.addStationToLine);
+  const toggleEdgeOnLine = useDoc((s) => s.toggleEdgeOnLine);
   const redistributeBetween = useDoc((s) => s.redistributeBetween);
   const addTransfer = useDoc((s) => s.addTransfer);
   const gridMode = useSnapPrefs((s) => s.modes.grid);
@@ -136,9 +138,27 @@ export function useStationInteraction(
     if (selection.uiMode.kind === 'appending-to-line') {
       const { lineId, insertAfterIndex } = selection.uiMode;
       const ln = lines[lineId];
-      const wasInLine = ln?.stations.includes(station.id) ?? false;
-      // No cursor: refuse to add a new stop. Removing an existing stop is
-      // still allowed since it doesn't depend on an insertion point.
+      if (!ln) return;
+      const wasInLine = ln.stations.includes(station.id);
+      // Alt/Option+click DRAWS a track edge from the pen (the station the
+      // cursor currently sits on) to this station — this is how loops close and
+      // branches form. Toggles: alt-clicking the same pair again erases that
+      // edge. A brand-new station joins as a member first, then wires to the pen.
+      if (e.altKey) {
+        const penStation =
+          insertAfterIndex != null ? (ln.stations[insertAfterIndex] ?? null) : null;
+        const clickedIdx = wasInLine ? ln.stations.indexOf(station.id) : ln.stations.length;
+        if (!wasInLine) addStationToLine(lineId, station.id);
+        if (penStation && penStation !== station.id) {
+          toggleEdgeOnLine(lineId, penStation, station.id);
+        }
+        // The pen walks to the just-touched station so drawing can continue.
+        selection.setInsertAfterIndex(clickedIdx);
+        return;
+      }
+      // Plain click: linear append at the cursor, or remove an existing member.
+      // No cursor: refuse to add a new stop. Removing an existing stop is still
+      // allowed since it doesn't depend on an insertion point.
       if (!wasInLine && insertAfterIndex === null) return;
       const effectiveCursor = insertAfterIndex ?? -1;
       toggleStationOnLine(lineId, station.id, effectiveCursor);
