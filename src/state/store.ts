@@ -128,7 +128,7 @@ function docSnapshotsEqual(a: DocSnapshot, b: DocSnapshot): boolean {
 }
 
 /**
- * Persisted-document version migration (v0 → v9). Exported and pure so it can
+ * Persisted-document version migration (v0 → v12). Exported and pure so it can
  * be unit-tested in isolation; the persist config below just delegates here.
  * Never mutates `persisted` — returns a possibly-new doc snapshot.
  *
@@ -833,7 +833,7 @@ export const useDoc = create<DocState>()(
         name: 'vignelli-map-doc-v1',
         storage: createJSONStorage(() => localStorage),
         version: 12,
-        // Version migration chain v0 → v11 lives in `migrateDoc` (above), which
+        // Version migration chain v0 → v12 lives in `migrateDoc` (above), which
         // is exported and unit-tested. See its doc comment for each step.
         migrate: (persisted, version) => migrateDoc(persisted, version),
         partialize: (s) => pickDocSnapshot(s),

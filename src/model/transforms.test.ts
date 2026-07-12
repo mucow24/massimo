@@ -958,13 +958,16 @@ describe('updateLine', () => {
     });
 
     it('skips the rewrite when the old service contains a delimiter character', () => {
+      // `|a|b|` is a real bullet token for service `a|b`. If the delimiter
+      // guard were dropped, the rewrite would mangle it into `|A|`; the guard
+      // must leave the literal text untouched.
       const doc = makeDoc({
         lines: [makeLine({ id: 'L1', service: 'a|b' })],
-        textLabels: [makeTextLabel({ id: 't1', text: 'a|b stays' })],
+        textLabels: [makeTextLabel({ id: 't1', text: '|a|b| here' })],
       });
       const next = T.updateLine(doc, 'L1', { service: 'A' });
       expect(next.lines.L1.service).toBe('A');
-      expect(next.textLabels.t1.text).toBe('a|b stays');
+      expect(next.textLabels.t1.text).toBe('|a|b| here');
     });
   });
 });

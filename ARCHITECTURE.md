@@ -1,6 +1,6 @@
 # Massimo — Architecture
 
-**Up to date as of commit `041e5bf` (2026-07-11) — verified 2026-07-12 06:43 -0400 against the live source.**
+**Up to date as of commit `be94293` (2026-07-12) — verified 2026-07-12 against the live source (code-health pass; no architectural changes).**
 
 > A fast-bootstrap reference for understanding the codebase: the ins, outs, gotchas, and
 > caveats. Written for an AI assistant (or new contributor) who needs the full picture

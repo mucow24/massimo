@@ -2,7 +2,8 @@ import { describe, it, expect, beforeEach } from 'vitest';
 import { render } from '@testing-library/react';
 import { StationPlacingPreview, makePreviewStation } from './StationPlacingPreview';
 import { useDoc } from '../../state/store';
-import { DEFAULT_DOC } from '../../model/transforms';
+import { DEFAULT_DOC, addStation } from '../../model/transforms';
+import type { StationId } from '../../model/types';
 
 beforeEach(() => {
   useDoc.setState({ ...useDoc.getState(), ...DEFAULT_DOC });
@@ -47,21 +48,19 @@ describe('<StationPlacingPreview />', () => {
 });
 
 describe('makePreviewStation', () => {
-  it('matches the shape T.addStation produces (rotation 0, no stops, default label)', () => {
-    const s = makePreviewStation({ x: 5, y: 7 }, 'Bayswater');
-    expect(s.x).toBe(5);
-    expect(s.y).toBe(7);
-    expect(s.name).toBe('Bayswater');
-    expect(s.rotation).toBe(0);
-    expect(s.stops).toEqual([]);
-    expect(s.label).toEqual({
-      row: 0,
-      col: -1,
-      rotation: 0,
-      offset: 0,
-      offsetPerp: 0,
-      align: 'auto',
-      valign: 'auto-down',
-    });
+  // Drift guard: the placement ghost must have the EXACT shape of the station
+  // that addStation actually drops (both flow through the shared makeStation
+  // factory). Compared against addStation's real output — not a hand-copied
+  // literal — so a change to the new-station skeleton can't silently desync
+  // the preview from the dropped station.
+  it('matches the station T.addStation drops at the same point', () => {
+    const world = { x: 5, y: 7 };
+    const preview = makePreviewStation(world, 'Bayswater');
+
+    const id = 's1' as StationId;
+    const added = addStation(DEFAULT_DOC, world.x, world.y, id, 'Bayswater').stations[id];
+
+    // Identical apart from the id (the ghost carries a sentinel preview id).
+    expect({ ...preview, id: added.id }).toEqual(added);
   });
 });
