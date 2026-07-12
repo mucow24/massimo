@@ -140,32 +140,34 @@ export function useStationInteraction(
       const ln = lines[lineId];
       if (!ln) return;
       const wasInLine = ln.stations.includes(station.id);
-      // Draw mode (the inspector's "branch" button) OR Alt/Option+click WIRES a
-      // track edge from the pen (the stop at the cursor) to this stop — this is
-      // how loops close and branches grow. Toggles: connecting the same pair
-      // again erases that edge. A brand-new stop joins as a member first, then
-      // wires to the pen.
-      if (draw || e.altKey) {
-        const penStation =
-          insertAfterIndex != null ? (ln.stations[insertAfterIndex] ?? null) : null;
-        const clickedIdx = wasInLine ? ln.stations.indexOf(station.id) : ln.stations.length;
-        if (!wasInLine) addStationToLine(lineId, station.id);
+      const penStation = insertAfterIndex != null ? (ln.stations[insertAfterIndex] ?? null) : null;
+
+      // Clicking a stop ALREADY on the line WIRES an edge from the pen (the stop
+      // at the cursor) to it — this is how a loop closes or two stops link up.
+      // It NEVER removes the stop (that's the inspector's × button). Same in
+      // insert mode, draw mode, and on Alt-click. Toggles: connecting the same
+      // pair again erases that edge.
+      if (wasInLine) {
         if (penStation && penStation !== station.id) {
           toggleEdgeOnLine(lineId, penStation, station.id);
         }
-        // The pen walks to the just-touched station so drawing can continue.
-        selection.setInsertAfterIndex(clickedIdx);
+        // Pen walks to the just-touched stop so drawing/looping can continue.
+        selection.setInsertAfterIndex(ln.stations.indexOf(station.id));
         return;
       }
-      // Plain click: linear append at the cursor, or remove an existing member.
-      // No cursor: refuse to add a new stop. Removing an existing stop is still
-      // allowed since it doesn't depend on an insertion point.
-      if (!wasInLine && insertAfterIndex === null) return;
-      const effectiveCursor = insertAfterIndex ?? -1;
-      toggleStationOnLine(lineId, station.id, effectiveCursor);
-      if (!wasInLine) {
-        selection.setInsertAfterIndex(effectiveCursor + 1);
+
+      // A brand-new stop. Draw mode (the "branch" button) or Alt/Option+click
+      // appends it and wires an edge from the pen (grows a branch); plain insert
+      // mode splices it into the chain at the cursor.
+      if (draw || e.altKey) {
+        addStationToLine(lineId, station.id);
+        if (penStation) toggleEdgeOnLine(lineId, penStation, station.id);
+        selection.setInsertAfterIndex(ln.stations.length); // appended at the end
+        return;
       }
+      if (insertAfterIndex === null) return; // no cursor → nowhere to insert
+      toggleStationOnLine(lineId, station.id, insertAfterIndex);
+      selection.setInsertAfterIndex(insertAfterIndex + 1);
       return;
     }
     // Ctrl/Cmd+Shift+click on a different station extends the selection

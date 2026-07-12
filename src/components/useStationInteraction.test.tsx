@@ -320,6 +320,19 @@ describe('useStationInteraction — append-to-line', () => {
     expect(toggleStationOnLine).toHaveBeenCalledWith('L1', 'S', -1);
   });
 
+  it('a plain click on a stop already on the line CONNECTS it (loop), never removes it', () => {
+    // Line S-T-U with the cursor on U (index 2). Plain-clicking the member S
+    // wires U→S (closes a loop); it must not remove S.
+    useSelection.getState().startAppendAt('L1' as LineId, 2);
+    const lines = {
+      L1: makeLine({ id: 'L1' as LineId, stations: ['S', 'T', 'U'] as StationId[] }),
+    };
+    const { result } = setup(stationS(), lines);
+    click(result.current.handlers, pointerEvent({}) as unknown as React.MouseEvent);
+    expect(toggleEdgeOnLine).toHaveBeenCalledWith('L1', 'U', 'S');
+    expect(toggleStationOnLine).not.toHaveBeenCalled(); // no removal
+  });
+
   it('alt+click draws an edge from the pen station to an existing member (loop/branch)', () => {
     // Line S-T-U, pen sitting on U (cursor index 2). Alt-clicking S connects U→S.
     useSelection.getState().startAppendAt('L1' as LineId, 2);
