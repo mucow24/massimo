@@ -149,11 +149,6 @@ describe('lockedHitsAt', () => {
     svgImageOrder: [] as string[],
     textLabels: {},
     routeBullets: {},
-    labelFontSize: 16,
-    labelWeight: 400 as const,
-    labelItalic: false,
-    labelLeading: 1,
-    labelTracking: 0,
     ...over,
   });
 

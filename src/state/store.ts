@@ -38,6 +38,7 @@ import {
   backfillLineNames,
   backfillPolygonDarkColors,
   backfillTextLabelColors,
+  bakeLegacyLabelSettings,
   bakeLegacyTransferSettings,
   convertLegacyDotShapes,
   ensureStyleInvariants,
@@ -100,11 +101,6 @@ const DOC_FIELDS = [
   // theirs repaired by the style-invariant pass in migrateDoc.
   'styles',
   'styleDefaults',
-  'labelFontSize',
-  'labelWeight',
-  'labelItalic',
-  'labelLeading',
-  'labelTracking',
   'activePalettes',
 ] as const;
 type DocFieldName = (typeof DOC_FIELDS)[number];
@@ -184,6 +180,13 @@ function docSnapshotsEqual(a: DocSnapshot, b: DocSnapshot): boolean {
  *   pre-designation storage through migrate at all (the persist merge alone
  *   would leave `styleDefaults` pointing at factory ids that round-1/2 docs'
  *   styles records don't contain).
+ * - v12 → v13: retire the five doc-level station-label font settings
+ *   (labelFontSize/labelWeight/labelItalic/labelLeading/labelTracking). Bake
+ *   each into per-station typography and the per-station labelBold (+2 weight)
+ *   / labelItalic (OR) flags with them, moving the map-wide role to the seeded
+ *   default station style — mirrors the transfer-settings retirement.
+ *   Idempotent (keyed off field presence), so `parse()` runs the shared
+ *   `bakeLegacyLabelSettings` unconditionally.
  */
 export function migrateDoc(persisted: unknown, version: number): DocState {
   const s = persisted as {
@@ -287,6 +290,15 @@ export function migrateDoc(persisted: unknown, version: number): DocState {
     } else {
       out = rest;
     }
+  }
+  if (v < 13) {
+    // Retired doc-level station-label font settings (labelFontSize/labelWeight/
+    // labelItalic/labelLeading/labelTracking) → baked into per-station
+    // typography, with the map-wide role moved to the seeded default station
+    // style. Runs AFTER the v<3 labelBold→labelWeight step (so it sees the
+    // materialized weight) and the invariant pass above (so styleDefaults.station
+    // resolves). Idempotent — `parse()` runs the shared bake unconditionally.
+    out = bakeLegacyLabelSettings(out);
   }
   // Non-version-gated invariant: at least one VALID active palette. Unlike the
   // migrations above, this isn't tied to a schema bump — a persisted doc with
@@ -467,13 +479,10 @@ interface DocState extends MapDoc {
   loadDoc: (doc: MapDoc) => void;
   setDocName: (name: string) => void;
   setCurveRadius: (r: number) => void;
-  setLabelFontSize: (n: number) => void;
-  setLabelWeight: (w: TextLabelWeight) => void;
-  setLabelLeading: (n: number) => void;
-  setLabelTracking: (n: number) => void;
-  setStationLabelBold: (stationId: StationId, bold: boolean) => void;
-  setStationLabelItalic: (stationId: StationId, italic: boolean) => void;
-  setLabelItalic: (i: boolean) => void;
+  /** The station popover's style section write path: patch a station's own
+   *  typography (fontSize/weight/italic/leading/tracking), detaching its style
+   *  tag when a covered value actually changes. */
+  updateStationLabelStyle: (stationId: StationId, patch: T.StationLabelPatch) => void;
   setActivePalettes: (ids: PaletteId[]) => void;
   togglePalette: (id: PaletteId) => void;
   /** Delete a custom palette definition (from the custom-palette store) and
@@ -492,7 +501,9 @@ export const useDoc = create<DocState>()(
         addStation: (x, y, name) => {
           const id = ids.stationId();
           const finalName = name ?? randomStationName();
-          set((s) => T.addStation(s, x, y, id, finalName));
+          // Stamp + tag the new station with the designated default 'station'
+          // style (its typography), like every other add action.
+          set((s) => S.applyDefaultStyle(T.addStation(s, x, y, id, finalName), 'station', id));
           return id;
         },
         renameStation: (id, name) => set((s) => T.renameStation(s, id, name)),
@@ -800,15 +811,8 @@ export const useDoc = create<DocState>()(
         loadDoc: (doc) => set({ ...DEFAULT_DOC, ...doc }),
         setDocName: (name) => set((s) => T.setDocName(s, name)),
         setCurveRadius: (r) => set((s) => T.setCurveRadius(s, r)),
-        setLabelFontSize: (n) => set((s) => T.setLabelFontSize(s, n)),
-        setLabelWeight: (w) => set((s) => T.setLabelWeight(s, w)),
-        setLabelLeading: (n) => set((s) => T.setLabelLeading(s, n)),
-        setLabelTracking: (n) => set((s) => T.setLabelTracking(s, n)),
-        setStationLabelBold: (stationId, bold) =>
-          set((s) => T.setStationLabelBold(s, stationId, bold)),
-        setStationLabelItalic: (stationId, italic) =>
-          set((s) => T.setStationLabelItalic(s, stationId, italic)),
-        setLabelItalic: (i) => set((s) => T.setLabelItalic(s, i)),
+        updateStationLabelStyle: (stationId, patch) =>
+          set((s) => T.updateStationLabelStyle(s, stationId, patch)),
         setActivePalettes: (idsArr) =>
           set((s) => T.setActivePalettes(s, idsArr, useCustomPalettes.getState().palettes)),
         togglePalette: (id) =>
@@ -832,8 +836,8 @@ export const useDoc = create<DocState>()(
       {
         name: 'vignelli-map-doc-v1',
         storage: createJSONStorage(() => localStorage),
-        version: 12,
-        // Version migration chain v0 → v12 lives in `migrateDoc` (above), which
+        version: 13,
+        // Version migration chain v0 → v13 lives in `migrateDoc` (above), which
         // is exported and unit-tested. See its doc comment for each step.
         migrate: (persisted, version) => migrateDoc(persisted, version),
         partialize: (s) => pickDocSnapshot(s),

@@ -5,7 +5,6 @@ import { waypointLabelRectLocal } from '../geometry/waypointLozenge';
 import { stopHalfOf } from '../model/lineWidth';
 import { effectiveStationLabelStyle } from '../model/transforms';
 import { useViewportStore } from '../state/viewportStore';
-import { useDocLabelStyle } from './useDocLabelStyle';
 import { useStationInteraction } from './useStationInteraction';
 
 /**
@@ -38,7 +37,6 @@ export function StationHitArea({
   // background and swallow the drag.
   proxy?: boolean;
 }) {
-  const docStyle = useDocLabelStyle();
   const { handlers, cursor, hitless } = useStationInteraction(station, onStartDrag, lines);
   const showWaypoints = useViewportStore((s) => s.showWaypoints);
 
@@ -49,17 +47,13 @@ export function StationHitArea({
   const hideLabelRect = !!station.isWaypoint && !showWaypoints;
   const stopHalf = stopHalfOf(lines);
   const cellsBox = cellsAABBLocal(station, stopHalf, showWaypoints);
-  const lay = labelLayoutLocal(
-    station,
-    effectiveStationLabelStyle(station, docStyle),
-    undefined,
-    stopHalf,
-  );
+  const effStyle = effectiveStationLabelStyle(station);
+  const lay = labelLayoutLocal(station, effStyle, undefined, stopHalf);
   const labelHitTransform = `rotate(${station.label.rotation * 45} ${lay.anchorX} ${lay.anchorY})`;
   // A revealed waypoint's label is the WP lozenge, so its clickable rect is the
   // pill's box (matching the paint), not the invisible name's.
   const labelRect = revealedWaypoint
-    ? waypointLabelRectLocal(lay, docStyle.fontSize)
+    ? waypointLabelRectLocal(lay, effStyle.fontSize)
     : { x: lay.hitX, y: lay.hitY, w: lay.hitW, h: lay.hitH };
 
   const hitProps = {

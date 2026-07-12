@@ -117,7 +117,7 @@ describe('App keyboard shortcuts: inForm guard routing', () => {
     const stationsBefore = Object.keys(useDoc.getState().stations).length;
 
     await user.click(screen.getByRole('button', { name: 'Options' }));
-    const slider = screen.getByRole('slider', { name: /font size/i });
+    const slider = screen.getByRole('slider', { name: /curve radius/i });
     slider.focus();
 
     fireEvent.keyDown(slider, { key: 'z', ctrlKey: true });
@@ -312,8 +312,8 @@ describe('App keyboard shortcuts: blur-then-undo', () => {
     const user = userEvent.setup();
     render(<App />);
     await user.click(screen.getByRole('button', { name: 'Options' }));
-    const slider = screen.getByRole('slider', { name: /font size/i }) as HTMLInputElement;
-    const initialFontSize = useDoc.getState().labelFontSize;
+    const slider = screen.getByRole('slider', { name: /curve radius/i }) as HTMLInputElement;
+    const initial = useDoc.getState().curveRadius;
     const pastBaseline = historyDepth();
 
     // Simulate focus → mid-drag → Ctrl+Z without intervening blur. The focus
@@ -325,12 +325,12 @@ describe('App keyboard shortcuts: blur-then-undo', () => {
     // Note: use the real DOM .focus() (not fireEvent.focus) so jsdom updates
     // document.activeElement — the Ctrl+Z handler's blur target depends on it.
     slider.focus();
-    fireEvent.change(slider, { target: { value: String(initialFontSize + 4) } });
-    expect(useDoc.getState().labelFontSize).toBe(initialFontSize + 4);
+    fireEvent.change(slider, { target: { value: String(initial + 4) } });
+    expect(useDoc.getState().curveRadius).toBe(initial + 4);
 
     fireEvent.keyDown(slider, { key: 'z', ctrlKey: true });
 
-    expect(useDoc.getState().labelFontSize).toBe(initialFontSize);
+    expect(useDoc.getState().curveRadius).toBe(initial);
     expect(historyDepth()).toBe(pastBaseline);
     expect(redoDepth()).toBe(1);
   });

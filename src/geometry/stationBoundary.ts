@@ -144,11 +144,9 @@ export function stationLocalToWorld(station: Station, p: Pt): Pt {
  * A station is a hit if either its cells rect or its (rotated) label rect
  * intersects the rect.
  *
- * `style.weight` is the *doc-default* label weight; each station's own bold
- * flag is folded in per-station via `effectiveStationLabelStyle`, so a bold
- * station's label rect is measured at the same (heavier, wider) weight it is
- * actually painted at — otherwise its marquee hit rect would be narrower than
- * the visible label.
+ * Each station's label rect is measured at its OWN effective typography
+ * (`effectiveStationLabelStyle`), so a station's marquee hit rect always
+ * matches the (weight/size/spacing) it is actually painted at.
  *
  * `includeLocked` (here and in the other *ForRect fns) is the alt-marquee
  * recovery path: locked items are click-through on the canvas, so an
@@ -158,7 +156,6 @@ export function stationLocalToWorld(station: Station, p: Pt): Pt {
 export function stationsForRect(
   stations: Record<StationId, Station>,
   rect: AABB,
-  style: LabelStyle = DEFAULT_LABEL_STYLE,
   stopHalf: StopHalfFn = DEFAULT_STOP_HALF,
   includeLocked = false,
 ): StationId[] {
@@ -167,7 +164,7 @@ export function stationsForRect(
     const st = stations[id];
     // Locked stations are excluded from marquee selection (mirrors polygons).
     if (st.locked && !includeLocked) continue;
-    const b = stationBoundaryRectsLocal(st, effectiveStationLabelStyle(st, style), stopHalf);
+    const b = stationBoundaryRectsLocal(st, effectiveStationLabelStyle(st), stopHalf);
     const cellsWorld = b.cells.map((p) => stationLocalToWorld(st, p));
     if (rectIntersectsPolygon(rect, cellsWorld)) {
       hits.push(id);

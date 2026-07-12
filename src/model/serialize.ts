@@ -1,8 +1,15 @@
 import {
   DEFAULT_DOC,
   DEFAULT_STYLES,
+  LABEL_FONT_SIZE_DEFAULT,
+  LABEL_LEADING_DEFAULT,
+  LABEL_TRACKING_DEFAULT,
+  LABEL_WEIGHT_DEFAULT,
+  STATION_LABEL_STYLE_DEFAULTS,
   TEXT_LABEL_COLOR_DEFAULT,
   TEXT_LABEL_DARK_COLOR_DEFAULT,
+  bumpWeightByIndex,
+  canonicalStationLabelStyle,
   isLabelWeight,
   withTransferOverride,
 } from './transforms';
@@ -43,6 +50,7 @@ import type {
   Polygon,
   RouteBulletShape,
   Station,
+  StationStyleProps,
   StopCell,
   StopOrientation,
   StyleDef,
@@ -304,6 +312,10 @@ export function parse(json: string, custom: readonly Palette[] = []): ParseResul
   merged = bakeLegacyTransferSettings(merged);
   const cleanedTransfers = sanitizeTransferStyles(merged.transfers);
   if (cleanedTransfers.changed) merged.transfers = cleanedTransfers.transfers;
+  // Fold the retired doc-level station-label font settings into per-station
+  // typography, seeding + adopting the Default station style (runs after the
+  // style invariants so styleDefaults.station resolves).
+  merged = bakeLegacyLabelSettings(merged);
   // Version-gated (non-idempotent) rewrite: files saved before the pipe
   // bullet grammar carry `<X>` circle tokens and unescaped literal pipes.
   if ((typeof file.version === 'number' ? file.version : 1) < 2) {
@@ -847,6 +859,121 @@ export function bakeLegacyTransferSettings<
 }
 
 /**
+ * Fold the retired doc-level station-label font settings (labelFontSize/
+ * labelWeight/labelItalic/labelLeading/labelTracking) into per-station
+ * typography, mirroring `bakeLegacyTransferSettings`. For each station the
+ * effective look under the OLD model is baked onto its own fields (with the
+ * collapse-at-default rule), and the per-station `labelBold` (+2 weight step) /
+ * `labelItalic` (OR) flags are consumed and dropped.
+ *
+ * The settings' MAP-WIDE role moves to the DESIGNATED default station style:
+ * while it still wears untouched factory props (backfilled/injected by
+ * `ensureStyleInvariants` before this runs), it is seeded from the legacy BASE
+ * settings so newly dropped stations keep the old look — and any station whose
+ * baked look matches it is TAGGED here, so default-looking stations stay on the
+ * Default even on the styles-present load path (where the general
+ * `adoptDefaultStyles` is gated off). Guarded by the presence of any legacy
+ * field, so it never touches a post-retirement save (idempotent).
+ */
+export function bakeLegacyLabelSettings<
+  T extends {
+    stations?: Record<string, Station>;
+    styles?: Record<string, StyleDef>;
+    styleDefaults?: Record<StyleKind, string>;
+  },
+>(doc: T): T {
+  const raw = doc as Record<string, unknown>;
+  const hasLegacy =
+    'labelFontSize' in raw ||
+    'labelWeight' in raw ||
+    'labelItalic' in raw ||
+    'labelLeading' in raw ||
+    'labelTracking' in raw;
+  if (!hasLegacy) return doc;
+  const num = (v: unknown, fb: number): number =>
+    typeof v === 'number' && Number.isFinite(v) ? v : fb;
+  const legacy: StationStyleProps = {
+    fontSize: num(raw.labelFontSize, LABEL_FONT_SIZE_DEFAULT),
+    weight: isLabelWeight(raw.labelWeight) ? raw.labelWeight : LABEL_WEIGHT_DEFAULT,
+    italic: raw.labelItalic === true,
+    leading: num(raw.labelLeading, LABEL_LEADING_DEFAULT),
+    tracking: num(raw.labelTracking, LABEL_TRACKING_DEFAULT),
+  };
+  // Seed the designated default station style from the legacy BASE settings
+  // (weight un-bumped) while it still wears untouched factory props.
+  let styles = doc.styles;
+  const targetId = doc.styleDefaults?.station;
+  const target = styles && targetId !== undefined ? styles[targetId] : undefined;
+  if (styles && targetId !== undefined && target?.kind === 'station') {
+    const factory = DEFAULT_STYLES['default-station'];
+    const seeded = canonicalStationLabelStyle(legacy);
+    if (
+      factory &&
+      stylePropsEqual('station', target.props, factory.props) &&
+      !stylePropsEqual('station', seeded, target.props)
+    ) {
+      styles = { ...styles, [targetId]: { ...target, props: seeded } };
+    }
+  }
+  // The default style's post-seed props — the adoption target.
+  const defaultId = target?.kind === 'station' ? targetId : undefined;
+  const defaultProps =
+    defaultId !== undefined ? (styles?.[defaultId] as StyleDef | undefined)?.props : undefined;
+  const stations: Record<string, Station> = {};
+  for (const id of Object.keys(doc.stations ?? {})) {
+    const rawSt = (doc.stations as Record<string, Station>)[id] as unknown as Record<
+      string,
+      unknown
+    >;
+    const bold = rawSt.labelBold === true;
+    const italicFlag = rawSt.labelItalic === true;
+    const eff = canonicalStationLabelStyle({
+      fontSize: legacy.fontSize,
+      weight: bold ? bumpWeightByIndex(legacy.weight, 2) : legacy.weight,
+      italic: legacy.italic || italicFlag,
+      leading: legacy.leading,
+      tracking: legacy.tracking,
+    });
+    // Strip the legacy flags and any prior typography/tag, then re-apply the
+    // baked look with the collapse-at-default rule.
+    const {
+      labelBold: _b,
+      labelItalic: _i,
+      fontSize: _f,
+      weight: _w,
+      italic: _it,
+      leading: _l,
+      tracking: _tr,
+      styleId: _sid,
+      ...restSt
+    } = rawSt;
+    const next: Record<string, unknown> = { ...restSt };
+    if (eff.fontSize !== STATION_LABEL_STYLE_DEFAULTS.fontSize) next.fontSize = eff.fontSize;
+    if (eff.weight !== STATION_LABEL_STYLE_DEFAULTS.weight) next.weight = eff.weight;
+    if (eff.italic !== STATION_LABEL_STYLE_DEFAULTS.italic) next.italic = eff.italic;
+    if (eff.leading !== STATION_LABEL_STYLE_DEFAULTS.leading) next.leading = eff.leading;
+    if (eff.tracking !== STATION_LABEL_STYLE_DEFAULTS.tracking) next.tracking = eff.tracking;
+    if (defaultId !== undefined && defaultProps && stylePropsEqual('station', eff, defaultProps)) {
+      next.styleId = defaultId;
+    }
+    stations[id] = next as unknown as Station;
+  }
+  const {
+    labelFontSize: _1,
+    labelWeight: _2,
+    labelItalic: _3,
+    labelLeading: _4,
+    labelTracking: _5,
+    ...rest
+  } = raw;
+  return {
+    ...rest,
+    ...(doc.stations ? { stations } : {}),
+    ...(styles !== doc.styles ? { styles } : {}),
+  } as T;
+}
+
+/**
  * v9 → v10 style-def hygiene for the localStorage rehydrate: docs persisted
  * by the round-1 Styles build carry textLabel defs with the since-dropped
  * width/leading/tracking keys. Rebuild every def through the canonical
@@ -942,6 +1069,7 @@ const KNOWN_STYLE_KINDS = new Set<StyleKind>([
   'polygon',
   'routeBullet',
   'transfer',
+  'station',
 ]);
 const KNOWN_TEXT_ALIGNS = new Set<TextLabelAlign>(['left', 'center', 'right', 'justify']);
 const KNOWN_BULLET_SHAPES = new Set<RouteBulletShape>(['circle', 'square', 'diamond']);
@@ -1035,6 +1163,24 @@ function sanitizeStyleProps(kind: StyleKind, raw: unknown): StyleDef['props'] | 
       if (thickness === undefined || color === undefined) return undefined;
       if (strokeWidth === undefined || strokeColor === undefined) return undefined;
       return canonicalStyleProps('transfer', { thickness, color, strokeWidth, strokeColor });
+    }
+    case 'station': {
+      // All five typography fields are required in a style def (concrete, even
+      // for leading/tracking which are optional on the item).
+      const fontSize = finiteNum(o.fontSize);
+      const italic = asBool(o.italic);
+      const leading = finiteNum(o.leading);
+      const tracking = finiteNum(o.tracking);
+      if (fontSize === undefined || italic === undefined) return undefined;
+      if (leading === undefined || tracking === undefined) return undefined;
+      if (!isLabelWeight(o.weight)) return undefined;
+      return canonicalStyleProps('station', {
+        fontSize,
+        weight: o.weight,
+        italic,
+        leading,
+        tracking,
+      });
     }
   }
 }
@@ -1131,16 +1277,18 @@ export function pruneDanglingStyleRefs(doc: MapDoc): MapDoc {
   const polygons = pruneColl(doc.polygons, 'polygon');
   const routeBullets = pruneColl(doc.routeBullets, 'routeBullet');
   const transfers = pruneColl(doc.transfers, 'transfer');
+  const stations = pruneColl(doc.stations, 'station');
   if (
     lines === doc.lines &&
     textLabels === doc.textLabels &&
     polygons === doc.polygons &&
     routeBullets === doc.routeBullets &&
-    transfers === doc.transfers
+    transfers === doc.transfers &&
+    stations === doc.stations
   ) {
     return doc;
   }
-  return { ...doc, lines, textLabels, polygons, routeBullets, transfers };
+  return { ...doc, lines, textLabels, polygons, routeBullets, transfers, stations };
 }
 
 function sanitizeSegments(line: Line): Line {

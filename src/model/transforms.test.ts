@@ -1421,60 +1421,12 @@ describe('setCurveRadius / clearAll', () => {
   });
 });
 
-describe('label font/style settings', () => {
+describe('station label typography constants', () => {
   it('exposes font-size bounds, default, and step as constants', () => {
     expect(T.LABEL_FONT_SIZE_MIN).toBe(2);
     expect(T.LABEL_FONT_SIZE_MAX).toBe(24);
     expect(T.LABEL_FONT_SIZE_DEFAULT).toBe(12);
     expect(T.FONT_SIZE_STEP).toBe(0.25);
-  });
-
-  it('DEFAULT_DOC has sensible defaults', () => {
-    expect(T.DEFAULT_DOC.labelFontSize).toBe(12);
-    expect(T.DEFAULT_DOC.labelWeight).toBe(400);
-    expect(T.DEFAULT_DOC.labelItalic).toBe(false);
-  });
-
-  it('setLabelFontSize sets a valid value', () => {
-    const doc = makeDoc({});
-    expect(T.setLabelFontSize(doc, 16).labelFontSize).toBe(16);
-  });
-
-  it('setLabelFontSize clamps below the minimum', () => {
-    const doc = makeDoc({});
-    expect(T.setLabelFontSize(doc, 0).labelFontSize).toBe(2);
-    expect(T.setLabelFontSize(doc, -5).labelFontSize).toBe(2);
-  });
-
-  it('setLabelFontSize does NOT clamp above the slider max (textbox accepts arbitrary)', () => {
-    const doc = makeDoc({});
-    expect(T.setLabelFontSize(doc, 99).labelFontSize).toBe(99);
-  });
-
-  it('setLabelFontSize snaps fractional values to the nearest 0.25', () => {
-    const doc = makeDoc({});
-    expect(T.setLabelFontSize(doc, 12.13).labelFontSize).toBe(12.25);
-    expect(T.setLabelFontSize(doc, 12.1).labelFontSize).toBe(12);
-    expect(T.setLabelFontSize(doc, 12.7).labelFontSize).toBe(12.75);
-    expect(T.setLabelFontSize(doc, 12.5).labelFontSize).toBe(12.5);
-  });
-
-  it('setLabelWeight accepts the supported Helvetica Neue weights', () => {
-    const doc = makeDoc({});
-    expect(T.setLabelWeight(doc, 100).labelWeight).toBe(100);
-    expect(T.setLabelWeight(doc, 700).labelWeight).toBe(700);
-    expect(T.setLabelWeight(doc, 900).labelWeight).toBe(900);
-  });
-
-  it('setLabelWeight is a no-op when the value is unchanged (reference equality)', () => {
-    const doc = makeDoc({ labelWeight: 500 });
-    expect(T.setLabelWeight(doc, 500)).toBe(doc);
-  });
-
-  it('setLabelItalic flips the boolean', () => {
-    const doc = makeDoc({});
-    expect(T.setLabelItalic(doc, true).labelItalic).toBe(true);
-    expect(T.setLabelItalic(T.setLabelItalic(doc, true), false).labelItalic).toBe(false);
   });
 
   it('exposes leading/tracking bounds, defaults, and steps as constants', () => {
@@ -1488,35 +1440,14 @@ describe('label font/style settings', () => {
     expect(T.LABEL_TRACKING_DEFAULT).toBe(0);
   });
 
-  it('DEFAULT_DOC leading/tracking default to the neutral 1 / 0', () => {
-    expect(T.DEFAULT_DOC.labelLeading).toBe(1);
-    expect(T.DEFAULT_DOC.labelTracking).toBe(0);
-  });
-
-  it('setLabelLeading snaps to the 0.05 step and clamps at 0 (no upper clamp)', () => {
-    const doc = makeDoc({});
-    expect(T.setLabelLeading(doc, 1.2).labelLeading).toBe(1.2);
-    // Snaps to the nearest 0.05 with no float dust (1.17 → 1.15).
-    expect(T.setLabelLeading(doc, 1.17).labelLeading).toBe(1.15);
-    // Clamps at the bottom only; the spinbutton accepts values above the max.
-    expect(T.setLabelLeading(doc, -3).labelLeading).toBe(0);
-    expect(T.setLabelLeading(doc, 5).labelLeading).toBe(5);
-  });
-
-  it('setLabelTracking snaps to the 0.001 step and clamps at the -0.1 floor', () => {
-    const doc = makeDoc({});
-    expect(T.setLabelTracking(doc, 0.2).labelTracking).toBe(0.2);
-    expect(T.setLabelTracking(doc, 0.123).labelTracking).toBe(0.123);
-    // Below the -0.1 floor is a hard clamp.
-    expect(T.setLabelTracking(doc, -1).labelTracking).toBe(-0.1);
-    // The spinbutton accepts values above the slider max.
-    expect(T.setLabelTracking(doc, 1).labelTracking).toBe(1);
-  });
-
-  it('setLabelLeading / setLabelTracking are no-ops when unchanged (reference equality)', () => {
-    const doc = makeDoc({ labelLeading: 1.5, labelTracking: 0.05 });
-    expect(T.setLabelLeading(doc, 1.5)).toBe(doc);
-    expect(T.setLabelTracking(doc, 0.05)).toBe(doc);
+  it('STATION_LABEL_STYLE_DEFAULTS is the LABEL_* family as the factory station props', () => {
+    expect(T.STATION_LABEL_STYLE_DEFAULTS).toEqual({
+      fontSize: 12,
+      weight: 400,
+      italic: false,
+      leading: 1,
+      tracking: 0,
+    });
   });
 });
 
@@ -1643,113 +1574,26 @@ describe('bumpWeightByIndex', () => {
   });
 });
 
-describe('resolveStationLabelWeight', () => {
-  it('returns the default weight when stationBold is undefined or false', () => {
-    expect(T.resolveStationLabelWeight(400, undefined)).toBe(400);
-    expect(T.resolveStationLabelWeight(400, false)).toBe(400);
-    expect(T.resolveStationLabelWeight(500, undefined)).toBe(500);
-  });
-
-  it('bumps two indices heavier when stationBold is true', () => {
-    expect(T.resolveStationLabelWeight(400, true)).toBe(700); // Regular → Bold
-    expect(T.resolveStationLabelWeight(300, true)).toBe(500); // Light → Medium
-    expect(T.resolveStationLabelWeight(200, true)).toBe(400); // UltraLight → Roman
-  });
-
-  it('saturates at Black (900) when default is near or at the top', () => {
-    expect(T.resolveStationLabelWeight(800, true)).toBe(900);
-    expect(T.resolveStationLabelWeight(900, true)).toBe(900);
-  });
-});
-
 describe('effectiveStationLabelStyle', () => {
-  const docStyle = {
-    fontSize: 12,
-    weight: 400 as const,
-    italic: true,
-    leading: 1.1,
-    tracking: 0.02,
-  };
-
-  it('folds the per-station bold flag into the weight, passing every other field through', () => {
-    expect(T.effectiveStationLabelStyle({ labelBold: true }, docStyle)).toEqual({
+  it('resolves a station with no typography fields to the LABEL_* defaults', () => {
+    expect(T.effectiveStationLabelStyle(makeStation({ id: 'a' }))).toEqual({
       fontSize: 12,
-      weight: 700, // 400 (Regular) bumped two indices → Bold
+      weight: 400,
+      italic: false,
+      leading: 1,
+      tracking: 0,
+    });
+  });
+
+  it("reads the station's own typography, resolving absent fields to defaults", () => {
+    const st = makeStation({ id: 'a', fontSize: 20, weight: 700, italic: true });
+    expect(T.effectiveStationLabelStyle(st)).toEqual({
+      fontSize: 20,
+      weight: 700,
       italic: true,
-      leading: 1.1,
-      tracking: 0.02,
+      leading: 1,
+      tracking: 0,
     });
-  });
-
-  it('leaves the doc weight untouched when the station is not bold', () => {
-    expect(T.effectiveStationLabelStyle({ labelBold: false }, docStyle).weight).toBe(400);
-    expect(T.effectiveStationLabelStyle({ labelBold: undefined }, docStyle).weight).toBe(400);
-  });
-
-  it('does not mutate the passed-in doc style', () => {
-    const style = { ...docStyle };
-    T.effectiveStationLabelStyle({ labelBold: true }, style);
-    expect(style.weight).toBe(400);
-  });
-});
-
-describe('setStationLabelBold', () => {
-  it('writes labelBold:true on the station when called with true', () => {
-    const doc = makeDoc({ stations: [makeStation({ id: 'a' })] });
-    const next = T.setStationLabelBold(doc, 'a', true);
-    expect(next.stations.a.labelBold).toBe(true);
-  });
-
-  it('clears labelBold from the station when called with false', () => {
-    const doc = makeDoc({
-      stations: [{ ...makeStation({ id: 'a' }), labelBold: true }],
-    });
-    const next = T.setStationLabelBold(doc, 'a', false);
-    expect(next.stations.a.labelBold).toBeFalsy();
-    // Specifically: omitted, not set to false. Keeps existing saves clean.
-    expect('labelBold' in next.stations.a).toBe(false);
-  });
-
-  it('is a no-op (reference equality) when the value is unchanged', () => {
-    const doc = makeDoc({ stations: [makeStation({ id: 'a' })] });
-    expect(T.setStationLabelBold(doc, 'a', false)).toBe(doc);
-    const bolded = T.setStationLabelBold(doc, 'a', true);
-    expect(T.setStationLabelBold(bolded, 'a', true)).toBe(bolded);
-  });
-
-  it('is a no-op for missing ids', () => {
-    const doc = makeDoc({ stations: [makeStation({ id: 'a' })] });
-    expect(T.setStationLabelBold(doc, 'nope', true)).toBe(doc);
-  });
-});
-
-describe('setStationLabelItalic', () => {
-  it('writes labelItalic:true on the station when called with true', () => {
-    const doc = makeDoc({ stations: [makeStation({ id: 'a' })] });
-    const next = T.setStationLabelItalic(doc, 'a', true);
-    expect(next.stations.a.labelItalic).toBe(true);
-  });
-
-  it('clears labelItalic from the station when called with false', () => {
-    const doc = makeDoc({
-      stations: [{ ...makeStation({ id: 'a' }), labelItalic: true }],
-    });
-    const next = T.setStationLabelItalic(doc, 'a', false);
-    expect(next.stations.a.labelItalic).toBeFalsy();
-    // Specifically: omitted, not set to false. Keeps existing saves clean.
-    expect('labelItalic' in next.stations.a).toBe(false);
-  });
-
-  it('is a no-op (reference equality) when the value is unchanged', () => {
-    const doc = makeDoc({ stations: [makeStation({ id: 'a' })] });
-    expect(T.setStationLabelItalic(doc, 'a', false)).toBe(doc);
-    const italicized = T.setStationLabelItalic(doc, 'a', true);
-    expect(T.setStationLabelItalic(italicized, 'a', true)).toBe(italicized);
-  });
-
-  it('is a no-op for missing ids', () => {
-    const doc = makeDoc({ stations: [makeStation({ id: 'a' })] });
-    expect(T.setStationLabelItalic(doc, 'nope', true)).toBe(doc);
   });
 });
 

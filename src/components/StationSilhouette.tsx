@@ -11,7 +11,6 @@ import {
   SELECTION_WASH_OPACITY,
   selectionOutlineTones,
 } from './selectionStyle';
-import { useDocLabelStyle } from './useDocLabelStyle';
 
 const SELECTION_CORNER_RADIUS = 5;
 const MATCH_STROKE_COLOR = '#888';
@@ -38,7 +37,6 @@ export function StationSilhouette({
    *  stroke). The layout-edit focus paints a white outline above its dim. */
   strokeColor?: string;
 }) {
-  const docStyle = useDocLabelStyle();
   const lines = useDoc((s) => s.lines);
   const editingStationId = useSelection((s) => s.editingStationId);
   const themeColors = useThemeColors();
@@ -56,7 +54,7 @@ export function StationSilhouette({
   // must wrap it).
   const { cells, label: labelPoly } = stationBoundaryRectsLocal(
     station,
-    effectiveStationLabelStyle(station, docStyle),
+    effectiveStationLabelStyle(station),
     stopHalfOf(lines),
     showWaypoints,
   );

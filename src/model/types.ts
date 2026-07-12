@@ -176,16 +176,21 @@ export interface Station {
   // simply treats all bullets as hidden while the flag is on. Omitted/false
   // means "regular station".
   isWaypoint?: boolean;
-  // Per-station bold flag. When true, the rendered weight is bumped two
-  // steps along LABEL_WEIGHT_VALUES (Regular → Bold, Light → Roman, etc.),
-  // clamped at Black (900). Omitted/false means "use the doc's labelWeight
-  // as-is".
-  labelBold?: boolean;
-  // Per-station italic flag. When true, this station's name renders italic
-  // even if the doc's global `labelItalic` is off. Combined with the global
-  // flag (OR): the label is italic when either is set. Omitted/false means
-  // "use the doc's labelItalic as-is".
-  labelItalic?: boolean;
+  // Per-station name typography. All optional with collapse-at-default: an
+  // absent field means "the LABEL_* default" (fontSize→LABEL_FONT_SIZE_DEFAULT,
+  // weight→LABEL_WEIGHT_DEFAULT, italic→false, leading→LABEL_LEADING_DEFAULT,
+  // tracking→LABEL_TRACKING_DEFAULT), so a station wearing the factory Default
+  // style stores none of them. `updateStationLabelStyle` drops a field when it
+  // lands on its default, mirroring the transfer-override and
+  // TextLabel.leading/tracking patterns. All five are covered by the station
+  // StyleDef; editing any of them detaches the styleId tag. `weight` is one of
+  // the Helvetica Neue ladder values (see TextLabelWeight); the hover bump and
+  // append-starter styling are applied at paint time, not stored here.
+  fontSize?: number;
+  weight?: TextLabelWeight;
+  italic?: boolean;
+  leading?: number;
+  tracking?: number;
   // When locked, the station can't be dragged, marquee-selected, group-towed,
   // arrow-nudged, rotated, or deleted from the canvas — it can still be click-selected
   // (so its inspector, including the lock toggle, stays reachable) and remains
@@ -199,6 +204,11 @@ export interface Station {
   // missing ⇒ the box auto-sizes to its content. Clamped to a positive integer
   // by `setStationEditorHeight`. Mirrors `TextLabel.editorHeight`.
   editorHeight?: number;
+  // Live link to a StyleDef of kind 'station' — covered fields are the name
+  // typography (fontSize/weight/italic/leading/tracking), NOT identity
+  // (name/position/rotation/stops/label/waypoint/lock/editorHeight). Same
+  // contract as `Line.styleId`.
+  styleId?: string;
 }
 
 // Visual style for a single segment of a line. `solid` is the historical
@@ -486,21 +496,14 @@ export interface MapDoc {
   // kind; INVARIANT: each entry resolves to a style of that kind (repaired on
   // load, re-pointed when the default style is deleted).
   styleDefaults: Record<StyleKind, string>;
-  // Global station-label styling. Applies to every station name; line tags
-  // and route bullets keep their always-bold pill styling. `labelWeight` is
-  // one of the Helvetica Neue weights we ship in /public/fonts/ (no 600).
-  // Per-station `labelBold` bumps the rendered weight two steps heavier on
-  // top of this default.
-  labelFontSize: number;
-  labelWeight: TextLabelWeight;
-  labelItalic: boolean;
-  // Global station-label line-spacing multiplier (1 = the default 1.2em
-  // spacing) and letter-spacing in em (0 = font-normal). Apply to every
-  // station name, mirroring the per-label `leading`/`tracking` on TextLabel.
-  // Absent in saves predating the fields — backfilled to the neutral 1 / 0 via
-  // DEFAULT_DOC.
-  labelLeading: number;
-  labelTracking: number;
+  // NOTE: there are no doc-level station-label font settings anymore — the
+  // five labelFontSize/labelWeight/labelItalic/labelLeading/labelTracking
+  // fields were retired. Station name typography is per-station (Station's
+  // fontSize/weight/italic/leading/tracking), and the map-wide default is the
+  // DESIGNATED default 'station' style. Saves predating the retirement carry
+  // the five label* fields — baked into per-station values on load
+  // (bakeLegacyLabelSettings / persist v13), mirroring the transfer-settings
+  // retirement below.
   // Which color palettes are available in the line editor. Invariant:
   // never empty (enforced by transforms / parse sanitiser).
   activePalettes: PaletteId[];
@@ -632,7 +635,7 @@ export type TransferStylePatch = Partial<
 // ---------- Styles (named, reusable per-kind formatting presets) ----------
 
 // Which item collection a style preset applies to.
-export type StyleKind = 'line' | 'textLabel' | 'polygon' | 'routeBullet' | 'transfer';
+export type StyleKind = 'line' | 'textLabel' | 'polygon' | 'routeBullet' | 'transfer' | 'station';
 
 // Style props hold FULLY-RESOLVED effective values (captured by example from
 // an item — see model/styles.ts), so a style is self-contained: applying one
@@ -686,6 +689,20 @@ export interface TransferStyleProps {
   strokeColor: string;
 }
 
+// Per-station name typography. Every value is FULLY-RESOLVED (captured by
+// example — absent per-station optionals resolve through the LABEL_* defaults),
+// so a station style is self-contained like the others. Unlike
+// TextLabelStyleProps, leading and tracking ARE covered here: for stations
+// these were doc-global typography being decentralized (the retired
+// labelLeading/labelTracking), not per-item layout tuning.
+export interface StationStyleProps {
+  fontSize: number;
+  weight: TextLabelWeight;
+  italic: boolean;
+  leading: number;
+  tracking: number;
+}
+
 // Per-kind props lookup, for code generic over StyleKind.
 export interface StylePropsByKind {
   line: LineStyleProps;
@@ -693,6 +710,7 @@ export interface StylePropsByKind {
   polygon: PolygonStyleProps;
   routeBullet: RouteBulletStyleProps;
   transfer: TransferStyleProps;
+  station: StationStyleProps;
 }
 
 // A named, reusable formatting preset stored in the doc (MapDoc.styles).

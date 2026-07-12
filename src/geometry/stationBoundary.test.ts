@@ -67,9 +67,7 @@ describe('stationsForRect — per-stop widths', () => {
     const st = makeStation({ id: 'A', stops: [makeStop('L1', { row: 0, col: 0 })] });
     const rect = { x0: 10, y0: -2, x1: 12, y1: 2 };
     expect(stationsForRect({ A: st }, rect)).toEqual([]);
-    expect(stationsForRect({ A: st }, rect, undefined, stopHalfOf({ L1: { width: 28 } }))).toEqual([
-      'A',
-    ]);
+    expect(stationsForRect({ A: st }, rect, stopHalfOf({ L1: { width: 28 } }))).toEqual(['A']);
   });
 });
 
@@ -227,7 +225,7 @@ describe('stationsForRect', () => {
     const a = { ...stationWithStop('A', 'L1', { x: 0, y: 0 }), locked: true };
     const stations = { A: a };
     const rect = { x0: -100, y0: -100, x1: 100, y1: 100 };
-    expect(stationsForRect(stations, rect, undefined, undefined, true)).toEqual(['A']);
+    expect(stationsForRect(stations, rect, undefined, true)).toEqual(['A']);
   });
 
   it('a waypoint station does NOT match a rect that only overlaps where the label would be', () => {
