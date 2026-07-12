@@ -371,11 +371,21 @@ function TransferStyleEditor({ id, props }: { id: string; props: TransferStylePr
       />
       <div className="row">
         <label htmlFor={`style-${id}-color`}>Color</label>
+        <SunIcon aria-hidden="true" />
         <ColorField
           id={`style-${id}-color`}
           ariaLabel="Transfer color"
-          value={props.color}
-          onChange={(color) => patch({ color })}
+          title="Light mode color"
+          value={props.color.day}
+          onChange={(day) => patch({ color: { day, night: props.color.night } })}
+        />
+        <MoonIcon aria-hidden="true" />
+        <ColorField
+          id={`style-${id}-dark-color`}
+          ariaLabel="Transfer dark color"
+          title="Dark mode color"
+          value={props.color.night}
+          onChange={(night) => patch({ color: { day: props.color.day, night } })}
         />
       </div>
       <NumericFieldRow
@@ -391,11 +401,21 @@ function TransferStyleEditor({ id, props }: { id: string; props: TransferStylePr
       />
       <div className="row">
         <label htmlFor={`style-${id}-stroke-color`}>Stroke color</label>
+        <SunIcon aria-hidden="true" />
         <ColorField
           id={`style-${id}-stroke-color`}
           ariaLabel="Transfer stroke color"
-          value={props.strokeColor}
-          onChange={(strokeColor) => patch({ strokeColor })}
+          title="Light mode stroke"
+          value={props.strokeColor.day}
+          onChange={(day) => patch({ strokeColor: { day, night: props.strokeColor.night } })}
+        />
+        <MoonIcon aria-hidden="true" />
+        <ColorField
+          id={`style-${id}-dark-stroke-color`}
+          ariaLabel="Transfer dark stroke color"
+          title="Dark mode stroke"
+          value={props.strokeColor.night}
+          onChange={(night) => patch({ strokeColor: { day: props.strokeColor.day, night } })}
         />
       </div>
     </div>

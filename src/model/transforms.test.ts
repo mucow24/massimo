@@ -958,13 +958,16 @@ describe('updateLine', () => {
     });
 
     it('skips the rewrite when the old service contains a delimiter character', () => {
+      // `|a|b|` is a real bullet token for service `a|b`. If the delimiter
+      // guard were dropped, the rewrite would mangle it into `|A|`; the guard
+      // must leave the literal text untouched.
       const doc = makeDoc({
         lines: [makeLine({ id: 'L1', service: 'a|b' })],
-        textLabels: [makeTextLabel({ id: 't1', text: 'a|b stays' })],
+        textLabels: [makeTextLabel({ id: 't1', text: '|a|b| here' })],
       });
       const next = T.updateLine(doc, 'L1', { service: 'A' });
       expect(next.lines.L1.service).toBe('A');
-      expect(next.textLabels.t1.text).toBe('a|b stays');
+      expect(next.textLabels.t1.text).toBe('|a|b| here');
     });
   });
 });
@@ -1533,14 +1536,14 @@ describe('per-transfer style overrides', () => {
 
     it('patches several fields at once, leaving the rest tracking', () => {
       const doc = T.updateTransferStyle(baseDoc(), 'x1', {
-        color: '#ff0080',
+        color: { day: '#ff0080', night: '#333333' },
         strokeWidth: 3,
-        strokeColor: '#123456',
+        strokeColor: { day: '#123456', night: '#654321' },
       });
       expect(doc.transfers['x1']).toMatchObject({
-        color: '#ff0080',
+        color: { day: '#ff0080', night: '#333333' },
         strokeWidth: 3,
-        strokeColor: '#123456',
+        strokeColor: { day: '#123456', night: '#654321' },
       });
       expect('thickness' in doc.transfers['x1']).toBe(false);
     });
@@ -1559,15 +1562,29 @@ describe('per-transfer style overrides', () => {
       expect('thickness' in cleared.transfers['x1']).toBe(false);
     });
 
-    it('clears color overrides at the default color the same way', () => {
-      const withOverride = T.updateTransferStyle(baseDoc(), 'x1', { color: '#ff0080' });
-      const cleared = T.updateTransferStyle(withOverride, 'x1', { color: '#000000' });
+    it('clears color overrides only when BOTH day and night match the default', () => {
+      const withOverride = T.updateTransferStyle(baseDoc(), 'x1', {
+        color: { day: '#ff0080', night: '#ff0080' },
+      });
+      // Night still diverges — the override stays.
+      const stillSet = T.updateTransferStyle(withOverride, 'x1', {
+        color: { day: '#000000', night: '#ff0080' },
+      });
+      expect(stillSet.transfers['x1'].color).toEqual({ day: '#000000', night: '#ff0080' });
+      // Both halves back to black — the override collapses.
+      const cleared = T.updateTransferStyle(stillSet, 'x1', {
+        color: { day: '#000000', night: '#000000' },
+      });
       expect('color' in cleared.transfers['x1']).toBe(false);
     });
 
-    it('clears strokeColor overrides at the default STROKE color (not the body color)', () => {
-      const withOverride = T.updateTransferStyle(baseDoc(), 'x1', { strokeColor: '#123456' });
-      const cleared = T.updateTransferStyle(withOverride, 'x1', { strokeColor: '#ffffff' });
+    it('clears strokeColor overrides at the default STROKE color (white, not the body color)', () => {
+      const withOverride = T.updateTransferStyle(baseDoc(), 'x1', {
+        strokeColor: { day: '#123456', night: '#654321' },
+      });
+      const cleared = T.updateTransferStyle(withOverride, 'x1', {
+        strokeColor: { day: '#ffffff', night: '#ffffff' },
+      });
       expect('strokeColor' in cleared.transfers['x1']).toBe(false);
     });
 

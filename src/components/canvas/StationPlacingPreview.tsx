@@ -1,28 +1,13 @@
 import type { Vec2 } from '../../geometry/vec';
 import type { Line, Station, StationId } from '../../model/types';
+import { makeStation } from '../../model/transforms';
 import { StationView } from '../StationView';
 
 const PREVIEW_ID = '__placing_preview__' as StationId;
 const NO_OP = () => {};
 
 export function makePreviewStation(world: Vec2, name: string): Station {
-  return {
-    id: PREVIEW_ID,
-    name,
-    x: world.x,
-    y: world.y,
-    rotation: 0,
-    stops: [],
-    label: {
-      row: 0,
-      col: -1,
-      rotation: 0,
-      offset: 0,
-      offsetPerp: 0,
-      align: 'auto',
-      valign: 'auto-down',
-    },
-  };
+  return makeStation(PREVIEW_ID, world.x, world.y, name);
 }
 
 interface Props {

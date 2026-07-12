@@ -1,3 +1,4 @@
+import { MoonIcon, SunIcon } from '@radix-ui/react-icons';
 import { useDoc } from '../state/store';
 import { type ViewportProjection } from './canvas/screenAnchor';
 import { DraggablePopoverShell } from './DraggablePopoverShell';
@@ -89,11 +90,25 @@ export function TransferPopover({ transfer, worldRect, view, spawnBox, onClose }
       />
       <div className="row">
         <label htmlFor="transfer-color">Color</label>
+        <SunIcon aria-hidden="true" />
         <ColorField
           id="transfer-color"
           ariaLabel="Transfer color"
-          value={style.color}
-          onChange={(color) => updateTransferStyle(transfer.id, { color })}
+          title="Light mode color"
+          value={style.color.day}
+          onChange={(day) =>
+            updateTransferStyle(transfer.id, { color: { day, night: style.color.night } })
+          }
+        />
+        <MoonIcon aria-hidden="true" />
+        <ColorField
+          id="transfer-dark-color"
+          ariaLabel="Transfer dark color"
+          title="Dark mode color"
+          value={style.color.night}
+          onChange={(night) =>
+            updateTransferStyle(transfer.id, { color: { day: style.color.day, night } })
+          }
         />
       </div>
       <hr className="popover-divider" aria-hidden="true" />
@@ -110,11 +125,29 @@ export function TransferPopover({ transfer, worldRect, view, spawnBox, onClose }
       />
       <div className="row">
         <label htmlFor="transfer-stroke-color">Stroke color</label>
+        <SunIcon aria-hidden="true" />
         <ColorField
           id="transfer-stroke-color"
           ariaLabel="Transfer stroke color"
-          value={style.strokeColor}
-          onChange={(strokeColor) => updateTransferStyle(transfer.id, { strokeColor })}
+          title="Light mode stroke"
+          value={style.strokeColor.day}
+          onChange={(day) =>
+            updateTransferStyle(transfer.id, {
+              strokeColor: { day, night: style.strokeColor.night },
+            })
+          }
+        />
+        <MoonIcon aria-hidden="true" />
+        <ColorField
+          id="transfer-dark-stroke-color"
+          ariaLabel="Transfer dark stroke color"
+          title="Dark mode stroke"
+          value={style.strokeColor.night}
+          onChange={(night) =>
+            updateTransferStyle(transfer.id, {
+              strokeColor: { day: style.strokeColor.day, night },
+            })
+          }
         />
       </div>
       <PopoverFooter noun="transfer" onDelete={onDelete} />

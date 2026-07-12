@@ -227,7 +227,12 @@ const STYLE_PROPS_DEFAULTS: StylePropsByKind = {
     closed: true,
   },
   routeBullet: { shape: 'circle', size: 14 },
-  transfer: { thickness: 2, color: '#000000', strokeWidth: 0, strokeColor: '#ffffff' },
+  transfer: {
+    thickness: 2,
+    color: { day: '#000000', night: '#000000' },
+    strokeWidth: 0,
+    strokeColor: { day: '#ffffff', night: '#ffffff' },
+  },
 };
 
 // A named style preset of the given kind. Props default to the app's

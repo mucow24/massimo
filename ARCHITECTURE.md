@@ -1,6 +1,6 @@
 # Massimo — Architecture
 
-**Up to date as of commit `041e5bf` (2026-07-11) — verified 2026-07-12 06:43 -0400 against the live source.**
+**Up to date as of commit `be94293` (2026-07-12) — verified 2026-07-12 against the live source (code-health pass; no architectural changes).**
 
 > A fast-bootstrap reference for understanding the codebase: the ins, outs, gotchas, and
 > caveats. Written for an AI assistant (or new contributor) who needs the full picture
@@ -425,7 +425,11 @@ deleting the station/line or removing that line's stop). Default styling (thickn
 optional halo) comes from the constant `TRANSFER_STYLE_DEFAULTS` — there are **no doc-level
 transfer settings** (see the MapDoc note above); the four optional fields are per-transfer
 overrides with the dot-style contract — absent ⇒ track the default, and `updateTransferStyle`
-drops a value equal to the default. Map-wide restyling is the designated **Default** transfer
+drops a value equal to the default. `color`/`strokeColor` are **theme-aware `DayNightColor`s**
+(`{day, night}`, the same abstraction dot fill/stroke use) — day paints on the light canvas,
+night on the dark; the whole override drops only when **both** halves match the default
+(black/black body, white/white outline). `TransferLayer` resolves them to hex per the active
+theme via `resolveDayNight`. Map-wide restyling is the designated **Default** transfer
 style preset in `doc.styles`, not a doc field
 ([transferStyle.ts](src/model/transferStyle.ts), `updateTransferStyle`).
 
@@ -508,6 +512,7 @@ disjoint fields (order immaterial except where noted), never mutating the input:
 | `v<10`      | `migrateV9Styles` (rebuild round-1 style defs on the canonical grids, materialize an explicit `styles` record), then — **after** the style-invariant pass below — `bakeLegacyTransferSettings` |
 | `v<11`      | `adoptDefaultStyles` (tag untagged, default-looking items — mirrors Path A's step 14)                                                      |
 | `v<12`      | nothing of its own — the bump just forces pre-designation storage through migrate so the style-invariant pass backfills `styleDefaults`    |
+| `v<13`      | `backfillTransferDayNightColors` (transfer per-transfer overrides + transfer StyleDef props: legacy single-color strings → `{day, night}` pairs) — ordered **after** the `v<10` bake, **before** the `v<11` adoption (which now compares transfer props by `.day`/`.night`) |
 | (not gated) | `ensureStyleInvariants` whenever `styles !== undefined` — ordered between the `v<10` hygiene and the bake (the bake seeds the _designated_ default transfer style; adoption stamps designated defaults) |
 | (not gated) | `validActivePalettes` whenever `activePalettes !== undefined`                                                                              |
 

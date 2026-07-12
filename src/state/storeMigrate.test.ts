@@ -288,7 +288,8 @@ describe('migrateDoc', () => {
       );
       const t = (out.transfers as Record<string, Record<string, unknown>>).x1;
       expect(t.thickness).toBe(7);
-      expect(t.color).toBe('#abcdef');
+      // The legacy single color becomes a day/night pair (both halves).
+      expect(t.color).toEqual({ day: '#abcdef', night: '#abcdef' });
       // Settings equal to the constants leave no override behind.
       expect('strokeWidth' in t).toBe(false);
       expect('strokeColor' in t).toBe(false);
@@ -346,7 +347,10 @@ describe('migrateDoc', () => {
       const def = Object.values(out.styles).find(
         (d) => d.kind === 'transfer' && d.name === 'Default',
       );
-      expect(def?.props).toMatchObject({ thickness: 7, color: '#000000' });
+      expect(def?.props).toMatchObject({
+        thickness: 7,
+        color: { day: '#000000', night: '#000000' },
+      });
     });
 
     it('seeds the designated default even under a non-factory id', () => {
@@ -371,6 +375,64 @@ describe('migrateDoc', () => {
         9,
       ) as unknown as { styles: Record<string, StyleDef> };
       expect((out.styles['default-transfer'].props as { thickness: number }).thickness).toBe(9);
+    });
+  });
+
+  describe('v12 → v13: transfer colors gain day/night halves', () => {
+    const xfer = (extra: Record<string, unknown> = {}) => ({
+      id: 'x1',
+      a: { stationId: 's1', lineId: null },
+      b: { stationId: 's2', lineId: null },
+      ...extra,
+    });
+
+    it('wraps legacy single-color per-transfer overrides into {day, night} pairs', () => {
+      const out = run(
+        {
+          transfers: {
+            x1: xfer({ color: '#ff0080', strokeColor: '#abcdef' }),
+            x2: { ...xfer(), id: 'x2' }, // tracking — no color overrides
+          },
+        } as Record<string, unknown>,
+        12,
+      );
+      const transfers = out.transfers as Record<string, Record<string, unknown>>;
+      expect(transfers.x1.color).toEqual({ day: '#ff0080', night: '#ff0080' });
+      expect(transfers.x1.strokeColor).toEqual({ day: '#abcdef', night: '#abcdef' });
+      // A tracking transfer stays clean — no color key is materialized.
+      expect('color' in transfers.x2).toBe(false);
+      expect('strokeColor' in transfers.x2).toBe(false);
+    });
+
+    it('wraps transfer StyleDef props too, leaving them concrete pairs', () => {
+      const styles = {
+        t1: {
+          id: 't1',
+          name: 'Link',
+          kind: 'transfer',
+          props: { thickness: 6, color: '#111111', strokeWidth: 2, strokeColor: '#eeeeee' },
+        },
+      };
+      const out = run({ styles } as Record<string, unknown>, 12) as unknown as {
+        styles: Record<string, StyleDef>;
+      };
+      expect(out.styles.t1.props).toMatchObject({
+        thickness: 6,
+        color: { day: '#111111', night: '#111111' },
+        strokeWidth: 2,
+        strokeColor: { day: '#eeeeee', night: '#eeeeee' },
+      });
+    });
+
+    it('leaves an already-day/night doc untouched at version >= 13', () => {
+      const out = run(
+        {
+          transfers: { x1: xfer({ color: { day: '#ff0080', night: '#003300' } }) },
+        } as Record<string, unknown>,
+        13,
+      );
+      const t = (out.transfers as Record<string, Record<string, unknown>>).x1;
+      expect(t.color).toEqual({ day: '#ff0080', night: '#003300' });
     });
   });
 

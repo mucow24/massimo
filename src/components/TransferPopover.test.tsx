@@ -70,15 +70,19 @@ describe('<TransferPopover />', () => {
     expect(await openColorField(user, 'Transfer stroke color')).toHaveValue('#ffffff');
   });
 
-  it('shows the override values when present', async () => {
+  it('shows the override values when present (day + night swatches)', async () => {
     const user = userEvent.setup();
     useDoc.setState({
       ...useDoc.getState(),
-      transfers: { x1: makeTransfer({ id: 'x1', thickness: 6, color: '#ff8800' }) },
+      transfers: {
+        x1: makeTransfer({ id: 'x1', thickness: 6, color: { day: '#ff8800', night: '#4400aa' } }),
+      },
     });
     renderPopover();
     expect(screen.getByRole('slider', { name: 'Thickness' })).toHaveValue('6');
     expect(await openColorField(user, 'Transfer color')).toHaveValue('#ff8800');
+    await user.keyboard('{Escape}');
+    expect(await openColorField(user, 'Transfer dark color')).toHaveValue('#4400aa');
   });
 
   it('editing the thickness writes a per-transfer override', () => {
@@ -101,19 +105,32 @@ describe('<TransferPopover />', () => {
     expect('thickness' in useDoc.getState().transfers.x1).toBe(false);
   });
 
-  it('editing the colors writes/clears the per-transfer overrides', async () => {
+  it('editing the DAY color swatch writes that half; the night half stays at its effective value', async () => {
     const user = userEvent.setup();
     renderPopover();
     await setColorField(user, 'Transfer color', '#ff0080');
-    expect(useDoc.getState().transfers.x1.color).toBe('#ff0080');
-    // Back to the default color → the override is dropped.
+    // Day takes the new color; night tracked the default (#000000) and is kept.
+    expect(useDoc.getState().transfers.x1.color).toEqual({ day: '#ff0080', night: '#000000' });
+    // Back to the default day color → both halves black → the override drops.
     fireEvent.change(screen.getByLabelText('Transfer color hex value'), {
       target: { value: '#000000' },
     });
     expect('color' in useDoc.getState().transfers.x1).toBe(false);
     await user.keyboard('{Escape}');
     await setColorField(user, 'Transfer stroke color', '#123456');
-    expect(useDoc.getState().transfers.x1.strokeColor).toBe('#123456');
+    // Day stroke takes the new color; night tracked the default white and is kept.
+    expect(useDoc.getState().transfers.x1.strokeColor).toEqual({
+      day: '#123456',
+      night: '#ffffff',
+    });
+  });
+
+  it('editing the NIGHT color swatch writes only that half of the override', async () => {
+    const user = userEvent.setup();
+    renderPopover();
+    await setColorField(user, 'Transfer dark color', '#4400aa');
+    // Day still tracks the default black; night takes the new color.
+    expect(useDoc.getState().transfers.x1.color).toEqual({ day: '#000000', night: '#4400aa' });
   });
 
   it('editing the stroke width writes a per-transfer override', () => {
