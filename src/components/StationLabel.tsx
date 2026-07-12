@@ -37,8 +37,10 @@ function WaypointLozengeLabel({
   fontSize: number;
 }) {
   const box = waypointLabelRectLocal(lay, fontSize);
+  // Tagged data-export-exclude: Show-waypoints is a view aid, so the "WP" pill
+  // (painted in place of the name) must never bake into a PNG/SVG/PDF export.
   return (
-    <g transform={`rotate(${rotationDeg} ${lay.anchorX} ${lay.anchorY})`}>
+    <g data-export-exclude="1" transform={`rotate(${rotationDeg} ${lay.anchorX} ${lay.anchorY})`}>
       <WaypointLozenge rightX={box.x + box.w} centerY={box.y + box.h / 2} fontSize={fontSize} />
     </g>
   );

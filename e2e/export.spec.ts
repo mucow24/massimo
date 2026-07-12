@@ -3,6 +3,7 @@ import { readFileSync } from 'node:fs';
 import {
   seedAndOpen,
   stationCenter,
+  fourInLine,
   fourInLineWithBulletsAndLabel,
   type Seed,
 } from './fixtures';
@@ -100,6 +101,31 @@ test.describe('Canvas export', () => {
     const svg = (await readDownload(await exportVia(page, 'SVG'))).toString('utf-8');
     // L2 keeps its true color in the export, not the desaturated variant.
     expect(svg).toMatch(/#EE352E/i);
+  });
+
+  test('a revealed waypoint is never baked into an export (Show-waypoints is a view aid)', async ({
+    page,
+  }) => {
+    await seedAndOpen(page, fourInLine);
+
+    // Mark B a waypoint, then reveal all waypoints from the toolbar.
+    const b = await stationCenter(page, 'B');
+    await page.mouse.click(b.x, b.y);
+    await page.getByRole('button', { name: 'Waypoint', exact: true }).click();
+    await page.getByRole('button', { name: 'Toggle waypoints' }).click();
+
+    // Sanity: the overlay is genuinely showing B's chrome on the live canvas.
+    await expect(page.locator('[data-waypoint-lozenge]')).toHaveCount(1);
+    await expect(
+      page.locator('[data-stop-station="B"][data-stop-shape="circle"]'),
+    ).toBeVisible();
+
+    const svg = (await readDownload(await exportVia(page, 'SVG'))).toString('utf-8');
+    // The revealed waypoint's dot and "WP" lozenge are stripped from the export…
+    expect(svg).not.toContain('data-waypoint-lozenge');
+    expect(svg).not.toContain('data-stop-station="B"');
+    // …while ordinary stations' dots (real map content) survive.
+    expect(svg).toContain('data-stop-station="A"');
   });
 
   test('PNG export renders at 4× the SVG’s natural size', async ({ page }) => {
