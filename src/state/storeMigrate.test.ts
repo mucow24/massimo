@@ -677,6 +677,21 @@ describe('migrateDoc', () => {
       // Membership order (display) is untouched by the backfill.
       expect(line.stations).toEqual(['s1', 's2', 's3']);
     });
+
+    it('backfills line edges even for a doc already stamped at the current version', () => {
+      // Regression: an intermediate build bumped the persist version to 14 and
+      // re-saved docs BEFORE lines were writing `edges`. Those docs are stranded
+      // at v14 with no edges, and a `v < 14` gate can never recover them (14 is
+      // not < 14) — the renderer then crashes on `ln.edges.join(...)`. The
+      // backfill must therefore be a non-gated invariant, firing at v14 too.
+      const out = run(
+        { lines: { L1: { service: 'A', name: 'A line', stations: ['s1', 's2', 's3'] } } },
+        14,
+      );
+      const line = out.lines!.L1 as { edges?: string[]; stations?: string[] };
+      expect(line.edges).toEqual(['s1|s2', 's2|s3']);
+      expect(line.stations).toEqual(['s1', 's2', 's3']);
+    });
   });
 
   describe('v13 → v14: retire doc-level station-label font settings', () => {
