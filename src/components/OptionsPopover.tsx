@@ -3,36 +3,20 @@ import {
   ChevronDownIcon,
   ChevronRightIcon,
   Cross2Icon,
-  FontItalicIcon,
   MixerHorizontalIcon,
 } from '@radix-ui/react-icons';
 import { useDoc } from '../state/store';
-import {
-  FONT_SIZE_STEP,
-  LABEL_FONT_SIZE_MAX,
-  LABEL_FONT_SIZE_MIN,
-  LABEL_LEADING_DEFAULT,
-  LABEL_LEADING_MAX,
-  LABEL_LEADING_MIN,
-  LABEL_LEADING_STEP,
-  LABEL_TRACKING_DEFAULT,
-  LABEL_TRACKING_MAX,
-  LABEL_TRACKING_MIN,
-  LABEL_TRACKING_STEP,
-  LABEL_WEIGHT_NAMES,
-} from '../model/transforms';
-import type { TextLabelWeight } from '../model/types';
 import { PALETTES } from '../model/palettes';
 import { parseCustomPalette } from '../model/customPalette';
 import { useCustomPalettes } from '../state/customPalettes';
-import { NumericFieldRow } from './NumericFieldRow';
 import { useFieldHistory } from './useFieldHistory';
 import { usePopover } from './usePopover';
 
 /**
- * Toolbar button that opens a small floating panel of map-styling options:
- * curve radius, station-label font size, and bold/italic toggles for station
- * labels. Mirrors `Menu`'s open/close behaviour via `usePopover`.
+ * Toolbar button that opens a small floating panel of map-wide options: the
+ * curve radius and the color-palette picker. Station-label typography moved to
+ * per-station styles (the station popover); the map-wide default is the Default
+ * station style in the Styles tab. Mirrors `Menu`'s open/close via `usePopover`.
  */
 export function OptionsPopover() {
   const { open, setOpen, wrapRef } = usePopover();
@@ -40,16 +24,6 @@ export function OptionsPopover() {
 
   const curveRadius = useDoc((s) => s.curveRadius);
   const setCurveRadius = useDoc((s) => s.setCurveRadius);
-  const labelFontSize = useDoc((s) => s.labelFontSize);
-  const setLabelFontSize = useDoc((s) => s.setLabelFontSize);
-  const labelWeight = useDoc((s) => s.labelWeight);
-  const setLabelWeight = useDoc((s) => s.setLabelWeight);
-  const labelItalic = useDoc((s) => s.labelItalic);
-  const setLabelItalic = useDoc((s) => s.setLabelItalic);
-  const labelLeading = useDoc((s) => s.labelLeading);
-  const setLabelLeading = useDoc((s) => s.setLabelLeading);
-  const labelTracking = useDoc((s) => s.labelTracking);
-  const setLabelTracking = useDoc((s) => s.setLabelTracking);
   const activePalettes = useDoc((s) => s.activePalettes);
   const togglePalette = useDoc((s) => s.togglePalette);
 
@@ -112,91 +86,10 @@ export function OptionsPopover() {
             <span className="options-popover-value">{curveRadius}</span>
           </div>
 
-          <NumericFieldRow
-            id={`${panelId}-fontSize`}
-            label="Font size"
-            min={LABEL_FONT_SIZE_MIN}
-            max={LABEL_FONT_SIZE_MAX}
-            step={FONT_SIZE_STEP}
-            value={labelFontSize}
-            onChange={setLabelFontSize}
-            getCurrent={() => useDoc.getState().labelFontSize}
-            textboxAllowAboveMax
-          />
-
-          <div className="options-popover-row">
-            <label htmlFor={`${panelId}-weight`} className="options-popover-label">
-              Weight
-            </label>
-            <select
-              id={`${panelId}-weight`}
-              aria-label="Weight"
-              className="weight-select"
-              value={labelWeight}
-              onChange={(e) => {
-                const n = Number(e.target.value) as TextLabelWeight;
-                setLabelWeight(n);
-              }}
-            >
-              {LABEL_WEIGHT_NAMES.map((w) => (
-                <option
-                  key={w.value}
-                  value={w.value}
-                  style={{
-                    fontFamily: "'Helvetica Neue', Helvetica, Arial, sans-serif",
-                    fontWeight: w.value,
-                    fontStyle: labelItalic ? 'italic' : 'normal',
-                  }}
-                >
-                  {w.name}
-                </option>
-              ))}
-            </select>
-            <button
-              type="button"
-              className={'tool-btn' + (labelItalic ? ' active' : '')}
-              aria-pressed={labelItalic}
-              aria-label="Italic"
-              title="Italic station labels"
-              onClick={() => setLabelItalic(!labelItalic)}
-            >
-              <FontItalicIcon />
-            </button>
-          </div>
-
-          {/* Line-spacing multiplier for every station label (1 = normal); the
-              tick marks the neutral 1. */}
-          <NumericFieldRow
-            id={`${panelId}-leading`}
-            label="Leading"
-            min={LABEL_LEADING_MIN}
-            max={LABEL_LEADING_MAX}
-            step={LABEL_LEADING_STEP}
-            value={labelLeading}
-            onChange={setLabelLeading}
-            getCurrent={() => useDoc.getState().labelLeading}
-            detent={LABEL_LEADING_DEFAULT}
-            textboxAllowAboveMax
-          />
-
-          {/* Letter-spacing in em for every station label (0 = normal); the
-              tick marks the neutral 0. */}
-          <NumericFieldRow
-            id={`${panelId}-tracking`}
-            label="Tracking"
-            min={LABEL_TRACKING_MIN}
-            max={LABEL_TRACKING_MAX}
-            step={LABEL_TRACKING_STEP}
-            value={labelTracking}
-            onChange={setLabelTracking}
-            getCurrent={() => useDoc.getState().labelTracking}
-            detent={LABEL_TRACKING_DEFAULT}
-            textboxAllowAboveMax
-          />
-
-          {/* Transfer styling lives in the Styles sidebar tab now — editing
-              the "Default" transfer style is the map-wide knob the four
-              retired doc-level settings used to be. */}
+          {/* Station-label typography (size/weight/italic/leading/tracking) is
+              per-station now — edit it in the station popover, or the Default
+              station style in the Styles tab for the map-wide default. Transfer
+              styling likewise lives on the Default transfer style. */}
           <div className="options-popover-row options-popover-row-block">
             <button
               type="button"

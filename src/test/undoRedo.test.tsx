@@ -187,11 +187,11 @@ describe('beginHistoryGroup', () => {
     expect(useDoc.getState().stations[id].x).toBe(OVERFLOW);
   });
 
-  // Regression: the commit() equality check used to enumerate doc fields
-  // by hand and missed labelFontSize / labelWeight / labelItalic /
-  // activePalettes. Slider drags wrapped in useFieldHistory pause zundo
-  // and then the manual push thinks nothing changed, so the entire edit
-  // is silently lost from the undo stack.
+  // Regression: the commit() equality check used to enumerate doc fields by
+  // hand and missed some (e.g. the since-retired label settings, activePalettes).
+  // Slider drags wrapped in useFieldHistory pause zundo and then the manual push
+  // thinks nothing changed, so the entire edit is silently lost from the undo
+  // stack. Now driven by DOC_FIELDS, so every tracked field is covered.
   // Overlapping (NOT nested) group lifetimes: two independent gestures can
   // interleave because pointer order is pointerdown → blur. Pressing a canvas
   // handle opens the drag's group BEFORE the focused field's blur-commit
@@ -289,26 +289,11 @@ describe('beginHistoryGroup', () => {
   });
 
   describe('commits a history entry for every tracked doc field', () => {
-    it('labelFontSize', () => {
+    it('updateStationLabelStyle (per-station typography)', () => {
+      const sid = useDoc.getState().addStation(0, 0, 'S');
       const before = historyDepth();
       const group = beginHistoryGroup();
-      useDoc.getState().setLabelFontSize(useDoc.getState().labelFontSize + 4);
-      group.commit();
-      expect(historyDepth() - before).toBe(1);
-    });
-
-    it('labelWeight', () => {
-      const before = historyDepth();
-      const group = beginHistoryGroup();
-      useDoc.getState().setLabelWeight(700);
-      group.commit();
-      expect(historyDepth() - before).toBe(1);
-    });
-
-    it('labelItalic', () => {
-      const before = historyDepth();
-      const group = beginHistoryGroup();
-      useDoc.getState().setLabelItalic(!useDoc.getState().labelItalic);
+      useDoc.getState().updateStationLabelStyle(sid, { fontSize: 20 });
       group.commit();
       expect(historyDepth() - before).toBe(1);
     });

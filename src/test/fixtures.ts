@@ -16,7 +16,6 @@ import type {
   Polygon,
   SvgImage,
   TextLabel,
-  TextLabelWeight,
   Transfer,
 } from '../model/types';
 import type { SegmentBandSpec } from '../geometry/interlining';
@@ -233,6 +232,7 @@ const STYLE_PROPS_DEFAULTS: StylePropsByKind = {
     strokeWidth: 0,
     strokeColor: { day: '#ffffff', night: '#ffffff' },
   },
+  station: { fontSize: 12, weight: 400, italic: false, leading: 1, tracking: 0 },
 };
 
 // A named style preset of the given kind. Props default to the app's
@@ -266,11 +266,6 @@ export function makeDoc(parts: {
   svgImageOrder?: string[];
   styles?: StyleDef[];
   styleDefaults?: Partial<Record<StyleKind, string>>;
-  labelFontSize?: number;
-  labelWeight?: TextLabelWeight;
-  labelItalic?: boolean;
-  labelLeading?: number;
-  labelTracking?: number;
   activePalettes?: import('../model/palettes').PaletteId[];
 }): MapDoc {
   const stations: Record<StationId, Station> = {};
@@ -295,7 +290,7 @@ export function makeDoc(parts: {
   // named "Default", else its first style (name-sorted), else the factory id
   // (dangling in a style-less fixture doc — lookups guard resolution).
   const styleDefaults = {} as Record<StyleKind, string>;
-  const kinds: StyleKind[] = ['line', 'textLabel', 'polygon', 'routeBullet', 'transfer'];
+  const kinds: StyleKind[] = ['line', 'textLabel', 'polygon', 'routeBullet', 'transfer', 'station'];
   for (const kind of kinds) {
     const ofKind = Object.values(styles)
       .filter((d) => d.kind === kind)
@@ -322,11 +317,6 @@ export function makeDoc(parts: {
     svgImageOrder: parts.svgImageOrder ?? Object.keys(svgImages),
     styles,
     styleDefaults,
-    labelFontSize: parts.labelFontSize ?? 12,
-    labelWeight: parts.labelWeight ?? 400,
-    labelItalic: parts.labelItalic ?? false,
-    labelLeading: parts.labelLeading ?? 1,
-    labelTracking: parts.labelTracking ?? 0,
     activePalettes: parts.activePalettes ?? ['mta'],
   };
 }

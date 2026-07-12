@@ -5,17 +5,12 @@ import { useThemeColors } from '../state/theme';
 import { useViewportStore } from '../state/viewportStore';
 import { labelLayoutLocal } from '../geometry/labelLayout';
 import { stopHalfOf } from '../model/lineWidth';
-import {
-  bumpWeightByIndex,
-  effectiveStationLabelStyle,
-  resolveStationLabelWeight,
-} from '../model/transforms';
+import { bumpWeightByIndex, effectiveStationStyleProps } from '../model/transforms';
 import { legibleTextOn } from '../util/color';
 import { waypointLabelRectLocal } from '../geometry/waypointLozenge';
 import { renderStationLabelText } from './stationLabelText';
 import { StationNameEditor } from './StationNameEditor';
 import { WaypointLozenge } from './WaypointLozenge';
-import { useDocLabelStyle } from './useDocLabelStyle';
 
 /**
  * A revealed waypoint's label: the "WP" lozenge painted IN PLACE OF the station
@@ -53,24 +48,21 @@ function WaypointLozengeLabel({
  * The common text-positioning bundle shared by all three station-label passes
  * (starter / highlight / normal). Mirrors the derivation StationView used to
  * do inline so the rendered <text>/<tspan> geometry is byte-for-byte the same:
- * the label layout (anchor, text-anchor, baseline, hit rect) is measured at
- * the effective style (doc defaults + station bold, doc italic), while the
- * painted text uses the per-station rendered weight (with hover bump) and
- * per-station italic.
+ * the label layout (anchor, text-anchor, baseline, hit rect) and the painted
+ * text both read the station's OWN effective typography (`effStyle`), and the
+ * rendered weight adds the hover bump on top of the station's stored weight.
  */
 function useStationLabelLayout(station: Station, lines: Record<string, Line>) {
-  const docStyle = useDocLabelStyle();
-  // The doc weight re-read at its ladder type: the paint path's bold/hover
-  // bumps resolve against the shipped weight ladder, which LabelStyle's
-  // loose `number` can't express.
-  const labelWeight = useDoc((s) => s.labelWeight);
   const hovered = useSelection((s) => s.hoveredStationId === station.id);
-  // Resolve the rendered weight: doc default → +2 indices if the station's
-  // own bold flag is on → +2 more indices when the station is hovered. Each
-  // bump saturates at Black (900).
-  const stationWeight = resolveStationLabelWeight(labelWeight, station.labelBold);
-  // Per-station italic ORs with the doc-wide default.
-  const stationItalic = docStyle.italic || !!station.labelItalic;
+  // The station's own effective typography (stored ?? LABEL_* default) — the
+  // single source the hit rect / silhouette (via effectiveStationLabelStyle,
+  // the same object) and the painted text share. `weight` is a shipped-ladder
+  // value, so the hover bump resolves against it.
+  const effStyle = effectiveStationStyleProps(station);
+  const stationWeight = effStyle.weight;
+  const stationItalic = effStyle.italic;
+  // Rendered weight: the station's weight, +2 indices when hovered (saturating
+  // at Black 900).
   const renderedWeight = hovered ? bumpWeightByIndex(stationWeight, 2) : stationWeight;
   // Service-code lookup for inline bullets. Only walked when a label's text
   // contains a <CODE> token; building once per render keeps it cheap.
@@ -79,16 +71,15 @@ function useStationLabelLayout(station: Station, lines: Record<string, Line>) {
     for (const ln of Object.values(lines)) map.set(ln.service, ln);
     return map;
   }, [lines]);
-  // Label layout goes through effectiveStationLabelStyle (like the hit rect /
-  // silhouette) and the same per-stop width lookup, so the painted anchor
-  // agrees with the boundary geometry next to wide stops.
-  const effStyle = effectiveStationLabelStyle(station, docStyle);
+  // Label layout goes through the same effective style (a StationStyleProps is
+  // structurally a LabelStyle) and per-stop width lookup as the hit rect /
+  // silhouette, so the painted anchor agrees with the boundary geometry next to
+  // wide stops.
   const lay = labelLayoutLocal(station, effStyle, undefined, stopHalfOf(lines));
   return {
     angle: station.rotation * 45,
     rotationDeg: station.label.rotation * 45,
     hovered,
-    docStyle,
     effStyle,
     stationWeight,
     renderedWeight,
@@ -113,7 +104,7 @@ export function StationStarterLabel({
   highlightColor: string;
 }) {
   const showWaypoints = useViewportStore((s) => s.showWaypoints);
-  const { angle, rotationDeg, hovered, docStyle, lineByService, lay } = useStationLabelLayout(
+  const { angle, rotationDeg, hovered, effStyle, lineByService, lay } = useStationLabelLayout(
     station,
     lines,
   );
@@ -122,14 +113,14 @@ export function StationStarterLabel({
   return (
     <g transform={`translate(${station.x} ${station.y}) rotate(${angle})`}>
       {station.isWaypoint ? (
-        <WaypointLozengeLabel lay={lay} rotationDeg={rotationDeg} fontSize={docStyle.fontSize} />
+        <WaypointLozengeLabel lay={lay} rotationDeg={rotationDeg} fontSize={effStyle.fontSize} />
       ) : (
         renderStationLabelText({
           text: station.name,
           fontSize: 12,
           fontWeight: 700,
-          leading: docStyle.leading,
-          tracking: docStyle.tracking,
+          leading: effStyle.leading,
+          tracking: effStyle.tracking,
           fill: highlightColor,
           stroke: strokeColor,
           strokeWidth: 2,
@@ -168,7 +159,7 @@ export function StationHighlightLabel({
     angle,
     rotationDeg,
     hovered,
-    docStyle,
+    effStyle,
     renderedWeight,
     stationItalic,
     lineByService,
@@ -178,15 +169,15 @@ export function StationHighlightLabel({
   return (
     <g transform={`translate(${station.x} ${station.y}) rotate(${angle})`}>
       {station.isWaypoint ? (
-        <WaypointLozengeLabel lay={lay} rotationDeg={rotationDeg} fontSize={docStyle.fontSize} />
+        <WaypointLozengeLabel lay={lay} rotationDeg={rotationDeg} fontSize={effStyle.fontSize} />
       ) : (
         renderStationLabelText({
           text: station.name,
-          fontSize: docStyle.fontSize,
+          fontSize: effStyle.fontSize,
           fontWeight: renderedWeight,
           fontStyle: stationItalic ? 'italic' : undefined,
-          leading: docStyle.leading,
-          tracking: docStyle.tracking,
+          leading: effStyle.leading,
+          tracking: effStyle.tracking,
           textDecoration: hovered ? 'underline' : 'none',
           fill: highlightColor,
           anchorX: lay.anchorX,
@@ -229,7 +220,6 @@ export function StationLabel({
     angle,
     rotationDeg,
     hovered,
-    docStyle,
     effStyle,
     stationWeight,
     renderedWeight,
@@ -274,7 +264,7 @@ export function StationLabel({
           width={editorHit ? editorHit.hitW : lay.hitW}
           minHeight={editorHit ? editorHit.hitH : lay.hitH}
           transform={labelHitTransform}
-          fontSize={docStyle.fontSize}
+          fontSize={effStyle.fontSize}
           fontWeight={stationWeight}
           italic={stationItalic}
           textAlign={editorTextAlign}
@@ -283,15 +273,15 @@ export function StationLabel({
           onCommit={() => setEditingStationId(null)}
         />
       ) : station.isWaypoint ? (
-        <WaypointLozengeLabel lay={lay} rotationDeg={rotationDeg} fontSize={docStyle.fontSize} />
+        <WaypointLozengeLabel lay={lay} rotationDeg={rotationDeg} fontSize={effStyle.fontSize} />
       ) : (
         renderStationLabelText({
           text: station.name,
-          fontSize: docStyle.fontSize,
+          fontSize: effStyle.fontSize,
           fontWeight: renderedWeight,
           fontStyle: stationItalic ? 'italic' : undefined,
-          leading: docStyle.leading,
-          tracking: docStyle.tracking,
+          leading: effStyle.leading,
+          tracking: effStyle.tracking,
           textDecoration: hovered ? 'underline' : 'none',
           fill: themeColors.label,
           anchorX: lay.anchorX,

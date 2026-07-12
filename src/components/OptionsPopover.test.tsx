@@ -1,5 +1,5 @@
 import { describe, it, expect, beforeEach } from 'vitest';
-import { render, screen, fireEvent, act } from '@testing-library/react';
+import { render, screen, fireEvent } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { Toolbar } from './Toolbar';
 import { useDoc } from '../state/store';
@@ -87,219 +87,18 @@ describe('<OptionsPopover />', () => {
     expect(useDoc.getState().curveRadius).toBe(42);
   });
 
-  it('a wheel notch over the font-size slider steps it once (row-level handler)', async () => {
-    // NumericFieldRow handles wheel at the row level: the slider ignores wheel
-    // natively, so a notch over it must nudge the value by one step — the same
-    // affordance as the route-bullet / text-label popover rows.
+  it('no longer exposes station-label font controls (they moved to per-station styles)', async () => {
+    // Font size / weight / italic / leading / tracking are per-station now
+    // (the station popover + the Default station style). Options keeps only the
+    // curve radius and the palette picker.
     const user = userEvent.setup();
     render(<Toolbar />);
     await user.click(screen.getByRole('button', { name: 'Options' }));
-    const before = useDoc.getState().labelFontSize;
-    fireEvent.wheel(screen.getByRole('slider', { name: /font size/i }), { deltaY: -1 });
-    expect(useDoc.getState().labelFontSize).toBe(before + 0.25);
-  });
-
-  it('contains a font-size slider with bounds [2, 24] that updates the store', async () => {
-    const user = userEvent.setup();
-    render(<Toolbar />);
-    await user.click(screen.getByRole('button', { name: 'Options' }));
-    const slider = screen.getByRole('slider', { name: /font size/i });
-    expect(slider).toHaveAttribute('min', '2');
-    expect(slider).toHaveAttribute('max', '24');
-    expect(slider).toHaveAttribute('step', '0.25');
-    fireEvent.change(slider, { target: { value: '18' } });
-    expect(useDoc.getState().labelFontSize).toBe(18);
-  });
-
-  it('contains a font-size spinbutton that mirrors the slider value', async () => {
-    const user = userEvent.setup();
-    render(<Toolbar />);
-    await user.click(screen.getByRole('button', { name: 'Options' }));
-    const spin = screen.getByRole('spinbutton', { name: /font size/i });
-    expect(spin).toHaveAttribute('min', '2');
-    // No `max` attribute — the textbox lets users enter sizes beyond the
-    // slider's range.
-    expect(spin).not.toHaveAttribute('max');
-    expect(spin).toHaveAttribute('step', '0.25');
-    fireEvent.change(spin, { target: { value: '7' } });
-    expect(useDoc.getState().labelFontSize).toBe(7);
-    // Above the slider max is allowed via the textbox.
-    fireEvent.change(spin, { target: { value: '40' } });
-    expect(useDoc.getState().labelFontSize).toBe(40);
-  });
-
-  it('the font-size spinbutton displays two decimal places', async () => {
-    const user = userEvent.setup();
-    render(<Toolbar />);
-    await user.click(screen.getByRole('button', { name: 'Options' }));
-    const spin = screen.getByRole('spinbutton', { name: /font size/i }) as HTMLInputElement;
-    expect(spin.value).toBe('12.00');
-    act(() => {
-      useDoc.setState({ ...useDoc.getState(), labelFontSize: 7.5 });
-    });
-    expect(spin.value).toBe('7.50');
-  });
-
-  it('mousewheel on the spinbutton steps by 0.25, increments freely above the slider max, clamps at MIN', async () => {
-    const user = userEvent.setup();
-    render(<Toolbar />);
-    await user.click(screen.getByRole('button', { name: 'Options' }));
-    const spin = screen.getByRole('spinbutton', { name: /font size/i });
-
-    // Start at default 12; each wheel tick moves by a quarter point.
-    fireEvent.wheel(spin, { deltaY: -1 });
-    expect(useDoc.getState().labelFontSize).toBe(12.25);
-    fireEvent.wheel(spin, { deltaY: 1 });
-    fireEvent.wheel(spin, { deltaY: 1 });
-    expect(useDoc.getState().labelFontSize).toBe(11.75);
-
-    // No upper clamp — wheeling up from the slider max keeps incrementing.
-    useDoc.setState({ ...useDoc.getState(), labelFontSize: 24 });
-    fireEvent.wheel(spin, { deltaY: -1 });
-    expect(useDoc.getState().labelFontSize).toBe(24.25);
-
-    // Clamp to MIN.
-    useDoc.setState({ ...useDoc.getState(), labelFontSize: 2 });
-    fireEvent.wheel(spin, { deltaY: 1 });
-    expect(useDoc.getState().labelFontSize).toBe(2);
-  });
-
-  it('typing an empty value in the spinbutton leaves the store unchanged; on blur it snaps back', async () => {
-    const user = userEvent.setup();
-    render(<Toolbar />);
-    await user.click(screen.getByRole('button', { name: 'Options' }));
-    const spin = screen.getByRole('spinbutton', { name: /font size/i }) as HTMLInputElement;
-    fireEvent.change(spin, { target: { value: '' } });
-    expect(useDoc.getState().labelFontSize).toBe(12); // unchanged
-    fireEvent.blur(spin);
-    expect(spin.value).toBe('12.00'); // re-synced to the store, two decimals
-  });
-
-  it('Weight dropdown lists every shipped Helvetica Neue weight in ascending order', async () => {
-    const user = userEvent.setup();
-    render(<Toolbar />);
-    await user.click(screen.getByRole('button', { name: 'Options' }));
-    const select = screen.getByRole('combobox', { name: /weight/i }) as HTMLSelectElement;
-    const values = Array.from(select.options).map((o) => Number(o.value));
-    expect(values).toEqual([100, 200, 300, 400, 500, 700, 800, 900]);
-  });
-
-  it('Weight dropdown defaults to the store value (400 = Roman)', async () => {
-    const user = userEvent.setup();
-    render(<Toolbar />);
-    await user.click(screen.getByRole('button', { name: 'Options' }));
-    const select = screen.getByRole('combobox', { name: /weight/i }) as HTMLSelectElement;
-    expect(select.value).toBe('400');
-  });
-
-  it('Selecting a weight from the dropdown writes labelWeight to the store', async () => {
-    const user = userEvent.setup();
-    render(<Toolbar />);
-    await user.click(screen.getByRole('button', { name: 'Options' }));
-    const select = screen.getByRole('combobox', { name: /weight/i }) as HTMLSelectElement;
-    await user.selectOptions(select, '700');
-    expect(useDoc.getState().labelWeight).toBe(700);
-    await user.selectOptions(select, '300');
-    expect(useDoc.getState().labelWeight).toBe(300);
-  });
-
-  it('Weight dropdown reflects an externally-changed store value', () => {
-    useDoc.setState({ ...useDoc.getState(), labelWeight: 800 });
-    render(<Toolbar />);
-    // Open the popover via a click on the trigger.
-    fireEvent.click(screen.getByRole('button', { name: 'Options' }));
-    const select = screen.getByRole('combobox', { name: /weight/i }) as HTMLSelectElement;
-    expect(select.value).toBe('800');
-  });
-
-  it('The old Bold toggle button is gone (replaced by the weight dropdown)', async () => {
-    const user = userEvent.setup();
-    render(<Toolbar />);
-    await user.click(screen.getByRole('button', { name: 'Options' }));
-    // No button labelled "Bold" inside the dialog (the only one with /bold/i
-    // would have been the old toggle). The italic button stays.
-    expect(screen.queryByRole('button', { name: /^bold$/i })).toBeNull();
-    expect(screen.getByRole('button', { name: /italic/i })).toBeInTheDocument();
-  });
-
-  it('Italic toggle reflects and flips labelItalic', async () => {
-    const user = userEvent.setup();
-    render(<Toolbar />);
-    await user.click(screen.getByRole('button', { name: 'Options' }));
-    const italic = screen.getByRole('button', { name: /italic/i });
-    expect(italic).toHaveAttribute('aria-pressed', 'false');
-    await user.click(italic);
-    expect(useDoc.getState().labelItalic).toBe(true);
-    await user.click(italic);
-    expect(useDoc.getState().labelItalic).toBe(false);
-  });
-
-  describe('leading & tracking', () => {
-    it('contains a Leading slider with bounds [0, 2] step 0.05 that updates the store', async () => {
-      const user = userEvent.setup();
-      render(<Toolbar />);
-      await user.click(screen.getByRole('button', { name: 'Options' }));
-      const slider = screen.getByRole('slider', { name: /leading/i });
-      expect(slider).toHaveAttribute('min', '0');
-      expect(slider).toHaveAttribute('max', '2');
-      expect(slider).toHaveAttribute('step', '0.05');
-      expect(slider).toHaveValue('1'); // neutral default
-      fireEvent.change(slider, { target: { value: '1.5' } });
-      expect(useDoc.getState().labelLeading).toBe(1.5);
-    });
-
-    it('the Leading spinbutton accepts values above the slider max (no max attr)', async () => {
-      const user = userEvent.setup();
-      render(<Toolbar />);
-      await user.click(screen.getByRole('button', { name: 'Options' }));
-      const spin = screen.getByRole('spinbutton', { name: /leading/i });
-      expect(spin).toHaveAttribute('min', '0');
-      expect(spin).not.toHaveAttribute('max');
-      fireEvent.change(spin, { target: { value: '3' } });
-      expect(useDoc.getState().labelLeading).toBe(3);
-    });
-
-    it('marks the neutral leading (1) with a datalist detent tick', async () => {
-      const user = userEvent.setup();
-      render(<Toolbar />);
-      await user.click(screen.getByRole('button', { name: 'Options' }));
-      const slider = screen.getByRole('slider', { name: /leading/i });
-      const listId = slider.getAttribute('list');
-      expect(listId).toBeTruthy();
-      // useId() ids contain colons, so getElementById (not a CSS selector).
-      const option = document.getElementById(listId!)?.querySelector('option');
-      expect(option).toHaveAttribute('value', '1');
-    });
-
-    it('contains a Tracking slider with bounds [-0.1, 0.5] step 0.001 that updates the store', async () => {
-      const user = userEvent.setup();
-      render(<Toolbar />);
-      await user.click(screen.getByRole('button', { name: 'Options' }));
-      const slider = screen.getByRole('slider', { name: /tracking/i });
-      expect(slider).toHaveAttribute('min', '-0.1');
-      expect(slider).toHaveAttribute('max', '0.5');
-      expect(slider).toHaveAttribute('step', '0.001');
-      expect(slider).toHaveValue('0'); // neutral default
-      fireEvent.change(slider, { target: { value: '0.1' } });
-      expect(useDoc.getState().labelTracking).toBe(0.1);
-    });
-
-    it('the Tracking spinbutton clamps at the -0.1 floor', async () => {
-      const user = userEvent.setup();
-      render(<Toolbar />);
-      await user.click(screen.getByRole('button', { name: 'Options' }));
-      const spin = screen.getByRole('spinbutton', { name: /tracking/i });
-      fireEvent.change(spin, { target: { value: '-1' } });
-      expect(useDoc.getState().labelTracking).toBe(-0.1);
-    });
-
-    it('both sliders reflect externally-changed store values', () => {
-      useDoc.setState({ ...useDoc.getState(), labelLeading: 0.5, labelTracking: 0.3 });
-      render(<Toolbar />);
-      fireEvent.click(screen.getByRole('button', { name: 'Options' }));
-      expect(screen.getByRole('slider', { name: /leading/i })).toHaveValue('0.5');
-      expect(screen.getByRole('slider', { name: /tracking/i })).toHaveValue('0.3');
-    });
+    expect(screen.queryByRole('slider', { name: /font size/i })).toBeNull();
+    expect(screen.queryByRole('combobox', { name: /weight/i })).toBeNull();
+    expect(screen.queryByRole('button', { name: /italic/i })).toBeNull();
+    expect(screen.queryByRole('slider', { name: /leading/i })).toBeNull();
+    expect(screen.queryByRole('slider', { name: /tracking/i })).toBeNull();
   });
 
   describe('color-palette disclosure', () => {

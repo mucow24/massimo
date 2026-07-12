@@ -95,33 +95,49 @@ describe('save/load round-trip', () => {
     expect(obj.doc).toBeDefined();
   });
 
-  it('round-trips labelFontSize / labelWeight / labelItalic', () => {
+  it('round-trips per-station typography', () => {
     const fixture = makeDoc({
-      labelFontSize: 18,
-      labelWeight: 700,
-      labelItalic: true,
+      stations: [
+        {
+          ...makeStation({ id: 's1' }),
+          fontSize: 18,
+          weight: 700,
+          italic: true,
+          leading: 1.4,
+          tracking: 0.08,
+        },
+      ],
     });
     const json = serialize(fixture);
     const result = parse(json);
     expect(result.ok).toBe(true);
     if (result.ok) {
-      expect(result.doc.labelFontSize).toBe(18);
-      expect(result.doc.labelWeight).toBe(700);
-      expect(result.doc.labelItalic).toBe(true);
+      expect(result.doc.stations.s1).toMatchObject({
+        fontSize: 18,
+        weight: 700,
+        italic: true,
+        leading: 1.4,
+        tracking: 0.08,
+      });
     }
   });
 
-  it('parses legacy files (without label settings) by filling in defaults', () => {
-    // A file saved before label settings existed: only the canonical envelope
-    // and a sparse doc. Parser should merge with DEFAULT_DOC so missing
-    // fields fall back to defaults.
+  it('parses legacy files (without label settings) by filling in the factory station style', () => {
+    // A file saved before per-station typography existed: only the canonical
+    // envelope and a sparse doc. The retired global settings' map-wide role now
+    // lives on the default station style, which falls back to the factory props.
     const legacy = legacyEnvelope();
     const result = parse(legacy);
     expect(result.ok).toBe(true);
     if (result.ok) {
-      expect(result.doc.labelFontSize).toBe(12);
-      expect(result.doc.labelWeight).toBe(400);
-      expect(result.doc.labelItalic).toBe(false);
+      const stationDefault = result.doc.styles[result.doc.styleDefaults.station];
+      expect(stationDefault.props).toEqual({
+        fontSize: 12,
+        weight: 400,
+        italic: false,
+        leading: 1,
+        tracking: 0,
+      });
       // Pre-textLabels saves default to empty.
       expect(result.doc.textLabels).toEqual({});
     }
@@ -153,30 +169,26 @@ describe('save/load round-trip', () => {
     }
   });
 
-  it('Toolbar onSave path round-trips label settings', () => {
+  it('Toolbar onSave path round-trips per-station typography via the DOC_FIELDS snapshot', () => {
     // Mirror Toolbar.tsx onSave exactly: serialize(pickDocSnapshot(state)).
-    // Using the same DOC_FIELDS-driven snapshot the production path uses means
-    // this guard cannot silently omit a newly-added persisted MapDoc field.
-    useDoc.setState({
-      ...useDoc.getState(),
-      labelFontSize: 20,
-      labelWeight: 700,
-      labelItalic: false,
-      // Non-default leading/tracking (defaults are 1 / 0) so a DOC_FIELDS
-      // regression that dropped either field surfaces as a lost value here
-      // rather than passing silently at the neutral default.
-      labelLeading: 1.4,
-      labelTracking: 0.08,
-    });
+    // Per-station typography rides in `stations` (a DOC_FIELD), so a snapshot
+    // regression that dropped stations would surface here as lost values.
+    const sid = useDoc.getState().addStation(0, 0, 'S');
+    // Non-default leading/tracking (defaults are 1 / 0) so a regression that
+    // dropped either surfaces as a lost value rather than passing at the detent.
+    useDoc
+      .getState()
+      .updateStationLabelStyle(sid, { fontSize: 20, weight: 700, leading: 1.4, tracking: 0.08 });
     const json = serialize(pickDocSnapshot(useDoc.getState()));
     const result = parse(json);
     expect(result.ok).toBe(true);
     if (result.ok) {
-      expect(result.doc.labelFontSize).toBe(20);
-      expect(result.doc.labelWeight).toBe(700);
-      expect(result.doc.labelItalic).toBe(false);
-      expect(result.doc.labelLeading).toBe(1.4);
-      expect(result.doc.labelTracking).toBe(0.08);
+      expect(result.doc.stations[sid]).toMatchObject({
+        fontSize: 20,
+        weight: 700,
+        leading: 1.4,
+        tracking: 0.08,
+      });
     }
   });
 

@@ -12,7 +12,6 @@ import { dotSizeOverride, resolveDotSize } from '../../model/dotSize';
 import { resolveDotRender } from '../../model/dotStyle';
 import { effectiveStationLabelStyle, resolveDotStyle } from '../../model/transforms';
 import { ORIENTATION_GLYPH, sameCell } from '../inspector/stopGridDrag';
-import { useDocLabelStyle } from '../useDocLabelStyle';
 import type { LayoutDragSource } from './useStationLayoutDrag';
 
 // Handles never shrink below this screen size, however far out the view is
@@ -59,7 +58,6 @@ export function StationLayoutEditor({
   const selection = useSelection();
   const rotateStop = useDoc((s) => s.rotateStop);
   const rotateLabel = useDoc((s) => s.rotateLabel);
-  const docStyle = useDocLabelStyle();
 
   // Theme still drives the label-handle stroke; darkMode resolves each dot's
   // fill so the orientation arrow can contrast it.
@@ -83,7 +81,7 @@ export function StationLayoutEditor({
     hitY,
     hitW,
     hitH,
-  } = labelLayoutLocal(station, effectiveStationLabelStyle(station, docStyle), undefined, stopHalf);
+  } = labelLayoutLocal(station, effectiveStationLabelStyle(station), undefined, stopHalf);
 
   const shieldHandlers = inHandMode
     ? {}

@@ -1,7 +1,6 @@
 import { soleSelection, useDoc, useSelection } from '../../state/store';
 import type { ViewportProjection } from './screenAnchor';
 import { useLiveView } from './useViewport';
-import { useDocLabelStyle } from '../useDocLabelStyle';
 import {
   polygonAABB,
   routeBulletAABB,
@@ -49,7 +48,6 @@ export function ItemPopovers({ view: committed }: { view: ViewportProjection }) 
   const polygons = useDoc((s) => s.polygons);
   const svgImages = useDoc((s) => s.svgImages);
   const lines = useDoc((s) => s.lines);
-  const baseStyle = useDocLabelStyle();
   const transfers = useDoc((s) => s.transfers);
 
   // The popover anchors against the live viewport; a zero-size viewport (first
@@ -106,11 +104,7 @@ export function ItemPopovers({ view: committed }: { view: ViewportProjection }) 
     return (
       <StationPopover
         station={st}
-        worldRect={stationWorldAABB(
-          st,
-          effectiveStationLabelStyle(st, baseStyle),
-          stopHalfOf(lines),
-        )}
+        worldRect={stationWorldAABB(st, effectiveStationLabelStyle(st), stopHalfOf(lines))}
         view={view}
         spawnBox={spawnBox}
         hidden={!show}

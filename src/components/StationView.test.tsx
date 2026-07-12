@@ -4,6 +4,7 @@ import { StationView } from './StationView';
 import { useDoc, useSelection } from '../state/store';
 import { useViewportStore } from '../state/viewportStore';
 import { DEFAULT_DOC } from '../model/transforms';
+import type { Station } from '../model/types';
 import { makeLabel, makeLine, makeStation, makeStop } from '../test/fixtures';
 import { STOP_SIZE } from '../geometry/orientation';
 import { labelLayoutLocal } from '../geometry/labelLayout';
@@ -55,22 +56,26 @@ describe('<StationView /> — label styling', () => {
     expect(text.getAttribute('font-style')).toBeNull();
   });
 
-  it('applies labelFontSize, labelWeight, and labelItalic from the store', () => {
-    useDoc.setState({
-      ...useDoc.getState(),
-      labelFontSize: 18,
-      labelWeight: 500,
-      labelItalic: true,
-    });
-    const { text } = renderLabel();
-    expect(text.getAttribute('font-size')).toBe('18');
-    expect(text.getAttribute('font-weight')).toBe('500');
-    expect(text.getAttribute('font-style')).toBe('italic');
+  it('applies per-station fontSize, weight, and italic', () => {
+    const station = {
+      ...makeStation({ id: 's1', name: 'Foo' }),
+      fontSize: 18,
+      weight: 500 as const,
+      italic: true,
+    };
+    const { container } = render(
+      <svg>
+        <StationView station={station} lines={{}} zoom={1} onStartDrag={vi.fn()} layer="label" />
+      </svg>,
+    );
+    const text = container.querySelector('text');
+    expect(text?.getAttribute('font-size')).toBe('18');
+    expect(text?.getAttribute('font-weight')).toBe('500');
+    expect(text?.getAttribute('font-style')).toBe('italic');
   });
 
-  it('per-station labelItalic renders italic even when the doc default is upright', () => {
-    useDoc.setState({ ...useDoc.getState(), labelItalic: false });
-    const station = { ...makeStation({ id: 's1', name: 'Foo' }), labelItalic: true as const };
+  it('per-station italic renders italic', () => {
+    const station = { ...makeStation({ id: 's1', name: 'Foo' }), italic: true as const };
     const { container } = render(
       <svg>
         <StationView station={station} lines={{}} zoom={1} onStartDrag={vi.fn()} layer="label" />
@@ -80,42 +85,18 @@ describe('<StationView /> — label styling', () => {
     expect(text?.getAttribute('font-style')).toBe('italic');
   });
 
-  it('per-station labelBold bumps the rendered weight two indices heavier (Regular → Bold)', () => {
-    const station = { ...makeStation({ id: 's1', name: 'Foo' }), labelBold: true as const };
+  it('renders the per-station weight directly (Bold 700)', () => {
+    const station = { ...makeStation({ id: 's1', name: 'Foo' }), weight: 700 as const };
     const { container } = render(
       <svg>
         <StationView station={station} lines={{}} zoom={1} onStartDrag={vi.fn()} layer="label" />
       </svg>,
     );
     const text = container.querySelector('text');
-    expect(text?.getAttribute('font-weight')).toBe('700'); // 400 → 700
+    expect(text?.getAttribute('font-weight')).toBe('700');
   });
 
-  it('per-station labelBold bumps two indices from a non-default labelWeight (Light → Medium)', () => {
-    useDoc.setState({ ...useDoc.getState(), labelWeight: 300 });
-    const station = { ...makeStation({ id: 's1', name: 'Foo' }), labelBold: true as const };
-    const { container } = render(
-      <svg>
-        <StationView station={station} lines={{}} zoom={1} onStartDrag={vi.fn()} layer="label" />
-      </svg>,
-    );
-    const text = container.querySelector('text');
-    expect(text?.getAttribute('font-weight')).toBe('500'); // 300 → 500
-  });
-
-  it('per-station labelBold saturates at Black (900) when the default is near the top', () => {
-    useDoc.setState({ ...useDoc.getState(), labelWeight: 800 });
-    const station = { ...makeStation({ id: 's1', name: 'Foo' }), labelBold: true as const };
-    const { container } = render(
-      <svg>
-        <StationView station={station} lines={{}} zoom={1} onStartDrag={vi.fn()} layer="label" />
-      </svg>,
-    );
-    const text = container.querySelector('text');
-    expect(text?.getAttribute('font-weight')).toBe('900');
-  });
-
-  it('hover bumps the rendered weight two indices heavier from the current weight (Regular → Bold)', () => {
+  it('hover bumps the rendered weight two indices heavier from the station weight (Regular → Bold)', () => {
     const station = makeStation({ id: 's1', name: 'Foo' });
     useSelection.setState({ ...useSelection.getState(), hoveredStationId: station.id });
     const { container } = render(
@@ -127,8 +108,8 @@ describe('<StationView /> — label styling', () => {
     expect(text?.getAttribute('font-weight')).toBe('700');
   });
 
-  it('hover stacks on top of per-station bold (400 → 700 → 900), saturating at Black', () => {
-    const station = { ...makeStation({ id: 's1', name: 'Foo' }), labelBold: true as const };
+  it('hover stacks on top of a bold per-station weight (700 → 900), saturating at Black', () => {
+    const station = { ...makeStation({ id: 's1', name: 'Foo' }), weight: 700 as const };
     useSelection.setState({ ...useSelection.getState(), hoveredStationId: station.id });
     const { container } = render(
       <svg>
@@ -136,7 +117,7 @@ describe('<StationView /> — label styling', () => {
       </svg>,
     );
     const text = container.querySelector('text');
-    // 400 → +2 (station bold) → 700 → +2 (hover) → 900.
+    // 700 → +2 (hover) → 900.
     expect(text?.getAttribute('font-weight')).toBe('900');
   });
 
@@ -188,9 +169,8 @@ describe('<StationView /> — label styling', () => {
     expect(container.querySelectorAll('line').length).toBeGreaterThanOrEqual(1);
   });
 
-  it('hover saturates at Black (900) when the doc default is already 900', () => {
-    useDoc.setState({ ...useDoc.getState(), labelWeight: 900 });
-    const station = makeStation({ id: 's1', name: 'Foo' });
+  it('hover saturates at Black (900) when the station weight is already 900', () => {
+    const station = { ...makeStation({ id: 's1', name: 'Foo' }), weight: 900 as const };
     useSelection.setState({ ...useSelection.getState(), hoveredStationId: station.id });
     const { container } = render(
       <svg>
@@ -237,9 +217,9 @@ describe('<StationView /> — whitespace is not collapsed', () => {
   });
 });
 
-describe('<StationView /> — global label leading & tracking', () => {
-  function renderMultiline() {
-    const station = makeStation({ id: 's1', name: 'Foo\nBar', x: 0, y: 0 });
+describe('<StationView /> — per-station label leading & tracking', () => {
+  function renderMultiline(overrides: Partial<Station> = {}) {
+    const station = { ...makeStation({ id: 's1', name: 'Foo\nBar', x: 0, y: 0 }), ...overrides };
     const { container } = render(
       <svg>
         <StationView station={station} lines={{}} zoom={1} onStartDrag={vi.fn()} layer="label" />
@@ -250,13 +230,11 @@ describe('<StationView /> — global label leading & tracking', () => {
 
   it('leading scales the plain-path line spacing (second tspan dy)', () => {
     // fontSize 12 * LINE_HEIGHT 1.2 * leading = between-line dy.
-    useDoc.setState({ ...useDoc.getState(), labelLeading: 1 });
-    const single = renderMultiline();
+    const single = renderMultiline({ leading: 1 });
     const tspans1 = single.querySelectorAll('tspan');
     expect(parseFloat(tspans1[1].getAttribute('dy')!)).toBeCloseTo(14.4, 5);
 
-    useDoc.setState({ ...useDoc.getState(), labelLeading: 2 });
-    const doubled = renderMultiline();
+    const doubled = renderMultiline({ leading: 2 });
     const tspans2 = doubled.querySelectorAll('tspan');
     expect(parseFloat(tspans2[1].getAttribute('dy')!)).toBeCloseTo(28.8, 5);
   });
@@ -271,8 +249,7 @@ describe('<StationView /> — global label leading & tracking', () => {
   it('tracking routes a plain name through the per-line path and sets letter-spacing', () => {
     // A tracked label emits one <text> per line (so the PDF letter-spacing bake
     // stays a single-run measurement) carrying the em→px letter-spacing.
-    useDoc.setState({ ...useDoc.getState(), labelTracking: 0.1 });
-    const container = renderMultiline();
+    const container = renderMultiline({ tracking: 0.1 });
     const texts = Array.from(container.querySelectorAll('text'));
     // Two lines → two <text> elements, no multi-tspan single <text>.
     expect(texts).toHaveLength(2);
@@ -318,21 +295,18 @@ describe('<StationView /> — inline label editor matches the painted label', ()
     expect(ta.style.fontWeight).toBe('400');
   });
 
-  it('matches a bold label default (700) instead of forcing a fixed weight', () => {
-    useDoc.setState({ ...useDoc.getState(), labelWeight: 700 });
-    const { ta } = renderEditor(makeStation({ id: 's1', name: 'Foo' }));
+  it('matches a bold station weight (700) instead of forcing a fixed weight', () => {
+    const { ta } = renderEditor({ ...makeStation({ id: 's1', name: 'Foo' }), weight: 700 });
     expect(ta.style.fontWeight).toBe('700');
   });
 
-  it('renders the editor at the document label font size', () => {
-    useDoc.setState({ ...useDoc.getState(), labelFontSize: 18 });
-    const { ta } = renderEditor(makeStation({ id: 's1', name: 'Foo' }));
+  it('renders the editor at the per-station font size', () => {
+    const { ta } = renderEditor({ ...makeStation({ id: 's1', name: 'Foo' }), fontSize: 18 });
     expect(ta.style.fontSize).toBe('18px');
   });
 
-  it('renders the editor italic when the label is italic', () => {
-    useDoc.setState({ ...useDoc.getState(), labelItalic: true });
-    const { ta } = renderEditor(makeStation({ id: 's1', name: 'Foo' }));
+  it('renders the editor italic when the station is italic', () => {
+    const { ta } = renderEditor({ ...makeStation({ id: 's1', name: 'Foo' }), italic: true });
     expect(ta.style.fontStyle).toBe('italic');
   });
 

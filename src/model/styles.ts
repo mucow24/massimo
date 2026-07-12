@@ -17,7 +17,9 @@ import {
   POLYGON_STROKE_STEP,
   POLYGON_STROKE_WIDTH_MIN,
   TEXT_LABEL_FONT_SIZE_MIN,
+  canonicalStationLabelStyle,
   clampRouteBulletSize,
+  effectiveStationStyleProps,
   setLineDefaultDotSize,
   setLineDefaultDotStyle,
   setLineStrokeColor,
@@ -25,6 +27,7 @@ import {
   setLineWidth,
   updatePolygon,
   updateRouteBullet,
+  updateStationLabelStyle,
   updateTextLabel,
   updateTransferStyle,
 } from './transforms';
@@ -48,6 +51,7 @@ import type {
   MapDoc,
   PolygonStyleProps,
   RouteBulletStyleProps,
+  StationStyleProps,
   StyleDef,
   StyleKind,
   StylePropsByKind,
@@ -62,6 +66,7 @@ export const STYLE_COLLECTION_OF = {
   polygon: 'polygons',
   routeBullet: 'routeBullets',
   transfer: 'transfers',
+  station: 'stations',
 } as const satisfies Record<StyleKind, keyof MapDoc>;
 
 // The one shape all five collections share that styles care about.
@@ -128,6 +133,13 @@ export function captureStyleProps<K extends StyleKind>(
       const t = doc.transfers[itemId];
       if (!t) return null;
       return resolveTransferStyle(t) as StylePropsByKind[K];
+    }
+    case 'station': {
+      const s = doc.stations[itemId];
+      if (!s) return null;
+      // Effective typography (stored ?? LABEL_* default), so a default-looking
+      // station captures the factory props — self-contained like the others.
+      return effectiveStationStyleProps(s) as StylePropsByKind[K];
     }
   }
   return null;
@@ -245,6 +257,11 @@ export function canonicalStyleProps<K extends StyleKind>(
         strokeColor: p.strokeColor,
       } as StylePropsByKind[K];
     }
+    case 'station': {
+      // Same canonicalizer the per-station writer uses, so a panel-edited def
+      // compares exactly equal to what stamping it stores back on a station.
+      return canonicalStationLabelStyle(props as StationStyleProps) as StylePropsByKind[K];
+    }
   }
   return props;
 }
@@ -297,6 +314,21 @@ function stampStyle(doc: MapDoc, def: StyleDef, itemId: string): MapDoc {
     case 'transfer':
       next = updateTransferStyle(next, itemId, { ...def.props });
       break;
+    case 'station': {
+      // Explicit pick (not a props spread) so a def from an older save can't
+      // carry a since-changed key onto the station; the setter collapses each
+      // field to omission at its default and strips any prior tag (re-added
+      // below). All five typography fields are covered.
+      const p = def.props;
+      next = updateStationLabelStyle(next, itemId, {
+        fontSize: p.fontSize,
+        weight: p.weight,
+        italic: p.italic,
+        leading: p.leading,
+        tracking: p.tracking,
+      });
+      break;
+    }
   }
   return withStyleTag(next, def.kind, itemId, def.id);
 }
@@ -407,7 +439,8 @@ export type StylePropsPatch =
   | Partial<TextLabelStyleProps>
   | Partial<PolygonStyleProps>
   | Partial<RouteBulletStyleProps>
-  | Partial<TransferStyleProps>;
+  | Partial<TransferStyleProps>
+  | Partial<StationStyleProps>;
 
 /**
  * Patch a style def's props (the panel editor's write path) and re-stamp

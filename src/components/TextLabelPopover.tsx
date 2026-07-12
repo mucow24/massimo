@@ -1,6 +1,5 @@
 import { type ReactNode } from 'react';
 import {
-  FontItalicIcon,
   MoonIcon,
   SunIcon,
   TextAlignCenterIcon,
@@ -16,10 +15,9 @@ import { DraggablePopoverShell } from './DraggablePopoverShell';
 import { useDraggablePopover } from './canvas/useDraggablePopover';
 import { usePersistedTextareaHeight } from './usePersistedTextareaHeight';
 import { StyleRow } from './StyleRow';
+import { WeightSelect, ItalicButton } from './WeightItalicControls';
 import {
   FONT_SIZE_STEP,
-  isLabelWeight,
-  LABEL_WEIGHT_NAMES,
   TEXT_LABEL_FONT_SIZE_MAX,
   TEXT_LABEL_FONT_SIZE_MIN,
   TEXT_LABEL_LEADING_DEFAULT,
@@ -203,30 +201,12 @@ export function TextLabelPopover({ label, worldRect, view, spawnBox, onClose }: 
 
       <div className="row">
         <label>Weight</label>
-        <select
-          className="weight-select"
-          aria-label="Weight"
+        <WeightSelect
           value={label.weight}
+          italic={label.italic}
           disabled={locked}
-          onChange={(e) => {
-            const n = Number(e.target.value);
-            if (isLabelWeight(n)) setWeight(n);
-          }}
-        >
-          {LABEL_WEIGHT_NAMES.map((w) => (
-            <option
-              key={w.value}
-              value={w.value}
-              style={{
-                fontFamily: "'Helvetica Neue', Helvetica, Arial, sans-serif",
-                fontWeight: w.value,
-                fontStyle: label.italic ? 'italic' : 'normal',
-              }}
-            >
-              {w.name}
-            </option>
-          ))}
-        </select>
+          onChange={setWeight}
+        />
       </div>
 
       <hr className="popover-divider" aria-hidden="true" />
@@ -248,17 +228,11 @@ export function TextLabelPopover({ label, worldRect, view, spawnBox, onClose }: 
               {a.icon}
             </button>
           ))}
-          <button
-            type="button"
-            className={'italic-btn' + (label.italic ? ' active' : '')}
+          <ItalicButton
+            active={label.italic}
             disabled={locked}
-            onClick={() => setItalic(!label.italic)}
-            title="Italic"
-            aria-label="Italic"
-            aria-pressed={label.italic}
-          >
-            <FontItalicIcon />
-          </button>
+            onToggle={() => setItalic(!label.italic)}
+          />
         </div>
       </div>
 

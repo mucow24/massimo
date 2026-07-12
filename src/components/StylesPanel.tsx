@@ -14,6 +14,7 @@ import type { StyleKind } from '../model/types';
 
 const KIND_ORDER: readonly StyleKind[] = [
   'line',
+  'station',
   'textLabel',
   'polygon',
   'routeBullet',
@@ -21,6 +22,7 @@ const KIND_ORDER: readonly StyleKind[] = [
 ];
 const KIND_LABELS: Record<StyleKind, string> = {
   line: 'Lines',
+  station: 'Stations',
   textLabel: 'Labels',
   polygon: 'Polygons',
   routeBullet: 'Route bullets',
@@ -28,6 +30,7 @@ const KIND_LABELS: Record<StyleKind, string> = {
 };
 const KIND_SINGULAR: Record<StyleKind, string> = {
   line: 'line',
+  station: 'station',
   textLabel: 'label',
   polygon: 'polygon',
   routeBullet: 'route bullet',
