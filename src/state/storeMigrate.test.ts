@@ -42,16 +42,27 @@ type AnyDoc = {
       name?: string;
       stops: { orientation: string; dotShape?: string; dotStyle?: DotStyle }[];
       label: { valign: string };
+      fontSize?: number;
+      weight?: number;
+      styleId?: string;
     }
   >;
   polygons?: Record<string, Polygon>;
   textLabels?: Record<string, TextLabel>;
   transfers?: Record<string, Record<string, unknown>>;
+  styles?: Record<string, { kind?: string; name?: string; props: Record<string, unknown> }>;
+  styleDefaults?: Record<string, string>;
   labelWeight?: number;
   labelBold?: boolean;
+  labelFontSize?: number;
 };
 const run = (persisted: unknown, version: number): AnyDoc =>
   migrateDoc(persisted, version) as unknown as AnyDoc;
+
+// The retired global label settings now live on the designated default station
+// style (seeded by the v<13 bake).
+const stationDefaultProps = (out: AnyDoc): Record<string, unknown> =>
+  out.styles![out.styleDefaults!.station].props;
 
 describe('migrateDoc', () => {
   describe('v0 → v1: line.name backfill', () => {
@@ -121,24 +132,30 @@ describe('migrateDoc', () => {
     });
   });
 
-  describe('v2 → v3: labelBold → labelWeight', () => {
-    it('translates labelBold:true to weight 700 and drops the legacy field', () => {
+  describe('v2 → v3: labelBold → labelWeight (folded into the default station style)', () => {
+    // The v<3 step materializes a global labelWeight; the v<13 bake then folds
+    // it into the seeded default station style and drops the doc field.
+    it('translates labelBold:true to a Bold (700) default station style, dropping the field', () => {
       const out = run({ labelBold: true }, 0);
-      expect(out.labelWeight).toBe(700);
+      expect(stationDefaultProps(out).weight).toBe(700);
+      expect(out.labelWeight).toBeUndefined();
       expect(out.labelBold).toBeUndefined();
     });
 
-    it('translates labelBold:false to weight 400', () => {
-      expect(run({ labelBold: false }, 0).labelWeight).toBe(400);
+    it('translates labelBold:false to a Regular (400) default station style', () => {
+      expect(stationDefaultProps(run({ labelBold: false }, 0)).weight).toBe(400);
     });
 
     it('keeps an explicit labelWeight when both fields are present', () => {
       const out = run({ labelBold: true, labelWeight: 300 }, 0);
-      expect(out.labelWeight).toBe(300);
+      expect(stationDefaultProps(out).weight).toBe(300);
+      expect(out.labelWeight).toBeUndefined();
       expect(out.labelBold).toBeUndefined();
     });
 
     it('does not translate labelBold at version >= 3', () => {
+      // At v>=3 the labelBold→labelWeight step is skipped; labelBold is not a
+      // legacy label FONT field, so the v<13 bake leaves it untouched too.
       const out = run({ labelBold: true }, 3);
       expect(out.labelWeight).toBeUndefined();
       expect(out.labelBold).toBe(true);
@@ -176,16 +193,17 @@ describe('migrateDoc', () => {
       expect(out.stations!.S.stops[0].dotStyle).toEqual(DOT_SHAPE_PRESETS['none']);
     });
 
-    it('leaves stations and dot fields alone when no legacy dot fields exist', () => {
-      // (The v<11 default-adoption pass may tag the line, so the whole-doc
-      // reference pin moved to the current-version test; this one pins that
-      // the dot CONVERSION itself is a no-op.)
+    it('leaves the dot fields alone when no legacy dot fields exist', () => {
+      // The v<11 default-adoption pass now tags default-looking STATIONS too (a
+      // default station matches the factory 'station' style), so the whole-doc
+      // reference pin no longer holds; this pins that the dot CONVERSION itself
+      // is a no-op — the stops array is untouched.
       const input = {
         stations: { S: stationWithDotShape() },
         lines: { L1: { service: 'A', name: 'A line', stations: [] } },
       };
       const out = run(input, 6);
-      expect(out.stations).toBe(input.stations);
+      expect(out.stations!.S.stops).toBe(input.stations.S.stops);
       expect(out.lines!.L1.defaultDotStyle).toBeUndefined();
       expect('defaultDotShape' in out.lines!.L1).toBe(false);
     });
@@ -442,7 +460,7 @@ describe('migrateDoc', () => {
         styles: Record<string, StyleDef>;
       };
       const names = Object.values(out.styles).map((d) => d.name);
-      expect(names).toEqual(['Default', 'Default', 'Default', 'Default', 'Default']);
+      expect(names).toEqual(['Default', 'Default', 'Default', 'Default', 'Default', 'Default']);
     });
 
     it('strips since-dropped width/leading/tracking keys from round-1 textLabel defs', () => {
@@ -504,6 +522,7 @@ describe('migrateDoc', () => {
         styleDefaults: Record<string, string>;
       };
       expect(Object.values(out.styles).map((d) => d.name)).toEqual([
+        'Default',
         'Default',
         'Default',
         'Default',
@@ -634,11 +653,66 @@ describe('migrateDoc', () => {
           L1: { service: 'A', name: 'A line', stations: ['S'], width: 21, defaultDotSize: 12 },
         },
       };
-      const out = run(input, 12);
+      const out = run(input, 14);
       // No migration applies at the current version → same reference passes
       // straight through. (No `styles` key either, so the style-invariant
       // pass leaves it alone.)
       expect(out).toBe(input);
+    });
+  });
+
+  describe('v13 → v14: retire doc-level station-label font settings', () => {
+    it('strips the premature v<11 Default tag so a bolded legacy station ends up Custom', () => {
+      // At v<11 adoptDefaultStyles tags EVERY field-less station Default (its
+      // effective props equal the factory). The v<13 bake must strip that tag
+      // and re-evaluate — a bolded station (weight bumped +2) diverges from the
+      // base-seeded Default, so it must NOT stay tagged. Deleting the strip
+      // would silently leave it tagged-but-mismatched (breaks tagged ⇒ matches).
+      const out = run(
+        {
+          stations: { S: { ...makeStation({ id: 'S' as StationId }), labelBold: true } },
+          labelFontSize: 12,
+          labelWeight: 400,
+          labelItalic: false,
+          labelLeading: 1,
+          labelTracking: 0,
+        } as Record<string, unknown>,
+        0,
+      );
+      expect(out.stations!.S.weight).toBe(700); // 400 bumped two steps
+      expect(out.stations!.S.styleId).toBeUndefined(); // NOT left tagged Default
+      expect('labelFontSize' in out).toBe(false);
+      expect('labelWeight' in out).toBe(false);
+    });
+
+    it('adopts a default-looking legacy station onto the seeded Default (weight un-bumped)', () => {
+      const out = run(
+        {
+          stations: { S: makeStation({ id: 'S' as StationId }) }, // no bold → plain
+          labelFontSize: 18,
+          labelWeight: 400,
+          labelItalic: false,
+          labelLeading: 1,
+          labelTracking: 0,
+        } as Record<string, unknown>,
+        0,
+      );
+      expect(out.stations!.S.fontSize).toBe(18);
+      expect(out.stations!.S.styleId).toBe('default-station');
+      expect(stationDefaultProps(out)).toMatchObject({ fontSize: 18, weight: 400 });
+    });
+
+    it('does not bake at version >= 14', () => {
+      const out = run(
+        {
+          stations: { S: makeStation({ id: 'S' as StationId }) },
+          labelFontSize: 18,
+          styles: DEFAULT_STYLES,
+          styleDefaults: FACTORY_STYLE_DEFAULTS,
+        } as Record<string, unknown>,
+        14,
+      );
+      expect(out.stations!.S.fontSize).toBeUndefined(); // not baked
     });
   });
 

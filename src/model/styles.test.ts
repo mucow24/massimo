@@ -128,6 +128,30 @@ describe('captureStyleProps', () => {
     });
   });
 
+  it('reads a default-looking station as the factory typography', () => {
+    const doc = makeDoc({ stations: [makeStation({ id: 's1' })] });
+    expect(captureStyleProps(doc, 'station', 's1')).toEqual({
+      fontSize: 12,
+      weight: 400,
+      italic: false,
+      leading: 1,
+      tracking: 0,
+    });
+  });
+
+  it('reads explicit station typography, resolving absent fields to defaults', () => {
+    const doc = makeDoc({
+      stations: [makeStation({ id: 's1', fontSize: 20, weight: 700, tracking: 0.02 })],
+    });
+    expect(captureStyleProps(doc, 'station', 's1')).toEqual({
+      fontSize: 20,
+      weight: 700,
+      italic: false,
+      leading: 1,
+      tracking: 0.02,
+    });
+  });
+
   it('returns null for a missing item', () => {
     const doc = makeDoc({});
     expect(captureStyleProps(doc, 'line', 'nope')).toBeNull();
@@ -292,6 +316,36 @@ describe('applyStyleToItem', () => {
     expect(t.strokeColor).toEqual({ day: '#ff00ff', night: '#ff00ff' });
   });
 
+  it('stamps a station style across all five typography fields and tags the station', () => {
+    const style = makeStyle('station', 'y1', {
+      props: { fontSize: 18, weight: 700, italic: true, leading: 1.2, tracking: 0.02 },
+    });
+    const doc = makeDoc({ stations: [makeStation({ id: 's1' })], styles: [style] });
+    const next = applyStyleToItem(doc, 'y1', 's1');
+    const st = next.stations.s1;
+    expect(st.styleId).toBe('y1');
+    expect(st.fontSize).toBe(18);
+    expect(st.weight).toBe(700);
+    expect(st.italic).toBe(true);
+    expect(st.leading).toBe(1.2);
+    expect(st.tracking).toBe(0.02);
+    // tagged ⇒ matches: capture reproduces the style props exactly.
+    expect(captureStyleProps(next, 'station', 's1')).toEqual(next.styles.y1.props);
+  });
+
+  it('stores nothing for station values that equal the LABEL_* defaults but still tags', () => {
+    const style = makeStyle('station', 'y1'); // all-default props
+    const doc = makeDoc({ stations: [makeStation({ id: 's1', fontSize: 20 })], styles: [style] });
+    const next = applyStyleToItem(doc, 'y1', 's1');
+    const st = next.stations.s1;
+    expect(st.styleId).toBe('y1');
+    expect(st.fontSize).toBeUndefined();
+    expect(st.weight).toBeUndefined();
+    expect(st.italic).toBeUndefined();
+    expect(st.leading).toBeUndefined();
+    expect(st.tracking).toBeUndefined();
+  });
+
   it('no-ops (same reference) on unknown style, missing item, or a tagged MATCHING item', () => {
     const style = makeStyle('routeBullet', 'y1', { props: { shape: 'square', size: 14 } });
     const doc = makeDoc({
@@ -301,6 +355,17 @@ describe('applyStyleToItem', () => {
     expect(applyStyleToItem(doc, 'nope', 'b1')).toBe(doc);
     expect(applyStyleToItem(doc, 'y1', 'nope')).toBe(doc);
     expect(applyStyleToItem(doc, 'y1', 'b1')).toBe(doc);
+  });
+
+  it('re-stamps a tagged station whose typography drifted (invariant repair)', () => {
+    const style = makeStyle('station', 'y1', { props: { fontSize: 20 } });
+    const doc = makeDoc({
+      stations: [makeStation({ id: 's1', fontSize: 14, styleId: 'y1' })],
+      styles: [style],
+    });
+    const next = applyStyleToItem(doc, 'y1', 's1');
+    expect(next.stations.s1.fontSize).toBe(20);
+    expect(next.stations.s1.styleId).toBe('y1');
   });
 
   it('re-stamps a tagged item whose values drifted from the style (invariant repair)', () => {
@@ -612,6 +677,18 @@ describe('updateStyleProps', () => {
     const next = updateStyleProps(doc, 'y1', { size: 24 });
     expect(next.routeBullets.b1).toBe(doc.routeBullets.b1);
   });
+
+  it('re-stamps tagged stations on a leading/tracking patch (station-only covered fields)', () => {
+    const doc = makeDoc({
+      stations: [makeStation({ id: 's1', styleId: 'y1' })], // all-default, tagged
+      styles: [makeStyle('station', 'y1')],
+    });
+    const next = updateStyleProps(doc, 'y1', { leading: 1.5, fontSize: 20 });
+    expect(next.styles.y1.props).toMatchObject({ leading: 1.5, fontSize: 20 });
+    expect(next.stations.s1.leading).toBe(1.5); // live re-stamp
+    expect(next.stations.s1.fontSize).toBe(20);
+    expect(next.stations.s1.styleId).toBe('y1'); // stays tagged
+  });
 });
 
 describe('DEFAULT_STYLES / applyDefaultStyle', () => {
@@ -619,7 +696,7 @@ describe('DEFAULT_STYLES / applyDefaultStyle', () => {
     const kinds = Object.values(DEFAULT_STYLES)
       .map((d) => d.kind)
       .sort();
-    expect(kinds).toEqual(['line', 'polygon', 'routeBullet', 'textLabel', 'transfer']);
+    expect(kinds).toEqual(['line', 'polygon', 'routeBullet', 'station', 'textLabel', 'transfer']);
     for (const d of Object.values(DEFAULT_STYLES)) expect(d.name).toBe('Default');
     expect(DEFAULT_DOC.styles).toBe(DEFAULT_STYLES);
     expect(DEFAULT_DOC.styleDefaults).toBe(FACTORY_STYLE_DEFAULTS);
@@ -633,6 +710,20 @@ describe('DEFAULT_STYLES / applyDefaultStyle', () => {
     expect(defaultStyleProps(DEFAULT_DOC, 'polygon')).toMatchObject({ fill: '#cfe3f2' });
     expect(defaultStyleProps(DEFAULT_DOC, 'routeBullet')).toMatchObject({ size: 14 });
     expect(defaultStyleProps(DEFAULT_DOC, 'transfer')).toMatchObject({ thickness: 2 });
+    expect(defaultStyleProps(DEFAULT_DOC, 'station')).toMatchObject({ fontSize: 12, weight: 400 });
+  });
+
+  it('stamps a customized default station style onto a new station', () => {
+    const doc = makeDoc({
+      stations: [makeStation({ id: 's1' })],
+      styles: [
+        makeStyle('station', 'default-station', { name: 'Default', props: { fontSize: 16 } }),
+      ],
+      styleDefaults: { station: 'default-station' },
+    });
+    const next = applyDefaultStyle(doc, 'station', 's1');
+    expect(next.stations.s1.styleId).toBe('default-station');
+    expect(next.stations.s1.fontSize).toBe(16);
   });
 
   it("stamps and tags the kind's DESIGNATED default, with its CURRENT props", () => {

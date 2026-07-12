@@ -5,13 +5,18 @@ import {
   addPolygonWith,
   addRouteBulletWith,
   addTextLabelWith,
+  moveStation,
+  renameStation,
   setLineDefaultDotSize,
   setLineDefaultDotStyle,
   setLineStrokeColor,
   setLineStrokeWidth,
   setLineWidth,
+  setStationEditorHeight,
+  setStationLocked,
   updatePolygon,
   updateRouteBullet,
+  updateStationLabelStyle,
   updateTextLabel,
   updateTransferStyle,
 } from './transforms';
@@ -157,6 +162,71 @@ describe('detach on covered-field edits — transfers', () => {
       updateTransferStyle(doc, 'x1', { color: { day: '#ff0000', night: '#ff0000' } }).transfers.x1
         .styleId,
     ).toBeUndefined();
+  });
+});
+
+describe('detach on covered-field edits — stations', () => {
+  // Station stores only fontSize:20 (rest absent ⇒ effective defaults), tagged
+  // to a style whose props match — the tagged ⇒ matches invariant holds.
+  const tagged = () =>
+    makeDoc({
+      stations: [makeStation({ id: 's1', fontSize: 20, styleId: 'y1' })],
+      styles: [makeStyle('station', 'y1', { props: { fontSize: 20 } })],
+    });
+
+  it('detaches when any covered typography value actually changes', () => {
+    expect(
+      updateStationLabelStyle(tagged(), 's1', { fontSize: 24 }).stations.s1.styleId,
+    ).toBeUndefined();
+    expect(
+      updateStationLabelStyle(tagged(), 's1', { weight: 700 }).stations.s1.styleId,
+    ).toBeUndefined();
+    expect(
+      updateStationLabelStyle(tagged(), 's1', { italic: true }).stations.s1.styleId,
+    ).toBeUndefined();
+    expect(
+      updateStationLabelStyle(tagged(), 's1', { leading: 1.5 }).stations.s1.styleId,
+    ).toBeUndefined();
+    expect(
+      updateStationLabelStyle(tagged(), 's1', { tracking: 0.05 }).stations.s1.styleId,
+    ).toBeUndefined();
+  });
+
+  it('keeps the tag (same reference) on value-identical covered writes', () => {
+    const doc = tagged();
+    expect(updateStationLabelStyle(doc, 's1', { fontSize: 20 })).toBe(doc);
+    // weight/italic/leading/tracking absent ⇒ effective default; re-firing the
+    // default value is a no-op that must keep the tag and the reference.
+    expect(updateStationLabelStyle(doc, 's1', { weight: 400 })).toBe(doc);
+    expect(updateStationLabelStyle(doc, 's1', { italic: false })).toBe(doc);
+    expect(updateStationLabelStyle(doc, 's1', { leading: 1 })).toBe(doc);
+    expect(updateStationLabelStyle(doc, 's1', { tracking: 0 })).toBe(doc);
+  });
+
+  it('identity/layout edits keep the tag (rename, move, lock, editorHeight)', () => {
+    const doc = tagged();
+    expect(renameStation(doc, 's1', 'New name').stations.s1.styleId).toBe('y1');
+    expect(moveStation(doc, 's1', 40, 40).stations.s1.styleId).toBe('y1');
+    expect(setStationLocked(doc, 's1', true).stations.s1.styleId).toBe('y1');
+    expect(setStationEditorHeight(doc, 's1', 80).stations.s1.styleId).toBe('y1');
+  });
+
+  it('collapses a field to omission when it lands on its LABEL_* default', () => {
+    const doc = makeDoc({ stations: [makeStation({ id: 's1', fontSize: 20 })] });
+    const next = updateStationLabelStyle(doc, 's1', { fontSize: 12 });
+    expect(next.stations.s1.fontSize).toBeUndefined();
+  });
+
+  it('clamps/snaps to the canonical grids', () => {
+    const doc = makeDoc({ stations: [makeStation({ id: 's1' })] });
+    // fontSize floored at LABEL_FONT_SIZE_MIN=2, snapped to the 0.25 grid.
+    expect(updateStationLabelStyle(doc, 's1', { fontSize: 0 }).stations.s1.fontSize).toBe(2);
+    expect(updateStationLabelStyle(doc, 's1', { fontSize: 13.1 }).stations.s1.fontSize).toBe(13);
+    // leading snaps to 0.05, tracking to 0.001.
+    expect(updateStationLabelStyle(doc, 's1', { leading: 1.53 }).stations.s1.leading).toBe(1.55);
+    expect(updateStationLabelStyle(doc, 's1', { tracking: 0.0123 }).stations.s1.tracking).toBe(
+      0.012,
+    );
   });
 });
 

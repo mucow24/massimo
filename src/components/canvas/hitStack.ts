@@ -6,7 +6,6 @@ import {
   svgImagesForRect,
   textLabelsForRect,
 } from '../../geometry/stationBoundary';
-import { docLabelStyle, type DocLabelFields } from '../../geometry/labelLayout';
 import { stopHalfOf } from '../../model/lineWidth';
 import { effectivePolygonOrder, effectiveSvgImageOrder } from '../../model/transforms';
 import type { Pt } from '../../geometry/polygonUnion';
@@ -129,7 +128,7 @@ export function nextInStack<T extends HitRef>(
 export const LOCKED_HIT_PAD_PX = 4;
 
 /** The slice of the doc lockedHitsAt reads — matches useDoc's state shape. */
-export interface LockedHitDocSlice extends DocLabelFields {
+export interface LockedHitDocSlice {
   stations: Record<StationId, Station>;
   lines: Record<LineId, Line>;
   polygons: Record<string, Polygon>;
@@ -151,7 +150,6 @@ export interface LockedHitDocSlice extends DocLabelFields {
  */
 export function lockedHitsAt(pt: Pt, doc: LockedHitDocSlice, pad: number): HitRef[] {
   const rect = { x0: pt.x - pad, y0: pt.y - pad, x1: pt.x + pad, y1: pt.y + pad };
-  const style = docLabelStyle(doc);
   const out: HitRef[] = [];
   const push = (kind: HitKind, ids: string[]) => {
     for (const id of ids) out.push({ kind, id });
@@ -166,7 +164,7 @@ export function lockedHitsAt(pt: Pt, doc: LockedHitDocSlice, pad: number): HitRe
   );
   push(
     'station',
-    stationsForRect(doc.stations, rect, style, stopHalfOf(doc.lines), true).filter(
+    stationsForRect(doc.stations, rect, stopHalfOf(doc.lines), true).filter(
       (id) => doc.stations[id].locked,
     ),
   );

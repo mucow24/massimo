@@ -6,7 +6,7 @@ import { useDoc, useSelection } from '../../state/store';
 import { historyDepth, undo } from '../../state/history';
 import { DEFAULT_DOC, resolveOffsetPerp } from '../../model/transforms';
 import { DOT_SHAPE_PRESETS } from '../../model/dotStyle';
-import { makeDoc, makeStation, makeStop, makeLine } from '../../test/fixtures';
+import { makeDoc, makeStation, makeStop, makeLine, makeStyle } from '../../test/fixtures';
 
 const SELECTION_BLANK = {
   selectedStationIds: [] as string[],
@@ -215,166 +215,64 @@ describe('<StationInspector /> — shape picker wiring', () => {
     );
   });
 
-  describe('Bold button', () => {
-    it('renders next to the label alignment buttons inside the Label field', () => {
-      useDoc.setState({
-        ...DEFAULT_DOC,
-        ...makeDoc({
-          stations: [makeStation({ id: 'a' })],
-          lines: [],
-        }),
-      });
-      useSelection.setState({ ...SELECTION_BLANK, selectedStationIds: ['a'] });
-
-      render(<StationInspector id="a" />);
-      const bold = screen.getByRole('button', { name: 'Bold' });
-      // Same parent (row) as the horizontal-align cycle button.
-      const hAlign = screen.getByRole('button', { name: /^Align:/ });
-      expect(bold.parentElement).toBe(hAlign.parentElement);
-      // DOM order: align button → Bold.
-      const siblings = Array.from(bold.parentElement!.children);
-      expect(siblings.indexOf(bold)).toBeGreaterThan(siblings.indexOf(hAlign));
-    });
-
-    it('starts unpressed when the station has no labelBold flag', () => {
-      useDoc.setState({
-        ...DEFAULT_DOC,
-        ...makeDoc({ stations: [makeStation({ id: 'a' })] }),
-      });
+  describe('Text style section', () => {
+    const setup = (station = makeStation({ id: 'a' })) => {
+      useDoc.setState({ ...DEFAULT_DOC, ...makeDoc({ stations: [station] }) });
       useSelection.setState({ ...SELECTION_BLANK, selectedStationIds: ['a'] });
       render(<StationInspector id="a" />);
-      expect(screen.getByRole('button', { name: 'Bold' })).toHaveAttribute('aria-pressed', 'false');
+    };
+
+    it('renders the style picker and the typography controls', () => {
+      setup();
+      expect(screen.getByRole('combobox', { name: 'Style' })).toBeInTheDocument();
+      expect(screen.getByRole('slider', { name: /size/i })).toBeInTheDocument();
+      expect(screen.getByRole('combobox', { name: /weight/i })).toBeInTheDocument();
+      expect(screen.getByRole('button', { name: 'Italic' })).toBeInTheDocument();
+      expect(screen.getByRole('slider', { name: /leading/i })).toBeInTheDocument();
+      expect(screen.getByRole('slider', { name: /tracking/i })).toBeInTheDocument();
     });
 
-    it('starts pressed when the station already has labelBold:true', () => {
-      useDoc.setState({
-        ...DEFAULT_DOC,
-        ...makeDoc({
-          stations: [{ ...makeStation({ id: 'a' }), labelBold: true }],
-        }),
-      });
-      useSelection.setState({ ...SELECTION_BLANK, selectedStationIds: ['a'] });
-      render(<StationInspector id="a" />);
-      expect(screen.getByRole('button', { name: 'Bold' })).toHaveAttribute('aria-pressed', 'true');
+    it('the Size slider writes per-station fontSize', () => {
+      setup();
+      fireEvent.change(screen.getByRole('slider', { name: /size/i }), { target: { value: '18' } });
+      expect(useDoc.getState().stations.a.fontSize).toBe(18);
     });
 
-    it('toggles labelBold on the station when clicked', async () => {
+    it('the Weight dropdown writes per-station weight', async () => {
       const user = userEvent.setup();
-      useDoc.setState({
-        ...DEFAULT_DOC,
-        ...makeDoc({ stations: [makeStation({ id: 'a' })] }),
-      });
-      useSelection.setState({ ...SELECTION_BLANK, selectedStationIds: ['a'] });
-      render(<StationInspector id="a" />);
-
-      await user.click(screen.getByRole('button', { name: 'Bold' }));
-      expect(useDoc.getState().stations.a.labelBold).toBe(true);
-      expect(screen.getByRole('button', { name: 'Bold' })).toHaveAttribute('aria-pressed', 'true');
-
-      await user.click(screen.getByRole('button', { name: 'Bold' }));
-      expect(useDoc.getState().stations.a.labelBold).toBeFalsy();
-      expect(screen.getByRole('button', { name: 'Bold' })).toHaveAttribute('aria-pressed', 'false');
+      setup();
+      await user.selectOptions(screen.getByRole('combobox', { name: /weight/i }), '700');
+      expect(useDoc.getState().stations.a.weight).toBe(700);
     });
 
-    it('does NOT mirror-propagate to matching stations', async () => {
-      // Same expectation as the Waypoint button: per-station styling decisions
-      // should stay per-station even with mirror on.
+    it('the Italic button toggles per-station italic', async () => {
       const user = userEvent.setup();
-      useDoc.setState({
-        ...DEFAULT_DOC,
-        ...makeDoc({
-          stations: [
-            makeStation({ id: 'a', stops: [makeStop('L1')] }),
-            makeStation({ id: 'b', stops: [makeStop('L1')] }),
-          ],
-          lines: [makeLine({ id: 'L1', stations: ['a', 'b'] })],
-        }),
-      });
-      useSelection.setState({
-        ...SELECTION_BLANK,
-        selectedStationIds: ['a'],
-        mirrorMatching: true,
-      });
-
-      render(<StationInspector id="a" />);
-      await user.click(screen.getByRole('button', { name: 'Bold' }));
-
-      const doc = useDoc.getState();
-      expect(doc.stations.a.labelBold).toBe(true);
-      expect(doc.stations.b.labelBold).toBeFalsy();
-    });
-  });
-
-  describe('Italic button', () => {
-    it('renders next to the Bold button inside the Label field', () => {
-      useDoc.setState({
-        ...DEFAULT_DOC,
-        ...makeDoc({ stations: [makeStation({ id: 'a' })], lines: [] }),
-      });
-      useSelection.setState({ ...SELECTION_BLANK, selectedStationIds: ['a'] });
-
-      render(<StationInspector id="a" />);
-      const italic = screen.getByRole('button', { name: 'Italic' });
-      const bold = screen.getByRole('button', { name: 'Bold' });
-      // Same parent (row) as Bold, and ordered right after it.
-      expect(italic.parentElement).toBe(bold.parentElement);
-      const siblings = Array.from(italic.parentElement!.children);
-      expect(siblings.indexOf(italic)).toBeGreaterThan(siblings.indexOf(bold));
-    });
-
-    it('starts unpressed when the station has no labelItalic flag', () => {
-      useDoc.setState({
-        ...DEFAULT_DOC,
-        ...makeDoc({ stations: [makeStation({ id: 'a' })] }),
-      });
-      useSelection.setState({ ...SELECTION_BLANK, selectedStationIds: ['a'] });
-      render(<StationInspector id="a" />);
-      expect(screen.getByRole('button', { name: 'Italic' })).toHaveAttribute(
-        'aria-pressed',
-        'false',
-      );
-    });
-
-    it('starts pressed when the station already has labelItalic:true', () => {
-      useDoc.setState({
-        ...DEFAULT_DOC,
-        ...makeDoc({
-          stations: [{ ...makeStation({ id: 'a' }), labelItalic: true }],
-        }),
-      });
-      useSelection.setState({ ...SELECTION_BLANK, selectedStationIds: ['a'] });
-      render(<StationInspector id="a" />);
-      expect(screen.getByRole('button', { name: 'Italic' })).toHaveAttribute(
-        'aria-pressed',
-        'true',
-      );
-    });
-
-    it('toggles labelItalic on the station when clicked', async () => {
-      const user = userEvent.setup();
-      useDoc.setState({
-        ...DEFAULT_DOC,
-        ...makeDoc({ stations: [makeStation({ id: 'a' })] }),
-      });
-      useSelection.setState({ ...SELECTION_BLANK, selectedStationIds: ['a'] });
-      render(<StationInspector id="a" />);
-
+      setup();
       await user.click(screen.getByRole('button', { name: 'Italic' }));
-      expect(useDoc.getState().stations.a.labelItalic).toBe(true);
-      expect(screen.getByRole('button', { name: 'Italic' })).toHaveAttribute(
-        'aria-pressed',
-        'true',
-      );
-
+      expect(useDoc.getState().stations.a.italic).toBe(true);
       await user.click(screen.getByRole('button', { name: 'Italic' }));
-      expect(useDoc.getState().stations.a.labelItalic).toBeFalsy();
-      expect(screen.getByRole('button', { name: 'Italic' })).toHaveAttribute(
-        'aria-pressed',
-        'false',
-      );
+      expect(useDoc.getState().stations.a.italic).toBeFalsy();
     });
 
-    it('does NOT mirror-propagate to matching stations', async () => {
+    it('editing a covered typography field detaches the style tag', () => {
+      // A default-looking station tagged to a matching style (tagged ⇒ matches).
+      useDoc.setState({
+        ...DEFAULT_DOC,
+        ...makeDoc({
+          stations: [{ ...makeStation({ id: 'a' }), styleId: 'y1' }],
+          styles: [makeStyle('station', 'y1', { name: 'Big' })],
+        }),
+      });
+      useSelection.setState({ ...SELECTION_BLANK, selectedStationIds: ['a'] });
+      render(<StationInspector id="a" />);
+      expect(screen.getByRole('combobox', { name: 'Style' })).toHaveValue('y1');
+      fireEvent.change(screen.getByRole('slider', { name: /size/i }), { target: { value: '18' } });
+      expect(useDoc.getState().stations.a.styleId).toBeUndefined();
+    });
+
+    it('typography edits do NOT mirror-propagate to matching stations (pinned decision)', async () => {
+      // Even with mirror matching on, typography stays local to the inspected
+      // station — the style picker is how you share it.
       const user = userEvent.setup();
       useDoc.setState({
         ...DEFAULT_DOC,
@@ -396,8 +294,8 @@ describe('<StationInspector /> — shape picker wiring', () => {
       await user.click(screen.getByRole('button', { name: 'Italic' }));
 
       const doc = useDoc.getState();
-      expect(doc.stations.a.labelItalic).toBe(true);
-      expect(doc.stations.b.labelItalic).toBeFalsy();
+      expect(doc.stations.a.italic).toBe(true);
+      expect(doc.stations.b.italic).toBeFalsy();
     });
   });
 

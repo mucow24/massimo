@@ -41,6 +41,7 @@ describe('styles round-trip', () => {
         makeStyle('polygon', 'y3', { name: 'Lake', props: { fill: '#00aaff', curveRadius: 8 } }),
         makeStyle('routeBullet', 'y4', { name: 'Big', props: { size: 20 } }),
         makeStyle('transfer', 'y5', { name: 'Bold link', props: { thickness: 6 } }),
+        makeStyle('station', 'y6', { name: 'Big name', props: { fontSize: 20, weight: 700 } }),
       ],
     });
     doc = applyStyleToItem(doc, 'y1', 'l1');
@@ -48,6 +49,7 @@ describe('styles round-trip', () => {
     doc = applyStyleToItem(doc, 'y3', 'p1');
     doc = applyStyleToItem(doc, 'y4', 'b1');
     doc = applyStyleToItem(doc, 'y5', 'x1');
+    doc = applyStyleToItem(doc, 'y6', 's1');
     const result = parse(serialize(doc));
     expect(result.ok).toBe(true);
     if (result.ok) expect(result.doc).toEqual(doc);
@@ -132,7 +134,7 @@ describe('sanitizeStyles via parse', () => {
       ...makeDoc({}),
       styles: {
         y1: good,
-        y2: { id: 'y2', name: 'Bad kind', kind: 'station', props: {} },
+        y2: { id: 'y2', name: 'Bad kind', kind: 'bogus', props: {} },
         y3: { id: 'y3', name: '   ', kind: 'routeBullet', props: { shape: 'circle', size: 10 } },
         y4: {
           id: 'y4',
@@ -150,6 +152,7 @@ describe('sanitizeStyles via parse', () => {
     expect(Object.keys(out.styles).sort()).toEqual([
       'default-line',
       'default-polygon',
+      'default-station',
       'default-textLabel',
       'default-transfer',
       'y1',
@@ -208,6 +211,7 @@ describe('sanitizeStyles via parse', () => {
     const out = parsed(doc);
     expect(Object.keys(out.styles).sort()).toEqual([
       'default-line',
+      'default-station',
       'default-textLabel',
       'default-transfer',
       'y1',
@@ -343,5 +347,111 @@ describe('pruneDanglingStyleRefs via parse', () => {
       styles: { y1: makeStyle('routeBullet', 'y1', { name: 'Custom' }) },
     };
     expect(parsed(doc).styles).toEqual(DEFAULT_STYLES); // dropped, then refilled
+  });
+});
+
+describe('bakeLegacyLabelSettings via parse — retired global station-label font', () => {
+  // A pre-retirement doc still carrying the five global label* fields, with two
+  // stations exercising the per-station relative flags.
+  const legacyDoc = (extra: Record<string, unknown> = {}) => {
+    const base = makeDoc({
+      stations: [makeStation({ id: 's1' }), makeStation({ id: 's2' }), makeStation({ id: 's3' })],
+    });
+    return {
+      ...base,
+      stations: {
+        s1: base.stations.s1, // plain → matches the seeded Default
+        s2: { ...base.stations.s2, labelBold: true }, // +2 weight → Custom
+        s3: { ...base.stations.s3, labelItalic: true }, // italic OR → Custom
+      },
+      labelFontSize: 18,
+      labelWeight: 400,
+      labelItalic: false,
+      labelLeading: 1.5,
+      labelTracking: 0,
+      ...extra,
+    };
+  };
+
+  it('bakes each station’s effective typography and drops the global + relative flags', () => {
+    const out = parsed(legacyDoc());
+    // The five global fields are gone.
+    for (const k of [
+      'labelFontSize',
+      'labelWeight',
+      'labelItalic',
+      'labelLeading',
+      'labelTracking',
+    ]) {
+      expect(k in out).toBe(false);
+    }
+    // s1 (plain): global size/leading baked; weight/italic/tracking stay default.
+    expect(out.stations.s1.fontSize).toBe(18);
+    expect(out.stations.s1.leading).toBe(1.5);
+    expect(out.stations.s1.weight).toBeUndefined();
+    expect(out.stations.s1.italic).toBeUndefined();
+    // s2 (labelBold): weight bumped 400 → 700, flag consumed.
+    expect(out.stations.s2.weight).toBe(700);
+    expect(out.stations.s2.fontSize).toBe(18);
+    expect('labelBold' in out.stations.s2).toBe(false);
+    // s3 (labelItalic): italic OR'd true, flag consumed.
+    expect(out.stations.s3.italic).toBe(true);
+    expect('labelItalic' in out.stations.s3).toBe(false);
+  });
+
+  it('seeds the designated default station style from the legacy BASE settings', () => {
+    const out = parsed(legacyDoc());
+    // Weight is the BASE (un-bumped) 400, not any station's bolded 700.
+    expect(out.styles['default-station'].props).toEqual({
+      fontSize: 18,
+      weight: 400,
+      italic: false,
+      leading: 1.5,
+      tracking: 0,
+    });
+  });
+
+  it('adopts default-looking stations onto the seeded Default, even on the styles-present path', () => {
+    // makeDoc ships a styles record (hadStyles), so the general adoptDefaultStyles
+    // is gated off — the bake does the station adoption itself.
+    const out = parsed(legacyDoc());
+    expect(out.stations.s1.styleId).toBe('default-station'); // matches the seed
+    expect(out.stations.s2.styleId).toBeUndefined(); // bold → Custom
+    expect(out.stations.s3.styleId).toBeUndefined(); // italic → Custom
+  });
+
+  it('bakes + seeds for a pre-styles file too (no styles record)', () => {
+    const {
+      styles: _s,
+      styleDefaults: _sd,
+      ...noStyles
+    } = makeDoc({
+      stations: [makeStation({ id: 's1' })],
+    }) as MapDoc;
+    const out = parsed({
+      ...noStyles,
+      labelFontSize: 16,
+      labelWeight: 400,
+      labelItalic: false,
+      labelLeading: 1,
+      labelTracking: 0,
+    });
+    expect(out.styles['default-station'].props).toMatchObject({ fontSize: 16 });
+    expect(out.stations.s1.fontSize).toBe(16);
+    expect(out.stations.s1.styleId).toBe('default-station');
+  });
+
+  it('is a no-op on a post-retirement save (round-trips value-identical)', () => {
+    let doc = makeDoc({
+      stations: [makeStation({ id: 's1' }), makeStation({ id: 's2' })],
+      styles: [
+        ...Object.values(DEFAULT_STYLES),
+        makeStyle('station', 'big', { props: { fontSize: 20 } }),
+      ],
+    });
+    doc = applyStyleToItem(doc, 'big', 's2'); // s2 tagged, fontSize 20
+    const result = parse(serialize(doc));
+    expect(result.ok).toBe(true);
+    if (result.ok) expect(result.doc).toEqual(doc);
   });
 });

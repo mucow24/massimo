@@ -1,7 +1,5 @@
 import { useCallback, useMemo, useRef } from 'react';
 import {
-  FontBoldIcon,
-  FontItalicIcon,
   LockClosedIcon,
   LockOpen1Icon,
   MagicWandIcon,
@@ -19,11 +17,29 @@ import {
   LabelValignCycleButton,
 } from './LabelAlignButtons';
 import { StopRows } from './StopRows';
+import { StyleRow } from '../StyleRow';
+import { NumericFieldRow } from '../NumericFieldRow';
+import { WeightSelect, ItalicButton } from '../WeightItalicControls';
 import { useFieldHistory } from '../useFieldHistory';
 import { usePersistedTextareaHeight } from '../usePersistedTextareaHeight';
 import { useNumericField } from '../useNumericField';
 import { useDismiss } from '../usePopover';
-import { resolveAutoAlign, resolveOffsetPerp } from '../../model/transforms';
+import {
+  FONT_SIZE_STEP,
+  LABEL_FONT_SIZE_MAX,
+  LABEL_FONT_SIZE_MIN,
+  LABEL_LEADING_DEFAULT,
+  LABEL_LEADING_MAX,
+  LABEL_LEADING_MIN,
+  LABEL_LEADING_STEP,
+  LABEL_TRACKING_DEFAULT,
+  LABEL_TRACKING_MAX,
+  LABEL_TRACKING_MIN,
+  LABEL_TRACKING_STEP,
+  effectiveStationStyleProps,
+  resolveAutoAlign,
+  resolveOffsetPerp,
+} from '../../model/transforms';
 
 export function StationInspector({ id }: { id: StationId }) {
   const station = useDoc((s) => s.stations[id]);
@@ -42,8 +58,7 @@ export function StationInspector({ id }: { id: StationId }) {
   const setStationWaypoint = useDoc((s) => s.setStationWaypoint);
   const setStationLocked = useDoc((s) => s.setStationLocked);
   const setStationEditorHeight = useDoc((s) => s.setStationEditorHeight);
-  const setStationLabelBold = useDoc((s) => s.setStationLabelBold);
-  const setStationLabelItalic = useDoc((s) => s.setStationLabelItalic);
+  const updateStationLabelStyle = useDoc((s) => s.updateStationLabelStyle);
   const selection = useSelection();
   const nameField = useFieldHistory();
   // Remember the manually stretched height of the Name box, per station, so it
@@ -103,6 +118,11 @@ export function StationInspector({ id }: { id: StationId }) {
   const mirrorAvailable = matches.length > 0;
   const inLayoutEdit =
     selection.uiMode.kind === 'editing-station-layout' && selection.uiMode.stationId === station.id;
+  // The station's OWN effective typography (stored ?? LABEL_* default) — the
+  // style section's controls read/write these. Typography edits stay LOCAL to
+  // this station (not dispatched through mirror), matching the pinned
+  // "typography never mirrors" decision; the style picker is how you share it.
+  const labelStyle = effectiveStationStyleProps(station);
 
   return (
     <section className="inspector">
@@ -300,34 +320,6 @@ export function StationInspector({ id }: { id: StationId }) {
             disabled={resolveAutoAlign(station.label)}
             onSet={(v) => dispatchAll((sid) => setLabelValign(sid, v))}
           />
-          <button
-            type="button"
-            className={`chip-btn${station.labelBold ? ' active' : ''}`}
-            aria-pressed={!!station.labelBold}
-            aria-label="Bold"
-            title={
-              station.labelBold
-                ? 'Bold on — text renders two weights heavier than the default'
-                : 'Bold this station (renders two weights heavier than the default)'
-            }
-            onClick={() => setStationLabelBold(station.id, !station.labelBold)}
-          >
-            <FontBoldIcon />
-          </button>
-          <button
-            type="button"
-            className={`chip-btn${station.labelItalic ? ' active' : ''}`}
-            aria-pressed={!!station.labelItalic}
-            aria-label="Italic"
-            title={
-              station.labelItalic
-                ? 'Italic on — this station’s name renders italic'
-                : 'Italicize this station’s name'
-            }
-            onClick={() => setStationLabelItalic(station.id, !station.labelItalic)}
-          >
-            <FontItalicIcon />
-          </button>
         </div>
         <div className="field-hint">Offset (along reading direction)</div>
         <LabelOffsetControl
@@ -349,6 +341,72 @@ export function StationInspector({ id }: { id: StationId }) {
                 resolveOffsetPerp(stationsAll[m.id]?.label) !== resolveOffsetPerp(station.label),
             )
           }
+        />
+      </div>
+
+      {/* Name typography — the standard "style picker on top, style options
+          below" section (like the other item popovers). Edits are LOCAL to this
+          station (never dispatchAll), preserving the pinned "typography never
+          mirrors" decision; NOT lock-disabled — the station inspector stays
+          fully editable even when the station is canvas-locked. */}
+      <div className="field">
+        <StyleRow key={station.id} kind="station" itemId={station.id} styleId={station.styleId} />
+        <hr className="popover-divider" aria-hidden="true" />
+        <NumericFieldRow
+          id={`station-size-${station.id}`}
+          label="Size"
+          min={LABEL_FONT_SIZE_MIN}
+          max={LABEL_FONT_SIZE_MAX}
+          step={FONT_SIZE_STEP}
+          value={labelStyle.fontSize}
+          onChange={(n) => updateStationLabelStyle(station.id, { fontSize: n })}
+          getCurrent={() =>
+            effectiveStationStyleProps(useDoc.getState().stations[station.id] ?? station).fontSize
+          }
+          textboxAllowAboveMax
+        />
+        <div className="field-row">
+          <label htmlFor={`station-weight-${station.id}`}>Weight</label>
+          <WeightSelect
+            id={`station-weight-${station.id}`}
+            value={labelStyle.weight}
+            italic={labelStyle.italic}
+            onChange={(weight) => updateStationLabelStyle(station.id, { weight })}
+          />
+          <ItalicButton
+            active={labelStyle.italic}
+            onToggle={() => updateStationLabelStyle(station.id, { italic: !labelStyle.italic })}
+          />
+        </div>
+        {/* Line-spacing multiplier (1 = normal); the tick marks the neutral 1. */}
+        <NumericFieldRow
+          id={`station-leading-${station.id}`}
+          label="Leading"
+          min={LABEL_LEADING_MIN}
+          max={LABEL_LEADING_MAX}
+          step={LABEL_LEADING_STEP}
+          value={labelStyle.leading}
+          onChange={(n) => updateStationLabelStyle(station.id, { leading: n })}
+          getCurrent={() =>
+            effectiveStationStyleProps(useDoc.getState().stations[station.id] ?? station).leading
+          }
+          detent={LABEL_LEADING_DEFAULT}
+          textboxAllowAboveMax
+        />
+        {/* Letter-spacing in em (0 = normal); the tick marks the neutral 0. */}
+        <NumericFieldRow
+          id={`station-tracking-${station.id}`}
+          label="Tracking"
+          min={LABEL_TRACKING_MIN}
+          max={LABEL_TRACKING_MAX}
+          step={LABEL_TRACKING_STEP}
+          value={labelStyle.tracking}
+          onChange={(n) => updateStationLabelStyle(station.id, { tracking: n })}
+          getCurrent={() =>
+            effectiveStationStyleProps(useDoc.getState().stations[station.id] ?? station).tracking
+          }
+          detent={LABEL_TRACKING_DEFAULT}
+          textboxAllowAboveMax
         />
       </div>
     </section>

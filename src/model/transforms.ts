@@ -49,6 +49,7 @@ import type {
   RouteBullet,
   Station,
   StationId,
+  StationStyleProps,
   StopCell,
   StopOrientation,
   StyleDef,
@@ -131,36 +132,71 @@ export function bumpWeightByIndex(weight: TextLabelWeight, delta: number): TextL
   return LABEL_WEIGHT_VALUES[next];
 }
 
+// The per-station typography defaults — the LABEL_* family as one object, so
+// effective-value resolution, the collapse-at-default writer, and the factory
+// 'station' style all read from a single source. A station stores only the
+// fields that differ from these.
+export const STATION_LABEL_STYLE_DEFAULTS: StationStyleProps = {
+  fontSize: LABEL_FONT_SIZE_DEFAULT,
+  weight: LABEL_WEIGHT_DEFAULT,
+  italic: false,
+  leading: LABEL_LEADING_DEFAULT,
+  tracking: LABEL_TRACKING_DEFAULT,
+};
+
 /**
- * Resolve the rendered weight for a station label, given the doc default and
- * the station's per-station bold flag. `stationBold` true bumps two indices
- * heavier (Regular → Bold), saturating at Black.
+ * The EFFECTIVE per-station typography (stored value ?? its LABEL_* default) as
+ * a self-contained `StationStyleProps` — the define-by-example capture for the
+ * 'station' style kind. Absent fields resolve to the defaults, so a station
+ * carrying no typography fields reads as the factory look.
  */
-export function resolveStationLabelWeight(
-  defaultWeight: TextLabelWeight,
-  stationBold: boolean | undefined,
-): TextLabelWeight {
-  return stationBold ? bumpWeightByIndex(defaultWeight, 2) : defaultWeight;
+export function effectiveStationStyleProps(
+  station: Pick<Station, 'fontSize' | 'weight' | 'italic' | 'leading' | 'tracking'>,
+): StationStyleProps {
+  return {
+    fontSize: station.fontSize ?? LABEL_FONT_SIZE_DEFAULT,
+    weight: station.weight ?? LABEL_WEIGHT_DEFAULT,
+    italic: station.italic ?? false,
+    leading: station.leading ?? LABEL_LEADING_DEFAULT,
+    tracking: station.tracking ?? LABEL_TRACKING_DEFAULT,
+  };
 }
 
 /**
- * The effective `LabelStyle` for a single station: the doc-level label defaults
- * (see `docLabelStyle`) with the station's per-station bold flag folded into
- * the weight. Every measured consumer — the painted label's layout, the
- * silhouette, the hit area, the layout editor, and marquee hit-testing — goes
- * through here so they all agree on how a given station's label is measured.
- * `docStyle.weight` must be the *default* weight (before any per-station
- * bold); the bold bump is applied here.
+ * The effective `LabelStyle` for a single station — its own per-station
+ * typography, resolved through the defaults. Every measured consumer (the
+ * painted label's layout, the silhouette, the hit area, the layout editor, and
+ * marquee hit-testing) goes through here so they all agree on how a given
+ * station's label is measured. `StationStyleProps` is structurally a
+ * `LabelStyle` (weight narrowed to the shipped ladder), so this is a
+ * type-facing view of `effectiveStationStyleProps`.
  */
 export function effectiveStationLabelStyle(
-  station: Pick<Station, 'labelBold'>,
-  docStyle: LabelStyle,
+  station: Pick<Station, 'fontSize' | 'weight' | 'italic' | 'leading' | 'tracking'>,
 ): LabelStyle {
-  // `LabelStyle.weight` is loosely `number` (geometry measures at any weight),
-  // but a station's doc-default weight is always one of the shipped ladder
-  // values, so resolving it against the ladder is sound.
-  const weight = resolveStationLabelWeight(docStyle.weight as TextLabelWeight, station.labelBold);
-  return { ...docStyle, weight };
+  return effectiveStationStyleProps(station);
+}
+
+/**
+ * Clamp/snap a full StationStyleProps onto the canonical grids (fontSize on the
+ * FONT_SIZE_STEP grid floored at LABEL_FONT_SIZE_MIN; leading/tracking snapped
+ * to their slider steps). The ONE canonicalizer shared by
+ * `updateStationLabelStyle` (the per-station writer) and
+ * `canonicalStyleProps('station')` (the style def), so a def edited in the panel
+ * compares exactly equal to what stamping it stores back. `weight`/`italic` pass
+ * through (validated as a shipped ladder value / boolean upstream).
+ */
+export function canonicalStationLabelStyle(props: StationStyleProps): StationStyleProps {
+  return {
+    fontSize: Math.max(
+      LABEL_FONT_SIZE_MIN,
+      Math.round(props.fontSize / FONT_SIZE_STEP) * FONT_SIZE_STEP,
+    ),
+    weight: props.weight,
+    italic: props.italic,
+    leading: snapToStep(props.leading, LABEL_LEADING_STEP, LABEL_LEADING_MIN),
+    tracking: snapToStep(props.tracking, LABEL_TRACKING_STEP, LABEL_TRACKING_MIN),
+  };
 }
 
 // TextLabel constants and defaults — exported so the popover, placement
@@ -1499,48 +1535,76 @@ export function setDocName(doc: MapDoc, name: string): MapDoc {
   return { ...doc, name };
 }
 
-// Clamps at the bottom only; the spinbutton accepts sizes beyond the slider's
-// range (LABEL_FONT_SIZE_MAX constrains the slider, not the value). Snaps to
-// the FONT_SIZE_STEP (0.25) grid so the quarter-step controls round-trip cleanly.
-export function setLabelFontSize(doc: MapDoc, n: number): MapDoc {
-  const clamped = Math.max(LABEL_FONT_SIZE_MIN, Math.round(n / FONT_SIZE_STEP) * FONT_SIZE_STEP);
-  if (clamped === doc.labelFontSize) return doc;
-  return { ...doc, labelFontSize: clamped };
-}
-
-export function setLabelWeight(doc: MapDoc, w: TextLabelWeight): MapDoc {
-  if (w === doc.labelWeight) return doc;
-  return { ...doc, labelWeight: w };
-}
-
-// `false` is the default for these boolean station flags, so we store `true`
-// and omit the field entirely when off — keeping persisted docs clean. All
-// three setters share this through `updateStation` (returning `st` unchanged
-// on a no-op so history grouping still sees an untouched doc).
-function setStationBoolFlag(
-  doc: MapDoc,
-  stationId: StationId,
-  field: 'labelBold' | 'labelItalic' | 'locked',
-  value: boolean,
-): MapDoc {
+// `false` is the default for `locked`, so we store `true` and omit the field
+// entirely when off — keeping persisted docs clean. No-op (returns `st`
+// unchanged) when already at the requested state, so history grouping still
+// sees an untouched doc.
+export function setStationLocked(doc: MapDoc, stationId: StationId, locked: boolean): MapDoc {
   return updateStation(doc, stationId, (st) => {
-    if (!!st[field] === value) return st;
-    if (value) return { ...st, [field]: true };
-    const { [field]: _gone, ...rest } = st;
+    if (!!st.locked === locked) return st;
+    if (locked) return { ...st, locked: true };
+    const { locked: _gone, ...rest } = st;
     return rest;
   });
 }
 
-export function setStationLabelBold(doc: MapDoc, stationId: StationId, bold: boolean): MapDoc {
-  return setStationBoolFlag(doc, stationId, 'labelBold', bold);
+// The covered per-station typography fields a station style controls. The patch
+// shape shared by the inspector's style section, the style stamp
+// (model/styles.ts stampStyle), and updateStationLabelStyle, so the three never
+// drift.
+export type StationLabelPatch = Partial<
+  Pick<Station, 'fontSize' | 'weight' | 'italic' | 'leading' | 'tracking'>
+>;
+
+// Rebuild a station's five typography fields from a resolved StationStyleProps,
+// COLLAPSING each to omission when it equals its LABEL_* default — so a station
+// wearing the factory look stores none of them (mirrors the transfer-override
+// and bool-flag collapse). Every non-typography station field is preserved.
+function withStationLabelStyle(st: Station, props: StationStyleProps): Station {
+  const { fontSize: _f, weight: _w, italic: _i, leading: _l, tracking: _t, ...rest } = st;
+  const out: Station = { ...rest };
+  if (props.fontSize !== STATION_LABEL_STYLE_DEFAULTS.fontSize) out.fontSize = props.fontSize;
+  if (props.weight !== STATION_LABEL_STYLE_DEFAULTS.weight) out.weight = props.weight;
+  if (props.italic !== STATION_LABEL_STYLE_DEFAULTS.italic) out.italic = props.italic;
+  if (props.leading !== STATION_LABEL_STYLE_DEFAULTS.leading) out.leading = props.leading;
+  if (props.tracking !== STATION_LABEL_STYLE_DEFAULTS.tracking) out.tracking = props.tracking;
+  return out;
 }
 
-export function setStationLabelItalic(doc: MapDoc, stationId: StationId, italic: boolean): MapDoc {
-  return setStationBoolFlag(doc, stationId, 'labelItalic', italic);
-}
-
-export function setStationLocked(doc: MapDoc, stationId: StationId, locked: boolean): MapDoc {
-  return setStationBoolFlag(doc, stationId, 'locked', locked);
+/**
+ * Write one or more per-station typography fields (the 'station' style fields).
+ * Each provided field is clamped/snapped to the same canonical grid the style
+ * def uses (so a stamped station compares exactly equal to its style), then the
+ * whole set is rebuilt with collapse-at-default. Detaches the styleId tag
+ * whenever a covered EFFECTIVE value actually changes — a value-identical
+ * rewrite (a slider tick landing on the same value) keeps the tag and the same
+ * reference. The single write path for the inspector controls and the style
+ * stamp, mirroring `updateTextLabel`'s covered-change detach.
+ */
+export function updateStationLabelStyle(
+  doc: MapDoc,
+  id: StationId,
+  patch: StationLabelPatch,
+): MapDoc {
+  return updateStation(doc, id, (st) => {
+    const before = effectiveStationStyleProps(st);
+    const after = canonicalStationLabelStyle({
+      fontSize: patch.fontSize ?? before.fontSize,
+      weight: patch.weight ?? before.weight,
+      italic: patch.italic ?? before.italic,
+      leading: patch.leading ?? before.leading,
+      tracking: patch.tracking ?? before.tracking,
+    });
+    const coveredChanged =
+      after.fontSize !== before.fontSize ||
+      after.weight !== before.weight ||
+      after.italic !== before.italic ||
+      after.leading !== before.leading ||
+      after.tracking !== before.tracking;
+    // No effective change: keep the station verbatim (tag and reference intact).
+    if (!coveredChanged) return st;
+    return stripStyleId(withStationLabelStyle(st, after));
+  });
 }
 
 /**
@@ -1556,35 +1620,15 @@ export function setStationEditorHeight(doc: MapDoc, stationId: StationId, height
   );
 }
 
-export function setLabelItalic(doc: MapDoc, i: boolean): MapDoc {
-  if (i === doc.labelItalic) return doc;
-  return { ...doc, labelItalic: i };
-}
-
 // Snap a value to its slider's step and clamp at the bottom only (the
 // spinbutton accepts values above the slider max). The three-decimal rounding
 // kills float artifacts like 1.1500000000000001 while preserving the finest
 // step in use (tracking's 0.001); the coarser 0.05 / 0.25 steps never carry a
-// legitimate third decimal, so they're unaffected. Shared by the global
-// leading/tracking setters and per-label updateTextLabel.
+// legitimate third decimal, so they're unaffected. Shared by the per-station
+// updateStationLabelStyle (leading/tracking) and per-label updateTextLabel.
 export function snapToStep(v: number, step: number, min: number): number {
   if (!Number.isFinite(v)) return min;
   return Math.max(min, Math.round(Math.round(v / step) * step * 1000) / 1000);
-}
-
-// Global station-label line spacing. Clamps/snaps like the per-label leading;
-// mirrors setLabelFontSize's bottom-only clamp so the spinbutton can exceed the
-// slider's max.
-export function setLabelLeading(doc: MapDoc, n: number): MapDoc {
-  const snapped = snapToStep(n, LABEL_LEADING_STEP, LABEL_LEADING_MIN);
-  if (snapped === doc.labelLeading) return doc;
-  return { ...doc, labelLeading: snapped };
-}
-
-export function setLabelTracking(doc: MapDoc, n: number): MapDoc {
-  const snapped = snapToStep(n, LABEL_TRACKING_STEP, LABEL_TRACKING_MIN);
-  if (snapped === doc.labelTracking) return doc;
-  return { ...doc, labelTracking: snapped };
 }
 
 function arraysEqual<T>(a: readonly T[], b: readonly T[]): boolean {
@@ -1804,7 +1848,7 @@ export function updateTextLabel(
     // Clamp font size at the bottom only so callers (slider, spinbutton,
     // paste) can't push it to 0/negative; the spinbutton accepts sizes beyond
     // the slider's range. Snaps to the FONT_SIZE_STEP (0.25) grid. Mirrors
-    // `setLabelFontSize`.
+    // `canonicalStationLabelStyle`'s fontSize clamp.
     let nextPatch = patch;
     if (typeof patch.fontSize === 'number') {
       const clamped = Math.max(
@@ -2416,6 +2460,12 @@ export const DEFAULT_STYLES: Record<string, StyleDef> = {
       strokeColor: TRANSFER_STROKE_COLOR_DEFAULT,
     },
   },
+  'default-station': {
+    id: 'default-station',
+    name: 'Default',
+    kind: 'station',
+    props: STATION_LABEL_STYLE_DEFAULTS,
+  },
 };
 
 // The factory per-kind default designations — each kind's shipped style is
@@ -2427,6 +2477,7 @@ export const FACTORY_STYLE_DEFAULTS: Record<StyleKind, string> = {
   polygon: 'default-polygon',
   routeBullet: 'default-routeBullet',
   transfer: 'default-transfer',
+  station: 'default-station',
 };
 
 export const DEFAULT_DOC: MapDoc = {
@@ -2446,10 +2497,5 @@ export const DEFAULT_DOC: MapDoc = {
   svgImageOrder: [],
   styles: DEFAULT_STYLES,
   styleDefaults: FACTORY_STYLE_DEFAULTS,
-  labelFontSize: LABEL_FONT_SIZE_DEFAULT,
-  labelWeight: LABEL_WEIGHT_DEFAULT,
-  labelItalic: false,
-  labelLeading: LABEL_LEADING_DEFAULT,
-  labelTracking: LABEL_TRACKING_DEFAULT,
   activePalettes: ['mta'],
 };

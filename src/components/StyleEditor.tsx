@@ -1,5 +1,4 @@
 import {
-  FontItalicIcon,
   MoonIcon,
   SunIcon,
   TextAlignCenterIcon,
@@ -10,6 +9,7 @@ import {
 import { useDoc } from '../state/store';
 import { ColorField } from './ColorField';
 import { NumericFieldRow } from './NumericFieldRow';
+import { WeightSelect, ItalicButton } from './WeightItalicControls';
 import { StationShapePicker } from './StationShapePicker';
 import { ShapeIcon } from './RouteBulletPopover';
 import type { StylePropsPatch } from '../model/styles';
@@ -29,7 +29,16 @@ import {
 } from '../model/transferStyle';
 import {
   FONT_SIZE_STEP,
-  LABEL_WEIGHT_NAMES,
+  LABEL_FONT_SIZE_MAX,
+  LABEL_FONT_SIZE_MIN,
+  LABEL_LEADING_DEFAULT,
+  LABEL_LEADING_MAX,
+  LABEL_LEADING_MIN,
+  LABEL_LEADING_STEP,
+  LABEL_TRACKING_DEFAULT,
+  LABEL_TRACKING_MAX,
+  LABEL_TRACKING_MIN,
+  LABEL_TRACKING_STEP,
   POLYGON_CURVE_RADIUS_MAX,
   POLYGON_CURVE_RADIUS_MIN,
   POLYGON_STROKE_STEP,
@@ -39,13 +48,13 @@ import {
   ROUTE_BULLET_SIZE_MIN,
   TEXT_LABEL_FONT_SIZE_MAX,
   TEXT_LABEL_FONT_SIZE_MIN,
-  isLabelWeight,
 } from '../model/transforms';
 import type {
   LineStyleProps,
   PolygonStyleProps,
   RouteBulletShape,
   RouteBulletStyleProps,
+  StationStyleProps,
   StyleDef,
   TextLabelAlign,
   TextLabelStyleProps,
@@ -71,6 +80,8 @@ export function StyleEditor({ def }: { def: StyleDef }) {
       return <RouteBulletStyleEditor id={def.id} props={def.props} />;
     case 'transfer':
       return <TransferStyleEditor id={def.id} props={def.props} />;
+    case 'station':
+      return <StationStyleEditor id={def.id} props={def.props} />;
   }
 }
 
@@ -189,22 +200,12 @@ function TextLabelStyleEditor({ id, props }: { id: string; props: TextLabelStyle
       />
       <div className="row">
         <label htmlFor={`style-${id}-weight`}>Weight</label>
-        <select
+        <WeightSelect
           id={`style-${id}-weight`}
-          className="weight-select"
-          aria-label="Weight"
           value={props.weight}
-          onChange={(e) => {
-            const n = Number(e.target.value);
-            if (isLabelWeight(n)) patch({ weight: n });
-          }}
-        >
-          {LABEL_WEIGHT_NAMES.map((w) => (
-            <option key={w.value} value={w.value} style={{ fontWeight: w.value }}>
-              {w.name}
-            </option>
-          ))}
-        </select>
+          italic={props.italic}
+          onChange={(weight) => patch({ weight })}
+        />
       </div>
       <div className="row">
         <label>Align</label>
@@ -223,16 +224,7 @@ function TextLabelStyleEditor({ id, props }: { id: string; props: TextLabelStyle
             </button>
           ))}
         </div>
-        <button
-          type="button"
-          className={'italic-btn' + (props.italic ? ' active' : '')}
-          title="Italic"
-          aria-label="Italic"
-          aria-pressed={props.italic}
-          onClick={() => patch({ italic: !props.italic })}
-        >
-          <FontItalicIcon />
-        </button>
+        <ItalicButton active={props.italic} onToggle={() => patch({ italic: !props.italic })} />
       </div>
     </div>
   );
@@ -418,6 +410,59 @@ function TransferStyleEditor({ id, props }: { id: string; props: TransferStylePr
           onChange={(night) => patch({ strokeColor: { day: props.strokeColor.day, night } })}
         />
       </div>
+    </div>
+  );
+}
+
+function StationStyleEditor({ id, props }: { id: string; props: StationStyleProps }) {
+  const patch = usePatch(id);
+  return (
+    <div className="style-editor">
+      <NumericFieldRow
+        id={`style-${id}-size`}
+        label="Size"
+        min={LABEL_FONT_SIZE_MIN}
+        max={LABEL_FONT_SIZE_MAX}
+        step={FONT_SIZE_STEP}
+        value={props.fontSize}
+        onChange={(fontSize) => patch({ fontSize })}
+        getCurrent={liveNumberProp(id, 'fontSize', props.fontSize)}
+        textboxAllowAboveMax
+      />
+      <div className="row">
+        <label htmlFor={`style-${id}-weight`}>Weight</label>
+        <WeightSelect
+          id={`style-${id}-weight`}
+          value={props.weight}
+          italic={props.italic}
+          onChange={(weight) => patch({ weight })}
+        />
+        <ItalicButton active={props.italic} onToggle={() => patch({ italic: !props.italic })} />
+      </div>
+      <NumericFieldRow
+        id={`style-${id}-leading`}
+        label="Leading"
+        min={LABEL_LEADING_MIN}
+        max={LABEL_LEADING_MAX}
+        step={LABEL_LEADING_STEP}
+        value={props.leading}
+        onChange={(leading) => patch({ leading })}
+        getCurrent={liveNumberProp(id, 'leading', props.leading)}
+        detent={LABEL_LEADING_DEFAULT}
+        textboxAllowAboveMax
+      />
+      <NumericFieldRow
+        id={`style-${id}-tracking`}
+        label="Tracking"
+        min={LABEL_TRACKING_MIN}
+        max={LABEL_TRACKING_MAX}
+        step={LABEL_TRACKING_STEP}
+        value={props.tracking}
+        onChange={(tracking) => patch({ tracking })}
+        getCurrent={liveNumberProp(id, 'tracking', props.tracking)}
+        detent={LABEL_TRACKING_DEFAULT}
+        textboxAllowAboveMax
+      />
     </div>
   );
 }

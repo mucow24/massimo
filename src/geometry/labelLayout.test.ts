@@ -1,10 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import {
-  docLabelStyle,
-  labelLayoutLocal,
-  screenDeltaToLabelOffsets,
-  DEFAULT_LABEL_STYLE,
-} from './labelLayout';
+import { labelLayoutLocal, screenDeltaToLabelOffsets, DEFAULT_LABEL_STYLE } from './labelLayout';
 import { stopCenterAt, STOP_SIZE } from './orientation';
 import { stopHalfOf } from '../model/lineWidth';
 import type { LabelValign, Rotation, Station } from '../model/types';
@@ -59,20 +54,6 @@ function station({
     label: { row: labelRow, col: labelCol, rotation, offset: 0, align, valign: 'middle' },
   };
 }
-
-describe('docLabelStyle', () => {
-  it('maps the five doc-level label fields onto the LabelStyle shape', () => {
-    expect(
-      docLabelStyle({
-        labelFontSize: 17,
-        labelWeight: 700,
-        labelItalic: true,
-        labelLeading: 1.4,
-        labelTracking: 0.08,
-      }),
-    ).toEqual({ fontSize: 17, weight: 700, italic: true, leading: 1.4, tracking: 0.08 });
-  });
-});
 
 describe('labelLayoutLocal — per-stop widths', () => {
   const half28 = stopHalfOf({ L1: { width: 28 } });

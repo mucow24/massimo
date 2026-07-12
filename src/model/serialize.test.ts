@@ -377,12 +377,16 @@ describe('parse — legacy stop orientation migration', () => {
   });
 });
 
-describe('parse — labelBold → labelWeight migration', () => {
-  // Older docs stored station-label boldness as a single boolean. The schema
-  // now has a per-doc `labelWeight` (one of 100/200/300/400/500/700/800/900)
-  // and an optional per-station `labelBold` flag that bumps two indices on
-  // top of that. parse() must translate the legacy boolean so saves made
-  // before the change still load correctly.
+describe('parse — legacy global labelBold → default station style weight', () => {
+  // Two legacy layers compose here: the ancient global `labelBold: boolean`
+  // first migrates to a global `labelWeight` (migrateLegacyLabelBold), which the
+  // retired-settings bake then folds into the DESIGNATED default station style
+  // (bakeLegacyLabelSettings). So the observable outcome moved from a doc field
+  // to that style's `weight`.
+  const defaultStationProps = (r: ReturnType<typeof parse>) => {
+    if (!r.ok) throw new Error('parse failed');
+    return r.doc.styles[r.doc.styleDefaults.station].props;
+  };
   const buildLegacy = (labelBold: boolean) =>
     JSON.stringify({
       format: 'massimo-map',
@@ -403,22 +407,22 @@ describe('parse — labelBold → labelWeight migration', () => {
       },
     });
 
-  it('translates labelBold:true to labelWeight:700', () => {
-    const r = parse(buildLegacy(true));
-    expect(r.ok).toBe(true);
-    if (r.ok) expect(r.doc.labelWeight).toBe(700);
+  it('translates labelBold:true to a Bold (700) default station style', () => {
+    expect(defaultStationProps(parse(buildLegacy(true)))).toMatchObject({ weight: 700 });
   });
 
-  it('translates labelBold:false to labelWeight:400', () => {
-    const r = parse(buildLegacy(false));
-    expect(r.ok).toBe(true);
-    if (r.ok) expect(r.doc.labelWeight).toBe(400);
+  it('translates labelBold:false to a Regular (400) default station style', () => {
+    expect(defaultStationProps(parse(buildLegacy(false)))).toMatchObject({ weight: 400 });
   });
 
-  it('strips labelBold from the doc after migrating', () => {
+  it('strips labelBold and the global label* fields from the doc after migrating', () => {
     const r = parse(buildLegacy(true));
     expect(r.ok).toBe(true);
-    if (r.ok) expect('labelBold' in r.doc).toBe(false);
+    if (r.ok) {
+      expect('labelBold' in r.doc).toBe(false);
+      expect('labelWeight' in r.doc).toBe(false);
+      expect('labelFontSize' in r.doc).toBe(false);
+    }
   });
 
   it('prefers an explicit labelWeight over a legacy labelBold', () => {
@@ -443,9 +447,7 @@ describe('parse — labelBold → labelWeight migration', () => {
         activePalettes: ['mta'],
       },
     });
-    const r = parse(json);
-    expect(r.ok).toBe(true);
-    if (r.ok) expect(r.doc.labelWeight).toBe(500);
+    expect(defaultStationProps(parse(json))).toMatchObject({ weight: 500 });
   });
 });
 

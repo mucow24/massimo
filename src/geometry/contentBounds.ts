@@ -1,5 +1,4 @@
 import type { MapDoc } from '../model/types';
-import { docLabelStyle } from './labelLayout';
 import { stopHalfOf } from '../model/lineWidth';
 import { effectiveStationLabelStyle } from '../model/transforms';
 import { TEXT_LABEL_HIT_PAD, type AABBRect } from './stationBoundary';
@@ -37,12 +36,11 @@ export function computeContentBounds(doc: MapDoc): AABBRect | null {
     if (r.y1 > maxY) maxY = r.y1;
   };
 
-  const baseStyle = docLabelStyle(doc);
   const stopHalf = stopHalfOf(doc.lines);
 
   for (const id in doc.stations) {
     const st = doc.stations[id];
-    acc(stationWorldAABB(st, effectiveStationLabelStyle(st, baseStyle), stopHalf));
+    acc(stationWorldAABB(st, effectiveStationLabelStyle(st), stopHalf));
   }
   for (const id in doc.textLabels) {
     acc(textLabelAABB(doc.textLabels[id], TEXT_LABEL_HIT_PAD));
