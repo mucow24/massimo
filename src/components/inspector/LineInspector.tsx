@@ -41,6 +41,7 @@ import {
   lineStrokeWidthOf,
 } from '../../model/lineStroke';
 import { stationBandLayout, STATION_ROW_H, GAP_ROW_H } from './stationBandGeometry';
+import { StationGraph } from './StationGraph';
 
 // Clear the line editor's pointer-hover highlights (the white dot casing and
 // the segment-corridor wash). Call this whenever a hovered row/divider is
@@ -402,7 +403,46 @@ export function LineInspector({ id }: { id: LineId }) {
         >
           {isAppending ? 'Done' : 'Edit Stops'}
         </button>
+        {/* Not editing: show the column-based graph so branches and loops read
+            as their actual shape instead of one flat list. Editing (appending)
+            keeps the linear list + insert affordances below. */}
+        {line.stations.length > 0 && !isAppending && (
+          <StationGraph
+            line={line}
+            stations={stations}
+            color={line.color}
+            underlayColor={underlayColor}
+            isAppending={false}
+            cursorStationId={null}
+            appendDraw={false}
+            hovered={
+              selection.hoveredInspectorSegment?.lineId === line.id
+                ? selection.hoveredInspectorSegment
+                : null
+            }
+            onSelectStation={(sid) => selection.selectStation(sid)}
+            onRemoveStation={() => {}}
+            onCycleSegment={(a, b) => cycleSegmentStyle(a, b)}
+            onInsertAfter={() => {}}
+            onBranchFrom={() => {}}
+            onHoverSegment={(edge) =>
+              selection.setHoveredInspectorSegment(
+                edge ? { lineId: line.id, fromStationId: edge.from, toStationId: edge.to } : null,
+              )
+            }
+            onHoverStation={(sid) => {
+              if (sid) {
+                selection.setHoveredLineStop({ lineId: line.id, stationId: sid });
+                selection.setHoveredStation(sid);
+              } else {
+                selection.setHoveredLineStop(null);
+                selection.setHoveredStation(null);
+              }
+            }}
+          />
+        )}
         {line.stations.length > 0 &&
+          isAppending &&
           (() => {
             const N = line.stations.length;
             // The preview band always paints at the default line width — the
@@ -736,61 +776,63 @@ export function LineInspector({ id }: { id: LineId }) {
               </div>
             );
           })()}
-        {/* Edges the linear preview band can't show — loop-closing wraps and
-            branch legs (any edge not between two display-consecutive stops).
-            Listed here so EVERY segment's style is reachable on a loop/branch. */}
-        {(() => {
-          const consecutive = new Set<string>();
-          for (let i = 0; i < line.stations.length - 1; i++) {
-            consecutive.add(pairKeyOf(line.stations[i], line.stations[i + 1]));
-          }
-          const extras = line.edges.filter((e) => !consecutive.has(e));
-          if (extras.length === 0) return null;
-          return (
-            <div className="field">
-              <label>Branch / loop segments</label>
-              {extras.map((e) => {
-                const [a, b] = edgeEndpoints(e);
-                const sa = stations[a];
-                const sb = stations[b];
-                if (!sa || !sb) return null;
-                const segStyle = resolveSegmentStyle(line, e);
-                const setHover = () =>
-                  selection.setHoveredInspectorSegment({
-                    lineId: line.id,
-                    fromStationId: a,
-                    toStationId: b,
-                  });
-                const clearHover = () => selection.setHoveredInspectorSegment(null);
-                return (
-                  <div
-                    key={e}
-                    className="list-row"
-                    style={{ gap: 8, alignItems: 'center', padding: '2px 0' }}
-                    onMouseEnter={setHover}
-                    onMouseLeave={clearHover}
-                  >
-                    <span className="grow" style={{ paddingLeft: 4 }}>
-                      {stationNameListText(sa.name)} → {stationNameListText(sb.name)}
-                    </span>
-                    <button
-                      type="button"
-                      className="btn-mini"
-                      onClick={() => cycleSegmentStyle(a, b)}
-                      onFocus={setHover}
-                      onBlur={clearHover}
-                      title={`Segment style: ${segStyle} (click to cycle)`}
-                      aria-label={`Segment style ${sa.name} to ${sb.name}: ${segStyle} (click to cycle)`}
-                      style={{ minWidth: 72, textTransform: 'capitalize' }}
+        {/* While editing, edges the linear preview band can't show — loop-closing
+            wraps and branch legs (any edge not between two display-consecutive
+            stops). When not editing, the graph's connectors are clickable
+            instead, so this only appears in append mode. */}
+        {isAppending &&
+          (() => {
+            const consecutive = new Set<string>();
+            for (let i = 0; i < line.stations.length - 1; i++) {
+              consecutive.add(pairKeyOf(line.stations[i], line.stations[i + 1]));
+            }
+            const extras = line.edges.filter((e) => !consecutive.has(e));
+            if (extras.length === 0) return null;
+            return (
+              <div className="field">
+                <label>Branch / loop segments</label>
+                {extras.map((e) => {
+                  const [a, b] = edgeEndpoints(e);
+                  const sa = stations[a];
+                  const sb = stations[b];
+                  if (!sa || !sb) return null;
+                  const segStyle = resolveSegmentStyle(line, e);
+                  const setHover = () =>
+                    selection.setHoveredInspectorSegment({
+                      lineId: line.id,
+                      fromStationId: a,
+                      toStationId: b,
+                    });
+                  const clearHover = () => selection.setHoveredInspectorSegment(null);
+                  return (
+                    <div
+                      key={e}
+                      className="list-row"
+                      style={{ gap: 8, alignItems: 'center', padding: '2px 0' }}
+                      onMouseEnter={setHover}
+                      onMouseLeave={clearHover}
                     >
-                      {segStyle}
-                    </button>
-                  </div>
-                );
-              })}
-            </div>
-          );
-        })()}
+                      <span className="grow" style={{ paddingLeft: 4 }}>
+                        {stationNameListText(sa.name)} → {stationNameListText(sb.name)}
+                      </span>
+                      <button
+                        type="button"
+                        className="btn-mini"
+                        onClick={() => cycleSegmentStyle(a, b)}
+                        onFocus={setHover}
+                        onBlur={clearHover}
+                        title={`Segment style: ${segStyle} (click to cycle)`}
+                        aria-label={`Segment style ${sa.name} to ${sb.name}: ${segStyle} (click to cycle)`}
+                        style={{ minWidth: 72, textTransform: 'capitalize' }}
+                      >
+                        {segStyle}
+                      </button>
+                    </div>
+                  );
+                })}
+              </div>
+            );
+          })()}
         {/* An empty line has no station band, so surface the same
             "before the first stop" insert lozenge on its own. Clicking it
             arms the cursor (-1) so map clicks add the first stop — identical

@@ -33,6 +33,9 @@ describe('<LineInspector /> — segment style dividers', () => {
     localStorage.clear();
     useDoc.setState({ ...DEFAULT_DOC });
     useSelection.setState(SELECTION_BLANK);
+    // The inline dividers are the EDIT-mode segment UI (the view shows the
+    // graph, whose connectors are clickable instead), so edit the line.
+    useSelection.getState().setAppending('L1');
   });
 
   const seedThreeStationLine = () => {
@@ -647,6 +650,7 @@ describe('<LineInspector /> — branch/loop segment styles', () => {
         ],
       }),
     });
+    useSelection.getState().setAppending('L1'); // list is the edit-mode segment UI
     const user = userEvent.setup();
     render(<LineInspector id="L1" />);
 

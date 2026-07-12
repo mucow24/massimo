@@ -119,7 +119,17 @@ Topology enumerators to switch from consecutive-pairs → `edges`:
     `appending-to-line` UiMode; in draw mode a plain click wires an edge (Alt+click still
     works everywhere). Off-chain edges (branch legs, loop wraps) are listed under a
     **"Branch / loop segments"** section so every segment's style is settable. Unit-tested.
-- **Full suite green (195 files / 3398 tests), `tsc`/lint/format/build all clean.**
+- **Column/graph line-editor view (iteration 4).** The flat stop list read badly for
+  branches/loops, so the inspector now shows a **git-graph-style column layout when viewing**
+  a line: `inspector/lineGraphLayout.ts` (pure, tested) assigns each stop a row + lane via a
+  DFS — trunk in lane 0, each branch splitting into a lane that runs alongside down to its
+  stops, a loop closing with a back-edge bowed out in a side lane. `inspector/StationGraph.tsx`
+  renders the gutter (connectors + dots) with clickable connectors to cycle a segment's style.
+  Split for now: **view = graph, active editing (append) = the existing linear list**
+  (insert/branch/remove/reorder), to keep that tested flow intact. Deferred: unify so editing
+  also uses the graph; reorder + dot-shape picker are edit-list-only meanwhile; loop-arc
+  visuals are best-effort.
+- **Full suite green (197 files / 3406 tests), `tsc`/lint/format/build all clean.**
 
 ### Known open: a line overdraws its own casing at junctions
 
