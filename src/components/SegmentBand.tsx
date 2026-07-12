@@ -1,10 +1,26 @@
 import { Fragment, memo } from 'react';
 import { resolveSegmentStyle, SegmentBandSpec } from '../geometry/interlining';
-import { lineStrokeColorOf, lineStrokeRailWidth, lineStrokeWidthOf } from '../model/lineStroke';
+import {
+  casingInsetBodyWidth,
+  casingSilhouetteWidth,
+  lineStrokeColorOf,
+  lineStrokeRailWidth,
+  lineStrokeWidthOf,
+} from '../model/lineStroke';
 import { CasingRails } from './CasingRails';
-import type { Line, LineId } from '../model/types';
+import type { Line, LineId, LineStyle } from '../model/types';
 import { leftNormal, midpoint, norm, sub } from '../geometry/vec';
 import { lineStyleStrokeAttrs, lineStyleUnderlayAttrs } from './HatchPatterns';
+
+// A style's interior is "opaque" when its body fully covers its own footprint
+// (solid, or dashed/hatched whose gaps read as opaque underlay/pattern): a
+// solid casing silhouette painted behind such a body is hidden except at the
+// railW rim, so casing renders as SILHOUETTE + INSET BODY and a line's own
+// overlapping bands merge into one outer casing. The two "open" styles have
+// transparent gaps a silhouette would bleed through, so they keep the centered
+// rails (unchanged, and still self-overlap at junctions — a rare combination).
+export const styleHasOpaqueInterior = (style: LineStyle): boolean =>
+  style !== 'dashed-open' && style !== 'dotted';
 
 interface Props {
   spec: SegmentBandSpec;
@@ -12,9 +28,17 @@ interface Props {
   // emitted as one renderable per stripe so each can paint at its own line's
   // z-priority — see buildOrderedRenderables.
   stripeIndex: number;
+  // Two-pass split (mirrors StopGlyph's `pass`): a band emits a 'casing'
+  // renderable just behind its 'stripe' body (priority + CASING_EPS). The
+  // 'silhouette' pass paints the fat under-stroke that becomes the casing; the
+  // 'body' pass paints the (inset) colored body. Splitting them across z-order
+  // is what lets a line's own overlapping bands merge into one continuous outer
+  // casing.
+  pass: 'silhouette' | 'body';
   // When `interactive` is true, the stripe captures pointer events on its
   // stroke and forwards them via the per-line callbacks. Used to wire up
-  // hover-to-preview and click-to-insert in add-line-tag mode.
+  // hover-to-preview and click-to-insert in add-line-tag mode. (Body pass only;
+  // the silhouette is always inert.)
   interactive?: boolean;
   onLineHover?: (lineId: LineId, e: React.PointerEvent<SVGPathElement>) => void;
   onLineLeave?: (lineId: LineId, e: React.PointerEvent<SVGPathElement>) => void;
@@ -32,15 +56,17 @@ interface Props {
   underlayColor?: string;
 }
 
-// Memoized: a band emits one stripe renderable per line, so SegmentBand is one
-// of the highest-instance-count components on the canvas. Across a viewport pan
-// every prop is referentially stable (spec is from a doc-keyed memo; lines is
-// an immutable store ref; colorMap is memoized; onLineSelect is a stable
-// useCallback; interactive is constant outside line-tag/layering modes), so
-// React skips re-rendering the stripes when only the viewBox moves.
+// Memoized: a band emits one stripe renderable per line (and one casing
+// renderable), so SegmentBand is one of the highest-instance-count components
+// on the canvas. Across a viewport pan every prop is referentially stable (spec
+// is from a doc-keyed memo; lines is an immutable store ref; colorMap is
+// memoized; onLineSelect is a stable useCallback; interactive is constant
+// outside line-tag/layering modes), so React skips re-rendering when only the
+// viewBox moves.
 export const SegmentBand = memo(function SegmentBand({
   spec,
   stripeIndex,
+  pass,
   interactive = false,
   onLineHover,
   onLineLeave,
@@ -60,15 +86,37 @@ export const SegmentBand = memo(function SegmentBand({
   // is GEOMETRY — baked into the spec alongside the paths it shaped.
   const color = colorMap?.[lineId] ?? live.color;
   const style = resolveSegmentStyle(live, spec.pairKey);
-  const strokeWidth = spec.stripeWidths[stripeIndex];
+  const fullWidth = spec.stripeWidths[stripeIndex];
+  const railW = lineStrokeRailWidth(lineStrokeWidthOf(live), fullWidth);
+  const opaque = styleHasOpaqueInterior(style);
+
+  // Silhouette pass: the fat under-stroke that becomes the casing. Opaque
+  // styles only — an open style has no silhouette (its rails paint inline in
+  // the body pass). Nothing to paint when the line has no casing.
+  if (pass === 'silhouette') {
+    if (railW <= 0 || !opaque) return null;
+    return (
+      <path
+        d={d}
+        data-band-casing=""
+        data-line-id={lineId}
+        fill="none"
+        stroke={lineStrokeColorOf(live)}
+        strokeWidth={casingSilhouetteWidth(fullWidth, railW)}
+        strokeLinecap="butt"
+        strokeLinejoin="round"
+        pointerEvents="none"
+      />
+    );
+  }
+
+  // Body pass. Opaque styles inset the body by railW so the silhouette beneath
+  // shows exactly railW of casing at each edge; open styles keep the full body
+  // width and carry their casing as inline centered rails (unchanged).
+  const bodyWidth = opaque ? casingInsetBodyWidth(fullWidth, railW) : fullWidth;
   const selectable = !interactive && !!onLineSelect;
-  const { stroke, strokeDasharray, strokeLinecap } = lineStyleStrokeAttrs(
-    style,
-    color,
-    strokeWidth,
-  );
+  const { stroke, strokeDasharray, strokeLinecap } = lineStyleStrokeAttrs(style, color, bodyWidth);
   const underlay = lineStyleUnderlayAttrs(style, underlayColor);
-  const railW = lineStrokeRailWidth(lineStrokeWidthOf(live), strokeWidth);
   return (
     <Fragment>
       {underlay && (
@@ -76,7 +124,7 @@ export const SegmentBand = memo(function SegmentBand({
           d={d}
           fill="none"
           stroke={underlay.stroke}
-          strokeWidth={strokeWidth}
+          strokeWidth={bodyWidth}
           strokeLinecap={underlay.strokeLinecap}
           strokeLinejoin="round"
           pointerEvents="none"
@@ -89,7 +137,7 @@ export const SegmentBand = memo(function SegmentBand({
         data-line-id={lineId}
         fill="none"
         stroke={stroke}
-        strokeWidth={strokeWidth}
+        strokeWidth={bodyWidth}
         strokeLinecap={strokeLinecap}
         strokeLinejoin="round"
         strokeDasharray={strokeDasharray}
@@ -110,16 +158,20 @@ export const SegmentBand = memo(function SegmentBand({
           interactive && onLineContextMenu ? (e) => onLineContextMenu(lineId, e) : undefined
         }
       />
-      {/* Casing rails, painted immediately after the body — see CasingRails. */}
-      <CasingRails
-        centerline={spec.centerline}
-        radius={spec.radius}
-        offset={spec.stripeOffsets[stripeIndex]}
-        bodyWidth={strokeWidth}
-        railW={railW}
-        color={lineStrokeColorOf(live)}
-        lineId={lineId}
-      />
+      {/* Open styles keep centered casing rails inline (a silhouette would
+          bleed through their transparent gaps); opaque styles get the merged
+          casing from the silhouette pass instead. */}
+      {!opaque && (
+        <CasingRails
+          centerline={spec.centerline}
+          radius={spec.radius}
+          offset={spec.stripeOffsets[stripeIndex]}
+          bodyWidth={fullWidth}
+          railW={railW}
+          color={lineStrokeColorOf(live)}
+          lineId={lineId}
+        />
+      )}
     </Fragment>
   );
 });

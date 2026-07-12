@@ -94,6 +94,33 @@ describe('buildBands — golden geometry pins (all-default widths)', () => {
     expect(golden(buildBands(doc.stations, doc.lines, 24, doc.lineOrder))).toMatchSnapshot();
   });
 
+  // Loop/branch topology (PR #234) had no golden band-geometry coverage. These
+  // pin the routed paths for a junction and a loop so a change to buildBands
+  // can't silently slide them. (Geometry only — casing is a render concern.)
+  const hStation = (id: string, x: number, y: number) =>
+    makeStation({ id, x, y, stops: [makeStop('L1', { orientation: 'auto-horizontal' })] });
+
+  it('degree-3 junction: through-line a-j-c plus branch j-d', () => {
+    const doc = makeDoc({
+      stations: [
+        hStation('a', -120, 0),
+        hStation('c', 120, 0),
+        hStation('d', 120, -120),
+        hStation('j', 0, 0),
+      ],
+      lines: [makeLine({ id: 'L1', stations: ['a', 'j', 'c', 'd'], edges: ['a|j', 'c|j', 'd|j'] })],
+    });
+    expect(golden(buildBands(doc.stations, doc.lines, 24, doc.lineOrder))).toMatchSnapshot();
+  });
+
+  it('3-cycle loop: triangle a-b-c', () => {
+    const doc = makeDoc({
+      stations: [hStation('a', 0, 0), hStation('b', 160, 0), hStation('c', 80, 90)],
+      lines: [makeLine({ id: 'L1', stations: ['a', 'b', 'c'], edges: ['a|b', 'b|c', 'a|c'] })],
+    });
+    expect(golden(buildBands(doc.stations, doc.lines, 24, doc.lineOrder))).toMatchSnapshot();
+  });
+
   it('cramped single-stripe perpendicular terminus (cap below R)', () => {
     const doc = makeDoc({
       stations: [

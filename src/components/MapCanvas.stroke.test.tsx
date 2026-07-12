@@ -62,7 +62,7 @@ describe('MapCanvas — stroke edits repaint without a geometry rebuild', () => 
   // Stroke is PRESENTATION (unlike width): it must repaint through the live
   // lines map while the band geometry — paths, band keys, merging — stays
   // byte-identical. This is the inverse of the width regression test.
-  it('a stroke edit adds the rails live and leaves band geometry untouched', () => {
+  it('a stroke edit adds the casing live and leaves band geometry untouched', () => {
     render(<App />);
     seedInterlinedPair();
 
@@ -75,40 +75,35 @@ describe('MapCanvas — stroke edits repaint without a geometry rebuild', () => 
       useDoc.getState().setLineStrokeWidth('L1', 4);
     });
 
-    // Rails appear: two 4-wide paths inside the body in the default white,
-    // plus two marker rails per stop (2 stops).
-    const rails = casingEls('L1');
-    expect(rails).toHaveLength(2);
-    for (const c of rails) {
-      expect(c.getAttribute('stroke-width')).toBe('4');
-      expect(c.getAttribute('stroke')).toBe('#ffffff');
-    }
-    // The rails flank the body centerline on distinct offset paths. Both
-    // stations of a two-stop line are termini: 2 side rails + 1 end cap
-    // per marker.
-    expect(rails[0].getAttribute('d')).not.toBe(rails[1].getAttribute('d'));
+    // One casing silhouette appears (body 14 + railW 4 = 18 wide, default
+    // white), plus the marker casings (both stops are termini: 3 each = 6).
+    const casing = casingEls('L1');
+    expect(casing).toHaveLength(1);
+    expect(casing[0].getAttribute('stroke-width')).toBe('18');
+    expect(casing[0].getAttribute('stroke')).toBe('#ffffff');
     expect(markerCasingEls('L1')).toHaveLength(6);
     // The bare line is untouched.
     expect(casingEls('L2')).toHaveLength(0);
     expect(markerCasingEls('L2')).toHaveLength(0);
 
-    // …and geometry didn't rebuild: same band key count, byte-identical path.
+    // …and geometry didn't rebuild: same band key count, byte-identical body
+    // path (only its stroke-WIDTH insets — the `d` is stroke-independent).
     expect(distinctBandKeys()).toBe(1);
     expect(stripeD('L1')).toBe(dBefore);
 
-    // Color edit repaints the rails in place.
+    // Color edit repaints the casing in place.
     act(() => {
       useDoc.getState().setLineStrokeColor('L1', '#ff0000');
     });
     expect(casingEls('L1')[0].getAttribute('stroke')).toBe('#ff0000');
 
-    // Half-step widths render as-is.
+    // Half-step widths render as-is (14 + 1.5 = 15.5).
     act(() => {
       useDoc.getState().setLineStrokeWidth('L1', 1.5);
     });
-    expect(casingEls('L1')[0].getAttribute('stroke-width')).toBe('1.5');
+    expect(casingEls('L1')[0].getAttribute('stroke-width')).toBe('15.5');
 
-    // Back to 0 removes every rail.
+    // Back to 0 removes the casing.
     act(() => {
       useDoc.getState().setLineStrokeWidth('L1', 0);
     });
@@ -116,7 +111,7 @@ describe('MapCanvas — stroke edits repaint without a geometry rebuild', () => 
     expect(markerCasingEls('L1')).toHaveLength(0);
   });
 
-  it('the rails paint immediately after their own body — never on a neighbor', () => {
+  it('the casing silhouette paints just before its own body — never on a neighbor', () => {
     render(<App />);
     seedInterlinedPair();
     act(() => {
@@ -130,41 +125,47 @@ describe('MapCanvas — stroke edits repaint without a geometry rebuild', () => 
         (el.hasAttribute('data-band-casing') ? 'casing:' : 'stripe:') +
         el.getAttribute('data-line-id'),
     );
-    // Inside rails ride their own body: L2 (back) paints, then L1's body
-    // immediately followed by L1's rails. No cross-line interleaving.
-    expect(order).toEqual(['stripe:L2', 'stripe:L1', 'casing:L1', 'casing:L1']);
+    // L2 (back, no casing) body; then L1's casing silhouette immediately
+    // followed by L1's body — the silhouette (priority + ε) sits just behind
+    // its own body, never between another line's body and casing.
+    expect(order).toEqual(['stripe:L2', 'casing:L1', 'stripe:L1']);
   });
 
-  it('the line-highlight overlay repaints the selected line’s rails above the dim', () => {
+  it('the line-highlight overlay repaints the selected line’s casing above the dim', () => {
     render(<App />);
     seedInterlinedPair();
     act(() => {
       useDoc.getState().setLineStrokeWidth('L1', 4);
     });
-    // Band rails carry data attrs only in the main pass; count the highlight
-    // copies via marker rails (StopMarker emits them in both layers) and via
-    // 4-wide white paths for the stripes.
-    expect(markerCasingEls('L1')).toHaveLength(6);
-    const railPathCount = () =>
+    // Overlay silhouettes carry no data attrs; count them by signature — an
+    // 18-wide white OPEN band path (the terminus arrow casing is also 18 wide
+    // but a closed 'Z' triangle, so exclude those).
+    const bandSilhouettes = () =>
       Array.from(document.querySelectorAll('path')).filter(
-        (p) => p.getAttribute('stroke-width') === '4' && p.getAttribute('stroke') === '#ffffff',
+        (p) =>
+          p.getAttribute('stroke-width') === '18' &&
+          p.getAttribute('stroke') === '#ffffff' &&
+          !p.getAttribute('d')?.includes('Z'),
       ).length;
-    const before = railPathCount();
-    expect(before).toBe(2);
+    expect(markerCasingEls('L1')).toHaveLength(6);
+    expect(bandSilhouettes()).toBe(1); // main layer only
 
     act(() => {
       useSelection.getState().selectLine('L1');
     });
-    expect(railPathCount()).toBe(4);
+    expect(bandSilhouettes()).toBe(2); // main + overlay copy
     // Highlight copies: s1 repaints rails + cap (3), but s2 — the arrow
     // tip (the display-tail terminus) — suppresses its cap (2): the cased
     // arrowhead is the line's end.
     expect(markerCasingEls('L1')).toHaveLength(11);
 
-    // The terminus arrowhead is cased too: an underlay copy fattened by
-    // 2× the stroke width (10 + 2*4 = 18) in the stroke color.
+    // The terminus arrowhead is cased too: an underlay copy fattened by 2× the
+    // stroke width (10 + 2*4 = 18) in the stroke color — a closed triangle.
     const arrowCasing = Array.from(document.querySelectorAll('path')).filter(
-      (p) => p.getAttribute('stroke-width') === '18' && p.getAttribute('stroke') === '#ffffff',
+      (p) =>
+        p.getAttribute('stroke-width') === '18' &&
+        p.getAttribute('stroke') === '#ffffff' &&
+        p.getAttribute('d')?.includes('Z'),
     );
     expect(arrowCasing.length).toBe(1);
   });

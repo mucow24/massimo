@@ -938,6 +938,20 @@ export function MapCanvas() {
 
         {/* band stripes, warnings, and stop squares interleaved by per-stripe z-priority */}
         {renderables.map((r) => {
+          if (r.kind === 'casing') {
+            const stripeLineId = r.band.lines[r.stripeIndex].id;
+            return (
+              <SegmentBand
+                key={'c:' + r.band.bandKey + ':' + stripeLineId}
+                spec={r.band}
+                stripeIndex={r.stripeIndex}
+                pass="silhouette"
+                lines={lines}
+                colorMap={colorMap}
+                underlayColor={underlayColor}
+              />
+            );
+          }
           if (r.kind === 'stripe') {
             const stripeLineId = r.band.lines[r.stripeIndex].id;
             return (
@@ -945,6 +959,7 @@ export function MapCanvas() {
                 key={'s:' + r.band.bandKey + ':' + stripeLineId}
                 spec={r.band}
                 stripeIndex={r.stripeIndex}
+                pass="body"
                 interactive={selection.uiMode.kind === 'creating-line-tag' || inLayeringMode}
                 lines={lines}
                 colorMap={colorMap}

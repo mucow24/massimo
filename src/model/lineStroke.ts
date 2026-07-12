@@ -75,3 +75,24 @@ export const lineStrokeColorOf = (line: { strokeColor?: string } | null | undefi
  */
 export const lineStrokeRailWidth = (strokeWidth: number, width: number): number =>
   Math.min(strokeWidth, width);
+
+/**
+ * The two stroke widths that render a stripe's casing as a SILHOUETTE + INSET
+ * BODY (the merge-friendly equivalent of the two centered rails). The
+ * silhouette is the body OUTSET by `railW` — so the casing shows `railW/2`
+ * past each edge; the inset body is the body NARROWED by `railW` — so the
+ * casing shows `railW/2` inside each edge. Painted silhouette-under-body they
+ * reproduce the centered-rail look pixel-for-pixel (colored core `width −
+ * railW`, casing ring `railW`, outer extent `width/2 + railW/2`) while letting
+ * a line's own overlapping bands merge into ONE outer casing — every
+ * silhouette paints before every body, so a body always re-covers a same-line
+ * silhouette in the interior. Shared by SegmentBand, the highlight overlay,
+ * and the self-overdraw test so the three can't drift.
+ *
+ * Only for OPAQUE-interior styles (solid / dashed / hatched): an "open" style
+ * (dashed-open, dotted) has transparent gaps, so a solid silhouette behind it
+ * would show through — those keep the centered rails instead.
+ */
+export const casingSilhouetteWidth = (width: number, railW: number): number => width + railW;
+export const casingInsetBodyWidth = (width: number, railW: number): number =>
+  Math.max(0, width - railW);

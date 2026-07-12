@@ -392,19 +392,29 @@ export function assignLinePriorities(
   }
 }
 
-// Flatten bands + markers into a single list of per-stripe renderables,
-// sorted back-to-front for paint order. Each stripe in a band ships at its
-// own line's z-priority so a line whose layer falls between two interlined
-// lines correctly renders between their stripes.
+// Casing paints just BEHIND its own body: a stripe emits a `casing` renderable
+// at `priority + CASING_EPS`. Higher priority sorts EARLIER (further back), so
+// the casing lands directly under its body, yet still IN FRONT of any
+// lower-priority line's body. ε = 0.5 is provably safe because stripe
+// priorities are integers (`lineIdx − layer·LAYER_WEIGHT`, see
+// {@link segmentPriority}), so the smallest gap between two distinct
+// priorities is 1 — a casing can never leapfrog another line's body across the
+// integer boundary. This is what lets a line's OWN overlapping bands (loops,
+// branches) merge into one continuous outer casing: every silhouette paints
+// before every body, so a same-line body always re-covers a sibling's casing
+// in the shared interior — WITHOUT the global "all casing first" reorder that
+// historically erased the between-lines separators.
+export const CASING_EPS = 0.5;
+
+// Flatten bands + markers into a single list of renderables, sorted
+// back-to-front for paint order. Each stripe in a band ships at its own line's
+// z-priority so a line whose layer falls between two interlined lines correctly
+// renders between their stripes.
 //
 // `kind` distinguishes:
-//   - 'stripe' : one path of a band, identified by (band, stripeIndex).
+//   - 'stripe' : one body path of a band, identified by (band, stripeIndex).
+//   - 'casing' : that stripe's casing silhouette, at priority + CASING_EPS.
 //   - 'marker' : a stop square for one line at one station.
-//
-// Per-line stroke (casing) needs no renderable of its own: the rails paint
-// INSIDE the line's footprint, immediately after their body, within
-// <SegmentBand> / <StopMarker> — they can never collide with another
-// renderable's paint, so ordering is purely the per-stripe priority sort.
 //
 // Band routing warnings are NOT emitted here — they paint in a dedicated
 // top-most overlay (see <BandWarning> in MapCanvas) so the ⚠ marker and its
@@ -412,6 +422,7 @@ export function assignLinePriorities(
 // z-priority.
 export type OrderedRenderable =
   | { kind: 'stripe'; band: SegmentBandSpec; stripeIndex: number; priority: number }
+  | { kind: 'casing'; band: SegmentBandSpec; stripeIndex: number; priority: number }
   | { kind: 'marker'; spec: StopMarkerSpec; priority: number };
 
 export function buildOrderedRenderables(
@@ -421,7 +432,9 @@ export function buildOrderedRenderables(
   const list: OrderedRenderable[] = [];
   for (const band of bands) {
     for (let i = 0; i < band.lines.length; i++) {
-      list.push({ kind: 'stripe', band, stripeIndex: i, priority: band.linePriorities[i] });
+      const priority = band.linePriorities[i];
+      list.push({ kind: 'stripe', band, stripeIndex: i, priority });
+      list.push({ kind: 'casing', band, stripeIndex: i, priority: priority + CASING_EPS });
     }
   }
   for (const m of markers) {
