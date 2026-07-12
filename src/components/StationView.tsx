@@ -25,6 +25,9 @@ interface Props {
   // Override the `stroke` layer's outline color (default: theme selection
   // stroke). Used by the layout-edit focus to paint a white outline.
   strokeColor?: string;
+  // Marks the wash/stroke silhouette as a 50%-opacity mouseover preview so it
+  // swaps to `data-station-*-preview` identity attributes (see StationSilhouette).
+  preview?: boolean;
 }
 
 /**
@@ -46,12 +49,20 @@ export const StationView = memo(function StationView({
   layer,
   highlightColor = '#fff',
   strokeColor,
+  preview = false,
 }: Props) {
   switch (layer) {
     case 'wash':
     case 'stroke':
     case 'match-stroke':
-      return <StationSilhouette station={station} layer={layer} strokeColor={strokeColor} />;
+      return (
+        <StationSilhouette
+          station={station}
+          layer={layer}
+          strokeColor={strokeColor}
+          preview={preview}
+        />
+      );
     case 'bg':
       return <StationHitArea station={station} lines={lines} onStartDrag={onStartDrag} />;
     case 'hit':

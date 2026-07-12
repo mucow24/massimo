@@ -47,6 +47,60 @@ interface Props {
   // Edge index 0=top,1=right,2=bottom,3=left (single-axis stretch).
   onEdgePointerDown: (id: string, edgeIndex: number, e: React.PointerEvent) => void;
   onRotatePointerDown: (id: string, e: React.PointerEvent) => void;
+  // Canvas mouseover → preview this image's selection box at 50% (see
+  // MapCanvas). Only the body layer wires them; the id lets leave no-op when
+  // the hover already moved on. Optional so the proxy/hit uses skip them.
+  onHoverEnter?: (id: string) => void;
+  onHoverLeave?: (id: string) => void;
+}
+
+/**
+ * The two-tone dashed box rects in the image's LOCAL (unrotated, centered)
+ * frame — no transform of their own. Shared by the selection overlay and the
+ * hovered-image preview so both draw the identical ring. `preview` swaps to
+ * `data-svg-image-box-preview` so `data-svg-image-box` stays a pure "this image
+ * is selected" marker.
+ */
+function SvgImageBoxRects({ image, preview = false }: { image: SvgImage; preview?: boolean }) {
+  const themeColors = useThemeColors();
+  const hw = image.width / 2;
+  const hh = image.height / 2;
+  return (
+    <>
+      {selectionOutlineTones(themeColors).map(({ tone, stroke, strokeWidth }) => (
+        <rect
+          key={tone}
+          data-svg-image-box={preview ? undefined : ''}
+          data-svg-image-box-preview={preview ? '' : undefined}
+          x={-hw}
+          y={-hh}
+          width={image.width}
+          height={image.height}
+          fill="none"
+          stroke={stroke}
+          strokeWidth={strokeWidth}
+          strokeDasharray={SELECTION_DASH}
+          vectorEffect="non-scaling-stroke"
+          pointerEvents="none"
+        />
+      ))}
+    </>
+  );
+}
+
+/**
+ * The image's selection box, self-positioned in world coords — the chrome-only
+ * half of the overlay, with none of the resize/rotate handles. A hovered
+ * (unselected) image renders JUST this at 50% opacity, so the mouseover preview
+ * shows the box alone, never the manipulators.
+ */
+export function SvgImageSelectionBox({ image }: { image: SvgImage }) {
+  const transform = `translate(${image.x} ${image.y}) rotate(${image.rotation})`;
+  return (
+    <g transform={transform} pointerEvents="none">
+      <SvgImageBoxRects image={image} preview />
+    </g>
+  );
 }
 
 export function SvgImageView({
@@ -61,6 +115,8 @@ export function SvgImageView({
   onCornerPointerDown,
   onEdgePointerDown,
   onRotatePointerDown,
+  onHoverEnter,
+  onHoverLeave,
 }: Props) {
   const hw = image.width / 2;
   const hh = image.height / 2;
@@ -97,6 +153,8 @@ export function SvgImageView({
           onPointerDown={(e) => onPointerDown(image.id, e)}
           onClick={(e) => onClick(image.id, e)}
           onContextMenu={(e) => onContextMenu(image.id, e)}
+          onPointerEnter={onHoverEnter ? () => onHoverEnter(image.id) : undefined}
+          onPointerLeave={onHoverLeave ? () => onHoverLeave(image.id) : undefined}
           style={{ cursor: itemCursor(inHandMode, image.locked) }}
         />
       </g>
@@ -184,25 +242,9 @@ function SvgImageSelectionOverlay({
   ];
   return (
     <g data-svg-image-overlay={image.id} transform={transform}>
-      {/* Two-tone selection box: black core over white underlay, screen-constant
-          via vector-effect (no zoom subscription of its own → no snap). Dashed
-          (both tones share geometry, so the dashes align). */}
-      {selectionOutlineTones(themeColors).map(({ tone, stroke, strokeWidth }) => (
-        <rect
-          key={tone}
-          data-svg-image-box=""
-          x={-hw}
-          y={-hh}
-          width={image.width}
-          height={image.height}
-          fill="none"
-          stroke={stroke}
-          strokeWidth={strokeWidth}
-          strokeDasharray={SELECTION_DASH}
-          vectorEffect="non-scaling-stroke"
-          pointerEvents="none"
-        />
-      ))}
+      {/* Two-tone selection box (chrome only — no handles). Shared with the
+          hovered-image preview, which renders JUST this at 50% opacity. */}
+      <SvgImageBoxRects image={image} />
       {/* Transform handles + rotate knob. On a LOCKED image they render
           GHOSTED — still visible, so a re-selected locked image reads as
           selected (the thin box alone is easy to miss) — but inert:
