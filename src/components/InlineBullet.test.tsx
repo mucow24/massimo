@@ -3,6 +3,7 @@ import { render } from '@testing-library/react';
 import { InlineBullet } from './InlineBullet';
 import { useViewportStore } from '../state/viewportStore';
 import type { Line } from '../model/types';
+import { edgesFromStations } from '../model/lineTopology';
 
 const lineMap = (lines: Line[]): Map<string, Line> => {
   const m = new Map<string, Line>();
@@ -16,6 +17,7 @@ const makeLine = (overrides: Partial<Line> & Pick<Line, 'id' | 'service'>): Line
   name: overrides.name ?? overrides.service,
   color: overrides.color ?? '#ff0000',
   stations: overrides.stations ?? [],
+  edges: edgesFromStations(overrides.stations ?? []),
 });
 
 const redA1 = lineMap([makeLine({ id: 'l1', service: 'A1', color: '#ff0000' })]);

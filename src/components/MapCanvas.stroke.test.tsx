@@ -5,6 +5,7 @@ import { useDoc } from '../state/store';
 import { useSelection } from '../state/selection';
 import { DEFAULT_DOC } from '../model/transforms';
 import type { Line, Station } from '../model/types';
+import { makeLine } from '../test/fixtures';
 
 beforeEach(() => {
   useDoc.setState({ ...useDoc.getState(), ...DEFAULT_DOC });
@@ -29,13 +30,14 @@ const seedInterlinedPair = () => {
   ];
   const s1: Station = { id: 's1', name: 'S1', x: 0, y: 0, rotation: 0, stops, label };
   const s2: Station = { id: 's2', name: 'S2', x: 200, y: 0, rotation: 0, stops, label };
-  const mkLine = (id: string, color: string): Line => ({
-    id,
-    service: id,
-    name: `${id} line`,
-    color,
-    stations: ['s1', 's2'],
-  });
+  const mkLine = (id: string, color: string): Line =>
+    makeLine({
+      id,
+      service: id,
+      name: `${id} line`,
+      color,
+      stations: ['s1', 's2'],
+    });
   act(() => {
     useDoc.setState({
       ...useDoc.getState(),
@@ -155,7 +157,8 @@ describe('MapCanvas — stroke edits repaint without a geometry rebuild', () => 
     });
     expect(railPathCount()).toBe(4);
     // Highlight copies: s1 repaints rails + cap (3), but s2 — the arrow
-    // tip — suppresses its cap (2): the cased arrowhead is the line's end.
+    // tip (the display-tail terminus) — suppresses its cap (2): the cased
+    // arrowhead is the line's end.
     expect(markerCasingEls('L1')).toHaveLength(11);
 
     // The terminus arrowhead is cased too: an underlay copy fattened by

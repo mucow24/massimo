@@ -68,6 +68,8 @@ export function useStationInteraction(
   const selection = useSelection();
   const rotateStation = useDoc((s) => s.rotateStation);
   const toggleStationOnLine = useDoc((s) => s.toggleStationOnLine);
+  const addStationToLine = useDoc((s) => s.addStationToLine);
+  const toggleEdgeOnLine = useDoc((s) => s.toggleEdgeOnLine);
   const redistributeBetween = useDoc((s) => s.redistributeBetween);
   const addTransfer = useDoc((s) => s.addTransfer);
   const gridMode = useSnapPrefs((s) => s.modes.grid);
@@ -134,17 +136,38 @@ export function useStationInteraction(
       return;
     }
     if (selection.uiMode.kind === 'appending-to-line') {
-      const { lineId, insertAfterIndex } = selection.uiMode;
+      const { lineId, insertAfterIndex, draw } = selection.uiMode;
       const ln = lines[lineId];
-      const wasInLine = ln?.stations.includes(station.id) ?? false;
-      // No cursor: refuse to add a new stop. Removing an existing stop is
-      // still allowed since it doesn't depend on an insertion point.
-      if (!wasInLine && insertAfterIndex === null) return;
-      const effectiveCursor = insertAfterIndex ?? -1;
-      toggleStationOnLine(lineId, station.id, effectiveCursor);
-      if (!wasInLine) {
-        selection.setInsertAfterIndex(effectiveCursor + 1);
+      if (!ln) return;
+      const wasInLine = ln.stations.includes(station.id);
+      const penStation = insertAfterIndex != null ? (ln.stations[insertAfterIndex] ?? null) : null;
+
+      // Clicking a stop ALREADY on the line WIRES an edge from the pen (the stop
+      // at the cursor) to it — this is how a loop closes or two stops link up.
+      // It NEVER removes the stop (that's the inspector's × button). Same in
+      // insert mode, draw mode, and on Alt-click. Toggles: connecting the same
+      // pair again erases that edge.
+      if (wasInLine) {
+        if (penStation && penStation !== station.id) {
+          toggleEdgeOnLine(lineId, penStation, station.id);
+        }
+        // Pen walks to the just-touched stop so drawing/looping can continue.
+        selection.setInsertAfterIndex(ln.stations.indexOf(station.id));
+        return;
       }
+
+      // A brand-new stop. Draw mode (the "branch" button) or Alt/Option+click
+      // appends it and wires an edge from the pen (grows a branch); plain insert
+      // mode splices it into the chain at the cursor.
+      if (draw || e.altKey) {
+        addStationToLine(lineId, station.id);
+        if (penStation) toggleEdgeOnLine(lineId, penStation, station.id);
+        selection.setInsertAfterIndex(ln.stations.length); // appended at the end
+        return;
+      }
+      if (insertAfterIndex === null) return; // no cursor → nowhere to insert
+      toggleStationOnLine(lineId, station.id, insertAfterIndex);
+      selection.setInsertAfterIndex(insertAfterIndex + 1);
       return;
     }
     // Ctrl/Cmd+Shift+click on a different station extends the selection

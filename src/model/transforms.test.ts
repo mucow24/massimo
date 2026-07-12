@@ -3303,7 +3303,7 @@ describe('redistributeBetween', () => {
 });
 
 describe('reorderLineStations', () => {
-  it('prunes segment overrides orphaned by a reorder; they do not resurrect on reorder-back', () => {
+  it('is display-only: the track (edges) and per-segment overrides are untouched', () => {
     const base = makeDoc({
       stations: [
         makeStation({ id: 'a', stops: [makeStop('L1')] }),
@@ -3319,11 +3319,130 @@ describe('reorderLineStations', () => {
         }),
       ],
     });
-    // Reorder so a and b are no longer adjacent → the a|b override is orphaned.
+    const edgesBefore = base.lines.L1.edges;
+    // Reordering the member list changes display order only — topology is in
+    // `edges`, so the a|b corridor (and its hatched override) survive.
     const reordered = T.reorderLineStations(base, 'L1', ['a', 'c', 'b']);
-    expect(reordered.lines.L1.segmentStyles).toEqual({});
-    // Reordering back must NOT resurrect the pruned override.
-    const back = T.reorderLineStations(reordered, 'L1', ['a', 'b', 'c']);
-    expect(back.lines.L1.segmentStyles).toEqual({});
+    expect(reordered.lines.L1.stations).toEqual(['a', 'c', 'b']);
+    expect(reordered.lines.L1.edges).toEqual(edgesBefore);
+    expect(reordered.lines.L1.segmentStyles).toEqual({ 'a|b': 'hatched' });
+  });
+});
+
+describe('loops and branches (edge-set topology)', () => {
+  const fourStops = () => [
+    makeStation({ id: 'a', stops: [makeStop('L1')] }),
+    makeStation({ id: 'b', stops: [makeStop('L1')] }),
+    makeStation({ id: 'c', stops: [makeStop('L1')] }),
+    makeStation({ id: 'd', stops: [makeStop('L1')] }),
+  ];
+
+  it('toggleEdgeOnLine closes a loop by connecting the two ends', () => {
+    const base = makeDoc({
+      stations: fourStops().slice(0, 3),
+      lines: [makeLine({ id: 'L1', stations: ['a', 'b', 'c'] })], // edges a|b, b|c
+    });
+    const looped = T.toggleEdgeOnLine(base, 'L1', 'a', 'c');
+    // A genuine 3-cycle — every station degree 2, no repeated member.
+    expect(new Set(looped.lines.L1.edges)).toEqual(new Set(['a|b', 'b|c', 'a|c']));
+    expect(looped.lines.L1.stations).toEqual(['a', 'b', 'c']);
+  });
+
+  it('addStationToLine adds a lone member (stop, no edge, no splice)', () => {
+    const base = makeDoc({
+      stations: fourStops().slice(0, 3),
+      lines: [makeLine({ id: 'L1', stations: ['a', 'b'] })], // edge a|b
+    });
+    const out = T.addStationToLine(base, 'L1', 'c');
+    expect(out.lines.L1.stations).toEqual(['a', 'b', 'c']); // appended member
+    expect(out.lines.L1.edges).toEqual(['a|b']); // NO edge to c, a|b untouched
+    expect(out.stations.c.stops.some((s) => s.lineId === 'L1')).toBe(true);
+    // Already a member → no-op (same reference).
+    expect(T.addStationToLine(out, 'L1', 'c')).toBe(out);
+  });
+
+  it('draw flow (addStationToLine + toggleEdgeOnLine) branches to a new station', () => {
+    const base = makeDoc({
+      stations: fourStops(),
+      lines: [makeLine({ id: 'L1', stations: ['a', 'b', 'c'] })], // a|b, b|c
+    });
+    // Pen at b; draw a branch to a fresh member d.
+    const withD = T.addStationToLine(base, 'L1', 'd');
+    const branched = T.toggleEdgeOnLine(withD, 'L1', 'b', 'd');
+    expect(new Set(branched.lines.L1.edges)).toEqual(new Set(['a|b', 'b|c', 'b|d']));
+  });
+
+  it('toggleEdgeOnLine forms a branch: a junction of degree 3', () => {
+    const base = makeDoc({
+      stations: fourStops(),
+      // Trunk a-b-c, plus member d not yet wired in.
+      lines: [makeLine({ id: 'L1', stations: ['a', 'b', 'c', 'd'], edges: ['a|b', 'b|c'] })],
+    });
+    const branched = T.toggleEdgeOnLine(base, 'L1', 'b', 'd');
+    expect(new Set(branched.lines.L1.edges)).toEqual(new Set(['a|b', 'b|c', 'b|d']));
+  });
+
+  it('toggleEdgeOnLine removes an existing edge; no-op for a non-member', () => {
+    const base = makeDoc({
+      stations: fourStops().slice(0, 3),
+      lines: [makeLine({ id: 'L1', stations: ['a', 'b', 'c'] })],
+    });
+    expect(T.toggleEdgeOnLine(base, 'L1', 'a', 'b').lines.L1.edges).toEqual(['b|c']);
+    expect(T.toggleEdgeOnLine(base, 'L1', 'a', 'zzz')).toBe(base);
+  });
+
+  it('drops a loop-closing edge override when that edge is cut', () => {
+    const base = makeDoc({
+      stations: fourStops().slice(0, 3),
+      lines: [
+        makeLine({
+          id: 'L1',
+          stations: ['a', 'b', 'c'],
+          edges: ['a|b', 'b|c', 'a|c'],
+          segmentStyles: { 'a|c': 'dashed' },
+        }),
+      ],
+    });
+    const cut = T.toggleEdgeOnLine(base, 'L1', 'a', 'c');
+    expect(cut.lines.L1.edges).toEqual(['a|b', 'b|c']);
+    expect(cut.lines.L1.segmentStyles).toEqual({}); // orphaned override pruned
+  });
+
+  it('insert-after does not fabricate an edge to a non-adjacent display-next stop', () => {
+    const base = makeDoc({
+      stations: [
+        makeStation({ id: 'a', stops: [makeStop('L1')] }),
+        makeStation({ id: 'b', stops: [makeStop('L1')] }),
+        makeStation({ id: 'c', stops: [makeStop('L1')] }),
+        makeStation({ id: 'd', stops: [] }),
+      ],
+      // Junction at a (a–b and a–c). Display order [a, b, c] makes b and c
+      // display-consecutive, but they are NOT connected.
+      lines: [makeLine({ id: 'L1', stations: ['a', 'b', 'c'], edges: ['a|b', 'a|c'] })],
+    });
+    // "Insert after b" (index 1): b's display-next is c, but b–c is not an edge.
+    const out = T.toggleStationOnLine(base, 'L1', 'd', 1);
+    // d attaches to b only — no spurious d–c edge.
+    expect(new Set(out.lines.L1.edges)).toEqual(new Set(['a|b', 'a|c', 'b|d']));
+  });
+
+  it('removing an intermediate stop heals the gap (degree-2)', () => {
+    const base = makeDoc({
+      stations: fourStops().slice(0, 3),
+      lines: [makeLine({ id: 'L1', stations: ['a', 'b', 'c'] })], // a|b, b|c
+    });
+    const healed = T.removeStationFromLine(base, 'L1', 1); // remove b
+    expect(healed.lines.L1.stations).toEqual(['a', 'c']);
+    expect(healed.lines.L1.edges).toEqual(['a|c']);
+  });
+
+  it('removing a junction drops all incident edges (no heal)', () => {
+    const base = makeDoc({
+      stations: fourStops(),
+      lines: [makeLine({ id: 'L1', stations: ['a', 'b', 'c', 'd'], edges: ['a|b', 'b|c', 'b|d'] })],
+    });
+    const out = T.removeStationFromLine(base, 'L1', 1); // remove junction b
+    expect(out.lines.L1.edges).toEqual([]);
+    expect(new Set(out.lines.L1.stations)).toEqual(new Set(['a', 'c', 'd']));
   });
 });

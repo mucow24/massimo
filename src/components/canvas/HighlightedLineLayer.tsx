@@ -8,6 +8,7 @@ import {
   type OrderedRenderable,
 } from '../../geometry/interlining';
 import { pairKeyOf } from '../../model/pairKey';
+import { degreeOf } from '../../model/lineTopology';
 import { resolveDotStyle } from '../../model/transforms';
 import { STOP_SIZE, STOP_DOT_RADIUS } from '../../geometry/orientation';
 import { lineStyleStrokeAttrs, lineStyleUnderlayAttrs } from '../HatchPatterns';
@@ -179,7 +180,13 @@ export function HighlightedLineLayer({
           const stopsOnLine = ln.stations.filter((sid) =>
             stations[sid]?.stops.some((c) => c.lineId === highlightLineId),
           );
-          const arrowTipSid = stopsOnLine.length >= 2 ? stopsOnLine[stopsOnLine.length - 1] : null;
+          // The arrowhead marks the APPEND direction, so it caps only the
+          // display-tail stop — and only when that stop is a genuine line end
+          // (degree 1). A loop, or a junction at the tail, draws no false
+          // arrowhead. The tip marker drops its end-cap rail so the arrowhead
+          // merges into the body.
+          const lastStopSid = stopsOnLine.length >= 2 ? stopsOnLine[stopsOnLine.length - 1] : null;
+          const arrowTipSid = lastStopSid && degreeOf(ln, lastStopSid) === 1 ? lastStopSid : null;
           renderables.forEach((r, i) => {
             if (r.kind !== 'marker' || r.spec.lineId !== highlightLineId) return;
             push(
@@ -213,16 +220,18 @@ export function HighlightedLineLayer({
             const baseDist = dotR + gap;
             const apexDist = baseDist + height;
             points.forEach((p, i) => {
-              // Hint resolves auto-* sign; for explicit orientations it's
-              // ignored. Use the segment toward the next stop (or back from
-              // the previous stop at the terminus).
+              // The arrow shows the APPEND direction: interior stops point
+              // toward the next drawn stop; the arrow-tip terminus points
+              // outward. Only the degree-1 display tail is a terminus (see
+              // arrowTipSid) — a loop/junction tail draws a plain chevron, not a
+              // false arrowhead. Hint resolves the auto-axis sign only.
               const ref = i < points.length - 1 ? points[i + 1] : points[i - 1];
               const sign = i < points.length - 1 ? 1 : -1;
               const worldHint = { x: (ref.x - p.x) * sign, y: (ref.y - p.y) * sign };
               const worldDir = travelDirWorld(p.cell, p.st, worldHint);
               const dx = worldDir.x;
               const dy = worldDir.y;
-              const isTerminus = i === points.length - 1;
+              const isTerminus = p.sid === arrowTipSid;
               // A stroked line's terminus arrow gets a casing rim too: an
               // underlay copy fattened by 2× the line's stroke width in the
               // stroke color, so the arrow reads as part of the cased line.

@@ -34,9 +34,8 @@ describe('<HighlightedLineLayer /> — direction-triangle orientation (E11)', ()
   //
   // Geometry: s1 (0,0) → s2 (100,0), both rotation 0, auto-horizontal stops.
   // dotR = STOP_DOT_RADIUS(4), gap 2, halfW 3, height 5 ⇒ baseDist 6, apexDist 11.
-  // Forward tangent is +x, so BOTH the interior arrow (at s1, pointing toward s2)
-  // and the terminus arrow (at s2, pointing outward in the travel direction)
-  // point +x: apex AHEAD of the base on the x axis.
+  // The tail s2 is the sole terminus (its arrowhead points +x, outward); the
+  // front stop s1 is a plain forward chevron (+x). Both point +x here.
   const seedDoc = () => {
     const lines: Record<string, Line> = {
       L1: makeLine({ id: 'L1', service: 'A', color: '#cc0000', stations: ['s1', 's2'] }),
@@ -84,29 +83,73 @@ describe('<HighlightedLineLayer /> — direction-triangle orientation (E11)', ()
   };
 
   // A direction triangle is a closed 3-point path emitted by arrowTrianglePath:
-  // "M ax ay L lx ly L rx ry Z". Pick those out of all <path>s.
-  const trianglePaths = (container: HTMLElement) =>
-    Array.from(container.querySelectorAll('path'))
-      .map((p) => p.getAttribute('d') ?? '')
-      .filter((d) => /^M [-\d.]+ [-\d.]+ L [-\d.]+ [-\d.]+ L [-\d.]+ [-\d.]+ Z$/.test(d));
+  // "M ax ay L lx ly L rx ry Z". Stripe paths are open (no Z, fill="none"), so
+  // this picks only the triangles. Terminus arrowheads are filled with the LINE
+  // color; interior chevrons use the contrasting legible color — so line-colored
+  // triangles are exactly the termini (genuine degree-1 line ends).
+  const triangleEls = (container: HTMLElement) =>
+    Array.from(container.querySelectorAll('path')).filter((p) =>
+      /^M [-\d.]+ [-\d.]+ L [-\d.]+ [-\d.]+ L [-\d.]+ [-\d.]+ Z$/.test(p.getAttribute('d') ?? ''),
+    );
+  const terminusDs = (container: HTMLElement) =>
+    triangleEls(container)
+      .filter((p) => p.getAttribute('fill') === '#cc0000')
+      .map((p) => p.getAttribute('d') ?? '');
 
-  it('renders both triangles pointing +x for a left-to-right horizontal line', () => {
-    const { container } = renderLayer();
-    const ds = trianglePaths(container);
-    // The interior arrow at s1 and the terminus arrow at s2 — both present.
-    expect(ds).toContain('M 11 0 L 6 3 L 6 -3 Z'); // at s1: apex at x=11 (+x)
-    expect(ds).toContain('M 111 0 L 106 3 L 106 -3 Z'); // at s2: apex at x=111 (+x)
+  const renderWith = (lines: Record<string, Line>, stations: Record<string, Station>) =>
+    render(
+      <svg>
+        <HighlightedLineLayer
+          highlightLineId="L1"
+          lines={lines}
+          stations={stations}
+          renderables={[]}
+          underlayColor="#ffffff"
+          hoveredInspectorSegment={null}
+          uiMode={{ kind: 'idle' }}
+          zoom={1}
+          onStartDrag={vi.fn()}
+          vbX={-200}
+          vbY={-200}
+          vbW={600}
+          vbH={600}
+        />
+      </svg>,
+    );
+  const triStation = (id: string, x: number, y: number): Station =>
+    makeStation({ id, x, y, stops: [makeStop('L1', { orientation: 'auto-horizontal' })] });
+  const redLine = (stations: string[], edges?: string[]) => ({
+    L1: makeLine({ id: 'L1', service: 'A', color: '#cc0000', stations, edges }),
   });
 
-  it('every triangle apex sits to the +x side of its base (points along travel)', () => {
+  it('caps only the display-tail end (append direction), not the front stop', () => {
     const { container } = renderLayer();
-    const ds = trianglePaths(container);
-    expect(ds.length).toBeGreaterThanOrEqual(2);
-    for (const d of ds) {
-      const m = /^M ([-\d.]+) [-\d.]+ L ([-\d.]+) [-\d.]+ L ([-\d.]+)/.exec(d)!;
-      const apexX = Number(m[1]);
-      const baseX = Number(m[2]); // both base wings share the same x
-      expect(apexX).toBeGreaterThan(baseX);
-    }
+    // Tail s2 (x=100) is the sole terminus, arrowhead outward (+x). The front
+    // stop s1 gets no arrowhead — it is a plain interior chevron.
+    const term = terminusDs(container);
+    expect(term.length).toBe(1);
+    const apexX = Number(/^M ([-\d.]+)/.exec(term[0])![1]);
+    expect(apexX).toBeGreaterThan(100);
+  });
+
+  it('draws NO terminus arrowhead on a loop (the tail is degree 2)', () => {
+    const { container } = renderWith(redLine(['s1', 's2', 's3'], ['s1|s2', 's2|s3', 's1|s3']), {
+      s1: triStation('s1', 0, 0),
+      s2: triStation('s2', 100, 0),
+      s3: triStation('s3', 50, 90),
+    });
+    expect(terminusDs(container)).toEqual([]);
+  });
+
+  it('a branch caps its last-drawn stop when that tail is a leaf (not a false one)', () => {
+    // Trunk s1-J with branches J-s2, J-s3; display tail s3 is a degree-1 leaf.
+    const { container } = renderWith(redLine(['s1', 'J', 's2', 's3'], ['J|s1', 'J|s2', 'J|s3']), {
+      s1: triStation('s1', -100, 0),
+      J: triStation('J', 0, 0),
+      s2: triStation('s2', 100, 50),
+      s3: triStation('s3', 100, -50),
+    });
+    // Exactly one arrowhead — at the tail leaf s3, and none at the junction J.
+    expect(terminusDs(container).length).toBe(1);
   });
 });

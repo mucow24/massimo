@@ -4,6 +4,7 @@ import { cross, SQRT2_2 } from './vec';
 import { rotateBy, stopCenterAt, travelDirLocal } from './orientation';
 import type { Rotation } from './orientation';
 import { stopPosWorld } from './interlining';
+import { lineHasEdge } from '../model/lineTopology';
 
 /**
  * Default perpendicular tolerance for engaging a snap, in world units — this is
@@ -1149,9 +1150,10 @@ export function alignmentPairs(
     const line = lines[dCell.lineId];
     if (!line) continue;
     if (requireAdjacency) {
-      const dIdx = line.stations.indexOf(draggedId);
-      const tIdx = line.stations.indexOf(target.id);
-      if (dIdx < 0 || tIdx < 0 || Math.abs(dIdx - tIdx) !== 1) continue;
+      // Aligned only when the two stations share a direct track segment. Reads
+      // the edge set, so a loop's wrap corridor and a branch's legs count too
+      // (identical to array-adjacency for a plain linear line).
+      if (!lineHasEdge(line, draggedId, target.id)) continue;
     } else {
       // Still require both stations to be on the line.
       if (!line.stations.includes(draggedId) || !line.stations.includes(target.id)) continue;

@@ -5,6 +5,7 @@ import { useDoc, useSelection, dragState } from '../../state/store';
 import { DEFAULT_DOC } from '../../model/transforms';
 import { DOT_SHAPE_PRESETS } from '../../model/dotStyle';
 import type { Station } from '../../model/types';
+import { makeLine } from '../../test/fixtures';
 
 const hubStation = (): Station => ({
   id: 'a',
@@ -24,8 +25,8 @@ const seed = () => {
     ...DEFAULT_DOC,
     stations: { a: hubStation() },
     lines: {
-      L1: { id: 'L1', service: '1', name: '1 line', color: '#111111', stations: ['a'] },
-      L2: { id: 'L2', service: '2', name: '2 line', color: '#222222', stations: ['a'] },
+      L1: makeLine({ id: 'L1', service: '1', name: '1 line', color: '#111111', stations: ['a'] }),
+      L2: makeLine({ id: 'L2', service: '2', name: '2 line', color: '#222222', stations: ['a'] }),
     },
     lineOrder: ['L1', 'L2'],
   });
@@ -134,16 +135,16 @@ describe('<StationLayoutEditor />', () => {
       stations: { a: hubStation() },
       lines: {
         // White-filled dot ⇒ the arrow must flip to black.
-        L1: {
+        L1: makeLine({
           id: 'L1',
           service: '1',
           name: '1 line',
           color: '#ffffff',
           stations: ['a'],
           defaultDotStyle: DOT_SHAPE_PRESETS['filled-white'],
-        },
+        }),
         // Black-filled dot ⇒ white arrow.
-        L2: { id: 'L2', service: '2', name: '2 line', color: '#111111', stations: ['a'] },
+        L2: makeLine({ id: 'L2', service: '2', name: '2 line', color: '#111111', stations: ['a'] }),
       },
       lineOrder: ['L1', 'L2'],
     });

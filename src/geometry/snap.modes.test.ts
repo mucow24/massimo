@@ -6,18 +6,19 @@ import {
   snapPointToGrid,
   type SnapModes,
 } from './snap';
-import { makeStation, makeStop } from '../test/fixtures';
+import { makeLine, makeStation, makeStop } from '../test/fixtures';
 import type { Line, LineId, Station, StationId, StopCell } from '../model/types';
 
 // Local fixture helpers — same shape as snap.test.ts so the two suites read
 // the same. Kept local so this file stays self-contained.
-const lineOf = (id: LineId, stationIds: StationId[]): Line => ({
-  id,
-  service: id,
-  name: `${id} line`,
-  color: '#000',
-  stations: stationIds,
-});
+const lineOf = (id: LineId, stationIds: StationId[]): Line =>
+  makeLine({
+    id,
+    service: id,
+    name: `${id} line`,
+    color: '#000',
+    stations: stationIds,
+  });
 const linesOf = (...ls: Line[]): Record<LineId, Line> => {
   const m: Record<LineId, Line> = {};
   for (const l of ls) m[l.id] = l;

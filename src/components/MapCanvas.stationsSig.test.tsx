@@ -5,6 +5,7 @@ import { useDoc } from '../state/store';
 import { DEFAULT_DOC } from '../model/transforms';
 import * as interlining from '../geometry/interlining';
 import type { Line, Station } from '../model/types';
+import { makeLine } from '../test/fixtures';
 
 beforeEach(() => {
   useDoc.setState({ ...useDoc.getState(), ...DEFAULT_DOC });
@@ -33,13 +34,14 @@ const seedInterlinedPair = () => {
   ];
   const s1: Station = { id: 's1', name: 'S1', x: 0, y: 0, rotation: 0, stops, label };
   const s2: Station = { id: 's2', name: 'S2', x: 200, y: 0, rotation: 0, stops, label };
-  const mkLine = (id: string, color: string): Line => ({
-    id,
-    service: id,
-    name: `${id} line`,
-    color,
-    stations: ['s1', 's2'],
-  });
+  const mkLine = (id: string, color: string): Line =>
+    makeLine({
+      id,
+      service: id,
+      name: `${id} line`,
+      color,
+      stations: ['s1', 's2'],
+    });
   act(() => {
     useDoc.setState({
       ...useDoc.getState(),
@@ -134,6 +136,34 @@ describe('MapCanvas — station edits and the geometry memos', () => {
       useDoc.getState().rotateStation('s1');
     });
 
+    expect(bandSpy.mock.calls.length).toBeGreaterThan(bandCalls);
+  });
+
+  it('closing a loop (toggleEdgeOnLine) DOES rebuild band geometry immediately', () => {
+    // Regression: linesGeometrySig must key on `edges`, not `stations`.
+    // toggleEdgeOnLine changes `edges` only, so before the fix the band memo
+    // held and the wrap corridor didn't render until some other edit fired.
+    const bandSpy = vi.spyOn(interlining, 'buildBandGeometry');
+    render(<App />);
+    const stop = { lineId: 'L1', row: 0, col: 0, orientation: 'auto-horizontal' as const };
+    act(() => {
+      useDoc.setState({
+        ...useDoc.getState(),
+        stations: {
+          s1: { id: 's1', name: 'S1', x: 0, y: 0, rotation: 0, stops: [stop], label },
+          s2: { id: 's2', name: 'S2', x: 100, y: 0, rotation: 0, stops: [stop], label },
+          s3: { id: 's3', name: 'S3', x: 100, y: 100, rotation: 0, stops: [stop], label },
+        },
+        lines: { L1: makeLine({ id: 'L1', stations: ['s1', 's2', 's3'] }) },
+        lineOrder: ['L1'],
+      });
+    });
+    const bandCalls = bandSpy.mock.calls.length;
+    expect(bandCalls).toBeGreaterThan(0);
+
+    act(() => {
+      useDoc.getState().toggleEdgeOnLine('L1', 's1', 's3'); // close the loop
+    });
     expect(bandSpy.mock.calls.length).toBeGreaterThan(bandCalls);
   });
 });

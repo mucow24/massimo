@@ -41,7 +41,10 @@ export type UiMode =
   // Carries the parsed svg payload (data URI + intrinsic size) read from the
   // file at import time; the next canvas click drops it at the cursor.
   | { kind: 'placing-svg'; image: { href: string; width: number; height: number } }
-  | { kind: 'appending-to-line'; lineId: LineId; insertAfterIndex: number | null }
+  // `draw` = branch/draw sub-mode: plain clicks WIRE an edge from the pen (the
+  // stop at insertAfterIndex) to the clicked stop, instead of inserting a stop
+  // into the line linearly. This is how a branch is grown from an interior stop.
+  | { kind: 'appending-to-line'; lineId: LineId; insertAfterIndex: number | null; draw?: boolean }
   | { kind: 'layering' }
   // Edit the station's stop/label layout in place on the canvas: drag the
   // real dots/label between ghost-lattice slots, right-click to rotate.
@@ -229,8 +232,10 @@ export interface SelectionState {
   startAppendAt: (lineId: LineId, insertAfterIndex: number) => void;
   setAppending: (id: LineId | null) => void;
   // Narrowing helper: updates the appending-to-line variant's insertAfterIndex
-  // in place. No-op when uiMode.kind isn't 'appending-to-line'.
-  setInsertAfterIndex: (idx: number | null) => void;
+  // (the pen position) in place. `draw` switches the linear-insert / branch-draw
+  // sub-mode; omit it to preserve the current mode (pen advancing after an add).
+  // No-op when uiMode.kind isn't 'appending-to-line'.
+  setInsertAfterIndex: (idx: number | null, draw?: boolean) => void;
   setUiMode: (mode: UiMode) => void;
   setHoveredStation: (id: StationId | null) => void;
   setHoveredCanvasItem: (item: HoveredCanvasItem | null) => void;
@@ -617,10 +622,10 @@ export const useSelection = create<SelectionState>()(
           lineTagHoverPreview: null,
         });
       },
-      setInsertAfterIndex: (idx) => {
+      setInsertAfterIndex: (idx, draw) => {
         const cur = get().uiMode;
         if (cur.kind !== 'appending-to-line') return;
-        set({ uiMode: { ...cur, insertAfterIndex: idx } });
+        set({ uiMode: { ...cur, insertAfterIndex: idx, draw: draw ?? cur.draw } });
       },
       setHoveredStation: (id) => set({ hoveredStationId: id }),
       setHoveredCanvasItem: (item) => set({ hoveredCanvasItem: item }),

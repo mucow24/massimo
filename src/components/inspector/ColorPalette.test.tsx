@@ -6,6 +6,7 @@ import { useDoc } from '../../state/store';
 import { useCustomPalettes } from '../../state/customPalettes';
 import { DEFAULT_DOC } from '../../model/transforms';
 import type { Line } from '../../model/types';
+import { edgesFromStations } from '../../model/lineTopology';
 
 beforeEach(() => {
   localStorage.clear();
@@ -142,6 +143,7 @@ describe('<ColorPalette /> custom colors from the map', () => {
     name: id,
     color,
     stations: [],
+    edges: edgesFromStations([]),
   });
 
   it('always renders a Custom section, even when the map has no custom colors', () => {
