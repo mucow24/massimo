@@ -154,7 +154,8 @@ describe('detach on covered-field edits — transfers', () => {
     expect(updateTransferStyle(doc, 'x1', { thickness: 6 })).toBe(doc);
     expect(updateTransferStyle(doc, 'x1', { thickness: 9 }).transfers.x1.styleId).toBeUndefined();
     expect(
-      updateTransferStyle(doc, 'x1', { color: '#ff0000' }).transfers.x1.styleId,
+      updateTransferStyle(doc, 'x1', { color: { day: '#ff0000', night: '#ff0000' } }).transfers.x1
+        .styleId,
     ).toBeUndefined();
   });
 });

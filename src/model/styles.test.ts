@@ -11,6 +11,7 @@ import {
   renameStyle,
   saveStyleFromItem,
   setDefaultStyle,
+  stylePropsEqual,
   stylesOfKind,
   updateStyleProps,
 } from './styles';
@@ -106,28 +107,65 @@ describe('captureStyleProps', () => {
     });
     expect(captureStyleProps(doc, 'transfer', 'x1')).toEqual({
       thickness: 2,
-      color: '#000000',
+      color: { day: '#000000', night: '#000000' },
       strokeWidth: 0,
-      strokeColor: '#ffffff',
+      strokeColor: { day: '#ffffff', night: '#ffffff' },
     });
   });
 
   it('prefers per-transfer overrides over the constant defaults', () => {
     const doc = makeDoc({
       stations: [makeStation({ id: 's1' }), makeStation({ id: 's2' })],
-      transfers: [makeTransfer({ id: 'x1', thickness: 7, color: '#ff0000' })],
+      transfers: [
+        makeTransfer({ id: 'x1', thickness: 7, color: { day: '#ff0000', night: '#880000' } }),
+      ],
     });
     expect(captureStyleProps(doc, 'transfer', 'x1')).toEqual({
       thickness: 7,
-      color: '#ff0000',
+      color: { day: '#ff0000', night: '#880000' },
       strokeWidth: 0,
-      strokeColor: '#ffffff',
+      strokeColor: { day: '#ffffff', night: '#ffffff' },
     });
   });
 
   it('returns null for a missing item', () => {
     const doc = makeDoc({});
     expect(captureStyleProps(doc, 'line', 'nope')).toBeNull();
+  });
+});
+
+describe('stylePropsEqual — transfer day/night colors', () => {
+  const props = (
+    color: { day: string; night: string },
+    strokeColor: { day: string; night: string },
+  ) => ({
+    thickness: 2,
+    color,
+    strokeWidth: 0,
+    strokeColor,
+  });
+
+  it('compares transfer colors STRUCTURALLY, not by reference', () => {
+    // Distinct objects, equal values — the shape captureStyleProps vs a stored
+    // def produces. A reference compare here would wrongly strip valid tags
+    // (pruneDanglingStyleRefs) and block adoption (adoptDefaultStyles).
+    const a = props({ day: '#000000', night: '#111111' }, { day: '#ffffff', night: '#eeeeee' });
+    const b = props({ day: '#000000', night: '#111111' }, { day: '#ffffff', night: '#eeeeee' });
+    expect(stylePropsEqual('transfer', a, b)).toBe(true);
+  });
+
+  it('is false when either color half diverges', () => {
+    const base = props({ day: '#000000', night: '#111111' }, { day: '#ffffff', night: '#ffffff' });
+    expect(
+      stylePropsEqual(
+        'transfer',
+        base,
+        props({ day: '#000000', night: '#999999' }, base.strokeColor),
+      ),
+    ).toBe(false);
+    expect(
+      stylePropsEqual('transfer', base, props(base.color, { day: '#ffffff', night: '#999999' })),
+    ).toBe(false);
   });
 });
 
@@ -233,7 +271,12 @@ describe('applyStyleToItem', () => {
 
   it('stamps a transfer style as canonical overrides (collapsed at the constant defaults)', () => {
     const style = makeStyle('transfer', 'y1', {
-      props: { thickness: 6, color: '#000000', strokeWidth: 2, strokeColor: '#ff00ff' },
+      props: {
+        thickness: 6,
+        color: { day: '#000000', night: '#000000' },
+        strokeWidth: 2,
+        strokeColor: { day: '#ff00ff', night: '#ff00ff' },
+      },
     });
     const doc = makeDoc({
       stations: [makeStation({ id: 's1' }), makeStation({ id: 's2' })],
@@ -244,9 +287,9 @@ describe('applyStyleToItem', () => {
     const t = next.transfers.x1;
     expect(t.styleId).toBe('y1');
     expect(t.thickness).toBe(6);
-    expect(t.color).toBeUndefined(); // equals doc setting → tracks it
+    expect(t.color).toBeUndefined(); // equals default (both halves) → tracks it
     expect(t.strokeWidth).toBe(2);
-    expect(t.strokeColor).toBe('#ff00ff');
+    expect(t.strokeColor).toEqual({ day: '#ff00ff', night: '#ff00ff' });
   });
 
   it('no-ops (same reference) on unknown style, missing item, or a tagged MATCHING item', () => {

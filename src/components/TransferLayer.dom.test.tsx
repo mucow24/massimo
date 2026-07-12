@@ -91,21 +91,38 @@ function transferBody(id: string): Element {
 }
 
 describe('TransferLayer — DOM rendering', () => {
-  it('visible body <line> reflects the constant defaults and per-transfer overrides', () => {
+  it('visible body <line> resolves the day/night color for the active theme, plus overrides', () => {
     seedTwoStationsWithTransfer();
     render(<App />);
 
     let body = transferBody('x1');
+    // Default is black in both themes.
     expect(body.getAttribute('stroke')).toBe('#000000');
     expect(body.getAttribute('stroke-width')).toBe('2');
 
     act(() => {
-      useDoc.getState().updateTransferStyle('x1', { color: '#ff8800', thickness: 6 });
+      useDoc.getState().updateTransferStyle('x1', {
+        color: { day: '#ff8800', night: '#4400aa' },
+        thickness: 6,
+      });
     });
 
     body = transferBody('x1');
+    // Light canvas → the day half paints.
     expect(body.getAttribute('stroke')).toBe('#ff8800');
     expect(body.getAttribute('stroke-width')).toBe('6');
+
+    // Dark canvas → the night half paints (same transfer, no doc change).
+    act(() => {
+      useViewportStore.setState({ darkMode: true });
+    });
+    try {
+      expect(transferBody('x1').getAttribute('stroke')).toBe('#4400aa');
+    } finally {
+      act(() => {
+        useViewportStore.setState({ darkMode: false });
+      });
+    }
   });
 
   it('renders the transfer BEFORE the connected stop dots in document order', () => {
@@ -175,7 +192,7 @@ describe('TransferLayer — DOM rendering', () => {
       act(() => {
         useDoc.getState().updateTransferStyle('x1', {
           strokeWidth: 3,
-          strokeColor: '#abcdef',
+          strokeColor: { day: '#abcdef', night: '#102030' },
         });
       });
       render(<App />);
@@ -184,6 +201,7 @@ describe('TransferLayer — DOM rendering', () => {
       expect(lines.length).toBe(2);
       const body = transferBody('x1');
       const stroke = lines.find((el) => el !== body)!;
+      // Light canvas → the day half of the outline color.
       expect(stroke.getAttribute('stroke')).toBe('#abcdef');
       // visibleExtent = thickness + 2 * strokeWidth = 2 + 6 = 8.
       expect(Number(stroke.getAttribute('stroke-width'))).toBe(8);
@@ -402,7 +420,7 @@ describe('TransferLayer — DOM rendering', () => {
 
     it('an overridden transfer renders its own body style; a sibling keeps the defaults', () => {
       seedTwoStationsWithTransfer();
-      seedSecondTransfer({ thickness: 6, color: '#ff8800' });
+      seedSecondTransfer({ thickness: 6, color: { day: '#ff8800', night: '#ff8800' } });
       render(<App />);
 
       const overridden = transferBody('x2');
@@ -414,7 +432,9 @@ describe('TransferLayer — DOM rendering', () => {
 
       // Choosing the defaults again clears the overrides — back to constants.
       act(() => {
-        useDoc.getState().updateTransferStyle('x2', { thickness: 2, color: '#000000' });
+        useDoc
+          .getState()
+          .updateTransferStyle('x2', { thickness: 2, color: { day: '#000000', night: '#000000' } });
       });
       expect(transferBody('x2').getAttribute('stroke')).toBe('#000000');
       expect(transferBody('x2').getAttribute('stroke-width')).toBe('2');
@@ -422,7 +442,7 @@ describe('TransferLayer — DOM rendering', () => {
 
     it('a strokeWidth override renders a halo for that transfer only', () => {
       seedTwoStationsWithTransfer();
-      seedSecondTransfer({ strokeWidth: 3, strokeColor: '#abcdef' });
+      seedSecondTransfer({ strokeWidth: 3, strokeColor: { day: '#abcdef', night: '#abcdef' } });
       render(<App />);
 
       // x1 keeps the constant strokeWidth 0 → body only.
