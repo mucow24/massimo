@@ -307,10 +307,18 @@ export function migrateDoc(persisted: unknown, version: number): DocState {
     // editors would act on nothing.
     out = S.adoptDefaultStyles(out as unknown as MapDoc) as typeof out;
   }
-  if (v < 14 && out.lines) {
-    // Line topology moved from the ordered `stations` list to an explicit
-    // `edges` set. Backfill the edge set from the legacy consecutive-pairs order
-    // so pre-edges saves rehydrate with identical connectivity.
+  // Non-version-gated invariant (like the palette/style repairs): every line
+  // MUST carry an `edges` array — the renderer and interlining read it directly
+  // (`ln.edges.join(...)`). Line topology moved from the ordered `stations`
+  // list to an explicit `edges` set at v14; a pure version gate would suffice
+  // for honestly-versioned docs, but an intermediate build bumped the persist
+  // version to 14 and re-saved docs BEFORE lines carried `edges`, stranding
+  // them at v14 with no edges — a `v < 14` gate can never recover those (14 is
+  // not < 14) and the renderer crashes on load. So backfill it every time,
+  // mirroring parse()'s unconditional per-line backfill. `backfillLinesEdges`
+  // is reference-stable when every line already has an array, so this is a
+  // no-op (preserving the already-canonical pass-through) on canonical docs.
+  if (out.lines) {
     const { lines: cleaned, changed } = backfillLinesEdges(out.lines);
     if (changed) out = { ...out, lines: cleaned };
   }
