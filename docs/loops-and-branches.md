@@ -129,7 +129,23 @@ Topology enumerators to switch from consecutive-pairs → `edges`:
   (insert/branch/remove/reorder), to keep that tested flow intact. Deferred: unify so editing
   also uses the graph; reorder + dot-shape picker are edit-list-only meanwhile; loop-arc
   visuals are best-effort.
-- **Full suite green (197 files / 3406 tests), `tsc`/lint/format/build all clean.**
+- **Graph is now the ONE editor (iteration 5).** The flat band is deleted; `StationGraph`
+  renders in both view and edit mode (no layout swap on Edit Stops). Additions:
+  - **Orthogonal connectors** — vertical/horizontal segments with a constant `CORNER_R` 90°
+    corner (`geometry/polygonUnion.openPolylinePath` on lane/row waypoints), replacing the
+    wonky beziers. Route line 1px narrower (`BODY_W` 8→7).
+  - **T-junction rows** — `lineGraphLayout` runs a cheap pass-1 tree-child count, then a branch
+    point reserves a BLANK row one cell below the junction (`teeRow` on the cross-lane edge);
+    the branch tees off there as a clean `├`, clear of every dot. New `rowCount` (rows incl.
+    blanks); the row list renders blank spacers to stay gutter-aligned. A plain ring's root has
+    one tree child (wrap = back-edge) so it is NOT a branch point — no blank row.
+  - **Stop dots render their real type** via `StopGlyph` (shape/fill/stroke), 1px larger; click
+    a dot in edit mode to open the restored dot-shape picker (`onSetDotStyle`).
+  - **Right-click a connector removes that edge** (`toggleEdgeOnLine`) — how a loop/branch leg
+    is deleted without dropping a stop.
+  - **Insert-after fix:** `edgesAfterInsert` only splices into a real `prev–next` edge; on a
+    branchy/looped line it no longer fabricates an edge to the display-next stop.
+- **Full suite green (197 files / 3403 tests), `tsc`/lint/format/build all clean.**
 
 ### Known open: a line overdraws its own casing at junctions
 

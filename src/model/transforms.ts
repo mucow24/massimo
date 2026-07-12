@@ -1329,11 +1329,19 @@ function edgesAfterInsert(
   next: StationId | null,
   stationId: StationId,
 ): string[] {
-  let e = edges;
-  if (prev !== null && next !== null) e = removeEdge(e, prev, next);
-  if (prev !== null) e = addEdge(e, prev, stationId);
-  if (next !== null) e = addEdge(e, stationId, next);
-  return e;
+  // Splice INTO an existing segment (prev–new–next) only when prev and next
+  // were actually an edge. On a branchy/looped line `next` is merely the
+  // display-next stop (DFS order), NOT necessarily a neighbour — so otherwise
+  // just extend from `prev` and never fabricate an edge to a stop it was never
+  // joined to.
+  if (prev !== null && next !== null && edges.includes(pairKeyOf(prev, next))) {
+    let e = removeEdge(edges, prev, next);
+    e = addEdge(e, prev, stationId);
+    return addEdge(e, stationId, next);
+  }
+  if (prev !== null) return addEdge(edges, prev, stationId);
+  if (next !== null) return addEdge(edges, stationId, next);
+  return edges;
 }
 
 // Edge-set maintenance when `stationId` leaves the line: drop its incident

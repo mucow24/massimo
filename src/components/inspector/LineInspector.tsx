@@ -1,46 +1,32 @@
-import { Fragment, useEffect, useRef, useState, type ReactNode } from 'react';
-import { ChevronDownIcon, ChevronUpIcon, Cross2Icon } from '@radix-ui/react-icons';
+import { useEffect, useState, type ReactNode } from 'react';
+import { ChevronDownIcon } from '@radix-ui/react-icons';
 import { useDoc, useSelection } from '../../state/store';
 import { useThemeColors } from '../../state/theme';
-import type { DotShape, DotStyle, LineId, LineStyle } from '../../model/types';
+import type { LineId, LineStyle } from '../../model/types';
 import { pairKeyOf } from '../../model/pairKey';
-import { edgeEndpoints, lineHasEdge } from '../../model/lineTopology';
-import { resolveDotStyle } from '../../model/transforms';
 import { DEFAULT_DOT_STYLE, DOT_SHAPE_PRESETS } from '../../model/dotStyle';
 import { resolveSegmentStyle } from '../../geometry/interlining';
 import { ColorPalette } from './ColorPalette';
 import { ColorField } from '../ColorField';
 import { useFieldHistory } from '../useFieldHistory';
-import { useDismiss } from '../usePopover';
-import { HatchPatterns, lineStyleStrokeAttrs, lineStyleUnderlayAttrs } from '../HatchPatterns';
-import { StopGlyph } from '../StopGlyph';
-import { StationShapePicker, SHAPES } from '../StationShapePicker';
+import { StationShapePicker } from '../StationShapePicker';
 import { blendOver, legibleTextOn, withAlpha } from '../../util/color';
-import { stationNameListText } from '../../geometry/labelTokens';
 import { NumericFieldRow } from '../NumericFieldRow';
 import { StyleRow } from '../StyleRow';
 import {
-  LINE_WIDTH_DEFAULT,
   LINE_WIDTH_MAX,
   LINE_WIDTH_MIN,
   LINE_WIDTH_SLIDER_MIN,
   lineWidthOf,
 } from '../../model/lineWidth';
-import {
-  DOT_SIZE_MAX,
-  DOT_SIZE_MIN,
-  dotSizeOverride,
-  lineDefaultDotSizeOf,
-} from '../../model/dotSize';
+import { DOT_SIZE_MAX, DOT_SIZE_MIN, lineDefaultDotSizeOf } from '../../model/dotSize';
 import {
   LINE_STROKE_STEP,
   LINE_STROKE_WIDTH_MAX,
   LINE_STROKE_WIDTH_MIN,
   lineStrokeColorOf,
-  lineStrokeRailWidth,
   lineStrokeWidthOf,
 } from '../../model/lineStroke';
-import { stationBandLayout, STATION_ROW_H, GAP_ROW_H } from './stationBandGeometry';
 import { StationGraph } from './StationGraph';
 
 // Clear the line editor's pointer-hover highlights (the white dot casing and
@@ -57,49 +43,7 @@ function clearInspectorHovers() {
   s.setHoveredInspectorSegment(null);
 }
 
-function DotShapePopover({
-  onPick,
-  onClose,
-  style,
-  lineColor,
-  serviceCode,
-}: {
-  onPick: (shape: DotShape) => void;
-  onClose: () => void;
-  style: React.CSSProperties;
-  lineColor: string;
-  serviceCode: string;
-}) {
-  const ref = useRef<HTMLDivElement | null>(null);
-  useDismiss(true, onClose, [ref]);
-  return (
-    <div className="shape-grid" role="menu" ref={ref} style={{ ...style, right: 'auto' }}>
-      {SHAPES.map(({ shape, label }) => (
-        <button
-          key={shape}
-          type="button"
-          role="menuitem"
-          className="shape-option"
-          aria-label={label}
-          onClick={() => onPick(shape)}
-        >
-          <svg width={20} height={20} viewBox="-10 -10 20 20">
-            <StopGlyph
-              cx={0}
-              cy={0}
-              style={DOT_SHAPE_PRESETS[shape]}
-              lineColor={lineColor}
-              serviceCode={serviceCode}
-            />
-          </svg>
-        </button>
-      ))}
-    </div>
-  );
-}
-
 const INSERT_ROW_H = 16;
-const MARKER_W = 24;
 
 const NEXT_STYLE: Record<LineStyle, LineStyle> = {
   solid: 'dashed',
@@ -239,9 +183,9 @@ export function LineInspector({ id }: { id: LineId }) {
   const stations = useDoc((s) => s.stations);
   const updateLine = useDoc((s) => s.updateLine);
   const setLineSegmentStyle = useDoc((s) => s.setLineSegmentStyle);
-  const reorderLineStations = useDoc((s) => s.reorderLineStations);
-  const removeStationFromLine = useDoc((s) => s.removeStationFromLine);
+  const toggleEdgeOnLine = useDoc((s) => s.toggleEdgeOnLine);
   const setDotStyle = useDoc((s) => s.setDotStyle);
+  const removeStationFromLine = useDoc((s) => s.removeStationFromLine);
   const setLineDefaultDotStyle = useDoc((s) => s.setLineDefaultDotStyle);
   const setLineDefaultDotSize = useDoc((s) => s.setLineDefaultDotSize);
   const setLineWidth = useDoc((s) => s.setLineWidth);
@@ -252,7 +196,6 @@ export function LineInspector({ id }: { id: LineId }) {
   const underlayColor = useThemeColors().underlay;
   const nameField = useFieldHistory();
   const serviceField = useFieldHistory();
-  const [openPickerSid, setOpenPickerSid] = useState<string | null>(null);
 
   // When this inspector unmounts (line deleted, a station selected, the panel
   // collapsed, or a different line opened), any row/divider hovered at that
@@ -265,17 +208,6 @@ export function LineInspector({ id }: { id: LineId }) {
     const key = pairKeyOf(fromStationId, toStationId);
     const cur = resolveSegmentStyle(line, key);
     setLineSegmentStyle(line.id, fromStationId, toStationId, NEXT_STYLE[cur]);
-  };
-
-  const moveSt = (idx: number, dir: -1 | 1) => {
-    const arr = [...line.stations];
-    const j = idx + dir;
-    if (j < 0 || j >= arr.length) return;
-    [arr[idx], arr[j]] = [arr[j], arr[idx]];
-    // The reordered rows remount under the cursor without an onMouseLeave, so
-    // a row/divider hover would dangle on the old position.
-    clearInspectorHovers();
-    reorderLineStations(line.id, arr);
   };
 
   const isAppending =
@@ -403,28 +335,53 @@ export function LineInspector({ id }: { id: LineId }) {
         >
           {isAppending ? 'Done' : 'Edit Stops'}
         </button>
-        {/* Not editing: show the column-based graph so branches and loops read
-            as their actual shape instead of one flat list. Editing (appending)
-            keeps the linear list + insert affordances below. */}
-        {line.stations.length > 0 && !isAppending && (
+        {/* The column-based graph is the layout in BOTH view and edit mode, so
+            hitting "Edit Stops" doesn't rearrange anything — the rows just grow
+            insert/branch/remove controls. This top affordance arms inserting
+            before the first stop (and starts an empty line). */}
+        {isAppending && (
+          <div style={{ display: 'flex', height: INSERT_ROW_H, marginBottom: 2 }}>
+            <InsertZoneButtons
+              color={line.color}
+              height={INSERT_ROW_H}
+              insertActive={appendInsertAfterIndex === -1 && !appendDraw}
+              branchActive={false}
+              canBranch={false}
+              onInsert={() => selection.setInsertAfterIndex(-1, false)}
+              onBranch={() => {}}
+            />
+          </div>
+        )}
+        {line.stations.length > 0 && (
           <StationGraph
             line={line}
             stations={stations}
             color={line.color}
             underlayColor={underlayColor}
-            isAppending={false}
-            cursorStationId={null}
-            appendDraw={false}
+            isAppending={isAppending}
+            cursorStationId={
+              appendInsertAfterIndex != null && appendInsertAfterIndex >= 0
+                ? line.stations[appendInsertAfterIndex]
+                : null
+            }
+            appendDraw={appendDraw}
             hovered={
               selection.hoveredInspectorSegment?.lineId === line.id
                 ? selection.hoveredInspectorSegment
                 : null
             }
             onSelectStation={(sid) => selection.selectStation(sid)}
-            onRemoveStation={() => {}}
+            onRemoveStation={(sid) => {
+              clearInspectorHovers();
+              removeStationFromLine(line.id, line.stations.indexOf(sid));
+            }}
             onCycleSegment={(a, b) => cycleSegmentStyle(a, b)}
-            onInsertAfter={() => {}}
-            onBranchFrom={() => {}}
+            onRemoveSegment={(a, b) => toggleEdgeOnLine(line.id, a, b)}
+            onSetDotStyle={(sid, style) => setDotStyle(sid, line.id, style)}
+            onInsertAfter={(sid) =>
+              selection.setInsertAfterIndex(line.stations.indexOf(sid), false)
+            }
+            onBranchFrom={(sid) => selection.setInsertAfterIndex(line.stations.indexOf(sid), true)}
             onHoverSegment={(edge) =>
               selection.setHoveredInspectorSegment(
                 edge ? { lineId: line.id, fromStationId: edge.from, toStationId: edge.to } : null,
@@ -440,416 +397,6 @@ export function LineInspector({ id }: { id: LineId }) {
               }
             }}
           />
-        )}
-        {line.stations.length > 0 &&
-          isAppending &&
-          (() => {
-            const N = line.stations.length;
-            // The preview band always paints at the default line width — the
-            // actual width would render thin lines as near-invisible hairlines
-            // here, and the band is only a style affordance, not a width gauge.
-            const previewW = LINE_WIDTH_DEFAULT;
-            const {
-              totalHeight: totalBandH,
-              centerOf,
-              segments,
-            } = stationBandLayout(line, stations, previewW);
-            const needsHatchDefs = segments.some(
-              (s) => s.style === 'hatched' || s.style === 'hatched-mirror',
-            );
-            const hovered = selection.hoveredInspectorSegment;
-            const isActiveAt = (idx: number) => isAppending && appendInsertAfterIndex === idx;
-            const insertActiveAt = (idx: number) => isActiveAt(idx) && !appendDraw;
-            const branchActiveAt = (idx: number) => isActiveAt(idx) && appendDraw;
-            // Insert button arms the linear cursor (draw off); branch button arms
-            // draw mode with the pen on the predecessor stop.
-            const moveCursor = (idx: number) => selection.setInsertAfterIndex(idx, false);
-            const branchAt = (idx: number) => selection.setInsertAfterIndex(idx, true);
-            const hoverPredecessor = (predSid: string | null) => (h: boolean) => {
-              if (h && predSid) {
-                selection.setHoveredLineStop({ lineId: line.id, stationId: predSid });
-                selection.setHoveredStation(predSid);
-              } else {
-                selection.setHoveredLineStop(null);
-                selection.setHoveredStation(null);
-              }
-            };
-            return (
-              <div style={{ position: 'relative', display: 'flex', flexDirection: 'column' }}>
-                <svg
-                  width={MARKER_W}
-                  height={totalBandH}
-                  style={{
-                    position: 'absolute',
-                    top: INSERT_ROW_H,
-                    left: 0,
-                    pointerEvents: 'none',
-                  }}
-                >
-                  {needsHatchDefs && (
-                    <defs>
-                      <HatchPatterns colors={[line.color]} underlayColor={underlayColor} />
-                    </defs>
-                  )}
-                  {segments.map((seg) => {
-                    const { stroke, strokeDasharray, strokeLinecap } = lineStyleStrokeAttrs(
-                      seg.style,
-                      line.color,
-                      previewW,
-                    );
-                    const underlay = lineStyleUnderlayAttrs(seg.style, underlayColor);
-                    const isHovered =
-                      hovered?.lineId === line.id &&
-                      hovered?.fromStationId === seg.sid &&
-                      hovered?.toStationId === seg.nextSid;
-                    const filter = isHovered ? 'brightness(1.4) saturate(1.2)' : undefined;
-                    // Casing rails in the preview band, mirroring the
-                    // canvas: two lines centered on the body's edges.
-                    const previewRailW = lineStrokeRailWidth(lineStrokeWidthOf(line), previewW);
-                    return (
-                      <Fragment key={seg.i}>
-                        {underlay && (
-                          <line
-                            x1={MARKER_W / 2}
-                            y1={seg.y1}
-                            x2={MARKER_W / 2}
-                            y2={seg.y2}
-                            stroke={underlay.stroke}
-                            strokeWidth={previewW}
-                            strokeLinecap="butt"
-                            style={filter ? { filter } : undefined}
-                          />
-                        )}
-                        <line
-                          x1={MARKER_W / 2}
-                          y1={seg.y1}
-                          x2={MARKER_W / 2}
-                          y2={seg.y2}
-                          stroke={stroke}
-                          strokeWidth={previewW}
-                          strokeLinecap={strokeLinecap}
-                          strokeDasharray={strokeDasharray}
-                          style={filter ? { filter } : undefined}
-                        />
-                        {previewRailW > 0 &&
-                          [-1, 1].map((side) => (
-                            <line
-                              key={side}
-                              data-preview-casing
-                              x1={MARKER_W / 2 + (side * previewW) / 2}
-                              y1={seg.y1}
-                              x2={MARKER_W / 2 + (side * previewW) / 2}
-                              y2={seg.y2}
-                              stroke={lineStrokeColorOf(line)}
-                              strokeWidth={previewRailW}
-                              strokeLinecap="butt"
-                              style={filter ? { filter } : undefined}
-                            />
-                          ))}
-                      </Fragment>
-                    );
-                  })}
-                  {line.stations.map((sid, i) => {
-                    const station = stations[sid];
-                    if (!station) return null;
-                    const stop = station.stops.find((s) => s.lineId === line.id);
-                    const style: DotStyle = resolveDotStyle(line, stop);
-                    return (
-                      <g
-                        key={i + ':' + sid}
-                        style={{ cursor: 'pointer' }}
-                        onClick={(e) => {
-                          e.stopPropagation();
-                          setOpenPickerSid((cur) => (cur === sid ? null : sid));
-                        }}
-                      >
-                        <circle
-                          cx={MARKER_W / 2}
-                          cy={centerOf(i)}
-                          r={7}
-                          fill="transparent"
-                          style={{ pointerEvents: 'visible' }}
-                        />
-                        <StopGlyph
-                          cx={MARKER_W / 2}
-                          cy={centerOf(i)}
-                          style={style}
-                          lineColor={line.color}
-                          serviceCode={line.service}
-                          sizeOverride={dotSizeOverride(line, stop)}
-                        />
-                      </g>
-                    );
-                  })}
-                </svg>
-                {openPickerSid !== null &&
-                  (() => {
-                    const idx = line.stations.indexOf(openPickerSid);
-                    if (idx < 0) return null;
-                    return (
-                      <DotShapePopover
-                        lineColor={line.color}
-                        serviceCode={line.service}
-                        onPick={(shape) => {
-                          setDotStyle(openPickerSid, line.id, DOT_SHAPE_PRESETS[shape]);
-                          setOpenPickerSid(null);
-                        }}
-                        onClose={() => setOpenPickerSid(null)}
-                        style={{
-                          position: 'absolute',
-                          top: INSERT_ROW_H + centerOf(idx) + 10,
-                          left: MARKER_W + 4,
-                        }}
-                      />
-                    );
-                  })()}
-                <div style={{ display: 'flex', height: INSERT_ROW_H }}>
-                  <div style={{ width: MARKER_W, flexShrink: 0 }} />
-                  {isAppending && (
-                    <InsertZoneButtons
-                      color={line.color}
-                      height={INSERT_ROW_H}
-                      insertActive={insertActiveAt(-1)}
-                      branchActive={false}
-                      canBranch={false}
-                      onInsert={() => moveCursor(-1)}
-                      onBranch={() => {}}
-                    />
-                  )}
-                </div>
-                {line.stations.map((sid, i) => {
-                  const st = stations[sid];
-                  if (!st) return null;
-                  const isLast = i === N - 1;
-                  return (
-                    <Fragment key={i + ':' + sid}>
-                      <div
-                        className="list-row"
-                        style={{
-                          padding: '0 12px 0 0',
-                          gap: 0,
-                          height: STATION_ROW_H,
-                          boxSizing: 'border-box',
-                        }}
-                        onMouseEnter={() => {
-                          selection.setHoveredLineStop({ lineId: line.id, stationId: sid });
-                          selection.setHoveredStation(sid);
-                        }}
-                        onMouseLeave={() => {
-                          selection.setHoveredLineStop(null);
-                          selection.setHoveredStation(null);
-                        }}
-                      >
-                        <div style={{ width: MARKER_W, flexShrink: 0 }} />
-                        <span
-                          className="grow"
-                          style={{
-                            paddingLeft: 8,
-                            cursor: 'pointer',
-                            fontWeight: isAppending ? 700 : undefined,
-                          }}
-                          title="Open station editor"
-                          onClick={() => selection.selectStation(sid)}
-                        >
-                          {stationNameListText(st.name)}
-                        </span>
-                        {isAppending && (
-                          <>
-                            <button
-                              className="btn-mini icon"
-                              disabled={i === 0}
-                              onClick={() => moveSt(i, -1)}
-                              title="Move up"
-                              aria-label="Move up"
-                              style={{ marginLeft: 6 }}
-                            >
-                              <ChevronUpIcon />
-                            </button>
-                            <button
-                              className="btn-mini icon"
-                              disabled={i === N - 1}
-                              onClick={() => moveSt(i, 1)}
-                              title="Move down"
-                              aria-label="Move down"
-                              style={{ marginLeft: 6 }}
-                            >
-                              <ChevronDownIcon />
-                            </button>
-                            <button
-                              className="btn-mini danger"
-                              onClick={() => {
-                                // The row (and the dividers of the segments it
-                                // bordered) unmount on removal without firing
-                                // onMouseLeave, so clear their hover highlights.
-                                clearInspectorHovers();
-                                removeStationFromLine(line.id, i);
-                              }}
-                              title="Remove from line"
-                              aria-label="Remove from line"
-                              style={{ marginLeft: 6 }}
-                            >
-                              <Cross2Icon />
-                            </button>
-                          </>
-                        )}
-                      </div>
-                      {!isLast &&
-                        (() => {
-                          const nextSid = line.stations[i + 1];
-                          if (!stations[nextSid]) return null;
-                          const key = pairKeyOf(sid, nextSid);
-                          const segStyle = resolveSegmentStyle(line, key);
-                          const setHover = () =>
-                            selection.setHoveredInspectorSegment({
-                              lineId: line.id,
-                              fromStationId: sid,
-                              toStationId: nextSid,
-                            });
-                          const clearHover = () => selection.setHoveredInspectorSegment(null);
-                          // The divider is a transparent hit-target over the
-                          // preview band's segment, so it's only meaningful when
-                          // this consecutive-display pair is a REAL edge. After a
-                          // reorder or on a branch, adjacent rows may not be an
-                          // edge — off-chain edges (branch legs, loop wraps) are
-                          // styled via the "Branch / loop segments" list below.
-                          const isEdge = lineHasEdge(line, sid, nextSid);
-                          return (
-                            <div style={{ display: 'flex', height: GAP_ROW_H }}>
-                              {isEdge ? (
-                                <button
-                                  type="button"
-                                  onClick={() => cycleSegmentStyle(sid, nextSid)}
-                                  onMouseEnter={setHover}
-                                  onMouseLeave={clearHover}
-                                  onFocus={setHover}
-                                  onBlur={clearHover}
-                                  data-segment-style-divider
-                                  data-style={segStyle}
-                                  title={`Segment style: ${segStyle} (click to cycle)`}
-                                  aria-label={`Segment style: ${segStyle} (click to cycle)`}
-                                  style={{
-                                    width: MARKER_W,
-                                    height: GAP_ROW_H,
-                                    flexShrink: 0,
-                                    padding: 0,
-                                    background: 'transparent',
-                                    border: 'none',
-                                    cursor: 'pointer',
-                                  }}
-                                />
-                              ) : (
-                                <div style={{ width: MARKER_W, flexShrink: 0 }} />
-                              )}
-                              {isAppending && (
-                                <InsertZoneButtons
-                                  color={line.color}
-                                  height={GAP_ROW_H}
-                                  insertActive={insertActiveAt(i)}
-                                  branchActive={branchActiveAt(i)}
-                                  canBranch
-                                  onInsert={() => moveCursor(i)}
-                                  onBranch={() => branchAt(i)}
-                                  onHoverChange={hoverPredecessor(sid)}
-                                />
-                              )}
-                            </div>
-                          );
-                        })()}
-                    </Fragment>
-                  );
-                })}
-                <div style={{ display: 'flex', height: INSERT_ROW_H }}>
-                  <div style={{ width: MARKER_W, flexShrink: 0 }} />
-                  {isAppending && (
-                    <InsertZoneButtons
-                      color={line.color}
-                      height={INSERT_ROW_H}
-                      insertActive={insertActiveAt(N - 1)}
-                      branchActive={branchActiveAt(N - 1)}
-                      canBranch
-                      onInsert={() => moveCursor(N - 1)}
-                      onBranch={() => branchAt(N - 1)}
-                      onHoverChange={hoverPredecessor(line.stations[N - 1])}
-                    />
-                  )}
-                </div>
-              </div>
-            );
-          })()}
-        {/* While editing, edges the linear preview band can't show — loop-closing
-            wraps and branch legs (any edge not between two display-consecutive
-            stops). When not editing, the graph's connectors are clickable
-            instead, so this only appears in append mode. */}
-        {isAppending &&
-          (() => {
-            const consecutive = new Set<string>();
-            for (let i = 0; i < line.stations.length - 1; i++) {
-              consecutive.add(pairKeyOf(line.stations[i], line.stations[i + 1]));
-            }
-            const extras = line.edges.filter((e) => !consecutive.has(e));
-            if (extras.length === 0) return null;
-            return (
-              <div className="field">
-                <label>Branch / loop segments</label>
-                {extras.map((e) => {
-                  const [a, b] = edgeEndpoints(e);
-                  const sa = stations[a];
-                  const sb = stations[b];
-                  if (!sa || !sb) return null;
-                  const segStyle = resolveSegmentStyle(line, e);
-                  const setHover = () =>
-                    selection.setHoveredInspectorSegment({
-                      lineId: line.id,
-                      fromStationId: a,
-                      toStationId: b,
-                    });
-                  const clearHover = () => selection.setHoveredInspectorSegment(null);
-                  return (
-                    <div
-                      key={e}
-                      className="list-row"
-                      style={{ gap: 8, alignItems: 'center', padding: '2px 0' }}
-                      onMouseEnter={setHover}
-                      onMouseLeave={clearHover}
-                    >
-                      <span className="grow" style={{ paddingLeft: 4 }}>
-                        {stationNameListText(sa.name)} → {stationNameListText(sb.name)}
-                      </span>
-                      <button
-                        type="button"
-                        className="btn-mini"
-                        onClick={() => cycleSegmentStyle(a, b)}
-                        onFocus={setHover}
-                        onBlur={clearHover}
-                        title={`Segment style: ${segStyle} (click to cycle)`}
-                        aria-label={`Segment style ${sa.name} to ${sb.name}: ${segStyle} (click to cycle)`}
-                        style={{ minWidth: 72, textTransform: 'capitalize' }}
-                      >
-                        {segStyle}
-                      </button>
-                    </div>
-                  );
-                })}
-              </div>
-            );
-          })()}
-        {/* An empty line has no station band, so surface the same
-            "before the first stop" insert lozenge on its own. Clicking it
-            arms the cursor (-1) so map clicks add the first stop — identical
-            to the populated-line flow. */}
-        {isAppending && line.stations.length === 0 && (
-          <div style={{ display: 'flex', height: INSERT_ROW_H }}>
-            <div style={{ width: MARKER_W, flexShrink: 0 }} />
-            <InsertZoneButtons
-              color={line.color}
-              height={INSERT_ROW_H}
-              insertActive={appendInsertAfterIndex === -1 && !appendDraw}
-              branchActive={false}
-              canBranch={false}
-              onInsert={() => selection.setInsertAfterIndex(-1, false)}
-              onBranch={() => {}}
-            />
-          </div>
         )}
       </div>
     </section>

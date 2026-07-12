@@ -3564,6 +3564,24 @@ describe('loops and branches (edge-set topology)', () => {
     expect(cut.lines.L1.segmentStyles).toEqual({}); // orphaned override pruned
   });
 
+  it('insert-after does not fabricate an edge to a non-adjacent display-next stop', () => {
+    const base = makeDoc({
+      stations: [
+        makeStation({ id: 'a', stops: [makeStop('L1')] }),
+        makeStation({ id: 'b', stops: [makeStop('L1')] }),
+        makeStation({ id: 'c', stops: [makeStop('L1')] }),
+        makeStation({ id: 'd', stops: [] }),
+      ],
+      // Junction at a (a–b and a–c). Display order [a, b, c] makes b and c
+      // display-consecutive, but they are NOT connected.
+      lines: [makeLine({ id: 'L1', stations: ['a', 'b', 'c'], edges: ['a|b', 'a|c'] })],
+    });
+    // "Insert after b" (index 1): b's display-next is c, but b–c is not an edge.
+    const out = T.toggleStationOnLine(base, 'L1', 'd', 1);
+    // d attaches to b only — no spurious d–c edge.
+    expect(new Set(out.lines.L1.edges)).toEqual(new Set(['a|b', 'a|c', 'b|d']));
+  });
+
   it('removing an intermediate stop heals the gap (degree-2)', () => {
     const base = makeDoc({
       stations: fourStops().slice(0, 3),

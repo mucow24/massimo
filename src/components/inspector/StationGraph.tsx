@@ -1,9 +1,15 @@
-import { Fragment } from 'react';
-import type { Line, Station, StationId } from '../../model/types';
+import { Fragment, useRef, useState, type CSSProperties } from 'react';
+import type { DotShape, DotStyle, Line, Station, StationId } from '../../model/types';
 import { lineGraphLayout } from './lineGraphLayout';
 import { edgeEndpoints } from '../../model/lineTopology';
+import { openPolylinePath, type Pt } from '../../geometry/polygonUnion';
 import { resolveSegmentStyle } from '../../geometry/interlining';
+import { resolveDotStyle } from '../../model/transforms';
+import { DOT_SHAPE_PRESETS } from '../../model/dotStyle';
 import { lineStyleStrokeAttrs, lineStyleUnderlayAttrs, HatchPatterns } from '../HatchPatterns';
+import { StopGlyph } from '../StopGlyph';
+import { SHAPES } from '../StationShapePicker';
+import { useDismiss } from '../usePopover';
 import { stationNameListText } from '../../geometry/labelTokens';
 import { ChevronDownIcon, Cross2Icon } from '@radix-ui/react-icons';
 
@@ -14,10 +20,14 @@ import { ChevronDownIcon, Cross2Icon } from '@radix-ui/react-icons';
 // clickable to cycle that segment's style. Replaces the old flat band so a
 // branchy/looped line reads as its actual shape instead of one confusing list.
 
-const LANE_W = 18;
+const LANE_W = 24;
 const ROW_H = 26;
-const DOT_R = 5;
-const BODY_W = 8; // preview stroke width for the connectors
+const DOT_D = 12; // stop dot DIAMETER in the graph (1px larger than the old r=5 circle)
+const BODY_W = 7; // route-line stroke width for the connectors
+// Constant radius for every 90° corner. Must exceed the stroke width so the bend
+// reads as a curve (a railway-junction sweep), not a hard corner; and stay ≤
+// LANE_W/2 and ≤ ROW_H/2 so a corner never overshoots its shortest segment.
+const CORNER_R = 11;
 
 const laneX = (lane: number) => lane * LANE_W + LANE_W / 2;
 const rowY = (row: number) => row * ROW_H + ROW_H / 2;
@@ -36,41 +46,75 @@ export interface StationGraphProps {
   onSelectStation: (sid: StationId) => void;
   onRemoveStation: (sid: StationId) => void;
   onCycleSegment: (a: StationId, b: StationId) => void;
+  // Delete this track segment (right-click a connector). How a loop or branch
+  // edge is removed without deleting either stop.
+  onRemoveSegment: (a: StationId, b: StationId) => void;
+  // Set a stop's dot style (from clicking its dot in the editor). No-op when the
+  // graph is read-only (not appending).
+  onSetDotStyle: (sid: StationId, style: DotStyle) => void;
   onInsertAfter: (sid: StationId) => void;
   onBranchFrom: (sid: StationId) => void;
   onHoverSegment: (edge: { from: StationId; to: StationId } | null) => void;
   onHoverStation: (sid: StationId | null) => void;
 }
 
-// Connector path from the upper endpoint to the lower one. Same lane → a
-// straight vertical; different lanes → drop out of the parent's lane, curve
-// into the child's lane just below the branch, then run straight down.
-function treePath(fromLane: number, fromRow: number, toLane: number, toRow: number): string {
+// Connector from the upper endpoint (parent) down to the lower one (child), as
+// orthogonal segments with constant rounded corners on the lane/row grid. Same
+// lane → a plain vertical. A branch tees off at `teeRow` — the blank row one
+// cell below the junction — as a clean T: straight down into that row, a single
+// right-angle jog across to the child's lane, then straight down to the child.
+function treePath(
+  fromLane: number,
+  fromRow: number,
+  toLane: number,
+  toRow: number,
+  teeRow: number,
+): string {
   const x1 = laneX(fromLane);
   const y1 = rowY(fromRow);
   const x2 = laneX(toLane);
   const y2 = rowY(toRow);
-  if (fromLane === toLane) return `M ${x1} ${y1} L ${x2} ${y2}`;
-  const bendY = y1 + ROW_H; // finish the sideways move one row below the split
-  const midY = (y1 + bendY) / 2;
-  return `M ${x1} ${y1} C ${x1} ${midY} ${x2} ${midY} ${x2} ${bendY} L ${x2} ${y2}`;
+  if (fromLane === toLane) return `M ${x1} ${y1} V ${y2}`;
+  const yb = rowY(teeRow); // the blank junction row, one cell below the parent
+  const pts: Pt[] = [
+    { x: x1, y: y1 },
+    { x: x1, y: yb },
+    { x: x2, y: yb },
+    { x: x2, y: y2 },
+  ];
+  return openPolylinePath(pts, CORNER_R);
 }
 
-// A loop back-edge: leave the lower stop, bow out into the side lane, run up,
-// and curve back into the upper stop — so the closure reads as an arc alongside.
+// A loop back-edge, drawn so its horizontals sit in the blank rows BELOW the two
+// endpoints (not through the stops): from the upper stop drop one cell to its
+// blank row and tee off into the side lane, run straight down, drop level with
+// the lower stop's blank row, jog back to the trunk, and rise into the lower
+// stop. The upper tee overlays the trunk (a T-junction); the lower is an L-bend.
 function loopPath(
   fromLane: number,
   fromRow: number,
   toLane: number,
   toRow: number,
   sideLane: number,
+  upperBlank: number,
+  lowerBlank: number,
 ): string {
   const ux = laneX(fromLane);
   const uy = rowY(fromRow); // upper stop
   const lx = laneX(toLane);
   const ly = rowY(toRow); // lower stop
   const sx = laneX(sideLane);
-  return `M ${lx} ${ly} C ${sx} ${ly} ${sx} ${ly - ROW_H / 2} ${sx} ${(ly + uy) / 2} C ${sx} ${uy + ROW_H / 2} ${sx} ${uy} ${ux} ${uy}`;
+  const uyB = rowY(upperBlank); // blank row below the upper stop
+  const lyB = rowY(lowerBlank); // blank row below the lower stop
+  const pts: Pt[] = [
+    { x: ux, y: uy },
+    { x: ux, y: uyB },
+    { x: sx, y: uyB },
+    { x: sx, y: lyB },
+    { x: lx, y: lyB },
+    { x: lx, y: ly },
+  ];
+  return openPolylinePath(pts, CORNER_R);
 }
 
 export function StationGraph(props: StationGraphProps) {
@@ -86,15 +130,21 @@ export function StationGraph(props: StationGraphProps) {
     onSelectStation,
     onRemoveStation,
     onCycleSegment,
+    onRemoveSegment,
+    onSetDotStyle,
     onInsertAfter,
     onBranchFrom,
     onHoverSegment,
     onHoverStation,
   } = props;
+  // Which stop's dot picker is open (editor only).
+  const [pickerSid, setPickerSid] = useState<StationId | null>(null);
 
   const layout = lineGraphLayout(line);
   const gutterW = layout.laneCount * LANE_W;
-  const totalH = layout.nodes.length * ROW_H;
+  const totalH = layout.rowCount * ROW_H;
+  const nodeByRow = new Map(layout.nodes.map((n) => [n.row, n]));
+  const pickedNode = pickerSid ? layout.nodes.find((n) => n.stationId === pickerSid) : null;
   const needsHatch = line.edges.some((e) => {
     const s = resolveSegmentStyle(line, e);
     return s === 'hatched' || s === 'hatched-mirror';
@@ -121,6 +171,8 @@ export function StationGraph(props: StationGraphProps) {
         {/* Connectors first, dots on top. */}
         {layout.edges.map((e) => {
           const [a, b] = edgeEndpoints(e.pairKey);
+          const na = stations[a]?.name ?? a;
+          const nb = stations[b]?.name ?? b;
           const style = resolveSegmentStyle(line, e.pairKey);
           const { stroke, strokeDasharray, strokeLinecap } = lineStyleStrokeAttrs(
             style,
@@ -130,8 +182,16 @@ export function StationGraph(props: StationGraphProps) {
           const underlay = lineStyleUnderlayAttrs(style, underlayColor);
           const d =
             e.kind === 'loop'
-              ? loopPath(e.fromLane, e.fromRow, e.toLane, e.toRow, e.sideLane ?? layout.laneCount)
-              : treePath(e.fromLane, e.fromRow, e.toLane, e.toRow);
+              ? loopPath(
+                  e.fromLane,
+                  e.fromRow,
+                  e.toLane,
+                  e.toRow,
+                  e.sideLane ?? layout.laneCount,
+                  e.upperBlank ?? e.fromRow,
+                  e.lowerBlank ?? e.toRow,
+                )
+              : treePath(e.fromLane, e.fromRow, e.toLane, e.toRow, e.teeRow ?? e.fromRow);
           const filter = isHoveredEdge(a, b) ? 'brightness(1.4) saturate(1.2)' : undefined;
           return (
             <Fragment key={e.pairKey}>
@@ -163,24 +223,77 @@ export function StationGraph(props: StationGraphProps) {
                 strokeWidth={Math.max(BODY_W + 8, 14)}
                 style={{ cursor: 'pointer' }}
                 onClick={() => onCycleSegment(a, b)}
+                onContextMenu={(e) => {
+                  e.preventDefault();
+                  onRemoveSegment(a, b);
+                }}
                 onMouseEnter={() => onHoverSegment({ from: a, to: b })}
                 onMouseLeave={() => onHoverSegment(null)}
               >
-                <title>{`Segment style: ${style} (click to cycle)`}</title>
+                <title>{`Segment ${na} → ${nb}: ${style} (left-click to cycle style, right-click to remove)`}</title>
               </path>
             </Fragment>
           );
         })}
-        {layout.nodes.map((n) => (
-          <circle key={n.stationId} cx={laneX(n.lane)} cy={rowY(n.row)} r={DOT_R} fill={color} />
-        ))}
-      </svg>
-
-      {/* Rows, in graph order, offset past the gutter. */}
-      <div style={{ paddingLeft: gutterW + 6 }}>
         {layout.nodes.map((n) => {
-          const st = stations[n.stationId];
-          if (!st) return null;
+          const cell = stations[n.stationId]?.stops.find((c) => c.lineId === line.id);
+          const cx = laneX(n.lane);
+          const cy = rowY(n.row);
+          return (
+            <Fragment key={n.stationId}>
+              {/* The stop's ACTUAL dot type (shape/fill/stroke), at a fixed
+                  graph size. */}
+              <StopGlyph
+                cx={cx}
+                cy={cy}
+                style={cell ? resolveDotStyle(line, cell) : undefined}
+                lineColor={color}
+                serviceCode={line.service}
+                sizeOverride={DOT_D}
+              />
+              {/* Editor: click the dot to change its type. */}
+              {isAppending && (
+                <circle
+                  cx={cx}
+                  cy={cy}
+                  r={DOT_D / 2 + 3}
+                  fill="transparent"
+                  style={{ cursor: 'pointer' }}
+                  onClick={() => setPickerSid(n.stationId)}
+                >
+                  <title>Change stop dot type</title>
+                </circle>
+              )}
+            </Fragment>
+          );
+        })}
+      </svg>
+      {pickedNode && (
+        <DotShapePopover
+          lineColor={color}
+          serviceCode={line.service}
+          style={{
+            position: 'absolute',
+            top: rowY(pickedNode.row) + DOT_D / 2 + 4,
+            left: laneX(pickedNode.lane) + 6,
+            zIndex: 10,
+          }}
+          onPick={(shape) => {
+            onSetDotStyle(pickedNode.stationId, DOT_SHAPE_PRESETS[shape]);
+            setPickerSid(null);
+          }}
+          onClose={() => setPickerSid(null)}
+        />
+      )}
+
+      {/* Rows, one per grid row, offset past the gutter. Blank T-junction rows
+          render an empty spacer so the list stays aligned with the gutter. */}
+      <div style={{ paddingLeft: gutterW + 6 }}>
+        {Array.from({ length: layout.rowCount }, (_, row) => {
+          const n = nodeByRow.get(row);
+          if (!n || !stations[n.stationId])
+            return <div key={`blank-${row}`} style={{ height: ROW_H }} />;
+          const st = stations[n.stationId]!;
           const armed = isAppending && cursorStationId === n.stationId;
           return (
             <div
@@ -243,6 +356,49 @@ export function StationGraph(props: StationGraphProps) {
           );
         })}
       </div>
+    </div>
+  );
+}
+
+// The stop-dot shape picker, opened by clicking a dot in the editor. Restored
+// from the old flat list; positioned by the caller next to the clicked dot.
+function DotShapePopover({
+  onPick,
+  onClose,
+  style,
+  lineColor,
+  serviceCode,
+}: {
+  onPick: (shape: DotShape) => void;
+  onClose: () => void;
+  style: CSSProperties;
+  lineColor: string;
+  serviceCode: string;
+}) {
+  const ref = useRef<HTMLDivElement | null>(null);
+  useDismiss(true, onClose, [ref]);
+  return (
+    <div className="shape-grid" role="menu" ref={ref} style={{ ...style, right: 'auto' }}>
+      {SHAPES.map(({ shape, label }) => (
+        <button
+          key={shape}
+          type="button"
+          role="menuitem"
+          className="shape-option"
+          aria-label={label}
+          onClick={() => onPick(shape)}
+        >
+          <svg width={20} height={20} viewBox="-10 -10 20 20">
+            <StopGlyph
+              cx={0}
+              cy={0}
+              style={DOT_SHAPE_PRESETS[shape]}
+              lineColor={lineColor}
+              serviceCode={serviceCode}
+            />
+          </svg>
+        </button>
+      ))}
     </div>
   );
 }

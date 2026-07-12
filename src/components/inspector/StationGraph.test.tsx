@@ -20,6 +20,8 @@ const baseProps = (): Omit<StationGraphProps, 'line' | 'stations'> => ({
   onSelectStation: vi.fn(),
   onRemoveStation: vi.fn(),
   onCycleSegment: vi.fn(),
+  onRemoveSegment: vi.fn(),
+  onSetDotStyle: vi.fn(),
   onInsertAfter: vi.fn(),
   onBranchFrom: vi.fn(),
   onHoverSegment: vi.fn(),
@@ -58,6 +60,40 @@ describe('StationGraph', () => {
     expect(hits.length).toBe(3);
     fireEvent.click(hits[0]);
     expect(props.onCycleSegment).toHaveBeenCalledTimes(1);
+  });
+
+  it('right-clicking a connector removes that segment (how a loop/branch edge is deleted)', () => {
+    const props = baseProps();
+    const line = makeLine({
+      id: 'L1',
+      stations: ['s1', 's2', 's3'],
+      edges: ['s1|s2', 's2|s3', 's1|s3'], // loop
+    });
+    const { container } = render(
+      <StationGraph {...props} line={line} stations={stationsFor(['s1', 's2', 's3'])} />,
+    );
+    const hits = container.querySelectorAll('path[stroke="transparent"]');
+    fireEvent.contextMenu(hits[0]);
+    expect(props.onRemoveSegment).toHaveBeenCalledTimes(1);
+    expect(props.onCycleSegment).not.toHaveBeenCalled();
+  });
+
+  it('editor: clicking a dot opens the shape picker; picking sets that stop dot style', () => {
+    const props = baseProps();
+    const ids = ['s1', 's2'];
+    const line = makeLine({ id: 'L1', stations: ids });
+    const { container } = render(
+      <StationGraph {...props} isAppending line={line} stations={stationsFor(ids)} />,
+    );
+    // The clickable dot hit-targets are the transparent circles (editor only).
+    const hit = Array.from(container.querySelectorAll('circle')).find(
+      (c) => c.getAttribute('fill') === 'transparent',
+    );
+    expect(hit).toBeTruthy();
+    fireEvent.click(hit!);
+    // The shape picker opens; pick the first shape.
+    fireEvent.click(screen.getAllByRole('menuitem')[0]);
+    expect(props.onSetDotStyle).toHaveBeenCalledWith('s1', expect.anything()); // dot of stop s1
   });
 
   it('shows remove / insert / branch controls only while editing', () => {

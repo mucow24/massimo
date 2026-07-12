@@ -52,59 +52,42 @@ describe('<LineInspector /> — segment style dividers', () => {
     });
   };
 
-  it('renders one divider per adjacent station-pair (N-1 for N stations)', () => {
+  it('clicking a graph connector cycles that segment: solid → dashed → … → solid', () => {
     seedThreeStationLine();
     const { container } = render(<LineInspector id="L1" />);
-    const dividers = container.querySelectorAll('[data-segment-style-divider]');
-    expect(dividers.length).toBe(2);
+    // The first connector (transparent hit-target) is the s1|s2 corridor.
+    const conn = container.querySelectorAll('path[stroke="transparent"]')[0];
+    for (const style of ['dashed', 'hatched', 'hatched-mirror', 'dotted', 'dashed-open']) {
+      fireEvent.click(conn);
+      expect(useDoc.getState().lines.L1.segmentStyles).toEqual({ 's1|s2': style });
+    }
+    fireEvent.click(conn);
+    expect(useDoc.getState().lines.L1.segmentStyles).toEqual({}); // back to solid → dropped
   });
 
-  it('reflects the current style of each segment via data-style', () => {
-    seedThreeStationLine();
-    useDoc.getState().setLineSegmentStyle('L1', 's2', 's3', 'hatched');
-    const { container } = render(<LineInspector id="L1" />);
-    const dividers = container.querySelectorAll('[data-segment-style-divider]');
-    expect(dividers[0].getAttribute('data-style')).toBe('solid');
-    expect(dividers[1].getAttribute('data-style')).toBe('hatched');
-  });
-
-  it('clicking a divider cycles solid → dashed → hatched → hatched-mirror → dotted → dashed-open → solid', async () => {
-    seedThreeStationLine();
-    const user = userEvent.setup();
-    render(<LineInspector id="L1" />);
-
-    const divider = screen.getAllByRole('button', { name: /segment style/i })[0];
-
-    await user.click(divider);
-    expect(useDoc.getState().lines.L1.segmentStyles).toEqual({ 's1|s2': 'dashed' });
-
-    await user.click(divider);
-    expect(useDoc.getState().lines.L1.segmentStyles).toEqual({ 's1|s2': 'hatched' });
-
-    await user.click(divider);
-    expect(useDoc.getState().lines.L1.segmentStyles).toEqual({ 's1|s2': 'hatched-mirror' });
-
-    await user.click(divider);
-    expect(useDoc.getState().lines.L1.segmentStyles).toEqual({ 's1|s2': 'dotted' });
-
-    await user.click(divider);
-    expect(useDoc.getState().lines.L1.segmentStyles).toEqual({ 's1|s2': 'dashed-open' });
-
-    await user.click(divider);
-    // Back to solid -> entry deleted entirely.
-    expect(useDoc.getState().lines.L1.segmentStyles).toEqual({});
-  });
-
-  it('renders no dividers for a line with fewer than two stations', () => {
+  it('right-clicking a graph connector removes that edge (e.g. opening a loop)', () => {
+    // Loop s1-s2-s3-s1; the wrap edge s1|s3 is a labelled connector.
     useDoc.setState({
       ...DEFAULT_DOC,
       ...makeDoc({
-        stations: [makeStation({ id: 's1', stops: [makeStop('L1')] })],
-        lines: [makeLine({ id: 'L1', stations: ['s1'] })],
+        stations: [
+          makeStation({ id: 's1', stops: [makeStop('L1')] }),
+          makeStation({ id: 's2', stops: [makeStop('L1')] }),
+          makeStation({ id: 's3', stops: [makeStop('L1')] }),
+        ],
+        lines: [
+          makeLine({ id: 'L1', stations: ['s1', 's2', 's3'], edges: ['s1|s2', 's2|s3', 's1|s3'] }),
+        ],
       }),
     });
     const { container } = render(<LineInspector id="L1" />);
-    expect(container.querySelectorAll('[data-segment-style-divider]').length).toBe(0);
+    const title = Array.from(container.querySelectorAll('title')).find((t) =>
+      /Segment s1 → s3/.test(t.textContent ?? ''),
+    );
+    expect(title).toBeTruthy();
+    fireEvent.contextMenu(title!.parentElement!);
+    // The loop is opened: the wrap edge is gone, the s1-s2-s3 path remains.
+    expect(new Set(useDoc.getState().lines.L1.edges)).toEqual(new Set(['s1|s2', 's2|s3']));
   });
 });
 
@@ -181,29 +164,6 @@ describe('<LineInspector /> — name / service / default-shape / station-list (E
     await user.click(screen.getByRole('button', { name: 'Stop shape' }));
     await user.click(screen.getByRole('menuitem', { name: 'Open white' }));
     expect(useDoc.getState().lines.L1.defaultDotStyle).toEqual(DOT_SHAPE_PRESETS['open-white']);
-  });
-
-  it('the station-list move-up button reorders via reorderLineStations', async () => {
-    const user = userEvent.setup();
-    seedThree();
-    render(<LineInspector id="L1" />);
-    // The up/down/remove buttons only render in append (Edit Stops) mode.
-    await user.click(screen.getByRole('button', { name: 'Edit Stops' }));
-    // Move the SECOND station up: ups[1] (the first row's up is disabled).
-    const ups = screen.getAllByTitle('Move up');
-    await user.click(ups[1]);
-    expect(useDoc.getState().lines.L1.stations).toEqual(['s2', 's1', 's3']);
-  });
-
-  it('the station-list move-down button reorders via reorderLineStations', async () => {
-    const user = userEvent.setup();
-    seedThree();
-    render(<LineInspector id="L1" />);
-    await user.click(screen.getByRole('button', { name: 'Edit Stops' }));
-    const downs = screen.getAllByTitle('Move down');
-    // Move the FIRST station down.
-    await user.click(downs[0]);
-    expect(useDoc.getState().lines.L1.stations).toEqual(['s2', 's1', 's3']);
   });
 
   it('the station-list remove button drops the stop via removeStationFromLine', async () => {
@@ -286,23 +246,6 @@ describe('<LineInspector /> — width control', () => {
     expect(historyDepth()).toBe(before + 1);
     useDoc.temporal.getState().undo();
     expect('width' in useDoc.getState().lines.L1).toBe(false);
-  });
-
-  it('the stop-band preview always renders at the default width, ignoring the line width', () => {
-    // A wide line must not make the preview band thick...
-    seed(28);
-    const wide = render(<LineInspector id="L1" />);
-    const wideBand = wide.container.querySelectorAll('svg line');
-    expect(wideBand.length).toBeGreaterThan(0);
-    for (const l of wideBand) expect(l.getAttribute('stroke-width')).toBe('14');
-    wide.unmount();
-
-    // ...nor a thin line make it a hairline.
-    seed(2);
-    const thin = render(<LineInspector id="L1" />);
-    const thinBand = thin.container.querySelectorAll('svg line');
-    expect(thinBand.length).toBeGreaterThan(0);
-    for (const l of thinBand) expect(l.getAttribute('stroke-width')).toBe('14');
   });
 });
 
@@ -487,30 +430,6 @@ describe('<LineInspector /> — stroke controls', () => {
     useDoc.temporal.getState().undo();
     expect('strokeWidth' in useDoc.getState().lines.L1).toBe(false);
   });
-
-  it('the stop-band preview paints two edge-centered rails per segment', () => {
-    seed({ strokeWidth: 4, strokeColor: '#ff0000' });
-    const { container } = render(<LineInspector id="L1" />);
-    const casings = Array.from(container.querySelectorAll('svg line[data-preview-casing]'));
-    expect(casings.length).toBe(2); // one segment × two rails
-    for (const l of casings) {
-      expect(l.getAttribute('stroke')).toBe('#ff0000');
-      expect(l.getAttribute('stroke-width')).toBe('4'); // the rail itself
-    }
-    // Rails straddle the body edges at ±previewW/2 = ±7 around the marker
-    // column center (12).
-    const xs = casings.map((l) => Number(l.getAttribute('x1'))).sort((a, b) => a - b);
-    expect(xs).toEqual([5, 19]);
-    // The body paints first; the rails follow it in document order.
-    const first = container.querySelector('svg line');
-    expect(first?.hasAttribute('data-preview-casing')).toBe(false);
-  });
-
-  it('the preview paints no casing for a stroke-less line', () => {
-    seed();
-    const { container } = render(<LineInspector id="L1" />);
-    expect(container.querySelectorAll('[data-preview-casing]').length).toBe(0);
-  });
 });
 
 describe('<LineInspector /> — waypoint pill', () => {
@@ -591,7 +510,7 @@ describe('<LineInspector /> — branch button (draw mode)', () => {
     useSelection.getState().setUiMode({ kind: 'idle' });
   });
 
-  it('arms draw mode with the pen on the chosen stop', async () => {
+  it('the per-stop Branch button arms draw mode with the pen on that stop', async () => {
     useDoc.setState({
       ...DEFAULT_DOC,
       ...makeDoc({
@@ -606,17 +525,13 @@ describe('<LineInspector /> — branch button (draw mode)', () => {
     const user = userEvent.setup();
     render(<LineInspector id="L1" />);
 
-    // First branch button = branch from stop 0 (the zone just after s1).
-    const branchButtons = screen.getAllByRole('button', {
-      name: 'Start a new branch from this stop',
-    });
-    await user.click(branchButtons[0]);
+    await user.click(screen.getByRole('button', { name: 'Branch from s1' }));
 
     const ui = useSelection.getState().uiMode;
     expect(ui.kind).toBe('appending-to-line');
     if (ui.kind === 'appending-to-line') {
       expect(ui.draw).toBe(true);
-      expect(ui.insertAfterIndex).toBe(0);
+      expect(ui.insertAfterIndex).toBe(0); // pen on s1 (index 0)
     }
   });
 });
@@ -629,7 +544,7 @@ describe('<LineInspector /> — branch/loop segment styles', () => {
     useSelection.getState().setUiMode({ kind: 'idle' });
   });
 
-  it('exposes off-chain (branch) segments so their dashedness is settable', async () => {
+  it('a branch leg (off the display chain) is style-settable via its graph connector', () => {
     useDoc.setState({
       ...DEFAULT_DOC,
       ...makeDoc({
@@ -639,8 +554,7 @@ describe('<LineInspector /> — branch/loop segment styles', () => {
           makeStation({ id: 's3', stops: [makeStop('L1')] }),
           makeStation({ id: 's4', stops: [makeStop('L1')] }),
         ],
-        // Trunk s1-s2-s3 + branch leg s2-s4. s2|s4 is NOT display-consecutive,
-        // so the inline dividers can't reach it.
+        // Trunk s1-s2-s3 + branch leg s2-s4 (s2|s4 is NOT display-consecutive).
         lines: [
           makeLine({
             id: 'L1',
@@ -650,13 +564,13 @@ describe('<LineInspector /> — branch/loop segment styles', () => {
         ],
       }),
     });
-    useSelection.getState().setAppending('L1'); // list is the edit-mode segment UI
-    const user = userEvent.setup();
-    render(<LineInspector id="L1" />);
-
-    const btn = screen.getByRole('button', { name: /Segment style s2 to s4/i });
-    expect(btn).toHaveTextContent(/solid/i);
-    await user.click(btn);
+    const { container } = render(<LineInspector id="L1" />);
+    // The branch leg is a labelled connector in the graph; click it to cycle.
+    const title = Array.from(container.querySelectorAll('title')).find((t) =>
+      /Segment s2 → s4/.test(t.textContent ?? ''),
+    );
+    expect(title).toBeTruthy();
+    fireEvent.click(title!.parentElement!);
     // Cycling stored a non-solid style for the branch leg (solid is never stored).
     expect(useDoc.getState().lines.L1.segmentStyles?.['s2|s4']).toBeDefined();
   });
@@ -726,50 +640,28 @@ describe('<LineInspector /> — removing a station clears its dangling hover hig
     expect(useSelection.getState().hoveredStationId).toBeNull();
   });
 
-  it('clicking "×" clears a hovered segment divider whose endpoint is removed, so its corridor wash cannot survive undo', () => {
+  it('removing a stop clears a hovered graph connector, so its corridor wash cannot survive undo', () => {
     seedThreeStationLine();
     // Appending mode reveals the "×" buttons.
     useSelection.getState().setAppending('L1');
     const { container } = render(<LineInspector id="L1" />);
 
-    // Hover the s1|s2 segment divider, exactly as the user would.
-    const dividers = container.querySelectorAll('[data-segment-style-divider]');
-    expect(dividers).toHaveLength(2);
-    fireEvent.mouseEnter(dividers[0]);
+    // Hover the s1|s2 connector (the first transparent hit-target).
+    const conn = container.querySelectorAll('path[stroke="transparent"]')[0];
+    fireEvent.mouseEnter(conn);
     expect(useSelection.getState().hoveredInspectorSegment).toEqual({
       lineId: 'L1',
       fromStationId: 's1',
       toStationId: 's2',
     });
 
-    // Remove s2 — an endpoint of the hovered segment. Its divider unmounts
+    // Remove s2 — an endpoint of the hovered segment. Its connector unmounts
     // WITHOUT firing onMouseLeave.
     const removeButtons = screen.getAllByTitle('Remove from line');
     fireEvent.click(removeButtons[1]);
     expect(useDoc.getState().lines.L1.stations).toEqual(['s1', 's3']);
 
     expect(useSelection.getState().hoveredInspectorSegment).toBeNull();
-  });
-
-  it('reordering a hovered row (move ↓) clears its hover so the highlight does not dangle on the moved dot', () => {
-    seedThreeStationLine();
-    // Appending mode reveals the move "↑/↓" buttons.
-    useSelection.getState().setAppending('L1');
-    render(<LineInspector id="L1" />);
-
-    const downButtons = screen.getAllByTitle('Move down');
-    const s2Down = downButtons[1];
-    const s2Row = s2Down.closest('.list-row') as HTMLElement;
-
-    fireEvent.mouseEnter(s2Row);
-    expect(useSelection.getState().hoveredLineStop).toEqual({ lineId: 'L1', stationId: 's2' });
-
-    // Moving s2 down remounts the rows under the cursor (no onMouseLeave).
-    fireEvent.click(s2Down);
-    expect(useDoc.getState().lines.L1.stations).toEqual(['s1', 's3', 's2']);
-
-    expect(useSelection.getState().hoveredLineStop).toBeNull();
-    expect(useSelection.getState().hoveredStationId).toBeNull();
   });
 
   it('unmounting the inspector (line deleted, a station selected, panel collapsed) clears lingering hovers', () => {
