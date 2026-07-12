@@ -1,5 +1,7 @@
 # Massimo — Architecture
 
+**Up to date as of commit `041e5bf` (2026-07-11) — verified 2026-07-12 06:43 -0400 against the live source.**
+
 > A fast-bootstrap reference for understanding the codebase: the ins, outs, gotchas, and
 > caveats. Written for an AI assistant (or new contributor) who needs the full picture
 > quickly. Read the **TL;DR** and **Core mental model** first; treat the rest as reference.
@@ -38,7 +40,7 @@ are the only UI dependencies.
      React components render the doc to SVG and dispatch actions.
 - **Editing = pure transforms.** Store actions are thin wrappers: `set((s) => T.moveStation(s, …))`.
   Transforms return the **same object reference on no-op** — this is load-bearing for undo
-  grouping. ([src/model/transforms.ts](src/model/transforms.ts) is the ~2300-line heart.)
+  grouping. ([src/model/transforms.ts](src/model/transforms.ts) is the ~2450-line heart.)
 - **The Vignelli look comes from "interlining"** ([src/geometry/interlining.ts](src/geometry/interlining.ts)):
   multiple lines sharing a station-pair corridor are merged into mean-centered parallel stripes.
   This is the single most intricate algorithm in the repo and is pinned by a **byte-exact golden
@@ -93,20 +95,22 @@ index.html                      # Vite entry; loads Inter (Google Fonts), mounts
 src/
   main.tsx                      # ReactDOM root, imports styles.css
   App.tsx                       # 3-pane shell + ALL global keyboard/contextmenu/blur wiring
-  styles.css                    # 16 @font-face (Helvetica Neue) + .app CSS grid + design tokens
+  styles.css                    # 17 @font-face (16 Helvetica Neue + 1 DejaVu fallback) + .app CSS grid + tokens
                                 #   (~30 custom props on .app; dark mode = one reassignment block
                                 #   under .app[data-theme='dark'])
 
   model/                        # PURE domain logic — no React, no store
     types.ts                    # MapDoc + every entity type (the canonical data shape)
-    transforms.ts               # ~2300 lines: all (doc,…)→doc editing ops + DEFAULT_DOC + constants
+    transforms.ts               # ~2450 lines: all (doc,…)→doc editing ops + DEFAULT_DOC + constants
     serialize.ts                # serialize()/parse() + shared backfill/sanitize helpers
+    styles.ts                   # named per-kind formatting presets (StyleDef) + styleId tag/stamp
     ids.ts                      # IdFactory: crypto UUIDs (prod) / counter ids (tests)
     pairKey.ts                  # pairKeyOf(a,b): canonical station-pair key
     recordOrder.ts              # reconcileOrder/moveInOrder: shared z-order algebra
     palettes.ts                 # built-in PALETTES + resolution; PaletteId = open string
     customPalette.ts            # parse imported palette JSON; makeCustomPaletteId
     dotStyle.ts dotSize.ts      # procedural stop-dot style + size resolution
+    transferStyle.ts            # TRANSFER_STYLE_DEFAULTS + per-transfer override resolution
     lineWidth.ts lineStroke.ts  # stripe width (GEOMETRY) + casing rails (PRESENTATION)
     lineOrder.ts layerPriority.ts  # z-order reconcile + per-segment layer math
     lineNaming.ts               # nameForIndex/pickNextLineName (next free letter name)
@@ -128,9 +132,11 @@ src/
     layerLabelPlacement.ts      # where to put a stripe's layer-number label
     lineTagGeometry.ts          # offset-path arc-length sampling for in-band tags
     svgImage.ts                 # svg-image corners/resize/rotate/snap geometry
+    waypointLozenge.ts          # WP-lozenge pill geometry (shared drawn glyph + hit/selection box)
+    itemBounds.ts contentBounds.ts  # per-item + whole-map world AABBs (popover spawn + camera fit)
 
   state/                        # Zustand stores (7 of them) + history
-    store.ts                    # useDoc: temporal(persist(...)) + ~95 actions + migrateDoc
+    store.ts                    # useDoc: temporal(persist(...)) + ~110 actions + migrateDoc
     history.ts                  # the ONLY module touching zundo internals
     selection.ts                # useSelection: UiMode union + multi-select + reconcileWithDoc
     mirrorDispatch.ts           # mirror-matching fan-out shared by every layout-edit surface
@@ -154,11 +160,11 @@ src/
 
   export/                       # exportCanvas.ts (SVG/PNG), fonts.ts, exportCanvasPdf.ts
                                 #   + pure PDF-gap modules pdfHatch/pdfText/pdfGlyphs/
-                                #   pdfDropShadow/pdfMask/pdfAlpha
+                                #   pdfDropShadow/pdfMask/pdfAlpha + embeddedSvg (shared image-href plumbing)
   util/                         # color.ts (hex math), fonts.ts (font stack + weight math)
   test/                         # fixtures, jsdom setup, integration tests
 e2e/                            # Playwright specs + seedAndOpen harness
-public/fonts/                   # 16 Helvetica Neue .ttf faces
+public/fonts/                   # 16 Helvetica Neue .ttf faces + DejaVuSans.ttf (symbol fallback)
 ```
 
 ---
@@ -403,7 +409,9 @@ spinbutton/stored value is unbounded above and may be a half-integer),
 sizes to content and honors manual `\n`; `>0` = a fixed-width column that word-wraps, with
 `\n` a hard break; clamped to a non-negative integer by `updateTextLabel`), `color/
 darkColor` (day/night; **defaults DIFFER**: `#111111` / `#ffffff` for legibility — unlike a
-polygon whose dark default equals its light; backfilled on load), `locked?`.
+polygon whose dark default equals its light; backfilled on load), `locked?`, plus optional
+per-label `leading` (line-spacing multiplier) / `tracking` (em letter-spacing) — station labels
+instead take the doc-global `labelLeading`/`labelTracking`.
 
 **`RouteBullet`** — a free-floating route badge showing one line's service code in its color.
 `id, x, y, rotation: Rotation, lineId: LineId | null` (null = unset placeholder), `shape:
@@ -414,9 +422,11 @@ RouteBulletShape` (`circle|square|diamond`), `size` (half-extent), `locked?`.
 `TransferEnd = {stationId, lineId: LineId | null}` (lineId picks _which_ dot at an interlined
 station; null ⇒ station anchor). **Cascade-deleted** when either endpoint's stop is removed (by
 deleting the station/line or removing that line's stop). Default styling (thickness, color,
-optional halo) lives on `MapDoc`; the four optional fields are per-transfer overrides with the
-dot-style contract — absent ⇒ track the doc setting, setters drop a value equal to the setting,
-and the doc-level setters prune overrides their new value makes redundant
+optional halo) comes from the constant `TRANSFER_STYLE_DEFAULTS` — there are **no doc-level
+transfer settings** (see the MapDoc note above); the four optional fields are per-transfer
+overrides with the dot-style contract — absent ⇒ track the default, and `updateTransferStyle`
+drops a value equal to the default. Map-wide restyling is the designated **Default** transfer
+style preset in `doc.styles`, not a doc field
 ([transferStyle.ts](src/model/transferStyle.ts), `updateTransferStyle`).
 
 **Small unions:** `StopOrientation` (`auto-vertical|auto-ne-sw|auto-horizontal|auto-nw-se` —
@@ -436,9 +446,10 @@ Files: [serialize.ts](src/model/serialize.ts), [store.ts](src/state/store.ts) (`
 There is **no `normalizeDoc()`**. Absent fields fill from `DEFAULT_DOC`. The small number of
 value-level fixups are **shared exported functions** — `sanitizeStations`, `backfillLineNames`,
 `backfillPolygonDarkColors`, `backfillTextLabelColors`, `convertLegacyDotShapes`,
-`sanitizeStopDotSizes`, `validActivePalettes` — each returning `{...cleaned, changed}`, where the
+`sanitizeStopDotSizes` — each returning `{...cleaned, changed}`, where the
 **`changed` flag is the signal** callers use (`migrateDoc` re-spreads a field only when `changed` is
-true). The dict-level backfills allocate a fresh container even on a no-op, so don't rely on their
+true). (`validActivePalettes` is the exception — it returns a bare `PaletteId[]` that both callers
+assign unconditionally.) The dict-level backfills allocate a fresh container even on a no-op, so don't rely on their
 reference identity (the per-line / per-dot sanitizers _do_ return the same element ref when
 unchanged — distinct from the transform "same-reference-on-no-op" invariant). They are called by
 **both** load paths.
@@ -516,8 +527,9 @@ field is left for the persist-merge). `validActivePalettes` reads
   on every set).
 - **Startup**: no explicit load in `App.tsx` — zustand `persist` rehydrates from localStorage on
   boot, running `migrateDoc`.
-- **Manual Load…**: `parse(text, customPalettes)` then `useDoc.setState({ ...DEFAULT_DOC,
-...doc })` and `temporal.clear()` (wipe history).
+- **Manual Load…**: `parse(text, customPalettes)` then `loadDoc(doc)` (`set({ ...DEFAULT_DOC,
+...doc })`) and `clearHistory()` — which cancels any open history group _and_ wipes both undo/redo
+  stacks (undo must not cross a file load), deliberately more than a bare `temporal.clear()`.
 - File basename: `${sanitizedName} - YYYY-MM-DD` (e.g. `My Subway Map - 2026-07-01`), shared by
   save + export via `mapFileBasename` ([exportCanvas.ts](src/export/exportCanvas.ts)). The map
   name leads so successive saves group together; it falls back to the literal `map` only when the
@@ -543,7 +555,7 @@ Seven Zustand stores, split deliberately by lifecycle (`useDoc`, `useSelection`,
 
 `create<DocState>()(temporal(persist((set, get) => ({...DEFAULT_DOC, ...actions}), persistCfg),
 temporalCfg))`. **`temporal` is the outer wrapper, `persist` the inner**; both use the same
-`partialize: pickDocSnapshot` over `DOC_FIELDS`. The ~95 actions are thin wrappers delegating to
+`partialize: pickDocSnapshot` over `DOC_FIELDS`. The ~110 actions are thin wrappers delegating to
 pure transforms (`import * as T from '../model/transforms'`): `moveStation: (id,x,y) => set((s)
 => T.moveStation(s, id, x, y))`. Adders mint an id from the module-level `ids` factory, call the
 transform, and return the id.
@@ -628,9 +640,10 @@ the polygon stays selected while its vertex handles are active). Selectors:
 **Two stores, intentionally:**
 
 - `useViewportStore` — the **committed** camera (`x, y, zoom`) + `gridVisible`, `gridSize`
-  (`GRID_SIZES = [5,10,20]`, default 10), `darkMode` (default false). **Persisted** as
-  `'massimo-viewport'` (per-browser, **not** per-file). The giant SVG tree subscribes here and is
-  re-rendered only on commit.
+  (`GRID_SIZES = [5,10,20]`, default 10), `darkMode` (default false), `showWaypoints` (default
+  false — a pure paint toggle that reveals waypoint stations). **Persisted** as `'massimo-viewport'`
+  (per-browser, **not** per-file). The giant SVG tree subscribes here and is re-rendered only on
+  commit.
 - `useLiveViewportStore` — the **in-flight** gesture viewport (`pending: Viewport | null`).
   **Not persisted, not undoable.** Only the small popover-overlay layer subscribes. Exists solely
   so per-frame pan/zoom writes don't hammer localStorage or re-render the SVG. See the
@@ -881,7 +894,9 @@ instantiated **once per pass**. Top→bottom paint order (later = on top):
 6. `LayeringDashedOutlines` (layering mode only).
 7. `TransferLayer` (before dots).
 8. Station `dots` (over transfers, so a dot click routes to the station — everything below
-   this point still paints above the dots).
+   this point still paints above the dots), then the **selected-transfer outline**
+   (`TransferSelectionOutline`) — mounted just above the dots (unlike `TransferLayer`, step 7,
+   which is below them) so a connected or crossing dot can't cover the selection chrome.
 9. Placement previews (`*PlacingPreview` ghosts), route bullets, free text labels
    (`LabelView layer="bg"`).
 10. `HighlightedLineLayer` (line-edit dim wash + the selected line repainted above it) →
@@ -896,11 +911,14 @@ instantiated **once per pass**. Top→bottom paint order (later = on top):
 13. Polygon/image `overlay` handles, then the marquee rect.
 14. `SnapGuides` (dotted guides + measurement labels — above dots and everything else painted
     so far).
-15. `StationLayoutEditor` grab rings + `GhostLattice` (editing-station-layout mode);
-    `LayeringHoverOutline` + `LayerNumberLabels` (layering mode).
-16. `BandWarning` ⚠ markers — the very end of the SVG, so a warning is never occluded by any
-    stripe, dot, or label (deliberately NOT interleaved with the band pass; see the note in
+15. `LayeringHoverOutline` + `LayerNumberLabels` (layering mode only).
+16. `BandWarning` ⚠ markers — painted after everything above, so a warning is never occluded by
+    any stripe, dot, or label (deliberately NOT interleaved with the band pass; see the note in
     `buildOrderedRenderables`).
+17. **Layout-editor focus content** (editing-station-layout mode only) — painted last of all,
+    _above_ the warnings, so the station being edited stays reachable: a white selection
+    re-stroke over the focus dim, its stops re-painted at full strength, `StationLayoutEditor`
+    grab rings + direction arrows, then `GhostLattice` during a drag.
 
 Outside the `<svg>`, `WarningToasts` renders one clickable HTML toast per router-flagged band;
 clicking it jumps the viewport to the band's center. It takes MapCanvas's memoized `bands`
@@ -930,10 +948,12 @@ circular dot), sized to the line `width`, with casing rails centered on the trav
 patterns would re-rotate the stripes). Dashed/dotted markers render nothing at interior stops
 (the pattern flows through) and a half-width stub at termini.
 
-**`TransferLayer`** renders all transfers in **three flat passes** (selection rings → user
-strokes/halos → bodies) so overlapping thick transfers trace one outer union. Bodies + halos are
-click targets (`pointer-events="stroke"`); rings are decorative; dots paint above so a dot click
-routes to the station, not the transfer.
+**`TransferLayer`** renders all transfers in **two flat passes** (user stroke halos → bodies) so
+overlapping thick transfers trace one outer union. Bodies + halos are click targets
+(`pointer-events="stroke"`). The selected transfer's ring is **not** in this layer: it renders in a
+separate `TransferSelectionOutline` mounted **above** the station dots (step 8), so a connected or
+crossing dot can't cover it; `TransferLayer` itself sits below the dots so a dot click routes to the
+station, not the transfer.
 
 ---
 
@@ -1193,7 +1213,7 @@ from `FONT_TABLE` — don't "sync" it in.) `normalizeWeight` ties go **low** (60
 
 **PDF** ([exportCanvasPdf.ts](src/export/exportCanvasPdf.ts)) reuses `buildExportSvg`, then renders
 that SVG to a true vector PDF with **svg2pdf.js + jsPDF** — selectable text, vector line work,
-embedded SVG graphics kept as vectors (bar mask users, gap 6). Seven gaps svg2pdf/jsPDF can't bridge
+embedded SVG graphics kept as vectors (bar mask users, gap 7). Eight gaps svg2pdf/jsPDF can't bridge
 are closed here:
 
 1. **Fonts** — jsPDF ignores the SVG's `@font-face` and can only embed TrueType, so the map's used
@@ -1211,7 +1231,12 @@ are closed here:
    high. [pdfText.ts](src/export/pdfText.ts) `normalizeTextBaselines` measures each `<text>`'s box vs
    its forced-alphabetic box (`getBBox`, browser truth) and shifts `y` by the delta — exact for any
    baseline mode/font without metrics.
-5. **Uncovered glyphs** — characters Helvetica Neue lacks (✈, ↔, ★, …) are drawn on screen by the
+5. **Letter-spacing** — svg2pdf ignores the SVG `letter-spacing` property, so a tracked label would
+   print at default spacing. `bakeLetterSpacing` ([pdfText.ts](src/export/pdfText.ts)) re-expresses
+   each tracked run as an SVG `textLength` (which svg2pdf converts to a PDF `charSpace`); it runs on
+   the attached clone (needs `getComputedTextLength`) and **before** glyph outlining so char
+   positions are read from the final spacing.
+6. **Uncovered glyphs** — characters Helvetica Neue lacks (✈, ↔, ★, …) are drawn on screen by the
    shipped fallback font in [`FONT_STACK`](src/util/fonts.ts) (`'Helvetica Neue', 'DejaVu Sans', …`),
    but svg2pdf only embeds HN and jsPDF can't even encode supplementary-plane chars. Because the app
    already renders these in DejaVu, the PDF just traces the **same** font:
@@ -1222,7 +1247,7 @@ are closed here:
    PDF share the font. A character in neither HN nor DejaVu is dropped (renders nothing). `textMeasure`
    measures inline-bullet labels with the same `FONT_STACK` so a symbol's measured advance matches its
    drawn advance.
-6. **Image masks** — that same svg+xml-image re-vectorizing has **no `<mask>` support** (`<mask>`/
+7. **Image masks** — that same svg+xml-image re-vectorizing has **no `<mask>` support** (`<mask>`/
    `<defs>` parse to no-op void nodes and the `mask="url(#…)"` attribute is never read), so a graphic
    using a mask exports at full opacity — the mask silently drops (it renders fine on screen via the
    browser's native `<image>`). A mask has no vector equivalent, so `rasterizeMaskedImages`
@@ -1232,7 +1257,7 @@ are closed here:
    and `sizeSvgRoot` (which injects a `viewBox` so a no-viewBox graphic scales to fill) are pure and
    unit-tested; the canvas rasterizer is browser-only (e2e-covered, incl. an `/SMask` guard that the
    mask survived).
-7. **Translucent (hex8) colors** — svg2pdf.js truncates an 8-digit `#rrggbbaa` paint to its first 6
+8. **Translucent (hex8) colors** — svg2pdf.js truncates an 8-digit `#rrggbbaa` paint to its first 6
    digits and drops the alpha, so a translucent fill/stroke would print fully opaque; it _does_ honor
    a separate `fill-opacity`/`stroke-opacity` (jsPDF writes it as a real PDF `ExtGState /ca /CA`). So
    `splitAlphaColors` ([pdfAlpha.ts](src/export/pdfAlpha.ts)) rewrites every hex8 paint on the export
@@ -1249,7 +1274,7 @@ are closed here:
 picker: `parseHexA` (→ `[r,g,b,a]`, preserving alpha from `#rgba`/`#rrggbbaa`), `withHexAlpha`
 (replace a color's alpha byte), and `normalizeHex` (canonical stored form — lowercase, shorthand
 expanded, an opaque `ff` suffix stripped back to 6 digits so opaque colors still match palette
-swatches). The internal `parseHex`/`parseHexA` fall back to opaque black `[0,0,0(,255)]` for any
+swatches). `parseHex` (module-private) and its exported companion `parseHexA` fall back to opaque black `[0,0,0(,255)]` for any
 malformed input (e.g. a 7-hex-digit string from a hand-edited file), so NaN never reaches the
 downstream luminance / `rgba()` math.
 
