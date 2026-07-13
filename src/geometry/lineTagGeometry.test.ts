@@ -248,6 +248,7 @@ describe('snapNeighborTag', () => {
     overrides: Partial<Parameters<typeof snapNeighborTag>[0]>,
   ): Parameters<typeof snapNeighborTag>[0] => ({
     candCanonT: 0.5,
+    candOffset: 0,
     candPairKey: 's1|s2',
     selfTagId: 'self',
     bandCenterline: centerline,
@@ -451,6 +452,64 @@ describe('snapNeighborTag', () => {
     const result = snapNeighborTag(makeArgs({ candCanonT: 0.305, lineTags: { t1: tag } }));
     expect(result.snapped).toBe(true);
     expect(result.canonT).toBeCloseTo(0.3, 6);
+  });
+
+  it('lands the dragged tag ADJACENT (same cross-section) to a neighbor on a curved band', () => {
+    // Bent corridor: east, 90° fillet, north. Two interlined stripes at
+    // offsets ±7 have DIFFERENT arc-lengths around the fillet, so aligning by
+    // fraction-of-own-stripe would drop the dragged tag at an along-corridor
+    // offset (the "snaps but not adjacent" bug). The snap must instead put it
+    // directly across the corridor: same perpendicular slice, |Δoffset| apart.
+    const bent = [
+      { x: 0, y: 0 },
+      { x: 100, y: 0 },
+      { x: 100, y: 100 },
+    ];
+    const oDrag = -7;
+    const oNbr = 7;
+    const nbrTotal = offsetPathLength(bent, R, oNbr);
+    // Neighbor near the bend (65% along its own stripe), on the +7 stripe.
+    const nbrArcLen = 0.65 * nbrTotal;
+    const nbr: LineTag = {
+      id: 'N',
+      lineId: 'L2',
+      fromStationId: 's1',
+      toStationId: 's2',
+      ...anchorFromArcLen(nbrArcLen, nbrTotal),
+      orientation: 0,
+    };
+    const nbrPt = sampleOffsetPath(bent, R, oNbr, 0.65).p;
+    // Dragged candidate: cursor at (near) the neighbor's world point, projected
+    // onto the drag (−7) stripe — exactly what the drag hook feeds in.
+    const cand = closestParamOnOffsetPath(bent, R, oDrag, nbrPt).t;
+
+    const result = snapNeighborTag({
+      candCanonT: cand,
+      candOffset: oDrag,
+      candPairKey: 's1|s2',
+      selfTagId: 'self',
+      bandCenterline: bent,
+      curveRadius: R,
+      lineStripeOffset: (lid) => (lid === 'L1' ? oDrag : lid === 'L2' ? oNbr : null),
+      lineTags: { N: nbr },
+      tol: 20,
+    });
+    expect(result.snapped).toBe(true);
+
+    // The landed point and the neighbor share a cross-section ⟺ their feet on
+    // the centerline coincide, and they sit exactly |Δoffset| = 14 apart.
+    const draggedPt = sampleOffsetPath(bent, R, oDrag, result.canonT).p;
+    const clTotal = offsetPathLength(bent, R, 0);
+    const nbrFoot = closestParamOnOffsetPath(bent, R, 0, nbrPt).t * clTotal;
+    const dragFoot = closestParamOnOffsetPath(bent, R, 0, draggedPt).t * clTotal;
+    expect(Math.abs(nbrFoot - dragFoot)).toBeCloseTo(0, 1); // no along-corridor drift
+    expect(Math.hypot(draggedPt.x - nbrPt.x, draggedPt.y - nbrPt.y)).toBeCloseTo(14, 1);
+
+    // The guide still reports the neighbor's OWN position (its own stripe/t),
+    // not the dragged landing spot.
+    expect(result.match?.lineId).toBe('L2');
+    expect(result.match?.stripeOffset).toBe(oNbr);
+    expect(result.match?.canonT).toBeCloseTo(0.65, 3);
   });
 });
 

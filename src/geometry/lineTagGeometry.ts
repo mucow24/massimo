@@ -217,12 +217,23 @@ export interface NeighborTagMatch {
 /**
  * Snap-to-neighbor for line-tag drag and placement.
  *
- * Given a candidate canonical-t for the tag on a band, scans every OTHER tag
- * in the same corridor, converts each neighbor's `(anchorEnd, distance)` to
- * canonical-t (using THAT neighbor's own stripe length), and returns the
- * NEAREST neighbor's canon-t within `tol` (world arc-length units on the
- * centerline) — plus that neighbor's identity in `match` so the caller can
- * draw a guide to it. Otherwise returns the candidate unchanged.
+ * Given a candidate `t` for the tag on the dragged stripe (offset
+ * `candOffset`), scans every OTHER tag in the same corridor and returns the
+ * NEAREST one whose CROSS-SECTION is within `tol` (world arc-length units
+ * along the dragged stripe) — as the `t` on the dragged stripe that sits
+ * directly across the corridor from it — plus that neighbor's identity in
+ * `match` so the caller can draw a guide to it. Otherwise returns the
+ * candidate unchanged.
+ *
+ * Alignment is by CROSS-SECTION, not by fraction-of-own-stripe: two tags are
+ * "adjacent" when they sit on the same perpendicular slice of the corridor.
+ * Offset stripes are concentric through a bend (same angle, radius R ± offset),
+ * so equal arc-length *fractions* land at different cross-sections wherever the
+ * band curves — which read as tags snapping at an along-corridor offset rather
+ * than side by side. Projecting the neighbor's rendered world point onto the
+ * dragged stripe (closest point between parallel/concentric offsets lies along
+ * the shared normal) recovers the true cross-section on straights and curves
+ * alike.
  *
  * `lineStripeOffset(lineId)` lets the caller report the perpendicular offset
  * of any line's stripe within the band — used to compute that line's stripe
@@ -230,6 +241,7 @@ export interface NeighborTagMatch {
  */
 export function snapNeighborTag(args: {
   candCanonT: number;
+  candOffset: number;
   candPairKey: string;
   selfTagId: string;
   bandCenterline: Vec2[];
@@ -238,10 +250,10 @@ export function snapNeighborTag(args: {
   lineTags: Record<string, LineTag>;
   tol: number;
 }): { canonT: number; snapped: boolean; match?: NeighborTagMatch } {
-  const centerlineTotal = offsetPathLength(args.bandCenterline, args.curveRadius, 0);
-  if (centerlineTotal <= 0) return { canonT: args.candCanonT, snapped: false };
-  const candArcLenOnCenterline = args.candCanonT * centerlineTotal;
-  let best: (NeighborTagMatch & { delta: number }) | null = null;
+  const candStripeTotal = offsetPathLength(args.bandCenterline, args.curveRadius, args.candOffset);
+  if (candStripeTotal <= 0) return { canonT: args.candCanonT, snapped: false };
+  const candArcLen = args.candCanonT * candStripeTotal;
+  let best: { match: NeighborTagMatch; alignedT: number; delta: number } | null = null;
   for (const otherId of Object.keys(args.lineTags)) {
     if (otherId === args.selfTagId) continue;
     const other = args.lineTags[otherId];
@@ -251,17 +263,39 @@ export function snapNeighborTag(args: {
     if (otherOffset === null) continue;
     const otherStripeTotal = offsetPathLength(args.bandCenterline, args.curveRadius, otherOffset);
     if (otherStripeTotal <= 0) continue;
-    const otherArcLenOnStripe = arcLenFromAnchor(other.anchorEnd, other.distance, otherStripeTotal);
-    const otherCanonT = otherArcLenOnStripe / otherStripeTotal;
-    const otherArcLenOnCenterline = otherCanonT * centerlineTotal;
-    const delta = Math.abs(otherArcLenOnCenterline - candArcLenOnCenterline);
+    const otherArcLen = arcLenFromAnchor(other.anchorEnd, other.distance, otherStripeTotal);
+    // The neighbor's actual rendered position (see resolveTag), then the point
+    // on the dragged stripe directly across the corridor from it.
+    const otherWorld = sampleOffsetPathByArcLength(
+      args.bandCenterline,
+      args.curveRadius,
+      otherOffset,
+      otherArcLen,
+    ).p;
+    const alignedT = closestParamOnOffsetPath(
+      args.bandCenterline,
+      args.curveRadius,
+      args.candOffset,
+      otherWorld,
+    ).t;
+    const delta = Math.abs(alignedT * candStripeTotal - candArcLen);
     if (delta < args.tol && (!best || delta < best.delta)) {
-      best = { lineId: other.lineId, canonT: otherCanonT, stripeOffset: otherOffset, delta };
+      best = {
+        // `match.canonT` is the neighbor's OWN t (fraction of its own stripe),
+        // so the caller samples the neighbor's world point for the guide;
+        // `alignedT` is where the DRAGGED tag lands (its stripe, same slice).
+        match: {
+          lineId: other.lineId,
+          canonT: otherArcLen / otherStripeTotal,
+          stripeOffset: otherOffset,
+        },
+        alignedT,
+        delta,
+      };
     }
   }
   if (best) {
-    const { delta: _delta, ...match } = best;
-    return { canonT: best.canonT, snapped: true, match };
+    return { canonT: best.alignedT, snapped: true, match: best.match };
   }
   return { canonT: args.candCanonT, snapped: false };
 }

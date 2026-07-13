@@ -670,12 +670,15 @@ export function MapCanvas() {
   // Each band's renderer captures its own spec via closure.
   const makeBandHandlers = (spec: SegmentBandSpec) => {
     // Placement parity with the tag drag: the hover ghost and the click both
-    // apply the same gated neighbor snap, so the preview always matches the
-    // dropped tag. Gated on "Snap to all"; Shift bypasses.
-    const snapTagT = (t: number, shiftKey: boolean): number => {
-      if (snapModes.all === 'off' || shiftKey) return t;
+    // apply the same neighbor snap, so the preview always matches the dropped
+    // tag. Always on (a tag lines up with its interlined siblings); Shift
+    // bypasses. `offset` is the placing stripe's own offset — the alignment is
+    // by cross-section, so it must know which stripe the tag lands on.
+    const snapTagT = (t: number, offset: number, shiftKey: boolean): number => {
+      if (shiftKey) return t;
       return snapNeighborTag({
         candCanonT: t,
+        candOffset: offset,
         candPairKey: spec.pairKey,
         selfTagId: '', // a tag being placed has no id yet
         bandCenterline: spec.centerline,
@@ -697,7 +700,7 @@ export function MapCanvas() {
         const offset = spec.stripeOffsets[k];
         const world = view.screenToWorld(e.clientX, e.clientY);
         const closest = closestParamOnOffsetPath(spec.centerline, spec.radius, offset, world);
-        const t = snapTagT(closest.t, e.shiftKey);
+        const t = snapTagT(closest.t, offset, e.shiftKey);
         const sample = sampleOffsetPath(spec.centerline, spec.radius, offset, t);
         // Determine canon vs line-traversal: the band's pairKey is canonical.
         // For this band's stations, fromCanon < toCanon. The line traverses
@@ -727,7 +730,7 @@ export function MapCanvas() {
         const offset = spec.stripeOffsets[k];
         const world = view.screenToWorld(e.clientX, e.clientY);
         const closest = closestParamOnOffsetPath(spec.centerline, spec.radius, offset, world);
-        const t = snapTagT(closest.t, e.shiftKey);
+        const t = snapTagT(closest.t, offset, e.shiftKey);
         const [fromCanon, toCanon] = spec.pairKey.split('|');
         const stripeTotal = offsetPathLength(spec.centerline, spec.radius, offset);
         // Anchor to whichever endpoint is nearer at insertion time.

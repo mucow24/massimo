@@ -6,7 +6,7 @@ import { historyDepth } from '../../state/history';
 import { useSnapPrefs } from '../../state/snapPrefs';
 import { DEFAULT_DOC } from '../../model/transforms';
 import { DEFAULT_SNAP_MODES, type SnapModes } from '../../geometry/snap';
-import { makeLine, stationWithStop } from '../../test/fixtures';
+import { makeLine, makeStation, makeStop, stationWithStop } from '../../test/fixtures';
 import { fakeSvgRef, pointerEvent, dispatchWindowPointer } from '../../test/interaction';
 import type { LineId, StationId } from '../../model/types';
 
@@ -123,9 +123,10 @@ describe('useLineTagDrag', () => {
     expect(svg.hasPointerCapture(1)).toBe(false);
   });
 
-  it("neighbor snap engages only with 'Snap to all' on, drawing a labeled guide", () => {
+  it('neighbor-snaps by default (no snap toggle needed), drawing a labeled guide', () => {
+    // Restored always-on behavior: a tag lines up with its neighbors without
+    // the "Snap to all" pref, which defaults off (beforeEach resets to it).
     addNeighborAt(50);
-    setModes({ all: 'all' });
     const { result } = render();
     result.current.onStartDrag('T', pointerEvent({ clientX: 20, clientY: 0 }));
     act(() => dispatchWindowPointer('pointermove', { clientX: 44, clientY: 0 }));
@@ -140,20 +141,64 @@ describe('useLineTagDrag', () => {
     dispatchWindowPointer('pointerup', { clientX: 44, clientY: 0 });
   });
 
-  it("does NOT neighbor-snap with 'Snap to all' off (the default)", () => {
-    addNeighborAt(50);
+  it('snaps to a neighbor tag on an ADJACENT interlined line', () => {
+    // The reported scenario: two interlined lines share one two-stripe band
+    // (stops 14 apart). Dragging L1's tag near L2's snaps it to sit directly
+    // across the corridor — same cross-section, one stripe-gap away.
+    const stops = () => [
+      makeStop('L1' as LineId, { row: 0, col: 0, orientation: 'auto-horizontal' }),
+      makeStop('L2' as LineId, { row: 1, col: 0, orientation: 'auto-horizontal' }),
+    ];
+    useDoc.setState({
+      ...useDoc.getState(),
+      lines: {
+        L1: makeLine({ id: 'L1' as LineId, stations: ['A', 'B'] as StationId[] }),
+        L2: makeLine({ id: 'L2' as LineId, stations: ['A', 'B'] as StationId[] }),
+      },
+      lineOrder: ['L1', 'L2'] as LineId[],
+      stations: {
+        A: makeStation({ id: 'A' as StationId, x: 0, y: 0, stops: stops() }),
+        B: makeStation({ id: 'B' as StationId, x: 200, y: 0, stops: stops() }),
+      },
+      lineTags: {
+        T: {
+          id: 'T',
+          lineId: 'L1' as LineId,
+          fromStationId: 'A' as StationId,
+          toStationId: 'B' as StationId,
+          anchorEnd: 'from',
+          distance: 20,
+          orientation: 0,
+        },
+        N: {
+          id: 'N',
+          lineId: 'L2' as LineId,
+          fromStationId: 'A' as StationId,
+          toStationId: 'B' as StationId,
+          anchorEnd: 'from',
+          distance: 50,
+          orientation: 0,
+        },
+      },
+    });
+    useDoc.temporal.getState().clear();
     const { result } = render();
     result.current.onStartDrag('T', pointerEvent({ clientX: 20, clientY: 0 }));
     act(() => dispatchWindowPointer('pointermove', { clientX: 44, clientY: 0 }));
 
-    expect(useDoc.getState().lineTags['T'].distance).toBeCloseTo(44, 5);
-    expect(result.current.lineTagSnapGuides).toHaveLength(0);
+    // Snaps along the corridor to N's cross-section (distance 50 from A). The
+    // projection's ternary refine leaves ~1e-4 residue, so 3 dp not 5.
+    expect(useDoc.getState().lineTags['T'].distance).toBeCloseTo(50, 3);
+    // Guide spans the two stripes (14 apart), both at the same along-position.
+    expect(result.current.lineTagSnapGuides).toHaveLength(1);
+    const g = result.current.lineTagSnapGuides[0];
+    expect(g.from.x).toBeCloseTo(g.to.x, 3);
+    expect(g.label).toBe('14');
     dispatchWindowPointer('pointerup', { clientX: 44, clientY: 0 });
   });
 
   it('Shift bypasses the neighbor snap mid-drag', () => {
     addNeighborAt(50);
-    setModes({ all: 'all' });
     const { result } = render();
     result.current.onStartDrag('T', pointerEvent({ clientX: 20, clientY: 0 }));
     act(() => dispatchWindowPointer('pointermove', { clientX: 44, clientY: 0, shiftKey: true }));
@@ -164,7 +209,6 @@ describe('useLineTagDrag', () => {
 
   it('the engage radius is constant in screen px (tolerance ÷ zoom)', () => {
     addNeighborAt(50);
-    setModes({ all: 'all' });
     // Zoom 4 → world tolerance 10/4 = 2.5; a 6-unit gap must NOT snap.
     const { result } = render(4);
     result.current.onStartDrag('T', pointerEvent({ clientX: 20, clientY: 0 }));
