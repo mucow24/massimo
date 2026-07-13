@@ -11,7 +11,9 @@ import {
   lineStrokeWidthOf,
   lineStrokeColorOf,
   lineSeamColorOf,
+  lineSeamWidthOf,
   lineStrokeRailWidth,
+  seamRenderWidth,
 } from './lineStroke';
 
 describe('line stroke constants', () => {
@@ -91,6 +93,30 @@ describe('lineSeamColorOf', () => {
     expect(lineSeamColorOf({})).toBeUndefined();
     expect(lineSeamColorOf(null)).toBeUndefined();
     expect(lineSeamColorOf(undefined)).toBeUndefined();
+  });
+});
+
+describe('lineSeamWidthOf / seamRenderWidth', () => {
+  it('returns the RAW stored seam width (undefined when unset)', () => {
+    expect(lineSeamWidthOf({ seamWidth: 3 })).toBe(3);
+    expect(lineSeamWidthOf({})).toBeUndefined();
+    expect(lineSeamWidthOf(null)).toBeUndefined();
+  });
+
+  it('inherits the casing rail width when unset, overrides when set', () => {
+    // Unset ⇒ inherit railW (so a seam-color-only line shows a seam).
+    expect(seamRenderWidth(undefined, 4, 14)).toBe(4);
+    // Explicit width overrides the casing width entirely.
+    expect(seamRenderWidth(2, 4, 14)).toBe(2);
+    // Explicit width works even with no casing (railW 0).
+    expect(seamRenderWidth(3, 0, 14)).toBe(3);
+    // Unset AND no casing ⇒ no seam.
+    expect(seamRenderWidth(undefined, 0, 14)).toBe(0);
+  });
+
+  it('clamps to the band width so the two edge seams never cross', () => {
+    expect(seamRenderWidth(30, 4, 14)).toBe(14);
+    expect(seamRenderWidth(undefined, 20, 14)).toBe(14); // inherited-but-oversized casing too
   });
 });
 

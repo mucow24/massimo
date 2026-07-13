@@ -4,9 +4,11 @@ import {
   casingInsetBodyWidth,
   casingSilhouetteWidth,
   lineSeamColorOf,
+  lineSeamWidthOf,
   lineStrokeColorOf,
   lineStrokeRailWidth,
   lineStrokeWidthOf,
+  seamRenderWidth,
 } from '../model/lineStroke';
 import { CasingRails } from './CasingRails';
 import { seamClipId } from './canvas/SeamClips';
@@ -93,28 +95,29 @@ export const SegmentBand = memo(function SegmentBand({
   const railW = lineStrokeRailWidth(lineStrokeWidthOf(live), fullWidth);
   const opaque = styleHasOpaqueInterior(style);
 
-  // Seam pass: the interior branch/loop overlap indicator — the casing's OUTER
-  // ring (a railW-wide stroke abutting each body edge on the OUTSIDE), in the
-  // seam color, CLIPPED to the line's own corridor (see SeamClips) so it shows
-  // only where this band overlaps another of the line's own bands and vanishes
-  // on the true outer boundary. Reuses the casing width, so it needs a casing
-  // and a seam color to appear.
+  // Seam pass: the interior branch/loop overlap indicator — two strokes CENTERED
+  // on the body edges (exactly where the casing sits, so the seam aligns with
+  // it), in the seam color, CLIPPED to the line's OTHER band corridors (see
+  // SeamClips) so it shows only where this band overlaps another of the line's
+  // own bands and vanishes on a plain segment and the outer boundary. Width is
+  // independent (seamWidth), inheriting the casing width when unset.
   if (pass === 'seam') {
     const seamColor = lineSeamColorOf(live);
-    if (!seamColor || railW <= 0) return null;
+    const seamW = seamRenderWidth(lineSeamWidthOf(live), railW, fullWidth);
+    if (!seamColor || seamW <= 0) return null;
     const off = spec.stripeOffsets[stripeIndex];
-    const ringOffset = fullWidth / 2 + railW / 2;
+    const edge = fullWidth / 2;
     return (
-      <g clipPath={`url(#${seamClipId(lineId)})`} pointerEvents="none">
+      <g clipPath={`url(#${seamClipId(lineId, spec.bandKey)})`} pointerEvents="none">
         {[-1, 1].map((side) => (
           <path
             key={side}
-            d={offsetFilletPath(spec.centerline, spec.radius, off + side * ringOffset)}
+            d={offsetFilletPath(spec.centerline, spec.radius, off + side * edge)}
             data-band-seam=""
             data-line-id={lineId}
             fill="none"
             stroke={seamColor}
-            strokeWidth={railW}
+            strokeWidth={seamW}
             strokeLinecap="butt"
             strokeLinejoin="round"
           />

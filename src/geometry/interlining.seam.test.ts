@@ -2,32 +2,30 @@ import { describe, it, expect } from 'vitest';
 import { buildBands } from './interlining';
 import { closestParamOnOffsetPath, sampleOffsetPath } from './lineTagGeometry';
 import { lineWidthOf } from '../model/lineWidth';
-import { lineStrokeRailWidth } from '../model/lineStroke';
 import { makeDoc, makeLine, makeStation, makeStop } from '../test/fixtures';
 import type { MapDoc } from '../model/types';
 
 // ---------------------------------------------------------------------------
 // The branch seam shows ONLY where a line overlaps itself.
 //
-// The seam is the casing's OUTER ring (a railW-wide stroke just outside each
-// band edge) painted in the seam color and CLIPPED to the line's own body
-// corridor (SeamClips). So a seam point is VISIBLE exactly when it falls inside
-// the corridor — i.e. over ANOTHER of the line's bands (a branch/loop overlap)
-// — and clipped away on the true outer boundary of a plain segment.
+// The seam is two strokes CENTERED on each band edge (offset ± width/2, exactly
+// where the casing sits, so the seam aligns with it), painted in the seam color
+// and CLIPPED to the line's OTHER band corridors (SeamClips excludes the seam's
+// own band). So a seam point is VISIBLE exactly when it falls strictly inside a
+// DIFFERENT band's corridor — a branch/loop overlap — and clipped away on a
+// plain segment (its own corridor is excluded) and on the outer boundary.
 //
 // This models the clip geometrically (jsdom doesn't apply SVG clipping): a seam
-// ring sample is "visible" iff it lies within w/2 of some band's centerline
-// (inside the width-w corridor). It never lies in its OWN band's corridor (the
-// ring sits railW/2 beyond that edge), so a lone straight line shows no seam,
-// while a junction does.
+// sample on band b's edge is "visible" iff it lies within w/2 of ANOTHER band's
+// centerline. On its own straight run the edge only touches its own corridor
+// boundary, so a lone straight line (and a collinear joint) shows no seam.
 // ---------------------------------------------------------------------------
 
 function visibleSeamPoints(doc: MapDoc, lineId: string): number {
   const bands = buildBands(doc.stations, doc.lines, doc.curveRadius, doc.lineOrder);
   const line = doc.lines[lineId];
   const w = lineWidthOf(line);
-  const railW = lineStrokeRailWidth(line.strokeWidth ?? 0, w);
-  const ringOffset = w / 2 + railW / 2; // the seam ring, just outside each body edge
+  const edgeOffset = w / 2; // the seam sits centered on each body edge
   const stationPts = Object.values(doc.stations).map((s) => ({ x: s.x, y: s.y }));
   const nearDot = (p: { x: number; y: number }) =>
     stationPts.some((s) => Math.hypot(p.x - s.x, p.y - s.y) <= w);
@@ -35,19 +33,20 @@ function visibleSeamPoints(doc: MapDoc, lineId: string): number {
   let visible = 0;
   for (const b of bands) {
     for (const side of [-1, 1]) {
-      const off = b.stripeOffsets[0] + side * ringOffset;
+      const off = b.stripeOffsets[0] + side * edgeOffset;
       for (let i = 0; i <= 40; i++) {
         const { p } = sampleOffsetPath(b.centerline, b.radius, off, i / 40);
         if (nearDot(p)) continue;
-        // Inside the line's corridor (within w/2 of SOME band's centerline)?
-        // The ring is railW/2 outside its own band, so this only hits when it
-        // falls over a DIFFERENT band — a self-overlap.
-        const inCorridor = bands.some(
+        // Strictly inside a DIFFERENT band's corridor? (The seam's own corridor
+        // is excluded by the clip; a collinear joint only reaches the boundary,
+        // not the interior — the margin keeps that from counting.)
+        const inOther = bands.some(
           (o) =>
-            closestParamOnOffsetPath(o.centerline, o.radius, o.stripeOffsets[0], p).dist <=
-            w / 2 + 1e-6,
+            o !== b &&
+            closestParamOnOffsetPath(o.centerline, o.radius, o.stripeOffsets[0], p).dist <
+              w / 2 - 0.5,
         );
-        if (inCorridor) visible++;
+        if (inOther) visible++;
       }
     }
   }

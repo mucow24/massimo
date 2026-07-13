@@ -88,6 +88,30 @@ export const canonicalSeamColor = (c: string): string | undefined => {
 };
 
 /**
+ * Stored seam width, per side, in world units — the RAW field (undefined when
+ * unset). Stored/canonicalized exactly like the casing width (drop at 0 via
+ * {@link canonicalStrokeWidth}), so an UNSET seam width is `undefined`, not 0.
+ * The render distinguishes the two (see {@link seamRenderWidth}).
+ */
+export const lineSeamWidthOf = (
+  line: { seamWidth?: number } | null | undefined,
+): number | undefined => line?.seamWidth;
+
+/**
+ * The rendered seam stroke width for a stripe of `bandWidth`. The seam sits
+ * CENTERED on the body edge (like the casing), so an UNSET seam width inherits
+ * the casing rail width `railW` — a seam-color-only line still shows a seam
+ * matched to its casing — while an explicit width overrides it. Clamped to the
+ * band width so the two edge seams never cross at the centerline. Returns 0
+ * (no seam) only when both the stored width is unset AND there is no casing.
+ */
+export const seamRenderWidth = (
+  seamWidth: number | undefined,
+  railW: number,
+  bandWidth: number,
+): number => Math.min(seamWidth ?? railW, bandWidth);
+
+/**
  * The rendered rail width for a stripe of the given body width: each rail
  * is centered on a body edge (spanning [width/2 − rail/2, width/2 + rail/2]
  * per side), so a rail wider than the body is meaningless (the two rails

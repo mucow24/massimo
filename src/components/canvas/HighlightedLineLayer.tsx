@@ -15,12 +15,17 @@ import { lineStyleStrokeAttrs, lineStyleUnderlayAttrs } from '../HatchPatterns';
 import {
   casingInsetBodyWidth,
   casingSilhouetteWidth,
+  lineSeamColorOf,
+  lineSeamWidthOf,
   lineStrokeColorOf,
   lineStrokeRailWidth,
   lineStrokeWidthOf,
+  seamRenderWidth,
 } from '../../model/lineStroke';
 import { CasingRails } from '../CasingRails';
 import { styleHasOpaqueInterior } from '../SegmentBand';
+import { seamClipId } from './SeamClips';
+import { offsetFilletPath } from '../../geometry/router';
 import { lineWidthOf } from '../../model/lineWidth';
 import { dotSizeOverride } from '../../model/dotSize';
 import { StopMarker } from '../StopMarker';
@@ -210,6 +215,38 @@ export function HighlightedLineLayer({
                   />
                 )}
               </Fragment>,
+            );
+          });
+          // Pass 3: branch seams — two strokes centered on the body edges,
+          // clipped to the line's OTHER band corridors (the shared SeamClips
+          // defs) so they show only at self-overlaps. Painted after the bodies
+          // (in front), matching the main layer's priority − SEAM_EPS.
+          stripesOfLine.forEach((r, i) => {
+            const seamColor = lineSeamColorOf(ln);
+            const stripeW = r.band.stripeWidths[r.stripeIndex];
+            const railW = lineStrokeRailWidth(lineStrokeWidthOf(ln), stripeW);
+            const seamW = seamRenderWidth(lineSeamWidthOf(ln), railW, stripeW);
+            if (!seamColor || seamW <= 0) return;
+            const off = r.band.stripeOffsets[r.stripeIndex];
+            const edge = stripeW / 2;
+            push(
+              matchedSeg(r.band.pairKey),
+              <g
+                key={'hl-seam:' + i}
+                clipPath={`url(#${seamClipId(highlightLineId, r.band.bandKey)})`}
+              >
+                {[-1, 1].map((side) => (
+                  <path
+                    key={side}
+                    d={offsetFilletPath(r.band.centerline, r.band.radius, off + side * edge)}
+                    fill="none"
+                    stroke={seamColor}
+                    strokeWidth={seamW}
+                    strokeLinecap="butt"
+                    strokeLinejoin="round"
+                  />
+                ))}
+              </g>,
             );
           });
           // The arrow-tip station (last stop with ≥2 stops on the line):

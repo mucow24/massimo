@@ -349,7 +349,14 @@ describe('<LineInspector /> — stroke controls', () => {
     useDoc.temporal.getState().clear();
   });
 
-  const seed = (over: { strokeWidth?: number; strokeColor?: string; seamColor?: string } = {}) => {
+  const seed = (
+    over: {
+      strokeWidth?: number;
+      strokeColor?: string;
+      seamColor?: string;
+      seamWidth?: number;
+    } = {},
+  ) => {
     useDoc.setState({
       ...DEFAULT_DOC,
       ...makeDoc({
@@ -433,6 +440,18 @@ describe('<LineInspector /> — stroke controls', () => {
     seed({ strokeWidth: 4, strokeColor: '#123456' });
     render(<LineInspector id="L1" />);
     expect(await openColorField(user, 'Seam color')).toHaveValue('#12345600');
+  });
+
+  it('the Seam width slider inherits the casing width when unset, and writes edits', () => {
+    seed({ strokeWidth: 4 }); // casing 4, no seam width
+    render(<LineInspector id="L1" />);
+    const slider = screen.getByRole('slider', { name: 'Seam width' }) as HTMLInputElement;
+    expect(slider.value).toBe('4'); // inherits the casing rail width
+    fireEvent.change(slider, { target: { value: '2' } });
+    expect(useDoc.getState().lines.L1.seamWidth).toBe(2);
+    // Back to 0 drops the field → inherits the casing width again.
+    fireEvent.change(slider, { target: { value: '0' } });
+    expect('seamWidth' in useDoc.getState().lines.L1).toBe(false);
   });
 
   it('one slider focus-arc collapses to a single undo entry', () => {

@@ -317,14 +317,21 @@ describe('<SegmentBand> — casing (silhouette + inset body)', () => {
 });
 
 describe('<SegmentBand> — branch seam (pass="seam")', () => {
-  const seamLines = (seamColor: string | undefined, strokeWidth = 4): Record<LineId, Line> => ({
-    L1: makeLine({
-      id: 'L1',
-      stations: ['s1', 's2'],
-      ...(strokeWidth > 0 ? { strokeWidth } : {}),
-      ...(seamColor ? { seamColor } : {}),
-    }),
-  });
+  const seamLines = (
+    seamColor: string | undefined,
+    opts: { strokeWidth?: number; seamWidth?: number } = {},
+  ): Record<LineId, Line> => {
+    const strokeWidth = opts.strokeWidth ?? 4;
+    return {
+      L1: makeLine({
+        id: 'L1',
+        stations: ['s1', 's2'],
+        ...(strokeWidth > 0 ? { strokeWidth } : {}),
+        ...(seamColor ? { seamColor } : {}),
+        ...(opts.seamWidth !== undefined ? { seamWidth: opts.seamWidth } : {}),
+      }),
+    };
+  };
 
   const renderSeam = (lines: Record<LineId, Line>) =>
     render(
@@ -335,20 +342,34 @@ describe('<SegmentBand> — branch seam (pass="seam")', () => {
 
   const startY = (p: Element) => Number(p.getAttribute('d')!.match(/M [\d.-]+ ([\d.-]+)/)![1]);
 
-  it('paints two clipped seam rings just OUTSIDE the body edges, in the seam color', () => {
+  it('paints two clipped seam strokes CENTERED on the body edges, in the seam color', () => {
     const { container } = renderSeam(seamLines('#ff000080'));
     const rings = Array.from(container.querySelectorAll('[data-band-seam]'));
     expect(rings.length).toBe(2);
     for (const r of rings) {
       expect(r.getAttribute('stroke')).toBe('#ff000080'); // alpha preserved
-      expect(r.getAttribute('stroke-width')).toBe('4'); // railW
+      expect(r.getAttribute('stroke-width')).toBe('4'); // unset seam width inherits railW = 4
       expect(r.getAttribute('data-line-id')).toBe('L1');
     }
-    // Ring centers at ±(width/2 + railW/2) = ±(7 + 2) = ±9 — outside the edges.
-    expect(rings.map(startY).sort((a, b) => a - b)).toEqual([-9, 9]);
-    // Clipped to the line's own corridor so the seam only shows over overlaps.
+    // Centered ON the body edges (±width/2 = ±7) — aligned with the casing.
+    expect(rings.map(startY).sort((a, b) => a - b)).toEqual([-7, 7]);
+    // Clipped to the line's OTHER band corridors (per-band, excluding this band).
     const g = container.querySelector('g[clip-path]')!;
-    expect(g.getAttribute('clip-path')).toBe('url(#seam-clip-L1)');
+    expect(g.getAttribute('clip-path')).toBe('url(#seam-clip-L1__s1-s2-L1)');
+  });
+
+  it('uses an explicit seam width, independent of the casing width', () => {
+    const { container } = renderSeam(seamLines('#ff000080', { strokeWidth: 4, seamWidth: 2 }));
+    const rings = Array.from(container.querySelectorAll('[data-band-seam]'));
+    expect(rings.length).toBe(2);
+    for (const r of rings) expect(r.getAttribute('stroke-width')).toBe('2');
+  });
+
+  it('shows a seam at its own width even when the line has no casing', () => {
+    const { container } = renderSeam(seamLines('#ff000080', { strokeWidth: 0, seamWidth: 3 }));
+    const rings = Array.from(container.querySelectorAll('[data-band-seam]'));
+    expect(rings.length).toBe(2);
+    for (const r of rings) expect(r.getAttribute('stroke-width')).toBe('3');
   });
 
   it('renders nothing without a seam color', () => {
@@ -356,8 +377,8 @@ describe('<SegmentBand> — branch seam (pass="seam")', () => {
     expect(container.querySelector('[data-band-seam]')).toBeNull();
   });
 
-  it('renders nothing when the line has no casing width (seam reuses it)', () => {
-    const { container } = renderSeam(seamLines('#ff000080', 0));
+  it('renders nothing when there is neither a casing nor an explicit seam width', () => {
+    const { container } = renderSeam(seamLines('#ff000080', { strokeWidth: 0 }));
     expect(container.querySelector('[data-band-seam]')).toBeNull();
   });
 });

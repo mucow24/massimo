@@ -722,6 +722,18 @@ function sanitizeLineStroke(line: Line): Line {
       next = { ...next, seamColor: stored };
     }
   }
+  if ('seamWidth' in line) {
+    const raw = line.seamWidth as unknown;
+    // Seam width shares the casing grid/floor + drop-at-0.
+    const stored =
+      typeof raw === 'number' && Number.isFinite(raw) ? canonicalStrokeWidth(raw) : undefined;
+    if (stored === undefined) {
+      const { seamWidth: _gone, ...rest } = next;
+      next = rest;
+    } else if (stored !== next.seamWidth) {
+      next = { ...next, seamWidth: stored };
+    }
+  }
   return next;
 }
 
@@ -1202,9 +1214,11 @@ function sanitizeStyleProps(kind: StyleKind, raw: unknown): StyleDef['props'] | 
       const strokeColor = asString(o.strokeColor);
       if (!dot || dotSize === undefined || width === undefined) return undefined;
       if (strokeWidth === undefined || strokeColor === undefined) return undefined;
-      // seamColor is OPTIONAL — absent ⇒ no seam; a malformed value is dropped
-      // (treated as absent) rather than invalidating the whole def.
+      // seamColor / seamWidth are OPTIONAL — absent ⇒ no seam / inherit; a
+      // malformed value is dropped (treated as absent) rather than invalidating
+      // the whole def.
       const seamColor = asString(o.seamColor);
+      const seamWidth = finiteNum(o.seamWidth);
       return canonicalStyleProps('line', {
         defaultDotStyle: dot,
         defaultDotSize: dotSize,
@@ -1212,6 +1226,7 @@ function sanitizeStyleProps(kind: StyleKind, raw: unknown): StyleDef['props'] | 
         strokeWidth,
         strokeColor,
         ...(seamColor !== undefined ? { seamColor } : {}),
+        ...(seamWidth !== undefined ? { seamWidth } : {}),
       });
     }
     case 'textLabel': {

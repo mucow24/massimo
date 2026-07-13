@@ -66,15 +66,19 @@ describe('captureStyleProps', () => {
     });
   });
 
-  it('captures a seam color (with alpha) when set, and omits the key when off', () => {
+  it('captures the seam color + width when set, and omits both keys when off', () => {
     const withSeam = makeDoc({
-      lines: [makeLine({ id: 'l1', strokeWidth: 2, seamColor: '#abcdef80' })],
+      lines: [makeLine({ id: 'l1', strokeWidth: 2, seamColor: '#abcdef80', seamWidth: 3 })],
     });
-    expect(captureStyleProps(withSeam, 'line', 'l1')).toMatchObject({ seamColor: '#abcdef80' });
-    // A seamless line captures NO seamColor key (so it compares equal to a
-    // style that never had one).
-    const noSeam = makeDoc({ lines: [makeLine({ id: 'l1' })] });
-    expect(captureStyleProps(noSeam, 'line', 'l1')).not.toHaveProperty('seamColor');
+    expect(captureStyleProps(withSeam, 'line', 'l1')).toMatchObject({
+      seamColor: '#abcdef80',
+      seamWidth: 3,
+    });
+    // A seamless line captures NEITHER key (so it compares equal to a style that
+    // never had one).
+    const noSeam = captureStyleProps(makeDoc({ lines: [makeLine({ id: 'l1' })] }), 'line', 'l1');
+    expect(noSeam).not.toHaveProperty('seamColor');
+    expect(noSeam).not.toHaveProperty('seamWidth');
   });
 
   it('captures only the covered label typography — width/leading/tracking stay per-label', () => {
@@ -226,23 +230,25 @@ describe('applyStyleToItem', () => {
     expect(line.defaultDotSize).toBe(12);
   });
 
-  it('stamps a style seam color, and stamping a seamless style clears an existing seam', () => {
+  it('stamps a style seam color + width, and stamping a seamless style clears both', () => {
     const seamStyle = makeStyle('line', 'y1', {
-      props: { strokeWidth: 2, seamColor: '#abcdef80' },
+      props: { strokeWidth: 2, seamColor: '#abcdef80', seamWidth: 3 },
     });
     const doc = makeDoc({ lines: [makeLine({ id: 'l1' })], styles: [seamStyle] });
     const stamped = applyStyleToItem(doc, 'y1', 'l1').lines.l1;
     expect(stamped.seamColor).toBe('#abcdef80');
+    expect(stamped.seamWidth).toBe(3);
     expect(stamped.styleId).toBe('y1');
 
-    // A style with NO seam, stamped onto a line that HAS one, removes it.
+    // A style with NO seam, stamped onto a line that HAS one, removes both.
     const plainStyle = makeStyle('line', 'y2', { props: { strokeWidth: 2 } });
     const doc2 = makeDoc({
-      lines: [makeLine({ id: 'l1', seamColor: '#abcdef80' })],
+      lines: [makeLine({ id: 'l1', seamColor: '#abcdef80', seamWidth: 3 })],
       styles: [plainStyle],
     });
     const cleared = applyStyleToItem(doc2, 'y2', 'l1').lines.l1;
     expect('seamColor' in cleared).toBe(false);
+    expect('seamWidth' in cleared).toBe(false);
     expect(cleared.styleId).toBe('y2');
   });
 

@@ -291,12 +291,17 @@ export interface Line {
   // subtle stroke there so the overlap still reads as two tracks. Lowercase
   // hex, may carry alpha (#rrggbbaa) for a translucent seam. Missing ⇒ no seam;
   // the setter drops the field when unset or fully transparent (the "off"
-  // state). Reuses the casing WIDTH, so it only shows when strokeWidth > 0.
+  // state).
   seamColor?: string;
+  // Seam width per side, world units. Stored like `strokeWidth` (drop at 0), but
+  // an UNSET value inherits the casing width at render time (see seamRenderWidth)
+  // so a seam-color-only line still shows a seam. Only takes effect alongside a
+  // non-transparent seamColor.
+  seamWidth?: number;
   // Live link to a StyleDef of kind 'line' (see MapDoc.styles). INVARIANT:
   // when present, this line's covered style fields (defaultDotStyle,
-  // defaultDotSize, width, strokeWidth, strokeColor, seamColor — NOT color)
-  // equal the style's props. Transforms maintain it: editing any covered field clears
+  // defaultDotSize, width, strokeWidth, strokeColor, seamColor, seamWidth — NOT
+  // color) equal the style's props. Transforms maintain it: editing any covered field clears
   // the tag ("detach to Custom"), editing the style re-stamps its users,
   // deleting the style untags. Absent ⇒ no style ("Custom" in the UI).
   // Dangling ids are pruned on file load.
@@ -680,6 +685,9 @@ export interface LineStyleProps {
   // Interior branch/loop seam color (lowercase hex, may carry alpha). Optional:
   // absent ⇒ the style leaves the seam off (see Line.seamColor).
   seamColor?: string;
+  // Seam width per side (world units). Optional: absent ⇒ inherit the casing
+  // width (see Line.seamWidth).
+  seamWidth?: number;
 }
 
 export interface TextLabelStyleProps {

@@ -25,7 +25,9 @@ import {
   LINE_STROKE_WIDTH_MAX,
   LINE_STROKE_WIDTH_MIN,
   lineSeamColorOf,
+  lineSeamWidthOf,
   lineStrokeColorOf,
+  lineStrokeRailWidth,
   lineStrokeWidthOf,
 } from '../../model/lineStroke';
 import { StationGraph } from './StationGraph';
@@ -193,6 +195,7 @@ export function LineInspector({ id }: { id: LineId }) {
   const setLineStrokeWidth = useDoc((s) => s.setLineStrokeWidth);
   const setLineStrokeColor = useDoc((s) => s.setLineStrokeColor);
   const setLineSeamColor = useDoc((s) => s.setLineSeamColor);
+  const setLineSeamWidth = useDoc((s) => s.setLineSeamWidth);
   const selection = useSelection();
   // Gap color matches the canvas so the band preview mirrors the on-canvas look.
   const underlayColor = useThemeColors().underlay;
@@ -304,14 +307,33 @@ export function LineInspector({ id }: { id: LineId }) {
           onChange={(c) => setLineStrokeColor(line.id, c)}
         />
       </div>
+      <NumericFieldRow
+        id={`line-seam-${line.id}`}
+        label="Seam width"
+        min={LINE_STROKE_WIDTH_MIN}
+        max={LINE_STROKE_WIDTH_MAX}
+        step={LINE_STROKE_STEP}
+        // Unset inherits the casing width (so a seam-color-only line shows a
+        // seam matched to its casing); the slider overrides.
+        value={
+          lineSeamWidthOf(line) ?? lineStrokeRailWidth(lineStrokeWidthOf(line), lineWidthOf(line))
+        }
+        onChange={(n) => setLineSeamWidth(line.id, n)}
+        getCurrent={() => {
+          const l = useDoc.getState().lines[id];
+          return lineSeamWidthOf(l) ?? lineStrokeRailWidth(lineStrokeWidthOf(l), lineWidthOf(l));
+        }}
+        textboxAllowAboveMax
+      />
       <div className="options-popover-row">
         <label htmlFor={`line-seam-color-${line.id}`} className="options-popover-label">
           Seam color
         </label>
-        {/* Interior branch/loop overlap indicator. Off by default: seeded at the
-            casing hue with zero alpha, so the swatch reads transparent
-            ("off") and dragging the picker's alpha up enables a translucent
-            seam. Reuses the casing width, so it only shows once Stroke width > 0. */}
+        {/* Interior branch/loop overlap indicator, shown where a line overlaps
+            itself. Off by default: seeded at the casing hue with zero alpha, so
+            the swatch reads transparent ("off") and dragging the picker's alpha
+            up enables a translucent seam. Needs a seam width (inherits the
+            casing width when unset). */}
         <ColorField
           id={`line-seam-color-${line.id}`}
           ariaLabel="Seam color"

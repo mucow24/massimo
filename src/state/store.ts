@@ -424,6 +424,7 @@ interface DocState extends MapDoc {
   setLineStrokeWidth: (lineId: LineId, w: number) => void;
   setLineStrokeColor: (lineId: LineId, c: string) => void;
   setLineSeamColor: (lineId: LineId, c: string) => void;
+  setLineSeamWidth: (lineId: LineId, w: number) => void;
   deleteLine: (id: LineId) => void;
   moveLineInOrder: (id: LineId, dir: -1 | 1) => void;
 
@@ -639,6 +640,7 @@ export const useDoc = create<DocState>()(
         setLineStrokeWidth: (lineId, w) => set((s) => T.setLineStrokeWidth(s, lineId, w)),
         setLineStrokeColor: (lineId, c) => set((s) => T.setLineStrokeColor(s, lineId, c)),
         setLineSeamColor: (lineId, c) => set((s) => T.setLineSeamColor(s, lineId, c)),
+        setLineSeamWidth: (lineId, w) => set((s) => T.setLineSeamWidth(s, lineId, w)),
         deleteLine: (id) => set((s) => T.deleteLine(s, id)),
         moveLineInOrder: (id, dir) => set((s) => T.moveLineInOrder(s, id, dir)),
 

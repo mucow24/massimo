@@ -618,6 +618,24 @@ export function setLineSeamColor(doc: MapDoc, id: LineId, c: string): MapDoc {
   return { ...doc, lines: { ...doc.lines, [id]: stripStyleId(nextLine) } };
 }
 
+// Per-line seam width. Shares the casing width's canonical grid/floor and
+// drop-at-0 (`canonicalStrokeWidth`); an unset (dropped) value inherits the
+// casing width at render time. A change detaches the line from its preset.
+export function setLineSeamWidth(doc: MapDoc, id: LineId, w: number): MapDoc {
+  const cur = doc.lines[id];
+  if (!cur || !Number.isFinite(w)) return doc;
+  const stored = canonicalStrokeWidth(w);
+  if (cur.seamWidth === stored) return doc;
+  let nextLine: Line;
+  if (stored === undefined) {
+    const { seamWidth: _gone, ...rest } = cur;
+    nextLine = rest;
+  } else {
+    nextLine = { ...cur, seamWidth: stored };
+  }
+  return { ...doc, lines: { ...doc.lines, [id]: stripStyleId(nextLine) } };
+}
+
 export function setStationWaypoint(doc: MapDoc, stationId: StationId, isWaypoint: boolean): MapDoc {
   return updateStation(doc, stationId, (st) =>
     !!st.isWaypoint === isWaypoint ? st : { ...st, isWaypoint },
