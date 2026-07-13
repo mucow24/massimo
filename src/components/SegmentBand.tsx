@@ -59,6 +59,14 @@ interface Props {
   colorMap?: Record<LineId, string>;
   // Gap/underlay color for non-solid styles; matches the canvas background.
   underlayColor?: string;
+  // Decorative render (the selected-line highlight overlay): repaint the band
+  // with NO DOM identity — drops every `data-band-*`/`data-line-id` tag and
+  // forces the paths inert (pointer-events: none, no handlers), regardless of
+  // the interactive/onLineSelect props. The overlay repaints the selected
+  // line's stripes on top of a pointer-events:none wash, so its copies must not
+  // be found a second time by hit-testing (see hitStack) or the `[data-band-*]`
+  // DOM-query tests — those key on the tags the base paint stamps here.
+  decorative?: boolean;
 }
 
 // Memoized: a band emits one stripe renderable per line (and one casing
@@ -81,6 +89,7 @@ export const SegmentBand = memo(function SegmentBand({
   lines,
   colorMap,
   underlayColor,
+  decorative = false,
 }: Props) {
   const lineId = spec.lines[stripeIndex].id;
   const d = spec.paths[stripeIndex];
@@ -113,8 +122,8 @@ export const SegmentBand = memo(function SegmentBand({
           <path
             key={side}
             d={offsetFilletPath(spec.centerline, spec.radius, off + side * edge)}
-            data-band-seam=""
-            data-line-id={lineId}
+            data-band-seam={decorative ? undefined : ''}
+            data-line-id={decorative ? undefined : lineId}
             fill="none"
             stroke={seamColor}
             strokeWidth={seamW}
@@ -134,8 +143,8 @@ export const SegmentBand = memo(function SegmentBand({
     return (
       <path
         d={d}
-        data-band-casing=""
-        data-line-id={lineId}
+        data-band-casing={decorative ? undefined : ''}
+        data-line-id={decorative ? undefined : lineId}
         fill="none"
         stroke={lineStrokeColorOf(live)}
         strokeWidth={casingSilhouetteWidth(fullWidth, railW)}
@@ -150,7 +159,10 @@ export const SegmentBand = memo(function SegmentBand({
   // shows exactly railW of casing at each edge; open styles keep the full body
   // width and carry their casing as inline centered rails (unchanged).
   const bodyWidth = opaque ? casingInsetBodyWidth(fullWidth, railW) : fullWidth;
-  const selectable = !interactive && !!onLineSelect;
+  // A decorative copy is fully inert: it never wires pointer handlers nor
+  // becomes selectable, whatever interactive/onLineSelect say.
+  const active = interactive && !decorative;
+  const selectable = !interactive && !decorative && !!onLineSelect;
   const { stroke, strokeDasharray, strokeLinecap } = lineStyleStrokeAttrs(style, color, bodyWidth);
   const underlay = lineStyleUnderlayAttrs(style, underlayColor);
   return (
@@ -168,30 +180,28 @@ export const SegmentBand = memo(function SegmentBand({
       )}
       <path
         d={d}
-        data-band-stripe
-        data-band-key={spec.bandKey}
-        data-line-id={lineId}
+        data-band-stripe={decorative ? undefined : true}
+        data-band-key={decorative ? undefined : spec.bandKey}
+        data-line-id={decorative ? undefined : lineId}
         fill="none"
         stroke={stroke}
         strokeWidth={bodyWidth}
         strokeLinecap={strokeLinecap}
         strokeLinejoin="round"
         strokeDasharray={strokeDasharray}
-        pointerEvents={interactive || selectable ? 'stroke' : undefined}
-        style={
-          interactive ? { cursor: 'crosshair' } : selectable ? { cursor: 'pointer' } : undefined
-        }
-        onPointerMove={interactive && onLineHover ? (e) => onLineHover(lineId, e) : undefined}
-        onPointerLeave={interactive && onLineLeave ? (e) => onLineLeave(lineId, e) : undefined}
+        pointerEvents={decorative ? 'none' : active || selectable ? 'stroke' : undefined}
+        style={active ? { cursor: 'crosshair' } : selectable ? { cursor: 'pointer' } : undefined}
+        onPointerMove={active && onLineHover ? (e) => onLineHover(lineId, e) : undefined}
+        onPointerLeave={active && onLineLeave ? (e) => onLineLeave(lineId, e) : undefined}
         onClick={
-          interactive && onLineClick
+          active && onLineClick
             ? (e) => onLineClick(lineId, e)
             : selectable
               ? (e) => onLineSelect!(lineId, e)
               : undefined
         }
         onContextMenu={
-          interactive && onLineContextMenu ? (e) => onLineContextMenu(lineId, e) : undefined
+          active && onLineContextMenu ? (e) => onLineContextMenu(lineId, e) : undefined
         }
       />
       {/* Open styles keep centered casing rails inline (a silhouette would
@@ -205,7 +215,7 @@ export const SegmentBand = memo(function SegmentBand({
           bodyWidth={fullWidth}
           railW={railW}
           color={lineStrokeColorOf(live)}
-          lineId={lineId}
+          lineId={decorative ? undefined : lineId}
         />
       )}
     </Fragment>
