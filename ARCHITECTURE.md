@@ -209,7 +209,7 @@ is not a micro-optimization — it is the foundation of undo grouping:
 | `LabelCell.offset/offsetPerp`                                                                                                         | **Pixels in unrotated-station-local space**                                                                              |
 | Snap guides, viewBox, redistribute, curveRadius, line width/stroke, transfer thickness                                                | **World**                                                                                                                |
 | Drag thresholds (`DRAG_MOVE_THRESHOLD=4`), pointer start coords                                                                       | **Screen pixels**                                                                                                        |
-| Snap engage radius (`SNAP_PERP_TOLERANCE=10`; `LINE_TAG_SNAP_TOLERANCE=10` in centerline arc length — both **world units at zoom 1**) | Call sites pass `/zoom`, so the _effective_ radius is constant in screen px (the world tolerance shrinks as you zoom in) |
+| Snap engage radius (`SNAP_PERP_TOLERANCE=10`; `LINE_TAG_SNAP_TOLERANCE=10` in dragged-stripe arc length — both **world units at zoom 1**) | Call sites pass `/zoom`, so the _effective_ radius is constant in screen px (the world tolerance shrinks as you zoom in) |
 | Grid snap                                                                                                                             | **Hard world constraint** — unaffected by zoom                                                                           |
 
 Screen y is **down** everywhere. `vec.leftNormal((x,y)) = (y,-x)` is "left of travel" in the
@@ -844,9 +844,13 @@ placement mode's ghost preview and drop, so preview == commit by construction; S
 places raw.
 
 **Line tags** keep their own arc-length snapper (`snapNeighborTag` in `lineTagGeometry.ts`):
-nearest in-tolerance neighbor tag in the corridor, gated on "Snap to all", Shift bypasses,
+nearest in-tolerance neighbor tag in the corridor, **always on** (a tag lines up with its
+interlined siblings — independent of the "Snap to all" pref), Shift bypasses,
 `LINE_TAG_SNAP_TOLERANCE/zoom`, guide to the matched neighbor; the add-tag hover ghost and
-click apply the same snap.
+click apply the same snap. Alignment is by **cross-section**, not fraction-of-own-stripe:
+the neighbor's rendered point is projected onto the dragged stripe (closest point between
+concentric/parallel offsets lies along the shared normal), so two aligned tags sit directly
+across the corridor even where the band curves and the stripes differ in length.
 
 **Deliberately unsnapped** (documented, not bugs): arrow-key nudges (raw 1 / Shift 5 world
 units — free fine-positioning); 45° group rotate (re-snapping would distort shapes); snapping
