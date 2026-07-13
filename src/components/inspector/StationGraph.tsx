@@ -30,7 +30,12 @@ const BODY_W = 7; // route-line stroke width for the connectors
 // LANE_W/2 and ≤ ROW_H/2 so a corner never overshoots its shortest segment.
 const CORNER_R = 11;
 
-const laneX = (lane: number) => lane * LANE_W + LANE_W / 2;
+// x-center of a lane within the gutter, MIRRORED so lane 0 (the trunk) renders at
+// the RIGHTMOST position — nearest the name column just past the gutter's right
+// edge — and each further lane (branches, loop side-lanes) steps left, away from
+// the text. Keeps a line's main run of stops tight against their names.
+export const laneCenterX = (lane: number, laneCount: number) =>
+  (laneCount - 1 - lane) * LANE_W + LANE_W / 2;
 const rowY = (row: number) => row * ROW_H + ROW_H / 2;
 
 export interface StationGraphProps {
@@ -60,53 +65,37 @@ export interface StationGraphProps {
 }
 
 // Connector from the upper endpoint (parent) down to the lower one (child), as
-// orthogonal segments with constant rounded corners on the lane/row grid. Same
-// lane → a plain vertical. A branch tees off at `teeRow` — the blank row one
-// cell below the junction — as a clean T: straight down into that row, a single
-// right-angle jog across to the child's lane, then straight down to the child.
-function treePath(
-  fromLane: number,
-  fromRow: number,
-  toLane: number,
-  toRow: number,
-  teeRow: number,
-): string {
-  const x1 = laneX(fromLane);
-  const y1 = rowY(fromRow);
-  const x2 = laneX(toLane);
-  const y2 = rowY(toRow);
-  if (fromLane === toLane) return `M ${x1} ${y1} V ${y2}`;
-  const yb = rowY(teeRow); // the blank junction row, one cell below the parent
+// orthogonal segments with constant rounded corners. Takes resolved pixel
+// coordinates so the caller owns lane→x (and its mirror). Same lane → a plain
+// vertical. A branch tees off at `yTee` — the blank junction row one cell below
+// the parent — as a clean T: straight down into that row, a single right-angle
+// jog across to the child's lane, then straight down to the child.
+function treePath(x1: number, y1: number, x2: number, y2: number, yTee: number): string {
+  if (x1 === x2) return `M ${x1} ${y1} V ${y2}`;
   const pts: Pt[] = [
     { x: x1, y: y1 },
-    { x: x1, y: yb },
-    { x: x2, y: yb },
+    { x: x1, y: yTee },
+    { x: x2, y: yTee },
     { x: x2, y: y2 },
   ];
   return openPolylinePath(pts, CORNER_R);
 }
 
-// A loop back-edge, drawn so its horizontals sit in the blank rows BELOW the two
-// endpoints (not through the stops): from the upper stop drop one cell to its
-// blank row and tee off into the side lane, run straight down, drop level with
-// the lower stop's blank row, jog back to the trunk, and rise into the lower
-// stop. The upper tee overlays the trunk (a T-junction); the lower is an L-bend.
+// A loop back-edge, drawn so its horizontals sit in blank rows clear of the stops:
+// from the upper stop go to its blank row (ABOVE it — the arc comes over the top)
+// and tee off into the side lane, run straight down, reach the lower stop's blank
+// row (below it), jog back to the trunk, and rise into the lower stop. Takes
+// resolved coordinates (`uyB`/`lyB` are the blank-row y's) so the caller owns the
+// lane→x mirror.
 function loopPath(
-  fromLane: number,
-  fromRow: number,
-  toLane: number,
-  toRow: number,
-  sideLane: number,
-  upperBlank: number,
-  lowerBlank: number,
+  ux: number,
+  uy: number,
+  lx: number,
+  ly: number,
+  sx: number,
+  uyB: number,
+  lyB: number,
 ): string {
-  const ux = laneX(fromLane);
-  const uy = rowY(fromRow); // upper stop
-  const lx = laneX(toLane);
-  const ly = rowY(toRow); // lower stop
-  const sx = laneX(sideLane);
-  const uyB = rowY(upperBlank); // blank row below the upper stop
-  const lyB = rowY(lowerBlank); // blank row below the lower stop
   const pts: Pt[] = [
     { x: ux, y: uy },
     { x: ux, y: uyB },
@@ -142,6 +131,7 @@ export function StationGraph(props: StationGraphProps) {
   const [pickerSid, setPickerSid] = useState<StationId | null>(null);
 
   const layout = lineGraphLayout(line);
+  const laneX = (lane: number) => laneCenterX(lane, layout.laneCount);
   const gutterW = layout.laneCount * LANE_W;
   const totalH = layout.rowCount * ROW_H;
   const nodeByRow = new Map(layout.nodes.map((n) => [n.row, n]));
@@ -184,15 +174,21 @@ export function StationGraph(props: StationGraphProps) {
           const d =
             e.kind === 'loop'
               ? loopPath(
-                  e.fromLane,
-                  e.fromRow,
-                  e.toLane,
-                  e.toRow,
-                  e.sideLane ?? layout.laneCount,
-                  e.upperBlank ?? e.fromRow,
-                  e.lowerBlank ?? e.toRow,
+                  laneX(e.fromLane),
+                  rowY(e.fromRow),
+                  laneX(e.toLane),
+                  rowY(e.toRow),
+                  laneX(e.sideLane ?? layout.laneCount),
+                  rowY(e.upperBlank ?? e.fromRow),
+                  rowY(e.lowerBlank ?? e.toRow),
                 )
-              : treePath(e.fromLane, e.fromRow, e.toLane, e.toRow, e.teeRow ?? e.fromRow);
+              : treePath(
+                  laneX(e.fromLane),
+                  rowY(e.fromRow),
+                  laneX(e.toLane),
+                  rowY(e.toRow),
+                  rowY(e.teeRow ?? e.fromRow),
+                );
           const filter = isHoveredEdge(a, b) ? 'brightness(1.4) saturate(1.2)' : undefined;
           return (
             <Fragment key={e.pairKey}>
