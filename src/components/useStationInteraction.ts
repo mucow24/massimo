@@ -145,8 +145,8 @@ export function useStationInteraction(
       // Clicking a stop ALREADY on the line WIRES an edge from the pen (the stop
       // at the cursor) to it — this is how a loop closes or two stops link up.
       // It NEVER removes the stop (that's the inspector's × button). Same in
-      // insert mode, draw mode, and on Alt-click. Toggles: connecting the same
-      // pair again erases that edge.
+      // insert mode and draw mode. Toggles: connecting the same pair again
+      // erases that edge.
       if (wasInLine) {
         if (penStation && penStation !== station.id) {
           toggleEdgeOnLine(lineId, penStation, station.id);
@@ -156,10 +156,10 @@ export function useStationInteraction(
         return;
       }
 
-      // A brand-new stop. Draw mode (the "branch" button) or Alt/Option+click
-      // appends it and wires an edge from the pen (grows a branch); plain insert
-      // mode splices it into the chain at the cursor.
-      if (draw || e.altKey) {
+      // A brand-new stop. Draw mode (the "branch" button) appends it and wires
+      // an edge from the pen (grows a branch); plain insert mode splices it
+      // into the chain at the cursor.
+      if (draw) {
         addStationToLine(lineId, station.id);
         if (penStation) toggleEdgeOnLine(lineId, penStation, station.id);
         selection.setInsertAfterIndex(ln.stations.length); // appended at the end
