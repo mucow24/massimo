@@ -1,16 +1,14 @@
 import { Fragment, type ComponentProps, type ReactNode } from 'react';
-import type { Line, LineId, Station, StationId, StopCell } from '../../model/types';
+import type { Line, LineId, Station, StationId } from '../../model/types';
 import type { UiMode } from '../../state/selection';
 import {
   resolveSegmentStyle,
   stopPosWorld,
-  travelDirWorld,
   type OrderedRenderable,
 } from '../../geometry/interlining';
 import { pairKeyOf } from '../../model/pairKey';
-import { degreeOf } from '../../model/lineTopology';
 import { resolveDotStyle } from '../../model/transforms';
-import { STOP_SIZE, STOP_DOT_RADIUS } from '../../geometry/orientation';
+import { STOP_SIZE } from '../../geometry/orientation';
 import { lineStyleStrokeAttrs, lineStyleUnderlayAttrs } from '../HatchPatterns';
 import {
   casingInsetBodyWidth,
@@ -26,7 +24,6 @@ import { CasingRails } from '../CasingRails';
 import { styleHasOpaqueInterior } from '../SegmentBand';
 import { seamClipId } from './SeamClips';
 import { offsetFilletPath } from '../../geometry/router';
-import { lineWidthOf } from '../../model/lineWidth';
 import { dotSizeOverride } from '../../model/dotSize';
 import { StopMarker } from '../StopMarker';
 import { StopGlyph } from '../StopGlyph';
@@ -82,8 +79,8 @@ interface Props {
 }
 
 // The selected-line highlight: a dim wash over the whole map plus the chosen
-// line re-painted on top (stripes, stop markers, direction triangles, names),
-// with append-mode affordances when adding stations. Dim strength comes from
+// line re-painted on top (stripes, stop markers, stop dots, names), with
+// append-mode affordances when adding stations. Dim strength comes from
 // the theme — softer in light mode so the rest of the map stays readable as
 // context.
 export function HighlightedLineLayer({
@@ -124,14 +121,14 @@ export function HighlightedLineLayer({
           const hovPairKey = hov ? pairKeyOf(hov.fromStationId, hov.toStationId) : null;
           const isHoverStation = (sid: string) =>
             !!hov && (sid === hov.fromStationId || sid === hov.toStationId);
-          // Two buckets so dimmed stripe + colored stop square + direction
-          // triangle at one station composite *together* into one isolated
-          // group (children overdraw normally, then the group composites
-          // once at 0.2). Without this each dimmed element composites to
-          // the background separately and you see the stripe tinting
-          // through the marker, the marker tinting through the triangle,
-          // etc. When no divider is hovered, everything goes into the
-          // matched bucket and renders flat.
+          // Two buckets so dimmed stripe + colored stop square + stop dot
+          // at one station composite *together* into one isolated group
+          // (children overdraw normally, then the group composites once at
+          // 0.2). Without this each dimmed element composites to the
+          // background separately and you see the stripe tinting through the
+          // marker, the marker tinting through the dot, etc. When no divider
+          // is hovered, everything goes into the matched bucket and renders
+          // flat.
           const dimmed: ReactNode[] = [];
           const matched: ReactNode[] = [];
           const push = (m: boolean, node: ReactNode) => (m || !hov ? matched : dimmed).push(node);
@@ -249,20 +246,6 @@ export function HighlightedLineLayer({
               </g>,
             );
           });
-          // The arrow-tip station (last stop with ≥2 stops on the line):
-          // its cased arrowhead replaces the line's end, so the marker's
-          // end-cap rail is suppressed there — one smooth border from body
-          // into arrow.
-          const stopsOnLine = ln.stations.filter((sid) =>
-            stations[sid]?.stops.some((c) => c.lineId === highlightLineId),
-          );
-          // The arrowhead marks the APPEND direction, so it caps only the
-          // display-tail stop — and only when that stop is a genuine line end
-          // (degree 1). A loop, or a junction at the tail, draws no false
-          // arrowhead. The tip marker drops its end-cap rail so the arrowhead
-          // merges into the body.
-          const lastStopSid = stopsOnLine.length >= 2 ? stopsOnLine[stopsOnLine.length - 1] : null;
-          const arrowTipSid = lastStopSid && degreeOf(ln, lastStopSid) === 1 ? lastStopSid : null;
           renderables.forEach((r, i) => {
             if (r.kind !== 'marker' || r.spec.lineId !== highlightLineId) return;
             push(
@@ -272,98 +255,11 @@ export function HighlightedLineLayer({
                 spec={r.spec}
                 underlayColor={underlayColor}
                 lines={lines}
-                noEndCap={r.spec.stationId === arrowTipSid}
               />,
             );
           });
-          // Direction triangles: small arrow ~5px past each stop dot
-          // pointing along the stop's own travel direction.
-          type P = { sid: string; x: number; y: number; st: Station; cell: StopCell };
-          const points: P[] = [];
-          for (const sid of ln.stations) {
-            const st = stations[sid];
-            if (!st) continue;
-            const cell = st.stops.find((c) => c.lineId === highlightLineId);
-            if (!cell) continue;
-            const world = stopPosWorld(cell, st);
-            points.push({ sid, st, cell, x: world.x, y: world.y });
-          }
-          if (points.length >= 2) {
-            const dotR = STOP_DOT_RADIUS;
-            const gap = 2;
-            const halfW = 3;
-            const height = 5;
-            const baseDist = dotR + gap;
-            const apexDist = baseDist + height;
-            points.forEach((p, i) => {
-              // The arrow shows the APPEND direction: interior stops point
-              // toward the next drawn stop; the arrow-tip terminus points
-              // outward. Only the degree-1 display tail is a terminus (see
-              // arrowTipSid) — a loop/junction tail draws a plain chevron, not a
-              // false arrowhead. Hint resolves the auto-axis sign only.
-              const ref = i < points.length - 1 ? points[i + 1] : points[i - 1];
-              const sign = i < points.length - 1 ? 1 : -1;
-              const worldHint = { x: (ref.x - p.x) * sign, y: (ref.y - p.y) * sign };
-              const worldDir = travelDirWorld(p.cell, p.st, worldHint);
-              const dx = worldDir.x;
-              const dy = worldDir.y;
-              const isTerminus = p.sid === arrowTipSid;
-              // A stroked line's terminus arrow gets a casing rim too: an
-              // underlay copy fattened by 2× the line's stroke width in the
-              // stroke color, so the arrow reads as part of the cased line.
-              const arrowStroke = isTerminus ? lineStrokeWidthOf(ln) : 0;
-              const bodyW = lineWidthOf(ln);
-              const railW = lineStrokeRailWidth(arrowStroke, bodyW);
-              const d = arrowTrianglePath(p.x, p.y, dx, dy, baseDist, apexDist, halfW);
-              push(
-                isHoverStation(p.sid),
-                <Fragment key={'hl-tri:' + p.sid}>
-                  {arrowStroke > 0 && (
-                    <path
-                      d={d}
-                      fill={lineStrokeColorOf(ln)}
-                      stroke={lineStrokeColorOf(ln)}
-                      strokeWidth={10 + 2 * arrowStroke}
-                      strokeLinejoin="miter"
-                      paintOrder="stroke fill"
-                    />
-                  )}
-                  <path
-                    d={d}
-                    // legibleTextOn: the arrow sits on the re-painted stripe,
-                    // so contrast the LINE color — a fixed #000 vanished on
-                    // dark lines.
-                    fill={isTerminus ? ln.color : legibleTextOn(ln.color)}
-                    stroke={isTerminus ? ln.color : undefined}
-                    strokeWidth={isTerminus ? 10 : undefined}
-                    strokeLinejoin={isTerminus ? 'miter' : undefined}
-                    paintOrder={isTerminus ? 'stroke fill' : undefined}
-                  />
-                  {/* Junction patch: the underlay is a CLOSED triangle, so
-                      its fattened stroke also rims the arrow's BASE edge —
-                      a stroke-colored bar across the body where the arrow
-                      overlaps it. Repaint the body color between the rails
-                      (width − rail wide) from just behind the stop into the
-                      arrow base, so the body flows seamlessly into the
-                      arrowhead while the rim survives only around the
-                      arrow's exposed silhouette. */}
-                  {arrowStroke > 0 && (
-                    <line
-                      x1={p.x - dx * railW}
-                      y1={p.y - dy * railW}
-                      x2={p.x + dx * baseDist}
-                      y2={p.y + dy * baseDist}
-                      stroke={ln.color}
-                      strokeWidth={bodyW - railW}
-                      strokeLinecap="butt"
-                    />
-                  )}
-                </Fragment>,
-              );
-            });
-          }
           // Re-render the selected line's stop dots on top so the colored
-          // markers and direction triangles don't swallow them.
+          // markers don't swallow them.
           for (const sid of ln.stations) {
             const st = stations[sid];
             if (!st) continue;

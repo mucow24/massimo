@@ -222,6 +222,16 @@ export function LineInspector({ id }: { id: LineId }) {
   const appendDraw =
     selection.uiMode.kind === 'appending-to-line' ? !!selection.uiMode.draw : false;
 
+  // Arming an insert/branch button is a TOGGLE: clicking the one already armed
+  // (same stop AND same mode) clears the cursor to null, so nothing is "added
+  // after" — the way to deselect the insert point without leaving append mode.
+  // Any other click (re)arms this stop in the requested mode.
+  const armCursor = (idx: number, draw: boolean) => {
+    const alreadyArmed = appendInsertAfterIndex === idx && appendDraw === draw;
+    if (alreadyArmed) selection.setInsertAfterIndex(null, false);
+    else selection.setInsertAfterIndex(idx, draw);
+  };
+
   return (
     <section className="inspector">
       <div className="field">
@@ -386,7 +396,7 @@ export function LineInspector({ id }: { id: LineId }) {
               insertActive={appendInsertAfterIndex === -1 && !appendDraw}
               branchActive={false}
               canBranch={false}
-              onInsert={() => selection.setInsertAfterIndex(-1, false)}
+              onInsert={() => armCursor(-1, false)}
               onBranch={() => {}}
             />
           </div>
@@ -417,10 +427,8 @@ export function LineInspector({ id }: { id: LineId }) {
             onCycleSegment={(a, b) => cycleSegmentStyle(a, b)}
             onRemoveSegment={(a, b) => toggleEdgeOnLine(line.id, a, b)}
             onSetDotStyle={(sid, style) => setDotStyle(sid, line.id, style)}
-            onInsertAfter={(sid) =>
-              selection.setInsertAfterIndex(line.stations.indexOf(sid), false)
-            }
-            onBranchFrom={(sid) => selection.setInsertAfterIndex(line.stations.indexOf(sid), true)}
+            onInsertAfter={(sid) => armCursor(line.stations.indexOf(sid), false)}
+            onBranchFrom={(sid) => armCursor(line.stations.indexOf(sid), true)}
             onHoverSegment={(edge) =>
               selection.setHoveredInspectorSegment(
                 edge ? { lineId: line.id, fromStationId: edge.from, toStationId: edge.to } : null,

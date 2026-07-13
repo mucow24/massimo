@@ -575,6 +575,78 @@ describe('<LineInspector /> — branch button (draw mode)', () => {
   });
 });
 
+describe('<LineInspector /> — deselecting the insert cursor', () => {
+  beforeEach(() => {
+    localStorage.clear();
+    useDoc.setState({ ...DEFAULT_DOC });
+    useSelection.setState(SELECTION_BLANK);
+    useSelection.getState().setUiMode({ kind: 'idle' });
+  });
+
+  const seedTwo = () => {
+    useDoc.setState({
+      ...DEFAULT_DOC,
+      ...makeDoc({
+        stations: [
+          makeStation({ id: 's1', name: 'One', stops: [makeStop('L1')] }),
+          makeStation({ id: 's2', name: 'Two', stops: [makeStop('L1')] }),
+        ],
+        lines: [makeLine({ id: 'L1', stations: ['s1', 's2'] })],
+      }),
+    });
+  };
+
+  const armedIndex = (): number | null | 'not-appending' => {
+    const ui = useSelection.getState().uiMode;
+    return ui.kind === 'appending-to-line' ? ui.insertAfterIndex : 'not-appending';
+  };
+
+  it('clicking an already-armed "Insert after" button clears the cursor (deselect), staying in append mode', async () => {
+    seedTwo();
+    useSelection.getState().setAppending('L1');
+    useSelection.getState().setInsertAfterIndex(null);
+    const user = userEvent.setup();
+    render(<LineInspector id="L1" />);
+
+    const insertS1 = screen.getByRole('button', { name: 'Insert after One' });
+    await user.click(insertS1);
+    expect(armedIndex()).toBe(0); // armed on s1
+
+    await user.click(insertS1);
+    expect(armedIndex()).toBeNull(); // toggled off — nothing is "added after"
+    // Still appending — deselecting the cursor must not exit the mode.
+    expect(useSelection.getState().uiMode.kind).toBe('appending-to-line');
+  });
+
+  it('clicking the already-armed Branch button clears the cursor too', async () => {
+    seedTwo();
+    useSelection.getState().setAppending('L1');
+    useSelection.getState().setInsertAfterIndex(null);
+    const user = userEvent.setup();
+    render(<LineInspector id="L1" />);
+
+    const branchS1 = screen.getByRole('button', { name: 'Branch from One' });
+    await user.click(branchS1);
+    expect(armedIndex()).toBe(0);
+
+    await user.click(branchS1);
+    expect(armedIndex()).toBeNull();
+  });
+
+  it('clicking a DIFFERENT stop re-arms rather than clearing', async () => {
+    seedTwo();
+    useSelection.getState().setAppending('L1');
+    useSelection.getState().setInsertAfterIndex(null);
+    const user = userEvent.setup();
+    render(<LineInspector id="L1" />);
+
+    await user.click(screen.getByRole('button', { name: 'Insert after One' }));
+    expect(armedIndex()).toBe(0);
+    await user.click(screen.getByRole('button', { name: 'Insert after Two' }));
+    expect(armedIndex()).toBe(1); // moved, not cleared
+  });
+});
+
 describe('<LineInspector /> — branch/loop segment styles', () => {
   beforeEach(() => {
     localStorage.clear();

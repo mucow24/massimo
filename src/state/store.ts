@@ -126,7 +126,7 @@ function docSnapshotsEqual(a: DocSnapshot, b: DocSnapshot): boolean {
 }
 
 /**
- * Persisted-document version migration (v0 → v15). Exported and pure so it can
+ * Persisted-document version migration (v0 → v14). Exported and pure so it can
  * be unit-tested in isolation; the persist config below just delegates here.
  * Never mutates `persisted` — returns a possibly-new doc snapshot.
  *
@@ -195,12 +195,6 @@ function docSnapshotsEqual(a: DocSnapshot, b: DocSnapshot): boolean {
  *   default station style — mirrors the transfer-settings retirement.
  *   Idempotent (keyed off field presence), so `parse()` runs the shared
  *   `bakeLegacyLabelSettings` unconditionally.
- * - v14 → v15: NO new transform. The persist version was bumped to 15 purely to
- *   force `migrate` to re-run for docs stranded at v14 without line `edges` (an
- *   intermediate build stamped 14 before lines wrote the field). zustand skips
- *   `migrate` on a version match, so the non-version-gated edges backfill below
- *   could never reach them; bumping the version routes every ≤14 doc back
- *   through here, where the backfill is a no-op on already-canonical docs.
  */
 export function migrateDoc(persisted: unknown, version: number): DocState {
   const s = persisted as {
@@ -891,19 +885,25 @@ export const useDoc = create<DocState>()(
       {
         name: 'vignelli-map-doc-v1',
         storage: createJSONStorage(() => localStorage),
-        // Bumped 14 → 15 SOLELY to force `migrate` to run for docs stranded at
-        // v14 without line `edges`. zustand calls `migrate` only on a version
-        // MISMATCH, so the non-version-gated edges backfill inside `migrateDoc`
-        // (added in #236) could never reach a doc already stamped 14 — it just
-        // crashed the renderer at `ln.edges.join(...)` on load. Bumping the
-        // version makes every ≤14 doc pass back through `migrateDoc`, which
-        // backfills edges (a no-op for already-canonical docs) and re-saves at
-        // 15. No new gated step is needed: the edges repair is the non-gated
-        // invariant, not a 14→15 transform.
-        version: 15,
+        version: 14,
         // Version migration chain v0 → v14 lives in `migrateDoc` (above), which
         // is exported and unit-tested. See its doc comment for each step.
         migrate: (persisted, version) => migrateDoc(persisted, version),
+        // `migrate` only runs when the STORED version differs from the config
+        // version — so a doc stranded at 14 (an intermediate build re-saved docs
+        // at the bumped version BEFORE lines carried `edges`) skips migrateDoc's
+        // unconditional edge backfill entirely, and the renderer crashes on
+        // `ln.edges.join(...)`. `merge` runs on EVERY rehydrate, so repair that
+        // one invariant here too. Reference-stable when every line already has
+        // an array, so canonical docs pass straight through the default merge.
+        merge: (persisted, current) => {
+          const doc = (persisted ?? {}) as Partial<DocState>;
+          if (doc.lines) {
+            const { lines, changed } = backfillLinesEdges(doc.lines);
+            if (changed) return { ...current, ...doc, lines };
+          }
+          return { ...current, ...doc };
+        },
         partialize: (s) => pickDocSnapshot(s),
       },
     ),

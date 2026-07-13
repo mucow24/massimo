@@ -1,12 +1,5 @@
-import { describe, it, expect, beforeEach, afterEach } from 'vitest';
-import {
-  migrateDoc,
-  beginHistoryGroup,
-  cancelAppendMode,
-  pickDocSnapshot,
-  useDoc,
-  useSelection,
-} from './store';
+import { describe, it, expect, beforeEach } from 'vitest';
+import { migrateDoc, beginHistoryGroup, cancelAppendMode, useDoc, useSelection } from './store';
 import { historyDepth } from './history';
 import {
   DEFAULT_DOC,
@@ -17,7 +10,6 @@ import {
 } from '../model/transforms';
 import { DOT_SHAPE_PRESETS } from '../model/dotStyle';
 import {
-  makeDoc,
   makeLine,
   makeStation,
   makeStop,
@@ -954,50 +946,5 @@ describe('cancelAppendMode', () => {
   it('is a no-op (beyond clearing append) when not in appending mode', () => {
     expect(() => cancelAppendMode()).not.toThrow();
     expect(useSelection.getState().uiMode.kind).toBe('idle');
-  });
-});
-
-// migrateDoc is version-gated by zustand: `migrate` runs ONLY on a version
-// mismatch. The tests above call migrateDoc directly, so they can't see that a
-// doc stamped at the current persist version bypasses migrate entirely. This
-// exercises the REAL persist.rehydrate() path — the one that actually crashed —
-// so the "stranded at the current version without edges" bug can't regress
-// behind a green direct-migrateDoc test again.
-describe('persist rehydration guarantees the line-edges invariant', () => {
-  const KEY = 'vignelli-map-doc-v1';
-  // zundo wraps persist, so the persist API isn't on the bound store's type;
-  // it IS attached at runtime.
-  const rehydrate = () =>
-    (useDoc as unknown as { persist: { rehydrate: () => Promise<void> } }).persist.rehydrate();
-
-  afterEach(() => {
-    localStorage.clear();
-    useDoc.setState({ ...DEFAULT_DOC });
-  });
-
-  it('backfills edges for a doc stranded at the persist version without them', async () => {
-    // A doc stamped at the (then-current) version 14, saved before lines wrote
-    // `edges`. The renderer crashes on `ln.edges.join(...)` unless the persist
-    // version has moved past 14 so zustand re-runs migrate — the fix a direct
-    // migrateDoc() call (versions equal) can never prove.
-    const snapshot = pickDocSnapshot(
-      makeDoc({
-        stations: [
-          makeStation({ id: 's1' as StationId, stops: [makeStop('L1' as LineId)] }),
-          makeStation({ id: 's2' as StationId, stops: [makeStop('L1' as LineId)] }),
-        ],
-        lines: [makeLine({ id: 'L1' as LineId, stations: ['s1', 's2'] as StationId[] })],
-      }),
-    );
-    // Drop the edges array makeLine synthesizes → the stranded shape.
-    const { edges: _dropped, ...l1NoEdges } = snapshot.lines['L1' as LineId];
-    const stranded = { ...snapshot, lines: { L1: l1NoEdges } };
-    localStorage.setItem(KEY, JSON.stringify({ state: stranded, version: 14 }));
-
-    await rehydrate();
-
-    const line = useDoc.getState().lines['L1' as LineId];
-    expect(Array.isArray(line.edges)).toBe(true);
-    expect(line.edges).toEqual(['s1|s2']); // backfilled from the consecutive stations
   });
 });

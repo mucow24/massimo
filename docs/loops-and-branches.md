@@ -76,7 +76,6 @@ Topology enumerators to switch from consecutive-pairs → `edges`:
 | `lineTraversesForwardCanon` | `geometry/lineTagGeometry.ts` |
 | `alignmentPairs`, terminus extrapolation | `geometry/snap.ts` |
 | `pathBetweenStations`, `redistributeBetween` | `model/pathSelect.ts`, `model/transforms.ts` |
-| arrow tip / direction triangles | `components/canvas/HighlightedLineLayer.tsx` |
 | inspector station band | `components/inspector/stationBandGeometry.ts` |
 
 ## Work log
@@ -105,10 +104,12 @@ Topology enumerators to switch from consecutive-pairs → `edges`:
 - **Stage 5 (partial).** `pathBetweenStations` (ctrl+shift line-select) is now BFS over the
   edge graph — shorter loop arc, unique branch path; identical for linear lines (+ tests).
 - **Highlight overlay + branch UI + reactivity (iterations 2–3).**
-  - `HighlightedLineLayer` arrowhead: it marks the APPEND direction, so it caps only the
-    display-tail stop, and only when that stop is a genuine degree-1 end. A loop, or a
-    junction at the tail, draws no false arrowhead (the earlier "both ends" attempt was
-    reverted — the front stop must stay a plain forward chevron). Tests updated.
+  - `HighlightedLineLayer` arrowhead: it marked the APPEND direction, so it capped only the
+    display-tail stop, and only when that stop was a genuine degree-1 end. A loop, or a
+    junction at the tail, drew no false arrowhead (the earlier "both ends" attempt was
+    reverted — the front stop stayed a plain forward chevron). **Removed since:** the
+    on-canvas direction arrows (per-stop chevrons + terminus arrowhead) are gone; the
+    highlighted line just re-paints stripes, markers, dots, and names.
   - **Loop/branch now renders immediately (bug fix):** `linesGeometrySig` (MapCanvas band
     memo) keyed on `stations`, but `toggleEdgeOnLine` changes only `edges` — so the new band
     didn't appear until another edit. Now keyed on `edges`. Regression test in
