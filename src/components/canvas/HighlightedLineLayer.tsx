@@ -10,8 +10,20 @@ import { pairKeyOf } from '../../model/pairKey';
 import { resolveDotStyle } from '../../model/transforms';
 import { STOP_SIZE } from '../../geometry/orientation';
 import { lineStyleStrokeAttrs, lineStyleUnderlayAttrs } from '../HatchPatterns';
-import { lineStrokeColorOf, lineStrokeRailWidth, lineStrokeWidthOf } from '../../model/lineStroke';
+import {
+  casingInsetBodyWidth,
+  casingSilhouetteWidth,
+  lineSeamColorOf,
+  lineSeamWidthOf,
+  lineStrokeColorOf,
+  lineStrokeRailWidth,
+  lineStrokeWidthOf,
+  seamRenderWidth,
+} from '../../model/lineStroke';
 import { CasingRails } from '../CasingRails';
+import { styleHasOpaqueInterior } from '../SegmentBand';
+import { seamClipId } from './SeamClips';
+import { offsetFilletPath } from '../../geometry/router';
 import { dotSizeOverride } from '../../model/dotSize';
 import { StopMarker } from '../StopMarker';
 import { StopGlyph } from '../StopGlyph';
@@ -120,31 +132,62 @@ export function HighlightedLineLayer({
           const dimmed: ReactNode[] = [];
           const matched: ReactNode[] = [];
           const push = (m: boolean, node: ReactNode) => (m || !hov ? matched : dimmed).push(node);
-          renderables.forEach((r, i) => {
-            if (r.kind !== 'stripe') return;
-            const stripeLn = r.band.lines[r.stripeIndex];
-            if (stripeLn.id !== highlightLineId) return;
-            // Presentation resolved live from the highlighted line (the
-            // spec carries only the id); style is per-segment via pairKey.
+          // Casing as silhouette + inset body (see lineStroke.ts). The overlay
+          // repaints just this one line, so a plain global two-pass — every
+          // silhouette, then every body — lets its own overlapping bands
+          // (loops/branches) merge into one outer casing instead of
+          // overdrawing. Presentation is resolved live from the highlighted
+          // line (the spec carries only the id); style is per-segment via
+          // pairKey. Open styles keep inline rails (a silhouette would bleed
+          // through their transparent gaps).
+          const stripesOfLine = renderables.filter(
+            (r): r is Extract<OrderedRenderable, { kind: 'stripe' }> =>
+              r.kind === 'stripe' && r.band.lines[r.stripeIndex].id === highlightLineId,
+          );
+          const matchedSeg = (pairKey: string) =>
+            !!hov && hov.lineId === highlightLineId && pairKey === hovPairKey;
+          // Pass 1: silhouettes (opaque styles with casing only).
+          stripesOfLine.forEach((r, i) => {
+            const style = resolveSegmentStyle(ln, r.band.pairKey);
+            if (!styleHasOpaqueInterior(style)) return;
+            const stripeW = r.band.stripeWidths[r.stripeIndex];
+            const railW = lineStrokeRailWidth(lineStrokeWidthOf(ln), stripeW);
+            if (railW <= 0) return;
+            push(
+              matchedSeg(r.band.pairKey),
+              <path
+                key={'hl-sil:' + i}
+                d={r.band.paths[r.stripeIndex]}
+                fill="none"
+                stroke={lineStrokeColorOf(ln)}
+                strokeWidth={casingSilhouetteWidth(stripeW, railW)}
+                strokeLinecap="butt"
+                strokeLinejoin="round"
+              />,
+            );
+          });
+          // Pass 2: bodies (inset for opaque; full width + inline rails for open).
+          stripesOfLine.forEach((r, i) => {
             const style = resolveSegmentStyle(ln, r.band.pairKey);
             const stripeW = r.band.stripeWidths[r.stripeIndex];
+            const railW = lineStrokeRailWidth(lineStrokeWidthOf(ln), stripeW);
+            const opaque = styleHasOpaqueInterior(style);
+            const bodyW = opaque ? casingInsetBodyWidth(stripeW, railW) : stripeW;
             const { stroke, strokeDasharray, strokeLinecap } = lineStyleStrokeAttrs(
               style,
               ln.color,
-              stripeW,
+              bodyW,
             );
             const underlay = lineStyleUnderlayAttrs(style, underlayColor);
-            const railW = lineStrokeRailWidth(lineStrokeWidthOf(ln), stripeW);
-            const m = !!hov && hov.lineId === stripeLn.id && r.band.pairKey === hovPairKey;
             push(
-              m,
+              matchedSeg(r.band.pairKey),
               <Fragment key={'hl-b:' + i}>
                 {underlay && (
                   <path
                     d={r.band.paths[r.stripeIndex]}
                     fill="none"
                     stroke={underlay.stroke}
-                    strokeWidth={stripeW}
+                    strokeWidth={bodyW}
                     strokeLinecap={underlay.strokeLinecap}
                     strokeLinejoin="round"
                   />
@@ -153,21 +196,54 @@ export function HighlightedLineLayer({
                   d={r.band.paths[r.stripeIndex]}
                   fill="none"
                   stroke={stroke}
-                  strokeWidth={stripeW}
+                  strokeWidth={bodyW}
                   strokeLinecap={strokeLinecap}
                   strokeLinejoin="round"
                   strokeDasharray={strokeDasharray}
                 />
-                {/* Casing rails centered on the body edges — see CasingRails. */}
-                <CasingRails
-                  centerline={r.band.centerline}
-                  radius={r.band.radius}
-                  offset={r.band.stripeOffsets[r.stripeIndex]}
-                  bodyWidth={stripeW}
-                  railW={railW}
-                  color={lineStrokeColorOf(ln)}
-                />
+                {!opaque && (
+                  <CasingRails
+                    centerline={r.band.centerline}
+                    radius={r.band.radius}
+                    offset={r.band.stripeOffsets[r.stripeIndex]}
+                    bodyWidth={stripeW}
+                    railW={railW}
+                    color={lineStrokeColorOf(ln)}
+                  />
+                )}
               </Fragment>,
+            );
+          });
+          // Pass 3: branch seams — two strokes centered on the body edges,
+          // clipped to the line's OTHER band corridors (the shared SeamClips
+          // defs) so they show only at self-overlaps. Painted after the bodies
+          // (in front), matching the main layer's priority − SEAM_EPS.
+          stripesOfLine.forEach((r, i) => {
+            const seamColor = lineSeamColorOf(ln);
+            const stripeW = r.band.stripeWidths[r.stripeIndex];
+            const railW = lineStrokeRailWidth(lineStrokeWidthOf(ln), stripeW);
+            const seamW = seamRenderWidth(lineSeamWidthOf(ln), railW, stripeW);
+            if (!seamColor || seamW <= 0) return;
+            const off = r.band.stripeOffsets[r.stripeIndex];
+            const edge = stripeW / 2;
+            push(
+              matchedSeg(r.band.pairKey),
+              <g
+                key={'hl-seam:' + i}
+                clipPath={`url(#${seamClipId(highlightLineId, r.band.bandKey)})`}
+              >
+                {[-1, 1].map((side) => (
+                  <path
+                    key={side}
+                    d={offsetFilletPath(r.band.centerline, r.band.radius, off + side * edge)}
+                    fill="none"
+                    stroke={seamColor}
+                    strokeWidth={seamW}
+                    strokeLinecap="butt"
+                    strokeLinejoin="round"
+                  />
+                ))}
+              </g>,
             );
           });
           renderables.forEach((r, i) => {

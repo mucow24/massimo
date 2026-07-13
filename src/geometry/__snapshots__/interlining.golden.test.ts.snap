@@ -1,5 +1,80 @@
 // Vitest Snapshot v1, https://vitest.dev/guide/snapshot.html
 
+exports[`buildBands — golden geometry pins (all-default widths) > 3-cycle loop: triangle a-b-c 1`] = `
+[
+  {
+    "bandKey": "a|b#L1",
+    "centerline": [
+      {
+        "x": 0,
+        "y": 0,
+      },
+      {
+        "x": 160,
+        "y": 0,
+      },
+    ],
+    "paths": [
+      "M 0.000000 0.000000 L 160.000000 0.000000",
+    ],
+    "radius": 24,
+    "warning": false,
+  },
+  {
+    "bandKey": "b|c#L1",
+    "centerline": [
+      {
+        "x": 160,
+        "y": 0,
+      },
+      {
+        "x": 120,
+        "y": 0,
+      },
+      {
+        "x": 120,
+        "y": 90,
+      },
+      {
+        "x": 80,
+        "y": 90,
+      },
+    ],
+    "paths": [
+      "M 160.000000 0.000000 L 144.000000 0.000000 A 24.00 24.00 0 0 0 120.000000 24.000000 L 120.000000 66.000000 A 24.00 24.00 0 0 1 96.000000 90.000000 L 80.000000 90.000000",
+    ],
+    "radius": 24,
+    "warning": false,
+  },
+  {
+    "bandKey": "a|c#L1",
+    "centerline": [
+      {
+        "x": 0,
+        "y": 0,
+      },
+      {
+        "x": 40,
+        "y": 0,
+      },
+      {
+        "x": 40,
+        "y": 90,
+      },
+      {
+        "x": 80,
+        "y": 90,
+      },
+    ],
+    "paths": [
+      "M 0.000000 0.000000 L 16.000000 0.000000 A 24.00 24.00 0 0 1 40.000000 24.000000 L 40.000000 66.000000 A 24.00 24.00 0 0 0 64.000000 90.000000 L 80.000000 90.000000",
+    ],
+    "radius": 24,
+    "warning": false,
+  },
+]
+`;
+
 exports[`buildBands — golden geometry pins (all-default widths) > 5-stripe Z-bend with ample edges (cap inactive) 1`] = `
 [
   {
@@ -96,6 +171,73 @@ exports[`buildBands — golden geometry pins (all-default widths) > cramped sing
       "M 0.000000 0.000000 L 0.000000 -20.000000 A 7.10 7.10 0 0 1 2.079690 -25.020815 L 11.979185 -34.920310 A 7.10 7.10 0 0 1 17.000000 -37.000000 L 24.000000 -37.000000",
     ],
     "radius": 7.100505063388332,
+    "warning": false,
+  },
+]
+`;
+
+exports[`buildBands — golden geometry pins (all-default widths) > degree-3 junction: through-line a-j-c plus branch j-d 1`] = `
+[
+  {
+    "bandKey": "a|j#L1",
+    "centerline": [
+      {
+        "x": -120,
+        "y": 0,
+      },
+      {
+        "x": 0,
+        "y": 0,
+      },
+    ],
+    "paths": [
+      "M -120.000000 0.000000 L 0.000000 0.000000",
+    ],
+    "radius": 24,
+    "warning": false,
+  },
+  {
+    "bandKey": "c|j#L1",
+    "centerline": [
+      {
+        "x": 120,
+        "y": 0,
+      },
+      {
+        "x": 0,
+        "y": 0,
+      },
+    ],
+    "paths": [
+      "M 120.000000 0.000000 L 0.000000 0.000000",
+    ],
+    "radius": 24,
+    "warning": false,
+  },
+  {
+    "bandKey": "d|j#L1",
+    "centerline": [
+      {
+        "x": 120,
+        "y": -120,
+      },
+      {
+        "x": 60,
+        "y": -120,
+      },
+      {
+        "x": 60,
+        "y": 0,
+      },
+      {
+        "x": 0,
+        "y": 0,
+      },
+    ],
+    "paths": [
+      "M 120.000000 -120.000000 L 84.000000 -120.000000 A 24.00 24.00 0 0 0 60.000000 -96.000000 L 60.000000 -24.000000 A 24.00 24.00 0 0 1 36.000000 0.000000 L 0.000000 0.000000",
+    ],
+    "radius": 24,
     "warning": false,
   },
 ]

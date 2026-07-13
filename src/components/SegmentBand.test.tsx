@@ -41,6 +41,7 @@ const renderStripe = (
       <SegmentBand
         spec={baseSpec(ids)}
         stripeIndex={stripeIndex}
+        pass="body"
         lines={linesFor(styles, color)}
         underlayColor={opts.underlayColor}
       />
@@ -115,13 +116,23 @@ describe('<SegmentBand> — single-stripe renderer', () => {
     const stroke = () => document.querySelector('path')?.getAttribute('stroke');
     const { rerender } = render(
       <svg>
-        <SegmentBand spec={spec} stripeIndex={0} lines={linesFor(['solid'], '#EF374B')} />
+        <SegmentBand
+          spec={spec}
+          stripeIndex={0}
+          pass="body"
+          lines={linesFor(['solid'], '#EF374B')}
+        />
       </svg>,
     );
     expect(stroke()).toBe('#EF374B');
     rerender(
       <svg>
-        <SegmentBand spec={spec} stripeIndex={0} lines={linesFor(['solid'], '#00AA55')} />
+        <SegmentBand
+          spec={spec}
+          stripeIndex={0}
+          pass="body"
+          lines={linesFor(['solid'], '#00AA55')}
+        />
       </svg>,
     );
     expect(stroke()).toBe('#00AA55');
@@ -131,14 +142,14 @@ describe('<SegmentBand> — single-stripe renderer', () => {
     const spec = baseSpec(['L1']);
     const { container, rerender } = render(
       <svg>
-        <SegmentBand spec={spec} stripeIndex={0} lines={linesFor(['solid'])} />
+        <SegmentBand spec={spec} stripeIndex={0} pass="body" lines={linesFor(['solid'])} />
       </svg>,
     );
     // Solid: one path, no dasharray.
     expect(container.querySelectorAll('path').length).toBe(1);
     rerender(
       <svg>
-        <SegmentBand spec={spec} stripeIndex={0} lines={linesFor(['hatched'])} />
+        <SegmentBand spec={spec} stripeIndex={0} pass="body" lines={linesFor(['hatched'])} />
       </svg>,
     );
     // Hatched: still one path, now the hatch pattern url.
@@ -158,13 +169,13 @@ describe('<SegmentBand> — single-stripe renderer', () => {
     const lines = linesFor(['solid', 'dashed']);
     const narrow = render(
       <svg>
-        <SegmentBand spec={spec} stripeIndex={0} lines={lines} />
+        <SegmentBand spec={spec} stripeIndex={0} pass="body" lines={lines} />
       </svg>,
     );
     expect(narrow.container.querySelector('path')!.getAttribute('stroke-width')).toBe('14');
     const wide = render(
       <svg>
-        <SegmentBand spec={spec} stripeIndex={1} lines={lines} />
+        <SegmentBand spec={spec} stripeIndex={1} pass="body" lines={lines} />
       </svg>,
     );
     const paths = wide.container.querySelectorAll('path');
@@ -174,120 +185,201 @@ describe('<SegmentBand> — single-stripe renderer', () => {
   });
 });
 
-describe('<SegmentBand> — casing rails (centered on the body edges)', () => {
-  const strokedLines = (strokeWidth: number, strokeColor?: string): Record<LineId, Line> => ({
+describe('<SegmentBand> — casing (silhouette + inset body)', () => {
+  const strokedLines = (
+    strokeWidth: number,
+    strokeColor?: string,
+    style?: StripeStyle,
+  ): Record<LineId, Line> => ({
     L1: makeLine({
       id: 'L1',
       stations: ['s1', 's2'],
       ...(strokeWidth > 0 ? { strokeWidth } : {}),
       ...(strokeColor ? { strokeColor } : {}),
+      ...(style && style !== 'solid' ? { segmentStyles: { 's1|s2': style } } : {}),
     }),
   });
 
-  const renderStroked = (lines: Record<LineId, Line>, spec = baseSpec(['L1']), idx = 0) =>
+  // Render both passes in paint order — silhouette (the casing renderable, at
+  // priority + ε) BEHIND the body — mirroring MapCanvas.
+  const renderCased = (lines: Record<LineId, Line>, spec = baseSpec(['L1']), idx = 0) =>
     render(
       <svg>
-        <SegmentBand spec={spec} stripeIndex={idx} lines={lines} />
+        <SegmentBand spec={spec} stripeIndex={idx} pass="silhouette" lines={lines} />
+        <SegmentBand spec={spec} stripeIndex={idx} pass="body" lines={lines} />
       </svg>,
     );
 
   // First M-coordinate pair of a path's d — for a straight horizontal band
-  // this is the rail's y position.
+  // this is the stroke's y position.
   const startY = (p: Element) => Number(p.getAttribute('d')!.match(/M [\d.-]+ ([\d.-]+)/)![1]);
 
-  it('paints two rails AFTER the body, centered on its edges', () => {
-    const { container } = renderStroked(strokedLines(4, '#ff0000'));
+  it('paints one casing silhouette BEHIND the inset body', () => {
+    const { container } = renderCased(strokedLines(4, '#ff0000'));
     const paths = Array.from(container.querySelectorAll('path'));
-    expect(paths.length).toBe(3); // body + 2 rails
-    expect(paths[0].hasAttribute('data-band-stripe')).toBe(true);
-    for (const rail of paths.slice(1)) {
-      expect(rail.hasAttribute('data-band-casing')).toBe(true);
-      expect(rail.getAttribute('data-line-id')).toBe('L1');
-      expect(rail.getAttribute('stroke')).toBe('#ff0000');
-      expect(rail.getAttribute('stroke-width')).toBe('4');
-      expect(rail.getAttribute('stroke-dasharray')).toBeNull();
-      expect(rail.getAttribute('pointer-events')).toBe('none');
-    }
-    // Rail centers at ±14/2 = ±7 — straddling the body edges.
-    expect(
-      paths
-        .slice(1)
-        .map(startY)
-        .sort((a, b) => a - b),
-    ).toEqual([-7, 7]);
+    expect(paths.length).toBe(2); // silhouette + inset body
+    const [sil, body] = paths;
+    // Silhouette first in DOM = painted first = behind the body.
+    expect(sil.hasAttribute('data-band-casing')).toBe(true);
+    expect(sil.getAttribute('data-line-id')).toBe('L1');
+    expect(sil.getAttribute('stroke')).toBe('#ff0000');
+    expect(sil.getAttribute('stroke-width')).toBe('18'); // width 14 + railW 4
+    expect(sil.getAttribute('stroke-dasharray')).toBeNull();
+    expect(sil.getAttribute('pointer-events')).toBe('none');
+    // Body is the colored core, inset by railW so the silhouette shows a railW
+    // rim on each edge.
+    expect(body.hasAttribute('data-band-stripe')).toBe(true);
+    expect(body.getAttribute('stroke-width')).toBe('10'); // width 14 − railW 4
   });
 
-  it('defaults the rail color to white', () => {
-    const { container } = renderStroked(strokedLines(4));
-    const rail = container.querySelector('[data-band-casing]')!;
-    expect(rail.getAttribute('stroke')).toBe('#ffffff');
+  it('defaults the casing color to white', () => {
+    const { container } = renderCased(strokedLines(4));
+    expect(container.querySelector('[data-band-casing]')!.getAttribute('stroke')).toBe('#ffffff');
   });
 
-  it('offsets against the stripe’s own width and offset in a mixed-width band', () => {
-    // Widths [14, 28] ⇒ offsets [−10.5, +10.5]. Stripe 1 (width 28):
-    // rail centers at 10.5 ± 14 = [−3.5, 24.5]. (Offsets are along the left
-    // normal — screen-up for an east segment — so +offset lands at −y.)
+  it('sizes silhouette/inset against the stripe’s own width in a mixed-width band', () => {
+    // Stripe 1 (width 28) with stroke 3 ⇒ silhouette 28 + 3 = 31, inset 28 − 3 = 25.
     const spec = makeBandSpec(['L1', 'L2'], { stripeWidths: [14, 28] });
     const lines: Record<LineId, Line> = {
       L1: makeLine({ id: 'L1', stations: ['s1', 's2'] }),
       L2: makeLine({ id: 'L2', stations: ['s1', 's2'], strokeWidth: 3 }),
     };
-    const { container } = renderStroked(lines, spec, 1);
-    const rails = Array.from(container.querySelectorAll('[data-band-casing]'));
-    expect(rails.length).toBe(2);
-    expect(rails.map(startY).sort((a, b) => a - b)).toEqual([-24.5, 3.5]);
-    for (const r of rails) expect(r.getAttribute('stroke-width')).toBe('3');
+    const { container } = renderCased(lines, spec, 1);
+    expect(container.querySelector('[data-band-casing]')!.getAttribute('stroke-width')).toBe('31');
+    expect(container.querySelector('[data-band-stripe]')!.getAttribute('stroke-width')).toBe('25');
   });
 
-  it('clamps the rendered rail at the stripe width', () => {
-    // Stored stroke 30 on a 14-wide stripe: rails render 14 wide, still
-    // centered on the edges (they meet exactly at the centerline).
-    const { container } = renderStroked(strokedLines(30));
-    const rails = Array.from(container.querySelectorAll('[data-band-casing]'));
-    expect(rails.length).toBe(2);
-    for (const r of rails) expect(r.getAttribute('stroke-width')).toBe('14');
-    expect(rails.map(startY).sort((a, b) => a - b)).toEqual([-7, 7]);
+  it('clamps the casing at the stripe width (railW ≤ width)', () => {
+    // Stored stroke 30 on a 14-wide stripe: railW clamps to 14, so the
+    // silhouette is 14 + 14 = 28 and the inset body collapses to 0.
+    const { container } = renderCased(strokedLines(30));
+    expect(container.querySelector('[data-band-casing]')!.getAttribute('stroke-width')).toBe('28');
+    expect(container.querySelector('[data-band-stripe]')!.getAttribute('stroke-width')).toBe('0');
   });
 
-  it('renders no rails for a stroke-less line', () => {
-    const { container } = renderStroked(strokedLines(0));
-    expect(container.querySelectorAll('path').length).toBe(1);
+  it('renders no casing for a stroke-less line', () => {
+    const { container } = renderCased(strokedLines(0));
     expect(container.querySelector('[data-band-casing]')).toBeNull();
+    const paths = container.querySelectorAll('path');
+    expect(paths.length).toBe(1); // body only, full width
+    expect(paths[0].getAttribute('stroke-width')).toBe('14');
   });
 
-  it('keeps the rails solid over a dashed body', () => {
-    const lines: Record<LineId, Line> = {
-      L1: makeLine({
-        id: 'L1',
-        stations: ['s1', 's2'],
-        segmentStyles: { 's1|s2': 'dashed' },
-        strokeWidth: 2,
-      }),
-    };
-    const { container } = renderStroked(lines);
+  it('a dashed (opaque) body: solid silhouette + inset underlay/dashes, no rails', () => {
+    const { container } = renderCased(strokedLines(2, undefined, 'dashed'));
     const paths = Array.from(container.querySelectorAll('path'));
-    expect(paths.length).toBe(4); // underlay + dashes + 2 rails
-    const rails = paths.filter((p) => p.hasAttribute('data-band-casing'));
-    expect(rails.length).toBe(2);
-    for (const r of rails) expect(r.getAttribute('stroke-dasharray')).toBeNull();
+    expect(paths.length).toBe(3); // silhouette + underlay + dashes (no rails)
+    const sil = container.querySelector('[data-band-casing]')!;
+    expect(sil.getAttribute('stroke-dasharray')).toBeNull(); // casing stays solid
+    expect(sil.getAttribute('stroke-width')).toBe('16'); // 14 + 2
+    expect(container.querySelectorAll('[data-band-casing]').length).toBe(1); // just the silhouette
   });
 
-  it('resolves the stroke live from the lines map — an edit repaints without a new spec', () => {
+  it('an OPEN style keeps inline centered rails and emits NO silhouette', () => {
+    // dashed-open has transparent gaps a solid silhouette would fill white, so
+    // it keeps the two centered rails (painted in the body pass) instead.
+    const { container } = renderCased(strokedLines(2, undefined, 'dashed-open'));
+    const casings = Array.from(container.querySelectorAll('[data-band-casing]'));
+    expect(casings.length).toBe(2); // two rails
+    for (const rail of casings) expect(rail.getAttribute('stroke-width')).toBe('2');
+    // Rail centers at ±14/2 = ±7 — the full-width body's edges (no inset).
+    expect(casings.map(startY).sort((a, b) => a - b)).toEqual([-7, 7]);
+  });
+
+  it('resolves the casing live from the lines map — an edit repaints without a new spec', () => {
     const spec = baseSpec(['L1']);
     const { container, rerender } = render(
       <svg>
-        <SegmentBand spec={spec} stripeIndex={0} lines={strokedLines(4, '#ff0000')} />
+        <SegmentBand
+          spec={spec}
+          stripeIndex={0}
+          pass="silhouette"
+          lines={strokedLines(4, '#ff0000')}
+        />
       </svg>,
     );
-    expect(container.querySelector('[data-band-casing]')!.getAttribute('stroke')).toBe('#ff0000');
+    const sil = () => container.querySelector('[data-band-casing]')!;
+    expect(sil().getAttribute('stroke')).toBe('#ff0000');
+    expect(sil().getAttribute('stroke-width')).toBe('18');
     rerender(
       <svg>
-        <SegmentBand spec={spec} stripeIndex={0} lines={strokedLines(1.5, '#00aa55')} />
+        <SegmentBand
+          spec={spec}
+          stripeIndex={0}
+          pass="silhouette"
+          lines={strokedLines(1.5, '#00aa55')}
+        />
       </svg>,
     );
-    const rail = container.querySelector('[data-band-casing]')!;
-    expect(rail.getAttribute('stroke')).toBe('#00aa55');
-    expect(rail.getAttribute('stroke-width')).toBe('1.5');
+    expect(sil().getAttribute('stroke')).toBe('#00aa55');
+    expect(sil().getAttribute('stroke-width')).toBe('15.5'); // 14 + 1.5
+  });
+});
+
+describe('<SegmentBand> — branch seam (pass="seam")', () => {
+  const seamLines = (
+    seamColor: string | undefined,
+    opts: { strokeWidth?: number; seamWidth?: number } = {},
+  ): Record<LineId, Line> => {
+    const strokeWidth = opts.strokeWidth ?? 4;
+    return {
+      L1: makeLine({
+        id: 'L1',
+        stations: ['s1', 's2'],
+        ...(strokeWidth > 0 ? { strokeWidth } : {}),
+        ...(seamColor ? { seamColor } : {}),
+        ...(opts.seamWidth !== undefined ? { seamWidth: opts.seamWidth } : {}),
+      }),
+    };
+  };
+
+  const renderSeam = (lines: Record<LineId, Line>) =>
+    render(
+      <svg>
+        <SegmentBand spec={baseSpec(['L1'])} stripeIndex={0} pass="seam" lines={lines} />
+      </svg>,
+    );
+
+  const startY = (p: Element) => Number(p.getAttribute('d')!.match(/M [\d.-]+ ([\d.-]+)/)![1]);
+
+  it('paints two clipped seam strokes CENTERED on the body edges, in the seam color', () => {
+    const { container } = renderSeam(seamLines('#ff000080'));
+    const rings = Array.from(container.querySelectorAll('[data-band-seam]'));
+    expect(rings.length).toBe(2);
+    for (const r of rings) {
+      expect(r.getAttribute('stroke')).toBe('#ff000080'); // alpha preserved
+      expect(r.getAttribute('stroke-width')).toBe('4'); // unset seam width inherits railW = 4
+      expect(r.getAttribute('data-line-id')).toBe('L1');
+    }
+    // Centered ON the body edges (±width/2 = ±7) — aligned with the casing.
+    expect(rings.map(startY).sort((a, b) => a - b)).toEqual([-7, 7]);
+    // Clipped to the line's OTHER band corridors (per-band, excluding this band).
+    const g = container.querySelector('g[clip-path]')!;
+    expect(g.getAttribute('clip-path')).toBe('url(#seam-clip-L1__s1-s2-L1)');
+  });
+
+  it('uses an explicit seam width, independent of the casing width', () => {
+    const { container } = renderSeam(seamLines('#ff000080', { strokeWidth: 4, seamWidth: 2 }));
+    const rings = Array.from(container.querySelectorAll('[data-band-seam]'));
+    expect(rings.length).toBe(2);
+    for (const r of rings) expect(r.getAttribute('stroke-width')).toBe('2');
+  });
+
+  it('shows a seam at its own width even when the line has no casing', () => {
+    const { container } = renderSeam(seamLines('#ff000080', { strokeWidth: 0, seamWidth: 3 }));
+    const rings = Array.from(container.querySelectorAll('[data-band-seam]'));
+    expect(rings.length).toBe(2);
+    for (const r of rings) expect(r.getAttribute('stroke-width')).toBe('3');
+  });
+
+  it('renders nothing without a seam color', () => {
+    const { container } = renderSeam(seamLines(undefined));
+    expect(container.querySelector('[data-band-seam]')).toBeNull();
+  });
+
+  it('renders nothing when there is neither a casing nor an explicit seam width', () => {
+    const { container } = renderSeam(seamLines('#ff000080', { strokeWidth: 0 }));
+    expect(container.querySelector('[data-band-seam]')).toBeNull();
   });
 });
 

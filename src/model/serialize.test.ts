@@ -892,6 +892,41 @@ describe('parse — line stroke sanitizing', () => {
       if (result.ok) expect('strokeColor' in result.doc.lines.L1).toBe(false);
     }
   });
+
+  it('round-trips a translucent seam color and drops a transparent one', () => {
+    const keep = parse(buildWithStroke({ seamColor: '#AB12CD80' }));
+    expect(keep.ok).toBe(true);
+    if (keep.ok) expect(keep.doc.lines.L1.seamColor).toBe('#ab12cd80');
+    // Fully transparent = the "off" state → dropped, never stored.
+    const off = parse(buildWithStroke({ seamColor: '#12345600' }));
+    expect(off.ok).toBe(true);
+    if (off.ok) expect('seamColor' in off.doc.lines.L1).toBe(false);
+  });
+
+  it('drops non-string seam colors', () => {
+    for (const junk of [5, null, true, {}]) {
+      const result = parse(buildWithStroke({ seamColor: junk }));
+      expect(result.ok).toBe(true);
+      if (result.ok) expect('seamColor' in result.doc.lines.L1).toBe(false);
+    }
+  });
+
+  it('round-trips a seam width on the half-pixel grid and drops it at 0', () => {
+    const keep = parse(buildWithStroke({ seamWidth: 3.6 }));
+    expect(keep.ok).toBe(true);
+    if (keep.ok) expect(keep.doc.lines.L1.seamWidth).toBe(3.5);
+    const off = parse(buildWithStroke({ seamWidth: 0 }));
+    expect(off.ok).toBe(true);
+    if (off.ok) expect('seamWidth' in off.doc.lines.L1).toBe(false);
+  });
+
+  it('drops non-numeric seam widths', () => {
+    for (const junk of ['thick', null, true, {}]) {
+      const result = parse(buildWithStroke({ seamWidth: junk }));
+      expect(result.ok).toBe(true);
+      if (result.ok) expect('seamWidth' in result.doc.lines.L1).toBe(false);
+    }
+  });
 });
 
 describe('parse — transfer style sanitizing', () => {

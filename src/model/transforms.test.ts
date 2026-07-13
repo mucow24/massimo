@@ -1099,6 +1099,68 @@ describe('setLineStrokeColor', () => {
   });
 });
 
+describe('setLineSeamColor', () => {
+  it('stores a seam color, preserving alpha, lowercased', () => {
+    const doc = makeDoc({ lines: [makeLine({ id: 'L1' })] });
+    expect(T.setLineSeamColor(doc, 'L1', '#FF0000').lines.L1.seamColor).toBe('#ff0000');
+    expect(T.setLineSeamColor(doc, 'L1', '#AB12CD80').lines.L1.seamColor).toBe('#ab12cd80');
+  });
+
+  it('drops the field when set fully transparent (the "off" state)', () => {
+    const doc = makeDoc({ lines: [makeLine({ id: 'L1', seamColor: '#ff000080' })] });
+    const next = T.setLineSeamColor(doc, 'L1', '#00000000');
+    expect('seamColor' in next.lines.L1).toBe(false);
+  });
+
+  it('returns the input doc unchanged when the seam color is already stored', () => {
+    const doc = makeDoc({ lines: [makeLine({ id: 'L1', seamColor: '#ff000080' })] });
+    expect(T.setLineSeamColor(doc, 'L1', '#ff000080')).toBe(doc);
+  });
+
+  it('returns the input doc unchanged when turning off an already-off (unset) line', () => {
+    const doc = makeDoc({ lines: [makeLine({ id: 'L1' })] });
+    expect(T.setLineSeamColor(doc, 'L1', '#12345600')).toBe(doc);
+  });
+
+  it('detaches the line from its style preset on change', () => {
+    const doc = makeDoc({ lines: [makeLine({ id: 'L1', styleId: 'some-style' })] });
+    const next = T.setLineSeamColor(doc, 'L1', '#ff000080');
+    expect('styleId' in next.lines.L1).toBe(false);
+  });
+
+  it('returns the input doc for an unknown line id', () => {
+    const doc = makeDoc({ lines: [makeLine({ id: 'L1' })] });
+    expect(T.setLineSeamColor(doc, 'ghost', '#ff0000')).toBe(doc);
+  });
+});
+
+describe('setLineSeamWidth', () => {
+  it('stores a seam width on the half-pixel grid, dropping the field at 0 (unset ⇒ inherit)', () => {
+    const doc = makeDoc({ lines: [makeLine({ id: 'L1' })] });
+    expect(T.setLineSeamWidth(doc, 'L1', 3).lines.L1.seamWidth).toBe(3);
+    expect(T.setLineSeamWidth(doc, 'L1', 2.24).lines.L1.seamWidth).toBe(2);
+    const off = T.setLineSeamWidth(
+      makeDoc({ lines: [makeLine({ id: 'L1', seamWidth: 3 })] }),
+      'L1',
+      0,
+    );
+    expect('seamWidth' in off.lines.L1).toBe(false);
+  });
+
+  it('returns the input doc unchanged on a no-op / non-finite input', () => {
+    const doc = makeDoc({ lines: [makeLine({ id: 'L1', seamWidth: 3 })] });
+    expect(T.setLineSeamWidth(doc, 'L1', 3)).toBe(doc);
+    expect(T.setLineSeamWidth(doc, 'L1', NaN)).toBe(doc);
+    const unset = makeDoc({ lines: [makeLine({ id: 'L1' })] });
+    expect(T.setLineSeamWidth(unset, 'L1', 0)).toBe(unset); // 0 on an unset line = no-op
+  });
+
+  it('detaches the line from its style preset on change', () => {
+    const doc = makeDoc({ lines: [makeLine({ id: 'L1', styleId: 'some-style' })] });
+    expect('styleId' in T.setLineSeamWidth(doc, 'L1', 3).lines.L1).toBe(false);
+  });
+});
+
 describe('toggleStationOnLine', () => {
   it('adds a station + stop cell when not present', () => {
     const doc = makeDoc({

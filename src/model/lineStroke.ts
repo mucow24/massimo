@@ -67,6 +67,51 @@ export const lineStrokeColorOf = (line: { strokeColor?: string } | null | undefi
   line?.strokeColor ?? LINE_STROKE_COLOR_DEFAULT;
 
 /**
+ * Effective seam color — the interior overlap indicator painted where a line's
+ * OWN bands overlap (branch/loop). Unlike the casing there is NO default color:
+ * absent ⇒ NO seam (the overlaps stay merged). Returns undefined when unset.
+ */
+export const lineSeamColorOf = (
+  line: { seamColor?: string } | null | undefined,
+): string | undefined => line?.seamColor;
+
+/**
+ * Canonical STORED form of a seam color: lowercased, and collapsed to
+ * `undefined` when fully transparent (alpha `00`) — the "off" state — so a
+ * disabled seam is never stored. Mirrors {@link canonicalStrokeColor} (the
+ * picker already normalizes shorthand/opaque via normalizeHex; hand-edited
+ * files may carry uppercase). Shared by `setLineSeamColor` and the file cleaner.
+ */
+export const canonicalSeamColor = (c: string): string | undefined => {
+  const norm = c.toLowerCase();
+  return /^#[0-9a-f]{6}00$/.test(norm) ? undefined : norm;
+};
+
+/**
+ * Stored seam width, per side, in world units — the RAW field (undefined when
+ * unset). Stored/canonicalized exactly like the casing width (drop at 0 via
+ * {@link canonicalStrokeWidth}), so an UNSET seam width is `undefined`, not 0.
+ * The render distinguishes the two (see {@link seamRenderWidth}).
+ */
+export const lineSeamWidthOf = (
+  line: { seamWidth?: number } | null | undefined,
+): number | undefined => line?.seamWidth;
+
+/**
+ * The rendered seam stroke width for a stripe of `bandWidth`. The seam sits
+ * CENTERED on the body edge (like the casing), so an UNSET seam width inherits
+ * the casing rail width `railW` — a seam-color-only line still shows a seam
+ * matched to its casing — while an explicit width overrides it. Clamped to the
+ * band width so the two edge seams never cross at the centerline. Returns 0
+ * (no seam) only when both the stored width is unset AND there is no casing.
+ */
+export const seamRenderWidth = (
+  seamWidth: number | undefined,
+  railW: number,
+  bandWidth: number,
+): number => Math.min(seamWidth ?? railW, bandWidth);
+
+/**
  * The rendered rail width for a stripe of the given body width: each rail
  * is centered on a body edge (spanning [width/2 − rail/2, width/2 + rail/2]
  * per side), so a rail wider than the body is meaningless (the two rails
@@ -75,3 +120,24 @@ export const lineStrokeColorOf = (line: { strokeColor?: string } | null | undefi
  */
 export const lineStrokeRailWidth = (strokeWidth: number, width: number): number =>
   Math.min(strokeWidth, width);
+
+/**
+ * The two stroke widths that render a stripe's casing as a SILHOUETTE + INSET
+ * BODY (the merge-friendly equivalent of the two centered rails). The
+ * silhouette is the body OUTSET by `railW` — so the casing shows `railW/2`
+ * past each edge; the inset body is the body NARROWED by `railW` — so the
+ * casing shows `railW/2` inside each edge. Painted silhouette-under-body they
+ * reproduce the centered-rail look pixel-for-pixel (colored core `width −
+ * railW`, casing ring `railW`, outer extent `width/2 + railW/2`) while letting
+ * a line's own overlapping bands merge into ONE outer casing — every
+ * silhouette paints before every body, so a body always re-covers a same-line
+ * silhouette in the interior. Shared by SegmentBand, the highlight overlay,
+ * and the self-overdraw test so the three can't drift.
+ *
+ * Only for OPAQUE-interior styles (solid / dashed / hatched): an "open" style
+ * (dashed-open, dotted) has transparent gaps, so a solid silhouette behind it
+ * would show through — those keep the centered rails instead.
+ */
+export const casingSilhouetteWidth = (width: number, railW: number): number => width + railW;
+export const casingInsetBodyWidth = (width: number, railW: number): number =>
+  Math.max(0, width - railW);
