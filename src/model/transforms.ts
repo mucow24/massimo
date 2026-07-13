@@ -7,6 +7,7 @@ import {
   LINE_STROKE_COLOR_DEFAULT,
   LINE_STROKE_WIDTH_DEFAULT,
   canonicalStrokeColor,
+  canonicalSeamColor,
   canonicalStrokeWidth,
 } from './lineStroke';
 import {
@@ -594,6 +595,26 @@ export function setLineStrokeColor(doc: MapDoc, id: LineId, c: string): MapDoc {
     nextLine = { ...cur, strokeColor: stored };
   }
   // Fall-through = the stored casing color changed → detach from the preset.
+  return { ...doc, lines: { ...doc.lines, [id]: stripStyleId(nextLine) } };
+}
+
+// Per-line seam color (the interior branch/loop overlap indicator). Like the
+// casing color it is normalized to lowercase and dropped at the "off" state
+// (unset / fully transparent) so it is never stored; a change detaches the line
+// from its preset.
+export function setLineSeamColor(doc: MapDoc, id: LineId, c: string): MapDoc {
+  const cur = doc.lines[id];
+  if (!cur) return doc;
+  const stored = canonicalSeamColor(c);
+  if (cur.seamColor === stored) return doc;
+  let nextLine: Line;
+  if (stored === undefined) {
+    const { seamColor: _gone, ...rest } = cur;
+    nextLine = rest;
+  } else {
+    nextLine = { ...cur, seamColor: stored };
+  }
+  // Fall-through = the stored seam color changed → detach from the preset.
   return { ...doc, lines: { ...doc.lines, [id]: stripStyleId(nextLine) } };
 }
 

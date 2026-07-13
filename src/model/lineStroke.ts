@@ -67,6 +67,27 @@ export const lineStrokeColorOf = (line: { strokeColor?: string } | null | undefi
   line?.strokeColor ?? LINE_STROKE_COLOR_DEFAULT;
 
 /**
+ * Effective seam color — the interior overlap indicator painted where a line's
+ * OWN bands overlap (branch/loop). Unlike the casing there is NO default color:
+ * absent ⇒ NO seam (the overlaps stay merged). Returns undefined when unset.
+ */
+export const lineSeamColorOf = (
+  line: { seamColor?: string } | null | undefined,
+): string | undefined => line?.seamColor;
+
+/**
+ * Canonical STORED form of a seam color: lowercased, and collapsed to
+ * `undefined` when fully transparent (alpha `00`) — the "off" state — so a
+ * disabled seam is never stored. Mirrors {@link canonicalStrokeColor} (the
+ * picker already normalizes shorthand/opaque via normalizeHex; hand-edited
+ * files may carry uppercase). Shared by `setLineSeamColor` and the file cleaner.
+ */
+export const canonicalSeamColor = (c: string): string | undefined => {
+  const norm = c.toLowerCase();
+  return /^#[0-9a-f]{6}00$/.test(norm) ? undefined : norm;
+};
+
+/**
  * The rendered rail width for a stripe of the given body width: each rail
  * is centered on a body edge (spanning [width/2 − rail/2, width/2 + rail/2]
  * per side), so a rail wider than the body is meaningless (the two rails

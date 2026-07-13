@@ -3,13 +3,16 @@ import { resolveSegmentStyle, SegmentBandSpec } from '../geometry/interlining';
 import {
   casingInsetBodyWidth,
   casingSilhouetteWidth,
+  lineSeamColorOf,
   lineStrokeColorOf,
   lineStrokeRailWidth,
   lineStrokeWidthOf,
 } from '../model/lineStroke';
 import { CasingRails } from './CasingRails';
+import { seamClipId } from './canvas/SeamClips';
 import type { Line, LineId, LineStyle } from '../model/types';
 import { leftNormal, midpoint, norm, sub } from '../geometry/vec';
+import { offsetFilletPath } from '../geometry/router';
 import { lineStyleStrokeAttrs, lineStyleUnderlayAttrs } from './HatchPatterns';
 
 // A style's interior is "opaque" when its body fully covers its own footprint
@@ -28,13 +31,13 @@ interface Props {
   // emitted as one renderable per stripe so each can paint at its own line's
   // z-priority — see buildOrderedRenderables.
   stripeIndex: number;
-  // Two-pass split (mirrors StopGlyph's `pass`): a band emits a 'casing'
-  // renderable just behind its 'stripe' body (priority + CASING_EPS). The
-  // 'silhouette' pass paints the fat under-stroke that becomes the casing; the
-  // 'body' pass paints the (inset) colored body. Splitting them across z-order
-  // is what lets a line's own overlapping bands merge into one continuous outer
-  // casing.
-  pass: 'silhouette' | 'body';
+  // Which pass to paint (mirrors StopGlyph's `pass`). A band emits three
+  // renderables per stripe: the 'casing' silhouette just behind its body
+  // (priority + CASING_EPS), the 'stripe' body, and the branch 'seam' just in
+  // front (priority − SEAM_EPS). The 'silhouette' pass paints the fat
+  // under-stroke that becomes the casing; the 'body' pass paints the (inset)
+  // colored body; the 'seam' pass paints the interior overlap indicator.
+  pass: 'silhouette' | 'body' | 'seam';
   // When `interactive` is true, the stripe captures pointer events on its
   // stroke and forwards them via the per-line callbacks. Used to wire up
   // hover-to-preview and click-to-insert in add-line-tag mode. (Body pass only;
@@ -89,6 +92,36 @@ export const SegmentBand = memo(function SegmentBand({
   const fullWidth = spec.stripeWidths[stripeIndex];
   const railW = lineStrokeRailWidth(lineStrokeWidthOf(live), fullWidth);
   const opaque = styleHasOpaqueInterior(style);
+
+  // Seam pass: the interior branch/loop overlap indicator — the casing's OUTER
+  // ring (a railW-wide stroke abutting each body edge on the OUTSIDE), in the
+  // seam color, CLIPPED to the line's own corridor (see SeamClips) so it shows
+  // only where this band overlaps another of the line's own bands and vanishes
+  // on the true outer boundary. Reuses the casing width, so it needs a casing
+  // and a seam color to appear.
+  if (pass === 'seam') {
+    const seamColor = lineSeamColorOf(live);
+    if (!seamColor || railW <= 0) return null;
+    const off = spec.stripeOffsets[stripeIndex];
+    const ringOffset = fullWidth / 2 + railW / 2;
+    return (
+      <g clipPath={`url(#${seamClipId(lineId)})`} pointerEvents="none">
+        {[-1, 1].map((side) => (
+          <path
+            key={side}
+            d={offsetFilletPath(spec.centerline, spec.radius, off + side * ringOffset)}
+            data-band-seam=""
+            data-line-id={lineId}
+            fill="none"
+            stroke={seamColor}
+            strokeWidth={railW}
+            strokeLinecap="butt"
+            strokeLinejoin="round"
+          />
+        ))}
+      </g>
+    );
+  }
 
   // Silhouette pass: the fat under-stroke that becomes the casing. Opaque
   // styles only — an open style has no silhouette (its rails paint inline in

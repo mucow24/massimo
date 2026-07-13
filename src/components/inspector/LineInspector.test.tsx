@@ -349,7 +349,7 @@ describe('<LineInspector /> — stroke controls', () => {
     useDoc.temporal.getState().clear();
   });
 
-  const seed = (over: { strokeWidth?: number; strokeColor?: string } = {}) => {
+  const seed = (over: { strokeWidth?: number; strokeColor?: string; seamColor?: string } = {}) => {
     useDoc.setState({
       ...DEFAULT_DOC,
       ...makeDoc({
@@ -413,6 +413,26 @@ describe('<LineInspector /> — stroke controls', () => {
     seed();
     render(<LineInspector id="L1" />);
     expect(await openColorField(user, 'Stroke color')).toHaveValue('#ffffff');
+  });
+
+  it('the seam color picker writes translucent edits and drops a transparent (off) pick', async () => {
+    const user = userEvent.setup();
+    seed({ strokeWidth: 4, seamColor: '#abcdef80' });
+    render(<LineInspector id="L1" />);
+    const input = await openColorField(user, 'Seam color');
+    expect(input).toHaveValue('#abcdef80');
+    fireEvent.change(input, { target: { value: '#00aa5580' } });
+    expect(useDoc.getState().lines.L1.seamColor).toBe('#00aa5580');
+    // Dragging alpha to zero (fully transparent) turns the seam OFF → key dropped.
+    fireEvent.change(input, { target: { value: '#00aa5500' } });
+    expect('seamColor' in useDoc.getState().lines.L1).toBe(false);
+  });
+
+  it('seeds the seam picker at the casing hue with zero alpha when off (reads as off)', async () => {
+    const user = userEvent.setup();
+    seed({ strokeWidth: 4, strokeColor: '#123456' });
+    render(<LineInspector id="L1" />);
+    expect(await openColorField(user, 'Seam color')).toHaveValue('#12345600');
   });
 
   it('one slider focus-arc collapses to a single undo entry', () => {

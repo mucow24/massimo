@@ -10,7 +10,7 @@ import { ColorPalette } from './ColorPalette';
 import { ColorField } from '../ColorField';
 import { useFieldHistory } from '../useFieldHistory';
 import { StationShapePicker } from '../StationShapePicker';
-import { blendOver, legibleTextOn, withAlpha } from '../../util/color';
+import { blendOver, legibleTextOn, withAlpha, withHexAlpha } from '../../util/color';
 import { NumericFieldRow } from '../NumericFieldRow';
 import { StyleRow } from '../StyleRow';
 import {
@@ -24,6 +24,7 @@ import {
   LINE_STROKE_STEP,
   LINE_STROKE_WIDTH_MAX,
   LINE_STROKE_WIDTH_MIN,
+  lineSeamColorOf,
   lineStrokeColorOf,
   lineStrokeWidthOf,
 } from '../../model/lineStroke';
@@ -191,6 +192,7 @@ export function LineInspector({ id }: { id: LineId }) {
   const setLineWidth = useDoc((s) => s.setLineWidth);
   const setLineStrokeWidth = useDoc((s) => s.setLineStrokeWidth);
   const setLineStrokeColor = useDoc((s) => s.setLineStrokeColor);
+  const setLineSeamColor = useDoc((s) => s.setLineSeamColor);
   const selection = useSelection();
   // Gap color matches the canvas so the band preview mirrors the on-canvas look.
   const underlayColor = useThemeColors().underlay;
@@ -300,6 +302,21 @@ export function LineInspector({ id }: { id: LineId }) {
           ariaLabel="Stroke color"
           value={lineStrokeColorOf(line)}
           onChange={(c) => setLineStrokeColor(line.id, c)}
+        />
+      </div>
+      <div className="options-popover-row">
+        <label htmlFor={`line-seam-color-${line.id}`} className="options-popover-label">
+          Seam color
+        </label>
+        {/* Interior branch/loop overlap indicator. Off by default: seeded at the
+            casing hue with zero alpha, so the swatch reads transparent
+            ("off") and dragging the picker's alpha up enables a translucent
+            seam. Reuses the casing width, so it only shows once Stroke width > 0. */}
+        <ColorField
+          id={`line-seam-color-${line.id}`}
+          ariaLabel="Seam color"
+          value={lineSeamColorOf(line) ?? withHexAlpha(lineStrokeColorOf(line), 0)}
+          onChange={(c) => setLineSeamColor(line.id, c)}
         />
       </div>
       <div className="field">

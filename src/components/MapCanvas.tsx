@@ -20,6 +20,7 @@ import { rotateItemOnContextMenu } from './canvas/groupRotate';
 import { legibleTextOn } from '../util/color';
 import { BandWarning, SegmentBand } from './SegmentBand';
 import { HatchPatterns } from './HatchPatterns';
+import { SeamClips } from './canvas/SeamClips';
 import { StopMarker } from './StopMarker';
 import { StationView } from './StationView';
 import { useViewport } from './canvas/useViewport';
@@ -814,6 +815,8 @@ export function MapCanvas() {
       >
         <defs>
           <HatchPatterns colors={hatchedColors} underlayColor={underlayColor} />
+          {/* Per-line corridor clips for the branch seam (see SeamClips). */}
+          <SeamClips bands={bands} lines={lines} />
         </defs>
 
         {/* Background hit target for panning. Overdrawn one viewport-width in
@@ -946,6 +949,20 @@ export function MapCanvas() {
                 spec={r.band}
                 stripeIndex={r.stripeIndex}
                 pass="silhouette"
+                lines={lines}
+                colorMap={colorMap}
+                underlayColor={underlayColor}
+              />
+            );
+          }
+          if (r.kind === 'seam') {
+            const stripeLineId = r.band.lines[r.stripeIndex].id;
+            return (
+              <SegmentBand
+                key={'seam:' + r.band.bandKey + ':' + stripeLineId}
+                spec={r.band}
+                stripeIndex={r.stripeIndex}
+                pass="seam"
                 lines={lines}
                 colorMap={colorMap}
                 underlayColor={underlayColor}

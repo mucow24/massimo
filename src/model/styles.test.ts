@@ -66,6 +66,17 @@ describe('captureStyleProps', () => {
     });
   });
 
+  it('captures a seam color (with alpha) when set, and omits the key when off', () => {
+    const withSeam = makeDoc({
+      lines: [makeLine({ id: 'l1', strokeWidth: 2, seamColor: '#abcdef80' })],
+    });
+    expect(captureStyleProps(withSeam, 'line', 'l1')).toMatchObject({ seamColor: '#abcdef80' });
+    // A seamless line captures NO seamColor key (so it compares equal to a
+    // style that never had one).
+    const noSeam = makeDoc({ lines: [makeLine({ id: 'l1' })] });
+    expect(captureStyleProps(noSeam, 'line', 'l1')).not.toHaveProperty('seamColor');
+  });
+
   it('captures only the covered label typography — width/leading/tracking stay per-label', () => {
     const doc = makeDoc({
       textLabels: [makeTextLabel({ id: 'g1', fontSize: 20, weight: 700, width: 200, leading: 2 })],
@@ -213,6 +224,26 @@ describe('applyStyleToItem', () => {
     expect(line.strokeColor).toBe('#123456');
     expect(line.defaultDotStyle).toEqual(DOT_SHAPE_PRESETS['filled-white']);
     expect(line.defaultDotSize).toBe(12);
+  });
+
+  it('stamps a style seam color, and stamping a seamless style clears an existing seam', () => {
+    const seamStyle = makeStyle('line', 'y1', {
+      props: { strokeWidth: 2, seamColor: '#abcdef80' },
+    });
+    const doc = makeDoc({ lines: [makeLine({ id: 'l1' })], styles: [seamStyle] });
+    const stamped = applyStyleToItem(doc, 'y1', 'l1').lines.l1;
+    expect(stamped.seamColor).toBe('#abcdef80');
+    expect(stamped.styleId).toBe('y1');
+
+    // A style with NO seam, stamped onto a line that HAS one, removes it.
+    const plainStyle = makeStyle('line', 'y2', { props: { strokeWidth: 2 } });
+    const doc2 = makeDoc({
+      lines: [makeLine({ id: 'l1', seamColor: '#abcdef80' })],
+      styles: [plainStyle],
+    });
+    const cleared = applyStyleToItem(doc2, 'y2', 'l1').lines.l1;
+    expect('seamColor' in cleared).toBe(false);
+    expect(cleared.styleId).toBe('y2');
   });
 
   it('stores nothing for line values that equal the global defaults (canonical collapse)', () => {

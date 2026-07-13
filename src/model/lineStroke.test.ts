@@ -7,8 +7,10 @@ import {
   LINE_STROKE_COLOR_DEFAULT,
   canonicalStrokeWidth,
   canonicalStrokeColor,
+  canonicalSeamColor,
   lineStrokeWidthOf,
   lineStrokeColorOf,
+  lineSeamColorOf,
   lineStrokeRailWidth,
 } from './lineStroke';
 
@@ -65,6 +67,30 @@ describe('lineStrokeWidthOf / lineStrokeColorOf', () => {
     expect(lineStrokeColorOf({})).toBe(LINE_STROKE_COLOR_DEFAULT);
     expect(lineStrokeColorOf(null)).toBe(LINE_STROKE_COLOR_DEFAULT);
     expect(lineStrokeColorOf(undefined)).toBe(LINE_STROKE_COLOR_DEFAULT);
+  });
+});
+
+describe('canonicalSeamColor', () => {
+  it('lowercases and keeps an opaque or translucent seam color', () => {
+    expect(canonicalSeamColor('#AABBCC')).toBe('#aabbcc');
+    // Alpha is preserved (a translucent seam is the whole point).
+    expect(canonicalSeamColor('#AABBCC80')).toBe('#aabbcc80');
+  });
+
+  it('collapses a fully-transparent color to undefined (the "off" state)', () => {
+    expect(canonicalSeamColor('#aabbcc00')).toBeUndefined();
+    expect(canonicalSeamColor('#00000000')).toBeUndefined();
+    // A non-zero alpha is NOT off, even at 01.
+    expect(canonicalSeamColor('#aabbcc01')).toBe('#aabbcc01');
+  });
+});
+
+describe('lineSeamColorOf', () => {
+  it('returns the stored seam color, or undefined when unset (no seam by default)', () => {
+    expect(lineSeamColorOf({ seamColor: '#ff000080' })).toBe('#ff000080');
+    expect(lineSeamColorOf({})).toBeUndefined();
+    expect(lineSeamColorOf(null)).toBeUndefined();
+    expect(lineSeamColorOf(undefined)).toBeUndefined();
   });
 });
 

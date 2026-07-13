@@ -405,6 +405,15 @@ export function assignLinePriorities(
 // in the shared interior — WITHOUT the global "all casing first" reorder that
 // historically erased the between-lines separators.
 export const CASING_EPS = 0.5;
+// The branch seam (interior overlap indicator) paints just IN FRONT of its own
+// body: a stripe emits a `seam` renderable at `priority − SEAM_EPS`. It must
+// clear the body (0 < SEAM_EPS) yet not collide with a neighbour line's casing:
+// with integer base priorities (gap ≥ 1), a neighbour's casing sits at
+// `(p−1) + CASING_EPS = p − 0.5`, so SEAM_EPS ≠ CASING_EPS keeps them distinct
+// (0.25 vs 0.5). Clipped to the line's own corridor (see SeamClips), the seam
+// only shows where the line overlaps itself — so its z only matters versus the
+// line's own bodies, which it correctly sits above.
+export const SEAM_EPS = 0.25;
 
 // Flatten bands + markers into a single list of renderables, sorted
 // back-to-front for paint order. Each stripe in a band ships at its own line's
@@ -414,6 +423,7 @@ export const CASING_EPS = 0.5;
 // `kind` distinguishes:
 //   - 'stripe' : one body path of a band, identified by (band, stripeIndex).
 //   - 'casing' : that stripe's casing silhouette, at priority + CASING_EPS.
+//   - 'seam'   : that stripe's branch-seam ring, at priority − SEAM_EPS.
 //   - 'marker' : a stop square for one line at one station.
 //
 // Band routing warnings are NOT emitted here — they paint in a dedicated
@@ -423,6 +433,7 @@ export const CASING_EPS = 0.5;
 export type OrderedRenderable =
   | { kind: 'stripe'; band: SegmentBandSpec; stripeIndex: number; priority: number }
   | { kind: 'casing'; band: SegmentBandSpec; stripeIndex: number; priority: number }
+  | { kind: 'seam'; band: SegmentBandSpec; stripeIndex: number; priority: number }
   | { kind: 'marker'; spec: StopMarkerSpec; priority: number };
 
 export function buildOrderedRenderables(
@@ -435,6 +446,7 @@ export function buildOrderedRenderables(
       const priority = band.linePriorities[i];
       list.push({ kind: 'stripe', band, stripeIndex: i, priority });
       list.push({ kind: 'casing', band, stripeIndex: i, priority: priority + CASING_EPS });
+      list.push({ kind: 'seam', band, stripeIndex: i, priority: priority - SEAM_EPS });
     }
   }
   for (const m of markers) {

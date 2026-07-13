@@ -25,7 +25,7 @@ import {
 } from './transferStyle';
 import { canonicalLineWidth } from './lineWidth';
 import { DOT_SIZE_DEFAULT, canonicalDotSize } from './dotSize';
-import { canonicalStrokeColor, canonicalStrokeWidth } from './lineStroke';
+import { canonicalStrokeColor, canonicalStrokeWidth, canonicalSeamColor } from './lineStroke';
 import { DEFAULT_DOT_STYLE, DOT_SHAPE_PRESETS, dotStylesEqual } from './dotStyle';
 import {
   adoptDefaultStyles,
@@ -712,6 +712,16 @@ function sanitizeLineStroke(line: Line): Line {
       next = { ...next, strokeColor: stored };
     }
   }
+  if ('seamColor' in line) {
+    const raw = line.seamColor as unknown;
+    const stored = typeof raw === 'string' ? canonicalSeamColor(raw) : undefined;
+    if (stored === undefined) {
+      const { seamColor: _gone, ...rest } = next;
+      next = rest;
+    } else if (stored !== next.seamColor) {
+      next = { ...next, seamColor: stored };
+    }
+  }
   return next;
 }
 
@@ -1192,12 +1202,16 @@ function sanitizeStyleProps(kind: StyleKind, raw: unknown): StyleDef['props'] | 
       const strokeColor = asString(o.strokeColor);
       if (!dot || dotSize === undefined || width === undefined) return undefined;
       if (strokeWidth === undefined || strokeColor === undefined) return undefined;
+      // seamColor is OPTIONAL — absent ⇒ no seam; a malformed value is dropped
+      // (treated as absent) rather than invalidating the whole def.
+      const seamColor = asString(o.seamColor);
       return canonicalStyleProps('line', {
         defaultDotStyle: dot,
         defaultDotSize: dotSize,
         width,
         strokeWidth,
         strokeColor,
+        ...(seamColor !== undefined ? { seamColor } : {}),
       });
     }
     case 'textLabel': {

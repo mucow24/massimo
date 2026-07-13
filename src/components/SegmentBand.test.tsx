@@ -316,6 +316,52 @@ describe('<SegmentBand> — casing (silhouette + inset body)', () => {
   });
 });
 
+describe('<SegmentBand> — branch seam (pass="seam")', () => {
+  const seamLines = (seamColor: string | undefined, strokeWidth = 4): Record<LineId, Line> => ({
+    L1: makeLine({
+      id: 'L1',
+      stations: ['s1', 's2'],
+      ...(strokeWidth > 0 ? { strokeWidth } : {}),
+      ...(seamColor ? { seamColor } : {}),
+    }),
+  });
+
+  const renderSeam = (lines: Record<LineId, Line>) =>
+    render(
+      <svg>
+        <SegmentBand spec={baseSpec(['L1'])} stripeIndex={0} pass="seam" lines={lines} />
+      </svg>,
+    );
+
+  const startY = (p: Element) => Number(p.getAttribute('d')!.match(/M [\d.-]+ ([\d.-]+)/)![1]);
+
+  it('paints two clipped seam rings just OUTSIDE the body edges, in the seam color', () => {
+    const { container } = renderSeam(seamLines('#ff000080'));
+    const rings = Array.from(container.querySelectorAll('[data-band-seam]'));
+    expect(rings.length).toBe(2);
+    for (const r of rings) {
+      expect(r.getAttribute('stroke')).toBe('#ff000080'); // alpha preserved
+      expect(r.getAttribute('stroke-width')).toBe('4'); // railW
+      expect(r.getAttribute('data-line-id')).toBe('L1');
+    }
+    // Ring centers at ±(width/2 + railW/2) = ±(7 + 2) = ±9 — outside the edges.
+    expect(rings.map(startY).sort((a, b) => a - b)).toEqual([-9, 9]);
+    // Clipped to the line's own corridor so the seam only shows over overlaps.
+    const g = container.querySelector('g[clip-path]')!;
+    expect(g.getAttribute('clip-path')).toBe('url(#seam-clip-L1)');
+  });
+
+  it('renders nothing without a seam color', () => {
+    const { container } = renderSeam(seamLines(undefined));
+    expect(container.querySelector('[data-band-seam]')).toBeNull();
+  });
+
+  it('renders nothing when the line has no casing width (seam reuses it)', () => {
+    const { container } = renderSeam(seamLines('#ff000080', 0));
+    expect(container.querySelector('[data-band-seam]')).toBeNull();
+  });
+});
+
 describe('<BandWarning>', () => {
   const warnSpec = (lineIds: LineId[], centerline: { x: number; y: number }[]): SegmentBandSpec => {
     const spec = baseSpec(lineIds);

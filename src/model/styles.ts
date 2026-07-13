@@ -23,6 +23,7 @@ import {
   setLineDefaultDotSize,
   setLineDefaultDotStyle,
   setLineStrokeColor,
+  setLineSeamColor,
   setLineStrokeWidth,
   setLineWidth,
   updatePolygon,
@@ -37,6 +38,8 @@ import { LINE_WIDTH_MIN, lineWidthOf } from './lineWidth';
 import {
   LINE_STROKE_STEP,
   LINE_STROKE_WIDTH_MIN,
+  canonicalSeamColor,
+  lineSeamColorOf,
   lineStrokeColorOf,
   lineStrokeWidthOf,
 } from './lineStroke';
@@ -91,12 +94,16 @@ export function captureStyleProps<K extends StyleKind>(
     case 'line': {
       const l = doc.lines[itemId];
       if (!l) return null;
+      const seamColor = lineSeamColorOf(l);
       return {
         defaultDotStyle: l.defaultDotStyle ?? DEFAULT_DOT_STYLE,
         defaultDotSize: lineDefaultDotSizeOf(l),
         width: lineWidthOf(l),
         strokeWidth: lineStrokeWidthOf(l),
         strokeColor: lineStrokeColorOf(l),
+        // Optional: omitted when the line has no seam, so a captured style of a
+        // seamless line compares equal to one that never had the key.
+        ...(seamColor !== undefined ? { seamColor } : {}),
       } as StylePropsByKind[K];
     }
     case 'textLabel': {
@@ -170,7 +177,8 @@ export function stylePropsEqual(
       la.defaultDotSize === lb.defaultDotSize &&
       la.width === lb.width &&
       la.strokeWidth === lb.strokeWidth &&
-      la.strokeColor === lb.strokeColor
+      la.strokeColor === lb.strokeColor &&
+      la.seamColor === lb.seamColor
     );
   }
   if (kind === 'transfer') {
@@ -204,6 +212,9 @@ export function canonicalStyleProps<K extends StyleKind>(
   switch (kind as StyleKind) {
     case 'line': {
       const p = props as LineStyleProps;
+      // Canonical seam: off (transparent) collapses to omitted, mirroring the
+      // line field.
+      const seamColor = p.seamColor == null ? undefined : canonicalSeamColor(p.seamColor);
       return {
         defaultDotStyle: p.defaultDotStyle,
         defaultDotSize: Math.max(DOT_SIZE_MIN, Math.round(p.defaultDotSize)),
@@ -213,6 +224,7 @@ export function canonicalStyleProps<K extends StyleKind>(
           Math.round(p.strokeWidth / LINE_STROKE_STEP) * LINE_STROKE_STEP,
         ),
         strokeColor: p.strokeColor.toLowerCase(),
+        ...(seamColor !== undefined ? { seamColor } : {}),
       } as StylePropsByKind[K];
     }
     case 'textLabel': {
@@ -288,6 +300,8 @@ function stampStyle(doc: MapDoc, def: StyleDef, itemId: string): MapDoc {
       next = setLineWidth(next, itemId, p.width);
       next = setLineStrokeWidth(next, itemId, p.strokeWidth);
       next = setLineStrokeColor(next, itemId, p.strokeColor);
+      // undefined ⇒ fully transparent ⇒ removes any prior seam (stamp "off").
+      next = setLineSeamColor(next, itemId, p.seamColor ?? '#00000000');
       break;
     }
     case 'textLabel': {
