@@ -156,16 +156,16 @@ describe('MapCanvas — stroke edits repaint without a geometry rebuild', () => 
       useSelection.getState().selectLine('L1');
     });
     expect(railPathCount()).toBe(4);
-    // Highlight copies: s1 repaints rails + cap (3), but s2 — the arrow
-    // tip (the display-tail terminus) — suppresses its cap (2): the cased
-    // arrowhead is the line's end.
-    expect(markerCasingEls('L1')).toHaveLength(11);
+    // Highlight copies: both s1 and s2 repaint rails + cap (3 each). The
+    // direction arrows were removed, so the display-tail terminus no longer
+    // suppresses its cap — nothing replaces the line's end anymore.
+    expect(markerCasingEls('L1')).toHaveLength(12);
 
-    // The terminus arrowhead is cased too: an underlay copy fattened by
-    // 2× the stroke width (10 + 2*4 = 18) in the stroke color.
+    // No cased terminus arrowhead survives: there is no fattened underlay
+    // copy (10 + 2*4 = 18 wide) in the stroke color.
     const arrowCasing = Array.from(document.querySelectorAll('path')).filter(
       (p) => p.getAttribute('stroke-width') === '18' && p.getAttribute('stroke') === '#ffffff',
     );
-    expect(arrowCasing.length).toBe(1);
+    expect(arrowCasing.length).toBe(0);
   });
 });
