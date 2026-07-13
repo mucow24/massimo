@@ -154,6 +154,14 @@ describe('MapCanvas — stroke edits repaint without a geometry rebuild', () => 
       useSelection.getState().selectLine('L1');
     });
     expect(bandSilhouettes()).toBe(2); // main + overlay copy (silhouette casing)
+    // …but the overlay copy carries NO band DOM identity: hit-testing (see
+    // hitStack) and the [data-band-*] DOM queries still see exactly the one
+    // main-layer casing + body for L1, never a second (double-matching) copy —
+    // which is why bandSilhouettes() has to count by signature, not by tag.
+    expect(casingEls('L1')).toHaveLength(1);
+    expect(
+      Array.from(document.querySelectorAll('[data-band-stripe][data-line-id="L1"]')),
+    ).toHaveLength(1);
     // Highlight copies: both s1 and s2 repaint rails + cap (3 each). The
     // direction arrows were removed (#238), so the display-tail terminus no
     // longer suppresses its cap — nothing replaces the line's end anymore.
