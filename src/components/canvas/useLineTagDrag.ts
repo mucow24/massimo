@@ -1,6 +1,5 @@
 import { RefObject, useRef, useState } from 'react';
 import { beginHistoryGroup, useDoc } from '../../state/store';
-import { useSnapPrefs } from '../../state/snapPrefs';
 import type { LineId, StationId } from '../../model/types';
 import { edgeEndpoints } from '../../model/lineTopology';
 import type { SnapGuide } from '../../geometry/snap';
@@ -27,9 +26,10 @@ export interface LineTagDragApi {
  * pointerdown captures pre-drag state, threshold of 4 screen px before
  * registering a drag, pointermove projects cursor onto the line's path
  * across all segments + snaps to the nearest neighbouring tag in the same
- * corridor — gated on "Snap to all" and bypassed by Shift, with a labeled
- * guide to the matched neighbor and an engage radius held constant in
- * screen px (tolerance ÷ zoom), matching the other drag hooks.
+ * corridor — always on (an interlined tag naturally lines up with its
+ * siblings) and bypassed by Shift, with a labeled guide to the matched
+ * neighbor and an engage radius held constant in screen px (tolerance ÷
+ * zoom), matching the other drag hooks.
  */
 export function useLineTagDrag(
   svgRef: RefObject<SVGSVGElement | null>,
@@ -143,14 +143,13 @@ export function useLineTagDrag(
     if (!best) return;
 
     // Snap to the nearest neighbor tag in the same corridor (any line, any
-    // stripe). Pure helper converts each neighbor's (anchorEnd, distance) to
-    // a canonical-t using THAT neighbor's own stripe length. Gated on "Snap
-    // to all" (the item-to-item alignment pref); Shift bypasses.
-    const modes = useSnapPrefs.getState().modes;
-    const snapOn = modes.all !== 'off' && !e.shiftKey;
-    const snap = snapOn
+    // stripe), aligned by cross-section so it lands directly across from its
+    // neighbor even where the band curves. Always on — a tag naturally lines
+    // up with its interlined siblings; Shift bypasses.
+    const snap = !e.shiftKey
       ? snapNeighborTag({
           candCanonT: best.tCanon,
+          candOffset: best.offset,
           candPairKey: best.pairKey,
           selfTagId: ds.tagId,
           bandCenterline: best.band.centerline,
