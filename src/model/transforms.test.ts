@@ -3470,6 +3470,23 @@ describe('loops and branches (edge-set topology)', () => {
     expect(cut.lines.L1.segmentStyles).toEqual({}); // orphaned override pruned
   });
 
+  it('insert-after splices the new stop into an existing edge (rewires prev–next)', () => {
+    const base = makeDoc({
+      stations: [
+        makeStation({ id: 'a', stops: [makeStop('L1')] }),
+        makeStation({ id: 'b', stops: [makeStop('L1')] }),
+        makeStation({ id: 'c', stops: [] }),
+      ],
+      // a–b is a real edge; inserting c after a must BREAK a–b and wire a–c + c–b
+      // (the splice branch of edgesAfterInsert). This is the most common line edit.
+      lines: [makeLine({ id: 'L1', stations: ['a', 'b'], edges: ['a|b'] })],
+    });
+    const out = T.toggleStationOnLine(base, 'L1', 'c', 0); // insert c after a (index 0)
+    expect(out.lines.L1.stations).toEqual(['a', 'c', 'b']);
+    // The a–b chord is gone; a–c and b–c (canonical) replace it — no phantom a|b.
+    expect(new Set(out.lines.L1.edges)).toEqual(new Set(['a|c', 'b|c']));
+  });
+
   it('insert-after does not fabricate an edge to a non-adjacent display-next stop', () => {
     const base = makeDoc({
       stations: [

@@ -31,6 +31,7 @@ import {
   lineStrokeWidthOf,
 } from '../../model/lineStroke';
 import { StationGraph } from './StationGraph';
+import { BranchGlyph } from './BranchGlyph';
 
 // Clear the line editor's pointer-hover highlights (the white dot casing and
 // the segment-corridor wash). Call this whenever a hovered row/divider is
@@ -56,29 +57,6 @@ const NEXT_STYLE: Record<LineStyle, LineStyle> = {
   dotted: 'dashed-open',
   'dashed-open': 'solid',
 };
-
-// A downward junction glyph: a track heading down that also branches off to the
-// right, both ending in an arrowhead — the "start a branch here" affordance.
-function BranchGlyph() {
-  return (
-    <svg
-      width="14"
-      height="14"
-      viewBox="0 0 15 15"
-      fill="none"
-      stroke="currentColor"
-      strokeWidth={1.3}
-      strokeLinecap="round"
-      strokeLinejoin="round"
-      aria-hidden
-    >
-      <path d="M4 1.5 V13" />
-      <path d="M1.8 10.5 L4 13 L6.2 10.5" />
-      <path d="M4 5 C 9 5, 11 6.5, 11.2 12" />
-      <path d="M9 9.7 L11.2 12.2 L13.2 9.4" />
-    </svg>
-  );
-}
 
 // One small insert-zone button (the active state fills with the line color).
 function ZoneButton({

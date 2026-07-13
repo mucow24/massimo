@@ -194,6 +194,27 @@ describe('serialize / parse — segmentStyles', () => {
     if (r.ok) expect(r.doc.lines.L1.segmentStyles).toEqual({});
   });
 
+  it('backfills line edges from the stations order for pre-edges files', () => {
+    const raw = {
+      format: 'massimo-map',
+      doc: makeDoc({
+        stations: [
+          makeStation({ id: 's1', stops: [makeStop('L1')] }),
+          makeStation({ id: 's2', stops: [makeStop('L1')] }),
+          makeStation({ id: 's3', stops: [makeStop('L1')] }),
+        ],
+        lines: [makeLine({ id: 'L1', stations: ['s1', 's2', 's3'] })],
+      }),
+    };
+    // Simulate a file saved BEFORE the `edges` field existed. Without the parse
+    // backfill, `ln.edges` is undefined and the renderer white-screens on
+    // `ln.edges.join(...)` — this path is distinct from the localStorage rehydrate.
+    delete (raw.doc.lines.L1 as { edges?: unknown }).edges;
+    const r = parse(JSON.stringify(raw));
+    expect(r.ok).toBe(true);
+    if (r.ok) expect(r.doc.lines.L1.edges).toEqual(['s1|s2', 's2|s3']);
+  });
+
   it("drops entries whose pair-key isn't an adjacency on the line", () => {
     const doc = makeDoc({
       stations: [
