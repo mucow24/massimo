@@ -1,6 +1,6 @@
 # Massimo — Architecture
 
-**Up to date as of commit `be94293` (2026-07-12) — verified 2026-07-12 against the live source (code-health pass; no architectural changes).**
+**Up to date as of commit `3646333` (2026-07-13) — verified against the live source (code-health pass covering the edge-set line topology, branch/loop seams + continuous casing, and per-station text styles landed since the prior refresh).**
 
 > A fast-bootstrap reference for understanding the codebase: the ins, outs, gotchas, and
 > caveats. Written for an AI assistant (or new contributor) who needs the full picture
@@ -114,6 +114,7 @@ src/
     lineWidth.ts lineStroke.ts  # stripe width (GEOMETRY) + casing rails (PRESENTATION)
     lineOrder.ts layerPriority.ts  # z-order reconcile + per-segment layer math
     lineNaming.ts               # nameForIndex/pickNextLineName (next free letter name)
+    lineTopology.ts             # the single owner of a Line's edge-set adjacency (degree/neighbours/incidence, add/remove edge, edgesFromStations)
     matching.ts pathSelect.ts   # interlining-group matching + shortest-path selection
     autoOrient.ts               # rotate a just-added station to the line tangent
     clipboard.ts                # ClipPayload union + read/write + SVG-href security guard
@@ -154,9 +155,10 @@ src/
     Toolbar.tsx Sidebar.tsx Menu.tsx  # chrome
     *Popover.tsx                # on-canvas item editors
     canvas/                     # interaction layer: drag/placement/viewport hooks + overlay layers
-    inspector/                  # LineInspector (sidebar) + StationInspector (hosted by the
-                                #   on-canvas StationPopover) + pure math: stopGridDrag.ts,
-                                #   stationBandGeometry.ts
+    inspector/                  # LineInspector (sidebar; incl. the StationGraph edge/branch/loop
+                                #   editor) + StationInspector (hosted by the on-canvas
+                                #   StationPopover) + pure math: stopGridDrag.ts,
+                                #   stationBandGeometry.ts, lineGraphLayout.ts (git-graph trunk/lane layout)
 
   export/                       # exportCanvas.ts (SVG/PNG), fonts.ts, exportCanvasPdf.ts
                                 #   + pure PDF-gap modules pdfHatch/pdfText/pdfGlyphs/
@@ -267,11 +269,6 @@ interface MapDoc {
   polygonOrder: string[]; // LATER = top (opposite of lineOrder)
   svgImages: Record<string, SvgImage>;
   svgImageOrder: string[]; // LATER = top
-  labelFontSize: number; // global station-name styling
-  labelWeight: TextLabelWeight;
-  labelItalic: boolean;
-  labelLeading: number;
-  labelTracking: number; // line-spacing mult / em letter-spacing (1 / 0 = neutral)
   activePalettes: PaletteId[]; // INVARIANT: never empty
   styles: Record<string, StyleDef>; // named per-kind formatting presets ("Styles")
   styleDefaults: Record<StyleKind, string>; // per-kind DEFAULT designation (style id)
@@ -285,10 +282,17 @@ wearing it follows). Pre-retirement saves carried `transferThickness/transferCol
 transferStrokeWidth/transferStrokeColor`; both load paths bake them into per-transfer overrides
 (`bakeLegacyTransferSettings`, persist v10).
 
+Likewise there are **no doc-level station-label settings** anymore — station name typography is
+**per-station** (`Station.fontSize/weight/italic/leading/tracking`, each collapse-at-default) and
+the map-wide knob is the designated default `'station'` style. Pre-retirement saves carried
+`labelFontSize/labelWeight/labelItalic/labelLeading/labelTracking`; both load paths bake them into
+per-station values and seed the default station style (`bakeLegacyLabelSettings`, persist v14),
+mirroring the transfer retirement.
+
 `DEFAULT_DOC` (in [transforms.ts](src/model/transforms.ts)) is the merge baseline: empty
 collections, `name: 'Untitled map'`, `curveRadius: 24`, `lineCounter: 0`, `activePalettes:
-['mta']`, `labelItalic: false`, `styles: DEFAULT_STYLES` — the five factory "Default"
-presets (one per styleable kind: line, textLabel, polygon, routeBullet, transfer) — and
+['mta']`, `styles: DEFAULT_STYLES` — the six factory "Default"
+presets (one per styleable kind: line, textLabel, polygon, routeBullet, transfer, station) — and
 `styleDefaults: FACTORY_STYLE_DEFAULTS` designating them. Styles are doc-scoped: applying one
 stamps its props onto the item through the canonical setters and tags it (`styleId`, invariant:
 tagged => the item's covered values equal the style's props); editing a covered field detaches
@@ -310,9 +314,15 @@ kind. See [styles.ts](src/model/styles.ts).
 - `isWaypoint?` — a "routing point": hide name + all bullet glyphs + drop the label hit rect;
   the station stays selectable/draggable via its stop-cell hit rect. Per-stop styles are **not**
   mutated when this toggles.
-- `labelBold?` — bump rendered weight **two steps** heavier along the weight table (clamped at
-  900).
-- `labelItalic?` — OR'd with the doc-global `labelItalic`.
+- `fontSize? / weight? / italic? / leading? / tracking?` — **per-station name typography**, each
+  omitted at its `LABEL_*` default (fontSize→`LABEL_FONT_SIZE_DEFAULT`, weight→`LABEL_WEIGHT_DEFAULT`,
+  italic→false, leading→`LABEL_LEADING_DEFAULT`, tracking→`LABEL_TRACKING_DEFAULT`). These are the
+  five fields covered by the `'station'` StyleDef; editing any of them detaches the `styleId` tag.
+  The hover bump and append-starter styling are applied at **paint time**, not stored here.
+- `styleId?` — live link to a StyleDef of kind `'station'` (see MapDoc.styles); covers the
+  typography above, not identity. Same contract as `Line.styleId`.
+- `editorHeight?` — remembered CSS-px height of the inspector Name box (editing-UI only; never
+  affects the rendered name). Mirrors `TextLabel.editorHeight`.
 - `locked?` — **canvas protection**: can't be dragged, marquee-selected, group-towed, nudged,
   rotated (right-click rotate is a no-op; group rotate skips locked members), or deleted. A
   locked item is also **click-through while unselected** (its hit surfaces drop pointer-events,
@@ -349,10 +359,22 @@ octant relative to the nearest stop (see `labelLayoutLocal`); `offset`/`offsetPe
 autoAlign's multi-line handling: within-block line alignment, and which line anchors.
 
 **`Line`** — `id, service` (the route code shown in bullets), `name, color`, `stations:
-StationId[]` (ordered path), `waypoints?`. All other fields optional and **never stored at
-default**:
+StationId[]`, and the required `edges: string[]`.
 
-- `segmentStyles?: Record<pairKey, LineStyle>` — per-segment style; missing ⇒ `'solid'`.
+- `stations` are the line's **members** (one StopCell each). Their order is **DISPLAY ONLY** (the
+  inspector list, "reverse", stable iteration); it does **not** define the route.
+- `edges` is the route: the connectivity as an **EDGE SET** of canonical `pairKeyOf(a,b)` strings,
+  each unique. This — not `stations` order — is what the renderer, interlining, tags, and
+  per-segment overrides key off. A path is a chain of edges, a **loop** a cycle, a **branch** a
+  station of **degree ≥ 3**. All adjacency (degree, neighbours, incidence, add/remove) is derived
+  in the single owner module **[lineTopology.ts](src/model/lineTopology.ts)** so no consumer
+  re-scans `stations`. Saves predating the field backfill `edges` from consecutive `stations`
+  pairs on load (`edgesFromStations`; serialize.ts / migrateDoc — unconditional, see below).
+
+All remaining fields optional and **never stored at default**:
+
+- `segmentStyles?: Record<pairKey, LineStyle>` — per-segment style; missing ⇒ `'solid'`. Valid
+  keys are exactly this line's `edges`.
 - `segmentLayers?: Record<pairKey, number>` — per-segment z-layer; missing ⇒ 0; **uncapped** ±.
 - `defaultDotStyle?: DotStyle` — missing ⇒ `DEFAULT_DOT_STYLE` (filled-black).
 - `defaultDotSize?: number` — dot diameter px; missing ⇒ `DOT_SIZE_DEFAULT` (= 2×`STOP_DOT_RADIUS` = 8).
@@ -361,10 +383,19 @@ default**:
 - `strokeWidth?: number` — **casing rail, PRESENTATION**; centered on the body edges (half in /
   half out), missing ⇒ 0; rounded to a 0.5 grid. Resolved live; never moves paths.
 - `strokeColor?: string` — casing color; missing ⇒ `'#ffffff'`; lowercased.
+- `seamColor?: string` — **interior seam** for a branch/loop: where a line's OWN bands overlap (a
+  self-junction) the casing normally merges away; set this to paint a subtle stroke there so the
+  overlap still reads as two tracks. Lowercase hex, may carry alpha (`#rrggbbaa`). Missing ⇒ no
+  seam; dropped when unset or fully transparent (the "off" state). PRESENTATION, like the casing.
+- `seamWidth?: number` — seam width per side, world units. Stored like `strokeWidth` (drop at 0),
+  but an **unset** value inherits the casing width at render time (`seamRenderWidth`) so a
+  seam-color-only line still shows a seam. Only takes effect alongside a non-transparent `seamColor`.
+- `styleId?` — live link to a StyleDef of kind `'line'` (covers the style fields above, not
+  identity/topology).
 
-> **Width is GEOMETRY, stroke is PRESENTATION.** A `width` edit rebuilds band geometry; a
-> `strokeWidth`/`strokeColor`/color/style edit is resolved at render time and never rebuilds.
-> This split is exploited by the band-geometry memo (see Interaction layer).
+> **Width is GEOMETRY, stroke/seam are PRESENTATION.** A `width` edit rebuilds band geometry; a
+> `strokeWidth`/`strokeColor`/`seamColor`/`seamWidth`/color/style edit is resolved at render time
+> and never rebuilds. This split is exploited by the band-geometry memo (see Interaction layer).
 
 **`DotStyle`** ([dotStyle.ts](src/model/dotStyle.ts)) — a procedural stop dot. **All fields
 required** (a deliberate divergence from the optional-field convention) so plain deep equality
@@ -411,7 +442,7 @@ sizes to content and honors manual `\n`; `>0` = a fixed-width column that word-w
 darkColor` (day/night; **defaults DIFFER**: `#111111` / `#ffffff` for legibility — unlike a
 polygon whose dark default equals its light; backfilled on load), `locked?`, plus optional
 per-label `leading` (line-spacing multiplier) / `tracking` (em letter-spacing) — station labels
-instead take the doc-global `labelLeading`/`labelTracking`.
+carry their own per-station `leading`/`tracking` (see `Station`), no longer any doc-global.
 
 **`RouteBullet`** — a free-floating route badge showing one line's service code in its color.
 `id, x, y, rotation: Rotation, lineId: LineId | null` (null = unset placeholder), `shape:
@@ -468,7 +499,9 @@ by the **Load…** menu. Pure, returns `{ok, doc}` or `{ok:false, error}`:
 3. `merged = { ...DEFAULT_DOC, ...doc }` — the entire defaulting mechanism.
 4. `validActivePalettes` (enforce ≥1 valid palette).
 5. Per-line clean (clamp width/dotSize/stroke, drop never-stored defaults, drop segment keys that
-   aren't real adjacencies) + `backfillLineNames`.
+   aren't real adjacencies) + `backfillLineEdges` (derive `edges` from the legacy `stations` order
+   for pre-topology saves — unconditional, since a missing `edges` white-screens the renderer) +
+   `backfillLineNames`.
 6. `sanitizeStations` (legacy orientations + `valign:'auto'`→`'auto-down'`).
 7. `convertLegacyDotShapes` (preset ids → `DotStyle`) — **runs after** the line/station passes.
 8. `sanitizeStopDotSizes` — **must run after** the per-line pass (a stop compares against the
@@ -481,7 +514,9 @@ by the **Load…** menu. Pure, returns `{ok, doc}` or `{ok:false, error}`:
     and a `styleDefaults` entry resolving per kind). **Before** the transfer bake, which seeds
     the _designated_ default transfer style.
 11. `bakeLegacyTransferSettings` (retired doc-level transfer settings → per-transfer overrides;
-    idempotent, keyed off field presence) then `sanitizeTransferStyles`.
+    idempotent, keyed off field presence) then `sanitizeTransferStyles`, then
+    `bakeLegacyLabelSettings` (retired doc-level station-label settings → per-station typography +
+    seed the designated default station style; idempotent, keyed off field presence).
 12. `migrateLegacyBulletSyntax` — gated on the **file's own** `version < 2` (the one version-gated,
     non-idempotent step in Path A).
 13. `pruneDanglingStyleRefs` — **last**, so dangling / wrong-kind / value-mismatched `styleId`
@@ -494,7 +529,7 @@ Path A does **more** than Path B because hand-edited files can be non-canonical 
 sanitizers `sanitizeLineWidth/Stroke/DotSize/Segments/StopDotSizes` exist for this).
 
 **Path B — localStorage rehydration: `migrateDoc(persisted, version)`** ([store.ts](src/state/store.ts)).
-The zustand `persist` config: `name: 'vignelli-map-doc-v1'`, `version: 12`, `migrate:
+The zustand `persist` config: `name: 'vignelli-map-doc-v1'`, `version: 14`, `migrate:
 migrateDoc`, `partialize: pickDocSnapshot`. Because the persist-merge already fills absent fields
 from the initial state, `migrateDoc` only does **value-level legacy fixups, version-gated**, on
 disjoint fields (order immaterial except where noted), never mutating the input:
@@ -513,13 +548,16 @@ disjoint fields (order immaterial except where noted), never mutating the input:
 | `v<11`      | `adoptDefaultStyles` (tag untagged, default-looking items — mirrors Path A's step 14)                                                      |
 | `v<12`      | nothing of its own — the bump just forces pre-designation storage through migrate so the style-invariant pass backfills `styleDefaults`    |
 | `v<13`      | `backfillTransferDayNightColors` (transfer per-transfer overrides + transfer StyleDef props: legacy single-color strings → `{day, night}` pairs) — ordered **after** the `v<10` bake, **before** the `v<11` adoption (which now compares transfer props by `.day`/`.night`) |
+| `v<14`      | `bakeLegacyLabelSettings` (retired doc-level `labelFontSize/labelWeight/labelItalic/labelLeading/labelTracking` → per-station typography + seed the designated default station style) — ordered **after** the `v<3` `labelBold`→`labelWeight` step (so it sees the materialized weight) and the edge/style invariant passes |
+| (not gated) | `backfillLinesEdges` whenever `lines !== undefined` — every rehydrate, **not** `v<14`-gated: an intermediate build bumped the persist version to 14 and re-saved lines BEFORE they carried `edges`, so a `v<14` gate could never recover those (`ln.edges.join(...)` white-screens on load). Reference-stable when every line already has an array |
 | (not gated) | `ensureStyleInvariants` whenever `styles !== undefined` — ordered between the `v<10` hygiene and the bake (the bake seeds the _designated_ default transfer style; adoption stamps designated defaults) |
 | (not gated) | `validActivePalettes` whenever `activePalettes !== undefined`                                                                              |
 
-A **corrupt/missing version is treated as v0** (all migrations run). The two invariant
-repairs are **not** tied to a schema bump — they run any time their field is present (an absent
-field is left for the persist-merge). `validActivePalettes` reads
-`useCustomPalettes.getState().palettes` to validate custom ids.
+A **corrupt/missing version is treated as v0** (all migrations run). The three non-gated
+repairs (`backfillLinesEdges`, `ensureStyleInvariants`, `validActivePalettes`) are **not** tied to
+a schema bump — they run any time their field is present (an absent field is left for the
+persist-merge). `validActivePalettes` reads `useCustomPalettes.getState().palettes` to validate
+custom ids.
 
 > **Do not "simplify" the two paths into one.** `storeMigrate.test.ts` pins reference-equality
 > pass-through for already-canonical docs (`expect(out).toBe(input)`); adding a file-only width
@@ -618,7 +656,9 @@ Not persisted, not undoable. Two key pieces:
 **`UiMode`** — a discriminated union, **exactly one editor mode active at a time**:
 `idle | placing-station | creating-line-tag | creating-route-bullet | creating-transfer(anchor)
 | placing-label | creating-polygon | placing-svg(image) | appending-to-line(lineId,
-insertAfterIndex) | layering | editing-station-layout(stationId)`. Entering a non-idle mode wipes
+insertAfterIndex, draw?) | layering | editing-station-layout(stationId)`. (`draw?` on
+appending-to-line marks the drag-to-draw sub-gesture of the graph line editor.) Entering a
+non-idle mode wipes
 all selections — with one exception: `startEditingStationLayout` **preserves** the station
 selection and mirror state (the mode edits the selected station in place). Adding a new mode is
 one variant + handlers; its right-click policy is declared in one place,
@@ -639,6 +679,10 @@ set of vertex indices — shift-click toggles more in/out; independent of the po
 the polygon stays selected while its vertex handles are active). Selectors:
 `soleSelection(s)` (non-null only when total across all five lists === 1) and
 `getCopyableSelection(s)` (everything **except stations** — the clipboard has no station payload).
+
+Separately, `hoveredCanvasItem: HoveredCanvasItem | null` (`{kind: HoverKind, id}`) tracks the
+item under the cursor so the canvas can preview each item's selection chrome at 50% opacity on
+mouseover — a pure hover cue, independent of the selection lists above.
 
 ### Viewport: committed vs live ([viewportStore.ts](src/state/viewportStore.ts))
 
@@ -736,6 +780,17 @@ identity. The band specs are pinned by a **byte-exact golden snapshot**
 (`interlining.golden.test.ts`) guarding the zero-visual-change-for-legacy-docs invariant; never
 update it without understanding why every painted path on every map would move.
 
+**Casing & seam passes.** [SegmentBand.tsx](src/components/SegmentBand.tsx) emits **three
+renderables per stripe**, interleaved by z-priority: a `'silhouette'` pass (the fat under-stroke
+just behind the body, `priority + CASING_EPS`), the `'body'` pass (the inset colored stripe), and
+a `'seam'` pass (the branch/loop overlap indicator just in front, `priority − SEAM_EPS`). The
+casing widths come from [lineStroke.ts](src/model/lineStroke.ts) (`casingSilhouetteWidth` /
+`casingInsetBodyWidth` for opaque styles so a line's own overlapping bands merge into ONE outer
+casing; `CasingRails` centered rails for the two transparent "open" styles). The seam is two
+edge-centered strokes CLIPPED to the line's OTHER band corridors (`SeamClips.tsx`), so it only
+shows where a line crosses itself. All three read the same `lineStroke` helpers as the highlight
+overlay so they can't drift.
+
 ### Snapping — `snap.ts`, `polygonSnap.ts`
 
 **The contract.** Two snappers exist, on purpose, and everything positional routes through one
@@ -819,8 +874,8 @@ which are a separate slot-based system where Shift flips the lattice basis.
   text. Both free-floating text labels (`LabelView`) and station labels (`renderStationLabelText`)
   render these tags; the inline rename editor shows the raw tokens (`literalBullets`). Free-floating
   labels also carry optional `leading` (line-spacing multiplier) and `tracking` (em letter-spacing)
-  per label; station labels take the same two globally (doc `labelLeading` / `labelTracking`). Both
-  are applied by the measurer. Legacy docs (`<X>` circle bullets, unescaped literal pipes) are
+  per label; station labels carry the same two per-station (`Station.leading` / `Station.tracking`,
+  collapse-at-default). Both are applied by the measurer. Legacy docs (`<X>` circle bullets, unescaped literal pipes) are
   rewritten once by `migrateLegacyInlineTokens`, gated by persist v8 / file `version` 2.
 - **`measureTextLabel`** measures multi-line styled text **without a browser layout**: it lazily
   creates an offscreen 2D canvas and uses `ctx.measureText` (advance + ink bearings). **In jsdom
@@ -1127,7 +1182,11 @@ band routing or the marker sort. Pinned by `MapCanvas.stationsSig.test.tsx`.
   isn't baked into the clone, then restores it in `finally`.
 - **[Sidebar.tsx](src/components/Sidebar.tsx)** — Stations/Lines tabs, a sortable station list
   (rows select/deselect; the station editor itself is an on-canvas popover), and the
-  inline-expanded LINE inspector on the Lines tab.
+  inline-expanded LINE inspector on the Lines tab. The LineInspector hosts
+  **[inspector/StationGraph.tsx](src/components/inspector/StationGraph.tsx)** — a git-graph view
+  of the line's `edges` (trunk + loop-over-the-top arcs + branch lanes, laid out by the pure
+  **[inspector/lineGraphLayout.ts](src/components/inspector/lineGraphLayout.ts)**) where stops are
+  added, reordered, branched (degree-≥3 junctions), and looped by editing the edge set directly.
 - **[StationPopover.tsx](src/components/StationPopover.tsx)** — the station editor's home:
   mounted by `ItemPopovers` for a sole-selected station (idle mode, or that station's own
   layout-edit mode), hosting the full `StationInspector` — a Name header row with the
