@@ -175,7 +175,6 @@ export function lineGraphLayout(line: Line): LineGraphLayout {
     pairKey: string;
     upper: StationId; // earlier-visited endpoint
     lower: StationId; // later-visited endpoint
-    overTop?: boolean; // upper is a top root → arc comes in over the top
   }
   const seqOf = new Map<StationId, number>();
   const laneOf = new Map<StationId, number>();
@@ -183,13 +182,11 @@ export function lineGraphLayout(line: Line): LineGraphLayout {
   const treeEdges: TreeE[] = [];
   const loopEdges: LoopE[] = [];
   const visited = new Set<StationId>();
-  const rootSet = new Set<StationId>(); // stops started with no parent (top of a chain)
   let nextSeq = 0;
   let nextLane = 1; // lane 0 is the trunk
 
   const visit = (node: StationId, lane: number, parent: StationId | null) => {
     visited.add(node);
-    if (parent === null) rootSet.add(node);
     seqOf.set(node, nextSeq++);
     laneOf.set(node, lane);
     let kids = 0;
@@ -228,23 +225,23 @@ export function lineGraphLayout(line: Line): LineGraphLayout {
   };
   for (const r of roots) if (!visited.has(r)) visit(r, 0, null);
 
-  // Phase B — which stops get a blank row, and on which SIDE. Branch points and
-  // most loop endpoints tee off in a blank BELOW them. But a loop that closes
-  // back to a ROOT (a stop at the top of a chain, nothing above it) re-enters
-  // from the top: that endpoint reserves its blank ABOVE and the arc loops over
-  // it, so a loop-to-the-top reads as a loop rather than a trumpet.
+  // Phase B — which stops get a blank row, and on which SIDE. A branch point tees
+  // its extra child off in a blank BELOW it. A loop's UPPER endpoint always gets a
+  // blank ABOVE it and the arc loops over its top: a back-edge closes to an
+  // ancestor, so the upper endpoint is the TOP of its cycle and must read as being
+  // INSIDE the loop (teeing off below it would strand a cycle's entry junction
+  // visually above/outside its own loop). The lower endpoint tees off below, so
+  // the loop closes under it.
   const blankBelow = new Set<StationId>();
   const blankAbove = new Set<StationId>();
   for (const [node, k] of childCount) if (k >= 2) blankBelow.add(node);
   for (const lp of loopEdges) {
-    lp.overTop = rootSet.has(lp.upper);
-    if (lp.overTop) blankAbove.add(lp.upper);
-    else blankBelow.add(lp.upper);
+    blankAbove.add(lp.upper);
     blankBelow.add(lp.lower);
   }
 
   // Phase C — assign final rows in visit order, inserting the reserved blanks
-  // (above a loop-to-the-top endpoint, below everything else).
+  // (above a loop's upper endpoint, below branch points and loop lower endpoints).
   const inSeq = [...seqOf.keys()].sort((a, b) => seqOf.get(a)! - seqOf.get(b)!);
   const rowOf = new Map<StationId, number>();
   const blankRowOf = new Map<StationId, number>();
@@ -283,9 +280,10 @@ export function lineGraphLayout(line: Line): LineGraphLayout {
       toRow: rowOf.get(lp.lower)!,
       toLane: laneOf.get(lp.lower)!,
       kind: 'loop',
-      // Over-top loops come in from the blank ABOVE the upper stop; the rest tee
-      // off from the blank below it.
-      upperBlank: lp.overTop ? aboveRowOf.get(lp.upper)! : blankRowOf.get(lp.upper)!,
+      // The arc comes in over the top of the upper stop (from the blank ABOVE it)
+      // and tees off below the lower stop (the blank BELOW it), so both endpoints
+      // sit inside the loop.
+      upperBlank: aboveRowOf.get(lp.upper)!,
       lowerBlank: blankRowOf.get(lp.lower)!,
     });
   }

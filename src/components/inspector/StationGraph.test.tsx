@@ -1,6 +1,7 @@
 import { describe, it, expect, vi } from 'vitest';
 import { render, screen, fireEvent } from '@testing-library/react';
-import { StationGraph, type StationGraphProps } from './StationGraph';
+import { StationGraph, laneCenterX, type StationGraphProps } from './StationGraph';
+import { lineGraphLayout } from './lineGraphLayout';
 import { makeLine, makeStation, makeStop } from '../../test/fixtures';
 import type { Station } from '../../model/types';
 
@@ -29,6 +30,23 @@ const baseProps = (): Omit<StationGraphProps, 'line' | 'stations'> => ({
 });
 
 describe('StationGraph', () => {
+  it('renders the reported lasso (tail + loop) without crashing', () => {
+    // Tail A6–A5–A4–A3 + 5-cycle A3–A2–A1–B2–B1(–A3): 8 stops, 8 edges (7 tree +
+    // 1 loop back-edge). Guards against a render crash on a real branch+loop line.
+    const ids = ['A1', 'A2', 'A3', 'A4', 'A5', 'A6', 'B1', 'B2'];
+    const line = makeLine({
+      id: 'L1',
+      stations: ids,
+      edges: ['A1|A2', 'A2|A3', 'A3|A4', 'A4|A5', 'A5|A6', 'A3|B1', 'B1|B2', 'B2|A1'],
+    });
+    const { container } = render(
+      <StationGraph {...baseProps()} line={line} stations={stationsFor(ids)} />,
+    );
+    for (const id of ids) expect(screen.getByText(id)).toBeInTheDocument();
+    expect(container.querySelectorAll('circle')).toHaveLength(8); // one dot per stop
+    expect(container.querySelectorAll('path[stroke="transparent"]')).toHaveLength(8); // one per edge
+  });
+
   it('renders a row and a dot per stop, and a connector per edge', () => {
     const ids = ['s1', 's2', 'J', 's3', 's4'];
     const line = makeLine({
@@ -107,5 +125,33 @@ describe('StationGraph', () => {
     rerender(<StationGraph {...baseProps()} isAppending line={line} stations={stationsFor(ids)} />);
     expect(screen.getByRole('button', { name: /Remove s1/ })).toBeInTheDocument();
     expect(screen.getByRole('button', { name: /Branch from s1/ })).toBeInTheDocument();
+  });
+});
+
+describe('StationGraph lane mapping (stops hug the name column)', () => {
+  it('renders the trunk closest to the names, branches bowing away', () => {
+    // Trunk s1-s2-J-s3 in lane 0 with a branch J-s4 in lane 1. The name column
+    // sits to the RIGHT of the gutter, so the trunk (lane 0) must render at a
+    // LARGER x than the branch (lane 1): stops sit next to their names and the
+    // branch line is no longer stranded between the trunk dots and the text.
+    const layout = lineGraphLayout(
+      makeLine({
+        id: 'L1',
+        stations: ['s1', 's2', 'J', 's3', 's4'],
+        edges: ['s1|s2', 's2|J', 'J|s3', 'J|s4'],
+      }),
+    );
+    const lane = Object.fromEntries(layout.nodes.map((n) => [n.stationId, n.lane]));
+    expect(lane.s3).toBe(0); // trunk
+    expect(lane.s4).toBe(1); // branch
+    expect(laneCenterX(lane.s3, layout.laneCount)).toBeGreaterThan(
+      laneCenterX(lane.s4, layout.laneCount),
+    );
+  });
+
+  it('mirrors the axis so each further lane steps away from the text', () => {
+    // Lane 0 (trunk, nearest the names) is rightmost; every further lane steps left.
+    expect(laneCenterX(0, 3)).toBeGreaterThan(laneCenterX(1, 3));
+    expect(laneCenterX(1, 3)).toBeGreaterThan(laneCenterX(2, 3));
   });
 });

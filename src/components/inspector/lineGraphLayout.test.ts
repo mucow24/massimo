@@ -104,6 +104,36 @@ describe('lineGraphLayout', () => {
     expect(layout.laneCount).toBeGreaterThanOrEqual(2);
   });
 
+  it('draws a lasso junction INSIDE its loop (over the top), not stranded above it', () => {
+    // The reported case: a tail A6–A5–A4–A3 meeting a 5-cycle A3–A2–A1–B2–B1(–A3)
+    // at the junction A3. The longest chain A6…B1 threads the whole cycle into
+    // lane 0; the cycle closes with the A3–B1 back-edge, whose upper endpoint is
+    // A3. A3 is a genuine cycle member, so the loop must arc OVER A3's top (a blank
+    // ABOVE it, between the tail A4 and A3) — putting A3 inside the loop — rather
+    // than tee off below A3 (which strands A3 above/outside its own loop and reads
+    // as a phantom split between A2 and A3).
+    const layout = lineGraphLayout(
+      makeLine({
+        id: 'L1',
+        stations: ['A1', 'A2', 'A3', 'A4', 'A5', 'A6', 'B1', 'B2'],
+        edges: ['A1|A2', 'A2|A3', 'A3|A4', 'A4|A5', 'A5|A6', 'A3|B1', 'B1|B2', 'B2|A1'],
+      }),
+    );
+    const pos = posByStation(layout.nodes);
+    // Every stop threads into the trunk lane; the loop costs a side lane, not a column.
+    expect(Math.max(...layout.nodes.map((n) => n.lane))).toBe(0);
+    const loop = layout.edges.filter((e) => e.kind === 'loop');
+    expect(loop).toHaveLength(1);
+    expect(loop[0].pairKey).toBe('A3|B1');
+    // The loop's upper endpoint is A3, and it arcs over A3's TOP: the reserved
+    // blank sits ABOVE A3 (between the tail A4 and A3), so A3 is inside the loop.
+    expect(loop[0].fromRow).toBe(pos.A3.row);
+    expect(loop[0].upperBlank).toBeLessThan(pos.A3.row); // over the top of A3
+    expect(pos.A4.row).toBeLessThan(loop[0].upperBlank!); // the tail A4 stays OUTSIDE the loop
+    // No phantom split between A2 and A3: the trunk runs straight through them.
+    expect(pos.A2.row).toBe(pos.A3.row + 1);
+  });
+
   it('handles a disconnected member (degree 0) without crashing', () => {
     const layout = lineGraphLayout(
       makeLine({ id: 'L1', stations: ['s1', 's2', 's3'], edges: ['s1|s2'] }),
