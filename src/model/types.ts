@@ -531,6 +531,13 @@ export interface MapDoc {
   // Ids missing from this list (legacy saves, races) fall back to insertion
   // order and render on top — see `effectivePolygonOrder`.
   polygonOrder: string[];
+  // Region paint choices ("paint by numbers" layering): which line shows in
+  // an overlap region where line bodies cross. Keyed by assignment id. The
+  // regions themselves are derived geometry; assignments track them via
+  // line-frame anchors and are reconciled (rebound, split, merged, re-minted)
+  // by the store on every geometry-committing edit. Absent entries mean every
+  // overlap shows its lineOrder default.
+  regionAssignments: Record<string, RegionAssignment>;
   // Free-floating imported SVG graphics, placed in the polygon band (under all
   // other map content). Keyed by image id.
   svgImages: Record<string, SvgImage>;

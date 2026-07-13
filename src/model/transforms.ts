@@ -45,6 +45,7 @@ import type {
   MapDoc,
   Polygon,
   PolygonStylePatch,
+  RegionAssignment,
   SvgImage,
   SvgImageStylePatch,
   Rotation,
@@ -1629,7 +1630,71 @@ export function deleteLine(doc: MapDoc, id: LineId): MapDoc {
   // Deleting the line removes all its stops, so delete every transfer anchored
   // at one — an endpoint with lineId === id pointed at a stop that's now gone.
   const transfers = pruneTransfers(doc.transfers, (e) => e.lineId === id);
-  return { ...doc, lines: rest, stations, lineOrder: order, lineTags, routeBullets, transfers };
+  const regionAssignments = pruneRegionAssignmentsForLine(doc.regionAssignments, id);
+  return {
+    ...doc,
+    lines: rest,
+    stations,
+    lineOrder: order,
+    lineTags,
+    routeBullets,
+    transfers,
+    regionAssignments,
+  };
+}
+
+// ---------- Region assignments ("paint by numbers" layering) ----------
+
+// Wholesale replacement, used by the store's reconcile step. Same-reference
+// no-op when the record is shallow-equal (reconcile returns the input record
+// untouched when nothing changed, so this collapses to a reference check plus
+// a key sweep for safety).
+export function setRegionAssignments(
+  doc: MapDoc,
+  next: Record<string, RegionAssignment>,
+): MapDoc {
+  const prev = doc.regionAssignments;
+  if (prev === next) return doc;
+  const prevKeys = Object.keys(prev);
+  const nextKeys = Object.keys(next);
+  if (prevKeys.length === nextKeys.length && nextKeys.every((k) => prev[k] === next[k])) {
+    return doc;
+  }
+  return { ...doc, regionAssignments: next };
+}
+
+// Upsert (assignment) or delete (null) one region assignment — the click
+// writer. Same-reference no-op when deleting a missing id or re-writing an
+// identical value.
+export function assignRegion(
+  doc: MapDoc,
+  id: string,
+  assignment: RegionAssignment | null,
+): MapDoc {
+  const prev = doc.regionAssignments;
+  if (assignment === null) {
+    if (!(id in prev)) return doc;
+    const { [id]: _gone, ...rest } = prev;
+    return { ...doc, regionAssignments: rest };
+  }
+  if (prev[id] === assignment) return doc;
+  return { ...doc, regionAssignments: { ...prev, [id]: assignment } };
+}
+
+// Drop assignments referencing a dead line — as the chosen line OR as any
+// cover member (a cover that can never match a live face again is dead
+// weight). Shared by deleteLine's cascade.
+function pruneRegionAssignmentsForLine(
+  assignments: Record<string, RegionAssignment>,
+  lineId: LineId,
+): Record<string, RegionAssignment> {
+  const doomed = Object.keys(assignments).filter(
+    (id) => assignments[id].lineId === lineId || assignments[id].lines.includes(lineId),
+  );
+  if (!doomed.length) return assignments;
+  const out = { ...assignments };
+  for (const id of doomed) delete out[id];
+  return out;
 }
 
 export function moveLineInOrder(doc: MapDoc, id: LineId, dir: -1 | 1): MapDoc {
@@ -2604,6 +2669,7 @@ export const DEFAULT_DOC: MapDoc = {
   textLabels: {},
   polygons: {},
   polygonOrder: [],
+  regionAssignments: {},
   svgImages: {},
   svgImageOrder: [],
   styles: DEFAULT_STYLES,

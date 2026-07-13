@@ -14,6 +14,7 @@ import type {
   MapDoc,
   Polygon,
   PolygonStylePatch,
+  RegionAssignment,
   RouteBullet,
   StationId,
   StyleDef,
@@ -95,6 +96,9 @@ const DOC_FIELDS = [
   'textLabels',
   'polygons',
   'polygonOrder',
+  // Region paint choices ("paint by numbers" layering). New field: absent in
+  // older saves, backfilled to {} by the shallow merge on both load paths.
+  'regionAssignments',
   'svgImages',
   'svgImageOrder',
   // Named style presets + the per-kind default designations. Pre-styles saves
@@ -422,6 +426,13 @@ interface DocState extends MapDoc {
   deleteLine: (id: LineId) => void;
   moveLineInOrder: (id: LineId, dir: -1 | 1) => void;
 
+  // Region paint choices. `assignRegion` is the click writer: id null mints a
+  // fresh one (returned); assignment null deletes (back to the lineOrder
+  // default). `setRegionAssignments` is the wholesale writer used by the
+  // geometry reconcile step.
+  assignRegion: (id: string | null, assignment: RegionAssignment | null) => string;
+  setRegionAssignments: (next: Record<string, RegionAssignment>) => void;
+
   addLineTag: (
     lineId: LineId,
     fromStationId: StationId,
@@ -637,6 +648,13 @@ export const useDoc = create<DocState>()(
         setLineSeamWidth: (lineId, w) => set((s) => T.setLineSeamWidth(s, lineId, w)),
         deleteLine: (id) => set((s) => T.deleteLine(s, id)),
         moveLineInOrder: (id, dir) => set((s) => T.moveLineInOrder(s, id, dir)),
+
+        assignRegion: (id, assignment) => {
+          const realId = id ?? ids.regionAssignmentId();
+          set((s) => T.assignRegion(s, realId, assignment && { ...assignment, id: realId }));
+          return realId;
+        },
+        setRegionAssignments: (next) => set((s) => T.setRegionAssignments(s, next)),
 
         addLineTag: (lineId, fromStationId, toStationId, anchorEnd, distance, orientation) => {
           const id = ids.lineTagId();

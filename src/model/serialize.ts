@@ -50,6 +50,8 @@ import type {
   LineStyle,
   MapDoc,
   Polygon,
+  RegionAnchor,
+  RegionAssignment,
   RouteBulletShape,
   Station,
   StationStyleProps,
@@ -273,6 +275,10 @@ export function parse(json: string, custom: readonly Palette[] = []): ParseResul
   if (linesChanged || named.changed) merged.lines = named.lines;
   const sanitized = sanitizeStations(merged.stations);
   if (sanitized.changed) merged.stations = sanitized.stations;
+  // Region assignments validate against the CLEANED lines (dangling ids drop
+  // the assignment; dangling pairKey anchors survive for reconcile).
+  const cleanedAssignments = sanitizeRegionAssignments(merged.regionAssignments, merged.lines);
+  if (cleanedAssignments.changed) merged.regionAssignments = cleanedAssignments.assignments;
   // Convert legacy dotShape preset ids to DotStyle objects and validate any
   // explicit style objects (after the line/station passes so it sees their
   // cleaned output).
@@ -744,6 +750,56 @@ function sanitizeLineStroke(line: Line): Line {
 // Non-numbers / non-finite numerics and non-string colors are dropped.
 // File-import hygiene only — localStorage rehydration never sees uncanonical
 // overrides because every write goes through `updateTransferStyle`.
+// Drop region assignments that can never bind again (dangling chosen/cover
+// line ids) and anchors that are malformed or reference a dead line. Anchors
+// whose pairKey is no longer among the line's edges are deliberately KEPT:
+// reconcile's topology-translation step maps them across edge splits/heals,
+// and the binding falls back to the assignment's other anchors meanwhile.
+// File-only hygiene (parse); the localStorage path gets the same strip via
+// the persist migration gate.
+export function sanitizeRegionAssignments(
+  assignments: Record<string, RegionAssignment>,
+  lines: Record<string, Line>,
+): { assignments: Record<string, RegionAssignment>; changed: boolean } {
+  let changed = false;
+  const next: Record<string, RegionAssignment> = {};
+  for (const id of Object.keys(assignments)) {
+    const a = assignments[id];
+    if (!a || typeof a !== 'object' || !Array.isArray(a.lines) || !Array.isArray(a.anchors)) {
+      changed = true;
+      continue;
+    }
+    if (!lines[a.lineId] || !a.lines.every((l) => typeof l === 'string' && !!lines[l])) {
+      changed = true;
+      continue;
+    }
+    if (!a.lines.includes(a.lineId)) {
+      changed = true;
+      continue;
+    }
+    const anchors = a.anchors.filter(
+      (anchor): anchor is RegionAnchor =>
+        !!anchor &&
+        typeof anchor === 'object' &&
+        typeof anchor.pairKey === 'string' &&
+        (anchor.anchorEnd === 'from' || anchor.anchorEnd === 'to') &&
+        typeof anchor.distance === 'number' &&
+        Number.isFinite(anchor.distance) &&
+        anchor.distance >= 0 &&
+        !!lines[anchor.lineId],
+    );
+    if (!anchors.length) {
+      changed = true;
+      continue;
+    }
+    let cleaned = anchors.length === a.anchors.length ? a : { ...a, anchors };
+    if (cleaned.id !== id) cleaned = { ...cleaned, id };
+    if (cleaned !== a) changed = true;
+    next[id] = cleaned;
+  }
+  return changed ? { assignments: next, changed } : { assignments, changed };
+}
+
 export function sanitizeTransferStyles(transfers: Record<string, Transfer>): {
   transfers: Record<string, Transfer>;
   changed: boolean;
