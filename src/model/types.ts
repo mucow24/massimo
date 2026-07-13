@@ -346,6 +346,38 @@ export interface LineTag {
   kind?: 'text' | 'chevron';
 }
 
+// One coordinate of a region assignment, expressed in a LINE's own frame so
+// it rides the line through geometry edits: "along line `lineId`'s stripe in
+// corridor `pairKey`, `distance` world units of arc length from the
+// `anchorEnd` endpoint" (same anchoring convention as LineTag). A region
+// assignment carries one anchor per covering line; reconciliation re-mints
+// them after every geometry edit and translates them across edge
+// splits/heals when a pairKey is replaced.
+export interface RegionAnchor {
+  lineId: LineId;
+  // Canonical station-pair key of the edge whose band the anchor measures
+  // along. May transiently reference a removed edge mid-reconcile (step 0
+  // translates it); never persisted dangling by app writers.
+  pairKey: string;
+  anchorEnd: 'from' | 'to';
+  // Arc length in world units from the anchor endpoint along this line's
+  // stripe in the corridor.
+  distance: number;
+}
+
+// A user's choice of which line paints one overlap region ("paint by
+// numbers"). Regions themselves are derived geometry (faces of the
+// arrangement of line bodies); the assignment tracks its region through
+// edits via the anchors, and `lines` records the region's covering line set
+// (sorted) for compatibility checks. `lineId` — the line that shows — is
+// always a member of `lines`.
+export interface RegionAssignment {
+  id: string;
+  lineId: LineId;
+  lines: LineId[];
+  anchors: RegionAnchor[];
+}
+
 export interface Viewport {
   x: number;
   y: number;

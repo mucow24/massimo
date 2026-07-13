@@ -1,0 +1,521 @@
+/**
+ * Region building for "paint by numbers" line layering: the faces of the
+ * planar arrangement formed by all lines' painted bodies, plus the anchor
+ * machinery that lets a stored RegionAssignment track its face through
+ * geometry edits.
+ *
+ * Bodies are built by round-join/butt-cap stroking of each stripe's offset
+ * path (the same path the renderer strokes), so the region boundaries track
+ * the painted pixels — including at degenerate inner corners where the ±w/2
+ * edge segments would mislead (they miter-cap while the paint rounds).
+ * Marker squares join a body only where the marker actually renders.
+ */
+import type { LineId, RegionAnchor, RegionAssignment } from '../model/types';
+import type { SegmentBandSpec, StopMarkerSpec } from './interlining';
+import type { OffsetPathSegment } from './router';
+import { emitOffsetSegments } from './router';
+import { perp, rotatedRectCorners, type Vec2 } from './vec';
+import {
+  type Face,
+  type Ring,
+  intersect,
+  offsetClosed,
+  offsetOpenPath,
+  pointInFace,
+  faceArea,
+  splitIntoFaces,
+  subtract,
+  unionAll,
+} from './clip';
+
+/** Arc flattening chord tolerance, world units. */
+export const FLATTEN_TOL = 0.01;
+
+/** Faces that vanish under this erosion depth are hairline slivers. */
+export const SLIVER_ERODE = 0.15;
+
+/** Arc-length sampling step for face spans, world units. */
+const SPAN_STEP = 2;
+
+/** Binding penalty when an anchor's corridor doesn't run through the face. */
+const CROSS_CORRIDOR_PENALTY = 25;
+
+export interface RegionSpanEntry {
+  /** Arc-length intervals of the stripe path inside the face. */
+  intervals: { d0: number; d1: number }[];
+  /** Total arc length of that stripe path. */
+  totalLen: number;
+}
+
+export interface RegionFace {
+  /** Render key: cover + rounded bbox center + index (collision-proof). */
+  key: string;
+  /** Sorted covering line ids. */
+  lineIds: LineId[];
+  /** Outer ring + holes, world space. */
+  face: Face;
+  bbox: { x0: number; y0: number; x1: number; y1: number };
+  area: number;
+  /** `${lineId}|${pairKey}` → where that line's stripe runs inside this face. */
+  spans: Map<string, RegionSpanEntry>;
+}
+
+/** Flatten line/arc offset segments into a polyline by chord tolerance. */
+export function flattenOffsetSegments(segs: OffsetPathSegment[], tol = FLATTEN_TOL): Vec2[] {
+  const pts: Vec2[] = [];
+  const push = (p: Vec2) => {
+    const last = pts[pts.length - 1];
+    if (!last || Math.abs(last.x - p.x) > 1e-9 || Math.abs(last.y - p.y) > 1e-9) pts.push(p);
+  };
+  for (const s of segs) {
+    push(s.from);
+    if (s.kind === 'arc') {
+      // Chord error e = r(1 − cos(dψ/2)) ⇒ dψ = 2·acos(1 − e/r), clamped so
+      // tiny radii (inner fillets shrink arbitrarily) can't NaN the acos.
+      const cosArg = Math.min(1, Math.max(-1, 1 - tol / s.r));
+      const maxStep = 2 * Math.acos(cosArg);
+      const n = Math.min(256, Math.max(1, Math.ceil(s.theta / Math.max(maxStep, 1e-4))));
+      // p(ψ) = from + r·(sin ψ · inDir + sign·(1 − cos ψ)·perp(inDir)) — the
+      // exact parametrization lineTagGeometry samples with.
+      const pp = perp(s.inDir);
+      for (let i = 1; i < n; i++) {
+        const psi = (s.theta * i) / n;
+        const a = Math.sin(psi);
+        const b = s.sign * (1 - Math.cos(psi));
+        push({ x: s.from.x + s.r * (a * s.inDir.x + b * pp.x), y: s.from.y + s.r * (a * s.inDir.y + b * pp.y) });
+      }
+    }
+    push(s.to);
+  }
+  return pts;
+}
+
+/** The painted body of one stripe: round-join, butt-cap stroke outline. */
+export function stripeBodyPolys(band: SegmentBandSpec, stripeIndex: number): Ring[] {
+  const segs = emitOffsetSegments(band.centerline, band.radius, band.stripeOffsets[stripeIndex]);
+  const pts = flattenOffsetSegments(segs);
+  return offsetOpenPath(pts, band.stripeWidths[stripeIndex] / 2);
+}
+
+/**
+ * The rendered footprint of a stop marker, or nothing when the marker paints
+ * nothing (patterned styles at interior stops).
+ */
+function markerBodyRings(spec: StopMarkerSpec): Ring[] {
+  const half = spec.width / 2;
+  const center = { x: spec.cx, y: spec.cy };
+  if (spec.style === 'solid' || spec.style === 'hatched' || spec.style === 'hatched-mirror') {
+    const rad = (spec.rotationDeg * Math.PI) / 180;
+    return [Array.from(rotatedRectCorners(center, half, half, rad))];
+  }
+  // Patterned (dashed/dotted/dashed-open): nothing at interior stops; a
+  // width/2-long, width-wide stub continuing outward at a terminus.
+  if (!spec.outward) return [];
+  const o = spec.outward;
+  const px = -o.y;
+  const py = o.x;
+  const end = { x: center.x + o.x * half, y: center.y + o.y * half };
+  return [
+    [
+      { x: center.x + px * half, y: center.y + py * half },
+      { x: end.x + px * half, y: end.y + py * half },
+      { x: end.x - px * half, y: end.y - py * half },
+      { x: center.x - px * half, y: center.y - py * half },
+    ],
+  ];
+}
+
+/** Per-line painted body: union of stripe bodies + rendering marker squares. */
+export function buildLineBodies(
+  bands: SegmentBandSpec[],
+  markers: StopMarkerSpec[],
+): Map<LineId, Ring[]> {
+  const raw = new Map<LineId, Ring[]>();
+  const add = (id: LineId, rings: Ring[]) => {
+    if (!rings.length) return;
+    const list = raw.get(id);
+    if (list) list.push(...rings);
+    else raw.set(id, [...rings]);
+  };
+  for (const band of bands) {
+    for (let k = 0; k < band.lines.length; k++) add(band.lines[k].id, stripeBodyPolys(band, k));
+  }
+  for (const m of markers) add(m.lineId, markerBodyRings(m));
+  const out = new Map<LineId, Ring[]>();
+  for (const [id, rings] of raw) {
+    const merged = unionAll(rings);
+    if (merged.length) out.set(id, merged);
+  }
+  return out;
+}
+
+// ---------------------------------------------------------------------------
+// Stripe-path sampling (flattened once per band spec, WeakMap-cached — band
+// specs are rebuilt objects whenever geometry changes, so the cache can never
+// serve stale paths).
+
+interface StripePath {
+  pts: Vec2[];
+  /** Cumulative arc length at each vertex; cum[0] = 0. */
+  cum: number[];
+  len: number;
+  bbox: { x0: number; y0: number; x1: number; y1: number };
+}
+
+const stripePathCache = new WeakMap<SegmentBandSpec, Map<number, StripePath>>();
+
+function stripePathFor(band: SegmentBandSpec, stripeIndex: number): StripePath {
+  let byIndex = stripePathCache.get(band);
+  if (!byIndex) {
+    byIndex = new Map();
+    stripePathCache.set(band, byIndex);
+  }
+  const hit = byIndex.get(stripeIndex);
+  if (hit) return hit;
+  const pts = flattenOffsetSegments(
+    emitOffsetSegments(band.centerline, band.radius, band.stripeOffsets[stripeIndex]),
+  );
+  const cum = [0];
+  let x0 = Infinity;
+  let y0 = Infinity;
+  let x1 = -Infinity;
+  let y1 = -Infinity;
+  for (let i = 0; i < pts.length; i++) {
+    if (i > 0) cum.push(cum[i - 1] + Math.hypot(pts[i].x - pts[i - 1].x, pts[i].y - pts[i - 1].y));
+    x0 = Math.min(x0, pts[i].x);
+    y0 = Math.min(y0, pts[i].y);
+    x1 = Math.max(x1, pts[i].x);
+    y1 = Math.max(y1, pts[i].y);
+  }
+  const sp: StripePath = { pts, cum, len: cum[cum.length - 1] ?? 0, bbox: { x0, y0, x1, y1 } };
+  byIndex.set(stripeIndex, sp);
+  return sp;
+}
+
+function pointAtArcLength(sp: StripePath, d: number): Vec2 {
+  const target = Math.min(Math.max(d, 0), sp.len);
+  let lo = 0;
+  let hi = sp.cum.length - 1;
+  while (lo + 1 < hi) {
+    const mid = (lo + hi) >> 1;
+    if (sp.cum[mid] <= target) lo = mid;
+    else hi = mid;
+  }
+  const span = sp.cum[hi] - sp.cum[lo];
+  const t = span > 0 ? (target - sp.cum[lo]) / span : 0;
+  return {
+    x: sp.pts[lo].x + (sp.pts[hi].x - sp.pts[lo].x) * t,
+    y: sp.pts[lo].y + (sp.pts[hi].y - sp.pts[lo].y) * t,
+  };
+}
+
+const boxesOverlap = (
+  a: { x0: number; y0: number; x1: number; y1: number },
+  b: { x0: number; y0: number; x1: number; y1: number },
+  pad = 0,
+) => a.x0 <= b.x1 + pad && b.x0 <= a.x1 + pad && a.y0 <= b.y1 + pad && b.y0 <= a.y1 + pad;
+
+// ---------------------------------------------------------------------------
+// Overlap faces
+
+function ringsBbox(rings: Ring[]): { x0: number; y0: number; x1: number; y1: number } {
+  let x0 = Infinity;
+  let y0 = Infinity;
+  let x1 = -Infinity;
+  let y1 = -Infinity;
+  for (const ring of rings) {
+    for (const p of ring) {
+      x0 = Math.min(x0, p.x);
+      y0 = Math.min(y0, p.y);
+      x1 = Math.max(x1, p.x);
+      y1 = Math.max(y1, p.y);
+    }
+  }
+  return { x0, y0, x1, y1 };
+}
+
+function computeSpans(
+  face: Face,
+  bbox: { x0: number; y0: number; x1: number; y1: number },
+  cover: LineId[],
+  bands: SegmentBandSpec[],
+): Map<string, RegionSpanEntry> {
+  const spans = new Map<string, RegionSpanEntry>();
+  const coverSet = new Set(cover);
+  for (const band of bands) {
+    for (let k = 0; k < band.lines.length; k++) {
+      const lineId = band.lines[k].id;
+      if (!coverSet.has(lineId)) continue;
+      const sp = stripePathFor(band, k);
+      // The stripe's painted body extends half a width past the path bbox.
+      if (!boxesOverlap(sp.bbox, bbox, band.stripeWidths[k] / 2)) continue;
+      const intervals: { d0: number; d1: number }[] = [];
+      let runStart: number | null = null;
+      for (let d = 0; ; d += SPAN_STEP) {
+        const at = Math.min(d, sp.len);
+        const inside = pointInFace(pointAtArcLength(sp, at), face);
+        if (inside && runStart === null) runStart = Math.max(0, at - SPAN_STEP / 2);
+        if (!inside && runStart !== null) {
+          intervals.push({ d0: runStart, d1: Math.min(sp.len, at - SPAN_STEP / 2) });
+          runStart = null;
+        }
+        if (at >= sp.len) break;
+      }
+      if (runStart !== null) intervals.push({ d0: runStart, d1: sp.len });
+      if (intervals.length) {
+        spans.set(`${lineId}|${band.pairKey}`, { intervals, totalLen: sp.len });
+      }
+    }
+  }
+  return spans;
+}
+
+/** All overlap faces (cover ≥ 2 lines) of the current geometry. */
+export function buildOverlapRegions(
+  bands: SegmentBandSpec[],
+  markers: StopMarkerSpec[],
+): RegionFace[] {
+  const bodies = buildLineBodies(bands, markers);
+  const ids = [...bodies.keys()].sort();
+  if (ids.length < 2) return [];
+  const boxes = new Map(ids.map((id) => [id, ringsBbox(bodies.get(id)!)]));
+
+  // Restrict everything to the pairwise-overlap zone: any ≥2-cover point is
+  // in some pairwise intersection, so cells inside the zone subdivide exactly
+  // as they would in the full arrangement, at a fraction of the cost.
+  const zoneParts: Ring[] = [];
+  for (let i = 0; i < ids.length; i++) {
+    for (let j = i + 1; j < ids.length; j++) {
+      if (!boxesOverlap(boxes.get(ids[i])!, boxes.get(ids[j])!)) continue;
+      zoneParts.push(...intersect(bodies.get(ids[i])!, bodies.get(ids[j])!));
+    }
+  }
+  if (!zoneParts.length) return [];
+  const zone = unionAll(zoneParts);
+
+  // Iterative cell splitting: each cell is a maximal area with one cover set.
+  let cells: { cover: LineId[]; rings: Ring[] }[] = [];
+  for (const id of ids) {
+    const restricted = intersect(bodies.get(id)!, zone);
+    if (!restricted.length) continue;
+    const next: typeof cells = [];
+    let remaining = restricted;
+    for (const cell of cells) {
+      const inter = intersect(cell.rings, remaining);
+      if (!inter.length) {
+        next.push(cell);
+        continue;
+      }
+      const diff = subtract(cell.rings, remaining);
+      remaining = subtract(remaining, cell.rings);
+      next.push({ cover: [...cell.cover, id], rings: inter });
+      if (diff.length) next.push({ cover: cell.cover, rings: diff });
+    }
+    if (remaining.length) next.push({ cover: [id], rings: remaining });
+    cells = next;
+  }
+
+  const out: RegionFace[] = [];
+  for (const cell of cells) {
+    if (cell.cover.length < 2) continue;
+    for (const face of splitIntoFaces(cell.rings)) {
+      if (!offsetClosed(face, -SLIVER_ERODE).length) continue; // hairline sliver
+      const bbox = ringsBbox([face[0]]);
+      const lineIds = [...cell.cover].sort();
+      out.push({
+        key: '',
+        lineIds,
+        face,
+        bbox,
+        area: faceArea(face),
+        spans: computeSpans(face, bbox, lineIds, bands),
+      });
+    }
+  }
+  out.sort(
+    (a, b) =>
+      a.bbox.y0 - b.bbox.y0 ||
+      a.bbox.x0 - b.bbox.x0 ||
+      (a.lineIds.join(',') < b.lineIds.join(',') ? -1 : 1),
+  );
+  out.forEach((f, i) => {
+    const cx = Math.round((f.bbox.x0 + f.bbox.x1) / 2);
+    const cy = Math.round((f.bbox.y0 + f.bbox.y1) / 2);
+    f.key = `${f.lineIds.join(',')}@${cx},${cy}#${i}`;
+  });
+  return out;
+}
+
+// ---------------------------------------------------------------------------
+// Anchors: mint, evaluate, bind
+
+/** Fresh anchors for a face: one per covering line, at its span midpoint. */
+export function mintAnchors(face: RegionFace, _bands: SegmentBandSpec[]): RegionAnchor[] {
+  const anchors: RegionAnchor[] = [];
+  for (const lineId of face.lineIds) {
+    let best: { pairKey: string; mid: number; totalLen: number; size: number } | null = null;
+    for (const [key, entry] of face.spans) {
+      if (!key.startsWith(`${lineId}|`)) continue;
+      const pairKey = key.slice(lineId.length + 1);
+      for (const iv of entry.intervals) {
+        const size = iv.d1 - iv.d0;
+        if (!best || size > best.size) {
+          best = { pairKey, mid: (iv.d0 + iv.d1) / 2, totalLen: entry.totalLen, size };
+        }
+      }
+    }
+    if (!best) continue; // covered via marker footprint only — no stripe span
+    const nearFrom = best.mid <= best.totalLen / 2;
+    anchors.push({
+      lineId,
+      pairKey: best.pairKey,
+      anchorEnd: nearFrom ? 'from' : 'to',
+      distance: nearFrom ? best.mid : best.totalLen - best.mid,
+    });
+  }
+  return anchors;
+}
+
+/**
+ * Evaluate an anchor under current geometry: the world point and absolute
+ * arc-length position (from the canonical 'from' end) along its stripe.
+ * Null when the corridor no longer exists for that line.
+ */
+export function evaluateAnchor(
+  anchor: RegionAnchor,
+  bands: SegmentBandSpec[],
+): { p: Vec2; d: number } | null {
+  for (const band of bands) {
+    if (band.pairKey !== anchor.pairKey) continue;
+    const k = band.lines.findIndex((l) => l.id === anchor.lineId);
+    if (k < 0) continue;
+    const sp = stripePathFor(band, k);
+    const raw = anchor.anchorEnd === 'from' ? anchor.distance : sp.len - anchor.distance;
+    const d = Math.min(Math.max(raw, 0), sp.len);
+    return { p: pointAtArcLength(sp, d), d };
+  }
+  return null;
+}
+
+const bboxDistance = (
+  bbox: { x0: number; y0: number; x1: number; y1: number },
+  p: Vec2,
+): number => {
+  const dx = Math.max(bbox.x0 - p.x, 0, p.x - bbox.x1);
+  const dy = Math.max(bbox.y0 - p.y, 0, p.y - bbox.y1);
+  return Math.hypot(dx, dy);
+};
+
+/**
+ * Nearest-compatible-face binding (shared by rendering and reconciliation):
+ * assignment id → face index. Distances are measured in arc length along
+ * each anchor's line — that is what follows a crossing that slides ALONG an
+ * unmoved line, where any world-point containment test loses it. Unbindable
+ * assignments are absent from the result (dormant). One assignment per face:
+ * on conflict the id-sorted first keeps it (reconciliation resolves for real).
+ */
+export function bindAssignments(
+  faces: RegionFace[],
+  assignments: Record<string, RegionAssignment>,
+  bands: SegmentBandSpec[],
+  liveLines: Set<LineId>,
+): Map<string, number> {
+  const out = new Map<string, number>();
+  const taken = new Set<number>();
+  for (const id of Object.keys(assignments).sort()) {
+    const a = assignments[id];
+    if (!liveLines.has(a.lineId)) continue;
+    const required = a.lines.filter((l) => liveLines.has(l));
+    const evals = a.anchors
+      .filter((anchor) => liveLines.has(anchor.lineId))
+      .map((anchor) => ({ anchor, ev: evaluateAnchor(anchor, bands) }))
+      .filter((x): x is { anchor: RegionAnchor; ev: { p: Vec2; d: number } } => x.ev !== null);
+    if (!evals.length) continue; // nothing evaluable — dormant
+    let best = -1;
+    let bestScore = Infinity;
+    for (let i = 0; i < faces.length; i++) {
+      if (taken.has(i)) continue;
+      const f = faces[i];
+      const cover = new Set(f.lineIds);
+      if (!cover.has(a.lineId)) continue;
+      if (!required.every((l) => cover.has(l))) continue;
+      let score = 0;
+      for (const { anchor, ev } of evals) {
+        const entry = f.spans.get(`${anchor.lineId}|${anchor.pairKey}`);
+        if (entry) {
+          let d = Infinity;
+          for (const iv of entry.intervals) {
+            d = Math.min(d, ev.d < iv.d0 ? iv.d0 - ev.d : ev.d > iv.d1 ? ev.d - iv.d1 : 0);
+          }
+          score += d;
+        } else {
+          // Anchor's corridor doesn't run through this face (e.g. the
+          // crossing slid onto the line's next segment): approximate with
+          // world distance, penalized so an exact-corridor match wins ties.
+          score += bboxDistance(f.bbox, ev.p) + CROSS_CORRIDOR_PENALTY;
+        }
+      }
+      if (score < bestScore - 1e-9) {
+        bestScore = score;
+        best = i;
+      }
+    }
+    if (best >= 0) {
+      out.set(id, best);
+      taken.add(best);
+    }
+  }
+  return out;
+}
+
+const orderIndexer = (lineOrder: LineId[]) => {
+  const idx = new Map(lineOrder.map((id, i) => [id, i]));
+  return (id: LineId) => idx.get(id) ?? lineOrder.length;
+};
+
+const defaultWinner = (face: RegionFace, orderIdx: (id: LineId) => number): LineId =>
+  [...face.lineIds].sort((a, b) => orderIdx(a) - orderIdx(b) || (a < b ? -1 : 1))[0];
+
+/** Per-face effective winner: bound assignment's line, else lineOrder-first. */
+export function resolveRegionWinners(
+  faces: RegionFace[],
+  assignments: Record<string, RegionAssignment>,
+  bands: SegmentBandSpec[],
+  lineOrder: LineId[],
+): { winner: LineId; assignmentId: string | null }[] {
+  const liveLines = new Set<LineId>(lineOrder);
+  for (const band of bands) for (const l of band.lines) liveLines.add(l.id);
+  const bound = bindAssignments(faces, assignments, bands, liveLines);
+  const byFace = new Map<number, string>();
+  for (const [id, faceIndex] of bound) byFace.set(faceIndex, id);
+  const orderIdx = orderIndexer(lineOrder);
+  return faces.map((face, i) => {
+    const assignmentId = byFace.get(i) ?? null;
+    return assignmentId
+      ? { winner: assignments[assignmentId].lineId, assignmentId }
+      : { winner: defaultWinner(face, orderIdx), assignmentId: null };
+  });
+}
+
+/** The click interaction: cycle the face's winner, deleting at the default. */
+export function regionClickAction(args: {
+  face: RegionFace;
+  bound: RegionAssignment | null;
+  lineOrder: LineId[];
+  dir: 1 | -1;
+  bands: SegmentBandSpec[];
+  newId: string;
+}): { id: string; assignment: RegionAssignment | null } {
+  const { face, bound, lineOrder, dir, bands, newId } = args;
+  const orderIdx = orderIndexer(lineOrder);
+  const order = [...face.lineIds].sort((a, b) => orderIdx(a) - orderIdx(b) || (a < b ? -1 : 1));
+  const current = bound?.lineId ?? order[0];
+  const at = Math.max(0, order.indexOf(current));
+  const next = order[(at + dir + order.length) % order.length];
+  const id = bound?.id ?? newId;
+  if (next === order[0]) return { id, assignment: null };
+  return {
+    id,
+    assignment: { id, lineId: next, lines: [...face.lineIds], anchors: mintAnchors(face, bands) },
+  };
+}
