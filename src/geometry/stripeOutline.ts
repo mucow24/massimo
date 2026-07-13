@@ -2,6 +2,42 @@ import type { SegmentBandSpec } from './interlining';
 import { emitOffsetSegments, offsetFilletPath, type OffsetPathSegment } from './router';
 import { leftNormal, norm, sub, type Vec2 } from './vec';
 
+/**
+ * Build a single closed `M … Z` SVG path tracing a stripe's whole perimeter —
+ * edge A forward, the end cap, edge B in reverse, the start cap (implicit via
+ * `Z`). With `strokeLinejoin="round"` this joins every corner smoothly, and as
+ * a FILLED shape it's a clip/hit region for the stripe's body corridor.
+ *
+ * Reversal rule: each arc keeps its radius but flips its sweep flag, and
+ * `from`/`to` swap; line segments just swap `from`/`to`. Shared by the
+ * layering-mode hovered outline and the branch-seam clip corridor.
+ */
+export function closedPerimeterPath(
+  segsA: OffsetPathSegment[],
+  segsB: OffsetPathSegment[],
+): string {
+  if (segsA.length === 0 || segsB.length === 0) return '';
+  const fmt = (v: number) => v.toFixed(2);
+  const cmdFwd = (s: OffsetPathSegment): string => {
+    if (s.kind === 'line') return ` L ${fmt(s.to.x)} ${fmt(s.to.y)}`;
+    const sweep = s.sign === 1 ? 1 : 0;
+    return ` A ${fmt(s.r)} ${fmt(s.r)} 0 0 ${sweep} ${fmt(s.to.x)} ${fmt(s.to.y)}`;
+  };
+  const cmdRev = (s: OffsetPathSegment): string => {
+    if (s.kind === 'line') return ` L ${fmt(s.from.x)} ${fmt(s.from.y)}`;
+    const sweep = s.sign === 1 ? 0 : 1;
+    return ` A ${fmt(s.r)} ${fmt(s.r)} 0 0 ${sweep} ${fmt(s.from.x)} ${fmt(s.from.y)}`;
+  };
+  const startA = segsA[0].from;
+  let d = `M ${fmt(startA.x)} ${fmt(startA.y)}`;
+  for (const s of segsA) d += cmdFwd(s);
+  // Jump along the end cap to edge B's far end, then walk B back.
+  const endB = segsB[segsB.length - 1].to;
+  d += ` L ${fmt(endB.x)} ${fmt(endB.y)}`;
+  for (let i = segsB.length - 1; i >= 0; i--) d += cmdRev(segsB[i]);
+  return d + ' Z';
+}
+
 export interface StripeOutline {
   /** SVG `d` for the stripe's two long edges (offset ± width/2). */
   edgeAPath: string;

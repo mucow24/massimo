@@ -945,6 +945,29 @@ describe('buildOrderedRenderables — cross-band layering', () => {
     expect(aPos).toBeLessThan(dPos);
     expect(dPos).toBeLessThan(cPos);
   });
+
+  it('emits per stripe a casing (just behind) and a seam (just in front) of its body', () => {
+    const doc = makeDoc({
+      stations: [
+        stationWithStop('s1', 'A', { x: 0, y: 0 }),
+        stationWithStop('s2', 'A', { x: 0, y: 100 }),
+      ],
+      lines: [makeLine({ id: 'A', stations: ['s1', 's2'] })],
+    });
+    const bands = buildBands(doc.stations, doc.lines, 24, doc.lineOrder);
+    const list = buildOrderedRenderables(bands, []);
+    const body = list.find((r) => r.kind === 'stripe')!;
+    const casing = list.find((r) => r.kind === 'casing')!;
+    const seam = list.find((r) => r.kind === 'seam')!;
+    // Higher priority = painted earlier = further back. Casing sits just behind
+    // the body; the seam just in front. The offsets are distinct (0.5 vs 0.25)
+    // so neither collides with a neighbour line's decoration one integer away.
+    expect(casing.priority).toBe(body.priority + 0.5);
+    expect(seam.priority).toBe(body.priority - 0.25);
+    const order = list.map((r) => r.kind);
+    expect(order.indexOf('casing')).toBeLessThan(order.indexOf('stripe'));
+    expect(order.indexOf('stripe')).toBeLessThan(order.indexOf('seam'));
+  });
 });
 
 describe('buildBands — segmentLayer priority', () => {

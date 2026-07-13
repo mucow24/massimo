@@ -20,7 +20,9 @@ import {
   LINE_STROKE_STEP,
   LINE_STROKE_WIDTH_MAX,
   LINE_STROKE_WIDTH_MIN,
+  lineStrokeRailWidth,
 } from '../model/lineStroke';
+import { withHexAlpha } from '../util/color';
 import {
   TRANSFER_STROKE_WIDTH_MAX,
   TRANSFER_STROKE_WIDTH_MIN,
@@ -102,6 +104,8 @@ function usePatch(id: string): (patch: StylePropsPatch) => void {
 
 function LineStyleEditor({ id, props }: { id: string; props: LineStyleProps }) {
   const patch = usePatch(id);
+  // Seam controls inherit the casing when unset (see Line.seamWidth / seamColor).
+  const railW = lineStrokeRailWidth(props.strokeWidth, props.width);
   return (
     <div className="style-editor">
       <NumericFieldRow
@@ -152,6 +156,26 @@ function LineStyleEditor({ id, props }: { id: string; props: LineStyleProps }) {
           ariaLabel="Stroke color"
           value={props.strokeColor}
           onChange={(strokeColor) => patch({ strokeColor })}
+        />
+      </div>
+      <NumericFieldRow
+        id={`style-${id}-seam`}
+        label="Seam width"
+        min={LINE_STROKE_WIDTH_MIN}
+        max={LINE_STROKE_WIDTH_MAX}
+        step={LINE_STROKE_STEP}
+        value={props.seamWidth ?? railW}
+        onChange={(seamWidth) => patch({ seamWidth })}
+        getCurrent={liveNumberProp(id, 'seamWidth', props.seamWidth ?? railW)}
+        textboxAllowAboveMax
+      />
+      <div className="row">
+        <label htmlFor={`style-${id}-seam-color`}>Seam color</label>
+        <ColorField
+          id={`style-${id}-seam-color`}
+          ariaLabel="Seam color"
+          value={props.seamColor ?? withHexAlpha(props.strokeColor, 0)}
+          onChange={(seamColor) => patch({ seamColor })}
         />
       </div>
     </div>

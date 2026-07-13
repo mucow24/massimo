@@ -1,0 +1,73 @@
+import type { Line, LineId } from '../../model/types';
+import type { SegmentBandSpec } from '../../geometry/interlining';
+import { closedPerimeterPath, computeStripeOutline } from '../../geometry/stripeOutline';
+import { lineSeamColorOf } from '../../model/lineStroke';
+
+// Clip-path id for one band's branch seam on a given line. The seam paints the
+// casing rails (centered on the body edges) in the seam color, clipped to
+// this — the union of the line's OTHER band corridors — so it shows ONLY where
+// this band overlaps another of the line's OWN bands (a branch/loop) and
+// vanishes on a plain segment (its own corridor is excluded) and on the outer
+// boundary (background is excluded). Ids sanitize to valid SVG id characters.
+export const seamClipId = (lineId: LineId, bandKey: string): string =>
+  `seam-clip-${`${lineId}__${bandKey}`.replace(/[^A-Za-z0-9_-]/g, '-')}`;
+
+interface Props {
+  bands: SegmentBandSpec[];
+  lines: Record<LineId, Line>;
+}
+
+/**
+ * One `<clipPath>` per (seam line, band): the union of that line's OTHER band
+ * body corridors (filled ribbons). Mount inside the canvas `<defs>`. A
+ * `<clipPath>` (fill-based, unlike a `<mask>`) survives PDF export — svg2pdf
+ * drops masks but renders clips. Excluding the seam's OWN band is what centers
+ * the seam on the body edge (aligned with the casing) without leaking onto
+ * plain segments. Cost is ~O(bands²) per seam line, but bands-per-line is small.
+ */
+export function SeamClips({ bands, lines }: Props) {
+  // Group each seam-line's stripes with their precomputed body ribbon.
+  const byLine = new Map<LineId, Array<{ bandKey: string; ribbon: string }>>();
+  for (const band of bands) {
+    for (let k = 0; k < band.lines.length; k++) {
+      const lineId = band.lines[k].id;
+      if (lineSeamColorOf(lines[lineId]) === undefined) continue;
+      const outline = computeStripeOutline(band, k);
+      if (!outline) continue;
+      const ribbon = closedPerimeterPath(outline.segsA, outline.segsB);
+      if (!ribbon) continue;
+      let arr = byLine.get(lineId);
+      if (!arr) {
+        arr = [];
+        byLine.set(lineId, arr);
+      }
+      arr.push({ bandKey: band.bandKey, ribbon });
+    }
+  }
+  if (byLine.size === 0) return null;
+  return (
+    <>
+      {[...byLine].flatMap(([lineId, stripes]) =>
+        stripes.map((s, i) => {
+          const others = stripes.filter((_, j) => j !== i);
+          return (
+            <clipPath
+              key={s.bandKey}
+              id={seamClipId(lineId, s.bandKey)}
+              clipPathUnits="userSpaceOnUse"
+            >
+              {others.length > 0 ? (
+                others.map((o, j) => <path key={j} d={o.ribbon} />)
+              ) : (
+                // No other band ⇒ no self-overlap ⇒ clip to nothing (a zero-area
+                // path keeps the clipPath non-empty so it reliably hides the seam
+                // rather than being treated as "no clip").
+                <path d="M0 0Z" />
+              )}
+            </clipPath>
+          );
+        }),
+      )}
+    </>
+  );
+}
