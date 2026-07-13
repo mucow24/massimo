@@ -7,15 +7,14 @@ import { seedAndOpen, type Seed } from './fixtures';
 // the feature landed. (The "default renders no casing" case passed from day
 // one, so it never carried an annotation.)
 //
-// A stroke of width s paints two SIDE RAILS per stripe CENTERED on the
-// line's body edges — s-wide paths at ±stripeWidth/2 from the stripe path,
-// half in, half out — in the line's strokeColor, MTA-style, plus two
-// matching rails on each stop marker's travel-axis edges. Centering is
-// load-bearing: tangent stroked neighbors' facing rails COINCIDE (one
-// separator, not two stacked, so interlined bands read with uniform stroke
-// weight on every edge), and the separator is anchored to the edge itself,
-// immune to draw order and segment layering. Rails paint immediately after
-// their own body and never cross the line.
+// A stroke of width s paints the band casing as a SILHOUETTE — the stripe path
+// stroked (bodyWidth + s) wide in the line's strokeColor, painted just BEHIND an
+// INSET body (bodyWidth − s) at priority + ε — so a line's own overlapping bands
+// (loops/branches) merge into one continuous outer casing instead of splitting
+// the color (see model/lineStroke.ts). Between DIFFERENT interlined lines the
+// inset bodies leave a railW gap the silhouettes fill, so the separator is
+// preserved. Each stop MARKER still carries matching centered rails on its
+// travel-axis edges (StopMarker is unchanged).
 
 const STRIPE = (page: Page, lineId: string) =>
   page.locator(`[data-band-stripe][data-line-id="${lineId}"]`).first();
@@ -205,20 +204,18 @@ test.describe('Per-line stroke', () => {
     await expect(page.locator('[data-marker-casing]')).toHaveCount(0);
   });
 
-  test('a seeded stroke renders edge rails on the stripe and markers', async ({ page }) => {
+  test('a seeded stroke renders a casing silhouette on the stripe and marker rails', async ({
+    page,
+  }) => {
     await seedAndOpen(page, strokedTwoStop);
 
-    // Two s-wide rails in the stroke color, painted right after the body.
-    const rails = page.locator('[data-band-casing][data-line-id="L1"]');
-    await expect(rails).toHaveCount(2);
-    for (const rail of await rails.all()) {
-      await expect(rail).toHaveAttribute('stroke-width', '4');
-      await expect(rail).toHaveAttribute('stroke', '#ff0000');
-    }
-    // The rails flank the body centerline on distinct offset paths.
-    const ds = await rails.evaluateAll((els) => els.map((el) => el.getAttribute('d')));
-    expect(ds[0]).not.toBe(ds[1]);
-    expect(ds[0]).not.toBe(await STRIPE(page, 'L1').getAttribute('d'));
+    // ONE casing silhouette (body + railW wide) in the stroke color, painted
+    // just behind the body — the band merges its own overlaps into one outer
+    // casing instead of two centered rails (see lineStroke.ts).
+    const casing = page.locator('[data-band-casing][data-line-id="L1"]');
+    await expect(casing).toHaveCount(1);
+    await expect(casing).toHaveAttribute('stroke-width', '18'); // width 14 + railW 4
+    await expect(casing).toHaveAttribute('stroke', '#ff0000');
 
     // Each stop marker gets two rails on its travel-axis edges, continuing
     // the stripe rails through the station — and both stops here are
@@ -237,11 +234,13 @@ test.describe('Per-line stroke', () => {
       await expect(cap).toHaveAttribute('stroke', '#ff0000');
     }
 
-    await expect(STRIPE(page, 'L1')).toHaveAttribute('stroke-width', '14');
+    // The body is inset by railW so the silhouette shows a railW rim on each edge.
+    await expect(STRIPE(page, 'L1')).toHaveAttribute('stroke-width', '10'); // 14 − railW 4
+    // The silhouette (casing) paints just before its own body; marker rails ride
+    // their markers at the end.
     expect(await casingThenBodyOrder(page, 'L1')).toEqual([
+      'casing',
       'stripe',
-      'casing',
-      'casing',
       'marker-casing',
       'marker-casing',
       'marker-casing',
@@ -256,7 +255,8 @@ test.describe('Per-line stroke', () => {
 
     await selectLine(page, 'L1');
     await setStrokeTo(page, '4');
-    await expect(CASING(page, 'L1')).toHaveAttribute('stroke-width', '4');
+    // The casing silhouette is body (14) + railW (4) wide.
+    await expect(CASING(page, 'L1')).toHaveAttribute('stroke-width', '18');
     // Default color is white.
     await expect(CASING(page, 'L1')).toHaveAttribute('stroke', '#ffffff');
 
@@ -265,7 +265,7 @@ test.describe('Per-line stroke', () => {
 
     await page.reload();
     await page.waitForSelector('.canvas-host svg');
-    await expect(CASING(page, 'L1')).toHaveAttribute('stroke-width', '4');
+    await expect(CASING(page, 'L1')).toHaveAttribute('stroke-width', '18');
     await expect(CASING(page, 'L1')).toHaveAttribute('stroke', '#00aa00');
 
     // Back to 0: the casing disappears and the field drops out of the
@@ -292,29 +292,30 @@ test.describe('Per-line stroke', () => {
       () => JSON.parse(localStorage.getItem('vignelli-map-doc-v1')!).state.lines.L1.strokeWidth,
     );
     expect(stored).toBe(30);
-    // …rendered rail clamps at the stripe width (rails meet at the centerline).
-    await expect(CASING(page, 'L1')).toHaveAttribute('stroke-width', '14');
+    // …the rendered railW clamps at the stripe width (14), so the silhouette is
+    // width + clamped railW = 14 + 14 = 28.
+    await expect(CASING(page, 'L1')).toHaveAttribute('stroke-width', '28');
 
-    // Half-step values render as-is.
+    // Half-step values render as-is: silhouette = 14 + 1.5 = 15.5.
     await setStrokeTo(page, '1.5');
-    await expect(CASING(page, 'L1')).toHaveAttribute('stroke-width', '1.5');
+    await expect(CASING(page, 'L1')).toHaveAttribute('stroke-width', '15.5');
   });
 
-  test('rails ride their own bodies through multi-segment lines', async ({ page }) => {
+  test('casing silhouettes paint behind their own bodies through multi-segment lines', async ({
+    page,
+  }) => {
     await seedAndOpen(page, strokedThreeStop);
 
     const order = await casingThenBodyOrder(page, 'L1');
-    // Each body is followed immediately by its own two rails; marker rails
-    // ride their markers at the end (the two TERMINI add an end cap each,
-    // the interior stop doesn't). Edge-centered rails keep the separator
-    // position independent of cross-element paint order.
+    // Both bands' silhouettes paint (priority + ε), then both bodies, then the
+    // marker rails ride their markers at the end (the two TERMINI add an end
+    // cap each, the interior stop doesn't). Same-line silhouettes-before-bodies
+    // is what merges a line's own overlaps.
     expect(order).toEqual([
-      'stripe',
-      'casing',
-      'casing',
-      'stripe',
-      'casing',
-      'casing',
+      'casing', // band A|B silhouette
+      'casing', // band B|C silhouette
+      'stripe', // band A|B body
+      'stripe', // band B|C body
       // terminus A: 2 side rails + end cap
       'marker-casing',
       'marker-casing',
@@ -329,7 +330,7 @@ test.describe('Per-line stroke', () => {
     ]);
   });
 
-  test('a front line’s rails follow its own body, inside its footprint', async ({ page }) => {
+  test('a front line’s casing silhouette paints just behind its own body', async ({ page }) => {
     await seedAndOpen(page, tangentFrontStroked);
 
     const order = await page.evaluate(() => {
@@ -342,14 +343,16 @@ test.describe('Per-line stroke', () => {
           el.getAttribute('data-line-id'),
       );
     });
-    expect(order).toEqual(['stripe:L2', 'stripe:L1', 'casing:L1', 'casing:L1']);
+    // L2 (back, no casing) body; then L1's casing silhouette (priority + ε) just
+    // behind its own body. L2 has no casing, so no L2 silhouette.
+    expect(order).toEqual(['stripe:L2', 'casing:L1', 'stripe:L1']);
   });
 
   test('the casing survives SVG export', async ({ page }) => {
     await seedAndOpen(page, strokedTwoStop);
 
     // Live canvas first (the export clones the live SVG)…
-    await expect(CASING(page, 'L1')).toHaveAttribute('stroke-width', '4');
+    await expect(CASING(page, 'L1')).toHaveAttribute('stroke-width', '18'); // silhouette 14 + 4
     // …then the exported markup as an end-to-end smoke.
     const svg = await exportSvg(page);
     expect(svg).toContain('data-band-casing');
