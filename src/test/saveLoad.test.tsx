@@ -318,6 +318,44 @@ describe('save/load round-trip', () => {
   });
 });
 
+describe('localStorage rehydrate — line edge backfill', () => {
+  beforeEach(() => {
+    localStorage.clear();
+    useDoc.setState({ ...useDoc.getState(), ...DEFAULT_DOC });
+  });
+
+  it('backfills edges when rehydrating a doc stranded at the current version with edge-less lines', async () => {
+    // The exact shape an intermediate build persisted: version 14 (== the
+    // current persist version, so zustand SKIPS `migrate`) with lines that
+    // predate the `edges` field. Without a rehydrate-time backfill the renderer
+    // reads `ln.edges.join(...)` on undefined and the whole app white-screens.
+    localStorage.setItem(
+      'vignelli-map-doc-v1',
+      JSON.stringify({
+        version: 14,
+        state: {
+          lines: {
+            L1: {
+              id: 'L1',
+              service: 'A',
+              name: 'A line',
+              color: '#0039A6',
+              stations: ['s1', 's2'],
+            },
+          },
+        },
+      }),
+    );
+
+    await useDoc.persist.rehydrate();
+
+    const l1 = useDoc.getState().lines.L1;
+    expect(Array.isArray(l1.edges)).toBe(true);
+    // Derived from the legacy linear `stations` order.
+    expect(l1.edges).toEqual(['s1|s2']);
+  });
+});
+
 describe('addLine auto-cycle across palettes', () => {
   it('cycles through every active palette’s colors in PALETTES order, then wraps', () => {
     // Note: BART precedes MTA alphabetically within North America, so the

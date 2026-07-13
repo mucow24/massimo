@@ -885,6 +885,21 @@ export const useDoc = create<DocState>()(
         // Version migration chain v0 → v14 lives in `migrateDoc` (above), which
         // is exported and unit-tested. See its doc comment for each step.
         migrate: (persisted, version) => migrateDoc(persisted, version),
+        // `migrate` only runs when the STORED version differs from the config
+        // version — so a doc stranded at 14 (an intermediate build re-saved docs
+        // at the bumped version BEFORE lines carried `edges`) skips migrateDoc's
+        // unconditional edge backfill entirely, and the renderer crashes on
+        // `ln.edges.join(...)`. `merge` runs on EVERY rehydrate, so repair that
+        // one invariant here too. Reference-stable when every line already has
+        // an array, so canonical docs pass straight through the default merge.
+        merge: (persisted, current) => {
+          const doc = (persisted ?? {}) as Partial<DocState>;
+          if (doc.lines) {
+            const { lines, changed } = backfillLinesEdges(doc.lines);
+            if (changed) return { ...current, ...doc, lines };
+          }
+          return { ...current, ...doc };
+        },
         partialize: (s) => pickDocSnapshot(s),
       },
     ),

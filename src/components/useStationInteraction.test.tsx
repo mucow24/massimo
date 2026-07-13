@@ -359,16 +359,19 @@ describe('useStationInteraction — append-to-line', () => {
     expect(toggleStationOnLine).not.toHaveBeenCalled();
   });
 
-  it('alt+click on a non-member adds it then wires the edge (branch to a new stop)', () => {
-    // Pen on T (index 0); alt-click the fresh station S branches T→S.
+  it('alt+click on a non-member no longer branches — it linear-inserts like a plain click', () => {
+    // Pen on T (index 0). The Alt-click branch shortcut was removed, so
+    // alt-clicking the fresh station S just splices it into the chain at the
+    // cursor — no new station+edge, no branch.
     useSelection.getState().startAppendAt('L1' as LineId, 0);
     const lines = {
       L1: makeLine({ id: 'L1' as LineId, stations: ['T', 'U'] as StationId[] }),
     };
     const { result } = setup(stationS(), lines);
     click(result.current.handlers, pointerEvent({ altKey: true }) as unknown as React.MouseEvent);
-    expect(addStationToLine).toHaveBeenCalledWith('L1', 'S');
-    expect(toggleEdgeOnLine).toHaveBeenCalledWith('L1', 'T', 'S');
+    expect(toggleStationOnLine).toHaveBeenCalledWith('L1', 'S', 0);
+    expect(addStationToLine).not.toHaveBeenCalled();
+    expect(toggleEdgeOnLine).not.toHaveBeenCalled();
   });
 });
 

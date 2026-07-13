@@ -318,7 +318,11 @@ export function StationGraph(props: StationGraphProps) {
                     type="button"
                     className="btn-mini icon"
                     onClick={() => onInsertAfter(n.stationId)}
-                    title="Insert stops after this stop (in-line)"
+                    title={
+                      armed && !appendDraw
+                        ? 'Click to stop adding after this stop'
+                        : 'Insert stops after this stop (in-line)'
+                    }
                     aria-label={`Insert after ${st.name}`}
                     style={{
                       background: armed && !appendDraw ? color : undefined,
@@ -332,7 +336,11 @@ export function StationGraph(props: StationGraphProps) {
                     type="button"
                     className="btn-mini icon"
                     onClick={() => onBranchFrom(n.stationId)}
-                    title="Start a new branch from this stop"
+                    title={
+                      armed && appendDraw
+                        ? 'Click to stop branching from this stop'
+                        : 'Start a new branch from this stop'
+                    }
                     aria-label={`Branch from ${st.name}`}
                     style={{
                       background: armed && appendDraw ? color : undefined,
