@@ -8,6 +8,7 @@ import { resolveDotStyle } from '../../model/transforms';
 import { DOT_SHAPE_PRESETS } from '../../model/dotStyle';
 import { lineStyleStrokeAttrs, lineStyleUnderlayAttrs, HatchPatterns } from '../HatchPatterns';
 import { StopGlyph } from '../StopGlyph';
+import { BranchGlyph } from './BranchGlyph';
 import { SHAPES } from '../StationShapePicker';
 import { useDismiss } from '../usePopover';
 import { stationNameListText } from '../../geometry/labelTokens';
@@ -348,7 +349,7 @@ export function StationGraph(props: StationGraphProps) {
                     }}
                   >
                     <span style={{ fontSize: 11 }}>+</span>
-                    <BranchGlyph />
+                    <BranchGlyph size={13} />
                   </button>
                   <button
                     type="button"
@@ -409,27 +410,5 @@ function DotShapePopover({
         </button>
       ))}
     </div>
-  );
-}
-
-// A downward junction glyph (matches the one in LineInspector's insert zones).
-function BranchGlyph() {
-  return (
-    <svg
-      width="13"
-      height="13"
-      viewBox="0 0 15 15"
-      fill="none"
-      stroke="currentColor"
-      strokeWidth={1.3}
-      strokeLinecap="round"
-      strokeLinejoin="round"
-      aria-hidden
-    >
-      <path d="M4 1.5 V13" />
-      <path d="M1.8 10.5 L4 13 L6.2 10.5" />
-      <path d="M4 5 C 9 5, 11 6.5, 11.2 12" />
-      <path d="M9 9.7 L11.2 12.2 L13.2 9.4" />
-    </svg>
   );
 }

@@ -2,7 +2,7 @@
 // serialize/parse, malformed defs are dropped, numerics land on the canonical
 // grids, and dangling / wrong-kind styleId tags are pruned.
 import { describe, it, expect } from 'vitest';
-import { parse, serialize } from './serialize';
+import { bakeLegacyLabelSettings, parse, serialize } from './serialize';
 import { applyStyleToItem } from './styles';
 import { DEFAULT_STYLES, FACTORY_STYLE_DEFAULTS } from './transforms';
 import type { MapDoc, TextLabelStyleProps } from './types';
@@ -453,5 +453,23 @@ describe('bakeLegacyLabelSettings via parse — retired global station-label fon
     const result = parse(serialize(doc));
     expect(result.ok).toBe(true);
     if (result.ok) expect(result.doc).toEqual(doc);
+  });
+
+  it('leaves an already-customized default station style un-seeded (no clobber)', () => {
+    // The designated default station style wears NON-factory props (the user
+    // edited the Default). Seeding it from the legacy base settings would erase
+    // that customization — the guard must skip the seed and preserve the props.
+    const custom = makeStyle('station', 'default-station', {
+      name: 'Default',
+      props: { fontSize: 30, weight: 700, italic: false, leading: 1.2, tracking: 0 },
+    });
+    const doc = {
+      stations: {},
+      styles: { 'default-station': custom },
+      styleDefaults: { ...FACTORY_STYLE_DEFAULTS, station: 'default-station' },
+      labelFontSize: 18, // a legacy field so the bake actually runs
+    } as unknown as Parameters<typeof bakeLegacyLabelSettings>[0];
+    const out = bakeLegacyLabelSettings(doc);
+    expect(out.styles!['default-station'].props).toEqual(custom.props);
   });
 });
