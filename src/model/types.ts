@@ -472,14 +472,15 @@ export type PolygonStylePatch = Partial<
   >
 >;
 
-// A free-floating imported SVG graphic, placed on the canvas as an OPAQUE
-// `<image href="data:image/svg+xml;base64,…">`. Rendered in the same band as
-// polygons (under all other map content). `x`/`y` are the WORLD coords of the
-// image CENTER; `width`/`height` are the unrotated bounding-box size in world
-// units (post-scale). `rotation` is a CONTINUOUS angle in degrees clockwise —
-// deliberately NOT the 8-step `Rotation` octant used elsewhere, because svg
-// images snap to 22.5° (half an octant) under Shift. `href` is the embedded
-// data URI, fixed at import and never edited.
+// A free-floating imported graphic — an .svg, or a png/jpeg raster — placed on
+// the canvas as an OPAQUE `<image href="data:image/…;base64,…">`. (The name
+// predates raster support; the entity is format-agnostic.) Rendered in the
+// same band as polygons (under all other map content). `x`/`y` are the WORLD
+// coords of the image CENTER; `width`/`height` are the unrotated bounding-box
+// size in world units (post-scale). `rotation` is a CONTINUOUS angle in
+// degrees clockwise — deliberately NOT the 8-step `Rotation` octant used
+// elsewhere, because these images snap to 22.5° (half an octant) under Shift.
+// `href` is the embedded data URI, fixed at import and never edited.
 export interface SvgImage {
   id: string;
   x: number;
@@ -543,8 +544,8 @@ export interface MapDoc {
   // by the store on every geometry-committing edit. Absent entries mean every
   // overlap shows its lineOrder default.
   regionAssignments: Record<string, RegionAssignment>;
-  // Free-floating imported SVG graphics, placed in the polygon band (under all
-  // other map content). Keyed by image id.
+  // Free-floating imported graphics (svg or png/jpeg raster), placed in the
+  // polygon band (under all other map content). Keyed by image id.
   svgImages: Record<string, SvgImage>;
   // Relative paint order of svg images among themselves (all still sit in the
   // polygon band). Later in the array = painted later = on top. Ids missing
