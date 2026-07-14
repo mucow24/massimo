@@ -3,15 +3,25 @@ import { pairKeyOf } from '../../model/pairKey';
 import { edgeEndpoints } from '../../model/lineTopology';
 
 // Column-based ("git graph") layout for a line's topology in the inspector.
-// Each member station gets a ROW (vertical order) and a LANE (column). The
-// trunk (lane 0) follows the graph's LONGEST chain, so loops thread inline and
-// only genuine dead-end branches spend an extra column; at a branch the trunk
-// continues in the lane and each other path takes a new lane to the right that
-// runs alongside down to its stops. A loop closes with a back-edge routed in a
-// side lane so it doesn't overlap the trunk.
+// Each member station gets a ROW (vertical order) and a LANE (column), laid out
+// so the tree reads like the drawn line:
 //
-// Pure: depends only on `line.stations` (members + their display order, which
-// only breaks ties for the trunk) and `line.edges` (topology).
+//   • The trunk (lane 0) is the longest chain FROM the display-first terminus,
+//     so the list starts where the user started drawing and runs in drawn
+//     direction. A path found tip-first is reversed, and a singleton "bypass
+//     cap" at the line's end is trimmed off the trunk so it renders between
+//     its neighbors instead of folding back past them.
+//   • At a junction, branch stops are emitted DIRECTLY below it (before the
+//     trunk continues), so a branch reads next to its junction rather than
+//     after the whole trunk. Lanes are reused across disjoint row spans.
+//   • A back-edge closing a cycle renders as a MERGE — the arm rejoins the
+//     line with a jog above its target, mirroring the branch tee — when its
+//     upper endpoint ends a side lane; otherwise as an arc bowed out in a side
+//     lane over the top of the upper endpoint, so a lasso's junction stays
+//     inside its loop.
+//
+// Pure: depends only on `line.stations` (members + display order, which is
+// drawn order) and `line.edges` (topology).
 
 export interface GraphNode {
   stationId: StationId;
@@ -26,16 +36,21 @@ export interface GraphEdgeVis {
   fromLane: number;
   toRow: number;
   toLane: number;
-  // 'tree' = a spanning-tree edge (drawn as a straight/branch connector);
-  // 'loop' = a back-edge closing a cycle, routed out in `sideLane`.
-  kind: 'tree' | 'loop';
-  // Only for loops: the column the back-edge bows out into (right of the tree).
-  sideLane?: number;
+  // 'tree'  = a spanning-tree edge (straight vertical or a tee'd branch connector);
+  // 'merge' = a back-edge from the end of a side lane into a later stop, drawn
+  //           down the lane with a jog across just above its target;
+  // 'loop'  = any other back-edge, routed out in `sideLane` as an arc.
+  kind: 'tree' | 'merge' | 'loop';
   // Only for a cross-lane branch: the blank row one cell below the parent where
   // the branch tees off, so the horizontal sits below the stop, not through it.
   teeRow?: number;
-  // Only for loops: the blank rows below the upper / lower endpoints where the
-  // loop's horizontals sit (below the stops, not branching out of them).
+  // Only for merges: the blank row above the target where the arm jogs across.
+  jogRow?: number;
+  // Only for loops: the column the arc bows into — the smallest lane free over
+  // the arc's row span, so nearby columns are reused rather than accumulated.
+  sideLane?: number;
+  // Only for loops: the blank rows above the upper / below the lower endpoint
+  // where the arc's horizontals sit (over the top of the upper stop).
   upperBlank?: number;
   lowerBlank?: number;
 }
@@ -84,18 +99,19 @@ function longestPathFrom(
   return best;
 }
 
-// Pick, per connected component, the longest simple path and record each of its
-// nodes' trunk SUCCESSOR (so the layout walk lays that chain down lane 0) plus
-// the component's start node. Routing the trunk down the longest chain threads
-// loops inline — their internal stops sit in the trunk lane and the cycle closes
-// with a short side arc — instead of each loop/branch claiming a parallel column.
+// Pick, per connected component, the trunk chain: the longest simple path from
+// the component's display-FIRST terminus (its display-first member when a ring
+// has no terminus), so the tree starts reading where the user started drawing.
+// Records each trunk node's successor, the component start, and the full trunk
+// membership (the DFS may only enter trunk stations along this chain).
 function longestTrunk(
   members: StationId[],
   adj: Map<StationId, StationId[]>,
   order: Map<StationId, number>,
-): { next: Map<StationId, StationId>; starts: StationId[] } {
+): { next: Map<StationId, StationId>; starts: StationId[]; trunkSet: Set<StationId> } {
   const next = new Map<StationId, StationId>();
   const starts: StationId[] = [];
+  const trunkSet = new Set<StationId>();
   const budget = { steps: LONGEST_PATH_STEP_BUDGET };
   const byDisplay = (a: StationId, b: StationId) => order.get(a)! - order.get(b)!;
   const seen = new Set<StationId>();
@@ -115,28 +131,43 @@ function longestTrunk(
         }
       }
     }
-    // Seed from every terminus (a longest path ends at one); a ring with no ends
-    // seeds from its display-first stop.
     const termini = comp.filter((c) => adj.get(c)!.length === 1).sort(byDisplay);
-    const seeds = termini.length ? termini : [[...comp].sort(byDisplay)[0]];
-    let bestPath: StationId[] = [seeds[0]];
-    for (const s of seeds) {
-      const p = longestPathFrom(s, adj, budget);
-      if (p.length > bestPath.length) bestPath = p;
-      if (budget.steps <= 0) break;
+    const seed = termini[0] ?? [...comp].sort(byDisplay)[0];
+    const path = longestPathFrom(seed, adj, budget);
+    // Keep the drawn direction when the seed itself was drawn late: a component
+    // drawn ring-first grows its only terminus at the tip of a LATER tail, and
+    // reading from that tip would render the whole ring in reverse drawn order.
+    if (order.get(path[path.length - 1])! < order.get(path[0])!) path.reverse();
+    // Bypass-cap trim: a singleton bypass at the END of the line — a station
+    // whose only two neighbours are the last trunk edge's endpoints, drawn
+    // after both — should render BETWEEN them as a parallel arm (as the same
+    // bypass already does mid-line), not extend the trunk past the mainline
+    // and fold back. Guards: a pure ring keeps threading inline (T would be
+    // the trunk start), and longer folded-back tails (e.g. a lasso) never
+    // match a singleton.
+    while (path.length >= 3) {
+      const cap = path[path.length - 1];
+      const before = path[path.length - 2];
+      const anchor = path[path.length - 3];
+      const nbrs = adj.get(cap)!;
+      const isTriangleCap = nbrs.length === 2 && nbrs.includes(anchor) && nbrs.includes(before);
+      const drawnAfterBoth =
+        order.get(cap)! > order.get(anchor)! && order.get(cap)! > order.get(before)!;
+      if (!isTriangleCap || !drawnAfterBoth || anchor === path[0]) break;
+      path.pop();
     }
-    // Orient so the trunk starts at the display-earlier endpoint (determinism).
-    if (order.get(bestPath[0])! > order.get(bestPath[bestPath.length - 1])!) bestPath.reverse();
-    starts.push(bestPath[0]);
-    for (let i = 0; i < bestPath.length - 1; i++) next.set(bestPath[i], bestPath[i + 1]);
+    starts.push(path[0]);
+    for (let i = 0; i < path.length - 1; i++) next.set(path[i], path[i + 1]);
+    for (const p of path) trunkSet.add(p);
   }
-  return { next, starts };
+  return { next, starts, trunkSet };
 }
 
 export function lineGraphLayout(line: Line): LineGraphLayout {
   const members = line.stations;
   const order = new Map<StationId, number>();
   members.forEach((s, i) => order.set(s, i));
+  const byDisplay = (a: StationId, b: StationId) => order.get(a)! - order.get(b)!;
 
   const adj = new Map<StationId, StationId[]>();
   for (const s of members) adj.set(s, []);
@@ -148,151 +179,244 @@ export function lineGraphLayout(line: Line): LineGraphLayout {
     }
   }
   // Visit neighbours in display order so the layout is deterministic and the
-  // user's drawn order decides which path is the trunk.
-  for (const list of adj.values()) list.sort((x, y) => order.get(x)! - order.get(y)!);
+  // user's drawn order decides trunk ties and branch order.
+  for (const list of adj.values()) list.sort(byDisplay);
 
-  // Route the trunk down each component's LONGEST chain so loops thread inline
-  // (a big win in the narrow editor). `starts` gives one root per component and
-  // `trunkNext` names the lane-0 successor of every stop along those chains;
-  // display order only breaks ties. The remaining members are appended as roots
-  // purely as a safety net — every component is already covered by a start.
-  const { next: trunkNext, starts } = longestTrunk(members, adj, order);
+  const { next: trunkNext, starts, trunkSet } = longestTrunk(members, adj, order);
   const startSet = new Set(starts);
-  const roots = [
-    ...starts,
-    ...[...members].filter((m) => !startSet.has(m)).sort((a, b) => order.get(a)! - order.get(b)!),
-  ];
+  const roots = [...starts, ...members.filter((m) => !startSet.has(m)).sort(byDisplay)];
 
-  // Phase A — one DFS: visit sequence + lane per stop, the spanning-tree edges,
-  // the loop back-edges, and each stop's tree-child count.
+  // Phase A — one DFS producing the visit sequence, the RUN partition (a run =
+  // a maximal same-lane chain: the trunk, or one branch arm), the spanning-tree
+  // edges, and the back-edges. Rules:
+  //   • a trunk station may only be ENTERED along the trunk walk (via
+  //     trunkNext); other unvisited trunk neighbours are skipped here and
+  //     resolve later as back-edges, when the later endpoint sees the earlier
+  //     one visited;
+  //   • children order: branches (display order) FIRST, the run continuation
+  //     LAST — branch stops hug their junction and the run resumes below them;
+  //   • the continuation (trunkNext on the trunk, the first eligible child off
+  //     it) stays in the parent's run; every other child starts a new run.
+  interface Run {
+    parentRun: number | null;
+    teeOf: StationId | null; // the junction this run tees off (null for roots)
+    chain: StationId[]; // stations in this run, top to bottom
+    lane: number;
+  }
+  const runs: Run[] = [];
+  const runOf = new Map<StationId, number>();
   interface TreeE {
     pairKey: string;
     parent: StationId;
     child: StationId;
-    sameLane: boolean;
+    sameRun: boolean;
   }
-  interface LoopE {
+  interface BackE {
     pairKey: string;
     upper: StationId; // earlier-visited endpoint
     lower: StationId; // later-visited endpoint
   }
-  const seqOf = new Map<StationId, number>();
-  const laneOf = new Map<StationId, number>();
-  const childCount = new Map<StationId, number>();
   const treeEdges: TreeE[] = [];
-  const loopEdges: LoopE[] = [];
+  const backEdges: BackE[] = [];
+  const seqOf = new Map<StationId, number>();
   const visited = new Set<StationId>();
   let nextSeq = 0;
-  let nextLane = 1; // lane 0 is the trunk
 
-  const visit = (node: StationId, lane: number, parent: StationId | null) => {
+  const visit = (node: StationId, runId: number, parent: StationId | null) => {
     visited.add(node);
     seqOf.set(node, nextSeq++);
-    laneOf.set(node, lane);
-    let kids = 0;
-    let first = true;
+    runOf.set(node, runId);
+    runs[runId].chain.push(node);
     let skippedParent = false;
-    // Take the trunk successor first so it becomes the lane-0 continuation; the
-    // rest follow in display order (branches / back-edges).
     const tn = trunkNext.get(node);
-    const nbrs =
-      tn === undefined ? adj.get(node)! : [tn, ...adj.get(node)!.filter((x) => x !== tn)];
-    for (const nb of nbrs) {
+    const eligible: StationId[] = [];
+    for (const nb of adj.get(node)!) {
       if (nb === parent && !skippedParent) {
         skippedParent = true; // consume the tree edge back to the parent once
         continue;
       }
       if (visited.has(nb)) {
-        // Back-edge → a loop. Both endpoints see it; record once from the LOWER
-        // (later-visited) node looking up at the already-placed upper one.
+        // Back-edge → a cycle closes. Both endpoints see it; record once from
+        // the LOWER (later-visited) node looking up at the placed upper one.
         if (seqOf.get(nb)! < seqOf.get(node)!) {
-          loopEdges.push({ pairKey: pairKeyOf(node, nb), upper: nb, lower: node });
+          backEdges.push({ pairKey: pairKeyOf(node, nb), upper: nb, lower: node });
         }
         continue;
       }
-      kids++;
-      const childLane = first ? lane : nextLane++;
-      first = false;
-      treeEdges.push({
-        pairKey: pairKeyOf(node, nb),
-        parent: node,
-        child: nb,
-        sameLane: childLane === lane,
-      });
-      visit(nb, childLane, node);
+      // Trunk stations are only entered via the trunk walk; the skipped edge
+      // returns as a back-edge once the trunk reaches the neighbour.
+      if (trunkSet.has(nb) && nb !== tn) continue;
+      eligible.push(nb);
     }
-    childCount.set(node, kids);
+    const continuation = tn !== undefined && eligible.includes(tn) ? tn : eligible[0];
+    const ordered = [...eligible.filter((c) => c !== continuation), continuation].filter(
+      (c): c is StationId => c !== undefined,
+    );
+    for (const nb of ordered) {
+      if (visited.has(nb)) continue; // a sibling subtree may have reached it
+      const sameRun = nb === continuation;
+      let childRun = runId;
+      if (!sameRun) {
+        childRun = runs.length;
+        runs.push({ parentRun: runId, teeOf: node, chain: [], lane: -1 });
+      }
+      treeEdges.push({ pairKey: pairKeyOf(node, nb), parent: node, child: nb, sameRun });
+      visit(nb, childRun, node);
+    }
   };
-  for (const r of roots) if (!visited.has(r)) visit(r, 0, null);
-
-  // Phase B — which stops get a blank row, and on which SIDE. A branch point tees
-  // its extra child off in a blank BELOW it. A loop's UPPER endpoint always gets a
-  // blank ABOVE it and the arc loops over its top: a back-edge closes to an
-  // ancestor, so the upper endpoint is the TOP of its cycle and must read as being
-  // INSIDE the loop (teeing off below it would strand a cycle's entry junction
-  // visually above/outside its own loop). The lower endpoint tees off below, so
-  // the loop closes under it.
-  const blankBelow = new Set<StationId>();
-  const blankAbove = new Set<StationId>();
-  for (const [node, k] of childCount) if (k >= 2) blankBelow.add(node);
-  for (const lp of loopEdges) {
-    blankAbove.add(lp.upper);
-    blankBelow.add(lp.lower);
+  for (const r of roots) {
+    if (visited.has(r)) continue;
+    const rootRun = runs.length;
+    runs.push({ parentRun: null, teeOf: null, chain: [], lane: 0 });
+    visit(r, rootRun, null);
   }
 
-  // Phase C — assign final rows in visit order, inserting the reserved blanks
-  // (above a loop's upper endpoint, below branch points and loop lower endpoints).
+  // Phase B — classify back-edges. Same run → an arc over the top of the upper
+  // endpoint (a cycle closing onto its own lane, e.g. a lasso or ring). Across
+  // runs, IF the upper endpoint is the bottom of its run (nothing below it in
+  // that lane) → a merge: the arm reads as a parallel track rejoining the line.
+  // Otherwise (upper has in-lane descendants the merge would cut through) fall
+  // back to an arc.
+  const chainBottom = new Map<number, StationId>();
+  runs.forEach((r, i) => {
+    if (r.chain.length) chainBottom.set(i, r.chain[r.chain.length - 1]);
+  });
+  interface Routed extends BackE {
+    flavor: 'arc' | 'merge';
+  }
+  const routed: Routed[] = backEdges.map((be) => {
+    const sameRun = runOf.get(be.upper)! === runOf.get(be.lower)!;
+    const upperIsBottom = chainBottom.get(runOf.get(be.upper)!) === be.upper;
+    return { ...be, flavor: !sameRun && upperIsBottom ? 'merge' : 'arc' };
+  });
+
+  // Phase C — which stops get a blank row, and on which side. A branch point
+  // tees its cross-run children off in a blank BELOW it. An arc's UPPER
+  // endpoint gets a blank ABOVE it (the arc comes over its top, keeping a
+  // cycle's junction inside its loop) and its lower endpoint a blank below. A
+  // merge target gets a blank ABOVE it, hosting the arm's jog.
+  const blankAbove = new Set<StationId>();
+  const blankBelow = new Set<StationId>();
+  for (const te of treeEdges) if (!te.sameRun) blankBelow.add(te.parent);
+  for (const be of routed) {
+    if (be.flavor === 'arc') {
+      blankAbove.add(be.upper);
+      blankBelow.add(be.lower);
+    } else {
+      blankAbove.add(be.lower);
+    }
+  }
+
+  // Phase D — assign final rows in visit order, inserting the reserved blanks.
   const inSeq = [...seqOf.keys()].sort((a, b) => seqOf.get(a)! - seqOf.get(b)!);
   const rowOf = new Map<StationId, number>();
-  const blankRowOf = new Map<StationId, number>();
   const aboveRowOf = new Map<StationId, number>();
+  const belowRowOf = new Map<StationId, number>();
   let nextRow = 0;
   for (const node of inSeq) {
     if (blankAbove.has(node)) aboveRowOf.set(node, nextRow++);
     rowOf.set(node, nextRow++);
-    if (blankBelow.has(node)) blankRowOf.set(node, nextRow++);
+    if (blankBelow.has(node)) belowRowOf.set(node, nextRow++);
   }
   const rowCount = nextRow;
 
-  // Phase D — build renderable nodes + edges.
+  // Phase E — lanes by interval reuse. Every run claims the row interval its
+  // vertical actually occupies — tee row through chain bottom, extended down to
+  // the jog row of any merge leaving its end — and branch runs, processed in
+  // tee order (parents before their nested children), take the smallest lane
+  // ≥ 1 that is free across the whole interval. Arcs claim their side lane the
+  // same way afterwards. Two branches may share a lane when their spans don't
+  // overlap, which is what keeps a many-branch line at two columns.
+  const claims: { lane: number; top: number; bottom: number }[] = [];
+  const isFree = (lane: number, top: number, bottom: number) =>
+    !claims.some((c) => c.lane === lane && c.top <= bottom && top <= c.bottom);
+  const smallestFree = (top: number, bottom: number) => {
+    for (let lane = 1; ; lane++) if (isFree(lane, top, bottom)) return lane;
+  };
+
+  const mergesFrom = new Map<StationId, Routed[]>();
+  for (const be of routed) {
+    if (be.flavor !== 'merge') continue;
+    const list = mergesFrom.get(be.upper) ?? [];
+    list.push(be);
+    mergesFrom.set(be.upper, list);
+  }
+  const runInterval = (r: Run): { top: number; bottom: number } => {
+    const top = r.teeOf !== null ? belowRowOf.get(r.teeOf)! : rowOf.get(r.chain[0])!;
+    let bottom = rowOf.get(r.chain[r.chain.length - 1])!;
+    for (const m of mergesFrom.get(r.chain[r.chain.length - 1]) ?? []) {
+      bottom = Math.max(bottom, aboveRowOf.get(m.lower)!);
+    }
+    return { top, bottom };
+  };
+  for (const r of runs) {
+    if (r.parentRun === null && r.chain.length) {
+      const { top, bottom } = runInterval(r);
+      claims.push({ lane: 0, top, bottom });
+    }
+  }
+  const branchRuns = runs
+    .filter((r) => r.chain.length && r.parentRun !== null)
+    .sort((a, b) => runInterval(a).top - runInterval(b).top);
+  for (const r of branchRuns) {
+    const { top, bottom } = runInterval(r);
+    r.lane = smallestFree(top, bottom);
+    claims.push({ lane: r.lane, top, bottom });
+  }
+  const laneOf = (s: StationId) => runs[runOf.get(s)!].lane;
+
+  // Phase F — build renderable nodes + edges; arcs claim side lanes last, in
+  // span order, so each bows into the nearest free column.
   const nodes: GraphNode[] = inSeq.map((s) => ({
     stationId: s,
     row: rowOf.get(s)!,
-    lane: laneOf.get(s)!,
+    lane: laneOf(s),
   }));
   const edges: GraphEdgeVis[] = [];
   for (const te of treeEdges) {
     edges.push({
       pairKey: te.pairKey,
       fromRow: rowOf.get(te.parent)!,
-      fromLane: laneOf.get(te.parent)!,
+      fromLane: laneOf(te.parent),
       toRow: rowOf.get(te.child)!,
-      toLane: laneOf.get(te.child)!,
+      toLane: laneOf(te.child),
       kind: 'tree',
-      ...(te.sameLane ? {} : { teeRow: blankRowOf.get(te.parent)! }),
+      ...(te.sameRun ? {} : { teeRow: belowRowOf.get(te.parent)! }),
     });
   }
-  for (const lp of loopEdges) {
+  for (const be of routed) {
+    if (be.flavor !== 'merge') continue;
     edges.push({
-      pairKey: lp.pairKey,
-      fromRow: rowOf.get(lp.upper)!,
-      fromLane: laneOf.get(lp.upper)!,
-      toRow: rowOf.get(lp.lower)!,
-      toLane: laneOf.get(lp.lower)!,
+      pairKey: be.pairKey,
+      fromRow: rowOf.get(be.upper)!,
+      fromLane: laneOf(be.upper),
+      toRow: rowOf.get(be.lower)!,
+      toLane: laneOf(be.lower),
+      kind: 'merge',
+      jogRow: aboveRowOf.get(be.lower)!,
+    });
+  }
+  const arcs = routed
+    .filter((be) => be.flavor === 'arc')
+    .sort((a, b) => aboveRowOf.get(a.upper)! - aboveRowOf.get(b.upper)!);
+  for (const be of arcs) {
+    const top = aboveRowOf.get(be.upper)!;
+    const bottom = belowRowOf.get(be.lower)!;
+    const sideLane = smallestFree(top, bottom);
+    claims.push({ lane: sideLane, top, bottom });
+    edges.push({
+      pairKey: be.pairKey,
+      fromRow: rowOf.get(be.upper)!,
+      fromLane: laneOf(be.upper),
+      toRow: rowOf.get(be.lower)!,
+      toLane: laneOf(be.lower),
       kind: 'loop',
-      // The arc comes in over the top of the upper stop (from the blank ABOVE it)
-      // and tees off below the lower stop (the blank BELOW it), so both endpoints
-      // sit inside the loop.
-      upperBlank: aboveRowOf.get(lp.upper)!,
-      lowerBlank: blankRowOf.get(lp.lower)!,
+      sideLane,
+      upperBlank: top,
+      lowerBlank: bottom,
     });
   }
 
-  // Phase E — route each loop in its own side lane, right of the tree.
-  const treeLaneCount = nodes.reduce((m, n) => Math.max(m, n.lane), 0) + 1;
-  let sideLane = treeLaneCount;
-  for (const e of edges) if (e.kind === 'loop') e.sideLane = sideLane++;
-  const laneCount = Math.max(treeLaneCount, sideLane);
-
+  const laneCount = Math.max(0, ...nodes.map((n) => n.lane), ...claims.map((c) => c.lane)) + 1;
   return { nodes, edges, laneCount, rowCount };
 }
