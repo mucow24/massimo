@@ -17,17 +17,16 @@ import { buildOverlapRegions, type RegionFace } from './lineRegions';
 export interface GeometrySlice {
   stations: Record<StationId, Station>;
   lines: Record<LineId, Line>;
-  curveRadius: number;
 }
 
 /**
  * Hash of everything region geometry depends on: station positions/rotations
- * and stop cells, line edge sets and widths, segment style VALUES (they flip
- * marker footprints between full-square and stub/none), and curveRadius.
+ * and stop cells, line edge sets, widths and curve radii, and segment style
+ * VALUES (they flip marker footprints between full-square and stub/none).
  * Deliberately excludes colors, casing, seams, lineOrder — presentation.
  */
 export function regionGeometrySig(g: GeometrySlice): string {
-  const parts: string[] = [String(g.curveRadius)];
+  const parts: string[] = [];
   for (const id of Object.keys(g.stations)) {
     const st = g.stations[id];
     if (!st.stops.length) continue; // stopless stations carry no band geometry
@@ -37,7 +36,7 @@ export function regionGeometrySig(g: GeometrySlice): string {
   for (const id of Object.keys(g.lines)) {
     const ln = g.lines[id];
     if (!ln.edges.length) continue; // edgeless lines have no bands
-    parts.push(id, ln.edges.join('.'), String(ln.width ?? ''));
+    parts.push(id, ln.edges.join('.'), String(ln.width ?? ''), String(ln.curveRadius ?? ''));
     const styles = ln.segmentStyles;
     if (styles) for (const k of Object.keys(styles)) parts.push(k, styles[k]);
   }
@@ -67,7 +66,7 @@ export function regionsFor(g: GeometrySlice): RegionGeometry {
     cache.set(sig, hit);
     return hit;
   }
-  const bands = buildBandGeometry(g.stations, g.lines, g.curveRadius);
+  const bands = buildBandGeometry(g.stations, g.lines);
   const markers = buildStopMarkers(g.stations, g.lines, [], bands);
   const faces = buildOverlapRegions(bands, markers);
   const entry: RegionGeometry = { bands, markers, faces };

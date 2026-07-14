@@ -75,22 +75,19 @@ describe('<OptionsPopover />', () => {
     expect(document.querySelector('.toolbar input[type="range"]')).toBeNull();
   });
 
-  it('contains a curve-radius slider that reflects and updates the store', async () => {
+  it('no longer exposes a curve-radius slider (it moved to per-line styles)', async () => {
+    // Curve radius is a per-line style field now — edited in the line
+    // inspector and line style presets, not as a map-wide option.
     const user = userEvent.setup();
     render(<Toolbar />);
     await user.click(screen.getByRole('button', { name: 'Options' }));
-    const slider = screen.getByRole('slider', { name: /curve radius/i });
-    expect(slider).toHaveAttribute('min', '4');
-    expect(slider).toHaveAttribute('max', '80');
-    expect(slider).toHaveValue(String(useDoc.getState().curveRadius));
-    fireEvent.change(slider, { target: { value: '42' } });
-    expect(useDoc.getState().curveRadius).toBe(42);
+    expect(screen.queryByRole('slider', { name: /curve radius/i })).toBeNull();
   });
 
   it('no longer exposes station-label font controls (they moved to per-station styles)', async () => {
     // Font size / weight / italic / leading / tracking are per-station now
-    // (the station popover + the Default station style). Options keeps only the
-    // curve radius and the palette picker.
+    // (the station popover + the Default station style). Options is only the
+    // palette picker.
     const user = userEvent.setup();
     render(<Toolbar />);
     await user.click(screen.getByRole('button', { name: 'Options' }));
@@ -101,24 +98,19 @@ describe('<OptionsPopover />', () => {
     expect(screen.queryByRole('slider', { name: /tracking/i })).toBeNull();
   });
 
-  describe('color-palette disclosure', () => {
-    it('renders a "Color palettes" disclosure trigger; cards are hidden by default', async () => {
+  describe('color palettes', () => {
+    it('shows the palette cards directly — no disclosure to expand', async () => {
       const user = userEvent.setup();
       render(<Toolbar />);
       await user.click(screen.getByRole('button', { name: 'Options' }));
-      const disclosure = screen.getByRole('button', { name: /color palettes/i });
-      expect(disclosure).toHaveAttribute('aria-expanded', 'false');
-      // No palette checkboxes visible until expanded.
-      expect(screen.queryByRole('checkbox', { name: /^MTA$/ })).toBeNull();
+      expect(screen.queryByRole('button', { name: /color palettes/i })).toBeNull();
+      expect(screen.getByRole('checkbox', { name: 'MTA' })).toBeInTheDocument();
     });
 
-    it('expanding reveals one checkbox per palette in PALETTES order', async () => {
+    it('opening the popover reveals one checkbox per palette in PALETTES order', async () => {
       const user = userEvent.setup();
       render(<Toolbar />);
       await user.click(screen.getByRole('button', { name: 'Options' }));
-      const disclosure = screen.getByRole('button', { name: /color palettes/i });
-      await user.click(disclosure);
-      expect(disclosure).toHaveAttribute('aria-expanded', 'true');
       const checkboxes = screen.getAllByRole('checkbox');
       const names = checkboxes.map((c) => c.getAttribute('aria-label'));
       expect(names).toEqual([
@@ -147,7 +139,6 @@ describe('<OptionsPopover />', () => {
       const user = userEvent.setup();
       render(<Toolbar />);
       await user.click(screen.getByRole('button', { name: 'Options' }));
-      await user.click(screen.getByRole('button', { name: /color palettes/i }));
       // Three continents (asia, europe, na) → two separators between them.
       const separators = document.querySelectorAll('.options-palette-separator');
       expect(separators).toHaveLength(2);
@@ -157,7 +148,6 @@ describe('<OptionsPopover />', () => {
       const user = userEvent.setup();
       render(<Toolbar />);
       await user.click(screen.getByRole('button', { name: 'Options' }));
-      await user.click(screen.getByRole('button', { name: /color palettes/i }));
       const mta = screen.getByRole('checkbox', { name: 'MTA' }) as HTMLInputElement;
       const bart = screen.getByRole('checkbox', { name: 'BART' }) as HTMLInputElement;
       const caltrain = screen.getByRole('checkbox', { name: 'Caltrain' }) as HTMLInputElement;
@@ -173,7 +163,6 @@ describe('<OptionsPopover />', () => {
       const user = userEvent.setup();
       render(<Toolbar />);
       await user.click(screen.getByRole('button', { name: 'Options' }));
-      await user.click(screen.getByRole('button', { name: /color palettes/i }));
       await user.click(screen.getByRole('checkbox', { name: 'BART' }));
       // Stored in canonical order — BART precedes MTA in N. America.
       expect(useDoc.getState().activePalettes).toEqual(['bart', 'mta']);
@@ -185,7 +174,6 @@ describe('<OptionsPopover />', () => {
       const user = userEvent.setup();
       render(<Toolbar />);
       await user.click(screen.getByRole('button', { name: 'Options' }));
-      await user.click(screen.getByRole('button', { name: /color palettes/i }));
       await user.click(screen.getByRole('checkbox', { name: 'BART' }));
       await user.click(screen.getByRole('checkbox', { name: 'BART' }));
       expect(useDoc.getState().activePalettes).toEqual(['mta']);
@@ -212,7 +200,6 @@ describe('<OptionsPopover />', () => {
 
     const openPalettes = async (user: ReturnType<typeof userEvent.setup>) => {
       await user.click(screen.getByRole('button', { name: 'Options' }));
-      await user.click(screen.getByRole('button', { name: /color palettes/i }));
     };
 
     it('shows a "Load palette…" button at the top of the palette list', async () => {

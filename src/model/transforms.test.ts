@@ -1061,6 +1061,53 @@ describe('setLineStrokeWidth', () => {
   });
 });
 
+describe('setLineCurveRadius', () => {
+  it('stores a non-default radius', () => {
+    const doc = makeDoc({ lines: [makeLine({ id: 'L1' })] });
+    expect(T.setLineCurveRadius(doc, 'L1', 40).lines.L1.curveRadius).toBe(40);
+  });
+
+  it('drops the field entirely when set back to the default 24', () => {
+    const doc = makeDoc({ lines: [makeLine({ id: 'L1', curveRadius: 40 })] });
+    const next = T.setLineCurveRadius(doc, 'L1', 24);
+    expect('curveRadius' in next.lines.L1).toBe(false);
+  });
+
+  it('returns the input doc unchanged when setting the default on a bare line', () => {
+    const doc = makeDoc({ lines: [makeLine({ id: 'L1' })] });
+    expect(T.setLineCurveRadius(doc, 'L1', 24)).toBe(doc);
+  });
+
+  it('returns the input doc unchanged when the radius is already stored', () => {
+    const doc = makeDoc({ lines: [makeLine({ id: 'L1', curveRadius: 40 })] });
+    expect(T.setLineCurveRadius(doc, 'L1', 40)).toBe(doc);
+  });
+
+  it('clamps to the floor and rounds to an integer', () => {
+    const doc = makeDoc({ lines: [makeLine({ id: 'L1' })] });
+    expect(T.setLineCurveRadius(doc, 'L1', 1).lines.L1.curveRadius).toBe(4);
+    expect(T.setLineCurveRadius(doc, 'L1', 39.6).lines.L1.curveRadius).toBe(40);
+    // Rounds-to-default is dropped like an exact 24.
+    expect(T.setLineCurveRadius(doc, 'L1', 23.7)).toBe(doc);
+  });
+
+  it('ignores non-finite input (same reference out)', () => {
+    const doc = makeDoc({ lines: [makeLine({ id: 'L1', curveRadius: 40 })] });
+    expect(T.setLineCurveRadius(doc, 'L1', NaN)).toBe(doc);
+    expect(T.setLineCurveRadius(doc, 'L1', Infinity)).toBe(doc);
+  });
+
+  it('detaches the line from its style preset on change', () => {
+    const doc = makeDoc({ lines: [makeLine({ id: 'L1', styleId: 'some-style' })] });
+    expect('styleId' in T.setLineCurveRadius(doc, 'L1', 40).lines.L1).toBe(false);
+  });
+
+  it('returns the input doc for an unknown line id', () => {
+    const doc = makeDoc({ lines: [makeLine({ id: 'L1' })] });
+    expect(T.setLineCurveRadius(doc, 'ghost', 40)).toBe(doc);
+  });
+});
+
 describe('setLineStrokeColor', () => {
   it('stores a non-default stroke color', () => {
     const doc = makeDoc({ lines: [makeLine({ id: 'L1' })] });
@@ -1465,11 +1512,7 @@ describe('moveLineInOrder', () => {
   });
 });
 
-describe('setCurveRadius / clearAll', () => {
-  it('setCurveRadius updates curveRadius', () => {
-    const doc = makeDoc({});
-    expect(T.setCurveRadius(doc, 42).curveRadius).toBe(42);
-  });
+describe('clearAll', () => {
   it('clearAll returns a fresh DEFAULT_DOC', () => {
     const doc = makeDoc({
       stations: [makeStation({ id: 's1' })],

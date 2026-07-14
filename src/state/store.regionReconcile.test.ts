@@ -22,7 +22,7 @@ function seedCross(): RegionAssignment {
     l1: makeLine({ id: 'l1', stations: ['s1', 's2'] }),
     l2: makeLine({ id: 'l2', stations: ['s3', 's4'] }),
   };
-  const geom = { stations, lines, curveRadius: 24 };
+  const geom = { stations, lines };
   const { bands, faces } = regionsFor(geom);
   const asg: RegionAssignment = {
     id: 'r1',
@@ -44,11 +44,7 @@ function seedCross(): RegionAssignment {
 /** Effective winner of every current overlap face, from live store state. */
 function currentWinners(): string[] {
   const s = useDoc.getState();
-  const { bands, faces } = regionsFor({
-    stations: s.stations,
-    lines: s.lines,
-    curveRadius: s.curveRadius,
-  });
+  const { bands, faces } = regionsFor({ stations: s.stations, lines: s.lines });
   return resolveRegionWinners(faces, s.regionAssignments, bands, s.lineOrder).map((w) => w.winner);
 }
 

@@ -22,7 +22,7 @@ import type { MapDoc } from '../model/types';
 // ---------------------------------------------------------------------------
 
 function visibleSeamPoints(doc: MapDoc, lineId: string): number {
-  const bands = buildBands(doc.stations, doc.lines, doc.curveRadius, doc.lineOrder);
+  const bands = buildBands(doc.stations, doc.lines, doc.lineOrder);
   const line = doc.lines[lineId];
   const w = lineWidthOf(line);
   const edgeOffset = w / 2; // the seam sits centered on each body edge

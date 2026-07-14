@@ -152,7 +152,7 @@ describe('buildBands — single line', () => {
       ],
       lines: [makeLine({ id: 'L1', stations: ['s1', 's2'] })],
     });
-    const bands = buildBands(doc.stations, doc.lines, 24, doc.lineOrder);
+    const bands = buildBands(doc.stations, doc.lines, doc.lineOrder);
     expect(bands).toHaveLength(1);
     expect(bands[0].lines).toHaveLength(1);
     expect(bands[0].paths).toHaveLength(1);
@@ -169,7 +169,7 @@ describe('buildBands — single line', () => {
       ],
       lines: [makeLine({ id: 'L1', stations: ['s1', 's2'] })],
     });
-    const bands = buildBands(doc.stations, doc.lines, 24, doc.lineOrder);
+    const bands = buildBands(doc.stations, doc.lines, doc.lineOrder);
     expect(bands).toHaveLength(0);
   });
 });
@@ -217,7 +217,9 @@ describe('buildBands — centerline radius', () => {
     }),
   ];
   const fiveStripeLines = () =>
-    ['L1', 'L2', 'L3', 'L4', 'L5'].map((id) => makeLine({ id, stations: ['s1', 's2'] }));
+    ['L1', 'L2', 'L3', 'L4', 'L5'].map((id) =>
+      makeLine({ id, stations: ['s1', 's2'], curveRadius: 20 }),
+    );
 
   it('single-stripe band: radius equals curveRadius (no bump, no cap)', () => {
     const doc = makeDoc({
@@ -227,7 +229,7 @@ describe('buildBands — centerline radius', () => {
       ],
       lines: [makeLine({ id: 'L1', stations: ['s1', 's2'] })],
     });
-    const bands = buildBands(doc.stations, doc.lines, 24, doc.lineOrder);
+    const bands = buildBands(doc.stations, doc.lines, doc.lineOrder);
     expect(bands).toHaveLength(1);
     expect(bands[0].radius).toBe(24);
   });
@@ -240,7 +242,7 @@ describe('buildBands — centerline radius', () => {
       stations: fiveStripeStations({ x: 0, y: 0 }, { x: 0, y: 200 }),
       lines: fiveStripeLines(),
     });
-    const bands = buildBands(doc.stations, doc.lines, 20, doc.lineOrder);
+    const bands = buildBands(doc.stations, doc.lines, doc.lineOrder);
     expect(bands).toHaveLength(1);
     expect(bands[0].lines).toHaveLength(5);
     // n=5, STOP_SIZE=14 → maxAbsOffset = 2 * 14 = 28. ideal R = 20 + 28 = 48.
@@ -255,7 +257,7 @@ describe('buildBands — centerline radius', () => {
       stations: fiveStripeStations({ x: 0, y: 0 }, { x: 96, y: 120 }),
       lines: fiveStripeLines(),
     });
-    const bands = buildBands(doc.stations, doc.lines, 20, doc.lineOrder);
+    const bands = buildBands(doc.stations, doc.lines, doc.lineOrder);
     expect(bands).toHaveLength(1);
     expect(bands[0].radius).toBe(48);
   });
@@ -271,7 +273,7 @@ describe('buildBands — centerline radius', () => {
       stations: fiveStripeStations({ x: 0, y: 0 }, { x: 96, y: 100 }),
       lines: fiveStripeLines(),
     });
-    const bands = buildBands(doc.stations, doc.lines, 20, doc.lineOrder);
+    const bands = buildBands(doc.stations, doc.lines, doc.lineOrder);
     expect(bands).toHaveLength(1);
     expect(bands[0].radius).toBeCloseTo(43, 6);
   });
@@ -307,7 +309,7 @@ describe('buildBands — centerline radius', () => {
       ],
       lines: [makeLine({ id: 'L1', stations: ['s2', 's1'] })],
     });
-    const bands = buildBands(doc.stations, doc.lines, R, doc.lineOrder);
+    const bands = buildBands(doc.stations, doc.lines, doc.lineOrder);
     expect(bands).toHaveLength(1);
     const band = bands[0];
     // The cap engaged below the configured R (old behavior floored at R = 24).
@@ -357,7 +359,7 @@ describe('buildBands — interlining', () => {
         makeLine({ id: 'L2', stations: ['s1', 's2'] }),
       ],
     });
-    const bands = buildBands(doc.stations, doc.lines, 24, doc.lineOrder);
+    const bands = buildBands(doc.stations, doc.lines, doc.lineOrder);
     expect(bands).toHaveLength(1);
     expect(bands[0].lines).toHaveLength(2);
     expect(bands[0].paths).toHaveLength(2);
@@ -386,7 +388,7 @@ describe('buildBands — interlining', () => {
         makeLine({ id: 'L2', stations: ['s2', 's1'] }),
       ],
     });
-    const bands = buildBands(doc.stations, doc.lines, 24, doc.lineOrder);
+    const bands = buildBands(doc.stations, doc.lines, doc.lineOrder);
     expect(bands).toHaveLength(1);
     expect(bands[0].lines).toHaveLength(2);
   });
@@ -414,7 +416,7 @@ describe('buildBands — interlining', () => {
       ],
       lines: [makeLine({ id: 'L1', stations: ['s1', 's2'] })],
     });
-    const bands = buildBands(doc.stations, doc.lines, 24, doc.lineOrder);
+    const bands = buildBands(doc.stations, doc.lines, doc.lineOrder);
     expect(bands).toHaveLength(1);
     expect(bands[0].lines).toHaveLength(1);
     expect(bands[0].paths).toHaveLength(1);
@@ -449,7 +451,7 @@ describe('buildBands — interlining', () => {
         makeLine({ id: 'L2', stations: ['s1', 's2'] }),
       ],
     });
-    const bands = buildBands(doc.stations, doc.lines, 24, doc.lineOrder);
+    const bands = buildBands(doc.stations, doc.lines, doc.lineOrder);
     expect(bands).toHaveLength(1);
     expect(bands[0].lines).toHaveLength(2);
     expect(bands[0].paths).toHaveLength(2);
@@ -484,7 +486,7 @@ describe('buildBands — interlining', () => {
         makeLine({ id: 'L3', stations: ['s1', 's2'] }),
       ],
     });
-    const bands = buildBands(doc.stations, doc.lines, 24, doc.lineOrder);
+    const bands = buildBands(doc.stations, doc.lines, doc.lineOrder);
     expect(bands).toHaveLength(1);
     expect(bands[0].lines).toHaveLength(3);
     expect(bands[0].paths).toHaveLength(3);
@@ -528,7 +530,7 @@ describe('buildBands — interlining', () => {
         makeLine({ id: 'L4', stations: ['s1', 's2'] }),
       ],
     });
-    const bands = buildBands(doc.stations, doc.lines, 24, doc.lineOrder);
+    const bands = buildBands(doc.stations, doc.lines, doc.lineOrder);
     // Two bands (one per pair), each with two stripes.
     expect(bands).toHaveLength(2);
     for (const b of bands) expect(b.lines).toHaveLength(2);
@@ -574,7 +576,7 @@ describe('buildBands — interlining', () => {
         makeLine({ id: 'L3', stations: ['s1', 's2'] }),
       ],
     });
-    const bands = buildBands(doc.stations, doc.lines, 24, doc.lineOrder);
+    const bands = buildBands(doc.stations, doc.lines, doc.lineOrder);
     // L1+L2 form one interlined band; L3 is its own singleton band.
     expect(bands).toHaveLength(2);
     const byLineSet = bands.map((b) =>
@@ -618,7 +620,7 @@ describe('buildBands — interlining', () => {
         makeLine({ id: 'L2', stations: ['s1', 's2'] }),
       ],
     });
-    const bands = buildBands(doc.stations, doc.lines, 24, doc.lineOrder);
+    const bands = buildBands(doc.stations, doc.lines, doc.lineOrder);
     expect(bands).toHaveLength(2);
   });
 
@@ -644,7 +646,7 @@ describe('buildBands — interlining', () => {
         makeLine({ id: 'L2', stations: ['s1', 's2'] }),
       ],
     });
-    const bands = buildBands(doc.stations, doc.lines, 24, doc.lineOrder);
+    const bands = buildBands(doc.stations, doc.lines, doc.lineOrder);
     expect(bands).toHaveLength(2);
   });
 });
@@ -673,7 +675,7 @@ describe('buildBands — per-line widths', () => {
   it('merges a mixed-width pair whose stop centers sit exactly tangentGap apart', () => {
     // gap = (14 + 28) / 2 = 21 world units = 1.5 rows.
     const doc = twoLineDoc(1.5, { L2: 28 });
-    const bands = buildBands(doc.stations, doc.lines, 24, doc.lineOrder);
+    const bands = buildBands(doc.stations, doc.lines, doc.lineOrder);
     expect(bands).toHaveLength(1);
     // stripeWidths is parallel to lines (the band's perp-sorted order).
     const widthByLine: Record<string, number> = { L1: 14, L2: 28 };
@@ -685,13 +687,13 @@ describe('buildBands — per-line widths', () => {
 
   it('keeps a mixed-width pair at the legacy unit gap separate (stripes would overlap)', () => {
     const doc = twoLineDoc(1, { L2: 28 });
-    expect(buildBands(doc.stations, doc.lines, 24, doc.lineOrder)).toHaveLength(2);
+    expect(buildBands(doc.stations, doc.lines, doc.lineOrder)).toHaveLength(2);
   });
 
   it('merges a uniform non-default-width pair at its own tangent gap', () => {
     // Both width 20 → tangent gap 20 world units = 20/14 rows.
     const doc = twoLineDoc(20 / STOP_SIZE, { L1: 20, L2: 20 });
-    const bands = buildBands(doc.stations, doc.lines, 24, doc.lineOrder);
+    const bands = buildBands(doc.stations, doc.lines, doc.lineOrder);
     expect(bands).toHaveLength(1);
     expect(bands[0].stripeWidths).toEqual([20, 20]);
     expect(bands[0].stripeOffsets).toEqual([-10, 10]);
@@ -699,7 +701,7 @@ describe('buildBands — per-line widths', () => {
 
   it('bakes legacy-equivalent stripe fields for an all-default band', () => {
     const doc = twoLineDoc(1);
-    const bands = buildBands(doc.stations, doc.lines, 24, doc.lineOrder);
+    const bands = buildBands(doc.stations, doc.lines, doc.lineOrder);
     expect(bands).toHaveLength(1);
     expect(bands[0].stripeWidths).toEqual([STOP_SIZE, STOP_SIZE]);
     expect(bands[0].stripeOffsets).toEqual([-STOP_SIZE / 2, STOP_SIZE / 2]);
@@ -727,7 +729,7 @@ describe('buildBands — per-line widths', () => {
             ],
             lines: ids.map((id, i) => makeLine({ id, stations: ['s1', 's2'], width: widths[i] })),
           });
-          const bands = buildBands(doc.stations, doc.lines, 24, doc.lineOrder);
+          const bands = buildBands(doc.stations, doc.lines, doc.lineOrder);
           expect(bands).toHaveLength(1);
           const band = bands[0];
           expect(band.paths).toHaveLength(widths.length);
@@ -776,7 +778,7 @@ describe('buildBands — per-line widths', () => {
           ],
           lines: ids.map((id) => makeLine({ id, stations: ['s1', 's2'] })),
         });
-        const bands = buildBands(doc.stations, doc.lines, 24, doc.lineOrder);
+        const bands = buildBands(doc.stations, doc.lines, doc.lineOrder);
         expect(bands).toHaveLength(1);
         expect(bands[0].stripeOffsets).toEqual(stripeOffsetsForWidths(Array(n).fill(STOP_SIZE)));
       }),
@@ -810,7 +812,7 @@ describe('buildBands — bandKey identity', () => {
         makeLine({ id: 'L2', stations: ['s1', 's2'] }),
       ],
     });
-    const bands = buildBands(doc.stations, doc.lines, 24, doc.lineOrder);
+    const bands = buildBands(doc.stations, doc.lines, doc.lineOrder);
     expect(bands).toHaveLength(2);
     expect(bands[0].pairKey).toBe(bands[1].pairKey);
     expect(bands[0].bandKey).not.toBe(bands[1].bandKey);
@@ -845,13 +847,11 @@ describe('buildBands — bandKey identity', () => {
     const a = buildBands(
       makeDoc({ stations, lines, lineOrder: ['L1', 'L2'] }).stations,
       makeDoc({ stations, lines, lineOrder: ['L1', 'L2'] }).lines,
-      24,
       ['L1', 'L2'],
     );
     const b = buildBands(
       makeDoc({ stations, lines, lineOrder: ['L2', 'L1'] }).stations,
       makeDoc({ stations, lines, lineOrder: ['L2', 'L1'] }).lines,
-      24,
       ['L2', 'L1'],
     );
     expect(a).toHaveLength(1);
@@ -883,7 +883,7 @@ describe('buildBands — priority', () => {
       ],
       lineOrder: ['L2', 'L1'], // L2 in front (index 0), L1 behind (index 1)
     });
-    const bands = buildBands(doc.stations, doc.lines, 24, doc.lineOrder);
+    const bands = buildBands(doc.stations, doc.lines, doc.lineOrder);
     expect(bands).toHaveLength(1);
     expect(bands[0].linePriorities.length).toBe(bands[0].lines.length);
     // Each stripe carries its own line's priority — no longer collapsed to a min.
@@ -926,7 +926,7 @@ describe('buildOrderedRenderables — cross-band layering', () => {
       ],
       lineOrder: ['C', 'D', 'A'], // C front (0), D middle (1), A back (2)
     });
-    const bands = buildBands(doc.stations, doc.lines, 24, doc.lineOrder);
+    const bands = buildBands(doc.stations, doc.lines, doc.lineOrder);
     const markers = buildStopMarkers(doc.stations, doc.lines, doc.lineOrder, bands);
     const list = buildOrderedRenderables(bands, markers);
 
@@ -953,7 +953,7 @@ describe('buildOrderedRenderables — cross-band layering', () => {
       ],
       lines: [makeLine({ id: 'A', stations: ['s1', 's2'] })],
     });
-    const bands = buildBands(doc.stations, doc.lines, 24, doc.lineOrder);
+    const bands = buildBands(doc.stations, doc.lines, doc.lineOrder);
     const list = buildOrderedRenderables(bands, []);
     const body = list.find((r) => r.kind === 'stripe')!;
     const casing = list.find((r) => r.kind === 'casing')!;
@@ -986,7 +986,7 @@ describe('buildBands — lineOrder priority', () => {
       ],
       lineOrder: ['B', 'A'],
     });
-    const bands = buildBands(doc.stations, doc.lines, 24, doc.lineOrder);
+    const bands = buildBands(doc.stations, doc.lines, doc.lineOrder);
     const aBand = bands.find((b) => b.lines.some((l) => l.id === 'A'))!;
     const bBand = bands.find((b) => b.lines.some((l) => l.id === 'B'))!;
     expect(bBand.linePriorities[0]).toBe(0); // index 0 = front-most
@@ -1001,7 +1001,7 @@ describe('buildBands — lineOrder priority', () => {
       ],
       lines: [makeLine({ id: 'A', stations: ['s1', 's2'] })],
     });
-    const bands = buildBands(doc.stations, doc.lines, 24, doc.lineOrder);
+    const bands = buildBands(doc.stations, doc.lines, doc.lineOrder);
     expect(bands[0].linePriorities[0]).toBe(0);
   });
 
@@ -1207,7 +1207,7 @@ describe('buildStopMarkers', () => {
         ],
       });
     const findMarker = (doc: ReturnType<typeof dashedDoc>, stationId: string) => {
-      const bands = buildBands(doc.stations, doc.lines, 24, doc.lineOrder);
+      const bands = buildBands(doc.stations, doc.lines, doc.lineOrder);
       const ms = buildStopMarkers(doc.stations, doc.lines, doc.lineOrder, bands);
       const st = doc.stations[stationId];
       return ms.find(

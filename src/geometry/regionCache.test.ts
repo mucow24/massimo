@@ -3,12 +3,12 @@ import { regionsFor, regionGeometrySig, type GeometrySlice } from './regionCache
 import { makeLine, makeStation, makeStop } from '../test/fixtures';
 import type { Line, Station } from '../model/types';
 
-const geom = (stations: Station[], lines: Line[], curveRadius = 24): GeometrySlice => {
+const geom = (stations: Station[], lines: Line[]): GeometrySlice => {
   const st: GeometrySlice['stations'] = {};
   for (const s of stations) st[s.id] = s;
   const ln: GeometrySlice['lines'] = {};
   for (const l of lines) ln[l.id] = l;
-  return { stations: st, lines: ln, curveRadius };
+  return { stations: st, lines: ln };
 };
 
 const station = (id: string, x: number, y: number, lineIds: string[]): Station =>
@@ -72,8 +72,12 @@ describe('regionGeometrySig', () => {
       },
     };
     expect(regionGeometrySig(styled)).not.toBe(sig);
-    // curveRadius
-    expect(regionGeometrySig({ ...base, curveRadius: 12 })).not.toBe(sig);
+    // per-line curve radius (drives the band fillet radius)
+    const tightened = {
+      ...base,
+      lines: { ...base.lines, l1: { ...base.lines.l1, curveRadius: 12 } },
+    };
+    expect(regionGeometrySig(tightened)).not.toBe(sig);
   });
 
   it('is stable across presentation-only changes (color, casing, seam)', () => {

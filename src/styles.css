@@ -428,20 +428,6 @@ select option {
   align-items: stretch;
   gap: 4px;
 }
-.options-palette-disclosure {
-  display: inline-flex;
-  align-items: center;
-  gap: 4px;
-  background: transparent;
-  border: 0;
-  padding: 2px 0;
-  color: var(--text-muted);
-  cursor: pointer;
-  font-size: var(--fs-small);
-}
-.options-palette-disclosure:hover {
-  color: var(--text);
-}
 .options-palettes {
   display: flex;
   flex-direction: column;

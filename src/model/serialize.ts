@@ -24,6 +24,11 @@ import {
   legacyColorToDayNight,
 } from './transferStyle';
 import { canonicalLineWidth } from './lineWidth';
+import {
+  LINE_CURVE_RADIUS_DEFAULT,
+  LINE_CURVE_RADIUS_MIN,
+  canonicalLineCurveRadius,
+} from './lineCurve';
 import { DOT_SIZE_DEFAULT, canonicalDotSize } from './dotSize';
 import { canonicalStrokeColor, canonicalStrokeWidth, canonicalSeamColor } from './lineStroke';
 import { DEFAULT_DOT_STYLE, DOT_SHAPE_PRESETS, dotStylesEqual } from './dotStyle';
@@ -257,6 +262,10 @@ export function parse(json: string, custom: readonly Palette[] = []): ParseResul
   // otherwise leave the doc in an unreachable-from-UI state. Shared with the
   // localStorage rehydration path via `validActivePalettes`.
   merged.activePalettes = validActivePalettes(merged.activePalettes, custom);
+  // Bake the retired doc-level curveRadius onto the lines (and fill line
+  // style defs that predate the covered field) BEFORE the per-line clean and
+  // the style validation below — both expect the per-line/per-def form.
+  merged = bakeDocCurveRadius(merged);
   // Sanitize per-line segment styles AND layers: drop unknown style values,
   // drop the never-persisted defaults ('solid' / layer 0), and drop any entry
   // whose pair-key isn't a station-pair adjacency on the line. Also backfill
@@ -266,7 +275,9 @@ export function parse(json: string, custom: readonly Palette[] = []): ParseResul
   for (const id of Object.keys(merged.lines)) {
     const line = merged.lines[id];
     const cleaned = sanitizeLineDotSize(
-      sanitizeLineStroke(sanitizeLineWidth(sanitizeSegments(backfillLineEdges(line)))),
+      sanitizeLineStroke(
+        sanitizeLineCurve(sanitizeLineWidth(sanitizeSegments(backfillLineEdges(line)))),
+      ),
     );
     if (cleaned !== line) linesChanged = true;
     cleanedLines[id] = cleaned;
@@ -339,6 +350,80 @@ export function parse(json: string, custom: readonly Palette[] = []): ParseResul
   // act on the whole loaded map rather than nothing.
   if (!hadStyles) final = adoptDefaultStyles(final);
   return { ok: true, doc: final };
+}
+
+/**
+ * Bake the RETIRED doc-level `curveRadius` into per-line fields, and fill
+ * line style defs saved before `curveRadius` was a covered field. Corner
+ * rounding is per-line now (`Line.curveRadius`, missing ⇒ the old doc-global
+ * default 24), so a legacy file's map-wide radius must land on every line to
+ * keep its rendered curves; the doc field is then dropped. A line (or style
+ * def) that somehow carries its own value keeps it. Keyed off field presence
+ * (idempotent), so parse() runs it unconditionally and the localStorage
+ * rehydrate gates it at v<16. Garbage legacy values read as the default.
+ * Must run BEFORE style-def validation on both paths — `sanitizeStyleProps`
+ * requires `curveRadius` on line defs, and this bake is what guarantees it
+ * for defs written by older builds.
+ */
+export function bakeDocCurveRadius<
+  T extends { lines?: Record<string, Line>; styles?: Record<string, StyleDef> },
+>(doc: T): T {
+  const raw = doc as Record<string, unknown>;
+  const hasLegacy = 'curveRadius' in raw;
+  const legacyR =
+    typeof raw.curveRadius === 'number' && Number.isFinite(raw.curveRadius)
+      ? (raw.curveRadius as number)
+      : LINE_CURVE_RADIUS_DEFAULT;
+  // Per-line stored form (undefined at the default — never stored) vs. the
+  // concrete style-def form (defs always store the resolved value).
+  const stored = canonicalLineCurveRadius(legacyR);
+  const defR = Math.max(LINE_CURVE_RADIUS_MIN, Math.round(legacyR));
+
+  let out = doc;
+  let changed = false;
+
+  if (hasLegacy) {
+    const { curveRadius: _retired, ...rest } = raw;
+    out = rest as unknown as T;
+    changed = true;
+    if (stored !== undefined && out.lines) {
+      const lines: Record<string, Line> = {};
+      for (const id of Object.keys(out.lines)) {
+        const ln = out.lines[id];
+        lines[id] = 'curveRadius' in ln ? ln : { ...ln, curveRadius: stored };
+      }
+      out = { ...out, lines };
+    }
+  }
+
+  if (out.styles) {
+    let stylesChanged = false;
+    const styles: Record<string, StyleDef> = {};
+    for (const id of Object.keys(out.styles)) {
+      const def = out.styles[id];
+      if (
+        def &&
+        def.kind === 'line' &&
+        def.props &&
+        typeof def.props === 'object' &&
+        !('curveRadius' in def.props)
+      ) {
+        // Raw persisted props — spread via a loose view (the def predates the
+        // field, so it isn't a valid LineStyleProps yet).
+        const props = def.props as unknown as Record<string, unknown>;
+        styles[id] = { ...def, props: { ...props, curveRadius: defR } } as StyleDef;
+        stylesChanged = true;
+      } else {
+        styles[id] = def;
+      }
+    }
+    if (stylesChanged) {
+      out = out === doc ? ({ ...doc, styles } as T) : { ...out, styles };
+      changed = true;
+    }
+  }
+
+  return changed ? out : doc;
 }
 
 // Backfill `line.name` for legacy files saved before the field existed, using
@@ -625,6 +710,23 @@ function sanitizeLineWidth(line: Line): Line {
     }
   }
   const { width: _gone, ...rest } = line;
+  return rest;
+}
+
+// Normalize a hand-edited `curveRadius` to the canonical stored form the
+// transforms maintain: integer ≥ LINE_CURVE_RADIUS_MIN, and absent when it
+// equals the default (the app never stores the default). Non-numbers and
+// non-finite values are dropped. Same contract as `sanitizeLineWidth`.
+function sanitizeLineCurve(line: Line): Line {
+  if (!('curveRadius' in line)) return line;
+  const raw = line.curveRadius as unknown;
+  if (typeof raw === 'number' && Number.isFinite(raw)) {
+    const stored = canonicalLineCurveRadius(raw);
+    if (stored !== undefined) {
+      return stored === line.curveRadius ? line : { ...line, curveRadius: stored };
+    }
+  }
+  const { curveRadius: _gone, ...rest } = line;
   return rest;
 }
 
@@ -1290,9 +1392,14 @@ function sanitizeStyleProps(kind: StyleKind, raw: unknown): StyleDef['props'] | 
       const dot = sanitizeDotStyle(o.defaultDotStyle);
       const dotSize = finiteNum(o.defaultDotSize);
       const width = finiteNum(o.width);
+      // Required like `width` — defs from builds that predate the covered
+      // field get it filled by bakeDocCurveRadius before this runs, so a
+      // missing value here is hand-edited garbage.
+      const curveRadius = finiteNum(o.curveRadius);
       const strokeWidth = finiteNum(o.strokeWidth);
       const strokeColor = asString(o.strokeColor);
       if (!dot || dotSize === undefined || width === undefined) return undefined;
+      if (curveRadius === undefined) return undefined;
       if (strokeWidth === undefined || strokeColor === undefined) return undefined;
       // seamColor / seamWidth are OPTIONAL — absent ⇒ no seam / inherit; a
       // malformed value is dropped (treated as absent) rather than invalidating
@@ -1303,6 +1410,7 @@ function sanitizeStyleProps(kind: StyleKind, raw: unknown): StyleDef['props'] | 
         defaultDotStyle: dot,
         defaultDotSize: dotSize,
         width,
+        curveRadius,
         strokeWidth,
         strokeColor,
         ...(seamColor !== undefined ? { seamColor } : {}),

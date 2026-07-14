@@ -23,6 +23,7 @@ import { STOP_SIZE, stripeOffsetsForWidths } from '../geometry/orientation';
 import { DEFAULT_DOT_STYLE } from '../model/dotStyle';
 import { DOT_SIZE_DEFAULT } from '../model/dotSize';
 import { LINE_WIDTH_DEFAULT } from '../model/lineWidth';
+import { LINE_CURVE_RADIUS_DEFAULT } from '../model/lineCurve';
 import { edgesFromStations } from '../model/lineTopology';
 
 export function makeStation(overrides: Partial<Station> & { id: StationId }): Station {
@@ -210,6 +211,7 @@ const STYLE_PROPS_DEFAULTS: StylePropsByKind = {
     defaultDotStyle: DEFAULT_DOT_STYLE,
     defaultDotSize: DOT_SIZE_DEFAULT,
     width: LINE_WIDTH_DEFAULT,
+    curveRadius: LINE_CURVE_RADIUS_DEFAULT,
     strokeWidth: 0,
     strokeColor: '#ffffff',
   },
@@ -260,7 +262,6 @@ export function makeDoc(parts: {
   stations?: Station[];
   lines?: Line[];
   lineOrder?: LineId[];
-  curveRadius?: number;
   lineTags?: import('../model/types').LineTag[];
   routeBullets?: RouteBullet[];
   transfers?: import('../model/types').Transfer[];
@@ -313,7 +314,6 @@ export function makeDoc(parts: {
     stations,
     lines,
     lineOrder: parts.lineOrder ?? Object.keys(lines),
-    curveRadius: parts.curveRadius ?? 24,
     lineCounter: 0,
     lineTags,
     routeBullets,
