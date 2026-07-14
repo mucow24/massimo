@@ -290,6 +290,33 @@ describe('buildOverlapRegions', () => {
   });
 });
 
+describe('buildOverlapRegions — dumbbell split (morphological opening)', () => {
+  it('splits two real overlap lobes connected by a hairline neck into separate faces', () => {
+    // l1 horizontal; l2 crosses it twice, and BETWEEN the crossings runs
+    // almost-tangent alongside it (0.1-wide overlap sliver). Without the
+    // opening, the two crossings + the neck fuse into ONE face — clicking
+    // one crossing would flip the other ("weird region" bug).
+    const bands = [
+      hBand('l1', 's1|s2', 0, 400),
+      vBand('l2', 's5|s6', -50, 13.9, 100),
+      hBand('l2', 's6|s7', 100, 300, 13.9),
+      vBand('l2', 's7|s8', -50, 13.9, 300),
+    ];
+    const faces = buildOverlapRegions(bands, []);
+    const covers = faces.filter((f) => f.lineIds.join(',') === 'l1,l2');
+    expect(covers.length).toBeGreaterThanOrEqual(2);
+    // The two crossing lobes are separate faces at x≈100 and x≈300.
+    const near = covers.find((f) => f.bbox.x0 < 200 && f.area > 50);
+    const far = covers.find((f) => f.bbox.x0 > 200 && f.area > 50);
+    expect(near).toBeDefined();
+    expect(far).toBeDefined();
+    // And no face spans both crossings anymore.
+    for (const f of covers) {
+      expect(f.bbox.x1 - f.bbox.x0).toBeLessThan(150);
+    }
+  });
+});
+
 describe('anchors: mint, bind, resolve', () => {
   const cross = (x: number, hLen = 100) => [
     hBand('l1', 's1|s2', 0, hLen),

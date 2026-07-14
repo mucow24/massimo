@@ -56,6 +56,12 @@ export const RegionPatchLayer = memo(function RegionPatchLayer({
     for (const r of renderables) if (r.kind === 'marker') markers.push(r.spec);
     const bands = [...new Set(renderables.flatMap((r) => (r.kind === 'marker' ? [] : [r.band])))];
     const orderIdx = new Map(lineOrder.map((id, i) => [id, i]));
+    // Every face with its EFFECTIVE winner — buildPatchClip's overdraw must
+    // not spill into a face showing a different line.
+    const all = faces.map((f, i) => ({
+      face: f,
+      winner: winners[i]?.winner ?? regionDefaultWinner(f, lineOrder),
+    }));
     const list: {
       face: RegionFace;
       winner: LineId;
@@ -88,7 +94,7 @@ export const RegionPatchLayer = memo(function RegionPatchLayer({
           r.band.stripeWidths[r.stripeIndex] / 2 + railW + pad,
         );
       });
-      const clipRings = buildPatchClip(face, w.winner, bands, markers, railWOf);
+      const clipRings = buildPatchClip(face, w.winner, bands, markers, railWOf, all);
       list.push({
         face,
         winner: w.winner,

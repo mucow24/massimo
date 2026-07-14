@@ -318,20 +318,45 @@ export function buildOverlapRegions(
   }
 
   const out: RegionFace[] = [];
+  const pushFace = (face: Face, cover: LineId[]) => {
+    const bbox = ringsBbox([face[0]]);
+    const lineIds = [...cover].sort();
+    out.push({
+      key: '',
+      lineIds,
+      face,
+      bbox,
+      area: faceArea(face),
+      spans: computeSpans(face, bbox, lineIds, bands),
+    });
+  };
   for (const cell of cells) {
     if (cell.cover.length < 2) continue;
     for (const face of splitIntoFaces(cell.rings)) {
-      if (!offsetClosed(face, -SLIVER_ERODE).length) continue; // hairline sliver
-      const bbox = ringsBbox([face[0]]);
-      const lineIds = [...cell.cover].sort();
-      out.push({
-        key: '',
-        lineIds,
-        face,
-        bbox,
-        area: faceArea(face),
-        spans: computeSpans(face, bbox, lineIds, bands),
-      });
+      const eroded = offsetClosed(face, -SLIVER_ERODE);
+      if (!eroded.length) continue; // hairline sliver
+      // Morphological opening: a face made of REAL lobes joined by hairline
+      // necks (near-tangent parallel corridors, marker-corner grazes) must
+      // not act as one region — clicking one crossing would flip another far
+      // away. Erosion splits at the necks; each surviving lobe reclaims its
+      // share of the original face and becomes its own clickable region.
+      const lobes = splitIntoFaces(eroded);
+      if (lobes.length <= 1) {
+        pushFace(face, cell.cover);
+        continue;
+      }
+      let remaining: Ring[] = [...face];
+      for (const lobe of lobes) {
+        const blob = intersect(remaining, offsetClosed(lobe, SLIVER_ERODE * 2 + 0.05));
+        if (!blob.length) continue;
+        for (const piece of splitIntoFaces(blob)) {
+          if (!offsetClosed(piece, -SLIVER_ERODE).length) continue;
+          pushFace(piece, cell.cover);
+        }
+        remaining = subtract(remaining, blob);
+      }
+      // Whatever is left is sub-sliver neck residue — dropped, like any
+      // standalone sliver. (Painted patches overdraw across it anyway.)
     }
   }
   out.sort(
@@ -614,17 +639,31 @@ export function stripeIntersectsBox(
 }
 
 /**
- * The clip region for one overridden face's patch. Uncased cover: exactly the
- * face. With cased lines (railW > 0) two rim terms join it, confined to a
- * railW/2 neighborhood of the face:
- *  1. the WINNER's rail over its cover-mates' bodies along the winner's own
- *     body edges — the "winner bridges over" separator a top line paints;
- *  2. cover-mates' rails crossing the winner's body just outside the face —
- *     repainted by the winner's body so no stale white notch survives.
- * Lines outside the cover are never touched (both terms intersect only cover
- * geometry). Marker silhouettes are approximated by railW/2 dilation (their
- * rails only run along travel edges — slight over-approximation, confined to
- * the same rim neighborhood).
+ * How far a patch clip may overdraw past its face into same-winner territory,
+ * world units. Kills the coincident-antialiased-edge seam: a clip cut exactly
+ * at a loser's body edge shares its pixel row with the loser's antialiased
+ * base edge, and two half-covered rows never composite to full coverage — a
+ * hairline of the loser ghosts through continuous winner paint. Overdrawing
+ * where the area beyond ALREADY shows the winner is invisible by
+ * construction, so the margin can be generous.
+ */
+export const SEAM_OVERDRAW = 2;
+
+/**
+ * The clip region for one overridden face's patch:
+ *  - the face itself;
+ *  - a SEAM_OVERDRAW margin past the face, but only where the map already
+ *    shows the winner (winner's body, minus every nearby face — this one's
+ *    lobes included via `others` — whose effective winner differs), so the
+ *    patch overlaps the base paint instead of abutting it (see SEAM_OVERDRAW);
+ *  - with cased lines (railW > 0), two rim terms confined to a railW/2
+ *    neighborhood: (1) the WINNER's rail over its cover-mates' bodies along
+ *    the winner's own body edges — the "winner bridges over" separator a top
+ *    line paints; (2) cover-mates' rails crossing the winner's body just
+ *    outside the face — repainted so no stale white notch survives.
+ * Lines outside the cover are never repainted (the rim terms intersect only
+ * cover geometry; the overdraw is invisible where it lands). Marker
+ * silhouettes are approximated by railW/2 dilation.
  */
 export function buildPatchClip(
   face: RegionFace,
@@ -632,11 +671,12 @@ export function buildPatchClip(
   bands: SegmentBandSpec[],
   markers: StopMarkerSpec[],
   railWOf: (lineId: LineId) => number,
+  others: { face: RegionFace; winner: LineId }[] = [],
 ): Ring[] {
   const cased = face.lineIds.filter((l) => railWOf(l) > 0);
-  if (!cased.length) return face.face;
-  const maxRail = Math.max(...cased.map(railWOf));
-  const zone = offsetClosed(face.face, maxRail / 2 + 0.5);
+  const maxRail = cased.length ? Math.max(...cased.map(railWOf)) : 0;
+  const reach = Math.max(SEAM_OVERDRAW, maxRail / 2) + 0.5;
+  const zone = offsetClosed(face.face, reach);
   const zoneBox = ringsBbox(zone);
 
   const bodyOf = (lineId: LineId): Ring[] => {
@@ -677,6 +717,24 @@ export function buildPatchClip(
 
   const losers = face.lineIds.filter((l) => l !== winnerId);
   const parts: Ring[] = [...face.face];
+
+  // Anti-seam overdraw: the margin beyond the face, restricted to the
+  // winner's own paint footprint (slightly dilated so the clip never crops
+  // the stroke's antialiased tail), minus every nearby face whose effective
+  // winner differs — overdrawing there would visibly nick that face.
+  const margin = subtract(
+    intersect(zone, offsetClosed(bodyOf(winnerId), 0.5)),
+    others
+      .filter(
+        (o) =>
+          o.winner !== winnerId &&
+          boxesOverlap(o.face.bbox, face.bbox, reach + 1) &&
+          o.face !== face,
+      )
+      .flatMap((o) => o.face.face),
+  );
+  parts.push(...margin);
+
   if (railWOf(winnerId) > 0) {
     const loserBodies = losers.flatMap(bodyOf);
     if (loserBodies.length) {
