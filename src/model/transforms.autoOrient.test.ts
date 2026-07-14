@@ -7,10 +7,10 @@ import { makeDoc, makeStation, makeStop, makeLine } from '../test/fixtures';
 // keeps the rotation the user gave it — adding, inserting, removing, or
 // reordering must never disturb it.
 describe('auto-orientation only touches a station gaining its first line', () => {
-  it('appending a station does not re-rotate stations already on the line', () => {
-    // L-bend: a (top) — b (below a). Appending c to the east of b would, under
-    // the old whole-line pass, flip b from a vertical endpoint (0) to a corner
-    // (7). b is already served by L1, so it must stay put.
+  it('connecting a new station does not re-rotate stations already on the line', () => {
+    // L-bend: a (top) — b (below a). Connecting c to the east of b would,
+    // under the old whole-line pass, flip b from a vertical endpoint (0) to a
+    // corner (7). b is already served by L1, so it must stay put.
     let doc = makeDoc({
       stations: [
         makeStation({ id: 'a', x: 0, y: 0, rotation: 0, stops: [makeStop('L1')] }),
@@ -19,30 +19,13 @@ describe('auto-orientation only touches a station gaining its first line', () =>
       ],
       lines: [makeLine({ id: 'L1', stations: ['a', 'b'] })],
     });
-    doc = T.toggleStationOnLine(doc, 'L1', 'c'); // append at end → [a, b, c]
-    expect(doc.stations.b.rotation).toBe(0); // RED on old code: becomes 7
+    doc = T.connectStationsOnLine(doc, 'L1', 'b', 'c'); // extend b → c
+    expect(doc.stations.b.rotation).toBe(0);
     expect(doc.stations.a.rotation).toBe(0);
     expect(doc.stations.c.rotation).toBe(6); // the new station IS oriented
   });
 
-  it('inserting a station mid-line does not re-rotate the flanking stations', () => {
-    // a — c horizontal; insert b below the midpoint. Old code re-rotates both
-    // a (0→7) and c (0→5) because their neighbour changed to b.
-    let doc = makeDoc({
-      stations: [
-        makeStation({ id: 'a', x: 0, y: 0, rotation: 0, stops: [makeStop('L1')] }),
-        makeStation({ id: 'c', x: 100, y: 0, rotation: 0, stops: [makeStop('L1')] }),
-        makeStation({ id: 'b', x: 50, y: 50, rotation: 0, stops: [] }),
-      ],
-      lines: [makeLine({ id: 'L1', stations: ['a', 'c'] })],
-    });
-    doc = T.toggleStationOnLine(doc, 'L1', 'b', 0); // insert after index 0 → [a, b, c]
-    expect(doc.stations.a.rotation).toBe(0); // RED on old code: becomes 7
-    expect(doc.stations.c.rotation).toBe(0); // RED on old code: becomes 5
-    expect(doc.stations.b.rotation).toBe(6); // the new station IS oriented
-  });
-
-  it('orients the newly added station but leaves the first station untouched', () => {
+  it('orients the newly connected station but leaves the first station untouched', () => {
     // The first station was placed when the line was too short to have a
     // tangent, so it keeps its rotation; only the new station orients.
     let doc = makeDoc({
@@ -52,9 +35,9 @@ describe('auto-orientation only touches a station gaining its first line', () =>
       ],
       lines: [makeLine({ id: 'L1', stations: ['a'] })],
     });
-    doc = T.toggleStationOnLine(doc, 'L1', 'b'); // → [a, b]
+    doc = T.connectStationsOnLine(doc, 'L1', 'a', 'b'); // → a–b
     expect(doc.stations.b.rotation).toBe(6); // new station oriented to the tangent
-    expect(doc.stations.a.rotation).toBe(0); // RED on old code: becomes 6
+    expect(doc.stations.a.rotation).toBe(0);
   });
 
   it('removing a station does not re-rotate the remaining stations', () => {
@@ -72,33 +55,56 @@ describe('auto-orientation only touches a station gaining its first line', () =>
     expect(doc.stations.b.rotation).toBe(7); // RED on old code: becomes 0
     expect(doc.stations.a.rotation).toBe(0);
   });
+});
 
-  it('reordering a line does not re-rotate its stations', () => {
-    // Collinear vertical a — b — c. Reordering to a — c — b would, under the
-    // old pass, make b a downward endpoint (0→4).
+// The canvas primitives orient from the WIRED chain, not the member array:
+// connect passes [from, to]; splice passes [from, station, to]. The member
+// array is display-only and its tail may be nowhere near the new edge.
+describe('canvas connect/splice orientation', () => {
+  it('connectStationsOnLine orients the new station along the wired edge, not the member array', () => {
+    // Members [a, b] but the connection comes FROM a; c sits east of a.
+    // Array-neighbor logic would orient c along b→c (a diagonal); the wired
+    // edge a→c runs east.
     let doc = makeDoc({
       stations: [
         makeStation({ id: 'a', x: 0, y: 0, rotation: 0, stops: [makeStop('L1')] }),
         makeStation({ id: 'b', x: 0, y: 100, rotation: 0, stops: [makeStop('L1')] }),
-        makeStation({ id: 'c', x: 0, y: 200, rotation: 0, stops: [makeStop('L1')] }),
+        makeStation({ id: 'c', x: 100, y: 0, rotation: 0, stops: [] }),
       ],
-      lines: [makeLine({ id: 'L1', stations: ['a', 'b', 'c'] })],
+      lines: [makeLine({ id: 'L1', stations: ['a', 'b'] })],
     });
-    doc = T.reorderLineStations(doc, 'L1', ['a', 'c', 'b']);
-    expect(doc.stations.b.rotation).toBe(0); // RED on old code: becomes 4
+    doc = T.connectStationsOnLine(doc, 'L1', 'a', 'c');
+    expect(doc.stations.c.rotation).toBe(6); // east tangent
+    expect(doc.stations.a.rotation).toBe(0);
+    expect(doc.stations.b.rotation).toBe(0);
   });
 
-  it('adding an already-served station to another line never rotates it', () => {
-    // Requirement 1, multi-line case (green today via the transfer-hub guard,
-    // must stay green): s already serves L1 with a user-set rotation of 5.
+  it('connectStationsOnLine never rotates an already-served target', () => {
     let doc = makeDoc({
       stations: [
-        makeStation({ id: 's', x: 0, y: 0, rotation: 5, stops: [makeStop('L1')] }),
-        makeStation({ id: 't', x: 0, y: 100, rotation: 0, stops: [makeStop('L2')] }),
+        makeStation({ id: 's', x: 100, y: 0, rotation: 5, stops: [makeStop('L1')] }),
+        makeStation({ id: 't', x: 0, y: 0, rotation: 0, stops: [makeStop('L2')] }),
       ],
       lines: [makeLine({ id: 'L1', stations: ['s'] }), makeLine({ id: 'L2', stations: ['t'] })],
     });
-    doc = T.toggleStationOnLine(doc, 'L2', 's'); // s joins L2 → [t, s]
+    doc = T.connectStationsOnLine(doc, 'L2', 't', 's'); // s joins L2 by wire
     expect(doc.stations.s.rotation).toBe(5);
+  });
+
+  it('spliceStationIntoEdge bisector-orients a brand-new station; flanks untouched', () => {
+    // a — c horizontal; splice b in below the midpoint. Same geometry as the
+    // old insert-after mid-line case: b gets the bisector, a and c stay put.
+    let doc = makeDoc({
+      stations: [
+        makeStation({ id: 'a', x: 0, y: 0, rotation: 0, stops: [makeStop('L1')] }),
+        makeStation({ id: 'c', x: 100, y: 0, rotation: 0, stops: [makeStop('L1')] }),
+        makeStation({ id: 'b', x: 50, y: 50, rotation: 0, stops: [] }),
+      ],
+      lines: [makeLine({ id: 'L1', stations: ['a', 'c'] })],
+    });
+    doc = T.spliceStationIntoEdge(doc, 'L1', 'a', 'c', 'b');
+    expect(doc.stations.b.rotation).toBe(6);
+    expect(doc.stations.a.rotation).toBe(0);
+    expect(doc.stations.c.rotation).toBe(0);
   });
 });

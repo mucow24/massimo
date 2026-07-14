@@ -380,10 +380,10 @@ describe('findMatchingStations', () => {
     }
   });
 
-  it('three stations added to a line via toggleStationOnLine all match each other', () => {
-    // Integration check: build a doc the way the UI actually does, then
-    // verify matching. Each toggle re-runs auto-orient on the line; the
-    // stations end up with the same rotation because they're collinear.
+  it('three stations connected onto a line all match each other', () => {
+    // Integration check: build a doc the way the UI actually does (seed +
+    // connect chain), then verify matching. Each add auto-orients the new
+    // station; they end up with the same rotation because they're collinear.
     let doc = T.addLine(
       T.addStation(
         T.addStation(T.addStation(makeDoc({}), 0, 0, 's1', 'S1'), 0, 100, 's2', 'S2'),
@@ -396,9 +396,9 @@ describe('findMatchingStations', () => {
       'L1',
       '#000',
     );
-    doc = T.toggleStationOnLine(doc, 'L1', 's1');
-    doc = T.toggleStationOnLine(doc, 'L1', 's2');
-    doc = T.toggleStationOnLine(doc, 'L1', 's3');
+    doc = T.addStationToLine(doc, 'L1', 's1');
+    doc = T.connectStationsOnLine(doc, 'L1', 's1', 's2');
+    doc = T.connectStationsOnLine(doc, 'L1', 's2', 's3');
     expect(
       findMatchingStations(doc, 's1')
         .map((m) => m.id)
@@ -635,14 +635,14 @@ describe('findMatchingStations', () => {
       'L1',
       '#000',
     );
-    doc = T.toggleStationOnLine(doc, 'L1', 's1');
-    doc = T.toggleStationOnLine(doc, 'L1', 's2');
-    doc = T.toggleStationOnLine(doc, 'L1', 's3');
+    doc = T.addStationToLine(doc, 'L1', 's1');
+    doc = T.connectStationsOnLine(doc, 'L1', 's1', 's2');
+    doc = T.connectStationsOnLine(doc, 'L1', 's2', 's3');
     doc = T.deleteLine(doc, 'L1');
     doc = T.addLine(doc, 'L1', 'L1', '#000');
-    doc = T.toggleStationOnLine(doc, 'L1', 's1');
-    doc = T.toggleStationOnLine(doc, 'L1', 's2');
-    doc = T.toggleStationOnLine(doc, 'L1', 's3');
+    doc = T.addStationToLine(doc, 'L1', 's1');
+    doc = T.connectStationsOnLine(doc, 'L1', 's1', 's2');
+    doc = T.connectStationsOnLine(doc, 'L1', 's2', 's3');
     expect(
       findMatchingStations(doc, 's2')
         .map((m) => m.id)

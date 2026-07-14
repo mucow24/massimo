@@ -210,6 +210,10 @@ test.describe('Per-line width', () => {
     await expect(STRIPE(page, 'L1')).toHaveAttribute('stroke-width', '14');
     await expect(STRIPE(page, 'L2')).toHaveAttribute('stroke-width', '28');
 
+    // Leave the line editor before the station clicks below — while Edit
+    // Stops is up, station clicks are editing gestures, not selections.
+    await page.keyboard.press('Escape');
+
     // The layout editor still owns deliberate spacing: dragging L2's stop one
     // width-scaled lattice ring outward (pitch = tangentGap(28, 14) / 14 =
     // 1.5 cells, so 1.25 → 2.75) at both stations SPLITS the band…

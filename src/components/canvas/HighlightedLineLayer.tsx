@@ -10,35 +10,10 @@ import { dotSizeOverride } from '../../model/dotSize';
 import { StopMarker } from '../StopMarker';
 import { StopGlyph } from '../StopGlyph';
 import { StationView } from '../StationView';
-import { legibleTextOn } from '../../util/color';
 import { useThemeColors } from '../../state/theme';
-
-/**
- * SVG path for a small isoceles arrow pointing along the unit vector (dx, dy)
- * from (ox, oy). The base (width 2*halfW) sits `baseDist` from the origin, the
- * apex `apexDist` from it. Swapping base/apex distances flips the arrow 180°.
- */
-export function arrowTrianglePath(
-  ox: number,
-  oy: number,
-  dx: number,
-  dy: number,
-  baseDist: number,
-  apexDist: number,
-  halfW: number,
-): string {
-  const px = -dy;
-  const py = dx;
-  const baseCx = ox + dx * baseDist;
-  const baseCy = oy + dy * baseDist;
-  const apexX = ox + dx * apexDist;
-  const apexY = oy + dy * apexDist;
-  const lX = baseCx + px * halfW;
-  const lY = baseCy + py * halfW;
-  const rX = baseCx - px * halfW;
-  const rY = baseCy - py * halfW;
-  return `M ${apexX} ${apexY} L ${lX} ${lY} L ${rX} ${rY} Z`;
-}
+import { validCursor } from './appendGestures';
+import { offsetFilletPath } from '../../geometry/router';
+import { sampleOffsetPath } from '../../geometry/lineTagGeometry';
 
 interface Props {
   highlightLineId: LineId;
@@ -49,14 +24,14 @@ interface Props {
   // Global branch-seam inner-edge mode, forwarded to the overlay's seam bands
   // so the highlighted line's seam matches the main layer.
   seamEdges: SeamEdges;
-  hoveredInspectorSegment: {
-    lineId: LineId;
-    fromStationId: StationId;
-    toStationId: StationId;
-  } | null;
   uiMode: UiMode;
   zoom: number;
   onStartDrag: ComponentProps<typeof StationView>['onStartDrag'];
+  // Edit Stops: the clickable × chips next to the cursor station / on the
+  // armed segment remove them (the chips render OUTSIDE the
+  // pointer-events:none wash).
+  onRemoveCursorStation?: (stationId: StationId) => void;
+  onRemoveCursorEdge?: (from: StationId, to: StationId) => void;
   vbX: number;
   vbY: number;
   vbW: number;
@@ -75,10 +50,11 @@ export function HighlightedLineLayer({
   renderables,
   underlayColor,
   seamEdges,
-  hoveredInspectorSegment,
   uiMode,
   zoom,
   onStartDrag,
+  onRemoveCursorStation,
+  onRemoveCursorEdge,
   vbX,
   vbY,
   vbW,
@@ -103,21 +79,15 @@ export function HighlightedLineLayer({
         {(() => {
           const ln = lines[highlightLineId];
           if (!ln) return null;
-          const hov = hoveredInspectorSegment;
-          const hovPairKey = hov ? pairKeyOf(hov.fromStationId, hov.toStationId) : null;
-          const isHoverStation = (sid: string) =>
-            !!hov && (sid === hov.fromStationId || sid === hov.toStationId);
-          // Two buckets so dimmed stripe + colored stop square + stop dot
-          // at one station composite *together* into one isolated group
-          // (children overdraw normally, then the group composites once at
-          // 0.2). Without this each dimmed element composites to the
-          // background separately and you see the stripe tinting through the
-          // marker, the marker tinting through the dot, etc. When no divider
-          // is hovered, everything goes into the matched bucket and renders
-          // flat.
-          const dimmed: ReactNode[] = [];
-          const matched: ReactNode[] = [];
-          const push = (m: boolean, node: ReactNode) => (m || !hov ? matched : dimmed).push(node);
+          // Edit Stops cursor (validated: a stale cursor renders nothing).
+          const append =
+            uiMode.kind === 'appending-to-line' && uiMode.lineId === highlightLineId
+              ? uiMode
+              : null;
+          const cursor = append ? validCursor(ln, append.cursor) : null;
+          const armedPairKey = cursor?.kind === 'edge' ? pairKeyOf(cursor.from, cursor.to) : null;
+          const parts: ReactNode[] = [];
+          const push = (node: ReactNode) => parts.push(node);
           // Repaint the selected line's bands with the SAME three-pass renderer
           // the main layer uses (SegmentBand), rendered `decorative` so the
           // overlay copies carry no DOM identity tags (see SegmentBand). Each
@@ -130,12 +100,9 @@ export function HighlightedLineLayer({
             (r): r is Extract<OrderedRenderable, { kind: 'stripe' }> =>
               r.kind === 'stripe' && r.band.lines[r.stripeIndex].id === highlightLineId,
           );
-          const matchedSeg = (pairKey: string) =>
-            !!hov && hov.lineId === highlightLineId && pairKey === hovPairKey;
           const pushBand = (pass: 'silhouette' | 'body' | 'seam', keyPrefix: string) =>
             stripesOfLine.forEach((r, i) =>
               push(
-                matchedSeg(r.band.pairKey),
                 <SegmentBand
                   key={keyPrefix + i}
                   decorative
@@ -151,10 +118,55 @@ export function HighlightedLineLayer({
           pushBand('silhouette', 'hl-sil:');
           pushBand('body', 'hl-b:');
           pushBand('seam', 'hl-seam:');
+          // Armed edge cursor: a two-tone halo (black edge / white core, the
+          // selection-ring convention) around the armed corridor's stripes,
+          // then the body repainted on top — a brightness bump alone got lost.
+          if (armedPairKey) {
+            const armed = stripesOfLine.filter((r) => r.band.pairKey === armedPairKey);
+            push(
+              <g key="armed-seg" data-armed-segment={armedPairKey}>
+                {armed.map((r, i) => {
+                  const d = offsetFilletPath(
+                    r.band.centerline,
+                    r.band.radius,
+                    r.band.stripeOffsets[r.stripeIndex],
+                  );
+                  const w = r.band.stripeWidths[r.stripeIndex];
+                  return (
+                    <g key={'armed:' + i}>
+                      <path
+                        d={d}
+                        fill="none"
+                        stroke="#000"
+                        strokeWidth={w + 10}
+                        strokeLinecap="round"
+                        strokeLinejoin="round"
+                      />
+                      <path
+                        d={d}
+                        fill="none"
+                        stroke="#fff"
+                        strokeWidth={w + 6}
+                        strokeLinecap="round"
+                        strokeLinejoin="round"
+                      />
+                      <SegmentBand
+                        decorative
+                        spec={r.band}
+                        stripeIndex={r.stripeIndex}
+                        pass="body"
+                        lines={lines}
+                        underlayColor={underlayColor}
+                      />
+                    </g>
+                  );
+                })}
+              </g>,
+            );
+          }
           renderables.forEach((r, i) => {
             if (r.kind !== 'marker' || r.spec.lineId !== highlightLineId) return;
             push(
-              isHoverStation(r.spec.stationId),
               <StopMarker
                 key={'hl-m:' + i}
                 spec={r.spec}
@@ -172,7 +184,6 @@ export function HighlightedLineLayer({
             if (!cell) continue;
             const { x: cx, y: cy } = stopPosWorld(cell, st);
             push(
-              isHoverStation(sid),
               <StopGlyph
                 key={'hl-d:' + sid}
                 cx={cx}
@@ -187,22 +198,14 @@ export function HighlightedLineLayer({
             );
           }
           // Selected line's station names rendered in white above dim.
-          // The append-mode "starter" station gets its own treatment
-          // below (line-color name + arrowhead), so skip it here.
-          const append = uiMode.kind === 'appending-to-line' ? uiMode : null;
-          const starterId =
-            append &&
-            append.lineId === highlightLineId &&
-            append.insertAfterIndex != null &&
-            append.insertAfterIndex >= 0
-              ? ln.stations[append.insertAfterIndex]
-              : null;
+          // The cursor station gets its own treatment below (line-color
+          // name + ring), so skip it here.
+          const cursorStationId = cursor?.kind === 'station' ? cursor.stationId : null;
           for (const sid of ln.stations) {
-            if (sid === starterId) continue;
+            if (sid === cursorStationId) continue;
             const st = stations[sid];
             if (!st) continue;
             push(
-              isHoverStation(sid),
               <StationView
                 key={'hl-l:' + sid}
                 station={st}
@@ -213,22 +216,15 @@ export function HighlightedLineLayer({
               />,
             );
           }
-          return (
-            <>
-              {dimmed.length > 0 && <g opacity={0.2}>{dimmed}</g>}
-              {matched}
-            </>
-          );
+          return <>{parts}</>;
         })()}
-        {/* In append mode, surface stations not yet on the line as
-                light gray labels above the dim, plus highlight the
-                "starter" stop and draw an arrowhead pointing at where
-                the next station will be inserted. */}
+        {/* In Edit Stops, surface stations not yet on the line as light gray
+            labels above the dim, and mark the cursor: a two-tone ring + line-
+            color name on a station cursor (the armed edge repaints brighter in
+            the band sweep above). */}
         {uiMode.kind === 'appending-to-line' &&
           uiMode.lineId === highlightLineId &&
           (() => {
-            const append = uiMode;
-            if (append.kind !== 'appending-to-line') return null;
             const ln = lines[highlightLineId];
             if (!ln) return null;
             const onLine = new Set(ln.stations);
@@ -246,101 +242,141 @@ export function HighlightedLineLayer({
                 />
               ));
 
-            // `null` = no insert cursor armed (append mode is passive:
-            // reorder / remove / wire, and a station click is a no-op). Only
-            // once a cursor is armed — a stop's +↓ / branch button, or the top
-            // "insert before start" affordance (idx -1) — is there somewhere to
-            // insert, so only then draw the arrow. Don't coerce null to -1.
-            const idx = append.insertAfterIndex;
-            const stopWorld = (sid: string) => {
-              const st = stations[sid];
-              if (!st) return null;
+            const cursor = validCursor(ln, uiMode.cursor);
+            let ring: ReactNode = null;
+            let starter: ReactNode = null;
+            if (cursor?.kind === 'station' && stations[cursor.stationId]) {
+              const st = stations[cursor.stationId];
               const cell = st.stops.find((c) => c.lineId === highlightLineId);
-              if (!cell) return null;
-              return stopPosWorld(cell, st);
-            };
-
-            let arrow: ReactNode = null;
-            if (idx != null) {
-              // Pick origin (the stop the arrow extends from) and the
-              // direction in which insertion will happen.
-              let originIdx: number;
-              let dirToIdx: number | null;
-              let dirSign: 1 | -1 = 1;
-              if (idx === -1) {
-                // Insert at start: arrow extends BEFORE station 0,
-                // opposite of the 0→1 direction.
-                originIdx = 0;
-                dirToIdx = ln.stations.length > 1 ? 1 : null;
-                dirSign = -1;
-              } else if (idx >= ln.stations.length - 1) {
-                // After last station: arrow extends past it in the
-                // direction of the final segment.
-                originIdx = idx;
-                dirToIdx = idx > 0 ? idx - 1 : null;
-                dirSign = -1;
-              } else {
-                // Between K and K+1: arrow points from K toward K+1.
-                originIdx = idx;
-                dirToIdx = idx + 1;
-                dirSign = 1;
-              }
-
-              const originSid = ln.stations[originIdx];
-              const origin = originSid ? stopWorld(originSid) : null;
-              const dirRef = dirToIdx != null ? stopWorld(ln.stations[dirToIdx]) : null;
-              if (origin && dirRef) {
-                const rdx = (dirRef.x - origin.x) * dirSign;
-                const rdy = (dirRef.y - origin.y) * dirSign;
-                const rlen = Math.hypot(rdx, rdy) || 1;
-                const dx = rdx / rlen;
-                const dy = rdy / rlen;
-                // Triangle: base STOP_SIZE wide centered just past the
-                // dot, apex one stop further along the direction. For
-                // the -1 ("add before start") case the arrow is rendered
-                // outside station 0, but flipped 180° so it points back
-                // down the line at station 0.
-                const baseDist = STOP_SIZE * 0.85;
-                const apexDist = baseDist + STOP_SIZE * 0.7;
-                const halfW = STOP_SIZE * 0.55;
-                const flipped = idx === -1;
-                const baseR = flipped ? apexDist : baseDist;
-                const apexR = flipped ? baseDist : apexDist;
-                arrow = (
-                  <path
-                    d={arrowTrianglePath(origin.x, origin.y, dx, dy, baseR, apexR, halfW)}
-                    fill={ln.color}
-                    stroke={legibleTextOn(ln.color)}
-                    strokeWidth={1}
-                    strokeLinejoin="round"
-                  />
+              if (cell) {
+                const p = stopPosWorld(cell, st);
+                // Two-tone ring (white core / black edge) so it reads on any
+                // line color; non-scaling strokes keep it crisp at any zoom.
+                ring = (
+                  <g data-append-cursor={cursor.stationId}>
+                    <circle
+                      cx={p.x}
+                      cy={p.y}
+                      r={STOP_SIZE * 0.75}
+                      fill="none"
+                      stroke="#000"
+                      strokeWidth={5}
+                      vectorEffect="non-scaling-stroke"
+                    />
+                    <circle
+                      cx={p.x}
+                      cy={p.y}
+                      r={STOP_SIZE * 0.75}
+                      fill="none"
+                      stroke="#fff"
+                      strokeWidth={3}
+                      vectorEffect="non-scaling-stroke"
+                    />
+                  </g>
                 );
               }
-            }
-
-            const starterSid = idx != null && idx >= 0 ? ln.stations[idx] : null;
-            const starter =
-              starterSid && stations[starterSid] ? (
+              starter = (
                 <StationView
-                  key={'starter:' + starterSid}
-                  station={stations[starterSid]}
+                  key={'starter:' + cursor.stationId}
+                  station={st}
                   lines={lines}
                   zoom={zoom}
                   onStartDrag={onStartDrag}
                   layer="starter-label"
                   highlightColor={ln.color}
                 />
-              ) : null;
+              );
+            }
 
             return (
               <>
                 {addable}
-                {arrow}
+                {ring}
                 {starter}
               </>
             );
           })()}
       </g>
+      {/* The × chip beside whatever the cursor has armed (a stop, or the
+          middle of the armed segment) — removes it. Clickable, so it lives
+          OUTSIDE the pointer-events:none wash. Sized in screen space via the
+          committed zoom, like the rest of the edit chrome. */}
+      {uiMode.kind === 'appending-to-line' &&
+        uiMode.lineId === highlightLineId &&
+        (() => {
+          const ln = lines[highlightLineId];
+          if (!ln) return null;
+          const cursor = validCursor(ln, uiMode.cursor);
+          if (cursor?.kind === 'station' && onRemoveCursorStation) {
+            const st = stations[cursor.stationId];
+            const cell = st?.stops.find((c) => c.lineId === highlightLineId);
+            if (!st || !cell) return null;
+            const p = stopPosWorld(cell, st);
+            return (
+              <g
+                data-append-remove-stop={cursor.stationId}
+                style={{ cursor: 'pointer' }}
+                onClick={(e) => {
+                  e.stopPropagation();
+                  onRemoveCursorStation(cursor.stationId);
+                }}
+              >
+                <title>Remove this stop from the line</title>
+                <RemoveChipGlyph cx={p.x + 16 / zoom} cy={p.y - 16 / zoom} zoom={zoom} />
+              </g>
+            );
+          }
+          if (cursor?.kind === 'edge' && onRemoveCursorEdge) {
+            // Anchor the chip just above the armed corridor's midpoint.
+            const pairKey = pairKeyOf(cursor.from, cursor.to);
+            const r = renderables.find(
+              (x): x is Extract<OrderedRenderable, { kind: 'stripe' }> =>
+                x.kind === 'stripe' &&
+                x.band.pairKey === pairKey &&
+                x.band.lines[x.stripeIndex].id === highlightLineId,
+            );
+            if (!r) return null;
+            const mid = sampleOffsetPath(
+              r.band.centerline,
+              r.band.radius,
+              r.band.stripeOffsets[r.stripeIndex],
+              0.5,
+            ).p;
+            const { from, to } = cursor;
+            return (
+              <g
+                data-append-remove-segment={pairKey}
+                style={{ cursor: 'pointer' }}
+                onClick={(e) => {
+                  e.stopPropagation();
+                  onRemoveCursorEdge(from, to);
+                }}
+              >
+                <title>Remove this segment</title>
+                <RemoveChipGlyph cx={mid.x + 16 / zoom} cy={mid.y - 16 / zoom} zoom={zoom} />
+              </g>
+            );
+          }
+          return null;
+        })()}
+    </>
+  );
+}
+
+// The shared × glyph for the remove chips: a white disc with a black cross,
+// sized in screen space so it stays clickable at any zoom.
+function RemoveChipGlyph({ cx, cy, zoom }: { cx: number; cy: number; zoom: number }) {
+  const r = 8 / zoom;
+  const arm = r * 0.45;
+  return (
+    <>
+      <circle cx={cx} cy={cy} r={r} fill="#fff" stroke="#000" strokeWidth={1 / zoom} />
+      <path
+        d={`M ${cx - arm} ${cy - arm} L ${cx + arm} ${cy + arm} M ${cx - arm} ${cy + arm} L ${cx + arm} ${cy - arm}`}
+        stroke="#000"
+        strokeWidth={1.5 / zoom}
+        strokeLinecap="round"
+      />
     </>
   );
 }

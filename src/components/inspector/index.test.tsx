@@ -28,7 +28,7 @@ describe('Inspector', () => {
   it('shows the line inspector (sticky) while appending to a line', () => {
     useSelection.setState({
       ...useSelection.getState(),
-      uiMode: { kind: 'appending-to-line', lineId: 'L9' as LineId, insertAfterIndex: null },
+      uiMode: { kind: 'appending-to-line', lineId: 'L9' as LineId, cursor: null },
       selectedStationIds: ['S' as StationId],
     });
     render(<Inspector />);

@@ -76,17 +76,24 @@ const SECTIONS: HelpSection[] = [
   {
     title: 'Lines',
     rows: [
-      { k: 'Click a stripe', effect: 'Open the line editor' },
+      { k: 'Click a stripe', effect: 'Edit the line — same as clicking it in the sidebar' },
       {
-        k: 'Edit Stops',
+        k: 'Click stations',
         effect:
-          'Click stations to add them — clicking a stop already on the line wires/unwires a track edge (loops, branches)',
+          'First click sets the cursor; each next click connects from it (members close loops, interior stops grow branches)',
       },
-      { k: '×  (stop list)', effect: 'Remove a stop — canvas clicks never remove' },
       {
-        k: 'Connector (tree)',
-        effect: 'Click cycles the segment style — right-click removes the edge (delete a loop)',
+        k: 'Click a segment',
+        effect:
+          'Arm insertion into that edge — station/Alt clicks splice in, marching to the far end',
       },
+      { k: 'Alt+click canvas', effect: 'Create a station and connect/splice it in one go' },
+      {
+        k: 'Del / ×',
+        effect: 'Remove the armed stop or segment — right-click also removes a segment',
+      },
+      { k: 'Shift+click segment', effect: 'Cycle that segment’s style' },
+      { k: 'Esc', effect: 'Drop the cursor, then exit the editor' },
       { k: 'Tag', effect: 'Drag slides it along the line — right-click cycles text/chevron' },
     ],
   },

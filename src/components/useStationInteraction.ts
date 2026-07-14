@@ -7,6 +7,7 @@ import { pathBetweenStations } from '../model/pathSelect';
 import { rotateItemOnContextMenu } from './canvas/groupRotate';
 import { itemCursor } from './canvas/itemCursor';
 import { screenToWorld } from './canvas/viewportMath';
+import { decideStationClick } from './canvas/appendGestures';
 
 // Map a click on a station to the closest dot's lineId. Used to pin a
 // transfer endpoint to the specific stop the user clicked on, rather than
@@ -67,9 +68,9 @@ export function useStationInteraction(
 ) {
   const selection = useSelection();
   const rotateStation = useDoc((s) => s.rotateStation);
-  const toggleStationOnLine = useDoc((s) => s.toggleStationOnLine);
   const addStationToLine = useDoc((s) => s.addStationToLine);
-  const toggleEdgeOnLine = useDoc((s) => s.toggleEdgeOnLine);
+  const connectStationsOnLine = useDoc((s) => s.connectStationsOnLine);
+  const spliceStationIntoEdge = useDoc((s) => s.spliceStationIntoEdge);
   const redistributeBetween = useDoc((s) => s.redistributeBetween);
   const addTransfer = useDoc((s) => s.addTransfer);
   const gridMode = useSnapPrefs((s) => s.modes.grid);
@@ -136,38 +137,32 @@ export function useStationInteraction(
       return;
     }
     if (selection.uiMode.kind === 'appending-to-line') {
-      const { lineId, insertAfterIndex, draw } = selection.uiMode;
+      // Edit Stops: the click's meaning is decided by the pure gesture matrix
+      // (appendGestures.ts) — a station cursor connects and advances, an edge
+      // cursor splices and keeps marching, a null cursor arms on a member.
+      const { lineId, cursor } = selection.uiMode;
       const ln = lines[lineId];
       if (!ln) return;
-      const wasInLine = ln.stations.includes(station.id);
-      const penStation = insertAfterIndex != null ? (ln.stations[insertAfterIndex] ?? null) : null;
-
-      // Clicking a stop ALREADY on the line WIRES an edge from the pen (the stop
-      // at the cursor) to it — this is how a loop closes or two stops link up.
-      // It NEVER removes the stop (that's the inspector's × button). Same in
-      // insert mode and draw mode. Toggles: connecting the same pair again
-      // erases that edge.
-      if (wasInLine) {
-        if (penStation && penStation !== station.id) {
-          toggleEdgeOnLine(lineId, penStation, station.id);
-        }
-        // Pen walks to the just-touched stop so drawing/looping can continue.
-        selection.setInsertAfterIndex(ln.stations.indexOf(station.id));
-        return;
+      const decision = decideStationClick(ln, cursor, station.id);
+      switch (decision.kind) {
+        case 'seed':
+          addStationToLine(lineId, decision.stationId);
+          selection.setAppendCursor(decision.cursor);
+          break;
+        case 'connect':
+          connectStationsOnLine(lineId, decision.from, decision.to);
+          selection.setAppendCursor(decision.cursor);
+          break;
+        case 'splice':
+          spliceStationIntoEdge(lineId, decision.from, decision.to, decision.stationId);
+          selection.setAppendCursor(decision.cursor);
+          break;
+        case 'cursor':
+          selection.setAppendCursor(decision.cursor);
+          break;
+        default:
+          break; // 'none' — the click means nothing right now
       }
-
-      // A brand-new stop. Draw mode (the "branch" button) appends it and wires
-      // an edge from the pen (grows a branch); plain insert mode splices it
-      // into the chain at the cursor.
-      if (draw) {
-        addStationToLine(lineId, station.id);
-        if (penStation) toggleEdgeOnLine(lineId, penStation, station.id);
-        selection.setInsertAfterIndex(ln.stations.length); // appended at the end
-        return;
-      }
-      if (insertAfterIndex === null) return; // no cursor → nowhere to insert
-      toggleStationOnLine(lineId, station.id, insertAfterIndex);
-      selection.setInsertAfterIndex(insertAfterIndex + 1);
       return;
     }
     // Ctrl/Cmd+Shift+click on a different station extends the selection
@@ -194,6 +189,9 @@ export function useStationInteraction(
   const onContextMenu = (e: React.MouseEvent) => {
     e.preventDefault();
     e.stopPropagation();
+    // NOTE: right-click rotates in Edit Stops too (auto-orient often needs a
+    // quick fix while laying out a line) — stop removal is the × chip or the
+    // Delete key, never right-click, which sits one slip away from rotate.
     // Right-click on a station that's part of a multi-selection rotates the
     // whole group rigidly around this station (each member rotates in place AND
     // non-pivot members — bullets, labels, AND polygons — orbit 45° around the

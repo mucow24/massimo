@@ -10,7 +10,7 @@ import { counterIdFactory } from './ids';
 // to whatever doc state currently exists. We don't generate raw arguments;
 // the runner picks valid ids from the doc at apply time, indexing into the
 // current id lists with the action's `idx` field(s). Index-driven selection
-// (rather than always-first) is what lets `toggleStationOnLine` add DIFFERENT
+// (rather than always-first) is what lets `toggleMembership` add DIFFERENT
 // stations to the SAME line — so multi-station lines, and thus real segments,
 // segment-style overrides, and line tags, actually form during a run.
 type Action =
@@ -18,7 +18,7 @@ type Action =
   | { kind: 'addLine' }
   | { kind: 'deleteStation'; idx: number }
   | { kind: 'deleteLine'; idx: number }
-  | { kind: 'toggleStationOnLine'; lineIdx: number; stationIdx: number }
+  | { kind: 'toggleMembership'; lineIdx: number; stationIdx: number }
   | { kind: 'rotateStation'; idx: number }
   | { kind: 'moveLineInOrder'; idx: number; dir: -1 | 1 }
   | { kind: 'setLineWidth'; idx: number; w: number }
@@ -55,7 +55,7 @@ const actionArb = fc.oneof(
   fc.record({ kind: fc.constant<'deleteStation'>('deleteStation'), idx: idxArb }),
   fc.record({ kind: fc.constant<'deleteLine'>('deleteLine'), idx: idxArb }),
   fc.record({
-    kind: fc.constant<'toggleStationOnLine'>('toggleStationOnLine'),
+    kind: fc.constant<'toggleMembership'>('toggleMembership'),
     lineIdx: idxArb,
     stationIdx: idxArb,
   }),
@@ -148,10 +148,20 @@ function applyOne(doc: MapDoc, action: Action, ids: ReturnType<typeof counterIdF
       const id = pickAt(doc.lines, action.idx);
       return id ? T.deleteLine(doc, id) : doc;
     }
-    case 'toggleStationOnLine': {
+    case 'toggleMembership': {
+      // Membership add/remove via the canvas primitives: a member is removed;
+      // a non-member is connected from the line's last member (the old
+      // toggle-append chain wiring), or seeds an empty line.
       const lineId = pickAt(doc.lines, action.lineIdx);
       const stationId = pickAt(doc.stations, action.stationIdx);
-      return lineId && stationId ? T.toggleStationOnLine(doc, lineId, stationId) : doc;
+      if (!lineId || !stationId) return doc;
+      const ln = doc.lines[lineId];
+      if (ln.stations.includes(stationId))
+        return T.removeStationFromLine(doc, lineId, ln.stations.indexOf(stationId));
+      const from = ln.stations.length ? ln.stations[ln.stations.length - 1] : null;
+      return from
+        ? T.connectStationsOnLine(doc, lineId, from, stationId)
+        : T.addStationToLine(doc, lineId, stationId);
     }
     case 'rotateStation': {
       const id = pickAt(doc.stations, action.idx);

@@ -1402,32 +1402,6 @@ export function setLineSegmentStyle(
   return { ...doc, lines: { ...doc.lines, [id]: { ...cur, segmentStyles: next } } };
 }
 
-// Edge-set maintenance for the linear append tool: splice `stationId` into the
-// display chain between its new neighbours `prev`/`next` (either absent at an
-// end). The prev–next edge the insertion breaks is removed and the two new
-// incident edges added; any loop/branch edges elsewhere on the line are left
-// untouched (this only rewires around the insertion point).
-function edgesAfterInsert(
-  edges: string[],
-  prev: StationId | null,
-  next: StationId | null,
-  stationId: StationId,
-): string[] {
-  // Splice INTO an existing segment (prev–new–next) only when prev and next
-  // were actually an edge. On a branchy/looped line `next` is merely the
-  // display-next stop (DFS order), NOT necessarily a neighbour — so otherwise
-  // just extend from `prev` and never fabricate an edge to a stop it was never
-  // joined to.
-  if (prev !== null && next !== null && edges.includes(pairKeyOf(prev, next))) {
-    let e = removeEdge(edges, prev, next);
-    e = addEdge(e, prev, stationId);
-    return addEdge(e, stationId, next);
-  }
-  if (prev !== null) return addEdge(edges, prev, stationId);
-  if (next !== null) return addEdge(edges, stationId, next);
-  return edges;
-}
-
 // Edge-set maintenance when `stationId` leaves the line: drop its incident
 // edges, and heal a degree-2 gap with a direct edge between its two neighbours
 // (so removing an intermediate stop keeps the line running — the historical
@@ -1477,68 +1451,6 @@ function spawnStopCell(
     label = { ...st.label, row: newRow, col: lc };
   }
   return { stops, label };
-}
-
-export function toggleStationOnLine(
-  doc: MapDoc,
-  lineId: LineId,
-  stationId: StationId,
-  insertAfterIndex?: number,
-): MapDoc {
-  const ln = doc.lines[lineId];
-  const st = doc.stations[stationId];
-  if (!ln || !st) return doc;
-  const inLine = ln.stations.includes(stationId);
-  if (inLine) {
-    // Remove this member (members are unique). The stop cell goes with it.
-    const newStations = ln.stations.filter((x) => x !== stationId);
-    const newStops = st.stops.filter((c) => c.lineId !== lineId);
-    const stationsAfter = { ...doc.stations, [stationId]: { ...st, stops: newStops } };
-    // The (station, line) stop is gone — delete transfers anchored at it.
-    const transfersAfter = pruneTransfers(
-      doc.transfers,
-      (e) => e.stationId === stationId && e.lineId === lineId,
-    );
-    // Drop the station's incident edges (healing a degree-2 gap), then prune
-    // overrides / tags keyed to edges that no longer exist.
-    const updatedLine = pruneOrphanSegmentStyles({
-      ...ln,
-      stations: newStations,
-      edges: edgesAfterRemoveStation(ln.edges, stationId),
-    });
-    return pruneOrphanLineTags({
-      ...doc,
-      lines: { ...doc.lines, [lineId]: updatedLine },
-      // Removing a station never gives any station its first line, so nothing
-      // is auto-oriented — every station here is already served.
-      stations: stationsAfter,
-      transfers: transfersAfter,
-    });
-  }
-  const idx =
-    insertAfterIndex === undefined
-      ? ln.stations.length
-      : Math.min(ln.stations.length, Math.max(0, insertAfterIndex + 1));
-  const prev = idx > 0 ? ln.stations[idx - 1] : null;
-  const next = idx < ln.stations.length ? ln.stations[idx] : null;
-  const newStations = [...ln.stations.slice(0, idx), stationId, ...ln.stations.slice(idx)];
-  const newEdges = edgesAfterInsert(ln.edges, prev, next, stationId);
-  const { stops: newStops, label: newLabel } = spawnStopCell(st, lineId, doc.lines);
-  const stationsAfter = {
-    ...doc.stations,
-    [stationId]: { ...st, stops: newStops, label: newLabel },
-  };
-  return {
-    ...doc,
-    lines: { ...doc.lines, [lineId]: { ...ln, stations: newStations, edges: newEdges } },
-    // Auto-orient only a brand-new station (one with no prior line) to the line
-    // tangent. A station already served by a line keeps the rotation the user
-    // gave it — adding it to another line must not disturb it.
-    stations:
-      st.stops.length === 0
-        ? autoOrientNewStation(stationsAfter, newStations, stationId)
-        : stationsAfter,
-  };
 }
 
 // Add `stationId` to the line as a MEMBER (with a stop cell) WITHOUT drawing an
@@ -1600,16 +1512,6 @@ export function removeStationFromLine(doc: MapDoc, lineId: LineId, idx: number):
   });
 }
 
-// Reorder the line's MEMBER list. This is display order only (the inspector
-// list, "reverse", stable iteration) — the track topology lives in `edges` and
-// is untouched, so no segment/tag pruning is needed (unlike the pre-edges model
-// where adjacency followed this array).
-export function reorderLineStations(doc: MapDoc, lineId: LineId, stations: StationId[]): MapDoc {
-  const ln = doc.lines[lineId];
-  if (!ln) return doc;
-  return { ...doc, lines: { ...doc.lines, [lineId]: { ...ln, stations } } };
-}
-
 // Add or remove a single track segment between two members (both must already
 // be on the line). This is how loops close (an edge back to an existing member)
 // and branches form (an edge from an interior member). Toggles: adds the
@@ -1624,6 +1526,89 @@ export function toggleEdgeOnLine(doc: MapDoc, lineId: LineId, a: StationId, b: S
   if (nextEdges === ln.edges) return doc;
   const updatedLine = pruneOrphanSegmentStyles({ ...ln, edges: nextEdges });
   return pruneOrphanLineTags({ ...doc, lines: { ...doc.lines, [lineId]: updatedLine } });
+}
+
+/**
+ * Canvas "connect" primitive (station cursor → station click): wire an edge
+ * from a member station to any station, adding the target to the line first
+ * when it isn't a member (stop cell spawned; a brand-new station orients along
+ * the WIRED edge [from, to] — not the member array, whose tail may be nowhere
+ * near the new edge). Idempotent: an already-connected pair returns the doc
+ * unchanged, so a re-click never destroys an edge — removal is its own gesture.
+ */
+export function connectStationsOnLine(
+  doc: MapDoc,
+  lineId: LineId,
+  fromStationId: StationId,
+  toStationId: StationId,
+): MapDoc {
+  const ln = doc.lines[lineId];
+  const to = doc.stations[toStationId];
+  if (!ln || !to || fromStationId === toStationId) return doc;
+  if (!ln.stations.includes(fromStationId)) return doc;
+  if (lineHasEdge(ln, fromStationId, toStationId)) return doc;
+  const isMember = ln.stations.includes(toStationId);
+  let stationsAfter = doc.stations;
+  let newStations = ln.stations;
+  if (!isMember) {
+    const { stops, label } = spawnStopCell(to, lineId, doc.lines);
+    newStations = [...ln.stations, toStationId];
+    stationsAfter = { ...doc.stations, [toStationId]: { ...to, stops, label } };
+  }
+  const edges = addEdge(ln.edges, fromStationId, toStationId);
+  return {
+    ...doc,
+    lines: { ...doc.lines, [lineId]: { ...ln, stations: newStations, edges } },
+    // Only a station gaining its first line is auto-oriented; anything already
+    // served keeps the rotation the user gave it.
+    stations:
+      !isMember && to.stops.length === 0
+        ? autoOrientNewStation(stationsAfter, [fromStationId, toStationId], toStationId)
+        : stationsAfter,
+  };
+}
+
+/**
+ * Canvas "splice" primitive (edge cursor → station click): subdivide the edge
+ * from–to with `stationId` — remove from–to, wire from–station and station–to.
+ * A non-member is added to the line first (stop cell spawned; a brand-new
+ * station orients on the [from, station, to] bisector). The split edge's style
+ * override and any line tag anchored on it are pruned — the halves inherit the
+ * line style. No-op (same reference) when the edge is missing or the station
+ * is one of its endpoints.
+ */
+export function spliceStationIntoEdge(
+  doc: MapDoc,
+  lineId: LineId,
+  fromStationId: StationId,
+  toStationId: StationId,
+  stationId: StationId,
+): MapDoc {
+  const ln = doc.lines[lineId];
+  const st = doc.stations[stationId];
+  if (!ln || !st) return doc;
+  if (stationId === fromStationId || stationId === toStationId) return doc;
+  if (!lineHasEdge(ln, fromStationId, toStationId)) return doc;
+  const isMember = ln.stations.includes(stationId);
+  let stationsAfter = doc.stations;
+  let newStations = ln.stations;
+  if (!isMember) {
+    const { stops, label } = spawnStopCell(st, lineId, doc.lines);
+    newStations = [...ln.stations, stationId];
+    stationsAfter = { ...doc.stations, [stationId]: { ...st, stops, label } };
+  }
+  let edges = removeEdge(ln.edges, fromStationId, toStationId);
+  edges = addEdge(edges, fromStationId, stationId);
+  edges = addEdge(edges, stationId, toStationId);
+  const updatedLine = pruneOrphanSegmentStyles({ ...ln, stations: newStations, edges });
+  return pruneOrphanLineTags({
+    ...doc,
+    lines: { ...doc.lines, [lineId]: updatedLine },
+    stations:
+      !isMember && st.stops.length === 0
+        ? autoOrientNewStation(stationsAfter, [fromStationId, stationId, toStationId], stationId)
+        : stationsAfter,
+  });
 }
 
 export function deleteLine(doc: MapDoc, id: LineId): MapDoc {

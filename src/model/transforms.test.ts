@@ -7,6 +7,7 @@ import { localToWorld, stopCenterAt } from '../geometry/orientation';
 import {
   makeDoc,
   makeLine,
+  makeLineTag,
   makeStation,
   makeStop,
   makeTextLabel,
@@ -1208,41 +1209,16 @@ describe('setLineSeamWidth', () => {
   });
 });
 
-describe('toggleStationOnLine', () => {
+describe('addStationToLine — stop-cell spawn + label nudge', () => {
   it('adds a station + stop cell when not present', () => {
     const doc = makeDoc({
       stations: [makeStation({ id: 's1' })],
       lines: [makeLine({ id: 'L1', stations: [] })],
     });
-    const next = T.toggleStationOnLine(doc, 'L1', 's1');
+    const next = T.addStationToLine(doc, 'L1', 's1');
     expect(next.lines.L1.stations).toEqual(['s1']);
     expect(next.stations.s1.stops).toHaveLength(1);
     expect(next.stations.s1.stops[0].lineId).toBe('L1');
-  });
-
-  it('inserts at insertAfterIndex+1', () => {
-    const doc = makeDoc({
-      stations: [makeStation({ id: 'a' }), makeStation({ id: 'b' }), makeStation({ id: 'c' })],
-      lines: [makeLine({ id: 'L1', stations: ['a', 'b'] })],
-    });
-    const next = T.toggleStationOnLine(doc, 'L1', 'c', 0);
-    // After 'a' (index 0) → at position 1.
-    expect(next.lines.L1.stations).toEqual(['a', 'c', 'b']);
-  });
-
-  it('removes the station + stop cell when already present (single-line case)', () => {
-    const doc = makeDoc({
-      stations: [
-        makeStation({
-          id: 's1',
-          stops: [makeStop('L1')],
-        }),
-      ],
-      lines: [makeLine({ id: 'L1', stations: ['s1'] })],
-    });
-    const next = T.toggleStationOnLine(doc, 'L1', 's1');
-    expect(next.lines.L1.stations).toEqual([]);
-    expect(next.stations.s1.stops).toEqual([]);
   });
 
   it('nudges an auto-placed label that sits where the new stop is landing', () => {
@@ -1259,7 +1235,7 @@ describe('toggleStationOnLine', () => {
       ],
       lines: [makeLine({ id: 'L1', stations: ['s1'] }), makeLine({ id: 'L2', stations: [] })],
     });
-    const next = T.toggleStationOnLine(doc, 'L2', 's1');
+    const next = T.addStationToLine(doc, 'L2', 's1');
     expect(next.stations.s1.stops).toEqual(
       expect.arrayContaining([expect.objectContaining({ lineId: 'L2', row: 0, col: 1 })]),
     );
@@ -1279,7 +1255,7 @@ describe('toggleStationOnLine', () => {
       ],
       lines: [makeLine({ id: 'L1', stations: ['s1'] }), makeLine({ id: 'L2', stations: [] })],
     });
-    const next = T.toggleStationOnLine(doc, 'L2', 's1');
+    const next = T.addStationToLine(doc, 'L2', 's1');
     expect(next.stations.s1.label).toMatchObject({ row: 0, col: 1, align: 'end' });
   });
 
@@ -1304,7 +1280,7 @@ describe('toggleStationOnLine', () => {
       ],
       lines: [makeLine({ id: 'L1', stations: ['s1'] }), makeLine({ id: 'L2', stations: [] })],
     });
-    const next = T.toggleStationOnLine(doc, 'L2', 's1');
+    const next = T.addStationToLine(doc, 'L2', 's1');
     expect(next.stations.s1.label).toMatchObject({ row: 0, col: 2 });
   });
 
@@ -1319,7 +1295,7 @@ describe('toggleStationOnLine', () => {
       ],
       lines: [makeLine({ id: 'L1', stations: ['s1'] }), makeLine({ id: 'L2', stations: [] })],
     });
-    const next = T.toggleStationOnLine(doc, 'L2', 's1');
+    const next = T.addStationToLine(doc, 'L2', 's1');
     expect(next.stations.s1.label).toMatchObject({ row: 0, col: -1 });
   });
 });
@@ -1394,29 +1370,9 @@ describe('removeStationFromLine', () => {
   });
 });
 
-describe('toggleStationOnLine: transfers', () => {
-  it('deletes transfers anchored at the stop when the station is toggled off', () => {
-    const doc = makeDoc({
-      stations: [
-        makeStation({ id: 's1', stops: [makeStop('L1')] }),
-        makeStation({ id: 's2', stops: [makeStop('L1')] }),
-      ],
-      lines: [makeLine({ id: 'L1', stations: ['s1', 's2'] })],
-      transfers: [
-        // anchored at the (s1, L1) stop being removed — deleted.
-        { id: 'x1', a: { stationId: 's1', lineId: 'L1' }, b: { stationId: 's2', lineId: 'L1' } },
-        // anchored at the station, not the stop — survives.
-        { id: 'x2', a: { stationId: 's1', lineId: null }, b: { stationId: 's2', lineId: null } },
-      ],
-    });
-    const next = T.toggleStationOnLine(doc, 'L1', 's1');
-    expect(next.stations.s1.stops).toEqual([]);
-    expect(next.transfers.x1).toBeUndefined();
-    expect(next.transfers.x2).toBeDefined();
-  });
-
+describe('removeStationFromLine: transfers on other lines', () => {
   it('keeps anchored transfers when the station keeps a stop on another line', () => {
-    // Toggling s1 off L1 must not disturb a transfer anchored at its L2 stop.
+    // Removing s1 from L1 must not disturb a transfer anchored at its L2 stop.
     const doc = makeDoc({
       stations: [
         makeStation({ id: 's1', stops: [makeStop('L1'), makeStop('L2', { col: 1 })] }),
@@ -1430,29 +1386,9 @@ describe('toggleStationOnLine: transfers', () => {
         { id: 'x1', a: { stationId: 's1', lineId: 'L2' }, b: { stationId: 's2', lineId: 'L2' } },
       ],
     });
-    const next = T.toggleStationOnLine(doc, 'L1', 's1');
+    const next = T.removeStationFromLine(doc, 'L1', 0);
     expect(next.stations.s1.stops.map((c) => c.lineId)).toEqual(['L2']);
     expect(next.transfers.x1).toBeDefined();
-  });
-});
-
-describe('reorderLineStations', () => {
-  it('replaces line.stations and leaves station rotations untouched (no re-orient)', () => {
-    // Contract: reordering only rearranges already-served stations, so — unlike
-    // adding/removing a station — it deliberately does NOT re-run auto-orient.
-    // Give the stations a rotation auto-orient would "fix" (a vertical L1 line
-    // would orient both to rotation 2) and assert reorder leaves them alone.
-    const doc = makeDoc({
-      stations: [
-        stationWithStop('s1', 'L1', { x: 0, y: 0 }, { rotation: 5 }),
-        stationWithStop('s2', 'L1', { x: 0, y: 100 }, { rotation: 5 }),
-      ],
-      lines: [makeLine({ id: 'L1', stations: ['s1', 's2'] })],
-    });
-    const next = T.reorderLineStations(doc, 'L1', ['s2', 's1']);
-    expect(next.lines.L1.stations).toEqual(['s2', 's1']);
-    expect(next.stations.s1.rotation).toBe(5);
-    expect(next.stations.s2.rotation).toBe(5);
   });
 });
 
@@ -2104,8 +2040,8 @@ describe('deleteStation — segment override cascade', () => {
     // L1 = a–b–c with a styled (a,b) segment. Deleting `a` removes it from
     // the line, so the (a,b) pair is no longer an edge; the style keyed on it
     // must be pruned, not left dangling at a station that no longer exists.
-    // toggleStationOnLine / removeStationFromLine / deleteLine already do
-    // this — deleteStation must too.
+    // removeStationFromLine / deleteLine already do this — deleteStation
+    // must too.
     let doc = makeDoc({
       stations: [
         makeStation({ id: 'a', stops: [makeStop('L1')] }),
@@ -3335,33 +3271,6 @@ describe('redistributeBetween', () => {
   });
 });
 
-describe('reorderLineStations', () => {
-  it('is display-only: the track (edges) and per-segment overrides are untouched', () => {
-    const base = makeDoc({
-      stations: [
-        makeStation({ id: 'a', stops: [makeStop('L1')] }),
-        makeStation({ id: 'b', stops: [makeStop('L1')] }),
-        makeStation({ id: 'c', stops: [makeStop('L1')] }),
-      ],
-      lines: [
-        makeLine({
-          id: 'L1',
-          stations: ['a', 'b', 'c'],
-          // Canonical pair-key for the (a, b) edge.
-          segmentStyles: { 'a|b': 'hatched' },
-        }),
-      ],
-    });
-    const edgesBefore = base.lines.L1.edges;
-    // Reordering the member list changes display order only — topology is in
-    // `edges`, so the a|b corridor (and its hatched override) survive.
-    const reordered = T.reorderLineStations(base, 'L1', ['a', 'c', 'b']);
-    expect(reordered.lines.L1.stations).toEqual(['a', 'c', 'b']);
-    expect(reordered.lines.L1.edges).toEqual(edgesBefore);
-    expect(reordered.lines.L1.segmentStyles).toEqual({ 'a|b': 'hatched' });
-  });
-});
-
 describe('loops and branches (edge-set topology)', () => {
   const fourStops = () => [
     makeStation({ id: 'a', stops: [makeStop('L1')] }),
@@ -3441,41 +3350,6 @@ describe('loops and branches (edge-set topology)', () => {
     expect(cut.lines.L1.segmentStyles).toEqual({}); // orphaned override pruned
   });
 
-  it('insert-after splices the new stop into an existing edge (rewires prev–next)', () => {
-    const base = makeDoc({
-      stations: [
-        makeStation({ id: 'a', stops: [makeStop('L1')] }),
-        makeStation({ id: 'b', stops: [makeStop('L1')] }),
-        makeStation({ id: 'c', stops: [] }),
-      ],
-      // a–b is a real edge; inserting c after a must BREAK a–b and wire a–c + c–b
-      // (the splice branch of edgesAfterInsert). This is the most common line edit.
-      lines: [makeLine({ id: 'L1', stations: ['a', 'b'], edges: ['a|b'] })],
-    });
-    const out = T.toggleStationOnLine(base, 'L1', 'c', 0); // insert c after a (index 0)
-    expect(out.lines.L1.stations).toEqual(['a', 'c', 'b']);
-    // The a–b chord is gone; a–c and b–c (canonical) replace it — no phantom a|b.
-    expect(new Set(out.lines.L1.edges)).toEqual(new Set(['a|c', 'b|c']));
-  });
-
-  it('insert-after does not fabricate an edge to a non-adjacent display-next stop', () => {
-    const base = makeDoc({
-      stations: [
-        makeStation({ id: 'a', stops: [makeStop('L1')] }),
-        makeStation({ id: 'b', stops: [makeStop('L1')] }),
-        makeStation({ id: 'c', stops: [makeStop('L1')] }),
-        makeStation({ id: 'd', stops: [] }),
-      ],
-      // Junction at a (a–b and a–c). Display order [a, b, c] makes b and c
-      // display-consecutive, but they are NOT connected.
-      lines: [makeLine({ id: 'L1', stations: ['a', 'b', 'c'], edges: ['a|b', 'a|c'] })],
-    });
-    // "Insert after b" (index 1): b's display-next is c, but b–c is not an edge.
-    const out = T.toggleStationOnLine(base, 'L1', 'd', 1);
-    // d attaches to b only — no spurious d–c edge.
-    expect(new Set(out.lines.L1.edges)).toEqual(new Set(['a|b', 'a|c', 'b|d']));
-  });
-
   it('removing an intermediate stop heals the gap (degree-2)', () => {
     const base = makeDoc({
       stations: fourStops().slice(0, 3),
@@ -3494,5 +3368,139 @@ describe('loops and branches (edge-set topology)', () => {
     const out = T.removeStationFromLine(base, 'L1', 1); // remove junction b
     expect(out.lines.L1.edges).toEqual([]);
     expect(new Set(out.lines.L1.stations)).toEqual(new Set(['a', 'c', 'd']));
+  });
+});
+
+// The two canvas line-editing primitives: "connect" (station cursor → station
+// click) wires an edge from a member, adding the target to the line if needed;
+// "splice" (edge cursor → station click) subdivides an existing edge with the
+// clicked station. Both are single transforms so each canvas click is one undo
+// entry, and both return the SAME reference on no-op (load-bearing for undo
+// grouping).
+describe('connectStationsOnLine', () => {
+  const threeStops = () => [
+    makeStation({ id: 'a', stops: [makeStop('L1')] }),
+    makeStation({ id: 'b', stops: [makeStop('L1')] }),
+    makeStation({ id: 'c', stops: [makeStop('L1')] }),
+  ];
+
+  it('wires an edge between two existing members (loop close)', () => {
+    const base = makeDoc({
+      stations: threeStops(),
+      lines: [makeLine({ id: 'L1', stations: ['a', 'b', 'c'] })], // a|b, b|c
+    });
+    const out = T.connectStationsOnLine(base, 'L1', 'c', 'a');
+    expect(new Set(out.lines.L1.edges)).toEqual(new Set(['a|b', 'b|c', 'a|c']));
+    expect(out.lines.L1.stations).toEqual(['a', 'b', 'c']); // membership untouched
+  });
+
+  it('is idempotent: an already-connected pair is a same-reference no-op', () => {
+    const base = makeDoc({
+      stations: threeStops(),
+      lines: [makeLine({ id: 'L1', stations: ['a', 'b', 'c'] })],
+    });
+    expect(T.connectStationsOnLine(base, 'L1', 'a', 'b')).toBe(base);
+    expect(T.connectStationsOnLine(base, 'L1', 'b', 'a')).toBe(base); // either direction
+  });
+
+  it('adds a non-member target to the line (stop cell spawned) and wires the edge', () => {
+    const base = makeDoc({
+      stations: [...threeStops().slice(0, 2), makeStation({ id: 'n', stops: [] })],
+      lines: [makeLine({ id: 'L1', stations: ['a', 'b'] })], // a|b
+    });
+    const out = T.connectStationsOnLine(base, 'L1', 'a', 'n'); // branch off a
+    expect(out.lines.L1.stations).toEqual(['a', 'b', 'n']);
+    expect(new Set(out.lines.L1.edges)).toEqual(new Set(['a|b', 'a|n']));
+    expect(out.stations.n.stops.some((s) => s.lineId === 'L1')).toBe(true);
+  });
+
+  it('guards: from must be a member; self-connect and unknown ids are no-ops', () => {
+    const base = makeDoc({
+      stations: [...threeStops().slice(0, 2), makeStation({ id: 'n', stops: [] })],
+      lines: [makeLine({ id: 'L1', stations: ['a', 'b'] })],
+    });
+    expect(T.connectStationsOnLine(base, 'L1', 'n', 'a')).toBe(base); // from not on line
+    expect(T.connectStationsOnLine(base, 'L1', 'a', 'a')).toBe(base);
+    expect(T.connectStationsOnLine(base, 'L1', 'a', 'zzz')).toBe(base);
+    expect(T.connectStationsOnLine(base, 'LX', 'a', 'b')).toBe(base);
+  });
+});
+
+describe('spliceStationIntoEdge', () => {
+  const fourStops = () => [
+    makeStation({ id: 'a', stops: [makeStop('L1')] }),
+    makeStation({ id: 'b', stops: [makeStop('L1')] }),
+    makeStation({ id: 'c', stops: [makeStop('L1')] }),
+    makeStation({ id: 'd', stops: [makeStop('L1')] }),
+  ];
+
+  it('splices a non-member into the edge: membership, stop cell, rewired edges', () => {
+    const base = makeDoc({
+      stations: [
+        makeStation({ id: 'a', stops: [makeStop('L1')] }),
+        makeStation({ id: 'b', stops: [makeStop('L1')] }),
+        makeStation({ id: 'n', stops: [] }),
+      ],
+      lines: [makeLine({ id: 'L1', stations: ['a', 'b'] })], // a|b
+    });
+    const out = T.spliceStationIntoEdge(base, 'L1', 'a', 'b', 'n');
+    expect(new Set(out.lines.L1.edges)).toEqual(new Set(['a|n', 'b|n']));
+    expect(out.lines.L1.stations).toEqual(['a', 'b', 'n']);
+    expect(out.stations.n.stops.some((s) => s.lineId === 'L1')).toBe(true);
+  });
+
+  it('splices an existing member into an edge elsewhere (bypass rerouting)', () => {
+    const base = makeDoc({
+      stations: fourStops(),
+      lines: [makeLine({ id: 'L1', stations: ['a', 'b', 'c', 'd'] })], // a|b, b|c, c|d
+    });
+    const out = T.spliceStationIntoEdge(base, 'L1', 'a', 'b', 'd');
+    expect(new Set(out.lines.L1.edges)).toEqual(new Set(['a|d', 'b|d', 'b|c', 'c|d']));
+    expect(out.lines.L1.stations).toEqual(['a', 'b', 'c', 'd']); // membership unchanged
+  });
+
+  it('guards: missing edge, endpoint target, and unknown ids are same-ref no-ops', () => {
+    const base = makeDoc({
+      stations: fourStops().slice(0, 3),
+      lines: [makeLine({ id: 'L1', stations: ['a', 'b', 'c'] })], // a|b, b|c
+    });
+    expect(T.spliceStationIntoEdge(base, 'L1', 'a', 'c', 'b')).toBe(base); // a–c not an edge
+    expect(T.spliceStationIntoEdge(base, 'L1', 'a', 'b', 'a')).toBe(base); // endpoint
+    expect(T.spliceStationIntoEdge(base, 'L1', 'a', 'b', 'b')).toBe(base); // endpoint
+    expect(T.spliceStationIntoEdge(base, 'L1', 'a', 'b', 'zzz')).toBe(base);
+    expect(T.spliceStationIntoEdge(base, 'LX', 'a', 'b', 'c')).toBe(base);
+  });
+
+  it('prunes the split edge’s style override (the halves inherit the line style)', () => {
+    const base = makeDoc({
+      stations: [
+        makeStation({ id: 'a', stops: [makeStop('L1')] }),
+        makeStation({ id: 'b', stops: [makeStop('L1')] }),
+        makeStation({ id: 'n', stops: [] }),
+      ],
+      lines: [
+        makeLine({
+          id: 'L1',
+          stations: ['a', 'b'],
+          segmentStyles: { 'a|b': 'dashed' },
+        }),
+      ],
+    });
+    const out = T.spliceStationIntoEdge(base, 'L1', 'a', 'b', 'n');
+    expect(out.lines.L1.segmentStyles).toEqual({}); // orphaned override pruned
+  });
+
+  it('prunes a line tag anchored on the split edge', () => {
+    const base = makeDoc({
+      stations: [
+        makeStation({ id: 'a', stops: [makeStop('L1')] }),
+        makeStation({ id: 'b', stops: [makeStop('L1')] }),
+        makeStation({ id: 'n', stops: [] }),
+      ],
+      lines: [makeLine({ id: 'L1', stations: ['a', 'b'] })],
+      lineTags: [makeLineTag({ id: 't1', lineId: 'L1', fromStationId: 'a', toStationId: 'b' })],
+    });
+    const out = T.spliceStationIntoEdge(base, 'L1', 'a', 'b', 'n');
+    expect(out.lineTags).toEqual({}); // the a–b corridor no longer exists
   });
 });
