@@ -22,11 +22,12 @@ const label: Station['label'] = {
 };
 
 // Legacy interlined pair: L1 and L2 horizontal through the same two stations,
-// stops one row apart (tangent at the default width).
-const seedInterlinedPair = () => {
+// stops one row apart (tangent at the default width). Pass a larger l2Row to
+// seed a NON-tangent pair (two singleton bands, no repackable chain).
+const seedInterlinedPair = (l2Row = 1) => {
   const stops: Station['stops'] = [
     { lineId: 'L1', row: 0, col: 0, orientation: 'auto-horizontal' },
-    { lineId: 'L2', row: 1, col: 0, orientation: 'auto-horizontal' },
+    { lineId: 'L2', row: l2Row, col: 0, orientation: 'auto-horizontal' },
   ];
   const s1: Station = { id: 's1', name: 'S1', x: 0, y: 0, rotation: 0, stops, label };
   const s2: Station = { id: 's2', name: 'S2', x: 200, y: 0, rotation: 0, stops, label };
@@ -62,7 +63,7 @@ describe('MapCanvas — width edits rebuild band geometry', () => {
   // memo is keyed on linesGeometrySig — if that signature omits width, a
   // width edit silently never repaints the canvas until some unrelated
   // geometry edit happens. This is the regression this file pins.
-  it('a width edit re-merges bands live (no reload, no unrelated edit)', () => {
+  it('a width edit rebuilds band geometry live (no reload, no unrelated edit)', () => {
     render(<App />);
     seedInterlinedPair();
 
@@ -72,20 +73,45 @@ describe('MapCanvas — width edits rebuild band geometry', () => {
     const dBefore = stripeD('L1');
     expect(dBefore).toBeTruthy();
 
-    // Widening L2 breaks the 14-unit tangency (now needs 21) → the band must
-    // SPLIT into two singletons. (Pre-fix, linesGeometrySig omitted width and
-    // the canvas kept painting the stale merged band — this assertion is the
-    // regression catch.)
+    // Widening L2 re-packs the pair's stops to the mixed tangent gap (21), so
+    // the band stays MERGED — and every stripe path moves to the new
+    // mean-centered offsets. (Pre-fix, linesGeometrySig omitted width and the
+    // canvas kept painting the stale geometry until an unrelated edit — the
+    // path-changed assertion is the regression catch.)
     act(() => {
       useDoc.getState().setLineWidth('L2', 28);
     });
-    expect(distinctBandKeys()).toBe(2);
+    expect(distinctBandKeys()).toBe(1);
+    expect(stripeEls()).toHaveLength(2);
+    expect(stripeD('L1')).not.toBe(dBefore);
+  });
 
-    // …and L1's painted path is byte-identical through the split: offsets are
-    // mean-centered tangency positions, so every stripe lands exactly on its
-    // stop regardless of band membership. A straight corridor's paths never
-    // move under width edits — only grouping and stroke widths do.
-    expect(stripeD('L1')).toBe(dBefore);
+  it('a width edit with NO repackable stops still rebuilds geometry live (memo pin)', () => {
+    // The repack-through-width test above can't catch a linesGeometrySig that
+    // omits width: the moved stop cells change stationsGeometrySig and force
+    // the rebuild anyway. Here the pair is seeded two rows apart — not
+    // tangent, so no stop moves — and ONLY the signature's width term can
+    // trigger the rebuild that bakes the new stripe stroke-width.
+    render(<App />);
+    seedInterlinedPair(2);
+
+    expect(distinctBandKeys()).toBe(2); // spread pair: two singleton bands
+    const rowsBefore = useDoc.getState().stations.s1.stops.map((c) => c.row);
+    const dL1Before = stripeD('L1');
+
+    act(() => {
+      useDoc.getState().setLineWidth('L2', 28);
+    });
+
+    // No repack happened (non-tangent stops are never moved)…
+    expect(useDoc.getState().stations.s1.stops.map((c) => c.row)).toEqual(rowsBefore);
+    // …yet the painted stripe carries the new baked width immediately.
+    expect(
+      document.querySelector('[data-band-stripe][data-line-id="L2"]')?.getAttribute('stroke-width'),
+    ).toBe('28');
+    // The untouched singleton neighbor rebuilds to a byte-identical path
+    // (offset 0 regardless of widths) — the rebuild changes only what it must.
+    expect(stripeD('L1')).toBe(dL1Before);
   });
 
   it('a COLOR edit repaints the stripe live but never moves band geometry (E5d)', () => {

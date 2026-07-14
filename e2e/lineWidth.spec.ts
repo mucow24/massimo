@@ -54,8 +54,10 @@ const twoStop: Seed = {
 };
 
 // Legacy interlined pair: both default width, stops 1 row apart (tangent at
-// 14/14). Widening L2 to 28 must SPLIT the band; re-spacing L2's stop to row
-// 1.5 in the layout editor must RE-MERGE it as a mixed-width band.
+// 14/14). Widening L2 to 28 re-packs the stops to the mixed tangent gap
+// (21 units, centroid preserved: rows −0.25 / 1.25), so the band STAYS
+// merged; the layout editor's width-scaled ghost lattice can then drag the
+// pair out of tangency (split) and back (re-merge).
 const legacyInterlined: Seed = {
   stations: [
     {
@@ -187,7 +189,7 @@ test.describe('Per-line width', () => {
     await expect(STRIPE(page, 'L1')).toHaveAttribute('stroke-width', '28');
   });
 
-  test('widening an interlined line splits the band; re-spacing its stop re-merges it', async ({
+  test('widening an interlined line repacks its stops and keeps the band merged', async ({
     page,
   }) => {
     await seedAndOpen(page, legacyInterlined);
@@ -199,16 +201,21 @@ test.describe('Per-line width', () => {
         .evaluateAll((els) => new Set(els.map((el) => el.getAttribute('data-band-key'))).size);
     expect(await bandKeys()).toBe(1);
 
-    // Widen L2 → stops are now 14 apart but tangency needs 21 → band splits.
+    // Widen L2 → the stops re-pack to the mixed tangent gap (21 units about
+    // the pair centroid: rows −0.25 / 1.25) and the band STAYS one merged
+    // mixed-width band — no manual re-spacing.
     await selectLine(page, 'L2');
     await setWidthTo(page, '28');
-    expect(await bandKeys()).toBe(2);
+    expect(await bandKeys()).toBe(1);
+    await expect(STRIPE(page, 'L1')).toHaveAttribute('stroke-width', '14');
+    await expect(STRIPE(page, 'L2')).toHaveAttribute('stroke-width', '28');
 
-    // Re-space L2's stop at BOTH stations to row 1.5 (tangent again). The
-    // ghost lattice scales to the pair tangency, so the drop lands exactly
-    // on (1.5, 0). Layout-edit mode is entered once on A; clicking B while
-    // the mode is active RETARGETS the editor to it (layoutEditReconcile),
-    // so the popover already reads Done — no second Edit layout click.
+    // The layout editor still owns deliberate spacing: dragging L2's stop one
+    // width-scaled lattice ring outward (pitch = tangentGap(28, 14) / 14 =
+    // 1.5 cells, so 1.25 → 2.75) at both stations SPLITS the band…
+    // Layout-edit mode is entered once on A; clicking B while the mode is
+    // active RETARGETS the editor to it (layoutEditReconcile), so the popover
+    // already reads Done — no second Edit layout click.
     for (const sid of ['A', 'B'] as const) {
       const c = await stationCenter(page, sid);
       await page.mouse.click(c.x, c.y);
@@ -219,12 +226,25 @@ test.describe('Per-line width', () => {
       }
       await dragStopByLocalDelta(
         page,
-        '[data-cell-row="1"][data-cell-col="0"][data-cell-kind="stop"][data-line-id="L2"]',
-        0.5,
+        '[data-cell-row="1.25"][data-cell-col="0"][data-cell-kind="stop"][data-line-id="L2"]',
+        1.5,
         0,
       );
     }
+    expect(await bandKeys()).toBe(2);
 
+    // …and dragging it back onto the ring-1 tangency slot re-merges it.
+    for (const sid of ['A', 'B'] as const) {
+      const c = await stationCenter(page, sid);
+      await page.mouse.click(c.x, c.y);
+      await expect(page.getByRole('button', { name: 'Done' })).toBeVisible();
+      await dragStopByLocalDelta(
+        page,
+        '[data-cell-row="2.75"][data-cell-col="0"][data-cell-kind="stop"][data-line-id="L2"]',
+        -1.5,
+        0,
+      );
+    }
     expect(await bandKeys()).toBe(1);
     await expect(STRIPE(page, 'L1')).toHaveAttribute('stroke-width', '14');
     await expect(STRIPE(page, 'L2')).toHaveAttribute('stroke-width', '28');
