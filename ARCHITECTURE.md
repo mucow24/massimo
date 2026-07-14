@@ -158,7 +158,8 @@ src/
     inspector/                  # LineInspector (sidebar; incl. the StationGraph edge/branch/loop
                                 #   editor) + StationInspector (hosted by the on-canvas
                                 #   StationPopover) + pure math: stopGridDrag.ts,
-                                #   stationBandGeometry.ts, lineGraphLayout.ts (git-graph trunk/lane layout)
+                                #   stationBandGeometry.ts, lineGraphLayout.ts (git-graph row/lane layout:
+                                #   drawn-order trunk, junction-local branches, merge/arc loop closures)
 
   export/                       # exportCanvas.ts (SVG/PNG), fonts.ts, exportCanvasPdf.ts
                                 #   + pure PDF-gap modules pdfHatch/pdfText/pdfGlyphs/
@@ -1188,9 +1189,13 @@ band routing or the marker sort. Pinned by `MapCanvas.stationsSig.test.tsx`.
   (rows select/deselect; the station editor itself is an on-canvas popover), and the
   inline-expanded LINE inspector on the Lines tab. The LineInspector hosts
   **[inspector/StationGraph.tsx](src/components/inspector/StationGraph.tsx)** — a git-graph view
-  of the line's `edges` (trunk + loop-over-the-top arcs + branch lanes, laid out by the pure
-  **[inspector/lineGraphLayout.ts](src/components/inspector/lineGraphLayout.ts)**) where stops are
-  added, reordered, branched (degree-≥3 junctions), and looped by editing the edge set directly.
+  of the line's `edges`, laid out by the pure
+  **[inspector/lineGraphLayout.ts](src/components/inspector/lineGraphLayout.ts)**: the trunk is the
+  longest chain from the display-first terminus (the tree reads in drawn direction), branch stops
+  sit directly under their junction in interval-reused side lanes, and a cycle closes either as a
+  `merge` (the arm rejoins the line like parallel tracks on the map) or as an arc over the top of
+  its upper endpoint. Stops are added, reordered, branched (degree-≥3 junctions), and looped by
+  editing the edge set directly.
 - **[StationPopover.tsx](src/components/StationPopover.tsx)** — the station editor's home:
   mounted by `ItemPopovers` for a sole-selected station (idle mode, or that station's own
   layout-edit mode), hosting the full `StationInspector` — a Name header row with the
