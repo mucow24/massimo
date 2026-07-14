@@ -1,7 +1,8 @@
 import { autoOrientNewStation } from './autoOrient';
 import { effectiveLineOrder } from './lineOrder';
 import { reconcileOrder, moveInOrder } from './recordOrder';
-import { LINE_WIDTH_DEFAULT, canonicalLineWidth } from './lineWidth';
+import { LINE_WIDTH_DEFAULT, canonicalLineWidth, lineWidthOf } from './lineWidth';
+import { repackStationForWidth } from './stationPacking';
 import { DOT_SIZE_DEFAULT, canonicalDotSize } from './dotSize';
 import {
   LINE_STROKE_COLOR_DEFAULT,
@@ -22,7 +23,7 @@ import {
 import { DEFAULT_DOT_STYLE, dotStylesEqual } from './dotStyle';
 import { pairKeyOf } from './pairKey';
 import { addEdge, edgeNeighbors, edgesWithout, lineHasEdge, removeEdge } from './lineTopology';
-import { DIR_8, rotateBy, stopCenterAt } from '../geometry/orientation';
+import { DIR_8, STOP_SIZE, rotateBy, stopCenterAt, tangentGap } from '../geometry/orientation';
 import { CELL_EPS, sameCell } from '../geometry/lattice';
 import { GRID_INTERVAL, snapPointToGrid, type GridSnap } from '../geometry/snap';
 import { polygonCentroid, edgeMidpoint } from '../geometry/polygon';
@@ -540,6 +541,13 @@ export function setLineDefaultDotSize(doc: MapDoc, id: LineId, size: number): Ma
 // when the effective stored form wouldn't change — the slider fires this on
 // every drag tick, and reference equality is what keeps no-op ticks out of
 // the undo history.
+//
+// Width is GEOMETRY: the interlining merge gate keys on stops sitting exactly
+// tangentGap(wA, wB) apart, so a bare width write would strand every packed
+// layout at its old spacing and un-merge its bands. Each width change
+// therefore also re-packs the tangent stop chains at every station hosting
+// this line (see stationPacking.ts) — packed stays packed, spread stays
+// spread, and the whole edit is one doc write (one undo entry).
 export function setLineWidth(doc: MapDoc, id: LineId, w: number): MapDoc {
   const cur = doc.lines[id];
   if (!cur || !Number.isFinite(w)) return doc;
@@ -552,8 +560,11 @@ export function setLineWidth(doc: MapDoc, id: LineId, w: number): MapDoc {
   } else {
     nextLine = { ...cur, width: stored };
   }
+  const stations = mapRecord(doc.stations, (st) =>
+    repackStationForWidth(st, doc.lines, id, lineWidthOf(cur), stored ?? LINE_WIDTH_DEFAULT),
+  );
   // Fall-through = the stored width changed → detach from the style preset.
-  return { ...doc, lines: { ...doc.lines, [id]: stripStyleId(nextLine) } };
+  return { ...doc, lines: { ...doc.lines, [id]: stripStyleId(nextLine) }, stations };
 }
 
 // Per-line casing width. Same contract as setLineWidth except the grid:
@@ -1430,19 +1441,30 @@ function edgesAfterRemoveStation(edges: string[], stationId: StationId): string[
 }
 
 // Spawn a stop cell for `lineId` on station `st` when it doesn't have one,
-// placed one column east of the rightmost existing stop (or (0,0) when empty),
-// and nudge an auto-placed label out from under it. Anchoring on a real stop —
-// not the bounding box — keeps the new cell 8-adjacent so the layout never gains
-// an orphan. Returns the originals unchanged when a stop already exists. Shared
-// by the linear-append and lone-member add paths so the two never drift.
-function spawnStopCell(st: Station, lineId: LineId): { stops: StopCell[]; label: LabelCell } {
+// placed one tangent gap east of the rightmost existing stop (exactly one
+// column at default widths; (0,0) when empty), and nudge an auto-placed label
+// out from under it. Spawning at tangency — not a flat column step — is what
+// makes a new stop on a non-default-width line land packed against its
+// neighbor, matching the width-aware ghost lattice the layout editor offers.
+// Anchoring on a real stop — not the bounding box — keeps the new cell
+// adjacent so the layout never gains an orphan. Returns the originals
+// unchanged when a stop already exists. Shared by the linear-append and
+// lone-member add paths so the two never drift.
+function spawnStopCell(
+  st: Station,
+  lineId: LineId,
+  lines: Record<LineId, Line>,
+): { stops: StopCell[]; label: LabelCell } {
   if (st.stops.some((c) => c.lineId === lineId)) return { stops: st.stops, label: st.label };
   const anchor =
     st.stops.length === 0
       ? null
       : st.stops.reduce((best, c) => (c.col > best.col ? c : best), st.stops[0]);
   const newRow = anchor ? anchor.row : 0;
-  const newCol = anchor ? anchor.col + 1 : 0;
+  const newCol = anchor
+    ? anchor.col +
+      tangentGap(lineWidthOf(lines[lineId]), lineWidthOf(lines[anchor.lineId])) / STOP_SIZE
+    : 0;
   const newCell: StopCell = { lineId, row: newRow, col: newCol, orientation: 'auto-vertical' };
   const stops = [...st.stops, newCell];
   let label = st.label;
@@ -1503,7 +1525,7 @@ export function toggleStationOnLine(
   const next = idx < ln.stations.length ? ln.stations[idx] : null;
   const newStations = [...ln.stations.slice(0, idx), stationId, ...ln.stations.slice(idx)];
   const newEdges = edgesAfterInsert(ln.edges, prev, next, stationId);
-  const { stops: newStops, label: newLabel } = spawnStopCell(st, lineId);
+  const { stops: newStops, label: newLabel } = spawnStopCell(st, lineId, doc.lines);
   const stationsAfter = {
     ...doc.stations,
     [stationId]: { ...st, stops: newStops, label: newLabel },
@@ -1529,7 +1551,7 @@ export function addStationToLine(doc: MapDoc, lineId: LineId, stationId: Station
   const ln = doc.lines[lineId];
   const st = doc.stations[stationId];
   if (!ln || !st || ln.stations.includes(stationId)) return doc;
-  const { stops: newStops, label: newLabel } = spawnStopCell(st, lineId);
+  const { stops: newStops, label: newLabel } = spawnStopCell(st, lineId, doc.lines);
   const newStations = [...ln.stations, stationId];
   const stationsAfter = {
     ...doc.stations,

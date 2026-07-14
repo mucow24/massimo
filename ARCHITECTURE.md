@@ -112,6 +112,7 @@ src/
     dotStyle.ts dotSize.ts      # procedural stop-dot style + size resolution
     transferStyle.ts            # TRANSFER_STYLE_DEFAULTS + per-transfer override resolution
     lineWidth.ts lineStroke.ts  # stripe width (GEOMETRY) + casing rails (PRESENTATION)
+    stationPacking.ts           # width-edit repack: keeps tangent stop chains packed
     lineOrder.ts layerPriority.ts  # z-order reconcile + per-segment layer math
     lineNaming.ts               # nameForIndex/pickNextLineName (next free letter name)
     lineTopology.ts             # the single owner of a Line's edge-set adjacency (degree/neighbours/incidence, add/remove edge, edgesFromStations)
@@ -381,6 +382,11 @@ All remaining fields optional and **never stored at default**:
 - `defaultDotSize?: number` — dot diameter px; missing ⇒ `DOT_SIZE_DEFAULT` (= 2×`STOP_DOT_RADIUS` = 8).
 - `width?: number` — **stripe width, GEOMETRY**; missing ⇒ `LINE_WIDTH_DEFAULT` (= `STOP_SIZE` =
   14); integer ≥ `LINE_WIDTH_MIN` (1). Drives stop-cell tangency, band merging, stripe offsets.
+  `setLineWidth` also **re-packs tangent stop chains** at every station hosting the line
+  ([stationPacking.ts](src/model/stationPacking.ts)): stops packed edge-to-edge under the old
+  width are rewritten to the new tangent gaps, chain-centroid preserved, label riding its
+  nearest stop — so a width edit never un-merges an interlined band. Non-tangent spacing never
+  moves. New stops likewise spawn one tangent gap (not one flat cell) from their anchor.
 - `strokeWidth?: number` — **casing rail, PRESENTATION**; centered on the body edges (half in /
   half out), missing ⇒ 0; rounded to a 0.5 grid. Resolved live; never moves paths.
 - `strokeColor?: string` — casing color; missing ⇒ `'#ffffff'`; lowercased.
@@ -1395,7 +1401,9 @@ Each is confirmed in source/tests; file pointers included.
   default-tracking service-code discs shrink to r 4. ([dotStyle.ts](src/model/dotStyle.ts))
 - **`width` is GEOMETRY, `strokeWidth` is PRESENTATION** — a width edit rebuilds bands; a stroke/
   color/style edit is resolved live. The band-geometry memo signature deliberately excludes
-  everything but width. ([types.ts](src/model/types.ts), MapCanvas).
+  everything but width. ([types.ts](src/model/types.ts), MapCanvas). A width edit also MOVES
+  stop cells: tangent chains re-pack to the new gaps ([stationPacking.ts](src/model/stationPacking.ts)),
+  so don't assume stop rows/cols survive `setLineWidth`.
 - **Casing rails must stay centered on body edges** — adjacent stroked lines' facing rails occupy
   the same pixels so an interlined band reads as one uniform stroke. Reordering line casings to
   merge separators was **tried and reverted**. ([lineStroke.ts](src/model/lineStroke.ts))
