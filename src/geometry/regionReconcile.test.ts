@@ -75,9 +75,11 @@ describe('reconcileRegionAssignments', () => {
   it('split: routing a third line through the region keeps BOTH halves painted', () => {
     const before = crossGeom(50);
     const asg = assignmentAt(before);
-    const after = crossGeom(50, [station('s5', 30, -20, ['l3']), station('s6', 70, 20, ['l3'])], [
-      makeLine({ id: 'l3', stations: ['s5', 's6'] }),
-    ]);
+    const after = crossGeom(
+      50,
+      [station('s5', 30, -20, ['l3']), station('s6', 70, 20, ['l3'])],
+      [makeLine({ id: 'l3', stations: ['s5', 's6'] })],
+    );
     const out = reconcileRegionAssignments(before, after, { r1: asg }, mintId);
     expect(Object.keys(out).length).toBeGreaterThanOrEqual(2);
     for (const w of winnersOf(after, out)) {
@@ -88,9 +90,11 @@ describe('reconcileRegionAssignments', () => {
   it('move AND split in one gesture still covers every descendant half', () => {
     const before = crossGeom(50);
     const asg = assignmentAt(before);
-    const after = crossGeom(300, [station('s5', 280, -20, ['l3']), station('s6', 320, 20, ['l3'])], [
-      makeLine({ id: 'l3', stations: ['s5', 's6'] }),
-    ]);
+    const after = crossGeom(
+      300,
+      [station('s5', 280, -20, ['l3']), station('s6', 320, 20, ['l3'])],
+      [makeLine({ id: 'l3', stations: ['s5', 's6'] })],
+    );
     const out = reconcileRegionAssignments(before, after, { r1: asg }, mintId);
     for (const w of winnersOf(after, out)) {
       if (w.lineIds.includes('l1') && w.lineIds.includes('l2')) expect(w.winner).toBe('l2');
@@ -98,9 +102,11 @@ describe('reconcileRegionAssignments', () => {
   });
 
   it('merge: removing the cutting line collapses duplicates to one assignment', () => {
-    const split = crossGeom(50, [station('s5', 30, -20, ['l3']), station('s6', 70, 20, ['l3'])], [
-      makeLine({ id: 'l3', stations: ['s5', 's6'] }),
-    ]);
+    const split = crossGeom(
+      50,
+      [station('s5', 30, -20, ['l3']), station('s6', 70, 20, ['l3'])],
+      [makeLine({ id: 'l3', stations: ['s5', 's6'] })],
+    );
     const beforeSplit = crossGeom(50);
     const populated = reconcileRegionAssignments(
       beforeSplit,
@@ -214,8 +220,18 @@ describe('reconcileRegionAssignments', () => {
     const { bands, faces } = regionsFor(before);
     expect(faces).toHaveLength(2);
     const assignments: Record<string, RegionAssignment> = {
-      r1: { id: 'r1', lineId: 'l2', lines: faces[0].lineIds, anchors: mintAnchors(faces[0], bands) },
-      r2: { id: 'r2', lineId: 'l2', lines: faces[1].lineIds, anchors: mintAnchors(faces[1], bands) },
+      r1: {
+        id: 'r1',
+        lineId: 'l2',
+        lines: faces[0].lineIds,
+        anchors: mintAnchors(faces[0], bands),
+      },
+      r2: {
+        id: 'r2',
+        lineId: 'l2',
+        lines: faces[1].lineIds,
+        anchors: mintAnchors(faces[1], bands),
+      },
     };
     const after = two(200, 200); // both corridors coincide → one face
     const out = reconcileRegionAssignments(before, after, assignments, mintId);
