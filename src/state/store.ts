@@ -52,7 +52,9 @@ import {
 } from '../model/serialize';
 import type { Station, Transfer } from '../model/types';
 import { randomStationName } from './stationNames';
-import { pauseHistory, pushHistory, resumeHistory } from './history';
+import { isHistoryGrouping, pauseHistory, pushHistory, resumeHistory } from './history';
+import { reconcileRegionAssignments } from '../geometry/regionReconcile';
+import { regionGeometrySig, type GeometrySlice } from '../geometry/regionCache';
 import { useViewportStore } from './viewportStore';
 
 // Re-export so callers (Sidebar, etc.) keep working with one source of truth.
@@ -562,7 +564,7 @@ export const useDoc = create<DocState>()(
           return id;
         },
         renameStation: (id, name) => set((s) => T.renameStation(s, id, name)),
-        moveStation: (id, x, y) => set((s) => T.moveStation(s, id, x, y)),
+        moveStation: (id, x, y) => set(withRegionReconcile((s) => T.moveStation(s, id, x, y))),
         setDotStyle: (stationId, lineId, style) =>
           set((s) => T.setDotStyle(s, stationId, lineId, style)),
         setDotSize: (stationId, lineId, size) =>
@@ -577,24 +579,29 @@ export const useDoc = create<DocState>()(
           // gridMode is per-call intent (depends on Shift at the call site);
           // gridInterval is ambient, so read the active grid size from the
           // viewport store here rather than threading it through every caller.
-          set((s) =>
-            T.redistributeBetween(
-              s,
-              startId,
-              endId,
-              mode,
-              gridMode,
-              useViewportStore.getState().gridSize,
+          set(
+            withRegionReconcile((s) =>
+              T.redistributeBetween(
+                s,
+                startId,
+                endId,
+                mode,
+                gridMode,
+                useViewportStore.getState().gridSize,
+              ),
             ),
           ),
-        rotateStation: (id, dir) => set((s) => T.rotateStation(s, id, dir)),
-        rotateItemsAround: (pivot, members) => set((s) => T.rotateItemsAround(s, pivot, members)),
-        rotateStationAndLayout: (id, dir) => set((s) => T.rotateStationAndLayout(s, id, dir)),
-        deleteStation: (id) => set((s) => T.deleteStation(s, id)),
+        rotateStation: (id, dir) => set(withRegionReconcile((s) => T.rotateStation(s, id, dir))),
+        rotateItemsAround: (pivot, members) =>
+          set(withRegionReconcile((s) => T.rotateItemsAround(s, pivot, members))),
+        rotateStationAndLayout: (id, dir) =>
+          set(withRegionReconcile((s) => T.rotateStationAndLayout(s, id, dir))),
+        deleteStation: (id) => set(withRegionReconcile((s) => T.deleteStation(s, id))),
 
         moveStop: (stationId, lineId, dRow, dCol) =>
-          set((s) => T.moveStop(s, stationId, lineId, dRow, dCol)),
-        rotateStop: (stationId, lineId) => set((s) => T.rotateStop(s, stationId, lineId)),
+          set(withRegionReconcile((s) => T.moveStop(s, stationId, lineId, dRow, dCol))),
+        rotateStop: (stationId, lineId) =>
+          set(withRegionReconcile((s) => T.rotateStop(s, stationId, lineId))),
 
         moveLabel: (stationId, dRow, dCol) => set((s) => T.moveLabel(s, stationId, dRow, dCol)),
         rotateLabel: (stationId) => set((s) => T.rotateLabel(s, stationId)),
@@ -626,27 +633,37 @@ export const useDoc = create<DocState>()(
         },
         updateLine: (id, patch) => set((s) => T.updateLine(s, id, patch)),
         toggleStationOnLine: (lineId, stationId, insertAfterIndex) =>
-          set((s) => T.toggleStationOnLine(s, lineId, stationId, insertAfterIndex)),
+          set(
+            withRegionReconcile((s) =>
+              T.toggleStationOnLine(s, lineId, stationId, insertAfterIndex),
+            ),
+          ),
         addStationToLine: (lineId, stationId) =>
-          set((s) => T.addStationToLine(s, lineId, stationId)),
-        toggleEdgeOnLine: (lineId, a, b) => set((s) => T.toggleEdgeOnLine(s, lineId, a, b)),
-        removeStationFromLine: (lineId, idx) => set((s) => T.removeStationFromLine(s, lineId, idx)),
+          set(withRegionReconcile((s) => T.addStationToLine(s, lineId, stationId))),
+        toggleEdgeOnLine: (lineId, a, b) =>
+          set(withRegionReconcile((s) => T.toggleEdgeOnLine(s, lineId, a, b))),
+        removeStationFromLine: (lineId, idx) =>
+          set(withRegionReconcile((s) => T.removeStationFromLine(s, lineId, idx))),
         reorderLineStations: (lineId, stations) =>
           set((s) => T.reorderLineStations(s, lineId, stations)),
         setLineSegmentStyle: (lineId, fromStationId, toStationId, style) =>
-          set((s) => T.setLineSegmentStyle(s, lineId, fromStationId, toStationId, style)),
+          set(
+            withRegionReconcile((s) =>
+              T.setLineSegmentStyle(s, lineId, fromStationId, toStationId, style),
+            ),
+          ),
         cycleSegmentLayer: (lineId, fromStationId, toStationId, dir) =>
           set((s) => T.cycleSegmentLayer(s, lineId, fromStationId, toStationId, dir)),
         setLineDefaultDotStyle: (lineId, style) =>
           set((s) => T.setLineDefaultDotStyle(s, lineId, style)),
         setLineDefaultDotSize: (lineId, size) =>
           set((s) => T.setLineDefaultDotSize(s, lineId, size)),
-        setLineWidth: (lineId, w) => set((s) => T.setLineWidth(s, lineId, w)),
+        setLineWidth: (lineId, w) => set(withRegionReconcile((s) => T.setLineWidth(s, lineId, w))),
         setLineStrokeWidth: (lineId, w) => set((s) => T.setLineStrokeWidth(s, lineId, w)),
         setLineStrokeColor: (lineId, c) => set((s) => T.setLineStrokeColor(s, lineId, c)),
         setLineSeamColor: (lineId, c) => set((s) => T.setLineSeamColor(s, lineId, c)),
         setLineSeamWidth: (lineId, w) => set((s) => T.setLineSeamWidth(s, lineId, w)),
-        deleteLine: (id) => set((s) => T.deleteLine(s, id)),
+        deleteLine: (id) => set(withRegionReconcile((s) => T.deleteLine(s, id))),
         moveLineInOrder: (id, dir) => set((s) => T.moveLineInOrder(s, id, dir)),
 
         assignRegion: (id, assignment) => {
@@ -850,10 +867,11 @@ export const useDoc = create<DocState>()(
             (d) => d.kind === kind && d.name === trimmed,
           );
           const id = existing?.id ?? ids.styleId();
-          set((s) => S.saveStyleFromItem(s, id, kind, trimmed, itemId));
+          set(withRegionReconcile((s) => S.saveStyleFromItem(s, id, kind, trimmed, itemId)));
           return id;
         },
-        applyStyle: (styleId, itemId) => set((s) => S.applyStyleToItem(s, styleId, itemId)),
+        applyStyle: (styleId, itemId) =>
+          set(withRegionReconcile((s) => S.applyStyleToItem(s, styleId, itemId))),
         clearStyleTag: (kind, itemId) => set((s) => S.clearStyleTag(s, kind, itemId)),
         renameStyle: (styleId, name) => set((s) => S.renameStyle(s, styleId, name)),
         deleteStyle: (styleId) => set((s) => S.deleteStyle(s, styleId)),
@@ -871,13 +889,14 @@ export const useDoc = create<DocState>()(
           set((s) => S.createStyle(s, id, kind, name));
           return id;
         },
-        updateStyleProps: (styleId, patch) => set((s) => S.updateStyleProps(s, styleId, patch)),
+        updateStyleProps: (styleId, patch) =>
+          set(withRegionReconcile((s) => S.updateStyleProps(s, styleId, patch))),
         setDefaultStyle: (styleId) => set((s) => S.setDefaultStyle(s, styleId)),
 
         // A plain merge: doc fields are replaced, mutator methods survive.
         loadDoc: (doc) => set({ ...DEFAULT_DOC, ...doc }),
         setDocName: (name) => set((s) => T.setDocName(s, name)),
-        setCurveRadius: (r) => set((s) => T.setCurveRadius(s, r)),
+        setCurveRadius: (r) => set(withRegionReconcile((s) => T.setCurveRadius(s, r))),
         updateStationLabelStyle: (stationId, patch) =>
           set((s) => T.updateStationLabelStyle(s, stationId, patch)),
         setActivePalettes: (idsArr) =>
@@ -959,6 +978,56 @@ export function cancelOpenHistoryGroup(): void {
 }
 
 /**
+ * Rewrite region assignments against the post-edit geometry, so the paint
+ * choices track their regions through the edit. `prev` supplies the pre-edit
+ * geometry (a live state or a history-group snapshot). Cheap gates first:
+ * no assignments, untouched geometry fields, or an unchanged geometry sig
+ * (renames, presentation edits) all skip the clipper work entirely.
+ */
+function applyRegionReconcile<T extends MapDoc>(prev: GeometrySlice, next: T): T {
+  const assignments = next.regionAssignments;
+  if (!Object.keys(assignments).length) return next;
+  if (
+    prev.stations === next.stations &&
+    prev.lines === next.lines &&
+    prev.curveRadius === next.curveRadius
+  ) {
+    return next;
+  }
+  const oldGeom: GeometrySlice = {
+    stations: prev.stations,
+    lines: prev.lines,
+    curveRadius: prev.curveRadius,
+  };
+  const newGeom: GeometrySlice = {
+    stations: next.stations,
+    lines: next.lines,
+    curveRadius: next.curveRadius,
+  };
+  if (regionGeometrySig(oldGeom) === regionGeometrySig(newGeom)) return next;
+  const reconciled = reconcileRegionAssignments(oldGeom, newGeom, assignments, () =>
+    ids.regionAssignmentId(),
+  );
+  return reconciled === assignments ? next : { ...next, regionAssignments: reconciled };
+}
+
+/**
+ * Compose the region reconcile into a geometry-writing action's updater.
+ * Inside a history group it is a deliberate no-op — streamed writes (drags,
+ * slider ticks, nudge fan-outs) defer to the single reconcile in the group's
+ * commit; ungrouped one-shots (wheel ticks, sidebar deletes, edge toggles)
+ * reconcile inline so their one undo entry stays self-consistent.
+ */
+function withRegionReconcile<T extends MapDoc>(updater: (s: DocState) => T): (s: DocState) => T {
+  return (s) => {
+    const next = updater(s);
+    if ((next as MapDoc) === (s as MapDoc)) return next;
+    if (isHistoryGrouping()) return next;
+    return applyRegionReconcile(s, next);
+  };
+}
+
+/**
  * Open a history "group" around a multi-step user action — a station drag
  * (many moveStation calls between pointerdown and pointerup), a text-input
  * edit (many onChange calls between focus and blur), a slider drag, etc.
@@ -1018,6 +1087,14 @@ export function beginHistoryGroup(): {
   const group = {
     commit: () => {
       if (!finish()) return;
+      // Region reconcile fold-in: recording is still paused here, so the
+      // assignment rewrite lands inside this group's single history entry.
+      // The snapshot is the pre-group doc — exactly the "old geometry".
+      const live = useDoc.getState();
+      const reconciled = applyRegionReconcile(snapshot, live);
+      if (reconciled !== live) {
+        useDoc.setState({ regionAssignments: reconciled.regionAssignments });
+      }
       resumeHistory();
       const cur = pickDocSnapshot(useDoc.getState());
       // Reference-equality check across every tracked doc field. Transforms

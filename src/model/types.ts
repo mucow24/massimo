@@ -363,6 +363,11 @@ export interface RegionAnchor {
   // Arc length in world units from the anchor endpoint along this line's
   // stripe in the corridor.
   distance: number;
+  // Signed perpendicular offset (leftNormal of the stripe tangent) from the
+  // stripe's center path, world units. Lets an anchor point INTO a face that
+  // sits within the stripe body but off its center path (small corner faces
+  // at multi-line junctions). Missing ⇒ 0 (on the path); never stored at 0.
+  side?: number;
 }
 
 // A user's choice of which line paints one overlap region ("paint by

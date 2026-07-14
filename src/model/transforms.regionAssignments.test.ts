@@ -79,10 +79,29 @@ describe('deleteLine — regionAssignments cascade', () => {
     expect(out.regionAssignments).toEqual({});
   });
 
-  it('drops assignments when any covering line died', () => {
+  it('drops a two-line assignment when its only cover mate died', () => {
     const doc = assignRegion(docWithLines(), 'r1', asg());
-    const out = deleteLine(doc, 'l1'); // cover member, not the chosen line
+    const out = deleteLine(doc, 'l1'); // cover member; overlap can't exist anymore
     expect(out.regionAssignments).toEqual({});
+  });
+
+  it('shrinks a three-line cover instead of dropping when an incidental member died', () => {
+    const doc = assignRegion(
+      docWithLines(),
+      'r1',
+      asg({
+        lines: ['l1', 'l2', 'l3'],
+        anchors: [
+          { lineId: 'l1', pairKey: 's1|s2', anchorEnd: 'from', distance: 50 },
+          { lineId: 'l2', pairKey: 's3|s4', anchorEnd: 'from', distance: 50 },
+          { lineId: 'l3', pairKey: 's1|s4', anchorEnd: 'from', distance: 10 },
+        ],
+      }),
+    );
+    const out = deleteLine(doc, 'l3');
+    expect(out.regionAssignments.r1).toBeDefined();
+    expect(out.regionAssignments.r1.lines).toEqual(['l1', 'l2']);
+    expect(out.regionAssignments.r1.anchors.map((a) => a.lineId)).toEqual(['l1', 'l2']);
   });
 
   it('keeps the record reference when no assignment is affected', () => {

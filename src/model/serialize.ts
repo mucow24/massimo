@@ -786,6 +786,7 @@ export function sanitizeRegionAssignments(
         typeof anchor.distance === 'number' &&
         Number.isFinite(anchor.distance) &&
         anchor.distance >= 0 &&
+        (anchor.side === undefined || Number.isFinite(anchor.side)) &&
         !!lines[anchor.lineId],
     );
     if (!anchors.length) {

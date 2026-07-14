@@ -1649,10 +1649,7 @@ export function deleteLine(doc: MapDoc, id: LineId): MapDoc {
 // no-op when the record is shallow-equal (reconcile returns the input record
 // untouched when nothing changed, so this collapses to a reference check plus
 // a key sweep for safety).
-export function setRegionAssignments(
-  doc: MapDoc,
-  next: Record<string, RegionAssignment>,
-): MapDoc {
+export function setRegionAssignments(doc: MapDoc, next: Record<string, RegionAssignment>): MapDoc {
   const prev = doc.regionAssignments;
   if (prev === next) return doc;
   const prevKeys = Object.keys(prev);
@@ -1666,11 +1663,7 @@ export function setRegionAssignments(
 // Upsert (assignment) or delete (null) one region assignment — the click
 // writer. Same-reference no-op when deleting a missing id or re-writing an
 // identical value.
-export function assignRegion(
-  doc: MapDoc,
-  id: string,
-  assignment: RegionAssignment | null,
-): MapDoc {
+export function assignRegion(doc: MapDoc, id: string, assignment: RegionAssignment | null): MapDoc {
   const prev = doc.regionAssignments;
   if (assignment === null) {
     if (!(id in prev)) return doc;
@@ -1681,20 +1674,38 @@ export function assignRegion(
   return { ...doc, regionAssignments: { ...prev, [id]: assignment } };
 }
 
-// Drop assignments referencing a dead line — as the chosen line OR as any
-// cover member (a cover that can never match a live face again is dead
-// weight). Shared by deleteLine's cascade.
+// deleteLine cascade for region assignments. An assignment whose CHOSEN line
+// died is meaningless — dropped. A dead cover MEMBER only shrinks the cover
+// (the user's "X above Y" intent survives losing an incidental third line;
+// the store's reconcile step rebinds it to the merged face): the dead id and
+// its anchor are stripped, and the assignment is dropped only when fewer
+// than two cover lines (no overlap to arbitrate) or zero anchors remain.
 function pruneRegionAssignmentsForLine(
   assignments: Record<string, RegionAssignment>,
   lineId: LineId,
 ): Record<string, RegionAssignment> {
-  const doomed = Object.keys(assignments).filter(
-    (id) => assignments[id].lineId === lineId || assignments[id].lines.includes(lineId),
-  );
-  if (!doomed.length) return assignments;
-  const out = { ...assignments };
-  for (const id of doomed) delete out[id];
-  return out;
+  let changed = false;
+  const out: Record<string, RegionAssignment> = {};
+  for (const id of Object.keys(assignments)) {
+    const a = assignments[id];
+    if (a.lineId === lineId) {
+      changed = true;
+      continue;
+    }
+    if (!a.lines.includes(lineId)) {
+      out[id] = a;
+      continue;
+    }
+    const lines = a.lines.filter((l) => l !== lineId);
+    const anchors = a.anchors.filter((anchor) => anchor.lineId !== lineId);
+    if (lines.length < 2 || anchors.length === 0) {
+      changed = true;
+      continue;
+    }
+    out[id] = { ...a, lines, anchors };
+    changed = true;
+  }
+  return changed ? out : assignments;
 }
 
 export function moveLineInOrder(doc: MapDoc, id: LineId, dir: -1 | 1): MapDoc {

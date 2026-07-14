@@ -14,10 +14,12 @@ import type { LineId, RegionAnchor, RegionAssignment } from '../model/types';
 import type { SegmentBandSpec, StopMarkerSpec } from './interlining';
 import type { OffsetPathSegment } from './router';
 import { emitOffsetSegments } from './router';
-import { perp, rotatedRectCorners, type Vec2 } from './vec';
+import { closestParamOnOffsetPath, sampleOffsetPathByArcLength } from './lineTagGeometry';
+import { leftNormal, perp, rotatedRectCorners, type Vec2 } from './vec';
 import {
   type Face,
   type Ring,
+  interiorPoint,
   intersect,
   offsetClosed,
   offsetOpenPath,
@@ -36,9 +38,6 @@ export const SLIVER_ERODE = 0.15;
 
 /** Arc-length sampling step for face spans, world units. */
 const SPAN_STEP = 2;
-
-/** Binding penalty when an anchor's corridor doesn't run through the face. */
-const CROSS_CORRIDOR_PENALTY = 25;
 
 export interface RegionSpanEntry {
   /** Arc-length intervals of the stripe path inside the face. */
@@ -82,7 +81,10 @@ export function flattenOffsetSegments(segs: OffsetPathSegment[], tol = FLATTEN_T
         const psi = (s.theta * i) / n;
         const a = Math.sin(psi);
         const b = s.sign * (1 - Math.cos(psi));
-        push({ x: s.from.x + s.r * (a * s.inDir.x + b * pp.x), y: s.from.y + s.r * (a * s.inDir.y + b * pp.y) });
+        push({
+          x: s.from.x + s.r * (a * s.inDir.x + b * pp.x),
+          y: s.from.y + s.r * (a * s.inDir.y + b * pp.y),
+        });
       }
     }
     push(s.to);
@@ -349,9 +351,15 @@ export function buildOverlapRegions(
 // ---------------------------------------------------------------------------
 // Anchors: mint, evaluate, bind
 
-/** Fresh anchors for a face: one per covering line, at its span midpoint. */
-export function mintAnchors(face: RegionFace, _bands: SegmentBandSpec[]): RegionAnchor[] {
+/**
+ * Fresh anchors for a face: one per covering line, at its span midpoint.
+ * A cover line whose stripe CENTER path doesn't cross the face (small corner
+ * faces sit inside the stripe body but off its center; marker-only cover)
+ * gets a projection fallback: the arc position on its nearest stripe.
+ */
+export function mintAnchors(face: RegionFace, bands: SegmentBandSpec[]): RegionAnchor[] {
   const anchors: RegionAnchor[] = [];
+  let fallbackTarget: Vec2 | undefined;
   for (const lineId of face.lineIds) {
     let best: { pairKey: string; mid: number; totalLen: number; size: number } | null = null;
     for (const [key, entry] of face.spans) {
@@ -364,22 +372,111 @@ export function mintAnchors(face: RegionFace, _bands: SegmentBandSpec[]): Region
         }
       }
     }
-    if (!best) continue; // covered via marker footprint only — no stripe span
+    let side = 0;
+    if (!best) {
+      if (fallbackTarget === undefined) {
+        fallbackTarget = interiorPoint(face.face) ?? {
+          x: (face.bbox.x0 + face.bbox.x1) / 2,
+          y: (face.bbox.y0 + face.bbox.y1) / 2,
+        };
+      }
+      const projected = projectOntoLineStripe(lineId, fallbackTarget, bands);
+      if (projected) {
+        best = projected;
+        side = projected.side;
+      }
+    }
+    if (!best) continue;
     const nearFrom = best.mid <= best.totalLen / 2;
     anchors.push({
       lineId,
       pairKey: best.pairKey,
       anchorEnd: nearFrom ? 'from' : 'to',
       distance: nearFrom ? best.mid : best.totalLen - best.mid,
+      ...(side !== 0 ? { side } : {}),
     });
   }
   return anchors;
 }
 
 /**
- * Evaluate an anchor under current geometry: the world point and absolute
- * arc-length position (from the canonical 'from' end) along its stripe.
- * Null when the corridor no longer exists for that line.
+ * Nearest arc position to `target` across all of a line's stripes, plus the
+ * signed perpendicular offset (leftNormal frame, capped to the half-width)
+ * that points from the path back toward the target.
+ */
+function projectOntoLineStripe(
+  lineId: LineId,
+  target: Vec2,
+  bands: SegmentBandSpec[],
+): { pairKey: string; mid: number; totalLen: number; size: number; side: number } | null {
+  let best: {
+    pairKey: string;
+    mid: number;
+    totalLen: number;
+    size: number;
+    side: number;
+  } | null = null;
+  let bestDist = Infinity;
+  for (const band of bands) {
+    const k = band.lines.findIndex((l) => l.id === lineId);
+    if (k < 0) continue;
+    const sp = stripePathFor(band, k);
+    if (
+      target.x < sp.bbox.x0 - bestDist ||
+      target.x > sp.bbox.x1 + bestDist ||
+      target.y < sp.bbox.y0 - bestDist ||
+      target.y > sp.bbox.y1 + bestDist
+    ) {
+      continue;
+    }
+    const { t, dist } = closestParamOnOffsetPath(
+      band.centerline,
+      band.radius,
+      band.stripeOffsets[k],
+      target,
+    );
+    if (dist < bestDist) {
+      bestDist = dist;
+      const d = t * sp.len;
+      const at = sampleOffsetPathByArcLength(
+        band.centerline,
+        band.radius,
+        band.stripeOffsets[k],
+        d,
+      );
+      const n = leftNormal(at.tangent);
+      const half = band.stripeWidths[k] / 2;
+      const raw = (target.x - at.p.x) * n.x + (target.y - at.p.y) * n.y;
+      const side = Math.max(-half, Math.min(half, raw));
+      best = { pairKey: band.pairKey, mid: d, totalLen: sp.len, size: 0, side };
+    }
+  }
+  return best;
+}
+
+/**
+ * Total arc length of a line's stripe in a corridor, or null when the line
+ * has no stripe there. Used by reconcile's anchor translation to walk
+ * distances across edge splits/heals.
+ */
+export function stripeArcLength(
+  bands: SegmentBandSpec[],
+  pairKey: string,
+  lineId: LineId,
+): number | null {
+  for (const band of bands) {
+    if (band.pairKey !== pairKey) continue;
+    const k = band.lines.findIndex((l) => l.id === lineId);
+    if (k < 0) continue;
+    return stripePathFor(band, k).len;
+  }
+  return null;
+}
+
+/**
+ * Evaluate an anchor under current geometry: the world point (side offset
+ * applied) and absolute arc-length position (from the canonical 'from' end)
+ * along its stripe. Null when the corridor no longer exists for that line.
  */
 export function evaluateAnchor(
   anchor: RegionAnchor,
@@ -392,19 +489,43 @@ export function evaluateAnchor(
     const sp = stripePathFor(band, k);
     const raw = anchor.anchorEnd === 'from' ? anchor.distance : sp.len - anchor.distance;
     const d = Math.min(Math.max(raw, 0), sp.len);
-    return { p: pointAtArcLength(sp, d), d };
+    const side = anchor.side ?? 0;
+    if (side === 0) return { p: pointAtArcLength(sp, d), d };
+    const at = sampleOffsetPathByArcLength(band.centerline, band.radius, band.stripeOffsets[k], d);
+    const n = leftNormal(at.tangent);
+    return { p: { x: at.p.x + n.x * side, y: at.p.y + n.y * side }, d };
   }
   return null;
 }
 
-const bboxDistance = (
-  bbox: { x0: number; y0: number; x1: number; y1: number },
-  p: Vec2,
-): number => {
-  const dx = Math.max(bbox.x0 - p.x, 0, p.x - bbox.x1);
-  const dy = Math.max(bbox.y0 - p.y, 0, p.y - bbox.y1);
-  return Math.hypot(dx, dy);
-};
+/** World distance from a point to a face: 0 inside, else to the outer ring. */
+function pointToFaceDistance(p: Vec2, face: RegionFace): number {
+  const b = face.bbox;
+  const dx = Math.max(b.x0 - p.x, 0, p.x - b.x1);
+  const dy = Math.max(b.y0 - p.y, 0, p.y - b.y1);
+  const bboxDist = Math.hypot(dx, dy);
+  if (bboxDist > 0) {
+    // Outside the bbox: segment-exact distance still ≥ bboxDist; the bbox
+    // value is enough for ranking distant candidates. Refine only when near.
+    if (bboxDist > 4) return bboxDist;
+  }
+  if (pointInFace(p, face.face)) return 0;
+  const ring = face.face[0];
+  let min = Infinity;
+  for (let i = 0; i < ring.length; i++) {
+    const a = ring[i];
+    const c = ring[(i + 1) % ring.length];
+    const ex = c.x - a.x;
+    const ey = c.y - a.y;
+    const lenSq = ex * ex + ey * ey;
+    const t =
+      lenSq > 0 ? Math.max(0, Math.min(1, ((p.x - a.x) * ex + (p.y - a.y) * ey) / lenSq)) : 0;
+    const qx = a.x + ex * t;
+    const qy = a.y + ey * t;
+    min = Math.min(min, Math.hypot(p.x - qx, p.y - qy));
+  }
+  return min;
+}
 
 /**
  * Nearest-compatible-face binding (shared by rendering and reconciliation):
@@ -412,19 +533,21 @@ const bboxDistance = (
  * each anchor's line — that is what follows a crossing that slides ALONG an
  * unmoved line, where any world-point containment test loses it. Unbindable
  * assignments are absent from the result (dormant). One assignment per face:
- * on conflict the id-sorted first keeps it (reconciliation resolves for real).
+ * on conflict the earlier id (or the caller's explicit `order`, which
+ * reconciliation uses to give larger old faces priority) keeps it.
  */
 export function bindAssignments(
   faces: RegionFace[],
   assignments: Record<string, RegionAssignment>,
   bands: SegmentBandSpec[],
   liveLines: Set<LineId>,
+  order?: string[],
 ): Map<string, number> {
   const out = new Map<string, number>();
   const taken = new Set<number>();
-  for (const id of Object.keys(assignments).sort()) {
+  for (const id of order ?? Object.keys(assignments).sort()) {
     const a = assignments[id];
-    if (!liveLines.has(a.lineId)) continue;
+    if (!a || !liveLines.has(a.lineId)) continue;
     const required = a.lines.filter((l) => liveLines.has(l));
     const evals = a.anchors
       .filter((anchor) => liveLines.has(anchor.lineId))
@@ -439,21 +562,19 @@ export function bindAssignments(
       const cover = new Set(f.lineIds);
       if (!cover.has(a.lineId)) continue;
       if (!required.every((l) => cover.has(l))) continue;
+      // Discounted sum of world distances: the nearest anchor counts in
+      // full, the rest at 25%. A long drag strands the anchors of UNMOVED
+      // cover lines at the old location — the anchor that rode the moved
+      // line must outvote them (plain sum lets a stale anchor drag the bind
+      // onto a nearer sibling crossing) — while small corner faces at a
+      // junction still need the agreement of every anchor (plain min would
+      // let one shared-boundary anchor steal a neighbor's face).
+      const contributions = evals
+        .map(({ ev }) => pointToFaceDistance(ev.p, f))
+        .sort((x, y) => x - y);
       let score = 0;
-      for (const { anchor, ev } of evals) {
-        const entry = f.spans.get(`${anchor.lineId}|${anchor.pairKey}`);
-        if (entry) {
-          let d = Infinity;
-          for (const iv of entry.intervals) {
-            d = Math.min(d, ev.d < iv.d0 ? iv.d0 - ev.d : ev.d > iv.d1 ? ev.d - iv.d1 : 0);
-          }
-          score += d;
-        } else {
-          // Anchor's corridor doesn't run through this face (e.g. the
-          // crossing slid onto the line's next segment): approximate with
-          // world distance, penalized so an exact-corridor match wins ties.
-          score += bboxDistance(f.bbox, ev.p) + CROSS_CORRIDOR_PENALTY;
-        }
+      for (let c = 0; c < contributions.length; c++) {
+        score += c === 0 ? contributions[c] : 0.25 * contributions[c];
       }
       if (score < bestScore - 1e-9) {
         bestScore = score;
