@@ -85,7 +85,7 @@ const SECTIONS: HelpSection[] = [
       { k: '×  (stop list)', effect: 'Remove a stop — canvas clicks never remove' },
       {
         k: 'Connector (graph)',
-        effect: 'Click cycles the segment style — right-click deletes the edge',
+        effect: 'Click cycles the segment style — right-click deletes the edge (view mode)',
       },
       { k: 'Tag', effect: 'Drag slides it along the line — right-click cycles text/chevron' },
     ],
