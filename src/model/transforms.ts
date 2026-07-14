@@ -2,6 +2,7 @@ import { autoOrientNewStation } from './autoOrient';
 import { effectiveLineOrder } from './lineOrder';
 import { reconcileOrder, moveInOrder } from './recordOrder';
 import { LINE_WIDTH_DEFAULT, canonicalLineWidth, lineWidthOf } from './lineWidth';
+import { LINE_CURVE_RADIUS_DEFAULT, canonicalLineCurveRadius } from './lineCurve';
 import { repackStationForWidth } from './stationPacking';
 import { DOT_SIZE_DEFAULT, canonicalDotSize } from './dotSize';
 import {
@@ -566,6 +567,29 @@ export function setLineWidth(doc: MapDoc, id: LineId, w: number): MapDoc {
   );
   // Fall-through = the stored width changed → detach from the style preset.
   return { ...doc, lines: { ...doc.lines, [id]: stripStyleId(nextLine) }, stations };
+}
+
+// Per-line corner-rounding radius. Same contract as setLineStrokeWidth:
+// non-finite input is ignored, the value is rounded to an integer and clamped
+// to ≥ LINE_CURVE_RADIUS_MIN, and the field is dropped when the result lands
+// on LINE_CURVE_RADIUS_DEFAULT so it is never stored. Reference-equal no-ops
+// keep slider ticks out of the undo history. Curve radius is GEOMETRY (it
+// moves band paths), so store actions wrap this in withRegionReconcile like
+// the other geometry writers.
+export function setLineCurveRadius(doc: MapDoc, id: LineId, r: number): MapDoc {
+  const cur = doc.lines[id];
+  if (!cur || !Number.isFinite(r)) return doc;
+  const stored = canonicalLineCurveRadius(r);
+  if (cur.curveRadius === stored) return doc;
+  let nextLine: Line;
+  if (stored === undefined) {
+    const { curveRadius: _gone, ...rest } = cur;
+    nextLine = rest;
+  } else {
+    nextLine = { ...cur, curveRadius: stored };
+  }
+  // Fall-through = the stored radius changed → detach from the style preset.
+  return { ...doc, lines: { ...doc.lines, [id]: stripStyleId(nextLine) } };
 }
 
 // Per-line casing width. Same contract as setLineWidth except the grid:
@@ -1711,10 +1735,6 @@ export function moveLineInOrder(doc: MapDoc, id: LineId, dir: -1 | 1): MapDoc {
 
 // ---------- Misc ----------
 
-export function setCurveRadius(doc: MapDoc, r: number): MapDoc {
-  return { ...doc, curveRadius: r };
-}
-
 // Rename the document. No-op guard (returns the same reference) so an unchanged
 // name — e.g. the field committing on blur without an edit — records no history
 // entry, matching the other scalar setters.
@@ -2570,6 +2590,7 @@ export const DEFAULT_STYLES: Record<string, StyleDef> = {
       defaultDotStyle: DEFAULT_DOT_STYLE,
       defaultDotSize: DOT_SIZE_DEFAULT,
       width: LINE_WIDTH_DEFAULT,
+      curveRadius: LINE_CURVE_RADIUS_DEFAULT,
       strokeWidth: LINE_STROKE_WIDTH_DEFAULT,
       strokeColor: LINE_STROKE_COLOR_DEFAULT,
     },
@@ -2643,7 +2664,6 @@ export const DEFAULT_DOC: MapDoc = {
   stations: {},
   lines: {},
   lineOrder: [],
-  curveRadius: 24,
   lineCounter: 0,
   lineTags: {},
   routeBullets: {},

@@ -21,6 +21,7 @@ import {
 import type {
   DotStyle,
   LineId,
+  LineStyleProps,
   StationId,
   StopOrientation,
   StyleDef,
@@ -774,6 +775,68 @@ describe('migrateDoc', () => {
         14,
       );
       expect(out.stations!.S.fontSize).toBeUndefined(); // not baked
+    });
+  });
+
+  describe('v15 → v16: retire the doc-level curveRadius', () => {
+    const linesIn = () => ({
+      L1: { service: 'A', name: 'A line', stations: ['s1', 's2'], edges: ['s1|s2'] },
+      L2: { service: 'B', name: 'B line', stations: ['s1'], edges: [] },
+    });
+    const radiusOf = (out: AnyDoc, id: string) =>
+      (out.lines![id] as { curveRadius?: number }).curveRadius;
+
+    it('stamps a non-default legacy radius onto every line and drops the doc field', () => {
+      const out = run({ lines: linesIn(), curveRadius: 40 }, 15);
+      expect(radiusOf(out, 'L1')).toBe(40);
+      expect(radiusOf(out, 'L2')).toBe(40);
+      expect('curveRadius' in out).toBe(false);
+    });
+
+    it('leaves lines unstamped for the legacy default 24 (never stored)', () => {
+      const out = run({ lines: linesIn(), curveRadius: 24 }, 15);
+      expect(radiusOf(out, 'L1')).toBeUndefined();
+      expect('curveRadius' in out).toBe(false);
+    });
+
+    it('fills line style defs that predate the covered field from the legacy radius', () => {
+      // Uses the factory line def (which predates curveRadius in this input:
+      // strip the key to simulate an old persisted def).
+      const { curveRadius: _c, ...oldProps } = DEFAULT_STYLES['default-line']
+        .props as LineStyleProps;
+      const out = run(
+        {
+          lines: {},
+          curveRadius: 40,
+          styles: { 'default-line': { ...DEFAULT_STYLES['default-line'], props: oldProps } },
+          styleDefaults: FACTORY_STYLE_DEFAULTS,
+        },
+        15,
+      );
+      expect(out.styles!['default-line'].props.curveRadius).toBe(40);
+    });
+
+    it('runs BEFORE the v<10 style hygiene, so old defs heal to the doc value, not 24', () => {
+      // A round-1 doc (v9): migrateV9Styles rebuilds defs through the
+      // canonical grids. If the bake ran after it, the missing curveRadius
+      // would heal to the constant default and lose the doc's 40.
+      const { curveRadius: _c, ...oldProps } = DEFAULT_STYLES['default-line']
+        .props as LineStyleProps;
+      const out = run(
+        {
+          lines: {},
+          curveRadius: 40,
+          styles: { 'default-line': { ...DEFAULT_STYLES['default-line'], props: oldProps } },
+          styleDefaults: FACTORY_STYLE_DEFAULTS,
+        },
+        9,
+      );
+      expect(out.styles!['default-line'].props.curveRadius).toBe(40);
+    });
+
+    it('does not bake at version >= 16', () => {
+      const out = run({ lines: linesIn(), curveRadius: 40 }, 16);
+      expect(radiusOf(out, 'L1')).toBeUndefined(); // not stamped
     });
   });
 

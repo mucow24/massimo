@@ -25,8 +25,9 @@ const FRRF = JSON.stringify({
 });
 
 async function openPalettes(page: Page): Promise<void> {
+  // The Options popover is palettes-only now — the list renders directly,
+  // no disclosure to expand.
   await page.getByRole('button', { name: 'Options' }).click();
-  await page.getByRole('button', { name: /color palettes/i }).click();
 }
 
 async function loadFrrf(page: Page): Promise<void> {

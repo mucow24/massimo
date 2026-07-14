@@ -41,6 +41,7 @@ const seedWarningDoc = () => {
       name: `${id} line`,
       color,
       stations: ['s1', 's2'],
+      curveRadius: 80,
     });
   act(() => {
     useDoc.setState({
@@ -48,7 +49,6 @@ const seedWarningDoc = () => {
       stations: { s1, s2 },
       lines: { L1: mkLine('L1', '#0039A6'), L2: mkLine('L2', '#EE352E') },
       lineOrder: ['L1', 'L2'],
-      curveRadius: 80,
     });
   });
 };

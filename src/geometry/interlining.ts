@@ -27,6 +27,7 @@ import {
   worldDirToLocal,
 } from './orientation';
 import { lineWidthOf } from '../model/lineWidth';
+import { lineCurveRadiusOf } from '../model/lineCurve';
 
 export interface SegmentBandSpec {
   pairKey: string;
@@ -48,14 +49,14 @@ export interface SegmentBandSpec {
   paths: string[];
   warning: boolean;
   centerline: Vec2[];
-  // Effective centerline curve radius used to build `paths`. For an n-stripe
-  // band this is bumped above the configured `curveRadius` toward
-  // `R + max|stripeOffsets|` so the innermost stripe still hits R, then
-  // capped per-endpoint so the widest stop marker (a width × width square)
-  // fits within the post-fillet straight section. Callers sampling offset
-  // paths against `centerline` (line-tag layer, hover/click) MUST use this
-  // rather than the raw doc.curveRadius, or they'll desync from painted
-  // geometry.
+  // Effective centerline curve radius used to build `paths`. The configured
+  // R is the LARGEST member line's `curveRadius`; for an n-stripe band it is
+  // bumped toward `R + max|stripeOffsets|` so the innermost stripe still hits
+  // R, then capped per-endpoint so the widest stop marker (a width × width
+  // square) fits within the post-fillet straight section. Callers sampling
+  // offset paths against `centerline` (line-tag layer, hover/click) MUST use
+  // this rather than any line's raw `curveRadius`, or they'll desync from
+  // painted geometry.
   radius: number;
   // Per-stripe z-priority: parallel to `lines` and `paths`. Smallest = front-most.
   // Each stripe carries its own line's lineOrder index so a perpendicular
@@ -176,10 +177,9 @@ export function resolveSegmentStyle(line: Line, pairKey: string): LineStyle {
 export function buildBands(
   stations: Record<StationId, Station>,
   lines: Record<LineId, Line>,
-  curveRadius: number,
   lineOrder: LineId[] = [],
 ): SegmentBandSpec[] {
-  const bands = buildBandGeometry(stations, lines, curveRadius);
+  const bands = buildBandGeometry(stations, lines);
   assignLinePriorities(bands, lines, lineOrder);
   return bands;
 }
@@ -190,7 +190,7 @@ export function buildBands(
  * adjacency runs, and computes the routed centerline + per-stripe paths.
  *
  * Reads only `stations`, `line.stations`, `line.segmentStyles`,
- * `line.width`, and `curveRadius`. None of those change on a per-segment
+ * `line.width`, and `line.curveRadius`. None of those change on a per-segment
  * layer cycle, so a caller that memoizes this output gets a stable bands
  * reference across layer edits — that's how the layering-mode caches stay
  * valid without a content-hash workaround. (A width edit DOES rebuild —
@@ -202,7 +202,6 @@ export function buildBands(
 export function buildBandGeometry(
   stations: Record<StationId, Station>,
   lines: Record<LineId, Line>,
-  curveRadius: number,
 ): SegmentBandSpec[] {
   // 1. Collect per-line segments keyed by sorted station pair, with stop cells.
   const groups: Record<string, SegInfo[]> = {};
@@ -319,7 +318,11 @@ export function buildBandGeometry(
           buildBandSpec(
             group.map((e) => e.seg),
             group.map((e) => e.width),
-            curveRadius,
+            // Interlined lines may disagree on curve radius; the shared
+            // centerline curves at the LARGEST member radius, so no line
+            // curves tighter than it asked for (the smaller-radius lines
+            // just ride along — same trade as the inner-stripe bump).
+            Math.max(...group.map((e) => lineCurveRadiusOf(lines[e.seg.lineId]))),
             pairKey,
             fDir,
             tDir,
@@ -572,7 +575,7 @@ export function bandCentroid(points: Vec2[]): Vec2 {
 }
 
 // Centerline radius bumped so the INNERMOST stripe of a band still has
-// radius >= the configured curveRadius. `maxAbsOffset` is the extreme
+// radius >= the configured curve radius. `maxAbsOffset` is the extreme
 // |stripe-center offset| (max |stripeOffsetsForWidths(widths)|) — for a
 // uniform-width band that's the historical (n-1)/2 * width.
 export function idealBandRadius(curveRadius: number, maxAbsOffset: number): number {

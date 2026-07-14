@@ -10,7 +10,7 @@ const geom = (stations: Station[], lines: Line[]): GeometrySlice => {
   for (const s of stations) st[s.id] = s;
   const ln: GeometrySlice['lines'] = {};
   for (const l of lines) ln[l.id] = l;
-  return { stations: st, lines: ln, curveRadius: 24 };
+  return { stations: st, lines: ln };
 };
 
 const station = (id: string, x: number, y: number, lineIds: string[]): Station =>

@@ -216,7 +216,7 @@ describe('beginHistoryGroup', () => {
       const base = historyDepth();
 
       const field = beginHistoryGroup(); // spinbutton focus
-      useDoc.getState().setCurveRadius(42); // field edit
+      useDoc.getState().setDocName('Renamed'); // field edit
       const drag = beginHistoryGroup(); // handle pointerdown — blur not yet fired
       field.commit(); // blur arrives late
       useDoc.getState().moveStation(a, 0, 50); // fan-out: one write per target
@@ -231,16 +231,16 @@ describe('beginHistoryGroup', () => {
       expect(useDoc.getState().stations[a].y).toBe(0);
       expect(useDoc.getState().stations[b].y).toBe(0);
       expect(useDoc.getState().stations[c].y).toBe(0);
-      expect(useDoc.getState().curveRadius).toBe(42);
+      expect(useDoc.getState().name).toBe('Renamed');
       // …and undo #2 the field edit. Monotonic — never forward.
       undo();
-      expect(useDoc.getState().curveRadius).toBe(DEFAULT_DOC.curveRadius);
+      expect(useDoc.getState().name).toBe(DEFAULT_DOC.name);
     });
 
     it('begin while a group is open seals the elder immediately; its late end is a no-op', () => {
       const base = historyDepth();
       const elder = beginHistoryGroup();
-      useDoc.getState().setCurveRadius(42);
+      useDoc.getState().setDocName('Renamed');
       const newer = beginHistoryGroup();
       // The steal itself sealed the elder's edit as one entry…
       expect(historyDepth() - base).toBe(1);
@@ -274,16 +274,16 @@ describe('beginHistoryGroup', () => {
     it('a leaked-open group is healed by the next begin, its edits recovered as an entry', () => {
       const base = historyDepth();
       beginHistoryGroup(); // gesture died without commit/cancel/rollback
-      useDoc.getState().setCurveRadius(42);
+      useDoc.getState().setDocName('First');
       const next = beginHistoryGroup(); // heals: seals the stranded edit
-      useDoc.getState().setCurveRadius(77);
+      useDoc.getState().setDocName('Second');
       next.commit();
       // Both edits are separately undoable — the leaked one isn't baked in.
       expect(historyDepth() - base).toBe(2);
       undo();
-      expect(useDoc.getState().curveRadius).toBe(42);
+      expect(useDoc.getState().name).toBe('First');
       undo();
-      expect(useDoc.getState().curveRadius).toBe(DEFAULT_DOC.curveRadius);
+      expect(useDoc.getState().name).toBe(DEFAULT_DOC.name);
       expect(isHistoryGrouping()).toBe(false);
     });
   });

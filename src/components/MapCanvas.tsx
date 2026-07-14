@@ -107,7 +107,6 @@ const NO_VERTEX_INDICES: ReadonlySet<number> = new Set();
 export function MapCanvas() {
   const stations = useDoc((s) => s.stations);
   const lines = useDoc((s) => s.lines);
-  const curveRadius = useDoc((s) => s.curveRadius);
   const lineOrder = useDoc((s) => s.lineOrder);
   const addLineTag = useDoc((s) => s.addLineTag);
   const assignRegion = useDoc((s) => s.assignRegion);
@@ -198,7 +197,7 @@ export function MapCanvas() {
   const polygonsInteractive = selection.uiMode.kind === 'idle';
 
   // Geometry hash for buildBandGeometry's inputs (line topology + segmentStyles
-  // + per-line width). Topology is the `edges` SET, not the `stations` member
+  // + per-line width + curve radius). Topology is the `edges` SET, not the `stations` member
   // list — buildBandGeometry iterates edges, and a display-only reorder of
   // `stations` must NOT churn geometry (so `edges`, not `stations`, is hashed;
   // adding/removing an edge — e.g. closing a loop or branching — changes it and
@@ -207,7 +206,8 @@ export function MapCanvas() {
   // layering-mode memos rely on. Color is also intentionally absent: a color
   // edit must repaint WITHOUT a geometry rebuild (stripes resolve color live).
   // Width, by contrast, IS geometry — it moves the baked paths and changes band
-  // merging — so it must be in the hash or width edits never repaint.
+  // merging — so it must be in the hash or width edits never repaint. Curve
+  // radius is geometry for the same reason (it moves the baked fillets).
   const linesGeometrySig = useMemo(() => {
     const parts: string[] = [];
     for (const id of Object.keys(lines)) {
@@ -217,6 +217,7 @@ export function MapCanvas() {
         ln.edges.join('.'),
         Object.keys(ln.segmentStyles ?? {}).join('.'),
         String(ln.width ?? ''),
+        String(ln.curveRadius ?? ''),
       );
     }
     return parts.join('|');
@@ -240,9 +241,9 @@ export function MapCanvas() {
   }, [stations]);
 
   const bandsGeometry = useMemo(
-    () => buildBandGeometry(stations, lines, curveRadius),
+    () => buildBandGeometry(stations, lines),
     // eslint-disable-next-line react-hooks/exhaustive-deps
-    [stationsGeometrySig, linesGeometrySig, curveRadius],
+    [stationsGeometrySig, linesGeometrySig],
   );
 
   const bands = useMemo(() => {
@@ -329,8 +330,8 @@ export function MapCanvas() {
   const needRegions =
     selection.uiMode.kind === 'layering' || Object.keys(regionAssignments).length > 0;
   const regionGeom = useMemo(
-    () => (needRegions ? regionsFor({ stations, lines, curveRadius }) : null),
-    [needRegions, stations, lines, curveRadius],
+    () => (needRegions ? regionsFor({ stations, lines }) : null),
+    [needRegions, stations, lines],
   );
   const regionWinners = useMemo(
     () =>

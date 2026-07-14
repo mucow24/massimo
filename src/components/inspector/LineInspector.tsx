@@ -19,6 +19,11 @@ import {
   LINE_WIDTH_SLIDER_MIN,
   lineWidthOf,
 } from '../../model/lineWidth';
+import {
+  LINE_CURVE_RADIUS_MAX,
+  LINE_CURVE_RADIUS_MIN,
+  lineCurveRadiusOf,
+} from '../../model/lineCurve';
 import { DOT_SIZE_MAX, DOT_SIZE_MIN, lineDefaultDotSizeOf } from '../../model/dotSize';
 import {
   LINE_STROKE_STEP,
@@ -170,6 +175,7 @@ export function LineInspector({ id }: { id: LineId }) {
   const setLineDefaultDotStyle = useDoc((s) => s.setLineDefaultDotStyle);
   const setLineDefaultDotSize = useDoc((s) => s.setLineDefaultDotSize);
   const setLineWidth = useDoc((s) => s.setLineWidth);
+  const setLineCurveRadius = useDoc((s) => s.setLineCurveRadius);
   const setLineStrokeWidth = useDoc((s) => s.setLineStrokeWidth);
   const setLineStrokeColor = useDoc((s) => s.setLineStrokeColor);
   const setLineSeamColor = useDoc((s) => s.setLineSeamColor);
@@ -272,6 +278,17 @@ export function LineInspector({ id }: { id: LineId }) {
         getCurrent={() => lineWidthOf(useDoc.getState().lines[id])}
         textboxAllowAboveMax
         textboxMin={LINE_WIDTH_MIN}
+      />
+      <NumericFieldRow
+        id={`line-curve-${line.id}`}
+        label="Curve radius"
+        min={LINE_CURVE_RADIUS_MIN}
+        max={LINE_CURVE_RADIUS_MAX}
+        step={1}
+        value={lineCurveRadiusOf(line)}
+        onChange={(n) => setLineCurveRadius(line.id, n)}
+        getCurrent={() => lineCurveRadiusOf(useDoc.getState().lines[id])}
+        textboxAllowAboveMax
       />
       <NumericFieldRow
         id={`line-stroke-${line.id}`}

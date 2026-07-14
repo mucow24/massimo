@@ -98,12 +98,7 @@ export function useLineTagDrag(
 
     // Recompute bands fresh — buildBands is pure & memo'd at the canvas, but
     // here we just need the latest geometry. Cheap relative to drag latency.
-    const bands = buildBands(
-      docState.stations,
-      docState.lines,
-      docState.curveRadius,
-      docState.lineOrder,
-    );
+    const bands = buildBands(docState.stations, docState.lines, docState.lineOrder);
 
     // Build candidate set: every EDGE (segment) of the line — its actual
     // topology, so loop wrap-edges and branch legs (which are not consecutive

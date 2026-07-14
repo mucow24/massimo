@@ -80,7 +80,7 @@ function topAt(els: PaintEl[], p: Vec2): PaintEl | null {
 // body, clear of the stop dots — i.e. a visible white split. Returned as
 // readable descriptors so a failure names the offending points.
 function selfCasingOverdraw(doc: MapDoc, lineId: string): string[] {
-  const bands = buildBands(doc.stations, doc.lines, doc.curveRadius, doc.lineOrder);
+  const bands = buildBands(doc.stations, doc.lines, doc.lineOrder);
   const line = doc.lines[lineId];
   const w = lineWidthOf(line);
   const railW = lineStrokeRailWidth(line.strokeWidth ?? 0, w);
@@ -168,7 +168,7 @@ describe('a line does not overdraw its own casing at junctions/loops', () => {
         makeLine({ id: 'l2', color: '#00c', strokeWidth: 4, stations: ['s1', 's2'] }),
       ],
     });
-    const bands = buildBands(doc.stations, doc.lines, doc.curveRadius, doc.lineOrder);
+    const bands = buildBands(doc.stations, doc.lines, doc.lineOrder);
     expect(bands).toHaveLength(1); // one interlined band, two stripes
     const band = bands[0];
     // Both lines share strokeWidth 4, so either resolves the same railW.

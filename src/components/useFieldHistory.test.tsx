@@ -18,7 +18,7 @@ describe('useFieldHistory — group-commit safety nets', () => {
   it('commits the open group when the field unmounts while focused', () => {
     const { result, unmount } = renderHook(() => useFieldHistory());
     act(() => result.current.onFocus());
-    act(() => useDoc.getState().setCurveRadius(42));
+    act(() => useDoc.getState().setDocName('Mid-edit name'));
     expect(isHistoryGrouping()).toBe(true);
     const before = historyDepth();
 
@@ -33,7 +33,7 @@ describe('useFieldHistory — group-commit safety nets', () => {
   it('re-focusing without a blur commits the previous group before opening a new one', () => {
     const { result } = renderHook(() => useFieldHistory());
     act(() => result.current.onFocus());
-    act(() => useDoc.getState().setCurveRadius(42));
+    act(() => useDoc.getState().setDocName('Mid-edit name'));
     const before = historyDepth();
 
     // Focus lands again with no intervening blur (e.g. focus jumped straight

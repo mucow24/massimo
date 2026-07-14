@@ -84,7 +84,7 @@ describe('setLineWidth repacks tangent chains', () => {
       expect(stopOf(next, sid, 'L2').col).toBe(0);
     }
     // The headline invariant: the corridor is still ONE merged band.
-    const bands = buildBandGeometry(next.stations, next.lines, next.curveRadius);
+    const bands = buildBandGeometry(next.stations, next.lines);
     expect(bands).toHaveLength(1);
     expect(bands[0].lines).toHaveLength(2);
   });
@@ -97,7 +97,7 @@ describe('setLineWidth repacks tangent chains', () => {
       expect(stopOf(next, sid, 'L1').row).toBeCloseTo(3 / 14, 12);
       expect(stopOf(next, sid, 'L2').row).toBeCloseTo(11 / 14, 12);
     }
-    const bands = buildBandGeometry(next.stations, next.lines, next.curveRadius);
+    const bands = buildBandGeometry(next.stations, next.lines);
     expect(bands).toHaveLength(1);
     expect(bands[0].stripeWidths).toEqual([8, 8]);
   });
@@ -108,7 +108,7 @@ describe('setLineWidth repacks tangent chains', () => {
     // Gap = tangentGap(14, 28) = 21, centroid preserved: rows -0.25 and 1.25.
     expect(stopOf(next, 's1', 'L1').row).toBeCloseTo(-0.25, 12);
     expect(stopOf(next, 's1', 'L2').row).toBeCloseTo(1.25, 12);
-    expect(buildBandGeometry(next.stations, next.lines, next.curveRadius)).toHaveLength(1);
+    expect(buildBandGeometry(next.stations, next.lines)).toHaveLength(1);
   });
 
   it('setting the width back to the DEFAULT repacks too (field-drop branch) and round-trips', () => {
@@ -122,7 +122,7 @@ describe('setLineWidth repacks tangent chains', () => {
       expect(stopOf(next, sid, 'L1').row).toBeCloseTo(0, 12);
       expect(stopOf(next, sid, 'L2').row).toBeCloseTo(1, 12);
     }
-    expect(buildBandGeometry(next.stations, next.lines, next.curveRadius)).toHaveLength(1);
+    expect(buildBandGeometry(next.stations, next.lines)).toHaveLength(1);
   });
 
   it('editing the middle line of a three-chain leaves the middle stop in place', () => {
@@ -133,7 +133,7 @@ describe('setLineWidth repacks tangent chains', () => {
     expect(stopOf(next, 's1', 'L1').row).toBeCloseTo(3 / 14, 12);
     expect(stopOf(next, 's1', 'L2').row).toBeCloseTo(1, 12);
     expect(stopOf(next, 's1', 'L3').row).toBeCloseTo(25 / 14, 12);
-    const bands = buildBandGeometry(next.stations, next.lines, next.curveRadius);
+    const bands = buildBandGeometry(next.stations, next.lines);
     expect(bands).toHaveLength(1);
     expect(bands[0].lines).toHaveLength(3);
   });
@@ -216,7 +216,7 @@ describe('setLineWidth repacks tangent chains', () => {
     const wide = T.setLineWidth(T.setLineWidth(thin, 'L1', 20), 'L2', 20);
     const dRow = stopOf(wide, 's1', 'L2').row - stopOf(wide, 's1', 'L1').row;
     expect(dRow * 14).toBeCloseTo(20, 9);
-    expect(buildBandGeometry(wide.stations, wide.lines, wide.curveRadius)).toHaveLength(1);
+    expect(buildBandGeometry(wide.stations, wide.lines)).toHaveLength(1);
   });
 
   it('slider ticks compose: stepping 14→8 one unit at a time ≡ jumping straight to 8', () => {
@@ -280,6 +280,7 @@ describe('style-driven width changes repack through the same path', () => {
             },
             defaultDotSize: 8,
             width: 8,
+            curveRadius: 24,
             strokeWidth: 0,
             strokeColor: '#ffffff',
           },
@@ -291,7 +292,7 @@ describe('style-driven width changes repack through the same path', () => {
     expect(next.lines.L2.width).toBe(8);
     expect(stopOf(next, 's1', 'L1').row).toBeCloseTo(3 / 14, 12);
     expect(stopOf(next, 's1', 'L2').row).toBeCloseTo(11 / 14, 12);
-    expect(buildBandGeometry(next.stations, next.lines, next.curveRadius)).toHaveLength(1);
+    expect(buildBandGeometry(next.stations, next.lines)).toHaveLength(1);
   });
 });
 
@@ -459,7 +460,7 @@ describe('chains survive same-axis stops from other corridors', () => {
     expect(stopOf(next, 's1', 'L2').row).toBeCloseTo(12.5 / 14, 12);
     // The interloper itself never moves.
     expect(stopOf(next, 's1', 'L3')).toBe(doc.stations.s1.stops[2]);
-    expect(buildBandGeometry(next.stations, next.lines, next.curveRadius)).toHaveLength(1);
+    expect(buildBandGeometry(next.stations, next.lines)).toHaveLength(1);
   });
 
   it('a perp-TIED stop at another parallel position does not sever the chain', () => {
@@ -484,7 +485,7 @@ describe('chains survive same-axis stops from other corridors', () => {
       expect(stopOf(next, sid, 'L2').col).toBeCloseTo(12.5 / 14, 12);
     }
     expect(stopOf(next, 's1', 'L3')).toBe(doc.stations.s1.stops[2]);
-    expect(buildBandGeometry(next.stations, next.lines, next.curveRadius)).toHaveLength(1);
+    expect(buildBandGeometry(next.stations, next.lines)).toHaveLength(1);
   });
 
   it('an interloper never triggers a PARTIAL chain rewrite', () => {
@@ -498,7 +499,7 @@ describe('chains survive same-axis stops from other corridors', () => {
     expect(stopOf(next, 's1', 'L1').row).toBeCloseTo(2 / 14, 12);
     expect(stopOf(next, 's1', 'L2').row).toBeCloseTo(13 / 14, 12);
     expect(stopOf(next, 's1', 'L3').row).toBeCloseTo(27 / 14, 12);
-    const bands = buildBandGeometry(next.stations, next.lines, next.curveRadius);
+    const bands = buildBandGeometry(next.stations, next.lines);
     expect(bands).toHaveLength(1);
     expect(bands[0].lines).toHaveLength(3);
   });
@@ -522,17 +523,17 @@ describe('chains survive same-axis stops from other corridors', () => {
 describe('tolerances mirror the merge gate', () => {
   it('within-TOL slop is recognized and canonicalized to the exact new gap', () => {
     const doc = interlinedPairDoc([0, 14.3 / 14]); // gap 14.3 — merges (TOL 0.5)
-    expect(buildBandGeometry(doc.stations, doc.lines, doc.curveRadius)).toHaveLength(1);
+    expect(buildBandGeometry(doc.stations, doc.lines)).toHaveLength(1);
     const next = T.setLineWidth(doc, 'L1', 8);
     // Old centroid 7.15 preserved, EXACT new gap 11.
     expect(stopOf(next, 's1', 'L1').row).toBeCloseTo(1.65 / 14, 12);
     expect(stopOf(next, 's1', 'L2').row).toBeCloseTo(12.65 / 14, 12);
-    expect(buildBandGeometry(next.stations, next.lines, next.curveRadius)).toHaveLength(1);
+    expect(buildBandGeometry(next.stations, next.lines)).toHaveLength(1);
   });
 
   it('slop beyond the merge tolerance is left alone', () => {
     const doc = interlinedPairDoc([0, 14.6 / 14]); // gap 14.6 — never merged
-    expect(buildBandGeometry(doc.stations, doc.lines, doc.curveRadius)).toHaveLength(2);
+    expect(buildBandGeometry(doc.stations, doc.lines)).toHaveLength(2);
     const next = T.setLineWidth(doc, 'L1', 8);
     expect(next.stations).toBe(doc.stations);
   });
@@ -549,7 +550,7 @@ describe('chain arithmetic details', () => {
       expect(stopOf(next, sid, 'L2').row).toBeCloseTo(13 / 14, 12);
       expect(stopOf(next, sid, 'L3').row).toBeCloseTo(27 / 14, 12);
     }
-    const bands = buildBandGeometry(next.stations, next.lines, next.curveRadius);
+    const bands = buildBandGeometry(next.stations, next.lines);
     expect(bands).toHaveLength(1);
     expect([...bands[0].stripeWidths].sort((a, b) => a - b)).toEqual([8, 14, 14]);
   });

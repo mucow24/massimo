@@ -92,7 +92,7 @@ export function resolveTag(
   const k = band.lines.findIndex((l) => l.id === tag.lineId);
   const offset = band.stripeOffsets[k];
   // band.radius is the effective centerline radius the router used — already
-  // bumped above doc.curveRadius for interlined bands so the inner stripes
+  // bumped above the configured curve radius for interlined bands so the inner stripes
   // respect the min radius. Sample against the same radius or geometry desyncs.
   const stripeTotal = offsetPathLength(band.centerline, band.radius, offset);
   // Walk from anchor endpoint by `distance` along the stripe (clamped to the
