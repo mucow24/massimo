@@ -8,6 +8,7 @@ import type {
   TextLabelAlign,
   TextLabelWeight,
 } from './types';
+import { isAllowedImageHref } from './svgImport';
 import type { Vec2 } from '../geometry/vec';
 
 /**
@@ -120,9 +121,10 @@ function parseSvgImageData(raw: unknown): Omit<SvgImage, 'id'> | null {
   if (typeof d.height !== 'number' || !Number.isFinite(d.height) || d.height <= 0) return null;
   // Continuous rotation — finite is the only constraint (NOT the 0..7 octant).
   if (typeof d.rotation !== 'number' || !Number.isFinite(d.rotation)) return null;
-  // Security: only an inline svg data URI is allowed. A remote/script href from
-  // a crafted clipboard string would break the opaque-sandbox guarantee.
-  if (typeof d.href !== 'string' || !d.href.startsWith('data:image/svg+xml')) return null;
+  // Security: only an inline image data URI (svg/png/jpeg) is allowed. A
+  // remote/script href from a crafted clipboard string would break the
+  // opaque-sandbox guarantee.
+  if (typeof d.href !== 'string' || !isAllowedImageHref(d.href)) return null;
   // Optional: reject a present-but-wrong type; leave an absent flag absent.
   if (d.locked !== undefined && typeof d.locked !== 'boolean') return null;
   const out: Omit<SvgImage, 'id'> = {

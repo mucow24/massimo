@@ -45,7 +45,7 @@ describe('<EditingBanner /> — every non-idle mode gets chrome', () => {
       .getState()
       .setUiMode({ kind: 'placing-svg', image: { href: 'data:', width: 10, height: 10 } });
     render(<EditingBanner />);
-    expect(banner()!.textContent).toMatch(/imported SVG/i);
+    expect(banner()!.textContent).toMatch(/imported image/i);
     expect(banner()!.textContent).toMatch(/Esc or right-click/);
   });
 
