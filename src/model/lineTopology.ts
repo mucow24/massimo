@@ -9,7 +9,7 @@ import type { Line, StationId } from './types';
 // Two properties hold by construction and every helper below relies on them:
 //   • each edge is unique (a Set of pairKeys), so `degreeOf` == neighbour count;
 //   • each edge is canonical (`from < to`), matching the key space that
-//     `segmentStyles` / `segmentLayers` / line tags already live in.
+//     `segmentStyles` / line tags already live in.
 
 // Split a canonical pair-key back into its two station ids. Station ids never
 // contain '|' (UUIDs / counter ids), so the first '|' is the separator.

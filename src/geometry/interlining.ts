@@ -25,7 +25,6 @@ import {
   travelDirLocal,
   worldDirToLocal,
 } from './orientation';
-import { LAYER_WEIGHT, segmentPriority, stationLayerFor } from '../model/layerPriority';
 import { lineWidthOf } from '../model/lineWidth';
 
 export interface SegmentBandSpec {
@@ -168,8 +167,8 @@ export function resolveSegmentStyle(line: Line, pairKey: string): LineStyle {
  * positions; `(k − (n−1)/2) * STOP_SIZE` in the uniform default case).
  *
  * Composes {@link buildBandGeometry} (depends only on stations + line
- * topology) and {@link assignLinePriorities} (depends on `lineOrder` and
- * `segmentLayers`). Callers that want geometry to survive priority-only
+ * topology) and {@link assignLinePriorities} (depends on `lineOrder` only).
+ * Callers that want geometry to survive priority-only
  * changes (e.g. layering mode's outline / label memos) call the two halves
  * directly instead of this convenience wrapper.
  */
@@ -367,12 +366,13 @@ export function buildBandGeometry(
 
 /**
  * Priority half of {@link buildBands}: fills `band.linePriorities` from the
- * global `lineOrder` and each line's per-segment layer override. Mutates
- * the bands in place — the geometry array's reference is preserved, which
- * is what the layering-mode memos rely on.
+ * global `lineOrder` (index 0 = front-most). Per-segment layer overrides are
+ * gone — region paint patches (RegionPatchLayer) override locally instead.
+ * Mutates the bands in place — the geometry array's reference is preserved,
+ * which is what the mode-overlay memos rely on.
  *
- * Reading split: depends on `lineOrder` and `lines[id].segmentLayers`, but
- * NOT on the geometric fields buildBandGeometry reads.
+ * Reading split: depends on `lineOrder` only, NOT on the geometric fields
+ * buildBandGeometry reads.
  */
 export function assignLinePriorities(
   bands: SegmentBandSpec[],
@@ -386,9 +386,7 @@ export function assignLinePriorities(
   const lineIndex = buildLineIndex(lineOrder, lines);
   const fallback = Object.keys(lineIndex).length;
   for (const band of bands) {
-    band.linePriorities = band.lines.map((l) =>
-      segmentPriority(lines[l.id], band.pairKey, lineIndex[l.id] ?? fallback),
-    );
+    band.linePriorities = band.lines.map((l) => lineIndex[l.id] ?? fallback);
   }
 }
 
@@ -396,8 +394,7 @@ export function assignLinePriorities(
 // at `priority + CASING_EPS`. Higher priority sorts EARLIER (further back), so
 // the casing lands directly under its body, yet still IN FRONT of any
 // lower-priority line's body. ε = 0.5 is provably safe because stripe
-// priorities are integers (`lineIdx − layer·LAYER_WEIGHT`, see
-// {@link segmentPriority}), so the smallest gap between two distinct
+// priorities are integers (lineOrder indices), so the smallest gap between two distinct
 // priorities is 1 — a casing can never leapfrog another line's body across the
 // integer boundary. This is what lets a line's OWN overlapping bands (loops,
 // branches) merge into one continuous outer casing: every silhouette paints
@@ -501,7 +498,6 @@ export function buildStopMarkers(
       const worldTangent = rotateBy(travelDirLocal(cell.orientation), station.rotation);
       const rotationDeg = angleDeg(worldTangent);
       const style = stationMarkerStyle(line, station.id);
-      const stationLayer = stationLayerFor(line, station.id);
       const basePriority = lineIndex[cell.lineId] ?? fallback;
       markers.push({
         cx,
@@ -510,7 +506,7 @@ export function buildStopMarkers(
         lineId: cell.lineId,
         stationId: station.id,
         rotationDeg,
-        priority: basePriority - stationLayer * LAYER_WEIGHT,
+        priority: basePriority,
         style,
         outward: terminusOutwardFromBand(line, station.id, bandByPair),
         width: lineWidthOf(line),

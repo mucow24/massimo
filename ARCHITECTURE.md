@@ -20,7 +20,8 @@ essentially one user (the developer).
 Stack: **React 18 + TypeScript + Vite**, **Zustand** for state, **zundo** for undo/redo,
 **Vitest** (jsdom) for unit tests, **Playwright** for e2e. No UI framework beyond React +
 hand-rolled CSS; `@radix-ui/react-icons` (icons) and `react-colorful` (the RGBA color picker)
-are the only UI dependencies.
+are the only UI dependencies. `clipper-lib` (integer-snapped polygon booleans/offsets) powers
+the region-layering geometry.
 
 ---
 
@@ -113,7 +114,7 @@ src/
     transferStyle.ts            # TRANSFER_STYLE_DEFAULTS + per-transfer override resolution
     lineWidth.ts lineStroke.ts  # stripe width (GEOMETRY) + casing rails (PRESENTATION)
     stationPacking.ts           # width-edit repack: keeps tangent stop chains packed
-    lineOrder.ts layerPriority.ts  # z-order reconcile + per-segment layer math
+    lineOrder.ts                # z-order reconcile (lineOrder = the default stacking)
     lineNaming.ts               # nameForIndex/pickNextLineName (next free letter name)
     lineTopology.ts             # the single owner of a Line's edge-set adjacency (degree/neighbours/incidence, add/remove edge, edgesFromStations)
     matching.ts pathSelect.ts   # interlining-group matching + shortest-path selection
@@ -130,8 +131,11 @@ src/
     stationBoundary.ts          # selection silhouette + marquee hit rects
     stripeOutline.ts            # per-stripe edge/cap geometry (stroke-before-fill dots)
     polygon.ts polygonSnap.ts polygonUnion.ts rectPolygon.ts  # polygon geom + union + hit test
+    clip.ts                     # typed clipper-lib wrapper (booleans/offsets, integer-snapped)
+    lineRegions.ts              # overlap faces (region layering) + anchor binding + exclusion holes
+    regionCache.ts              # sig-keyed cache of bands+markers+faces (render + reconcile)
+    regionReconcile.ts          # carries regionAssignments across geometry edits
     labelTokens.ts textMeasure.ts labelLayout.ts labelJustify.ts  # name → tokens → measured → placed
-    layerLabelPlacement.ts      # where to put a stripe's layer-number label
     lineTagGeometry.ts          # offset-path arc-length sampling for in-band tags
     svgImage.ts                 # svg-image corners/resize/rotate/snap geometry
     waypointLozenge.ts          # WP-lozenge pill geometry (shared drawn glyph + hit/selection box)
@@ -269,6 +273,7 @@ interface MapDoc {
   textLabels: Record<string, TextLabel>;
   polygons: Record<string, Polygon>;
   polygonOrder: string[]; // LATER = top (opposite of lineOrder)
+  regionAssignments: Record<string, RegionAssignment>; // region paint choices ("paint by numbers")
   svgImages: Record<string, SvgImage>;
   svgImageOrder: string[]; // LATER = top
   activePalettes: PaletteId[]; // INVARIANT: never empty
@@ -377,7 +382,6 @@ All remaining fields optional and **never stored at default**:
 
 - `segmentStyles?: Record<pairKey, LineStyle>` — per-segment style; missing ⇒ `'solid'`. Valid
   keys are exactly this line's `edges`.
-- `segmentLayers?: Record<pairKey, number>` — per-segment z-layer; missing ⇒ 0; **uncapped** ±.
 - `defaultDotStyle?: DotStyle` — missing ⇒ `DEFAULT_DOT_STYLE` (filled-black).
 - `defaultDotSize?: number` — dot diameter px; missing ⇒ `DOT_SIZE_DEFAULT` (= 2×`STOP_DOT_RADIUS` = 8).
 - `width?: number` — **stripe width, GEOMETRY**; missing ⇒ `LINE_WIDTH_DEFAULT` (= `STOP_SIZE` =
@@ -399,6 +403,26 @@ All remaining fields optional and **never stored at default**:
   seam-color-only line still shows a seam. Only takes effect alongside a non-transparent `seamColor`.
 - `styleId?` — live link to a StyleDef of kind `'line'` (covers the style fields above, not
   identity/topology).
+
+**Region layering ("paint by numbers").** There is no per-segment z-order. Where line bodies
+overlap, the planar arrangement's faces are derived live (`lineRegions.buildOverlapRegions`,
+clipper-backed via `clip.ts`, cached in `regionCache.ts`); each face shows one covering line —
+by default the `lineOrder` front-most, overridable per face via `MapDoc.regionAssignments`
+(Layering mode, `L`: click a face to cycle, shift/right-click backward, landing on the default
+deletes). An assignment is anchored IN THE LINES' OWN FRAME (`RegionAnchor`: arc position +
+side offset per covering line) and is carried across every geometry edit by
+`regionReconcile.ts` — rebinding by nearest-compatible face (survives drags/teleports),
+duplicating onto split halves, resolving merges by largest old face, going dormant when its
+overlap temporarily vanishes. The reconcile runs inside `beginHistoryGroup.commit()` (drags,
+sliders, nudge groups) or inline via `withRegionReconcile` (ungrouped one-shots), always in
+the SAME undo entry as the edit. Rendering is SUBTRACTIVE (`buildExclusionHoles` +
+`RegionExcludeClips`): losers are clipped out over the faces they lose — the winner is NEVER
+repainted (repainting doubles antialiased edges; clip-abutting seams are impossible when the
+winner is one continuous base stroke). Cased lines: the hole runs through the winner's white
+ring (its rails are already painted beneath — uncovering them gives the natural bridges-over
+look) and swallows the losers' fringes near the face. Clipped areas take no pointer events,
+so idle clicks land on the visible winner natively. Zero assignments ⇒ zero cost and
+byte-identical output.
 
 > **Width is GEOMETRY, stroke/seam are PRESENTATION.** A `width` edit rebuilds band geometry; a
 > `strokeWidth`/`strokeColor`/`seamColor`/`seamWidth`/color/style edit is resolved at render time
@@ -536,7 +560,7 @@ Path A does **more** than Path B because hand-edited files can be non-canonical 
 sanitizers `sanitizeLineWidth/Stroke/DotSize/Segments/StopDotSizes` exist for this).
 
 **Path B — localStorage rehydration: `migrateDoc(persisted, version)`** ([store.ts](src/state/store.ts)).
-The zustand `persist` config: `name: 'vignelli-map-doc-v1'`, `version: 14`, `migrate:
+The zustand `persist` config: `name: 'vignelli-map-doc-v1'`, `version: 15`, `migrate:
 migrateDoc`, `partialize: pickDocSnapshot`. Because the persist-merge already fills absent fields
 from the initial state, `migrateDoc` only does **value-level legacy fixups, version-gated**, on
 disjoint fields (order immaterial except where noted), never mutating the input:
@@ -941,9 +965,6 @@ renderers** (one pass rounds convex corners and fillets concave junctions).
   **baked** `stripeWidths`/`stripeOffsets`.
 - `lineTagGeometry.ts` — arc-length sampling along an offset path; `snapNeighborTag` snaps a
   dragged tag to a same-corridor neighbor (matched by unordered `pairKeyOf`).
-- `layerLabelPlacement.ts` — picks the arc-length `t` for a stripe's layer-number label at max
-  clearance from other bands; **requires a pre-built sample cache** by design (to force callers to
-  cache — uncached layer-cycling on busy maps was a real bottleneck).
 - `svgImage.ts` — corners, aspect-locked corner resize, single-axis edge resize, rotate-to-pointer
   (`atan2(dx, -dy)`, Shift snaps 22.5°), snap anchor — all in the image's local frame.
 - `lattice.ts` — orthogonal/diagonal stop-placement lattices, disjoint except at the origin.
@@ -960,9 +981,13 @@ instantiated **once per pass**. Top→bottom paint order (later = on top):
 2. Station `wash` (selection silhouette fill, behind bands).
 3. Interleaved band stripes + `StopMarker` squares (ordered by per-stripe z-priority via
    `buildOrderedRenderables`).
+3b. Region overrides render SUBTRACTIVELY inside pass 3: a line that loses an
+    overridden overlap face paints through an exclusion clipPath (RegionExcludeClips,
+    holes over the faces it loses — see buildExclusionHoles), so the winner shows
+    through as its own continuous base stroke. Real map paint (exported).
 4. Station `bg` (transparent hit areas).
 5. Station `label` (after bg, so a selected wash never covers a neighbor's name).
-6. `LayeringDashedOutlines` (layering mode only).
+6. `RegionModeOverlay layer="outlines"` (layering mode only — dashed overlap-face footprints).
 7. `TransferLayer` (before dots).
 8. Station `dots` (over transfers, so a dot click routes to the station — everything below
    this point still paints above the dots), then the **selected-transfer outline**
@@ -982,7 +1007,7 @@ instantiated **once per pass**. Top→bottom paint order (later = on top):
 13. Polygon/image `overlay` handles, then the marquee rect.
 14. `SnapGuides` (dotted guides + measurement labels — above dots and everything else painted
     so far).
-15. `LayeringHoverOutline` + `LayerNumberLabels` (layering mode only).
+15. `RegionModeOverlay layer="hit"` (layering mode only — hover halo + face click targets).
 16. `BandWarning` ⚠ markers — painted after everything above, so a warning is never occluded by
     any stripe, dot, or label (deliberately NOT interleaved with the band pass; see the note in
     `buildOrderedRenderables`).
@@ -1165,7 +1190,7 @@ the canvas, which would deselect the item (closing the popover) or right-click-r
 
 ### Memo contract (subtle but important)
 
-`bandsGeometry` (`buildBandGeometry`) excludes `segmentLayers`, color, and style _values_ from its
+`bandsGeometry` (`buildBandGeometry`) excludes color and style _values_ from its
 signature — **width is geometry (in the hash), and so is the _set_ of styled segments
 (`Object.keys(segmentStyles)`); style values, like color, are re-resolved live at paint time
 (`resolveSegmentStyle` is the single resolver shared by the geometry bake and the render-time
@@ -1370,7 +1395,7 @@ downstream luminance / `rgba()` math.
   clamp/round/lowercase and drop at default. `DotStyle` objects are written in fixed field order
   so `JSON.stringify` equality is exact for app-written docs.
 - **Referential integrity after every action**: `line.stations[i] ∈ stations`; `stop.lineId ∈
-lines`; every `segmentStyles`/`segmentLayers` key is a real, non-default adjacency; every
+lines`; every `segmentStyles` key is a real, non-default adjacency; every
   tag/transfer endpoint and `routeBullet.lineId` resolves live-or-null. Maintained by cascade
   prunes after structural edits (`deleteStation`/`deleteLine`/`removeStationFromLine`/…).
 - **`LineTag.fromStationId < toStationId`** always (canonical/alphabetic, = `pairKeyOf`).

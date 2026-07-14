@@ -75,14 +75,14 @@ export function EditingBanner() {
       );
     }
     case 'layering':
-      // Right-click is repurposed here (layer decrement — see
+      // Right-click is repurposed here (cycle backward — see
       // RIGHT_CLICK_PASSTHROUGH_MODES), so Esc is the only exit.
       return (
         <>
           <div className="append-frame layering" />
           <div className="append-banner layering">
-            Layering mode — click a line segment to cycle its layer, shift-click or right-click to
-            decrement. Press Esc to exit.
+            Layering mode — click where lines overlap to cycle which line shows on top; shift-click
+            or right-click cycles backward. Press Esc to exit.
           </div>
         </>
       );

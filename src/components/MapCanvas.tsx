@@ -19,6 +19,13 @@ import { defaultStyleProps } from '../model/styles';
 import { rotateItemOnContextMenu } from './canvas/groupRotate';
 import { legibleTextOn } from '../util/color';
 import { BandWarning, SegmentBand } from './SegmentBand';
+import { RegionExcludeClips, regionExcludeClipId } from './canvas/RegionExcludeClips';
+import { regionsFor } from '../geometry/regionCache';
+import {
+  buildExclusionHoles,
+  regionClickAction,
+  resolveRegionWinners,
+} from '../geometry/lineRegions';
 import { HatchPatterns } from './HatchPatterns';
 import { SeamClips } from './canvas/SeamClips';
 import { StopMarker } from './StopMarker';
@@ -31,6 +38,7 @@ import { StationLayoutEditor } from './canvas/StationLayoutEditor';
 import { GhostLattice } from './canvas/GhostLattice';
 import { STOP_SIZE } from '../geometry/orientation';
 import { lineWidthOf } from '../model/lineWidth';
+import { lineStrokeRailWidth, lineStrokeWidthOf } from '../model/lineStroke';
 import { useRectSelect } from './canvas/useRectSelect';
 import {
   currentHitEntity,
@@ -50,8 +58,7 @@ import { useItemDrag } from './canvas/useItemDrag';
 import { usePolygonDrag } from './canvas/usePolygonDrag';
 import { useSvgImageDrag } from './canvas/useSvgImageDrag';
 import { LineTagsLayer } from './canvas/LineTagsLayer';
-import { LayeringDashedOutlines, LayeringHoverOutline } from './canvas/LayeringOutlines';
-import { LayerNumberLabels } from './canvas/LayerNumberLabels';
+import { RegionModeOverlay } from './canvas/RegionModeOverlay';
 import { StationPlacingPreview } from './canvas/StationPlacingPreview';
 import { PolygonPlacingPreview } from './canvas/PolygonPlacingPreview';
 import { SvgImagePlacingPreview } from './canvas/SvgImagePlacingPreview';
@@ -103,7 +110,7 @@ export function MapCanvas() {
   const curveRadius = useDoc((s) => s.curveRadius);
   const lineOrder = useDoc((s) => s.lineOrder);
   const addLineTag = useDoc((s) => s.addLineTag);
-  const cycleSegmentLayer = useDoc((s) => s.cycleSegmentLayer);
+  const assignRegion = useDoc((s) => s.assignRegion);
   const routeBullets = useDoc((s) => s.routeBullets);
   const rotateRouteBullet = useDoc((s) => s.rotateRouteBullet);
   const transfers = useDoc((s) => s.transfers);
@@ -114,6 +121,7 @@ export function MapCanvas() {
   const polygons = useDoc((s) => s.polygons);
   const polygonOrder = useDoc((s) => s.polygonOrder);
   const rotatePolygon = useDoc((s) => s.rotatePolygon);
+  const regionAssignments = useDoc((s) => s.regionAssignments);
   const svgImages = useDoc((s) => s.svgImages);
   const svgImageOrder = useDoc((s) => s.svgImageOrder);
   const rotateSvgImage45 = useDoc((s) => s.rotateSvgImage45);
@@ -194,7 +202,7 @@ export function MapCanvas() {
   // list — buildBandGeometry iterates edges, and a display-only reorder of
   // `stations` must NOT churn geometry (so `edges`, not `stations`, is hashed;
   // adding/removing an edge — e.g. closing a loop or branching — changes it and
-  // triggers the rebuild). EXCLUDES segmentLayers so layer cycles don't churn
+  // triggers the rebuild). EXCLUDES presentation-only fields so repaints don't churn
   // geometry — `bandsGeometry`'s reference stays stable across them, which the
   // layering-mode memos rely on. Color is also intentionally absent: a color
   // edit must repaint WITHOUT a geometry rebuild (stripes resolve color live).
@@ -310,6 +318,45 @@ export function MapCanvas() {
 
   const inHandMode = selection.toolMode === 'hand' || selection.spaceHeld;
 
+  // Region paint machinery: overlap faces + per-face winners + the exclusion
+  // clips that realize overrides (see buildExclusionHoles — losers are
+  // clipped, winners are never repainted). Computed only when it can matter
+  // (layering mode active, or stored assignments exist); regionsFor's
+  // sig-keyed cache dedupes against the reconcile step's builds. SYNCHRONOUS
+  // on purpose: the clips attach to the LIVE base strokes, so they must be
+  // derived from the same geometry the strokes render — a deferred snapshot
+  // would tear the clip holes off the moving bands mid-drag.
+  const needRegions =
+    selection.uiMode.kind === 'layering' || Object.keys(regionAssignments).length > 0;
+  const regionGeom = useMemo(
+    () => (needRegions ? regionsFor({ stations, lines, curveRadius }) : null),
+    [needRegions, stations, lines, curveRadius],
+  );
+  const regionWinners = useMemo(
+    () =>
+      regionGeom
+        ? resolveRegionWinners(regionGeom.faces, regionAssignments, regionGeom.bands, lineOrder)
+        : null,
+    [regionGeom, regionAssignments, lineOrder],
+  );
+  const regionExcludeHoles = useMemo(
+    () =>
+      regionGeom && regionWinners
+        ? buildExclusionHoles(
+            regionGeom.faces,
+            regionWinners,
+            lineOrder,
+            regionGeom.bands,
+            regionGeom.markers,
+            (lineId) => {
+              const line = lines[lineId];
+              return line ? lineStrokeRailWidth(lineStrokeWidthOf(line), lineWidthOf(line)) : 0;
+            },
+          )
+        : null,
+    [regionGeom, regionWinners, lineOrder, lines],
+  );
+
   const itemDrag = useItemDrag(svgRef, view.viewport.zoom, inHandMode);
   const polyDrag = usePolygonDrag(svgRef, view.viewport.zoom, inHandMode);
   const svgDrag = useSvgImageDrag(svgRef, view.viewport.zoom, inHandMode, view.screenToWorld);
@@ -359,15 +406,12 @@ export function MapCanvas() {
   // pointer is currently over. Drives the lightened-color preview + the small
   // layer-number text rendered at the stripe's midpoint. Cleared whenever we
   // leave layering mode (via the render-pattern below).
-  const [hoveredLayerStripe, setHoveredLayerStripe] = useState<{
-    bandKey: string;
-    lineId: LineId;
-  } | null>(null);
+  const [hoveredRegionKey, setHoveredRegionKey] = useState<string | null>(null);
   const inLayeringMode = selection.uiMode.kind === 'layering';
   const [prevLayering, setPrevLayering] = useState(inLayeringMode);
   if (inLayeringMode !== prevLayering) {
     setPrevLayering(inLayeringMode);
-    if (!inLayeringMode && hoveredLayerStripe) setHoveredLayerStripe(null);
+    if (!inLayeringMode && hoveredRegionKey) setHoveredRegionKey(null);
   }
 
   // Stable click handler for selecting a line by clicking its stripe. Passed to
@@ -741,35 +785,28 @@ export function MapCanvas() {
     };
   };
 
-  // Hover/click handlers for layering mode. Hovering a stripe records the
-  // (band, line) pair so the renderer can draw the layer-number overlay +
-  // black outline; left-click bumps the per-segment layer up by 1 (down with
-  // shift), right-click bumps it down by 1.
-  const makeLayerHandlers = (spec: SegmentBandSpec) => ({
-    onLineHover: (lineId: LineId) => {
-      setHoveredLayerStripe((cur) =>
-        cur && cur.bandKey === spec.bandKey && cur.lineId === lineId
-          ? cur
-          : { bandKey: spec.bandKey, lineId },
-      );
-    },
-    onLineLeave: (lineId: LineId) => {
-      setHoveredLayerStripe((cur) =>
-        cur && cur.bandKey === spec.bandKey && cur.lineId === lineId ? null : cur,
-      );
-    },
-    onLineClick: (lineId: LineId, e: React.MouseEvent) => {
-      e.stopPropagation();
-      const [fromCanon, toCanon] = spec.pairKey.split('|');
-      cycleSegmentLayer(lineId, fromCanon, toCanon, e.shiftKey ? -1 : 1);
-    },
-    onLineContextMenu: (lineId: LineId, e: React.MouseEvent) => {
-      e.preventDefault();
-      e.stopPropagation();
-      const [fromCanon, toCanon] = spec.pairKey.split('|');
-      cycleSegmentLayer(lineId, fromCanon, toCanon, -1);
-    },
-  });
+  // Layering-mode click: cycle which covering line paints the face. The pure
+  // decision (next winner, wrap, delete-at-default, fresh anchors) lives in
+  // regionClickAction; the store mints the id and records ONE undo entry.
+  // The face/winner set the user CLICKS is the one being DISPLAYED (the
+  // deferred snapshot); the bound assignment object is read fresh by id.
+  const handleRegionClick = (faceIndex: number, dir: 1 | -1) => {
+    if (!regionGeom || !regionWinners) return;
+    const face = regionGeom.faces[faceIndex];
+    const w = regionWinners[faceIndex];
+    if (!face || !w) return;
+    const bound = (w.assignmentId && useDoc.getState().regionAssignments[w.assignmentId]) || null;
+    const action = regionClickAction({
+      face,
+      bound,
+      lineOrder,
+      dir,
+      bands: regionGeom.bands,
+      newId: '',
+    });
+    if (action.assignment) assignRegion(bound ? bound.id : null, action.assignment);
+    else if (bound) assignRegion(bound.id, null);
+  };
 
   return (
     <div className="canvas-host" data-uimode={selection.uiMode.kind}>
@@ -820,6 +857,7 @@ export function MapCanvas() {
           <HatchPatterns colors={hatchedColors} underlayColor={underlayColor} />
           {/* Per-line corridor clips for the branch seam (see SeamClips). */}
           <SeamClips bands={bands} lines={lines} />
+          {regionExcludeHoles && <RegionExcludeClips holes={regionExcludeHoles} />}
         </defs>
 
         {/* Background hit target for panning. Overdrawn one viewport-width in
@@ -942,69 +980,85 @@ export function MapCanvas() {
           </g>
         )}
 
-        {/* band stripes, warnings, and stop squares interleaved by per-stripe z-priority */}
+        {/* band stripes, warnings, and stop squares interleaved by per-stripe
+            z-priority. A line that LOSES an overridden overlap region renders
+            through its exclusion clip (holes over the faces it loses), so the
+            region's winner shows through as its own continuous base stroke —
+            see buildExclusionHoles. The clip wrapper also removes the loser's
+            pointer surface there, landing clicks on the visible winner. */}
         {renderables.map((r) => {
+          const lineId = r.kind === 'marker' ? r.spec.lineId : r.band.lines[r.stripeIndex].id;
+          const clipped = regionExcludeHoles?.has(lineId) ?? false;
+          const withExcludeClip = (key: string, node: React.ReactNode) =>
+            clipped ? (
+              <g
+                key={key}
+                data-region-excluded={lineId}
+                clipPath={`url(#${regionExcludeClipId(lineId)})`}
+              >
+                {node}
+              </g>
+            ) : (
+              node
+            );
           if (r.kind === 'casing') {
-            const stripeLineId = r.band.lines[r.stripeIndex].id;
-            return (
+            return withExcludeClip(
+              'c:' + r.band.bandKey + ':' + lineId,
               <SegmentBand
-                key={'c:' + r.band.bandKey + ':' + stripeLineId}
+                key={'c:' + r.band.bandKey + ':' + lineId}
                 spec={r.band}
                 stripeIndex={r.stripeIndex}
                 pass="silhouette"
                 lines={lines}
                 colorMap={colorMap}
                 underlayColor={underlayColor}
-              />
+              />,
             );
           }
           if (r.kind === 'seam') {
-            const stripeLineId = r.band.lines[r.stripeIndex].id;
-            return (
+            return withExcludeClip(
+              'seam:' + r.band.bandKey + ':' + lineId,
               <SegmentBand
-                key={'seam:' + r.band.bandKey + ':' + stripeLineId}
+                key={'seam:' + r.band.bandKey + ':' + lineId}
                 spec={r.band}
                 stripeIndex={r.stripeIndex}
                 pass="seam"
                 lines={lines}
                 colorMap={colorMap}
                 underlayColor={underlayColor}
-              />
+              />,
             );
           }
           if (r.kind === 'stripe') {
-            const stripeLineId = r.band.lines[r.stripeIndex].id;
-            return (
+            return withExcludeClip(
+              's:' + r.band.bandKey + ':' + lineId,
               <SegmentBand
-                key={'s:' + r.band.bandKey + ':' + stripeLineId}
+                key={'s:' + r.band.bandKey + ':' + lineId}
                 spec={r.band}
                 stripeIndex={r.stripeIndex}
                 pass="body"
-                interactive={selection.uiMode.kind === 'creating-line-tag' || inLayeringMode}
+                interactive={selection.uiMode.kind === 'creating-line-tag'}
                 lines={lines}
                 colorMap={colorMap}
                 underlayColor={underlayColor}
-                onLineSelect={inHandMode ? undefined : handleLineSelect}
-                {...(selection.uiMode.kind === 'creating-line-tag'
-                  ? makeBandHandlers(r.band)
-                  : inLayeringMode
-                    ? makeLayerHandlers(r.band)
-                    : {})}
-              />
+                onLineSelect={inHandMode || inLayeringMode ? undefined : handleLineSelect}
+                {...(selection.uiMode.kind === 'creating-line-tag' ? makeBandHandlers(r.band) : {})}
+              />,
             );
           }
           const effectiveColor =
             colorMap && r.spec.lineId !== highlightLineId
               ? (colorMap[r.spec.lineId] ?? r.spec.color)
               : r.spec.color;
-          return (
+          return withExcludeClip(
+            'm:' + r.spec.stationId + ':' + lineId,
             <StopMarker
-              key={'m:' + r.spec.stationId + ':' + r.spec.lineId}
+              key={'m:' + r.spec.stationId + ':' + lineId}
               spec={r.spec}
               effectiveColor={effectiveColor}
               underlayColor={underlayColor}
               lines={lines}
-            />
+            />,
           );
         })}
 
@@ -1040,17 +1094,16 @@ export function MapCanvas() {
           ))}
         </g>
 
-        {/* Layering-mode dashed outlines: a soft 1.5px dashed footprint per
-            non-hovered band stripe, painted ABOVE the colored bands but
-            BELOW transfers + station dots so those keep their visual
-            primacy. The hovered solid outline + the layer-number labels
-            still paint at the very end so they stay on top. */}
-        {inLayeringMode && (
+        {/* Layering-mode region outlines: a dashed footprint per clickable
+            overlap face, mounted BELOW transfers + station dots so those keep
+            their visual primacy. The hover halo + click targets paint at the
+            very end so they stay on top. */}
+        {inLayeringMode && regionGeom && (
           <g data-export-exclude="1">
-            <LayeringDashedOutlines
-              bands={bandsGeometry}
-              lines={lines}
-              hovered={hoveredLayerStripe}
+            <RegionModeOverlay
+              faces={regionGeom.faces}
+              hoveredKey={hoveredRegionKey}
+              layer="outlines"
             />
           </g>
         )}
@@ -1576,14 +1629,15 @@ export function MapCanvas() {
             regardless of how busy the canvas is underneath. The dashed
             footprint is rendered earlier (above) so dots and transfers
             paint over it. */}
-        {inLayeringMode && (
+        {inLayeringMode && regionGeom && (
           <g data-export-exclude="1">
-            <LayeringHoverOutline
-              bands={bandsGeometry}
-              lines={lines}
-              hovered={hoveredLayerStripe}
+            <RegionModeOverlay
+              faces={regionGeom.faces}
+              hoveredKey={hoveredRegionKey}
+              layer="hit"
+              onHover={setHoveredRegionKey}
+              onFaceClick={handleRegionClick}
             />
-            <LayerNumberLabels bands={bandsGeometry} lines={lines} hovered={hoveredLayerStripe} />
           </g>
         )}
 

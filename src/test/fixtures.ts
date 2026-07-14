@@ -267,6 +267,7 @@ export function makeDoc(parts: {
   textLabels?: TextLabel[];
   polygons?: Polygon[];
   polygonOrder?: string[];
+  regionAssignments?: import('../model/types').RegionAssignment[];
   svgImages?: SvgImage[];
   svgImageOrder?: string[];
   styles?: StyleDef[];
@@ -287,6 +288,8 @@ export function makeDoc(parts: {
   for (const g of parts.textLabels ?? []) textLabels[g.id] = g;
   const polygons: Record<string, Polygon> = {};
   for (const pg of parts.polygons ?? []) polygons[pg.id] = pg;
+  const regionAssignments: Record<string, import('../model/types').RegionAssignment> = {};
+  for (const ra of parts.regionAssignments ?? []) regionAssignments[ra.id] = ra;
   const svgImages: Record<string, SvgImage> = {};
   for (const im of parts.svgImages ?? []) svgImages[im.id] = im;
   const styles: Record<string, StyleDef> = {};
@@ -318,6 +321,7 @@ export function makeDoc(parts: {
     textLabels,
     polygons,
     polygonOrder: parts.polygonOrder ?? Object.keys(polygons),
+    regionAssignments,
     svgImages,
     svgImageOrder: parts.svgImageOrder ?? Object.keys(svgImages),
     styles,

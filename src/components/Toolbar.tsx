@@ -297,7 +297,7 @@ export function Toolbar() {
           title={
             selection.uiMode.kind === 'layering'
               ? 'Exit layering mode (Esc)'
-              : 'Layering mode: click segments to cycle layer (shift to decrement)'
+              : 'Layering mode: click overlaps to cycle which line shows on top'
           }
           aria-label="Toggle layering mode"
           aria-pressed={selection.uiMode.kind === 'layering'}
