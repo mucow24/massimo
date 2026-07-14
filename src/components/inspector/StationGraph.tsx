@@ -1,7 +1,7 @@
 import { Fragment, useRef, useState, type CSSProperties } from 'react';
 import type { DotShape, DotStyle, Line, Station, StationId } from '../../model/types';
 import { lineGraphLayout } from './lineGraphLayout';
-import { edgeEndpoints } from '../../model/lineTopology';
+import { edgeEndpoints, degreeOf } from '../../model/lineTopology';
 import { openPolylinePath, type Pt } from '../../geometry/polygonUnion';
 import { resolveSegmentStyle } from '../../geometry/interlining';
 import { resolveDotStyle } from '../../model/transforms';
@@ -297,6 +297,12 @@ export function StationGraph(props: StationGraphProps) {
             return <div key={`blank-${row}`} style={{ height: ROW_H }} />;
           const st = stations[n.stationId]!;
           const armed = isAppending && cursorStationId === n.stationId;
+          // Branch only forks a NEW arm on a stop that already has ≥2 edges. On a
+          // terminal (degree ≤ 1) "branch" would just extend the line, identical
+          // to Insert after — so we hide the button there. It's kept in the DOM
+          // (visibility, not unmounted) so its slot stays reserved and the
+          // Insert/Remove columns don't go ragged from row to row.
+          const canBranch = degreeOf(line, n.stationId) >= 2;
           return (
             <div
               key={n.stationId}
@@ -336,14 +342,17 @@ export function StationGraph(props: StationGraphProps) {
                   <button
                     type="button"
                     className="btn-mini icon"
-                    onClick={() => onBranchFrom(n.stationId)}
+                    onClick={canBranch ? () => onBranchFrom(n.stationId) : undefined}
                     title={
                       armed && appendDraw
                         ? 'Click to stop branching from this stop'
                         : 'Start a new branch from this stop'
                     }
                     aria-label={`Branch from ${st.name}`}
+                    aria-hidden={!canBranch}
+                    tabIndex={canBranch ? undefined : -1}
                     style={{
+                      visibility: canBranch ? undefined : 'hidden',
                       background: armed && appendDraw ? color : undefined,
                       color: armed && appendDraw ? '#fff' : undefined,
                     }}
