@@ -173,6 +173,11 @@ export function reconcileRegionAssignments(
   const oldLive = new Set<LineId>(Object.keys(oldGeom.lines));
   const newLive = new Set<LineId>(Object.keys(newGeom.lines));
 
+  // The numbered steps are conceptual phases, not code order: they execute
+  // 0, 1, 3, 4, 2 down the function. Split inheritance (2) runs LAST because it
+  // duplicates onto faces left unclaimed after the remint (4) has settled every
+  // bound assignment.
+  //
   // Step 0 — drop choices whose chosen line died (mirrors the transform
   // cascade), shrink covers of dead members, translate dangling anchors.
   const translated: Record<string, RegionAssignment> = {};

@@ -602,8 +602,8 @@ export default function App() {
     const onContextMenu = (e: globalThis.MouseEvent) => {
       const sel = useSelection.getState();
       // Modes in RIGHT_CLICK_PASSTHROUGH_MODES own the right-click gesture
-      // (layering uses it to decrement a segment's layer); everything else
-      // exits on right-click. The set lives next to UiMode in the store so
+      // (layering uses it to cycle a region's covering line backward); everything
+      // else exits on right-click. The set lives next to UiMode in the store so
       // a new variant declares its right-click policy in one place.
       if (RIGHT_CLICK_PASSTHROUGH_MODES.has(sel.uiMode.kind)) return;
       e.preventDefault();

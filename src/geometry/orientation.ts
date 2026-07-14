@@ -34,6 +34,14 @@ export const stopCenterAt = (row: number, col: number): Vec2 => ({
 // divides by STOP_SIZE to convert into lattice units).
 export const tangentGap = (wA: number, wB: number): number => (wA + wB) / 2;
 
+// Perp/parallel proximity tolerance (world units) for deciding two adjacent
+// stripes are packed tightly enough to share one band. Slightly loose to
+// absorb floating-point error in the tangency math: too tight splits valid
+// interlines into separate bands, too loose merges lines that shouldn't share
+// a corridor. Shared by the band merge gate (interlining) and the width-edit
+// repack recognizer (stationPacking) so the two can never drift apart.
+export const BAND_MERGE_TOL = 0.5;
+
 /**
  * Perpendicular offsets for n mutually-tangent stripes of the given widths,
  * in world units, relative to the band centerline. Tangency positions:
