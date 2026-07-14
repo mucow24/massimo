@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { lineGraphLayout } from './lineGraphLayout';
+import { lineGraphLayout, branchableStops } from './lineGraphLayout';
 import { edgeEndpoints } from '../../model/lineTopology';
 import { makeLine } from '../../test/fixtures';
 import type { Line } from '../../model/types';
@@ -615,4 +615,44 @@ describe('lineGraphLayout invariants across an edge-case zoo', () => {
       checkInvariants(line, lineGraphLayout(line));
     });
   }
+});
+
+describe('branchableStops (which inspector rows offer a Branch button)', () => {
+  const setFor = (line: Line) => branchableStops(line, lineGraphLayout(line));
+
+  it('offers Branch on the head and interior of a linear line, but not the tail', () => {
+    const s = setFor(makeLine({ id: 'L1', stations: ['s1', 's2', 's3'] }));
+    expect(s.has('s1')).toBe(true); // head: s2 is rendered below it (Insert splices in, Branch extends out)
+    expect(s.has('s2')).toBe(true); // interior
+    expect(s.has('s3')).toBe(false); // tail dead-end: Branch would just extend, same as Insert after
+  });
+
+  it('offers Branch on every stop of a ring, including the one drawn last', () => {
+    // All three are degree-2; none is a dead-end. `r` is LAST in line.stations,
+    // which must not hide it — visibility follows the rendered graph, not the
+    // array order.
+    const s = setFor(
+      makeLine({ id: 'L1', stations: ['p', 'q', 'r'], edges: ['p|q', 'q|r', 'p|r'] }),
+    );
+    expect(s.has('p')).toBe(true);
+    expect(s.has('q')).toBe(true);
+    expect(s.has('r')).toBe(true);
+  });
+
+  it('offers Branch on a degree-1 HEAD and loop stops, but hides the bottom tail', () => {
+    // Tail a-b, loop b-c-d, tail d-e. The longest chain a-b-c-d-e is the trunk,
+    // so `a` renders at the top (head) and `e` at the bottom (tail).
+    const s = setFor(
+      makeLine({
+        id: 'L1',
+        stations: ['a', 'b', 'c', 'd', 'e'],
+        edges: ['a|b', 'b|c', 'c|d', 'd|b', 'd|e'],
+      }),
+    );
+    expect(s.has('a')).toBe(true); // degree-1 head — the case the degree-only rule wrongly hid
+    expect(s.has('c')).toBe(true); // degree-2 loop stop
+    expect(s.has('b')).toBe(true);
+    expect(s.has('d')).toBe(true);
+    expect(s.has('e')).toBe(false); // degree-1 bottom dead-end
+  });
 });

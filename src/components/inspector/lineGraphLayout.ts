@@ -1,6 +1,6 @@
 import type { Line, StationId } from '../../model/types';
 import { pairKeyOf } from '../../model/pairKey';
-import { edgeEndpoints } from '../../model/lineTopology';
+import { degreeOf, edgeEndpoints } from '../../model/lineTopology';
 
 // Column-based ("git graph") layout for a line's topology in the inspector.
 // Each member station gets a ROW (vertical order) and a LANE (column), laid out
@@ -419,4 +419,29 @@ export function lineGraphLayout(line: Line): LineGraphLayout {
 
   const laneCount = Math.max(0, ...nodes.map((n) => n.lane), ...claims.map((c) => c.lane)) + 1;
   return { nodes, edges, laneCount, rowCount };
+}
+
+// The stops whose inspector row should offer a "Branch" button. Branch only does
+// something DISTINCT from "Insert after" where the line continues past the stop:
+// there Insert splices in-line while Branch forks/extends a new arm. At a bottom
+// dead-end terminus the two coincide (both just extend), so Branch is hidden.
+//
+// Decided from the RENDERED layout, not `line.stations` order, so it matches what
+// the user sees. A stop is branchable when EITHER it has a neighbour rendered
+// BELOW it (something to fork past — this catches a degree-1 HEAD like the top of
+// the trunk) OR it is a junction / pass-through (degree >= 2, e.g. a loop stop).
+// Only a degree-<=1 leaf with nothing rendered below it (a true tail) is hidden.
+export function branchableStops(line: Line, layout: LineGraphLayout): Set<StationId> {
+  const rowOf = new Map(layout.nodes.map((n) => [n.stationId, n.row]));
+  const out = new Set<StationId>();
+  for (const n of layout.nodes) {
+    if (degreeOf(line, n.stationId) >= 2) out.add(n.stationId);
+  }
+  for (const e of layout.edges) {
+    const [a, b] = edgeEndpoints(e.pairKey);
+    const ra = rowOf.get(a) ?? 0;
+    const rb = rowOf.get(b) ?? 0;
+    out.add(ra < rb ? a : b); // the upper endpoint has a neighbour rendered below it
+  }
+  return out;
 }
