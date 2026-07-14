@@ -35,6 +35,31 @@ import { dispatchMirrored, fanOutMirrored } from './state/mirrorDispatch';
 import { useViewportStore } from './state/viewportStore';
 import { isHistoryGrouping, redo, undo } from './state/history';
 
+/**
+ * The document-level capture handler behind "right-click cancels an active
+ * mode". Capture phase + stopPropagation so it beats element-level context
+ * menus (station rotate, tag flip): they shouldn't fire when the user is
+ * backing out of a mode. Exported for the unit test; registered by App's
+ * effect below.
+ */
+export function cancelModeOnContextMenu(e: globalThis.MouseEvent): void {
+  const sel = useSelection.getState();
+  // Modes in RIGHT_CLICK_PASSTHROUGH_MODES own the right-click gesture
+  // (layering uses it to cycle a region's covering line backward); everything
+  // else exits on right-click. The set lives next to UiMode in the store so
+  // a new variant declares its right-click policy in one place.
+  if (RIGHT_CLICK_PASSTHROUGH_MODES.has(sel.uiMode.kind)) return;
+  // The sidebar owns its own right-click gestures — removing a tree edge in
+  // the line editor works mid-Edit-Stops precisely because of this carve-out.
+  // Cancel-a-mode is a canvas gesture; a right-click on chrome shouldn't
+  // silently kick the user out of the mode they're working in.
+  if (e.target instanceof Element && e.target.closest('.sidebar')) return;
+  e.preventDefault();
+  e.stopPropagation();
+  cancelAppendMode();
+  sel.setUiMode({ kind: 'idle' });
+}
+
 // Selected items minus locked ones — locked items resist both Delete and
 // arrow-nudge, so both keyboard paths filter the same way.
 function unlockedSelectedPolygonIds(): string[] {
@@ -595,24 +620,10 @@ export default function App() {
     setSpaceHeld,
   ]);
 
-  // Right-click anywhere cancels an active mode. Capture phase + stopPropagation
-  // so we beat element-level context menus (station rotate, tag flip): they
-  // shouldn't fire when the user is trying to back out of a mode.
+  // Right-click cancels an active mode (see cancelModeOnContextMenu above).
   useEffect(() => {
-    const onContextMenu = (e: globalThis.MouseEvent) => {
-      const sel = useSelection.getState();
-      // Modes in RIGHT_CLICK_PASSTHROUGH_MODES own the right-click gesture
-      // (layering uses it to cycle a region's covering line backward); everything
-      // else exits on right-click. The set lives next to UiMode in the store so
-      // a new variant declares its right-click policy in one place.
-      if (RIGHT_CLICK_PASSTHROUGH_MODES.has(sel.uiMode.kind)) return;
-      e.preventDefault();
-      e.stopPropagation();
-      cancelAppendMode();
-      sel.setUiMode({ kind: 'idle' });
-    };
-    document.addEventListener('contextmenu', onContextMenu, true);
-    return () => document.removeEventListener('contextmenu', onContextMenu, true);
+    document.addEventListener('contextmenu', cancelModeOnContextMenu, true);
+    return () => document.removeEventListener('contextmenu', cancelModeOnContextMenu, true);
   }, []);
 
   return (
