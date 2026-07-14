@@ -512,6 +512,12 @@ export type SvgImageStylePatch = Partial<
   Pick<SvgImage, 'x' | 'y' | 'width' | 'height' | 'rotation' | 'locked'>
 >;
 
+// How the branch seam's "inner edges" are drawn (see MapDoc.seamEdges). A seam
+// edge path is a mix of straight (`line`) and curved (fillet `arc`) pieces; this
+// picks which to keep — 'both' is the full notch, 'straight'/'curved' hint the
+// branch with just one edge.
+export type SeamEdges = 'both' | 'straight' | 'curved';
+
 export interface MapDoc {
   // User-facing document name. Shown in the toolbar, the window title, and the
   // export/save filename. Never empty at runtime: absent in a loaded file (or
@@ -588,6 +594,13 @@ export interface MapDoc {
   // Which color palettes are available in the line editor. Invariant:
   // never empty (enforced by transforms / parse sanitiser).
   activePalettes: PaletteId[];
+  // How to render every line's branch/loop "inner edges" — the seam painted
+  // where a line's own bands overlap at a junction. 'both' draws the full notch
+  // (every seam edge), 'straight' keeps only the straight pieces, 'curved' only
+  // the fillet arcs, so a branch can be hinted with a single edge instead of the
+  // whole overlap. Global for now (all lines share it). Absent in older saves
+  // ⇒ 'both' via the DEFAULT_DOC merge — no migration needed.
+  seamEdges: SeamEdges;
   // NOTE: there are no doc-level transfer settings anymore. Transfers fall
   // back to the constant TRANSFER_STYLE_DEFAULTS (transferStyle.ts); map-wide
   // restyling goes through the "Default" transfer style preset. Saves that

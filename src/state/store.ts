@@ -16,6 +16,7 @@ import type {
   PolygonStylePatch,
   RegionAssignment,
   RouteBullet,
+  SeamEdges,
   StationId,
   StyleDef,
   StyleKind,
@@ -112,6 +113,9 @@ const DOC_FIELDS = [
   'styles',
   'styleDefaults',
   'activePalettes',
+  // Global branch-seam inner-edge mode. Absent in older saves, backfilled to
+  // 'both' by the shallow merge on both load paths.
+  'seamEdges',
 ] as const;
 type DocFieldName = (typeof DOC_FIELDS)[number];
 export type DocSnapshot = Pick<MapDoc, DocFieldName>;
@@ -567,6 +571,9 @@ interface DocState extends MapDoc {
   updateStationLabelStyle: (stationId: StationId, patch: T.StationLabelPatch) => void;
   setActivePalettes: (ids: PaletteId[]) => void;
   togglePalette: (id: PaletteId) => void;
+  /** Global branch-seam inner-edge mode: draw both edges, only the straight
+   *  pieces, or only the curved (fillet) pieces of every line's seam. */
+  setSeamEdges: (seamEdges: SeamEdges) => void;
   /** Delete a custom palette definition (from the custom-palette store) and
    *  prune it from this doc's active set, falling back to the default set if it
    *  was the only active palette. */
@@ -927,6 +934,7 @@ export const useDoc = create<DocState>()(
           set((s) => T.setActivePalettes(s, idsArr, useCustomPalettes.getState().palettes)),
         togglePalette: (id) =>
           set((s) => T.togglePalette(s, id, useCustomPalettes.getState().palettes)),
+        setSeamEdges: (seamEdges) => set((s) => T.setSeamEdges(s, seamEdges)),
         deleteCustomPalette: (id) => {
           useCustomPalettes.getState().removePalette(id);
           set((s) => {

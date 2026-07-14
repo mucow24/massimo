@@ -3,7 +3,7 @@ import { render } from '@testing-library/react';
 import { BandWarning, SegmentBand } from './SegmentBand';
 import { hatchPatternId } from './HatchPatterns';
 import type { SegmentBandSpec } from '../geometry/interlining';
-import type { Line, LineId } from '../model/types';
+import type { Line, LineId, SeamEdges } from '../model/types';
 import { makeBandSpec, makeLine } from '../test/fixtures';
 
 type StripeStyle = 'solid' | 'dashed' | 'hatched' | 'dotted' | 'dashed-open';
@@ -380,6 +380,68 @@ describe('<SegmentBand> — branch seam (pass="seam")', () => {
   it('renders nothing when there is neither a casing nor an explicit seam width', () => {
     const { container } = renderSeam(seamLines('#ff000080', { strokeWidth: 0 }));
     expect(container.querySelector('[data-band-seam]')).toBeNull();
+  });
+
+  describe('seamEdges filter (branch inner edges)', () => {
+    // A bent centerline so each seam edge carries BOTH a straight (L) run and a
+    // fillet arc (A) — the two kinds the global setting picks between.
+    const bentSeam = (seamEdges?: SeamEdges) => {
+      const spec = baseSpec(['L1']);
+      spec.centerline = [
+        { x: 0, y: 0 },
+        { x: 100, y: 0 },
+        { x: 100, y: 100 },
+      ];
+      spec.radius = 24;
+      return render(
+        <svg>
+          <SegmentBand
+            spec={spec}
+            stripeIndex={0}
+            pass="seam"
+            lines={seamLines('#ff000080')}
+            seamEdges={seamEdges}
+          />
+        </svg>,
+      );
+    };
+    const seamPaths = (c: HTMLElement) =>
+      Array.from(c.querySelectorAll('[data-band-seam]'))
+        .map((p) => p.getAttribute('d') ?? '')
+        .join(' ');
+
+    it("default ('both') draws both the straight and the curved seam pieces", () => {
+      const d = seamPaths(bentSeam().container);
+      expect(d).toContain('L');
+      expect(d).toContain('A');
+    });
+
+    it("'straight' keeps only the straight seam pieces (no fillet arcs)", () => {
+      const d = seamPaths(bentSeam('straight').container);
+      expect(d).toContain('L');
+      expect(d).not.toContain('A');
+    });
+
+    it("'curved' keeps only the curved fillet pieces (no straight runs)", () => {
+      const d = seamPaths(bentSeam('curved').container);
+      expect(d).toContain('A');
+      expect(d).not.toContain('L');
+    });
+
+    it("'curved' on a fully straight band emits no seam paths (skips the empty edge)", () => {
+      const { container } = render(
+        <svg>
+          <SegmentBand
+            spec={baseSpec(['L1'])}
+            stripeIndex={0}
+            pass="seam"
+            lines={seamLines('#ff000080')}
+            seamEdges="curved"
+          />
+        </svg>,
+      );
+      expect(container.querySelectorAll('[data-band-seam]').length).toBe(0);
+    });
   });
 });
 

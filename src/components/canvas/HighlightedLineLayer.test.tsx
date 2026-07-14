@@ -48,6 +48,7 @@ describe('<HighlightedLineLayer /> — no per-stop chevrons or terminus arrowhea
           stations={stations}
           renderables={[]}
           underlayColor="#ffffff"
+          seamEdges="both"
           hoveredInspectorSegment={null}
           uiMode={{ kind: 'idle' }}
           zoom={1}
@@ -103,6 +104,7 @@ describe('<HighlightedLineLayer /> — append-mode insert arrow', () => {
           stations={{ s1: triStation('s1', 0, 0), s2: triStation('s2', 100, 0) }}
           renderables={[]}
           underlayColor="#ffffff"
+          seamEdges="both"
           hoveredInspectorSegment={null}
           uiMode={{ kind: 'appending-to-line', lineId: 'L1', insertAfterIndex }}
           zoom={1}

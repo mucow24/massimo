@@ -1811,6 +1811,23 @@ describe('activePalettes', () => {
   });
 });
 
+describe('setSeamEdges (branch inner-edge mode)', () => {
+  it("DEFAULT_DOC.seamEdges defaults to 'both'", () => {
+    expect(T.DEFAULT_DOC.seamEdges).toBe('both');
+  });
+
+  it('stores the chosen mode', () => {
+    const doc = makeDoc({});
+    expect(T.setSeamEdges(doc, 'curved').seamEdges).toBe('curved');
+    expect(T.setSeamEdges(doc, 'straight').seamEdges).toBe('straight');
+  });
+
+  it('returns the input doc unchanged when the mode is unchanged (no undo no-op)', () => {
+    const doc = T.setSeamEdges(makeDoc({}), 'curved');
+    expect(T.setSeamEdges(doc, 'curved')).toBe(doc);
+  });
+});
+
 describe('activePalettes — custom palettes', () => {
   const custom = [{ id: 'custom:frrf', name: 'frrf', swatches: [{ name: '1', color: '#c1272d' }] }];
 

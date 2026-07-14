@@ -52,6 +52,7 @@ import type {
   SvgImageStylePatch,
   Rotation,
   RouteBullet,
+  SeamEdges,
   Station,
   StationId,
   StationStyleProps,
@@ -1872,6 +1873,16 @@ export function togglePalette(doc: MapDoc, id: PaletteId, custom: readonly Palet
   return setActivePalettes(doc, next, custom);
 }
 
+/**
+ * Set the global branch-seam inner-edge mode (see MapDoc.seamEdges). Returns
+ * the input doc unchanged when the value is unchanged (so undo doesn't record a
+ * no-op).
+ */
+export function setSeamEdges(doc: MapDoc, seamEdges: SeamEdges): MapDoc {
+  if (doc.seamEdges === seamEdges) return doc;
+  return { ...doc, seamEdges };
+}
+
 export function clearAll(_doc: MapDoc): MapDoc {
   // DEFAULT_DOC already supplies empty lineTags (and every other collection);
   // no field needs special re-zeroing here.
@@ -2677,4 +2688,5 @@ export const DEFAULT_DOC: MapDoc = {
   styles: DEFAULT_STYLES,
   styleDefaults: FACTORY_STYLE_DEFAULTS,
   activePalettes: ['mta'],
+  seamEdges: 'both',
 };
