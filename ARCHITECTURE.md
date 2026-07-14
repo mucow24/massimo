@@ -703,7 +703,10 @@ all selections — with one exception: `startEditingStationLayout` **preserves**
 selection and mirror state (the mode edits the selected station in place). Adding a new mode is
 one variant + handlers; its right-click policy is declared in one place,
 `RIGHT_CLICK_PASSTHROUGH_MODES` (`{idle, layering, editing-station-layout}` — modes where
-right-click does **not** cancel). Every non-idle mode announces itself on the canvas via
+right-click does **not** cancel). The cancel gesture is also scoped to the canvas: a right-click
+landing inside `.sidebar` is exempt (`cancelModeOnContextMenu` in App.tsx), so sidebar controls
+keep their own right-click semantics mid-mode — removing a tree edge in the line editor works
+during Edit Stops. Every non-idle mode announces itself on the canvas via
 [canvas/EditingBanner.tsx](src/components/canvas/EditingBanner.tsx) (banner + 4-side mode frame:
 accent for placement modes, the line's color for appending, orange for layering; an exhaustive
 `switch` over the union with a compile-time `never` guard, so a new mode that forgets its banner
