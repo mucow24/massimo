@@ -34,6 +34,7 @@ import {
 import { dispatchMirrored, fanOutMirrored } from './state/mirrorDispatch';
 import { useViewportStore } from './state/viewportStore';
 import { isHistoryGrouping, redo, undo } from './state/history';
+import { decideDeleteKey } from './components/canvas/appendGestures';
 
 /**
  * The document-level capture handler behind "right-click cancels an active
@@ -49,10 +50,9 @@ export function cancelModeOnContextMenu(e: globalThis.MouseEvent): void {
   // else exits on right-click. The set lives next to UiMode in the store so
   // a new variant declares its right-click policy in one place.
   if (RIGHT_CLICK_PASSTHROUGH_MODES.has(sel.uiMode.kind)) return;
-  // The sidebar owns its own right-click gestures — removing a tree edge in
-  // the line editor works mid-Edit-Stops precisely because of this carve-out.
-  // Cancel-a-mode is a canvas gesture; a right-click on chrome shouldn't
-  // silently kick the user out of the mode they're working in.
+  // The sidebar owns its own right-click gestures. Cancel-a-mode is a canvas
+  // gesture; a right-click on chrome shouldn't silently kick the user out of
+  // the mode they're working in.
   if (e.target instanceof Element && e.target.closest('.sidebar')) return;
   e.preventDefault();
   e.stopPropagation();
@@ -213,6 +213,12 @@ export default function App() {
             setUiMode({ kind: 'idle' });
             return;
           }
+          // Edit Stops step-out ladder: a pending connect/splice cursor drops
+          // first; only a second Esc exits the editor.
+          if (sel.uiMode.kind === 'appending-to-line' && sel.uiMode.cursor) {
+            sel.setAppendCursor(null);
+            return;
+          }
         }
         // cancelAppendMode runs first so a freshly-created empty line gets
         // garbage-collected before setUiMode flips the variant.
@@ -229,6 +235,24 @@ export default function App() {
       }
       if ((e.key === 'Delete' || e.key === 'Backspace') && !inFormControl) {
         const sel = useSelection.getState();
+        // Edit Stops: Delete removes whatever the cursor has armed — the
+        // cursor station leaves the line, the armed edge is cut. (Selections
+        // are wiped in this mode, so nothing below would fire anyway.)
+        if (sel.uiMode.kind === 'appending-to-line') {
+          const { lineId } = sel.uiMode;
+          const line = useDoc.getState().lines[lineId];
+          const d = line ? decideDeleteKey(line, sel.uiMode.cursor) : { kind: 'none' as const };
+          if (d.kind === 'remove-station') {
+            e.preventDefault();
+            sel.setAppendCursor(null);
+            useDoc.getState().removeStationFromLine(lineId, line!.stations.indexOf(d.stationId));
+          } else if (d.kind === 'remove-edge') {
+            e.preventDefault();
+            sel.setAppendCursor(null);
+            useDoc.getState().toggleEdgeOnLine(lineId, d.from, d.to);
+          }
+          return;
+        }
         // Selected polygon vertices take top priority: remove them (the
         // transform no-ops if the removal would breach the 3-vertex floor) and
         // keep the polygon selected so the user can keep editing.

@@ -307,7 +307,7 @@ describe('spawnStopCell places new stops at the tangent gap', () => {
       ],
       lines: [makeLine({ id: 'L1', stations: ['s1'], width: 8 }), makeLine({ id: 'L2', width: 8 })],
     });
-    const next = T.toggleStationOnLine(doc, 'L2', 's1');
+    const next = T.addStationToLine(doc, 'L2', 's1');
     const cell = stopOf(next, 's1', 'L2');
     expect(cell.row).toBe(0);
     expect(cell.col).toBeCloseTo(8 / 14, 12);
@@ -323,7 +323,7 @@ describe('spawnStopCell places new stops at the tangent gap', () => {
       ],
       lines: [makeLine({ id: 'L1', stations: ['s1'] }), makeLine({ id: 'L2' })],
     });
-    const next = T.toggleStationOnLine(doc, 'L2', 's1');
+    const next = T.addStationToLine(doc, 'L2', 's1');
     expect(stopOf(next, 's1', 'L2').col).toBe(1);
   });
 
@@ -342,7 +342,7 @@ describe('spawnStopCell places new stops at the tangent gap', () => {
         makeLine({ id: 'L3', width: 8 }),
       ],
     });
-    const next = T.toggleStationOnLine(doc, 'L3', 's1');
+    const next = T.addStationToLine(doc, 'L3', 's1');
     expect(stopOf(next, 's1', 'L3').row).toBe(0);
     expect(stopOf(next, 's1', 'L3').col).toBeCloseTo(16 / 14, 12);
     // The auto label stepped one whole cell east of the new stop.

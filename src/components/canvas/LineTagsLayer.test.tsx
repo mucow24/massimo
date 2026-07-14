@@ -105,10 +105,11 @@ describe('<LineTagsLayer> — selection chrome', () => {
   });
 });
 
-// While the line editor is open (a line is selected), clicking a tag is "click
-// off the line to exit": deselect the line, don't select the tag. Mirrors the
-// label/polygon/transfer cases in MapCanvas.itemClick.test.tsx — this one lives
-// here because the guard is wired inside LineTagsLayer itself.
+// While the line editor is open (Edit Stops), clicking a tag exits the editor
+// (back to the main view — there is no selected-not-editing state) AND selects
+// the tag. Mirrors the label/polygon/transfer cases in
+// MapCanvas.itemClick.test.tsx — this one lives here because the guard is
+// wired inside LineTagsLayer itself.
 describe('<LineTagsLayer> — clicking a tag while the line editor is open', () => {
   beforeEach(() => {
     useDoc.setState({
@@ -119,14 +120,14 @@ describe('<LineTagsLayer> — clicking a tag while the line editor is open', () 
       lineTags: { T: tagOnL2() },
     });
     useDoc.temporal.getState().clear();
-    useSelection.getState().selectLine('L2');
+    useSelection.getState().startAppend('L2');
   });
   afterEach(() => {
-    useSelection.getState().selectLine(null);
+    useSelection.getState().setAppending(null);
     useSelection.getState().selectLineTag(null);
   });
 
-  it('deselects the line without selecting the tag', () => {
+  it('exits the editor and selects the tag', () => {
     const { ref } = fakeSvgRef();
     const { container } = render(
       <svg>
@@ -134,8 +135,9 @@ describe('<LineTagsLayer> — clicking a tag while the line editor is open', () 
       </svg>,
     );
     fireEvent.click(container.querySelector('rect[fill="transparent"]')!);
+    expect(useSelection.getState().uiMode.kind).toBe('idle');
     expect(useSelection.getState().selectedLineId).toBeNull();
-    expect(useSelection.getState().selectedLineTagId).toBeNull();
+    expect(useSelection.getState().selectedLineTagId).toBe('T');
   });
 });
 

@@ -1,5 +1,5 @@
 import { test, expect, type Page } from '@playwright/test';
-import { seedAndOpen, type Seed } from './fixtures';
+import { clickAtWithModifiers, seedAndOpen, type Seed } from './fixtures';
 
 // Two stops on one horizontal line → exactly one band with one stripe and one
 // segment connector in the inspector graph, so the assertions don't disambiguate.
@@ -51,19 +51,20 @@ test.describe('line presentation repaints live (no reload)', () => {
     await seedAndOpen(page, twoStop);
     await selectLine(page);
 
-    // Segment style is cycled by clicking the segment's connector in the
-    // inspector's line graph (a transparent-stroke hit-target, so `force` skips
-    // the visibility heuristic — same as the stripe click above).
-    const connector = page.locator('.inspector [data-segment-connector]').first();
+    // Segment style is cycled by SHIFT-clicking the segment on the canvas
+    // while its line is selected (the inspector tree is gone).
+    const box = await stripe(page).boundingBox();
+    if (!box) throw new Error('stripe not visible');
+    const mid = { x: box.x + box.width / 2, y: box.y + box.height / 2 };
 
     // solid → dashed (adds a segmentStyles key; worked even pre-fix).
-    await connector.click({ force: true });
+    await clickAtWithModifiers(page, mid, ['Shift']);
     await expect(stripe(page)).toHaveAttribute('stroke-dasharray', /\d/);
 
     // dashed → hatched: a value-only change at an existing key. This is the
     // case the stale-geometry memo missed — the stripe must switch to the
     // hatch pattern url without a reload.
-    await connector.click({ force: true });
+    await clickAtWithModifiers(page, mid, ['Shift']);
     await expect(stripe(page)).toHaveAttribute('stroke', /^url\(#hatch/);
   });
 });

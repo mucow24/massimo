@@ -15,9 +15,10 @@ let rotateStation: ReturnType<typeof vi.fn>;
 let rotateItemsAround: ReturnType<typeof vi.fn>;
 let redistributeBetween: ReturnType<typeof vi.fn>;
 let addTransfer: ReturnType<typeof vi.fn>;
-let toggleStationOnLine: ReturnType<typeof vi.fn>;
 let addStationToLine: ReturnType<typeof vi.fn>;
-let toggleEdgeOnLine: ReturnType<typeof vi.fn>;
+let connectStationsOnLine: ReturnType<typeof vi.fn>;
+let spliceStationIntoEdge: ReturnType<typeof vi.fn>;
+let removeStationFromLine: ReturnType<typeof vi.fn>;
 
 beforeEach(() => {
   useDoc.setState({ ...useDoc.getState(), ...DEFAULT_DOC });
@@ -25,17 +26,19 @@ beforeEach(() => {
   rotateItemsAround = vi.fn();
   redistributeBetween = vi.fn();
   addTransfer = vi.fn();
-  toggleStationOnLine = vi.fn();
   addStationToLine = vi.fn();
-  toggleEdgeOnLine = vi.fn();
+  connectStationsOnLine = vi.fn();
+  spliceStationIntoEdge = vi.fn();
+  removeStationFromLine = vi.fn();
   useDoc.setState({
     rotateStation,
     rotateItemsAround,
     redistributeBetween,
     addTransfer,
-    toggleStationOnLine,
     addStationToLine,
-    toggleEdgeOnLine,
+    connectStationsOnLine,
+    spliceStationIntoEdge,
+    removeStationFromLine,
   } as unknown as Partial<ReturnType<typeof useDoc.getState>>);
   useSelection.setState({
     ...useSelection.getState(),
@@ -311,67 +314,87 @@ describe('useStationInteraction — transfer creation', () => {
   });
 });
 
-describe('useStationInteraction — append-to-line', () => {
-  it('toggles the clicked station onto the line being appended', () => {
-    useSelection.getState().startAppendAt('L1' as LineId, -1);
+describe('useStationInteraction — append-to-line (Edit Stops)', () => {
+  const appendCursor = () => {
+    const m = useSelection.getState().uiMode;
+    return m.kind === 'appending-to-line' ? m.cursor : undefined;
+  };
+
+  it('the first click on an empty line seeds it and takes the cursor', () => {
+    useSelection.getState().startAppend('L1' as LineId);
     const lines = { L1: makeLine({ id: 'L1' as LineId, stations: [] as StationId[] }) };
     const { result } = setup(stationS(), lines);
     click(result.current.handlers, pointerEvent({}) as unknown as React.MouseEvent);
-    expect(toggleStationOnLine).toHaveBeenCalledWith('L1', 'S', -1);
+    expect(addStationToLine).toHaveBeenCalledWith('L1', 'S');
+    expect(appendCursor()).toEqual({ kind: 'station', stationId: 'S' });
   });
 
-  it('a plain click on a stop already on the line CONNECTS it (loop), never removes it', () => {
-    // Line S-T-U with the cursor on U (index 2). Plain-clicking the member S
-    // wires U→S (closes a loop); it must not remove S.
-    useSelection.getState().startAppendAt('L1' as LineId, 2);
+  it('with no cursor, clicking a member arms the cursor without touching the doc', () => {
+    useSelection.getState().startAppend('L1' as LineId);
     const lines = {
       L1: makeLine({ id: 'L1' as LineId, stations: ['S', 'T', 'U'] as StationId[] }),
     };
     const { result } = setup(stationS(), lines);
     click(result.current.handlers, pointerEvent({}) as unknown as React.MouseEvent);
-    expect(toggleEdgeOnLine).toHaveBeenCalledWith('L1', 'U', 'S');
-    expect(toggleStationOnLine).not.toHaveBeenCalled(); // no removal
+    expect(addStationToLine).not.toHaveBeenCalled();
+    expect(connectStationsOnLine).not.toHaveBeenCalled();
+    expect(appendCursor()).toEqual({ kind: 'station', stationId: 'S' });
   });
 
-  it('alt+click draws an edge from the pen station to an existing member (loop/branch)', () => {
-    // Line S-T-U, pen sitting on U (cursor index 2). Alt-clicking S connects U→S.
-    useSelection.getState().startAppendAt('L1' as LineId, 2);
-    const lines = {
-      L1: makeLine({ id: 'L1' as LineId, stations: ['S', 'T', 'U'] as StationId[] }),
-    };
-    const { result } = setup(stationS(), lines);
-    click(result.current.handlers, pointerEvent({ altKey: true }) as unknown as React.MouseEvent);
-    expect(toggleEdgeOnLine).toHaveBeenCalledWith('L1', 'U', 'S');
-    // Plain linear append must NOT fire on an alt+click.
-    expect(toggleStationOnLine).not.toHaveBeenCalled();
-  });
-
-  it('draw mode wires an edge from the pen on a PLAIN click (no Alt needed)', () => {
-    // Branch button arms draw mode with the pen at index 2 (stop U).
-    useSelection.getState().startAppendAt('L1' as LineId, 2);
-    useSelection.getState().setInsertAfterIndex(2, true);
+  it('a station cursor connects to the clicked station and advances', () => {
+    useSelection.getState().startAppend('L1' as LineId);
+    useSelection.getState().setAppendCursor({ kind: 'station', stationId: 'U' as StationId });
     const lines = {
       L1: makeLine({ id: 'L1' as LineId, stations: ['S', 'T', 'U'] as StationId[] }),
     };
     const { result } = setup(stationS(), lines);
     click(result.current.handlers, pointerEvent({}) as unknown as React.MouseEvent);
-    expect(toggleEdgeOnLine).toHaveBeenCalledWith('L1', 'U', 'S');
-    expect(toggleStationOnLine).not.toHaveBeenCalled();
+    expect(connectStationsOnLine).toHaveBeenCalledWith('L1', 'U', 'S');
+    expect(appendCursor()).toEqual({ kind: 'station', stationId: 'S' });
   });
 
-  it('alt+click on a non-member no longer branches — it linear-inserts like a plain click', () => {
-    // Pen on T (index 0). The Alt-click branch shortcut was removed, so
-    // alt-clicking the fresh station S just splices it into the chain at the
-    // cursor — no new station+edge, no branch.
-    useSelection.getState().startAppendAt('L1' as LineId, 0);
+  it('clicking the cursor station drops the cursor (and nothing else happens)', () => {
+    useSelection.getState().startAppend('L1' as LineId);
+    useSelection.getState().setAppendCursor({ kind: 'station', stationId: 'S' as StationId });
+    const lines = {
+      L1: makeLine({ id: 'L1' as LineId, stations: ['S', 'T'] as StationId[] }),
+    };
+    const { result } = setup(stationS(), lines);
+    click(result.current.handlers, pointerEvent({}) as unknown as React.MouseEvent);
+    expect(connectStationsOnLine).not.toHaveBeenCalled();
+    expect(appendCursor()).toBeNull();
+  });
+
+  it('an edge cursor splices the clicked station in and keeps marching', () => {
+    useSelection.getState().startAppend('L1' as LineId);
+    useSelection
+      .getState()
+      .setAppendCursor({ kind: 'edge', from: 'T' as StationId, to: 'U' as StationId });
     const lines = {
       L1: makeLine({ id: 'L1' as LineId, stations: ['T', 'U'] as StationId[] }),
     };
     const { result } = setup(stationS(), lines);
-    click(result.current.handlers, pointerEvent({ altKey: true }) as unknown as React.MouseEvent);
-    expect(toggleStationOnLine).toHaveBeenCalledWith('L1', 'S', 0);
-    expect(addStationToLine).not.toHaveBeenCalled();
-    expect(toggleEdgeOnLine).not.toHaveBeenCalled();
+    click(result.current.handlers, pointerEvent({}) as unknown as React.MouseEvent);
+    expect(spliceStationIntoEdge).toHaveBeenCalledWith('L1', 'T', 'U', 'S');
+    expect(appendCursor()).toEqual({ kind: 'edge', from: 'S', to: 'U' });
+  });
+
+  it('right-click during Edit Stops ROTATES (removal is the × chip / Delete key)', () => {
+    // Auto-orient often lands a fresh station in a weird orientation while
+    // laying out a line — right-click must stay the quick fix, never a
+    // one-slip-away deletion.
+    useSelection.getState().startAppend('L1' as LineId);
+    useSelection.getState().setAppendCursor({ kind: 'station', stationId: 'S' as StationId });
+    const lines = {
+      L1: makeLine({ id: 'L1' as LineId, stations: ['T', 'S', 'U'] as StationId[] }),
+    };
+    const { result } = setup(stationS(), lines);
+    act(() =>
+      result.current.handlers.onContextMenu?.(pointerEvent({}) as unknown as React.MouseEvent),
+    );
+    expect(rotateStation).toHaveBeenCalledWith('S');
+    expect(removeStationFromLine).not.toHaveBeenCalled();
+    expect(useSelection.getState().uiMode.kind).toBe('appending-to-line');
   });
 });
 
@@ -453,13 +476,13 @@ describe('useStationInteraction — locked stations are click-through unless sel
     }
   });
 
-  it('a locked station can still be toggled onto a line in appending-to-line mode', () => {
-    useSelection.getState().startAppendAt('L1' as LineId, -1);
+  it('a locked station can still seed a line in appending-to-line mode', () => {
+    useSelection.getState().startAppend('L1' as LineId);
     const lines = { L1: makeLine({ id: 'L1' as LineId, stations: [] as StationId[] }) };
     const { result } = setup({ ...stationS(), locked: true }, lines);
     expect(result.current.hitless).toBe(false);
     click(result.current.handlers, pointerEvent({}) as unknown as React.MouseEvent);
-    expect(toggleStationOnLine).toHaveBeenCalledWith('L1', 'S', -1);
+    expect(addStationToLine).toHaveBeenCalledWith('L1', 'S');
   });
 });
 

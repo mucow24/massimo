@@ -105,7 +105,7 @@ export function Toolbar() {
   const onAddPolygon = () => toggleMode('creating-polygon');
   const onAddLine = () => {
     const id = addLine();
-    selection.startAppendAt(id, -1);
+    selection.startAppend(id);
   };
   // Point the camera at a doc's content: center it and zoom to fit, using the
   // live SVG's pixel size (content-independent, so no wait for a render).

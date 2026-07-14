@@ -7,7 +7,7 @@ import {
   offsetPathLength,
   sampleOffsetPathByArcLength,
 } from '../../geometry/lineTagGeometry';
-import { dragState, exitLineEditorOnItemClick, useDoc, useSelection } from '../../state/store';
+import { dragState, useDoc, useSelection } from '../../state/store';
 import { hoveredChrome } from '../../state/selection';
 import { useThemeColors } from '../../state/theme';
 import { legibleTextOn } from '../../util/color';
@@ -154,9 +154,9 @@ export function LineTagsLayer({ bands, zoom, svgRef }: Props) {
     // Suppress the post-drag click, mirroring station drag.
     if (dragState.suppressClick) return;
     e.stopPropagation();
-    // Line editor open: this is a click off the line to exit — deselect the
-    // line and don't select the tag under the cursor.
-    if (exitLineEditorOnItemClick()) return;
+    // Clicking a tag while editing a line's stops exits the editor (back to
+    // the main view) AND selects the tag — no intermediate state.
+    if (selection.uiMode.kind === 'appending-to-line') selection.setAppending(null);
     selection.selectLineTag(tagId);
   };
 
