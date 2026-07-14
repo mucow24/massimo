@@ -76,10 +76,10 @@ describe('<EditingBanner /> — every non-idle mode gets chrome', () => {
     useSelection.getState().setUiMode({
       kind: 'appending-to-line',
       lineId: 'L1',
-      insertAfterIndex: null,
+      cursor: null,
     });
     render(<EditingBanner />);
-    expect(banner()!.textContent).toMatch(/Appending to line A/);
+    expect(banner()!.textContent).toMatch(/Editing line A/);
     // The line's OWN color — a truthy-only check would also pass on a
     // hardcoded accent, which is exactly the regression this guards against.
     // (jsdom normalizes #ff0000 to rgb.)

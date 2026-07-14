@@ -117,9 +117,11 @@ describe('MapCanvas — polygon vertex click multi-select', () => {
 
 // The line editor is open when a line is selected (LineInspector + the dim /
 // arrow highlight). Clicking off the line to exit must ONLY deselect the line —
-// the item under the cursor must NOT get selected. Two exceptions the user
-// asked to keep: clicking a station exits AND selects it (stations belong to
-// the line), and clicking another line stripe switches the editor to that line.
+// the editor must EXIT (back to the main view — there is no selected-but-not-
+// editing state) and the clicked item gets selected in the same click.
+// Stations are the exception: station clicks are Edit Stops gestures (arm the
+// cursor / connect), so they never exit; another line's stripe switches the
+// editor to that line.
 describe('MapCanvas — clicking off-line while the line editor is open', () => {
   const openEditor = () => {
     act(() => {
@@ -147,49 +149,57 @@ describe('MapCanvas — clicking off-line while the line editor is open', () => 
           },
         },
       });
-      useSelection.getState().selectLine('L1');
+      useSelection.getState().startAppend('L1');
     });
     expect(useSelection.getState().selectedLineId).toBe('L1');
+    expect(useSelection.getState().uiMode.kind).toBe('appending-to-line');
   };
 
-  it('clicking a label deselects the line and does not select the label', () => {
+  it('clicking a label exits the editor and selects the label', () => {
     render(<App />);
     openEditor();
 
     clickEl('[data-text-label-id="g1"]', {});
 
+    expect(useSelection.getState().uiMode.kind).toBe('idle');
     expect(useSelection.getState().selectedLineId).toBeNull();
-    expect(useSelection.getState().selectedLabelIds).toEqual([]);
+    expect(useSelection.getState().selectedLabelIds).toEqual(['g1']);
   });
 
-  it('clicking a polygon deselects the line and does not select the polygon', () => {
+  it('clicking a polygon exits the editor and selects the polygon', () => {
     render(<App />);
     openEditor();
 
     clickEl('[data-polygon-id="p1"]', {});
 
+    expect(useSelection.getState().uiMode.kind).toBe('idle');
     expect(useSelection.getState().selectedLineId).toBeNull();
-    expect(useSelection.getState().selectedPolygonIds).toEqual([]);
+    expect(useSelection.getState().selectedPolygonIds).toEqual(['p1']);
   });
 
-  it('clicking a transfer deselects the line and does not select the transfer', () => {
+  it('clicking a transfer exits the editor and selects the transfer', () => {
     render(<App />);
     openEditor();
 
     clickEl('line[data-transfer-id="t1"]', {});
 
+    expect(useSelection.getState().uiMode.kind).toBe('idle');
     expect(useSelection.getState().selectedLineId).toBeNull();
-    expect(useSelection.getState().selectedTransferId).toBeNull();
+    expect(useSelection.getState().selectedTransferId).toBe('t1');
   });
 
-  it('clicking a station exits the editor AND selects the station (stations belong to the line)', () => {
+  it('clicking a station is an Edit Stops gesture (arms the cursor), never an exit', () => {
     render(<App />);
     openEditor();
 
     clickEl('[data-station-id="s1"] rect', {});
 
-    expect(useSelection.getState().selectedLineId).toBeNull();
-    expect(useSelection.getState().selectedStationIds).toEqual(['s1']);
+    const s = useSelection.getState();
+    expect(s.uiMode.kind).toBe('appending-to-line');
+    expect(s.selectedLineId).toBe('L1');
+    if (s.uiMode.kind === 'appending-to-line') {
+      expect(s.uiMode.cursor).toEqual({ kind: 'station', stationId: 's1' });
+    }
   });
 
   it('clicking another line stripe switches the editor to that line', () => {
@@ -199,12 +209,17 @@ describe('MapCanvas — clicking off-line while the line editor is open', () => 
     clickEl('[data-band-stripe][data-line-id="L2"]', {});
 
     expect(useSelection.getState().selectedLineId).toBe('L2');
+    expect(useSelection.getState().uiMode).toMatchObject({
+      kind: 'appending-to-line',
+      lineId: 'L2',
+    });
   });
 
-  it('with no line selected, clicking a label selects it as normal', () => {
+  it('with the editor closed, clicking a label selects it as normal', () => {
     render(<App />);
     openEditor();
-    act(() => useSelection.getState().selectLine(null));
+    act(() => useSelection.getState().setAppending(null));
+    expect(useSelection.getState().selectedLineId).toBeNull(); // exit = main view
 
     clickEl('[data-text-label-id="g1"]', {});
 

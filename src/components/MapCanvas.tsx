@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 
-import { dragState, exitLineEditorOnItemClick, useDoc, useSelection } from '../state/store';
+import { dragState, useDoc, useSelection } from '../state/store';
 import { hoveredChrome, type HoverKind } from '../state/selection';
 import { useSnapPrefs } from '../state/snapPrefs';
 import { useViewportStore } from '../state/viewportStore';
@@ -11,8 +11,12 @@ import {
   buildBandGeometry,
   buildOrderedRenderables,
   buildStopMarkers,
+  resolveSegmentStyle,
+  stopPosWorld,
   SegmentBandSpec,
 } from '../geometry/interlining';
+import { edgeEndpoints } from '../model/lineTopology';
+import { decideSegmentClick, NEXT_STYLE } from './canvas/appendGestures';
 import { effectivePolygonOrder, effectiveSvgImageOrder, type ItemRef } from '../model/transforms';
 import { resolveDayNight, TRANSFER_STYLE_DEFAULTS } from '../model/transferStyle';
 import { defaultStyleProps } from '../model/styles';
@@ -110,6 +114,9 @@ export function MapCanvas() {
   const lineOrder = useDoc((s) => s.lineOrder);
   const addLineTag = useDoc((s) => s.addLineTag);
   const assignRegion = useDoc((s) => s.assignRegion);
+  const setLineSegmentStyle = useDoc((s) => s.setLineSegmentStyle);
+  const toggleEdgeOnLine = useDoc((s) => s.toggleEdgeOnLine);
+  const removeStationFromLine = useDoc((s) => s.removeStationFromLine);
   const routeBullets = useDoc((s) => s.routeBullets);
   const rotateRouteBullet = useDoc((s) => s.rotateRouteBullet);
   const transfers = useDoc((s) => s.transfers);
@@ -415,16 +422,17 @@ export function MapCanvas() {
     if (!inLayeringMode && hoveredRegionKey) setHoveredRegionKey(null);
   }
 
-  // Stable click handler for selecting a line by clicking its stripe. Passed to
-  // every (memoized) SegmentBand, so it must keep a constant identity across a
-  // pan; selection.selectLine is a stable Zustand action.
-  const selectLine = selection.selectLine;
+  // Stable click handler for a stripe click in idle: goes STRAIGHT into Edit
+  // Stops (there is no "selected but not editing" state). Passed to every
+  // (memoized) SegmentBand, so it must keep a constant identity across a pan;
+  // selection.startAppend is a stable Zustand action.
+  const startAppend = selection.startAppend;
   const handleLineSelect = useCallback(
     (lineId: LineId, e: React.MouseEvent<SVGPathElement>) => {
       e.stopPropagation();
-      selectLine(lineId);
+      startAppend(lineId);
     },
-    [selectLine],
+    [startAppend],
   );
 
   const onPointerDown = (e: React.PointerEvent) => {
@@ -585,10 +593,6 @@ export function MapCanvas() {
     const next = nextInStack(stack, currentHitEntity(useSelection.getState()));
     if (!next) return false; // nothing selectable here — behave as a plain background click
     e.stopPropagation();
-    // "Click off the line exits the editor without selecting" must not eat a
-    // deep-pick — the user explicitly asked for the next item — so exit the
-    // line editor BEFORE dispatching (exitLineEditorOnItemClick then no-ops).
-    if (useSelection.getState().selectedLineId) selectLine(null);
     next.element.dispatchEvent(
       new MouseEvent('click', {
         bubbles: true,
@@ -624,9 +628,10 @@ export function MapCanvas() {
       if (dragState.suppressClick) return;
       if (inHandMode) return;
       e.stopPropagation();
-      // Line editor open: this is a click off the line to exit — deselect the
-      // line and don't select the item under the cursor.
-      if (exitLineEditorOnItemClick()) return;
+      // Clicking a free item while editing a line's stops exits the editor
+      // (back to the main view) AND selects the item — no intermediate state.
+      const sel = useSelection.getState();
+      if (sel.uiMode.kind === 'appending-to-line') sel.setAppending(null);
       opts.beforeSelect?.();
       if (e.shiftKey && !(e.ctrlKey || e.metaKey)) {
         opts.toggle(id);
@@ -782,6 +787,75 @@ export function MapCanvas() {
         const { anchorEnd, distance } = anchorFromArcLen(t * stripeTotal, stripeTotal);
         addLineTag(lineId, fromCanon, toCanon, anchorEnd, distance, 0);
         // Stay in mode (matches + Station behavior).
+      },
+    };
+  };
+
+  // Edit Stops: stripe clicks operate on the EDITED line's edge in this band's
+  // corridor — any stripe in the band is a fat target for the same pairKey, and
+  // stripes of corridors the edited line doesn't run are inert (no
+  // stopPropagation, so a miss reads as a canvas click). Plain click arms /
+  // disarms the insertion cursor (nearest endpoint first — see
+  // decideSegmentClick), shift-click cycles the edge's style, right-click
+  // removes the edge.
+  const makeAppendBandHandlers = (spec: SegmentBandSpec) => {
+    const appendCtx = () => {
+      const mode = selection.uiMode;
+      if (mode.kind !== 'appending-to-line') return null;
+      const line = lines[mode.lineId];
+      if (!line || !line.edges.includes(spec.pairKey)) return null;
+      return { cursor: mode.cursor, line };
+    };
+    // A member's stop position for the edited line (what the user sees), for
+    // the near/far endpoint ordering.
+    const stopPosOf = (lineId: LineId) => (sid: string) => {
+      const st = stations[sid];
+      const cell = st?.stops.find((c) => c.lineId === lineId);
+      return st && cell ? stopPosWorld(cell, st) : null;
+    };
+    return {
+      onLineClick: (lineId: LineId, e: React.MouseEvent) => {
+        const ctx = appendCtx();
+        if (!ctx) {
+          // A corridor the edited line doesn't run: clicking another line's
+          // stripe switches the editor to that line (matching the old
+          // stripe-click-switches behavior).
+          const mode = selection.uiMode;
+          if (
+            mode.kind === 'appending-to-line' &&
+            lineId !== mode.lineId &&
+            lines[lineId] !== undefined
+          ) {
+            e.stopPropagation();
+            selection.setAppending(lineId);
+          }
+          return;
+        }
+        e.stopPropagation();
+        const { cursor, line } = ctx;
+        if (e.shiftKey) {
+          const [a, b] = edgeEndpoints(spec.pairKey);
+          setLineSegmentStyle(line.id, a, b, NEXT_STYLE[resolveSegmentStyle(line, spec.pairKey)]);
+          return;
+        }
+        const world = view.screenToWorld(e.clientX, e.clientY);
+        const decision = decideSegmentClick(line, cursor, spec.pairKey, world, stopPosOf(line.id));
+        if (decision.kind === 'cursor') selection.setAppendCursor(decision.cursor);
+      },
+      onLineContextMenu: (_lineId: LineId, e: React.MouseEvent) => {
+        const ctx = appendCtx();
+        if (!ctx) return;
+        e.preventDefault();
+        e.stopPropagation();
+        const { cursor, line } = ctx;
+        const [a, b] = edgeEndpoints(spec.pairKey);
+        // Drop a cursor that referenced the removed edge.
+        if (
+          cursor?.kind === 'edge' &&
+          ((cursor.from === a && cursor.to === b) || (cursor.from === b && cursor.to === a))
+        )
+          selection.setAppendCursor(null);
+        toggleEdgeOnLine(line.id, a, b); // the guard proved the edge exists → removal
       },
     };
   };
@@ -1038,12 +1112,18 @@ export function MapCanvas() {
                 spec={r.band}
                 stripeIndex={r.stripeIndex}
                 pass="body"
-                interactive={selection.uiMode.kind === 'creating-line-tag'}
+                interactive={
+                  selection.uiMode.kind === 'creating-line-tag' ||
+                  selection.uiMode.kind === 'appending-to-line'
+                }
                 lines={lines}
                 colorMap={colorMap}
                 underlayColor={underlayColor}
                 onLineSelect={inHandMode || inLayeringMode ? undefined : handleLineSelect}
                 {...(selection.uiMode.kind === 'creating-line-tag' ? makeBandHandlers(r.band) : {})}
+                {...(selection.uiMode.kind === 'appending-to-line'
+                  ? makeAppendBandHandlers(r.band)
+                  : {})}
               />,
             );
           }
@@ -1119,8 +1199,10 @@ export function MapCanvas() {
           stations={stations}
           defaults={TRANSFER_STYLE_DEFAULTS}
           onSelect={(id) => {
-            if (exitLineEditorOnItemClick()) return;
-            selection.selectTransfer(id);
+            // Same exit-then-select contract as the free items above.
+            const sel = useSelection.getState();
+            if (sel.uiMode.kind === 'appending-to-line') sel.setAppending(null);
+            sel.selectTransfer(id);
           }}
           onHoverEnter={(id) => setHover({ kind: 'transfer', id })}
           onHoverLeave={(id) => clearHoverIf('transfer', id)}
@@ -1299,10 +1381,23 @@ export function MapCanvas() {
               stations={stations}
               renderables={renderables}
               underlayColor={underlayColor}
-              hoveredInspectorSegment={selection.hoveredInspectorSegment}
               uiMode={selection.uiMode}
               zoom={view.viewport.zoom}
               onStartDrag={drag.onStartDrag}
+              onRemoveCursorStation={(sid) => {
+                const mode = selection.uiMode;
+                if (mode.kind !== 'appending-to-line') return;
+                const line = lines[mode.lineId];
+                if (!line || !line.stations.includes(sid)) return;
+                selection.setAppendCursor(null);
+                removeStationFromLine(mode.lineId, line.stations.indexOf(sid));
+              }}
+              onRemoveCursorEdge={(from, to) => {
+                const mode = selection.uiMode;
+                if (mode.kind !== 'appending-to-line') return;
+                selection.setAppendCursor(null);
+                toggleEdgeOnLine(mode.lineId, from, to);
+              }}
               vbX={overdrawn.vbX}
               vbY={overdrawn.vbY}
               vbW={overdrawn.vbW}

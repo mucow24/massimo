@@ -1,5 +1,12 @@
 import { useState } from 'react';
-import { cancelAppendMode, useDoc, useSelection, type UiMode } from '../../state/store';
+import {
+  beginHistoryGroup,
+  cancelAppendMode,
+  useDoc,
+  useSelection,
+  type UiMode,
+} from '../../state/store';
+import { decideCanvasClick } from './appendGestures';
 import { useSnapPrefs } from '../../state/snapPrefs';
 import { useViewportStore } from '../../state/viewportStore';
 import { randomStationName } from '../../state/stationNames';
@@ -102,6 +109,9 @@ export function snapPlacement(
       // Placement forces rotation 0, so the drag's rotated-corner anchor is
       // the plain top-left corner.
       return viaPoint({ x: -mode.image.width / 2, y: -mode.image.height / 2 });
+    case 'appending-to-line':
+      // Alt-click station creation snaps exactly like placing-station.
+      return viaEngine();
     default:
       return raw;
   }
@@ -130,10 +140,14 @@ export interface PlacementDispatch {
 export function usePlacementDispatch(view: ViewportApi): PlacementDispatch {
   const uiMode = useSelection((s) => s.uiMode);
   const setUiMode = useSelection((s) => s.setUiMode);
+  const setAppendCursor = useSelection((s) => s.setAppendCursor);
   const selectLabel = useSelection((s) => s.selectLabel);
   const selectPolygon = useSelection((s) => s.selectPolygon);
   const selectSvgImage = useSelection((s) => s.selectSvgImage);
   const addStation = useDoc((s) => s.addStation);
+  const addStationToLine = useDoc((s) => s.addStationToLine);
+  const connectStationsOnLine = useDoc((s) => s.connectStationsOnLine);
+  const spliceStationIntoEdge = useDoc((s) => s.spliceStationIntoEdge);
   const addRouteBullet = useDoc((s) => s.addRouteBullet);
   const addTextLabel = useDoc((s) => s.addTextLabel);
   const addPolygon = useDoc((s) => s.addPolygon);
@@ -205,8 +219,45 @@ export function usePlacementDispatch(view: ViewportApi): PlacementDispatch {
       return true;
     }
     if (mode.kind === 'appending-to-line') {
-      cancelAppendMode();
-      return true;
+      const line = lines[mode.lineId];
+      if (!line) {
+        cancelAppendMode();
+        return true;
+      }
+      const decision = decideCanvasClick(line, mode.cursor, e.altKey);
+      if (decision.kind === 'cursor') {
+        // Back out one level: drop the pending cursor, stay in the editor.
+        setAppendCursor(decision.cursor);
+        return true;
+      }
+      if (decision.kind === 'exit') {
+        cancelAppendMode();
+        return true;
+      }
+      if (
+        decision.kind === 'create-seed' ||
+        decision.kind === 'create-connect' ||
+        decision.kind === 'create-splice'
+      ) {
+        // Alt-click drops a new station at the snapped point and completes
+        // the pending action with it. Grouped so one Ctrl+Z removes the
+        // station AND its wiring together.
+        const w = snappedWorld();
+        const group = beginHistoryGroup();
+        const id = addStation(w.x, w.y);
+        if (decision.kind === 'create-seed') {
+          addStationToLine(mode.lineId, id);
+          setAppendCursor({ kind: 'station', stationId: id });
+        } else if (decision.kind === 'create-connect') {
+          connectStationsOnLine(mode.lineId, decision.from, id);
+          setAppendCursor({ kind: 'station', stationId: id });
+        } else {
+          spliceStationIntoEdge(mode.lineId, decision.from, decision.to, id);
+          setAppendCursor({ kind: 'edge', from: id, to: decision.to });
+        }
+        group.commit();
+      }
+      return true; // consumed either way ('none' falls through to here)
     }
     if (mode.kind === 'creating-transfer') {
       // Click on background while picking transfer endpoints exits the mode.

@@ -49,8 +49,10 @@ interface Props {
   onLineLeave?: (lineId: LineId, e: React.PointerEvent<SVGPathElement>) => void;
   onLineClick?: (lineId: LineId, e: React.MouseEvent<SVGPathElement>) => void;
   onLineContextMenu?: (lineId: LineId, e: React.MouseEvent<SVGPathElement>) => void;
-  // Default-mode click handler: selects a line by clicking its stripe.
-  onLineSelect?: (lineId: LineId, e: React.MouseEvent<SVGPathElement>) => void;
+  // Default-mode click handler: selects a line by clicking its stripe. Also
+  // receives this band's corridor pairKey so shift-click can address the
+  // segment (style cycling) without a per-band closure.
+  onLineSelect?: (lineId: LineId, e: React.MouseEvent<SVGPathElement>, pairKey?: string) => void;
   // Live line map. Color and per-segment style are resolved from here at
   // render time (the spec is presentation-free), so edits repaint without a
   // geometry rebuild.
@@ -197,7 +199,7 @@ export const SegmentBand = memo(function SegmentBand({
           active && onLineClick
             ? (e) => onLineClick(lineId, e)
             : selectable
-              ? (e) => onLineSelect!(lineId, e)
+              ? (e) => onLineSelect!(lineId, e, spec.pairKey)
               : undefined
         }
         onContextMenu={
