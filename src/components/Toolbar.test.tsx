@@ -161,6 +161,83 @@ describe('Toolbar — tool + view toggles', () => {
   });
 });
 
+describe('Toolbar — help guide', () => {
+  const dialog = () => screen.queryByRole('dialog', { name: 'Quick reference' });
+  // useDismiss defers its outside-mousedown listener to the next tick so the
+  // opening click can't instantly dismiss; flush that timeout before firing
+  // outside-clicks at the overlay.
+  const flushDismissListener = () => new Promise((r) => setTimeout(r, 1));
+
+  it('renders the ? help button immediately right of the WP toggle', () => {
+    render(<Toolbar />);
+    const help = screen.getByLabelText('Help');
+    expect(help.previousElementSibling).toBe(screen.getByLabelText('Toggle waypoints'));
+  });
+
+  it('opens the quick-reference overlay on click and closes on a second click', async () => {
+    const user = userEvent.setup();
+    render(<Toolbar />);
+    await user.click(screen.getByLabelText('Help'));
+    expect(dialog()).toBeInTheDocument();
+    await user.click(screen.getByLabelText('Help'));
+    expect(dialog()).toBeNull();
+  });
+
+  it('closes on Escape', async () => {
+    const user = userEvent.setup();
+    render(<Toolbar />);
+    await user.click(screen.getByLabelText('Help'));
+    expect(dialog()).toBeInTheDocument();
+    await user.keyboard('{Escape}');
+    expect(dialog()).toBeNull();
+  });
+
+  it('closes on a backdrop click but stays open on a click inside the panel', async () => {
+    const user = userEvent.setup();
+    render(<Toolbar />);
+    await user.click(screen.getByLabelText('Help'));
+    await flushDismissListener();
+
+    fireEvent.mouseDown(dialog()!);
+    expect(dialog()).toBeInTheDocument();
+
+    fireEvent.mouseDown(document.body);
+    expect(dialog()).toBeNull();
+  });
+
+  it('the ? key opens and closes it', async () => {
+    const user = userEvent.setup();
+    render(<Toolbar />);
+    await user.keyboard('?');
+    expect(dialog()).toBeInTheDocument();
+    await user.keyboard('?');
+    expect(dialog()).toBeNull();
+  });
+
+  it('the ? key is inert while typing in a text field', async () => {
+    const user = userEvent.setup();
+    render(<Toolbar />);
+    // The map-name button becomes a real text input on click (select-all on
+    // focus); typing "?" there must edit the name, not open the guide.
+    await user.click(screen.getByRole('button', { name: 'Untitled map' }));
+    await user.keyboard('?');
+    expect(dialog()).toBeNull();
+    expect(screen.getByRole('textbox')).toHaveValue('?');
+  });
+
+  it('lists core gestures', async () => {
+    const user = userEvent.setup();
+    render(<Toolbar />);
+    await user.click(screen.getByLabelText('Help'));
+    const panel = dialog()!;
+    // Spot-check a few load-bearing entries; wording may evolve, but these
+    // gestures must stay documented.
+    expect(panel.textContent).toMatch(/right.?click/i);
+    expect(panel.textContent).toMatch(/rotate/i);
+    expect(panel.textContent).toMatch(/alt.?click/i);
+  });
+});
+
 describe('Toolbar — sidebar toggle', () => {
   it('the single arrow collapses and reopens the sidebar', async () => {
     const user = userEvent.setup();

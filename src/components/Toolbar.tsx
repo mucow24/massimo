@@ -31,6 +31,7 @@ import {
 } from '@radix-ui/react-icons';
 import { SnapToggleBar } from './SnapToggleBar';
 import { OptionsPopover } from './OptionsPopover';
+import { HelpPopover } from './HelpPopover';
 import { MapNameField } from './MapNameField';
 
 function ToolButtons() {
@@ -337,6 +338,7 @@ export function Toolbar() {
         >
           WP
         </button>
+        <HelpPopover />
       </div>
       <input
         ref={fileInputRef}
