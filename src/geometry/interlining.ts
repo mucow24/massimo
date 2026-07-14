@@ -16,6 +16,7 @@ import {
 } from './vec';
 import { dirIndex, offsetFilletPath, route } from './router';
 import {
+  BAND_MERGE_TOL,
   localToWorld,
   rotateBy,
   STOP_SIZE,
@@ -328,12 +329,7 @@ export function buildBandGeometry(
         );
         group = [];
       };
-      // Perpendicular/parallel proximity tolerance (world units) for deciding
-      // two adjacent lines are packed tightly enough to share one band. Slightly
-      // loose to absorb floating-point error in the merge gate's tangency math;
-      // too tight would split valid interlines into separate bands, too loose
-      // would merge lines that shouldn't share a corridor.
-      const TOL = 0.5;
+      const TOL = BAND_MERGE_TOL;
       for (const e of enriched) {
         if (group.length === 0) {
           group.push(e);
@@ -367,7 +363,8 @@ export function buildBandGeometry(
 /**
  * Priority half of {@link buildBands}: fills `band.linePriorities` from the
  * global `lineOrder` (index 0 = front-most). Per-segment layer overrides are
- * gone — region paint patches (RegionPatchLayer) override locally instead.
+ * gone — region assignments override the covering line per-face at render
+ * time (see lineRegions.resolveRegionWinners) instead.
  * Mutates the bands in place — the geometry array's reference is preserved,
  * which is what the mode-overlay memos rely on.
  *

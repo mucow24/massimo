@@ -94,8 +94,7 @@ export function flattenOffsetSegments(segs: OffsetPathSegment[], tol = FLATTEN_T
 
 /** The painted body of one stripe: round-join, butt-cap stroke outline. */
 export function stripeBodyPolys(band: SegmentBandSpec, stripeIndex: number): Ring[] {
-  const segs = emitOffsetSegments(band.centerline, band.radius, band.stripeOffsets[stripeIndex]);
-  const pts = flattenOffsetSegments(segs);
+  const { pts } = stripePathFor(band, stripeIndex);
   return offsetOpenPath(pts, band.stripeWidths[stripeIndex] / 2);
 }
 
@@ -698,9 +697,8 @@ export function buildExclusionHoles(
         if (pad === 0) {
           rings.push(...stripeBodyPolys(band, k));
         } else {
-          const segs = emitOffsetSegments(band.centerline, band.radius, band.stripeOffsets[k]);
           rings.push(
-            ...offsetOpenPath(flattenOffsetSegments(segs), (band.stripeWidths[k] + pad) / 2),
+            ...offsetOpenPath(stripePathFor(band, k).pts, (band.stripeWidths[k] + pad) / 2),
           );
         }
       }

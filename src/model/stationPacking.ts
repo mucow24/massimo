@@ -27,16 +27,17 @@
 // bounded, only occurs at branch/trunk stations, and is fixed by nudging the
 // station; the alternative (per-corridor centroids) is over-constrained.
 import { CELL_EPS, sameCell } from '../geometry/lattice';
-import { STOP_SIZE, tangentGap, travelDirLocal } from '../geometry/orientation';
+import { BAND_MERGE_TOL, STOP_SIZE, tangentGap, travelDirLocal } from '../geometry/orientation';
 import { leftNormal } from '../geometry/vec';
 import { lineWidthOf } from './lineWidth';
 import type { Line, LineId, Station, StopOrientation } from './types';
 
-/** Chain-recognition tolerance, world units. MUST match the merge gate's TOL
- *  in buildBandGeometry — repack must recognize exactly the layouts the
- *  renderer merges (recognition is per-station, so it is deliberately a
- *  little more generous than the both-ends merge rule). */
-export const REPACK_TOL = 0.5;
+/** Chain-recognition tolerance, world units — the shared band-merge tolerance
+ *  (BAND_MERGE_TOL). Repack must recognize exactly the layouts the renderer
+ *  merges; sharing the constant is what keeps the two from drifting. Applied
+ *  per-station here (one-sided), which is deliberately a little more generous
+ *  than the merge gate's both-ends rule. */
+const REPACK_TOL = BAND_MERGE_TOL;
 
 /** Below this perp movement (world units) a stop is considered unmoved, so a
  *  degenerate rewrite can't churn references. */
