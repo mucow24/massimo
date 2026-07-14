@@ -2,6 +2,9 @@ import { create } from 'zustand';
 import { persist, createJSONStorage } from 'zustand/middleware';
 import type { LineId, MapDoc, StationId } from '../model/types';
 import type { Vec2 } from '../geometry/vec';
+// Type-only: the append cursor is defined next to the gesture decisions it
+// drives (appendGestures.ts is pure — no store import, so no cycle).
+import type { AppendCursor } from '../components/canvas/appendGestures';
 
 // ----- Selection (ephemeral, except the persisted sidebarOpen flag) -----
 
@@ -41,10 +44,11 @@ export type UiMode =
   // Carries the parsed svg payload (data URI + intrinsic size) read from the
   // file at import time; the next canvas click drops it at the cursor.
   | { kind: 'placing-svg'; image: { href: string; width: number; height: number } }
-  // `draw` = branch/draw sub-mode: plain clicks WIRE an edge from the pen (the
-  // stop at insertAfterIndex) to the clicked stop, instead of inserting a stop
-  // into the line linearly. This is how a branch is grown from an interior stop.
-  | { kind: 'appending-to-line'; lineId: LineId; insertAfterIndex: number | null; draw?: boolean }
+  // Edit Stops: all line editing happens on the canvas, driven by the CURSOR
+  // (see appendGestures.ts — station cursor connects, edge cursor splices,
+  // null is "nothing pending"). The cursor is updated in place via
+  // setAppendCursor.
+  | { kind: 'appending-to-line'; lineId: LineId; cursor: AppendCursor }
   | { kind: 'layering' }
   // Edit the station's stop/label layout in place on the canvas: drag the
   // real dots/label between ghost-lattice slots, right-click to rotate.
@@ -78,6 +82,10 @@ export const RIGHT_CLICK_PASSTHROUGH_MODES: ReadonlySet<UiMode['kind']> = new Se
   'layering',
   // Right-click rotates the stop/label under the cursor.
   'editing-station-layout',
+  // Right-click REMOVES the station / segment under the cursor (Esc or a
+  // plain canvas click back out of the mode instead), so a missed right-click
+  // while deleting track must not eject the user from the editor.
+  'appending-to-line',
 ]);
 
 // Selection fields that get wiped whenever the user enters a non-idle uiMode
@@ -153,18 +161,9 @@ export interface SelectionState {
   // sweeps past. Ephemeral (never persisted); the hoveredChrome selector gates
   // whether it actually paints (idle mode, not panning, not already selected).
   hoveredCanvasItem: HoveredCanvasItem | null;
-  // The (lineId, stationId) currently hovered in the line editor's station
-  // list. Used to highlight the corresponding stop dot on the canvas.
+  // The (lineId, stationId) currently hovered in the transfer-creation flow.
+  // Used to highlight the corresponding stop dot on the canvas.
   hoveredLineStop: { lineId: LineId; stationId: StationId } | null;
-  // The segment whose style-divider button is currently being hovered/focused
-  // in the line editor. While set, the canvas paints a soft white wash and
-  // re-renders only this segment + its endpoint dots so the user can see
-  // which corridor on the map the divider corresponds to.
-  hoveredInspectorSegment: {
-    lineId: LineId;
-    fromStationId: StationId;
-    toStationId: StationId;
-  } | null;
   // The lineId of the currently-selected stop cell within the active station
   // inspector. Cleared whenever a different station is selected.
   selectedStopLineId: LineId | null;
@@ -227,22 +226,18 @@ export interface SelectionState {
   selectLine: (id: LineId | null) => void;
   // Enter editing-station-layout with the station selected and mirror
   // matching preserved — a vanilla setUiMode would wipe both (the mode's
-  // whole UI depends on them; same re-assert pattern as startAppendAt).
+  // whole UI depends on them; same re-assert pattern as startAppend).
   startEditingStationLayout: (stationId: StationId) => void;
-  startAppendAt: (lineId: LineId, insertAfterIndex: number) => void;
+  startAppend: (lineId: LineId) => void;
   setAppending: (id: LineId | null) => void;
-  // Narrowing helper: updates the appending-to-line variant's insertAfterIndex
-  // (the pen position) in place. `draw` switches the linear-insert / branch-draw
-  // sub-mode; omit it to preserve the current mode (pen advancing after an add).
-  // No-op when uiMode.kind isn't 'appending-to-line'.
-  setInsertAfterIndex: (idx: number | null, draw?: boolean) => void;
+  // Narrowing helper: updates the appending-to-line variant's cursor (the
+  // pending connect/splice anchor) in place. No-op when uiMode.kind isn't
+  // 'appending-to-line'.
+  setAppendCursor: (cursor: AppendCursor) => void;
   setUiMode: (mode: UiMode) => void;
   setHoveredStation: (id: StationId | null) => void;
   setHoveredCanvasItem: (item: HoveredCanvasItem | null) => void;
   setHoveredLineStop: (v: { lineId: LineId; stationId: StationId } | null) => void;
-  setHoveredInspectorSegment: (
-    v: { lineId: LineId; fromStationId: StationId; toStationId: StationId } | null,
-  ) => void;
   setSelectedStopLineId: (id: LineId | null) => void;
   setLabelSelected: (selected: boolean) => void;
   setEditingStationId: (id: StationId | null) => void;
@@ -428,7 +423,6 @@ export const useSelection = create<SelectionState>()(
       hoveredStationId: null,
       hoveredCanvasItem: null,
       hoveredLineStop: null,
-      hoveredInspectorSegment: null,
       selectedStopLineId: null,
       labelSelected: false,
       editingStationId: null,
@@ -452,8 +446,8 @@ export const useSelection = create<SelectionState>()(
       // The single source of truth for mode transitions. Entering any non-idle
       // mode wipes all primary selections; exiting just clears the line-tag
       // hover preview (which is only meaningful inside creating-line-tag).
-      // Variant payloads (transferAnchor, insertAfterIndex) are updated in place
-      // via setTransferAnchor / setInsertAfterIndex.
+      // Variant payloads (transferAnchor, append cursor) are updated in place
+      // via setTransferAnchor / setAppendCursor.
       setUiMode: (mode) =>
         set(
           // A deliberate mode switch drops the canvas hover-preview outright
@@ -596,10 +590,10 @@ export const useSelection = create<SelectionState>()(
           activeTab: 'stations',
           lineTagHoverPreview: null,
         }),
-      startAppendAt: (lineId, insertAfterIndex) =>
+      startAppend: (lineId) =>
         set({
           ...clearedSelections(),
-          uiMode: { kind: 'appending-to-line', lineId, insertAfterIndex },
+          uiMode: { kind: 'appending-to-line', lineId, cursor: null },
           selectedLineId: lineId,
           activeTab: 'lines',
           lineTagHoverPreview: null,
@@ -612,25 +606,24 @@ export const useSelection = create<SelectionState>()(
           }
           return;
         }
-        // Preserve any in-progress insertion cursor only when re-entering the
-        // SAME line; switching lines resets it.
-        const insertAfterIndex =
-          cur.kind === 'appending-to-line' && cur.lineId === lineId ? cur.insertAfterIndex : null;
+        // Preserve any in-progress cursor only when re-entering the SAME
+        // line; switching lines resets it.
+        const cursor =
+          cur.kind === 'appending-to-line' && cur.lineId === lineId ? cur.cursor : null;
         set({
-          uiMode: { kind: 'appending-to-line', lineId, insertAfterIndex },
+          uiMode: { kind: 'appending-to-line', lineId, cursor },
           selectedLineId: lineId,
           lineTagHoverPreview: null,
         });
       },
-      setInsertAfterIndex: (idx, draw) => {
+      setAppendCursor: (cursor) => {
         const cur = get().uiMode;
         if (cur.kind !== 'appending-to-line') return;
-        set({ uiMode: { ...cur, insertAfterIndex: idx, draw: draw ?? cur.draw } });
+        set({ uiMode: { ...cur, cursor } });
       },
       setHoveredStation: (id) => set({ hoveredStationId: id }),
       setHoveredCanvasItem: (item) => set({ hoveredCanvasItem: item }),
       setHoveredLineStop: (v) => set({ hoveredLineStop: v }),
-      setHoveredInspectorSegment: (v) => set({ hoveredInspectorSegment: v }),
       setSelectedStopLineId: (id) =>
         set({ selectedStopLineId: id, labelSelected: id === null ? get().labelSelected : false }),
       setLabelSelected: (selected) =>

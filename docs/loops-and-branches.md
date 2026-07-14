@@ -177,23 +177,39 @@ to stroke the UNION of a line's bands (outer boundary only) or a carefully-verif
 casing reorder — deferred pending an approach decision (a naive reorder erased the inter-line
 separators historically). NOT yet fixed.
 
-## How to draw them (current UX)
+## How to draw them (current UX — canvas-only line editing, Jul 2026)
 
-1. Place the stations (place-station mode), then **Edit Stops** on the line.
-2. Plain-click stations in order to build the path (unchanged).
-3. **Close a loop:** with the pen on the last stop, **Alt+click the first stop** → wrap edge.
-4. **Branch:** click the **Branch** button (`+` junction) next to the stop you want to branch
-   from, then click the branch's stops on the canvas — each click adds a leg. (Alt+click from
-   any pen position also works.)
+The inspector tree view (`StationGraph` / `lineGraphLayout`) is **deleted**; all stop/topology
+editing happens on the canvas in Edit Stops, driven by a CURSOR
+(`components/canvas/appendGestures.ts` is the tested gesture matrix):
+
+1. Place stations (place-station mode) or Alt-click them into existence while editing, then
+   **Edit Stops** on the line.
+2. **Connect:** click a stop to put the cursor on it; every next station click wires an edge
+   from the cursor and advances it (click-click-click builds a path; clicking an existing
+   member closes a loop; clicking from an interior stop grows a branch — no draw mode).
+3. **Insert in-line:** click a **segment** to arm insertion into that edge (the end nearer
+   your click is where stops enter, marching toward the far end); each station click splices
+   in and keeps marching. This is what resolved the old "insert after an ambiguous junction
+   stop" problem — the edge, not the stop, is the target.
+4. **Create:** Alt-click empty canvas to mint a station as the second click of the pending
+   connect/splice (station-engine snap; grouped into one undo entry with its wiring).
+5. **Remove:** the armed stop/segment shows a clickable × chip, and Delete/Backspace removes
+   it too; right-click removes a SEGMENT directly. Right-click on a STATION rotates it (as
+   everywhere — the quick fix for a weird auto-orientation while laying out a line; deletion
+   deliberately isn't one slip away from it). Edit Stops is a right-click passthrough mode —
+   right-click never exits it.
+6. **Style:** shift-click a segment cycles its per-segment style (also works with the line
+   merely selected, outside Edit Stops).
+7. **Back out:** Esc or a plain canvas click drops the cursor first; a second one exits.
+
+Transforms: `connectStationsOnLine`, `spliceStationIntoEdge`, `toggleEdgeOnLine`,
+`addStationToLine`, `removeStationFromLine`. `toggleStationOnLine`, `edgesAfterInsert`, and
+`reorderLineStations` are gone — `Line.stations` is a pure membership list (order is
+meaningless now that nothing displays it).
 
 ## Iterate-later (known gaps; correct for linear today, cosmetic/edge-case on non-linear)
 
-- **LineInspector** still shows the linear preview band as a single vertical chain (off-chain
-  edges are style-editable via the separate "Branch / loop segments" list, but they don't
-  appear in the pretty band preview). A full edge-list/graph form is the eventual step.
-- **On-canvas pen repositioning:** the Branch button relocates the pen from the inspector; an
-  on-canvas "lift/relocate pen" gesture (or draw-to-empty to create+connect) would make
-  free-hand multi-branch drawing smoother.
 - **`redistributeBetween`** (ctrl+click even-spacing) and **`snap.refineAlongAxis`** terminus
   extrapolation still read display order — correct for linear lines, approximate on
   branchy/looped ones.
@@ -205,3 +221,5 @@ separators historically). NOT yet fixed.
 - **Visual confirmation** of a junction (three stripes converging) is architecturally sound
   and unit-reasoned but not yet eyeballed — the interlining golden snapshot only covers
   linear fixtures. Worth a preview eval.
+- **Overlapping stations at low zoom:** the tree gave guaranteed-clickable rows; on canvas,
+  coincident stops need a zoom-in to disambiguate. Accepted for single-user alpha.

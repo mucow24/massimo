@@ -1056,7 +1056,7 @@ describe('serialize / parse — round-trip property', () => {
   type Action =
     | { kind: 'addStation' }
     | { kind: 'addLine' }
-    | { kind: 'toggleStationOnLine' }
+    | { kind: 'toggleMembership' }
     | { kind: 'rotateStation' }
     | { kind: 'moveStation'; x: number; y: number }
     | { kind: 'deleteStation' }
@@ -1067,7 +1067,7 @@ describe('serialize / parse — round-trip property', () => {
   const actionArb = fc.oneof(
     fc.constant<Action>({ kind: 'addStation' }),
     fc.constant<Action>({ kind: 'addLine' }),
-    fc.constant<Action>({ kind: 'toggleStationOnLine' }),
+    fc.constant<Action>({ kind: 'toggleMembership' }),
     fc.constant<Action>({ kind: 'rotateStation' }),
     fc.record({
       kind: fc.constant<'moveStation'>('moveStation'),
@@ -1103,10 +1103,19 @@ describe('serialize / parse — round-trip property', () => {
         case 'addLine':
           doc = T.addLine(doc, ids.lineId(), 'X', '#0039A6');
           break;
-        case 'toggleStationOnLine': {
+        case 'toggleMembership': {
+          // Membership add/remove via the canvas primitives (see the
+          // invariants suite for the same shape).
           const l = firstKey(doc.lines);
           const s = lastKey(doc.stations);
-          if (l && s) doc = T.toggleStationOnLine(doc, l, s);
+          if (!l || !s) break;
+          const ln = doc.lines[l];
+          if (ln.stations.includes(s)) {
+            doc = T.removeStationFromLine(doc, l, ln.stations.indexOf(s));
+          } else {
+            const from = ln.stations.length ? ln.stations[ln.stations.length - 1] : null;
+            doc = from ? T.connectStationsOnLine(doc, l, from, s) : T.addStationToLine(doc, l, s);
+          }
           break;
         }
         case 'rotateStation': {

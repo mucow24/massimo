@@ -432,11 +432,16 @@ interface DocState extends MapDoc {
 
   addLine: () => LineId;
   updateLine: (id: LineId, patch: Partial<Pick<Line, 'service' | 'name' | 'color'>>) => void;
-  toggleStationOnLine: (lineId: LineId, stationId: StationId, insertAfterIndex?: number) => void;
+  connectStationsOnLine: (lineId: LineId, fromStationId: StationId, toStationId: StationId) => void;
+  spliceStationIntoEdge: (
+    lineId: LineId,
+    fromStationId: StationId,
+    toStationId: StationId,
+    stationId: StationId,
+  ) => void;
   addStationToLine: (lineId: LineId, stationId: StationId) => void;
   toggleEdgeOnLine: (lineId: LineId, a: StationId, b: StationId) => void;
   removeStationFromLine: (lineId: LineId, idx: number) => void;
-  reorderLineStations: (lineId: LineId, stations: StationId[]) => void;
   setLineSegmentStyle: (
     lineId: LineId,
     fromStationId: StationId,
@@ -657,20 +662,24 @@ export const useDoc = create<DocState>()(
           return id;
         },
         updateLine: (id, patch) => set((s) => T.updateLine(s, id, patch)),
-        toggleStationOnLine: (lineId, stationId, insertAfterIndex) =>
-          set(
-            withRegionReconcile((s) =>
-              T.toggleStationOnLine(s, lineId, stationId, insertAfterIndex),
-            ),
-          ),
         addStationToLine: (lineId, stationId) =>
           set(withRegionReconcile((s) => T.addStationToLine(s, lineId, stationId))),
+        connectStationsOnLine: (lineId, fromStationId, toStationId) =>
+          set(
+            withRegionReconcile((s) =>
+              T.connectStationsOnLine(s, lineId, fromStationId, toStationId),
+            ),
+          ),
+        spliceStationIntoEdge: (lineId, fromStationId, toStationId, stationId) =>
+          set(
+            withRegionReconcile((s) =>
+              T.spliceStationIntoEdge(s, lineId, fromStationId, toStationId, stationId),
+            ),
+          ),
         toggleEdgeOnLine: (lineId, a, b) =>
           set(withRegionReconcile((s) => T.toggleEdgeOnLine(s, lineId, a, b))),
         removeStationFromLine: (lineId, idx) =>
           set(withRegionReconcile((s) => T.removeStationFromLine(s, lineId, idx))),
-        reorderLineStations: (lineId, stations) =>
-          set((s) => T.reorderLineStations(s, lineId, stations)),
         setLineSegmentStyle: (lineId, fromStationId, toStationId, style) =>
           set(
             withRegionReconcile((s) =>

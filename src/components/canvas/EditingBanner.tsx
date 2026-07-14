@@ -68,8 +68,9 @@ export function EditingBanner() {
         <>
           <div className="append-frame" style={{ borderColor: line.color }} />
           <div className="append-banner" style={{ background: line.color, color: text }}>
-            Appending to line {line.service} — click stations to add or remove. Esc or right-click
-            to stop.
+            Editing line {line.service} — click stations to connect, click a segment to insert into
+            it, Alt-click for a new station, Del (or the ×) removes the armed stop/segment. Esc
+            backs out.
           </div>
         </>
       );

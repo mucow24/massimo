@@ -11,8 +11,12 @@ import {
   buildBandGeometry,
   buildOrderedRenderables,
   buildStopMarkers,
+  resolveSegmentStyle,
+  stopPosWorld,
   SegmentBandSpec,
 } from '../geometry/interlining';
+import { edgeEndpoints } from '../model/lineTopology';
+import { decideSegmentClick, NEXT_STYLE } from './canvas/appendGestures';
 import { effectivePolygonOrder, effectiveSvgImageOrder, type ItemRef } from '../model/transforms';
 import { resolveDayNight, TRANSFER_STYLE_DEFAULTS } from '../model/transferStyle';
 import { defaultStyleProps } from '../model/styles';
@@ -110,6 +114,9 @@ export function MapCanvas() {
   const lineOrder = useDoc((s) => s.lineOrder);
   const addLineTag = useDoc((s) => s.addLineTag);
   const assignRegion = useDoc((s) => s.assignRegion);
+  const setLineSegmentStyle = useDoc((s) => s.setLineSegmentStyle);
+  const toggleEdgeOnLine = useDoc((s) => s.toggleEdgeOnLine);
+  const removeStationFromLine = useDoc((s) => s.removeStationFromLine);
   const routeBullets = useDoc((s) => s.routeBullets);
   const rotateRouteBullet = useDoc((s) => s.rotateRouteBullet);
   const transfers = useDoc((s) => s.transfers);
@@ -417,14 +424,29 @@ export function MapCanvas() {
 
   // Stable click handler for selecting a line by clicking its stripe. Passed to
   // every (memoized) SegmentBand, so it must keep a constant identity across a
-  // pan; selection.selectLine is a stable Zustand action.
+  // pan; selection.selectLine / setLineSegmentStyle are stable Zustand actions.
   const selectLine = selection.selectLine;
   const handleLineSelect = useCallback(
-    (lineId: LineId, e: React.MouseEvent<SVGPathElement>) => {
+    (lineId: LineId, e: React.MouseEvent<SVGPathElement>, pairKey?: string) => {
       e.stopPropagation();
+      // Shift-click on the ALREADY-selected line's stripe cycles that
+      // segment's style — styling shouldn't require entering Edit Stops.
+      // (Reads the stores imperatively to keep this callback's identity
+      // stable across renders; the memoized bands depend on that.)
+      if (e.shiftKey && pairKey) {
+        const sel = useSelection.getState();
+        if (sel.uiMode.kind === 'idle' && sel.selectedLineId === lineId) {
+          const line = useDoc.getState().lines[lineId];
+          if (line && line.edges.includes(pairKey)) {
+            const [a, b] = edgeEndpoints(pairKey);
+            setLineSegmentStyle(lineId, a, b, NEXT_STYLE[resolveSegmentStyle(line, pairKey)]);
+            return;
+          }
+        }
+      }
       selectLine(lineId);
     },
-    [selectLine],
+    [selectLine, setLineSegmentStyle],
   );
 
   const onPointerDown = (e: React.PointerEvent) => {
@@ -786,6 +808,61 @@ export function MapCanvas() {
     };
   };
 
+  // Edit Stops: stripe clicks operate on the EDITED line's edge in this band's
+  // corridor — any stripe in the band is a fat target for the same pairKey, and
+  // stripes of corridors the edited line doesn't run are inert (no
+  // stopPropagation, so a miss reads as a canvas click). Plain click arms /
+  // disarms the insertion cursor (nearest endpoint first — see
+  // decideSegmentClick), shift-click cycles the edge's style, right-click
+  // removes the edge.
+  const makeAppendBandHandlers = (spec: SegmentBandSpec) => {
+    const appendCtx = () => {
+      const mode = selection.uiMode;
+      if (mode.kind !== 'appending-to-line') return null;
+      const line = lines[mode.lineId];
+      if (!line || !line.edges.includes(spec.pairKey)) return null;
+      return { cursor: mode.cursor, line };
+    };
+    // A member's stop position for the edited line (what the user sees), for
+    // the near/far endpoint ordering.
+    const stopPosOf = (lineId: LineId) => (sid: string) => {
+      const st = stations[sid];
+      const cell = st?.stops.find((c) => c.lineId === lineId);
+      return st && cell ? stopPosWorld(cell, st) : null;
+    };
+    return {
+      onLineClick: (_lineId: LineId, e: React.MouseEvent) => {
+        const ctx = appendCtx();
+        if (!ctx) return;
+        e.stopPropagation();
+        const { cursor, line } = ctx;
+        if (e.shiftKey) {
+          const [a, b] = edgeEndpoints(spec.pairKey);
+          setLineSegmentStyle(line.id, a, b, NEXT_STYLE[resolveSegmentStyle(line, spec.pairKey)]);
+          return;
+        }
+        const world = view.screenToWorld(e.clientX, e.clientY);
+        const decision = decideSegmentClick(line, cursor, spec.pairKey, world, stopPosOf(line.id));
+        if (decision.kind === 'cursor') selection.setAppendCursor(decision.cursor);
+      },
+      onLineContextMenu: (_lineId: LineId, e: React.MouseEvent) => {
+        const ctx = appendCtx();
+        if (!ctx) return;
+        e.preventDefault();
+        e.stopPropagation();
+        const { cursor, line } = ctx;
+        const [a, b] = edgeEndpoints(spec.pairKey);
+        // Drop a cursor that referenced the removed edge.
+        if (
+          cursor?.kind === 'edge' &&
+          ((cursor.from === a && cursor.to === b) || (cursor.from === b && cursor.to === a))
+        )
+          selection.setAppendCursor(null);
+        toggleEdgeOnLine(line.id, a, b); // the guard proved the edge exists → removal
+      },
+    };
+  };
+
   // Layering-mode click: cycle which covering line paints the face. The pure
   // decision (next winner, wrap, delete-at-default, fresh anchors) lives in
   // regionClickAction; the store mints the id and records ONE undo entry.
@@ -1038,12 +1115,18 @@ export function MapCanvas() {
                 spec={r.band}
                 stripeIndex={r.stripeIndex}
                 pass="body"
-                interactive={selection.uiMode.kind === 'creating-line-tag'}
+                interactive={
+                  selection.uiMode.kind === 'creating-line-tag' ||
+                  selection.uiMode.kind === 'appending-to-line'
+                }
                 lines={lines}
                 colorMap={colorMap}
                 underlayColor={underlayColor}
                 onLineSelect={inHandMode || inLayeringMode ? undefined : handleLineSelect}
                 {...(selection.uiMode.kind === 'creating-line-tag' ? makeBandHandlers(r.band) : {})}
+                {...(selection.uiMode.kind === 'appending-to-line'
+                  ? makeAppendBandHandlers(r.band)
+                  : {})}
               />,
             );
           }
@@ -1299,10 +1382,23 @@ export function MapCanvas() {
               stations={stations}
               renderables={renderables}
               underlayColor={underlayColor}
-              hoveredInspectorSegment={selection.hoveredInspectorSegment}
               uiMode={selection.uiMode}
               zoom={view.viewport.zoom}
               onStartDrag={drag.onStartDrag}
+              onRemoveCursorStation={(sid) => {
+                const mode = selection.uiMode;
+                if (mode.kind !== 'appending-to-line') return;
+                const line = lines[mode.lineId];
+                if (!line || !line.stations.includes(sid)) return;
+                selection.setAppendCursor(null);
+                removeStationFromLine(mode.lineId, line.stations.indexOf(sid));
+              }}
+              onRemoveCursorEdge={(from, to) => {
+                const mode = selection.uiMode;
+                if (mode.kind !== 'appending-to-line') return;
+                selection.setAppendCursor(null);
+                toggleEdgeOnLine(mode.lineId, from, to);
+              }}
               vbX={overdrawn.vbX}
               vbY={overdrawn.vbY}
               vbW={overdrawn.vbW}

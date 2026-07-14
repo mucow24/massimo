@@ -361,7 +361,7 @@ const NON_IDLE_MODES: UiMode[] = [
   { kind: 'creating-route-bullet' },
   { kind: 'creating-transfer', anchor: null },
   { kind: 'placing-label' },
-  { kind: 'appending-to-line', lineId: 'L1' as LineId, insertAfterIndex: null },
+  { kind: 'appending-to-line', lineId: 'L1' as LineId, cursor: null },
   { kind: 'layering' },
 ];
 
@@ -467,33 +467,53 @@ describe('uiMode variant payloads', () => {
     expect(useSelection.getState().uiMode).toEqual({ kind: 'idle' });
   });
 
-  it('appending-to-line carries lineId + insertAfterIndex', () => {
-    useSelection
-      .getState()
-      .setUiMode({ kind: 'appending-to-line', lineId: 'L1' as LineId, insertAfterIndex: 3 });
+  it('appending-to-line carries lineId + cursor', () => {
+    useSelection.getState().setUiMode({
+      kind: 'appending-to-line',
+      lineId: 'L1' as LineId,
+      cursor: { kind: 'station', stationId: 'S1' as StationId },
+    });
     const cur = useSelection.getState().uiMode;
     expect(cur.kind).toBe('appending-to-line');
     if (cur.kind === 'appending-to-line') {
       expect(cur.lineId).toBe('L1');
-      expect(cur.insertAfterIndex).toBe(3);
+      expect(cur.cursor).toEqual({ kind: 'station', stationId: 'S1' });
     }
   });
 
-  it('setInsertAfterIndex updates the appending-to-line variant in place', () => {
+  it('setAppendCursor updates the appending-to-line variant in place', () => {
     useSelection
       .getState()
-      .setUiMode({ kind: 'appending-to-line', lineId: 'L1' as LineId, insertAfterIndex: null });
-    useSelection.getState().setInsertAfterIndex(5);
+      .setUiMode({ kind: 'appending-to-line', lineId: 'L1' as LineId, cursor: null });
+    useSelection
+      .getState()
+      .setAppendCursor({ kind: 'edge', from: 'A' as StationId, to: 'B' as StationId });
     const cur = useSelection.getState().uiMode;
     if (cur.kind === 'appending-to-line') {
-      expect(cur.insertAfterIndex).toBe(5);
+      expect(cur.cursor).toEqual({ kind: 'edge', from: 'A', to: 'B' });
     }
   });
 
-  it('setInsertAfterIndex is a no-op when not appending', () => {
+  it('setAppendCursor is a no-op when not appending', () => {
     useSelection.getState().setUiMode({ kind: 'idle' });
-    useSelection.getState().setInsertAfterIndex(5);
+    useSelection.getState().setAppendCursor({ kind: 'station', stationId: 'S1' as StationId });
     expect(useSelection.getState().uiMode.kind).toBe('idle');
+  });
+
+  it('setAppending preserves the cursor when re-entering the SAME line, resets on switch', () => {
+    useSelection.getState().startAppend('L1' as LineId);
+    useSelection.getState().setAppendCursor({ kind: 'station', stationId: 'S1' as StationId });
+    useSelection.getState().setAppending('L1' as LineId);
+    let cur = useSelection.getState().uiMode;
+    if (cur.kind === 'appending-to-line') {
+      expect(cur.cursor).toEqual({ kind: 'station', stationId: 'S1' });
+    }
+    useSelection.getState().setAppending('L2' as LineId);
+    cur = useSelection.getState().uiMode;
+    if (cur.kind === 'appending-to-line') {
+      expect(cur.lineId).toBe('L2');
+      expect(cur.cursor).toBeNull();
+    }
   });
 });
 
@@ -592,13 +612,13 @@ describe('uiMode entry clears all selections (no leftover cross-type selection)'
     expect(s.selectedTransferId).toBeNull();
   });
 
-  it('startAppendAt keeps selectedLineId pinned to the line being appended', () => {
-    useSelection.getState().startAppendAt('L1' as LineId, 2);
+  it('startAppend keeps selectedLineId pinned to the line being appended', () => {
+    useSelection.getState().startAppend('L1' as LineId);
     const s = useSelection.getState();
     expect(s.uiMode).toEqual({
       kind: 'appending-to-line',
       lineId: 'L1',
-      insertAfterIndex: 2,
+      cursor: null,
     });
     expect(s.selectedLineId).toBe('L1');
     expect(s.activeTab).toBe('lines');
