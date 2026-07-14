@@ -274,7 +274,9 @@ export interface Line {
   // setter (`setLineWidth`) clamps to ≥ LINE_WIDTH_MIN, rounds to an integer,
   // and drops the field when the result lands on the default so it is never
   // stored. Width is GEOMETRY, not presentation: stop-cell tangency, band
-  // merging, and stripe offsets all derive from it (see lineWidth.ts).
+  // merging, and stripe offsets all derive from it (see lineWidth.ts) — so
+  // the setter also re-packs tangent stop chains at the line's stations
+  // (stationPacking.ts), keeping packed layouts packed at the new width.
   width?: number;
   // Casing rails CENTERED on the line's body edges — half in, half out —
   // in world units per side (MTA-style separators; see lineStroke.ts for
