@@ -7,7 +7,7 @@ import { parse, serialize } from '../model/serialize';
 import { computeContentBounds } from '../geometry/contentBounds';
 import { fitViewport } from './canvas/viewportMath';
 import { clearHistory } from '../state/history';
-import { parseSvgIntrinsicSize, svgTextToDataUri } from '../model/svgImport';
+import { parseSvgIntrinsicSize, rasterFileToImage, svgTextToDataUri } from '../model/svgImport';
 import { useCustomPalettes } from '../state/customPalettes';
 import { themeColors } from '../state/theme';
 import {
@@ -74,7 +74,7 @@ export function Toolbar() {
   const selection = useSelection();
 
   const fileInputRef = useRef<HTMLInputElement | null>(null);
-  const svgInputRef = useRef<HTMLInputElement | null>(null);
+  const imageInputRef = useRef<HTMLInputElement | null>(null);
   const [menuError, setMenuError] = useState<string | null>(null);
 
   // Each "Add X" menu item toggles the matching uiMode variant: clicking it
@@ -225,17 +225,25 @@ export function Toolbar() {
     fitCameraToDoc(result.doc);
   };
 
-  // Add → SVG…: read the file, parse its intrinsic size, encode it as an opaque
-  // data URI, and enter placing-svg mode so the next canvas click drops it.
-  const onAddSvg = () => svgInputRef.current?.click();
-  const onSvgChosen = async (e: React.ChangeEvent<HTMLInputElement>) => {
+  // Add → Image…: read the file (svg text, or png/jpeg bytes), take its
+  // intrinsic size, encode it as an opaque data URI, and enter placing-svg
+  // mode so the next canvas click drops it. A raster that fails to decode is
+  // skipped (it would render as nothing); a malformed svg keeps the existing
+  // 200×200 fallback.
+  const onAddImage = () => imageInputRef.current?.click();
+  const onImageChosen = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const f = e.target.files?.[0];
     e.target.value = ''; // allow re-picking the same file
     if (!f) return;
-    const text = await f.text();
-    const { width, height } = parseSvgIntrinsicSize(text);
-    const href = svgTextToDataUri(text);
-    selection.setUiMode({ kind: 'placing-svg', image: { href, width, height } });
+    let image: { href: string; width: number; height: number } | null;
+    if (f.type === 'image/svg+xml' || /\.svg$/i.test(f.name)) {
+      const text = await f.text();
+      image = { href: svgTextToDataUri(text), ...parseSvgIntrinsicSize(text) };
+    } else {
+      image = await rasterFileToImage(f);
+    }
+    if (!image) return;
+    selection.setUiMode({ kind: 'placing-svg', image });
   };
 
   return (
@@ -263,7 +271,7 @@ export function Toolbar() {
         <MenuItem onClick={onAddTransfer}>Transfer</MenuItem>
         <MenuItem onClick={onAddLabel}>Label</MenuItem>
         <MenuItem onClick={onAddPolygon}>Polygon</MenuItem>
-        <MenuItem onClick={onAddSvg}>SVG…</MenuItem>
+        <MenuItem onClick={onAddImage}>Image / SVG…</MenuItem>
       </Menu>
       <ToolButtons />
       <span className="tool-group-divider" aria-hidden="true" />
@@ -338,12 +346,12 @@ export function Toolbar() {
         onChange={onFileChosen}
       />
       <input
-        ref={svgInputRef}
+        ref={imageInputRef}
         type="file"
-        accept=".svg,image/svg+xml"
-        aria-label="Import SVG file"
+        accept=".svg,image/svg+xml,.png,image/png,.jpg,.jpeg,image/jpeg"
+        aria-label="Import image file"
         style={{ display: 'none' }}
-        onChange={onSvgChosen}
+        onChange={onImageChosen}
       />
       <span className="spacer" />
       <label>

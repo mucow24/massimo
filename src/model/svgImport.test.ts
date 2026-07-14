@@ -1,5 +1,10 @@
 import { describe, it, expect } from 'vitest';
-import { parseSvgIntrinsicSize, svgTextToDataUri } from './svgImport';
+import {
+  bytesToDataUri,
+  isAllowedImageHref,
+  parseSvgIntrinsicSize,
+  svgTextToDataUri,
+} from './svgImport';
 
 describe('parseSvgIntrinsicSize', () => {
   it('uses the viewBox when there is no explicit width/height', () => {
@@ -23,6 +28,32 @@ describe('parseSvgIntrinsicSize', () => {
 
   it('falls back to 200×200 when neither width/height nor viewBox is usable', () => {
     expect(parseSvgIntrinsicSize('<svg></svg>')).toEqual({ width: 200, height: 200 });
+  });
+});
+
+describe('isAllowedImageHref', () => {
+  it('accepts inline svg and basic raster data URIs', () => {
+    expect(isAllowedImageHref('data:image/svg+xml;base64,PHN2Zy8+')).toBe(true);
+    expect(isAllowedImageHref('data:image/png;base64,AAAA')).toBe(true);
+    expect(isAllowedImageHref('data:image/jpeg;base64,AAAA')).toBe(true);
+  });
+
+  it('rejects remote references and non-image data URIs', () => {
+    expect(isAllowedImageHref('http://evil.example/x.png')).toBe(false);
+    expect(isAllowedImageHref('https://evil.example/x.svg')).toBe(false);
+    expect(isAllowedImageHref('data:text/html;base64,AAAA')).toBe(false);
+    expect(isAllowedImageHref('data:image/webp;base64,AAAA')).toBe(false);
+    expect(isAllowedImageHref('javascript:alert(1)')).toBe(false);
+  });
+});
+
+describe('bytesToDataUri', () => {
+  it('base64-encodes raw bytes under the given mime', () => {
+    const uri = bytesToDataUri('image/png', new Uint8Array([137, 80, 78, 71]));
+    expect(uri.startsWith('data:image/png;base64,')).toBe(true);
+    const b64 = uri.slice('data:image/png;base64,'.length);
+    const bytes = Uint8Array.from(globalThis.atob(b64), (c) => c.charCodeAt(0));
+    expect([...bytes]).toEqual([137, 80, 78, 71]);
   });
 });
 

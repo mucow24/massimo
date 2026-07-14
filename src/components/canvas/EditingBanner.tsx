@@ -18,7 +18,7 @@ const PLACING_TEXT: Record<
   'creating-route-bullet': 'Click on the canvas to place a route bullet.',
   'placing-label': 'Click on the canvas to place a text label.',
   'creating-polygon': 'Click on the canvas to place a polygon.',
-  'placing-svg': 'Click on the canvas to place the imported SVG.',
+  'placing-svg': 'Click on the canvas to place the imported image.',
 };
 const CANCEL_HINT = 'Esc or right-click to cancel.';
 

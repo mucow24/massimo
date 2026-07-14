@@ -21,20 +21,35 @@ describe('svg-image clipboard', () => {
     expect('id' in items[0].data).toBe(false);
   });
 
-  it('rejects an href that is not an svg data URI (security guard)', () => {
+  it('rejects an href that is not an allowed image data URI (security guard)', () => {
     // An attacker-crafted clipboard string could carry a remote/script href.
-    // Only `data:image/svg+xml` is allowed, preserving the opaque-sandbox model.
-    const payload = {
+    // Only inline image data URIs (svg/png/jpeg) are allowed, preserving the
+    // opaque-sandbox model.
+    const payload = (href: string) => ({
       format: 'massimo-clipboard',
       version: 2,
       items: [
-        {
-          kind: 'svg-image',
-          data: { x: 0, y: 0, width: 10, height: 10, rotation: 0, href: 'http://evil.example/x' },
-        },
+        { kind: 'svg-image', data: { x: 0, y: 0, width: 10, height: 10, rotation: 0, href } },
       ],
-    };
-    expect(readClipboard(JSON.stringify(payload))).toBeNull();
+    });
+    expect(readClipboard(JSON.stringify(payload('http://evil.example/x')))).toBeNull();
+    expect(readClipboard(JSON.stringify(payload('data:text/html;base64,AAAA')))).toBeNull();
+    expect(readClipboard(JSON.stringify(payload('javascript:alert(1)')))).toBeNull();
+  });
+
+  it('accepts raster (png/jpeg) data-URI hrefs', () => {
+    const payload = (href: string) => ({
+      format: 'massimo-clipboard',
+      version: 2,
+      items: [
+        { kind: 'svg-image', data: { x: 0, y: 0, width: 10, height: 10, rotation: 0, href } },
+      ],
+    });
+    for (const href of ['data:image/png;base64,AAAA', 'data:image/jpeg;base64,AAAA']) {
+      const items = readClipboard(JSON.stringify(payload(href)));
+      expect(items).not.toBeNull();
+      expect(items![0].data).toMatchObject({ href });
+    }
   });
 
   it('rejects non-positive dimensions', () => {
