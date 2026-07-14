@@ -31,6 +31,7 @@ const renderLayer = (
         stations={stations}
         renderables={opts.renderables ?? []}
         underlayColor="#ffffff"
+        seamEdges="both"
         uiMode={uiMode}
         zoom={1}
         onStartDrag={vi.fn()}

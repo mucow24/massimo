@@ -12,7 +12,7 @@ import {
 } from '../model/lineStroke';
 import { CasingRails } from './CasingRails';
 import { seamClipId } from './canvas/SeamClips';
-import type { Line, LineId, LineStyle } from '../model/types';
+import type { Line, LineId, LineStyle, SeamEdges } from '../model/types';
 import { leftNormal, midpoint, norm, sub } from '../geometry/vec';
 import { offsetFilletPath } from '../geometry/router';
 import { lineStyleStrokeAttrs, lineStyleUnderlayAttrs } from './HatchPatterns';
@@ -69,6 +69,10 @@ interface Props {
   // be found a second time by hit-testing (see hitStack) or the `[data-band-*]`
   // DOM-query tests — those key on the tags the base paint stamps here.
   decorative?: boolean;
+  // Global branch-seam inner-edge mode; only consulted on the seam pass. 'both'
+  // paints the whole seam, 'straight'/'curved' keep only the straight or fillet
+  // pieces of each edge so a branch reads as a single hint. Default 'both'.
+  seamEdges?: SeamEdges;
 }
 
 // Memoized: a band emits one stripe renderable per line (and one casing
@@ -92,6 +96,7 @@ export const SegmentBand = memo(function SegmentBand({
   colorMap,
   underlayColor,
   decorative = false,
+  seamEdges = 'both',
 }: Props) {
   const lineId = spec.lines[stripeIndex].id;
   const d = spec.paths[stripeIndex];
@@ -118,21 +123,32 @@ export const SegmentBand = memo(function SegmentBand({
     if (!seamColor || seamW <= 0) return null;
     const off = spec.stripeOffsets[stripeIndex];
     const edge = fullWidth / 2;
+    // Keep both edge kinds, or just the straight (`line`) / curved (`arc`)
+    // pieces per the global setting — so a branch can be hinted with one edge.
+    const keep = seamEdges === 'straight' ? 'line' : seamEdges === 'curved' ? 'arc' : 'both';
     return (
       <g clipPath={`url(#${seamClipId(lineId, spec.bandKey)})`} pointerEvents="none">
-        {[-1, 1].map((side) => (
-          <path
-            key={side}
-            d={offsetFilletPath(spec.centerline, spec.radius, off + side * edge)}
-            data-band-seam={decorative ? undefined : ''}
-            data-line-id={decorative ? undefined : lineId}
-            fill="none"
-            stroke={seamColor}
-            strokeWidth={seamW}
-            strokeLinecap="butt"
-            strokeLinejoin="round"
-          />
-        ))}
+        {[-1, 1].map((side) => {
+          // Filtering ('straight'/'curved') can leave an edge with no retained
+          // pieces (e.g. a curved-only seam on a fully straight band). Skip the
+          // empty path rather than emit `d=""` — inert on-canvas, but an empty
+          // path is a needless snag for the PDF exporter.
+          const d = offsetFilletPath(spec.centerline, spec.radius, off + side * edge, keep);
+          if (!d) return null;
+          return (
+            <path
+              key={side}
+              d={d}
+              data-band-seam={decorative ? undefined : ''}
+              data-line-id={decorative ? undefined : lineId}
+              fill="none"
+              stroke={seamColor}
+              strokeWidth={seamW}
+              strokeLinecap="butt"
+              strokeLinejoin="round"
+            />
+          );
+        })}
       </g>
     );
   }

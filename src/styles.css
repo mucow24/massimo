@@ -428,6 +428,16 @@ select option {
   align-items: stretch;
   gap: 4px;
 }
+.options-popover-block-label {
+  color: var(--text-muted);
+}
+.options-popover-select {
+  width: 100%;
+  font-size: var(--fs-small);
+  padding: 2px 4px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+}
 .options-palettes {
   display: flex;
   flex-direction: column;
@@ -436,7 +446,8 @@ select option {
   max-height: 360px;
   overflow-y: auto;
 }
-.options-palette-separator {
+.options-palette-separator,
+.options-popover-divider {
   border: 0;
   border-top: 1px solid var(--border);
   margin: 4px 0;

@@ -1,6 +1,7 @@
 import { Fragment, useId, useRef, useState } from 'react';
 import { Cross2Icon, MixerHorizontalIcon } from '@radix-ui/react-icons';
 import { useDoc } from '../state/store';
+import type { SeamEdges } from '../model/types';
 import { PALETTES } from '../model/palettes';
 import { parseCustomPalette } from '../model/customPalette';
 import { useCustomPalettes } from '../state/customPalettes';
@@ -19,6 +20,9 @@ export function OptionsPopover() {
 
   const activePalettes = useDoc((s) => s.activePalettes);
   const togglePalette = useDoc((s) => s.togglePalette);
+  const seamEdges = useDoc((s) => s.seamEdges);
+  const setSeamEdges = useDoc((s) => s.setSeamEdges);
+  const seamEdgesId = useId();
 
   const customPalettes = useCustomPalettes((s) => s.palettes);
   const addPalette = useCustomPalettes((s) => s.addPalette);
@@ -55,6 +59,22 @@ export function OptionsPopover() {
       </button>
       {open && (
         <div className="options-popover" id={panelId} role="dialog" aria-label="Options">
+          <div className="options-popover-row options-popover-row-block">
+            <label htmlFor={seamEdgesId} className="options-popover-block-label">
+              Branch inner edges
+            </label>
+            <select
+              id={seamEdgesId}
+              className="options-popover-select"
+              value={seamEdges}
+              onChange={(e) => setSeamEdges(e.target.value as SeamEdges)}
+            >
+              <option value="both">Both</option>
+              <option value="straight">Straight only</option>
+              <option value="curved">Curved only</option>
+            </select>
+          </div>
+          <hr className="options-popover-divider" aria-hidden="true" />
           <div className="options-popover-row options-popover-row-block">
             <div className="options-palettes">
               <button
