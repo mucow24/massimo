@@ -241,7 +241,12 @@ export function HighlightedLineLayer({
                 />
               ));
 
-            const idx = append.insertAfterIndex ?? -1;
+            // `null` = no insert cursor armed (append mode is passive:
+            // reorder / remove / wire, and a station click is a no-op). Only
+            // once a cursor is armed — a stop's +↓ / branch button, or the top
+            // "insert before start" affordance (idx -1) — is there somewhere to
+            // insert, so only then draw the arrow. Don't coerce null to -1.
+            const idx = append.insertAfterIndex;
             const stopWorld = (sid: string) => {
               const st = stations[sid];
               if (!st) return null;
@@ -250,63 +255,65 @@ export function HighlightedLineLayer({
               return stopPosWorld(cell, st);
             };
 
-            // Pick origin (the stop the arrow extends from) and the
-            // direction in which insertion will happen.
-            let originIdx: number;
-            let dirToIdx: number | null;
-            let dirSign: 1 | -1 = 1;
-            if (idx === -1) {
-              // Insert at start: arrow extends BEFORE station 0,
-              // opposite of the 0→1 direction.
-              originIdx = 0;
-              dirToIdx = ln.stations.length > 1 ? 1 : null;
-              dirSign = -1;
-            } else if (idx >= ln.stations.length - 1) {
-              // After last station: arrow extends past it in the
-              // direction of the final segment.
-              originIdx = idx;
-              dirToIdx = idx > 0 ? idx - 1 : null;
-              dirSign = -1;
-            } else {
-              // Between K and K+1: arrow points from K toward K+1.
-              originIdx = idx;
-              dirToIdx = idx + 1;
-              dirSign = 1;
-            }
-
-            const originSid = ln.stations[originIdx];
-            const origin = originSid ? stopWorld(originSid) : null;
-            const dirRef = dirToIdx != null ? stopWorld(ln.stations[dirToIdx]) : null;
             let arrow: ReactNode = null;
-            if (origin && dirRef) {
-              const rdx = (dirRef.x - origin.x) * dirSign;
-              const rdy = (dirRef.y - origin.y) * dirSign;
-              const rlen = Math.hypot(rdx, rdy) || 1;
-              const dx = rdx / rlen;
-              const dy = rdy / rlen;
-              // Triangle: base STOP_SIZE wide centered just past the
-              // dot, apex one stop further along the direction. For
-              // the -1 ("add before start") case the arrow is rendered
-              // outside station 0, but flipped 180° so it points back
-              // down the line at station 0.
-              const baseDist = STOP_SIZE * 0.85;
-              const apexDist = baseDist + STOP_SIZE * 0.7;
-              const halfW = STOP_SIZE * 0.55;
-              const flipped = idx === -1;
-              const baseR = flipped ? apexDist : baseDist;
-              const apexR = flipped ? baseDist : apexDist;
-              arrow = (
-                <path
-                  d={arrowTrianglePath(origin.x, origin.y, dx, dy, baseR, apexR, halfW)}
-                  fill={ln.color}
-                  stroke={legibleTextOn(ln.color)}
-                  strokeWidth={1}
-                  strokeLinejoin="round"
-                />
-              );
+            if (idx != null) {
+              // Pick origin (the stop the arrow extends from) and the
+              // direction in which insertion will happen.
+              let originIdx: number;
+              let dirToIdx: number | null;
+              let dirSign: 1 | -1 = 1;
+              if (idx === -1) {
+                // Insert at start: arrow extends BEFORE station 0,
+                // opposite of the 0→1 direction.
+                originIdx = 0;
+                dirToIdx = ln.stations.length > 1 ? 1 : null;
+                dirSign = -1;
+              } else if (idx >= ln.stations.length - 1) {
+                // After last station: arrow extends past it in the
+                // direction of the final segment.
+                originIdx = idx;
+                dirToIdx = idx > 0 ? idx - 1 : null;
+                dirSign = -1;
+              } else {
+                // Between K and K+1: arrow points from K toward K+1.
+                originIdx = idx;
+                dirToIdx = idx + 1;
+                dirSign = 1;
+              }
+
+              const originSid = ln.stations[originIdx];
+              const origin = originSid ? stopWorld(originSid) : null;
+              const dirRef = dirToIdx != null ? stopWorld(ln.stations[dirToIdx]) : null;
+              if (origin && dirRef) {
+                const rdx = (dirRef.x - origin.x) * dirSign;
+                const rdy = (dirRef.y - origin.y) * dirSign;
+                const rlen = Math.hypot(rdx, rdy) || 1;
+                const dx = rdx / rlen;
+                const dy = rdy / rlen;
+                // Triangle: base STOP_SIZE wide centered just past the
+                // dot, apex one stop further along the direction. For
+                // the -1 ("add before start") case the arrow is rendered
+                // outside station 0, but flipped 180° so it points back
+                // down the line at station 0.
+                const baseDist = STOP_SIZE * 0.85;
+                const apexDist = baseDist + STOP_SIZE * 0.7;
+                const halfW = STOP_SIZE * 0.55;
+                const flipped = idx === -1;
+                const baseR = flipped ? apexDist : baseDist;
+                const apexR = flipped ? baseDist : apexDist;
+                arrow = (
+                  <path
+                    d={arrowTrianglePath(origin.x, origin.y, dx, dy, baseR, apexR, halfW)}
+                    fill={ln.color}
+                    stroke={legibleTextOn(ln.color)}
+                    strokeWidth={1}
+                    strokeLinejoin="round"
+                  />
+                );
+              }
             }
 
-            const starterSid = idx >= 0 ? ln.stations[idx] : null;
+            const starterSid = idx != null && idx >= 0 ? ln.stations[idx] : null;
             const starter =
               starterSid && stations[starterSid] ? (
                 <StationView
