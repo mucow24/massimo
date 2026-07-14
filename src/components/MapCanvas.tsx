@@ -21,7 +21,7 @@ import { legibleTextOn } from '../util/color';
 import { BandWarning, SegmentBand } from './SegmentBand';
 import { RegionPatchLayer } from './canvas/RegionPatchLayer';
 import { regionsFor } from '../geometry/regionCache';
-import { resolveRegionWinners } from '../geometry/lineRegions';
+import { regionClickAction, resolveRegionWinners } from '../geometry/lineRegions';
 import { HatchPatterns } from './HatchPatterns';
 import { SeamClips } from './canvas/SeamClips';
 import { StopMarker } from './StopMarker';
@@ -53,8 +53,7 @@ import { useItemDrag } from './canvas/useItemDrag';
 import { usePolygonDrag } from './canvas/usePolygonDrag';
 import { useSvgImageDrag } from './canvas/useSvgImageDrag';
 import { LineTagsLayer } from './canvas/LineTagsLayer';
-import { LayeringDashedOutlines, LayeringHoverOutline } from './canvas/LayeringOutlines';
-import { LayerNumberLabels } from './canvas/LayerNumberLabels';
+import { RegionModeOverlay } from './canvas/RegionModeOverlay';
 import { StationPlacingPreview } from './canvas/StationPlacingPreview';
 import { PolygonPlacingPreview } from './canvas/PolygonPlacingPreview';
 import { SvgImagePlacingPreview } from './canvas/SvgImagePlacingPreview';
@@ -106,7 +105,7 @@ export function MapCanvas() {
   const curveRadius = useDoc((s) => s.curveRadius);
   const lineOrder = useDoc((s) => s.lineOrder);
   const addLineTag = useDoc((s) => s.addLineTag);
-  const cycleSegmentLayer = useDoc((s) => s.cycleSegmentLayer);
+  const assignRegion = useDoc((s) => s.assignRegion);
   const routeBullets = useDoc((s) => s.routeBullets);
   const rotateRouteBullet = useDoc((s) => s.rotateRouteBullet);
   const transfers = useDoc((s) => s.transfers);
@@ -395,15 +394,12 @@ export function MapCanvas() {
   // pointer is currently over. Drives the lightened-color preview + the small
   // layer-number text rendered at the stripe's midpoint. Cleared whenever we
   // leave layering mode (via the render-pattern below).
-  const [hoveredLayerStripe, setHoveredLayerStripe] = useState<{
-    bandKey: string;
-    lineId: LineId;
-  } | null>(null);
+  const [hoveredRegionKey, setHoveredRegionKey] = useState<string | null>(null);
   const inLayeringMode = selection.uiMode.kind === 'layering';
   const [prevLayering, setPrevLayering] = useState(inLayeringMode);
   if (inLayeringMode !== prevLayering) {
     setPrevLayering(inLayeringMode);
-    if (!inLayeringMode && hoveredLayerStripe) setHoveredLayerStripe(null);
+    if (!inLayeringMode && hoveredRegionKey) setHoveredRegionKey(null);
   }
 
   // Stable click handler for selecting a line by clicking its stripe. Passed to
@@ -777,35 +773,28 @@ export function MapCanvas() {
     };
   };
 
-  // Hover/click handlers for layering mode. Hovering a stripe records the
-  // (band, line) pair so the renderer can draw the layer-number overlay +
-  // black outline; left-click bumps the per-segment layer up by 1 (down with
-  // shift), right-click bumps it down by 1.
-  const makeLayerHandlers = (spec: SegmentBandSpec) => ({
-    onLineHover: (lineId: LineId) => {
-      setHoveredLayerStripe((cur) =>
-        cur && cur.bandKey === spec.bandKey && cur.lineId === lineId
-          ? cur
-          : { bandKey: spec.bandKey, lineId },
-      );
-    },
-    onLineLeave: (lineId: LineId) => {
-      setHoveredLayerStripe((cur) =>
-        cur && cur.bandKey === spec.bandKey && cur.lineId === lineId ? null : cur,
-      );
-    },
-    onLineClick: (lineId: LineId, e: React.MouseEvent) => {
-      e.stopPropagation();
-      const [fromCanon, toCanon] = spec.pairKey.split('|');
-      cycleSegmentLayer(lineId, fromCanon, toCanon, e.shiftKey ? -1 : 1);
-    },
-    onLineContextMenu: (lineId: LineId, e: React.MouseEvent) => {
-      e.preventDefault();
-      e.stopPropagation();
-      const [fromCanon, toCanon] = spec.pairKey.split('|');
-      cycleSegmentLayer(lineId, fromCanon, toCanon, -1);
-    },
-  });
+  // Layering-mode click: cycle which covering line paints the face. The pure
+  // decision (next winner, wrap, delete-at-default, fresh anchors) lives in
+  // regionClickAction; the store mints the id and records ONE undo entry.
+  // The face/winner set the user CLICKS is the one being DISPLAYED (the
+  // deferred snapshot); the bound assignment object is read fresh by id.
+  const handleRegionClick = (faceIndex: number, dir: 1 | -1) => {
+    if (!regionGeom || !regionWinners) return;
+    const face = regionGeom.faces[faceIndex];
+    const w = regionWinners[faceIndex];
+    if (!face || !w) return;
+    const bound = (w.assignmentId && useDoc.getState().regionAssignments[w.assignmentId]) || null;
+    const action = regionClickAction({
+      face,
+      bound,
+      lineOrder,
+      dir,
+      bands: regionGeom.bands,
+      newId: '',
+    });
+    if (action.assignment) assignRegion(bound ? bound.id : null, action.assignment);
+    else if (bound) assignRegion(bound.id, null);
+  };
 
   return (
     <div className="canvas-host" data-uimode={selection.uiMode.kind}>
@@ -1016,16 +1005,12 @@ export function MapCanvas() {
                 spec={r.band}
                 stripeIndex={r.stripeIndex}
                 pass="body"
-                interactive={selection.uiMode.kind === 'creating-line-tag' || inLayeringMode}
+                interactive={selection.uiMode.kind === 'creating-line-tag'}
                 lines={lines}
                 colorMap={colorMap}
                 underlayColor={underlayColor}
-                onLineSelect={inHandMode ? undefined : handleLineSelect}
-                {...(selection.uiMode.kind === 'creating-line-tag'
-                  ? makeBandHandlers(r.band)
-                  : inLayeringMode
-                    ? makeLayerHandlers(r.band)
-                    : {})}
+                onLineSelect={inHandMode || inLayeringMode ? undefined : handleLineSelect}
+                {...(selection.uiMode.kind === 'creating-line-tag' ? makeBandHandlers(r.band) : {})}
               />
             );
           }
@@ -1091,17 +1076,16 @@ export function MapCanvas() {
           ))}
         </g>
 
-        {/* Layering-mode dashed outlines: a soft 1.5px dashed footprint per
-            non-hovered band stripe, painted ABOVE the colored bands but
-            BELOW transfers + station dots so those keep their visual
-            primacy. The hovered solid outline + the layer-number labels
-            still paint at the very end so they stay on top. */}
-        {inLayeringMode && (
+        {/* Layering-mode region outlines: a dashed footprint per clickable
+            overlap face, mounted BELOW transfers + station dots so those keep
+            their visual primacy. The hover halo + click targets paint at the
+            very end so they stay on top. */}
+        {inLayeringMode && regionGeom && (
           <g data-export-exclude="1">
-            <LayeringDashedOutlines
-              bands={bandsGeometry}
-              lines={lines}
-              hovered={hoveredLayerStripe}
+            <RegionModeOverlay
+              faces={regionGeom.faces}
+              hoveredKey={hoveredRegionKey}
+              layer="outlines"
             />
           </g>
         )}
@@ -1627,14 +1611,15 @@ export function MapCanvas() {
             regardless of how busy the canvas is underneath. The dashed
             footprint is rendered earlier (above) so dots and transfers
             paint over it. */}
-        {inLayeringMode && (
+        {inLayeringMode && regionGeom && (
           <g data-export-exclude="1">
-            <LayeringHoverOutline
-              bands={bandsGeometry}
-              lines={lines}
-              hovered={hoveredLayerStripe}
+            <RegionModeOverlay
+              faces={regionGeom.faces}
+              hoveredKey={hoveredRegionKey}
+              layer="hit"
+              onHover={setHoveredRegionKey}
+              onFaceClick={handleRegionClick}
             />
-            <LayerNumberLabels bands={bandsGeometry} lines={lines} hovered={hoveredLayerStripe} />
           </g>
         )}
 
