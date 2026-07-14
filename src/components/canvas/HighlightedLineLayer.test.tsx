@@ -83,3 +83,49 @@ describe('<HighlightedLineLayer /> — no per-stop chevrons or terminus arrowhea
     expect(triangleEls(container)).toEqual([]);
   });
 });
+
+describe('<HighlightedLineLayer /> — append-mode insert arrow', () => {
+  const triangleEls = (container: HTMLElement) =>
+    Array.from(container.querySelectorAll('path')).filter((p) =>
+      /^M [-\d.]+ [-\d.]+ L [-\d.]+ [-\d.]+ L [-\d.]+ [-\d.]+ Z$/.test(p.getAttribute('d') ?? ''),
+    );
+  const triStation = (id: string, x: number, y: number): Station =>
+    makeStation({ id, x, y, stops: [makeStop('L1', { orientation: 'auto-horizontal' })] });
+  const redLine = (stations: string[]) => ({
+    L1: makeLine({ id: 'L1', service: 'A', color: '#cc0000', stations }),
+  });
+  const renderAppend = (insertAfterIndex: number | null) =>
+    render(
+      <svg>
+        <HighlightedLineLayer
+          highlightLineId="L1"
+          lines={redLine(['s1', 's2'])}
+          stations={{ s1: triStation('s1', 0, 0), s2: triStation('s2', 100, 0) }}
+          renderables={[]}
+          underlayColor="#ffffff"
+          hoveredInspectorSegment={null}
+          uiMode={{ kind: 'appending-to-line', lineId: 'L1', insertAfterIndex }}
+          zoom={1}
+          onStartDrag={vi.fn()}
+          vbX={-200}
+          vbY={-200}
+          vbW={600}
+          vbH={600}
+        />
+      </svg>,
+    );
+
+  it('draws no insert arrow when no cursor is armed (insertAfterIndex null)', () => {
+    // "Edit Stops" enters append mode with no insert point armed. Until the
+    // user arms one, there's nowhere to insert — so no arrow should show.
+    const { container } = renderAppend(null);
+    expect(triangleEls(container)).toEqual([]);
+  });
+
+  it('draws the insert arrow once a cursor is armed (insert before start)', () => {
+    // Arming the top "insert before start" affordance sets insertAfterIndex
+    // to -1 — a real cursor, so the arrow appears pointing before stop 0.
+    const { container } = renderAppend(-1);
+    expect(triangleEls(container).length).toBe(1);
+  });
+});
