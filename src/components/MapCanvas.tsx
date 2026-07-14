@@ -197,7 +197,7 @@ export function MapCanvas() {
   // list — buildBandGeometry iterates edges, and a display-only reorder of
   // `stations` must NOT churn geometry (so `edges`, not `stations`, is hashed;
   // adding/removing an edge — e.g. closing a loop or branching — changes it and
-  // triggers the rebuild). EXCLUDES segmentLayers so layer cycles don't churn
+  // triggers the rebuild). EXCLUDES presentation-only fields so repaints don't churn
   // geometry — `bandsGeometry`'s reference stays stable across them, which the
   // layering-mode memos rely on. Color is also intentionally absent: a color
   // edit must repaint WITHOUT a geometry rebuild (stripes resolve color live).

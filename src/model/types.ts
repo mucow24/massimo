@@ -249,11 +249,9 @@ export interface Line {
   // Missing key ⇒ 'solid'. Setters delete the key when called with 'solid'
   // so the default is never stored.
   segmentStyles?: Record<string, LineStyle>;
-  // Per-segment z-layer override keyed by canonical pair-key. Missing key ⇒ 0.
-  // Higher = closer to the viewer. Uncapped — the layering UI just ±1's the
-  // value, so it can drift as far positive or negative as the user clicks.
-  // Setters delete the key when value lands on 0 so the default isn't stored.
-  segmentLayers?: Record<string, number>;
+  // NOTE: there is no per-segment z-layer field anymore — `segmentLayers`
+  // was retired with the layering rework: overlap regions are painted via
+  // MapDoc.regionAssignments instead (persist v15 strips the old field).
   // Style for stops on this line whose own `dotStyle` is unset. Missing ⇒
   // DEFAULT_DOT_STYLE (the filled-black preset, the historical default).
   // Setters drop the field when the chosen style equals the default so it is

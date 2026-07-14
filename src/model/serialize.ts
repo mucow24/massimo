@@ -750,6 +750,29 @@ function sanitizeLineStroke(line: Line): Line {
 // Non-numbers / non-finite numerics and non-string colors are dropped.
 // File-import hygiene only — localStorage rehydration never sees uncanonical
 // overrides because every write goes through `updateTransferStyle`.
+// Strip the retired per-segment z-layer field from persisted lines. The
+// layering rework replaced it with MapDoc.regionAssignments; docs saved by
+// older builds still carry it. Reference-stable when no line has the field.
+// Shared by migrateDoc's v15 gate; parse() strips inside sanitizeSegments.
+export function stripLegacySegmentLayers(lines: Record<string, Line>): {
+  lines: Record<string, Line>;
+  changed: boolean;
+} {
+  let changed = false;
+  const next: Record<string, Line> = {};
+  for (const id of Object.keys(lines)) {
+    const line = lines[id];
+    if ('segmentLayers' in line) {
+      const { segmentLayers: _retired, ...rest } = line as Line & { segmentLayers?: unknown };
+      next[id] = rest;
+      changed = true;
+    } else {
+      next[id] = line;
+    }
+  }
+  return changed ? { lines: next, changed } : { lines, changed };
+}
+
 // Drop region assignments that can never bind again (dangling chosen/cover
 // line ids) and anchors that are malformed or reference a dead line. Anchors
 // whose pairKey is no longer among the line's edges are deliberately KEPT:
@@ -1500,13 +1523,17 @@ export function backfillLinesEdges(lines: Record<string, Line>): {
 }
 
 function sanitizeSegments(line: Line): Line {
+  // The retired per-segment z-layer field: files saved before the region
+  // rework may still carry it — strip it so dead data never re-enters the
+  // doc (regionAssignments replaced it; migrateDoc's v15 gate does the same
+  // for localStorage docs).
+  const carriesLegacyLayers = 'segmentLayers' in line;
   const styles = line.segmentStyles;
-  const layers = line.segmentLayers;
-  if (!styles && !layers) return line;
+  if (!styles && !carriesLegacyLayers) return line;
   // Valid keys are exactly this line's edges — the single source of truth for
   // which station-pair corridors it occupies (see model/lineTopology.ts).
   const valid = new Set<string>(line.edges);
-  let changed = false;
+  let changed = carriesLegacyLayers;
 
   let nextStyles = styles;
   if (styles) {
@@ -1526,25 +1553,7 @@ function sanitizeSegments(line: Line): Line {
     }
   }
 
-  // Mirror the segmentStyles healing for segmentLayers: drop the never-stored
-  // default (0), non-finite junk, and any key that isn't a real adjacency.
-  let nextLayers = layers;
-  if (layers) {
-    const next: Record<string, number> = {};
-    let layersChanged = false;
-    for (const key of Object.keys(layers)) {
-      const layer = layers[key];
-      if (!Number.isFinite(layer) || layer === 0 || !valid.has(key)) {
-        layersChanged = true;
-        continue;
-      }
-      next[key] = layer;
-    }
-    if (layersChanged) {
-      nextLayers = next;
-      changed = true;
-    }
-  }
-
-  return changed ? { ...line, segmentStyles: nextStyles, segmentLayers: nextLayers } : line;
+  if (!changed) return line;
+  const { segmentLayers: _retired, ...rest } = line as Line & { segmentLayers?: unknown };
+  return { ...rest, segmentStyles: nextStyles };
 }

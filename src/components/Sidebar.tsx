@@ -330,7 +330,7 @@ export function Sidebar() {
                   <div
                     className={'list-row' + (expanded ? ' selected' : '')}
                     onClick={() => selection.selectLine(expanded ? null : ln.id)}
-                    title="Same-layer tiebreaker: top of list = front-most among lines sharing a layer. Use ↑/↓ to reorder."
+                    title="Default stacking: top of list paints front-most where lines overlap (regions can override per overlap). Use ↑/↓ to reorder."
                   >
                     <span
                       className="line-badge"
@@ -351,7 +351,7 @@ export function Sidebar() {
                     <button
                       className="btn-mini icon"
                       disabled={i === 0}
-                      title="Move up (forward among same-layer lines)"
+                      title="Move up (paint further forward)"
                       onClick={(e) => {
                         e.stopPropagation();
                         moveLineInOrder(ln.id, -1);
@@ -362,7 +362,7 @@ export function Sidebar() {
                     <button
                       className="btn-mini icon"
                       disabled={i === orderedLineIds.length - 1}
-                      title="Move down (backward among same-layer lines)"
+                      title="Move down (paint further back)"
                       onClick={(e) => {
                         e.stopPropagation();
                         moveLineInOrder(ln.id, 1);

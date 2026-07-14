@@ -48,6 +48,8 @@ import {
   foldPolygonFillOpacity,
   migrateLegacyBulletSyntax,
   migrateV9Styles,
+  sanitizeRegionAssignments,
+  stripLegacySegmentLayers,
   validActivePalettes,
 } from '../model/serialize';
 import type { Station, Transfer } from '../model/types';
@@ -132,7 +134,7 @@ function docSnapshotsEqual(a: DocSnapshot, b: DocSnapshot): boolean {
 }
 
 /**
- * Persisted-document version migration (v0 → v14). Exported and pure so it can
+ * Persisted-document version migration (v0 → v15). Exported and pure so it can
  * be unit-tested in isolation; the persist config below just delegates here.
  * Never mutates `persisted` — returns a possibly-new doc snapshot.
  *
@@ -211,6 +213,7 @@ export function migrateDoc(persisted: unknown, version: number): DocState {
     transfers?: Record<string, Transfer>;
     styles?: Record<string, StyleDef>;
     styleDefaults?: Record<StyleKind, string>;
+    regionAssignments?: Record<string, RegionAssignment>;
     labelBold?: boolean;
     labelWeight?: TextLabelWeight;
     activePalettes?: PaletteId[];
@@ -346,6 +349,20 @@ export function migrateDoc(persisted: unknown, version: number): DocState {
     // resolves). Idempotent — `parse()` runs the shared bake unconditionally.
     out = bakeLegacyLabelSettings(out);
   }
+  if (v < 15) {
+    // The layering rework: per-segment z-layers retired in favor of region
+    // assignments. Strip the dead field from persisted lines, and run the
+    // region-assignment hygiene parse() applies (a pre-v15 doc can't have
+    // assignments, but a tampered/newer-build one might).
+    if (out.lines) {
+      const stripped = stripLegacySegmentLayers(out.lines);
+      if (stripped.changed) out = { ...out, lines: stripped.lines };
+    }
+    if (out.regionAssignments && out.lines) {
+      const cleaned = sanitizeRegionAssignments(out.regionAssignments, out.lines);
+      if (cleaned.changed) out = { ...out, regionAssignments: cleaned.assignments };
+    }
+  }
   // Non-version-gated invariant: at least one VALID active palette. Unlike the
   // migrations above, this isn't tied to a schema bump — a persisted doc with
   // an explicit empty / all-unknown `activePalettes` (tampering, or a
@@ -411,12 +428,6 @@ interface DocState extends MapDoc {
     fromStationId: StationId,
     toStationId: StationId,
     style: LineStyle,
-  ) => void;
-  cycleSegmentLayer: (
-    lineId: LineId,
-    fromStationId: StationId,
-    toStationId: StationId,
-    dir: -1 | 1,
   ) => void;
   setLineDefaultDotStyle: (lineId: LineId, style: DotStyle) => void;
   setLineDefaultDotSize: (lineId: LineId, size: number) => void;
@@ -652,8 +663,6 @@ export const useDoc = create<DocState>()(
               T.setLineSegmentStyle(s, lineId, fromStationId, toStationId, style),
             ),
           ),
-        cycleSegmentLayer: (lineId, fromStationId, toStationId, dir) =>
-          set((s) => T.cycleSegmentLayer(s, lineId, fromStationId, toStationId, dir)),
         setLineDefaultDotStyle: (lineId, style) =>
           set((s) => T.setLineDefaultDotStyle(s, lineId, style)),
         setLineDefaultDotSize: (lineId, size) =>
@@ -922,7 +931,7 @@ export const useDoc = create<DocState>()(
       {
         name: 'vignelli-map-doc-v1',
         storage: createJSONStorage(() => localStorage),
-        version: 14,
+        version: 15,
         // Version migration chain v0 → v14 lives in `migrateDoc` (above), which
         // is exported and unit-tested. See its doc comment for each step.
         migrate: (persisted, version) => migrateDoc(persisted, version),

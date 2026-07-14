@@ -32,7 +32,6 @@ type Action =
       toIdx: number;
       style: LineStyle;
     }
-  | { kind: 'cycleSegmentLayer'; lineIdx: number; fromIdx: number; toIdx: number; dir: -1 | 1 }
   | { kind: 'addLineTag'; lineIdx: number; fromIdx: number; toIdx: number }
   | {
       kind: 'addTransfer';
@@ -106,13 +105,6 @@ const actionArb = fc.oneof(
     fromIdx: idxArb,
     toIdx: idxArb,
     style: fc.constantFrom<LineStyle>('solid', 'dashed', 'hatched', 'dotted'),
-  }),
-  fc.record({
-    kind: fc.constant<'cycleSegmentLayer'>('cycleSegmentLayer'),
-    lineIdx: idxArb,
-    fromIdx: idxArb,
-    toIdx: idxArb,
-    dir: fc.constantFrom<-1 | 1>(-1, 1),
   }),
   fc.record({
     kind: fc.constant<'addLineTag'>('addLineTag'),
@@ -200,15 +192,6 @@ function applyOne(doc: MapDoc, action: Action, ids: ReturnType<typeof counterIdF
       // (otherwise the override is keyed to a non-edge and would be meaningless).
       if (!from || !to || from === to) return doc;
       return T.setLineSegmentStyle(doc, lineId, from, to, action.style);
-    }
-    case 'cycleSegmentLayer': {
-      const lineId = pickAt(doc.lines, action.lineIdx);
-      if (!lineId) return doc;
-      const stations = doc.lines[lineId].stations;
-      const from = pickAt2(stations, action.fromIdx);
-      const to = pickAt2(stations, action.toIdx);
-      if (!from || !to || from === to) return doc;
-      return T.cycleSegmentLayer(doc, lineId, from, to, action.dir);
     }
     case 'addLineTag': {
       const lineId = pickAt(doc.lines, action.lineIdx);
@@ -357,10 +340,9 @@ describe('transforms invariants (property-based)', () => {
   // 'deleteLine — line tag cascade'), and `deleteStation`'s segment-override prune
   // (see 'deleteStation — segment override cascade'). The latter was a real source
   // gap this suite first surfaced — `deleteStation` filtered the station out of
-  // each line's `stations` but never pruned that line's `segmentStyles` /
-  // `segmentLayers`, and `serialize.ts` healed only `segmentStyles` on load — both
-  // now fixed (deleteStation calls pruneOrphanSegmentStyles; sanitizeSegments
-  // heals layers too). The invariants below assert the correct property; the
+  // each line's `stations` but never pruned that line's `segmentStyles` — now
+  // fixed (deleteStation calls pruneOrphanSegmentStyles). The invariants below
+  // assert the correct property; the
   // deterministic tests are the regression guards for the narrow paths.
   const REFERENTIAL_RUNS = 2000;
 
@@ -377,26 +359,6 @@ describe('transforms invariants (property-based)', () => {
             expect(doc.stations[b]).toBeDefined();
             // 'solid' is the canonical default and must never be stored.
             expect(styles[key]).not.toBe('solid');
-          }
-        }
-      }),
-      { numRuns: REFERENTIAL_RUNS },
-    );
-  });
-
-  it('every segmentLayers key resolves to two existing stations and is non-zero', () => {
-    fc.assert(
-      fc.property(fc.array(actionArb, { maxLength: 30 }), (actions) => {
-        const doc = applyAll(actions);
-        for (const lid of Object.keys(doc.lines)) {
-          const layers = doc.lines[lid].segmentLayers;
-          if (!layers) continue;
-          for (const key of Object.keys(layers)) {
-            const [a, b] = pairKeyStations(key);
-            expect(doc.stations[a]).toBeDefined();
-            expect(doc.stations[b]).toBeDefined();
-            // Layer 0 is the canonical default and must never be stored.
-            expect(layers[key]).not.toBe(0);
           }
         }
       }),

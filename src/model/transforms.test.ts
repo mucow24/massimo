@@ -2040,12 +2040,12 @@ describe('deleteStation — line tag cascade', () => {
 });
 
 describe('deleteStation — segment override cascade', () => {
-  it('prunes segmentStyles AND segmentLayers whose pair-key referenced the deleted station', () => {
-    // L1 = a–b–c with a styled + layered (a,b) segment. Deleting `a` removes it
-    // from the line, so the (a,b) pair is no longer an edge; both the style and
-    // the layer override keyed on it must be pruned, not left dangling at a
-    // station that no longer exists. toggleStationOnLine / removeStationFromLine
-    // / deleteLine already do this — deleteStation must too.
+  it('prunes segmentStyles whose pair-key referenced the deleted station', () => {
+    // L1 = a–b–c with a styled (a,b) segment. Deleting `a` removes it from
+    // the line, so the (a,b) pair is no longer an edge; the style keyed on it
+    // must be pruned, not left dangling at a station that no longer exists.
+    // toggleStationOnLine / removeStationFromLine / deleteLine already do
+    // this — deleteStation must too.
     let doc = makeDoc({
       stations: [
         makeStation({ id: 'a', stops: [makeStop('L1')] }),
@@ -2055,15 +2055,12 @@ describe('deleteStation — segment override cascade', () => {
       lines: [makeLine({ id: 'L1', stations: ['a', 'b', 'c'] })],
     });
     doc = T.setLineSegmentStyle(doc, 'L1', 'a', 'b', 'dashed');
-    doc = T.cycleSegmentLayer(doc, 'L1', 'a', 'b', 1);
     // Sanity: exactly the (a,b) override exists before deletion.
     expect(Object.keys(doc.lines.L1.segmentStyles ?? {})).toHaveLength(1);
-    expect(Object.keys(doc.lines.L1.segmentLayers ?? {})).toHaveLength(1);
 
     const next = T.deleteStation(doc, 'a');
-    // The (a,b) edge is gone → both override maps drop the orphaned key.
+    // The (a,b) edge is gone → the override map drops the orphaned key.
     expect(next.lines.L1.segmentStyles ?? {}).toEqual({});
-    expect(next.lines.L1.segmentLayers ?? {}).toEqual({});
   });
 });
 
@@ -2635,92 +2632,6 @@ describe('removeStationFromLine — segmentStyles cascade', () => {
     });
     const next = T.removeStationFromLine(doc, 'L1', 2);
     expect(next.lines.L1.segmentStyles).toEqual({ 's1|s2': 'hatched' });
-  });
-});
-
-describe('cycleSegmentLayer', () => {
-  const docWithLine = () =>
-    makeDoc({
-      stations: [
-        makeStation({ id: 's1', stops: [makeStop('L1')] }),
-        makeStation({ id: 's2', stops: [makeStop('L1')] }),
-        makeStation({ id: 's3', stops: [makeStop('L1')] }),
-      ],
-      lines: [makeLine({ id: 'L1', stations: ['s1', 's2', 's3'] })],
-    });
-
-  it('writes a non-zero layer under the canonical pair-key on +1', () => {
-    const next = T.cycleSegmentLayer(docWithLine(), 'L1', 's1', 's2', 1);
-    expect(next.lines.L1.segmentLayers).toEqual({ 's1|s2': 1 });
-  });
-
-  it('writes a negative layer on -1', () => {
-    const next = T.cycleSegmentLayer(docWithLine(), 'L1', 's1', 's2', -1);
-    expect(next.lines.L1.segmentLayers).toEqual({ 's1|s2': -1 });
-  });
-
-  it('canonicalizes argument order (b, a) -> a|b', () => {
-    const next = T.cycleSegmentLayer(docWithLine(), 'L1', 's2', 's1', 1);
-    expect(next.lines.L1.segmentLayers).toEqual({ 's1|s2': 1 });
-  });
-
-  it('accumulates: repeated +1 climbs uncapped', () => {
-    let doc = docWithLine();
-    for (let i = 0; i < 5; i++) doc = T.cycleSegmentLayer(doc, 'L1', 's1', 's2', 1);
-    expect(doc.lines.L1.segmentLayers).toEqual({ 's1|s2': 5 });
-  });
-
-  it('returning to 0 deletes the entry rather than storing it', () => {
-    let doc = T.cycleSegmentLayer(docWithLine(), 'L1', 's1', 's2', 1);
-    doc = T.cycleSegmentLayer(doc, 'L1', 's1', 's2', -1);
-    expect(doc.lines.L1.segmentLayers).toEqual({});
-  });
-
-  it('preserves entries on other segments when one segment changes', () => {
-    let doc = T.cycleSegmentLayer(docWithLine(), 'L1', 's1', 's2', 1);
-    doc = T.cycleSegmentLayer(doc, 'L1', 's2', 's3', -1);
-    expect(doc.lines.L1.segmentLayers).toEqual({
-      's1|s2': 1,
-      's2|s3': -1,
-    });
-  });
-
-  it('silently no-ops on unknown line id', () => {
-    const doc = docWithLine();
-    expect(T.cycleSegmentLayer(doc, 'ghost', 's1', 's2', 1)).toEqual(doc);
-  });
-});
-
-describe('removeStationFromLine — segmentLayers cascade', () => {
-  it('drops segment-layer entries whose corridor is no longer an edge', () => {
-    let doc = makeDoc({
-      stations: [
-        makeStation({ id: 's1', stops: [makeStop('L1')] }),
-        makeStation({ id: 's2', stops: [makeStop('L1')] }),
-        makeStation({ id: 's3', stops: [makeStop('L1')] }),
-      ],
-      lines: [makeLine({ id: 'L1', stations: ['s1', 's2', 's3'] })],
-    });
-    doc = T.cycleSegmentLayer(doc, 'L1', 's1', 's2', 1);
-    doc = T.cycleSegmentLayer(doc, 'L1', 's2', 's3', -1);
-    const next = T.removeStationFromLine(doc, 'L1', 1);
-    // After removing s2, only s1-s3 remains as an edge; both prior keys break.
-    expect(next.lines.L1.segmentLayers).toEqual({});
-  });
-
-  it('keeps segment-layer entries whose corridor remains an edge', () => {
-    let doc = makeDoc({
-      stations: [
-        makeStation({ id: 's1', stops: [makeStop('L1')] }),
-        makeStation({ id: 's2', stops: [makeStop('L1')] }),
-        makeStation({ id: 's3', stops: [makeStop('L1')] }),
-      ],
-      lines: [makeLine({ id: 'L1', stations: ['s1', 's2', 's3'] })],
-    });
-    doc = T.cycleSegmentLayer(doc, 'L1', 's1', 's2', 1);
-    doc = T.cycleSegmentLayer(doc, 'L1', 's1', 's2', 1);
-    const next = T.removeStationFromLine(doc, 'L1', 2);
-    expect(next.lines.L1.segmentLayers).toEqual({ 's1|s2': 2 });
   });
 });
 
