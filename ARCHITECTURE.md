@@ -1,6 +1,6 @@
 # Massimo — Architecture
 
-**Up to date as of commit `3646333` (2026-07-13) — verified against the live source (code-health pass covering the edge-set line topology, branch/loop seams + continuous casing, and per-station text styles landed since the prior refresh).**
+**Up to date as of commit `accf654` (2026-07-14) — verified against the live source (code-health pass focused on the region-layering rewrite that retired per-segment z-layers for "paint-by-numbers" region assignments, plus the width-edit stop repack and the git-graph line-tree layout landed since the prior refresh).**
 
 > A fast-bootstrap reference for understanding the codebase: the ins, outs, gotchas, and
 > caveats. Written for an AI assistant (or new contributor) who needs the full picture
@@ -533,7 +533,9 @@ by the **Load…** menu. Pure, returns `{ok, doc}` or `{ok:false, error}`:
    aren't real adjacencies) + `backfillLineEdges` (derive `edges` from the legacy `stations` order
    for pre-topology saves — unconditional, since a missing `edges` white-screens the renderer) +
    `backfillLineNames`.
-6. `sanitizeStations` (legacy orientations + `valign:'auto'`→`'auto-down'`).
+6. `sanitizeStations` (legacy orientations + `valign:'auto'`→`'auto-down'`), then
+   `sanitizeRegionAssignments` (region-assignment hygiene — validates against the **cleaned**
+   lines: dangling line ids drop the assignment, dangling pairKey anchors survive for reconcile).
 7. `convertLegacyDotShapes` (preset ids → `DotStyle`) — **runs after** the line/station passes.
 8. `sanitizeStopDotSizes` — **must run after** the per-line pass (a stop compares against the
    _sanitized_ line default).
@@ -580,6 +582,7 @@ disjoint fields (order immaterial except where noted), never mutating the input:
 | `v<12`      | nothing of its own — the bump just forces pre-designation storage through migrate so the style-invariant pass backfills `styleDefaults`    |
 | `v<13`      | `backfillTransferDayNightColors` (transfer per-transfer overrides + transfer StyleDef props: legacy single-color strings → `{day, night}` pairs) — ordered **after** the `v<10` bake, **before** the `v<11` adoption (which now compares transfer props by `.day`/`.night`) |
 | `v<14`      | `bakeLegacyLabelSettings` (retired doc-level `labelFontSize/labelWeight/labelItalic/labelLeading/labelTracking` → per-station typography + seed the designated default station style) — ordered **after** the `v<3` `labelBold`→`labelWeight` step (so it sees the materialized weight) and the edge/style invariant passes |
+| `v<15`      | the **layering rework**: `stripLegacySegmentLayers` (drops the retired per-segment `segmentLayers` field from lines) + `sanitizeRegionAssignments` (region-assignment hygiene — a pre-v15 doc has none, but a tampered/newer-build one might). Path A runs `sanitizeRegionAssignments` unconditionally |
 | (not gated) | `backfillLinesEdges` whenever `lines !== undefined` — every rehydrate, **not** `v<14`-gated: an intermediate build bumped the persist version to 14 and re-saved lines BEFORE they carried `edges`, so a `v<14` gate could never recover those (`ln.edges.join(...)` white-screens on load). Reference-stable when every line already has an array |
 | (not gated) | `ensureStyleInvariants` whenever `styles !== undefined` — ordered between the `v<10` hygiene and the bake (the bake seeds the _designated_ default transfer style; adoption stamps designated defaults) |
 | (not gated) | `validActivePalettes` whenever `activePalettes !== undefined`                                                                              |
@@ -797,9 +800,11 @@ This produces the Vignelli parallel-stripe look. `buildBandGeometry` (the heart)
 maxAbsOffset` so the innermost stripe still curves at ≥ R); **marker-fit cap** (cap R so the
    post-fillet straight run ≥ the widest marker half-width — single-stripe bands may cap _below_
    R, multi-stripe bands floor _at_ R); then `offsetFilletPath` per stripe.
-7. `assignLinePriorities` fills per-stripe z-priority from `lineOrder` + segment-layer overrides;
-   `buildOrderedRenderables` flattens to per-stripe + marker renderables sorted back-to-front, so
-   a perpendicular middle-layer line can interleave _between_ another band's stripes.
+7. `assignLinePriorities` fills per-stripe z-priority from `lineOrder` **only** (per-segment layer
+   overrides are gone — region assignments override the covering line per-face at render time
+   instead, see Region layering); `buildOrderedRenderables` flattens to per-stripe + marker
+   renderables sorted back-to-front, so a perpendicular middle-layer line can interleave _between_
+   another band's stripes.
 
 A `SegmentBandSpec` carries **parallel arrays** (`lines`, `paths`, `stripeOffsets`,
 `stripeWidths`, `linePriorities` — index k = same stripe). `stripeOffsets`/`stripeWidths`/`radius`
@@ -1194,10 +1199,11 @@ the canvas, which would deselect the item (closing the popover) or right-click-r
 signature — **width is geometry (in the hash), and so is the _set_ of styled segments
 (`Object.keys(segmentStyles)`); style values, like color, are re-resolved live at paint time
 (`resolveSegmentStyle` is the single resolver shared by the geometry bake and the render-time
-refresh, so the two can never disagree)**. So a color/layer edit — or a dashed→dotted change on an
-already-styled segment — repaints without a geometry rebuild, and the geometry-only
-array (not the priority-assigned `bands`) is passed to layering overlays so a layer cycle doesn't
-churn the reference and re-run the per-stripe `t` search (a single click on a busy map once burned
+refresh, so the two can never disagree)**. So a color or casing edit — or a dashed→dotted change on
+an already-styled segment — repaints without a geometry rebuild. Region layering keeps its own
+parallel cache: the overlays read `regionCache.regionsFor` (sig-keyed on the same geometry fields,
+presentation excluded), so cycling a region assignment reuses the cached faces/bands/markers and
+doesn't re-run the per-face arc-length search (a single click on a busy map once burned
 300–500ms). `assignLinePriorities` mutates in place, so `bands` clones each spec.
 
 The stations side works the same way: `stationsGeometrySig` hashes only the station fields
@@ -1555,7 +1561,7 @@ Each is confirmed in source/tests; file pointers included.
 - **Interlining** — merging multiple lines sharing a corridor into mean-centered parallel stripes
   (the Vignelli look).
 - **pairKey** — `pairKeyOf(a, b)` = canonical sorted `"${min}|${max}"` station-pair key; the
-  anchor for segment styles/layers and line tags.
+  anchor for segment styles and line tags (per-segment layers are retired — see Region layering).
 - **Casing / rail** — the thin outline ("stroke") along a line's body edges, MTA-style.
 - **Dot vs marker** — the circular **dot** (`StopGlyph`) is the stop indicator; the **marker**
   (`StopMarker`) is the colored square sitting in the band at the same stop.
