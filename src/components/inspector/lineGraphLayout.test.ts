@@ -631,7 +631,9 @@ describe('branchableStops (which inspector rows offer a Branch button)', () => {
     // All three are degree-2; none is a dead-end. `r` is LAST in line.stations,
     // which must not hide it — visibility follows the rendered graph, not the
     // array order.
-    const s = setFor(makeLine({ id: 'L1', stations: ['p', 'q', 'r'], edges: ['p|q', 'q|r', 'p|r'] }));
+    const s = setFor(
+      makeLine({ id: 'L1', stations: ['p', 'q', 'r'], edges: ['p|q', 'q|r', 'p|r'] }),
+    );
     expect(s.has('p')).toBe(true);
     expect(s.has('q')).toBe(true);
     expect(s.has('r')).toBe(true);
