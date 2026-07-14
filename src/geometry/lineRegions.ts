@@ -655,18 +655,22 @@ export const EXCLUSION_INSET = 0.25;
  * doubled antialiased edges, no seams inside the winner, tangent territory
  * untouched), and holes hug the face (adjacent regions can't be nicked).
  *
- * The hole for loser L at face F with winner W is the union of:
- *  - CORE — W's body over L: F itself. Uncased W: F ∩ erode(bodyW,
- *    EXCLUSION_INSET) so the hole edge lands on opaque winner paint. Cased
- *    W: F ∪ (silhouetteW ∩ dilate(F, railW_W/2 + ε)) — the hole runs on
- *    THROUGH W's white ring, uncovering W's rails where they cross L: the
- *    rails are already painted in the base pass, buried under L; revealing
- *    them gives the override the exact "winner bridges over" look of a
- *    natural top line (no inset needed — no exposed body edge remains).
- *  - FRINGE (cased L): silhouetteL ∩ bodyW ∩ dilate(F, railW_L/2 + ε) — L's
- *    white casing fringe extends railW/2 beyond its body, i.e. beyond F,
- *    and would otherwise slash across the winner's continuous run at every
- *    face boundary.
+ * The hole for loser L at face F with winner W is ONE intersection:
+ *
+ *   dilate_miter(F, railW_L/2 + railW_W/2 + 0.5) ∩ footprintW
+ *
+ * where footprintW is W's silhouette when W is cased (the hole runs on
+ * through W's white ring, uncovering W's rails where they cross L — the
+ * rails are already painted in the base pass, buried under L, so revealing
+ * them gives the exact "winner bridges over" look), or W's body eroded by
+ * EXCLUSION_INSET when uncased (the hole edge must land on opaque winner
+ * paint, not its antialiased tail). Both hole boundaries are invisible by
+ * construction: the dilation reaches past L's own silhouette (no L paint
+ * beyond the cutoff to cut), with MITER joins so the cutoff stays parallel
+ * to L's edges through F's corners (a round dilation arcs inward there,
+ * leaving a misaligned sliver where a crossing meets a parallel channel);
+ * and the footprint boundary coincides with the winner's natural paint/rail
+ * edge, aligning with the same edge above and below the crossing.
  *
  * Returns lineId → hole rings; lines absent from the map paint unclipped.
  * Clipping also removes the losers' pointer-event surface over the face, so
@@ -726,32 +730,18 @@ export function buildExclusionHoles(
     if (!w || !w.assignmentId) return;
     if (w.winner === defaultWinner(face, orderIdx)) return; // base already shows it
     const railWWinner = railWOf(w.winner);
-    const body = paintNear(w.winner, face.bbox, 0);
-    if (!body.length) return;
-    const core =
+    const footprint =
       railWWinner > 0
-        ? unionAll([
-            ...face.face,
-            ...intersect(
-              paintNear(w.winner, face.bbox, railWWinner),
-              offsetClosed(face.face, railWWinner / 2 + 0.5),
-            ),
-          ])
-        : intersect(face.face, offsetClosed(body, -EXCLUSION_INSET));
-    if (!core.length) return;
+        ? paintNear(w.winner, face.bbox, railWWinner)
+        : offsetClosed(paintNear(w.winner, face.bbox, 0), -EXCLUSION_INSET);
+    if (!footprint.length) return;
     const winnerRank = orderIdx(w.winner);
     for (const lineId of face.lineIds) {
       if (lineId === w.winner) continue;
       if (orderIdx(lineId) >= winnerRank) continue; // painted below the winner
-      const railWLoser = railWOf(lineId);
-      let hole = core;
-      if (railWLoser > 0) {
-        const fringe = intersect(
-          intersect(paintNear(lineId, face.bbox, railWLoser), body),
-          offsetClosed(face.face, railWLoser / 2 + 0.5),
-        );
-        if (fringe.length) hole = unionAll([...core, ...fringe]);
-      }
+      const reach = railWOf(lineId) / 2 + railWWinner / 2 + 0.5;
+      const hole = intersect(offsetClosed(face.face, reach, 'miter'), footprint);
+      if (!hole.length) continue;
       const list = holes.get(lineId);
       if (list) list.push(...hole);
       else holes.set(lineId, [...hole]);

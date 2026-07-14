@@ -152,3 +152,26 @@ describe('buildExclusionHoles — casings', () => {
     expect(contains(hole, { x: 43.1, y: 0 })).toBe(true);
   });
 });
+
+describe('buildExclusionHoles — corner alignment (the channel-junction nub)', () => {
+  it('keeps full reach through face corners (miter, not round, dilation)', () => {
+    // Both lines cased at railW = 2. The hole's cutoff beyond the face must
+    // stay parallel to the loser's edges THROUGH the face corners — a round
+    // dilation arcs inward there, leaving a sliver of loser paint over the
+    // winner's rail that misaligns the white bands where a crossing meets a
+    // parallel channel (the pixel-peeped nub).
+    const bands = cross();
+    const faces = buildOverlapRegions(bands, []);
+    const winners = [{ winner: 'l2' as LineId, assignmentId: 'r1' }];
+    const holes = buildExclusionHoles(faces, winners, ['l1', 'l2'], bands, [], () => 2);
+    const hole = holes.get('l1');
+    // Face corner at (57, 7); winner silhouette reaches x = 58; reach beyond
+    // the face is railW_L/2 + railW_W/2 + slack = 2.5. This probe is inside
+    // the miter region (0.9 and 2.4 past the corner's edges) but 2.56 from
+    // the corner point — a round dilation excludes it.
+    expect(contains(hole, { x: 57.9, y: 9.4 })).toBe(true);
+    // Still cut exactly at the winner's silhouette edge (the channel edge).
+    expect(contains(hole, { x: 58.5, y: 9.4 })).toBe(false);
+    expect(contains(hole, { x: 58.5, y: 0 })).toBe(false);
+  });
+});

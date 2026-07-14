@@ -70,18 +70,26 @@ export function offsetOpenPath(path: Vec2[], delta: number): Ring[] {
 }
 
 /**
- * Dilate (delta > 0) or erode (delta < 0) closed polygons, round joins.
- * Input rings are orientation-normalized through a NonZero union first, so
- * callers may pass rings of either winding (including [outer, ...holes] faces).
+ * Dilate (delta > 0) or erode (delta < 0) closed polygons. Joins default to
+ * round (a true Minkowski disc sum); 'miter' keeps the offset boundary
+ * parallel to the input edges THROUGH corners (extending them to their
+ * intersection, limit 3) — used where the dilation boundary must align with
+ * offsets of the same edges elsewhere (region exclusion holes). Input rings
+ * are orientation-normalized through a NonZero union first, so callers may
+ * pass rings of either winding (including [outer, ...holes] faces).
  */
-export function offsetClosed(rings: Ring[], delta: number): Ring[] {
+export function offsetClosed(
+  rings: Ring[],
+  delta: number,
+  join: 'round' | 'miter' = 'round',
+): Ring[] {
   if (!rings.length) return [];
   const normalized = unionAll(rings);
   if (!normalized.length) return [];
-  const offset = new ClipperLib.ClipperOffset(2, ARC_TOLERANCE);
+  const offset = new ClipperLib.ClipperOffset(3, ARC_TOLERANCE);
   offset.AddPaths(
     normalized.map(toInt),
-    ClipperLib.JoinType.jtRound,
+    join === 'miter' ? ClipperLib.JoinType.jtMiter : ClipperLib.JoinType.jtRound,
     ClipperLib.EndType.etClosedPolygon,
   );
   const solution: ClipperLib.Paths = [];
