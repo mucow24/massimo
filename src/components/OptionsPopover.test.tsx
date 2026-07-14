@@ -98,6 +98,29 @@ describe('<OptionsPopover />', () => {
     expect(screen.queryByRole('slider', { name: /tracking/i })).toBeNull();
   });
 
+  describe('branch inner edges', () => {
+    it("defaults to 'both'", async () => {
+      const user = userEvent.setup();
+      render(<Toolbar />);
+      await user.click(screen.getByRole('button', { name: 'Options' }));
+      const select = screen.getByRole('combobox', {
+        name: /branch inner edges/i,
+      }) as HTMLSelectElement;
+      expect(select.value).toBe('both');
+    });
+
+    it('selecting a mode writes it to the doc', async () => {
+      const user = userEvent.setup();
+      render(<Toolbar />);
+      await user.click(screen.getByRole('button', { name: 'Options' }));
+      const select = screen.getByRole('combobox', { name: /branch inner edges/i });
+      await user.selectOptions(select, 'curved');
+      expect(useDoc.getState().seamEdges).toBe('curved');
+      await user.selectOptions(select, 'straight');
+      expect(useDoc.getState().seamEdges).toBe('straight');
+    });
+  });
+
   describe('color palettes', () => {
     it('shows the palette cards directly — no disclosure to expand', async () => {
       const user = userEvent.setup();

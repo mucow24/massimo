@@ -112,6 +112,7 @@ export function MapCanvas() {
   const stations = useDoc((s) => s.stations);
   const lines = useDoc((s) => s.lines);
   const lineOrder = useDoc((s) => s.lineOrder);
+  const seamEdges = useDoc((s) => s.seamEdges);
   const addLineTag = useDoc((s) => s.addLineTag);
   const assignRegion = useDoc((s) => s.assignRegion);
   const setLineSegmentStyle = useDoc((s) => s.setLineSegmentStyle);
@@ -1101,6 +1102,7 @@ export function MapCanvas() {
                 lines={lines}
                 colorMap={colorMap}
                 underlayColor={underlayColor}
+                seamEdges={seamEdges}
               />,
             );
           }
@@ -1381,6 +1383,7 @@ export function MapCanvas() {
               stations={stations}
               renderables={renderables}
               underlayColor={underlayColor}
+              seamEdges={seamEdges}
               uiMode={selection.uiMode}
               zoom={view.viewport.zoom}
               onStartDrag={drag.onStartDrag}
