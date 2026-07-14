@@ -43,10 +43,10 @@ test('right-click removes a segment in Edit Stops mode and stays in the mode', a
   page,
 }) => {
   await seedAndOpen(page, fourInLine);
+  // Clicking a stripe goes straight into Edit Stops (no button, no
+  // intermediate selected state); the banner is the mode signal.
   await stripe(page).click({ force: true });
-  await page.locator('.inspector').waitFor();
-  await page.getByRole('button', { name: 'Edit Stops' }).click();
-  await expect(page.getByRole('button', { name: 'Done' })).toBeVisible();
+  await expect(page.locator('.append-banner')).toBeVisible();
 
   const p = await segMid(page, 'B', 'C');
   await page.mouse.click(p.x, p.y, { button: 'right' });
@@ -55,17 +55,16 @@ test('right-click removes a segment in Edit Stops mode and stays in the mode', a
     .poll(async () => new Set(await readEdges(page)))
     .toEqual(new Set(['A|B', 'C|D']));
   // The right-click belongs to the editor's remove gesture — the mode stays.
-  await expect(page.getByRole('button', { name: 'Done' })).toBeVisible();
+  await expect(page.locator('.append-banner')).toBeVisible();
 });
 
 test('right-click on a segment outside Edit Stops changes nothing', async ({ page }) => {
-  await seedAndOpen(page, fourInLine);
-  await stripe(page).click({ force: true }); // line selected, but NOT editing
-  await page.locator('.inspector').waitFor();
+  await seedAndOpen(page, fourInLine); // idle: nothing selected, no mode
 
   const p = await segMid(page, 'B', 'C');
   await page.mouse.click(p.x, p.y, { button: 'right' });
   await page.waitForTimeout(300); // give any (wrong) mutation time to persist
 
   expect(new Set(await readEdges(page))).toEqual(new Set(['A|B', 'B|C', 'C|D']));
+  await expect(page.locator('.append-banner')).toBeHidden(); // and no mode entered
 });

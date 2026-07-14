@@ -590,19 +590,31 @@ export const useSelection = create<SelectionState>()(
           activeTab: 'stations',
           lineTagHoverPreview: null,
         }),
-      startAppend: (lineId) =>
+      // THE way into the line editor — there is no "selected but not editing"
+      // state: picking a line (sidebar row, badge, or canvas stripe) goes
+      // straight into Edit Stops. Mirrors selectLine's old entry semantics:
+      // reveal a hidden sidebar so the editor is visible, and remember we did
+      // so exiting can re-hide it.
+      startAppend: (lineId) => {
+        const s = get();
         set({
           ...clearedSelections(),
           uiMode: { kind: 'appending-to-line', lineId, cursor: null },
           selectedLineId: lineId,
           activeTab: 'lines',
+          sidebarOpen: true,
+          sidebarAutoRevealed: !s.sidebarOpen || s.sidebarAutoRevealed,
           lineTagHoverPreview: null,
-        }),
+        });
+      },
       setAppending: (lineId) => {
         const cur = get().uiMode;
         if (lineId === null) {
           if (cur.kind === 'appending-to-line') {
-            set({ uiMode: { kind: 'idle' }, lineTagHoverPreview: null });
+            // Exiting the editor goes straight back to the MAIN view — the
+            // line deselects with the mode (there is no selected-not-editing
+            // state to land on).
+            set({ uiMode: { kind: 'idle' }, selectedLineId: null, lineTagHoverPreview: null });
           }
           return;
         }

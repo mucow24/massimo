@@ -1,11 +1,11 @@
-import { useDoc, useSelection } from '../../state/store';
+import { useDoc } from '../../state/store';
 import type { LineId } from '../../model/types';
 import { DEFAULT_DOT_STYLE, DOT_SHAPE_PRESETS } from '../../model/dotStyle';
 import { ColorPalette } from './ColorPalette';
 import { ColorField } from '../ColorField';
 import { useFieldHistory } from '../useFieldHistory';
 import { StationShapePicker } from '../StationShapePicker';
-import { legibleTextOn, withHexAlpha } from '../../util/color';
+import { withHexAlpha } from '../../util/color';
 import { NumericFieldRow } from '../NumericFieldRow';
 import { StyleRow } from '../StyleRow';
 import {
@@ -31,10 +31,11 @@ import {
   lineStrokeWidthOf,
 } from '../../model/lineStroke';
 
-// The line's identity + style fields. Stop/topology editing happens ON THE
-// CANVAS in Edit Stops mode (see appendGestures.ts): click stations to
-// connect, click a segment to insert into it, right-click to remove,
-// shift-click a segment to cycle its style. The old stop-list tree is gone.
+// The line's identity + style fields, shown while the line is being edited
+// (picking a line goes straight into Edit Stops — there is no selected-but-
+// not-editing state). Stop/topology editing happens ON THE CANVAS (see
+// appendGestures.ts): click stations to connect, click a segment to insert
+// into it, Delete/× removes, shift-click a segment cycles its style.
 export function LineInspector({ id }: { id: LineId }) {
   const line = useDoc((s) => s.lines[id]);
   const updateLine = useDoc((s) => s.updateLine);
@@ -46,14 +47,10 @@ export function LineInspector({ id }: { id: LineId }) {
   const setLineStrokeColor = useDoc((s) => s.setLineStrokeColor);
   const setLineSeamColor = useDoc((s) => s.setLineSeamColor);
   const setLineSeamWidth = useDoc((s) => s.setLineSeamWidth);
-  const selection = useSelection();
   const nameField = useFieldHistory();
   const serviceField = useFieldHistory();
 
   if (!line) return null;
-
-  const isAppending =
-    selection.uiMode.kind === 'appending-to-line' && selection.uiMode.lineId === line.id;
 
   return (
     <section className="inspector">
@@ -184,33 +181,6 @@ export function LineInspector({ id }: { id: LineId }) {
           value={lineSeamColorOf(line) ?? withHexAlpha(lineStrokeColorOf(line), 0)}
           onChange={(c) => setLineSeamColor(line.id, c)}
         />
-      </div>
-      <div className="field">
-        <button
-          type="button"
-          onClick={() => selection.setAppending(isAppending ? null : line.id)}
-          title={
-            isAppending
-              ? 'Done editing stops.'
-              : 'Edit stops on the canvas: click stations to connect, click a segment to insert into it, right-click to remove.'
-          }
-          style={{
-            width: '100%',
-            marginBottom: 3,
-            padding: '8px 12px',
-            border: 'none',
-            borderRadius: 0,
-            background: isAppending ? line.color : '#000',
-            color: isAppending ? legibleTextOn(line.color) : '#fff',
-            fontFamily: 'inherit',
-            fontWeight: 500,
-            fontSize: 13,
-            letterSpacing: '0.04em',
-            cursor: 'pointer',
-          }}
-        >
-          {isAppending ? 'Done' : 'Edit Stops'}
-        </button>
       </div>
     </section>
   );

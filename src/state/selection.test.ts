@@ -515,6 +515,23 @@ describe('uiMode variant payloads', () => {
       expect(cur.cursor).toBeNull();
     }
   });
+
+  it('exiting the editor deselects the line too — no selected-not-editing state', () => {
+    useSelection.getState().startAppend('L1' as LineId);
+    expect(useSelection.getState().selectedLineId).toBe('L1');
+    useSelection.getState().setAppending(null);
+    expect(useSelection.getState().uiMode.kind).toBe('idle');
+    expect(useSelection.getState().selectedLineId).toBeNull();
+  });
+
+  it('startAppend reveals a hidden sidebar (the editor must be visible)', () => {
+    useSelection.setState({ sidebarOpen: false, sidebarAutoRevealed: false });
+    useSelection.getState().startAppend('L1' as LineId);
+    const s = useSelection.getState();
+    expect(s.sidebarOpen).toBe(true);
+    expect(s.sidebarAutoRevealed).toBe(true);
+    expect(s.activeTab).toBe('lines');
+  });
 });
 
 describe('select* rationalized exclusivity (non-station)', () => {

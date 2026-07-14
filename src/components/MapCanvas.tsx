@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 
-import { dragState, exitLineEditorOnItemClick, useDoc, useSelection } from '../state/store';
+import { dragState, useDoc, useSelection } from '../state/store';
 import { hoveredChrome, type HoverKind } from '../state/selection';
 import { useSnapPrefs } from '../state/snapPrefs';
 import { useViewportStore } from '../state/viewportStore';
@@ -422,31 +422,17 @@ export function MapCanvas() {
     if (!inLayeringMode && hoveredRegionKey) setHoveredRegionKey(null);
   }
 
-  // Stable click handler for selecting a line by clicking its stripe. Passed to
-  // every (memoized) SegmentBand, so it must keep a constant identity across a
-  // pan; selection.selectLine / setLineSegmentStyle are stable Zustand actions.
-  const selectLine = selection.selectLine;
+  // Stable click handler for a stripe click in idle: goes STRAIGHT into Edit
+  // Stops (there is no "selected but not editing" state). Passed to every
+  // (memoized) SegmentBand, so it must keep a constant identity across a pan;
+  // selection.startAppend is a stable Zustand action.
+  const startAppend = selection.startAppend;
   const handleLineSelect = useCallback(
-    (lineId: LineId, e: React.MouseEvent<SVGPathElement>, pairKey?: string) => {
+    (lineId: LineId, e: React.MouseEvent<SVGPathElement>) => {
       e.stopPropagation();
-      // Shift-click on the ALREADY-selected line's stripe cycles that
-      // segment's style — styling shouldn't require entering Edit Stops.
-      // (Reads the stores imperatively to keep this callback's identity
-      // stable across renders; the memoized bands depend on that.)
-      if (e.shiftKey && pairKey) {
-        const sel = useSelection.getState();
-        if (sel.uiMode.kind === 'idle' && sel.selectedLineId === lineId) {
-          const line = useDoc.getState().lines[lineId];
-          if (line && line.edges.includes(pairKey)) {
-            const [a, b] = edgeEndpoints(pairKey);
-            setLineSegmentStyle(lineId, a, b, NEXT_STYLE[resolveSegmentStyle(line, pairKey)]);
-            return;
-          }
-        }
-      }
-      selectLine(lineId);
+      startAppend(lineId);
     },
-    [selectLine, setLineSegmentStyle],
+    [startAppend],
   );
 
   const onPointerDown = (e: React.PointerEvent) => {
@@ -607,10 +593,6 @@ export function MapCanvas() {
     const next = nextInStack(stack, currentHitEntity(useSelection.getState()));
     if (!next) return false; // nothing selectable here — behave as a plain background click
     e.stopPropagation();
-    // "Click off the line exits the editor without selecting" must not eat a
-    // deep-pick — the user explicitly asked for the next item — so exit the
-    // line editor BEFORE dispatching (exitLineEditorOnItemClick then no-ops).
-    if (useSelection.getState().selectedLineId) selectLine(null);
     next.element.dispatchEvent(
       new MouseEvent('click', {
         bubbles: true,
@@ -646,9 +628,10 @@ export function MapCanvas() {
       if (dragState.suppressClick) return;
       if (inHandMode) return;
       e.stopPropagation();
-      // Line editor open: this is a click off the line to exit — deselect the
-      // line and don't select the item under the cursor.
-      if (exitLineEditorOnItemClick()) return;
+      // Clicking a free item while editing a line's stops exits the editor
+      // (back to the main view) AND selects the item — no intermediate state.
+      const sel = useSelection.getState();
+      if (sel.uiMode.kind === 'appending-to-line') sel.setAppending(null);
       opts.beforeSelect?.();
       if (e.shiftKey && !(e.ctrlKey || e.metaKey)) {
         opts.toggle(id);
@@ -831,9 +814,23 @@ export function MapCanvas() {
       return st && cell ? stopPosWorld(cell, st) : null;
     };
     return {
-      onLineClick: (_lineId: LineId, e: React.MouseEvent) => {
+      onLineClick: (lineId: LineId, e: React.MouseEvent) => {
         const ctx = appendCtx();
-        if (!ctx) return;
+        if (!ctx) {
+          // A corridor the edited line doesn't run: clicking another line's
+          // stripe switches the editor to that line (matching the old
+          // stripe-click-switches behavior).
+          const mode = selection.uiMode;
+          if (
+            mode.kind === 'appending-to-line' &&
+            lineId !== mode.lineId &&
+            lines[lineId] !== undefined
+          ) {
+            e.stopPropagation();
+            selection.setAppending(lineId);
+          }
+          return;
+        }
         e.stopPropagation();
         const { cursor, line } = ctx;
         if (e.shiftKey) {
@@ -1202,8 +1199,10 @@ export function MapCanvas() {
           stations={stations}
           defaults={TRANSFER_STYLE_DEFAULTS}
           onSelect={(id) => {
-            if (exitLineEditorOnItemClick()) return;
-            selection.selectTransfer(id);
+            // Same exit-then-select contract as the free items above.
+            const sel = useSelection.getState();
+            if (sel.uiMode.kind === 'appending-to-line') sel.setAppending(null);
+            sel.selectTransfer(id);
           }}
           onHoverEnter={(id) => setHover({ kind: 'transfer', id })}
           onHoverLeave={(id) => clearHoverIf('transfer', id)}

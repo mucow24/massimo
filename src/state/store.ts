@@ -1172,25 +1172,6 @@ export function cancelAppendMode(): void {
   sel.setAppending(null);
 }
 
-/**
- * The line editor is "open" when a line is selected (the LineInspector plus the
- * dim / direction-arrow highlight are showing) and no sub-mode is active. A
- * canvas click on some OTHER item then counts as "click off the line to exit":
- * it deselects the line and reports that it consumed the click, so the caller
- * does NOT select the item under the cursor. Returns false (caller proceeds
- * normally) otherwise.
- *
- * Stations and lines are exempt and never route through here: clicking a station
- * exits the editor and selects it (stations belong to the line), and clicking
- * another line stripe switches the editor to that line.
- */
-export function exitLineEditorOnItemClick(): boolean {
-  const sel = useSelection.getState();
-  if (sel.selectedLineId == null || sel.uiMode.kind !== 'idle') return false;
-  sel.selectLine(null);
-  return true;
-}
-
 // ----- Drag-vs-click suppression (module-level, not persisted) -----
 export const dragState = { suppressClick: false };
 

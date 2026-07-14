@@ -86,18 +86,11 @@ describe('<LineInspector /> — name / service / default-shape (E9)', () => {
     expect(useDoc.getState().lines.L1.defaultDotStyle).toEqual(DOT_SHAPE_PRESETS['open-white']);
   });
 
-  it('the Edit Stops button enters and exits appending-to-line mode', async () => {
-    const user = userEvent.setup();
+  it('renders no Edit Stops button — picking a line IS entering the editor', () => {
     seedThree();
     render(<LineInspector id="L1" />);
-    await user.click(screen.getByRole('button', { name: 'Edit Stops' }));
-    expect(useSelection.getState().uiMode).toEqual({
-      kind: 'appending-to-line',
-      lineId: 'L1',
-      cursor: null,
-    });
-    await user.click(screen.getByRole('button', { name: 'Done' }));
-    expect(useSelection.getState().uiMode.kind).toBe('idle');
+    expect(screen.queryByRole('button', { name: 'Edit Stops' })).toBeNull();
+    expect(screen.queryByRole('button', { name: 'Done' })).toBeNull();
   });
 });
 

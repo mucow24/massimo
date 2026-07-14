@@ -9,12 +9,13 @@ import { seedAndOpen, stationCenter, clickAtWithModifiers, fourInLine, type Seed
 
 const stripe = (page: Page) => page.locator('[data-band-stripe][data-line-id="L1"]').first();
 
+// Clicking a stripe goes STRAIGHT into Edit Stops (there is no selected-but-
+// not-editing state, and no Edit Stops button). The banner is the mode signal.
 async function openEditStops(page: Page): Promise<void> {
   await stripe(page).click({ force: true });
-  await page.locator('.inspector').waitFor();
-  await page.getByRole('button', { name: 'Edit Stops' }).click();
-  await expect(page.getByRole('button', { name: 'Done' })).toBeVisible();
+  await expect(page.locator('.append-banner')).toBeVisible();
 }
+const editing = (page: Page) => page.locator('.append-banner');
 
 // Page point on the corridor between two stations, biased toward `a` (t from
 // a → b). Bias picks the armed edge's march direction deterministically.
@@ -67,7 +68,7 @@ test('segment click + station click splices the station into that edge', async (
     .poll(async () => new Set((await readLine(page)).edges))
     .toEqual(new Set(['A|B', 'B|S', 'C|S', 'C|D']));
   // Still editing.
-  await expect(page.getByRole('button', { name: 'Done' })).toBeVisible();
+  await expect(editing(page)).toBeVisible();
 });
 
 test('the edge cursor marches: two clicks subdivide the same corridor in order', async ({
@@ -142,10 +143,10 @@ test('Esc backs out one level: first the cursor, then the editor', async ({ page
   await page.keyboard.press('Escape');
   // Cursor dropped, still editing.
   await expect(page.locator('[data-append-cursor]')).toHaveCount(0);
-  await expect(page.getByRole('button', { name: 'Done' })).toBeVisible();
+  await expect(editing(page)).toBeVisible();
 
   await page.keyboard.press('Escape');
-  await expect(page.getByRole('button', { name: 'Done' })).toHaveCount(0);
+  await expect(editing(page)).toBeHidden();
 });
 
 test('Delete removes the armed station and heals the gap', async ({ page }) => {
@@ -160,7 +161,7 @@ test('Delete removes the armed station and heals the gap', async ({ page }) => {
   await expect
     .poll(async () => new Set((await readLine(page)).edges))
     .toEqual(new Set(['A|C', 'C|D']));
-  await expect(page.getByRole('button', { name: 'Done' })).toBeVisible();
+  await expect(editing(page)).toBeVisible();
 });
 
 test('Delete cuts the armed segment', async ({ page }) => {
@@ -174,7 +175,7 @@ test('Delete cuts the armed segment', async ({ page }) => {
   await expect
     .poll(async () => new Set((await readLine(page)).edges))
     .toEqual(new Set(['A|B', 'C|D']));
-  await expect(page.getByRole('button', { name: 'Done' })).toBeVisible();
+  await expect(editing(page)).toBeVisible();
 });
 
 test('the × chip on the armed segment removes that edge', async ({ page }) => {
@@ -190,7 +191,7 @@ test('the × chip on the armed segment removes that edge', async ({ page }) => {
   await expect
     .poll(async () => new Set((await readLine(page)).edges))
     .toEqual(new Set(['A|B', 'C|D']));
-  await expect(page.getByRole('button', { name: 'Done' })).toBeVisible();
+  await expect(editing(page)).toBeVisible();
 });
 
 test('right-click on a station during Edit Stops rotates it (never removes)', async ({ page }) => {
@@ -209,7 +210,7 @@ test('right-click on a station during Edit Stops rotates it (never removes)', as
     )
     .not.toBe(0);
   expect((await readLine(page)).stations).toEqual(['A', 'B', 'C', 'D']); // still a member
-  await expect(page.getByRole('button', { name: 'Done' })).toBeVisible();
+  await expect(editing(page)).toBeVisible();
 });
 
 test('the × chip beside the cursor station removes it from the line', async ({ page }) => {
@@ -223,7 +224,7 @@ test('the × chip beside the cursor station removes it from the line', async ({ 
   await chip.click();
 
   await expect.poll(async () => (await readLine(page)).stations).toEqual(['A', 'C', 'D']);
-  await expect(page.getByRole('button', { name: 'Done' })).toBeVisible();
+  await expect(editing(page)).toBeVisible();
 });
 
 test('shift-click cycles a segment style while editing', async ({ page }) => {

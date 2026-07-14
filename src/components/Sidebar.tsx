@@ -286,7 +286,7 @@ export function Sidebar() {
                             onClick={(e) => {
                               e.stopPropagation();
                               selection.setHoveredStation(null);
-                              selection.selectLine(ln.id);
+                              selection.startAppend(ln.id);
                             }}
                           >
                             <span className="line-badge__code">{ln.service}</span>
@@ -329,7 +329,11 @@ export function Sidebar() {
                 >
                   <div
                     className={'list-row' + (expanded ? ' selected' : '')}
-                    onClick={() => selection.selectLine(expanded ? null : ln.id)}
+                    // Straight into Edit Stops — there is no selected-but-not-
+                    // editing state. Clicking the row being edited exits.
+                    onClick={() =>
+                      expanded ? selection.setAppending(null) : selection.startAppend(ln.id)
+                    }
                     title="Default stacking: top of list paints front-most where lines overlap (regions can override per overlap). Use ↑/↓ to reorder."
                   >
                     <span

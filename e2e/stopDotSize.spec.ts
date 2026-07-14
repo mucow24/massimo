@@ -47,8 +47,11 @@ async function selectLine(page: Page, lineId: string): Promise<void> {
 }
 
 // Select station `stationId`, enter its on-canvas layout editor, and click
-// its `lineId` stop handle so the per-stop controls target it.
+// its `lineId` stop handle so the per-stop controls target it. Leaves the
+// line editor first if one is open — while Edit Stops is up, station clicks
+// are editing gestures, not selections.
 async function selectStop(page: Page, stationId: string, lineId: string): Promise<void> {
+  await page.keyboard.press('Escape');
   const c = await stationCenter(page, stationId);
   await page.mouse.click(c.x, c.y);
   await page.getByRole('button', { name: 'Edit layout' }).click();

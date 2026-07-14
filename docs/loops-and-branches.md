@@ -184,7 +184,9 @@ editing happens on the canvas in Edit Stops, driven by a CURSOR
 (`components/canvas/appendGestures.ts` is the tested gesture matrix):
 
 1. Place stations (place-station mode) or Alt-click them into existence while editing, then
-   **Edit Stops** on the line.
+   **pick the line** (sidebar row/badge or canvas stripe) — picking a line IS entering Edit
+   Stops; there is no selected-but-not-editing state, and exits (Esc, canvas click, clicking
+   another item) land back on the main view.
 2. **Connect:** click a stop to put the cursor on it; every next station click wires an edge
    from the cursor and advances it (click-click-click builds a path; clicking an existing
    member closes a loop; clicking from an interior stop grows a branch — no draw mode).
