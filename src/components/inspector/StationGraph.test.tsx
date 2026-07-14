@@ -124,7 +124,26 @@ describe('StationGraph', () => {
 
     rerender(<StationGraph {...baseProps()} isAppending line={line} stations={stationsFor(ids)} />);
     expect(screen.getByRole('button', { name: /Remove s1/ })).toBeInTheDocument();
-    expect(screen.getByRole('button', { name: /Branch from s1/ })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: /Insert after s1/ })).toBeInTheDocument();
+  });
+
+  it('offers Branch only where it forks a junction — hidden on terminals (degree ≤ 1)', () => {
+    // Linear s1-s2-s3-s4: the ends (s1, s4) are degree-1 terminals; the interior
+    // stops (s2, s3) are degree 2, where Branch actually forks a junction. On a
+    // terminal, "branch" would just extend the line — identical to Insert — so
+    // the button is pointless there and we don't offer it.
+    const ids = ['s1', 's2', 's3', 's4'];
+    const line = makeLine({ id: 'L1', stations: ids }); // linear edges backfilled
+    render(<StationGraph {...baseProps()} isAppending line={line} stations={stationsFor(ids)} />);
+    // Interior stops can fork → Branch offered.
+    expect(screen.getByRole('button', { name: /Branch from s2/ })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: /Branch from s3/ })).toBeInTheDocument();
+    // Terminals can't fork → Branch hidden.
+    expect(screen.queryByRole('button', { name: /Branch from s1/ })).toBeNull();
+    expect(screen.queryByRole('button', { name: /Branch from s4/ })).toBeNull();
+    // Insert-after stays available everywhere, terminals included.
+    expect(screen.getByRole('button', { name: /Insert after s1/ })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: /Insert after s4/ })).toBeInTheDocument();
   });
 });
 

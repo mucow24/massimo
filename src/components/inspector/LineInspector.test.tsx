@@ -556,21 +556,23 @@ describe('<LineInspector /> — branch button (draw mode)', () => {
         stations: [
           makeStation({ id: 's1', stops: [makeStop('L1')] }),
           makeStation({ id: 's2', stops: [makeStop('L1')] }),
+          makeStation({ id: 's3', stops: [makeStop('L1')] }),
         ],
-        lines: [makeLine({ id: 'L1', stations: ['s1', 's2'] })],
+        lines: [makeLine({ id: 'L1', stations: ['s1', 's2', 's3'] })],
       }),
     });
     useSelection.getState().setAppending('L1');
     const user = userEvent.setup();
     render(<LineInspector id="L1" />);
 
-    await user.click(screen.getByRole('button', { name: 'Branch from s1' }));
+    // Branch is only offered where it can fork — s2 (degree 2), not a terminal.
+    await user.click(screen.getByRole('button', { name: 'Branch from s2' }));
 
     const ui = useSelection.getState().uiMode;
     expect(ui.kind).toBe('appending-to-line');
     if (ui.kind === 'appending-to-line') {
       expect(ui.draw).toBe(true);
-      expect(ui.insertAfterIndex).toBe(0); // pen on s1 (index 0)
+      expect(ui.insertAfterIndex).toBe(1); // pen on s2 (index 1)
     }
   });
 });
@@ -619,17 +621,29 @@ describe('<LineInspector /> — deselecting the insert cursor', () => {
   });
 
   it('clicking the already-armed Branch button clears the cursor too', async () => {
-    seedTwo();
+    // Branch is only offered on a stop that can fork, so seed a 3-stop line and
+    // branch from the interior stop (degree 2); the ends are terminals.
+    useDoc.setState({
+      ...DEFAULT_DOC,
+      ...makeDoc({
+        stations: [
+          makeStation({ id: 's1', name: 'One', stops: [makeStop('L1')] }),
+          makeStation({ id: 's2', name: 'Two', stops: [makeStop('L1')] }),
+          makeStation({ id: 's3', name: 'Three', stops: [makeStop('L1')] }),
+        ],
+        lines: [makeLine({ id: 'L1', stations: ['s1', 's2', 's3'] })],
+      }),
+    });
     useSelection.getState().setAppending('L1');
     useSelection.getState().setInsertAfterIndex(null);
     const user = userEvent.setup();
     render(<LineInspector id="L1" />);
 
-    const branchS1 = screen.getByRole('button', { name: 'Branch from One' });
-    await user.click(branchS1);
-    expect(armedIndex()).toBe(0);
+    const branchTwo = screen.getByRole('button', { name: 'Branch from Two' });
+    await user.click(branchTwo);
+    expect(armedIndex()).toBe(1);
 
-    await user.click(branchS1);
+    await user.click(branchTwo);
     expect(armedIndex()).toBeNull();
   });
 
