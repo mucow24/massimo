@@ -1,7 +1,7 @@
 import { Fragment, useRef, useState, type CSSProperties } from 'react';
 import type { DotShape, DotStyle, Line, Station, StationId } from '../../model/types';
-import { lineGraphLayout } from './lineGraphLayout';
-import { edgeEndpoints, degreeOf } from '../../model/lineTopology';
+import { lineGraphLayout, branchableStops } from './lineGraphLayout';
+import { edgeEndpoints } from '../../model/lineTopology';
 import { openPolylinePath, type Pt } from '../../geometry/polygonUnion';
 import { resolveSegmentStyle } from '../../geometry/interlining';
 import { resolveDotStyle } from '../../model/transforms';
@@ -133,6 +133,7 @@ export function StationGraph(props: StationGraphProps) {
   const [pickerSid, setPickerSid] = useState<StationId | null>(null);
 
   const layout = lineGraphLayout(line);
+  const branchable = branchableStops(line, layout);
   const laneX = (lane: number) => laneCenterX(lane, layout.laneCount);
   const gutterW = layout.laneCount * LANE_W;
   const totalH = layout.rowCount * ROW_H;
@@ -297,12 +298,13 @@ export function StationGraph(props: StationGraphProps) {
             return <div key={`blank-${row}`} style={{ height: ROW_H }} />;
           const st = stations[n.stationId]!;
           const armed = isAppending && cursorStationId === n.stationId;
-          // Branch only forks a NEW arm on a stop that already has ≥2 edges. On a
-          // terminal (degree ≤ 1) "branch" would just extend the line, identical
-          // to Insert after — so we hide the button there. It's kept in the DOM
-          // (visibility, not unmounted) so its slot stays reserved and the
-          // Insert/Remove columns don't go ragged from row to row.
-          const canBranch = degreeOf(line, n.stationId) >= 2;
+          // Branch is offered wherever it does something distinct from Insert
+          // after (see branchableStops): every stop except a bottom dead-end
+          // terminus, decided from the RENDERED rows so it matches the display.
+          // The button is kept in the DOM (visibility, not unmounted) on hidden
+          // rows so its slot stays reserved and the Insert/Remove columns don't
+          // go ragged from row to row.
+          const canBranch = branchable.has(n.stationId);
           return (
             <div
               key={n.stationId}
