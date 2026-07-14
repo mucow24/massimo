@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { useCallback, useDeferredValue, useEffect, useMemo, useRef, useState } from 'react';
 
 import { dragState, exitLineEditorOnItemClick, useDoc, useSelection } from '../state/store';
 import { hoveredChrome, type HoverKind } from '../state/selection';
@@ -19,6 +19,9 @@ import { defaultStyleProps } from '../model/styles';
 import { rotateItemOnContextMenu } from './canvas/groupRotate';
 import { legibleTextOn } from '../util/color';
 import { BandWarning, SegmentBand } from './SegmentBand';
+import { RegionPatchLayer } from './canvas/RegionPatchLayer';
+import { regionsFor } from '../geometry/regionCache';
+import { resolveRegionWinners } from '../geometry/lineRegions';
 import { HatchPatterns } from './HatchPatterns';
 import { SeamClips } from './canvas/SeamClips';
 import { StopMarker } from './StopMarker';
@@ -114,6 +117,7 @@ export function MapCanvas() {
   const polygons = useDoc((s) => s.polygons);
   const polygonOrder = useDoc((s) => s.polygonOrder);
   const rotatePolygon = useDoc((s) => s.rotatePolygon);
+  const regionAssignments = useDoc((s) => s.regionAssignments);
   const svgImages = useDoc((s) => s.svgImages);
   const svgImageOrder = useDoc((s) => s.svgImageOrder);
   const rotateSvgImage45 = useDoc((s) => s.rotateSvgImage45);
@@ -309,6 +313,38 @@ export function MapCanvas() {
   }, [bands, stationsGeometrySig, lines, lineOrder]);
 
   const inHandMode = selection.toolMode === 'hand' || selection.spaceHeld;
+
+  // Region paint machinery: overlap faces + per-face winners. Computed only
+  // when it can matter (layering mode active, or stored assignments exist);
+  // regionsFor's sig-keyed cache dedupes against the reconcile step's builds.
+  //
+  // Every input is DEFERRED as one coherent snapshot: face building costs
+  // tens of ms on busy maps, so during a drag the patches lag a beat behind
+  // the bands (background-priority render) instead of janking every frame.
+  // The patch layer renders exclusively from the deferred values — mixing
+  // deferred faces with the LIVE renderables would tear the clips.
+  const needRegions =
+    selection.uiMode.kind === 'layering' || Object.keys(regionAssignments).length > 0;
+  const dStations = useDeferredValue(stations);
+  const dLines = useDeferredValue(lines);
+  const dCurveRadius = useDeferredValue(curveRadius);
+  const dLineOrder = useDeferredValue(lineOrder);
+  const dRegionAssignments = useDeferredValue(regionAssignments);
+  const dRenderables = useDeferredValue(renderables);
+  const regionGeom = useMemo(
+    () =>
+      needRegions
+        ? regionsFor({ stations: dStations, lines: dLines, curveRadius: dCurveRadius })
+        : null,
+    [needRegions, dStations, dLines, dCurveRadius],
+  );
+  const regionWinners = useMemo(
+    () =>
+      regionGeom
+        ? resolveRegionWinners(regionGeom.faces, dRegionAssignments, regionGeom.bands, dLineOrder)
+        : null,
+    [regionGeom, dRegionAssignments, dLineOrder],
+  );
 
   const itemDrag = useItemDrag(svgRef, view.viewport.zoom, inHandMode);
   const polyDrag = usePolygonDrag(svgRef, view.viewport.zoom, inHandMode);
@@ -1007,6 +1043,21 @@ export function MapCanvas() {
             />
           );
         })}
+
+        {/* region paint patches: overridden overlap faces repaint their
+            winner clipped to the face. Real map paint (exported). */}
+        {regionGeom && regionWinners && (
+          <RegionPatchLayer
+            faces={regionGeom.faces}
+            winners={regionWinners}
+            renderables={dRenderables}
+            lines={dLines}
+            lineOrder={dLineOrder}
+            colorMap={colorMap}
+            underlayColor={underlayColor}
+            onLineSelect={inHandMode || inLayeringMode ? undefined : handleLineSelect}
+          />
+        )}
 
         {/* station backgrounds: hit areas, names, colored stop squares */}
         {Object.values(stations).map((st) => (

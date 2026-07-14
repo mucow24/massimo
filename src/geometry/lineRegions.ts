@@ -594,8 +594,101 @@ const orderIndexer = (lineOrder: LineId[]) => {
   return (id: LineId) => idx.get(id) ?? lineOrder.length;
 };
 
+/** The line an unassigned face shows: highest in lineOrder among the cover. */
+export function regionDefaultWinner(face: RegionFace, lineOrder: LineId[]): LineId {
+  const orderIdx = orderIndexer(lineOrder);
+  return defaultWinner(face, orderIdx);
+}
+
 const defaultWinner = (face: RegionFace, orderIdx: (id: LineId) => number): LineId =>
   [...face.lineIds].sort((a, b) => orderIdx(a) - orderIdx(b) || (a < b ? -1 : 1))[0];
+
+/** Does a stripe's flattened path bbox (padded) intersect a box? */
+export function stripeIntersectsBox(
+  band: SegmentBandSpec,
+  stripeIndex: number,
+  box: { x0: number; y0: number; x1: number; y1: number },
+  pad: number,
+): boolean {
+  return boxesOverlap(stripePathFor(band, stripeIndex).bbox, box, pad);
+}
+
+/**
+ * The clip region for one overridden face's patch. Uncased cover: exactly the
+ * face. With cased lines (railW > 0) two rim terms join it, confined to a
+ * railW/2 neighborhood of the face:
+ *  1. the WINNER's rail over its cover-mates' bodies along the winner's own
+ *     body edges — the "winner bridges over" separator a top line paints;
+ *  2. cover-mates' rails crossing the winner's body just outside the face —
+ *     repainted by the winner's body so no stale white notch survives.
+ * Lines outside the cover are never touched (both terms intersect only cover
+ * geometry). Marker silhouettes are approximated by railW/2 dilation (their
+ * rails only run along travel edges — slight over-approximation, confined to
+ * the same rim neighborhood).
+ */
+export function buildPatchClip(
+  face: RegionFace,
+  winnerId: LineId,
+  bands: SegmentBandSpec[],
+  markers: StopMarkerSpec[],
+  railWOf: (lineId: LineId) => number,
+): Ring[] {
+  const cased = face.lineIds.filter((l) => railWOf(l) > 0);
+  if (!cased.length) return face.face;
+  const maxRail = Math.max(...cased.map(railWOf));
+  const zone = offsetClosed(face.face, maxRail / 2 + 0.5);
+  const zoneBox = ringsBbox(zone);
+
+  const bodyOf = (lineId: LineId): Ring[] => {
+    const rings: Ring[] = [];
+    for (const band of bands) {
+      for (let k = 0; k < band.lines.length; k++) {
+        if (band.lines[k].id !== lineId) continue;
+        if (!stripeIntersectsBox(band, k, zoneBox, band.stripeWidths[k] / 2)) continue;
+        rings.push(...stripeBodyPolys(band, k));
+      }
+    }
+    for (const m of markers) {
+      if (m.lineId === lineId) rings.push(...markerBodyRings(m));
+    }
+    return rings;
+  };
+  const ringOf = (lineId: LineId): Ring[] => {
+    const railW = railWOf(lineId);
+    if (railW <= 0) return [];
+    const sil: Ring[] = [];
+    for (const band of bands) {
+      for (let k = 0; k < band.lines.length; k++) {
+        if (band.lines[k].id !== lineId) continue;
+        if (!stripeIntersectsBox(band, k, zoneBox, (band.stripeWidths[k] + railW) / 2)) continue;
+        const segs = emitOffsetSegments(band.centerline, band.radius, band.stripeOffsets[k]);
+        sil.push(
+          ...offsetOpenPath(flattenOffsetSegments(segs), (band.stripeWidths[k] + railW) / 2),
+        );
+      }
+    }
+    const markerRings: Ring[] = [];
+    for (const m of markers) {
+      if (m.lineId === lineId) markerRings.push(...markerBodyRings(m));
+    }
+    if (markerRings.length) sil.push(...offsetClosed(markerRings, railW / 2));
+    return subtract(sil, bodyOf(lineId));
+  };
+
+  const losers = face.lineIds.filter((l) => l !== winnerId);
+  const parts: Ring[] = [...face.face];
+  if (railWOf(winnerId) > 0) {
+    const loserBodies = losers.flatMap(bodyOf);
+    if (loserBodies.length) {
+      parts.push(...intersect(intersect(ringOf(winnerId), loserBodies), zone));
+    }
+  }
+  const casedLoserRings = losers.filter((l) => railWOf(l) > 0).flatMap(ringOf);
+  if (casedLoserRings.length) {
+    parts.push(...intersect(intersect(casedLoserRings, bodyOf(winnerId)), zone));
+  }
+  return unionAll(parts);
+}
 
 /** Per-face effective winner: bound assignment's line, else lineOrder-first. */
 export function resolveRegionWinners(
