@@ -639,113 +639,125 @@ export function stripeIntersectsBox(
 }
 
 /**
- * How far a patch clip may overdraw past its face into same-winner territory,
- * world units. Kills the coincident-antialiased-edge seam: a clip cut exactly
- * at a loser's body edge shares its pixel row with the loser's antialiased
- * base edge, and two half-covered rows never composite to full coverage — a
- * hairline of the loser ghosts through continuous winner paint. Overdrawing
- * where the area beyond ALREADY shows the winner is invisible by
- * construction, so the margin can be generous.
+ * Inset from the WINNER's body edges when punching exclusion holes, world
+ * units. The hole edge must land on fully-opaque winner paint — cutting a
+ * loser exactly at the winner's stroke edge would expose the winner's
+ * antialiased tail (a half-covered pixel row) as a ghost hairline. Along the
+ * losers' own edges no inset is needed: there is no loser paint beyond them.
  */
-export const SEAM_OVERDRAW = 2;
+export const EXCLUSION_INSET = 0.25;
 
 /**
- * The clip region for one overridden face's patch:
- *  - the face itself;
- *  - a SEAM_OVERDRAW margin past the face, but only where the map already
- *    shows the winner (winner's body, minus every nearby face — this one's
- *    lobes included via `others` — whose effective winner differs), so the
- *    patch overlaps the base paint instead of abutting it (see SEAM_OVERDRAW);
- *  - with cased lines (railW > 0), two rim terms confined to a railW/2
- *    neighborhood: (1) the WINNER's rail over its cover-mates' bodies along
- *    the winner's own body edges — the "winner bridges over" separator a top
- *    line paints; (2) cover-mates' rails crossing the winner's body just
- *    outside the face — repainted so no stale white notch survives.
- * Lines outside the cover are never repainted (the rim terms intersect only
- * cover geometry; the overdraw is invisible where it lands). Marker
- * silhouettes are approximated by railW/2 dilation.
+ * Region overrides, subtractively: for every face whose bound choice differs
+ * from its lineOrder default, every covering line painted ABOVE the winner
+ * gets a clip hole — the winner then shows through as its ORIGINAL,
+ * continuous, never-repainted base stroke. Nothing is painted twice (no
+ * doubled antialiased edges, no seams inside the winner, tangent territory
+ * untouched), and holes hug the face (adjacent regions can't be nicked).
+ *
+ * The hole for loser L at face F with winner W is the union of:
+ *  - CORE — W's body over L: F itself. Uncased W: F ∩ erode(bodyW,
+ *    EXCLUSION_INSET) so the hole edge lands on opaque winner paint. Cased
+ *    W: F ∪ (silhouetteW ∩ dilate(F, railW_W/2 + ε)) — the hole runs on
+ *    THROUGH W's white ring, uncovering W's rails where they cross L: the
+ *    rails are already painted in the base pass, buried under L; revealing
+ *    them gives the override the exact "winner bridges over" look of a
+ *    natural top line (no inset needed — no exposed body edge remains).
+ *  - FRINGE (cased L): silhouetteL ∩ bodyW ∩ dilate(F, railW_L/2 + ε) — L's
+ *    white casing fringe extends railW/2 beyond its body, i.e. beyond F,
+ *    and would otherwise slash across the winner's continuous run at every
+ *    face boundary.
+ *
+ * Returns lineId → hole rings; lines absent from the map paint unclipped.
+ * Clipping also removes the losers' pointer-event surface over the face, so
+ * idle-mode clicks and deep-picks reach the visible winner natively.
  */
-export function buildPatchClip(
-  face: RegionFace,
-  winnerId: LineId,
+export function buildExclusionHoles(
+  faces: RegionFace[],
+  winners: { winner: LineId; assignmentId: string | null }[],
+  lineOrder: LineId[],
   bands: SegmentBandSpec[],
   markers: StopMarkerSpec[],
   railWOf: (lineId: LineId) => number,
-  others: { face: RegionFace; winner: LineId }[] = [],
-): Ring[] {
-  const cased = face.lineIds.filter((l) => railWOf(l) > 0);
-  const maxRail = cased.length ? Math.max(...cased.map(railWOf)) : 0;
-  const reach = Math.max(SEAM_OVERDRAW, maxRail / 2) + 0.5;
-  const zone = offsetClosed(face.face, reach);
-  const zoneBox = ringsBbox(zone);
+): Map<LineId, Ring[]> {
+  const orderIdx = orderIndexer(lineOrder);
+  const holes = new Map<LineId, Ring[]>();
 
-  const bodyOf = (lineId: LineId): Ring[] => {
+  // A line's painted footprint near one face, at body width (pad 0) or
+  // silhouette width (pad railW). Bbox-filtered; markers dilate by pad/2.
+  const paintNear = (lineId: LineId, box: RegionFace['bbox'], pad: number): Ring[] => {
     const rings: Ring[] = [];
     for (const band of bands) {
       for (let k = 0; k < band.lines.length; k++) {
         if (band.lines[k].id !== lineId) continue;
-        if (!stripeIntersectsBox(band, k, zoneBox, band.stripeWidths[k] / 2)) continue;
-        rings.push(...stripeBodyPolys(band, k));
-      }
-    }
-    for (const m of markers) {
-      if (m.lineId === lineId) rings.push(...markerBodyRings(m));
-    }
-    return rings;
-  };
-  const ringOf = (lineId: LineId): Ring[] => {
-    const railW = railWOf(lineId);
-    if (railW <= 0) return [];
-    const sil: Ring[] = [];
-    for (const band of bands) {
-      for (let k = 0; k < band.lines.length; k++) {
-        if (band.lines[k].id !== lineId) continue;
-        if (!stripeIntersectsBox(band, k, zoneBox, (band.stripeWidths[k] + railW) / 2)) continue;
-        const segs = emitOffsetSegments(band.centerline, band.radius, band.stripeOffsets[k]);
-        sil.push(
-          ...offsetOpenPath(flattenOffsetSegments(segs), (band.stripeWidths[k] + railW) / 2),
-        );
+        if (!stripeIntersectsBox(band, k, box, (band.stripeWidths[k] + pad) / 2 + pad)) continue;
+        if (pad === 0) {
+          rings.push(...stripeBodyPolys(band, k));
+        } else {
+          const segs = emitOffsetSegments(band.centerline, band.radius, band.stripeOffsets[k]);
+          rings.push(
+            ...offsetOpenPath(flattenOffsetSegments(segs), (band.stripeWidths[k] + pad) / 2),
+          );
+        }
       }
     }
     const markerRings: Ring[] = [];
     for (const m of markers) {
-      if (m.lineId === lineId) markerRings.push(...markerBodyRings(m));
+      if (m.lineId !== lineId) continue;
+      const half = m.width + pad; // generous reject: squares are width×width
+      if (
+        m.cx + half < box.x0 ||
+        m.cx - half > box.x1 ||
+        m.cy + half < box.y0 ||
+        m.cy - half > box.y1
+      ) {
+        continue;
+      }
+      markerRings.push(...markerBodyRings(m));
     }
-    if (markerRings.length) sil.push(...offsetClosed(markerRings, railW / 2));
-    return subtract(sil, bodyOf(lineId));
+    if (markerRings.length) {
+      rings.push(...(pad > 0 ? offsetClosed(markerRings, pad / 2) : markerRings));
+    }
+    return rings;
   };
 
-  const losers = face.lineIds.filter((l) => l !== winnerId);
-  const parts: Ring[] = [...face.face];
-
-  // Anti-seam overdraw: the margin beyond the face, restricted to the
-  // winner's own paint footprint (slightly dilated so the clip never crops
-  // the stroke's antialiased tail), minus every nearby face whose effective
-  // winner differs — overdrawing there would visibly nick that face.
-  const margin = subtract(
-    intersect(zone, offsetClosed(bodyOf(winnerId), 0.5)),
-    others
-      .filter(
-        (o) =>
-          o.winner !== winnerId &&
-          boxesOverlap(o.face.bbox, face.bbox, reach + 1) &&
-          o.face !== face,
-      )
-      .flatMap((o) => o.face.face),
-  );
-  parts.push(...margin);
-
-  if (railWOf(winnerId) > 0) {
-    const loserBodies = losers.flatMap(bodyOf);
-    if (loserBodies.length) {
-      parts.push(...intersect(intersect(ringOf(winnerId), loserBodies), zone));
+  faces.forEach((face, i) => {
+    const w = winners[i];
+    if (!w || !w.assignmentId) return;
+    if (w.winner === defaultWinner(face, orderIdx)) return; // base already shows it
+    const railWWinner = railWOf(w.winner);
+    const body = paintNear(w.winner, face.bbox, 0);
+    if (!body.length) return;
+    const core =
+      railWWinner > 0
+        ? unionAll([
+            ...face.face,
+            ...intersect(
+              paintNear(w.winner, face.bbox, railWWinner),
+              offsetClosed(face.face, railWWinner / 2 + 0.5),
+            ),
+          ])
+        : intersect(face.face, offsetClosed(body, -EXCLUSION_INSET));
+    if (!core.length) return;
+    const winnerRank = orderIdx(w.winner);
+    for (const lineId of face.lineIds) {
+      if (lineId === w.winner) continue;
+      if (orderIdx(lineId) >= winnerRank) continue; // painted below the winner
+      const railWLoser = railWOf(lineId);
+      let hole = core;
+      if (railWLoser > 0) {
+        const fringe = intersect(
+          intersect(paintNear(lineId, face.bbox, railWLoser), body),
+          offsetClosed(face.face, railWLoser / 2 + 0.5),
+        );
+        if (fringe.length) hole = unionAll([...core, ...fringe]);
+      }
+      const list = holes.get(lineId);
+      if (list) list.push(...hole);
+      else holes.set(lineId, [...hole]);
     }
-  }
-  const casedLoserRings = losers.filter((l) => railWOf(l) > 0).flatMap(ringOf);
-  if (casedLoserRings.length) {
-    parts.push(...intersect(intersect(casedLoserRings, bodyOf(winnerId)), zone));
-  }
-  return unionAll(parts);
+  });
+  return holes;
 }
 
 /** Per-face effective winner: bound assignment's line, else lineOrder-first. */

@@ -55,33 +55,32 @@ test.describe('Region layering — click a face to cycle which line shows', () =
     await page.keyboard.press('l');
     const target = page.locator('[data-region-target]');
 
-    // Default (L1 on top): no patch.
-    await expect(page.locator('[data-region-patch]')).toHaveCount(0);
+    // Default (L1 on top): nothing is clipped.
+    await expect(page.locator('[data-region-excluded]')).toHaveCount(0);
 
-    // Click → L2 painted on top: a patch re-emitting L2 appears.
+    // Click → L2 painted on top: L1 (the loser) renders through an exclusion
+    // clip with a hole over the face; L2 shows through as its base stroke.
     await target.click({ force: true });
-    await expect(page.locator('[data-region-patch]')).toHaveCount(1);
-    await expect(page.locator('[data-region-patch]')).toHaveAttribute('data-line-id', 'L2');
+    await expect(page.locator('g[data-region-excluded="L1"]').first()).toBeAttached();
+    await expect(page.locator('clipPath[data-region-exclude="L1"]')).toHaveCount(1);
 
     // Click again → wraps back to the default → the assignment is deleted.
     await target.click({ force: true });
-    await expect(page.locator('[data-region-patch]')).toHaveCount(0);
+    await expect(page.locator('[data-region-excluded]')).toHaveCount(0);
 
     // Right-click cycles backward: from default straight to L2 again.
     await target.click({ button: 'right', force: true });
-    await expect(page.locator('[data-region-patch]')).toHaveCount(1);
-    await expect(page.locator('[data-region-patch]')).toHaveAttribute('data-line-id', 'L2');
+    await expect(page.locator('g[data-region-excluded="L1"]').first()).toBeAttached();
   });
 
   test('a painted region survives reload (persisted + rebound on rehydrate)', async ({ page }) => {
     await seedAndOpen(page, crossing);
     await page.keyboard.press('l');
     await page.locator('[data-region-target]').click({ force: true });
-    await expect(page.locator('[data-region-patch]')).toHaveCount(1);
+    await expect(page.locator('g[data-region-excluded="L1"]').first()).toBeAttached();
     await page.reload();
     await page.waitForSelector('.canvas-host svg');
-    await expect(page.locator('[data-region-patch]')).toHaveCount(1);
-    await expect(page.locator('[data-region-patch]')).toHaveAttribute('data-line-id', 'L2');
+    await expect(page.locator('g[data-region-excluded="L1"]').first()).toBeAttached();
   });
 
   test('the assignment follows the crossing when a station drags the line away', async ({
@@ -90,7 +89,7 @@ test.describe('Region layering — click a face to cycle which line shows', () =
     await seedAndOpen(page, crossing);
     await page.keyboard.press('l');
     await page.locator('[data-region-target]').click({ force: true });
-    await expect(page.locator('[data-region-patch]')).toHaveCount(1);
+    await expect(page.locator('g[data-region-excluded="L1"]').first()).toBeAttached();
     await page.keyboard.press('Escape');
 
     // Nudge the whole vertical line right: select C, arrow-nudge it, then D.
@@ -100,9 +99,9 @@ test.describe('Region layering — click a face to cycle which line shows', () =
       for (let i = 0; i < 5; i++) await page.keyboard.press('Shift+ArrowRight');
       await page.keyboard.press('Escape');
     }
-    // The crossing moved 25 world units right; the paint choice must follow.
-    await expect(page.locator('[data-region-patch]')).toHaveCount(1);
-    await expect(page.locator('[data-region-patch]')).toHaveAttribute('data-line-id', 'L2');
+    // The crossing moved 25 world units right; the paint choice must follow
+    // (the exclusion clip is still present, over the moved face).
+    await expect(page.locator('g[data-region-excluded="L1"]').first()).toBeAttached();
   });
 
   test('idle-mode click on a painted face selects the line the user SEES', async ({ page }) => {
@@ -110,8 +109,13 @@ test.describe('Region layering — click a face to cycle which line shows', () =
     await page.keyboard.press('l');
     await page.locator('[data-region-target]').click({ force: true });
     await page.keyboard.press('Escape');
-    // The patch carries an invisible hit path with the winner's identity.
-    await page.locator('[data-region-hit]').click({ force: true });
+    // The loser's stripe is clip-excluded over the face — clipped areas take
+    // no pointer events, so a click at the crossing lands on the visible
+    // winner's stripe natively. The vertical L2 stripe's bbox center IS the
+    // crossing point.
+    await page
+      .locator('[data-band-stripe][data-line-id="L2"]')
+      .click({ force: true, position: undefined });
     // Selecting a line mounts the highlight overlay for it.
     await expect(page.locator('[data-highlight-layer]')).toHaveCount(1);
   });

@@ -1,4 +1,4 @@
-import { useCallback, useDeferredValue, useEffect, useMemo, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 
 import { dragState, exitLineEditorOnItemClick, useDoc, useSelection } from '../state/store';
 import { hoveredChrome, type HoverKind } from '../state/selection';
@@ -19,9 +19,13 @@ import { defaultStyleProps } from '../model/styles';
 import { rotateItemOnContextMenu } from './canvas/groupRotate';
 import { legibleTextOn } from '../util/color';
 import { BandWarning, SegmentBand } from './SegmentBand';
-import { RegionPatchLayer } from './canvas/RegionPatchLayer';
+import { RegionExcludeClips, regionExcludeClipId } from './canvas/RegionExcludeClips';
 import { regionsFor } from '../geometry/regionCache';
-import { regionClickAction, resolveRegionWinners } from '../geometry/lineRegions';
+import {
+  buildExclusionHoles,
+  regionClickAction,
+  resolveRegionWinners,
+} from '../geometry/lineRegions';
 import { HatchPatterns } from './HatchPatterns';
 import { SeamClips } from './canvas/SeamClips';
 import { StopMarker } from './StopMarker';
@@ -34,6 +38,7 @@ import { StationLayoutEditor } from './canvas/StationLayoutEditor';
 import { GhostLattice } from './canvas/GhostLattice';
 import { STOP_SIZE } from '../geometry/orientation';
 import { lineWidthOf } from '../model/lineWidth';
+import { lineStrokeRailWidth, lineStrokeWidthOf } from '../model/lineStroke';
 import { useRectSelect } from './canvas/useRectSelect';
 import {
   currentHitEntity,
@@ -313,36 +318,43 @@ export function MapCanvas() {
 
   const inHandMode = selection.toolMode === 'hand' || selection.spaceHeld;
 
-  // Region paint machinery: overlap faces + per-face winners. Computed only
-  // when it can matter (layering mode active, or stored assignments exist);
-  // regionsFor's sig-keyed cache dedupes against the reconcile step's builds.
-  //
-  // Every input is DEFERRED as one coherent snapshot: face building costs
-  // tens of ms on busy maps, so during a drag the patches lag a beat behind
-  // the bands (background-priority render) instead of janking every frame.
-  // The patch layer renders exclusively from the deferred values — mixing
-  // deferred faces with the LIVE renderables would tear the clips.
+  // Region paint machinery: overlap faces + per-face winners + the exclusion
+  // clips that realize overrides (see buildExclusionHoles — losers are
+  // clipped, winners are never repainted). Computed only when it can matter
+  // (layering mode active, or stored assignments exist); regionsFor's
+  // sig-keyed cache dedupes against the reconcile step's builds. SYNCHRONOUS
+  // on purpose: the clips attach to the LIVE base strokes, so they must be
+  // derived from the same geometry the strokes render — a deferred snapshot
+  // would tear the clip holes off the moving bands mid-drag.
   const needRegions =
     selection.uiMode.kind === 'layering' || Object.keys(regionAssignments).length > 0;
-  const dStations = useDeferredValue(stations);
-  const dLines = useDeferredValue(lines);
-  const dCurveRadius = useDeferredValue(curveRadius);
-  const dLineOrder = useDeferredValue(lineOrder);
-  const dRegionAssignments = useDeferredValue(regionAssignments);
-  const dRenderables = useDeferredValue(renderables);
   const regionGeom = useMemo(
-    () =>
-      needRegions
-        ? regionsFor({ stations: dStations, lines: dLines, curveRadius: dCurveRadius })
-        : null,
-    [needRegions, dStations, dLines, dCurveRadius],
+    () => (needRegions ? regionsFor({ stations, lines, curveRadius }) : null),
+    [needRegions, stations, lines, curveRadius],
   );
   const regionWinners = useMemo(
     () =>
       regionGeom
-        ? resolveRegionWinners(regionGeom.faces, dRegionAssignments, regionGeom.bands, dLineOrder)
+        ? resolveRegionWinners(regionGeom.faces, regionAssignments, regionGeom.bands, lineOrder)
         : null,
-    [regionGeom, dRegionAssignments, dLineOrder],
+    [regionGeom, regionAssignments, lineOrder],
+  );
+  const regionExcludeHoles = useMemo(
+    () =>
+      regionGeom && regionWinners
+        ? buildExclusionHoles(
+            regionGeom.faces,
+            regionWinners,
+            lineOrder,
+            regionGeom.bands,
+            regionGeom.markers,
+            (lineId) => {
+              const line = lines[lineId];
+              return line ? lineStrokeRailWidth(lineStrokeWidthOf(line), lineWidthOf(line)) : 0;
+            },
+          )
+        : null,
+    [regionGeom, regionWinners, lineOrder, lines],
   );
 
   const itemDrag = useItemDrag(svgRef, view.viewport.zoom, inHandMode);
@@ -845,6 +857,7 @@ export function MapCanvas() {
           <HatchPatterns colors={hatchedColors} underlayColor={underlayColor} />
           {/* Per-line corridor clips for the branch seam (see SeamClips). */}
           <SeamClips bands={bands} lines={lines} />
+          {regionExcludeHoles && <RegionExcludeClips holes={regionExcludeHoles} />}
         </defs>
 
         {/* Background hit target for panning. Overdrawn one viewport-width in
@@ -967,41 +980,60 @@ export function MapCanvas() {
           </g>
         )}
 
-        {/* band stripes, warnings, and stop squares interleaved by per-stripe z-priority */}
+        {/* band stripes, warnings, and stop squares interleaved by per-stripe
+            z-priority. A line that LOSES an overridden overlap region renders
+            through its exclusion clip (holes over the faces it loses), so the
+            region's winner shows through as its own continuous base stroke —
+            see buildExclusionHoles. The clip wrapper also removes the loser's
+            pointer surface there, landing clicks on the visible winner. */}
         {renderables.map((r) => {
+          const lineId = r.kind === 'marker' ? r.spec.lineId : r.band.lines[r.stripeIndex].id;
+          const clipped = regionExcludeHoles?.has(lineId) ?? false;
+          const withExcludeClip = (key: string, node: React.ReactNode) =>
+            clipped ? (
+              <g
+                key={key}
+                data-region-excluded={lineId}
+                clipPath={`url(#${regionExcludeClipId(lineId)})`}
+              >
+                {node}
+              </g>
+            ) : (
+              node
+            );
           if (r.kind === 'casing') {
-            const stripeLineId = r.band.lines[r.stripeIndex].id;
-            return (
+            return withExcludeClip(
+              'c:' + r.band.bandKey + ':' + lineId,
               <SegmentBand
-                key={'c:' + r.band.bandKey + ':' + stripeLineId}
+                key={'c:' + r.band.bandKey + ':' + lineId}
                 spec={r.band}
                 stripeIndex={r.stripeIndex}
                 pass="silhouette"
                 lines={lines}
                 colorMap={colorMap}
                 underlayColor={underlayColor}
-              />
+              />,
             );
           }
           if (r.kind === 'seam') {
-            const stripeLineId = r.band.lines[r.stripeIndex].id;
-            return (
+            return withExcludeClip(
+              'seam:' + r.band.bandKey + ':' + lineId,
               <SegmentBand
-                key={'seam:' + r.band.bandKey + ':' + stripeLineId}
+                key={'seam:' + r.band.bandKey + ':' + lineId}
                 spec={r.band}
                 stripeIndex={r.stripeIndex}
                 pass="seam"
                 lines={lines}
                 colorMap={colorMap}
                 underlayColor={underlayColor}
-              />
+              />,
             );
           }
           if (r.kind === 'stripe') {
-            const stripeLineId = r.band.lines[r.stripeIndex].id;
-            return (
+            return withExcludeClip(
+              's:' + r.band.bandKey + ':' + lineId,
               <SegmentBand
-                key={'s:' + r.band.bandKey + ':' + stripeLineId}
+                key={'s:' + r.band.bandKey + ':' + lineId}
                 spec={r.band}
                 stripeIndex={r.stripeIndex}
                 pass="body"
@@ -1011,38 +1043,24 @@ export function MapCanvas() {
                 underlayColor={underlayColor}
                 onLineSelect={inHandMode || inLayeringMode ? undefined : handleLineSelect}
                 {...(selection.uiMode.kind === 'creating-line-tag' ? makeBandHandlers(r.band) : {})}
-              />
+              />,
             );
           }
           const effectiveColor =
             colorMap && r.spec.lineId !== highlightLineId
               ? (colorMap[r.spec.lineId] ?? r.spec.color)
               : r.spec.color;
-          return (
+          return withExcludeClip(
+            'm:' + r.spec.stationId + ':' + lineId,
             <StopMarker
-              key={'m:' + r.spec.stationId + ':' + r.spec.lineId}
+              key={'m:' + r.spec.stationId + ':' + lineId}
               spec={r.spec}
               effectiveColor={effectiveColor}
               underlayColor={underlayColor}
               lines={lines}
-            />
+            />,
           );
         })}
-
-        {/* region paint patches: overridden overlap faces repaint their
-            winner clipped to the face. Real map paint (exported). */}
-        {regionGeom && regionWinners && (
-          <RegionPatchLayer
-            faces={regionGeom.faces}
-            winners={regionWinners}
-            renderables={dRenderables}
-            lines={dLines}
-            lineOrder={dLineOrder}
-            colorMap={colorMap}
-            underlayColor={underlayColor}
-            onLineSelect={inHandMode || inLayeringMode ? undefined : handleLineSelect}
-          />
-        )}
 
         {/* station backgrounds: hit areas, names, colored stop squares */}
         {Object.values(stations).map((st) => (

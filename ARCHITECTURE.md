@@ -131,7 +131,7 @@ src/
     stripeOutline.ts            # per-stripe edge/cap geometry (stroke-before-fill dots)
     polygon.ts polygonSnap.ts polygonUnion.ts rectPolygon.ts  # polygon geom + union + hit test
     clip.ts                     # typed clipper-lib wrapper (booleans/offsets, integer-snapped)
-    lineRegions.ts              # overlap faces (region layering) + anchor binding + patch clips
+    lineRegions.ts              # overlap faces (region layering) + anchor binding + exclusion holes
     regionCache.ts              # sig-keyed cache of bands+markers+faces (render + reconcile)
     regionReconcile.ts          # carries regionAssignments across geometry edits
     labelTokens.ts textMeasure.ts labelLayout.ts labelJustify.ts  # name → tokens → measured → placed
@@ -408,9 +408,14 @@ side offset per covering line) and is carried across every geometry edit by
 duplicating onto split halves, resolving merges by largest old face, going dormant when its
 overlap temporarily vanishes. The reconcile runs inside `beginHistoryGroup.commit()` (drags,
 sliders, nudge groups) or inline via `withRegionReconcile` (ungrouped one-shots), always in
-the SAME undo entry as the edit. Rendering: `RegionPatchLayer` repaints each overridden face's
-winner clipped to the face (+ casing-rim terms — see `buildPatchClip`); zero assignments ⇒
-zero cost and byte-identical output.
+the SAME undo entry as the edit. Rendering is SUBTRACTIVE (`buildExclusionHoles` +
+`RegionExcludeClips`): losers are clipped out over the faces they lose — the winner is NEVER
+repainted (repainting doubles antialiased edges; clip-abutting seams are impossible when the
+winner is one continuous base stroke). Cased lines: the hole runs through the winner's white
+ring (its rails are already painted beneath — uncovering them gives the natural bridges-over
+look) and swallows the losers' fringes near the face. Clipped areas take no pointer events,
+so idle clicks land on the visible winner natively. Zero assignments ⇒ zero cost and
+byte-identical output.
 
 > **Width is GEOMETRY, stroke/seam are PRESENTATION.** A `width` edit rebuilds band geometry; a
 > `strokeWidth`/`strokeColor`/`seamColor`/`seamWidth`/color/style edit is resolved at render time
@@ -969,9 +974,10 @@ instantiated **once per pass**. Top→bottom paint order (later = on top):
 2. Station `wash` (selection silhouette fill, behind bands).
 3. Interleaved band stripes + `StopMarker` squares (ordered by per-stripe z-priority via
    `buildOrderedRenderables`).
-3b. `RegionPatchLayer` — region paint patches: overlap faces whose assignment differs
-    from the lineOrder default repaint their winner clipped to the face (real map paint,
-    exported; clipPath, not mask).
+3b. Region overrides render SUBTRACTIVELY inside pass 3: a line that loses an
+    overridden overlap face paints through an exclusion clipPath (RegionExcludeClips,
+    holes over the faces it loses — see buildExclusionHoles), so the winner shows
+    through as its own continuous base stroke. Real map paint (exported).
 4. Station `bg` (transparent hit areas).
 5. Station `label` (after bg, so a selected wash never covers a neighbor's name).
 6. `RegionModeOverlay layer="outlines"` (layering mode only — dashed overlap-face footprints).
