@@ -1,7 +1,7 @@
 import { Fragment, useRef, useState, type CSSProperties } from 'react';
 import type { DotShape, DotStyle, Line, Station, StationId } from '../../model/types';
 import { lineGraphLayout } from './lineGraphLayout';
-import { edgeEndpoints } from '../../model/lineTopology';
+import { edgeEndpoints, degreeOf } from '../../model/lineTopology';
 import { openPolylinePath, type Pt } from '../../geometry/polygonUnion';
 import { resolveSegmentStyle } from '../../geometry/interlining';
 import { resolveDotStyle } from '../../model/transforms';
@@ -15,11 +15,12 @@ import { stationNameListText } from '../../geometry/labelTokens';
 import { ChevronDownIcon, Cross2Icon } from '@radix-ui/react-icons';
 
 // A column-based ("git graph") rendering of a line's stops in the inspector:
-// the trunk runs down lane 0, branches split into lanes to the right that run
-// alongside, and a loop closes with a back-edge bowed out in a side lane. Each
-// stop is a row (name + controls); the colored connectors between stops are
-// clickable to cycle that segment's style. Replaces the old flat band so a
-// branchy/looped line reads as its actual shape instead of one confusing list.
+// the trunk runs down lane 0, a branch tees into a side lane directly under
+// its junction, a cycle arm rejoins the line as a merge (the tee's mirror),
+// and other loop closures bow out in a reused side lane. Each stop is a row
+// (name + controls); the colored connectors between stops are clickable to
+// cycle that segment's style. Replaces the old flat band so a branchy/looped
+// line reads as its actual shape instead of one confusing list.
 
 const LANE_W = 24;
 const ROW_H = 26;
@@ -64,12 +65,13 @@ export interface StationGraphProps {
   onHoverStation: (sid: StationId | null) => void;
 }
 
-// Connector from the upper endpoint (parent) down to the lower one (child), as
-// orthogonal segments with constant rounded corners. Takes resolved pixel
-// coordinates so the caller owns lane→x (and its mirror). Same lane → a plain
-// vertical. A branch tees off at `yTee` — the blank junction row one cell below
-// the parent — as a clean T: straight down into that row, a single right-angle
-// jog across to the child's lane, then straight down to the child.
+// Connector from the upper endpoint down to the lower one, as orthogonal
+// segments with constant rounded corners. Takes resolved pixel coordinates so
+// the caller owns lane→x (and its mirror). Same lane → a plain vertical.
+// Cross-lane, the path runs straight down to `yTee`, jogs across in that blank
+// row, then drops to the lower endpoint — `yTee` is the blank one cell below
+// the parent for a branch tee, and the blank one cell above the target for a
+// merge, so the horizontal never crosses a stop's dot.
 function treePath(x1: number, y1: number, x2: number, y2: number, yTee: number): string {
   if (x1 === x2) return `M ${x1} ${y1} V ${y2}`;
   const pts: Pt[] = [
@@ -187,7 +189,9 @@ export function StationGraph(props: StationGraphProps) {
                   rowY(e.fromRow),
                   laneX(e.toLane),
                   rowY(e.toRow),
-                  rowY(e.teeRow ?? e.fromRow),
+                  // A branch tees off just below its parent; a merge jogs into
+                  // its target from the blank row just above it.
+                  rowY(e.kind === 'merge' ? (e.jogRow ?? e.toRow) : (e.teeRow ?? e.fromRow)),
                 );
           const filter = isHoveredEdge(a, b) ? 'brightness(1.4) saturate(1.2)' : undefined;
           return (
@@ -293,6 +297,12 @@ export function StationGraph(props: StationGraphProps) {
             return <div key={`blank-${row}`} style={{ height: ROW_H }} />;
           const st = stations[n.stationId]!;
           const armed = isAppending && cursorStationId === n.stationId;
+          // Branch only forks a NEW arm on a stop that already has ≥2 edges. On a
+          // terminal (degree ≤ 1) "branch" would just extend the line, identical
+          // to Insert after — so we hide the button there. It's kept in the DOM
+          // (visibility, not unmounted) so its slot stays reserved and the
+          // Insert/Remove columns don't go ragged from row to row.
+          const canBranch = degreeOf(line, n.stationId) >= 2;
           return (
             <div
               key={n.stationId}
@@ -332,14 +342,17 @@ export function StationGraph(props: StationGraphProps) {
                   <button
                     type="button"
                     className="btn-mini icon"
-                    onClick={() => onBranchFrom(n.stationId)}
+                    onClick={canBranch ? () => onBranchFrom(n.stationId) : undefined}
                     title={
                       armed && appendDraw
                         ? 'Click to stop branching from this stop'
                         : 'Start a new branch from this stop'
                     }
                     aria-label={`Branch from ${st.name}`}
+                    aria-hidden={!canBranch}
+                    tabIndex={canBranch ? undefined : -1}
                     style={{
+                      visibility: canBranch ? undefined : 'hidden',
                       background: armed && appendDraw ? color : undefined,
                       color: armed && appendDraw ? '#fff' : undefined,
                     }}

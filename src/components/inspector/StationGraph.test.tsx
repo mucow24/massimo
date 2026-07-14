@@ -114,6 +114,33 @@ describe('StationGraph', () => {
     expect(props.onSetDotStyle).toHaveBeenCalledWith('s1', expect.anything()); // dot of stop s1
   });
 
+  it('draws a merge connector jogging in the blank row ABOVE its target', () => {
+    // End-of-line bypass t–J–P with E between J and P: the layout emits a
+    // 'merge' edge E→P whose jog must sit in the blank row above P (jogRow),
+    // NOT at E's own row (the tree-edge fallback, which would draw the
+    // horizontal through E's dot row).
+    const ids = ['t', 'J', 'P', 'E'];
+    const line = makeLine({
+      id: 'L1',
+      stations: ids,
+      edges: ['J|t', 'J|P', 'E|J', 'E|P'],
+    });
+    const layout = lineGraphLayout(line);
+    const merge = layout.edges.find((e) => e.kind === 'merge')!;
+    expect(merge.pairKey).toBe('E|P');
+    const rowY = (row: number) => row * 26 + 13; // ROW_H grid, matching StationGraph
+    const { container } = render(
+      <StationGraph {...baseProps()} line={line} stations={stationsFor(ids)} />,
+    );
+    const hit = Array.from(container.querySelectorAll('path[stroke="transparent"]')).find((p) =>
+      p.querySelector('title')?.textContent?.startsWith('Segment E → P'),
+    )!;
+    expect(hit).toBeTruthy();
+    const d = hit.getAttribute('d')!;
+    expect(d).toContain(` ${rowY(merge.jogRow!)}`); // jog in the blank above P
+    expect(d).not.toContain(` ${rowY(merge.fromRow)} L`); // no horizontal at E's row
+  });
+
   it('shows remove / insert / branch controls only while editing', () => {
     const ids = ['s1', 's2'];
     const line = makeLine({ id: 'L1', stations: ids });
@@ -124,7 +151,26 @@ describe('StationGraph', () => {
 
     rerender(<StationGraph {...baseProps()} isAppending line={line} stations={stationsFor(ids)} />);
     expect(screen.getByRole('button', { name: /Remove s1/ })).toBeInTheDocument();
-    expect(screen.getByRole('button', { name: /Branch from s1/ })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: /Insert after s1/ })).toBeInTheDocument();
+  });
+
+  it('offers Branch only where it forks a junction — hidden on terminals (degree ≤ 1)', () => {
+    // Linear s1-s2-s3-s4: the ends (s1, s4) are degree-1 terminals; the interior
+    // stops (s2, s3) are degree 2, where Branch actually forks a junction. On a
+    // terminal, "branch" would just extend the line — identical to Insert — so
+    // the button is pointless there and we don't offer it.
+    const ids = ['s1', 's2', 's3', 's4'];
+    const line = makeLine({ id: 'L1', stations: ids }); // linear edges backfilled
+    render(<StationGraph {...baseProps()} isAppending line={line} stations={stationsFor(ids)} />);
+    // Interior stops can fork → Branch offered.
+    expect(screen.getByRole('button', { name: /Branch from s2/ })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: /Branch from s3/ })).toBeInTheDocument();
+    // Terminals can't fork → Branch hidden.
+    expect(screen.queryByRole('button', { name: /Branch from s1/ })).toBeNull();
+    expect(screen.queryByRole('button', { name: /Branch from s4/ })).toBeNull();
+    // Insert-after stays available everywhere, terminals included.
+    expect(screen.getByRole('button', { name: /Insert after s1/ })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: /Insert after s4/ })).toBeInTheDocument();
   });
 });
 

@@ -113,6 +113,7 @@ src/
     dotStyle.ts dotSize.ts      # procedural stop-dot style + size resolution
     transferStyle.ts            # TRANSFER_STYLE_DEFAULTS + per-transfer override resolution
     lineWidth.ts lineStroke.ts  # stripe width (GEOMETRY) + casing rails (PRESENTATION)
+    stationPacking.ts           # width-edit repack: keeps tangent stop chains packed
     lineOrder.ts                # z-order reconcile (lineOrder = the default stacking)
     lineNaming.ts               # nameForIndex/pickNextLineName (next free letter name)
     lineTopology.ts             # the single owner of a Line's edge-set adjacency (degree/neighbours/incidence, add/remove edge, edgesFromStations)
@@ -162,7 +163,8 @@ src/
     inspector/                  # LineInspector (sidebar; incl. the StationGraph edge/branch/loop
                                 #   editor) + StationInspector (hosted by the on-canvas
                                 #   StationPopover) + pure math: stopGridDrag.ts,
-                                #   stationBandGeometry.ts, lineGraphLayout.ts (git-graph trunk/lane layout)
+                                #   stationBandGeometry.ts, lineGraphLayout.ts (git-graph row/lane layout:
+                                #   drawn-order trunk, junction-local branches, merge/arc loop closures)
 
   export/                       # exportCanvas.ts (SVG/PNG), fonts.ts, exportCanvasPdf.ts
                                 #   + pure PDF-gap modules pdfHatch/pdfText/pdfGlyphs/
@@ -384,6 +386,11 @@ All remaining fields optional and **never stored at default**:
 - `defaultDotSize?: number` — dot diameter px; missing ⇒ `DOT_SIZE_DEFAULT` (= 2×`STOP_DOT_RADIUS` = 8).
 - `width?: number` — **stripe width, GEOMETRY**; missing ⇒ `LINE_WIDTH_DEFAULT` (= `STOP_SIZE` =
   14); integer ≥ `LINE_WIDTH_MIN` (1). Drives stop-cell tangency, band merging, stripe offsets.
+  `setLineWidth` also **re-packs tangent stop chains** at every station hosting the line
+  ([stationPacking.ts](src/model/stationPacking.ts)): stops packed edge-to-edge under the old
+  width are rewritten to the new tangent gaps, chain-centroid preserved, label riding its
+  nearest stop — so a width edit never un-merges an interlined band. Non-tangent spacing never
+  moves. New stops likewise spawn one tangent gap (not one flat cell) from their anchor.
 - `strokeWidth?: number` — **casing rail, PRESENTATION**; centered on the body edges (half in /
   half out), missing ⇒ 0; rounded to a 0.5 grid. Resolved live; never moves paths.
 - `strokeColor?: string` — casing color; missing ⇒ `'#ffffff'`; lowercased.
@@ -1213,9 +1220,13 @@ band routing or the marker sort. Pinned by `MapCanvas.stationsSig.test.tsx`.
   (rows select/deselect; the station editor itself is an on-canvas popover), and the
   inline-expanded LINE inspector on the Lines tab. The LineInspector hosts
   **[inspector/StationGraph.tsx](src/components/inspector/StationGraph.tsx)** — a git-graph view
-  of the line's `edges` (trunk + loop-over-the-top arcs + branch lanes, laid out by the pure
-  **[inspector/lineGraphLayout.ts](src/components/inspector/lineGraphLayout.ts)**) where stops are
-  added, reordered, branched (degree-≥3 junctions), and looped by editing the edge set directly.
+  of the line's `edges`, laid out by the pure
+  **[inspector/lineGraphLayout.ts](src/components/inspector/lineGraphLayout.ts)**: the trunk is the
+  longest chain from the display-first terminus (the tree reads in drawn direction), branch stops
+  sit directly under their junction in interval-reused side lanes, and a cycle closes either as a
+  `merge` (the arm rejoins the line like parallel tracks on the map) or as an arc over the top of
+  its upper endpoint. Stops are added, reordered, branched (degree-≥3 junctions), and looped by
+  editing the edge set directly.
 - **[StationPopover.tsx](src/components/StationPopover.tsx)** — the station editor's home:
   mounted by `ItemPopovers` for a sole-selected station (idle mode, or that station's own
   layout-edit mode), hosting the full `StationInspector` — a Name header row with the
@@ -1415,7 +1426,9 @@ Each is confirmed in source/tests; file pointers included.
   default-tracking service-code discs shrink to r 4. ([dotStyle.ts](src/model/dotStyle.ts))
 - **`width` is GEOMETRY, `strokeWidth` is PRESENTATION** — a width edit rebuilds bands; a stroke/
   color/style edit is resolved live. The band-geometry memo signature deliberately excludes
-  everything but width. ([types.ts](src/model/types.ts), MapCanvas).
+  everything but width. ([types.ts](src/model/types.ts), MapCanvas). A width edit also MOVES
+  stop cells: tangent chains re-pack to the new gaps ([stationPacking.ts](src/model/stationPacking.ts)),
+  so don't assume stop rows/cols survive `setLineWidth`.
 - **Casing rails must stay centered on body edges** — adjacent stroked lines' facing rails occupy
   the same pixels so an interlined band reads as one uniform stroke. Reordering line casings to
   merge separators was **tried and reverted**. ([lineStroke.ts](src/model/lineStroke.ts))

@@ -147,8 +147,29 @@ Topology enumerators to switch from consecutive-pairs → `edges`:
   - **Insert-after fix:** `edgesAfterInsert` only splices into a real `prev–next` edge; on a
     branchy/looped line it no longer fabricates an edge to the display-next stop.
 - **Full suite green (197 files / 3403 tests), `tsc`/lint/format/build all clean.**
-
-### Known open: a line overdraws its own casing at junctions
+- **Map-shaped tree layout (iteration 6).** The graph layout was rewritten so a complex line's
+  tree maps back to the drawn line instead of exploding into columns and diagram-spanning
+  brackets (`lineGraphLayout.ts`; renderer untouched except a `merge` edge kind):
+  - **Drawn-direction trunk** — the trunk is the longest chain from the display-FIRST terminus
+    (previously: global longest path, which could start at a branch tip and read the whole line
+    backwards). A path found tip-first is reversed; a singleton **bypass cap** at the line's end
+    (station whose only two neighbours are the last trunk edge's endpoints, drawn after both) is
+    trimmed off the trunk so it renders between its neighbours — matching how the same bypass
+    renders mid-line. Guards: pure rings and lasso shapes keep threading inline.
+  - **Junction-local branches** — branch stops are emitted directly below their junction
+    (before the trunk continues) and lanes are reused across disjoint row spans, so a
+    two-branch line needs two columns, not three, and branch stops sit next to their junction.
+    A branch's DFS may not wander into trunk stations (the skipped edge resolves as a
+    back-edge from the far side).
+  - **Merge closures** — a back-edge whose upper endpoint ends a side lane renders as a
+    `merge`: down the lane, a jog in the blank row reserved ABOVE the target, into the target's
+    dot — the tee's mirror image. A loop entered at one station and left at another reads as
+    two parallel arms rejoining (like the map); same-lane closures and mid-run uppers keep the
+    over-the-top arc, whose side lane is now the smallest free column over the arc's span
+    instead of a globally-unique one.
+  - Pinned by fixture tests (the three Jul 2026 test maps), an invariant zoo (theta, figure-8,
+    chords, continuation-steal, multi-component…), and a StationGraph test that the merge jog
+    sits in the blank row above its target.
 
 Casing (the white stroke) is drawn per-band inline, so at a same-line junction/loop one
 segment's casing paints over another segment's body, splitting the color. The clean fix is
