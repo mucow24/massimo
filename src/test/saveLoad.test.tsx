@@ -21,7 +21,6 @@ function legacyEnvelope(docOverrides: Record<string, unknown> = {}): string {
       stations: {},
       lines: {},
       lineOrder: [],
-      curveRadius: 24,
       lineCounter: 0,
       lineTags: {},
       routeBullets: {},

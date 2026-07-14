@@ -16,6 +16,7 @@ import type { StylePropsPatch } from '../model/styles';
 import { DOT_SHAPE_PRESETS } from '../model/dotStyle';
 import { DOT_SIZE_MAX, DOT_SIZE_MIN } from '../model/dotSize';
 import { LINE_WIDTH_MAX, LINE_WIDTH_MIN, LINE_WIDTH_SLIDER_MIN } from '../model/lineWidth';
+import { LINE_CURVE_RADIUS_MAX, LINE_CURVE_RADIUS_MIN } from '../model/lineCurve';
 import {
   LINE_STROKE_STEP,
   LINE_STROKE_WIDTH_MAX,
@@ -137,6 +138,17 @@ function LineStyleEditor({ id, props }: { id: string; props: LineStyleProps }) {
         getCurrent={liveNumberProp(id, 'width', props.width)}
         textboxAllowAboveMax
         textboxMin={LINE_WIDTH_MIN}
+      />
+      <NumericFieldRow
+        id={`style-${id}-curve`}
+        label="Curve radius"
+        min={LINE_CURVE_RADIUS_MIN}
+        max={LINE_CURVE_RADIUS_MAX}
+        step={1}
+        value={props.curveRadius}
+        onChange={(curveRadius) => patch({ curveRadius })}
+        getCurrent={liveNumberProp(id, 'curveRadius', props.curveRadius)}
+        textboxAllowAboveMax
       />
       <NumericFieldRow
         id={`style-${id}-stroke`}

@@ -22,8 +22,7 @@ const countWarningGlyphs = () =>
 
 const expectedWarningCount = () => {
   const s = useDoc.getState();
-  return buildBands(s.stations, s.lines, s.curveRadius, s.lineOrder).filter((b) => b.warning)
-    .length;
+  return buildBands(s.stations, s.lines, s.lineOrder).filter((b) => b.warning).length;
 };
 
 describe('MapCanvas — warning glyph reconciliation', () => {
@@ -82,12 +81,15 @@ describe('MapCanvas — warning glyph reconciliation', () => {
       ],
       label: { row: 0, col: -1, rotation: 0, offset: 0, align: 'auto', valign: 'middle' },
     };
+    // Large curveRadius makes even moderate-angle bends fail the
+    // "r < R * 0.5" threshold so both bands warn at close range.
     const l1: Line = makeLine({
       id: 'L1',
       service: 'L1',
       name: 'L1 line',
       color: '#0039A6',
       stations: ['s1', 's2'],
+      curveRadius: 80,
     });
     const l2: Line = makeLine({
       id: 'L2',
@@ -95,6 +97,7 @@ describe('MapCanvas — warning glyph reconciliation', () => {
       name: 'L2 line',
       color: '#EE352E',
       stations: ['s1', 's2'],
+      curveRadius: 80,
     });
 
     act(() => {
@@ -103,9 +106,6 @@ describe('MapCanvas — warning glyph reconciliation', () => {
         stations: { s1, s2 },
         lines: { L1: l1, L2: l2 },
         lineOrder: ['L1', 'L2'],
-        // Large radius makes even moderate-angle bends fail the
-        // "r < R * 0.5" threshold so both bands warn at close range.
-        curveRadius: 80,
       });
     });
 
@@ -115,7 +115,6 @@ describe('MapCanvas — warning glyph reconciliation', () => {
     const initialBands = buildBands(
       useDoc.getState().stations,
       useDoc.getState().lines,
-      useDoc.getState().curveRadius,
       useDoc.getState().lineOrder,
     );
     expect(initialBands).toHaveLength(2);
@@ -192,13 +191,15 @@ describe('MapCanvas — warning glyph reconciliation', () => {
     };
     const s1: Station = { id: 's1', name: 'S1', x: 0, y: 0, rotation: 0, stops, label };
     const s2: Station = { id: 's2', name: 'S2', x: 0, y: 20, rotation: 2, stops, label };
-    // L1 dark → white glyph; L2 light → black glyph.
+    // L1 dark → white glyph; L2 light → black glyph. Large curveRadius on
+    // both lines forces the tight-corner warning at close range.
     const l1: Line = makeLine({
       id: 'L1',
       service: 'L1',
       name: 'L1',
       color: '#0039A6',
       stations: ['s1', 's2'],
+      curveRadius: 80,
     });
     const l2: Line = makeLine({
       id: 'L2',
@@ -206,6 +207,7 @@ describe('MapCanvas — warning glyph reconciliation', () => {
       name: 'L2',
       color: '#FFD700',
       stations: ['s1', 's2'],
+      curveRadius: 80,
     });
 
     act(() => {
@@ -214,7 +216,6 @@ describe('MapCanvas — warning glyph reconciliation', () => {
         stations: { s1, s2 },
         lines: { L1: l1, L2: l2 },
         lineOrder: ['L1', 'L2'],
-        curveRadius: 80,
       });
     });
 
@@ -222,7 +223,6 @@ describe('MapCanvas — warning glyph reconciliation', () => {
     const warnBands = buildBands(
       useDoc.getState().stations,
       useDoc.getState().lines,
-      useDoc.getState().curveRadius,
       useDoc.getState().lineOrder,
     ).filter((b) => b.warning);
     expect(warnBands).toHaveLength(2);

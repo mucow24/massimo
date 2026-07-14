@@ -265,7 +265,6 @@ interface MapDoc {
   stations: Record<StationId, Station>;
   lines: Record<LineId, Line>;
   lineOrder: LineId[]; // index 0 = TOP
-  curveRadius: number; // global corner radius, world units (default 24)
   lineCounter: number; // monotonic; advanced per addLine; drives palette color cycle
   lineTags: Record<string, LineTag>;
   routeBullets: Record<string, RouteBullet>;
@@ -296,8 +295,15 @@ the map-wide knob is the designated default `'station'` style. Pre-retirement sa
 per-station values and seed the default station style (`bakeLegacyLabelSettings`, persist v14),
 mirroring the transfer retirement.
 
+And there is **no doc-level `curveRadius`** anymore — corner rounding is per-line
+(`Line.curveRadius`, missing ⇒ `LINE_CURVE_RADIUS_DEFAULT` = 24, [lineCurve.ts](src/model/lineCurve.ts)),
+covered by line styles, and edited in the line inspector / line style presets (the Options popover
+is palettes-only now). Legacy saves carried the doc field; both load paths bake it onto every line
+and fill line style defs that predate the covered field (`bakeDocCurveRadius`, persist v16).
+Where interlined lines disagree, the shared band curves at the LARGEST member radius.
+
 `DEFAULT_DOC` (in [transforms.ts](src/model/transforms.ts)) is the merge baseline: empty
-collections, `name: 'Untitled map'`, `curveRadius: 24`, `lineCounter: 0`, `activePalettes:
+collections, `name: 'Untitled map'`, `lineCounter: 0`, `activePalettes:
 ['mta']`, `styles: DEFAULT_STYLES` — the six factory "Default"
 presets (one per styleable kind: line, textLabel, polygon, routeBullet, transfer, station) — and
 `styleDefaults: FACTORY_STYLE_DEFAULTS` designating them. Styles are doc-scoped: applying one
@@ -810,7 +816,8 @@ A `SegmentBandSpec` carries **parallel arrays** (`lines`, `paths`, `stripeOffset
 `stripeWidths`, `linePriorities` — index k = same stripe). `stripeOffsets`/`stripeWidths`/`radius`
 are the **single source of truth**: every consumer (band paint, stripe outline, label/tag
 placement, hit sampling) **must read them, never re-derive**, and must use **`band.radius`** (the
-bumped/capped effective radius), **not** `doc.curveRadius`. `bandKey` (= `pairKey#sortedLineIds`)
+bumped/capped effective radius), **not** any line's raw `curveRadius` (the configured R is the
+LARGEST member line's radius). `bandKey` (= `pairKey#sortedLineIds`)
 is unique and stable regardless of input order — used for React keys and as the "which band"
 identity. The band specs are pinned by a **byte-exact golden snapshot**
 (`interlining.golden.test.ts`) guarding the zero-visual-change-for-legacy-docs invariant; never
@@ -1410,7 +1417,8 @@ lines`; every `segmentStyles` key is a real, non-default adjacency; every
   would default but never persist/undo).
 - **Parallel arrays in a band** (`lines`, `paths`, `stripeOffsets`, `stripeWidths`,
   `linePriorities`) are index-aligned; `stripeOffsets`/`stripeWidths`/`radius` are the single
-  source of truth — read them, never re-derive; sample with `band.radius`, not `doc.curveRadius`.
+  source of truth — read them, never re-derive; sample with `band.radius`, not a line's raw
+  `curveRadius`.
 - **One history entry per gesture**; the selection store is reconciled (not restored) after
   undo/redo.
 - **Paste/duplicate always unlock the copy** even if the source was `locked`, and offset by

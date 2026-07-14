@@ -1,33 +1,24 @@
 import { Fragment, useId, useRef, useState } from 'react';
-import {
-  ChevronDownIcon,
-  ChevronRightIcon,
-  Cross2Icon,
-  MixerHorizontalIcon,
-} from '@radix-ui/react-icons';
+import { Cross2Icon, MixerHorizontalIcon } from '@radix-ui/react-icons';
 import { useDoc } from '../state/store';
 import { PALETTES } from '../model/palettes';
 import { parseCustomPalette } from '../model/customPalette';
 import { useCustomPalettes } from '../state/customPalettes';
-import { useFieldHistory } from './useFieldHistory';
 import { usePopover } from './usePopover';
 
 /**
- * Toolbar button that opens a small floating panel of map-wide options: the
- * curve radius and the color-palette picker. Station-label typography moved to
- * per-station styles (the station popover); the map-wide default is the Default
- * station style in the Styles tab. Mirrors `Menu`'s open/close via `usePopover`.
+ * Toolbar button that opens the color-palette picker. The panel is palettes
+ * only now — the curve radius moved to the per-line style (line inspector /
+ * line style presets), and station-label typography lives on per-station
+ * styles — so the list renders directly, no disclosure. Mirrors `Menu`'s
+ * open/close via `usePopover`.
  */
 export function OptionsPopover() {
   const { open, setOpen, wrapRef } = usePopover();
   const panelId = useId();
 
-  const curveRadius = useDoc((s) => s.curveRadius);
-  const setCurveRadius = useDoc((s) => s.setCurveRadius);
   const activePalettes = useDoc((s) => s.activePalettes);
   const togglePalette = useDoc((s) => s.togglePalette);
-
-  const [palettesExpanded, setPalettesExpanded] = useState(false);
 
   const customPalettes = useCustomPalettes((s) => s.palettes);
   const addPalette = useCustomPalettes((s) => s.addPalette);
@@ -48,11 +39,6 @@ export function OptionsPopover() {
     addPalette({ name: result.name, swatches: result.swatches });
   };
 
-  // Curve radius is slider-only (no spinbutton), so it stays inline with its
-  // own useFieldHistory. The slider+spinbutton fields all go through
-  // <NumericFieldRow />, which manages its own field history internally.
-  const curveField = useFieldHistory();
-
   return (
     <div className="options-popover-wrap" ref={wrapRef}>
       <button
@@ -69,64 +55,77 @@ export function OptionsPopover() {
       </button>
       {open && (
         <div className="options-popover" id={panelId} role="dialog" aria-label="Options">
-          <div className="options-popover-row">
-            <label htmlFor={`${panelId}-curve`} className="options-popover-label">
-              Curve radius
-            </label>
-            <input
-              id={`${panelId}-curve`}
-              type="range"
-              min={4}
-              max={80}
-              step={1}
-              value={curveRadius}
-              onChange={(e) => setCurveRadius(Number(e.target.value))}
-              {...curveField}
-            />
-            <span className="options-popover-value">{curveRadius}</span>
-          </div>
-
-          {/* Station-label typography (size/weight/italic/leading/tracking) is
-              per-station now — edit it in the station popover, or the Default
-              station style in the Styles tab for the map-wide default. Transfer
-              styling likewise lives on the Default transfer style. */}
           <div className="options-popover-row options-popover-row-block">
-            <button
-              type="button"
-              className="options-palette-disclosure"
-              aria-expanded={palettesExpanded}
-              onClick={() => setPalettesExpanded((v) => !v)}
-            >
-              {palettesExpanded ? <ChevronDownIcon /> : <ChevronRightIcon />}
-              <span>Color palettes</span>
-            </button>
-            {palettesExpanded && (
-              <div className="options-palettes">
-                <button
-                  type="button"
-                  className="btn-mini options-palette-load"
-                  onClick={() => paletteFileRef.current?.click()}
-                >
-                  Load palette…
-                </button>
-                <input
-                  ref={paletteFileRef}
-                  type="file"
-                  accept=".json,application/json"
-                  aria-label="Load palette file"
-                  style={{ display: 'none' }}
-                  onChange={onLoadPalette}
-                />
-                {paletteError && (
-                  <div className="options-palette-error" role="alert">
-                    {paletteError}
-                  </div>
-                )}
-                {customPalettes.map((palette) => {
-                  const checked = activePalettes.includes(palette.id);
-                  const isLone = checked && activePalettes.length === 1;
-                  return (
-                    <label key={palette.id} className="options-palette-card" aria-disabled={isLone}>
+            <div className="options-palettes">
+              <button
+                type="button"
+                className="btn-mini options-palette-load"
+                onClick={() => paletteFileRef.current?.click()}
+              >
+                Load palette…
+              </button>
+              <input
+                ref={paletteFileRef}
+                type="file"
+                accept=".json,application/json"
+                aria-label="Load palette file"
+                style={{ display: 'none' }}
+                onChange={onLoadPalette}
+              />
+              {paletteError && (
+                <div className="options-palette-error" role="alert">
+                  {paletteError}
+                </div>
+              )}
+              {customPalettes.map((palette) => {
+                const checked = activePalettes.includes(palette.id);
+                const isLone = checked && activePalettes.length === 1;
+                return (
+                  <label key={palette.id} className="options-palette-card" aria-disabled={isLone}>
+                    <div className="options-palette-card-row">
+                      <input
+                        type="checkbox"
+                        aria-label={palette.name}
+                        checked={checked}
+                        disabled={isLone}
+                        onChange={() => togglePalette(palette.id)}
+                      />
+                      <span>{palette.name}</span>
+                      <button
+                        type="button"
+                        className="btn-mini danger options-palette-delete"
+                        aria-label={`Delete ${palette.name}`}
+                        title={`Delete ${palette.name}`}
+                        onClick={(e) => {
+                          e.preventDefault();
+                          deleteCustomPalette(palette.id);
+                        }}
+                      >
+                        <Cross2Icon />
+                      </button>
+                    </div>
+                    <div className="options-palette-strip" aria-hidden="true">
+                      {palette.swatches.map((s, si) => (
+                        <span key={si} style={{ background: s.color }} />
+                      ))}
+                    </div>
+                  </label>
+                );
+              })}
+              {customPalettes.length > 0 && (
+                <hr className="options-palette-separator" aria-hidden="true" />
+              )}
+              {PALETTES.map((palette, i) => {
+                const checked = activePalettes.includes(palette.id);
+                const isLone = checked && activePalettes.length === 1;
+                const prev = i > 0 ? PALETTES[i - 1] : null;
+                const showSeparator = prev !== null && prev.continent !== palette.continent;
+                return (
+                  <Fragment key={palette.id}>
+                    {showSeparator && (
+                      <hr className="options-palette-separator" aria-hidden="true" />
+                    )}
+                    <label className="options-palette-card" aria-disabled={isLone}>
                       <div className="options-palette-card-row">
                         <input
                           type="checkbox"
@@ -136,62 +135,17 @@ export function OptionsPopover() {
                           onChange={() => togglePalette(palette.id)}
                         />
                         <span>{palette.name}</span>
-                        <button
-                          type="button"
-                          className="btn-mini danger options-palette-delete"
-                          aria-label={`Delete ${palette.name}`}
-                          title={`Delete ${palette.name}`}
-                          onClick={(e) => {
-                            e.preventDefault();
-                            deleteCustomPalette(palette.id);
-                          }}
-                        >
-                          <Cross2Icon />
-                        </button>
                       </div>
                       <div className="options-palette-strip" aria-hidden="true">
-                        {palette.swatches.map((s, si) => (
-                          <span key={si} style={{ background: s.color }} />
+                        {palette.swatches.map((s) => (
+                          <span key={s.color} style={{ background: s.color }} />
                         ))}
                       </div>
                     </label>
-                  );
-                })}
-                {customPalettes.length > 0 && (
-                  <hr className="options-palette-separator" aria-hidden="true" />
-                )}
-                {PALETTES.map((palette, i) => {
-                  const checked = activePalettes.includes(palette.id);
-                  const isLone = checked && activePalettes.length === 1;
-                  const prev = i > 0 ? PALETTES[i - 1] : null;
-                  const showSeparator = prev !== null && prev.continent !== palette.continent;
-                  return (
-                    <Fragment key={palette.id}>
-                      {showSeparator && (
-                        <hr className="options-palette-separator" aria-hidden="true" />
-                      )}
-                      <label className="options-palette-card" aria-disabled={isLone}>
-                        <div className="options-palette-card-row">
-                          <input
-                            type="checkbox"
-                            aria-label={palette.name}
-                            checked={checked}
-                            disabled={isLone}
-                            onChange={() => togglePalette(palette.id)}
-                          />
-                          <span>{palette.name}</span>
-                        </div>
-                        <div className="options-palette-strip" aria-hidden="true">
-                          {palette.swatches.map((s) => (
-                            <span key={s.color} style={{ background: s.color }} />
-                          ))}
-                        </div>
-                      </label>
-                    </Fragment>
-                  );
-                })}
-              </div>
-            )}
+                  </Fragment>
+                );
+              })}
+            </div>
           </div>
         </div>
       )}

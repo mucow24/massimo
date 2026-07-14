@@ -6,7 +6,7 @@ interface Props {
   // The band centerline the body path was baked from — the rails reuse it so
   // they hug the exact same fillets.
   centerline: Vec2[];
-  // The band's effective radius (bumped/capped), NOT doc.curveRadius.
+  // The band's effective radius (bumped/capped), NOT any line's raw curveRadius.
   radius: number;
   // This stripe's centerline offset; the two rails sit at offset ± bodyWidth/2.
   offset: number;

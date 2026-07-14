@@ -26,11 +26,17 @@ describe('serialize / parse round-trip', () => {
         makeStation({ id: 's2', x: 100, y: 100 }),
       ],
       lines: [
-        makeLine({ id: 'L1', service: 'A', color: '#0039A6', stations: ['s1', 's2'] }),
+        // Non-default per-line curve radius must survive the round-trip.
+        makeLine({
+          id: 'L1',
+          service: 'A',
+          color: '#0039A6',
+          stations: ['s1', 's2'],
+          curveRadius: 30,
+        }),
         makeLine({ id: 'L2', service: 'B', color: '#FF6319', stations: ['s1'] }),
       ],
       lineOrder: ['L2', 'L1'],
-      curveRadius: 30,
       // Round-trip pins compare parse(serialize(doc)) with toEqual, so the
       // fixture must satisfy the load-time style invariants (>= 1 per kind).
       styles: Object.values(T.DEFAULT_STYLES),
@@ -1147,5 +1153,132 @@ describe('serialize / parse — round-trip property', () => {
         if (result.ok) expect(result.doc).toEqual(doc);
       }),
     );
+  });
+});
+
+describe('parse — legacy doc-level curveRadius bake', () => {
+  // Corner rounding moved from MapDoc.curveRadius (doc-global) to a per-line
+  // style field. Legacy files carry the doc field; the bake stamps it onto
+  // every line (and fills line style defs that predate the covered field),
+  // then drops it — so old maps keep their exact rendered curves.
+  const lineStyleDef = (props: Record<string, unknown>) => ({
+    id: 'default-line',
+    name: 'Default',
+    kind: 'line',
+    props: {
+      defaultDotStyle: DEFAULT_DOT_STYLE,
+      defaultDotSize: 14,
+      width: 14,
+      strokeWidth: 0,
+      strokeColor: '#ffffff',
+      ...props,
+    },
+  });
+  const buildFile = (docExtra: Record<string, unknown>): string =>
+    JSON.stringify({
+      format: 'massimo-map',
+      version: 2,
+      doc: {
+        stations: {
+          s1: {
+            id: 's1',
+            name: 'A',
+            x: 0,
+            y: 0,
+            rotation: 0,
+            stops: [{ lineId: 'L1' }],
+            label: { row: 0, col: 0, rotation: 0, offset: 8, align: 'auto', valign: 'middle' },
+          },
+          s2: {
+            id: 's2',
+            name: 'B',
+            x: 100,
+            y: 0,
+            rotation: 0,
+            stops: [{ lineId: 'L1' }],
+            label: { row: 0, col: 0, rotation: 0, offset: 8, align: 'auto', valign: 'middle' },
+          },
+        },
+        lines: {
+          L1: { id: 'L1', service: '1', name: '1 line', color: '#ee352e', stations: ['s1', 's2'] },
+        },
+        lineOrder: ['L1'],
+        ...docExtra,
+      },
+    });
+
+  it('stamps a non-default legacy radius onto every line and drops the doc field', () => {
+    const r = parse(buildFile({ curveRadius: 40 }));
+    expect(r.ok).toBe(true);
+    if (!r.ok) return;
+    expect(r.doc.lines.L1.curveRadius).toBe(40);
+    expect('curveRadius' in r.doc).toBe(false);
+  });
+
+  it('leaves lines unstamped for the legacy default 24 (never stored)', () => {
+    const r = parse(buildFile({ curveRadius: 24 }));
+    expect(r.ok).toBe(true);
+    if (!r.ok) return;
+    expect('curveRadius' in r.doc.lines.L1).toBe(false);
+    expect('curveRadius' in r.doc).toBe(false);
+  });
+
+  it("a line's own curveRadius wins over the legacy doc value", () => {
+    const withOwn = buildFile({ curveRadius: 40 }).replace(
+      '"color":"#ee352e"',
+      '"color":"#ee352e","curveRadius":12',
+    );
+    const r = parse(withOwn);
+    expect(r.ok).toBe(true);
+    if (r.ok) expect(r.doc.lines.L1.curveRadius).toBe(12);
+  });
+
+  it('fills line style defs that predate the field from the legacy radius', () => {
+    const r = parse(buildFile({ curveRadius: 40, styles: { 'default-line': lineStyleDef({}) } }));
+    expect(r.ok).toBe(true);
+    if (!r.ok) return;
+    const def = r.doc.styles['default-line'];
+    expect(def.kind).toBe('line');
+    expect((def.props as { curveRadius?: number }).curveRadius).toBe(40);
+  });
+
+  it('fills a field-less line style def with the default 24 when no legacy doc field exists', () => {
+    const r = parse(buildFile({ styles: { 'default-line': lineStyleDef({}) } }));
+    expect(r.ok).toBe(true);
+    if (!r.ok) return;
+    expect((r.doc.styles['default-line'].props as { curveRadius?: number }).curveRadius).toBe(24);
+  });
+
+  it('keeps an explicit style-def curveRadius over the legacy doc value', () => {
+    const r = parse(
+      buildFile({ curveRadius: 40, styles: { 'default-line': lineStyleDef({ curveRadius: 30 }) } }),
+    );
+    expect(r.ok).toBe(true);
+    if (!r.ok) return;
+    expect((r.doc.styles['default-line'].props as { curveRadius?: number }).curveRadius).toBe(30);
+  });
+
+  it('sanitizes per-line curveRadius: rounds, clamps to the floor, drops at the default', () => {
+    const stamped = (v: string) => {
+      const r = parse(
+        buildFile({}).replace('"color":"#ee352e"', `"color":"#ee352e","curveRadius":${v}`),
+      );
+      expect(r.ok).toBe(true);
+      return r.ok ? r.doc.lines.L1.curveRadius : undefined;
+    };
+    expect(stamped('39.6')).toBe(40);
+    expect(stamped('1')).toBe(4); // clamps to LINE_CURVE_RADIUS_MIN
+    expect(stamped('24')).toBe(undefined); // default is never stored
+    expect(stamped('"junk"')).toBe(undefined); // garbage dropped
+    expect(stamped('1e999')).toBe(undefined); // non-finite dropped
+  });
+
+  it('is idempotent: a re-serialized baked doc parses back unchanged', () => {
+    const first = parse(buildFile({ curveRadius: 40 }));
+    expect(first.ok).toBe(true);
+    if (!first.ok) return;
+    const second = parse(serialize(first.doc));
+    expect(second.ok).toBe(true);
+    if (second.ok) expect(second.doc).toEqual(first.doc);
   });
 });

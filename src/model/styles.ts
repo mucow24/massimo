@@ -20,6 +20,7 @@ import {
   canonicalStationLabelStyle,
   clampRouteBulletSize,
   effectiveStationStyleProps,
+  setLineCurveRadius,
   setLineDefaultDotSize,
   setLineDefaultDotStyle,
   setLineStrokeColor,
@@ -36,6 +37,7 @@ import {
 import { DEFAULT_DOT_STYLE, dotStylesEqual } from './dotStyle';
 import { DOT_SIZE_MIN, lineDefaultDotSizeOf } from './dotSize';
 import { LINE_WIDTH_MIN, lineWidthOf } from './lineWidth';
+import { LINE_CURVE_RADIUS_DEFAULT, LINE_CURVE_RADIUS_MIN, lineCurveRadiusOf } from './lineCurve';
 import {
   LINE_STROKE_STEP,
   LINE_STROKE_WIDTH_MIN,
@@ -103,6 +105,7 @@ export function captureStyleProps<K extends StyleKind>(
         defaultDotStyle: l.defaultDotStyle ?? DEFAULT_DOT_STYLE,
         defaultDotSize: lineDefaultDotSizeOf(l),
         width: lineWidthOf(l),
+        curveRadius: lineCurveRadiusOf(l),
         strokeWidth: lineStrokeWidthOf(l),
         strokeColor: lineStrokeColorOf(l),
         // Optional: omitted when unset, so a captured style compares equal to
@@ -181,6 +184,7 @@ export function stylePropsEqual(
       dotStylesEqual(la.defaultDotStyle, lb.defaultDotStyle) &&
       la.defaultDotSize === lb.defaultDotSize &&
       la.width === lb.width &&
+      la.curveRadius === lb.curveRadius &&
       la.strokeWidth === lb.strokeWidth &&
       la.strokeColor === lb.strokeColor &&
       la.seamColor === lb.seamColor &&
@@ -226,6 +230,13 @@ export function canonicalStyleProps<K extends StyleKind>(
         defaultDotStyle: p.defaultDotStyle,
         defaultDotSize: Math.max(DOT_SIZE_MIN, Math.round(p.defaultDotSize)),
         width: Math.max(LINE_WIDTH_MIN, Math.round(p.width)),
+        // `?? DEFAULT` heals defs from saves that predate the field (the load
+        // paths bake it in first — see bakeDocCurveRadius — this is the
+        // keep-canonical-props-concrete backstop).
+        curveRadius: Math.max(
+          LINE_CURVE_RADIUS_MIN,
+          Math.round(p.curveRadius ?? LINE_CURVE_RADIUS_DEFAULT),
+        ),
         strokeWidth: Math.max(
           LINE_STROKE_WIDTH_MIN,
           Math.round(p.strokeWidth / LINE_STROKE_STEP) * LINE_STROKE_STEP,
@@ -306,6 +317,7 @@ function stampStyle(doc: MapDoc, def: StyleDef, itemId: string): MapDoc {
       next = setLineDefaultDotStyle(next, itemId, p.defaultDotStyle);
       next = setLineDefaultDotSize(next, itemId, p.defaultDotSize);
       next = setLineWidth(next, itemId, p.width);
+      next = setLineCurveRadius(next, itemId, p.curveRadius);
       next = setLineStrokeWidth(next, itemId, p.strokeWidth);
       next = setLineStrokeColor(next, itemId, p.strokeColor);
       // undefined ⇒ fully transparent ⇒ removes any prior seam (stamp "off").

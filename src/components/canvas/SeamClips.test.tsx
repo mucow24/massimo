@@ -26,7 +26,7 @@ function junctionBandsAndLines(seamColor?: string) {
     ],
   });
   return {
-    bands: buildBands(doc.stations, doc.lines, doc.curveRadius, doc.lineOrder),
+    bands: buildBands(doc.stations, doc.lines, doc.lineOrder),
     lines: doc.lines,
   };
 }

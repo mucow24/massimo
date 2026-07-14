@@ -21,9 +21,9 @@ const station = (id: string, x: number, y: number): Station => ({
 
 describe('loadDoc', () => {
   it('replaces the document wholesale, resetting fields the loaded doc omits', () => {
-    // Dirty the current doc: a station and a non-default curveRadius.
+    // Dirty the current doc: a station and a non-default lineCounter.
     useDoc.getState().addStation(10, 20, 'Old');
-    useDoc.setState({ ...useDoc.getState(), curveRadius: 80 });
+    useDoc.setState({ ...useDoc.getState(), lineCounter: 7 });
     const oldIds = Object.keys(useDoc.getState().stations);
     expect(oldIds).toHaveLength(1);
 
@@ -36,9 +36,9 @@ describe('loadDoc', () => {
     const s = useDoc.getState();
     expect(s.name).toBe('Loaded map');
     expect(Object.keys(s.stations)).toEqual(['a']);
-    // curveRadius wasn't in the loaded doc's non-default fields — it must
+    // lineCounter wasn't in the loaded doc's non-default fields — it must
     // come back as the default, not leak through from the replaced doc.
-    expect(s.curveRadius).toBe(DEFAULT_DOC.curveRadius);
+    expect(s.lineCounter).toBe(DEFAULT_DOC.lineCounter);
   });
 
   it('preserves the store mutators (a load is a merge, not a state swap)', () => {

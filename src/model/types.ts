@@ -298,10 +298,19 @@ export interface Line {
   // so a seam-color-only line still shows a seam. Only takes effect alongside a
   // non-transparent seamColor.
   seamWidth?: number;
+  // Corner-rounding radius in world units. Missing ⇒ LINE_CURVE_RADIUS_DEFAULT
+  // (= 24, the historical doc-global default) — legacy saves carried a
+  // doc-level `curveRadius` instead, baked onto lines on load (see
+  // bakeDocCurveRadius in serialize.ts). Like `width` this is GEOMETRY: it
+  // moves band paths. Where interlined lines disagree, the shared band curves
+  // at the largest member radius. The setter (`setLineCurveRadius`) rounds,
+  // clamps to ≥ LINE_CURVE_RADIUS_MIN, and drops the field at the default so
+  // it is never stored.
+  curveRadius?: number;
   // Live link to a StyleDef of kind 'line' (see MapDoc.styles). INVARIANT:
   // when present, this line's covered style fields (defaultDotStyle,
-  // defaultDotSize, width, strokeWidth, strokeColor, seamColor, seamWidth — NOT
-  // color) equal the style's props. Transforms maintain it: editing any covered field clears
+  // defaultDotSize, width, strokeWidth, strokeColor, seamColor, seamWidth,
+  // curveRadius — NOT color) equal the style's props. Transforms maintain it: editing any covered field clears
   // the tag ("detach to Custom"), editing the style re-stamps its users,
   // deleting the style untags. Absent ⇒ no style ("Custom" in the UI).
   // Dangling ids are pruned on file load.
@@ -513,7 +522,9 @@ export interface MapDoc {
   lines: Record<LineId, Line>;
   // Z-order, top-of-list (index 0) renders LAST = on top, à la Photoshop layers.
   lineOrder: LineId[];
-  curveRadius: number;
+  // NOTE: there is no doc-level `curveRadius` anymore — corner rounding is a
+  // per-line style field (Line.curveRadius). Legacy saves that carry the old
+  // doc field get it baked onto their lines on load (bakeDocCurveRadius).
   /**
    * Monotonically-increasing counter advanced each time a line is added.
    * Used to pick the next palette color so the cycle continues across
@@ -723,6 +734,8 @@ export interface LineStyleProps {
   defaultDotSize: number;
   // Stripe width, world units.
   width: number;
+  // Corner-rounding radius, world units.
+  curveRadius: number;
   // Casing width per side, world units (0 = no casing).
   strokeWidth: number;
   // Casing color, lowercase hex.

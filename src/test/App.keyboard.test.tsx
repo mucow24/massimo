@@ -115,15 +115,22 @@ describe('App keyboard shortcuts: Escape', () => {
 
 describe('App keyboard shortcuts: inForm guard routing', () => {
   it('Ctrl+Z fires on a focused range slider (slider drag is undoable without click-away)', async () => {
-    const user = userEvent.setup();
     render(<App />);
+    // Any range slider exercises the guard; the line inspector's Curve
+    // radius slider stands in for the retired Options one. Seed + select
+    // BEFORE the baseline so the seeding write isn't what Ctrl+Z pops.
+    useDoc.setState({
+      ...useDoc.getState(),
+      lines: { L1: makeLine({ id: 'L1' }) },
+      lineOrder: ['L1'],
+    });
+    useSelection.getState().selectLine('L1');
     // Create an undoable entry so Ctrl+Z has something to pop.
     useDoc.getState().addStation(50, 50);
     const pastBefore = historyDepth();
     const stationsBefore = Object.keys(useDoc.getState().stations).length;
 
-    await user.click(screen.getByRole('button', { name: 'Options' }));
-    const slider = screen.getByRole('slider', { name: /curve radius/i });
+    const slider = await screen.findByRole('slider', { name: /curve radius/i });
     slider.focus();
 
     fireEvent.keyDown(slider, { key: 'z', ctrlKey: true });
@@ -173,7 +180,6 @@ describe('App keyboard shortcuts: inForm guard routing', () => {
     const user = userEvent.setup();
     render(<App />);
     await user.click(screen.getByRole('button', { name: 'Options' }));
-    await user.click(screen.getByRole('button', { name: /color palettes/i }));
     const bart = screen.getByRole('checkbox', { name: 'BART' });
     bart.focus();
 
@@ -314,16 +320,25 @@ describe('App keyboard shortcuts: add-transfer mode', () => {
 });
 
 describe('App keyboard shortcuts: blur-then-undo', () => {
-  it('Ctrl+Z mid-slider-drag commits the open useFieldHistory group, then undoes the drag', async () => {
-    const user = userEvent.setup();
+  it('Ctrl+Z mid-slider-drag commits the open field-history group, then undoes the drag', async () => {
     render(<App />);
-    await user.click(screen.getByRole('button', { name: 'Options' }));
-    const slider = screen.getByRole('slider', { name: /curve radius/i }) as HTMLInputElement;
-    const initial = useDoc.getState().curveRadius;
+    // The line inspector's Curve radius slider (NumericFieldRow) drives its
+    // own field-history group — the same blur-then-undo contract the retired
+    // Options curve slider exercised.
+    useDoc.setState({
+      ...useDoc.getState(),
+      lines: { L1: makeLine({ id: 'L1' }) },
+      lineOrder: ['L1'],
+    });
+    useSelection.getState().selectLine('L1');
+    const slider = (await screen.findByRole('slider', {
+      name: /curve radius/i,
+    })) as HTMLInputElement;
+    const initial = Number(slider.value);
     const pastBaseline = historyDepth();
 
     // Simulate focus → mid-drag → Ctrl+Z without intervening blur. The focus
-    // opens a useFieldHistory group (pauses zundo); the change mutates state
+    // opens a field-history group (pauses zundo); the change mutates state
     // but no entry lands on pastStates yet; the Ctrl+Z handler must blur the
     // active element so commit() runs, *then* undo against the just-pushed
     // entry. Without blur-then-undo, undo would skip the in-progress edit.
@@ -332,11 +347,11 @@ describe('App keyboard shortcuts: blur-then-undo', () => {
     // document.activeElement — the Ctrl+Z handler's blur target depends on it.
     slider.focus();
     fireEvent.change(slider, { target: { value: String(initial + 4) } });
-    expect(useDoc.getState().curveRadius).toBe(initial + 4);
+    expect(useDoc.getState().lines.L1.curveRadius).toBe(initial + 4);
 
     fireEvent.keyDown(slider, { key: 'z', ctrlKey: true });
 
-    expect(useDoc.getState().curveRadius).toBe(initial);
+    expect(useDoc.getState().lines.L1.curveRadius).toBeUndefined(); // back to default
     expect(historyDepth()).toBe(pastBaseline);
     expect(redoDepth()).toBe(1);
   });

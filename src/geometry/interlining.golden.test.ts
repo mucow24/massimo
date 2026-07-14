@@ -48,7 +48,9 @@ const fiveStripeStations = (s1: { x: number; y: number }, s2: { x: number; y: nu
   }),
 ];
 const fiveStripeLines = () =>
-  ['L1', 'L2', 'L3', 'L4', 'L5'].map((id) => makeLine({ id, stations: ['s1', 's2'] }));
+  ['L1', 'L2', 'L3', 'L4', 'L5'].map((id) =>
+    makeLine({ id, stations: ['s1', 's2'], curveRadius: 20 }),
+  );
 
 describe('buildBands — golden geometry pins (all-default widths)', () => {
   it('straight 5-stripe band', () => {
@@ -56,7 +58,7 @@ describe('buildBands — golden geometry pins (all-default widths)', () => {
       stations: fiveStripeStations({ x: 0, y: 0 }, { x: 0, y: 200 }),
       lines: fiveStripeLines(),
     });
-    expect(golden(buildBands(doc.stations, doc.lines, 20, doc.lineOrder))).toMatchSnapshot();
+    expect(golden(buildBands(doc.stations, doc.lines, doc.lineOrder))).toMatchSnapshot();
   });
 
   it('5-stripe Z-bend with ample edges (cap inactive)', () => {
@@ -64,7 +66,7 @@ describe('buildBands — golden geometry pins (all-default widths)', () => {
       stations: fiveStripeStations({ x: 0, y: 0 }, { x: 96, y: 120 }),
       lines: fiveStripeLines(),
     });
-    expect(golden(buildBands(doc.stations, doc.lines, 20, doc.lineOrder))).toMatchSnapshot();
+    expect(golden(buildBands(doc.stations, doc.lines, doc.lineOrder))).toMatchSnapshot();
   });
 
   it('5-stripe Z-bend with tight edges (marker-fit cap engaged)', () => {
@@ -72,7 +74,7 @@ describe('buildBands — golden geometry pins (all-default widths)', () => {
       stations: fiveStripeStations({ x: 0, y: 0 }, { x: 96, y: 100 }),
       lines: fiveStripeLines(),
     });
-    expect(golden(buildBands(doc.stations, doc.lines, 20, doc.lineOrder))).toMatchSnapshot();
+    expect(golden(buildBands(doc.stations, doc.lines, doc.lineOrder))).toMatchSnapshot();
   });
 
   it('diagonal merged pair', () => {
@@ -91,7 +93,7 @@ describe('buildBands — golden geometry pins (all-default widths)', () => {
         makeLine({ id: 'L2', stations: ['s1', 's2'] }),
       ],
     });
-    expect(golden(buildBands(doc.stations, doc.lines, 24, doc.lineOrder))).toMatchSnapshot();
+    expect(golden(buildBands(doc.stations, doc.lines, doc.lineOrder))).toMatchSnapshot();
   });
 
   // Loop/branch topology (PR #234) had no golden band-geometry coverage. These
@@ -110,7 +112,7 @@ describe('buildBands — golden geometry pins (all-default widths)', () => {
       ],
       lines: [makeLine({ id: 'L1', stations: ['a', 'j', 'c', 'd'], edges: ['a|j', 'c|j', 'd|j'] })],
     });
-    expect(golden(buildBands(doc.stations, doc.lines, 24, doc.lineOrder))).toMatchSnapshot();
+    expect(golden(buildBands(doc.stations, doc.lines, doc.lineOrder))).toMatchSnapshot();
   });
 
   it('3-cycle loop: triangle a-b-c', () => {
@@ -118,7 +120,7 @@ describe('buildBands — golden geometry pins (all-default widths)', () => {
       stations: [hStation('a', 0, 0), hStation('b', 160, 0), hStation('c', 80, 90)],
       lines: [makeLine({ id: 'L1', stations: ['a', 'b', 'c'], edges: ['a|b', 'b|c', 'a|c'] })],
     });
-    expect(golden(buildBands(doc.stations, doc.lines, 24, doc.lineOrder))).toMatchSnapshot();
+    expect(golden(buildBands(doc.stations, doc.lines, doc.lineOrder))).toMatchSnapshot();
   });
 
   it('cramped single-stripe perpendicular terminus (cap below R)', () => {
@@ -141,6 +143,6 @@ describe('buildBands — golden geometry pins (all-default widths)', () => {
       ],
       lines: [makeLine({ id: 'L1', stations: ['s2', 's1'] })],
     });
-    expect(golden(buildBands(doc.stations, doc.lines, 24, doc.lineOrder))).toMatchSnapshot();
+    expect(golden(buildBands(doc.stations, doc.lines, doc.lineOrder))).toMatchSnapshot();
   });
 });

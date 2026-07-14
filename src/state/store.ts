@@ -41,6 +41,7 @@ import {
   backfillPolygonDarkColors,
   backfillTextLabelColors,
   backfillTransferDayNightColors,
+  bakeDocCurveRadius,
   bakeLegacyLabelSettings,
   bakeLegacyTransferSettings,
   convertLegacyDotShapes,
@@ -92,7 +93,6 @@ const DOC_FIELDS = [
   'stations',
   'lines',
   'lineOrder',
-  'curveRadius',
   'lineCounter',
   'lineTags',
   'routeBullets',
@@ -134,7 +134,7 @@ function docSnapshotsEqual(a: DocSnapshot, b: DocSnapshot): boolean {
 }
 
 /**
- * Persisted-document version migration (v0 → v15). Exported and pure so it can
+ * Persisted-document version migration (v0 → v16). Exported and pure so it can
  * be unit-tested in isolation; the persist config below just delegates here.
  * Never mutates `persisted` — returns a possibly-new doc snapshot.
  *
@@ -203,6 +203,12 @@ function docSnapshotsEqual(a: DocSnapshot, b: DocSnapshot): boolean {
  *   default station style — mirrors the transfer-settings retirement.
  *   Idempotent (keyed off field presence), so `parse()` runs the shared
  *   `bakeLegacyLabelSettings` unconditionally.
+ * - v15 → v16: retire the doc-level `curveRadius` — bake it onto every line
+ *   (`Line.curveRadius`, dropped at the historical default 24) and fill line
+ *   style defs that predate the covered field, via the shared
+ *   `bakeDocCurveRadius`. Idempotent (keyed off field presence), so `parse()`
+ *   runs it unconditionally. Ordered BEFORE the v<10 style hygiene — see the
+ *   gate's comment.
  */
 export function migrateDoc(persisted: unknown, version: number): DocState {
   const s = persisted as {
@@ -269,6 +275,14 @@ export function migrateDoc(persisted: unknown, version: number): DocState {
     // Runs after the v<5 dark-color backfill above, so darkFill is present.
     const folded = foldPolygonFillOpacity(out.polygons);
     if (folded.changed) out = { ...out, polygons: folded.polygons };
+  }
+  if (v < 16) {
+    // Retired doc-level curveRadius → per-line fields, plus the line-style-def
+    // fill. MUST run before the v<10 style hygiene below: migrateV9Styles
+    // rebuilds defs through the canonical grids, and a def missing
+    // `curveRadius` would heal to the constant default instead of the doc's
+    // legacy value.
+    out = bakeDocCurveRadius(out);
   }
   if (v < 10) {
     // Style-def hygiene FIRST — strip round-1 defs' since-dropped keys, and
@@ -432,6 +446,7 @@ interface DocState extends MapDoc {
   setLineDefaultDotStyle: (lineId: LineId, style: DotStyle) => void;
   setLineDefaultDotSize: (lineId: LineId, size: number) => void;
   setLineWidth: (lineId: LineId, w: number) => void;
+  setLineCurveRadius: (lineId: LineId, r: number) => void;
   setLineStrokeWidth: (lineId: LineId, w: number) => void;
   setLineStrokeColor: (lineId: LineId, c: string) => void;
   setLineSeamColor: (lineId: LineId, c: string) => void;
@@ -546,7 +561,6 @@ interface DocState extends MapDoc {
    *  cross a file load. */
   loadDoc: (doc: MapDoc) => void;
   setDocName: (name: string) => void;
-  setCurveRadius: (r: number) => void;
   /** The station popover's style section write path: patch a station's own
    *  typography (fontSize/weight/italic/leading/tracking), detaching its style
    *  tag when a covered value actually changes. */
@@ -668,6 +682,8 @@ export const useDoc = create<DocState>()(
         setLineDefaultDotSize: (lineId, size) =>
           set((s) => T.setLineDefaultDotSize(s, lineId, size)),
         setLineWidth: (lineId, w) => set(withRegionReconcile((s) => T.setLineWidth(s, lineId, w))),
+        setLineCurveRadius: (lineId, r) =>
+          set(withRegionReconcile((s) => T.setLineCurveRadius(s, lineId, r))),
         setLineStrokeWidth: (lineId, w) => set((s) => T.setLineStrokeWidth(s, lineId, w)),
         setLineStrokeColor: (lineId, c) => set((s) => T.setLineStrokeColor(s, lineId, c)),
         setLineSeamColor: (lineId, c) => set((s) => T.setLineSeamColor(s, lineId, c)),
@@ -905,7 +921,6 @@ export const useDoc = create<DocState>()(
         // A plain merge: doc fields are replaced, mutator methods survive.
         loadDoc: (doc) => set({ ...DEFAULT_DOC, ...doc }),
         setDocName: (name) => set((s) => T.setDocName(s, name)),
-        setCurveRadius: (r) => set(withRegionReconcile((s) => T.setCurveRadius(s, r))),
         updateStationLabelStyle: (stationId, patch) =>
           set((s) => T.updateStationLabelStyle(s, stationId, patch)),
         setActivePalettes: (idsArr) =>
@@ -931,8 +946,8 @@ export const useDoc = create<DocState>()(
       {
         name: 'vignelli-map-doc-v1',
         storage: createJSONStorage(() => localStorage),
-        version: 15,
-        // Version migration chain v0 → v15 lives in `migrateDoc` (above), which
+        version: 16,
+        // Version migration chain v0 → v16 lives in `migrateDoc` (above), which
         // is exported and unit-tested. See its doc comment for each step.
         migrate: (persisted, version) => migrateDoc(persisted, version),
         // `migrate` only runs when the STORED version differs from the config
@@ -996,23 +1011,11 @@ export function cancelOpenHistoryGroup(): void {
 function applyRegionReconcile<T extends MapDoc>(prev: GeometrySlice, next: T): T {
   const assignments = next.regionAssignments;
   if (!Object.keys(assignments).length) return next;
-  if (
-    prev.stations === next.stations &&
-    prev.lines === next.lines &&
-    prev.curveRadius === next.curveRadius
-  ) {
+  if (prev.stations === next.stations && prev.lines === next.lines) {
     return next;
   }
-  const oldGeom: GeometrySlice = {
-    stations: prev.stations,
-    lines: prev.lines,
-    curveRadius: prev.curveRadius,
-  };
-  const newGeom: GeometrySlice = {
-    stations: next.stations,
-    lines: next.lines,
-    curveRadius: next.curveRadius,
-  };
+  const oldGeom: GeometrySlice = { stations: prev.stations, lines: prev.lines };
+  const newGeom: GeometrySlice = { stations: next.stations, lines: next.lines };
   if (regionGeometrySig(oldGeom) === regionGeometrySig(newGeom)) return next;
   const reconciled = reconcileRegionAssignments(oldGeom, newGeom, assignments, () =>
     ids.regionAssignmentId(),

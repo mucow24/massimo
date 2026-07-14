@@ -19,6 +19,7 @@ import { DEFAULT_DOC, DEFAULT_STYLES, FACTORY_STYLE_DEFAULTS } from './transform
 import { DEFAULT_DOT_STYLE, DOT_SHAPE_PRESETS } from './dotStyle';
 import { DOT_SIZE_DEFAULT } from './dotSize';
 import { LINE_WIDTH_DEFAULT } from './lineWidth';
+import { LINE_CURVE_RADIUS_DEFAULT } from './lineCurve';
 import type { RouteBulletStyleProps, TextLabelStyleProps, TransferStyleProps } from './types';
 import {
   makeDoc,
@@ -39,6 +40,7 @@ describe('captureStyleProps', () => {
       defaultDotStyle: DEFAULT_DOT_STYLE,
       defaultDotSize: DOT_SIZE_DEFAULT,
       width: LINE_WIDTH_DEFAULT,
+      curveRadius: LINE_CURVE_RADIUS_DEFAULT,
       strokeWidth: 0,
       strokeColor: '#ffffff',
     });
@@ -52,6 +54,7 @@ describe('captureStyleProps', () => {
           defaultDotStyle: DOT_SHAPE_PRESETS['open-black'],
           defaultDotSize: 12,
           width: 10,
+          curveRadius: 40,
           strokeWidth: 1.5,
           strokeColor: '#123456',
         }),
@@ -61,6 +64,7 @@ describe('captureStyleProps', () => {
       defaultDotStyle: DOT_SHAPE_PRESETS['open-black'],
       defaultDotSize: 12,
       width: 10,
+      curveRadius: 40,
       strokeWidth: 1.5,
       strokeColor: '#123456',
     });
@@ -173,6 +177,24 @@ describe('captureStyleProps', () => {
   });
 });
 
+describe('stylePropsEqual — line covered fields', () => {
+  it('distinguishes props differing only in curveRadius', () => {
+    // The line branch compares an EXPLICIT field list — a covered field
+    // missing from it makes curveRadius-only edits no-op in updateStyleProps
+    // and invisible to the mismatched-tag pruning.
+    const base = {
+      defaultDotStyle: DEFAULT_DOT_STYLE,
+      defaultDotSize: DOT_SIZE_DEFAULT,
+      width: LINE_WIDTH_DEFAULT,
+      curveRadius: LINE_CURVE_RADIUS_DEFAULT,
+      strokeWidth: 0,
+      strokeColor: '#ffffff',
+    };
+    expect(stylePropsEqual('line', base, { ...base })).toBe(true);
+    expect(stylePropsEqual('line', base, { ...base, curveRadius: 40 })).toBe(false);
+  });
+});
+
 describe('stylePropsEqual — transfer day/night colors', () => {
   const props = (
     color: { day: string; night: string },
@@ -215,6 +237,7 @@ describe('applyStyleToItem', () => {
         defaultDotStyle: DOT_SHAPE_PRESETS['filled-white'],
         defaultDotSize: 12,
         width: 10,
+        curveRadius: 40,
         strokeWidth: 2,
         strokeColor: '#123456',
       },
@@ -224,6 +247,7 @@ describe('applyStyleToItem', () => {
     const line = next.lines.l1;
     expect(line.styleId).toBe('y1');
     expect(line.width).toBe(10);
+    expect(line.curveRadius).toBe(40);
     expect(line.strokeWidth).toBe(2);
     expect(line.strokeColor).toBe('#123456');
     expect(line.defaultDotStyle).toEqual(DOT_SHAPE_PRESETS['filled-white']);
@@ -254,11 +278,15 @@ describe('applyStyleToItem', () => {
 
   it('stores nothing for line values that equal the global defaults (canonical collapse)', () => {
     const style = makeStyle('line', 'y1'); // all-default props
-    const doc = makeDoc({ lines: [makeLine({ id: 'l1', width: 10 })], styles: [style] });
+    const doc = makeDoc({
+      lines: [makeLine({ id: 'l1', width: 10, curveRadius: 40 })],
+      styles: [style],
+    });
     const next = applyStyleToItem(doc, 'y1', 'l1');
     const line = next.lines.l1;
     expect(line.styleId).toBe('y1');
     expect(line.width).toBeUndefined();
+    expect(line.curveRadius).toBeUndefined();
     expect(line.strokeWidth).toBeUndefined();
     expect(line.strokeColor).toBeUndefined();
     expect(line.defaultDotStyle).toBeUndefined();
