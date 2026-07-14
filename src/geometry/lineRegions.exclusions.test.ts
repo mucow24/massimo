@@ -153,6 +153,42 @@ describe('buildExclusionHoles — casings', () => {
   });
 });
 
+describe('buildExclusionHoles — neighboring faces are never nicked', () => {
+  it("stops at a tangent face the LOSER wins (the loser's own territory)", () => {
+    // l1 vertical (loser, top of lineOrder); l2 horizontal (winner by
+    // assignment, body y ∈ [-7, 7]); l3 horizontal TANGENT below l2 (body
+    // y ∈ [7, 21]), painted between them. All cased at railW = 0.5, so the
+    // winner's silhouette reaches y = 7.25 — past the face boundary, over
+    // l3's body, where l1 is the DEFAULT winner of the {l1,l3} face. The
+    // hole must not cut l1 there: beneath l1 sits l3's body (painted above
+    // the winner), so the cut would expose an l3-colored sliver instead of
+    // the winner's rail — the loser's paint must run to the boundary.
+    const bands = [
+      vBand('l1', 's1|s2', -50, 50, 50),
+      hBand('l2', 's3|s4', 0, 100, 0),
+      hBand('l3', 's5|s6', 0, 100, 14),
+    ];
+    const lineOrder = ['l1', 'l3', 'l2'];
+    const faces = buildOverlapRegions(bands, []);
+    expect(faces.map((f) => f.lineIds.join('+'))).toEqual(['l1+l2', 'l1+l3']);
+    const winners = faces.map((f) =>
+      f.lineIds.includes('l2')
+        ? { winner: 'l2' as LineId, assignmentId: 'r1' }
+        : { winner: 'l1' as LineId, assignmentId: null },
+    );
+    const holes = buildExclusionHoles(faces, winners, lineOrder, bands, [], () => 0.5);
+    const hole = holes.get('l1');
+    // Inside the tangent {l1,l3} face, just past the shared boundary: the
+    // hole may not reach in, however far the winner's footprint extends.
+    expect(contains(hole, { x: 50, y: 7.1 })).toBe(false);
+    // The face itself stays fully cut, right up to that boundary…
+    expect(contains(hole, { x: 50, y: 6.9 })).toBe(true);
+    // …and on the FREE side (no neighboring face) the hole still runs
+    // through the winner's rail for the bridges-over reveal.
+    expect(contains(hole, { x: 50, y: -7.1 })).toBe(true);
+  });
+});
+
 describe('buildExclusionHoles — corner alignment (the channel-junction nub)', () => {
   it('keeps full reach through face corners (miter, not round, dilation)', () => {
     // Both lines cased at railW = 2. The hole's cutoff beyond the face must

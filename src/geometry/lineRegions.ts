@@ -671,6 +671,15 @@ export const EXCLUSION_INSET = 0.25;
  * and the footprint boundary coincides with the winner's natural paint/rail
  * edge, aligning with the same edge above and below the crossing.
  *
+ * Minus, finally, every nearby face a DIFFERENT line wins: the footprint is
+ * no backstop against nicking those when W's own path curves back alongside
+ * F (the bend body carries the footprint deep into the neighbor — e.g. over
+ * a tangent corridor painted between W and L, where cutting L would expose
+ * that corridor's color instead of W's rail; found on the CTA map as a blue
+ * sliver notched out of an orange column under a pink bridge). Same-winner
+ * neighbors are deliberately not shielded, so adjacent faces assigned to
+ * one winner merge seamlessly.
+ *
  * Returns lineId → hole rings; lines absent from the map paint unclipped.
  * Clipping also removes the losers' pointer-event surface over the face, so
  * idle-mode clicks and deep-picks reach the visible winner natively.
@@ -734,11 +743,24 @@ export function buildExclusionHoles(
         : offsetClosed(paintNear(w.winner, face.bbox, 0), -EXCLUSION_INSET);
     if (!footprint.length) return;
     const winnerRank = orderIdx(w.winner);
-    for (const lineId of face.lineIds) {
-      if (lineId === w.winner) continue;
-      if (orderIdx(lineId) >= winnerRank) continue; // painted below the winner
+    const losers = face.lineIds.filter(
+      (lineId) => lineId !== w.winner && orderIdx(lineId) < winnerRank,
+    );
+    if (!losers.length) return;
+    // Differently-won neighboring faces, to subtract from every hole (see
+    // the doc comment). Bbox-filtered generously: a miter dilation can poke
+    // up to 3× reach (the miter limit) past a corner.
+    const maxReach = Math.max(...losers.map((id) => railWOf(id))) / 2 + railWWinner / 2 + 0.5;
+    const shield: Ring[] = [];
+    faces.forEach((other, j) => {
+      if (j === i || winners[j]?.winner === w.winner) return;
+      if (!boxesOverlap(other.bbox, face.bbox, maxReach * 3)) return;
+      shield.push(...other.face);
+    });
+    for (const lineId of losers) {
       const reach = railWOf(lineId) / 2 + railWWinner / 2 + 0.5;
-      const hole = intersect(offsetClosed(face.face, reach, 'miter'), footprint);
+      const dilated = intersect(offsetClosed(face.face, reach, 'miter'), footprint);
+      const hole = shield.length ? subtract(dilated, shield) : dilated;
       if (!hole.length) continue;
       const list = holes.get(lineId);
       if (list) list.push(...hole);
