@@ -7,7 +7,7 @@ the change that lets a line form loops and branches without hacks.
 
 A `Line` used to store its topology as an ordered node list, `stations: StationId[]`. An
 ordered list structurally caps every interior node at **degree 2** (no Y-junctions) and
-cannot close on itself. Yet every per-segment concern — `segmentStyles`, `segmentLayers`,
+cannot close on itself. Yet every per-segment concern — `segmentStyles`,
 line tags — and the whole interlining renderer are already keyed by the canonical
 station-pair (`pairKeyOf`). The ordered list was a vestigial, over-restrictive encoding of
 what is really an **edge set**.
@@ -25,7 +25,7 @@ interface Line {
   duplicate edge, which the set forbids by construction).
 - **Branch** = a station with ≥3 incident edges.
 
-`edges` is literally the key domain that `segmentStyles` / `segmentLayers` / `lineTags`
+`edges` is literally the key domain that `segmentStyles` / `lineTags`
 already live in. `stations` is kept as the member set so a line can hold a lone
 degree-0 seed while being drawn, and so the huge fixture surface that passes `stations:
 [...]` keeps working. Invariant: `endpoints(edges) ⊆ stations`.
