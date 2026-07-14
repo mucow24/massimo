@@ -59,6 +59,35 @@ export interface RegionFace {
   spans: Map<string, RegionSpanEntry>;
 }
 
+/**
+ * A dropped overlap sliver: territory the {@link SLIVER_ERODE} morphological
+ * opening removed from the clickable arrangement (hairline faces and the neck
+ * residue between split lobes). NOT a region — it has no anchors, no spans, and
+ * is never a click target. It is carried only so {@link buildExclusionHoles}
+ * can absorb it into an adjacent bridge, keeping a winner's revealed casing
+ * continuous across the gap the erosion left (at near-tangent fillets a sliver
+ * sits between two real bridged faces; without it the reveal notches there).
+ */
+export interface RegionSliver {
+  /** Sorted covering line ids of the dropped arrangement cell. */
+  lineIds: LineId[];
+  /** Outer ring + holes, world space. */
+  face: Face;
+  bbox: { x0: number; y0: number; x1: number; y1: number };
+}
+
+/** Dropped slivers below this area are clipper dust — never collected. */
+const SLIVER_MIN_AREA = 0.02;
+
+/**
+ * How far past a bridging face a reveal follows a dropped sliver, world units
+ * (see {@link buildExclusionHoles}). Big enough to close a near-tangent fillet
+ * gap (the sliver between two bridged faces at an inner corner); bounded so a
+ * long tangent corridor sharing the winner+loser is bridged only near the
+ * junction, not painted over along its whole length.
+ */
+export const SLIVER_ABSORB_REACH = 2;
+
 /** Flatten line/arc offset segments into a polyline by chord tolerance. */
 export function flattenOffsetSegments(segs: OffsetPathSegment[], tol = FLATTEN_TOL): Vec2[] {
   const pts: Vec2[] = [];
@@ -271,10 +300,16 @@ function computeSpans(
   return spans;
 }
 
-/** All overlap faces (cover ≥ 2 lines) of the current geometry. */
+/**
+ * All overlap faces (cover ≥ 2 lines) of the current geometry. Territory that
+ * the sliver erosion drops is pushed into `sliverSink` when one is supplied
+ * (see {@link RegionSliver}); rendering passes one so bridges can reveal across
+ * the gaps, while the many geometry-only callers omit it and pay nothing.
+ */
 export function buildOverlapRegions(
   bands: SegmentBandSpec[],
   markers: StopMarkerSpec[],
+  sliverSink?: RegionSliver[],
 ): RegionFace[] {
   const bodies = buildLineBodies(bands, markers);
   const ids = [...bodies.keys()].sort();
@@ -329,11 +364,22 @@ export function buildOverlapRegions(
       spans: computeSpans(face, bbox, lineIds, bands),
     });
   };
+  const addSliver = (rings: Ring[], cover: LineId[]) => {
+    if (!sliverSink) return;
+    const lineIds = [...cover].sort();
+    for (const rf of splitIntoFaces(rings)) {
+      if (faceArea(rf) < SLIVER_MIN_AREA) continue;
+      sliverSink.push({ lineIds, face: rf, bbox: ringsBbox([rf[0]]) });
+    }
+  };
   for (const cell of cells) {
     if (cell.cover.length < 2) continue;
     for (const face of splitIntoFaces(cell.rings)) {
       const eroded = offsetClosed(face, -SLIVER_ERODE);
-      if (!eroded.length) continue; // hairline sliver
+      if (!eroded.length) {
+        addSliver(face, cell.cover); // whole face is a hairline sliver
+        continue;
+      }
       // Morphological opening: a face made of REAL lobes joined by hairline
       // necks (near-tangent parallel corridors, marker-corner grazes) must
       // not act as one region — clicking one crossing would flip another far
@@ -349,13 +395,12 @@ export function buildOverlapRegions(
         const blob = intersect(remaining, offsetClosed(lobe, SLIVER_ERODE * 2 + 0.05));
         if (!blob.length) continue;
         for (const piece of splitIntoFaces(blob)) {
-          if (!offsetClosed(piece, -SLIVER_ERODE).length) continue;
-          pushFace(piece, cell.cover);
+          if (offsetClosed(piece, -SLIVER_ERODE).length) pushFace(piece, cell.cover);
+          else addSliver(piece, cell.cover); // reclaimed piece still sub-sliver
         }
         remaining = subtract(remaining, blob);
       }
-      // Whatever is left is sub-sliver neck residue — dropped, like any
-      // standalone sliver. (Painted patches overdraw across it anyway.)
+      addSliver(remaining, cell.cover); // leftover neck residue between lobes
     }
   }
   out.sort(
@@ -680,6 +725,17 @@ export const EXCLUSION_INSET = 0.25;
  * neighbors are deliberately not shielded, so adjacent faces assigned to
  * one winner merge seamlessly.
  *
+ * Before dilating, F's reveal region absorbs any adjacent dropped `slivers`
+ * (see {@link RegionSliver}): at a near-tangent inner fillet the arrangement
+ * cell between two bridged faces erodes to a hairline and is dropped, so the
+ * winner's revealed casing NOTCHES at the gap. Only the part of a sliver
+ * within {@link SLIVER_ABSORB_REACH} of F is taken (a long tangent corridor
+ * that shares F's winner+loser is bridged only near the junction), and only
+ * when every above-winner line in the sliver is already a loser of F (nothing
+ * above the winner is left un-clipped in the patch). Absorbed territory never
+ * coincides with a real face — its cover set differs — so no shield can
+ * re-subtract it.
+ *
  * Returns lineId → hole rings; lines absent from the map paint unclipped.
  * Clipping also removes the losers' pointer-event surface over the face, so
  * idle-mode clicks and deep-picks reach the visible winner natively.
@@ -691,6 +747,7 @@ export function buildExclusionHoles(
   bands: SegmentBandSpec[],
   markers: StopMarkerSpec[],
   railWOf: (lineId: LineId) => number,
+  slivers: RegionSliver[] = [],
 ): Map<LineId, Ring[]> {
   const orderIdx = orderIndexer(lineOrder);
   const holes = new Map<LineId, Ring[]>();
@@ -736,17 +793,42 @@ export function buildExclusionHoles(
     const w = winners[i];
     if (!w || !w.assignmentId) return;
     if (w.winner === defaultWinner(face, orderIdx)) return; // base already shows it
-    const railWWinner = railWOf(w.winner);
-    const footprint =
-      railWWinner > 0
-        ? paintNear(w.winner, face.bbox, railWWinner)
-        : offsetClosed(paintNear(w.winner, face.bbox, 0), -EXCLUSION_INSET);
-    if (!footprint.length) return;
     const winnerRank = orderIdx(w.winner);
     const losers = face.lineIds.filter(
       (lineId) => lineId !== w.winner && orderIdx(lineId) < winnerRank,
     );
     if (!losers.length) return;
+    const railWWinner = railWOf(w.winner);
+
+    // Absorb adjacent dropped slivers into the reveal region (see the doc
+    // comment): take only the part within SLIVER_ABSORB_REACH of this face,
+    // and only slivers whose above-winner lines are all losers here.
+    const loserSet = new Set(losers);
+    let region: Ring[] = face.face;
+    let regionBbox = face.bbox;
+    if (slivers.length) {
+      const near = offsetClosed(face.face, SLIVER_ABSORB_REACH, 'miter');
+      const absorbed: Ring[] = [];
+      for (const s of slivers) {
+        if (!s.lineIds.includes(w.winner)) continue;
+        if (!s.lineIds.every((id) => orderIdx(id) >= winnerRank || loserSet.has(id))) continue;
+        // Prefilter generously — a miter dilation reaches up to 3× past a
+        // corner; `near` is the real gate.
+        if (!boxesOverlap(s.bbox, face.bbox, SLIVER_ABSORB_REACH * 3)) continue;
+        const part = intersect(s.face, near); // clip to the face's neighborhood
+        if (part.length) absorbed.push(...part);
+      }
+      if (absorbed.length) {
+        region = [...face.face, ...absorbed];
+        regionBbox = ringsBbox(region);
+      }
+    }
+
+    const footprint =
+      railWWinner > 0
+        ? paintNear(w.winner, regionBbox, railWWinner)
+        : offsetClosed(paintNear(w.winner, regionBbox, 0), -EXCLUSION_INSET);
+    if (!footprint.length) return;
     // Differently-won neighboring faces, to subtract from every hole (see
     // the doc comment). Bbox-filtered generously: a miter dilation can poke
     // up to 3× reach (the miter limit) past a corner.
@@ -754,12 +836,12 @@ export function buildExclusionHoles(
     const shield: Ring[] = [];
     faces.forEach((other, j) => {
       if (j === i || winners[j]?.winner === w.winner) return;
-      if (!boxesOverlap(other.bbox, face.bbox, maxReach * 3)) return;
+      if (!boxesOverlap(other.bbox, regionBbox, maxReach * 3)) return;
       shield.push(...other.face);
     });
     for (const lineId of losers) {
       const reach = railWOf(lineId) / 2 + railWWinner / 2 + 0.5;
-      const dilated = intersect(offsetClosed(face.face, reach, 'miter'), footprint);
+      const dilated = intersect(offsetClosed(region, reach, 'miter'), footprint);
       const hole = shield.length ? subtract(dilated, shield) : dilated;
       if (!hole.length) continue;
       const list = holes.get(lineId);

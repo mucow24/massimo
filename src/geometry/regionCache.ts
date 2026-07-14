@@ -12,7 +12,7 @@ import {
   type SegmentBandSpec,
   type StopMarkerSpec,
 } from './interlining';
-import { buildOverlapRegions, type RegionFace } from './lineRegions';
+import { buildOverlapRegions, type RegionFace, type RegionSliver } from './lineRegions';
 
 export interface GeometrySlice {
   stations: Record<StationId, Station>;
@@ -47,6 +47,8 @@ export interface RegionGeometry {
   bands: SegmentBandSpec[];
   markers: StopMarkerSpec[];
   faces: RegionFace[];
+  /** Dropped overlap slivers, for bridge reveals (see buildExclusionHoles). */
+  slivers: RegionSliver[];
 }
 
 const CACHE_LIMIT = 4;
@@ -68,8 +70,9 @@ export function regionsFor(g: GeometrySlice): RegionGeometry {
   }
   const bands = buildBandGeometry(g.stations, g.lines);
   const markers = buildStopMarkers(g.stations, g.lines, [], bands);
-  const faces = buildOverlapRegions(bands, markers);
-  const entry: RegionGeometry = { bands, markers, faces };
+  const slivers: RegionSliver[] = [];
+  const faces = buildOverlapRegions(bands, markers, slivers);
+  const entry: RegionGeometry = { bands, markers, faces, slivers };
   cache.set(sig, entry);
   if (cache.size > CACHE_LIMIT) {
     const oldest = cache.keys().next().value;
