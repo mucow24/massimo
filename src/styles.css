@@ -665,6 +665,82 @@ select option {
   text-transform: lowercase;
 }
 
+/* Help overlay: the toolbar "?" quick-reference guide. Portals to `.app`
+   (like .color-field-popover) so the tokens + dark mode resolve; the backdrop
+   sits above everything, color picker included. */
+.help-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 1300;
+  background: rgba(0, 0, 0, 0.35);
+  display: flex;
+  align-items: flex-start;
+  justify-content: center;
+  padding: 56px 16px 16px;
+  box-sizing: border-box;
+}
+.help-panel {
+  background: var(--surface-raised);
+  color: var(--text);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  box-shadow: var(--shadow-pop);
+  padding: 14px 20px 18px;
+  max-width: 920px;
+  max-height: calc(100vh - 72px);
+  overflow-y: auto;
+  box-sizing: border-box;
+  font-size: var(--fs-small);
+}
+.help-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  margin-bottom: 10px;
+}
+.help-header h2 {
+  margin: 0;
+  font-size: var(--fs-ui);
+  font-weight: 700;
+}
+.help-sections {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(260px, 1fr));
+  gap: 12px 32px;
+  align-items: start;
+}
+.help-section h3 {
+  margin: 0 0 4px;
+  font-size: var(--fs-caption);
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: var(--text-muted);
+}
+.help-row {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+  padding: 2px 0;
+}
+.help-row kbd {
+  flex-shrink: 0;
+  min-width: 96px;
+  font-family: inherit;
+  font-size: var(--fs-caption);
+  font-weight: 600;
+  color: var(--text);
+  background: var(--inset-bg);
+  border: 1px solid var(--inset-border);
+  border-radius: var(--radius);
+  padding: 1px 6px;
+  text-align: center;
+}
+.help-row span {
+  color: var(--text-muted);
+}
+
 .toolbar .spacer {
   flex: 1;
 }
