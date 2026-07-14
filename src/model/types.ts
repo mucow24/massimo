@@ -249,11 +249,9 @@ export interface Line {
   // Missing key ⇒ 'solid'. Setters delete the key when called with 'solid'
   // so the default is never stored.
   segmentStyles?: Record<string, LineStyle>;
-  // Per-segment z-layer override keyed by canonical pair-key. Missing key ⇒ 0.
-  // Higher = closer to the viewer. Uncapped — the layering UI just ±1's the
-  // value, so it can drift as far positive or negative as the user clicks.
-  // Setters delete the key when value lands on 0 so the default isn't stored.
-  segmentLayers?: Record<string, number>;
+  // NOTE: there is no per-segment z-layer field anymore — `segmentLayers`
+  // was retired with the layering rework: overlap regions are painted via
+  // MapDoc.regionAssignments instead (persist v15 strips the old field).
   // Style for stops on this line whose own `dotStyle` is unset. Missing ⇒
   // DEFAULT_DOT_STYLE (the filled-black preset, the historical default).
   // Setters drop the field when the chosen style equals the default so it is
@@ -346,6 +344,43 @@ export interface LineTag {
   orientation: 0 | 1 | 2 | 3;
   // Undefined (legacy saves) is treated as 'text'.
   kind?: 'text' | 'chevron';
+}
+
+// One coordinate of a region assignment, expressed in a LINE's own frame so
+// it rides the line through geometry edits: "along line `lineId`'s stripe in
+// corridor `pairKey`, `distance` world units of arc length from the
+// `anchorEnd` endpoint" (same anchoring convention as LineTag). A region
+// assignment carries one anchor per covering line; reconciliation re-mints
+// them after every geometry edit and translates them across edge
+// splits/heals when a pairKey is replaced.
+export interface RegionAnchor {
+  lineId: LineId;
+  // Canonical station-pair key of the edge whose band the anchor measures
+  // along. May transiently reference a removed edge mid-reconcile (step 0
+  // translates it); never persisted dangling by app writers.
+  pairKey: string;
+  anchorEnd: 'from' | 'to';
+  // Arc length in world units from the anchor endpoint along this line's
+  // stripe in the corridor.
+  distance: number;
+  // Signed perpendicular offset (leftNormal of the stripe tangent) from the
+  // stripe's center path, world units. Lets an anchor point INTO a face that
+  // sits within the stripe body but off its center path (small corner faces
+  // at multi-line junctions). Missing ⇒ 0 (on the path); never stored at 0.
+  side?: number;
+}
+
+// A user's choice of which line paints one overlap region ("paint by
+// numbers"). Regions themselves are derived geometry (faces of the
+// arrangement of line bodies); the assignment tracks its region through
+// edits via the anchors, and `lines` records the region's covering line set
+// (sorted) for compatibility checks. `lineId` — the line that shows — is
+// always a member of `lines`.
+export interface RegionAssignment {
+  id: string;
+  lineId: LineId;
+  lines: LineId[];
+  anchors: RegionAnchor[];
 }
 
 export interface Viewport {
@@ -501,6 +536,13 @@ export interface MapDoc {
   // Ids missing from this list (legacy saves, races) fall back to insertion
   // order and render on top — see `effectivePolygonOrder`.
   polygonOrder: string[];
+  // Region paint choices ("paint by numbers" layering): which line shows in
+  // an overlap region where line bodies cross. Keyed by assignment id. The
+  // regions themselves are derived geometry; assignments track them via
+  // line-frame anchors and are reconciled (rebound, split, merged, re-minted)
+  // by the store on every geometry-committing edit. Absent entries mean every
+  // overlap shows its lineOrder default.
+  regionAssignments: Record<string, RegionAssignment>;
   // Free-floating imported SVG graphics, placed in the polygon band (under all
   // other map content). Keyed by image id.
   svgImages: Record<string, SvgImage>;

@@ -46,6 +46,7 @@ import type {
   MapDoc,
   Polygon,
   PolygonStylePatch,
+  RegionAssignment,
   SvgImage,
   SvgImageStylePatch,
   Rotation,
@@ -1376,34 +1377,6 @@ export function setLineSegmentStyle(
   return { ...doc, lines: { ...doc.lines, [id]: { ...cur, segmentStyles: next } } };
 }
 
-// Bump this segment's layer by `dir`. Uncapped — keep clicking to drive the
-// value further positive or negative. Layer 0 is the default and is never
-// stored, so when the bump lands on 0 the entry is dropped.
-export function cycleSegmentLayer(
-  doc: MapDoc,
-  id: LineId,
-  fromStationId: StationId,
-  toStationId: StationId,
-  dir: -1 | 1,
-): MapDoc {
-  const cur = doc.lines[id];
-  if (!cur) return doc;
-  const key = pairKeyOf(fromStationId, toStationId);
-  const prev = cur.segmentLayers ?? {};
-  const curLayer = prev[key] ?? 0;
-  const nextLayer = curLayer + dir;
-  let next: Record<string, number>;
-  if (nextLayer === 0) {
-    if (!(key in prev)) return doc;
-    const { [key]: _gone, ...rest } = prev;
-    next = rest;
-  } else {
-    if (prev[key] === nextLayer) return doc;
-    next = { ...prev, [key]: nextLayer };
-  }
-  return { ...doc, lines: { ...doc.lines, [id]: { ...cur, segmentLayers: next } } };
-}
-
 // Edge-set maintenance for the linear append tool: splice `stationId` into the
 // display chain between its new neighbours `prev`/`next` (either absent at an
 // end). The prev–next edge the insertion breaks is removed and the two new
@@ -1651,7 +1624,82 @@ export function deleteLine(doc: MapDoc, id: LineId): MapDoc {
   // Deleting the line removes all its stops, so delete every transfer anchored
   // at one — an endpoint with lineId === id pointed at a stop that's now gone.
   const transfers = pruneTransfers(doc.transfers, (e) => e.lineId === id);
-  return { ...doc, lines: rest, stations, lineOrder: order, lineTags, routeBullets, transfers };
+  const regionAssignments = pruneRegionAssignmentsForLine(doc.regionAssignments, id);
+  return {
+    ...doc,
+    lines: rest,
+    stations,
+    lineOrder: order,
+    lineTags,
+    routeBullets,
+    transfers,
+    regionAssignments,
+  };
+}
+
+// ---------- Region assignments ("paint by numbers" layering) ----------
+
+// Wholesale replacement, used by the store's reconcile step. Same-reference
+// no-op when the record is shallow-equal (reconcile returns the input record
+// untouched when nothing changed, so this collapses to a reference check plus
+// a key sweep for safety).
+export function setRegionAssignments(doc: MapDoc, next: Record<string, RegionAssignment>): MapDoc {
+  const prev = doc.regionAssignments;
+  if (prev === next) return doc;
+  const prevKeys = Object.keys(prev);
+  const nextKeys = Object.keys(next);
+  if (prevKeys.length === nextKeys.length && nextKeys.every((k) => prev[k] === next[k])) {
+    return doc;
+  }
+  return { ...doc, regionAssignments: next };
+}
+
+// Upsert (assignment) or delete (null) one region assignment — the click
+// writer. Same-reference no-op when deleting a missing id or re-writing an
+// identical value.
+export function assignRegion(doc: MapDoc, id: string, assignment: RegionAssignment | null): MapDoc {
+  const prev = doc.regionAssignments;
+  if (assignment === null) {
+    if (!(id in prev)) return doc;
+    const { [id]: _gone, ...rest } = prev;
+    return { ...doc, regionAssignments: rest };
+  }
+  if (prev[id] === assignment) return doc;
+  return { ...doc, regionAssignments: { ...prev, [id]: assignment } };
+}
+
+// deleteLine cascade for region assignments. An assignment whose CHOSEN line
+// died is meaningless — dropped. A dead cover MEMBER only shrinks the cover
+// (the user's "X above Y" intent survives losing an incidental third line;
+// the store's reconcile step rebinds it to the merged face): the dead id and
+// its anchor are stripped, and the assignment is dropped only when fewer
+// than two cover lines (no overlap to arbitrate) or zero anchors remain.
+function pruneRegionAssignmentsForLine(
+  assignments: Record<string, RegionAssignment>,
+  lineId: LineId,
+): Record<string, RegionAssignment> {
+  let changed = false;
+  const out: Record<string, RegionAssignment> = {};
+  for (const id of Object.keys(assignments)) {
+    const a = assignments[id];
+    if (a.lineId === lineId) {
+      changed = true;
+      continue;
+    }
+    if (!a.lines.includes(lineId)) {
+      out[id] = a;
+      continue;
+    }
+    const lines = a.lines.filter((l) => l !== lineId);
+    const anchors = a.anchors.filter((anchor) => anchor.lineId !== lineId);
+    if (lines.length < 2 || anchors.length === 0) {
+      changed = true;
+      continue;
+    }
+    out[id] = { ...a, lines, anchors };
+    changed = true;
+  }
+  return changed ? out : assignments;
 }
 
 export function moveLineInOrder(doc: MapDoc, id: LineId, dir: -1 | 1): MapDoc {
@@ -2478,44 +2526,21 @@ function pruneOrphanLineTags(doc: MapDoc): MapDoc {
   return changed ? { ...doc, lineTags: next } : doc;
 }
 
-// Drop entries from `line.segmentStyles` and `line.segmentLayers` whose
-// pair-key no longer corresponds to a station-pair adjacency on this line.
-// Returns the input line unchanged if both maps are missing/empty or every
-// key still maps to a real edge.
+// Drop entries from `line.segmentStyles` whose pair-key no longer corresponds
+// to a station-pair adjacency on this line. Returns the input line unchanged
+// if the map is missing/empty or every key still maps to a real edge.
 function pruneOrphanSegmentStyles(line: Line): Line {
   const styles = line.segmentStyles;
-  const layers = line.segmentLayers;
-  if (!styles && !layers) return line;
+  if (!styles) return line;
   // Valid keys are exactly this line's edges — the topology source of truth.
   const validKeys = new Set<string>(line.edges);
+  const filtered: Record<string, LineStyle> = {};
   let changed = false;
-  let nextStyles = styles;
-  if (styles) {
-    const filtered: Record<string, LineStyle> = {};
-    let stylesChanged = false;
-    for (const key of Object.keys(styles)) {
-      if (validKeys.has(key)) filtered[key] = styles[key];
-      else stylesChanged = true;
-    }
-    if (stylesChanged) {
-      nextStyles = filtered;
-      changed = true;
-    }
+  for (const key of Object.keys(styles)) {
+    if (validKeys.has(key)) filtered[key] = styles[key];
+    else changed = true;
   }
-  let nextLayers = layers;
-  if (layers) {
-    const filtered: Record<string, number> = {};
-    let layersChanged = false;
-    for (const key of Object.keys(layers)) {
-      if (validKeys.has(key)) filtered[key] = layers[key];
-      else layersChanged = true;
-    }
-    if (layersChanged) {
-      nextLayers = filtered;
-      changed = true;
-    }
-  }
-  return changed ? { ...line, segmentStyles: nextStyles, segmentLayers: nextLayers } : line;
+  return changed ? { ...line, segmentStyles: filtered } : line;
 }
 
 function isLineEdge(line: Line, a: StationId, b: StationId): boolean {
@@ -2626,6 +2651,7 @@ export const DEFAULT_DOC: MapDoc = {
   textLabels: {},
   polygons: {},
   polygonOrder: [],
+  regionAssignments: {},
   svgImages: {},
   svgImageOrder: [],
   styles: DEFAULT_STYLES,

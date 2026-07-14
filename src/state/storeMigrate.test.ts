@@ -65,6 +65,34 @@ const stationDefaultProps = (out: AnyDoc): Record<string, unknown> =>
   out.styles![out.styleDefaults!.station].props;
 
 describe('migrateDoc', () => {
+  describe('v14 → v15: retired segmentLayers strip', () => {
+    it('strips segmentLayers from persisted lines', () => {
+      const out = run(
+        {
+          lines: {
+            L1: {
+              service: 'A',
+              name: 'A line',
+              stations: ['a', 'b'],
+              edges: ['a|b'],
+              segmentLayers: { 'a|b': 2 },
+            },
+          },
+        },
+        14,
+      );
+      expect('segmentLayers' in out.lines!.L1).toBe(false);
+    });
+
+    it('is reference-stable for lines without the field', () => {
+      const lines = {
+        L1: { service: 'A', name: 'A line', stations: ['a', 'b'], edges: ['a|b'] },
+      };
+      const out = run({ lines }, 14);
+      expect(out.lines).toBe(lines);
+    });
+  });
+
   describe('v0 → v1: line.name backfill', () => {
     it('fills a missing name from the service letter', () => {
       const out = run({ lines: { L1: { service: 'A', stations: [] } } }, 0);
