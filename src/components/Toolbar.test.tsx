@@ -82,7 +82,6 @@ beforeEach(() => {
     zoom: 1,
     gridVisible: true,
     gridSize: 10,
-    darkMode: false,
     showWaypoints: false,
     showNetwork: true,
   });
@@ -146,11 +145,13 @@ describe('Toolbar — tool + view toggles', () => {
     expect(useSelection.getState().uiMode.kind).toBe('layering');
   });
 
-  it('toggles dark mode', async () => {
+  // The toggle writes the DOCUMENT, not session state: a night map stays a
+  // night map when the file is reopened, so the mode has to land in the doc.
+  it('toggles dark mode, writing it to the doc', async () => {
     const user = userEvent.setup();
     render(<Toolbar />);
     await user.click(screen.getByLabelText('Toggle dark mode'));
-    expect(useViewportStore.getState().darkMode).toBe(true);
+    expect(useDoc.getState().darkMode).toBe(true);
   });
 
   it('toggles waypoint visibility via the WP button', async () => {

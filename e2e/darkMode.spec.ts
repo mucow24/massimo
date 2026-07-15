@@ -2,9 +2,9 @@ import { test, expect } from '@playwright/test';
 import { seedAndOpen, fourInLineWithBulletsAndLabel } from './fixtures';
 
 // The canvas background rect and on-canvas label fills come from the JS theme
-// palette (CSS can't reach SVG attribute paint), and the toggle persists via
-// the viewport store. This exercises all three: black canvas, white labels,
-// and survival across a reload.
+// palette (CSS can't reach SVG attribute paint), and the mode is a field on the
+// DOC (MapDoc.darkMode), so it persists with the document. This exercises all
+// three: black canvas, white labels, and survival across a reload.
 test.describe('dark mode', () => {
   test('toggle blackens the canvas, whitens labels, and persists across reload', async ({
     page,
@@ -30,6 +30,24 @@ test.describe('dark mode', () => {
     await expect(page.locator('[data-text-label-id="g1"] text').first()).toHaveAttribute(
       'fill',
       '#ffffff',
+    );
+  });
+
+  // The point of putting the mode in the doc: a map that was SAVED as a night
+  // map opens dark, with nobody touching the toggle. The seed carries darkMode
+  // in the persisted doc blob, so this drives the real rehydrate path.
+  test('a map saved as a night map opens dark, with no toggle click', async ({ page }) => {
+    await seedAndOpen(page, { ...fourInLineWithBulletsAndLabel, darkMode: true });
+
+    await expect(page.locator('[data-bg]')).toHaveAttribute('fill', '#000000');
+    await expect(page.locator('[data-text-label-id="g1"] text').first()).toHaveAttribute(
+      'fill',
+      '#ffffff',
+    );
+    // The button reflects the doc's mode, so it offers the way BACK to light.
+    await expect(page.getByRole('button', { name: 'Toggle dark mode' })).toHaveAttribute(
+      'aria-pressed',
+      'true',
     );
   });
 

@@ -275,6 +275,7 @@ export function makeDoc(parts: {
   styleDefaults?: Partial<Record<StyleKind, string>>;
   activePalettes?: import('../model/palettes').PaletteId[];
   seamEdges?: import('../model/types').SeamEdges;
+  darkMode?: boolean;
 }): MapDoc {
   const stations: Record<StationId, Station> = {};
   for (const s of parts.stations ?? []) stations[s.id] = s;
@@ -328,6 +329,7 @@ export function makeDoc(parts: {
     styleDefaults,
     activePalettes: parts.activePalettes ?? ['mta'],
     seamEdges: parts.seamEdges ?? 'both',
+    darkMode: parts.darkMode ?? false,
   };
 }
 

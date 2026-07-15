@@ -20,7 +20,7 @@ beforeEach(() => {
     editingStationId: null,
     uiMode: { kind: 'idle' },
   });
-  useViewportStore.setState({ darkMode: false });
+  useDoc.setState({ darkMode: false });
 });
 
 function renderLabel() {
@@ -38,12 +38,12 @@ function renderLabel() {
 
 describe('<StationView /> — label color follows the theme', () => {
   it('paints the label near-black in light mode', () => {
-    useViewportStore.setState({ darkMode: false });
+    useDoc.setState({ darkMode: false });
     expect(renderLabel().text.getAttribute('fill')).toBe('#111111');
   });
 
   it('paints the label white in dark mode', () => {
-    useViewportStore.setState({ darkMode: true });
+    useDoc.setState({ darkMode: true });
     expect(renderLabel().text.getAttribute('fill')).toBe('#ffffff');
   });
 });

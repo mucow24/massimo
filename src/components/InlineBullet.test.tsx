@@ -1,7 +1,7 @@
 import { describe, it, expect, afterEach } from 'vitest';
 import { render } from '@testing-library/react';
 import { InlineBullet } from './InlineBullet';
-import { useViewportStore } from '../state/viewportStore';
+import { useDoc } from '../state/store';
 import type { Line } from '../model/types';
 import { edgesFromStations } from '../model/lineTopology';
 
@@ -23,7 +23,7 @@ const makeLine = (overrides: Partial<Line> & Pick<Line, 'id' | 'service'>): Line
 const redA1 = lineMap([makeLine({ id: 'l1', service: 'A1', color: '#ff0000' })]);
 
 afterEach(() => {
-  useViewportStore.setState({ darkMode: false });
+  useDoc.setState({ darkMode: false });
 });
 
 describe('<InlineBullet />', () => {
@@ -113,7 +113,7 @@ describe('<InlineBullet />', () => {
   });
 
   it('fills an unfilled bullet interior black in dark mode', () => {
-    useViewportStore.setState({ darkMode: true });
+    useDoc.setState({ darkMode: true });
     const { container } = render(
       <svg>
         <InlineBullet

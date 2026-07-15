@@ -1,6 +1,7 @@
 import type { Polygon } from '../model/types';
 import { useThemeColors } from '../state/theme';
 import { useLiveZoom, useViewportStore } from '../state/viewportStore';
+import { useDoc } from '../state/store';
 import { resolvePolygonColors } from '../model/transforms';
 import { polygonPathData } from '../geometry/polygon';
 import { midpoint } from '../geometry/vec';
@@ -102,7 +103,7 @@ export function PolygonView({
   onHoverEnter,
   onHoverLeave,
 }: Props) {
-  const darkMode = useViewportStore((s) => s.darkMode);
+  const darkMode = useDoc((s) => s.darkMode);
   // Committed zoom: only the 'hit' proxy's corridor floor reads it. The
   // selection overlay's handles size off the LIVE gesture zoom instead (see
   // PolygonSelectionOverlay) so they never snap on commit.

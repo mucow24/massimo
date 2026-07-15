@@ -8,7 +8,6 @@ beforeEach(() => {
     y: 0,
     zoom: 1,
     gridVisible: true,
-    darkMode: false,
     gridSize: 10,
     showWaypoints: false,
     showNetwork: true,
@@ -56,7 +55,7 @@ describe('viewportStore — gridSize', () => {
     localStorage.setItem(
       'massimo-viewport',
       JSON.stringify({
-        state: { x: 1, y: 2, zoom: 3, gridVisible: false, darkMode: true },
+        state: { x: 1, y: 2, zoom: 3, gridVisible: false },
         version: 0,
       }),
     );
@@ -64,7 +63,9 @@ describe('viewportStore — gridSize', () => {
     const s = useViewportStore.getState();
     expect(s.gridSize).toBe(10);
     expect(Number.isNaN(s.gridSize)).toBe(false);
-    expect(s.darkMode).toBe(true);
+    // A key the blob DOES carry still applies — so the line above is gridSize
+    // falling back to the initializer, not the whole rehydrate being ignored.
+    expect(s.gridVisible).toBe(false);
   });
 });
 
@@ -93,7 +94,7 @@ describe('viewportStore — showWaypoints', () => {
     localStorage.setItem(
       'massimo-viewport',
       JSON.stringify({
-        state: { x: 1, y: 2, zoom: 3, gridVisible: false, gridSize: 10, darkMode: false },
+        state: { x: 1, y: 2, zoom: 3, gridVisible: false, gridSize: 10 },
         version: 0,
       }),
     );

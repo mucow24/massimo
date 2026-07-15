@@ -115,13 +115,13 @@ describe('TransferLayer — DOM rendering', () => {
 
     // Dark canvas → the night half paints (same transfer, no doc change).
     act(() => {
-      useViewportStore.setState({ darkMode: true });
+      useDoc.setState({ darkMode: true });
     });
     try {
       expect(transferBody('x1').getAttribute('stroke')).toBe('#4400aa');
     } finally {
       act(() => {
-        useViewportStore.setState({ darkMode: false });
+        useDoc.setState({ darkMode: false });
       });
     }
   });
@@ -349,7 +349,7 @@ describe('TransferLayer — DOM rendering', () => {
     it('flips to a black underlay under a white ink core in dark mode (BWB)', () => {
       seedTwoStationsWithTransfer();
       act(() => {
-        useViewportStore.setState({ darkMode: true });
+        useDoc.setState({ darkMode: true });
       });
       try {
         render(<App />);
@@ -362,7 +362,7 @@ describe('TransferLayer — DOM rendering', () => {
         expect(core.getAttribute('stroke')).toBe('#ffffff');
       } finally {
         act(() => {
-          useViewportStore.setState({ darkMode: false });
+          useDoc.setState({ darkMode: false });
         });
       }
     });

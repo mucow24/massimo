@@ -19,7 +19,7 @@ const seedLine = (overrides: Partial<Line> & Pick<Line, 'id' | 'service'>): Line
 
 beforeEach(() => {
   useDoc.setState({ ...useDoc.getState(), ...DEFAULT_DOC });
-  useViewportStore.setState({ darkMode: false });
+  useDoc.setState({ darkMode: false });
 });
 
 // The selection ring is a two-tone rect: a 2px ink core over a 4px underlay,
@@ -71,12 +71,12 @@ describe('<LabelView /> — text color follows the theme', () => {
     );
 
   it('paints text near-black in light mode', () => {
-    useViewportStore.setState({ darkMode: false });
+    useDoc.setState({ darkMode: false });
     expect(renderPlain().container.querySelector('text')?.getAttribute('fill')).toBe('#111111');
   });
 
   it('paints text white in dark mode', () => {
-    useViewportStore.setState({ darkMode: true });
+    useDoc.setState({ darkMode: true });
     expect(renderPlain().container.querySelector('text')?.getAttribute('fill')).toBe('#ffffff');
   });
 });
@@ -98,12 +98,12 @@ describe('<LabelView /> — per-label day/night colors', () => {
     );
 
   it('paints the day color in light mode', () => {
-    useViewportStore.setState({ darkMode: false });
+    useDoc.setState({ darkMode: false });
     expect(renderColored().container.querySelector('text')?.getAttribute('fill')).toBe('#ff0000');
   });
 
   it('paints the night color in dark mode', () => {
-    useViewportStore.setState({ darkMode: true });
+    useDoc.setState({ darkMode: true });
     expect(renderColored().container.querySelector('text')?.getAttribute('fill')).toBe('#00ff00');
   });
 });
