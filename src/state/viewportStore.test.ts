@@ -11,6 +11,7 @@ beforeEach(() => {
     darkMode: false,
     gridSize: 10,
     showWaypoints: false,
+    showNetwork: true,
   });
 });
 
@@ -98,5 +99,31 @@ describe('viewportStore — showWaypoints', () => {
     );
     await useViewportStore.persist.rehydrate();
     expect(useViewportStore.getState().showWaypoints).toBe(false);
+  });
+});
+
+describe('viewportStore — showNetwork', () => {
+  it('defaults to on: a fresh session always opens with the map drawn', () => {
+    expect(useViewportStore.getInitialState().showNetwork).toBe(true);
+  });
+
+  it('setShowNetwork updates the value', () => {
+    useViewportStore.getState().setShowNetwork(false);
+    expect(useViewportStore.getState().showNetwork).toBe(false);
+    useViewportStore.getState().setShowNetwork(true);
+    expect(useViewportStore.getState().showNetwork).toBe(true);
+  });
+
+  it('is deliberately NOT persisted, so a reload never opens onto a blank-looking map', () => {
+    useViewportStore.getState().setShowNetwork(false);
+    // Write a sibling that IS persisted in the same breath: it proves the blob
+    // was really flushed, so showNetwork's absence below is partialize leaving
+    // it out on purpose — not a test that raced the write.
+    useViewportStore.getState().setGridSize(20);
+    const raw = localStorage.getItem('massimo-viewport');
+    expect(raw).toBeTruthy();
+    const persisted = JSON.parse(raw!).state;
+    expect(persisted.gridSize).toBe(20);
+    expect('showNetwork' in persisted).toBe(false);
   });
 });

@@ -31,6 +31,17 @@ interface ViewportState extends Viewport {
    *  same as the `isWaypoint` flag itself). */
   showWaypoints: boolean;
   setShowWaypoints: (show: boolean) => void;
+  /** Render toggle: paint the line/station network at all — line bands, stop
+   *  markers, station dots + names, line tags, and transfers. Off leaves the
+   *  background (polygons, imported images, grid) alone on the canvas, so art
+   *  buried under the network can be clicked and dragged. Hidden content isn't
+   *  rendered rather than made invisible, so its pointer surface goes with it —
+   *  that's the whole point. A pure paint toggle; it never mutates the doc.
+   *  Anything that reads geometry from the doc instead of the DOM has to opt in
+   *  by hand: see useRectSelect (a marquee must not sweep up stations that
+   *  aren't there) and liveAlignTargets (no snapping to invisible targets). */
+  showNetwork: boolean;
+  setShowNetwork: (show: boolean) => void;
 }
 
 /**
@@ -91,6 +102,8 @@ export const useViewportStore = create<ViewportState>()(
       setDarkMode: (darkMode) => set({ darkMode }),
       showWaypoints: false,
       setShowWaypoints: (showWaypoints) => set({ showWaypoints }),
+      showNetwork: true,
+      setShowNetwork: (showNetwork) => set({ showNetwork }),
     }),
     {
       name: 'massimo-viewport',
@@ -103,6 +116,10 @@ export const useViewportStore = create<ViewportState>()(
         gridSize: s.gridSize,
         darkMode: s.darkMode,
         showWaypoints: s.showWaypoints,
+        // showNetwork is deliberately absent: hiding the network is a momentary
+        // "get out of my way" toggle, not a saved preference. Persisting it
+        // would let a reload open onto an apparently empty map, with only the
+        // toolbar button's state to explain where everything went.
       }),
     },
   ),

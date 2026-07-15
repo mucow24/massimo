@@ -22,7 +22,7 @@ import {
   translateSiblings,
   type GroupSiblings,
 } from './groupDrag';
-import { alignTargets } from './snapTargets';
+import { liveAlignTargets } from './snapTargets';
 
 type ScreenToWorld = (mx: number, my: number) => Vec2;
 
@@ -37,7 +37,7 @@ type MoveState = {
   siblings: GroupSiblings;
   // "Snap to all" pool, snapshotted at pointer-down. In a group drag it
   // excludes the dragged image AND every co-moving sibling (they'd be unstable
-  // targets); stationary items stay valid targets. See the alignTargets call
+  // targets); stationary items stay valid targets. See the liveAlignTargets call
   // below.
   allTargets: Vec2[];
   history: ReturnType<typeof beginHistoryGroup>;
@@ -99,7 +99,7 @@ const geomOf = (im: {
  * edge (single-axis) resizes, and rotation. The gesture lifecycle and the
  * whole-image group-drag towing are shared with the other drag hooks via
  * dragGesture + groupDrag. Move + axis-aligned resize snap through
- * {@link snapPolygonPoint} against the shared {@link alignTargets} pool (same
+ * {@link snapPolygonPoint} against the shared {@link liveAlignTargets} pool (same
  * targets as polygons); rotation snaps to 22.5° multiples by default (Shift
  * frees it), never to the grid.
  */
@@ -139,7 +139,7 @@ export function useSvgImageDrag(
       // The pool excludes the dragged image and every co-selected sibling
       // (they move with the grab); stationary items stay valid targets even
       // during a group drag.
-      allTargets: alignTargets(useDoc.getState(), groupAlignExclude('svgImage', id, siblings)),
+      allTargets: liveAlignTargets(groupAlignExclude('svgImage', id, siblings)),
       history: beginHistoryGroup(),
     };
   };
@@ -162,7 +162,7 @@ export function useSvgImageDrag(
       startMX: e.clientX,
       startMY: e.clientY,
       moved: false,
-      allTargets: alignTargets(useDoc.getState(), { svgImageIds: new Set([id]) }),
+      allTargets: liveAlignTargets({ svgImageIds: new Set([id]) }),
       history: beginHistoryGroup(),
     };
   };

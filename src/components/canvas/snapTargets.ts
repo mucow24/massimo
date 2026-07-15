@@ -2,6 +2,8 @@ import { stopPosWorld } from '../../geometry/interlining';
 import { textLabelCorners } from '../../geometry/stationBoundary';
 import { svgImageCorners } from '../../geometry/svgImage';
 import { type Vec2 } from '../../geometry/vec';
+import { useDoc } from '../../state/store';
+import { useViewportStore } from '../../state/viewportStore';
 import type { MapDoc, TextLabel } from '../../model/types';
 
 /** Per-kind id sets excluded from the pool — the dragged item itself plus, in a
@@ -66,4 +68,25 @@ export function alignTargets(doc: AlignDoc, exclude: AlignExclude = {}): Vec2[] 
     out.push({ x: b.x, y: b.y });
   }
   return out;
+}
+
+/**
+ * {@link alignTargets} over the LIVE doc — the single entry point every drag and
+ * placement path uses to build its pool, so none of them can miss the rule
+ * below.
+ *
+ * Stations drop out of the pool while the lines/stations toggle hides them.
+ * The pool is geometric (straight off the doc), so hiding the network doesn't
+ * remove them by itself: without this, dragging the background art the toggle
+ * just exposed would align it against stations that aren't on the canvas, and
+ * draw snap guides pointing at empty space. Everything else is untouched — that
+ * art still snaps to itself.
+ *
+ * `alignTargets` stays pure (and separately tested) so it can be exercised over
+ * a hand-built doc with no stores in play.
+ */
+export function liveAlignTargets(exclude: AlignExclude = {}): Vec2[] {
+  const doc = useDoc.getState();
+  const visible = useViewportStore.getState().showNetwork ? doc : { ...doc, stations: {} };
+  return alignTargets(visible, exclude);
 }

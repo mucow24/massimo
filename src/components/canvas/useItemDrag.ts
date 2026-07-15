@@ -15,7 +15,7 @@ import {
   translateSiblings,
   type GroupSiblings,
 } from './groupDrag';
-import { alignTargets } from './snapTargets';
+import { liveAlignTargets } from './snapTargets';
 
 // Drag state for a free-floating x/y item. `kind` selects the per-frame snap;
 // everything else (lifecycle, group towing) is shared.
@@ -54,7 +54,7 @@ export interface ItemDragApi {
  * with a single gesture state machine for both. They differ only in their
  * per-frame snap: a bound bullet reuses the station snap engine in bullet mode
  * (grid fallback when unbound); a label snaps its topmost-then-leftmost visible
- * corner through the point snapper against the shared {@link alignTargets}
+ * corner through the point snapper against the shared {@link liveAlignTargets}
  * pool. The drag lifecycle (threshold, capture, click suppression, one history
  * entry) and the multi-selection sibling towing are shared via dragGesture +
  * groupDrag.
@@ -104,7 +104,7 @@ export function useItemDrag(
       const anchor = polygonSnapAnchor(textLabelCorners(textLabels[id]));
       anchorOff = { x: anchor.x - wx, y: anchor.y - wy };
     }
-    const allTargets = alignTargets(useDoc.getState(), groupAlignExclude(kind, id, siblings));
+    const allTargets = liveAlignTargets(groupAlignExclude(kind, id, siblings));
     dragRef.current = {
       kind,
       id,
