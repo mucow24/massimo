@@ -1,5 +1,11 @@
 import { describe, it, expect } from 'vitest';
-import { effectiveBackgroundOrder, moveBackgroundUp, moveBackgroundDown } from './transforms';
+import {
+  effectiveBackgroundOrder,
+  moveBackgroundUp,
+  moveBackgroundDown,
+  moveBackgroundToTop,
+  moveBackgroundToBottom,
+} from './transforms';
 import { makeDoc, makePolygon, makeSvgImage } from '../test/fixtures';
 
 // Polygons and svg images share ONE z-stack (`backgroundOrder`), so the order
@@ -45,6 +51,41 @@ describe('background-order transforms', () => {
     const doc = mixed();
     expect(moveBackgroundUp(doc, 'nope')).toBe(doc);
     expect(moveBackgroundDown(doc, 'nope')).toBe(doc);
+  });
+
+  // The to-top/to-bottom pair clears the whole band in one click. A three-deep
+  // stack is the smallest one that tells them apart from the single-step pair:
+  // from the middle, one step and all-the-way land on different orders.
+  const deep = () =>
+    makeDoc({
+      polygons: [makePolygon({ id: 'p0' }), makePolygon({ id: 'p1' })],
+      svgImages: [makeSvgImage({ id: 'i0' })],
+      backgroundOrder: ['p0', 'p1', 'i0'], // image on top
+    });
+
+  it('moves a polygon from the middle to the top, past every kind above it', () => {
+    expect(moveBackgroundToTop(deep(), 'p1').backgroundOrder).toEqual(['p0', 'i0', 'p1']);
+  });
+
+  it('moves an image from the top to the bottom, under every kind below it', () => {
+    expect(moveBackgroundToBottom(deep(), 'i0').backgroundOrder).toEqual(['i0', 'p0', 'p1']);
+  });
+
+  it('travels further than the single-step pair from the same start', () => {
+    expect(moveBackgroundToTop(deep(), 'p0').backgroundOrder).toEqual(['p1', 'i0', 'p0']);
+    expect(moveBackgroundUp(deep(), 'p0').backgroundOrder).toEqual(['p1', 'p0', 'i0']);
+  });
+
+  it('no-ops at either end return the same doc reference', () => {
+    const doc = deep();
+    expect(moveBackgroundToTop(doc, 'i0')).toBe(doc); // already top
+    expect(moveBackgroundToBottom(doc, 'p0')).toBe(doc); // already bottom
+  });
+
+  it('no-ops for an id that is neither a polygon nor an image', () => {
+    const doc = deep();
+    expect(moveBackgroundToTop(doc, 'nope')).toBe(doc);
+    expect(moveBackgroundToBottom(doc, 'nope')).toBe(doc);
   });
 
   it('effectiveBackgroundOrder drops stale ids and appends missing records', () => {

@@ -1,6 +1,6 @@
 import { autoOrientNewStation } from './autoOrient';
 import { effectiveLineOrder } from './lineOrder';
-import { reconcileOrder, moveInOrder } from './recordOrder';
+import { reconcileOrder, moveInOrder, moveToEndInOrder } from './recordOrder';
 import { LINE_WIDTH_DEFAULT, canonicalLineWidth, lineWidthOf } from './lineWidth';
 import { LINE_CURVE_RADIUS_DEFAULT, canonicalLineCurveRadius } from './lineCurve';
 import { repackStationForWidth } from './stationPacking';
@@ -2329,26 +2329,41 @@ export function effectiveBackgroundOrder(
   return reconcileOrder({ ...polygons, ...svgImages }, order);
 }
 
-// Shift a background item — polygon OR svg image — one step toward the top
-// (`dir: +1`) or bottom (`dir: -1`) of the shared paint order. Reconciles a
-// legacy/partial order first so the swap is always well-defined. No-op at the
-// respective end, and for an id that is neither kind.
-function moveBackgroundBy(doc: MapDoc, id: string, dir: 1 | -1): MapDoc {
+// Restack a background item — polygon OR svg image — within the shared paint
+// order, `move` deciding how far it travels. Reconciles a legacy/partial order
+// first so the move is always well-defined. No-op for an id that is neither
+// kind, and whenever `move` itself no-ops (already at the respective end) —
+// the same-reference return is what tells the caller nothing changed.
+function moveBackgroundVia(
+  doc: MapDoc,
+  id: string,
+  move: (order: string[], id: string) => string[],
+): MapDoc {
   if (!doc.polygons[id] && !doc.svgImages[id]) return doc;
   const order = effectiveBackgroundOrder(doc.polygons, doc.svgImages, doc.backgroundOrder);
-  const next = moveInOrder(order, id, dir);
+  const next = move(order, id);
   if (next === order) return doc;
   return { ...doc, backgroundOrder: next };
 }
 
-// Toward the top (rendered in front of the rest of the background band).
+// One step toward the top (rendered in front of the rest of the background band).
 export function moveBackgroundUp(doc: MapDoc, id: string): MapDoc {
-  return moveBackgroundBy(doc, id, 1);
+  return moveBackgroundVia(doc, id, (o, i) => moveInOrder(o, i, 1));
 }
 
-// Toward the bottom (rendered behind the rest of the background band).
+// One step toward the bottom (rendered behind the rest of the background band).
 export function moveBackgroundDown(doc: MapDoc, id: string): MapDoc {
-  return moveBackgroundBy(doc, id, -1);
+  return moveBackgroundVia(doc, id, (o, i) => moveInOrder(o, i, -1));
+}
+
+// All the way to the top, clearing the whole band in one click.
+export function moveBackgroundToTop(doc: MapDoc, id: string): MapDoc {
+  return moveBackgroundVia(doc, id, (o, i) => moveToEndInOrder(o, i, 1));
+}
+
+// All the way to the bottom, clearing the whole band in one click.
+export function moveBackgroundToBottom(doc: MapDoc, id: string): MapDoc {
+  return moveBackgroundVia(doc, id, (o, i) => moveToEndInOrder(o, i, -1));
 }
 
 // ---------- Svg images ----------
