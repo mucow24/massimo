@@ -4,6 +4,7 @@ import { undo, redo, historyDepth, isHistoryGrouping } from '../state/history';
 import { useViewportStore } from '../state/viewportStore';
 import { useSelection } from '../state/store';
 import { DEFAULT_DOC } from '../model/transforms';
+import type { RegionAssignment } from '../model/types';
 
 beforeEach(() => {
   useDoc.setState({ ...useDoc.getState(), ...DEFAULT_DOC });
@@ -117,6 +118,28 @@ describe('undo/redo', () => {
     // post-redo doc, so the dangling id is dropped.
     expect(useDoc.getState().stations[id]).toBeUndefined();
     expect(useSelection.getState().selectedStationIds).toEqual([]);
+  });
+
+  it('undoes a whole region flood as ONE entry', () => {
+    // A shift-click in layering mode writes the seed face plus every face the
+    // flood carried the winner to. However many that is, it's one user action,
+    // so it must cost exactly one undo — hence the list-taking writer.
+    const asg = (lineId: string): RegionAssignment => ({
+      id: '',
+      lineId,
+      lines: ['l1', lineId],
+      anchors: [],
+    });
+    useDoc.getState().assignRegions([
+      { id: null, assignment: asg('l2') },
+      { id: null, assignment: asg('l3') },
+      { id: null, assignment: asg('l4') },
+    ]);
+    // Three survivors ⇒ each null id minted its own (a collision would merge).
+    expect(Object.keys(useDoc.getState().regionAssignments)).toHaveLength(3);
+    expect(historyDepth()).toBe(1);
+    undo();
+    expect(useDoc.getState().regionAssignments).toEqual({});
   });
 });
 
