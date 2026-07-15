@@ -28,6 +28,8 @@ import { regionsFor } from '../geometry/regionCache';
 import {
   buildExclusionHoles,
   regionClickAction,
+  regionFloodTargets,
+  regionSetAction,
   resolveRegionWinners,
 } from '../geometry/lineRegions';
 import { HatchPatterns } from './HatchPatterns';
@@ -114,7 +116,7 @@ export function MapCanvas() {
   const lineOrder = useDoc((s) => s.lineOrder);
   const seamEdges = useDoc((s) => s.seamEdges);
   const addLineTag = useDoc((s) => s.addLineTag);
-  const assignRegion = useDoc((s) => s.assignRegion);
+  const assignRegions = useDoc((s) => s.assignRegions);
   const setLineSegmentStyle = useDoc((s) => s.setLineSegmentStyle);
   const toggleEdgeOnLine = useDoc((s) => s.toggleEdgeOnLine);
   const removeStationFromLine = useDoc((s) => s.removeStationFromLine);
@@ -864,16 +866,21 @@ export function MapCanvas() {
 
   // Layering-mode click: cycle which covering line paints the face. The pure
   // decision (next winner, wrap, delete-at-default, fresh anchors) lives in
-  // regionClickAction; the store mints the id and records ONE undo entry.
+  // regionClickAction; the store mints the ids and records ONE undo entry.
   // The face/winner set the user CLICKS is the one being DISPLAYED (the
   // deferred snapshot); the bound assignment object is read fresh by id.
-  const handleRegionClick = (faceIndex: number, dir: 1 | -1) => {
+  //
+  // With `flood` (shift held), the new winner carries out to every face
+  // regionFloodTargets reaches — flipping a logical piece of a line (one
+  // click takes it over a whole crossing) instead of one window pane.
+  const handleRegionClick = (faceIndex: number, dir: 1 | -1, flood: boolean) => {
     if (!regionGeom || !regionWinners) return;
     const face = regionGeom.faces[faceIndex];
     const w = regionWinners[faceIndex];
     if (!face || !w) return;
-    const bound = (w.assignmentId && useDoc.getState().regionAssignments[w.assignmentId]) || null;
-    const action = regionClickAction({
+    const assignments = useDoc.getState().regionAssignments;
+    const bound = (w.assignmentId && assignments[w.assignmentId]) || null;
+    const seed = regionClickAction({
       face,
       bound,
       lineOrder,
@@ -881,8 +888,26 @@ export function MapCanvas() {
       bands: regionGeom.bands,
       newId: '',
     });
-    if (action.assignment) assignRegion(bound ? bound.id : null, action.assignment);
-    else if (bound) assignRegion(bound.id, null);
+    const spread = flood
+      ? regionFloodTargets(regionGeom.faces, regionWinners, faceIndex, seed.winner)
+      : [faceIndex];
+    // Ids come from the bound assignment (or null, for the store to mint) —
+    // never from the pure action, which has no id generator to draw on.
+    assignRegions(
+      spread.map((i) => {
+        if (i === faceIndex) return { id: bound?.id ?? null, assignment: seed.assignment };
+        const boundId = regionWinners[i].assignmentId;
+        const set = regionSetAction({
+          face: regionGeom.faces[i],
+          boundId,
+          lineOrder,
+          winner: seed.winner,
+          bands: regionGeom.bands,
+          newId: '',
+        });
+        return { id: boundId, assignment: set.assignment };
+      }),
+    );
   };
 
   return (

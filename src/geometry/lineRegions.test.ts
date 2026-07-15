@@ -7,6 +7,7 @@ import {
   bindAssignments,
   resolveRegionWinners,
   regionClickAction,
+  regionFloodTargets,
   mintAnchors,
 } from './lineRegions';
 import { splitIntoFaces, faceArea, pointInFace } from './clip';
@@ -467,5 +468,125 @@ describe('regionClickAction', () => {
       newId: 'new1',
     });
     expect(out.assignment!.lineId).toBe('l2'); // wrap: default l1 → back = l2
+  });
+
+  it('reports the line the face ends up showing, including back at the default', () => {
+    const [face] = buildOverlapRegions(bands, []);
+    const fwd = regionClickAction({
+      face,
+      bound: null,
+      lineOrder: ['l1', 'l2'],
+      dir: 1,
+      bands,
+      newId: 'new1',
+    });
+    expect(fwd.winner).toBe('l2');
+    const bound: RegionAssignment = {
+      id: 'r1',
+      lineId: 'l2',
+      lines: ['l1', 'l2'],
+      anchors: mintAnchors(face, bands),
+    };
+    const back = regionClickAction({
+      face,
+      bound,
+      lineOrder: ['l1', 'l2'],
+      dir: 1,
+      bands,
+      newId: 'unused',
+    });
+    expect(back.assignment).toBeNull();
+    expect(back.winner).toBe('l1'); // deleting the assignment shows the default
+  });
+});
+
+describe('regionFloodTargets', () => {
+  // A horizontal trunk of three mutually-tangent stripes (a/b/c at y = -14/0/
+  // +14) crossed at x = 50 by a vertical trunk of two (d/e): a 3×2 grid of
+  // 14×14 overlap panes, every pane abutting its neighbours along a stripe
+  // seam. `at` is unambiguous — all six covers are distinct.
+  const trunkBands = () => [
+    makeBandSpec(['a', 'b', 'c'], {
+      pairKey: 's1|s2',
+      bandKey: 's1|s2#a,b,c',
+      fromId: 's1',
+      toId: 's2',
+      centerline: [
+        { x: 0, y: 0 },
+        { x: 100, y: 0 },
+      ],
+    }),
+    makeBandSpec(['d', 'e'], {
+      pairKey: 's3|s4',
+      bandKey: 's3|s4#d,e',
+      fromId: 's3',
+      toId: 's4',
+      centerline: [
+        { x: 50, y: -50 },
+        { x: 50, y: 50 },
+      ],
+    }),
+  ];
+  // Trunk lines front-most, so every pane defaults to the horizontal trunk.
+  const lineOrder = ['a', 'b', 'c', 'd', 'e'];
+  const atIn = (faces: ReturnType<typeof buildOverlapRegions>, cover: string) =>
+    faces.findIndex((f) => f.lineIds.join(',') === cover);
+
+  it('carries the target across a whole crossing trunk, but not sideways', () => {
+    const bands = trunkBands();
+    const faces = buildOverlapRegions(bands, []);
+    expect(faces).toHaveLength(6);
+    const at = (cover: string) => atIn(faces, cover);
+    const winners = resolveRegionWinners(faces, {}, bands, lineOrder);
+
+    const flooded = regionFloodTargets(faces, winners, at('a,d'), 'd');
+
+    // d bridges the whole a/b/c trunk off one click on the {a,d} pane.
+    expect([...flooded].sort()).toEqual([at('a,d'), at('b,d'), at('c,d')].sort());
+    // {a,e} abuts the seed along the d/e stripe seam, but its cover has no d —
+    // it can't legally show d, so the flood does not leak into the e column.
+    expect(flooded).not.toContain(at('a,e'));
+  });
+
+  it('walls off at a face already showing the target', () => {
+    const bands = trunkBands();
+    const faces = buildOverlapRegions(bands, []);
+    const at = (cover: string) => atIn(faces, cover);
+    const mid = faces[at('b,d')];
+    const assignments: Record<string, RegionAssignment> = {
+      r1: { id: 'r1', lineId: 'd', lines: [...mid.lineIds], anchors: mintAnchors(mid, bands) },
+    };
+    const winners = resolveRegionWinners(faces, assignments, bands, lineOrder);
+    expect(winners[at('b,d')].winner).toBe('d');
+
+    const flooded = regionFloodTargets(faces, winners, at('a,d'), 'd');
+
+    // {c,d} is reachable only THROUGH {b,d}, which already shows d — so the
+    // flood stops dead at the seed rather than jumping the wall.
+    expect(flooded).toEqual([at('a,d')]);
+  });
+
+  it('does not un-flood the trunk when the seed goes back to its default', () => {
+    // Falls out of the legality rule and is worth pinning: once d has been
+    // flooded over the trunk, flooding {a,d} back to a touches only {a,d} —
+    // {b,d} and {c,d} have no a in their cover to carry it to. Reverting a
+    // flood is undo's job, not a second shift-click's.
+    const bands = trunkBands();
+    const faces = buildOverlapRegions(bands, []);
+    const at = (cover: string) => atIn(faces, cover);
+    const assignments: Record<string, RegionAssignment> = {};
+    for (const cover of ['a,d', 'b,d', 'c,d']) {
+      const f = faces[at(cover)];
+      assignments[cover] = {
+        id: cover,
+        lineId: 'd',
+        lines: [...f.lineIds],
+        anchors: mintAnchors(f, bands),
+      };
+    }
+    const winners = resolveRegionWinners(faces, assignments, bands, lineOrder);
+    expect(winners[at('b,d')].winner).toBe('d');
+
+    expect(regionFloodTargets(faces, winners, at('a,d'), 'a')).toEqual([at('a,d')]);
   });
 });

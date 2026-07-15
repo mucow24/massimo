@@ -873,7 +873,83 @@ export function resolveRegionWinners(
   });
 }
 
-/** The click interaction: cycle the face's winner, deleting at the default. */
+/**
+ * How close two faces' boundaries must come to count as neighbours for a
+ * flood, world units. Faces of one arrangement share EXACT boundaries (band
+ * stripes are built mutually tangent, so a line crossing a trunk yields panes
+ * that abut along each stripe seam), so this only has to beat the clipper
+ * integer snap (1/CLIP_SCALE) — and must stay well under {@link SLIVER_ERODE}
+ * so the opening's split lobes aren't re-bridged wholesale.
+ */
+export const REGION_ADJACENCY_TOL = 0.05;
+
+/**
+ * Flood-fill from a clicked face: every face that should join it in showing
+ * `target`. Returns `seedIndex` plus each face reachable from it through
+ * neighbours that BOTH
+ *
+ *  - can legally show `target` (it covers them — the only lines a face can
+ *    ever show are its cover), and
+ *  - don't already show it.
+ *
+ * This turns a click from "flip one window pane" into "flip a logical piece
+ * of a line": where line D crosses a trunk of A/B/C, the panes {A,D} {B,D}
+ * {C,D} abut along the trunk's stripe seams, so one click carries D over the
+ * whole crossing. The already-showing-target rule is what bounds it — a face
+ * that already shows D is a wall, so the flood can't run away up and down D's
+ * whole length through some chain of incidental touches.
+ *
+ * Faces that merely touch but can't show `target` are walls too, which is why
+ * the flood doesn't leak sideways: {A,D} abuts {A,E} along the D/E seam, but
+ * {A,E}'s cover has no D.
+ */
+export function regionFloodTargets(
+  faces: RegionFace[],
+  winners: { winner: LineId }[],
+  seedIndex: number,
+  target: LineId,
+): number[] {
+  if (!faces[seedIndex]) return [];
+  // Both rules are cheap set tests, so applying them up front leaves only a
+  // handful of candidates for the clipper adjacency work below.
+  const open = new Set<number>();
+  for (let i = 0; i < faces.length; i++) {
+    if (i === seedIndex) continue;
+    if (!faces[i].lineIds.includes(target)) continue;
+    if (winners[i]?.winner === target) continue;
+    open.add(i);
+  }
+  const dilated = new Map<number, Ring[]>();
+  const grown = (i: number): Ring[] => {
+    let rings = dilated.get(i);
+    if (!rings) {
+      rings = offsetClosed(faces[i].face, REGION_ADJACENCY_TOL);
+      dilated.set(i, rings);
+    }
+    return rings;
+  };
+  const out = [seedIndex];
+  const frontier = [seedIndex];
+  while (frontier.length) {
+    const i = frontier.pop()!;
+    for (const j of [...open]) {
+      if (!boxesOverlap(faces[i].bbox, faces[j].bbox, REGION_ADJACENCY_TOL)) continue;
+      // Neighbouring faces share an exact boundary, so they only intersect
+      // once one of them is grown by the tolerance.
+      if (!intersect(grown(i), faces[j].face).length) continue;
+      open.delete(j);
+      out.push(j);
+      frontier.push(j);
+    }
+  }
+  return out;
+}
+
+/**
+ * The click interaction: cycle the face's winner, deleting at the default.
+ * `winner` is the line the face ends up showing — the flood's target when the
+ * click floods (see {@link regionFloodTargets}).
+ */
 export function regionClickAction(args: {
   face: RegionFace;
   bound: RegionAssignment | null;
@@ -881,17 +957,40 @@ export function regionClickAction(args: {
   dir: 1 | -1;
   bands: SegmentBandSpec[];
   newId: string;
-}): { id: string; assignment: RegionAssignment | null } {
+}): { id: string; assignment: RegionAssignment | null; winner: LineId } {
   const { face, bound, lineOrder, dir, bands, newId } = args;
   const orderIdx = orderIndexer(lineOrder);
   const order = [...face.lineIds].sort((a, b) => orderIdx(a) - orderIdx(b) || (a < b ? -1 : 1));
   const current = bound?.lineId ?? order[0];
   const at = Math.max(0, order.indexOf(current));
-  const next = order[(at + dir + order.length) % order.length];
-  const id = bound?.id ?? newId;
-  if (next === order[0]) return { id, assignment: null };
+  const winner = order[(at + dir + order.length) % order.length];
+  return {
+    winner,
+    ...regionSetAction({ face, boundId: bound?.id ?? null, lineOrder, winner, bands, newId }),
+  };
+}
+
+/**
+ * Make one face show `winner`: the write behind both a click and each face a
+ * flood carries (see {@link regionFloodTargets}). Assignment null means the
+ * face already shows `winner` by lineOrder default, so any stored choice is
+ * deleted rather than restated.
+ */
+export function regionSetAction(args: {
+  face: RegionFace;
+  /** The face's currently bound assignment id, reused so a flood re-aims an
+   *  existing choice instead of stranding it (one assignment per face). */
+  boundId: string | null;
+  lineOrder: LineId[];
+  winner: LineId;
+  bands: SegmentBandSpec[];
+  newId: string;
+}): { id: string; assignment: RegionAssignment | null } {
+  const { face, boundId, lineOrder, winner, bands, newId } = args;
+  const id = boundId ?? newId;
+  if (winner === regionDefaultWinner(face, lineOrder)) return { id, assignment: null };
   return {
     id,
-    assignment: { id, lineId: next, lines: [...face.lineIds], anchors: mintAnchors(face, bands) },
+    assignment: { id, lineId: winner, lines: [...face.lineIds], anchors: mintAnchors(face, bands) },
   };
 }
