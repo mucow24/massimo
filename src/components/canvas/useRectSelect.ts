@@ -1,5 +1,6 @@
 import { RefObject, useRef, useState } from 'react';
 import { useDoc, useSelection } from '../../state/store';
+import { useViewportStore } from '../../state/viewportStore';
 import { releaseDragCapture, trackDragMove } from './dragGesture';
 import {
   polygonsForRect,
@@ -9,8 +10,24 @@ import {
   textLabelsForRect,
 } from '../../geometry/stationBoundary';
 import { stopHalfOf } from '../../model/lineWidth';
+import type { MapDoc, StationId } from '../../model/types';
 import type { Pt } from '../../geometry/polygonUnion';
-import type { StationId } from '../../model/types';
+
+/**
+ * Stations swept up by the rect — none while the lines/stations toggle hides
+ * them. Hits are geometric (straight off the doc), so hiding the network does
+ * NOT take stations out of a marquee on its own: without this, a band thrown
+ * around the background art the toggle just exposed would also select every
+ * station it crossed, invisibly — and that selection answers Delete.
+ */
+function stationsForRectVisible(
+  doc: Pick<MapDoc, 'stations' | 'lines'>,
+  rect: RectSelectRect,
+  includeLocked: boolean,
+): StationId[] {
+  if (!useViewportStore.getState().showNetwork) return [];
+  return stationsForRect(doc.stations, rect, stopHalfOf(doc.lines), includeLocked);
+}
 
 export interface RectSelectRect {
   x0: number;
@@ -161,12 +178,7 @@ export function useRectSelect(
     const sel = useSelection.getState();
     const mode = modeFromEvent(e);
     const includeLocked = e.altKey;
-    const stationHits = stationsForRect(
-      doc.stations,
-      nextRect,
-      stopHalfOf(doc.lines),
-      includeLocked,
-    );
+    const stationHits = stationsForRectVisible(doc, nextRect, includeLocked);
     const bulletHits = routeBulletsForRect(doc.routeBullets, nextRect, includeLocked);
     const labelHits = textLabelsForRect(doc.textLabels, nextRect, includeLocked);
     const polygonHits = polygonsForRect(doc.polygons, nextRect, includeLocked);
@@ -208,12 +220,7 @@ export function useRectSelect(
 
     const doc = useDoc.getState();
     const includeLocked = e.altKey;
-    const stationHits = stationsForRect(
-      doc.stations,
-      finalRect,
-      stopHalfOf(doc.lines),
-      includeLocked,
-    );
+    const stationHits = stationsForRectVisible(doc, finalRect, includeLocked);
     const bulletHits = routeBulletsForRect(doc.routeBullets, finalRect, includeLocked);
     const labelHits = textLabelsForRect(doc.textLabels, finalRect, includeLocked);
     const polygonHits = polygonsForRect(doc.polygons, finalRect, includeLocked);

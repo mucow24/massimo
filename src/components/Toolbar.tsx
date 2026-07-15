@@ -23,6 +23,8 @@ import {
   DoubleArrowLeftIcon,
   DoubleArrowRightIcon,
   ExclamationTriangleIcon,
+  EyeNoneIcon,
+  EyeOpenIcon,
   FrameIcon,
   HandIcon,
   LayersIcon,
@@ -70,6 +72,8 @@ export function Toolbar() {
   const setDarkMode = useViewportStore((s) => s.setDarkMode);
   const showWaypoints = useViewportStore((s) => s.showWaypoints);
   const setShowWaypoints = useViewportStore((s) => s.setShowWaypoints);
+  const showNetwork = useViewportStore((s) => s.showNetwork);
+  const setShowNetwork = useViewportStore((s) => s.setShowNetwork);
   const clearAll = useDoc((s) => s.clearAll);
   const addLine = useDoc((s) => s.addLine);
   const selection = useSelection();
@@ -337,6 +341,20 @@ export function Toolbar() {
           onClick={() => setShowWaypoints(!showWaypoints)}
         >
           WP
+        </button>
+        <button
+          type="button"
+          className={'tool-btn' + (showNetwork ? ' active' : '')}
+          title={
+            showNetwork
+              ? 'Hide lines & stations — work on the background beneath them'
+              : 'Show lines & stations'
+          }
+          aria-label="Toggle lines and stations"
+          aria-pressed={showNetwork}
+          onClick={() => setShowNetwork(!showNetwork)}
+        >
+          {showNetwork ? <EyeOpenIcon /> : <EyeNoneIcon />}
         </button>
         <HelpPopover />
       </div>

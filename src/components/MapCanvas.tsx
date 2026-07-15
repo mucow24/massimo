@@ -138,6 +138,11 @@ export function MapCanvas() {
   const snapModes = useSnapPrefs((s) => s.modes);
   const gridVisible = useViewportStore((s) => s.gridVisible);
   const gridSize = useViewportStore((s) => s.gridSize);
+  // Draw the line/station network at all? Off = only the background art
+  // (polygons, images) and the grid, so buried art is clickable. Stations
+  // self-gate inside StationView (one chokepoint for ~15 call sites); lines and
+  // everything anchored to them are gated at the blocks below.
+  const showNetwork = useViewportStore((s) => s.showNetwork);
   // For resolving theme-aware (day/night) transfer colors on the creation preview.
   const darkMode = useViewportStore((s) => s.darkMode);
   const theme = useThemeColors();
@@ -337,8 +342,13 @@ export function MapCanvas() {
   // on purpose: the clips attach to the LIVE base strokes, so they must be
   // derived from the same geometry the strokes render — a deferred snapshot
   // would tear the clip holes off the moving bands mid-drag.
+  // Nothing to reconcile against while the network isn't painted: the exclusion
+  // clips attach to base strokes that don't exist, and the clickable faces would
+  // float over bands the user can't see. Skipping also spares the app its most
+  // expensive pure computation for the duration.
   const needRegions =
-    selection.uiMode.kind === 'layering' || Object.keys(regionAssignments).length > 0;
+    showNetwork &&
+    (selection.uiMode.kind === 'layering' || Object.keys(regionAssignments).length > 0);
   const regionGeom = useMemo(
     () => (needRegions ? regionsFor({ stations, lines }) : null),
     [needRegions, stations, lines],
@@ -1088,88 +1098,91 @@ export function MapCanvas() {
             region's winner shows through as its own continuous base stroke —
             see buildExclusionHoles. The clip wrapper also removes the loser's
             pointer surface there, landing clicks on the visible winner. */}
-        {renderables.map((r) => {
-          const lineId = r.kind === 'marker' ? r.spec.lineId : r.band.lines[r.stripeIndex].id;
-          const clipped = regionExcludeHoles?.has(lineId) ?? false;
-          const withExcludeClip = (key: string, node: React.ReactNode) =>
-            clipped ? (
-              <g
-                key={key}
-                data-region-excluded={lineId}
-                clipPath={`url(#${regionExcludeClipId(lineId)})`}
-              >
-                {node}
-              </g>
-            ) : (
-              node
-            );
-          if (r.kind === 'casing') {
+        {showNetwork &&
+          renderables.map((r) => {
+            const lineId = r.kind === 'marker' ? r.spec.lineId : r.band.lines[r.stripeIndex].id;
+            const clipped = regionExcludeHoles?.has(lineId) ?? false;
+            const withExcludeClip = (key: string, node: React.ReactNode) =>
+              clipped ? (
+                <g
+                  key={key}
+                  data-region-excluded={lineId}
+                  clipPath={`url(#${regionExcludeClipId(lineId)})`}
+                >
+                  {node}
+                </g>
+              ) : (
+                node
+              );
+            if (r.kind === 'casing') {
+              return withExcludeClip(
+                'c:' + r.band.bandKey + ':' + lineId,
+                <SegmentBand
+                  key={'c:' + r.band.bandKey + ':' + lineId}
+                  spec={r.band}
+                  stripeIndex={r.stripeIndex}
+                  pass="silhouette"
+                  lines={lines}
+                  colorMap={colorMap}
+                  underlayColor={underlayColor}
+                />,
+              );
+            }
+            if (r.kind === 'seam') {
+              return withExcludeClip(
+                'seam:' + r.band.bandKey + ':' + lineId,
+                <SegmentBand
+                  key={'seam:' + r.band.bandKey + ':' + lineId}
+                  spec={r.band}
+                  stripeIndex={r.stripeIndex}
+                  pass="seam"
+                  lines={lines}
+                  colorMap={colorMap}
+                  underlayColor={underlayColor}
+                  seamEdges={seamEdges}
+                />,
+              );
+            }
+            if (r.kind === 'stripe') {
+              return withExcludeClip(
+                's:' + r.band.bandKey + ':' + lineId,
+                <SegmentBand
+                  key={'s:' + r.band.bandKey + ':' + lineId}
+                  spec={r.band}
+                  stripeIndex={r.stripeIndex}
+                  pass="body"
+                  interactive={
+                    selection.uiMode.kind === 'creating-line-tag' ||
+                    selection.uiMode.kind === 'appending-to-line'
+                  }
+                  lines={lines}
+                  colorMap={colorMap}
+                  underlayColor={underlayColor}
+                  onLineSelect={inHandMode || inLayeringMode ? undefined : handleLineSelect}
+                  {...(selection.uiMode.kind === 'creating-line-tag'
+                    ? makeBandHandlers(r.band)
+                    : {})}
+                  {...(selection.uiMode.kind === 'appending-to-line'
+                    ? makeAppendBandHandlers(r.band)
+                    : {})}
+                />,
+              );
+            }
+            const effectiveColor =
+              colorMap && r.spec.lineId !== highlightLineId
+                ? (colorMap[r.spec.lineId] ?? r.spec.color)
+                : r.spec.color;
             return withExcludeClip(
-              'c:' + r.band.bandKey + ':' + lineId,
-              <SegmentBand
-                key={'c:' + r.band.bandKey + ':' + lineId}
-                spec={r.band}
-                stripeIndex={r.stripeIndex}
-                pass="silhouette"
-                lines={lines}
-                colorMap={colorMap}
+              'm:' + r.spec.stationId + ':' + lineId,
+              <StopMarker
+                key={'m:' + r.spec.stationId + ':' + lineId}
+                spec={r.spec}
+                effectiveColor={effectiveColor}
                 underlayColor={underlayColor}
+                lines={lines}
               />,
             );
-          }
-          if (r.kind === 'seam') {
-            return withExcludeClip(
-              'seam:' + r.band.bandKey + ':' + lineId,
-              <SegmentBand
-                key={'seam:' + r.band.bandKey + ':' + lineId}
-                spec={r.band}
-                stripeIndex={r.stripeIndex}
-                pass="seam"
-                lines={lines}
-                colorMap={colorMap}
-                underlayColor={underlayColor}
-                seamEdges={seamEdges}
-              />,
-            );
-          }
-          if (r.kind === 'stripe') {
-            return withExcludeClip(
-              's:' + r.band.bandKey + ':' + lineId,
-              <SegmentBand
-                key={'s:' + r.band.bandKey + ':' + lineId}
-                spec={r.band}
-                stripeIndex={r.stripeIndex}
-                pass="body"
-                interactive={
-                  selection.uiMode.kind === 'creating-line-tag' ||
-                  selection.uiMode.kind === 'appending-to-line'
-                }
-                lines={lines}
-                colorMap={colorMap}
-                underlayColor={underlayColor}
-                onLineSelect={inHandMode || inLayeringMode ? undefined : handleLineSelect}
-                {...(selection.uiMode.kind === 'creating-line-tag' ? makeBandHandlers(r.band) : {})}
-                {...(selection.uiMode.kind === 'appending-to-line'
-                  ? makeAppendBandHandlers(r.band)
-                  : {})}
-              />,
-            );
-          }
-          const effectiveColor =
-            colorMap && r.spec.lineId !== highlightLineId
-              ? (colorMap[r.spec.lineId] ?? r.spec.color)
-              : r.spec.color;
-          return withExcludeClip(
-            'm:' + r.spec.stationId + ':' + lineId,
-            <StopMarker
-              key={'m:' + r.spec.stationId + ':' + lineId}
-              spec={r.spec}
-              effectiveColor={effectiveColor}
-              underlayColor={underlayColor}
-              lines={lines}
-            />,
-          );
-        })}
+          })}
 
         {/* station backgrounds: hit areas, names, colored stop squares */}
         {Object.values(stations).map((st) => (
@@ -1222,25 +1235,28 @@ export function MapCanvas() {
             obscures the dot it's connecting. Stay at full opacity in
             layering mode (they ride between line stops so they're part of
             the route-network reading, not background annotation). */}
-        <TransferLayer
-          transfers={transfers}
-          stations={stations}
-          defaults={TRANSFER_STYLE_DEFAULTS}
-          onSelect={(id) => {
-            // Same exit-then-select contract as the free items above.
-            const sel = useSelection.getState();
-            if (sel.uiMode.kind === 'appending-to-line') sel.setAppending(null);
-            sel.selectTransfer(id);
-          }}
-          onHoverEnter={(id) => setHover({ kind: 'transfer', id })}
-          onHoverLeave={(id) => clearHoverIf('transfer', id)}
-        />
+        {showNetwork && (
+          <TransferLayer
+            transfers={transfers}
+            stations={stations}
+            defaults={TRANSFER_STYLE_DEFAULTS}
+            onSelect={(id) => {
+              // Same exit-then-select contract as the free items above.
+              const sel = useSelection.getState();
+              if (sel.uiMode.kind === 'appending-to-line') sel.setAppending(null);
+              sel.selectTransfer(id);
+            }}
+            onHoverEnter={(id) => setHover({ kind: 'transfer', id })}
+            onHoverLeave={(id) => clearHoverIf('transfer', id)}
+          />
+        )}
 
         {/* In-progress transfer preview line: from the anchor dot to the
             cursor while waiting for the second click. Dashed + translucent so
             it reads as provisional rather than an already-placed transfer;
             renders below the dots for the same reason as the real ones. */}
-        {selection.uiMode.kind === 'creating-transfer' &&
+        {showNetwork &&
+          selection.uiMode.kind === 'creating-transfer' &&
           selection.uiMode.anchor &&
           cursorWorld &&
           stations[selection.uiMode.anchor.stationId] &&
@@ -1292,16 +1308,18 @@ export function MapCanvas() {
         {/* Selected-transfer outline: above the dots (unlike TransferLayer)
             so the connected dots — and any crossing transfer — can't cover
             the selection chrome. */}
-        <TransferSelectionOutline
-          transfers={transfers}
-          stations={stations}
-          defaults={TRANSFER_STYLE_DEFAULTS}
-          selectedId={selection.selectedTransferId}
-        />
+        {showNetwork && (
+          <TransferSelectionOutline
+            transfers={transfers}
+            stations={stations}
+            defaults={TRANSFER_STYLE_DEFAULTS}
+            selectedId={selection.selectedTransferId}
+          />
+        )}
 
         {/* Mouseover preview: the hovered (unselected) transfer's selection
             outline at 50% opacity — the same ring, reused, just fainter. */}
-        {hoverTransferId && (
+        {showNetwork && hoverTransferId && (
           <g data-export-exclude="1" opacity={0.5}>
             <TransferSelectionOutline
               transfers={transfers}
@@ -1400,8 +1418,11 @@ export function MapCanvas() {
 
         {/* Line-selection highlight: dim wash + re-painted selected line on
             top. Painted after dots so other lines' stop dots can't punch
-            through the selected line's outline. */}
-        {highlightLineId && (
+            through the selected line's outline. Gated on showNetwork for the
+            DIM above all: it covers the whole viewport, so leaving it up with
+            the network hidden would black out the background art the toggle
+            exists to expose. */}
+        {showNetwork && highlightLineId && (
           <g data-export-exclude="1">
             <HighlightedLineLayer
               highlightLineId={highlightLineId}
@@ -1438,9 +1459,11 @@ export function MapCanvas() {
         {/* Line tags: in-band labels that ride each line's stripe. Faded
             in layering mode so the tag text doesn't compete with the
             outline + layer-number overlays. */}
-        <g opacity={inLayeringMode ? LAYERING_FADE_OPACITY : 1}>
-          <LineTagsLayer bands={bands} zoom={view.viewport.zoom} svgRef={svgRef} />
-        </g>
+        {showNetwork && (
+          <g opacity={inLayeringMode ? LAYERING_FADE_OPACITY : 1}>
+            <LineTagsLayer bands={bands} zoom={view.viewport.zoom} svgRef={svgRef} />
+          </g>
+        )}
 
         {/* Match-stroke: gray outline on each station whose layout matches
             the selected station while mirror mode is on. Drawn beneath the
@@ -1733,7 +1756,7 @@ export function MapCanvas() {
             SVG, AFTER the routing-warning markers, so those markers can never
             cover its click targets. Same focus language as the line-selection
             highlight; chrome, excluded from export. */}
-        {layoutEditStation && theme.dimOpacity > 0 && (
+        {showNetwork && layoutEditStation && theme.dimOpacity > 0 && (
           <rect
             data-export-exclude="1"
             data-dim="1"
@@ -1771,19 +1794,21 @@ export function MapCanvas() {
             very end of the SVG so the marker draws on top of every stripe,
             dot, and label and is never occluded. The ⚠ takes whichever of
             black/white is legible against the stripe under its center. */}
-        <g data-export-exclude="1" data-band-warnings="1">
-          {bands.map((b) => {
-            if (!b.warning) return null;
-            // Color under the glyph = the band's center stripe, resolved the
-            // same way SegmentBand paints it (desaturation override, else live).
-            const centerId = b.lines[Math.floor(b.lines.length / 2)]?.id;
-            const centerColor = centerId
-              ? (colorMap?.[centerId] ?? lines[centerId]?.color)
-              : undefined;
-            const iconColor = centerColor ? legibleTextOn(centerColor) : '#000';
-            return <BandWarning key={'w:' + b.bandKey} spec={b} iconColor={iconColor} />;
-          })}
-        </g>
+        {showNetwork && (
+          <g data-export-exclude="1" data-band-warnings="1">
+            {bands.map((b) => {
+              if (!b.warning) return null;
+              // Color under the glyph = the band's center stripe, resolved the
+              // same way SegmentBand paints it (desaturation override, else live).
+              const centerId = b.lines[Math.floor(b.lines.length / 2)]?.id;
+              const centerColor = centerId
+                ? (colorMap?.[centerId] ?? lines[centerId]?.color)
+                : undefined;
+              const iconColor = centerColor ? legibleTextOn(centerColor) : '#000';
+              return <BandWarning key={'w:' + b.bandKey} spec={b} iconColor={iconColor} />;
+            })}
+          </g>
+        )}
 
         {/* Layout-editor focus content, painted at the very END of the SVG so
             it sits ABOVE the routing-warning markers, which would otherwise
@@ -1791,7 +1816,7 @@ export function MapCanvas() {
             targets you reach for exactly when a routing warning appears). The
             dim is painted much earlier, below the warnings, so the warnings
             stay visible beneath this content. */}
-        {layoutEditStation && (
+        {showNetwork && layoutEditStation && (
           <>
             {/* White selection border, above the dim. The base stroke pass
                 skips this station's themed (black) border; white reads on the
@@ -1855,7 +1880,10 @@ export function MapCanvas() {
 
       <ItemPopovers view={view} />
 
-      <WarningToasts bands={bands} />
+      {/* Routing warnings are about bands the user can't see while the network
+          is hidden — the toast's "jump to the band" click would land on blank
+          canvas. Comes back with the map. */}
+      {showNetwork && <WarningToasts bands={bands} />}
     </div>
   );
 }

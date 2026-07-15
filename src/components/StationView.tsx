@@ -1,5 +1,6 @@
 import { memo } from 'react';
 import { Line, Station } from '../model/types';
+import { useViewportStore } from '../state/viewportStore';
 import { StationSilhouette } from './StationSilhouette';
 import { StationHitArea } from './StationHitArea';
 import { StationDots } from './StationDots';
@@ -41,6 +42,8 @@ interface Props {
  * (station/lines are immutable store refs; zoom is constant during a pan;
  * onStartDrag is a stable useCallback), so React skips re-rendering every
  * station's subtree when only the viewBox moves — the dominant pan cost.
+ * (memo doesn't block the showNetwork subscription below: a store change
+ * re-renders through it regardless of prop equality.)
  */
 export const StationView = memo(function StationView({
   station,
@@ -51,6 +54,14 @@ export const StationView = memo(function StationView({
   strokeColor,
   preview = false,
 }: Props) {
+  const showNetwork = useViewportStore((s) => s.showNetwork);
+  // The lines/stations toggle is gated HERE rather than at the ~15 call sites,
+  // because this dispatcher is the one chokepoint every station pass — wash,
+  // hit area, dots, labels, selection stroke, drag proxy — funnels through, in
+  // MapCanvas and in the highlight/placing overlays alike. Returning null (not
+  // hiding) is deliberate: an invisible-but-present hit rect would still
+  // swallow clicks meant for the background art the toggle exists to uncover.
+  if (!showNetwork) return null;
   switch (layer) {
     case 'wash':
     case 'stroke':

@@ -755,13 +755,37 @@ mouseover — a pure hover cue, independent of the selection lists above.
 
 - `useViewportStore` — the **committed** camera (`x, y, zoom`) + `gridVisible`, `gridSize`
   (`GRID_SIZES = [5,10,20]`, default 10), `darkMode` (default false), `showWaypoints` (default
-  false — a pure paint toggle that reveals waypoint stations). **Persisted** as `'massimo-viewport'`
-  (per-browser, **not** per-file). The giant SVG tree subscribes here and is re-rendered only on
-  commit.
+  false — a pure paint toggle that reveals waypoint stations), `showNetwork` (default true — see
+  below). **Persisted** as `'massimo-viewport'` (per-browser, **not** per-file) — except
+  `showNetwork`, which `partialize` deliberately omits so a reload never opens onto an
+  apparently-empty map. The giant SVG tree subscribes here and is re-rendered only on commit.
 - `useLiveViewportStore` — the **in-flight** gesture viewport (`pending: Viewport | null`).
   **Not persisted, not undoable.** Only the small popover-overlay layer subscribes. Exists solely
   so per-frame pan/zoom writes don't hammer localStorage or re-render the SVG. See the
   [Interaction layer](#canvas-interaction-layer) for how the viewBox is written imperatively.
+
+**`showNetwork` — the lines/stations toggle** (toolbar eye button, right of `WP`). Off leaves only
+the background art (polygons, svg images) and the grid on the canvas, so art buried under the
+network can be clicked and dragged. Hidden content is **not rendered** rather than made invisible —
+an invisible-but-present hit rect would still swallow the clicks the toggle exists to let through.
+Three seams cover it, and a fourth rule governs anything new:
+
+- **Stations** self-gate inside [StationView.tsx](src/components/StationView.tsx). That dispatcher
+  is the chokepoint every station pass (wash, hit area, dots, labels, stroke, drag proxy) funnels
+  through, in `MapCanvas` and the highlight/placing overlays alike — so one `return null` covers
+  ~15 call sites and no future pass can miss it.
+- **Lines** are already consolidated into `MapCanvas`'s single `renderables.map` block (stripes,
+  casings, seams, stop markers), so they gate at that one call site. Line tags, transfers, band
+  warnings, the warning toasts, the layout editor, and `HighlightedLineLayer` gate beside it —
+  that last one matters most, because it paints a **full-viewport dim** that would otherwise black
+  out the background art with the network gone. `needRegions` folds in `showNetwork` too, which
+  also skips the app's most expensive computation while hidden.
+- **Doc-geometric code must opt in by hand.** Not rendering kills DOM hit-testing, but anything
+  reading geometry straight off the doc never notices: `useRectSelect` would sweep hidden stations
+  into a marquee (an invisible selection that answers Delete), and the snap pool would align art
+  to stations that aren't on screen. Both go through explicit gates —
+  `stationsForRectVisible` and `liveAlignTargets` (which wraps the still-pure `alignTargets`).
+  **Any new feature that reads `doc.stations`/`doc.lines` for interaction needs the same gate.**
 
 ### Preferences
 
