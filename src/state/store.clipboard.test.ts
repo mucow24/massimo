@@ -1,12 +1,15 @@
 import { describe, it, expect, beforeEach } from 'vitest';
 import { useDoc } from './store';
+import { DEFAULT_DOC } from '../model/transforms';
 
 // Offset the paste/duplicate actions apply so a copy lands just off the source.
 const OFFSET = 15;
 
 beforeEach(() => {
   localStorage.clear();
-  useDoc.getState().clearAll();
+  // Not clearAll() — that deliberately preserves the name, styles, palettes and
+  // seam mode, so it would leak them between tests rather than reset the doc.
+  useDoc.setState({ ...useDoc.getState(), ...DEFAULT_DOC });
 });
 
 describe('pasteTextLabel / duplicateTextLabel', () => {

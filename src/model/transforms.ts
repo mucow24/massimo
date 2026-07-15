@@ -1842,10 +1842,22 @@ export function setSeamEdges(doc: MapDoc, seamEdges: SeamEdges): MapDoc {
   return { ...doc, seamEdges };
 }
 
-export function clearAll(_doc: MapDoc): MapDoc {
-  // DEFAULT_DOC already supplies empty lineTags (and every other collection);
-  // no field needs special re-zeroing here.
-  return { ...DEFAULT_DOC };
+/**
+ * Empty the canvas, keeping the document. Clear is not New: it stays in the
+ * same map, so everything that isn't drawn content survives — the title, the
+ * define-by-example styles, which palettes are switched on, the seam mode.
+ * DEFAULT_DOC supplies the emptied collections; the spread below re-imposes
+ * the settings on top of them.
+ */
+export function clearAll(doc: MapDoc): MapDoc {
+  return {
+    ...DEFAULT_DOC,
+    name: doc.name,
+    styles: doc.styles,
+    styleDefaults: doc.styleDefaults,
+    activePalettes: doc.activePalettes,
+    seamEdges: doc.seamEdges,
+  };
 }
 
 // ---------- Line tags ----------
