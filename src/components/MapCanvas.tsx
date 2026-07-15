@@ -361,6 +361,7 @@ export function MapCanvas() {
               const line = lines[lineId];
               return line ? lineStrokeRailWidth(lineStrokeWidthOf(line), lineWidthOf(line)) : 0;
             },
+            regionGeom.slivers,
           )
         : null,
     [regionGeom, regionWinners, lineOrder, lines],
