@@ -51,6 +51,7 @@ beforeEach(() => {
     gridSize: 10,
     darkMode: false,
     showWaypoints: false,
+    showNetwork: true,
   });
   vi.mocked(downloadBlob).mockClear();
   vi.mocked(getCanvasSvg).mockReset();
@@ -117,6 +118,20 @@ describe('Toolbar — tool + view toggles', () => {
     expect(useViewportStore.getState().showWaypoints).toBe(false);
   });
 
+  it('toggles lines + stations via the eye button', async () => {
+    const user = userEvent.setup();
+    render(<Toolbar />);
+    const btn = () => screen.getByLabelText('Toggle lines and stations');
+    // Starts pressed: unlike the WP button, this one is ON in the normal case —
+    // the map is drawn, and clicking is what takes it away.
+    expect(btn()).toHaveAttribute('aria-pressed', 'true');
+    await user.click(btn());
+    expect(useViewportStore.getState().showNetwork).toBe(false);
+    expect(btn()).toHaveAttribute('aria-pressed', 'false');
+    await user.click(btn());
+    expect(useViewportStore.getState().showNetwork).toBe(true);
+  });
+
   it('Reset view fits the camera to the map content', async () => {
     // A single far-flung station: Reset view must move the camera onto it,
     // exactly the center+fit the file-load path performs.
@@ -168,10 +183,15 @@ describe('Toolbar — help guide', () => {
   // outside-clicks at the overlay.
   const flushDismissListener = () => new Promise((r) => setTimeout(r, 1));
 
-  it('renders the ? help button immediately right of the WP toggle', () => {
+  it('renders the ? help button last in the view-toggle group', () => {
     render(<Toolbar />);
     const help = screen.getByLabelText('Help');
-    expect(help.previousElementSibling).toBe(screen.getByLabelText('Toggle waypoints'));
+    // Pinned as "closes out its group" rather than "sits right of <the WP
+    // button>", which is what this asserted until a toggle was added between
+    // the two. The invariant that matters is Help coming last; naming a
+    // neighbour re-breaks this for every future button.
+    expect(help.parentElement!.lastElementChild).toBe(help);
+    expect(help.parentElement).toContainElement(screen.getByLabelText('Toggle waypoints'));
   });
 
   it('opens the quick-reference overlay on click and closes on a second click', async () => {
@@ -391,8 +411,13 @@ describe('Toolbar — Export wiring', () => {
     await user.click(screen.getByRole('menuitem', { name: 'Export' }));
   };
 
-  it('Export → SVG forwards the live canvas svg to exportCanvasSvg', async () => {
+  it('Export → SVG forwards a faithful snapshot of the live canvas svg', async () => {
     const fakeSvg = document.createElementNS('http://www.w3.org/2000/svg', 'svg') as SVGSVGElement;
+    // A distinctive child, so the snapshot assertion below can't pass merely
+    // because any two empty <svg>s compare equal.
+    const marker = document.createElementNS('http://www.w3.org/2000/svg', 'g');
+    marker.setAttribute('data-marker', 'live-canvas');
+    fakeSvg.appendChild(marker);
     vi.mocked(getCanvasSvg).mockReturnValue(fakeSvg);
 
     const user = userEvent.setup();
@@ -403,7 +428,14 @@ describe('Toolbar — Export wiring', () => {
     fireEvent.click(screen.getByRole('menuitem', { name: 'SVG' }));
 
     await waitFor(() => expect(exportCanvasSvg).toHaveBeenCalledTimes(1));
-    expect(vi.mocked(exportCanvasSvg).mock.calls[0][0]).toBe(fakeSvg);
+    const passed = vi.mocked(exportCanvasSvg).mock.calls[0][0];
+    // A detached snapshot, NOT the live element — this asserted `toBe(fakeSvg)`
+    // until captureExportSnapshot took over. The export applies and reverts view
+    // state around the clone inside one synchronous task, so the live canvas is
+    // deliberately not what travels into the async pipeline. Faithful content is
+    // what the contract is really about.
+    expect(passed).not.toBe(fakeSvg);
+    expect(passed.isEqualNode(fakeSvg)).toBe(true);
     // The SVG command must NOT route to the PNG exporter.
     expect(exportCanvasPng).not.toHaveBeenCalled();
   });

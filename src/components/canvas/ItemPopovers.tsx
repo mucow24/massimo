@@ -1,4 +1,5 @@
 import { soleSelection, useDoc, useSelection } from '../../state/store';
+import { useViewportStore } from '../../state/viewportStore';
 import type { ViewportProjection } from './screenAnchor';
 import { useLiveView } from './useViewport';
 import {
@@ -49,6 +50,10 @@ export function ItemPopovers({ view: committed }: { view: ViewportProjection }) 
   const svgImages = useDoc((s) => s.svgImages);
   const lines = useDoc((s) => s.lines);
   const transfers = useDoc((s) => s.transfers);
+  // These panels are DOM overlays, not canvas content, so the lines/stations
+  // toggle doesn't take the station/transfer ones with it — they'd hang there
+  // anchored to nothing, offering to edit what the user can't see.
+  const showNetwork = useViewportStore((s) => s.showNetwork);
 
   // The popover anchors against the live viewport; a zero-size viewport (first
   // paint) has no screen mapping yet, so wait for a real box.
@@ -64,7 +69,10 @@ export function ItemPopovers({ view: committed }: { view: ViewportProjection }) 
   const sole = soleSelection(selection);
   if (!sole) {
     const t = selection.selectedTransferId ? transfers[selection.selectedTransferId] : undefined;
-    if (!t) return null;
+    // Unmounted rather than `hidden` like the station panel below: TransferPopover
+    // has no hidden prop, and a transfer's panel is cheap to re-spawn beside its
+    // (restored) transfer on the way back.
+    if (!t || !showNetwork) return null;
     // A live transfer's stations always exist (either end's removal
     // cascade-deletes it); the guard covers a transient render mid-delete.
     const sa = stations[t.a.stationId];
@@ -95,10 +103,14 @@ export function ItemPopovers({ view: committed }: { view: ViewportProjection }) 
     // pop an editor open under every placement click on an existing station.
     // Hidden rather than unmounted for other modes: unmounting would drop the
     // frozen anchor and re-spawn the panel against wherever the camera is on
-    // the way back to idle — a canvas-lock-breaking jump.
+    // the way back to idle — a canvas-lock-breaking jump. A hidden network is
+    // the same kind of excursion: the station stays SELECTED (this is a peek at
+    // the background, not a deselect), so the panel just goes quiet and returns
+    // to the same canvas point on the way back.
     const show =
-      mode.kind === 'idle' ||
-      (mode.kind === 'editing-station-layout' && mode.stationId === sole.id);
+      showNetwork &&
+      (mode.kind === 'idle' ||
+        (mode.kind === 'editing-station-layout' && mode.stationId === sole.id));
     // Same style/stopHalf the renderer uses, so the silhouette rect the spawn
     // dodges matches the painted station (cells + name label).
     return (

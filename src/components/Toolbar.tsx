@@ -23,6 +23,8 @@ import {
   DoubleArrowLeftIcon,
   DoubleArrowRightIcon,
   ExclamationTriangleIcon,
+  EyeNoneIcon,
+  EyeOpenIcon,
   FrameIcon,
   HandIcon,
   LayersIcon,
@@ -70,6 +72,8 @@ export function Toolbar() {
   const setDarkMode = useViewportStore((s) => s.setDarkMode);
   const showWaypoints = useViewportStore((s) => s.showWaypoints);
   const setShowWaypoints = useViewportStore((s) => s.setShowWaypoints);
+  const showNetwork = useViewportStore((s) => s.showNetwork);
+  const setShowNetwork = useViewportStore((s) => s.setShowNetwork);
   const clearAll = useDoc((s) => s.clearAll);
   const addLine = useDoc((s) => s.addLine);
   const selection = useSelection();
@@ -145,9 +149,52 @@ export function Toolbar() {
     downloadBlob(blob, `${mapFileBasename(useDoc.getState().name)}.massimo.json`);
   };
 
-  // Export the rendered map as an image. Both share the live canvas SVG, the
-  // active theme's background, and the name-stamped basename; failures surface
-  // in the toolbar alert.
+  /**
+   * A detached snapshot of the canvas as the export should see it: the finished
+   * map, free of whatever transient view state the user happens to be working
+   * in. Two such states would otherwise bake into the image — a selected line
+   * desaturates every other line, and the lines/stations toggle takes the whole
+   * network off the canvas. Neither is a decision about the map's content, so
+   * neither belongs in the file.
+   *
+   * Apply, clone, revert — all inside ONE synchronous task. flushSync commits
+   * each repaint to the DOM immediately, but the browser gets no frame in
+   * between, so nothing the user set is ever visibly disturbed. That's the
+   * whole point of snapshotting rather than holding the LIVE canvas in the
+   * export state across `fn`: everything downstream (font embedding, PNG
+   * rasterization, PDF generation) is async and can run for seconds, which
+   * would flash a hidden network back on and drop the line highlight for the
+   * duration.
+   */
+  const captureExportSnapshot = (svg: SVGSVGElement): SVGSVGElement => {
+    const prevLineId = useSelection.getState().selectedLineId;
+    // Clearing selectedLineId trips the sidebar's auto-reveal collapse (it keys
+    // off exactly that), so the flag is saved and restored with the reselection.
+    const prevAutoReveal = useSelection.getState().sidebarAutoRevealed;
+    const prevShowNetwork = useViewportStore.getState().showNetwork;
+    flushSync(() => {
+      if (prevLineId) {
+        useSelection.setState({ sidebarAutoRevealed: false });
+        useSelection.getState().selectLine(null);
+      }
+      if (!prevShowNetwork) useViewportStore.getState().setShowNetwork(true);
+    });
+    try {
+      return svg.cloneNode(true) as SVGSVGElement;
+    } finally {
+      flushSync(() => {
+        if (prevLineId) {
+          useSelection.getState().selectLine(prevLineId);
+          useSelection.setState({ sidebarAutoRevealed: prevAutoReveal });
+        }
+        if (!prevShowNetwork) useViewportStore.getState().setShowNetwork(false);
+      });
+    }
+  };
+
+  // Export the rendered map as an image. All three share the canvas snapshot,
+  // the active theme's background, and the name-stamped basename; failures
+  // surface in the toolbar alert.
   const runExport = async (
     fn: (svg: SVGSVGElement, bg: string, basename: string) => Promise<void>,
   ) => {
@@ -156,34 +203,15 @@ export function Toolbar() {
       setMenuError('Canvas not ready to export yet.');
       return;
     }
-    // A selected line desaturates the others on the live canvas; that recoloring
-    // would bake into the clone. Drop the line selection for the capture and
-    // restore it afterward so the export shows the finished map in full color
-    // regardless of what's selected. flushSync commits the repaint to the DOM
-    // synchronously, so the clone we read is guaranteed clean — no frame-timing
-    // race.
-    const prevLineId = useSelection.getState().selectedLineId;
-    // Dropping the line selection for the capture would trip the sidebar's
-    // auto-reveal collapse (it keys off selectedLineId clearing). Clear the flag
-    // first so an auto-revealed sidebar doesn't blink shut mid-export (visible
-    // during the async PDF path), then restore it with the reselection.
-    const prevAutoReveal = useSelection.getState().sidebarAutoRevealed;
     try {
       setMenuError(null);
-      if (prevLineId)
-        flushSync(() => {
-          useSelection.setState({ sidebarAutoRevealed: false });
-          useSelection.getState().selectLine(null);
-        });
-      await fn(svg, themeColors(darkMode).canvasBg, mapFileBasename(useDoc.getState().name));
+      await fn(
+        captureExportSnapshot(svg),
+        themeColors(darkMode).canvasBg,
+        mapFileBasename(useDoc.getState().name),
+      );
     } catch (err) {
       setMenuError(err instanceof Error ? err.message : 'Export failed.');
-    } finally {
-      if (prevLineId)
-        flushSync(() => {
-          useSelection.getState().selectLine(prevLineId);
-          useSelection.setState({ sidebarAutoRevealed: prevAutoReveal });
-        });
     }
   };
   const onExportPng = () => void runExport(exportCanvasPng);
@@ -337,6 +365,20 @@ export function Toolbar() {
           onClick={() => setShowWaypoints(!showWaypoints)}
         >
           WP
+        </button>
+        <button
+          type="button"
+          className={'tool-btn' + (showNetwork ? ' active' : '')}
+          title={
+            showNetwork
+              ? 'Hide lines & stations — work on the background beneath them'
+              : 'Show lines & stations'
+          }
+          aria-label="Toggle lines and stations"
+          aria-pressed={showNetwork}
+          onClick={() => setShowNetwork(!showNetwork)}
+        >
+          {showNetwork ? <EyeOpenIcon /> : <EyeNoneIcon />}
         </button>
         <HelpPopover />
       </div>

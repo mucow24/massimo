@@ -7,7 +7,7 @@ import { polygonSnapAnchor } from '../../geometry/polygon';
 import { SNAP_PERP_TOLERANCE, type SnapGuide } from '../../geometry/snap';
 import type { Vec2 } from '../../geometry/vec';
 import { finishDrag, trackDragMove } from './dragGesture';
-import { alignTargets } from './snapTargets';
+import { liveAlignTargets } from './snapTargets';
 import {
   collectGroupSiblings,
   groupAlignExclude,
@@ -29,7 +29,7 @@ type WholeDragState = {
   // "Snap to all" pool, snapshotted at pointer-down (everything in it is
   // stationary for the duration of the drag). In a group drag it excludes the
   // dragged polygon AND every co-moving sibling (they'd be unstable targets);
-  // stationary items stay valid targets. See the alignTargets call below.
+  // stationary items stay valid targets. See the liveAlignTargets call below.
   allTargets: Vec2[];
   history: ReturnType<typeof beginHistoryGroup>;
 };
@@ -81,7 +81,7 @@ export interface PolygonDragApi {
  * suppression) and the whole-shape group-drag towing are shared with the other
  * drag hooks via dragGesture + groupDrag; snapping routes through
  * {@link snapPolygonPoint} so "Snap to line" aligns to the polygon's own
- * vertices and "Snap to all" aligns to the shared {@link alignTargets} pool
+ * vertices and "Snap to all" aligns to the shared {@link liveAlignTargets} pool
  * (stations, polygon vertices, image corners, label points, bullet centers).
  */
 export function usePolygonDrag(
@@ -123,7 +123,7 @@ export function usePolygonDrag(
       // The pool excludes the dragged polygon and every co-selected sibling
       // (they move with the grab); stationary items stay valid targets even
       // during a group drag.
-      allTargets: alignTargets(doc, groupAlignExclude('polygon', id, siblings)),
+      allTargets: liveAlignTargets(groupAlignExclude('polygon', id, siblings)),
       history: beginHistoryGroup(),
     };
   };
@@ -137,7 +137,7 @@ export function usePolygonDrag(
     const others = doc.polygons[polygonId]?.vertices.filter((_, i) => !moving.has(i)) ?? [];
     return {
       lineTargets: others,
-      allTargets: [...alignTargets(doc, { polygonIds: new Set([polygonId]) }), ...others],
+      allTargets: [...liveAlignTargets({ polygonIds: new Set([polygonId]) }), ...others],
     };
   };
 
