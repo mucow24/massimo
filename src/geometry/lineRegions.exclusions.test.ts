@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { buildExclusionHoles, buildOverlapRegions } from './lineRegions';
+import { buildExclusionHoles, buildOverlapRegions, type RegionSliver } from './lineRegions';
 import { pointInFace, splitIntoFaces } from './clip';
 import { makeBandSpec } from '../test/fixtures';
 import type { Vec2 } from './vec';
@@ -186,6 +186,62 @@ describe('buildExclusionHoles — neighboring faces are never nicked', () => {
     // …and on the FREE side (no neighboring face) the hole still runs
     // through the winner's rail for the bridges-over reveal.
     expect(contains(hole, { x: 50, y: -7.1 })).toBe(true);
+  });
+});
+
+describe('buildExclusionHoles — absorbs dropped slivers into a bridge', () => {
+  // l1 horizontal; l2 crosses it twice and runs near-tangent between the
+  // crossings (the dumbbell). The morphological opening keeps the two crossings
+  // as clickable faces and DROPS the hairline neck between them as a sliver
+  // (buildOverlapRegions). With the near crossing assigned to l2, l1 is clipped
+  // over it — and its clip must extend a little way into the dropped neck so
+  // l2's revealed casing doesn't NOTCH at the join (the CTA fillet-arc bug),
+  // without bridging the whole (long) neck to the far crossing.
+  const dumbbell = () => [
+    hBand('l1', 's1|s2', 0, 400),
+    vBand('l2', 's5|s6', -50, 13.9, 100),
+    hBand('l2', 's6|s7', 100, 300, 13.9),
+    vBand('l2', 's7|s8', -50, 13.9, 300),
+  ];
+  const bridgeNear = (faces: ReturnType<typeof buildOverlapRegions>) => {
+    const nearIdx = faces.findIndex((f) => f.lineIds.join(',') === 'l1,l2' && f.bbox.x0 < 200);
+    return faces.map((f, i) =>
+      i === nearIdx
+        ? { winner: 'l2' as LineId, assignmentId: 'r1' }
+        : { winner: f.lineIds[0], assignmentId: null },
+    );
+  };
+
+  it('collects the dropped neck as a sliver of the overlap cover', () => {
+    const slivers: RegionSliver[] = [];
+    buildOverlapRegions(dumbbell(), [], slivers);
+    const neck = slivers.find((s) => s.lineIds.join(',') === 'l1,l2');
+    expect(neck).toBeDefined();
+    // A thin (~0.1-tall) strip spanning between the two crossings.
+    expect(neck!.bbox.y1 - neck!.bbox.y0).toBeLessThan(1);
+    expect(neck!.bbox.x0).toBeGreaterThan(105);
+    expect(neck!.bbox.x1).toBeLessThan(295);
+  });
+
+  it("extends the loser's clip into the neck at the join, but not along its whole length", () => {
+    const bands = dumbbell();
+    const slivers: RegionSliver[] = [];
+    const faces = buildOverlapRegions(bands, [], slivers);
+    const winners = bridgeNear(faces);
+    const railW = () => 1;
+    const holes = buildExclusionHoles(faces, winners, ['l1', 'l2'], bands, [], railW, slivers);
+    // Just past the near crossing (its right edge is x≈107), inside the dropped
+    // neck: the fix extends l1's hole here so l2's casing runs unbroken across
+    // the join.
+    const atJoin = { x: 110, y: 6.95 };
+    expect(contains(holes.get('l1'), atJoin)).toBe(true);
+    // Without the sliver input (the pre-fix path) the neck is unreachable — the
+    // notch this bug is about.
+    const noAbsorb = buildExclusionHoles(faces, winners, ['l1', 'l2'], bands, [], railW);
+    expect(contains(noAbsorb.get('l1'), atJoin)).toBe(false);
+    // The bound holds: the reveal does NOT run the whole neck to the far
+    // crossing (a long tangent corridor must stay un-bridged past the junction).
+    expect(contains(holes.get('l1'), { x: 200, y: 6.95 })).toBe(false);
   });
 });
 
