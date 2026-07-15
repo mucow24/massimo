@@ -284,8 +284,3 @@ export function setCurrentMapId(id: string | null): void {
   if (id === null) localStorage.removeItem(CURRENT_KEY);
   else localStorage.setItem(CURRENT_KEY, id);
 }
-
-export function __closeForTests(): void {
-  void dbPromise?.then((db) => db.close());
-  dbPromise = null;
-}

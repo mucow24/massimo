@@ -109,22 +109,30 @@ describe('mapLibrary', () => {
     expect(await lib.getPayload(b)).toBe(json('2'));
   });
 
+  /**
+   * m1 is created first and m2 last, so getAll()'s primary-key order is
+   * ['m1','m2'] and the newest-touched-first answer is the OPPOSITE. Ordering
+   * the fixture the other way round makes the expectation coincide with the
+   * unsorted result, and `listMaps`'s sort can then be deleted outright with
+   * this test still green.
+   */
   it('orders maps and revisions newest-first', async () => {
     // Only Date is faked: vi.useFakeTimers() would also stub the task queue
     // fake-indexeddb schedules its request callbacks on, and every await hangs.
     const clock = vi.spyOn(Date, 'now');
     clock.mockReturnValue(Date.parse('2026-07-15T10:00:00Z'));
-    await lib.saveRevision('m1', 'Older', json('1'), 'user');
+    await lib.saveRevision('m1', 'A', json('1'), 'user');
     clock.mockReturnValue(Date.parse('2026-07-15T11:00:00Z'));
-    await lib.saveRevision('m2', 'Newer', json('2'), 'user');
+    await lib.saveRevision('m1', 'A', json('2'), 'user');
     clock.mockReturnValue(Date.parse('2026-07-15T12:00:00Z'));
-    await lib.saveRevision('m1', 'Older-but-touched', json('3'), 'user');
+    await lib.saveRevision('m2', 'B', json('3'), 'user');
     clock.mockRestore();
 
-    expect((await lib.listMaps()).map((m) => m.id)).toEqual(['m1', 'm2']);
+    expect((await lib.listMaps()).map((m) => m.id)).toEqual(['m2', 'm1']);
+    // Same again for revisions: insertion order is oldest-first.
     const revs = await lib.listRevisions('m1');
     expect(revs.map((r) => r.savedAt)).toEqual([
-      Date.parse('2026-07-15T12:00:00Z'),
+      Date.parse('2026-07-15T11:00:00Z'),
       Date.parse('2026-07-15T10:00:00Z'),
     ]);
   });

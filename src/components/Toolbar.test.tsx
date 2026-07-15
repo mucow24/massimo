@@ -481,6 +481,27 @@ describe('Toolbar — Load', () => {
     expect(setCurrentMapId).toHaveBeenLastCalledWith(null);
   });
 
+  /**
+   * Adopting records the adopted bytes as the dedup baseline. Without that, an
+   * unedited file-loaded doc is copied into the library on the very next
+   * switch — so browsing N files deposits N-1 junk maps that nothing dedupes
+   * (names may repeat) and nothing prunes (the cap is per-map).
+   */
+  it('does not deposit a copy of a file that was loaded and never edited', async () => {
+    const user = userEvent.setup();
+    seedOutgoing();
+    render(<Toolbar />);
+    fireEvent.change(fileInput(), { target: { files: [validFile()] } });
+    await waitFor(() => expect(useDoc.getState().stations.fromfile).toBeDefined());
+    expect(saveRevision).toHaveBeenCalledTimes(1); // the OUTGOING doc, correctly
+
+    await user.click(screen.getByRole('button', { name: 'Canvas' }));
+    await user.click(screen.getByRole('menuitem', { name: 'New' }));
+    await waitFor(() => expect(Object.keys(useDoc.getState().stations)).toHaveLength(0));
+    // Still just the outgoing doc's revision — the untouched file was not copied.
+    expect(saveRevision).toHaveBeenCalledTimes(1);
+  });
+
   it('writes no auto-save for a file that fails to parse', async () => {
     seedOutgoing();
     render(<Toolbar />);
