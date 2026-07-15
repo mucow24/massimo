@@ -15,14 +15,16 @@ export interface RegionModeOverlayProps {
    */
   layer: 'outlines' | 'hit';
   onHover?: (key: string | null) => void;
-  onFaceClick?: (faceIndex: number, dir: 1 | -1) => void;
+  onFaceClick?: (faceIndex: number, dir: 1 | -1, flood: boolean) => void;
 }
 
 /**
  * Layering-mode chrome for region painting: dashed outlines mark every
  * clickable overlap face; hovering halos one; clicking cycles which covering
- * line paints it (handled by the owner via onFaceClick). Export-excluded by
- * the mount site. Strokes use non-scaling-stroke so they read at any zoom.
+ * line paints it (handled by the owner via onFaceClick). Right-click cycles
+ * backward; shift is an orthogonal modifier that floods the new winner out to
+ * neighbouring faces. Export-excluded by the mount site. Strokes use
+ * non-scaling-stroke so they read at any zoom.
  */
 export const RegionModeOverlay = memo(function RegionModeOverlay({
   faces,
@@ -93,12 +95,12 @@ export const RegionModeOverlay = memo(function RegionModeOverlay({
               onPointerLeave={() => onHover?.(null)}
               onClick={(e) => {
                 e.stopPropagation();
-                onFaceClick?.(i, e.shiftKey ? -1 : 1);
+                onFaceClick?.(i, 1, e.shiftKey);
               }}
               onContextMenu={(e) => {
                 e.preventDefault();
                 e.stopPropagation();
-                onFaceClick?.(i, -1);
+                onFaceClick?.(i, -1, e.shiftKey);
               }}
             />
           </g>

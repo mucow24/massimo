@@ -414,8 +414,15 @@ All remaining fields optional and **never stored at default**:
 overlap, the planar arrangement's faces are derived live (`lineRegions.buildOverlapRegions`,
 clipper-backed via `clip.ts`, cached in `regionCache.ts`); each face shows one covering line —
 by default the `lineOrder` front-most, overridable per face via `MapDoc.regionAssignments`
-(Layering mode, `L`: click a face to cycle, shift/right-click backward, landing on the default
-deletes). An assignment is anchored IN THE LINES' OWN FRAME (`RegionAnchor`: arc position +
+(Layering mode, `L`: click a face to cycle, right-click backward, landing on the default
+deletes). Holding **shift** floods the new winner out to neighbouring faces
+(`lineRegions.regionFloodTargets`) — one click carries a line over a whole crossing instead of
+one window pane at a time. The flood walks faces that touch (within `REGION_ADJACENCY_TOL`;
+band stripes are built mutually tangent, so a line crossing a trunk yields panes that abut
+along each stripe seam), and stops at any face that either can't legally show the target (it
+isn't in the cover) or already shows it — the latter is what keeps a flood from running away
+along a line's whole length. All of it writes through the list-taking `assignRegions` so a
+flood costs exactly one undo. An assignment is anchored IN THE LINES' OWN FRAME (`RegionAnchor`: arc position +
 side offset per covering line) and is carried across every geometry edit by
 `regionReconcile.ts` — rebinding by nearest-compatible face (survives drags/teleports),
 duplicating onto split halves, resolving merges by largest old face, going dormant when its

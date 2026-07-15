@@ -61,7 +61,7 @@ describe('<RegionModeOverlay>', () => {
     expect(target!.getAttribute('data-line-ids')).toBe('l1,l2');
   });
 
-  it('cycles forward on click, backward on shift-click and right-click', () => {
+  it('cycles forward on click and backward on right-click, flooding when shift is held', () => {
     const faces = crossFaces();
     const onFaceClick = vi.fn();
     const { container } = render(
@@ -71,12 +71,16 @@ describe('<RegionModeOverlay>', () => {
     );
     const target = container.querySelector('[data-region-target]')!;
     fireEvent.click(target);
-    expect(onFaceClick).toHaveBeenLastCalledWith(0, 1);
+    expect(onFaceClick).toHaveBeenLastCalledWith(0, 1, false);
+    // Shift is the flood modifier, orthogonal to direction — it does NOT
+    // reverse the cycle (right-click is the way to that).
     fireEvent.click(target, { shiftKey: true });
-    expect(onFaceClick).toHaveBeenLastCalledWith(0, -1);
+    expect(onFaceClick).toHaveBeenLastCalledWith(0, 1, true);
     fireEvent.contextMenu(target);
-    expect(onFaceClick).toHaveBeenLastCalledWith(0, -1);
-    expect(onFaceClick).toHaveBeenCalledTimes(3);
+    expect(onFaceClick).toHaveBeenLastCalledWith(0, -1, false);
+    fireEvent.contextMenu(target, { shiftKey: true });
+    expect(onFaceClick).toHaveBeenLastCalledWith(0, -1, true);
+    expect(onFaceClick).toHaveBeenCalledTimes(4);
   });
 
   it('reports hover enter/leave with the face key', () => {
