@@ -11,7 +11,7 @@ beforeEach(() => {
 
 describe('svg images participate in document history', () => {
   it('undo removes an added svg image', () => {
-    // Behavioral guard on the DOC_FIELDS wiring: if svgImages/svgImageOrder are
+    // Behavioral guard on the DOC_FIELDS wiring: if svgImages/backgroundOrder are
     // not part of the tracked document snapshot, the change is invisible to
     // beginHistoryGroup's equality check, no history entry is pushed, and undo
     // is a no-op — so the image would survive the undo.
@@ -19,21 +19,21 @@ describe('svg images participate in document history', () => {
     const group = beginHistoryGroup();
     useDoc.setState((s) => ({
       svgImages: { ...s.svgImages, i0: img },
-      svgImageOrder: [...s.svgImageOrder, 'i0'],
+      backgroundOrder: [...s.backgroundOrder, 'i0'],
     }));
     group.commit();
     expect(useDoc.getState().svgImages.i0).toBeDefined();
 
     undo();
     expect(useDoc.getState().svgImages.i0).toBeUndefined();
-    expect(useDoc.getState().svgImageOrder).toEqual([]);
+    expect(useDoc.getState().backgroundOrder).toEqual([]);
   });
 });
 
 describe('svg-image store actions', () => {
   it('duplicateSvgImage offsets the center by the drop offset and drops the lock', () => {
     const img = makeSvgImage({ id: 'i0', x: 0, y: 0, locked: true });
-    useDoc.setState({ svgImages: { i0: img }, svgImageOrder: ['i0'] });
+    useDoc.setState({ svgImages: { i0: img }, backgroundOrder: ['i0'] });
     const newId = useDoc.getState().duplicateSvgImage('i0');
     expect(newId).not.toBeNull();
     if (!newId) return;
@@ -42,13 +42,13 @@ describe('svg-image store actions', () => {
     expect(copy.y).toBe(15);
     expect(copy.locked).toBeUndefined();
     // Both originals + copy are in the paint order.
-    expect(useDoc.getState().svgImageOrder).toEqual(['i0', newId]);
+    expect(useDoc.getState().backgroundOrder).toEqual(['i0', newId]);
   });
 
   it('rotateSvgImage45 steps the rotation by 45° and normalizes', () => {
     useDoc.setState({
       svgImages: { i0: makeSvgImage({ id: 'i0', rotation: 340 }) },
-      svgImageOrder: ['i0'],
+      backgroundOrder: ['i0'],
     });
     useDoc.getState().rotateSvgImage45('i0');
     expect(useDoc.getState().svgImages.i0.rotation).toBe(25); // 340 + 45 = 385 → 25

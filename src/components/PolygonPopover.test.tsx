@@ -23,7 +23,7 @@ beforeEach(() => {
     ...useDoc.getState(),
     ...DEFAULT_DOC,
     polygons: { p0: makePolygon({ id: 'p0', fill: '#112233', stroke: '#445566', strokeWidth: 2 }) },
-    polygonOrder: ['p0'],
+    backgroundOrder: ['p0'],
   });
 });
 
@@ -102,7 +102,7 @@ describe('<PolygonPopover />', () => {
           darkStroke: '#99aabb',
         }),
       },
-      polygonOrder: ['p0'],
+      backgroundOrder: ['p0'],
     });
     renderPopover();
     expect(await openColorField(user, 'Dark mode color')).toHaveValue('#778899');
@@ -256,13 +256,13 @@ describe('<PolygonPopover />', () => {
     useDoc.setState({
       ...useDoc.getState(),
       polygons: { p0: makePolygon({ id: 'p0' }), p1: makePolygon({ id: 'p1' }) },
-      polygonOrder: ['p0', 'p1'],
+      backgroundOrder: ['p0', 'p1'],
     });
     renderPopover();
     fireEvent.click(screen.getByRole('button', { name: 'Move polygon up' }));
-    expect(useDoc.getState().polygonOrder).toEqual(['p1', 'p0']); // p0 now on top
+    expect(useDoc.getState().backgroundOrder).toEqual(['p1', 'p0']); // p0 now on top
     fireEvent.click(screen.getByRole('button', { name: 'Move polygon down' }));
-    expect(useDoc.getState().polygonOrder).toEqual(['p0', 'p1']);
+    expect(useDoc.getState().backgroundOrder).toEqual(['p0', 'p1']);
   });
 
   it('the Closed checkbox is checked by default and unchecking writes closed: false', () => {
@@ -277,7 +277,7 @@ describe('<PolygonPopover />', () => {
     useDoc.setState({
       ...useDoc.getState(),
       polygons: { p0: makePolygon({ id: 'p0', closed: false }) },
-      polygonOrder: ['p0'],
+      backgroundOrder: ['p0'],
     });
     renderPopover();
     const box = screen.getByRole('checkbox', { name: 'Closed' });
@@ -290,7 +290,7 @@ describe('<PolygonPopover />', () => {
     useDoc.setState({
       ...useDoc.getState(),
       polygons: { p0: makePolygon({ id: 'p0', closed: false }) },
-      polygonOrder: ['p0'],
+      backgroundOrder: ['p0'],
     });
     renderPopover();
     // Fill has no effect on a stroke-only shape.
@@ -308,7 +308,7 @@ describe('<PolygonPopover />', () => {
     useDoc.setState({
       ...useDoc.getState(),
       polygons: { p0: makePolygon({ id: 'p0', locked: true }) },
-      polygonOrder: ['p0'],
+      backgroundOrder: ['p0'],
     });
     renderPopover();
     expect(screen.getByRole('checkbox', { name: 'Closed' })).toBeDisabled();
@@ -324,7 +324,7 @@ describe('<PolygonPopover />', () => {
     useDoc.setState({
       ...useDoc.getState(),
       polygons: { p0: makePolygon({ id: 'p0', locked: true }) },
-      polygonOrder: ['p0'],
+      backgroundOrder: ['p0'],
     });
     renderPopover();
     expect(screen.getByRole('slider', { name: 'Stroke width' })).toBeDisabled();

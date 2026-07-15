@@ -17,7 +17,7 @@ import {
 } from '../geometry/interlining';
 import { edgeEndpoints } from '../model/lineTopology';
 import { decideSegmentClick, NEXT_STYLE } from './canvas/appendGestures';
-import { effectivePolygonOrder, effectiveSvgImageOrder, type ItemRef } from '../model/transforms';
+import { effectiveBackgroundOrder, type ItemRef } from '../model/transforms';
 import { resolveDayNight, TRANSFER_STYLE_DEFAULTS } from '../model/transferStyle';
 import { defaultStyleProps } from '../model/styles';
 import { rotateItemOnContextMenu } from './canvas/groupRotate';
@@ -128,11 +128,10 @@ export function MapCanvas() {
   const textLabels = useDoc((s) => s.textLabels);
   const rotateTextLabel = useDoc((s) => s.rotateTextLabel);
   const polygons = useDoc((s) => s.polygons);
-  const polygonOrder = useDoc((s) => s.polygonOrder);
+  const backgroundOrder = useDoc((s) => s.backgroundOrder);
   const rotatePolygon = useDoc((s) => s.rotatePolygon);
   const regionAssignments = useDoc((s) => s.regionAssignments);
   const svgImages = useDoc((s) => s.svgImages);
-  const svgImageOrder = useDoc((s) => s.svgImageOrder);
   const rotateSvgImage45 = useDoc((s) => s.rotateSvgImage45);
   const selection = useSelection();
   const snapModes = useSnapPrefs((s) => s.modes);
@@ -196,15 +195,11 @@ export function MapCanvas() {
   const labelSelectedIds = rectSelect.previewLabelIds ?? selection.selectedLabelIds;
   const polygonSelectedIds = rectSelect.previewPolygonIds ?? selection.selectedPolygonIds;
   const svgImageSelectedIds = rectSelect.previewSvgImageIds ?? selection.selectedSvgImageIds;
-  // Paint order for polygon bodies (later = on top, among polygons only).
-  const polygonRenderOrder = useMemo(
-    () => effectivePolygonOrder(polygons, polygonOrder),
-    [polygons, polygonOrder],
-  );
-  // Paint order for svg images — same band as polygons; later = on top.
-  const svgImageRenderOrder = useMemo(
-    () => effectiveSvgImageOrder(svgImages, svgImageOrder),
-    [svgImages, svgImageOrder],
+  // Paint order for the background band: polygons and svg images share ONE
+  // stack, so either kind can sit over the other. Later = on top.
+  const backgroundRenderOrder = useMemo(
+    () => effectiveBackgroundOrder(polygons, svgImages, backgroundOrder),
+    [polygons, svgImages, backgroundOrder],
   );
   // While a click-to-place tool is active (any non-idle mode), polygon bodies
   // ignore pointer events so a canvas click places the item over them instead
@@ -1002,45 +997,43 @@ export function MapCanvas() {
           </g>
         )}
 
-        {/* Polygon bodies: painted just above the grid and below ALL map
-            content (bands, stations, dots, labels) so background shapes like
-            rivers/lakes always sit underneath everything else. Their selection
-            handles + "+" buttons render in a separate top overlay pass below. */}
-        {polygonRenderOrder.map((pid) => {
-          const poly = polygons[pid];
-          return (
-            <PolygonView
-              key={pid}
-              polygon={poly}
-              layer="body"
-              selected={polygonSelectedIds.includes(pid)}
-              selectedVertexIndices={vertexIndicesFor(pid)}
-              interactive={polygonsInteractive}
-              inHandMode={inHandMode}
-              onPointerDown={polyDrag.onPolygonPointerDown}
-              onClick={onPolygonClick}
-              onContextMenu={onPolygonContextMenu}
-              onVertexPointerDown={polyDrag.onVertexPointerDown}
-              onVertexClick={onVertexClick}
-              onEdgeAddPointerDown={polyDrag.onEdgeAddPointerDown}
-              onHoverEnter={(id) => setHover({ kind: 'polygon', id })}
-              onHoverLeave={(id) => clearHoverIf('polygon', id)}
-            />
-          );
-        })}
-
-        {/* Svg-image bodies: same band as polygons (above the grid, below ALL
-            map content), painted just on top of polygon bodies since an
-            imported graphic is usually a deliberate foreground. Their transform
-            handles render in the top overlay pass below. */}
-        {svgImageRenderOrder.map((iid) => {
-          const im = svgImages[iid];
+        {/* Background band: polygon and svg-image bodies INTERLEAVED in one
+            paint order, so a polygon can sit over an image or vice versa.
+            Painted just above the grid and below ALL map content (bands,
+            stations, dots, labels) so background shapes like rivers/lakes and
+            imported graphics always sit underneath everything else. Selection
+            handles, vertex/"+" buttons and image transform knobs render in a
+            separate top overlay pass below. */}
+        {backgroundRenderOrder.map((bid) => {
+          const poly = polygons[bid];
+          if (poly) {
+            return (
+              <PolygonView
+                key={bid}
+                polygon={poly}
+                layer="body"
+                selected={polygonSelectedIds.includes(bid)}
+                selectedVertexIndices={vertexIndicesFor(bid)}
+                interactive={polygonsInteractive}
+                inHandMode={inHandMode}
+                onPointerDown={polyDrag.onPolygonPointerDown}
+                onClick={onPolygonClick}
+                onContextMenu={onPolygonContextMenu}
+                onVertexPointerDown={polyDrag.onVertexPointerDown}
+                onVertexClick={onVertexClick}
+                onEdgeAddPointerDown={polyDrag.onEdgeAddPointerDown}
+                onHoverEnter={(id) => setHover({ kind: 'polygon', id })}
+                onHoverLeave={(id) => clearHoverIf('polygon', id)}
+              />
+            );
+          }
+          const im = svgImages[bid];
           return (
             <SvgImageView
-              key={iid}
+              key={bid}
               image={im}
               layer="body"
-              selected={svgImageSelectedIds.includes(iid)}
+              selected={svgImageSelectedIds.includes(bid)}
               interactive={polygonsInteractive}
               inHandMode={inHandMode}
               onPointerDown={svgDrag.onSvgImagePointerDown}
@@ -1555,40 +1548,46 @@ export function MapCanvas() {
             re-dispatch to the real element beneath, so SELECTION follows normal
             layer order (see rerouteProxyEventBeneath). That capture-phase
             stopPropagation also means the proxies' own onClick/onContextMenu never
-            fire — hence the no-ops. Emitted in body paint order (polygon → svg
-            image → station → bullet → label) so when two SELECTED items overlap,
-            the one painted higher still wins its grab. The polygon/svg-image
-            MANIPULATION handle passes come AFTER this layer in the SVG (they
-            paint on top and win hit-testing), so a selected item's own
-            corner/vertex handles still beat its body proxy. These iterate the
-            same preview-aware id lists as the handle overlays, harmless
-            mid-marquee since useRectSelect captures the pointer on first move.
-            Excluded from export — pure interaction chrome. */}
+            fire — hence the no-ops. Emitted in body paint order (background band
+            → station → bullet → label) so when two SELECTED items overlap, the
+            one painted higher still wins its grab. That's why the polygon/image
+            proxies walk `backgroundRenderOrder` rather than their own id lists:
+            those two kinds interleave, so a polygon selected ABOVE an image
+            must emit its proxy after the image's or the visually-lower image
+            steals the drag. The polygon/svg-image MANIPULATION handle passes
+            come AFTER this layer in the SVG (they paint on top and win
+            hit-testing), so a selected item's own corner/vertex handles still
+            beat its body proxy. These honor the same preview-aware id lists as
+            the handle overlays, harmless mid-marquee since useRectSelect
+            captures the pointer on first move. Excluded from export — pure
+            interaction chrome. */}
         <g ref={proxyLayerRef} data-export-exclude="1">
-          {polygonSelectedIds.map((pid) =>
-            polygons[pid] ? (
-              <PolygonView
-                key={pid + ':hit'}
-                polygon={polygons[pid]}
-                layer="hit"
-                selected
-                selectedVertexIndices={NO_VERTEX_INDICES}
-                interactive={polygonsInteractive}
-                inHandMode={inHandMode}
-                onPointerDown={polyDrag.onPolygonPointerDown}
-                onClick={proxyClickNoop}
-                onContextMenu={proxyClickNoop}
-                onVertexPointerDown={polyDrag.onVertexPointerDown}
-                onVertexClick={onVertexClick}
-                onEdgeAddPointerDown={polyDrag.onEdgeAddPointerDown}
-              />
-            ) : null,
-          )}
-          {svgImageSelectedIds.map((iid) =>
-            svgImages[iid] ? (
+          {backgroundRenderOrder.map((bid) => {
+            const poly = polygons[bid];
+            if (poly) {
+              return polygonSelectedIds.includes(bid) ? (
+                <PolygonView
+                  key={bid + ':hit'}
+                  polygon={poly}
+                  layer="hit"
+                  selected
+                  selectedVertexIndices={NO_VERTEX_INDICES}
+                  interactive={polygonsInteractive}
+                  inHandMode={inHandMode}
+                  onPointerDown={polyDrag.onPolygonPointerDown}
+                  onClick={proxyClickNoop}
+                  onContextMenu={proxyClickNoop}
+                  onVertexPointerDown={polyDrag.onVertexPointerDown}
+                  onVertexClick={onVertexClick}
+                  onEdgeAddPointerDown={polyDrag.onEdgeAddPointerDown}
+                />
+              ) : null;
+            }
+            const im = svgImages[bid];
+            return im && svgImageSelectedIds.includes(bid) ? (
               <SvgImageView
-                key={iid + ':hit'}
-                image={svgImages[iid]}
+                key={bid + ':hit'}
+                image={im}
                 layer="hit"
                 selected
                 interactive={polygonsInteractive}
@@ -1600,8 +1599,8 @@ export function MapCanvas() {
                 onEdgePointerDown={svgDrag.onSvgEdgePointerDown}
                 onRotatePointerDown={svgDrag.onSvgRotatePointerDown}
               />
-            ) : null,
-          )}
+            ) : null;
+          })}
           {washIds.map((sid) =>
             stations[sid] && !stations[sid].locked ? (
               <StationView

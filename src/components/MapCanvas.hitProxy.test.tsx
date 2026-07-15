@@ -69,9 +69,8 @@ function seedAll() {
       lines: { L1: makeLine({ id: 'L1', stations: ['s1'] }) },
       lineOrder: ['L1'],
       polygons: { p0: makePolygon({ id: 'p0' }) },
-      polygonOrder: ['p0'],
       svgImages: { i0: makeSvgImage({ id: 'i0' }) },
-      svgImageOrder: ['i0'],
+      backgroundOrder: ['p0', 'i0'],
       routeBullets: { b1: bullet },
       textLabels: { g1: makeTextLabel({ id: 'g1', text: 'Midtown' }) },
     });
@@ -186,7 +185,7 @@ describe('MapCanvas — selected-item hit proxies win pointer hit-testing', () =
       useDoc.setState({
         ...useDoc.getState(),
         polygons: { p0: makePolygon({ id: 'p0', locked: true }) },
-        polygonOrder: ['p0'],
+        backgroundOrder: ['p0'],
       });
     });
     act(() => useSelection.getState().setPolygonSelection(['p0']));

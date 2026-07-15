@@ -356,7 +356,7 @@ describe('useItemDrag — group drag tows every selected item type', () => {
           ],
         }),
       },
-      polygonOrder: ['p1'],
+      backgroundOrder: ['p1'],
     });
     setModes({ line: false, all: 'off', grid: 'off' });
     resetSelection({

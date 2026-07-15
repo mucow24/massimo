@@ -60,7 +60,7 @@ function seed() {
       lines: { L1: makeLine({ id: 'L1', stations: ['s1', 's2'] }) },
       lineOrder: ['L1'],
       polygons: { p0: makePolygon({ id: 'p0' }) },
-      polygonOrder: ['p0'],
+      backgroundOrder: ['p0'],
     });
   });
 }

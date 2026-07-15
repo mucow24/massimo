@@ -162,7 +162,7 @@ describe('useRectSelect — preview + commit across all object types', () => {
           ],
         }),
       },
-      polygonOrder: ['p1'],
+      backgroundOrder: ['p1'],
     });
   });
 
@@ -216,7 +216,7 @@ describe('useRectSelect — a hidden network stays out of the marquee', () => {
           ],
         }),
       },
-      polygonOrder: ['p1'],
+      backgroundOrder: ['p1'],
     });
   });
 
@@ -251,7 +251,7 @@ describe('useRectSelect — alt-marquee includes locked items (recovery path)', 
     useDoc.setState({
       ...useDoc.getState(),
       polygons: { p1: makePolygon({ id: 'p1', locked: true }) },
-      polygonOrder: ['p1'],
+      backgroundOrder: ['p1'],
       textLabels: { g1: makeTextLabel({ id: 'g1', x: 0, y: 0, locked: true }) },
     });
   });

@@ -1,6 +1,6 @@
 import { autoOrientNewStation } from './autoOrient';
 import { effectiveLineOrder } from './lineOrder';
-import { reconcileOrder, moveInOrder } from './recordOrder';
+import { reconcileOrder, moveInOrder, moveToEndInOrder } from './recordOrder';
 import { LINE_WIDTH_DEFAULT, canonicalLineWidth, lineWidthOf } from './lineWidth';
 import { LINE_CURVE_RADIUS_DEFAULT, canonicalLineCurveRadius } from './lineCurve';
 import { repackStationForWidth } from './stationPacking';
@@ -2179,7 +2179,7 @@ export function addPolygon(doc: MapDoc, id: string, x: number, y: number): MapDo
   return {
     ...doc,
     polygons: { ...doc.polygons, [id]: polygon },
-    polygonOrder: [...doc.polygonOrder, id],
+    backgroundOrder: [...doc.backgroundOrder, id],
   };
 }
 
@@ -2189,7 +2189,7 @@ export function addPolygonWith(doc: MapDoc, id: string, fields: Omit<Polygon, 'i
   return {
     ...doc,
     polygons: { ...doc.polygons, [id]: polygon },
-    polygonOrder: [...doc.polygonOrder, id],
+    backgroundOrder: [...doc.backgroundOrder, id],
   };
 }
 
@@ -2306,40 +2306,64 @@ export function rotatePolygon(doc: MapDoc, id: string): MapDoc {
 export function deletePolygon(doc: MapDoc, id: string): MapDoc {
   if (!doc.polygons[id]) return doc;
   const { [id]: _gone, ...rest } = doc.polygons;
-  return { ...doc, polygons: rest, polygonOrder: doc.polygonOrder.filter((pid) => pid !== id) };
+  return {
+    ...doc,
+    polygons: rest,
+    backgroundOrder: doc.backgroundOrder.filter((bid) => bid !== id),
+  };
 }
 
 /**
- * The polygon ids in paint order: stored `polygonOrder` filtered to ones that
- * still exist, then any polygons missing from it appended (legacy saves, or a
- * race between add and order update) so nothing ever drops out. Later = on top.
+ * The background band's ids in paint order — polygons and svg images in ONE
+ * stack, so either kind can sit over the other. Stored `backgroundOrder`
+ * filtered to ids that still exist, then any record missing from it appended
+ * (legacy saves, or a race between add and order update) so nothing ever drops
+ * out. Later = on top. The append order is polygons then images, which is the
+ * stacking these two kinds had when their orders were separate arrays.
  */
-export function effectivePolygonOrder(
+export function effectiveBackgroundOrder(
   polygons: Record<string, Polygon>,
+  svgImages: Record<string, SvgImage>,
   order: string[],
 ): string[] {
-  return reconcileOrder(polygons, order);
+  return reconcileOrder({ ...polygons, ...svgImages }, order);
 }
 
-// Shift a polygon one step toward the top (`dir: +1`) or bottom (`dir: -1`) of
-// the polygon paint order. Reconciles legacy/partial order first so the swap is
-// always well-defined. No-op at the respective end.
-function movePolygonBy(doc: MapDoc, id: string, dir: 1 | -1): MapDoc {
-  if (!doc.polygons[id]) return doc;
-  const order = effectivePolygonOrder(doc.polygons, doc.polygonOrder);
-  const next = moveInOrder(order, id, dir);
+// Restack a background item — polygon OR svg image — within the shared paint
+// order, `move` deciding how far it travels. Reconciles a legacy/partial order
+// first so the move is always well-defined. No-op for an id that is neither
+// kind, and whenever `move` itself no-ops (already at the respective end) —
+// the same-reference return is what tells the caller nothing changed.
+function moveBackgroundVia(
+  doc: MapDoc,
+  id: string,
+  move: (order: string[], id: string) => string[],
+): MapDoc {
+  if (!doc.polygons[id] && !doc.svgImages[id]) return doc;
+  const order = effectiveBackgroundOrder(doc.polygons, doc.svgImages, doc.backgroundOrder);
+  const next = move(order, id);
   if (next === order) return doc;
-  return { ...doc, polygonOrder: next };
+  return { ...doc, backgroundOrder: next };
 }
 
-// Toward the top (rendered in front of the other polygons).
-export function movePolygonUp(doc: MapDoc, id: string): MapDoc {
-  return movePolygonBy(doc, id, 1);
+// One step toward the top (rendered in front of the rest of the background band).
+export function moveBackgroundUp(doc: MapDoc, id: string): MapDoc {
+  return moveBackgroundVia(doc, id, (o, i) => moveInOrder(o, i, 1));
 }
 
-// Toward the bottom (rendered behind the other polygons).
-export function movePolygonDown(doc: MapDoc, id: string): MapDoc {
-  return movePolygonBy(doc, id, -1);
+// One step toward the bottom (rendered behind the rest of the background band).
+export function moveBackgroundDown(doc: MapDoc, id: string): MapDoc {
+  return moveBackgroundVia(doc, id, (o, i) => moveInOrder(o, i, -1));
+}
+
+// All the way to the top, clearing the whole band in one click.
+export function moveBackgroundToTop(doc: MapDoc, id: string): MapDoc {
+  return moveBackgroundVia(doc, id, (o, i) => moveToEndInOrder(o, i, 1));
+}
+
+// All the way to the bottom, clearing the whole band in one click.
+export function moveBackgroundToBottom(doc: MapDoc, id: string): MapDoc {
+  return moveBackgroundVia(doc, id, (o, i) => moveToEndInOrder(o, i, -1));
 }
 
 // ---------- Svg images ----------
@@ -2364,7 +2388,7 @@ export function addSvgImage(doc: MapDoc, id: string, fields: Omit<SvgImage, 'id'
   return {
     ...doc,
     svgImages: { ...doc.svgImages, [id]: image },
-    svgImageOrder: [...doc.svgImageOrder, id],
+    backgroundOrder: [...doc.backgroundOrder, id],
   };
 }
 
@@ -2395,38 +2419,8 @@ export function deleteSvgImage(doc: MapDoc, id: string): MapDoc {
   return {
     ...doc,
     svgImages: rest,
-    svgImageOrder: doc.svgImageOrder.filter((iid) => iid !== id),
+    backgroundOrder: doc.backgroundOrder.filter((bid) => bid !== id),
   };
-}
-
-/**
- * The svg-image ids in paint order: stored `svgImageOrder` filtered to ones
- * that still exist, then any missing from it appended (legacy saves, races) so
- * nothing drops out. Later = on top. Mirrors `effectivePolygonOrder`.
- */
-export function effectiveSvgImageOrder(
-  svgImages: Record<string, SvgImage>,
-  order: string[],
-): string[] {
-  return reconcileOrder(svgImages, order);
-}
-
-function moveSvgImageBy(doc: MapDoc, id: string, dir: 1 | -1): MapDoc {
-  if (!doc.svgImages[id]) return doc;
-  const order = effectiveSvgImageOrder(doc.svgImages, doc.svgImageOrder);
-  const next = moveInOrder(order, id, dir);
-  if (next === order) return doc;
-  return { ...doc, svgImageOrder: next };
-}
-
-// Toward the top (rendered in front of the other images).
-export function moveSvgImageUp(doc: MapDoc, id: string): MapDoc {
-  return moveSvgImageBy(doc, id, 1);
-}
-
-// Toward the bottom (rendered behind the other images).
-export function moveSvgImageDown(doc: MapDoc, id: string): MapDoc {
-  return moveSvgImageBy(doc, id, -1);
 }
 
 // ---------- Transfers ----------
@@ -2656,10 +2650,9 @@ export const DEFAULT_DOC: MapDoc = {
   transfers: {},
   textLabels: {},
   polygons: {},
-  polygonOrder: [],
+  backgroundOrder: [],
   regionAssignments: {},
   svgImages: {},
-  svgImageOrder: [],
   styles: DEFAULT_STYLES,
   styleDefaults: FACTORY_STYLE_DEFAULTS,
   activePalettes: ['mta'],

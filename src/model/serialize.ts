@@ -40,6 +40,7 @@ import {
   stylePropsEqual,
 } from './styles';
 import { edgesFromStations } from './lineTopology';
+import { reconcileOrder } from './recordOrder';
 import { parseHexA, withHexAlpha } from '../util/color';
 import { migrateLegacyInlineTokens } from '../geometry/labelTokens';
 import { KNOWN_PALETTE_IDS, type Palette, type PaletteId } from './palettes';
@@ -246,7 +247,10 @@ export function parse(json: string, custom: readonly Palette[] = []): ParseResul
   // uses `labelWeight: TextLabelWeight`. Translate before merging so the
   // typed shape is clean and `labelBold` doesn't leak through.
   const rawDoc = file.doc as unknown as Record<string, unknown>;
-  const docWithMigratedWeight = migrateLegacyLabelBold(rawDoc);
+  // Also pre-migration, and for the same reason: merge the retired
+  // `polygonOrder`/`svgImageOrder` into the single `backgroundOrder` BEFORE the
+  // DEFAULT_DOC merge below fabricates an empty one (see the bake's comment).
+  const docWithMigratedWeight = bakeLegacyBackgroundOrder(migrateLegacyLabelBold(rawDoc));
   // Pre-styles saves get the factory Defaults via the merge below AND a
   // default-adoption pass at the end; a file that carries a styles record
   // keeps its explicit tag/Custom state (round-trip stability).
@@ -424,6 +428,48 @@ export function bakeDocCurveRadius<
   }
 
   return changed ? out : doc;
+}
+
+/**
+ * Merge the RETIRED `polygonOrder` + `svgImageOrder` into the single
+ * `backgroundOrder`. Polygons and svg images share one z-stack now, so either
+ * kind can sit over the other; before the merge they were two arrays painted
+ * as two blocks, which pinned every image above every polygon. Concatenating
+ * polygons-then-images reproduces that stacking exactly, so a legacy map
+ * renders unchanged. Each side is reconciled against its records first (drop
+ * dead ids, append records the order missed), and the two retired fields are
+ * dropped. Keyed off field presence (idempotent), so parse() runs it
+ * unconditionally and the localStorage rehydrate gates it at v<17. Returns the
+ * input reference untouched when there is nothing to merge — `migrateDoc` pins
+ * pass-through-by-reference for already-canonical docs.
+ *
+ * MUST run BEFORE parse()'s `{...DEFAULT_DOC, ...doc}` merge: that merge
+ * fabricates `backgroundOrder: []` for a legacy file, which is indistinguishable
+ * from a real empty one, and the "already has it" check below would then throw
+ * the legacy order away. Pre-merge, presence means the file truly carried it.
+ */
+export function bakeLegacyBackgroundOrder<
+  T extends {
+    polygons?: Record<string, unknown>;
+    svgImages?: Record<string, unknown>;
+    backgroundOrder?: string[];
+  },
+>(doc: T): T {
+  const raw = doc as Record<string, unknown>;
+  const hasLegacy = 'polygonOrder' in raw || 'svgImageOrder' in raw;
+  if (!hasLegacy) return doc;
+
+  const legacy = (key: string): string[] => (Array.isArray(raw[key]) ? (raw[key] as string[]) : []);
+  const { polygonOrder: _retiredP, svgImageOrder: _retiredI, ...rest } = raw;
+  // A doc that already carries a real backgroundOrder (a newer build's, with
+  // stale legacy keys alongside) keeps it; only the dead keys are dropped.
+  const merged = Array.isArray(raw.backgroundOrder)
+    ? (raw.backgroundOrder as string[])
+    : [
+        ...reconcileOrder(doc.polygons ?? {}, legacy('polygonOrder')),
+        ...reconcileOrder(doc.svgImages ?? {}, legacy('svgImageOrder')),
+      ];
+  return { ...rest, backgroundOrder: merged } as unknown as T;
 }
 
 // Backfill `line.name` for legacy files saved before the field existed, using
