@@ -39,6 +39,18 @@ describe('<SvgImagePopover />', () => {
     expect(useDoc.getState().svgImageOrder).toEqual(['i1', 'i0']);
   });
 
+  it('writes the opacity slider percent back as a 0..1 alpha', () => {
+    renderPopover();
+    fireEvent.change(screen.getByRole('slider', { name: 'Opacity' }), { target: { value: '40' } });
+    expect(useDoc.getState().svgImages.i0.opacity).toBe(0.4);
+  });
+
+  it('shows an image with no stored opacity as 100%', () => {
+    renderPopover();
+    expect(screen.getByRole('slider', { name: 'Opacity' })).toHaveValue('100');
+    expect(screen.getByRole('spinbutton', { name: 'Opacity' })).toHaveValue(100);
+  });
+
   it('disables layer + delete (but not unlock) when locked', () => {
     useDoc.setState({
       ...useDoc.getState(),
@@ -46,6 +58,7 @@ describe('<SvgImagePopover />', () => {
       svgImageOrder: ['i0'],
     });
     renderPopover();
+    expect(screen.getByRole('slider', { name: 'Opacity' })).toBeDisabled();
     expect(screen.getByRole('button', { name: 'Move image up' })).toBeDisabled();
     expect(screen.getByRole('button', { name: 'Move image down' })).toBeDisabled();
     expect(screen.getByRole('button', { name: 'Delete' })).toBeDisabled();

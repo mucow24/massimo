@@ -476,7 +476,12 @@ action so they never drift.
 support) — placed as an **opaque** `<image href="data:image/…;base64,…">` in the polygon band.
 `id, x, y` (world **center**), `width, height` (unrotated bbox,
 post-scale), `rotation: number` (**continuous degrees CW**, snaps to 22.5° under Shift), `href`
-(fixed at import, never edited), `locked?`. `SvgImageStylePatch` is the shared patch type.
+(fixed at import, never edited), `locked?`. Optional: `opacity?` — an SVG-native **0..1** alpha
+clamped at both ends, painted onto the `<image>`'s `opacity` attribute; missing ⇒ 1 (fully
+opaque) and the attribute is omitted, so an untouched image's exported markup is unchanged. The
+popover slider trades in whole **percent** (the doc stores the alpha). Only the artwork fades —
+selection chrome and the hit area are unaffected, so a 0% image is still clickable.
+`SvgImageStylePatch` is the shared patch type.
 
 **`TextLabel`** — a free-floating, rotatable text annotation rendered **on top** of the map.
 `id, x, y` (center), `rotation: Rotation`, `text` (multiline `\n`), `fontSize` (floored at

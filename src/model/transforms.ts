@@ -2344,6 +2344,19 @@ export function movePolygonDown(doc: MapDoc, id: string): MapDoc {
 
 // ---------- Svg images ----------
 
+// Image opacity is an SVG-native 0..1 alpha (the popover slider trades in
+// percent). Missing ⇒ SVG_IMAGE_OPACITY_DEFAULT = fully opaque. Size clamping
+// lives in geometry/svgImage.ts because the resize gestures share it; opacity
+// is presentation only, so it stays here.
+export const SVG_IMAGE_OPACITY_MIN = 0;
+export const SVG_IMAGE_OPACITY_MAX = 1;
+export const SVG_IMAGE_OPACITY_DEFAULT = 1;
+
+// Clamps at BOTH ends (unlike the polygon widths, whose spinbuttons run past
+// the slider): an alpha outside 0..1 has no meaning to render.
+const clampSvgImageOpacity = (o: number): number =>
+  Math.min(SVG_IMAGE_OPACITY_MAX, Math.max(SVG_IMAGE_OPACITY_MIN, o));
+
 // Insert a fully-specified imported svg image. Used by the placement drop and
 // by duplicate/paste (the store actions supply all fields).
 export function addSvgImage(doc: MapDoc, id: string, fields: Omit<SvgImage, 'id'>): MapDoc {
@@ -2362,6 +2375,9 @@ export function updateSvgImage(doc: MapDoc, id: string, patch: SvgImageStylePatc
     if (typeof next.height === 'number') next = { ...next, height: clampSvgImageSize(next.height) };
     if (typeof next.rotation === 'number') {
       next = { ...next, rotation: normalizeRotation(next.rotation) };
+    }
+    if (typeof next.opacity === 'number') {
+      next = { ...next, opacity: clampSvgImageOpacity(next.opacity) };
     }
     return { ...cur, ...next };
   });

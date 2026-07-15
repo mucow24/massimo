@@ -59,6 +59,19 @@ describe('<SvgImageView /> body', () => {
     expect(img.getAttribute('y')).toBe('-20');
   });
 
+  it('paints the body image at its opacity, and omits the attribute when unset', () => {
+    const { container } = renderView(makeSvgImage({ id: 'i0', opacity: 0.35 }));
+    expect(
+      container.querySelector('g[data-svg-image-id="i0"] image')?.getAttribute('opacity'),
+    ).toBe('0.35');
+    // Absent ⇒ fully opaque: no attribute at all, so the export SVG of an
+    // untouched image stays byte-identical.
+    const plain = renderView(makeSvgImage({ id: 'i1' }));
+    expect(
+      plain.container.querySelector('g[data-svg-image-id="i1"] image')?.hasAttribute('opacity'),
+    ).toBe(false);
+  });
+
   it('disables pointer events on the image when not interactive (placement fall-through)', () => {
     const { container } = renderView(makeSvgImage({ id: 'i0' }), { interactive: false });
     const img = container.querySelector('g[data-svg-image-id="i0"] image') as Element;
