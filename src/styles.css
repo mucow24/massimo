@@ -1613,6 +1613,121 @@ input[type='range'].indeterminate {
   font-style: italic;
 }
 
+/* The toolbar's inline message: an export/save failure, or a save confirmation.
+   One element, two kinds — the role stays "alert" for both and only the color
+   and icon change. */
+.menu-status {
+  color: var(--danger);
+  margin-left: 8px;
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  cursor: pointer;
+}
+.menu-status.info {
+  color: var(--text-muted);
+}
+
+/* Map library dialog. NOTE: no bare `.toast`/`.row` selectors here — the canvas
+   warning toasts are `.warning-toasts .toast`, and an unscoped class would leak
+   straight into them. */
+.map-library-backdrop {
+  position: fixed;
+  inset: 0;
+  background: rgb(0 0 0 / 35%);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 50;
+}
+.map-library {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  box-shadow: 0 8px 32px rgb(0 0 0 / 25%);
+  width: min(880px, 90vw);
+  height: min(560px, 85vh);
+  display: flex;
+  flex-direction: column;
+}
+.map-library header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 8px 12px;
+  border-bottom: 1px solid var(--border-soft);
+}
+.map-library header h2 {
+  margin: 0;
+  font-size: 14px;
+}
+.map-library-error {
+  color: var(--danger);
+  padding: 6px 12px;
+}
+.map-library-columns {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  flex: 1;
+  min-height: 0;
+}
+.map-library-maps {
+  overflow-y: auto;
+  border-right: 1px solid var(--border-soft);
+}
+.map-library-revisions {
+  overflow-y: auto;
+}
+.map-row,
+.revision-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 6px 12px;
+  border-bottom: 1px solid var(--border-soft);
+}
+.map-row {
+  cursor: pointer;
+}
+.map-row.selected {
+  background: var(--accent-bg);
+}
+.map-row-body {
+  display: flex;
+  flex-direction: column;
+  flex: 1;
+  min-width: 0;
+  gap: 2px;
+}
+.map-row-meta {
+  color: var(--text-muted);
+  font-size: 11px;
+}
+.map-row-actions {
+  display: flex;
+  gap: 4px;
+}
+.map-row-actions .danger {
+  color: var(--danger);
+  border-color: var(--danger);
+}
+.map-thumb {
+  width: 64px;
+  height: 48px;
+  object-fit: contain;
+  border: 1px solid var(--border-soft);
+  flex: none;
+}
+.map-thumb-blank {
+  background: var(--border-soft);
+}
+.revision-source {
+  color: var(--text-muted);
+  font-size: 11px;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+
 /* Styles panel (sidebar): an expanded style row's editor body — the style's
    parameters as direct controls, reusing the popovers' row idioms. Indented
    under its row and closed off with a hairline so consecutive rows read

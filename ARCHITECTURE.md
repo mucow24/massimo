@@ -150,6 +150,7 @@ src/
     viewportStore.ts            # useViewportStore (committed) + useLiveViewportStore (in-flight)
     theme.ts                    # themeColors(darkMode) table (no store; reads viewportStore)
     customPalettes.ts           # useCustomPalettes: imported palettes (global localStorage)
+    mapLibrary.ts               # saved maps + revisions in IndexedDB (no store; opaque JSON)
     snapPrefs.ts                # useSnapPrefs: snap toggles (+ v0→v1 migration)
     labelEditorPrefs.ts         # useLabelEditorPrefs: text-label editor UI prefs (wrapText)
     stationNames.ts             # random station-name word lists
@@ -159,6 +160,7 @@ src/
     Station*/Stop*/Label*/...   # per-entity SVG views (see Rendering section)
     selectionStyle.ts           # shared selection stroke/dash/wash constants (screen-px; ÷ zoom)
     Toolbar.tsx Sidebar.tsx Menu.tsx  # chrome
+    MapLibraryDialog.tsx        # the library manager (maps | revisions)
     *Popover.tsx                # on-canvas item editors
     canvas/                     # interaction layer: drag/placement/viewport hooks + overlay layers
     inspector/                  # LineInspector (sidebar; identity + line-style fields — stop/topology
@@ -631,18 +633,69 @@ custom ids.
 
 ### Save / startup
 
-- **Save** = `serialize(pickDocSnapshot(state))` → `${basename}.massimo.json`. `serialize` does
-  **no** sanitization (writers are canonical by construction; transforms maintain canonical form
-  on every set).
+- **Export → JSON** = `serialize(pickDocSnapshot(state))` → `${basename}.massimo.json`. A
+  download is an export; **Save revision** writes to the library instead. `serialize` does **no**
+  sanitization (writers are canonical by construction; transforms maintain canonical form on every
+  set).
 - **Startup**: no explicit load in `App.tsx` — zustand `persist` rehydrates from localStorage on
   boot, running `migrateDoc`.
-- **Manual Load…**: `parse(text, customPalettes)` then `loadDoc(doc)` (`set({ ...DEFAULT_DOC,
-...doc })`) and `clearHistory()` — which cancels any open history group _and_ wipes both undo/redo
-  stacks (undo must not cross a file load), deliberately more than a bare `temporal.clear()`.
+- **Load → JSON…**: `parse(text, customPalettes)` then `adoptParsedDoc()` (below).
 - File basename: `${sanitizedName} - YYYY-MM-DD` (e.g. `My Subway Map - 2026-07-01`), shared by
-  save + export via `mapFileBasename` ([exportCanvas.ts](src/export/exportCanvas.ts)). The map
+  every export via `mapFileBasename` ([exportCanvas.ts](src/export/exportCanvas.ts)). The map
   name leads so successive saves group together; it falls back to the literal `map` only when the
   name is empty or all-illegal after stripping filename-hostile characters.
+
+### The map library ([mapLibrary.ts](src/state/mapLibrary.ts))
+
+In-app saved maps with revision history, in **IndexedDB** (`massimo-library`, v1). Reached via
+Canvas → Save revision and Canvas → Load → From library…
+
+- **A row IS a file.** The three stores hold opaque `serialize()` output, verbatim; loading goes
+  through `parse()`. The module imports nothing from the model and knows nothing about `MapDoc` —
+  so this is **not** a third ingestion path. Storing the structured object instead would bypass the
+  version envelope (IndexedDB structured-clones, so the temptation is real).
+- **Schema**: `maps` (keyPath `id`; name + updatedAt) · `revisions` (autoIncrement `id`, index
+  `mapId`; savedAt, `source: 'user'|'auto'`, thumb) · `payloads` (`id` === revision id; the JSON).
+  Payloads are split off so listing never drags 256 KB/map through a clone.
+- **Keyed by a minted library id**, never by name — **two maps may share a name**, and a rename
+  can't orphan history. The id lives **outside** the doc, in
+  `localStorage['massimo-library-current']`: no `MapDoc` schema change, and a downloaded file
+  carries no id, so load-file → save-to-library forks a **new** map (as re-uploading a downloaded
+  doc would). `setCurrentMapId(null)` must `removeItem` — `setItem(k, null)` stores the *string*
+  `"null"`, which is truthy and survives `??`.
+- **Promises settle on the transaction, never on a request.** The revision id appears at the `add`
+  request's `onsuccess`, which is where one reaches for `resolve` — but the transaction has not
+  committed there, so a quota abort would be reported as a successful save and New would wipe a doc
+  whose revision does not exist. `saveRevision` resolves on `tx.oncomplete`, rejects on
+  `onabort`/`onerror`. Pinned by a test that drives a real abort.
+- **100 revisions/map**, oldest pruned with their payloads inside the same transaction.
+
+### Document switches: `adoptParsedDoc` + `autoSaveCurrent` ([Toolbar.tsx](src/components/Toolbar.tsx))
+
+Every path that replaces the live document — **New**, Load → JSON…, Load → From library — goes
+through both, so none can drift:
+
+- `adoptParsedDoc(doc)`: selection resets → `loadDoc(doc)` → `clearHistory()` (which cancels any
+  open history group _and_ wipes both stacks — undo must not splice two different documents,
+  deliberately more than a bare `temporal.clear()`) → `fitCameraToDoc(doc)` falling back to the
+  origin whenever the fit declines → record the doc's bytes as the dedup baseline.
+- `autoSaveCurrent()`: writes an `'auto'` revision first. **Nothing that replaces the document may
+  lose it.** It **throws** on storage failure and every caller aborts its switch — the auto-save is
+  the whole backstop for New, which is not undoable.
+  - The content gate is `serialize(...) === EMPTY_DOC_JSON` — an exact byte compare covering every
+    `DOC_FIELDS` entry by construction, so a new field is covered the day it is added. **Do not**
+    substitute `computeContentBounds`: that is a *camera hull* which reads 5 of them and omits
+    lines deliberately, so a map whose work is entirely lines would read as empty, write nothing,
+    and be wiped. Three clicks away (Add line ×2, Esc).
+  - The dedup gate compares against a **retained baseline** (the bytes last saved or adopted), not
+    a DB read: id-keyed dedup is structurally inapplicable on the file-load path, which nulls the
+    id. Not a dirty flag — a flag reads *clean* after a refresh, which loses data; a null baseline
+    reads dirty, costing at most one redundant revision.
+- **Clear** is the exception: it stays in the *same* document, so it neither auto-saves nor clears
+  history (Ctrl+Z is the backstop), and `clearAll` preserves name/styles/styleDefaults/
+  activePalettes/seamEdges.
+- Known gap: work that lives only in the undo stack (Clear → New) is lost — the gate sees an empty
+  doc and `clearHistory()` then discards the stack. Pre-existing in kind.
 
 ### IDs
 
@@ -1282,7 +1335,8 @@ band routing or the marker sort. Pinned by `MapCanvas.stationsSig.test.tsx`.
 
 ## UI chrome
 
-- **[Toolbar.tsx](src/components/Toolbar.tsx)** — file menu (Save/Load/Export), Add-item menu
+- **[Toolbar.tsx](src/components/Toolbar.tsx)** — Canvas menu (New / Save revision /
+  Load → {JSON…, From library…} / Export → {PNG, SVG, PDF, JSON} / Clear), Add-item menu
   (toggles `uiMode`; includes **Image / SVG…** — imports `.svg`, `.png`, or `.jpg/.jpeg` via
   `svgImport.ts` into an `SvgImage`), tool buttons (arrow/hand), grid-size + grid-visible +
   dark-mode toggles; embeds `SnapToggleBar`, `OptionsPopover`, and the **`?` `HelpPopover`**

@@ -12,28 +12,61 @@ vi.mock('../export/exportCanvas', async (importOriginal) => {
     ...actual,
     downloadBlob: vi.fn(),
     getCanvasSvg: vi.fn(),
+    captureThumbnail: vi.fn(async () => 'data:image/png;base64,THUMB'),
     exportCanvasSvg: vi.fn(async () => {}),
     exportCanvasPng: vi.fn(async () => {}),
   };
 });
 
+/**
+ * WHOLESALE, not the importOriginal partial this file uses elsewhere: jsdom has
+ * no indexedDB, so a partial mock would leave the real getPayload/listRevisions
+ * reachable from the Toolbar and die on a ReferenceError rather than a useful
+ * assertion.
+ *
+ * The current-map pointer is a stateful fake, not a constant-returning vi.fn():
+ * "the second save reuses the id the first one set" is unobservable otherwise.
+ */
+const libState = vi.hoisted(() => ({ current: null as string | null, minted: 0 }));
+vi.mock('../state/mapLibrary', () => ({
+  saveRevision: vi.fn(async () => 1),
+  listMaps: vi.fn(async () => []),
+  listRevisions: vi.fn(async () => []),
+  getPayload: vi.fn(async () => undefined),
+  renameMap: vi.fn(async () => {}),
+  deleteMap: vi.fn(async () => {}),
+  deleteRevision: vi.fn(async () => {}),
+  newMapId: vi.fn(() => `minted-${++libState.minted}`),
+  getCurrentMapId: vi.fn(() => libState.current),
+  setCurrentMapId: vi.fn((id: string | null) => {
+    libState.current = id;
+  }),
+}));
+
 import { Toolbar } from './Toolbar';
 import {
   downloadBlob,
   getCanvasSvg,
+  captureThumbnail,
   exportCanvasSvg,
   exportCanvasPng,
 } from '../export/exportCanvas';
+import { saveRevision, newMapId, setCurrentMapId, getPayload } from '../state/mapLibrary';
 import { useDoc, useSelection } from '../state/store';
 import { useViewportStore } from '../state/viewportStore';
 import { DEFAULT_DOC } from '../model/transforms';
+import { pickDocSnapshot } from '../state/store';
 import { serialize } from '../model/serialize';
+import { historyDepth } from '../state/history';
 import { computeContentBounds } from '../geometry/contentBounds';
 import { fitViewport } from './canvas/viewportMath';
 import { makeDoc, makeLine, makeStation, makeStop, stationWithStop } from '../test/fixtures';
 import type { LineId, StationId } from '../model/types';
 
 beforeEach(() => {
+  localStorage.clear();
+  libState.current = null;
+  libState.minted = 0;
   useDoc.setState({ ...useDoc.getState(), ...DEFAULT_DOC });
   useSelection.setState({
     ...useSelection.getState(),
@@ -57,7 +90,22 @@ beforeEach(() => {
   vi.mocked(getCanvasSvg).mockReset();
   vi.mocked(exportCanvasSvg).mockClear();
   vi.mocked(exportCanvasPng).mockClear();
+  vi.mocked(captureThumbnail).mockClear();
+  vi.mocked(captureThumbnail).mockResolvedValue('data:image/png;base64,THUMB');
+  vi.mocked(saveRevision).mockClear();
+  vi.mocked(saveRevision).mockResolvedValue(1);
+  vi.mocked(newMapId).mockClear();
+  vi.mocked(setCurrentMapId).mockClear();
+  vi.mocked(getPayload).mockClear();
 });
+
+/**
+ * A canvas stand-in real enough to be cloned — captureExportSnapshot calls
+ * cloneNode on it, so an object literal would throw and be swallowed as "no
+ * thumbnail", quietly defeating any assertion about the thumb.
+ */
+const mountableSvg = () =>
+  document.createElementNS('http://www.w3.org/2000/svg', 'svg') as SVGSVGElement;
 
 describe('Toolbar — tool + view toggles', () => {
   it('switches to hand mode and back to arrow', async () => {
@@ -306,11 +354,14 @@ describe('Toolbar — Add menu', () => {
 });
 
 describe('Toolbar — Canvas menu', () => {
-  it('Save serializes and triggers a download', async () => {
+  it('Export → JSON serializes and triggers a download', async () => {
     const user = userEvent.setup();
     render(<Toolbar />);
     await user.click(screen.getByRole('button', { name: 'Canvas' }));
-    await user.click(screen.getByRole('menuitem', { name: 'Save' }));
+    await user.click(screen.getByRole('menuitem', { name: 'Export' }));
+    // The leaf flyout is hover-driven; userEvent's pointer movement tears it
+    // down before the click lands, so fire the click directly on the leaf.
+    fireEvent.click(screen.getByRole('menuitem', { name: 'JSON' }));
     expect(downloadBlob).toHaveBeenCalledTimes(1);
   });
 
@@ -318,6 +369,7 @@ describe('Toolbar — Canvas menu', () => {
     const user = userEvent.setup();
     useDoc.setState({
       ...useDoc.getState(),
+      name: 'My Map',
       lines: { L1: makeLine({ id: 'L1' as LineId, stations: ['S'] as StationId[] }) },
       lineOrder: ['L1' as LineId],
       stations: { S: stationWithStop('S' as StationId, 'L1' as LineId, { x: 0, y: 0 }) },
@@ -328,6 +380,15 @@ describe('Toolbar — Canvas menu', () => {
     await user.click(screen.getByRole('menuitem', { name: 'Clear' }));
     expect(Object.keys(useDoc.getState().stations)).toHaveLength(0);
     expect(useSelection.getState().selectedStationIds).toHaveLength(0);
+    // Clear stays in the same document: the title survives, and so does undo.
+    // (The no-dialog and undo pins guard the ABSENCE of an earlier design that
+    // put Clear behind a confirm and made it non-undoable.)
+    expect(useDoc.getState().name).toBe('My Map');
+    expect(screen.queryByRole('dialog')).toBeNull();
+    expect(historyDepth()).toBeGreaterThan(0);
+    expect(saveRevision).not.toHaveBeenCalled();
+    useDoc.temporal.getState().undo();
+    expect(Object.keys(useDoc.getState().stations)).toHaveLength(1);
   });
 });
 
@@ -402,6 +463,286 @@ describe('Toolbar — Load', () => {
     // No error surfaced, and undo history was cleared by the load.
     expect(screen.queryByRole('alert')).toBeNull();
     expect(useDoc.temporal.getState().pastStates.length).toBe(0);
+  });
+
+  const validFile = () =>
+    new File(
+      [
+        serialize(
+          makeDoc({
+            name: 'From File',
+            stations: [makeStation({ id: 'fromfile', stops: [makeStop('L1')] })],
+            lines: [makeLine({ id: 'L1', stations: ['fromfile'] })],
+          }),
+        ),
+      ],
+      'map.massimo.json',
+      { type: 'application/json' },
+    );
+
+  const seedOutgoing = () =>
+    useDoc.setState({
+      ...useDoc.getState(),
+      name: 'Outgoing',
+      lines: { L9: makeLine({ id: 'L9' as LineId, stations: ['S9'] as StationId[] }) },
+      lineOrder: ['L9' as LineId],
+      stations: { S9: stationWithStop('S9' as StationId, 'L9' as LineId, { x: 0, y: 0 }) },
+    });
+
+  it('auto-saves the outgoing doc before adopting a file, and drops the library id', async () => {
+    seedOutgoing();
+    render(<Toolbar />);
+    fireEvent.change(fileInput(), { target: { files: [validFile()] } });
+    await waitFor(() => expect(useDoc.getState().stations.fromfile).toBeDefined());
+    expect(saveRevision).toHaveBeenCalledTimes(1);
+    expect(vi.mocked(saveRevision).mock.calls[0][1]).toBe('Outgoing');
+    expect(vi.mocked(saveRevision).mock.calls[0][3]).toBe('auto');
+    // A file is not a library map — saving it must fork a new one (D2b).
+    expect(setCurrentMapId).toHaveBeenLastCalledWith(null);
+  });
+
+  /**
+   * Adopting records the adopted bytes as the dedup baseline. Without that, an
+   * unedited file-loaded doc is copied into the library on the very next
+   * switch — so browsing N files deposits N-1 junk maps that nothing dedupes
+   * (names may repeat) and nothing prunes (the cap is per-map).
+   */
+  it('does not deposit a copy of a file that was loaded and never edited', async () => {
+    const user = userEvent.setup();
+    seedOutgoing();
+    render(<Toolbar />);
+    fireEvent.change(fileInput(), { target: { files: [validFile()] } });
+    await waitFor(() => expect(useDoc.getState().stations.fromfile).toBeDefined());
+    expect(saveRevision).toHaveBeenCalledTimes(1); // the OUTGOING doc, correctly
+
+    await user.click(screen.getByRole('button', { name: 'Canvas' }));
+    await user.click(screen.getByRole('menuitem', { name: 'New' }));
+    await waitFor(() => expect(Object.keys(useDoc.getState().stations)).toHaveLength(0));
+    // Still just the outgoing doc's revision — the untouched file was not copied.
+    expect(saveRevision).toHaveBeenCalledTimes(1);
+  });
+
+  it('writes no auto-save for a file that fails to parse', async () => {
+    seedOutgoing();
+    render(<Toolbar />);
+    const badFile = new File(['not json'], 'broken.json', { type: 'application/json' });
+    fireEvent.change(fileInput(), { target: { files: [badFile] } });
+    await screen.findByRole('alert');
+    expect(saveRevision).not.toHaveBeenCalled();
+    expect(useDoc.getState().name).toBe('Outgoing');
+  });
+
+  /**
+   * The error-surface half is the load-bearing one: "doc unchanged" passes
+   * against a defective implementation that swallows the rejection as an
+   * unhandled promise and simply does nothing. eslint has no type-aware rules
+   * here, so nothing else would catch it.
+   */
+  it('aborts the load and surfaces the error when the auto-save fails', async () => {
+    seedOutgoing();
+    vi.mocked(saveRevision).mockRejectedValue(new Error('QuotaExceededError'));
+    render(<Toolbar />);
+    fireEvent.change(fileInput(), { target: { files: [validFile()] } });
+    const alert = await screen.findByRole('alert');
+    expect(alert).toHaveTextContent('QuotaExceededError');
+    expect(useDoc.getState().stations.fromfile).toBeUndefined();
+    expect(useDoc.getState().name).toBe('Outgoing');
+    expect(setCurrentMapId).not.toHaveBeenCalled();
+  });
+});
+
+describe('Toolbar — map library', () => {
+  // A doc whose work is entirely lines: no stations, no labels, nothing the
+  // camera hull looks at. This is the shape that a contentBounds-based gate
+  // classifies as empty, and it is three clicks away (Add line, Add line, Esc).
+  const seedLinesOnly = () =>
+    useDoc.setState({
+      ...useDoc.getState(),
+      name: 'Lines Only',
+      lines: {
+        L1: makeLine({ id: 'L1' as LineId, stations: [] }),
+        L2: makeLine({ id: 'L2' as LineId, stations: [] }),
+      },
+      lineOrder: ['L1', 'L2'] as LineId[],
+    });
+
+  const seedRealMap = (name = 'My Map') =>
+    useDoc.setState({
+      ...useDoc.getState(),
+      name,
+      lines: { L1: makeLine({ id: 'L1' as LineId, stations: ['S'] as StationId[] }) },
+      lineOrder: ['L1' as LineId],
+      stations: { S: stationWithStop('S' as StationId, 'L1' as LineId, { x: 0, y: 0 }) },
+    });
+
+  const clickNew = async (user: ReturnType<typeof userEvent.setup>) => {
+    await user.click(screen.getByRole('button', { name: 'Canvas' }));
+    await user.click(screen.getByRole('menuitem', { name: 'New' }));
+  };
+
+  const saveToLibrary = async (user: ReturnType<typeof userEvent.setup>) => {
+    await user.click(screen.getByRole('button', { name: 'Canvas' }));
+    await user.click(screen.getByRole('menuitem', { name: 'Save revision' }));
+  };
+
+  it('Save revision writes a user revision of the serialized doc', async () => {
+    const user = userEvent.setup();
+    seedRealMap();
+    vi.mocked(getCanvasSvg).mockReturnValue(mountableSvg());
+    render(<Toolbar />);
+    await saveToLibrary(user);
+    await waitFor(() => expect(saveRevision).toHaveBeenCalledTimes(1));
+    expect(saveRevision).toHaveBeenCalledWith(
+      'minted-1',
+      'My Map',
+      serialize(pickDocSnapshot(useDoc.getState())),
+      'user',
+      'data:image/png;base64,THUMB',
+    );
+  });
+
+  // An empty canvas throws in buildExportSvg. That must cost the picture, not
+  // the save.
+  it('a thumbnail failure still saves, with no thumb and no error', async () => {
+    const user = userEvent.setup();
+    seedRealMap();
+    vi.mocked(getCanvasSvg).mockReturnValue(mountableSvg());
+    vi.mocked(captureThumbnail).mockRejectedValue(
+      new Error('Nothing to export — the canvas is empty.'),
+    );
+    render(<Toolbar />);
+    await saveToLibrary(user);
+    await waitFor(() => expect(saveRevision).toHaveBeenCalledTimes(1));
+    expect(vi.mocked(saveRevision).mock.calls[0][4]).toBeUndefined();
+    // The only message is the success one — the failure never reaches the user.
+    const alert = await screen.findByRole('alert');
+    expect(alert.className).toContain('info');
+  });
+
+  it('surfaces a save failure and shows no confirmation', async () => {
+    const user = userEvent.setup();
+    seedRealMap();
+    vi.mocked(saveRevision).mockRejectedValue(new Error('QuotaExceededError'));
+    render(<Toolbar />);
+    await saveToLibrary(user);
+    const alert = await screen.findByRole('alert');
+    expect(alert).toHaveTextContent('QuotaExceededError');
+    expect(alert.className).not.toContain('info');
+  });
+
+  it('confirms a successful save by name', async () => {
+    const user = userEvent.setup();
+    seedRealMap('Canal Line');
+    render(<Toolbar />);
+    await saveToLibrary(user);
+    const alert = await screen.findByRole('alert');
+    expect(alert).toHaveTextContent('Canal Line');
+    expect(alert.className).toContain('info');
+  });
+
+  it('a second save reuses the id the first one minted', async () => {
+    const user = userEvent.setup();
+    seedRealMap();
+    render(<Toolbar />);
+    await saveToLibrary(user);
+    await waitFor(() => expect(saveRevision).toHaveBeenCalledTimes(1));
+    await saveToLibrary(user);
+    await waitFor(() => expect(saveRevision).toHaveBeenCalledTimes(2));
+    const ids = vi.mocked(saveRevision).mock.calls.map((c) => c[0]);
+    expect(ids).toEqual(['minted-1', 'minted-1']);
+    expect(newMapId).toHaveBeenCalledTimes(1);
+  });
+
+  it('New auto-saves the outgoing doc, then wipes it and mints a fresh id', async () => {
+    const user = userEvent.setup();
+    seedRealMap('Outgoing');
+    useViewportStore.setState({ x: 100, y: 50, zoom: 3 });
+    render(<Toolbar />);
+    await clickNew(user);
+    await waitFor(() => expect(saveRevision).toHaveBeenCalledTimes(1));
+    expect(vi.mocked(saveRevision).mock.calls[0][3]).toBe('auto');
+    expect(vi.mocked(saveRevision).mock.calls[0][1]).toBe('Outgoing');
+    // A different document now: wiped, renamed to the default, undo reset, and
+    // the camera back at the origin (fitCameraToDoc declines on an empty doc,
+    // so the fallback is the only thing that recenters).
+    expect(Object.keys(useDoc.getState().stations)).toHaveLength(0);
+    expect(useDoc.getState().name).toBe(DEFAULT_DOC.name);
+    expect(historyDepth()).toBe(0);
+    expect(useViewportStore.getState()).toMatchObject({ x: 0, y: 0, zoom: 1 });
+    expect(setCurrentMapId).toHaveBeenLastCalledWith('minted-2');
+  });
+
+  it('New ABORTS without wiping when the auto-save fails', async () => {
+    const user = userEvent.setup();
+    seedRealMap('Precious');
+    vi.mocked(saveRevision).mockRejectedValue(new Error('QuotaExceededError'));
+    const before = historyDepth();
+    render(<Toolbar />);
+    await clickNew(user);
+    await screen.findByRole('alert');
+    // The auto-save IS the backstop for a non-undoable wipe. No save, no wipe.
+    expect(Object.keys(useDoc.getState().stations)).toHaveLength(1);
+    expect(useDoc.getState().name).toBe('Precious');
+    expect(historyDepth()).toBe(before);
+  });
+
+  /**
+   * B1. The red that matters: a doc whose work lives in lines reads as EMPTY to
+   * computeContentBounds (a camera hull that omits lines deliberately), so a
+   * gate built on it writes nothing and New wipes the map for good. The byte
+   * compare classifies it correctly.
+   */
+  it('New auto-saves a doc whose only content is lines', async () => {
+    const user = userEvent.setup();
+    seedLinesOnly();
+    // Precondition: the camera hull genuinely calls this doc empty.
+    expect(computeContentBounds(useDoc.getState())).toBeNull();
+    render(<Toolbar />);
+    await clickNew(user);
+    await waitFor(() => expect(saveRevision).toHaveBeenCalledTimes(1));
+    expect(vi.mocked(saveRevision).mock.calls[0][3]).toBe('auto');
+    expect(vi.mocked(saveRevision).mock.calls[0][1]).toBe('Lines Only');
+  });
+
+  it('New on a virgin empty doc writes nothing', async () => {
+    const user = userEvent.setup();
+    render(<Toolbar />);
+    await clickNew(user);
+    await waitFor(() => expect(setCurrentMapId).toHaveBeenCalled());
+    expect(saveRevision).not.toHaveBeenCalled();
+  });
+
+  it('New writes no second copy of a doc that has not changed since its save', async () => {
+    const user = userEvent.setup();
+    seedRealMap();
+    // Load-bearing: without a canvas, tryCaptureThumbnail returns before it ever
+    // reaches captureThumbnail, and the "not called" assertion below would pass
+    // no matter what order the gate and the capture ran in.
+    vi.mocked(getCanvasSvg).mockReturnValue(mountableSvg());
+    render(<Toolbar />);
+    await saveToLibrary(user);
+    await waitFor(() => expect(saveRevision).toHaveBeenCalledTimes(1));
+    expect(captureThumbnail).toHaveBeenCalledTimes(1); // the explicit save paid for one
+    vi.mocked(captureThumbnail).mockClear();
+
+    await clickNew(user);
+    await waitFor(() => expect(setCurrentMapId).toHaveBeenLastCalledWith('minted-2'));
+    // Still just the explicit save — the auto-save deduped against it.
+    expect(saveRevision).toHaveBeenCalledTimes(1);
+    // And it deduped BEFORE paying for a thumbnail.
+    expect(captureThumbnail).not.toHaveBeenCalled();
+  });
+
+  it('New re-saves once the doc changes again', async () => {
+    const user = userEvent.setup();
+    seedRealMap();
+    render(<Toolbar />);
+    await saveToLibrary(user);
+    await waitFor(() => expect(saveRevision).toHaveBeenCalledTimes(1));
+    useDoc.getState().setDocName('Edited');
+    await clickNew(user);
+    await waitFor(() => expect(saveRevision).toHaveBeenCalledTimes(2));
+    expect(vi.mocked(saveRevision).mock.calls[1][3]).toBe('auto');
   });
 });
 

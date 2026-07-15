@@ -11,11 +11,27 @@ vi.mock('../export/exportCanvas', async (importOriginal) => {
     ...actual,
     downloadBlob: vi.fn(),
     exportCanvasSvg: vi.fn(async () => {}),
+    captureThumbnail: vi.fn(async () => 'data:image/png;base64,THUMB'),
   };
 });
 
+// jsdom has no indexedDB; a partial mock would leave the real module reachable.
+vi.mock('../state/mapLibrary', () => ({
+  saveRevision: vi.fn(async () => 1),
+  listMaps: vi.fn(async () => []),
+  listRevisions: vi.fn(async () => []),
+  getPayload: vi.fn(async () => undefined),
+  renameMap: vi.fn(async () => {}),
+  deleteMap: vi.fn(async () => {}),
+  deleteRevision: vi.fn(async () => {}),
+  newMapId: vi.fn(() => 'minted-1'),
+  getCurrentMapId: vi.fn(() => null),
+  setCurrentMapId: vi.fn(),
+}));
+
 import App from '../App';
-import { exportCanvasSvg } from '../export/exportCanvas';
+import { exportCanvasSvg, captureThumbnail } from '../export/exportCanvas';
+import { saveRevision } from '../state/mapLibrary';
 import { useDoc, useSelection } from '../state/store';
 import { useViewportStore } from '../state/viewportStore';
 import { DEFAULT_DOC } from '../model/transforms';
@@ -35,6 +51,9 @@ beforeEach(() => {
   useViewportStore.setState({ x: 0, y: 0, zoom: 1, showNetwork: true });
   useSelection.setState({ selectedLineId: null, selectedStationIds: [], uiMode: { kind: 'idle' } });
   vi.mocked(exportCanvasSvg).mockClear();
+  vi.mocked(captureThumbnail).mockClear();
+  vi.mocked(saveRevision).mockClear();
+  localStorage.removeItem('massimo-library-current');
 });
 afterEach(() => {
   for (const prop of sizeProps) {
@@ -106,6 +125,34 @@ describe('Toolbar — export is independent of the lines/stations toggle', () =>
     expect(captured.querySelectorAll('[data-band-stripe]').length).toBeGreaterThan(0);
     expect(captured.querySelectorAll('[data-polygon-id]').length).toBeGreaterThan(0);
     expect(useViewportStore.getState().showNetwork).toBe(true);
+  });
+
+  /**
+   * The library thumbnail shares captureExportSnapshot with the image exports.
+   * It has to: a save made while the network is hidden would otherwise deposit a
+   * picture of a bare background, and a library of blank thumbnails is a library
+   * you cannot navigate.
+   */
+  it('captures a library thumbnail of the whole map while the network is hidden', async () => {
+    render(<App />);
+    seed();
+    act(() => {
+      useViewportStore.getState().setShowNetwork(false);
+    });
+    expect(liveStripes()).toBe(0); // precondition: the live canvas really is bare
+
+    const user = userEvent.setup();
+    await user.click(screen.getByRole('button', { name: 'Canvas' }));
+    await user.click(screen.getByRole('menuitem', { name: 'Save revision' }));
+    await waitFor(() => expect(captureThumbnail).toHaveBeenCalledTimes(1));
+
+    const captured = vi.mocked(captureThumbnail).mock.calls[0][0];
+    expect(captured.querySelectorAll('[data-band-stripe]').length).toBeGreaterThan(0);
+    expect(captured.querySelectorAll('[data-station-id]').length).toBeGreaterThan(0);
+    // ...and the toggle is exactly where the user left it.
+    expect(useViewportStore.getState().showNetwork).toBe(false);
+    expect(liveStripes()).toBe(0);
+    await waitFor(() => expect(saveRevision).toHaveBeenCalledTimes(1));
   });
 
   it('keeps a selected line selected, and still captures it undesaturated', async () => {
