@@ -51,6 +51,8 @@ export function SvgImagePopover({ image, worldRect, view, spawnBox, onClose }: P
   const deleteSvgImage = useDoc((s) => s.deleteSvgImage);
   const moveBackgroundUp = useDoc((s) => s.moveBackgroundUp);
   const moveBackgroundDown = useDoc((s) => s.moveBackgroundDown);
+  const moveBackgroundToTop = useDoc((s) => s.moveBackgroundToTop);
+  const moveBackgroundToBottom = useDoc((s) => s.moveBackgroundToBottom);
 
   const locked = image.locked ?? false;
   const onOpacity = (pct: number) => updateSvgImage(image.id, { opacity: pct / PERCENT });
@@ -83,8 +85,10 @@ export function SvgImagePopover({ image, worldRect, view, spawnBox, onClose }: P
       <hr className="popover-divider" aria-hidden="true" />
       <LayerOrderRow
         noun="image"
-        onMoveDown={() => moveBackgroundDown(image.id)}
+        onMoveToTop={() => moveBackgroundToTop(image.id)}
         onMoveUp={() => moveBackgroundUp(image.id)}
+        onMoveDown={() => moveBackgroundDown(image.id)}
+        onMoveToBottom={() => moveBackgroundToBottom(image.id)}
         disabled={locked}
       />
       <PopoverFooter noun="image" locked={locked} onToggleLock={onToggleLock} onDelete={onDelete} />

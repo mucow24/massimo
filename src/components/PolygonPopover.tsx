@@ -54,6 +54,8 @@ export function PolygonPopover({ polygon, worldRect, view, spawnBox, onClose }: 
   const deletePolygon = useDoc((s) => s.deletePolygon);
   const moveBackgroundUp = useDoc((s) => s.moveBackgroundUp);
   const moveBackgroundDown = useDoc((s) => s.moveBackgroundDown);
+  const moveBackgroundToTop = useDoc((s) => s.moveBackgroundToTop);
+  const moveBackgroundToBottom = useDoc((s) => s.moveBackgroundToBottom);
 
   const locked = polygon.locked ?? false;
   const closed = polygon.closed !== false;
@@ -178,8 +180,10 @@ export function PolygonPopover({ polygon, worldRect, view, spawnBox, onClose }: 
       </div>
       <LayerOrderRow
         noun="polygon"
-        onMoveDown={() => moveBackgroundDown(polygon.id)}
+        onMoveToTop={() => moveBackgroundToTop(polygon.id)}
         onMoveUp={() => moveBackgroundUp(polygon.id)}
+        onMoveDown={() => moveBackgroundDown(polygon.id)}
+        onMoveToBottom={() => moveBackgroundToBottom(polygon.id)}
         disabled={locked}
       />
       <PopoverFooter
