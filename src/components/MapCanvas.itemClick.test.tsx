@@ -37,7 +37,7 @@ const seed = () => {
         p1: makePolygon({ id: 'p1' }),
         p2: makePolygon({ id: 'p2' }),
       },
-      polygonOrder: ['p1', 'p2'],
+      backgroundOrder: ['p1', 'p2'],
     });
   });
 };
@@ -88,7 +88,7 @@ describe('MapCanvas — polygon vertex click multi-select', () => {
       useDoc.setState({
         ...useDoc.getState(),
         polygons: { p1: makePolygon({ id: 'p1' }) },
-        polygonOrder: ['p1'],
+        backgroundOrder: ['p1'],
       });
       useSelection.getState().selectPolygon('p1');
     });
@@ -140,7 +140,7 @@ describe('MapCanvas — clicking off-line while the line editor is open', () => 
         lineOrder: ['L1', 'L2'],
         textLabels: { g1: makeTextLabel({ id: 'g1', text: 'One', x: 200, y: 0 }) },
         polygons: { p1: makePolygon({ id: 'p1' }) },
-        polygonOrder: ['p1'],
+        backgroundOrder: ['p1'],
         transfers: {
           t1: {
             id: 't1',

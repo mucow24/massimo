@@ -49,6 +49,9 @@ type AnyDoc = {
     }
   >;
   polygons?: Record<string, Polygon>;
+  backgroundOrder?: string[];
+  polygonOrder?: string[];
+  svgImageOrder?: string[];
   textLabels?: Record<string, TextLabel>;
   transfers?: Record<string, Record<string, unknown>>;
   styles?: Record<string, { kind?: string; name?: string; props: Record<string, unknown> }>;
@@ -66,6 +69,35 @@ const stationDefaultProps = (out: AnyDoc): Record<string, unknown> =>
   out.styles![out.styleDefaults!.station].props;
 
 describe('migrateDoc', () => {
+  describe('v16 → v17: polygonOrder + svgImageOrder → backgroundOrder', () => {
+    const polygons = { p0: {}, p1: {} };
+    const svgImages = { i0: {} };
+
+    it('merges the two retired orders, polygons first, and drops the old keys', () => {
+      const out = run(
+        { polygons, polygonOrder: ['p1', 'p0'], svgImages, svgImageOrder: ['i0'] },
+        16,
+      );
+      // Images sat above polygons before the merge; the concat preserves that,
+      // so a rehydrated legacy map renders exactly as it did.
+      expect(out.backgroundOrder).toEqual(['p1', 'p0', 'i0']);
+      expect('polygonOrder' in out).toBe(false);
+      expect('svgImageOrder' in out).toBe(false);
+    });
+
+    it('appends records the legacy orders never listed', () => {
+      const out = run({ polygons, polygonOrder: [], svgImages, svgImageOrder: [] }, 16);
+      expect(out.backgroundOrder).toEqual(['p0', 'p1', 'i0']);
+    });
+
+    it('does not run at version >= 17', () => {
+      const out = run({ polygons, polygonOrder: ['p1', 'p0'] }, 17);
+      // The gate held: the retired key survives untouched rather than merging.
+      expect(out.backgroundOrder).toBeUndefined();
+      expect(out.polygonOrder).toEqual(['p1', 'p0']);
+    });
+  });
+
   describe('v14 → v15: retired segmentLayers strip', () => {
     it('strips segmentLayers from persisted lines', () => {
       const out = run(

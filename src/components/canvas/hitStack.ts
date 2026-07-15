@@ -7,7 +7,7 @@ import {
   textLabelsForRect,
 } from '../../geometry/stationBoundary';
 import { stopHalfOf } from '../../model/lineWidth';
-import { effectivePolygonOrder, effectiveSvgImageOrder } from '../../model/transforms';
+import { effectiveBackgroundOrder } from '../../model/transforms';
 import type { Pt } from '../../geometry/polygonUnion';
 import type {
   Line,
@@ -132,9 +132,8 @@ export interface LockedHitDocSlice {
   stations: Record<StationId, Station>;
   lines: Record<LineId, Line>;
   polygons: Record<string, Polygon>;
-  polygonOrder: string[];
   svgImages: Record<string, SvgImage>;
-  svgImageOrder: string[];
+  backgroundOrder: string[];
   textLabels: Record<string, TextLabel>;
   routeBullets: Record<string, RouteBullet>;
 }
@@ -144,9 +143,10 @@ export interface LockedHitDocSlice {
  * are click-through (pointer-events: none), so document.elementsFromPoint
  * never reports them — this geometric point-test (a pad×pad rect through the
  * same *ForRect helpers the marquee uses) is how the alt+click deep-pick
- * reaches them. Order mirrors the canvas paint bands (labels over bullets
- * over stations over images over polygons); within the polygon/image bands
- * the explicit render order applies (later = on top → first here).
+ * reaches them. Order mirrors the canvas paint bands (labels over bullets over
+ * stations over the background band); within the background band polygons and
+ * images interleave in the one explicit `backgroundOrder` (later = on top →
+ * first here).
  */
 export function lockedHitsAt(pt: Pt, doc: LockedHitDocSlice, pad: number): HitRef[] {
   const rect = { x0: pt.x - pad, y0: pt.y - pad, x1: pt.x + pad, y1: pt.y + pad };
@@ -168,26 +168,23 @@ export function lockedHitsAt(pt: Pt, doc: LockedHitDocSlice, pad: number): HitRe
       (id) => doc.stations[id].locked,
     ),
   );
-  push(
-    'svgImage',
-    [...effectiveSvgImageOrder(doc.svgImages, doc.svgImageOrder)]
-      .reverse()
-      .filter(
-        (id) =>
-          doc.svgImages[id].locked &&
-          svgImagesForRect({ [id]: doc.svgImages[id] }, rect, true).length > 0,
-      ),
-  );
-  push(
-    'polygon',
-    [...effectivePolygonOrder(doc.polygons, doc.polygonOrder)]
-      .reverse()
-      .filter(
-        (id) =>
-          doc.polygons[id].locked &&
-          polygonsForRect({ [id]: doc.polygons[id] }, rect, true).length > 0,
-      ),
-  );
+  // One walk of the shared background stack, topmost first — polygons and
+  // images interleave, so they can't be pushed as two kind-grouped blocks.
+  for (const id of [
+    ...effectiveBackgroundOrder(doc.polygons, doc.svgImages, doc.backgroundOrder),
+  ].reverse()) {
+    const poly = doc.polygons[id];
+    if (poly) {
+      if (poly.locked && polygonsForRect({ [id]: poly }, rect, true).length > 0) {
+        out.push({ kind: 'polygon', id });
+      }
+      continue;
+    }
+    const image = doc.svgImages[id];
+    if (image?.locked && svgImagesForRect({ [id]: image }, rect, true).length > 0) {
+      out.push({ kind: 'svgImage', id });
+    }
+  }
   return out;
 }
 

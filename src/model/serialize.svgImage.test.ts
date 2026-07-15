@@ -9,7 +9,7 @@ describe('svg-image serialization', () => {
         makeSvgImage({ id: 'i0', x: 10, y: 20, width: 80, height: 40 }),
         makeSvgImage({ id: 'i1' }),
       ],
-      svgImageOrder: ['i1', 'i0'],
+      backgroundOrder: ['i1', 'i0'],
     });
     const result = parse(serialize(doc));
     expect(result.ok).toBe(true);
@@ -21,7 +21,7 @@ describe('svg-image serialization', () => {
       width: 80,
       height: 40,
     });
-    expect(result.doc.svgImageOrder).toEqual(['i1', 'i0']);
+    expect(result.doc.backgroundOrder).toEqual(['i1', 'i0']);
   });
 
   it('preserves a continuous (non-octant) rotation through a round-trip', () => {
@@ -34,7 +34,7 @@ describe('svg-image serialization', () => {
     expect(result.doc.svgImages['i0'].rotation).toBe(247.5);
   });
 
-  it('fills svgImages/svgImageOrder to empty for a legacy file lacking them', () => {
+  it('fills svgImages/backgroundOrder to empty for a legacy file lacking them', () => {
     // A pre-feature save has no svg keys at all. The DEFAULT_DOC merge in
     // parse() must default them to {} / [] rather than leaving them undefined.
     const legacy = JSON.stringify({
@@ -45,6 +45,6 @@ describe('svg-image serialization', () => {
     expect(result.ok).toBe(true);
     if (!result.ok) return;
     expect(result.doc.svgImages).toEqual({});
-    expect(result.doc.svgImageOrder).toEqual([]);
+    expect(result.doc.backgroundOrder).toEqual([]);
   });
 });
