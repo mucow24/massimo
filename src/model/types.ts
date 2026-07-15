@@ -556,11 +556,14 @@ export interface MapDoc {
   // Free-floating background shapes (rivers, lakes, …). Rendered under all
   // other map content. Keyed by polygon id.
   polygons: Record<string, Polygon>;
-  // Relative paint order of polygons among themselves (all still sit beneath
-  // every other map element). Later in the array = painted later = on top.
-  // Ids missing from this list (legacy saves, races) fall back to insertion
-  // order and render on top — see `effectivePolygonOrder`.
-  polygonOrder: string[];
+  // Relative paint order of the BACKGROUND BAND — polygons and svg images
+  // TOGETHER, in one stack, so either kind can sit over the other (all of it
+  // still sits beneath every other map element). Holds ids from both
+  // `polygons` and `svgImages`; the kind is resolved by lookup. Later in the
+  // array = painted later = on top. Ids missing from this list (legacy saves,
+  // races) fall back to insertion order — polygons then images, the pre-merge
+  // stacking — and render on top; see `effectiveBackgroundOrder`.
+  backgroundOrder: string[];
   // Region paint choices ("paint by numbers" layering): which line shows in
   // an overlap region where line bodies cross. Keyed by assignment id. The
   // regions themselves are derived geometry; assignments track them via
@@ -569,12 +572,9 @@ export interface MapDoc {
   // overlap shows its lineOrder default.
   regionAssignments: Record<string, RegionAssignment>;
   // Free-floating imported graphics (svg or png/jpeg raster), placed in the
-  // polygon band (under all other map content). Keyed by image id.
+  // background band (under all other map content). Keyed by image id. Their
+  // z-order lives in `backgroundOrder`, shared with polygons.
   svgImages: Record<string, SvgImage>;
-  // Relative paint order of svg images among themselves (all still sit in the
-  // polygon band). Later in the array = painted later = on top. Ids missing
-  // from this list fall back to insertion order — see `effectiveSvgImageOrder`.
-  svgImageOrder: string[];
   // Named, reusable formatting presets, keyed by style id (see StyleDef at the
   // bottom of this file and model/styles.ts). Doc-scoped on purpose: styles
   // travel inside the saved file and every edit to them is undoable. Absent in

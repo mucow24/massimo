@@ -4,9 +4,6 @@ import {
   updateSvgImage,
   deleteSvgImage,
   setSvgImageCenter,
-  effectiveSvgImageOrder,
-  moveSvgImageUp,
-  moveSvgImageDown,
   rotateItemsAround,
   buildRotateMembers,
 } from './transforms';
@@ -24,7 +21,7 @@ describe('svg-image transforms', () => {
       href: 'd',
     });
     expect(out.svgImages.i0).toMatchObject({ id: 'i0', x: 5, y: 6 });
-    expect(out.svgImageOrder).toEqual(['i0']);
+    expect(out.backgroundOrder).toEqual(['i0']);
   });
 
   it('updateSvgImage clamps width/height to the min and normalizes rotation', () => {
@@ -52,29 +49,15 @@ describe('svg-image transforms', () => {
     expect(out.svgImages.i0).toMatchObject({ x: 42, y: 99 });
   });
 
-  it('deleteSvgImage drops the image and its order entry', () => {
+  it('deleteSvgImage drops the image and its backgroundOrder entry', () => {
     const doc = makeDoc({ svgImages: [makeSvgImage({ id: 'i0' }), makeSvgImage({ id: 'i1' })] });
     const out = deleteSvgImage(doc, 'i0');
     expect(out.svgImages.i0).toBeUndefined();
-    expect(out.svgImageOrder).toEqual(['i1']);
+    expect(out.backgroundOrder).toEqual(['i1']);
   });
 
-  it('moveSvgImageUp/Down swap neighbors and no-op at the ends', () => {
-    const doc = makeDoc({
-      svgImages: [makeSvgImage({ id: 'a' }), makeSvgImage({ id: 'b' })],
-      svgImageOrder: ['a', 'b'],
-    });
-    expect(moveSvgImageUp(doc, 'a').svgImageOrder).toEqual(['b', 'a']);
-    expect(moveSvgImageDown(doc, 'b').svgImageOrder).toEqual(['b', 'a']);
-    // 'b' is already on top; up is a no-op that returns the SAME doc reference
-    // (not just an equal order) so history grouping skips a spurious entry.
-    expect(moveSvgImageUp(doc, 'b')).toBe(doc);
-  });
-
-  it('effectiveSvgImageOrder appends ids missing from the stored order', () => {
-    const svgImages = { a: makeSvgImage({ id: 'a' }), b: makeSvgImage({ id: 'b' }) };
-    expect(effectiveSvgImageOrder(svgImages, ['a'])).toEqual(['a', 'b']);
-  });
+  // The z-order algebra is kind-agnostic and shared with polygons — see
+  // transforms.backgroundOrder.test.ts.
 
   it('group rotate orbits a member center and bumps every member rotation by 45°', () => {
     const doc = makeDoc({

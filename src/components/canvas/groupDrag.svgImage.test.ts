@@ -10,7 +10,7 @@ beforeEach(() => {
     ...DEFAULT_DOC,
     textLabels: { g0: makeTextLabel({ id: 'g0', x: 5, y: 5 }) },
     svgImages: { i0: makeSvgImage({ id: 'i0', x: 0, y: 0 }) },
-    svgImageOrder: ['i0'],
+    backgroundOrder: ['i0'],
   });
   useSelection.setState({
     ...useSelection.getState(),

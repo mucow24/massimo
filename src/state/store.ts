@@ -43,6 +43,7 @@ import {
   backfillTextLabelColors,
   backfillTransferDayNightColors,
   bakeDocCurveRadius,
+  bakeLegacyBackgroundOrder,
   bakeLegacyLabelSettings,
   bakeLegacyTransferSettings,
   convertLegacyDotShapes,
@@ -100,12 +101,14 @@ const DOC_FIELDS = [
   'transfers',
   'textLabels',
   'polygons',
-  'polygonOrder',
+  // The shared polygon + svg-image z-stack. Replaced the separate
+  // polygonOrder/svgImageOrder pair (persist v17); both load paths merge the
+  // retired fields into it via `bakeLegacyBackgroundOrder`.
+  'backgroundOrder',
   // Region paint choices ("paint by numbers" layering). New field: absent in
   // older saves, backfilled to {} by the shallow merge on both load paths.
   'regionAssignments',
   'svgImages',
-  'svgImageOrder',
   // Named style presets + the per-kind default designations. Pre-styles saves
   // lack the keys, so zustand's shallow merge (and parse()'s DEFAULT_DOC
   // merge) backfills the factory set; docs persisted by earlier builds get
@@ -381,6 +384,13 @@ export function migrateDoc(persisted: unknown, version: number): DocState {
       if (cleaned.changed) out = { ...out, regionAssignments: cleaned.assignments };
     }
   }
+  if (v < 17) {
+    // Polygons and svg images share ONE z-stack now: merge the retired
+    // `polygonOrder`/`svgImageOrder` into `backgroundOrder`, polygons first,
+    // which is exactly the stacking the two separate arrays produced. Keyed off
+    // field presence, so it no-ops (by reference) on a doc that has neither.
+    out = bakeLegacyBackgroundOrder(out);
+  }
   // Non-version-gated invariant: at least one VALID active palette. Unlike the
   // migrations above, this isn't tied to a schema bump — a persisted doc with
   // an explicit empty / all-unknown `activePalettes` (tampering, or a
@@ -529,8 +539,6 @@ interface DocState extends MapDoc {
   deleteVertices: (id: string, indices: number[]) => void;
   updatePolygon: (id: string, patch: PolygonStylePatch) => void;
   rotatePolygon: (id: string) => void;
-  movePolygonUp: (id: string) => void;
-  movePolygonDown: (id: string) => void;
   deletePolygon: (id: string) => void;
 
   addSvgImage: (fields: Omit<SvgImage, 'id'>) => string;
@@ -539,9 +547,13 @@ interface DocState extends MapDoc {
   moveSvgImage: (id: string, x: number, y: number) => void;
   updateSvgImage: (id: string, patch: SvgImageStylePatch) => void;
   rotateSvgImage45: (id: string) => void;
-  moveSvgImageUp: (id: string) => void;
-  moveSvgImageDown: (id: string) => void;
   deleteSvgImage: (id: string) => void;
+
+  /** Shift a background item — polygon OR svg image — one step up/down the
+   *  shared background z-stack (`backgroundOrder`). One pair of actions for
+   *  both kinds, since they share the one stack. */
+  moveBackgroundUp: (id: string) => void;
+  moveBackgroundDown: (id: string) => void;
 
   /** Define-by-example: capture `itemId`'s current EFFECTIVE formatting as
    *  the style named `name` — upsert-by-name per kind (à la addPalette), so
@@ -874,8 +886,6 @@ export const useDoc = create<DocState>()(
         deleteVertices: (id, indices) => set((s) => T.deleteVertices(s, id, indices)),
         updatePolygon: (id, patch) => set((s) => T.updatePolygon(s, id, patch)),
         rotatePolygon: (id) => set((s) => T.rotatePolygon(s, id)),
-        movePolygonUp: (id) => set((s) => T.movePolygonUp(s, id)),
-        movePolygonDown: (id) => set((s) => T.movePolygonDown(s, id)),
         deletePolygon: (id) => set((s) => T.deletePolygon(s, id)),
 
         addSvgImage: (fields) => {
@@ -899,9 +909,10 @@ export const useDoc = create<DocState>()(
         // rotatePolygon); updateSvgImage normalizes the result into [0, 360).
         rotateSvgImage45: (id) =>
           set((s) => T.updateSvgImage(s, id, { rotation: (s.svgImages[id]?.rotation ?? 0) + 45 })),
-        moveSvgImageUp: (id) => set((s) => T.moveSvgImageUp(s, id)),
-        moveSvgImageDown: (id) => set((s) => T.moveSvgImageDown(s, id)),
         deleteSvgImage: (id) => set((s) => T.deleteSvgImage(s, id)),
+
+        moveBackgroundUp: (id) => set((s) => T.moveBackgroundUp(s, id)),
+        moveBackgroundDown: (id) => set((s) => T.moveBackgroundDown(s, id)),
 
         // Each style action is one atomic set() over one pure transform, so a
         // multi-item fan-out (save re-stamping every user, delete untagging
@@ -967,8 +978,8 @@ export const useDoc = create<DocState>()(
       {
         name: 'vignelli-map-doc-v1',
         storage: createJSONStorage(() => localStorage),
-        version: 16,
-        // Version migration chain v0 → v16 lives in `migrateDoc` (above), which
+        version: 17,
+        // Version migration chain v0 → v17 lives in `migrateDoc` (above), which
         // is exported and unit-tested. See its doc comment for each step.
         migrate: (persisted, version) => migrateDoc(persisted, version),
         // `migrate` only runs when the STORED version differs from the config

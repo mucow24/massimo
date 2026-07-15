@@ -143,7 +143,7 @@ describe('ItemPopovers — spawn avoids covering the item', () => {
           href: 'data:image/svg+xml;base64,PHN2Zy8+',
         },
       },
-      svgImageOrder: ['i1'],
+      backgroundOrder: ['i1'],
     });
     useSelection.getState().selectRouteBullet(null); // sole selection = the image
     useSelection.getState().selectSvgImage('i1');
@@ -172,7 +172,7 @@ describe('ItemPopovers — spawn avoids covering the item', () => {
           href: 'data:image/svg+xml;base64,PHN2Zy8+',
         },
       },
-      svgImageOrder: ['i1'],
+      backgroundOrder: ['i1'],
     });
     useSelection.getState().selectRouteBullet(null); // sole selection = the image
     useSelection.getState().selectSvgImage('i1');
