@@ -33,3 +33,17 @@ export function moveInOrder(order: string[], id: string, dir: 1 | -1): string[] 
   [next[i], next[j]] = [next[j], next[i]];
   return next;
 }
+
+/**
+ * Move `id` all the way to the end (`dir: +1`) or the start (`dir: -1`) of
+ * `order`, sliding everything it passes along by one. The jump-to-the-end
+ * counterpart of {@link moveInOrder}, with the same caller-side paint
+ * convention and the same same-reference-on-no-op contract (id absent, or
+ * already at the respective end).
+ */
+export function moveToEndInOrder(order: string[], id: string, dir: 1 | -1): string[] {
+  const i = order.indexOf(id);
+  if (i < 0 || i === (dir === 1 ? order.length - 1 : 0)) return order;
+  const rest = order.filter((x) => x !== id);
+  return dir === 1 ? [...rest, id] : [id, ...rest];
+}

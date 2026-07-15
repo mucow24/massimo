@@ -549,11 +549,14 @@ interface DocState extends MapDoc {
   rotateSvgImage45: (id: string) => void;
   deleteSvgImage: (id: string) => void;
 
-  /** Shift a background item — polygon OR svg image — one step up/down the
-   *  shared background z-stack (`backgroundOrder`). One pair of actions for
-   *  both kinds, since they share the one stack. */
+  /** Restack a background item — polygon OR svg image — within the shared
+   *  background z-stack (`backgroundOrder`): one step up/down, or all the way
+   *  to either end. One set of actions for both kinds, since they share the
+   *  one stack. */
   moveBackgroundUp: (id: string) => void;
   moveBackgroundDown: (id: string) => void;
+  moveBackgroundToTop: (id: string) => void;
+  moveBackgroundToBottom: (id: string) => void;
 
   /** Define-by-example: capture `itemId`'s current EFFECTIVE formatting as
    *  the style named `name` — upsert-by-name per kind (à la addPalette), so
@@ -913,6 +916,8 @@ export const useDoc = create<DocState>()(
 
         moveBackgroundUp: (id) => set((s) => T.moveBackgroundUp(s, id)),
         moveBackgroundDown: (id) => set((s) => T.moveBackgroundDown(s, id)),
+        moveBackgroundToTop: (id) => set((s) => T.moveBackgroundToTop(s, id)),
+        moveBackgroundToBottom: (id) => set((s) => T.moveBackgroundToBottom(s, id)),
 
         // Each style action is one atomic set() over one pure transform, so a
         // multi-item fan-out (save re-stamping every user, delete untagging
