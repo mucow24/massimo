@@ -35,7 +35,7 @@ describe('App keyboard shortcuts: Escape', () => {
     useDoc.setState({
       ...useDoc.getState(),
       polygons: { p1: makePolygon({ id: 'p1' }) },
-      polygonOrder: ['p1'],
+      backgroundOrder: ['p1'],
     });
     useSelection.getState().selectPolygon('p1');
     fireEvent.keyDown(document.body, { key: 'Escape' });
@@ -773,7 +773,7 @@ describe('App keyboard: polygon vertices (multi-select)', () => {
           ],
         }),
       },
-      polygonOrder: ['p0'],
+      backgroundOrder: ['p0'],
     });
     useSelection.setState({
       ...useSelection.getState(),
@@ -828,7 +828,7 @@ describe('App keyboard: svg images', () => {
     useDoc.setState({
       ...useDoc.getState(),
       svgImages: { a: makeSvgImage({ id: 'a' }), b: makeSvgImage({ id: 'b', locked: true }) },
-      svgImageOrder: ['a', 'b'],
+      backgroundOrder: ['a', 'b'],
     });
     useSelection.setState({ ...useSelection.getState(), selectedSvgImageIds: ['a', 'b'] });
     fireEvent.keyDown(window, { key: 'Delete' });
@@ -842,7 +842,7 @@ describe('App keyboard: svg images', () => {
     useDoc.setState({
       ...useDoc.getState(),
       svgImages: { a: makeSvgImage({ id: 'a', x: 10, y: 10 }) },
-      svgImageOrder: ['a'],
+      backgroundOrder: ['a'],
     });
     useSelection.setState({ ...useSelection.getState(), selectedSvgImageIds: ['a'] });
     fireEvent.keyDown(window, { key: 'ArrowRight', shiftKey: true });

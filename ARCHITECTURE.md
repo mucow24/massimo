@@ -234,12 +234,17 @@ y-up convention and is **intentionally the negation** — using the wrong one fl
 ### 5. Two opposite z-order conventions (don't conflate them either)
 
 - **Lines:** `MapDoc.lineOrder`, **index 0 = top** (Photoshop-layers convention).
-- **Polygons / svg images:** `polygonOrder` / `svgImageOrder`, **later in array = top** (painted
-  later). Ids missing from these arrays fall back to insertion order and render **on top** (via
-  `effectivePolygonOrder` / `effectiveSvgImageOrder`), so an add/order race never drops an item.
+- **Polygons + svg images:** ONE shared `backgroundOrder`, **later in array = top** (painted
+  later). The two kinds interleave in a single stack — a polygon can sit over an image or vice
+  versa — and the kind is resolved by lookup (`polygons[id] ?? svgImages[id]`), since ids are
+  UUIDs. Ids missing from the array fall back to insertion order, **polygons then images**, and
+  render on top (via `effectiveBackgroundOrder`), so an add/order race never drops an item. That
+  polygons-then-images fallback is also exactly the stacking of the retired
+  `polygonOrder`/`svgImageOrder` pair, which pinned every image above every polygon.
 
 Correspondingly `addLine` prepends (`[id, ...order]`, front), but `addPolygon`/`addSvgImage`
-append (back of array = front by the opposite convention).
+append (back of array = front by the opposite convention) — a new background item of either kind
+lands on top of the whole band.
 
 ### 6. The rendering pipeline is a fixed, interleaved z-order of passes
 
@@ -271,10 +276,9 @@ interface MapDoc {
   transfers: Record<string, Transfer>;
   textLabels: Record<string, TextLabel>;
   polygons: Record<string, Polygon>;
-  polygonOrder: string[]; // LATER = top (opposite of lineOrder)
+  backgroundOrder: string[]; // polygons + svgImages in ONE stack; LATER = top (opposite of lineOrder)
   regionAssignments: Record<string, RegionAssignment>; // region paint choices ("paint by numbers")
   svgImages: Record<string, SvgImage>;
-  svgImageOrder: string[]; // LATER = top
   activePalettes: PaletteId[]; // INVARIANT: never empty
   seamEdges: SeamEdges; // global branch-seam inner-edge mode: 'both' | 'straight' | 'curved'
   styles: Record<string, StyleDef>; // named per-kind formatting presets ("Styles")
@@ -461,7 +465,8 @@ toStationId` (**invariant: `from < to`**, canonical/alphabetic, matching `pairKe
 Right-click cycles all six states: text up→right→down→left → chevron-forward → chevron-reverse.
 
 **`Polygon`** — a free-floating background shape (river, park…), rendered **under all other map
-content**. `id, vertices: Vec2[]` (**world coords, ≥3, ordered; there is no center/rotation
+content**, z-ordered against the svg images in the shared `backgroundOrder`. `id, vertices:
+Vec2[]` (**world coords, ≥3, ordered; there is no center/rotation
 field — rotation rewrites the vertices** around the centroid), `fill, stroke` (`#rrggbb`, or
 `#rrggbbaa` when translucent — colors carry their own alpha now), `strokeWidth` (world units,
 floored at 0 — the slider caps at 10, but the spinbutton/stored value is unbounded above),
@@ -473,8 +478,9 @@ on load for legacy saves). Optional: `locked?`, `curveRadius?` (floored at 0, sl
 action so they never drift.
 
 **`SvgImage`** — an imported graphic — an `.svg` **or** a png/jpeg raster (the name predates raster
-support) — placed as an **opaque** `<image href="data:image/…;base64,…">` in the polygon band.
-`id, x, y` (world **center**), `width, height` (unrotated bbox,
+support) — placed as an **opaque** `<image href="data:image/…;base64,…">` in the background band,
+z-ordered against the polygons in the shared `backgroundOrder` (so an image can sit under a
+polygon, not just over it). `id, x, y` (world **center**), `width, height` (unrotated bbox,
 post-scale), `rotation: number` (**continuous degrees CW**, snaps to 22.5° under Shift), `href`
 (fixed at import, never edited), `locked?`. `SvgImageStylePatch` is the shared patch type.
 
@@ -581,7 +587,7 @@ Path A does **more** than Path B because hand-edited files can be non-canonical 
 sanitizers `sanitizeLineWidth/Stroke/DotSize/Segments/StopDotSizes` exist for this).
 
 **Path B — localStorage rehydration: `migrateDoc(persisted, version)`** ([store.ts](src/state/store.ts)).
-The zustand `persist` config: `name: 'vignelli-map-doc-v1'`, `version: 16`, `migrate:
+The zustand `persist` config: `name: 'vignelli-map-doc-v1'`, `version: 17`, `migrate:
 migrateDoc`, `partialize: pickDocSnapshot`. Because the persist-merge already fills absent fields
 from the initial state, `migrateDoc` only does **value-level legacy fixups, version-gated**, on
 disjoint fields (order immaterial except where noted), never mutating the input:
@@ -603,6 +609,7 @@ disjoint fields (order immaterial except where noted), never mutating the input:
 | `v<14`      | `bakeLegacyLabelSettings` (retired doc-level `labelFontSize/labelWeight/labelItalic/labelLeading/labelTracking` → per-station typography + seed the designated default station style) — ordered **after** the `v<3` `labelBold`→`labelWeight` step (so it sees the materialized weight) and the edge/style invariant passes |
 | `v<15`      | the **layering rework**: `stripLegacySegmentLayers` (drops the retired per-segment `segmentLayers` field from lines) + `sanitizeRegionAssignments` (region-assignment hygiene — a pre-v15 doc has none, but a tampered/newer-build one might). Path A runs `sanitizeRegionAssignments` unconditionally |
 | `v<16`      | `bakeDocCurveRadius` (retired doc-level `curveRadius` → per-line `Line.curveRadius` + line-style-def fill). Ordered **before** the `v<10` style hygiene — `migrateV9Styles` rebuilds defs on the canonical grids, so a def missing `curveRadius` would heal to the constant default instead of the doc's legacy value. Idempotent, keyed off field presence |
+| `v<17`      | `bakeLegacyBackgroundOrder` (the retired `polygonOrder` + `svgImageOrder` → the single `backgroundOrder`, polygons concatenated first — exactly the stacking the two separate arrays painted, so a legacy map renders unchanged). Each side is reconciled against its records before the concat. Idempotent, keyed off field presence; reference-stable when neither retired key is present |
 | (not gated) | `backfillLinesEdges` whenever `lines !== undefined` — every rehydrate, **not** `v<14`-gated: an intermediate build bumped the persist version to 14 and re-saved lines BEFORE they carried `edges`, so a `v<14` gate could never recover those (`ln.edges.join(...)` white-screens on load). Reference-stable when every line already has an array |
 | (not gated) | `ensureStyleInvariants` whenever `styles !== undefined` — ordered between the `v<10` hygiene and the bake (the bake seeds the _designated_ default transfer style; adoption stamps designated defaults) |
 | (not gated) | `validActivePalettes` whenever `activePalettes !== undefined`                                                                              |
@@ -1456,8 +1463,13 @@ Each is confirmed in source/tests; file pointers included.
 - **`SvgImage.rotation` is continuous degrees, not an octant** — never snap it to a `Rotation`. A
   serialize test pins `247.5°` surviving verbatim. ([types.ts](src/model/types.ts),
   `serialize.svgImage.test.ts`)
-- **Two opposite z-order conventions** — `lineOrder` index 0 = top; `polygonOrder`/`svgImageOrder`
-  last = top. `addLine` prepends, `addPolygon`/`addSvgImage` append.
+- **Two opposite z-order conventions** — `lineOrder` index 0 = top; `backgroundOrder` last = top.
+  `addLine` prepends, `addPolygon`/`addSvgImage` append.
+- **Polygons and svg images share ONE z-stack** (`backgroundOrder`) — they interleave, so neither
+  kind is structurally above the other. Anything that walks the band must resolve kind per id
+  rather than emit two kind-grouped blocks: the body pass, the drag-proxy pass (whose order is
+  the grab-priority tiebreak between two overlapping SELECTED items), and `lockedHitsAt` all do.
+  ([MapCanvas.tsx](src/components/MapCanvas.tsx), [hitStack.ts](src/components/canvas/hitStack.ts))
 - **`resolveDotRender` size param trap** — pass `dotSizeOverride` (the override-only value,
   `undefined` when tracking defaults), **never** `resolveDotSize` (the resolved value), or
   default-tracking service-code discs shrink to r 4. ([dotStyle.ts](src/model/dotStyle.ts))

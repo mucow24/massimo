@@ -21,7 +21,7 @@ const seed = (over = {}) =>
   useDoc.setState({
     ...useDoc.getState(),
     svgImages: { i0: makeSvgImage({ id: 'i0', x: 0, y: 0, width: 100, height: 60, ...over }) },
-    svgImageOrder: ['i0'],
+    backgroundOrder: ['i0'],
   });
 
 beforeEach(() => {
@@ -80,7 +80,7 @@ describe('useSvgImageDrag — move', () => {
     useDoc.setState({
       ...useDoc.getState(),
       polygons: { p0: makePolygon({ id: 'p0', vertices: [{ x: 100, y: 55 }] }) },
-      polygonOrder: ['p0'],
+      backgroundOrder: ['p0'],
       textLabels: { t0: makeTextLabel({ id: 't0', x: 300, y: 300 }) },
     });
     useSelection.setState({

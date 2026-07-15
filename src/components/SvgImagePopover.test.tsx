@@ -12,7 +12,7 @@ beforeEach(() => {
     ...useDoc.getState(),
     ...DEFAULT_DOC,
     svgImages: { i0: makeSvgImage({ id: 'i0' }), i1: makeSvgImage({ id: 'i1' }) },
-    svgImageOrder: ['i0', 'i1'],
+    backgroundOrder: ['i0', 'i1'],
   });
 });
 
@@ -36,14 +36,14 @@ describe('<SvgImagePopover />', () => {
   it('moves the image up/down in the paint order', () => {
     renderPopover('i0');
     fireEvent.click(screen.getByRole('button', { name: 'Move image up' }));
-    expect(useDoc.getState().svgImageOrder).toEqual(['i1', 'i0']);
+    expect(useDoc.getState().backgroundOrder).toEqual(['i1', 'i0']);
   });
 
   it('disables layer + delete (but not unlock) when locked', () => {
     useDoc.setState({
       ...useDoc.getState(),
       svgImages: { i0: makeSvgImage({ id: 'i0', locked: true }) },
-      svgImageOrder: ['i0'],
+      backgroundOrder: ['i0'],
     });
     renderPopover();
     expect(screen.getByRole('button', { name: 'Move image up' })).toBeDisabled();

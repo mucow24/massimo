@@ -36,8 +36,8 @@ export function SvgImagePopover({ image, worldRect, view, spawnBox, onClose }: P
   );
   const updateSvgImage = useDoc((s) => s.updateSvgImage);
   const deleteSvgImage = useDoc((s) => s.deleteSvgImage);
-  const moveSvgImageUp = useDoc((s) => s.moveSvgImageUp);
-  const moveSvgImageDown = useDoc((s) => s.moveSvgImageDown);
+  const moveBackgroundUp = useDoc((s) => s.moveBackgroundUp);
+  const moveBackgroundDown = useDoc((s) => s.moveBackgroundDown);
 
   const locked = image.locked ?? false;
   const onToggleLock = () => updateSvgImage(image.id, { locked: !locked });
@@ -57,8 +57,8 @@ export function SvgImagePopover({ image, worldRect, view, spawnBox, onClose }: P
     >
       <LayerOrderRow
         noun="image"
-        onMoveDown={() => moveSvgImageDown(image.id)}
-        onMoveUp={() => moveSvgImageUp(image.id)}
+        onMoveDown={() => moveBackgroundDown(image.id)}
+        onMoveUp={() => moveBackgroundUp(image.id)}
         disabled={locked}
       />
       <PopoverFooter noun="image" locked={locked} onToggleLock={onToggleLock} onDelete={onDelete} />

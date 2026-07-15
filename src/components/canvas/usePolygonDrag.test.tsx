@@ -112,7 +112,7 @@ describe('usePolygonDrag — whole-polygon drag', () => {
         // if the exclusion is missing, x snaps to 95 instead of 100.
         p1: makePolygon({ id: 'p1', vertices: [{ x: 95, y: -200 }] }),
       },
-      polygonOrder: ['p0', 'p1'],
+      backgroundOrder: ['p0', 'p1'],
       routeBullets: { b0: makeRouteBullet({ id: 'b0', x: 100, y: 55 }) },
     });
     useSelection.setState({ ...useSelection.getState(), selectedPolygonIds: ['p0', 'p1'] });
@@ -158,7 +158,7 @@ describe('usePolygonDrag — vertex drag', () => {
         }),
       },
       svgImages: { i0: makeSvgImage({ id: 'i0', x: 200, y: 100 }) },
-      svgImageOrder: ['i0'],
+      backgroundOrder: ['i0'],
     });
     const r = render();
     // Image corners at (150,70)/(250,70)/(250,130)/(150,130). Δscreen (103,35)

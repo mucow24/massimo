@@ -11,9 +11,6 @@ import {
   deletePolygon,
   buildRotateMembers,
   rotateItemsAround,
-  movePolygonUp,
-  movePolygonDown,
-  effectivePolygonOrder,
   resolvePolygonColors,
   POLYGON_STROKE_WIDTH_MIN,
   POLYGON_STROKE_WIDTH_DEFAULT,
@@ -180,12 +177,12 @@ describe('polygon transforms', () => {
     expect(cy).toBeCloseTo(0, 6);
   });
 
-  it('deletePolygon removes the polygon and its entry in polygonOrder', () => {
+  it('deletePolygon removes the polygon and its entry in backgroundOrder', () => {
     const doc = makeDoc({ polygons: [makePolygon({ id: 'p0' }), makePolygon({ id: 'p1' })] });
     const next = deletePolygon(doc, 'p0');
     expect(next.polygons['p0']).toBeUndefined();
     expect(next.polygons['p1']).toBeDefined();
-    expect(next.polygonOrder).toEqual(['p1']);
+    expect(next.backgroundOrder).toEqual(['p1']);
   });
 
   it('updatePolygon toggles locked', () => {
@@ -253,34 +250,15 @@ describe('polygon transforms', () => {
     });
   });
 
-  it('addPolygon appends to polygonOrder; move up/down reorders (later = on top)', () => {
+  // The z-order algebra itself (move up/down, effectiveBackgroundOrder) is
+  // kind-agnostic and lives in transforms.backgroundOrder.test.ts — polygons
+  // and svg images share the one stack. Only the polygon-side wiring is here.
+  it('addPolygon appends to backgroundOrder (new polygon on top of the band)', () => {
     let doc = makeDoc({});
     doc = addPolygon(doc, 'a', 0, 0);
     doc = addPolygon(doc, 'b', 0, 0);
     doc = addPolygon(doc, 'c', 0, 0);
-    expect(doc.polygonOrder).toEqual(['a', 'b', 'c']); // c on top
-
-    doc = movePolygonUp(doc, 'a'); // a moves toward top
-    expect(doc.polygonOrder).toEqual(['b', 'a', 'c']);
-
-    doc = movePolygonDown(doc, 'c'); // c moves toward bottom
-    expect(doc.polygonOrder).toEqual(['b', 'c', 'a']);
-
-    // No-ops at the ends return the SAME doc reference (not just an equal
-    // order) — history grouping relies on reference identity to avoid pushing a
-    // spurious undo entry for a boundary click that changed nothing.
-    expect(movePolygonUp(doc, 'a')).toBe(doc); // 'a' already top
-    expect(movePolygonDown(doc, 'b')).toBe(doc); // 'b' already bottom
-  });
-
-  it('effectivePolygonOrder backfills ids missing from a legacy/partial order', () => {
-    const polys = {
-      p0: makePolygon({ id: 'p0' }),
-      p1: makePolygon({ id: 'p1' }),
-      p2: makePolygon({ id: 'p2' }),
-    };
-    // Stored order omits p2 (legacy) and references a stale id.
-    expect(effectivePolygonOrder(polys, ['p1', 'gone', 'p0'])).toEqual(['p1', 'p0', 'p2']);
+    expect(doc.backgroundOrder).toEqual(['a', 'b', 'c']); // c on top
   });
 
   describe('resolvePolygonColors', () => {
