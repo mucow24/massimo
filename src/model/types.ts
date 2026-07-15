@@ -498,6 +498,13 @@ export interface SvgImage {
   height: number;
   rotation: number;
   href: string;
+  // Alpha in the SVG-native 0..1 range, painted straight onto the <image>'s
+  // `opacity` attribute (the popover slider shows it as a percent). Optional;
+  // MISSING ⇒ 1 = fully opaque, and the attribute is omitted entirely, so an
+  // untouched image's exported markup is unchanged. Unlike Polygon's fill,
+  // opacity can't live in the color's alpha here — an image has no paint of
+  // its own, only its baked-in pixels.
+  opacity?: number;
   // When locked, the image can't be dragged, resized, rotated, deleted, or
   // marquee-selected, and its popover controls (other than the lock toggle)
   // are disabled. It can still be click-selected so the user can unlock it.
@@ -509,7 +516,7 @@ export interface SvgImage {
 // except `id` and the immutable `href`). Shared by the transform and the store
 // action so the two never drift.
 export type SvgImageStylePatch = Partial<
-  Pick<SvgImage, 'x' | 'y' | 'width' | 'height' | 'rotation' | 'locked'>
+  Pick<SvgImage, 'x' | 'y' | 'width' | 'height' | 'rotation' | 'opacity' | 'locked'>
 >;
 
 // How the branch seam's "inner edges" are drawn (see MapDoc.seamEdges). A seam

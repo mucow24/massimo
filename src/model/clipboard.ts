@@ -125,7 +125,13 @@ function parseSvgImageData(raw: unknown): Omit<SvgImage, 'id'> | null {
   // remote/script href from a crafted clipboard string would break the
   // opaque-sandbox guarantee.
   if (typeof d.href !== 'string' || !isAllowedImageHref(d.href)) return null;
-  // Optional: reject a present-but-wrong type; leave an absent flag absent.
+  // Optional: reject a present-but-wrong type; leave an absent field absent.
+  if (
+    d.opacity !== undefined &&
+    (typeof d.opacity !== 'number' || !Number.isFinite(d.opacity) || d.opacity < 0 || d.opacity > 1)
+  ) {
+    return null;
+  }
   if (d.locked !== undefined && typeof d.locked !== 'boolean') return null;
   const out: Omit<SvgImage, 'id'> = {
     x: d.x,
@@ -135,6 +141,7 @@ function parseSvgImageData(raw: unknown): Omit<SvgImage, 'id'> | null {
     rotation: d.rotation,
     href: d.href,
   };
+  if (d.opacity !== undefined) out.opacity = d.opacity as number;
   if (d.locked !== undefined) out.locked = d.locked as boolean;
   return out;
 }

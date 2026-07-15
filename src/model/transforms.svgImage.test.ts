@@ -37,6 +37,15 @@ describe('svg-image transforms', () => {
     expect(updateSvgImage(doc, 'i0', { width: 200 }).svgImages.i0.width).toBe(200);
   });
 
+  it('updateSvgImage clamps opacity into the 0..1 alpha range', () => {
+    const doc = makeDoc({ svgImages: [makeSvgImage({ id: 'i0' })] });
+    expect(updateSvgImage(doc, 'i0', { opacity: 0.4 }).svgImages.i0.opacity).toBe(0.4);
+    expect(updateSvgImage(doc, 'i0', { opacity: -1 }).svgImages.i0.opacity).toBe(0);
+    expect(updateSvgImage(doc, 'i0', { opacity: 5 }).svgImages.i0.opacity).toBe(1);
+    // Absent ⇒ fully opaque; a fresh image carries no opacity field at all.
+    expect(doc.svgImages.i0.opacity).toBeUndefined();
+  });
+
   it('setSvgImageCenter moves the image to an absolute center', () => {
     const doc = makeDoc({ svgImages: [makeSvgImage({ id: 'i0' })] });
     const out = setSvgImageCenter(doc, 'i0', 42, 99);

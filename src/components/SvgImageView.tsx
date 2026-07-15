@@ -145,6 +145,11 @@ export function SvgImageView({
           // SVG's own aspect ratio and letterbox it, so an edge (single-axis)
           // resize would only shrink the box instead of stretching the image.
           preserveAspectRatio="none"
+          // Absent ⇒ React omits the attribute, so an untouched image's
+          // markup (and its export) is exactly as before the slider existed.
+          // Only the artwork fades — the selection box, handles, and this
+          // element's hit area are unaffected, so a 0% image stays clickable.
+          opacity={image.opacity}
           // Generic lock marker shared with polygons/stations: the rect-select
           // gate keys off [data-locked] so a drag starting on a locked image
           // begins a marquee instead of doing nothing.
