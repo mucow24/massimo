@@ -4,6 +4,7 @@ import { pickDocSnapshot, useDoc, useSelection, type UiMode } from '../state/sto
 import type { MapDoc } from '../model/types';
 import { useViewportStore, nextGridSize } from '../state/viewportStore';
 import { parse, serialize } from '../model/serialize';
+import { DEFAULT_DOC } from '../model/transforms';
 import { computeContentBounds } from '../geometry/contentBounds';
 import { fitViewport } from './canvas/viewportMath';
 import { clearHistory } from '../state/history';
@@ -11,14 +12,24 @@ import { parseSvgIntrinsicSize, rasterFileToImage, svgTextToDataUri } from '../m
 import { useCustomPalettes } from '../state/customPalettes';
 import { themeColors } from '../state/theme';
 import {
+  captureThumbnail,
   downloadBlob,
   exportCanvasPng,
   exportCanvasSvg,
   getCanvasSvg,
   mapFileBasename,
 } from '../export/exportCanvas';
+import {
+  getCurrentMapId,
+  getPayload,
+  newMapId,
+  saveRevision,
+  setCurrentMapId,
+} from '../state/mapLibrary';
+import { MapLibraryDialog } from './MapLibraryDialog';
 import { Menu, MenuItem, MenuSeparator, SubMenu } from './Menu';
 import {
+  CheckCircledIcon,
   CursorArrowIcon,
   DoubleArrowLeftIcon,
   DoubleArrowRightIcon,
@@ -33,6 +44,67 @@ import { SnapToggleBar } from './SnapToggleBar';
 import { OptionsPopover } from './OptionsPopover';
 import { HelpPopover } from './HelpPopover';
 import { MapNameField } from './MapNameField';
+
+/**
+ * The empty document, serialized. Byte-comparing against this IS the auto-save's
+ * content gate: exact, and covering all 18 DOC_FIELDS by construction.
+ *
+ * Deliberately NOT `computeContentBounds` — that is a camera hull which reads 5
+ * fields and omits lines on purpose, so a map whose work lives entirely in its
+ * lines reads as "empty", the auto-save writes nothing, and New wipes it for
+ * good. One concept, not two.
+ */
+const EMPTY_DOC_JSON = serialize(pickDocSnapshot(DEFAULT_DOC));
+
+/** A dismissible message in the toolbar: a failure, or a confirmation. */
+type MenuStatus = { kind: 'error' | 'info'; text: string };
+
+const errorText = (err: unknown, fallback: string): string =>
+  err instanceof Error ? err.message : fallback;
+
+/**
+ * Run `fn` with no line selected, then put the selection back.
+ *
+ * A selected line desaturates the others on the live canvas (MapCanvas's
+ * colorMap repaints them at OTHER_LINE_SATURATION in the main, non-excluded
+ * layer), and that recoloring would bake into any clone taken of it. flushSync
+ * commits the repaint synchronously, so what we read is guaranteed clean — no
+ * frame-timing race. Clearing `sidebarAutoRevealed` first stops an auto-revealed
+ * sidebar blinking shut mid-capture.
+ */
+async function withNeutralSelection<T>(fn: () => Promise<T>): Promise<T> {
+  const prevLineId = useSelection.getState().selectedLineId;
+  const prevAutoReveal = useSelection.getState().sidebarAutoRevealed;
+  if (prevLineId)
+    flushSync(() => {
+      useSelection.setState({ sidebarAutoRevealed: false });
+      useSelection.getState().selectLine(null);
+    });
+  try {
+    return await fn();
+  } finally {
+    if (prevLineId)
+      flushSync(() => {
+        useSelection.getState().selectLine(prevLineId);
+        useSelection.setState({ sidebarAutoRevealed: prevAutoReveal });
+      });
+  }
+}
+
+/**
+ * A thumbnail of the live canvas, or undefined if one can't be had. An empty
+ * canvas throws (buildExportSvg has nothing to frame) and so does any
+ * rasterization failure — neither should cost the user their save.
+ */
+async function tryCaptureThumbnail(background: string): Promise<string | undefined> {
+  const svg = getCanvasSvg();
+  if (!svg) return undefined;
+  try {
+    return await withNeutralSelection(() => captureThumbnail(svg, background));
+  } catch {
+    return undefined;
+  }
+}
 
 function ToolButtons() {
   const toolMode = useSelection((s) => s.toolMode);
@@ -76,7 +148,19 @@ export function Toolbar() {
 
   const fileInputRef = useRef<HTMLInputElement | null>(null);
   const imageInputRef = useRef<HTMLInputElement | null>(null);
-  const [menuError, setMenuError] = useState<string | null>(null);
+  const [menuStatus, setMenuStatus] = useState<MenuStatus | null>(null);
+  const [libraryOpen, setLibraryOpen] = useState(false);
+  /**
+   * The bytes we last wrote to the library or adopted from one. The auto-save
+   * skips when the doc still matches it — so browsing files deposits nothing,
+   * and an unedited document is never copied.
+   *
+   * This is NOT a dirty flag. A flag answers "did anything touch the doc", which
+   * is the wrong question (edit-then-undo), and a flag that resets on refresh
+   * reads CLEAN — losing data. A null baseline reads dirty, which errs toward
+   * one redundant revision instead of toward silence.
+   */
+  const baselineRef = useRef<string | null>(null);
 
   // Each "Add X" menu item toggles the matching uiMode variant: clicking it
   // again (or while the variant is active) returns to idle.
@@ -131,18 +215,106 @@ export function Toolbar() {
     selection.selectLineTag(null);
     selection.selectRouteBullet(null);
     selection.selectTransfer(null);
-    selection.selectLabel(null);
     selection.setUiMode({ kind: 'idle' });
     selection.setEditingStationId(null);
+    // No clearHistory and no auto-save: Clear stays in the SAME document, so
+    // Ctrl+Z is the backstop and undo has nothing to splice across.
     clearAll();
   };
 
-  const onSave = () => {
+  /**
+   * Replace the live document. Shared by every path that swaps one doc for
+   * another — file load, library load, New — so none of them can drift.
+   */
+  const adoptParsedDoc = (doc: MapDoc) => {
+    selection.selectStation(null);
+    selection.selectLine(null);
+    selection.selectLineTag(null);
+    selection.selectRouteBullet(null);
+    selection.selectTransfer(null);
+    selection.setUiMode({ kind: 'idle' });
+    selection.setEditingStationId(null);
+    useDoc.getState().loadDoc(doc);
+    clearHistory(); // undo must not splice two different documents
+    // The camera lives outside the doc (saved files are camera-agnostic), so a
+    // switch would otherwise keep the old pan/zoom and could land on a blank
+    // area. Falls back to the origin whenever the fit declines — empty content,
+    // canvas unmounted, or a zero-size rect.
+    if (!fitCameraToDoc(doc)) setViewport({ x: 0, y: 0, zoom: 1 });
+    baselineRef.current = serialize(pickDocSnapshot(doc));
+  };
+
+  /**
+   * Write an 'auto' revision of the live doc before something replaces it.
+   * No-op when there is nothing to lose, or nothing has changed since the last
+   * save or load.
+   *
+   * THROWS on a storage failure — every caller MUST abort its switch, or it
+   * wipes a document it only thinks it saved.
+   */
+  const autoSaveCurrent = async (): Promise<void> => {
+    const doc = useDoc.getState();
+    const json = serialize(pickDocSnapshot(doc));
+    if (json === EMPTY_DOC_JSON) return; // nothing to lose
+    if (json === baselineRef.current) return; // already in the library, verbatim
+    const thumb = await tryCaptureThumbnail(themeColors(darkMode).canvasBg);
+    const id = getCurrentMapId() ?? newMapId();
+    await saveRevision(id, doc.name, json, 'auto', thumb);
+    baselineRef.current = json;
+  };
+
+  const onSaveJson = () => {
     // Serialize the canonical doc slice (DOC_FIELDS) so the save never drifts
     // from the model when a field is added.
     const json = serialize(pickDocSnapshot(useDoc.getState()));
     const blob = new Blob([json], { type: 'application/json' });
     downloadBlob(blob, `${mapFileBasename(useDoc.getState().name)}.massimo.json`);
+  };
+
+  const onSaveToLibrary = async () => {
+    const doc = useDoc.getState();
+    const json = serialize(pickDocSnapshot(doc));
+    try {
+      const thumb = await tryCaptureThumbnail(themeColors(darkMode).canvasBg);
+      // An explicit save is never deduped: asking for a checkpoint and getting
+      // silence would be its own bug.
+      const id = getCurrentMapId() ?? newMapId();
+      await saveRevision(id, doc.name, json, 'user', thumb);
+      setCurrentMapId(id);
+      baselineRef.current = json;
+      setMenuStatus({ kind: 'info', text: `Saved to library as “${doc.name}”` });
+    } catch (err) {
+      setMenuStatus({ kind: 'error', text: errorText(err, 'Could not save to the library.') });
+    }
+  };
+
+  /** New = a different document, which is exactly when clearing undo is right. */
+  const onNew = async () => {
+    try {
+      await autoSaveCurrent();
+    } catch (err) {
+      // The auto-save IS the backstop for a non-undoable wipe. If it failed,
+      // there is nothing to fall back to — so don't wipe.
+      setMenuStatus({ kind: 'error', text: errorText(err, 'Could not save to the library.') });
+      return;
+    }
+    setMenuStatus(null);
+    adoptParsedDoc(DEFAULT_DOC);
+    setCurrentMapId(newMapId());
+  };
+
+  const onOpenLibrary = () => setLibraryOpen(true);
+
+  /** Load a revision's payload over the live doc. Throws for the dialog to show. */
+  const onOpenRevision = async (mapId: string, revisionId: number) => {
+    await autoSaveCurrent();
+    const json = await getPayload(revisionId);
+    if (json === undefined) throw new Error('That revision is no longer in the library.');
+    const result = parse(json, useCustomPalettes.getState().palettes);
+    if (!result.ok) throw new Error(result.error);
+    adoptParsedDoc(result.doc);
+    setCurrentMapId(mapId);
+    setLibraryOpen(false);
   };
 
   // Export the rendered map as an image. Both share the live canvas SVG, the
@@ -153,37 +325,16 @@ export function Toolbar() {
   ) => {
     const svg = getCanvasSvg();
     if (!svg) {
-      setMenuError('Canvas not ready to export yet.');
+      setMenuStatus({ kind: 'error', text: 'Canvas not ready to export yet.' });
       return;
     }
-    // A selected line desaturates the others on the live canvas; that recoloring
-    // would bake into the clone. Drop the line selection for the capture and
-    // restore it afterward so the export shows the finished map in full color
-    // regardless of what's selected. flushSync commits the repaint to the DOM
-    // synchronously, so the clone we read is guaranteed clean — no frame-timing
-    // race.
-    const prevLineId = useSelection.getState().selectedLineId;
-    // Dropping the line selection for the capture would trip the sidebar's
-    // auto-reveal collapse (it keys off selectedLineId clearing). Clear the flag
-    // first so an auto-revealed sidebar doesn't blink shut mid-export (visible
-    // during the async PDF path), then restore it with the reselection.
-    const prevAutoReveal = useSelection.getState().sidebarAutoRevealed;
     try {
-      setMenuError(null);
-      if (prevLineId)
-        flushSync(() => {
-          useSelection.setState({ sidebarAutoRevealed: false });
-          useSelection.getState().selectLine(null);
-        });
-      await fn(svg, themeColors(darkMode).canvasBg, mapFileBasename(useDoc.getState().name));
+      setMenuStatus(null);
+      await withNeutralSelection(() =>
+        fn(svg, themeColors(darkMode).canvasBg, mapFileBasename(useDoc.getState().name)),
+      );
     } catch (err) {
-      setMenuError(err instanceof Error ? err.message : 'Export failed.');
-    } finally {
-      if (prevLineId)
-        flushSync(() => {
-          useSelection.getState().selectLine(prevLineId);
-          useSelection.setState({ sidebarAutoRevealed: prevAutoReveal });
-        });
+      setMenuStatus({ kind: 'error', text: errorText(err, 'Export failed.') });
     }
   };
   const onExportPng = () => void runExport(exportCanvasPng);
@@ -207,23 +358,26 @@ export function Toolbar() {
     // instead of dropping them as unknown.
     const result = parse(text, useCustomPalettes.getState().palettes);
     if (!result.ok) {
-      setMenuError(result.error);
+      setMenuStatus({ kind: 'error', text: result.error });
       return;
     }
-    setMenuError(null);
-    selection.selectStation(null);
-    selection.selectLine(null);
-    selection.selectLineTag(null);
-    selection.selectRouteBullet(null);
-    selection.selectTransfer(null);
-    selection.setUiMode({ kind: 'idle' });
-    selection.setEditingStationId(null);
-    useDoc.getState().loadDoc(result.doc);
-    clearHistory(); // undo must not cross a file load
-    // The camera lives outside the doc (saved files are camera-agnostic), so a
-    // load would otherwise keep the old pan/zoom and could land on a blank area.
-    // Point it at the freshly loaded content: center + fit the whole map.
-    fitCameraToDoc(result.doc);
+    // After the parse, so a cancelled picker or an unreadable file writes
+    // nothing; before the adopt, so a storage failure costs the load, not the
+    // document.
+    try {
+      await autoSaveCurrent();
+    } catch (err) {
+      setMenuStatus({
+        kind: 'error',
+        text: errorText(err, 'Could not save the current map to the library.'),
+      });
+      return;
+    }
+    setMenuStatus(null);
+    adoptParsedDoc(result.doc);
+    // A file is not a library map: saving it makes a NEW one, the same way
+    // re-uploading a downloaded doc gives you a new doc.
+    setCurrentMapId(null);
   };
 
   // Add → Image…: read the file (svg text, or png/jpeg bytes), take its
@@ -254,8 +408,16 @@ export function Toolbar() {
       <MapNameField />
       <span className="tool-group-divider" aria-hidden="true" />
       <Menu label="Canvas">
-        <MenuItem onClick={onSave}>Save</MenuItem>
-        <MenuItem onClick={onLoadClick}>Load…</MenuItem>
+        <MenuItem onClick={() => void onNew()}>New</MenuItem>
+        <MenuSeparator />
+        <SubMenu label="Save">
+          <MenuItem onClick={onSaveJson}>JSON</MenuItem>
+          <MenuItem onClick={() => void onSaveToLibrary()}>To library</MenuItem>
+        </SubMenu>
+        <SubMenu label="Load">
+          <MenuItem onClick={onLoadClick}>JSON…</MenuItem>
+          <MenuItem onClick={onOpenLibrary}>From library…</MenuItem>
+        </SubMenu>
         <SubMenu label="Export">
           <MenuItem onClick={onExportPng}>PNG</MenuItem>
           <MenuItem onClick={onExportSvg}>SVG</MenuItem>
@@ -361,20 +523,24 @@ export function Toolbar() {
         <span style={{ width: 36 }}>{(zoom * 100).toFixed(0)}%</span>
       </label>
       <button onClick={onResetView}>Reset view</button>
-      {menuError && (
+      {menuStatus && (
+        // One fixed role="alert" for both kinds. Not role="status": this span is
+        // conditionally mounted, and inserting a polite live region with its text
+        // already inside is the classic shape that never gets announced. alert is
+        // special-cased to fire on insertion, so a success message spoken
+        // assertively beats one not spoken at all. The CSS keys off the class.
         <span
           role="alert"
-          style={{
-            color: 'var(--danger)',
-            marginLeft: 8,
-            display: 'inline-flex',
-            alignItems: 'center',
-            gap: 4,
-          }}
-          onClick={() => setMenuError(null)}
+          className={menuStatus.kind === 'info' ? 'menu-status info' : 'menu-status'}
+          onClick={() => setMenuStatus(null)}
           title="Click to dismiss"
         >
-          <ExclamationTriangleIcon aria-hidden="true" /> {menuError}
+          {menuStatus.kind === 'info' ? (
+            <CheckCircledIcon aria-hidden="true" />
+          ) : (
+            <ExclamationTriangleIcon aria-hidden="true" />
+          )}{' '}
+          {menuStatus.text}
         </span>
       )}
       <span className="tool-group-divider" aria-hidden="true" />
@@ -388,6 +554,9 @@ export function Toolbar() {
       >
         {selection.sidebarOpen ? <DoubleArrowRightIcon /> : <DoubleArrowLeftIcon />}
       </button>
+      {libraryOpen && (
+        <MapLibraryDialog onClose={() => setLibraryOpen(false)} onOpenRevision={onOpenRevision} />
+      )}
     </div>
   );
 }

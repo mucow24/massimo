@@ -1449,7 +1449,7 @@ describe('moveLineInOrder', () => {
 });
 
 describe('clearAll', () => {
-  it('clearAll returns a fresh DEFAULT_DOC', () => {
+  it('clearAll wipes every collection', () => {
     const doc = makeDoc({
       stations: [makeStation({ id: 's1' })],
       lines: [makeLine({ id: 'L1' })],
@@ -1459,6 +1459,33 @@ describe('clearAll', () => {
     expect(cleared.lines).toEqual({});
     expect(cleared.lineOrder).toEqual([]);
     expect(cleared.lineCounter).toBe(0);
+  });
+
+  /**
+   * Clear empties the canvas of the SAME document — so everything that isn't
+   * canvas content stays. The name MUST be non-default here: makeDoc's default
+   * name is MAP_NAME_DEFAULT is DEFAULT_DOC.name, so `toBe(doc.name)` against
+   * an unnamed fixture passes against a clearAll that drops the name entirely.
+   */
+  it('clearAll keeps the document settings that are not canvas content', () => {
+    const doc = makeDoc({
+      name: 'My Map',
+      stations: [makeStation({ id: 's1' })],
+      lines: [makeLine({ id: 'L1' })],
+      activePalettes: ['mta', 'custom-x'],
+      seamEdges: 'straight',
+    });
+    const styled = {
+      ...doc,
+      styles: { ...doc.styles, y1: { name: 'Bold stop', fields: {} } },
+    } as unknown as MapDoc;
+
+    const cleared = T.clearAll(styled);
+    expect(cleared.name).toBe('My Map');
+    expect(cleared.activePalettes).toEqual(['mta', 'custom-x']);
+    expect(cleared.seamEdges).toBe('straight');
+    expect(cleared.styles).toBe(styled.styles);
+    expect(cleared.styleDefaults).toBe(styled.styleDefaults);
   });
 });
 

@@ -1,4 +1,4 @@
-import { describe, it, expect, afterEach } from 'vitest';
+import { describe, it, expect, afterEach, vi } from 'vitest';
 import { buildExportSvg, mapFileBasename } from './exportCanvas';
 
 const SVG_NS = 'http://www.w3.org/2000/svg';
@@ -113,6 +113,76 @@ describe('buildExportSvg', () => {
     expect(width).toBe(296);
     expect(height).toBe(256);
     expect(out).toContain('viewBox="-14 -4 148 128"');
+  });
+
+  // PADDING=24 adds 48 to each axis, so the bbox below is the frame minus 48.
+  // The assertion is on the returned pixel size only: :116-117 applies ONE
+  // uniform scalar to both axes, so letterboxing is architecturally impossible
+  // and an aspect-ratio assertion could never fail.
+  it.each([
+    {
+      name: 'fits an oversized frame to the box',
+      box: { width: 432, height: 312 },
+      w: 240,
+      h: 180,
+    },
+    // min-not-max: taking the larger ratio here would give 720×180 and overflow.
+    { name: 'fits a wide frame by its bound axis', box: { width: 432, height: 72 }, w: 240, h: 60 },
+    // No upscaling — a small map stays its own size rather than blurring up.
+    { name: 'leaves a frame smaller than the box', box: { width: 52, height: 2 }, w: 100, h: 50 },
+  ])('fitBox $name', async ({ box, w, h }) => {
+    restore = stubGetBBox({ x: 0, y: 0, ...box });
+    const svg = makeSourceSvg('<circle cx="5" cy="5" r="1"></circle>');
+    const out = await buildExportSvg(svg, {
+      background: '#fff',
+      fitBox: { w: 240, h: 180 },
+    });
+    expect([out.width, out.height]).toEqual([w, h]);
+  });
+
+  /**
+   * Both halves need the fetch stub. buildExportSvg calls buildEmbeddedFontCss
+   * with one arg, so the default `fetchFn = fetch` resolves to undici, which
+   * throws on the base-relative URL; the per-face `catch { return '' }` swallows
+   * it and the empty css skips the <style>. Unstubbed, "no <style>" would pass
+   * before embedFonts exists at all, and "default still embeds" could never pass.
+   */
+  describe('embedFonts', () => {
+    const withStubbedFetch = () =>
+      vi.stubGlobal('fetch', async () => ({
+        ok: true,
+        arrayBuffer: async () => new Uint8Array([1, 2, 3, 4]).buffer,
+      }));
+    afterEach(() => vi.unstubAllGlobals());
+
+    it('embeds the used faces by default', async () => {
+      withStubbedFetch();
+      restore = stubGetBBox({ x: 0, y: 0, width: 100, height: 80 });
+      const svg = makeSourceSvg('<text x="0" y="0">Canal St</text>');
+      const { svg: out } = await buildExportSvg(svg, { background: '#fff' });
+      expect(out).toContain('<style');
+      expect(out).toContain('@font-face');
+    });
+
+    it('emits no font css when embedFonts is false', async () => {
+      withStubbedFetch();
+      restore = stubGetBBox({ x: 0, y: 0, width: 100, height: 80 });
+      const svg = makeSourceSvg('<text x="0" y="0">Canal St</text>');
+      const { svg: out } = await buildExportSvg(svg, { background: '#fff', embedFonts: false });
+      expect(out).not.toContain('<style');
+      expect(out).not.toContain('@font-face');
+    });
+  });
+
+  it('fitBox wins over pixelScale', async () => {
+    restore = stubGetBBox({ x: 0, y: 0, width: 432, height: 312 });
+    const svg = makeSourceSvg('<circle cx="5" cy="5" r="1"></circle>');
+    const out = await buildExportSvg(svg, {
+      background: '#fff',
+      pixelScale: 4,
+      fitBox: { w: 240, h: 180 },
+    });
+    expect([out.width, out.height]).toEqual([240, 180]);
   });
 
   it('inserts the background rect before the content, sized to the frame, filled with the background color', async () => {

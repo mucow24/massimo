@@ -70,12 +70,20 @@ export interface ExportSvg {
  * Clone the live map SVG, strip editing chrome, reframe to content bounds,
  * paint the theme background, embed the fonts actually used, and serialize to a
  * standalone SVG string. Throws when there is no content to export.
+ *
+ * `fitBox` scales the result down to fit within a box (never up) and wins over
+ * `pixelScale`. `embedFonts: false` skips the `@font-face` payload — hundreds of
+ * KB that a thumbnail has no use for.
  */
 export async function buildExportSvg(
   source: SVGSVGElement,
-  opts: { background: string; pixelScale?: number },
+  opts: {
+    background: string;
+    pixelScale?: number;
+    fitBox?: { w: number; h: number };
+    embedFonts?: boolean;
+  },
 ): Promise<ExportSvg> {
-  const pixelScale = opts.pixelScale ?? 1;
   const clone = source.cloneNode(true) as SVGSVGElement;
   clone.removeAttribute('class');
 
@@ -113,8 +121,15 @@ export async function buildExportSvg(
   // PNG (pixelScale=4) this makes the SVG declare 4× dimensions so the browser
   // rasterizes the vector natively at 4× — scaling the canvas context instead
   // would upscale a 1×-decoded bitmap (blurry, not true 4×).
-  const pxW = frameW * pixelScale;
-  const pxH = frameH * pixelScale;
+  //
+  // fitBox takes the SMALLER of the two ratios so the bound axis lands on the
+  // box and the other stays inside it, and clamps at 1 so a map smaller than the
+  // box is never blown up. One scalar for both axes — never letterboxed.
+  const scale = opts.fitBox
+    ? Math.min(opts.fitBox.w / frameW, opts.fitBox.h / frameH, 1)
+    : (opts.pixelScale ?? 1);
+  const pxW = frameW * scale;
+  const pxH = frameH * scale;
   clone.setAttribute('xmlns', SVG_NS);
   clone.setAttribute('viewBox', `${frameX} ${frameY} ${frameW} ${frameH}`);
   clone.setAttribute('width', String(pxW));
@@ -132,7 +147,8 @@ export async function buildExportSvg(
   clone.insertBefore(bg, clone.firstChild);
 
   // Embed only the font faces actually used by the surviving text.
-  const css = await buildEmbeddedFontCss(collectUsedFontFaces(clone));
+  const css =
+    (opts.embedFonts ?? true) ? await buildEmbeddedFontCss(collectUsedFontFaces(clone)) : '';
   if (css) {
     let defs = clone.querySelector('defs');
     if (!defs) {
@@ -156,6 +172,44 @@ export async function exportCanvasSvg(
 ): Promise<void> {
   const { svg } = await buildExportSvg(source, { background });
   downloadBlob(new Blob([svg], { type: 'image/svg+xml;charset=utf-8' }), `${basename}.svg`);
+}
+
+/** Largest a library thumbnail may be; the map fits inside, keeping its aspect. */
+export const THUMB_BOX = { w: 240, h: 180 };
+
+/**
+ * A small PNG data URI of the current map, for the library's revision list.
+ *
+ * Captured at save time because that is the only time it is possible: MapCanvas
+ * takes no props and reads singleton stores, so a document that isn't on screen
+ * cannot be rendered. Fonts are deliberately not embedded — ~347 KB of base64
+ * for a 240px-wide picture, where the fallback stack looks the same. The active
+ * theme's background bakes in.
+ *
+ * Throws on an empty canvas (via buildExportSvg), which callers treat as
+ * "no thumbnail" rather than a failed save.
+ */
+export async function captureThumbnail(source: SVGSVGElement, background: string): Promise<string> {
+  const { svg, width, height } = await buildExportSvg(source, {
+    background,
+    fitBox: THUMB_BOX,
+    embedFonts: false,
+  });
+  const url = URL.createObjectURL(new Blob([svg], { type: 'image/svg+xml;charset=utf-8' }));
+  try {
+    const img = new Image();
+    img.src = url;
+    await img.decode();
+    const canvas = document.createElement('canvas');
+    canvas.width = Math.round(width);
+    canvas.height = Math.round(height);
+    const ctx = canvas.getContext('2d');
+    if (!ctx) throw new Error('Could not get a 2D canvas context.');
+    ctx.drawImage(img, 0, 0);
+    return canvas.toDataURL('image/png');
+  } finally {
+    URL.revokeObjectURL(url);
+  }
 }
 
 /** Export the current map as a downloaded PNG file rendered at `scale`× size. */

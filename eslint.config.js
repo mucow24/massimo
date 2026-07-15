@@ -68,6 +68,13 @@ export default [
         SVGGraphicsElement: 'readonly',
         HTMLCanvasElement: 'readonly',
         CanvasRenderingContext2D: 'readonly',
+        indexedDB: 'readonly',
+        IDBDatabase: 'readonly',
+        IDBTransaction: 'readonly',
+        IDBRequest: 'readonly',
+        IDBObjectStore: 'readonly',
+        IDBKeyRange: 'readonly',
+        IDBValidKey: 'readonly',
       },
     },
     plugins: {
