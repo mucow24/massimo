@@ -1843,8 +1843,8 @@ input[type='range'].indeterminate {
    .app grid root (see App.tsx). Almost everything flows from the token
    reassignment below; only genuinely structural rules follow. The canvas
    background + on-canvas label colors are handled in the SVG itself
-   (MapCanvas / StationView / LabelView / Grid read darkMode from the
-   viewport store), not here. */
+   (MapCanvas / StationView / LabelView / Grid read darkMode off the doc —
+   see MapDoc.darkMode), not here. */
 .app[data-theme='dark'] {
   background: #141414;
   color: #e4e4e4;

@@ -17,7 +17,8 @@ beforeEach(() => {
     lines: { L1: makeLine({ id: 'L1', stations: ['s1'] }) },
     lineOrder: ['L1'],
   });
-  useViewportStore.setState({ darkMode: false, zoom: 1 });
+  useDoc.setState({ darkMode: false });
+  useViewportStore.setState({ zoom: 1 });
 });
 
 afterEach(() => useViewportStore.setState({ zoom: 1 }));
@@ -46,7 +47,7 @@ describe('<StationSilhouette /> — selection stroke (no-snap two-tone)', () => 
   });
 
   it('flips to a white core over a black underlay in dark mode (BWB)', () => {
-    useViewportStore.setState({ darkMode: true });
+    useDoc.setState({ darkMode: true });
     const [edge, core] = strokePaths('stroke');
     expect(edge.getAttribute('stroke')).toBe('#000000');
     expect(core.getAttribute('stroke')).toBe('#ffffff');

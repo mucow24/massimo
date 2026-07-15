@@ -2,7 +2,6 @@ import { describe, it, expect, beforeEach, vi } from 'vitest';
 import { render } from '@testing-library/react';
 import { StationView } from './StationView';
 import { useDoc, useSelection } from '../state/store';
-import { useViewportStore } from '../state/viewportStore';
 import { DEFAULT_DOC } from '../model/transforms';
 import { makeLine, makeStation, makeStop } from '../test/fixtures';
 import { DOT_SHAPE_PRESETS } from '../model/dotStyle';
@@ -19,7 +18,7 @@ beforeEach(() => {
     editingStationId: null,
     uiMode: { kind: 'idle' },
   });
-  useViewportStore.setState({ darkMode: false });
+  useDoc.setState({ darkMode: false });
 });
 
 // Black-stroked white dot: both a fill AND a stroke, so each dot contributes

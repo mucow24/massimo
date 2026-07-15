@@ -12,7 +12,6 @@ import { TEXT_LABEL_HIT_PAD } from '../geometry/stationBoundary';
 import { FONT_STACK } from '../util/fonts';
 import { useDoc } from '../state/store';
 import { useThemeColors } from '../state/theme';
-import { useViewportStore } from '../state/viewportStore';
 import { resolveTextLabelColor } from '../model/transforms';
 import { InlineBullet } from './InlineBullet';
 import { itemCursor } from './canvas/itemCursor';
@@ -73,7 +72,7 @@ export function LabelView({
   inHandMode = false,
 }: Props) {
   const docLines = useDoc((s) => s.lines);
-  const darkMode = useViewportStore((s) => s.darkMode);
+  const darkMode = useDoc((s) => s.darkMode);
   // Two-tone selection ring flips with the theme (WBW on light, BWB on dark).
   const themeColors = useThemeColors();
   // Per-label day/night color (defaults match the old theme-driven colors).

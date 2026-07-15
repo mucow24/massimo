@@ -97,8 +97,8 @@ export function Toolbar() {
   const setGridVisible = useViewportStore((s) => s.setGridVisible);
   const gridSize = useViewportStore((s) => s.gridSize);
   const setGridSize = useViewportStore((s) => s.setGridSize);
-  const darkMode = useViewportStore((s) => s.darkMode);
-  const setDarkMode = useViewportStore((s) => s.setDarkMode);
+  const darkMode = useDoc((s) => s.darkMode);
+  const setDarkMode = useDoc((s) => s.setDarkMode);
   const showWaypoints = useViewportStore((s) => s.showWaypoints);
   const setShowWaypoints = useViewportStore((s) => s.setShowWaypoints);
   const showNetwork = useViewportStore((s) => s.showNetwork);
@@ -280,7 +280,10 @@ export function Toolbar() {
     const svg = getCanvasSvg();
     if (!svg) return undefined;
     try {
-      return await captureThumbnail(captureExportSnapshot(svg), themeColors(darkMode).canvasBg);
+      return await captureThumbnail(
+        captureExportSnapshot(svg),
+        themeColors(useDoc.getState().darkMode).canvasBg,
+      );
     } catch {
       return undefined;
     }
@@ -357,7 +360,7 @@ export function Toolbar() {
       setMenuStatus(null);
       await fn(
         captureExportSnapshot(svg),
-        themeColors(darkMode).canvasBg,
+        themeColors(useDoc.getState().darkMode).canvasBg,
         mapFileBasename(useDoc.getState().name),
       );
     } catch (err) {

@@ -6,7 +6,6 @@ import { cellsAABBLocal } from '../../geometry/stationBoundary';
 import { labelLayoutLocal } from '../../geometry/labelLayout';
 import { stopHalfOf, lineWidthOf } from '../../model/lineWidth';
 import { useThemeColors } from '../../state/theme';
-import { useViewportStore } from '../../state/viewportStore';
 import { legibleTextOn } from '../../util/color';
 import { dotSizeOverride, resolveDotSize } from '../../model/dotSize';
 import { resolveDotRender } from '../../model/dotStyle';
@@ -62,7 +61,7 @@ export function StationLayoutEditor({
   // Theme still drives the label-handle stroke; darkMode resolves each dot's
   // fill so the orientation arrow can contrast it.
   const theme = useThemeColors();
-  const darkMode = useViewportStore((s) => s.darkMode);
+  const darkMode = useDoc((s) => s.darkMode);
   const inHandMode = selection.toolMode === 'hand' || selection.spaceHeld;
   const angle = station.rotation * 45;
   const stopHalf = stopHalfOf(lines);

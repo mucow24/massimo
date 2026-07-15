@@ -1,6 +1,6 @@
 import type { ReactNode } from 'react';
 import { DEFAULT_DOT_STYLE, resolveDotRender, type DotRenderParams } from '../model/dotStyle';
-import { useViewportStore } from '../state/viewportStore';
+import { useDoc } from '../state/store';
 import type { DotStyle } from '../model/types';
 import { FONT_STACK } from '../util/fonts';
 
@@ -104,7 +104,7 @@ export function StopGlyph({
   lineId,
   pass,
 }: Props) {
-  const darkMode = useViewportStore((s) => s.darkMode);
+  const darkMode = useDoc((s) => s.darkMode);
   const params = resolveDotRender(
     style ?? DEFAULT_DOT_STYLE,
     lineColor,

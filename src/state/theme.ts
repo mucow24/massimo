@@ -1,5 +1,5 @@
 import { useMemo } from 'react';
-import { useViewportStore } from './viewportStore';
+import { useDoc } from './store';
 
 /**
  * Theming has two halves, split by what can consume CSS:
@@ -107,8 +107,9 @@ export function themeColors(darkMode: boolean): ThemeColors {
   return darkMode ? DARK : LIGHT;
 }
 
-/** Canvas-side color palette for the active theme. */
+/** Canvas-side color palette for the active theme (see MapDoc.darkMode — the
+ *  document decides, so loading a night map paints night with no extra wiring). */
 export function useThemeColors(): ThemeColors {
-  const darkMode = useViewportStore((s) => s.darkMode);
+  const darkMode = useDoc((s) => s.darkMode);
   return useMemo(() => themeColors(darkMode), [darkMode]);
 }

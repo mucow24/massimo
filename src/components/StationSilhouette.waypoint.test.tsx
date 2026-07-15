@@ -10,7 +10,8 @@ import type { Line, Station } from '../model/types';
 beforeEach(() => {
   useDoc.setState({ ...useDoc.getState(), ...DEFAULT_DOC });
   useSelection.setState({ ...useSelection.getState(), editingStationId: null });
-  useViewportStore.setState({ darkMode: false, zoom: 1, showWaypoints: false });
+  useDoc.setState({ darkMode: false });
+  useViewportStore.setState({ zoom: 1, showWaypoints: false });
 });
 
 // StationSilhouette reads `lines` from the doc store (not a prop), so seed it.

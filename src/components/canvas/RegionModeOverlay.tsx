@@ -1,6 +1,5 @@
 import { memo } from 'react';
-import { useViewportStore } from '../../state/viewportStore';
-import { themeColors } from '../../state/theme';
+import { useThemeColors } from '../../state/theme';
 import type { RegionFace } from '../../geometry/lineRegions';
 import { polygonsToPath } from '../../geometry/polygonUnion';
 
@@ -33,8 +32,7 @@ export const RegionModeOverlay = memo(function RegionModeOverlay({
   onHover,
   onFaceClick,
 }: RegionModeOverlayProps) {
-  const darkMode = useViewportStore((s) => s.darkMode);
-  const theme = themeColors(darkMode);
+  const theme = useThemeColors();
   if (layer === 'outlines') {
     return (
       <g pointerEvents="none">

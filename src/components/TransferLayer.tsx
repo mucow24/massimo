@@ -2,7 +2,7 @@ import type { LineId, Station, Transfer, TransferEnd } from '../model/types';
 import { resolveDayNight, resolveTransferStyle, type TransferStyle } from '../model/transferStyle';
 import { stopPosWorld } from '../geometry/interlining';
 import { useThemeColors } from '../state/theme';
-import { useViewportStore } from '../state/viewportStore';
+import { useDoc } from '../state/store';
 import { selectionOutlineTones } from './selectionStyle';
 
 // World-unit gap between a selected transfer's visible edge and its outline,
@@ -126,7 +126,7 @@ export function TransferLayer({
 }: Omit<Props, 'selectedId'> & HoverProps) {
   // Transfer colors are theme-aware (day/night); resolve to the concrete hex
   // for the active canvas theme, same source as the dots + polygons.
-  const darkMode = useViewportStore((s) => s.darkMode);
+  const darkMode = useDoc((s) => s.darkMode);
   const list = Object.values(transfers);
   if (list.length === 0) return null;
 

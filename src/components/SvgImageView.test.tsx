@@ -3,6 +3,7 @@ import { render, fireEvent } from '@testing-library/react';
 import { resizeCursor, SvgImageView } from './SvgImageView';
 import { makeSvgImage } from '../test/fixtures';
 import { useLiveViewportStore, useViewportStore } from '../state/viewportStore';
+import { useDoc } from '../state/store';
 import type { SvgImage } from '../model/types';
 
 const noop = () => {};
@@ -35,7 +36,10 @@ function renderView(
 }
 
 describe('<SvgImageView /> body', () => {
-  beforeEach(() => useViewportStore.setState({ darkMode: false, zoom: 1 }));
+  beforeEach(() => {
+    useDoc.setState({ darkMode: false });
+    useViewportStore.setState({ zoom: 1 });
+  });
 
   it('renders an <image> with the href, size, and a translate+rotate transform', () => {
     const { container } = renderView(
@@ -133,7 +137,10 @@ describe('resizeCursor', () => {
 });
 
 describe('<SvgImageView /> overlay', () => {
-  beforeEach(() => useViewportStore.setState({ darkMode: false, zoom: 1 }));
+  beforeEach(() => {
+    useDoc.setState({ darkMode: false });
+    useViewportStore.setState({ zoom: 1 });
+  });
 
   const handles = (container: HTMLElement) =>
     Array.from(container.querySelectorAll('[data-svg-image-handle]'));
@@ -276,7 +283,10 @@ describe('<SvgImageView /> overlay', () => {
 });
 
 describe('<SvgImageView /> hit proxy (selected-on-top drag target)', () => {
-  beforeEach(() => useViewportStore.setState({ darkMode: false, zoom: 1 }));
+  beforeEach(() => {
+    useDoc.setState({ darkMode: false });
+    useViewportStore.setState({ zoom: 1 });
+  });
 
   const hit = (c: HTMLElement) => c.querySelector('[data-svg-image-hit="i0"]');
 

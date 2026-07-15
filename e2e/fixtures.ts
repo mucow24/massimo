@@ -82,6 +82,9 @@ export interface Seed {
   routeBullets?: SeedRouteBullet[];
   textLabels?: SeedTextLabel[];
   polygons?: SeedPolygon[];
+  // Seed a NIGHT map. Omit to persist a doc without the field at all — a save
+  // predating it, which must rehydrate to day via the DEFAULT_DOC merge.
+  darkMode?: boolean;
 }
 
 /**
@@ -202,6 +205,7 @@ export async function seedAndOpen(
       textLabels,
       polygons,
       polygonOrder: (seed.polygons ?? []).map((p) => p.id),
+      ...(seed.darkMode !== undefined ? { darkMode: seed.darkMode } : {}),
     },
   };
 

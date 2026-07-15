@@ -3,6 +3,7 @@ import { render, fireEvent } from '@testing-library/react';
 import { PolygonView } from './PolygonView';
 import { makePolygon } from '../test/fixtures';
 import { useLiveViewportStore, useViewportStore } from '../state/viewportStore';
+import { useDoc } from '../state/store';
 import type { Polygon } from '../model/types';
 
 const noop = () => {};
@@ -32,7 +33,7 @@ const body = (container: HTMLElement) =>
 
 describe('<PolygonView /> dark-mode colors', () => {
   beforeEach(() => {
-    useViewportStore.setState({ darkMode: false });
+    useDoc.setState({ darkMode: false });
   });
 
   it('paints the light fill/stroke in light mode, ignoring dark overrides', () => {
@@ -50,7 +51,7 @@ describe('<PolygonView /> dark-mode colors', () => {
   });
 
   it('paints the dark fill/stroke when dark mode is on', () => {
-    useViewportStore.setState({ darkMode: true });
+    useDoc.setState({ darkMode: true });
     const { container } = renderBody(
       makePolygon({
         id: 'p0',
@@ -65,7 +66,7 @@ describe('<PolygonView /> dark-mode colors', () => {
   });
 
   it('shows the light colors in dark mode when dark equals light (uncustomized)', () => {
-    useViewportStore.setState({ darkMode: true });
+    useDoc.setState({ darkMode: true });
     const { container } = renderBody(makePolygon({ id: 'p0', fill: '#112233', stroke: '#445566' }));
     expect(body(container).getAttribute('fill')).toBe('#112233');
     expect(body(container).getAttribute('stroke')).toBe('#445566');
@@ -74,7 +75,8 @@ describe('<PolygonView /> dark-mode colors', () => {
 
 describe('<PolygonView /> overlay handles are a constant screen size', () => {
   beforeEach(() => {
-    useViewportStore.setState({ darkMode: false, zoom: 1 });
+    useDoc.setState({ darkMode: false });
+    useViewportStore.setState({ zoom: 1 });
   });
 
   function renderOverlay(zoom: number) {
@@ -148,7 +150,8 @@ describe('<PolygonView /> overlay handles are a constant screen size', () => {
 
 describe('<PolygonView /> overlay handles track the LIVE gesture zoom (no snap)', () => {
   beforeEach(() => {
-    useViewportStore.setState({ darkMode: false, zoom: 1 });
+    useDoc.setState({ darkMode: false });
+    useViewportStore.setState({ zoom: 1 });
     useLiveViewportStore.setState({ pending: null });
   });
   afterEach(() => useLiveViewportStore.setState({ pending: null }));
@@ -194,7 +197,8 @@ describe('<PolygonView /> overlay handles track the LIVE gesture zoom (no snap)'
 
 describe('<PolygonView /> selected-vertex highlight', () => {
   beforeEach(() => {
-    useViewportStore.setState({ darkMode: false, zoom: 1 });
+    useDoc.setState({ darkMode: false });
+    useViewportStore.setState({ zoom: 1 });
   });
 
   // The selected handles are filled with the accent color (every handle is
@@ -231,7 +235,8 @@ describe('<PolygonView /> selected-vertex highlight', () => {
 
 describe('<PolygonView /> open polygons (closed: false)', () => {
   beforeEach(() => {
-    useViewportStore.setState({ darkMode: false, zoom: 1 });
+    useDoc.setState({ darkMode: false });
+    useViewportStore.setState({ zoom: 1 });
   });
 
   function renderOverlay(polygon: Polygon) {
@@ -335,7 +340,8 @@ describe('<PolygonView /> open polygons (closed: false)', () => {
 
 describe('<PolygonView /> locked body is click-through unless selected', () => {
   beforeEach(() => {
-    useViewportStore.setState({ darkMode: false, zoom: 1 });
+    useDoc.setState({ darkMode: false });
+    useViewportStore.setState({ zoom: 1 });
   });
 
   it('a locked, unselected body ignores pointer events (clicks land on what is beneath)', () => {
@@ -364,7 +370,8 @@ describe('<PolygonView /> locked body is click-through unless selected', () => {
 
 describe('<PolygonView /> locked polygons (E5c)', () => {
   beforeEach(() => {
-    useViewportStore.setState({ darkMode: false, zoom: 1 });
+    useDoc.setState({ darkMode: false });
+    useViewportStore.setState({ zoom: 1 });
   });
 
   function renderOverlay(polygon: Polygon) {
@@ -429,7 +436,10 @@ describe('<PolygonView /> locked polygons (E5c)', () => {
 });
 
 describe('<PolygonView /> hit proxy (selected-on-top drag target)', () => {
-  beforeEach(() => useViewportStore.setState({ darkMode: false, zoom: 1 }));
+  beforeEach(() => {
+    useDoc.setState({ darkMode: false });
+    useViewportStore.setState({ zoom: 1 });
+  });
 
   function renderHit(
     polygon: Polygon,
@@ -527,7 +537,7 @@ describe('<PolygonView /> hit proxy (selected-on-top drag target)', () => {
 
 describe('<PolygonView /> corner rounding', () => {
   beforeEach(() => {
-    useViewportStore.setState({ darkMode: false });
+    useDoc.setState({ darkMode: false });
   });
 
   it('draws straight edges (no quadratic) when curveRadius is unset', () => {

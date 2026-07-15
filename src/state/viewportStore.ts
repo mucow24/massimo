@@ -23,8 +23,9 @@ interface ViewportState extends Viewport {
    *  snapping (cycled through 5, 10, and 20 from the toolbar; see GRID_SIZES). */
   gridSize: number;
   setGridSize: (size: number) => void;
-  darkMode: boolean;
-  setDarkMode: (dark: boolean) => void;
+  // NOTE: darkMode is NOT here — it lives on MapDoc. A night map is a property
+  // of the map, not of the session viewing it, so it has to travel in the
+  // saved/exported file rather than sit beside it in localStorage.
   /** Render overlay: reveal waypoint stations (normally hidden) — their stops
    *  in a black-stroke/white-fill dot and their names with a "WP" lozenge. A
    *  pure paint toggle; it never mutates the doc (per-stop styles stay intact,
@@ -98,8 +99,6 @@ export const useViewportStore = create<ViewportState>()(
       setGridVisible: (gridVisible) => set({ gridVisible }),
       gridSize: 10,
       setGridSize: (gridSize) => set({ gridSize }),
-      darkMode: false,
-      setDarkMode: (darkMode) => set({ darkMode }),
       showWaypoints: false,
       setShowWaypoints: (showWaypoints) => set({ showWaypoints }),
       showNetwork: true,
@@ -114,7 +113,6 @@ export const useViewportStore = create<ViewportState>()(
         zoom: s.zoom,
         gridVisible: s.gridVisible,
         gridSize: s.gridSize,
-        darkMode: s.darkMode,
         showWaypoints: s.showWaypoints,
         // showNetwork is deliberately absent: hiding the network is a momentary
         // "get out of my way" toggle, not a saved preference. Persisting it

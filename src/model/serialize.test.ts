@@ -46,6 +46,25 @@ describe('serialize / parse round-trip', () => {
     expect(result.ok).toBe(true);
     if (result.ok) expect(result.doc).toEqual(doc);
   });
+
+  // A night map is a property of the map, not of the session that drew it: an
+  // exported file has to carry the mode or it reopens in day.
+  it('round-trips darkMode, so an exported night map reopens dark', () => {
+    const doc = makeDoc({ darkMode: true, styles: Object.values(T.DEFAULT_STYLES) });
+    const result = parse(serialize(doc));
+    expect(result.ok).toBe(true);
+    if (result.ok) expect(result.doc.darkMode).toBe(true);
+  });
+
+  // Absent in every save predating the field ⇒ day, via the DEFAULT_DOC merge.
+  // No migration: the same route seamEdges took.
+  it('defaults darkMode to false for a file saved before the field existed', () => {
+    const { darkMode: _omitted, ...docWithoutDarkMode } = T.DEFAULT_DOC;
+    const json = JSON.stringify({ format: 'massimo-map', doc: docWithoutDarkMode });
+    const r = parse(json);
+    expect(r.ok).toBe(true);
+    if (r.ok) expect(r.doc.darkMode).toBe(false);
+  });
 });
 
 describe('parse — active palette invariant', () => {

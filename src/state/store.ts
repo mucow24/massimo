@@ -119,6 +119,11 @@ const DOC_FIELDS = [
   // Global branch-seam inner-edge mode. Absent in older saves, backfilled to
   // 'both' by the shallow merge on both load paths.
   'seamEdges',
+  // Whether this is a night map. Lived in useViewportStore (session state)
+  // until it became clear a night map is a property of the MAP: it has to
+  // travel in the exported file. Absent in older saves, backfilled to false by
+  // the shallow merge on both load paths — no migration.
+  'darkMode',
 ] as const;
 type DocFieldName = (typeof DOC_FIELDS)[number];
 export type DocSnapshot = Pick<MapDoc, DocFieldName>;
@@ -596,6 +601,9 @@ interface DocState extends MapDoc {
   /** Global branch-seam inner-edge mode: draw both edges, only the straight
    *  pieces, or only the curved (fillet) pieces of every line's seam. */
   setSeamEdges: (seamEdges: SeamEdges) => void;
+  /** Make this a night map (or a day map again). A document edit like any
+   *  other — undoable, and saved with the file. */
+  setDarkMode: (darkMode: boolean) => void;
   /** Delete a custom palette definition (from the custom-palette store) and
    *  prune it from this doc's active set, falling back to the default set if it
    *  was the only active palette. */
@@ -964,6 +972,7 @@ export const useDoc = create<DocState>()(
         togglePalette: (id) =>
           set((s) => T.togglePalette(s, id, useCustomPalettes.getState().palettes)),
         setSeamEdges: (seamEdges) => set((s) => T.setSeamEdges(s, seamEdges)),
+        setDarkMode: (darkMode) => set((s) => T.setDarkMode(s, darkMode)),
         deleteCustomPalette: (id) => {
           useCustomPalettes.getState().removePalette(id);
           set((s) => {
