@@ -1,8 +1,10 @@
-import { describe, it, expect } from 'vitest';
-import { alignTargets, textLabelAlignPoints } from './snapTargets';
+import { describe, it, expect, beforeEach } from 'vitest';
+import { alignTargets, liveAlignTargets, textLabelAlignPoints } from './snapTargets';
 import { stopPosWorld } from '../../geometry/interlining';
 import { svgImageCorners } from '../../geometry/svgImage';
 import { measureTextLabel } from '../../geometry/textMeasure';
+import { useDoc } from '../../state/store';
+import { useViewportStore } from '../../state/viewportStore';
 import {
   makeDoc,
   makePolygon,
@@ -104,5 +106,47 @@ describe('alignTargets', () => {
       { x: 2, y: 2 },
       { x: 3, y: 3 },
     ]);
+  });
+});
+
+describe('liveAlignTargets — the lines/stations toggle', () => {
+  const station = makeStation({ id: 'a', x: 300, y: 300, stops: [makeStop('L1')] });
+  const polygon = makePolygon({
+    id: 'p1',
+    vertices: [
+      { x: 0, y: 0 },
+      { x: 10, y: 0 },
+      { x: 10, y: 10 },
+    ],
+  });
+
+  beforeEach(() => {
+    useDoc.setState({
+      ...useDoc.getState(),
+      ...makeDoc({ stations: [station], polygons: [polygon] }),
+    });
+    useViewportStore.setState({ showNetwork: true });
+  });
+
+  it('offers station stops as targets while the network is shown', () => {
+    const out = liveAlignTargets();
+    expect(out).toContainEqual(stopPosWorld(station.stops[0], station));
+    expect(out).toContainEqual({ x: 10, y: 10 });
+  });
+
+  it('drops station targets while the network is hidden, keeping the background art', () => {
+    // Dragging a polygon shouldn't align it against — or draw a guide line to —
+    // a station that isn't on the canvas. The art the toggle exposes still
+    // snaps to itself, so only the station points go.
+    useViewportStore.setState({ showNetwork: false });
+    const out = liveAlignTargets();
+    expect(out).not.toContainEqual(stopPosWorld(station.stops[0], station));
+    expect(out).toEqual(polygon.vertices);
+  });
+
+  it('honours exclusions the same as alignTargets', () => {
+    expect(liveAlignTargets({ polygonIds: new Set(['p1']) })).toEqual(
+      alignTargets(useDoc.getState(), { polygonIds: new Set(['p1']) }),
+    );
   });
 });

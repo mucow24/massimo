@@ -22,7 +22,7 @@ import type { Vec2 } from '../../geometry/vec';
 import type { LineId } from '../../model/types';
 import { textLabelCorners } from '../../geometry/stationBoundary';
 import { starterPolygonVertices, TEXT_LABEL_DEFAULTS } from '../../model/transforms';
-import { alignTargets } from './snapTargets';
+import { liveAlignTargets } from './snapTargets';
 import type { ViewportApi } from './useViewport';
 
 export interface PlacementSnap {
@@ -78,7 +78,7 @@ export function snapPlacement(
     const snap = snapPolygonPoint({
       proposed: { x: world.x + anchorOff.x, y: world.y + anchorOff.y },
       lineTargets: [],
-      allTargets: alignTargets(doc),
+      allTargets: liveAlignTargets(),
       modes,
       tolerance,
       gridInterval: gridSize,

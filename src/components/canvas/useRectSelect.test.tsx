@@ -2,6 +2,7 @@ import { describe, it, expect, beforeEach } from 'vitest';
 import { act, renderHook } from '@testing-library/react';
 import { useRectSelect, type RectSelectApi } from './useRectSelect';
 import { useDoc, useSelection, dragState } from '../../state/store';
+import { useViewportStore } from '../../state/viewportStore';
 import { DEFAULT_DOC } from '../../model/transforms';
 import { makeLine, makePolygon, makeTextLabel, stationWithStop } from '../../test/fixtures';
 import { fakeSvgRef, pointerEvent } from '../../test/interaction';
@@ -36,6 +37,7 @@ function resetSelection(over: Record<string, unknown> = {}) {
 beforeEach(() => {
   useDoc.setState({ ...useDoc.getState(), ...DEFAULT_DOC });
   resetSelection();
+  useViewportStore.setState({ showNetwork: true });
   dragState.suppressClick = false;
 });
 
@@ -160,7 +162,7 @@ describe('useRectSelect — preview + commit across all object types', () => {
           ],
         }),
       },
-      polygonOrder: ['p1'],
+      backgroundOrder: ['p1'],
     });
   });
 
@@ -190,6 +192,58 @@ describe('useRectSelect — preview + commit across all object types', () => {
   });
 });
 
+describe('useRectSelect — a hidden network stays out of the marquee', () => {
+  // The lines/stations toggle exists so the art buried under the network can be
+  // worked on. Station hits come from doc geometry, not the DOM, so hiding them
+  // doesn't take them out of a marquee by itself: without this opt-out, throwing
+  // a band around that art would also grab every station it crossed — an
+  // invisible selection that then answers Delete and the nudge keys.
+  beforeEach(() => {
+    useDoc.setState({
+      ...useDoc.getState(),
+      lines: { L1: makeLine({ id: 'L1', stations: ['S'] }) },
+      lineOrder: ['L1'],
+      stations: { S: stationWithStop('S' as StationId, 'L1', { x: 50, y: 50 }) },
+      // Sits right under the station, which is the whole scenario.
+      polygons: {
+        p1: makePolygon({
+          id: 'p1',
+          vertices: [
+            { x: 30, y: 30 },
+            { x: 70, y: 30 },
+            { x: 70, y: 70 },
+            { x: 30, y: 70 },
+          ],
+        }),
+      },
+      backgroundOrder: ['p1'],
+    });
+  });
+
+  const bandOverBoth = (result: Result, ref: ReturnType<typeof render>['ref']) => {
+    down(result, pointerEvent({ clientX: 0, clientY: 0, target: ref.current }));
+    move(result, pointerEvent({ clientX: 150, clientY: 150 }));
+  };
+
+  it('grabs both when the network is shown (baseline)', () => {
+    const { result, ref } = render();
+    bandOverBoth(result, ref);
+    expect(result.current.previewStationIds).toContain('S');
+    expect(result.current.previewPolygonIds).toContain('p1');
+  });
+
+  it('grabs the polygon underneath but not the hidden station', () => {
+    useViewportStore.setState({ showNetwork: false });
+    const { result, ref } = render();
+    bandOverBoth(result, ref);
+    expect(result.current.previewStationIds).toEqual([]);
+    expect(result.current.previewPolygonIds).toContain('p1');
+    up(result, pointerEvent({ clientX: 150, clientY: 150 }));
+    expect(useSelection.getState().selectedStationIds).toEqual([]);
+    expect(useSelection.getState().selectedPolygonIds).toContain('p1');
+  });
+});
+
 describe('useRectSelect — alt-marquee includes locked items (recovery path)', () => {
   // Locked items are click-through on the canvas, so an Alt-marquee is the
   // way to re-select one (to reach its popover's unlock toggle).
@@ -197,7 +251,7 @@ describe('useRectSelect — alt-marquee includes locked items (recovery path)', 
     useDoc.setState({
       ...useDoc.getState(),
       polygons: { p1: makePolygon({ id: 'p1', locked: true }) },
-      polygonOrder: ['p1'],
+      backgroundOrder: ['p1'],
       textLabels: { g1: makeTextLabel({ id: 'g1', x: 0, y: 0, locked: true }) },
     });
   });

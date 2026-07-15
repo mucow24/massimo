@@ -144,9 +144,8 @@ describe('lockedHitsAt', () => {
     stations: {},
     lines: {},
     polygons: {},
-    polygonOrder: [] as string[],
     svgImages: {},
-    svgImageOrder: [] as string[],
+    backgroundOrder: [] as string[],
     textLabels: {},
     routeBullets: {},
     ...over,
@@ -156,21 +155,20 @@ describe('lockedHitsAt', () => {
     // makePolygon's default square spans (-30,-30)..(30,30).
     const d = doc({
       polygons: { a: makePolygon({ id: 'a', locked: true }), b: makePolygon({ id: 'b' }) },
-      polygonOrder: ['a', 'b'],
+      backgroundOrder: ['a', 'b'],
     });
     expect(lockedHitsAt({ x: 0, y: 0 }, d, 0)).toEqual([{ kind: 'polygon', id: 'a' }]);
     expect(lockedHitsAt({ x: 500, y: 500 }, d, 0)).toEqual([]);
   });
 
-  it('reports every locked kind, topmost-first by paint band (labels > bullets > stations > images > polygons)', () => {
+  it('reports every locked kind, topmost-first by paint band (labels > bullets > stations > background)', () => {
     const d = doc({
       stations: {
         S: { ...stationWithStop('S' as StationId, 'L1' as LineId, { x: 0, y: 0 }), locked: true },
       },
       polygons: { p: makePolygon({ id: 'p', locked: true }) },
-      polygonOrder: ['p'],
       svgImages: { i: makeSvgImage({ id: 'i', locked: true }) },
-      svgImageOrder: ['i'],
+      backgroundOrder: ['p', 'i'], // image over polygon
       textLabels: { g: makeTextLabel({ id: 'g', x: 0, y: 0, text: 'Hi', locked: true }) },
       routeBullets: { b: bullet('b') },
     });
@@ -189,9 +187,23 @@ describe('lockedHitsAt', () => {
         low: makePolygon({ id: 'low', locked: true }),
         high: makePolygon({ id: 'high', locked: true }),
       },
-      polygonOrder: ['low', 'high'], // later = painted on top
+      backgroundOrder: ['low', 'high'], // later = painted on top
     });
     expect(lockedHitsAt({ x: 0, y: 0 }, d, 0).map((r) => r.id)).toEqual(['high', 'low']);
+  });
+
+  it('interleaves locked polygons and images by the one shared background order', () => {
+    // A polygon stacked ABOVE an image must be reported above it — the two
+    // kinds share one stack, so they can't be reported as kind-grouped blocks.
+    const d = doc({
+      polygons: { p: makePolygon({ id: 'p', locked: true }) },
+      svgImages: { i: makeSvgImage({ id: 'i', locked: true }) },
+      backgroundOrder: ['i', 'p'], // polygon on top
+    });
+    expect(lockedHitsAt({ x: 0, y: 0 }, d, 0).map((r) => `${r.kind}:${r.id}`)).toEqual([
+      'polygon:p',
+      'svgImage:i',
+    ]);
   });
 
   it('the pad makes an OPEN locked polygon reachable near its stroke', () => {
@@ -204,7 +216,7 @@ describe('lockedHitsAt', () => {
         { x: 100, y: 0 },
       ],
     });
-    const d = doc({ polygons: { open: chain }, polygonOrder: ['open'] });
+    const d = doc({ polygons: { open: chain }, backgroundOrder: ['open'] });
     expect(lockedHitsAt({ x: 50, y: 1 }, d, 2)).toEqual([{ kind: 'polygon', id: 'open' }]);
     expect(lockedHitsAt({ x: 50, y: 5 }, d, 2)).toEqual([]);
   });

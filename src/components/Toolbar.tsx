@@ -34,6 +34,8 @@ import {
   DoubleArrowLeftIcon,
   DoubleArrowRightIcon,
   ExclamationTriangleIcon,
+  EyeNoneIcon,
+  EyeOpenIcon,
   FrameIcon,
   HandIcon,
   LayersIcon,
@@ -47,12 +49,13 @@ import { MapNameField } from './MapNameField';
 
 /**
  * The empty document, serialized. Byte-comparing against this IS the auto-save's
- * content gate: exact, and covering all 18 DOC_FIELDS by construction.
+ * content gate: exact, and covering every DOC_FIELDS entry by construction — a
+ * new doc field is gated the day it is added, with no edit here.
  *
- * Deliberately NOT `computeContentBounds` — that is a camera hull which reads 5
- * fields and omits lines on purpose, so a map whose work lives entirely in its
- * lines reads as "empty", the auto-save writes nothing, and New wipes it for
- * good. One concept, not two.
+ * Deliberately NOT `computeContentBounds` — that is a camera hull which reads
+ * five of those fields and omits lines on purpose, so a map whose work lives
+ * entirely in its lines reads as "empty", the auto-save writes nothing, and New
+ * wipes it for good. One concept, not two.
  */
 const EMPTY_DOC_JSON = serialize(pickDocSnapshot(DEFAULT_DOC));
 
@@ -61,50 +64,6 @@ type MenuStatus = { kind: 'error' | 'info'; text: string };
 
 const errorText = (err: unknown, fallback: string): string =>
   err instanceof Error ? err.message : fallback;
-
-/**
- * Run `fn` with no line selected, then put the selection back.
- *
- * A selected line desaturates the others on the live canvas (MapCanvas's
- * colorMap repaints them at OTHER_LINE_SATURATION in the main, non-excluded
- * layer), and that recoloring would bake into any clone taken of it. flushSync
- * commits the repaint synchronously, so what we read is guaranteed clean — no
- * frame-timing race. Clearing `sidebarAutoRevealed` first stops an auto-revealed
- * sidebar blinking shut mid-capture.
- */
-async function withNeutralSelection<T>(fn: () => Promise<T>): Promise<T> {
-  const prevLineId = useSelection.getState().selectedLineId;
-  const prevAutoReveal = useSelection.getState().sidebarAutoRevealed;
-  if (prevLineId)
-    flushSync(() => {
-      useSelection.setState({ sidebarAutoRevealed: false });
-      useSelection.getState().selectLine(null);
-    });
-  try {
-    return await fn();
-  } finally {
-    if (prevLineId)
-      flushSync(() => {
-        useSelection.getState().selectLine(prevLineId);
-        useSelection.setState({ sidebarAutoRevealed: prevAutoReveal });
-      });
-  }
-}
-
-/**
- * A thumbnail of the live canvas, or undefined if one can't be had. An empty
- * canvas throws (buildExportSvg has nothing to frame) and so does any
- * rasterization failure — neither should cost the user their save.
- */
-async function tryCaptureThumbnail(background: string): Promise<string | undefined> {
-  const svg = getCanvasSvg();
-  if (!svg) return undefined;
-  try {
-    return await withNeutralSelection(() => captureThumbnail(svg, background));
-  } catch {
-    return undefined;
-  }
-}
 
 function ToolButtons() {
   const toolMode = useSelection((s) => s.toolMode);
@@ -142,6 +101,8 @@ export function Toolbar() {
   const setDarkMode = useViewportStore((s) => s.setDarkMode);
   const showWaypoints = useViewportStore((s) => s.showWaypoints);
   const setShowWaypoints = useViewportStore((s) => s.setShowWaypoints);
+  const showNetwork = useViewportStore((s) => s.showNetwork);
+  const setShowNetwork = useViewportStore((s) => s.setShowNetwork);
   const clearAll = useDoc((s) => s.clearAll);
   const addLine = useDoc((s) => s.addLine);
   const selection = useSelection();
@@ -257,14 +218,78 @@ export function Toolbar() {
     const json = serialize(pickDocSnapshot(doc));
     if (json === EMPTY_DOC_JSON) return; // nothing to lose
     if (json === baselineRef.current) return; // already in the library, verbatim
-    const thumb = await tryCaptureThumbnail(themeColors(darkMode).canvasBg);
+    const thumb = await tryCaptureThumbnail();
     const id = getCurrentMapId() ?? newMapId();
     await saveRevision(id, doc.name, json, 'auto', thumb);
     baselineRef.current = json;
   };
 
-  const onSaveJson = () => {
-    // Serialize the canonical doc slice (DOC_FIELDS) so the save never drifts
+  /**
+   * A detached snapshot of the canvas as the export should see it: the finished
+   * map, free of whatever transient view state the user happens to be working
+   * in. Two such states would otherwise bake into the image — a selected line
+   * desaturates every other line, and the lines/stations toggle takes the whole
+   * network off the canvas. Neither is a decision about the map's content, so
+   * neither belongs in the file.
+   *
+   * Apply, clone, revert — all inside ONE synchronous task. flushSync commits
+   * each repaint to the DOM immediately, but the browser gets no frame in
+   * between, so nothing the user set is ever visibly disturbed. That's the
+   * whole point of snapshotting rather than holding the LIVE canvas in the
+   * export state across `fn`: everything downstream (font embedding, PNG
+   * rasterization, PDF generation) is async and can run for seconds, which
+   * would flash a hidden network back on and drop the line highlight for the
+   * duration.
+   */
+  const captureExportSnapshot = (svg: SVGSVGElement): SVGSVGElement => {
+    const prevLineId = useSelection.getState().selectedLineId;
+    // Clearing selectedLineId trips the sidebar's auto-reveal collapse (it keys
+    // off exactly that), so the flag is saved and restored with the reselection.
+    const prevAutoReveal = useSelection.getState().sidebarAutoRevealed;
+    const prevShowNetwork = useViewportStore.getState().showNetwork;
+    flushSync(() => {
+      if (prevLineId) {
+        useSelection.setState({ sidebarAutoRevealed: false });
+        useSelection.getState().selectLine(null);
+      }
+      if (!prevShowNetwork) useViewportStore.getState().setShowNetwork(true);
+    });
+    try {
+      return svg.cloneNode(true) as SVGSVGElement;
+    } finally {
+      flushSync(() => {
+        if (prevLineId) {
+          useSelection.getState().selectLine(prevLineId);
+          useSelection.setState({ sidebarAutoRevealed: prevAutoReveal });
+        }
+        if (!prevShowNetwork) useViewportStore.getState().setShowNetwork(false);
+      });
+    }
+  };
+
+  /**
+   * A thumbnail of the map as the export sees it, or undefined if one can't be
+   * had. Shares captureExportSnapshot with the image exports, so a save made
+   * with a line selected or the network hidden still pictures the finished map
+   * rather than the view someone happened to be working in.
+   *
+   * An empty canvas throws (buildExportSvg has nothing to frame), as does any
+   * rasterization failure. Neither should cost the user their save.
+   */
+  const tryCaptureThumbnail = async (): Promise<string | undefined> => {
+    const svg = getCanvasSvg();
+    if (!svg) return undefined;
+    try {
+      return await captureThumbnail(captureExportSnapshot(svg), themeColors(darkMode).canvasBg);
+    } catch {
+      return undefined;
+    }
+  };
+
+  // A downloaded file, which is what Export means here — saving now writes a
+  // revision to the library instead.
+  const onExportJson = () => {
+    // Serialize the canonical doc slice (DOC_FIELDS) so the file never drifts
     // from the model when a field is added.
     const json = serialize(pickDocSnapshot(useDoc.getState()));
     const blob = new Blob([json], { type: 'application/json' });
@@ -275,7 +300,7 @@ export function Toolbar() {
     const doc = useDoc.getState();
     const json = serialize(pickDocSnapshot(doc));
     try {
-      const thumb = await tryCaptureThumbnail(themeColors(darkMode).canvasBg);
+      const thumb = await tryCaptureThumbnail();
       // An explicit save is never deduped: asking for a checkpoint and getting
       // silence would be its own bug.
       const id = getCurrentMapId() ?? newMapId();
@@ -317,9 +342,9 @@ export function Toolbar() {
     setLibraryOpen(false);
   };
 
-  // Export the rendered map as an image. Both share the live canvas SVG, the
-  // active theme's background, and the name-stamped basename; failures surface
-  // in the toolbar alert.
+  // Export the rendered map as an image. All three share the canvas snapshot,
+  // the active theme's background, and the name-stamped basename; failures
+  // surface in the toolbar alert.
   const runExport = async (
     fn: (svg: SVGSVGElement, bg: string, basename: string) => Promise<void>,
   ) => {
@@ -330,8 +355,10 @@ export function Toolbar() {
     }
     try {
       setMenuStatus(null);
-      await withNeutralSelection(() =>
-        fn(svg, themeColors(darkMode).canvasBg, mapFileBasename(useDoc.getState().name)),
+      await fn(
+        captureExportSnapshot(svg),
+        themeColors(darkMode).canvasBg,
+        mapFileBasename(useDoc.getState().name),
       );
     } catch (err) {
       setMenuStatus({ kind: 'error', text: errorText(err, 'Export failed.') });
@@ -410,10 +437,7 @@ export function Toolbar() {
       <Menu label="Canvas">
         <MenuItem onClick={() => void onNew()}>New</MenuItem>
         <MenuSeparator />
-        <SubMenu label="Save">
-          <MenuItem onClick={onSaveJson}>JSON</MenuItem>
-          <MenuItem onClick={() => void onSaveToLibrary()}>To library</MenuItem>
-        </SubMenu>
+        <MenuItem onClick={() => void onSaveToLibrary()}>Save revision</MenuItem>
         <SubMenu label="Load">
           <MenuItem onClick={onLoadClick}>JSON…</MenuItem>
           <MenuItem onClick={onOpenLibrary}>From library…</MenuItem>
@@ -422,6 +446,7 @@ export function Toolbar() {
           <MenuItem onClick={onExportPng}>PNG</MenuItem>
           <MenuItem onClick={onExportSvg}>SVG</MenuItem>
           <MenuItem onClick={onExportPdf}>PDF</MenuItem>
+          <MenuItem onClick={onExportJson}>JSON</MenuItem>
         </SubMenu>
         <MenuSeparator />
         <MenuItem onClick={onClear}>Clear</MenuItem>
@@ -499,6 +524,20 @@ export function Toolbar() {
           onClick={() => setShowWaypoints(!showWaypoints)}
         >
           WP
+        </button>
+        <button
+          type="button"
+          className={'tool-btn' + (showNetwork ? ' active' : '')}
+          title={
+            showNetwork
+              ? 'Hide lines & stations — work on the background beneath them'
+              : 'Show lines & stations'
+          }
+          aria-label="Toggle lines and stations"
+          aria-pressed={showNetwork}
+          onClick={() => setShowNetwork(!showNetwork)}
+        >
+          {showNetwork ? <EyeOpenIcon /> : <EyeNoneIcon />}
         </button>
         <HelpPopover />
       </div>

@@ -236,12 +236,17 @@ y-up convention and is **intentionally the negation** — using the wrong one fl
 ### 5. Two opposite z-order conventions (don't conflate them either)
 
 - **Lines:** `MapDoc.lineOrder`, **index 0 = top** (Photoshop-layers convention).
-- **Polygons / svg images:** `polygonOrder` / `svgImageOrder`, **later in array = top** (painted
-  later). Ids missing from these arrays fall back to insertion order and render **on top** (via
-  `effectivePolygonOrder` / `effectiveSvgImageOrder`), so an add/order race never drops an item.
+- **Polygons + svg images:** ONE shared `backgroundOrder`, **later in array = top** (painted
+  later). The two kinds interleave in a single stack — a polygon can sit over an image or vice
+  versa — and the kind is resolved by lookup (`polygons[id] ?? svgImages[id]`), since ids are
+  UUIDs. Ids missing from the array fall back to insertion order, **polygons then images**, and
+  render on top (via `effectiveBackgroundOrder`), so an add/order race never drops an item. That
+  polygons-then-images fallback is also exactly the stacking of the retired
+  `polygonOrder`/`svgImageOrder` pair, which pinned every image above every polygon.
 
 Correspondingly `addLine` prepends (`[id, ...order]`, front), but `addPolygon`/`addSvgImage`
-append (back of array = front by the opposite convention).
+append (back of array = front by the opposite convention) — a new background item of either kind
+lands on top of the whole band.
 
 ### 6. The rendering pipeline is a fixed, interleaved z-order of passes
 
@@ -273,10 +278,9 @@ interface MapDoc {
   transfers: Record<string, Transfer>;
   textLabels: Record<string, TextLabel>;
   polygons: Record<string, Polygon>;
-  polygonOrder: string[]; // LATER = top (opposite of lineOrder)
+  backgroundOrder: string[]; // polygons + svgImages in ONE stack; LATER = top (opposite of lineOrder)
   regionAssignments: Record<string, RegionAssignment>; // region paint choices ("paint by numbers")
   svgImages: Record<string, SvgImage>;
-  svgImageOrder: string[]; // LATER = top
   activePalettes: PaletteId[]; // INVARIANT: never empty
   seamEdges: SeamEdges; // global branch-seam inner-edge mode: 'both' | 'straight' | 'curved'
   styles: Record<string, StyleDef>; // named per-kind formatting presets ("Styles")
@@ -463,7 +467,8 @@ toStationId` (**invariant: `from < to`**, canonical/alphabetic, matching `pairKe
 Right-click cycles all six states: text up→right→down→left → chevron-forward → chevron-reverse.
 
 **`Polygon`** — a free-floating background shape (river, park…), rendered **under all other map
-content**. `id, vertices: Vec2[]` (**world coords, ≥3, ordered; there is no center/rotation
+content**, z-ordered against the svg images in the shared `backgroundOrder`. `id, vertices:
+Vec2[]` (**world coords, ≥3, ordered; there is no center/rotation
 field — rotation rewrites the vertices** around the centroid), `fill, stroke` (`#rrggbb`, or
 `#rrggbbaa` when translucent — colors carry their own alpha now), `strokeWidth` (world units,
 floored at 0 — the slider caps at 10, but the spinbutton/stored value is unbounded above),
@@ -475,8 +480,9 @@ on load for legacy saves). Optional: `locked?`, `curveRadius?` (floored at 0, sl
 action so they never drift.
 
 **`SvgImage`** — an imported graphic — an `.svg` **or** a png/jpeg raster (the name predates raster
-support) — placed as an **opaque** `<image href="data:image/…;base64,…">` in the polygon band.
-`id, x, y` (world **center**), `width, height` (unrotated bbox,
+support) — placed as an **opaque** `<image href="data:image/…;base64,…">` in the background band,
+z-ordered against the polygons in the shared `backgroundOrder` (so an image can sit under a
+polygon, not just over it). `id, x, y` (world **center**), `width, height` (unrotated bbox,
 post-scale), `rotation: number` (**continuous degrees CW**, snaps to 22.5° under Shift), `href`
 (fixed at import, never edited), `locked?`. Optional: `opacity?` — an SVG-native **0..1** alpha
 clamped at both ends, painted onto the `<image>`'s `opacity` attribute; missing ⇒ 1 (fully
@@ -588,7 +594,7 @@ Path A does **more** than Path B because hand-edited files can be non-canonical 
 sanitizers `sanitizeLineWidth/Stroke/DotSize/Segments/StopDotSizes` exist for this).
 
 **Path B — localStorage rehydration: `migrateDoc(persisted, version)`** ([store.ts](src/state/store.ts)).
-The zustand `persist` config: `name: 'vignelli-map-doc-v1'`, `version: 16`, `migrate:
+The zustand `persist` config: `name: 'vignelli-map-doc-v1'`, `version: 17`, `migrate:
 migrateDoc`, `partialize: pickDocSnapshot`. Because the persist-merge already fills absent fields
 from the initial state, `migrateDoc` only does **value-level legacy fixups, version-gated**, on
 disjoint fields (order immaterial except where noted), never mutating the input:
@@ -610,6 +616,7 @@ disjoint fields (order immaterial except where noted), never mutating the input:
 | `v<14`      | `bakeLegacyLabelSettings` (retired doc-level `labelFontSize/labelWeight/labelItalic/labelLeading/labelTracking` → per-station typography + seed the designated default station style) — ordered **after** the `v<3` `labelBold`→`labelWeight` step (so it sees the materialized weight) and the edge/style invariant passes |
 | `v<15`      | the **layering rework**: `stripLegacySegmentLayers` (drops the retired per-segment `segmentLayers` field from lines) + `sanitizeRegionAssignments` (region-assignment hygiene — a pre-v15 doc has none, but a tampered/newer-build one might). Path A runs `sanitizeRegionAssignments` unconditionally |
 | `v<16`      | `bakeDocCurveRadius` (retired doc-level `curveRadius` → per-line `Line.curveRadius` + line-style-def fill). Ordered **before** the `v<10` style hygiene — `migrateV9Styles` rebuilds defs on the canonical grids, so a def missing `curveRadius` would heal to the constant default instead of the doc's legacy value. Idempotent, keyed off field presence |
+| `v<17`      | `bakeLegacyBackgroundOrder` (the retired `polygonOrder` + `svgImageOrder` → the single `backgroundOrder`, polygons concatenated first — exactly the stacking the two separate arrays painted, so a legacy map renders unchanged). Each side is reconciled against its records before the concat. Idempotent, keyed off field presence; reference-stable when neither retired key is present |
 | (not gated) | `backfillLinesEdges` whenever `lines !== undefined` — every rehydrate, **not** `v<14`-gated: an intermediate build bumped the persist version to 14 and re-saved lines BEFORE they carried `edges`, so a `v<14` gate could never recover those (`ln.edges.join(...)` white-screens on load). Reference-stable when every line already has an array |
 | (not gated) | `ensureStyleInvariants` whenever `styles !== undefined` — ordered between the `v<10` hygiene and the bake (the bake seeds the _designated_ default transfer style; adoption stamps designated defaults) |
 | (not gated) | `validActivePalettes` whenever `activePalettes !== undefined`                                                                              |
@@ -626,21 +633,22 @@ custom ids.
 
 ### Save / startup
 
-- **Save → JSON** = `serialize(pickDocSnapshot(state))` → `${basename}.massimo.json`. `serialize`
-  does **no** sanitization (writers are canonical by construction; transforms maintain canonical
-  form on every set).
+- **Export → JSON** = `serialize(pickDocSnapshot(state))` → `${basename}.massimo.json`. A
+  download is an export; **Save revision** writes to the library instead. `serialize` does **no**
+  sanitization (writers are canonical by construction; transforms maintain canonical form on every
+  set).
 - **Startup**: no explicit load in `App.tsx` — zustand `persist` rehydrates from localStorage on
   boot, running `migrateDoc`.
 - **Load → JSON…**: `parse(text, customPalettes)` then `adoptParsedDoc()` (below).
 - File basename: `${sanitizedName} - YYYY-MM-DD` (e.g. `My Subway Map - 2026-07-01`), shared by
-  save + export via `mapFileBasename` ([exportCanvas.ts](src/export/exportCanvas.ts)). The map
+  every export via `mapFileBasename` ([exportCanvas.ts](src/export/exportCanvas.ts)). The map
   name leads so successive saves group together; it falls back to the literal `map` only when the
   name is empty or all-illegal after stripping filename-hostile characters.
 
 ### The map library ([mapLibrary.ts](src/state/mapLibrary.ts))
 
 In-app saved maps with revision history, in **IndexedDB** (`massimo-library`, v1). Reached via
-Canvas → Save → To library and Canvas → Load → From library…
+Canvas → Save revision and Canvas → Load → From library…
 
 - **A row IS a file.** The three stores hold opaque `serialize()` output, verbatim; loading goes
   through `parse()`. The module imports nothing from the model and knows nothing about `MapDoc` —
@@ -674,10 +682,11 @@ through both, so none can drift:
 - `autoSaveCurrent()`: writes an `'auto'` revision first. **Nothing that replaces the document may
   lose it.** It **throws** on storage failure and every caller aborts its switch — the auto-save is
   the whole backstop for New, which is not undoable.
-  - The content gate is `serialize(...) === EMPTY_DOC_JSON` — an exact byte compare covering all 18
-    `DOC_FIELDS`. **Do not** substitute `computeContentBounds`: that is a *camera hull* which reads
-    5 fields and omits lines deliberately, so a map whose work is entirely lines would read as
-    empty, write nothing, and be wiped. Three clicks away (Add line ×2, Esc).
+  - The content gate is `serialize(...) === EMPTY_DOC_JSON` — an exact byte compare covering every
+    `DOC_FIELDS` entry by construction, so a new field is covered the day it is added. **Do not**
+    substitute `computeContentBounds`: that is a *camera hull* which reads 5 of them and omits
+    lines deliberately, so a map whose work is entirely lines would read as empty, write nothing,
+    and be wiped. Three clicks away (Add line ×2, Esc).
   - The dedup gate compares against a **retained baseline** (the bytes last saved or adopted), not
     a DB read: id-keyed dedup is structurally inapplicable on the file-load path, which nulls the
     id. Not a dirty flag — a flag reads *clean* after a refresh, which loses data; a null baseline
@@ -806,13 +815,37 @@ mouseover — a pure hover cue, independent of the selection lists above.
 
 - `useViewportStore` — the **committed** camera (`x, y, zoom`) + `gridVisible`, `gridSize`
   (`GRID_SIZES = [5,10,20]`, default 10), `darkMode` (default false), `showWaypoints` (default
-  false — a pure paint toggle that reveals waypoint stations). **Persisted** as `'massimo-viewport'`
-  (per-browser, **not** per-file). The giant SVG tree subscribes here and is re-rendered only on
-  commit.
+  false — a pure paint toggle that reveals waypoint stations), `showNetwork` (default true — see
+  below). **Persisted** as `'massimo-viewport'` (per-browser, **not** per-file) — except
+  `showNetwork`, which `partialize` deliberately omits so a reload never opens onto an
+  apparently-empty map. The giant SVG tree subscribes here and is re-rendered only on commit.
 - `useLiveViewportStore` — the **in-flight** gesture viewport (`pending: Viewport | null`).
   **Not persisted, not undoable.** Only the small popover-overlay layer subscribes. Exists solely
   so per-frame pan/zoom writes don't hammer localStorage or re-render the SVG. See the
   [Interaction layer](#canvas-interaction-layer) for how the viewBox is written imperatively.
+
+**`showNetwork` — the lines/stations toggle** (toolbar eye button, right of `WP`). Off leaves only
+the background art (polygons, svg images) and the grid on the canvas, so art buried under the
+network can be clicked and dragged. Hidden content is **not rendered** rather than made invisible —
+an invisible-but-present hit rect would still swallow the clicks the toggle exists to let through.
+Three seams cover it, and a fourth rule governs anything new:
+
+- **Stations** self-gate inside [StationView.tsx](src/components/StationView.tsx). That dispatcher
+  is the chokepoint every station pass (wash, hit area, dots, labels, stroke, drag proxy) funnels
+  through, in `MapCanvas` and the highlight/placing overlays alike — so one `return null` covers
+  ~15 call sites and no future pass can miss it.
+- **Lines** are already consolidated into `MapCanvas`'s single `renderables.map` block (stripes,
+  casings, seams, stop markers), so they gate at that one call site. Line tags, transfers, band
+  warnings, the warning toasts, the layout editor, and `HighlightedLineLayer` gate beside it —
+  that last one matters most, because it paints a **full-viewport dim** that would otherwise black
+  out the background art with the network gone. `needRegions` folds in `showNetwork` too, which
+  also skips the app's most expensive computation while hidden.
+- **Doc-geometric code must opt in by hand.** Not rendering kills DOM hit-testing, but anything
+  reading geometry straight off the doc never notices: `useRectSelect` would sweep hidden stations
+  into a marquee (an invisible selection that answers Delete), and the snap pool would align art
+  to stations that aren't on screen. Both go through explicit gates —
+  `stationsForRectVisible` and `liveAlignTargets` (which wraps the still-pure `alignTargets`).
+  **Any new feature that reads `doc.stations`/`doc.lines` for interaction needs the same gate.**
 
 ### Preferences
 
@@ -1302,8 +1335,8 @@ band routing or the marker sort. Pinned by `MapCanvas.stationsSig.test.tsx`.
 
 ## UI chrome
 
-- **[Toolbar.tsx](src/components/Toolbar.tsx)** — Canvas menu (New / Save → {JSON, To library} /
-  Load → {JSON…, From library…} / Export / Clear), Add-item menu
+- **[Toolbar.tsx](src/components/Toolbar.tsx)** — Canvas menu (New / Save revision /
+  Load → {JSON…, From library…} / Export → {PNG, SVG, PDF, JSON} / Clear), Add-item menu
   (toggles `uiMode`; includes **Image / SVG…** — imports `.svg`, `.png`, or `.jpg/.jpeg` via
   `svgImport.ts` into an `SvgImage`), tool buttons (arrow/hand), grid-size + grid-visible +
   dark-mode toggles; embeds `SnapToggleBar`, `OptionsPopover`, and the **`?` `HelpPopover`**
@@ -1513,8 +1546,13 @@ Each is confirmed in source/tests; file pointers included.
 - **`SvgImage.rotation` is continuous degrees, not an octant** — never snap it to a `Rotation`. A
   serialize test pins `247.5°` surviving verbatim. ([types.ts](src/model/types.ts),
   `serialize.svgImage.test.ts`)
-- **Two opposite z-order conventions** — `lineOrder` index 0 = top; `polygonOrder`/`svgImageOrder`
-  last = top. `addLine` prepends, `addPolygon`/`addSvgImage` append.
+- **Two opposite z-order conventions** — `lineOrder` index 0 = top; `backgroundOrder` last = top.
+  `addLine` prepends, `addPolygon`/`addSvgImage` append.
+- **Polygons and svg images share ONE z-stack** (`backgroundOrder`) — they interleave, so neither
+  kind is structurally above the other. Anything that walks the band must resolve kind per id
+  rather than emit two kind-grouped blocks: the body pass, the drag-proxy pass (whose order is
+  the grab-priority tiebreak between two overlapping SELECTED items), and `lockedHitsAt` all do.
+  ([MapCanvas.tsx](src/components/MapCanvas.tsx), [hitStack.ts](src/components/canvas/hitStack.ts))
 - **`resolveDotRender` size param trap** — pass `dotSizeOverride` (the override-only value,
   `undefined` when tracking defaults), **never** `resolveDotSize` (the resolved value), or
   default-tracking service-code discs shrink to r 4. ([dotStyle.ts](src/model/dotStyle.ts))

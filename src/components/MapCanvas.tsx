@@ -17,7 +17,7 @@ import {
 } from '../geometry/interlining';
 import { edgeEndpoints } from '../model/lineTopology';
 import { decideSegmentClick, NEXT_STYLE } from './canvas/appendGestures';
-import { effectivePolygonOrder, effectiveSvgImageOrder, type ItemRef } from '../model/transforms';
+import { effectiveBackgroundOrder, type ItemRef } from '../model/transforms';
 import { resolveDayNight, TRANSFER_STYLE_DEFAULTS } from '../model/transferStyle';
 import { defaultStyleProps } from '../model/styles';
 import { rotateItemOnContextMenu } from './canvas/groupRotate';
@@ -128,16 +128,20 @@ export function MapCanvas() {
   const textLabels = useDoc((s) => s.textLabels);
   const rotateTextLabel = useDoc((s) => s.rotateTextLabel);
   const polygons = useDoc((s) => s.polygons);
-  const polygonOrder = useDoc((s) => s.polygonOrder);
+  const backgroundOrder = useDoc((s) => s.backgroundOrder);
   const rotatePolygon = useDoc((s) => s.rotatePolygon);
   const regionAssignments = useDoc((s) => s.regionAssignments);
   const svgImages = useDoc((s) => s.svgImages);
-  const svgImageOrder = useDoc((s) => s.svgImageOrder);
   const rotateSvgImage45 = useDoc((s) => s.rotateSvgImage45);
   const selection = useSelection();
   const snapModes = useSnapPrefs((s) => s.modes);
   const gridVisible = useViewportStore((s) => s.gridVisible);
   const gridSize = useViewportStore((s) => s.gridSize);
+  // Draw the line/station network at all? Off = only the background art
+  // (polygons, images) and the grid, so buried art is clickable. Stations
+  // self-gate inside StationView (one chokepoint for ~15 call sites); lines and
+  // everything anchored to them are gated at the blocks below.
+  const showNetwork = useViewportStore((s) => s.showNetwork);
   // For resolving theme-aware (day/night) transfer colors on the creation preview.
   const darkMode = useViewportStore((s) => s.darkMode);
   const theme = useThemeColors();
@@ -191,15 +195,11 @@ export function MapCanvas() {
   const labelSelectedIds = rectSelect.previewLabelIds ?? selection.selectedLabelIds;
   const polygonSelectedIds = rectSelect.previewPolygonIds ?? selection.selectedPolygonIds;
   const svgImageSelectedIds = rectSelect.previewSvgImageIds ?? selection.selectedSvgImageIds;
-  // Paint order for polygon bodies (later = on top, among polygons only).
-  const polygonRenderOrder = useMemo(
-    () => effectivePolygonOrder(polygons, polygonOrder),
-    [polygons, polygonOrder],
-  );
-  // Paint order for svg images — same band as polygons; later = on top.
-  const svgImageRenderOrder = useMemo(
-    () => effectiveSvgImageOrder(svgImages, svgImageOrder),
-    [svgImages, svgImageOrder],
+  // Paint order for the background band: polygons and svg images share ONE
+  // stack, so either kind can sit over the other. Later = on top.
+  const backgroundRenderOrder = useMemo(
+    () => effectiveBackgroundOrder(polygons, svgImages, backgroundOrder),
+    [polygons, svgImages, backgroundOrder],
   );
   // While a click-to-place tool is active (any non-idle mode), polygon bodies
   // ignore pointer events so a canvas click places the item over them instead
@@ -337,8 +337,13 @@ export function MapCanvas() {
   // on purpose: the clips attach to the LIVE base strokes, so they must be
   // derived from the same geometry the strokes render — a deferred snapshot
   // would tear the clip holes off the moving bands mid-drag.
+  // Nothing to reconcile against while the network isn't painted: the exclusion
+  // clips attach to base strokes that don't exist, and the clickable faces would
+  // float over bands the user can't see. Skipping also spares the app its most
+  // expensive pure computation for the duration.
   const needRegions =
-    selection.uiMode.kind === 'layering' || Object.keys(regionAssignments).length > 0;
+    showNetwork &&
+    (selection.uiMode.kind === 'layering' || Object.keys(regionAssignments).length > 0);
   const regionGeom = useMemo(
     () => (needRegions ? regionsFor({ stations, lines }) : null),
     [needRegions, stations, lines],
@@ -992,45 +997,43 @@ export function MapCanvas() {
           </g>
         )}
 
-        {/* Polygon bodies: painted just above the grid and below ALL map
-            content (bands, stations, dots, labels) so background shapes like
-            rivers/lakes always sit underneath everything else. Their selection
-            handles + "+" buttons render in a separate top overlay pass below. */}
-        {polygonRenderOrder.map((pid) => {
-          const poly = polygons[pid];
-          return (
-            <PolygonView
-              key={pid}
-              polygon={poly}
-              layer="body"
-              selected={polygonSelectedIds.includes(pid)}
-              selectedVertexIndices={vertexIndicesFor(pid)}
-              interactive={polygonsInteractive}
-              inHandMode={inHandMode}
-              onPointerDown={polyDrag.onPolygonPointerDown}
-              onClick={onPolygonClick}
-              onContextMenu={onPolygonContextMenu}
-              onVertexPointerDown={polyDrag.onVertexPointerDown}
-              onVertexClick={onVertexClick}
-              onEdgeAddPointerDown={polyDrag.onEdgeAddPointerDown}
-              onHoverEnter={(id) => setHover({ kind: 'polygon', id })}
-              onHoverLeave={(id) => clearHoverIf('polygon', id)}
-            />
-          );
-        })}
-
-        {/* Svg-image bodies: same band as polygons (above the grid, below ALL
-            map content), painted just on top of polygon bodies since an
-            imported graphic is usually a deliberate foreground. Their transform
-            handles render in the top overlay pass below. */}
-        {svgImageRenderOrder.map((iid) => {
-          const im = svgImages[iid];
+        {/* Background band: polygon and svg-image bodies INTERLEAVED in one
+            paint order, so a polygon can sit over an image or vice versa.
+            Painted just above the grid and below ALL map content (bands,
+            stations, dots, labels) so background shapes like rivers/lakes and
+            imported graphics always sit underneath everything else. Selection
+            handles, vertex/"+" buttons and image transform knobs render in a
+            separate top overlay pass below. */}
+        {backgroundRenderOrder.map((bid) => {
+          const poly = polygons[bid];
+          if (poly) {
+            return (
+              <PolygonView
+                key={bid}
+                polygon={poly}
+                layer="body"
+                selected={polygonSelectedIds.includes(bid)}
+                selectedVertexIndices={vertexIndicesFor(bid)}
+                interactive={polygonsInteractive}
+                inHandMode={inHandMode}
+                onPointerDown={polyDrag.onPolygonPointerDown}
+                onClick={onPolygonClick}
+                onContextMenu={onPolygonContextMenu}
+                onVertexPointerDown={polyDrag.onVertexPointerDown}
+                onVertexClick={onVertexClick}
+                onEdgeAddPointerDown={polyDrag.onEdgeAddPointerDown}
+                onHoverEnter={(id) => setHover({ kind: 'polygon', id })}
+                onHoverLeave={(id) => clearHoverIf('polygon', id)}
+              />
+            );
+          }
+          const im = svgImages[bid];
           return (
             <SvgImageView
-              key={iid}
+              key={bid}
               image={im}
               layer="body"
-              selected={svgImageSelectedIds.includes(iid)}
+              selected={svgImageSelectedIds.includes(bid)}
               interactive={polygonsInteractive}
               inHandMode={inHandMode}
               onPointerDown={svgDrag.onSvgImagePointerDown}
@@ -1088,88 +1091,91 @@ export function MapCanvas() {
             region's winner shows through as its own continuous base stroke —
             see buildExclusionHoles. The clip wrapper also removes the loser's
             pointer surface there, landing clicks on the visible winner. */}
-        {renderables.map((r) => {
-          const lineId = r.kind === 'marker' ? r.spec.lineId : r.band.lines[r.stripeIndex].id;
-          const clipped = regionExcludeHoles?.has(lineId) ?? false;
-          const withExcludeClip = (key: string, node: React.ReactNode) =>
-            clipped ? (
-              <g
-                key={key}
-                data-region-excluded={lineId}
-                clipPath={`url(#${regionExcludeClipId(lineId)})`}
-              >
-                {node}
-              </g>
-            ) : (
-              node
-            );
-          if (r.kind === 'casing') {
+        {showNetwork &&
+          renderables.map((r) => {
+            const lineId = r.kind === 'marker' ? r.spec.lineId : r.band.lines[r.stripeIndex].id;
+            const clipped = regionExcludeHoles?.has(lineId) ?? false;
+            const withExcludeClip = (key: string, node: React.ReactNode) =>
+              clipped ? (
+                <g
+                  key={key}
+                  data-region-excluded={lineId}
+                  clipPath={`url(#${regionExcludeClipId(lineId)})`}
+                >
+                  {node}
+                </g>
+              ) : (
+                node
+              );
+            if (r.kind === 'casing') {
+              return withExcludeClip(
+                'c:' + r.band.bandKey + ':' + lineId,
+                <SegmentBand
+                  key={'c:' + r.band.bandKey + ':' + lineId}
+                  spec={r.band}
+                  stripeIndex={r.stripeIndex}
+                  pass="silhouette"
+                  lines={lines}
+                  colorMap={colorMap}
+                  underlayColor={underlayColor}
+                />,
+              );
+            }
+            if (r.kind === 'seam') {
+              return withExcludeClip(
+                'seam:' + r.band.bandKey + ':' + lineId,
+                <SegmentBand
+                  key={'seam:' + r.band.bandKey + ':' + lineId}
+                  spec={r.band}
+                  stripeIndex={r.stripeIndex}
+                  pass="seam"
+                  lines={lines}
+                  colorMap={colorMap}
+                  underlayColor={underlayColor}
+                  seamEdges={seamEdges}
+                />,
+              );
+            }
+            if (r.kind === 'stripe') {
+              return withExcludeClip(
+                's:' + r.band.bandKey + ':' + lineId,
+                <SegmentBand
+                  key={'s:' + r.band.bandKey + ':' + lineId}
+                  spec={r.band}
+                  stripeIndex={r.stripeIndex}
+                  pass="body"
+                  interactive={
+                    selection.uiMode.kind === 'creating-line-tag' ||
+                    selection.uiMode.kind === 'appending-to-line'
+                  }
+                  lines={lines}
+                  colorMap={colorMap}
+                  underlayColor={underlayColor}
+                  onLineSelect={inHandMode || inLayeringMode ? undefined : handleLineSelect}
+                  {...(selection.uiMode.kind === 'creating-line-tag'
+                    ? makeBandHandlers(r.band)
+                    : {})}
+                  {...(selection.uiMode.kind === 'appending-to-line'
+                    ? makeAppendBandHandlers(r.band)
+                    : {})}
+                />,
+              );
+            }
+            const effectiveColor =
+              colorMap && r.spec.lineId !== highlightLineId
+                ? (colorMap[r.spec.lineId] ?? r.spec.color)
+                : r.spec.color;
             return withExcludeClip(
-              'c:' + r.band.bandKey + ':' + lineId,
-              <SegmentBand
-                key={'c:' + r.band.bandKey + ':' + lineId}
-                spec={r.band}
-                stripeIndex={r.stripeIndex}
-                pass="silhouette"
-                lines={lines}
-                colorMap={colorMap}
+              'm:' + r.spec.stationId + ':' + lineId,
+              <StopMarker
+                key={'m:' + r.spec.stationId + ':' + lineId}
+                spec={r.spec}
+                effectiveColor={effectiveColor}
                 underlayColor={underlayColor}
+                lines={lines}
               />,
             );
-          }
-          if (r.kind === 'seam') {
-            return withExcludeClip(
-              'seam:' + r.band.bandKey + ':' + lineId,
-              <SegmentBand
-                key={'seam:' + r.band.bandKey + ':' + lineId}
-                spec={r.band}
-                stripeIndex={r.stripeIndex}
-                pass="seam"
-                lines={lines}
-                colorMap={colorMap}
-                underlayColor={underlayColor}
-                seamEdges={seamEdges}
-              />,
-            );
-          }
-          if (r.kind === 'stripe') {
-            return withExcludeClip(
-              's:' + r.band.bandKey + ':' + lineId,
-              <SegmentBand
-                key={'s:' + r.band.bandKey + ':' + lineId}
-                spec={r.band}
-                stripeIndex={r.stripeIndex}
-                pass="body"
-                interactive={
-                  selection.uiMode.kind === 'creating-line-tag' ||
-                  selection.uiMode.kind === 'appending-to-line'
-                }
-                lines={lines}
-                colorMap={colorMap}
-                underlayColor={underlayColor}
-                onLineSelect={inHandMode || inLayeringMode ? undefined : handleLineSelect}
-                {...(selection.uiMode.kind === 'creating-line-tag' ? makeBandHandlers(r.band) : {})}
-                {...(selection.uiMode.kind === 'appending-to-line'
-                  ? makeAppendBandHandlers(r.band)
-                  : {})}
-              />,
-            );
-          }
-          const effectiveColor =
-            colorMap && r.spec.lineId !== highlightLineId
-              ? (colorMap[r.spec.lineId] ?? r.spec.color)
-              : r.spec.color;
-          return withExcludeClip(
-            'm:' + r.spec.stationId + ':' + lineId,
-            <StopMarker
-              key={'m:' + r.spec.stationId + ':' + lineId}
-              spec={r.spec}
-              effectiveColor={effectiveColor}
-              underlayColor={underlayColor}
-              lines={lines}
-            />,
-          );
-        })}
+          })}
 
         {/* station backgrounds: hit areas, names, colored stop squares */}
         {Object.values(stations).map((st) => (
@@ -1222,25 +1228,28 @@ export function MapCanvas() {
             obscures the dot it's connecting. Stay at full opacity in
             layering mode (they ride between line stops so they're part of
             the route-network reading, not background annotation). */}
-        <TransferLayer
-          transfers={transfers}
-          stations={stations}
-          defaults={TRANSFER_STYLE_DEFAULTS}
-          onSelect={(id) => {
-            // Same exit-then-select contract as the free items above.
-            const sel = useSelection.getState();
-            if (sel.uiMode.kind === 'appending-to-line') sel.setAppending(null);
-            sel.selectTransfer(id);
-          }}
-          onHoverEnter={(id) => setHover({ kind: 'transfer', id })}
-          onHoverLeave={(id) => clearHoverIf('transfer', id)}
-        />
+        {showNetwork && (
+          <TransferLayer
+            transfers={transfers}
+            stations={stations}
+            defaults={TRANSFER_STYLE_DEFAULTS}
+            onSelect={(id) => {
+              // Same exit-then-select contract as the free items above.
+              const sel = useSelection.getState();
+              if (sel.uiMode.kind === 'appending-to-line') sel.setAppending(null);
+              sel.selectTransfer(id);
+            }}
+            onHoverEnter={(id) => setHover({ kind: 'transfer', id })}
+            onHoverLeave={(id) => clearHoverIf('transfer', id)}
+          />
+        )}
 
         {/* In-progress transfer preview line: from the anchor dot to the
             cursor while waiting for the second click. Dashed + translucent so
             it reads as provisional rather than an already-placed transfer;
             renders below the dots for the same reason as the real ones. */}
-        {selection.uiMode.kind === 'creating-transfer' &&
+        {showNetwork &&
+          selection.uiMode.kind === 'creating-transfer' &&
           selection.uiMode.anchor &&
           cursorWorld &&
           stations[selection.uiMode.anchor.stationId] &&
@@ -1292,16 +1301,18 @@ export function MapCanvas() {
         {/* Selected-transfer outline: above the dots (unlike TransferLayer)
             so the connected dots — and any crossing transfer — can't cover
             the selection chrome. */}
-        <TransferSelectionOutline
-          transfers={transfers}
-          stations={stations}
-          defaults={TRANSFER_STYLE_DEFAULTS}
-          selectedId={selection.selectedTransferId}
-        />
+        {showNetwork && (
+          <TransferSelectionOutline
+            transfers={transfers}
+            stations={stations}
+            defaults={TRANSFER_STYLE_DEFAULTS}
+            selectedId={selection.selectedTransferId}
+          />
+        )}
 
         {/* Mouseover preview: the hovered (unselected) transfer's selection
             outline at 50% opacity — the same ring, reused, just fainter. */}
-        {hoverTransferId && (
+        {showNetwork && hoverTransferId && (
           <g data-export-exclude="1" opacity={0.5}>
             <TransferSelectionOutline
               transfers={transfers}
@@ -1400,8 +1411,11 @@ export function MapCanvas() {
 
         {/* Line-selection highlight: dim wash + re-painted selected line on
             top. Painted after dots so other lines' stop dots can't punch
-            through the selected line's outline. */}
-        {highlightLineId && (
+            through the selected line's outline. Gated on showNetwork for the
+            DIM above all: it covers the whole viewport, so leaving it up with
+            the network hidden would black out the background art the toggle
+            exists to expose. */}
+        {showNetwork && highlightLineId && (
           <g data-export-exclude="1">
             <HighlightedLineLayer
               highlightLineId={highlightLineId}
@@ -1438,9 +1452,11 @@ export function MapCanvas() {
         {/* Line tags: in-band labels that ride each line's stripe. Faded
             in layering mode so the tag text doesn't compete with the
             outline + layer-number overlays. */}
-        <g opacity={inLayeringMode ? LAYERING_FADE_OPACITY : 1}>
-          <LineTagsLayer bands={bands} zoom={view.viewport.zoom} svgRef={svgRef} />
-        </g>
+        {showNetwork && (
+          <g opacity={inLayeringMode ? LAYERING_FADE_OPACITY : 1}>
+            <LineTagsLayer bands={bands} zoom={view.viewport.zoom} svgRef={svgRef} />
+          </g>
+        )}
 
         {/* Match-stroke: gray outline on each station whose layout matches
             the selected station while mirror mode is on. Drawn beneath the
@@ -1532,40 +1548,46 @@ export function MapCanvas() {
             re-dispatch to the real element beneath, so SELECTION follows normal
             layer order (see rerouteProxyEventBeneath). That capture-phase
             stopPropagation also means the proxies' own onClick/onContextMenu never
-            fire — hence the no-ops. Emitted in body paint order (polygon → svg
-            image → station → bullet → label) so when two SELECTED items overlap,
-            the one painted higher still wins its grab. The polygon/svg-image
-            MANIPULATION handle passes come AFTER this layer in the SVG (they
-            paint on top and win hit-testing), so a selected item's own
-            corner/vertex handles still beat its body proxy. These iterate the
-            same preview-aware id lists as the handle overlays, harmless
-            mid-marquee since useRectSelect captures the pointer on first move.
-            Excluded from export — pure interaction chrome. */}
+            fire — hence the no-ops. Emitted in body paint order (background band
+            → station → bullet → label) so when two SELECTED items overlap, the
+            one painted higher still wins its grab. That's why the polygon/image
+            proxies walk `backgroundRenderOrder` rather than their own id lists:
+            those two kinds interleave, so a polygon selected ABOVE an image
+            must emit its proxy after the image's or the visually-lower image
+            steals the drag. The polygon/svg-image MANIPULATION handle passes
+            come AFTER this layer in the SVG (they paint on top and win
+            hit-testing), so a selected item's own corner/vertex handles still
+            beat its body proxy. These honor the same preview-aware id lists as
+            the handle overlays, harmless mid-marquee since useRectSelect
+            captures the pointer on first move. Excluded from export — pure
+            interaction chrome. */}
         <g ref={proxyLayerRef} data-export-exclude="1">
-          {polygonSelectedIds.map((pid) =>
-            polygons[pid] ? (
-              <PolygonView
-                key={pid + ':hit'}
-                polygon={polygons[pid]}
-                layer="hit"
-                selected
-                selectedVertexIndices={NO_VERTEX_INDICES}
-                interactive={polygonsInteractive}
-                inHandMode={inHandMode}
-                onPointerDown={polyDrag.onPolygonPointerDown}
-                onClick={proxyClickNoop}
-                onContextMenu={proxyClickNoop}
-                onVertexPointerDown={polyDrag.onVertexPointerDown}
-                onVertexClick={onVertexClick}
-                onEdgeAddPointerDown={polyDrag.onEdgeAddPointerDown}
-              />
-            ) : null,
-          )}
-          {svgImageSelectedIds.map((iid) =>
-            svgImages[iid] ? (
+          {backgroundRenderOrder.map((bid) => {
+            const poly = polygons[bid];
+            if (poly) {
+              return polygonSelectedIds.includes(bid) ? (
+                <PolygonView
+                  key={bid + ':hit'}
+                  polygon={poly}
+                  layer="hit"
+                  selected
+                  selectedVertexIndices={NO_VERTEX_INDICES}
+                  interactive={polygonsInteractive}
+                  inHandMode={inHandMode}
+                  onPointerDown={polyDrag.onPolygonPointerDown}
+                  onClick={proxyClickNoop}
+                  onContextMenu={proxyClickNoop}
+                  onVertexPointerDown={polyDrag.onVertexPointerDown}
+                  onVertexClick={onVertexClick}
+                  onEdgeAddPointerDown={polyDrag.onEdgeAddPointerDown}
+                />
+              ) : null;
+            }
+            const im = svgImages[bid];
+            return im && svgImageSelectedIds.includes(bid) ? (
               <SvgImageView
-                key={iid + ':hit'}
-                image={svgImages[iid]}
+                key={bid + ':hit'}
+                image={im}
                 layer="hit"
                 selected
                 interactive={polygonsInteractive}
@@ -1577,8 +1599,8 @@ export function MapCanvas() {
                 onEdgePointerDown={svgDrag.onSvgEdgePointerDown}
                 onRotatePointerDown={svgDrag.onSvgRotatePointerDown}
               />
-            ) : null,
-          )}
+            ) : null;
+          })}
           {washIds.map((sid) =>
             stations[sid] && !stations[sid].locked ? (
               <StationView
@@ -1733,7 +1755,7 @@ export function MapCanvas() {
             SVG, AFTER the routing-warning markers, so those markers can never
             cover its click targets. Same focus language as the line-selection
             highlight; chrome, excluded from export. */}
-        {layoutEditStation && theme.dimOpacity > 0 && (
+        {showNetwork && layoutEditStation && theme.dimOpacity > 0 && (
           <rect
             data-export-exclude="1"
             data-dim="1"
@@ -1771,19 +1793,21 @@ export function MapCanvas() {
             very end of the SVG so the marker draws on top of every stripe,
             dot, and label and is never occluded. The ⚠ takes whichever of
             black/white is legible against the stripe under its center. */}
-        <g data-export-exclude="1" data-band-warnings="1">
-          {bands.map((b) => {
-            if (!b.warning) return null;
-            // Color under the glyph = the band's center stripe, resolved the
-            // same way SegmentBand paints it (desaturation override, else live).
-            const centerId = b.lines[Math.floor(b.lines.length / 2)]?.id;
-            const centerColor = centerId
-              ? (colorMap?.[centerId] ?? lines[centerId]?.color)
-              : undefined;
-            const iconColor = centerColor ? legibleTextOn(centerColor) : '#000';
-            return <BandWarning key={'w:' + b.bandKey} spec={b} iconColor={iconColor} />;
-          })}
-        </g>
+        {showNetwork && (
+          <g data-export-exclude="1" data-band-warnings="1">
+            {bands.map((b) => {
+              if (!b.warning) return null;
+              // Color under the glyph = the band's center stripe, resolved the
+              // same way SegmentBand paints it (desaturation override, else live).
+              const centerId = b.lines[Math.floor(b.lines.length / 2)]?.id;
+              const centerColor = centerId
+                ? (colorMap?.[centerId] ?? lines[centerId]?.color)
+                : undefined;
+              const iconColor = centerColor ? legibleTextOn(centerColor) : '#000';
+              return <BandWarning key={'w:' + b.bandKey} spec={b} iconColor={iconColor} />;
+            })}
+          </g>
+        )}
 
         {/* Layout-editor focus content, painted at the very END of the SVG so
             it sits ABOVE the routing-warning markers, which would otherwise
@@ -1791,7 +1815,7 @@ export function MapCanvas() {
             targets you reach for exactly when a routing warning appears). The
             dim is painted much earlier, below the warnings, so the warnings
             stay visible beneath this content. */}
-        {layoutEditStation && (
+        {showNetwork && layoutEditStation && (
           <>
             {/* White selection border, above the dim. The base stroke pass
                 skips this station's themed (black) border; white reads on the
@@ -1855,7 +1879,10 @@ export function MapCanvas() {
 
       <ItemPopovers view={view} />
 
-      <WarningToasts bands={bands} />
+      {/* Routing warnings are about bands the user can't see while the network
+          is hidden — the toast's "jump to the band" click would land on blank
+          canvas. Comes back with the map. */}
+      {showNetwork && <WarningToasts bands={bands} />}
     </div>
   );
 }

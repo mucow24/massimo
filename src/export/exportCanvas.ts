@@ -2,12 +2,19 @@
  * Canvas → image export. Produces a standalone SVG (or a 4× PNG raster of it)
  * of the rendered map, framed to the content bounds with the theme background.
  *
- * The pipeline clones the *live* `<svg>` rather than re-rendering it: all label
- * and tag geometry is measured against the live DOM, so cloning is the only way
- * to capture the finished layout faithfully. Editing-only chrome (grid,
- * selection highlights, placement ghosts, snap guides, layering overlays, …) is
- * tagged `data-export-exclude` in MapCanvas and stripped here, leaving just the
- * finished map.
+ * The pipeline clones a `<svg>` captured from the canvas rather than
+ * re-rendering it: all label and tag geometry is measured against the live DOM,
+ * so cloning is the only way to capture the finished layout faithfully.
+ * Editing-only chrome (grid, selection highlights, placement ghosts, snap
+ * guides, layering overlays, …) is tagged `data-export-exclude` in MapCanvas and
+ * stripped here, leaving just the finished map.
+ *
+ * `source` is a DETACHED SNAPSHOT, not the mounted canvas: the toolbar's
+ * captureExportSnapshot applies and reverts the export-only view state (line
+ * selection, the lines/stations toggle) around a synchronous clone, so this
+ * async pipeline can't pin the live canvas in a state the user didn't ask for.
+ * Everything here works off `source`'s content, so a detached node is fine —
+ * getBBox gets its own offscreen mount below.
  */
 
 import { buildEmbeddedFontCss, collectUsedFontFaces } from './fonts';

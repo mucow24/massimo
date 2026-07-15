@@ -174,10 +174,12 @@ test.describe('Polygon shapes', () => {
   });
 });
 
-async function polygonOrder(page: Page): Promise<string[]> {
+// Polygons and svg images share one z-stack; the seeded doc has no images, so
+// what comes back here is polygon ids only.
+async function backgroundOrder(page: Page): Promise<string[]> {
   return await page.evaluate(() => {
     const raw = localStorage.getItem('vignelli-map-doc-v1');
-    return raw ? (JSON.parse(raw).state.polygonOrder ?? []) : [];
+    return raw ? (JSON.parse(raw).state.backgroundOrder ?? []) : [];
   });
 }
 
@@ -204,17 +206,17 @@ test.describe('Polygon opacity, layering, placement, lock', () => {
     expect(fill).toBe('#11223380');
   });
 
-  test('Move down reorders the polygon paint order (DOM matches polygonOrder)', async ({
+  test('Move down reorders the polygon paint order (DOM matches backgroundOrder)', async ({
     page,
   }) => {
     await seedAndOpen(page, { stations: [], lines: [] });
     await addPolygonAt(page, 600, 400);
     await addPolygonAt(page, 640, 430); // second polygon, now selected (popover open)
-    const before = await polygonOrder(page);
+    const before = await backgroundOrder(page);
     expect(before).toHaveLength(2);
     // The selected (second) polygon is on top; send it to the back.
     await page.getByRole('button', { name: 'Move polygon down' }).click();
-    const after = await polygonOrder(page);
+    const after = await backgroundOrder(page);
     expect(after).toEqual([before[1], before[0]]);
     // Body paint order in the DOM matches the stored order (later = on top).
     expect(await domPolygonIds(page)).toEqual(after);

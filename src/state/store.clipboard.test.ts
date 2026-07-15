@@ -88,7 +88,7 @@ describe('pastePolygon / duplicatePolygon', () => {
     locked: true,
   };
 
-  it('pastePolygon offsets every vertex, preserves style, appends to polygonOrder', () => {
+  it('pastePolygon offsets every vertex, preserves style, appends to backgroundOrder', () => {
     const newId = useDoc.getState().pastePolygon(polyData);
     const state = useDoc.getState();
     const poly = state.polygons[newId];
@@ -105,7 +105,7 @@ describe('pastePolygon / duplicatePolygon', () => {
       strokeWidth: 2,
       fillOpacity: 50,
     });
-    expect(state.polygonOrder[state.polygonOrder.length - 1]).toBe(newId);
+    expect(state.backgroundOrder[state.backgroundOrder.length - 1]).toBe(newId);
   });
 
   it('pastePolygon unlocks the copy even when the source was locked', () => {

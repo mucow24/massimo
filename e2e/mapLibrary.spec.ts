@@ -23,8 +23,7 @@ test.beforeEach(async ({ page }) => {
 
 const saveToLibrary = async (page: Page) => {
   await page.getByRole('button', { name: 'Canvas' }).click();
-  await page.getByRole('menuitem', { name: 'Save' }).click();
-  await page.getByRole('menuitem', { name: 'To library' }).click();
+  await page.getByRole('menuitem', { name: 'Save revision' }).click();
   await expect(page.getByRole('alert')).toContainText('Saved to library');
 };
 

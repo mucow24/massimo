@@ -267,10 +267,10 @@ export function makeDoc(parts: {
   transfers?: import('../model/types').Transfer[];
   textLabels?: TextLabel[];
   polygons?: Polygon[];
-  polygonOrder?: string[];
   regionAssignments?: import('../model/types').RegionAssignment[];
   svgImages?: SvgImage[];
-  svgImageOrder?: string[];
+  // The shared polygon + image z-stack; defaults to polygons then images.
+  backgroundOrder?: string[];
   styles?: StyleDef[];
   styleDefaults?: Partial<Record<StyleKind, string>>;
   activePalettes?: import('../model/palettes').PaletteId[];
@@ -321,10 +321,9 @@ export function makeDoc(parts: {
     transfers,
     textLabels,
     polygons,
-    polygonOrder: parts.polygonOrder ?? Object.keys(polygons),
+    backgroundOrder: parts.backgroundOrder ?? [...Object.keys(polygons), ...Object.keys(svgImages)],
     regionAssignments,
     svgImages,
-    svgImageOrder: parts.svgImageOrder ?? Object.keys(svgImages),
     styles,
     styleDefaults,
     activePalettes: parts.activePalettes ?? ['mta'],
