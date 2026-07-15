@@ -411,8 +411,13 @@ describe('Toolbar — Export wiring', () => {
     await user.click(screen.getByRole('menuitem', { name: 'Export' }));
   };
 
-  it('Export → SVG forwards the live canvas svg to exportCanvasSvg', async () => {
+  it('Export → SVG forwards a faithful snapshot of the live canvas svg', async () => {
     const fakeSvg = document.createElementNS('http://www.w3.org/2000/svg', 'svg') as SVGSVGElement;
+    // A distinctive child, so the snapshot assertion below can't pass merely
+    // because any two empty <svg>s compare equal.
+    const marker = document.createElementNS('http://www.w3.org/2000/svg', 'g');
+    marker.setAttribute('data-marker', 'live-canvas');
+    fakeSvg.appendChild(marker);
     vi.mocked(getCanvasSvg).mockReturnValue(fakeSvg);
 
     const user = userEvent.setup();
@@ -423,7 +428,14 @@ describe('Toolbar — Export wiring', () => {
     fireEvent.click(screen.getByRole('menuitem', { name: 'SVG' }));
 
     await waitFor(() => expect(exportCanvasSvg).toHaveBeenCalledTimes(1));
-    expect(vi.mocked(exportCanvasSvg).mock.calls[0][0]).toBe(fakeSvg);
+    const passed = vi.mocked(exportCanvasSvg).mock.calls[0][0];
+    // A detached snapshot, NOT the live element — this asserted `toBe(fakeSvg)`
+    // until captureExportSnapshot took over. The export applies and reverts view
+    // state around the clone inside one synchronous task, so the live canvas is
+    // deliberately not what travels into the async pipeline. Faithful content is
+    // what the contract is really about.
+    expect(passed).not.toBe(fakeSvg);
+    expect(passed.isEqualNode(fakeSvg)).toBe(true);
     // The SVG command must NOT route to the PNG exporter.
     expect(exportCanvasPng).not.toHaveBeenCalled();
   });
