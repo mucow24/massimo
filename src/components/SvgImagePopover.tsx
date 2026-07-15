@@ -4,8 +4,21 @@ import type { AABB } from '../geometry/rectPolygon';
 import { DraggablePopoverShell } from './DraggablePopoverShell';
 import { useDraggablePopover } from './canvas/useDraggablePopover';
 import { LayerOrderRow } from './LayerOrderRow';
+import { NumericFieldRow } from './NumericFieldRow';
 import { PopoverFooter } from './PopoverFooter';
+import {
+  SVG_IMAGE_OPACITY_DEFAULT,
+  SVG_IMAGE_OPACITY_MAX,
+  SVG_IMAGE_OPACITY_MIN,
+} from '../model/transforms';
 import type { SvgImage } from '../model/types';
+
+// The doc stores an SVG-native 0..1 alpha; the slider trades in whole percent,
+// which is what people actually mean by "50% opacity". Round on the way out —
+// an alpha × 100 lands on values like 37.000000000000004.
+const PERCENT = 100;
+const toPercent = (alpha: number | undefined): number =>
+  Math.round((alpha ?? SVG_IMAGE_OPACITY_DEFAULT) * PERCENT);
 
 interface Props {
   image: SvgImage;
@@ -19,12 +32,12 @@ interface Props {
 }
 
 /**
- * Popover for a selected svg image: layer up/down, lock, delete. An imported
- * image has no editable style (it's opaque), so there are no color/size
- * controls — size and rotation are edited via the on-canvas handles. The spawn
- * placement is frozen at first display and projected through the live viewport,
- * and the header drag stays pinned to the canvas through zoom. Mirrors
- * {@link PolygonPopover} minus the style rows.
+ * Popover for a selected svg image: opacity, layer up/down, lock, delete. The
+ * artwork's own colors are baked into the import and can't be edited, and size
+ * and rotation are edited via the on-canvas handles — so opacity is the one
+ * style knob here. The spawn placement is frozen at first display and projected
+ * through the live viewport, and the header drag stays pinned to the canvas
+ * through zoom. Mirrors {@link PolygonPopover} minus the paint rows.
  */
 export function SvgImagePopover({ image, worldRect, view, spawnBox, onClose }: Props) {
   const { anchor, measuring, shellRef, headerHandlers } = useDraggablePopover(
@@ -40,6 +53,7 @@ export function SvgImagePopover({ image, worldRect, view, spawnBox, onClose }: P
   const moveSvgImageDown = useDoc((s) => s.moveSvgImageDown);
 
   const locked = image.locked ?? false;
+  const onOpacity = (pct: number) => updateSvgImage(image.id, { opacity: pct / PERCENT });
   const onToggleLock = () => updateSvgImage(image.id, { locked: !locked });
   const onDelete = () => {
     deleteSvgImage(image.id);
@@ -55,6 +69,18 @@ export function SvgImagePopover({ image, worldRect, view, spawnBox, onClose }: P
       shellRef={shellRef}
       headerHandlers={headerHandlers}
     >
+      <NumericFieldRow
+        id="svg-image-opacity"
+        label="Opacity"
+        min={SVG_IMAGE_OPACITY_MIN * PERCENT}
+        max={SVG_IMAGE_OPACITY_MAX * PERCENT}
+        step={1}
+        value={toPercent(image.opacity)}
+        onChange={onOpacity}
+        getCurrent={() => toPercent(useDoc.getState().svgImages[image.id]?.opacity)}
+        disabled={locked}
+      />
+      <hr className="popover-divider" aria-hidden="true" />
       <LayerOrderRow
         noun="image"
         onMoveDown={() => moveSvgImageDown(image.id)}
