@@ -537,6 +537,39 @@ export function setLineDefaultDotSize(doc: MapDoc, id: LineId, size: number): Ma
   return { ...doc, lines: { ...doc.lines, [id]: stripStyleId(nextLine) }, stations };
 }
 
+// Write optional style field `field` onto a line: set it to `stored`, or drop
+// it entirely when `stored` is undefined — a field at its default is never
+// persisted (see the per-field canonicalizers). Pure; the caller owns the
+// styleId detach and the doc splice.
+function writeLineField<K extends keyof Line>(
+  line: Line,
+  field: K,
+  stored: Line[K] | undefined,
+): Line {
+  if (stored !== undefined) return { ...line, [field]: stored };
+  const { [field]: _gone, ...rest } = line;
+  return rest as Line;
+}
+
+// The shared body of every plain per-line style setter: bail if the line is
+// gone or the canonical stored value is unchanged (reference-equal no-ops keep
+// slider ticks out of undo history), otherwise write the field, detach from the
+// style preset, and splice back. Callers own canonicalization and any
+// finiteness guard. `setLineWidth` opts out — it also re-packs station layouts.
+function setLineStyleField<K extends keyof Line>(
+  doc: MapDoc,
+  id: LineId,
+  field: K,
+  stored: Line[K] | undefined,
+): MapDoc {
+  const cur = doc.lines[id];
+  if (!cur || cur[field] === stored) return doc;
+  return {
+    ...doc,
+    lines: { ...doc.lines, [id]: stripStyleId(writeLineField(cur, field, stored)) },
+  };
+}
+
 // Per-line stripe width. Non-finite input is ignored; otherwise the value is
 // rounded and clamped to ≥ LINE_WIDTH_MIN, and the field is dropped when the
 // result lands on LINE_WIDTH_DEFAULT so the default is never stored (mirrors
@@ -556,18 +589,15 @@ export function setLineWidth(doc: MapDoc, id: LineId, w: number): MapDoc {
   if (!cur || !Number.isFinite(w)) return doc;
   const stored = canonicalLineWidth(w);
   if (cur.width === stored) return doc;
-  let nextLine: Line;
-  if (stored === undefined) {
-    const { width: _gone, ...rest } = cur;
-    nextLine = rest;
-  } else {
-    nextLine = { ...cur, width: stored };
-  }
   const stations = mapRecord(doc.stations, (st) =>
     repackStationForWidth(st, doc.lines, id, lineWidthOf(cur), stored ?? LINE_WIDTH_DEFAULT),
   );
   // Fall-through = the stored width changed → detach from the style preset.
-  return { ...doc, lines: { ...doc.lines, [id]: stripStyleId(nextLine) }, stations };
+  return {
+    ...doc,
+    lines: { ...doc.lines, [id]: stripStyleId(writeLineField(cur, 'width', stored)) },
+    stations,
+  };
 }
 
 // Per-line corner-rounding radius. Same contract as setLineStrokeWidth:
@@ -578,19 +608,8 @@ export function setLineWidth(doc: MapDoc, id: LineId, w: number): MapDoc {
 // moves band paths), so store actions wrap this in withRegionReconcile like
 // the other geometry writers.
 export function setLineCurveRadius(doc: MapDoc, id: LineId, r: number): MapDoc {
-  const cur = doc.lines[id];
-  if (!cur || !Number.isFinite(r)) return doc;
-  const stored = canonicalLineCurveRadius(r);
-  if (cur.curveRadius === stored) return doc;
-  let nextLine: Line;
-  if (stored === undefined) {
-    const { curveRadius: _gone, ...rest } = cur;
-    nextLine = rest;
-  } else {
-    nextLine = { ...cur, curveRadius: stored };
-  }
-  // Fall-through = the stored radius changed → detach from the style preset.
-  return { ...doc, lines: { ...doc.lines, [id]: stripStyleId(nextLine) } };
+  if (!Number.isFinite(r)) return doc;
+  return setLineStyleField(doc, id, 'curveRadius', canonicalLineCurveRadius(r));
 }
 
 // Per-line casing width. Same contract as setLineWidth except the grid:
@@ -600,19 +619,8 @@ export function setLineCurveRadius(doc: MapDoc, id: LineId, r: number): MapDoc {
 // it is never stored. Reference-equal no-ops keep slider ticks out of the
 // undo history.
 export function setLineStrokeWidth(doc: MapDoc, id: LineId, w: number): MapDoc {
-  const cur = doc.lines[id];
-  if (!cur || !Number.isFinite(w)) return doc;
-  const stored = canonicalStrokeWidth(w);
-  if (cur.strokeWidth === stored) return doc;
-  let nextLine: Line;
-  if (stored === undefined) {
-    const { strokeWidth: _gone, ...rest } = cur;
-    nextLine = rest;
-  } else {
-    nextLine = { ...cur, strokeWidth: stored };
-  }
-  // Fall-through = the stored casing width changed → detach from the preset.
-  return { ...doc, lines: { ...doc.lines, [id]: stripStyleId(nextLine) } };
+  if (!Number.isFinite(w)) return doc;
+  return setLineStyleField(doc, id, 'strokeWidth', canonicalStrokeWidth(w));
 }
 
 // Per-line casing color. Normalized to lowercase before compare/store (the
@@ -620,19 +628,7 @@ export function setLineStrokeWidth(doc: MapDoc, id: LineId, w: number): MapDoc {
 // and the field is dropped at the default so it is never stored — the
 // invariant is "stored color is lowercase and never the default".
 export function setLineStrokeColor(doc: MapDoc, id: LineId, c: string): MapDoc {
-  const cur = doc.lines[id];
-  if (!cur) return doc;
-  const stored = canonicalStrokeColor(c);
-  if (cur.strokeColor === stored) return doc;
-  let nextLine: Line;
-  if (stored === undefined) {
-    const { strokeColor: _gone, ...rest } = cur;
-    nextLine = rest;
-  } else {
-    nextLine = { ...cur, strokeColor: stored };
-  }
-  // Fall-through = the stored casing color changed → detach from the preset.
-  return { ...doc, lines: { ...doc.lines, [id]: stripStyleId(nextLine) } };
+  return setLineStyleField(doc, id, 'strokeColor', canonicalStrokeColor(c));
 }
 
 // Per-line seam color (the interior branch/loop overlap indicator). Like the
@@ -640,37 +636,15 @@ export function setLineStrokeColor(doc: MapDoc, id: LineId, c: string): MapDoc {
 // (unset / fully transparent) so it is never stored; a change detaches the line
 // from its preset.
 export function setLineSeamColor(doc: MapDoc, id: LineId, c: string): MapDoc {
-  const cur = doc.lines[id];
-  if (!cur) return doc;
-  const stored = canonicalSeamColor(c);
-  if (cur.seamColor === stored) return doc;
-  let nextLine: Line;
-  if (stored === undefined) {
-    const { seamColor: _gone, ...rest } = cur;
-    nextLine = rest;
-  } else {
-    nextLine = { ...cur, seamColor: stored };
-  }
-  // Fall-through = the stored seam color changed → detach from the preset.
-  return { ...doc, lines: { ...doc.lines, [id]: stripStyleId(nextLine) } };
+  return setLineStyleField(doc, id, 'seamColor', canonicalSeamColor(c));
 }
 
 // Per-line seam width. Shares the casing width's canonical grid/floor and
 // drop-at-0 (`canonicalStrokeWidth`); an unset (dropped) value inherits the
 // casing width at render time. A change detaches the line from its preset.
 export function setLineSeamWidth(doc: MapDoc, id: LineId, w: number): MapDoc {
-  const cur = doc.lines[id];
-  if (!cur || !Number.isFinite(w)) return doc;
-  const stored = canonicalStrokeWidth(w);
-  if (cur.seamWidth === stored) return doc;
-  let nextLine: Line;
-  if (stored === undefined) {
-    const { seamWidth: _gone, ...rest } = cur;
-    nextLine = rest;
-  } else {
-    nextLine = { ...cur, seamWidth: stored };
-  }
-  return { ...doc, lines: { ...doc.lines, [id]: stripStyleId(nextLine) } };
+  if (!Number.isFinite(w)) return doc;
+  return setLineStyleField(doc, id, 'seamWidth', canonicalStrokeWidth(w));
 }
 
 export function setStationWaypoint(doc: MapDoc, stationId: StationId, isWaypoint: boolean): MapDoc {

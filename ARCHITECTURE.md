@@ -1,6 +1,6 @@
 # Massimo — Architecture
 
-**Up to date as of commit `accf654` (2026-07-14) — verified against the live source (code-health pass focused on the region-layering rewrite that retired per-segment z-layers for "paint-by-numbers" region assignments, plus the width-edit stop repack and the git-graph line-tree layout landed since the prior refresh).**
+**Up to date as of commit `ff872fd` (2026-07-15) — verified against the live source (code-health pass covering the changes since `accf654`: canvas-driven Edit Stops replacing the retired in-sidebar line-tree editor, png/jpeg raster import, the `?` help popover, per-line curve radius baked off the retired doc-level option, and the global branch-seam-edge mode).**
 
 > A fast-bootstrap reference for understanding the codebase: the ins, outs, gotchas, and
 > caveats. Written for an AI assistant (or new contributor) who needs the full picture
@@ -120,7 +120,8 @@ src/
     matching.ts pathSelect.ts   # interlining-group matching + shortest-path selection
     autoOrient.ts               # rotate a just-added station to the line tangent
     clipboard.ts                # ClipPayload union + read/write + SVG-href security guard
-    svgImport.ts                # parse external .svg → intrinsic size + data URI
+    svgImport.ts                # import external .svg or png/jpeg raster → intrinsic/decoded
+                                #   size + data URI (+ href security allow-list)
 
   geometry/                     # PURE math — world coordinates, no React/store
     vec.ts orientation.ts       # vector primitives; rotation/local↔world; STOP_SIZE=14
@@ -160,11 +161,10 @@ src/
     Toolbar.tsx Sidebar.tsx Menu.tsx  # chrome
     *Popover.tsx                # on-canvas item editors
     canvas/                     # interaction layer: drag/placement/viewport hooks + overlay layers
-    inspector/                  # LineInspector (sidebar; incl. the StationGraph edge/branch/loop
-                                #   editor) + StationInspector (hosted by the on-canvas
-                                #   StationPopover) + pure math: stopGridDrag.ts,
-                                #   stationBandGeometry.ts, lineGraphLayout.ts (git-graph row/lane layout:
-                                #   drawn-order trunk, junction-local branches, merge/arc loop closures)
+    inspector/                  # LineInspector (sidebar; identity + line-style fields — stop/topology
+                                #   editing is canvas-driven, see appendGestures.ts) + StationInspector
+                                #   (hosted by the on-canvas StationPopover) + pure math:
+                                #   stopGridDrag.ts, stationBandGeometry.ts
 
   export/                       # exportCanvas.ts (SVG/PNG), fonts.ts, exportCanvasPdf.ts
                                 #   + pure PDF-gap modules pdfHatch/pdfText/pdfGlyphs/
@@ -276,6 +276,7 @@ interface MapDoc {
   svgImages: Record<string, SvgImage>;
   svgImageOrder: string[]; // LATER = top
   activePalettes: PaletteId[]; // INVARIANT: never empty
+  seamEdges: SeamEdges; // global branch-seam inner-edge mode: 'both' | 'straight' | 'curved'
   styles: Record<string, StyleDef>; // named per-kind formatting presets ("Styles")
   styleDefaults: Record<StyleKind, string>; // per-kind DEFAULT designation (style id)
 }
@@ -298,7 +299,8 @@ mirroring the transfer retirement.
 And there is **no doc-level `curveRadius`** anymore — corner rounding is per-line
 (`Line.curveRadius`, missing ⇒ `LINE_CURVE_RADIUS_DEFAULT` = 24, [lineCurve.ts](src/model/lineCurve.ts)),
 covered by line styles, and edited in the line inspector / line style presets (the Options popover
-is palettes-only now). Legacy saves carried the doc field; both load paths bake it onto every line
+holds palettes and the global branch-seam-edge control, not curve radius). Legacy saves carried the
+doc field; both load paths bake it onto every line
 and fill line style defs that predate the covered field (`bakeDocCurveRadius`, persist v16).
 Where interlined lines disagree, the shared band curves at the LARGEST member radius.
 
@@ -470,8 +472,9 @@ on load for legacy saves). Optional: `locked?`, `curveRadius?` (floored at 0, sl
 `PolygonStylePatch` is the shared `Partial<Pick<…>>` used by both the transform and the store
 action so they never drift.
 
-**`SvgImage`** — an imported `.svg` placed as an **opaque** `<image href="data:image/svg+xml;
-base64,…">` in the polygon band. `id, x, y` (world **center**), `width, height` (unrotated bbox,
+**`SvgImage`** — an imported graphic — an `.svg` **or** a png/jpeg raster (the name predates raster
+support) — placed as an **opaque** `<image href="data:image/…;base64,…">` in the polygon band.
+`id, x, y` (world **center**), `width, height` (unrotated bbox,
 post-scale), `rotation: number` (**continuous degrees CW**, snaps to 22.5° under Shift), `href`
 (fixed at import, never edited), `locked?`. `SvgImageStylePatch` is the shared patch type.
 
@@ -541,7 +544,10 @@ by the **Load…** menu. Pure, returns `{ok, doc}` or `{ok:false, error}`:
 1. `JSON.parse`; reject non-object / `format !== 'massimo-map'` / missing `doc`.
 2. `migrateLegacyLabelBold` **before** the merge (so `labelBold` never leaks into the typed shape).
 3. `merged = { ...DEFAULT_DOC, ...doc }` — the entire defaulting mechanism.
-4. `validActivePalettes` (enforce ≥1 valid palette).
+4. `validActivePalettes` (enforce ≥1 valid palette), then `bakeDocCurveRadius` (retired doc-level
+   `curveRadius` → per-line `Line.curveRadius` + fill line style defs; idempotent, keyed off field
+   presence) — **before** the per-line clean and style validation below, which expect the
+   per-line/per-def form.
 5. Per-line clean (clamp width/dotSize/stroke, drop never-stored defaults, drop segment keys that
    aren't real adjacencies) + `backfillLineEdges` (derive `edges` from the legacy `stations` order
    for pre-topology saves — unconditional, since a missing `edges` white-screens the renderer) +
@@ -575,7 +581,7 @@ Path A does **more** than Path B because hand-edited files can be non-canonical 
 sanitizers `sanitizeLineWidth/Stroke/DotSize/Segments/StopDotSizes` exist for this).
 
 **Path B — localStorage rehydration: `migrateDoc(persisted, version)`** ([store.ts](src/state/store.ts)).
-The zustand `persist` config: `name: 'vignelli-map-doc-v1'`, `version: 15`, `migrate:
+The zustand `persist` config: `name: 'vignelli-map-doc-v1'`, `version: 16`, `migrate:
 migrateDoc`, `partialize: pickDocSnapshot`. Because the persist-merge already fills absent fields
 from the initial state, `migrateDoc` only does **value-level legacy fixups, version-gated**, on
 disjoint fields (order immaterial except where noted), never mutating the input:
@@ -596,6 +602,7 @@ disjoint fields (order immaterial except where noted), never mutating the input:
 | `v<13`      | `backfillTransferDayNightColors` (transfer per-transfer overrides + transfer StyleDef props: legacy single-color strings → `{day, night}` pairs) — ordered **after** the `v<10` bake, **before** the `v<11` adoption (which now compares transfer props by `.day`/`.night`) |
 | `v<14`      | `bakeLegacyLabelSettings` (retired doc-level `labelFontSize/labelWeight/labelItalic/labelLeading/labelTracking` → per-station typography + seed the designated default station style) — ordered **after** the `v<3` `labelBold`→`labelWeight` step (so it sees the materialized weight) and the edge/style invariant passes |
 | `v<15`      | the **layering rework**: `stripLegacySegmentLayers` (drops the retired per-segment `segmentLayers` field from lines) + `sanitizeRegionAssignments` (region-assignment hygiene — a pre-v15 doc has none, but a tampered/newer-build one might). Path A runs `sanitizeRegionAssignments` unconditionally |
+| `v<16`      | `bakeDocCurveRadius` (retired doc-level `curveRadius` → per-line `Line.curveRadius` + line-style-def fill). Ordered **before** the `v<10` style hygiene — `migrateV9Styles` rebuilds defs on the canonical grids, so a def missing `curveRadius` would heal to the constant default instead of the doc's legacy value. Idempotent, keyed off field presence |
 | (not gated) | `backfillLinesEdges` whenever `lines !== undefined` — every rehydrate, **not** `v<14`-gated: an intermediate build bumped the persist version to 14 and re-saved lines BEFORE they carried `edges`, so a `v<14` gate could never recover those (`ln.edges.join(...)` white-screens on load). Reference-stable when every line already has an array |
 | (not gated) | `ensureStyleInvariants` whenever `styles !== undefined` — ordered between the `v<10` hygiene and the bake (the bake seeds the _designated_ default transfer style; adoption stamps designated defaults) |
 | (not gated) | `validActivePalettes` whenever `activePalettes !== undefined`                                                                              |
@@ -702,18 +709,21 @@ Not persisted, not undoable. Two key pieces:
 
 **`UiMode`** — a discriminated union, **exactly one editor mode active at a time**:
 `idle | placing-station | creating-line-tag | creating-route-bullet | creating-transfer(anchor)
-| placing-label | creating-polygon | placing-svg(image) | appending-to-line(lineId,
-insertAfterIndex, draw?) | layering | editing-station-layout(stationId)`. (`draw?` on
-appending-to-line marks the drag-to-draw sub-gesture of the graph line editor.) Entering a
+| placing-label | creating-polygon | placing-svg(image) | appending-to-line(lineId, cursor)
+| layering | editing-station-layout(stationId)`. (`cursor: AppendCursor` is the whole Edit Stops
+mode state — a station cursor connects on the next click, an edge cursor splices into that edge,
+`null` means nothing pending; see [appendGestures.ts](src/components/canvas/appendGestures.ts).)
+Entering a
 non-idle mode wipes
 all selections — with one exception: `startEditingStationLayout` **preserves** the station
 selection and mirror state (the mode edits the selected station in place). Adding a new mode is
 one variant + handlers; its right-click policy is declared in one place,
-`RIGHT_CLICK_PASSTHROUGH_MODES` (`{idle, layering, editing-station-layout}` — modes where
-right-click does **not** cancel). The cancel gesture is also scoped to the canvas: a right-click
-landing inside `.sidebar` is exempt (`cancelModeOnContextMenu` in App.tsx), so sidebar controls
-keep their own right-click semantics mid-mode — removing a tree edge in the line editor works
-during Edit Stops. Every non-idle mode announces itself on the canvas via
+`RIGHT_CLICK_PASSTHROUGH_MODES` (`{idle, layering, editing-station-layout, appending-to-line}` —
+modes where right-click does **not** cancel). The cancel gesture is also scoped to the canvas: a
+right-click landing inside `.sidebar` is exempt (`cancelModeOnContextMenu` in App.tsx), so sidebar
+controls keep their own right-click semantics mid-mode. During Edit Stops, right-click removes a
+segment/edge on the canvas rather than ejecting the mode (why `appending-to-line` is a passthrough
+mode). Every non-idle mode announces itself on the canvas via
 [canvas/EditingBanner.tsx](src/components/canvas/EditingBanner.tsx) (banner + 4-side mode frame:
 accent for placement modes, the line's color for appending, orange for layering; an exhaustive
 `switch` over the union with a compile-time `never` guard, so a new mode that forgets its banner
@@ -841,8 +851,10 @@ casing widths come from [lineStroke.ts](src/model/lineStroke.ts) (`casingSilhoue
 `casingInsetBodyWidth` for opaque styles so a line's own overlapping bands merge into ONE outer
 casing; `CasingRails` centered rails for the two transparent "open" styles). The seam is two
 edge-centered strokes CLIPPED to the line's OTHER band corridors (`SeamClips.tsx`), so it only
-shows where a line crosses itself. All three read the same `lineStroke` helpers as the highlight
-overlay so they can't drift.
+shows where a line crosses itself. The global `MapDoc.seamEdges` mode filters which seam edges
+draw — `'both'` (default), `'straight'` only (`'line'` edges), or `'curved'` only (`'arc'` edges);
+`SegmentBand` keeps just the matching edge kind. All three passes read the same `lineStroke`
+helpers as the highlight overlay so they can't drift.
 
 ### Snapping — `snap.ts`, `polygonSnap.ts`
 
@@ -1235,21 +1247,22 @@ band routing or the marker sort. Pinned by `MapCanvas.stationsSig.test.tsx`.
 ## UI chrome
 
 - **[Toolbar.tsx](src/components/Toolbar.tsx)** — file menu (Save/Load/Export), Add-item menu
-  (toggles `uiMode`), tool buttons (arrow/hand), grid-size + grid-visible + dark-mode toggles;
-  embeds `SnapToggleBar` and `OptionsPopover`. Owns the **export desaturation flush**: before
-  export it drops the selected-line desaturation via `flushSync(() => selectLine(null))` so it
-  isn't baked into the clone, then restores it in `finally`.
+  (toggles `uiMode`; includes **Image / SVG…** — imports `.svg`, `.png`, or `.jpg/.jpeg` via
+  `svgImport.ts` into an `SvgImage`), tool buttons (arrow/hand), grid-size + grid-visible +
+  dark-mode toggles; embeds `SnapToggleBar`, `OptionsPopover`, and the **`?` `HelpPopover`**
+  ([HelpPopover.tsx](src/components/HelpPopover.tsx) — a quick-reference interaction guide, also
+  opened by the `?` key). Owns the **export desaturation flush**: before export it drops the
+  selected-line desaturation via `flushSync(() => selectLine(null))` so it isn't baked into the
+  clone, then restores it in `finally`.
 - **[Sidebar.tsx](src/components/Sidebar.tsx)** — Stations/Lines tabs, a sortable station list
   (rows select/deselect; the station editor itself is an on-canvas popover), and the
-  inline-expanded LINE inspector on the Lines tab. The LineInspector hosts
-  **[inspector/StationGraph.tsx](src/components/inspector/StationGraph.tsx)** — a git-graph view
-  of the line's `edges`, laid out by the pure
-  **[inspector/lineGraphLayout.ts](src/components/inspector/lineGraphLayout.ts)**: the trunk is the
-  longest chain from the display-first terminus (the tree reads in drawn direction), branch stops
-  sit directly under their junction in interval-reused side lanes, and a cycle closes either as a
-  `merge` (the arm rejoins the line like parallel tracks on the map) or as an arc over the top of
-  its upper endpoint. Stops are added, reordered, branched (degree-≥3 junctions), and looped by
-  editing the edge set directly.
+  inline-expanded LINE inspector on the Lines tab. The `LineInspector` shows only the line's
+  identity + style fields — picking a line goes **straight into Edit Stops** (there is no
+  selected-but-not-editing state). Stop/topology editing is **canvas-driven**
+  ([canvas/appendGestures.ts](src/components/canvas/appendGestures.ts)): click stations to connect,
+  click a segment to insert into it, Delete/× removes the armed stop/edge, right-click removes a
+  segment/edge, shift-click a segment cycles its style. (This replaced the old in-sidebar
+  git-graph tree editor, `StationGraph`/`lineGraphLayout`, both retired.)
 - **[StationPopover.tsx](src/components/StationPopover.tsx)** — the station editor's home:
   mounted by `ItemPopovers` for a sole-selected station (idle mode, or that station's own
   layout-edit mode), hosting the full `StationInspector` — a Name header row with the

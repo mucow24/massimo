@@ -8,11 +8,11 @@ import { useCustomPalettes } from '../state/customPalettes';
 import { usePopover } from './usePopover';
 
 /**
- * Toolbar button that opens the color-palette picker. The panel is palettes
- * only now — the curve radius moved to the per-line style (line inspector /
- * line style presets), and station-label typography lives on per-station
- * styles — so the list renders directly, no disclosure. Mirrors `Menu`'s
- * open/close via `usePopover`.
+ * Toolbar "Options" button. The panel holds the global branch-seam inner-edge
+ * mode selector (`seamEdges`) and the color-palette picker. Per-line curve
+ * radius moved to the line style (line inspector / line style presets) and
+ * station-label typography lives on per-station styles, so neither appears
+ * here. Mirrors `Menu`'s open/close via `usePopover`.
  */
 export function OptionsPopover() {
   const { open, setOpen, wrapRef } = usePopover();
