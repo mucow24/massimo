@@ -2,7 +2,6 @@ import { describe, it, expect, afterEach, beforeEach } from 'vitest';
 import { render, fireEvent } from '@testing-library/react';
 import { LineTagsLayer, resolveTag } from './LineTagsLayer';
 import { useDoc, useSelection } from '../../state/store';
-import { useViewportStore } from '../../state/viewportStore';
 import { DEFAULT_DOC } from '../../model/transforms';
 import { makeBandSpec, makeLine } from '../../test/fixtures';
 import { fakeSvgRef } from '../../test/interaction';
@@ -60,7 +59,7 @@ describe('<LineTagsLayer> — selection chrome', () => {
       lineTags: { T: tagOnL2({ kind: 'chevron' }) },
     });
     useDoc.temporal.getState().clear();
-    useViewportStore.setState({ darkMode: false });
+    useDoc.setState({ darkMode: false });
     useSelection.getState().selectLineTag('T');
   });
   afterEach(() => useSelection.getState().selectLineTag(null));

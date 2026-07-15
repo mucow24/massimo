@@ -3,7 +3,7 @@ import { render } from '@testing-library/react';
 import { StopGlyph, X_POINTS } from './StopGlyph';
 import { DOT_SHAPE_PRESETS, SERVICE_CODE_DOT_RADIUS } from '../model/dotStyle';
 import { STOP_DOT_RADIUS } from '../geometry/orientation';
-import { useViewportStore } from '../state/viewportStore';
+import { useDoc } from '../state/store';
 import type { DotStyle } from '../model/types';
 
 const P = DOT_SHAPE_PRESETS;
@@ -38,7 +38,7 @@ const parsePoints = (points: string): [number, number][] =>
     .map((pair) => pair.split(',').map(Number) as [number, number]);
 
 afterEach(() => {
-  useViewportStore.setState({ darkMode: false });
+  useDoc.setState({ darkMode: false });
 });
 
 // ——— Characterization: every legacy preset renders exactly as before ———
@@ -234,7 +234,7 @@ describe('<StopGlyph /> procedural styles', () => {
   it('a day/night fill pair follows the viewport dark mode', () => {
     const s = custom({ fill: { day: '#112233', night: '#445566' } });
     expect(renderGlyph(s).querySelector('circle')!.getAttribute('fill')).toBe('#112233');
-    useViewportStore.setState({ darkMode: true });
+    useDoc.setState({ darkMode: true });
     expect(renderGlyph(s).querySelector('circle')!.getAttribute('fill')).toBe('#445566');
   });
 

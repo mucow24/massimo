@@ -18,7 +18,8 @@ beforeEach(() => {
     toolMode: 'arrow',
     spaceHeld: false,
   });
-  useViewportStore.setState({ darkMode: false, showWaypoints: false });
+  useDoc.setState({ darkMode: false });
+  useViewportStore.setState({ showWaypoints: false });
 });
 
 function renderHitArea(station: Station, lines: Record<string, Line>) {

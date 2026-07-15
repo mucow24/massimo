@@ -143,7 +143,7 @@ export function MapCanvas() {
   // everything anchored to them are gated at the blocks below.
   const showNetwork = useViewportStore((s) => s.showNetwork);
   // For resolving theme-aware (day/night) transfer colors on the creation preview.
-  const darkMode = useViewportStore((s) => s.darkMode);
+  const darkMode = useDoc((s) => s.darkMode);
   const theme = useThemeColors();
   // Gap/underlay color for dashed + hatched styles: matches the canvas
   // background so the "off" stripes read as empty canvas, not stale white.

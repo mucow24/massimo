@@ -608,6 +608,16 @@ export interface MapDoc {
   // whole overlap. Global for now (all lines share it). Absent in older saves
   // ⇒ 'both' via the DEFAULT_DOC merge — no migration needed.
   seamEdges: SeamEdges;
+  // Whether the map is a NIGHT map: false = day (light), true = night (dark).
+  // A property of the document, not of the session viewing it — so it travels
+  // in the saved file, an exported .massimo.json reopens in the mode it was
+  // drawn in, and the library thumbnail / PNG / PDF exports all bake the right
+  // background. Every day/night resolution (DayNightColor, themeColors) takes
+  // this as a plain boolean parameter, so the model stays theme-agnostic: this
+  // field is only ever the SOURCE, read once per component from the store.
+  // Absent in older saves ⇒ false via the DEFAULT_DOC merge — no migration
+  // needed, same route seamEdges took.
+  darkMode: boolean;
   // NOTE: there are no doc-level transfer settings anymore. Transfers fall
   // back to the constant TRANSFER_STYLE_DEFAULTS (transferStyle.ts); map-wide
   // restyling goes through the "Default" transfer style preset. Saves that

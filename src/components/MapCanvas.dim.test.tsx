@@ -122,14 +122,14 @@ describe('MapCanvas — the line-highlight dim wash survives imperative-viewBox 
     expect(dim().getAttribute('fill')).toBe('#000000');
     expect(Number(dim().getAttribute('fill-opacity'))).toBe(0.7);
     act(() => {
-      useViewportStore.setState({ darkMode: true });
+      useDoc.setState({ darkMode: true });
     });
     try {
       // Standardized: the black canvas gets the same wash, not a stronger one.
       expect(Number(dim().getAttribute('fill-opacity'))).toBe(0.7);
     } finally {
       act(() => {
-        useViewportStore.setState({ darkMode: false });
+        useDoc.setState({ darkMode: false });
       });
     }
   });

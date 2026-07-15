@@ -1474,6 +1474,7 @@ describe('clearAll', () => {
       lines: [makeLine({ id: 'L1' })],
       activePalettes: ['mta', 'custom-x'],
       seamEdges: 'straight',
+      darkMode: true,
     });
     const styled = {
       ...doc,
@@ -1484,6 +1485,9 @@ describe('clearAll', () => {
     expect(cleared.name).toBe('My Map');
     expect(cleared.activePalettes).toEqual(['mta', 'custom-x']);
     expect(cleared.seamEdges).toBe('straight');
+    // Clearing a night map leaves a night map — Clear empties the canvas, it
+    // doesn't reset what kind of map this is.
+    expect(cleared.darkMode).toBe(true);
     expect(cleared.styles).toBe(styled.styles);
     expect(cleared.styleDefaults).toBe(styled.styleDefaults);
   });
@@ -1788,6 +1792,25 @@ describe('setSeamEdges (branch inner-edge mode)', () => {
   it('returns the input doc unchanged when the mode is unchanged (no undo no-op)', () => {
     const doc = T.setSeamEdges(makeDoc({}), 'curved');
     expect(T.setSeamEdges(doc, 'curved')).toBe(doc);
+  });
+});
+
+describe('setDarkMode (night map)', () => {
+  it('DEFAULT_DOC.darkMode defaults to day', () => {
+    expect(T.DEFAULT_DOC.darkMode).toBe(false);
+  });
+
+  it('stores the chosen mode', () => {
+    const doc = makeDoc({});
+    expect(T.setDarkMode(doc, true).darkMode).toBe(true);
+    expect(T.setDarkMode(T.setDarkMode(doc, true), false).darkMode).toBe(false);
+  });
+
+  it('returns the input doc unchanged when the mode is unchanged (no undo no-op)', () => {
+    const night = T.setDarkMode(makeDoc({}), true);
+    expect(T.setDarkMode(night, true)).toBe(night);
+    const day = makeDoc({});
+    expect(T.setDarkMode(day, false)).toBe(day);
   });
 });
 

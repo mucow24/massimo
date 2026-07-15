@@ -32,7 +32,6 @@ import {
   type LayoutSource,
 } from './components/inspector/stopGridDrag';
 import { dispatchMirrored, fanOutMirrored } from './state/mirrorDispatch';
-import { useViewportStore } from './state/viewportStore';
 import { isHistoryGrouping, redo, undo } from './state/history';
 import { decideDeleteKey } from './components/canvas/appendGestures';
 
@@ -116,7 +115,7 @@ function collectClipItems(
 }
 
 export default function App() {
-  const darkMode = useViewportStore((s) => s.darkMode);
+  const darkMode = useDoc((s) => s.darkMode);
 
   // Keep the browser tab title in sync with the map name: "Massimo - <name>".
   const docName = useDoc((s) => s.name);

@@ -19,7 +19,8 @@ beforeEach(() => {
     editingStationId: null,
     uiMode: { kind: 'idle' },
   });
-  useViewportStore.setState({ darkMode: false, showWaypoints: false });
+  useDoc.setState({ darkMode: false });
+  useViewportStore.setState({ showWaypoints: false });
 });
 
 function renderLabel(station: Station, lines: Record<string, Line>, layer: LabelLayer = 'label') {

@@ -1843,11 +1843,21 @@ export function setSeamEdges(doc: MapDoc, seamEdges: SeamEdges): MapDoc {
 }
 
 /**
+ * Make this a night map (or a day map again) — see MapDoc.darkMode. Returns the
+ * input doc unchanged when the value is unchanged (so undo doesn't record a
+ * no-op).
+ */
+export function setDarkMode(doc: MapDoc, darkMode: boolean): MapDoc {
+  if (doc.darkMode === darkMode) return doc;
+  return { ...doc, darkMode };
+}
+
+/**
  * Empty the canvas, keeping the document. Clear is not New: it stays in the
  * same map, so everything that isn't drawn content survives — the title, the
- * define-by-example styles, which palettes are switched on, the seam mode.
- * DEFAULT_DOC supplies the emptied collections; the spread below re-imposes
- * the settings on top of them.
+ * define-by-example styles, which palettes are switched on, the seam mode, and
+ * whether this is a night map. DEFAULT_DOC supplies the emptied collections;
+ * the spread below re-imposes the settings on top of them.
  */
 export function clearAll(doc: MapDoc): MapDoc {
   return {
@@ -1857,6 +1867,7 @@ export function clearAll(doc: MapDoc): MapDoc {
     styleDefaults: doc.styleDefaults,
     activePalettes: doc.activePalettes,
     seamEdges: doc.seamEdges,
+    darkMode: doc.darkMode,
   };
 }
 
@@ -2669,4 +2680,5 @@ export const DEFAULT_DOC: MapDoc = {
   styleDefaults: FACTORY_STYLE_DEFAULTS,
   activePalettes: ['mta'],
   seamEdges: 'both',
+  darkMode: false,
 };

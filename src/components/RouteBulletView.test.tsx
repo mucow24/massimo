@@ -20,7 +20,7 @@ const makeBullet = (overrides: Partial<RouteBullet> & { id: string }): RouteBull
 
 beforeEach(() => {
   useDoc.setState({ ...useDoc.getState(), ...DEFAULT_DOC });
-  useViewportStore.setState({ darkMode: false });
+  useDoc.setState({ darkMode: false });
 });
 
 describe('<RouteBulletView /> hit proxy (selected-on-top drag target)', () => {
@@ -171,7 +171,7 @@ describe('<RouteBulletView /> — selection ring', () => {
   });
 
   it('flips to a white core over a black underlay in dark mode (BWB)', () => {
-    useViewportStore.setState({ darkMode: true });
+    useDoc.setState({ darkMode: true });
     const [edge, core] = rings(renderSelected());
     expect(edge.getAttribute('stroke')).toBe('#000000');
     expect(core.getAttribute('stroke')).toBe('#ffffff');

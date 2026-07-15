@@ -2,7 +2,6 @@ import { describe, it, expect, beforeAll, afterAll, beforeEach } from 'vitest';
 import { render } from '@testing-library/react';
 import { LabelView } from './LabelView';
 import { useDoc } from '../state/store';
-import { useViewportStore } from '../state/viewportStore';
 import { DEFAULT_DOC } from '../model/transforms';
 import { measureTextLabel, _clearTextMeasureCache } from '../geometry/textMeasure';
 import { makeTextLabel } from '../test/fixtures';
@@ -42,7 +41,7 @@ afterAll(() => {
 beforeEach(() => {
   _clearTextMeasureCache();
   useDoc.setState({ ...useDoc.getState(), ...DEFAULT_DOC });
-  useViewportStore.setState({ darkMode: false });
+  useDoc.setState({ darkMode: false });
 });
 
 const renderLabel = (label: TextLabel) =>

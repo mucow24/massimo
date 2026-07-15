@@ -148,7 +148,7 @@ src/
     selection.ts                # useSelection: UiMode union + multi-select + reconcileWithDoc
     mirrorDispatch.ts           # mirror-matching fan-out shared by every layout-edit surface
     viewportStore.ts            # useViewportStore (committed) + useLiveViewportStore (in-flight)
-    theme.ts                    # themeColors(darkMode) table (no store; reads viewportStore)
+    theme.ts                    # themeColors(darkMode) table (no store; reads doc.darkMode)
     customPalettes.ts           # useCustomPalettes: imported palettes (global localStorage)
     mapLibrary.ts               # saved maps + revisions in IndexedDB (no store; opaque JSON)
     snapPrefs.ts                # useSnapPrefs: snap toggles (+ v0→v1 migration)
@@ -186,9 +186,14 @@ Internalize these six and the rest of the codebase reads cleanly.
 ### 1. The document is everything saveable; nothing else is
 
 `MapDoc` is the **only** thing that is undoable and persisted-per-file. Selection, camera
-(viewport), grid size, dark mode, snap prefs, and custom-palette **definitions** all live in
+(viewport), grid size, snap prefs, and custom-palette **definitions** all live in
 **separate Zustand stores** and are explicitly excluded from history and from saved files. A
 saved `.massimo.json` is camera-agnostic and selection-agnostic.
+
+The line is **"is this a property of the map, or of the session looking at it?"** — not "is it a
+setting?". Day/night (`MapDoc.darkMode`) sits on the doc precisely because a night map is still a
+night map tomorrow, on another machine, in an exported file. Grid size and `showWaypoints` are the
+other side of that line: scaffolding for whoever is drawing right now.
 
 The exact set of persisted/undoable fields is the hand-maintained `DOC_FIELDS` tuple in
 [src/state/store.ts](src/state/store.ts) — the single source of truth that drives `partialize`
@@ -283,6 +288,7 @@ interface MapDoc {
   svgImages: Record<string, SvgImage>;
   activePalettes: PaletteId[]; // INVARIANT: never empty
   seamEdges: SeamEdges; // global branch-seam inner-edge mode: 'both' | 'straight' | 'curved'
+  darkMode: boolean; // is this a NIGHT map? false = day. Travels in the saved/exported file
   styles: Record<string, StyleDef>; // named per-kind formatting presets ("Styles")
   styleDefaults: Record<StyleKind, string>; // per-kind DEFAULT designation (style id)
 }
@@ -814,9 +820,11 @@ mouseover — a pure hover cue, independent of the selection lists above.
 **Two stores, intentionally:**
 
 - `useViewportStore` — the **committed** camera (`x, y, zoom`) + `gridVisible`, `gridSize`
-  (`GRID_SIZES = [5,10,20]`, default 10), `darkMode` (default false), `showWaypoints` (default
+  (`GRID_SIZES = [5,10,20]`, default 10), `showWaypoints` (default
   false — a pure paint toggle that reveals waypoint stations), `showNetwork` (default true — see
-  below). **Persisted** as `'massimo-viewport'` (per-browser, **not** per-file) — except
+  below). **No `darkMode`** — day/night is a property of the map, so it lives on `MapDoc`; a
+  stale `darkMode` key in an existing persisted blob is ignored. **Persisted** as
+  `'massimo-viewport'` (per-browser, **not** per-file) — except
   `showNetwork`, which `partialize` deliberately omits so a reload never opens onto an
   apparently-empty map. The giant SVG tree subscribes here and is re-rendered only on commit.
 - `useLiveViewportStore` — the **in-flight** gesture viewport (`pending: Viewport | null`).
@@ -853,7 +861,9 @@ Three seams cover it, and a fourth rule governs anything new:
   `canvasBg, label, selectionStroke, grid, underlay, editorBg, editorText, phantomDot`, plus the
   interaction accent `accent`/`accentWash` — marquee, snap guides, selection washes, mode frames —
   and the line-edit dim `dim`/`dimOpacity`/`dimmedLabel`; light `#fafafa`, dark `#000000`).
-  **No store of its own** — `darkMode` lives in `useViewportStore`. Theming is split by what can
+  **No store of its own** — `useThemeColors()` reads `darkMode` off the **doc**, so loading a
+  night map paints night with no extra wiring (unlike the camera, which needs an explicit
+  `fitCameraToDoc`). Theming is split by what can
   consume CSS: **chrome** is themed by the design tokens on `.app` in styles.css (dark mode = one
   token-reassignment block), **canvas SVG** paint comes from this table. `accent` therefore exists
   as **two hand-maintained copies** — `ThemeColors.accent` and the `--accent` CSS token — pinned
