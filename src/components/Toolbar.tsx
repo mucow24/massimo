@@ -32,11 +32,9 @@ import { useLibraryPointer } from '../state/libraryPointer';
 import { MapLibraryDialog } from './MapLibraryDialog';
 import { Menu, MenuItem, MenuSeparator, SubMenu } from './Menu';
 import {
-  CheckCircledIcon,
   CursorArrowIcon,
   DoubleArrowLeftIcon,
   DoubleArrowRightIcon,
-  ExclamationTriangleIcon,
   EyeNoneIcon,
   EyeOpenIcon,
   FrameIcon,
@@ -50,9 +48,7 @@ import { OptionsPopover } from './OptionsPopover';
 import { HelpPopover } from './HelpPopover';
 import { MapNameField } from './MapNameField';
 import { MapVersionPill } from './MapVersionPill';
-
-/** A dismissible message in the toolbar: a failure, or a confirmation. */
-type MenuStatus = { kind: 'error' | 'info'; text: string };
+import { pushToast } from '../state/toastStore';
 
 const errorText = (err: unknown, fallback: string): string =>
   err instanceof Error ? err.message : fallback;
@@ -101,7 +97,6 @@ export function Toolbar() {
 
   const fileInputRef = useRef<HTMLInputElement | null>(null);
   const imageInputRef = useRef<HTMLInputElement | null>(null);
-  const [menuStatus, setMenuStatus] = useState<MenuStatus | null>(null);
   const [libraryOpen, setLibraryOpen] = useState(false);
   /**
    * The tri-state save signal (saveBaseline.ts). 'clean' greys out Save
@@ -315,9 +310,9 @@ export function Toolbar() {
       const saved = await saveVersion(id, doc.name, json, 'user', thumb);
       useLibraryPointer.getState().setPointer(id, saved.version);
       markSaved(json, snap);
-      setMenuStatus({ kind: 'info', text: `Saved “${doc.name}” as v${saved.version}` });
+      pushToast('info', `Saved “${doc.name}” as v${saved.version}`);
     } catch (err) {
-      setMenuStatus({ kind: 'error', text: errorText(err, 'Could not save to the library.') });
+      pushToast('error', errorText(err, 'Could not save to the library.'));
     }
   };
 
@@ -328,8 +323,8 @@ export function Toolbar() {
   // serialized, exactly as App's undo handler does; then honour the same
   // clean-state gate the menu item's disabled state enforces — a clean doc
   // already matches a library version, so a save could only mint a duplicate.
-  // Lives here, beside the save action and its toolbar status message, rather
-  // than in App's global key handler. A ref keeps the listener stable while
+  // Lives here, beside the save action, rather than in App's global key
+  // handler. A ref keeps the listener stable while
   // always calling the latest closure (refreshed in its own effect, never
   // written during render).
   const saveToLibraryRef = useRef(onSaveToLibrary);
@@ -355,10 +350,9 @@ export function Toolbar() {
     } catch (err) {
       // The auto-save IS the backstop for a non-undoable wipe. If it failed,
       // there is nothing to fall back to — so don't wipe.
-      setMenuStatus({ kind: 'error', text: errorText(err, 'Could not save to the library.') });
+      pushToast('error', errorText(err, 'Could not save to the library.'));
       return;
     }
-    setMenuStatus(null);
     adoptParsedDoc(DEFAULT_DOC, false);
     // A fresh map: it has an id to save under, but nothing saved under it yet,
     // so there is no version to show until the first save.
@@ -392,24 +386,23 @@ export function Toolbar() {
 
   // Export the rendered map as an image. All three share the canvas snapshot,
   // the active theme's background, and the name-stamped basename; failures
-  // surface in the toolbar alert.
+  // surface as a status toast.
   const runExport = async (
     fn: (svg: SVGSVGElement, bg: string, basename: string) => Promise<void>,
   ) => {
     const svg = getCanvasSvg();
     if (!svg) {
-      setMenuStatus({ kind: 'error', text: 'Canvas not ready to export yet.' });
+      pushToast('error', 'Canvas not ready to export yet.');
       return;
     }
     try {
-      setMenuStatus(null);
       await fn(
         captureExportSnapshot(svg),
         themeColors(useDoc.getState().darkMode).canvasBg,
         mapFileBasename(useDoc.getState().name),
       );
     } catch (err) {
-      setMenuStatus({ kind: 'error', text: errorText(err, 'Export failed.') });
+      pushToast('error', errorText(err, 'Export failed.'));
     }
   };
   const onExportPng = () => void runExport(exportCanvasPng);
@@ -433,7 +426,7 @@ export function Toolbar() {
     // instead of dropping them as unknown.
     const result = parse(text, useCustomPalettes.getState().palettes);
     if (!result.ok) {
-      setMenuStatus({ kind: 'error', text: result.error });
+      pushToast('error', result.error);
       return;
     }
     // After the parse, so a cancelled picker or an unreadable file writes
@@ -442,13 +435,9 @@ export function Toolbar() {
     try {
       await autoSaveCurrent();
     } catch (err) {
-      setMenuStatus({
-        kind: 'error',
-        text: errorText(err, 'Could not save the current map to the library.'),
-      });
+      pushToast('error', errorText(err, 'Could not save the current map to the library.'));
       return;
     }
-    setMenuStatus(null);
     // A file is not a library map: it adopts as unsaved (Save stays armed to
     // import it), and saving it makes a NEW map, the same way re-uploading a
     // downloaded doc gives you a new doc. No id and no version — the pill has
@@ -621,26 +610,6 @@ export function Toolbar() {
         <span style={{ width: 36 }}>{(zoom * 100).toFixed(0)}%</span>
       </label>
       <button onClick={onResetView}>Reset view</button>
-      {menuStatus && (
-        // One fixed role="alert" for both kinds. Not role="status": this span is
-        // conditionally mounted, and inserting a polite live region with its text
-        // already inside is the classic shape that never gets announced. alert is
-        // special-cased to fire on insertion, so a success message spoken
-        // assertively beats one not spoken at all. The CSS keys off the class.
-        <span
-          role="alert"
-          className={menuStatus.kind === 'info' ? 'menu-status info' : 'menu-status'}
-          onClick={() => setMenuStatus(null)}
-          title="Click to dismiss"
-        >
-          {menuStatus.kind === 'info' ? (
-            <CheckCircledIcon aria-hidden="true" />
-          ) : (
-            <ExclamationTriangleIcon aria-hidden="true" />
-          )}{' '}
-          {menuStatus.text}
-        </span>
-      )}
       <span className="tool-group-divider" aria-hidden="true" />
       <button
         type="button"

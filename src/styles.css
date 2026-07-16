@@ -1474,13 +1474,18 @@ button.field-select {
 }
 /* The save-status dot beside the pill (title carries the words): red = the doc
    differs from its last save/load; blue = clean but the library holds no copy
-   (a loaded file, a fresh map). Absent entirely when the canvas matches a
-   library version — same predicate that greys out Save version. */
+   (a loaded file, a fresh map). Invisible when the canvas matches a library
+   version — same predicate that greys out Save version. visibility, not an
+   unmount: the box must keep its width so the toolbar never reflows (a reflow
+   re-clamps scrollX in a narrow window — the page jumped on every save). */
 .map-save-dot {
   flex: none;
   width: 6px;
   height: 6px;
   border-radius: 50%;
+}
+.map-save-dot[data-status='clean'] {
+  visibility: hidden;
 }
 .map-save-dot[data-status='dirty'] {
   background: var(--danger);
@@ -1989,19 +1994,81 @@ button.field-select {
   font-style: italic;
 }
 
-/* The toolbar's inline message: an export/save failure, or a save confirmation.
-   One element, two kinds — the role stays "alert" for both and only the color
-   and icon change. */
-.menu-status {
-  color: var(--danger);
-  margin-left: 8px;
-  display: inline-flex;
-  align-items: center;
-  gap: 4px;
+/* Status toasts: outcome reports (save confirmation, save/export/load
+   failures) sliding in over the canvas's lower-LEFT corner — where the eye
+   is; an inline message in the toolbar chrome went unread. The routing
+   warnings own the opposite corner (.warning-toasts). Errors persist until
+   clicked; info expires on its own (StatusToasts.tsx owns the timing).
+   All tokens, so dark mode needs no override block. */
+.status-toast-anchor {
+  position: fixed;
+  bottom: 12px;
+  left: 12px;
+  /* Above the color picker (1200) and help overlay (1300): a failure report
+     must never hide behind the surface whose action produced it. */
+  z-index: 1400;
+  /* clip (not hidden — no scroll container) so a mid-slide transform can't
+     join the page's scrollable overflow; the width bound keeps the stack
+     inside even the narrowest preview pane. The slide-in starts fully clipped
+     and wipes into view at the anchor's edge. */
+  overflow: clip;
+  max-width: calc(100vw - 24px);
+}
+.status-toast-viewport {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  max-width: 340px;
+}
+.status-toast {
+  background: var(--surface-raised);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  box-shadow: var(--shadow-pop);
+  padding: 8px 12px;
+  font-size: var(--fs-ui);
   cursor: pointer;
 }
-.menu-status.info {
+.status-toast[data-kind='error'] {
+  color: var(--danger);
+}
+.status-toast[data-kind='info'] {
   color: var(--text-muted);
+}
+.status-toast-text {
+  display: flex;
+  align-items: flex-start;
+  gap: 6px;
+}
+/* Pin the icon to the first line when a long error message wraps. */
+.status-toast-text > svg {
+  flex: none;
+  margin-top: 2px;
+}
+@keyframes status-toast-in {
+  from {
+    transform: translateX(calc(-100% - 12px));
+    opacity: 0;
+  }
+  to {
+    transform: translateX(0);
+    opacity: 1;
+  }
+}
+.status-toast[data-state='open'] {
+  animation: status-toast-in 200ms ease-out;
+}
+/* Swipe-to-dismiss (swipeDirection="left"): track the pointer, spring back on
+   a cancelled swipe. Radix unmounts on completion, so no exit keyframes. */
+.status-toast[data-swipe='move'] {
+  transform: translateX(var(--radix-toast-swipe-move-x));
+}
+.status-toast[data-swipe='cancel'] {
+  transform: translateX(0);
+  transition: transform 150ms ease-out;
 }
 
 /* Map library dialog. NOTE: no bare `.toast`/`.row` selectors here — the canvas

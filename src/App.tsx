@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react';
 import { Toolbar } from './components/Toolbar';
 import { Sidebar } from './components/Sidebar';
 import { MapCanvas } from './components/MapCanvas';
+import { StatusToasts } from './components/StatusToasts';
 import {
   beginHistoryGroup,
   cancelAppendMode,
@@ -615,6 +616,9 @@ export default function App() {
       <Toolbar />
       <MapCanvas />
       <Sidebar />
+      {/* Inside .app (not portalled) so the design tokens and data-theme
+          apply; position:fixed puts it over the canvas regardless. */}
+      <StatusToasts />
     </div>
   );
 }
