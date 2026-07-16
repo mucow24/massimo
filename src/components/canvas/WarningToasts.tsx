@@ -1,6 +1,7 @@
-import { useDoc } from '../../state/store';
+import { useDoc, useSelection } from '../../state/store';
 import { useViewportStore } from '../../state/viewportStore';
 import type { SegmentBandSpec } from '../../geometry/interlining';
+import { SIDEBAR_WIDTH, sidebarVisible } from '../Sidebar';
 
 /**
  * Shows a clickable toast for each band the router flagged as "tight." Click
@@ -12,10 +13,20 @@ export function WarningToasts({ bands }: { bands: readonly SegmentBandSpec[] }) 
   const stations = useDoc((s) => s.stations);
   const setViewport = useViewportStore((s) => s.setViewport);
   const zoom = useViewportStore((s) => s.zoom);
+  // The toasts rest in the host's bottom-right corner (`right: 12px` in
+  // styles.css) — right where the open sidebar paints over them. While the
+  // panel shows, shift them a panel-width left so they clear it and stay on
+  // screen, keeping the same 12px gap on the panel's near edge. Same
+  // SIDEBAR_WIDTH inset ItemPopovers subtracts from its spawn box; re-renders
+  // only when the panel toggles (boolean selector), never rebuilding the router.
+  const underSidebar = useSelection(sidebarVisible);
   const warnings = bands.filter((b) => b.warning);
   if (warnings.length === 0) return null;
   return (
-    <div className="warning-toasts">
+    <div
+      className="warning-toasts"
+      style={underSidebar ? { right: 12 + SIDEBAR_WIDTH } : undefined}
+    >
       {warnings.map((w) => {
         const a = stations[w.fromId]?.name ?? '?';
         const b = stations[w.toId]?.name ?? '?';

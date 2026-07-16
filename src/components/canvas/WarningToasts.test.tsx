@@ -1,15 +1,24 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { act, render } from '@testing-library/react';
 import App from '../../App';
-import { useDoc } from '../../state/store';
+import { useDoc, useSelection } from '../../state/store';
 import * as interlining from '../../geometry/interlining';
 import { DEFAULT_DOC } from '../../model/transforms';
 import type { Line, Station } from '../../model/types';
 import { makeLine } from '../../test/fixtures';
+import { SIDEBAR_WIDTH } from '../Sidebar';
 
 beforeEach(() => {
   useDoc.setState({ ...useDoc.getState(), ...DEFAULT_DOC });
   useDoc.temporal.getState().clear();
+  // Sidebar open (its default) unless a test closes it; reset so the closed-
+  // sidebar case can't leak its state into the next test.
+  useSelection.setState({
+    ...useSelection.getState(),
+    sidebarOpen: true,
+    sidebarAutoRevealed: false,
+    uiMode: { kind: 'idle' },
+  });
 });
 
 afterEach(() => {
@@ -79,5 +88,28 @@ describe('WarningToasts', () => {
 
     expect(document.querySelectorAll('.warning-toasts .toast')).toHaveLength(2);
     expect(spy).not.toHaveBeenCalled();
+  });
+
+  // The toasts rest in the host's bottom-right corner — exactly where the open
+  // sidebar paints over them (it overlays the right strip, z-index above the
+  // canvas). So while the panel shows, shift them left of it so they stay on
+  // screen; the offset clears SIDEBAR_WIDTH the same way ItemPopovers' spawn
+  // box does.
+  it('shifts the toasts left of the sidebar while the panel is open', () => {
+    render(<App />);
+    seedWarningDoc();
+
+    const el = document.querySelector('.warning-toasts') as HTMLElement;
+    expect(el.style.right).toBe(`${12 + SIDEBAR_WIDTH}px`);
+  });
+
+  it('leaves the toasts at their resting inset when the sidebar is closed', () => {
+    render(<App />);
+    seedWarningDoc();
+    act(() => useSelection.setState({ ...useSelection.getState(), sidebarOpen: false }));
+
+    // No inline override → the toasts fall back to the CSS `right: 12px` inset.
+    const el = document.querySelector('.warning-toasts') as HTMLElement;
+    expect(el.style.right).toBe('');
   });
 });
