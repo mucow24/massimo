@@ -314,3 +314,25 @@ export async function clickAtWithModifiers(
     for (const m of [...modifiers].reverse()) await page.keyboard.up(m);
   }
 }
+
+/**
+ * Drag the open on-canvas popover (any shell) by its title header down to the
+ * viewport's bottom edge, so the panel hangs off-screen and stops covering
+ * fixture items. The redesigned chrome is taller than the old shells, and a
+ * fresh spawn (which recurs whenever a multi-selection's membership changes —
+ * the anchor re-freezes per member set) can sit over a neighbouring item; a
+ * coordinate click there lands on the panel, which swallows canvas events.
+ * Parking uses the real drag-handle affordance, so tests exercise honest UX.
+ */
+export async function parkPopover(page: Page): Promise<void> {
+  const header = page.locator('.bullet-popover .header, .text-label-popover .header').first();
+  const box = await header.boundingBox();
+  if (!box) throw new Error('parkPopover: no popover open');
+  const grabX = box.x + box.width / 2;
+  const grabY = box.y + box.height / 2;
+  await page.mouse.move(grabX, grabY);
+  await page.mouse.down();
+  await page.mouse.move(grabX + 10, grabY, { steps: 2 });
+  await page.mouse.move(grabX, 714, { steps: 3 });
+  await page.mouse.up();
+}
