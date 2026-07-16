@@ -25,12 +25,16 @@ beforeEach(() => {
 });
 
 describe('MapVersionPill — version pill + save-status dot', () => {
-  it('a clean doc shows the pill alone: version number, no dot', () => {
+  it('a clean doc shows the pill and keeps the dot as a hidden placeholder', () => {
     useLibraryPointer.setState({ mapId: 'm1', version: 32 });
     anchor(markSaved);
     render(<MapVersionPill />);
     expect(screen.getByText('v32')).toBeInTheDocument();
-    expect(dot()).toBeNull();
+    // The box stays (CSS hides the paint): unmounting it changes the
+    // toolbar's width, which re-clamps scrollX in a narrow window — the
+    // whole page visibly jumped ~18px on every save.
+    expect(dot()).toHaveAttribute('data-status', 'clean');
+    expect(dot()).not.toHaveAttribute('title');
   });
 
   it('a dirty doc shows a red dot beside the pill, titled "Unsaved changes"', () => {
@@ -57,11 +61,11 @@ describe('MapVersionPill — version pill + save-status dot', () => {
     expect(dot()).toHaveAttribute('data-status', 'dirty');
   });
 
-  it('the dot tracks edits live, and undo takes it away again', () => {
+  it('the dot tracks edits live, and undo hides it again', () => {
     useLibraryPointer.setState({ mapId: 'm1', version: 32 });
     anchor(markSaved);
     render(<MapVersionPill />);
-    expect(dot()).toBeNull();
+    expect(dot()).toHaveAttribute('data-status', 'clean');
     act(() => {
       useDoc.getState().addStation(0, 0);
     });
@@ -69,6 +73,6 @@ describe('MapVersionPill — version pill + save-status dot', () => {
     act(() => {
       undo();
     });
-    expect(dot()).toBeNull();
+    expect(dot()).toHaveAttribute('data-status', 'clean');
   });
 });
