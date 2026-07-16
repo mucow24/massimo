@@ -372,7 +372,11 @@ kind. See [styles.ts](src/model/styles.ts).
   **ghosted** (`data-*-adornments="inactive"`: 0.4 opacity, pointer-events none) so the
   selection is visible without inviting edits. Polygon, RouteBullet, TextLabel and SvgImage
   share the same canvas protections, but their popovers **disable every editing control
-  except the lock toggle** while locked.
+  except the lock toggle** while locked. **Bulk lock/unlock**: a multi-selection (≥2 items,
+  any mix of the five kinds) mounts one shared `SelectionPopover` with Lock all / Unlock all /
+  Delete all (`setItemsLocked` — one undo entry; delete shares the Delete key's
+  unlocked-subset semantics via `state/selectionOps.ts`), so **Alt+marquee → Unlock all** is
+  the mass-unlock path (and Lock all the mass-lock).
 
 **`StopCell`** — one line's stop on a station. `lineId, row, col` (station-local grid;
 **`row`/`col` are floats now**, since diagonal moves use ±√2/2 — equality uses `CELL_EPS=1e-4`),
@@ -1442,8 +1446,11 @@ popover/handles). Cursor-following ghost previews (`*PlacingPreview`, all `opaci
 
 `ItemPopovers` mounts the single popover for the sole selection — including the station editor
 (see UI chrome) and the transfer popover (whose selection is the single-id
-`selectedTransferId` primary outside `soleSelection`) — and reprojects through `useLiveView` so
-it tracks the canvas during pan/zoom.
+`selectedTransferId` primary outside `soleSelection`) — plus the one shared `SelectionPopover`
+when **≥2 items** are selected across the five lists (idle only): a count summary + Lock all /
+Unlock all / Delete all over the whole group, spawned beside the members' **union AABB** and
+keyed by membership so it re-places when the selection changes. All of them reproject through
+`useLiveView` so they track the canvas during pan/zoom.
 `useDraggablePopover` **freezes the popover's spawn position as one world point** (item
 projection + 14px gap, clamped into the host, then inverted through `screenToWorldPoint`) and
 renders `projectToScreen(that point + drag)` with **nothing added after projection** — the

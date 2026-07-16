@@ -6,6 +6,7 @@ import {
   svgImageAABB,
   textLabelAABB,
   transferAABB,
+  unionAABBs,
 } from './itemBounds';
 import { measureTextLabel } from './textMeasure';
 import {
@@ -25,6 +26,31 @@ const expectCloseAABB = (
   expect(got.x1).toBeCloseTo(want.x1, 9);
   expect(got.y1).toBeCloseTo(want.y1, 9);
 };
+
+describe('unionAABBs', () => {
+  it('spans the extremes across all rects', () => {
+    expect(
+      unionAABBs([
+        { x0: 0, y0: 0, x1: 10, y1: 10 },
+        { x0: -5, y0: 2, x1: 3, y1: 20 },
+        { x0: 1, y0: -8, x1: 30, y1: 4 },
+      ]),
+    ).toEqual({ x0: -5, y0: -8, x1: 30, y1: 20 });
+  });
+
+  it('a single rect unions to itself', () => {
+    expect(unionAABBs([{ x0: 1, y0: 2, x1: 3, y1: 4 }])).toEqual({ x0: 1, y0: 2, x1: 3, y1: 4 });
+  });
+
+  it('a contained rect does not shrink the union', () => {
+    expect(
+      unionAABBs([
+        { x0: 0, y0: 0, x1: 100, y1: 100 },
+        { x0: 40, y0: 40, x1: 60, y1: 60 },
+      ]),
+    ).toEqual({ x0: 0, y0: 0, x1: 100, y1: 100 });
+  });
+});
 
 describe('routeBulletAABB', () => {
   it('is the size-half-extent square around the center', () => {
