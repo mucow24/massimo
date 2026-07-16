@@ -44,18 +44,27 @@ interface MenuItemProps {
    *  the panel's close-on-click never fires and the menu stays open — the
    *  standard "nothing happened" reading. */
   disabled?: boolean;
+  /** Optional accelerator hint (e.g. "Ctrl+S"), shown right-aligned and muted.
+   *  aria-hidden — it's a visual affordance, so the item's accessible name
+   *  stays the label alone. */
+  shortcut?: string;
 }
 
-export function MenuItem({ onClick, children, disabled }: MenuItemProps) {
+export function MenuItem({ onClick, children, disabled, shortcut }: MenuItemProps) {
   return (
     <button
       type="button"
-      className="menu-item"
+      className={'menu-item' + (shortcut ? ' has-shortcut' : '')}
       role="menuitem"
       disabled={disabled}
       onClick={onClick}
     >
       {children}
+      {shortcut && (
+        <span className="menu-shortcut" aria-hidden="true">
+          {shortcut}
+        </span>
+      )}
     </button>
   );
 }
