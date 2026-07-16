@@ -384,15 +384,19 @@ describe('Toolbar — sidebar toggle', () => {
 
 describe('Toolbar — map name field', () => {
   it('renders the editable map name flanked by dividers', () => {
-    // Clean — but the save-status dot is a hidden PLACEHOLDER, not absent
-    // (it keeps its box so the toolbar never reflows), so the right-hand
-    // divider sits after the dot rather than directly after the name.
+    // Clean and no version — but both the version pill and the save-status dot
+    // are hidden PLACEHOLDERS, not absent (each keeps its box so the toolbar
+    // never reflows), so the right-hand divider sits after the pill AND the dot
+    // rather than directly after the name.
     anchor(markSaved);
     renderToolbar();
     const field = screen.getByRole('button', { name: 'Untitled map' });
     expect(field.previousElementSibling).toHaveClass('tool-group-divider');
-    expect(field.nextElementSibling).toHaveClass('map-save-dot');
-    expect(field.nextElementSibling?.nextElementSibling).toHaveClass('tool-group-divider');
+    expect(field.nextElementSibling).toHaveClass('map-version-pill');
+    expect(field.nextElementSibling?.nextElementSibling).toHaveClass('map-save-dot');
+    expect(field.nextElementSibling?.nextElementSibling?.nextElementSibling).toHaveClass(
+      'tool-group-divider',
+    );
   });
 });
 

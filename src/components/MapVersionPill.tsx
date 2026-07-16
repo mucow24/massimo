@@ -5,10 +5,14 @@ import { useSaveStatus } from '../state/saveBaseline';
  * The live document's version, beside the map name: the handle you use to talk
  * about a map ("open v32").
  *
- * Absent — not "v0", not an empty pill — whenever there is nothing true to say:
- * a map with no saves under it yet, or a JSON file, which is not a library map
- * at all. A pill that shows a number the library cannot resolve is worse than
- * no pill.
+ * Shows nothing — not "v0", not an empty pill — whenever there is nothing true
+ * to say: a map with no saves under it yet, or a JSON file, which is not a
+ * library map at all. A pill that shows a number the library cannot resolve is
+ * worse than no pill. But the box stays MOUNTED and reserves its width (CSS
+ * visibility hides the paint off data-empty): conditionally mounting it shifted
+ * the toolbar by the pill's width plus its flex gap (~28px), and in a window
+ * narrow enough to h-scroll that reflow re-clamps scrollX — the whole page
+ * jumped on a fresh map's first save (same failure the dot's placeholder fixes).
  *
  * It reports the version the document CAME FROM, and says nothing about whether
  * the canvas still matches it — that is the dot's job. The dot is painted
@@ -27,11 +31,13 @@ export function MapVersionPill() {
   const status = useSaveStatus();
   return (
     <>
-      {version !== null && (
-        <span className="map-version-pill" title={`This map came from version ${version}`}>
-          v{version}
-        </span>
-      )}
+      <span
+        className="map-version-pill"
+        data-empty={version === null ? '' : undefined}
+        title={version !== null ? `This map came from version ${version}` : undefined}
+      >
+        {version !== null ? `v${version}` : null}
+      </span>
       <span
         className="map-save-dot"
         data-status={status}
