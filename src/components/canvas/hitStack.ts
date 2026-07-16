@@ -170,9 +170,13 @@ export function lockedHitsAt(pt: Pt, doc: LockedHitDocSlice, pad: number): HitRe
   );
   // One walk of the shared background stack, topmost first — polygons and
   // images interleave, so they can't be pushed as two kind-grouped blocks.
-  for (const id of [
-    ...effectiveBackgroundOrder(doc.polygons, doc.svgImages, doc.backgroundOrder),
-  ].reverse()) {
+  // `effectiveBackgroundOrder` returns a fresh array (reconcileOrder always
+  // rebuilds it), so reversing it in place is safe — no defensive copy needed.
+  for (const id of effectiveBackgroundOrder(
+    doc.polygons,
+    doc.svgImages,
+    doc.backgroundOrder,
+  ).reverse()) {
     const poly = doc.polygons[id];
     if (poly) {
       if (poly.locked && polygonsForRect({ [id]: poly }, rect, true).length > 0) {

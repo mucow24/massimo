@@ -1,6 +1,6 @@
 # Massimo — Architecture
 
-**Up to date as of commit `ff872fd` (2026-07-15) — verified against the live source (code-health pass covering the changes since `accf654`: canvas-driven Edit Stops replacing the retired in-sidebar line-tree editor, png/jpeg raster import, the `?` help popover, per-line curve radius baked off the retired doc-level option, and the global branch-seam-edge mode).**
+**Up to date as of commit `b5d0c8e` (2026-07-16) — verified against the live source (code-health pass covering the changes since `ff872fd`: the shared background layer stack (polygons and svg images interleaved under one `backgroundOrder`), the svg/raster opacity slider, layer move-to-top/to-bottom, the hide-network canvas toggle, in-app map-library revisions replacing the `map.json` download, day/night persisted on the doc so night maps reopen dark, and per-version numbers/names/stars).**
 
 > A fast-bootstrap reference for understanding the codebase: the ins, outs, gotchas, and
 > caveats. Written for an AI assistant (or new contributor) who needs the full picture
@@ -795,10 +795,11 @@ parts and shared one millisecond suffix across kinds.)
 
 ## State management
 
-Seven Zustand stores, split deliberately by lifecycle (`useDoc`, `useSelection`, `useViewportStore`
+Eight Zustand stores, split deliberately by lifecycle (`useDoc`, `useSelection`, `useViewportStore`
 
-- `useLiveViewportStore`, `useSnapPrefs`, `useCustomPalettes`, `useLabelEditorPrefs`). Files in
-  [src/state/](src/state/).
+- `useLiveViewportStore`, `useSnapPrefs`, `useCustomPalettes`, `useLabelEditorPrefs`,
+  `useLibraryPointer`). Files in [src/state/](src/state/). (`mapLibrary.ts` sits alongside them
+  but is IndexedDB, not a store — it owns no React state; see the map-library section below.)
 
 ### `useDoc` — the document store ([store.ts](src/state/store.ts))
 
