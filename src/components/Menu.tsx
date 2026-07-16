@@ -40,11 +40,21 @@ export function Menu({ label, children }: MenuProps) {
 interface MenuItemProps {
   onClick: () => void;
   children: ReactNode;
+  /** Greyed out and inert. A disabled button swallows the click entirely, so
+   *  the panel's close-on-click never fires and the menu stays open — the
+   *  standard "nothing happened" reading. */
+  disabled?: boolean;
 }
 
-export function MenuItem({ onClick, children }: MenuItemProps) {
+export function MenuItem({ onClick, children, disabled }: MenuItemProps) {
   return (
-    <button type="button" className="menu-item" role="menuitem" onClick={onClick}>
+    <button
+      type="button"
+      className="menu-item"
+      role="menuitem"
+      disabled={disabled}
+      onClick={onClick}
+    >
       {children}
     </button>
   );

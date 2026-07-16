@@ -1,0 +1,155 @@
+import { create } from 'zustand';
+import { docSnapshotsEqual, pickDocSnapshot, useDoc, type DocSnapshot } from './store';
+import { serialize } from '../model/serialize';
+import { DEFAULT_DOC } from '../model/transforms';
+
+/**
+ * The save baseline: what the live document would have to look like to count
+ * as "saved". It is the bytes last written to the library or adopted from a
+ * load, PLUS the doc-field references captured at that same moment — the
+ * bytes drive the auto-save's exact dedup gate, the references drive the
+ * cheap reactive status signal (~20 reference compares per doc change, no
+ * serialization on the drag path).
+ *
+ * The reference comparison is undo-aware for free: zundo snapshots share
+ * field references and undo restores them verbatim, so editing and then
+ * undoing back to the save point compares equal again. That soundness rests
+ * on the same invariant the undo stack itself rests on — transforms allocate
+ * new objects only when something actually changed.
+ *
+ * `backed` distinguishes the two flavors of "clean": the baseline bytes exist
+ * as a library version (saved there, or opened from there), or they merely
+ * came from a load (a JSON file, a fresh New) and the library has no copy.
+ */
+interface SaveBaselineState {
+  baselineSnap: DocSnapshot | null;
+  baselineJson: string | null;
+  backed: boolean;
+}
+
+/**
+ * The live document's relationship to the library:
+ * - `clean`   — matches a library version, byte for byte. Nothing to save.
+ * - `dirty`   — differs from its last save/load (or has no baseline at all,
+ *               which errs toward "save me").
+ * - `unsaved` — untouched since its load, but the library holds no copy: a
+ *               loaded JSON file, or a fresh New map. Saving imports it.
+ */
+export type SaveStatus = 'clean' | 'dirty' | 'unsaved';
+
+/**
+ * The empty document, serialized. Byte-comparing against this is the
+ * auto-save's "nothing to lose" gate: exact, and covering every DOC_FIELDS
+ * entry by construction — a new doc field is gated the day it is added.
+ *
+ * Deliberately NOT `computeContentBounds` — that is a camera hull which reads
+ * five of those fields and omits lines on purpose, so a map whose work lives
+ * entirely in its lines would read as "empty", the auto-save would write
+ * nothing, and New would wipe it for good. One concept, not two.
+ */
+export const EMPTY_DOC_JSON = serialize(pickDocSnapshot(DEFAULT_DOC));
+
+/**
+ * Where the baseline survives a refresh: a hash of the baseline bytes plus
+ * the backed bit, in localStorage. The bytes themselves would double the
+ * doc's storage footprint (svg images carry data URIs), so on boot the
+ * rehydrated doc is re-serialized and compared by hash instead — a match
+ * restores the baseline, a mismatch errs dirty, the same direction a null
+ * baseline errs.
+ */
+const PERSIST_KEY = 'massimo-save-baseline';
+
+/** FNV-1a over the code units, prefixed with the length. Not cryptographic —
+ *  a collision costs one wrongly-quiet dot until the next edit, on a
+ *  single-user app, at 2^-32 odds per boot. */
+export function hashBaseline(json: string): string {
+  let h = 0x811c9dc5;
+  for (let i = 0; i < json.length; i++) {
+    h ^= json.charCodeAt(i);
+    h = Math.imul(h, 0x01000193);
+  }
+  return `${json.length}.${(h >>> 0).toString(36)}`;
+}
+
+const UNSET: SaveBaselineState = { baselineSnap: null, baselineJson: null, backed: false };
+
+/**
+ * Reconstruct the baseline for the doc the persist middleware just
+ * rehydrated. Exported for tests; runs once at module init.
+ *
+ * A recorded hash that matches the doc restores the baseline (with its backed
+ * bit); one that mismatches means unsaved work went down with the refresh —
+ * stay unset, which reads dirty. With nothing recorded at all (first boot,
+ * pre-feature storage) an EMPTY doc adopts itself as the unsaved baseline, so
+ * a brand-new user meets the same blue dot a virgin New shows rather than a
+ * red one; a non-empty doc of unknown provenance errs dirty.
+ */
+export function bootBaselineState(): SaveBaselineState {
+  const snap = pickDocSnapshot(useDoc.getState());
+  const json = serialize(snap);
+  const raw = localStorage.getItem(PERSIST_KEY);
+  if (raw !== null) {
+    try {
+      const parsed = JSON.parse(raw) as { h?: unknown; backed?: unknown };
+      if (parsed.h === hashBaseline(json)) {
+        return { baselineSnap: snap, baselineJson: json, backed: parsed.backed === true };
+      }
+    } catch {
+      // Unreadable record: same as a mismatch.
+    }
+    return UNSET;
+  }
+  if (json === EMPTY_DOC_JSON) return { baselineSnap: snap, baselineJson: json, backed: false };
+  return UNSET;
+}
+
+export const useSaveBaseline = create<SaveBaselineState>()(() => bootBaselineState());
+
+const persistBaseline = (json: string, backed: boolean): void => {
+  localStorage.setItem(PERSIST_KEY, JSON.stringify({ h: hashBaseline(json), backed }));
+};
+
+/** The doc was written to the library (or adopted straight from it): these
+ *  bytes ARE a library version. `json`/`snap` must be captured together from
+ *  the same state — and BEFORE any await, so an edit that lands mid-save
+ *  leaves the doc correctly dirty. */
+export function markSaved(json: string, snap: DocSnapshot): void {
+  useSaveBaseline.setState({ baselineSnap: snap, baselineJson: json, backed: true });
+  persistBaseline(json, true);
+}
+
+/** The doc was adopted from outside the library (a JSON file, New): clean,
+ *  but the library holds no copy — Save stays armed to import it. */
+export function markAdopted(json: string, snap: DocSnapshot): void {
+  useSaveBaseline.setState({ baselineSnap: snap, baselineJson: json, backed: false });
+  persistBaseline(json, false);
+}
+
+/**
+ * The library row backing these bytes was deleted under the live doc. Null —
+ * not "kept but unbacked" — on purpose: the auto-save's dedup gate compares
+ * bytes against `baselineJson`, and after this deletion those bytes exist
+ * nowhere but the canvas, so the next switch MUST write them. A kept baseline
+ * would read as "already in the library, verbatim" and New would wipe a doc
+ * that is then in no file, no row, and no undo stack. Reading dirty (red)
+ * rather than unsaved (blue) is the erring direction that keeps the doc.
+ */
+export function markUnbacked(): void {
+  useSaveBaseline.setState(UNSET);
+  localStorage.removeItem(PERSIST_KEY);
+}
+
+/** The tri-state signal, pure. `doc` is the live doc state (any superset of
+ *  DocSnapshot works — the comparison reads only DOC_FIELDS). */
+export function saveStatusOf(doc: DocSnapshot, baseline: SaveBaselineState): SaveStatus {
+  if (baseline.baselineSnap === null || !docSnapshotsEqual(doc, baseline.baselineSnap)) {
+    return 'dirty';
+  }
+  return baseline.backed ? 'clean' : 'unsaved';
+}
+
+/** Reactive tri-state for components: re-renders only when the status flips. */
+export function useSaveStatus(): SaveStatus {
+  const baseline = useSaveBaseline();
+  return useDoc((s) => saveStatusOf(s, baseline));
+}

@@ -13,6 +13,7 @@ import {
   type VersionMeta,
 } from '../state/mapLibrary';
 import { useLibraryPointer } from '../state/libraryPointer';
+import { markUnbacked } from '../state/saveBaseline';
 import { useDoc } from '../state/store';
 import { useDismiss } from './usePopover';
 
@@ -20,18 +21,6 @@ interface Props {
   onClose: () => void;
   /** Adopt a version over the live doc. Rejects with a message worth showing. */
   onOpenVersion: (version: VersionMeta) => Promise<void>;
-  /**
-   * The library no longer holds the bytes the live document came from — its map
-   * was deleted, or the one version it came from was. Anything upstream treating
-   * the document as "already saved" has to stop, or it will decline to save a
-   * document that now exists nowhere else.
-   *
-   * A signal rather than something upstream can infer: a cleared pointer looks
-   * identical to opening a JSON file, and that document is safe on disk. And on
-   * the delete-a-version path the pointer does not move at all. Only the dialog
-   * knows the difference.
-   */
-  onLiveDocUnbacked: () => void;
 }
 
 const when = (ms: number) => new Date(ms).toLocaleString();
@@ -47,7 +36,7 @@ const when = (ms: number) => new Date(ms).toLocaleString();
  * anywhere in this app, and a second layer would mean two Escape listeners
  * racing over one keypress.
  */
-export function MapLibraryDialog({ onClose, onOpenVersion, onLiveDocUnbacked }: Props) {
+export function MapLibraryDialog({ onClose, onOpenVersion }: Props) {
   const panelRef = useRef<HTMLDivElement | null>(null);
   // null means "still loading" — distinct from [], which means "no maps yet".
   // Collapsing the two flashes "No saved maps" on every open.
@@ -121,9 +110,14 @@ export function MapLibraryDialog({ onClose, onOpenVersion, onLiveDocUnbacked }: 
     }
     // A stale pointer would resurrect the row: saveVersion's write to the maps
     // store is an upsert, so the very next save re-creates what we just deleted.
+    // The baseline goes with it — the library no longer holds the live doc's
+    // bytes, and anything still treating it as "already saved" would decline
+    // to save a document that now exists nowhere else. Only the dialog knows:
+    // upstream, a cleared pointer looks identical to opening a JSON file, and
+    // that document is safe on disk.
     if (useLibraryPointer.getState().mapId === id) {
       useLibraryPointer.getState().setPointer(null, null);
-      onLiveDocUnbacked();
+      markUnbacked();
     }
     if (selectedMapId === id) {
       setSelectedMapId(null);
@@ -152,7 +146,7 @@ export function MapLibraryDialog({ onClose, onOpenVersion, onLiveDocUnbacked }: 
       return;
     }
     const pointer = useLibraryPointer.getState();
-    if (pointer.mapId === version.mapId && pointer.version === version.version) onLiveDocUnbacked();
+    if (pointer.mapId === version.mapId && pointer.version === version.version) markUnbacked();
     if (selectedMapId) await refreshVersions(selectedMapId);
     await refreshMaps();
   };

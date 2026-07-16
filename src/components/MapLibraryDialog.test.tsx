@@ -29,7 +29,9 @@ import {
 } from '../state/mapLibrary';
 // NOT mocked: a plain zustand + localStorage store, which jsdom runs happily.
 import { useLibraryPointer } from '../state/libraryPointer';
-import { useDoc } from '../state/store';
+import { markSaved, useSaveBaseline } from '../state/saveBaseline';
+import { pickDocSnapshot, useDoc } from '../state/store';
+import { serialize } from '../model/serialize';
 import { DEFAULT_DOC } from '../model/transforms';
 
 const MAPS: MapSummary[] = [
@@ -57,16 +59,17 @@ const VERSIONS: VersionMeta[] = [
 
 const onClose = vi.fn();
 const onOpenVersion = vi.fn(async () => {});
-const onLiveDocUnbacked = vi.fn();
 
 const renderDialog = () =>
-  render(
-    <MapLibraryDialog
-      onClose={onClose}
-      onOpenVersion={onOpenVersion}
-      onLiveDocUnbacked={onLiveDocUnbacked}
-    />,
-  );
+  render(<MapLibraryDialog onClose={onClose} onOpenVersion={onOpenVersion} />);
+
+/** Vouch for the live doc as saved, so "the baseline survived" and "the
+ *  baseline was wiped" are distinguishable outcomes below. */
+const anchorSavedBaseline = () => {
+  const snap = pickDocSnapshot(useDoc.getState());
+  markSaved(serialize(snap), snap);
+};
+const baselineWiped = () => useSaveBaseline.getState().baselineSnap === null;
 
 /** Select Canal Line and wait for its versions to land. */
 const openCanalLine = async (user: ReturnType<typeof userEvent.setup>) => {
@@ -87,7 +90,7 @@ beforeEach(() => {
   vi.mocked(setVersionStarred).mockReset().mockResolvedValue(undefined);
   onClose.mockClear();
   onOpenVersion.mockClear();
-  onLiveDocUnbacked.mockClear();
+  useSaveBaseline.setState({ baselineSnap: null, baselineJson: null, backed: false });
 });
 
 describe('MapLibraryDialog', () => {
@@ -193,25 +196,27 @@ describe('MapLibraryDialog', () => {
    * so its bytes are legitimately still "saved". These bytes are not: their
    * library row is gone. Only the dialog knows the difference.
    */
-  it('reports the deletion of the live doc’s own map, so its bytes stop counting as saved', async () => {
+  it('deleting the live doc’s own map wipes the baseline, so its bytes stop counting as saved', async () => {
     const user = userEvent.setup();
     useLibraryPointer.setState({ mapId: 'm1', version: 3 });
+    anchorSavedBaseline();
     renderDialog();
     await screen.findByText('Canal Line');
     await user.click(screen.getByRole('button', { name: 'Delete Canal Line' }));
     await user.click(screen.getByRole('button', { name: 'Sure?' }));
-    await waitFor(() => expect(onLiveDocUnbacked).toHaveBeenCalled());
+    await waitFor(() => expect(baselineWiped()).toBe(true));
   });
 
-  it('stays quiet when the deleted map is not the live doc’s', async () => {
+  it('keeps the baseline when the deleted map is not the live doc’s', async () => {
     const user = userEvent.setup();
     useLibraryPointer.setState({ mapId: 'm2', version: 9 });
+    anchorSavedBaseline();
     renderDialog();
     await screen.findByText('Canal Line');
     await user.click(screen.getByRole('button', { name: 'Delete Canal Line' }));
     await user.click(screen.getByRole('button', { name: 'Sure?' }));
     await waitFor(() => expect(deleteMap).toHaveBeenCalledWith('m1'));
-    expect(onLiveDocUnbacked).not.toHaveBeenCalled();
+    expect(baselineWiped()).toBe(false);
   });
 
   // The failed delete must not report a loss that did not happen: the map, and
@@ -221,52 +226,56 @@ describe('MapLibraryDialog', () => {
    * delete just the version the live doc came from and its bytes are equally
    * gone, while the pointer deliberately does not move at all.
    */
-  it('reports the deletion of the one version the live doc came from', async () => {
+  it('deleting the one version the live doc came from wipes the baseline', async () => {
     const user = userEvent.setup();
     useLibraryPointer.setState({ mapId: 'm1', version: 3 });
+    anchorSavedBaseline();
     renderDialog();
     await openCanalLine(user);
     await user.click(screen.getByRole('button', { name: 'Delete version 3' }));
     await user.click(screen.getByRole('button', { name: 'Sure?' }));
-    await waitFor(() => expect(onLiveDocUnbacked).toHaveBeenCalled());
+    await waitFor(() => expect(baselineWiped()).toBe(true));
   });
 
   // Some OTHER version of the same map: the doc's own bytes are untouched, so
   // this must not fire — a signal on every delete would defeat the dedup gate
   // and copy the document on the next switch.
-  it('stays quiet when a version the live doc did not come from is deleted', async () => {
+  it('keeps the baseline when a version the live doc did not come from is deleted', async () => {
     const user = userEvent.setup();
     useLibraryPointer.setState({ mapId: 'm1', version: 2 });
+    anchorSavedBaseline();
     renderDialog();
     await openCanalLine(user);
     await user.click(screen.getByRole('button', { name: 'Delete version 3' }));
     await user.click(screen.getByRole('button', { name: 'Sure?' }));
     await waitFor(() => expect(deleteVersion).toHaveBeenCalledWith(7));
-    expect(onLiveDocUnbacked).not.toHaveBeenCalled();
+    expect(baselineWiped()).toBe(false);
   });
 
   // Same version NUMBER, different map: the number alone is not identity.
-  it('stays quiet when another map happens to share the version number', async () => {
+  it('keeps the baseline when another map happens to share the version number', async () => {
     const user = userEvent.setup();
     useLibraryPointer.setState({ mapId: 'm2', version: 3 });
+    anchorSavedBaseline();
     renderDialog();
     await openCanalLine(user);
     await user.click(screen.getByRole('button', { name: 'Delete version 3' }));
     await user.click(screen.getByRole('button', { name: 'Sure?' }));
     await waitFor(() => expect(deleteVersion).toHaveBeenCalledWith(7));
-    expect(onLiveDocUnbacked).not.toHaveBeenCalled();
+    expect(baselineWiped()).toBe(false);
   });
 
-  it('stays quiet when the delete itself fails', async () => {
+  it('keeps the baseline when the delete itself fails', async () => {
     const user = userEvent.setup();
     useLibraryPointer.setState({ mapId: 'm1', version: 3 });
+    anchorSavedBaseline();
     vi.mocked(deleteMap).mockRejectedValue(new Error('QuotaExceededError'));
     renderDialog();
     await screen.findByText('Canal Line');
     await user.click(screen.getByRole('button', { name: 'Delete Canal Line' }));
     await user.click(screen.getByRole('button', { name: 'Sure?' }));
     expect(await screen.findByRole('alert')).toBeInTheDocument();
-    expect(onLiveDocUnbacked).not.toHaveBeenCalled();
+    expect(baselineWiped()).toBe(false);
     expect(useLibraryPointer.getState()).toMatchObject({ mapId: 'm1', version: 3 });
   });
 
