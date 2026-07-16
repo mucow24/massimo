@@ -23,7 +23,14 @@ import {
 } from './transferStyle';
 import { DEFAULT_DOT_STYLE, dotStylesEqual } from './dotStyle';
 import { pairKeyOf } from './pairKey';
-import { addEdge, edgeNeighbors, edgesWithout, lineHasEdge, removeEdge } from './lineTopology';
+import {
+  addEdge,
+  degreeOf,
+  edgeNeighbors,
+  edgesWithout,
+  lineHasEdge,
+  removeEdge,
+} from './lineTopology';
 import { DIR_8, STOP_SIZE, rotateBy, stopCenterAt, tangentGap } from '../geometry/orientation';
 import { CELL_EPS, sameCell } from '../geometry/lattice';
 import { GRID_INTERVAL, snapPointToGrid, type GridSnap } from '../geometry/snap';
@@ -1492,14 +1499,29 @@ export function removeStationFromLine(doc: MapDoc, lineId: LineId, idx: number):
 // canonical edge when absent, removes it (pruning its overrides/tag) when
 // present. No-op (same doc reference) when either station isn't a member or the
 // two are the same.
+//
+// Cutting an edge can strand an endpoint with no remaining edges (a terminus
+// whose only track this was). Such a station is dropped from the line entirely
+// — same cleanup as a right-click "remove station" on it — so removing a
+// segment never leaves an edgeless orphan stop behind.
 export function toggleEdgeOnLine(doc: MapDoc, lineId: LineId, a: StationId, b: StationId): MapDoc {
   const ln = doc.lines[lineId];
   if (!ln || a === b) return doc;
   if (!ln.stations.includes(a) || !ln.stations.includes(b)) return doc;
-  const nextEdges = lineHasEdge(ln, a, b) ? removeEdge(ln.edges, a, b) : addEdge(ln.edges, a, b);
+  const removing = lineHasEdge(ln, a, b);
+  const nextEdges = removing ? removeEdge(ln.edges, a, b) : addEdge(ln.edges, a, b);
   if (nextEdges === ln.edges) return doc;
   const updatedLine = pruneOrphanSegmentStyles({ ...ln, edges: nextEdges });
-  return pruneOrphanLineTags({ ...doc, lines: { ...doc.lines, [lineId]: updatedLine } });
+  let out = pruneOrphanLineTags({ ...doc, lines: { ...doc.lines, [lineId]: updatedLine } });
+  if (removing) {
+    for (const endpoint of [a, b]) {
+      const line = out.lines[lineId];
+      if (degreeOf(line, endpoint) === 0) {
+        out = removeStationFromLine(out, lineId, line.stations.indexOf(endpoint));
+      }
+    }
+  }
+  return out;
 }
 
 /**
