@@ -975,6 +975,151 @@ describe('Toolbar — map library', () => {
 });
 
 /**
+ * Make a copy — Google Docs semantics: mint a NEW library map from the live
+ * doc, named "Copy of X", with a version history of its own starting at its
+ * first save. Versions are keyed by map id, so saving under a fresh id is
+ * what guarantees the copy inherits none of the source's revisions. The
+ * canvas continues uninterrupted — same content, same camera, same undo
+ * stack — it just belongs to the copy now.
+ */
+describe('Toolbar — Make a copy', () => {
+  /** A clean library map: the doc IS v32 of 'src-id'. */
+  const seedSourceMap = () => {
+    useDoc.setState({
+      ...useDoc.getState(),
+      name: 'My Map',
+      lines: { L1: makeLine({ id: 'L1' as LineId, stations: ['S'] as StationId[] }) },
+      lineOrder: ['L1' as LineId],
+      stations: { S: stationWithStop('S' as StationId, 'L1' as LineId, { x: 0, y: 0 }) },
+    });
+    useLibraryPointer.setState({ mapId: 'src-id', version: 32 });
+    anchor(markSaved);
+  };
+
+  const makeCopy = async (user: ReturnType<typeof userEvent.setup>) => {
+    await user.click(screen.getByRole('button', { name: 'Canvas' }));
+    await user.click(screen.getByRole('menuitem', { name: 'Make a copy' }));
+  };
+
+  it('sits directly below New in the Canvas menu', async () => {
+    const user = userEvent.setup();
+    renderToolbar();
+    await user.click(screen.getByRole('button', { name: 'Canvas' }));
+    const labels = screen.getAllByRole('menuitem').map((el) => el.textContent);
+    expect(labels.slice(0, 2)).toEqual(['New', 'Make a copy']);
+  });
+
+  it('mints a new library map from the live doc — renamed, repointed, clean', async () => {
+    const user = userEvent.setup();
+    seedSourceMap();
+    vi.mocked(getCanvasSvg).mockReturnValue(mountableSvg());
+    useViewportStore.setState({ x: 100, y: 50, zoom: 3 });
+    const depthBefore = historyDepth();
+    renderToolbar();
+    await makeCopy(user);
+    const toast = await findToast(/Copy of My Map/);
+    expect(toast.dataset.kind).toBe('info');
+    // A clean source needs no checkpoint: exactly one save, the copy itself,
+    // under a fresh id — never the source's.
+    expect(saveVersion).toHaveBeenCalledTimes(1);
+    expect(saveVersion).toHaveBeenCalledWith(
+      'minted-1',
+      'Copy of My Map',
+      // The payload is byte-for-byte the (renamed) live doc.
+      serialize(pickDocSnapshot(useDoc.getState())),
+      'user',
+      'data:image/png;base64,THUMB',
+    );
+    expect(useDoc.getState().name).toBe('Copy of My Map');
+    expect(useLibraryPointer.getState()).toMatchObject({ mapId: 'minted-1', version: 1 });
+    expect(statusNow()).toBe('clean');
+    // The canvas continues uninterrupted: camera untouched, undo NOT cleared —
+    // the only new history entry is the rename itself.
+    expect(useViewportStore.getState()).toMatchObject({ x: 100, y: 50, zoom: 3 });
+    expect(historyDepth()).toBe(depthBefore + 1);
+  });
+
+  it('checkpoints a dirty source under the SOURCE id before minting the copy', async () => {
+    const user = userEvent.setup();
+    seedSourceMap();
+    useDoc.getState().setDocName('My Map (wip)'); // dirty against the v32 baseline
+    renderToolbar();
+    await makeCopy(user);
+    await waitFor(() => expect(saveVersion).toHaveBeenCalledTimes(2));
+    const [checkpoint, copy] = vi.mocked(saveVersion).mock.calls;
+    expect(checkpoint[0]).toBe('src-id');
+    expect(checkpoint[1]).toBe('My Map (wip)');
+    expect(checkpoint[3]).toBe('auto');
+    expect(copy[0]).toBe('minted-1');
+    expect(copy[1]).toBe('Copy of My Map (wip)');
+    expect(copy[3]).toBe('user');
+  });
+
+  it('a loaded file forks straight to the copy — no checkpoint map is minted for it', async () => {
+    const user = userEvent.setup();
+    seedSourceMap();
+    useLibraryPointer.setState({ mapId: null, version: null });
+    anchor(markAdopted); // a loaded file: clean bytes, no library copy
+    useDoc.getState().setDocName('Edited file'); // dirty, and in no library row
+    renderToolbar();
+    await makeCopy(user);
+    await findToast(/Copy of Edited file/);
+    // The copy itself preserves the bytes; there is no source map whose
+    // history a checkpoint could update, so none is fabricated.
+    expect(saveVersion).toHaveBeenCalledTimes(1);
+    expect(vi.mocked(saveVersion).mock.calls[0][0]).toBe('minted-1');
+    expect(newMapId).toHaveBeenCalledTimes(1);
+  });
+
+  it('a failed copy save changes nothing — name, pointer and baseline stay the source’s', async () => {
+    const user = userEvent.setup();
+    seedSourceMap();
+    vi.mocked(saveVersion).mockRejectedValue(new Error('QuotaExceededError'));
+    renderToolbar();
+    await makeCopy(user);
+    const toast = await findToast(/QuotaExceededError/);
+    expect(toast.dataset.kind).toBe('error');
+    expect(useDoc.getState().name).toBe('My Map');
+    expect(useLibraryPointer.getState()).toMatchObject({ mapId: 'src-id', version: 32 });
+    expect(statusNow()).toBe('clean');
+  });
+
+  it('aborts before minting the copy when the source checkpoint fails', async () => {
+    const user = userEvent.setup();
+    seedSourceMap();
+    useDoc.getState().setDocName('My Map (wip)'); // dirty → a checkpoint must run
+    vi.mocked(saveVersion).mockRejectedValue(new Error('QuotaExceededError'));
+    renderToolbar();
+    await makeCopy(user);
+    await findToast(/QuotaExceededError/);
+    expect(saveVersion).toHaveBeenCalledTimes(1); // the checkpoint attempt only
+    expect(newMapId).not.toHaveBeenCalled();
+    expect(useDoc.getState().name).toBe('My Map (wip)');
+    expect(useLibraryPointer.getState()).toMatchObject({ mapId: 'src-id', version: 32 });
+  });
+
+  it('an edit that lands during an in-flight copy leaves the doc dirty', async () => {
+    const user = userEvent.setup();
+    seedSourceMap();
+    let resolveSave: (v: { id: number; version: number }) => void = () => {};
+    vi.mocked(saveVersion).mockImplementation(
+      () =>
+        new Promise((res) => {
+          resolveSave = res;
+        }),
+    );
+    renderToolbar();
+    await makeCopy(user);
+    await waitFor(() => expect(saveVersion).toHaveBeenCalledTimes(1));
+    useDoc.getState().addStation(500, 500); // lands while the copy is in flight
+    resolveSave({ id: 1, version: 1 });
+    await findToast(/Copy of My Map/);
+    // The copy vouched for the bytes it captured, not the mid-flight edit.
+    expect(statusNow()).toBe('dirty');
+  });
+});
+
+/**
  * The save gate is the menu item's enabled state: Save version is greyed out
  * exactly when the doc byte-for-byte matches a library version (clean), and
  * armed when it is dirty (edits) or unsaved (clean bytes the library holds no
