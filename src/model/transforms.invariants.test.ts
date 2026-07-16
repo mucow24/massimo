@@ -1,8 +1,12 @@
 import { describe, it, expect } from 'vitest';
 import fc from 'fast-check';
 import * as T from './transforms';
-import { LINE_WIDTH_DEFAULT, LINE_WIDTH_MIN } from './lineWidth';
-import { LINE_STROKE_COLOR_DEFAULT, LINE_STROKE_WIDTH_DEFAULT } from './lineStroke';
+import { LINE_WIDTH_DEFAULT, LINE_WIDTH_MIN, LINE_WIDTH_STEP } from './lineWidth';
+import {
+  LINE_STROKE_COLOR_DEFAULT,
+  LINE_STROKE_STEP,
+  LINE_STROKE_WIDTH_DEFAULT,
+} from './lineStroke';
 import type { LineStyle, MapDoc } from './types';
 import { counterIdFactory } from './ids';
 
@@ -296,30 +300,48 @@ describe('transforms invariants (property-based)', () => {
     );
   });
 
-  it('line.width is always in canonical stored form (integer ≥ MIN, never the default)', () => {
+  it('line.width is always in canonical stored form (on the 0.25 grid, ≥ MIN, never the default)', () => {
+    // Deterministic coverage of the fractional path. As of #276 widths live on
+    // a 0.25 grid (LINE_WIDTH_STEP), so 1.125 canonicalizes to a legal
+    // non-integer 1.25 — the case a naive Number.isInteger check wrongly
+    // rejected. Injecting it as an example keeps this a reliable regression
+    // guard instead of a seed-dependent flake (the original flaky counterexample
+    // was exactly setLineWidth w:1.125).
+    const fractionalWidth: Action[] = [
+      { kind: 'addLine' },
+      { kind: 'setLineWidth', idx: 0, w: 1.125 },
+    ];
     fc.assert(
       fc.property(fc.array(actionArb, { maxLength: 30 }), (actions) => {
         const doc = applyAll(actions);
         for (const lid of Object.keys(doc.lines)) {
           const w = doc.lines[lid].width;
           if (w === undefined) continue;
-          expect(Number.isInteger(w)).toBe(true);
+          expect(Number.isInteger(w / LINE_WIDTH_STEP)).toBe(true);
           expect(w).toBeGreaterThanOrEqual(LINE_WIDTH_MIN);
           expect(w).not.toBe(LINE_WIDTH_DEFAULT);
         }
       }),
+      { examples: [[fractionalWidth]] },
     );
   });
 
   it('line stroke fields are always in canonical stored form', () => {
+    // Deterministic coverage of the fractional path. Stroke width moved onto
+    // the same 0.25 grid in #276 (was 0.5, LINE_STROKE_STEP), so 0.75 stores as
+    // 0.75 — a value the old half-pixel (× 2) check wrongly rejected.
+    const fractionalStroke: Action[] = [
+      { kind: 'addLine' },
+      { kind: 'setLineStrokeWidth', idx: 0, w: 0.75 },
+    ];
     fc.assert(
       fc.property(fc.array(actionArb, { maxLength: 30 }), (actions) => {
         const doc = applyAll(actions);
         for (const lid of Object.keys(doc.lines)) {
           const { strokeWidth, strokeColor } = doc.lines[lid];
           if (strokeWidth !== undefined) {
-            // On the half-pixel grid, never the (dropped) default.
-            expect(Number.isInteger(strokeWidth * 2)).toBe(true);
+            // On the 0.25 grid, never the (dropped) default.
+            expect(Number.isInteger(strokeWidth / LINE_STROKE_STEP)).toBe(true);
             expect(strokeWidth).toBeGreaterThan(LINE_STROKE_WIDTH_DEFAULT);
           }
           if (strokeColor !== undefined) {
@@ -328,6 +350,7 @@ describe('transforms invariants (property-based)', () => {
           }
         }
       }),
+      { examples: [[fractionalStroke]] },
     );
   });
 
