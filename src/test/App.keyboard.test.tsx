@@ -2,6 +2,8 @@ import { describe, it, expect, beforeEach, vi } from 'vitest';
 import { render, screen, fireEvent, waitFor } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import App from '../App';
+import { NumericFieldRow } from '../components/NumericFieldRow';
+import { WeightSelect } from '../components/WeightItalicControls';
 import { beginHistoryGroup, useDoc, useSelection } from '../state/store';
 import { historyDepth, isHistoryGrouping, redoDepth } from '../state/history';
 import { DEFAULT_DOC } from '../model/transforms';
@@ -188,6 +190,52 @@ describe('App keyboard shortcuts: inForm guard routing', () => {
     expect(useSelection.getState().spaceHeld).toBe(false);
   });
 
+  // Radix widgets are buttons/spans wearing ARIA form roles, not native
+  // inputs — the guards must read the role, or a focused slider thumb would
+  // both move the slider AND nudge the selected item on ArrowRight.
+  it('ArrowRight on a focused Radix slider thumb does not nudge the selected station', () => {
+    // App supplies the window-level key handler; the slider stands in for any
+    // popover/inspector NumericFieldRow (jsdom's zero-size canvas host keeps
+    // the real item popovers from mounting under <App />).
+    render(
+      <>
+        <App />
+        <NumericFieldRow
+          id="guard-probe"
+          label="Probe"
+          min={0}
+          max={10}
+          step={1}
+          value={5}
+          onChange={() => {}}
+          getCurrent={() => 5}
+        />
+      </>,
+    );
+    const sid = useDoc.getState().addStation(140, 140);
+    useSelection.getState().selectStation(sid);
+    const before = useDoc.getState().stations[sid].x;
+
+    const slider = screen.getByRole('slider', { name: 'Probe' });
+    slider.focus();
+    fireEvent.keyDown(slider, { key: 'ArrowRight' });
+
+    expect(useDoc.getState().stations[sid].x).toBe(before); // slider moved, station didn't
+  });
+
+  it('tool shortcut "t" on a focused Radix select trigger does not switch mode', () => {
+    render(
+      <>
+        <App />
+        <WeightSelect value={400} italic={false} onChange={() => {}} />
+      </>,
+    );
+    const trigger = screen.getByRole('combobox', { name: 'Weight' });
+    trigger.focus();
+    fireEvent.keyDown(trigger, { key: 't' });
+    expect(useSelection.getState().uiMode.kind).toBe('idle');
+  });
+
   // The non-modifier canvas shortcuts (Space-pan, a/h/l/t tools) must NOT fire
   // while a range slider or color picker is focused — `inForm` lets those
   // through for the Ctrl-combos, but `inFormControl` (the stricter test) gates
@@ -331,22 +379,23 @@ describe('App keyboard shortcuts: blur-then-undo', () => {
       lineOrder: ['L1'],
     });
     useSelection.getState().selectLine('L1');
-    const slider = (await screen.findByRole('slider', {
+    const slider = await screen.findByRole('slider', {
       name: /curve radius/i,
-    })) as HTMLInputElement;
-    const initial = Number(slider.value);
+    });
+    const initial = Number(slider.getAttribute('aria-valuenow'));
     const pastBaseline = historyDepth();
 
     // Simulate focus → mid-drag → Ctrl+Z without intervening blur. The focus
-    // opens a field-history group (pauses zundo); the change mutates state
-    // but no entry lands on pastStates yet; the Ctrl+Z handler must blur the
-    // active element so commit() runs, *then* undo against the just-pushed
+    // opens a field-history group (pauses zundo); the arrow-key steps mutate
+    // state but no entry lands on pastStates yet; the Ctrl+Z handler must blur
+    // the active element so commit() runs, *then* undo against the just-pushed
     // entry. Without blur-then-undo, undo would skip the in-progress edit.
     //
     // Note: use the real DOM .focus() (not fireEvent.focus) so jsdom updates
     // document.activeElement — the Ctrl+Z handler's blur target depends on it.
+    // The Radix slider thumb steps via arrow keys (no native change event).
     slider.focus();
-    fireEvent.change(slider, { target: { value: String(initial + 4) } });
+    for (let i = 0; i < 4; i++) fireEvent.keyDown(slider, { key: 'ArrowRight' });
     expect(useDoc.getState().lines.L1.curveRadius).toBe(initial + 4);
 
     fireEvent.keyDown(slider, { key: 'z', ctrlKey: true });

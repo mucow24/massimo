@@ -1,3 +1,4 @@
+import * as Slider from '@radix-ui/react-slider';
 import { useFieldHistory } from '../useFieldHistory';
 
 export function LabelOffsetControl({
@@ -18,24 +19,27 @@ export function LabelOffsetControl({
   const numberField = useFieldHistory();
   return (
     <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
-      <input
-        type="range"
+      <Slider.Root
+        className={'field-slider field-slider-centered' + (indeterminate ? ' indeterminate' : '')}
         min={-100}
         max={100}
         step={1}
-        // In indeterminate mode the slider thumb sits at 0 visually but the
-        // styling makes it clear the value is "mixed" — see styles.css.
-        value={indeterminate ? 0 : clampedSlider}
-        className={indeterminate ? 'indeterminate' : undefined}
-        onChange={(e) => {
-          const n = Number(e.target.value);
-          onChange(Math.abs(n) <= 2 ? 0 : n);
-        }}
-        style={{ flex: 1 }}
-        {...sliderField}
-      />
+        // In indeterminate mode the thumb sits at 0 visually but the styling
+        // makes it clear the value is "mixed" — see styles.css.
+        value={[indeterminate ? 0 : clampedSlider]}
+        onValueChange={([n]) => onChange(Math.abs(n) <= 2 ? 0 : n)}
+      >
+        <Slider.Track className="field-slider-track">
+          <Slider.Range className="field-slider-range" />
+          {/* The neutral tick at offset 0 (was the native datalist detent). */}
+          <span className="field-slider-detent" aria-hidden="true" style={{ left: '50%' }} />
+        </Slider.Track>
+        <Slider.Thumb className="field-slider-thumb" aria-label="Offset" {...sliderField} />
+      </Slider.Root>
       <input
         type="number"
+        aria-label="Offset value"
+        className="options-popover-spin"
         value={indeterminate ? '' : value}
         placeholder={indeterminate ? '—' : undefined}
         onChange={(e) => {

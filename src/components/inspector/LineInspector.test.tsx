@@ -8,6 +8,7 @@ import { DEFAULT_DOC } from '../../model/transforms';
 import { makeDoc, makeLine, makeStation, makeStop, makeStyle } from '../../test/fixtures';
 import { DOT_SHAPE_PRESETS } from '../../model/dotStyle';
 import { openColorField } from '../../test/colorField';
+import { chooseOption, stepSlider } from '../../test/interaction';
 
 const SELECTION_BLANK = {
   selectedStationIds: [] as string[],
@@ -122,20 +123,19 @@ describe('<LineInspector /> — width control', () => {
   it('renders a 2–28 step-1 slider at the line’s effective width', () => {
     seed();
     render(<LineInspector id="L1" />);
-    const slider = screen.getByRole('slider', { name: 'Line width' }) as HTMLInputElement;
-    expect(slider.getAttribute('min')).toBe('2');
-    expect(slider.getAttribute('max')).toBe('28');
-    expect(slider.getAttribute('step')).toBe('1');
-    expect(slider.value).toBe('14');
+    const slider = screen.getByRole('slider', { name: 'Line width' });
+    expect(slider).toHaveAttribute('aria-valuemin', '2');
+    expect(slider).toHaveAttribute('aria-valuemax', '28');
+    expect(slider).toHaveAttribute('aria-valuenow', '14');
   });
 
   it('slider edits write the width; the default drops the key', () => {
     seed();
     render(<LineInspector id="L1" />);
     const slider = screen.getByRole('slider', { name: 'Line width' });
-    fireEvent.change(slider, { target: { value: '20' } });
-    expect(useDoc.getState().lines.L1.width).toBe(20);
-    fireEvent.change(slider, { target: { value: '14' } });
+    stepSlider(slider, 1); // one step of the 1-unit grid: 14 -> 15
+    expect(useDoc.getState().lines.L1.width).toBe(15);
+    stepSlider(slider, -1); // back to the 14 default drops the key
     expect('width' in useDoc.getState().lines.L1).toBe(false);
   });
 
@@ -155,10 +155,7 @@ describe('<LineInspector /> — width control', () => {
     render(<LineInspector id="L1" />);
     const slider = screen.getByRole('slider', { name: 'Line width' });
     const before = historyDepth();
-    fireEvent.focus(slider);
-    fireEvent.change(slider, { target: { value: '16' } });
-    fireEvent.change(slider, { target: { value: '20' } });
-    fireEvent.change(slider, { target: { value: '24' } });
+    stepSlider(slider, 3); // focus opens the group; three steps inside one arc
     fireEvent.blur(slider);
     expect(historyDepth()).toBe(before + 1);
     useDoc.temporal.getState().undo();
@@ -198,11 +195,10 @@ describe('<LineInspector /> — dot size control', () => {
   it('renders a 0–20 step-1 slider at the line’s effective default dot size', () => {
     seed();
     render(<LineInspector id="L1" />);
-    const slider = screen.getByRole('slider', { name: 'Dot size' }) as HTMLInputElement;
-    expect(slider.getAttribute('min')).toBe('0');
-    expect(slider.getAttribute('max')).toBe('20');
-    expect(slider.getAttribute('step')).toBe('1');
-    expect(slider.value).toBe('8');
+    const slider = screen.getByRole('slider', { name: 'Dot size' });
+    expect(slider).toHaveAttribute('aria-valuemin', '0');
+    expect(slider).toHaveAttribute('aria-valuemax', '20');
+    expect(slider).toHaveAttribute('aria-valuenow', '8');
   });
 
   it('shares one row with the dot-shape picker, under a caption below Color', () => {
@@ -225,9 +221,9 @@ describe('<LineInspector /> — dot size control', () => {
     seed();
     render(<LineInspector id="L1" />);
     const slider = screen.getByRole('slider', { name: 'Dot size' });
-    fireEvent.change(slider, { target: { value: '12' } });
-    expect(useDoc.getState().lines.L1.defaultDotSize).toBe(12);
-    fireEvent.change(slider, { target: { value: '8' } });
+    stepSlider(slider, 1); // 8 -> 9
+    expect(useDoc.getState().lines.L1.defaultDotSize).toBe(9);
+    stepSlider(slider, -1); // back to the 8 default drops the key
     expect('defaultDotSize' in useDoc.getState().lines.L1).toBe(false);
   });
 
@@ -247,10 +243,7 @@ describe('<LineInspector /> — dot size control', () => {
     render(<LineInspector id="L1" />);
     const slider = screen.getByRole('slider', { name: 'Dot size' });
     const before = historyDepth();
-    fireEvent.focus(slider);
-    fireEvent.change(slider, { target: { value: '10' } });
-    fireEvent.change(slider, { target: { value: '14' } });
-    fireEvent.change(slider, { target: { value: '16' } });
+    stepSlider(slider, 3); // focus opens the group; three steps inside one arc
     fireEvent.blur(slider);
     expect(historyDepth()).toBe(before + 1);
     useDoc.temporal.getState().undo();
@@ -291,20 +284,19 @@ describe('<LineInspector /> — stroke controls', () => {
   it('renders a 0–10 half-step slider at the line’s effective stroke width', () => {
     seed();
     render(<LineInspector id="L1" />);
-    const slider = screen.getByRole('slider', { name: 'Stroke width' }) as HTMLInputElement;
-    expect(slider.getAttribute('min')).toBe('0');
-    expect(slider.getAttribute('max')).toBe('10');
-    expect(slider.getAttribute('step')).toBe('0.5');
-    expect(slider.value).toBe('0');
+    const slider = screen.getByRole('slider', { name: 'Stroke width' });
+    expect(slider).toHaveAttribute('aria-valuemin', '0');
+    expect(slider).toHaveAttribute('aria-valuemax', '10');
+    expect(slider).toHaveAttribute('aria-valuenow', '0');
   });
 
   it('slider edits write the stroke width (half steps included); zero drops the key', () => {
     seed();
     render(<LineInspector id="L1" />);
     const slider = screen.getByRole('slider', { name: 'Stroke width' });
-    fireEvent.change(slider, { target: { value: '1.5' } });
+    stepSlider(slider, 3); // three steps of the 0.5 grid: 0 -> 1.5
     expect(useDoc.getState().lines.L1.strokeWidth).toBe(1.5);
-    fireEvent.change(slider, { target: { value: '0' } });
+    stepSlider(slider, -3); // back to 0 drops the key
     expect('strokeWidth' in useDoc.getState().lines.L1).toBe(false);
   });
 
@@ -362,12 +354,12 @@ describe('<LineInspector /> — stroke controls', () => {
   it('the Seam width slider inherits the casing width when unset, and writes edits', () => {
     seed({ strokeWidth: 4 }); // casing 4, no seam width
     render(<LineInspector id="L1" />);
-    const slider = screen.getByRole('slider', { name: 'Seam width' }) as HTMLInputElement;
-    expect(slider.value).toBe('4'); // inherits the casing rail width
-    fireEvent.change(slider, { target: { value: '2' } });
+    const slider = screen.getByRole('slider', { name: 'Seam width' });
+    expect(slider).toHaveAttribute('aria-valuenow', '4'); // inherits the casing rail width
+    stepSlider(slider, -4); // four steps of the 0.5 grid: 4 -> 2
     expect(useDoc.getState().lines.L1.seamWidth).toBe(2);
     // Back to 0 drops the field → inherits the casing width again.
-    fireEvent.change(slider, { target: { value: '0' } });
+    stepSlider(slider, -4);
     expect('seamWidth' in useDoc.getState().lines.L1).toBe(false);
   });
 
@@ -377,10 +369,7 @@ describe('<LineInspector /> — stroke controls', () => {
     render(<LineInspector id="L1" />);
     const slider = screen.getByRole('slider', { name: 'Stroke width' });
     const before = historyDepth();
-    fireEvent.focus(slider);
-    fireEvent.change(slider, { target: { value: '2' } });
-    fireEvent.change(slider, { target: { value: '4' } });
-    fireEvent.change(slider, { target: { value: '6' } });
+    stepSlider(slider, 3); // focus opens the group; three steps inside one arc
     fireEvent.blur(slider);
     expect(historyDepth()).toBe(before + 1);
     useDoc.temporal.getState().undo();
@@ -395,7 +384,7 @@ describe('<LineInspector /> — style presets', () => {
     useSelection.setState(SELECTION_BLANK);
   });
 
-  it('applies a preset from the Style row, then flips to Custom on a covered edit', () => {
+  it('applies a preset from the Style row, then flips to Custom on a covered edit', async () => {
     useDoc.setState({
       ...DEFAULT_DOC,
       ...makeDoc({
@@ -404,15 +393,12 @@ describe('<LineInspector /> — style presets', () => {
       }),
     });
     render(<LineInspector id="L1" />);
-    const select = screen.getByRole('combobox', { name: 'Style' });
-    fireEvent.change(select, { target: { value: 'y1' } });
+    await chooseOption(userEvent.setup(), 'Style', 'Thick');
     expect(useDoc.getState().lines['L1']).toMatchObject({ width: 12, styleId: 'y1' });
-    expect(select).toHaveValue('y1');
+    expect(screen.getByRole('combobox', { name: 'Style' })).toHaveTextContent('Thick');
     // A covered edit (line width) detaches; name/service/color stay identity.
-    fireEvent.change(screen.getByRole('slider', { name: 'Line width' }), {
-      target: { value: '14' },
-    });
+    stepSlider(screen.getByRole('slider', { name: 'Line width' }), 1);
     expect(useDoc.getState().lines['L1'].styleId).toBeUndefined();
-    expect(select).toHaveValue('__custom__');
+    expect(screen.getByRole('combobox', { name: 'Style' })).toHaveTextContent('Custom');
   });
 });

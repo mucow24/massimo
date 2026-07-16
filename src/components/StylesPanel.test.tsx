@@ -1,5 +1,7 @@
 import { describe, it, expect, beforeEach } from 'vitest';
 import { render, screen, fireEvent } from '@testing-library/react';
+import userEvent from '@testing-library/user-event';
+import { chooseOption } from '../test/interaction';
 import { Sidebar } from './Sidebar';
 import { StylesPanel } from './StylesPanel';
 import { useDoc } from '../state/store';
@@ -138,27 +140,26 @@ describe('<StylesPanel />', () => {
     expect(def).toMatchObject({ kind: 'routeBullet' });
     expect((def?.props as RouteBulletStyleProps).size).toBe(14);
     // Auto-expanded: its editor's Size control is on screen.
-    expect(screen.getByRole('slider', { name: 'Size' })).toHaveValue('14');
+    expect(screen.getByRole('slider', { name: 'Size' })).toHaveAttribute('aria-valuenow', '14');
   });
 
   it('expanding a style and editing a control updates the def AND its tagged items live', () => {
     render(<StylesPanel />);
     fireEvent.click(screen.getByRole('button', { name: 'Edit Big' }));
-    const slider = screen.getByRole('slider', { name: 'Size' });
-    expect(slider).toHaveValue('20');
-    fireEvent.change(slider, { target: { value: '30' } });
+    expect(screen.getByRole('slider', { name: 'Size' })).toHaveAttribute('aria-valuenow', '20');
+    fireEvent.change(screen.getByRole('spinbutton', { name: 'Size' }), {
+      target: { value: '30' },
+    });
     expect((useDoc.getState().styles.y2.props as RouteBulletStyleProps).size).toBe(30);
     // Live preview: the tagged bullet followed; the tag survived.
     expect(useDoc.getState().routeBullets.b1.size).toBe(30);
     expect(useDoc.getState().routeBullets.b1.styleId).toBe('y2');
   });
 
-  it('the label editor edits typography (weight select + italic + align)', () => {
+  it('the label editor edits typography (weight select + italic + align)', async () => {
     render(<StylesPanel />);
     fireEvent.click(screen.getByRole('button', { name: 'Edit Heading' }));
-    fireEvent.change(screen.getByRole('combobox', { name: 'Weight' }), {
-      target: { value: '700' },
-    });
+    await chooseOption(userEvent.setup(), 'Weight', 'Bold');
     fireEvent.click(screen.getByRole('button', { name: 'Italic' }));
     fireEvent.click(screen.getByRole('button', { name: 'Align center' }));
     const props = useDoc.getState().styles.y1.props as TextLabelStyleProps;

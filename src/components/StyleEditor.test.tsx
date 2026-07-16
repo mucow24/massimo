@@ -15,8 +15,10 @@ describe('<StyleEditor> — line', () => {
     expect(screen.getByRole('slider', { name: 'Stroke width' })).toBeTruthy();
     // … and the seam, previously missing from this editor.
     expect(screen.getByText('Seam color')).toBeTruthy();
-    const seamWidth = screen.getByRole('slider', { name: 'Seam width' }) as HTMLInputElement;
-    expect(seamWidth.value).toBe('3');
+    expect(screen.getByRole('slider', { name: 'Seam width' })).toHaveAttribute(
+      'aria-valuenow',
+      '3',
+    );
   });
 
   it('inherits the casing width in the seam-width control when unset', () => {
@@ -25,7 +27,9 @@ describe('<StyleEditor> — line', () => {
         def={makeStyle('line', 'y1', { props: { strokeWidth: 4 /* no seamWidth */ } })}
       />,
     );
-    const seamWidth = screen.getByRole('slider', { name: 'Seam width' }) as HTMLInputElement;
-    expect(seamWidth.value).toBe('4'); // inherits the casing rail width
+    expect(screen.getByRole('slider', { name: 'Seam width' })).toHaveAttribute(
+      'aria-valuenow',
+      '4', // inherits the casing rail width
+    );
   });
 });

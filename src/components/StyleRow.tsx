@@ -1,4 +1,6 @@
 import { useRef, useState } from 'react';
+import { ChevronDownIcon } from '@radix-ui/react-icons';
+import * as Select from '@radix-ui/react-select';
 import { useDoc } from '../state/store';
 import { stylesOfKind } from '../model/styles';
 import type { StyleKind } from '../model/types';
@@ -20,10 +22,11 @@ interface Props {
  * of this kind's named styles plus the "Custom" sentinel and a define-by-
  * example "Save style…" action that captures the item's current effective
  * formatting (typing an existing name redefines that style, like palette
- * upsert). The dropdown's value derives from the styleId tag alone — the
- * transforms keep "tagged ⇒ matches" true, so no value comparison happens
- * here. Mount with key={itemId} so naming state resets when the selection
- * switches items.
+ * upsert). The dropdown is a Radix Select wearing the shared `field-select`
+ * chrome (same as the Weight dropdown). Its value derives from the styleId
+ * tag alone — the transforms keep "tagged ⇒ matches" true, so no value
+ * comparison happens here. Mount with key={itemId} so naming state resets
+ * when the selection switches items.
  */
 export function StyleRow({ kind, itemId, styleId, disabled }: Props) {
   const styles = useDoc((s) => s.styles);
@@ -86,26 +89,39 @@ export function StyleRow({ kind, itemId, styleId, disabled }: Props) {
   return (
     <div className="row style-row">
       <label htmlFor={`style-select-${itemId}`}>Style</label>
-      <select
-        id={`style-select-${itemId}`}
-        aria-label="Style"
+      <Select.Root
         value={current}
         disabled={disabled}
-        onChange={(e) => {
-          const v = e.target.value;
+        onValueChange={(v) => {
           if (v === SAVE) startNaming();
           else if (v === CUSTOM) clearStyleTag(kind, itemId);
           else applyStyle(v, itemId);
         }}
       >
-        <option value={CUSTOM}>Custom</option>
-        {stylesOfKind(styles, kind).map((d) => (
-          <option key={d.id} value={d.id}>
-            {d.name}
-          </option>
-        ))}
-        <option value={SAVE}>Save style…</option>
-      </select>
+        <Select.Trigger id={`style-select-${itemId}`} className="field-select" aria-label="Style">
+          <Select.Value />
+          <Select.Icon className="field-select-caret" aria-hidden="true">
+            <ChevronDownIcon />
+          </Select.Icon>
+        </Select.Trigger>
+        <Select.Content className="field-select-panel" position="popper" sideOffset={4}>
+          <Select.Viewport>
+            <Select.Item value={CUSTOM} className="field-select-item">
+              <Select.ItemText>Custom</Select.ItemText>
+            </Select.Item>
+            {stylesOfKind(styles, kind).map((d) => (
+              <Select.Item key={d.id} value={d.id} className="field-select-item">
+                <Select.ItemText>{d.name}</Select.ItemText>
+              </Select.Item>
+            ))}
+            <Select.Separator className="field-select-separator" aria-hidden="true" />
+            {/* An action, not a state — muted so it reads as a verb. */}
+            <Select.Item value={SAVE} className="field-select-item field-select-action">
+              <Select.ItemText>Save style…</Select.ItemText>
+            </Select.Item>
+          </Select.Viewport>
+        </Select.Content>
+      </Select.Root>
     </div>
   );
 }

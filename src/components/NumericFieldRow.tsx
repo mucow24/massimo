@@ -1,17 +1,15 @@
 import type { ReactNode } from 'react';
+import * as Slider from '@radix-ui/react-slider';
 import { useNumericField } from './useNumericField';
 
 interface Props {
-  /** Used as the slider's `id` (for `<label htmlFor>` association) and the
-   *  spinbutton's `aria-label`, so `getByRole('slider'|'spinbutton', { name })`
-   *  works in tests. */
+  /** Used as the slider thumb's `id` and the spinbutton's `aria-label`, so
+   *  `getByRole('slider'|'spinbutton', { name })` works in tests. */
   id: string;
   label: string;
   /** Optional control rendered in the label column in place of the text label
    *  — e.g. the dot-shape picker on the Line inspector's combined dot row. The
-   *  `label` prop still names the slider + spinbutton for a11y/tests (the
-   *  slider falls back to it as its `aria-label` when the visible label is
-   *  gone). */
+   *  `label` prop still names the slider + spinbutton for a11y/tests. */
   leading?: ReactNode;
   min: number;
   max: number;
@@ -32,26 +30,27 @@ interface Props {
    *  whose textbox/steppers accept down to 1). The transform's clamping
    *  decides the actual lower bound. */
   textboxMin?: number;
-  /** Marks a neutral value with a tick on the slider track (native
-   *  `<datalist>` hash mark) — e.g. leading 1 / tracking 0. Purely visual;
-   *  the value grid still comes from `step`. */
+  /** Marks a neutral value with a tick on the slider track — e.g. leading 1 /
+   *  tracking 0. Purely visual; the value grid still comes from `step`. */
   detent?: number;
   /** Greys out + disables both the slider and the spinbutton. */
   disabled?: boolean;
 }
 
 /**
- * A single Options-popover row: visible label, range slider, and a numeric
- * spinbutton mirror. Both inputs share one history group (slider drag and
- * any subsequent typing in the same focus arc collapse to one undo entry)
- * via a shared `useFieldHistory`.
+ * A single Options-popover row: visible label, slider, and a numeric
+ * spinbutton mirror. The slider is a Radix Slider (keyboard steps, Home/End,
+ * proper aria value reporting); its thumb carries the same `useFieldHistory`
+ * focus/blur pair the native range did, so a whole drag or arrow-key run
+ * still collapses to one undo entry, shared with any typing in the same
+ * focus arc.
  *
  * The spinbutton keeps a local text mirror so mid-edit empty / non-numeric
  * values don't write garbage to the store; on blur the text re-syncs to the
  * (clamped) store value. Wheel-scroll anywhere on the row increments by `step`
- * — handled once at the row level so the slider (which ignores wheel natively)
- * and the spinbutton both respond without double-counting — and the mirror is
- * shown to the step's decimal places. A disabled row ignores the wheel.
+ * — handled once at the row level so the slider and the spinbutton both
+ * respond without double-counting — and the mirror is shown to the step's
+ * decimal places. A disabled row ignores the wheel.
  */
 export function NumericFieldRow({
   id,
@@ -71,6 +70,11 @@ export function NumericFieldRow({
   const { text, history, onNumberFocus, onNumberChange, attachWheel, onNumberBlur } =
     useNumericField(value, onChange, getCurrent, step);
 
+  // The store value may sit outside the slider's range (the spinbutton can
+  // type past `max`); the slider clamps its own display, like the native
+  // range did.
+  const sliderValue = Math.min(Math.max(value, min), max);
+
   // attachWheel binds a non-passive native wheel listener (React's onWheel is
   // passive, so its preventDefault would warn + no-op). Omit it while disabled
   // so a disabled row ignores the wheel.
@@ -83,24 +87,27 @@ export function NumericFieldRow({
           {label}
         </label>
       )}
-      <input
-        id={id}
-        type="range"
-        aria-label={leading !== undefined ? label : undefined}
+      <Slider.Root
+        className="field-slider"
         min={min}
         max={max}
         step={step}
-        value={value}
-        list={detent !== undefined ? `${id}-detent` : undefined}
+        value={[sliderValue]}
         disabled={disabled}
-        onChange={(e) => onChange(Number(e.target.value))}
-        {...history}
-      />
-      {detent !== undefined && (
-        <datalist id={`${id}-detent`}>
-          <option value={detent} />
-        </datalist>
-      )}
+        onValueChange={([n]) => onChange(n)}
+      >
+        <Slider.Track className="field-slider-track">
+          <Slider.Range className="field-slider-range" />
+          {detent !== undefined && (
+            <span
+              className="field-slider-detent"
+              aria-hidden="true"
+              style={{ left: `${((detent - min) / (max - min)) * 100}%` }}
+            />
+          )}
+        </Slider.Track>
+        <Slider.Thumb id={id} className="field-slider-thumb" aria-label={label} {...history} />
+      </Slider.Root>
       <input
         type="number"
         aria-label={label}

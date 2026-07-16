@@ -7,6 +7,7 @@ import { historyDepth } from '../state/history';
 import { DEFAULT_DOC } from '../model/transforms';
 import { makeStation, makeStyle, makeTransfer } from '../test/fixtures';
 import { openColorField, setColorField } from '../test/colorField';
+import { chooseOption, stepSlider } from '../test/interaction';
 
 const view = { vbX: 0, vbY: 0, vbW: 800, vbH: 600, size: { w: 800, h: 600 } };
 
@@ -62,9 +63,12 @@ describe('<TransferPopover />', () => {
   it('shows the EFFECTIVE values — the constant defaults for an override-free transfer', async () => {
     const user = userEvent.setup();
     renderPopover();
-    expect(screen.getByRole('slider', { name: 'Thickness' })).toHaveValue('2');
+    expect(screen.getByRole('slider', { name: 'Thickness' })).toHaveAttribute('aria-valuenow', '2');
     expect(screen.getByRole('spinbutton', { name: 'Thickness' })).toHaveValue(2);
-    expect(screen.getByRole('slider', { name: 'Stroke width' })).toHaveValue('0');
+    expect(screen.getByRole('slider', { name: 'Stroke width' })).toHaveAttribute(
+      'aria-valuenow',
+      '0',
+    );
     expect(await openColorField(user, 'Transfer color')).toHaveValue('#000000');
     await user.keyboard('{Escape}');
     expect(await openColorField(user, 'Transfer stroke color')).toHaveValue('#ffffff');
@@ -79,7 +83,7 @@ describe('<TransferPopover />', () => {
       },
     });
     renderPopover();
-    expect(screen.getByRole('slider', { name: 'Thickness' })).toHaveValue('6');
+    expect(screen.getByRole('slider', { name: 'Thickness' })).toHaveAttribute('aria-valuenow', '6');
     expect(await openColorField(user, 'Transfer color')).toHaveValue('#ff8800');
     await user.keyboard('{Escape}');
     expect(await openColorField(user, 'Transfer dark color')).toHaveValue('#4400aa');
@@ -87,10 +91,9 @@ describe('<TransferPopover />', () => {
 
   it('editing the thickness writes a per-transfer override', () => {
     renderPopover();
-    fireEvent.change(screen.getByRole('slider', { name: 'Thickness' }), {
-      target: { value: '7' },
-    });
-    expect(useDoc.getState().transfers.x1.thickness).toBe(7);
+    // One arrow step from the effective default (2) → 3, stored as an override.
+    stepSlider(screen.getByRole('slider', { name: 'Thickness' }), 1);
+    expect(useDoc.getState().transfers.x1.thickness).toBe(3);
   });
 
   it('choosing the constant default CLEARS the override (never stored)', () => {
@@ -99,7 +102,8 @@ describe('<TransferPopover />', () => {
       transfers: { x1: makeTransfer({ id: 'x1', thickness: 7 }) },
     });
     renderPopover();
-    fireEvent.change(screen.getByRole('slider', { name: 'Thickness' }), {
+    // Type the constant default (2) into the paired spinbutton.
+    fireEvent.change(screen.getByRole('spinbutton', { name: 'Thickness' }), {
       target: { value: '2' },
     });
     expect('thickness' in useDoc.getState().transfers.x1).toBe(false);
@@ -135,10 +139,9 @@ describe('<TransferPopover />', () => {
 
   it('editing the stroke width writes a per-transfer override', () => {
     renderPopover();
-    fireEvent.change(screen.getByRole('slider', { name: 'Stroke width' }), {
-      target: { value: '3' },
-    });
-    expect(useDoc.getState().transfers.x1.strokeWidth).toBe(3);
+    // One arrow step from the effective default (0) → 1, stored as an override.
+    stepSlider(screen.getByRole('slider', { name: 'Stroke width' }), 1);
+    expect(useDoc.getState().transfers.x1.strokeWidth).toBe(1);
   });
 
   it('one wheel notch over a spinbutton steps the EFFECTIVE value exactly once', () => {
@@ -168,14 +171,28 @@ describe('<TransferPopover />', () => {
   });
 
   it('groups a thickness-slider drag into a single undo entry', () => {
-    renderPopover();
+    // Successive arrow-key steps need the popover re-rendered with the fresh
+    // store transfer between steps (the Radix slider is controlled), so mount
+    // it live rather than with the static renderPopover snapshot.
+    function LivePopover() {
+      const transfer = useDoc((s) => s.transfers['x1']);
+      return (
+        <TransferPopover
+          transfer={transfer}
+          worldRect={rectAt(100, 0)}
+          view={view}
+          onClose={() => {}}
+        />
+      );
+    }
+    render(<LivePopover />);
     const slider = screen.getByRole('slider', { name: 'Thickness' });
     const before = historyDepth();
-    fireEvent.focus(slider);
-    fireEvent.change(slider, { target: { value: '5' } });
-    fireEvent.change(slider, { target: { value: '9' } });
+    // A drag: focus opens the field-history group, arrow steps edit, blur
+    // commits exactly one entry — same contract the native range had.
+    stepSlider(slider, 3);
     fireEvent.blur(slider);
-    expect(useDoc.getState().transfers.x1.thickness).toBe(9);
+    expect(useDoc.getState().transfers.x1.thickness).toBe(5); // effective 2 + 3 steps
     expect(historyDepth() - before).toBe(1);
   });
 
@@ -227,20 +244,19 @@ describe('<TransferPopover /> — style presets', () => {
     ) : null;
   }
 
-  it('applies a preset from the Style row, then flips to Custom on a covered edit', () => {
+  it('applies a preset from the Style row, then flips to Custom on a covered edit', async () => {
     useDoc.setState({
       ...useDoc.getState(),
       styles: { y1: makeStyle('transfer', 'y1', { name: 'Bold link', props: { thickness: 6 } }) },
     });
     render(<LivePopover />);
-    const select = screen.getByRole('combobox', { name: 'Style' });
-    fireEvent.change(select, { target: { value: 'y1' } });
+    await chooseOption(userEvent.setup(), 'Style', 'Bold link');
     expect(useDoc.getState().transfers['x1'].styleId).toBe('y1');
-    expect(screen.getByRole('slider', { name: 'Thickness' })).toHaveValue('6');
-    expect(select).toHaveValue('y1');
+    expect(screen.getByRole('slider', { name: 'Thickness' })).toHaveAttribute('aria-valuenow', '6');
+    expect(screen.getByRole('combobox', { name: 'Style' })).toHaveTextContent('Bold link');
     // A covered edit detaches back to Custom.
-    fireEvent.change(screen.getByRole('slider', { name: 'Thickness' }), { target: { value: '9' } });
+    stepSlider(screen.getByRole('slider', { name: 'Thickness' }), 1);
     expect(useDoc.getState().transfers['x1'].styleId).toBeUndefined();
-    expect(select).toHaveValue('__custom__');
+    expect(screen.getByRole('combobox', { name: 'Style' })).toHaveTextContent('Custom');
   });
 });
