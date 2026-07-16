@@ -2373,10 +2373,13 @@ body:has(.app[data-theme='dark']) {
   padding: 0;
 }
 .station-popover .body {
-  /* Tall multi-section panel: clamp to the viewport and scroll inside. The
-     cap is generous so the scrollbar only appears on genuinely short
-     windows; when it does, keep it a hairline. */
-  max-height: min(84vh, 720px);
+  /* Tall multi-section panel: clamp to the viewport ONLY and scroll inside, so
+     the panel grows to fit its content and the scrollbar appears solely when
+     the content genuinely can't fit the window. A prior fixed 720px ceiling sat
+     just under a multi-line station's natural height, forcing a stray hairline
+     scroll even with the whole window free; the viewport clamp alone avoids
+     that. When scrolling is real, keep it a hairline. */
+  max-height: 84vh;
   overflow-y: auto;
   scrollbar-width: thin;
   scrollbar-color: var(--border) transparent;
