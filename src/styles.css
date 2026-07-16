@@ -201,6 +201,12 @@ select {
 
   --danger: #c33;
 
+  /* A starred version's mark. Amber rather than the accent blue: starring is
+     the user's own annotation, not the editor talking about selection. Darker
+     than the amber one reaches for first (#d99311 measures 2.6:1 on white) —
+     the star carries state, so it owes WCAG's 3:1 for non-text indication. */
+  --star: #b8770a;
+
   /* Neutral backdrop for stop-glyph previews: mid-gray so both black and
      white glyph variants stay visible. Same value in both themes. */
   --glyph-backdrop: #808080;
@@ -1112,6 +1118,20 @@ select option {
   text-decoration: underline;
   text-underline-offset: 3px;
 }
+/* The live map's version, beside its name. Quiet on purpose: it is a handle to
+   read when you go looking for it ("open v32"), never a control and never a
+   thing to notice. Tabular figures so it doesn't jitter as the number grows. */
+.map-version-pill {
+  padding: 1px 6px;
+  border-radius: 9px;
+  background: var(--border-soft);
+  color: var(--text-muted);
+  font-size: 11px;
+  font-variant-numeric: tabular-nums;
+  line-height: 1.5;
+  cursor: default;
+  user-select: none;
+}
 .toolbar input.map-name-input {
   font-family: inherit;
   font-weight: 500;
@@ -1675,16 +1695,24 @@ input[type='range'].indeterminate {
   overflow-y: auto;
   border-right: 1px solid var(--border-soft);
 }
-.map-library-revisions {
+.map-library-versions {
   overflow-y: auto;
 }
 .map-row,
-.revision-row {
+.version-row {
   display: flex;
   align-items: center;
   gap: 8px;
   padding: 6px 12px;
   border-bottom: 1px solid var(--border-soft);
+}
+/* The starred block runs to the top of the list; this is the seam below the
+   last of them. A heavier rule than the hairline between rows, so the two
+   groups read as two groups without needing a heading for a list that is
+   usually one item long. Carried on the first UNSTARRED row (not the last
+   starred one) so it collapses on its own when nothing is starred. */
+.version-row.after-starred {
+  border-top: 2px solid var(--border-strong);
 }
 .map-row {
   cursor: pointer;
@@ -1721,11 +1749,46 @@ input[type='range'].indeterminate {
 .map-thumb-blank {
   background: var(--border-soft);
 }
-.revision-source {
+.version-source {
   color: var(--text-muted);
   font-size: 11px;
   text-transform: uppercase;
   letter-spacing: 0.04em;
+}
+/* A version row's headline: the number, then its name if it has one. */
+.version-row-title {
+  display: flex;
+  align-items: baseline;
+  gap: 6px;
+  min-width: 0;
+}
+.version-number {
+  font-variant-numeric: tabular-nums;
+  flex: none;
+}
+.version-name {
+  color: var(--text-muted);
+  font-size: var(--fs-small);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+/* The star is a state, not a command, so it reads as an icon rather than a
+   button until you go near it — an outline among the row's real buttons. */
+.version-star {
+  display: inline-flex;
+  align-items: center;
+  padding: 4px;
+  background: transparent;
+  border-color: transparent;
+  color: var(--text-muted);
+}
+.version-star:hover {
+  color: var(--text);
+}
+.version-star.starred {
+  color: var(--star);
+  border-color: transparent;
 }
 
 /* Styles panel (sidebar): an expanded style row's editor body — the style's
@@ -1881,6 +1944,7 @@ input[type='range'].indeterminate {
   --selection-ring: #fff;
 
   --danger: #d66;
+  --star: #e8b339; /* lifted off the dark surface, as the accent is */
 
   --shadow-tint: rgba(0, 0, 0, 0.5);
   --shadow-pop: 0 6px 16px rgba(0, 0, 0, 0.5);

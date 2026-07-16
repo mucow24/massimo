@@ -1,5 +1,5 @@
 /**
- * The map library: revisions of saved maps, in IndexedDB.
+ * The map library: versions of saved maps, in IndexedDB.
  *
  * This module knows NOTHING about `MapDoc`. It stores opaque strings — a row
  * IS a file, byte-for-byte what `serialize()` produced — so `parse()` remains
@@ -9,14 +9,23 @@
  *
  * Keyed by a minted library id, never by name: two maps may share a name, and
  * a rename must not orphan history.
+ *
+ * Two unrelated things are called "version" around here. A row's `version` is
+ * the user-facing handle — the v32 in the toolbar. The DOC's version is the
+ * schema stamp inside the payload string, which belongs to `serialize`/`parse`
+ * and which this module never reads. `DB_SCHEMA_VERSION` is a third, private to
+ * the upgrade path below. Only the first is a library concept.
  */
 
 const DB_NAME = 'massimo-library';
-const DB_VERSION = 1;
-const CURRENT_KEY = 'massimo-library-current';
+/** IndexedDB's own schema stamp — NOT a map's version number. v1 shipped in #265. */
+const DB_SCHEMA_VERSION = 2;
 
-/** Revisions kept per map; the oldest are pruned past this. */
-export const REVISION_LIMIT = 100;
+/**
+ * Auto versions kept per map. Explicit saves are never pruned, however many
+ * there are, and neither is anything you starred or named — see `isPrunable`.
+ */
+export const AUTO_VERSION_LIMIT = 50;
 
 /**
  * How far back a map row looks for a thumbnail. A save can legitimately have
@@ -25,28 +34,48 @@ export const REVISION_LIMIT = 100;
  */
 const THUMB_WALK_BACK = 5;
 
-export type RevisionSource = 'user' | 'auto';
+export type VersionSource = 'user' | 'auto';
 
 export interface MapSummary {
   id: string;
   name: string;
   updatedAt: number;
-  revisionCount: number;
+  versionCount: number;
   thumb?: string;
 }
 
-export interface RevisionMeta {
+export interface VersionMeta {
   id: number;
   mapId: string;
   savedAt: number;
-  source: RevisionSource;
+  source: VersionSource;
+  /** The user-facing handle: 1-based, per map, and never reused. */
+  version: number;
+  /** An optional label ("beta 1 — needs work"). Absent, never blank. */
+  name?: string;
+  /** Present only when starred, so the flag reads as an act, not a default. */
+  starred?: true;
   thumb?: string;
+}
+
+/** What a save hands back: the storage key, and the number to show for it. */
+export interface SavedVersion {
+  id: number;
+  version: number;
 }
 
 interface MapRow {
   id: string;
   name: string;
   updatedAt: number;
+  /**
+   * The next version number to hand out. It only ever climbs — which is the
+   * whole point. Deriving the number instead (`max(version) + 1`, or a count)
+   * would re-issue v3 after v3 is deleted, or renumber the map's whole history
+   * the first time the prune policy runs, and a version number that moves is
+   * no use as a handle.
+   */
+  nextVersion: number;
 }
 
 interface PayloadRow {
@@ -54,25 +83,110 @@ interface PayloadRow {
   json: string;
 }
 
+/** The v1 row shape (store `revisions`), read only by the v1 → v2 upgrade. */
+interface LegacyRevisionRow {
+  id: number;
+  mapId: string;
+  savedAt: number;
+  source: VersionSource;
+  thumb?: string;
+}
+
 // Payloads live in their own store so listing never drags 256 KB of JSON per
 // map through a structured clone.
-const STORES = ['maps', 'revisions', 'payloads'] as const;
+const STORES = ['maps', 'versions', 'payloads'] as const;
 
 let dbPromise: Promise<IDBDatabase> | null = null;
+
+function createVersionsStore(db: IDBDatabase): IDBObjectStore {
+  const store = db.createObjectStore('versions', { keyPath: 'id', autoIncrement: true });
+  store.createIndex('mapId', 'mapId', { unique: false });
+  return store;
+}
+
+/**
+ * v1 → v2: rename `revisions` to `versions` and backfill the numbering it
+ * never had — `version` per row, and the map row's `nextVersion` counter.
+ *
+ * Every row is carried across WITH ITS ORIGINAL ID. Payload rows are keyed by
+ * that id, so re-adding rows and letting the new store's generator mint fresh
+ * ones would orphan every payload in the library: each map would still list its
+ * whole history, and every entry in it would fail to open. Passing the id back
+ * through an autoIncrement store also drags the generator up past it, so the
+ * first save after the upgrade cannot collide with a row it inherited.
+ */
+function upgradeV1ToV2(db: IDBDatabase, tx: IDBTransaction): void {
+  const versions = createVersionsStore(db);
+  const maps = tx.objectStore('maps');
+  const oldRowsReq = tx.objectStore('revisions').getAll();
+  oldRowsReq.onsuccess = () => {
+    // The v1 id autoIncremented once per save, so id order IS chronological —
+    // and it stays total where two saves shared a millisecond, which savedAt
+    // does not.
+    const rows = (oldRowsReq.result as LegacyRevisionRow[]).sort((a, b) => a.id - b.id);
+    const counts = new Map<string, number>();
+    for (const row of rows) {
+      const version = (counts.get(row.mapId) ?? 0) + 1;
+      counts.set(row.mapId, version);
+      versions.add({ ...row, version });
+    }
+    // Read the map rows only once the counts are final, and write each exactly
+    // once: a map with no versions still needs a counter, and racing a
+    // per-map put against a sweep for the stragglers would clobber it back to 1.
+    const mapsReq = maps.getAll();
+    mapsReq.onsuccess = () => {
+      for (const row of mapsReq.result as MapRow[]) {
+        maps.put({ ...row, nextVersion: (counts.get(row.id) ?? 0) + 1 });
+      }
+      db.deleteObjectStore('revisions');
+    };
+  };
+}
 
 function openDb(): Promise<IDBDatabase> {
   if (dbPromise) return dbPromise;
   dbPromise = new Promise<IDBDatabase>((resolve, reject) => {
-    const req = indexedDB.open(DB_NAME, DB_VERSION);
-    req.onupgradeneeded = () => {
+    const req = indexedDB.open(DB_NAME, DB_SCHEMA_VERSION);
+    /**
+     * Another connection is still holding an older schema open, so the upgrade
+     * cannot start. Every tab running this module closes on `versionchange`
+     * (see below), so this is the case where that never ran — a frozen or
+     * back/forward-cached page.
+     *
+     * Worth handling only as of v2: v1 was the schema at creation, so no open
+     * request ever had an upgrade to be blocked on, and `blocked` was
+     * unreachable. Without this the request settles NEITHER way and every save
+     * waits on a promise that will never resolve — a silently dead Save menu
+     * rather than a message. Rejecting frees the caller to show one, and
+     * `dbPromise` is nulled below so a retry re-opens once the other tab goes.
+     */
+    let abandoned = false;
+    req.onblocked = () => {
+      abandoned = true;
+      reject(new Error('The map library is open in another tab. Close it and try again.'));
+    };
+    req.onupgradeneeded = (event) => {
       const db = req.result;
-      db.createObjectStore('maps', { keyPath: 'id' });
-      const revisions = db.createObjectStore('revisions', { keyPath: 'id', autoIncrement: true });
-      revisions.createIndex('mapId', 'mapId', { unique: false });
-      db.createObjectStore('payloads', { keyPath: 'id' });
+      if (event.oldVersion < 1) {
+        db.createObjectStore('maps', { keyPath: 'id' });
+        createVersionsStore(db);
+        db.createObjectStore('payloads', { keyPath: 'id' });
+        return;
+      }
+      // `req.transaction` is the versionchange transaction, and it is the only
+      // handle from which the retiring store can still be read.
+      if (event.oldVersion < 2) upgradeV1ToV2(db, req.transaction!);
     };
     req.onsuccess = () => {
       const db = req.result;
+      // A blocked request still completes if the other tab eventually goes away
+      // — but we already rejected, so this handle is one nobody holds and
+      // nobody closes, and an open connection is precisely what blocks the NEXT
+      // upgrade. Close it and let the caller's retry open its own.
+      if (abandoned) {
+        db.close();
+        return;
+      }
       // Without this, a version bump in another tab parks on `blocked` forever
       // behind our cached handle.
       db.onversionchange = () => {
@@ -104,7 +218,7 @@ function reqDone<T>(req: IDBRequest<T>): Promise<T> {
  * autoIncrement id, say) and so is exactly where one reaches for `resolve` —
  * but the transaction has not committed there. A later abort (quota, version
  * change) would then have already been reported as success, and a caller that
- * wipes the document on a successful save would wipe it against a revision
+ * wipes the document on a successful save would wipe it against a version
  * that does not exist.
  */
 function txDone<T>(tx: IDBTransaction, result: () => T): Promise<T> {
@@ -117,56 +231,79 @@ function txDone<T>(tx: IDBTransaction, result: () => T): Promise<T> {
 }
 
 /**
- * Drop the oldest revisions (and their payloads) past the cap. Issued inside
- * the caller's transaction — the index cursor runs oldest-first because, for a
- * single mapId, index order is primary-key order and the key autoIncrements.
+ * Whether the prune policy may take this row.
+ *
+ * An explicit save, a star and a name are all the same act — "keep this" — so
+ * none of them is prunable. Deleting a version someone starred, or typed
+ * "beta 1 — needs work" onto, is the silent loss of precisely the thing they
+ * marked, which is worse than keeping a few rows too many.
+ */
+const isPrunable = (v: VersionMeta): boolean => v.source === 'auto' && !v.starred && !v.name;
+
+/**
+ * Drop the oldest prunable versions past the cap, with their payloads, inside
+ * the caller's transaction.
+ *
+ * The cap counts only the rows policy may actually take, so protected versions
+ * never eat the budget — you keep a full 50 autos either way.
+ *
+ * This reads the map's rows rather than counting them, because the predicate
+ * lives in the values. Thumbs ride along on those rows, so a save drags its own
+ * map's thumbnails through one clone; that is noise beside the rasterize and
+ * 256 KB serialize the same save already paid for. If it ever stops being
+ * noise, thumbs split into their own store exactly as payloads did.
  */
 function pruneWithin(tx: IDBTransaction, mapId: string): void {
-  const revisions = tx.objectStore('revisions');
+  const versions = tx.objectStore('versions');
   const payloads = tx.objectStore('payloads');
-  const index = revisions.index('mapId');
-  const countReq = index.count(IDBKeyRange.only(mapId));
-  countReq.onsuccess = () => {
-    let excess = countReq.result - REVISION_LIMIT;
-    if (excess <= 0) return;
-    const cursorReq = index.openCursor(IDBKeyRange.only(mapId));
-    cursorReq.onsuccess = () => {
-      const cursor = cursorReq.result;
-      if (!cursor) return;
-      payloads.delete(cursor.value.id);
-      cursor.delete();
-      if (--excess > 0) cursor.continue();
-    };
+  const rowsReq = versions.index('mapId').getAll(IDBKeyRange.only(mapId));
+  rowsReq.onsuccess = () => {
+    // For a single mapId, index order is primary-key order and the key
+    // autoIncrements — so this is oldest-first, and the excess is the head.
+    const prunable = (rowsReq.result as VersionMeta[]).filter(isPrunable);
+    const excess = prunable.length - AUTO_VERSION_LIMIT;
+    if (excess <= 0) return; // NOT slice(0, excess): a negative end trims the TAIL
+    for (const row of prunable.slice(0, excess)) {
+      versions.delete(row.id);
+      payloads.delete(row.id);
+    }
   };
 }
 
 /**
- * Write a revision of `json` under `mapId`, upserting the map row's name and
- * timestamp. Resolves with the new revision id once the transaction commits.
- * Rejects — and writes nothing — on any storage failure.
+ * Write a version of `json` under `mapId`, upserting the map row's name and
+ * timestamp. Resolves with the new version's id and number once the transaction
+ * commits. Rejects — and writes nothing — on any storage failure.
  */
-export async function saveRevision(
+export async function saveVersion(
   mapId: string,
   name: string,
   json: string,
-  source: RevisionSource,
+  source: VersionSource,
   thumb?: string,
-): Promise<number> {
+): Promise<SavedVersion> {
   const db = await openDb();
   const tx = db.transaction(STORES, 'readwrite');
   const now = Date.now();
-  let newId = 0;
+  const saved: SavedVersion = { id: 0, version: 0 };
 
-  // `put` is an upsert: first save creates the row, later ones refresh it.
-  tx.objectStore('maps').put({ id: mapId, name, updatedAt: now } satisfies MapRow);
-  const addReq = tx.objectStore('revisions').add({ mapId, savedAt: now, source, thumb });
-  addReq.onsuccess = () => {
-    newId = addReq.result as number;
-    tx.objectStore('payloads').put({ id: newId, json } satisfies PayloadRow);
-    pruneWithin(tx, mapId);
+  const maps = tx.objectStore('maps');
+  const mapReq = maps.get(mapId);
+  mapReq.onsuccess = () => {
+    const prev = mapReq.result as MapRow | undefined;
+    const version = prev?.nextVersion ?? 1;
+    // `put` is an upsert: first save creates the row, later ones refresh it.
+    maps.put({ id: mapId, name, updatedAt: now, nextVersion: version + 1 } satisfies MapRow);
+    const addReq = tx.objectStore('versions').add({ mapId, savedAt: now, source, version, thumb });
+    addReq.onsuccess = () => {
+      saved.id = addReq.result as number;
+      saved.version = version;
+      tx.objectStore('payloads').put({ id: saved.id, json } satisfies PayloadRow);
+      pruneWithin(tx, mapId);
+    };
   };
 
-  return txDone(tx, () => newId);
+  return txDone(tx, () => saved);
 }
 
 /** Every map, newest-touched first. */
@@ -178,29 +315,31 @@ export async function listMaps(): Promise<MapSummary[]> {
   // A fresh transaction per lookup: awaiting inside one lets it auto-commit
   // between requests. Two reads per map, on a library of a handful.
   const summaries = await Promise.all(
-    rows.map(async (row) => ({
-      ...row,
-      revisionCount: await countRevisions(db, row.id),
-      thumb: await latestThumb(db, row.id),
+    rows.map(async ({ id, name, updatedAt }) => ({
+      id,
+      name,
+      updatedAt,
+      versionCount: await countVersions(db, id),
+      thumb: await latestThumb(db, id),
     })),
   );
   return summaries.sort((a, b) => b.updatedAt - a.updatedAt);
 }
 
-function countRevisions(db: IDBDatabase, mapId: string): Promise<number> {
-  const index = db.transaction('revisions', 'readonly').objectStore('revisions').index('mapId');
+function countVersions(db: IDBDatabase, mapId: string): Promise<number> {
+  const index = db.transaction('versions', 'readonly').objectStore('versions').index('mapId');
   return reqDone(index.count(IDBKeyRange.only(mapId)));
 }
 
 function latestThumb(db: IDBDatabase, mapId: string): Promise<string | undefined> {
   return new Promise<string | undefined>((resolve, reject) => {
-    const index = db.transaction('revisions', 'readonly').objectStore('revisions').index('mapId');
+    const index = db.transaction('versions', 'readonly').objectStore('versions').index('mapId');
     const req = index.openCursor(IDBKeyRange.only(mapId), 'prev');
     let seen = 0;
     req.onsuccess = () => {
       const cursor = req.result;
       if (!cursor) return resolve(undefined);
-      const thumb = (cursor.value as RevisionMeta).thumb;
+      const thumb = (cursor.value as VersionMeta).thumb;
       if (thumb) return resolve(thumb);
       if (++seen >= THUMB_WALK_BACK) return resolve(undefined);
       cursor.continue();
@@ -209,25 +348,74 @@ function latestThumb(db: IDBDatabase, mapId: string): Promise<string | undefined
   });
 }
 
-/** One map's revisions, newest first. */
-export async function listRevisions(mapId: string): Promise<RevisionMeta[]> {
+/**
+ * One map's versions: starred first, then newest-first within each group.
+ *
+ * The starred block is the list's own structure, not a view preference — the
+ * dialog draws its divider at the boundary this order creates.
+ */
+export async function listVersions(mapId: string): Promise<VersionMeta[]> {
   const db = await openDb();
-  const index = db.transaction('revisions', 'readonly').objectStore('revisions').index('mapId');
-  const rows = await reqDone<RevisionMeta[]>(index.getAll(IDBKeyRange.only(mapId)));
+  const index = db.transaction('versions', 'readonly').objectStore('versions').index('mapId');
+  const rows = await reqDone<VersionMeta[]>(index.getAll(IDBKeyRange.only(mapId)));
   // Two saves can land in the same millisecond; the id breaks the tie in the
   // same direction, so the order is total.
-  return rows.sort((a, b) => b.savedAt - a.savedAt || b.id - a.id);
+  return rows.sort(
+    (a, b) =>
+      Number(b.starred ?? false) - Number(a.starred ?? false) ||
+      b.savedAt - a.savedAt ||
+      b.id - a.id,
+  );
 }
 
-export async function getPayload(revisionId: number): Promise<string | undefined> {
+export async function getPayload(versionId: number): Promise<string | undefined> {
   const db = await openDb();
   const row = await reqDone<PayloadRow | undefined>(
-    db.transaction('payloads', 'readonly').objectStore('payloads').get(revisionId),
+    db.transaction('payloads', 'readonly').objectStore('payloads').get(versionId),
   );
   return row?.json;
 }
 
-/** Rename the library row only — a saved revision's own JSON is never rewritten. */
+/**
+ * Read-modify-write one version row. A row that is gone is not an error: the
+ * dialog can be looking at a list the prune policy has already moved past.
+ */
+async function patchVersion(versionId: number, patch: (row: VersionMeta) => void): Promise<void> {
+  const db = await openDb();
+  const tx = db.transaction('versions', 'readwrite');
+  const store = tx.objectStore('versions');
+  const getReq = store.get(versionId);
+  getReq.onsuccess = () => {
+    const row = getReq.result as VersionMeta | undefined;
+    if (!row) return;
+    patch(row);
+    store.put(row);
+  };
+  return txDone(tx, () => undefined);
+}
+
+/**
+ * Label a version, or clear the label with a blank string. Absent-when-empty:
+ * a blank name is deleted rather than stored, which keeps the row honest and is
+ * also what `isPrunable` reads — whitespace is not an act of preservation.
+ */
+export function setVersionName(versionId: number, name: string): Promise<void> {
+  return patchVersion(versionId, (row) => {
+    const trimmed = name.trim();
+    if (trimmed) row.name = trimmed;
+    else delete row.name;
+  });
+}
+
+/** Star a version, or un-star it — which hands it back to the prune policy. */
+export function setVersionStarred(versionId: number, starred: boolean): Promise<void> {
+  return patchVersion(versionId, (row) => {
+    if (starred) row.starred = true;
+    else delete row.starred;
+  });
+}
+
+/** Rename the library row only — a saved version's own JSON is never rewritten. */
 export async function renameMap(mapId: string, name: string): Promise<void> {
   const db = await openDb();
   const tx = db.transaction('maps', 'readwrite');
@@ -240,12 +428,17 @@ export async function renameMap(mapId: string, name: string): Promise<void> {
   return txDone(tx, () => undefined);
 }
 
+/**
+ * Delete a map outright: its row, its versions, its payloads — and with them
+ * its counter, so a later map that happened to reuse the id starts at v1. That
+ * is not a reused number: the map it belonged to no longer exists.
+ */
 export async function deleteMap(mapId: string): Promise<void> {
   const db = await openDb();
   const tx = db.transaction(STORES, 'readwrite');
   tx.objectStore('maps').delete(mapId);
   const payloads = tx.objectStore('payloads');
-  const cursorReq = tx.objectStore('revisions').index('mapId').openCursor(IDBKeyRange.only(mapId));
+  const cursorReq = tx.objectStore('versions').index('mapId').openCursor(IDBKeyRange.only(mapId));
   cursorReq.onsuccess = () => {
     const cursor = cursorReq.result;
     if (!cursor) return;
@@ -256,31 +449,15 @@ export async function deleteMap(mapId: string): Promise<void> {
   return txDone(tx, () => undefined);
 }
 
-export async function deleteRevision(revisionId: number): Promise<void> {
+/** Delete one version. The map's counter is untouched: v3 is spent forever. */
+export async function deleteVersion(versionId: number): Promise<void> {
   const db = await openDb();
-  const tx = db.transaction(['revisions', 'payloads'], 'readwrite');
-  tx.objectStore('revisions').delete(revisionId);
-  tx.objectStore('payloads').delete(revisionId);
+  const tx = db.transaction(['versions', 'payloads'], 'readwrite');
+  tx.objectStore('versions').delete(versionId);
+  tx.objectStore('payloads').delete(versionId);
   return txDone(tx, () => undefined);
 }
 
 export function newMapId(): string {
   return globalThis.crypto.randomUUID();
-}
-
-/**
- * Which library map the live document belongs to. Deliberately outside the
- * doc: a downloaded file carries no id, so loading one and saving it creates a
- * new map rather than two files fighting over one history.
- */
-export function getCurrentMapId(): string | null {
-  return localStorage.getItem(CURRENT_KEY);
-}
-
-export function setCurrentMapId(id: string | null): void {
-  // NOT setItem(key, null) — that stores the string "null", which is truthy and
-  // survives `??`, so `getCurrentMapId() ?? newMapId()` would hand back "null"
-  // and every file loaded thereafter would write into one shared bogus map.
-  if (id === null) localStorage.removeItem(CURRENT_KEY);
-  else localStorage.setItem(CURRENT_KEY, id);
 }

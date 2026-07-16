@@ -19,13 +19,8 @@ import {
   getCanvasSvg,
   mapFileBasename,
 } from '../export/exportCanvas';
-import {
-  getCurrentMapId,
-  getPayload,
-  newMapId,
-  saveRevision,
-  setCurrentMapId,
-} from '../state/mapLibrary';
+import { getPayload, newMapId, saveVersion, type VersionMeta } from '../state/mapLibrary';
+import { useLibraryPointer } from '../state/libraryPointer';
 import { MapLibraryDialog } from './MapLibraryDialog';
 import { Menu, MenuItem, MenuSeparator, SubMenu } from './Menu';
 import {
@@ -46,6 +41,7 @@ import { SnapToggleBar } from './SnapToggleBar';
 import { OptionsPopover } from './OptionsPopover';
 import { HelpPopover } from './HelpPopover';
 import { MapNameField } from './MapNameField';
+import { MapVersionPill } from './MapVersionPill';
 
 /**
  * The empty document, serialized. Byte-comparing against this IS the auto-save's
@@ -119,7 +115,7 @@ export function Toolbar() {
    * This is NOT a dirty flag. A flag answers "did anything touch the doc", which
    * is the wrong question (edit-then-undo), and a flag that resets on refresh
    * reads CLEAN — losing data. A null baseline reads dirty, which errs toward
-   * one redundant revision instead of toward silence.
+   * one redundant version instead of toward silence.
    */
   const baselineRef = useRef<string | null>(null);
 
@@ -206,9 +202,14 @@ export function Toolbar() {
   };
 
   /**
-   * Write an 'auto' revision of the live doc before something replaces it.
+   * Write an 'auto' version of the live doc before something replaces it.
    * No-op when there is nothing to lose, or nothing has changed since the last
    * save or load.
+   *
+   * Deliberately does NOT move the pointer. This runs while a document is on
+   * its way out, and the caller sets the pointer to whatever is coming in; the
+   * map written here keeps its history and stays reachable from the library
+   * dialog, which is the whole job.
    *
    * THROWS on a storage failure — every caller MUST abort its switch, or it
    * wipes a document it only thinks it saved.
@@ -219,8 +220,8 @@ export function Toolbar() {
     if (json === EMPTY_DOC_JSON) return; // nothing to lose
     if (json === baselineRef.current) return; // already in the library, verbatim
     const thumb = await tryCaptureThumbnail();
-    const id = getCurrentMapId() ?? newMapId();
-    await saveRevision(id, doc.name, json, 'auto', thumb);
+    const id = useLibraryPointer.getState().mapId ?? newMapId();
+    await saveVersion(id, doc.name, json, 'auto', thumb);
     baselineRef.current = json;
   };
 
@@ -290,7 +291,7 @@ export function Toolbar() {
   };
 
   // A downloaded file, which is what Export means here — saving now writes a
-  // revision to the library instead.
+  // version to the library instead.
   const onExportJson = () => {
     // Serialize the canonical doc slice (DOC_FIELDS) so the file never drifts
     // from the model when a field is added.
@@ -306,11 +307,11 @@ export function Toolbar() {
       const thumb = await tryCaptureThumbnail();
       // An explicit save is never deduped: asking for a checkpoint and getting
       // silence would be its own bug.
-      const id = getCurrentMapId() ?? newMapId();
-      await saveRevision(id, doc.name, json, 'user', thumb);
-      setCurrentMapId(id);
+      const id = useLibraryPointer.getState().mapId ?? newMapId();
+      const saved = await saveVersion(id, doc.name, json, 'user', thumb);
+      useLibraryPointer.getState().setPointer(id, saved.version);
       baselineRef.current = json;
-      setMenuStatus({ kind: 'info', text: `Saved to library as “${doc.name}”` });
+      setMenuStatus({ kind: 'info', text: `Saved “${doc.name}” as v${saved.version}` });
     } catch (err) {
       setMenuStatus({ kind: 'error', text: errorText(err, 'Could not save to the library.') });
     }
@@ -328,20 +329,33 @@ export function Toolbar() {
     }
     setMenuStatus(null);
     adoptParsedDoc(DEFAULT_DOC);
-    setCurrentMapId(newMapId());
+    // A fresh map: it has an id to save under, but nothing saved under it yet,
+    // so there is no version to show until the first save.
+    useLibraryPointer.getState().setPointer(newMapId(), null);
   };
 
   const onOpenLibrary = () => setLibraryOpen(true);
 
-  /** Load a revision's payload over the live doc. Throws for the dialog to show. */
-  const onOpenRevision = async (mapId: string, revisionId: number) => {
-    await autoSaveCurrent();
-    const json = await getPayload(revisionId);
-    if (json === undefined) throw new Error('That revision is no longer in the library.');
+  /**
+   * Load a version's payload over the live doc. Throws for the dialog to show.
+   *
+   * Read and parse BEFORE the auto-save, exactly as the file-load path does.
+   * The auto-save writes an 'auto' under this same map and prunes it in the same
+   * transaction — and a map that has been open a while sits at exactly
+   * AUTO_VERSION_LIMIT prunable autos, so the 51st prunes the oldest, which is
+   * the row at the bottom of the list the user just clicked Open on. Fetching
+   * first means the bytes are already in hand and the prune cannot take them.
+   * The save still lands before the adopt, so a storage failure costs the open
+   * rather than the document.
+   */
+  const onOpenVersion = async (version: VersionMeta) => {
+    const json = await getPayload(version.id);
+    if (json === undefined) throw new Error('That version is no longer in the library.');
     const result = parse(json, useCustomPalettes.getState().palettes);
     if (!result.ok) throw new Error(result.error);
+    await autoSaveCurrent();
     adoptParsedDoc(result.doc);
-    setCurrentMapId(mapId);
+    useLibraryPointer.getState().setPointer(version.mapId, version.version);
     setLibraryOpen(false);
   };
 
@@ -406,8 +420,9 @@ export function Toolbar() {
     setMenuStatus(null);
     adoptParsedDoc(result.doc);
     // A file is not a library map: saving it makes a NEW one, the same way
-    // re-uploading a downloaded doc gives you a new doc.
-    setCurrentMapId(null);
+    // re-uploading a downloaded doc gives you a new doc. No id and no version —
+    // the pill has nothing true to show until that first save.
+    useLibraryPointer.getState().setPointer(null, null);
   };
 
   // Add → Image…: read the file (svg text, or png/jpeg bytes), take its
@@ -436,11 +451,12 @@ export function Toolbar() {
       <strong>Massimo</strong>
       <span className="tool-group-divider" aria-hidden="true" />
       <MapNameField />
+      <MapVersionPill />
       <span className="tool-group-divider" aria-hidden="true" />
       <Menu label="Canvas">
         <MenuItem onClick={() => void onNew()}>New</MenuItem>
         <MenuSeparator />
-        <MenuItem onClick={() => void onSaveToLibrary()}>Save revision</MenuItem>
+        <MenuItem onClick={() => void onSaveToLibrary()}>Save version</MenuItem>
         <SubMenu label="Load">
           <MenuItem onClick={onLoadClick}>JSON…</MenuItem>
           <MenuItem onClick={onOpenLibrary}>From library…</MenuItem>
@@ -597,7 +613,18 @@ export function Toolbar() {
         {selection.sidebarOpen ? <DoubleArrowRightIcon /> : <DoubleArrowLeftIcon />}
       </button>
       {libraryOpen && (
-        <MapLibraryDialog onClose={() => setLibraryOpen(false)} onOpenRevision={onOpenRevision} />
+        <MapLibraryDialog
+          onClose={() => setLibraryOpen(false)}
+          onOpenVersion={onOpenVersion}
+          // The bytes the baseline vouches for went with the map. Left standing,
+          // the dedup gate below would skip the next auto-save against a version
+          // that no longer exists — and New, which is not undoable, would wipe a
+          // document that is then in no file, no library row and no undo stack.
+          // Null reads dirty, which is the erring direction that keeps the doc.
+          onLiveDocUnbacked={() => {
+            baselineRef.current = null;
+          }}
+        />
       )}
     </div>
   );
