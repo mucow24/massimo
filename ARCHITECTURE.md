@@ -352,8 +352,6 @@ kind. See [styles.ts](src/model/styles.ts).
   The hover bump and append-starter styling are applied at **paint time**, not stored here.
 - `styleId?` — live link to a StyleDef of kind `'station'` (see MapDoc.styles); covers the
   typography above, not identity. Same contract as `Line.styleId`.
-- `editorHeight?` — remembered CSS-px height of the inspector Name box (editing-UI only; never
-  affects the rendered name). Mirrors `TextLabel.editorHeight`.
 - `locked?` — **canvas protection**: can't be dragged, marquee-selected, group-towed, nudged,
   rotated (right-click rotate is a no-op; group rotate skips locked members), or deleted. A
   locked item is also **click-through while unselected** (its hit surfaces drop pointer-events,
@@ -1511,9 +1509,10 @@ band routing or the marker sort. Pinned by `MapCanvas.stationsSig.test.tsx`.
   git-graph tree editor, `StationGraph`/`lineGraphLayout`, both retired.)
 - **[StationPopover.tsx](src/components/StationPopover.tsx)** — the station editor's home:
   mounted by `ItemPopovers` for a sole-selected station (idle mode, or that station's own
-  layout-edit mode), hosting the full `StationInspector` — a Name header row with the
-  **Select Similar** mirror-matching toggle + WP / lock toggles, labeled X/Y + a mirrored ±45°
-  rotate icon pair, the **Edit layout** button, per-stop rows
+  layout-edit mode). The titlebar IS the station's name (double-click renames in place via the
+  shared `useRenameEditor` protocol) with the **WP** lozenge on the far right; below it the full
+  `StationInspector` — labeled X/Y + a mirrored ±45°
+  rotate icon pair, the **Edit layout** + **Select Similar** buttons, per-stop rows
   ([inspector/StopRows.tsx](src/components/inspector/StopRows.tsx): service badge + always-enabled
   shape picker + dot size + a world-true orientation cycle button per stop; hover
   cross-highlights the dot via `hoveredLineStop`), and label align/valign cycle buttons + offset
@@ -1523,7 +1522,8 @@ band routing or the marker sort. Pinned by `MapCanvas.stationsSig.test.tsx`.
   mirror symmetry — whole line, not adjacency; an edit broadcasts through
   [state/mirrorDispatch.ts](src/state/mirrorDispatch.ts), rotating local deltas through
   `rotateGridDelta`; orientation cycles and station rotation are relative steps so odd-offset
-  matches stay world-equivalent). The **Select Similar** chip (Name header, left of WP) drives
+  matches stay world-equivalent). The **Select Similar** chip (Stop layout header, right of
+  Edit layout) drives
   `mirrorMatching`: off = every dispatch resolves to the source station alone; on = stop/label
   edits + station rotation broadcast, while name, X/Y, and the per-station WP / lock /
   bold / italic flags stay local. Disabled at zero matches unless already on (so the mode can
@@ -1559,8 +1559,9 @@ band routing or the marker sort. Pinned by `MapCanvas.stationsSig.test.tsx`.
   unmount, as a safety net); `useNumericField` wraps it with a local text mirror, a focus guard,
   and wheel-to-increment off the live value. `NumericFieldRow` pairs a slider + spinbutton sharing
   one group so a drag + typing collapse to one undo entry.
-- **`StationNameEditor`** intercepts Ctrl+Z itself — native input undo would creep the doc back
-  one char per press; it commits the rename group, runs doc-level undo/redo, then closes.
+- **`useRenameEditor`** (shared by `StationNameEditor` and the station popover's title editor)
+  intercepts Ctrl+Z itself — native input undo would creep the doc back one char per press; it
+  commits the rename group, runs doc-level undo/redo, then closes.
 
 ---
 

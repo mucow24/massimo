@@ -192,22 +192,15 @@ export interface Station {
   leading?: number;
   tracking?: number;
   // When locked, the station can't be dragged, marquee-selected, group-towed,
-  // arrow-nudged, rotated, or deleted from the canvas — it can still be click-selected
-  // (so its inspector, including the lock toggle, stays reachable) and remains
-  // fully editable there. Optional; missing ⇒ unlocked. Mirrors Polygon.locked
-  // but is canvas-protection only (the station inspector is never disabled).
+  // arrow-nudged, rotated, or deleted from the canvas — it can still be
+  // click-selected, and its popover greys out every editing control except the
+  // unlock toggle (which lives in the footer, outside the disabled fieldset).
+  // Optional; missing ⇒ unlocked. Mirrors Polygon.locked.
   locked?: boolean;
-  // Remembered height (in CSS px) of the Name text box in this station's
-  // inspector, so a manually stretched box stays stretched instead of resetting
-  // to its rows-derived default each time the inspector reopens. Purely an
-  // editing-UI dimension — it never affects the rendered name. Optional;
-  // missing ⇒ the box auto-sizes to its content. Clamped to a positive integer
-  // by `setStationEditorHeight`. Mirrors `TextLabel.editorHeight`.
-  editorHeight?: number;
   // Live link to a StyleDef of kind 'station' — covered fields are the name
   // typography (fontSize/weight/italic/leading/tracking), NOT identity
-  // (name/position/rotation/stops/label/waypoint/lock/editorHeight). Same
-  // contract as `Line.styleId`.
+  // (name/position/rotation/stops/label/waypoint/lock). Same contract as
+  // `Line.styleId`.
   styleId?: string;
 }
 
@@ -692,7 +685,7 @@ export interface TextLabel {
   // to its rows-derived default each time the popover reopens. Purely an
   // editing-UI dimension — it never affects the rendered label. Optional;
   // missing ⇒ the box auto-sizes to its content. Clamped to a positive integer
-  // by `updateTextLabel`. Mirrors `Station.editorHeight`.
+  // by `updateTextLabel`.
   editorHeight?: number;
   // Live link to a StyleDef of kind 'textLabel' — covered fields are the
   // colors, fontSize, weight, italic and align (NOT width/leading/tracking/

@@ -431,7 +431,6 @@ interface DocState extends MapDoc {
   setStationLocked: (stationId: StationId, locked: boolean) => void;
   // Bulk lock/unlock across every lockable kind — ONE undo entry.
   setItemsLocked: (ids: T.LockableItemIds, locked: boolean) => void;
-  setStationEditorHeight: (stationId: StationId, height: number) => void;
   redistributeBetween: (
     startId: StationId,
     endId: StationId,
@@ -643,8 +642,6 @@ export const useDoc = create<DocState>()(
         setStationLocked: (stationId, locked) =>
           set((s) => T.setStationLocked(s, stationId, locked)),
         setItemsLocked: (ids, locked) => set((s) => T.setItemsLocked(s, ids, locked)),
-        setStationEditorHeight: (stationId, height) =>
-          set((s) => T.setStationEditorHeight(s, stationId, height)),
         redistributeBetween: (startId, endId, mode = 'arc-bends', gridMode = 'off') =>
           // gridMode is per-call intent (depends on Shift at the call site);
           // gridInterval is ambient, so read the active grid size from the

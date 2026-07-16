@@ -1854,19 +1854,6 @@ export function updateStationLabelStyle(
   });
 }
 
-/**
- * Remember the manually stretched height (CSS px) of the station Name box in
- * the inspector. Clamped to a positive integer; a no-op when unchanged (so a
- * plain click that reads back the same height doesn't churn history). Mirrors
- * `updateTextLabel`'s `editorHeight` clamp for text labels.
- */
-export function setStationEditorHeight(doc: MapDoc, stationId: StationId, height: number): MapDoc {
-  const next = Math.max(1, Math.round(height));
-  return updateStation(doc, stationId, (st) =>
-    st.editorHeight === next ? st : { ...st, editorHeight: next },
-  );
-}
-
 // Snap a value to its slider's step and clamp at the bottom only (the
 // spinbutton accepts values above the slider max). The three-decimal rounding
 // kills float artifacts like 1.1500000000000001 while preserving the finest
