@@ -740,10 +740,13 @@ via Canvas → Save version and Canvas → Load → From library…
     merge, so a real persisted pointer is never clobbered by a legacy key that outlived it. The
     failure needs a *reload* to show, so it hides from any test that only checks the boot.
 - **The pill** ([MapVersionPill.tsx](src/components/MapVersionPill.tsx)) renders the pointer's
-  `version` as a grey `.map-version-pill` beside the map name — and **nothing at all** when it is
+  `version` as a grey `.map-version-pill` beside the map name — and **shows nothing** when it is
   null: not "v0", not an empty pill. A pill showing a number the library cannot resolve is worse
-  than no pill. Beside it, the same component renders the **save-status dot** (below) whenever the
-  doc is not clean — pill or no pill.
+  than no pill. The box stays mounted though (`data-empty` → `visibility: hidden`, with a `min-width`
+  reserve), so a map's first save mints its version without shifting the toolbar — an unmount
+  re-clamps scrollX in a narrow window, the same jolt the save-dot placeholder avoids. Beside it,
+  the same component renders the **save-status dot** (below) whenever the doc is not clean — pill or
+  no pill.
 
 ### The save baseline + tri-state status ([saveBaseline.ts](src/state/saveBaseline.ts))
 

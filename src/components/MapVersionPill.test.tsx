@@ -15,6 +15,7 @@ const anchor = (mark: typeof markSaved) => {
 };
 
 const dot = () => document.querySelector('.map-save-dot');
+const pill = () => document.querySelector('.map-version-pill');
 
 beforeEach(() => {
   localStorage.clear();
@@ -30,6 +31,9 @@ describe('MapVersionPill — version pill + save-status dot', () => {
     anchor(markSaved);
     render(<MapVersionPill />);
     expect(screen.getByText('v32')).toBeInTheDocument();
+    // Shown, not a placeholder: no data-empty, and the title claims the version.
+    expect(pill()).not.toHaveAttribute('data-empty');
+    expect(pill()).toHaveAttribute('title', 'This map came from version 32');
     // The box stays (CSS hides the paint): unmounting it changes the
     // toolbar's width, which re-clamps scrollX in a narrow window — the
     // whole page visibly jumped ~18px on every save.
@@ -47,12 +51,30 @@ describe('MapVersionPill — version pill + save-status dot', () => {
     expect(screen.getByTitle('Unsaved changes')).toBeInTheDocument();
   });
 
-  it('an unsaved doc (a loaded file) shows a blue dot and no pill', () => {
+  it('an unsaved doc (a loaded file) shows a blue dot and the pill claims no version', () => {
     anchor(markAdopted);
     render(<MapVersionPill />);
     expect(screen.queryByText(/^v\d+$/)).toBeNull(); // no version to claim
+    // The pill is still mounted, but as an empty hidden placeholder — see the
+    // reserves-its-box test below for why it must not unmount.
+    expect(pill()).toBeEmptyDOMElement();
+    expect(pill()).toHaveAttribute('data-empty', '');
+    expect(pill()).not.toHaveAttribute('title');
     expect(dot()).toHaveAttribute('data-status', 'unsaved');
     expect(screen.getByTitle('Not saved to the library yet')).toBeInTheDocument();
+  });
+
+  it('with no version, the pill stays mounted as an empty hidden placeholder (reserves its box)', () => {
+    // version stays null (beforeEach). The pill must NOT unmount: unmounting it
+    // (and its flex gap) shrinks the toolbar's min-content width, which
+    // re-clamps scrollX in a narrow window — the toolbar jumped ~28px on a
+    // fresh map's first save. It reserves its box but claims nothing: empty
+    // content, no title, hidden by CSS off data-empty.
+    render(<MapVersionPill />);
+    expect(pill()).toBeInTheDocument();
+    expect(pill()).toBeEmptyDOMElement();
+    expect(pill()).toHaveAttribute('data-empty', '');
+    expect(pill()).not.toHaveAttribute('title');
   });
 
   it('a dirty doc with no version still gets its dot — the dot outranks the pill', () => {
