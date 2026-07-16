@@ -2,7 +2,11 @@ import { describe, it, expect } from 'vitest';
 import fc from 'fast-check';
 import * as T from './transforms';
 import { LINE_WIDTH_DEFAULT, LINE_WIDTH_MIN, LINE_WIDTH_STEP } from './lineWidth';
-import { LINE_STROKE_COLOR_DEFAULT, LINE_STROKE_STEP, LINE_STROKE_WIDTH_DEFAULT } from './lineStroke';
+import {
+  LINE_STROKE_COLOR_DEFAULT,
+  LINE_STROKE_STEP,
+  LINE_STROKE_WIDTH_DEFAULT,
+} from './lineStroke';
 import type { LineStyle, MapDoc } from './types';
 import { counterIdFactory } from './ids';
 
