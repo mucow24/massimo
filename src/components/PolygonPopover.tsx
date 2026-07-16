@@ -13,6 +13,7 @@ import {
   POLYGON_CURVE_RADIUS_DEFAULT,
   POLYGON_CURVE_RADIUS_MAX,
   POLYGON_CURVE_RADIUS_MIN,
+  POLYGON_CURVE_RADIUS_STEP,
   POLYGON_STROKE_STEP,
   POLYGON_STROKE_WIDTH_MAX,
   POLYGON_STROKE_WIDTH_MIN,
@@ -157,7 +158,7 @@ export function PolygonPopover({ polygon, worldRect, view, spawnBox, onClose }: 
         label="Curve radius"
         min={POLYGON_CURVE_RADIUS_MIN}
         max={POLYGON_CURVE_RADIUS_MAX}
-        step={1}
+        step={POLYGON_CURVE_RADIUS_STEP}
         value={polygon.curveRadius ?? POLYGON_CURVE_RADIUS_DEFAULT}
         onChange={onCurveRadius}
         getCurrent={() =>

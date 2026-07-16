@@ -17,20 +17,21 @@ import {
 } from './lineStroke';
 
 describe('line stroke constants', () => {
-  it('defaults to no casing in white; slider range is 0..10 in 0.5 steps', () => {
+  it('defaults to no casing in white; slider range is 0..10 in 0.25 steps', () => {
     expect(LINE_STROKE_WIDTH_DEFAULT).toBe(0);
     expect(LINE_STROKE_WIDTH_MIN).toBe(0);
     expect(LINE_STROKE_WIDTH_MAX).toBe(10);
-    expect(LINE_STROKE_STEP).toBe(0.5);
+    expect(LINE_STROKE_STEP).toBe(0.25);
     expect(LINE_STROKE_COLOR_DEFAULT).toBe('#ffffff');
   });
 });
 
 describe('canonicalStrokeWidth', () => {
-  it('rounds to the half-pixel grid', () => {
-    expect(canonicalStrokeWidth(2.24)).toBe(2);
-    expect(canonicalStrokeWidth(2.25)).toBe(2.5);
-    expect(canonicalStrokeWidth(2.74)).toBe(2.5);
+  it('rounds to the quarter grid, preserving quarter values', () => {
+    expect(canonicalStrokeWidth(2.1)).toBe(2);
+    expect(canonicalStrokeWidth(2.4)).toBe(2.5);
+    // A quarter value survives instead of snapping to a half.
+    expect(canonicalStrokeWidth(2.25)).toBe(2.25);
   });
 
   it('collapses the default (0 = no casing) to undefined, including clamped negatives', () => {
@@ -39,7 +40,7 @@ describe('canonicalStrokeWidth', () => {
     expect(LINE_STROKE_WIDTH_MIN).toBe(LINE_STROKE_WIDTH_DEFAULT);
     expect(canonicalStrokeWidth(-1)).toBeUndefined();
     expect(canonicalStrokeWidth(0)).toBeUndefined();
-    expect(canonicalStrokeWidth(0.2)).toBeUndefined();
+    expect(canonicalStrokeWidth(0.1)).toBeUndefined();
     expect(canonicalStrokeWidth(1.5)).toBe(1.5);
   });
 });

@@ -341,7 +341,7 @@ describe('applyStyleToItem', () => {
     const poly = next.polygons.p1;
     expect(poly.styleId).toBe('y1');
     expect(poly.fill).toBe('#00ff00');
-    expect(poly.strokeWidth).toBe(2.5); // snapped to the 0.5 grid
+    expect(poly.strokeWidth).toBe(2.25); // snapped to the 0.25 grid
     expect(poly.curveRadius).toBe(8);
     expect(poly.closed).toBe(false);
     expect(poly.vertices).toBe(doc.polygons.p1.vertices); // geometry untouched

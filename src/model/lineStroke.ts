@@ -23,16 +23,16 @@ export const LINE_STROKE_WIDTH_MIN = 0;
 // textboxAllowAboveMax); the rendered rail clamps at the stripe width
 // regardless (see lineStrokeRailWidth).
 export const LINE_STROKE_WIDTH_MAX = 10;
-// Stroke widths live on a half-pixel grid: the slider/steppers move in
-// 0.5 increments and the setters round to the nearest step.
-export const LINE_STROKE_STEP = 0.5;
+// Stroke widths live on a quarter-unit grid: the slider/steppers move in
+// 0.25 increments and the setters round to the nearest step.
+export const LINE_STROKE_STEP = 0.25;
 // Stored lowercase; the setter normalizes and drops the field at the
 // default so it is never stored.
 export const LINE_STROKE_COLOR_DEFAULT = '#ffffff';
 
 /**
  * The canonical STORED form of a casing width: round to the LINE_STROKE_STEP
- * (half-pixel) grid, clamp to ≥ LINE_STROKE_WIDTH_MIN, and collapse to
+ * (quarter-unit) grid, clamp to ≥ LINE_STROKE_WIDTH_MIN, and collapse to
  * `undefined` at LINE_STROKE_WIDTH_DEFAULT (0 = no casing, never stored).
  * Shared by the `setLineStrokeWidth` transform and the `sanitizeLineStroke`
  * file cleaner so the grid/floor can never drift. Callers own the finiteness

@@ -13,6 +13,7 @@ import {
   TRANSFER_STROKE_WIDTH_DEFAULT,
   TRANSFER_STROKE_WIDTH_MAX,
   TRANSFER_STROKE_WIDTH_MIN,
+  TRANSFER_STROKE_WIDTH_STEP,
   TRANSFER_THICKNESS_DEFAULT,
   TRANSFER_THICKNESS_MAX,
   TRANSFER_THICKNESS_MIN,
@@ -118,7 +119,7 @@ export function TransferPopover({ transfer, worldRect, view, spawnBox, onClose }
         label="Stroke width"
         min={TRANSFER_STROKE_WIDTH_MIN}
         max={TRANSFER_STROKE_WIDTH_MAX}
-        step={1}
+        step={TRANSFER_STROKE_WIDTH_STEP}
         value={style.strokeWidth}
         onChange={(strokeWidth) => updateTransferStyle(transfer.id, { strokeWidth })}
         getCurrent={currentStrokeWidth}

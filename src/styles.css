@@ -500,10 +500,13 @@ select option {
   color: var(--text-muted);
 }
 .options-popover-spin {
-  /* Wide enough for a three-decimal signed value ("-0.025", tracking) PLUS the
-     native stepper arrows, which Chromium overlays inside the input's right
-     edge — at 56px they clip the last digit. */
-  width: 64px;
+  /* Wide enough for the widest mirror PLUS the native stepper arrows, which
+     Chromium overlays inside the input's right edge. Two cases set the floor:
+     a three-decimal signed value ("-0.025", tracking), and — since widths,
+     radii, and stroke/seam widths all step by 0.25 — a two-decimal value whose
+     integer part runs to three digits ("140.00", the uncapped line width). At
+     64px the arrows clip the last digit of those. */
+  width: 76px;
   font-size: var(--fs-small);
   padding: 1px 4px;
   border: 1px solid var(--border);
@@ -1266,9 +1269,9 @@ button.field-select:hover:not(:disabled) {
   background: var(--control-bg);
 }
 /* Slider + spinbutton rows are NumericFieldRow in every item popover. The
-   global .options-popover-spin already sets the 56px width that fits a
-   one-decimal value plus the overlaid native stepper arrows; keep the item
-   popovers' right-aligned digits. */
+   global .options-popover-spin already sets the width that fits a two-decimal
+   value plus the overlaid native stepper arrows; keep the item popovers'
+   right-aligned digits. */
 .bullet-popover .options-popover-spin,
 .text-label-popover .options-popover-spin {
   text-align: right;

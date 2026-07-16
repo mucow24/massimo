@@ -396,7 +396,8 @@ describe('App keyboard shortcuts: blur-then-undo', () => {
     // The Radix slider thumb steps via arrow keys (no native change event).
     slider.focus();
     for (let i = 0; i < 4; i++) fireEvent.keyDown(slider, { key: 'ArrowRight' });
-    expect(useDoc.getState().lines.L1.curveRadius).toBe(initial + 4);
+    // Curve radius steps by 0.25, so four ArrowRight presses advance by 1.
+    expect(useDoc.getState().lines.L1.curveRadius).toBe(initial + 1);
 
     fireEvent.keyDown(slider, { key: 'z', ctrlKey: true });
 
