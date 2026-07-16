@@ -1435,9 +1435,9 @@ button.field-select {
   vertical-align: middle;
 }
 
-/* Double-click-to-edit map name, sitting between two dividers after
-   "Massimo". The resting state reads like a label (transparent,
-   underline-on-hover); double-clicking swaps in the input below. */
+/* Click-to-edit map name, sitting between two dividers after "Massimo".
+   The resting state reads like a label (transparent, underline-on-hover);
+   clicking swaps in the input below. */
 .toolbar button.map-name {
   background: transparent;
   border: 0;
@@ -2484,59 +2484,6 @@ body:has(.app[data-theme='dark']) {
 /* Numeric inputs line up with the 26px chip buttons they sit beside. */
 .station-popover .inspector input[type='number'] {
   height: 26px;
-}
-
-/* Titlebar: the station's name IS the panel title (double-click to rename),
-   with the WP lozenge on the far right. Slimmer vertical padding than the
-   plain-string headers so the 20px pill keeps the band the same height. */
-.station-popover .header {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  padding-top: 5px;
-  padding-bottom: 6px;
-}
-/* The name flexes over the whole band left of WP — the entire strip is the
-   double-click target. `pre` keeps the user's line breaks visible; overflow
-   clips rather than growing the shell sideways. */
-.station-popover .header .title-name {
-  flex: 1;
-  min-width: 0;
-  white-space: pre;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  /* Room for the hover underline: overflow:hidden clips at the box edge and
-     the 3px-offset underline paints just below the line box, so without
-     padding it is clipped invisible (the toolbar map-name gets this room from
-     its button padding). The negative margin cancels the padding in layout,
-     keeping flex centering and the band height unchanged. */
-  padding-bottom: 5px;
-  margin-bottom: -5px;
-}
-/* Rename affordance, matching the toolbar map name: underline on hover.
-   Locked stations don't get the class (no rename to advertise). */
-.station-popover .header .title-name.renameable:hover {
-  text-decoration: underline;
-  text-underline-offset: 3px;
-}
-/* The in-band rename editor: the same white-on-black title typography over a
-   faint well so the editable state reads. Beats the shared popover textarea
-   recipe on specificity (it would paint a white-bordered light field here). */
-.station-popover .header .title-rename {
-  flex: 1;
-  min-width: 0;
-  font: inherit;
-  color: #fff;
-  background: rgba(255, 255, 255, 0.16);
-  border: none;
-  border-radius: 4px;
-  padding: 1px 5px;
-  resize: none;
-  overflow: hidden;
-  white-space: pre;
-}
-.station-popover .header .wp-pill-btn {
-  flex-shrink: 0;
 }
 
 /* One quiet family for the panel's action verbs (Select Similar, Edit

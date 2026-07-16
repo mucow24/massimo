@@ -15,6 +15,8 @@ import { StopRows } from './StopRows';
 import { StyleRow } from '../StyleRow';
 import { NumericFieldRow } from '../NumericFieldRow';
 import { WeightSelect, ItalicButton } from '../WeightItalicControls';
+import { useFieldHistory } from '../useFieldHistory';
+import { usePersistedTextareaHeight } from '../usePersistedTextareaHeight';
 import { useNumericField } from '../useNumericField';
 import { useDismiss } from '../usePopover';
 import {
@@ -38,6 +40,7 @@ export function StationInspector({ id }: { id: StationId }) {
   const station = useDoc((s) => s.stations[id]);
   const stationsAll = useDoc((s) => s.stations);
   const linesAll = useDoc((s) => s.lines);
+  const renameStation = useDoc((s) => s.renameStation);
   const rotateStation = useDoc((s) => s.rotateStation);
   const moveStation = useDoc((s) => s.moveStation);
   const setLabelOffset = useDoc((s) => s.setLabelOffset);
@@ -47,8 +50,17 @@ export function StationInspector({ id }: { id: StationId }) {
   const setLabelAutoAlign = useDoc((s) => s.setLabelAutoAlign);
   const setLabelAutoHAlign = useDoc((s) => s.setLabelAutoHAlign);
   const setLabelAutoVAlign = useDoc((s) => s.setLabelAutoVAlign);
+  const setStationWaypoint = useDoc((s) => s.setStationWaypoint);
+  const setStationEditorHeight = useDoc((s) => s.setStationEditorHeight);
   const updateStationLabelStyle = useDoc((s) => s.updateStationLabelStyle);
   const selection = useSelection();
+  const nameField = useFieldHistory();
+  // Remember the manually stretched height of the Name box, per station, so it
+  // reopens at the size the user left it (see usePersistedTextareaHeight).
+  const { attach: attachNameBox, onPointerUp: onNameBoxPointerUp } = usePersistedTextareaHeight(
+    station?.editorHeight,
+    (h) => setStationEditorHeight(id, h),
+  );
   // useNumericField (not bare inputs): its text mirror ignores an emptied
   // field mid-edit — Number('') === 0 would teleport the station to the axis.
   const xField = useNumericField(
@@ -116,6 +128,58 @@ export function StationInspector({ id }: { id: StationId }) {
           selects) also get an explicit disabled prop — their thumbs are
           spans, which a fieldset can't reach. */}
       <fieldset className="inspector-fields" disabled={locked}>
+        <div className="field">
+          <div className="field-header">
+            <label>Name</label>
+            {/* Mirror-matching toggle. While on, layout edits (stops, label,
+              rotation — not name/position, and not the per-station styling
+              flags WP/lock/bold/italic) broadcast to every station on a
+              shared line that renders identically (model/matching.ts).
+              Stays clickable while on even at zero matches so the mode can
+              always be exited. */}
+            <button
+              type="button"
+              className={`ghost-btn${mirrorOn ? ' active' : ''}`}
+              aria-pressed={mirrorOn}
+              disabled={!mirrorAvailable && !mirrorOn}
+              title={
+                mirrorOn
+                  ? 'Similar stations selected — edits here apply to all of them; click to edit only this station'
+                  : mirrorAvailable
+                    ? `Select the ${matches.length} station${matches.length === 1 ? '' : 's'} on this line with this exact layout — edits here will apply to all of them`
+                    : 'No other station on this line has an identical layout'
+              }
+              onClick={() => selection.setMirrorMatching(!mirrorOn)}
+            >
+              Select Similar
+            </button>
+            {/* The same lozenge the canvas draws for a waypoint (gray pill,
+              white WP): outline while off, filled while on. */}
+            <button
+              type="button"
+              className={`wp-pill-btn${station.isWaypoint ? ' active' : ''}`}
+              aria-pressed={!!station.isWaypoint}
+              aria-label="Waypoint"
+              title={
+                station.isWaypoint
+                  ? 'Waypoint on — name + bullets hidden'
+                  : 'Mark as waypoint (hide name + bullets)'
+              }
+              onClick={() => setStationWaypoint(station.id, !station.isWaypoint)}
+            >
+              WP
+            </button>
+          </div>
+          <textarea
+            ref={attachNameBox}
+            value={station.name}
+            onChange={(e) => renameStation(station.id, e.target.value)}
+            onPointerUp={onNameBoxPointerUp}
+            rows={Math.max(1, station.name.split('\n').length)}
+            style={{ resize: 'vertical', whiteSpace: 'pre', overflow: 'auto' }}
+            {...nameField}
+          />
+        </div>
         <div className="field">
           <label>Position &amp; rotation</label>
           <div className="field-row">
@@ -185,28 +249,6 @@ export function StationInspector({ id }: { id: StationId }) {
               }
             >
               {inLayoutEdit ? 'Done' : 'Edit layout'}
-            </button>
-            {/* Mirror-matching toggle. While on, layout edits (stops, label,
-              rotation — not name/position, and not the per-station styling
-              flags WP/lock/bold/italic) broadcast to every station on a
-              shared line that renders identically (model/matching.ts).
-              Stays clickable while on even at zero matches so the mode can
-              always be exited. */}
-            <button
-              type="button"
-              className={`ghost-btn${mirrorOn ? ' active' : ''}`}
-              aria-pressed={mirrorOn}
-              disabled={!mirrorAvailable && !mirrorOn}
-              title={
-                mirrorOn
-                  ? 'Similar stations selected — edits here apply to all of them; click to edit only this station'
-                  : mirrorAvailable
-                    ? `Select the ${matches.length} station${matches.length === 1 ? '' : 's'} on this line with this exact layout — edits here will apply to all of them`
-                    : 'No other station on this line has an identical layout'
-              }
-              onClick={() => selection.setMirrorMatching(!mirrorOn)}
-            >
-              Select Similar
             </button>
           </div>
           <div ref={stopRowsRef}>

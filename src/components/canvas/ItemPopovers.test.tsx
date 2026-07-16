@@ -284,8 +284,8 @@ describe('ItemPopovers — station popover', () => {
     render(<ItemPopovers view={committedView} />);
     const pop = document.querySelector('.station-popover');
     expect(pop).not.toBeNull();
-    // The inspector's sections are inside.
-    expect(pop?.querySelector('.inspector')).not.toBeNull();
+    // The inspector's Name field is inside.
+    expect(pop?.querySelector('textarea')).not.toBeNull();
   });
 
   it('is hidden (mounted, display:none) during sticky placing-station mode', () => {
