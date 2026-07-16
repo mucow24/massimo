@@ -891,13 +891,6 @@ function sanitizeLineStroke(line: Line): Line {
   return next;
 }
 
-// Normalize hand-edited / legacy per-transfer style overrides to the
-// canonical stored form `updateTransferStyle` maintains: numeric fields
-// rounded and floor-clamped, and every field absent when it equals the
-// constant transfer default (the app never stores a redundant override).
-// Non-numbers / non-finite numerics and non-string colors are dropped.
-// File-import hygiene only — localStorage rehydration never sees uncanonical
-// overrides because every write goes through `updateTransferStyle`.
 // Strip the retired per-segment z-layer field from persisted lines. The
 // layering rework replaced it with MapDoc.regionAssignments; docs saved by
 // older builds still carry it. Reference-stable when no line has the field.
@@ -972,6 +965,13 @@ export function sanitizeRegionAssignments(
   return changed ? { assignments: next, changed } : { assignments, changed };
 }
 
+// Normalize hand-edited / legacy per-transfer style overrides to the
+// canonical stored form `updateTransferStyle` maintains: numeric fields
+// rounded and floor-clamped, and every field absent when it equals the
+// constant transfer default (the app never stores a redundant override).
+// Non-numbers / non-finite numerics and non-string colors are dropped.
+// File-import hygiene only — localStorage rehydration never sees uncanonical
+// overrides because every write goes through `updateTransferStyle`.
 export function sanitizeTransferStyles(transfers: Record<string, Transfer>): {
   transfers: Record<string, Transfer>;
   changed: boolean;
