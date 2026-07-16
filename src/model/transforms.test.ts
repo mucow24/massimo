@@ -3400,6 +3400,64 @@ describe('loops and branches (edge-set topology)', () => {
     expect(cut.lines.L1.segmentStyles).toEqual({}); // orphaned override pruned
   });
 
+  it('cutting a segment that strands a terminus drops that station from the line', () => {
+    const base = makeDoc({
+      stations: fourStops().slice(0, 3),
+      lines: [makeLine({ id: 'L1', stations: ['a', 'b', 'c'] })], // a|b, b|c
+    });
+    // Cut a|b: a was a degree-1 terminus, so it's now edgeless → off the line.
+    const cut = T.toggleEdgeOnLine(base, 'L1', 'a', 'b');
+    expect(cut.lines.L1.edges).toEqual(['b|c']);
+    expect(cut.lines.L1.stations).toEqual(['b', 'c']);
+    expect(cut.stations.a.stops.some((s) => s.lineId === 'L1')).toBe(false);
+    // b kept its remaining edge, so it stays a member with its stop.
+    expect(cut.stations.b.stops.some((s) => s.lineId === 'L1')).toBe(true);
+  });
+
+  it('cutting an interior segment strands nobody (both endpoints keep an edge)', () => {
+    const base = makeDoc({
+      stations: fourStops(),
+      lines: [makeLine({ id: 'L1', stations: ['a', 'b', 'c', 'd'] })], // a|b, b|c, c|d
+    });
+    const cut = T.toggleEdgeOnLine(base, 'L1', 'b', 'c'); // split into a-b and c-d
+    expect(new Set(cut.lines.L1.edges)).toEqual(new Set(['a|b', 'c|d']));
+    expect(cut.lines.L1.stations).toEqual(['a', 'b', 'c', 'd']); // all retained
+  });
+
+  it('cutting the only segment of a two-stop line strands both stations', () => {
+    const base = makeDoc({
+      stations: fourStops().slice(0, 2),
+      lines: [makeLine({ id: 'L1', stations: ['a', 'b'] })], // a|b
+    });
+    const cut = T.toggleEdgeOnLine(base, 'L1', 'a', 'b');
+    expect(cut.lines.L1.edges).toEqual([]);
+    expect(cut.lines.L1.stations).toEqual([]);
+    expect(cut.stations.a.stops.some((s) => s.lineId === 'L1')).toBe(false);
+    expect(cut.stations.b.stops.some((s) => s.lineId === 'L1')).toBe(false);
+  });
+
+  it("cutting a branch's spur drops the spur tip but keeps the junction", () => {
+    const base = makeDoc({
+      stations: fourStops(),
+      lines: [makeLine({ id: 'L1', stations: ['a', 'b', 'c', 'd'], edges: ['a|b', 'b|c', 'b|d'] })],
+    });
+    const cut = T.toggleEdgeOnLine(base, 'L1', 'b', 'd'); // d was the spur tip
+    expect(new Set(cut.lines.L1.edges)).toEqual(new Set(['a|b', 'b|c']));
+    expect(new Set(cut.lines.L1.stations)).toEqual(new Set(['a', 'b', 'c']));
+    expect(cut.stations.d.stops.some((s) => s.lineId === 'L1')).toBe(false);
+  });
+
+  it('cascade-deletes a transfer anchored at a stranded stop', () => {
+    const base = makeDoc({
+      stations: fourStops().slice(0, 3),
+      lines: [makeLine({ id: 'L1', stations: ['a', 'b', 'c'] })], // a|b, b|c
+      transfers: [makeTransfer({ id: 'x', a: { stationId: 'a', lineId: 'L1' } })],
+    });
+    // Cutting a|b strands a; its (a, L1) stop is dropped, so the transfer goes.
+    const cut = T.toggleEdgeOnLine(base, 'L1', 'a', 'b');
+    expect(cut.transfers.x).toBeUndefined();
+  });
+
   it('removing an intermediate stop heals the gap (degree-2)', () => {
     const base = makeDoc({
       stations: fourStops().slice(0, 3),
