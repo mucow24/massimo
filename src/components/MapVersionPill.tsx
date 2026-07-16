@@ -1,4 +1,5 @@
 import { useLibraryPointer } from '../state/libraryPointer';
+import { useSaveStatus } from '../state/saveBaseline';
 
 /**
  * The live document's version, beside the map name: the handle you use to talk
@@ -10,15 +11,28 @@ import { useLibraryPointer } from '../state/libraryPointer';
  * no pill.
  *
  * It reports the version the document CAME FROM, and says nothing about whether
- * the canvas still matches it — editing v32 leaves this reading v32 until the
- * next save mints v33.
+ * the canvas still matches it — that is the dot's job. The dot renders whenever
+ * the doc is not clean, pill or no pill: red for unsaved changes, blue for a
+ * clean doc the library holds no copy of (a loaded file, a fresh New). It is
+ * the same predicate that greys out Save version, so the two never disagree.
  */
 export function MapVersionPill() {
   const version = useLibraryPointer((s) => s.version);
-  if (version === null) return null;
+  const status = useSaveStatus();
   return (
-    <span className="map-version-pill" title={`This map came from version ${version}`}>
-      v{version}
-    </span>
+    <>
+      {version !== null && (
+        <span className="map-version-pill" title={`This map came from version ${version}`}>
+          v{version}
+        </span>
+      )}
+      {status !== 'clean' && (
+        <span
+          className="map-save-dot"
+          data-status={status}
+          title={status === 'dirty' ? 'Unsaved changes' : 'Not saved to the library yet'}
+        />
+      )}
+    </>
   );
 }

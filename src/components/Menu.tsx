@@ -31,12 +31,29 @@ export function Menu({ label, children }: MenuProps) {
 interface MenuItemProps {
   onClick: () => void;
   children: ReactNode;
+  /** Greyed out and inert. Radix keeps a disabled item's activation from
+   *  firing AND from closing the menu — the standard "nothing happened"
+   *  reading. */
+  disabled?: boolean;
+  /** Optional accelerator hint (e.g. "Ctrl+S"), shown right-aligned and muted.
+   *  aria-hidden — it's a visual affordance, so the item's accessible name
+   *  stays the label alone. */
+  shortcut?: string;
 }
 
-export function MenuItem({ onClick, children }: MenuItemProps) {
+export function MenuItem({ onClick, children, disabled, shortcut }: MenuItemProps) {
   return (
-    <Dropdown.Item className="menu-item" onSelect={onClick}>
+    <Dropdown.Item
+      className={'menu-item' + (shortcut ? ' has-shortcut' : '')}
+      disabled={disabled}
+      onSelect={onClick}
+    >
       {children}
+      {shortcut && (
+        <span className="menu-shortcut" aria-hidden="true">
+          {shortcut}
+        </span>
+      )}
     </Dropdown.Item>
   );
 }

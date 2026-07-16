@@ -348,6 +348,25 @@ select option {
 .menu-panel .menu-item[data-highlighted] {
   background: var(--raised-hover);
 }
+/* Greyed-out item (e.g. Save version when the doc is already saved): muted,
+   no hover invitation. Radix marks it data-disabled (the item is a div, not
+   a button) and keeps its activation from firing or closing the menu. */
+.menu-panel .menu-item[data-disabled] {
+  color: var(--text-muted);
+  cursor: default;
+}
+/* An item carrying an accelerator hint (e.g. Save version ▸ Ctrl+S): lay the
+   label and the muted key on one row, key pinned to the right edge. */
+.menu-panel .menu-item.has-shortcut {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 24px;
+}
+.menu-shortcut {
+  color: var(--text-muted);
+  font-size: 0.85em;
+}
 .menu-separator {
   height: 1px;
   background: var(--border-soft);
@@ -1225,6 +1244,27 @@ button.field-select {
 button.field-select:hover:not(:disabled) {
   border-color: var(--border-strong);
 }
+/* ── Selection popover (multi-select) ──
+   Rides the bullet-popover shell: a count summary, the Lock all / Unlock all
+   pair, and Delete all. Unlike the single-item lock toggle these buttons can
+   be disabled (each is a no-op at one end of the mixed-state range), so they
+   need the disabled look the shared lock-btn recipe never had. */
+.selection-popover .selection-summary {
+  font-weight: 700;
+  color: var(--text);
+}
+.selection-popover .lock-btn {
+  flex: 1;
+  justify-content: center;
+}
+.selection-popover .lock-btn:disabled,
+.selection-popover .delete-btn:disabled {
+  opacity: 0.45;
+  cursor: default;
+}
+.selection-popover .lock-btn:disabled:hover {
+  background: var(--control-bg);
+}
 /* Slider + spinbutton rows are NumericFieldRow in every item popover. The
    global .options-popover-spin already sets the 56px width that fits a
    one-decimal value plus the overlaid native stepper arrows; keep the item
@@ -1428,6 +1468,22 @@ button.field-select {
   line-height: 1.5;
   cursor: default;
   user-select: none;
+}
+/* The save-status dot beside the pill (title carries the words): red = the doc
+   differs from its last save/load; blue = clean but the library holds no copy
+   (a loaded file, a fresh map). Absent entirely when the canvas matches a
+   library version — same predicate that greys out Save version. */
+.map-save-dot {
+  flex: none;
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+}
+.map-save-dot[data-status='dirty'] {
+  background: var(--danger);
+}
+.map-save-dot[data-status='unsaved'] {
+  background: var(--accent);
 }
 .toolbar input.map-name-input {
   font-family: inherit;

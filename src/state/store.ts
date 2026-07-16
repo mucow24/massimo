@@ -138,7 +138,12 @@ export function pickDocSnapshot(s: DocSnapshot): DocSnapshot {
   return out as DocSnapshot;
 }
 
-function docSnapshotsEqual(a: DocSnapshot, b: DocSnapshot): boolean {
+// Reference-equality per tracked field. Sound because transforms allocate new
+// objects only when something actually changed — the same invariant zundo's
+// `equality` guard and the history-group commit rely on. Exported for the
+// save-status signal (saveBaseline.ts), which compares the live doc against
+// the snapshot captured at the last save/load.
+export function docSnapshotsEqual(a: DocSnapshot, b: DocSnapshot): boolean {
   for (const k of DOC_FIELDS) {
     if (a[k] !== b[k]) return false;
   }
@@ -424,6 +429,8 @@ interface DocState extends MapDoc {
   setDotSize: (stationId: StationId, lineId: LineId, size: number) => void;
   setStationWaypoint: (stationId: StationId, isWaypoint: boolean) => void;
   setStationLocked: (stationId: StationId, locked: boolean) => void;
+  // Bulk lock/unlock across every lockable kind — ONE undo entry.
+  setItemsLocked: (ids: T.LockableItemIds, locked: boolean) => void;
   setStationEditorHeight: (stationId: StationId, height: number) => void;
   redistributeBetween: (
     startId: StationId,
@@ -635,6 +642,7 @@ export const useDoc = create<DocState>()(
           set((s) => T.setStationWaypoint(s, stationId, isWaypoint)),
         setStationLocked: (stationId, locked) =>
           set((s) => T.setStationLocked(s, stationId, locked)),
+        setItemsLocked: (ids, locked) => set((s) => T.setItemsLocked(s, ids, locked)),
         setStationEditorHeight: (stationId, height) =>
           set((s) => T.setStationEditorHeight(s, stationId, height)),
         redistributeBetween: (startId, endId, mode = 'arc-bends', gridMode = 'off') =>

@@ -33,15 +33,28 @@ export function isHistoryGrouping(): boolean {
   return !useDoc.temporal.getState().isTracking;
 }
 
+// zundo applies undo/redo through the raw `set` it captured, which sits ABOVE
+// persist in the temporal(persist(...)) chain (store.ts) — so the reverted doc
+// never reaches persist's storage writer, and a refresh would resurrect the
+// undone edit from localStorage. Nudge persist to flush by writing an empty
+// partial through useDoc.setState, which persist's middleware wraps with a
+// storage write. It is a true no-op to history: nothing changes, so temporal's
+// `equality` (docSnapshotsEqual) skips both the entry AND the redo-stack wipe.
+function flushPersist(): void {
+  useDoc.setState({});
+}
+
 // After moving through history, prune the (separate) selection store of any
 // ids the restored doc no longer contains — otherwise undoing the deletion of a
 // still-selected item leaves a dangling selection id behind.
 export function undo(): void {
   useDoc.temporal.getState().undo();
+  flushPersist();
   useSelection.getState().reconcileWithDoc(useDoc.getState());
 }
 export function redo(): void {
   useDoc.temporal.getState().redo();
+  flushPersist();
   useSelection.getState().reconcileWithDoc(useDoc.getState());
 }
 

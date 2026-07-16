@@ -32,6 +32,11 @@ import {
   type LayoutSource,
 } from './components/inspector/stopGridDrag';
 import { dispatchMirrored, fanOutMirrored } from './state/mirrorDispatch';
+import {
+  deleteUnlockedSelection,
+  itemIdCount,
+  unlockedSelectedItemIds,
+} from './state/selectionOps';
 import { isHistoryGrouping, redo, undo } from './state/history';
 import { decideDeleteKey } from './components/canvas/appendGestures';
 
@@ -57,34 +62,6 @@ export function cancelModeOnContextMenu(e: globalThis.MouseEvent): void {
   e.stopPropagation();
   cancelAppendMode();
   sel.setUiMode({ kind: 'idle' });
-}
-
-// Selected items minus locked ones — locked items resist both Delete and
-// arrow-nudge, so both keyboard paths filter the same way.
-function unlockedSelectedPolygonIds(): string[] {
-  const doc = useDoc.getState();
-  return useSelection.getState().selectedPolygonIds.filter((id) => !doc.polygons[id]?.locked);
-}
-function unlockedSelectedRouteBulletIds(): string[] {
-  const doc = useDoc.getState();
-  return useSelection
-    .getState()
-    .selectedRouteBulletIds.filter((id) => !doc.routeBullets[id]?.locked);
-}
-function unlockedSelectedLabelIds(): string[] {
-  const doc = useDoc.getState();
-  return useSelection.getState().selectedLabelIds.filter((id) => !doc.textLabels[id]?.locked);
-}
-function unlockedSelectedSvgImageIds(): string[] {
-  const doc = useDoc.getState();
-  return useSelection.getState().selectedSvgImageIds.filter((id) => !doc.svgImages[id]?.locked);
-}
-
-// Selected stations minus locked ones — locked stations resist Delete and
-// arrow-nudge too, mirroring locked polygons.
-function unlockedSelectedStationIds() {
-  const doc = useDoc.getState();
-  return useSelection.getState().selectedStationIds.filter((id) => !doc.stations[id]?.locked);
 }
 
 // Build the ordered clipboard payloads (bullet → label → polygon → image) for a
@@ -285,34 +262,10 @@ export default function App() {
         // Mixed station + bullet + label + polygon multi-selection takes
         // priority over the single-element delete paths below; one history
         // entry covers every removed item so a single Ctrl-Z reverts the lot.
-        // Locked stations, bullets, labels, and polygons are all protected from deletion.
-        const stationIds = unlockedSelectedStationIds();
-        const bulletIds = unlockedSelectedRouteBulletIds();
-        const labelIds = unlockedSelectedLabelIds();
-        const polygonIds = unlockedSelectedPolygonIds();
-        const svgImageIds = unlockedSelectedSvgImageIds();
-        if (
-          stationIds.length +
-            bulletIds.length +
-            labelIds.length +
-            polygonIds.length +
-            svgImageIds.length >
-          0
-        ) {
+        // Locked items are protected from deletion (state/selectionOps.ts —
+        // shared with the selection popover's "Delete all").
+        if (deleteUnlockedSelection()) {
           e.preventDefault();
-          sel.selectStation(null);
-          sel.selectRouteBullet(null);
-          sel.selectLabel(null);
-          sel.selectPolygon(null);
-          sel.selectSvgImage(null);
-          const group = beginHistoryGroup();
-          const doc = useDoc.getState();
-          for (const id of stationIds) doc.deleteStation(id);
-          for (const id of bulletIds) doc.deleteRouteBullet(id);
-          for (const id of labelIds) doc.deleteTextLabel(id);
-          for (const id of polygonIds) doc.deletePolygon(id);
-          for (const id of svgImageIds) doc.deleteSvgImage(id);
-          group.commit();
           return;
         }
         const transferId = sel.selectedTransferId;
@@ -429,35 +382,24 @@ export default function App() {
           return;
         }
         // Locked stations, bullets, labels, and polygons don't move.
-        const stationIds = unlockedSelectedStationIds();
-        const bulletIds = unlockedSelectedRouteBulletIds();
-        const labelIds = unlockedSelectedLabelIds();
-        const polygonIds = unlockedSelectedPolygonIds();
-        const svgImageIds = unlockedSelectedSvgImageIds();
-        if (
-          stationIds.length +
-            bulletIds.length +
-            labelIds.length +
-            polygonIds.length +
-            svgImageIds.length >
-          0
-        ) {
+        const ids = unlockedSelectedItemIds();
+        if (itemIdCount(ids) > 0) {
           e.preventDefault();
           const group = beginHistoryGroup();
-          for (const id of stationIds) {
+          for (const id of ids.stations) {
             const s = doc.stations[id];
             if (s) doc.moveStation(id, s.x + dx, s.y + dy);
           }
-          for (const id of bulletIds) {
+          for (const id of ids.bullets) {
             const b = doc.routeBullets[id];
             if (b) doc.moveRouteBullet(id, b.x + dx, b.y + dy);
           }
-          for (const id of labelIds) {
+          for (const id of ids.labels) {
             const l = doc.textLabels[id];
             if (l) doc.moveTextLabel(id, l.x + dx, l.y + dy);
           }
-          for (const id of polygonIds) doc.movePolygon(id, dx, dy);
-          for (const id of svgImageIds) {
+          for (const id of ids.polygons) doc.movePolygon(id, dx, dy);
+          for (const id of ids.svgImages) {
             const im = doc.svgImages[id];
             if (im) doc.moveSvgImage(id, im.x + dx, im.y + dy);
           }
@@ -555,10 +497,12 @@ export default function App() {
       // (like copy/duplicate) cut ignores them. When nothing is cuttable we fall
       // through WITHOUT preventDefault so a native cut still works.
       if (mod && !inForm && (e.key === 'x' || e.key === 'X')) {
-        const bulletIds = unlockedSelectedRouteBulletIds();
-        const labelIds = unlockedSelectedLabelIds();
-        const polygonIds = unlockedSelectedPolygonIds();
-        const svgImageIds = unlockedSelectedSvgImageIds();
+        const {
+          bullets: bulletIds,
+          labels: labelIds,
+          polygons: polygonIds,
+          svgImages: svgImageIds,
+        } = unlockedSelectedItemIds();
         const doc = useDoc.getState();
         const items = collectClipItems(doc, {
           bullets: bulletIds,

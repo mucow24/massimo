@@ -1,6 +1,6 @@
 # Massimo — Architecture
 
-**Up to date as of commit `b5d0c8e` (2026-07-16) — verified against the live source (code-health pass covering the changes since `ff872fd`: the shared background layer stack (polygons and svg images interleaved under one `backgroundOrder`), the svg/raster opacity slider, layer move-to-top/to-bottom, the hide-network canvas toggle, in-app map-library revisions replacing the `map.json` download, day/night persisted on the doc so night maps reopen dark, and per-version numbers/names/stars).**
+**Up to date as of commit `b5d0c8e` (2026-07-16) — verified against the live source (code-health pass covering the changes since `ff872fd`: the shared background layer stack (polygons and svg images interleaved under one `backgroundOrder`), the svg/raster opacity slider, layer move-to-top/to-bottom, the hide-network canvas toggle, in-app map-library revisions replacing the `map.json` download, day/night persisted on the doc so night maps reopen dark, and per-version numbers/names/stars — plus the tri-state save signal: the clean/dirty/unsaved dot beside the version pill, Save version greyed out when clean, saveBaseline.ts).**
 
 > A fast-bootstrap reference for understanding the codebase: the ins, outs, gotchas, and
 > caveats. Written for an AI assistant (or new contributor) who needs the full picture
@@ -152,6 +152,8 @@ src/
     customPalettes.ts           # useCustomPalettes: imported palettes (global localStorage)
     mapLibrary.ts               # saved maps + versions in IndexedDB (no store; opaque JSON)
     libraryPointer.ts           # useLibraryPointer: which map + version the live doc came from
+    saveBaseline.ts             # the save baseline + tri-state clean/dirty/unsaved signal
+                                #   (gates Save version + the toolbar dot; hash survives refresh)
     snapPrefs.ts                # useSnapPrefs: snap toggles (+ v0→v1 migration)
     labelEditorPrefs.ts         # useLabelEditorPrefs: text-label editor UI prefs (wrapText)
     stationNames.ts             # random station-name word lists
@@ -162,7 +164,7 @@ src/
     selectionStyle.ts           # shared selection stroke/dash/wash constants (screen-px; ÷ zoom)
     Toolbar.tsx Sidebar.tsx Menu.tsx  # chrome
     MapLibraryDialog.tsx        # the library manager (maps | versions)
-    MapVersionPill.tsx          # the live doc's version, beside the map name
+    MapVersionPill.tsx          # the live doc's version + save-status dot, beside the map name
     *Popover.tsx                # on-canvas item editors
     canvas/                     # interaction layer: drag/placement/viewport hooks + overlay layers
     inspector/                  # LineInspector (sidebar; identity + line-style fields — stop/topology
@@ -370,7 +372,11 @@ kind. See [styles.ts](src/model/styles.ts).
   **ghosted** (`data-*-adornments="inactive"`: 0.4 opacity, pointer-events none) so the
   selection is visible without inviting edits. Polygon, RouteBullet, TextLabel and SvgImage
   share the same canvas protections, but their popovers **disable every editing control
-  except the lock toggle** while locked.
+  except the lock toggle** while locked. **Bulk lock/unlock**: a multi-selection (≥2 items,
+  any mix of the five kinds) mounts one shared `SelectionPopover` with Lock all / Unlock all /
+  Delete all (`setItemsLocked` — one undo entry; delete shares the Delete key's
+  unlocked-subset semantics via `state/selectionOps.ts`), so **Alt+marquee → Unlock all** is
+  the mass-unlock path (and Lock all the mass-lock).
 
 **`StopCell`** — one line's stop on a station. `lineId, row, col` (station-local grid;
 **`row`/`col` are floats now**, since diagonal moves use ±√2/2 — equality uses `CELL_EPS=1e-4`),
@@ -736,17 +742,62 @@ via Canvas → Save version and Canvas → Load → From library…
 - **The pill** ([MapVersionPill.tsx](src/components/MapVersionPill.tsx)) renders the pointer's
   `version` as a grey `.map-version-pill` beside the map name — and **nothing at all** when it is
   null: not "v0", not an empty pill. A pill showing a number the library cannot resolve is worse
-  than no pill.
+  than no pill. Beside it, the same component renders the **save-status dot** (below) whenever the
+  doc is not clean — pill or no pill.
+
+### The save baseline + tri-state status ([saveBaseline.ts](src/state/saveBaseline.ts))
+
+`useSaveBaseline` holds what the live doc would have to look like to count as saved: the **bytes**
+last written to the library or adopted from a load (`baselineJson` — drives the auto-save's exact
+dedup gate), the **doc-field references** captured at that same moment (`baselineSnap` — drives the
+reactive signal), and `backed` (do those bytes exist as a library version, or did they merely come
+from a load?). `saveStatusOf` folds them into a tri-state:
+
+- **`clean`** — references equal the baseline and `backed`: the canvas byte-for-byte matches a
+  library version. **Save version is greyed out** (a save could only mint a duplicate) and no dot
+  shows.
+- **`dirty`** — references differ, or no baseline at all (which errs toward "save me"). Red dot
+  (`--danger`), Save armed.
+- **`unsaved`** — references equal the baseline but not `backed`: a loaded JSON file or a fresh
+  New. Blue dot (`--accent`), Save armed — saving **imports** it as a new map (or mints an empty
+  v1; saving an empty doc is allowed). This is the state that keeps load-file → save-to-library
+  alive under the grey-out.
+
+Load-bearing details:
+
+- **The reference compare is undo-aware for free.** zundo snapshots share field references and
+  undo restores them verbatim, so 3 edits + 3 undos compares equal again — the same
+  transforms-allocate-only-on-change invariant the undo stack itself rests on. ~20 reference
+  compares per doc change; no serialization on the drag path. Primitive `DOC_FIELDS` (name,
+  darkMode…) compare by value, so a toggle-on/toggle-off round-trip reads clean without undo.
+- **`markSaved`/`markAdopted` take `(json, snap)` captured together, BEFORE any await** — an edit
+  landing while a save is in flight is not vouched for, and the doc stays dirty.
+- **The baseline survives a refresh by hash.** `markSaved`/`markAdopted` persist
+  `{hash(json), backed}` under `localStorage['massimo-save-baseline']`; on boot the rehydrated doc
+  is re-serialized and compared (`bootBaselineState`). Match → baseline restored (blue survives a
+  refresh too); mismatch → unset, which reads dirty — the erring direction that keeps data. The
+  bytes themselves are not persisted (svg images carry data URIs; doubling the doc's footprint).
+  With nothing recorded at all, an **empty** doc adopts itself as unsaved (a first boot shows the
+  same blue a virgin New does), a non-empty one errs dirty.
+- **`markUnbacked` (a delete under the live doc) nulls the baseline** rather than keeping it with
+  `backed: false` — deliberately reading **dirty, not blue**: those bytes now exist nowhere but
+  the canvas, and the auto-save's byte gate must not skip them (see below).
+- **Undo-to-clean survives a refresh** because `undo`/`redo` flush persist (see _Undo/redo_
+  below): the reverted doc reaches `localStorage`, so on boot its re-serialized hash still matches
+  the saved baseline and the dot stays quiet. Without the flush, edit → undo → refresh would
+  resurrect the edit from `localStorage` and read dirty.
 
 ### Document switches: `adoptParsedDoc` + `autoSaveCurrent` ([Toolbar.tsx](src/components/Toolbar.tsx))
 
 Every path that replaces the live document — **New**, Load → JSON…, Load → From library — goes
 through both, so none can drift:
 
-- `adoptParsedDoc(doc)`: selection resets → `loadDoc(doc)` → `clearHistory()` (which cancels any
-  open history group _and_ wipes both stacks — undo must not splice two different documents,
-  deliberately more than a bare `temporal.clear()`) → `fitCameraToDoc(doc)` falling back to the
-  origin whenever the fit declines → record the doc's bytes as the dedup baseline.
+- `adoptParsedDoc(doc, backed)`: selection resets → `loadDoc(doc)` → `clearHistory()` (which
+  cancels any open history group _and_ wipes both stacks — undo must not splice two different
+  documents, deliberately more than a bare `temporal.clear()`) → `fitCameraToDoc(doc)` falling
+  back to the origin whenever the fit declines → anchor the save baseline to the **post-load store
+  state** (`markSaved` when the bytes came from the library, `markAdopted` for a file or New — the
+  difference between starting clean and starting unsaved-but-armed).
 - `autoSaveCurrent()`: writes an `'auto'` version first. **Nothing that replaces the document may
   lose it.** It **throws** on storage failure and every caller aborts its switch — the auto-save is
   the whole backstop for New, which is not undoable.
@@ -755,18 +806,19 @@ through both, so none can drift:
     substitute `computeContentBounds`: that is a *camera hull* which reads 5 of them and omits
     lines deliberately, so a map whose work is entirely lines would read as empty, write nothing,
     and be wiped. Three clicks away (Add line ×2, Esc).
-  - The dedup gate compares against a **retained baseline** (the bytes last saved or adopted), not
-    a DB read: id-keyed dedup is structurally inapplicable on the file-load path, which nulls the
-    id. Not a dirty flag — a flag reads *clean* after a refresh, which loses data; a null baseline
-    reads dirty, costing at most one redundant version.
-  - **A delete in the library must null that baseline** (`onLiveDocUnbacked`), or the gate vouches
-    for bytes that no longer exist and New — which is not undoable and clears history — wipes a
-    document that is then in no file, no library row and no undo stack. It fires on **two** paths:
-    deleting the live doc's map, and deleting the one *version* it came from (where the pointer
-    deliberately does not move at all, so nothing else marks the loss). It is a signal, not an
-    inference: a cleared pointer looks identical to opening a JSON file, and *that* document is
-    safe on disk. Pinned by an e2e test, because the baseline is Toolbar state and the delete
-    happens in the dialog — only the real pair over real IndexedDB proves they agree.
+  - The dedup gate compares against the **retained baseline bytes** (`baselineJson`, saveBaseline.ts),
+    not a DB read: id-keyed dedup is structurally inapplicable on the file-load path, which nulls
+    the id. The byte compare deliberately ignores `backed` — an unedited loaded *file* is skipped
+    ("browsing files deposits nothing"; the doc is safe on disk) even though it reads `unsaved`.
+  - **A delete in the library nulls that baseline** (`markUnbacked`, called by the dialog), or the
+    gate vouches for bytes that no longer exist and New — which is not undoable and clears
+    history — wipes a document that is then in no file, no library row and no undo stack. It fires
+    on **two** paths: deleting the live doc's map, and deleting the one *version* it came from
+    (where the pointer deliberately does not move at all, so nothing else marks the loss). Nulling
+    is a signal, not an inference: a cleared pointer looks identical to opening a JSON file, and
+    *that* document is safe on disk. Pinned by an e2e test, because the delete happens in the
+    dialog and the auto-save in the Toolbar — only the real pair over real IndexedDB proves they
+    agree.
   - `onOpenVersion` reads and parses the payload **before** the auto-save, as the file-load path
     does. The auto-save writes an `'auto'` under the same map and prunes in the same transaction,
     and a well-used map sits at *exactly* `AUTO_VERSION_LIMIT` prunable autos — so the 51st prunes
@@ -776,8 +828,9 @@ through both, so none can drift:
     and the map it writes keeps its history and stays reachable from the dialog, which is the whole
     job. Each caller then points at whatever is coming *in*: **New** → `(newMapId(), null)` (an id
     to save under, nothing saved yet), Load → JSON… → `(null, null)`, Load → From library → the
-    opened row's `(mapId, version)`. **Save version** is not a switch, and sets
-    `(id, saved.version)` itself.
+    opened row's `(mapId, version)`. **Save version** is not a switch: it sets
+    `(id, saved.version)` itself and re-anchors the baseline (`markSaved`) — and it is **greyed
+    out while the doc is `clean`**, so an unchanged doc can never mint a duplicate version.
 - **Clear** is the exception: it stays in the *same* document, so it neither auto-saves nor clears
   history (Ctrl+Z is the backstop), and `clearAll` preserves name/styles/styleDefaults/
   activePalettes/seamEdges.
@@ -825,6 +878,12 @@ two documents together).
 **`undo`/`redo` also call `useSelection.getState().reconcileWithDoc(...)`** — the selection store
 is separate and untouched by zundo, so after an undo restores the doc, dangling selection ids
 must be pruned.
+**`undo`/`redo` also flush persist** with an empty-partial `useDoc.setState({})` right after the
+zundo call. zundo applies undo/redo through the raw `set` it captured — which sits **above**
+`persist` in the `temporal(persist(...))` chain — so the reverted doc never reaches persist's
+storage writer on its own, and `localStorage` would lag the canvas until the next ordinary edit
+(edit → undo → refresh would resurrect the edit). The empty-partial write changes nothing, so
+temporal's `equality` (`docSnapshotsEqual`) skips both the history entry and the redo-stack wipe.
 
 **Grouped edits — `beginHistoryGroup()`** ([store.ts](src/state/store.ts)). A drag is many
 `moveStation` calls; a text edit is many `onChange`s; a slider drag is many ticks. The pattern:
@@ -1387,8 +1446,11 @@ popover/handles). Cursor-following ghost previews (`*PlacingPreview`, all `opaci
 
 `ItemPopovers` mounts the single popover for the sole selection — including the station editor
 (see UI chrome) and the transfer popover (whose selection is the single-id
-`selectedTransferId` primary outside `soleSelection`) — and reprojects through `useLiveView` so
-it tracks the canvas during pan/zoom.
+`selectedTransferId` primary outside `soleSelection`) — plus the one shared `SelectionPopover`
+when **≥2 items** are selected across the five lists (idle only): a count summary + Lock all /
+Unlock all / Delete all over the whole group, spawned beside the members' **union AABB** and
+keyed by membership so it re-places when the selection changes. All of them reproject through
+`useLiveView` so they track the canvas during pan/zoom.
 `useDraggablePopover` **freezes the popover's spawn position as one world point** (item
 projection + 14px gap, clamped into the host, then inverted through `screenToWorldPoint`) and
 renders `projectToScreen(that point + drag)` with **nothing added after projection** — the
@@ -1427,7 +1489,8 @@ band routing or the marker sort. Pinned by `MapCanvas.stationsSig.test.tsx`.
 
 ## UI chrome
 
-- **[Toolbar.tsx](src/components/Toolbar.tsx)** — Canvas menu (New / Save version /
+- **[Toolbar.tsx](src/components/Toolbar.tsx)** — Canvas menu (New / Save version — greyed out
+  while the doc is `clean`, see saveBaseline.ts /
   Load → {JSON…, From library…} / Export → {PNG, SVG, PDF, JSON} / Clear), Add-item menu
   (toggles `uiMode`; includes **Image / SVG…** — imports `.svg`, `.png`, or `.jpg/.jpeg` via
   `svgImport.ts` into an `SvgImage`), tool buttons (arrow/hand), grid-size + grid-visible +

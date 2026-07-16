@@ -61,6 +61,7 @@ import { useViewportStore } from '../state/viewportStore';
 import { DEFAULT_DOC } from '../model/transforms';
 import { pickDocSnapshot } from '../state/store';
 import { serialize } from '../model/serialize';
+import { markAdopted, markSaved, saveStatusOf, useSaveBaseline } from '../state/saveBaseline';
 import { historyDepth } from '../state/history';
 import { computeContentBounds } from '../geometry/contentBounds';
 import { fitViewport } from './canvas/viewportMath';
@@ -71,6 +72,9 @@ beforeEach(() => {
   localStorage.clear();
   libState.minted = 0;
   useLibraryPointer.setState({ mapId: null, version: null });
+  // Module state, so it outlives component mounts: without a reset, one test's
+  // save vouches for the next test's doc.
+  useSaveBaseline.setState({ baselineSnap: null, baselineJson: null, backed: false });
   useDoc.setState({ ...useDoc.getState(), ...DEFAULT_DOC });
   useSelection.setState({
     ...useSelection.getState(),
@@ -115,6 +119,16 @@ beforeEach(() => {
  */
 const mountableSvg = () =>
   document.createElementNS('http://www.w3.org/2000/svg', 'svg') as SVGSVGElement;
+
+/** The live doc's tri-state save status, read the way the toolbar reads it. */
+const statusNow = () => saveStatusOf(useDoc.getState(), useSaveBaseline.getState());
+
+/** Anchor the baseline to the CURRENT doc, the way every save/adopt site does:
+ *  json and snap captured together from one state. */
+const anchor = (mark: typeof markSaved) => {
+  const snap = pickDocSnapshot(useDoc.getState());
+  mark(serialize(snap), snap);
+};
 
 describe('Toolbar — tool + view toggles', () => {
   it('switches to hand mode and back to arrow', async () => {
@@ -338,6 +352,9 @@ describe('Toolbar — sidebar toggle', () => {
 
 describe('Toolbar — map name field', () => {
   it('renders the editable map name flanked by dividers', () => {
+    // Clean, so no save-status dot slots in after the name — the dot's own
+    // placement is MapVersionPill.test.tsx's job.
+    anchor(markSaved);
     render(<Toolbar />);
     const field = screen.getByRole('button', { name: 'Untitled map' });
     expect(field.previousElementSibling).toHaveClass('tool-group-divider');
@@ -537,6 +554,13 @@ describe('Toolbar — Load', () => {
     expect(saveVersion).toHaveBeenCalledTimes(1);
   });
 
+  it('a loaded file reads unsaved — clean bytes, but the library has no copy', async () => {
+    render(<Toolbar />);
+    fireEvent.change(fileInput(), { target: { files: [validFile()] } });
+    await waitFor(() => expect(useDoc.getState().stations.fromfile).toBeDefined());
+    expect(statusNow()).toBe('unsaved');
+  });
+
   it('writes no auto-save for a file that fails to parse', async () => {
     seedOutgoing();
     render(<Toolbar />);
@@ -635,6 +659,17 @@ describe('Toolbar — Load from library', () => {
     // Unlike a file, a version IS a library map: keep working in its history,
     // and show the version the document actually came from.
     expect(useLibraryPointer.getState()).toMatchObject({ mapId: 'm1', version: 3 });
+  });
+
+  it('a version opened from the library reads clean — it IS the library copy', async () => {
+    const user = userEvent.setup();
+    seedLibraryRow();
+    vi.mocked(getPayload).mockResolvedValue(libraryPayload());
+    seedOutgoing();
+    render(<Toolbar />);
+    await clickOpen(user);
+    await waitFor(() => expect(useDoc.getState().stations.fromlib).toBeDefined());
+    expect(statusNow()).toBe('clean');
   });
 
   /**
@@ -795,6 +830,8 @@ describe('Toolbar — map library', () => {
     render(<Toolbar />);
     await saveToLibrary(user);
     await waitFor(() => expect(saveVersion).toHaveBeenCalledTimes(1));
+    // A clean doc greys Save version out, so re-arm it with an edit first.
+    useDoc.getState().setDocName('Edited between saves');
     await saveToLibrary(user);
     await waitFor(() => expect(saveVersion).toHaveBeenCalledTimes(2));
     const ids = vi.mocked(saveVersion).mock.calls.map((c) => c[0]);
@@ -896,6 +933,179 @@ describe('Toolbar — map library', () => {
     await clickNew(user);
     await waitFor(() => expect(saveVersion).toHaveBeenCalledTimes(2));
     expect(vi.mocked(saveVersion).mock.calls[1][3]).toBe('auto');
+  });
+});
+
+/**
+ * The save gate is the menu item's enabled state: Save version is greyed out
+ * exactly when the doc byte-for-byte matches a library version (clean), and
+ * armed when it is dirty (edits) or unsaved (clean bytes the library holds no
+ * copy of — a loaded file, a fresh New). The dot beside the version pill is
+ * the same predicate, so the two can never disagree.
+ */
+describe('Toolbar — save gating (clean / dirty / unsaved)', () => {
+  const seedMap = () =>
+    useDoc.setState({
+      ...useDoc.getState(),
+      name: 'Gated',
+      lines: { L1: makeLine({ id: 'L1' as LineId, stations: ['S'] as StationId[] }) },
+      lineOrder: ['L1' as LineId],
+      stations: { S: stationWithStop('S' as StationId, 'L1' as LineId, { x: 0, y: 0 }) },
+    });
+
+  const openCanvasMenu = async (user: ReturnType<typeof userEvent.setup>) => {
+    await user.click(screen.getByRole('button', { name: 'Canvas' }));
+  };
+  const saveItem = () => screen.getByRole('menuitem', { name: 'Save version' });
+
+  it('greys out Save version when the doc matches its library baseline', async () => {
+    const user = userEvent.setup();
+    seedMap();
+    anchor(markSaved);
+    render(<Toolbar />);
+    await openCanvasMenu(user);
+    expect(saveItem()).toHaveAttribute('aria-disabled', 'true');
+  });
+
+  it('arms Save version on an edit; saving greys it out again', async () => {
+    const user = userEvent.setup();
+    seedMap();
+    anchor(markSaved);
+    useDoc.getState().addStation(200, 0);
+    render(<Toolbar />);
+    await openCanvasMenu(user);
+    expect(saveItem()).not.toHaveAttribute('aria-disabled');
+    await user.click(saveItem());
+    await waitFor(() => expect(saveVersion).toHaveBeenCalledTimes(1));
+    expect(statusNow()).toBe('clean');
+    await openCanvasMenu(user);
+    expect(saveItem()).toHaveAttribute('aria-disabled', 'true');
+  });
+
+  it('arms Save version for a clean-but-unsaved doc, and saving imports it', async () => {
+    const user = userEvent.setup();
+    seedMap();
+    anchor(markAdopted); // a loaded file: clean bytes, no library copy
+    render(<Toolbar />);
+    await openCanvasMenu(user);
+    expect(saveItem()).not.toHaveAttribute('aria-disabled');
+    await user.click(saveItem());
+    await waitFor(() => expect(saveVersion).toHaveBeenCalledTimes(1));
+    expect(vi.mocked(saveVersion).mock.calls[0][3]).toBe('user');
+    expect(statusNow()).toBe('clean');
+  });
+
+  it('an edit that lands during an in-flight save leaves the doc dirty', async () => {
+    const user = userEvent.setup();
+    seedMap();
+    let resolveSave: (v: { id: number; version: number }) => void = () => {};
+    vi.mocked(saveVersion).mockImplementation(
+      () =>
+        new Promise((res) => {
+          resolveSave = res;
+        }),
+    );
+    render(<Toolbar />);
+    await openCanvasMenu(user);
+    await user.click(saveItem());
+    await waitFor(() => expect(saveVersion).toHaveBeenCalledTimes(1));
+    useDoc.getState().addStation(500, 500); // lands while the save is in flight
+    resolveSave({ id: 1, version: 1 });
+    await screen.findByRole('alert'); // the save confirmation
+    // The save vouched for the bytes it captured, not for the mid-flight edit.
+    expect(statusNow()).toBe('dirty');
+  });
+
+  it('New leaves a fresh map unsaved — armed to save, but not "changed"', async () => {
+    const user = userEvent.setup();
+    render(<Toolbar />);
+    await openCanvasMenu(user);
+    await user.click(screen.getByRole('menuitem', { name: 'New' }));
+    await waitFor(() => expect(statusNow()).toBe('unsaved'));
+  });
+});
+
+/**
+ * Ctrl/Cmd+S is a keyboard accelerator for Canvas ▸ Save version — it writes a
+ * library version, NOT a JSON download, and never lets the browser's Save-page
+ * dialog open. It honours the same clean-state gate the menu item's disabled
+ * state enforces.
+ */
+describe('Toolbar — Ctrl+S saves a version', () => {
+  const seedMap = (name = 'My Map') =>
+    useDoc.setState({
+      ...useDoc.getState(),
+      name,
+      lines: { L1: makeLine({ id: 'L1' as LineId, stations: ['S'] as StationId[] }) },
+      lineOrder: ['L1' as LineId],
+      stations: { S: stationWithStop('S' as StationId, 'L1' as LineId, { x: 0, y: 0 }) },
+    });
+
+  it('writes a user version to the library — never a JSON download — and swallows the dialog', async () => {
+    seedMap('Canal Line'); // no baseline anchored → dirty → armed
+    vi.mocked(getCanvasSvg).mockReturnValue(mountableSvg());
+    render(<Toolbar />);
+
+    // fireEvent returns dispatchEvent's result: false when a handler called
+    // preventDefault, which is how the browser Save-page dialog is suppressed.
+    const notPrevented = fireEvent.keyDown(window, { key: 's', ctrlKey: true });
+    expect(notPrevented).toBe(false);
+
+    await waitFor(() => expect(saveVersion).toHaveBeenCalledTimes(1));
+    expect(vi.mocked(saveVersion).mock.calls[0][1]).toBe('Canal Line');
+    expect(vi.mocked(saveVersion).mock.calls[0][3]).toBe('user');
+    // It saved to the library, not to a downloaded file.
+    expect(downloadBlob).not.toHaveBeenCalled();
+  });
+
+  it('also fires on Cmd+S (metaKey), for mac', async () => {
+    seedMap();
+    render(<Toolbar />);
+    fireEvent.keyDown(window, { key: 's', metaKey: true });
+    await waitFor(() => expect(saveVersion).toHaveBeenCalledTimes(1));
+  });
+
+  it('is a no-op on a clean doc (mirrors the greyed-out menu item) but still suppresses the dialog', () => {
+    seedMap();
+    anchor(markSaved); // clean: byte-for-byte a library version
+    render(<Toolbar />);
+    const notPrevented = fireEvent.keyDown(window, { key: 's', ctrlKey: true });
+    expect(notPrevented).toBe(false); // dialog still suppressed...
+    expect(saveVersion).not.toHaveBeenCalled(); // ...but nothing minted
+  });
+
+  it('commits an in-progress rename before serializing (blur-first)', async () => {
+    const user = userEvent.setup();
+    seedMap('Original');
+    anchor(markSaved); // clean, so ONLY the rename can arm the save
+    vi.mocked(getCanvasSvg).mockReturnValue(mountableSvg());
+    render(<Toolbar />);
+
+    await user.click(screen.getByRole('button', { name: 'Original' }));
+    const input = screen.getByRole('textbox', { name: 'Map name' });
+    await user.clear(input);
+    await user.type(input, 'Renamed');
+    // Uncommitted: the store still holds the old name, so the doc reads clean.
+    expect(useDoc.getState().name).toBe('Original');
+    expect(statusNow()).toBe('clean');
+
+    fireEvent.keyDown(window, { key: 's', ctrlKey: true });
+
+    // Blur committed the rename, flipping the doc dirty, so the save ran and
+    // captured the NEW name rather than the stale one.
+    await waitFor(() => expect(saveVersion).toHaveBeenCalledTimes(1));
+    expect(useDoc.getState().name).toBe('Renamed');
+    expect(vi.mocked(saveVersion).mock.calls[0][1]).toBe('Renamed');
+  });
+
+  it('the Save version menu item advertises its Ctrl+S accelerator (name stays clean)', async () => {
+    const user = userEvent.setup();
+    seedMap();
+    render(<Toolbar />);
+    await user.click(screen.getByRole('button', { name: 'Canvas' }));
+    // Found by the unpolluted name (the hint is aria-hidden), and it shows the key.
+    const item = screen.getByRole('menuitem', { name: 'Save version' });
+    expect(item).toHaveTextContent('Ctrl+S');
   });
 });
 
