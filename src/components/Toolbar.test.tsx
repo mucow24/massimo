@@ -310,9 +310,10 @@ describe('Toolbar — help guide', () => {
   it('the ? key is inert while typing in a text field', async () => {
     const user = userEvent.setup();
     render(<Toolbar />);
-    // The map-name button becomes a real text input on click (select-all on
-    // focus); typing "?" there must edit the name, not open the guide.
-    await user.click(screen.getByRole('button', { name: 'Untitled map' }));
+    // The map-name button becomes a real text input on double-click
+    // (select-all on focus); typing "?" there must edit the name, not open
+    // the guide.
+    await user.dblClick(screen.getByRole('button', { name: 'Untitled map' }));
     await user.keyboard('?');
     expect(dialog()).toBeNull();
     expect(screen.getByRole('textbox')).toHaveValue('?');
@@ -1081,7 +1082,7 @@ describe('Toolbar — Ctrl+S saves a version', () => {
     vi.mocked(getCanvasSvg).mockReturnValue(mountableSvg());
     render(<Toolbar />);
 
-    await user.click(screen.getByRole('button', { name: 'Original' }));
+    await user.dblClick(screen.getByRole('button', { name: 'Original' }));
     const input = screen.getByRole('textbox', { name: 'Map name' });
     await user.clear(input);
     await user.type(input, 'Renamed');
