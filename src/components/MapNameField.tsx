@@ -3,13 +3,11 @@ import { useDoc } from '../state/store';
 import { MAP_NAME_DEFAULT } from '../model/transforms';
 
 /**
- * Double-click-to-edit map name for the toolbar (the same rename gesture as
- * the station popover title and the on-canvas station label). Displays the
- * current name as a button; double-clicking swaps in a text input pre-filled
- * with the name. The edit commits once (on Enter or blur) via a single
- * `setDocName` — so a rename is one undo entry — and reverts on Escape. An
- * empty/whitespace commit falls back to the default name so the map is never
- * nameless (which would break the export filename).
+ * Click-to-edit map name for the toolbar. Displays the current name as a button;
+ * clicking swaps in a text input pre-filled with the name. The edit commits once
+ * (on Enter or blur) via a single `setDocName` — so a rename is one undo entry —
+ * and reverts on Escape. An empty/whitespace commit falls back to the default
+ * name so the map is never nameless (which would break the export filename).
  */
 export function MapNameField() {
   const name = useDoc((s) => s.name);
@@ -54,12 +52,7 @@ export function MapNameField() {
   }
 
   return (
-    <button
-      type="button"
-      className="map-name"
-      title="Double-click to rename"
-      onDoubleClick={startEdit}
-    >
+    <button type="button" className="map-name" title="Rename map" onClick={startEdit}>
       {name}
     </button>
   );

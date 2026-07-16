@@ -1713,6 +1713,25 @@ describe('setStationLocked', () => {
   });
 });
 
+describe('setStationEditorHeight', () => {
+  it('writes a clamped positive-integer editorHeight on the station', () => {
+    const doc = makeDoc({ stations: [makeStation({ id: 'a' })] });
+    expect(T.setStationEditorHeight(doc, 'a', 120.6).stations.a.editorHeight).toBe(121);
+    expect(T.setStationEditorHeight(doc, 'a', 0).stations.a.editorHeight).toBe(1);
+    expect(T.setStationEditorHeight(doc, 'a', -40).stations.a.editorHeight).toBe(1);
+  });
+
+  it('is a no-op (reference equality) when the height is unchanged', () => {
+    const doc = makeDoc({ stations: [{ ...makeStation({ id: 'a' }), editorHeight: 150 }] });
+    expect(T.setStationEditorHeight(doc, 'a', 150)).toBe(doc);
+  });
+
+  it('is a no-op for missing ids', () => {
+    const doc = makeDoc({ stations: [makeStation({ id: 'a' })] });
+    expect(T.setStationEditorHeight(doc, 'nope', 150)).toBe(doc);
+  });
+});
+
 describe('activePalettes', () => {
   it('DEFAULT_DOC.activePalettes is exactly [mta]', () => {
     expect(T.DEFAULT_DOC.activePalettes).toEqual(['mta']);

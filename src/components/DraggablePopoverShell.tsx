@@ -3,10 +3,8 @@ import type { DraggablePopover } from './canvas/useDraggablePopover';
 
 interface Props {
   className: string;
-  // The panel's title, shown in the drag-handle header. Usually a plain
-  // string ("Label", "Polygon"…); the station popover passes richer content
-  // (editable name + WP pill).
-  title: ReactNode;
+  // The panel's title, shown in the drag-handle header ("Label", "Polygon"…).
+  title: string;
   // Screen position for the shell's top-left: usually useDraggablePopover's
   // anchor, but a caller may pin it elsewhere (StationPopover in layout edit).
   left: number;
@@ -22,12 +20,6 @@ interface Props {
   // useDraggablePopover's ref; how the measuring commit reaches the DOM node.
   shellRef?: DraggablePopover['shellRef'];
   headerHandlers: DraggablePopover['headerHandlers'];
-  // Optional double-click on the header band (the station popover's rename).
-  // It must live on the header DIV, not on content inside it: the drag's
-  // pointer capture retargets the synthesized click/dblclick events to the
-  // capture element, so a handler on a child span never fires in a real
-  // browser (jsdom bubbles it, which hides the difference in tests).
-  onHeaderDoubleClick?: (e: React.MouseEvent<HTMLDivElement>) => void;
   children: ReactNode;
 }
 
@@ -48,7 +40,6 @@ export function DraggablePopoverShell({
   measuring,
   shellRef,
   headerHandlers,
-  onHeaderDoubleClick,
   children,
 }: Props) {
   return (
@@ -70,7 +61,7 @@ export function DraggablePopoverShell({
         e.stopPropagation();
       }}
     >
-      <div className="header" {...headerHandlers} onDoubleClick={onHeaderDoubleClick}>
+      <div className="header" {...headerHandlers}>
         {title}
       </div>
       <div className="body">{children}</div>

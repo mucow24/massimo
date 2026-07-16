@@ -1,7 +1,8 @@
-import { useLayoutEffect, useState } from 'react';
+import { useEffect, useLayoutEffect, useRef, useState } from 'react';
+import { beginHistoryGroup } from '../state/store';
+import { redo, undo } from '../state/history';
 import { useThemeColors } from '../state/theme';
 import { LINE_HEIGHT } from '../geometry/textMeasure';
-import { useRenameEditor } from './useRenameEditor';
 export function StationNameEditor({
   x,
   y,
@@ -35,11 +36,24 @@ export function StationNameEditor({
   onChange: (v: string) => void;
   onCommit: () => void;
 }) {
-  // History group + focus/select + Enter/Escape/Ctrl+Z protocol — shared
-  // with the station popover's title editor.
-  const { ref, onKeyDown, onBlur } = useRenameEditor(onCommit);
+  const ref = useRef<HTMLTextAreaElement | null>(null);
   const theme = useThemeColors();
   const [editorHeight, setEditorHeight] = useState(minHeight);
+  // Open a history group on mount. Doing this in useEffect (rather than via
+  // an onFocus handler) sidesteps any uncertainty about whether the synthetic
+  // focus event fires for an input inside a foreignObject when el.focus() is
+  // called programmatically. Group is committed on blur, Enter, or unmount.
+  const groupRef = useRef<ReturnType<typeof beginHistoryGroup> | null>(null);
+  useEffect(() => {
+    groupRef.current = beginHistoryGroup();
+    const el = ref.current;
+    el?.focus();
+    el?.select();
+    return () => {
+      groupRef.current?.commit();
+      groupRef.current = null;
+    };
+  }, []);
 
   // Reset to 'auto' before reading scrollHeight so the textarea can shrink
   // when lines are removed, then snap to content height (floored at the label
@@ -51,7 +65,51 @@ export function StationNameEditor({
     const h = Math.max(minHeight, el.scrollHeight);
     el.style.height = h + 'px';
     setEditorHeight((prev) => (prev === h ? prev : h));
-  }, [ref, value, minHeight, fontSize]);
+  }, [value, minHeight, fontSize]);
+
+  const closeEditor = () => {
+    groupRef.current?.commit();
+    groupRef.current = null;
+    onCommit();
+  };
+
+  const onKey = (e: React.KeyboardEvent<HTMLTextAreaElement>) => {
+    // Enter commits (preserves single-line muscle memory). Shift+Enter
+    // inserts a newline so labels can be multiline.
+    if (e.key === 'Enter' && !e.shiftKey) {
+      e.preventDefault();
+      closeEditor();
+      e.stopPropagation();
+      return;
+    }
+    if (e.key === 'Escape') {
+      e.preventDefault();
+      closeEditor();
+      e.stopPropagation();
+      return;
+    }
+    // Intercept Cmd/Ctrl+Z and friends. The browser's native input undo
+    // would only revert one keystroke at a time AND fire onChange, creeping
+    // the doc back one char per Ctrl-Z. Commit the rename group, run our
+    // doc-level undo/redo, then close — one Ctrl-Z reverts the whole rename.
+    const mod = e.metaKey || e.ctrlKey;
+    if (mod && (e.key === 'z' || e.key === 'Z')) {
+      e.preventDefault();
+      closeEditor();
+      if (e.shiftKey) redo();
+      else undo();
+      e.stopPropagation();
+      return;
+    }
+    if (mod && (e.key === 'y' || e.key === 'Y')) {
+      e.preventDefault();
+      closeEditor();
+      redo();
+      e.stopPropagation();
+      return;
+    }
+    e.stopPropagation();
+  };
 
   return (
     <foreignObject
@@ -67,8 +125,8 @@ export function StationNameEditor({
         rows={1}
         value={value}
         onChange={(e) => onChange(e.target.value)}
-        onBlur={onBlur}
-        onKeyDown={onKeyDown}
+        onBlur={closeEditor}
+        onKeyDown={onKey}
         onPointerDown={(e) => e.stopPropagation()}
         onMouseDown={(e) => e.stopPropagation()}
         onClick={(e) => e.stopPropagation()}

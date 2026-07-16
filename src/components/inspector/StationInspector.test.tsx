@@ -157,6 +157,35 @@ describe('<StationInspector /> — shape picker wiring', () => {
     expect(circle?.getAttribute('fill')).toBe('#ffffff');
   });
 
+  it('Waypoint button toggles aria-pressed and writes isWaypoint on the station', async () => {
+    const user = userEvent.setup();
+    useDoc.setState({
+      ...DEFAULT_DOC,
+      ...makeDoc({
+        stations: [makeStation({ id: 'a', stops: [makeStop('L1')] })],
+        lines: [makeLine({ id: 'L1', stations: ['a'] })],
+      }),
+    });
+    useSelection.setState({ ...SELECTION_BLANK, selectedStationIds: ['a'] });
+
+    render(<StationInspector id="a" />);
+    const wpBtn = screen.getByRole('button', { name: 'Waypoint' });
+    expect(wpBtn).toHaveAttribute('aria-pressed', 'false');
+    expect(wpBtn).not.toHaveClass('active');
+
+    await user.click(wpBtn);
+    expect(useDoc.getState().stations.a.isWaypoint).toBe(true);
+    const wpBtnOn = screen.getByRole('button', { name: 'Waypoint' });
+    expect(wpBtnOn).toHaveAttribute('aria-pressed', 'true');
+    expect(wpBtnOn).toHaveClass('active');
+
+    await user.click(screen.getByRole('button', { name: 'Waypoint' }));
+    const wpBtnOff = screen.getByRole('button', { name: 'Waypoint' });
+    expect(useDoc.getState().stations.a.isWaypoint).toBe(false);
+    expect(wpBtnOff).toHaveAttribute('aria-pressed', 'false');
+    expect(wpBtnOff).not.toHaveClass('active');
+  });
+
   it('Lock toggles aria-pressed and writes locked (in the popover footer)', async () => {
     // The lock toggle lives in the StationPopover footer now (beside Delete,
     // like every other item popover) — render the popover, which hosts the
@@ -288,6 +317,48 @@ describe('<StationInspector /> — shape picker wiring', () => {
       expect(doc.stations.a.italic).toBe(true);
       expect(doc.stations.b.italic).toBeFalsy();
     });
+  });
+
+  it('Waypoint button starts pressed when the station is already a waypoint', () => {
+    useDoc.setState({
+      ...DEFAULT_DOC,
+      ...makeDoc({
+        stations: [makeStation({ id: 'a', isWaypoint: true, stops: [makeStop('L1')] })],
+        lines: [makeLine({ id: 'L1', stations: ['a'] })],
+      }),
+    });
+    useSelection.setState({ ...SELECTION_BLANK, selectedStationIds: ['a'] });
+
+    render(<StationInspector id="a" />);
+    const wpBtn = screen.getByRole('button', { name: 'Waypoint' });
+    expect(wpBtn).toHaveAttribute('aria-pressed', 'true');
+    expect(wpBtn).toHaveClass('active');
+  });
+
+  it('Waypoint toggle does NOT mirror-propagate to matching stations', async () => {
+    const user = userEvent.setup();
+    useDoc.setState({
+      ...DEFAULT_DOC,
+      ...makeDoc({
+        stations: [
+          makeStation({ id: 'a', stops: [makeStop('L1')] }),
+          makeStation({ id: 'b', stops: [makeStop('L1')] }),
+        ],
+        lines: [makeLine({ id: 'L1', stations: ['a', 'b'] })],
+      }),
+    });
+    useSelection.setState({
+      ...SELECTION_BLANK,
+      selectedStationIds: ['a'],
+      mirrorMatching: true,
+    });
+
+    render(<StationInspector id="a" />);
+    await user.click(screen.getByRole('button', { name: 'Waypoint' }));
+
+    const doc = useDoc.getState();
+    expect(doc.stations.a.isWaypoint).toBe(true);
+    expect(doc.stations.b.isWaypoint).toBeFalsy();
   });
 
   it('mirror mode propagates the per-stop shape change to matching stations and collapses to one undo step', async () => {
@@ -517,6 +588,14 @@ describe('<StationInspector /> — edit paths that reach the document (E8)', () 
     expect(useDoc.getState().stations.a.rotation).toBe(0);
   });
 
+  it('the Name textarea writes through renameStation', () => {
+    seedStation({ name: 'Old' });
+    render(<StationInspector id="a" />);
+    const ta = screen.getByRole('textbox') as HTMLTextAreaElement;
+    fireEvent.change(ta, { target: { value: 'New Name' } });
+    expect(useDoc.getState().stations.a.name).toBe('New Name');
+  });
+
   it('the X and Y inputs are labeled and each move the station on their own axis', () => {
     seedStation();
     render(<StationInspector id="a" />);
@@ -550,11 +629,13 @@ describe('<StationInspector /> — edit paths that reach the document (E8)', () 
     expect(screen.queryByRole('button', { name: /Mirror/ })).toBeNull();
   });
 
-  it('renders neither the WP toggle nor the Lock toggle (both live in the StationPopover chrome)', () => {
+  it('WP sits in the top header row next to the Name label (Lock moved to the footer)', () => {
     seedStation();
     render(<StationInspector id="a" />);
-    // WP moved to the popover titlebar; the lock toggle is the footer's.
-    expect(screen.queryByRole('button', { name: 'Waypoint' })).toBeNull();
+    const wp = screen.getByRole('button', { name: 'Waypoint' });
+    const nameLabel = screen.getByText('Name');
+    expect(wp.parentElement).toBe(nameLabel.parentElement);
+    // The lock toggle is the StationPopover footer's, not the inspector's.
     expect(screen.queryByRole('button', { name: 'Lock station' })).toBeNull();
   });
 
@@ -888,15 +969,14 @@ describe('<StationInspector /> — Select Similar (mirror matching) toggle', () 
     useSelection.setState({ ...SELECTION_BLANK, selectedStationIds: ['a'], ...over });
   };
 
-  it('sits in the Stop layout header row, to the right of Edit layout', () => {
+  it('sits in the Name header row, to the left of the WP button', () => {
     seedPair();
     render(<StationInspector id="a" />);
     const similar = screen.getByRole('button', { name: 'Select Similar' });
-    const editLayout = screen.getByRole('button', { name: 'Edit layout' });
-    expect(similar.parentElement).toBe(editLayout.parentElement);
-    expect(similar.parentElement!.textContent).toContain('Stop layout');
-    const siblings = Array.from(similar.parentElement!.children);
-    expect(siblings.indexOf(similar)).toBeGreaterThan(siblings.indexOf(editLayout));
+    const wp = screen.getByRole('button', { name: 'Waypoint' });
+    expect(similar.parentElement).toBe(wp.parentElement);
+    const siblings = Array.from(wp.parentElement!.children);
+    expect(siblings.indexOf(similar)).toBeLessThan(siblings.indexOf(wp));
   });
 
   it('toggles mirrorMatching on and off, reflected via aria-pressed + active class', async () => {

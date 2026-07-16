@@ -16,17 +16,10 @@ describe('MapNameField', () => {
     expect(screen.getByRole('button', { name: 'Untitled map' })).toBeInTheDocument();
   });
 
-  it('a single click does NOT open the editor (double-click, like the station title)', async () => {
-    const user = userEvent.setup();
-    render(<MapNameField />);
-    await user.click(screen.getByRole('button', { name: 'Untitled map' }));
-    expect(screen.queryByLabelText('Map name')).toBeNull();
-  });
-
   it('commits an edit to the store on Enter', async () => {
     const user = userEvent.setup();
     render(<MapNameField />);
-    await user.dblClick(screen.getByRole('button', { name: 'Untitled map' }));
+    await user.click(screen.getByRole('button', { name: 'Untitled map' }));
     const input = screen.getByLabelText('Map name');
     await user.clear(input);
     await user.type(input, 'Night Owl{Enter}');
@@ -38,7 +31,7 @@ describe('MapNameField', () => {
   it('commits an edit to the store on blur', async () => {
     const user = userEvent.setup();
     render(<MapNameField />);
-    await user.dblClick(screen.getByRole('button', { name: 'Untitled map' }));
+    await user.click(screen.getByRole('button', { name: 'Untitled map' }));
     const input = screen.getByLabelText('Map name');
     await user.clear(input);
     await user.type(input, 'Blurred');
@@ -49,7 +42,7 @@ describe('MapNameField', () => {
   it('reverts on Escape without touching the store', async () => {
     const user = userEvent.setup();
     render(<MapNameField />);
-    await user.dblClick(screen.getByRole('button', { name: 'Untitled map' }));
+    await user.click(screen.getByRole('button', { name: 'Untitled map' }));
     const input = screen.getByLabelText('Map name');
     await user.clear(input);
     await user.type(input, 'Discarded{Escape}');
@@ -61,7 +54,7 @@ describe('MapNameField', () => {
     const user = userEvent.setup();
     useDoc.setState({ ...useDoc.getState(), name: 'Something' });
     render(<MapNameField />);
-    await user.dblClick(screen.getByRole('button', { name: 'Something' }));
+    await user.click(screen.getByRole('button', { name: 'Something' }));
     const input = screen.getByLabelText('Map name');
     await user.clear(input);
     await user.type(input, '   {Enter}');
