@@ -1025,6 +1025,90 @@ describe('Toolbar — save gating (clean / dirty / unsaved)', () => {
   });
 });
 
+/**
+ * Ctrl/Cmd+S is a keyboard accelerator for Canvas ▸ Save version — it writes a
+ * library version, NOT a JSON download, and never lets the browser's Save-page
+ * dialog open. It honours the same clean-state gate the menu item's disabled
+ * state enforces.
+ */
+describe('Toolbar — Ctrl+S saves a version', () => {
+  const seedMap = (name = 'My Map') =>
+    useDoc.setState({
+      ...useDoc.getState(),
+      name,
+      lines: { L1: makeLine({ id: 'L1' as LineId, stations: ['S'] as StationId[] }) },
+      lineOrder: ['L1' as LineId],
+      stations: { S: stationWithStop('S' as StationId, 'L1' as LineId, { x: 0, y: 0 }) },
+    });
+
+  it('writes a user version to the library — never a JSON download — and swallows the dialog', async () => {
+    seedMap('Canal Line'); // no baseline anchored → dirty → armed
+    vi.mocked(getCanvasSvg).mockReturnValue(mountableSvg());
+    render(<Toolbar />);
+
+    // fireEvent returns dispatchEvent's result: false when a handler called
+    // preventDefault, which is how the browser Save-page dialog is suppressed.
+    const notPrevented = fireEvent.keyDown(window, { key: 's', ctrlKey: true });
+    expect(notPrevented).toBe(false);
+
+    await waitFor(() => expect(saveVersion).toHaveBeenCalledTimes(1));
+    expect(vi.mocked(saveVersion).mock.calls[0][1]).toBe('Canal Line');
+    expect(vi.mocked(saveVersion).mock.calls[0][3]).toBe('user');
+    // It saved to the library, not to a downloaded file.
+    expect(downloadBlob).not.toHaveBeenCalled();
+  });
+
+  it('also fires on Cmd+S (metaKey), for mac', async () => {
+    seedMap();
+    render(<Toolbar />);
+    fireEvent.keyDown(window, { key: 's', metaKey: true });
+    await waitFor(() => expect(saveVersion).toHaveBeenCalledTimes(1));
+  });
+
+  it('is a no-op on a clean doc (mirrors the greyed-out menu item) but still suppresses the dialog', () => {
+    seedMap();
+    anchor(markSaved); // clean: byte-for-byte a library version
+    render(<Toolbar />);
+    const notPrevented = fireEvent.keyDown(window, { key: 's', ctrlKey: true });
+    expect(notPrevented).toBe(false); // dialog still suppressed...
+    expect(saveVersion).not.toHaveBeenCalled(); // ...but nothing minted
+  });
+
+  it('commits an in-progress rename before serializing (blur-first)', async () => {
+    const user = userEvent.setup();
+    seedMap('Original');
+    anchor(markSaved); // clean, so ONLY the rename can arm the save
+    vi.mocked(getCanvasSvg).mockReturnValue(mountableSvg());
+    render(<Toolbar />);
+
+    await user.click(screen.getByRole('button', { name: 'Original' }));
+    const input = screen.getByRole('textbox', { name: 'Map name' });
+    await user.clear(input);
+    await user.type(input, 'Renamed');
+    // Uncommitted: the store still holds the old name, so the doc reads clean.
+    expect(useDoc.getState().name).toBe('Original');
+    expect(statusNow()).toBe('clean');
+
+    fireEvent.keyDown(window, { key: 's', ctrlKey: true });
+
+    // Blur committed the rename, flipping the doc dirty, so the save ran and
+    // captured the NEW name rather than the stale one.
+    await waitFor(() => expect(saveVersion).toHaveBeenCalledTimes(1));
+    expect(useDoc.getState().name).toBe('Renamed');
+    expect(vi.mocked(saveVersion).mock.calls[0][1]).toBe('Renamed');
+  });
+
+  it('the Save version menu item advertises its Ctrl+S accelerator (name stays clean)', async () => {
+    const user = userEvent.setup();
+    seedMap();
+    render(<Toolbar />);
+    await user.click(screen.getByRole('button', { name: 'Canvas' }));
+    // Found by the unpolluted name (the hint is aria-hidden), and it shows the key.
+    const item = screen.getByRole('menuitem', { name: 'Save version' });
+    expect(item).toHaveTextContent('Ctrl+S');
+  });
+});
+
 describe('Toolbar — Export wiring', () => {
   const openExportSubmenu = async (user: ReturnType<typeof userEvent.setup>) => {
     await user.click(screen.getByRole('button', { name: 'Canvas' }));

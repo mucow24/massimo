@@ -354,6 +354,18 @@ select option {
 .toolbar button.menu-item:disabled:hover {
   background: transparent;
 }
+/* An item carrying an accelerator hint (e.g. Save version ▸ Ctrl+S): lay the
+   label and the muted key on one row, key pinned to the right edge. */
+.toolbar button.menu-item.has-shortcut {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 24px;
+}
+.menu-shortcut {
+  color: var(--text-muted);
+  font-size: 0.85em;
+}
 .menu-separator {
   height: 1px;
   background: var(--border-soft);

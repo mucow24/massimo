@@ -1,4 +1,4 @@
-import { useRef, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { flushSync } from 'react-dom';
 import { pickDocSnapshot, useDoc, useSelection, type UiMode } from '../state/store';
 import type { MapDoc } from '../model/types';
@@ -24,6 +24,7 @@ import {
   EMPTY_DOC_JSON,
   markAdopted,
   markSaved,
+  saveStatusOf,
   useSaveBaseline,
   useSaveStatus,
 } from '../state/saveBaseline';
@@ -320,6 +321,33 @@ export function Toolbar() {
     }
   };
 
+  // Ctrl/Cmd+S is the keyboard accelerator for Canvas ▸ Save version. Always
+  // preventDefault so the browser's Save-page dialog never opens, and it is a
+  // library save — never the JSON export. Blur first so an in-progress rename
+  // in the map-name field (which commits on blur) lands in the doc before it is
+  // serialized, exactly as App's undo handler does; then honour the same
+  // clean-state gate the menu item's disabled state enforces — a clean doc
+  // already matches a library version, so a save could only mint a duplicate.
+  // Lives here, beside the save action and its toolbar status message, rather
+  // than in App's global key handler. A ref keeps the listener stable while
+  // always calling the latest closure (refreshed in its own effect, never
+  // written during render).
+  const saveToLibraryRef = useRef(onSaveToLibrary);
+  useEffect(() => {
+    saveToLibraryRef.current = onSaveToLibrary;
+  });
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => {
+      if (!(e.metaKey || e.ctrlKey) || (e.key !== 's' && e.key !== 'S')) return;
+      e.preventDefault();
+      if (document.activeElement instanceof HTMLElement) document.activeElement.blur();
+      if (saveStatusOf(useDoc.getState(), useSaveBaseline.getState()) === 'clean') return;
+      void saveToLibraryRef.current();
+    };
+    window.addEventListener('keydown', onKey);
+    return () => window.removeEventListener('keydown', onKey);
+  }, []);
+
   /** New = a different document, which is exactly when clearing undo is right. */
   const onNew = async () => {
     try {
@@ -462,7 +490,11 @@ export function Toolbar() {
         <MenuSeparator />
         {/* Greyed out when clean: the doc already matches a library version,
             so a save could only mint a duplicate. */}
-        <MenuItem onClick={() => void onSaveToLibrary()} disabled={saveStatus === 'clean'}>
+        <MenuItem
+          onClick={() => void onSaveToLibrary()}
+          disabled={saveStatus === 'clean'}
+          shortcut="Ctrl+S"
+        >
           Save version
         </MenuItem>
         <SubMenu label="Load">
