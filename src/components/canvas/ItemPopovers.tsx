@@ -9,11 +9,15 @@ import {
   svgImageAABB,
   textLabelAABB,
   transferAABB,
+  unionAABBs,
 } from '../../geometry/itemBounds';
 import { stopHalfOf } from '../../model/lineWidth';
 import { effectiveStationLabelStyle } from '../../model/transforms';
 import { resolveTransferStyle } from '../../model/transferStyle';
+import type { AABB } from '../../geometry/rectPolygon';
+import { itemIdCount, type SelectionItemIds } from '../../state/selectionOps';
 import { SIDEBAR_WIDTH, sidebarVisible } from '../Sidebar';
+import { SelectionPopover } from '../SelectionPopover';
 import { RouteBulletPopover } from '../RouteBulletPopover';
 import { TextLabelPopover } from '../TextLabelPopover';
 import { PolygonPopover } from '../PolygonPopover';
@@ -68,6 +72,52 @@ export function ItemPopovers({ view: committed }: { view: ViewportProjection }) 
 
   const sole = soleSelection(selection);
   if (!sole) {
+    // ≥2 items across the five multi-select lists: ONE popover for the whole
+    // group (count summary + bulk lock/unlock/delete). Idle-only — the modes
+    // that preserve a selection (placing-label's marquee) shouldn't pop a
+    // group editor under their placement clicks, mirroring the station gate
+    // below. The union of the members' AABBs is the spawn hint; members that
+    // don't resolve (transient mid-delete render) just don't contribute.
+    const multiIds: SelectionItemIds = {
+      stations: selection.selectedStationIds,
+      bullets: selection.selectedRouteBulletIds,
+      labels: selection.selectedLabelIds,
+      polygons: selection.selectedPolygonIds,
+      svgImages: selection.selectedSvgImageIds,
+    };
+    if (itemIdCount(multiIds) >= 2 && selection.uiMode.kind === 'idle') {
+      const rects: AABB[] = [];
+      const stopHalf = stopHalfOf(lines);
+      for (const id of multiIds.stations) {
+        const st = stations[id];
+        if (st) rects.push(stationWorldAABB(st, effectiveStationLabelStyle(st), stopHalf));
+      }
+      for (const id of multiIds.bullets) {
+        const b = routeBullets[id];
+        if (b) rects.push(routeBulletAABB(b));
+      }
+      for (const id of multiIds.labels) {
+        const l = textLabels[id];
+        if (l) rects.push(textLabelAABB(l));
+      }
+      for (const id of multiIds.polygons) {
+        const p = polygons[id];
+        if (p) rects.push(polygonAABB(p.vertices));
+      }
+      for (const id of multiIds.svgImages) {
+        const im = svgImages[id];
+        if (im) rects.push(svgImageAABB(im));
+      }
+      if (rects.length === 0) return null;
+      return (
+        <SelectionPopover
+          ids={multiIds}
+          worldRect={unionAABBs(rects)}
+          view={view}
+          spawnBox={spawnBox}
+        />
+      );
+    }
     const t = selection.selectedTransferId ? transfers[selection.selectedTransferId] : undefined;
     // Unmounted rather than `hidden` like the station panel below: TransferPopover
     // has no hidden prop, and a transfer's panel is cheap to re-spawn beside its

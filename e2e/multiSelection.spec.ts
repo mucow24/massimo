@@ -655,7 +655,7 @@ test.describe('multi-bullet selection', () => {
     expect(afterA.y - afterb1.y).toBeCloseTo(dx * SQRT2_2 + dy * SQRT2_2, 1);
   });
 
-  test('inspector and popover hide when the selection mixes a station and a bullet', async ({
+  test('per-item popovers yield to the selection popover on a mixed selection', async ({
     page,
   }) => {
     await seedAndOpen(page, fourInLineWithBullets);
@@ -667,15 +667,18 @@ test.describe('multi-bullet selection', () => {
     await page.mouse.click(a.x, a.y);
     await expect(page.locator('.station-popover')).toBeVisible();
 
-    // Add a bullet via shift-click → mixed selection. Station popover hides;
-    // bullet popover stays out (it only shows for single-bullet, no
-    // station-selected case).
+    // Add a bullet via shift-click → mixed selection. The per-item editors
+    // hide; the ONE group popover (bulk lock/unlock/delete) takes their
+    // place, with the member count in its summary.
     await clickAtWithModifiers(page, b1, ['Shift']);
     await expect(page.locator('.station-popover')).toHaveCount(0);
-    await expect(page.locator('.bullet-popover')).toHaveCount(0);
+    await expect(page.locator('.selection-popover .selection-summary')).toHaveText(
+      '2 items · 0 locked',
+    );
 
-    // Reduce to a single bullet → popover returns.
+    // Reduce to a single bullet → the group popover yields back.
     await clickAtWithModifiers(page, a, ['Shift']);
+    await expect(page.locator('.selection-popover')).toHaveCount(0);
     await expect(page.locator('.bullet-popover')).toBeVisible();
   });
 
@@ -702,6 +705,58 @@ test.describe('multi-bullet selection', () => {
     await page.keyboard.press('Control+z');
     await expect(page.locator('[data-station-id="A"]')).toBeVisible();
     await expect(page.locator('[data-bullet-id="b1"]')).toBeVisible();
+  });
+
+  test('selection popover: Lock all protects the group; Alt+marquee + Unlock all frees it', async ({
+    page,
+  }) => {
+    await seedAndOpen(page, fourInLineWithBullets);
+
+    const b1 = await bulletCenter(page, 'b1');
+    const b2 = await bulletCenter(page, 'b2');
+    const summary = page.locator('.selection-popover .selection-summary');
+
+    // Marquee both bullets (they sit alone above the station row) and lock
+    // the group in one click.
+    const marquee = async () => {
+      await page.mouse.move(b1.x - 60, b1.y - 60);
+      await page.mouse.down();
+      await page.mouse.move(b2.x + 60, b2.y + 60, { steps: 4 });
+      await page.mouse.up();
+    };
+    await marquee();
+    await expect(summary).toHaveText('2 items · 0 locked');
+    await page.getByRole('button', { name: 'Lock all', exact: true }).click();
+    await expect(summary).toHaveText('2 items · 2 locked');
+    await expect(page.getByRole('button', { name: 'Lock all', exact: true })).toBeDisabled();
+
+    // Deselect: a PLAIN marquee now sweeps past the locked bullets (no
+    // selection, no popover).
+    await page.keyboard.press('Escape');
+    await marquee();
+    await expect(page.locator('.selection-popover')).toHaveCount(0);
+
+    // Alt+marquee is the recovery path; Unlock all frees the group.
+    await page.keyboard.down('Alt');
+    await marquee();
+    await page.keyboard.up('Alt');
+    await expect(summary).toHaveText('2 items · 2 locked');
+    await page.getByRole('button', { name: 'Unlock all' }).click();
+    await expect(summary).toHaveText('2 items · 0 locked');
+
+    // The unlocked group tows again: dragging b1 moves b2 by the same delta.
+    const before1 = await bulletWorldPos(page, 'b1');
+    const before2 = await bulletWorldPos(page, 'b2');
+    await page.mouse.move(b1.x, b1.y);
+    await page.mouse.down();
+    await page.mouse.move(b1.x + 50, b1.y + 30, { steps: 4 });
+    await page.mouse.up();
+    const after1 = await bulletWorldPos(page, 'b1');
+    const after2 = await bulletWorldPos(page, 'b2');
+    expect(after1.x - before1.x).toBeCloseTo(50, 1);
+    expect(after1.y - before1.y).toBeCloseTo(30, 1);
+    expect(after2.x - before2.x).toBeCloseTo(50, 1);
+    expect(after2.y - before2.y).toBeCloseTo(30, 1);
   });
 
   test('right-click on a selected station rotates a mixed group with bullets too', async ({

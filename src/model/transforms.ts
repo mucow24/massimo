@@ -1716,6 +1716,63 @@ export function setStationLocked(doc: MapDoc, stationId: StationId, locked: bool
   });
 }
 
+// A mixed multi-selection's ids, one list per lockable kind. Absent/empty
+// lists leave that collection untouched.
+export interface LockableItemIds {
+  stations?: readonly StationId[];
+  bullets?: readonly string[];
+  labels?: readonly string[];
+  polygons?: readonly string[];
+  svgImages?: readonly string[];
+}
+
+// Flip `locked` on the listed members of one collection, allocating a new
+// record only when at least one member actually changes state. Same
+// store-true / drop-when-off convention as setStationLocked above.
+function setLockedIn<T extends { locked?: boolean }>(
+  rec: Record<string, T>,
+  ids: readonly string[] | undefined,
+  locked: boolean,
+): Record<string, T> {
+  if (!ids || ids.length === 0) return rec;
+  let out: Record<string, T> | null = null;
+  for (const id of ids) {
+    const cur = rec[id];
+    if (!cur || !!cur.locked === locked) continue;
+    let next: T;
+    if (locked) {
+      next = { ...cur, locked: true };
+    } else {
+      const { locked: _gone, ...rest } = cur;
+      next = rest as T;
+    }
+    out ??= { ...rec };
+    out[id] = next;
+  }
+  return out ?? rec;
+}
+
+// Lock/unlock a mixed multi-selection in ONE doc write, so the whole batch is
+// a single undo entry. Unknown ids and members already at the requested state
+// are skipped; when nothing flips, the input doc comes back unchanged.
+export function setItemsLocked(doc: MapDoc, ids: LockableItemIds, locked: boolean): MapDoc {
+  const stations = setLockedIn(doc.stations, ids.stations, locked);
+  const routeBullets = setLockedIn(doc.routeBullets, ids.bullets, locked);
+  const textLabels = setLockedIn(doc.textLabels, ids.labels, locked);
+  const polygons = setLockedIn(doc.polygons, ids.polygons, locked);
+  const svgImages = setLockedIn(doc.svgImages, ids.svgImages, locked);
+  if (
+    stations === doc.stations &&
+    routeBullets === doc.routeBullets &&
+    textLabels === doc.textLabels &&
+    polygons === doc.polygons &&
+    svgImages === doc.svgImages
+  ) {
+    return doc;
+  }
+  return { ...doc, stations, routeBullets, textLabels, polygons, svgImages };
+}
+
 // The covered per-station typography fields a station style controls. The patch
 // shape shared by the inspector's style section, the style stamp
 // (model/styles.ts stampStyle), and updateStationLabelStyle, so the three never

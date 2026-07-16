@@ -429,6 +429,8 @@ interface DocState extends MapDoc {
   setDotSize: (stationId: StationId, lineId: LineId, size: number) => void;
   setStationWaypoint: (stationId: StationId, isWaypoint: boolean) => void;
   setStationLocked: (stationId: StationId, locked: boolean) => void;
+  // Bulk lock/unlock across every lockable kind — ONE undo entry.
+  setItemsLocked: (ids: T.LockableItemIds, locked: boolean) => void;
   setStationEditorHeight: (stationId: StationId, height: number) => void;
   redistributeBetween: (
     startId: StationId,
@@ -640,6 +642,7 @@ export const useDoc = create<DocState>()(
           set((s) => T.setStationWaypoint(s, stationId, isWaypoint)),
         setStationLocked: (stationId, locked) =>
           set((s) => T.setStationLocked(s, stationId, locked)),
+        setItemsLocked: (ids, locked) => set((s) => T.setItemsLocked(s, ids, locked)),
         setStationEditorHeight: (stationId, height) =>
           set((s) => T.setStationEditorHeight(s, stationId, height)),
         redistributeBetween: (startId, endId, mode = 'arc-bends', gridMode = 'off') =>

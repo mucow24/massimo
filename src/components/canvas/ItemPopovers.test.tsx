@@ -325,6 +325,75 @@ describe('ItemPopovers — station popover', () => {
   });
 });
 
+describe('ItemPopovers — selection popover (multi-select) gating', () => {
+  // The multi-selection gate: the selection popover mounts when ≥2 items are
+  // selected across the five lists (any mix of kinds), idle mode only —
+  // exactly one selected item stays the per-item popovers' territory.
+  const seedSecondBullet = () => {
+    useDoc.setState({
+      ...useDoc.getState(),
+      routeBullets: { b1: bullet, b2: { ...bullet, id: 'b2', x: 50, y: 20 } },
+    });
+  };
+
+  afterEach(() => {
+    useSelection.getState().setRouteBulletSelection([]);
+    useSelection.getState().setStationSelection([]);
+    useSelection.getState().setUiMode({ kind: 'idle' });
+  });
+
+  it('mounts for two selected items of one kind, with the count summary', () => {
+    seedSecondBullet();
+    useSelection.getState().setRouteBulletSelection(['b1', 'b2']);
+    render(<ItemPopovers view={committedView} />);
+    expect(document.querySelector('.selection-popover .selection-summary')?.textContent).toBe(
+      '2 items · 0 locked',
+    );
+  });
+
+  it('mounts for a mixed-kind selection and counts locked members', () => {
+    useDoc.setState({
+      ...useDoc.getState(),
+      routeBullets: { b1: { ...bullet, locked: true } },
+      stations: {
+        a: {
+          id: 'a',
+          name: 'Alpha',
+          x: 0,
+          y: 0,
+          rotation: 0,
+          stops: [],
+          label: { row: 0, col: -1, rotation: 0, offset: 0, align: 'auto', valign: 'middle' },
+        },
+      },
+    });
+    useSelection.getState().setStationSelection(['a']);
+    useSelection.getState().addRouteBulletsToSelection(['b1']);
+    render(<ItemPopovers view={committedView} />);
+    expect(document.querySelector('.selection-popover .selection-summary')?.textContent).toBe(
+      '2 items · 1 locked',
+    );
+  });
+
+  it('does NOT mount for a sole selection (the item popover owns it)', () => {
+    // The global beforeEach selects just b1.
+    render(<ItemPopovers view={committedView} />);
+    expect(document.querySelector('.selection-popover')).toBeNull();
+    expect(document.querySelector('.bullet-popover')).not.toBeNull();
+  });
+
+  it('does NOT mount outside idle mode', () => {
+    seedSecondBullet();
+    useSelection.getState().setRouteBulletSelection(['b1', 'b2']);
+    // placing-label keeps a marquee selection alive (the one non-idle mode
+    // where rect-select still runs) — set the mode directly, since setUiMode
+    // wipes selections on entry.
+    act(() => useSelection.setState({ uiMode: { kind: 'placing-label' } }));
+    render(<ItemPopovers view={committedView} />);
+    expect(document.querySelector('.selection-popover')).toBeNull();
+  });
+});
+
 describe('ItemPopovers — station popover, layout-edit interplay', () => {
   const seedStation = () => {
     useDoc.setState({
