@@ -13,6 +13,7 @@ import {
   setLineSeamColor,
   setLineStrokeWidth,
   setLineWidth,
+  setStationEditorHeight,
   setStationLocked,
   updatePolygon,
   updateRouteBullet,
@@ -214,11 +215,12 @@ describe('detach on covered-field edits — stations', () => {
     expect(updateStationLabelStyle(doc, 's1', { tracking: 0 })).toBe(doc);
   });
 
-  it('identity/layout edits keep the tag (rename, move, lock)', () => {
+  it('identity/layout edits keep the tag (rename, move, lock, editorHeight)', () => {
     const doc = tagged();
     expect(renameStation(doc, 's1', 'New name').stations.s1.styleId).toBe('y1');
     expect(moveStation(doc, 's1', 40, 40).stations.s1.styleId).toBe('y1');
     expect(setStationLocked(doc, 's1', true).stations.s1.styleId).toBe('y1');
+    expect(setStationEditorHeight(doc, 's1', 80).stations.s1.styleId).toBe('y1');
   });
 
   it('collapses a field to omission when it lands on its LABEL_* default', () => {

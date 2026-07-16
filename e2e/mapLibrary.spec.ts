@@ -59,7 +59,7 @@ const clickNew = async (page: Page) => {
 /** Rename the map via the toolbar name field — the smallest edit that is
  *  unambiguously a doc change, and the one that re-arms a greyed-out Save. */
 const renameTo = async (page: Page, from: string, to: string) => {
-  await page.getByRole('button', { name: from }).dblclick();
+  await page.getByRole('button', { name: from }).click();
   await page.getByRole('textbox', { name: 'Map name' }).fill(to);
   await page.getByRole('textbox', { name: 'Map name' }).press('Enter');
   await expect(page.getByRole('button', { name: to })).toBeVisible();
