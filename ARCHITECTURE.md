@@ -778,9 +778,10 @@ Load-bearing details:
 - **`markUnbacked` (a delete under the live doc) nulls the baseline** rather than keeping it with
   `backed: false` — deliberately reading **dirty, not blue**: those bytes now exist nowhere but
   the canvas, and the auto-save's byte gate must not skip them (see below).
-- Known quirk (pre-existing, now merely *visible*): zundo's undo/redo call the raw `set` above the
-  persist middleware, so an undone state is not written to localStorage until the next ordinary
-  edit. Edit → undo → refresh resurrects the edit — and the dot correctly comes back red.
+- **Undo-to-clean survives a refresh** because `undo`/`redo` flush persist (see _Undo/redo_
+  below): the reverted doc reaches `localStorage`, so on boot its re-serialized hash still matches
+  the saved baseline and the dot stays quiet. Without the flush, edit → undo → refresh would
+  resurrect the edit from `localStorage` and read dirty.
 
 ### Document switches: `adoptParsedDoc` + `autoSaveCurrent` ([Toolbar.tsx](src/components/Toolbar.tsx))
 
@@ -873,6 +874,12 @@ two documents together).
 **`undo`/`redo` also call `useSelection.getState().reconcileWithDoc(...)`** — the selection store
 is separate and untouched by zundo, so after an undo restores the doc, dangling selection ids
 must be pruned.
+**`undo`/`redo` also flush persist** with an empty-partial `useDoc.setState({})` right after the
+zundo call. zundo applies undo/redo through the raw `set` it captured — which sits **above**
+`persist` in the `temporal(persist(...))` chain — so the reverted doc never reaches persist's
+storage writer on its own, and `localStorage` would lag the canvas until the next ordinary edit
+(edit → undo → refresh would resurrect the edit). The empty-partial write changes nothing, so
+temporal's `equality` (`docSnapshotsEqual`) skips both the history entry and the redo-stack wipe.
 
 **Grouped edits — `beginHistoryGroup()`** ([store.ts](src/state/store.ts)). A drag is many
 `moveStation` calls; a text edit is many `onChange`s; a slider drag is many ticks. The pattern:

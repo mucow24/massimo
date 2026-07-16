@@ -170,10 +170,14 @@ test('the save dot tracks edits and undo, and both states survive a reload', asy
   await page.keyboard.press('Control+z');
   await expect(saveDot(page)).toHaveCount(0);
 
-  // Dirty survives a reload too: the hash mismatches. (Deliberately re-edited
-  // rather than reloading straight off the undo above — zundo's undo bypasses
-  // the persist middleware, so an undone-to-clean doc is NOT what localStorage
-  // holds. A pre-existing quirk, and the dot at least reports it honestly.)
+  // Undo-to-clean survives a reload. zundo applies undo through the raw set
+  // above the persist middleware, so history.ts flushes persist right after —
+  // the rehydrated bytes are the reverted doc, still matching the saved hash.
+  await page.reload();
+  await expect(page.locator('.map-version-pill')).toHaveText('v1');
+  await expect(saveDot(page)).toHaveCount(0);
+
+  // A genuine (un-undone) edit survives a reload as dirty: the hash mismatches.
   await renameTo(page, 'Untitled map', 'Edited Map');
   await page.reload();
   await expect(saveDot(page)).toHaveAttribute('data-status', 'dirty');
