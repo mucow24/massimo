@@ -140,10 +140,14 @@ test('a version thumbnail is a real raster within the 240×180 box', async ({ pa
 
 test('the toolbar pill shows the version each save mints', async ({ page }) => {
   await seedAndOpen(page, fourInLine);
-  // Nothing is saved under this doc yet, so there is no version to name.
-  await expect(page.locator('.map-version-pill')).toHaveCount(0);
+  // Nothing is saved under this doc yet, so there is no version to name — but
+  // the pill stays mounted as a hidden placeholder, reserving its box so the
+  // first save doesn't jolt the toolbar (an unmount re-clamps scrollX).
+  await expect(page.locator('.map-version-pill')).toHaveCount(1);
+  await expect(page.locator('.map-version-pill')).toBeHidden();
 
   await saveToLibrary(page);
+  await expect(page.locator('.map-version-pill')).toBeVisible();
   await expect(page.locator('.map-version-pill')).toHaveText('v1');
   // A clean doc greys Save version out, so re-arm it with an edit; the next
   // save mints v2.

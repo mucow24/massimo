@@ -1460,8 +1460,12 @@ button.field-select {
 }
 /* The live map's version, beside its name. Quiet on purpose: it is a handle to
    read when you go looking for it ("open v32"), never a control and never a
-   thing to notice. Tabular figures so it doesn't jitter as the number grows. */
+   thing to notice. Tabular figures so it doesn't jitter as the number grows.
+   min-width reserves a version's worth of box (the tabular digits keep that
+   reserve honest) so the empty placeholder below is the same width as a shown
+   pill — a map's first save then mints its version without moving the toolbar. */
 .map-version-pill {
+  min-width: calc(2ch + 12px);
   padding: 1px 6px;
   border-radius: 9px;
   background: var(--border-soft);
@@ -1469,8 +1473,15 @@ button.field-select {
   font-size: 11px;
   font-variant-numeric: tabular-nums;
   line-height: 1.5;
+  text-align: center;
   cursor: default;
   user-select: none;
+}
+/* No version to claim: keep the reserved box, hide the paint. visibility, not
+   an unmount — an unmount drops the box (and its flex gap) and re-clamps scrollX
+   in a narrow window, the same jolt the save-dot placeholder avoids. */
+.map-version-pill[data-empty] {
+  visibility: hidden;
 }
 /* The save-status dot beside the pill (title carries the words): red = the doc
    differs from its last save/load; blue = clean but the library holds no copy
