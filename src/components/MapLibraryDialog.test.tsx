@@ -4,97 +4,130 @@ import userEvent from '@testing-library/user-event';
 
 // Wholesale: jsdom has no indexedDB, so a partial mock would leave the real
 // module reachable and fail on a ReferenceError instead of an assertion.
-const libState = vi.hoisted(() => ({ current: null as string | null }));
 vi.mock('../state/mapLibrary', () => ({
   listMaps: vi.fn(async () => []),
-  listRevisions: vi.fn(async () => []),
+  listVersions: vi.fn(async () => []),
   getPayload: vi.fn(async () => undefined),
   renameMap: vi.fn(async () => {}),
   deleteMap: vi.fn(async () => {}),
-  deleteRevision: vi.fn(async () => {}),
-  getCurrentMapId: vi.fn(() => libState.current),
-  setCurrentMapId: vi.fn((id: string | null) => {
-    libState.current = id;
-  }),
+  deleteVersion: vi.fn(async () => {}),
+  setVersionName: vi.fn(async () => {}),
+  setVersionStarred: vi.fn(async () => {}),
 }));
 
 import { MapLibraryDialog } from './MapLibraryDialog';
 import {
   listMaps,
-  listRevisions,
+  listVersions,
   renameMap,
   deleteMap,
-  deleteRevision,
-  getCurrentMapId,
-  setCurrentMapId,
+  deleteVersion,
+  setVersionName,
+  setVersionStarred,
   type MapSummary,
-  type RevisionMeta,
+  type VersionMeta,
 } from '../state/mapLibrary';
+// NOT mocked: a plain zustand + localStorage store, which jsdom runs happily.
+import { useLibraryPointer } from '../state/libraryPointer';
 import { useDoc } from '../state/store';
 import { DEFAULT_DOC } from '../model/transforms';
 
 const MAPS: MapSummary[] = [
-  { id: 'm1', name: 'Canal Line', updatedAt: Date.parse('2026-07-14T10:00:00Z'), revisionCount: 2 },
-  { id: 'm2', name: 'Broadway', updatedAt: Date.parse('2026-07-13T10:00:00Z'), revisionCount: 1 },
+  { id: 'm1', name: 'Canal Line', updatedAt: Date.parse('2026-07-14T10:00:00Z'), versionCount: 2 },
+  { id: 'm2', name: 'Broadway', updatedAt: Date.parse('2026-07-13T10:00:00Z'), versionCount: 1 },
 ];
 
-const REVS: RevisionMeta[] = [
-  { id: 7, mapId: 'm1', savedAt: Date.parse('2026-07-14T10:00:00Z'), source: 'user' },
-  { id: 6, mapId: 'm1', savedAt: Date.parse('2026-07-13T09:00:00Z'), source: 'auto' },
+/**
+ * Mirrors `listVersions`'s contract: the starred block first, newest-first
+ * within each group. A fixture in plain newest-first order would let the
+ * dialog's divider logic pass while disagreeing with every real list.
+ */
+const VERSIONS: VersionMeta[] = [
+  {
+    id: 6,
+    mapId: 'm1',
+    savedAt: Date.parse('2026-07-13T09:00:00Z'),
+    source: 'auto',
+    version: 2,
+    starred: true,
+    name: 'beta 1 — needs work',
+  },
+  { id: 7, mapId: 'm1', savedAt: Date.parse('2026-07-14T10:00:00Z'), source: 'user', version: 3 },
 ];
 
 const onClose = vi.fn();
-const onOpenRevision = vi.fn(async () => {});
+const onOpenVersion = vi.fn(async () => {});
+const onLiveDocUnbacked = vi.fn();
 
 const renderDialog = () =>
-  render(<MapLibraryDialog onClose={onClose} onOpenRevision={onOpenRevision} />);
+  render(
+    <MapLibraryDialog
+      onClose={onClose}
+      onOpenVersion={onOpenVersion}
+      onLiveDocUnbacked={onLiveDocUnbacked}
+    />,
+  );
+
+/** Select Canal Line and wait for its versions to land. */
+const openCanalLine = async (user: ReturnType<typeof userEvent.setup>) => {
+  await user.click(await screen.findByText('Canal Line'));
+  await waitFor(() => expect(listVersions).toHaveBeenCalledWith('m1'));
+};
 
 beforeEach(() => {
-  libState.current = null;
+  localStorage.clear();
+  useLibraryPointer.setState({ mapId: null, version: null });
   useDoc.setState({ ...useDoc.getState(), ...DEFAULT_DOC });
   vi.mocked(listMaps).mockReset().mockResolvedValue(MAPS);
-  vi.mocked(listRevisions).mockReset().mockResolvedValue(REVS);
+  vi.mocked(listVersions).mockReset().mockResolvedValue(VERSIONS);
   vi.mocked(renameMap).mockReset().mockResolvedValue(undefined);
   vi.mocked(deleteMap).mockReset().mockResolvedValue(undefined);
-  vi.mocked(deleteRevision).mockReset().mockResolvedValue(undefined);
-  vi.mocked(getCurrentMapId).mockClear();
-  vi.mocked(setCurrentMapId).mockClear();
+  vi.mocked(deleteVersion).mockReset().mockResolvedValue(undefined);
+  vi.mocked(setVersionName).mockReset().mockResolvedValue(undefined);
+  vi.mocked(setVersionStarred).mockReset().mockResolvedValue(undefined);
   onClose.mockClear();
-  onOpenRevision.mockClear();
+  onOpenVersion.mockClear();
+  onLiveDocUnbacked.mockClear();
 });
 
 describe('MapLibraryDialog', () => {
-  it('lists maps, and a selected map’s revisions with their source tags', async () => {
+  it('lists maps, and a selected map’s versions with their numbers and source tags', async () => {
     const user = userEvent.setup();
     renderDialog();
     await screen.findByText('Canal Line');
     expect(screen.getByText('Broadway')).toBeInTheDocument();
-    expect(screen.getByText(/2 revisions/)).toBeInTheDocument();
-    expect(screen.getByText(/1 revision ·/)).toBeInTheDocument(); // not "1 revisions"
+    expect(screen.getByText(/2 versions/)).toBeInTheDocument();
+    expect(screen.getByText(/1 version ·/)).toBeInTheDocument(); // not "1 versions"
 
-    await user.click(screen.getByText('Canal Line'));
-    await waitFor(() => expect(listRevisions).toHaveBeenCalledWith('m1'));
-    const revisions = screen.getByRole('region', { name: 'Revisions' });
-    expect(within(revisions).getByText('user')).toBeInTheDocument();
-    expect(within(revisions).getByText('auto')).toBeInTheDocument();
+    await openCanalLine(user);
+    const versions = screen.getByRole('region', { name: 'Versions' });
+    expect(within(versions).getByText('user')).toBeInTheDocument();
+    expect(within(versions).getByText('auto')).toBeInTheDocument();
+    expect(within(versions).getByText('v3')).toBeInTheDocument();
+    expect(within(versions).getByText('v2')).toBeInTheDocument();
   });
 
-  it('opens a revision through the caller', async () => {
+  it('shows a version’s name when it has one', async () => {
     const user = userEvent.setup();
     renderDialog();
-    await user.click(await screen.findByText('Canal Line'));
-    const opens = await screen.findAllByRole('button', { name: /Open revision/ });
-    await user.click(opens[0]);
-    await waitFor(() => expect(onOpenRevision).toHaveBeenCalledWith('m1', 7));
+    await openCanalLine(user);
+    expect(screen.getByText('beta 1 — needs work')).toBeInTheDocument();
+  });
+
+  it('opens a version through the caller', async () => {
+    const user = userEvent.setup();
+    renderDialog();
+    await openCanalLine(user);
+    await user.click(screen.getByRole('button', { name: 'Open version 3' }));
+    await waitFor(() => expect(onOpenVersion).toHaveBeenCalledWith(VERSIONS[1]));
   });
 
   it('shows a failed open inside the dialog and keeps it mounted', async () => {
     const user = userEvent.setup();
-    onOpenRevision.mockRejectedValue(new Error('Not valid JSON: Unexpected token'));
+    onOpenVersion.mockRejectedValue(new Error('Not valid JSON: Unexpected token'));
     renderDialog();
-    await user.click(await screen.findByText('Canal Line'));
-    const opens = await screen.findAllByRole('button', { name: /Open revision/ });
-    await user.click(opens[0]);
+    await openCanalLine(user);
+    await user.click(screen.getByRole('button', { name: 'Open version 3' }));
     expect(await screen.findByRole('alert')).toHaveTextContent('Not valid JSON');
     expect(screen.getByRole('dialog')).toBeInTheDocument();
     expect(onClose).not.toHaveBeenCalled();
@@ -109,8 +142,7 @@ describe('MapLibraryDialog', () => {
   it('deletes a map behind a two-step confirm, leaving the library open', async () => {
     const user = userEvent.setup();
     renderDialog();
-    await user.click(await screen.findByText('Canal Line'));
-    await waitFor(() => expect(listRevisions).toHaveBeenCalled());
+    await openCanalLine(user);
 
     // One click arms; it does NOT delete.
     await user.click(screen.getByRole('button', { name: 'Delete Canal Line' }));
@@ -123,44 +155,310 @@ describe('MapLibraryDialog', () => {
     expect(screen.getByRole('dialog')).toBeInTheDocument();
     await waitFor(() => expect(screen.queryByText('Canal Line')).toBeNull());
     expect(screen.getByText('Broadway')).toBeInTheDocument();
-    // The right column must not keep rendering a dead map's revisions.
-    expect(screen.getByText('Select a map to see its revisions.')).toBeInTheDocument();
+    // The right column must not keep rendering a dead map's versions.
+    expect(screen.getByText('Select a map to see its versions.')).toBeInTheDocument();
   });
 
   /**
-   * Without this, the stale pointer resurrects the map: saveRevision's write to
+   * Without this, the stale pointer resurrects the map: saveVersion's write to
    * the maps store is an upsert, so the next save re-creates the row we deleted.
    */
   it('clears the current-map pointer when the current map is deleted', async () => {
     const user = userEvent.setup();
-    libState.current = 'm1';
+    useLibraryPointer.setState({ mapId: 'm1', version: 3 });
     renderDialog();
     await screen.findByText('Canal Line');
     await user.click(screen.getByRole('button', { name: 'Delete Canal Line' }));
     await user.click(screen.getByRole('button', { name: 'Sure?' }));
-    await waitFor(() => expect(setCurrentMapId).toHaveBeenCalledWith(null));
+    // Both halves: a lingering version would put a pill on a map that is gone.
+    await waitFor(() => expect(useLibraryPointer.getState().mapId).toBeNull());
+    expect(useLibraryPointer.getState().version).toBeNull();
   });
 
   it('leaves the pointer alone when a different map is deleted', async () => {
     const user = userEvent.setup();
-    libState.current = 'm2';
+    useLibraryPointer.setState({ mapId: 'm2', version: 9 });
     renderDialog();
     await screen.findByText('Canal Line');
     await user.click(screen.getByRole('button', { name: 'Delete Canal Line' }));
     await user.click(screen.getByRole('button', { name: 'Sure?' }));
     await waitFor(() => expect(deleteMap).toHaveBeenCalledWith('m1'));
-    expect(setCurrentMapId).not.toHaveBeenCalled();
+    expect(useLibraryPointer.getState()).toMatchObject({ mapId: 'm2', version: 9 });
   });
 
-  it('deletes a single revision behind the same two-step', async () => {
+  /**
+   * Clearing the pointer is NOT enough on its own, and it is why this is a
+   * separate signal rather than something upstream can infer. A null pointer is
+   * also what a loaded JSON file looks like — and that document is safe on disk,
+   * so its bytes are legitimately still "saved". These bytes are not: their
+   * library row is gone. Only the dialog knows the difference.
+   */
+  it('reports the deletion of the live doc’s own map, so its bytes stop counting as saved', async () => {
+    const user = userEvent.setup();
+    useLibraryPointer.setState({ mapId: 'm1', version: 3 });
+    renderDialog();
+    await screen.findByText('Canal Line');
+    await user.click(screen.getByRole('button', { name: 'Delete Canal Line' }));
+    await user.click(screen.getByRole('button', { name: 'Sure?' }));
+    await waitFor(() => expect(onLiveDocUnbacked).toHaveBeenCalled());
+  });
+
+  it('stays quiet when the deleted map is not the live doc’s', async () => {
+    const user = userEvent.setup();
+    useLibraryPointer.setState({ mapId: 'm2', version: 9 });
+    renderDialog();
+    await screen.findByText('Canal Line');
+    await user.click(screen.getByRole('button', { name: 'Delete Canal Line' }));
+    await user.click(screen.getByRole('button', { name: 'Sure?' }));
+    await waitFor(() => expect(deleteMap).toHaveBeenCalledWith('m1'));
+    expect(onLiveDocUnbacked).not.toHaveBeenCalled();
+  });
+
+  // The failed delete must not report a loss that did not happen: the map, and
+  // the document's claim on it, are both still there.
+  /**
+   * The same loss through a smaller door, and the one the map-level fix misses:
+   * delete just the version the live doc came from and its bytes are equally
+   * gone, while the pointer deliberately does not move at all.
+   */
+  it('reports the deletion of the one version the live doc came from', async () => {
+    const user = userEvent.setup();
+    useLibraryPointer.setState({ mapId: 'm1', version: 3 });
+    renderDialog();
+    await openCanalLine(user);
+    await user.click(screen.getByRole('button', { name: 'Delete version 3' }));
+    await user.click(screen.getByRole('button', { name: 'Sure?' }));
+    await waitFor(() => expect(onLiveDocUnbacked).toHaveBeenCalled());
+  });
+
+  // Some OTHER version of the same map: the doc's own bytes are untouched, so
+  // this must not fire — a signal on every delete would defeat the dedup gate
+  // and copy the document on the next switch.
+  it('stays quiet when a version the live doc did not come from is deleted', async () => {
+    const user = userEvent.setup();
+    useLibraryPointer.setState({ mapId: 'm1', version: 2 });
+    renderDialog();
+    await openCanalLine(user);
+    await user.click(screen.getByRole('button', { name: 'Delete version 3' }));
+    await user.click(screen.getByRole('button', { name: 'Sure?' }));
+    await waitFor(() => expect(deleteVersion).toHaveBeenCalledWith(7));
+    expect(onLiveDocUnbacked).not.toHaveBeenCalled();
+  });
+
+  // Same version NUMBER, different map: the number alone is not identity.
+  it('stays quiet when another map happens to share the version number', async () => {
+    const user = userEvent.setup();
+    useLibraryPointer.setState({ mapId: 'm2', version: 3 });
+    renderDialog();
+    await openCanalLine(user);
+    await user.click(screen.getByRole('button', { name: 'Delete version 3' }));
+    await user.click(screen.getByRole('button', { name: 'Sure?' }));
+    await waitFor(() => expect(deleteVersion).toHaveBeenCalledWith(7));
+    expect(onLiveDocUnbacked).not.toHaveBeenCalled();
+  });
+
+  it('stays quiet when the delete itself fails', async () => {
+    const user = userEvent.setup();
+    useLibraryPointer.setState({ mapId: 'm1', version: 3 });
+    vi.mocked(deleteMap).mockRejectedValue(new Error('QuotaExceededError'));
+    renderDialog();
+    await screen.findByText('Canal Line');
+    await user.click(screen.getByRole('button', { name: 'Delete Canal Line' }));
+    await user.click(screen.getByRole('button', { name: 'Sure?' }));
+    expect(await screen.findByRole('alert')).toBeInTheDocument();
+    expect(onLiveDocUnbacked).not.toHaveBeenCalled();
+    expect(useLibraryPointer.getState()).toMatchObject({ mapId: 'm1', version: 3 });
+  });
+
+  it('deletes a single version behind the same two-step', async () => {
     const user = userEvent.setup();
     renderDialog();
-    await user.click(await screen.findByText('Canal Line'));
-    const dels = await screen.findAllByRole('button', { name: /Delete revision/ });
-    await user.click(dels[0]);
-    expect(deleteRevision).not.toHaveBeenCalled();
+    await openCanalLine(user);
+    await user.click(screen.getByRole('button', { name: 'Delete version 3' }));
+    expect(deleteVersion).not.toHaveBeenCalled();
     await user.click(screen.getByRole('button', { name: 'Sure?' }));
-    await waitFor(() => expect(deleteRevision).toHaveBeenCalledWith(7));
+    await waitFor(() => expect(deleteVersion).toHaveBeenCalledWith(7));
+  });
+
+  /**
+   * Deleting the version the live doc came from must NOT clear the pill: the
+   * canvas still holds those bytes, so "came from v3" stays true. Only deleting
+   * the whole map takes the pointer with it.
+   */
+  it('leaves the pointer alone when the live doc’s own version is deleted', async () => {
+    const user = userEvent.setup();
+    useLibraryPointer.setState({ mapId: 'm1', version: 3 });
+    renderDialog();
+    await openCanalLine(user);
+    await user.click(screen.getByRole('button', { name: 'Delete version 3' }));
+    await user.click(screen.getByRole('button', { name: 'Sure?' }));
+    await waitFor(() => expect(deleteVersion).toHaveBeenCalledWith(7));
+    expect(useLibraryPointer.getState()).toMatchObject({ mapId: 'm1', version: 3 });
+  });
+
+  describe('stars', () => {
+    it('stars an unstarred version', async () => {
+      const user = userEvent.setup();
+      renderDialog();
+      await openCanalLine(user);
+      await user.click(screen.getByRole('button', { name: 'Star version 3' }));
+      await waitFor(() => expect(setVersionStarred).toHaveBeenCalledWith(7, true));
+    });
+
+    // The same control both ways: a star button that only ever stars is the
+    // easy bug, and it reads as "nothing happened".
+    it('un-stars a starred version', async () => {
+      const user = userEvent.setup();
+      renderDialog();
+      await openCanalLine(user);
+      await user.click(screen.getByRole('button', { name: 'Unstar version 2' }));
+      await waitFor(() => expect(setVersionStarred).toHaveBeenCalledWith(6, false));
+    });
+
+    it('re-reads the list so the newly starred version sorts up', async () => {
+      const user = userEvent.setup();
+      renderDialog();
+      await openCanalLine(user);
+      vi.mocked(listVersions).mockClear();
+      await user.click(screen.getByRole('button', { name: 'Star version 3' }));
+      await waitFor(() => expect(listVersions).toHaveBeenCalledWith('m1'));
+    });
+
+    /**
+     * A star is an edit to a list you are looking at. Re-selecting the map to
+     * refresh would blank the column and flash "Loading…" under the cursor.
+     */
+    it('does not flash the loading state while re-reading', async () => {
+      const user = userEvent.setup();
+      renderDialog();
+      await openCanalLine(user);
+      await user.click(screen.getByRole('button', { name: 'Star version 3' }));
+      expect(screen.queryByText('Loading…')).toBeNull();
+      await waitFor(() => expect(setVersionStarred).toHaveBeenCalled());
+      expect(screen.queryByText('Loading…')).toBeNull();
+    });
+  });
+
+  /**
+   * The divider marks where the starred block ends. It hangs off the first
+   * UNSTARRED row, so it collapses on its own at both degenerate ends.
+   */
+  describe('the starred divider', () => {
+    // The dialog portals into document.body, so the render container is empty.
+    const rowClasses = () => [...document.querySelectorAll('.version-row')].map((r) => r.className);
+
+    it('marks the first unstarred row when a starred block sits above it', async () => {
+      const user = userEvent.setup();
+      renderDialog();
+      await openCanalLine(user);
+      await waitFor(() => expect(rowClasses()).toHaveLength(2));
+      const classes = rowClasses();
+      expect(classes[0]).not.toContain('after-starred'); // the starred one
+      expect(classes[1]).toContain('after-starred');
+    });
+
+    /**
+     * Three rows, TWO of them unstarred — the two-row fixture above cannot tell
+     * "the first unstarred row" from "every unstarred row", because they are the
+     * same row. A divider under every unstarred entry is just a list of boxes.
+     */
+    it('marks only the FIRST unstarred row, not every one below it', async () => {
+      const user = userEvent.setup();
+      vi.mocked(listVersions).mockResolvedValue([
+        VERSIONS[0],
+        VERSIONS[1],
+        { ...VERSIONS[1], id: 8, version: 1, savedAt: Date.parse('2026-07-12T09:00:00Z') },
+      ]);
+      renderDialog();
+      await openCanalLine(user);
+      await waitFor(() => expect(rowClasses()).toHaveLength(3));
+      const classes = rowClasses();
+      expect(classes[0]).not.toContain('after-starred');
+      expect(classes[1]).toContain('after-starred');
+      expect(classes[2]).not.toContain('after-starred');
+    });
+
+    it('marks nothing when no version is starred', async () => {
+      const user = userEvent.setup();
+      vi.mocked(listVersions).mockResolvedValue(
+        VERSIONS.map((v) => ({ ...v, starred: undefined })),
+      );
+      renderDialog();
+      await openCanalLine(user);
+      await waitFor(() => expect(rowClasses()).toHaveLength(2));
+      expect(rowClasses().join(' ')).not.toContain('after-starred');
+    });
+
+    it('marks nothing when every version is starred', async () => {
+      const user = userEvent.setup();
+      vi.mocked(listVersions).mockResolvedValue(
+        VERSIONS.map((v) => ({ ...v, starred: true as const })),
+      );
+      renderDialog();
+      await openCanalLine(user);
+      await waitFor(() => expect(rowClasses()).toHaveLength(2));
+      expect(rowClasses().join(' ')).not.toContain('after-starred');
+    });
+  });
+
+  describe('naming a version', () => {
+    it('names an unnamed version', async () => {
+      const user = userEvent.setup();
+      renderDialog();
+      await openCanalLine(user);
+      await user.click(screen.getByRole('button', { name: 'Name version 3' }));
+      await user.type(screen.getByRole('textbox', { name: 'Name version 3' }), 'rc2{Enter}');
+      await waitFor(() => expect(setVersionName).toHaveBeenCalledWith(7, 'rc2'));
+    });
+
+    it('opens the editor on the existing name so it can be edited, not retyped', async () => {
+      const user = userEvent.setup();
+      renderDialog();
+      await openCanalLine(user);
+      await user.click(screen.getByRole('button', { name: 'Name version 2' }));
+      expect(screen.getByRole('textbox', { name: 'Name version 2' })).toHaveValue(
+        'beta 1 — needs work',
+      );
+    });
+
+    /**
+     * Clearing the field is how you remove a name, so a blank must reach the
+     * library rather than being swallowed as "nothing to do" — which is exactly
+     * what the map rename above it does with a blank.
+     */
+    it('passes a cleared name through, so a name can be removed', async () => {
+      const user = userEvent.setup();
+      renderDialog();
+      await openCanalLine(user);
+      await user.click(screen.getByRole('button', { name: 'Name version 2' }));
+      const input = screen.getByRole('textbox', { name: 'Name version 2' });
+      await user.clear(input);
+      await user.keyboard('{Enter}');
+      await waitFor(() => expect(setVersionName).toHaveBeenCalledWith(6, ''));
+    });
+
+    it('commits on blur', async () => {
+      const user = userEvent.setup();
+      renderDialog();
+      await openCanalLine(user);
+      await user.click(screen.getByRole('button', { name: 'Name version 3' }));
+      await user.type(screen.getByRole('textbox', { name: 'Name version 3' }), 'rc2');
+      await user.tab();
+      await waitFor(() => expect(setVersionName).toHaveBeenCalledWith(7, 'rc2'));
+    });
+
+    // Same shape as the map rename: Escape is a second consumer of a keypress
+    // useDismiss also listens for on `document`.
+    it('Escape while naming cancels it without closing the library', async () => {
+      const user = userEvent.setup();
+      renderDialog();
+      await openCanalLine(user);
+      await user.click(screen.getByRole('button', { name: 'Name version 3' }));
+      await user.type(screen.getByRole('textbox', { name: 'Name version 3' }), 'zzz{Escape}');
+      expect(setVersionName).not.toHaveBeenCalled();
+      expect(onClose).not.toHaveBeenCalled();
+      expect(screen.getByRole('dialog')).toBeInTheDocument();
+    });
   });
 
   /**
@@ -170,7 +468,7 @@ describe('MapLibraryDialog', () => {
    */
   it('renaming the CURRENT map also renames the live document', async () => {
     const user = userEvent.setup();
-    libState.current = 'm1';
+    useLibraryPointer.setState({ mapId: 'm1', version: 3 });
     useDoc.getState().setDocName('Canal Line');
     renderDialog();
     await screen.findByText('Canal Line');
@@ -184,7 +482,7 @@ describe('MapLibraryDialog', () => {
 
   it('renaming a NON-current map leaves the live document’s name alone', async () => {
     const user = userEvent.setup();
-    libState.current = 'm2';
+    useLibraryPointer.setState({ mapId: 'm2', version: 1 });
     useDoc.getState().setDocName('Broadway');
     renderDialog();
     await screen.findByText('Canal Line');
@@ -246,6 +544,6 @@ describe('MapLibraryDialog', () => {
   it('starts with no map selected', async () => {
     renderDialog();
     await screen.findByText('Canal Line');
-    expect(screen.getByText('Select a map to see its revisions.')).toBeInTheDocument();
+    expect(screen.getByText('Select a map to see its versions.')).toBeInTheDocument();
   });
 });

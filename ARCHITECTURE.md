@@ -142,7 +142,7 @@ src/
     waypointLozenge.ts          # WP-lozenge pill geometry (shared drawn glyph + hit/selection box)
     itemBounds.ts contentBounds.ts  # per-item + whole-map world AABBs (popover spawn + camera fit)
 
-  state/                        # Zustand stores (7 of them) + history
+  state/                        # Zustand stores (8 of them) + history
     store.ts                    # useDoc: temporal(persist(...)) + ~110 actions + migrateDoc
     history.ts                  # the ONLY module touching zundo internals
     selection.ts                # useSelection: UiMode union + multi-select + reconcileWithDoc
@@ -150,7 +150,8 @@ src/
     viewportStore.ts            # useViewportStore (committed) + useLiveViewportStore (in-flight)
     theme.ts                    # themeColors(darkMode) table (no store; reads viewportStore)
     customPalettes.ts           # useCustomPalettes: imported palettes (global localStorage)
-    mapLibrary.ts               # saved maps + revisions in IndexedDB (no store; opaque JSON)
+    mapLibrary.ts               # saved maps + versions in IndexedDB (no store; opaque JSON)
+    libraryPointer.ts           # useLibraryPointer: which map + version the live doc came from
     snapPrefs.ts                # useSnapPrefs: snap toggles (+ v0→v1 migration)
     labelEditorPrefs.ts         # useLabelEditorPrefs: text-label editor UI prefs (wrapText)
     stationNames.ts             # random station-name word lists
@@ -160,7 +161,8 @@ src/
     Station*/Stop*/Label*/...   # per-entity SVG views (see Rendering section)
     selectionStyle.ts           # shared selection stroke/dash/wash constants (screen-px; ÷ zoom)
     Toolbar.tsx Sidebar.tsx Menu.tsx  # chrome
-    MapLibraryDialog.tsx        # the library manager (maps | revisions)
+    MapLibraryDialog.tsx        # the library manager (maps | versions)
+    MapVersionPill.tsx          # the live doc's version, beside the map name
     *Popover.tsx                # on-canvas item editors
     canvas/                     # interaction layer: drag/placement/viewport hooks + overlay layers
     inspector/                  # LineInspector (sidebar; identity + line-style fields — stop/topology
@@ -634,7 +636,7 @@ custom ids.
 ### Save / startup
 
 - **Export → JSON** = `serialize(pickDocSnapshot(state))` → `${basename}.massimo.json`. A
-  download is an export; **Save revision** writes to the library instead. `serialize` does **no**
+  download is an export; **Save version** writes to the library instead. `serialize` does **no**
   sanitization (writers are canonical by construction; transforms maintain canonical form on every
   set).
 - **Startup**: no explicit load in `App.tsx` — zustand `persist` rehydrates from localStorage on
@@ -647,28 +649,88 @@ custom ids.
 
 ### The map library ([mapLibrary.ts](src/state/mapLibrary.ts))
 
-In-app saved maps with revision history, in **IndexedDB** (`massimo-library`, v1). Reached via
-Canvas → Save revision and Canvas → Load → From library…
+In-app saved maps with version history, in **IndexedDB** (`massimo-library`, schema **v2**). Reached
+via Canvas → Save version and Canvas → Load → From library…
 
-- **A row IS a file.** The three stores hold opaque `serialize()` output, verbatim; loading goes
+- **A row IS a file.** `payloads` holds opaque `serialize()` output, verbatim; loading goes
   through `parse()`. The module imports nothing from the model and knows nothing about `MapDoc` —
   so this is **not** a third ingestion path. Storing the structured object instead would bypass the
   version envelope (IndexedDB structured-clones, so the temptation is real).
-- **Schema**: `maps` (keyPath `id`; name + updatedAt) · `revisions` (autoIncrement `id`, index
-  `mapId`; savedAt, `source: 'user'|'auto'`, thumb) · `payloads` (`id` === revision id; the JSON).
-  Payloads are split off so listing never drags 256 KB/map through a clone.
+- **Three unrelated things are called "version"**; only the first is a library concept. A row's
+  `version` = the user-facing handle, the v32 in the toolbar. The **doc's** version = the schema
+  stamp inside the payload string, owned by `serialize`/`parse` and never read here.
+  `DB_SCHEMA_VERSION` = IndexedDB's own stamp, private to the upgrade path.
+- **Schema (v2)**: `maps` (keyPath `id`; name, updatedAt, `nextVersion`) · `versions` (autoIncrement
+  `id`, index `mapId`; savedAt, `source: 'user'|'auto'`, `version`, optional `name`, optional
+  `starred: true`, thumb) · `payloads` (`id` === the version row's id; the JSON). Payloads are split
+  off so listing never drags 256 KB/map through a clone.
+- **`nextVersion` is a counter, not a derivation.** A version number is a **handle** ("open v32"),
+  so it must never move and never be reused — and every derivation moves it. `max(version) + 1`
+  re-issues v3 the moment v3 is deleted; a count renumbers the map's whole history the first time
+  the prune policy runs. The counter only climbs: `deleteVersion` deliberately leaves it alone (v3
+  is spent forever), while `deleteMap` drops it along with the map's rows and payloads — an id
+  that somehow returned would start at v1, which is not a reuse, because that map no longer exists.
+- **v1 → v2 upgrade**: renames `revisions` → `versions` and backfills the numbering v1 never had —
+  `version` per row (assigned in **id** order: the v1 id autoIncremented once per save, so it is
+  chronological and stays total where two saves shared a millisecond, which `savedAt` does not) plus
+  each map's `nextVersion`. Every row is carried across **with its original id**. Payloads are keyed
+  by that id, so re-adding rows and letting the new store's generator mint fresh ones would orphan
+  every payload in the library: each map would still list its whole history, and every entry in it
+  would fail to open. Passing the id back through an autoIncrement store also drags the generator up
+  past it, so the first save after the upgrade cannot collide with an inherited row.
 - **Keyed by a minted library id**, never by name — **two maps may share a name**, and a rename
-  can't orphan history. The id lives **outside** the doc, in
-  `localStorage['massimo-library-current']`: no `MapDoc` schema change, and a downloaded file
-  carries no id, so load-file → save-to-library forks a **new** map (as re-uploading a downloaded
-  doc would). `setCurrentMapId(null)` must `removeItem` — `setItem(k, null)` stores the *string*
-  `"null"`, which is truthy and survives `??`.
-- **Promises settle on the transaction, never on a request.** The revision id appears at the `add`
+  can't orphan history.
+- **`onblocked` rejects rather than hanging.** Another tab holding an older schema open stalls the
+  upgrade; every tab closes on `versionchange`, so reaching this needs one that never got to (frozen,
+  bfcached). Unhandled, the open request settles NEITHER way and every save waits on a promise that
+  never resolves — a silently dead Save menu instead of a message. Only reachable as of v2: v1 was
+  the schema at creation, so no open request ever had an upgrade to be blocked on. The rejected
+  request's late `onsuccess` closes its handle (an open connection is exactly what blocks the *next*
+  upgrade) and `dbPromise` is nulled, so a retry re-opens once the other tab goes.
+- **Promises settle on the transaction, never on a request.** The new row's id appears at the `add`
   request's `onsuccess`, which is where one reaches for `resolve` — but the transaction has not
   committed there, so a quota abort would be reported as a successful save and New would wipe a doc
-  whose revision does not exist. `saveRevision` resolves on `tx.oncomplete`, rejects on
+  whose version does not exist. `saveVersion` resolves on `tx.oncomplete`, rejects on
   `onabort`/`onerror`. Pinned by a test that drives a real abort.
-- **100 revisions/map**, oldest pruned with their payloads inside the same transaction.
+- **Prune policy**: `AUTO_VERSION_LIMIT = 50` per map, oldest-first, with their payloads inside the
+  save's transaction. It takes only **prunable** rows — `source === 'auto' && !starred && !name`.
+  An explicit save, a star and a name are all the same act ("keep this"), so **none of them is ever
+  pruned**, however many there are. The cap counts only prunable rows, so protected versions never
+  eat the budget — you keep a full 50 autos either way.
+- **Star / name** (`setVersionStarred` / `setVersionName`): read-modify-write on the row; a row
+  that's gone is not an error (the dialog can be looking at a list the prune policy has moved past).
+  Both are **absent-when-off**, never `false`/`''` — a blank name is *deleted*, which keeps the row
+  honest and is what `isPrunable` reads. `listVersions` sorts **starred first, then newest-first
+  within each group** (`id` breaking a same-millisecond tie, so the order is total). That order is
+  the list's own structure, not a view preference: the dialog draws its `.after-starred` divider at
+  the boundary it creates.
+- **The pointer lives outside both** ([libraryPointer.ts](src/state/libraryPointer.ts)).
+  `useLibraryPointer` holds `{ mapId, version }` — which library map the live doc belongs to, and
+  which version it **came from** (not a claim about the canvas now: edit after opening v32 and it
+  still reads v32 until the next save mints v33). Outside the **doc** because a downloaded file
+  carries no id, so load-file → save-to-library forks a **new** map (as re-uploading a downloaded
+  doc would) — and no `MapDoc` schema change. Outside **mapLibrary** because that module owns
+  IndexedDB and knows nothing about React; this is a two-field pointer the toolbar re-renders on.
+  Both halves move together, keeping the two states that matter distinct: a fresh map (`mapId` set,
+  `version` null — nothing saved under it yet) vs. a loaded JSON file (both null — not a library
+  map at all).
+- **Persisted as JSON** under `localStorage['massimo-library-pointer']` (zustand `persist`). #265's
+  bare string under `massimo-library-current` is **adopted once on boot, then the key is removed** —
+  so an afternoon's saves don't fork a new map the first time this build runs, and it can only
+  happen once. The adopted `version` is left null on purpose: nothing recorded which version that
+  doc came from, and a guess would put a wrong number in the toolbar. JSON also retires the old
+  `setItem(k, null)` trap (it stored the *string* `"null"` — truthy, and it survived `??`); with a
+  JSON codec that is structurally impossible.
+  - **Write the id through, THEN retire the key** — the order is load-bearing. `persist` writes on a
+    *change* and skips the initial state when storage is empty, so an id adopted into the initial
+    state lives in memory and nowhere else; retire the key beside it and one reload with nothing
+    saved in between loses the map. The write is guarded on the adopted id having actually won the
+    merge, so a real persisted pointer is never clobbered by a legacy key that outlived it. The
+    failure needs a *reload* to show, so it hides from any test that only checks the boot.
+- **The pill** ([MapVersionPill.tsx](src/components/MapVersionPill.tsx)) renders the pointer's
+  `version` as a grey `.map-version-pill` beside the map name — and **nothing at all** when it is
+  null: not "v0", not an empty pill. A pill showing a number the library cannot resolve is worse
+  than no pill.
 
 ### Document switches: `adoptParsedDoc` + `autoSaveCurrent` ([Toolbar.tsx](src/components/Toolbar.tsx))
 
@@ -679,7 +741,7 @@ through both, so none can drift:
   open history group _and_ wipes both stacks — undo must not splice two different documents,
   deliberately more than a bare `temporal.clear()`) → `fitCameraToDoc(doc)` falling back to the
   origin whenever the fit declines → record the doc's bytes as the dedup baseline.
-- `autoSaveCurrent()`: writes an `'auto'` revision first. **Nothing that replaces the document may
+- `autoSaveCurrent()`: writes an `'auto'` version first. **Nothing that replaces the document may
   lose it.** It **throws** on storage failure and every caller aborts its switch — the auto-save is
   the whole backstop for New, which is not undoable.
   - The content gate is `serialize(...) === EMPTY_DOC_JSON` — an exact byte compare covering every
@@ -690,7 +752,26 @@ through both, so none can drift:
   - The dedup gate compares against a **retained baseline** (the bytes last saved or adopted), not
     a DB read: id-keyed dedup is structurally inapplicable on the file-load path, which nulls the
     id. Not a dirty flag — a flag reads *clean* after a refresh, which loses data; a null baseline
-    reads dirty, costing at most one redundant revision.
+    reads dirty, costing at most one redundant version.
+  - **A delete in the library must null that baseline** (`onLiveDocUnbacked`), or the gate vouches
+    for bytes that no longer exist and New — which is not undoable and clears history — wipes a
+    document that is then in no file, no library row and no undo stack. It fires on **two** paths:
+    deleting the live doc's map, and deleting the one *version* it came from (where the pointer
+    deliberately does not move at all, so nothing else marks the loss). It is a signal, not an
+    inference: a cleared pointer looks identical to opening a JSON file, and *that* document is
+    safe on disk. Pinned by an e2e test, because the baseline is Toolbar state and the delete
+    happens in the dialog — only the real pair over real IndexedDB proves they agree.
+  - `onOpenVersion` reads and parses the payload **before** the auto-save, as the file-load path
+    does. The auto-save writes an `'auto'` under the same map and prunes in the same transaction,
+    and a well-used map sits at *exactly* `AUTO_VERSION_LIMIT` prunable autos — so the 51st prunes
+    the oldest, which is the row at the bottom of the list the user just clicked Open on. Fetching
+    first puts the bytes in hand before the prune can take them.
+  - It deliberately does **not** move the pointer — it runs while a document is on its way *out*,
+    and the map it writes keeps its history and stays reachable from the dialog, which is the whole
+    job. Each caller then points at whatever is coming *in*: **New** → `(newMapId(), null)` (an id
+    to save under, nothing saved yet), Load → JSON… → `(null, null)`, Load → From library → the
+    opened row's `(mapId, version)`. **Save version** is not a switch, and sets
+    `(id, saved.version)` itself.
 - **Clear** is the exception: it stays in the *same* document, so it neither auto-saves nor clears
   history (Ctrl+Z is the backstop), and `clearAll` preserves name/styles/styleDefaults/
   activePalettes/seamEdges.
@@ -1335,11 +1416,12 @@ band routing or the marker sort. Pinned by `MapCanvas.stationsSig.test.tsx`.
 
 ## UI chrome
 
-- **[Toolbar.tsx](src/components/Toolbar.tsx)** — Canvas menu (New / Save revision /
+- **[Toolbar.tsx](src/components/Toolbar.tsx)** — Canvas menu (New / Save version /
   Load → {JSON…, From library…} / Export → {PNG, SVG, PDF, JSON} / Clear), Add-item menu
   (toggles `uiMode`; includes **Image / SVG…** — imports `.svg`, `.png`, or `.jpg/.jpeg` via
   `svgImport.ts` into an `SvgImage`), tool buttons (arrow/hand), grid-size + grid-visible +
-  dark-mode toggles; embeds `SnapToggleBar`, `OptionsPopover`, and the **`?` `HelpPopover`**
+  dark-mode toggles; embeds `MapNameField`, `MapVersionPill`, `SnapToggleBar`, `OptionsPopover`,
+  and the **`?` `HelpPopover`**
   ([HelpPopover.tsx](src/components/HelpPopover.tsx) — a quick-reference interaction guide, also
   opened by the `?` key). Owns the **export desaturation flush**: before export it drops the
   selected-line desaturation via `flushSync(() => selectLine(null))` so it isn't baked into the

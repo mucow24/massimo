@@ -16,22 +16,25 @@ vi.mock('../export/exportCanvas', async (importOriginal) => {
 });
 
 // jsdom has no indexedDB; a partial mock would leave the real module reachable.
+// The library pointer is NOT mocked — it is plain zustand over localStorage,
+// which jsdom has; beforeEach resets it instead.
 vi.mock('../state/mapLibrary', () => ({
-  saveRevision: vi.fn(async () => 1),
+  saveVersion: vi.fn(async () => ({ id: 1, version: 1 })),
   listMaps: vi.fn(async () => []),
-  listRevisions: vi.fn(async () => []),
+  listVersions: vi.fn(async () => []),
   getPayload: vi.fn(async () => undefined),
   renameMap: vi.fn(async () => {}),
   deleteMap: vi.fn(async () => {}),
-  deleteRevision: vi.fn(async () => {}),
+  deleteVersion: vi.fn(async () => {}),
+  setVersionName: vi.fn(async () => {}),
+  setVersionStarred: vi.fn(async () => {}),
   newMapId: vi.fn(() => 'minted-1'),
-  getCurrentMapId: vi.fn(() => null),
-  setCurrentMapId: vi.fn(),
 }));
 
 import App from '../App';
 import { exportCanvasSvg, captureThumbnail } from '../export/exportCanvas';
-import { saveRevision } from '../state/mapLibrary';
+import { saveVersion } from '../state/mapLibrary';
+import { useLibraryPointer } from '../state/libraryPointer';
 import { useDoc, useSelection } from '../state/store';
 import { useViewportStore } from '../state/viewportStore';
 import { DEFAULT_DOC } from '../model/transforms';
@@ -52,8 +55,8 @@ beforeEach(() => {
   useSelection.setState({ selectedLineId: null, selectedStationIds: [], uiMode: { kind: 'idle' } });
   vi.mocked(exportCanvasSvg).mockClear();
   vi.mocked(captureThumbnail).mockClear();
-  vi.mocked(saveRevision).mockClear();
-  localStorage.removeItem('massimo-library-current');
+  vi.mocked(saveVersion).mockClear();
+  useLibraryPointer.setState({ mapId: null, version: null });
 });
 afterEach(() => {
   for (const prop of sizeProps) {
@@ -143,7 +146,7 @@ describe('Toolbar — export is independent of the lines/stations toggle', () =>
 
     const user = userEvent.setup();
     await user.click(screen.getByRole('button', { name: 'Canvas' }));
-    await user.click(screen.getByRole('menuitem', { name: 'Save revision' }));
+    await user.click(screen.getByRole('menuitem', { name: 'Save version' }));
     await waitFor(() => expect(captureThumbnail).toHaveBeenCalledTimes(1));
 
     const captured = vi.mocked(captureThumbnail).mock.calls[0][0];
@@ -152,7 +155,7 @@ describe('Toolbar — export is independent of the lines/stations toggle', () =>
     // ...and the toggle is exactly where the user left it.
     expect(useViewportStore.getState().showNetwork).toBe(false);
     expect(liveStripes()).toBe(0);
-    await waitFor(() => expect(saveRevision).toHaveBeenCalledTimes(1));
+    await waitFor(() => expect(saveVersion).toHaveBeenCalledTimes(1));
   });
 
   it('keeps a selected line selected, and still captures it undesaturated', async () => {
