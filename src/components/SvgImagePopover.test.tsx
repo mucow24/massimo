@@ -2,6 +2,7 @@ import { describe, it, expect, beforeEach, vi } from 'vitest';
 import { render, screen, fireEvent } from '@testing-library/react';
 import { SvgImagePopover } from './SvgImagePopover';
 import { useDoc } from '../state/store';
+import { stepSlider } from '../test/interaction';
 import { DEFAULT_DOC } from '../model/transforms';
 import { makeSvgImage } from '../test/fixtures';
 
@@ -41,13 +42,14 @@ describe('<SvgImagePopover />', () => {
 
   it('writes the opacity slider percent back as a 0..1 alpha', () => {
     renderPopover();
-    fireEvent.change(screen.getByRole('slider', { name: 'Opacity' }), { target: { value: '40' } });
-    expect(useDoc.getState().svgImages.i0.opacity).toBe(0.4);
+    // One arrow-key step of the percent grid down from 100: 99% -> 0.99.
+    stepSlider(screen.getByRole('slider', { name: 'Opacity' }), -1);
+    expect(useDoc.getState().svgImages.i0.opacity).toBe(0.99);
   });
 
   it('shows an image with no stored opacity as 100%', () => {
     renderPopover();
-    expect(screen.getByRole('slider', { name: 'Opacity' })).toHaveValue('100');
+    expect(screen.getByRole('slider', { name: 'Opacity' })).toHaveAttribute('aria-valuenow', '100');
     expect(screen.getByRole('spinbutton', { name: 'Opacity' })).toHaveValue(100);
   });
 
@@ -58,7 +60,7 @@ describe('<SvgImagePopover />', () => {
       backgroundOrder: ['i0'],
     });
     renderPopover();
-    expect(screen.getByRole('slider', { name: 'Opacity' })).toBeDisabled();
+    expect(screen.getByRole('slider', { name: 'Opacity' })).toHaveAttribute('data-disabled');
     expect(screen.getByRole('button', { name: 'Move image up' })).toBeDisabled();
     expect(screen.getByRole('button', { name: 'Move image down' })).toBeDisabled();
     expect(screen.getByRole('button', { name: 'Delete' })).toBeDisabled();

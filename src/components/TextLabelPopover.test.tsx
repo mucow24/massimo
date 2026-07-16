@@ -4,9 +4,10 @@ import userEvent from '@testing-library/user-event';
 import { TextLabelPopover } from './TextLabelPopover';
 import { useDoc } from '../state/store';
 import { useLabelEditorPrefs } from '../state/labelEditorPrefs';
-import { DEFAULT_DOC } from '../model/transforms';
+import { DEFAULT_DOC, TEXT_LABEL_WIDTH_MAX } from '../model/transforms';
 import { makeStyle, makeTextLabel } from '../test/fixtures';
 import { openColorField, setColorField } from '../test/colorField';
+import { chooseOption, stepSlider } from '../test/interaction';
 
 beforeEach(() => {
   useDoc.setState({ ...useDoc.getState(), ...DEFAULT_DOC });
@@ -366,17 +367,24 @@ describe('<TextLabelPopover /> — day/night color pickers', () => {
 describe('<TextLabelPopover /> — text / size / align / weight controls', () => {
   const identityView = { vbX: 0, vbY: 0, vbW: 800, vbH: 600, size: { w: 800, h: 600 } };
 
-  function seedAndRender(onClose = () => {}) {
-    const label = makeTextLabel({ id: 'g1', text: 'Hi', fontSize: 16, weight: 400, align: 'left' });
-    useDoc.setState({ ...useDoc.getState(), textLabels: { g1: label } });
-    render(
+  // Subscribe to the live store label, like the real mount (ItemPopovers)
+  // does — successive slider steps must see each other's writes.
+  function LiveControlsPopover({ onClose }: { onClose: () => void }) {
+    const label = useDoc((s) => s.textLabels['g1']);
+    return label ? (
       <TextLabelPopover
-        label={useDoc.getState().textLabels['g1']}
+        label={label}
         worldRect={rectAt(0, 0)}
         view={identityView}
         onClose={onClose}
-      />,
-    );
+      />
+    ) : null;
+  }
+
+  function seedAndRender(onClose = () => {}) {
+    const label = makeTextLabel({ id: 'g1', text: 'Hi', fontSize: 16, weight: 400, align: 'left' });
+    useDoc.setState({ ...useDoc.getState(), textLabels: { g1: label } });
+    render(<LiveControlsPopover onClose={onClose} />);
   }
 
   it('edits the label text', () => {
@@ -422,25 +430,28 @@ describe('<TextLabelPopover /> — text / size / align / weight controls', () =>
 
   it('changes the font size via the range slider', () => {
     seedAndRender();
-    fireEvent.change(screen.getByRole('slider', { name: 'Size' }), { target: { value: '24' } });
-    expect(useDoc.getState().textLabels['g1'].fontSize).toBe(24);
+    stepSlider(screen.getByRole('slider', { name: 'Size' }), 1);
+    expect(useDoc.getState().textLabels['g1'].fontSize).toBe(16.25);
   });
 
   it('the size slider and spinbutton step by 0.25 and the box shows two decimals', () => {
     seedAndRender();
-    const slider = screen.getByRole('slider', { name: 'Size' }) as HTMLInputElement;
     const spin = screen.getByRole('spinbutton', { name: 'Size' }) as HTMLInputElement;
-    expect(slider.getAttribute('step')).toBe('0.25');
     expect(spin.getAttribute('step')).toBe('0.25');
     expect(spin.value).toBe('16.00');
+    // The slider's step grid is behavioral now (a Radix thumb has no step
+    // attribute): one arrow press moves a quarter point and the box mirrors it.
+    stepSlider(screen.getByRole('slider', { name: 'Size' }), 1);
+    expect(useDoc.getState().textLabels['g1'].fontSize).toBe(16.25);
+    expect(spin.value).toBe('16.25');
   });
 
   it('writes quarter-point sizes via the wheel and the slider', () => {
     seedAndRender();
     fireEvent.wheel(screen.getByRole('spinbutton', { name: 'Size' }), { deltaY: -1 });
     expect(useDoc.getState().textLabels['g1'].fontSize).toBe(16.25);
-    fireEvent.change(screen.getByRole('slider', { name: 'Size' }), { target: { value: '20.5' } });
-    expect(useDoc.getState().textLabels['g1'].fontSize).toBe(20.5);
+    stepSlider(screen.getByRole('slider', { name: 'Size' }), 1);
+    expect(useDoc.getState().textLabels['g1'].fontSize).toBe(16.5);
   });
 
   it('changes alignment and toggles italic', () => {
@@ -451,11 +462,28 @@ describe('<TextLabelPopover /> — text / size / align / weight controls', () =>
     expect(useDoc.getState().textLabels['g1'].italic).toBe(true);
   });
 
-  it('changes the weight via the dropdown', () => {
+  it('the align options are one roving-focus group: arrows move between them', async () => {
     seedAndRender();
-    fireEvent.change(screen.getByRole('combobox', { name: 'Weight' }), {
-      target: { value: '700' },
-    });
+    const user = userEvent.setup();
+    await user.click(screen.getByLabelText('Align left'));
+    expect(screen.getByLabelText('Align left')).toHaveFocus();
+    await user.keyboard('{ArrowRight}');
+    expect(screen.getByLabelText('Align center')).toHaveFocus();
+    await user.keyboard('{ArrowRight}');
+    expect(screen.getByLabelText('Align right')).toHaveFocus();
+  });
+
+  it('re-clicking the selected alignment keeps it selected (no empty state)', async () => {
+    seedAndRender();
+    const user = userEvent.setup();
+    await user.click(screen.getByLabelText('Align center'));
+    await user.click(screen.getByLabelText('Align center'));
+    expect(useDoc.getState().textLabels['g1'].align).toBe('center');
+  });
+
+  it('changes the weight via the dropdown', async () => {
+    seedAndRender();
+    await chooseOption(userEvent.setup(), 'Weight', 'Bold');
     expect(useDoc.getState().textLabels['g1'].weight).toBe(700);
   });
 
@@ -486,37 +514,36 @@ describe('<TextLabelPopover /> — leading + tracking', () => {
 
   it('sets leading via its slider ([0,2] range, 0.05 step)', () => {
     seedAndRender();
-    const slider = screen.getByRole('slider', { name: 'Leading' }) as HTMLInputElement;
-    expect(slider.getAttribute('min')).toBe('0');
-    expect(slider.getAttribute('max')).toBe('2');
-    expect(slider.getAttribute('step')).toBe('0.05');
-    expect(slider.value).toBe('1'); // default
-    fireEvent.change(slider, { target: { value: '1.5' } });
-    expect(useDoc.getState().textLabels['g1'].leading).toBe(1.5);
+    const slider = screen.getByRole('slider', { name: 'Leading' });
+    expect(slider).toHaveAttribute('aria-valuemin', '0');
+    expect(slider).toHaveAttribute('aria-valuemax', '2');
+    expect(slider).toHaveAttribute('aria-valuenow', '1'); // default
+    stepSlider(slider, 1); // one step of the 0.05 grid
+    expect(useDoc.getState().textLabels['g1'].leading).toBeCloseTo(1.05, 10);
   });
 
   it('sets tracking via its slider ([-0.1,0.5] range, 0.001 step)', () => {
     seedAndRender();
-    const slider = screen.getByRole('slider', { name: 'Tracking' }) as HTMLInputElement;
-    expect(slider.getAttribute('min')).toBe('-0.1');
-    expect(slider.getAttribute('max')).toBe('0.5');
-    expect(slider.getAttribute('step')).toBe('0.001');
-    expect(slider.value).toBe('0'); // default
-    fireEvent.change(slider, { target: { value: '0.25' } });
-    expect(useDoc.getState().textLabels['g1'].tracking).toBe(0.25);
+    const slider = screen.getByRole('slider', { name: 'Tracking' });
+    expect(slider).toHaveAttribute('aria-valuemin', '-0.1');
+    expect(slider).toHaveAttribute('aria-valuemax', '0.5');
+    expect(slider).toHaveAttribute('aria-valuenow', '0'); // default
+    stepSlider(slider, 1); // one step of the 0.001 grid
+    expect(useDoc.getState().textLabels['g1'].tracking).toBeCloseTo(0.001, 10);
   });
 
   it('marks the neutral values with a detent tick', () => {
     seedAndRender();
-    for (const [name, neutral] of [
-      ['Leading', '1'],
-      ['Tracking', '0'],
+    for (const [name, expectedLeftPct] of [
+      ['Leading', 50], // 1 in [0, 2]
+      ['Tracking', (0.1 / 0.6) * 100], // 0 in [-0.1, 0.5]
     ] as const) {
       const slider = screen.getByRole('slider', { name });
-      const listId = slider.getAttribute('list');
-      expect(listId).toBeTruthy();
-      const tick = document.getElementById(listId!)?.querySelector('option');
-      expect(tick?.getAttribute('value')).toBe(neutral);
+      const tick = slider
+        .closest('.options-popover-row')
+        ?.querySelector('.field-slider-detent') as HTMLElement | null;
+      expect(tick).toBeTruthy();
+      expect(parseFloat(tick!.style.left)).toBeCloseTo(expectedLeftPct, 2);
     }
   });
 
@@ -531,8 +558,8 @@ describe('<TextLabelPopover /> — leading + tracking', () => {
         onClose={() => {}}
       />,
     );
-    expect(screen.getByRole('slider', { name: 'Leading' })).toBeDisabled();
-    expect(screen.getByRole('slider', { name: 'Tracking' })).toBeDisabled();
+    expect(screen.getByRole('slider', { name: 'Leading' })).toHaveAttribute('data-disabled');
+    expect(screen.getByRole('slider', { name: 'Tracking' })).toHaveAttribute('data-disabled');
   });
 });
 
@@ -560,7 +587,7 @@ describe('<TextLabelPopover /> — lock toggle', () => {
   it('when locked, editing controls are disabled but the lock toggle stays active', () => {
     seedAndRender(makeTextLabel({ id: 'g1', text: 'Hi', locked: true }));
     expect(screen.getByRole('textbox')).toBeDisabled();
-    expect(screen.getByRole('slider', { name: 'Size' })).toBeDisabled();
+    expect(screen.getByRole('slider', { name: 'Size' })).toHaveAttribute('data-disabled');
     expect(screen.getByRole('spinbutton', { name: 'Size' })).toBeDisabled();
     expect(screen.getByRole('combobox', { name: 'Weight' })).toBeDisabled();
     expect(screen.getByRole('combobox', { name: 'Style' })).toBeDisabled();
@@ -600,8 +627,12 @@ describe('<TextLabelPopover /> — column width + justify', () => {
 
   it('sets a column width via the width slider', () => {
     seed();
-    fireEvent.change(screen.getByRole('slider', { name: 'Width' }), { target: { value: '220' } });
-    expect(useDoc.getState().textLabels['g1'].width).toBe(220);
+    // From Auto (0), one arrow press starts a fixed column on the 1-unit grid.
+    stepSlider(screen.getByRole('slider', { name: 'Width' }), 1);
+    expect(useDoc.getState().textLabels['g1'].width).toBe(1);
+    // End jumps to the slider's rail — the documented [0, max] range.
+    fireEvent.keyDown(screen.getByRole('slider', { name: 'Width' }), { key: 'End' });
+    expect(useDoc.getState().textLabels['g1'].width).toBe(TEXT_LABEL_WIDTH_MAX);
   });
 
   it('shows width 0 (Auto) for a label with no width', () => {
@@ -611,7 +642,7 @@ describe('<TextLabelPopover /> — column width + justify', () => {
 
   it('disables the width controls when locked', () => {
     seed(makeTextLabel({ id: 'g1', text: 'Hi', locked: true }));
-    expect(screen.getByRole('slider', { name: 'Width' })).toBeDisabled();
+    expect(screen.getByRole('slider', { name: 'Width' })).toHaveAttribute('data-disabled');
     expect(screen.getByRole('spinbutton', { name: 'Width' })).toBeDisabled();
   });
 
@@ -709,7 +740,7 @@ describe('<TextLabelPopover /> — style presets', () => {
     ) : null;
   }
 
-  it('applies a preset from the Style row, then flips to Custom on a covered edit', () => {
+  it('applies a preset from the Style row, then flips to Custom on a covered edit', async () => {
     useDoc.setState({
       ...useDoc.getState(),
       textLabels: { g1: makeTextLabel({ id: 'g1', text: 'Hi' }) },
@@ -721,20 +752,18 @@ describe('<TextLabelPopover /> — style presets', () => {
       },
     });
     render(<LivePopover />);
-    const select = screen.getByRole('combobox', { name: 'Style' });
-    fireEvent.change(select, { target: { value: 'y1' } });
+    const user = userEvent.setup();
+    await chooseOption(user, 'Style', 'Heading');
     expect(useDoc.getState().textLabels['g1']).toMatchObject({
       fontSize: 24,
       weight: 700,
       styleId: 'y1',
     });
-    expect(select).toHaveValue('y1');
+    expect(screen.getByRole('combobox', { name: 'Style' })).toHaveTextContent('Heading');
     expect(screen.getByRole('spinbutton', { name: 'Size' })).toHaveValue(24);
     // A covered edit (weight) detaches; the text content is not covered.
-    fireEvent.change(screen.getByRole('combobox', { name: 'Weight' }), {
-      target: { value: '400' },
-    });
+    await chooseOption(user, 'Weight', 'Roman');
     expect(useDoc.getState().textLabels['g1'].styleId).toBeUndefined();
-    expect(select).toHaveValue('__custom__');
+    expect(screen.getByRole('combobox', { name: 'Style' })).toHaveTextContent('Custom');
   });
 });

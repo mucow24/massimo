@@ -69,6 +69,7 @@ export function TransferPopover({ transfer, worldRect, view, spawnBox, onClose }
   return (
     <DraggablePopoverShell
       className="bullet-popover transfer-popover"
+      title="Transfer"
       left={anchor.x}
       top={anchor.y}
       measuring={measuring}

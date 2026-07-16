@@ -18,6 +18,7 @@ import {
   POLYGON_STROKE_WIDTH_MIN,
 } from '../model/transforms';
 import type { Polygon } from '../model/types';
+import { FieldCheckbox } from './FieldCheckbox';
 
 interface Props {
   polygon: Polygon;
@@ -80,6 +81,7 @@ export function PolygonPopover({ polygon, worldRect, view, spawnBox, onClose }: 
   return (
     <DraggablePopoverShell
       className="bullet-popover polygon-popover"
+      title="Polygon"
       left={anchor.x}
       top={anchor.y}
       measuring={measuring}
@@ -168,14 +170,13 @@ export function PolygonPopover({ polygon, worldRect, view, spawnBox, onClose }: 
             no closing edge — so unchecking this also greys the fill controls. */}
       <div className="row">
         <label htmlFor="polygon-closed">Closed</label>
-        <input
+        <FieldCheckbox
           id="polygon-closed"
-          type="checkbox"
-          aria-label="Closed"
+          ariaLabel="Closed"
           title="Closed (uncheck for an open, stroke-only polygon)"
           checked={closed}
           disabled={locked}
-          onChange={(e) => onClosed(e.target.checked)}
+          onCheckedChange={onClosed}
         />
       </div>
       <LayerOrderRow

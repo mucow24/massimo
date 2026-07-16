@@ -6,6 +6,7 @@ import { useDoc } from '../state/store';
 import { DEFAULT_DOC } from '../model/transforms';
 import { makePolygon, makeStyle } from '../test/fixtures';
 import { openColorField, setColorField } from '../test/colorField';
+import { chooseOption, stepSlider } from '../test/interaction';
 
 const view = { vbX: 0, vbY: 0, vbW: 100, vbH: 100, size: { w: 100, h: 100 } };
 
@@ -26,6 +27,16 @@ beforeEach(() => {
     backgroundOrder: ['p0'],
   });
 });
+
+// The real mount (ItemPopovers) passes the live store polygon; mirror that
+// where a test needs the popover to re-render on store writes (successive
+// slider/wheel edits, the Style row re-deriving after an action).
+function LivePopover() {
+  const polygon = useDoc((s) => s.polygons['p0']);
+  return polygon ? (
+    <PolygonPopover polygon={polygon} worldRect={rectAt(0, 0)} view={view} onClose={() => {}} />
+  ) : null;
+}
 
 function renderPopover(onClose = () => {}) {
   return render(
@@ -66,9 +77,12 @@ describe('<PolygonPopover />', () => {
     const user = userEvent.setup();
     renderPopover();
     const slider = screen.getByRole('slider', { name: 'Stroke width' });
-    expect(slider).toHaveAttribute('min', '0');
-    expect(slider).toHaveAttribute('max', '10');
-    expect(slider).toHaveAttribute('step', '0.5');
+    expect(slider).toHaveAttribute('aria-valuemin', '0');
+    expect(slider).toHaveAttribute('aria-valuemax', '10');
+    // No step attribute on a Radix thumb — assert it behaviorally: one arrow
+    // press moves exactly one 0.5 step (fixture strokeWidth 2 → 2.5).
+    stepSlider(slider, 1);
+    expect(useDoc.getState().polygons['p0'].strokeWidth).toBeCloseTo(2.5, 9);
     const spin = screen.getByRole('spinbutton', { name: 'Stroke width' });
     expect(spin).toBeInTheDocument();
     expect(spin).toHaveAttribute('step', '0.5');
@@ -128,22 +142,21 @@ describe('<PolygonPopover />', () => {
 
   it('editing the stroke-width slider writes through to the store', () => {
     renderPopover();
-    fireEvent.change(screen.getByRole('slider', { name: 'Stroke width' }), {
-      target: { value: '7' },
-    });
-    expect(useDoc.getState().polygons['p0'].strokeWidth).toBe(7);
+    const slider = screen.getByRole('slider', { name: 'Stroke width' });
+    slider.focus();
+    fireEvent.keyDown(slider, { key: 'End' }); // jump to the 10 rail
+    expect(useDoc.getState().polygons['p0'].strokeWidth).toBe(10);
   });
 
   it('the stroke-width box shows one decimal and the wheel steps by 0.5', () => {
-    renderPopover(); // strokeWidth 2
+    render(<LivePopover />); // strokeWidth 2; live so the second write sees the first
     const spin = screen.getByRole('spinbutton', { name: 'Stroke width' }) as HTMLInputElement;
     expect(spin.value).toBe('2.0');
     fireEvent.wheel(spin, { deltaY: -1 });
     expect(useDoc.getState().polygons['p0'].strokeWidth).toBe(2.5);
-    fireEvent.change(screen.getByRole('slider', { name: 'Stroke width' }), {
-      target: { value: '3.5' },
-    });
-    expect(useDoc.getState().polygons['p0'].strokeWidth).toBe(3.5);
+    expect(spin.value).toBe('2.5');
+    stepSlider(screen.getByRole('slider', { name: 'Stroke width' }), 2); // 2.5 → 3.5
+    expect(useDoc.getState().polygons['p0'].strokeWidth).toBeCloseTo(3.5, 9);
   });
 
   it('Delete removes the polygon and calls onClose', () => {
@@ -245,10 +258,10 @@ describe('<PolygonPopover />', () => {
   it('the curve-radius slider (0–50) writes through to the store', () => {
     renderPopover();
     const slider = screen.getByRole('slider', { name: 'Curve radius' });
-    expect(slider).toHaveAttribute('min', '0');
-    expect(slider).toHaveAttribute('max', '50');
-    fireEvent.change(slider, { target: { value: '20' } });
-    expect(useDoc.getState().polygons['p0'].curveRadius).toBe(20);
+    expect(slider).toHaveAttribute('aria-valuemin', '0');
+    expect(slider).toHaveAttribute('aria-valuemax', '50');
+    stepSlider(slider, 1); // one step off the sharp default
+    expect(useDoc.getState().polygons['p0'].curveRadius).toBe(1);
   });
 
   it('layer up/down buttons reorder the polygon among its peers', () => {
@@ -327,8 +340,8 @@ describe('<PolygonPopover />', () => {
       backgroundOrder: ['p0'],
     });
     renderPopover();
-    expect(screen.getByRole('slider', { name: 'Stroke width' })).toBeDisabled();
-    expect(screen.getByRole('slider', { name: 'Curve radius' })).toBeDisabled();
+    expect(screen.getByRole('slider', { name: 'Stroke width' })).toHaveAttribute('data-disabled');
+    expect(screen.getByRole('slider', { name: 'Curve radius' })).toHaveAttribute('data-disabled');
     expect(screen.getByRole('button', { name: 'Move polygon up' })).toBeDisabled();
     expect(screen.getByRole('button', { name: 'Delete' })).toBeDisabled();
     // All four color pickers (light + dark, fill + stroke) are disabled too.
@@ -345,16 +358,7 @@ describe('<PolygonPopover />', () => {
 });
 
 describe('<PolygonPopover /> — style presets', () => {
-  // The real mount (ItemPopovers) passes the live store polygon; mirror that
-  // so the Style row re-derives when an action writes the tag.
-  function LivePopover() {
-    const polygon = useDoc((s) => s.polygons['p0']);
-    return polygon ? (
-      <PolygonPopover polygon={polygon} worldRect={rectAt(0, 0)} view={view} onClose={() => {}} />
-    ) : null;
-  }
-
-  it('applies a preset from the Style row, then flips to Custom on a covered edit', () => {
+  it('applies a preset from the Style row, then flips to Custom on a covered edit', async () => {
     useDoc.setState({
       ...useDoc.getState(),
       styles: {
@@ -365,17 +369,16 @@ describe('<PolygonPopover /> — style presets', () => {
       },
     });
     render(<LivePopover />);
-    const select = screen.getByRole('combobox', { name: 'Style' });
-    fireEvent.change(select, { target: { value: 'y1' } });
+    await chooseOption(userEvent.setup(), 'Style', 'Lake');
     expect(useDoc.getState().polygons['p0']).toMatchObject({
       fill: '#00aaff',
       curveRadius: 8,
       styleId: 'y1',
     });
-    expect(select).toHaveValue('y1');
+    expect(screen.getByRole('combobox', { name: 'Style' })).toHaveTextContent('Lake');
     // A covered edit (closed) detaches back to Custom.
     fireEvent.click(screen.getByLabelText('Closed'));
     expect(useDoc.getState().polygons['p0'].styleId).toBeUndefined();
-    expect(select).toHaveValue('__custom__');
+    expect(screen.getByRole('combobox', { name: 'Style' })).toHaveTextContent('Custom');
   });
 });

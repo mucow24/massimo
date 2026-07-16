@@ -6,6 +6,9 @@
 // under jsdom, which doesn't implement getBoundingClientRect layout, pointer
 // capture, or SVG geometry (createSVGPoint/getScreenCTM).
 
+import { fireEvent, screen } from '@testing-library/react';
+import type userEvent from '@testing-library/user-event';
+
 export interface PointerOpts {
   clientX?: number;
   clientY?: number;
@@ -175,4 +178,31 @@ export function dispatchWindowPointer(
   });
   Object.assign(ev, { pointerId: opts.pointerId ?? 1 });
   window.dispatchEvent(ev);
+}
+
+/**
+ * Step a Radix slider (the `role="slider"` thumb) by `steps` arrow-key
+ * presses — negative steps left. The old native ranges took a synthetic
+ * `change` with any value; a Radix thumb only moves on the step grid, so
+ * tests assert relative moves (or Home/End for the rails).
+ */
+export function stepSlider(slider: HTMLElement, steps: number): void {
+  slider.focus();
+  const key = steps < 0 ? 'ArrowLeft' : 'ArrowRight';
+  for (let i = 0; i < Math.abs(steps); i++) {
+    fireEvent.keyDown(slider, { key });
+  }
+}
+
+/**
+ * Pick an option in a Radix Select by clicking the trigger, then the option.
+ * (A native select took a synthetic `change`; the Radix panel is real DOM.)
+ */
+export async function chooseOption(
+  user: ReturnType<typeof userEvent.setup>,
+  comboName: string | RegExp,
+  optionName: string | RegExp,
+): Promise<void> {
+  await user.click(screen.getByRole('combobox', { name: comboName }));
+  await user.click(await screen.findByRole('option', { name: optionName }));
 }

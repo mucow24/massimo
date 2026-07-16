@@ -177,13 +177,30 @@ export default function App() {
       const target = e.target as HTMLElement | null;
       const tag = target?.tagName;
       const inputType = tag === 'INPUT' ? (target as HTMLInputElement).type : '';
+      // Radix widgets are buttons/spans wearing ARIA form roles, not native
+      // inputs — read the role so they guard like the elements they replaced:
+      // checkbox/radio/switch/combobox mirror INPUT/SELECT (Space toggles,
+      // letters typeahead), slider mirrors the old range input (arrows move
+      // it, and, like range, stays OUT of `inForm` so Ctrl+Z still fires
+      // mid-drag — the blur-then-undo contract).
+      // Optional-call: the event target can be the window itself (jsdom
+      // dispatches, blur-time synthetics), which has no getAttribute.
+      const role = target?.getAttribute?.('role');
+      const ariaFormRole =
+        role === 'checkbox' || role === 'radio' || role === 'switch' || role === 'combobox';
       const inForm =
         (tag === 'INPUT' && inputType !== 'range' && inputType !== 'color') ||
         tag === 'TEXTAREA' ||
         tag === 'SELECT' ||
+        ariaFormRole ||
         target?.isContentEditable;
       const inFormControl =
-        tag === 'INPUT' || tag === 'TEXTAREA' || tag === 'SELECT' || !!target?.isContentEditable;
+        tag === 'INPUT' ||
+        tag === 'TEXTAREA' ||
+        tag === 'SELECT' ||
+        ariaFormRole ||
+        role === 'slider' ||
+        !!target?.isContentEditable;
 
       if (e.key === 'Escape') {
         // Esc while typing belongs to the field — don't close popovers or

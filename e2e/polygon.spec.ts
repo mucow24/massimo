@@ -71,8 +71,8 @@ test.describe('Polygon shapes', () => {
   test('the popover edits stroke width', async ({ page }) => {
     await seedAndOpen(page, { stations: [], lines: [] });
     await addPolygonAt(page, CENTER.x, CENTER.y);
-    const slider = page.getByRole('slider', { name: 'Stroke width' });
-    await slider.fill('6');
+    // The slider is a Radix thumb now — type into its paired spinbutton.
+    await page.getByRole('spinbutton', { name: 'Stroke width' }).fill('6');
     expect((await onlyPolygon(page)).strokeWidth).toBe(6);
   });
 
@@ -82,8 +82,7 @@ test.describe('Polygon shapes', () => {
     await seedAndOpen(page, { stations: [], lines: [] });
     await addPolygonAt(page, CENTER.x, CENTER.y);
 
-    const slider = page.getByRole('slider', { name: 'Curve radius' });
-    await slider.fill('20');
+    await page.getByRole('spinbutton', { name: 'Curve radius' }).fill('20');
     expect((await onlyPolygon(page)).curveRadius).toBe(20);
 
     // The body is a <path> whose `d` contains quadratic curves once rounded.

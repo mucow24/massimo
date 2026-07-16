@@ -52,6 +52,7 @@ import {
   TEXT_LABEL_FONT_SIZE_MAX,
   TEXT_LABEL_FONT_SIZE_MIN,
 } from '../model/transforms';
+import { FieldCheckbox } from './FieldCheckbox';
 import type {
   LineStyleProps,
   PolygonStyleProps,
@@ -332,13 +333,12 @@ function PolygonStyleEditor({ id, props }: { id: string; props: PolygonStyleProp
       />
       <div className="row">
         <label htmlFor={`style-${id}-closed`}>Closed</label>
-        <input
+        <FieldCheckbox
           id={`style-${id}-closed`}
-          type="checkbox"
-          aria-label="Closed"
+          ariaLabel="Closed"
           title="Closed (uncheck for an open, stroke-only polygon)"
           checked={props.closed}
-          onChange={(e) => patch({ closed: e.target.checked })}
+          onCheckedChange={(closed) => patch({ closed })}
         />
       </div>
     </div>
