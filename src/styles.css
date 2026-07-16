@@ -154,6 +154,21 @@ select {
   color: inherit;
 }
 
+/* Chrome text is UI, not content — popover titles, field labels, button
+   captions, menu entries. Dragging across the app shouldn't leave a stray text
+   selection behind, so everything under `.app` (including the menus, popovers,
+   and pickers that render/portal into it) is unselectable by default. The
+   editable controls opt back in below so their own contents stay selectable and
+   copyable. */
+.app {
+  user-select: none;
+  -webkit-user-select: none;
+}
+.app :is(input, textarea) {
+  user-select: text;
+  -webkit-user-select: text;
+}
+
 .app {
   display: grid;
   grid-template-columns: 1fr;
@@ -342,7 +357,6 @@ select option {
   cursor: pointer;
   color: var(--text);
   outline: none;
-  user-select: none;
   transition: background-color 80ms ease;
 }
 .menu-panel .menu-item[data-highlighted] {
@@ -1377,7 +1391,6 @@ button.field-select {
   padding: 5px 12px;
   cursor: pointer;
   outline: none;
-  user-select: none;
 }
 .field-select-item[data-highlighted] {
   background: var(--raised-hover);
@@ -1475,7 +1488,6 @@ button.field-select {
   line-height: 1.5;
   text-align: center;
   cursor: default;
-  user-select: none;
 }
 /* No version to claim: keep the reserved box, hide the paint. visibility, not
    an unmount — an unmount drops the box (and its flex gap) and re-clamps scrollX
@@ -1935,7 +1947,6 @@ button.field-select {
 .inspector .axis-label {
   font-size: var(--fs-caption);
   color: var(--text-muted);
-  user-select: none;
 }
 /* The Line inspector embeds a NumericFieldRow (the popover slider idiom)
    between its .field rows — align its label styling and spacing with the
