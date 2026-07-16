@@ -53,7 +53,8 @@ import {
   exportCanvasSvg,
   exportCanvasPng,
 } from '../export/exportCanvas';
-import { saveVersion, newMapId, getPayload } from '../state/mapLibrary';
+import { saveVersion, newMapId, getPayload, listMaps, listVersions } from '../state/mapLibrary';
+import type { MapSummary, VersionMeta } from '../state/mapLibrary';
 import { useLibraryPointer } from '../state/libraryPointer';
 import { useDoc, useSelection } from '../state/store';
 import { useViewportStore } from '../state/viewportStore';
@@ -98,6 +99,13 @@ beforeEach(() => {
   vi.mocked(saveVersion).mockResolvedValue({ id: 1, version: 1 });
   vi.mocked(newMapId).mockClear();
   vi.mocked(getPayload).mockClear();
+  // Values, not just call logs: mockClear keeps the implementation, so a test
+  // that seeds library rows would leak them into every later dialog.
+  vi.mocked(getPayload).mockResolvedValue(undefined);
+  vi.mocked(listMaps).mockClear();
+  vi.mocked(listMaps).mockResolvedValue([]);
+  vi.mocked(listVersions).mockClear();
+  vi.mocked(listVersions).mockResolvedValue([]);
 });
 
 /**
@@ -557,6 +565,133 @@ describe('Toolbar — Load', () => {
     expect(useDoc.getState().name).toBe('Outgoing');
     // The doc stayed, so its pointer must stay with it — untouched, not cleared.
     expect(useLibraryPointer.getState()).toMatchObject({ mapId: 'lib-map', version: 7 });
+  });
+});
+
+/**
+ * Opening a version is the third and last way a document gets replaced, and it
+ * carries the same non-undoable wipe as New and Load — but nothing exercised its
+ * auto-save: MapLibraryDialog.test.tsx mocks onOpenVersion wholesale, so it only
+ * proves the callback fires, and the Load block above only ever reaches the file
+ * path. These drive the real dialog, so the Toolbar's own wiring is under test.
+ */
+describe('Toolbar — Load from library', () => {
+  const SAVED_AT = Date.parse('2026-07-14T10:00:00Z');
+
+  const seedLibraryRow = () => {
+    vi.mocked(listMaps).mockResolvedValue([
+      { id: 'm1', name: 'Saved Map', updatedAt: SAVED_AT, versionCount: 1 },
+    ] satisfies MapSummary[]);
+    vi.mocked(listVersions).mockResolvedValue([
+      { id: 7, mapId: 'm1', savedAt: SAVED_AT, source: 'user', version: 3 },
+    ] satisfies VersionMeta[]);
+  };
+
+  // Outgoing work that belongs to a DIFFERENT map, so "the pointer moved to the
+  // opened version" and "the pointer was left alone" are distinguishable.
+  const seedOutgoing = () => {
+    useDoc.setState({
+      ...useDoc.getState(),
+      name: 'Outgoing',
+      lines: { L9: makeLine({ id: 'L9' as LineId, stations: ['S9'] as StationId[] }) },
+      lineOrder: ['L9' as LineId],
+      stations: { S9: stationWithStop('S9' as StationId, 'L9' as LineId, { x: 0, y: 0 }) },
+    });
+    useLibraryPointer.setState({ mapId: 'other-map', version: 9 });
+  };
+
+  const libraryPayload = () =>
+    serialize(
+      makeDoc({
+        name: 'From Library',
+        stations: [makeStation({ id: 'fromlib', stops: [makeStop('L1')] })],
+        lines: [makeLine({ id: 'L1', stations: ['fromlib'] })],
+      }),
+    );
+
+  const clickOpen = async (user: ReturnType<typeof userEvent.setup>) => {
+    await user.click(screen.getByRole('button', { name: 'Canvas' }));
+    await user.click(screen.getByRole('menuitem', { name: 'Load' }));
+    // The leaf flyout is hover-driven; userEvent's pointer movement tears it
+    // down before the click lands, so fire the click directly on the leaf.
+    fireEvent.click(screen.getByRole('menuitem', { name: 'From library…' }));
+    await user.click(await screen.findByText('Saved Map'));
+    await user.click(await screen.findByRole('button', { name: 'Open version 3' }));
+  };
+
+  it('auto-saves the outgoing doc before adopting a version, and moves the pointer', async () => {
+    const user = userEvent.setup();
+    seedLibraryRow();
+    vi.mocked(getPayload).mockResolvedValue(libraryPayload());
+    seedOutgoing();
+    render(<Toolbar />);
+    await clickOpen(user);
+
+    await waitFor(() => expect(useDoc.getState().stations.fromlib).toBeDefined());
+    expect(saveVersion).toHaveBeenCalledTimes(1);
+    expect(vi.mocked(saveVersion).mock.calls[0][0]).toBe('other-map'); // under ITS map
+    expect(vi.mocked(saveVersion).mock.calls[0][1]).toBe('Outgoing');
+    expect(vi.mocked(saveVersion).mock.calls[0][3]).toBe('auto');
+    // Unlike a file, a version IS a library map: keep working in its history,
+    // and show the version the document actually came from.
+    expect(useLibraryPointer.getState()).toMatchObject({ mapId: 'm1', version: 3 });
+  });
+
+  /**
+   * The fetch precedes the auto-save, and it is not a stylistic ordering. The
+   * auto-save writes an 'auto' under the OUTGOING map and prunes in the same
+   * transaction, so on a map already at AUTO_VERSION_LIMIT the prune can take
+   * the very row that was just clicked — fetching first means the bytes are
+   * already in hand. Nothing else pins that order, and reversing it costs a
+   * junk version on every failed open too, which is what these two catch.
+   */
+  it('writes no auto-save when the version is gone from the library', async () => {
+    const user = userEvent.setup();
+    seedLibraryRow();
+    vi.mocked(getPayload).mockResolvedValue(undefined);
+    seedOutgoing();
+    render(<Toolbar />);
+    await clickOpen(user);
+
+    expect(
+      await screen.findByText('That version is no longer in the library.'),
+    ).toBeInTheDocument();
+    expect(saveVersion).not.toHaveBeenCalled();
+    expect(useDoc.getState().name).toBe('Outgoing');
+  });
+
+  it('writes no auto-save when the version payload fails to parse', async () => {
+    const user = userEvent.setup();
+    seedLibraryRow();
+    vi.mocked(getPayload).mockResolvedValue('not json');
+    seedOutgoing();
+    render(<Toolbar />);
+    await clickOpen(user);
+
+    await screen.findByRole('alert');
+    expect(saveVersion).not.toHaveBeenCalled();
+    expect(useDoc.getState().name).toBe('Outgoing');
+  });
+
+  /**
+   * The auto-save IS the backstop for a non-undoable wipe, so a storage failure
+   * has to cost the open rather than the document — the same contract the file
+   * path's own abort test pins.
+   */
+  it('aborts the open and surfaces the error when the auto-save fails', async () => {
+    const user = userEvent.setup();
+    seedLibraryRow();
+    vi.mocked(getPayload).mockResolvedValue(libraryPayload());
+    vi.mocked(saveVersion).mockRejectedValue(new Error('QuotaExceededError'));
+    seedOutgoing();
+    render(<Toolbar />);
+    await clickOpen(user);
+
+    expect(await screen.findByText('QuotaExceededError')).toBeInTheDocument();
+    expect(useDoc.getState().stations.fromlib).toBeUndefined();
+    expect(useDoc.getState().name).toBe('Outgoing');
+    // The doc stayed, so its pointer stays with it.
+    expect(useLibraryPointer.getState()).toMatchObject({ mapId: 'other-map', version: 9 });
   });
 });
 
