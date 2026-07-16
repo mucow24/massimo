@@ -185,7 +185,7 @@ export async function exportCanvasSvg(
 export const THUMB_BOX = { w: 240, h: 180 };
 
 /**
- * A small PNG data URI of the current map, for the library's revision list.
+ * A small PNG data URI of the current map, for the library's version list.
  *
  * Captured at save time because that is the only time it is possible: MapCanvas
  * takes no props and reads singleton stores, so a document that isn't on screen

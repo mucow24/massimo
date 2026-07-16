@@ -1,29 +1,43 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
+import { StarIcon, StarFilledIcon } from '@radix-ui/react-icons';
 import {
   deleteMap,
-  deleteRevision,
-  getCurrentMapId,
+  deleteVersion,
   listMaps,
-  listRevisions,
+  listVersions,
   renameMap,
-  setCurrentMapId,
+  setVersionName,
+  setVersionStarred,
   type MapSummary,
-  type RevisionMeta,
+  type VersionMeta,
 } from '../state/mapLibrary';
+import { useLibraryPointer } from '../state/libraryPointer';
 import { useDoc } from '../state/store';
 import { useDismiss } from './usePopover';
 
 interface Props {
   onClose: () => void;
-  /** Adopt a revision over the live doc. Rejects with a message worth showing. */
-  onOpenRevision: (mapId: string, revisionId: number) => Promise<void>;
+  /** Adopt a version over the live doc. Rejects with a message worth showing. */
+  onOpenVersion: (version: VersionMeta) => Promise<void>;
+  /**
+   * The library no longer holds the bytes the live document came from — its map
+   * was deleted, or the one version it came from was. Anything upstream treating
+   * the document as "already saved" has to stop, or it will decline to save a
+   * document that now exists nowhere else.
+   *
+   * A signal rather than something upstream can infer: a cleared pointer looks
+   * identical to opening a JSON file, and that document is safe on disk. And on
+   * the delete-a-version path the pointer does not move at all. Only the dialog
+   * knows the difference.
+   */
+  onLiveDocUnbacked: () => void;
 }
 
 const when = (ms: number) => new Date(ms).toLocaleString();
 
 /**
- * The library manager: maps on the left, the selected map's revisions on the
+ * The library manager: maps on the left, the selected map's versions on the
  * right. Reached from Load → From library…, and the only place maps are renamed
  * or deleted — you never have to open a map to throw it away.
  *
@@ -33,16 +47,17 @@ const when = (ms: number) => new Date(ms).toLocaleString();
  * anywhere in this app, and a second layer would mean two Escape listeners
  * racing over one keypress.
  */
-export function MapLibraryDialog({ onClose, onOpenRevision }: Props) {
+export function MapLibraryDialog({ onClose, onOpenVersion, onLiveDocUnbacked }: Props) {
   const panelRef = useRef<HTMLDivElement | null>(null);
   // null means "still loading" — distinct from [], which means "no maps yet".
   // Collapsing the two flashes "No saved maps" on every open.
   const [maps, setMaps] = useState<MapSummary[] | null>(null);
   const [selectedMapId, setSelectedMapId] = useState<string | null>(null);
-  const [revisions, setRevisions] = useState<RevisionMeta[] | null>(null);
+  const [versions, setVersions] = useState<VersionMeta[] | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [confirmKey, setConfirmKey] = useState<string | null>(null);
   const [renamingId, setRenamingId] = useState<string | null>(null);
+  const [namingVersionId, setNamingVersionId] = useState<number | null>(null);
 
   useDismiss(true, onClose, [panelRef]);
 
@@ -52,6 +67,21 @@ export function MapLibraryDialog({ onClose, onOpenRevision }: Props) {
     } catch {
       setMaps([]);
       setError('Could not read the map library.');
+    }
+  }, []);
+
+  /**
+   * Re-read the open map's versions in place. Separate from `selectMap`, which
+   * blanks the list first: a star or a name is an edit to a list you are
+   * looking at, and flashing "Loading…" under your cursor for it reads as a
+   * glitch.
+   */
+  const refreshVersions = useCallback(async (mapId: string) => {
+    try {
+      setVersions(await listVersions(mapId));
+    } catch {
+      setVersions([]);
+      setError('Could not read that map’s versions.');
     }
   }, []);
 
@@ -76,14 +106,9 @@ export function MapLibraryDialog({ onClose, onOpenRevision }: Props) {
 
   const selectMap = async (id: string) => {
     setSelectedMapId(id);
-    setRevisions(null);
+    setVersions(null);
     setConfirmKey(null);
-    try {
-      setRevisions(await listRevisions(id));
-    } catch {
-      setRevisions([]);
-      setError('Could not read that map’s revisions.');
-    }
+    await refreshVersions(id);
   };
 
   const onDeleteMap = async (id: string) => {
@@ -94,26 +119,65 @@ export function MapLibraryDialog({ onClose, onOpenRevision }: Props) {
       setError('Could not delete that map.');
       return;
     }
-    // A stale pointer would resurrect the row: saveRevision's write to the maps
+    // A stale pointer would resurrect the row: saveVersion's write to the maps
     // store is an upsert, so the very next save re-creates what we just deleted.
-    if (getCurrentMapId() === id) setCurrentMapId(null);
+    if (useLibraryPointer.getState().mapId === id) {
+      useLibraryPointer.getState().setPointer(null, null);
+      onLiveDocUnbacked();
+    }
     if (selectedMapId === id) {
       setSelectedMapId(null);
-      setRevisions(null);
+      setVersions(null);
     }
     await refreshMaps();
   };
 
-  const onDeleteRevision = async (revisionId: number) => {
+  /**
+   * Delete one version. The POINTER is deliberately left alone even when this
+   * is the version the live document came from: the canvas still holds those
+   * bytes, so "came from v32" stays true — v32 is merely no longer in the
+   * library, and the map's counter has spent that number for good.
+   *
+   * The document's BACKING is a different question with the opposite answer.
+   * Those bytes just stopped existing anywhere but the canvas, so the live doc
+   * is now unbacked exactly as if its whole map had gone — one version deleted
+   * is the same wipe as a map deleted, through a smaller door.
+   */
+  const onDeleteVersion = async (version: VersionMeta) => {
     setConfirmKey(null);
     try {
-      await deleteRevision(revisionId);
+      await deleteVersion(version.id);
     } catch {
-      setError('Could not delete that revision.');
+      setError('Could not delete that version.');
       return;
     }
-    if (selectedMapId) await selectMap(selectedMapId);
+    const pointer = useLibraryPointer.getState();
+    if (pointer.mapId === version.mapId && pointer.version === version.version) onLiveDocUnbacked();
+    if (selectedMapId) await refreshVersions(selectedMapId);
     await refreshMaps();
+  };
+
+  const onToggleStar = async (version: VersionMeta) => {
+    try {
+      await setVersionStarred(version.id, !version.starred);
+    } catch {
+      setError('Could not star that version.');
+      return;
+    }
+    if (selectedMapId) await refreshVersions(selectedMapId);
+  };
+
+  const onCommitVersionName = async (versionId: number, name: string) => {
+    setNamingVersionId(null);
+    try {
+      // Not trimmed or emptiness-checked here: a blank name is how you CLEAR
+      // one, and the library owns that rule.
+      await setVersionName(versionId, name);
+    } catch {
+      setError('Could not name that version.');
+      return;
+    }
+    if (selectedMapId) await refreshVersions(selectedMapId);
   };
 
   const onCommitRename = async (id: string, name: string) => {
@@ -129,16 +193,16 @@ export function MapLibraryDialog({ onClose, onOpenRevision }: Props) {
     // Keep the live title and the library row from diverging: an auto-save
     // passes doc.name, so a diverged rename would be silently reverted by the
     // next document switch.
-    if (getCurrentMapId() === id) useDoc.getState().setDocName(trimmed);
+    if (useLibraryPointer.getState().mapId === id) useDoc.getState().setDocName(trimmed);
     await refreshMaps();
   };
 
-  const onOpen = async (mapId: string, revisionId: number) => {
+  const onOpen = async (version: VersionMeta) => {
     setError(null);
     try {
-      await onOpenRevision(mapId, revisionId);
+      await onOpenVersion(version);
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'Could not open that revision.');
+      setError(err instanceof Error ? err.message : 'Could not open that version.');
     }
   };
 
@@ -152,6 +216,12 @@ export function MapLibraryDialog({ onClose, onOpenRevision }: Props) {
         Delete
       </button>
     );
+
+  // `listVersions` returns the starred block first, so the boundary is simply
+  // the first unstarred row — and only when there is a block above it to divide
+  // from. -1 when every row is starred, or none is.
+  const dividerIndex =
+    versions && versions[0]?.starred ? versions.findIndex((v) => !v.starred) : -1;
 
   const panel = (
     <div className="map-library-backdrop">
@@ -211,8 +281,7 @@ export function MapLibraryDialog({ onClose, onOpenRevision }: Props) {
                     <strong>{m.name}</strong>
                   )}
                   <span className="map-row-meta">
-                    {m.revisionCount} revision{m.revisionCount === 1 ? '' : 's'} ·{' '}
-                    {when(m.updatedAt)}
+                    {m.versionCount} version{m.versionCount === 1 ? '' : 's'} · {when(m.updatedAt)}
                   </span>
                 </div>
                 <div className="map-row-actions" onClick={(e) => e.stopPropagation()}>
@@ -229,35 +298,82 @@ export function MapLibraryDialog({ onClose, onOpenRevision }: Props) {
             ))}
           </section>
 
-          <section className="map-library-revisions" aria-label="Revisions">
+          <section className="map-library-versions" aria-label="Versions">
             {selectedMapId === null && (
-              <div className="empty">Select a map to see its revisions.</div>
+              <div className="empty">Select a map to see its versions.</div>
             )}
-            {selectedMapId !== null && revisions === null && <div className="empty">Loading…</div>}
-            {revisions?.length === 0 && <div className="empty">No revisions.</div>}
-            {revisions?.map((r) => (
-              <div key={r.id} className="revision-row">
+            {selectedMapId !== null && versions === null && <div className="empty">Loading…</div>}
+            {versions?.length === 0 && <div className="empty">No versions.</div>}
+            {versions?.map((r, i) => (
+              <div
+                key={r.id}
+                className={'version-row' + (i === dividerIndex ? ' after-starred' : '')}
+              >
                 {r.thumb ? (
                   <img src={r.thumb} alt="" className="map-thumb" />
                 ) : (
                   <span className="map-thumb map-thumb-blank" aria-hidden="true" />
                 )}
                 <div className="map-row-body">
-                  <span>{when(r.savedAt)}</span>
-                  <span className="revision-source">{r.source}</span>
+                  {namingVersionId === r.id ? (
+                    <input
+                      autoFocus
+                      aria-label={`Name version ${r.version}`}
+                      defaultValue={r.name ?? ''}
+                      placeholder="beta 1 — needs work"
+                      onBlur={(e) => void onCommitVersionName(r.id, e.target.value)}
+                      onKeyDown={(e) => {
+                        if (e.key === 'Enter')
+                          void onCommitVersionName(r.id, e.currentTarget.value);
+                        if (e.key === 'Escape') {
+                          e.stopPropagation();
+                          setNamingVersionId(null);
+                        }
+                      }}
+                    />
+                  ) : (
+                    <span className="version-row-title">
+                      <strong className="version-number">v{r.version}</strong>
+                      {r.name && <span className="version-name">{r.name}</span>}
+                    </span>
+                  )}
+                  <span className="map-row-meta">
+                    <span className="version-source">{r.source}</span> · {when(r.savedAt)}
+                  </span>
                 </div>
                 <div className="map-row-actions">
                   <button
                     type="button"
-                    aria-label={`Open revision from ${when(r.savedAt)}`}
-                    onClick={() => void onOpen(r.mapId, r.id)}
+                    className={'version-star' + (r.starred ? ' starred' : '')}
+                    aria-label={`${r.starred ? 'Unstar' : 'Star'} version ${r.version}`}
+                    aria-pressed={r.starred ?? false}
+                    title={
+                      r.starred
+                        ? 'Starred — kept to the top, and never pruned'
+                        : 'Star this version: keeps it to the top, and safe from pruning'
+                    }
+                    onClick={() => void onToggleStar(r)}
+                  >
+                    {r.starred ? <StarFilledIcon /> : <StarIcon />}
+                  </button>
+                  <button
+                    type="button"
+                    aria-label={`Name version ${r.version}`}
+                    onClick={() => setNamingVersionId(r.id)}
+                  >
+                    Name
+                  </button>
+                  <button
+                    type="button"
+                    aria-label={`Open version ${r.version}`}
+                    onClick={() => void onOpen(r)}
                   >
                     Open
                   </button>
                   {deleteButton(
-                    `rev:${r.id}`,
-                    `Delete revision from ${when(r.savedAt)}`,
-                    () => void onDeleteRevision(r.id),
+                    `ver:${r.id}`,
+                    `Delete version ${r.version}`,
+                    () => void onDeleteVersion(r),
                   )}
                 </div>
               </div>

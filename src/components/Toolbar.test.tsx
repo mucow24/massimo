@@ -20,27 +20,29 @@ vi.mock('../export/exportCanvas', async (importOriginal) => {
 
 /**
  * WHOLESALE, not the importOriginal partial this file uses elsewhere: jsdom has
- * no indexedDB, so a partial mock would leave the real getPayload/listRevisions
+ * no indexedDB, so a partial mock would leave the real getPayload/listVersions
  * reachable from the Toolbar and die on a ReferenceError rather than a useful
  * assertion.
  *
- * The current-map pointer is a stateful fake, not a constant-returning vi.fn():
- * "the second save reuses the id the first one set" is unobservable otherwise.
+ * `newMapId` mints a fresh id per call rather than returning a constant: "the
+ * second save reuses the id the first one minted" is unobservable otherwise.
+ *
+ * The library POINTER is deliberately NOT mocked — it is a plain zustand store
+ * over localStorage, which jsdom has, so the tests below drive the real thing
+ * and assert on its state. beforeEach resets it.
  */
-const libState = vi.hoisted(() => ({ current: null as string | null, minted: 0 }));
+const libState = vi.hoisted(() => ({ minted: 0 }));
 vi.mock('../state/mapLibrary', () => ({
-  saveRevision: vi.fn(async () => 1),
+  saveVersion: vi.fn(async () => ({ id: 1, version: 1 })),
   listMaps: vi.fn(async () => []),
-  listRevisions: vi.fn(async () => []),
+  listVersions: vi.fn(async () => []),
   getPayload: vi.fn(async () => undefined),
   renameMap: vi.fn(async () => {}),
   deleteMap: vi.fn(async () => {}),
-  deleteRevision: vi.fn(async () => {}),
+  deleteVersion: vi.fn(async () => {}),
+  setVersionName: vi.fn(async () => {}),
+  setVersionStarred: vi.fn(async () => {}),
   newMapId: vi.fn(() => `minted-${++libState.minted}`),
-  getCurrentMapId: vi.fn(() => libState.current),
-  setCurrentMapId: vi.fn((id: string | null) => {
-    libState.current = id;
-  }),
 }));
 
 import { Toolbar } from './Toolbar';
@@ -51,7 +53,8 @@ import {
   exportCanvasSvg,
   exportCanvasPng,
 } from '../export/exportCanvas';
-import { saveRevision, newMapId, setCurrentMapId, getPayload } from '../state/mapLibrary';
+import { saveVersion, newMapId, getPayload } from '../state/mapLibrary';
+import { useLibraryPointer } from '../state/libraryPointer';
 import { useDoc, useSelection } from '../state/store';
 import { useViewportStore } from '../state/viewportStore';
 import { DEFAULT_DOC } from '../model/transforms';
@@ -65,8 +68,8 @@ import type { LineId, StationId } from '../model/types';
 
 beforeEach(() => {
   localStorage.clear();
-  libState.current = null;
   libState.minted = 0;
+  useLibraryPointer.setState({ mapId: null, version: null });
   useDoc.setState({ ...useDoc.getState(), ...DEFAULT_DOC });
   useSelection.setState({
     ...useSelection.getState(),
@@ -91,10 +94,9 @@ beforeEach(() => {
   vi.mocked(exportCanvasPng).mockClear();
   vi.mocked(captureThumbnail).mockClear();
   vi.mocked(captureThumbnail).mockResolvedValue('data:image/png;base64,THUMB');
-  vi.mocked(saveRevision).mockClear();
-  vi.mocked(saveRevision).mockResolvedValue(1);
+  vi.mocked(saveVersion).mockClear();
+  vi.mocked(saveVersion).mockResolvedValue({ id: 1, version: 1 });
   vi.mocked(newMapId).mockClear();
-  vi.mocked(setCurrentMapId).mockClear();
   vi.mocked(getPayload).mockClear();
 });
 
@@ -387,7 +389,7 @@ describe('Toolbar — Canvas menu', () => {
     expect(useDoc.getState().name).toBe('My Map');
     expect(screen.queryByRole('dialog')).toBeNull();
     expect(historyDepth()).toBeGreaterThan(0);
-    expect(saveRevision).not.toHaveBeenCalled();
+    expect(saveVersion).not.toHaveBeenCalled();
     useDoc.temporal.getState().undo();
     expect(Object.keys(useDoc.getState().stations)).toHaveLength(1);
   });
@@ -492,14 +494,18 @@ describe('Toolbar — Load', () => {
 
   it('auto-saves the outgoing doc before adopting a file, and drops the library id', async () => {
     seedOutgoing();
+    // The outgoing doc came from the library, so there is a pointer to drop —
+    // the assertion below is vacuous against the null it starts at.
+    useLibraryPointer.setState({ mapId: 'lib-map', version: 7 });
     render(<Toolbar />);
     fireEvent.change(fileInput(), { target: { files: [validFile()] } });
     await waitFor(() => expect(useDoc.getState().stations.fromfile).toBeDefined());
-    expect(saveRevision).toHaveBeenCalledTimes(1);
-    expect(vi.mocked(saveRevision).mock.calls[0][1]).toBe('Outgoing');
-    expect(vi.mocked(saveRevision).mock.calls[0][3]).toBe('auto');
-    // A file is not a library map — saving it must fork a new one (D2b).
-    expect(setCurrentMapId).toHaveBeenLastCalledWith(null);
+    expect(saveVersion).toHaveBeenCalledTimes(1);
+    expect(vi.mocked(saveVersion).mock.calls[0][1]).toBe('Outgoing');
+    expect(vi.mocked(saveVersion).mock.calls[0][3]).toBe('auto');
+    // A file is not a library map — saving it must fork a new one (D2b). Both
+    // halves go: a version with no map behind it is nothing the pill can show.
+    expect(useLibraryPointer.getState()).toMatchObject({ mapId: null, version: null });
   });
 
   /**
@@ -514,13 +520,13 @@ describe('Toolbar — Load', () => {
     render(<Toolbar />);
     fireEvent.change(fileInput(), { target: { files: [validFile()] } });
     await waitFor(() => expect(useDoc.getState().stations.fromfile).toBeDefined());
-    expect(saveRevision).toHaveBeenCalledTimes(1); // the OUTGOING doc, correctly
+    expect(saveVersion).toHaveBeenCalledTimes(1); // the OUTGOING doc, correctly
 
     await user.click(screen.getByRole('button', { name: 'Canvas' }));
     await user.click(screen.getByRole('menuitem', { name: 'New' }));
     await waitFor(() => expect(Object.keys(useDoc.getState().stations)).toHaveLength(0));
-    // Still just the outgoing doc's revision — the untouched file was not copied.
-    expect(saveRevision).toHaveBeenCalledTimes(1);
+    // Still just the outgoing doc's version — the untouched file was not copied.
+    expect(saveVersion).toHaveBeenCalledTimes(1);
   });
 
   it('writes no auto-save for a file that fails to parse', async () => {
@@ -529,7 +535,7 @@ describe('Toolbar — Load', () => {
     const badFile = new File(['not json'], 'broken.json', { type: 'application/json' });
     fireEvent.change(fileInput(), { target: { files: [badFile] } });
     await screen.findByRole('alert');
-    expect(saveRevision).not.toHaveBeenCalled();
+    expect(saveVersion).not.toHaveBeenCalled();
     expect(useDoc.getState().name).toBe('Outgoing');
   });
 
@@ -541,14 +547,16 @@ describe('Toolbar — Load', () => {
    */
   it('aborts the load and surfaces the error when the auto-save fails', async () => {
     seedOutgoing();
-    vi.mocked(saveRevision).mockRejectedValue(new Error('QuotaExceededError'));
+    useLibraryPointer.setState({ mapId: 'lib-map', version: 7 });
+    vi.mocked(saveVersion).mockRejectedValue(new Error('QuotaExceededError'));
     render(<Toolbar />);
     fireEvent.change(fileInput(), { target: { files: [validFile()] } });
     const alert = await screen.findByRole('alert');
     expect(alert).toHaveTextContent('QuotaExceededError');
     expect(useDoc.getState().stations.fromfile).toBeUndefined();
     expect(useDoc.getState().name).toBe('Outgoing');
-    expect(setCurrentMapId).not.toHaveBeenCalled();
+    // The doc stayed, so its pointer must stay with it — untouched, not cleared.
+    expect(useLibraryPointer.getState()).toMatchObject({ mapId: 'lib-map', version: 7 });
   });
 });
 
@@ -583,17 +591,17 @@ describe('Toolbar — map library', () => {
 
   const saveToLibrary = async (user: ReturnType<typeof userEvent.setup>) => {
     await user.click(screen.getByRole('button', { name: 'Canvas' }));
-    await user.click(screen.getByRole('menuitem', { name: 'Save revision' }));
+    await user.click(screen.getByRole('menuitem', { name: 'Save version' }));
   };
 
-  it('Save revision writes a user revision of the serialized doc', async () => {
+  it('Save version writes a user version of the serialized doc', async () => {
     const user = userEvent.setup();
     seedRealMap();
     vi.mocked(getCanvasSvg).mockReturnValue(mountableSvg());
     render(<Toolbar />);
     await saveToLibrary(user);
-    await waitFor(() => expect(saveRevision).toHaveBeenCalledTimes(1));
-    expect(saveRevision).toHaveBeenCalledWith(
+    await waitFor(() => expect(saveVersion).toHaveBeenCalledTimes(1));
+    expect(saveVersion).toHaveBeenCalledWith(
       'minted-1',
       'My Map',
       serialize(pickDocSnapshot(useDoc.getState())),
@@ -613,8 +621,8 @@ describe('Toolbar — map library', () => {
     );
     render(<Toolbar />);
     await saveToLibrary(user);
-    await waitFor(() => expect(saveRevision).toHaveBeenCalledTimes(1));
-    expect(vi.mocked(saveRevision).mock.calls[0][4]).toBeUndefined();
+    await waitFor(() => expect(saveVersion).toHaveBeenCalledTimes(1));
+    expect(vi.mocked(saveVersion).mock.calls[0][4]).toBeUndefined();
     // The only message is the success one — the failure never reaches the user.
     const alert = await screen.findByRole('alert');
     expect(alert.className).toContain('info');
@@ -623,7 +631,7 @@ describe('Toolbar — map library', () => {
   it('surfaces a save failure and shows no confirmation', async () => {
     const user = userEvent.setup();
     seedRealMap();
-    vi.mocked(saveRevision).mockRejectedValue(new Error('QuotaExceededError'));
+    vi.mocked(saveVersion).mockRejectedValue(new Error('QuotaExceededError'));
     render(<Toolbar />);
     await saveToLibrary(user);
     const alert = await screen.findByRole('alert');
@@ -631,14 +639,19 @@ describe('Toolbar — map library', () => {
     expect(alert.className).not.toContain('info');
   });
 
-  it('confirms a successful save by name', async () => {
+  it('confirms a successful save by name and version', async () => {
     const user = userEvent.setup();
     seedRealMap('Canal Line');
+    // A distinctive number, so "v32" can only have come from the save's result.
+    vi.mocked(saveVersion).mockResolvedValue({ id: 9, version: 32 });
     render(<Toolbar />);
     await saveToLibrary(user);
     const alert = await screen.findByRole('alert');
     expect(alert).toHaveTextContent('Canal Line');
+    expect(alert).toHaveTextContent('v32');
     expect(alert.className).toContain('info');
+    // The pill's number is the same fact, and it comes from the same result.
+    expect(useLibraryPointer.getState().version).toBe(32);
   });
 
   it('a second save reuses the id the first one minted', async () => {
@@ -646,10 +659,10 @@ describe('Toolbar — map library', () => {
     seedRealMap();
     render(<Toolbar />);
     await saveToLibrary(user);
-    await waitFor(() => expect(saveRevision).toHaveBeenCalledTimes(1));
+    await waitFor(() => expect(saveVersion).toHaveBeenCalledTimes(1));
     await saveToLibrary(user);
-    await waitFor(() => expect(saveRevision).toHaveBeenCalledTimes(2));
-    const ids = vi.mocked(saveRevision).mock.calls.map((c) => c[0]);
+    await waitFor(() => expect(saveVersion).toHaveBeenCalledTimes(2));
+    const ids = vi.mocked(saveVersion).mock.calls.map((c) => c[0]);
     expect(ids).toEqual(['minted-1', 'minted-1']);
     expect(newMapId).toHaveBeenCalledTimes(1);
   });
@@ -660,9 +673,9 @@ describe('Toolbar — map library', () => {
     useViewportStore.setState({ x: 100, y: 50, zoom: 3 });
     render(<Toolbar />);
     await clickNew(user);
-    await waitFor(() => expect(saveRevision).toHaveBeenCalledTimes(1));
-    expect(vi.mocked(saveRevision).mock.calls[0][3]).toBe('auto');
-    expect(vi.mocked(saveRevision).mock.calls[0][1]).toBe('Outgoing');
+    await waitFor(() => expect(saveVersion).toHaveBeenCalledTimes(1));
+    expect(vi.mocked(saveVersion).mock.calls[0][3]).toBe('auto');
+    expect(vi.mocked(saveVersion).mock.calls[0][1]).toBe('Outgoing');
     // A different document now: wiped, renamed to the default, undo reset, and
     // the camera back at the origin (fitCameraToDoc declines on an empty doc,
     // so the fallback is the only thing that recenters).
@@ -670,13 +683,15 @@ describe('Toolbar — map library', () => {
     expect(useDoc.getState().name).toBe(DEFAULT_DOC.name);
     expect(historyDepth()).toBe(0);
     expect(useViewportStore.getState()).toMatchObject({ x: 0, y: 0, zoom: 1 });
-    expect(setCurrentMapId).toHaveBeenLastCalledWith('minted-2');
+    // A fresh map: an id of its own (not the one the auto-save just wrote
+    // under), and no version until something is saved beneath it.
+    expect(useLibraryPointer.getState()).toMatchObject({ mapId: 'minted-2', version: null });
   });
 
   it('New ABORTS without wiping when the auto-save fails', async () => {
     const user = userEvent.setup();
     seedRealMap('Precious');
-    vi.mocked(saveRevision).mockRejectedValue(new Error('QuotaExceededError'));
+    vi.mocked(saveVersion).mockRejectedValue(new Error('QuotaExceededError'));
     const before = historyDepth();
     render(<Toolbar />);
     await clickNew(user);
@@ -700,17 +715,19 @@ describe('Toolbar — map library', () => {
     expect(computeContentBounds(useDoc.getState())).toBeNull();
     render(<Toolbar />);
     await clickNew(user);
-    await waitFor(() => expect(saveRevision).toHaveBeenCalledTimes(1));
-    expect(vi.mocked(saveRevision).mock.calls[0][3]).toBe('auto');
-    expect(vi.mocked(saveRevision).mock.calls[0][1]).toBe('Lines Only');
+    await waitFor(() => expect(saveVersion).toHaveBeenCalledTimes(1));
+    expect(vi.mocked(saveVersion).mock.calls[0][3]).toBe('auto');
+    expect(vi.mocked(saveVersion).mock.calls[0][1]).toBe('Lines Only');
   });
 
   it('New on a virgin empty doc writes nothing', async () => {
     const user = userEvent.setup();
     render(<Toolbar />);
     await clickNew(user);
-    await waitFor(() => expect(setCurrentMapId).toHaveBeenCalled());
-    expect(saveRevision).not.toHaveBeenCalled();
+    // minted-1, not minted-2: New's own id is the first this test mints, which
+    // is exactly the evidence that no auto-save ran ahead of it.
+    await waitFor(() => expect(useLibraryPointer.getState().mapId).toBe('minted-1'));
+    expect(saveVersion).not.toHaveBeenCalled();
   });
 
   it('New writes no second copy of a doc that has not changed since its save', async () => {
@@ -722,14 +739,14 @@ describe('Toolbar — map library', () => {
     vi.mocked(getCanvasSvg).mockReturnValue(mountableSvg());
     render(<Toolbar />);
     await saveToLibrary(user);
-    await waitFor(() => expect(saveRevision).toHaveBeenCalledTimes(1));
+    await waitFor(() => expect(saveVersion).toHaveBeenCalledTimes(1));
     expect(captureThumbnail).toHaveBeenCalledTimes(1); // the explicit save paid for one
     vi.mocked(captureThumbnail).mockClear();
 
     await clickNew(user);
-    await waitFor(() => expect(setCurrentMapId).toHaveBeenLastCalledWith('minted-2'));
+    await waitFor(() => expect(useLibraryPointer.getState().mapId).toBe('minted-2'));
     // Still just the explicit save — the auto-save deduped against it.
-    expect(saveRevision).toHaveBeenCalledTimes(1);
+    expect(saveVersion).toHaveBeenCalledTimes(1);
     // And it deduped BEFORE paying for a thumbnail.
     expect(captureThumbnail).not.toHaveBeenCalled();
   });
@@ -739,11 +756,11 @@ describe('Toolbar — map library', () => {
     seedRealMap();
     render(<Toolbar />);
     await saveToLibrary(user);
-    await waitFor(() => expect(saveRevision).toHaveBeenCalledTimes(1));
+    await waitFor(() => expect(saveVersion).toHaveBeenCalledTimes(1));
     useDoc.getState().setDocName('Edited');
     await clickNew(user);
-    await waitFor(() => expect(saveRevision).toHaveBeenCalledTimes(2));
-    expect(vi.mocked(saveRevision).mock.calls[1][3]).toBe('auto');
+    await waitFor(() => expect(saveVersion).toHaveBeenCalledTimes(2));
+    expect(vi.mocked(saveVersion).mock.calls[1][3]).toBe('auto');
   });
 });
 
