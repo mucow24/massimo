@@ -26,6 +26,9 @@ export const TRANSFER_STROKE_WIDTH_MIN = 0;
 // Slider bound only, like TRANSFER_THICKNESS_MAX.
 export const TRANSFER_STROKE_WIDTH_MAX = 5;
 export const TRANSFER_STROKE_WIDTH_DEFAULT = 0;
+// Outline width lives on a quarter-unit grid: the slider/steppers move in 0.25
+// increments and the setter rounds to the nearest step. (Thickness stays whole.)
+export const TRANSFER_STROKE_WIDTH_STEP = 0.25;
 export const TRANSFER_STROKE_COLOR_DEFAULT: DayNightColor = { day: '#ffffff', night: '#ffffff' };
 
 // The four style knobs a transfer can override — also the shape of the
@@ -81,9 +84,15 @@ export const canonicalTransferThickness = (n: number, dropAt: number): number | 
   return norm === dropAt ? undefined : norm;
 };
 
-/** Same contract as canonicalTransferThickness for the outline width. */
+/**
+ * Same contract as canonicalTransferThickness for the outline width, but on the
+ * TRANSFER_STROKE_WIDTH_STEP (quarter-unit) grid rather than whole integers.
+ */
 export const canonicalTransferStrokeWidth = (n: number, dropAt: number): number | undefined => {
-  const norm = Math.max(TRANSFER_STROKE_WIDTH_MIN, Math.round(n));
+  const norm = Math.max(
+    TRANSFER_STROKE_WIDTH_MIN,
+    Math.round(n / TRANSFER_STROKE_WIDTH_STEP) * TRANSFER_STROKE_WIDTH_STEP,
+  );
   return norm === dropAt ? undefined : norm;
 };
 

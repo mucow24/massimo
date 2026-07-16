@@ -95,8 +95,10 @@ describe('canonicalTransferThickness', () => {
 });
 
 describe('canonicalTransferStrokeWidth', () => {
-  it('rounds and clamps to the floor TRANSFER_STROKE_WIDTH_MIN (0 is legal)', () => {
-    expect(canonicalTransferStrokeWidth(2.7, 0)).toBe(3);
+  it('rounds to the quarter grid and clamps to the floor TRANSFER_STROKE_WIDTH_MIN (0 is legal)', () => {
+    expect(canonicalTransferStrokeWidth(2.7, 0)).toBe(2.75);
+    // A quarter value survives instead of being rounded off to an integer.
+    expect(canonicalTransferStrokeWidth(2.75, 0)).toBe(2.75);
     expect(canonicalTransferStrokeWidth(-2, 1)).toBe(TRANSFER_STROKE_WIDTH_MIN);
   });
 

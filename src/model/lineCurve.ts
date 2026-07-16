@@ -11,17 +11,24 @@ export const LINE_CURVE_RADIUS_MIN = 4;
 // (NumericFieldRow's textboxAllowAboveMax); band-level marker-fit caps keep
 // any large value geometrically safe.
 export const LINE_CURVE_RADIUS_MAX = 80;
+// Radii live on a quarter-unit grid: the slider/steppers move in 0.25
+// increments and the setter rounds to the nearest step.
+export const LINE_CURVE_RADIUS_STEP = 0.25;
 
 /**
- * The canonical STORED form of a curve radius: round to an integer, clamp to
- * ≥ LINE_CURVE_RADIUS_MIN, and collapse to `undefined` (store nothing) when
- * it lands on LINE_CURVE_RADIUS_DEFAULT — the app never stores the default.
- * Shared by the `setLineCurveRadius` transform and the file-import sanitizer
- * so the two can never drift. Callers own the finiteness guard (a transform
- * ignores non-finite input; a sanitizer drops the field).
+ * The canonical STORED form of a curve radius: round to the
+ * LINE_CURVE_RADIUS_STEP (quarter-unit) grid, clamp to ≥ LINE_CURVE_RADIUS_MIN,
+ * and collapse to `undefined` (store nothing) when it lands on
+ * LINE_CURVE_RADIUS_DEFAULT — the app never stores the default. Shared by the
+ * `setLineCurveRadius` transform and the file-import sanitizer so the two can
+ * never drift. Callers own the finiteness guard (a transform ignores
+ * non-finite input; a sanitizer drops the field).
  */
 export const canonicalLineCurveRadius = (r: number): number | undefined => {
-  const norm = Math.max(LINE_CURVE_RADIUS_MIN, Math.round(r));
+  const norm = Math.max(
+    LINE_CURVE_RADIUS_MIN,
+    Math.round(r / LINE_CURVE_RADIUS_STEP) * LINE_CURVE_RADIUS_STEP,
+  );
   return norm === LINE_CURVE_RADIUS_DEFAULT ? undefined : norm;
 };
 

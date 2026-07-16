@@ -24,9 +24,12 @@ describe('line width constants', () => {
 });
 
 describe('canonicalLineWidth', () => {
-  it('rounds to an integer', () => {
-    expect(canonicalLineWidth(20.4)).toBe(20);
-    expect(canonicalLineWidth(20.6)).toBe(21);
+  it('rounds to the quarter grid, preserving quarter values', () => {
+    expect(canonicalLineWidth(20.1)).toBe(20);
+    expect(canonicalLineWidth(20.2)).toBe(20.25);
+    expect(canonicalLineWidth(20.4)).toBe(20.5);
+    // A quarter value survives instead of being rounded off to an integer.
+    expect(canonicalLineWidth(20.25)).toBe(20.25);
   });
 
   it('clamps below the floor up to LINE_WIDTH_MIN', () => {
@@ -37,12 +40,14 @@ describe('canonicalLineWidth', () => {
 
   it('collapses the default to undefined so it is never stored', () => {
     expect(canonicalLineWidth(LINE_WIDTH_DEFAULT)).toBeUndefined();
-    expect(canonicalLineWidth(LINE_WIDTH_DEFAULT + 0.3)).toBeUndefined();
+    // Within a quarter of the default still lands on it.
+    expect(canonicalLineWidth(LINE_WIDTH_DEFAULT + 0.1)).toBeUndefined();
   });
 
-  it('keeps non-default widths as the rounded integer', () => {
+  it('keeps non-default widths on the quarter grid', () => {
     expect(canonicalLineWidth(21)).toBe(21);
     expect(canonicalLineWidth(2)).toBe(2);
+    expect(canonicalLineWidth(2.75)).toBe(2.75);
   });
 });
 

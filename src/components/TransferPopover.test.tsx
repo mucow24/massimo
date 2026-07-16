@@ -139,9 +139,9 @@ describe('<TransferPopover />', () => {
 
   it('editing the stroke width writes a per-transfer override', () => {
     renderPopover();
-    // One arrow step from the effective default (0) → 1, stored as an override.
+    // One arrow step from the effective default (0) → 0.25, stored as an override.
     stepSlider(screen.getByRole('slider', { name: 'Stroke width' }), 1);
-    expect(useDoc.getState().transfers.x1.strokeWidth).toBe(1);
+    expect(useDoc.getState().transfers.x1.strokeWidth).toBe(0.25);
   });
 
   it('one wheel notch over a spinbutton steps the EFFECTIVE value exactly once', () => {
@@ -165,8 +165,8 @@ describe('<TransferPopover />', () => {
   it('a wheel notch over the Stroke width spinbutton steps the stroke width, not thickness', () => {
     renderPopover();
     fireEvent.wheel(screen.getByRole('spinbutton', { name: 'Stroke width' }), { deltaY: -1 });
-    // Tracking transfer: effective 0 + 1 = 1, stored as a strokeWidth override.
-    expect(useDoc.getState().transfers.x1.strokeWidth).toBe(1);
+    // Tracking transfer: effective 0 + 0.25 = 0.25, stored as a strokeWidth override.
+    expect(useDoc.getState().transfers.x1.strokeWidth).toBe(0.25);
     expect('thickness' in useDoc.getState().transfers.x1).toBe(false);
   });
 

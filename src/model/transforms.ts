@@ -2229,21 +2229,25 @@ export function resolveTextLabelColor(
 export const POLYGON_STROKE_WIDTH_MIN = 0;
 export const POLYGON_STROKE_WIDTH_MAX = 10;
 export const POLYGON_STROKE_WIDTH_DEFAULT = 1;
-// Stroke width steps in halves, like the line stroke-width control
+// Stroke width steps in quarter units, like the line stroke-width control
 // (LINE_STROKE_STEP). The slider/spinbutton/wheel all move by this.
-export const POLYGON_STROKE_STEP = 0.5;
+export const POLYGON_STROKE_STEP = 0.25;
 export const POLYGON_FILL_DEFAULT = '#cfe3f2';
 export const POLYGON_STROKE_DEFAULT = '#000000';
 // Corner-rounding radius in world units; missing ⇒ 0 (sharp corners).
 export const POLYGON_CURVE_RADIUS_MIN = 0;
 export const POLYGON_CURVE_RADIUS_MAX = 50;
 export const POLYGON_CURVE_RADIUS_DEFAULT = 0;
+// Slider granularity only: the radius is stored free-form (clampPolygonCurveRadius
+// clamps the floor but never rounds), so this just sets the slider/stepper/wheel
+// increment to a quarter unit.
+export const POLYGON_CURVE_RADIUS_STEP = 0.25;
 // Half-side of the default square, in world units.
 export const POLYGON_DEFAULT_HALF = 30;
 // A polygon never drops below a triangle, so deleting a vertex is a no-op here.
 export const POLYGON_MIN_VERTICES = 3;
 
-// Stroke width snaps to the POLYGON_STROKE_STEP (0.5) grid and clamps at the
+// Stroke width snaps to the POLYGON_STROKE_STEP (0.25) grid and clamps at the
 // bottom only; its spinbutton accepts values beyond the slider max
 // (POLYGON_STROKE_WIDTH_MAX constrains the slider, not the value). Mirrors the
 // line stroke-width control.

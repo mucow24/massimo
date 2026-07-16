@@ -80,12 +80,12 @@ describe('<PolygonPopover />', () => {
     expect(slider).toHaveAttribute('aria-valuemin', '0');
     expect(slider).toHaveAttribute('aria-valuemax', '10');
     // No step attribute on a Radix thumb — assert it behaviorally: one arrow
-    // press moves exactly one 0.5 step (fixture strokeWidth 2 → 2.5).
+    // press moves exactly one 0.25 step (fixture strokeWidth 2 → 2.25).
     stepSlider(slider, 1);
-    expect(useDoc.getState().polygons['p0'].strokeWidth).toBeCloseTo(2.5, 9);
+    expect(useDoc.getState().polygons['p0'].strokeWidth).toBeCloseTo(2.25, 9);
     const spin = screen.getByRole('spinbutton', { name: 'Stroke width' });
     expect(spin).toBeInTheDocument();
-    expect(spin).toHaveAttribute('step', '0.5');
+    expect(spin).toHaveAttribute('step', '0.25');
     // Fill + stroke pickers reflect the polygon's colors.
     expect(await openColorField(user, 'Polygon color')).toHaveValue('#112233');
     await user.keyboard('{Escape}');
@@ -148,15 +148,15 @@ describe('<PolygonPopover />', () => {
     expect(useDoc.getState().polygons['p0'].strokeWidth).toBe(10);
   });
 
-  it('the stroke-width box shows one decimal and the wheel steps by 0.5', () => {
+  it('the stroke-width box shows two decimals and the wheel steps by 0.25', () => {
     render(<LivePopover />); // strokeWidth 2; live so the second write sees the first
     const spin = screen.getByRole('spinbutton', { name: 'Stroke width' }) as HTMLInputElement;
-    expect(spin.value).toBe('2.0');
+    expect(spin.value).toBe('2.00');
     fireEvent.wheel(spin, { deltaY: -1 });
-    expect(useDoc.getState().polygons['p0'].strokeWidth).toBe(2.5);
-    expect(spin.value).toBe('2.5');
-    stepSlider(screen.getByRole('slider', { name: 'Stroke width' }), 2); // 2.5 → 3.5
-    expect(useDoc.getState().polygons['p0'].strokeWidth).toBeCloseTo(3.5, 9);
+    expect(useDoc.getState().polygons['p0'].strokeWidth).toBe(2.25);
+    expect(spin.value).toBe('2.25');
+    stepSlider(screen.getByRole('slider', { name: 'Stroke width' }), 2); // 2.25 → 2.75
+    expect(useDoc.getState().polygons['p0'].strokeWidth).toBeCloseTo(2.75, 9);
   });
 
   it('Delete removes the polygon and calls onClose', () => {
@@ -260,8 +260,8 @@ describe('<PolygonPopover />', () => {
     const slider = screen.getByRole('slider', { name: 'Curve radius' });
     expect(slider).toHaveAttribute('aria-valuemin', '0');
     expect(slider).toHaveAttribute('aria-valuemax', '50');
-    stepSlider(slider, 1); // one step off the sharp default
-    expect(useDoc.getState().polygons['p0'].curveRadius).toBe(1);
+    stepSlider(slider, 1); // one 0.25 step off the sharp default
+    expect(useDoc.getState().polygons['p0'].curveRadius).toBe(0.25);
   });
 
   it('layer up/down buttons reorder the polygon among its peers', () => {

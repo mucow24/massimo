@@ -36,8 +36,13 @@ import {
 } from './transforms';
 import { DEFAULT_DOT_STYLE, dotStylesEqual } from './dotStyle';
 import { DOT_SIZE_MIN, lineDefaultDotSizeOf } from './dotSize';
-import { LINE_WIDTH_MIN, lineWidthOf } from './lineWidth';
-import { LINE_CURVE_RADIUS_DEFAULT, LINE_CURVE_RADIUS_MIN, lineCurveRadiusOf } from './lineCurve';
+import { LINE_WIDTH_MIN, LINE_WIDTH_STEP, lineWidthOf } from './lineWidth';
+import {
+  LINE_CURVE_RADIUS_DEFAULT,
+  LINE_CURVE_RADIUS_MIN,
+  LINE_CURVE_RADIUS_STEP,
+  lineCurveRadiusOf,
+} from './lineCurve';
 import {
   LINE_STROKE_STEP,
   LINE_STROKE_WIDTH_MIN,
@@ -50,6 +55,7 @@ import {
 } from './lineStroke';
 import {
   TRANSFER_STROKE_WIDTH_MIN,
+  TRANSFER_STROKE_WIDTH_STEP,
   TRANSFER_THICKNESS_MIN,
   dayNightColorsEqual,
   resolveTransferStyle,
@@ -229,13 +235,14 @@ export function canonicalStyleProps<K extends StyleKind>(
       return {
         defaultDotStyle: p.defaultDotStyle,
         defaultDotSize: Math.max(DOT_SIZE_MIN, Math.round(p.defaultDotSize)),
-        width: Math.max(LINE_WIDTH_MIN, Math.round(p.width)),
+        width: Math.max(LINE_WIDTH_MIN, Math.round(p.width / LINE_WIDTH_STEP) * LINE_WIDTH_STEP),
         // `?? DEFAULT` heals defs from saves that predate the field (the load
         // paths bake it in first — see bakeDocCurveRadius — this is the
         // keep-canonical-props-concrete backstop).
         curveRadius: Math.max(
           LINE_CURVE_RADIUS_MIN,
-          Math.round(p.curveRadius ?? LINE_CURVE_RADIUS_DEFAULT),
+          Math.round((p.curveRadius ?? LINE_CURVE_RADIUS_DEFAULT) / LINE_CURVE_RADIUS_STEP) *
+            LINE_CURVE_RADIUS_STEP,
         ),
         strokeWidth: Math.max(
           LINE_STROKE_WIDTH_MIN,
@@ -284,7 +291,10 @@ export function canonicalStyleProps<K extends StyleKind>(
       return {
         thickness: Math.max(TRANSFER_THICKNESS_MIN, Math.round(p.thickness)),
         color: p.color,
-        strokeWidth: Math.max(TRANSFER_STROKE_WIDTH_MIN, Math.round(p.strokeWidth)),
+        strokeWidth: Math.max(
+          TRANSFER_STROKE_WIDTH_MIN,
+          Math.round(p.strokeWidth / TRANSFER_STROKE_WIDTH_STEP) * TRANSFER_STROKE_WIDTH_STEP,
+        ),
         strokeColor: p.strokeColor,
       } as StylePropsByKind[K];
     }

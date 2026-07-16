@@ -14,19 +14,22 @@ export const LINE_WIDTH_MIN = 1;
 // down to LINE_WIDTH_MIN.
 export const LINE_WIDTH_SLIDER_MIN = 2;
 export const LINE_WIDTH_MAX = 28;
+// Widths live on a quarter-unit grid: the slider/steppers move in 0.25
+// increments and the setter rounds to the nearest step.
+export const LINE_WIDTH_STEP = 0.25;
 
 /**
- * The canonical STORED form of a stripe width: round to an integer, clamp to
- * ≥ LINE_WIDTH_MIN, and collapse to `undefined` (store nothing) when it lands
- * on LINE_WIDTH_DEFAULT — the app never stores the default. This is the one
- * home for that arithmetic, shared by the `setLineWidth` transform and the
- * `sanitizeLineWidth` file-import cleaner so the two can never drift. Callers
- * own the finiteness guard, because they diverge on non-finite input (a
- * transform ignores it and keeps the current value; a sanitizer drops the
- * field).
+ * The canonical STORED form of a stripe width: round to the LINE_WIDTH_STEP
+ * (quarter-unit) grid, clamp to ≥ LINE_WIDTH_MIN, and collapse to `undefined`
+ * (store nothing) when it lands on LINE_WIDTH_DEFAULT — the app never stores
+ * the default. This is the one home for that arithmetic, shared by the
+ * `setLineWidth` transform and the `sanitizeLineWidth` file-import cleaner so
+ * the two can never drift. Callers own the finiteness guard, because they
+ * diverge on non-finite input (a transform ignores it and keeps the current
+ * value; a sanitizer drops the field).
  */
 export const canonicalLineWidth = (w: number): number | undefined => {
-  const norm = Math.max(LINE_WIDTH_MIN, Math.round(w));
+  const norm = Math.max(LINE_WIDTH_MIN, Math.round(w / LINE_WIDTH_STEP) * LINE_WIDTH_STEP);
   return norm === LINE_WIDTH_DEFAULT ? undefined : norm;
 };
 

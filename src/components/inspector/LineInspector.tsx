@@ -12,11 +12,13 @@ import {
   LINE_WIDTH_MAX,
   LINE_WIDTH_MIN,
   LINE_WIDTH_SLIDER_MIN,
+  LINE_WIDTH_STEP,
   lineWidthOf,
 } from '../../model/lineWidth';
 import {
   LINE_CURVE_RADIUS_MAX,
   LINE_CURVE_RADIUS_MIN,
+  LINE_CURVE_RADIUS_STEP,
   lineCurveRadiusOf,
 } from '../../model/lineCurve';
 import { DOT_SIZE_MAX, DOT_SIZE_MIN, lineDefaultDotSizeOf } from '../../model/dotSize';
@@ -108,7 +110,7 @@ export function LineInspector({ id }: { id: LineId }) {
         label="Line width"
         min={LINE_WIDTH_SLIDER_MIN}
         max={LINE_WIDTH_MAX}
-        step={1}
+        step={LINE_WIDTH_STEP}
         value={lineWidthOf(line)}
         onChange={(n) => setLineWidth(line.id, n)}
         getCurrent={() => lineWidthOf(useDoc.getState().lines[id])}
@@ -120,7 +122,7 @@ export function LineInspector({ id }: { id: LineId }) {
         label="Curve radius"
         min={LINE_CURVE_RADIUS_MIN}
         max={LINE_CURVE_RADIUS_MAX}
-        step={1}
+        step={LINE_CURVE_RADIUS_STEP}
         value={lineCurveRadiusOf(line)}
         onChange={(n) => setLineCurveRadius(line.id, n)}
         getCurrent={() => lineCurveRadiusOf(useDoc.getState().lines[id])}

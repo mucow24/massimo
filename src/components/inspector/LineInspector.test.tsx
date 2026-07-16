@@ -120,7 +120,7 @@ describe('<LineInspector /> — width control', () => {
     });
   };
 
-  it('renders a 2–28 step-1 slider at the line’s effective width', () => {
+  it('renders a 2–28 quarter-step slider at the line’s effective width', () => {
     seed();
     render(<LineInspector id="L1" />);
     const slider = screen.getByRole('slider', { name: 'Line width' });
@@ -129,12 +129,12 @@ describe('<LineInspector /> — width control', () => {
     expect(slider).toHaveAttribute('aria-valuenow', '14');
   });
 
-  it('slider edits write the width; the default drops the key', () => {
+  it('slider edits write the width (quarter steps); the default drops the key', () => {
     seed();
     render(<LineInspector id="L1" />);
     const slider = screen.getByRole('slider', { name: 'Line width' });
-    stepSlider(slider, 1); // one step of the 1-unit grid: 14 -> 15
-    expect(useDoc.getState().lines.L1.width).toBe(15);
+    stepSlider(slider, 1); // one step of the 0.25 grid: 14 -> 14.25
+    expect(useDoc.getState().lines.L1.width).toBe(14.25);
     stepSlider(slider, -1); // back to the 14 default drops the key
     expect('width' in useDoc.getState().lines.L1).toBe(false);
   });
@@ -281,7 +281,7 @@ describe('<LineInspector /> — stroke controls', () => {
     });
   };
 
-  it('renders a 0–10 half-step slider at the line’s effective stroke width', () => {
+  it('renders a 0–10 quarter-step slider at the line’s effective stroke width', () => {
     seed();
     render(<LineInspector id="L1" />);
     const slider = screen.getByRole('slider', { name: 'Stroke width' });
@@ -290,23 +290,23 @@ describe('<LineInspector /> — stroke controls', () => {
     expect(slider).toHaveAttribute('aria-valuenow', '0');
   });
 
-  it('slider edits write the stroke width (half steps included); zero drops the key', () => {
+  it('slider edits write the stroke width (quarter steps included); zero drops the key', () => {
     seed();
     render(<LineInspector id="L1" />);
     const slider = screen.getByRole('slider', { name: 'Stroke width' });
-    stepSlider(slider, 3); // three steps of the 0.5 grid: 0 -> 1.5
-    expect(useDoc.getState().lines.L1.strokeWidth).toBe(1.5);
+    stepSlider(slider, 3); // three steps of the 0.25 grid: 0 -> 0.75
+    expect(useDoc.getState().lines.L1.strokeWidth).toBe(0.75);
     stepSlider(slider, -3); // back to 0 drops the key
     expect('strokeWidth' in useDoc.getState().lines.L1).toBe(false);
   });
 
-  it('the spinbutton steps by 0.5 and is uncapped above the slider max', () => {
+  it('the spinbutton steps by 0.25 and is uncapped above the slider max', () => {
     seed();
     render(<LineInspector id="L1" />);
     const spin = screen.getByRole('spinbutton', { name: 'Stroke width' });
     expect(spin.getAttribute('min')).toBe('0');
     expect(spin.getAttribute('max')).toBeNull();
-    expect(spin.getAttribute('step')).toBe('0.5');
+    expect(spin.getAttribute('step')).toBe('0.25');
     fireEvent.change(spin, { target: { value: '30' } });
     expect(useDoc.getState().lines.L1.strokeWidth).toBe(30);
   });
@@ -356,10 +356,10 @@ describe('<LineInspector /> — stroke controls', () => {
     render(<LineInspector id="L1" />);
     const slider = screen.getByRole('slider', { name: 'Seam width' });
     expect(slider).toHaveAttribute('aria-valuenow', '4'); // inherits the casing rail width
-    stepSlider(slider, -4); // four steps of the 0.5 grid: 4 -> 2
+    stepSlider(slider, -8); // eight steps of the 0.25 grid: 4 -> 2
     expect(useDoc.getState().lines.L1.seamWidth).toBe(2);
     // Back to 0 drops the field → inherits the casing width again.
-    stepSlider(slider, -4);
+    stepSlider(slider, -8);
     expect('seamWidth' in useDoc.getState().lines.L1).toBe(false);
   });
 
