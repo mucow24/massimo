@@ -996,13 +996,13 @@ describe('setLineWidth', () => {
     expect(T.setLineWidth(doc, 'L1', 20)).toBe(doc);
   });
 
-  it('clamps to the floor and rounds to an integer', () => {
+  it('clamps to the floor and rounds to the 0.25 grid', () => {
     const doc = makeDoc({ lines: [makeLine({ id: 'L1' })] });
     expect(T.setLineWidth(doc, 'L1', 0).lines.L1.width).toBe(1);
     expect(T.setLineWidth(doc, 'L1', -3).lines.L1.width).toBe(1);
-    expect(T.setLineWidth(doc, 'L1', 9.6).lines.L1.width).toBe(10);
+    expect(T.setLineWidth(doc, 'L1', 9.6).lines.L1.width).toBe(9.5);
     // Rounds-to-default drops the field, same as an exact 14.
-    expect('width' in T.setLineWidth(doc, 'L1', 14.4).lines.L1).toBe(false);
+    expect('width' in T.setLineWidth(doc, 'L1', 14.1).lines.L1).toBe(false);
   });
 
   it('ignores non-finite input (same reference out)', () => {
@@ -1040,14 +1040,14 @@ describe('setLineStrokeWidth', () => {
     expect(T.setLineStrokeWidth(doc, 'L1', 4)).toBe(doc);
   });
 
-  it('clamps to the floor and rounds to the 0.5 grid', () => {
+  it('clamps to the floor and rounds to the 0.25 grid', () => {
     const doc = makeDoc({ lines: [makeLine({ id: 'L1' })] });
     // Below-floor clamps to 0 = the default, so the field is never stored.
     expect(T.setLineStrokeWidth(doc, 'L1', -3)).toBe(doc);
     expect(T.setLineStrokeWidth(doc, 'L1', 3.6).lines.L1.strokeWidth).toBe(3.5);
-    expect(T.setLineStrokeWidth(doc, 'L1', 3.8).lines.L1.strokeWidth).toBe(4);
+    expect(T.setLineStrokeWidth(doc, 'L1', 3.8).lines.L1.strokeWidth).toBe(3.75);
     // Rounds-to-zero is dropped like an exact 0.
-    expect(T.setLineStrokeWidth(doc, 'L1', 0.2)).toBe(doc);
+    expect(T.setLineStrokeWidth(doc, 'L1', 0.1)).toBe(doc);
   });
 
   it('ignores non-finite input (same reference out)', () => {
@@ -1084,12 +1084,12 @@ describe('setLineCurveRadius', () => {
     expect(T.setLineCurveRadius(doc, 'L1', 40)).toBe(doc);
   });
 
-  it('clamps to the floor and rounds to an integer', () => {
+  it('clamps to the floor and rounds to the 0.25 grid', () => {
     const doc = makeDoc({ lines: [makeLine({ id: 'L1' })] });
     expect(T.setLineCurveRadius(doc, 'L1', 1).lines.L1.curveRadius).toBe(4);
-    expect(T.setLineCurveRadius(doc, 'L1', 39.6).lines.L1.curveRadius).toBe(40);
+    expect(T.setLineCurveRadius(doc, 'L1', 39.6).lines.L1.curveRadius).toBe(39.5);
     // Rounds-to-default is dropped like an exact 24.
-    expect(T.setLineCurveRadius(doc, 'L1', 23.7)).toBe(doc);
+    expect(T.setLineCurveRadius(doc, 'L1', 23.9)).toBe(doc);
   });
 
   it('ignores non-finite input (same reference out)', () => {
@@ -1183,10 +1183,10 @@ describe('setLineSeamColor', () => {
 });
 
 describe('setLineSeamWidth', () => {
-  it('stores a seam width on the half-pixel grid, dropping the field at 0 (unset ⇒ inherit)', () => {
+  it('stores a seam width on the quarter-unit grid, dropping the field at 0 (unset ⇒ inherit)', () => {
     const doc = makeDoc({ lines: [makeLine({ id: 'L1' })] });
     expect(T.setLineSeamWidth(doc, 'L1', 3).lines.L1.seamWidth).toBe(3);
-    expect(T.setLineSeamWidth(doc, 'L1', 2.24).lines.L1.seamWidth).toBe(2);
+    expect(T.setLineSeamWidth(doc, 'L1', 2.2).lines.L1.seamWidth).toBe(2.25);
     const off = T.setLineSeamWidth(
       makeDoc({ lines: [makeLine({ id: 'L1', seamWidth: 3 })] }),
       'L1',

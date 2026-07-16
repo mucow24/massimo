@@ -15,8 +15,17 @@ import { ShapeIcon } from './RouteBulletPopover';
 import type { StylePropsPatch } from '../model/styles';
 import { DOT_SHAPE_PRESETS } from '../model/dotStyle';
 import { DOT_SIZE_MAX, DOT_SIZE_MIN } from '../model/dotSize';
-import { LINE_WIDTH_MAX, LINE_WIDTH_MIN, LINE_WIDTH_SLIDER_MIN } from '../model/lineWidth';
-import { LINE_CURVE_RADIUS_MAX, LINE_CURVE_RADIUS_MIN } from '../model/lineCurve';
+import {
+  LINE_WIDTH_MAX,
+  LINE_WIDTH_MIN,
+  LINE_WIDTH_SLIDER_MIN,
+  LINE_WIDTH_STEP,
+} from '../model/lineWidth';
+import {
+  LINE_CURVE_RADIUS_MAX,
+  LINE_CURVE_RADIUS_MIN,
+  LINE_CURVE_RADIUS_STEP,
+} from '../model/lineCurve';
 import {
   LINE_STROKE_STEP,
   LINE_STROKE_WIDTH_MAX,
@@ -27,6 +36,7 @@ import { withHexAlpha } from '../util/color';
 import {
   TRANSFER_STROKE_WIDTH_MAX,
   TRANSFER_STROKE_WIDTH_MIN,
+  TRANSFER_STROKE_WIDTH_STEP,
   TRANSFER_THICKNESS_MAX,
   TRANSFER_THICKNESS_MIN,
 } from '../model/transferStyle';
@@ -44,6 +54,7 @@ import {
   LABEL_TRACKING_STEP,
   POLYGON_CURVE_RADIUS_MAX,
   POLYGON_CURVE_RADIUS_MIN,
+  POLYGON_CURVE_RADIUS_STEP,
   POLYGON_STROKE_STEP,
   POLYGON_STROKE_WIDTH_MAX,
   POLYGON_STROKE_WIDTH_MIN,
@@ -133,7 +144,7 @@ function LineStyleEditor({ id, props }: { id: string; props: LineStyleProps }) {
         label="Line width"
         min={LINE_WIDTH_SLIDER_MIN}
         max={LINE_WIDTH_MAX}
-        step={1}
+        step={LINE_WIDTH_STEP}
         value={props.width}
         onChange={(width) => patch({ width })}
         getCurrent={liveNumberProp(id, 'width', props.width)}
@@ -145,7 +156,7 @@ function LineStyleEditor({ id, props }: { id: string; props: LineStyleProps }) {
         label="Curve radius"
         min={LINE_CURVE_RADIUS_MIN}
         max={LINE_CURVE_RADIUS_MAX}
-        step={1}
+        step={LINE_CURVE_RADIUS_STEP}
         value={props.curveRadius}
         onChange={(curveRadius) => patch({ curveRadius })}
         getCurrent={liveNumberProp(id, 'curveRadius', props.curveRadius)}
@@ -325,7 +336,7 @@ function PolygonStyleEditor({ id, props }: { id: string; props: PolygonStyleProp
         label="Curve radius"
         min={POLYGON_CURVE_RADIUS_MIN}
         max={POLYGON_CURVE_RADIUS_MAX}
-        step={1}
+        step={POLYGON_CURVE_RADIUS_STEP}
         value={props.curveRadius}
         onChange={(curveRadius) => patch({ curveRadius })}
         getCurrent={liveNumberProp(id, 'curveRadius', props.curveRadius)}
@@ -421,7 +432,7 @@ function TransferStyleEditor({ id, props }: { id: string; props: TransferStylePr
         label="Stroke width"
         min={TRANSFER_STROKE_WIDTH_MIN}
         max={TRANSFER_STROKE_WIDTH_MAX}
-        step={1}
+        step={TRANSFER_STROKE_WIDTH_STEP}
         value={props.strokeWidth}
         onChange={(strokeWidth) => patch({ strokeWidth })}
         getCurrent={liveNumberProp(id, 'strokeWidth', props.strokeWidth)}

@@ -695,9 +695,9 @@ describe('parse — line width sanitizing', () => {
     if (low.ok) expect(low.doc.lines.L1.width).toBe(1);
     const frac = parse(buildWithWidth(9.6));
     expect(frac.ok).toBe(true);
-    if (frac.ok) expect(frac.doc.lines.L1.width).toBe(10);
+    if (frac.ok) expect(frac.doc.lines.L1.width).toBe(9.5);
     // Rounds-to-default is dropped like an exact 14.
-    const nearDefault = parse(buildWithWidth(14.4));
+    const nearDefault = parse(buildWithWidth(14.1));
     expect(nearDefault.ok).toBe(true);
     if (nearDefault.ok) expect('width' in nearDefault.doc.lines.L1).toBe(false);
   });
@@ -992,7 +992,7 @@ describe('parse — transfer style sanitizing', () => {
     expect(frac.ok).toBe(true);
     if (frac.ok) {
       expect(frac.doc.transfers.x1.thickness).toBe(5);
-      expect(frac.doc.transfers.x1.strokeWidth).toBe(3);
+      expect(frac.doc.transfers.x1.strokeWidth).toBe(2.75);
     }
     // Rounds-to-setting is dropped like an exact match.
     const nearDefault = parse(buildWithTransfer({ thickness: 2.4 }));
@@ -1294,7 +1294,7 @@ describe('parse — legacy doc-level curveRadius bake', () => {
       expect(r.ok).toBe(true);
       return r.ok ? r.doc.lines.L1.curveRadius : undefined;
     };
-    expect(stamped('39.6')).toBe(40);
+    expect(stamped('39.6')).toBe(39.5);
     expect(stamped('1')).toBe(4); // clamps to LINE_CURVE_RADIUS_MIN
     expect(stamped('24')).toBe(undefined); // default is never stored
     expect(stamped('"junk"')).toBe(undefined); // garbage dropped

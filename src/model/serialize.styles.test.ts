@@ -181,12 +181,12 @@ describe('sanitizeStyles via parse', () => {
     };
     const out = parsed(doc);
     expect(out.styles.y1.props).toMatchObject({
-      width: 10,
-      strokeWidth: 1.5,
+      width: 9.5,
+      strokeWidth: 1.25,
       strokeColor: '#abcdef',
     });
     expect(out.styles.y2.props).toMatchObject({ fontSize: 12 });
-    expect(out.styles.y3.props).toMatchObject({ strokeWidth: 2.5, curveRadius: 0 });
+    expect(out.styles.y3.props).toMatchObject({ strokeWidth: 2.25, curveRadius: 0 });
     expect(out.styles.y4.props).toMatchObject({ size: 6 });
     expect(out.styles.y5.props).toMatchObject({ thickness: 5, strokeWidth: 0 });
   });
