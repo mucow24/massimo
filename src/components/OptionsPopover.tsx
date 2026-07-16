@@ -6,6 +6,7 @@ import { PALETTES } from '../model/palettes';
 import { parseCustomPalette } from '../model/customPalette';
 import { useCustomPalettes } from '../state/customPalettes';
 import { usePopover } from './usePopover';
+import { FieldCheckbox } from './FieldCheckbox';
 
 /**
  * Toolbar "Options" button. The panel holds the global branch-seam inner-edge
@@ -103,12 +104,11 @@ export function OptionsPopover() {
                 return (
                   <label key={palette.id} className="options-palette-card" aria-disabled={isLone}>
                     <div className="options-palette-card-row">
-                      <input
-                        type="checkbox"
-                        aria-label={palette.name}
+                      <FieldCheckbox
+                        ariaLabel={palette.name}
                         checked={checked}
                         disabled={isLone}
-                        onChange={() => togglePalette(palette.id)}
+                        onCheckedChange={() => togglePalette(palette.id)}
                       />
                       <span>{palette.name}</span>
                       <button
@@ -147,12 +147,11 @@ export function OptionsPopover() {
                     )}
                     <label className="options-palette-card" aria-disabled={isLone}>
                       <div className="options-palette-card-row">
-                        <input
-                          type="checkbox"
-                          aria-label={palette.name}
+                        <FieldCheckbox
+                          ariaLabel={palette.name}
                           checked={checked}
                           disabled={isLone}
-                          onChange={() => togglePalette(palette.id)}
+                          onCheckedChange={() => togglePalette(palette.id)}
                         />
                         <span>{palette.name}</span>
                       </div>

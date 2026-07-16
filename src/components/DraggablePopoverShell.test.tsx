@@ -14,6 +14,7 @@ function renderShell(props: { hidden?: boolean; measuring?: boolean }) {
   const { container } = render(
     <DraggablePopoverShell
       className="bullet-popover"
+      title="Test"
       left={10}
       top={20}
       headerHandlers={headerHandlers}

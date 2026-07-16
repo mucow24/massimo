@@ -65,6 +65,7 @@ export function SvgImagePopover({ image, worldRect, view, spawnBox, onClose }: P
   return (
     <DraggablePopoverShell
       className="bullet-popover polygon-popover svg-image-popover"
+      title="Image"
       left={anchor.x}
       top={anchor.y}
       measuring={measuring}

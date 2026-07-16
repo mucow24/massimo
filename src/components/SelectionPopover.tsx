@@ -63,6 +63,7 @@ export function SelectionPopover({ ids, worldRect, view, spawnBox }: Props) {
   return (
     <DraggablePopoverShell
       className="bullet-popover selection-popover"
+      title="Selection"
       left={anchor.x}
       top={anchor.y}
       measuring={measuring}

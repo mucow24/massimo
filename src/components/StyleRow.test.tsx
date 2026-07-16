@@ -6,6 +6,7 @@ import { useDoc } from '../state/store';
 import { DEFAULT_DOC } from '../model/transforms';
 import type { TextLabelStyleProps } from '../model/types';
 import { makeStyle, makeTextLabel } from '../test/fixtures';
+import { chooseOption } from '../test/interaction';
 
 beforeEach(() => {
   localStorage.clear();
@@ -28,32 +29,35 @@ function Harness() {
   return <StyleRow kind="textLabel" itemId="g1" styleId={label?.styleId} />;
 }
 
+// The row is a Radix Select: the closed trigger shows the current choice as
+// text, and the option list exists in the DOM only while open.
 describe('<StyleRow />', () => {
-  it('shows Custom when untagged and lists the styles sorted by name', () => {
+  it('shows Custom when untagged and lists the styles sorted by name', async () => {
+    const user = userEvent.setup();
     render(<Harness />);
     const select = screen.getByRole('combobox', { name: 'Style' });
-    expect(select).toHaveValue('__custom__');
-    const names = Array.from((select as HTMLSelectElement).options).map((o) => o.textContent);
+    expect(select).toHaveTextContent('Custom');
+    await user.click(select);
+    const names = screen.getAllByRole('option').map((o) => o.textContent);
     expect(names).toEqual(['Custom', 'Caption', 'Heading', 'Save style…']);
   });
 
   it('shows the tagged style, and picking a style applies it', async () => {
     const user = userEvent.setup();
     render(<Harness />);
-    const select = screen.getByRole('combobox', { name: 'Style' });
-    await user.selectOptions(select, 'y1');
+    await chooseOption(user, 'Style', 'Heading');
     const label = useDoc.getState().textLabels.g1;
     expect(label.styleId).toBe('y1');
     expect(label.fontSize).toBe(24);
     expect(label.weight).toBe(700);
-    expect(select).toHaveValue('y1');
+    expect(screen.getByRole('combobox', { name: 'Style' })).toHaveTextContent('Heading');
   });
 
   it('picking Custom detaches the tag but keeps the values', async () => {
     const user = userEvent.setup();
     render(<Harness />);
-    await user.selectOptions(screen.getByRole('combobox', { name: 'Style' }), 'y1');
-    await user.selectOptions(screen.getByRole('combobox', { name: 'Style' }), '__custom__');
+    await chooseOption(user, 'Style', 'Heading');
+    await chooseOption(user, 'Style', 'Custom');
     const label = useDoc.getState().textLabels.g1;
     expect(label.styleId).toBeUndefined();
     expect(label.fontSize).toBe(24);
@@ -62,7 +66,7 @@ describe('<StyleRow />', () => {
   it('Save style… swaps to a name input; Enter saves and tags', async () => {
     const user = userEvent.setup();
     render(<Harness />);
-    await user.selectOptions(screen.getByRole('combobox', { name: 'Style' }), '__save__');
+    await chooseOption(user, 'Style', 'Save style…');
     const input = screen.getByRole('textbox', { name: 'Style name' });
     await user.type(input, 'Body{Enter}');
     const s = useDoc.getState();
@@ -71,14 +75,14 @@ describe('<StyleRow />', () => {
     expect((def?.props as TextLabelStyleProps).fontSize).toBe(12);
     expect(s.textLabels.g1.styleId).toBe(def?.id);
     // Back to the dropdown, now showing the new style.
-    expect(screen.getByRole('combobox', { name: 'Style' })).toHaveValue(def?.id);
+    expect(screen.getByRole('combobox', { name: 'Style' })).toHaveTextContent('Body');
   });
 
   it('pre-fills the current style name when tagged, and re-saving updates it', async () => {
     const user = userEvent.setup();
     useDoc.getState().applyStyle('y1', 'g1');
     render(<Harness />);
-    await user.selectOptions(screen.getByRole('combobox', { name: 'Style' }), '__save__');
+    await chooseOption(user, 'Style', 'Save style…');
     const input = screen.getByRole('textbox', { name: 'Style name' });
     expect(input).toHaveValue('Heading');
     // Commit as-is: redefines "Heading" from this item (a values no-op here).
@@ -90,8 +94,7 @@ describe('<StyleRow />', () => {
   it('Escape cancels the save; empty and reserved names are refused', async () => {
     const user = userEvent.setup();
     render(<Harness />);
-    const openSave = async () =>
-      user.selectOptions(screen.getByRole('combobox', { name: 'Style' }), '__save__');
+    const openSave = () => chooseOption(user, 'Style', 'Save style…');
 
     await openSave();
     await user.type(screen.getByRole('textbox', { name: 'Style name' }), 'Nope{Escape}');

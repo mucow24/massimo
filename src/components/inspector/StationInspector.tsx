@@ -1,10 +1,5 @@
 import { useCallback, useMemo, useRef } from 'react';
-import {
-  LockClosedIcon,
-  LockOpen1Icon,
-  MagicWandIcon,
-  RotateCounterClockwiseIcon,
-} from '@radix-ui/react-icons';
+import { MagicWandIcon, RotateCounterClockwiseIcon } from '@radix-ui/react-icons';
 import { useDoc, useSelection } from '../../state/store';
 import { dispatchMirrored } from '../../state/mirrorDispatch';
 import type { StationId } from '../../model/types';
@@ -56,7 +51,6 @@ export function StationInspector({ id }: { id: StationId }) {
   const setLabelAutoHAlign = useDoc((s) => s.setLabelAutoHAlign);
   const setLabelAutoVAlign = useDoc((s) => s.setLabelAutoVAlign);
   const setStationWaypoint = useDoc((s) => s.setStationWaypoint);
-  const setStationLocked = useDoc((s) => s.setStationLocked);
   const setStationEditorHeight = useDoc((s) => s.setStationEditorHeight);
   const updateStationLabelStyle = useDoc((s) => s.updateStationLabelStyle);
   const selection = useSelection();
@@ -123,292 +117,299 @@ export function StationInspector({ id }: { id: StationId }) {
   // this station (not dispatched through mirror), matching the pinned
   // "typography never mirrors" decision; the style picker is how you share it.
   const labelStyle = effectiveStationStyleProps(station);
+  const locked = !!station.locked;
 
   return (
     <section className="inspector">
-      <div className="field">
-        <div className="field-header">
-          <label>Name</label>
-          {/* Mirror-matching toggle. While on, layout edits (stops, label,
+      {/* One native disable for the whole panel: a locked station greys and
+          freezes every editing control, like the other item popovers. The
+          footer's lock toggle lives OUTSIDE this fieldset (in StationPopover),
+          so unlocking stays reachable. Radix-rendered controls (sliders,
+          selects) also get an explicit disabled prop — their thumbs are
+          spans, which a fieldset can't reach. */}
+      <fieldset className="inspector-fields" disabled={locked}>
+        <div className="field">
+          <div className="field-header">
+            <label>Name</label>
+            {/* Mirror-matching toggle. While on, layout edits (stops, label,
               rotation — not name/position, and not the per-station styling
               flags WP/lock/bold/italic) broadcast to every station on a
               shared line that renders identically (model/matching.ts).
               Stays clickable while on even at zero matches so the mode can
               always be exited. */}
-          <button
-            type="button"
-            className={`chip-btn${mirrorOn ? ' active' : ''}`}
-            aria-pressed={mirrorOn}
-            disabled={!mirrorAvailable && !mirrorOn}
-            title={
-              mirrorOn
-                ? 'Similar stations selected — edits here apply to all of them; click to edit only this station'
-                : mirrorAvailable
-                  ? `Select the ${matches.length} station${matches.length === 1 ? '' : 's'} on this line with this exact layout — edits here will apply to all of them`
-                  : 'No other station on this line has an identical layout'
-            }
-            onClick={() => selection.setMirrorMatching(!mirrorOn)}
-          >
-            Select Similar
-          </button>
-          <button
-            type="button"
-            className={`chip-btn${station.isWaypoint ? ' wp-on' : ''}`}
-            aria-pressed={!!station.isWaypoint}
-            aria-label="Waypoint"
-            title={
-              station.isWaypoint
-                ? 'Waypoint on — name + bullets hidden'
-                : 'Mark as waypoint (hide name + bullets)'
-            }
-            onClick={() => setStationWaypoint(station.id, !station.isWaypoint)}
-          >
-            WP
-          </button>
-          <button
-            type="button"
-            className={`chip-btn${station.locked ? ' lock-on' : ''}`}
-            aria-pressed={!!station.locked}
-            aria-label={station.locked ? 'Unlock station' : 'Lock station'}
-            title={
-              station.locked
-                ? 'Unlock — allow dragging, marquee-select, and delete'
-                : 'Lock (prevents dragging, marquee-select, and delete)'
-            }
-            onClick={() => setStationLocked(station.id, !station.locked)}
-          >
-            {station.locked ? <LockClosedIcon /> : <LockOpen1Icon />}
-          </button>
+            <button
+              type="button"
+              className={`ghost-btn${mirrorOn ? ' active' : ''}`}
+              aria-pressed={mirrorOn}
+              disabled={!mirrorAvailable && !mirrorOn}
+              title={
+                mirrorOn
+                  ? 'Similar stations selected — edits here apply to all of them; click to edit only this station'
+                  : mirrorAvailable
+                    ? `Select the ${matches.length} station${matches.length === 1 ? '' : 's'} on this line with this exact layout — edits here will apply to all of them`
+                    : 'No other station on this line has an identical layout'
+              }
+              onClick={() => selection.setMirrorMatching(!mirrorOn)}
+            >
+              Select Similar
+            </button>
+            {/* The same lozenge the canvas draws for a waypoint (gray pill,
+              white WP): outline while off, filled while on. */}
+            <button
+              type="button"
+              className={`wp-pill-btn${station.isWaypoint ? ' active' : ''}`}
+              aria-pressed={!!station.isWaypoint}
+              aria-label="Waypoint"
+              title={
+                station.isWaypoint
+                  ? 'Waypoint on — name + bullets hidden'
+                  : 'Mark as waypoint (hide name + bullets)'
+              }
+              onClick={() => setStationWaypoint(station.id, !station.isWaypoint)}
+            >
+              WP
+            </button>
+          </div>
+          <textarea
+            ref={attachNameBox}
+            value={station.name}
+            onChange={(e) => renameStation(station.id, e.target.value)}
+            onPointerUp={onNameBoxPointerUp}
+            rows={Math.max(1, station.name.split('\n').length)}
+            style={{ resize: 'vertical', whiteSpace: 'pre', overflow: 'auto' }}
+            {...nameField}
+          />
         </div>
-        <textarea
-          ref={attachNameBox}
-          value={station.name}
-          onChange={(e) => renameStation(station.id, e.target.value)}
-          onPointerUp={onNameBoxPointerUp}
-          rows={Math.max(1, station.name.split('\n').length)}
-          style={{ resize: 'vertical', whiteSpace: 'pre', overflow: 'auto' }}
-          {...nameField}
-        />
-      </div>
-      <div className="field">
-        <label>Position &amp; rotation</label>
-        <div className="field-row">
-          <span className="axis-label" aria-hidden>
-            X
-          </span>
-          <input
-            type="number"
-            aria-label="X"
-            value={xField.text}
-            onChange={xField.onNumberChange}
-            onFocus={xField.onNumberFocus}
-            onBlur={xField.onNumberBlur}
-            style={{ width: 56 }}
-          />
-          <span className="axis-label" aria-hidden>
-            Y
-          </span>
-          <input
-            type="number"
-            aria-label="Y"
-            value={yField.text}
-            onChange={yField.onNumberChange}
-            onFocus={yField.onNumberFocus}
-            onBlur={yField.onNumberBlur}
-            style={{ width: 56 }}
-          />
-          {/* One icon, mirrored, so the ± pair is visually identical.
+        <div className="field">
+          <label>Position &amp; rotation</label>
+          <div className="field-row">
+            <span className="axis-label" aria-hidden>
+              X
+            </span>
+            <input
+              type="number"
+              aria-label="X"
+              value={xField.text}
+              onChange={xField.onNumberChange}
+              onFocus={xField.onNumberFocus}
+              onBlur={xField.onNumberBlur}
+              style={{ width: 56 }}
+            />
+            <span className="axis-label" aria-hidden>
+              Y
+            </span>
+            <input
+              type="number"
+              aria-label="Y"
+              value={yField.text}
+              onChange={yField.onNumberChange}
+              onFocus={yField.onNumberFocus}
+              onBlur={yField.onNumberBlur}
+              style={{ width: 56 }}
+            />
+            {/* One icon, mirrored, so the ± pair is visually identical.
               Rotation broadcasts under mirror matching (a relative step is
               frame-invariant, so matches stay in sync); position does not. */}
-          <button
-            className="chip-btn"
-            onClick={() => dispatchAll((sid) => rotateStation(sid, -1))}
-            title="Rotate −45°"
-            aria-label="Rotate −45°"
-          >
-            <RotateCounterClockwiseIcon />
-          </button>
-          <button
-            className="chip-btn"
-            onClick={() => dispatchAll((sid) => rotateStation(sid))}
-            title="Rotate +45°"
-            aria-label="Rotate +45°"
-          >
-            <RotateCounterClockwiseIcon style={{ transform: 'scaleX(-1)' }} />
-          </button>
+            <button
+              className="chip-btn"
+              onClick={() => dispatchAll((sid) => rotateStation(sid, -1))}
+              title="Rotate −45°"
+              aria-label="Rotate −45°"
+            >
+              <RotateCounterClockwiseIcon />
+            </button>
+            <button
+              className="chip-btn"
+              onClick={() => dispatchAll((sid) => rotateStation(sid))}
+              title="Rotate +45°"
+              aria-label="Rotate +45°"
+            >
+              <RotateCounterClockwiseIcon style={{ transform: 'scaleX(-1)' }} />
+            </button>
+          </div>
         </div>
-      </div>
-      <div className="field">
-        <div className="field-header">
-          <label>Stop layout</label>
-          {/* Enter/exit editing-station-layout: the full stop/label editor
+        <div className="field">
+          <div className="field-header">
+            <label>Stop layout</label>
+            {/* Enter/exit editing-station-layout: the full stop/label editor
               on the real station, on the main canvas. */}
-          <button
-            type="button"
-            className={`btn-mini${inLayoutEdit ? ' active' : ''}`}
-            aria-pressed={inLayoutEdit}
-            title={
-              inLayoutEdit
-                ? 'Exit the on-canvas layout editor (Esc)'
-                : 'Edit stops + label on the map: drag between slots, right-click or R rotates, arrows nudge'
-            }
-            onClick={() =>
-              inLayoutEdit
-                ? selection.setUiMode({ kind: 'idle' })
-                : selection.startEditingStationLayout(station.id)
-            }
-          >
-            {inLayoutEdit ? 'Done' : 'Edit layout'}
-          </button>
+            <button
+              type="button"
+              className={`ghost-btn${inLayoutEdit ? ' active' : ''}`}
+              aria-pressed={inLayoutEdit}
+              title={
+                inLayoutEdit
+                  ? 'Exit the on-canvas layout editor (Esc)'
+                  : 'Edit stops + label on the map: drag between slots, right-click or R rotates, arrows nudge'
+              }
+              onClick={() =>
+                inLayoutEdit
+                  ? selection.setUiMode({ kind: 'idle' })
+                  : selection.startEditingStationLayout(station.id)
+              }
+            >
+              {inLayoutEdit ? 'Done' : 'Edit layout'}
+            </button>
+          </div>
+          <div ref={stopRowsRef}>
+            <StopRows station={station} lines={linesAll} />
+          </div>
+          <div className="field-hint">
+            {station.stops.length === 0
+              ? 'No stops yet — add this station to a line.'
+              : inLayoutEdit
+                ? 'Drag dots/label on the map; right-click or R rotates, arrows nudge.'
+                : 'Positions are edited on the map — click Edit layout.'}
+          </div>
         </div>
-        <div ref={stopRowsRef}>
-          <StopRows station={station} lines={linesAll} />
-        </div>
-        <div className="field-hint">
-          {station.stops.length === 0
-            ? 'No stops yet — add this station to a line.'
-            : inLayoutEdit
-              ? 'Drag dots/label on the map; right-click or R rotates, arrows nudge.'
-              : 'Positions are edited on the map — click Edit layout.'}
-        </div>
-      </div>
-      <div className="field">
-        <label>Label</label>
-        <div className="field-row">
-          {/* Cycle buttons dispatch the computed next value as an absolute
+        <div className="field">
+          <label>Label</label>
+          <div className="field-row">
+            {/* Cycle buttons dispatch the computed next value as an absolute
               set, so mirror mode is a plain broadcast of the same value —
               matching stations can't diverge. The Auto-placement toggle
               follows the same absolute-value dispatch; while it's on the
               align/valign cycles are overridden, so they disable. */}
-          <button
-            type="button"
-            className={`chip-btn${resolveAutoAlign(station.label) ? ' active' : ''}`}
-            aria-pressed={resolveAutoAlign(station.label)}
-            aria-label="Auto placement"
-            title={
-              resolveAutoAlign(station.label)
-                ? 'Auto placement on — alignment follows the nearest stop (transit-map typography), overriding align/v-align'
-                : 'Auto placement: align to the nearest stop with transit-map typography (overrides align/v-align)'
-            }
-            onClick={() => {
-              const next = !resolveAutoAlign(station.label);
-              dispatchAll((sid) => setLabelAutoAlign(sid, next));
-            }}
-          >
-            <MagicWandIcon />
-          </button>
-          {/* Multi-line tuning for Auto placement: within-block alignment
+            <button
+              type="button"
+              className={`chip-btn${resolveAutoAlign(station.label) ? ' active' : ''}`}
+              aria-pressed={resolveAutoAlign(station.label)}
+              aria-label="Auto placement"
+              title={
+                resolveAutoAlign(station.label)
+                  ? 'Auto placement on — alignment follows the nearest stop (transit-map typography), overriding align/v-align'
+                  : 'Auto placement: align to the nearest stop with transit-map typography (overrides align/v-align)'
+              }
+              onClick={() => {
+                const next = !resolveAutoAlign(station.label);
+                dispatchAll((sid) => setLabelAutoAlign(sid, next));
+              }}
+            >
+              <MagicWandIcon />
+            </button>
+            {/* Multi-line tuning for Auto placement: within-block alignment
               and which line anchors. Only meaningful while the wand is on;
               inverse-disabled from the legacy align/valign cycles. */}
-          <AutoHAlignCycleButton
-            value={station.label.autoHAlign ?? null}
-            disabled={!resolveAutoAlign(station.label)}
-            onSet={(v) => dispatchAll((sid) => setLabelAutoHAlign(sid, v))}
+            <AutoHAlignCycleButton
+              value={station.label.autoHAlign ?? null}
+              disabled={!resolveAutoAlign(station.label)}
+              onSet={(v) => dispatchAll((sid) => setLabelAutoHAlign(sid, v))}
+            />
+            <AutoVAlignCycleButton
+              value={station.label.autoVAlign ?? null}
+              disabled={!resolveAutoAlign(station.label)}
+              onSet={(v) => dispatchAll((sid) => setLabelAutoVAlign(sid, v))}
+            />
+            <LabelAlignCycleButton
+              align={station.label.align}
+              disabled={resolveAutoAlign(station.label)}
+              onSet={(v) => dispatchAll((sid) => setLabelAlign(sid, v))}
+            />
+            <LabelValignCycleButton
+              valign={station.label.valign}
+              disabled={resolveAutoAlign(station.label)}
+              onSet={(v) => dispatchAll((sid) => setLabelValign(sid, v))}
+            />
+          </div>
+          <div className="field-hint">Offset (along reading direction)</div>
+          <LabelOffsetControl
+            value={station.label.offset}
+            onChange={(v) => dispatchAll((sid) => setLabelOffset(sid, v))}
+            indeterminate={
+              mirrorOn &&
+              matches.some((m) => stationsAll[m.id]?.label.offset !== station.label.offset)
+            }
           />
-          <AutoVAlignCycleButton
-            value={station.label.autoVAlign ?? null}
-            disabled={!resolveAutoAlign(station.label)}
-            onSet={(v) => dispatchAll((sid) => setLabelAutoVAlign(sid, v))}
-          />
-          <LabelAlignCycleButton
-            align={station.label.align}
-            disabled={resolveAutoAlign(station.label)}
-            onSet={(v) => dispatchAll((sid) => setLabelAlign(sid, v))}
-          />
-          <LabelValignCycleButton
-            valign={station.label.valign}
-            disabled={resolveAutoAlign(station.label)}
-            onSet={(v) => dispatchAll((sid) => setLabelValign(sid, v))}
+          <div className="field-hint">Offset (perpendicular to reading direction)</div>
+          <LabelOffsetControl
+            value={resolveOffsetPerp(station.label)}
+            onChange={(v) => dispatchAll((sid) => setLabelOffsetPerp(sid, v))}
+            indeterminate={
+              mirrorOn &&
+              matches.some(
+                (m) =>
+                  resolveOffsetPerp(stationsAll[m.id]?.label) !== resolveOffsetPerp(station.label),
+              )
+            }
           />
         </div>
-        <div className="field-hint">Offset (along reading direction)</div>
-        <LabelOffsetControl
-          value={station.label.offset}
-          onChange={(v) => dispatchAll((sid) => setLabelOffset(sid, v))}
-          indeterminate={
-            mirrorOn &&
-            matches.some((m) => stationsAll[m.id]?.label.offset !== station.label.offset)
-          }
-        />
-        <div className="field-hint">Offset (perpendicular to reading direction)</div>
-        <LabelOffsetControl
-          value={resolveOffsetPerp(station.label)}
-          onChange={(v) => dispatchAll((sid) => setLabelOffsetPerp(sid, v))}
-          indeterminate={
-            mirrorOn &&
-            matches.some(
-              (m) =>
-                resolveOffsetPerp(stationsAll[m.id]?.label) !== resolveOffsetPerp(station.label),
-            )
-          }
-        />
-      </div>
 
-      {/* Name typography — the standard "style picker on top, style options
+        {/* Name typography — the standard "style picker on top, style options
           below" section (like the other item popovers). Edits are LOCAL to this
           station (never dispatchAll), preserving the pinned "typography never
-          mirrors" decision; NOT lock-disabled — the station inspector stays
-          fully editable even when the station is canvas-locked. */}
-      <div className="field">
-        <StyleRow key={station.id} kind="station" itemId={station.id} styleId={station.styleId} />
-        <hr className="popover-divider" aria-hidden="true" />
-        <NumericFieldRow
-          id={`station-size-${station.id}`}
-          label="Size"
-          min={LABEL_FONT_SIZE_MIN}
-          max={LABEL_FONT_SIZE_MAX}
-          step={FONT_SIZE_STEP}
-          value={labelStyle.fontSize}
-          onChange={(n) => updateStationLabelStyle(station.id, { fontSize: n })}
-          getCurrent={() =>
-            effectiveStationStyleProps(useDoc.getState().stations[station.id] ?? station).fontSize
-          }
-          textboxAllowAboveMax
-        />
-        <div className="field-row">
-          <label htmlFor={`station-weight-${station.id}`}>Weight</label>
-          <WeightSelect
-            id={`station-weight-${station.id}`}
-            value={labelStyle.weight}
-            italic={labelStyle.italic}
-            onChange={(weight) => updateStationLabelStyle(station.id, { weight })}
+          mirrors" decision. */}
+        <div className="field">
+          <StyleRow
+            key={station.id}
+            kind="station"
+            itemId={station.id}
+            styleId={station.styleId}
+            disabled={locked}
           />
-          <ItalicButton
-            active={labelStyle.italic}
-            onToggle={() => updateStationLabelStyle(station.id, { italic: !labelStyle.italic })}
+          <hr className="popover-divider" aria-hidden="true" />
+          <NumericFieldRow
+            id={`station-size-${station.id}`}
+            label="Size"
+            min={LABEL_FONT_SIZE_MIN}
+            max={LABEL_FONT_SIZE_MAX}
+            step={FONT_SIZE_STEP}
+            value={labelStyle.fontSize}
+            onChange={(n) => updateStationLabelStyle(station.id, { fontSize: n })}
+            getCurrent={() =>
+              effectiveStationStyleProps(useDoc.getState().stations[station.id] ?? station).fontSize
+            }
+            textboxAllowAboveMax
+            disabled={locked}
+          />
+          <div className="field-row">
+            <label htmlFor={`station-weight-${station.id}`}>Weight</label>
+            <WeightSelect
+              id={`station-weight-${station.id}`}
+              value={labelStyle.weight}
+              italic={labelStyle.italic}
+              disabled={locked}
+              onChange={(weight) => updateStationLabelStyle(station.id, { weight })}
+            />
+            <ItalicButton
+              active={labelStyle.italic}
+              disabled={locked}
+              onToggle={() => updateStationLabelStyle(station.id, { italic: !labelStyle.italic })}
+            />
+          </div>
+          {/* Line-spacing multiplier (1 = normal); the tick marks the neutral 1. */}
+          <NumericFieldRow
+            id={`station-leading-${station.id}`}
+            label="Leading"
+            min={LABEL_LEADING_MIN}
+            max={LABEL_LEADING_MAX}
+            step={LABEL_LEADING_STEP}
+            value={labelStyle.leading}
+            onChange={(n) => updateStationLabelStyle(station.id, { leading: n })}
+            getCurrent={() =>
+              effectiveStationStyleProps(useDoc.getState().stations[station.id] ?? station).leading
+            }
+            detent={LABEL_LEADING_DEFAULT}
+            textboxAllowAboveMax
+            disabled={locked}
+          />
+          {/* Letter-spacing in em (0 = normal); the tick marks the neutral 0. */}
+          <NumericFieldRow
+            id={`station-tracking-${station.id}`}
+            label="Tracking"
+            min={LABEL_TRACKING_MIN}
+            max={LABEL_TRACKING_MAX}
+            step={LABEL_TRACKING_STEP}
+            value={labelStyle.tracking}
+            onChange={(n) => updateStationLabelStyle(station.id, { tracking: n })}
+            getCurrent={() =>
+              effectiveStationStyleProps(useDoc.getState().stations[station.id] ?? station).tracking
+            }
+            detent={LABEL_TRACKING_DEFAULT}
+            textboxAllowAboveMax
+            disabled={locked}
           />
         </div>
-        {/* Line-spacing multiplier (1 = normal); the tick marks the neutral 1. */}
-        <NumericFieldRow
-          id={`station-leading-${station.id}`}
-          label="Leading"
-          min={LABEL_LEADING_MIN}
-          max={LABEL_LEADING_MAX}
-          step={LABEL_LEADING_STEP}
-          value={labelStyle.leading}
-          onChange={(n) => updateStationLabelStyle(station.id, { leading: n })}
-          getCurrent={() =>
-            effectiveStationStyleProps(useDoc.getState().stations[station.id] ?? station).leading
-          }
-          detent={LABEL_LEADING_DEFAULT}
-          textboxAllowAboveMax
-        />
-        {/* Letter-spacing in em (0 = normal); the tick marks the neutral 0. */}
-        <NumericFieldRow
-          id={`station-tracking-${station.id}`}
-          label="Tracking"
-          min={LABEL_TRACKING_MIN}
-          max={LABEL_TRACKING_MAX}
-          step={LABEL_TRACKING_STEP}
-          value={labelStyle.tracking}
-          onChange={(n) => updateStationLabelStyle(station.id, { tracking: n })}
-          getCurrent={() =>
-            effectiveStationStyleProps(useDoc.getState().stations[station.id] ?? station).tracking
-          }
-          detent={LABEL_TRACKING_DEFAULT}
-          textboxAllowAboveMax
-        />
-      </div>
+      </fieldset>
     </section>
   );
 }

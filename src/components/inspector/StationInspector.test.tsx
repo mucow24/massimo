@@ -2,11 +2,13 @@ import { describe, it, expect, beforeEach } from 'vitest';
 import { act, fireEvent, render, screen } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { StationInspector } from './StationInspector';
+import { StationPopover } from '../StationPopover';
 import { useDoc, useSelection } from '../../state/store';
 import { historyDepth, undo } from '../../state/history';
 import { DEFAULT_DOC, resolveOffsetPerp } from '../../model/transforms';
 import { DOT_SHAPE_PRESETS } from '../../model/dotStyle';
 import { makeDoc, makeStation, makeStop, makeLine, makeStyle } from '../../test/fixtures';
+import { chooseOption, stepSlider } from '../../test/interaction';
 
 const SELECTION_BLANK = {
   selectedStationIds: [] as string[],
@@ -169,22 +171,25 @@ describe('<StationInspector /> — shape picker wiring', () => {
     render(<StationInspector id="a" />);
     const wpBtn = screen.getByRole('button', { name: 'Waypoint' });
     expect(wpBtn).toHaveAttribute('aria-pressed', 'false');
-    expect(wpBtn).not.toHaveClass('wp-on');
+    expect(wpBtn).not.toHaveClass('active');
 
     await user.click(wpBtn);
     expect(useDoc.getState().stations.a.isWaypoint).toBe(true);
     const wpBtnOn = screen.getByRole('button', { name: 'Waypoint' });
     expect(wpBtnOn).toHaveAttribute('aria-pressed', 'true');
-    expect(wpBtnOn).toHaveClass('wp-on');
+    expect(wpBtnOn).toHaveClass('active');
 
     await user.click(screen.getByRole('button', { name: 'Waypoint' }));
     const wpBtnOff = screen.getByRole('button', { name: 'Waypoint' });
     expect(useDoc.getState().stations.a.isWaypoint).toBe(false);
     expect(wpBtnOff).toHaveAttribute('aria-pressed', 'false');
-    expect(wpBtnOff).not.toHaveClass('wp-on');
+    expect(wpBtnOff).not.toHaveClass('active');
   });
 
-  it('Lock button toggles aria-pressed and writes locked on the station', async () => {
+  it('Lock toggles aria-pressed and writes locked (in the popover footer)', async () => {
+    // The lock toggle lives in the StationPopover footer now (beside Delete,
+    // like every other item popover) — render the popover, which hosts the
+    // inspector plus that footer.
     const user = userEvent.setup();
     useDoc.setState({
       ...DEFAULT_DOC,
@@ -195,17 +200,30 @@ describe('<StationInspector /> — shape picker wiring', () => {
     });
     useSelection.setState({ ...SELECTION_BLANK, selectedStationIds: ['a'] });
 
-    render(<StationInspector id="a" />);
+    function LivePopover() {
+      const station = useDoc((s) => s.stations.a);
+      return station ? (
+        <StationPopover
+          station={station}
+          worldRect={{ x0: 0, y0: 0, x1: 0, y1: 0 }}
+          view={{ vbX: 0, vbY: 0, vbW: 800, vbH: 600, size: { w: 800, h: 600 } }}
+          onClose={() => {}}
+        />
+      ) : null;
+    }
+    render(<LivePopover />);
     const lockBtn = screen.getByRole('button', { name: 'Lock station' });
     expect(lockBtn).toHaveAttribute('aria-pressed', 'false');
-    expect(lockBtn).not.toHaveClass('lock-on');
 
     await user.click(lockBtn);
     expect(useDoc.getState().stations.a.locked).toBe(true);
-    // The label flips to the unlock affordance once locked.
+    // The label flips to the unlock affordance once locked, and the
+    // inspector's editing controls grey out behind the disabled fieldset.
     const lockBtnOn = screen.getByRole('button', { name: 'Unlock station' });
     expect(lockBtnOn).toHaveAttribute('aria-pressed', 'true');
-    expect(lockBtnOn).toHaveClass('lock-on');
+    expect(screen.getByRole('button', { name: 'Delete' })).toBeDisabled();
+    expect(screen.getByRole('button', { name: 'Waypoint' })).toBeDisabled();
+    expect(screen.getByRole('slider', { name: 'Size' })).toHaveAttribute('data-disabled');
 
     await user.click(screen.getByRole('button', { name: 'Unlock station' }));
     expect(useDoc.getState().stations.a.locked).toBeFalsy();
@@ -213,6 +231,7 @@ describe('<StationInspector /> — shape picker wiring', () => {
       'aria-pressed',
       'false',
     );
+    expect(screen.getByRole('button', { name: 'Waypoint' })).toBeEnabled();
   });
 
   describe('Text style section', () => {
@@ -234,14 +253,15 @@ describe('<StationInspector /> — shape picker wiring', () => {
 
     it('the Size slider writes per-station fontSize', () => {
       setup();
-      fireEvent.change(screen.getByRole('slider', { name: /size/i }), { target: { value: '18' } });
-      expect(useDoc.getState().stations.a.fontSize).toBe(18);
+      // One arrow-key step of the 0.25 grid up from the 12 default.
+      stepSlider(screen.getByRole('slider', { name: /size/i }), 1);
+      expect(useDoc.getState().stations.a.fontSize).toBe(12.25);
     });
 
     it('the Weight dropdown writes per-station weight', async () => {
       const user = userEvent.setup();
       setup();
-      await user.selectOptions(screen.getByRole('combobox', { name: /weight/i }), '700');
+      await chooseOption(user, /weight/i, 'Bold');
       expect(useDoc.getState().stations.a.weight).toBe(700);
     });
 
@@ -265,8 +285,8 @@ describe('<StationInspector /> — shape picker wiring', () => {
       });
       useSelection.setState({ ...SELECTION_BLANK, selectedStationIds: ['a'] });
       render(<StationInspector id="a" />);
-      expect(screen.getByRole('combobox', { name: 'Style' })).toHaveValue('y1');
-      fireEvent.change(screen.getByRole('slider', { name: /size/i }), { target: { value: '18' } });
+      expect(screen.getByRole('combobox', { name: 'Style' })).toHaveTextContent('Big');
+      stepSlider(screen.getByRole('slider', { name: /size/i }), 1);
       expect(useDoc.getState().stations.a.styleId).toBeUndefined();
     });
 
@@ -312,7 +332,7 @@ describe('<StationInspector /> — shape picker wiring', () => {
     render(<StationInspector id="a" />);
     const wpBtn = screen.getByRole('button', { name: 'Waypoint' });
     expect(wpBtn).toHaveAttribute('aria-pressed', 'true');
-    expect(wpBtn).toHaveClass('wp-on');
+    expect(wpBtn).toHaveClass('active');
   });
 
   it('Waypoint toggle does NOT mirror-propagate to matching stations', async () => {
@@ -609,14 +629,14 @@ describe('<StationInspector /> — edit paths that reach the document (E8)', () 
     expect(screen.queryByRole('button', { name: /Mirror/ })).toBeNull();
   });
 
-  it('WP and Lock sit in the top header row next to the Name label', () => {
+  it('WP sits in the top header row next to the Name label (Lock moved to the footer)', () => {
     seedStation();
     render(<StationInspector id="a" />);
     const wp = screen.getByRole('button', { name: 'Waypoint' });
-    const lock = screen.getByRole('button', { name: 'Lock station' });
     const nameLabel = screen.getByText('Name');
     expect(wp.parentElement).toBe(nameLabel.parentElement);
-    expect(lock.parentElement).toBe(nameLabel.parentElement);
+    // The lock toggle is the StationPopover footer's, not the inspector's.
+    expect(screen.queryByRole('button', { name: 'Lock station' })).toBeNull();
   });
 
   it('clicking the align button cycles label.align one step (auto → left) as one undo entry', async () => {

@@ -964,7 +964,7 @@ describe('Toolbar — save gating (clean / dirty / unsaved)', () => {
     anchor(markSaved);
     render(<Toolbar />);
     await openCanvasMenu(user);
-    expect(saveItem()).toBeDisabled();
+    expect(saveItem()).toHaveAttribute('aria-disabled', 'true');
   });
 
   it('arms Save version on an edit; saving greys it out again', async () => {
@@ -974,12 +974,12 @@ describe('Toolbar — save gating (clean / dirty / unsaved)', () => {
     useDoc.getState().addStation(200, 0);
     render(<Toolbar />);
     await openCanvasMenu(user);
-    expect(saveItem()).toBeEnabled();
+    expect(saveItem()).not.toHaveAttribute('aria-disabled');
     await user.click(saveItem());
     await waitFor(() => expect(saveVersion).toHaveBeenCalledTimes(1));
     expect(statusNow()).toBe('clean');
     await openCanvasMenu(user);
-    expect(saveItem()).toBeDisabled();
+    expect(saveItem()).toHaveAttribute('aria-disabled', 'true');
   });
 
   it('arms Save version for a clean-but-unsaved doc, and saving imports it', async () => {
@@ -988,7 +988,7 @@ describe('Toolbar — save gating (clean / dirty / unsaved)', () => {
     anchor(markAdopted); // a loaded file: clean bytes, no library copy
     render(<Toolbar />);
     await openCanvasMenu(user);
-    expect(saveItem()).toBeEnabled();
+    expect(saveItem()).not.toHaveAttribute('aria-disabled');
     await user.click(saveItem());
     await waitFor(() => expect(saveVersion).toHaveBeenCalledTimes(1));
     expect(vi.mocked(saveVersion).mock.calls[0][3]).toBe('user');

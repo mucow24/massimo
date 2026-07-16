@@ -171,15 +171,15 @@ describe('<OptionsPopover />', () => {
       const user = userEvent.setup();
       render(<Toolbar />);
       await user.click(screen.getByRole('button', { name: 'Options' }));
-      const mta = screen.getByRole('checkbox', { name: 'MTA' }) as HTMLInputElement;
-      const bart = screen.getByRole('checkbox', { name: 'BART' }) as HTMLInputElement;
-      const caltrain = screen.getByRole('checkbox', { name: 'Caltrain' }) as HTMLInputElement;
-      expect(mta.checked).toBe(true);
-      expect(bart.checked).toBe(false);
-      expect(caltrain.checked).toBe(false);
-      expect(mta.disabled).toBe(true);
-      expect(bart.disabled).toBe(false);
-      expect(caltrain.disabled).toBe(false);
+      const mta = screen.getByRole('checkbox', { name: 'MTA' });
+      const bart = screen.getByRole('checkbox', { name: 'BART' });
+      const caltrain = screen.getByRole('checkbox', { name: 'Caltrain' });
+      expect(mta).toBeChecked();
+      expect(bart).not.toBeChecked();
+      expect(caltrain).not.toBeChecked();
+      expect(mta).toBeDisabled();
+      expect(bart).toBeEnabled();
+      expect(caltrain).toBeEnabled();
     });
 
     it('checking BART updates the store and re-enables the MTA checkbox', async () => {
@@ -239,8 +239,8 @@ describe('<OptionsPopover />', () => {
       fireEvent.change(screen.getByLabelText('Load palette file'), {
         target: { files: [frrfFile()] },
       });
-      const checkbox = (await screen.findByRole('checkbox', { name: 'frrf' })) as HTMLInputElement;
-      expect(checkbox.checked).toBe(false); // added unchecked
+      const checkbox = await screen.findByRole('checkbox', { name: 'frrf' });
+      expect(checkbox).not.toBeChecked(); // added unchecked
       expect(useCustomPalettes.getState().palettes[0].swatches).toHaveLength(2);
       // Loading does not mutate the doc's active set.
       expect(useDoc.getState().activePalettes).toEqual(['mta']);

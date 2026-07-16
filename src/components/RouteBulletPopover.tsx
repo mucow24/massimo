@@ -1,3 +1,6 @@
+import { ChevronDownIcon } from '@radix-ui/react-icons';
+import * as Select from '@radix-ui/react-select';
+import * as ToggleGroup from '@radix-ui/react-toggle-group';
 import { useDoc } from '../state/store';
 import { type ViewportProjection } from './canvas/screenAnchor';
 import type { AABB } from '../geometry/rectPolygon';
@@ -8,6 +11,10 @@ import { PopoverFooter } from './PopoverFooter';
 import { StyleRow } from './StyleRow';
 import { ROUTE_BULLET_SIZE_MAX, ROUTE_BULLET_SIZE_MIN } from '../model/transforms';
 import type { RouteBullet, RouteBulletShape } from '../model/types';
+
+// Radix Select forbids empty-string item values; line ids are UUIDs, so the
+// dunder can't collide (same convention as StyleRow's sentinels).
+const NO_LINE = '__none__';
 
 interface Props {
   bullet: RouteBullet;
@@ -80,6 +87,7 @@ export function RouteBulletPopover({ bullet, worldRect, view, spawnBox, onClose 
   return (
     <DraggablePopoverShell
       className="bullet-popover"
+      title="Route bullet"
       left={anchor.x}
       top={anchor.y}
       measuring={measuring}
@@ -88,19 +96,35 @@ export function RouteBulletPopover({ bullet, worldRect, view, spawnBox, onClose 
     >
       <div className="row">
         <label>Line</label>
-        <select
-          aria-label="Line"
-          value={bullet.lineId ?? ''}
+        <Select.Root
+          value={bullet.lineId ?? NO_LINE}
           disabled={locked}
-          onChange={(e) => onLine(e.target.value)}
+          onValueChange={(v) => onLine(v === NO_LINE ? '' : v)}
         >
-          <option value="">— none —</option>
-          {orderedLines.map((ln) => (
-            <option key={ln.id} value={ln.id}>
-              {ln.service}
-            </option>
-          ))}
-        </select>
+          <Select.Trigger className="field-select" aria-label="Line">
+            <Select.Value />
+            <Select.Icon className="field-select-caret" aria-hidden="true">
+              <ChevronDownIcon />
+            </Select.Icon>
+          </Select.Trigger>
+          <Select.Content className="field-select-panel" position="popper" sideOffset={4}>
+            <Select.Viewport>
+              <Select.Item value={NO_LINE} className="field-select-item field-select-action">
+                <Select.ItemText>— none —</Select.ItemText>
+              </Select.Item>
+              {orderedLines.map((ln) => (
+                <Select.Item key={ln.id} value={ln.id} className="field-select-item">
+                  <Select.ItemText>
+                    {/* Swatch + service code: the list previews the line it
+                        picks, like the weight dropdown's per-face options. */}
+                    <span className="line-swatch" style={{ background: ln.color }} aria-hidden />
+                    {ln.service}
+                  </Select.ItemText>
+                </Select.Item>
+              ))}
+            </Select.Viewport>
+          </Select.Content>
+        </Select.Root>
       </div>
       {/* The Line select above is identity, not style — the style row covers
           shape + size only, so it sits between them. */}
@@ -115,18 +139,29 @@ export function RouteBulletPopover({ bullet, worldRect, view, spawnBox, onClose 
       <div className="row">
         <label>Shape</label>
         <div className="shape-group">
-          {shapes.map((s) => (
-            <button
-              key={s}
-              className={'shape-btn' + (bullet.shape === s ? ' active' : '')}
-              disabled={locked}
-              onClick={() => onShape(s)}
-              title={s}
-              aria-label={s}
-            >
-              <ShapeIcon shape={s} />
-            </button>
-          ))}
+          {/* One roving-focus group; the empty-string guard keeps it
+              radio-like (re-clicking the selected shape doesn't deselect). */}
+          <ToggleGroup.Root
+            type="single"
+            className="align-group"
+            value={bullet.shape}
+            disabled={locked}
+            onValueChange={(v) => {
+              if (v) onShape(v as RouteBulletShape);
+            }}
+          >
+            {shapes.map((s) => (
+              <ToggleGroup.Item
+                key={s}
+                value={s}
+                className={'shape-btn' + (bullet.shape === s ? ' active' : '')}
+                title={s}
+                aria-label={s}
+              >
+                <ShapeIcon shape={s} />
+              </ToggleGroup.Item>
+            ))}
+          </ToggleGroup.Root>
         </div>
       </div>
       {/* textboxAllowAboveMax: the spinbutton (typing and step buttons) accepts

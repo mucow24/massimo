@@ -293,11 +293,13 @@ select option {
 }
 
 /* Menus: underlined Helvetica Neue triggers, weight lighter than "Massimo"
-   (which is 700) but still substantial enough to read as a control. */
-.menu {
-  position: relative;
-  display: inline-flex;
-}
+   (which is 700) but still substantial enough to read as a control.
+   Structure is Radix DropdownMenu: the panel is positioned by Radix's popper
+   (a fixed-position wrapper), so .menu-panel carries only the visuals — no
+   position/top/left. Its z-index is real, though: Radix copies the content's
+   computed z-index onto the popper wrapper. Items are divs (not buttons) and
+   highlight via [data-highlighted], which covers pointer hover AND keyboard
+   focus in one state. */
 .toolbar button.menu-trigger {
   background: transparent;
   border: 0;
@@ -313,50 +315,49 @@ select option {
   cursor: pointer;
 }
 .toolbar button.menu-trigger:hover,
-.toolbar button.menu-trigger.open {
+.toolbar button.menu-trigger[data-state='open'] {
   background: transparent;
   text-decoration-thickness: 2px;
 }
 .menu-panel {
-  position: absolute;
-  top: calc(100% + 4px);
-  left: 0;
-  min-width: 160px;
+  min-width: 168px;
   background: var(--surface-raised);
-  border: 1px solid var(--border);
-  border-radius: 4px;
-  box-shadow: var(--shadow-pop);
-  padding: 4px 0;
+  border: 1px solid var(--border-soft);
+  border-radius: 8px;
+  box-shadow:
+    0 2px 6px rgba(0, 0, 0, 0.07),
+    0 12px 28px rgba(0, 0, 0, 0.16);
+  padding: 4px;
   z-index: 10;
   display: flex;
   flex-direction: column;
 }
-.toolbar button.menu-item {
+.menu-panel .menu-item {
   background: transparent;
   border: 0;
-  border-radius: 0;
+  border-radius: 4px;
   text-align: left;
-  padding: 6px 12px;
+  padding: 6px 10px;
   font-weight: 400;
   cursor: pointer;
   color: var(--text);
+  outline: none;
+  user-select: none;
+  transition: background-color 80ms ease;
 }
-.toolbar button.menu-item:hover {
+.menu-panel .menu-item[data-highlighted] {
   background: var(--raised-hover);
 }
 /* Greyed-out item (e.g. Save version when the doc is already saved): muted,
-   no hover invitation, and the disabled button swallows the click so the
-   panel's close-on-click never fires — the menu stays open. */
-.toolbar button.menu-item:disabled {
+   no hover invitation. Radix marks it data-disabled (the item is a div, not
+   a button) and keeps its activation from firing or closing the menu. */
+.menu-panel .menu-item[data-disabled] {
   color: var(--text-muted);
   cursor: default;
 }
-.toolbar button.menu-item:disabled:hover {
-  background: transparent;
-}
 /* An item carrying an accelerator hint (e.g. Save version ▸ Ctrl+S): lay the
    label and the muted key on one row, key pinned to the right edge. */
-.toolbar button.menu-item.has-shortcut {
+.menu-panel .menu-item.has-shortcut {
   display: flex;
   align-items: baseline;
   justify-content: space-between;
@@ -369,34 +370,24 @@ select option {
 .menu-separator {
   height: 1px;
   background: var(--border-soft);
-  margin: 4px 0;
+  margin: 4px 6px;
 }
 
 /* Nested flyout submenu (e.g. Canvas → Export → PNG/SVG). */
-.menu-sub {
-  position: relative;
-}
-.toolbar button.menu-sub-trigger {
+.menu-panel .menu-sub-trigger {
   display: flex;
   align-items: center;
   justify-content: space-between;
   gap: 12px;
   width: 100%;
 }
-.toolbar button.menu-sub-trigger:hover,
-.toolbar button.menu-sub-trigger.open {
+.menu-panel .menu-sub-trigger[data-state='open'] {
   background: var(--raised-hover);
 }
 .menu-sub-caret {
   display: inline-flex;
   align-items: center;
   opacity: 0.6;
-}
-.menu-sub-panel {
-  top: -5px;
-  /* Butt up against the parent panel's edge (no gap) so moving the pointer
-     into the flyout doesn't cross a dead zone that fires onMouseLeave. */
-  left: 100%;
 }
 
 .options-popover-wrap {
@@ -435,6 +426,73 @@ select option {
 .options-popover-row input[type='range'] {
   flex: 1;
   min-width: 0;
+}
+/* Radix slider (NumericFieldRow): accent-filled track, round thumb. Sized to
+   read at the popovers' small type scale. */
+.field-slider {
+  position: relative;
+  display: flex;
+  align-items: center;
+  flex: 1;
+  min-width: 0;
+  height: 20px;
+  touch-action: none;
+  user-select: none;
+}
+.field-slider-track {
+  position: relative;
+  flex-grow: 1;
+  height: 4px;
+  border-radius: 2px;
+  background: var(--border-soft);
+}
+.field-slider-range {
+  position: absolute;
+  height: 100%;
+  border-radius: 2px;
+  background: var(--accent);
+}
+.field-slider-thumb {
+  display: block;
+  width: 14px;
+  height: 14px;
+  border-radius: 50%;
+  background: var(--control-bg);
+  border: 1px solid var(--border-strong);
+  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.2);
+  cursor: pointer;
+  outline: none;
+  transition:
+    border-color 120ms ease,
+    box-shadow 120ms ease;
+}
+.field-slider:not([data-disabled]) .field-slider-thumb:hover {
+  border-color: var(--accent-border);
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.3);
+}
+.field-slider-thumb:focus-visible {
+  outline: 2px solid var(--accent-border);
+  outline-offset: 1px;
+}
+/* Signed, zero-centered sliders (label offsets): a min→value fill reads as a
+   half-set value at neutral, so these show track + detent + thumb only. */
+.field-slider-centered .field-slider-range {
+  display: none;
+}
+/* The neutral-value tick (leading 1, tracking 0) the native datalist drew. */
+.field-slider-detent {
+  position: absolute;
+  top: -3px;
+  bottom: -3px;
+  width: 1px;
+  background: var(--text-faint);
+}
+.field-slider[data-disabled] {
+  opacity: 0.45;
+}
+.field-slider[data-disabled] .field-slider-thumb,
+.field-slider[data-disabled] .field-slider-range {
+  cursor: default;
 }
 .options-popover-value {
   width: 24px;
@@ -799,33 +857,110 @@ select option {
    `bullet-popover`; the text-label popover has its own root class. */
 .bullet-popover,
 .text-label-popover {
+  /* Everything inside the panel rounds on a softer grid than the app chrome. */
+  --radius: 6px;
   background: var(--surface);
-  border: 3px solid #000;
-  /* 1px white ring around the black border so the popover's edge stays visible
-     against a black canvas (dark mode / dark polygons), where the border alone
-     would disappear. */
-  outline: 1px solid #fff;
-  box-shadow: var(--shadow-pop);
-  width: 240px;
+  border: 1px solid var(--border-soft);
+  border-radius: 10px;
+  /* Three layers: a hairline ring for edges the border can't carry (dark
+     polygons under a light panel), a tight contact shadow, and a wide soft
+     ambient falloff — the panel sits over the canvas instead of floating on
+     one hard blur. */
+  box-shadow:
+    0 0 0 1px rgba(0, 0, 0, 0.04),
+    0 2px 6px rgba(0, 0, 0, 0.07),
+    0 16px 40px rgba(0, 0, 0, 0.18);
+  width: 248px;
   font-size: var(--fs-small);
   display: flex;
   flex-direction: column;
 }
-/* Every popover header is the drag handle (wired via useDraggablePopover). */
+/* The header is the panel title AND the drag handle (wired via
+   useDraggablePopover): the signature black band, now wearing the panel's
+   rounded top corners — white bold Helvetica doing the chrome's talking.
+   Same black in both themes (it's the brand, not a surface). The top radius
+   is the shell's 10px minus its 1px border so the band nests flush. */
 .bullet-popover .header,
 .text-label-popover .header {
-  height: 10px;
+  padding: 7px 16px 8px;
   background: #000;
-  flex-shrink: 0;
+  color: #fff;
+  font-size: var(--fs-ui);
+  font-weight: 700;
+  border-radius: 9px 9px 0 0;
   cursor: move;
+  user-select: none;
   touch-action: none;
+  flex-shrink: 0;
 }
 .bullet-popover .body,
 .text-label-popover .body {
-  padding: 10px 12px;
+  padding: 12px 16px 14px;
   display: flex;
   flex-direction: column;
   gap: 10px;
+}
+/* One field recipe inside the popovers: hairline border, shared radius, quiet
+   until hovered/focused (the app-wide :focus-visible ring does the talking). */
+.bullet-popover :is(input[type='text'], input[type='number'], textarea, select),
+.text-label-popover :is(input[type='text'], input[type='number'], textarea, select) {
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  padding: 3px 6px;
+  transition: border-color 120ms ease;
+}
+.bullet-popover
+  :is(input[type='text'], input[type='number'], textarea, select):hover:not(:disabled),
+.text-label-popover
+  :is(input[type='text'], input[type='number'], textarea, select):hover:not(:disabled) {
+  border-color: var(--border-strong);
+}
+.bullet-popover input[type='checkbox'],
+.text-label-popover input[type='checkbox'] {
+  accent-color: var(--accent);
+}
+/* Radix checkbox (currently the label popover's Wrap): drawn in-app so it
+   matches the chrome exactly — hairline box, accent fill + white check when
+   on. */
+.field-checkbox {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 16px;
+  height: 16px;
+  padding: 0;
+  background: var(--input-bg);
+  border: 1px solid var(--border-strong);
+  border-radius: 4px;
+  cursor: pointer;
+  transition:
+    background-color 120ms ease,
+    border-color 120ms ease;
+}
+.field-checkbox:hover:not(:disabled) {
+  border-color: var(--accent-border);
+}
+.field-checkbox[data-state='checked'] {
+  background: var(--accent);
+  border-color: var(--accent);
+  color: #fff;
+}
+.field-checkbox-indicator {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+}
+.field-checkbox-indicator svg {
+  width: 13px;
+  height: 13px;
+}
+/* Dark canvas: the light-mode shadow ring vanishes on black — swap it for a
+   faint light ring so the panel edge still separates. */
+.app[data-theme='dark'] .bullet-popover,
+.app[data-theme='dark'] .text-label-popover {
+  box-shadow:
+    0 0 0 1px rgba(255, 255, 255, 0.07),
+    0 16px 40px rgba(0, 0, 0, 0.6);
 }
 .bullet-popover .row,
 .text-label-popover .row {
@@ -833,12 +968,14 @@ select option {
   align-items: center;
   gap: 8px;
 }
+/* Field labels sit back (muted, medium weight); the values and the title
+   carry the black. */
 .bullet-popover .row label,
 .text-label-popover .row label {
-  width: 48px;
+  width: 52px;
   flex-shrink: 0;
-  color: var(--text);
-  font-weight: 700;
+  color: var(--text-muted);
+  font-weight: 500;
 }
 .bullet-popover .row select,
 .bullet-popover .row input[type='range'],
@@ -866,7 +1003,7 @@ select option {
   margin: 8px 0 12px;
 }
 .inspector .style-row label {
-  width: 48px;
+  width: 52px; /* one label column with the popover .row rules above */
   flex-shrink: 0;
   color: var(--text);
   font-weight: 700;
@@ -887,9 +1024,60 @@ select option {
 .bullet-popover .popover-divider,
 .text-label-popover .popover-divider {
   border: 0;
-  border-top: 1px solid var(--border);
-  margin: 0;
+  border-top: 1px solid var(--border-soft);
+  margin: 2px 0;
   width: 100%;
+}
+
+/* Toggle clusters (Radix ToggleGroup — align buttons, bullet shapes): a
+   joined segmented control — shared inner borders, radius only on the outer
+   corners; the active segment raises so its accent border wins the shared
+   edge. Child-agnostic (align-btn / shape-btn both join); any detached chip
+   (italic) stays outside the group. */
+.bullet-popover .align-group,
+.text-label-popover .align-group,
+.style-editor .align-group {
+  display: inline-flex;
+  flex: 1;
+}
+.bullet-popover .align-group > button,
+.text-label-popover .align-group > button,
+.style-editor .align-group > button {
+  border-radius: 0;
+}
+.bullet-popover .align-group > button + button,
+.text-label-popover .align-group > button + button,
+.style-editor .align-group > button + button {
+  margin-left: -1px;
+}
+.bullet-popover .align-group > button:first-child,
+.text-label-popover .align-group > button:first-child,
+.style-editor .align-group > button:first-child {
+  border-top-left-radius: var(--radius);
+  border-bottom-left-radius: var(--radius);
+}
+.bullet-popover .align-group > button:last-child,
+.text-label-popover .align-group > button:last-child,
+.style-editor .align-group > button:last-child {
+  border-top-right-radius: var(--radius);
+  border-bottom-right-radius: var(--radius);
+}
+.bullet-popover .align-group > button.active,
+.text-label-popover .align-group > button.active,
+.style-editor .align-group > button.active {
+  position: relative;
+  z-index: 1;
+}
+
+/* Line swatch inside the bullet popover's Line dropdown: the list previews
+   the line color it picks (trigger inherits it through Select.Value). */
+.line-swatch {
+  display: inline-block;
+  width: 10px;
+  height: 10px;
+  border-radius: 3px;
+  margin-right: 7px;
+  vertical-align: -1px;
 }
 
 /* ── Shared control recipe ──
@@ -911,6 +1099,10 @@ select option {
   border: 1px solid var(--border-strong);
   border-radius: var(--radius);
   cursor: pointer;
+  transition:
+    background-color 120ms ease,
+    border-color 120ms ease,
+    color 120ms ease;
 }
 .toolbar button.tool-btn:hover,
 .bullet-popover .shape-btn:hover:not(:disabled),
@@ -974,32 +1166,62 @@ select option {
 .style-editor .italic-btn {
   flex: 0 0 36px;
 }
+/* Lock is a quiet ghost chip (muted icon + word) that turns into an accent
+   pill while the item is locked — same one-accent-pair language as the
+   toggle buttons above. The transparent border keeps its box identical to
+   the chip recipe's so nothing shifts on state changes. */
 .bullet-popover .lock-btn,
 .text-label-popover .lock-btn {
   display: inline-flex;
   align-items: center;
-  gap: 4px;
-  padding: 3px 10px;
+  gap: 6px;
+  height: 26px;
+  padding: 0 10px;
+  background: transparent;
+  border-color: transparent;
   font-size: var(--fs-small);
   font-weight: 600;
+  color: var(--text-muted);
+}
+.bullet-popover .lock-btn:hover,
+.text-label-popover .lock-btn:hover {
+  background: var(--control-hover);
   color: var(--text);
+}
+.bullet-popover .lock-btn.active,
+.text-label-popover .lock-btn.active {
+  background: var(--accent-bg);
+  border-color: transparent;
+  color: var(--accent);
+}
+.bullet-popover .lock-btn.active:hover,
+.text-label-popover .lock-btn.active:hover {
+  background: var(--accent-bg);
 }
 
 /* Footer holds the lock toggle (left, when the item supports locking) and
-   Delete (right). The transfer popover is lock-less — Delete alone. */
+   Delete (right) in its own zone: a hairline divider spanning the full panel
+   width (negative margins swallow the body padding). */
 .bullet-popover .footer,
 .text-label-popover .footer {
   display: flex;
   justify-content: space-between;
+  align-items: center;
   gap: 8px;
+  border-top: 1px solid var(--border-soft);
+  margin: 2px -16px -14px;
+  padding: 8px 12px 9px;
 }
+/* Delete is a quiet text button — red says enough at rest; a soft wash
+   answers on hover. */
 .bullet-popover .delete-btn,
 .text-label-popover .delete-btn {
-  background: var(--control-bg);
+  background: transparent;
   color: var(--danger);
-  border: 1px solid var(--danger);
+  border: 1px solid transparent;
   border-radius: var(--radius);
-  padding: 3px 10px;
+  height: 26px;
+  padding: 0 10px;
   font-size: var(--fs-small);
   font-weight: 600;
   cursor: pointer;
@@ -1007,10 +1229,20 @@ select option {
      where space-between has only one child to place. */
   margin-left: auto;
 }
+.bullet-popover .delete-btn,
+.text-label-popover .delete-btn,
+button.field-select {
+  transition:
+    background-color 120ms ease,
+    border-color 120ms ease,
+    color 120ms ease;
+}
 .bullet-popover .delete-btn:hover:not(:disabled),
 .text-label-popover .delete-btn:hover:not(:disabled) {
-  background: var(--danger);
-  color: #fff;
+  background: color-mix(in srgb, var(--danger) 12%, transparent);
+}
+button.field-select:hover:not(:disabled) {
+  border-color: var(--border-strong);
 }
 /* ── Selection popover (multi-select) ──
    Rides the bullet-popover shell: a count summary, the Lock all / Unlock all
@@ -1045,8 +1277,7 @@ select option {
 /* The item popovers reuse the bullet-popover shell but embed NumericFieldRow
    (the popover slider idiom) inside the body's gap-based column — zero its
    margin so spacing stays even, and give BOTH row idioms one label column
-   (same width, same bold-black typography) so each panel reads as a single
-   form. */
+   (same width, same muted typography) so each panel reads as a single form. */
 .bullet-popover .options-popover-row,
 .text-label-popover .options-popover-row,
 .polygon-popover .options-popover-row {
@@ -1054,18 +1285,18 @@ select option {
 }
 .bullet-popover .options-popover-label,
 .text-label-popover .options-popover-label {
-  width: 48px;
+  width: 52px;
   flex-shrink: 0;
-  color: var(--text);
-  font-weight: 700;
+  color: var(--text-muted);
+  font-weight: 500;
   font-size: inherit;
 }
 .polygon-popover .row label,
 .polygon-popover .options-popover-label {
   width: 84px;
   flex-shrink: 0;
-  color: var(--text);
-  font-weight: 700;
+  color: var(--text-muted);
+  font-weight: 500;
   font-size: inherit;
 }
 
@@ -1075,13 +1306,18 @@ select option {
   gap: 6px;
   align-items: stretch;
 }
+.text-label-popover .row-block > label {
+  color: var(--text-muted);
+  font-weight: 500;
+}
 .text-label-popover .row-block textarea {
   width: 100%;
   resize: vertical;
   min-height: 44px;
   font: inherit;
+  line-height: 1.4;
   padding: 4px 6px;
-  border: 1px solid var(--border-strong);
+  border: 1px solid var(--border);
   border-radius: var(--radius);
   /* Default (Wrap unchecked): a long line scrolls horizontally instead of
      wrapping. The .wrap modifier below flips this. Note the toggle has to live
@@ -1096,9 +1332,67 @@ select option {
 .text-label-popover .row-block textarea.wrap {
   white-space: pre-wrap;
 }
-.text-label-popover .weight-select option,
-.style-editor .weight-select option {
-  font-family: 'Helvetica Neue', Helvetica, Arial, sans-serif;
+/* Weight dropdown (Radix Select): the trigger reads like a field showing the
+   current face; the in-app panel lists each weight in its own face (native
+   <option> styling was OS-dependent). Positioning comes from Radix's popper;
+   these classes carry only the visuals. */
+button.field-select {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 6px;
+  flex: 1;
+  min-width: 0;
+  padding: 3px 6px;
+  background: var(--input-bg);
+  color: var(--input-text);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  font-size: inherit;
+  cursor: pointer;
+}
+.field-select-caret {
+  display: inline-flex;
+  align-items: center;
+  opacity: 0.6;
+}
+.field-select-panel {
+  background: var(--surface-raised);
+  border: 1px solid var(--border-soft);
+  border-radius: 8px;
+  box-shadow:
+    0 2px 6px rgba(0, 0, 0, 0.07),
+    0 12px 28px rgba(0, 0, 0, 0.16);
+  padding: 4px;
+  z-index: 100;
+  min-width: var(--radix-select-trigger-width);
+}
+.field-select-panel .field-select-item {
+  border-radius: 4px;
+}
+.field-select-item {
+  padding: 5px 12px;
+  cursor: pointer;
+  outline: none;
+  user-select: none;
+}
+.field-select-item[data-highlighted] {
+  background: var(--raised-hover);
+}
+.field-select-item[data-state='checked'] {
+  color: var(--accent);
+}
+.field-select-separator {
+  height: 1px;
+  background: var(--border-soft);
+  margin: 4px 6px;
+}
+/* Action rows (e.g. "Save style…"): verbs, not states — muted at rest. */
+.field-select-item.field-select-action {
+  color: var(--text-muted);
+}
+.field-select-item.field-select-action[data-highlighted] {
+  color: var(--text);
 }
 
 .tool-group {
@@ -1545,10 +1839,10 @@ select option {
   font-weight: 600;
 }
 
-/* Range input in "indeterminate" state — multiple matching stations have
+/* Slider in "indeterminate" state — multiple matching stations have
    different label offsets. Thumb dims so it doesn't claim a specific value;
    the next interaction commits the new value to all of them. */
-input[type='range'].indeterminate {
+.field-slider.indeterminate {
   filter: grayscale(1) opacity(0.5);
 }
 
@@ -2076,8 +2370,22 @@ body:has(.app[data-theme='dark']) {
   padding: 0;
 }
 .station-popover .body {
-  max-height: min(70vh, 560px);
+  /* Tall multi-section panel: clamp to the viewport and scroll inside. The
+     cap is generous so the scrollbar only appears on genuinely short
+     windows; when it does, keep it a hairline. */
+  max-height: min(84vh, 720px);
   overflow-y: auto;
+  scrollbar-width: thin;
+  scrollbar-color: var(--border) transparent;
+}
+/* The footer stays visible while the sections scroll beneath it. Opaque
+   surface + the shell's bottom radius so scrolled content never peeks
+   through or clips the rounded corners. */
+.station-popover .footer {
+  position: sticky;
+  bottom: -14px;
+  background: var(--surface);
+  border-radius: 0 0 9px 9px;
 }
 /* Hairline dividers between the popover's sections (Name / Position / Stop
    layout / Label) — the taller multi-section panel needs them where the
@@ -2092,4 +2400,114 @@ body:has(.app[data-theme='dark']) {
 /* Numeric inputs line up with the 26px chip buttons they sit beside. */
 .station-popover .inspector input[type='number'] {
   height: 26px;
+}
+
+/* One quiet family for the panel's action verbs (Select Similar, Edit
+   layout): outlined chips — a hairline ring so they read as buttons where
+   they sit among text (the footer's Lock/Delete stay borderless; isolation,
+   icon, and color already carry them), surface fill on hover, the shared
+   accent pair while toggled on. */
+.ghost-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  height: 26px;
+  padding: 0 10px;
+  background: transparent;
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  font-size: var(--fs-small);
+  font-weight: 600;
+  color: var(--text-muted);
+  cursor: pointer;
+  transition:
+    background-color 120ms ease,
+    border-color 120ms ease,
+    color 120ms ease;
+}
+.ghost-btn:hover:not(:disabled) {
+  background: var(--control-hover);
+  border-color: var(--border-strong);
+  color: var(--text);
+}
+.ghost-btn.active {
+  background: var(--accent-bg);
+  border-color: var(--accent-border);
+  color: var(--accent);
+}
+
+/* The WP toggle IS the waypoint lozenge the canvas draws (WaypointLozenge:
+   gray pill, white WP, theme-blind gray on purpose): outline while off,
+   filled while on. */
+.wp-pill-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  height: 20px;
+  padding: 0 9px;
+  border: 1px solid #6b7280;
+  border-radius: 10px;
+  background: transparent;
+  color: #6b7280;
+  font-size: var(--fs-caption);
+  font-weight: 600;
+  cursor: pointer;
+  transition:
+    background-color 120ms ease,
+    color 120ms ease;
+}
+.wp-pill-btn:hover:not(:disabled) {
+  background: color-mix(in srgb, #6b7280 15%, transparent);
+}
+.wp-pill-btn.active {
+  background: #6b7280;
+  color: #fff;
+}
+
+/* Locked station: the fieldset natively freezes every control inside (the
+   footer's unlock lives outside it); grey the whole block once and
+   neutralize the per-button dim so nothing double-fades. */
+.inspector fieldset.inspector-fields {
+  border: 0;
+  margin: 0;
+  padding: 0;
+  min-width: 0;
+}
+.inspector fieldset.inspector-fields:disabled {
+  opacity: 0.55;
+}
+.inspector fieldset.inspector-fields:disabled button:disabled {
+  opacity: 1;
+}
+
+/* The station panel reads like the other popovers: muted medium labels (the
+   sidebar line inspector keeps its own bolder look — these override the
+   `.inspector` rules by coming later at equal specificity). */
+.station-popover .field > label,
+.station-popover .field-header > label,
+.station-popover .field-row > label,
+.station-popover .style-row label {
+  color: var(--text-muted);
+  font-weight: 500;
+}
+/* Rows in the typography section share ONE control band: every row's label
+   is the same 52px column, so every control's left edge aligns with the
+   Style dropdown's, and every row's right side ends on the same edge —
+   Weight fits (dropdown + gap + italic chip) inside the band, the numeric
+   rows (slider + spinbox) likewise. The .options-popover-label override
+   beats `.inspector`'s 76px sidebar column (same specificity, later). */
+.station-popover .field-row > label {
+  width: 52px;
+  flex-shrink: 0;
+}
+.station-popover .field-row {
+  gap: 8px; /* match the .row gap so the bands truly line up */
+}
+.station-popover .options-popover-label {
+  width: 52px;
+  font-size: inherit;
+}
+.station-popover .options-popover-row {
+  gap: 8px;
+  margin-bottom: 0;
 }

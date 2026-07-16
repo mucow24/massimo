@@ -12,15 +12,21 @@ const twoLabels: Seed = {
   ],
 };
 
-const styleSelect = (page: Page) => page.locator('select[aria-label="Style"]');
-const currentStyleName = (page: Page) => styleSelect(page).locator('option:checked');
+// The Style row is a Radix Select: the trigger button carries the current
+// choice as its text, and options exist only while the panel is open.
+const styleSelect = (page: Page) => page.getByRole('combobox', { name: 'Style' });
+const currentStyleName = (page: Page) => styleSelect(page);
+async function pickStyleOption(page: Page, name: string | RegExp): Promise<void> {
+  await styleSelect(page).click();
+  await page.getByRole('option', { name }).click();
+}
 
 // Define "Heading" by example from g1's popover Style dropdown.
 async function saveHeadingFromG1(page: Page): Promise<void> {
   const g1 = await labelCenter(page, 'g1');
   await page.mouse.click(g1.x, g1.y);
   await expect(page.locator('.text-label-popover')).toBeVisible();
-  await styleSelect(page).selectOption('__save__');
+  await pickStyleOption(page, 'Save style…');
   await page.getByLabel('Style name').fill('Heading');
   await page.getByLabel('Style name').press('Enter');
   await expect(currentStyleName(page)).toHaveText('Heading');
@@ -43,7 +49,7 @@ test('save a label style, survive reload, apply to another label, detach on edit
   const g2 = await labelCenter(page, 'g2');
   await page.mouse.click(g2.x, g2.y);
   await expect(currentStyleName(page)).toHaveText('Default');
-  await styleSelect(page).selectOption({ label: 'Heading' });
+  await pickStyleOption(page, 'Heading');
   await expect(page.getByRole('spinbutton', { name: 'Size' })).toHaveValue(/^24(\.00)?$/);
 
   // Editing a covered control detaches: the dropdown flips back to Custom.
@@ -71,8 +77,11 @@ test('the sidebar Styles tab lists, renames, edits live, and deletes styles', as
   await page.getByRole('button', { name: 'Edit Header' }).click();
   const editor = page.locator('.style-editor');
   const popover = page.locator('.text-label-popover');
-  await expect(editor.getByRole('slider', { name: 'Size' })).toHaveValue('24');
-  await editor.getByRole('slider', { name: 'Size' }).fill('30');
+  await expect(editor.getByRole('slider', { name: 'Size' })).toHaveAttribute(
+    'aria-valuenow',
+    '24',
+  );
+  await editor.getByRole('spinbutton', { name: 'Size' }).fill('30');
   await expect(currentStyleName(page)).toHaveText('Header');
   await expect(popover.getByRole('spinbutton', { name: 'Size' })).toHaveValue(/^30/);
 
@@ -91,7 +100,7 @@ test('a new label is created wearing the (redefined) Default style', async ({ pa
   await page.getByRole('button', { name: 'Styles (6)' }).click();
   await page.getByRole('button', { name: 'Edit Default' }).nth(2).click();
   const editor = page.locator('.style-editor');
-  await editor.getByRole('slider', { name: 'Size' }).fill('32');
+  await editor.getByRole('spinbutton', { name: 'Size' }).fill('32');
   // Collapse the editor so its controls can't shadow the popover's below.
   await page.getByRole('button', { name: 'Edit Default' }).nth(2).click();
 

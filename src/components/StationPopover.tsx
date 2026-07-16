@@ -1,9 +1,10 @@
-import { useSelection } from '../state/store';
+import { useDoc, useSelection } from '../state/store';
 import type { Station } from '../model/types';
 import { type ViewportProjection } from './canvas/screenAnchor';
 import type { AABB } from '../geometry/rectPolygon';
 import { DraggablePopoverShell } from './DraggablePopoverShell';
 import { useDraggablePopover } from './canvas/useDraggablePopover';
+import { PopoverFooter } from './PopoverFooter';
 import { StationInspector } from './inspector';
 
 // Shell width (matches .station-popover in styles.css) — used for the
@@ -34,6 +35,7 @@ export function StationPopover({
   view,
   spawnBox,
   hidden,
+  onClose,
 }: {
   station: Station;
   // The station silhouette's world AABB (cells + name label) at the moment of
@@ -54,6 +56,8 @@ export function StationPopover({
     hidden,
     spawnBox,
   );
+  const setStationLocked = useDoc((s) => s.setStationLocked);
+  const deleteStation = useDoc((s) => s.deleteStation);
   const inLayoutEdit = useSelection((s) => s.uiMode.kind === 'editing-station-layout');
   const left = inLayoutEdit ? Math.max(EDGE_PAD, view.size.w - POPOVER_W - EDGE_PAD) : anchor.x;
   const top = inLayoutEdit ? EDGE_PAD : anchor.y;
@@ -61,6 +65,7 @@ export function StationPopover({
   return (
     <DraggablePopoverShell
       className="text-label-popover station-popover"
+      title="Station"
       left={left}
       top={top}
       hidden={hidden}
@@ -69,6 +74,19 @@ export function StationPopover({
       headerHandlers={headerHandlers}
     >
       <StationInspector id={station.id} />
+      {/* Same footer as every other item popover. Lock protects canvas
+          geometry only — the inspector above stays fully editable while
+          locked (the station-specific rule) — and Delete is disabled while
+          locked, matching the canvas protection. */}
+      <PopoverFooter
+        noun="station"
+        locked={!!station.locked}
+        onToggleLock={() => setStationLocked(station.id, !station.locked)}
+        onDelete={() => {
+          deleteStation(station.id);
+          onClose();
+        }}
+      />
     </DraggablePopoverShell>
   );
 }

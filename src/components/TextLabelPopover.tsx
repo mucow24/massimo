@@ -7,6 +7,8 @@ import {
   TextAlignLeftIcon,
   TextAlignRightIcon,
 } from '@radix-ui/react-icons';
+import * as ToggleGroup from '@radix-ui/react-toggle-group';
+import { FieldCheckbox } from './FieldCheckbox';
 import { useDoc } from '../state/store';
 import { useLabelEditorPrefs } from '../state/labelEditorPrefs';
 import { type ViewportProjection } from './canvas/screenAnchor';
@@ -115,6 +117,7 @@ export function TextLabelPopover({ label, worldRect, view, spawnBox, onClose }: 
   return (
     <DraggablePopoverShell
       className="text-label-popover"
+      title="Label"
       left={anchor.x}
       top={anchor.y}
       measuring={measuring}
@@ -122,9 +125,7 @@ export function TextLabelPopover({ label, worldRect, view, spawnBox, onClose }: 
       headerHandlers={headerHandlers}
     >
       <div className="row-block">
-        <label htmlFor={`label-text-${label.id}`}>
-          <span style={{ fontWeight: 700 }}>Text</span>
-        </label>
+        <label htmlFor={`label-text-${label.id}`}>Text</label>
         <textarea
           id={`label-text-${label.id}`}
           ref={attachTextBox}
@@ -142,13 +143,12 @@ export function TextLabelPopover({ label, worldRect, view, spawnBox, onClose }: 
           it stays usable even when the label is locked. */}
       <div className="row">
         <label htmlFor={`label-wrap-${label.id}`}>Wrap</label>
-        <input
+        <FieldCheckbox
           id={`label-wrap-${label.id}`}
-          type="checkbox"
-          aria-label="Wrap"
+          ariaLabel="Wrap"
           title="Wrap long lines in this editor (view only — doesn't change the label)"
           checked={wrapText}
-          onChange={(e) => setWrapText(e.target.checked)}
+          onCheckedChange={setWrapText}
         />
       </div>
 
@@ -214,20 +214,30 @@ export function TextLabelPopover({ label, worldRect, view, spawnBox, onClose }: 
       <div className="row">
         <label>Align</label>
         <div className="shape-group">
-          {ALIGNS.map((a) => (
-            <button
-              key={a.value}
-              type="button"
-              className={'align-btn' + (label.align === a.value ? ' active' : '')}
-              disabled={locked}
-              onClick={() => setAlign(a.value)}
-              title={a.title}
-              aria-label={a.title}
-              aria-pressed={label.align === a.value}
-            >
-              {a.icon}
-            </button>
-          ))}
+          {/* One roving-focus group (a single tab stop; arrows move within).
+              The empty-string guard keeps it radio-like: re-clicking the
+              selected alignment must not deselect into an empty state. */}
+          <ToggleGroup.Root
+            type="single"
+            className="align-group"
+            value={label.align}
+            disabled={locked}
+            onValueChange={(v) => {
+              if (v) setAlign(v as TextLabelAlign);
+            }}
+          >
+            {ALIGNS.map((a) => (
+              <ToggleGroup.Item
+                key={a.value}
+                value={a.value}
+                className={'align-btn' + (label.align === a.value ? ' active' : '')}
+                title={a.title}
+                aria-label={a.title}
+              >
+                {a.icon}
+              </ToggleGroup.Item>
+            ))}
+          </ToggleGroup.Root>
           <ItalicButton
             active={label.italic}
             disabled={locked}

@@ -1,10 +1,12 @@
 import { describe, it, expect, beforeEach, vi } from 'vitest';
 import { render, screen, fireEvent } from '@testing-library/react';
+import userEvent from '@testing-library/user-event';
 import { RouteBulletPopover } from './RouteBulletPopover';
 import { useDoc } from '../state/store';
 import { historyDepth } from '../state/history';
 import { DEFAULT_DOC, ROUTE_BULLET_SIZE_MIN } from '../model/transforms';
 import { makeLine, makeStyle } from '../test/fixtures';
+import { chooseOption, stepSlider } from '../test/interaction';
 import type { RouteBullet } from '../model/types';
 
 const identityView = { vbX: 0, vbY: 0, vbW: 800, vbH: 600, size: { w: 800, h: 600 } };
@@ -54,15 +56,15 @@ describe('RouteBulletPopover — line / shape / delete', () => {
     return { onClose };
   }
 
-  it('changes the bound line via the dropdown', () => {
+  it('changes the bound line via the dropdown', async () => {
     renderPopover(bulletFixture());
-    fireEvent.change(screen.getByRole('combobox', { name: 'Line' }), { target: { value: 'L2' } });
+    await chooseOption(userEvent.setup(), 'Line', 'B');
     expect(useDoc.getState().routeBullets['b1'].lineId).toBe('L2');
   });
 
-  it('unbinds the line when "none" is chosen', () => {
+  it('unbinds the line when "none" is chosen', async () => {
     renderPopover(bulletFixture());
-    fireEvent.change(screen.getByRole('combobox', { name: 'Line' }), { target: { value: '' } });
+    await chooseOption(userEvent.setup(), 'Line', '— none —');
     expect(useDoc.getState().routeBullets['b1'].lineId).toBeNull();
   });
 
@@ -90,7 +92,8 @@ describe('RouteBulletPopover — line / shape / delete', () => {
     expect(screen.getByRole('combobox', { name: 'Line' })).toBeDisabled();
     expect(screen.getByRole('combobox', { name: 'Style' })).toBeDisabled();
     expect(screen.getByLabelText('square')).toBeDisabled();
-    expect(screen.getByRole('slider')).toBeDisabled();
+    // The Radix slider thumb carries data-disabled (no native disabled attr).
+    expect(screen.getByRole('slider')).toHaveAttribute('data-disabled');
     expect(screen.getByRole('spinbutton')).toBeDisabled();
     expect(screen.getByRole('button', { name: 'Delete' })).toBeDisabled();
     // The unlock control remains usable.
@@ -123,25 +126,30 @@ describe('<RouteBulletPopover /> size control', () => {
   });
 
   it('groups a size-slider drag into a single undo entry', () => {
-    render(
-      <RouteBulletPopover
-        bullet={BULLET}
-        worldRect={rectAt(10, 10)}
-        view={VIEW}
-        onClose={() => {}}
-      />,
-    );
+    // Successive arrow-key steps need the popover re-rendered with the fresh
+    // store bullet between steps (the Radix slider is controlled), so mount it
+    // live rather than passing the static BULLET snapshot.
+    function LivePopover() {
+      const bullet = useDoc((s) => s.routeBullets['b1']);
+      return (
+        <RouteBulletPopover
+          bullet={bullet}
+          worldRect={rectAt(10, 10)}
+          view={VIEW}
+          onClose={() => {}}
+        />
+      );
+    }
+    render(<LivePopover />);
     const slider = screen.getByRole('slider');
     const before = historyDepth();
-    // A drag: focus (mousedown focuses the slider in a browser), several value
-    // changes, then blur. useFieldHistory opens one group on focus and commits
-    // exactly one entry on blur — the NumericFieldRow wiring shared with the
-    // Options and polygon popovers.
-    fireEvent.focus(slider);
-    fireEvent.change(slider, { target: { value: '20' } });
-    fireEvent.change(slider, { target: { value: '30' } });
+    // A drag: focus (mousedown focuses the thumb in a browser), several
+    // arrow-key steps, then blur. useFieldHistory opens one group on focus and
+    // commits exactly one entry on blur — the NumericFieldRow wiring shared
+    // with the Options and polygon popovers.
+    stepSlider(slider, 3);
     fireEvent.blur(slider);
-    expect(useDoc.getState().routeBullets.b1.size).toBe(30);
+    expect(useDoc.getState().routeBullets.b1.size).toBe(BULLET.size + 3);
     expect(historyDepth() - before).toBe(1);
   });
 
@@ -305,7 +313,7 @@ describe('RouteBulletPopover — style presets', () => {
     ) : null;
   }
 
-  it('applies a preset from the Style row, then flips to Custom on a covered edit', () => {
+  it('applies a preset from the Style row, then flips to Custom on a covered edit', async () => {
     seed(bulletFixture());
     useDoc.setState({
       ...useDoc.getState(),
@@ -314,17 +322,16 @@ describe('RouteBulletPopover — style presets', () => {
       },
     });
     render(<LivePopover />);
-    const select = screen.getByRole('combobox', { name: 'Style' });
-    fireEvent.change(select, { target: { value: 'y1' } });
+    await chooseOption(userEvent.setup(), 'Style', 'Big');
     expect(useDoc.getState().routeBullets['b1']).toMatchObject({
       shape: 'diamond',
       size: 20,
       styleId: 'y1',
     });
-    expect(select).toHaveValue('y1');
+    expect(screen.getByRole('combobox', { name: 'Style' })).toHaveTextContent('Big');
     // A covered edit (shape) detaches; the Line select stays identity-only.
     fireEvent.click(screen.getByLabelText('square'));
     expect(useDoc.getState().routeBullets['b1'].styleId).toBeUndefined();
-    expect(select).toHaveValue('__custom__');
+    expect(screen.getByRole('combobox', { name: 'Style' })).toHaveTextContent('Custom');
   });
 });

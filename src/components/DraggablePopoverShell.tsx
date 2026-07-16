@@ -3,6 +3,8 @@ import type { DraggablePopover } from './canvas/useDraggablePopover';
 
 interface Props {
   className: string;
+  // The panel's title, shown in the drag-handle header ("Label", "Polygon"…).
+  title: string;
   // Screen position for the shell's top-left: usually useDraggablePopover's
   // anchor, but a caller may pin it elsewhere (StationPopover in layout edit).
   left: number;
@@ -31,6 +33,7 @@ interface Props {
  */
 export function DraggablePopoverShell({
   className,
+  title,
   left,
   top,
   hidden,
@@ -58,7 +61,9 @@ export function DraggablePopoverShell({
         e.stopPropagation();
       }}
     >
-      <div className="header" {...headerHandlers} />
+      <div className="header" {...headerHandlers}>
+        {title}
+      </div>
       <div className="body">{children}</div>
     </div>
   );

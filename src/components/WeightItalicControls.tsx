@@ -1,14 +1,21 @@
-import { FontItalicIcon } from '@radix-ui/react-icons';
+import { ChevronDownIcon, FontItalicIcon } from '@radix-ui/react-icons';
+import * as Select from '@radix-ui/react-select';
+import * as Toggle from '@radix-ui/react-toggle';
 import { LABEL_WEIGHT_NAMES, isLabelWeight } from '../model/transforms';
 import type { TextLabelWeight } from '../model/types';
 
 /**
  * The Helvetica-Neue weight dropdown shared by every label/station style
  * surface — the text-label + station popovers and their Styles-panel editors.
- * Each option previews its own weight and the current italic, so the list reads
- * in the face it selects. The row wrapper + `<label>` stay in the caller: they
- * differ across sites (`row` vs `field-row`, with/without an htmlFor, and
- * whether italic sits in this row or over with align buttons).
+ * A Radix Select so the list renders in-app: each option previews its own
+ * weight and the current italic (native `<option>` styling is OS-dependent),
+ * and the closed trigger reads in the face it selects. The row wrapper +
+ * `<label>` stay in the caller: they differ across sites (`row` vs
+ * `field-row`, with/without an htmlFor, and whether italic sits in this row
+ * or over with align buttons).
+ *
+ * Not portaled — the panel must stay inside `.app` for the design tokens and
+ * the dark-mode reassignment to apply.
  */
 export function WeightSelect({
   id,
@@ -23,36 +30,46 @@ export function WeightSelect({
   disabled?: boolean;
   onChange: (w: TextLabelWeight) => void;
 }) {
+  const face = (weight: number) => ({
+    fontFamily: "'Helvetica Neue', Helvetica, Arial, sans-serif",
+    fontWeight: weight,
+    fontStyle: italic ? ('italic' as const) : ('normal' as const),
+  });
   return (
-    <select
-      id={id}
-      className="weight-select"
-      aria-label="Weight"
-      value={value}
+    <Select.Root
+      value={String(value)}
       disabled={disabled}
-      onChange={(e) => {
-        const n = Number(e.target.value);
+      onValueChange={(v) => {
+        const n = Number(v);
         if (isLabelWeight(n)) onChange(n);
       }}
     >
-      {LABEL_WEIGHT_NAMES.map((w) => (
-        <option
-          key={w.value}
-          value={w.value}
-          style={{
-            fontFamily: "'Helvetica Neue', Helvetica, Arial, sans-serif",
-            fontWeight: w.value,
-            fontStyle: italic ? 'italic' : 'normal',
-          }}
-        >
-          {w.name}
-        </option>
-      ))}
-    </select>
+      <Select.Trigger id={id} className="field-select" aria-label="Weight" style={face(value)}>
+        <Select.Value />
+        <Select.Icon className="field-select-caret" aria-hidden="true">
+          <ChevronDownIcon />
+        </Select.Icon>
+      </Select.Trigger>
+      <Select.Content className="field-select-panel" position="popper" sideOffset={4}>
+        <Select.Viewport>
+          {LABEL_WEIGHT_NAMES.map((w) => (
+            <Select.Item
+              key={w.value}
+              value={String(w.value)}
+              className="field-select-item"
+              style={face(w.value)}
+            >
+              <Select.ItemText>{w.name}</Select.ItemText>
+            </Select.Item>
+          ))}
+        </Select.Viewport>
+      </Select.Content>
+    </Select.Root>
   );
 }
 
-/** The italic toggle button shared by the same surfaces. */
+/** The italic toggle button shared by the same surfaces (a Radix Toggle:
+ *  same button + aria-pressed contract, Enter/Space handled uniformly). */
 export function ItalicButton({
   active,
   disabled,
@@ -63,16 +80,15 @@ export function ItalicButton({
   onToggle: () => void;
 }) {
   return (
-    <button
-      type="button"
+    <Toggle.Root
       className={'italic-btn' + (active ? ' active' : '')}
+      pressed={active}
       disabled={disabled}
-      onClick={onToggle}
+      onPressedChange={onToggle}
       title="Italic"
       aria-label="Italic"
-      aria-pressed={active}
     >
       <FontItalicIcon />
-    </button>
+    </Toggle.Root>
   );
 }
