@@ -1,3 +1,4 @@
+import { useState } from 'react';
 import * as Toast from '@radix-ui/react-toast';
 import { CheckCircledIcon, ExclamationTriangleIcon } from '@radix-ui/react-icons';
 import { useToasts } from '../state/toastStore';
@@ -26,9 +27,16 @@ const INFO_DURATION_MS = 3000;
 export function StatusToasts({ infoDurationMs = INFO_DURATION_MS }: { infoDurationMs?: number }) {
   const toasts = useToasts((s) => s.toasts);
   const dismiss = useToasts((s) => s.dismiss);
+  // Radix portals a visually-hidden announce span per toast into document.body
+  // by default. At the end of a 100vh body, that absolute box can tip
+  // scrollHeight by a pixel (zoom/DPI rounding decides) and flicker a
+  // scrollbar in for the announce's 1s lifetime — a ~10px content shift.
+  // Redirect it inside the clipped anchor, where it can't touch page geometry.
+  const [announcer, setAnnouncer] = useState<HTMLDivElement | null>(null);
   return (
     <div className="status-toast-anchor">
-      <Toast.Provider swipeDirection="left">
+      <div ref={setAnnouncer} />
+      <Toast.Provider swipeDirection="left" announcerContainer={announcer ?? undefined}>
         {toasts.map((t) => (
           <Toast.Root
             key={t.id}

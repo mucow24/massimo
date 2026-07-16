@@ -383,13 +383,15 @@ describe('Toolbar — sidebar toggle', () => {
 
 describe('Toolbar — map name field', () => {
   it('renders the editable map name flanked by dividers', () => {
-    // Clean, so no save-status dot slots in after the name — the dot's own
-    // placement is MapVersionPill.test.tsx's job.
+    // Clean — but the save-status dot is a hidden PLACEHOLDER, not absent
+    // (it keeps its box so the toolbar never reflows), so the right-hand
+    // divider sits after the dot rather than directly after the name.
     anchor(markSaved);
     renderToolbar();
     const field = screen.getByRole('button', { name: 'Untitled map' });
     expect(field.previousElementSibling).toHaveClass('tool-group-divider');
-    expect(field.nextElementSibling).toHaveClass('tool-group-divider');
+    expect(field.nextElementSibling).toHaveClass('map-save-dot');
+    expect(field.nextElementSibling?.nextElementSibling).toHaveClass('tool-group-divider');
   });
 });
 
@@ -1247,6 +1249,22 @@ describe('Toolbar — status toasts', () => {
     await waitForElementToBeRemoved(() => screen.queryAllByText(/Saved “Canal Line”/), {
       timeout: 2000,
     });
+  });
+
+  it('keeps the screen-reader announcement inside the anchor, off document.body', async () => {
+    const user = userEvent.setup();
+    seedRealMap();
+    vi.mocked(getCanvasSvg).mockReturnValue(mountableSvg());
+    renderToolbar();
+    await saveToLibrary(user);
+    await findToast(/Saved/);
+    // Radix portals a visually-hidden announce element per toast to
+    // document.body by default; at body's end its absolute box flickered a
+    // scrollbar in and out (a ~10px page shift). announcerContainer must keep
+    // it inside the fixed, clipped anchor, where it can't touch page layout.
+    const anchor = document.querySelector('.status-toast-anchor')!;
+    await waitFor(() => expect(anchor.querySelector('[aria-live]')).toBeTruthy());
+    expect(document.body.querySelector(':scope > [aria-live]')).toBeNull();
   });
 
   it('an error outlives the info lifetime and leaves on click', async () => {

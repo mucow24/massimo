@@ -164,25 +164,28 @@ test('the save dot tracks edits and undo, and both states survive a reload', asy
   // so the doc starts dirty and the first save clears it.
   await expect(saveDot(page)).toHaveAttribute('data-status', 'dirty');
   await saveToLibrary(page);
-  await expect(saveDot(page)).toHaveCount(0);
+  // Hidden, not gone: the dot keeps its box so the toolbar never reflows
+  // (an unmount re-clamped scrollX in narrow windows — the page jumped).
+  await expect(saveDot(page)).toBeHidden();
+  await expect(saveDot(page)).toHaveAttribute('data-status', 'clean');
 
   // Clean survives a reload: the persisted hash matches the rehydrated doc.
   await page.reload();
   await expect(page.locator('.map-version-pill')).toHaveText('v1');
-  await expect(saveDot(page)).toHaveCount(0);
+  await expect(saveDot(page)).toBeHidden();
 
-  // An edit turns the dot red; undoing it takes the dot away again.
+  // An edit turns the dot red; undoing it hides the dot again.
   await renameTo(page, 'Untitled map', 'Edited Map');
   await expect(saveDot(page)).toHaveAttribute('data-status', 'dirty');
   await page.keyboard.press('Control+z');
-  await expect(saveDot(page)).toHaveCount(0);
+  await expect(saveDot(page)).toBeHidden();
 
   // Undo-to-clean survives a reload. zundo applies undo through the raw set
   // above the persist middleware, so history.ts flushes persist right after —
   // the rehydrated bytes are the reverted doc, still matching the saved hash.
   await page.reload();
   await expect(page.locator('.map-version-pill')).toHaveText('v1');
-  await expect(saveDot(page)).toHaveCount(0);
+  await expect(saveDot(page)).toBeHidden();
 
   // A genuine (un-undone) edit survives a reload as dirty: the hash mismatches.
   await renameTo(page, 'Untitled map', 'Edited Map');
@@ -199,7 +202,7 @@ test('New arms an unsaved (blue) dot, and saving the fresh map clears it', async
   // saving an empty map is allowed, like every app on the planet.
   await expect(saveDot(page)).toHaveAttribute('data-status', 'unsaved');
   await saveToLibrary(page);
-  await expect(saveDot(page)).toHaveCount(0);
+  await expect(saveDot(page)).toBeHidden();
   await expect(page.locator('.map-version-pill')).toHaveText('v1');
 });
 

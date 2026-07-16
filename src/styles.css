@@ -1474,13 +1474,18 @@ button.field-select {
 }
 /* The save-status dot beside the pill (title carries the words): red = the doc
    differs from its last save/load; blue = clean but the library holds no copy
-   (a loaded file, a fresh map). Absent entirely when the canvas matches a
-   library version — same predicate that greys out Save version. */
+   (a loaded file, a fresh map). Invisible when the canvas matches a library
+   version — same predicate that greys out Save version. visibility, not an
+   unmount: the box must keep its width so the toolbar never reflows (a reflow
+   re-clamps scrollX in a narrow window — the page jumped on every save). */
 .map-save-dot {
   flex: none;
   width: 6px;
   height: 6px;
   border-radius: 50%;
+}
+.map-save-dot[data-status='clean'] {
+  visibility: hidden;
 }
 .map-save-dot[data-status='dirty'] {
   background: var(--danger);
