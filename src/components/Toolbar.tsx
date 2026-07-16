@@ -359,6 +359,47 @@ export function Toolbar() {
     useLibraryPointer.getState().setPointer(newMapId(), null);
   };
 
+  /**
+   * Make a copy — Google Docs semantics: mint a NEW library map from the live
+   * doc, named "Copy of X", with a version history of its own. Versions are
+   * keyed by map id, so saving under a fresh id is what guarantees the copy
+   * inherits none of the source's revisions. The canvas continues
+   * uninterrupted — same content, same camera, same undo stack — it just
+   * belongs to the copy now.
+   */
+  const onMakeCopy = async () => {
+    // Checkpoint a dirty source under its OWN id first, so the state at the
+    // fork point lands in the source's history rather than existing only in
+    // the copy's line. A doc with no library identity (a loaded file) has no
+    // history to update — and the copy itself preserves the bytes — so no
+    // orphan map is minted for it.
+    if (useLibraryPointer.getState().mapId !== null) {
+      try {
+        await autoSaveCurrent();
+      } catch (err) {
+        pushToast('error', errorText(err, 'Could not save to the library.'));
+        return;
+      }
+    }
+    // Snapshot and bytes captured BEFORE the awaits, already wearing the
+    // copy's name: an edit that lands mid-save is not vouched for, and a
+    // failed save leaves the live doc untouched — still the source map.
+    const copyName = `Copy of ${useDoc.getState().name}`;
+    const snap = { ...pickDocSnapshot(useDoc.getState()), name: copyName };
+    const json = serialize(snap);
+    try {
+      const thumb = await tryCaptureThumbnail();
+      const id = newMapId();
+      const saved = await saveVersion(id, copyName, json, 'user', thumb);
+      useDoc.getState().setDocName(copyName);
+      useLibraryPointer.getState().setPointer(id, saved.version);
+      markSaved(json, snap);
+      pushToast('info', `Created “${copyName}” as v${saved.version}`);
+    } catch (err) {
+      pushToast('error', errorText(err, 'Could not save to the library.'));
+    }
+  };
+
   const onOpenLibrary = () => setLibraryOpen(true);
 
   /**
@@ -476,6 +517,7 @@ export function Toolbar() {
       <span className="tool-group-divider" aria-hidden="true" />
       <Menu label="Canvas">
         <MenuItem onClick={() => void onNew()}>New</MenuItem>
+        <MenuItem onClick={() => void onMakeCopy()}>Make a copy</MenuItem>
         <MenuSeparator />
         {/* Greyed out when clean: the doc already matches a library version,
             so a save could only mint a duplicate. */}
