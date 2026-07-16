@@ -86,6 +86,21 @@ export function routeBulletAABB(b: Pick<RouteBullet, 'x' | 'y' | 'size'>): AABB 
 }
 
 /**
+ * Union of several NORMALIZED AABBs — the joint bounds of a multi-selection
+ * (the selection popover's spawn hint). Precondition: at least one rect.
+ */
+export function unionAABBs(rects: readonly AABB[]): AABB {
+  let { x0, y0, x1, y1 } = rects[0];
+  for (const r of rects) {
+    if (r.x0 < x0) x0 = r.x0;
+    if (r.y0 < y0) y0 = r.y0;
+    if (r.x1 > x1) x1 = r.x1;
+    if (r.y1 > y1) y1 = r.y1;
+  }
+  return { x0, y0, x1, y1 };
+}
+
+/**
  * World AABB of a transfer's drawn capsule: the box spanned by its two
  * endpoint dots, grown by `halfExtent` (effective thickness/2 + stroke) on
  * every side. Exact for the round-capped stroke — each cap is a circle of
