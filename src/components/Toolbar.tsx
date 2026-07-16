@@ -20,6 +20,13 @@ import {
   mapFileBasename,
 } from '../export/exportCanvas';
 import { getPayload, newMapId, saveVersion, type VersionMeta } from '../state/mapLibrary';
+import {
+  EMPTY_DOC_JSON,
+  markAdopted,
+  markSaved,
+  useSaveBaseline,
+  useSaveStatus,
+} from '../state/saveBaseline';
 import { useLibraryPointer } from '../state/libraryPointer';
 import { MapLibraryDialog } from './MapLibraryDialog';
 import { Menu, MenuItem, MenuSeparator, SubMenu } from './Menu';
@@ -42,18 +49,6 @@ import { OptionsPopover } from './OptionsPopover';
 import { HelpPopover } from './HelpPopover';
 import { MapNameField } from './MapNameField';
 import { MapVersionPill } from './MapVersionPill';
-
-/**
- * The empty document, serialized. Byte-comparing against this IS the auto-save's
- * content gate: exact, and covering every DOC_FIELDS entry by construction — a
- * new doc field is gated the day it is added, with no edit here.
- *
- * Deliberately NOT `computeContentBounds` — that is a camera hull which reads
- * five of those fields and omits lines on purpose, so a map whose work lives
- * entirely in its lines reads as "empty", the auto-save writes nothing, and New
- * wipes it for good. One concept, not two.
- */
-const EMPTY_DOC_JSON = serialize(pickDocSnapshot(DEFAULT_DOC));
 
 /** A dismissible message in the toolbar: a failure, or a confirmation. */
 type MenuStatus = { kind: 'error' | 'info'; text: string };
@@ -108,16 +103,13 @@ export function Toolbar() {
   const [menuStatus, setMenuStatus] = useState<MenuStatus | null>(null);
   const [libraryOpen, setLibraryOpen] = useState(false);
   /**
-   * The bytes we last wrote to the library or adopted from one. The auto-save
-   * skips when the doc still matches it — so browsing files deposits nothing,
-   * and an unedited document is never copied.
-   *
-   * This is NOT a dirty flag. A flag answers "did anything touch the doc", which
-   * is the wrong question (edit-then-undo), and a flag that resets on refresh
-   * reads CLEAN — losing data. A null baseline reads dirty, which errs toward
-   * one redundant version instead of toward silence.
+   * The tri-state save signal (saveBaseline.ts). 'clean' greys out Save
+   * version — the doc byte-for-byte matches a library version, so a save
+   * could only mint a duplicate. 'dirty' and 'unsaved' both arm it: edits to
+   * checkpoint, or clean bytes the library holds no copy of (a loaded file, a
+   * fresh New) that a save imports.
    */
-  const baselineRef = useRef<string | null>(null);
+  const saveStatus = useSaveStatus();
 
   // Each "Add X" menu item toggles the matching uiMode variant: clicking it
   // again (or while the variant is active) returns to idle.
@@ -182,8 +174,12 @@ export function Toolbar() {
   /**
    * Replace the live document. Shared by every path that swaps one doc for
    * another — file load, library load, New — so none of them can drift.
+   *
+   * `backed` says whether the incoming bytes exist as a library version
+   * (opening one) or not (a JSON file, New) — the difference between the doc
+   * starting out clean and starting out unsaved-but-armed.
    */
-  const adoptParsedDoc = (doc: MapDoc) => {
+  const adoptParsedDoc = (doc: MapDoc, backed: boolean) => {
     selection.selectStation(null);
     selection.selectLine(null);
     selection.selectLineTag(null);
@@ -198,7 +194,10 @@ export function Toolbar() {
     // area. Falls back to the origin whenever the fit declines — empty content,
     // canvas unmounted, or a zero-size rect.
     if (!fitCameraToDoc(doc)) setViewport({ x: 0, y: 0, zoom: 1 });
-    baselineRef.current = serialize(pickDocSnapshot(doc));
+    // Anchor the baseline to the POST-load store state: those are the exact
+    // references the reactive status signal will compare against.
+    const snap = pickDocSnapshot(useDoc.getState());
+    (backed ? markSaved : markAdopted)(serialize(snap), snap);
   };
 
   /**
@@ -216,13 +215,14 @@ export function Toolbar() {
    */
   const autoSaveCurrent = async (): Promise<void> => {
     const doc = useDoc.getState();
-    const json = serialize(pickDocSnapshot(doc));
+    const snap = pickDocSnapshot(doc);
+    const json = serialize(snap);
     if (json === EMPTY_DOC_JSON) return; // nothing to lose
-    if (json === baselineRef.current) return; // already in the library, verbatim
+    if (json === useSaveBaseline.getState().baselineJson) return; // already saved/loaded, verbatim
     const thumb = await tryCaptureThumbnail();
     const id = useLibraryPointer.getState().mapId ?? newMapId();
     await saveVersion(id, doc.name, json, 'auto', thumb);
-    baselineRef.current = json;
+    markSaved(json, snap);
   };
 
   /**
@@ -301,16 +301,19 @@ export function Toolbar() {
   };
 
   const onSaveToLibrary = async () => {
+    // Gated by the menu item's disabled state, not a check here: when the doc
+    // is clean this handler is simply unreachable. Snapshot and bytes are
+    // captured together BEFORE the awaits, so an edit that lands while the
+    // save is in flight is not vouched for — the doc stays dirty.
     const doc = useDoc.getState();
-    const json = serialize(pickDocSnapshot(doc));
+    const snap = pickDocSnapshot(doc);
+    const json = serialize(snap);
     try {
       const thumb = await tryCaptureThumbnail();
-      // An explicit save is never deduped: asking for a checkpoint and getting
-      // silence would be its own bug.
       const id = useLibraryPointer.getState().mapId ?? newMapId();
       const saved = await saveVersion(id, doc.name, json, 'user', thumb);
       useLibraryPointer.getState().setPointer(id, saved.version);
-      baselineRef.current = json;
+      markSaved(json, snap);
       setMenuStatus({ kind: 'info', text: `Saved “${doc.name}” as v${saved.version}` });
     } catch (err) {
       setMenuStatus({ kind: 'error', text: errorText(err, 'Could not save to the library.') });
@@ -328,7 +331,7 @@ export function Toolbar() {
       return;
     }
     setMenuStatus(null);
-    adoptParsedDoc(DEFAULT_DOC);
+    adoptParsedDoc(DEFAULT_DOC, false);
     // A fresh map: it has an id to save under, but nothing saved under it yet,
     // so there is no version to show until the first save.
     useLibraryPointer.getState().setPointer(newMapId(), null);
@@ -354,7 +357,7 @@ export function Toolbar() {
     const result = parse(json, useCustomPalettes.getState().palettes);
     if (!result.ok) throw new Error(result.error);
     await autoSaveCurrent();
-    adoptParsedDoc(result.doc);
+    adoptParsedDoc(result.doc, true); // straight from the library: clean
     useLibraryPointer.getState().setPointer(version.mapId, version.version);
     setLibraryOpen(false);
   };
@@ -418,10 +421,11 @@ export function Toolbar() {
       return;
     }
     setMenuStatus(null);
-    adoptParsedDoc(result.doc);
-    // A file is not a library map: saving it makes a NEW one, the same way
-    // re-uploading a downloaded doc gives you a new doc. No id and no version —
-    // the pill has nothing true to show until that first save.
+    // A file is not a library map: it adopts as unsaved (Save stays armed to
+    // import it), and saving it makes a NEW map, the same way re-uploading a
+    // downloaded doc gives you a new doc. No id and no version — the pill has
+    // nothing true to show until that first save.
+    adoptParsedDoc(result.doc, false);
     useLibraryPointer.getState().setPointer(null, null);
   };
 
@@ -456,7 +460,11 @@ export function Toolbar() {
       <Menu label="Canvas">
         <MenuItem onClick={() => void onNew()}>New</MenuItem>
         <MenuSeparator />
-        <MenuItem onClick={() => void onSaveToLibrary()}>Save version</MenuItem>
+        {/* Greyed out when clean: the doc already matches a library version,
+            so a save could only mint a duplicate. */}
+        <MenuItem onClick={() => void onSaveToLibrary()} disabled={saveStatus === 'clean'}>
+          Save version
+        </MenuItem>
         <SubMenu label="Load">
           <MenuItem onClick={onLoadClick}>JSON…</MenuItem>
           <MenuItem onClick={onOpenLibrary}>From library…</MenuItem>
@@ -613,18 +621,7 @@ export function Toolbar() {
         {selection.sidebarOpen ? <DoubleArrowRightIcon /> : <DoubleArrowLeftIcon />}
       </button>
       {libraryOpen && (
-        <MapLibraryDialog
-          onClose={() => setLibraryOpen(false)}
-          onOpenVersion={onOpenVersion}
-          // The bytes the baseline vouches for went with the map. Left standing,
-          // the dedup gate below would skip the next auto-save against a version
-          // that no longer exists — and New, which is not undoable, would wipe a
-          // document that is then in no file, no library row and no undo stack.
-          // Null reads dirty, which is the erring direction that keeps the doc.
-          onLiveDocUnbacked={() => {
-            baselineRef.current = null;
-          }}
-        />
+        <MapLibraryDialog onClose={() => setLibraryOpen(false)} onOpenVersion={onOpenVersion} />
       )}
     </div>
   );

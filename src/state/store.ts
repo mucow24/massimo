@@ -138,7 +138,12 @@ export function pickDocSnapshot(s: DocSnapshot): DocSnapshot {
   return out as DocSnapshot;
 }
 
-function docSnapshotsEqual(a: DocSnapshot, b: DocSnapshot): boolean {
+// Reference-equality per tracked field. Sound because transforms allocate new
+// objects only when something actually changed — the same invariant zundo's
+// `equality` guard and the history-group commit rely on. Exported for the
+// save-status signal (saveBaseline.ts), which compares the live doc against
+// the snapshot captured at the last save/load.
+export function docSnapshotsEqual(a: DocSnapshot, b: DocSnapshot): boolean {
   for (const k of DOC_FIELDS) {
     if (a[k] !== b[k]) return false;
   }
