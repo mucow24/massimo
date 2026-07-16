@@ -31,7 +31,14 @@ test.beforeEach(async ({ page }) => {
 const saveToLibrary = async (page: Page) => {
   await page.getByRole('button', { name: 'Canvas' }).click();
   await page.getByRole('menuitem', { name: 'Save version' }).click();
-  await expect(page.getByRole('alert')).toContainText(/Saved “.+” as v\d+/);
+  // .last(): confirmations auto-expire after 5s, so two quick saves can have
+  // both toasts up at once — the newest is the one this save minted.
+  await expect(
+    page
+      .locator('li.status-toast')
+      .filter({ hasText: /Saved “.+” as v\d+/ })
+      .last(),
+  ).toBeVisible();
 };
 
 /** A library row by name — scoped, since the toolbar's name button matches too. */

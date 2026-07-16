@@ -1,5 +1,11 @@
 import { describe, it, expect, beforeEach, vi } from 'vitest';
-import { fireEvent, render, screen, waitFor } from '@testing-library/react';
+import {
+  fireEvent,
+  render,
+  screen,
+  waitFor,
+  waitForElementToBeRemoved,
+} from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 
 // Stub the actual file download (jsdom has no URL.createObjectURL / anchor
@@ -46,6 +52,8 @@ vi.mock('../state/mapLibrary', () => ({
 }));
 
 import { Toolbar } from './Toolbar';
+import { StatusToasts } from './StatusToasts';
+import { useToasts } from '../state/toastStore';
 import {
   downloadBlob,
   getCanvasSvg,
@@ -71,6 +79,8 @@ import type { LineId, StationId } from '../model/types';
 beforeEach(() => {
   localStorage.clear();
   libState.minted = 0;
+  // Toasts persist in a module store, so one test's error would greet the next.
+  useToasts.setState({ toasts: [] });
   useLibraryPointer.setState({ mapId: null, version: null });
   // Module state, so it outlives component mounts: without a reset, one test's
   // save vouches for the next test's doc.
@@ -123,6 +133,27 @@ const mountableSvg = () =>
 /** The live doc's tri-state save status, read the way the toolbar reads it. */
 const statusNow = () => saveStatusOf(useDoc.getState(), useSaveBaseline.getState());
 
+/** Toolbar plus the toast stack it reports outcomes to (App mounts both). */
+const renderToolbar = () =>
+  render(
+    <>
+      <Toolbar />
+      <StatusToasts />
+    </>,
+  );
+
+/** The visible status toasts, oldest first. Scoped by class rather than text
+ *  or role: Radix mirrors each toast into a transient visually-hidden announce
+ *  region, so a bare text/role query can match the same message twice. */
+const toastsNow = () => Array.from(document.querySelectorAll<HTMLElement>('li.status-toast'));
+
+const findToast = (pattern: RegExp) =>
+  waitFor(() => {
+    const hit = toastsNow().find((t) => pattern.test(t.textContent ?? ''));
+    if (!hit) throw new Error(`no toast matching ${pattern}`);
+    return hit;
+  });
+
 /** Anchor the baseline to the CURRENT doc, the way every save/adopt site does:
  *  json and snap captured together from one state. */
 const anchor = (mark: typeof markSaved) => {
@@ -133,7 +164,7 @@ const anchor = (mark: typeof markSaved) => {
 describe('Toolbar — tool + view toggles', () => {
   it('switches to hand mode and back to arrow', async () => {
     const user = userEvent.setup();
-    render(<Toolbar />);
+    renderToolbar();
     await user.click(screen.getByTitle('Hand (H) — hold Space'));
     expect(useSelection.getState().toolMode).toBe('hand');
     await user.click(screen.getByTitle('Arrow (A)'));
@@ -142,14 +173,14 @@ describe('Toolbar — tool + view toggles', () => {
 
   it('toggles grid visibility', async () => {
     const user = userEvent.setup();
-    render(<Toolbar />);
+    renderToolbar();
     await user.click(screen.getByLabelText('Toggle grid'));
     expect(useViewportStore.getState().gridVisible).toBe(false);
   });
 
   it('cycles grid size 10 → 20 → 5 → 10', async () => {
     const user = userEvent.setup();
-    render(<Toolbar />);
+    renderToolbar();
     const btn = () => screen.getByLabelText('Cycle grid size');
     expect(btn()).toHaveTextContent('10');
     await user.click(btn());
@@ -164,7 +195,7 @@ describe('Toolbar — tool + view toggles', () => {
 
   it('toggles layering mode', async () => {
     const user = userEvent.setup();
-    render(<Toolbar />);
+    renderToolbar();
     await user.click(screen.getByLabelText('Toggle layering mode'));
     expect(useSelection.getState().uiMode.kind).toBe('layering');
   });
@@ -173,14 +204,14 @@ describe('Toolbar — tool + view toggles', () => {
   // night map when the file is reopened, so the mode has to land in the doc.
   it('toggles dark mode, writing it to the doc', async () => {
     const user = userEvent.setup();
-    render(<Toolbar />);
+    renderToolbar();
     await user.click(screen.getByLabelText('Toggle dark mode'));
     expect(useDoc.getState().darkMode).toBe(true);
   });
 
   it('toggles waypoint visibility via the WP button', async () => {
     const user = userEvent.setup();
-    render(<Toolbar />);
+    renderToolbar();
     const btn = () => screen.getByLabelText('Toggle waypoints');
     expect(btn()).toHaveTextContent('WP');
     expect(btn()).toHaveAttribute('aria-pressed', 'false');
@@ -193,7 +224,7 @@ describe('Toolbar — tool + view toggles', () => {
 
   it('toggles lines + stations via the eye button', async () => {
     const user = userEvent.setup();
-    render(<Toolbar />);
+    renderToolbar();
     const btn = () => screen.getByLabelText('Toggle lines and stations');
     // Starts pressed: unlike the WP button, this one is ON in the normal case —
     // the map is drawn, and clicking is what takes it away.
@@ -231,7 +262,7 @@ describe('Toolbar — tool + view toggles', () => {
 
     const user = userEvent.setup();
     useViewportStore.setState({ x: 0, y: 0, zoom: 1 });
-    render(<Toolbar />);
+    renderToolbar();
     await user.click(screen.getByRole('button', { name: 'Reset view' }));
 
     const bounds = computeContentBounds(useDoc.getState())!;
@@ -243,7 +274,7 @@ describe('Toolbar — tool + view toggles', () => {
   it('Reset view falls back to the origin when the map is empty', async () => {
     const user = userEvent.setup();
     useViewportStore.setState({ x: 100, y: 50, zoom: 3 });
-    render(<Toolbar />);
+    renderToolbar();
     await user.click(screen.getByRole('button', { name: 'Reset view' }));
     expect(useViewportStore.getState()).toMatchObject({ x: 0, y: 0, zoom: 1 });
   });
@@ -257,7 +288,7 @@ describe('Toolbar — help guide', () => {
   const flushDismissListener = () => new Promise((r) => setTimeout(r, 1));
 
   it('renders the ? help button last in the view-toggle group', () => {
-    render(<Toolbar />);
+    renderToolbar();
     const help = screen.getByLabelText('Help');
     // Pinned as "closes out its group" rather than "sits right of <the WP
     // button>", which is what this asserted until a toggle was added between
@@ -269,7 +300,7 @@ describe('Toolbar — help guide', () => {
 
   it('opens the quick-reference overlay on click and closes on a second click', async () => {
     const user = userEvent.setup();
-    render(<Toolbar />);
+    renderToolbar();
     await user.click(screen.getByLabelText('Help'));
     expect(dialog()).toBeInTheDocument();
     await user.click(screen.getByLabelText('Help'));
@@ -278,7 +309,7 @@ describe('Toolbar — help guide', () => {
 
   it('closes on Escape', async () => {
     const user = userEvent.setup();
-    render(<Toolbar />);
+    renderToolbar();
     await user.click(screen.getByLabelText('Help'));
     expect(dialog()).toBeInTheDocument();
     await user.keyboard('{Escape}');
@@ -287,7 +318,7 @@ describe('Toolbar — help guide', () => {
 
   it('closes on a backdrop click but stays open on a click inside the panel', async () => {
     const user = userEvent.setup();
-    render(<Toolbar />);
+    renderToolbar();
     await user.click(screen.getByLabelText('Help'));
     await flushDismissListener();
 
@@ -300,7 +331,7 @@ describe('Toolbar — help guide', () => {
 
   it('the ? key opens and closes it', async () => {
     const user = userEvent.setup();
-    render(<Toolbar />);
+    renderToolbar();
     await user.keyboard('?');
     expect(dialog()).toBeInTheDocument();
     await user.keyboard('?');
@@ -309,7 +340,7 @@ describe('Toolbar — help guide', () => {
 
   it('the ? key is inert while typing in a text field', async () => {
     const user = userEvent.setup();
-    render(<Toolbar />);
+    renderToolbar();
     // The map-name button becomes a real text input on click (select-all on
     // focus); typing "?" there must edit the name, not open the guide.
     await user.click(screen.getByRole('button', { name: 'Untitled map' }));
@@ -320,7 +351,7 @@ describe('Toolbar — help guide', () => {
 
   it('lists core gestures', async () => {
     const user = userEvent.setup();
-    render(<Toolbar />);
+    renderToolbar();
     await user.click(screen.getByLabelText('Help'));
     const panel = dialog()!;
     // Spot-check a few load-bearing entries; wording may evolve, but these
@@ -335,7 +366,7 @@ describe('Toolbar — sidebar toggle', () => {
   it('the single arrow collapses and reopens the sidebar', async () => {
     const user = userEvent.setup();
     useSelection.setState({ ...useSelection.getState(), sidebarOpen: true });
-    render(<Toolbar />);
+    renderToolbar();
 
     const btn = () => screen.getByLabelText('Toggle sidebar');
     expect(btn().getAttribute('title')).toBe('Hide sidebar');
@@ -355,7 +386,7 @@ describe('Toolbar — map name field', () => {
     // Clean, so no save-status dot slots in after the name — the dot's own
     // placement is MapVersionPill.test.tsx's job.
     anchor(markSaved);
-    render(<Toolbar />);
+    renderToolbar();
     const field = screen.getByRole('button', { name: 'Untitled map' });
     expect(field.previousElementSibling).toHaveClass('tool-group-divider');
     expect(field.nextElementSibling).toHaveClass('tool-group-divider');
@@ -365,7 +396,7 @@ describe('Toolbar — map name field', () => {
 describe('Toolbar — Add menu', () => {
   it('Add → Stations enters placing-station mode', async () => {
     const user = userEvent.setup();
-    render(<Toolbar />);
+    renderToolbar();
     await user.click(screen.getByRole('button', { name: 'Add' }));
     await user.click(screen.getByRole('menuitem', { name: 'Stations' }));
     expect(useSelection.getState().uiMode.kind).toBe('placing-station');
@@ -373,7 +404,7 @@ describe('Toolbar — Add menu', () => {
 
   it('Add → Line creates a line and enters append mode', async () => {
     const user = userEvent.setup();
-    render(<Toolbar />);
+    renderToolbar();
     await user.click(screen.getByRole('button', { name: 'Add' }));
     await user.click(screen.getByRole('menuitem', { name: 'Line' }));
     expect(Object.keys(useDoc.getState().lines).length).toBe(1);
@@ -384,7 +415,7 @@ describe('Toolbar — Add menu', () => {
 describe('Toolbar — Canvas menu', () => {
   it('Export → JSON serializes and triggers a download', async () => {
     const user = userEvent.setup();
-    render(<Toolbar />);
+    renderToolbar();
     await user.click(screen.getByRole('button', { name: 'Canvas' }));
     await user.click(screen.getByRole('menuitem', { name: 'Export' }));
     // The leaf flyout is hover-driven; userEvent's pointer movement tears it
@@ -403,7 +434,7 @@ describe('Toolbar — Canvas menu', () => {
       stations: { S: stationWithStop('S' as StationId, 'L1' as LineId, { x: 0, y: 0 }) },
     });
     useSelection.setState({ ...useSelection.getState(), selectedStationIds: ['S' as StationId] });
-    render(<Toolbar />);
+    renderToolbar();
     await user.click(screen.getByRole('button', { name: 'Canvas' }));
     await user.click(screen.getByRole('menuitem', { name: 'Clear' }));
     expect(Object.keys(useDoc.getState().stations)).toHaveLength(0);
@@ -433,7 +464,7 @@ describe('Toolbar — Add menu mode commands', () => {
     ['Transfer', 'creating-transfer'],
   ])('Add → %s enters %s mode', async (item, expectedKind) => {
     const user = userEvent.setup();
-    render(<Toolbar />);
+    renderToolbar();
     await openAdd(user);
     await user.click(screen.getByRole('menuitem', { name: item }));
     expect(useSelection.getState().uiMode.kind).toBe(expectedKind);
@@ -441,7 +472,7 @@ describe('Toolbar — Add menu mode commands', () => {
 
   it('Add → Transfer enters creating-transfer with a null anchor', async () => {
     const user = userEvent.setup();
-    render(<Toolbar />);
+    renderToolbar();
     await openAdd(user);
     await user.click(screen.getByRole('menuitem', { name: 'Transfer' }));
     const mode = useSelection.getState().uiMode;
@@ -451,7 +482,7 @@ describe('Toolbar — Add menu mode commands', () => {
 
   it('clicking an active Add item again toggles back to idle', async () => {
     const user = userEvent.setup();
-    render(<Toolbar />);
+    renderToolbar();
     await openAdd(user);
     await user.click(screen.getByRole('menuitem', { name: 'Polygon' }));
     expect(useSelection.getState().uiMode.kind).toBe('creating-polygon');
@@ -466,10 +497,10 @@ describe('Toolbar — Load', () => {
   const fileInput = () => document.querySelector('input[type="file"]') as HTMLInputElement;
 
   it('shows an error for an invalid-JSON file and does not replace the doc', async () => {
-    render(<Toolbar />);
+    renderToolbar();
     const badFile = new File(['this is not json'], 'broken.json', { type: 'application/json' });
     fireEvent.change(fileInput(), { target: { files: [badFile] } });
-    await screen.findByRole('alert');
+    expect((await findToast(/./)).dataset.kind).toBe('error');
     // Doc untouched (still empty).
     expect(Object.keys(useDoc.getState().stations)).toHaveLength(0);
   });
@@ -481,7 +512,7 @@ describe('Toolbar — Load', () => {
         lines: [makeLine({ id: 'L1', stations: ['fromfile'] })],
       }),
     );
-    render(<Toolbar />);
+    renderToolbar();
     const goodFile = new File([json], 'map.massimo.json', { type: 'application/json' });
     fireEvent.change(fileInput(), { target: { files: [goodFile] } });
 
@@ -489,7 +520,7 @@ describe('Toolbar — Load', () => {
       expect(useDoc.getState().stations.fromfile).toBeDefined();
     });
     // No error surfaced, and undo history was cleared by the load.
-    expect(screen.queryByRole('alert')).toBeNull();
+    expect(toastsNow()).toHaveLength(0);
     expect(useDoc.temporal.getState().pastStates.length).toBe(0);
   });
 
@@ -522,7 +553,7 @@ describe('Toolbar — Load', () => {
     // The outgoing doc came from the library, so there is a pointer to drop —
     // the assertion below is vacuous against the null it starts at.
     useLibraryPointer.setState({ mapId: 'lib-map', version: 7 });
-    render(<Toolbar />);
+    renderToolbar();
     fireEvent.change(fileInput(), { target: { files: [validFile()] } });
     await waitFor(() => expect(useDoc.getState().stations.fromfile).toBeDefined());
     expect(saveVersion).toHaveBeenCalledTimes(1);
@@ -542,7 +573,7 @@ describe('Toolbar — Load', () => {
   it('does not deposit a copy of a file that was loaded and never edited', async () => {
     const user = userEvent.setup();
     seedOutgoing();
-    render(<Toolbar />);
+    renderToolbar();
     fireEvent.change(fileInput(), { target: { files: [validFile()] } });
     await waitFor(() => expect(useDoc.getState().stations.fromfile).toBeDefined());
     expect(saveVersion).toHaveBeenCalledTimes(1); // the OUTGOING doc, correctly
@@ -555,7 +586,7 @@ describe('Toolbar — Load', () => {
   });
 
   it('a loaded file reads unsaved — clean bytes, but the library has no copy', async () => {
-    render(<Toolbar />);
+    renderToolbar();
     fireEvent.change(fileInput(), { target: { files: [validFile()] } });
     await waitFor(() => expect(useDoc.getState().stations.fromfile).toBeDefined());
     expect(statusNow()).toBe('unsaved');
@@ -563,10 +594,10 @@ describe('Toolbar — Load', () => {
 
   it('writes no auto-save for a file that fails to parse', async () => {
     seedOutgoing();
-    render(<Toolbar />);
+    renderToolbar();
     const badFile = new File(['not json'], 'broken.json', { type: 'application/json' });
     fireEvent.change(fileInput(), { target: { files: [badFile] } });
-    await screen.findByRole('alert');
+    expect((await findToast(/./)).dataset.kind).toBe('error');
     expect(saveVersion).not.toHaveBeenCalled();
     expect(useDoc.getState().name).toBe('Outgoing');
   });
@@ -581,10 +612,9 @@ describe('Toolbar — Load', () => {
     seedOutgoing();
     useLibraryPointer.setState({ mapId: 'lib-map', version: 7 });
     vi.mocked(saveVersion).mockRejectedValue(new Error('QuotaExceededError'));
-    render(<Toolbar />);
+    renderToolbar();
     fireEvent.change(fileInput(), { target: { files: [validFile()] } });
-    const alert = await screen.findByRole('alert');
-    expect(alert).toHaveTextContent('QuotaExceededError');
+    await findToast(/QuotaExceededError/);
     expect(useDoc.getState().stations.fromfile).toBeUndefined();
     expect(useDoc.getState().name).toBe('Outgoing');
     // The doc stayed, so its pointer must stay with it — untouched, not cleared.
@@ -648,7 +678,7 @@ describe('Toolbar — Load from library', () => {
     seedLibraryRow();
     vi.mocked(getPayload).mockResolvedValue(libraryPayload());
     seedOutgoing();
-    render(<Toolbar />);
+    renderToolbar();
     await clickOpen(user);
 
     await waitFor(() => expect(useDoc.getState().stations.fromlib).toBeDefined());
@@ -666,7 +696,7 @@ describe('Toolbar — Load from library', () => {
     seedLibraryRow();
     vi.mocked(getPayload).mockResolvedValue(libraryPayload());
     seedOutgoing();
-    render(<Toolbar />);
+    renderToolbar();
     await clickOpen(user);
     await waitFor(() => expect(useDoc.getState().stations.fromlib).toBeDefined());
     expect(statusNow()).toBe('clean');
@@ -685,7 +715,7 @@ describe('Toolbar — Load from library', () => {
     seedLibraryRow();
     vi.mocked(getPayload).mockResolvedValue(undefined);
     seedOutgoing();
-    render(<Toolbar />);
+    renderToolbar();
     await clickOpen(user);
 
     expect(
@@ -700,9 +730,11 @@ describe('Toolbar — Load from library', () => {
     seedLibraryRow();
     vi.mocked(getPayload).mockResolvedValue('not json');
     seedOutgoing();
-    render(<Toolbar />);
+    renderToolbar();
     await clickOpen(user);
 
+    // The dialog's own inline alert, not a status toast — onOpenVersion throws
+    // for the dialog to show.
     await screen.findByRole('alert');
     expect(saveVersion).not.toHaveBeenCalled();
     expect(useDoc.getState().name).toBe('Outgoing');
@@ -719,7 +751,7 @@ describe('Toolbar — Load from library', () => {
     vi.mocked(getPayload).mockResolvedValue(libraryPayload());
     vi.mocked(saveVersion).mockRejectedValue(new Error('QuotaExceededError'));
     seedOutgoing();
-    render(<Toolbar />);
+    renderToolbar();
     await clickOpen(user);
 
     expect(await screen.findByText('QuotaExceededError')).toBeInTheDocument();
@@ -768,7 +800,7 @@ describe('Toolbar — map library', () => {
     const user = userEvent.setup();
     seedRealMap();
     vi.mocked(getCanvasSvg).mockReturnValue(mountableSvg());
-    render(<Toolbar />);
+    renderToolbar();
     await saveToLibrary(user);
     await waitFor(() => expect(saveVersion).toHaveBeenCalledTimes(1));
     expect(saveVersion).toHaveBeenCalledWith(
@@ -789,24 +821,25 @@ describe('Toolbar — map library', () => {
     vi.mocked(captureThumbnail).mockRejectedValue(
       new Error('Nothing to export — the canvas is empty.'),
     );
-    render(<Toolbar />);
+    renderToolbar();
     await saveToLibrary(user);
     await waitFor(() => expect(saveVersion).toHaveBeenCalledTimes(1));
     expect(vi.mocked(saveVersion).mock.calls[0][4]).toBeUndefined();
     // The only message is the success one — the failure never reaches the user.
-    const alert = await screen.findByRole('alert');
-    expect(alert.className).toContain('info');
+    const toast = await findToast(/Saved/);
+    expect(toast.dataset.kind).toBe('info');
+    expect(toastsNow()).toHaveLength(1);
   });
 
   it('surfaces a save failure and shows no confirmation', async () => {
     const user = userEvent.setup();
     seedRealMap();
     vi.mocked(saveVersion).mockRejectedValue(new Error('QuotaExceededError'));
-    render(<Toolbar />);
+    renderToolbar();
     await saveToLibrary(user);
-    const alert = await screen.findByRole('alert');
-    expect(alert).toHaveTextContent('QuotaExceededError');
-    expect(alert.className).not.toContain('info');
+    const toast = await findToast(/QuotaExceededError/);
+    expect(toast.dataset.kind).toBe('error');
+    expect(toastsNow().some((t) => /Saved/.test(t.textContent ?? ''))).toBe(false);
   });
 
   it('confirms a successful save by name and version', async () => {
@@ -814,12 +847,11 @@ describe('Toolbar — map library', () => {
     seedRealMap('Canal Line');
     // A distinctive number, so "v32" can only have come from the save's result.
     vi.mocked(saveVersion).mockResolvedValue({ id: 9, version: 32 });
-    render(<Toolbar />);
+    renderToolbar();
     await saveToLibrary(user);
-    const alert = await screen.findByRole('alert');
-    expect(alert).toHaveTextContent('Canal Line');
-    expect(alert).toHaveTextContent('v32');
-    expect(alert.className).toContain('info');
+    const toast = await findToast(/Canal Line/);
+    expect(toast).toHaveTextContent('v32');
+    expect(toast.dataset.kind).toBe('info');
     // The pill's number is the same fact, and it comes from the same result.
     expect(useLibraryPointer.getState().version).toBe(32);
   });
@@ -827,7 +859,7 @@ describe('Toolbar — map library', () => {
   it('a second save reuses the id the first one minted', async () => {
     const user = userEvent.setup();
     seedRealMap();
-    render(<Toolbar />);
+    renderToolbar();
     await saveToLibrary(user);
     await waitFor(() => expect(saveVersion).toHaveBeenCalledTimes(1));
     // A clean doc greys Save version out, so re-arm it with an edit first.
@@ -843,7 +875,7 @@ describe('Toolbar — map library', () => {
     const user = userEvent.setup();
     seedRealMap('Outgoing');
     useViewportStore.setState({ x: 100, y: 50, zoom: 3 });
-    render(<Toolbar />);
+    renderToolbar();
     await clickNew(user);
     await waitFor(() => expect(saveVersion).toHaveBeenCalledTimes(1));
     expect(vi.mocked(saveVersion).mock.calls[0][3]).toBe('auto');
@@ -865,9 +897,9 @@ describe('Toolbar — map library', () => {
     seedRealMap('Precious');
     vi.mocked(saveVersion).mockRejectedValue(new Error('QuotaExceededError'));
     const before = historyDepth();
-    render(<Toolbar />);
+    renderToolbar();
     await clickNew(user);
-    await screen.findByRole('alert');
+    expect((await findToast(/./)).dataset.kind).toBe('error');
     // The auto-save IS the backstop for a non-undoable wipe. No save, no wipe.
     expect(Object.keys(useDoc.getState().stations)).toHaveLength(1);
     expect(useDoc.getState().name).toBe('Precious');
@@ -885,7 +917,7 @@ describe('Toolbar — map library', () => {
     seedLinesOnly();
     // Precondition: the camera hull genuinely calls this doc empty.
     expect(computeContentBounds(useDoc.getState())).toBeNull();
-    render(<Toolbar />);
+    renderToolbar();
     await clickNew(user);
     await waitFor(() => expect(saveVersion).toHaveBeenCalledTimes(1));
     expect(vi.mocked(saveVersion).mock.calls[0][3]).toBe('auto');
@@ -894,7 +926,7 @@ describe('Toolbar — map library', () => {
 
   it('New on a virgin empty doc writes nothing', async () => {
     const user = userEvent.setup();
-    render(<Toolbar />);
+    renderToolbar();
     await clickNew(user);
     // minted-1, not minted-2: New's own id is the first this test mints, which
     // is exactly the evidence that no auto-save ran ahead of it.
@@ -909,7 +941,7 @@ describe('Toolbar — map library', () => {
     // reaches captureThumbnail, and the "not called" assertion below would pass
     // no matter what order the gate and the capture ran in.
     vi.mocked(getCanvasSvg).mockReturnValue(mountableSvg());
-    render(<Toolbar />);
+    renderToolbar();
     await saveToLibrary(user);
     await waitFor(() => expect(saveVersion).toHaveBeenCalledTimes(1));
     expect(captureThumbnail).toHaveBeenCalledTimes(1); // the explicit save paid for one
@@ -926,7 +958,7 @@ describe('Toolbar — map library', () => {
   it('New re-saves once the doc changes again', async () => {
     const user = userEvent.setup();
     seedRealMap();
-    render(<Toolbar />);
+    renderToolbar();
     await saveToLibrary(user);
     await waitFor(() => expect(saveVersion).toHaveBeenCalledTimes(1));
     useDoc.getState().setDocName('Edited');
@@ -962,7 +994,7 @@ describe('Toolbar — save gating (clean / dirty / unsaved)', () => {
     const user = userEvent.setup();
     seedMap();
     anchor(markSaved);
-    render(<Toolbar />);
+    renderToolbar();
     await openCanvasMenu(user);
     expect(saveItem()).toHaveAttribute('aria-disabled', 'true');
   });
@@ -972,7 +1004,7 @@ describe('Toolbar — save gating (clean / dirty / unsaved)', () => {
     seedMap();
     anchor(markSaved);
     useDoc.getState().addStation(200, 0);
-    render(<Toolbar />);
+    renderToolbar();
     await openCanvasMenu(user);
     expect(saveItem()).not.toHaveAttribute('aria-disabled');
     await user.click(saveItem());
@@ -986,7 +1018,7 @@ describe('Toolbar — save gating (clean / dirty / unsaved)', () => {
     const user = userEvent.setup();
     seedMap();
     anchor(markAdopted); // a loaded file: clean bytes, no library copy
-    render(<Toolbar />);
+    renderToolbar();
     await openCanvasMenu(user);
     expect(saveItem()).not.toHaveAttribute('aria-disabled');
     await user.click(saveItem());
@@ -1005,20 +1037,20 @@ describe('Toolbar — save gating (clean / dirty / unsaved)', () => {
           resolveSave = res;
         }),
     );
-    render(<Toolbar />);
+    renderToolbar();
     await openCanvasMenu(user);
     await user.click(saveItem());
     await waitFor(() => expect(saveVersion).toHaveBeenCalledTimes(1));
     useDoc.getState().addStation(500, 500); // lands while the save is in flight
     resolveSave({ id: 1, version: 1 });
-    await screen.findByRole('alert'); // the save confirmation
+    await findToast(/Saved/); // the save confirmation
     // The save vouched for the bytes it captured, not for the mid-flight edit.
     expect(statusNow()).toBe('dirty');
   });
 
   it('New leaves a fresh map unsaved — armed to save, but not "changed"', async () => {
     const user = userEvent.setup();
-    render(<Toolbar />);
+    renderToolbar();
     await openCanvasMenu(user);
     await user.click(screen.getByRole('menuitem', { name: 'New' }));
     await waitFor(() => expect(statusNow()).toBe('unsaved'));
@@ -1044,7 +1076,7 @@ describe('Toolbar — Ctrl+S saves a version', () => {
   it('writes a user version to the library — never a JSON download — and swallows the dialog', async () => {
     seedMap('Canal Line'); // no baseline anchored → dirty → armed
     vi.mocked(getCanvasSvg).mockReturnValue(mountableSvg());
-    render(<Toolbar />);
+    renderToolbar();
 
     // fireEvent returns dispatchEvent's result: false when a handler called
     // preventDefault, which is how the browser Save-page dialog is suppressed.
@@ -1060,7 +1092,7 @@ describe('Toolbar — Ctrl+S saves a version', () => {
 
   it('also fires on Cmd+S (metaKey), for mac', async () => {
     seedMap();
-    render(<Toolbar />);
+    renderToolbar();
     fireEvent.keyDown(window, { key: 's', metaKey: true });
     await waitFor(() => expect(saveVersion).toHaveBeenCalledTimes(1));
   });
@@ -1068,7 +1100,7 @@ describe('Toolbar — Ctrl+S saves a version', () => {
   it('is a no-op on a clean doc (mirrors the greyed-out menu item) but still suppresses the dialog', () => {
     seedMap();
     anchor(markSaved); // clean: byte-for-byte a library version
-    render(<Toolbar />);
+    renderToolbar();
     const notPrevented = fireEvent.keyDown(window, { key: 's', ctrlKey: true });
     expect(notPrevented).toBe(false); // dialog still suppressed...
     expect(saveVersion).not.toHaveBeenCalled(); // ...but nothing minted
@@ -1079,7 +1111,7 @@ describe('Toolbar — Ctrl+S saves a version', () => {
     seedMap('Original');
     anchor(markSaved); // clean, so ONLY the rename can arm the save
     vi.mocked(getCanvasSvg).mockReturnValue(mountableSvg());
-    render(<Toolbar />);
+    renderToolbar();
 
     await user.click(screen.getByRole('button', { name: 'Original' }));
     const input = screen.getByRole('textbox', { name: 'Map name' });
@@ -1101,7 +1133,7 @@ describe('Toolbar — Ctrl+S saves a version', () => {
   it('the Save version menu item advertises its Ctrl+S accelerator (name stays clean)', async () => {
     const user = userEvent.setup();
     seedMap();
-    render(<Toolbar />);
+    renderToolbar();
     await user.click(screen.getByRole('button', { name: 'Canvas' }));
     // Found by the unpolluted name (the hint is aria-hidden), and it shows the key.
     const item = screen.getByRole('menuitem', { name: 'Save version' });
@@ -1125,7 +1157,7 @@ describe('Toolbar — Export wiring', () => {
     vi.mocked(getCanvasSvg).mockReturnValue(fakeSvg);
 
     const user = userEvent.setup();
-    render(<Toolbar />);
+    renderToolbar();
     await openExportSubmenu(user);
     // The leaf flyout is hover-driven; userEvent's pointer movement tears it
     // down before the click lands, so fire the click directly on the leaf.
@@ -1148,12 +1180,91 @@ describe('Toolbar — Export wiring', () => {
     vi.mocked(getCanvasSvg).mockReturnValue(null);
 
     const user = userEvent.setup();
-    render(<Toolbar />);
+    renderToolbar();
     await openExportSubmenu(user);
     fireEvent.click(screen.getByRole('menuitem', { name: 'SVG' }));
 
-    const alert = await screen.findByRole('alert');
-    expect(alert.textContent).toContain('Canvas not ready');
+    await findToast(/Canvas not ready/);
     expect(exportCanvasSvg).not.toHaveBeenCalled();
+  });
+});
+
+/**
+ * The status surface: toolbar actions report outcomes as toasts. The contract
+ * that separates toasts from the old single inline span: messages STACK (one
+ * failure never overwrites another), and the save confirmation expires on its
+ * own while errors stay until dismissed.
+ */
+describe('Toolbar — status toasts', () => {
+  const seedRealMap = (name = 'My Map') =>
+    useDoc.setState({
+      ...useDoc.getState(),
+      name,
+      lines: { L1: makeLine({ id: 'L1' as LineId, stations: ['S'] as StationId[] }) },
+      lineOrder: ['L1' as LineId],
+      stations: { S: stationWithStop('S' as StationId, 'L1' as LineId, { x: 0, y: 0 }) },
+    });
+
+  const saveToLibrary = async (user: ReturnType<typeof userEvent.setup>) => {
+    await user.click(screen.getByRole('button', { name: 'Canvas' }));
+    await user.click(screen.getByRole('menuitem', { name: 'Save version' }));
+  };
+
+  const openExportSubmenu = async (user: ReturnType<typeof userEvent.setup>) => {
+    await user.click(screen.getByRole('button', { name: 'Canvas' }));
+    await user.click(screen.getByRole('menuitem', { name: 'Export' }));
+  };
+
+  it('stacks outcomes: a save failure is still on screen after a later export failure', async () => {
+    const user = userEvent.setup();
+    seedRealMap();
+    vi.mocked(saveVersion).mockRejectedValue(new Error('QuotaExceededError'));
+    renderToolbar();
+    await saveToLibrary(user);
+    expect((await screen.findAllByText(/QuotaExceededError/)).length).toBeGreaterThan(0);
+    // A second, unrelated failure must not clobber the first message.
+    vi.mocked(getCanvasSvg).mockReturnValue(null);
+    await openExportSubmenu(user);
+    fireEvent.click(screen.getByRole('menuitem', { name: 'SVG' }));
+    expect((await screen.findAllByText(/Canvas not ready/)).length).toBeGreaterThan(0);
+    expect(screen.getAllByText(/QuotaExceededError/).length).toBeGreaterThan(0);
+  });
+
+  it('the save confirmation dismisses itself', async () => {
+    const user = userEvent.setup();
+    seedRealMap('Canal Line');
+    vi.mocked(getCanvasSvg).mockReturnValue(mountableSvg());
+    // The short-duration seam: the contract is "expires on its own", asserted
+    // with real timers that must not wait out the real three seconds.
+    render(
+      <>
+        <Toolbar />
+        <StatusToasts infoDurationMs={40} />
+      </>,
+    );
+    await saveToLibrary(user);
+    await findToast(/Saved “Canal Line”/);
+    await waitForElementToBeRemoved(() => screen.queryAllByText(/Saved “Canal Line”/), {
+      timeout: 2000,
+    });
+  });
+
+  it('an error outlives the info lifetime and leaves on click', async () => {
+    const user = userEvent.setup();
+    seedRealMap();
+    vi.mocked(saveVersion).mockRejectedValue(new Error('QuotaExceededError'));
+    render(
+      <>
+        <Toolbar />
+        <StatusToasts infoDurationMs={40} />
+      </>,
+    );
+    await saveToLibrary(user);
+    const toast = await findToast(/QuotaExceededError/);
+    // Well past the info lifetime: errors have no timer at all.
+    await new Promise((r) => setTimeout(r, 120));
+    expect(toastsNow()).toHaveLength(1);
+    await user.click(toast);
+    await waitFor(() => expect(toastsNow()).toHaveLength(0));
   });
 });
