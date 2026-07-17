@@ -1,7 +1,7 @@
 import type { Line, LineId, Station, StopCell } from '../../model/types';
 import { useDoc, useSelection } from '../../state/store';
 import { dispatchMirrored } from '../../state/mirrorDispatch';
-import { AXIS_CYCLE, resolveDotStyle } from '../../model/transforms';
+import { AXIS_CYCLE, resolveDotStyle, stationIsSingleton } from '../../model/transforms';
 import { DOT_SHAPE_PRESETS } from '../../model/dotStyle';
 import { DOT_SIZE_MIN, resolveDotSize } from '../../model/dotSize';
 import { legibleTextOn } from '../../util/color';
@@ -67,9 +67,12 @@ function StopRow({ station, stop, line }: { station: Station; stop: StopCell; li
   const stationId = station.id;
   const selected = selection.selectedStopLineId === lineId;
   const rotation = (station.rotation % 4) as Rotation;
+  // The row shows what this stop actually renders — its singleton or shared
+  // default (a per-station property), unless the stop pins its own override.
+  const isSingleton = stationIsSingleton(station);
   // Dash (tick) dimensions derive from the line width (+ per-line overrides
   // in the line inspector); the per-stop dot size is inert for them.
-  const isDash = resolveDotStyle(line, stop).shape === 'dash';
+  const isDash = resolveDotStyle(line, stop, isSingleton).shape === 'dash';
 
   const {
     text: sizeText,
@@ -78,15 +81,17 @@ function StopRow({ station, stop, line }: { station: Station; stop: StopCell; li
     onNumberChange: onSizeChange,
     onNumberBlur: onSizeBlur,
   } = useNumericField(
-    resolveDotSize(line, stop),
+    resolveDotSize(line, stop, isSingleton),
     // dotSize is rotation-invariant — no per-match transform. Writing the
     // line's effective default back clears the override (setDotSize contract).
     (n) => dispatchMirrored(stationId, (sid) => setDotSize(sid, lineId, n)),
     () => {
       const doc = useDoc.getState();
+      const liveStation = doc.stations[stationId];
       return resolveDotSize(
         doc.lines[lineId],
-        doc.stations[stationId]?.stops.find((c) => c.lineId === lineId),
+        liveStation?.stops.find((c) => c.lineId === lineId),
+        stationIsSingleton(liveStation),
       );
     },
   );
@@ -118,7 +123,7 @@ function StopRow({ station, stop, line }: { station: Station; stop: StopCell; li
       </span>
       <StationShapePicker
         disabled={false}
-        currentStyle={resolveDotStyle(line, stop)}
+        currentStyle={resolveDotStyle(line, stop, isSingleton)}
         lineColor={line?.color}
         serviceCode={line?.service}
         onPick={(shape) =>

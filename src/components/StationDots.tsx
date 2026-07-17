@@ -4,7 +4,7 @@ import { useThemeColors } from '../state/theme';
 import { useViewportStore } from '../state/viewportStore';
 import { STOP_DOT_RADIUS, stopCenterAt } from '../geometry/orientation';
 import { stopPosWorld } from '../geometry/interlining';
-import { resolveDotStyle } from '../model/transforms';
+import { resolveDotStyle, stationIsSingleton } from '../model/transforms';
 import { DOT_SHAPE_PRESETS } from '../model/dotStyle';
 import { dotSizeOverride } from '../model/dotSize';
 import { StopGlyph } from './StopGlyph';
@@ -56,6 +56,10 @@ export function StationDots({
   if (station.isWaypoint && !showWaypoints) return null;
   const wpOverride = station.isWaypoint ? WAYPOINT_OVERLAY_STYLE : null;
   const angle = station.rotation * 45;
+  // Singleton vs. shared drives which split default each stop resolves — a
+  // per-station property (every stop here shares it), recomputed each render so
+  // a station reduced to one line immediately adopts its singleton default.
+  const isSingleton = stationIsSingleton(station);
   const phantomDot = phantomDotCell(station, showWaypoints);
   // Dash (TfL tick) stops split off from the dot passes: each renders one
   // DashGlyph beneath every dot, painted far-from-label first so the tick
@@ -63,7 +67,7 @@ export function StationDots({
   // waypoint override is a circle, so a revealed waypoint never ticks.)
   const resolvedStops = station.stops.map((cell) => ({
     cell,
-    style: wpOverride ?? resolveDotStyle(lines[cell.lineId], cell),
+    style: wpOverride ?? resolveDotStyle(lines[cell.lineId], cell, isSingleton),
   }));
   const dashStops = resolvedStops
     .filter((r) => r.style.shape === 'dash')
@@ -125,7 +129,7 @@ export function StationDots({
               style={style}
               lineColor={lines[cell.lineId]?.color}
               serviceCode={lines[cell.lineId]?.service}
-              sizeOverride={dotSizeOverride(lines[cell.lineId], cell)}
+              sizeOverride={dotSizeOverride(lines[cell.lineId], cell, isSingleton)}
               isHovered={isHovered}
               stationId={station.id}
               lineId={cell.lineId}

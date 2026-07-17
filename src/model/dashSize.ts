@@ -1,5 +1,5 @@
 import { lineWidthOf } from './lineWidth';
-import { resolveDotStyle } from './transforms';
+import { resolveDotStyle, stationIsSingleton } from './transforms';
 import type { Line, StopCell } from './types';
 
 // TfL-tick dimensions for 'dash' stops, derived from the line's stripe width
@@ -53,13 +53,17 @@ export const dashRenderWidth = (
  * the tick's rendered dimensions when the stop's effective style is 'dash',
  * else null. The companion of `stopHalfOf` (lineWidth.ts) — pass the two
  * together at every labelLayoutLocal / stationBoundary / itemBounds site, so
- * the autoAlign pin, the hit rect, and the silhouette all clear the same
- * tick the canvas paints.
+ * the autoAlign pin, the hit rect, and the silhouette all clear the same tick
+ * the canvas paints. Takes the stop's whole station `stops` array so it can
+ * resolve the SAME split default the canvas does (`stationIsSingleton` is
+ * blank-aware), keeping that rule in the model rather than duplicated in
+ * geometry — the label clears a tick iff the stop actually paints one.
  */
 export const stopDashOf =
   (lines: Record<string, Line | undefined>) =>
-  (stop: StopCell): { length: number; width: number } | null => {
+  (stop: StopCell, stationStops: readonly StopCell[]): { length: number; width: number } | null => {
     const line = lines[stop.lineId];
-    if (resolveDotStyle(line, stop).shape !== 'dash') return null;
+    if (resolveDotStyle(line, stop, stationIsSingleton({ stops: stationStops })).shape !== 'dash')
+      return null;
     return { length: dashRenderLength(line), width: dashRenderWidth(line) };
   };

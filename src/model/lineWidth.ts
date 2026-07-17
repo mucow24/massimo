@@ -36,7 +36,7 @@ export const canonicalLineWidth = (w: number): number | undefined => {
 /**
  * Effective render width of a line. Missing field ⇒ LINE_WIDTH_DEFAULT, so
  * saves from before the field existed need no migration (same idiom as
- * `Line.defaultDotStyle`). Structural parameter so narrowed line shapes
+ * `Line.singletonDotStyle`). Structural parameter so narrowed line shapes
  * (e.g. StopGrid's lines prop) pass through.
  */
 export const lineWidthOf = (line: { width?: number } | null | undefined): number =>

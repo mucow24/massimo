@@ -413,8 +413,20 @@ All remaining fields optional and **never stored at default**:
 
 - `segmentStyles?: Record<pairKey, LineStyle>` — per-segment style; missing ⇒ `'solid'`. Valid
   keys are exactly this line's `edges`.
-- `defaultDotStyle?: DotStyle` — missing ⇒ `DEFAULT_DOT_STYLE` (filled-black).
-- `defaultDotSize?: number` — dot diameter px; missing ⇒ `DOT_SIZE_DEFAULT` (= 2×`STOP_DOT_RADIUS` = 8).
+- `singletonDotStyle?` / `multiDotStyle?: DotStyle` — the default dot style, **split by how the
+  stop's station is shared**: `singletonDotStyle` for a stop that is the only VISIBLE stop at its
+  station, `multiDotStyle` for a shared/interchange one (`stationIsSingleton`). "Visible" excludes
+  a sibling whose EXPLICIT `dotStyle` override is blank (renders nothing) — the express+local
+  pattern draws both lines through every station but blanks the express dot at skipped stops, and
+  those must still read as singletons for the local line (only explicit overrides are inspected,
+  never resolved defaults — that would be circular). Resolved live per stop
+  (`resolveDotStyle(line, stop, isSingleton)`), so a station losing its other visible line adopts
+  the singleton default with no rewrite; a per-stop `dotStyle` override always wins. Independent
+  (editing one never moves the other); each missing ⇒ `DEFAULT_DOT_STYLE` (filled-black). Legacy
+  saves carried one combined `defaultDotStyle` — baked into both on load (`bakeLineDotDefaults`,
+  persist v18).
+- `singletonDotSize?` / `multiDotSize?: number` — dot diameter px, split the same way; each
+  missing ⇒ `DOT_SIZE_DEFAULT` (= 2×`STOP_DOT_RADIUS` = 8). Legacy `defaultDotSize` baked into both.
 - `width?: number` — **stripe width, GEOMETRY**; missing ⇒ `LINE_WIDTH_DEFAULT` (= `STOP_SIZE` =
   14); on a 0.25 (quarter-unit) grid, ≥ `LINE_WIDTH_MIN` (1) (`canonicalLineWidth`, `LINE_WIDTH_STEP`).
   Drives stop-cell tangency, band merging, stripe offsets.
@@ -473,9 +485,10 @@ required** (a deliberate divergence from the optional-field convention) so plain
 DotFill` (`DayNightColor | 'line' | 'none'`), `strokeWidth` (0 = no stroke), `strokeColor:
 DotStrokeColor` (`DayNightColor | 'line'`; **no `'none'`** — strokeWidth 0 expresses "no
 stroke"), `showServiceCode`. **Size is deliberately NOT part of style** — it is the orthogonal
-`dotSize`/`defaultDotSize` pair, so picking a shape preset never clobbers a size. `DayNightColor
-= {day, night}` resolves per theme. The clean-persisted convention lives one level up: in the
-_presence/absence_ of `StopCell.dotStyle` and `Line.defaultDotStyle`.
+`dotSize` / `singletonDotSize` / `multiDotSize` set, so picking a shape preset never clobbers a
+size. `DayNightColor = {day, night}` resolves per theme. The clean-persisted convention lives one
+level up: in the _presence/absence_ of `StopCell.dotStyle` and `Line.singletonDotStyle` /
+`Line.multiDotStyle` (the split singleton-vs-interchange line defaults).
 
 **`LineTag`** — a movable label printed inside a line's color band. Anchored to a **station-pair
 corridor**, not a segment index, so it survives line reordering. `id, lineId, fromStationId,
@@ -587,8 +600,12 @@ by the **Load…** menu. Pure, returns `{ok, doc}` or `{ok:false, error}`:
    `sanitizeRegionAssignments` (region-assignment hygiene — validates against the **cleaned**
    lines: dangling line ids drop the assignment, dangling pairKey anchors survive for reconcile).
 7. `convertLegacyDotShapes` (preset ids → `DotStyle`) — **runs after** the line/station passes.
-8. `sanitizeStopDotSizes` — **must run after** the per-line pass (a stop compares against the
-   _sanitized_ line default).
+   Then `bakeLineDotDefaults` (retired single `defaultDotStyle`/`defaultDotSize` → the split
+   `singletonDotStyle`/`multiDotStyle` + sizes, on lines AND line style defs) — **after**
+   `convertLegacyDotShapes` (which materializes `defaultDotStyle` from any legacy `defaultDotShape`)
+   and **before** the singleton-aware `sanitizeStopDotSizes` + style validation below.
+8. `sanitizeStopDotSizes` — **must run after** the per-line pass AND the dot-defaults bake (a stop
+   compares against the _sanitized_ line default for its own singleton/shared case).
 9. `backfillPolygonDarkColors`, then `foldPolygonFillOpacity` (legacy polygon `fillOpacity` → the
    alpha of `fill`/`darkFill`; **after** the dark-color backfill so `darkFill` exists to fold),
    then `backfillTextLabelColors`.
@@ -612,7 +629,7 @@ Path A does **more** than Path B because hand-edited files can be non-canonical 
 sanitizers `sanitizeLineWidth/Stroke/DotSize/Segments/StopDotSizes` exist for this).
 
 **Path B — localStorage rehydration: `migrateDoc(persisted, version)`** ([store.ts](src/state/store.ts)).
-The zustand `persist` config: `name: 'vignelli-map-doc-v1'`, `version: 17`, `migrate:
+The zustand `persist` config: `name: 'vignelli-map-doc-v1'`, `version: 18`, `migrate:
 migrateDoc`, `partialize: pickDocSnapshot`. Because the persist-merge already fills absent fields
 from the initial state, `migrateDoc` only does **value-level legacy fixups, version-gated**, on
 disjoint fields (order immaterial except where noted), never mutating the input:
@@ -635,6 +652,7 @@ disjoint fields (order immaterial except where noted), never mutating the input:
 | `v<15`      | the **layering rework**: `stripLegacySegmentLayers` (drops the retired per-segment `segmentLayers` field from lines) + `sanitizeRegionAssignments` (region-assignment hygiene — a pre-v15 doc has none, but a tampered/newer-build one might). Path A runs `sanitizeRegionAssignments` unconditionally |
 | `v<16`      | `bakeDocCurveRadius` (retired doc-level `curveRadius` → per-line `Line.curveRadius` + line-style-def fill). Ordered **before** the `v<10` style hygiene — `migrateV9Styles` rebuilds defs on the canonical grids, so a def missing `curveRadius` would heal to the constant default instead of the doc's legacy value. Idempotent, keyed off field presence |
 | `v<17`      | `bakeLegacyBackgroundOrder` (the retired `polygonOrder` + `svgImageOrder` → the single `backgroundOrder`, polygons concatenated first — exactly the stacking the two separate arrays painted, so a legacy map renders unchanged). Each side is reconciled against its records before the concat. Idempotent, keyed off field presence; reference-stable when neither retired key is present |
+| `v<18`      | `bakeLineDotDefaults` (the retired single `defaultDotStyle`/`defaultDotSize` → the split `singletonDotStyle`/`multiDotStyle` + sizes, on lines AND line style-def props — every stop used one default, now both the singleton and interchange cases carry it, so a legacy map renders unchanged). Ordered **after** the `v<7` `convertLegacyDotShapes` (which materializes `defaultDotStyle` from any legacy `defaultDotShape`) and **before** the `v<10` style hygiene, same as `bakeDocCurveRadius`. Idempotent, keyed off the retired keys' presence |
 | (not gated) | `backfillLinesEdges` whenever `lines !== undefined` — every rehydrate, **not** `v<14`-gated: an intermediate build bumped the persist version to 14 and re-saved lines BEFORE they carried `edges`, so a `v<14` gate could never recover those (`ln.edges.join(...)` white-screens on load). Reference-stable when every line already has an array |
 | (not gated) | `ensureStyleInvariants` whenever `styles !== undefined` — ordered between the `v<10` hygiene and the bake (the bake seeds the _designated_ default transfer style; adoption stamps designated defaults) |
 | (not gated) | `validActivePalettes` whenever `activePalettes !== undefined`                                                                              |

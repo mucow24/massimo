@@ -34,9 +34,10 @@ export interface SeedLine {
   // existed (renders with no casing / the default white).
   strokeWidth?: number;
   strokeColor?: string;
-  // Default stop dot diameter in px. Omit to simulate a line saved before
-  // the field existed (dots render at the global default size).
-  defaultDotSize?: number;
+  // Default stop dot diameter in px, split by singleton vs. shared station.
+  // Omit to render at the global default size.
+  singletonDotSize?: number;
+  multiDotSize?: number;
 }
 
 export interface SeedRouteBullet {
@@ -139,7 +140,8 @@ export async function seedAndOpen(
       ...(l.width !== undefined ? { width: l.width } : {}),
       ...(l.strokeWidth !== undefined ? { strokeWidth: l.strokeWidth } : {}),
       ...(l.strokeColor !== undefined ? { strokeColor: l.strokeColor } : {}),
-      ...(l.defaultDotSize !== undefined ? { defaultDotSize: l.defaultDotSize } : {}),
+      ...(l.singletonDotSize !== undefined ? { singletonDotSize: l.singletonDotSize } : {}),
+      ...(l.multiDotSize !== undefined ? { multiDotSize: l.multiDotSize } : {}),
     };
   }
 

@@ -127,22 +127,52 @@ function LineStyleEditor({ id, props }: { id: string; props: LineStyleProps }) {
   const railW = lineStrokeRailWidth(props.strokeWidth, props.width);
   return (
     <div className="style-editor">
+      {/* Split default dot: singleton (only line at the station) vs.
+          interchange (shared with another line). Independent; resolved live per
+          stop. The picker fills the row's label column, so each row gets its
+          own caption above it (tooltip explains the case). */}
+      <div className="style-editor-caption" title="Stations with only one line stop">
+        Singleton stop dot
+      </div>
       <NumericFieldRow
-        id={`style-${id}-dot`}
-        label="Dot size"
+        id={`style-${id}-singleton-dot`}
+        label="Singleton dot size"
         leading={
           <StationShapePicker
             disabled={false}
-            currentStyle={props.defaultDotStyle}
-            onPick={(shape) => patch({ defaultDotStyle: DOT_SHAPE_PRESETS[shape] })}
+            ariaLabel="Singleton stop shape"
+            currentStyle={props.singletonDotStyle}
+            onPick={(shape) => patch({ singletonDotStyle: DOT_SHAPE_PRESETS[shape] })}
           />
         }
         min={DOT_SIZE_MIN}
         max={DOT_SIZE_MAX}
         step={1}
-        value={props.defaultDotSize}
-        onChange={(defaultDotSize) => patch({ defaultDotSize })}
-        getCurrent={liveNumberProp(id, 'defaultDotSize', props.defaultDotSize)}
+        value={props.singletonDotSize}
+        onChange={(singletonDotSize) => patch({ singletonDotSize })}
+        getCurrent={liveNumberProp(id, 'singletonDotSize', props.singletonDotSize)}
+        textboxAllowAboveMax
+      />
+      <div className="style-editor-caption" title="Stations with more than one line stop">
+        Interchange stop dot
+      </div>
+      <NumericFieldRow
+        id={`style-${id}-multi-dot`}
+        label="Interchange dot size"
+        leading={
+          <StationShapePicker
+            disabled={false}
+            ariaLabel="Interchange stop shape"
+            currentStyle={props.multiDotStyle}
+            onPick={(shape) => patch({ multiDotStyle: DOT_SHAPE_PRESETS[shape] })}
+          />
+        }
+        min={DOT_SIZE_MIN}
+        max={DOT_SIZE_MAX}
+        step={1}
+        value={props.multiDotSize}
+        onChange={(multiDotSize) => patch({ multiDotSize })}
+        getCurrent={liveNumberProp(id, 'multiDotSize', props.multiDotSize)}
         textboxAllowAboveMax
       />
       <NumericFieldRow

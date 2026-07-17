@@ -109,8 +109,23 @@ export const DOT_SHAPE_PRESETS: Record<DotShape, DotStyle> = {
 };
 
 // The historical default: `undefined` on `StopCell.dotStyle` defers to the
-// line's `defaultDotStyle`; `undefined` there falls back to this.
+// line's split default (`singletonDotStyle` / `multiDotStyle` per the stop's
+// station case); `undefined` there falls back to this.
 export const DEFAULT_DOT_STYLE: DotStyle = DOT_SHAPE_PRESETS['filled-black'];
+
+/**
+ * A dot style that paints NOTHING — no fill, no stroke, no service code. The
+ * `none` preset is the canonical one, but any style meeting this condition is
+ * effectively blank (`resolveDotRender` returns null for it). Used to
+ * short-circuit rendering AND to decide whether a stop OCCUPIES its station for
+ * the singleton/interchange split: a stop whose EXPLICIT override is blank —
+ * e.g. an express line's skipped stops in the express+local pattern — doesn't
+ * count, so the visible stop sharing that station is still treated as a
+ * singleton (see `stationIsSingleton`).
+ */
+export function isBlankDotStyle(style: DotStyle): boolean {
+  return style.fill === 'none' && style.strokeWidth === 0 && !style.showServiceCode;
+}
 
 const dayNight = (c: DayNightColor, darkMode: boolean): string => (darkMode ? c.night : c.day);
 
@@ -161,7 +176,7 @@ export function resolveDotRender(
   // resolved size, or default-tracking code discs would shrink to r 4.
   sizeOverride?: number,
 ): DotRenderParams | null {
-  if (style.fill === 'none' && style.strokeWidth === 0 && !style.showServiceCode) return null;
+  if (isBlankDotStyle(style)) return null;
   const fill = resolveFill(style.fill, lineColor, darkMode);
   const out: DotRenderParams = {
     shape: style.shape,

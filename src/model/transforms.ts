@@ -21,7 +21,7 @@ import {
   canonicalTransferStrokeWidth,
   canonicalTransferThickness,
 } from './transferStyle';
-import { DEFAULT_DOT_STYLE, dotStylesEqual } from './dotStyle';
+import { DEFAULT_DOT_STYLE, dotStylesEqual, isBlankDotStyle } from './dotStyle';
 import { pairKeyOf } from './pairKey';
 import {
   addEdge,
@@ -368,12 +368,48 @@ export function moveStation(doc: MapDoc, id: StationId, x: number, y: number): M
 }
 
 /**
- * Resolve the style for a stop: explicit per-stop `dotStyle` wins, else the
- * line's `defaultDotStyle`, else DEFAULT_DOT_STYLE (the historical
- * filled-black).
+ * A station is a "singleton" for dot-styling when exactly one stop VISIBLY
+ * occupies it — i.e. picks the line's singleton default rather than its
+ * interchange default. A stop whose EXPLICIT `dotStyle` override is blank
+ * (renders nothing) does NOT count: the express+local pattern draws both lines
+ * through every station but blanks the express dot at stops it skips, and those
+ * skipped stations should still read as singletons for the local line. Only
+ * explicit overrides are inspected, never resolved defaults — resolving a
+ * default-tracking stop's style would itself depend on this result, so counting
+ * it would be circular. This is a per-STATION property (every non-blank stop
+ * shares it), recomputed live so a station losing its other visible line
+ * immediately adopts the singleton default. Zero visible stops is not a
+ * singleton (nothing to style).
  */
-export function resolveDotStyle(line: Line | undefined, stop: StopCell | undefined): DotStyle {
-  return stop?.dotStyle ?? line?.defaultDotStyle ?? DEFAULT_DOT_STYLE;
+export function stationIsSingleton(
+  station: { stops: readonly { dotStyle?: DotStyle }[] } | undefined,
+): boolean {
+  const stops = station?.stops;
+  if (!stops) return false;
+  let visible = 0;
+  for (const s of stops) {
+    if (s.dotStyle !== undefined && isBlankDotStyle(s.dotStyle)) continue;
+    if (++visible > 1) return false;
+  }
+  return visible === 1;
+}
+
+/**
+ * Resolve the style for a stop: explicit per-stop `dotStyle` wins, else the
+ * line's split default for the stop's station case (`singletonDotStyle` when
+ * `isSingleton`, else `multiDotStyle`), else DEFAULT_DOT_STYLE (the historical
+ * filled-black). `isSingleton` is `stationIsSingleton(station)`.
+ */
+export function resolveDotStyle(
+  line: Line | undefined,
+  stop: StopCell | undefined,
+  isSingleton: boolean,
+): DotStyle {
+  return (
+    stop?.dotStyle ??
+    (isSingleton ? line?.singletonDotStyle : line?.multiDotStyle) ??
+    DEFAULT_DOT_STYLE
+  );
 }
 
 /**
@@ -399,13 +435,19 @@ export function setDotStyle(
   lineId: LineId,
   style: DotStyle,
 ): MapDoc {
-  // Picking the line's effective default for a stop clears the per-stop
-  // override so the stop tracks the default going forward (and so persisted
-  // state stays clean — same pattern as `segmentStyles` + 'solid'). Style
-  // equality is structural (`dotStylesEqual`), never reference identity.
-  const lineDefault = doc.lines[lineId]?.defaultDotStyle ?? DEFAULT_DOT_STYLE;
-  const clears = dotStylesEqual(style, lineDefault);
+  const line = doc.lines[lineId];
   return updateStation(doc, stationId, (cur) => {
+    // Picking the line's effective default for a stop clears the per-stop
+    // override so the stop tracks the default going forward (and so persisted
+    // state stays clean — same pattern as `segmentStyles` + 'solid'). Which
+    // default applies depends on whether the station is a singleton; picking a
+    // value that differs from it (the caller's genuinely-distinct choice) pins
+    // and survives later topology changes. Style equality is structural
+    // (`dotStylesEqual`), never reference identity.
+    const lineDefault =
+      (stationIsSingleton(cur) ? line?.singletonDotStyle : line?.multiDotStyle) ??
+      DEFAULT_DOT_STYLE;
+    const clears = dotStylesEqual(style, lineDefault);
     let changed = false;
     const stops = cur.stops.map((s) => {
       if (s.lineId !== lineId) return s;
@@ -425,25 +467,27 @@ export function setDotStyle(
 
 /**
  * Drop every per-stop override of `field` on `lineId` that has become
- * redundant — `isRedundant(stop)` decides when a stop now equals the line's
- * new effective default. Shared by the two "set line default" setters
- * (`setLineDefaultDotStyle` / `setLineDefaultDotSize`) so the override-pruning
- * rule — which keeps persisted docs clean and makes those stops track the
- * default going forward — can never drift between dot-style and dot-size.
- * Returns the same `stations` reference when nothing was pruned.
+ * redundant — `isRedundant(stop, station)` decides when a stop now equals the
+ * line's new effective default. The station is passed so the predicate can gate
+ * on the stop's singleton/shared case (a singleton-default edit only makes
+ * overrides on singleton stops redundant, and vice versa). Shared by the four
+ * "set line default" setters so the override-pruning rule — which keeps
+ * persisted docs clean and makes those stops track the default going forward —
+ * can never drift between dot-style and dot-size. Returns the same `stations`
+ * reference when nothing was pruned.
  */
 function dropRedundantStopOverrides(
   stations: Record<StationId, Station>,
   lineId: LineId,
   field: 'dotStyle' | 'dotSize',
-  isRedundant: (stop: StopCell) => boolean,
+  isRedundant: (stop: StopCell, station: Station) => boolean,
 ): Record<StationId, Station> {
   let out = stations;
   for (const sid of Object.keys(out)) {
     const st = out[sid];
     let stopsChanged = false;
     const stops = st.stops.map((s) => {
-      if (s.lineId !== lineId || !isRedundant(s)) return s;
+      if (s.lineId !== lineId || !isRedundant(s, st)) return s;
       stopsChanged = true;
       const { [field]: _gone, ...rest } = s;
       return rest;
@@ -453,33 +497,55 @@ function dropRedundantStopOverrides(
   return out;
 }
 
-export function setLineDefaultDotStyle(doc: MapDoc, id: LineId, style: DotStyle): MapDoc {
+// Shared body of the two split default-dot-style setters. `field` is the line
+// field to write (`singletonDotStyle` / `multiDotStyle`) and `wantSingleton`
+// selects which stop case the redundant-override cascade prunes.
+function setLineCaseDotStyle(
+  doc: MapDoc,
+  id: LineId,
+  style: DotStyle,
+  field: 'singletonDotStyle' | 'multiDotStyle',
+  wantSingleton: boolean,
+): MapDoc {
   const cur = doc.lines[id];
   if (!cur) return doc;
+  const existing = cur[field];
   // DEFAULT_DOT_STYLE is the historical default; omit the field so persisted
   // state stays clean (mirrors `setLineSegmentStyle` + 'solid').
-  let nextLine: Line;
+  let stored: DotStyle | undefined;
   if (dotStylesEqual(style, DEFAULT_DOT_STYLE)) {
-    if (cur.defaultDotStyle === undefined) return doc;
-    const { defaultDotStyle: _gone, ...rest } = cur;
-    nextLine = rest;
+    if (existing === undefined) return doc;
+    stored = undefined;
   } else {
-    if (cur.defaultDotStyle !== undefined && dotStylesEqual(cur.defaultDotStyle, style)) {
-      return doc;
-    }
-    nextLine = { ...cur, defaultDotStyle: style };
+    if (existing !== undefined && dotStylesEqual(existing, style)) return doc;
+    stored = style;
   }
-  // Any per-stop override on this line that matches the NEW default is now
-  // redundant — drop it so the stop tracks the default going forward.
+  const nextLine = writeLineField(cur, field, stored);
+  // A per-stop override on a stop of the MATCHING case (singleton vs. shared)
+  // that equals the NEW default is now redundant — drop it so the stop tracks
+  // the default going forward. Overrides on the OTHER case keep their pin, so a
+  // stop deliberately set for its current sharing state survives an edit to the
+  // default it doesn't currently use.
   const stations = dropRedundantStopOverrides(
     doc.stations,
     id,
     'dotStyle',
-    (s) => s.dotStyle !== undefined && dotStylesEqual(s.dotStyle, style),
+    (s, st) =>
+      stationIsSingleton(st) === wantSingleton &&
+      s.dotStyle !== undefined &&
+      dotStylesEqual(s.dotStyle, style),
   );
   // Every fall-through past the early-returns above is a real covered-field
   // change → detach from the line's style preset.
   return { ...doc, lines: { ...doc.lines, [id]: stripStyleId(nextLine) }, stations };
+}
+
+export function setLineSingletonDotStyle(doc: MapDoc, id: LineId, style: DotStyle): MapDoc {
+  return setLineCaseDotStyle(doc, id, style, 'singletonDotStyle', true);
+}
+
+export function setLineMultiDotStyle(doc: MapDoc, id: LineId, style: DotStyle): MapDoc {
+  return setLineCaseDotStyle(doc, id, style, 'multiDotStyle', false);
 }
 
 // Per-stop dot size override — the dot's DIAMETER in px. Non-finite input is
@@ -494,9 +560,13 @@ export function setDotSize(
   size: number,
 ): MapDoc {
   if (!Number.isFinite(size)) return doc;
-  const effDefault = doc.lines[lineId]?.defaultDotSize ?? DOT_SIZE_DEFAULT;
-  const stored = canonicalDotSize(size, effDefault);
+  const line = doc.lines[lineId];
   return updateStation(doc, stationId, (cur) => {
+    // The default this stop tracks is its station's singleton or shared size;
+    // setting exactly that clears the override, any other value pins.
+    const effDefault =
+      (stationIsSingleton(cur) ? line?.singletonDotSize : line?.multiDotSize) ?? DOT_SIZE_DEFAULT;
+    const stored = canonicalDotSize(size, effDefault);
     let changed = false;
     const stops = cur.stops.map((s) => {
       if (s.lineId !== lineId || s.dotSize === stored) return s;
@@ -511,37 +581,46 @@ export function setDotSize(
   });
 }
 
-// Per-line default dot size (DIAMETER in px). Same normalization grid as
-// `setLineWidth` (non-finite ignored, rounded, floor-clamped, dropped at the
-// default, reference-equal no-ops) PLUS the `setLineDefaultDotStyle`
-// cascade: any per-stop override equal to the NEW effective default is now
-// redundant — drop it so those stops track the default going forward.
-export function setLineDefaultDotSize(doc: MapDoc, id: LineId, size: number): MapDoc {
+// Shared body of the two split default-dot-size setters (DIAMETER in px). Same
+// normalization grid as `setLineWidth` (non-finite ignored, rounded,
+// floor-clamped, dropped at the default, reference-equal no-ops) PLUS the
+// split-aware cascade: any per-stop override on a stop of the matching case
+// (`wantSingleton`) equal to the NEW effective default is now redundant — drop
+// it so those stops track the default going forward.
+function setLineCaseDotSize(
+  doc: MapDoc,
+  id: LineId,
+  size: number,
+  field: 'singletonDotSize' | 'multiDotSize',
+  wantSingleton: boolean,
+): MapDoc {
   const cur = doc.lines[id];
   if (!cur || !Number.isFinite(size)) return doc;
   const stored = canonicalDotSize(size);
-  if (cur.defaultDotSize === stored) return doc;
-  let nextLine: Line;
-  if (stored === undefined) {
-    const { defaultDotSize: _gone, ...rest } = cur;
-    nextLine = rest;
-  } else {
-    nextLine = { ...cur, defaultDotSize: stored };
-  }
+  if (cur[field] === stored) return doc;
+  const nextLine = writeLineField(cur, field, stored);
   // The cascade compares against the new EFFECTIVE default — `stored`, or the
   // global DOT_SIZE_DEFAULT when `stored` collapsed to undefined (`stored` is
-  // undefined ONLY at that default). Resetting to the global default must also
-  // absorb overrides that equal DOT_SIZE_DEFAULT.
+  // undefined ONLY at that default) — but only on stops of the matching case;
+  // the other case keeps its pin.
   const effDefault = stored ?? DOT_SIZE_DEFAULT;
   const stations = dropRedundantStopOverrides(
     doc.stations,
     id,
     'dotSize',
-    (s) => s.dotSize === effDefault,
+    (s, st) => stationIsSingleton(st) === wantSingleton && s.dotSize === effDefault,
   );
   // Fall-through = the stored default-dot-size changed → detach from the
   // line's style preset.
   return { ...doc, lines: { ...doc.lines, [id]: stripStyleId(nextLine) }, stations };
+}
+
+export function setLineSingletonDotSize(doc: MapDoc, id: LineId, size: number): MapDoc {
+  return setLineCaseDotSize(doc, id, size, 'singletonDotSize', true);
+}
+
+export function setLineMultiDotSize(doc: MapDoc, id: LineId, size: number): MapDoc {
+  return setLineCaseDotSize(doc, id, size, 'multiDotSize', false);
 }
 
 // Write optional style field `field` onto a line: set it to `stored`, or drop
@@ -2686,8 +2765,10 @@ export const DEFAULT_STYLES: Record<string, StyleDef> = {
     name: 'Default',
     kind: 'line',
     props: {
-      defaultDotStyle: DEFAULT_DOT_STYLE,
-      defaultDotSize: DOT_SIZE_DEFAULT,
+      singletonDotStyle: DEFAULT_DOT_STYLE,
+      multiDotStyle: DEFAULT_DOT_STYLE,
+      singletonDotSize: DOT_SIZE_DEFAULT,
+      multiDotSize: DOT_SIZE_DEFAULT,
       width: LINE_WIDTH_DEFAULT,
       curveRadius: LINE_CURVE_RADIUS_DEFAULT,
       strokeWidth: LINE_STROKE_WIDTH_DEFAULT,

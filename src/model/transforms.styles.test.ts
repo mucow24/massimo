@@ -7,8 +7,10 @@ import {
   addTextLabelWith,
   moveStation,
   renameStation,
-  setLineDefaultDotSize,
-  setLineDefaultDotStyle,
+  setLineSingletonDotSize,
+  setLineMultiDotSize,
+  setLineSingletonDotStyle,
+  setLineMultiDotStyle,
   setLineStrokeColor,
   setLineSeamColor,
   setLineStrokeWidth,
@@ -67,14 +69,22 @@ describe('detach on covered-field edits — lines', () => {
     expect(setLineSeamColor(doc, 'l1', '#00000000').lines.l1.styleId).toBeUndefined();
   });
 
-  it('setLineDefaultDotStyle / setLineDefaultDotSize detach on change only', () => {
+  it('the split dot setters detach on change only', () => {
     const doc = tagged();
-    expect(setLineDefaultDotStyle(doc, 'l1', DOT_SHAPE_PRESETS['filled-black'])).toBe(doc);
+    // No-ops (value already effective) keep the tag…
+    expect(setLineSingletonDotStyle(doc, 'l1', DOT_SHAPE_PRESETS['filled-black'])).toBe(doc);
+    expect(setLineMultiDotStyle(doc, 'l1', DOT_SHAPE_PRESETS['filled-black'])).toBe(doc);
+    expect(setLineSingletonDotSize(doc, 'l1', 8)).toBe(doc); // 8 = DOT_SIZE_DEFAULT
+    expect(setLineMultiDotSize(doc, 'l1', 8)).toBe(doc);
+    // …real changes detach, on either case independently.
     expect(
-      setLineDefaultDotStyle(doc, 'l1', DOT_SHAPE_PRESETS['open-black']).lines.l1.styleId,
+      setLineSingletonDotStyle(doc, 'l1', DOT_SHAPE_PRESETS['open-black']).lines.l1.styleId,
     ).toBeUndefined();
-    expect(setLineDefaultDotSize(doc, 'l1', 8)).toBe(doc); // 8 = DOT_SIZE_DEFAULT, already effective
-    expect(setLineDefaultDotSize(doc, 'l1', 12).lines.l1.styleId).toBeUndefined();
+    expect(
+      setLineMultiDotStyle(doc, 'l1', DOT_SHAPE_PRESETS['open-black']).lines.l1.styleId,
+    ).toBeUndefined();
+    expect(setLineSingletonDotSize(doc, 'l1', 12).lines.l1.styleId).toBeUndefined();
+    expect(setLineMultiDotSize(doc, 'l1', 12).lines.l1.styleId).toBeUndefined();
   });
 });
 

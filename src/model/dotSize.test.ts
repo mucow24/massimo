@@ -7,7 +7,8 @@ import {
   canonicalDotSize,
   dotSizeOverride,
   resolveDotSize,
-  lineDefaultDotSizeOf,
+  lineSingletonDotSizeOf,
+  lineMultiDotSizeOf,
 } from './dotSize';
 
 describe('dot size constants', () => {
@@ -49,43 +50,64 @@ describe('canonicalDotSize', () => {
 });
 
 describe('dotSizeOverride', () => {
-  it('prefers the stop override over the line default', () => {
-    expect(dotSizeOverride({ defaultDotSize: 10 }, { dotSize: 16 })).toBe(16);
+  const line = { singletonDotSize: 10, multiDotSize: 14 };
+
+  it('prefers the stop override over either line default', () => {
+    expect(dotSizeOverride(line, { dotSize: 16 }, true)).toBe(16);
+    expect(dotSizeOverride(line, { dotSize: 16 }, false)).toBe(16);
   });
 
-  it('falls back to the line default when the stop has none', () => {
-    expect(dotSizeOverride({ defaultDotSize: 10 }, {})).toBe(10);
-    expect(dotSizeOverride({ defaultDotSize: 10 }, undefined)).toBe(10);
+  it('falls back to the singleton default for a singleton stop, multi for a shared stop', () => {
+    expect(dotSizeOverride(line, {}, true)).toBe(10);
+    expect(dotSizeOverride(line, undefined, true)).toBe(10);
+    expect(dotSizeOverride(line, {}, false)).toBe(14);
+    expect(dotSizeOverride(line, undefined, false)).toBe(14);
   });
 
   it('is undefined when fully tracking defaults — the renderer keeps its per-style radii', () => {
     // Load-bearing: collapsing this to DOT_SIZE_DEFAULT would shrink
     // default-tracking service-code discs from r 6 to r 4.
-    expect(dotSizeOverride({}, {})).toBeUndefined();
-    expect(dotSizeOverride(undefined, undefined)).toBeUndefined();
+    expect(dotSizeOverride({}, {}, true)).toBeUndefined();
+    expect(dotSizeOverride({}, {}, false)).toBeUndefined();
+    expect(dotSizeOverride(undefined, undefined, true)).toBeUndefined();
+  });
+
+  it('reads only the case-relevant default (the other side never leaks)', () => {
+    expect(dotSizeOverride({ singletonDotSize: 10 }, {}, false)).toBeUndefined();
+    expect(dotSizeOverride({ multiDotSize: 14 }, {}, true)).toBeUndefined();
   });
 });
 
 describe('resolveDotSize', () => {
-  it('resolves the override chain for UI display', () => {
-    expect(resolveDotSize({ defaultDotSize: 10 }, { dotSize: 16 })).toBe(16);
-    expect(resolveDotSize({ defaultDotSize: 10 }, {})).toBe(10);
+  const line = { singletonDotSize: 10, multiDotSize: 14 };
+
+  it('resolves the override chain for UI display, per case', () => {
+    expect(resolveDotSize(line, { dotSize: 16 }, true)).toBe(16);
+    expect(resolveDotSize(line, {}, true)).toBe(10);
+    expect(resolveDotSize(line, {}, false)).toBe(14);
   });
 
   it('falls back to DOT_SIZE_DEFAULT only when fully tracking', () => {
-    expect(resolveDotSize({}, {})).toBe(DOT_SIZE_DEFAULT);
-    expect(resolveDotSize(undefined, undefined)).toBe(DOT_SIZE_DEFAULT);
+    expect(resolveDotSize({}, {}, true)).toBe(DOT_SIZE_DEFAULT);
+    expect(resolveDotSize({}, {}, false)).toBe(DOT_SIZE_DEFAULT);
+    expect(resolveDotSize(undefined, undefined, true)).toBe(DOT_SIZE_DEFAULT);
   });
 });
 
-describe('lineDefaultDotSizeOf', () => {
-  it('reads the stored default when present', () => {
-    expect(lineDefaultDotSizeOf({ defaultDotSize: 12 })).toBe(12);
+describe('lineSingletonDotSizeOf / lineMultiDotSizeOf', () => {
+  it('read the stored default of their own case when present', () => {
+    expect(lineSingletonDotSizeOf({ singletonDotSize: 12 })).toBe(12);
+    expect(lineMultiDotSizeOf({ multiDotSize: 18 })).toBe(18);
   });
 
-  it('falls back to the default for a size-less line, null, and undefined', () => {
-    expect(lineDefaultDotSizeOf({})).toBe(DOT_SIZE_DEFAULT);
-    expect(lineDefaultDotSizeOf(null)).toBe(DOT_SIZE_DEFAULT);
-    expect(lineDefaultDotSizeOf(undefined)).toBe(DOT_SIZE_DEFAULT);
+  it("do not read the other case's stored value", () => {
+    expect(lineSingletonDotSizeOf({ multiDotSize: 18 })).toBe(DOT_SIZE_DEFAULT);
+    expect(lineMultiDotSizeOf({ singletonDotSize: 12 })).toBe(DOT_SIZE_DEFAULT);
+  });
+
+  it('fall back to the default for a size-less line, null, and undefined', () => {
+    expect(lineSingletonDotSizeOf({})).toBe(DOT_SIZE_DEFAULT);
+    expect(lineSingletonDotSizeOf(null)).toBe(DOT_SIZE_DEFAULT);
+    expect(lineMultiDotSizeOf(undefined)).toBe(DOT_SIZE_DEFAULT);
   });
 });
