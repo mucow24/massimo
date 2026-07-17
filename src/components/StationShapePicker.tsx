@@ -23,6 +23,7 @@ export const SHAPES: ShapeOption[] = [
   { shape: 'filled-white-diamond', label: 'Filled white diamond' },
   { shape: 'filled-black-x', label: 'Filled black X' },
   { shape: 'filled-white-x', label: 'Filled white X' },
+  { shape: 'dash', label: 'Dash (tick)' },
   { shape: 'none', label: 'None' },
 ];
 

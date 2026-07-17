@@ -84,6 +84,11 @@ function shapeElement(
       return <polygon points={DIAMOND_POINTS(cx, cy, r)} {...attrs} />;
     case 'x':
       return <polygon points={X_POINTS(cx, cy, r)} {...attrs} />;
+    case 'dash':
+      // Context-free preview bar (2r × r), for the shape pickers only: on
+      // canvas, StationDots routes dash stops to DashGlyph, which renders
+      // the real travel-axis/label-side tick.
+      return <rect x={cx - r} y={cy - r / 2} width={2 * r} height={r} {...attrs} />;
   }
 }
 

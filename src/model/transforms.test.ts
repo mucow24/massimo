@@ -1209,6 +1209,44 @@ describe('setLineSeamWidth', () => {
   });
 });
 
+describe('setLineDashLength / setLineDashWidth', () => {
+  it('stores dash dims on the quarter-unit grid, dropping the field at 0 (unset ⇒ derive from width)', () => {
+    const doc = makeDoc({ lines: [makeLine({ id: 'L1' })] });
+    expect(T.setLineDashLength(doc, 'L1', 21).lines.L1.dashLength).toBe(21);
+    expect(T.setLineDashLength(doc, 'L1', 2.2).lines.L1.dashLength).toBe(2.25);
+    expect(T.setLineDashWidth(doc, 'L1', 3.6).lines.L1.dashWidth).toBe(3.5);
+    const off = T.setLineDashLength(
+      makeDoc({ lines: [makeLine({ id: 'L1', dashLength: 3 })] }),
+      'L1',
+      0,
+    );
+    expect('dashLength' in off.lines.L1).toBe(false);
+    const offW = T.setLineDashWidth(
+      makeDoc({ lines: [makeLine({ id: 'L1', dashWidth: 3 })] }),
+      'L1',
+      0,
+    );
+    expect('dashWidth' in offW.lines.L1).toBe(false);
+  });
+
+  it('returns the input doc unchanged on a no-op / non-finite input / unknown line', () => {
+    const doc = makeDoc({ lines: [makeLine({ id: 'L1', dashLength: 3, dashWidth: 2 })] });
+    expect(T.setLineDashLength(doc, 'L1', 3)).toBe(doc);
+    expect(T.setLineDashWidth(doc, 'L1', 2)).toBe(doc);
+    expect(T.setLineDashLength(doc, 'L1', NaN)).toBe(doc);
+    expect(T.setLineDashWidth(doc, 'L1', Infinity)).toBe(doc);
+    expect(T.setLineDashLength(doc, 'ghost', 5)).toBe(doc);
+    const unset = makeDoc({ lines: [makeLine({ id: 'L1' })] });
+    expect(T.setLineDashLength(unset, 'L1', 0)).toBe(unset); // 0 on an unset line = no-op
+  });
+
+  it('detaches the line from its style preset on change', () => {
+    const doc = makeDoc({ lines: [makeLine({ id: 'L1', styleId: 'some-style' })] });
+    expect('styleId' in T.setLineDashLength(doc, 'L1', 3).lines.L1).toBe(false);
+    expect('styleId' in T.setLineDashWidth(doc, 'L1', 3).lines.L1).toBe(false);
+  });
+});
+
 describe('addStationToLine — stop-cell spawn + label nudge', () => {
   it('adds a station + stop cell when not present', () => {
     const doc = makeDoc({

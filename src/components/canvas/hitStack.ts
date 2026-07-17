@@ -7,6 +7,7 @@ import {
   textLabelsForRect,
 } from '../../geometry/stationBoundary';
 import { stopHalfOf } from '../../model/lineWidth';
+import { stopDashOf } from '../../model/dashSize';
 import { effectiveBackgroundOrder } from '../../model/transforms';
 import type { Pt } from '../../geometry/polygonUnion';
 import type {
@@ -164,7 +165,7 @@ export function lockedHitsAt(pt: Pt, doc: LockedHitDocSlice, pad: number): HitRe
   );
   push(
     'station',
-    stationsForRect(doc.stations, rect, stopHalfOf(doc.lines), true).filter(
+    stationsForRect(doc.stations, rect, stopHalfOf(doc.lines), true, stopDashOf(doc.lines)).filter(
       (id) => doc.stations[id].locked,
     ),
   );

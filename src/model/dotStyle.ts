@@ -95,6 +95,16 @@ export const DOT_SHAPE_PRESETS: Record<DotShape, DotStyle> = {
   },
   'filled-black-x': { shape: 'x', fill: K, strokeWidth: 0, strokeColor: W, showServiceCode: false },
   'filled-white-x': { shape: 'x', fill: W, strokeWidth: 0, strokeColor: K, showServiceCode: false },
+  // The TfL tick. 'line' fill so the bar always paints in its line's color;
+  // stroke/code are inert on dash stops (see DotBaseShape doc). Rendered by
+  // DashGlyph on canvas; StopGlyph only draws the context-free picker preview.
+  dash: {
+    shape: 'dash',
+    fill: 'line',
+    strokeWidth: 0,
+    strokeColor: 'line',
+    showServiceCode: false,
+  },
   none: { shape: 'circle', fill: 'none', strokeWidth: 0, strokeColor: K, showServiceCode: false },
 };
 

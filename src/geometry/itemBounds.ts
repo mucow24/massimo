@@ -18,8 +18,10 @@ import {
 import { svgImageCorners, type SvgImageGeom } from './svgImage';
 import {
   DEFAULT_LABEL_STYLE,
+  DEFAULT_STOP_DASH,
   DEFAULT_STOP_HALF,
   type LabelStyle,
+  type StopDashFn,
   type StopHalfFn,
 } from './labelLayout';
 
@@ -47,8 +49,9 @@ export function stationWorldAABB(
   station: Station,
   style: LabelStyle = DEFAULT_LABEL_STYLE,
   stopHalf: StopHalfFn = DEFAULT_STOP_HALF,
+  stopDash: StopDashFn = DEFAULT_STOP_DASH,
 ): AABB {
-  const b = stationBoundaryRectsLocal(station, style, stopHalf);
+  const b = stationBoundaryRectsLocal(station, style, stopHalf, false, stopDash);
   const pts = b.cells.concat(b.label ?? []).map((p) => stationLocalToWorld(station, p));
   return aabbOfPoints(pts);
 }

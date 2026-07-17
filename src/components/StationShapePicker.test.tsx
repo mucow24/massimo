@@ -20,7 +20,7 @@ describe('<StationShapePicker />', () => {
     expect(screen.queryByRole('menu')).toBeNull();
   });
 
-  it('trigger is enabled when disabled=false; clicking opens a menu with 13 menuitems', async () => {
+  it('trigger is enabled when disabled=false; clicking opens a menu with 14 menuitems', async () => {
     const user = userEvent.setup();
     render(
       <StationShapePicker
@@ -33,7 +33,7 @@ describe('<StationShapePicker />', () => {
     expect(trigger).toHaveAttribute('aria-disabled', 'false');
     await user.click(trigger);
     expect(screen.getByRole('menu')).toBeInTheDocument();
-    expect(screen.getAllByRole('menuitem')).toHaveLength(13);
+    expect(screen.getAllByRole('menuitem')).toHaveLength(14);
   });
 
   it('menu items carry human-readable aria-labels for every shape', async () => {
@@ -64,6 +64,7 @@ describe('<StationShapePicker />', () => {
     expect(screen.getByRole('menuitem', { name: 'Filled white diamond' })).toBeInTheDocument();
     expect(screen.getByRole('menuitem', { name: 'Filled black X' })).toBeInTheDocument();
     expect(screen.getByRole('menuitem', { name: 'Filled white X' })).toBeInTheDocument();
+    expect(screen.getByRole('menuitem', { name: 'Dash (tick)' })).toBeInTheDocument();
     expect(screen.getByRole('menuitem', { name: 'None' })).toBeInTheDocument();
   });
 

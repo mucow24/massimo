@@ -102,6 +102,23 @@ test.describe('Stop shape picker — coverage', () => {
     await expect(page.locator('[data-station-id="B"]')).toBeVisible();
   });
 
+  test('picking "Dash (tick)" renders a tick rect instead of a dot', async ({ page }) => {
+    await seedAndOpen(page, fourInLine);
+
+    const b = await stationCenter(page, 'B');
+    await page.mouse.click(b.x, b.y);
+    await page.getByRole('button', { name: 'Edit layout' }).click();
+    await page.locator('[data-cell-kind="stop"][data-line-id="L1"]').click();
+    await page.getByRole('button', { name: 'Stop shape' }).click();
+    await page.getByRole('menuitem', { name: 'Dash (tick)' }).click();
+
+    // The dot glyph is replaced by the label-side tick, one element per stop.
+    const tick = page.locator('[data-stop-station="B"][data-stop-shape="dash"]');
+    await expect(tick).toBeVisible();
+    await expect(tick).toHaveJSProperty('tagName', 'rect');
+    await expect(page.locator('[data-stop-station="B"]')).toHaveCount(1);
+  });
+
   test('Ctrl+Z undoes a shape change', async ({ page }) => {
     await seedAndOpen(page, fourInLine);
 

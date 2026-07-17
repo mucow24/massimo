@@ -163,6 +163,52 @@ describe('<LineInspector /> — width control', () => {
   });
 });
 
+describe('<LineInspector /> — dash dimension controls', () => {
+  beforeEach(() => {
+    localStorage.clear();
+    useDoc.setState({ ...DEFAULT_DOC });
+    useSelection.setState(SELECTION_BLANK);
+    useDoc.temporal.getState().clear();
+  });
+
+  const seedDash = (over: Record<string, unknown> = {}) => {
+    useDoc.setState({
+      ...DEFAULT_DOC,
+      ...makeDoc({
+        stations: [makeStation({ id: 's1', stops: [makeStop('L1')] })],
+        lines: [makeLine({ id: 'L1', stations: ['s1'], ...over })],
+      }),
+    });
+  };
+
+  it('shows the width-derived values when unset (length = width, width = width/2)', () => {
+    seedDash();
+    render(<LineInspector id="L1" />);
+    expect(screen.getByRole('slider', { name: 'Dash length' })).toHaveAttribute(
+      'aria-valuenow',
+      '14',
+    );
+    expect(screen.getByRole('slider', { name: 'Dash width' })).toHaveAttribute(
+      'aria-valuenow',
+      '7',
+    );
+  });
+
+  it('shows explicit stored dims, and slider edits write through the setters', () => {
+    seedDash({ dashLength: 21, dashWidth: 3 });
+    render(<LineInspector id="L1" />);
+    const length = screen.getByRole('slider', { name: 'Dash length' });
+    expect(length).toHaveAttribute('aria-valuenow', '21');
+    expect(screen.getByRole('slider', { name: 'Dash width' })).toHaveAttribute(
+      'aria-valuenow',
+      '3',
+    );
+    stepSlider(length, 1); // one 0.25 step up
+    fireEvent.blur(length);
+    expect(useDoc.getState().lines.L1.dashLength).toBe(21.25);
+  });
+});
+
 describe('<LineInspector /> — dot size control', () => {
   beforeEach(() => {
     localStorage.clear();

@@ -16,6 +16,12 @@ import type { StylePropsPatch } from '../model/styles';
 import { DOT_SHAPE_PRESETS } from '../model/dotStyle';
 import { DOT_SIZE_MAX, DOT_SIZE_MIN } from '../model/dotSize';
 import {
+  DASH_LENGTH_MAX,
+  DASH_WIDTH_MAX,
+  dashRenderLength,
+  dashRenderWidth,
+} from '../model/dashSize';
+import {
   LINE_WIDTH_MAX,
   LINE_WIDTH_MIN,
   LINE_WIDTH_SLIDER_MIN,
@@ -202,6 +208,32 @@ function LineStyleEditor({ id, props }: { id: string; props: LineStyleProps }) {
           onChange={(seamColor) => patch({ seamColor })}
         />
       </div>
+      {/* TfL-tick dimensions for 'dash' stops. Unset derives from the style's
+          line width (length = width, thickness = width/2) — props is
+          structurally a {width, dashLength, dashWidth} line, so the shared
+          resolvers apply. */}
+      <NumericFieldRow
+        id={`style-${id}-dash-length`}
+        label="Dash length"
+        min={0}
+        max={DASH_LENGTH_MAX}
+        step={LINE_STROKE_STEP}
+        value={dashRenderLength(props)}
+        onChange={(dashLength) => patch({ dashLength })}
+        getCurrent={liveNumberProp(id, 'dashLength', dashRenderLength(props))}
+        textboxAllowAboveMax
+      />
+      <NumericFieldRow
+        id={`style-${id}-dash-width`}
+        label="Dash width"
+        min={0}
+        max={DASH_WIDTH_MAX}
+        step={LINE_STROKE_STEP}
+        value={dashRenderWidth(props)}
+        onChange={(dashWidth) => patch({ dashWidth })}
+        getCurrent={liveNumberProp(id, 'dashWidth', dashRenderWidth(props))}
+        textboxAllowAboveMax
+      />
     </div>
   );
 }

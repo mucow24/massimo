@@ -10,6 +10,7 @@ import {
   textLabelsForRect,
 } from '../../geometry/stationBoundary';
 import { stopHalfOf } from '../../model/lineWidth';
+import { stopDashOf } from '../../model/dashSize';
 import type { MapDoc, StationId } from '../../model/types';
 import type { Pt } from '../../geometry/polygonUnion';
 
@@ -26,7 +27,13 @@ function stationsForRectVisible(
   includeLocked: boolean,
 ): StationId[] {
   if (!useViewportStore.getState().showNetwork) return [];
-  return stationsForRect(doc.stations, rect, stopHalfOf(doc.lines), includeLocked);
+  return stationsForRect(
+    doc.stations,
+    rect,
+    stopHalfOf(doc.lines),
+    includeLocked,
+    stopDashOf(doc.lines),
+  );
 }
 
 export interface RectSelectRect {
