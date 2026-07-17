@@ -419,8 +419,10 @@ describe('<StationInspector /> — stop dot size textbox', () => {
           makeLine({
             id: 'L1',
             stations: ['a'],
+            // Station 'a' is a singleton (one stop), so the size its stop row
+            // resolves is the line's SINGLETON default.
             ...(over.lineDefaultDotSize !== undefined
-              ? { defaultDotSize: over.lineDefaultDotSize }
+              ? { singletonDotSize: over.lineDefaultDotSize }
               : {}),
           }),
         ],

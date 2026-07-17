@@ -2278,6 +2278,15 @@ button.field-select {
   gap: 4px;
   flex: 1;
 }
+/* Per-row caption for the split singleton/interchange dot rows: their picker
+   fills the row's label column, so the row can't carry a text label of its
+   own. Tightened to the row below (the .style-editor column gap is 8px). */
+.style-editor-caption {
+  font-size: var(--fs-caption);
+  color: var(--text-muted);
+  font-weight: 700;
+  margin-bottom: -4px;
+}
 
 /* Styles panel (sidebar): the click-to-rename name field. Button shows the
    name in row typography; the input takes its place while editing (MapNameField

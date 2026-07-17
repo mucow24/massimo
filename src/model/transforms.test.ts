@@ -2167,21 +2167,107 @@ describe('clearAll — line tags', () => {
   });
 });
 
+describe('stationIsSingleton', () => {
+  const blank = DOT_SHAPE_PRESETS['none'];
+
+  it('is true for a station with exactly one visible stop, false otherwise', () => {
+    expect(T.stationIsSingleton(makeStation({ id: 'a', stops: [makeStop('L1')] }))).toBe(true);
+    expect(
+      T.stationIsSingleton(
+        makeStation({ id: 'a', stops: [makeStop('L1'), makeStop('L2', { col: 1 })] }),
+      ),
+    ).toBe(false);
+    // An empty station is not a singleton (no dot to style).
+    expect(T.stationIsSingleton(makeStation({ id: 'a', stops: [] }))).toBe(false);
+    expect(T.stationIsSingleton(undefined)).toBe(false);
+  });
+
+  it('does not count a stop whose explicit override is blank (express+local pattern)', () => {
+    // Local (real dot) + express blanked at a skipped stop → still a singleton
+    // for the local line, so its dot uses the SINGLETON default.
+    expect(
+      T.stationIsSingleton(
+        makeStation({
+          id: 'a',
+          stops: [makeStop('LOCAL'), makeStop('EXPRESS', { col: 1, dotStyle: blank })],
+        }),
+      ),
+    ).toBe(true);
+    // Two blanked stops → zero visible → not a singleton.
+    expect(
+      T.stationIsSingleton(
+        makeStation({
+          id: 'a',
+          stops: [makeStop('L1', { dotStyle: blank }), makeStop('L2', { col: 1, dotStyle: blank })],
+        }),
+      ),
+    ).toBe(false);
+  });
+
+  it('an open ring (fill none but a visible stroke) is NOT blank — it still counts', () => {
+    // open-white has strokeWidth > 0, so it paints and occupies the station.
+    expect(
+      T.stationIsSingleton(
+        makeStation({
+          id: 'a',
+          stops: [
+            makeStop('L1'),
+            makeStop('L2', { col: 1, dotStyle: DOT_SHAPE_PRESETS['open-white'] }),
+          ],
+        }),
+      ),
+    ).toBe(false);
+  });
+
+  it('a stop TRACKING the default always counts (blank check reads only explicit overrides)', () => {
+    // Two default-tracking stops → interchange, even though we can't resolve
+    // their defaults here (that would be circular).
+    expect(
+      T.stationIsSingleton(
+        makeStation({ id: 'a', stops: [makeStop('L1'), makeStop('L2', { col: 1 })] }),
+      ),
+    ).toBe(false);
+  });
+});
+
 describe('resolveDotStyle', () => {
-  it('prefers the per-stop style over everything', () => {
-    const line = makeLine({ id: 'L1', defaultDotStyle: DOT_SHAPE_PRESETS['open-white'] });
-    const stop = makeStop('L1', { dotStyle: DOT_SHAPE_PRESETS['filled-black-diamond'] });
-    expect(T.resolveDotStyle(line, stop)).toBe(DOT_SHAPE_PRESETS['filled-black-diamond']);
+  const A = DOT_SHAPE_PRESETS['open-white'];
+  const B = DOT_SHAPE_PRESETS['filled-white'];
+  const C = DOT_SHAPE_PRESETS['filled-black-diamond'];
+  const line = makeLine({ id: 'L1', singletonDotStyle: A, multiDotStyle: B });
+
+  it('prefers the per-stop style over either split default, in both cases', () => {
+    const stop = makeStop('L1', { dotStyle: C });
+    expect(T.resolveDotStyle(line, stop, true)).toBe(C);
+    expect(T.resolveDotStyle(line, stop, false)).toBe(C);
   });
 
-  it("falls back to the line's default when the stop has no override", () => {
-    const line = makeLine({ id: 'L1', defaultDotStyle: DOT_SHAPE_PRESETS['open-white'] });
-    expect(T.resolveDotStyle(line, makeStop('L1'))).toBe(DOT_SHAPE_PRESETS['open-white']);
+  it('picks the singleton default for a singleton stop, the multi default for a shared one', () => {
+    expect(T.resolveDotStyle(line, makeStop('L1'), true)).toBe(A);
+    expect(T.resolveDotStyle(line, makeStop('L1'), false)).toBe(B);
   });
 
-  it('falls back to DEFAULT_DOT_STYLE when neither field is set', () => {
-    expect(T.resolveDotStyle(makeLine({ id: 'L1' }), makeStop('L1'))).toBe(DEFAULT_DOT_STYLE);
-    expect(T.resolveDotStyle(undefined, undefined)).toBe(DEFAULT_DOT_STYLE);
+  it('a pinned override survives a singleton⇄shared flip (the key requirement)', () => {
+    // C differs from BOTH defaults — an explicit set stays put no matter how the
+    // station is later shared.
+    const stop = makeStop('L1', { dotStyle: C });
+    expect(T.resolveDotStyle(line, stop, false)).toBe(C);
+    expect(T.resolveDotStyle(line, stop, true)).toBe(C);
+  });
+
+  it('falls back to DEFAULT_DOT_STYLE when neither the stop nor the case default is set', () => {
+    expect(T.resolveDotStyle(makeLine({ id: 'L1' }), makeStop('L1'), true)).toBe(DEFAULT_DOT_STYLE);
+    expect(T.resolveDotStyle(makeLine({ id: 'L1' }), makeStop('L1'), false)).toBe(
+      DEFAULT_DOT_STYLE,
+    );
+    expect(T.resolveDotStyle(undefined, undefined, true)).toBe(DEFAULT_DOT_STYLE);
+  });
+
+  it('reads only the case-relevant default (the other side never leaks)', () => {
+    const singletonOnly = makeLine({ id: 'L1', singletonDotStyle: A });
+    expect(T.resolveDotStyle(singletonOnly, makeStop('L1'), false)).toBe(DEFAULT_DOT_STYLE);
+    const multiOnly = makeLine({ id: 'L1', multiDotStyle: B });
+    expect(T.resolveDotStyle(multiOnly, makeStop('L1'), true)).toBe(DEFAULT_DOT_STYLE);
   });
 });
 
@@ -2256,7 +2342,7 @@ describe('setDotStyle', () => {
     expect(next.stations.a.stops[0].dotStyle).toEqual(DOT_SHAPE_PRESETS['none']);
   });
 
-  it("clears an existing override when the new style equals the line's default BY VALUE", () => {
+  it("clears a singleton stop's override when the new style equals the singleton default BY VALUE", () => {
     const doc = makeDoc({
       stations: [
         makeStation({
@@ -2264,7 +2350,7 @@ describe('setDotStyle', () => {
           stops: [makeStop('L1', { dotStyle: DOT_SHAPE_PRESETS['open-white'] })],
         }),
       ],
-      lines: [makeLine({ id: 'L1', defaultDotStyle: DOT_SHAPE_PRESETS['open-white'] })],
+      lines: [makeLine({ id: 'L1', singletonDotStyle: DOT_SHAPE_PRESETS['open-white'] })],
     });
     // A structural clone, not the preset object — equality must be deep.
     const next = T.setDotStyle(doc, 'a', 'L1', cloneStyle(DOT_SHAPE_PRESETS['open-white']));
@@ -2285,113 +2371,172 @@ describe('setDotStyle', () => {
     expect(next.stations.a.stops[0].dotStyle).toBeUndefined();
   });
 
-  it("leaves dotStyle undefined when picking the line's default on a stop with no override", () => {
+  it("leaves a singleton stop's dotStyle undefined when picking the singleton default", () => {
     const doc = makeDoc({
       stations: [makeStation({ id: 'a', stops: [makeStop('L1')] })],
-      lines: [makeLine({ id: 'L1', defaultDotStyle: DOT_SHAPE_PRESETS['open-white'] })],
+      lines: [makeLine({ id: 'L1', singletonDotStyle: DOT_SHAPE_PRESETS['open-white'] })],
     });
     const next = T.setDotStyle(doc, 'a', 'L1', DOT_SHAPE_PRESETS['open-white']);
     expect(next.stations.a.stops[0].dotStyle).toBeUndefined();
   });
 
-  it("stores the default style as an explicit override when the line's default is something else", () => {
+  it('stores the default style as an explicit override when the singleton default is something else', () => {
     const doc = makeDoc({
       stations: [makeStation({ id: 'a', stops: [makeStop('L1')] })],
-      lines: [makeLine({ id: 'L1', defaultDotStyle: DOT_SHAPE_PRESETS['open-white'] })],
+      lines: [makeLine({ id: 'L1', singletonDotStyle: DOT_SHAPE_PRESETS['open-white'] })],
     });
     const next = T.setDotStyle(doc, 'a', 'L1', DEFAULT_DOT_STYLE);
     expect(next.stations.a.stops[0].dotStyle).toEqual(DEFAULT_DOT_STYLE);
   });
+
+  it('collapses against the SHARED default on a shared station, not the singleton one', () => {
+    // Station 'a' hosts L1 + L2 (shared). L1's defaults: singleton=A, multi=B.
+    const A = DOT_SHAPE_PRESETS['open-white'];
+    const B = DOT_SHAPE_PRESETS['filled-white'];
+    const doc = makeDoc({
+      stations: [makeStation({ id: 'a', stops: [makeStop('L1'), makeStop('L2', { col: 1 })] })],
+      lines: [
+        makeLine({ id: 'L1', singletonDotStyle: A, multiDotStyle: B }),
+        makeLine({ id: 'L2' }),
+      ],
+    });
+    // Picking B (the shared default) on the shared stop clears — it tracks.
+    expect(
+      T.setDotStyle(doc, 'a', 'L1', cloneStyle(B)).stations.a.stops[0].dotStyle,
+    ).toBeUndefined();
+    // Picking A (the SINGLETON default) pins here, because it differs from the
+    // shared default this stop currently uses.
+    expect(T.setDotStyle(doc, 'a', 'L1', cloneStyle(A)).stations.a.stops[0].dotStyle).toEqual(A);
+  });
+
+  it('a value distinct from both defaults pins, and the pin resolves the same in either case', () => {
+    const A = DOT_SHAPE_PRESETS['open-white'];
+    const B = DOT_SHAPE_PRESETS['filled-white'];
+    const C = DOT_SHAPE_PRESETS['filled-black-diamond'];
+    const doc = makeDoc({
+      stations: [makeStation({ id: 'a', stops: [makeStop('L1'), makeStop('L2', { col: 1 })] })],
+      lines: [
+        makeLine({ id: 'L1', singletonDotStyle: A, multiDotStyle: B }),
+        makeLine({ id: 'L2' }),
+      ],
+    });
+    const pinned = T.setDotStyle(doc, 'a', 'L1', C);
+    const l1stop = pinned.stations.a.stops[0];
+    expect(l1stop.dotStyle).toEqual(C);
+    // The override is a plain per-stop field, untouched by station topology —
+    // whether 'a' is shared (now) or a singleton (were L2 removed), it resolves
+    // to C. This is the requirement: an explicit set survives sharing changes.
+    expect(T.resolveDotStyle(pinned.lines.L1, l1stop, false)).toEqual(C);
+    expect(T.resolveDotStyle(pinned.lines.L1, l1stop, true)).toEqual(C);
+  });
 });
 
-describe('setLineDefaultDotStyle', () => {
-  it('sets the field when the new style is not the default', () => {
+describe('setLineSingletonDotStyle', () => {
+  const OW = DOT_SHAPE_PRESETS['open-white'];
+
+  it('sets the singleton field when the new style is not the default', () => {
     const doc = makeDoc({ lines: [makeLine({ id: 'L1' })] });
-    const next = T.setLineDefaultDotStyle(doc, 'L1', DOT_SHAPE_PRESETS['open-white']);
-    expect(next.lines.L1.defaultDotStyle).toEqual(DOT_SHAPE_PRESETS['open-white']);
+    const next = T.setLineSingletonDotStyle(doc, 'L1', OW);
+    expect(next.lines.L1.singletonDotStyle).toEqual(OW);
+    // The multi field is independent — untouched.
+    expect('multiDotStyle' in next.lines.L1).toBe(false);
   });
 
   it('drops the field when the new style equals the historical default by value', () => {
-    const doc = makeDoc({
-      lines: [makeLine({ id: 'L1', defaultDotStyle: DOT_SHAPE_PRESETS['open-white'] })],
-    });
-    const next = T.setLineDefaultDotStyle(doc, 'L1', cloneStyle(DEFAULT_DOT_STYLE));
-    expect(next.lines.L1.defaultDotStyle).toBeUndefined();
-    expect('defaultDotStyle' in next.lines.L1).toBe(false);
+    const doc = makeDoc({ lines: [makeLine({ id: 'L1', singletonDotStyle: OW })] });
+    const next = T.setLineSingletonDotStyle(doc, 'L1', cloneStyle(DEFAULT_DOT_STYLE));
+    expect('singletonDotStyle' in next.lines.L1).toBe(false);
   });
 
-  it('silently no-ops on unknown line id', () => {
-    const doc = makeDoc({ lines: [makeLine({ id: 'L1' })] });
-    expect(T.setLineDefaultDotStyle(doc, 'ghost', DOT_SHAPE_PRESETS['open-white'])).toBe(doc);
+  it('reference-equal no-ops: unknown id, unchanged value, clearing an already-cleared default', () => {
+    const doc = makeDoc({ lines: [makeLine({ id: 'L1', singletonDotStyle: OW })] });
+    expect(T.setLineSingletonDotStyle(doc, 'ghost', OW)).toBe(doc);
+    expect(T.setLineSingletonDotStyle(doc, 'L1', cloneStyle(OW))).toBe(doc);
+    const bare = makeDoc({ lines: [makeLine({ id: 'L1' })] });
+    expect(T.setLineSingletonDotStyle(bare, 'L1', DEFAULT_DOT_STYLE)).toBe(bare);
   });
 
-  it('returns the same doc reference when the value is unchanged (deep-equal input)', () => {
-    const doc = makeDoc({
-      lines: [makeLine({ id: 'L1', defaultDotStyle: DOT_SHAPE_PRESETS['open-white'] })],
-    });
-    expect(T.setLineDefaultDotStyle(doc, 'L1', cloneStyle(DOT_SHAPE_PRESETS['open-white']))).toBe(
-      doc,
-    );
-  });
-
-  it('returns the same doc reference when clearing an already-cleared default', () => {
-    const doc = makeDoc({ lines: [makeLine({ id: 'L1' })] });
-    expect(T.setLineDefaultDotStyle(doc, 'L1', DEFAULT_DOT_STYLE)).toBe(doc);
-  });
-
-  it('clears per-stop overrides that match the NEW default', () => {
+  it('clears matching overrides on SINGLETON stops only; different styles left alone', () => {
     const doc = makeDoc({
       stations: [
-        makeStation({
-          id: 'a',
-          stops: [makeStop('L1', { dotStyle: DOT_SHAPE_PRESETS['open-white'] })],
-        }),
+        makeStation({ id: 'a', stops: [makeStop('L1', { dotStyle: OW })] }), // singleton, matches
         makeStation({
           id: 'b',
           stops: [makeStop('L1', { dotStyle: DOT_SHAPE_PRESETS['filled-black-diamond'] })],
-        }),
-        makeStation({ id: 'c', stops: [makeStop('L1')] }),
+        }), // singleton, different
+        makeStation({ id: 'c', stops: [makeStop('L1')] }), // singleton, tracking
       ],
       lines: [makeLine({ id: 'L1' })],
     });
-    const next = T.setLineDefaultDotStyle(doc, 'L1', cloneStyle(DOT_SHAPE_PRESETS['open-white']));
-    // 'a' matched the new default — override cleared.
-    expect(next.stations.a.stops[0].dotStyle).toBeUndefined();
+    const next = T.setLineSingletonDotStyle(doc, 'L1', cloneStyle(OW));
     expect('dotStyle' in next.stations.a.stops[0]).toBe(false);
-    // 'b' had a different explicit style — left alone.
     expect(next.stations.b.stops[0].dotStyle).toEqual(DOT_SHAPE_PRESETS['filled-black-diamond']);
-    // 'c' had no override — still none.
     expect(next.stations.c.stops[0].dotStyle).toBeUndefined();
   });
 
-  it('clears per-stop default-style overrides when the default is reset to the default', () => {
-    const doc = makeDoc({
-      stations: [
-        makeStation({ id: 'a', stops: [makeStop('L1', { dotStyle: DEFAULT_DOT_STYLE })] }),
-      ],
-      lines: [makeLine({ id: 'L1', defaultDotStyle: DOT_SHAPE_PRESETS['open-white'] })],
-    });
-    const next = T.setLineDefaultDotStyle(doc, 'L1', DEFAULT_DOT_STYLE);
-    expect(next.lines.L1.defaultDotStyle).toBeUndefined();
-    expect(next.stations.a.stops[0].dotStyle).toBeUndefined();
-  });
-
-  it('leaves overrides on OTHER lines untouched when a default changes', () => {
+  it('does NOT clear a matching override on a SHARED stop (that is the multi case)', () => {
+    // 'a' hosts L1 + L2, so L1's stop there is a multiple stop; a singleton
+    // default edit must leave it pinned.
     const doc = makeDoc({
       stations: [
         makeStation({
           id: 'a',
-          stops: [
-            makeStop('L1', { dotStyle: DOT_SHAPE_PRESETS['open-white'] }),
-            makeStop('L2', { col: 1, dotStyle: DOT_SHAPE_PRESETS['open-white'] }),
-          ],
+          stops: [makeStop('L1', { dotStyle: OW }), makeStop('L2', { col: 1 })],
         }),
       ],
       lines: [makeLine({ id: 'L1' }), makeLine({ id: 'L2' })],
     });
-    const next = T.setLineDefaultDotStyle(doc, 'L1', DOT_SHAPE_PRESETS['open-white']);
-    expect(next.stations.a.stops[0].dotStyle).toBeUndefined();
-    expect(next.stations.a.stops[1].dotStyle).toEqual(DOT_SHAPE_PRESETS['open-white']);
+    const next = T.setLineSingletonDotStyle(doc, 'L1', cloneStyle(OW));
+    expect(next.stations.a.stops[0].dotStyle).toEqual(OW);
+  });
+
+  it('leaves overrides on OTHER lines untouched', () => {
+    const doc = makeDoc({
+      stations: [
+        makeStation({ id: 'a', stops: [makeStop('L1', { dotStyle: OW })] }),
+        makeStation({ id: 'b', stops: [makeStop('L2', { dotStyle: OW })] }),
+      ],
+      lines: [makeLine({ id: 'L1' }), makeLine({ id: 'L2' })],
+    });
+    const next = T.setLineSingletonDotStyle(doc, 'L1', OW);
+    expect('dotStyle' in next.stations.a.stops[0]).toBe(false);
+    expect(next.stations.b.stops[0].dotStyle).toEqual(OW);
+  });
+});
+
+describe('setLineMultiDotStyle', () => {
+  const OW = DOT_SHAPE_PRESETS['open-white'];
+
+  it('sets the multi field independently of the singleton field', () => {
+    const doc = makeDoc({ lines: [makeLine({ id: 'L1', singletonDotStyle: OW })] });
+    const next = T.setLineMultiDotStyle(doc, 'L1', DOT_SHAPE_PRESETS['filled-white']);
+    expect(next.lines.L1.multiDotStyle).toEqual(DOT_SHAPE_PRESETS['filled-white']);
+    // The singleton field the fixture set is preserved (independence).
+    expect(next.lines.L1.singletonDotStyle).toEqual(OW);
+  });
+
+  it('drops the field at the historical default', () => {
+    const doc = makeDoc({ lines: [makeLine({ id: 'L1', multiDotStyle: OW })] });
+    const next = T.setLineMultiDotStyle(doc, 'L1', cloneStyle(DEFAULT_DOT_STYLE));
+    expect('multiDotStyle' in next.lines.L1).toBe(false);
+  });
+
+  it('clears matching overrides on SHARED stops only, never on singleton stops', () => {
+    const doc = makeDoc({
+      stations: [
+        // shared: L1's stop is a multiple stop — matches, should clear.
+        makeStation({
+          id: 'a',
+          stops: [makeStop('L1', { dotStyle: OW }), makeStop('L2', { col: 1 })],
+        }),
+        // singleton L1 with the same override value — must NOT clear (wrong case).
+        makeStation({ id: 'b', stops: [makeStop('L1', { dotStyle: OW })] }),
+      ],
+      lines: [makeLine({ id: 'L1' }), makeLine({ id: 'L2' })],
+    });
+    const next = T.setLineMultiDotStyle(doc, 'L1', cloneStyle(OW));
+    expect('dotStyle' in next.stations.a.stops[0]).toBe(false);
+    expect(next.stations.b.stops[0].dotStyle).toEqual(OW);
   });
 });
 
@@ -2422,7 +2567,7 @@ describe('setDotSize', () => {
   it("clears an existing override when set to the line's EFFECTIVE default", () => {
     const doc = makeDoc({
       stations: [makeStation({ id: 'a', stops: [makeStop('L1', { dotSize: 12 })] })],
-      lines: [makeLine({ id: 'L1', defaultDotSize: 10 })],
+      lines: [makeLine({ id: 'L1', singletonDotSize: 10 })],
     });
     const next = T.setDotSize(doc, 'a', 'L1', 10);
     expect('dotSize' in next.stations.a.stops[0]).toBe(false);
@@ -2440,7 +2585,7 @@ describe('setDotSize', () => {
   it("stores the global default as an explicit override when the line's default differs", () => {
     const doc = makeDoc({
       stations: [makeStation({ id: 'a', stops: [makeStop('L1')] })],
-      lines: [makeLine({ id: 'L1', defaultDotSize: 10 })],
+      lines: [makeLine({ id: 'L1', singletonDotSize: 10 })],
     });
     const next = T.setDotSize(doc, 'a', 'L1', DOT_SIZE_DEFAULT);
     expect(next.stations.a.stops[0].dotSize).toBe(DOT_SIZE_DEFAULT);
@@ -2488,35 +2633,34 @@ describe('setDotSize', () => {
   });
 });
 
-describe('setLineDefaultDotSize', () => {
-  it('stores a non-default size', () => {
+describe('setLineSingletonDotSize', () => {
+  it('stores a non-default size, independently of the multi size', () => {
     const doc = makeDoc({ lines: [makeLine({ id: 'L1' })] });
-    const next = T.setLineDefaultDotSize(doc, 'L1', 12);
-    expect(next.lines.L1.defaultDotSize).toBe(12);
+    const next = T.setLineSingletonDotSize(doc, 'L1', 12);
+    expect(next.lines.L1.singletonDotSize).toBe(12);
+    expect('multiDotSize' in next.lines.L1).toBe(false);
   });
 
-  it('drops the field when set to DOT_SIZE_DEFAULT', () => {
-    const doc = makeDoc({ lines: [makeLine({ id: 'L1', defaultDotSize: 12 })] });
-    const next = T.setLineDefaultDotSize(doc, 'L1', DOT_SIZE_DEFAULT);
-    expect('defaultDotSize' in next.lines.L1).toBe(false);
-  });
-
-  it('a value that rounds onto the default is dropped like an exact one', () => {
-    const doc = makeDoc({ lines: [makeLine({ id: 'L1', defaultDotSize: 12 })] });
-    const next = T.setLineDefaultDotSize(doc, 'L1', DOT_SIZE_DEFAULT + 0.3);
-    expect('defaultDotSize' in next.lines.L1).toBe(false);
+  it('drops the field at DOT_SIZE_DEFAULT (exact or rounding onto it)', () => {
+    const doc = makeDoc({ lines: [makeLine({ id: 'L1', singletonDotSize: 12 })] });
+    expect(
+      'singletonDotSize' in T.setLineSingletonDotSize(doc, 'L1', DOT_SIZE_DEFAULT).lines.L1,
+    ).toBe(false);
+    expect(
+      'singletonDotSize' in T.setLineSingletonDotSize(doc, 'L1', DOT_SIZE_DEFAULT + 0.3).lines.L1,
+    ).toBe(false);
   });
 
   it('reference-equal no-ops: unchanged value, unknown id, non-finite input', () => {
-    const doc = makeDoc({ lines: [makeLine({ id: 'L1', defaultDotSize: 12 })] });
-    expect(T.setLineDefaultDotSize(doc, 'L1', 12)).toBe(doc);
-    expect(T.setLineDefaultDotSize(doc, 'ghost', 16)).toBe(doc);
-    expect(T.setLineDefaultDotSize(doc, 'L1', NaN)).toBe(doc);
+    const doc = makeDoc({ lines: [makeLine({ id: 'L1', singletonDotSize: 12 })] });
+    expect(T.setLineSingletonDotSize(doc, 'L1', 12)).toBe(doc);
+    expect(T.setLineSingletonDotSize(doc, 'ghost', 16)).toBe(doc);
+    expect(T.setLineSingletonDotSize(doc, 'L1', NaN)).toBe(doc);
     const bare = makeDoc({ lines: [makeLine({ id: 'L1' })] });
-    expect(T.setLineDefaultDotSize(bare, 'L1', DOT_SIZE_DEFAULT)).toBe(bare);
+    expect(T.setLineSingletonDotSize(bare, 'L1', DOT_SIZE_DEFAULT)).toBe(bare);
   });
 
-  it('clears per-stop overrides equal to the NEW default; different overrides untouched', () => {
+  it('clears matching overrides on SINGLETON stops only; different sizes untouched', () => {
     const doc = makeDoc({
       stations: [
         makeStation({ id: 'a', stops: [makeStop('L1', { dotSize: 10 })] }),
@@ -2525,41 +2669,31 @@ describe('setLineDefaultDotSize', () => {
       ],
       lines: [makeLine({ id: 'L1' })],
     });
-    const next = T.setLineDefaultDotSize(doc, 'L1', 10);
-    // 'a' matched the new default — override cleared.
+    const next = T.setLineSingletonDotSize(doc, 'L1', 10);
     expect('dotSize' in next.stations.a.stops[0]).toBe(false);
-    // 'b' had a different explicit size — left alone.
     expect(next.stations.b.stops[0].dotSize).toBe(16);
-    // 'c' had no override — still none.
     expect(next.stations.c.stops[0].dotSize).toBeUndefined();
   });
 
-  it('leaves overrides on OTHER lines untouched when a default changes', () => {
+  it('does NOT clear a matching override on a shared stop, nor on other lines', () => {
     const doc = makeDoc({
       stations: [
+        // shared: L1's stop is a multiple stop — the singleton edit skips it.
         makeStation({
           id: 'a',
-          stops: [makeStop('L1', { dotSize: 10 }), makeStop('L2', { col: 1, dotSize: 10 })],
+          stops: [makeStop('L1', { dotSize: 10 }), makeStop('L2', { col: 1 })],
         }),
+        // other line, singleton — untouched.
+        makeStation({ id: 'b', stops: [makeStop('L2', { dotSize: 10 })] }),
       ],
       lines: [makeLine({ id: 'L1' }), makeLine({ id: 'L2' })],
     });
-    const next = T.setLineDefaultDotSize(doc, 'L1', 10);
-    expect('dotSize' in next.stations.a.stops[0]).toBe(false);
-    expect(next.stations.a.stops[1].dotSize).toBe(10);
+    const next = T.setLineSingletonDotSize(doc, 'L1', 10);
+    expect(next.stations.a.stops[0].dotSize).toBe(10);
+    expect(next.stations.b.stops[0].dotSize).toBe(10);
   });
 
-  it('clears per-stop default-size overrides when the default is reset to the default', () => {
-    const doc = makeDoc({
-      stations: [makeStation({ id: 'a', stops: [makeStop('L1', { dotSize: DOT_SIZE_DEFAULT })] })],
-      lines: [makeLine({ id: 'L1', defaultDotSize: 12 })],
-    });
-    const next = T.setLineDefaultDotSize(doc, 'L1', DOT_SIZE_DEFAULT);
-    expect('defaultDotSize' in next.lines.L1).toBe(false);
-    expect('dotSize' in next.stations.a.stops[0]).toBe(false);
-  });
-
-  it('acceptance: default 7, stop at 8 — 7→9 keeps 8; 7→8 absorbs it; 8→9 moves the stop', () => {
+  it('acceptance: singleton default 7, stop at 8 — 7→9 keeps 8; 7→8 absorbs it; 8→9 moves the stop', () => {
     let doc = makeDoc({
       stations: [
         makeStation({ id: 's', stops: [makeStop('L1')] }),
@@ -2567,24 +2701,49 @@ describe('setLineDefaultDotSize', () => {
       ],
       lines: [makeLine({ id: 'L1' })],
     });
-    doc = T.setLineDefaultDotSize(doc, 'L1', 7);
+    doc = T.setLineSingletonDotSize(doc, 'L1', 7);
     doc = T.setDotSize(doc, 's', 'L1', 8);
     expect(doc.stations.s.stops[0].dotSize).toBe(8);
 
-    // 7 → 9: S's explicit 8 is untouched; tracking T follows the default.
-    doc = T.setLineDefaultDotSize(doc, 'L1', 9);
+    doc = T.setLineSingletonDotSize(doc, 'L1', 9);
     expect(doc.stations.s.stops[0].dotSize).toBe(8);
     expect(doc.stations.t.stops[0].dotSize).toBeUndefined();
-    expect(doc.lines.L1.defaultDotSize).toBe(9);
+    expect(doc.lines.L1.singletonDotSize).toBe(9);
 
-    // 9 → 8: S's override equals the new default — absorbed.
-    doc = T.setLineDefaultDotSize(doc, 'L1', 8);
+    doc = T.setLineSingletonDotSize(doc, 'L1', 8);
     expect('dotSize' in doc.stations.s.stops[0]).toBe(false);
 
-    // 8 → 9: S now tracks the default along with T.
-    doc = T.setLineDefaultDotSize(doc, 'L1', 9);
+    doc = T.setLineSingletonDotSize(doc, 'L1', 9);
     expect(doc.stations.s.stops[0].dotSize).toBeUndefined();
-    expect(doc.lines.L1.defaultDotSize).toBe(9);
+    expect(doc.lines.L1.singletonDotSize).toBe(9);
+  });
+});
+
+describe('setLineMultiDotSize', () => {
+  it('stores/drops the multi size independently of the singleton size', () => {
+    const doc = makeDoc({ lines: [makeLine({ id: 'L1', singletonDotSize: 6 })] });
+    const set = T.setLineMultiDotSize(doc, 'L1', 12);
+    expect(set.lines.L1.multiDotSize).toBe(12);
+    expect(set.lines.L1.singletonDotSize).toBe(6);
+    expect('multiDotSize' in T.setLineMultiDotSize(set, 'L1', DOT_SIZE_DEFAULT).lines.L1).toBe(
+      false,
+    );
+  });
+
+  it('clears matching overrides on SHARED stops only, never on singleton stops', () => {
+    const doc = makeDoc({
+      stations: [
+        makeStation({
+          id: 'a',
+          stops: [makeStop('L1', { dotSize: 10 }), makeStop('L2', { col: 1 })],
+        }),
+        makeStation({ id: 'b', stops: [makeStop('L1', { dotSize: 10 })] }),
+      ],
+      lines: [makeLine({ id: 'L1' }), makeLine({ id: 'L2' })],
+    });
+    const next = T.setLineMultiDotSize(doc, 'L1', 10);
+    expect('dotSize' in next.stations.a.stops[0]).toBe(false);
+    expect(next.stations.b.stops[0].dotSize).toBe(10);
   });
 });
 

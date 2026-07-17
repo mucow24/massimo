@@ -16,10 +16,11 @@ export const DOT_SIZE_MAX = 20;
  * clamp to ≥ DOT_SIZE_MIN, and collapse to `undefined` when it equals `dropAt`
  * — the effective default the value would otherwise redundantly duplicate.
  * `dropAt` is DOT_SIZE_DEFAULT for a line default, or the line's effective
- * default for a per-stop override. The one home for that arithmetic, shared by
- * the `setDotSize`/`setLineDefaultDotSize` transforms and the
- * `sanitizeStopDotSizes`/`sanitizeLineDotSize` file cleaners so the clamp rule
- * can never drift. Callers own the finiteness guard (they diverge on
+ * default (for the stop's singleton/shared case) for a per-stop override. The
+ * one home for that arithmetic, shared by the
+ * `setDotSize`/`setLineSingletonDotSize`/`setLineMultiDotSize` transforms and
+ * the `sanitizeStopDotSizes`/`sanitizeLineDotSize` file cleaners so the clamp
+ * rule can never drift. Callers own the finiteness guard (they diverge on
  * non-finite input).
  */
 export const canonicalDotSize = (
@@ -30,33 +31,49 @@ export const canonicalDotSize = (
   return norm === dropAt ? undefined : norm;
 };
 
+// The line-default size for a stop, chosen by whether its station is a
+// singleton (this line's only stop there) or shared with another line. Missing
+// field ⇒ undefined (fully tracking) — the caller adds the DOT_SIZE_DEFAULT
+// fallback where appropriate.
+const lineDotSizeFor = (
+  line: { singletonDotSize?: number; multiDotSize?: number } | null | undefined,
+  isSingleton: boolean,
+): number | undefined => (isSingleton ? line?.singletonDotSize : line?.multiDotSize);
+
 /**
- * The OVERRIDE-ONLY size: stop override, else line default, else undefined.
- * `undefined` means "fully tracking defaults" — rendering then keeps the
- * per-style fixed radii (SERVICE_CODE_DOT_RADIUS for code discs,
- * STOP_DOT_RADIUS otherwise), which is why this must NOT collapse to
- * DOT_SIZE_DEFAULT. Structural parameters so narrowed line/stop shapes pass
- * through (same convention as lineWidthOf).
+ * The OVERRIDE-ONLY size: stop override, else the line default for the stop's
+ * singleton/shared case, else undefined. `undefined` means "fully tracking
+ * defaults" — rendering then keeps the per-style fixed radii
+ * (SERVICE_CODE_DOT_RADIUS for code discs, STOP_DOT_RADIUS otherwise), which is
+ * why this must NOT collapse to DOT_SIZE_DEFAULT. `isSingleton` is
+ * `station.stops.length === 1` (see stationIsSingleton). Structural parameters
+ * so narrowed line/stop shapes pass through (same convention as lineWidthOf).
  */
 export const dotSizeOverride = (
-  line: { defaultDotSize?: number } | null | undefined,
+  line: { singletonDotSize?: number; multiDotSize?: number } | null | undefined,
   stop: { dotSize?: number } | null | undefined,
-): number | undefined => stop?.dotSize ?? line?.defaultDotSize;
+  isSingleton: boolean,
+): number | undefined => stop?.dotSize ?? lineDotSizeFor(line, isSingleton);
 
 /**
  * Fully-resolved size for UI display (the station inspector textbox). NOT
  * for rendering — see dotSizeOverride.
  */
 export const resolveDotSize = (
-  line: { defaultDotSize?: number } | null | undefined,
+  line: { singletonDotSize?: number; multiDotSize?: number } | null | undefined,
   stop: { dotSize?: number } | null | undefined,
-): number => dotSizeOverride(line, stop) ?? DOT_SIZE_DEFAULT;
+  isSingleton: boolean,
+): number => dotSizeOverride(line, stop, isSingleton) ?? DOT_SIZE_DEFAULT;
 
 /**
- * Effective line default for the LineInspector slider. Missing field ⇒
- * DOT_SIZE_DEFAULT, so saves from before the field existed need no
- * migration (mirrors lineWidthOf).
+ * Effective singleton / shared line-default sizes for the LineInspector
+ * sliders. Missing field ⇒ DOT_SIZE_DEFAULT, so saves from before the field
+ * existed need no migration (mirrors lineWidthOf).
  */
-export const lineDefaultDotSizeOf = (
-  line: { defaultDotSize?: number } | null | undefined,
-): number => line?.defaultDotSize ?? DOT_SIZE_DEFAULT;
+export const lineSingletonDotSizeOf = (
+  line: { singletonDotSize?: number; multiDotSize?: number } | null | undefined,
+): number => line?.singletonDotSize ?? DOT_SIZE_DEFAULT;
+
+export const lineMultiDotSizeOf = (
+  line: { singletonDotSize?: number; multiDotSize?: number } | null | undefined,
+): number => line?.multiDotSize ?? DOT_SIZE_DEFAULT;

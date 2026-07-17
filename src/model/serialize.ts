@@ -11,6 +11,7 @@ import {
   bumpWeightByIndex,
   canonicalStationLabelStyle,
   isLabelWeight,
+  stationIsSingleton,
   withTransferOverride,
 } from './transforms';
 import {
@@ -302,6 +303,12 @@ export function parse(json: string, custom: readonly Palette[] = []): ParseResul
     merged.stations = dots.stations;
     merged.lines = dots.lines;
   }
+  // Split the retired single `defaultDotStyle` / `defaultDotSize` into the
+  // singleton/multi pair (lines + line style defs) — AFTER convertLegacyDotShapes
+  // has materialized `defaultDotStyle` from any legacy `defaultDotShape`, and
+  // BEFORE the singleton-aware `sanitizeStopDotSizes` (which reads the split
+  // line sizes) and the style validation below (which reads the split props).
+  merged = bakeLineDotDefaults(merged);
   // Sanitize per-stop dot sizes AFTER the line pass: the canonical stored
   // form depends on the line's effective default, so the comparison must use
   // sanitized line values.
@@ -416,6 +423,104 @@ export function bakeDocCurveRadius<
         // field, so it isn't a valid LineStyleProps yet).
         const props = def.props as unknown as Record<string, unknown>;
         styles[id] = { ...def, props: { ...props, curveRadius: defR } } as StyleDef;
+        stylesChanged = true;
+      } else {
+        styles[id] = def;
+      }
+    }
+    if (stylesChanged) {
+      out = out === doc ? ({ ...doc, styles } as T) : { ...out, styles };
+      changed = true;
+    }
+  }
+
+  return changed ? out : doc;
+}
+
+/**
+ * Bake the retired single `defaultDotStyle` / `defaultDotSize` into the split
+ * `singletonDotStyle` / `multiDotStyle` (+ sizes) — on both the lines and the
+ * line style-def props — so a save that predates the split renders identically:
+ * every stop used one default, now both the singleton and shared cases carry
+ * it. Idempotent and keyed off the retired keys' presence: reference-stable when
+ * neither appears (preserving the already-canonical passthrough storeMigrate
+ * pins). Called by parse() — after convertLegacyDotShapes materializes
+ * `defaultDotStyle` from any legacy `defaultDotShape`, and before the
+ * singleton-aware `sanitizeStopDotSizes` — and by migrateDoc (v<18).
+ */
+export function bakeLineDotDefaults<
+  T extends { lines?: Record<string, Line>; styles?: Record<string, StyleDef> },
+>(doc: T): T {
+  let out = doc;
+  let changed = false;
+
+  if (out.lines) {
+    let linesChanged = false;
+    const lines: Record<string, Line> = {};
+    for (const id of Object.keys(out.lines)) {
+      const ln = out.lines[id] as Line & { defaultDotStyle?: DotStyle; defaultDotSize?: number };
+      const hasLegacyStyle = 'defaultDotStyle' in ln;
+      const hasLegacySize = 'defaultDotSize' in ln;
+      if (!hasLegacyStyle && !hasLegacySize) {
+        lines[id] = ln;
+        continue;
+      }
+      const { defaultDotStyle: legacyStyle, defaultDotSize: legacySize, ...rest } = ln;
+      let next = rest as Line;
+      if (hasLegacyStyle) {
+        // Per-line stored form: drop at the historical default (never stored).
+        // An explicit split field already present wins (never clobbered).
+        const stored =
+          legacyStyle !== undefined && !dotStylesEqual(legacyStyle, DEFAULT_DOT_STYLE)
+            ? legacyStyle
+            : undefined;
+        if (stored !== undefined) {
+          if (!('singletonDotStyle' in next)) next = { ...next, singletonDotStyle: stored };
+          if (!('multiDotStyle' in next)) next = { ...next, multiDotStyle: stored };
+        }
+      }
+      if (hasLegacySize) {
+        // canonicalDotSize does not guard finiteness (its callers do), so a
+        // non-finite legacy value must be dropped here, not clamped to Infinity.
+        const stored =
+          typeof legacySize === 'number' && Number.isFinite(legacySize)
+            ? canonicalDotSize(legacySize)
+            : undefined;
+        if (stored !== undefined) {
+          if (!('singletonDotSize' in next)) next = { ...next, singletonDotSize: stored };
+          if (!('multiDotSize' in next)) next = { ...next, multiDotSize: stored };
+        }
+      }
+      lines[id] = next;
+      linesChanged = true;
+    }
+    if (linesChanged) {
+      out = { ...out, lines } as T;
+      changed = true;
+    }
+  }
+
+  if (out.styles) {
+    let stylesChanged = false;
+    const styles: Record<string, StyleDef> = {};
+    for (const id of Object.keys(out.styles)) {
+      const def = out.styles[id];
+      const props = def?.props as unknown as Record<string, unknown> | undefined;
+      if (
+        def &&
+        def.kind === 'line' &&
+        props &&
+        ('defaultDotStyle' in props || 'defaultDotSize' in props)
+      ) {
+        const { defaultDotStyle: ls, defaultDotSize: lz, ...restProps } = props;
+        const filled: Record<string, unknown> = { ...restProps };
+        // Style-def props are CONCRETE (always store the resolved value, even a
+        // default), so no drop-at-default here — mirror bakeDocCurveRadius.
+        if (!('singletonDotStyle' in filled) && ls !== undefined) filled.singletonDotStyle = ls;
+        if (!('multiDotStyle' in filled) && ls !== undefined) filled.multiDotStyle = ls;
+        if (!('singletonDotSize' in filled) && lz !== undefined) filled.singletonDotSize = lz;
+        if (!('multiDotSize' in filled) && lz !== undefined) filled.multiDotSize = lz;
+        styles[id] = { ...def, props: filled } as unknown as StyleDef;
         stylesChanged = true;
       } else {
         styles[id] = def;
@@ -656,32 +761,50 @@ function convertStopDotFields(stop: StopCell): StopCell {
   return next;
 }
 
+// Validate/canonicalize one line-level dot-style field: drop when invalid or at
+// the historical default (never stored — mirrors the setters), else rebuild to
+// canonical form. `defaultDotStyle` is the retired single field (split into the
+// two below by bakeLineDotDefaults right after); `singletonDotStyle` /
+// `multiDotStyle` are the live ones. Accessed loosely so the retired key
+// (absent from the Line type) still resolves.
+function sanitizeLineDotStyleField(
+  line: Line,
+  field: 'defaultDotStyle' | 'singletonDotStyle' | 'multiDotStyle',
+): Line {
+  const raw = (line as unknown as Record<string, unknown>)[field];
+  if (raw === undefined) return line;
+  const cleaned = sanitizeDotStyle(raw);
+  if (cleaned === undefined || dotStylesEqual(cleaned, DEFAULT_DOT_STYLE)) {
+    const { [field]: _gone, ...rest } = line as unknown as Record<string, unknown>;
+    return rest as unknown as Line;
+  }
+  if (!isCanonicalDotStyle(raw, cleaned)) {
+    return { ...line, [field]: cleaned } as Line;
+  }
+  return line;
+}
+
 function convertLineDotFields(line: Line): Line {
-  let next = line;
+  let next = line as Line & { defaultDotShape?: unknown; defaultDotStyle?: DotStyle };
   if ('defaultDotShape' in next) {
-    const { defaultDotShape, ...rest } = next as Line & { defaultDotShape?: unknown };
+    const { defaultDotShape, ...rest } = next;
     if (rest.defaultDotStyle === undefined) {
       const preset =
         typeof defaultDotShape === 'string'
           ? DOT_SHAPE_PRESETS[defaultDotShape as DotShape]
           : undefined;
-      next = preset ? { ...rest, defaultDotStyle: preset } : rest;
+      next = (preset ? { ...rest, defaultDotStyle: preset } : rest) as typeof next;
     } else {
-      next = rest;
+      next = rest as typeof next;
     }
   }
-  if (next.defaultDotStyle !== undefined) {
-    const cleaned = sanitizeDotStyle(next.defaultDotStyle);
-    // Drop when invalid, or when it lands on the default (never stored —
-    // mirrors `setLineDefaultDotStyle`).
-    if (cleaned === undefined || dotStylesEqual(cleaned, DEFAULT_DOT_STYLE)) {
-      const { defaultDotStyle: _gone, ...rest } = next;
-      next = rest;
-    } else if (!isCanonicalDotStyle(next.defaultDotStyle, cleaned)) {
-      next = { ...next, defaultDotStyle: cleaned };
-    }
-  }
-  return next;
+  // The retired single `defaultDotStyle` is validated here and split into the
+  // singleton/multi pair by bakeLineDotDefaults (runs immediately after); v18+
+  // files carry the split fields directly, validated the same way.
+  let out: Line = sanitizeLineDotStyleField(next, 'defaultDotStyle');
+  out = sanitizeLineDotStyleField(out, 'singletonDotStyle');
+  out = sanitizeLineDotStyleField(out, 'multiDotStyle');
+  return out;
 }
 
 // Convert legacy `dotShape`/`defaultDotShape` preset ids (pre-v7 saves) to
@@ -776,23 +899,30 @@ function sanitizeLineCurve(line: Line): Line {
   return rest;
 }
 
-// Normalize a hand-edited / legacy `defaultDotSize` to the canonical stored
-// form the transforms maintain: integer ≥ DOT_SIZE_MIN, and absent when it
-// equals the default (the app never stores the default). Non-numbers and
-// non-finite values are dropped. File-import hygiene only — localStorage
-// rehydration never sees uncanonical sizes because every write goes through
-// `setLineDefaultDotSize`'s clamp.
-function sanitizeLineDotSize(line: Line): Line {
-  if (!('defaultDotSize' in line)) return line;
-  const raw = line.defaultDotSize as unknown;
+// Normalize one hand-edited / legacy split default-dot-size field to the
+// canonical stored form the transforms maintain: integer ≥ DOT_SIZE_MIN, and
+// absent when it equals the default (the app never stores the default).
+// Non-numbers and non-finite values are dropped. File-import hygiene only —
+// localStorage rehydration never sees uncanonical sizes because every write
+// goes through the setters' clamp.
+function sanitizeLineDotSizeField(line: Line, field: 'singletonDotSize' | 'multiDotSize'): Line {
+  if (!(field in line)) return line;
+  const raw = line[field] as unknown;
   if (typeof raw === 'number' && Number.isFinite(raw)) {
     const stored = canonicalDotSize(raw);
     if (stored !== undefined) {
-      return stored === line.defaultDotSize ? line : { ...line, defaultDotSize: stored };
+      return stored === line[field] ? line : { ...line, [field]: stored };
     }
   }
-  const { defaultDotSize: _gone, ...rest } = line;
-  return rest;
+  const { [field]: _gone, ...rest } = line;
+  return rest as Line;
+}
+
+function sanitizeLineDotSize(line: Line): Line {
+  return sanitizeLineDotSizeField(
+    sanitizeLineDotSizeField(line, 'singletonDotSize'),
+    'multiDotSize',
+  );
 }
 
 // Normalize hand-edited / legacy per-stop `dotSize` values to the canonical
@@ -813,7 +943,12 @@ export function sanitizeStopDotSizes(
       if (!('dotSize' in s)) return s;
       const raw = s.dotSize as unknown;
       if (typeof raw === 'number' && Number.isFinite(raw)) {
-        const effDefault = lines[s.lineId]?.defaultDotSize ?? DOT_SIZE_DEFAULT;
+        // Effective default depends on whether this stop's station is a
+        // singleton or shared — same split the renderer resolves.
+        const line = lines[s.lineId];
+        const effDefault =
+          (stationIsSingleton(st) ? line?.singletonDotSize : line?.multiDotSize) ??
+          DOT_SIZE_DEFAULT;
         const stored = canonicalDotSize(raw, effDefault);
         if (stored !== undefined) {
           if (stored === s.dotSize) return s;
@@ -1449,16 +1584,21 @@ function sanitizeStyleProps(kind: StyleKind, raw: unknown): StyleDef['props'] | 
   const o = raw as Record<string, unknown>;
   switch (kind) {
     case 'line': {
-      const dot = sanitizeDotStyle(o.defaultDotStyle);
-      const dotSize = finiteNum(o.defaultDotSize);
+      // The singleton/multi dot fields are required. Defs from builds that
+      // predate the split get them filled from the retired single
+      // `defaultDotStyle` / `defaultDotSize` by bakeLineDotDefaults before this
+      // runs (mirrors the curveRadius bake), so a missing value here is
+      // hand-edited garbage.
+      const singletonDot = sanitizeDotStyle(o.singletonDotStyle);
+      const multiDot = sanitizeDotStyle(o.multiDotStyle);
+      const singletonDotSize = finiteNum(o.singletonDotSize);
+      const multiDotSize = finiteNum(o.multiDotSize);
       const width = finiteNum(o.width);
-      // Required like `width` — defs from builds that predate the covered
-      // field get it filled by bakeDocCurveRadius before this runs, so a
-      // missing value here is hand-edited garbage.
       const curveRadius = finiteNum(o.curveRadius);
       const strokeWidth = finiteNum(o.strokeWidth);
       const strokeColor = asString(o.strokeColor);
-      if (!dot || dotSize === undefined || width === undefined) return undefined;
+      if (!singletonDot || !multiDot || width === undefined) return undefined;
+      if (singletonDotSize === undefined || multiDotSize === undefined) return undefined;
       if (curveRadius === undefined) return undefined;
       if (strokeWidth === undefined || strokeColor === undefined) return undefined;
       // seamColor / seamWidth / dashLength / dashWidth are OPTIONAL — absent ⇒
@@ -1469,8 +1609,10 @@ function sanitizeStyleProps(kind: StyleKind, raw: unknown): StyleDef['props'] | 
       const dashLength = finiteNum(o.dashLength);
       const dashWidth = finiteNum(o.dashWidth);
       return canonicalStyleProps('line', {
-        defaultDotStyle: dot,
-        defaultDotSize: dotSize,
+        singletonDotStyle: singletonDot,
+        multiDotStyle: multiDot,
+        singletonDotSize,
+        multiDotSize,
         width,
         curveRadius,
         strokeWidth,

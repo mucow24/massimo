@@ -18,8 +18,11 @@ import { seedAndOpen, stationCenter, fourInLine } from './fixtures';
 // twice — `expectDotR` asserts on every match, which doubles as the check
 // that the highlight copy is size-threaded like the base render.
 // Assertions use the `r` attribute (not toBeVisible) so size 0 stays
-// assertable. The two size controls' accessible names nest ("Dot size" ⊂
-// "Stop dot size"), so role lookups use exact: true.
+// assertable. The line default is split into "Singleton dot size" /
+// "Interchange dot size"; the per-stop control is "Stop dot size". These
+// share the "dot size" substring, so role lookups use exact: true. The
+// fourInLine fixture's stations are single-line (singletons), so the tests
+// drive the SINGLETON line default (the interchange split is unit-tested).
 
 const DOT = (page: Page, stationId: string, lineId: string) =>
   page.locator(`[data-stop-station="${stationId}"][data-stop-line="${lineId}"]`);
@@ -76,9 +79,11 @@ async function replaceNumber(page: Page, name: string, value: string): Promise<v
   await spin.blur();
 }
 
-// Set the line's default dot size through the LineInspector spinbutton.
+// Set the line's SINGLETON default dot size through the LineInspector
+// spinbutton (fourInLine's stations are single-line, so this is the default
+// their stops track).
 async function setLineDotSizeTo(page: Page, value: string): Promise<void> {
-  await replaceNumber(page, 'Dot size', value);
+  await replaceNumber(page, 'Singleton dot size', value);
 }
 
 // Set the selected stop's dot size through the StationInspector textbox.
@@ -159,9 +164,9 @@ test.describe('Stop dot size', () => {
   }) => {
     await seedAndOpen(page, fourInLine);
 
-    // Make the service-code disc the line's default stop dot.
+    // Make the service-code disc the line's SINGLETON default stop dot.
     await selectLine(page, 'L1');
-    await page.getByRole('button', { name: 'Stop shape' }).click();
+    await page.getByRole('button', { name: 'Singleton stop shape' }).click();
     await page.getByRole('menuitem', { name: 'Filled black with service code' }).click();
 
     // No explicit size anywhere: the code disc keeps its legibility radius.

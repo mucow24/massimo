@@ -35,7 +35,16 @@ import type {
 type AnyDoc = {
   lines?: Record<
     string,
-    { name?: string; service?: string; defaultDotShape?: string; defaultDotStyle?: DotStyle }
+    {
+      name?: string;
+      service?: string;
+      defaultDotShape?: string;
+      defaultDotStyle?: DotStyle;
+      singletonDotStyle?: DotStyle;
+      multiDotStyle?: DotStyle;
+      singletonDotSize?: number;
+      multiDotSize?: number;
+    }
   >;
   stations?: Record<
     string,
@@ -236,7 +245,7 @@ describe('migrateDoc', () => {
       expect('dotShape' in stop).toBe(false);
     });
 
-    it("converts a line's defaultDotShape and strips the key", () => {
+    it("converts a line's defaultDotShape and bakes it into both split fields", () => {
       const out = run(
         {
           lines: {
@@ -245,8 +254,11 @@ describe('migrateDoc', () => {
         },
         6,
       );
-      expect(out.lines!.L1.defaultDotStyle).toEqual(DOT_SHAPE_PRESETS['open-white']);
+      // v<7 converts the preset id → defaultDotStyle; v<18 then splits it.
+      expect(out.lines!.L1.singletonDotStyle).toEqual(DOT_SHAPE_PRESETS['open-white']);
+      expect(out.lines!.L1.multiDotStyle).toEqual(DOT_SHAPE_PRESETS['open-white']);
       expect('defaultDotShape' in out.lines!.L1).toBe(false);
+      expect('defaultDotStyle' in out.lines!.L1).toBe(false);
     });
 
     it("converts a legacy 'none' to the invisible style", () => {
@@ -265,7 +277,8 @@ describe('migrateDoc', () => {
       };
       const out = run(input, 6);
       expect(out.stations!.S.stops).toBe(input.stations.S.stops);
-      expect(out.lines!.L1.defaultDotStyle).toBeUndefined();
+      expect('singletonDotStyle' in out.lines!.L1).toBe(false);
+      expect('multiDotStyle' in out.lines!.L1).toBe(false);
       expect('defaultDotShape' in out.lines!.L1).toBe(false);
     });
 
@@ -274,6 +287,52 @@ describe('migrateDoc', () => {
       const stop = out.stations!.S.stops[0];
       expect(stop.dotShape).toBe('filled-white');
       expect(stop.dotStyle).toBeUndefined();
+    });
+  });
+
+  describe('v17 → v18: split the single default dot style/size', () => {
+    it('bakes a modern-era line defaultDotStyle/defaultDotSize into both split fields', () => {
+      const out = run(
+        {
+          lines: {
+            L1: {
+              service: 'A',
+              name: 'A line',
+              stations: [],
+              edges: [],
+              defaultDotStyle: DOT_SHAPE_PRESETS['open-white'],
+              defaultDotSize: 12,
+            },
+          },
+        },
+        17,
+      );
+      expect(out.lines!.L1.singletonDotStyle).toEqual(DOT_SHAPE_PRESETS['open-white']);
+      expect(out.lines!.L1.multiDotStyle).toEqual(DOT_SHAPE_PRESETS['open-white']);
+      expect(out.lines!.L1.singletonDotSize).toBe(12);
+      expect(out.lines!.L1.multiDotSize).toBe(12);
+      expect('defaultDotStyle' in out.lines!.L1).toBe(false);
+      expect('defaultDotSize' in out.lines!.L1).toBe(false);
+    });
+
+    it('does not touch the split fields at version >= 18', () => {
+      const out = run(
+        {
+          lines: {
+            L1: {
+              service: 'A',
+              name: 'A line',
+              stations: [],
+              edges: [],
+              defaultDotStyle: DOT_SHAPE_PRESETS['open-white'],
+            },
+          },
+        },
+        18,
+      );
+      // The gate is closed: the legacy field rides along un-split (a v18 doc
+      // never has it, so this only proves the gate, not a real scenario).
+      expect('singletonDotStyle' in out.lines!.L1).toBe(false);
     });
   });
 
@@ -699,9 +758,9 @@ describe('migrateDoc', () => {
     });
 
     it('returns the input as-is when already at the current version', () => {
-      // `width`, `defaultDotSize`, and per-stop `dotSize` ride along
-      // untouched — each field is optional with a runtime default, so none
-      // needs a migration (and adding one would break this
+      // `width`, the split `singletonDotSize`/`multiDotSize`, and per-stop
+      // `dotSize` ride along untouched — each is optional with a runtime
+      // default, so none needs a migration (and adding one would break this
       // reference-equality pin).
       const input = {
         stations: {
@@ -717,11 +776,12 @@ describe('migrateDoc', () => {
             stations: ['S'],
             edges: [],
             width: 21,
-            defaultDotSize: 12,
+            singletonDotSize: 12,
+            multiDotSize: 18,
           },
         },
       };
-      const out = run(input, 14);
+      const out = run(input, 18);
       // No migration applies at the current version → same reference passes
       // straight through. (No `styles` key either, so the style-invariant
       // pass leaves it alone.)

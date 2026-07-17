@@ -208,8 +208,10 @@ export function makeTransfer(overrides: Partial<Transfer> & { id: string }): Tra
 // fields they exercise. Kept in one place so new props get a default here once.
 const STYLE_PROPS_DEFAULTS: StylePropsByKind = {
   line: {
-    defaultDotStyle: DEFAULT_DOT_STYLE,
-    defaultDotSize: DOT_SIZE_DEFAULT,
+    singletonDotStyle: DEFAULT_DOT_STYLE,
+    multiDotStyle: DEFAULT_DOT_STYLE,
+    singletonDotSize: DOT_SIZE_DEFAULT,
+    multiDotSize: DOT_SIZE_DEFAULT,
     width: LINE_WIDTH_DEFAULT,
     curveRadius: LINE_CURVE_RADIUS_DEFAULT,
     strokeWidth: 0,

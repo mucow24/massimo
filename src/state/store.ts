@@ -46,6 +46,7 @@ import {
   bakeLegacyBackgroundOrder,
   bakeLegacyLabelSettings,
   bakeLegacyTransferSettings,
+  bakeLineDotDefaults,
   convertLegacyDotShapes,
   ensureStyleInvariants,
   foldPolygonFillOpacity,
@@ -151,7 +152,7 @@ export function docSnapshotsEqual(a: DocSnapshot, b: DocSnapshot): boolean {
 }
 
 /**
- * Persisted-document version migration (v0 → v16). Exported and pure so it can
+ * Persisted-document version migration (v0 → v18). Exported and pure so it can
  * be unit-tested in isolation; the persist config below just delegates here.
  * Never mutates `persisted` — returns a possibly-new doc snapshot.
  *
@@ -226,6 +227,16 @@ export function docSnapshotsEqual(a: DocSnapshot, b: DocSnapshot): boolean {
  *   `bakeDocCurveRadius`. Idempotent (keyed off field presence), so `parse()`
  *   runs it unconditionally. Ordered BEFORE the v<10 style hygiene — see the
  *   gate's comment.
+ * - v16 → v17: merge the retired `polygonOrder` + `svgImageOrder` into the
+ *   single `backgroundOrder` (polygons first — the stacking the two arrays
+ *   painted), via `bakeLegacyBackgroundOrder`. Idempotent, keyed off field
+ *   presence.
+ * - v17 → v18: split the single `defaultDotStyle`/`defaultDotSize` into the
+ *   `singletonDotStyle`/`multiDotStyle` (+ sizes) pair — on lines AND line
+ *   style-def props — via the shared `bakeLineDotDefaults`. Ordered AFTER the
+ *   v<7 `convertLegacyDotShapes` (which materializes `defaultDotStyle` from any
+ *   legacy `defaultDotShape`) and BEFORE the v<10 style hygiene, same as
+ *   `bakeDocCurveRadius`. Idempotent, keyed off the retired keys' presence.
  */
 export function migrateDoc(persisted: unknown, version: number): DocState {
   const s = persisted as {
@@ -300,6 +311,16 @@ export function migrateDoc(persisted: unknown, version: number): DocState {
     // `curveRadius` would heal to the constant default instead of the doc's
     // legacy value.
     out = bakeDocCurveRadius(out);
+  }
+  if (v < 18) {
+    // Split the retired single `defaultDotStyle` / `defaultDotSize` into the
+    // singleton/multi pair (per-line + line style-def props). Ordered AFTER the
+    // v<7 convertLegacyDotShapes (which materializes `defaultDotStyle` from any
+    // legacy `defaultDotShape`) and BEFORE the v<10 style hygiene below, same
+    // as bakeDocCurveRadius: migrateV9Styles rebuilds defs through the canonical
+    // grids, which now read the split props. Idempotent (keyed off the retired
+    // keys' presence).
+    out = bakeLineDotDefaults(out);
   }
   if (v < 10) {
     // Style-def hygiene FIRST — strip round-1 defs' since-dropped keys, and
@@ -474,8 +495,10 @@ interface DocState extends MapDoc {
     toStationId: StationId,
     style: LineStyle,
   ) => void;
-  setLineDefaultDotStyle: (lineId: LineId, style: DotStyle) => void;
-  setLineDefaultDotSize: (lineId: LineId, size: number) => void;
+  setLineSingletonDotStyle: (lineId: LineId, style: DotStyle) => void;
+  setLineMultiDotStyle: (lineId: LineId, style: DotStyle) => void;
+  setLineSingletonDotSize: (lineId: LineId, size: number) => void;
+  setLineMultiDotSize: (lineId: LineId, size: number) => void;
   setLineWidth: (lineId: LineId, w: number) => void;
   setLineCurveRadius: (lineId: LineId, r: number) => void;
   setLineStrokeWidth: (lineId: LineId, w: number) => void;
@@ -728,10 +751,13 @@ export const useDoc = create<DocState>()(
               T.setLineSegmentStyle(s, lineId, fromStationId, toStationId, style),
             ),
           ),
-        setLineDefaultDotStyle: (lineId, style) =>
-          set((s) => T.setLineDefaultDotStyle(s, lineId, style)),
-        setLineDefaultDotSize: (lineId, size) =>
-          set((s) => T.setLineDefaultDotSize(s, lineId, size)),
+        setLineSingletonDotStyle: (lineId, style) =>
+          set((s) => T.setLineSingletonDotStyle(s, lineId, style)),
+        setLineMultiDotStyle: (lineId, style) =>
+          set((s) => T.setLineMultiDotStyle(s, lineId, style)),
+        setLineSingletonDotSize: (lineId, size) =>
+          set((s) => T.setLineSingletonDotSize(s, lineId, size)),
+        setLineMultiDotSize: (lineId, size) => set((s) => T.setLineMultiDotSize(s, lineId, size)),
         setLineWidth: (lineId, w) => set(withRegionReconcile((s) => T.setLineWidth(s, lineId, w))),
         setLineCurveRadius: (lineId, r) =>
           set(withRegionReconcile((s) => T.setLineCurveRadius(s, lineId, r))),
@@ -1004,8 +1030,8 @@ export const useDoc = create<DocState>()(
       {
         name: 'vignelli-map-doc-v1',
         storage: createJSONStorage(() => localStorage),
-        version: 17,
-        // Version migration chain v0 → v17 lives in `migrateDoc` (above), which
+        version: 18,
+        // Version migration chain v0 → v18 lives in `migrateDoc` (above), which
         // is exported and unit-tested. See its doc comment for each step.
         migrate: (persisted, version) => migrateDoc(persisted, version),
         // `migrate` only runs when the STORED version differs from the config

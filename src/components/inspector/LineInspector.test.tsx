@@ -77,14 +77,25 @@ describe('<LineInspector /> — name / service / default-shape (E9)', () => {
     expect(useDoc.getState().lines.L1.service).toBe('BD');
   });
 
-  it('picking a default stop dot shape writes setLineDefaultDotStyle', async () => {
+  it('picking a singleton stop dot shape writes singletonDotStyle only', async () => {
     const user = userEvent.setup();
     seedThree();
     render(<LineInspector id="L1" />);
-    // The default-dot picker trigger is the only "Stop shape" button.
-    await user.click(screen.getByRole('button', { name: 'Stop shape' }));
+    await user.click(screen.getByRole('button', { name: 'Singleton stop shape' }));
     await user.click(screen.getByRole('menuitem', { name: 'Open white' }));
-    expect(useDoc.getState().lines.L1.defaultDotStyle).toEqual(DOT_SHAPE_PRESETS['open-white']);
+    expect(useDoc.getState().lines.L1.singletonDotStyle).toEqual(DOT_SHAPE_PRESETS['open-white']);
+    // The shared default is independent — untouched.
+    expect('multiDotStyle' in useDoc.getState().lines.L1).toBe(false);
+  });
+
+  it('picking a shared stop dot shape writes multiDotStyle only', async () => {
+    const user = userEvent.setup();
+    seedThree();
+    render(<LineInspector id="L1" />);
+    await user.click(screen.getByRole('button', { name: 'Interchange stop shape' }));
+    await user.click(screen.getByRole('menuitem', { name: 'Filled white' }));
+    expect(useDoc.getState().lines.L1.multiDotStyle).toEqual(DOT_SHAPE_PRESETS['filled-white']);
+    expect('singletonDotStyle' in useDoc.getState().lines.L1).toBe(false);
   });
 
   it('renders no Edit Stops button — picking a line IS entering the editor', () => {
@@ -217,7 +228,7 @@ describe('<LineInspector /> — dot size control', () => {
     useDoc.temporal.getState().clear();
   });
 
-  const seed = (defaultDotSize?: number) => {
+  const seed = (sizes?: { singletonDotSize?: number; multiDotSize?: number }) => {
     useDoc.setState({
       ...DEFAULT_DOC,
       ...makeDoc({
@@ -228,72 +239,80 @@ describe('<LineInspector /> — dot size control', () => {
         lines: [
           // Spread conditionally — an explicit `undefined` would plant the
           // key, and the canonical size-less form has no key at all.
-          makeLine({
-            id: 'L1',
-            stations: ['s1', 's2'],
-            ...(defaultDotSize !== undefined ? { defaultDotSize } : {}),
-          }),
+          makeLine({ id: 'L1', stations: ['s1', 's2'], ...(sizes ?? {}) }),
         ],
       }),
     });
   };
 
-  it('renders a 0–20 step-1 slider at the line’s effective default dot size', () => {
+  it('renders a 0–20 step-1 slider for each case at the effective default dot size', () => {
     seed();
     render(<LineInspector id="L1" />);
-    const slider = screen.getByRole('slider', { name: 'Dot size' });
-    expect(slider).toHaveAttribute('aria-valuemin', '0');
-    expect(slider).toHaveAttribute('aria-valuemax', '20');
-    expect(slider).toHaveAttribute('aria-valuenow', '8');
+    for (const name of ['Singleton dot size', 'Interchange dot size']) {
+      const slider = screen.getByRole('slider', { name });
+      expect(slider).toHaveAttribute('aria-valuemin', '0');
+      expect(slider).toHaveAttribute('aria-valuemax', '20');
+      expect(slider).toHaveAttribute('aria-valuenow', '8');
+    }
   });
 
-  it('shares one row with the dot-shape picker, under a caption below Color', () => {
+  it('the singleton section shares one row with its picker, under a caption below Color', () => {
     seed();
     render(<LineInspector id="L1" />);
     const color = screen.getByText('Color');
-    const caption = screen.getByText('Default stop dot type and size');
-    const picker = screen.getByRole('button', { name: 'Stop shape' });
-    const slider = screen.getByRole('slider', { name: 'Dot size' });
+    const caption = screen.getByText('Singleton stop dot type and size');
+    const picker = screen.getByRole('button', { name: 'Singleton stop shape' });
+    const slider = screen.getByRole('slider', { name: 'Singleton dot size' });
     // DOCUMENT_POSITION_FOLLOWING = 4: the argument follows the receiver.
-    // Color precedes the caption, which precedes the combined dot row.
     expect(color.compareDocumentPosition(caption) & 4).toBe(4);
     expect(caption.compareDocumentPosition(picker) & 4).toBe(4);
     expect(color.compareDocumentPosition(slider) & 4).toBe(4);
     // The picker and the size slider live in the same row.
     expect(picker.closest('.options-popover-row')).toBe(slider.closest('.options-popover-row'));
+    // The shared section follows the singleton one.
+    const shared = screen.getByText('Interchange stop dot type and size');
+    expect(caption.compareDocumentPosition(shared) & 4).toBe(4);
   });
 
-  it('slider edits write defaultDotSize; the default drops the key', () => {
+  it('the two sliders write their own field independently; the default drops the key', () => {
     seed();
     render(<LineInspector id="L1" />);
-    const slider = screen.getByRole('slider', { name: 'Dot size' });
-    stepSlider(slider, 1); // 8 -> 9
-    expect(useDoc.getState().lines.L1.defaultDotSize).toBe(9);
-    stepSlider(slider, -1); // back to the 8 default drops the key
-    expect('defaultDotSize' in useDoc.getState().lines.L1).toBe(false);
+    const singleton = screen.getByRole('slider', { name: 'Singleton dot size' });
+    stepSlider(singleton, 1); // 8 -> 9
+    expect(useDoc.getState().lines.L1.singletonDotSize).toBe(9);
+    expect('multiDotSize' in useDoc.getState().lines.L1).toBe(false);
+
+    const shared = screen.getByRole('slider', { name: 'Interchange dot size' });
+    stepSlider(shared, 2); // 8 -> 10
+    expect(useDoc.getState().lines.L1.multiDotSize).toBe(10);
+    // Singleton unaffected by the shared edit.
+    expect(useDoc.getState().lines.L1.singletonDotSize).toBe(9);
+
+    stepSlider(singleton, -1); // back to the 8 default drops the key
+    expect('singletonDotSize' in useDoc.getState().lines.L1).toBe(false);
   });
 
   it('the spinbutton floors at 0 and is uncapped above the slider max', () => {
     seed();
     render(<LineInspector id="L1" />);
-    const spin = screen.getByRole('spinbutton', { name: 'Dot size' });
+    const spin = screen.getByRole('spinbutton', { name: 'Singleton dot size' });
     expect(spin.getAttribute('min')).toBe('0');
     expect(spin.getAttribute('max')).toBeNull();
     fireEvent.change(spin, { target: { value: '32' } });
-    expect(useDoc.getState().lines.L1.defaultDotSize).toBe(32);
+    expect(useDoc.getState().lines.L1.singletonDotSize).toBe(32);
   });
 
   it('one slider focus-arc collapses to a single undo entry', () => {
     seed();
     useDoc.temporal.getState().clear();
     render(<LineInspector id="L1" />);
-    const slider = screen.getByRole('slider', { name: 'Dot size' });
+    const slider = screen.getByRole('slider', { name: 'Singleton dot size' });
     const before = historyDepth();
     stepSlider(slider, 3); // focus opens the group; three steps inside one arc
     fireEvent.blur(slider);
     expect(historyDepth()).toBe(before + 1);
     useDoc.temporal.getState().undo();
-    expect('defaultDotSize' in useDoc.getState().lines.L1).toBe(false);
+    expect('singletonDotSize' in useDoc.getState().lines.L1).toBe(false);
   });
 });
 

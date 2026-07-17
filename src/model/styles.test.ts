@@ -37,8 +37,10 @@ describe('captureStyleProps', () => {
   it('reads a fully-default line as the effective constants', () => {
     const doc = makeDoc({ lines: [makeLine({ id: 'l1' })] });
     expect(captureStyleProps(doc, 'line', 'l1')).toEqual({
-      defaultDotStyle: DEFAULT_DOT_STYLE,
-      defaultDotSize: DOT_SIZE_DEFAULT,
+      singletonDotStyle: DEFAULT_DOT_STYLE,
+      multiDotStyle: DEFAULT_DOT_STYLE,
+      singletonDotSize: DOT_SIZE_DEFAULT,
+      multiDotSize: DOT_SIZE_DEFAULT,
       width: LINE_WIDTH_DEFAULT,
       curveRadius: LINE_CURVE_RADIUS_DEFAULT,
       strokeWidth: 0,
@@ -46,13 +48,15 @@ describe('captureStyleProps', () => {
     });
   });
 
-  it('reads explicit line overrides verbatim', () => {
+  it('reads explicit line overrides verbatim, singleton and shared independently', () => {
     const doc = makeDoc({
       lines: [
         makeLine({
           id: 'l1',
-          defaultDotStyle: DOT_SHAPE_PRESETS['open-black'],
-          defaultDotSize: 12,
+          singletonDotStyle: DOT_SHAPE_PRESETS['open-black'],
+          multiDotStyle: DOT_SHAPE_PRESETS['filled-white'],
+          singletonDotSize: 12,
+          multiDotSize: 16,
           width: 10,
           curveRadius: 40,
           strokeWidth: 1.5,
@@ -61,8 +65,10 @@ describe('captureStyleProps', () => {
       ],
     });
     expect(captureStyleProps(doc, 'line', 'l1')).toEqual({
-      defaultDotStyle: DOT_SHAPE_PRESETS['open-black'],
-      defaultDotSize: 12,
+      singletonDotStyle: DOT_SHAPE_PRESETS['open-black'],
+      multiDotStyle: DOT_SHAPE_PRESETS['filled-white'],
+      singletonDotSize: 12,
+      multiDotSize: 16,
       width: 10,
       curveRadius: 40,
       strokeWidth: 1.5,
@@ -198,8 +204,10 @@ describe('stylePropsEqual — line covered fields', () => {
     // missing from it makes curveRadius-only edits no-op in updateStyleProps
     // and invisible to the mismatched-tag pruning.
     const base = {
-      defaultDotStyle: DEFAULT_DOT_STYLE,
-      defaultDotSize: DOT_SIZE_DEFAULT,
+      singletonDotStyle: DEFAULT_DOT_STYLE,
+      multiDotStyle: DEFAULT_DOT_STYLE,
+      singletonDotSize: DOT_SIZE_DEFAULT,
+      multiDotSize: DOT_SIZE_DEFAULT,
       width: LINE_WIDTH_DEFAULT,
       curveRadius: LINE_CURVE_RADIUS_DEFAULT,
       strokeWidth: 0,
@@ -207,6 +215,12 @@ describe('stylePropsEqual — line covered fields', () => {
     };
     expect(stylePropsEqual('line', base, { ...base })).toBe(true);
     expect(stylePropsEqual('line', base, { ...base, curveRadius: 40 })).toBe(false);
+    // The split dot fields are compared too — differing on either side is a
+    // real difference (each is its own covered field).
+    expect(
+      stylePropsEqual('line', base, { ...base, multiDotStyle: DOT_SHAPE_PRESETS['open-white'] }),
+    ).toBe(false);
+    expect(stylePropsEqual('line', base, { ...base, singletonDotSize: 12 })).toBe(false);
   });
 });
 
@@ -249,8 +263,10 @@ describe('applyStyleToItem', () => {
   it('stamps a line style through the canonical setters and tags the line', () => {
     const style = makeStyle('line', 'y1', {
       props: {
-        defaultDotStyle: DOT_SHAPE_PRESETS['filled-white'],
-        defaultDotSize: 12,
+        singletonDotStyle: DOT_SHAPE_PRESETS['filled-white'],
+        multiDotStyle: DOT_SHAPE_PRESETS['open-white'],
+        singletonDotSize: 12,
+        multiDotSize: 16,
         width: 10,
         curveRadius: 40,
         strokeWidth: 2,
@@ -265,8 +281,10 @@ describe('applyStyleToItem', () => {
     expect(line.curveRadius).toBe(40);
     expect(line.strokeWidth).toBe(2);
     expect(line.strokeColor).toBe('#123456');
-    expect(line.defaultDotStyle).toEqual(DOT_SHAPE_PRESETS['filled-white']);
-    expect(line.defaultDotSize).toBe(12);
+    expect(line.singletonDotStyle).toEqual(DOT_SHAPE_PRESETS['filled-white']);
+    expect(line.multiDotStyle).toEqual(DOT_SHAPE_PRESETS['open-white']);
+    expect(line.singletonDotSize).toBe(12);
+    expect(line.multiDotSize).toBe(16);
   });
 
   it('stamps a style seam color + width, and stamping a seamless style clears both', () => {
@@ -327,13 +345,17 @@ describe('applyStyleToItem', () => {
     expect(line.curveRadius).toBeUndefined();
     expect(line.strokeWidth).toBeUndefined();
     expect(line.strokeColor).toBeUndefined();
-    expect(line.defaultDotStyle).toBeUndefined();
-    expect(line.defaultDotSize).toBeUndefined();
+    expect(line.singletonDotStyle).toBeUndefined();
+    expect(line.multiDotStyle).toBeUndefined();
+    expect(line.singletonDotSize).toBeUndefined();
+    expect(line.multiDotSize).toBeUndefined();
   });
 
   it('applying a line style prunes now-redundant per-stop dot overrides', () => {
+    // The station below is a singleton, so its override is pruned against the
+    // style's SINGLETON default.
     const style = makeStyle('line', 'y1', {
-      props: { defaultDotStyle: DOT_SHAPE_PRESETS['filled-white'], defaultDotSize: 12 },
+      props: { singletonDotStyle: DOT_SHAPE_PRESETS['filled-white'], singletonDotSize: 12 },
     });
     const doc = makeDoc({
       lines: [makeLine({ id: 'l1' })],

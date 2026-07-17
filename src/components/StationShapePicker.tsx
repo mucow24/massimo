@@ -36,12 +36,17 @@ export function StationShapePicker({
   lineColor,
   serviceCode,
   onPick,
+  ariaLabel = 'Stop shape',
 }: {
   disabled: boolean;
   currentStyle: DotStyle;
   lineColor?: string;
   serviceCode?: string;
   onPick: (shape: DotShape) => void;
+  // Accessible name of the trigger. Defaults to "Stop shape"; callers with
+  // more than one picker on screen (the line inspector's singleton/shared
+  // sections) pass distinct names so each is individually addressable.
+  ariaLabel?: string;
 }) {
   const { open, setOpen, wrapRef } = usePopover();
 
@@ -60,11 +65,11 @@ export function StationShapePicker({
       <button
         type="button"
         className="btn-mini shape-picker-trigger"
-        aria-label="Stop shape"
+        aria-label={ariaLabel}
         aria-haspopup="menu"
         aria-expanded={open}
         aria-disabled={disabled}
-        title={disabled ? 'Stop shape — select a stop first' : 'Stop shape'}
+        title={disabled ? `${ariaLabel} — select a stop first` : ariaLabel}
         onClick={onTriggerClick}
       >
         <svg

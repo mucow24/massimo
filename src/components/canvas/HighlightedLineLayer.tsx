@@ -3,7 +3,7 @@ import type { Line, LineId, SeamEdges, Station, StationId } from '../../model/ty
 import type { UiMode } from '../../state/selection';
 import { stopPosWorld, type OrderedRenderable } from '../../geometry/interlining';
 import { pairKeyOf } from '../../model/pairKey';
-import { resolveDotStyle } from '../../model/transforms';
+import { resolveDotStyle, stationIsSingleton } from '../../model/transforms';
 import { STOP_SIZE } from '../../geometry/orientation';
 import { SegmentBand } from '../SegmentBand';
 import { dotSizeOverride } from '../../model/dotSize';
@@ -184,7 +184,8 @@ export function HighlightedLineLayer({
             if (!st) continue;
             const cell = st.stops.find((c) => c.lineId === highlightLineId);
             if (!cell) continue;
-            const style = resolveDotStyle(ln, cell);
+            const isSingleton = stationIsSingleton(st);
+            const style = resolveDotStyle(ln, cell, isSingleton);
             if (style.shape === 'dash') {
               // Dash stops re-render as ticks, same as the base dots pass.
               push(
@@ -209,7 +210,7 @@ export function HighlightedLineLayer({
                 style={style}
                 lineColor={ln.color}
                 serviceCode={ln.service}
-                sizeOverride={dotSizeOverride(ln, cell)}
+                sizeOverride={dotSizeOverride(ln, cell, isSingleton)}
                 stationId={sid}
                 lineId={cell.lineId}
               />,
