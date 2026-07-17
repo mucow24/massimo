@@ -836,7 +836,7 @@ export function sanitizeStopDotSizes(
 }
 
 // Normalize hand-edited / legacy casing fields to the canonical stored form
-// the transforms maintain: strokeWidth on the half-pixel grid and ≥
+// the transforms maintain: strokeWidth on the quarter-unit (0.25) grid and ≥
 // LINE_STROKE_WIDTH_MIN, strokeColor a lowercase string, and each field
 // absent when it equals its default (the app never stores defaults).
 // Non-numbers / non-finite widths and non-string colors are dropped.

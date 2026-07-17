@@ -1,6 +1,6 @@
 # Massimo — Architecture
 
-**Up to date as of commit `b5d0c8e` (2026-07-16) — verified against the live source (code-health pass covering the changes since `ff872fd`: the shared background layer stack (polygons and svg images interleaved under one `backgroundOrder`), the svg/raster opacity slider, layer move-to-top/to-bottom, the hide-network canvas toggle, in-app map-library revisions replacing the `map.json` download, day/night persisted on the doc so night maps reopen dark, and per-version numbers/names/stars — plus the tri-state save signal: the clean/dirty/unsaved dot beside the version pill, Save version greyed out when clean, saveBaseline.ts).**
+**Up to date as of commit `e0cc662` (2026-07-17) — verified against the live source (code-health pass covering the changes since `b5d0c8e`: the Radix-primitives adoption and popover chrome redesign; status messages moved to stacking Radix **toasts** (`StatusToasts` + `toastStore`) instead of a toolbar span; the multi-select **`SelectionPopover`** with bulk lock/unlock/delete (`selectionOps.ts`); the pinned **`LinePopover`** replacing the sidebar line inspector; two new canvas-menu items — **Make a copy** and **Revert**; the stroke/width/seam/curve sliders moving to a 0.25 (quarter-unit) grid; cutting a segment dropping a stranded (edgeless) station; and unselectable UI-chrome text).**
 
 > A fast-bootstrap reference for understanding the codebase: the ins, outs, gotchas, and
 > caveats. Written for an AI assistant (or new contributor) who needs the full picture
@@ -18,10 +18,11 @@ runs fully client-side (no backend), and persists to `localStorage`. It is alpha
 essentially one user (the developer).
 
 Stack: **React 18 + TypeScript + Vite**, **Zustand** for state, **zundo** for undo/redo,
-**Vitest** (jsdom) for unit tests, **Playwright** for e2e. No UI framework beyond React +
-hand-rolled CSS; `@radix-ui/react-icons` (icons) and `react-colorful` (the RGBA color picker)
-are the only UI dependencies. `clipper-lib` (integer-snapped polygon booleans/offsets) powers
-the region-layering geometry.
+**Vitest** (jsdom) for unit tests, **Playwright** for e2e. No heavyweight UI framework — the
+chrome is hand-rolled CSS over a set of **Radix primitives** (`@radix-ui/react-{dropdown-menu,
+select, slider, checkbox, toggle, toggle-group, toast, icons}`), with `react-colorful` for the
+RGBA color picker. `clipper-lib` (integer-snapped polygon booleans/offsets) powers the
+region-layering geometry.
 
 ---
 
@@ -41,7 +42,7 @@ the region-layering geometry.
      React components render the doc to SVG and dispatch actions.
 - **Editing = pure transforms.** Store actions are thin wrappers: `set((s) => T.moveStation(s, …))`.
   Transforms return the **same object reference on no-op** — this is load-bearing for undo
-  grouping. ([src/model/transforms.ts](src/model/transforms.ts) is the ~2450-line heart.)
+  grouping. ([src/model/transforms.ts](src/model/transforms.ts) is the ~2800-line heart.)
 - **The Vignelli look comes from "interlining"** ([src/geometry/interlining.ts](src/geometry/interlining.ts)):
   multiple lines sharing a station-pair corridor are merged into mean-centered parallel stripes.
   This is the single most intricate algorithm in the repo and is pinned by a **byte-exact golden
@@ -102,7 +103,7 @@ src/
 
   model/                        # PURE domain logic — no React, no store
     types.ts                    # MapDoc + every entity type (the canonical data shape)
-    transforms.ts               # ~2450 lines: all (doc,…)→doc editing ops + DEFAULT_DOC + constants
+    transforms.ts               # ~2800 lines: all (doc,…)→doc editing ops + DEFAULT_DOC + constants
     serialize.ts                # serialize()/parse() + shared backfill/sanitize helpers
     styles.ts                   # named per-kind formatting presets (StyleDef) + styleId tag/stamp
     ids.ts                      # IdFactory: crypto UUIDs (prod) / counter ids (tests)
@@ -142,18 +143,20 @@ src/
     waypointLozenge.ts          # WP-lozenge pill geometry (shared drawn glyph + hit/selection box)
     itemBounds.ts contentBounds.ts  # per-item + whole-map world AABBs (popover spawn + camera fit)
 
-  state/                        # Zustand stores (8 of them) + history
+  state/                        # Zustand stores (10 of them) + history
     store.ts                    # useDoc: temporal(persist(...)) + ~110 actions + migrateDoc
     history.ts                  # the ONLY module touching zundo internals
     selection.ts                # useSelection: UiMode union + multi-select + reconcileWithDoc
+    selectionOps.ts             # bulk selection gestures (delete/lock the unlocked subset)
     mirrorDispatch.ts           # mirror-matching fan-out shared by every layout-edit surface
     viewportStore.ts            # useViewportStore (committed) + useLiveViewportStore (in-flight)
     theme.ts                    # themeColors(darkMode) table (no store; reads doc.darkMode)
     customPalettes.ts           # useCustomPalettes: imported palettes (global localStorage)
     mapLibrary.ts               # saved maps + versions in IndexedDB (no store; opaque JSON)
     libraryPointer.ts           # useLibraryPointer: which map + version the live doc came from
-    saveBaseline.ts             # the save baseline + tri-state clean/dirty/unsaved signal
+    saveBaseline.ts             # useSaveBaseline: baseline + tri-state clean/dirty/unsaved signal
                                 #   (gates Save version + the toolbar dot; hash survives refresh)
+    toastStore.ts               # useToasts: stacking status toasts (pushToast from anywhere)
     snapPrefs.ts                # useSnapPrefs: snap toggles (+ v0→v1 migration)
     labelEditorPrefs.ts         # useLabelEditorPrefs: text-label editor UI prefs (wrapText)
     stationNames.ts             # random station-name word lists
@@ -413,14 +416,15 @@ All remaining fields optional and **never stored at default**:
 - `defaultDotStyle?: DotStyle` — missing ⇒ `DEFAULT_DOT_STYLE` (filled-black).
 - `defaultDotSize?: number` — dot diameter px; missing ⇒ `DOT_SIZE_DEFAULT` (= 2×`STOP_DOT_RADIUS` = 8).
 - `width?: number` — **stripe width, GEOMETRY**; missing ⇒ `LINE_WIDTH_DEFAULT` (= `STOP_SIZE` =
-  14); integer ≥ `LINE_WIDTH_MIN` (1). Drives stop-cell tangency, band merging, stripe offsets.
+  14); on a 0.25 (quarter-unit) grid, ≥ `LINE_WIDTH_MIN` (1) (`canonicalLineWidth`, `LINE_WIDTH_STEP`).
+  Drives stop-cell tangency, band merging, stripe offsets.
   `setLineWidth` also **re-packs tangent stop chains** at every station hosting the line
   ([stationPacking.ts](src/model/stationPacking.ts)): stops packed edge-to-edge under the old
   width are rewritten to the new tangent gaps, chain-centroid preserved, label riding its
   nearest stop — so a width edit never un-merges an interlined band. Non-tangent spacing never
   moves. New stops likewise spawn one tangent gap (not one flat cell) from their anchor.
 - `strokeWidth?: number` — **casing rail, PRESENTATION**; centered on the body edges (half in /
-  half out), missing ⇒ 0; rounded to a 0.5 grid. Resolved live; never moves paths.
+  half out), missing ⇒ 0; rounded to a 0.25 grid (`LINE_STROKE_STEP`). Resolved live; never moves paths.
 - `strokeColor?: string` — casing color; missing ⇒ `'#ffffff'`; lowercased.
 - `seamColor?: string` — **interior seam** for a branch/loop: where a line's OWN bands overlap (a
   self-junction) the casing normally merges away; set this to paint a subtle stroke there so the
@@ -851,11 +855,11 @@ parts and shared one millisecond suffix across kinds.)
 
 ## State management
 
-Eight Zustand stores, split deliberately by lifecycle (`useDoc`, `useSelection`, `useViewportStore`
-
-- `useLiveViewportStore`, `useSnapPrefs`, `useCustomPalettes`, `useLabelEditorPrefs`,
-  `useLibraryPointer`). Files in [src/state/](src/state/). (`mapLibrary.ts` sits alongside them
-  but is IndexedDB, not a store — it owns no React state; see the map-library section below.)
+Ten Zustand stores, split deliberately by lifecycle (`useDoc`, `useSelection`, `useViewportStore`,
+`useLiveViewportStore`, `useSnapPrefs`, `useCustomPalettes`, `useLabelEditorPrefs`,
+`useLibraryPointer`, `useSaveBaseline`, `useToasts`). Files in [src/state/](src/state/).
+(`mapLibrary.ts` sits alongside them but is IndexedDB, not a store — it owns no React state; see
+the map-library section below.)
 
 ### `useDoc` — the document store ([store.ts](src/state/store.ts))
 
@@ -1492,9 +1496,11 @@ band routing or the marker sort. Pinned by `MapCanvas.stationsSig.test.tsx`.
 
 ## UI chrome
 
-- **[Toolbar.tsx](src/components/Toolbar.tsx)** — Canvas menu (New / Save version — greyed out
-  while the doc is `clean`, see saveBaseline.ts /
-  Load → {JSON…, From library…} / Export → {PNG, SVG, PDF, JSON} / Clear), Add-item menu
+- **[Toolbar.tsx](src/components/Toolbar.tsx)** — Canvas menu (New / **Make a copy** — forks the
+  live doc into a new library map / Save version — greyed out while the doc is `clean`, see
+  saveBaseline.ts / **Revert** — discard unsaved changes back to the last save/load, disabled
+  when there's nothing to discard / Load → {JSON…, From library…} / Export → {PNG, SVG, PDF, JSON}
+  / Clear), Add-item menu
   (toggles `uiMode`; includes **Image / SVG…** — imports `.svg`, `.png`, or `.jpg/.jpeg` via
   `svgImport.ts` into an `SvgImage`), tool buttons (arrow/hand), grid-size + grid-visible +
   dark-mode toggles; embeds `MapNameField`, `MapVersionPill`, `SnapToggleBar`, `OptionsPopover`,
@@ -1504,6 +1510,13 @@ band routing or the marker sort. Pinned by `MapCanvas.stationsSig.test.tsx`.
   selected-line desaturation via `flushSync(() => selectLine(null))` so it isn't baked into the
   clone, then restores the id with a bare `setState` in `finally` (the selectLine ACTION would
   kick an in-progress Edit Stops session back to idle).
+- **[StatusToasts.tsx](src/components/StatusToasts.tsx)** — the status-message surface (Radix
+  toasts sliding in over the canvas, lower-left). Actions report outcomes by calling `pushToast`
+  ([state/toastStore.ts](src/state/toastStore.ts)) — a plain Zustand store (`useToasts`) so any
+  module can report without threading a setter — rather than rendering their own message. Toasts
+  **stack** (one failure never hides another): `push` appends with a unique incrementing id;
+  `dismiss(id)` drops exactly that one. `error` persists until clicked; `info` self-expires
+  (StatusToasts owns the timing). Distinct from `WarningToasts` (the router band-warning strip).
 - **[Sidebar.tsx](src/components/Sidebar.tsx)** — Stations/Lines tabs, a sortable station list
   (rows select/deselect; the station editor itself is an on-canvas popover), and a Lines list
   that is purely reorder (↑/↓) / delete / pick-for-editing — clicking a row goes **straight into

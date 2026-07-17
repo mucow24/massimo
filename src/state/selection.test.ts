@@ -1110,3 +1110,47 @@ describe('editing-station-layout mode — selection reconciliation', () => {
     expect(useSelection.getState().uiMode.kind).toBe('idle');
   });
 });
+
+describe('clearAllSelections', () => {
+  it('wipes every selection kind in one call, across lists and primaries', () => {
+    useSelection.setState({
+      selectedStationIds: ['A'] as StationId[],
+      selectedRouteBulletIds: ['b1'],
+      selectedLabelIds: ['l1'],
+      selectedPolygonIds: ['p1'],
+      selectedSvgImageIds: ['img1'],
+      selectedVertices: { polygonId: 'p1', indices: [0, 2] },
+      selectedLineId: 'L1' as LineId,
+      selectedLineTagId: 'tag1',
+      selectedTransferId: 't1',
+      selectedStopLineId: 'L1' as LineId,
+      labelSelected: true,
+      editingStationId: 'A' as StationId,
+      mirrorMatching: true,
+    });
+
+    useSelection.getState().clearAllSelections();
+
+    const s = useSelection.getState();
+    expect(s.selectedStationIds).toEqual([]);
+    expect(s.selectedRouteBulletIds).toEqual([]);
+    expect(s.selectedLabelIds).toEqual([]);
+    expect(s.selectedPolygonIds).toEqual([]);
+    expect(s.selectedSvgImageIds).toEqual([]);
+    expect(s.selectedVertices).toBeNull();
+    expect(s.selectedLineId).toBeNull();
+    expect(s.selectedLineTagId).toBeNull();
+    expect(s.selectedTransferId).toBeNull();
+    expect(s.selectedStopLineId).toBeNull();
+    expect(s.labelSelected).toBe(false);
+    expect(s.editingStationId).toBeNull();
+    expect(s.mirrorMatching).toBe(false);
+  });
+
+  it('leaves uiMode alone (callers reset the mode explicitly when they need to)', () => {
+    useSelection.getState().startEditingStationLayout('A' as StationId);
+    expect(useSelection.getState().uiMode.kind).toBe('editing-station-layout');
+    useSelection.getState().clearAllSelections();
+    expect(useSelection.getState().uiMode.kind).toBe('editing-station-layout');
+  });
+});
