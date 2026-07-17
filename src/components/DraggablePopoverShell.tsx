@@ -19,8 +19,24 @@ interface Props {
   measuring?: boolean;
   // useDraggablePopover's ref; how the measuring commit reaches the DOM node.
   shellRef?: DraggablePopover['shellRef'];
-  headerHandlers: DraggablePopover['headerHandlers'];
+  // Omitted for hard-pinned panels (LinePopover) — the header is then just a
+  // title band, not a drag handle.
+  headerHandlers?: DraggablePopover['headerHandlers'];
   children: ReactNode;
+}
+
+// Pin position for the top-right-docked editor popovers — the station layout
+// editor and the line editor (Edit Stops). One home for the arithmetic so the
+// two pins can't drift; both panels are 320px wide (.station-popover /
+// .line-popover in styles.css) and the sidebar cedes the corner while either
+// mode is active (see sidebarVisible).
+const PINNED_POPOVER_W = 320;
+const PINNED_EDGE_PAD = 8;
+export function pinnedTopRight(hostW: number): { left: number; top: number } {
+  return {
+    left: Math.max(PINNED_EDGE_PAD, hostW - PINNED_POPOVER_W - PINNED_EDGE_PAD),
+    top: PINNED_EDGE_PAD,
+  };
 }
 
 /**
@@ -61,7 +77,7 @@ export function DraggablePopoverShell({
         e.stopPropagation();
       }}
     >
-      <div className="header" {...headerHandlers}>
+      <div className="header" {...(headerHandlers ?? {})}>
         {title}
       </div>
       <div className="body">{children}</div>

@@ -240,25 +240,20 @@ export function Toolbar() {
    */
   const captureExportSnapshot = (svg: SVGSVGElement): SVGSVGElement => {
     const prevLineId = useSelection.getState().selectedLineId;
-    // Clearing selectedLineId trips the sidebar's auto-reveal collapse (it keys
-    // off exactly that), so the flag is saved and restored with the reselection.
-    const prevAutoReveal = useSelection.getState().sidebarAutoRevealed;
     const prevShowNetwork = useViewportStore.getState().showNetwork;
     flushSync(() => {
-      if (prevLineId) {
-        useSelection.setState({ sidebarAutoRevealed: false });
-        useSelection.getState().selectLine(null);
-      }
+      // The gentle null-clear: drops the id (and thus the dim) without
+      // touching uiMode, so an in-progress Edit Stops session survives the
+      // capture. The restore is a bare setState for the same reason — the
+      // selectLine ACTION would kick the mode back to idle.
+      if (prevLineId) useSelection.getState().selectLine(null);
       if (!prevShowNetwork) useViewportStore.getState().setShowNetwork(true);
     });
     try {
       return svg.cloneNode(true) as SVGSVGElement;
     } finally {
       flushSync(() => {
-        if (prevLineId) {
-          useSelection.getState().selectLine(prevLineId);
-          useSelection.setState({ sidebarAutoRevealed: prevAutoReveal });
-        }
+        if (prevLineId) useSelection.setState({ selectedLineId: prevLineId });
         if (!prevShowNetwork) useViewportStore.getState().setShowNetwork(false);
       });
     }

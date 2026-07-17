@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useState } from 'react';
 import {
   ChevronDownIcon,
   ChevronUpIcon,
@@ -8,7 +8,6 @@ import {
 } from '@radix-ui/react-icons';
 import { effectiveLineOrder, useDoc, useSelection } from '../state/store';
 import { useViewportStore } from '../state/viewportStore';
-import { LineInspector } from './inspector';
 import { StylesPanel } from './StylesPanel';
 import type { Line, Station } from '../model/types';
 import { legibleTextOn } from '../util/color';
@@ -23,9 +22,12 @@ type SortDirection = 'asc' | 'desc';
 export const SIDEBAR_WIDTH = 320;
 
 /** Whether the sidebar panel is actually showing (mirrors Sidebar's render
- * gate): open, and not ceded to the station layout editor's pinned popover. */
+ * gate): open, and not ceded to a pinned top-right editor popover — the
+ * station layout editor's, or the line editor's (Edit Stops). */
 export const sidebarVisible = (s: { sidebarOpen: boolean; uiMode: { kind: string } }): boolean =>
-  s.sidebarOpen && s.uiMode.kind !== 'editing-station-layout';
+  s.sidebarOpen &&
+  s.uiMode.kind !== 'editing-station-layout' &&
+  s.uiMode.kind !== 'appending-to-line';
 
 // Name-sort bucket: 0 for a "traditional" name (cleaned text begins with a
 // letter or digit), 1 for anything else — an empty name, or one starting with a
@@ -110,45 +112,18 @@ export function Sidebar() {
     el?.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
   }, [stationAnchorId, selection.activeTab]);
 
-  // Scroll the selected line's editor into view when it becomes newly visible:
-  // switching into the 'lines' tab (e.g. clicking a line bullet from the
-  // stations tab), or the sidebar reappearing (selectLine auto-reveals it when
-  // a line is picked while hidden). Plain in-tab clicks shouldn't reflow.
-  const prevLinesTabRef = useRef(selection.activeTab);
-  const prevSidebarOpenRef = useRef(selection.sidebarOpen);
-  useEffect(() => {
-    const wasOnLines = prevLinesTabRef.current === 'lines';
-    const wasOpen = prevSidebarOpenRef.current;
-    prevLinesTabRef.current = selection.activeTab;
-    prevSidebarOpenRef.current = selection.sidebarOpen;
-    if (!selection.sidebarOpen || selection.activeTab !== 'lines' || !selection.selectedLineId)
-      return;
-    if (wasOnLines && wasOpen) return; // already showing this list — in-tab click
-    const el = document.querySelector(`[data-line-row="${selection.selectedLineId}"]`);
-    el?.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
-  }, [selection.selectedLineId, selection.activeTab, selection.sidebarOpen]);
-
-  // The counterpart to selectLine's auto-reveal: once the line selection is
-  // cleared, collapse the sidebar again — but only if WE revealed it (a sidebar
-  // the user opened stays put; manual tab/panel toggles clear the flag). Lives
-  // here, not in the store, because the selection clears through many actions
-  // (selectStation, Escape, delete, …) with no single choke point to hook.
-  useEffect(() => {
-    if (selection.selectedLineId || !selection.sidebarAutoRevealed) return;
-    useSelection.setState({ sidebarOpen: false, sidebarAutoRevealed: false });
-  }, [selection.selectedLineId, selection.sidebarAutoRevealed]);
-
   // Collapsed = the whole panel is gone: render nothing so the grid column can
   // shrink to zero and hand the space back to the map. The toolbar arrow (and
   // clicking the active tab) toggle `sidebarOpen`; reopening returns to
   // whichever tab was last active.
   //
-  // Also hidden while the on-canvas station layout editor is active: that
-  // popover pins to the host's top-right corner, directly over the sidebar, and
-  // the canvas layer stacks BELOW the sidebar (see .canvas-host isolation in
-  // styles.css) — so its controls would sit unreachable behind the panel.
-  // Collapsing hands the corner to the editor. Derived purely from uiMode, so
-  // `sidebarOpen` is untouched and the panel reappears as it was on exit.
+  // Also hidden while a pinned top-right editor is active — the station layout
+  // editor's popover or the line editor's (Edit Stops): both pin to the host's
+  // top-right corner, directly over the sidebar, and the canvas layer stacks
+  // BELOW the sidebar (see .canvas-host isolation in styles.css) — so their
+  // controls would sit unreachable behind the panel. Collapsing hands the
+  // corner to the editor. Derived purely from uiMode, so `sidebarOpen` is
+  // untouched and the panel reappears as it was on exit.
   if (!sidebarVisible(selection)) return null;
 
   return (
@@ -317,23 +292,16 @@ export function Sidebar() {
             {orderedLineIds.map((id, i) => {
               const ln = lines[id];
               if (!ln) return null;
-              const expanded = selection.selectedLineId === ln.id;
               return (
-                <div
-                  key={ln.id}
-                  data-line-row={ln.id}
-                  style={{
-                    padding: '4px 0',
-                    ...(expanded ? { outline: `4px solid ${ln.color}`, outlineOffset: -4 } : {}),
-                  }}
-                >
+                <div key={ln.id} data-line-row={ln.id} style={{ padding: '4px 0' }}>
                   <div
-                    className={'list-row' + (expanded ? ' selected' : '')}
+                    className="list-row"
                     // Straight into Edit Stops — there is no selected-but-not-
-                    // editing state. Clicking the row being edited exits.
-                    onClick={() =>
-                      expanded ? selection.setAppending(null) : selection.startAppend(ln.id)
-                    }
+                    // editing state. The editor itself is the pinned line
+                    // popover; the whole panel hides while the mode is active
+                    // (see sidebarVisible), so this list never shows a
+                    // selected row.
+                    onClick={() => selection.startAppend(ln.id)}
                     title="Default stacking: top of list paints front-most where lines overlap (regions can override per overlap). Use ↑/↓ to reorder."
                   >
                     <span
@@ -386,11 +354,6 @@ export function Sidebar() {
                       <Cross2Icon />
                     </button>
                   </div>
-                  {expanded && (
-                    <div className="inline-editor" style={{ border: 'none' }}>
-                      <LineInspector id={ln.id} />
-                    </div>
-                  )}
                 </div>
               );
             })}

@@ -524,12 +524,11 @@ describe('uiMode variant payloads', () => {
     expect(useSelection.getState().selectedLineId).toBeNull();
   });
 
-  it('startAppend reveals a hidden sidebar (the editor must be visible)', () => {
-    useSelection.setState({ sidebarOpen: false, sidebarAutoRevealed: false });
+  it('startAppend leaves the sidebar closed — the pinned popover hosts the editor', () => {
+    useSelection.setState({ sidebarOpen: false });
     useSelection.getState().startAppend('L1' as LineId);
     const s = useSelection.getState();
-    expect(s.sidebarOpen).toBe(true);
-    expect(s.sidebarAutoRevealed).toBe(true);
+    expect(s.sidebarOpen).toBe(false);
     expect(s.activeTab).toBe('lines');
   });
 });
@@ -778,61 +777,23 @@ describe('sidebarOpen — persisted to localStorage', () => {
   });
 });
 
-describe('selectLine — reveals a hidden sidebar', () => {
-  const view = () => {
+describe('selectLine — sidebar visibility is not its business', () => {
+  // The line editor lives in the pinned on-canvas popover now, so picking a
+  // line must not reveal (or otherwise disturb) the sidebar panel.
+  it('selecting a line while hidden leaves it hidden, but still flips to the Lines tab', () => {
+    useSelection.setState({ sidebarOpen: false, activeTab: 'stations' });
+    useSelection.getState().selectLine('L1' as LineId);
     const s = useSelection.getState();
-    return {
-      sidebarOpen: s.sidebarOpen,
-      activeTab: s.activeTab,
-      autoRevealed: s.sidebarAutoRevealed,
-    };
-  };
-
-  it('selecting a line while hidden reveals it on the Lines tab and marks it auto-revealed', () => {
-    useSelection.setState({
-      sidebarOpen: false,
-      activeTab: 'stations',
-      sidebarAutoRevealed: false,
-    });
-    useSelection.getState().selectLine('L1' as LineId);
-    expect(view()).toEqual({ sidebarOpen: true, activeTab: 'lines', autoRevealed: true });
+    expect(s.sidebarOpen).toBe(false);
+    expect(s.activeTab).toBe('lines');
   });
 
-  it('selecting a line while the sidebar is already open does NOT mark it auto-revealed', () => {
-    useSelection.setState({ sidebarOpen: true, activeTab: 'stations', sidebarAutoRevealed: false });
-    useSelection.getState().selectLine('L1' as LineId);
-    expect(view()).toEqual({ sidebarOpen: true, activeTab: 'lines', autoRevealed: false });
-  });
-
-  it('switching lines within an auto-revealed session keeps the flag set', () => {
-    useSelection.setState({
-      sidebarOpen: false,
-      activeTab: 'stations',
-      sidebarAutoRevealed: false,
-    });
-    useSelection.getState().selectLine('L1' as LineId); // reveals; flag → true
-    useSelection.getState().selectLine('L2' as LineId); // sidebar already open now
-    expect(view()).toEqual({ sidebarOpen: true, activeTab: 'lines', autoRevealed: true });
-  });
-
-  it('a manual tab toggle cedes control: clears the auto-reveal flag', () => {
-    useSelection.setState({ sidebarOpen: true, activeTab: 'lines', sidebarAutoRevealed: true });
-    useSelection.getState().toggleTab('stations');
-    expect(useSelection.getState().sidebarAutoRevealed).toBe(false);
-  });
-
-  it('a manual sidebar toggle cedes control: clears the auto-reveal flag', () => {
-    useSelection.setState({ sidebarOpen: true, activeTab: 'lines', sidebarAutoRevealed: true });
-    useSelection.getState().toggleSidebar();
-    expect(useSelection.getState().sidebarAutoRevealed).toBe(false);
-  });
-
-  // The gentle null-clear leaves sidebar state alone; the Sidebar component's
-  // effect is what collapses an auto-revealed panel on exit (covered there).
-  it('clearing the line selection does not itself touch sidebar state', () => {
-    useSelection.setState({ sidebarOpen: true, activeTab: 'lines', sidebarAutoRevealed: true });
+  it('clearing the line selection does not touch sidebar state', () => {
+    useSelection.setState({ sidebarOpen: true, activeTab: 'lines' });
     useSelection.getState().selectLine(null);
-    expect(view()).toEqual({ sidebarOpen: true, activeTab: 'lines', autoRevealed: true });
+    const s = useSelection.getState();
+    expect(s.sidebarOpen).toBe(true);
+    expect(s.activeTab).toBe('lines');
   });
 });
 
@@ -1027,6 +988,25 @@ describe('reconcileWithDoc', () => {
     useSelection.setState({ selectedVertices: { polygonId: 'p1', indices: [0] } });
     useSelection.getState().reconcileWithDoc(docWith({}));
     expect(useSelection.getState().selectedVertices).toBeNull();
+  });
+
+  it('exits Edit Stops when the edited line no longer resolves (undo of addLine)', () => {
+    // Without this, an undo that removes the line strands the mode: the banner
+    // and pinned line popover null themselves out, but canvas clicks keep
+    // routing through append gestures against a dead lineId.
+    useSelection.getState().startAppend('L1' as LineId);
+    useSelection.getState().reconcileWithDoc(docWith({ lines: [] }));
+    expect(useSelection.getState().uiMode.kind).toBe('idle');
+  });
+
+  it('stays in Edit Stops while the edited line still resolves', () => {
+    useSelection.getState().startAppend('L1' as LineId);
+    useSelection.getState().reconcileWithDoc(docWith({ lines: ['L1'] }));
+    expect(useSelection.getState().uiMode).toEqual({
+      kind: 'appending-to-line',
+      lineId: 'L1',
+      cursor: null,
+    });
   });
 });
 
