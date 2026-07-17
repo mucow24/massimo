@@ -25,6 +25,7 @@ import {
   markAdopted,
   markSaved,
   saveStatusOf,
+  useCanRevert,
   useSaveBaseline,
   useSaveStatus,
 } from '../state/saveBaseline';
@@ -106,6 +107,12 @@ export function Toolbar() {
    * fresh New) that a save imports.
    */
   const saveStatus = useSaveStatus();
+  /**
+   * Whether Revert has anything to discard — a baseline exists and the doc has
+   * diverged from it. Distinct from `saveStatus`: a doc with no baseline reads
+   * dirty (save-armed) yet has nothing to revert (saveBaseline.ts).
+   */
+  const canRevert = useCanRevert();
 
   // Each "Add X" menu item toggles the matching uiMode variant: clicking it
   // again (or while the variant is active) returns to idle.
@@ -165,6 +172,24 @@ export function Toolbar() {
     // No clearHistory and no auto-save: Clear stays in the SAME document, so
     // Ctrl+Z is the backstop and undo has nothing to splice across.
     clearAll();
+  };
+
+  /**
+   * Revert — discard every unsaved change, restoring the document to the bytes
+   * last saved to the library or loaded. Like Clear, it stays in the SAME
+   * document: a normal undoable edit with no auto-save, so Ctrl+Z brings the
+   * discarded work back. The save baseline is left untouched — after the load
+   * the doc fields ARE the baseline's references again, so the status signal
+   * reads clean on its own. The selection is reconciled against the restored
+   * doc exactly as undo/redo do (keep what still exists, prune what doesn't).
+   * Guarded on a real baseline (the menu item is disabled without one), so a
+   * doc with no saved state to return to is a no-op rather than a wipe.
+   */
+  const onRevert = () => {
+    const baseline = useSaveBaseline.getState().baselineSnap;
+    if (!baseline) return;
+    useDoc.getState().loadDoc(baseline);
+    selection.reconcileWithDoc(useDoc.getState());
   };
 
   /**
@@ -522,6 +547,12 @@ export function Toolbar() {
           shortcut="Ctrl+S"
         >
           Save version
+        </MenuItem>
+        {/* Discard unsaved changes, back to the last save/load. Greyed out when
+            there's nothing to discard: a clean/unsaved doc already matches its
+            baseline, and a doc with no baseline has no saved state to revert to. */}
+        <MenuItem onClick={onRevert} disabled={!canRevert}>
+          Revert
         </MenuItem>
         <SubMenu label="Load">
           <MenuItem onClick={onLoadClick}>JSON…</MenuItem>
