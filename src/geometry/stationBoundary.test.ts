@@ -71,6 +71,37 @@ describe('stationsForRect — per-stop widths', () => {
   });
 });
 
+describe('stationBoundaryRectsLocal — dash tick clearance parity', () => {
+  it('the label rect tracks the autoAlign pin when a stopDash lookup is passed', () => {
+    // autoAlign label one cell east of a vertical dash stop: the pin clears
+    // the tick tip (HALF + 14 vs HALF), so the whole label polygon shifts
+    // east by the tick length. Same lookup contract as the renderer — this
+    // pins that the boundary geometry actually consumes it.
+    const st = makeStation({
+      id: 'A',
+      stops: [makeStop('L1', { row: 0, col: 0 })],
+      label: {
+        row: 0,
+        col: 1,
+        rotation: 0,
+        offset: 0,
+        align: 'auto',
+        valign: 'middle',
+        autoAlign: true,
+      },
+    });
+    const plain = stationBoundaryRectsLocal(st).label!;
+    const dashed = stationBoundaryRectsLocal(st, undefined, undefined, false, () => ({
+      length: 14,
+      width: 7,
+    })).label!;
+    for (let i = 0; i < 4; i++) {
+      expect(dashed[i].x - plain[i].x).toBeCloseTo(14, 6);
+      expect(dashed[i].y - plain[i].y).toBeCloseTo(0, 6);
+    }
+  });
+});
+
 describe('stationBoundaryRectsLocal', () => {
   it('returns two 4-vertex rects (cells + label) in local coords', () => {
     const st = stationWithStop('A', 'L1', { x: 100, y: 100 });

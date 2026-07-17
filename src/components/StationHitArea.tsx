@@ -3,6 +3,7 @@ import { labelLayoutLocal } from '../geometry/labelLayout';
 import { cellsAABBLocal } from '../geometry/stationBoundary';
 import { waypointLabelRectLocal } from '../geometry/waypointLozenge';
 import { stopHalfOf } from '../model/lineWidth';
+import { stopDashOf } from '../model/dashSize';
 import { effectiveStationLabelStyle } from '../model/transforms';
 import { useViewportStore } from '../state/viewportStore';
 import { useStationInteraction } from './useStationInteraction';
@@ -48,7 +49,7 @@ export function StationHitArea({
   const stopHalf = stopHalfOf(lines);
   const cellsBox = cellsAABBLocal(station, stopHalf, showWaypoints);
   const effStyle = effectiveStationLabelStyle(station);
-  const lay = labelLayoutLocal(station, effStyle, undefined, stopHalf);
+  const lay = labelLayoutLocal(station, effStyle, undefined, stopHalf, stopDashOf(lines));
   const labelHitTransform = `rotate(${station.label.rotation * 45} ${lay.anchorX} ${lay.anchorY})`;
   // A revealed waypoint's label is the WP lozenge, so its clickable rect is the
   // pill's box (matching the paint), not the invisible name's.

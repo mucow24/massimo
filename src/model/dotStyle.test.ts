@@ -205,6 +205,7 @@ describe('DOT_SHAPE_PRESETS', () => {
       'filled-white-diamond': style({ shape: 'diamond', fill: W, strokeColor: K }),
       'filled-black-x': style({ shape: 'x' }),
       'filled-white-x': style({ shape: 'x', fill: W, strokeColor: K }),
+      dash: style({ shape: 'dash', fill: 'line', strokeColor: 'line' }),
       none: style({ fill: 'none', strokeColor: K }),
     };
     expect(DOT_SHAPE_PRESETS).toEqual(expected);

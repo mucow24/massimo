@@ -5,9 +5,11 @@ import { rotateAround, rotatedRectCorners } from './vec';
 import { svgImageCorners } from './svgImage';
 import {
   DEFAULT_LABEL_STYLE,
+  DEFAULT_STOP_DASH,
   DEFAULT_STOP_HALF,
   labelLayoutLocal,
   type LabelStyle,
+  type StopDashFn,
   type StopHalfFn,
 } from './labelLayout';
 import { normalizeAABB, rectIntersectsPolygon, type AABB } from './rectPolygon';
@@ -98,6 +100,9 @@ export function stationBoundaryRectsLocal(
   // See cellsAABBLocal: a revealed waypoint gets its label rect back, so its
   // selection silhouette wraps the (now painted) name. Defaulted off.
   revealWaypoint = false,
+  // Dash-tick lookup — pass `stopDashOf(lines)` alongside stopHalf so the
+  // label rect tracks the autoAlign pin's tick clearance (see StopDashFn).
+  stopDash: StopDashFn = DEFAULT_STOP_DASH,
 ): StationBoundaryRects {
   const label = station.label;
   const labeled = !station.isWaypoint || revealWaypoint;
@@ -114,7 +119,7 @@ export function stationBoundaryRectsLocal(
   // Label rect — same layout the renderer uses (including the same per-stop
   // width lookup, so label snapping agrees), then rotated about the anchor
   // so the polygon aligns with the painted label.
-  const lay = labelLayoutLocal(station, style, undefined, stopHalf);
+  const lay = labelLayoutLocal(station, style, undefined, stopHalf, stopDash);
   const labelAnchor = { x: lay.anchorX, y: lay.anchorY };
   const rotateLabelCorner = (px: number, py: number): Pt =>
     rotateAround({ x: px, y: py }, labelAnchor, rotRad(label.rotation));
@@ -158,13 +163,20 @@ export function stationsForRect(
   rect: AABB,
   stopHalf: StopHalfFn = DEFAULT_STOP_HALF,
   includeLocked = false,
+  stopDash: StopDashFn = DEFAULT_STOP_DASH,
 ): StationId[] {
   const hits: StationId[] = [];
   for (const id of Object.keys(stations)) {
     const st = stations[id];
     // Locked stations are excluded from marquee selection (mirrors polygons).
     if (st.locked && !includeLocked) continue;
-    const b = stationBoundaryRectsLocal(st, effectiveStationLabelStyle(st), stopHalf);
+    const b = stationBoundaryRectsLocal(
+      st,
+      effectiveStationLabelStyle(st),
+      stopHalf,
+      false,
+      stopDash,
+    );
     const cellsWorld = b.cells.map((p) => stationLocalToWorld(st, p));
     if (rectIntersectsPolygon(rect, cellsWorld)) {
       hits.push(id);

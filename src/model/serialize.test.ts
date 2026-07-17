@@ -582,6 +582,21 @@ describe('serialize / parse — dot styles', () => {
     expect('dotShape' in stop).toBe(false);
   });
 
+  it("keeps a 'dash' stop style on load (the TfL tick shape)", () => {
+    const dash = {
+      shape: 'dash',
+      fill: 'line',
+      strokeWidth: 0,
+      strokeColor: 'line',
+      showServiceCode: false,
+    };
+    const r = parse(buildDotPayload({ dotStyle: dash }, { defaultDotStyle: dash }));
+    expect(r.ok).toBe(true);
+    if (!r.ok) return;
+    expect(r.doc.stations.s1.stops[0].dotStyle).toEqual(dash);
+    expect(r.doc.lines.L1.defaultDotStyle).toEqual(dash);
+  });
+
   it('drops malformed dotStyle objects', () => {
     const junkStyles: unknown[] = [
       'filled-black', // a preset id where an object belongs
@@ -920,6 +935,32 @@ describe('parse — line stroke sanitizing', () => {
       const result = parse(buildWithStroke({ seamWidth: junk }));
       expect(result.ok).toBe(true);
       if (result.ok) expect('seamWidth' in result.doc.lines.L1).toBe(false);
+    }
+  });
+
+  it('round-trips dash dimensions on the quarter-unit grid and drops them at 0 (unset ⇒ derive)', () => {
+    const keep = parse(buildWithStroke({ dashLength: 3.6, dashWidth: 2.2 }));
+    expect(keep.ok).toBe(true);
+    if (keep.ok) {
+      expect(keep.doc.lines.L1.dashLength).toBe(3.5);
+      expect(keep.doc.lines.L1.dashWidth).toBe(2.25);
+    }
+    const off = parse(buildWithStroke({ dashLength: 0, dashWidth: 0 }));
+    expect(off.ok).toBe(true);
+    if (off.ok) {
+      expect('dashLength' in off.doc.lines.L1).toBe(false);
+      expect('dashWidth' in off.doc.lines.L1).toBe(false);
+    }
+  });
+
+  it('drops non-numeric dash dimensions', () => {
+    for (const junk of ['long', null, true, {}]) {
+      const result = parse(buildWithStroke({ dashLength: junk, dashWidth: junk }));
+      expect(result.ok).toBe(true);
+      if (result.ok) {
+        expect('dashLength' in result.doc.lines.L1).toBe(false);
+        expect('dashWidth' in result.doc.lines.L1).toBe(false);
+      }
     }
   });
 });

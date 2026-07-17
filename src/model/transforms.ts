@@ -654,6 +654,21 @@ export function setLineSeamWidth(doc: MapDoc, id: LineId, w: number): MapDoc {
   return setLineStyleField(doc, id, 'seamWidth', canonicalStrokeWidth(w));
 }
 
+// Per-line tick length for 'dash' stops. Shares the casing width's canonical
+// grid/floor and drop-at-0; an unset (dropped) value derives from the line
+// width at render time (see dashSize.ts). A change detaches the line from
+// its preset.
+export function setLineDashLength(doc: MapDoc, id: LineId, v: number): MapDoc {
+  if (!Number.isFinite(v)) return doc;
+  return setLineStyleField(doc, id, 'dashLength', canonicalStrokeWidth(v));
+}
+
+// Per-line tick thickness for 'dash' stops. Same contract as setLineDashLength.
+export function setLineDashWidth(doc: MapDoc, id: LineId, v: number): MapDoc {
+  if (!Number.isFinite(v)) return doc;
+  return setLineStyleField(doc, id, 'dashWidth', canonicalStrokeWidth(v));
+}
+
 export function setStationWaypoint(doc: MapDoc, stationId: StationId, isWaypoint: boolean): MapDoc {
   return updateStation(doc, stationId, (st) =>
     !!st.isWaypoint === isWaypoint ? st : { ...st, isWaypoint },

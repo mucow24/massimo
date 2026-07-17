@@ -67,6 +67,9 @@ function StopRow({ station, stop, line }: { station: Station; stop: StopCell; li
   const stationId = station.id;
   const selected = selection.selectedStopLineId === lineId;
   const rotation = (station.rotation % 4) as Rotation;
+  // Dash (tick) dimensions derive from the line width (+ per-line overrides
+  // in the line inspector); the per-stop dot size is inert for them.
+  const isDash = resolveDotStyle(line, stop).shape === 'dash';
 
   const {
     text: sizeText,
@@ -126,14 +129,20 @@ function StopRow({ station, stop, line }: { station: Station; stop: StopCell; li
       <input
         type="number"
         aria-label="Stop dot size"
-        title="Stop dot size (px)"
+        title={
+          isDash ? 'Dash size follows the line width (see line inspector)' : 'Stop dot size (px)'
+        }
+        disabled={isDash}
         min={DOT_SIZE_MIN}
         step={1}
         style={{ width: 44 }}
         value={sizeText}
         // attachWheel binds a non-passive native wheel listener (React's
         // onWheel is passive, so its preventDefault would warn + no-op).
-        ref={attachSizeWheel}
+        // Omit it while disabled (dash) — browsers still deliver wheel events
+        // to disabled inputs, and the handler writes the doc (same guard as
+        // NumericFieldRow).
+        ref={isDash ? undefined : attachSizeWheel}
         onFocus={onSizeFocus}
         onChange={onSizeChange}
         onBlur={onSizeBlur}

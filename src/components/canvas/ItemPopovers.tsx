@@ -12,6 +12,7 @@ import {
   unionAABBs,
 } from '../../geometry/itemBounds';
 import { stopHalfOf } from '../../model/lineWidth';
+import { stopDashOf } from '../../model/dashSize';
 import { effectiveStationLabelStyle } from '../../model/transforms';
 import { resolveTransferStyle } from '../../model/transferStyle';
 import type { AABB } from '../../geometry/rectPolygon';
@@ -101,9 +102,11 @@ export function ItemPopovers({ view: committed }: { view: ViewportProjection }) 
     if (itemIdCount(multiIds) >= 2 && selection.uiMode.kind === 'idle') {
       const rects: AABB[] = [];
       const stopHalf = stopHalfOf(lines);
+      const stopDash = stopDashOf(lines);
       for (const id of multiIds.stations) {
         const st = stations[id];
-        if (st) rects.push(stationWorldAABB(st, effectiveStationLabelStyle(st), stopHalf));
+        if (st)
+          rects.push(stationWorldAABB(st, effectiveStationLabelStyle(st), stopHalf, stopDash));
       }
       for (const id of multiIds.bullets) {
         const b = routeBullets[id];
@@ -179,7 +182,12 @@ export function ItemPopovers({ view: committed }: { view: ViewportProjection }) 
     return (
       <StationPopover
         station={st}
-        worldRect={stationWorldAABB(st, effectiveStationLabelStyle(st), stopHalfOf(lines))}
+        worldRect={stationWorldAABB(
+          st,
+          effectiveStationLabelStyle(st),
+          stopHalfOf(lines),
+          stopDashOf(lines),
+        )}
         view={view}
         spawnBox={spawnBox}
         hidden={!show}

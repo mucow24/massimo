@@ -21,6 +21,8 @@ import {
   clampRouteBulletSize,
   effectiveStationStyleProps,
   setLineCurveRadius,
+  setLineDashLength,
+  setLineDashWidth,
   setLineDefaultDotSize,
   setLineDefaultDotStyle,
   setLineStrokeColor,
@@ -36,6 +38,7 @@ import {
 } from './transforms';
 import { DEFAULT_DOT_STYLE, dotStylesEqual } from './dotStyle';
 import { DOT_SIZE_MIN, lineDefaultDotSizeOf } from './dotSize';
+import { lineDashLengthOf, lineDashWidthOf } from './dashSize';
 import { LINE_WIDTH_MIN, LINE_WIDTH_STEP, lineWidthOf } from './lineWidth';
 import {
   LINE_CURVE_RADIUS_DEFAULT,
@@ -107,6 +110,8 @@ export function captureStyleProps<K extends StyleKind>(
       if (!l) return null;
       const seamColor = lineSeamColorOf(l);
       const seamWidth = lineSeamWidthOf(l);
+      const dashLength = lineDashLengthOf(l);
+      const dashWidth = lineDashWidthOf(l);
       return {
         defaultDotStyle: l.defaultDotStyle ?? DEFAULT_DOT_STYLE,
         defaultDotSize: lineDefaultDotSizeOf(l),
@@ -118,6 +123,8 @@ export function captureStyleProps<K extends StyleKind>(
         // one that never had the key.
         ...(seamColor !== undefined ? { seamColor } : {}),
         ...(seamWidth !== undefined ? { seamWidth } : {}),
+        ...(dashLength !== undefined ? { dashLength } : {}),
+        ...(dashWidth !== undefined ? { dashWidth } : {}),
       } as StylePropsByKind[K];
     }
     case 'textLabel': {
@@ -194,7 +201,9 @@ export function stylePropsEqual(
       la.strokeWidth === lb.strokeWidth &&
       la.strokeColor === lb.strokeColor &&
       la.seamColor === lb.seamColor &&
-      la.seamWidth === lb.seamWidth
+      la.seamWidth === lb.seamWidth &&
+      la.dashLength === lb.dashLength &&
+      la.dashWidth === lb.dashWidth
     );
   }
   if (kind === 'transfer') {
@@ -229,9 +238,11 @@ export function canonicalStyleProps<K extends StyleKind>(
     case 'line': {
       const p = props as LineStyleProps;
       // Canonical seam: off (transparent color / 0 width) collapses to omitted,
-      // mirroring the line fields.
+      // mirroring the line fields. Dash dims collapse the same way (0 = derive).
       const seamColor = p.seamColor == null ? undefined : canonicalSeamColor(p.seamColor);
       const seamWidth = p.seamWidth == null ? undefined : canonicalStrokeWidth(p.seamWidth);
+      const dashLength = p.dashLength == null ? undefined : canonicalStrokeWidth(p.dashLength);
+      const dashWidth = p.dashWidth == null ? undefined : canonicalStrokeWidth(p.dashWidth);
       return {
         defaultDotStyle: p.defaultDotStyle,
         defaultDotSize: Math.max(DOT_SIZE_MIN, Math.round(p.defaultDotSize)),
@@ -251,6 +262,8 @@ export function canonicalStyleProps<K extends StyleKind>(
         strokeColor: p.strokeColor.toLowerCase(),
         ...(seamColor !== undefined ? { seamColor } : {}),
         ...(seamWidth !== undefined ? { seamWidth } : {}),
+        ...(dashLength !== undefined ? { dashLength } : {}),
+        ...(dashWidth !== undefined ? { dashWidth } : {}),
       } as StylePropsByKind[K];
     }
     case 'textLabel': {
@@ -334,6 +347,9 @@ function stampStyle(doc: MapDoc, def: StyleDef, itemId: string): MapDoc {
       next = setLineSeamColor(next, itemId, p.seamColor ?? '#00000000');
       // undefined ⇒ 0 ⇒ dropped, so the stamped line inherits the casing width.
       next = setLineSeamWidth(next, itemId, p.seamWidth ?? 0);
+      // undefined ⇒ 0 ⇒ dropped, so the stamped line derives from its width.
+      next = setLineDashLength(next, itemId, p.dashLength ?? 0);
+      next = setLineDashWidth(next, itemId, p.dashWidth ?? 0);
       break;
     }
     case 'textLabel': {

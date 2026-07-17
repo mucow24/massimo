@@ -5,6 +5,7 @@ import { STOP_SIZE, stopCenterAt } from '../../geometry/orientation';
 import { cellsAABBLocal } from '../../geometry/stationBoundary';
 import { labelLayoutLocal } from '../../geometry/labelLayout';
 import { stopHalfOf, lineWidthOf } from '../../model/lineWidth';
+import { stopDashOf } from '../../model/dashSize';
 import { useThemeColors } from '../../state/theme';
 import { legibleTextOn } from '../../util/color';
 import { dotSizeOverride, resolveDotSize } from '../../model/dotSize';
@@ -80,7 +81,13 @@ export function StationLayoutEditor({
     hitY,
     hitW,
     hitH,
-  } = labelLayoutLocal(station, effectiveStationLabelStyle(station), undefined, stopHalf);
+  } = labelLayoutLocal(
+    station,
+    effectiveStationLabelStyle(station),
+    undefined,
+    stopHalf,
+    stopDashOf(lines),
+  );
 
   const shieldHandlers = inHandMode
     ? {}

@@ -23,6 +23,12 @@ import {
 } from '../../model/lineCurve';
 import { DOT_SIZE_MAX, DOT_SIZE_MIN, lineDefaultDotSizeOf } from '../../model/dotSize';
 import {
+  DASH_LENGTH_MAX,
+  DASH_WIDTH_MAX,
+  dashRenderLength,
+  dashRenderWidth,
+} from '../../model/dashSize';
+import {
   LINE_STROKE_STEP,
   LINE_STROKE_WIDTH_MAX,
   LINE_STROKE_WIDTH_MIN,
@@ -50,6 +56,8 @@ export function LineInspector({ id }: { id: LineId }) {
   const setLineStrokeColor = useDoc((s) => s.setLineStrokeColor);
   const setLineSeamColor = useDoc((s) => s.setLineSeamColor);
   const setLineSeamWidth = useDoc((s) => s.setLineSeamWidth);
+  const setLineDashLength = useDoc((s) => s.setLineDashLength);
+  const setLineDashWidth = useDoc((s) => s.setLineDashWidth);
   const nameField = useFieldHistory();
   const serviceField = useFieldHistory();
 
@@ -187,6 +195,31 @@ export function LineInspector({ id }: { id: LineId }) {
           onChange={(c) => setLineSeamColor(line.id, c)}
         />
       </div>
+      {/* TfL-tick dimensions for this line's 'dash' stops. Unset derives from
+          the line width (length = width, thickness = width/2); the sliders
+          show the resolved value and an explicit 0 returns to auto. */}
+      <NumericFieldRow
+        id={`line-dash-length-${line.id}`}
+        label="Dash length"
+        min={0}
+        max={DASH_LENGTH_MAX}
+        step={LINE_STROKE_STEP}
+        value={dashRenderLength(line)}
+        onChange={(n) => setLineDashLength(line.id, n)}
+        getCurrent={() => dashRenderLength(useDoc.getState().lines[id])}
+        textboxAllowAboveMax
+      />
+      <NumericFieldRow
+        id={`line-dash-width-${line.id}`}
+        label="Dash width"
+        min={0}
+        max={DASH_WIDTH_MAX}
+        step={LINE_STROKE_STEP}
+        value={dashRenderWidth(line)}
+        onChange={(n) => setLineDashWidth(line.id, n)}
+        getCurrent={() => dashRenderWidth(useDoc.getState().lines[id])}
+        textboxAllowAboveMax
+      />
     </section>
   );
 }
