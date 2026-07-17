@@ -394,6 +394,58 @@ describe('ItemPopovers — selection popover (multi-select) gating', () => {
   });
 });
 
+describe('ItemPopovers — line popover (Edit Stops)', () => {
+  const seedLine = () => {
+    useDoc.setState({
+      ...useDoc.getState(),
+      ...DEFAULT_DOC,
+      lines: {
+        L1: makeLine({ id: 'L1', service: '1', name: '1 line', color: '#111111', stations: [] }),
+      },
+      lineOrder: ['L1'],
+    });
+  };
+
+  afterEach(() => {
+    useSelection.getState().setAppending(null);
+  });
+
+  it('mounts pinned to the host top-right while appending-to-line is active', () => {
+    seedLine();
+    act(() => useSelection.getState().startAppend('L1'));
+    render(<ItemPopovers view={committedView} />);
+    const el = document.querySelector('.line-popover') as HTMLElement;
+    expect(el).not.toBeNull();
+    // Host is 800 wide; popover is 320 wide + 8px edge pad — the same pin the
+    // station layout editor uses.
+    expect(el.style.left).toBe('472px');
+    expect(el.style.top).toBe('8px');
+  });
+
+  it('unmounts when the mode exits', () => {
+    seedLine();
+    act(() => useSelection.getState().startAppend('L1'));
+    const { rerender } = render(<ItemPopovers view={committedView} />);
+    expect(document.querySelector('.line-popover')).not.toBeNull();
+
+    act(() => useSelection.getState().setAppending(null));
+    rerender(<ItemPopovers view={committedView} />);
+    expect(document.querySelector('.line-popover')).toBeNull();
+  });
+
+  it('renders nothing for a dangling lineId (transient mid-delete render)', () => {
+    seedLine();
+    act(() => useSelection.getState().startAppend('L1'));
+    act(() =>
+      useSelection.setState({
+        uiMode: { kind: 'appending-to-line', lineId: 'GONE', cursor: null },
+      }),
+    );
+    render(<ItemPopovers view={committedView} />);
+    expect(document.querySelector('.line-popover')).toBeNull();
+  });
+});
+
 describe('ItemPopovers — station popover, layout-edit interplay', () => {
   const seedStation = () => {
     useDoc.setState({

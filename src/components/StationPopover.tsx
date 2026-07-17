@@ -2,15 +2,10 @@ import { useDoc, useSelection } from '../state/store';
 import type { Station } from '../model/types';
 import { type ViewportProjection } from './canvas/screenAnchor';
 import type { AABB } from '../geometry/rectPolygon';
-import { DraggablePopoverShell } from './DraggablePopoverShell';
+import { DraggablePopoverShell, pinnedTopRight } from './DraggablePopoverShell';
 import { useDraggablePopover } from './canvas/useDraggablePopover';
 import { PopoverFooter } from './PopoverFooter';
 import { StationInspector } from './inspector';
-
-// Shell width (matches .station-popover in styles.css) — used for the
-// layout-edit pinned position.
-const POPOVER_W = 320;
-const EDGE_PAD = 8;
 
 /**
  * The station editor as an on-canvas popover — stations join every other
@@ -59,8 +54,9 @@ export function StationPopover({
   const setStationLocked = useDoc((s) => s.setStationLocked);
   const deleteStation = useDoc((s) => s.deleteStation);
   const inLayoutEdit = useSelection((s) => s.uiMode.kind === 'editing-station-layout');
-  const left = inLayoutEdit ? Math.max(EDGE_PAD, view.size.w - POPOVER_W - EDGE_PAD) : anchor.x;
-  const top = inLayoutEdit ? EDGE_PAD : anchor.y;
+  const pin = pinnedTopRight(view.size.w);
+  const left = inLayoutEdit ? pin.left : anchor.x;
+  const top = inLayoutEdit ? pin.top : anchor.y;
 
   return (
     <DraggablePopoverShell

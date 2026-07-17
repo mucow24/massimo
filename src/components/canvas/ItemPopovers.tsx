@@ -17,6 +17,7 @@ import { resolveTransferStyle } from '../../model/transferStyle';
 import type { AABB } from '../../geometry/rectPolygon';
 import { itemIdCount, type SelectionItemIds } from '../../state/selectionOps';
 import { SIDEBAR_WIDTH, sidebarVisible } from '../Sidebar';
+import { LinePopover } from '../LinePopover';
 import { SelectionPopover } from '../SelectionPopover';
 import { RouteBulletPopover } from '../RouteBulletPopover';
 import { TextLabelPopover } from '../TextLabelPopover';
@@ -62,6 +63,18 @@ export function ItemPopovers({ view: committed }: { view: ViewportProjection }) 
   // The popover anchors against the live viewport; a zero-size viewport (first
   // paint) has no screen mapping yet, so wait for a real box.
   if (!(view.vbW > 0 && view.vbH > 0)) return null;
+
+  // Edit Stops: the line editor rides in a panel hard-pinned to the host's
+  // top-right corner, mounted for the whole mode (the sidebar cedes the
+  // corner — sidebarVisible). Checked before the sole-selection branching:
+  // entering the mode wipes every other selection, so nothing below can
+  // co-show. Unmounted (not hidden) when the network toggles off — the pin is
+  // static, so there's no frozen anchor to preserve (the transfer rationale).
+  if (selection.uiMode.kind === 'appending-to-line') {
+    const ln = lines[selection.uiMode.lineId];
+    if (!ln || !showNetwork) return null;
+    return <LinePopover line={ln} hostSize={view.size} />;
+  }
 
   // The open sidebar overlays (and paints above) the host's right strip; a
   // spawn placed "fully on-screen" under it would be invisible. Spawn
