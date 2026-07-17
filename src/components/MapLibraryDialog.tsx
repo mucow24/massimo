@@ -1,21 +1,27 @@
-import { useCallback, useEffect, useRef, useState } from 'react';
-import { createPortal } from 'react-dom';
-import { StarIcon, StarFilledIcon } from '@radix-ui/react-icons';
+import { useCallback, useEffect, useState } from 'react';
+import * as Dialog from '@radix-ui/react-dialog';
+import * as HoverCard from '@radix-ui/react-hover-card';
+import * as Select from '@radix-ui/react-select';
+import * as Toggle from '@radix-ui/react-toggle';
+import { ChevronDownIcon, Cross2Icon, StarIcon, StarFilledIcon } from '@radix-ui/react-icons';
 import {
   deleteMap,
   deleteVersion,
   listMaps,
   listVersions,
   renameMap,
+  setMapStarred,
   setVersionName,
   setVersionStarred,
+  sortMaps,
+  type MapSort,
   type MapSummary,
   type VersionMeta,
 } from '../state/mapLibrary';
 import { useLibraryPointer } from '../state/libraryPointer';
+import { useLibraryPrefs } from '../state/libraryPrefs';
 import { markUnbacked } from '../state/saveBaseline';
 import { useDoc } from '../state/store';
-import { useDismiss } from './usePopover';
 
 interface Props {
   onClose: () => void;
@@ -23,21 +29,93 @@ interface Props {
   onOpenVersion: (version: VersionMeta) => Promise<void>;
 }
 
-const when = (ms: number) => new Date(ms).toLocaleString();
+const when = (ms: number) =>
+  new Date(ms).toLocaleString(undefined, { dateStyle: 'medium', timeStyle: 'short' });
+
+const SORT_LABELS: { value: MapSort; label: string }[] = [
+  { value: 'updated', label: 'Last edited' },
+  { value: 'created', label: 'Date created' },
+  { value: 'name', label: 'Name' },
+];
+
+const isMapSort = (v: string): v is MapSort => v === 'updated' || v === 'created' || v === 'name';
+
+/**
+ * Both lists put their starred block first, so the boundary is simply the
+ * first unstarred row — and only when there is a block above it to divide
+ * from. -1 when every row is starred, or none is.
+ */
+const afterStarredIndex = (rows: { starred?: true }[] | null): number =>
+  rows && rows[0]?.starred ? rows.findIndex((r) => !r.starred) : -1;
+
+/**
+ * A star as it appears in both columns: state first, command on approach.
+ * A Radix Toggle for the pressed/unpressed contract; the caller supplies the
+ * subject-specific labels.
+ */
+function StarToggle({
+  starred,
+  label,
+  title,
+  onToggle,
+}: {
+  starred: boolean;
+  label: string;
+  title: string;
+  onToggle: () => void;
+}) {
+  return (
+    <Toggle.Root
+      className={'star-btn' + (starred ? ' starred' : '')}
+      pressed={starred}
+      onPressedChange={onToggle}
+      aria-label={label}
+      title={title}
+    >
+      {starred ? <StarFilledIcon /> : <StarIcon />}
+    </Toggle.Root>
+  );
+}
+
+/**
+ * A row's thumbnail. Hovering it raises the stored capture at full size (the
+ * row shows a postage stamp; the raster is up to 240×180) in a hover-card
+ * beside the row. Not portaled — the card must stay inside `.app` for the
+ * design tokens and the dark-mode reassignment to apply.
+ */
+function Thumb({ src }: { src?: string }) {
+  if (!src) return <span className="map-thumb map-thumb-blank" aria-hidden="true" />;
+  return (
+    <HoverCard.Root openDelay={250} closeDelay={100}>
+      <HoverCard.Trigger asChild>
+        <img src={src} alt="" className="map-thumb" />
+      </HoverCard.Trigger>
+      <HoverCard.Content
+        className="map-thumb-preview"
+        side="right"
+        sideOffset={12}
+        collisionPadding={12}
+      >
+        <img src={src} alt="" />
+      </HoverCard.Content>
+    </HoverCard.Root>
+  );
+}
 
 /**
  * The library manager: maps on the left, the selected map's versions on the
  * right. Reached from Load → From library…, and the only place maps are renamed
  * or deleted — you never have to open a map to throw it away.
  *
+ * A Radix Dialog (portaled into `.app` so the design tokens reach it), which
+ * owns Escape, outside-click, and the focus trap.
+ *
  * Deletes here are the one destructive action in the app that undo cannot
  * reach (IndexedDB is outside zundo), so they get a speed bump: the button
- * flips to "Sure?" in place. Not a modal — there is no confirmation dialog
- * anywhere in this app, and a second layer would mean two Escape listeners
- * racing over one keypress.
+ * flips to "Sure?" in place. Not a modal on a modal — there is no confirmation
+ * dialog anywhere in this app.
  */
 export function MapLibraryDialog({ onClose, onOpenVersion }: Props) {
-  const panelRef = useRef<HTMLDivElement | null>(null);
   // null means "still loading" — distinct from [], which means "no maps yet".
   // Collapsing the two flashes "No saved maps" on every open.
   const [maps, setMaps] = useState<MapSummary[] | null>(null);
@@ -47,8 +125,8 @@ export function MapLibraryDialog({ onClose, onOpenVersion }: Props) {
   const [confirmKey, setConfirmKey] = useState<string | null>(null);
   const [renamingId, setRenamingId] = useState<string | null>(null);
   const [namingVersionId, setNamingVersionId] = useState<number | null>(null);
-
-  useDismiss(true, onClose, [panelRef]);
+  const sort = useLibraryPrefs((s) => s.sort);
+  const setSort = useLibraryPrefs((s) => s.setSort);
 
   const refreshMaps = useCallback(async () => {
     try {
@@ -161,6 +239,16 @@ export function MapLibraryDialog({ onClose, onOpenVersion }: Props) {
     if (selectedMapId) await refreshVersions(selectedMapId);
   };
 
+  const onToggleMapStar = async (map: MapSummary) => {
+    try {
+      await setMapStarred(map.id, !map.starred);
+    } catch {
+      setError('Could not star that map.');
+      return;
+    }
+    await refreshMaps();
+  };
+
   const onCommitVersionName = async (versionId: number, name: string) => {
     setNamingVersionId(null);
     try {
@@ -211,174 +299,239 @@ export function MapLibraryDialog({ onClose, onOpenVersion }: Props) {
       </button>
     );
 
-  // `listVersions` returns the starred block first, so the boundary is simply
-  // the first unstarred row — and only when there is a block above it to divide
-  // from. -1 when every row is starred, or none is.
-  const dividerIndex =
-    versions && versions[0]?.starred ? versions.findIndex((v) => !v.starred) : -1;
+  const sortedMaps = maps === null ? null : sortMaps(maps, sort);
+  const selectedMap = sortedMaps?.find((m) => m.id === selectedMapId) ?? null;
+  const mapDividerIndex = afterStarredIndex(sortedMaps);
+  // `listVersions` returns the starred block first, matching sortMaps's shape.
+  const versionDividerIndex = afterStarredIndex(versions);
 
-  const panel = (
-    <div className="map-library-backdrop">
-      <div
-        className="map-library"
-        ref={panelRef}
-        role="dialog"
-        aria-modal="true"
-        aria-label="Map library"
-      >
-        <header>
-          <h2>Map library</h2>
-          <button type="button" aria-label="Close map library" onClick={onClose}>
-            Close
-          </button>
-        </header>
+  return (
+    <Dialog.Root
+      open
+      onOpenChange={(open) => {
+        if (!open) onClose();
+      }}
+    >
+      {/* `.app` is absent in standalone component tests; Radix then portals to
+          document.body, exactly as the hand-rolled portal did. */}
+      <Dialog.Portal container={document.querySelector<HTMLElement>('.app') ?? undefined}>
+        <Dialog.Overlay className="map-library-backdrop">
+          <Dialog.Content
+            className="map-library"
+            aria-describedby={undefined}
+            onEscapeKeyDown={(e) => {
+              // Mid-rename, Escape belongs to the input (which cancels the
+              // edit); keep the dialog out of that keypress.
+              if (renamingId !== null || namingVersionId !== null) e.preventDefault();
+            }}
+          >
+            <header>
+              <Dialog.Title asChild>
+                <h2>Map library</h2>
+              </Dialog.Title>
+              <Dialog.Close asChild>
+                <button type="button" className="map-library-close" aria-label="Close map library">
+                  <Cross2Icon />
+                </button>
+              </Dialog.Close>
+            </header>
 
-        {error && (
-          <div role="alert" className="map-library-error">
-            {error}
-          </div>
-        )}
-
-        <div className="map-library-columns">
-          <section className="map-library-maps" aria-label="Saved maps">
-            {maps === null && <div className="empty">Loading…</div>}
-            {maps?.length === 0 && <div className="empty">No saved maps yet.</div>}
-            {maps?.map((m) => (
-              <div
-                key={m.id}
-                className={'map-row' + (m.id === selectedMapId ? ' selected' : '')}
-                onClick={() => void selectMap(m.id)}
-              >
-                {m.thumb ? (
-                  <img src={m.thumb} alt="" className="map-thumb" />
-                ) : (
-                  <span className="map-thumb map-thumb-blank" aria-hidden="true" />
-                )}
-                <div className="map-row-body">
-                  {renamingId === m.id ? (
-                    <input
-                      autoFocus
-                      aria-label={`Rename ${m.name}`}
-                      defaultValue={m.name}
-                      onClick={(e) => e.stopPropagation()}
-                      onBlur={(e) => void onCommitRename(m.id, e.target.value)}
-                      onKeyDown={(e) => {
-                        if (e.key === 'Enter') void onCommitRename(m.id, e.currentTarget.value);
-                        // Escape cancels the rename without closing the dialog.
-                        if (e.key === 'Escape') {
-                          e.stopPropagation();
-                          setRenamingId(null);
-                        }
-                      }}
-                    />
-                  ) : (
-                    <strong>{m.name}</strong>
-                  )}
-                  <span className="map-row-meta">
-                    {m.versionCount} version{m.versionCount === 1 ? '' : 's'} · {when(m.updatedAt)}
-                  </span>
-                </div>
-                <div className="map-row-actions" onClick={(e) => e.stopPropagation()}>
-                  <button
-                    type="button"
-                    aria-label={`Rename ${m.name}`}
-                    onClick={() => setRenamingId(m.id)}
-                  >
-                    Rename
-                  </button>
-                  {deleteButton(`map:${m.id}`, `Delete ${m.name}`, () => void onDeleteMap(m.id))}
-                </div>
+            {error && (
+              <div role="alert" className="map-library-error">
+                {error}
               </div>
-            ))}
-          </section>
-
-          <section className="map-library-versions" aria-label="Versions">
-            {selectedMapId === null && (
-              <div className="empty">Select a map to see its versions.</div>
             )}
-            {selectedMapId !== null && versions === null && <div className="empty">Loading…</div>}
-            {versions?.length === 0 && <div className="empty">No versions.</div>}
-            {versions?.map((r, i) => (
-              <div
-                key={r.id}
-                className={'version-row' + (i === dividerIndex ? ' after-starred' : '')}
-              >
-                {r.thumb ? (
-                  <img src={r.thumb} alt="" className="map-thumb" />
-                ) : (
-                  <span className="map-thumb map-thumb-blank" aria-hidden="true" />
-                )}
-                <div className="map-row-body">
-                  {namingVersionId === r.id ? (
-                    <input
-                      autoFocus
-                      aria-label={`Name version ${r.version}`}
-                      defaultValue={r.name ?? ''}
-                      placeholder="beta 1 — needs work"
-                      onBlur={(e) => void onCommitVersionName(r.id, e.target.value)}
-                      onKeyDown={(e) => {
-                        if (e.key === 'Enter')
-                          void onCommitVersionName(r.id, e.currentTarget.value);
-                        if (e.key === 'Escape') {
-                          e.stopPropagation();
-                          setNamingVersionId(null);
-                        }
-                      }}
-                    />
-                  ) : (
-                    <span className="version-row-title">
-                      <strong className="version-number">v{r.version}</strong>
-                      {r.name && <span className="version-name">{r.name}</span>}
-                    </span>
-                  )}
-                  <span className="map-row-meta">
-                    <span className="version-source">{r.source}</span> · {when(r.savedAt)}
-                  </span>
-                </div>
-                <div className="map-row-actions">
-                  <button
-                    type="button"
-                    className={'version-star' + (r.starred ? ' starred' : '')}
-                    aria-label={`${r.starred ? 'Unstar' : 'Star'} version ${r.version}`}
-                    aria-pressed={r.starred ?? false}
-                    title={
-                      r.starred
-                        ? 'Starred — kept to the top, and never pruned'
-                        : 'Star this version: keeps it to the top, and safe from pruning'
-                    }
-                    onClick={() => void onToggleStar(r)}
-                  >
-                    {r.starred ? <StarFilledIcon /> : <StarIcon />}
-                  </button>
-                  <button
-                    type="button"
-                    aria-label={`Name version ${r.version}`}
-                    onClick={() => setNamingVersionId(r.id)}
-                  >
-                    Name
-                  </button>
-                  <button
-                    type="button"
-                    aria-label={`Open version ${r.version}`}
-                    onClick={() => void onOpen(r)}
-                  >
-                    Open
-                  </button>
-                  {deleteButton(
-                    `ver:${r.id}`,
-                    `Delete version ${r.version}`,
-                    () => void onDeleteVersion(r),
-                  )}
-                </div>
-              </div>
-            ))}
-          </section>
-        </div>
-      </div>
-    </div>
-  );
 
-  // `.app` is absent in standalone component tests, and React throws on a null
-  // container.
-  return createPortal(panel, document.querySelector('.app') ?? document.body);
+            <div className="map-library-columns">
+              <section className="map-library-maps" aria-label="Saved maps">
+                <div className="map-library-colhead">
+                  <h3>Maps</h3>
+                  <Select.Root
+                    value={sort}
+                    onValueChange={(v) => {
+                      if (isMapSort(v)) setSort(v);
+                    }}
+                  >
+                    <Select.Trigger
+                      className="field-select map-library-sort"
+                      aria-label="Sort maps"
+                    >
+                      <Select.Value />
+                      <Select.Icon className="field-select-caret" aria-hidden="true">
+                        <ChevronDownIcon />
+                      </Select.Icon>
+                    </Select.Trigger>
+                    <Select.Content
+                      className="field-select-panel"
+                      position="popper"
+                      sideOffset={4}
+                      align="end"
+                    >
+                      <Select.Viewport>
+                        {SORT_LABELS.map((s) => (
+                          <Select.Item key={s.value} value={s.value} className="field-select-item">
+                            <Select.ItemText>{s.label}</Select.ItemText>
+                          </Select.Item>
+                        ))}
+                      </Select.Viewport>
+                    </Select.Content>
+                  </Select.Root>
+                </div>
+                <div className="map-library-list">
+                  {sortedMaps === null && <div className="empty">Loading…</div>}
+                  {sortedMaps?.length === 0 && <div className="empty">No saved maps yet.</div>}
+                  {sortedMaps?.map((m, i) => (
+                    <div
+                      key={m.id}
+                      className={
+                        'map-row' +
+                        (m.id === selectedMapId ? ' selected' : '') +
+                        (i === mapDividerIndex ? ' after-starred' : '')
+                      }
+                      onClick={() => void selectMap(m.id)}
+                    >
+                      <Thumb src={m.thumb} />
+                      <div className="map-row-body">
+                        {renamingId === m.id ? (
+                          <input
+                            autoFocus
+                            aria-label={`Rename ${m.name}`}
+                            defaultValue={m.name}
+                            onClick={(e) => e.stopPropagation()}
+                            onBlur={(e) => void onCommitRename(m.id, e.target.value)}
+                            onKeyDown={(e) => {
+                              if (e.key === 'Enter')
+                                void onCommitRename(m.id, e.currentTarget.value);
+                              // Escape cancels the rename without closing the dialog.
+                              if (e.key === 'Escape') {
+                                e.stopPropagation();
+                                setRenamingId(null);
+                              }
+                            }}
+                          />
+                        ) : (
+                          <strong>{m.name}</strong>
+                        )}
+                        <span className="map-row-meta">
+                          {m.versionCount} version{m.versionCount === 1 ? '' : 's'} ·{' '}
+                          {when(m.updatedAt)}
+                        </span>
+                      </div>
+                      <div className="map-row-actions" onClick={(e) => e.stopPropagation()}>
+                        <StarToggle
+                          starred={m.starred ?? false}
+                          label={`${m.starred ? 'Unstar' : 'Star'} ${m.name}`}
+                          title={
+                            m.starred
+                              ? 'Starred — kept to the top of the list'
+                              : 'Star this map: keeps it to the top of the list'
+                          }
+                          onToggle={() => void onToggleMapStar(m)}
+                        />
+                        <button
+                          type="button"
+                          aria-label={`Rename ${m.name}`}
+                          onClick={() => setRenamingId(m.id)}
+                        >
+                          Rename
+                        </button>
+                        {deleteButton(
+                          `map:${m.id}`,
+                          `Delete ${m.name}`,
+                          () => void onDeleteMap(m.id),
+                        )}
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              </section>
+
+              <section className="map-library-versions" aria-label="Versions">
+                <div className="map-library-colhead">
+                  <h3>{selectedMap ? selectedMap.name : 'Versions'}</h3>
+                </div>
+                <div className="map-library-list">
+                  {selectedMapId === null && (
+                    <div className="empty">Select a map to see its versions.</div>
+                  )}
+                  {selectedMapId !== null && versions === null && (
+                    <div className="empty">Loading…</div>
+                  )}
+                  {versions?.length === 0 && <div className="empty">No versions.</div>}
+                  {versions?.map((r, i) => (
+                    <div
+                      key={r.id}
+                      className={
+                        'version-row' + (i === versionDividerIndex ? ' after-starred' : '')
+                      }
+                    >
+                      <Thumb src={r.thumb} />
+                      <div className="map-row-body">
+                        {namingVersionId === r.id ? (
+                          <input
+                            autoFocus
+                            aria-label={`Name version ${r.version}`}
+                            defaultValue={r.name ?? ''}
+                            placeholder="beta 1 — needs work"
+                            onBlur={(e) => void onCommitVersionName(r.id, e.target.value)}
+                            onKeyDown={(e) => {
+                              if (e.key === 'Enter')
+                                void onCommitVersionName(r.id, e.currentTarget.value);
+                              if (e.key === 'Escape') {
+                                e.stopPropagation();
+                                setNamingVersionId(null);
+                              }
+                            }}
+                          />
+                        ) : (
+                          <span className="version-row-title">
+                            <strong className="version-number">v{r.version}</strong>
+                            {r.name && <span className="version-name">{r.name}</span>}
+                          </span>
+                        )}
+                        <span className="map-row-meta">
+                          <span className="version-source">{r.source}</span> · {when(r.savedAt)}
+                        </span>
+                      </div>
+                      <div className="map-row-actions">
+                        <StarToggle
+                          starred={r.starred ?? false}
+                          label={`${r.starred ? 'Unstar' : 'Star'} version ${r.version}`}
+                          title={
+                            r.starred
+                              ? 'Starred — kept to the top, and never pruned'
+                              : 'Star this version: keeps it to the top, and safe from pruning'
+                          }
+                          onToggle={() => void onToggleStar(r)}
+                        />
+                        <button
+                          type="button"
+                          aria-label={`Name version ${r.version}`}
+                          onClick={() => setNamingVersionId(r.id)}
+                        >
+                          Name
+                        </button>
+                        <button
+                          type="button"
+                          aria-label={`Open version ${r.version}`}
+                          onClick={() => void onOpen(r)}
+                        >
+                          Open
+                        </button>
+                        {deleteButton(
+                          `ver:${r.id}`,
+                          `Delete version ${r.version}`,
+                          () => void onDeleteVersion(r),
+                        )}
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              </section>
+            </div>
+          </Dialog.Content>
+        </Dialog.Overlay>
+      </Dialog.Portal>
+    </Dialog.Root>
+  );
 }
