@@ -2105,30 +2105,71 @@ button.field-select {
   justify-content: center;
   z-index: 50;
 }
+/* The shell wears the item popovers' signature — white body, black title band,
+   soft corners, the same three-layer shadow. The library is chrome of the same
+   family, just bigger. */
 .map-library {
   background: var(--surface);
-  border: 1px solid var(--border);
-  border-radius: 6px;
-  box-shadow: 0 8px 32px rgb(0 0 0 / 25%);
+  border: 1px solid var(--border-soft);
+  border-radius: 10px;
+  box-shadow:
+    0 0 0 1px rgba(0, 0, 0, 0.04),
+    0 2px 6px rgba(0, 0, 0, 0.07),
+    0 16px 40px rgba(0, 0, 0, 0.18);
   width: min(880px, 90vw);
   height: min(560px, 85vh);
+  font-size: var(--fs-small);
   display: flex;
   flex-direction: column;
 }
+/* Same swap the popovers make: the dark ring separates the panel edge where
+   the light-mode shadow vanishes on black. */
+.app[data-theme='dark'] .map-library {
+  box-shadow:
+    0 0 0 1px rgba(255, 255, 255, 0.07),
+    0 16px 40px rgba(0, 0, 0, 0.6);
+}
+/* The signature black band (the popover-header recipe: same black in both
+   themes — it's the brand, not a surface), nesting flush inside the 1px
+   border via the 9px top radius. */
 .map-library header {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  padding: 8px 12px;
-  border-bottom: 1px solid var(--border-soft);
+  padding: 6px 10px 6px 16px;
+  background: #000;
+  color: #fff;
+  border-radius: 9px 9px 0 0;
+  flex-shrink: 0;
 }
 .map-library header h2 {
   margin: 0;
-  font-size: 14px;
+  font-size: var(--fs-ui);
+  font-weight: 700;
+}
+/* Ghost close, white-on-black — the OptionsPopover close idiom in band colors. */
+.map-library-close {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 24px;
+  height: 24px;
+  padding: 0;
+  background: transparent;
+  border: none;
+  border-radius: var(--radius);
+  color: rgba(255, 255, 255, 0.7);
+  cursor: pointer;
+}
+.map-library-close:hover {
+  color: #fff;
+  background: rgba(255, 255, 255, 0.18);
 }
 .map-library-error {
   color: var(--danger);
-  padding: 6px 12px;
+  background: color-mix(in srgb, var(--danger) 8%, transparent);
+  border-bottom: 1px solid color-mix(in srgb, var(--danger) 25%, transparent);
+  padding: 6px 16px;
 }
 .map-library-columns {
   display: grid;
@@ -2136,34 +2177,76 @@ button.field-select {
   flex: 1;
   min-height: 0;
 }
+.map-library-maps,
+.map-library-versions {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+  min-height: 0;
+}
 .map-library-maps {
-  overflow-y: auto;
   border-right: 1px solid var(--border-soft);
 }
-.map-library-versions {
+/* Column headers: the sidebar's list-header wash. The left one carries the
+   sort control; the right names the selected map. A shared min-height keeps
+   the two seams level whether or not a head holds a control. */
+.map-library-colhead {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  min-height: 34px;
+  box-sizing: border-box;
+  padding: 4px 12px;
+  background: var(--inset-bg);
+  border-bottom: 1px solid var(--inset-border);
+  font-size: var(--fs-small);
+  font-weight: 600;
+  color: var(--text-muted);
+  flex-shrink: 0;
+}
+.map-library-colhead h3 {
+  margin: 0;
+  font: inherit;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+button.map-library-sort {
+  flex: none;
+  width: 112px;
+  font-weight: 500;
+}
+.map-library-list {
+  flex: 1;
   overflow-y: auto;
 }
 .map-row,
 .version-row {
   display: flex;
   align-items: center;
-  gap: 8px;
-  padding: 6px 12px;
+  gap: 10px;
+  padding: 8px 12px;
   border-bottom: 1px solid var(--border-soft);
 }
-/* The starred block runs to the top of the list; this is the seam below the
+/* The starred block runs to the top of both lists; this is the seam below the
    last of them. A heavier rule than the hairline between rows, so the two
    groups read as two groups without needing a heading for a list that is
    usually one item long. Carried on the first UNSTARRED row (not the last
    starred one) so it collapses on its own when nothing is starred. */
+.map-row.after-starred,
 .version-row.after-starred {
   border-top: 2px solid var(--border-strong);
 }
 .map-row {
   cursor: pointer;
+  transition: background-color 120ms ease;
+}
+.map-row:hover {
+  background: var(--row-hover);
 }
 .map-row.selected {
-  background: var(--accent-bg);
+  background: var(--row-selected);
 }
 .map-row-body {
   display: flex;
@@ -2174,29 +2257,71 @@ button.field-select {
 }
 .map-row-meta {
   color: var(--text-muted);
-  font-size: 11px;
+  font-size: var(--fs-caption);
 }
 .map-row-actions {
   display: flex;
+  align-items: center;
   gap: 4px;
+}
+/* Row commands on the popovers' small-button recipe: hairline, quiet until
+   approached. (The star opts back out below — it is a state, not a command.) */
+.map-row-actions button {
+  height: 24px;
+  padding: 0 8px;
+  background: var(--control-bg);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  font-size: var(--fs-caption);
+  font-weight: 600;
+  cursor: pointer;
+  transition:
+    background-color 120ms ease,
+    border-color 120ms ease,
+    color 120ms ease;
+}
+.map-row-actions button:hover {
+  background: var(--control-hover);
+  border-color: var(--border-strong);
 }
 .map-row-actions .danger {
   color: var(--danger);
   border-color: var(--danger);
+}
+.map-row-actions .danger:hover {
+  background: color-mix(in srgb, var(--danger) 12%, transparent);
 }
 .map-thumb {
   width: 64px;
   height: 48px;
   object-fit: contain;
   border: 1px solid var(--border-soft);
+  border-radius: var(--radius);
   flex: none;
 }
 .map-thumb-blank {
-  background: var(--border-soft);
+  background: var(--inset-bg);
+}
+/* The hover preview: the stored capture at full size (up to 240×180) on a
+   popover-family card. Radix's popper positions it fixed, so it escapes the
+   scroll column; the z-index ranks it inside the backdrop's stacking context. */
+.map-thumb-preview {
+  background: var(--surface);
+  border: 1px solid var(--border-soft);
+  border-radius: 8px;
+  box-shadow: var(--shadow-pop);
+  padding: 4px;
+  z-index: 100;
+}
+.map-thumb-preview img {
+  display: block;
+  max-width: 240px;
+  max-height: 180px;
+  border-radius: 5px;
 }
 .version-source {
   color: var(--text-muted);
-  font-size: 11px;
+  font-size: var(--fs-caption);
   text-transform: uppercase;
   letter-spacing: 0.04em;
 }
@@ -2219,21 +2344,24 @@ button.field-select {
   white-space: nowrap;
 }
 /* The star is a state, not a command, so it reads as an icon rather than a
-   button until you go near it — an outline among the row's real buttons. */
-.version-star {
+   button until you go near it — quiet among the row's real buttons. Shared by
+   both columns: maps pin, versions pin AND dodge the prune policy. */
+.map-library .star-btn {
   display: inline-flex;
   align-items: center;
   padding: 4px;
+  height: auto;
+  background: transparent;
+  border: 1px solid transparent;
+  color: var(--text-faint);
+}
+.map-library .star-btn:hover {
   background: transparent;
   border-color: transparent;
-  color: var(--text-muted);
-}
-.version-star:hover {
   color: var(--text);
 }
-.version-star.starred {
+.map-library .star-btn.starred {
   color: var(--star);
-  border-color: transparent;
 }
 
 /* Styles panel (sidebar): an expanded style row's editor body — the style's

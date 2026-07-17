@@ -20,8 +20,8 @@ essentially one user (the developer).
 Stack: **React 18 + TypeScript + Vite**, **Zustand** for state, **zundo** for undo/redo,
 **Vitest** (jsdom) for unit tests, **Playwright** for e2e. No heavyweight UI framework — the
 chrome is hand-rolled CSS over a set of **Radix primitives** (`@radix-ui/react-{dropdown-menu,
-select, slider, checkbox, toggle, toggle-group, toast, icons}`), with `react-colorful` for the
-RGBA color picker. `clipper-lib` (integer-snapped polygon booleans/offsets) powers the
+select, slider, checkbox, toggle, toggle-group, toast, dialog, hover-card, icons}`), with
+`react-colorful` for the RGBA color picker. `clipper-lib` (integer-snapped polygon booleans/offsets) powers the
 region-layering geometry.
 
 ---
@@ -153,6 +153,7 @@ src/
     theme.ts                    # themeColors(darkMode) table (no store; reads doc.darkMode)
     customPalettes.ts           # useCustomPalettes: imported palettes (global localStorage)
     mapLibrary.ts               # saved maps + versions in IndexedDB (no store; opaque JSON)
+    libraryPrefs.ts             # useLibraryPrefs: map-library UI prefs (list sort mode)
     libraryPointer.ts           # useLibraryPointer: which map + version the live doc came from
     saveBaseline.ts             # useSaveBaseline: baseline + tri-state clean/dirty/unsaved signal
                                 #   (gates Save version + the toolbar dot; hash survives refresh)
@@ -166,7 +167,7 @@ src/
     Station*/Stop*/Label*/...   # per-entity SVG views (see Rendering section)
     selectionStyle.ts           # shared selection stroke/dash/wash constants (screen-px; ÷ zoom)
     Toolbar.tsx Sidebar.tsx Menu.tsx  # chrome
-    MapLibraryDialog.tsx        # the library manager (maps | versions)
+    MapLibraryDialog.tsx        # the library manager (maps | versions; Radix Dialog)
     MapVersionPill.tsx          # the live doc's version + save-status dot, beside the map name
     *Popover.tsx                # on-canvas item editors
     canvas/                     # interaction layer: drag/placement/viewport hooks + overlay layers
@@ -683,7 +684,7 @@ custom ids.
 
 ### The map library ([mapLibrary.ts](src/state/mapLibrary.ts))
 
-In-app saved maps with version history, in **IndexedDB** (`massimo-library`, schema **v2**). Reached
+In-app saved maps with version history, in **IndexedDB** (`massimo-library`, schema **v3**). Reached
 via Canvas → Save version and Canvas → Load → From library…
 
 - **A row IS a file.** `payloads` holds opaque `serialize()` output, verbatim; loading goes
@@ -694,10 +695,12 @@ via Canvas → Save version and Canvas → Load → From library…
   `version` = the user-facing handle, the v32 in the toolbar. The **doc's** version = the schema
   stamp inside the payload string, owned by `serialize`/`parse` and never read here.
   `DB_SCHEMA_VERSION` = IndexedDB's own stamp, private to the upgrade path.
-- **Schema (v2)**: `maps` (keyPath `id`; name, updatedAt, `nextVersion`) · `versions` (autoIncrement
-  `id`, index `mapId`; savedAt, `source: 'user'|'auto'`, `version`, optional `name`, optional
-  `starred: true`, thumb) · `payloads` (`id` === the version row's id; the JSON). Payloads are split
-  off so listing never drags 256 KB/map through a clone.
+- **Schema (v3)**: `maps` (keyPath `id`; name, updatedAt, `createdAt`, optional `starred: true`,
+  `nextVersion`) · `versions` (autoIncrement `id`, index `mapId`; savedAt, `source: 'user'|'auto'`,
+  `version`, optional `name`, optional `starred: true`, thumb) · `payloads` (`id` === the version
+  row's id; the JSON). Payloads are split off so listing never drags 256 KB/map through a clone.
+  `saveVersion`'s upsert spreads the previous map row first, so the star and `createdAt` ride
+  across every save rather than being shed by a freshly built row.
 - **`nextVersion` is a counter, not a derivation.** A version number is a **handle** ("open v32"),
   so it must never move and never be reused — and every derivation moves it. `max(version) + 1`
   re-issues v3 the moment v3 is deleted; a count renumbers the map's whole history the first time
@@ -711,7 +714,11 @@ via Canvas → Save version and Canvas → Load → From library…
   by that id, so re-adding rows and letting the new store's generator mint fresh ones would orphan
   every payload in the library: each map would still list its whole history, and every entry in it
   would fail to open. Passing the id back through an autoIncrement store also drags the generator up
-  past it, so the first save after the upgrade cannot collide with an inherited row.
+  past it, so the first save after the upgrade cannot collide with an inherited row. It stamps
+  `createdAt` while it is rewriting every map row anyway, so a v1 library upgrades straight to v3.
+- **v2 → v3 upgrade**: stamps `createdAt` on every map row — the earliest surviving version's
+  `savedAt` (pruning may have taken older autos, so that is the best signal left), falling back to
+  `updatedAt` for a map with no versions. Runs only when the database is exactly v2.
 - **Keyed by a minted library id**, never by name — **two maps may share a name**, and a rename
   can't orphan history.
 - **`onblocked` rejects rather than hanging.** Another tab holding an older schema open stalls the
@@ -731,13 +738,18 @@ via Canvas → Save version and Canvas → Load → From library…
   An explicit save, a star and a name are all the same act ("keep this"), so **none of them is ever
   pruned**, however many there are. The cap counts only prunable rows, so protected versions never
   eat the budget — you keep a full 50 autos either way.
-- **Star / name** (`setVersionStarred` / `setVersionName`): read-modify-write on the row; a row
-  that's gone is not an error (the dialog can be looking at a list the prune policy has moved past).
-  Both are **absent-when-off**, never `false`/`''` — a blank name is *deleted*, which keeps the row
-  honest and is what `isPrunable` reads. `listVersions` sorts **starred first, then newest-first
+- **Star / name** (`setVersionStarred` / `setVersionName` / `setMapStarred`): read-modify-write on
+  the row; a row that's gone is not an error (the dialog can be looking at a list a delete has moved
+  past). All are **absent-when-off**, never `false`/`''` — a blank name is *deleted*, which keeps the
+  row honest and is what `isPrunable` reads. `listVersions` sorts **starred first, then newest-first
   within each group** (`id` breaking a same-millisecond tie, so the order is total). That order is
   the list's own structure, not a view preference: the dialog draws its `.after-starred` divider at
-  the boundary it creates.
+  the boundary it creates. A **map's** star is a pin only (maps are never pruned).
+- **Map ordering** is split the same way: the pure `sortMaps(rows, sort)` owns what each mode means
+  (`'updated' | 'created' | 'name'`, starred block always first, ties → newest-edited), while the
+  chosen mode is a view preference in `useLibraryPrefs`
+  ([libraryPrefs.ts](src/state/libraryPrefs.ts), persisted localStorage — the labelEditorPrefs
+  pattern). `listMaps` itself keeps returning newest-touched first; the dialog applies `sortMaps`.
 - **The pointer lives outside both** ([libraryPointer.ts](src/state/libraryPointer.ts)).
   `useLibraryPointer` holds `{ mapId, version }` — which library map the live doc belongs to, and
   which version it **came from** (not a claim about the canvas now: edit after opening v32 and it

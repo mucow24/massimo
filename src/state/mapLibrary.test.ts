@@ -124,6 +124,113 @@ describe('mapLibrary', () => {
     ]);
   });
 
+  describe('map creation dates', () => {
+    it('stamps createdAt at the first save and keeps it across later saves', async () => {
+      const clock = vi.spyOn(Date, 'now');
+      clock.mockReturnValue(Date.parse('2026-07-15T10:00:00Z'));
+      await lib.saveVersion('m1', 'A', json('1'), 'user');
+      clock.mockReturnValue(Date.parse('2026-07-15T11:00:00Z'));
+      await lib.saveVersion('m1', 'A', json('2'), 'user');
+      clock.mockRestore();
+      const [m] = await lib.listMaps();
+      expect(m.createdAt).toBe(Date.parse('2026-07-15T10:00:00Z'));
+      expect(m.updatedAt).toBe(Date.parse('2026-07-15T11:00:00Z'));
+    });
+  });
+
+  describe('map stars', () => {
+    it('round-trips a star, and drops the flag when un-starred', async () => {
+      await lib.saveVersion('m1', 'A', json('1'), 'user');
+      await lib.setMapStarred('m1', true);
+      expect((await lib.listMaps())[0].starred).toBe(true);
+      await lib.setMapStarred('m1', false);
+      expect((await lib.listMaps())[0].starred).toBeUndefined();
+    });
+
+    // saveVersion's write to the maps store is an upsert; a fresh row built
+    // from scratch would silently shed the star on the very next auto-save.
+    it('keeps the star across later saves of the map', async () => {
+      await lib.saveVersion('m1', 'A', json('1'), 'user');
+      await lib.setMapStarred('m1', true);
+      await lib.saveVersion('m1', 'A', json('2'), 'auto');
+      expect((await lib.listMaps())[0].starred).toBe(true);
+    });
+
+    it('leaves the star alone through a rename', async () => {
+      await lib.saveVersion('m1', 'A', json('1'), 'user');
+      await lib.setMapStarred('m1', true);
+      await lib.renameMap('m1', 'Renamed');
+      expect((await lib.listMaps())[0].starred).toBe(true);
+    });
+
+    it('ignores a star aimed at a map that is gone', async () => {
+      await expect(lib.setMapStarred('nope', true)).resolves.toBeUndefined();
+    });
+  });
+
+  describe('sortMaps', () => {
+    type Summary = import('./mapLibrary').MapSummary;
+    const summary = (over: Partial<Summary> & { id: string }): Summary => ({
+      name: over.id,
+      updatedAt: 0,
+      createdAt: 0,
+      versionCount: 1,
+      ...over,
+    });
+
+    it('pins starred maps above the rest in every mode', () => {
+      const rows = [
+        summary({ id: 'a', updatedAt: 3, createdAt: 3 }),
+        summary({ id: 'z', updatedAt: 1, createdAt: 1, starred: true }),
+      ];
+      for (const mode of ['updated', 'created', 'name'] as const) {
+        expect(lib.sortMaps(rows, mode).map((m) => m.id)).toEqual(['z', 'a']);
+      }
+    });
+
+    it("'updated' orders newest-edited first", () => {
+      const rows = [
+        summary({ id: 'a', updatedAt: 1 }),
+        summary({ id: 'b', updatedAt: 3 }),
+        summary({ id: 'c', updatedAt: 2 }),
+      ];
+      expect(lib.sortMaps(rows, 'updated').map((m) => m.id)).toEqual(['b', 'c', 'a']);
+    });
+
+    // updatedAt deliberately disagrees with createdAt, so a mode that quietly
+    // reads the wrong field cannot pass.
+    it("'created' orders newest-created first", () => {
+      const rows = [
+        summary({ id: 'a', createdAt: 2, updatedAt: 1 }),
+        summary({ id: 'b', createdAt: 1, updatedAt: 3 }),
+        summary({ id: 'c', createdAt: 3, updatedAt: 2 }),
+      ];
+      expect(lib.sortMaps(rows, 'created').map((m) => m.id)).toEqual(['c', 'a', 'b']);
+    });
+
+    it("'name' orders alphabetically, case-insensitively, ties broken by last edit", () => {
+      const rows = [
+        summary({ id: 'x', name: 'delta', updatedAt: 1 }),
+        summary({ id: 'y', name: 'Alpha', updatedAt: 1 }),
+        summary({ id: 'twin-old', name: 'Canal', updatedAt: 1 }),
+        summary({ id: 'twin-new', name: 'Canal', updatedAt: 2 }),
+      ];
+      expect(lib.sortMaps(rows, 'name').map((m) => m.id)).toEqual([
+        'y',
+        'twin-new',
+        'twin-old',
+        'x',
+      ]);
+    });
+
+    it('returns a new array rather than mutating its input', () => {
+      const rows = [summary({ id: 'a', updatedAt: 1 }), summary({ id: 'b', updatedAt: 2 })];
+      const out = lib.sortMaps(rows, 'updated');
+      expect(out).not.toBe(rows);
+      expect(rows.map((m) => m.id)).toEqual(['a', 'b']);
+    });
+  });
+
   // A thumb-less save (empty canvas / rasterization failure) must not blank the
   // library row while good thumbs sit on earlier versions.
   it('falls back to the latest AVAILABLE thumb for the map row', async () => {
@@ -537,6 +644,92 @@ describe('mapLibrary', () => {
       });
       expect([...db.objectStoreNames].sort()).toEqual(['maps', 'payloads', 'versions']);
       db.close();
+    });
+
+    // A v1 library upgrades straight through to the current schema, so the
+    // createdAt backfill has to land on this path too — not just on v2 rows.
+    it('backfills createdAt from the earliest surviving revision', async () => {
+      await seedTwoMaps();
+      const byId = new Map((await lib.listMaps()).map((m) => [m.id, m]));
+      expect(byId.get('m1')?.createdAt).toBe(1);
+      expect(byId.get('m2')?.createdAt).toBe(4);
+    });
+  });
+
+  /**
+   * The v2 schema (numbered versions, no map creation dates) also has real
+   * libraries in it. v3 adds nothing structural — it stamps `createdAt` on
+   * every map row, from the earliest surviving version's savedAt (pruning may
+   * have taken older autos, so this is the best signal left).
+   */
+  describe('schema migration (v2 → v3)', () => {
+    /** Build a v2 database by hand — the shape the v2 code actually wrote. */
+    const seedV2 = (
+      maps: { id: string; name: string; updatedAt: number; nextVersion: number }[],
+      versions: { mapId: string; savedAt: number; source: string; version: number }[],
+    ) =>
+      new Promise<void>((resolve, reject) => {
+        const req = indexedDB.open('massimo-library', 2);
+        req.onupgradeneeded = () => {
+          const db = req.result;
+          db.createObjectStore('maps', { keyPath: 'id' });
+          const vs = db.createObjectStore('versions', { keyPath: 'id', autoIncrement: true });
+          vs.createIndex('mapId', 'mapId', { unique: false });
+          db.createObjectStore('payloads', { keyPath: 'id' });
+        };
+        req.onsuccess = () => {
+          const db = req.result;
+          const tx = db.transaction(['maps', 'versions', 'payloads'], 'readwrite');
+          for (const m of maps) tx.objectStore('maps').put(m);
+          for (const v of versions) {
+            const addReq = tx.objectStore('versions').add(v);
+            addReq.onsuccess = () =>
+              tx.objectStore('payloads').put({ id: addReq.result, json: json(`p`) });
+          }
+          tx.oncomplete = () => {
+            // Close before the module opens at v3, or the upgrade parks on
+            // `blocked` behind this handle and never settles.
+            db.close();
+            resolve();
+          };
+          tx.onerror = () => reject(tx.error);
+          tx.onabort = () => reject(tx.error);
+        };
+        req.onerror = () => reject(req.error);
+      });
+
+    it('backfills createdAt from the earliest surviving version', async () => {
+      await seedV2(
+        [
+          { id: 'm1', name: 'Alpha', updatedAt: 30, nextVersion: 3 },
+          { id: 'm2', name: 'Beta', updatedAt: 40, nextVersion: 2 },
+        ],
+        [
+          { mapId: 'm1', savedAt: 10, source: 'user', version: 1 },
+          { mapId: 'm1', savedAt: 30, source: 'auto', version: 2 },
+          { mapId: 'm2', savedAt: 40, source: 'user', version: 1 },
+        ],
+      );
+      const byId = new Map((await lib.listMaps()).map((m) => [m.id, m]));
+      expect(byId.get('m1')?.createdAt).toBe(10);
+      expect(byId.get('m2')?.createdAt).toBe(40);
+    });
+
+    it('falls back to updatedAt for a map with no versions', async () => {
+      await seedV2([{ id: 'm1', name: 'Empty', updatedAt: 30, nextVersion: 1 }], []);
+      expect((await lib.listMaps())[0].createdAt).toBe(30);
+    });
+
+    it('leaves versions and counters untouched', async () => {
+      await seedV2(
+        [{ id: 'm1', name: 'Alpha', updatedAt: 30, nextVersion: 3 }],
+        [
+          { mapId: 'm1', savedAt: 10, source: 'user', version: 1 },
+          { mapId: 'm1', savedAt: 30, source: 'auto', version: 2 },
+        ],
+      );
+      expect((await lib.listVersions('m1')).map((r) => r.version)).toEqual([2, 1]);
+      expect((await lib.saveVersion('m1', 'Alpha', json('new'), 'user')).version).toBe(3);
     });
   });
 

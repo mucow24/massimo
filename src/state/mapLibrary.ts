@@ -19,7 +19,7 @@
 
 const DB_NAME = 'massimo-library';
 /** IndexedDB's own schema stamp — NOT a map's version number. v1 shipped in #265. */
-const DB_SCHEMA_VERSION = 2;
+const DB_SCHEMA_VERSION = 3;
 
 /**
  * Auto versions kept per map. Explicit saves are never pruned, however many
@@ -40,9 +40,16 @@ export interface MapSummary {
   id: string;
   name: string;
   updatedAt: number;
+  /** When the map's first version was saved (backfilled for older libraries). */
+  createdAt: number;
   versionCount: number;
+  /** Present only when starred — the same contract as a version's star. */
+  starred?: true;
   thumb?: string;
 }
+
+/** How the library list is ordered. Starred maps pin to the top regardless. */
+export type MapSort = 'updated' | 'created' | 'name';
 
 export interface VersionMeta {
   id: number;
@@ -68,6 +75,10 @@ interface MapRow {
   id: string;
   name: string;
   updatedAt: number;
+  /** Stamped at the map's first save; the v3 upgrade backfills older rows. */
+  createdAt: number;
+  /** Present only when starred, so the flag reads as an act, not a default. */
+  starred?: true;
   /**
    * The next version number to hand out. It only ever climbs — which is the
    * whole point. Deriving the number instead (`max(version) + 1`, or a count)
@@ -77,6 +88,9 @@ interface MapRow {
    */
   nextVersion: number;
 }
+
+/** A map row as the v2 schema wrote it — `createdAt` not yet stamped. */
+type MapRowV2 = Omit<MapRow, 'createdAt'> & { createdAt?: number };
 
 interface PayloadRow {
   id: number;
@@ -107,6 +121,8 @@ function createVersionsStore(db: IDBDatabase): IDBObjectStore {
 /**
  * v1 → v2: rename `revisions` to `versions` and backfill the numbering it
  * never had — `version` per row, and the map row's `nextVersion` counter.
+ * It already reads every row and rewrites every map, so the v3 `createdAt`
+ * stamp rides along here too and a v1 library upgrades straight through.
  *
  * Every row is carried across WITH ITS ORIGINAL ID. Payload rows are keyed by
  * that id, so re-adding rows and letting the new store's generator mint fresh
@@ -125,9 +141,11 @@ function upgradeV1ToV2(db: IDBDatabase, tx: IDBTransaction): void {
     // does not.
     const rows = (oldRowsReq.result as LegacyRevisionRow[]).sort((a, b) => a.id - b.id);
     const counts = new Map<string, number>();
+    const firstSavedAt = new Map<string, number>();
     for (const row of rows) {
       const version = (counts.get(row.mapId) ?? 0) + 1;
       counts.set(row.mapId, version);
+      if (!firstSavedAt.has(row.mapId)) firstSavedAt.set(row.mapId, row.savedAt);
       versions.add({ ...row, version });
     }
     // Read the map rows only once the counts are final, and write each exactly
@@ -136,9 +154,37 @@ function upgradeV1ToV2(db: IDBDatabase, tx: IDBTransaction): void {
     const mapsReq = maps.getAll();
     mapsReq.onsuccess = () => {
       for (const row of mapsReq.result as MapRow[]) {
-        maps.put({ ...row, nextVersion: (counts.get(row.id) ?? 0) + 1 });
+        maps.put({
+          ...row,
+          nextVersion: (counts.get(row.id) ?? 0) + 1,
+          createdAt: firstSavedAt.get(row.id) ?? row.updatedAt,
+        });
       }
       db.deleteObjectStore('revisions');
+    };
+  };
+}
+
+/**
+ * v2 → v3: stamp `createdAt` on every map row. The truest surviving signal is
+ * the earliest version's savedAt — pruning may have taken older autos, so this
+ * is the best approximation left; a map with no versions at all falls back to
+ * its updatedAt.
+ */
+function backfillCreatedAt(tx: IDBTransaction): void {
+  const versionsReq = tx.objectStore('versions').getAll();
+  versionsReq.onsuccess = () => {
+    const earliest = new Map<string, number>();
+    for (const row of versionsReq.result as VersionMeta[]) {
+      const prev = earliest.get(row.mapId);
+      if (prev === undefined || row.savedAt < prev) earliest.set(row.mapId, row.savedAt);
+    }
+    const maps = tx.objectStore('maps');
+    const mapsReq = maps.getAll();
+    mapsReq.onsuccess = () => {
+      for (const row of mapsReq.result as MapRowV2[]) {
+        maps.put({ ...row, createdAt: row.createdAt ?? earliest.get(row.id) ?? row.updatedAt });
+      }
     };
   };
 }
@@ -174,8 +220,11 @@ function openDb(): Promise<IDBDatabase> {
         return;
       }
       // `req.transaction` is the versionchange transaction, and it is the only
-      // handle from which the retiring store can still be read.
+      // handle from which the retiring store can still be read. The v1 path
+      // stamps createdAt itself (it rewrites every map row anyway), so the v3
+      // backfill runs only for a database that is exactly v2.
       if (event.oldVersion < 2) upgradeV1ToV2(db, req.transaction!);
+      else if (event.oldVersion < 3) backfillCreatedAt(req.transaction!);
     };
     req.onsuccess = () => {
       const db = req.result;
@@ -292,8 +341,17 @@ export async function saveVersion(
   mapReq.onsuccess = () => {
     const prev = mapReq.result as MapRow | undefined;
     const version = prev?.nextVersion ?? 1;
-    // `put` is an upsert: first save creates the row, later ones refresh it.
-    maps.put({ id: mapId, name, updatedAt: now, nextVersion: version + 1 } satisfies MapRow);
+    // `put` is an upsert: the first save creates the row (stamping its
+    // creation time), later ones refresh name/updatedAt — spreading `prev`
+    // first so the star and createdAt ride across rather than being shed.
+    maps.put({
+      ...prev,
+      id: mapId,
+      name,
+      updatedAt: now,
+      createdAt: prev?.createdAt ?? now,
+      nextVersion: version + 1,
+    } satisfies MapRow);
     const addReq = tx.objectStore('versions').add({ mapId, savedAt: now, source, version, thumb });
     addReq.onsuccess = () => {
       saved.id = addReq.result as number;
@@ -315,15 +373,38 @@ export async function listMaps(): Promise<MapSummary[]> {
   // A fresh transaction per lookup: awaiting inside one lets it auto-commit
   // between requests. Two reads per map, on a library of a handful.
   const summaries = await Promise.all(
-    rows.map(async ({ id, name, updatedAt }) => ({
+    rows.map(async ({ id, name, updatedAt, createdAt, starred }) => ({
       id,
       name,
       updatedAt,
+      createdAt,
+      starred,
       versionCount: await countVersions(db, id),
       thumb: await latestThumb(db, id),
     })),
   );
   return summaries.sort((a, b) => b.updatedAt - a.updatedAt);
+}
+
+/**
+ * Order maps for the library list: the starred block first — the same
+ * structure `listVersions` gives versions — then the chosen sort within each
+ * group. Name ties (two "Untitled map"s) and same-millisecond timestamps fall
+ * back to newest-edited first.
+ */
+export function sortMaps(rows: MapSummary[], sort: MapSort): MapSummary[] {
+  const byMode = (a: MapSummary, b: MapSummary): number =>
+    sort === 'name'
+      ? a.name.localeCompare(b.name, undefined, { sensitivity: 'base' })
+      : sort === 'created'
+        ? b.createdAt - a.createdAt
+        : 0;
+  return [...rows].sort(
+    (a, b) =>
+      Number(b.starred ?? false) - Number(a.starred ?? false) ||
+      byMode(a, b) ||
+      b.updatedAt - a.updatedAt,
+  );
 }
 
 function countVersions(db: IDBDatabase, mapId: string): Promise<number> {
@@ -415,17 +496,36 @@ export function setVersionStarred(versionId: number, starred: boolean): Promise<
   });
 }
 
-/** Rename the library row only — a saved version's own JSON is never rewritten. */
-export async function renameMap(mapId: string, name: string): Promise<void> {
+/** Read-modify-write one map row. A row that is gone is not an error, same
+ *  as `patchVersion`: the dialog can be looking at a list a delete has
+ *  already moved past. */
+async function patchMap(mapId: string, patch: (row: MapRow) => void): Promise<void> {
   const db = await openDb();
   const tx = db.transaction('maps', 'readwrite');
   const store = tx.objectStore('maps');
   const getReq = store.get(mapId);
   getReq.onsuccess = () => {
     const row = getReq.result as MapRow | undefined;
-    if (row) store.put({ ...row, name });
+    if (!row) return;
+    patch(row);
+    store.put(row);
   };
   return txDone(tx, () => undefined);
+}
+
+/** Rename the library row only — a saved version's own JSON is never rewritten. */
+export function renameMap(mapId: string, name: string): Promise<void> {
+  return patchMap(mapId, (row) => {
+    row.name = name;
+  });
+}
+
+/** Star a map — pinning it to the top of the library list — or un-star it. */
+export function setMapStarred(mapId: string, starred: boolean): Promise<void> {
+  return patchMap(mapId, (row) => {
+    if (starred) row.starred = true;
+    else delete row.starred;
+  });
 }
 
 /**
