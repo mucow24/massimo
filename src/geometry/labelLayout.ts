@@ -1,4 +1,4 @@
-import type { Station, StopOrientation } from '../model/types';
+import type { Station, StopCell, StopOrientation } from '../model/types';
 import {
   DIR_8,
   STOP_SIZE,
@@ -9,6 +9,7 @@ import {
 } from './orientation';
 import { DIRS_8, dirIndex } from './router';
 import type { Vec2 } from './vec';
+import { dashOutward } from './stationDash';
 import { BASELINE_FRACTION, CAP_FRACTION, LINE_HEIGHT, measureTextLabel } from './textMeasure';
 
 const HIT_PAD = 2;
@@ -25,6 +26,17 @@ const HALF = STOP_SIZE / 2;
  */
 export type StopHalfFn = (lineId: string) => number;
 export const DEFAULT_STOP_HALF: StopHalfFn = () => HALF;
+
+/**
+ * Per-stop dash (TfL tick) lookup for the autoAlign clearance: null for a
+ * non-dash stop, tick length/width in world units for a dash stop (see
+ * model/dashSize.ts). Production callers pass `stopDashOf(lines)` — and must
+ * do so at EVERY site that passes `stopHalfOf(lines)`, renderer and
+ * hit/bounds geometry alike, or the painted label drifts off its hit rect
+ * next to a dash stop. The default reproduces the tick-blind pre-dash pin.
+ */
+export type StopDashFn = (stop: StopCell) => { length: number; width: number } | null;
+export const DEFAULT_STOP_DASH: StopDashFn = () => null;
 
 export type LabelBaseline = 'central' | 'text-before-edge' | 'text-after-edge';
 
@@ -115,6 +127,8 @@ export function labelLayoutLocal(
   // (stationBoundary) MUST pass the same lookup or the wash/hit rect drifts
   // off the painted text next to a non-default-width stop.
   stopHalf: StopHalfFn = DEFAULT_STOP_HALF,
+  // Per-stop dash-tick lookup — same must-agree contract as stopHalf.
+  stopDash: StopDashFn = DEFAULT_STOP_DASH,
 ): LabelLayout {
   const stops = station.stops;
   const label = station.label;
@@ -178,6 +192,13 @@ export function labelLayoutLocal(
       readSin,
       style.fontSize,
       stopHalf,
+      // A waypoint never paints ticks — hidden it paints nothing, revealed
+      // the overlay replaces every stop style with a circle (StationDots'
+      // wpOverride) — so its pin must not clear a phantom tick. Gated on
+      // isWaypoint alone (not the view toggle) so layout never shifts with
+      // the Show-waypoints overlay.
+      station.isWaypoint ? DEFAULT_STOP_DASH : stopDash,
+      station.rotation,
       lineAdvances,
     );
     textAnchor = info.textAnchor;
@@ -523,6 +544,10 @@ function autoAlignInfo(
   readSin: number,
   fontSize: number,
   stopHalf: StopHalfFn,
+  stopDash: StopDashFn,
+  // The station's own rotation — only the dash tick's on-axis tie fallback
+  // reads it (dashOutward evaluates that fallback in world space).
+  stationRotation: Rotation,
   // Per-line pen advances of the rendered name, for the H/V overrides.
   lineAdvances: number[],
 ): AutoAlignInfo {
@@ -531,12 +556,14 @@ function autoAlignInfo(
     dCol: number;
     half: number;
     orientation: StopOrientation | null;
+    dash: { length: number; width: number } | null;
   }
   const candidates: Candidate[] = stops.map((s) => ({
     dRow: s.row - label.row,
     dCol: s.col - label.col,
     half: stopHalf(s.lineId),
     orientation: s.orientation,
+    dash: stopDash(s),
   }));
   if (phantomDot) {
     candidates.push({
@@ -544,6 +571,7 @@ function autoAlignInfo(
       dCol: phantomDot.col - label.col,
       half: HALF,
       orientation: null,
+      dash: null,
     });
   }
 
@@ -553,8 +581,11 @@ function autoAlignInfo(
   let ref: {
     proj: number;
     perp: number;
+    dRow: number;
+    dCol: number;
     half: number;
     orientation: StopOrientation | null;
+    dash: { length: number; width: number } | null;
   } | null = null;
   let refD2 = Infinity;
   for (const c of candidates) {
@@ -565,7 +596,15 @@ function autoAlignInfo(
     const perp = c.dCol * -readSin + c.dRow * readCos;
     const d2 = c.dRow * c.dRow + c.dCol * c.dCol;
     if (ref === null || d2 < refD2 - 1e-9 || (d2 < refD2 + 1e-9 && perp > ref.perp)) {
-      ref = { proj, perp, half: c.half, orientation: c.orientation };
+      ref = {
+        proj,
+        perp,
+        dRow: c.dRow,
+        dCol: c.dCol,
+        half: c.half,
+        orientation: c.orientation,
+        dash: c.dash,
+      };
       refD2 = Math.min(refD2, d2);
     }
   }
@@ -597,9 +636,30 @@ function autoAlignInfo(
   const uLocX = u.x * readCos - u.y * readSin;
   const uLocY = u.x * readSin + u.y * readCos;
   const axis = ref.orientation ? travelDirLocal(ref.orientation) : { x: 1, y: 0 };
-  const extent =
-    ref.half *
-    (Math.abs(uLocX * axis.x + uLocY * axis.y) + Math.abs(uLocX * -axis.y + uLocY * axis.x));
+  const alongAxis = Math.abs(uLocX * axis.x + uLocY * axis.y);
+  let extent = ref.half * (alongAxis + Math.abs(uLocX * -axis.y + uLocY * axis.x));
+  if (ref.dash && ref.orientation) {
+    // A dash stop's tick is a second obstacle: a rect from the stripe edge
+    // (± half on the label-signed perpendicular) reaching `length` toward
+    // the label, `width` thick along the travel axis. Its support along the
+    // approach joins the square's by max, so the pin clears whichever
+    // reaches further. The side comes from the SAME offset-aware vector the
+    // tick renderer uses (shared dashOutward), so a label parked on the far
+    // side via offsets gets no phantom clearance — the projection goes
+    // negative and the square wins. No cycle: side and octant read stored
+    // fields only; this extent merely moves the painted anchor.
+    const offsetPerp = label.offsetPerp ?? 0;
+    const delta = {
+      x: -ref.dCol * STOP_SIZE + label.offset * readCos + offsetPerp * -readSin,
+      y: -ref.dRow * STOP_SIZE + label.offset * readSin + offsetPerp * readCos,
+    };
+    const out = dashOutward(delta, ref.orientation, stationRotation);
+    const proj = out.x * uLocX + out.y * uLocY;
+    const tickExtent =
+      Math.max(ref.half * proj, (ref.half + ref.dash.length) * proj) +
+      (ref.dash.width / 2) * alongAxis;
+    extent = Math.max(extent, tickExtent);
+  }
 
   // Pin point: marker edge + LABEL_GAP along the approach, stop-relative on
   // BOTH axes (the cell picks the octant; offset/offsetPerp fine-tune).

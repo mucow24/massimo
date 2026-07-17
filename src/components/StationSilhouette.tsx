@@ -5,6 +5,7 @@ import type { Station } from '../model/types';
 import { effectiveStationLabelStyle } from '../model/transforms';
 import { stationBoundaryRectsLocal } from '../geometry/stationBoundary';
 import { stopHalfOf } from '../model/lineWidth';
+import { stopDashOf } from '../model/dashSize';
 import { polygonsToPath, unionConvex } from '../geometry/polygonUnion';
 import {
   SELECTION_STROKE_WIDTH,
@@ -62,6 +63,7 @@ export function StationSilhouette({
     effectiveStationLabelStyle(station),
     stopHalfOf(lines),
     showWaypoints,
+    stopDashOf(lines),
   );
   // Hidden waypoint: no label polygon to merge, render the cells rect alone.
   const polygons = labelPoly ? unionConvex(cells, labelPoly) : [cells];

@@ -90,6 +90,108 @@ const measureLines = (widths: number[]) => () => ({
   lines: [],
 });
 
+describe('labelLayoutLocal — autoAlign clears the dash tick', () => {
+  // Every stop reports a TfL tick of the default derived dimensions
+  // (length 14 = one line width, thickness 7). The pin must clear the tick's
+  // support extent along the approach — not just the marker square.
+  const DASH = { length: 14, width: 7 };
+  const dashAll = () => DASH;
+
+  it('E of a dashed vertical stop: the pin clears the tick tip', () => {
+    const st = autoStation({ stops: [{ dRow: 0, dCol: -1, orientation: 'auto-vertical' }] });
+    const lay = labelLayoutLocal(st, undefined, undefined, undefined, dashAll);
+    // Tick reaches HALF + length = 21 east of the stop center; text begins
+    // LABEL_GAP past the tip: −14 + (21 + 3) = +10 (vs −4 without the tick).
+    expect(lay.textAnchor).toBe('start');
+    expect(lay.anchorX).toBeCloseTo(-STOP_SIZE + (HALF + DASH.length + LABEL_GAP), 6);
+    expect(lay.anchorY).toBeCloseTo(CTR, 6);
+  });
+
+  it('along the travel axis the tick is beside the approach — pin unchanged', () => {
+    // Label S of a vertical-line stop: the tick points sideways (tie ⇒ west),
+    // so only its thin cross-section matters and the marker square dominates.
+    const stops = [{ dRow: -1, dCol: 0, orientation: 'auto-vertical' as const }];
+    const base = labelLayoutLocal(autoStation({ stops }));
+    const dashed = labelLayoutLocal(
+      autoStation({ stops }),
+      undefined,
+      undefined,
+      undefined,
+      dashAll,
+    );
+    expect(dashed.anchorX).toBeCloseTo(base.anchorX, 6);
+    expect(dashed.anchorY).toBeCloseTo(base.anchorY, 6);
+  });
+
+  it('offsets that park the label on the far side leave the pin tick-free (tick points away)', () => {
+    // Label cell E of the stop, but offset −30 carries the painted anchor
+    // west across the line. The octant still reads E (cells), the tick flips
+    // W (offset-aware side), so the E-approach clearance is the plain marker
+    // square — no cycle, no phantom clearance.
+    const stops = [{ dRow: 0, dCol: -1, orientation: 'auto-vertical' as const }];
+    const base = labelLayoutLocal(autoStation({ stops, offset: -30 }));
+    const dashed = labelLayoutLocal(
+      autoStation({ stops, offset: -30 }),
+      undefined,
+      undefined,
+      undefined,
+      dashAll,
+    );
+    expect(dashed.anchorX).toBeCloseTo(base.anchorX, 6);
+    expect(dashed.anchorY).toBeCloseTo(base.anchorY, 6);
+  });
+
+  it('a diagonal approach clears the tick corner via its support function', () => {
+    // Label NE of a dashed vertical stop (stop SW of the label): tick points
+    // E. Along u = NE the tick support is (HALF+L)·√2/2 + (t/2)·√2/2 = 24.5·√2/2,
+    // vs the square's 7·√2 — the pin moves out by exactly (24.5−14)·½ = 5.25
+    // on each axis.
+    const stops = [{ dRow: 1, dCol: -1, orientation: 'auto-vertical' as const }];
+    const base = labelLayoutLocal(autoStation({ stops }));
+    const dashed = labelLayoutLocal(
+      autoStation({ stops }),
+      undefined,
+      undefined,
+      undefined,
+      dashAll,
+    );
+    expect(dashed.anchorX - base.anchorX).toBeCloseTo(5.25, 6);
+    expect(dashed.anchorY - base.anchorY).toBeCloseTo(-5.25, 6);
+  });
+
+  it('a waypoint station never ticks — the lookup is neutralized (matches the renderer)', () => {
+    // StationDots' waypoint override replaces every stop style with the
+    // overlay circle, so no tick is ever painted for a waypoint (hidden or
+    // revealed). The pin must not clear a phantom tick.
+    const stops = [{ dRow: 0, dCol: -1, orientation: 'auto-vertical' as const }];
+    const wp = (s: Station): Station => ({ ...s, isWaypoint: true });
+    const base = labelLayoutLocal(wp(autoStation({ stops })));
+    const dashed = labelLayoutLocal(
+      wp(autoStation({ stops })),
+      undefined,
+      undefined,
+      undefined,
+      dashAll,
+    );
+    expect(dashed.anchorX).toBeCloseTo(base.anchorX, 6);
+    expect(dashed.anchorY).toBeCloseTo(base.anchorY, 6);
+  });
+
+  it('non-dash stops are unaffected by the lookup being present', () => {
+    const stops = [{ dRow: 0, dCol: -1, orientation: 'auto-vertical' as const }];
+    const base = labelLayoutLocal(autoStation({ stops }));
+    const withLookup = labelLayoutLocal(
+      autoStation({ stops }),
+      undefined,
+      undefined,
+      undefined,
+      () => null,
+    );
+    expect(withLookup.anchorX).toBeCloseTo(base.anchorX, 6);
+    expect(withLookup.anchorY).toBeCloseTo(base.anchorY, 6);
+  });
+});
+
 describe('labelLayoutLocal — autoAlign octant table', () => {
   // Cardinal octants against a straight line through the stop. The pinned
   // typographic target sits (marker extent + LABEL_GAP) from the stop

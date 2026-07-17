@@ -100,6 +100,7 @@ export function StationDots({
           spec={spec}
           style={style}
           lineColor={lines[cell.lineId]?.color}
+          line={lines[cell.lineId]}
           isHovered={hoveredStop?.stationId === station.id && hoveredStop?.lineId === cell.lineId}
           stationId={station.id}
           lineId={cell.lineId}

@@ -1,4 +1,6 @@
 import { lineWidthOf } from './lineWidth';
+import { resolveDotStyle } from './transforms';
+import type { Line, StopCell } from './types';
 
 // TfL-tick dimensions for 'dash' stops, derived from the line's stripe width
 // when not explicitly set. The ratios reproduce the TfL proportions at the
@@ -45,3 +47,19 @@ export const dashRenderLength = (
 export const dashRenderWidth = (
   line: { dashLength?: number; dashWidth?: number; width?: number } | null | undefined,
 ): number => lineDashWidthOf(line) ?? lineWidthOf(line) * DASH_WIDTH_RATIO;
+
+/**
+ * Per-stop dash-tick lookup for the label layout (labelLayout's StopDashFn):
+ * the tick's rendered dimensions when the stop's effective style is 'dash',
+ * else null. The companion of `stopHalfOf` (lineWidth.ts) — pass the two
+ * together at every labelLayoutLocal / stationBoundary / itemBounds site, so
+ * the autoAlign pin, the hit rect, and the silhouette all clear the same
+ * tick the canvas paints.
+ */
+export const stopDashOf =
+  (lines: Record<string, Line | undefined>) =>
+  (stop: StopCell): { length: number; width: number } | null => {
+    const line = lines[stop.lineId];
+    if (resolveDotStyle(line, stop).shape !== 'dash') return null;
+    return { length: dashRenderLength(line), width: dashRenderWidth(line) };
+  };

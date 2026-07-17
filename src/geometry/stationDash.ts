@@ -50,6 +50,39 @@ function labelAnchorLocal(station: Station): Vec2 {
 }
 
 /**
+ * Unit outward direction of a dash stop's tick — from the stripe edge toward
+ * the label — in the unrotated station-local frame. `labelMinusStop` is the
+ * label ANCHOR minus the stop center, local px (offset-aware: cell + the
+ * offset/offsetPerp composition labelLayoutLocal paints with). Shared by the
+ * tick renderer (dashSpec) and the autoAlign label clearance (labelLayout)
+ * so the two can never disagree about which side the tick is on.
+ */
+export function dashOutward(
+  labelMinusStop: Vec2,
+  orientation: StopCell['orientation'],
+  stationRotation: Station['rotation'],
+): Vec2 {
+  // A tick is 180°-symmetric about the travel axis, so the hint-free axis is
+  // enough (same argument as the marker squares, buildStopMarkers).
+  const travel = travelDirLocal(orientation);
+  const perpAxis = leftNormal(travel);
+  const s = dot(labelMinusStop, perpAxis);
+
+  let sign: 1 | -1;
+  if (Math.abs(s) > SIDE_EPS) {
+    sign = s > 0 ? 1 : -1;
+  } else {
+    // Label on the travel axis: fall back to the typographic default side —
+    // "label above the line" (negative world y), or negative world x when
+    // the perpendicular is exactly horizontal. Evaluated in WORLD space so
+    // the fallback reads the same regardless of station rotation.
+    const wp = rotateBy(perpAxis, stationRotation);
+    sign = wp.y < -SIDE_EPS || (Math.abs(wp.y) <= SIDE_EPS && wp.x < 0) ? 1 : -1;
+  }
+  return { x: perpAxis.x * sign, y: perpAxis.y * sign };
+}
+
+/**
  * Tick geometry for one dash stop, in world coordinates. Pure and
  * measure-free: the label side derives from the label ANCHOR (cell +
  * offsets), never the painted text bbox, so there is no text-measurement
@@ -65,26 +98,8 @@ export function dashSpec(
 ): DashSpec {
   const stopLocal = stopCenterAt(cell.row, cell.col);
   const labelLocal = labelAnchorLocal(station);
-
-  // A tick is 180°-symmetric about the travel axis, so the hint-free axis is
-  // enough (same argument as the marker squares, buildStopMarkers).
-  const travel = travelDirLocal(cell.orientation);
-  const perpAxis = leftNormal(travel);
-  const s = dot({ x: labelLocal.x - stopLocal.x, y: labelLocal.y - stopLocal.y }, perpAxis);
-
-  let sign: 1 | -1;
-  if (Math.abs(s) > SIDE_EPS) {
-    sign = s > 0 ? 1 : -1;
-  } else {
-    // Label on the travel axis: fall back to the typographic default side —
-    // "label above the line" (negative world y), or negative world x when
-    // the perpendicular is exactly horizontal. Evaluated in WORLD space so
-    // the fallback reads the same regardless of station rotation.
-    const wp = rotateBy(perpAxis, station.rotation);
-    sign = wp.y < -SIDE_EPS || (Math.abs(wp.y) <= SIDE_EPS && wp.x < 0) ? 1 : -1;
-  }
-
-  const out = { x: perpAxis.x * sign, y: perpAxis.y * sign };
+  const delta = { x: labelLocal.x - stopLocal.x, y: labelLocal.y - stopLocal.y };
+  const out = dashOutward(delta, cell.orientation, station.rotation);
   const half = lineWidthOf(line) / 2;
   const anchor = localToWorld(
     { x: stopLocal.x + out.x * half, y: stopLocal.y + out.y * half },
@@ -97,6 +112,8 @@ export function dashSpec(
     angleDeg: (Math.atan2(outWorld.y, outWorld.x) * 180) / Math.PI,
     length: dashRenderLength(line),
     width: dashRenderWidth(line),
-    labelDist: Math.abs(s),
+    // |perp distance to the label| — dot(delta, out) is that distance made
+    // non-negative, since `out` is the perp axis signed toward the label.
+    labelDist: Math.abs(dot(delta, out)),
   };
 }

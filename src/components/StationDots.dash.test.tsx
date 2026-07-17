@@ -54,6 +54,11 @@ describe('StationDots — dash stops render as ticks, not dots', () => {
     // Label east of a vertical line: anchored at the east stripe edge,
     // pointing east (angle 0).
     expect(tick.getAttribute('transform')).toBe('translate(107 50) rotate(0)');
+    // Weld overlap: the base reaches 1 unit INTO the line body (same color,
+    // invisible) so no rect edge coincides with the body edge — abutting
+    // edges leave an antialiasing hairline of the background between them.
+    expect(tick.getAttribute('x')).toBe('-1');
+    expect(tick.getAttribute('width')).toBe('15');
     // One data-stop-station element per stop (locator strict-mode invariant),
     // and no stroke-pass silhouette for a dash.
     expect(svg.querySelectorAll('[data-stop-station="s1"]').length).toBe(1);
@@ -100,6 +105,44 @@ describe('StationDots — dash stops render as ticks, not dots', () => {
     );
     // B sits nearer the (east) label, so it paints after A.
     expect(order).toEqual(['A', 'B']);
+  });
+
+  it('a cased line welds the tick to the body core and wraps it in a three-sided casing', () => {
+    // strokeWidth 2 on a default-width line ⇒ railW 2. The visible colored
+    // core ends railW/2 inside the nominal edge (silhouette+inset casing), so
+    // the tick's base must extend railW/2 INWARD to meet it — no white ring
+    // between line and tick — and the tick itself wears a strokeColor
+    // silhouette on its two long sides + tip (never the base).
+    const station = makeStation({
+      id: 's1',
+      stops: [makeStop('L1', { row: 0, col: 0, dotStyle: DASH })],
+      label: { row: 0, col: 2, rotation: 0, offset: 0, align: 'auto', valign: 'auto-down' },
+    });
+    const svg = renderDots(station, {
+      L1: makeLine({ id: 'L1', stations: ['s1'], color: '#e32017', strokeWidth: 2 }),
+    });
+    // Silhouette: outset railW/2 = 1 on the long sides and the tip, flush at
+    // the base. L=14, t=7 ⇒ x −1, y −4.5, 16 × 9, in the casing color.
+    const sil = svg.querySelector('[data-stop-stroke="s1"]')!;
+    expect(sil).not.toBeNull();
+    expect(sil.getAttribute('fill')).toBe('#ffffff');
+    expect(sil.getAttribute('x')).toBe('-1');
+    expect(sil.getAttribute('y')).toBe('-4.5');
+    expect(sil.getAttribute('width')).toBe('16');
+    expect(sil.getAttribute('height')).toBe('9');
+    // Body: base extended inward past the ring to −(railW/2 + weld 1) so it
+    // OVERLAPS the visible core (no antialiasing hairline at the join),
+    // inset railW/2 on the stroked sides ⇒ x −2, y −2.5, 15 × 5, painted
+    // after the silhouette. Tip stays at L − railW/2 = 13.
+    const body = svg.querySelector('[data-stop-shape="dash"]')!;
+    expect(body.getAttribute('x')).toBe('-2');
+    expect(body.getAttribute('y')).toBe('-2.5');
+    expect(body.getAttribute('width')).toBe('15');
+    expect(body.getAttribute('height')).toBe('5');
+    expect(body.getAttribute('fill')).toBe('#e32017');
+    expect(sil.compareDocumentPosition(body) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+    // Both halves share the tick's frame.
+    expect(sil.getAttribute('transform')).toBe(body.getAttribute('transform'));
   });
 
   it('flips the tick live when a label offset drags the anchor across the line (Option B)', () => {

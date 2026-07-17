@@ -193,6 +193,7 @@ export function HighlightedLineLayer({
                   spec={dashSpec(st, cell, ln)}
                   style={style}
                   lineColor={ln.color}
+                  line={ln}
                   stationId={sid}
                   lineId={cell.lineId}
                 />,
