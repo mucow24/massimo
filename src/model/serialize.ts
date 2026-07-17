@@ -569,7 +569,7 @@ export function foldPolygonFillOpacity(polygons: Record<string, Polygon>): {
   return { polygons: next, changed };
 }
 
-const KNOWN_DOT_BASE_SHAPES = new Set<DotBaseShape>(['circle', 'square', 'diamond', 'x']);
+const KNOWN_DOT_BASE_SHAPES = new Set<DotBaseShape>(['circle', 'square', 'diamond', 'x', 'dash']);
 
 // Validate + normalize one raw dot color from a hand-edited file: the 'line'
 // sentinel, the 'none' sentinel (fills only), or a {day, night} string pair
@@ -886,6 +886,20 @@ function sanitizeLineStroke(line: Line): Line {
       next = rest;
     } else if (stored !== next.seamWidth) {
       next = { ...next, seamWidth: stored };
+    }
+  }
+  // Dash dims share the seam width's contract exactly: casing grid/floor,
+  // drop-at-0 (0 / absent = derive from the line width at render).
+  for (const field of ['dashLength', 'dashWidth'] as const) {
+    if (!(field in line)) continue;
+    const raw = line[field] as unknown;
+    const stored =
+      typeof raw === 'number' && Number.isFinite(raw) ? canonicalStrokeWidth(raw) : undefined;
+    if (stored === undefined) {
+      const { [field]: _gone, ...rest } = next;
+      next = rest;
+    } else if (stored !== next[field]) {
+      next = { ...next, [field]: stored };
     }
   }
   return next;
@@ -1447,11 +1461,13 @@ function sanitizeStyleProps(kind: StyleKind, raw: unknown): StyleDef['props'] | 
       if (!dot || dotSize === undefined || width === undefined) return undefined;
       if (curveRadius === undefined) return undefined;
       if (strokeWidth === undefined || strokeColor === undefined) return undefined;
-      // seamColor / seamWidth are OPTIONAL — absent ⇒ no seam / inherit; a
-      // malformed value is dropped (treated as absent) rather than invalidating
-      // the whole def.
+      // seamColor / seamWidth / dashLength / dashWidth are OPTIONAL — absent ⇒
+      // no seam / inherit / derive; a malformed value is dropped (treated as
+      // absent) rather than invalidating the whole def.
       const seamColor = asString(o.seamColor);
       const seamWidth = finiteNum(o.seamWidth);
+      const dashLength = finiteNum(o.dashLength);
+      const dashWidth = finiteNum(o.dashWidth);
       return canonicalStyleProps('line', {
         defaultDotStyle: dot,
         defaultDotSize: dotSize,
@@ -1461,6 +1477,8 @@ function sanitizeStyleProps(kind: StyleKind, raw: unknown): StyleDef['props'] | 
         strokeColor,
         ...(seamColor !== undefined ? { seamColor } : {}),
         ...(seamWidth !== undefined ? { seamWidth } : {}),
+        ...(dashLength !== undefined ? { dashLength } : {}),
+        ...(dashWidth !== undefined ? { dashWidth } : {}),
       });
     }
     case 'textLabel': {

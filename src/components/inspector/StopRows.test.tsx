@@ -70,6 +70,48 @@ beforeEach(() => {
 });
 
 describe('<StopRows />', () => {
+  it('disables the dot-size input for dash stops (dimensions follow the line width)', () => {
+    const dash = {
+      shape: 'dash',
+      fill: 'line',
+      strokeWidth: 0,
+      strokeColor: 'line',
+      showServiceCode: false,
+    } as const;
+    seed({
+      a: hub({
+        stops: [
+          { lineId: 'L1', row: 0, col: 0, orientation: 'auto-vertical', dotStyle: dash },
+          { lineId: 'L2', row: 0, col: 1, orientation: 'auto-vertical' },
+        ],
+      }),
+    });
+    renderRows();
+    const sizeInputs = screen.getAllByRole('spinbutton', { name: 'Stop dot size' });
+    expect(sizeInputs[0]).toBeDisabled(); // the dash stop's row
+    expect(sizeInputs[1]).not.toBeDisabled(); // the circle stop keeps its size
+  });
+
+  it('a wheel over the disabled dash size input writes nothing (listener unbound)', () => {
+    const dash = {
+      shape: 'dash',
+      fill: 'line',
+      strokeWidth: 0,
+      strokeColor: 'line',
+      showServiceCode: false,
+    } as const;
+    seed({
+      a: hub({
+        stops: [{ lineId: 'L1', row: 0, col: 0, orientation: 'auto-vertical', dotStyle: dash }],
+      }),
+    });
+    renderRows();
+    const input = screen.getByRole('spinbutton', { name: 'Stop dot size' });
+    fireEvent.wheel(input, { deltaY: -1 });
+    const stop = useDoc.getState().stations.a.stops.find((s) => s.lineId === 'L1')!;
+    expect('dotSize' in stop).toBe(false);
+  });
+
   it('renders one row per stop, sorted row-major, with the service badge', () => {
     seed({ a: hub() });
     renderRows();

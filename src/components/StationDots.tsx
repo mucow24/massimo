@@ -8,6 +8,8 @@ import { resolveDotStyle } from '../model/transforms';
 import { DOT_SHAPE_PRESETS } from '../model/dotStyle';
 import { dotSizeOverride } from '../model/dotSize';
 import { StopGlyph } from './StopGlyph';
+import { DashGlyph } from './DashGlyph';
+import { dashSpec } from '../geometry/stationDash';
 import { useStationInteraction } from './useStationInteraction';
 
 // The dot a waypoint shows under the Show-waypoints overlay: a black-stroke /
@@ -55,6 +57,21 @@ export function StationDots({
   const wpOverride = station.isWaypoint ? WAYPOINT_OVERLAY_STYLE : null;
   const angle = station.rotation * 45;
   const phantomDot = phantomDotCell(station, showWaypoints);
+  // Dash (TfL tick) stops split off from the dot passes: each renders one
+  // DashGlyph beneath every dot, painted far-from-label first so the tick
+  // NEAREST the label lands on top where overlapping ticks stack. (The
+  // waypoint override is a circle, so a revealed waypoint never ticks.)
+  const resolvedStops = station.stops.map((cell) => ({
+    cell,
+    style: wpOverride ?? resolveDotStyle(lines[cell.lineId], cell),
+  }));
+  const dashStops = resolvedStops
+    .filter((r) => r.style.shape === 'dash')
+    .map((r) => ({ ...r, spec: dashSpec(station, r.cell, lines[r.cell.lineId]) }))
+    .sort(
+      (a, b) => b.spec.labelDist - a.spec.labelDist || a.cell.lineId.localeCompare(b.cell.lineId),
+    );
+  const dotStops = resolvedStops.filter((r) => r.style.shape !== 'dash');
   return (
     <g
       pointerEvents={hitless ? 'none' : undefined}
@@ -75,13 +92,26 @@ export function StationDots({
           })()}
         </g>
       )}
+      {/* Ticks first: real map paint, but always beneath the circular dots so
+          an interchange dot on a crossed stripe stays on top of a tick. */}
+      {dashStops.map(({ cell, style, spec }) => (
+        <DashGlyph
+          key={'dash:' + cell.lineId}
+          spec={spec}
+          style={style}
+          lineColor={lines[cell.lineId]?.color}
+          isHovered={hoveredStop?.stationId === station.id && hoveredStop?.lineId === cell.lineId}
+          stationId={station.id}
+          lineId={cell.lineId}
+        />
+      ))}
       {/* Two passes so overlapping dots in this station share one continuous
           outer border: every dot's stroke is painted first, then every dot's
           fill on top covers the inner half of each stroke beneath it. A single
           per-dot pass would let a later dot's fill punch a hole in its
           neighbor's border. */}
       {(['stroke', 'fill'] as const).map((pass) =>
-        station.stops.map((cell) => {
+        dotStops.map(({ cell, style }) => {
           const w = stopPosWorld(cell, station);
           const isHovered =
             hoveredStop?.stationId === station.id && hoveredStop?.lineId === cell.lineId;
@@ -91,7 +121,7 @@ export function StationDots({
               pass={pass}
               cx={w.x}
               cy={w.y}
-              style={wpOverride ?? resolveDotStyle(lines[cell.lineId], cell)}
+              style={style}
               lineColor={lines[cell.lineId]?.color}
               serviceCode={lines[cell.lineId]?.service}
               sizeOverride={dotSizeOverride(lines[cell.lineId], cell)}

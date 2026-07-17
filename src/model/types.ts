@@ -36,6 +36,7 @@ export type DotShape =
   | 'filled-white-diamond'
   | 'filled-black-x'
   | 'filled-white-x'
+  | 'dash'
   | 'none';
 
 // A color that resolves per theme: `day` paints in light mode, `night` in
@@ -45,7 +46,14 @@ export interface DayNightColor {
   night: string;
 }
 
-export type DotBaseShape = 'circle' | 'square' | 'diamond' | 'x';
+// 'dash' is the TfL-style tick: a short bar protruding from the stop's own
+// stripe edge toward the station label, perpendicular to the line. Unlike the
+// symmetric shapes it is NOT drawn by StopGlyph's isotropic path — StationDots
+// branches to DashGlyph, which reads the travel axis and label side (see
+// geometry/stationDash.ts). Its dimensions derive from the line width
+// (overridable per line via Line.dashLength / Line.dashWidth), so dotSize is
+// ignored for dash stops; of the style fields only `fill` applies.
+export type DotBaseShape = 'circle' | 'square' | 'diamond' | 'x' | 'dash';
 
 // Base color of a dot. 'line' = the owning line's color, resolved at render
 // time; 'none' = transparent (the line band shows through — the "open" dots).
@@ -298,6 +306,14 @@ export interface Line {
   // so a seam-color-only line still shows a seam. Only takes effect alongside a
   // non-transparent seamColor.
   seamWidth?: number;
+  // TfL-tick dimensions for this line's 'dash' stops, world units. Both are
+  // stored like `seamWidth` (quarter-unit grid, drop at 0 = "auto"); an UNSET
+  // value derives from the line width at render time (length = width,
+  // thickness = width / 2 — see dashSize.ts). PRESENTATION: never moves band
+  // geometry. `dashLength` is how far the tick protrudes from the stripe edge
+  // toward the label; `dashWidth` is its thickness along the travel axis.
+  dashLength?: number;
+  dashWidth?: number;
   // Corner-rounding radius in world units. Missing ⇒ LINE_CURVE_RADIUS_DEFAULT
   // (= 24, the historical doc-global default) — legacy saves carried a
   // doc-level `curveRadius` instead, baked onto lines on load (see
@@ -310,7 +326,7 @@ export interface Line {
   // Live link to a StyleDef of kind 'line' (see MapDoc.styles). INVARIANT:
   // when present, this line's covered style fields (defaultDotStyle,
   // defaultDotSize, width, strokeWidth, strokeColor, seamColor, seamWidth,
-  // curveRadius — NOT color) equal the style's props. Transforms maintain it: editing any covered field clears
+  // dashLength, dashWidth, curveRadius — NOT color) equal the style's props. Transforms maintain it: editing any covered field clears
   // the tag ("detach to Custom"), editing the style re-stamps its users,
   // deleting the style untags. Absent ⇒ no style ("Custom" in the UI).
   // Dangling ids are pruned on file load.
@@ -776,6 +792,10 @@ export interface LineStyleProps {
   // Seam width per side (world units). Optional: absent ⇒ inherit the casing
   // width (see Line.seamWidth).
   seamWidth?: number;
+  // TfL-tick dimensions (world units). Optional: absent ⇒ derive from the
+  // line width at render time (see Line.dashLength / Line.dashWidth).
+  dashLength?: number;
+  dashWidth?: number;
 }
 
 export interface TextLabelStyleProps {

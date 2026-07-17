@@ -85,6 +85,21 @@ describe('captureStyleProps', () => {
     expect(noSeam).not.toHaveProperty('seamWidth');
   });
 
+  it('captures dash dimensions when set, and omits both keys when unset', () => {
+    const withDash = makeDoc({
+      lines: [makeLine({ id: 'l1', dashLength: 21, dashWidth: 3 })],
+    });
+    expect(captureStyleProps(withDash, 'line', 'l1')).toMatchObject({
+      dashLength: 21,
+      dashWidth: 3,
+    });
+    // A dash-dim-less line captures NEITHER key (so it compares equal to a
+    // style that never had one).
+    const plain = captureStyleProps(makeDoc({ lines: [makeLine({ id: 'l1' })] }), 'line', 'l1');
+    expect(plain).not.toHaveProperty('dashLength');
+    expect(plain).not.toHaveProperty('dashWidth');
+  });
+
   it('captures only the covered label typography — width/leading/tracking stay per-label', () => {
     const doc = makeDoc({
       textLabels: [makeTextLabel({ id: 'g1', fontSize: 20, weight: 700, width: 200, leading: 2 })],
@@ -273,6 +288,29 @@ describe('applyStyleToItem', () => {
     const cleared = applyStyleToItem(doc2, 'y2', 'l1').lines.l1;
     expect('seamColor' in cleared).toBe(false);
     expect('seamWidth' in cleared).toBe(false);
+    expect(cleared.styleId).toBe('y2');
+  });
+
+  it('stamps dash dimensions, and stamping a style without them clears both', () => {
+    const dashStyle = makeStyle('line', 'y1', {
+      props: { dashLength: 21, dashWidth: 3 },
+    });
+    const doc = makeDoc({ lines: [makeLine({ id: 'l1' })], styles: [dashStyle] });
+    const stamped = applyStyleToItem(doc, 'y1', 'l1').lines.l1;
+    expect(stamped.dashLength).toBe(21);
+    expect(stamped.dashWidth).toBe(3);
+    expect(stamped.styleId).toBe('y1');
+
+    // A style with NO dash dims, stamped onto a line that HAS them, removes
+    // both (back to width-derived).
+    const plainStyle = makeStyle('line', 'y2', { props: {} });
+    const doc2 = makeDoc({
+      lines: [makeLine({ id: 'l1', dashLength: 21, dashWidth: 3 })],
+      styles: [plainStyle],
+    });
+    const cleared = applyStyleToItem(doc2, 'y2', 'l1').lines.l1;
+    expect('dashLength' in cleared).toBe(false);
+    expect('dashWidth' in cleared).toBe(false);
     expect(cleared.styleId).toBe('y2');
   });
 

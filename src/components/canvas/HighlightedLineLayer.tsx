@@ -9,6 +9,8 @@ import { SegmentBand } from '../SegmentBand';
 import { dotSizeOverride } from '../../model/dotSize';
 import { StopMarker } from '../StopMarker';
 import { StopGlyph } from '../StopGlyph';
+import { DashGlyph } from '../DashGlyph';
+import { dashSpec } from '../../geometry/stationDash';
 import { StationView } from '../StationView';
 import { useThemeColors } from '../../state/theme';
 import { validCursor } from './appendGestures';
@@ -182,13 +184,28 @@ export function HighlightedLineLayer({
             if (!st) continue;
             const cell = st.stops.find((c) => c.lineId === highlightLineId);
             if (!cell) continue;
+            const style = resolveDotStyle(ln, cell);
+            if (style.shape === 'dash') {
+              // Dash stops re-render as ticks, same as the base dots pass.
+              push(
+                <DashGlyph
+                  key={'hl-d:' + sid}
+                  spec={dashSpec(st, cell, ln)}
+                  style={style}
+                  lineColor={ln.color}
+                  stationId={sid}
+                  lineId={cell.lineId}
+                />,
+              );
+              continue;
+            }
             const { x: cx, y: cy } = stopPosWorld(cell, st);
             push(
               <StopGlyph
                 key={'hl-d:' + sid}
                 cx={cx}
                 cy={cy}
-                style={resolveDotStyle(ln, cell)}
+                style={style}
                 lineColor={ln.color}
                 serviceCode={ln.service}
                 sizeOverride={dotSizeOverride(ln, cell)}
