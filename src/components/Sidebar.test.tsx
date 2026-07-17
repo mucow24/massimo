@@ -1,4 +1,4 @@
-import { describe, it, expect, beforeEach, vi } from 'vitest';
+import { describe, it, expect, beforeEach } from 'vitest';
 import { act, render, screen } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { Sidebar } from './Sidebar';
@@ -18,7 +18,6 @@ beforeEach(() => {
     ...useSelection.getState(),
     activeTab: 'stations',
     sidebarOpen: true,
-    sidebarAutoRevealed: false,
     selectedStationIds: [],
     selectedRouteBulletIds: [],
     selectedLineId: null,
@@ -407,7 +406,7 @@ describe('<Sidebar /> — station name rendering', () => {
   });
 });
 
-describe('<Sidebar /> — auto-reveal follows the line selection', () => {
+describe('<Sidebar /> — line list drives Edit Stops (editor lives in the pinned popover)', () => {
   beforeEach(() => {
     useDoc.setState({
       ...useDoc.getState(),
@@ -419,76 +418,47 @@ describe('<Sidebar /> — auto-reveal follows the line selection', () => {
         ],
       }),
     });
+    useSelection.setState({ ...useSelection.getState(), activeTab: 'lines' });
   });
 
-  const autoRevealed = () =>
+  it('clicking a line row enters Edit Stops for that line', async () => {
+    const user = userEvent.setup();
+    render(<Sidebar />);
+
+    await user.click(document.querySelector('[data-line-row="L1"] .list-row')!);
+
+    const s = useSelection.getState();
+    expect(s.uiMode).toEqual({ kind: 'appending-to-line', lineId: 'L1', cursor: null });
+    expect(s.selectedLineId).toBe('L1');
+  });
+
+  it('hides the whole panel while Edit Stops is active (popover owns the corner), and never hosts an inline editor', () => {
     useSelection.setState({
       ...useSelection.getState(),
       sidebarOpen: true,
-      activeTab: 'lines',
       selectedLineId: 'L1',
-      sidebarAutoRevealed: true,
+      uiMode: { kind: 'appending-to-line', lineId: 'L1', cursor: null },
     });
-
-  it('collapses the sidebar when an auto-revealed line selection is cleared', () => {
-    autoRevealed();
     render(<Sidebar />);
-    expect(document.querySelector('.sidebar')).not.toBeNull();
-
-    act(() => useSelection.getState().selectLine(null));
-
-    expect(useSelection.getState().sidebarOpen).toBe(false);
+    // Same rule as editing-station-layout: the pinned line popover sits over
+    // the sidebar's corner, so the panel cedes it for the duration.
     expect(document.querySelector('.sidebar')).toBeNull();
+    expect(document.querySelector('.inline-editor')).toBeNull();
   });
 
-  it('collapses on exit through a non-line action (selecting a station)', () => {
-    autoRevealed();
-    render(<Sidebar />);
-
-    act(() => useSelection.getState().selectStation('s1'));
-
-    // selectStation clears selectedLineId — the exit effect fires regardless of
-    // which action cleared it.
-    expect(useSelection.getState().sidebarOpen).toBe(false);
-  });
-
-  it('leaves a user-opened sidebar alone when the line selection clears', () => {
+  it('reappears when Edit Stops exits (sidebarOpen untouched)', () => {
     useSelection.setState({
       ...useSelection.getState(),
       sidebarOpen: true,
-      activeTab: 'lines',
       selectedLineId: 'L1',
-      sidebarAutoRevealed: false, // the user opened it themselves
+      uiMode: { kind: 'appending-to-line', lineId: 'L1', cursor: null },
     });
     render(<Sidebar />);
+    expect(document.querySelector('.sidebar')).toBeNull();
 
-    act(() => useSelection.getState().selectLine(null));
+    act(() => useSelection.getState().setAppending(null));
 
+    expect(document.querySelector('.sidebar')).not.toBeNull();
     expect(useSelection.getState().sidebarOpen).toBe(true);
-  });
-
-  it('scrolls the selected line editor into view when the sidebar reappears', () => {
-    const scrollSpy = vi.spyOn(Element.prototype, 'scrollIntoView');
-    useSelection.setState({
-      ...useSelection.getState(),
-      sidebarOpen: false,
-      activeTab: 'stations',
-      selectedLineId: null,
-      sidebarAutoRevealed: false,
-    });
-    render(<Sidebar />);
-    expect(document.querySelector('.sidebar')).toBeNull(); // hidden to start
-
-    act(() => useSelection.getState().selectLine('L1'));
-
-    // The store revealed the panel on the Lines tab...
-    expect(useSelection.getState().sidebarOpen).toBe(true);
-    expect(useSelection.getState().activeTab).toBe('lines');
-    // ...and the newly-visible editor scrolled into view.
-    expect(scrollSpy).toHaveBeenCalled();
-    const contexts = scrollSpy.mock.contexts as Element[];
-    const scrolledTo = contexts[contexts.length - 1];
-    expect(scrolledTo?.getAttribute('data-line-row')).toBe('L1');
-    scrollSpy.mockRestore();
   });
 });

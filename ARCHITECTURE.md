@@ -167,10 +167,10 @@ src/
     MapVersionPill.tsx          # the live doc's version + save-status dot, beside the map name
     *Popover.tsx                # on-canvas item editors
     canvas/                     # interaction layer: drag/placement/viewport hooks + overlay layers
-    inspector/                  # LineInspector (sidebar; identity + line-style fields — stop/topology
-                                #   editing is canvas-driven, see appendGestures.ts) + StationInspector
-                                #   (hosted by the on-canvas StationPopover) + pure math:
-                                #   stopGridDrag.ts, stationBandGeometry.ts
+    inspector/                  # LineInspector (hosted by the pinned on-canvas LinePopover; identity +
+                                #   line-style fields — stop/topology editing is canvas-driven, see
+                                #   appendGestures.ts) + StationInspector (hosted by the on-canvas
+                                #   StationPopover) + pure math: stopGridDrag.ts, stationBandGeometry.ts
 
   export/                       # exportCanvas.ts (SVG/PNG), fonts.ts, exportCanvasPdf.ts
                                 #   + pure PDF-gap modules pdfHatch/pdfText/pdfGlyphs/
@@ -1502,16 +1502,27 @@ band routing or the marker sort. Pinned by `MapCanvas.stationsSig.test.tsx`.
   ([HelpPopover.tsx](src/components/HelpPopover.tsx) — a quick-reference interaction guide, also
   opened by the `?` key). Owns the **export desaturation flush**: before export it drops the
   selected-line desaturation via `flushSync(() => selectLine(null))` so it isn't baked into the
-  clone, then restores it in `finally`.
+  clone, then restores the id with a bare `setState` in `finally` (the selectLine ACTION would
+  kick an in-progress Edit Stops session back to idle).
 - **[Sidebar.tsx](src/components/Sidebar.tsx)** — Stations/Lines tabs, a sortable station list
-  (rows select/deselect; the station editor itself is an on-canvas popover), and the
-  inline-expanded LINE inspector on the Lines tab. The `LineInspector` shows only the line's
-  identity + style fields — picking a line goes **straight into Edit Stops** (there is no
-  selected-but-not-editing state). Stop/topology editing is **canvas-driven**
+  (rows select/deselect; the station editor itself is an on-canvas popover), and a Lines list
+  that is purely reorder (↑/↓) / delete / pick-for-editing — clicking a row goes **straight into
+  Edit Stops** (there is no selected-but-not-editing state) and the line editor rides in the
+  pinned `LinePopover`, not the sidebar. The whole panel hides while either pinned top-right
+  editor mode is active (`sidebarVisible`: `editing-station-layout` or `appending-to-line`),
+  ceding the corner. Stop/topology editing is **canvas-driven**
   ([canvas/appendGestures.ts](src/components/canvas/appendGestures.ts)): click stations to connect,
   click a segment to insert into it, Delete/× removes the armed stop/edge, right-click removes a
   segment/edge, shift-click a segment cycles its style. (This replaced the old in-sidebar
   git-graph tree editor, `StationGraph`/`lineGraphLayout`, both retired.)
+- **[LinePopover.tsx](src/components/LinePopover.tsx)** — the line editor's home: mounted by
+  `ItemPopovers` for the whole `appending-to-line` mode, hosting `LineInspector` (name, service
+  code, color palette, style row, default dot type/size, line width, curve radius, stroke
+  width/color, seam width/color) over a Delete-only `PopoverFooter` (lines have no `locked`
+  field; Delete also exits the mode). HARD-PINNED to the host's top-right via `pinnedTopRight`
+  (shared with the station layout editor's pin, [DraggablePopoverShell.tsx](src/components/DraggablePopoverShell.tsx))
+  — a line has no single on-canvas anchor to spawn beside, so the header is a title band, not a
+  drag handle. `reconcileWithDoc` exits the mode if undo removes the edited line.
 - **[StationPopover.tsx](src/components/StationPopover.tsx)** — the station editor's home:
   mounted by `ItemPopovers` for a sole-selected station (idle mode, or that station's own
   layout-edit mode), hosting the full `StationInspector` — a Name header row with the

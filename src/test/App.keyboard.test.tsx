@@ -2,6 +2,7 @@ import { describe, it, expect, beforeEach, vi } from 'vitest';
 import { render, screen, fireEvent, waitFor } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import App from '../App';
+import { LinePopover } from '../components/LinePopover';
 import { NumericFieldRow } from '../components/NumericFieldRow';
 import { WeightSelect } from '../components/WeightItalicControls';
 import { beginHistoryGroup, useDoc, useSelection } from '../state/store';
@@ -118,15 +119,19 @@ describe('App keyboard shortcuts: Escape', () => {
 describe('App keyboard shortcuts: inForm guard routing', () => {
   it('Ctrl+Z fires on a focused range slider (slider drag is undoable without click-away)', async () => {
     render(<App />);
-    // Any range slider exercises the guard; the line inspector's Curve
-    // radius slider stands in for the retired Options one. Seed + select
-    // BEFORE the baseline so the seeding write isn't what Ctrl+Z pops.
+    // Any range slider exercises the guard; the line editor's Curve radius
+    // slider stands in for the retired Options one. The editor popover
+    // (LinePopover) is rendered directly — under jsdom the canvas host
+    // measures 0×0, so ItemPopovers' zero-viewport guard keeps App's own
+    // instance unmounted. Seed + select BEFORE the baseline so the seeding
+    // write isn't what Ctrl+Z pops.
     useDoc.setState({
       ...useDoc.getState(),
       lines: { L1: makeLine({ id: 'L1' }) },
       lineOrder: ['L1'],
     });
     useSelection.getState().selectLine('L1');
+    render(<LinePopover line={useDoc.getState().lines.L1} hostSize={{ w: 800, h: 600 }} />);
     // Create an undoable entry so Ctrl+Z has something to pop.
     useDoc.getState().addStation(50, 50);
     const pastBefore = historyDepth();
@@ -370,15 +375,18 @@ describe('App keyboard shortcuts: add-transfer mode', () => {
 describe('App keyboard shortcuts: blur-then-undo', () => {
   it('Ctrl+Z mid-slider-drag commits the open field-history group, then undoes the drag', async () => {
     render(<App />);
-    // The line inspector's Curve radius slider (NumericFieldRow) drives its
+    // The line editor's Curve radius slider (NumericFieldRow) drives its
     // own field-history group — the same blur-then-undo contract the retired
-    // Options curve slider exercised.
+    // Options curve slider exercised. The LinePopover is rendered directly:
+    // under jsdom the canvas host measures 0×0, so ItemPopovers' zero-viewport
+    // guard keeps App's own instance unmounted.
     useDoc.setState({
       ...useDoc.getState(),
       lines: { L1: makeLine({ id: 'L1' }) },
       lineOrder: ['L1'],
     });
     useSelection.getState().selectLine('L1');
+    render(<LinePopover line={useDoc.getState().lines.L1} hostSize={{ w: 800, h: 600 }} />);
     const slider = await screen.findByRole('slider', {
       name: /curve radius/i,
     });

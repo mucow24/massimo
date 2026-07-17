@@ -2452,16 +2452,19 @@ body:has(.app[data-theme='dark']) {
   margin-left: auto;
 }
 
-/* Station popover: the station editor as an on-canvas popover (shares the
-   .text-label-popover shell). Wider than the standard 240px so the per-stop
-   rows fit on one line. */
-.station-popover {
+/* Station + line popovers: the two sidebar-era editors as on-canvas popovers
+   (both share the .text-label-popover shell). Wider than the standard 248px
+   so the per-stop rows / slider rows fit on one line. */
+.station-popover,
+.line-popover {
   width: 320px;
 }
-.station-popover .inspector {
+.station-popover .inspector,
+.line-popover .inspector {
   padding: 0;
 }
-.station-popover .body {
+.station-popover .body,
+.line-popover .body {
   /* Tall multi-section panel: clamp to the viewport ONLY and scroll inside, so
      the panel grows to fit its content and the scrollbar appears solely when
      the content genuinely can't fit the window. A prior fixed 720px ceiling sat
@@ -2476,11 +2479,17 @@ body:has(.app[data-theme='dark']) {
 /* The footer stays visible while the sections scroll beneath it. Opaque
    surface + the shell's bottom radius so scrolled content never peeks
    through or clips the rounded corners. */
-.station-popover .footer {
+.station-popover .footer,
+.line-popover .footer {
   position: sticky;
   bottom: -14px;
   background: var(--surface);
   border-radius: 0 0 9px 9px;
+}
+/* The line popover is hard-pinned to the host corner (no drag), so its header
+   is a title band, not a drag handle. */
+.line-popover .header {
+  cursor: default;
 }
 /* Hairline dividers between the popover's sections (Name / Position / Stop
    layout / Label) — the taller multi-section panel needs them where the
@@ -2493,7 +2502,8 @@ body:has(.app[data-theme='dark']) {
   margin-bottom: 0;
 }
 /* Numeric inputs line up with the 26px chip buttons they sit beside. */
-.station-popover .inspector input[type='number'] {
+.station-popover .inspector input[type='number'],
+.line-popover .inspector input[type='number'] {
   height: 26px;
 }
 

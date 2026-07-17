@@ -178,12 +178,6 @@ export interface SelectionState {
   // bar still shows, but no list below it. Clicking the shown tab collapses it;
   // clicking the other tab (or any tab while collapsed) opens that tab's list.
   sidebarOpen: boolean;
-  // True while the sidebar is showing ONLY because a line was selected from a
-  // hidden state (selectLine auto-reveals it). Lets the Sidebar collapse itself
-  // again when the line selection clears, without disturbing a sidebar the user
-  // opened themselves. Any manual tab/panel toggle clears it (see toggleTab /
-  // toggleSidebar), ceding visibility control back to the user.
-  sidebarAutoRevealed: boolean;
   selectedLineTagId: string | null;
   lineTagHoverPreview: LineTagHoverPreview | null;
   // Route bullet selection. Multi-selection: parallel to `selectedStationIds`,
@@ -428,7 +422,6 @@ export const useSelection = create<SelectionState>()(
       editingStationId: null,
       activeTab: 'stations',
       sidebarOpen: true,
-      sidebarAutoRevealed: false,
       selectedLineTagId: null,
       lineTagHoverPreview: null,
       selectedRouteBulletIds: [],
@@ -566,18 +559,14 @@ export const useSelection = create<SelectionState>()(
           });
           return;
         }
-        const s = get();
         set({
           ...clearedSelections(),
           uiMode: { kind: 'idle' },
           selectedLineId: id,
+          // The editor is a pinned on-canvas popover, so the sidebar's
+          // visibility is none of this action's business — only the active tab
+          // follows, so a reopened panel shows the relevant list.
           activeTab: 'lines',
-          // Selecting a line surfaces its editor: reveal a hidden sidebar so the
-          // editor is actually visible, and remember we did so exiting the
-          // selection can re-hide it. Sticky across line→line switches (by then the
-          // sidebar is already open, but the session is still "auto-revealed").
-          sidebarOpen: true,
-          sidebarAutoRevealed: !s.sidebarOpen || s.sidebarAutoRevealed,
           lineTagHoverPreview: null,
         });
       },
@@ -592,21 +581,17 @@ export const useSelection = create<SelectionState>()(
         }),
       // THE way into the line editor — there is no "selected but not editing"
       // state: picking a line (sidebar row, badge, or canvas stripe) goes
-      // straight into Edit Stops. Mirrors selectLine's old entry semantics:
-      // reveal a hidden sidebar so the editor is visible, and remember we did
-      // so exiting can re-hide it.
-      startAppend: (lineId) => {
-        const s = get();
+      // straight into Edit Stops. The editor itself is the pinned LinePopover
+      // (the sidebar cedes the corner while the mode is active — see
+      // sidebarVisible), so no sidebar revealing happens here.
+      startAppend: (lineId) =>
         set({
           ...clearedSelections(),
           uiMode: { kind: 'appending-to-line', lineId, cursor: null },
           selectedLineId: lineId,
           activeTab: 'lines',
-          sidebarOpen: true,
-          sidebarAutoRevealed: !s.sidebarOpen || s.sidebarAutoRevealed,
           lineTagHoverPreview: null,
-        });
-      },
+        }),
       setAppending: (lineId) => {
         const cur = get().uiMode;
         if (lineId === null) {
@@ -647,11 +632,10 @@ export const useSelection = create<SelectionState>()(
       toggleTab: (tab) =>
         set((s) =>
           s.sidebarOpen && s.activeTab === tab
-            ? { sidebarOpen: false, sidebarAutoRevealed: false }
-            : { activeTab: tab, sidebarOpen: true, sidebarAutoRevealed: false },
+            ? { sidebarOpen: false }
+            : { activeTab: tab, sidebarOpen: true },
         ),
-      toggleSidebar: () =>
-        set((s) => ({ sidebarOpen: !s.sidebarOpen, sidebarAutoRevealed: false })),
+      toggleSidebar: () => set((s) => ({ sidebarOpen: !s.sidebarOpen })),
       selectLineTag: (id) =>
         set({
           ...clearedSelections(),
@@ -752,6 +736,12 @@ export const useSelection = create<SelectionState>()(
         if (svgImages) next.selectedSvgImageIds = svgImages;
         // Single primaries.
         if (s.selectedLineId && !doc.lines[s.selectedLineId]) next.selectedLineId = null;
+        // Edit Stops is bound to one line the same way selectedLineId is: if
+        // the undo removed it, exit the mode too — otherwise the banner and
+        // pinned popover null themselves out while canvas clicks keep routing
+        // through append gestures against a dead lineId.
+        if (s.uiMode.kind === 'appending-to-line' && !doc.lines[s.uiMode.lineId])
+          next.uiMode = { kind: 'idle' };
         if (s.selectedLineTagId && !doc.lineTags[s.selectedLineTagId])
           next.selectedLineTagId = null;
         if (s.selectedTransferId && !doc.transfers[s.selectedTransferId])

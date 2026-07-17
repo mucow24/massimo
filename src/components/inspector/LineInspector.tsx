@@ -33,11 +33,12 @@ import {
   lineStrokeWidthOf,
 } from '../../model/lineStroke';
 
-// The line's identity + style fields, shown while the line is being edited
-// (picking a line goes straight into Edit Stops — there is no selected-but-
-// not-editing state). Stop/topology editing happens ON THE CANVAS (see
-// appendGestures.ts): click stations to connect, click a segment to insert
-// into it, Delete/× removes, shift-click a segment cycles its style.
+// The line's identity + style fields, hosted by the pinned LinePopover while
+// the line is being edited (picking a line goes straight into Edit Stops —
+// there is no selected-but-not-editing state). Stop/topology editing happens
+// ON THE CANVAS (see appendGestures.ts): click stations to connect, click a
+// segment to insert into it, Delete/× removes, shift-click a segment cycles
+// its style.
 export function LineInspector({ id }: { id: LineId }) {
   const line = useDoc((s) => s.lines[id]);
   const updateLine = useDoc((s) => s.updateLine);
@@ -57,8 +58,9 @@ export function LineInspector({ id }: { id: LineId }) {
   return (
     <section className="inspector">
       <div className="field">
-        <label>Line name</label>
+        <label htmlFor={`line-name-${line.id}`}>Line name</label>
         <input
+          id={`line-name-${line.id}`}
           type="text"
           value={line.name}
           onChange={(e) => updateLine(line.id, { name: e.target.value })}
@@ -66,8 +68,9 @@ export function LineInspector({ id }: { id: LineId }) {
         />
       </div>
       <div className="field">
-        <label>Service code</label>
+        <label htmlFor={`line-service-${line.id}`}>Service code</label>
         <input
+          id={`line-service-${line.id}`}
           type="text"
           maxLength={3}
           value={line.service}

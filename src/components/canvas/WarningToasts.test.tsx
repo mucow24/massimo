@@ -16,7 +16,6 @@ beforeEach(() => {
   useSelection.setState({
     ...useSelection.getState(),
     sidebarOpen: true,
-    sidebarAutoRevealed: false,
     uiMode: { kind: 'idle' },
   });
 });
