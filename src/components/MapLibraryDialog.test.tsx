@@ -2,9 +2,12 @@ import { describe, it, expect, beforeEach, vi } from 'vitest';
 import { render, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 
-// Wholesale: jsdom has no indexedDB, so a partial mock would leave the real
-// module reachable and fail on a ReferenceError instead of an assertion.
-vi.mock('../state/mapLibrary', () => ({
+// Every IndexedDB-touching function is mocked — jsdom has no indexedDB, and a
+// call that slipped through to the real module would fail on a ReferenceError
+// instead of an assertion. The pure exports (sortMaps, types) pass through
+// real, so the ordering the dialog shows is the real ordering.
+vi.mock('../state/mapLibrary', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('../state/mapLibrary')>()),
   listMaps: vi.fn(async () => []),
   listVersions: vi.fn(async () => []),
   getPayload: vi.fn(async () => undefined),
@@ -13,6 +16,7 @@ vi.mock('../state/mapLibrary', () => ({
   deleteVersion: vi.fn(async () => {}),
   setVersionName: vi.fn(async () => {}),
   setVersionStarred: vi.fn(async () => {}),
+  setMapStarred: vi.fn(async () => {}),
 }));
 
 import { MapLibraryDialog } from './MapLibraryDialog';
@@ -24,19 +28,34 @@ import {
   deleteVersion,
   setVersionName,
   setVersionStarred,
+  setMapStarred,
   type MapSummary,
   type VersionMeta,
 } from '../state/mapLibrary';
-// NOT mocked: a plain zustand + localStorage store, which jsdom runs happily.
+// NOT mocked: plain zustand + localStorage stores, which jsdom runs happily.
 import { useLibraryPointer } from '../state/libraryPointer';
+import { useLibraryPrefs } from '../state/libraryPrefs';
 import { markSaved, useSaveBaseline } from '../state/saveBaseline';
 import { pickDocSnapshot, useDoc } from '../state/store';
 import { serialize } from '../model/serialize';
 import { DEFAULT_DOC } from '../model/transforms';
+import { chooseOption } from '../test/interaction';
 
 const MAPS: MapSummary[] = [
-  { id: 'm1', name: 'Canal Line', updatedAt: Date.parse('2026-07-14T10:00:00Z'), versionCount: 2 },
-  { id: 'm2', name: 'Broadway', updatedAt: Date.parse('2026-07-13T10:00:00Z'), versionCount: 1 },
+  {
+    id: 'm1',
+    name: 'Canal Line',
+    updatedAt: Date.parse('2026-07-14T10:00:00Z'),
+    createdAt: Date.parse('2026-07-01T10:00:00Z'),
+    versionCount: 2,
+  },
+  {
+    id: 'm2',
+    name: 'Broadway',
+    updatedAt: Date.parse('2026-07-13T10:00:00Z'),
+    createdAt: Date.parse('2026-07-10T10:00:00Z'),
+    versionCount: 1,
+  },
 ];
 
 /**
@@ -80,6 +99,7 @@ const openCanalLine = async (user: ReturnType<typeof userEvent.setup>) => {
 beforeEach(() => {
   localStorage.clear();
   useLibraryPointer.setState({ mapId: null, version: null });
+  useLibraryPrefs.setState({ sort: 'updated' });
   useDoc.setState({ ...useDoc.getState(), ...DEFAULT_DOC });
   vi.mocked(listMaps).mockReset().mockResolvedValue(MAPS);
   vi.mocked(listVersions).mockReset().mockResolvedValue(VERSIONS);
@@ -88,6 +108,7 @@ beforeEach(() => {
   vi.mocked(deleteVersion).mockReset().mockResolvedValue(undefined);
   vi.mocked(setVersionName).mockReset().mockResolvedValue(undefined);
   vi.mocked(setVersionStarred).mockReset().mockResolvedValue(undefined);
+  vi.mocked(setMapStarred).mockReset().mockResolvedValue(undefined);
   onClose.mockClear();
   onOpenVersion.mockClear();
   useSaveBaseline.setState({ baselineSnap: null, baselineJson: null, backed: false });
@@ -554,5 +575,118 @@ describe('MapLibraryDialog', () => {
     renderDialog();
     await screen.findByText('Canal Line');
     expect(screen.getByText('Select a map to see its versions.')).toBeInTheDocument();
+  });
+
+  describe('map sorting', () => {
+    const mapNames = () =>
+      [...document.querySelectorAll('.map-row strong')].map((el) => el.textContent);
+
+    it('orders by last edited by default', async () => {
+      renderDialog();
+      await screen.findByText('Canal Line');
+      expect(mapNames()).toEqual(['Canal Line', 'Broadway']);
+    });
+
+    it('re-orders alphabetically when Name is chosen, and remembers the choice', async () => {
+      const user = userEvent.setup();
+      renderDialog();
+      await screen.findByText('Canal Line');
+      await chooseOption(user, 'Sort maps', 'Name');
+      await waitFor(() => expect(mapNames()).toEqual(['Broadway', 'Canal Line']));
+      expect(useLibraryPrefs.getState().sort).toBe('name');
+    });
+
+    // The mode's semantics live in sortMaps's own tests; this pins the wiring —
+    // the option exists and lands in the preference the next open reads.
+    it('offers creation-date order, remembering the choice', async () => {
+      const user = userEvent.setup();
+      renderDialog();
+      await screen.findByText('Canal Line');
+      await chooseOption(user, 'Sort maps', 'Date created');
+      await waitFor(() => expect(useLibraryPrefs.getState().sort).toBe('created'));
+    });
+
+    it('pins a starred map to the top, above newer-edited ones', async () => {
+      vi.mocked(listMaps).mockResolvedValue([MAPS[0], { ...MAPS[1], starred: true }]);
+      renderDialog();
+      await screen.findByText('Canal Line');
+      expect(mapNames()).toEqual(['Broadway', 'Canal Line']);
+    });
+
+    it('draws the divider under the starred block, mirroring the version list', async () => {
+      vi.mocked(listMaps).mockResolvedValue([MAPS[0], { ...MAPS[1], starred: true }]);
+      renderDialog();
+      await screen.findByText('Canal Line');
+      const classes = [...document.querySelectorAll('.map-row')].map((r) => r.className);
+      expect(classes[0]).not.toContain('after-starred');
+      expect(classes[1]).toContain('after-starred');
+    });
+  });
+
+  describe('map stars', () => {
+    it('stars an unstarred map', async () => {
+      const user = userEvent.setup();
+      renderDialog();
+      await screen.findByText('Canal Line');
+      await user.click(screen.getByRole('button', { name: 'Star Broadway' }));
+      await waitFor(() => expect(setMapStarred).toHaveBeenCalledWith('m2', true));
+    });
+
+    it('un-stars a starred map', async () => {
+      vi.mocked(listMaps).mockResolvedValue([MAPS[0], { ...MAPS[1], starred: true }]);
+      const user = userEvent.setup();
+      renderDialog();
+      await screen.findByText('Broadway');
+      await user.click(screen.getByRole('button', { name: 'Unstar Broadway' }));
+      await waitFor(() => expect(setMapStarred).toHaveBeenCalledWith('m2', false));
+    });
+
+    // A star is an edit to a list you are looking at (the version-star rule):
+    // the re-read must not blank the column into "Loading…" under the cursor.
+    it('re-reads the list so the starred map pins up, without flashing loading', async () => {
+      const user = userEvent.setup();
+      renderDialog();
+      await screen.findByText('Canal Line');
+      vi.mocked(listMaps).mockClear();
+      await user.click(screen.getByRole('button', { name: 'Star Broadway' }));
+      await waitFor(() => expect(listMaps).toHaveBeenCalled());
+      expect(screen.queryByText('Loading…')).toBeNull();
+    });
+
+    it('does not select the map on the way to its star', async () => {
+      const user = userEvent.setup();
+      renderDialog();
+      await screen.findByText('Canal Line');
+      await user.click(screen.getByRole('button', { name: 'Star Broadway' }));
+      await waitFor(() => expect(setMapStarred).toHaveBeenCalled());
+      expect(listVersions).not.toHaveBeenCalled();
+    });
+  });
+
+  describe('thumb hover preview', () => {
+    it('raises the full-size capture while hovering a version thumb', async () => {
+      const user = userEvent.setup();
+      vi.mocked(listVersions).mockResolvedValue([
+        { ...VERSIONS[1], thumb: 'data:image/png;base64,LARGE' },
+      ]);
+      renderDialog();
+      await openCanalLine(user);
+      const thumb = document.querySelector('.map-library-versions img.map-thumb');
+      expect(thumb).not.toBeNull();
+      await user.hover(thumb!);
+      await waitFor(() => {
+        const preview = document.querySelector('.map-thumb-preview img');
+        expect(preview).toHaveAttribute('src', 'data:image/png;base64,LARGE');
+      });
+    });
+
+    it('shows no preview for a thumb-less row', async () => {
+      const user = userEvent.setup();
+      renderDialog();
+      await openCanalLine(user);
+      // The fixture versions carry no thumb: the placeholder is inert.
+      expect(document.querySelector('.map-library-versions img.map-thumb')).toBeNull();
+      expect(document.querySelector('.map-thumb-preview')).toBeNull();
+    });
   });
 });

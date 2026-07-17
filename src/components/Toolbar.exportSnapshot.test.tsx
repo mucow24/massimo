@@ -28,6 +28,8 @@ vi.mock('../state/mapLibrary', () => ({
   deleteVersion: vi.fn(async () => {}),
   setVersionName: vi.fn(async () => {}),
   setVersionStarred: vi.fn(async () => {}),
+  setMapStarred: vi.fn(async () => {}),
+  sortMaps: (rows: unknown[]) => rows,
   newMapId: vi.fn(() => 'minted-1'),
 }));
 

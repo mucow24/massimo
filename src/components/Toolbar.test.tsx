@@ -48,6 +48,9 @@ vi.mock('../state/mapLibrary', () => ({
   deleteVersion: vi.fn(async () => {}),
   setVersionName: vi.fn(async () => {}),
   setVersionStarred: vi.fn(async () => {}),
+  setMapStarred: vi.fn(async () => {}),
+  // Pass-through: order is MapLibraryDialog.test.tsx's concern, not the Toolbar's.
+  sortMaps: (rows: MapSummary[]) => rows,
   newMapId: vi.fn(() => `minted-${++libState.minted}`),
 }));
 
@@ -640,7 +643,7 @@ describe('Toolbar — Load from library', () => {
 
   const seedLibraryRow = () => {
     vi.mocked(listMaps).mockResolvedValue([
-      { id: 'm1', name: 'Saved Map', updatedAt: SAVED_AT, versionCount: 1 },
+      { id: 'm1', name: 'Saved Map', updatedAt: SAVED_AT, createdAt: SAVED_AT, versionCount: 1 },
     ] satisfies MapSummary[]);
     vi.mocked(listVersions).mockResolvedValue([
       { id: 7, mapId: 'm1', savedAt: SAVED_AT, source: 'user', version: 3 },
