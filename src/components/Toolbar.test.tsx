@@ -1120,6 +1120,122 @@ describe('Toolbar — Make a copy', () => {
 });
 
 /**
+ * Revert — discard every unsaved change, restoring the document to the bytes
+ * last saved to the library or loaded. It stays in the SAME document, so (like
+ * Clear) it is a normal undoable edit with no auto-save; the save baseline is
+ * left untouched, so the status reads clean on its own once the doc is back on
+ * it. Gated on a real baseline: a clean/unsaved doc already matches its
+ * baseline and a doc with none has nothing to return to, so Revert is greyed
+ * out in both cases (which is NOT the same set as Save version's — a
+ * no-baseline doc is dirty, hence save-armed, yet has nothing to revert).
+ */
+describe('Toolbar — Revert', () => {
+  const seedSavedMap = () => {
+    useDoc.setState({
+      ...useDoc.getState(),
+      name: 'My Map',
+      lines: { L1: makeLine({ id: 'L1' as LineId, stations: ['S'] as StationId[] }) },
+      lineOrder: ['L1' as LineId],
+      stations: { S: stationWithStop('S' as StationId, 'L1' as LineId, { x: 0, y: 0 }) },
+    });
+    anchor(markSaved); // the baseline: this IS the saved state
+  };
+
+  const clickRevert = async (user: ReturnType<typeof userEvent.setup>) => {
+    await user.click(screen.getByRole('button', { name: 'Canvas' }));
+    await user.click(screen.getByRole('menuitem', { name: 'Revert' }));
+  };
+
+  it('sits directly below Save version in the Canvas menu', async () => {
+    const user = userEvent.setup();
+    renderToolbar();
+    await user.click(screen.getByRole('button', { name: 'Canvas' }));
+    const labels = screen.getAllByRole('menuitem').map((el) => el.textContent);
+    const saveIdx = labels.findIndex((l) => l?.startsWith('Save version'));
+    expect(labels[saveIdx + 1]).toBe('Revert');
+  });
+
+  it('discards unsaved changes, restoring the doc to its last-saved state', async () => {
+    const user = userEvent.setup();
+    seedSavedMap();
+    const added = useDoc.getState().addStation(300, 300); // an unsaved edit
+    expect(Object.keys(useDoc.getState().stations)).toHaveLength(2);
+    expect(statusNow()).toBe('dirty');
+    renderToolbar();
+    await clickRevert(user);
+    // Back to the single saved station, and clean against the untouched baseline.
+    expect(Object.keys(useDoc.getState().stations)).toEqual(['S']);
+    expect(useDoc.getState().stations[added]).toBeUndefined();
+    expect(statusNow()).toBe('clean');
+  });
+
+  it('stays in the same document: undoable, with no auto-save', async () => {
+    const user = userEvent.setup();
+    seedSavedMap();
+    useDoc.getState().addStation(300, 300);
+    renderToolbar();
+    await clickRevert(user);
+    expect(Object.keys(useDoc.getState().stations)).toHaveLength(1);
+    // An in-document edit: no version written, and Ctrl+Z brings the discarded
+    // change back, exactly like Clear.
+    expect(saveVersion).not.toHaveBeenCalled();
+    useDoc.temporal.getState().undo();
+    expect(Object.keys(useDoc.getState().stations)).toHaveLength(2);
+  });
+
+  it('prunes a selection the restored doc no longer contains', async () => {
+    const user = userEvent.setup();
+    seedSavedMap();
+    const added = useDoc.getState().addStation(300, 300);
+    useSelection.setState({ ...useSelection.getState(), selectedStationIds: [added] });
+    renderToolbar();
+    await clickRevert(user);
+    expect(useSelection.getState().selectedStationIds).toHaveLength(0);
+  });
+
+  it('is greyed out when the doc is clean — nothing to discard', async () => {
+    const user = userEvent.setup();
+    seedSavedMap(); // clean
+    renderToolbar();
+    await user.click(screen.getByRole('button', { name: 'Canvas' }));
+    expect(screen.getByRole('menuitem', { name: 'Revert' })).toHaveAttribute(
+      'aria-disabled',
+      'true',
+    );
+  });
+
+  it('is armed once the doc has unsaved changes', async () => {
+    const user = userEvent.setup();
+    seedSavedMap();
+    useDoc.getState().addStation(300, 300); // dirty
+    renderToolbar();
+    await user.click(screen.getByRole('button', { name: 'Canvas' }));
+    expect(screen.getByRole('menuitem', { name: 'Revert' })).not.toHaveAttribute('aria-disabled');
+  });
+
+  it('is greyed out on a dirty doc that has no baseline — nothing to return to', async () => {
+    const user = userEvent.setup();
+    // A non-empty doc with no baseline anchored: dirty (so Save version is
+    // armed), but there is no saved state to revert to.
+    useDoc.setState({
+      ...useDoc.getState(),
+      stations: { S: stationWithStop('S' as StationId, 'L1' as LineId, { x: 0, y: 0 }) },
+    });
+    expect(statusNow()).toBe('dirty');
+    renderToolbar();
+    await user.click(screen.getByRole('button', { name: 'Canvas' }));
+    expect(screen.getByRole('menuitem', { name: 'Revert' })).toHaveAttribute(
+      'aria-disabled',
+      'true',
+    );
+    // The gate really is Revert's own, not Save version's: Save is armed here.
+    expect(screen.getByRole('menuitem', { name: 'Save version' })).not.toHaveAttribute(
+      'aria-disabled',
+    );
+  });
+});
+
+/**
  * The save gate is the menu item's enabled state: Save version is greyed out
  * exactly when the doc byte-for-byte matches a library version (clean), and
  * armed when it is dirty (edits) or unsaved (clean bytes the library holds no

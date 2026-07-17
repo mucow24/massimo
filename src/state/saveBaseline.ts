@@ -153,3 +153,22 @@ export function useSaveStatus(): SaveStatus {
   const baseline = useSaveBaseline();
   return useDoc((s) => saveStatusOf(s, baseline));
 }
+
+/**
+ * Whether Revert has anything to discard: a baseline exists AND the live doc
+ * has diverged from it. A clean or unsaved doc already equals its baseline
+ * (nothing to throw away), and a doc with no baseline has no saved state to
+ * return to — both leave Revert inert. Note this is NOT `status === 'dirty'`:
+ * a doc with no baseline reads dirty (it errs "save me") yet has nothing to
+ * revert, so Revert and Save version gate on different predicates. Reuses the
+ * same reference comparison as `saveStatusOf`, so the two can never disagree
+ * about whether the doc is sitting on its baseline. */
+export function canRevertTo(doc: DocSnapshot, baseline: SaveBaselineState): boolean {
+  return baseline.baselineSnap !== null && !docSnapshotsEqual(doc, baseline.baselineSnap);
+}
+
+/** Reactive twin for components: re-renders only when revert-ability flips. */
+export function useCanRevert(): boolean {
+  const baseline = useSaveBaseline();
+  return useDoc((s) => canRevertTo(s, baseline));
+}
