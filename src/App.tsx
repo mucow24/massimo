@@ -516,13 +516,9 @@ export default function App() {
         // the async write just flushes that already-built string later.
         navigator.clipboard?.writeText(writeClipboard(items)).catch(() => {});
         e.preventDefault();
-        // Clear the copyable selections first so no id dangles at a deleted item
+        // Clear the selection first so no id dangles at a deleted item
         // (mirrors the Delete handler); then remove them in one history group.
-        const sel = useSelection.getState();
-        sel.selectRouteBullet(null);
-        sel.selectLabel(null);
-        sel.selectPolygon(null);
-        sel.selectSvgImage(null);
+        useSelection.getState().clearAllSelections();
         const group = beginHistoryGroup();
         for (const id of bulletIds) doc.deleteRouteBullet(id);
         for (const id of labelIds) doc.deleteTextLabel(id);

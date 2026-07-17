@@ -277,8 +277,8 @@ export interface Line {
   defaultDotSize?: number;
   // Stripe width in world units. Missing ⇒ LINE_WIDTH_DEFAULT (= STOP_SIZE,
   // the historical constant) — no migration needed for older saves. The
-  // setter (`setLineWidth`) clamps to ≥ LINE_WIDTH_MIN, rounds to an integer,
-  // and drops the field when the result lands on the default so it is never
+  // setter (`setLineWidth`) clamps to ≥ LINE_WIDTH_MIN, rounds to the 0.25
+  // (quarter-unit) grid, and drops the field when the result lands on the default so it is never
   // stored. Width is GEOMETRY, not presentation: stop-cell tangency, band
   // merging, and stripe offsets all derive from it (see lineWidth.ts) — so
   // the setter also re-packs tangent stop chains at the line's stations
@@ -289,7 +289,7 @@ export interface Line {
   // why centered). Missing ⇒ 0 (no casing). Unlike `width`, stroke is
   // PRESENTATION: it never moves paths or changes band merging, so
   // renderers resolve it live. The setter clamps to ≥ 0, rounds to the
-  // 0.5 grid, and drops the field at 0 so the default is never stored.
+  // 0.25 (quarter-unit) grid, and drops the field at 0 so the default is never stored.
   strokeWidth?: number;
   // Casing color, 7-char lowercase hex. Missing ⇒ '#ffffff'. The setter
   // normalizes to lowercase and drops the field at the default.
