@@ -14,18 +14,6 @@ export interface SelectionItemIds {
   svgImages: string[];
 }
 
-// The whole selection — lock/unlock acts on everything selected.
-export function selectedItemIds(): SelectionItemIds {
-  const sel = useSelection.getState();
-  return {
-    stations: sel.selectedStationIds,
-    bullets: sel.selectedRouteBulletIds,
-    labels: sel.selectedLabelIds,
-    polygons: sel.selectedPolygonIds,
-    svgImages: sel.selectedSvgImageIds,
-  };
-}
-
 // The selection minus locked members — locked items resist Delete, arrow-nudge
 // and cut, so every bulk gesture filters through here the same way.
 export function unlockedSelectedItemIds(): SelectionItemIds {
@@ -61,12 +49,8 @@ export function itemIdCount(ids: SelectionItemIds): number {
 export function deleteUnlockedSelection(): boolean {
   const ids = unlockedSelectedItemIds();
   if (itemIdCount(ids) === 0) return false;
-  const sel = useSelection.getState();
-  sel.selectStation(null);
-  sel.selectRouteBullet(null);
-  sel.selectLabel(null);
-  sel.selectPolygon(null);
-  sel.selectSvgImage(null);
+  // Drop the whole selection first so no id dangles at a deleted item.
+  useSelection.getState().clearAllSelections();
   const group = beginHistoryGroup();
   const doc = useDoc.getState();
   for (const id of ids.stations) doc.deleteStation(id);

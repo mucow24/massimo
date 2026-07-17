@@ -162,13 +162,8 @@ export function Toolbar() {
     if (!fitCameraToDoc(useDoc.getState())) setViewport({ x: 0, y: 0, zoom: 1 });
   };
   const onClear = () => {
-    selection.selectStation(null);
-    selection.selectLine(null);
-    selection.selectLineTag(null);
-    selection.selectRouteBullet(null);
-    selection.selectTransfer(null);
+    selection.clearAllSelections();
     selection.setUiMode({ kind: 'idle' });
-    selection.setEditingStationId(null);
     // No clearHistory and no auto-save: Clear stays in the SAME document, so
     // Ctrl+Z is the backstop and undo has nothing to splice across.
     clearAll();

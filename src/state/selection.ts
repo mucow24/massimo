@@ -290,6 +290,13 @@ export interface SelectionState {
   // dangling id behind (a null-deref hazard for consumers that index the doc
   // by the selected id). A no-op when everything still resolves.
   reconcileWithDoc: (doc: MapDoc) => void;
+  // Wipe the entire selection — every list, every primary, and the
+  // within-station micro-state — in one shot (the `clearedSelections()` set).
+  // Leaves `uiMode` untouched: the multi-select callers (cut, delete-all) run
+  // only in idle, and the Clear-canvas caller resets the mode itself. Replaces
+  // the old habit of chaining `select*(null)` calls, most of which were no-ops
+  // anyway since each one already spreads `clearedSelections()`.
+  clearAllSelections: () => void;
 }
 
 // ---- selection id-list algebra: pure helpers shared by every id-list kind
@@ -715,6 +722,7 @@ export const useSelection = create<SelectionState>()(
           selectedPolygonIds: dedupeLastWins(ids.polygons ?? []),
           selectedSvgImageIds: dedupeLastWins(ids.svgImages ?? []),
         }),
+      clearAllSelections: () => set({ ...clearedSelections() }),
       reconcileWithDoc: (doc) => {
         const s = get();
         const next: Partial<SelectionState> = {};

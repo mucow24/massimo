@@ -1725,17 +1725,12 @@ export function setDocName(doc: MapDoc, name: string): MapDoc {
   return { ...doc, name };
 }
 
-// `false` is the default for `locked`, so we store `true` and omit the field
-// entirely when off — keeping persisted docs clean. No-op (returns `st`
-// unchanged) when already at the requested state, so history grouping still
-// sees an untouched doc.
+// Lock/unlock a single station. A thin wrapper over the multi-item
+// setItemsLocked below (defined further down) — it owns the one canonical
+// "store true / drop the field when off, same-reference on no-op" convention,
+// so single- and multi-select locking can't drift apart.
 export function setStationLocked(doc: MapDoc, stationId: StationId, locked: boolean): MapDoc {
-  return updateStation(doc, stationId, (st) => {
-    if (!!st.locked === locked) return st;
-    if (locked) return { ...st, locked: true };
-    const { locked: _gone, ...rest } = st;
-    return rest;
-  });
+  return setItemsLocked(doc, { stations: [stationId] }, locked);
 }
 
 // A mixed multi-selection's ids, one list per lockable kind. Absent/empty
@@ -1749,8 +1744,11 @@ export interface LockableItemIds {
 }
 
 // Flip `locked` on the listed members of one collection, allocating a new
-// record only when at least one member actually changes state. Same
-// store-true / drop-when-off convention as setStationLocked above.
+// record only when at least one member actually changes state. THE canonical
+// lock convention: `false` is the default, so we store `true` and omit the
+// field entirely when off (keeping persisted docs clean), and a member already
+// at the requested state is skipped so an all-no-op batch returns `rec` itself
+// (reference equality → history grouping sees an untouched doc).
 function setLockedIn<T extends { locked?: boolean }>(
   rec: Record<string, T>,
   ids: readonly string[] | undefined,
