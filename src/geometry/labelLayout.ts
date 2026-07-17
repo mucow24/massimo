@@ -30,12 +30,19 @@ export const DEFAULT_STOP_HALF: StopHalfFn = () => HALF;
 /**
  * Per-stop dash (TfL tick) lookup for the autoAlign clearance: null for a
  * non-dash stop, tick length/width in world units for a dash stop (see
- * model/dashSize.ts). Production callers pass `stopDashOf(lines)` — and must
- * do so at EVERY site that passes `stopHalfOf(lines)`, renderer and
- * hit/bounds geometry alike, or the painted label drifts off its hit rect
- * next to a dash stop. The default reproduces the tick-blind pre-dash pin.
+ * model/dashSize.ts). Receives the stop's whole station `stops` array (not a
+ * precomputed flag) so the model side can pick the same split default the
+ * canvas resolves — including the blank-aware singleton rule — without geometry
+ * having to know it; the label clears a tick iff the stop actually paints one.
+ * Production callers pass `stopDashOf(lines)` — and must do so at EVERY site
+ * that passes `stopHalfOf(lines)`, renderer and hit/bounds geometry alike, or
+ * the painted label drifts off its hit rect next to a dash stop. The default
+ * reproduces the tick-blind pre-dash pin.
  */
-export type StopDashFn = (stop: StopCell) => { length: number; width: number } | null;
+export type StopDashFn = (
+  stop: StopCell,
+  stationStops: readonly StopCell[],
+) => { length: number; width: number } | null;
 export const DEFAULT_STOP_DASH: StopDashFn = () => null;
 
 export type LabelBaseline = 'central' | 'text-before-edge' | 'text-after-edge';
@@ -558,12 +565,16 @@ function autoAlignInfo(
     orientation: StopOrientation | null;
     dash: { length: number; width: number } | null;
   }
+  // Pass the whole station stop set so the dash lookup resolves the SAME split
+  // default the canvas paints (blank-aware singleton included) — otherwise an
+  // interchange-default edit would shift a singleton station's label (and vice
+  // versa), and a blanked express stop would wrongly read as an interchange.
   const candidates: Candidate[] = stops.map((s) => ({
     dRow: s.row - label.row,
     dCol: s.col - label.col,
     half: stopHalf(s.lineId),
     orientation: s.orientation,
-    dash: stopDash(s),
+    dash: stopDash(s, stops),
   }));
   if (phantomDot) {
     candidates.push({

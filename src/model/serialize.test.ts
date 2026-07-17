@@ -491,7 +491,7 @@ describe('serialize / parse — dot styles', () => {
       },
     });
 
-  it('round-trips a stop dotStyle and a line defaultDotStyle losslessly', () => {
+  it('round-trips a stop dotStyle and the split line dot defaults losslessly', () => {
     const doc = makeDoc({
       stations: [
         makeStation({
@@ -503,7 +503,9 @@ describe('serialize / parse — dot styles', () => {
         makeLine({
           id: 'L1',
           stations: ['s1'],
-          defaultDotStyle: DOT_SHAPE_PRESETS['filled-line-color'],
+          // Distinct singleton/shared defaults, to prove they survive independently.
+          singletonDotStyle: DOT_SHAPE_PRESETS['filled-line-color'],
+          multiDotStyle: DOT_SHAPE_PRESETS['open-white'],
         }),
       ],
       styles: Object.values(T.DEFAULT_STYLES),
@@ -511,6 +513,15 @@ describe('serialize / parse — dot styles', () => {
     const result = parse(serialize(doc));
     expect(result.ok).toBe(true);
     if (result.ok) expect(result.doc).toEqual(doc);
+  });
+
+  it('bakes a legacy line defaultDotStyle into BOTH split fields (renders identically)', () => {
+    const r = parse(buildDotPayload({}, { defaultDotStyle: DOT_SHAPE_PRESETS['open-white'] }));
+    expect(r.ok).toBe(true);
+    if (!r.ok) return;
+    expect(r.doc.lines.L1.singletonDotStyle).toEqual(DOT_SHAPE_PRESETS['open-white']);
+    expect(r.doc.lines.L1.multiDotStyle).toEqual(DOT_SHAPE_PRESETS['open-white']);
+    expect('defaultDotStyle' in r.doc.lines.L1).toBe(false);
   });
 
   it('converts a legacy per-stop dotShape string to its preset style and strips the key', () => {
@@ -526,8 +537,10 @@ describe('serialize / parse — dot styles', () => {
     const r = parse(buildDotPayload({}, { defaultDotShape: 'open-white' }));
     expect(r.ok).toBe(true);
     if (!r.ok) return;
-    expect(r.doc.lines.L1.defaultDotStyle).toEqual(DOT_SHAPE_PRESETS['open-white']);
+    expect(r.doc.lines.L1.singletonDotStyle).toEqual(DOT_SHAPE_PRESETS['open-white']);
+    expect(r.doc.lines.L1.multiDotStyle).toEqual(DOT_SHAPE_PRESETS['open-white']);
     expect('defaultDotShape' in r.doc.lines.L1).toBe(false);
+    expect('defaultDotStyle' in r.doc.lines.L1).toBe(false);
   });
 
   it("drops a legacy defaultDotShape of 'filled-black' (the default is never stored)", () => {
@@ -535,7 +548,8 @@ describe('serialize / parse — dot styles', () => {
     expect(r.ok).toBe(true);
     if (!r.ok) return;
     expect('defaultDotShape' in r.doc.lines.L1).toBe(false);
-    expect('defaultDotStyle' in r.doc.lines.L1).toBe(false);
+    expect('singletonDotStyle' in r.doc.lines.L1).toBe(false);
+    expect('multiDotStyle' in r.doc.lines.L1).toBe(false);
   });
 
   it("converts a legacy 'none' to the invisible preset", () => {
@@ -553,16 +567,19 @@ describe('serialize / parse — dot styles', () => {
     expect('dotShape' in stop).toBe(false);
     expect(stop.dotStyle).toBeUndefined();
     expect('defaultDotShape' in r.doc.lines.L1).toBe(false);
-    expect(r.doc.lines.L1.defaultDotStyle).toBeUndefined();
+    expect('singletonDotStyle' in r.doc.lines.L1).toBe(false);
+    expect('multiDotStyle' in r.doc.lines.L1).toBe(false);
   });
 
-  it('re-serializing a converted legacy doc emits dotStyle and never dotShape', () => {
+  it('re-serializing a converted legacy doc emits split dot fields and never dotShape', () => {
     const r = parse(buildDotPayload({ dotShape: 'open-white' }, { defaultDotShape: 'open-black' }));
     expect(r.ok).toBe(true);
     if (!r.ok) return;
     const json = serialize(r.doc);
     expect(json).toContain('"dotStyle"');
-    expect(json).toContain('"defaultDotStyle"');
+    expect(json).toContain('"singletonDotStyle"');
+    expect(json).toContain('"multiDotStyle"');
+    expect(json).not.toContain('"defaultDotStyle"');
     expect(json).not.toContain('"dotShape"');
     expect(json).not.toContain('"defaultDotShape"');
     // …and parsing the re-serialized doc is a fixed point.
@@ -594,7 +611,8 @@ describe('serialize / parse — dot styles', () => {
     expect(r.ok).toBe(true);
     if (!r.ok) return;
     expect(r.doc.stations.s1.stops[0].dotStyle).toEqual(dash);
-    expect(r.doc.lines.L1.defaultDotStyle).toEqual(dash);
+    expect(r.doc.lines.L1.singletonDotStyle).toEqual(dash);
+    expect(r.doc.lines.L1.multiDotStyle).toEqual(dash);
   });
 
   it('drops malformed dotStyle objects', () => {
@@ -631,17 +649,19 @@ describe('serialize / parse — dot styles', () => {
       expect(r.ok).toBe(true);
       if (!r.ok) continue;
       expect(r.doc.stations.s1.stops[0].dotStyle).toBeUndefined();
-      expect(r.doc.lines.L1.defaultDotStyle).toBeUndefined();
+      expect('singletonDotStyle' in r.doc.lines.L1).toBe(false);
+      expect('multiDotStyle' in r.doc.lines.L1).toBe(false);
     }
   });
 
-  it('drops a modern defaultDotStyle equal to DEFAULT_DOT_STYLE (never stored)', () => {
+  it('drops a legacy defaultDotStyle equal to DEFAULT_DOT_STYLE (never stored, both sides)', () => {
     // The payload goes through JSON.stringify anyway, so passing the default
     // object itself already exercises by-value comparison on the other side.
     const r = parse(buildDotPayload({}, { defaultDotStyle: DEFAULT_DOT_STYLE }));
     expect(r.ok).toBe(true);
     if (!r.ok) return;
-    expect('defaultDotStyle' in r.doc.lines.L1).toBe(false);
+    expect('singletonDotStyle' in r.doc.lines.L1).toBe(false);
+    expect('multiDotStyle' in r.doc.lines.L1).toBe(false);
   });
 
   it('normalizes color-pair hex casing and clamps negative stroke widths', () => {
@@ -753,10 +773,10 @@ describe('parse — dot size sanitizing', () => {
       },
     });
 
-  it('round-trips non-default line and stop sizes losslessly (pin — relies only on the optional fields)', () => {
+  it('round-trips non-default split line sizes and a stop size losslessly', () => {
     const doc = makeDoc({
       stations: [makeStation({ id: 's1', stops: [makeStop('L1', { dotSize: 16 })] })],
-      lines: [makeLine({ id: 'L1', stations: ['s1'], defaultDotSize: 12 })],
+      lines: [makeLine({ id: 'L1', stations: ['s1'], singletonDotSize: 12, multiDotSize: 18 })],
       styles: Object.values(T.DEFAULT_STYLES),
     });
     const result = parse(serialize(doc));
@@ -764,19 +784,30 @@ describe('parse — dot size sanitizing', () => {
     if (result.ok) expect(result.doc).toEqual(doc);
   });
 
-  it('drops an explicit default line size on parse (the default is never stored)', () => {
-    const result = parse(buildDotSizePayload({}, { defaultDotSize: 8 }));
-    expect(result.ok).toBe(true);
-    if (result.ok) expect('defaultDotSize' in result.doc.lines.L1).toBe(false);
+  it('bakes a legacy default line size into both split fields; an explicit default drops', () => {
+    const both = parse(buildDotSizePayload({}, { defaultDotSize: 12 }));
+    expect(both.ok).toBe(true);
+    if (both.ok) {
+      expect(both.doc.lines.L1.singletonDotSize).toBe(12);
+      expect(both.doc.lines.L1.multiDotSize).toBe(12);
+    }
+    const atDefault = parse(buildDotSizePayload({}, { defaultDotSize: 8 }));
+    expect(atDefault.ok).toBe(true);
+    if (atDefault.ok) {
+      expect('singletonDotSize' in atDefault.doc.lines.L1).toBe(false);
+      expect('multiDotSize' in atDefault.doc.lines.L1).toBe(false);
+    }
   });
 
-  it("drops a stop override equal to the line's effective default (after line sanitizing)", () => {
-    // The line's raw 10.4 rounds to 10 first; the stop's 10 must compare
-    // against the SANITIZED default — catching a sanitizer-ordering bug.
+  it("drops a singleton stop override equal to the line's effective default (after bake + sanitizing)", () => {
+    // The legacy 10.4 bakes to a canonical singleton default of 10; the
+    // singleton stop's 10 must compare against THAT — catching a bake/sanitize
+    // ordering bug.
     const result = parse(buildDotSizePayload({ dotSize: 10 }, { defaultDotSize: 10.4 }));
     expect(result.ok).toBe(true);
     if (!result.ok) return;
-    expect(result.doc.lines.L1.defaultDotSize).toBe(10);
+    expect(result.doc.lines.L1.singletonDotSize).toBe(10);
+    expect(result.doc.lines.L1.multiDotSize).toBe(10);
     expect('dotSize' in result.doc.stations.s1.stops[0]).toBe(false);
   });
 
@@ -791,7 +822,8 @@ describe('parse — dot size sanitizing', () => {
       const result = parse(buildDotSizePayload({ dotSize: junk }, { defaultDotSize: junk }));
       expect(result.ok).toBe(true);
       if (!result.ok) return;
-      expect('defaultDotSize' in result.doc.lines.L1).toBe(false);
+      expect('singletonDotSize' in result.doc.lines.L1).toBe(false);
+      expect('multiDotSize' in result.doc.lines.L1).toBe(false);
       expect('dotSize' in result.doc.stations.s1.stops[0]).toBe(false);
     }
   });
@@ -800,12 +832,16 @@ describe('parse — dot size sanitizing', () => {
     const low = parse(buildDotSizePayload({ dotSize: -3 }, { defaultDotSize: 9.6 }));
     expect(low.ok).toBe(true);
     if (!low.ok) return;
-    expect(low.doc.lines.L1.defaultDotSize).toBe(10);
+    expect(low.doc.lines.L1.singletonDotSize).toBe(10);
+    expect(low.doc.lines.L1.multiDotSize).toBe(10);
     expect(low.doc.stations.s1.stops[0].dotSize).toBe(0);
     // Rounds-to-default is dropped like an exact 8.
     const nearDefault = parse(buildDotSizePayload({}, { defaultDotSize: 8.4 }));
     expect(nearDefault.ok).toBe(true);
-    if (nearDefault.ok) expect('defaultDotSize' in nearDefault.doc.lines.L1).toBe(false);
+    if (nearDefault.ok) {
+      expect('singletonDotSize' in nearDefault.doc.lines.L1).toBe(false);
+      expect('multiDotSize' in nearDefault.doc.lines.L1).toBe(false);
+    }
   });
 
   it('drops non-finite sizes', () => {
@@ -817,7 +853,9 @@ describe('parse — dot size sanitizing', () => {
     const result = parse(json);
     expect(result.ok).toBe(true);
     if (!result.ok) return;
-    expect('defaultDotSize' in result.doc.lines.L1).toBe(false);
+    // A non-finite legacy default must be dropped by the bake, not clamped.
+    expect('singletonDotSize' in result.doc.lines.L1).toBe(false);
+    expect('multiDotSize' in result.doc.lines.L1).toBe(false);
     expect('dotSize' in result.doc.stations.s1.stops[0]).toBe(false);
   });
 });

@@ -10,7 +10,11 @@ import { useThemeColors } from '../../state/theme';
 import { legibleTextOn } from '../../util/color';
 import { dotSizeOverride, resolveDotSize } from '../../model/dotSize';
 import { resolveDotRender } from '../../model/dotStyle';
-import { effectiveStationLabelStyle, resolveDotStyle } from '../../model/transforms';
+import {
+  effectiveStationLabelStyle,
+  resolveDotStyle,
+  stationIsSingleton,
+} from '../../model/transforms';
 import { ORIENTATION_GLYPH, sameCell } from '../inspector/stopGridDrag';
 import type { LayoutDragSource } from './useStationLayoutDrag';
 
@@ -65,6 +69,9 @@ export function StationLayoutEditor({
   const darkMode = useDoc((s) => s.darkMode);
   const inHandMode = selection.toolMode === 'hand' || selection.spaceHeld;
   const angle = station.rotation * 45;
+  // Singleton vs. shared picks each stop's split default (dot style + size);
+  // it's a per-station property, so resolve it once for this editor.
+  const isSingleton = stationIsSingleton(station);
   const stopHalf = stopHalfOf(lines);
   const cellsBox = cellsAABBLocal(station, stopHalf);
   // Shield reach past the cells AABB: at least one cell, and at least the
@@ -72,7 +79,10 @@ export function StationLayoutEditor({
   // a live station click target, and any exposed ring would re-enable the
   // near-miss whole-station right-click the shield exists to swallow.
   const maxDotR =
-    station.stops.reduce((m, s) => Math.max(m, resolveDotSize(lines[s.lineId], s)), 0) / 2;
+    station.stops.reduce(
+      (m, s) => Math.max(m, resolveDotSize(lines[s.lineId], s, isSingleton)),
+      0,
+    ) / 2;
   const shieldPad = Math.max(STOP_SIZE, maxDotR);
   const {
     anchorX: labelAnchorX,
@@ -171,11 +181,11 @@ export function StationLayoutEditor({
         const line = lines[s.lineId];
         const dot = line
           ? resolveDotRender(
-              resolveDotStyle(line, s),
+              resolveDotStyle(line, s, isSingleton),
               line.color,
               line.service,
               darkMode,
-              dotSizeOverride(line, s),
+              dotSizeOverride(line, s, isSingleton),
             )
           : null;
         const glyphColor = dot && dot.fill !== 'none' ? legibleTextOn(dot.fill) : '#fff';

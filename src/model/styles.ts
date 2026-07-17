@@ -23,8 +23,10 @@ import {
   setLineCurveRadius,
   setLineDashLength,
   setLineDashWidth,
-  setLineDefaultDotSize,
-  setLineDefaultDotStyle,
+  setLineSingletonDotSize,
+  setLineMultiDotSize,
+  setLineSingletonDotStyle,
+  setLineMultiDotStyle,
   setLineStrokeColor,
   setLineSeamColor,
   setLineSeamWidth,
@@ -37,7 +39,7 @@ import {
   updateTransferStyle,
 } from './transforms';
 import { DEFAULT_DOT_STYLE, dotStylesEqual } from './dotStyle';
-import { DOT_SIZE_MIN, lineDefaultDotSizeOf } from './dotSize';
+import { DOT_SIZE_MIN, lineSingletonDotSizeOf, lineMultiDotSizeOf } from './dotSize';
 import { lineDashLengthOf, lineDashWidthOf } from './dashSize';
 import { LINE_WIDTH_MIN, LINE_WIDTH_STEP, lineWidthOf } from './lineWidth';
 import {
@@ -113,8 +115,10 @@ export function captureStyleProps<K extends StyleKind>(
       const dashLength = lineDashLengthOf(l);
       const dashWidth = lineDashWidthOf(l);
       return {
-        defaultDotStyle: l.defaultDotStyle ?? DEFAULT_DOT_STYLE,
-        defaultDotSize: lineDefaultDotSizeOf(l),
+        singletonDotStyle: l.singletonDotStyle ?? DEFAULT_DOT_STYLE,
+        multiDotStyle: l.multiDotStyle ?? DEFAULT_DOT_STYLE,
+        singletonDotSize: lineSingletonDotSizeOf(l),
+        multiDotSize: lineMultiDotSizeOf(l),
         width: lineWidthOf(l),
         curveRadius: lineCurveRadiusOf(l),
         strokeWidth: lineStrokeWidthOf(l),
@@ -194,8 +198,10 @@ export function stylePropsEqual(
     const la = a as LineStyleProps;
     const lb = b as LineStyleProps;
     return (
-      dotStylesEqual(la.defaultDotStyle, lb.defaultDotStyle) &&
-      la.defaultDotSize === lb.defaultDotSize &&
+      dotStylesEqual(la.singletonDotStyle, lb.singletonDotStyle) &&
+      dotStylesEqual(la.multiDotStyle, lb.multiDotStyle) &&
+      la.singletonDotSize === lb.singletonDotSize &&
+      la.multiDotSize === lb.multiDotSize &&
       la.width === lb.width &&
       la.curveRadius === lb.curveRadius &&
       la.strokeWidth === lb.strokeWidth &&
@@ -244,8 +250,10 @@ export function canonicalStyleProps<K extends StyleKind>(
       const dashLength = p.dashLength == null ? undefined : canonicalStrokeWidth(p.dashLength);
       const dashWidth = p.dashWidth == null ? undefined : canonicalStrokeWidth(p.dashWidth);
       return {
-        defaultDotStyle: p.defaultDotStyle,
-        defaultDotSize: Math.max(DOT_SIZE_MIN, Math.round(p.defaultDotSize)),
+        singletonDotStyle: p.singletonDotStyle,
+        multiDotStyle: p.multiDotStyle,
+        singletonDotSize: Math.max(DOT_SIZE_MIN, Math.round(p.singletonDotSize)),
+        multiDotSize: Math.max(DOT_SIZE_MIN, Math.round(p.multiDotSize)),
         width: Math.max(LINE_WIDTH_MIN, Math.round(p.width / LINE_WIDTH_STEP) * LINE_WIDTH_STEP),
         // `?? DEFAULT` heals defs from saves that predate the field (the load
         // paths bake it in first — see bakeDocCurveRadius — this is the
@@ -337,8 +345,10 @@ function stampStyle(doc: MapDoc, def: StyleDef, itemId: string): MapDoc {
   switch (def.kind) {
     case 'line': {
       const p = def.props;
-      next = setLineDefaultDotStyle(next, itemId, p.defaultDotStyle);
-      next = setLineDefaultDotSize(next, itemId, p.defaultDotSize);
+      next = setLineSingletonDotStyle(next, itemId, p.singletonDotStyle);
+      next = setLineMultiDotStyle(next, itemId, p.multiDotStyle);
+      next = setLineSingletonDotSize(next, itemId, p.singletonDotSize);
+      next = setLineMultiDotSize(next, itemId, p.multiDotSize);
       next = setLineWidth(next, itemId, p.width);
       next = setLineCurveRadius(next, itemId, p.curveRadius);
       next = setLineStrokeWidth(next, itemId, p.strokeWidth);

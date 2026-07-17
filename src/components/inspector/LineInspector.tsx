@@ -21,7 +21,12 @@ import {
   LINE_CURVE_RADIUS_STEP,
   lineCurveRadiusOf,
 } from '../../model/lineCurve';
-import { DOT_SIZE_MAX, DOT_SIZE_MIN, lineDefaultDotSizeOf } from '../../model/dotSize';
+import {
+  DOT_SIZE_MAX,
+  DOT_SIZE_MIN,
+  lineSingletonDotSizeOf,
+  lineMultiDotSizeOf,
+} from '../../model/dotSize';
 import {
   DASH_LENGTH_MAX,
   DASH_WIDTH_MAX,
@@ -48,8 +53,10 @@ import {
 export function LineInspector({ id }: { id: LineId }) {
   const line = useDoc((s) => s.lines[id]);
   const updateLine = useDoc((s) => s.updateLine);
-  const setLineDefaultDotStyle = useDoc((s) => s.setLineDefaultDotStyle);
-  const setLineDefaultDotSize = useDoc((s) => s.setLineDefaultDotSize);
+  const setLineSingletonDotStyle = useDoc((s) => s.setLineSingletonDotStyle);
+  const setLineMultiDotStyle = useDoc((s) => s.setLineMultiDotStyle);
+  const setLineSingletonDotSize = useDoc((s) => s.setLineSingletonDotSize);
+  const setLineMultiDotSize = useDoc((s) => s.setLineMultiDotSize);
   const setLineWidth = useDoc((s) => s.setLineWidth);
   const setLineCurveRadius = useDoc((s) => s.setLineCurveRadius);
   const setLineStrokeWidth = useDoc((s) => s.setLineStrokeWidth);
@@ -93,26 +100,60 @@ export function LineInspector({ id }: { id: LineId }) {
       {/* Name/service/color above are identity, not style — the style row
           heads the covered formatting controls (dot, width, stroke). */}
       <StyleRow key={line.id} kind="line" itemId={line.id} styleId={line.styleId} />
+      {/* Default stop dot, split by how the stop's station is shared: a
+          "singleton" stop is the only line stopping there; a "shared" stop is
+          an interchange with another line. The two are independent, resolved
+          live per stop, and always overridable per-stop in the station editor. */}
+      {/* Default stop dot, split by how the stop's station is shared. The
+          singleton/interchange distinction is dynamic and per-stop overridable
+          in the station editor; the label tooltips explain each case. */}
       <div className="field dot-field">
-        <label>Default stop dot type and size</label>
+        <label title="Stations with only one line stop">Singleton stop dot type and size</label>
         <NumericFieldRow
-          id={`line-dot-size-${line.id}`}
-          label="Dot size"
+          id={`line-singleton-dot-size-${line.id}`}
+          label="Singleton dot size"
           leading={
             <StationShapePicker
               disabled={false}
-              currentStyle={line.defaultDotStyle ?? DEFAULT_DOT_STYLE}
+              ariaLabel="Singleton stop shape"
+              currentStyle={line.singletonDotStyle ?? DEFAULT_DOT_STYLE}
               lineColor={line.color}
               serviceCode={line.service}
-              onPick={(shape) => setLineDefaultDotStyle(line.id, DOT_SHAPE_PRESETS[shape])}
+              onPick={(shape) => setLineSingletonDotStyle(line.id, DOT_SHAPE_PRESETS[shape])}
             />
           }
           min={DOT_SIZE_MIN}
           max={DOT_SIZE_MAX}
           step={1}
-          value={lineDefaultDotSizeOf(line)}
-          onChange={(n) => setLineDefaultDotSize(line.id, n)}
-          getCurrent={() => lineDefaultDotSizeOf(useDoc.getState().lines[id])}
+          value={lineSingletonDotSizeOf(line)}
+          onChange={(n) => setLineSingletonDotSize(line.id, n)}
+          getCurrent={() => lineSingletonDotSizeOf(useDoc.getState().lines[id])}
+          textboxAllowAboveMax
+        />
+      </div>
+      <div className="field dot-field">
+        <label title="Stations with more than one line stop">
+          Interchange stop dot type and size
+        </label>
+        <NumericFieldRow
+          id={`line-multi-dot-size-${line.id}`}
+          label="Interchange dot size"
+          leading={
+            <StationShapePicker
+              disabled={false}
+              ariaLabel="Interchange stop shape"
+              currentStyle={line.multiDotStyle ?? DEFAULT_DOT_STYLE}
+              lineColor={line.color}
+              serviceCode={line.service}
+              onPick={(shape) => setLineMultiDotStyle(line.id, DOT_SHAPE_PRESETS[shape])}
+            />
+          }
+          min={DOT_SIZE_MIN}
+          max={DOT_SIZE_MAX}
+          step={1}
+          value={lineMultiDotSizeOf(line)}
+          onChange={(n) => setLineMultiDotSize(line.id, n)}
+          getCurrent={() => lineMultiDotSizeOf(useDoc.getState().lines[id])}
           textboxAllowAboveMax
         />
       </div>

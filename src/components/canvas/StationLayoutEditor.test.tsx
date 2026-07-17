@@ -141,7 +141,8 @@ describe('<StationLayoutEditor />', () => {
           name: '1 line',
           color: '#ffffff',
           stations: ['a'],
-          defaultDotStyle: DOT_SHAPE_PRESETS['filled-white'],
+          // 'a' is a hub (L1 + L2), so L1's dot there is a shared stop.
+          multiDotStyle: DOT_SHAPE_PRESETS['filled-white'],
         }),
         // Black-filled dot ⇒ white arrow.
         L2: makeLine({ id: 'L2', service: '2', name: '2 line', color: '#111111', stations: ['a'] }),

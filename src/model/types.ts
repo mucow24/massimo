@@ -260,21 +260,34 @@ export interface Line {
   // NOTE: there is no per-segment z-layer field anymore — `segmentLayers`
   // was retired with the layering rework: overlap regions are painted via
   // MapDoc.regionAssignments instead (persist v15 strips the old field).
-  // Style for stops on this line whose own `dotStyle` is unset. Missing ⇒
-  // DEFAULT_DOT_STYLE (the filled-black preset, the historical default).
-  // Setters drop the field when the chosen style equals the default so it is
-  // never stored. Legacy saves carried a `defaultDotShape` preset id —
-  // converted on load (see convertLegacyDotShapes in serialize.ts).
-  defaultDotStyle?: DotStyle;
-  // Dot DIAMETER in px for stops on this line whose own `dotSize` is unset.
-  // Missing ⇒ DOT_SIZE_DEFAULT (= 2 × STOP_DOT_RADIUS) — no migration needed
-  // for older saves, same idiom as `width`. The setter
-  // (`setLineDefaultDotSize`) clamps to ≥ DOT_SIZE_MIN, rounds to an
-  // integer, and drops the field at the default so it is never stored. An
-  // EXPLICIT size (here or per-stop) applies to every dot style including
-  // service-code discs; only the fully-default chain keeps the larger
-  // SERVICE_CODE_DOT_RADIUS (see resolveDotRender's sizeOverride param).
-  defaultDotSize?: number;
+  // Default dot style for this line's stops, SPLIT by how many lines share the
+  // stop's station (dynamic, recomputed at render time — see resolveDotStyle):
+  //   - `singletonDotStyle` applies at a station where THIS is the only line
+  //     stopping (no other line's stop — `station.stops.length === 1`);
+  //   - `multiDotStyle` applies where the stop is shared with another line
+  //     (an interchange — `station.stops.length >= 2`).
+  // Each is used only for stops whose OWN `dotStyle` is unset; an explicit
+  // per-stop `dotStyle` always wins and survives topology changes. The two are
+  // INDEPENDENT — editing one never moves the other. Each missing ⇒
+  // DEFAULT_DOT_STYLE (the filled-black preset, the historical default);
+  // setters drop the field when the chosen style equals it so it is never
+  // stored. Legacy saves carried one combined `defaultDotStyle` (and, older
+  // still, a `defaultDotShape` preset id) — both baked into the split fields on
+  // load (bakeLineDotDefaults / convertLegacyDotShapes in serialize.ts).
+  singletonDotStyle?: DotStyle;
+  multiDotStyle?: DotStyle;
+  // Dot DIAMETER in px for this line's stops, split the same way as
+  // `singletonDotStyle` / `multiDotStyle` (singleton vs. shared station) and
+  // used only for stops whose own `dotSize` is unset. Each missing ⇒
+  // DOT_SIZE_DEFAULT (= 2 × STOP_DOT_RADIUS). The setters clamp to
+  // ≥ DOT_SIZE_MIN, round to an integer, and drop the field at the default so
+  // it is never stored. An EXPLICIT size (here or per-stop) applies to every
+  // dot style including service-code discs; only the fully-default chain keeps
+  // the larger SERVICE_CODE_DOT_RADIUS (see resolveDotRender's sizeOverride
+  // param). Legacy saves carried one combined `defaultDotSize`, baked into both
+  // on load (bakeLineDotDefaults).
+  singletonDotSize?: number;
+  multiDotSize?: number;
   // Stripe width in world units. Missing ⇒ LINE_WIDTH_DEFAULT (= STOP_SIZE,
   // the historical constant) — no migration needed for older saves. The
   // setter (`setLineWidth`) clamps to ≥ LINE_WIDTH_MIN, rounds to the 0.25
@@ -324,9 +337,10 @@ export interface Line {
   // it is never stored.
   curveRadius?: number;
   // Live link to a StyleDef of kind 'line' (see MapDoc.styles). INVARIANT:
-  // when present, this line's covered style fields (defaultDotStyle,
-  // defaultDotSize, width, strokeWidth, strokeColor, seamColor, seamWidth,
-  // dashLength, dashWidth, curveRadius — NOT color) equal the style's props. Transforms maintain it: editing any covered field clears
+  // when present, this line's covered style fields (singletonDotStyle,
+  // multiDotStyle, singletonDotSize, multiDotSize, width, strokeWidth,
+  // strokeColor, seamColor, seamWidth, dashLength, dashWidth, curveRadius —
+  // NOT color) equal the style's props. Transforms maintain it: editing any covered field clears
   // the tag ("detach to Custom"), editing the style re-stamps its users,
   // deleting the style untags. Absent ⇒ no style ("Custom" in the UI).
   // Dangling ids are pruned on file load.
@@ -775,9 +789,14 @@ export type StyleKind = 'line' | 'textLabel' | 'polygon' | 'routeBullet' | 'tran
 // fields are deliberately NOT style: a line's `color`/`service`/`name`, a
 // bullet's `lineId`.
 export interface LineStyleProps {
-  defaultDotStyle: DotStyle;
-  // Dot DIAMETER in px (the line-default size).
-  defaultDotSize: number;
+  // Default dot style, split by singleton vs. shared station (see
+  // Line.singletonDotStyle / Line.multiDotStyle). Both fully-resolved.
+  singletonDotStyle: DotStyle;
+  multiDotStyle: DotStyle;
+  // Dot DIAMETER in px, split the same way (see Line.singletonDotSize /
+  // Line.multiDotSize).
+  singletonDotSize: number;
+  multiDotSize: number;
   // Stripe width, world units.
   width: number;
   // Corner-rounding radius, world units.
