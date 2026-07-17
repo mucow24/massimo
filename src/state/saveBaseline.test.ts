@@ -5,6 +5,7 @@ import { serialize } from '../model/serialize';
 import { DEFAULT_DOC } from '../model/transforms';
 import {
   bootBaselineState,
+  canRevertTo,
   markAdopted,
   markSaved,
   markUnbacked,
@@ -110,6 +111,46 @@ describe('saveStatusOf — the tri-state signal', () => {
     expect(statusNow()).toBe('clean');
     markUnbacked();
     expect(statusNow()).toBe('dirty');
+  });
+});
+
+describe('canRevertTo — is there anything to discard', () => {
+  const canRevertNow = () => canRevertTo(useDoc.getState(), useSaveBaseline.getState());
+
+  it('is false with no baseline — dirty, but no saved state to return to', () => {
+    useDoc.getState().addStation(0, 0);
+    expect(statusNow()).toBe('dirty'); // dirty (errs "save me")...
+    expect(canRevertNow()).toBe(false); // ...yet nothing to revert to
+  });
+
+  it('is false on a clean doc — it already matches its baseline', () => {
+    anchor(markSaved);
+    expect(canRevertNow()).toBe(false);
+  });
+
+  it('is false on an untouched adopted doc (unsaved) — still on its baseline', () => {
+    anchor(markAdopted);
+    expect(canRevertNow()).toBe(false);
+  });
+
+  it('is true once the doc is edited away from its baseline', () => {
+    anchor(markSaved);
+    useDoc.getState().addStation(0, 0);
+    expect(canRevertNow()).toBe(true);
+  });
+
+  it('flips back to false when the edit is undone onto the baseline', () => {
+    anchor(markSaved);
+    useDoc.getState().addStation(0, 0);
+    expect(canRevertNow()).toBe(true);
+    undo();
+    expect(canRevertNow()).toBe(false);
+  });
+
+  it('is true for a dirty adopted doc too — a loaded file has a baseline to return to', () => {
+    anchor(markAdopted);
+    useDoc.getState().addStation(0, 0);
+    expect(canRevertNow()).toBe(true);
   });
 });
 
