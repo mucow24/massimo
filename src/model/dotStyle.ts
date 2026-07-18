@@ -72,6 +72,20 @@ export const DOT_SHAPE_PRESETS: Record<DotShape, DotStyle> = {
     strokeColor: W,
     showServiceCode: false,
   },
+  'filled-line-color-white-stroke': {
+    shape: 'circle',
+    fill: 'line',
+    strokeWidth: 2,
+    strokeColor: W,
+    showServiceCode: false,
+  },
+  'filled-line-color-black-stroke': {
+    shape: 'circle',
+    fill: 'line',
+    strokeWidth: 2,
+    strokeColor: K,
+    showServiceCode: false,
+  },
   'filled-black-service-code': {
     shape: 'circle',
     fill: K,
