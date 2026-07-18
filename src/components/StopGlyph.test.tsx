@@ -113,6 +113,24 @@ describe('<StopGlyph /> presets', () => {
     expect(c.getAttribute('fill')).toBe('#000');
   });
 
+  it("renders filled-line-color-white-stroke: line-color fill, 2px white stroke", () => {
+    const svg = renderGlyph(P['filled-line-color-white-stroke'], false, '#e6002d');
+    const c = svg.querySelector('circle')!;
+    expect(c.getAttribute('fill')).toBe('#e6002d');
+    expect(c.getAttribute('stroke')).toBe('#ffffff');
+    expect(c.getAttribute('stroke-width')).toBe('2');
+    expect(parseFloat(c.getAttribute('r')!)).toBeCloseTo(STOP_DOT_RADIUS, 5);
+  });
+
+  it("renders filled-line-color-black-stroke: line-color fill, 2px black stroke", () => {
+    const svg = renderGlyph(P['filled-line-color-black-stroke'], false, '#e6002d');
+    const c = svg.querySelector('circle')!;
+    expect(c.getAttribute('fill')).toBe('#e6002d');
+    expect(c.getAttribute('stroke')).toBe('#000000');
+    expect(c.getAttribute('stroke-width')).toBe('2');
+    expect(parseFloat(c.getAttribute('r')!)).toBeCloseTo(STOP_DOT_RADIUS, 5);
+  });
+
   it('renders filled-black-service-code as a black circle with the service code in white', () => {
     const svg = renderGlyph(P['filled-black-service-code'], false, '#e6002d', 'A');
     const c = svg.querySelector('circle')!;
