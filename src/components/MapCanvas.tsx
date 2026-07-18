@@ -823,6 +823,20 @@ export function MapCanvas() {
       return st && cell ? stopPosWorld(cell, st) : null;
     };
     return {
+      // Mouseover: mark this corridor as the append hover target so
+      // HighlightedLineLayer previews the halo a click would arm. Only for a
+      // corridor the edited line runs (appendCtx gates); a foreign stripe
+      // previews nothing (clicking it switches lines — a different gesture).
+      // The setter dedupes, so the stripe's pointermove stream is a no-op until
+      // the corridor actually changes.
+      onLineHover: () => {
+        if (!appendCtx()) return;
+        selection.setAppendHover({ kind: 'segment', pairKey: spec.pairKey });
+      },
+      onLineLeave: () => {
+        const h = useSelection.getState().appendHover;
+        if (h?.kind === 'segment' && h.pairKey === spec.pairKey) selection.setAppendHover(null);
+      },
       onLineClick: (lineId: LineId, e: React.MouseEvent) => {
         const ctx = appendCtx();
         if (!ctx) {
@@ -1425,6 +1439,9 @@ export function MapCanvas() {
               underlayColor={underlayColor}
               seamEdges={seamEdges}
               uiMode={selection.uiMode}
+              // Pan-suppress the hover preview the same way hoveredChrome does
+              // for idle mode — a lingering ring/halo mid-pan reads as stale.
+              appendHover={inHandMode ? null : selection.appendHover}
               zoom={view.viewport.zoom}
               onStartDrag={drag.onStartDrag}
               onRemoveCursorStation={(sid) => {

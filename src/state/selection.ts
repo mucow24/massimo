@@ -3,8 +3,10 @@ import { persist, createJSONStorage } from 'zustand/middleware';
 import type { LineId, MapDoc, StationId } from '../model/types';
 import type { Vec2 } from '../geometry/vec';
 // Type-only: the append cursor is defined next to the gesture decisions it
-// drives (appendGestures.ts is pure — no store import, so no cycle).
-import type { AppendCursor } from '../components/canvas/appendGestures';
+// drives (appendGestures.ts is pure — no store import, so no cycle). The
+// hover-equality helper is a value import (same pure module).
+import type { AppendCursor, AppendHover } from '../components/canvas/appendGestures';
+import { sameAppendHover } from '../components/canvas/appendGestures';
 
 // ----- Selection (ephemeral, except the persisted sidebarOpen flag) -----
 
@@ -161,6 +163,14 @@ export interface SelectionState {
   // sweeps past. Ephemeral (never persisted); the hoveredChrome selector gates
   // whether it actually paints (idle mode, not panning, not already selected).
   hoveredCanvasItem: HoveredCanvasItem | null;
+  // Edit Stops mouseover target: the station or segment under the cursor while
+  // editing a line's stops. Drives a 50%-opacity preview of the chrome a click
+  // would produce (the "what will I select" affordance), painted in
+  // HighlightedLineLayer. Kept apart from hoveredCanvasItem, whose whole reason
+  // for being is the idle-mode preview (and whose hoveredChrome gate suppresses
+  // non-idle modes); this one is meaningful ONLY in appending-to-line. Ephemeral
+  // (never persisted); cleared on pointer leave and on any mode exit.
+  appendHover: AppendHover;
   // The (lineId, stationId) currently hovered in the transfer-creation flow.
   // Used to highlight the corresponding stop dot on the canvas.
   hoveredLineStop: { lineId: LineId; stationId: StationId } | null;
@@ -231,6 +241,10 @@ export interface SelectionState {
   setUiMode: (mode: UiMode) => void;
   setHoveredStation: (id: StationId | null) => void;
   setHoveredCanvasItem: (item: HoveredCanvasItem | null) => void;
+  // Update the Edit Stops hover target. A no-op when the target is unchanged, so
+  // a segment stripe's pointermove stream (fires every frame) doesn't churn
+  // re-renders — only an actual change of station/segment notifies subscribers.
+  setAppendHover: (hover: AppendHover) => void;
   setHoveredLineStop: (v: { lineId: LineId; stationId: StationId } | null) => void;
   setSelectedStopLineId: (id: LineId | null) => void;
   setLabelSelected: (selected: boolean) => void;
@@ -423,6 +437,7 @@ export const useSelection = create<SelectionState>()(
       uiMode: { kind: 'idle' },
       hoveredStationId: null,
       hoveredCanvasItem: null,
+      appendHover: null,
       hoveredLineStop: null,
       selectedStopLineId: null,
       labelSelected: false,
@@ -454,11 +469,17 @@ export const useSelection = create<SelectionState>()(
           // (re-syncs on the next pointer move) so it can't linger, unrendered,
           // behind a mode and then reappear when idle returns.
           mode.kind === 'idle'
-            ? { uiMode: mode, lineTagHoverPreview: null, hoveredCanvasItem: null }
+            ? {
+                uiMode: mode,
+                lineTagHoverPreview: null,
+                hoveredCanvasItem: null,
+                appendHover: null,
+              }
             : {
                 uiMode: mode,
                 lineTagHoverPreview: null,
                 hoveredCanvasItem: null,
+                appendHover: null,
                 ...clearedSelections(),
               },
         ),
@@ -598,6 +619,7 @@ export const useSelection = create<SelectionState>()(
           selectedLineId: lineId,
           activeTab: 'lines',
           lineTagHoverPreview: null,
+          appendHover: null,
         }),
       setAppending: (lineId) => {
         const cur = get().uiMode;
@@ -605,8 +627,13 @@ export const useSelection = create<SelectionState>()(
           if (cur.kind === 'appending-to-line') {
             // Exiting the editor goes straight back to the MAIN view — the
             // line deselects with the mode (there is no selected-not-editing
-            // state to land on).
-            set({ uiMode: { kind: 'idle' }, selectedLineId: null, lineTagHoverPreview: null });
+            // state to land on). Drop the hover so no stale preview lingers.
+            set({
+              uiMode: { kind: 'idle' },
+              selectedLineId: null,
+              lineTagHoverPreview: null,
+              appendHover: null,
+            });
           }
           return;
         }
@@ -618,6 +645,7 @@ export const useSelection = create<SelectionState>()(
           uiMode: { kind: 'appending-to-line', lineId, cursor },
           selectedLineId: lineId,
           lineTagHoverPreview: null,
+          appendHover: null,
         });
       },
       setAppendCursor: (cursor) => {
@@ -627,6 +655,10 @@ export const useSelection = create<SelectionState>()(
       },
       setHoveredStation: (id) => set({ hoveredStationId: id }),
       setHoveredCanvasItem: (item) => set({ hoveredCanvasItem: item }),
+      setAppendHover: (hover) => {
+        if (sameAppendHover(get().appendHover, hover)) return;
+        set({ appendHover: hover });
+      },
       setHoveredLineStop: (v) => set({ hoveredLineStop: v }),
       setSelectedStopLineId: (id) =>
         set({ selectedStopLineId: id, labelSelected: id === null ? get().labelSelected : false }),

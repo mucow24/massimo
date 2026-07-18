@@ -1,6 +1,8 @@
 import { describe, it, expect } from 'vitest';
 import { makeLine } from '../../test/fixtures';
 import {
+  appendSegmentHoverPreview,
+  appendStationHoverPreview,
   decideCanvasClick,
   decideDeleteKey,
   decideSegmentClick,
@@ -222,6 +224,64 @@ describe('decideDeleteKey', () => {
     expect(decideDeleteKey(line(), null)).toEqual({ kind: 'none' });
     expect(decideDeleteKey(line(), stationCursor('gone'))).toEqual({ kind: 'none' });
     expect(decideDeleteKey(line(), edgeCursor('a', 'c'))).toEqual({ kind: 'none' });
+  });
+});
+
+// The hover-preview gates mirror the click matrix above: a preview shows iff a
+// click there would act (and it isn't the already-armed target). These ARE the
+// affordance's behavioral spec — HighlightedLineLayer only paints what they OK.
+describe('appendStationHoverPreview', () => {
+  it('previews any station on an empty line (a click seeds it)', () => {
+    const empty = makeLine({ id: 'L1', stations: [] });
+    expect(appendStationHoverPreview(empty, null, 'x')).toBe(true);
+  });
+
+  it('null cursor: previews a member (arms), not a non-member (dead click)', () => {
+    expect(appendStationHoverPreview(line(), null, 'b')).toBe(true);
+    expect(appendStationHoverPreview(line(), null, 'zzz')).toBe(false);
+  });
+
+  it('suppresses the armed station cursor itself — it already wears the full ring', () => {
+    expect(appendStationHoverPreview(line(), stationCursor('b'), 'b')).toBe(false);
+  });
+
+  it('station cursor: previews any OTHER station (a click connects to it)', () => {
+    expect(appendStationHoverPreview(line(), stationCursor('a'), 'c')).toBe(true); // member
+    expect(appendStationHoverPreview(line(), stationCursor('a'), 'n')).toBe(true); // non-member
+  });
+
+  it('edge cursor: previews an endpoint (jump) and a splice target', () => {
+    expect(appendStationHoverPreview(line(), edgeCursor('a', 'b'), 'b')).toBe(true); // endpoint
+    expect(appendStationHoverPreview(line(), edgeCursor('a', 'b'), 'n')).toBe(true); // splice
+  });
+
+  it('a stale cursor degrades to the null-cursor rules', () => {
+    expect(appendStationHoverPreview(line(), stationCursor('gone'), 'b')).toBe(true); // member arms
+    expect(appendStationHoverPreview(line(), stationCursor('gone'), 'zzz')).toBe(false); // dead
+  });
+});
+
+describe('appendSegmentHoverPreview', () => {
+  it('previews any corridor the edited line runs', () => {
+    expect(appendSegmentHoverPreview(line(), null, 'a|b')).toBe(true);
+    expect(appendSegmentHoverPreview(line(), null, 'b|c')).toBe(true);
+  });
+
+  it('previews nothing on a corridor the line does not run', () => {
+    expect(appendSegmentHoverPreview(line(), null, 'a|c')).toBe(false);
+  });
+
+  it('suppresses the already-armed edge, whatever its stored order', () => {
+    expect(appendSegmentHoverPreview(line(), edgeCursor('a', 'b'), 'a|b')).toBe(false);
+    expect(appendSegmentHoverPreview(line(), edgeCursor('b', 'a'), 'a|b')).toBe(false);
+  });
+
+  it('still previews a DIFFERENT armed-elsewhere corridor', () => {
+    expect(appendSegmentHoverPreview(line(), edgeCursor('a', 'b'), 'b|c')).toBe(true);
+  });
+
+  it('a stale edge cursor no longer suppresses (its edge is gone)', () => {
+    expect(appendSegmentHoverPreview(line(), edgeCursor('a', 'c'), 'a|b')).toBe(true);
   });
 });
 
