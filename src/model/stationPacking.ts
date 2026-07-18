@@ -19,7 +19,9 @@
 //     tighten (or fatten) in place;
 //   - everything else — parallel coordinates, other-axis stops, deliberately
 //     non-tangent spacing — never moves;
-//   - the station label rides along with its nearest stop.
+//   - the station label rides along with its nearest stop, and additionally
+//     CARRIES with the edited stop's EDGE when it is attached to one (see
+//     labelCarryDelta below) — a parked label stays parked at any width.
 //
 // Chains that span multiple corridors (a trunk flanked by a differently-
 // routed neighbor) can shift a corridor's stop-subset centroid by a few
@@ -27,10 +29,17 @@
 // bounded, only occurs at branch/trunk stations, and is fixed by nudging the
 // station; the alternative (per-corridor centroids) is over-constrained.
 import { CELL_EPS, sameCell } from '../geometry/lattice';
-import { BAND_MERGE_TOL, STOP_SIZE, tangentGap, travelDirLocal } from '../geometry/orientation';
+import {
+  BAND_MERGE_TOL,
+  labelAdjacencyGate,
+  STOP_SIZE,
+  tangentGap,
+  travelDirLocal,
+} from '../geometry/orientation';
+import { DIRS_8, dirIndex } from '../geometry/router';
 import { leftNormal } from '../geometry/vec';
 import { lineWidthOf } from './lineWidth';
-import type { Line, LineId, Station, StopOrientation } from './types';
+import type { Line, LineId, Station, StopCell, StopOrientation } from './types';
 
 /** Chain-recognition tolerance, world units — the shared band-merge tolerance
  *  (BAND_MERGE_TOL). Repack must recognize exactly the layouts the renderer
@@ -152,15 +161,29 @@ export function repackStationForWidth(
     }
   }
 
-  if (deltas.size === 0) return station;
+  // Edge-carry: a label ATTACHED to a stop of the edited line — within the
+  // shared labelAdjacencyGate under the OLD widths, the same gate the
+  // renderer's snap/autoAlign use — tracks the stop's EDGE, not its center.
+  // The rendered pin sits at (support · half + gap) along the approach
+  // octant, so the width edit moves it by Δhalf · support; carrying the cell
+  // the same way keeps a tangency-parked label parked (and inside the gate)
+  // at ANY width instead of stranding it at the old width's tangency.
+  const carry = labelCarryDelta(station, lines, lineId, oldWidth, newWidth);
 
-  const stops = station.stops.map((c, i) => {
-    const d = deltas.get(i);
-    return d ? { ...c, row: c.row + d.dRow, col: c.col + d.dCol } : c;
-  });
+  if (deltas.size === 0 && !carry) return station;
+
+  const stops =
+    deltas.size === 0
+      ? station.stops
+      : station.stops.map((c, i) => {
+          const d = deltas.get(i);
+          return d ? { ...c, row: c.row + d.dRow, col: c.col + d.dCol } : c;
+        });
 
   // The label follows its nearest stop (old positions; ties resolve to the
   // first stop in array order), keeping the name glued to the cluster edge.
+  // The ride (the stop's own movement) and the carry (its edge's movement
+  // relative to its center) compose into the full edge displacement.
   let label = station.label;
   let nearest = -1;
   let bestDist = Infinity;
@@ -171,7 +194,11 @@ export function repackStationForWidth(
       nearest = i;
     }
   });
-  const labelDelta = nearest >= 0 ? deltas.get(nearest) : undefined;
+  const ride = nearest >= 0 ? deltas.get(nearest) : undefined;
+  const dRow = (ride?.dRow ?? 0) + (carry?.dRow ?? 0);
+  const dCol = (ride?.dCol ?? 0) + (carry?.dCol ?? 0);
+  const labelDelta =
+    Math.abs(dRow) + Math.abs(dCol) > MOVE_EPS / STOP_SIZE ? { dRow, dCol } : undefined;
   if (labelDelta) {
     label = { ...label, row: label.row + labelDelta.dRow, col: label.col + labelDelta.dCol };
   }
@@ -201,4 +228,60 @@ export function repackStationForWidth(
   }
 
   return { ...station, stops, label };
+}
+
+/**
+ * The label's edge-carry for a width edit on `lineId`: when the label is
+ * attached to a stop of the edited line, return the cell delta that keeps it
+ * at the same distance from that stop's EDGE; null otherwise.
+ *
+ * The reference stop mirrors autoAlignInfo's pick (labelLayout.ts): the
+ * nearest stop within the shared labelAdjacencyGate under the OLD widths,
+ * ties preferring the stop below the reading direction. The movement is the
+ * pin's: the marker square's support along the approach octant scales the
+ * half-width change (a cardinal approach onto the square moves by Δhalf, a
+ * diagonal one by Δhalf·√2 along the diagonal — Δhalf per axis). Dash ticks
+ * are deliberately ignored: a dash stop's derived tick also scales with
+ * width, but the painted pin is stop-relative either way, so the carried
+ * cell merely sits a whisker off the tick's tangency — still inside the gate.
+ */
+function labelCarryDelta(
+  station: Station,
+  lines: Record<LineId, Line>,
+  lineId: LineId,
+  oldWidth: number,
+  newWidth: number,
+): { dRow: number; dCol: number } | null {
+  const label = station.label;
+  const readAngle = (label.rotation * Math.PI) / 4;
+  const readCos = Math.cos(readAngle);
+  const readSin = Math.sin(readAngle);
+  let ref: StopCell | null = null;
+  let refD2 = Infinity;
+  let refPerp = -Infinity;
+  for (const c of station.stops) {
+    const dRow = c.row - label.row;
+    const dCol = c.col - label.col;
+    const cheb = Math.max(Math.abs(dRow), Math.abs(dCol));
+    if (cheb < 1e-6) continue; // a stop on the label cell has no direction
+    const half = (c.lineId === lineId ? oldWidth : lineWidthOf(lines[c.lineId])) / 2;
+    if (cheb > labelAdjacencyGate(half)) continue;
+    const d2 = dRow * dRow + dCol * dCol;
+    const perp = dCol * -readSin + dRow * readCos;
+    if (ref === null || d2 < refD2 - 1e-9 || (d2 < refD2 + 1e-9 && perp > refPerp)) {
+      ref = c;
+      refD2 = Math.min(refD2, d2);
+      refPerp = perp;
+    }
+  }
+  if (!ref || ref.lineId !== lineId) return null;
+  // Approach octant stop → label, and the marker square's support along it —
+  // the same extent math the renderer's pin uses (labelLayout.autoAlignInfo).
+  const o = dirIndex({ x: label.col - ref.col, y: label.row - ref.row });
+  const u = DIRS_8[o];
+  const axis = travelDirLocal(ref.orientation);
+  const support = Math.abs(u.x * axis.x + u.y * axis.y) + Math.abs(u.x * -axis.y + u.y * axis.x);
+  const dExtent = ((newWidth - oldWidth) / 2) * support;
+  if (Math.abs(dExtent) < MOVE_EPS) return null;
+  return { dRow: (dExtent * u.y) / STOP_SIZE, dCol: (dExtent * u.x) / STOP_SIZE };
 }

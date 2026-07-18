@@ -1,6 +1,7 @@
 import type { Station, StopCell, StopOrientation } from '../model/types';
 import {
   DIR_8,
+  labelAdjacencyGate,
   STOP_SIZE,
   stopCenterAt,
   travelDirLocal,
@@ -425,15 +426,8 @@ function snapInfoInHalfPlane(
   let inWayStopProj: number | null = null;
   let inWayStopHalf: number | null = null;
   const consider = (dRow: number, dCol: number, half: number) => {
-    // Accept any cell whose Chebyshev distance is at most the TANGENCY
-    // distance between the unit label cell and this stop — (half + HALF) in
-    // world units, divided back into cell units. For a default-width stop
-    // that's the historical 1-cell gate; a width-28 stop tangent to the
-    // label sits 1.5 cells away and must still snap. The dual grid editor
-    // (#36) places diagonal-grid neighbors at ±√2/2 per axis so they're
-    // tangent on screen; a small epsilon keeps exact-tangent neighbors in.
-    const adjMax = (half + HALF) / STOP_SIZE + 1e-4;
-    if (Math.max(Math.abs(dRow), Math.abs(dCol)) > adjMax) return;
+    // Accept any cell within the adjacency gate (see labelAdjacencyGate).
+    if (Math.max(Math.abs(dRow), Math.abs(dCol)) > labelAdjacencyGate(half)) return;
     const proj = dCol * readCos + dRow * readSin;
     if (sign * proj <= 1e-6) return;
     inHalfPlane = true;
@@ -602,7 +596,7 @@ function autoAlignInfo(
   for (const c of candidates) {
     const cheb = Math.max(Math.abs(c.dRow), Math.abs(c.dCol));
     if (cheb < 1e-6) continue; // a stop on the label cell has no direction
-    if (cheb > (c.half + HALF) / STOP_SIZE + 1e-4) continue; // same gate as the legacy snap
+    if (cheb > labelAdjacencyGate(c.half)) continue; // same gate as the legacy snap
     const proj = c.dCol * readCos + c.dRow * readSin;
     const perp = c.dCol * -readSin + c.dRow * readCos;
     const d2 = c.dRow * c.dRow + c.dCol * c.dCol;
