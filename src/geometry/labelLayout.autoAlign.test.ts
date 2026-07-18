@@ -353,6 +353,61 @@ describe('labelLayoutLocal — autoAlign marker extent (support function)', () =
   });
 });
 
+describe('labelLayoutLocal — narrow stops keep the 1-cell adjacency gate', () => {
+  it('label one cell beside a vertical stop stays end-snapped when the line narrows', () => {
+    // Shrink repro: label parked one cell west of a vertical stop while the
+    // line was ≥ default width, line then narrowed to 13. The tangency gate
+    // (6.5+7)/14 ≈ 0.964 would exclude the stop and the label jumps to the
+    // centered fallback — the gate must floor at the historical 1-cell.
+    const lay = labelLayoutLocal(
+      autoStation({ stops: [{ dRow: 0, dCol: 1, orientation: 'auto-vertical', lineId: 'L1' }] }),
+      DEFAULT_LABEL_STYLE,
+      undefined,
+      stopHalfOf({ L1: { width: 13 } }),
+    );
+    expect(lay.textAnchor).toBe('end');
+    // The pin stays stop-relative: text ends LABEL_GAP west of the 6.5 edge.
+    expect(lay.anchorX).toBeCloseTo(STOP_SIZE - (6.5 + LABEL_GAP), 6);
+    expect(lay.anchorY).toBeCloseTo(CTR, 6);
+  });
+
+  it('a label parked tangent to a slightly-wider line (14.75) survives a shrink to 13', () => {
+    // The gate recognizes tangency-parks with the same 0.5-world tolerance
+    // (BAND_MERGE_TOL) the band machinery uses: this label was dragged
+    // against the dot while the line was 14.75 wide (cell ≈ 1.0268), and the
+    // line has since shrunk to 13.
+    const parked = (7.375 + HALF) / STOP_SIZE;
+    const lay = labelLayoutLocal(
+      autoStation({
+        stops: [{ dRow: 0, dCol: parked, orientation: 'auto-vertical', lineId: 'L1' }],
+      }),
+      DEFAULT_LABEL_STYLE,
+      undefined,
+      stopHalfOf({ L1: { width: 13 } }),
+    );
+    expect(lay.textAnchor).toBe('end');
+    expect(lay.anchorX).toBeCloseTo(parked * STOP_SIZE - (6.5 + LABEL_GAP), 6);
+    expect(lay.anchorY).toBeCloseTo(CTR, 6);
+  });
+
+  it('a label parked tangent to a 5px stop survives a shrink to 4.75px', () => {
+    // Dragging a label against a dot parks the cell at the CURRENT tangency
+    // ((2.5+7)/14 for 5px), so any later shrink used to detach it.
+    const tangent5 = (2.5 + HALF) / STOP_SIZE;
+    const lay = labelLayoutLocal(
+      autoStation({
+        stops: [{ dRow: 0, dCol: tangent5, orientation: 'auto-vertical', lineId: 'L1' }],
+      }),
+      DEFAULT_LABEL_STYLE,
+      undefined,
+      stopHalfOf({ L1: { width: 4.75 } }),
+    );
+    expect(lay.textAnchor).toBe('end');
+    expect(lay.anchorX).toBeCloseTo(tangent5 * STOP_SIZE - (2.375 + LABEL_GAP), 6);
+    expect(lay.anchorY).toBeCloseTo(CTR, 6);
+  });
+});
+
 describe('labelLayoutLocal — autoAlign rotation covariance', () => {
   it('rotation 2 (S-reading) beside-stop case = rotation-0 case rotated 90°', () => {
     // Rotation-0 oracle: stop (0,1) auto-vertical ⇒ anchor (4, CTR), 'end'.
