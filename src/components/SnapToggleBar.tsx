@@ -86,13 +86,40 @@ const TOGGLES: ToggleSpec[] = [
   },
 ];
 
+/**
+ * Advance one snap toggle a single step (wrapping), exactly as clicking its
+ * button once would. `index` is the toggle's position in {@link TOGGLES} — also
+ * the toolbar order and the 1–5 keyboard shortcut. Returns the mode key and its
+ * next value, or `null` when the index is out of range or the toggle is disabled
+ * (equidistant while `line` is off), matching a click on a disabled button (a
+ * no-op). Shared by the toolbar's onClick and App's number-key handler so a
+ * keypress is precisely one click.
+ */
+export function advanceSnapToggle(
+  modes: SnapModes,
+  index: number,
+): { key: keyof SnapModes; value: SnapModes[keyof SnapModes] } | null {
+  const spec = TOGGLES[index];
+  if (!spec) return null;
+  if (spec.requiresLine && !modes.line) return null;
+  const idx = Math.max(
+    0,
+    spec.states.findIndex((s) => s.value === modes[spec.key]),
+  );
+  const next = spec.states[(idx + 1) % spec.states.length];
+  return { key: spec.key, value: next.value };
+}
+
+/** Count of snap toggles = the number of `1..N` keyboard shortcuts. */
+export const SNAP_TOGGLE_COUNT = TOGGLES.length;
+
 export function SnapToggleBar() {
   const modes = useSnapPrefs((s) => s.modes);
   const setMode = useSnapPrefs((s) => s.setMode);
   const gridSize = useViewportStore((s) => s.gridSize);
   return (
     <div className="tool-group" role="group" aria-label="Snap modes">
-      {TOGGLES.map(({ key, label, hint, states, requiresLine }) => {
+      {TOGGLES.map(({ key, label, hint, states, requiresLine }, i) => {
         const disabled = !!requiresLine && !modes.line;
         const value = modes[key];
         const idx = Math.max(
@@ -124,9 +151,8 @@ export function SnapToggleBar() {
             data-snap-state={String(value)}
             title={title}
             onClick={() => {
-              if (disabled) return;
-              const next = states[(idx + 1) % states.length];
-              setMode(key, next.value);
+              const next = advanceSnapToggle(modes, i);
+              if (next) setMode(next.key, next.value);
             }}
           >
             <Icon />
