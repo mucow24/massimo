@@ -73,6 +73,23 @@ describe('labelLayoutLocal — per-stop widths', () => {
     expect(lay.anchorY).toBeCloseTo(0, 6);
   });
 
+  it('narrow stop one cell ahead still snaps (gate floors at the legacy 1-cell)', () => {
+    // The tangency gate for a width-13 stop is (6.5+7)/14 ≈ 0.964 — inside
+    // the strictly-adjacent cell. Narrowing a line must not detach a label
+    // sitting in that cell; the gate floors at the historical 1-cell.
+    const st = station({ rotation: 0, stopOffsetRow: 0, stopOffsetCol: 1 });
+    const lay = labelLayoutLocal(
+      st,
+      DEFAULT_LABEL_STYLE,
+      undefined,
+      stopHalfOf({ L1: { width: 13 } }),
+    );
+    expect(lay.textAnchor).toBe('end');
+    // The in-way clamp clears the stop's ACTUAL edge: 14 − (6.5 + 3) = 4.5.
+    expect(lay.anchorX).toBeCloseTo(STOP_SIZE - (6.5 + LABEL_GAP), 6);
+    expect(lay.anchorY).toBeCloseTo(0, 6);
+  });
+
   it('pushes the anchor clear of a wide in-way stop using ITS half-extent', () => {
     // Stop one cell ahead (snap fires either way); the clamp must use the
     // stop's 14-unit half, not the default 7.

@@ -138,11 +138,16 @@ describe('setLineWidth repacks tangent chains', () => {
     expect(bands[0].lines).toHaveLength(3);
   });
 
-  it('non-tangent stops never move (stations pass through by reference)', () => {
+  it('non-tangent stops never move (stop arrays pass through by reference)', () => {
     const doc = interlinedPairDoc([0, 2]); // two rows apart — not tangent
     const next = T.setLineWidth(doc, 'L1', 8);
     expect(next.lines.L1.width).toBe(8);
-    expect(next.stations).toBe(doc.stations);
+    for (const sid of ['s1', 's2']) {
+      expect(next.stations[sid].stops).toBe(doc.stations[sid].stops);
+      // The label parked against L1's stop still tracks its edge (14→8
+      // pulls the west edge in by 3 world units).
+      expect(next.stations[sid].label.col).toBeCloseTo(-11 / 14, 12);
+    }
   });
 
   it('stops with mismatched parallel positions are not chained', () => {
@@ -160,9 +165,9 @@ describe('setLineWidth repacks tangent chains', () => {
       },
     };
     const next = T.setLineWidth(shifted, 'L1', 8);
-    // s1's pair is un-chained by the par mismatch and passes through by
-    // reference; s2 (still tangent) repacks as usual.
-    expect(next.stations.s1).toBe(shifted.stations.s1);
+    // s1's pair is un-chained by the par mismatch and its stops pass through
+    // by reference; s2 (still tangent) repacks as usual.
+    expect(next.stations.s1.stops).toBe(shifted.stations.s1.stops);
     expect(stopOf(next, 's2', 'L1').row).toBeCloseTo(1.5 / 14, 12);
   });
 
@@ -181,7 +186,7 @@ describe('setLineWidth repacks tangent chains', () => {
       },
     };
     const next = T.setLineWidth(crossed, 'L1', 8);
-    expect(next.stations.s1).toBe(crossed.stations.s1);
+    expect(next.stations.s1.stops).toBe(crossed.stations.s1.stops);
     // s2 is untouched fixture data — still one tangent chain there.
     expect(stopOf(next, 's2', 'L1').row).toBeCloseTo(1.5 / 14, 12);
   });
@@ -194,9 +199,10 @@ describe('setLineWidth repacks tangent chains', () => {
     expect(next.stations.s1.label.col).toBe(0);
   });
 
-  it('the label stays put when its nearest stop does not move', () => {
+  it('the label tracks the edited edge even when its nearest stop is pinned', () => {
     // Label beside the MIDDLE stop: editing the middle line pins L2 in place
-    // (chain centroid), so the label must not move — same reference, even.
+    // (chain centroid) so there is no ride — but L2's near edge still moved
+    // in by 3 world units, and the parked label follows the EDGE.
     const base = interlinedTrioDoc();
     const doc = {
       ...base,
@@ -206,7 +212,8 @@ describe('setLineWidth repacks tangent chains', () => {
       },
     };
     const next = T.setLineWidth(doc, 'L2', 8);
-    expect(next.stations.s1.label).toBe(doc.stations.s1.label);
+    expect(next.stations.s1.label.col).toBeCloseTo(-11 / 14, 12);
+    expect(next.stations.s1.label.row).toBe(1);
   });
 
   it('a chain of repacked (off-lattice) stops is still recognized by the next edit', () => {
@@ -543,7 +550,7 @@ describe('tolerances mirror the merge gate', () => {
     const doc = interlinedPairDoc([0, 14.6 / 14]); // gap 14.6 — never merged
     expect(buildBandGeometry(doc.stations, doc.lines)).toHaveLength(2);
     const next = T.setLineWidth(doc, 'L1', 8);
-    expect(next.stations).toBe(doc.stations);
+    for (const sid of ['s1', 's2']) expect(next.stations[sid].stops).toBe(doc.stations[sid].stops);
   });
 });
 
@@ -628,5 +635,125 @@ describe('label collision dodge', () => {
     const out = repackStationForWidth(st, threeLines(), 'L1', 14, 70);
     expect(out.label.row).toBe(0);
     expect(out.label.col).toBe(4);
+  });
+});
+
+// A width edit moves a stop's EDGE by Δwidth/2 while the label cell records a
+// position relative to the lattice, so a label parked against the stop (the
+// renderer pins it at the stop's edge + gap) would be stranded at the OLD
+// width's tangency. The repack carries every ATTACHED label — within the
+// shared labelAdjacencyGate of a stop of the edited line — along its approach
+// octant by the edge displacement, so parked stays parked at ANY width.
+describe('width edits carry attached labels with the stop edge', () => {
+  const oneLine = () => ({ L1: makeLine({ id: 'L1' }) });
+
+  it('a parked label follows a shrinking edge (single-stop station)', () => {
+    // The user's "label left of the dot on a vertical line" layout. 14→13
+    // moves the west edge east by 0.5; the cell follows, staying exactly
+    // tangent ((6.5+7)/14).
+    const st = makeStation({
+      id: 's1',
+      stops: [makeStop('L1', { row: 0, col: 0, orientation: 'auto-vertical' })],
+      label: makeLabel({ row: 0, col: -1 }),
+    });
+    const out = repackStationForWidth(st, oneLine(), 'L1', 14, 13);
+    expect(out.label.col).toBeCloseTo(-13.5 / 14, 12);
+    expect(out.label.row).toBe(0);
+    // No chain here — the stop array passes through by reference.
+    expect(out.stops).toBe(st.stops);
+  });
+
+  it('a grown edge pushes the label out, and the round trip is exact', () => {
+    const st = makeStation({
+      id: 's1',
+      stops: [makeStop('L1', { row: 0, col: 0, orientation: 'auto-vertical' })],
+      label: makeLabel({ row: 0, col: -1 }),
+    });
+    const grown = repackStationForWidth(st, oneLine(), 'L1', 14, 20);
+    expect(grown.label.col).toBeCloseTo(-17 / 14, 12); // tangent to the 20 edge
+    const back = repackStationForWidth(grown, oneLine(), 'L1', 20, 14);
+    expect(back.label.col).toBeCloseTo(-1, 12);
+  });
+
+  it('a detached label (beyond the gate) never moves — same station reference', () => {
+    const st = makeStation({
+      id: 's1',
+      stops: [makeStop('L1', { row: 0, col: 0, orientation: 'auto-vertical' })],
+      label: makeLabel({ row: 0, col: -3 }),
+    });
+    expect(repackStationForWidth(st, oneLine(), 'L1', 14, 8)).toBe(st);
+  });
+
+  it("a label attached to ANOTHER line's stop stays put — same station reference", () => {
+    const st = makeStation({
+      id: 's1',
+      stops: [
+        makeStop('L1', { row: 0, col: 0, orientation: 'auto-vertical' }),
+        makeStop('L2', { row: 0, col: 3, orientation: 'auto-vertical' }),
+      ],
+      label: makeLabel({ row: 0, col: 4 }),
+    });
+    const lines = { L1: makeLine({ id: 'L1' }), L2: makeLine({ id: 'L2' }) };
+    expect(repackStationForWidth(st, lines, 'L1', 14, 8)).toBe(st);
+  });
+
+  it('a corner-parked label carries along the 45° approach (support function)', () => {
+    // Label NW of a vertical stop: the marker square's extent along the
+    // diagonal approach is half·√2, so a width edit moves the pin by
+    // Δhalf·√2 along NW — exactly Δhalf per axis. 14→10 pulls (−1,−1) in to
+    // (−12/14, −12/14).
+    const st = makeStation({
+      id: 's1',
+      stops: [makeStop('L1', { row: 0, col: 0, orientation: 'auto-vertical' })],
+      label: makeLabel({ row: -1, col: -1 }),
+    });
+    const out = repackStationForWidth(st, oneLine(), 'L1', 14, 10);
+    expect(out.label.col).toBeCloseTo(-12 / 14, 12);
+    expect(out.label.row).toBeCloseTo(-12 / 14, 12);
+  });
+
+  it('ride and edge-carry compose into the full edge delta', () => {
+    // Horizontal tangent pair; label west of L1's stop. Shrinking L1 14→8
+    // moves L1's stop +1.5/14 rows (chain centroid preserved) AND pulls its
+    // west edge in by 3 world units — the label follows both.
+    const st = makeStation({
+      id: 's1',
+      stops: [
+        makeStop('L1', { row: 0, col: 0, orientation: 'auto-horizontal' }),
+        makeStop('L2', { row: 1, col: 0, orientation: 'auto-horizontal' }),
+      ],
+      label: makeLabel({ row: 0, col: -1 }),
+    });
+    const lines = { L1: makeLine({ id: 'L1' }), L2: makeLine({ id: 'L2' }) };
+    const out = repackStationForWidth(st, lines, 'L1', 14, 8);
+    expect(out.label.row).toBeCloseTo(1.5 / 14, 12);
+    expect(out.label.col).toBeCloseTo(-11 / 14, 12);
+  });
+
+  it('setLineWidth carries the label at every station hosting the line (the 15→13 repro)', () => {
+    // Two single-stop stations with labels parked one cell west of a
+    // vertical line — shrinking 15→13 lands every label at −13/14, exactly
+    // where re-dragging it against the dot would.
+    const doc = makeDoc({
+      stations: [
+        makeStation({
+          id: 's1',
+          stops: [makeStop('L1', { orientation: 'auto-vertical' })],
+          label: makeLabel({ row: 0, col: -1 }),
+        }),
+        makeStation({
+          id: 's2',
+          y: 100,
+          stops: [makeStop('L1', { orientation: 'auto-vertical' })],
+          label: makeLabel({ row: 0, col: -1 }),
+        }),
+      ],
+      lines: [makeLine({ id: 'L1', stations: ['s1', 's2'], width: 15 })],
+    });
+    const next = T.setLineWidth(doc, 'L1', 13);
+    for (const sid of ['s1', 's2']) {
+      expect(next.stations[sid].label.col).toBeCloseTo(-13 / 14, 12);
+      expect(next.stations[sid].label.row).toBe(0);
+    }
   });
 });
