@@ -230,15 +230,19 @@ export function useStationInteraction(
   // selected it stays interactive, so the popover's unlock toggle and
   // label-layout editing remain reachable right after locking.
   //
-  // IDLE MODE ONLY: non-idle modes wipe the selection on entry, so without
-  // this gate a locked station would be unreachable in every mode — and the
-  // pass-through click would land on a stripe or the background, silently
-  // killing the mode. Lock protects geometry, not mode participation: a
-  // locked station is still a transfer endpoint and can still be toggled
-  // onto a line in append mode.
+  // IDLE + LAYOUT-EDIT ONLY: non-idle modes wipe the selection on entry, so
+  // without this gate a locked station would be unreachable in every mode —
+  // and the pass-through click would land on a stripe or the background,
+  // silently killing the mode. Lock protects geometry, not mode
+  // participation: a locked station is still a transfer endpoint and can
+  // still be toggled onto a line in append mode. editing-station-layout is
+  // the exception among modes: there a locked station must read as
+  // background again — a live hit rect would route the click to
+  // selectStation, whose layoutEditReconcile RETARGETS the editor onto the
+  // locked station instead of letting the click fall through and exit.
   const lockedClickThrough =
     !!station.locked &&
-    selection.uiMode.kind === 'idle' &&
+    (selection.uiMode.kind === 'idle' || selection.uiMode.kind === 'editing-station-layout') &&
     !selection.selectedStationIds.includes(station.id);
   // Mode pass-through strips the handlers outright; locked click-through
   // keeps them WIRED — pointer-events already blocks every real click, while
