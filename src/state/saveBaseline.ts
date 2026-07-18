@@ -1,7 +1,10 @@
 import { create } from 'zustand';
 import { docSnapshotsEqual, pickDocSnapshot, useDoc, type DocSnapshot } from './store';
-import { serialize } from '../model/serialize';
+import { parse, serialize } from '../model/serialize';
 import { DEFAULT_DOC } from '../model/transforms';
+import { useLibraryPointer } from './libraryPointer';
+import { getPayload, listVersions } from './mapLibrary';
+import { useCustomPalettes } from './customPalettes';
 
 /**
  * The save baseline: what the live document would have to look like to count
@@ -79,7 +82,8 @@ const UNSET: SaveBaselineState = { baselineSnap: null, baselineJson: null, backe
  *
  * A recorded hash that matches the doc restores the baseline (with its backed
  * bit); one that mismatches means unsaved work went down with the refresh —
- * stay unset, which reads dirty. With nothing recorded at all (first boot,
+ * stay unset, which reads dirty (a backed baseline may still come back through
+ * `bootRecovery` below, from the library). With nothing recorded at all (first boot,
  * pre-feature storage) an EMPTY doc adopts itself as the unsaved baseline, so
  * a brand-new user meets the same blue dot a virgin New shows rather than a
  * red one; a non-empty doc of unknown provenance errs dirty.
@@ -172,3 +176,62 @@ export function useCanRevert(): boolean {
   const baseline = useSaveBaseline();
   return useDoc((s) => canRevertTo(s, baseline));
 }
+
+/**
+ * Recover a baseline whose bytes went down with the refresh.
+ *
+ * `bootBaselineState` can restore the baseline only when the rehydrated doc IS
+ * the baseline. Reload with unsaved edits and the hash mismatches, the
+ * baseline boots unset, and Revert goes grey — even though, for a `backed`
+ * baseline, the exact bytes it should restore sit in the library under the
+ * version the pointer names. So fetch them: rebuild the (json, snap) pair the
+ * way adoption does (loadDoc's DEFAULT_DOC merge, then pick, then serialize)
+ * and accept it only if its hash IS the recorded one. A stale pointer, a
+ * pruned row, or bytes an app update now serializes differently all fail that
+ * check and decline — the same unset-reads-dirty direction the boot erred.
+ *
+ * Only the baseline store is written; the doc is never touched. The recorded
+ * `backed: false` declines up front: those bytes came from a file or a New,
+ * and the library never held them.
+ */
+async function recoverBaselineFromLibrary(): Promise<void> {
+  if (useSaveBaseline.getState().baselineSnap !== null) return; // boot restored it
+  const raw = localStorage.getItem(PERSIST_KEY);
+  if (raw === null) return; // nothing recorded — or markUnbacked, which must stay unset
+  let recorded: { h?: unknown; backed?: unknown };
+  try {
+    recorded = JSON.parse(raw) as { h?: unknown; backed?: unknown };
+  } catch {
+    return;
+  }
+  if (recorded.backed !== true) return;
+  const { mapId, version } = useLibraryPointer.getState();
+  if (mapId === null || version === null) return;
+
+  // Best-effort IO: a storage failure declines, same as a missing row.
+  let payload: string | undefined;
+  try {
+    const meta = (await listVersions(mapId)).find((v) => v.version === version);
+    if (meta === undefined) return;
+    payload = await getPayload(meta.id);
+  } catch {
+    return;
+  }
+  if (payload === undefined) return;
+  const parsed = parse(payload, useCustomPalettes.getState().palettes);
+  if (!parsed.ok) return;
+  const snap = pickDocSnapshot({ ...DEFAULT_DOC, ...parsed.doc });
+  const json = serialize(snap);
+  if (hashBaseline(json) !== recorded.h) return; // not the bytes the record vouches for
+
+  // Re-check the gates across the awaits: a save, load, or delete that landed
+  // mid-fetch owns the baseline now, and markUnbacked in particular must not
+  // be resurrected (see its doc comment).
+  if (useSaveBaseline.getState().baselineSnap !== null) return;
+  if (localStorage.getItem(PERSIST_KEY) !== raw) return;
+  useSaveBaseline.setState({ baselineSnap: snap, baselineJson: json, backed: true });
+}
+
+/** Fired once at boot, beside `bootBaselineState`; exported so tests (and any
+ *  boot sequencing that needs the baseline settled) can await it. */
+export const bootRecovery: Promise<void> = recoverBaselineFromLibrary();
