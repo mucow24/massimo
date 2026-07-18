@@ -282,14 +282,33 @@ export function useStationInteraction(
     const h = useSelection.getState().hoveredCanvasItem;
     if (h && h.kind === 'station' && h.id === station.id) selection.setHoveredCanvasItem(null);
   };
+  // Edit Stops mouseover: mark this station as the append hover target so
+  // HighlightedLineLayer previews the ring a click would place (gated there by
+  // the click matrix). The SAME footprint hit surfaces as the idle hover — the
+  // pointer is over one of them everywhere on the station — so "what I hover" is
+  // "what I'd click." The leave clears only when THIS station is still the
+  // target (fresh read), so a fast cross to a neighbor can't wipe it.
+  const inAppend = selection.uiMode.kind === 'appending-to-line';
+  const onAppendHoverEnter = () =>
+    selection.setAppendHover({ kind: 'station', stationId: station.id });
+  const onAppendHoverLeave = () => {
+    const h = useSelection.getState().appendHover;
+    if (h?.kind === 'station' && h.stationId === station.id) selection.setAppendHover(null);
+  };
   const handlers = {
     onPointerDown: modeInert ? undefined : onPointerDown,
     onClick: modeInert || inHandMode ? undefined : onClick,
     onDoubleClick: modeInert || inHandMode ? undefined : onDoubleClick,
     onContextMenu: modeInert ? undefined : onContextMenu,
-    onPointerEnter: inIdle ? onHoverEnter : undefined,
+    onPointerEnter: inIdle ? onHoverEnter : inAppend ? onAppendHoverEnter : undefined,
     onPointerMove: inTransferPick ? onTransferPointerMove : undefined,
-    onPointerLeave: inTransferPick ? onTransferPointerLeave : inIdle ? onHoverLeave : undefined,
+    onPointerLeave: inTransferPick
+      ? onTransferPointerLeave
+      : inIdle
+        ? onHoverLeave
+        : inAppend
+          ? onAppendHoverLeave
+          : undefined,
   };
   // Hand mode → open hand (pannable). Otherwise a movable station shows the
   // four-arrow move cursor; a locked station shows the pointing hand. The

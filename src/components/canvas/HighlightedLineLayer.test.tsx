@@ -5,7 +5,7 @@ import { makeBandSpec, makeLine, makeStation, makeStop } from '../../test/fixtur
 import type { Line, Station } from '../../model/types';
 import type { OrderedRenderable } from '../../geometry/interlining';
 import type { UiMode } from '../../state/selection';
-import type { AppendCursor } from './appendGestures';
+import type { AppendCursor, AppendHover } from './appendGestures';
 
 const triStation = (id: string, x: number, y: number): Station =>
   makeStation({ id, x, y, stops: [makeStop('L1', { orientation: 'auto-horizontal' })] });
@@ -21,6 +21,7 @@ const renderLayer = (
     onRemoveCursorStation?: (sid: string) => void;
     onRemoveCursorEdge?: (from: string, to: string) => void;
     renderables?: OrderedRenderable[];
+    appendHover?: AppendHover;
   } = {},
 ) =>
   render(
@@ -33,6 +34,7 @@ const renderLayer = (
         underlayColor="#ffffff"
         seamEdges="both"
         uiMode={uiMode}
+        appendHover={opts.appendHover}
         zoom={1}
         onStartDrag={vi.fn()}
         onRemoveCursorStation={opts.onRemoveCursorStation}
@@ -146,5 +148,101 @@ describe('<HighlightedLineLayer /> — Edit Stops cursor chrome', () => {
     );
     expect(container.querySelector('[data-append-cursor]')).toBeNull();
     expect(container.querySelector('[data-append-remove-stop]')).toBeNull();
+  });
+});
+
+describe('<HighlightedLineLayer /> — Edit Stops hover preview', () => {
+  const lines = () => redLine(['s1', 's2']);
+  const stations = () => ({ s1: triStation('s1', 0, 0), s2: triStation('s2', 100, 0) });
+  const appending = (cursor: AppendCursor): UiMode => ({
+    kind: 'appending-to-line',
+    lineId: 'L1',
+    cursor,
+  });
+  const stripeRenderables = (): OrderedRenderable[] => [
+    { kind: 'stripe', band: makeBandSpec(['L1']), stripeIndex: 0, priority: 0 },
+  ];
+
+  it('rings the hovered station a click would act on', () => {
+    // Pen on s1, hovering s2 → a click connects, so s2 previews its ring.
+    const { container } = renderLayer(
+      lines(),
+      stations(),
+      appending({ kind: 'station', stationId: 's1' }),
+      {
+        appendHover: { kind: 'station', stationId: 's2' },
+      },
+    );
+    expect(container.querySelector('[data-append-hover-ring="s2"]')).not.toBeNull();
+  });
+
+  it('does not ring the armed station cursor itself (already fully ringed)', () => {
+    const { container } = renderLayer(
+      lines(),
+      stations(),
+      appending({ kind: 'station', stationId: 's1' }),
+      {
+        appendHover: { kind: 'station', stationId: 's1' },
+      },
+    );
+    expect(container.querySelector('[data-append-hover-ring]')).toBeNull();
+    expect(container.querySelector('[data-append-cursor="s1"]')).not.toBeNull();
+  });
+
+  it('rings a not-yet-added station (no stop cell) a click would connect — at its anchor', () => {
+    // Pen on s1, hovering an orphan with no L1 stop → a click connects it, so it
+    // previews a ring positioned at the station anchor (the stop-cell branch has
+    // nothing to read).
+    const orphan = { ...stations(), s3: makeStation({ id: 's3', x: 200, y: 0, stops: [] }) };
+    const { container } = renderLayer(
+      lines(),
+      orphan,
+      appending({ kind: 'station', stationId: 's1' }),
+      {
+        appendHover: { kind: 'station', stationId: 's3' },
+      },
+    );
+    const ring = container.querySelector('[data-append-hover-ring="s3"]');
+    expect(ring).not.toBeNull();
+    expect(ring!.querySelector('circle')!.getAttribute('cx')).toBe('200');
+  });
+
+  it('does not ring a non-member when a click there is a dead click (null cursor)', () => {
+    const withOrphan = { ...stations(), s3: triStation('s3', 200, 0) };
+    const { container } = renderLayer(lines(), withOrphan, appending(null), {
+      appendHover: { kind: 'station', stationId: 's3' },
+    });
+    expect(container.querySelector('[data-append-hover-ring]')).toBeNull();
+  });
+
+  it('halos the hovered segment a click would arm', () => {
+    const { container } = renderLayer(lines(), stations(), appending(null), {
+      appendHover: { kind: 'segment', pairKey: 's1|s2' },
+      renderables: stripeRenderables(),
+    });
+    const halo = container.querySelector('[data-append-hover-segment="s1|s2"]');
+    expect(halo).not.toBeNull();
+    // The same two-tone (black-edge / white-core) stroke pair as the armed halo.
+    expect(halo!.querySelector('path[stroke="#000"]')).not.toBeNull();
+    expect(halo!.querySelector('path[stroke="#fff"]')).not.toBeNull();
+  });
+
+  it('does not halo the already-armed edge (it wears the full halo)', () => {
+    const { container } = renderLayer(
+      lines(),
+      stations(),
+      appending({ kind: 'edge', from: 's1', to: 's2' }),
+      { appendHover: { kind: 'segment', pairKey: 's1|s2' }, renderables: stripeRenderables() },
+    );
+    expect(container.querySelector('[data-append-hover-segment]')).toBeNull();
+    expect(container.querySelector('[data-armed-segment="s1|s2"]')).not.toBeNull();
+  });
+
+  it('renders no preview when nothing is hovered', () => {
+    const { container } = renderLayer(lines(), stations(), appending(null), {
+      renderables: stripeRenderables(),
+    });
+    expect(container.querySelector('[data-append-hover-ring]')).toBeNull();
+    expect(container.querySelector('[data-append-hover-segment]')).toBeNull();
   });
 });

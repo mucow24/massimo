@@ -8,6 +8,7 @@ beforeEach(() => {
     ...clearedSelections(),
     uiMode: { kind: 'idle' },
     hoveredCanvasItem: null,
+    appendHover: null,
     toolMode: 'arrow',
     spaceHeld: false,
     lineTagHoverPreview: null,
@@ -32,6 +33,48 @@ describe('hoveredCanvasItem store', () => {
     useSelection.getState().setHoveredCanvasItem({ kind: 'station', id: 'A' });
     useSelection.getState().setUiMode({ kind: 'idle' });
     expect(useSelection.getState().hoveredCanvasItem).toBeNull();
+  });
+});
+
+describe('appendHover store (Edit Stops mouseover target)', () => {
+  it('sets a station / segment target, then clears it', () => {
+    useSelection.getState().setAppendHover({ kind: 'station', stationId: 'A' });
+    expect(useSelection.getState().appendHover).toEqual({ kind: 'station', stationId: 'A' });
+    useSelection.getState().setAppendHover({ kind: 'segment', pairKey: 'A|B' });
+    expect(useSelection.getState().appendHover).toEqual({ kind: 'segment', pairKey: 'A|B' });
+    useSelection.getState().setAppendHover(null);
+    expect(useSelection.getState().appendHover).toBeNull();
+  });
+
+  it('is a no-op when the target is unchanged (no re-render churn)', () => {
+    useSelection.getState().setAppendHover({ kind: 'segment', pairKey: 'A|B' });
+    const before = useSelection.getState();
+    // An equal-but-fresh object must NOT replace the state (deduped).
+    useSelection.getState().setAppendHover({ kind: 'segment', pairKey: 'A|B' });
+    expect(useSelection.getState()).toBe(before);
+    // A genuinely different target does replace it.
+    useSelection.getState().setAppendHover({ kind: 'segment', pairKey: 'B|C' });
+    expect(useSelection.getState()).not.toBe(before);
+  });
+
+  it('entering a non-idle mode drops the hover', () => {
+    useSelection.getState().setAppendHover({ kind: 'station', stationId: 'A' });
+    useSelection.getState().setUiMode({ kind: 'placing-station' });
+    expect(useSelection.getState().appendHover).toBeNull();
+  });
+
+  it('a transition back to idle also drops the hover', () => {
+    useSelection.getState().setAppendHover({ kind: 'segment', pairKey: 'A|B' });
+    useSelection.getState().setUiMode({ kind: 'idle' });
+    expect(useSelection.getState().appendHover).toBeNull();
+  });
+
+  it('exiting Edit Stops via setAppending(null) drops the hover', () => {
+    useSelection.setState({ uiMode: { kind: 'appending-to-line', lineId: 'L1', cursor: null } });
+    useSelection.getState().setAppendHover({ kind: 'segment', pairKey: 'A|B' });
+    useSelection.getState().setAppending(null);
+    expect(useSelection.getState().appendHover).toBeNull();
+    expect(useSelection.getState().uiMode).toEqual({ kind: 'idle' });
   });
 });
 

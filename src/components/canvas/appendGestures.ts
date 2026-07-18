@@ -1,5 +1,6 @@
 import type { Line, LineStyle, StationId } from '../../model/types';
 import { edgeEndpoints, lineHasEdge } from '../../model/lineTopology';
+import { pairKeyOf } from '../../model/pairKey';
 
 // The Edit Stops gesture model, as pure decision functions: (line, cursor,
 // target) → decision. All behavioral rules of canvas line editing live here,
@@ -21,6 +22,24 @@ export type AppendCursor =
   | { kind: 'station'; stationId: StationId }
   | { kind: 'edge'; from: StationId; to: StationId }
   | null;
+
+// The Edit Stops mouseover target: the station or segment the pointer is
+// currently over. Purely a hover-preview affordance ("what a click acts on"),
+// separate from the CURSOR (the committed pen/armed edge). Ephemeral — set on
+// pointer enter/move, cleared on leave and on mode exit.
+export type AppendHover =
+  | { kind: 'station'; stationId: StationId }
+  | { kind: 'segment'; pairKey: string }
+  | null;
+
+/** True when two hover targets are the same (drives the store's no-churn set). */
+export function sameAppendHover(a: AppendHover, b: AppendHover): boolean {
+  if (a === b) return true;
+  if (!a || !b || a.kind !== b.kind) return false;
+  return a.kind === 'station'
+    ? a.stationId === (b as { stationId: StationId }).stationId
+    : a.pairKey === (b as { pairKey: string }).pairKey;
+}
 
 // What a gesture means. `cursor` on the mutating kinds is the follow-up cursor
 // the wiring must set AFTER dispatching the store action. The create-* kinds
@@ -157,6 +176,48 @@ export function decideDeleteKey(
   if (!cursor) return { kind: 'none' };
   if (cursor.kind === 'station') return { kind: 'remove-station', stationId: cursor.stationId };
   return { kind: 'remove-edge', from: cursor.from, to: cursor.to };
+}
+
+// ----- Hover previews (Edit Stops) --------------------------------------
+//
+// The mouseover affordance: while editing a line's stops, the station or
+// segment under the cursor previews the chrome a click would produce, so it's
+// always visually obvious what the next click acts on. These decide WHETHER a
+// preview shows; its position/paint lives in HighlightedLineLayer. Both mirror
+// the click matrix above so the preview can never promise an action the click
+// wouldn't take.
+
+/**
+ * Show a hover ring on the station under the cursor? True whenever a click on
+ * it would do something — connect / splice / seed / arm / jump — i.e. the
+ * gesture matrix doesn't return 'none'. Suppressed on the armed station cursor
+ * itself, which already wears the full (non-preview) ring.
+ */
+export function appendStationHoverPreview(
+  line: Line,
+  cursor: AppendCursor,
+  stationId: StationId,
+): boolean {
+  const c = validCursor(line, cursor);
+  if (c?.kind === 'station' && c.stationId === stationId) return false;
+  return decideStationClick(line, cursor, stationId).kind !== 'none';
+}
+
+/**
+ * Show a hover halo on the segment under the cursor? True for any corridor the
+ * edited line actually runs, except the already-armed edge (which wears the
+ * full halo). A foreign corridor — not one of this line's edges — previews
+ * nothing, since clicking it switches lines, a different gesture.
+ */
+export function appendSegmentHoverPreview(
+  line: Line,
+  cursor: AppendCursor,
+  pairKey: string,
+): boolean {
+  if (!line.edges.includes(pairKey)) return false;
+  const c = validCursor(line, cursor);
+  if (c?.kind === 'edge' && pairKeyOf(c.from, c.to) === pairKey) return false;
+  return true;
 }
 
 // Segment style cycle order (shift-click a segment). Moved from the old line
