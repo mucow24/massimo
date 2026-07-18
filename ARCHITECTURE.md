@@ -833,6 +833,14 @@ Load-bearing details:
   bytes themselves are not persisted (svg images carry data URIs; doubling the doc's footprint).
   With nothing recorded at all, an **empty** doc adopts itself as unsaved (a first boot shows the
   same blue a virgin New does), a non-empty one errs dirty.
+- **A dirty reload recovers its Revert target from the library** (`bootRecovery`). A hash mismatch
+  with a recorded `backed: true` means the baseline's bytes went down with the refresh but still
+  exist as the library version the pointer names: fetch that payload, rebuild `(json, snap)` the
+  way adoption does (DEFAULT_DOC merge → pick → serialize), and restore it **only if its hash IS
+  the recorded one** — a stale pointer, a pruned row, or a format an app update now serializes
+  differently declines, staying unset. Only the baseline store is written (the doc is untouched,
+  status stays dirty); gates re-checked after the awaits so a mid-fetch save/load/`markUnbacked`
+  keeps ownership.
 - **`markUnbacked` (a delete under the live doc) nulls the baseline** rather than keeping it with
   `backed: false` — deliberately reading **dirty, not blue**: those bytes now exist nowhere but
   the canvas, and the auto-save's byte gate must not skip them (see below).
