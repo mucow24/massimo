@@ -200,6 +200,8 @@ describe('DOT_SHAPE_PRESETS', () => {
       'open-white': style({ fill: 'none', strokeWidth: 1.5, strokeColor: W }),
       'filled-white-black-stroke': style({ fill: W, strokeWidth: 2, strokeColor: K }),
       'filled-line-color': style({ fill: 'line' }),
+      'filled-line-color-white-stroke': style({ fill: 'line', strokeWidth: 2, strokeColor: W }),
+      'filled-line-color-black-stroke': style({ fill: 'line', strokeWidth: 2, strokeColor: K }),
       'filled-black-service-code': style({ showServiceCode: true }),
       'filled-black-diamond': style({ shape: 'diamond' }),
       'filled-white-diamond': style({ shape: 'diamond', fill: W, strokeColor: K }),

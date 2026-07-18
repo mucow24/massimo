@@ -18,6 +18,8 @@ export const SHAPES: ShapeOption[] = [
   { shape: 'open-white', label: 'Open white' },
   { shape: 'filled-white-black-stroke', label: 'Filled white with black stroke' },
   { shape: 'filled-line-color', label: 'Filled line color' },
+  { shape: 'filled-line-color-white-stroke', label: 'Filled line color with white stroke' },
+  { shape: 'filled-line-color-black-stroke', label: 'Filled line color with black stroke' },
   { shape: 'filled-black-service-code', label: 'Filled black with service code' },
   { shape: 'filled-black-diamond', label: 'Filled black diamond' },
   { shape: 'filled-white-diamond', label: 'Filled white diamond' },
