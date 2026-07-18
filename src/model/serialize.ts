@@ -980,15 +980,20 @@ export function sanitizeStopDotSizes(
 // normalization.
 function sanitizeLineStroke(line: Line): Line {
   let next = line;
-  if ('strokeWidth' in line) {
-    const raw = line.strokeWidth as unknown;
+  // Every numeric width field shares one contract — canonicalStrokeWidth
+  // (casing grid/floor) + drop-at-0: strokeWidth/seamWidth are the casing rails,
+  // dashLength/dashWidth the TfL-tick dims (0 / absent = derive from the line
+  // width at render). One loop keeps them from drifting apart.
+  for (const field of ['strokeWidth', 'seamWidth', 'dashLength', 'dashWidth'] as const) {
+    if (!(field in line)) continue;
+    const raw = line[field] as unknown;
     const stored =
       typeof raw === 'number' && Number.isFinite(raw) ? canonicalStrokeWidth(raw) : undefined;
     if (stored === undefined) {
-      const { strokeWidth: _gone, ...rest } = next;
+      const { [field]: _gone, ...rest } = next;
       next = rest;
-    } else if (stored !== next.strokeWidth) {
-      next = { ...next, strokeWidth: stored };
+    } else if (stored !== next[field]) {
+      next = { ...next, [field]: stored };
     }
   }
   if ('strokeColor' in line) {
@@ -1009,32 +1014,6 @@ function sanitizeLineStroke(line: Line): Line {
       next = rest;
     } else if (stored !== next.seamColor) {
       next = { ...next, seamColor: stored };
-    }
-  }
-  if ('seamWidth' in line) {
-    const raw = line.seamWidth as unknown;
-    // Seam width shares the casing grid/floor + drop-at-0.
-    const stored =
-      typeof raw === 'number' && Number.isFinite(raw) ? canonicalStrokeWidth(raw) : undefined;
-    if (stored === undefined) {
-      const { seamWidth: _gone, ...rest } = next;
-      next = rest;
-    } else if (stored !== next.seamWidth) {
-      next = { ...next, seamWidth: stored };
-    }
-  }
-  // Dash dims share the seam width's contract exactly: casing grid/floor,
-  // drop-at-0 (0 / absent = derive from the line width at render).
-  for (const field of ['dashLength', 'dashWidth'] as const) {
-    if (!(field in line)) continue;
-    const raw = line[field] as unknown;
-    const stored =
-      typeof raw === 'number' && Number.isFinite(raw) ? canonicalStrokeWidth(raw) : undefined;
-    if (stored === undefined) {
-      const { [field]: _gone, ...rest } = next;
-      next = rest;
-    } else if (stored !== next[field]) {
-      next = { ...next, [field]: stored };
     }
   }
   return next;
