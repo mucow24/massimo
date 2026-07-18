@@ -45,6 +45,10 @@ interface Props {
   // pointer-events:none wash).
   onRemoveCursorStation?: (stationId: StationId) => void;
   onRemoveCursorEdge?: (from: StationId, to: StationId) => void;
+  // Edit Stops: cycles the armed segment's line style (solid → dashed →
+  // hatched → …). Renders a second chip beside the × on the armed segment,
+  // outside the wash like the × chip; a visible alternative to shift-click.
+  onCycleCursorEdgeStyle?: (from: StationId, to: StationId) => void;
   vbX: number;
   vbY: number;
   vbW: number;
@@ -69,6 +73,7 @@ export function HighlightedLineLayer({
   onStartDrag,
   onRemoveCursorStation,
   onRemoveCursorEdge,
+  onCycleCursorEdgeStyle,
   vbX,
   vbY,
   vbW,
@@ -432,8 +437,9 @@ export function HighlightedLineLayer({
               </g>
             );
           }
-          if (cursor?.kind === 'edge' && onRemoveCursorEdge) {
-            // Anchor the chip just above the armed corridor's midpoint.
+          if (cursor?.kind === 'edge' && (onRemoveCursorEdge || onCycleCursorEdgeStyle)) {
+            // Anchor the chips just above the armed corridor's midpoint. The
+            // style-cycle chip and the × chip flank the midpoint symmetrically.
             const pairKey = pairKeyOf(cursor.from, cursor.to);
             const r = renderables.find(
               (x): x is Extract<OrderedRenderable, { kind: 'stripe' }> =>
@@ -449,18 +455,36 @@ export function HighlightedLineLayer({
               0.5,
             ).p;
             const { from, to } = cursor;
+            const chipY = mid.y - 16 / zoom;
             return (
-              <g
-                data-append-remove-segment={pairKey}
-                style={{ cursor: 'pointer' }}
-                onClick={(e) => {
-                  e.stopPropagation();
-                  onRemoveCursorEdge(from, to);
-                }}
-              >
-                <title>Remove this segment</title>
-                <RemoveChipGlyph cx={mid.x + 16 / zoom} cy={mid.y - 16 / zoom} zoom={zoom} />
-              </g>
+              <>
+                {onCycleCursorEdgeStyle && (
+                  <g
+                    data-append-cycle-segment-style={pairKey}
+                    style={{ cursor: 'pointer' }}
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      onCycleCursorEdgeStyle(from, to);
+                    }}
+                  >
+                    <title>Cycle this segment&rsquo;s line style</title>
+                    <StyleChipGlyph cx={mid.x - 13 / zoom} cy={chipY} zoom={zoom} />
+                  </g>
+                )}
+                {onRemoveCursorEdge && (
+                  <g
+                    data-append-remove-segment={pairKey}
+                    style={{ cursor: 'pointer' }}
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      onRemoveCursorEdge(from, to);
+                    }}
+                  >
+                    <title>Remove this segment</title>
+                    <RemoveChipGlyph cx={mid.x + 13 / zoom} cy={chipY} zoom={zoom} />
+                  </g>
+                )}
+              </>
             );
           }
           return null;
@@ -482,6 +506,29 @@ function RemoveChipGlyph({ cx, cy, zoom }: { cx: number; cy: number; zoom: numbe
         stroke="#000"
         strokeWidth={1.5 / zoom}
         strokeLinecap="round"
+      />
+    </>
+  );
+}
+
+// The glyph for the style-cycle chip: a white disc with a short black dashed
+// line — a direct picture of "line style" (the segment's dash pattern). Sized
+// in screen space like RemoveChipGlyph so it stays legible/clickable at any zoom.
+function StyleChipGlyph({ cx, cy, zoom }: { cx: number; cy: number; zoom: number }) {
+  const r = 8 / zoom;
+  const half = r * 0.6;
+  const dash = 2.2 / zoom;
+  return (
+    <>
+      <circle cx={cx} cy={cy} r={r} fill="#fff" stroke="#000" strokeWidth={1 / zoom} />
+      <line
+        x1={cx - half}
+        y1={cy}
+        x2={cx + half}
+        y2={cy}
+        stroke="#000"
+        strokeWidth={1.6 / zoom}
+        strokeDasharray={`${dash} ${dash * 0.8}`}
       />
     </>
   );

@@ -228,6 +228,23 @@ test('the × chip on the armed segment removes that edge', async ({ page }) => {
   await expect(editing(page)).toBeVisible();
 });
 
+test('the style chip on the armed segment cycles its line style', async ({ page }) => {
+  await seedAndOpen(page, fourInLine);
+  await openEditStops(page);
+
+  const p = await segPoint(page, 'B', 'C');
+  await page.mouse.click(p.x, p.y); // arm B–C → chips appear at the midpoint
+  const chip = page.locator('[data-append-cycle-segment-style="B|C"]');
+  await expect(chip).toBeVisible();
+  await chip.click();
+
+  await expect.poll(async () => await segmentStyles(page)).toEqual({ 'B|C': 'dashed' });
+  // The cursor stays armed, so the chip is still there to keep cycling.
+  await chip.click();
+  await expect.poll(async () => await segmentStyles(page)).toEqual({ 'B|C': 'hatched' });
+  await expect(editing(page)).toBeVisible();
+});
+
 test('right-click on a station during Edit Stops rotates it (never removes)', async ({ page }) => {
   await seedAndOpen(page, fourInLine);
   await openEditStops(page);
