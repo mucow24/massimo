@@ -120,6 +120,56 @@ describe('decideStationClick', () => {
   });
 });
 
+describe('decideStationClick — shift cycles the armed segment', () => {
+  // Shift's ONLY job in Edit Stops is to cycle the ARMED segment's pattern, and
+  // only when the click lands over that segment — i.e. on one of its endpoint
+  // stations. The endpoints occlude a short segment's band, so this is how a
+  // segment sandwiched between two stations stays editable. Shift must NEVER
+  // add to the line (seed/connect/splice) — that's the whole reason the old
+  // shift-click-the-band gesture was unreachable for short segments.
+
+  it('shift-clicking either endpoint of the armed edge cycles that segment', () => {
+    expect(decideStationClick(line(), edgeCursor('a', 'b'), 'a', true)).toEqual({
+      kind: 'cycle-style',
+      from: 'a',
+      to: 'b',
+    });
+    // Same edge whichever endpoint is clicked, and whatever the stored order.
+    expect(decideStationClick(line(), edgeCursor('a', 'b'), 'b', true)).toEqual({
+      kind: 'cycle-style',
+      from: 'a',
+      to: 'b',
+    });
+    expect(decideStationClick(line(), edgeCursor('b', 'a'), 'a', true)).toEqual({
+      kind: 'cycle-style',
+      from: 'b',
+      to: 'a',
+    });
+  });
+
+  it('shift is inert anywhere that is not an endpoint of the armed segment', () => {
+    // A non-endpoint station while an edge is armed: NOT a splice.
+    expect(decideStationClick(line(), edgeCursor('a', 'b'), 'c', true)).toEqual({ kind: 'none' });
+    // A station cursor (no SEGMENT armed): NOT a connect.
+    expect(decideStationClick(line(), stationCursor('a'), 'c', true)).toEqual({ kind: 'none' });
+    // No cursor: NOT an arm.
+    expect(decideStationClick(line(), null, 'b', true)).toEqual({ kind: 'none' });
+    // Empty line: NOT a seed.
+    expect(decideStationClick(makeLine({ id: 'L1', stations: [] }), null, 'x', true)).toEqual({
+      kind: 'none',
+    });
+    // A stale armed edge degrades to null first, so shift is inert.
+    expect(decideStationClick(line(), edgeCursor('a', 'c'), 'a', true)).toEqual({ kind: 'none' });
+  });
+
+  it('without shift, an endpoint click is unchanged (jumps the cursor)', () => {
+    expect(decideStationClick(line(), edgeCursor('a', 'b'), 'b', false)).toEqual({
+      kind: 'cursor',
+      cursor: stationCursor('b'),
+    });
+  });
+});
+
 describe('decideSegmentClick', () => {
   const pos: Record<string, { x: number; y: number }> = {
     a: { x: 0, y: 0 },

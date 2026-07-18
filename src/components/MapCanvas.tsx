@@ -47,12 +47,14 @@ import { lineWidthOf } from '../model/lineWidth';
 import { lineStrokeRailWidth, lineStrokeWidthOf } from '../model/lineStroke';
 import { useRectSelect } from './canvas/useRectSelect';
 import {
+  appendCursorRef,
   currentHitEntity,
   LOCKED_HIT_PAD_PX,
   lockedDispatchTarget,
   lockedHitsAt,
   mergeLockedIntoStack,
   nextInStack,
+  resolveAppendStack,
   resolveHitStack,
   type HitEntry,
 } from './canvas/hitStack';
@@ -87,7 +89,7 @@ import {
   sampleOffsetPath,
   snapNeighborTag,
 } from '../geometry/lineTagGeometry';
-import type { LineId } from '../model/types';
+import type { LineId, StationId } from '../model/types';
 import { findMatchingStations } from '../model/matching';
 import { desaturateColor } from '../util/color';
 
@@ -556,6 +558,15 @@ export function MapCanvas() {
     );
   };
 
+  // A line member's stop position (what the user sees), for near/far endpoint
+  // ordering when arming an edge cursor. Shared by the append band handlers and
+  // the Edit Stops alt-pick.
+  const stopPosOf = (lineId: LineId) => (sid: string) => {
+    const st = stations[sid];
+    const cell = st?.stops.find((c) => c.lineId === lineId);
+    return st && cell ? stopPosWorld(cell, st) : null;
+  };
+
   // Alt+click deep-pick: cycle the selection through the stack of selectable
   // elements under the cursor, topmost first — the way to reach an element
   // buried under other hit surfaces (a line under a station's hit rect, a
@@ -612,6 +623,45 @@ export function MapCanvas() {
         button: 0,
       }),
     );
+    return true;
+  };
+
+  // Edit Stops alt-pick: alt-click cycles the overlapping items under the cursor
+  // — the same convention as the idle deep-pick — through what the editor can
+  // arm: stations (the pen) and the edited line's segments. This is how a short
+  // segment buried under its endpoint stations is reached (elementsFromPoint
+  // sees the stripe through the station rects). Unlike the idle deep-pick it
+  // ARMS the cursor directly — re-dispatching a plain click would MUTATE
+  // (connect/splice) in Edit Stops. Nothing to pick here means "let the normal
+  // alt handling run" (e.g. alt-click on empty canvas creates a station).
+  const appendDeepPick = (e: React.MouseEvent): boolean => {
+    if (!e.altKey || dragState.suppressClick) return false;
+    const mode = selection.uiMode;
+    if (mode.kind !== 'appending-to-line') return false;
+    const line = lines[mode.lineId];
+    if (!line) return false;
+    const layer = proxyLayerRef.current;
+    const prevDisplay = layer ? layer.style.display : '';
+    if (layer) layer.style.display = 'none';
+    const els = document.elementsFromPoint(e.clientX, e.clientY);
+    if (layer) layer.style.display = prevDisplay;
+    // Only a line MEMBER can hold the cursor, so non-member stations under the
+    // cursor drop out of the cycle (they'd arm a stale, immediately-degraded
+    // station cursor).
+    const members = line.stations as readonly string[];
+    const stack = resolveAppendStack(els, mode.lineId).filter(
+      (entry) => entry.kind === 'segment' || members.includes(entry.id),
+    );
+    const next = nextInStack(stack, appendCursorRef(mode.cursor));
+    if (!next) return false; // nothing pickable here
+    e.stopPropagation();
+    if (next.kind === 'station') {
+      selection.setAppendCursor({ kind: 'station', stationId: next.id as StationId });
+    } else {
+      const world = view.screenToWorld(e.clientX, e.clientY);
+      const decision = decideSegmentClick(line, null, next.id, world, stopPosOf(mode.lineId));
+      if (decision.kind === 'cursor') selection.setAppendCursor(decision.cursor);
+    }
     return true;
   };
 
@@ -815,13 +865,6 @@ export function MapCanvas() {
       if (!line || !line.edges.includes(spec.pairKey)) return null;
       return { cursor: mode.cursor, line };
     };
-    // A member's stop position for the edited line (what the user sees), for
-    // the near/far endpoint ordering.
-    const stopPosOf = (lineId: LineId) => (sid: string) => {
-      const st = stations[sid];
-      const cell = st?.stops.find((c) => c.lineId === lineId);
-      return st && cell ? stopPosWorld(cell, st) : null;
-    };
     return {
       // Mouseover: mark this corridor as the append hover target so
       // HighlightedLineLayer previews the halo a click would arm. Only for a
@@ -959,6 +1002,7 @@ export function MapCanvas() {
         // (only DRAG gets selected-item priority). Capture phase so both run
         // before the target's own handler and the canvas click handler.
         onClickCapture={(e) => {
+          if (appendDeepPick(e)) return;
           if (deepPickAltClick(e)) return;
           rerouteProxyEventBeneath('click', e);
         }}

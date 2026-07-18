@@ -1604,6 +1604,25 @@ button.field-select {
   cursor: grabbing;
 }
 
+/* Line-editor click priority: while editing a line's stops (Edit Stops), the
+   free canvas items — route bullets, text labels, transfers, line tags — go
+   click-through, so a click over the line lands on the LINE, not on a stray
+   item's bounding box (which would silently drop you out of editing). Stations
+   and the line stripes keep their handlers; polygons/images are already inert
+   in every non-idle mode via their `interactive` prop. A presentation-attribute
+   pointer-events (e.g. a transfer's "stroke") loses to this stylesheet rule,
+   and the descendant `*` reaches hit shapes nested inside a group (bullet,
+   label). */
+.canvas-host[data-uimode='appending-to-line']
+  > svg
+  :is([data-bullet-id], [data-text-label-id], [data-transfer-id], [data-line-tag-id]),
+.canvas-host[data-uimode='appending-to-line']
+  > svg
+  :is([data-bullet-id], [data-text-label-id], [data-transfer-id], [data-line-tag-id])
+  * {
+  pointer-events: none;
+}
+
 .station-hit {
   cursor: pointer;
 }

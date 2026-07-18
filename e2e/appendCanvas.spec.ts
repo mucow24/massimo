@@ -1,5 +1,12 @@
 import { test, expect, type Page } from '@playwright/test';
-import { seedAndOpen, stationCenter, clickAtWithModifiers, fourInLine, type Seed } from './fixtures';
+import {
+  seedAndOpen,
+  stationCenter,
+  labelCenter,
+  clickAtWithModifiers,
+  fourInLine,
+  type Seed,
+} from './fixtures';
 
 // Canvas-only line editing (Edit Stops): the cursor model. Click stations to
 // connect from the cursor, click a segment to arm insertion into that edge,
@@ -47,6 +54,33 @@ const withFreeStations: Seed = {
   ],
   lines: fourInLine.lines,
 };
+
+// A and B sit 16 world units apart, so the A–B band is fully hidden under their
+// two hit rects — a "short segment sandwiched between two stations". C is far
+// down the line so its B–C stripe stays easy to click.
+const shortSegment: Seed = {
+  stations: [
+    { id: 'A', name: 'A', x: -8, y: 0, stops: [{ lineId: 'L1', row: 0, col: 0 }] },
+    { id: 'B', name: 'B', x: 8, y: 0, stops: [{ lineId: 'L1', row: 0, col: 0 }] },
+    { id: 'C', name: 'C', x: 200, y: 0, stops: [{ lineId: 'L1', row: 0, col: 0 }] },
+  ],
+  lines: [{ id: 'L1', service: 'L', color: '#0039A6', stations: ['A', 'B', 'C'] }],
+};
+
+// fourInLine plus a text label centred on the B–C corridor (world midpoint
+// x≈0, y=0), so its box overlaps the line.
+const withLabelOverLine: Seed = {
+  ...fourInLine,
+  textLabels: [{ id: 'g1', x: 0, y: 0, text: 'Midtown', fontSize: 20, weight: 700 }],
+};
+
+// Page-coord centre of a stop dot (precise, unlike the station <g> box which the
+// label inflates) — needed when two stations sit close enough to occlude.
+async function stopDotCenter(page: Page, sid: string): Promise<{ x: number; y: number }> {
+  const box = await page.locator(`[data-stop-station="${sid}"]`).first().boundingBox();
+  if (!box) throw new Error(`stop dot ${sid} not visible`);
+  return { x: box.x + box.width / 2, y: box.y + box.height / 2 };
+}
 
 test.beforeEach(async ({ page }) => {
   await page.goto('/');
@@ -244,4 +278,75 @@ test('shift-click cycles a segment style while editing', async ({ page }) => {
       }),
     )
     .toEqual({ 'A|B': 'dashed' });
+});
+
+async function segmentStyles(page: Page): Promise<Record<string, string>> {
+  return page.evaluate(() => {
+    const raw = localStorage.getItem('vignelli-map-doc-v1');
+    return raw ? (JSON.parse(raw).state.lines.L1.segmentStyles ?? {}) : {};
+  });
+}
+
+test('shift-click on an armed segment’s endpoint station cycles that segment', async ({ page }) => {
+  await seedAndOpen(page, fourInLine);
+  await openEditStops(page);
+
+  // Arm A–B, then shift-click the ENDPOINT station A (not the band): the band
+  // of a short segment is occluded by its endpoints, so this is the path that
+  // keeps it editable.
+  const ab = await segPoint(page, 'A', 'B');
+  await page.mouse.click(ab.x, ab.y);
+  await expect(page.locator('[data-append-remove-segment="A|B"]')).toBeVisible();
+
+  const a = await stationCenter(page, 'A');
+  await clickAtWithModifiers(page, a, ['Shift']);
+
+  await expect.poll(async () => await segmentStyles(page)).toEqual({ 'A|B': 'dashed' });
+  // Shift over an endpoint did NOT connect/splice, and we stay in the editor.
+  expect((await readLine(page)).stations).toEqual(['A', 'B', 'C', 'D']);
+  await expect(editing(page)).toBeVisible();
+});
+
+test('alt-click reaches a short segment buried under its endpoint stations', async ({ page }) => {
+  await seedAndOpen(page, shortSegment);
+  // Enter Edit Stops via the long B–C stripe (A–B is too short to click).
+  await page.locator('[data-band-stripe][data-line-id="L1"]').last().click({ force: true });
+  await expect(editing(page)).toBeVisible();
+
+  // The midpoint of A–B, whose band is fully under both stations' hit rects.
+  const pa = await stopDotCenter(page, 'A');
+  const pb = await stopDotCenter(page, 'B');
+  const mid = { x: (pa.x + pb.x) / 2, y: (pa.y + pb.y) / 2 };
+
+  // A PLAIN click there lands on a station — never the buried A–B band...
+  await page.mouse.click(mid.x, mid.y);
+  const chip = page.locator('[data-append-remove-segment="A|B"]');
+  await expect(chip).toHaveCount(0);
+  // ...ALT-click cycles the stack (elementsFromPoint sees the stripe under the
+  // station rects) — the two endpoint stations plus the buried A–B segment — so
+  // within a couple of steps the segment arms.
+  for (let i = 0; i < 4 && (await chip.count()) === 0; i++) {
+    await clickAtWithModifiers(page, mid, ['Alt']);
+  }
+  await expect(chip).toBeVisible();
+  await expect(editing(page)).toBeVisible();
+});
+
+test('a canvas label over the line does not steal the click while editing stops', async ({
+  page,
+}) => {
+  await seedAndOpen(page, withLabelOverLine);
+  await openEditStops(page);
+
+  // Click dead on the label, which overlaps the B–C corridor. In Edit Stops the
+  // label is click-through, so the click lands on the LINE. Arming B–C proves
+  // the click reached the band; still being in the editor proves the label was
+  // NOT clicked — its handler would have called setAppending(null) and dropped
+  // us out. (A label selection can't be asserted via a popover here: the line
+  // editor's own inspector popover is always pinned open in Edit Stops.)
+  const g = await labelCenter(page, 'g1');
+  await page.mouse.click(g.x, g.y);
+
+  await expect(page.locator('[data-append-remove-segment="B|C"]')).toBeVisible();
+  await expect(editing(page)).toBeVisible();
 });
