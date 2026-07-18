@@ -42,8 +42,14 @@ const LAYOUT_RING_ACTIVE = '#5b9dff';
  * presses/clicks/right-clicks/double-clicks between handles — without it, a
  * near-miss right-click would rotate the WHOLE station through the hit rect
  * beneath (this mode is in RIGHT_CLICK_PASSTHROUGH_MODES, so App's
- * capture-phase canceller stands down). In hand/space mode the shield lets
- * presses through so drag-to-pan keeps working.
+ * capture-phase canceller stands down). The shield is TWO zones split at the
+ * painted white border, so the visible outline is exactly the stay/exit
+ * boundary: inside it a plain click clears the sub-selection and stays in
+ * the mode; in the padded HALO ring outside it (invisible — clicking there
+ * reads as clicking empty canvas) a plain click EXITS the mode like a canvas
+ * click would, while presses/right-clicks/double-clicks stay swallowed so a
+ * far-miss right-click still can't rotate the station beneath. In hand/space
+ * mode both zones let presses through so drag-to-pan keeps working.
  */
 export function StationLayoutEditor({
   station,
@@ -74,7 +80,7 @@ export function StationLayoutEditor({
   const isSingleton = stationIsSingleton(station);
   const stopHalf = stopHalfOf(lines);
   const cellsBox = cellsAABBLocal(station, stopHalf);
-  // Shield reach past the cells AABB: at least one cell, and at least the
+  // Halo reach past the cells AABB: at least one cell, and at least the
   // biggest dot's painted radius — an oversized per-stop dotSize override is
   // a live station click target, and any exposed ring would re-enable the
   // near-miss whole-station right-click the shield exists to swallow.
@@ -120,6 +126,20 @@ export function StationLayoutEditor({
           e.stopPropagation();
         },
       };
+  // The halo shares the shield's press/right-click/double-click swallowing,
+  // but a plain click out there is a far miss — outside the painted border —
+  // and means "done": exit the mode exactly like the canvas click in
+  // usePlacementDispatch (uiMode → idle, selection kept so the inspector
+  // stays open).
+  const haloHandlers = inHandMode
+    ? {}
+    : {
+        ...shieldHandlers,
+        onClick: (e: React.MouseEvent) => {
+          e.stopPropagation();
+          selection.setUiMode({ kind: 'idle' });
+        },
+      };
 
   const handleFor = (source: LayoutDragSource) => ({
     onPointerDown: (e: React.PointerEvent) => {
@@ -145,13 +165,29 @@ export function StationLayoutEditor({
 
   return (
     <g transform={`translate(${station.x} ${station.y}) rotate(${angle})`}>
-      {/* Shield: swallow station-level interactions under the editor. */}
+      {/* Halo first (beneath): document order is hit-test priority, so the
+          inner shields below win everywhere inside the painted border and the
+          halo only catches the invisible pad ring outside it. */}
       <rect
-        data-layout-shield="1"
+        data-layout-shield="halo"
         x={cellsBox.x - shieldPad}
         y={cellsBox.y - shieldPad}
         width={cellsBox.w + 2 * shieldPad}
         height={cellsBox.h + 2 * shieldPad}
+        fill="transparent"
+        pointerEvents={inHandMode ? 'none' : 'all'}
+        {...haloHandlers}
+      />
+      {/* Shield: swallow station-level interactions under the editor. The
+          cells rect matches the painted border (cellsAABBLocal is what the
+          white stroke outlines), so the visible outline IS the stay/exit
+          boundary. */}
+      <rect
+        data-layout-shield="1"
+        x={cellsBox.x}
+        y={cellsBox.y}
+        width={cellsBox.w}
+        height={cellsBox.h}
         fill="transparent"
         pointerEvents={inHandMode ? 'none' : 'all'}
         {...shieldHandlers}

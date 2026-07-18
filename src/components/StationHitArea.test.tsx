@@ -74,4 +74,20 @@ describe('<StationHitArea /> — a locked, sole-selected station stays reachable
     expect(cells.getAttribute('pointer-events')).toBe('none');
     expect(label.getAttribute('pointer-events')).toBe('none');
   });
+
+  it('stays click-through while another station is layout-edited (click exits, not retargets)', () => {
+    // In editing-station-layout mode a click on a locked station must fall
+    // through to the canvas (exiting the mode) — a live hit rect would route
+    // to selectStation, whose layoutEditReconcile RETARGETS the editor onto
+    // the locked station instead of exiting.
+    useSelection.setState({
+      ...useSelection.getState(),
+      uiMode: { kind: 'editing-station-layout', stationId: 'OTHER' as StationId },
+      selectedStationIds: ['OTHER' as StationId],
+    });
+    const { container } = renderHitArea(locked());
+    const [cells, label] = Array.from(rects(container));
+    expect(cells.getAttribute('pointer-events')).toBe('none');
+    expect(label.getAttribute('pointer-events')).toBe('none');
+  });
 });

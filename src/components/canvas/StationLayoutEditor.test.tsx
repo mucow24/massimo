@@ -111,12 +111,46 @@ describe('<StationLayoutEditor />', () => {
     seed();
     useSelection.setState({ ...useSelection.getState(), selectedStopLineId: 'L1' });
     const { container } = renderEditor();
-    const shield = container.querySelector('[data-layout-shield]') as Element;
+    const shield = container.querySelector('[data-layout-shield="1"]') as Element;
     expect(shield).not.toBeNull();
     fireEvent.contextMenu(shield);
     expect(useDoc.getState().stations.a.rotation).toBe(0);
     fireEvent.click(shield);
     expect(useSelection.getState().selectedStopLineId).toBeNull();
+    // A near-miss click inside the painted border stays in the mode.
+    expect(useSelection.getState().uiMode.kind).toBe('editing-station-layout');
+  });
+
+  it('a plain click on the halo (outside the painted border) exits the mode, keeping the selection', () => {
+    seed();
+    const { container } = renderEditor();
+    const halo = container.querySelector('[data-layout-shield="halo"]') as Element;
+    expect(halo).not.toBeNull();
+    fireEvent.click(halo);
+    expect(useSelection.getState().uiMode.kind).toBe('idle');
+    expect(useSelection.getState().selectedStationIds).toEqual(['a']);
+  });
+
+  it('right-click on the halo stays swallowed (no whole-station rotate, no exit)', () => {
+    seed();
+    const { container } = renderEditor();
+    const halo = container.querySelector('[data-layout-shield="halo"]') as Element;
+    fireEvent.contextMenu(halo);
+    expect(useDoc.getState().stations.a.rotation).toBe(0);
+    expect(useSelection.getState().uiMode.kind).toBe('editing-station-layout');
+  });
+
+  it('the halo renders beneath the inner shield and reaches past it', () => {
+    // Document order IS hit-test priority: the inner shield must come after
+    // the halo so near-miss clicks inside the border keep hitting the inner
+    // (stay-in-mode) rect where the two overlap.
+    seed();
+    const { container } = renderEditor();
+    const shields = Array.from(container.querySelectorAll('[data-layout-shield]'));
+    expect(shields.map((s) => s.getAttribute('data-layout-shield'))).toEqual(['halo', '1', '1']);
+    const [halo, cells] = shields;
+    expect(Number(halo.getAttribute('x'))).toBeLessThan(Number(cells.getAttribute('x')));
+    expect(Number(halo.getAttribute('width'))).toBeGreaterThan(Number(cells.getAttribute('width')));
   });
 
   it('marks the selected stop handle', () => {
@@ -193,7 +227,8 @@ describe('<StationLayoutEditor /> — hand mode passes through', () => {
     expect(onStartNodeDrag).not.toHaveBeenCalled();
     // The hit surfaces are pointer-transparent in hand mode.
     expect(l1.querySelector('circle')?.getAttribute('pointer-events')).toBe('none');
-    const shield = container.querySelector('[data-layout-shield]') as Element;
-    expect(shield.getAttribute('pointer-events')).toBe('none');
+    const shields = Array.from(container.querySelectorAll('[data-layout-shield]'));
+    expect(shields.length).toBeGreaterThan(0);
+    for (const s of shields) expect(s.getAttribute('pointer-events')).toBe('none');
   });
 });
