@@ -33,6 +33,8 @@ import {
   type LayoutSource,
 } from './components/inspector/stopGridDrag';
 import { dispatchMirrored, fanOutMirrored } from './state/mirrorDispatch';
+import { useSnapPrefs } from './state/snapPrefs';
+import { advanceSnapToggle } from './components/SnapToggleBar';
 import {
   deleteUnlockedSelection,
   itemIdCount,
@@ -547,6 +549,26 @@ export default function App() {
           });
         }
         return;
+      }
+      // 1–5 advance the five snap toggles one step each — the keyboard twin of
+      // a single click on that toolbar button. A multi-state toggle (Snap to
+      // all / grid) needs repeated presses to cycle, exactly like clicking.
+      // Numpad 1–5 too: with NumLock on e.key is already '1'–'5'; with it off
+      // e.key is 'End'/'ArrowDown'/etc. but e.code is 'Numpad1'..'Numpad5'.
+      // Ctrl/Cmd+digit is left alone for the browser's tab-switch gesture.
+      if (!inFormControl && !mod) {
+        const digit =
+          e.key >= '1' && e.key <= '5'
+            ? Number(e.key)
+            : /^Numpad[1-5]$/.test(e.code)
+              ? Number(e.code.slice(6))
+              : 0;
+        if (digit) {
+          e.preventDefault();
+          const next = advanceSnapToggle(useSnapPrefs.getState().modes, digit - 1);
+          if (next) useSnapPrefs.getState().setMode(next.key, next.value);
+          return;
+        }
       }
       if (!inFormControl && !mod && (e.key === 'a' || e.key === 'A')) {
         setToolMode('arrow');
