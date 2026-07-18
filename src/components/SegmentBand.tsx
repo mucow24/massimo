@@ -200,6 +200,7 @@ export const SegmentBand = memo(function SegmentBand({
         d={d}
         data-band-stripe={decorative ? undefined : true}
         data-band-key={decorative ? undefined : spec.bandKey}
+        data-pair-key={decorative ? undefined : spec.pairKey}
         data-line-id={decorative ? undefined : lineId}
         fill="none"
         stroke={stroke}

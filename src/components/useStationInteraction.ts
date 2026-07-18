@@ -2,12 +2,13 @@ import { Line, LineId, Station } from '../model/types';
 import { dragState, useDoc, useSelection } from '../state/store';
 import { dispatchMirrored } from '../state/mirrorDispatch';
 import { useSnapPrefs } from '../state/snapPrefs';
-import { stopPosWorld } from '../geometry/interlining';
+import { resolveSegmentStyle, stopPosWorld } from '../geometry/interlining';
+import { pairKeyOf } from '../model/pairKey';
 import { pathBetweenStations } from '../model/pathSelect';
 import { rotateItemOnContextMenu } from './canvas/groupRotate';
 import { itemCursor } from './canvas/itemCursor';
 import { screenToWorld } from './canvas/viewportMath';
-import { decideStationClick } from './canvas/appendGestures';
+import { decideStationClick, NEXT_STYLE } from './canvas/appendGestures';
 
 // Map a click on a station to the closest dot's lineId. Used to pin a
 // transfer endpoint to the specific stop the user clicked on, rather than
@@ -71,6 +72,7 @@ export function useStationInteraction(
   const addStationToLine = useDoc((s) => s.addStationToLine);
   const connectStationsOnLine = useDoc((s) => s.connectStationsOnLine);
   const spliceStationIntoEdge = useDoc((s) => s.spliceStationIntoEdge);
+  const setLineSegmentStyle = useDoc((s) => s.setLineSegmentStyle);
   const redistributeBetween = useDoc((s) => s.redistributeBetween);
   const addTransfer = useDoc((s) => s.addTransfer);
   const gridMode = useSnapPrefs((s) => s.modes.grid);
@@ -143,7 +145,7 @@ export function useStationInteraction(
       const { lineId, cursor } = selection.uiMode;
       const ln = lines[lineId];
       if (!ln) return;
-      const decision = decideStationClick(ln, cursor, station.id);
+      const decision = decideStationClick(ln, cursor, station.id, e.shiftKey);
       switch (decision.kind) {
         case 'seed':
           addStationToLine(lineId, decision.stationId);
@@ -159,6 +161,17 @@ export function useStationInteraction(
           break;
         case 'cursor':
           selection.setAppendCursor(decision.cursor);
+          break;
+        case 'cycle-style':
+          // Shift-click over the armed segment (on an endpoint station): cycle
+          // its pattern, leaving the cursor armed so repeated shifts keep
+          // cycling. The style edit is the whole action — no cursor change.
+          setLineSegmentStyle(
+            lineId,
+            decision.from,
+            decision.to,
+            NEXT_STYLE[resolveSegmentStyle(ln, pairKeyOf(decision.from, decision.to))],
+          );
           break;
         default:
           break; // 'none' — the click means nothing right now

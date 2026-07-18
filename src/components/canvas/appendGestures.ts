@@ -53,6 +53,7 @@ export type AppendDecision =
   | { kind: 'seed'; stationId: StationId; cursor: AppendCursor }
   | { kind: 'connect'; from: StationId; to: StationId; cursor: AppendCursor }
   | { kind: 'splice'; from: StationId; to: StationId; stationId: StationId; cursor: AppendCursor }
+  | { kind: 'cycle-style'; from: StationId; to: StationId }
   | { kind: 'create-seed' }
   | { kind: 'create-connect'; from: StationId }
   | { kind: 'create-splice'; from: StationId; to: StationId };
@@ -68,12 +69,29 @@ export function validCursor(line: Line, cursor: AppendCursor): AppendCursor {
   return lineHasEdge(line, cursor.from, cursor.to) ? cursor : null;
 }
 
-/** A click on a station (member or not) while editing the line's stops. */
+/**
+ * A click on a station (member or not) while editing the line's stops.
+ *
+ * With `shift`, the click's ONLY meaning is to cycle the ARMED segment's
+ * pattern, and only when it lands over that segment — i.e. on one of its
+ * endpoint stations. A short segment's band is occluded by its two endpoint
+ * stations, so this endpoint click is how a sandwiched segment stays editable
+ * (pair it with alt-click to arm the buried segment in the first place). Shift
+ * NEVER seeds/connects/splices — an add-to-line on shift is exactly the trap
+ * that made short segments uneditable.
+ */
 export function decideStationClick(
   line: Line,
   cursorIn: AppendCursor,
   stationId: StationId,
+  shift = false,
 ): AppendDecision {
+  if (shift) {
+    const cursor = validCursor(line, cursorIn);
+    if (cursor?.kind === 'edge' && (stationId === cursor.from || stationId === cursor.to))
+      return { kind: 'cycle-style', from: cursor.from, to: cursor.to };
+    return { kind: 'none' };
+  }
   if (line.stations.length === 0)
     return { kind: 'seed', stationId, cursor: { kind: 'station', stationId } };
   const cursor = validCursor(line, cursorIn);
