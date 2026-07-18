@@ -18,6 +18,7 @@ let addTransfer: ReturnType<typeof vi.fn>;
 let addStationToLine: ReturnType<typeof vi.fn>;
 let connectStationsOnLine: ReturnType<typeof vi.fn>;
 let spliceStationIntoEdge: ReturnType<typeof vi.fn>;
+let setLineSegmentStyle: ReturnType<typeof vi.fn>;
 let removeStationFromLine: ReturnType<typeof vi.fn>;
 
 beforeEach(() => {
@@ -29,6 +30,7 @@ beforeEach(() => {
   addStationToLine = vi.fn();
   connectStationsOnLine = vi.fn();
   spliceStationIntoEdge = vi.fn();
+  setLineSegmentStyle = vi.fn();
   removeStationFromLine = vi.fn();
   useDoc.setState({
     rotateStation,
@@ -38,6 +40,7 @@ beforeEach(() => {
     addStationToLine,
     connectStationsOnLine,
     spliceStationIntoEdge,
+    setLineSegmentStyle,
     removeStationFromLine,
   } as unknown as Partial<ReturnType<typeof useDoc.getState>>);
   useSelection.setState({
@@ -422,6 +425,43 @@ describe('useStationInteraction — append-to-line (Edit Stops)', () => {
     click(result.current.handlers, pointerEvent({}) as unknown as React.MouseEvent);
     expect(spliceStationIntoEdge).toHaveBeenCalledWith('L1', 'T', 'U', 'S');
     expect(appendCursor()).toEqual({ kind: 'edge', from: 'S', to: 'U' });
+  });
+
+  it('shift-clicking an armed segment endpoint cycles its pattern (never adds to the line)', () => {
+    // The armed S–T edge is "the selected segment"; shift-clicking either of
+    // its endpoint stations cycles solid→dashed. This is how a short segment,
+    // whose band is occluded by its two endpoint stations, stays editable.
+    useSelection.getState().startAppend('L1' as LineId);
+    useSelection
+      .getState()
+      .setAppendCursor({ kind: 'edge', from: 'S' as StationId, to: 'T' as StationId });
+    const lines = {
+      L1: makeLine({ id: 'L1' as LineId, stations: ['S', 'T'] as StationId[] }),
+    };
+    const { result } = setup(stationS(), lines);
+    click(result.current.handlers, pointerEvent({ shiftKey: true }) as unknown as React.MouseEvent);
+    expect(setLineSegmentStyle).toHaveBeenCalledWith('L1', 'S', 'T', 'dashed');
+    // Shift NEVER adds to the line, and the cursor stays armed for more cycling.
+    expect(spliceStationIntoEdge).not.toHaveBeenCalled();
+    expect(connectStationsOnLine).not.toHaveBeenCalled();
+    expect(appendCursor()).toEqual({ kind: 'edge', from: 'S', to: 'T' });
+  });
+
+  it('shift-clicking a station that is NOT an endpoint of the armed segment is inert', () => {
+    // Cursor over the T–U segment; clicking the unrelated S must not cycle it
+    // (that would be "shift-click willy-nilly changes the pattern") nor splice.
+    useSelection.getState().startAppend('L1' as LineId);
+    useSelection
+      .getState()
+      .setAppendCursor({ kind: 'edge', from: 'T' as StationId, to: 'U' as StationId });
+    const lines = {
+      L1: makeLine({ id: 'L1' as LineId, stations: ['T', 'U'] as StationId[] }),
+    };
+    const { result } = setup(stationS(), lines);
+    click(result.current.handlers, pointerEvent({ shiftKey: true }) as unknown as React.MouseEvent);
+    expect(setLineSegmentStyle).not.toHaveBeenCalled();
+    expect(spliceStationIntoEdge).not.toHaveBeenCalled();
+    expect(appendCursor()).toEqual({ kind: 'edge', from: 'T', to: 'U' });
   });
 
   it('right-click during Edit Stops ROTATES (removal is the × chip / Delete key)', () => {

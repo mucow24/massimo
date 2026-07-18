@@ -1,9 +1,11 @@
 import { describe, expect, it } from 'vitest';
 import {
+  appendCursorRef,
   currentHitEntity,
   lockedHitsAt,
   mergeLockedIntoStack,
   nextInStack,
+  resolveAppendStack,
   resolveHitStack,
   type HitEntry,
   type HitRef,
@@ -94,6 +96,79 @@ describe('resolveHitStack', () => {
     const el = buildDom();
     expect(resolveHitStack([el('bg')])).toEqual([]);
     expect(resolveHitStack([])).toEqual([]);
+  });
+});
+
+describe('resolveAppendStack (Edit Stops alt-pick)', () => {
+  // A miniature Edit-Stops DOM: two segments of the edited line L1, one segment
+  // of another line L2, plus stations and free items painted over them. Read as
+  // an elementsFromPoint snapshot (topmost-first) below.
+  function buildAppendDom() {
+    const host = document.createElement('div');
+    host.innerHTML = `
+      <svg>
+        <path data-band-stripe="" data-band-key="k1" data-line-id="L1" data-pair-key="a|b" id="segAB"></path>
+        <path data-band-stripe="" data-band-key="k2" data-line-id="L1" data-pair-key="b|c" id="segBC"></path>
+        <path data-band-stripe="" data-band-key="k3" data-line-id="L2" data-pair-key="a|b" id="otherLine"></path>
+        <g data-station-id="s1"><rect id="cellsS1"></rect></g>
+        <g><circle data-stop-station="s2" id="dotS2"></circle></g>
+        <g data-bullet-id="bl1"><circle id="bullet"></circle></g>
+        <g data-text-label-id="g1"><rect id="label"></rect></g>
+        <line data-transfer-id="t1" id="transfer"></line>
+      </svg>`;
+    return (id: string) => host.querySelector('#' + id)!;
+  }
+
+  it('cycles stations and the edited line’s segments; drops free items + other lines', () => {
+    const el = buildAppendDom();
+    // A station's dot on top, then the buried segment, then irrelevant surfaces.
+    const stack = resolveAppendStack(
+      [
+        el('dotS2'), // a station over the segment — part of the cycle
+        el('segAB'), // the buried edited-line segment
+        el('otherLine'), // a different line's stripe — irrelevant
+        el('bullet'),
+        el('label'),
+        el('transfer'),
+        el('cellsS1'), // a second station (its cells hit rect)
+      ],
+      'L1',
+    );
+    expect(stack).toEqual([
+      { kind: 'station', id: 's2' },
+      { kind: 'segment', id: 'a|b' },
+      { kind: 'station', id: 's1' },
+    ]);
+  });
+
+  it('cycles multiple overlapping edited-line segments, topmost-first, deduped', () => {
+    const el = buildAppendDom();
+    expect(resolveAppendStack([el('segBC'), el('segAB'), el('segBC')], 'L1')).toEqual([
+      { kind: 'segment', id: 'b|c' },
+      { kind: 'segment', id: 'a|b' },
+    ]);
+  });
+
+  it('drops a different line’s stripe but keeps stations under the cursor', () => {
+    const el = buildAppendDom();
+    expect(resolveAppendStack([el('dotS2'), el('otherLine'), el('label')], 'L1')).toEqual([
+      { kind: 'station', id: 's2' },
+    ]);
+  });
+});
+
+describe('appendCursorRef', () => {
+  it('maps the append cursor to an alt-pick ref (edge → its canonical pair key)', () => {
+    expect(appendCursorRef(null)).toBeNull();
+    expect(appendCursorRef({ kind: 'station', stationId: 's1' })).toEqual({
+      kind: 'station',
+      id: 's1',
+    });
+    // Whatever the stored order, the ref is the canonical pair key.
+    expect(appendCursorRef({ kind: 'edge', from: 'b', to: 'a' })).toEqual({
+      kind: 'segment',
+      id: 'a|b',
+    });
   });
 });
 

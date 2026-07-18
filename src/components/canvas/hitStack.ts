@@ -9,6 +9,8 @@ import {
 import { stopHalfOf } from '../../model/lineWidth';
 import { stopDashOf } from '../../model/dashSize';
 import { effectiveBackgroundOrder } from '../../model/transforms';
+import { pairKeyOf } from '../../model/pairKey';
+import type { AppendCursor } from './appendGestures';
 import type { Pt } from '../../geometry/polygonUnion';
 import type {
   Line,
@@ -106,15 +108,86 @@ export function resolveHitStack(elements: readonly Element[]): HitEntry[] {
 }
 
 /**
+ * Edit Stops (line editor) alt-pick. Alt-click cycles the overlapping items
+ * under the cursor — the SAME convention as the idle deep-pick — scoped to what
+ * the line editor can arm: stations (the pen) and the EDITED line's segments
+ * (keyed by pair key). A station's hit rect painting over a short segment's band
+ * is exactly why cycling matters here: a plain click lands on the station,
+ * alt-click steps on to the buried segment. The idle resolver's re-dispatch is
+ * NOT reused (a plain click MUTATES in Edit Stops — connect/splice); the caller
+ * arms the cursor directly. Free items and other lines' stripes are irrelevant
+ * and dropped.
+ */
+export type AppendStackEntry = { kind: 'station' | 'segment'; id: string };
+
+// The three station identity carriers the idle resolver leads with, plus the
+// edited line's segment stripe (which carries data-pair-key for the exact edge).
+const APPEND_STATION_SELECTORS = ['[data-stop-station]', '[data-stop-stroke]', '[data-station-id]'];
+
+/**
+ * Resolve the Edit Stops alt-pick stack from an elementsFromPoint snapshot
+ * (topmost-first), deduped: stations and the EDITED line's segments under the
+ * cursor. `elementsFromPoint` reports a band stripe even when a station's hit
+ * rect is painted on top of it — that is exactly how a short segment buried
+ * under its endpoint stations becomes reachable by cycling.
+ */
+export function resolveAppendStack(
+  elements: readonly Element[],
+  editedLineId: string,
+): AppendStackEntry[] {
+  const stack: AppendStackEntry[] = [];
+  const seen = new Set<string>();
+  const push = (kind: AppendStackEntry['kind'], id: string) => {
+    const key = kind + ':' + id;
+    if (id && !seen.has(key)) {
+      seen.add(key);
+      stack.push({ kind, id });
+    }
+  };
+  for (const el of elements) {
+    if (el.closest(PROXY_SELECTOR)) continue;
+    let station: string | null = null;
+    for (const sel of APPEND_STATION_SELECTORS) {
+      const owner = el.closest(sel);
+      if (owner) {
+        station = owner.getAttribute(sel.slice(1, -1)); // '[attr]' → 'attr'
+        break;
+      }
+    }
+    if (station) {
+      push('station', station);
+      continue;
+    }
+    const stripe = el.closest('[data-band-stripe]');
+    if (stripe && stripe.getAttribute('data-line-id') === editedLineId) {
+      const pk = stripe.getAttribute('data-pair-key');
+      if (pk) push('segment', pk);
+    }
+  }
+  return stack;
+}
+
+/**
+ * The append cursor as an alt-pick ref (mirrors `currentHitEntity` for idle):
+ * a station cursor is that station; an armed edge is its segment (pair key), so
+ * cycling advances PAST whichever is current; no cursor cycles from the top.
+ */
+export function appendCursorRef(cursor: AppendCursor): AppendStackEntry | null {
+  if (!cursor) return null;
+  if (cursor.kind === 'station') return { kind: 'station', id: cursor.stationId };
+  return { kind: 'segment', id: pairKeyOf(cursor.from, cursor.to) };
+}
+
+/**
  * The stack entry an Alt+click should select: the one AFTER the currently
  * selected entity (wrapping past the bottom), or the topmost when nothing —
  * or something not in the stack, or a multi-selection — is current. The
  * selection itself is the cycle cursor, so there is no positional state to
  * go stale.
  */
-export function nextInStack<T extends HitRef>(
+export function nextInStack<T extends { kind: string; id: string }>(
   stack: readonly T[],
-  current: HitRef | null,
+  current: { kind: string; id: string } | null,
 ): T | null {
   if (stack.length === 0) return null;
   if (!current) return stack[0];
