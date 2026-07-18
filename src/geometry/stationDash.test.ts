@@ -117,6 +117,20 @@ describe('dashSpec — tie fallback (label on the travel axis)', () => {
   });
 });
 
+describe('dashSpec — tie fallback is evaluated in world space', () => {
+  it('a 180°-flipped station keeps the on-axis tie tick on the world-west side', () => {
+    // Label dead-south (on the vertical travel axis) ⇒ a tie. The fallback side
+    // is chosen in WORLD space ("label above / to the west"), so flipping the
+    // station 180° must NOT flip the tick to world-east: it stays world-west,
+    // exactly like the rotation-0 tie above. A local-space fallback (dropping
+    // the rotateBy) would flip it to +7 here while passing every rotation-0 test.
+    const st = makeStation({ rotation: 4, stops: [{}], label: { row: 2, col: 0 } });
+    const spec = dashSpec(st, stopOf(st), undefined);
+    expect(spec.ax).toBeCloseTo(-7);
+    expect(Math.abs(spec.angleDeg)).toBeCloseTo(180);
+  });
+});
+
 describe('dashSpec — station rotation', () => {
   it('rotates the whole construction with the station', () => {
     // Rotation 2 = 90° CW: the local-east tick becomes world-south.

@@ -1,6 +1,6 @@
 # Massimo — Architecture
 
-**Up to date as of commit `e0cc662` (2026-07-17) — verified against the live source (code-health pass covering the changes since `b5d0c8e`: the Radix-primitives adoption and popover chrome redesign; status messages moved to stacking Radix **toasts** (`StatusToasts` + `toastStore`) instead of a toolbar span; the multi-select **`SelectionPopover`** with bulk lock/unlock/delete (`selectionOps.ts`); the pinned **`LinePopover`** replacing the sidebar line inspector; two new canvas-menu items — **Make a copy** and **Revert**; the stroke/width/seam/curve sliders moving to a 0.25 (quarter-unit) grid; cutting a segment dropping a stranded (edgeless) station; and unselectable UI-chrome text).**
+**Up to date as of commit `77d22b5` (2026-07-18) — verified against the live source (code-health pass covering the changes since `e0cc662`: the TfL-style label-aware **`dash`** stop type — a fifth `DotBaseShape` that renders as a tick protruding from the stripe edge toward the label, with per-line `dashLength`/`dashWidth` dims and its own [dashSize.ts](src/model/dashSize.ts)/[stationDash.ts](src/geometry/stationDash.ts) geometry; the prior currency marker predated it (#287). Also re-verified as already documented inline: the singleton-vs-interchange line dot-default split (`singletonDotStyle`/`multiDotStyle` + sizes, persist v18, #290), the sortable/star-able map library with UI prefs (#291), and line-color dot fills/strokes (#292)).**
 
 > A fast-bootstrap reference for understanding the codebase: the ins, outs, gotchas, and
 > caveats. Written for an AI assistant (or new contributor) who needs the full picture
@@ -112,6 +112,7 @@ src/
     palettes.ts                 # built-in PALETTES + resolution; PaletteId = open string
     customPalette.ts            # parse imported palette JSON; makeCustomPaletteId
     dotStyle.ts dotSize.ts      # procedural stop-dot style + size resolution
+    dashSize.ts                 # TfL-tick ('dash' stop) length/thickness resolution (derive from line width)
     transferStyle.ts            # TRANSFER_STYLE_DEFAULTS + per-transfer override resolution
     lineWidth.ts lineStroke.ts  # stripe width (GEOMETRY) + casing rails (PRESENTATION)
     stationPacking.ts           # width-edit repack: keeps tangent stop chains packed
@@ -131,6 +132,7 @@ src/
     snap.ts                     # the snap engine (line/equidistant/tens/all/grid modes)
     lattice.ts                  # stop-placement lattice (orthogonal/diagonal)
     stationBoundary.ts          # selection silhouette + marquee hit rects
+    stationDash.ts              # TfL-tick ('dash' stop) geometry: per-stop tick anchor/angle/length (label-side aware; emergent notched composite)
     stripeOutline.ts            # per-stripe edge/cap geometry (stroke-before-fill dots)
     polygon.ts polygonSnap.ts polygonUnion.ts rectPolygon.ts  # polygon geom + union + hit test
     clip.ts                     # typed clipper-lib wrapper (booleans/offsets, integer-snapped)
@@ -446,6 +448,13 @@ All remaining fields optional and **never stored at default**:
 - `seamWidth?: number` — seam width per side, world units. Stored like `strokeWidth` (drop at 0),
   but an **unset** value inherits the casing width at render time (`seamRenderWidth`) so a
   seam-color-only line still shows a seam. Only takes effect alongside a non-transparent `seamColor`.
+- `dashLength?` / `dashWidth?: number` — **TfL-tick dimensions for this line's `dash` stops**,
+  world units. PRESENTATION (never moves band geometry, resolved at render). Both **unset** ⇒
+  derive from the stripe width (`dashLength = width`, `dashWidth = width/2` — the TfL proportions;
+  see [dashSize.ts](src/model/dashSize.ts), `dashRenderLength`/`dashRenderWidth`). Stored on the
+  casing width's quarter-unit grid with drop-at-0 (0 = "auto" ⇒ field dropped, derivation takes
+  over). `dashLength` is how far the tick protrudes from the stripe edge toward the label;
+  `dashWidth` is its thickness along the travel axis. Covered by line styles.
 - `styleId?` — live link to a StyleDef of kind `'line'` (covers the style fields above, not
   identity/topology).
 
@@ -482,12 +491,20 @@ byte-identical output.
 
 **`DotStyle`** ([dotStyle.ts](src/model/dotStyle.ts)) — a procedural stop dot. **All fields
 required** (a deliberate divergence from the optional-field convention) so plain deep equality
-`dotStylesEqual` works everywhere: `shape: DotBaseShape` (`circle|square|diamond|x`), `fill:
+`dotStylesEqual` works everywhere: `shape: DotBaseShape` (`circle|square|diamond|x|dash`), `fill:
 DotFill` (`DayNightColor | 'line' | 'none'`), `strokeWidth` (0 = no stroke), `strokeColor:
 DotStrokeColor` (`DayNightColor | 'line'`; **no `'none'`** — strokeWidth 0 expresses "no
 stroke"), `showServiceCode`. **Size is deliberately NOT part of style** — it is the orthogonal
 `dotSize` / `singletonDotSize` / `multiDotSize` set, so picking a shape preset never clobbers a
-size. `DayNightColor = {day, night}` resolves per theme. The clean-persisted convention lives one
+size. **`dash` is the outlier shape** — a TfL-style tick protruding from the stripe edge toward
+the label rather than a centered glyph. It ignores `dotSize` entirely (its size comes from the
+per-line `dashLength` / `dashWidth`, see `Line` below) and of the style fields only `fill`
+applies (`strokeWidth`/`strokeColor`/`showServiceCode` are inert). The tick is a **singleton** —
+it knows only its own stripe and the label; on interlined stations the "notched" composite tick
+is emergent (`geometry/stationDash.ts`), since the derived length equals one line width so
+tangent ticks abut exactly. Which side it points is derived from the label anchor
+(`dashOutward`, shared with the autoAlign label-clearance in `labelLayout.ts` so the two never
+disagree). `DayNightColor = {day, night}` resolves per theme. The clean-persisted convention lives one
 level up: in the _presence/absence_ of `StopCell.dotStyle` and `Line.singletonDotStyle` /
 `Line.multiDotStyle` (the split singleton-vs-interchange line defaults).
 
