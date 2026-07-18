@@ -1,11 +1,11 @@
 import { describe, it, expect, beforeEach, afterEach } from 'vitest';
 import { render, screen } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
-import { SnapToggleBar } from './SnapToggleBar';
+import { SnapToggleBar, advanceSnapToggle } from './SnapToggleBar';
 import { useSnapPrefs } from '../state/snapPrefs';
 import { useSelection } from '../state/store';
 import { useViewportStore } from '../state/viewportStore';
-import { DEFAULT_SNAP_MODES } from '../geometry/snap';
+import { DEFAULT_SNAP_MODES, type SnapModes } from '../geometry/snap';
 
 describe('<SnapToggleBar />', () => {
   beforeEach(() => {
@@ -186,5 +186,59 @@ describe('<SnapToggleBar /> — label selection no longer gates the toggles', ()
     render(<SnapToggleBar />);
     await user.click(screen.getByRole('button', { name: 'Snap to grid' }));
     expect(useSnapPrefs.getState().modes.grid).toBe('horizontal');
+  });
+});
+
+// The pure step-advance shared by the toolbar's onClick and App's 1–5 keyboard
+// shortcuts, so a keypress is exactly one click.
+describe('advanceSnapToggle', () => {
+  const modes = (over: Partial<SnapModes> = {}): SnapModes => ({ ...DEFAULT_SNAP_MODES, ...over });
+
+  it('toggle 0 (line) flips the boolean', () => {
+    expect(advanceSnapToggle(modes({ line: true }), 0)).toEqual({ key: 'line', value: false });
+    expect(advanceSnapToggle(modes({ line: false }), 0)).toEqual({ key: 'line', value: true });
+  });
+
+  it('toggle 2 (tens) flips the boolean independently of line', () => {
+    expect(advanceSnapToggle(modes({ line: false, tens: false }), 2)).toEqual({
+      key: 'tens',
+      value: true,
+    });
+  });
+
+  it('toggle 3 (all) walks off → horizontal → vertical → diagonal → all → off', () => {
+    const order = ['horizontal', 'vertical', 'diagonal', 'all', 'off'];
+    let cur: SnapModes['all'] = 'off';
+    for (const want of order) {
+      const next = advanceSnapToggle(modes({ all: cur }), 3);
+      expect(next).toEqual({ key: 'all', value: want });
+      cur = next!.value as SnapModes['all'];
+    }
+  });
+
+  it('toggle 4 (grid) walks off → horizontal → vertical → both → off', () => {
+    const order = ['horizontal', 'vertical', 'both', 'off'];
+    let cur: SnapModes['grid'] = 'off';
+    for (const want of order) {
+      const next = advanceSnapToggle(modes({ grid: cur }), 4);
+      expect(next).toEqual({ key: 'grid', value: want });
+      cur = next!.value as SnapModes['grid'];
+    }
+  });
+
+  it('toggle 1 (equidistant) is a no-op when line is off, matching the disabled button', () => {
+    expect(advanceSnapToggle(modes({ line: false, equidistant: false }), 1)).toBeNull();
+  });
+
+  it('toggle 1 (equidistant) advances when line is on', () => {
+    expect(advanceSnapToggle(modes({ line: true, equidistant: false }), 1)).toEqual({
+      key: 'equidistant',
+      value: true,
+    });
+  });
+
+  it('returns null for an out-of-range index', () => {
+    expect(advanceSnapToggle(modes(), 5)).toBeNull();
+    expect(advanceSnapToggle(modes(), -1)).toBeNull();
   });
 });

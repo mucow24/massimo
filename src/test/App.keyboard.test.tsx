@@ -7,6 +7,8 @@ import { NumericFieldRow } from '../components/NumericFieldRow';
 import { WeightSelect } from '../components/WeightItalicControls';
 import { beginHistoryGroup, useDoc, useSelection } from '../state/store';
 import { historyDepth, isHistoryGrouping, redoDepth } from '../state/history';
+import { useSnapPrefs } from '../state/snapPrefs';
+import { DEFAULT_SNAP_MODES } from '../geometry/snap';
 import { DEFAULT_DOC } from '../model/transforms';
 import { readClipboard, writeClipboard, type ClipPayload } from '../model/clipboard';
 import {
@@ -281,6 +283,94 @@ describe('App keyboard shortcuts: inForm guard routing', () => {
     expect(useSelection.getState().spaceHeld).toBe(true);
     fireEvent.blur(window);
     expect(useSelection.getState().spaceHeld).toBe(false);
+  });
+});
+
+describe('App keyboard shortcuts: 1–5 snap toggles', () => {
+  beforeEach(() => {
+    useSnapPrefs.setState({ modes: { ...DEFAULT_SNAP_MODES } });
+  });
+
+  it('1 flips Snap to line (one press = one click)', () => {
+    render(<App />);
+    expect(useSnapPrefs.getState().modes.line).toBe(true);
+    fireEvent.keyDown(window, { key: '1' });
+    expect(useSnapPrefs.getState().modes.line).toBe(false);
+    fireEvent.keyDown(window, { key: '1' });
+    expect(useSnapPrefs.getState().modes.line).toBe(true);
+  });
+
+  it('3 flips Snap to grid length', () => {
+    render(<App />);
+    fireEvent.keyDown(window, { key: '3' });
+    expect(useSnapPrefs.getState().modes.tens).toBe(true);
+  });
+
+  it('4 cycles Snap to all one direction per press (needs multiple presses)', () => {
+    render(<App />);
+    fireEvent.keyDown(window, { key: '4' });
+    expect(useSnapPrefs.getState().modes.all).toBe('horizontal');
+    fireEvent.keyDown(window, { key: '4' });
+    expect(useSnapPrefs.getState().modes.all).toBe('vertical');
+  });
+
+  it('5 cycles Snap to grid one direction per press', () => {
+    render(<App />);
+    fireEvent.keyDown(window, { key: '5' });
+    expect(useSnapPrefs.getState().modes.grid).toBe('horizontal');
+  });
+
+  it('2 (equidistant) is a no-op while Snap to line is off, like the disabled button', () => {
+    render(<App />);
+    useSnapPrefs.setState({ modes: { ...DEFAULT_SNAP_MODES, line: false } });
+    fireEvent.keyDown(window, { key: '2' });
+    expect(useSnapPrefs.getState().modes.equidistant).toBe(false);
+  });
+
+  it('2 flips equidistant when line is on', () => {
+    render(<App />);
+    fireEvent.keyDown(window, { key: '2' });
+    expect(useSnapPrefs.getState().modes.equidistant).toBe(true);
+  });
+
+  it('numpad 1 also toggles, via e.code, with NumLock off (key is not a digit)', () => {
+    render(<App />);
+    // NumLock off: the numpad 1 reports key 'End' but code 'Numpad1'.
+    fireEvent.keyDown(window, { key: 'End', code: 'Numpad1' });
+    expect(useSnapPrefs.getState().modes.line).toBe(false);
+  });
+
+  it('numpad 4 also cycles Snap to all', () => {
+    render(<App />);
+    fireEvent.keyDown(window, { key: '4', code: 'Numpad4' });
+    expect(useSnapPrefs.getState().modes.all).toBe('horizontal');
+  });
+
+  it('Ctrl+1 is NOT bound (browser tab-switch gesture passes through)', () => {
+    render(<App />);
+    fireEvent.keyDown(window, { key: '1', ctrlKey: true });
+    expect(useSnapPrefs.getState().modes.line).toBe(true);
+  });
+
+  it('1 on a focused text input is suppressed (typing a digit does not toggle)', () => {
+    render(<App />);
+    const input = document.createElement('input');
+    input.type = 'text';
+    document.body.appendChild(input);
+    input.focus();
+    try {
+      fireEvent.keyDown(input, { key: '1' });
+      expect(useSnapPrefs.getState().modes.line).toBe(true);
+    } finally {
+      document.body.removeChild(input);
+    }
+  });
+
+  it('6 is unbound (only five toggles exist)', () => {
+    render(<App />);
+    const before = { ...useSnapPrefs.getState().modes };
+    fireEvent.keyDown(window, { key: '6' });
+    expect(useSnapPrefs.getState().modes).toEqual(before);
   });
 });
 

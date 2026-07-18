@@ -98,6 +98,16 @@ const SECTIONS: HelpSection[] = [
     ],
   },
   {
+    title: 'Snap',
+    rows: [
+      {
+        k: '1 – 5',
+        effect:
+          'Toggle the snap options (line, equidistant, grid length, all, grid) — press again to cycle direction',
+      },
+    ],
+  },
+  {
     title: 'Modes',
     rows: [
       { k: 'T', effect: 'Transfer: click two stop dots to connect them' },
