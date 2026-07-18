@@ -16,6 +16,7 @@ import {
   SegmentBandSpec,
 } from '../geometry/interlining';
 import { edgeEndpoints } from '../model/lineTopology';
+import { pairKeyOf } from '../model/pairKey';
 import { decideSegmentClick, NEXT_STYLE } from './canvas/appendGestures';
 import { effectiveBackgroundOrder, type ItemRef } from '../model/transforms';
 import { resolveDayNight, TRANSFER_STYLE_DEFAULTS } from '../model/transferStyle';
@@ -1501,6 +1502,21 @@ export function MapCanvas() {
                 if (mode.kind !== 'appending-to-line') return;
                 selection.setAppendCursor(null);
                 toggleEdgeOnLine(mode.lineId, from, to);
+              }}
+              onCycleCursorEdgeStyle={(from, to) => {
+                const mode = selection.uiMode;
+                if (mode.kind !== 'appending-to-line') return;
+                const line = lines[mode.lineId];
+                if (!line) return;
+                // Cycle the pattern in place; leave the cursor armed so the
+                // chip stays put and repeated clicks keep cycling (like
+                // shift-click). Reuses the shift-click cycle map + resolver.
+                setLineSegmentStyle(
+                  mode.lineId,
+                  from,
+                  to,
+                  NEXT_STYLE[resolveSegmentStyle(line, pairKeyOf(from, to))],
+                );
               }}
               vbX={overdrawn.vbX}
               vbY={overdrawn.vbY}

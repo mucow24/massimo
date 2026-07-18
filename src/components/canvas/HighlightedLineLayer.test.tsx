@@ -20,6 +20,7 @@ const renderLayer = (
   opts: {
     onRemoveCursorStation?: (sid: string) => void;
     onRemoveCursorEdge?: (from: string, to: string) => void;
+    onCycleCursorEdgeStyle?: (from: string, to: string) => void;
     renderables?: OrderedRenderable[];
     appendHover?: AppendHover;
   } = {},
@@ -39,6 +40,7 @@ const renderLayer = (
         onStartDrag={vi.fn()}
         onRemoveCursorStation={opts.onRemoveCursorStation}
         onRemoveCursorEdge={opts.onRemoveCursorEdge}
+        onCycleCursorEdgeStyle={opts.onCycleCursorEdgeStyle}
         vbX={-200}
         vbY={-200}
         vbW={600}
@@ -95,11 +97,13 @@ describe('<HighlightedLineLayer /> — Edit Stops cursor chrome', () => {
     const { container } = renderLayer(lines(), stations(), appending(null), {
       onRemoveCursorStation: vi.fn(),
       onRemoveCursorEdge: vi.fn(),
+      onCycleCursorEdgeStyle: vi.fn(),
       renderables: stripeRenderables(),
     });
     expect(container.querySelector('[data-append-cursor]')).toBeNull();
     expect(container.querySelector('[data-append-remove-stop]')).toBeNull();
     expect(container.querySelector('[data-append-remove-segment]')).toBeNull();
+    expect(container.querySelector('[data-append-cycle-segment-style]')).toBeNull();
     expect(container.querySelector('[data-armed-segment]')).toBeNull();
   });
 
@@ -137,6 +141,30 @@ describe('<HighlightedLineLayer /> — Edit Stops cursor chrome', () => {
     expect(chip).not.toBeNull();
     fireEvent.click(chip!);
     expect(onRemoveEdge).toHaveBeenCalledWith('s2', 's1'); // the cursor's order
+  });
+
+  it('an edge cursor gets a clickable style-cycle chip beside the × chip', () => {
+    const onCycle = vi.fn();
+    const { container } = renderLayer(
+      lines(),
+      stations(),
+      appending({ kind: 'edge', from: 's2', to: 's1' }),
+      { onCycleCursorEdgeStyle: onCycle, renderables: stripeRenderables() },
+    );
+    const chip = container.querySelector('[data-append-cycle-segment-style="s1|s2"]');
+    expect(chip).not.toBeNull();
+    fireEvent.click(chip!);
+    expect(onCycle).toHaveBeenCalledWith('s2', 's1'); // the cursor's order
+  });
+
+  it('a station cursor gets no style-cycle chip (style is a segment property)', () => {
+    const { container } = renderLayer(
+      lines(),
+      stations(),
+      appending({ kind: 'station', stationId: 's1' }),
+      { onRemoveCursorStation: vi.fn(), onCycleCursorEdgeStyle: vi.fn() },
+    );
+    expect(container.querySelector('[data-append-cycle-segment-style]')).toBeNull();
   });
 
   it('a stale cursor renders no chrome (undo can strip it out from under the mode)', () => {
