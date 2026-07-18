@@ -13,7 +13,12 @@ import { DashGlyph } from '../DashGlyph';
 import { dashSpec } from '../../geometry/stationDash';
 import { StationView } from '../StationView';
 import { useThemeColors } from '../../state/theme';
-import { validCursor } from './appendGestures';
+import {
+  appendSegmentHoverPreview,
+  appendStationHoverPreview,
+  validCursor,
+  type AppendHover,
+} from './appendGestures';
 import { offsetFilletPath } from '../../geometry/router';
 import { sampleOffsetPath } from '../../geometry/lineTagGeometry';
 
@@ -27,6 +32,12 @@ interface Props {
   // so the highlighted line's seam matches the main layer.
   seamEdges: SeamEdges;
   uiMode: UiMode;
+  // Edit Stops mouseover target (already pan-suppressed by the caller — null
+  // while panning). Drives the 50%-opacity preview of the ring/halo a click
+  // would produce: a station ring on a hovered station, a halo on a hovered
+  // segment. Gated per target through the click matrix (appendGestures) so the
+  // preview never promises an action the click wouldn't take.
+  appendHover?: AppendHover;
   zoom: number;
   onStartDrag: ComponentProps<typeof StationView>['onStartDrag'];
   // Edit Stops: the clickable × chips next to the cursor station / on the
@@ -53,6 +64,7 @@ export function HighlightedLineLayer({
   underlayColor,
   seamEdges,
   uiMode,
+  appendHover,
   zoom,
   onStartDrag,
   onRemoveCursorStation,
@@ -120,14 +132,21 @@ export function HighlightedLineLayer({
           pushBand('silhouette', 'hl-sil:');
           pushBand('body', 'hl-b:');
           pushBand('seam', 'hl-seam:');
-          // Armed edge cursor: a two-tone halo (black edge / white core, the
-          // selection-ring convention) around the armed corridor's stripes,
-          // then the body repainted on top — a brightness bump alone got lost.
-          if (armedPairKey) {
-            const armed = stripesOfLine.filter((r) => r.band.pairKey === armedPairKey);
-            push(
-              <g key="armed-seg" data-armed-segment={armedPairKey}>
-                {armed.map((r, i) => {
+          // A two-tone halo (black edge / white core, the selection-ring
+          // convention) around a corridor's stripes. The ARMED edge cursor
+          // repaints the body on top at full strength (a brightness bump alone
+          // got lost); the HOVER preview drops the body and rides at 50%, so a
+          // faint copy reads as "click to arm this" — mirroring the main
+          // canvas's 50%-opacity mouseover chrome.
+          const haloForPairKey = (
+            pairKey: string,
+            opts: { key: string; dataAttr: string; withBody: boolean; opacity?: number },
+          ): ReactNode => {
+            const stripes = stripesOfLine.filter((r) => r.band.pairKey === pairKey);
+            if (stripes.length === 0) return null;
+            return (
+              <g key={opts.key} {...{ [opts.dataAttr]: pairKey }} opacity={opts.opacity}>
+                {stripes.map((r, i) => {
                   const d = offsetFilletPath(
                     r.band.centerline,
                     r.band.radius,
@@ -135,7 +154,7 @@ export function HighlightedLineLayer({
                   );
                   const w = r.band.stripeWidths[r.stripeIndex];
                   return (
-                    <g key={'armed:' + i}>
+                    <g key={opts.key + ':' + i}>
                       <path
                         d={d}
                         fill="none"
@@ -152,20 +171,47 @@ export function HighlightedLineLayer({
                         strokeLinecap="round"
                         strokeLinejoin="round"
                       />
-                      <SegmentBand
-                        decorative
-                        spec={r.band}
-                        stripeIndex={r.stripeIndex}
-                        pass="body"
-                        lines={lines}
-                        underlayColor={underlayColor}
-                      />
+                      {opts.withBody && (
+                        <SegmentBand
+                          decorative
+                          spec={r.band}
+                          stripeIndex={r.stripeIndex}
+                          pass="body"
+                          lines={lines}
+                          underlayColor={underlayColor}
+                        />
+                      )}
                     </g>
                   );
                 })}
-              </g>,
+              </g>
             );
-          }
+          };
+          // Hover-preview halo on the segment under the cursor (suppressed on
+          // the armed edge itself — appendSegmentHoverPreview handles that).
+          const hoverSegKey =
+            append &&
+            appendHover?.kind === 'segment' &&
+            appendSegmentHoverPreview(ln, append.cursor, appendHover.pairKey)
+              ? appendHover.pairKey
+              : null;
+          if (armedPairKey)
+            push(
+              haloForPairKey(armedPairKey, {
+                key: 'armed-seg',
+                dataAttr: 'data-armed-segment',
+                withBody: true,
+              }),
+            );
+          if (hoverSegKey)
+            push(
+              haloForPairKey(hoverSegKey, {
+                key: 'hover-seg',
+                dataAttr: 'data-append-hover-segment',
+                withBody: false,
+                opacity: 0.5,
+              }),
+            );
           renderables.forEach((r, i) => {
             if (r.kind !== 'marker' || r.spec.lineId !== highlightLineId) return;
             push(
@@ -307,11 +353,52 @@ export function HighlightedLineLayer({
               );
             }
 
+            // Hover-preview ring on the station under the cursor: a 50% copy of
+            // the same two-tone ring, at the stop (a member) or the anchor (a
+            // not-yet-added station a click would seed/connect/splice). Gated by
+            // the click matrix so it never rings a station a click wouldn't act
+            // on, and suppressed on the armed station cursor (which wears the
+            // full ring above).
+            let hoverRing: ReactNode = null;
+            if (
+              appendHover?.kind === 'station' &&
+              appendStationHoverPreview(ln, uiMode.cursor, appendHover.stationId)
+            ) {
+              const st = stations[appendHover.stationId];
+              if (st) {
+                const cell = st.stops.find((c) => c.lineId === highlightLineId);
+                const p = cell ? stopPosWorld(cell, st) : { x: st.x, y: st.y };
+                hoverRing = (
+                  <g data-append-hover-ring={appendHover.stationId} opacity={0.5}>
+                    <circle
+                      cx={p.x}
+                      cy={p.y}
+                      r={STOP_SIZE * 0.75}
+                      fill="none"
+                      stroke="#000"
+                      strokeWidth={5}
+                      vectorEffect="non-scaling-stroke"
+                    />
+                    <circle
+                      cx={p.x}
+                      cy={p.y}
+                      r={STOP_SIZE * 0.75}
+                      fill="none"
+                      stroke="#fff"
+                      strokeWidth={3}
+                      vectorEffect="non-scaling-stroke"
+                    />
+                  </g>
+                );
+              }
+            }
+
             return (
               <>
                 {addable}
                 {ring}
                 {starter}
+                {hoverRing}
               </>
             );
           })()}

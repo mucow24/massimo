@@ -49,6 +49,8 @@ beforeEach(() => {
     selectedRouteBulletIds: [],
     selectedLabelIds: [],
     hoveredLineStop: null,
+    hoveredCanvasItem: null,
+    appendHover: null,
   });
   dragState.suppressClick = false;
 });
@@ -311,6 +313,49 @@ describe('useStationInteraction — transfer creation', () => {
     const { result } = setup();
     act(() => result.current.handlers.onPointerMove?.(pointerEvent({ clientX: 0, clientY: 0 })));
     expect(useSelection.getState().hoveredLineStop).toBeNull();
+  });
+});
+
+describe('useStationInteraction — Edit Stops hover target', () => {
+  const enterAppendMode = () =>
+    useSelection
+      .getState()
+      .setUiMode({ kind: 'appending-to-line', lineId: 'L1' as LineId, cursor: null });
+
+  it('pointer enter marks this station as the append hover target', () => {
+    enterAppendMode();
+    const { result } = setup();
+    act(() => result.current.handlers.onPointerEnter?.());
+    expect(useSelection.getState().appendHover).toEqual({ kind: 'station', stationId: 'S' });
+  });
+
+  it('pointer leave clears the target when it is this station', () => {
+    enterAppendMode();
+    useSelection.setState({
+      ...useSelection.getState(),
+      appendHover: { kind: 'station', stationId: 'S' as StationId },
+    });
+    const { result } = setup();
+    act(() => result.current.handlers.onPointerLeave?.());
+    expect(useSelection.getState().appendHover).toBeNull();
+  });
+
+  it('pointer leave keeps a neighbor target (a fast cross must not wipe it)', () => {
+    enterAppendMode();
+    useSelection.setState({
+      ...useSelection.getState(),
+      appendHover: { kind: 'station', stationId: 'OTHER' as StationId },
+    });
+    const { result } = setup(); // the hook is for station 'S'
+    act(() => result.current.handlers.onPointerLeave?.());
+    expect(useSelection.getState().appendHover).toEqual({ kind: 'station', stationId: 'OTHER' });
+  });
+
+  it('idle mode still uses hoveredCanvasItem, not the append target', () => {
+    const { result } = setup();
+    act(() => result.current.handlers.onPointerEnter?.());
+    expect(useSelection.getState().hoveredCanvasItem).toEqual({ kind: 'station', id: 'S' });
+    expect(useSelection.getState().appendHover).toBeNull();
   });
 });
 
