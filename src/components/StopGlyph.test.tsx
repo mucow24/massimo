@@ -113,7 +113,7 @@ describe('<StopGlyph /> presets', () => {
     expect(c.getAttribute('fill')).toBe('#000');
   });
 
-  it("renders filled-line-color-white-stroke: line-color fill, 2px white stroke", () => {
+  it('renders filled-line-color-white-stroke: line-color fill, 2px white stroke', () => {
     const svg = renderGlyph(P['filled-line-color-white-stroke'], false, '#e6002d');
     const c = svg.querySelector('circle')!;
     expect(c.getAttribute('fill')).toBe('#e6002d');
@@ -122,7 +122,7 @@ describe('<StopGlyph /> presets', () => {
     expect(parseFloat(c.getAttribute('r')!)).toBeCloseTo(STOP_DOT_RADIUS, 5);
   });
 
-  it("renders filled-line-color-black-stroke: line-color fill, 2px black stroke", () => {
+  it('renders filled-line-color-black-stroke: line-color fill, 2px black stroke', () => {
     const svg = renderGlyph(P['filled-line-color-black-stroke'], false, '#e6002d');
     const c = svg.querySelector('circle')!;
     expect(c.getAttribute('fill')).toBe('#e6002d');
