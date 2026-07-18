@@ -688,6 +688,119 @@ describe('serialize / parse — dot styles', () => {
   });
 });
 
+describe('parse — legacy line-STYLE-DEF dot defaults bake', () => {
+  // A line style PRESET saved before the singleton/interchange split carried a
+  // single `defaultDotStyle` / `defaultDotSize` in its props. The bake must fold
+  // them into the four split props (concrete — no drop-at-default) so every line
+  // wearing the preset keeps its dots. The curveRadius suite runs this branch
+  // but only ever asserts the curveRadius output, so the dot split is unpinned.
+  const lineDef = (props: Record<string, unknown>) => ({
+    id: 'ln',
+    name: 'Default',
+    kind: 'line',
+    props: { width: 14, strokeWidth: 0, strokeColor: '#ffffff', ...props },
+  });
+  const buildStyledFile = (styleProps: Record<string, unknown>) =>
+    JSON.stringify({
+      format: 'massimo-map',
+      version: 2,
+      doc: { stations: {}, lines: {}, lineOrder: [], styles: { ln: lineDef(styleProps) } },
+    });
+
+  it('folds a legacy defaultDotStyle/Size into all four split props and drops the legacy keys', () => {
+    const r = parse(
+      buildStyledFile({ defaultDotStyle: DOT_SHAPE_PRESETS['open-white'], defaultDotSize: 12 }),
+    );
+    expect(r.ok).toBe(true);
+    if (!r.ok) return;
+    const props = r.doc.styles.ln.props as unknown as Record<string, unknown>;
+    expect(props.singletonDotStyle).toEqual(DOT_SHAPE_PRESETS['open-white']);
+    expect(props.multiDotStyle).toEqual(DOT_SHAPE_PRESETS['open-white']);
+    expect(props.singletonDotSize).toBe(12);
+    expect(props.multiDotSize).toBe(12);
+    expect('defaultDotStyle' in props).toBe(false);
+    expect('defaultDotSize' in props).toBe(false);
+  });
+
+  it('never clobbers a split prop already present; only fills the missing side', () => {
+    const r = parse(
+      buildStyledFile({
+        defaultDotStyle: DOT_SHAPE_PRESETS['open-white'],
+        defaultDotSize: 12,
+        singletonDotStyle: DOT_SHAPE_PRESETS['filled-black'],
+        singletonDotSize: 20,
+      }),
+    );
+    expect(r.ok).toBe(true);
+    if (!r.ok) return;
+    const props = r.doc.styles.ln.props as unknown as Record<string, unknown>;
+    // The explicit singleton fields win; the absent interchange fields inherit
+    // the legacy default.
+    expect(props.singletonDotStyle).toEqual(DOT_SHAPE_PRESETS['filled-black']);
+    expect(props.singletonDotSize).toBe(20);
+    expect(props.multiDotStyle).toEqual(DOT_SHAPE_PRESETS['open-white']);
+    expect(props.multiDotSize).toBe(12);
+  });
+});
+
+describe('parse — dot size sanitizing at a shared (interchange) station', () => {
+  // Every single-stop case above exercises only the singletonDotSize side of
+  // the effective-default split. A stop at a SHARED station (≥2 visible stops)
+  // must canonicalize against its line's multiDotSize instead — swapping the two
+  // sides would silently resize interchange dots on load with no test to catch it.
+  const buildShared = (l1StopExtra: Record<string, unknown>) =>
+    JSON.stringify({
+      format: 'massimo-map',
+      doc: {
+        ...makeDoc({
+          lines: [
+            makeLine({ id: 'L1', stations: ['s1'] }),
+            makeLine({ id: 'L2', stations: ['s1'] }),
+          ],
+        }),
+        stations: {
+          s1: {
+            id: 's1',
+            name: 'S1',
+            x: 0,
+            y: 0,
+            rotation: 0,
+            stops: [
+              { lineId: 'L1', row: 0, col: 0, orientation: 'auto-vertical', ...l1StopExtra },
+              { lineId: 'L2', row: 0, col: 1, orientation: 'auto-vertical' },
+            ],
+            label: { row: 0, col: -1, rotation: 0, offset: 0, align: 'auto', valign: 'middle' },
+          },
+        },
+        // Distinct split sizes so the two sides are distinguishable.
+        lines: {
+          L1: {
+            ...makeLine({ id: 'L1', stations: ['s1'] }),
+            singletonDotSize: 12,
+            multiDotSize: 18,
+          },
+          L2: makeLine({ id: 'L2', stations: ['s1'] }),
+        },
+      },
+    });
+
+  it("drops a shared stop override equal to the line's multiDotSize", () => {
+    const r = parse(buildShared({ dotSize: 18 }));
+    expect(r.ok).toBe(true);
+    if (!r.ok) return;
+    const l1stop = r.doc.stations.s1.stops.find((s) => s.lineId === 'L1')!;
+    expect('dotSize' in l1stop).toBe(false);
+  });
+
+  it('keeps a shared stop override equal to singletonDotSize (the wrong side would drop it)', () => {
+    const r = parse(buildShared({ dotSize: 12 }));
+    expect(r.ok).toBe(true);
+    if (!r.ok) return;
+    const l1stop = r.doc.stations.s1.stops.find((s) => s.lineId === 'L1')!;
+    expect(l1stop.dotSize).toBe(12);
+  });
+});
+
 describe('parse — line width sanitizing', () => {
   // Builds a file whose single line carries an arbitrary raw `width` value,
   // as a hand-edited or legacy file might.
