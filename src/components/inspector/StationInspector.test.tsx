@@ -680,6 +680,75 @@ describe('<StationInspector /> — edit paths that reach the document (E8)', () 
     expect(useDoc.getState().stations.a.label.valign).toBe('top');
   });
 
+  it('sits in the Label row, after the align/valign formatting buttons', () => {
+    seedStation();
+    render(<StationInspector id="a" />);
+    const rotate = screen.getByRole('button', { name: 'Rotate label' });
+    const valign = screen.getByRole('button', {
+      name: 'V-align: auto-down (first line on cell, extra lines below)',
+    });
+    expect(rotate.parentElement).toBe(valign.parentElement);
+    const siblings = Array.from(valign.parentElement!.children);
+    expect(siblings.indexOf(rotate)).toBeGreaterThan(siblings.indexOf(valign));
+  });
+
+  it('clicking the rotate-label button steps label.rotation one step (0 → 1) as one undo entry', async () => {
+    const user = userEvent.setup();
+    seedStation();
+    expect(useDoc.getState().stations.a.label.rotation).toBe(0);
+    useDoc.temporal.getState().clear();
+    const before = historyDepth();
+    render(<StationInspector id="a" />);
+    await user.click(screen.getByRole('button', { name: 'Rotate label' }));
+    expect(useDoc.getState().stations.a.label.rotation).toBe(1);
+    expect(historyDepth() - before).toBe(1);
+  });
+
+  it('the rotate-label button stays enabled with Auto placement on (rotation is orthogonal to alignment)', async () => {
+    // The align/valign cycles disable while Auto placement overrides them, but
+    // rotation sets the text's reading axis — which autoAlign still honors — so
+    // this control keeps working.
+    const user = userEvent.setup();
+    seedStation();
+    render(<StationInspector id="a" />);
+    await user.click(screen.getByRole('button', { name: 'Auto placement' }));
+    const rotate = screen.getByRole('button', { name: 'Rotate label' });
+    expect(rotate).toBeEnabled();
+    await user.click(rotate);
+    expect(useDoc.getState().stations.a.label.rotation).toBe(1);
+  });
+
+  it('rotate-label with mirror on broadcasts the step to matching stations in one undo group', async () => {
+    // A relative rotation step is frame-invariant across mirror matches, so the
+    // same +1 reaches every match (the R shortcut and right-click do the same).
+    const user = userEvent.setup();
+    useDoc.setState({
+      ...DEFAULT_DOC,
+      ...makeDoc({
+        stations: [
+          makeStation({ id: 'a', stops: [makeStop('L1')] }),
+          makeStation({ id: 'b', stops: [makeStop('L1')] }),
+        ],
+        lines: [makeLine({ id: 'L1', stations: ['a', 'b'] })],
+      }),
+    });
+    useSelection.setState({
+      ...SELECTION_BLANK,
+      selectedStationIds: ['a'],
+      mirrorMatching: true,
+    });
+    useDoc.temporal.getState().clear();
+    const before = historyDepth();
+
+    render(<StationInspector id="a" />);
+    await user.click(screen.getByRole('button', { name: 'Rotate label' }));
+
+    const doc = useDoc.getState();
+    expect(doc.stations.a.label.rotation).toBe(1);
+    expect(doc.stations.b.label.rotation).toBe(1);
+    expect(historyDepth() - before).toBe(1);
+  });
+
   it('align cycle with mirror on broadcasts the SAME align to matching stations in one undo group', async () => {
     const user = userEvent.setup();
     useDoc.setState({
