@@ -50,6 +50,7 @@ export function StationInspector({ id }: { id: StationId }) {
   const setLabelAutoAlign = useDoc((s) => s.setLabelAutoAlign);
   const setLabelAutoHAlign = useDoc((s) => s.setLabelAutoHAlign);
   const setLabelAutoVAlign = useDoc((s) => s.setLabelAutoVAlign);
+  const rotateLabel = useDoc((s) => s.rotateLabel);
   const setStationWaypoint = useDoc((s) => s.setStationWaypoint);
   const setStationEditorHeight = useDoc((s) => s.setStationEditorHeight);
   const updateStationLabelStyle = useDoc((s) => s.updateStationLabelStyle);
@@ -310,6 +311,21 @@ export function StationInspector({ id }: { id: StationId }) {
               disabled={resolveAutoAlign(station.label)}
               onSet={(v) => dispatchAll((sid) => setLabelValign(sid, v))}
             />
+            {/* Rotate the label's reading direction one 45° step (clockwise,
+              like the ⟳ station button and the R shortcut). Rotation is
+              orthogonal to Auto placement — it sets the reading axis, which
+              autoAlign still honors — so this stays enabled while the
+              align/valign cycles disable. A relative step is frame-invariant,
+              so the mirror broadcast keeps matches in sync. */}
+            <button
+              type="button"
+              className="chip-btn"
+              aria-label="Rotate label"
+              title="Rotate the label 45°"
+              onClick={() => dispatchAll((sid) => rotateLabel(sid))}
+            >
+              <RotateCounterClockwiseIcon style={{ transform: 'scaleX(-1)' }} />
+            </button>
           </div>
           <div className="field-hint">Offset (along reading direction)</div>
           <LabelOffsetControl
