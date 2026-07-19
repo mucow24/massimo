@@ -1,6 +1,6 @@
 # Massimo — Architecture
 
-**Up to date as of commit `77d22b5` (2026-07-18) — verified against the live source (code-health pass covering the changes since `e0cc662`: the TfL-style label-aware **`dash`** stop type — a fifth `DotBaseShape` that renders as a tick protruding from the stripe edge toward the label, with per-line `dashLength`/`dashWidth` dims and its own [dashSize.ts](src/model/dashSize.ts)/[stationDash.ts](src/geometry/stationDash.ts) geometry; the prior currency marker predated it (#287). Also re-verified as already documented inline: the singleton-vs-interchange line dot-default split (`singletonDotStyle`/`multiDotStyle` + sizes, persist v18, #290), the sortable/star-able map library with UI prefs (#291), and line-color dot fills/strokes (#292)).**
+**Up to date as of commit `9391038` (2026-07-19) — verified against the live source (code-health pass covering the changes since `77d22b5`: the layout-editor locked-station click-through (#294); the Edit Stops overhaul — a 50%-opacity hover preview via the new `appendHover` selection field (#299), the line-editor alt-pick that reaches a segment buried under its endpoint stations (#300), style-cycling a segment from its endpoint station or a visible chip (#300/#301); the `1`–`5`/Numpad snap-toggle keybindings routed through `advanceSnapToggle` (#298); the station-inspector Rotate button (#302); and the width-shrink label edge-carry with the shared `labelAdjacencyGate` (#295). #293's `sanitizeLineStroke` dedup and #297's `bootRecovery` were documented in their own commits.).**
 
 > A fast-bootstrap reference for understanding the codebase: the ins, outs, gotchas, and
 > caveats. Written for an AI assistant (or new contributor) who needs the full picture
@@ -365,10 +365,14 @@ kind. See [styles.ts](src/model/styles.ts).
   locked item is also **click-through while unselected** (its hit surfaces drop pointer-events,
   so clicks land on whatever is beneath — lock reads as "this is background"); while it IS
   selected it stays clickable, so the popover's unlock toggle remains reachable right after
-  locking. For stations the click-through applies in **idle mode only** — lock protects
-  geometry, not mode participation, so a locked station is still a transfer endpoint and can
-  still be toggled onto a line in append mode (non-idle modes wipe the selection on entry, so
-  without the idle gate locked stations would be unreachable in every mode). Accepted
+  locking. For stations the click-through applies in **idle and layout-edit modes** — lock
+  protects geometry, not mode participation, so a locked station is still a transfer endpoint
+  and can still be toggled onto a line in append mode (those non-idle modes wipe the selection
+  on entry, so without the gate locked stations would be unreachable there). The
+  `editing-station-layout` mode is the exception that also gets click-through: a live locked hit
+  rect would route the click to `selectStation`, whose `layoutEditReconcile` **retargets** the
+  layout editor onto the locked station rather than letting the click fall through and exit — so
+  a locked station must read as background there too. Accepted
   side-effect: idle-mode modifier clicks that _target_ a station (ctrl-click redistribute,
   ctrl+shift path-extend) can't target a locked, unselected station — unlock it first.
   Re-selecting a locked, deselected item: **Alt+click** (the deep-pick's geometric fallback
@@ -437,7 +441,13 @@ All remaining fields optional and **never stored at default**:
   ([stationPacking.ts](src/model/stationPacking.ts)): stops packed edge-to-edge under the old
   width are rewritten to the new tangent gaps, chain-centroid preserved, label riding its
   nearest stop — so a width edit never un-merges an interlined band. Non-tangent spacing never
-  moves. New stops likewise spawn one tangent gap (not one flat cell) from their anchor.
+  moves. New stops likewise spawn one tangent gap (not one flat cell) from their anchor. A label
+  parked _tangent_ to a stop of the edited line additionally **edge-carries** (`labelCarryDelta`,
+  `dWidth/2` scaled by the marker square's support along the label's approach octant) so it
+  survives width **shrinks** — without which the label detaches and jumps to the centered
+  fallback. Both the renderer's adjacency test and this carry share `labelAdjacencyGate(half)`
+  ([geometry/orientation.ts](src/geometry/orientation.ts)), which floors adjacency at the
+  historical 1-cell gate so width only ever WIDENS it.
 - `strokeWidth?: number` — **casing rail, PRESENTATION**; centered on the body edges (half in /
   half out), missing ⇒ 0; rounded to a 0.25 grid (`LINE_STROKE_STEP`). Resolved live; never moves paths.
 - `strokeColor?: string` — casing color; missing ⇒ `'#ffffff'`; lowercased.
@@ -1016,7 +1026,15 @@ the polygon stays selected while its vertex handles are active). Selectors:
 
 Separately, `hoveredCanvasItem: HoveredCanvasItem | null` (`{kind: HoverKind, id}`) tracks the
 item under the cursor so the canvas can preview each item's selection chrome at 50% opacity on
-mouseover — a pure hover cue, independent of the selection lists above.
+mouseover — a pure hover cue, independent of the selection lists above. Its Edit-Stops twin is
+`appendHover: AppendHover` (`{kind:'station', stationId} | {kind:'segment', pairKey} | null`),
+the station/segment under the cursor _while editing a line's stops_. It drives the same
+50%-opacity preview — but of the ring/halo a click would place next (gated through the click
+matrix by `appendStationHoverPreview`/`appendSegmentHoverPreview`), painted in
+`HighlightedLineLayer`. It is kept apart from `hoveredCanvasItem` (whose `hoveredChrome` gate is
+idle-only); its setter `setAppendHover` no-ops on an unchanged target so a segment stripe's
+per-frame `pointermove` stream doesn't churn re-renders. Ephemeral; cleared on pointer-leave and
+on any mode exit.
 
 ### Viewport: committed vs live ([viewportStore.ts](src/state/viewportStore.ts))
 
@@ -1078,7 +1096,11 @@ Three seams cover it, and a fourth rule governs anything new:
   Resolution helpers take the custom palettes as an **explicit param** (the pure model never
   reaches into a store); `deleteCustomPalette` is the cross-store coordinator.
 - [snapPrefs.ts](src/state/snapPrefs.ts) — `useSnapPrefs`: snap-mode toggles, with a v0→v1
-  boolean→enum migration.
+  boolean→enum migration. Number keys **1–5** (and Numpad1–5, via `e.code` so they fire with
+  NumLock off) each advance one toggle a single step, in toolbar order — the keyboard twin of a
+  click on that button. Both paths route through the pure `advanceSnapToggle(modes, index)`
+  ([SnapToggleBar.tsx](src/components/SnapToggleBar.tsx)) so a keypress is exactly one click
+  (multi-state toggles cycle over repeated presses; a disabled toggle is a no-op).
 
 ---
 
@@ -1458,6 +1480,15 @@ reroute described below; `onContextMenu`/`onDragStart` just `preventDefault`):
   4px/zoom pad) and `mergeLockedIntoStack` appends them BELOW the live stack — locked reads as
   background, so cycling reaches them last; their body handlers stay wired (dispatch ignores
   pointer-events), so `lockedDispatchTarget`'s synthetic click selects them normally.
+  - **Edit Stops has a parallel alt-pick** (`appendDeepPick` in `MapCanvas`): while editing a
+    line's stops, Alt+click cycles the same under-cursor stack, but scoped to what the line
+    editor can _arm_ — member stations and the EDITED line's own segments (`resolveAppendStack`
+    in [hitStack.ts](src/components/canvas/hitStack.ts), keyed by `data-pair-key` on the band
+    stripes). It exists to reach a short segment buried under its two endpoint stations' hit
+    rects. Unlike the idle pick it does NOT re-dispatch a plain click (a plain click MUTATES in
+    Edit Stops — connect/splice); it arms the cursor directly. `appendCursorRef` maps the append
+    cursor to a stack ref so `nextInStack` (now generic over `{kind,id}`) advances past whatever
+    is armed.
 
 **Shared drag lifecycle** ([dragGesture.ts](src/components/canvas/dragGesture.ts)): pointerdown
 captures pre-drag state + `beginHistoryGroup()`; **pointer capture is deferred to first move** (so
@@ -1581,8 +1612,13 @@ band routing or the marker sort. Pinned by `MapCanvas.stationsSig.test.tsx`.
   ceding the corner. Stop/topology editing is **canvas-driven**
   ([canvas/appendGestures.ts](src/components/canvas/appendGestures.ts)): click stations to connect,
   click a segment to insert into it, Delete/× removes the armed stop/edge, right-click removes a
-  segment/edge, shift-click a segment cycles its style. (This replaced the old in-sidebar
-  git-graph tree editor, `StationGraph`/`lineGraphLayout`, both retired.)
+  segment/edge. A segment's line style cycles three ways, all through the one `NEXT_STYLE` map:
+  shift-clicking the band stripe, shift-clicking an armed segment's **endpoint station** (the
+  `cycle-style` decision — how a segment buried under its endpoints stays restyleable; shift
+  NEVER adds to the line), or clicking the **style-cycle chip** that flanks the × chip on the
+  armed segment. Alt-click deep-picks a buried segment (see the Edit Stops alt-pick above), and a
+  50%-opacity hover preview shows the ring/halo the next click will place. (This replaced the old
+  in-sidebar git-graph tree editor, `StationGraph`/`lineGraphLayout`, both retired.)
 - **[LinePopover.tsx](src/components/LinePopover.tsx)** — the line editor's home: mounted by
   `ItemPopovers` for the whole `appending-to-line` mode, hosting `LineInspector` (name, service
   code, color palette, style row, default dot type/size, line width, curve radius, stroke
@@ -1598,8 +1634,12 @@ band routing or the marker sort. Pinned by `MapCanvas.stationsSig.test.tsx`.
   rotate icon pair, the **Edit layout** button, per-stop rows
   ([inspector/StopRows.tsx](src/components/inspector/StopRows.tsx): service badge + always-enabled
   shape picker + dot size + a world-true orientation cycle button per stop; hover
-  cross-highlights the dot via `hoveredLineStop`), and label align/valign cycle buttons + offset
-  controls. The anchor is CLAMPED into the canvas host so sidebar-selecting an off-screen station
+  cross-highlights the dot via `hoveredLineStop`), and label align/valign cycle buttons, a
+  **Rotate button** (steps the label's reading direction 45° through all 8 orientations via
+  `rotateLabel` — the same action bound to `R` and the layout-editor right-click; unlike
+  align/valign it stays enabled under Auto placement, since rotation sets the reading axis that
+  autoAlign still honors), and offset controls. The anchor is CLAMPED into the canvas host so
+  sidebar-selecting an off-screen station
   still shows the editor. Inspectors dispatch transforms directly through **mirror matching**
   (`findMatchingStations` returns stations sharing a line + a layout under the model's 4-fold
   mirror symmetry — whole line, not adjacency; an edit broadcasts through

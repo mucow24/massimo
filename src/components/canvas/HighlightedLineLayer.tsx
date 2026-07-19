@@ -297,6 +297,37 @@ export function HighlightedLineLayer({
           (() => {
             const ln = lines[highlightLineId];
             if (!ln) return null;
+            // A two-tone ring (white core / black edge, the same selection-ring
+            // convention as the segment halo) around a stop. One helper for both
+            // the ARMED station cursor (full strength) and its HOVER preview
+            // (an identical copy at 50%) so the two can never diverge. Non-
+            // scaling strokes keep it crisp at any zoom; it reads on any color.
+            const twoToneRing = (
+              x: number,
+              y: number,
+              opts: { dataAttr: string; id: string; opacity?: number },
+            ): ReactNode => (
+              <g {...{ [opts.dataAttr]: opts.id }} opacity={opts.opacity}>
+                <circle
+                  cx={x}
+                  cy={y}
+                  r={STOP_SIZE * 0.75}
+                  fill="none"
+                  stroke="#000"
+                  strokeWidth={5}
+                  vectorEffect="non-scaling-stroke"
+                />
+                <circle
+                  cx={x}
+                  cy={y}
+                  r={STOP_SIZE * 0.75}
+                  fill="none"
+                  stroke="#fff"
+                  strokeWidth={3}
+                  vectorEffect="non-scaling-stroke"
+                />
+              </g>
+            );
             const onLine = new Set(ln.stations);
             const addable = Object.values(stations)
               .filter((st) => !onLine.has(st.id))
@@ -320,30 +351,10 @@ export function HighlightedLineLayer({
               const cell = st.stops.find((c) => c.lineId === highlightLineId);
               if (cell) {
                 const p = stopPosWorld(cell, st);
-                // Two-tone ring (white core / black edge) so it reads on any
-                // line color; non-scaling strokes keep it crisp at any zoom.
-                ring = (
-                  <g data-append-cursor={cursor.stationId}>
-                    <circle
-                      cx={p.x}
-                      cy={p.y}
-                      r={STOP_SIZE * 0.75}
-                      fill="none"
-                      stroke="#000"
-                      strokeWidth={5}
-                      vectorEffect="non-scaling-stroke"
-                    />
-                    <circle
-                      cx={p.x}
-                      cy={p.y}
-                      r={STOP_SIZE * 0.75}
-                      fill="none"
-                      stroke="#fff"
-                      strokeWidth={3}
-                      vectorEffect="non-scaling-stroke"
-                    />
-                  </g>
-                );
+                ring = twoToneRing(p.x, p.y, {
+                  dataAttr: 'data-append-cursor',
+                  id: cursor.stationId,
+                });
               }
               starter = (
                 <StationView
@@ -373,28 +384,11 @@ export function HighlightedLineLayer({
               if (st) {
                 const cell = st.stops.find((c) => c.lineId === highlightLineId);
                 const p = cell ? stopPosWorld(cell, st) : { x: st.x, y: st.y };
-                hoverRing = (
-                  <g data-append-hover-ring={appendHover.stationId} opacity={0.5}>
-                    <circle
-                      cx={p.x}
-                      cy={p.y}
-                      r={STOP_SIZE * 0.75}
-                      fill="none"
-                      stroke="#000"
-                      strokeWidth={5}
-                      vectorEffect="non-scaling-stroke"
-                    />
-                    <circle
-                      cx={p.x}
-                      cy={p.y}
-                      r={STOP_SIZE * 0.75}
-                      fill="none"
-                      stroke="#fff"
-                      strokeWidth={3}
-                      vectorEffect="non-scaling-stroke"
-                    />
-                  </g>
-                );
+                hoverRing = twoToneRing(p.x, p.y, {
+                  dataAttr: 'data-append-hover-ring',
+                  id: appendHover.stationId,
+                  opacity: 0.5,
+                });
               }
             }
 
