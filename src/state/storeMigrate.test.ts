@@ -344,6 +344,118 @@ describe('migrateDoc', () => {
     });
   });
 
+  describe('v20 → v21: backfill dot stroke alignment', () => {
+    // A dot style as persisted BEFORE strokeAlign existed (the field omitted).
+    const legacyDot = () => {
+      const { strokeAlign: _drop, ...rest } = DOT_SHAPE_PRESETS['filled-black-white-stroke'];
+      return rest;
+    };
+    // A pre-v19 styles record — the other kinds present, but NO stopDot library
+    // yet — so bakeStopDotLibrary actually runs its value-match (it early-returns
+    // when styles is absent or already carries a stopDot).
+    const stylesNoStopDot = () =>
+      Object.fromEntries(Object.entries(DEFAULT_STYLES).filter(([, d]) => d.kind !== 'stopDot'));
+
+    it("backfills 'center' onto every dot-style home", () => {
+      const out = run(
+        {
+          stations: {
+            S: {
+              ...makeStation({ id: 'S' as StationId }),
+              stops: [{ ...makeStop('L1' as LineId), dotStyle: legacyDot() }],
+            },
+          },
+          lines: {
+            L1: {
+              service: 'A',
+              name: 'A line',
+              stations: [],
+              edges: [],
+              singletonDotStyle: legacyDot(),
+              multiDotStyle: legacyDot(),
+            },
+          },
+          styles: { sd: { id: 'sd', name: 'Custom', kind: 'stopDot', props: legacyDot() } },
+        },
+        20,
+      );
+      expect(out.stations!.S.stops[0].dotStyle!.strokeAlign).toBe('center');
+      expect(out.lines!.L1.singletonDotStyle!.strokeAlign).toBe('center');
+      expect(out.lines!.L1.multiDotStyle!.strokeAlign).toBe('center');
+      expect(out.styles!.sd.props.strokeAlign).toBe('center');
+    });
+
+    it('does not backfill at version >= 21', () => {
+      const out = run(
+        {
+          lines: {
+            L1: {
+              service: 'A',
+              name: 'A line',
+              stations: [],
+              edges: [],
+              singletonDotStyle: legacyDot(),
+            },
+          },
+        },
+        21,
+      );
+      expect('strokeAlign' in out.lines!.L1.singletonDotStyle!).toBe(false);
+    });
+
+    // Regression: the earlier library/default bakes value-match RAW legacy dot
+    // styles (no strokeAlign) against the factory presets (which now carry
+    // strokeAlign). Those matches run BEFORE this change's v<21 backfill, so
+    // dotStylesEqual must treat an absent strokeAlign as 'center' or a v7..18 doc's
+    // dots get left untagged/Custom instead of linked to the stopDot library.
+    it('tags a preset-matching legacy split dot style through the v19 library bake', () => {
+      const out = run(
+        {
+          styles: stylesNoStopDot(),
+          lines: {
+            L1: {
+              service: 'A',
+              name: 'A line',
+              stations: [],
+              edges: [],
+              singletonDotStyle: legacyDot(),
+              multiDotStyle: legacyDot(),
+            },
+          },
+        },
+        18,
+      );
+      const l1 = out.lines!.L1 as { singletonDotStyleId?: string; multiDotStyleId?: string };
+      expect(l1.singletonDotStyleId).toBe('stop-filled-black-white-stroke');
+      expect(l1.multiDotStyleId).toBe('stop-filled-black-white-stroke');
+    });
+
+    it('drops a legacy defaultDotStyle at the filled-black default despite the added field', () => {
+      // A v<18 line carries the retired single defaultDotStyle. If it equals the
+      // filled-black default it must DROP (not materialize explicit split fields),
+      // then the v19 bake tags it via the default fallback — so the drop-at-default
+      // compare must ignore the absent strokeAlign.
+      const { strokeAlign: _omit, ...rawFilledBlack } = DOT_SHAPE_PRESETS['filled-black'];
+      const out = run(
+        {
+          styles: stylesNoStopDot(),
+          lines: {
+            L1: {
+              service: 'A',
+              name: 'A line',
+              stations: [],
+              edges: [],
+              defaultDotStyle: rawFilledBlack,
+            },
+          },
+        },
+        17,
+      );
+      const l1 = out.lines!.L1 as { singletonDotStyleId?: string };
+      expect(l1.singletonDotStyleId).toBe('stop-filled-black');
+    });
+  });
+
   describe('v7 → v8: legacy inline bullet syntax', () => {
     const legacyDoc = () => ({
       stations: { S: { ...makeStation({ id: 'S' as StationId }), name: '<A> North |lit|' } },

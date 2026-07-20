@@ -467,6 +467,7 @@ describe('<StopGlyph /> stroke/fill split (pass prop)', () => {
     fill: { day: '#ffffff', night: '#ffffff' },
     strokeWidth: 2,
     strokeColor: { day: '#000000', night: '#000000' },
+    strokeAlign: 'center',
     showServiceCode: false,
   };
   const strokedX: DotStyle = { ...strokedDiamond, shape: 'x' };
@@ -485,6 +486,93 @@ describe('<StopGlyph /> stroke/fill split (pass prop)', () => {
     expect(yExtent(sil)).toBeCloseTo(2 * (STOP_DOT_RADIUS + Math.SQRT2), 5);
     expect(body.getAttribute('fill')).toBe('#ffffff');
     expect(yExtent(body)).toBeCloseTo(2 * (STOP_DOT_RADIUS - Math.SQRT2), 5);
+  });
+
+  // Stroke alignment (center/inside/outside): center straddles the edge (the
+  // default, tested above); 'inside' pins the outer edge and grows the stroke
+  // inward; 'outside' pins the fill and grows it outward. filled-white-black-stroke
+  // is a strokeWidth-2 circle, so each shift is a full 2px.
+  const aligned = (a: DotStyle['strokeAlign']): DotStyle => ({
+    ...P['filled-white-black-stroke'],
+    strokeAlign: a,
+  });
+
+  it("'inside' pins the silhouette outer edge at r and eats the body inward", () => {
+    const sil = renderPass(aligned('inside'), 'stroke').querySelector('circle')!;
+    const body = renderPass(aligned('inside'), 'fill').querySelector('circle')!;
+    expect(parseFloat(sil.getAttribute('r')!)).toBeCloseTo(STOP_DOT_RADIUS, 5);
+    expect(parseFloat(body.getAttribute('r')!)).toBeCloseTo(STOP_DOT_RADIUS - 2, 5);
+  });
+
+  it("'outside' pins the body at r and grows the silhouette outward", () => {
+    const sil = renderPass(aligned('outside'), 'stroke').querySelector('circle')!;
+    const body = renderPass(aligned('outside'), 'fill').querySelector('circle')!;
+    expect(parseFloat(sil.getAttribute('r')!)).toBeCloseTo(STOP_DOT_RADIUS + 2, 5);
+    expect(parseFloat(body.getAttribute('r')!)).toBeCloseTo(STOP_DOT_RADIUS, 5);
+  });
+
+  it("scales an inside-aligned diamond's inward shift by √2", () => {
+    const insideDiamond: DotStyle = { ...strokedDiamond, strokeAlign: 'inside' };
+    const sil = renderPass(insideDiamond, 'stroke').querySelector('polygon')!;
+    const body = renderPass(insideDiamond, 'fill').querySelector('polygon')!;
+    expect(yExtent(sil)).toBeCloseTo(2 * STOP_DOT_RADIUS, 5);
+    expect(yExtent(body)).toBeCloseTo(2 * (STOP_DOT_RADIUS - 2 * Math.SQRT2), 5);
+  });
+
+  it('shifts an open ring native-stroke radius to honor alignment', () => {
+    // open-black: strokeWidth 1.5 → half 0.75. Inside draws the ring at r − 0.75
+    // (band [r−1.5, r]); outside at r + 0.75. The native stroke width is unchanged.
+    const inside = renderPass({ ...P['open-black'], strokeAlign: 'inside' }, 'fill').querySelector(
+      'circle',
+    )!;
+    expect(parseFloat(inside.getAttribute('r')!)).toBeCloseTo(STOP_DOT_RADIUS - 0.75, 5);
+    expect(inside.getAttribute('stroke-width')).toBe('1.5');
+    const outside = renderPass(
+      { ...P['open-black'], strokeAlign: 'outside' },
+      'fill',
+    ).querySelector('circle')!;
+    expect(parseFloat(outside.getAttribute('r')!)).toBeCloseTo(STOP_DOT_RADIUS + 0.75, 5);
+  });
+
+  it('keeps the hover affordance centered regardless of the style alignment', () => {
+    const c = renderPass(aligned('inside'), 'stroke', { isHovered: true }).querySelector('circle')!;
+    expect(parseFloat(c.getAttribute('r')!)).toBeCloseTo(STOP_DOT_RADIUS + 1.5, 5);
+  });
+
+  it('splits a non-center dot in combined (preview) mode so the shift is visible', () => {
+    const { container } = render(
+      <svg>
+        <StopGlyph cx={0} cy={0} style={aligned('inside')} />
+      </svg>,
+    );
+    const radii = [...container.querySelectorAll('circle')]
+      .map((c) => parseFloat(c.getAttribute('r')!))
+      .sort((a, b) => a - b);
+    expect(radii).toHaveLength(2);
+    expect(radii[0]).toBeCloseTo(STOP_DOT_RADIUS - 2, 5);
+    expect(radii[1]).toBeCloseTo(STOP_DOT_RADIUS, 5);
+  });
+
+  it('keeps a center-aligned dot as a single element in combined (preview) mode', () => {
+    const { container } = render(
+      <svg>
+        <StopGlyph cx={0} cy={0} style={aligned('center')} />
+      </svg>,
+    );
+    // Center is pixel-identical to the historical single native-stroke element.
+    expect(container.querySelectorAll('circle')).toHaveLength(1);
+  });
+
+  it('clamps the body radius at 0 for a stroke thicker than the dot (inside)', () => {
+    // inside body radius = r − 2·off; a strokeWidth of 2r+2 drives it negative, so
+    // it clamps to 0 (mirrors casingInsetBodyWidth) rather than a negative r.
+    const thick: DotStyle = {
+      ...P['filled-white-black-stroke'],
+      strokeWidth: 2 * STOP_DOT_RADIUS + 2,
+      strokeAlign: 'inside',
+    };
+    const body = renderPass(thick, 'fill').querySelector('circle')!;
+    expect(parseFloat(body.getAttribute('r')!)).toBe(0);
   });
 
   it('keeps a stroked X on a centered stroke (fill pass) with no silhouette', () => {

@@ -148,6 +148,18 @@ export function StopGlyph({
   // diamond's edges are only r/√2 from center, so moving them by h needs √2×
   // the radius delta.
   const off = params.shape === 'diamond' ? h * Math.SQRT2 : h;
+  // Where the stroke sits relative to the edge. The hover affordance and the
+  // concave 'x' always use center: hover is chrome (not the style), and no single
+  // radius delta offsets a saltire uniformly. 'center' straddles the edge (±off);
+  // 'inside' pins the outer edge and eats inward; 'outside' pins the fill and
+  // grows outward. silDelta/bodyDelta shift the two split radii; nativeDelta is
+  // their midpoint — where a single native-stroke element (open ring, 'x',
+  // combined-center) draws so its centered stroke lands in the same band. All
+  // are 0-preserving for center, so the historical render is untouched.
+  const align = isHovered || params.shape === 'x' ? 'center' : (params.strokeAlign ?? 'center');
+  const silDelta = align === 'inside' ? 0 : align === 'outside' ? 2 * off : off;
+  const bodyDelta = align === 'inside' ? -2 * off : align === 'outside' ? 0 : -off;
+  const nativeDelta = (silDelta + bodyDelta) / 2;
   // Only filled, stroked, non-x dots split into a silhouette + inset body.
   // Everything else keeps its outline on the single fill-pass element:
   //   - open rings (fill='none'): no fill to merge against, and the seam
@@ -166,7 +178,7 @@ export function StopGlyph({
   // data-stop-station element per dot would break the one-per-dot locators.
   if (pass === 'stroke') {
     if (!splitBorder || !strokeAttrs) return null;
-    return shapeElement({ ...params, r: params.r + off }, cx, cy, {
+    return shapeElement({ ...params, r: params.r + silDelta }, cx, cy, {
       fill: strokeAttrs.stroke,
       'data-stop-stroke': stationId ?? '',
       ...(lineId ? { 'data-stop-line': lineId } : {}),
@@ -205,28 +217,46 @@ export function StopGlyph({
     // any outline) stays on this one element — there's no separate silhouette
     // to inset against, so it renders exactly like a lone combined dot.
     if (!splitBorder) {
+      // A single native-stroke element (open ring / borderless). Its centered
+      // stroke is placed by shifting the drawn radius to nativeDelta so the band
+      // lands inside / centered / outside per the style (0 for center).
       return withCode(
-        shapeElement(params, cx, cy, {
+        shapeElement({ ...params, r: params.r + nativeDelta }, cx, cy, {
           fill: params.fill,
           ...(strokeAttrs ?? {}),
           ...(code ? {} : dataAttrs),
         }),
       );
     }
-    // Filled dot body, inset by the same amount the silhouette was outset so the
-    // silhouette beneath shows exactly strokeWidth of outline.
+    // Filled dot body, inset so the silhouette beneath shows exactly strokeWidth
+    // of outline on the aligned side(s). Clamp at 0 for a thick inside stroke on
+    // a small dot (mirrors casingInsetBodyWidth).
     return withCode(
-      shapeElement({ ...params, r: params.r - off }, cx, cy, {
+      shapeElement({ ...params, r: Math.max(0, params.r + bodyDelta) }, cx, cy, {
         fill: params.fill,
         ...(code ? {} : dataAttrs),
       }),
     );
   }
 
-  // Combined (default): fill + centered stroke on one element — unchanged for
-  // the isolated previews that never overlap.
+  // Combined (default): one element for the isolated previews that never
+  // overlap. A non-center aligned dot must still show its shift, so split it into
+  // a silhouette + inset body (only the body carries the seam attrs, keeping one
+  // data-stop-station per dot). Center stays a single native-stroke element,
+  // pixel-identical to before.
+  if (splitBorder && strokeAttrs && align !== 'center') {
+    return withCode(
+      <>
+        {shapeElement({ ...params, r: params.r + silDelta }, cx, cy, { fill: strokeAttrs.stroke })}
+        {shapeElement({ ...params, r: Math.max(0, params.r + bodyDelta) }, cx, cy, {
+          fill: params.fill,
+          ...(code ? {} : dataAttrs),
+        })}
+      </>,
+    );
+  }
   return withCode(
-    shapeElement(params, cx, cy, {
+    shapeElement({ ...params, r: params.r + nativeDelta }, cx, cy, {
       fill: params.fill,
       ...(strokeAttrs ?? {}),
       ...(code ? {} : dataAttrs),

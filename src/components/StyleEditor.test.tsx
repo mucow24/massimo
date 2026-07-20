@@ -1,9 +1,10 @@
 import { describe, it, expect, beforeEach } from 'vitest';
-import { render, screen } from '@testing-library/react';
+import { render, screen, fireEvent } from '@testing-library/react';
 import { StyleEditor } from './StyleEditor';
 import { useDoc } from '../state/store';
 import { DEFAULT_DOC } from '../model/transforms';
 import { makeStyle } from '../test/fixtures';
+import type { DotStyle } from '../model/types';
 
 // Reset the live store each test and seed two custom stopDot styles the line
 // editor's type pickers resolve against (a dash dot for the dash-gating tests).
@@ -136,5 +137,22 @@ describe('<StyleEditor> — stopDot', () => {
     ).toBe('true');
     // In 'line' mode the explicit color row is gone (like the stroke selector).
     expect(screen.queryByRole('button', { name: 'Service code color' })).toBeNull();
+  });
+
+  it('offers a Center/Inside/Outside stroke-alignment selector that writes strokeAlign', () => {
+    // Rendered from the SEEDED def so the click's updateStyleProps lands on it.
+    render(<StyleEditor def={useDoc.getState().styles['sd-square']} />);
+    // All three alignment options are present for a non-dash dot …
+    expect(screen.getByRole('button', { name: 'Align center' })).toBeTruthy();
+    expect(screen.getByRole('button', { name: 'Align inside' })).toBeTruthy();
+    expect(screen.getByRole('button', { name: 'Align outside' })).toBeTruthy();
+    // … and picking one writes the covered style field through updateStyleProps.
+    fireEvent.click(screen.getByRole('button', { name: 'Align inside' }));
+    expect((useDoc.getState().styles['sd-square'].props as DotStyle).strokeAlign).toBe('inside');
+  });
+
+  it('hides the stroke-alignment selector for a dash tick (stroke is inert)', () => {
+    render(<StyleEditor def={useDoc.getState().styles['sd-dash']} />);
+    expect(screen.queryByRole('button', { name: 'Align inside' })).toBeNull();
   });
 });

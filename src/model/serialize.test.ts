@@ -627,6 +627,7 @@ describe('serialize / parse — dot styles', () => {
       fill: 'line',
       strokeWidth: 0,
       strokeColor: 'line',
+      strokeAlign: 'center',
       showServiceCode: false,
     };
     const r = parse(buildDotPayload({ dotStyle: dash }, { defaultDotStyle: dash }));
@@ -635,6 +636,23 @@ describe('serialize / parse — dot styles', () => {
     expect(r.doc.stations.s1.stops[0].dotStyle).toEqual(dash);
     expect(r.doc.lines.L1.singletonDotStyle).toEqual(dash);
     expect(r.doc.lines.L1.multiDotStyle).toEqual(dash);
+  });
+
+  it('round-trips an explicit non-center stroke alignment', () => {
+    const inside = {
+      shape: 'circle',
+      fill: { day: '#000000', night: '#000000' },
+      strokeWidth: 2,
+      strokeColor: { day: '#ffffff', night: '#ffffff' },
+      strokeAlign: 'inside',
+      showServiceCode: false,
+    };
+    const r = parse(buildDotPayload({ dotStyle: inside }, { defaultDotStyle: inside }));
+    expect(r.ok).toBe(true);
+    if (!r.ok) return;
+    expect(r.doc.stations.s1.stops[0].dotStyle!.strokeAlign).toBe('inside');
+    expect(r.doc.lines.L1.singletonDotStyle!.strokeAlign).toBe('inside');
+    expect(r.doc.lines.L1.multiDotStyle!.strokeAlign).toBe('inside');
   });
 
   it('drops malformed dotStyle objects', () => {
@@ -705,6 +723,7 @@ describe('serialize / parse — dot styles', () => {
       fill: { day: '#aabbcc', night: '#ddeeff' },
       strokeWidth: 0,
       strokeColor: 'line',
+      strokeAlign: 'center',
       showServiceCode: false,
     });
   });
