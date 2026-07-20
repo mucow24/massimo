@@ -1,159 +1,244 @@
+import type { ReactNode } from 'react';
+import * as ToggleGroup from '@radix-ui/react-toggle-group';
 import type { AutoHAlign, AutoVAlign, LabelAlign, LabelValign } from '../../model/types';
-import {
-  ALIGN_CYCLE,
-  AUTO_HALIGN_CYCLE,
-  AUTO_VALIGN_CYCLE,
-  VALIGN_CYCLE,
-} from '../../model/transforms';
-
-const ALIGN_TITLE: Record<LabelAlign, string> = {
-  auto: 'auto (snap against adjacent stop)',
-  start: 'left',
-  middle: 'center',
-  end: 'right',
-};
-
-const VALIGN_TITLE: Record<LabelValign, string> = {
-  'auto-down': 'auto-down (first line on cell, extra lines below)',
-  top: 'top',
-  middle: 'middle',
-  bottom: 'bottom',
-  'auto-up': 'auto-up (last line on cell, extra lines above)',
-};
 
 const ICON_SIZE = 15;
 const LINE_THICKNESS = 1.5;
 const LINE_GAP = 2;
 const LINE_LENGTHS = [11, 8, 11, 6];
 
+// Sentinel ToggleGroup value for the "auto" segment of the wand-on tuning
+// controls, whose domain value is `null` (octant-derived). Radix ToggleGroup
+// values are strings, so null needs a stand-in; it's mapped back to null on
+// select and via `?? AUTO` on the way in.
+const AUTO = '__auto__';
+
+interface Segment {
+  // The ToggleGroup value (a string). For the wand-on controls the auto segment
+  // uses the AUTO sentinel; every other segment carries its real domain value.
+  value: string;
+  icon: ReactNode;
+  // Accessible name (tests query these) and hover tooltip.
+  label: string;
+  title: string;
+}
+
 /**
- * Single cycle button for the label's horizontal alignment: shows the CURRENT
- * state, a click advances one step through ALIGN_CYCLE. The next value is
- * computed here and dispatched as an absolute set, so a mirror broadcast
- * writes the SAME value to every match — matches can't diverge.
+ * A joined "select-one" segmented control (Radix ToggleGroup): the shared
+ * left/center/right button cluster used across the item popovers. Shows the
+ * CURRENT value highlighted; clicking a segment sets it. Re-clicking the active
+ * segment is a no-op (the empty-string guard keeps it radio-like — you can't
+ * deselect into an empty state). Lock is handled by the enclosing fieldset, so
+ * no explicit disabled is needed. `flex` is set to the segment count so segments
+ * stay equal width even when two groups of different lengths share one row.
  */
-export function LabelAlignCycleButton({
+function AlignSegmentedGroup({
+  ariaLabel,
+  value,
+  segments,
+  onSelect,
+}: {
+  ariaLabel: string;
+  value: string;
+  segments: Segment[];
+  onSelect: (value: string) => void;
+}) {
+  return (
+    <ToggleGroup.Root
+      type="single"
+      className="align-group"
+      style={{ flex: segments.length }}
+      aria-label={ariaLabel}
+      value={value}
+      onValueChange={(v) => {
+        if (v) onSelect(v);
+      }}
+    >
+      {segments.map((s) => (
+        <ToggleGroup.Item
+          key={s.value}
+          value={s.value}
+          className={'align-btn' + (value === s.value ? ' active' : '')}
+          aria-label={s.label}
+          title={s.title}
+        >
+          {s.icon}
+        </ToggleGroup.Item>
+      ))}
+    </ToggleGroup.Root>
+  );
+}
+
+/**
+ * Manual horizontal alignment (wand OFF): auto / left / center / right. `auto`
+ * is the legacy half-plane snap — kept so old maps (every station defaults to
+ * it) stay editable, not just readable.
+ */
+export function LabelAlignButtons({
   align,
   onSet,
-  disabled,
 }: {
   align: LabelAlign;
   onSet: (v: LabelAlign) => void;
-  disabled?: boolean;
 }) {
-  const next = ALIGN_CYCLE[(ALIGN_CYCLE.indexOf(align) + 1) % ALIGN_CYCLE.length];
   return (
-    <button
-      type="button"
-      className="chip-btn"
-      aria-label={`Align: ${ALIGN_TITLE[align]}`}
-      title={`Align: ${ALIGN_TITLE[align]} — click for ${ALIGN_TITLE[next]}`}
-      disabled={disabled}
-      onClick={() => onSet(next)}
-    >
-      <HAlignIcon mode={align} />
-    </button>
+    <AlignSegmentedGroup
+      ariaLabel="Horizontal alignment"
+      value={align}
+      onSelect={(v) => onSet(v as LabelAlign)}
+      segments={[
+        {
+          value: 'auto',
+          icon: <HAlignIcon mode="auto" />,
+          label: 'Align auto',
+          title: 'Auto — snap against the adjacent stop',
+        },
+        { value: 'start', icon: <HAlignIcon mode="start" />, label: 'Align left', title: 'Left' },
+        {
+          value: 'middle',
+          icon: <HAlignIcon mode="middle" />,
+          label: 'Align center',
+          title: 'Center',
+        },
+        { value: 'end', icon: <HAlignIcon mode="end" />, label: 'Align right', title: 'Right' },
+      ]}
+    />
   );
 }
 
-/** Vertical-alignment twin of {@link LabelAlignCycleButton} over VALIGN_CYCLE. */
-export function LabelValignCycleButton({
+/**
+ * Manual vertical alignment (wand OFF): auto-down / top / middle / bottom /
+ * auto-up. The two auto members grow multi-line blocks down/up from the pinned
+ * cell; kept for the same old-map reason as {@link LabelAlignButtons}.
+ */
+export function LabelValignButtons({
   valign,
   onSet,
-  disabled,
 }: {
   valign: LabelValign;
   onSet: (v: LabelValign) => void;
-  disabled?: boolean;
 }) {
-  const next = VALIGN_CYCLE[(VALIGN_CYCLE.indexOf(valign) + 1) % VALIGN_CYCLE.length];
   return (
-    <button
-      type="button"
-      className="chip-btn"
-      aria-label={`V-align: ${VALIGN_TITLE[valign]}`}
-      title={`V-align: ${VALIGN_TITLE[valign]} — click for ${VALIGN_TITLE[next]}`}
-      disabled={disabled}
-      onClick={() => onSet(next)}
-    >
-      <VAlignIcon mode={valign} />
-    </button>
+    <AlignSegmentedGroup
+      ariaLabel="Vertical alignment"
+      value={valign}
+      onSelect={(v) => onSet(v as LabelValign)}
+      segments={[
+        {
+          value: 'auto-down',
+          icon: <VAlignIcon mode="auto-down" />,
+          label: 'V-align auto (down)',
+          title: 'Auto-down — first line on the cell, extra lines below',
+        },
+        { value: 'top', icon: <VAlignIcon mode="top" />, label: 'V-align top', title: 'Top' },
+        {
+          value: 'middle',
+          icon: <VAlignIcon mode="middle" />,
+          label: 'V-align middle',
+          title: 'Middle',
+        },
+        {
+          value: 'bottom',
+          icon: <VAlignIcon mode="bottom" />,
+          label: 'V-align bottom',
+          title: 'Bottom',
+        },
+        {
+          value: 'auto-up',
+          icon: <VAlignIcon mode="auto-up" />,
+          label: 'V-align auto (up)',
+          title: 'Auto-up — last line on the cell, extra lines above',
+        },
+      ]}
+    />
   );
 }
 
-const AUTO_HALIGN_TITLE: Record<'auto' | AutoHAlign, string> = {
-  auto: 'auto (from position)',
-  start: 'left',
-  middle: 'center',
-  end: 'right',
-};
-
-const AUTO_VALIGN_TITLE: Record<'auto' | AutoVAlign, string> = {
-  auto: 'auto (line nearest the station)',
-  up: 'up (bottom line anchors, lines stack up)',
-  down: 'down (top line anchors, lines stack down)',
-};
-
 /**
- * Multi-line tuning for autoAlign labels: how the lines align WITHIN the
- * block (the anchor line keeps its auto-derived pinned position). Cycles
- * auto → left → center → right; only meaningful while Auto placement is on,
- * so callers disable it otherwise. Absolute-set dispatch, mirror-safe.
+ * Multi-line tuning for autoAlign labels (wand ON): how the lines align WITHIN
+ * the block. `auto` (null) leaves the octant-derived alignment; the anchor line
+ * keeps its pinned position, so single-line labels render identically.
  */
-export function AutoHAlignCycleButton({
+export function AutoHAlignButtons({
   value,
   onSet,
-  disabled,
 }: {
   value: AutoHAlign | null;
   onSet: (v: AutoHAlign | null) => void;
-  disabled?: boolean;
 }) {
-  const next = AUTO_HALIGN_CYCLE[(AUTO_HALIGN_CYCLE.indexOf(value) + 1) % AUTO_HALIGN_CYCLE.length];
-  const title = AUTO_HALIGN_TITLE[value ?? 'auto'];
   return (
-    <button
-      type="button"
-      className="chip-btn"
-      aria-label={`Auto align H: ${title}`}
-      title={`Auto align H: ${title} — click for ${AUTO_HALIGN_TITLE[next ?? 'auto']}`}
-      disabled={disabled}
-      onClick={() => onSet(next)}
-    >
-      <HAlignIcon mode={value ?? 'auto'} />
-    </button>
+    <AlignSegmentedGroup
+      ariaLabel="Auto horizontal alignment"
+      value={value ?? AUTO}
+      onSelect={(v) => onSet(v === AUTO ? null : (v as AutoHAlign))}
+      segments={[
+        {
+          value: AUTO,
+          icon: <HAlignIcon mode="auto" />,
+          label: 'Auto align: auto',
+          title: 'Auto (from position)',
+        },
+        {
+          value: 'start',
+          icon: <HAlignIcon mode="start" />,
+          label: 'Auto align: left',
+          title: 'Left',
+        },
+        {
+          value: 'middle',
+          icon: <HAlignIcon mode="middle" />,
+          label: 'Auto align: center',
+          title: 'Center',
+        },
+        {
+          value: 'end',
+          icon: <HAlignIcon mode="end" />,
+          label: 'Auto align: right',
+          title: 'Right',
+        },
+      ]}
+    />
   );
 }
 
 /**
- * Multi-line tuning for autoAlign labels: WHICH line anchors — 'down' works
- * from the top line (extra lines stack down), 'up' from the bottom line.
- * Cycles auto → up → down; disabled unless Auto placement is on.
+ * Multi-line tuning for autoAlign labels (wand ON): WHICH line anchors. `auto`
+ * (null) picks the line nearest the station; 'up' anchors the bottom line
+ * (lines stack up), 'down' anchors the top line (lines stack down).
  */
-export function AutoVAlignCycleButton({
+export function AutoVAlignButtons({
   value,
   onSet,
-  disabled,
 }: {
   value: AutoVAlign | null;
   onSet: (v: AutoVAlign | null) => void;
-  disabled?: boolean;
 }) {
-  const next = AUTO_VALIGN_CYCLE[(AUTO_VALIGN_CYCLE.indexOf(value) + 1) % AUTO_VALIGN_CYCLE.length];
-  const title = AUTO_VALIGN_TITLE[value ?? 'auto'];
-  const iconMode: LabelValign =
-    value === 'up' ? 'auto-up' : value === 'down' ? 'auto-down' : 'middle';
   return (
-    <button
-      type="button"
-      className="chip-btn"
-      aria-label={`Auto align V: ${title}`}
-      title={`Auto align V: ${title} — click for ${AUTO_VALIGN_TITLE[next ?? 'auto']}`}
-      disabled={disabled}
-      onClick={() => onSet(next)}
-    >
-      <VAlignIcon mode={iconMode} />
-    </button>
+    <AlignSegmentedGroup
+      ariaLabel="Auto vertical alignment"
+      value={value ?? AUTO}
+      onSelect={(v) => onSet(v === AUTO ? null : (v as AutoVAlign))}
+      segments={[
+        {
+          value: AUTO,
+          icon: <VAlignIcon mode="middle" />,
+          label: 'Auto align V: auto',
+          title: 'Auto (line nearest the station)',
+        },
+        {
+          value: 'up',
+          icon: <VAlignIcon mode="auto-up" />,
+          label: 'Auto align V: up',
+          title: 'Up — bottom line anchors, lines stack up',
+        },
+        {
+          value: 'down',
+          icon: <VAlignIcon mode="auto-down" />,
+          label: 'Auto align V: down',
+          title: 'Down — top line anchors, lines stack down',
+        },
+      ]}
+    />
   );
 }
 

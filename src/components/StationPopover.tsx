@@ -1,5 +1,6 @@
 import { useDoc, useSelection } from '../state/store';
 import type { Station } from '../model/types';
+import { stationNameListText } from '../geometry/labelTokens';
 import { type ViewportProjection } from './canvas/screenAnchor';
 import type { AABB } from '../geometry/rectPolygon';
 import { DraggablePopoverShell, pinnedTopRight } from './DraggablePopoverShell';
@@ -57,11 +58,15 @@ export function StationPopover({
   const pin = pinnedTopRight(view.size.w);
   const left = inLayoutEdit ? pin.left : anchor.x;
   const top = inLayoutEdit ? pin.top : anchor.y;
+  // Title the panel with the station's short name — the same bullet-free,
+  // tag-stripped text the stations list shows — falling back to "Station" for
+  // an unnamed (or waypoint) station so the drag-handle band is never blank.
+  const title = stationNameListText(station.name) || 'Station';
 
   return (
     <DraggablePopoverShell
       className="text-label-popover station-popover"
-      title="Station"
+      title={title}
       left={left}
       top={top}
       hidden={hidden}
