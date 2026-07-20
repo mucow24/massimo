@@ -1,4 +1,4 @@
-import { ReactNode } from 'react';
+import { ReactNode, useRef } from 'react';
 import { CheckIcon, ChevronRightIcon } from '@radix-ui/react-icons';
 import * as Dropdown from '@radix-ui/react-dropdown-menu';
 
@@ -18,10 +18,30 @@ interface MenuProps {
  * design-token custom properties (and the dark-mode reassignment) apply.
  */
 export function Menu({ label, children }: MenuProps) {
+  const triggerRef = useRef<HTMLButtonElement>(null);
   return (
     <Dropdown.Root modal={false}>
-      <Dropdown.Trigger className="menu-trigger">{label}</Dropdown.Trigger>
-      <Dropdown.Content className="menu-panel" align="start" sideOffset={4} loop>
+      <Dropdown.Trigger ref={triggerRef} className="menu-trigger">
+        {label}
+      </Dropdown.Trigger>
+      <Dropdown.Content
+        className="menu-panel"
+        align="start"
+        sideOffset={4}
+        loop
+        // Don't let the trigger keep keyboard focus once the menu closes. The
+        // canvas uses hold-Space-to-pan, and Radix's trigger opens the menu on
+        // a Space keydown — so a lingering trigger focus would turn the next
+        // pan keypress into a menu reopen. preventDefault stops Radix's own
+        // focus-return (Escape / item-select / outside-click), and the blur
+        // drops the focus a mouse toggle-close leaves on the button; both land
+        // focus back on the canvas (body). Blurring only our own trigger never
+        // steals focus from an input the user clicked to dismiss the menu.
+        onCloseAutoFocus={(e) => {
+          e.preventDefault();
+          triggerRef.current?.blur();
+        }}
+      >
         {children}
       </Dropdown.Content>
     </Dropdown.Root>
