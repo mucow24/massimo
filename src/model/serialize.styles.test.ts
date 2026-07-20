@@ -148,8 +148,14 @@ describe('sanitizeStyles via parse', () => {
     const out = parsed(doc);
     expect(out.styles.y1).toEqual(good);
     // The dropped defs' kinds end up empty, so the ≥1-per-kind invariant
-    // injects their factory Defaults (routeBullet is covered by y1).
-    expect(Object.keys(out.styles).sort()).toEqual([
+    // injects their factory Defaults (routeBullet is covered by y1). The stopDot
+    // library is seeded separately by the v19 bake — excluded here.
+    expect(
+      Object.values(out.styles)
+        .filter((d) => d.kind !== 'stopDot')
+        .map((d) => d.id)
+        .sort(),
+    ).toEqual([
       'default-line',
       'default-polygon',
       'default-station',
@@ -209,7 +215,12 @@ describe('sanitizeStyles via parse', () => {
       },
     };
     const out = parsed(doc);
-    expect(Object.keys(out.styles).sort()).toEqual([
+    expect(
+      Object.values(out.styles)
+        .filter((d) => d.kind !== 'stopDot')
+        .map((d) => d.id)
+        .sort(),
+    ).toEqual([
       'default-line',
       'default-station',
       'default-textLabel',
