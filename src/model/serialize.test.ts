@@ -65,6 +65,28 @@ describe('serialize / parse round-trip', () => {
     expect(r.ok).toBe(true);
     if (r.ok) expect(r.doc.darkMode).toBe(false);
   });
+
+  // The size sanitizer drops a dot size that equals the effective default. For
+  // a service-code line that default is 12, so an explicit 8 is a real size —
+  // it must survive import, not collapse and snap the dot to 12.
+  it('keeps an explicit 8px size on a service-code line default through import', () => {
+    const doc = makeDoc({
+      stations: [makeStation({ id: 's', stops: [makeStop('L1')] })],
+      lines: [
+        makeLine({
+          id: 'L1',
+          service: 'A',
+          stations: ['s'],
+          singletonDotStyle: DOT_SHAPE_PRESETS['filled-black-service-code'],
+          singletonDotSize: 8,
+        }),
+      ],
+      styles: Object.values(T.DEFAULT_STYLES),
+    });
+    const r = parse(serialize(doc));
+    expect(r.ok).toBe(true);
+    if (r.ok) expect(r.doc.lines.L1.singletonDotSize).toBe(8);
+  });
 });
 
 describe('parse — active palette invariant', () => {

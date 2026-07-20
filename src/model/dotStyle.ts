@@ -14,6 +14,15 @@ import { legibleTextOn } from '../util/color';
 // styling rule, not an SVG-assembly detail.)
 export const SERVICE_CODE_DOT_RADIUS = 6;
 
+// The DIAMETER a dot renders at when its size is fully tracking defaults —
+// larger for a service-code disc so the code stays legible. This MUST equal
+// resolveDotRender's untracked radius × 2; it is the single tracking-size the
+// size layer collapses to and falls back to (see canonicalDotSize's `dropAt`
+// and the dotSize.ts display helpers). Identical to DOT_SIZE_DEFAULT for every
+// non-code style, so nothing about plain dots changes.
+export const defaultDotDiameter = (style: DotStyle): number =>
+  2 * (style.showServiceCode ? SERVICE_CODE_DOT_RADIUS : STOP_DOT_RADIUS);
+
 const K: DayNightColor = { day: '#000000', night: '#000000' };
 const W: DayNightColor = { day: '#ffffff', night: '#ffffff' };
 
@@ -139,6 +148,26 @@ export const DEFAULT_DOT_STYLE: DotStyle = DOT_SHAPE_PRESETS['filled-black'];
  */
 export function isBlankDotStyle(style: DotStyle): boolean {
   return style.fill === 'none' && style.strokeWidth === 0 && !style.showServiceCode;
+}
+
+/**
+ * The effective dot style for a stop: its own `dotStyle` override, else the
+ * line's split default for the stop's station case (`singletonDotStyle` when
+ * `isSingleton`, else `multiDotStyle`), else DEFAULT_DOT_STYLE (the historical
+ * filled-black). `isSingleton` is `stationIsSingleton(station)`. Structural
+ * params so narrowed line/stop shapes pass through (same convention as
+ * `dotSizeOverride`); re-exported from transforms for its existing callers.
+ */
+export function resolveDotStyle(
+  line: { singletonDotStyle?: DotStyle; multiDotStyle?: DotStyle } | null | undefined,
+  stop: { dotStyle?: DotStyle } | null | undefined,
+  isSingleton: boolean,
+): DotStyle {
+  return (
+    stop?.dotStyle ??
+    (isSingleton ? line?.singletonDotStyle : line?.multiDotStyle) ??
+    DEFAULT_DOT_STYLE
+  );
 }
 
 const dayNight = (c: DayNightColor, darkMode: boolean): string => (darkMode ? c.night : c.day);
