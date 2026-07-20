@@ -32,6 +32,10 @@ describe('addStation', () => {
       rotation: 0,
       stops: [],
     });
+    // New stations default to auto placement (the magic wand on) with the H/V
+    // tuning left on auto — so a fresh label places itself transit-map style.
+    // The underlying align/valign are the overridden fallbacks used if the
+    // wand is turned off.
     expect(doc.stations.s1.label).toEqual({
       row: 0,
       col: -1,
@@ -40,6 +44,7 @@ describe('addStation', () => {
       offsetPerp: 0,
       align: 'auto',
       valign: 'auto-down',
+      autoAlign: true,
     });
   });
 });

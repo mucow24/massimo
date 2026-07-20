@@ -333,6 +333,11 @@ function updateLabel(doc: MapDoc, id: StationId, fn: (label: LabelCell) => Label
  * new-station skeleton (rotation, empty stops, and the auto-placed label
  * cell) — used by `addStation` and by the on-canvas placement ghost so the
  * preview can never drift from the station that actually drops.
+ *
+ * The label defaults to auto placement (the magic wand on) with the H/V
+ * tuning on auto, so a fresh label lays itself out transit-map style. The
+ * stored `align`/`valign` are the overridden fallbacks a user gets if they
+ * turn the wand off.
  */
 export function makeStation(id: StationId, x: number, y: number, name: string): Station {
   return {
@@ -350,6 +355,7 @@ export function makeStation(id: StationId, x: number, y: number, name: string): 
       offsetPerp: 0,
       align: 'auto',
       valign: 'auto-down',
+      autoAlign: true,
     },
   };
 }
