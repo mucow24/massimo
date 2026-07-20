@@ -565,6 +565,10 @@ function StopDotStyleEditor({ id, props: p }: { id: string; props: DotStyle }) {
   const strokePair: DayNightColor =
     typeof p.strokeColor === 'object' ? p.strokeColor : { day: '#ffffff', night: '#ffffff' };
   const codePair: DayNightColor = p.serviceCodeColor ?? { day: '#ffffff', night: '#ffffff' };
+  // A dash is a TfL tick: it takes its size AND outline from the owning line and
+  // never carries a service code, so only shape + fill do anything (see
+  // DashGlyph / resolveDotRender). Don't offer the inert controls.
+  const isDash = p.shape === 'dash';
 
   return (
     <div className="style-editor">
@@ -623,71 +627,80 @@ function StopDotStyleEditor({ id, props: p }: { id: string; props: DotStyle }) {
           onDarkChange={(night) => dp({ fill: { day: fillPair.day, night } })}
         />
       )}
-      <NumericFieldRow
-        id={`style-${id}-dot-stroke`}
-        label="Stroke width"
-        min={0}
-        max={6}
-        step={DOT_STROKE_STEP}
-        value={p.strokeWidth}
-        onChange={(strokeWidth) => dp({ strokeWidth })}
-        getCurrent={liveNumberProp(id, 'strokeWidth', p.strokeWidth)}
-        textboxAllowAboveMax
-      />
-      <div className="row">
-        <label>Stroke color</label>
-        <div className="shape-group">
-          {(['line', 'custom'] as const).map((mode) => (
-            <button
-              key={mode}
-              type="button"
-              className={'align-btn' + (strokeMode === mode ? ' active' : '')}
-              aria-pressed={strokeMode === mode}
-              aria-label={`Stroke ${mode}`}
-              onClick={() => dp({ strokeColor: mode === 'line' ? 'line' : strokePair })}
-            >
-              {mode === 'line' ? 'Line' : 'Custom'}
-            </button>
-          ))}
+      {isDash ? (
+        <div className="style-editor-caption">
+          A dash is a tick — it takes its size and outline from the line, so only shape and color
+          apply.
         </div>
-      </div>
-      {strokeMode === 'custom' && (
-        <DayNightColorRow
-          label="Stroke"
-          id={`style-${id}-stroke-day`}
-          darkId={`style-${id}-stroke-night`}
-          lightAriaLabel="Stroke color"
-          darkAriaLabel="Dark mode stroke color"
-          titleNoun="stroke"
-          value={strokePair.day}
-          darkValue={strokePair.night}
-          onChange={(day) => dp({ strokeColor: { day, night: strokePair.night } })}
-          onDarkChange={(night) => dp({ strokeColor: { day: strokePair.day, night } })}
-        />
-      )}
-      <div className="row">
-        <label htmlFor={`style-${id}-service-code`}>Service code</label>
-        <FieldCheckbox
-          id={`style-${id}-service-code`}
-          ariaLabel="Show service code"
-          title="Show the line's service code on the dot"
-          checked={p.showServiceCode}
-          onCheckedChange={(showServiceCode) => dp({ showServiceCode })}
-        />
-      </div>
-      {p.showServiceCode && (
-        <DayNightColorRow
-          label="Code color"
-          id={`style-${id}-code-day`}
-          darkId={`style-${id}-code-night`}
-          lightAriaLabel="Service code color"
-          darkAriaLabel="Dark mode service code color"
-          titleNoun="service-code color"
-          value={codePair.day}
-          darkValue={codePair.night}
-          onChange={(day) => dp({ serviceCodeColor: { day, night: codePair.night } })}
-          onDarkChange={(night) => dp({ serviceCodeColor: { day: codePair.day, night } })}
-        />
+      ) : (
+        <>
+          <NumericFieldRow
+            id={`style-${id}-dot-stroke`}
+            label="Stroke width"
+            min={0}
+            max={6}
+            step={DOT_STROKE_STEP}
+            value={p.strokeWidth}
+            onChange={(strokeWidth) => dp({ strokeWidth })}
+            getCurrent={liveNumberProp(id, 'strokeWidth', p.strokeWidth)}
+            textboxAllowAboveMax
+          />
+          <div className="row">
+            <label>Stroke color</label>
+            <div className="shape-group">
+              {(['line', 'custom'] as const).map((mode) => (
+                <button
+                  key={mode}
+                  type="button"
+                  className={'align-btn' + (strokeMode === mode ? ' active' : '')}
+                  aria-pressed={strokeMode === mode}
+                  aria-label={`Stroke ${mode}`}
+                  onClick={() => dp({ strokeColor: mode === 'line' ? 'line' : strokePair })}
+                >
+                  {mode === 'line' ? 'Line' : 'Custom'}
+                </button>
+              ))}
+            </div>
+          </div>
+          {strokeMode === 'custom' && (
+            <DayNightColorRow
+              label="Stroke"
+              id={`style-${id}-stroke-day`}
+              darkId={`style-${id}-stroke-night`}
+              lightAriaLabel="Stroke color"
+              darkAriaLabel="Dark mode stroke color"
+              titleNoun="stroke"
+              value={strokePair.day}
+              darkValue={strokePair.night}
+              onChange={(day) => dp({ strokeColor: { day, night: strokePair.night } })}
+              onDarkChange={(night) => dp({ strokeColor: { day: strokePair.day, night } })}
+            />
+          )}
+          <div className="row">
+            <label htmlFor={`style-${id}-service-code`}>Service code</label>
+            <FieldCheckbox
+              id={`style-${id}-service-code`}
+              ariaLabel="Show service code"
+              title="Show the line's service code on the dot"
+              checked={p.showServiceCode}
+              onCheckedChange={(showServiceCode) => dp({ showServiceCode })}
+            />
+          </div>
+          {p.showServiceCode && (
+            <DayNightColorRow
+              label="Code color"
+              id={`style-${id}-code-day`}
+              darkId={`style-${id}-code-night`}
+              lightAriaLabel="Service code color"
+              darkAriaLabel="Dark mode service code color"
+              titleNoun="service-code color"
+              value={codePair.day}
+              darkValue={codePair.night}
+              onChange={(day) => dp({ serviceCodeColor: { day, night: codePair.night } })}
+              onDarkChange={(night) => dp({ serviceCodeColor: { day: codePair.day, night } })}
+            />
+          )}
+        </>
       )}
     </div>
   );

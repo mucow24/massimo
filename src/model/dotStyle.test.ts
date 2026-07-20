@@ -87,6 +87,24 @@ describe('resolveDotRender', () => {
     );
   });
 
+  it('a dash renders only its fill — stroke and service code are dropped (matches DashGlyph)', () => {
+    // Even with a stroke + service code set, a dash resolves to fill-only, so the
+    // preview (StopGlyph) can't promise a stroke/code the canvas (DashGlyph) — which
+    // reads only params.fill and takes its outline from the line — never renders.
+    const s = style({
+      shape: 'dash',
+      fill: 'line',
+      strokeWidth: 3,
+      strokeColor: K,
+      showServiceCode: true,
+    });
+    const out = resolveDotRender(s, '#e6002d', 'A', false)!;
+    expect(out.fill).toBe('#e6002d'); // fill DOES apply
+    expect(out.stroke).toBeUndefined(); // dot-style stroke is inert for a dash
+    expect(out.strokeWidth).toBeUndefined();
+    expect(out.code).toBeUndefined(); // no service code on a tick
+  });
+
   describe('size override', () => {
     it('halves an explicit diameter into r', () => {
       expect(resolveDotRender(style(), undefined, undefined, false, 9)!.r).toBe(4.5);
