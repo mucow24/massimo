@@ -8,7 +8,12 @@ import {
   TEXT_LABEL_COLOR_DEFAULT,
   TEXT_LABEL_DARK_COLOR_DEFAULT,
 } from '../model/transforms';
-import { DEFAULT_STOP_DOT_STYLE_ID, DOT_SHAPE_PRESETS } from '../model/dotStyle';
+import {
+  DEFAULT_STOP_DOT_STYLE_ID,
+  DOT_SHAPE_PRESETS,
+  NONE_STOP_DOT_STYLE_ID,
+  STOP_DOT_FACTORY_STYLES,
+} from '../model/dotStyle';
 import {
   makeLine,
   makeStation,
@@ -935,6 +940,67 @@ describe('migrateDoc', () => {
     it('does not bake at version >= 16', () => {
       const out = run({ lines: linesIn(), curveRadius: 40 }, 16);
       expect(radiusOf(out, 'L1')).toBeUndefined(); // not stamped
+    });
+  });
+
+  describe('v19 → v20: dot TYPE becomes a covered line-style field', () => {
+    // A line style def that predates the covered dot-type ids (strip them off
+    // the factory default to simulate an old persisted def).
+    const {
+      singletonDotStyleId: _s,
+      multiDotStyleId: _m,
+      ...oldLineProps
+    } = DEFAULT_STYLES['default-line'].props as LineStyleProps;
+    // A v19 persisted doc: the stopDot library is already baked; lines carry
+    // their split dot-type ids; the line def does NOT yet.
+    const persisted = () => ({
+      lines: {
+        // Tagged 'ln'; L1's dot type differs from the to-be-backfilled default,
+        // L2's matches it.
+        L1: {
+          service: 'A',
+          name: 'A line',
+          stations: [],
+          edges: [],
+          styleId: 'ln',
+          singletonDotStyleId: NONE_STOP_DOT_STYLE_ID,
+          multiDotStyleId: NONE_STOP_DOT_STYLE_ID,
+        },
+        L2: {
+          service: 'B',
+          name: 'B line',
+          stations: [],
+          edges: [],
+          styleId: 'ln',
+          singletonDotStyleId: DEFAULT_STOP_DOT_STYLE_ID,
+          multiDotStyleId: DEFAULT_STOP_DOT_STYLE_ID,
+        },
+      },
+      styles: {
+        ...STOP_DOT_FACTORY_STYLES,
+        ln: { id: 'ln', name: 'My line', kind: 'line', props: oldLineProps },
+      },
+      styleDefaults: { ...FACTORY_STYLE_DEFAULTS, line: 'ln' },
+    });
+    const lineStyleId = (out: AnyDoc, id: string) =>
+      (out.lines![id] as { styleId?: string }).styleId;
+
+    it('backfills the split dot-type ids onto line defs that predate the field', () => {
+      const props = run(persisted(), 19).styles!.ln.props as unknown as LineStyleProps;
+      expect(props.singletonDotStyleId).toBe(DEFAULT_STOP_DOT_STYLE_ID);
+      expect(props.multiDotStyleId).toBe(DEFAULT_STOP_DOT_STYLE_ID);
+    });
+
+    it('untags a line whose dot type no longer matches its now-fuller line style, keeps a match', () => {
+      const out = run(persisted(), 19);
+      expect(lineStyleId(out, 'L1')).toBeUndefined(); // dot type differs → detached
+      expect(lineStyleId(out, 'L2')).toBe('ln'); // matches → tag kept
+    });
+
+    it('does not run at version >= 20', () => {
+      const out = run(persisted(), 20);
+      expect('singletonDotStyleId' in out.styles!.ln.props).toBe(false); // not backfilled
+      expect(lineStyleId(out, 'L1')).toBe('ln'); // not pruned
     });
   });
 

@@ -16,7 +16,7 @@ import {
   updateStyleProps,
 } from './styles';
 import { DEFAULT_DOC, DEFAULT_STYLES, FACTORY_STYLE_DEFAULTS } from './transforms';
-import { STOP_DOT_FACTORY_STYLES } from './dotStyle';
+import { DEFAULT_STOP_DOT_STYLE_ID, STOP_DOT_SEED_STYLES } from './dotStyle';
 import { DOT_SIZE_DEFAULT } from './dotSize';
 import { LINE_WIDTH_DEFAULT } from './lineWidth';
 import { LINE_CURVE_RADIUS_DEFAULT } from './lineCurve';
@@ -37,6 +37,8 @@ describe('captureStyleProps', () => {
   it('reads a fully-default line as the effective constants', () => {
     const doc = makeDoc({ lines: [makeLine({ id: 'l1' })] });
     expect(captureStyleProps(doc, 'line', 'l1')).toEqual({
+      singletonDotStyleId: DEFAULT_STOP_DOT_STYLE_ID,
+      multiDotStyleId: DEFAULT_STOP_DOT_STYLE_ID,
       singletonDotSize: DOT_SIZE_DEFAULT,
       multiDotSize: DOT_SIZE_DEFAULT,
       width: LINE_WIDTH_DEFAULT,
@@ -47,8 +49,8 @@ describe('captureStyleProps', () => {
   });
 
   it('reads explicit line overrides verbatim, singleton and shared independently', () => {
-    // Dot APPEARANCE is not a covered line-style field anymore; singleton vs.
-    // shared independence is captured via the two dot SIZES.
+    // Dot TYPE (the split stopDot ids) and dot SIZE are both covered; the ids
+    // heal to the stopDot ⭐ default when a (fixture) line stores neither.
     const doc = makeDoc({
       lines: [
         makeLine({
@@ -63,6 +65,8 @@ describe('captureStyleProps', () => {
       ],
     });
     expect(captureStyleProps(doc, 'line', 'l1')).toEqual({
+      singletonDotStyleId: DEFAULT_STOP_DOT_STYLE_ID,
+      multiDotStyleId: DEFAULT_STOP_DOT_STYLE_ID,
       singletonDotSize: 12,
       multiDotSize: 16,
       width: 10,
@@ -200,6 +204,8 @@ describe('stylePropsEqual — line covered fields', () => {
     // missing from it makes curveRadius-only edits no-op in updateStyleProps
     // and invisible to the mismatched-tag pruning.
     const base = {
+      singletonDotStyleId: DEFAULT_STOP_DOT_STYLE_ID,
+      multiDotStyleId: DEFAULT_STOP_DOT_STYLE_ID,
       singletonDotSize: DOT_SIZE_DEFAULT,
       multiDotSize: DOT_SIZE_DEFAULT,
       width: LINE_WIDTH_DEFAULT,
@@ -210,10 +216,15 @@ describe('stylePropsEqual — line covered fields', () => {
     expect(stylePropsEqual('line', base, { ...base })).toBe(true);
     expect(stylePropsEqual('line', base, { ...base, curveRadius: 40 })).toBe(false);
     // The split dot SIZE fields are compared too — differing on either side is a
-    // real difference (each is its own covered field). Dot APPEARANCE is no
-    // longer covered, so it is not part of this comparison.
+    // real difference (each is its own covered field).
     expect(stylePropsEqual('line', base, { ...base, multiDotSize: 12 })).toBe(false);
     expect(stylePropsEqual('line', base, { ...base, singletonDotSize: 12 })).toBe(false);
+    // Dot TYPE (the split stopDot library ids) is covered now too, so differing
+    // on either case is a real difference.
+    expect(stylePropsEqual('line', base, { ...base, singletonDotStyleId: 'stop-none' })).toBe(
+      false,
+    );
+    expect(stylePropsEqual('line', base, { ...base, multiDotStyleId: 'stop-none' })).toBe(false);
   });
 });
 
@@ -335,10 +346,16 @@ describe('applyStyleToItem', () => {
     expect(line.curveRadius).toBeUndefined();
     expect(line.strokeWidth).toBeUndefined();
     expect(line.strokeColor).toBeUndefined();
-    expect(line.singletonDotStyle).toBeUndefined();
-    expect(line.multiDotStyle).toBeUndefined();
+    // Dot SIZE collapses to absent at the default (never stored)…
     expect(line.singletonDotSize).toBeUndefined();
     expect(line.multiDotSize).toBeUndefined();
+    // …but dot TYPE is a covered field whose split defaults are ALWAYS stored
+    // (a default-tracking line stays tagged so editing the stopDot style
+    // restamps it), so the ids + raw shadows are present, not collapsed.
+    expect(line.singletonDotStyleId).toBe(DEFAULT_STOP_DOT_STYLE_ID);
+    expect(line.multiDotStyleId).toBe(DEFAULT_STOP_DOT_STYLE_ID);
+    expect(line.singletonDotStyle).toBeDefined();
+    expect(line.multiDotStyle).toBeDefined();
   });
 
   it('applying a line style prunes now-redundant per-stop dot SIZE overrides', () => {
@@ -807,16 +824,18 @@ describe('updateStyleProps', () => {
 });
 
 describe('DEFAULT_STYLES / applyDefaultStyle', () => {
-  it('ships one factory "Default" per non-stopDot kind plus the stopDot library, and DEFAULT_DOC starts with exactly those designated', () => {
+  it('ships one factory "Default" per non-stopDot kind plus the pruned stopDot seed, and DEFAULT_DOC starts with exactly those designated', () => {
     // Every kind but stopDot ships exactly one style named "Default"; stopDot is
-    // the outlier — it ships the whole named dot-style LIBRARY.
+    // the outlier — it ships the pruned SEED (Filled black + reserved None), not
+    // the whole known-preset catalog.
     const nonDot = Object.values(DEFAULT_STYLES).filter((d) => d.kind !== 'stopDot');
     const kinds = nonDot.map((d) => d.kind).sort();
     expect(kinds).toEqual(['line', 'polygon', 'routeBullet', 'station', 'textLabel', 'transfer']);
     for (const d of nonDot) expect(d.name).toBe('Default');
-    // The stopDot entries are exactly the factory dot-style library.
+    // The stopDot entries are exactly the pruned seed, NOT every known preset.
     const dotStyles = Object.values(DEFAULT_STYLES).filter((d) => d.kind === 'stopDot');
-    expect(dotStyles).toHaveLength(Object.keys(STOP_DOT_FACTORY_STYLES).length);
+    expect(dotStyles).toHaveLength(Object.keys(STOP_DOT_SEED_STYLES).length);
+    expect(dotStyles.map((d) => d.id).sort()).toEqual(['stop-filled-black', 'stop-none']);
     expect(DEFAULT_DOC.styles).toBe(DEFAULT_STYLES);
     expect(DEFAULT_DOC.styleDefaults).toBe(FACTORY_STYLE_DEFAULTS);
     for (const [kind, id] of Object.entries(FACTORY_STYLE_DEFAULTS)) {

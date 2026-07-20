@@ -15,7 +15,7 @@ test.describe('Stop shape picker — smoke', () => {
   test('selecting A, clicking its L1 stop, and picking "Filled black diamond" replaces only A\'s L1 dot', async ({
     page,
   }) => {
-    await seedAndOpen(page, fourInLine);
+    await seedAndOpen(page, fourInLine, { stopDotLibrary: true });
 
     // Default: every station's stop is the filled-black circle.
     await expect(
@@ -54,14 +54,14 @@ test.describe('Stop shape picker — smoke', () => {
 
 test.describe('Stop shape picker — coverage', () => {
   test('picker is absent when nothing is selected', async ({ page }) => {
-    await seedAndOpen(page, fourInLine);
+    await seedAndOpen(page, fourInLine, { stopDotLibrary: true });
     await expect(page.getByRole('button', { name: 'Stop shape' })).toHaveCount(0);
   });
 
   test('picker is present and ENABLED as soon as a station is selected (per-stop row)', async ({
     page,
   }) => {
-    await seedAndOpen(page, fourInLine);
+    await seedAndOpen(page, fourInLine, { stopDotLibrary: true });
 
     const a = await stationCenter(page, 'A');
     await page.mouse.click(a.x, a.y);
@@ -72,7 +72,7 @@ test.describe('Stop shape picker — coverage', () => {
   });
 
   test('picker becomes enabled after clicking a stop in the layout editor', async ({ page }) => {
-    await seedAndOpen(page, fourInLine);
+    await seedAndOpen(page, fourInLine, { stopDotLibrary: true });
 
     const a = await stationCenter(page, 'A');
     await page.mouse.click(a.x, a.y);
@@ -88,7 +88,7 @@ test.describe('Stop shape picker — coverage', () => {
   test('"None" leaves no glyph element at the targeted stop; line still routes through', async ({
     page,
   }) => {
-    await seedAndOpen(page, fourInLine);
+    await seedAndOpen(page, fourInLine, { stopDotLibrary: true });
 
     const b = await stationCenter(page, 'B');
     await page.mouse.click(b.x, b.y);
@@ -103,7 +103,7 @@ test.describe('Stop shape picker — coverage', () => {
   });
 
   test('picking "Dash (tick)" renders a tick rect instead of a dot', async ({ page }) => {
-    await seedAndOpen(page, fourInLine);
+    await seedAndOpen(page, fourInLine, { stopDotLibrary: true });
 
     const b = await stationCenter(page, 'B');
     await page.mouse.click(b.x, b.y);
@@ -120,7 +120,7 @@ test.describe('Stop shape picker — coverage', () => {
   });
 
   test('Ctrl+Z undoes a shape change', async ({ page }) => {
-    await seedAndOpen(page, fourInLine);
+    await seedAndOpen(page, fourInLine, { stopDotLibrary: true });
 
     const a = await stationCenter(page, 'A');
     await page.mouse.click(a.x, a.y);
@@ -139,7 +139,7 @@ test.describe('Stop shape picker — coverage', () => {
   });
 
   test('shape persists across page reload (localStorage)', async ({ page }) => {
-    await seedAndOpen(page, fourInLine);
+    await seedAndOpen(page, fourInLine, { stopDotLibrary: true });
 
     const a = await stationCenter(page, 'A');
     await page.mouse.click(a.x, a.y);

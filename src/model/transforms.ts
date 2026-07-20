@@ -24,7 +24,7 @@ import {
 import {
   DEFAULT_DOT_STYLE,
   DEFAULT_STOP_DOT_STYLE_ID,
-  STOP_DOT_FACTORY_STYLES,
+  STOP_DOT_SEED_STYLES,
   defaultDotDiameter,
   dotStylesEqual,
   isBlankDotStyle,
@@ -509,9 +509,11 @@ function dropRedundantStopOverrides(
 // tags the line default with the style id. Unlike per-stop overrides, line
 // defaults are ALWAYS stored (never dropped at the designated default): a
 // default-tracking line must stay tagged so editing the referenced style
-// restamps it. Dot appearance is NOT a covered line-style field, so this never
-// detaches the line's own style preset. `wantSingleton` selects which stop case
-// the redundant-override cascade prunes.
+// restamps it. Dot TYPE IS a covered LINE-style field, so a real change here
+// detaches the line's own style preset (stripStyleId) — the "tagged ⇒ matches"
+// rule, same as every other covered setter; the value-identical early-out below
+// keeps it. `wantSingleton` selects which stop case the redundant-override
+// cascade prunes.
 function setLineCaseDotStyle(
   doc: MapDoc,
   id: LineId,
@@ -533,7 +535,9 @@ function setLineCaseDotStyle(
   ) {
     return doc;
   }
-  const nextLine: Line = { ...cur, [rawField]: props, [tagField]: styleId };
+  // Real change (the value-identical case returned above) ⇒ detach the line's
+  // own style preset, like every other covered-field setter.
+  const nextLine: Line = stripStyleId({ ...cur, [rawField]: props, [tagField]: styleId });
   // A per-stop override on a stop of the MATCHING case (singleton vs. shared)
   // tagged with the SAME style now equals the new line default → drop it (both
   // raw + tag) so the stop tracks the default going forward. Overrides on the
@@ -2804,6 +2808,8 @@ export const DEFAULT_STYLES: Record<string, StyleDef> = {
     name: 'Default',
     kind: 'line',
     props: {
+      singletonDotStyleId: DEFAULT_STOP_DOT_STYLE_ID,
+      multiDotStyleId: DEFAULT_STOP_DOT_STYLE_ID,
       singletonDotSize: DOT_SIZE_DEFAULT,
       multiDotSize: DOT_SIZE_DEFAULT,
       width: LINE_WIDTH_DEFAULT,
@@ -2862,10 +2868,11 @@ export const DEFAULT_STYLES: Record<string, StyleDef> = {
     kind: 'station',
     props: STATION_LABEL_STYLE_DEFAULTS,
   },
-  // The stopDot LIBRARY — one named style per legacy preset. Unlike the six
-  // per-kind Defaults above, this is a whole set (the picker's menu); the
-  // designated default among them is FACTORY_STYLE_DEFAULTS.stopDot.
-  ...STOP_DOT_FACTORY_STYLES,
+  // The stopDot SEED — pruned all the way back to Filled black + the reserved
+  // None (STOP_DOT_SEED_STYLES). A fresh map's "Stop dots" list starts there;
+  // every other known preset stays recognizable on import but isn't seeded. The
+  // designated default among the seed is FACTORY_STYLE_DEFAULTS.stopDot.
+  ...STOP_DOT_SEED_STYLES,
 };
 
 // The factory per-kind default designations — each kind's shipped style is

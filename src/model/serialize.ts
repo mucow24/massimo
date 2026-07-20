@@ -37,6 +37,7 @@ import {
   DEFAULT_STOP_DOT_STYLE_ID,
   DOT_SHAPE_PRESETS,
   STOP_DOT_FACTORY_STYLES,
+  STOP_DOT_SEED_STYLES,
   defaultDotDiameter,
   dotStylesEqual,
   resolveDotStyle,
@@ -464,6 +465,80 @@ export function bakeDocCurveRadius<
 }
 
 /**
+ * Fill the split dot-TYPE ids (`singletonDotStyleId` / `multiDotStyleId`) on
+ * LINE STYLE DEFS saved before dot type became a covered line-style field —
+ * absent ⇒ the stopDot ⭐ default id. Only the defs need this: a line's own
+ * split-default ids were materialized by the v19 stopDot-library bake. The
+ * file-import path heals the same way inside `sanitizeStyleProps`
+ * (canonicalStyleProps' `?? DEFAULT`), so this is the localStorage-rehydrate
+ * counterpart, gated at v<20 by `migrateDoc`. Idempotent (keyed off the ids'
+ * presence) and reference-stable when every line def already carries both.
+ */
+export function bakeLineStyleDotIds<T extends { styles?: Record<string, StyleDef> }>(doc: T): T {
+  if (!doc.styles) return doc;
+  let changed = false;
+  const styles: Record<string, StyleDef> = {};
+  for (const id of Object.keys(doc.styles)) {
+    const def = doc.styles[id];
+    if (def && def.kind === 'line' && def.props && typeof def.props === 'object') {
+      // Raw persisted props — a loose view, since a pre-v20 def isn't a valid
+      // LineStyleProps yet.
+      const props = def.props as unknown as Record<string, unknown>;
+      const missingSingle = !('singletonDotStyleId' in props);
+      const missingMulti = !('multiDotStyleId' in props);
+      if (missingSingle || missingMulti) {
+        styles[id] = {
+          ...def,
+          props: {
+            ...props,
+            ...(missingSingle ? { singletonDotStyleId: DEFAULT_STOP_DOT_STYLE_ID } : {}),
+            ...(missingMulti ? { multiDotStyleId: DEFAULT_STOP_DOT_STYLE_ID } : {}),
+          },
+        } as StyleDef;
+        changed = true;
+        continue;
+      }
+    }
+    styles[id] = def;
+  }
+  return changed ? ({ ...doc, styles } as T) : doc;
+}
+
+/**
+ * Rehydrate-path counterpart to `pruneDanglingStyleRefs` for the ONE covered
+ * field that newly diverges when dot type joins line styles (v<20): drop a
+ * line's `styleId` when its split dot-TYPE ids no longer match its (now-fuller)
+ * line style def. Every other covered line field was kept in sync by the app on
+ * write, so only dot type can mismatch a v19 save — a targeted check that reads
+ * only the line + its def (no `captureStyleProps`), so it tolerates the migrate
+ * path's partial docs. Reference-stable when nothing is untagged. The file-
+ * import path handles this via the general `pruneDanglingStyleRefs` instead.
+ */
+export function pruneLineDotTypeTagMismatches(
+  lines: Record<string, Line>,
+  styles: Record<string, StyleDef>,
+): Record<string, Line> {
+  let changed = false;
+  const out: Record<string, Line> = {};
+  for (const id of Object.keys(lines)) {
+    const ln = lines[id];
+    const def = typeof ln.styleId === 'string' ? styles[ln.styleId] : undefined;
+    if (def?.kind === 'line') {
+      const single = ln.singletonDotStyleId ?? DEFAULT_STOP_DOT_STYLE_ID;
+      const multi = ln.multiDotStyleId ?? DEFAULT_STOP_DOT_STYLE_ID;
+      if (single !== def.props.singletonDotStyleId || multi !== def.props.multiDotStyleId) {
+        const { styleId: _gone, ...rest } = ln;
+        out[id] = rest as Line;
+        changed = true;
+        continue;
+      }
+    }
+    out[id] = ln;
+  }
+  return changed ? out : lines;
+}
+
+/**
  * Bake the retired single `defaultDotStyle` / `defaultDotSize` into the split
  * `singletonDotStyle` / `multiDotStyle` (+ sizes) — on both the lines and the
  * line style-def props — so a save that predates the split renders identically:
@@ -565,32 +640,40 @@ export function bakeLineDotDefaults<
 /**
  * v19: introduce the stopDot style LIBRARY. Pre-v19 docs stored dot appearance
  * as raw `DotStyle` values on lines (`singleton/multiDotStyle`) and per-stop
- * overrides (`dotStyle`), with no library. This seeds the factory library into
- * `doc.styles`, then TAGS every dot slot by value-match so editing a library
- * style restamps its wearers: each line's split default is materialized (always
- * stored now) and tagged; a per-stop override that matches a library style is
- * tagged (unmatched hand-edited values are left untagged, raw kept). Sets the
- * `stopDot` default designation. Idempotent and keyed off the ABSENCE of any
- * stopDot style — a doc that already has the library (v19+) is returned
+ * overrides (`dotStyle`), with no library. This seeds the PRUNED baseline
+ * (STOP_DOT_SEED_STYLES: Filled black + None) into `doc.styles`, recognizes each
+ * dot slot's raw value against the full known catalog, and — for a matched
+ * preset the map actually WEARS — adds it to the library and tags the slot (so
+ * editing that style restamps its wearers). A map's library thus stays pruned
+ * plus exactly the presets it uses; unmatched hand-edited values are left
+ * untagged, raw kept. Each line's split default is materialized (always stored
+ * now). Sets the `stopDot` default designation. Idempotent and keyed off the
+ * ABSENCE of any stopDot style — a doc that already has a library is returned
  * unchanged (reference-stable), so parse() can run it unconditionally and the
  * localStorage rehydrate gates it at v<19.
  */
 export function bakeStopDotLibrary(doc: MapDoc): MapDoc {
   if (!doc.styles || Object.values(doc.styles).some((d) => d.kind === 'stopDot')) return doc;
-  const styles = { ...STOP_DOT_FACTORY_STYLES, ...doc.styles };
-  const stopDefs = Object.values(styles).filter((d) => d.kind === 'stopDot');
+  // Recognize against the FULL known catalog, but seed only the pruned baseline
+  // plus whatever the map actually wears (collected below).
+  const knownDefs = Object.values(STOP_DOT_FACTORY_STYLES);
   const idOf = (v: DotStyle): string | undefined =>
-    stopDefs.find((d) => dotStylesEqual(d.props as DotStyle, v))?.id;
+    knownDefs.find((d) => dotStylesEqual(d.props as DotStyle, v))?.id;
+  const usedIds = new Set<string>();
+  const track = (id: string | undefined): string | undefined => {
+    if (id !== undefined) usedIds.add(id);
+    return id;
+  };
 
   const lines: Record<string, Line> = {};
   for (const id of Object.keys(doc.lines ?? {})) {
     const ln = doc.lines[id];
     // Materialize each split default (absent ⇒ the historical filled-black),
-    // then tag by value-match. A matched value is always a factory style here.
+    // then tag by value-match against the known catalog.
     const sRaw = ln.singletonDotStyle ?? DEFAULT_DOT_STYLE;
     const mRaw = ln.multiDotStyle ?? DEFAULT_DOT_STYLE;
-    const sId = idOf(sRaw);
-    const mId = idOf(mRaw);
+    const sId = track(idOf(sRaw));
+    const mId = track(idOf(mRaw));
     lines[id] = {
       ...ln,
       singletonDotStyle: sRaw,
@@ -606,13 +689,18 @@ export function bakeStopDotLibrary(doc: MapDoc): MapDoc {
     let changed = false;
     const stops = st.stops.map((s) => {
       if (s.dotStyle === undefined || s.dotStyleId !== undefined) return s;
-      const id = idOf(s.dotStyle);
+      const id = track(idOf(s.dotStyle));
       if (id === undefined) return s;
       changed = true;
       return { ...s, dotStyleId: id };
     });
     stations[sid] = changed ? { ...st, stops } : st;
   }
+
+  // Seed the pruned baseline + only the known presets the map actually wears.
+  const usedStyles: Record<string, StyleDef> = {};
+  for (const id of usedIds) usedStyles[id] = STOP_DOT_FACTORY_STYLES[id];
+  const styles = { ...STOP_DOT_SEED_STYLES, ...usedStyles, ...doc.styles };
 
   return {
     ...doc,
@@ -861,12 +949,15 @@ function convertStopDotFields(stop: StopCell): StopCell {
   return next;
 }
 
-// Validate/canonicalize one line-level dot-style field: drop when invalid or at
-// the historical default (never stored — mirrors the setters), else rebuild to
-// canonical form. `defaultDotStyle` is the retired single field (split into the
-// two below by bakeLineDotDefaults right after); `singletonDotStyle` /
-// `multiDotStyle` are the live ones. Accessed loosely so the retired key
-// (absent from the Line type) still resolves.
+// Validate/canonicalize one line-level dot-style field: drop when invalid, else
+// rebuild to canonical form. The RETIRED single `defaultDotStyle` also drops at
+// the historical default (mirrors its retired setter — it is split into the two
+// live fields by bakeLineDotDefaults right after). The live split fields
+// (`singletonDotStyle` / `multiDotStyle`) are NOT dropped at the default: their
+// setter (setLineCaseDotStyle) and the v19 library bake ALWAYS store the raw
+// shadow beside the id tag, so dropping it here would make file round-trip
+// disagree with the in-memory form. Accessed loosely so the retired key (absent
+// from the Line type) still resolves.
 function sanitizeLineDotStyleField(
   line: Line,
   field: 'defaultDotStyle' | 'singletonDotStyle' | 'multiDotStyle',
@@ -874,7 +965,11 @@ function sanitizeLineDotStyleField(
   const raw = (line as unknown as Record<string, unknown>)[field];
   if (raw === undefined) return line;
   const cleaned = sanitizeDotStyle(raw);
-  if (cleaned === undefined || dotStylesEqual(cleaned, DEFAULT_DOT_STYLE)) {
+  // Invalid ⇒ drop. The retired single field additionally drops at the default.
+  if (
+    cleaned === undefined ||
+    (field === 'defaultDotStyle' && dotStylesEqual(cleaned, DEFAULT_DOT_STYLE))
+  ) {
     const { [field]: _gone, ...rest } = line as unknown as Record<string, unknown>;
     return rest as unknown as Line;
   }
@@ -1682,9 +1777,13 @@ function sanitizeStyleProps(kind: StyleKind, raw: unknown): StyleDef['props'] | 
   const o = raw as Record<string, unknown>;
   switch (kind) {
     case 'line': {
-      // Dot APPEARANCE is no longer a covered line-style field (it lives in the
-      // stopDot library); only dot SIZE remains. A missing size here is
-      // hand-edited garbage (app-written defs are canonical by construction).
+      // Dot TYPE (the stopDot library id per case) and dot SIZE are both covered.
+      // A missing size is hand-edited garbage (app-written defs are canonical by
+      // construction); a missing/garbage id heals to the stopDot ⭐ default via
+      // canonicalStyleProps (the id can't be cross-checked against the styles map
+      // here — a since-deleted one is untagged by pruneDanglingStyleRefs below).
+      const singletonDotStyleId = asString(o.singletonDotStyleId) ?? DEFAULT_STOP_DOT_STYLE_ID;
+      const multiDotStyleId = asString(o.multiDotStyleId) ?? DEFAULT_STOP_DOT_STYLE_ID;
       const singletonDotSize = finiteNum(o.singletonDotSize);
       const multiDotSize = finiteNum(o.multiDotSize);
       const width = finiteNum(o.width);
@@ -1703,6 +1802,8 @@ function sanitizeStyleProps(kind: StyleKind, raw: unknown): StyleDef['props'] | 
       const dashLength = finiteNum(o.dashLength);
       const dashWidth = finiteNum(o.dashWidth);
       return canonicalStyleProps('line', {
+        singletonDotStyleId,
+        multiDotStyleId,
         singletonDotSize,
         multiDotSize,
         width,

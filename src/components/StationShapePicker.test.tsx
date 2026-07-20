@@ -1,8 +1,21 @@
-import { describe, it, expect, vi } from 'vitest';
+import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { render, screen } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { StationShapePicker } from './StationShapePicker';
-import { DOT_SHAPE_PRESETS } from '../model/dotStyle';
+import { useDoc } from '../state/store';
+import { DEFAULT_DOC } from '../model/transforms';
+import { DOT_SHAPE_PRESETS, STOP_DOT_FACTORY_STYLES } from '../model/dotStyle';
+
+// The picker lists the DOC's stopDot library. A fresh map now seeds only the
+// pruned set (Filled black + None), so seed the full known-preset catalog here
+// to exercise the menu against every entry.
+beforeEach(() => {
+  useDoc.setState({
+    ...useDoc.getState(),
+    ...DEFAULT_DOC,
+    styles: { ...DEFAULT_DOC.styles, ...STOP_DOT_FACTORY_STYLES },
+  });
+});
 
 describe('<StationShapePicker />', () => {
   it('trigger has aria-disabled=true when disabled prop is true; click does not open the menu', async () => {

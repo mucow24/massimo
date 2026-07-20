@@ -46,9 +46,11 @@ import {
   bakeLegacyLabelSettings,
   bakeLegacyTransferSettings,
   bakeLineDotDefaults,
+  bakeLineStyleDotIds,
   bakeStopDotLibrary,
   convertLegacyDotShapes,
   ensureStyleInvariants,
+  pruneLineDotTypeTagMismatches,
   foldPolygonFillOpacity,
   migrateLegacyBulletSyntax,
   migrateV9Styles,
@@ -430,6 +432,19 @@ export function migrateDoc(persisted: unknown, version: number): DocState {
     // field presence, so it no-ops (by reference) on a doc that has neither.
     out = bakeLegacyBackgroundOrder(out);
   }
+  if (v < 20 && out.styles) {
+    // Dot TYPE (the stopDot library id per case) became a covered LINE-style
+    // field. Backfill the two ids on line style defs (absent ⇒ the stopDot ⭐
+    // default), then untag any line whose split dot type differs from its
+    // now-fuller line style — keeping "tagged ⇒ matches". Ordered after the v<19
+    // library bake (lines carry their split ids). The file-import path prunes
+    // this via pruneDanglingStyleRefs in parse().
+    out = bakeLineStyleDotIds(out);
+    const styles = out.styles;
+    if (out.lines && styles) {
+      out = { ...out, lines: pruneLineDotTypeTagMismatches(out.lines, styles) };
+    }
+  }
   // Non-version-gated invariant: at least one VALID active palette. Unlike the
   // migrations above, this isn't tied to a schema bump — a persisted doc with
   // an explicit empty / all-unknown `activePalettes` (tampering, or a
@@ -729,11 +744,14 @@ export const useDoc = create<DocState>()(
             const service = pickNextLineName(s.lines);
             // New items wear the kind's "Default" style (composed into the
             // same set() so creation stays one undo entry). Color is identity,
-            // not style — the cycled pick above survives the stamp. Dot defaults
-            // are NOT covered by the line style, so seed them with the current
-            // ⭐ stopDot default separately (so new stations track it).
-            return T.applyDefaultStopDotToLine(
-              S.applyDefaultStyle(T.addLine(s, id, service, color), 'line', id),
+            // not style — the cycled pick above survives the stamp. Dot TYPE is
+            // a covered line-style field now, so seed the ⭐ stopDot default on
+            // the still-untagged line FIRST (nothing to detach), THEN stamp the
+            // default line style: it either matches (tag only) or restamps the
+            // dot to its own — the line style wins for a new line's dot.
+            return S.applyDefaultStyle(
+              T.applyDefaultStopDotToLine(T.addLine(s, id, service, color), id),
+              'line',
               id,
             );
           });
@@ -1043,7 +1061,7 @@ export const useDoc = create<DocState>()(
       {
         name: 'vignelli-map-doc-v1',
         storage: createJSONStorage(() => localStorage),
-        version: 19,
+        version: 20,
         // Version migration chain v0 → v18 lives in `migrateDoc` (above), which
         // is exported and unit-tested. See its doc comment for each step.
         migrate: (persisted, version) => migrateDoc(persisted, version),
