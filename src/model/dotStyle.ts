@@ -291,21 +291,29 @@ export function resolveDotRender(
 ): DotRenderParams | null {
   if (isBlankDotStyle(style)) return null;
   const fill = resolveFill(style.fill, lineColor, darkMode);
+  // A 'dash' is a TfL-style tick: on canvas DashGlyph draws it in its fill color
+  // and takes its OUTLINE from the owning line's casing, and never draws a
+  // service code. So of the style fields only `fill` applies — enforce that in
+  // this shared resolver so every consumer agrees (crucially the editor/picker
+  // previews via StopGlyph, which would otherwise paint a stroke + code onto the
+  // bar that the canvas never renders).
+  const isDash = style.shape === 'dash';
+  const showCode = style.showServiceCode && !isDash;
   const out: DotRenderParams = {
     shape: style.shape,
     r:
       sizeOverride !== undefined
         ? sizeOverride / 2
-        : style.showServiceCode
+        : showCode
           ? SERVICE_CODE_DOT_RADIUS
           : STOP_DOT_RADIUS,
     fill,
   };
-  if (style.strokeWidth > 0) {
+  if (style.strokeWidth > 0 && !isDash) {
     out.stroke = resolveStrokeColor(style.strokeColor, lineColor, darkMode);
     out.strokeWidth = style.strokeWidth;
   }
-  if (style.showServiceCode) {
+  if (showCode) {
     // An explicit day/night serviceCodeColor overrides the auto-contrast.
     // Otherwise legibility is judged against what's actually behind the code:
     // the resolved fill, or the canvas background when the fill is transparent.
