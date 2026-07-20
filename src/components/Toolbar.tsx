@@ -31,7 +31,7 @@ import {
 } from '../state/saveBaseline';
 import { useLibraryPointer } from '../state/libraryPointer';
 import { MapLibraryDialog } from './MapLibraryDialog';
-import { Menu, MenuItem, MenuSeparator, SubMenu } from './Menu';
+import { Menu, MenuCheckboxItem, MenuItem, MenuSeparator, SubMenu } from './Menu';
 import {
   CursorArrowIcon,
   DoubleArrowLeftIcon,
@@ -93,6 +93,8 @@ export function Toolbar() {
   const showNetwork = useViewportStore((s) => s.showNetwork);
   const setShowNetwork = useViewportStore((s) => s.setShowNetwork);
   const setDayCanvasColor = useViewportStore((s) => s.setDayCanvasColor);
+  const darkUiInDay = useViewportStore((s) => s.darkUiInDay);
+  const setDarkUiInDay = useViewportStore((s) => s.setDarkUiInDay);
   const clearAll = useDoc((s) => s.clearAll);
   const addLine = useDoc((s) => s.addLine);
   const selection = useSelection();
@@ -561,6 +563,12 @@ export function Toolbar() {
           <MenuItem onClick={onExportJson}>JSON</MenuItem>
         </SubMenu>
         <MenuSeparator />
+        {/* Local viewing preference: darken only the chrome, leaving the map a
+            day map. Distinct from the moon toggle's night mode (which repaints
+            the canvas and saves to the doc). Persisted, never touches the doc. */}
+        <MenuCheckboxItem checked={darkUiInDay} onCheckedChange={setDarkUiInDay}>
+          Dark UI in day
+        </MenuCheckboxItem>
         {/* Local viewing preference: dim the day-mode paper to cut glare
             without switching to night mode. Persisted, never touches the doc. */}
         <SubMenu label="Day canvas color">

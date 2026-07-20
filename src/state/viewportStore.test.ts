@@ -11,6 +11,7 @@ beforeEach(() => {
     gridSize: 10,
     showWaypoints: false,
     showNetwork: true,
+    darkUiInDay: false,
   });
 });
 
@@ -100,6 +101,40 @@ describe('viewportStore — showWaypoints', () => {
     );
     await useViewportStore.persist.rehydrate();
     expect(useViewportStore.getState().showWaypoints).toBe(false);
+  });
+});
+
+describe('viewportStore — darkUiInDay', () => {
+  it('defaults to off: a day map opens with light chrome', () => {
+    expect(useViewportStore.getInitialState().darkUiInDay).toBe(false);
+  });
+
+  it('setDarkUiInDay updates the value', () => {
+    useViewportStore.getState().setDarkUiInDay(true);
+    expect(useViewportStore.getState().darkUiInDay).toBe(true);
+    useViewportStore.getState().setDarkUiInDay(false);
+    expect(useViewportStore.getState().darkUiInDay).toBe(false);
+  });
+
+  it('persists darkUiInDay to localStorage (partialize)', () => {
+    useViewportStore.getState().setDarkUiInDay(true);
+    const raw = localStorage.getItem('massimo-viewport');
+    expect(raw).toBeTruthy();
+    expect(JSON.parse(raw!).state.darkUiInDay).toBe(true);
+  });
+
+  it('rehydrates a persisted blob without darkUiInDay back to the default off', async () => {
+    // A viewport saved before darkUiInDay existed: the missing key must fall
+    // back to the initializer (off), not undefined.
+    localStorage.setItem(
+      'massimo-viewport',
+      JSON.stringify({
+        state: { x: 1, y: 2, zoom: 3, gridVisible: false, gridSize: 10 },
+        version: 0,
+      }),
+    );
+    await useViewportStore.persist.rehydrate();
+    expect(useViewportStore.getState().darkUiInDay).toBe(false);
   });
 });
 
