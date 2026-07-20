@@ -1,6 +1,7 @@
 import type { Line, LineStyle, StationId } from '../../model/types';
 import { edgeEndpoints, lineHasEdge } from '../../model/lineTopology';
 import { pairKeyOf } from '../../model/pairKey';
+import { resolveSegmentStyle } from '../../geometry/interlining';
 
 // The Edit Stops gesture model, as pure decision functions: (line, cursor,
 // target) → decision. All behavioral rules of canvas line editing live here,
@@ -248,3 +249,15 @@ export const NEXT_STYLE: Record<LineStyle, LineStyle> = {
   dotted: 'dashed-open',
   'dashed-open': 'solid',
 };
+
+/**
+ * The style a segment cycles TO: its current resolved style advanced one step
+ * through {@link NEXT_STYLE}. The single composition of "what is this segment's
+ * style now" (resolveSegmentStyle) + "what's next", shared by every place a
+ * cycle fires — the shift-click on a stripe, the shift-click on an armed
+ * segment's endpoint station, and the style-cycle chip — so the three can never
+ * disagree about the cycle.
+ */
+export function nextSegmentStyle(line: Line, pairKey: string): LineStyle {
+  return NEXT_STYLE[resolveSegmentStyle(line, pairKey)];
+}

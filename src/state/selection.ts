@@ -459,10 +459,12 @@ export const useSelection = create<SelectionState>()(
       setSpaceHeld: (v) => set({ spaceHeld: v }),
 
       // The single source of truth for mode transitions. Entering any non-idle
-      // mode wipes all primary selections; exiting just clears the line-tag
-      // hover preview (which is only meaningful inside creating-line-tag).
-      // Variant payloads (transferAnchor, append cursor) are updated in place
-      // via setTransferAnchor / setAppendCursor.
+      // mode wipes all primary selections; every transition (either direction)
+      // also drops all three ephemeral hover previews — lineTagHoverPreview,
+      // hoveredCanvasItem, and appendHover — since each is meaningful only in a
+      // particular mode and must not linger behind a switch. Variant payloads
+      // (transferAnchor, append cursor) are updated in place via
+      // setTransferAnchor / setAppendCursor.
       setUiMode: (mode) =>
         set(
           // A deliberate mode switch drops the canvas hover-preview outright
