@@ -58,6 +58,7 @@ interface Props {
   bands: SegmentBandSpec[];
   zoom: number;
   svgRef: React.RefObject<SVGSVGElement | null>;
+  screenToWorld: (mx: number, my: number) => { x: number; y: number };
 }
 
 /**
@@ -119,12 +120,12 @@ const ORIENTATION_OFFSET_DEG: Record<0 | 1 | 2 | 3, number> = {
   3: 90, // perpendicular CW
 };
 
-export function LineTagsLayer({ bands, zoom, svgRef }: Props) {
+export function LineTagsLayer({ bands, zoom, svgRef, screenToWorld }: Props) {
   const lines = useDoc((s) => s.lines);
   const lineTags = useDoc((s) => s.lineTags);
   const cycleLineTagOrientation = useDoc((s) => s.cycleLineTagOrientation);
   const selection = useSelection();
-  const drag = useLineTagDrag(svgRef, zoom);
+  const drag = useLineTagDrag(svgRef, zoom, screenToWorld);
 
   const resolved = useMemo(() => {
     const list: ResolvedTag[] = [];

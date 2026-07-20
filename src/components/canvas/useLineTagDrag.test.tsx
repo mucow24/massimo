@@ -14,8 +14,9 @@ const setModes = (partial: Partial<SnapModes>) =>
   useSnapPrefs.setState({ modes: { ...DEFAULT_SNAP_MODES, ...partial } });
 
 // A horizontal A—B segment on line L1, with one text tag anchored 20 units from
-// the 'from' (A) end. The fake svg uses an identity CTM, so a pointer at screen
-// (x, y) projects onto the segment at world (x, y).
+// the 'from' (A) end. The hook converts the cursor via the injected
+// screenToWorld; render() passes an identity map, so a pointer at screen (x, y)
+// projects onto the segment at world (x, y).
 beforeEach(() => {
   useDoc.setState({
     ...useDoc.getState(),
@@ -50,9 +51,11 @@ afterEach(() => {
   dispatchWindowPointer('pointerup', { clientX: 0, clientY: 0 });
 });
 
+const identityScreenToWorld = (mx: number, my: number) => ({ x: mx, y: my });
+
 function render(zoom = 1) {
   const { ref, svg } = fakeSvgRef();
-  const { result } = renderHook(() => useLineTagDrag(ref, zoom));
+  const { result } = renderHook(() => useLineTagDrag(ref, zoom, identityScreenToWorld));
   return { result, svg };
 }
 

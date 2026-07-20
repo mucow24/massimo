@@ -1,4 +1,3 @@
-import { MoonIcon, SunIcon } from '@radix-ui/react-icons';
 import { useDoc } from '../state/store';
 import { type ViewportProjection } from './canvas/screenAnchor';
 import { DraggablePopoverShell } from './DraggablePopoverShell';
@@ -6,7 +5,7 @@ import { useDraggablePopover } from './canvas/useDraggablePopover';
 import { LayerOrderRow } from './LayerOrderRow';
 import { NumericFieldRow } from './NumericFieldRow';
 import { PopoverFooter } from './PopoverFooter';
-import { ColorField } from './ColorField';
+import { DayNightColorRow } from './DayNightColorRow';
 import { StyleRow } from './StyleRow';
 import type { AABB } from '../geometry/rectPolygon';
 import {
@@ -97,49 +96,33 @@ export function PolygonPopover({ polygon, worldRect, view, spawnBox, onClose }: 
         disabled={locked}
       />
       <hr className="popover-divider" aria-hidden="true" />
-      <div className="row">
-        <label htmlFor="polygon-fill">Fill color</label>
-        <SunIcon aria-hidden="true" />
-        <ColorField
-          id="polygon-fill"
-          ariaLabel="Polygon color"
-          title="Light mode fill"
-          value={polygon.fill}
-          disabled={locked || !closed}
-          onChange={onFill}
-        />
-        <MoonIcon aria-hidden="true" />
-        <ColorField
-          id="polygon-dark-fill"
-          ariaLabel="Dark mode color"
-          title="Dark mode fill"
-          value={darkFill}
-          disabled={locked || !closed}
-          onChange={onDarkFill}
-        />
-      </div>
+      <DayNightColorRow
+        label="Fill color"
+        id="polygon-fill"
+        darkId="polygon-dark-fill"
+        lightAriaLabel="Polygon color"
+        darkAriaLabel="Dark mode color"
+        titleNoun="fill"
+        value={polygon.fill}
+        darkValue={darkFill}
+        disabled={locked || !closed}
+        onChange={onFill}
+        onDarkChange={onDarkFill}
+      />
       <hr className="popover-divider" aria-hidden="true" />
-      <div className="row">
-        <label htmlFor="polygon-stroke">Stroke color</label>
-        <SunIcon aria-hidden="true" />
-        <ColorField
-          id="polygon-stroke"
-          ariaLabel="Stroke color"
-          title="Light mode stroke"
-          value={polygon.stroke}
-          disabled={locked}
-          onChange={onStroke}
-        />
-        <MoonIcon aria-hidden="true" />
-        <ColorField
-          id="polygon-dark-stroke"
-          ariaLabel="Dark mode stroke color"
-          title="Dark mode stroke"
-          value={darkStroke}
-          disabled={locked}
-          onChange={onDarkStroke}
-        />
-      </div>
+      <DayNightColorRow
+        label="Stroke color"
+        id="polygon-stroke"
+        darkId="polygon-dark-stroke"
+        lightAriaLabel="Stroke color"
+        darkAriaLabel="Dark mode stroke color"
+        titleNoun="stroke"
+        value={polygon.stroke}
+        darkValue={darkStroke}
+        disabled={locked}
+        onChange={onStroke}
+        onDarkChange={onDarkStroke}
+      />
       <NumericFieldRow
         id="polygon-stroke-width"
         label="Stroke width"
