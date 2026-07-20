@@ -2,6 +2,7 @@ import { Fragment, useRef, useState } from 'react';
 import {
   ChevronDownIcon,
   ChevronRightIcon,
+  CopyIcon,
   Cross2Icon,
   PlusIcon,
   StarFilledIcon,
@@ -143,6 +144,7 @@ export function StylesPanel() {
   const setDefaultStyle = useDoc((s) => s.setDefaultStyle);
   const deleteStyle = useDoc((s) => s.deleteStyle);
   const createStyle = useDoc((s) => s.createStyle);
+  const duplicateStyle = useDoc((s) => s.duplicateStyle);
   const [expandedId, setExpandedId] = useState<string | null>(null);
 
   const onCreate = (kind: StyleKind) => {
@@ -185,6 +187,16 @@ export function StylesPanel() {
                     </button>
                     <StyleRowPreview def={d} />
                     <StyleNameField id={d.id} name={d.name} />
+                    {/* Duplicate: a fresh "{name} copy" of this style, expanded
+                        for immediate editing. */}
+                    <button
+                      className="btn-mini icon"
+                      aria-label={`Duplicate ${d.name}`}
+                      title="Duplicate style"
+                      onClick={() => setExpandedId(duplicateStyle(d.id))}
+                    >
+                      <CopyIcon />
+                    </button>
                     {/* One persistent button (not a button/indicator swap):
                         activating it re-renders the row, and replacing the
                         focused element would drop keyboard focus to <body>. */}

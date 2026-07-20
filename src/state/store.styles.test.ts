@@ -5,7 +5,7 @@ import { describe, it, expect, beforeEach } from 'vitest';
 import { useDoc } from './store';
 import { undo } from './history';
 import { DEFAULT_DOC } from '../model/transforms';
-import type { TextLabelStyleProps } from '../model/types';
+import type { RouteBulletStyleProps, TextLabelStyleProps } from '../model/types';
 import { makeRouteBullet, makeStation, makeStyle, makeTextLabel } from '../test/fixtures';
 
 beforeEach(() => {
@@ -129,6 +129,45 @@ describe('createStyle / updateStyleProps (the panel editor)', () => {
     // Names are per-kind, so the polygon one starts over.
     expect(useDoc.getState().styles[c].name).toBe('New style');
     expect(useDoc.getState().styles[a].props).toEqual({ shape: 'circle', size: 14 });
+  });
+
+  it('duplicateStyle clones a "{name} copy" with the source props, in one undo entry', () => {
+    useDoc.setState({
+      routeBullets: { b1: makeRouteBullet({ id: 'b1', size: 20, styleId: 'y1' }) },
+      styles: { y1: makeStyle('routeBullet', 'y1', { name: 'Big', props: { size: 20 } }) },
+      styleDefaults: { ...DEFAULT_DOC.styleDefaults, routeBullet: 'y1' },
+    });
+    useDoc.temporal.getState().clear();
+    const copy = useDoc.getState().duplicateStyle('y1');
+    const s = useDoc.getState();
+    expect(s.styles[copy]).toMatchObject({ name: 'Big copy', kind: 'routeBullet' });
+    expect((s.styles[copy].props as RouteBulletStyleProps).size).toBe(20);
+    expect(s.styleDefaults.routeBullet).toBe('y1'); // the copy is NOT the default
+    expect(s.routeBullets.b1.styleId).toBe('y1'); // the source keeps its user
+    undo();
+    expect(useDoc.getState().styles[copy]).toBeUndefined(); // exactly one entry
+  });
+
+  it('duplicateStyle makes an independent copy — editing it leaves the source alone', () => {
+    useDoc.setState({
+      styles: { y1: makeStyle('routeBullet', 'y1', { name: 'Big', props: { size: 20 } }) },
+      styleDefaults: { ...DEFAULT_DOC.styleDefaults, routeBullet: 'y1' },
+    });
+    const copy = useDoc.getState().duplicateStyle('y1');
+    useDoc.getState().updateStyleProps(copy, { size: 30 });
+    expect((useDoc.getState().styles[copy].props as RouteBulletStyleProps).size).toBe(30);
+    expect((useDoc.getState().styles.y1.props as RouteBulletStyleProps).size).toBe(20);
+  });
+
+  it('duplicateStyle increments the "copy" suffix so successive copies never collide', () => {
+    useDoc.setState({
+      styles: { y1: makeStyle('routeBullet', 'y1', { name: 'Big' }) },
+      styleDefaults: { ...DEFAULT_DOC.styleDefaults, routeBullet: 'y1' },
+    });
+    const a = useDoc.getState().duplicateStyle('y1');
+    const b = useDoc.getState().duplicateStyle('y1');
+    expect(useDoc.getState().styles[a].name).toBe('Big copy');
+    expect(useDoc.getState().styles[b].name).toBe('Big copy 2');
   });
 
   it('updateStyleProps edits the def and re-stamps tagged users in ONE undo entry', () => {

@@ -159,6 +159,19 @@ describe('<StylesPanel />', () => {
     expect(screen.getByRole('slider', { name: 'Size' })).toHaveAttribute('aria-valuenow', '14');
   });
 
+  it('"Duplicate" clones the style as "{name} copy" and expands the copy for editing', () => {
+    render(<StylesPanel />);
+    fireEvent.click(screen.getByRole('button', { name: 'Duplicate Big' }));
+    const copy = Object.values(useDoc.getState().styles).find((d) => d.name === 'Big copy');
+    expect(copy).toMatchObject({ kind: 'routeBullet' });
+    expect((copy?.props as RouteBulletStyleProps).size).toBe(20); // source props copied
+    // The original still exists (this is a copy, not a rename).
+    expect(useDoc.getState().styles.y2).toBeDefined();
+    // Auto-expanded at the copied value: its editor's Size control is on screen.
+    expect(screen.getByText('Big copy')).toBeInTheDocument();
+    expect(screen.getByRole('slider', { name: 'Size' })).toHaveAttribute('aria-valuenow', '20');
+  });
+
   it('expanding a style and editing a control updates the def AND its tagged items live', () => {
     render(<StylesPanel />);
     fireEvent.click(screen.getByRole('button', { name: 'Edit Big' }));
