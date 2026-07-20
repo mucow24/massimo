@@ -825,11 +825,16 @@ export type StyleKind =
 // fields are deliberately NOT style: a line's `color`/`service`/`name`, a
 // bullet's `lineId`.
 export interface LineStyleProps {
-  // Dot APPEARANCE is deliberately NOT covered by line styles — it lives in the
-  // stopDot style library and is referenced per line (Line.singletonDotStyleId /
-  // multiDotStyleId), set in the Line inspector. Keeping it out avoids coupling
-  // a line style to the stopDot ⭐-default designation. Dot SIZE stays here: it
-  // is a plain per-line number, orthogonal to the library.
+  // Dot TYPE (appearance) IS a covered line-style field: the stopDot library id
+  // each split default points at (see Line.singletonDotStyleId /
+  // multiDotStyleId), captured/stamped alongside dot size. So a line style also
+  // carries the singleton/interchange dot appearance, mirroring the Line
+  // inspector's dot rows. Stored as the library id (not a resolved DotStyle):
+  // stamping re-points the line at the same library entry, so editing that
+  // stopDot style still cascades to the line. A def whose id no longer resolves
+  // is repaired to the stopDot ⭐ default on load (see canonicalStyleProps).
+  singletonDotStyleId: string;
+  multiDotStyleId: string;
   // Dot DIAMETER in px, split by singleton vs. shared station (see
   // Line.singletonDotSize / Line.multiDotSize).
   singletonDotSize: number;

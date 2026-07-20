@@ -23,6 +23,8 @@ import {
   setLineCurveRadius,
   setLineDashLength,
   setLineDashWidth,
+  setLineSingletonDotStyle,
+  setLineMultiDotStyle,
   setLineSingletonDotSize,
   setLineMultiDotSize,
   setLineStrokeColor,
@@ -36,7 +38,12 @@ import {
   updateTextLabel,
   updateTransferStyle,
 } from './transforms';
-import { NONE_STOP_DOT_STYLE_ID, canonicalDotStyle, dotStylesEqual } from './dotStyle';
+import {
+  DEFAULT_STOP_DOT_STYLE_ID,
+  NONE_STOP_DOT_STYLE_ID,
+  canonicalDotStyle,
+  dotStylesEqual,
+} from './dotStyle';
 import { DOT_SIZE_MIN, lineSingletonDotSizeOf, lineMultiDotSizeOf } from './dotSize';
 import { lineDashLengthOf, lineDashWidthOf } from './dashSize';
 import { LINE_WIDTH_MIN, LINE_WIDTH_STEP, lineWidthOf } from './lineWidth';
@@ -120,6 +127,10 @@ export function captureStyleProps<K extends StyleKind>(
       const dashLength = lineDashLengthOf(l);
       const dashWidth = lineDashWidthOf(l);
       return {
+        // Dot TYPE ids (always stored on a real line; the ?? heals a bare
+        // fixture / legacy line so the captured style is still self-contained).
+        singletonDotStyleId: l.singletonDotStyleId ?? DEFAULT_STOP_DOT_STYLE_ID,
+        multiDotStyleId: l.multiDotStyleId ?? DEFAULT_STOP_DOT_STYLE_ID,
         singletonDotSize: lineSingletonDotSizeOf(l),
         multiDotSize: lineMultiDotSizeOf(l),
         width: lineWidthOf(l),
@@ -208,6 +219,8 @@ export function stylePropsEqual(
     const la = a as LineStyleProps;
     const lb = b as LineStyleProps;
     return (
+      la.singletonDotStyleId === lb.singletonDotStyleId &&
+      la.multiDotStyleId === lb.multiDotStyleId &&
       la.singletonDotSize === lb.singletonDotSize &&
       la.multiDotSize === lb.multiDotSize &&
       la.width === lb.width &&
@@ -258,6 +271,12 @@ export function canonicalStyleProps<K extends StyleKind>(
       const dashLength = p.dashLength == null ? undefined : canonicalStrokeWidth(p.dashLength);
       const dashWidth = p.dashWidth == null ? undefined : canonicalStrokeWidth(p.dashWidth);
       return {
+        // `?? DEFAULT` heals a def from a save that predates dot-type coverage
+        // (and is the concrete backstop for a since-deleted id — see
+        // deleteStopDotStyle, which re-points wearers, but a hand-edited file
+        // could still dangle here).
+        singletonDotStyleId: p.singletonDotStyleId ?? DEFAULT_STOP_DOT_STYLE_ID,
+        multiDotStyleId: p.multiDotStyleId ?? DEFAULT_STOP_DOT_STYLE_ID,
         singletonDotSize: Math.max(DOT_SIZE_MIN, Math.round(p.singletonDotSize)),
         multiDotSize: Math.max(DOT_SIZE_MIN, Math.round(p.multiDotSize)),
         width: Math.max(LINE_WIDTH_MIN, Math.round(p.width / LINE_WIDTH_STEP) * LINE_WIDTH_STEP),
@@ -360,6 +379,10 @@ function stampStyle(doc: MapDoc, def: StyleDef, itemId: string): MapDoc {
   switch (def.kind) {
     case 'line': {
       const p = def.props;
+      // Dot TYPE: re-point the line's split defaults at the style's library
+      // entries (setter no-ops when the id doesn't resolve, e.g. a dangling def).
+      next = setLineSingletonDotStyle(next, itemId, p.singletonDotStyleId);
+      next = setLineMultiDotStyle(next, itemId, p.multiDotStyleId);
       next = setLineSingletonDotSize(next, itemId, p.singletonDotSize);
       next = setLineMultiDotSize(next, itemId, p.multiDotSize);
       next = setLineWidth(next, itemId, p.width);
@@ -696,7 +719,21 @@ function deleteStopDotStyle(
     doc.styleDefaults.stopDot === styleId
       ? { ...doc.styleDefaults, stopDot: fallbackDefaultId }
       : doc.styleDefaults;
-  return { ...doc, styles, styleDefaults, stations, lines };
+  let next: MapDoc = { ...doc, styles, styleDefaults, stations, lines };
+  // Dot TYPE is now a covered LINE-style field, so a line style def can also
+  // reference the deleted id. Re-point those defs at the fallback and restamp
+  // their wearer lines (whose split tag was just dropped above) so the
+  // tagged ⇒ matches invariant holds — updateStyleProps owns both halves.
+  for (const def of Object.values(next.styles)) {
+    if (def.kind !== 'line') continue;
+    const patch: Partial<LineStyleProps> = {};
+    if (def.props.singletonDotStyleId === styleId) patch.singletonDotStyleId = fallbackDefaultId;
+    if (def.props.multiDotStyleId === styleId) patch.multiDotStyleId = fallbackDefaultId;
+    if (patch.singletonDotStyleId !== undefined || patch.multiDotStyleId !== undefined) {
+      next = updateStyleProps(next, def.id, patch);
+    }
+  }
+  return next;
 }
 
 /** Drop an item's style tag only (the dropdown's "Custom" choice). No stopDot

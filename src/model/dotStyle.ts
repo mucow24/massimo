@@ -128,11 +128,12 @@ export const DOT_SHAPE_PRESETS: Record<DotShape, DotStyle> = {
 // station case); `undefined` there falls back to this.
 export const DEFAULT_DOT_STYLE: DotStyle = DOT_SHAPE_PRESETS['filled-black'];
 
-// The named dot-style LIBRARY that seeds every doc's `stopDot` styles and, once
-// doc-scoped, drives the dot pickers' menu. One entry per legacy preset — the
-// order is the historical picker order (display is name-sorted like every other
-// style list, so this only fixes the seed). Style ids are stable (`stop-<preset>`)
-// so migration can tag existing raw dot values by value-match → preset → id.
+// The catalog of KNOWN built-in dot looks — one named style per legacy preset,
+// in the historical picker order. Its job is RECOGNITION: `bakeStopDotLibrary`
+// value-matches an old save's raw dot values against these to tag them by
+// preset → id, so importing a pre-library file keeps its dots named. It is NOT
+// the fresh-map seed — a new doc ships only `STOP_DOT_SEED_STYLES` below
+// (Filled black + the reserved None). Style ids are stable (`stop-<preset>`).
 export const DOT_SHAPE_LIBRARY: { id: string; name: string; shape: DotShape }[] = [
   { id: 'stop-filled-black', name: 'Filled black', shape: 'filled-black' },
   { id: 'stop-open-black', name: 'Open black', shape: 'open-black' },
@@ -172,6 +173,14 @@ export const DOT_SHAPE_LIBRARY: { id: string; name: string; shape: DotShape }[] 
   { id: 'stop-none', name: 'None', shape: 'none' },
 ];
 
+// The stop-dot styles a FRESH map ships with — pruned all the way back to the
+// factory default (Filled black) plus the reserved "None" primitive the
+// singleton/interchange split and express-skip pattern depend on. Everything
+// else in DOT_SHAPE_LIBRARY is recognized on import but not seeded, so a new
+// map's "Stop dots" list starts clean; add any other look by defining a style.
+// (Literal ids here — NONE_STOP_DOT_STYLE_ID is declared further down.)
+export const STOP_DOT_SEED_IDS = ['stop-filled-black', 'stop-none'] as const;
+
 // Style id of the factory default stop-dot (filled black) — the fallback for a
 // dot with no explicit style and the seed for new stations. Kept in sync with
 // FACTORY_STYLE_DEFAULTS.stopDot.
@@ -196,6 +205,14 @@ export const STOP_DOT_FACTORY_STYLES: Record<
     { id, name, kind: 'stopDot', props: DOT_SHAPE_PRESETS[shape] } satisfies StyleDef,
   ]),
 );
+
+// The stopDot StyleDefs a FRESH doc ships with — the pruned seed (Filled black +
+// None), spread into DEFAULT_STYLES. A subset of STOP_DOT_FACTORY_STYLES; the
+// rest stay recognizable on import (bakeStopDotLibrary) but unseeded.
+export const STOP_DOT_SEED_STYLES: Record<
+  string,
+  Extract<StyleDef, { kind: 'stopDot' }>
+> = Object.fromEntries(STOP_DOT_SEED_IDS.map((id) => [id, STOP_DOT_FACTORY_STYLES[id]]));
 
 /**
  * A dot style that paints NOTHING — no fill, no stroke, no service code. The

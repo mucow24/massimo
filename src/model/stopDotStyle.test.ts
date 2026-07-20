@@ -1,6 +1,7 @@
 import { describe, it, expect } from 'vitest';
 import * as T from './transforms';
 import {
+  applyStyleToItem,
   updateStyleProps,
   deleteStyle,
   renameStyle,
@@ -14,8 +15,8 @@ import {
   STOP_DOT_FACTORY_STYLES,
   resolveDotRender,
 } from './dotStyle';
-import { makeDoc, makeLine, makeStation, makeStop } from '../test/fixtures';
-import type { DotStyle } from './types';
+import { makeDoc, makeLine, makeStation, makeStop, makeStyle } from '../test/fixtures';
+import type { DotStyle, LineStyleProps } from './types';
 
 const OPEN_WHITE = 'stop-open-white';
 const DIAMOND = 'stop-filled-black-diamond';
@@ -61,6 +62,52 @@ describe('stopDot styles — restamp propagation (the headline)', () => {
     expect(next.lines.L1.singletonDotStyleId).toBeUndefined();
     // Designation re-pointed to a surviving stopDot style:
     expect(next.styles[next.styleDefaults.stopDot]?.kind).toBe('stopDot');
+  });
+});
+
+describe('dot TYPE as a covered LINE-style field', () => {
+  // A line style with custom singleton/interchange stopDot references (custom so
+  // the test is independent of which factory presets ship).
+  const seed = () =>
+    makeDoc({
+      lines: [makeLine({ id: 'L1' })],
+      styles: [
+        makeStyle('stopDot', 'sd-square', { props: { shape: 'square' } }),
+        makeStyle('stopDot', 'sd-x', { props: { shape: 'x' } }),
+        makeStyle('line', 'ln', {
+          props: { singletonDotStyleId: 'sd-square', multiDotStyleId: 'sd-square' },
+        }),
+      ],
+    });
+
+  it('stamping a line style points the line split defaults at its stopDot ids', () => {
+    const doc = applyStyleToItem(seed(), 'ln', 'L1');
+    expect(doc.lines.L1.styleId).toBe('ln');
+    expect(doc.lines.L1.singletonDotStyleId).toBe('sd-square');
+    expect(doc.lines.L1.multiDotStyleId).toBe('sd-square');
+    expect(doc.lines.L1.singletonDotStyle!.shape).toBe('square');
+  });
+
+  it('editing a line style dot type restamps the tagged line (kept), on the edited case only', () => {
+    let doc = applyStyleToItem(seed(), 'ln', 'L1');
+    doc = updateStyleProps(doc, 'ln', { singletonDotStyleId: 'sd-x' });
+    expect(doc.lines.L1.singletonDotStyleId).toBe('sd-x');
+    expect(doc.lines.L1.singletonDotStyle!.shape).toBe('x');
+    expect(doc.lines.L1.multiDotStyleId).toBe('sd-square'); // untouched case
+    expect(doc.lines.L1.styleId).toBe('ln'); // restamp, not detach
+  });
+
+  it('deleting a referenced stopDot re-points the LINE style def to the fallback and restamps its wearer', () => {
+    const doc = applyStyleToItem(seed(), 'ln', 'L1');
+    const next = deleteStyle(doc, 'sd-square');
+    const fallback = (next.styles.ln.props as LineStyleProps).singletonDotStyleId;
+    // No dangle: the def points at a surviving stopDot style…
+    expect(next.styles[fallback]?.kind).toBe('stopDot');
+    expect((next.styles.ln.props as LineStyleProps).multiDotStyleId).toBe(fallback);
+    // …and the wearer line follows it (tagged ⇒ matches), keeping its tag.
+    expect(next.lines.L1.singletonDotStyleId).toBe(fallback);
+    expect(next.lines.L1.multiDotStyleId).toBe(fallback);
+    expect(next.lines.L1.styleId).toBe('ln');
   });
 });
 
