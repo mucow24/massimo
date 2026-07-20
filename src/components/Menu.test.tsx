@@ -34,6 +34,30 @@ describe('Menu', () => {
     expect(screen.queryByRole('menu')).toBeNull();
   });
 
+  it('does not keep the trigger focused after closing, so Space does not reopen it', async () => {
+    // The canvas uses hold-Space-to-pan. Radix returns focus to the trigger
+    // when a menu closes, and its trigger opens the menu on a Space keydown —
+    // so a lingering trigger focus turns the very next pan keypress into a
+    // menu reopen. After any close, focus must leave the trigger.
+    const user = userEvent.setup();
+    render(
+      <Menu label="File">
+        <MenuItem onClick={() => {}}>Save</MenuItem>
+      </Menu>,
+    );
+    const trigger = screen.getByRole('button', { name: 'File' });
+
+    await user.click(trigger);
+    expect(screen.getByRole('menu')).toBeInTheDocument();
+    await user.keyboard('{Escape}');
+    expect(screen.queryByRole('menu')).toBeNull();
+
+    // The regression: the trigger still holds focus, so Space reopens the menu.
+    expect(trigger).not.toHaveFocus();
+    await user.keyboard(' ');
+    expect(screen.queryByRole('menu')).toBeNull();
+  });
+
   it('renders a separator with the separator role', async () => {
     const user = userEvent.setup();
     render(
