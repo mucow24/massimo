@@ -1,4 +1,5 @@
 import { type Page } from '@playwright/test';
+import { STOP_DOT_FACTORY_STYLES } from '../src/model/dotStyle';
 
 // Mirrors the partialized shape persisted by the doc store
 // (`vignelli-map-doc-v1` in localStorage).
@@ -99,7 +100,10 @@ export async function seedAndOpen(
   // Optional camera seed. Defaults to the origin at zoom 1 (existing behavior),
   // so callers that don't care about the camera are unaffected. Tests that need
   // a specific zoom (e.g. zoom-aware snapping / constant-size handles) pass it.
-  opts: { zoom?: number; x?: number; y?: number } = {},
+  // `stopDotLibrary`: seed the FULL known dot-preset catalog into the doc — a
+  // fresh map now ships only the pruned seed (Filled black + None), so picker
+  // tests that reach for "Filled black diamond" / "Dash (tick)" opt in here.
+  opts: { zoom?: number; x?: number; y?: number; stopDotLibrary?: boolean } = {},
 ): Promise<void> {
   // Pre-navigation: localStorage isn't writable until a page exists in the
   // origin. Open `/` once so the origin is established, then write, then
@@ -208,6 +212,10 @@ export async function seedAndOpen(
       polygons,
       polygonOrder: (seed.polygons ?? []).map((p) => p.id),
       ...(seed.darkMode !== undefined ? { darkMode: seed.darkMode } : {}),
+      // Seeding stopDot styles makes bakeStopDotLibrary a no-op (it only seeds
+      // when none exist), so the full catalog survives migration; the invariant
+      // pass fills in the other kinds' defaults + the designation.
+      ...(opts.stopDotLibrary ? { styles: STOP_DOT_FACTORY_STYLES } : {}),
     },
   };
 

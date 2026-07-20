@@ -36,7 +36,7 @@ test.describe('Waypoint toggle', () => {
   });
 
   test('toggle off restores the prior dot shape (non-destructive)', async ({ page }) => {
-    await seedAndOpen(page, fourInLine);
+    await seedAndOpen(page, fourInLine, { stopDotLibrary: true });
     const b = await stationCenter(page, 'B');
     await page.mouse.click(b.x, b.y);
 
