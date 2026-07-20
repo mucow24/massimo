@@ -1,5 +1,5 @@
 import { ReactNode } from 'react';
-import { ChevronRightIcon } from '@radix-ui/react-icons';
+import { CheckIcon, ChevronRightIcon } from '@radix-ui/react-icons';
 import * as Dropdown from '@radix-ui/react-dropdown-menu';
 
 interface MenuProps {
@@ -55,6 +55,37 @@ export function MenuItem({ onClick, children, disabled, shortcut }: MenuItemProp
         </span>
       )}
     </Dropdown.Item>
+  );
+}
+
+interface MenuCheckboxItemProps {
+  checked: boolean;
+  onCheckedChange: (checked: boolean) => void;
+  children: ReactNode;
+}
+
+/**
+ * A checkable menu row — a `menu-item` with a leading check column that fills in
+ * when `checked`. Radix `CheckboxItem` supplies the toggle behavior and the
+ * `role="menuitemcheckbox"` semantics; the check itself lives in an
+ * `ItemIndicator`, which renders its child only in the checked state (the fixed
+ * `menu-check` width reserves the gutter so the label never shifts). Selecting it
+ * closes the menu like any other item — one toggle, immediate feedback, done.
+ */
+export function MenuCheckboxItem({ checked, onCheckedChange, children }: MenuCheckboxItemProps) {
+  return (
+    <Dropdown.CheckboxItem
+      className="menu-item menu-checkbox-item"
+      checked={checked}
+      onCheckedChange={onCheckedChange}
+    >
+      <span className="menu-check" aria-hidden="true">
+        <Dropdown.ItemIndicator>
+          <CheckIcon />
+        </Dropdown.ItemIndicator>
+      </span>
+      {children}
+    </Dropdown.CheckboxItem>
   );
 }
 
